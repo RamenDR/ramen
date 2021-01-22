@@ -1,0 +1,20 @@
+# permissions for end users to view replicatedapplications.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: replicatedapplication-viewer-role
+rules:
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - replicatedapplications
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - replicatedapplications/status
+  verbs:
+  - get

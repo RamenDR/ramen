@@ -1,0 +1,24 @@
+# permissions for end users to edit replicatedapplications.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: replicatedapplication-editor-role
+rules:
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - replicatedapplications
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - replicatedapplications/status
+  verbs:
+  - get

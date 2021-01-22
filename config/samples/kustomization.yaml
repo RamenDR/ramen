@@ -1,0 +1,6 @@
+## Append samples you want in your CSV to this file as resources ##
+resources:
+- ramendr_v1alpha1_replicatedapplication.yaml
+- ramendr_v1alpha1_clusterid.yaml
+- ramendr_v1alpha1_clusterpeers.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

@@ -1,0 +1,21 @@
+domain: openshift.io
+layout: go.kubebuilder.io/v3
+projectName: ramen
+repo: github.com/ramendr/ramen
+resources:
+- crdVersion: v1
+  group: ramendr
+  kind: ReplicatedApplication
+  version: v1alpha1
+- crdVersion: v1
+  group: ramendr
+  kind: ClusterID
+  version: v1alpha1
+- crdVersion: v1
+  group: ramendr
+  kind: ClusterPeers
+  version: v1alpha1
+version: 3-alpha
+plugins:
+  manifests.sdk.operatorframework.io/v2: {}
+  scorecard.sdk.operatorframework.io/v2: {}
