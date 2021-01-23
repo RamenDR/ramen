@@ -1,0 +1,34 @@
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  name: manager-role
+rules:
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - replicatedapplications
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - replicatedapplications/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - replicatedapplications/status
+  verbs:
+  - get
+  - patch
+  - update
