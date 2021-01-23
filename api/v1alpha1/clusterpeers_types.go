@@ -23,13 +23,27 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+// ReplicationPolicyType  -- present condition of the cluster, as known to the admin
+type ReplicationPolicyType string
+
+// ReplicationPolicyType definitions
+const (
+	// Sync replication implies Metro-DR
+	Sync ReplicationPolicyType = "sync"
+	// Async replication implies WAN-DR
+	Async ReplicationPolicyType = "async"
+)
+
 // ClusterPeersSpec defines the desired state of ClusterPeers
 type ClusterPeersSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Foo is an example field of ClusterPeers. Edit ClusterPeers_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// Members of the ClusterPeers set
+	ClusterIDs []string `json:"clusterIDs"`
+
+	// Type of replication policy used by this ClusterPeers: sync or async
+	ReplicationPolicy ReplicationPolicyType `json:"replicationPolicy"`
 }
 
 // ClusterPeersStatus defines the observed state of ClusterPeers

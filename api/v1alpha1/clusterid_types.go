@@ -23,19 +23,58 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+// The clusterName is a custom resource that assigns a unique name to each
+// kubernetes cluster that forms the larger multi-cluster DR peers. As it
+// exists, kubernetes does not have any notion of a cluster ID, hence this
+// custom resource serves as a substitute for the same. The multicluster-sig
+// is also working towards defining a clusterID and clusterSets; in future,
+// we may need to adapt/adopt the same.
+
+// LocationType -- the locality type of a cluster
+type LocationType string
+
+// LocationType definitions
+const (
+	// Self implies that this is a local cluster
+	Self LocationType = "Self"
+	// MetroRemote implies that this cluster is not local and is part of a Metro DR replication
+	MetroRemote LocationType = "MetroRemote"
+	// WANRemote  implies that this cluster is not local and is part of a WAN DR replication
+	WANRemote LocationType = "WANRemote" // WAN DR
+)
+
+// ExpectedConditionType -- present condition of the cluster, as known to the admin
+type ExpectedConditionType string
+
+// ExpectedConditionType definitions
+const (
+	// Cluster is expected to be recovering
+	Recovering ExpectedConditionType = "recovering"
+	// Cluster is expected to be up
+	Up ExpectedConditionType = "up"
+	// Cluster is expected to be down
+	Down ExpectedConditionType = "down"
+)
+
 // ClusterIDSpec defines the desired state of ClusterID
 type ClusterIDSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Foo is an example field of ClusterID. Edit ClusterID_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// Name of this cluster.  Each cluster in a given ClusterPeers should have a unique name.
+	Name string `json:"name"`
+
+	// Location of this cluster: one of Self (local) or MetroRemote or WANRemote
+	Location LocationType `json:"location"`
 }
 
 // ClusterIDStatus defines the observed state of ClusterID
 type ClusterIDStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+
+	// Fence status: fenced or unfenced
+	FenceStatus string `json:"fenceStatus"`
 }
 
 // +kubebuilder:object:root=true
