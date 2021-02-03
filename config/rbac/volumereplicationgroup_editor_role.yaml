@@ -1,20 +1,24 @@
-# permissions for end users to view replicatedapplications.
+# permissions for end users to edit volumereplicationgroups.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: replicatedapplication-viewer-role
+  name: volumereplicationgroup-editor-role
 rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - replicatedapplications
+  - volumereplicationgroups
   verbs:
+  - create
+  - delete
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - replicatedapplications/status
+  - volumereplicationgroups/status
   verbs:
   - get

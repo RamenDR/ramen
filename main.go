@@ -78,12 +78,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.ReplicatedApplicationReconciler{
+	if err = (&controllers.VolumeReplicationGroupReconciler{
 		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("ReplicatedApplication"),
+		Log:    ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ReplicatedApplication")
+		setupLog.Error(err, "unable to create controller", "controller", "VolumeReplicationGroup")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

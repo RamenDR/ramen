@@ -9,7 +9,7 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - replicatedapplications
+  - volumereplicationgroups
   verbs:
   - create
   - delete
@@ -21,13 +21,13 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - replicatedapplications/finalizers
+  - volumereplicationgroups/finalizers
   verbs:
   - update
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - replicatedapplications/status
+  - volumereplicationgroups/status
   verbs:
   - get
   - patch

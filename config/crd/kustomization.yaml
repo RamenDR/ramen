@@ -2,7 +2,7 @@
 # since it depends on service name and namespace that are out of this kustomize package.
 # It should be run by config/default
 resources:
-- bases/ramendr.openshift.io_replicatedapplications.yaml
+- bases/ramendr.openshift.io_volumereplicationgroups.yaml
 - bases/ramendr.openshift.io_clusterids.yaml
 - bases/ramendr.openshift.io_clusterpeers.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
@@ -10,14 +10,14 @@ resources:
 patchesStrategicMerge:
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix.
 # patches here are for enabling the conversion webhook for each CRD
-#- patches/webhook_in_replicatedapplications.yaml
+#- patches/webhook_in_volumereplicationgroups.yaml
 #- patches/webhook_in_clusterids.yaml
 #- patches/webhook_in_clusterpeers.yaml
 # +kubebuilder:scaffold:crdkustomizewebhookpatch
 
 # [CERTMANAGER] To enable webhook, uncomment all the sections with [CERTMANAGER] prefix.
 # patches here are for enabling the CA injection for each CRD
-#- patches/cainjection_in_replicatedapplications.yaml
+#- patches/cainjection_in_volumereplicationgroups.yaml
 #- patches/cainjection_in_clusterids.yaml
 #- patches/cainjection_in_clusterpeers.yaml
 # +kubebuilder:scaffold:crdkustomizecainjectionpatch

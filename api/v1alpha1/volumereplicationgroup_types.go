@@ -32,8 +32,8 @@ const (
 	ForcePromote VolumeTakeoverControlType = "ForcePromote"
 )
 
-// ReplicatedApplicationSpec defines the desired state of ReplicatedApplication
-type ReplicatedApplicationSpec struct {
+// VolumeReplicationGroupSpec defines the desired state of VolumeReplicationGroup
+type VolumeReplicationGroupSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
@@ -64,8 +64,8 @@ type ReplicatedApplicationSpec struct {
 	AsyncRPOGoalSeconds int64 `json:"asyncRPOGoalSeconds,omitempty"`
 }
 
-// ReplicatedApplicationStatus defines the observed state of ReplicatedApplication
-type ReplicatedApplicationStatus struct {
+// VolumeReplicationGroupStatus defines the observed state of VolumeReplicationGroup
+type VolumeReplicationGroupStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 }
@@ -73,24 +73,24 @@ type ReplicatedApplicationStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
-// ReplicatedApplication is the Schema for the replicatedapplications API
-type ReplicatedApplication struct {
+// VolumeReplicationGroup is the Schema for the volumereplicationgroups API
+type VolumeReplicationGroup struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ReplicatedApplicationSpec   `json:"spec,omitempty"`
-	Status ReplicatedApplicationStatus `json:"status,omitempty"`
+	Spec   VolumeReplicationGroupSpec   `json:"spec,omitempty"`
+	Status VolumeReplicationGroupStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// ReplicatedApplicationList contains a list of ReplicatedApplication
-type ReplicatedApplicationList struct {
+// VolumeReplicationGroupList contains a list of VolumeReplicationGroup
+type VolumeReplicationGroupList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []ReplicatedApplication `json:"items"`
+	Items           []VolumeReplicationGroup `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&ReplicatedApplication{}, &ReplicatedApplicationList{})
+	SchemeBuilder.Register(&VolumeReplicationGroup{}, &VolumeReplicationGroupList{})
 }

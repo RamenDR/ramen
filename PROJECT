@@ -5,7 +5,7 @@ repo: github.com/ramendr/ramen
 resources:
 - crdVersion: v1
   group: ramendr
-  kind: ReplicatedApplication
+  kind: VolumeReplicationGroup
   version: v1alpha1
 - crdVersion: v1
   group: ramendr

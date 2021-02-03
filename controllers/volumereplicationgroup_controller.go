@@ -27,28 +27,28 @@ import (
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 )
 
-// ReplicatedApplicationReconciler reconciles a ReplicatedApplication object
-type ReplicatedApplicationReconciler struct {
+// VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
+type VolumeReplicationGroupReconciler struct {
 	client.Client
 	Log    logr.Logger
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=replicatedapplications,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=replicatedapplications/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=replicatedapplications/finalizers,verbs=update
+// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 // TODO(user): Modify the Reconcile function to compare the state specified by
-// the ReplicatedApplication object against the actual cluster state, and then
+// the VolumeReplicationGroup object against the actual cluster state, and then
 // perform operations to make the cluster state reflect the state specified by
 // the user.
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
-func (r *ReplicatedApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = r.Log.WithValues("replicatedapplication", req.NamespacedName)
+func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	_ = v.Log.WithValues("volumereplicationgroup", req.NamespacedName)
 
 	// your logic here
 
@@ -56,8 +56,8 @@ func (r *ReplicatedApplicationReconciler) Reconcile(ctx context.Context, req ctr
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *ReplicatedApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (v *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&ramendrv1alpha1.ReplicatedApplication{}).
-		Complete(r)
+		For(&ramendrv1alpha1.VolumeReplicationGroup{}).
+		Complete(v)
 }

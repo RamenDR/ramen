@@ -6,20 +6,20 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.4.1
   creationTimestamp: null
-  name: replicatedapplications.ramendr.openshift.io
+  name: volumereplicationgroups.ramendr.openshift.io
 spec:
   group: ramendr.openshift.io
   names:
-    kind: ReplicatedApplication
-    listKind: ReplicatedApplicationList
-    plural: replicatedapplications
-    singular: replicatedapplication
+    kind: VolumeReplicationGroup
+    listKind: VolumeReplicationGroupList
+    plural: volumereplicationgroups
+    singular: volumereplicationgroup
   scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ReplicatedApplication is the Schema for the replicatedapplications
+        description: VolumeReplicationGroup is the Schema for the volumereplicationgroups
           API
         properties:
           apiVersion:
@@ -35,7 +35,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: ReplicatedApplicationSpec defines the desired state of ReplicatedApplication
+            description: VolumeReplicationGroupSpec defines the desired state of VolumeReplicationGroup
             properties:
               affinedCluster:
                 description: Cluster ID in ClusterPeers that has best storage performance
@@ -71,8 +71,8 @@ spec:
             - clusterPeersList
             type: object
           status:
-            description: ReplicatedApplicationStatus defines the observed state of
-              ReplicatedApplication
+            description: VolumeReplicationGroupStatus defines the observed state of
+              VolumeReplicationGroup
             type: object
         type: object
     served: true

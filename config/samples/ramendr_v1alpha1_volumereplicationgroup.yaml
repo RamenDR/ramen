@@ -1,7 +1,7 @@
 apiVersion: ramendr.openshift.io/v1alpha1
-kind: ReplicatedApplication
+kind: VolumeReplicationGroup
 metadata:
-  name: replicatedapplication-sample
+  name: volumereplicationgroup-sample
 spec:
   # Add fields here
   foo: bar
