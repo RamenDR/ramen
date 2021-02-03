@@ -35,12 +35,12 @@ type LocationType string
 
 // LocationType definitions
 const (
-	// Self implies that this is a local cluster
-	Self LocationType = "Self"
-	// MetroRemote implies that this cluster is not local and is part of a Metro DR replication
-	MetroRemote LocationType = "MetroRemote"
-	// WANRemote  implies that this cluster is not local and is part of a WAN DR replication
-	WANRemote LocationType = "WANRemote" // WAN DR
+	// LocalCluster implies that this is a local cluster
+	LocalCluster LocationType = "LocalCluster"
+	// MetroRemoteCluster implies that this cluster is not local and is part of a Metro DR replication
+	MetroRemoteCluster LocationType = "MetroRemoteCluster"
+	// WANRemoteCluster  implies that this cluster is not local and is part of a WAN DR replication
+	WANRemoteCluster LocationType = "WANRemoteCluster" // WAN DR
 )
 
 // ExpectedConditionType -- present condition of the cluster, as known to the admin
@@ -64,7 +64,7 @@ type ClusterIDSpec struct {
 	// Name of this cluster.  Each cluster in a given ClusterPeers should have a unique name.
 	Name string `json:"name"`
 
-	// Location of this cluster: one of Self (local) or MetroRemote or WANRemote
+	// Location of this cluster: one of LocalCluster (local) or MetroRemoteCluster or WANRemoteCluster
 	Location LocationType `json:"location"`
 }
 

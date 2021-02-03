@@ -37,8 +37,8 @@ spec:
             description: ClusterIDSpec defines the desired state of ClusterID
             properties:
               location:
-                description: 'Location of this cluster: one of Self (local) or MetroRemote
-                  or WANRemote'
+                description: 'Location of this cluster: one of LocalCluster (local)
+                  or MetroRemoteCluster or WANRemoteCluster'
                 type: string
               name:
                 description: Name of this cluster.  Each cluster in a given ClusterPeers
