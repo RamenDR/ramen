@@ -1,7 +1,12 @@
 apiVersion: ramendr.openshift.io/v1alpha1
 kind: VolumeReplicationGroup
 metadata:
-  name: volumereplicationgroup-sample
+  name: volumereplicationgroup-sample-1
 spec:
   # Add fields here
-  foo: bar
+  affinedCluster: us-central
+  applicationName: sample-app
+  clusterPeersList:
+    - us-northeast
+    - us-southwest
+  asyncRPOGoalSeconds: 3600
