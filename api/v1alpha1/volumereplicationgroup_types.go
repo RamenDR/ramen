@@ -40,6 +40,9 @@ type VolumeReplicationGroupSpec struct {
 	// Name of the application to replicate
 	ApplicationName string `json:"applicationName"`
 
+	// Application label that is used to identify its PVs
+	ApplicationLabels metav1.LabelSelector `json:"applicationLabels"`
+
 	// Cluster ID in ClusterPeers that has best storage performance affinity for the application
 	AffinedCluster string `json:"affinedCluster"`
 

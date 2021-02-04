@@ -5,8 +5,18 @@ metadata:
 spec:
   # Add fields here
   affinedCluster: us-central
+  applicationLabel:
+    matchExpressions:
+    - key: apptype
+      operator: NotIn
+      values:
+      - stateless
+    - {key: backend, operator: In, values: [ceph]}
+    matchLabels:
+      appclass: gold
+      environment: dev.AZ1
   applicationName: sample-app
-  clusterPeersList:
-    - us-northeast
-    - us-southwest
   asyncRPOGoalSeconds: 3600
+  clusterPeersList:
+  - us-northeast
+  - us-southwest
