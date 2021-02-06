@@ -5,7 +5,7 @@ metadata:
 spec:
   # Add fields here
   affinedCluster: us-central
-  applicationLabel:
+  applicationLabels:
     matchExpressions:
     - key: apptype
       operator: NotIn
