@@ -13,6 +13,8 @@ spec:
     kind: VolumeReplicationGroup
     listKind: VolumeReplicationGroupList
     plural: volumereplicationgroups
+    shortNames:
+    - vrg
     singular: volumereplicationgroup
   scope: Namespaced
   versions:

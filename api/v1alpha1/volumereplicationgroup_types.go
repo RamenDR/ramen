@@ -75,6 +75,7 @@ type VolumeReplicationGroupStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=vrg
 
 // VolumeReplicationGroup is the Schema for the volumereplicationgroups API
 type VolumeReplicationGroup struct {
