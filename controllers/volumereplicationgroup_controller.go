@@ -18,13 +18,14 @@ package controllers
 
 import (
 	"context"
-
 	"github.com/go-logr/logr"
 	"github.com/prometheus/common/log"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+        "k8s.io/apimachinery/pkg/labels"
+        corev1 "k8s.io/api/core/v1"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 )
@@ -69,6 +70,21 @@ func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	}
 	log.Info("Processing VolumeReplicationGroup ", volRepGroup.Spec, " in ns: ", req.NamespacedName)
 
+        labelSelector := volRepGroup.Spec.ApplicationLabels
+        log.Info("Label Selector: ", labels.Set(labelSelector.MatchLabels))
+        listOptions := []client.ListOption{
+        //                client.InNamespace("default"),
+                        client.MatchingLabels(labelSelector.MatchLabels),
+        }
+
+        log.Info("List Options", listOptions)
+        pvcList := &corev1.PersistentVolumeClaimList{}
+        if err = v.List(ctx, pvcList, listOptions...); err != nil {
+                        log.Error(err, "Failed to list PVC")
+                        return ctrl.Result{}, err
+                }
+        log.Info("PVC List: ", pvcList)
+
 	/*
 		// Check if the VolumeReplication CR already exists for the PVs of this application, if not create a new one
 		for all PVs of this application {
@@ -89,6 +105,8 @@ func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 				log.Error(err, "Failed to get VolumeReplication CR")
 				return ctrl.Result{}, err
 			}
+
+                        log.Info(Labels Found: "%s\n", labelsForVolumeReplication(volRepGroup.Name))
 
 			// Ensure the VolumeReplication fields as the same as the VolumeReplicationGroup spec
 			size := volRepGroup.Spec.Size
