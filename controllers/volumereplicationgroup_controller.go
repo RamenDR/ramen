@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,12 +20,14 @@ import (
 	"context"
 	"github.com/go-logr/logr"
 	"github.com/prometheus/common/log"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/labels"
+	//"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-        "k8s.io/apimachinery/pkg/labels"
-        corev1 "k8s.io/api/core/v1"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 )
@@ -40,6 +42,8 @@ type VolumeReplicationGroupReconciler struct {
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups/finalizers,verbs=update
+// +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -70,20 +74,85 @@ func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	}
 	log.Info("Processing VolumeReplicationGroup ", volRepGroup.Spec, " in ns: ", req.NamespacedName)
 
-        labelSelector := volRepGroup.Spec.ApplicationLabels
-        log.Info("Label Selector: ", labels.Set(labelSelector.MatchLabels))
-        listOptions := []client.ListOption{
-        //                client.InNamespace("default"),
-                        client.MatchingLabels(labelSelector.MatchLabels),
-        }
+	labelSelector := volRepGroup.Spec.ApplicationLabels
+	log.Info("Label Selector: ", labels.Set(labelSelector.MatchLabels))
+	log.Info("Namespace: ", volRepGroup.Namespace)
+	listOptions := []client.ListOption{
+		//                client.InNamespace("default"),
+		client.InNamespace(volRepGroup.Namespace),
+		client.MatchingLabels(labelSelector.MatchLabels),
+	}
 
-        log.Info("List Options", listOptions)
-        pvcList := &corev1.PersistentVolumeClaimList{}
-        if err = v.List(ctx, pvcList, listOptions...); err != nil {
-                        log.Error(err, "Failed to list PVC")
-                        return ctrl.Result{}, err
-                }
-        log.Info("PVC List: ", pvcList)
+	log.Info("List Options", listOptions)
+	pvcList := &corev1.PersistentVolumeClaimList{}
+	if err = v.List(ctx, pvcList, listOptions...); err != nil {
+		log.Error(err, "Failed to list PVC")
+		return ctrl.Result{}, err
+	}
+	log.Info("PVC List: ", pvcList)
+
+	log.Info("---------- PVs ----------")
+
+	//log.infof allows providing formatting directives.
+	//Providing formatting directives to log.info errors
+	template := "%-42s%-42s%-8s%-10s%-8s\n"
+	log.Infof(template, "NAME", "CLAIM REF", "STATUS", "CAPACITY", "RECLAIM POLICY")
+
+	var cap resource.Quantity
+
+	// https://gitlab.cncf.ci/kubernetes/kubernetes/blob/720f041985a97d0645884b5a2e0f58ab4fb9951d/staging/src/k8s.io/api/core/v1/types.go
+	// As per the above website, pvList is a structure and to get the actual list of PVs
+	// use pvList.Items (check the type PersistentVolumeStatus)
+	for _, pvc := range pvcList.Items {
+
+		//if the PVC is not bound yet, dont proceed.
+		if pvc.Status.Phase != corev1.ClaimBound {
+			log.Errorf("PVC is not yet bound status: %v", pvc.Status.Phase)
+			return ctrl.Result{}, err
+		}
+
+		volumeName := pvc.Spec.VolumeName
+
+		pv := &corev1.PersistentVolume{}
+
+		pvObjectKey := client.ObjectKey{
+			Name: pvc.Spec.VolumeName,
+		}
+
+		err = v.Get(ctx, pvObjectKey, pv)
+
+		if err != nil {
+			if errors.IsNotFound(err) {
+				// Request object not found, could have been deleted after reconcile request.
+				// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
+				// Return and don't requeue
+				log.Info("PersistentVolume resource not found. Ignoring since object must be deleted", volumeName)
+				//return ctrl.Result{}, nil
+				continue
+			}
+			// Error reading the object - requeue the request.
+			log.Error(err, "Failed to get VolumeReplicationGroup")
+			return ctrl.Result{}, err
+		}
+
+		claimRefUID := ""
+		if pv.Spec.ClaimRef != nil {
+			claimRefUID += pv.Spec.ClaimRef.Namespace
+			claimRefUID += "/"
+			claimRefUID += pv.Spec.ClaimRef.Name
+		}
+
+		reclaimPolicyStr := string(pv.Spec.PersistentVolumeReclaimPolicy)
+
+		quant := pv.Spec.Capacity[corev1.ResourceStorage]
+		cap.Add(quant)
+		log.Infof(template, pv.Name, claimRefUID, string(pv.Status.Phase), quant.String(),
+			reclaimPolicyStr)
+	}
+
+	log.Info("-----------------------------")
+	log.Info("Total capacity Used: ", cap.String())
+	log.Info("-----------------------------")
 
 	/*
 		// Check if the VolumeReplication CR already exists for the PVs of this application, if not create a new one
@@ -106,7 +175,7 @@ func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 				return ctrl.Result{}, err
 			}
 
-                        log.Info(Labels Found: "%s\n", labelsForVolumeReplication(volRepGroup.Name))
+			 log.Info(Labels Found: "%s\n", labelsForVolumeReplication(volRepGroup.Name))
 
 			// Ensure the VolumeReplication fields as the same as the VolumeReplicationGroup spec
 			size := volRepGroup.Spec.Size
@@ -154,5 +223,11 @@ func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 func (v *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&ramendrv1alpha1.VolumeReplicationGroup{}).
+
+		// TODO: Add code to keep watching the PVCs that get
+		//       created for the application that is being
+		//       disaster protected.
+		//Watches(&corev1.PersistentVolumeClaim{}).
+		Owns(&ramendrv1alpha1.VolumeReplicationGroup{}).
 		Complete(v)
 }
