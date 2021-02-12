@@ -256,6 +256,10 @@ func (v *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) er
 		//       created for the application that is being
 		//       disaster protected.
 		//Watches(&corev1.PersistentVolumeClaim{}).
+
+		// The actual thing that the controller owns is
+		// the VolumeReplication CR. Change the below
+		// line when VolumeReplication CR is ready.
 		Owns(&ramendrv1alpha1.VolumeReplicationGroup{}).
 		Complete(v)
 }
