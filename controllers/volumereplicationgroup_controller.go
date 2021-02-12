@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"github.com/go-logr/logr"
 	"github.com/prometheus/common/log"
 	corev1 "k8s.io/api/core/v1"
@@ -74,85 +75,18 @@ func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	}
 	log.Info("Processing VolumeReplicationGroup ", volRepGroup.Spec, " in ns: ", req.NamespacedName)
 
-	labelSelector := volRepGroup.Spec.ApplicationLabels
-	log.Info("Label Selector: ", labels.Set(labelSelector.MatchLabels))
-	log.Info("Namespace: ", volRepGroup.Namespace)
-	listOptions := []client.ListOption{
-		//                client.InNamespace("default"),
-		client.InNamespace(volRepGroup.Namespace),
-		client.MatchingLabels(labelSelector.MatchLabels),
-	}
-
-	log.Info("List Options", listOptions)
 	pvcList := &corev1.PersistentVolumeClaimList{}
-	if err = v.List(ctx, pvcList, listOptions...); err != nil {
-		log.Error(err, "Failed to list PVC")
+	pvcList, err = v.HandlePersistentVolumeClaims(ctx, volRepGroup)
+	if err != nil {
+		log.Error("Handling of Persistent Volume Claims of application failed", volRepGroup.Spec.ApplicationName)
 		return ctrl.Result{}, err
 	}
-	log.Info("PVC List: ", pvcList)
 
-	log.Info("---------- PVs ----------")
-
-	//log.infof allows providing formatting directives.
-	//Providing formatting directives to log.info errors
-	template := "%-42s%-42s%-8s%-10s%-8s\n"
-	log.Infof(template, "NAME", "CLAIM REF", "STATUS", "CAPACITY", "RECLAIM POLICY")
-
-	var cap resource.Quantity
-
-	// https://gitlab.cncf.ci/kubernetes/kubernetes/blob/720f041985a97d0645884b5a2e0f58ab4fb9951d/staging/src/k8s.io/api/core/v1/types.go
-	// As per the above website, pvList is a structure and to get the actual list of PVs
-	// use pvList.Items (check the type PersistentVolumeStatus)
-	for _, pvc := range pvcList.Items {
-
-		//if the PVC is not bound yet, dont proceed.
-		if pvc.Status.Phase != corev1.ClaimBound {
-			log.Errorf("PVC is not yet bound status: %v", pvc.Status.Phase)
-			return ctrl.Result{}, err
-		}
-
-		volumeName := pvc.Spec.VolumeName
-
-		pv := &corev1.PersistentVolume{}
-
-		pvObjectKey := client.ObjectKey{
-			Name: pvc.Spec.VolumeName,
-		}
-
-		err = v.Get(ctx, pvObjectKey, pv)
-
-		if err != nil {
-			if errors.IsNotFound(err) {
-				// Request object not found, could have been deleted after reconcile request.
-				// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
-				// Return and don't requeue
-				log.Info("PersistentVolume resource not found. Ignoring since object must be deleted", volumeName)
-				//return ctrl.Result{}, nil
-				continue
-			}
-			// Error reading the object - requeue the request.
-			log.Error(err, "Failed to get VolumeReplicationGroup")
-			return ctrl.Result{}, err
-		}
-
-		claimRefUID := ""
-		if pv.Spec.ClaimRef != nil {
-			claimRefUID += pv.Spec.ClaimRef.Namespace
-			claimRefUID += "/"
-			claimRefUID += pv.Spec.ClaimRef.Name
-		}
-
-		reclaimPolicyStr := string(pv.Spec.PersistentVolumeReclaimPolicy)
-
-		quant := pv.Spec.Capacity[corev1.ResourceStorage]
-		cap.Add(quant)
-		log.Infof(template, pv.Name, claimRefUID, string(pv.Status.Phase), quant.String(),
-			reclaimPolicyStr)
+	err = v.HandlePersistentVolumes(ctx, pvcList)
+	if err != nil {
+		log.Error("Handling of Persistent Volumes for PVCs of application failed", volRepGroup.Spec.ApplicationName)
+		return ctrl.Result{}, err
 	}
-
-	log.Info("-----------------------------")
-	log.Info("Total capacity Used: ", cap.String())
-	log.Info("-----------------------------")
 
 	/*
 		// Check if the VolumeReplication CR already exists for the PVs of this application, if not create a new one
@@ -216,6 +150,100 @@ func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	*/
 
 	return ctrl.Result{}, nil
+
+}
+
+func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumeClaims(ctx context.Context, volRepGroup *ramendrv1alpha1.VolumeReplicationGroup) (*corev1.PersistentVolumeClaimList, error) {
+	labelSelector := volRepGroup.Spec.ApplicationLabels
+	log.Info("Label Selector: ", labels.Set(labelSelector.MatchLabels))
+	log.Info("Namespace: ", volRepGroup.Namespace)
+	listOptions := []client.ListOption{
+		//                client.InNamespace("default"),
+		client.InNamespace(volRepGroup.Namespace),
+		client.MatchingLabels(labelSelector.MatchLabels),
+	}
+
+	log.Info("List Options", listOptions)
+	pvcList := &corev1.PersistentVolumeClaimList{}
+	if err := v.List(ctx, pvcList, listOptions...); err != nil {
+		log.Error(err, "Failed to list PVC")
+		return pvcList, err
+	}
+	log.Info("PVC List: ", pvcList)
+
+	return pvcList, nil
+}
+
+func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumes(ctx context.Context, pvcList *corev1.PersistentVolumeClaimList) error {
+
+	log.Info("---------- PVs ----------")
+
+	//log.infof allows providing formatting directives.
+	//Providing formatting directives to log.info errors
+	template := "%-42s%-42s%-8s%-10s%-8s\n"
+	log.Infof(template, "NAME", "CLAIM REF", "STATUS", "CAPACITY", "RECLAIM POLICY")
+
+	var cap resource.Quantity
+
+	// https://gitlab.cncf.ci/kubernetes/kubernetes/blob/720f041985a97d0645884b5a2e0f58ab4fb9951d/staging/src/k8s.io/api/core/v1/types.go
+	// As per the above website, pvList is a structure and to get the actual list of PVs
+	// use pvList.Items (check the type PersistentVolumeStatus)
+	for _, pvc := range pvcList.Items {
+
+		//if the PVC is not bound yet, dont proceed.
+		if pvc.Status.Phase != corev1.ClaimBound {
+			// Returning error is essential for the caller of this function to
+			// realize that everything is not correct and take appropriate actions.
+			// Hence use fmt.Errorf instead of log.Errorf as fmt.Errorf returns
+			// a non-nil info in "err" variable.
+			err := fmt.Errorf("PVC is not yet bound status: %v", pvc.Status.Phase)
+			return err
+		}
+
+		volumeName := pvc.Spec.VolumeName
+
+		pv := &corev1.PersistentVolume{}
+
+		pvObjectKey := client.ObjectKey{
+			Name: pvc.Spec.VolumeName,
+		}
+
+		err := v.Get(ctx, pvObjectKey, pv)
+
+		if err != nil {
+			if errors.IsNotFound(err) {
+				// Request object not found, could have been deleted after reconcile request.
+				// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
+				// Return and don't requeue
+				log.Info("PersistentVolume resource not found. Ignoring since object must be deleted", volumeName)
+				//return ctrl.Result{}, nil
+				continue
+			}
+			// Error reading the object - requeue the request.
+			log.Error(err, "Failed to get VolumeReplicationGroup")
+			return err
+		}
+
+		claimRefUID := ""
+		if pv.Spec.ClaimRef != nil {
+			claimRefUID += pv.Spec.ClaimRef.Namespace
+			claimRefUID += "/"
+			claimRefUID += pv.Spec.ClaimRef.Name
+		}
+
+		reclaimPolicyStr := string(pv.Spec.PersistentVolumeReclaimPolicy)
+
+		quant := pv.Spec.Capacity[corev1.ResourceStorage]
+		cap.Add(quant)
+		log.Infof(template, pv.Name, claimRefUID, string(pv.Status.Phase), quant.String(),
+			reclaimPolicyStr)
+	}
+
+	log.Info("-----------------------------")
+	log.Info("Total capacity Used: ", cap.String())
+	log.Info("-----------------------------")
+
+	return nil
 
 }
 
