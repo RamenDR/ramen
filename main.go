@@ -78,14 +78,32 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.VolumeReplicationGroupReconciler{
+	r := &controllers.VolumeReplicationGroupReconciler{
 		Client: mgr.GetClient(),
 		Log:    ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
 		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	}
+
+	// setup manager with a controller for volumereplicationgroup resource
+	if err = r.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VolumeReplicationGroup")
 		os.Exit(1)
 	}
+
+	setupLog.Info("Registering Components.")
+
+	// Setup Scheme for all resources
+	if err := controllers.AddToScheme(mgr.GetScheme()); err != nil {
+		setupLog.Error(err, "")
+		os.Exit(1)
+	}
+
+	// Setup all Controllers
+	if err := controllers.AddToManager(mgr); err != nil {
+		setupLog.Error(err, "")
+		os.Exit(1)
+	}
+
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("health", healthz.Ping); err != nil {

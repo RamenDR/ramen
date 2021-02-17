@@ -19,25 +19,163 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"reflect"
+
 	"github.com/go-logr/logr"
 	"github.com/prometheus/common/log"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
-	//"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
+
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 )
+
+// AddToSchemes may be used to add all resources defined in the project to a Scheme
+var AddToSchemes runtime.SchemeBuilder
+
+// AddToScheme adds all Resources to the Scheme
+func AddToScheme(s *runtime.Scheme) error {
+	return AddToSchemes.AddToScheme(s)
+}
+
+// AddToManagerFuncs is a list of functions to add all Controllers to the Manager
+var AddToManagerFuncs = []func(manager.Manager) error{
+	Add,
+}
+
+func Add(mgr manager.Manager) error {
+	return add(mgr, newReconciler(mgr))
+}
+
+// AddToManager adds all Controllers to the Manager
+func AddToManager(m manager.Manager) error {
+	for _, f := range AddToManagerFuncs {
+		if err := f(m); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// newReconciler returns a new reconcile.Reconciler
+func newReconciler(mgr manager.Manager) reconcile.Reconciler {
+	return &VolumeReplicationGroupReconciler{Client: mgr.GetClient(), Log: ctrl.Log.WithName("controllers").WithName("pvc"), Scheme: mgr.GetScheme()}
+}
 
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
 type VolumeReplicationGroupReconciler struct {
 	client.Client
 	Log    logr.Logger
 	Scheme *runtime.Scheme
+}
+
+// add adds a new Controller to mgr with r as the reconcile.Reconciler
+func add(mgr manager.Manager, r reconcile.Reconciler) error {
+	// Create a new controller
+	c, err := controller.New("pvc-controller", mgr, controller.Options{Reconciler: r})
+	if err != nil {
+		return err
+	}
+
+	// predicate functions send reconcile requests for create and delete events.
+	// For them the filtering of whether the pvc belongs to the any of the
+	// VolumeReplicationGroup CRs and identifying such a CR is done in the
+	// map function by comparing namespaces and labels.
+	// But for update of pvc, the reconcile request should be sent only for
+	// spec changes. Do that comparison here.
+	pvcPredicate := predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			log.Info("create event from pvc")
+			return true
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldPVC, ok := e.ObjectOld.DeepCopyObject().(*corev1.PersistentVolumeClaim)
+			if !ok {
+				log.Error("Update: failed to read old PVC, not reconciling")
+				return false
+			}
+			newPVC, ok := e.ObjectNew.DeepCopyObject().(*corev1.PersistentVolumeClaim)
+			if !ok {
+				log.Error("Update: failed to read new PVC, not reconciling")
+				return false
+			}
+			return !reflect.DeepEqual(oldPVC.Spec, newPVC.Spec)
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			log.Info("delete event from pvc")
+			return true
+		},
+	}
+
+	pvcMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
+		req := []reconcile.Request{}
+		pvc, ok := obj.(*corev1.PersistentVolumeClaim)
+		if !ok {
+			// Not a pvc, returning empty
+			log.Errorf("pvc handler received non-pvc")
+			return []reconcile.Request{}
+		}
+
+		pvcNamespace := pvc.Namespace
+		log.Info("pvc Namespace: ", pvcNamespace)
+
+		// get the list of VolumeReplicationGroup resources
+		var vrgs ramendrv1alpha1.VolumeReplicationGroupList
+		_ = mgr.GetClient().List(context.TODO(), &vrgs)
+
+		// decide if the resource received from notification
+		// needs a reconcile request to be sent to the corresponding
+		// VolumeReplicationGroup CR by comparing 2 things.
+		// 1) See whether there is a VolumeReplicationGroup CR in the
+		//    namespace to which the the pvc belongs to.
+		// 2) Check whether the labels on pvc match the label selectors from
+		//    VolumeReplicationGroup CR.
+		for _, vrg := range vrgs.Items {
+			if vrg.Namespace == pvcNamespace {
+				vrgLabelSelector := vrg.Spec.ApplicationLabels
+				selector, err := metav1.LabelSelectorAsSelector(&vrgLabelSelector)
+
+				// let us continue if we fail to get the labels for this object
+				// hoping that pvc might actually belong to  some other vrg
+				// instead of this. If not found, then reconcile request would
+				// not be sent.
+				if err != nil {
+					log.Error("failed to get the label selector as selector")
+					continue
+				}
+
+				if selector.Matches(labels.Set(pvc.GetLabels())) {
+					log.Info("found volume replication group that belongs to namespace with matching labels: ", pvcNamespace)
+					req = append(req, reconcile.Request{NamespacedName: types.NamespacedName{Name: vrg.Name, Namespace: vrg.Namespace}})
+				}
+			}
+		}
+		return req
+	}))
+
+	err = c.Watch(&source.Kind{Type: &corev1.PersistentVolumeClaim{}}, pvcMapFun, pvcPredicate)
+
+	if err != nil {
+		log.Error("non nil error while adding a watcher")
+		return err
+	}
+
+	log.Info("Successfully added the pvc watching controller to the manager")
+	return nil
 }
 
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups,verbs=get;list;watch;create;update;patch;delete
@@ -56,7 +194,7 @@ type VolumeReplicationGroupReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = v.Log.WithValues("volumereplicationgroup", req.NamespacedName)
+	_ = v.Log.WithValues("volumereplicationgroup reconciler", req.NamespacedName)
 
 	// Fetch the VolumeReplicationGroup instance
 	volRepGroup := &ramendrv1alpha1.VolumeReplicationGroup{}
@@ -66,25 +204,26 @@ func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 			// Return and don't requeue
-			log.Info("VolumeReplicationGroup resource not found. Ignoring since object must be deleted")
+			log.Info("VolumeReplicationGroup resource not found. Ignoring since object must be deleted", req.NamespacedName)
 			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
 		log.Error(err, "Failed to get VolumeReplicationGroup")
 		return ctrl.Result{}, err
 	}
+
 	log.Info("Processing VolumeReplicationGroup ", volRepGroup.Spec, " in ns: ", req.NamespacedName)
 
 	pvcList := &corev1.PersistentVolumeClaimList{}
 	pvcList, err = v.HandlePersistentVolumeClaims(ctx, volRepGroup)
 	if err != nil {
-		log.Error("Handling of Persistent Volume Claims of application failed", volRepGroup.Spec.ApplicationName)
+		log.Error("Handling of Persistent Volume Claims of application failed: ", volRepGroup.Spec.ApplicationName)
 		return ctrl.Result{}, err
 	}
 
 	err = v.HandlePersistentVolumes(ctx, pvcList)
 	if err != nil {
-		log.Error("Handling of Persistent Volumes for PVCs of application failed", volRepGroup.Spec.ApplicationName)
+		log.Error("Handling of Persistent Volumes for PVCs of application failed: ", volRepGroup.Spec.ApplicationName)
 		return ctrl.Result{}, err
 	}
 
@@ -150,6 +289,71 @@ func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	*/
 
 	return ctrl.Result{}, nil
+}
+
+func (v *VolumeReplicationGroupReconciler) HandlePersistentVolume(ctx context.Context, pvc *corev1.PersistentVolumeClaim) error {
+
+	log.Info("---------- PV ----------")
+
+	//log.infof allows providing formatting directives.
+	//Providing formatting directives to log.info errors
+	template := "%-42s%-42s%-8s%-10s%-8s\n"
+	log.Infof(template, "NAME", "CLAIM REF", "STATUS", "CAPACITY", "RECLAIM POLICY")
+
+	var cap resource.Quantity
+
+	//if the PVC is not bound yet, dont proceed.
+	if pvc.Status.Phase != corev1.ClaimBound {
+		// Returning error is essential for the caller of this function to
+		// realize that everything is not correct and take appropriate actions.
+		// Hence use fmt.Errorf instead of log.Errorf as fmt.Errorf returns
+		// a non-nil info in "err" variable.
+		err := fmt.Errorf("PVC is not yet bound status: %v", pvc.Status.Phase)
+		return err
+	}
+
+	volumeName := pvc.Spec.VolumeName
+
+	pv := &corev1.PersistentVolume{}
+
+	pvObjectKey := client.ObjectKey{
+		Name: pvc.Spec.VolumeName,
+	}
+
+	err := v.Get(ctx, pvObjectKey, pv)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Request object not found, could have been deleted after reconcile request.
+			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
+			// Return and don't requeue
+			log.Error("PersistentVolume resource not found. object might have been deleted", volumeName)
+			return err
+		}
+		// Error reading the object - requeue the request.
+		log.Error(err, "Failed to get PV")
+		return err
+	}
+
+	claimRefUID := ""
+	if pv.Spec.ClaimRef != nil {
+		claimRefUID += pv.Spec.ClaimRef.Namespace
+		claimRefUID += "/"
+		claimRefUID += pv.Spec.ClaimRef.Name
+	}
+
+	reclaimPolicyStr := string(pv.Spec.PersistentVolumeReclaimPolicy)
+
+	quant := pv.Spec.Capacity[corev1.ResourceStorage]
+	cap.Add(quant)
+	log.Infof(template, pv.Name, claimRefUID, string(pv.Status.Phase), quant.String(),
+		reclaimPolicyStr)
+
+	log.Info("-----------------------------")
+	log.Info("Total capacity Used: ", cap.String())
+	log.Info("-----------------------------")
+
+	return nil
 
 }
 
@@ -183,79 +387,24 @@ func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumes(ctx context.C
 	template := "%-42s%-42s%-8s%-10s%-8s\n"
 	log.Infof(template, "NAME", "CLAIM REF", "STATUS", "CAPACITY", "RECLAIM POLICY")
 
-	var cap resource.Quantity
-
 	// https://gitlab.cncf.ci/kubernetes/kubernetes/blob/720f041985a97d0645884b5a2e0f58ab4fb9951d/staging/src/k8s.io/api/core/v1/types.go
 	// As per the above website, pvList is a structure and to get the actual list of PVs
 	// use pvList.Items (check the type PersistentVolumeStatus)
 	for _, pvc := range pvcList.Items {
 
-		//if the PVC is not bound yet, dont proceed.
-		if pvc.Status.Phase != corev1.ClaimBound {
-			// Returning error is essential for the caller of this function to
-			// realize that everything is not correct and take appropriate actions.
-			// Hence use fmt.Errorf instead of log.Errorf as fmt.Errorf returns
-			// a non-nil info in "err" variable.
-			err := fmt.Errorf("PVC is not yet bound status: %v", pvc.Status.Phase)
-			return err
-		}
-
-		volumeName := pvc.Spec.VolumeName
-
-		pv := &corev1.PersistentVolume{}
-
-		pvObjectKey := client.ObjectKey{
-			Name: pvc.Spec.VolumeName,
-		}
-
-		err := v.Get(ctx, pvObjectKey, pv)
-
+		err := v.HandlePersistentVolume(ctx, &pvc)
 		if err != nil {
-			if errors.IsNotFound(err) {
-				// Request object not found, could have been deleted after reconcile request.
-				// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
-				// Return and don't requeue
-				log.Info("PersistentVolume resource not found. Ignoring since object must be deleted", volumeName)
-				//return ctrl.Result{}, nil
-				continue
-			}
-			// Error reading the object - requeue the request.
-			log.Error(err, "Failed to get VolumeReplicationGroup")
 			return err
 		}
-
-		claimRefUID := ""
-		if pv.Spec.ClaimRef != nil {
-			claimRefUID += pv.Spec.ClaimRef.Namespace
-			claimRefUID += "/"
-			claimRefUID += pv.Spec.ClaimRef.Name
-		}
-
-		reclaimPolicyStr := string(pv.Spec.PersistentVolumeReclaimPolicy)
-
-		quant := pv.Spec.Capacity[corev1.ResourceStorage]
-		cap.Add(quant)
-		log.Infof(template, pv.Name, claimRefUID, string(pv.Status.Phase), quant.String(),
-			reclaimPolicyStr)
 	}
 
-	log.Info("-----------------------------")
-	log.Info("Total capacity Used: ", cap.String())
-	log.Info("-----------------------------")
-
 	return nil
-
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (v *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&ramendrv1alpha1.VolumeReplicationGroup{}).
-
-		// TODO: Add code to keep watching the PVCs that get
-		//       created for the application that is being
-		//       disaster protected.
-		//Watches(&corev1.PersistentVolumeClaim{}).
 
 		// The actual thing that the controller owns is
 		// the VolumeReplication CR. Change the below
