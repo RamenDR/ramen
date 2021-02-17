@@ -18,6 +18,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -47,7 +48,7 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
-func main() {
+func getNewManager() (ctrl.Manager, error) {
 	var (
 		metricsAddr          string
 		enableLeaderElection bool
@@ -64,6 +65,7 @@ func main() {
 	opts := zap.Options{
 		Development: true,
 	}
+
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
@@ -78,20 +80,38 @@ func main() {
 		LeaderElectionID:       "ae40cfcb.openshift.io",
 	})
 	if err != nil {
-		setupLog.Error(err, "unable to start manager")
+		setupLog.Error(err, "unable Start new manager")
+
+		return mgr, fmt.Errorf("starting new manager failed %w", err)
+	}
+
+	return mgr, nil
+}
+
+func main() {
+	mgr, err := getNewManager()
+	if err != nil {
+		setupLog.Error(err, "unable to Get new manager")
 		os.Exit(1)
 	}
 
-	if err = (&controllers.VolumeReplicationGroupReconciler{
+	r := &controllers.VolumeReplicationGroupReconciler{
 		Client: mgr.GetClient(),
 		Log:    ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
 		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	}
+
+	if err = r.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VolumeReplicationGroup")
 		os.Exit(1)
 	}
-	// +kubebuilder:scaffold:builder
 
+	if err := controllers.AddSchemesAndControllers(mgr); err != nil {
+		setupLog.Error(err, "")
+		os.Exit(1)
+	}
+
+	// +kubebuilder:scaffold:builder
 	if err := mgr.AddHealthzCheck("health", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
