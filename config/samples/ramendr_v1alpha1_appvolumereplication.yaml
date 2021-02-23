@@ -1,0 +1,9 @@
+apiVersion: ramendr.openshift.io/v1alpha1
+kind: AppVolumeReplication
+metadata:
+  name: appvolumereplication-sample
+spec:
+  placement:
+    placementRef:
+      kind: PlacementRule
+      primary: towhichcluster
