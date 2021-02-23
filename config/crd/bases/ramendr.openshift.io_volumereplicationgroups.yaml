@@ -118,8 +118,10 @@ spec:
             - clusterPeersList
             type: object
           status:
-            description: VolumeReplicationGroupStatus defines the observed state of
-              VolumeReplicationGroup
+            description: 'VolumeReplicationGroupStatus defines the observed state
+              of VolumeReplicationGroup INSERT ADDITIONAL STATUS FIELD - define observed
+              state of cluster Important: Run "make" to regenerate code after modifying
+              this file'
             type: object
         type: object
     served: true
