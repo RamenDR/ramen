@@ -1,5 +1,5 @@
 /*
-Copyright 2021.
+Copyright 2021 The RamenDR authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -47,10 +47,9 @@ type ClusterPeersSpec struct {
 }
 
 // ClusterPeersStatus defines the observed state of ClusterPeers
-type ClusterPeersStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-}
+// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
+// Important: Run "make" to regenerate code after modifying this file
+type ClusterPeersStatus struct{}
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
@@ -60,8 +59,8 @@ type ClusterPeers struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ClusterPeersSpec   `json:"spec,omitempty"`
-	Status ClusterPeersStatus `json:"status,omitempty"`
+	Spec   ClusterPeersSpec    `json:"spec,omitempty"`
+	Status *ClusterPeersStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
