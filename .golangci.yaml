@@ -1,0 +1,56 @@
+# Ref template: https://github.com/golangci/golangci-lint/blob/v1.37.1/.golangci.example.yml
+
+# options for analysis running
+run:
+  timeout: 5m
+
+# all available settings of specific linters
+linters-settings:
+  errcheck:
+    # report about not checking of errors in type assertions: `a := b.(MyStruct)`;
+    # default is false: such cases aren't reported by default.
+    check-type-assertions: true
+    # report about assignment of errors to blank identifier: `num, _ := strconv.Atoi(numStr)`;
+    # default is false: such cases aren't reported by default.
+    check-blank: true
+  exhaustive:
+    # check switch statements in generated files also
+    check-generated: true
+  gocognit:
+    # minimal code complexity to report, 30 by default (but we recommend 10-20)
+    min-complexity: 15
+  gocyclo:
+    # minimal code complexity to report, 30 by default (but we recommend 10-20)
+    min-complexity: 15
+  goheader:
+    template: |
+      Copyright 2021 The RamenDR authors.
+
+      Licensed under the Apache License, Version 2.0 (the "License");
+      you may not use this file except in compliance with the License.
+      You may obtain a copy of the License at
+
+          http://www.apache.org/licenses/LICENSE-2.0
+
+      Unless required by applicable law or agreed to in writing, software
+      distributed under the License is distributed on an "AS IS" BASIS,
+      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+      See the License for the specific language governing permissions and
+      limitations under the License.
+  misspell:
+    locale: US
+  wsl:
+    allow-trailing-comment: true
+
+linters:
+  enable-all: true
+  disable:
+    - exhaustivestruct
+    - gochecknoglobals
+    - gochecknoinits
+    - godot
+    - godox
+    - paralleltest
+    - goerr113 # TODO: Need to introduce error definition and bring this back
+    - goheader # TODO: Introduce back post fixing linter errors
+    - gci
