@@ -30,6 +30,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+        metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 )
 
@@ -76,6 +77,9 @@ func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	log.Info("Processing VolumeReplicationGroup ", volRepGroup.Spec, " in ns: ", req.NamespacedName)
 
 	pvcList := &corev1.PersistentVolumeClaimList{}
+
+        err = v.TestCreateVolumeReplicationCRs(ctx, pvcList)
+
 	pvcList, err = v.HandlePersistentVolumeClaims(ctx, volRepGroup)
 	if err != nil {
 		log.Error("Handling of Persistent Volume Claims of application failed", volRepGroup.Spec.ApplicationName)
@@ -245,6 +249,66 @@ func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumes(ctx context.C
 
 	return nil
 
+}
+
+func (v *VolumeReplicationGroupReconciler) TestCreateVolumeReplicationCRs(ctx context.Context, pvcList *corev1.PersistentVolumeClaimList) error {
+
+      cr := &ramendrv1alpha1.VolumeReplication{
+                        ObjectMeta: metav1.ObjectMeta{
+                                Name:      "test",
+                                Namespace: "default",
+                        },
+                        Spec: ramendrv1alpha1.VolumeReplicationSpec{
+                                DataSource: &corev1.TypedLocalObjectReference{
+                                        Kind: "PersistentVolumeClaim",
+                                        Name: "pvc-sample",
+                                },
+                                State: "Primary",
+                        },
+                }
+
+      log.Info("Created CR: ", cr)
+
+      err := v.Create(ctx, cr)
+
+      if err != nil {
+                 log.Error("Error Creating CR")
+      }
+      return err
+
+}
+
+func (v *VolumeReplicationGroupReconciler) CreateVolumeReplicationCRs(ctx context.Context, pvcList *corev1.PersistentVolumeClaimList) error {
+      for _, pvc := range pvcList.Items {
+         //if the PVC is not bound yet, dont proceed.
+         if pvc.Status.Phase != corev1.ClaimBound {
+               err := fmt.Errorf("PVC is not yet bound status: %v", pvc.Status.Phase)
+               return err
+          }
+                
+          cr := &ramendrv1alpha1.VolumeReplication{
+                        ObjectMeta: metav1.ObjectMeta{
+                                Name:      pvc.Name,
+                                Namespace: pvc.ObjectMeta.Namespace,
+                        },
+                        Spec: ramendrv1alpha1.VolumeReplicationSpec{
+                                DataSource: &corev1.TypedLocalObjectReference{
+                                        Kind: "PersistentVolumeClaim",
+                                        Name: "pvc-sample",
+                                },
+                                State: "Primary",
+                        },
+                }
+
+          log.Info("Created CR: ", cr)
+
+          err := v.Create(ctx, cr)
+          if err != nil {
+                 log.Error("Error Creating CR")
+          }
+          return err      
+      }
+      return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
