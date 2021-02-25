@@ -213,16 +213,6 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 
 		pvcNamespace := pvc.Namespace
 		log.Info("pvc Namespace: ", pvcNamespace)
-
-		// get the list of VolumeReplicationGroup resources
-		var vrgs ramendrv1alpha1.VolumeReplicationGroupList
-		err = mgr.GetClient().List(context.TODO(), &vrgs)
-		if err != nil {
-			log.Errorf("failed to get list of VolumeReplicationGroup CRs")
-
-			return []reconcile.Request{}
-		}
-
 		req := filterPVC(mgr, pvc)
 
 		return req
