@@ -32,7 +32,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/controllers"
+
+	"github.com/ramendr/ramen/controllers/pvcwatcher"
+	vrg "github.com/ramendr/ramen/controllers/volumereplicationgroup"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -48,7 +50,7 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
-func getNewManager() (ctrl.Manager, error) {
+func newManager() (ctrl.Manager, error) {
 	var (
 		metricsAddr          string
 		enableLeaderElection bool
@@ -89,13 +91,13 @@ func getNewManager() (ctrl.Manager, error) {
 }
 
 func main() {
-	mgr, err := getNewManager()
+	mgr, err := newManager()
 	if err != nil {
 		setupLog.Error(err, "unable to Get new manager")
 		os.Exit(1)
 	}
 
-	r := &controllers.VolumeReplicationGroupReconciler{
+	r := &vrg.VRGReconciler{
 		Client: mgr.GetClient(),
 		Log:    ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
 		Scheme: mgr.GetScheme(),
@@ -106,8 +108,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := controllers.AddSchemesAndControllers(mgr); err != nil {
-		setupLog.Error(err, "")
+	p := &pvcwatcher.PersistentVolumeClaimReconciler{
+		Client: mgr.GetClient(),
+		Log:    ctrl.Log.WithName("controllers").WithName("pvc"),
+		Scheme: mgr.GetScheme(),
+	}
+
+	if err = p.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "pvc")
 		os.Exit(1)
 	}
 
