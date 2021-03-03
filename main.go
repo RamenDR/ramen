@@ -48,7 +48,7 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
-func getNewManager() (ctrl.Manager, error) {
+func newManager() (ctrl.Manager, error) {
 	var (
 		metricsAddr          string
 		enableLeaderElection bool
@@ -89,7 +89,7 @@ func getNewManager() (ctrl.Manager, error) {
 }
 
 func main() {
-	mgr, err := getNewManager()
+	mgr, err := newManager()
 	if err != nil {
 		setupLog.Error(err, "unable to Get new manager")
 		os.Exit(1)
@@ -103,11 +103,6 @@ func main() {
 
 	if err = r.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VolumeReplicationGroup")
-		os.Exit(1)
-	}
-
-	if err := controllers.AddSchemesAndControllers(mgr); err != nil {
-		setupLog.Error(err, "")
 		os.Exit(1)
 	}
 
