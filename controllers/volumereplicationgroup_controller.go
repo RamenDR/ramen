@@ -34,7 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -45,68 +45,11 @@ import (
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 )
 
-// AddToSchemes may be used to add all resources defined in the project to a Scheme
-var AddToSchemes runtime.SchemeBuilder
-
-// AddToScheme adds all Resources to the Scheme
-func AddToScheme(s *runtime.Scheme) error {
-	return AddToSchemes.AddToScheme(s)
-}
-
-// AddToManagerFuncs is a list of functions to add all Controllers to the Manager
-var AddToManagerFuncs = []func(manager.Manager) error{
-	Add,
-}
-
-func Add(mgr manager.Manager) error {
-	return add(mgr, newReconciler(mgr))
-}
-
-// AddToManager adds all Controllers to the Manager
-func AddToManager(m manager.Manager) error {
-	for _, f := range AddToManagerFuncs {
-		if err := f(m); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// newReconciler returns a new reconcile.Reconciler
-func newReconciler(mgr manager.Manager) reconcile.Reconciler {
-	return &VolumeReplicationGroupReconciler{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("pvc"),
-		Scheme: mgr.GetScheme(),
-	}
-}
-
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
 type VolumeReplicationGroupReconciler struct {
 	client.Client
 	Log    logr.Logger
 	Scheme *runtime.Scheme
-}
-
-func AddSchemesAndControllers(mgr manager.Manager) error {
-	ctrl.Log.WithName("setup").Info("Registering Components.")
-
-	// Setup Scheme for all resources
-	if err := AddToScheme(mgr.GetScheme()); err != nil {
-		ctrl.Log.WithName("setup").Error(err, "")
-
-		return err
-	}
-
-	// Setup all Controllers
-	if err := AddToManager(mgr); err != nil {
-		ctrl.Log.WithName("setup").Error(err, "")
-
-		return err
-	}
-
-	return nil
 }
 
 func getPredicateFunc() predicate.Funcs {
@@ -141,7 +84,14 @@ func getPredicateFunc() predicate.Funcs {
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			log.Info("delete event from pvc")
 
-			return true
+			// return false. Because, for delete event on a pvc, it is
+			// the finalizer which would actually delete the backed up
+			// pv and the VolumeReplication CR created for that pvc.
+			// In future if there arises a need to unconditionally
+			// do a reconcile, return true. If there is a need to do
+			// reconcile for certain conditions, then add the necessary
+			// checks here.
+			return false
 		},
 	}
 
@@ -153,14 +103,9 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim) []reconci
 
 	var vrgs ramendrv1alpha1.VolumeReplicationGroupList
 
-	err := mgr.GetClient().List(context.TODO(), &vrgs)
-	if err != nil {
-		log.Errorf("failed to get list of VolumeReplicationGroup CRs")
-
-		return []reconcile.Request{}
+	listOptions := []client.ListOption{
+		client.InNamespace(pvc.Namespace),
 	}
-
-	pvcNamespace := pvc.Namespace
 
 	// decide if reconcile request needs to be sent to the
 	// corresponding VolumeReplicationGroup CR by:
@@ -168,64 +113,33 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim) []reconci
 	//   to which the the pvc belongs to.
 	// - whether the labels on pvc match the label selectors from
 	//    VolumeReplicationGroup CR.
+	err := mgr.GetClient().List(context.TODO(), &vrgs, listOptions...)
+	if err != nil {
+		log.Errorf("failed to get list of VolumeReplicationGroup CRs")
+
+		return []reconcile.Request{}
+	}
+
 	for _, vrg := range vrgs.Items {
-		if vrg.Namespace == pvcNamespace {
-			vrgLabelSelector := vrg.Spec.ApplicationLabels
-			selector, err := metav1.LabelSelectorAsSelector(&vrgLabelSelector)
-			// continue if we fail to get the labels for this object hoping
-			// that pvc might actually belong to  some other vrg instead of
-			// this. If not found, then reconcile request would not be sent
-			if err != nil {
-				log.Error("failed to get the label selector as selector")
+		vrgLabelSelector := vrg.Spec.ApplicationLabels
+		selector, err := metav1.LabelSelectorAsSelector(&vrgLabelSelector)
+		// continue if we fail to get the labels for this object hoping
+		// that pvc might actually belong to  some other vrg instead of
+		// this. If not found, then reconcile request would not be sent
+		if err != nil {
+			log.Error("failed to get the label selector as selector")
 
-				continue
-			}
+			continue
+		}
 
-			if selector.Matches(labels.Set(pvc.GetLabels())) {
-				log.Info("found volume replication group that belongs to namespace with matching labels: ", pvcNamespace)
+		if selector.Matches(labels.Set(pvc.GetLabels())) {
+			log.Info("found volume replication group that belongs to namespace with matching labels: ", pvc.Namespace)
 
-				req = append(req, reconcile.Request{NamespacedName: types.NamespacedName{Name: vrg.Name, Namespace: vrg.Namespace}})
-			}
+			req = append(req, reconcile.Request{NamespacedName: types.NamespacedName{Name: vrg.Name, Namespace: vrg.Namespace}})
 		}
 	}
 
 	return req
-}
-
-// add adds a new Controller to mgr with r as the reconcile.Reconciler
-func add(mgr manager.Manager, r reconcile.Reconciler) error {
-	// Create a new controller
-	c, err := controller.New("pvc-controller", mgr, controller.Options{Reconciler: r})
-	if err != nil {
-		return fmt.Errorf("failed to add a new controller for pvc %w", err)
-	}
-
-	pvcPredicate := getPredicateFunc()
-
-	pvcMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
-		pvc, ok := obj.(*corev1.PersistentVolumeClaim)
-		if !ok {
-			// Not a pvc, returning empty
-			log.Errorf("pvc handler received non-pvc")
-
-			return []reconcile.Request{}
-		}
-
-		pvcNamespace := pvc.Namespace
-		log.Info("pvc Namespace: ", pvcNamespace)
-		req := filterPVC(mgr, pvc)
-
-		return req
-	}))
-
-	err = c.Watch(&source.Kind{Type: &corev1.PersistentVolumeClaim{}}, pvcMapFun, pvcPredicate)
-	if err != nil {
-		return fmt.Errorf("failed to add a watcher for pvc %w", err)
-	}
-
-	log.Info("Successfully added the pvc watching controller to the manager")
-
-	return nil
 }
 
 // nolint: lll // disabling line length linter
@@ -441,14 +355,27 @@ func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumes(
 
 // SetupWithManager sets up the controller with the Manager.
 func (v *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	pvcPredicate := getPredicateFunc()
+	pvcMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
+		pvc, ok := obj.(*corev1.PersistentVolumeClaim)
+		if !ok {
+			// Not a pvc, returning empty
+			log.Errorf("pvc handler received non-pvc")
+
+			return []reconcile.Request{}
+		}
+
+		log.Info("pvc Namespace: ", pvc.Namespace)
+		req := filterPVC(mgr, pvc)
+
+		return req
+	}))
+
+	log.Info("Adding VRG and PVC controller")
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&ramendrv1alpha1.VolumeReplicationGroup{}).
-
-		// TODO: Add code to keep watching the PVCs that get
-		//       created for the application that is being
-		//       disaster protected.
-		// Watches(&corev1.PersistentVolumeClaim{}).
-
+		Watches(&source.Kind{Type: &corev1.PersistentVolumeClaim{}}, pvcMapFun, builder.WithPredicates(pvcPredicate)).
 		// The actual thing that the controller owns is
 		// the VolumeReplication CR. Change the below
 		// line when VolumeReplication CR is ready.
