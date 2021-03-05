@@ -27,10 +27,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
@@ -86,12 +88,31 @@ func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
-	err = v.HandlePersistentVolumes(ctx, pvcList)
 	if err != nil {
 		log.Error("Handling of Persistent Volumes for PVCs of application failed", volRepGroup.Spec.ApplicationName)
 
 		return ctrl.Result{}, err
 	}
+
+        requeue := false
+
+	for _, pvc := range pvcList.Items {
+		volRep := &ramendrv1alpha1.VolumeReplication{}
+		err = v.Get(ctx, types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}, volRep)
+		if err != nil && errors.IsNotFound(err) {
+			err = v.CreateVolumeReplicationCRsFromPVC(ctx, &pvc)
+                        requeue = true
+
+		} else if err != nil {
+			log.Error(err, "Failed to get VolumeReplication CR")
+			return ctrl.Result{}, err
+		}
+	}
+
+        // Requeue if new CR is created   
+        if requeue == true{
+                return ctrl.Result{Requeue: true}, nil
+        }
 
 	return ctrl.Result{}, nil
 }
@@ -248,6 +269,33 @@ func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumes(
 	log.Info("Total capacity Used: ", capacity.String())
 
 	return nil
+}
+
+func (v *VolumeReplicationGroupReconciler) CreateVolumeReplicationCRsFromPVC(ctx context.Context, pvc *corev1.PersistentVolumeClaim) error {
+
+	cr := &ramendrv1alpha1.VolumeReplication{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pvc.Name,
+			Namespace: pvc.ObjectMeta.Namespace,
+		},
+		Spec: ramendrv1alpha1.VolumeReplicationSpec{
+			DataSource: &corev1.TypedLocalObjectReference{
+				Kind: "PersistentVolumeClaim",
+				Name: pvc.Name,
+			},
+			State: "Primary",
+		},
+	}
+
+	log.Info("Created CR: ", cr)
+
+	err := v.Create(ctx, cr)
+
+	if err != nil {
+		log.Error("Error Creating CR")
+	}
+	return err
+
 }
 
 // SetupWithManager sets up the controller with the Manager.
