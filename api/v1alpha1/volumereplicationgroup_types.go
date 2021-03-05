@@ -98,6 +98,7 @@ type VolumeReplicationGroupList struct {
 
 func init() {
 	SchemeBuilder.Register(&VolumeReplicationGroup{}, &VolumeReplicationGroupList{})
+	SchemeBuilder.Register(&VolumeReplication{}, &VolumeReplicationList{})
 }
 
 // ReplicationState is the set of states that can be used in

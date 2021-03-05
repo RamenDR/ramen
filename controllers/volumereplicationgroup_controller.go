@@ -25,13 +25,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
-	//"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-        metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
@@ -78,80 +78,34 @@ func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 
 	pvcList := &corev1.PersistentVolumeClaimList{}
 
-        err = v.TestCreateVolumeReplicationCRs(ctx, pvcList)
-
 	pvcList, err = v.HandlePersistentVolumeClaims(ctx, volRepGroup)
+
 	if err != nil {
 		log.Error("Handling of Persistent Volume Claims of application failed", volRepGroup.Spec.ApplicationName)
 		return ctrl.Result{}, err
 	}
 
-	err = v.HandlePersistentVolumes(ctx, pvcList)
-	if err != nil {
-		log.Error("Handling of Persistent Volumes for PVCs of application failed", volRepGroup.Spec.ApplicationName)
-		return ctrl.Result{}, err
-	}
+	//err = v.CreateVolumeReplicationCRsFromPVC(ctx, &pvcList.Items[0])
 
-	/*
-		// Check if the VolumeReplication CR already exists for the PVs of this application, if not create a new one
-		for all PVs of this application {
-			volRep := &appsv1.Deployment{}
-			err = v.Get(ctx, types.NamespacedName{Name: volRepGroup.Name, Namespace: volRepGroup.Namespace}, volRep)
-			if err != nil && errors.IsNotFound(err) {
-				// Define a new VolumeReplication CR
-				newVolRep := v.deploymentForMemcached(volRepGroup)
-				log.Info("Creating a new VolumeReplication CR", "Deployment.Namespace", newVolRep.Namespace, "Deployment.Name", newVolRep.Name)
-				err = v.Create(ctx, newVolRep)
-				if err != nil {
-					log.Error(err, "Failed to create new VolumeReplication CR", "Deployment.Namespace", newVolRep.Namespace, "Deployment.Name", newVolRep.Name)
-					return ctrl.Result{}, err
-				}
-				// VolumeReplication CR created successfully - return and requeue
-				return ctrl.Result{Requeue: true}, nil
-			} else if err != nil {
-				log.Error(err, "Failed to get VolumeReplication CR")
-				return ctrl.Result{}, err
-			}
+        requeue := false
 
-			 log.Info(Labels Found: "%s\n", labelsForVolumeReplication(volRepGroup.Name))
+	for _, pvc := range pvcList.Items {
+		volRep := &ramendrv1alpha1.VolumeReplication{}
+		err = v.Get(ctx, types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}, volRep)
+		if err != nil && errors.IsNotFound(err) {
+			err = v.CreateVolumeReplicationCRsFromPVC(ctx, &pvc)
+                        requeue = true
 
-			// Ensure the VolumeReplication fields as the same as the VolumeReplicationGroup spec
-			size := volRepGroup.Spec.Size
-			if *volRep.Spec.Replicas != size {
-				volRep.Spec.Replicas = &size
-				err = v.Update(ctx, volRep)
-				if err != nil {
-					log.Error(err, "Failed to update Deployment", "Deployment.Namespace", volRep.Namespace, "Deployment.Name", volRep.Name)
-					return ctrl.Result{}, err
-				}
-				// Spec updated - return and requeue
-				return ctrl.Result{Requeue: true}, nil
-			}
-		}
-
-		// Update the VolumeReplicationGroup status using the children VolumeReplication CRs
-		// List the VolumeReplication CRs for this volRepGroup
-		volRepList := &corev1.VolumeReplicationList{}
-		listOpts := []client.ListOption{
-			client.InNamespace(volRepGroup.Namespace),
-			client.MatchingLabels(labelsForVolumeReplication(volRepGroup.Name)),
-		}
-		if err = v.List(ctx, volRepList, listOpts...); err != nil {
-			log.Error(err, "Failed to list VolumeReplication CRs", "VolumeReplicationGroup.Namespace", volRepGroup.Namespace, "VolumeReplicationGroup.Name", volRepGroup.Name)
+		} else if err != nil {
+			log.Error(err, "Failed to get VolumeReplication CR")
 			return ctrl.Result{}, err
 		}
-		volRepNames := getVolRepNames(volRepList.Items)
+	}
 
-		// Update status.Nodes if needed
-		if !reflect.DeepEqual(volRepNames, volRepGroup.Status.VolumeReplications) {
-			volRepGroup.Status.VolumeReplications = volRepNames
-			err := v.Status().Update(ctx, volRepGroup)
-			if err != nil {
-				log.Error(err, "Failed to update VolumeReplicationGroup status")
-				return ctrl.Result{}, err
-			}
-		}
-	*/
+        // Requeue if new CR is created   
+        if requeue == true{
+                return ctrl.Result{Requeue: true}, nil
+        }
 
 	return ctrl.Result{}, nil
 
@@ -251,64 +205,31 @@ func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumes(ctx context.C
 
 }
 
-func (v *VolumeReplicationGroupReconciler) TestCreateVolumeReplicationCRs(ctx context.Context, pvcList *corev1.PersistentVolumeClaimList) error {
+func (v *VolumeReplicationGroupReconciler) CreateVolumeReplicationCRsFromPVC(ctx context.Context, pvc *corev1.PersistentVolumeClaim) error {
 
-      cr := &ramendrv1alpha1.VolumeReplication{
-                        ObjectMeta: metav1.ObjectMeta{
-                                Name:      "test",
-                                Namespace: "default",
-                        },
-                        Spec: ramendrv1alpha1.VolumeReplicationSpec{
-                                DataSource: &corev1.TypedLocalObjectReference{
-                                        Kind: "PersistentVolumeClaim",
-                                        Name: "pvc-sample",
-                                },
-                                State: "Primary",
-                        },
-                }
+	cr := &ramendrv1alpha1.VolumeReplication{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pvc.Name,
+			Namespace: pvc.ObjectMeta.Namespace,
+		},
+		Spec: ramendrv1alpha1.VolumeReplicationSpec{
+			DataSource: &corev1.TypedLocalObjectReference{
+				Kind: "PersistentVolumeClaim",
+				Name: pvc.Name,
+			},
+			State: "Primary",
+		},
+	}
 
-      log.Info("Created CR: ", cr)
+	log.Info("Created CR: ", cr)
 
-      err := v.Create(ctx, cr)
+	err := v.Create(ctx, cr)
 
-      if err != nil {
-                 log.Error("Error Creating CR")
-      }
-      return err
+	if err != nil {
+		log.Error("Error Creating CR")
+	}
+	return err
 
-}
-
-func (v *VolumeReplicationGroupReconciler) CreateVolumeReplicationCRs(ctx context.Context, pvcList *corev1.PersistentVolumeClaimList) error {
-      for _, pvc := range pvcList.Items {
-         //if the PVC is not bound yet, dont proceed.
-         if pvc.Status.Phase != corev1.ClaimBound {
-               err := fmt.Errorf("PVC is not yet bound status: %v", pvc.Status.Phase)
-               return err
-          }
-                
-          cr := &ramendrv1alpha1.VolumeReplication{
-                        ObjectMeta: metav1.ObjectMeta{
-                                Name:      pvc.Name,
-                                Namespace: pvc.ObjectMeta.Namespace,
-                        },
-                        Spec: ramendrv1alpha1.VolumeReplicationSpec{
-                                DataSource: &corev1.TypedLocalObjectReference{
-                                        Kind: "PersistentVolumeClaim",
-                                        Name: "pvc-sample",
-                                },
-                                State: "Primary",
-                        },
-                }
-
-          log.Info("Created CR: ", cr)
-
-          err := v.Create(ctx, cr)
-          if err != nil {
-                 log.Error("Error Creating CR")
-          }
-          return err      
-      }
-      return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
