@@ -19,7 +19,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-
 	"github.com/go-logr/logr"
 	"github.com/prometheus/common/log"
 	corev1 "k8s.io/api/core/v1"
@@ -88,31 +87,30 @@ func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
-	if err != nil {
-		log.Error("Handling of Persistent Volumes for PVCs of application failed", volRepGroup.Spec.ApplicationName)
-
-		return ctrl.Result{}, err
-	}
-
-        requeue := false
+	requeue := false
 
 	for _, pvc := range pvcList.Items {
 		volRep := &ramendrv1alpha1.VolumeReplication{}
 		err = v.Get(ctx, types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}, volRep)
-		if err != nil && errors.IsNotFound(err) {
-			err = v.CreateVolumeReplicationCRsFromPVC(ctx, &pvc)
-                        requeue = true
 
+		if err != nil && errors.IsNotFound(err) {
+			errcreate := v.CreateVolumeReplicationCRsFromPVC(ctx, pvc)
+			requeue = true
+
+			if errcreate != nil {
+				log.Error(err, "Failed to create VolumeReplication CR")
+			}
 		} else if err != nil {
 			log.Error(err, "Failed to get VolumeReplication CR")
-			return ctrl.Result{}, err
+
+			return ctrl.Result{}, fmt.Errorf("failed to get CR: %w", err)
 		}
 	}
 
-        // Requeue if new CR is created   
-        if requeue == true{
-                return ctrl.Result{Requeue: true}, nil
-        }
+	// Requeue if new CR is created
+	if requeue {
+		return ctrl.Result{Requeue: true}, nil
+	}
 
 	return ctrl.Result{}, nil
 }
@@ -271,8 +269,9 @@ func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumes(
 	return nil
 }
 
-func (v *VolumeReplicationGroupReconciler) CreateVolumeReplicationCRsFromPVC(ctx context.Context, pvc *corev1.PersistentVolumeClaim) error {
-
+func (v *VolumeReplicationGroupReconciler) CreateVolumeReplicationCRsFromPVC(
+	ctx context.Context,
+	pvc corev1.PersistentVolumeClaim) error {
 	cr := &ramendrv1alpha1.VolumeReplication{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      pvc.Name,
@@ -290,12 +289,11 @@ func (v *VolumeReplicationGroupReconciler) CreateVolumeReplicationCRsFromPVC(ctx
 	log.Info("Created CR: ", cr)
 
 	err := v.Create(ctx, cr)
-
 	if err != nil {
 		log.Error("Error Creating CR")
 	}
-	return err
 
+	return fmt.Errorf("failed to create CR: %w", err)
 }
 
 // SetupWithManager sets up the controller with the Manager.
