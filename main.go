@@ -80,8 +80,6 @@ func newManager() (ctrl.Manager, error) {
 		LeaderElectionID:       "ae40cfcb.openshift.io",
 	})
 	if err != nil {
-		setupLog.Error(err, "unable Start new manager")
-
 		return mgr, fmt.Errorf("starting new manager failed %w", err)
 	}
 

@@ -52,7 +52,7 @@ type VolumeReplicationGroupReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-func getPredicateFunc() predicate.Funcs {
+func newPredicateFunc() predicate.Funcs {
 	// predicate functions send reconcile requests for create and delete events.
 	// For them the filtering of whether the pvc belongs to the any of the
 	// VolumeReplicationGroup CRs and identifying such a CR is done in the
@@ -60,8 +60,20 @@ func getPredicateFunc() predicate.Funcs {
 	// But for update of pvc, the reconcile request should be sent only for
 	// spec changes. Do that comparison here.
 	pvcPredicate := predicate.Funcs{
+		// This predicate function can be removed as the only thing it is
+		// doing currently is to log the pvc creation event that is received.
+		// Even without this predicate function, by default the reconcile
+		// request would be sent (i.e. equivalent of returning true from here).
+		// However having a log here will be useful for debugging purposes where
+		// one can verify and distinguish between below 2 events.
+		// 1) pvc creation for the application for which VRG CR exists.
+		//    (i.e. application is disaster protected). For this reconcile
+		//    logic will be triggered.
+		// 2) pvc creation for the application for which VRG CR does not exist
+		//    (i.e. application is not disaster protected). For this reconcile
+		//    logic is not triggered.
 		CreateFunc: func(e event.CreateEvent) bool {
-			log.Info("create event from pvc")
+			log.Debug("create event from pvc")
 
 			return true
 		},
@@ -78,6 +90,7 @@ func getPredicateFunc() predicate.Funcs {
 
 				return false
 			}
+			log.Debug("Update event from pvc")
 
 			return !reflect.DeepEqual(oldPVC.Spec, newPVC.Spec)
 		},
@@ -355,7 +368,7 @@ func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumes(
 
 // SetupWithManager sets up the controller with the Manager.
 func (v *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	pvcPredicate := getPredicateFunc()
+	pvcPredicate := newPredicateFunc()
 	pvcMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
 		pvc, ok := obj.(*corev1.PersistentVolumeClaim)
 		if !ok {
