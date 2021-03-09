@@ -1,5 +1,5 @@
 /*
-Copyright 2021.
+Copyright 2021 The RamenDR authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,16 +26,14 @@ import (
 
 // AppVolumeReplicationSpec defines the desired state of AppVolumeReplication
 type AppVolumeReplicationSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	Placement *plrv1.Placement `json:"placement,omitempty"`
+	Placement     *plrv1.Placement `json:"placement"`
+	FailedCluster string           `json:"failedCluster"`
 }
 
 // AppVolumeReplicationStatus defines the observed state of AppVolumeReplication
 type AppVolumeReplicationStatus struct {
-	PrimaryCluster   string `json:"primaryCluster,omitempty"`
-	SecondaryCluster string `json:"secondaryCluster,omitempty"`
+	HomeCluster string `json:"homeCluster,omitempty"`
+	PeerCluster string `json:"peerCluster,omitempty"`
 }
 
 // +kubebuilder:object:root=true
