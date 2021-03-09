@@ -1,5 +1,5 @@
 /*
-Copyright 2021.
+Copyright 2021 The RamenDR authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -36,6 +36,8 @@ import (
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 )
+
+const manifestWorkNameFormat string = "%s-vrg-manifestwork"
 
 // AppVolumeReplicationReconciler reconciles a AppVolumeReplication object
 type AppVolumeReplicationReconciler struct {
@@ -76,55 +78,65 @@ func (r *AppVolumeReplicationReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, moreerrors.Wrap(err, "failed to get AVR object")
 	}
 
-	primaryCluster, secondaryCluster, err := r.createAvgManifestWork(avr)
+	//
+	// TODO failover case will be handled before we get to this point
+	// On a failover, AVR.Spec.FailedCluster should be filled in.
+	//
+
+	// Create a ManifestWork that represents the VolumeReplicationGroup CR for the hub to
+	// deploy on the managed cluster. A manifest workload is defined as a set of Kubernetes
+	// resources. The ManifestWork must be created in the cluster namespace on the hub, so that
+	// agent on the corresponding managed cluster can access this resource and deploy on the
+	// managed cluster.
+	homeCluster, peerCluster, err := r.createVrgManifestWork(avr)
 	if err != nil {
 		logger.Error(err, "failed to create or update AVG ManifestWork")
 
 		return ctrl.Result{}, err
 	}
 
-	if err := r.updateAppVolumeReplicationStatus(ctx, avr, primaryCluster, secondaryCluster); err != nil {
+	if err := r.updateAvrStatus(ctx, avr, homeCluster, peerCluster); err != nil {
 		logger.Error(err, "failed to update status")
 
 		return ctrl.Result{}, err
 	}
 
-	logger.Info("created VolumeReplicationGroup manifest for ", "primary cluster", primaryCluster)
+	logger.Info("created VolumeReplicationGroup manifest for ", "home cluster", homeCluster)
 
 	return ctrl.Result{}, nil
 }
 
-func (r *AppVolumeReplicationReconciler) createAvgManifestWork(
+func (r *AppVolumeReplicationReconciler) createVrgManifestWork(
 	avr *ramendrv1alpha1.AppVolumeReplication) (string, string, error) {
 	const empty string = ""
 
 	// Select cluster decisions from all Subscriptions of an app.
-	placementDecisions, primaryCluster, err := r.selectPlacementDecisions(avr.Namespace)
+	placementDecisions, homeCluster, err := r.selectPlacementDecisions(avr.Namespace)
 	if err != nil {
 		r.Log.Info("failed to get placement targets from subscriptions", "Namespace", avr.Namespace, " error: ", err)
 
 		return empty, empty, err
 	}
 
-	if primaryCluster == "" {
+	if homeCluster == "" {
 		return empty, empty,
-			fmt.Errorf("no primary cluster configured in any of the subscriptions in namespace %s", avr.Namespace)
+			fmt.Errorf("no home cluster configured in any of the subscriptions in namespace %s", avr.Namespace)
 	}
 
-	secondaryCluster, err := r.selectSecondaryClusterFromAVRPlacement(avr.Namespace, avr.Spec.Placement, primaryCluster)
+	peerCluster, err := r.selectPeerClusterFromAVRPlacement(avr.Namespace, avr.Spec.Placement, homeCluster)
 	if err != nil {
-		r.Log.Error(err, "unable to get secondary cluster")
+		r.Log.Error(err, "unable to get peer cluster")
 
 		return empty, empty, err
 	}
 
-	if secondaryCluster == "" {
-		return empty, empty, fmt.Errorf("no secondary cluster found in namespace %s", avr.Namespace)
+	if peerCluster == "" {
+		return empty, empty, fmt.Errorf("no peer cluster found in namespace %s", avr.Namespace)
 	}
 
-	// Validate primary and secondary clusters
-	_, p := placementDecisions[primaryCluster]
-	_, s := placementDecisions[secondaryCluster]
+	// Validate home and peer clusters
+	_, p := placementDecisions[homeCluster]
+	_, s := placementDecisions[peerCluster]
 
 	if !p || !s {
 		keys := make([]string, 0, len(placementDecisions))
@@ -134,28 +146,28 @@ func (r *AppVolumeReplicationReconciler) createAvgManifestWork(
 
 		r.Log.Info("disjoint set of clusters detected",
 			"Subscripts clusters:", keys,
-			"AVR clusters:", primaryCluster+","+secondaryCluster)
+			"AVR clusters:", homeCluster+","+peerCluster)
 
-		return empty, empty, fmt.Errorf("invalid AVR placement rule configuration. PrimaryCluster: %s, SecondaryCluster: %s",
-			primaryCluster, secondaryCluster)
+		return empty, empty, fmt.Errorf("invalid AVR placement rule configuration. HomeCluster: %s, PeerCluster: %s",
+			homeCluster, peerCluster)
 	}
 
-	if err := r.createOrUpdateManifestWork(avr.Name, avr.Namespace, primaryCluster, secondaryCluster); err != nil {
+	if err := r.createOrUpdateManifestWork(avr.Name, avr.Namespace, homeCluster, peerCluster); err != nil {
 		r.Log.Error(err, "failed to create or update manifest")
 
 		return empty, empty, err
 	}
 
-	return primaryCluster, secondaryCluster, nil
+	return homeCluster, peerCluster, nil
 }
 
-func (r *AppVolumeReplicationReconciler) updateAppVolumeReplicationStatus(ctx context.Context,
-	avr *ramendrv1alpha1.AppVolumeReplication, primaryCluster string, secondaryCluster string) error {
+func (r *AppVolumeReplicationReconciler) updateAvrStatus(ctx context.Context,
+	avr *ramendrv1alpha1.AppVolumeReplication, homeCluster string, peerCluster string) error {
 	r.Log.Info("updating AVR status")
 
 	avr.Status = ramendrv1alpha1.AppVolumeReplicationStatus{
-		PrimaryCluster:   primaryCluster,
-		SecondaryCluster: secondaryCluster,
+		HomeCluster: homeCluster,
+		PeerCluster: peerCluster,
 	}
 	if err := r.Client.Status().Update(ctx, avr); err != nil {
 		return moreerrors.Wrap(err, "failed to update AVR status")
@@ -176,7 +188,7 @@ func (r *AppVolumeReplicationReconciler) selectPlacementDecisions(namespace stri
 	listOptions := &client.ListOptions{Namespace: namespace}
 	placementDecisions := make(map[string]bool)
 
-	var primaryCluster string
+	var homeCluster string
 
 	err := r.Client.List(context.TODO(), subscriptionList, listOptions)
 	if err != nil {
@@ -184,21 +196,27 @@ func (r *AppVolumeReplicationReconciler) selectPlacementDecisions(namespace stri
 			// requeue the request
 			return nil, "", fmt.Errorf("failed to get subscription list with namespace %s", namespace)
 		}
-	}
 
+		return nil, "", moreerrors.Wrap(err, "failed to get placement rule")
+	}
+	// TODO Investigate whether we need multiple subscriptions per application for DR use case.
+	// TODO check for replica count and should we fail if it is more than 1?
 	for _, subscription := range subscriptionList.Items {
+		// The subscription phase describes the phasing of the subscriptions. Propagated means
+		// this subscription is the "parent" sitting in hub. Statuses is a map where the key is
+		// the cluster name and value is the aggregated status
 		if subscription.Status.Phase != subv1.SubscriptionPropagated || subscription.Status.Statuses == nil {
 			continue
 		}
 
-		r.extractPlacements(subscription, placementDecisions, &primaryCluster)
+		r.extractPlacements(subscription, placementDecisions, &homeCluster)
 	}
 
-	return placementDecisions, primaryCluster, nil
+	return placementDecisions, homeCluster, nil
 }
 
 func (r *AppVolumeReplicationReconciler) extractPlacements(
-	subscription subv1.Subscription, placementDecisions map[string]bool, primaryCluster *string) {
+	subscription subv1.Subscription, placementDecisions map[string]bool, homeCluster *string) {
 	pl := subscription.Spec.Placement
 	if pl != nil && pl.PlacementRef != nil {
 		plRef := pl.PlacementRef
@@ -218,30 +236,31 @@ func (r *AppVolumeReplicationReconciler) extractPlacements(
 			return
 		}
 
-		r.extractPlacementDecisionsAndPrimary(
-			placementRule.Status.Decisions, subscription.Status.Statuses, placementDecisions, primaryCluster)
+		r.extractPlacementDecisionsAndHomeCluster(
+			placementRule.Status.Decisions, subscription.Status.Statuses, placementDecisions, homeCluster)
 	}
 }
 
-func (r *AppVolumeReplicationReconciler) extractPlacementDecisionsAndPrimary(
+func (r *AppVolumeReplicationReconciler) extractPlacementDecisionsAndHomeCluster(
 	decisions []plrv1.PlacementDecision, subStatuses subv1.SubscriptionClusterStatusMap,
-	placementDecisions map[string]bool, primaryCluster *string) {
+	placementDecisions map[string]bool, homeCluster *string) {
 	if len(decisions) == 0 {
 		return
 	}
 
 	for _, decision := range decisions {
 		placementDecisions[decision.ClusterName] = true
-		// pick the first primary cluster found
-		if *primaryCluster == "" && subStatuses[decision.ClusterName] != nil {
-			*primaryCluster = decision.ClusterName
+		// pick the first home cluster found
+		if *homeCluster == "" && subStatuses[decision.ClusterName] != nil {
+			*homeCluster = decision.ClusterName
 		}
 	}
 }
 
-func (r *AppVolumeReplicationReconciler) selectSecondaryClusterFromAVRPlacement(
-	namespace string, placement *plrv1.Placement, primaryCluster string) (string, error) {
-	var secondaryCluster string
+// TODO: Should the peer be a set of clusters?
+func (r *AppVolumeReplicationReconciler) selectPeerClusterFromAVRPlacement(
+	namespace string, placement *plrv1.Placement, homeCluster string) (string, error) {
+	var peerCluster string
 
 	if placement != nil && placement.PlacementRef != nil {
 		plRef := placement.PlacementRef
@@ -261,25 +280,27 @@ func (r *AppVolumeReplicationReconciler) selectSecondaryClusterFromAVRPlacement(
 		}
 
 		for _, decision := range placementRule.Status.Decisions {
-			// select the secondary cluster
-			if primaryCluster != decision.ClusterName {
-				secondaryCluster = decision.ClusterName
+			// select the peer cluster
+			if homeCluster != decision.ClusterName {
+				peerCluster = decision.ClusterName
 
 				break
 			}
 		}
 	}
 
-	return secondaryCluster, nil
+	return peerCluster, nil
 }
 
 func (r *AppVolumeReplicationReconciler) createOrUpdateManifestWork(name string, namespace string,
-	primaryCluster string, secondaryCluster string) error {
+	homeCluster string, peerCluster string) error {
 	r.Log.Info("attempt to create and update ManifestWork")
-	manifestWork := r.createManifestWork(name, namespace, primaryCluster, secondaryCluster)
+
+	manifestWork := r.createManifestWork(name, namespace, homeCluster, peerCluster)
+
 	found := &ocmworkv1.ManifestWork{}
 
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: manifestWork.Name, Namespace: namespace}, found)
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: manifestWork.Name, Namespace: homeCluster}, found)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			r.Log.Error(err, "Could not fetch ManifestWork")
@@ -289,28 +310,26 @@ func (r *AppVolumeReplicationReconciler) createOrUpdateManifestWork(name string,
 
 		r.Log.Info("Creating ManifestWork", "ManifestWork", manifestWork)
 
-		if err := r.Client.Create(context.TODO(), manifestWork); err != nil {
-			return moreerrors.Wrap(err, "failed to create manifestWork")
-		}
+		return r.Client.Create(context.TODO(), manifestWork)
 	} else if !reflect.DeepEqual(found.Spec, manifestWork.Spec) {
 		manifestWork.Spec.DeepCopyInto(&found.Spec)
-		err := r.Client.Update(context.TODO(), found)
-		if err != nil {
-			return moreerrors.Wrap(err, "failed to update manifestWork")
-		}
+
+		r.Log.Info("Updating ManifestWork", "ManifestWork", manifestWork)
+
+		return r.Client.Update(context.TODO(), found)
 	}
 
 	return nil
 }
 
 func (r *AppVolumeReplicationReconciler) createManifestWork(name string, namespace string,
-	primaryCluster string, secondaryCluster string) *ocmworkv1.ManifestWork {
-	vrgClientManifest := r.createVRGClientManifest(name, namespace, primaryCluster, secondaryCluster)
+	homeCluster string, peerCluster string) *ocmworkv1.ManifestWork {
+	vrgClientManifest := r.createVRGClientManifest(name, namespace, homeCluster, peerCluster)
 
 	manifestwork := &ocmworkv1.ManifestWork{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-vrg-manifestwork", primaryCluster),
-			Namespace: namespace, Labels: map[string]string{"app": "VRG"},
+			Name:      fmt.Sprintf(manifestWorkNameFormat, homeCluster),
+			Namespace: homeCluster, Labels: map[string]string{"app": "VRG"},
 		},
 		Spec: ocmworkv1.ManifestWorkSpec{
 			Workload: ocmworkv1.ManifestsTemplate{
@@ -325,7 +344,8 @@ func (r *AppVolumeReplicationReconciler) createManifestWork(name string, namespa
 }
 
 func (r *AppVolumeReplicationReconciler) createVRGClientManifest(name string, namespace string,
-	primaryCluster string, secondaryCluster string) *ocmworkv1.Manifest {
+	homeCluster string, peerCluster string) *ocmworkv1.Manifest {
+	// TODO: try to use the VRG object, then marshal it into byte array.
 	vrgClientJSON := []byte(fmt.Sprintf(`
 	{
 		"apiVersion": "ramendr.openshift.io/v1alpha1",
@@ -366,7 +386,7 @@ func (r *AppVolumeReplicationReconciler) createVRGClientManifest(name string, na
 		   ]
 		}
 	 }
-	`, name, namespace, primaryCluster, secondaryCluster))
+	`, name, namespace, homeCluster, peerCluster))
 	vrgClientManifest := &ocmworkv1.Manifest{}
 	vrgClientManifest.RawExtension = runtime.RawExtension{Raw: vrgClientJSON}
 

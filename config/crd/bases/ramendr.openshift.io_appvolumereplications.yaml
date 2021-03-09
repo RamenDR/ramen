@@ -37,6 +37,8 @@ spec:
           spec:
             description: AppVolumeReplicationSpec defines the desired state of AppVolumeReplication
             properties:
+              failedCluster:
+                type: string
               placement:
                 description: Placement field to be referenced in specs, align with
                   Fedv2, add placementref
@@ -161,14 +163,17 @@ spec:
                         type: string
                     type: object
                 type: object
+            required:
+            - failedCluster
+            - placement
             type: object
           status:
             description: AppVolumeReplicationStatus defines the observed state of
               AppVolumeReplication
             properties:
-              primaryCluster:
+              homeCluster:
                 type: string
-              secondaryCluster:
+              peerCluster:
                 type: string
             type: object
         type: object

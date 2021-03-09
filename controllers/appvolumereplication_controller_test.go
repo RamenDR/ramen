@@ -1,5 +1,5 @@
 /*
-Copyright 2021.
+Copyright 2021 The RamenDR authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -37,7 +37,7 @@ const subscriptionYAML = `apiVersion: apps.open-cluster-management.io/v1
 kind: Subscription
 metadata:
   name: my-subscription
-  namespace: default
+  namespace: app-namespace
 spec:
   channel: test/test-github-channel
   placement:
@@ -59,7 +59,7 @@ const subPlacementRuleYAML = `apiVersion: apps.open-cluster-management.io/v1
 kind: PlacementRule
 metadata:
   name: sub-placement-rule
-  namespace: default
+  namespace: app-namespace
 spec:
   clusterConditions:
     - status: 'True'
@@ -75,7 +75,7 @@ const avrPlacementRuleYAML = `apiVersion: apps.open-cluster-management.io/v1
 kind: PlacementRule
 metadata:
   name: avr-placement-rule
-  namespace: default
+  namespace: app-namespace
 spec:
   clusterConditions:
     - status: 'True'
@@ -92,12 +92,46 @@ status:
 var _ = Describe("AppVolumeReplication controller", func() {
 	// Define utility constants for object names and testing timeouts/durations and intervals.
 	const (
-		AppVolumeReplicationName      = "app-volume-replication-test"
-		AppVolumeReplicationNamespace = "default"
+		AppVolumeReplicationName          = "app-volume-replication-test"
+		AppVolumeReplicationNamespaceName = "app-namespace"
+		ManagedClusterNamespaceName       = "remote-cluster"
 
 		timeout  = time.Second * 10
 		interval = time.Millisecond * 250
 	)
+
+	var (
+		ManagedClusterNamespace *corev1.Namespace
+		AppNamespace            *corev1.Namespace
+	)
+
+	BeforeEach(func() {
+		ManagedClusterNamespace := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: "remote-cluster"},
+		}
+		ctx := context.Background()
+		err := k8sClient.Create(ctx, ManagedClusterNamespace)
+		Expect(err).NotTo(HaveOccurred())
+
+		AppNamespace := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: AppVolumeReplicationNamespaceName},
+		}
+		err = k8sClient.Create(ctx, AppNamespace)
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	AfterEach(func() {
+		ctx := context.Background()
+		if ManagedClusterNamespace != nil {
+			err := k8sClient.Delete(ctx, ManagedClusterNamespace)
+			Expect(err).NotTo(HaveOccurred(), "failed to delete managed cluster namespace")
+		}
+
+		if AppNamespace != nil {
+			err := k8sClient.Delete(ctx, AppNamespace)
+			Expect(err).NotTo(HaveOccurred(), "failed to delete App namespace")
+		}
+	})
 
 	Context("When creating AppVolumeReplication", func() {
 		It("Should create VolumeReplicationGroup CR embedded in a ManifestWork CR", func() {
@@ -146,7 +180,7 @@ var _ = Describe("AppVolumeReplication controller", func() {
 			avr := &ramendrv1alpha1.AppVolumeReplication{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      AppVolumeReplicationName,
-					Namespace: AppVolumeReplicationNamespace,
+					Namespace: AppVolumeReplicationNamespaceName,
 				},
 				Spec: ramendrv1alpha1.AppVolumeReplicationSpec{
 					Placement: &plrv1.Placement{
@@ -160,7 +194,10 @@ var _ = Describe("AppVolumeReplication controller", func() {
 			Expect(k8sClient.Create(ctx, avr)).Should(Succeed())
 
 			// 5.0 Get the ManifestWork CR. The CR is created in the AVR Reconciler
-			manifestLookupKey := types.NamespacedName{Name: "remote-cluster-vrg-manifestwork", Namespace: "default"}
+			manifestLookupKey := types.NamespacedName{
+				Name:      "remote-cluster-vrg-manifestwork",
+				Namespace: ManagedClusterNamespaceName,
+			}
 			createdManifest := &ocmworkv1.ManifestWork{}
 
 			Eventually(func() bool {
@@ -179,7 +216,7 @@ var _ = Describe("AppVolumeReplication controller", func() {
 			Expect(vrg.Name).Should(Equal("app-volume-replication-test"))
 
 			// 6.0 retrieve the updated AVR CR. It should have the status updated on success
-			avrLookupKey := types.NamespacedName{Name: AppVolumeReplicationName, Namespace: AppVolumeReplicationNamespace}
+			avrLookupKey := types.NamespacedName{Name: AppVolumeReplicationName, Namespace: AppVolumeReplicationNamespaceName}
 			updatedAVR := &ramendrv1alpha1.AppVolumeReplication{}
 
 			Eventually(func() bool {
@@ -188,9 +225,9 @@ var _ = Describe("AppVolumeReplication controller", func() {
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
-			// 7.0 check that the primary and secondary clusters have been selected.
-			Expect(updatedAVR.Status.PrimaryCluster).Should(Equal("remote-cluster"))
-			Expect(updatedAVR.Status.SecondaryCluster).Should(Equal("local-cluster"))
+			// 7.0 check that the home and peer clusters have been selected.
+			Expect(updatedAVR.Status.HomeCluster).Should(Equal("remote-cluster"))
+			Expect(updatedAVR.Status.PeerCluster).Should(Equal("local-cluster"))
 		})
 	})
 })
