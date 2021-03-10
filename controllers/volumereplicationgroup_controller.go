@@ -51,6 +51,10 @@ type VolumeReplicationGroupReconciler struct {
 	Scheme *runtime.Scheme
 }
 
+const (
+	vrgFinalizer = "volumereplicationgroup.storage.io"
+)
+
 func newPredicateFunc() predicate.Funcs {
 	// predicate functions send reconcile requests for create and delete events.
 	// For them the filtering of whether the pvc belongs to the any of the
@@ -199,7 +203,21 @@ func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 
 	log.Info("Processing VolumeReplicationGroup ", volRepGroup.Spec, " in ns: ", req.NamespacedName)
 
-	pvcList, err := v.HandlePersistentVolumeClaims(ctx, volRepGroup)
+	// examine the DeletionTimestamp to determine whether the object is under deletion
+	if volRepGroup.GetDeletionTimestamp().IsZero() {
+		if err := v.AddFinalizer(ctx, volRepGroup, vrgFinalizer); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to add the finalizer to VRG CR %s (%w)", req.NamespacedName, err)
+		}
+	} else {
+		if err := v.RemoveFinalizer(ctx, volRepGroup, vrgFinalizer); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to remove the finalizer from VRG CR %s (%w)", req.NamespacedName, err)
+		}
+
+		// stop reconciliation as the item is being deleted
+		return ctrl.Result{}, nil
+	}
+
+	pvcList, err := v.ListPersistentVolumeClaims(ctx, volRepGroup)
 	if err != nil {
 		log.Error(err, "Handling of Persistent Volume Claims of application failed")
 
@@ -207,30 +225,125 @@ func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	requeue := false
+	requeue = v.HandlePersistentVolumeClaims(ctx, volRepGroup, pvcList)
 
-	for _, pvc := range pvcList.Items {
-		volRep := &volrep.VolumeReplication{}
+	if requeue {
+		return ctrl.Result{Requeue: requeue}, fmt.Errorf("failed to create VolumeReplication CRs %w", err)
+	}
 
-		err = v.Get(ctx, types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}, volRep)
-		if err != nil {
-			if errors.IsNotFound(err) {
-				if err = v.createVolumeReplicationCRForPVC(ctx, pvc); err == nil {
-					continue
-				}
-			}
+	return ctrl.Result{}, nil
+}
 
-			// requeue on failure to ensure any PVC not having a corresponding VR CR
-			requeue = true
-
-			log.Error(err, "Failed to get or create VolumeReplication CR for PVC", pvc.Name, pvc.Namespace)
+// It might be better move the helper functions like these to a separate
+// package or a separate go file?
+func containsString(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
 		}
 	}
 
-	return ctrl.Result{Requeue: requeue}, nil
+	return false
 }
 
-// HandlePersistentVolumeClaims handles PVCs in the VRG
-func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumeClaims(
+func removeString(slice []string, s string) (result []string) {
+	for _, item := range slice {
+		if item == s {
+			continue
+		}
+
+		result = append(result, item)
+	}
+
+	return
+}
+
+func (v *VolumeReplicationGroupReconciler) AddFinalizer(
+	ctx context.Context,
+	volRepGroup *ramendrv1alpha1.VolumeReplicationGroup,
+	finalizer string) error {
+	if !containsString(volRepGroup.ObjectMeta.Finalizers, finalizer) {
+		volRepGroup.ObjectMeta.Finalizers = append(volRepGroup.ObjectMeta.Finalizers, finalizer)
+		if err := v.Update(context.Background(), volRepGroup); err != nil {
+			return fmt.Errorf("failed to add the finalizer to VRG CR %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (v *VolumeReplicationGroupReconciler) RemoveFinalizer(
+	ctx context.Context,
+	volRepGroup *ramendrv1alpha1.VolumeReplicationGroup,
+	finalizer string) error {
+	if containsString(volRepGroup.ObjectMeta.Finalizers, finalizer) {
+		if err := v.deleteRelatedItems(ctx, volRepGroup); err != nil {
+			return fmt.Errorf("failed to delete VolumeReplicationGroup related resources %w", err)
+		}
+
+		volRepGroup.ObjectMeta.Finalizers = removeString(volRepGroup.ObjectMeta.Finalizers, finalizer)
+		if err := v.Update(context.Background(), volRepGroup); err != nil {
+			return fmt.Errorf("failed to remove the finalizer from VRG CR %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (v *VolumeReplicationGroupReconciler) deleteRelatedItems(
+	ctx context.Context,
+	volRepGroup *ramendrv1alpha1.VolumeReplicationGroup) error {
+	// add logic to perform the following things.
+	// - Remove the VolumeReplication CRs associated with pvcs
+	//   belonging to the application protected by this VolumeReplicationGroup CR.
+	// - Delete the backed up PV metadata from the backup store.
+	//
+	// As of now deletion of VolumeReplication CRs is done.
+	// TODO: Delete the backed up PV metadata from the backup store.
+	if err := v.DeleteVRCR(ctx, volRepGroup); err != nil {
+		return fmt.Errorf("failed to delete the VolumeReplication CRs %w", err)
+	}
+
+	return nil
+}
+
+func (v *VolumeReplicationGroupReconciler) DeleteVRCR(
+	ctx context.Context,
+	volRepGroup *ramendrv1alpha1.VolumeReplicationGroup) error {
+	vrList := &volrep.VolumeReplicationList{}
+
+	log.Info("Namespace: ", volRepGroup.Namespace)
+	listOptions := []client.ListOption{
+		client.InNamespace(volRepGroup.Namespace),
+	}
+
+	if err := v.List(ctx, vrList, listOptions...); err != nil {
+		if errors.IsNotFound(err) {
+			log.Info("Listing failed as there are no VR CRs")
+		} else {
+			log.Error(err, "Failed to list VolumeReplication CRs")
+
+			return fmt.Errorf("failed to list VolumeReplication CRs %w", err)
+		}
+	}
+
+	log.Info("volumeReplication CR List: ", vrList)
+
+	for _, vr := range vrList.Items {
+		// Stop at the first instance of failure and handle
+		// the deletion of remaining VolumeReplication CRs
+		// in the next reconcile request.
+		tmpVR := vr
+		if err := v.Delete(ctx, &tmpVR); err != nil {
+			return fmt.Errorf("failed to delete the VolumeReplication CR %s:%s", vr.Name, vr.Namespace)
+		}
+	}
+
+	return nil
+}
+
+// ListPersistentVolumeClaims handles PVCs in the VRG
+func (v *VolumeReplicationGroupReconciler) ListPersistentVolumeClaims(
 	ctx context.Context,
 	volRepGroup *ramendrv1alpha1.VolumeReplicationGroup) (
 	*corev1.PersistentVolumeClaimList,
@@ -256,8 +369,8 @@ func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumeClaims(
 	return pvcList, nil
 }
 
-// HandlePersistentVolumes handles bound PVs
-func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumes(
+// Prints the bound Persistent Volumes
+func (v *VolumeReplicationGroupReconciler) PrintPersistentVolumes(
 	ctx context.Context,
 	pvcList *corev1.PersistentVolumeClaimList) error {
 	template := "%-42s%-42s%-8s%-10s%-8s\n"
@@ -312,8 +425,84 @@ func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumes(
 	return nil
 }
 
+// HandlePersistentVolumes handles bound PVs
+func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumes(
+	ctx context.Context,
+	pvcList *corev1.PersistentVolumeClaimList) bool {
+	requeue := false
+
+	if err := v.PrintPersistentVolumes(ctx, pvcList); err != nil {
+		log.Error(err, "failed to print the persistent volumes for pvc list %w")
+
+		requeue = true
+	}
+
+	return requeue
+}
+
+func (v *VolumeReplicationGroupReconciler) CreateVolumeReplicationCRs(
+	ctx context.Context,
+	pvcList *corev1.PersistentVolumeClaimList) bool {
+	requeue := false
+
+	for _, pvc := range pvcList.Items {
+		// if the PVC is not bound yet, dont proceed.
+		if pvc.Status.Phase != corev1.ClaimBound {
+			log.Errorf("PVC is not yet bound status: %v", pvc.Status.Phase)
+
+			requeue = true
+
+			return requeue
+		}
+
+		volRep := &volrep.VolumeReplication{}
+
+		err := v.Get(ctx, types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}, volRep)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				if err = v.CreateVolumeReplicationCRForPVC(ctx, pvc); err == nil {
+					continue
+				}
+			}
+
+			// requeue on failure to ensure any PVC not having a corresponding VR CR
+			requeue = true
+
+			log.Error(err, "failed to get or create VolumeReplication CR for PVC ", pvc.Name, pvc.Namespace)
+		}
+	}
+
+	return requeue
+}
+
 // createVolumeReplicationCRForPVC creates a VolumeReplication CR with a PVC as its data source
-func (v *VolumeReplicationGroupReconciler) createVolumeReplicationCRForPVC(
+func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumeClaims(
+	ctx context.Context,
+	volRepGroup *ramendrv1alpha1.VolumeReplicationGroup,
+	pvcList *corev1.PersistentVolumeClaimList) bool {
+	// HandlePersistentVolumeClaims creates VolumeReplication CR for each pvc
+	// from pvcList. If fails (even for one pvc), then requeue is set to true.
+	// For now, keeping creation of VolumeReplication CR and backing up of PV
+	// metadata in separate functions and calling them separately. In future,
+	// if creation of VolumeReplication CR and backing up of pv metadata should
+	// happen together (i.e for each pvc create VolumeReplication CR and then
+	// backup PV metadata), then it can be put in a single function.
+	if requeue := v.CreateVolumeReplicationCRs(ctx, pvcList); requeue {
+		log.Error("failed to get or create VolumeReplication CRs for pvc list")
+
+		return requeue
+	}
+
+	if requeue := v.HandlePersistentVolumes(ctx, pvcList); requeue {
+		log.Error("failed to handle Persistent Volumes for pvc list")
+
+		return requeue
+	}
+
+	return false
+}
+
+func (v *VolumeReplicationGroupReconciler) CreateVolumeReplicationCRForPVC(
 	ctx context.Context,
 	pvc corev1.PersistentVolumeClaim) error {
 	cr := &volrep.VolumeReplication{
