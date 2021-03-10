@@ -17,7 +17,6 @@ limitations under the License.
 package v1alpha1
 
 import (
-	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -26,14 +25,22 @@ import (
 
 // AppVolumeReplicationSpec defines the desired state of AppVolumeReplication
 type AppVolumeReplicationSpec struct {
-	Placement     *plrv1.Placement `json:"placement"`
-	FailedCluster string           `json:"failedCluster"`
+	FailedCluster string `json:"failedCluster"`
 }
+
+// SubscriptionPlacementDecision lists each subscription with its home and peer clusters
+type SubscriptionPlacementDecision struct {
+	HomeCluster string `json:"homeCluster,omitempty"`
+	PeerCluster string `json:"peerCluster,omitempty"`
+}
+
+// SubscriptionPlacementDecisionMap defines per subscription placement decision, key is subscription name
+type SubscriptionPlacementDecisionMap map[string]*SubscriptionPlacementDecision
 
 // AppVolumeReplicationStatus defines the observed state of AppVolumeReplication
 type AppVolumeReplicationStatus struct {
-	HomeCluster string `json:"homeCluster,omitempty"`
-	PeerCluster string `json:"peerCluster,omitempty"`
+	// Decisions are for subscription and by AVR namespace (which is app namespace)
+	Decisions SubscriptionPlacementDecisionMap `json:"statuses,omitempty"`
 }
 
 // +kubebuilder:object:root=true

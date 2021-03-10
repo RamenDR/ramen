@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	spokeClusterV1 "github.com/open-cluster-management/api/cluster/v1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	subv1 "github.com/open-cluster-management/multicloud-operators-subscription/pkg/apis/apps/v1"
@@ -55,37 +56,28 @@ status:
           lastUpdateTime: '2021-02-16T23:09:03Z'
           phase: Subscribed`
 
-const subPlacementRuleYAML = `apiVersion: apps.open-cluster-management.io/v1
-kind: PlacementRule
-metadata:
-  name: sub-placement-rule
-  namespace: app-namespace
-spec:
-  clusterConditions:
-    - status: 'True'
-      type: ManagedClusterConditionAvailable
-status:
-  decisions:
-    - clusterName: local-cluster
-      clusterNamespace: local-cluster'
-    - clusterName: remote-cluster
-      clusterNamespace: remote-cluster`
+var (
+	localCluster = &spokeClusterV1.ManagedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "local-cluster",
+			Labels: map[string]string{
+				"name": "local-cluster",
+				"key1": "value1",
+			},
+		},
+	}
+	remoteCluster = &spokeClusterV1.ManagedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "remote-cluster",
+			Labels: map[string]string{
+				"name": "remote-cluster",
+				"key1": "value1",
+			},
+		},
+	}
 
-const avrPlacementRuleYAML = `apiVersion: apps.open-cluster-management.io/v1
-kind: PlacementRule
-metadata:
-  name: avr-placement-rule
-  namespace: app-namespace
-spec:
-  clusterConditions:
-    - status: 'True'
-      type: ManagedClusterConditionAvailable
-status:
-  decisions:
-    - clusterName: local-cluster
-      clusterNamespace: local-cluster'
-    - clusterName: remote-cluster
-      clusterNamespace: remote-cluster`
+	clusters = []*spokeClusterV1.ManagedCluster{localCluster, remoteCluster}
+)
 
 // +kubebuilder:docs-gen:collapse=Imports
 
@@ -154,41 +146,49 @@ var _ = Describe("AppVolumeReplication controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(createdSubscription.Status.Phase).Should(Equal(subv1.SubscriptionPhase("Propagated")))
 
-			// 2.0 create Placement Rule CR used by the Subscription
-			subPlacementRule := &plrv1.PlacementRule{}
-			err = yaml.Unmarshal([]byte(subPlacementRuleYAML), &subPlacementRule)
-			Expect(err).NotTo(HaveOccurred())
-			err = k8sClient.Create(context.TODO(), subPlacementRule)
+			// 3.0 create ManagedClusters
+			for _, cl := range clusters {
+				clinstance := cl.DeepCopy()
+
+				err = k8sClient.Create(context.TODO(), clinstance)
+				Expect(err).NotTo(HaveOccurred())
+
+				// defer Expect(k8sClient.Delete(context.TODO(), clinstance)).NotTo(HaveOccurred())
+			}
+
+			namereq := metav1.LabelSelectorRequirement{}
+			namereq.Key = "key1"
+			namereq.Operator = metav1.LabelSelectorOpIn
+
+			namereq.Values = []string{"value1"}
+			labelSelector := &metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{namereq},
+			}
+
+			placementRule := &plrv1.PlacementRule{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "sub-placement-rule",
+					Namespace: "app-namespace",
+				},
+				Spec: plrv1.PlacementRuleSpec{
+					GenericPlacementFields: plrv1.GenericPlacementFields{
+						ClusterSelector: labelSelector,
+					},
+				},
+			}
+
+			err = k8sClient.Create(context.TODO(), placementRule)
+			// defer Expect(k8sClient.Delete(context.TODO(), placementRule)).NotTo(HaveOccurred())
 			Expect(err).NotTo(HaveOccurred())
 
-			// 2.1 update Placement Rule status
-			err = k8sClient.Status().Update(ctx, subPlacementRule)
-			Expect(err).NotTo(HaveOccurred())
-
-			// 3.0 create Placement Rule used by the AVR CR
-			avrPlacementRule := &plrv1.PlacementRule{}
-			err = yaml.Unmarshal([]byte(avrPlacementRuleYAML), &avrPlacementRule)
-			Expect(err).NotTo(HaveOccurred())
-			err = k8sClient.Create(context.TODO(), avrPlacementRule)
-			Expect(err).NotTo(HaveOccurred())
-
-			// 3.1 update Placement Rule status
-			err = k8sClient.Status().Update(ctx, avrPlacementRule)
-			Expect(err).NotTo(HaveOccurred())
-
-			// 4.0 create AVR CR
+			// 3.0 create AVR CR
 			avr := &ramendrv1alpha1.AppVolumeReplication{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      AppVolumeReplicationName,
 					Namespace: AppVolumeReplicationNamespaceName,
 				},
 				Spec: ramendrv1alpha1.AppVolumeReplicationSpec{
-					Placement: &plrv1.Placement{
-						PlacementRef: &corev1.ObjectReference{
-							Kind: "PlacementRule",
-							Name: "avr-placement-rule",
-						},
-					},
+					FailedCluster: "",
 				},
 			}
 			Expect(k8sClient.Create(ctx, avr)).Should(Succeed())
@@ -213,7 +213,7 @@ var _ = Describe("AppVolumeReplication controller", func() {
 			vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
 			err = yaml.Unmarshal(vrgClientManifest.RawExtension.Raw, &vrg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(vrg.Name).Should(Equal("app-volume-replication-test"))
+			Expect(vrg.Name).Should(Equal(subscription.Name))
 
 			// 6.0 retrieve the updated AVR CR. It should have the status updated on success
 			avrLookupKey := types.NamespacedName{Name: AppVolumeReplicationName, Namespace: AppVolumeReplicationNamespaceName}
@@ -226,8 +226,8 @@ var _ = Describe("AppVolumeReplication controller", func() {
 			}, timeout, interval).Should(BeTrue())
 
 			// 7.0 check that the home and peer clusters have been selected.
-			Expect(updatedAVR.Status.HomeCluster).Should(Equal("remote-cluster"))
-			Expect(updatedAVR.Status.PeerCluster).Should(Equal("local-cluster"))
+			Expect(updatedAVR.Status.Decisions["my-subscription"].HomeCluster).Should(Equal("remote-cluster"))
+			Expect(updatedAVR.Status.Decisions["my-subscription"].PeerCluster).Should(Equal("local-cluster"))
 		})
 	})
 })

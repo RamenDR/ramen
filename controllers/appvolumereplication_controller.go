@@ -21,8 +21,10 @@ import (
 	"fmt"
 	"reflect"
 
+	spokeClusterV1 "github.com/open-cluster-management/api/cluster/v1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
+	"github.com/open-cluster-management/multicloud-operators-placementrule/pkg/utils"
 	subv1 "github.com/open-cluster-management/multicloud-operators-subscription/pkg/apis/apps/v1"
 
 	"github.com/go-logr/logr"
@@ -44,6 +46,13 @@ type AppVolumeReplicationReconciler struct {
 	client.Client
 	Log    logr.Logger
 	Scheme *runtime.Scheme
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (r *AppVolumeReplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&ramendrv1alpha1.AppVolumeReplication{}).
+		Complete(r)
 }
 
 //nolint:lll
@@ -78,96 +87,75 @@ func (r *AppVolumeReplicationReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, moreerrors.Wrap(err, "failed to get AVR object")
 	}
 
-	//
-	// TODO failover case will be handled before we get to this point
-	// On a failover, AVR.Spec.FailedCluster should be filled in.
-	//
+	// TODO failover case will be handled starting from this commented line
 
-	// Create a ManifestWork that represents the VolumeReplicationGroup CR for the hub to
-	// deploy on the managed cluster. A manifest workload is defined as a set of Kubernetes
-	// resources. The ManifestWork must be created in the cluster namespace on the hub, so that
-	// agent on the corresponding managed cluster can access this resource and deploy on the
-	// managed cluster.
-	homeCluster, peerCluster, err := r.createVrgManifestWork(avr)
+	subscriptionList := &subv1.SubscriptionList{}
+	listOptions := &client.ListOptions{Namespace: avr.Namespace}
+
+	err = r.Client.List(context.TODO(), subscriptionList, listOptions)
 	if err != nil {
-		logger.Error(err, "failed to create or update AVG ManifestWork")
+		if !errors.IsNotFound(err) {
+			// requeue the request
+			return ctrl.Result{}, fmt.Errorf("failed to get the subscription list for namespace %s", avr.Namespace)
+		}
 
-		return ctrl.Result{}, err
+		return ctrl.Result{}, moreerrors.Wrap(err, "failed to get placement rule")
 	}
 
-	if err := r.updateAvrStatus(ctx, avr, homeCluster, peerCluster); err != nil {
+	placementDecisions := r.processSubscriptionList(subscriptionList)
+
+	if len(placementDecisions) == 0 {
+		return ctrl.Result{}, fmt.Errorf("no placement decisions were found for namespace %s", avr.Namespace)
+	}
+
+	if err := r.updateAVRStatus(ctx, avr, placementDecisions); err != nil {
 		logger.Error(err, "failed to update status")
 
 		return ctrl.Result{}, err
 	}
 
-	logger.Info("created VolumeReplicationGroup manifest for ", "home cluster", homeCluster)
+	logger.Info("completed manifestwork for subscriptions")
 
 	return ctrl.Result{}, nil
 }
 
-func (r *AppVolumeReplicationReconciler) createVrgManifestWork(
-	avr *ramendrv1alpha1.AppVolumeReplication) (string, string, error) {
-	const empty string = ""
+func (r *AppVolumeReplicationReconciler) processSubscriptionList(
+	subscriptionList *subv1.SubscriptionList) ramendrv1alpha1.SubscriptionPlacementDecisionMap {
+	placementDecisions := ramendrv1alpha1.SubscriptionPlacementDecisionMap{}
 
-	// Select cluster decisions from all Subscriptions of an app.
-	placementDecisions, homeCluster, err := r.selectPlacementDecisions(avr.Namespace)
-	if err != nil {
-		r.Log.Info("failed to get placement targets from subscriptions", "Namespace", avr.Namespace, " error: ", err)
+	for _, subscription := range subscriptionList.Items {
+		// Create a ManifestWork that represents the VolumeReplicationGroup CR for the hub to
+		// deploy on the managed cluster. A manifest workload is defined as a set of Kubernetes
+		// resources. The ManifestWork must be created in the cluster namespace on the hub, so that
+		// agent on the corresponding managed cluster can access this resource and deploy on the
+		// managed cluster. We create one ManifestWork for each VRG CR.
+		homeCluster, peerCluster, err := r.createVRGManifestWork(subscription)
+		if err != nil {
+			r.Log.Info("failed to create or update ManifestWork for", "subscription:", subscription.Name, "error:", err)
 
-		return empty, empty, err
-	}
-
-	if homeCluster == "" {
-		return empty, empty,
-			fmt.Errorf("no home cluster configured in any of the subscriptions in namespace %s", avr.Namespace)
-	}
-
-	peerCluster, err := r.selectPeerClusterFromAVRPlacement(avr.Namespace, avr.Spec.Placement, homeCluster)
-	if err != nil {
-		r.Log.Error(err, "unable to get peer cluster")
-
-		return empty, empty, err
-	}
-
-	if peerCluster == "" {
-		return empty, empty, fmt.Errorf("no peer cluster found in namespace %s", avr.Namespace)
-	}
-
-	// Validate home and peer clusters
-	_, p := placementDecisions[homeCluster]
-	_, s := placementDecisions[peerCluster]
-
-	if !p || !s {
-		keys := make([]string, 0, len(placementDecisions))
-		for k := range placementDecisions {
-			keys = append(keys, k)
+			continue
 		}
 
-		r.Log.Info("disjoint set of clusters detected",
-			"Subscripts clusters:", keys,
-			"AVR clusters:", homeCluster+","+peerCluster)
+		placementDecisions[subscription.Name] = &ramendrv1alpha1.SubscriptionPlacementDecision{
+			HomeCluster: homeCluster,
+			PeerCluster: peerCluster,
+		}
 
-		return empty, empty, fmt.Errorf("invalid AVR placement rule configuration. HomeCluster: %s, PeerCluster: %s",
-			homeCluster, peerCluster)
+		r.Log.Info("created VolumeReplicationGroup manifest for ", "subscription:", subscription.Name,
+			"HomeCluster:", homeCluster, "PeerCluster:", peerCluster)
 	}
 
-	if err := r.createOrUpdateManifestWork(avr.Name, avr.Namespace, homeCluster, peerCluster); err != nil {
-		r.Log.Error(err, "failed to create or update manifest")
-
-		return empty, empty, err
-	}
-
-	return homeCluster, peerCluster, nil
+	return placementDecisions
 }
 
-func (r *AppVolumeReplicationReconciler) updateAvrStatus(ctx context.Context,
-	avr *ramendrv1alpha1.AppVolumeReplication, homeCluster string, peerCluster string) error {
+func (r *AppVolumeReplicationReconciler) updateAVRStatus(
+	ctx context.Context,
+	avr *ramendrv1alpha1.AppVolumeReplication,
+	placementDecisions ramendrv1alpha1.SubscriptionPlacementDecisionMap) error {
 	r.Log.Info("updating AVR status")
 
 	avr.Status = ramendrv1alpha1.AppVolumeReplicationStatus{
-		HomeCluster: homeCluster,
-		PeerCluster: peerCluster,
+		Decisions: placementDecisions,
 	}
 	if err := r.Client.Status().Update(ctx, avr); err != nil {
 		return moreerrors.Wrap(err, "failed to update AVR status")
@@ -176,123 +164,118 @@ func (r *AppVolumeReplicationReconciler) updateAvrStatus(ctx context.Context,
 	return nil
 }
 
-// SetupWithManager sets up the controller with the Manager.
-func (r *AppVolumeReplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&ramendrv1alpha1.AppVolumeReplication{}).
-		Complete(r)
+func (r *AppVolumeReplicationReconciler) createVRGManifestWork(
+	subscription subv1.Subscription) (string, string, error) {
+	const empty string = ""
+
+	// Select cluster decisions from each Subscriptions of an app.
+	homeCluster, peerCluster, err := r.selectPlacementDecision(&subscription)
+	if err != nil {
+		return empty, empty, fmt.Errorf("failed to get placement targets from subscription %s with error: %w",
+			subscription.Name, err)
+	}
+
+	if homeCluster == "" {
+		return empty, empty,
+			fmt.Errorf("no home cluster configured in subscription %s", subscription.Name)
+	}
+
+	if peerCluster == "" {
+		return empty, empty, fmt.Errorf("no peer cluster found for subscription %s", subscription.Name)
+	}
+
+	if err := r.doCreateOrUpdateManifestWork(
+		subscription.Name, subscription.Namespace, homeCluster, peerCluster); err != nil {
+		r.Log.Error(err, "failed to create or update manifest")
+
+		return empty, empty, err
+	}
+
+	return homeCluster, peerCluster, nil
 }
 
-func (r *AppVolumeReplicationReconciler) selectPlacementDecisions(namespace string) (map[string]bool, string, error) {
-	subscriptionList := &subv1.SubscriptionList{}
-	listOptions := &client.ListOptions{Namespace: namespace}
-	placementDecisions := make(map[string]bool)
+func (r *AppVolumeReplicationReconciler) selectPlacementDecision(
+	subscription *subv1.Subscription) (string, string, error) {
+	// The subscription phase describes the phasing of the subscriptions. Propagated means
+	// this subscription is the "parent" sitting in hub. Statuses is a map where the key is
+	// the cluster name and value is the aggregated status
+	if subscription.Status.Phase != subv1.SubscriptionPropagated || subscription.Status.Statuses == nil {
+		return "", "", fmt.Errorf("subscription %s not ready", subscription.Name)
+	}
+
+	pl := subscription.Spec.Placement
+	if pl == nil || pl.PlacementRef == nil {
+		return "", "", fmt.Errorf("placement not set for subscription %s", subscription.Name)
+	}
+
+	plRef := pl.PlacementRef
+
+	// if application subscription PlacementRef namespace is empty, then apply
+	// the application subscription namespace as the PlacementRef namespace
+	if plRef.Namespace == "" {
+		plRef.Namespace = subscription.Namespace
+	}
+
+	// get the placement rule fo this subscription
+	placementRule := &plrv1.PlacementRule{}
+
+	err := r.Client.Get(context.TODO(),
+		types.NamespacedName{Name: plRef.Name, Namespace: plRef.Namespace}, placementRule)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to retrieve placementRule using placementRef %s/%s", plRef.Namespace, plRef.Name)
+	}
+
+	return r.extractHomeClusterAndPeerCluster(subscription, placementRule)
+}
+
+func (r *AppVolumeReplicationReconciler) extractHomeClusterAndPeerCluster(
+	subscription *subv1.Subscription, placementRule *plrv1.PlacementRule) (string, string, error) {
+	subStatuses := subscription.Status.Statuses
+
+	const clusterCount = 2
+
+	// decisions := placementRule.Status.Decisions
+	clmap, err := utils.PlaceByGenericPlacmentFields(
+		r.Client, placementRule.Spec.GenericPlacementFields, nil, placementRule)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get cluster map for placement %s error: %w", placementRule.Name, err)
+	}
+
+	if len(clmap) != clusterCount {
+		return "", "", fmt.Errorf("PlacementRule %s should have made 2 decisions. Found %d", placementRule.Name, len(clmap))
+	}
+
+	idx := 0
+
+	clusters := make([]spokeClusterV1.ManagedCluster, clusterCount)
+	for _, c := range clmap {
+		clusters[idx] = *c
+		idx++
+	}
+
+	d1 := clusters[0]
+	d2 := clusters[1]
 
 	var homeCluster string
 
-	err := r.Client.List(context.TODO(), subscriptionList, listOptions)
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			// requeue the request
-			return nil, "", fmt.Errorf("failed to get subscription list with namespace %s", namespace)
-		}
-
-		return nil, "", moreerrors.Wrap(err, "failed to get placement rule")
-	}
-	// TODO Investigate whether we need multiple subscriptions per application for DR use case.
-	// TODO check for replica count and should we fail if it is more than 1?
-	for _, subscription := range subscriptionList.Items {
-		// The subscription phase describes the phasing of the subscriptions. Propagated means
-		// this subscription is the "parent" sitting in hub. Statuses is a map where the key is
-		// the cluster name and value is the aggregated status
-		if subscription.Status.Phase != subv1.SubscriptionPropagated || subscription.Status.Statuses == nil {
-			continue
-		}
-
-		r.extractPlacements(subscription, placementDecisions, &homeCluster)
-	}
-
-	return placementDecisions, homeCluster, nil
-}
-
-func (r *AppVolumeReplicationReconciler) extractPlacements(
-	subscription subv1.Subscription, placementDecisions map[string]bool, homeCluster *string) {
-	pl := subscription.Spec.Placement
-	if pl != nil && pl.PlacementRef != nil {
-		plRef := pl.PlacementRef
-
-		// if application subscription PlacementRef namespace is empty, then apply
-		// the application subscription namespace as the PlacementRef namespace
-		if plRef.Namespace == "" {
-			plRef.Namespace = subscription.Namespace
-		}
-
-		// get the placement rule fo this subscription
-		placementRule := &plrv1.PlacementRule{}
-
-		err := r.Client.Get(context.TODO(),
-			types.NamespacedName{Name: plRef.Name, Namespace: plRef.Namespace}, placementRule)
-		if err != nil {
-			return
-		}
-
-		r.extractPlacementDecisionsAndHomeCluster(
-			placementRule.Status.Decisions, subscription.Status.Statuses, placementDecisions, homeCluster)
-	}
-}
-
-func (r *AppVolumeReplicationReconciler) extractPlacementDecisionsAndHomeCluster(
-	decisions []plrv1.PlacementDecision, subStatuses subv1.SubscriptionClusterStatusMap,
-	placementDecisions map[string]bool, homeCluster *string) {
-	if len(decisions) == 0 {
-		return
-	}
-
-	for _, decision := range decisions {
-		placementDecisions[decision.ClusterName] = true
-		// pick the first home cluster found
-		if *homeCluster == "" && subStatuses[decision.ClusterName] != nil {
-			*homeCluster = decision.ClusterName
-		}
-	}
-}
-
-// TODO: Should the peer be a set of clusters?
-func (r *AppVolumeReplicationReconciler) selectPeerClusterFromAVRPlacement(
-	namespace string, placement *plrv1.Placement, homeCluster string) (string, error) {
 	var peerCluster string
 
-	if placement != nil && placement.PlacementRef != nil {
-		plRef := placement.PlacementRef
-		if plRef.Namespace == "" {
-			plRef.Namespace = namespace
-		}
-
-		placementRule := &plrv1.PlacementRule{}
-
-		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: plRef.Name, Namespace: plRef.Namespace}, placementRule)
-		if err != nil {
-			return "", moreerrors.Wrap(err, "failed to get placement rule")
-		}
-
-		if len(placementRule.Status.Decisions) == 0 {
-			return "", fmt.Errorf("AVR PlacementRule has no decisions. Placement rule name %s", plRef.Name)
-		}
-
-		for _, decision := range placementRule.Status.Decisions {
-			// select the peer cluster
-			if homeCluster != decision.ClusterName {
-				peerCluster = decision.ClusterName
-
-				break
-			}
-		}
+	switch {
+	case subStatuses[d1.Name] != nil:
+		homeCluster = d1.Name
+		peerCluster = d2.Name
+	case subStatuses[d2.Name] != nil:
+		homeCluster = d2.Name
+		peerCluster = d1.Name
+	default:
+		return "", "", fmt.Errorf("mismatch between placementRule %s decisions and subscription %s statuses",
+			placementRule.Name, subscription.Name)
 	}
 
-	return peerCluster, nil
+	return homeCluster, peerCluster, nil
 }
 
-func (r *AppVolumeReplicationReconciler) createOrUpdateManifestWork(name string, namespace string,
+func (r *AppVolumeReplicationReconciler) doCreateOrUpdateManifestWork(name string, namespace string,
 	homeCluster string, peerCluster string) error {
 	r.Log.Info("attempt to create and update ManifestWork")
 
