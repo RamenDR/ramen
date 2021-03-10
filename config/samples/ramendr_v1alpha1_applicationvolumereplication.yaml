@@ -1,7 +1,7 @@
 apiVersion: ramendr.openshift.io/v1alpha1
-kind: AppVolumeReplication
+kind: ApplicationVolumeReplication
 metadata:
-  name: appvolumereplication-sample
+  name: ApplicationVolumeReplication-sample
   namespace: default
 spec:
   placement:
