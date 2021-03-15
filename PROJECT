@@ -15,6 +15,10 @@ resources:
   group: ramendr
   kind: ClusterPeers
   version: v1alpha1
+- crdVersion: v1
+  group: ramendr
+  kind: ApplicationVolumeReplication
+  version: v1alpha1
 version: 3-alpha
 plugins:
   manifests.sdk.operatorframework.io/v2: {}
