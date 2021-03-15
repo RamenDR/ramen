@@ -25,7 +25,7 @@ import (
 
 // AppVolumeReplicationSpec defines the desired state of AppVolumeReplication
 type AppVolumeReplicationSpec struct {
-	FailedCluster string `json:"failedCluster"`
+	FailoverCluster string `json:"failedCluster"`
 }
 
 // SubscriptionPlacementDecision lists each subscription with its home and peer clusters
