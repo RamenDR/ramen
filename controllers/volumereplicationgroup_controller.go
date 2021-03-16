@@ -134,7 +134,7 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim) []reconci
 	}
 
 	for _, vrg := range vrgs.Items {
-		vrgLabelSelector := vrg.Spec.ApplicationLabelSelector
+		vrgLabelSelector := vrg.Spec.PVCLabelSelector
 		selector, err := metav1.LabelSelectorAsSelector(&vrgLabelSelector)
 		// continue if we fail to get the labels for this object hoping
 		// that pvc might actually belong to  some other vrg instead of
@@ -197,14 +197,14 @@ func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 
 	pvcList, err := v.HandlePersistentVolumeClaims(ctx, volRepGroup)
 	if err != nil {
-		log.Error("Handling of Persistent Volume Claims of application failed: ", volRepGroup.Spec.ApplicationName)
+		log.Errorf("Handling of Persistent Volume Claims of application failed: %v", volRepGroup.Spec.PVCLabelSelector)
 
 		return ctrl.Result{}, err
 	}
 
 	err = v.HandlePersistentVolumes(ctx, pvcList)
 	if err != nil {
-		log.Error("Handling of Persistent Volumes for PVCs of application failed: ", volRepGroup.Spec.ApplicationName)
+		log.Errorf("Handling of Persistent Volumes for PVCs of application failed: %v", volRepGroup.Spec.PVCLabelSelector)
 
 		return ctrl.Result{}, err
 	}
@@ -218,7 +218,7 @@ func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumeClaims(
 	volRepGroup *ramendrv1alpha1.VolumeReplicationGroup) (
 	*corev1.PersistentVolumeClaimList,
 	error) {
-	labelSelector := volRepGroup.Spec.ApplicationLabelSelector
+	labelSelector := volRepGroup.Spec.PVCLabelSelector
 	pvcList := &corev1.PersistentVolumeClaimList{}
 
 	log.Info("Label Selector: ", labels.Set(labelSelector.MatchLabels))

@@ -26,24 +26,30 @@ import (
 
 // VolumeReplicationGroup (VRG) spec declares the desired replication class
 // and replication state of all the PVCs owned by a given application, which
-// are identified via the given application label selector.  The VRG operator
-// creates children VolumeReplication (VR) CRs for each PVC of the application,
-// with the desired replication class and replication image state (primary or
-// secondary).
+// are identified via the given PVC label selector.  For every PVC created
+// by the application, the VRG operator does the following:
+// - Create a VolumeReplication (VR) CR to enable storage level replication
+// 	 of volume data and set the volume state to primary, secondary, etc.
+// - Take the corresponding PV metadata in Kubernetes etcd and deposit it in
+// 	 the S3 store.  The url, access key and access id required to access the
+//   S3 store is specified via environment variables of the VRG operator POD,
+//   which is obtained from a secret resource.
+// - Manage the lifecycle of VR CR and S3 data to match the CUD operations on
+// 	 VRG CR.
 type VolumeReplicationGroupSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Name of the application to replicate
-	ApplicationName string `json:"applicationName,omitempty"`
+	// Label selector to identify all the PVCs that are in this group
+	// This operator will create and needs to be replicated
+	PVCLabelSelector metav1.LabelSelector `json:"pvcLabelSelector"`
 
-	// Application label selector that is used to identify all its PVCs
-	ApplicationLabelSelector metav1.LabelSelector `json:"applicationLabelSelector"`
-
-	// ReplicationClass of all volumes in this replication group
+	// ReplicationClass of all volumes in this replication group that is
+	// passed to VolumeReplication CR
 	VolumeReplicationClass string `json:"volumeReplicationClass"`
 
-	// State of the image of all volumes in this replication group
-	ImageState vrv1alpha1.ImageState `json:"imageState"`
+	// Desired state of all volumes [primary or secondary] in this replication group that is
+	// passed to VolumeReplication CR
+	VolumeState vrv1alpha1.ImageState `json:"volumeState"`
 }
 
 // VolumeReplicationGroupStatus defines the observed state of VolumeReplicationGroup
