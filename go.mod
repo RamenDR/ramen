@@ -5,6 +5,7 @@ go 1.15
 require (
 	github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
 	github.com/go-logr/logr v0.3.0
+	github.com/kube-storage/volume-replication-operator v0.0.0-20210315122249-959b4f2c3d6e // indirect
 	github.com/onsi/ginkgo v1.14.1
 	github.com/onsi/gomega v1.10.2
 	github.com/open-cluster-management/api v0.0.0-20201007180356-41d07eee4294
