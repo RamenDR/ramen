@@ -37,14 +37,16 @@ spec:
           metadata:
             type: object
           spec:
-            description: VolumeReplicationGroupSpec defines the desired state of VolumeReplicationGroup
+            description: VolumeReplicationGroup (VRG) spec declares the desired replication
+              class and replication state of all the PVCs owned by a given application,
+              which are identified via the given application label selector.  The
+              VRG operator creates children VolumeReplication (VR) CRs for each PVC
+              of the application, with the desired replication class and replication
+              image state (primary or secondary).
             properties:
-              affinedCluster:
-                description: Cluster ID in ClusterPeers that has best storage performance
-                  affinity for the application
-                type: string
-              applicationLabels:
-                description: Application label that is used to identify its PVs
+              applicationLabelSelector:
+                description: Application label selector that is used to identify all
+                  its PVCs
                 properties:
                   matchExpressions:
                     description: matchExpressions is a list of label selector requirements.
@@ -90,32 +92,17 @@ spec:
               applicationName:
                 description: Name of the application to replicate
                 type: string
-              asyncRPOGoalSeconds:
-                description: WAN DR RPO goal in seconds
-                format: int64
-                type: integer
-              clusterPeersList:
-                description: 'List of ClusterPeers For Metro DR only: a single ClusterPeers
-                  For WAN DR only: one or more ClusterPeers For MetroDR and WAN DR:
-                  one Metro DR ClusterPeer and one or more WAN DR ClusterPeers.'
-                items:
-                  type: string
-                type: array
-              desiredCluster:
-                description: 'Desired cluster that should takeover the application
-                  from current active cluster. May be set either to: - secondary cluster
-                  ID (to migrate application or takeover application in case of a
-                  disaster) - nil (if application is not active in the affined cluster,
-                  takeback to affined cluster)'
+              imageState:
+                description: State of the image of all volumes in this replication
+                  group
                 type: string
-              volumeTakeoverControl:
-                description: 'Volume Takeover Control: ForcePromote'
+              volumeReplicationClass:
+                description: ReplicationClass of all volumes in this replication group
                 type: string
             required:
-            - affinedCluster
-            - applicationLabels
-            - applicationName
-            - clusterPeersList
+            - applicationLabelSelector
+            - imageState
+            - volumeReplicationClass
             type: object
           status:
             description: 'VolumeReplicationGroupStatus defines the observed state

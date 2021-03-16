@@ -18,53 +18,32 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	vrv1alpha1 "github.com/kube-storage/volume-replication-operator/api/v1alpha1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// VolumeTakeoverControlType -- takeover control when desiredCluster is different from affinedCluster
-type VolumeTakeoverControlType string
-
-// VolumeTakeoverControlType definitions
-const (
-	// Force promote the volume in a WAN DR setting
-	ForcePromote VolumeTakeoverControlType = "ForcePromote"
-)
-
-// VolumeReplicationGroupSpec defines the desired state of VolumeReplicationGroup
+// VolumeReplicationGroup (VRG) spec declares the desired replication class
+// and replication state of all the PVCs owned by a given application, which
+// are identified via the given application label selector.  The VRG operator
+// creates children VolumeReplication (VR) CRs for each PVC of the application,
+// with the desired replication class and replication image state (primary or
+// secondary).
 type VolumeReplicationGroupSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// Name of the application to replicate
-	ApplicationName string `json:"applicationName"`
+	ApplicationName string `json:"applicationName,omitempty"`
 
-	// Application label that is used to identify its PVs
-	ApplicationLabels metav1.LabelSelector `json:"applicationLabels"`
+	// Application label selector that is used to identify all its PVCs
+	ApplicationLabelSelector metav1.LabelSelector `json:"applicationLabelSelector"`
 
-	// Cluster ID in ClusterPeers that has best storage performance affinity for the application
-	AffinedCluster string `json:"affinedCluster"`
+	// ReplicationClass of all volumes in this replication group
+	VolumeReplicationClass string `json:"volumeReplicationClass"`
 
-	// Desired cluster that should takeover the application from current active cluster.
-	// May be set either to:
-	// - secondary cluster ID (to migrate application or takeover application in case of a disaster)
-	// - nil (if application is not active in the affined cluster, takeback to affined cluster)
-	// +optional
-	DesiredCluster string `json:"desiredCluster,omitempty"`
-
-	// Volume Takeover Control: ForcePromote
-	// +optional
-	VolumeTakeoverControl VolumeTakeoverControlType `json:"volumeTakeoverControl,omitempty"`
-
-	// List of ClusterPeers
-	// For Metro DR only: a single ClusterPeers
-	// For WAN DR only: one or more ClusterPeers
-	// For MetroDR and WAN DR: one Metro DR ClusterPeer and one or more WAN DR ClusterPeers.
-	ClusterPeersList []string `json:"clusterPeersList"`
-
-	// WAN DR RPO goal in seconds
-	AsyncRPOGoalSeconds int64 `json:"asyncRPOGoalSeconds,omitempty"`
+	// State of the image of all volumes in this replication group
+	ImageState vrv1alpha1.ImageState `json:"imageState"`
 }
 
 // VolumeReplicationGroupStatus defines the observed state of VolumeReplicationGroup
