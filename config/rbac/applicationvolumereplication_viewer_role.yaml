@@ -1,24 +1,20 @@
-# permissions for end users to edit appvolumereplications.
+# permissions for end users to view applicationvolumereplications.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: appvolumereplication-editor-role
+  name: applicationvolumereplication-viewer-role
 rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - appvolumereplications
+  - applicationvolumereplications
   verbs:
-  - create
-  - delete
   - get
   - list
-  - patch
-  - update
   - watch
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - appvolumereplications/status
+  - applicationvolumereplications/status
   verbs:
   - get

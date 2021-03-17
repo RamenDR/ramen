@@ -3,5 +3,5 @@ resources:
 - ramendr_v1alpha1_volumereplicationgroup.yaml
 - ramendr_v1alpha1_clusterid.yaml
 - ramendr_v1alpha1_clusterpeers.yaml
-- ramendr_v1alpha1_appvolumereplication.yaml
+- ramendr_v1alpha1_applicationvolumereplication.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

@@ -24,7 +24,7 @@ import (
 type FailoverClusterMap map[string]string
 
 // ApplicationVolumeReplicationSpec defines the desired state of ApplicationVolumeReplication
-type AppVolumeReplicationSpec struct {
+type ApplicationVolumeReplicationSpec struct {
 	FailoverClusters FailoverClusterMap `json:"statuses,omitempty"`
 }
 
@@ -37,8 +37,8 @@ type SubscriptionPlacementDecision struct {
 // SubscriptionPlacementDecisionMap defines per subscription placement decision, key is subscription name
 type SubscriptionPlacementDecisionMap map[string]*SubscriptionPlacementDecision
 
-// AppVolumeReplicationStatus defines the observed state of AppVolumeReplication
-type AppVolumeReplicationStatus struct {
+// ApplicationVolumeReplicationStatus defines the observed state of ApplicationVolumeReplication
+type ApplicationVolumeReplicationStatus struct {
 	// Decisions are for subscription and by AVR namespace (which is app namespace)
 	Decisions SubscriptionPlacementDecisionMap `json:"statuses,omitempty"`
 }
@@ -46,24 +46,24 @@ type AppVolumeReplicationStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
-// AppVolumeReplication is the Schema for the appvolumereplications API
-type AppVolumeReplication struct {
+// ApplicationVolumeReplication is the Schema for the applicationvolumereplications API
+type ApplicationVolumeReplication struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   AppVolumeReplicationSpec   `json:"spec,omitempty"`
-	Status AppVolumeReplicationStatus `json:"status,omitempty"`
+	Spec   ApplicationVolumeReplicationSpec   `json:"spec,omitempty"`
+	Status ApplicationVolumeReplicationStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// AppVolumeReplicationList contains a list of AppVolumeReplication
-type AppVolumeReplicationList struct {
+// ApplicationVolumeReplicationList contains a list of ApplicationVolumeReplication
+type ApplicationVolumeReplicationList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []AppVolumeReplication `json:"items"`
+	Items           []ApplicationVolumeReplication `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&AppVolumeReplication{}, &AppVolumeReplicationList{})
+	SchemeBuilder.Register(&ApplicationVolumeReplication{}, &ApplicationVolumeReplicationList{})
 }

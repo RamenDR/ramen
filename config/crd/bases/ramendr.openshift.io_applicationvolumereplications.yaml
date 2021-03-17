@@ -6,20 +6,20 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.4.1
   creationTimestamp: null
-  name: appvolumereplications.ramendr.openshift.io
+  name: applicationvolumereplications.ramendr.openshift.io
 spec:
   group: ramendr.openshift.io
   names:
-    kind: AppVolumeReplication
-    listKind: AppVolumeReplicationList
-    plural: appvolumereplications
-    singular: appvolumereplication
+    kind: ApplicationVolumeReplication
+    listKind: ApplicationVolumeReplicationList
+    plural: applicationvolumereplications
+    singular: applicationvolumereplication
   scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: AppVolumeReplication is the Schema for the appvolumereplications
+        description: ApplicationVolumeReplication is the Schema for the applicationvolumereplications
           API
         properties:
           apiVersion:
@@ -46,8 +46,8 @@ spec:
                 type: object
             type: object
           status:
-            description: AppVolumeReplicationStatus defines the observed state of
-              AppVolumeReplication
+            description: ApplicationVolumeReplicationStatus defines the observed state
+              of ApplicationVolumeReplication
             properties:
               statuses:
                 additionalProperties:

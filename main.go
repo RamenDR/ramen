@@ -114,12 +114,12 @@ func setupReconcilers(mgr ctrl.Manager) {
 		os.Exit(1)
 	}
 
-	if err := (&controllers.AppVolumeReplicationReconciler{
+	if err := (&controllers.ApplicationVolumeReplicationReconciler{
 		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("AppVolumeReplication"),
+		Log:    ctrl.Log.WithName("controllers").WithName("ApplicationVolumeReplication"),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "AppVolumeReplication")
+		setupLog.Error(err, "unable to create controller", "controller", "ApplicationVolumeReplication")
 		os.Exit(1)
 	}
 }

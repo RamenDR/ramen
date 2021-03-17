@@ -96,9 +96,9 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).ToNot(HaveOccurred())
 
-	err = (&ramencontrollers.AppVolumeReplicationReconciler{
+	err = (&ramencontrollers.ApplicationVolumeReplicationReconciler{
 		Client: k8sManager.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("AppVolumeReplication"),
+		Log:    ctrl.Log.WithName("controllers").WithName("ApplicationVolumeReplication"),
 		Scheme: k8sManager.GetScheme(),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())

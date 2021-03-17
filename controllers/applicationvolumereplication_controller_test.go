@@ -33,75 +33,12 @@ import (
 	subv1 "github.com/open-cluster-management/multicloud-operators-subscription/pkg/apis/apps/v1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
-	// "k8s.io/apimachinery/pkg/api/errors"
 )
 
-// const subscriptionYAML = `apiVersion: apps.open-cluster-management.io/v1
-// kind: Subscription
-// metadata:
-//   name: my-subscription
-//   namespace: app-namespace
-// spec:
-//   channel: test/test-github-channel
-//   placement:
-//     placementRef:
-//       kind: PlacementRule
-//       name: sub-placement-rule
-// status:
-//   lastUpdateTime: '2021-02-17T17:28:14Z'
-//   message: 'remote-cluster:Active'
-//   phase: Propagated
-//   statuses:
-//     remote-cluster:
-//       packages:
-//         ggithubcom-ramendr-internal-ConfigMap-test-configmap:
-//           lastUpdateTime: '2021-02-16T23:09:03Z'
-//           phase: Subscribed`
-
-// const subscriptionPausedNoStatusYAML = `apiVersion: apps.open-cluster-management.io/v1
-// kind: Subscription
-// metadata:
-//   name: my-paused-subscription
-//   namespace: sub-paused-namespace
-//   labels:
-//     ramendr: protected
-//     subscription-pause: true
-// spec:
-//   channel: test/test-github-channel
-//   placement:
-//     placementRef:
-//       kind: PlacementRule
-//       name: sub-placement-rule`
-
-// const subscriptionPausedWithStatusYAML = `apiVersion: apps.open-cluster-management.io/v1
-// kind: Subscription
-// metadata:
-//   name: my-subscription
-//   namespace: app-namespace
-//   labels:
-// 	ramendr: protected
-// 	subscription-pause: true
-// spec:
-//   channel: test/test-github-channel
-//   placement:
-//     placementRef:
-//       kind: PlacementRule
-//       name: sub-placement-rule
-// status:
-//   lastUpdateTime: '2021-02-17T17:28:14Z'
-//   message: 'remote-cluster:Active'
-//   phase: Propagated
-//   statuses:
-//     remote-cluster:
-//       packages:
-//         ggithubcom-ramendr-internal-ConfigMap-test-configmap:
-//           lastUpdateTime: '2021-02-16T23:09:03Z'
-//           phase: Subscribed`
-
 const (
-	AppVolumeReplicationName          = "app-volume-replication-test"
-	AppVolumeReplicationNamespaceName = "app-namespace"
-	ManagedClusterNamespaceName       = "remote-cluster"
+	ApplicationVolumeReplicationName          = "app-volume-replication-test"
+	ApplicationVolumeReplicationNamespaceName = "app-namespace"
+	ManagedClusterNamespaceName               = "remote-cluster"
 
 	timeout  = time.Second * 10
 	interval = time.Millisecond * 250
@@ -134,16 +71,16 @@ var (
 	}
 
 	appNamespace = &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: AppVolumeReplicationNamespaceName},
+		ObjectMeta: metav1.ObjectMeta{Name: ApplicationVolumeReplicationNamespaceName},
 	}
 )
 
 // +kubebuilder:docs-gen:collapse=Imports
 
-var _ = Describe("AppVolumeReplication Reconciler", func() {
+var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 	// Define utility constants for object names and testing timeouts/durations and intervals.
-	Context("AppVolumeReplication CR", func() {
-		When("Creating AppVolumeReplication CR for the first time", func() {
+	Context("ApplicationVolumeReplication CR", func() {
+		When("Creating ApplicationVolumeReplication CR for the first time", func() {
 			It("The reconciler creates VolumeReplicationGroup CR embedded within a ManifestWork CR", func() {
 				ctx := context.Background()
 
@@ -240,13 +177,13 @@ var _ = Describe("AppVolumeReplication Reconciler", func() {
 				}()
 
 				By("Creating AVR CR")
-				avr := &ramendrv1alpha1.AppVolumeReplication{
+				avr := &ramendrv1alpha1.ApplicationVolumeReplication{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      AppVolumeReplicationName,
-						Namespace: AppVolumeReplicationNamespaceName,
+						Name:      ApplicationVolumeReplicationName,
+						Namespace: ApplicationVolumeReplicationNamespaceName,
 					},
-					Spec: ramendrv1alpha1.AppVolumeReplicationSpec{
-						FailoverClusters: make(map[string]string),
+					Spec: ramendrv1alpha1.ApplicationVolumeReplicationSpec{
+						FailoverClusters: ramendrv1alpha1.FailoverClusterMap{},
 					},
 				}
 				Expect(k8sClient.Create(ctx, avr)).Should(Succeed())
@@ -254,9 +191,9 @@ var _ = Describe("AppVolumeReplication Reconciler", func() {
 					Expect(k8sClient.Delete(context.TODO(), avr)).NotTo(HaveOccurred())
 				}()
 
-				By("AVR Creating ManifestWork")
+				By("Creating ManifestWork")
 				manifestLookupKey := types.NamespacedName{
-					Name:      "remote-cluster-vrg-manifestwork",
+					Name:      fmt.Sprintf("%s-%s-%s-mw", subscription.Name, subscription.Namespace, "vrg"),
 					Namespace: ManagedClusterNamespaceName,
 				}
 				createdManifest := &ocmworkv1.ManifestWork{}
@@ -281,8 +218,11 @@ var _ = Describe("AppVolumeReplication Reconciler", func() {
 				Expect(vrg.Name).Should(Equal(subscription.Name))
 
 				By("Retrieving the updated AVR CR. It should have the status updated on success")
-				avrLookupKey := types.NamespacedName{Name: AppVolumeReplicationName, Namespace: AppVolumeReplicationNamespaceName}
-				updatedAVR := &ramendrv1alpha1.AppVolumeReplication{}
+				avrLookupKey := types.NamespacedName{
+					Name:      ApplicationVolumeReplicationName,
+					Namespace: ApplicationVolumeReplicationNamespaceName,
+				}
+				updatedAVR := &ramendrv1alpha1.ApplicationVolumeReplication{}
 				Eventually(func() bool {
 					err := k8sClient.Get(ctx, avrLookupKey, updatedAVR)
 
@@ -296,7 +236,7 @@ var _ = Describe("AppVolumeReplication Reconciler", func() {
 		})
 	})
 
-	Context("AppVolumeReplication Reconciler", func() {
+	Context("ApplicationVolumeReplication Reconciler", func() {
 		When("Subscription is paused", func() {
 			It("Should Unpause the subscription", func() {
 				ctx := context.Background()
@@ -384,13 +324,14 @@ var _ = Describe("AppVolumeReplication Reconciler", func() {
 					Expect(k8sClient.Delete(context.TODO(), placementRule)).NotTo(HaveOccurred())
 				}()
 
-				avr := &ramendrv1alpha1.AppVolumeReplication{
+				By("Creating AVR")
+				avr := &ramendrv1alpha1.ApplicationVolumeReplication{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      AppVolumeReplicationName,
-						Namespace: AppVolumeReplicationNamespaceName,
+						Name:      ApplicationVolumeReplicationName,
+						Namespace: ApplicationVolumeReplicationNamespaceName,
 					},
-					Spec: ramendrv1alpha1.AppVolumeReplicationSpec{
-						FailoverClusters: make(map[string]string),
+					Spec: ramendrv1alpha1.ApplicationVolumeReplicationSpec{
+						FailoverClusters: ramendrv1alpha1.FailoverClusterMap{"subscription-2": "remote-cluster"},
 					},
 				}
 				Expect(k8sClient.Create(ctx, avr)).Should(Succeed())
@@ -398,8 +339,9 @@ var _ = Describe("AppVolumeReplication Reconciler", func() {
 					Expect(k8sClient.Delete(context.TODO(), avr)).NotTo(HaveOccurred())
 				}()
 
+				By("Creating ManifestWork")
 				manifestLookupKey := types.NamespacedName{
-					Name:      "remote-cluster-vrg-manifestwork",
+					Name:      fmt.Sprintf("%s-%s-%s-mw", subscription.Name, subscription.Namespace, "pv"),
 					Namespace: ManagedClusterNamespaceName,
 				}
 				createdManifest := &ocmworkv1.ManifestWork{}
@@ -408,7 +350,27 @@ var _ = Describe("AppVolumeReplication Reconciler", func() {
 					err := k8sClient.Get(ctx, manifestLookupKey, createdManifest)
 
 					return err == nil
-				}, timeout, interval).Should(BeTrue())
+				}, timeout, interval).Should(BeTrue(), "failed to wait for manifest creation")
+
+				defer func() {
+					Expect(k8sClient.Delete(context.TODO(), createdManifest)).NotTo(HaveOccurred())
+				}()
+
+				// 5.1 verify that PVs have been created and added to the ManifestWork
+				Expect(len(createdManifest.Spec.Workload.Manifests)).To(Equal(2))
+				pvClientManifest1 := createdManifest.Spec.Workload.Manifests[0]
+				Expect(pvClientManifest1).ToNot(BeNil())
+				pv1 := &corev1.PersistentVolume{}
+				err = yaml.Unmarshal(pvClientManifest1.RawExtension.Raw, &pv1)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(pv1.Name).Should(Equal("pv0001"))
+
+				pvClientManifest2 := createdManifest.Spec.Workload.Manifests[1]
+				Expect(pvClientManifest2).ToNot(BeNil())
+				pv2 := &corev1.PersistentVolume{}
+				err = yaml.Unmarshal(pvClientManifest2.RawExtension.Raw, &pv2)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(pv2.Name).Should(Equal("pv0002"))
 
 				subLookupKey := types.NamespacedName{
 					Name:      "subscription-2",
@@ -419,7 +381,7 @@ var _ = Describe("AppVolumeReplication Reconciler", func() {
 					err := k8sClient.Get(ctx, subLookupKey, updatedSub)
 
 					return err == nil
-				}, timeout, interval).Should(BeTrue())
+				}, timeout, interval).Should(BeTrue(), "failed to wait for subscription update")
 
 				labels := updatedSub.GetLabels()
 				str := fmt.Sprintf("now the label is %v", updatedSub)
