@@ -95,16 +95,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	r := &controllers.VolumeReplicationGroupReconciler{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
-		Scheme: mgr.GetScheme(),
-	}
-
-	if err = r.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "VolumeReplicationGroup")
-		os.Exit(1)
-	}
+	setupReconcilers(mgr)
 
 	// +kubebuilder:scaffold:builder
 	if err := mgr.AddHealthzCheck("health", healthz.Ping); err != nil {
@@ -121,6 +112,26 @@ func main() {
 
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
+		os.Exit(1)
+	}
+}
+
+func setupReconcilers(mgr ctrl.Manager) {
+	if err := (&controllers.VolumeReplicationGroupReconciler{
+		Client: mgr.GetClient(),
+		Log:    ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "VolumeReplicationGroup")
+		os.Exit(1)
+	}
+
+	if err := (&controllers.AppVolumeReplicationReconciler{
+		Client: mgr.GetClient(),
+		Log:    ctrl.Log.WithName("controllers").WithName("AppVolumeReplication"),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "AppVolumeReplication")
 		os.Exit(1)
 	}
 }
