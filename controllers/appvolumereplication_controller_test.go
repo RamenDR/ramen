@@ -246,7 +246,7 @@ var _ = Describe("AppVolumeReplication Reconciler", func() {
 						Namespace: AppVolumeReplicationNamespaceName,
 					},
 					Spec: ramendrv1alpha1.AppVolumeReplicationSpec{
-						FailoverCluster: "",
+						FailoverClusters: make(map[string]string),
 					},
 				}
 				Expect(k8sClient.Create(ctx, avr)).Should(Succeed())
@@ -390,7 +390,7 @@ var _ = Describe("AppVolumeReplication Reconciler", func() {
 						Namespace: AppVolumeReplicationNamespaceName,
 					},
 					Spec: ramendrv1alpha1.AppVolumeReplicationSpec{
-						FailoverCluster: "",
+						FailoverClusters: make(map[string]string),
 					},
 				}
 				Expect(k8sClient.Create(ctx, avr)).Should(Succeed())

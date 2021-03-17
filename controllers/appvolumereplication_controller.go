@@ -138,28 +138,30 @@ func (r *AppVolumeReplicationReconciler) Reconcile(ctx context.Context, req ctrl
 	return ctrl.Result{}, nil
 }
 
+// For each subscription
+//		Check if it is paused for failover
+//			- If it is, restore PVs to the failed over cluster
+// 			- unpause
+//		otherwise, get placement rule
+//			- extract home cluster from placementrule.status.decisions
+//			- extract peer cluster from the clusters forming the dr pair
+//				example: ManagedCluster Set {A, B, C, D}
+//						 Pl.GenericPlacementField results in DR_Set = {A, B}
+//						 plRule{Status.Decision=A}
+//						 homeCluster = A
+//						 peerCluster = (DR_Set - A) = B
+//
 func (r *AppVolumeReplicationReconciler) processSubscriptions(
 	avr *ramendrv1alpha1.AppVolumeReplication,
 	subscriptionList *subv1.SubscriptionList) ramendrv1alpha1.SubscriptionPlacementDecisionMap {
 	placementDecisions := ramendrv1alpha1.SubscriptionPlacementDecisionMap{}
 
-	for _, subscription := range subscriptionList.Items {
-		if r.isSubsriptionPaused(subscription.GetLabels()) {
-			//nolint:wsl
-			if r.isFailover(subscription) {
-				// TODO: APPLY PV K8s metadata to the NEW target cluster
-
-				// Unpause subscription
-				r.unpauseSubscription(subscription)
-			} else if avr.Spec.FailoverCluster != "" {
-				// We couldn't detect why the subsription is paused. We'll the failover using the FailoverCluster
-
-				// TODO: APPLY PV K8s metadata to the NEW target cluster
-
-				// Unpause subscription
+	for idx, subscription := range subscriptionList.Items {
+		if r.isSubsriptionPausedForDR(subscription.GetLabels()) {
+			err := r.restorePVsToFailverCluster(subscription, avr.Spec.FailoverClusters[subscription.Name])
+			if err == nil {
 				r.unpauseSubscription(subscription)
 			}
-
 			// Stop processing this subscription. We'll wait for the next Reconciler iteration
 			continue
 		}
@@ -167,14 +169,22 @@ func (r *AppVolumeReplicationReconciler) processSubscriptions(
 		// This subscription is ready for manifest (VRG) creation
 		r.Log.Info("Subscription is unpaused", "Name", subscription.Name)
 
-		subPlDecision, err := r.createVRGForSubscription(subscription)
+		homeCluster, peerCluster, err := r.selectPlacementDecision(&subscriptionList.Items[idx])
+		if err != nil {
+			continue
+		}
+
+		err = r.createOrUpdateVRGManifestWork(subscription.Name, subscription.Namespace, homeCluster, peerCluster)
 		if err != nil {
 			r.Log.Error(err, fmt.Sprintf("Failed to create VRG for Subscription %s", subscription.Name))
 
 			continue
 		}
 
-		placementDecisions[subscription.Name] = subPlDecision
+		placementDecisions[subscription.Name] = &ramendrv1alpha1.SubscriptionPlacementDecision{
+			HomeCluster: homeCluster,
+			PeerCluster: peerCluster,
+		}
 	}
 
 	r.Log.Info("Returning Placement Decisions", "Total", len(placementDecisions))
@@ -182,32 +192,49 @@ func (r *AppVolumeReplicationReconciler) processSubscriptions(
 	return placementDecisions
 }
 
+func (r *AppVolumeReplicationReconciler) restorePVsToFailverCluster(
+	subscription subv1.Subscription, failoverCluster string) error {
+	// try to detect the failed over cluster
+	//nolint:gocritic
+	if r.isFailover(subscription) {
+		// TODO: APPLY PV K8s metadata to the NEW target cluster
+	} else if failoverCluster != "" {
+		// We couldn't detect why the subsription is paused. We'll check for the FailoverCluster
+
+		// TODO: APPLY PV K8s metadata to the NEW target cluster
+	} else {
+		return fmt.Errorf("failed to find the failover cluster for subscription %s", subscription.Name)
+	}
+
+	return nil
+}
+
 func (r *AppVolumeReplicationReconciler) isFailover(subscription subv1.Subscription) bool {
 	return subscription.Status.Phase != ""
 }
 
-func (r *AppVolumeReplicationReconciler) createVRGForSubscription(
-	subscription subv1.Subscription) (*ramendrv1alpha1.SubscriptionPlacementDecision, error) {
-	// Create a ManifestWork that represents the VolumeReplicationGroup CR for the hub to
-	// deploy on the managed cluster. A manifest workload is defined as a set of Kubernetes
-	// resources. The ManifestWork must be created in the cluster namespace on the hub, so that
-	// agent on the corresponding managed cluster can access this resource and deploy on the
-	// managed cluster. We create one ManifestWork for each VRG CR.
-	homeCluster, peerCluster, err := r.createVRGManifestWork(subscription)
-	if err != nil {
-		r.Log.Info("failed to create or update ManifestWork for", "subscription:", subscription.Name, "error:", err)
+// func (r *AppVolumeReplicationReconciler) createVRGForSubscription(
+// 	subscription subv1.Subscription) (*ramendrv1alpha1.SubscriptionPlacementDecision, error) {
+// 	// Create a ManifestWork that represents the VolumeReplicationGroup CR for the hub to
+// 	// deploy on the managed cluster. A manifest workload is defined as a set of Kubernetes
+// 	// resources. The ManifestWork must be created in the cluster namespace on the hub, so that
+// 	// agent on the corresponding managed cluster can access this resource and deploy on the
+// 	// managed cluster. We create one ManifestWork for each VRG CR.
+// 	homeCluster, peerCluster, err := r.createVRGManifestWork(subscription)
+// 	if err != nil {
+// 		r.Log.Info("failed to create or update ManifestWork for", "subscription:", subscription.Name, "error:", err)
 
-		return nil, moreerrors.Wrap(err, "failed to create or update ManifestWork")
-	}
+// 		return nil, moreerrors.Wrap(err, "failed to create or update ManifestWork")
+// 	}
 
-	r.Log.Info("created VolumeReplicationGroup manifest for ", "subscription:", subscription.Name,
-		"HomeCluster:", homeCluster, "PeerCluster:", peerCluster)
+// 	r.Log.Info("created VolumeReplicationGroup manifest for ", "subscription:", subscription.Name,
+// 		"HomeCluster:", homeCluster, "PeerCluster:", peerCluster)
 
-	return &ramendrv1alpha1.SubscriptionPlacementDecision{
-		HomeCluster: homeCluster,
-		PeerCluster: peerCluster,
-	}, nil
-}
+// 	return &ramendrv1alpha1.SubscriptionPlacementDecision{
+// 		HomeCluster: homeCluster,
+// 		PeerCluster: peerCluster,
+// 	}, nil
+// }
 
 func (r *AppVolumeReplicationReconciler) unpauseSubscription(subscription subv1.Subscription) {
 	labels := subscription.GetLabels()
@@ -217,7 +244,7 @@ func (r *AppVolumeReplicationReconciler) unpauseSubscription(subscription subv1.
 		return
 	}
 
-	if r.isSubsriptionPaused(labels) {
+	if r.isSubsriptionPausedForDR(labels) {
 		log.Info("Unpausing subscription: ", subscription)
 
 		labels[subv1.LabelSubscriptionPause] = "false"
@@ -233,7 +260,7 @@ func (r *AppVolumeReplicationReconciler) unpauseSubscription(subscription subv1.
 	}
 }
 
-func (r *AppVolumeReplicationReconciler) isSubsriptionPaused(labels map[string]string) bool {
+func (r *AppVolumeReplicationReconciler) isSubsriptionPausedForDR(labels map[string]string) bool {
 	return labels != nil &&
 		labels[RamenDRLabelName] != "" &&
 		strings.EqualFold(labels[RamenDRLabelName], "protected") &&
@@ -241,35 +268,35 @@ func (r *AppVolumeReplicationReconciler) isSubsriptionPaused(labels map[string]s
 		strings.EqualFold(labels[subv1.LabelSubscriptionPause], "true")
 }
 
-func (r *AppVolumeReplicationReconciler) createVRGManifestWork(
-	subscription subv1.Subscription) (string, string, error) {
-	const empty string = ""
+// func (r *AppVolumeReplicationReconciler) createVRGManifestWork(
+// 	subscription subv1.Subscription) (string, string, error) {
+// 	const empty string = ""
 
-	// Select cluster decisions from each Subscriptions of an app.
-	homeCluster, peerCluster, err := r.selectPlacementDecision(&subscription)
-	if err != nil {
-		return empty, empty, fmt.Errorf("failed to get placement targets from subscription %s with error: %w",
-			subscription.Name, err)
-	}
+// 	// Select cluster decisions from each Subscriptions of an app.
+// 	homeCluster, peerCluster, err := r.selectPlacementDecision(&subscription)
+// 	if err != nil {
+// 		return empty, empty, fmt.Errorf("failed to get placement targets from subscription %s with error: %w",
+// 			subscription.Name, err)
+// 	}
 
-	if homeCluster == "" {
-		return empty, empty,
-			fmt.Errorf("no home cluster configured in subscription %s", subscription.Name)
-	}
+// 	if homeCluster == "" {
+// 		return empty, empty,
+// 			fmt.Errorf("no home cluster configured in subscription %s", subscription.Name)
+// 	}
 
-	if peerCluster == "" {
-		return empty, empty, fmt.Errorf("no peer cluster found for subscription %s", subscription.Name)
-	}
+// 	if peerCluster == "" {
+// 		return empty, empty, fmt.Errorf("no peer cluster found for subscription %s", subscription.Name)
+// 	}
 
-	if err := r.doCreateOrUpdateVRGManifestWork(
-		subscription.Name, subscription.Namespace, homeCluster, peerCluster); err != nil {
-		r.Log.Error(err, "failed to create or update manifest")
+// 	if err := r.doCreateOrUpdateVRGManifestWork(
+// 		subscription.Name, subscription.Namespace, homeCluster, peerCluster); err != nil {
+// 		r.Log.Error(err, "failed to create or update manifest")
 
-		return empty, empty, err
-	}
+// 		return empty, empty, err
+// 	}
 
-	return homeCluster, peerCluster, nil
-}
+// 	return homeCluster, peerCluster, nil
+// }
 
 func (r *AppVolumeReplicationReconciler) selectPlacementDecision(
 	subscription *subv1.Subscription) (string, string, error) {
@@ -352,7 +379,7 @@ func (r *AppVolumeReplicationReconciler) extractHomeClusterAndPeerCluster(
 	return homeCluster, peerCluster, nil
 }
 
-func (r *AppVolumeReplicationReconciler) doCreateOrUpdateVRGManifestWork(name string, namespace string,
+func (r *AppVolumeReplicationReconciler) createOrUpdateVRGManifestWork(name string, namespace string,
 	homeCluster string, peerCluster string) error {
 	r.Log.Info("attempt to create and update ManifestWork")
 

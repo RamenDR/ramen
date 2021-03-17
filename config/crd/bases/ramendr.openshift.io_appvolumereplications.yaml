@@ -35,12 +35,15 @@ spec:
           metadata:
             type: object
           spec:
-            description: AppVolumeReplicationSpec defines the desired state of AppVolumeReplication
+            description: ApplicationVolumeReplicationSpec defines the desired state
+              of ApplicationVolumeReplication
             properties:
-              failedCluster:
-                type: string
-            required:
-            - failedCluster
+              statuses:
+                additionalProperties:
+                  type: string
+                description: FailoverClusterMap defines the clusters used for failover
+                  per subscription. Key is subscription name
+                type: object
             type: object
           status:
             description: AppVolumeReplicationStatus defines the observed state of

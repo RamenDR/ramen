@@ -20,12 +20,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// FailoverClusterMap defines the clusters used for failover per subscription. Key is subscription name
+type FailoverClusterMap map[string]string
 
-// AppVolumeReplicationSpec defines the desired state of AppVolumeReplication
+// ApplicationVolumeReplicationSpec defines the desired state of ApplicationVolumeReplication
 type AppVolumeReplicationSpec struct {
-	FailoverCluster string `json:"failedCluster"`
+	FailoverClusters FailoverClusterMap `json:"statuses,omitempty"`
 }
 
 // SubscriptionPlacementDecision lists each subscription with its home and peer clusters
