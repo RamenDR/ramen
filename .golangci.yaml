@@ -41,6 +41,7 @@ linters-settings:
     locale: US
   wsl:
     allow-trailing-comment: true
+    enforce-err-cuddling: true
 
 linters:
   enable-all: true
