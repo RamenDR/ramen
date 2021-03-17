@@ -23,18 +23,17 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/prometheus/common/log"
+	volrep "github.com/shyamsundarr/volrep-shim-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -159,6 +158,7 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim) []reconci
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups/finalizers,verbs=update
+// +kubebuilder:rbac:groups=replication.storage.ramen.io,resources=volumereplications,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch
 
@@ -172,7 +172,11 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim) []reconci
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = v.Log.WithValues("volumereplicationgroup reconciler", req.NamespacedName)
+	_ = v.Log.WithValues("VolumeReplicationGroup", req.NamespacedName)
+
+	log.Info("entering reconcile")
+
+	defer log.Info("exiting reconcile")
 
 	// Fetch the VolumeReplicationGroup instance
 	volRepGroup := &ramendrv1alpha1.VolumeReplicationGroup{}
@@ -197,19 +201,32 @@ func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 
 	pvcList, err := v.HandlePersistentVolumeClaims(ctx, volRepGroup)
 	if err != nil {
-		log.Errorf("Handling of Persistent Volume Claims of application failed: %v", volRepGroup.Spec.PVCLabelSelector)
+		log.Error(err, "Handling of Persistent Volume Claims of application failed")
 
 		return ctrl.Result{}, err
 	}
 
-	err = v.HandlePersistentVolumes(ctx, pvcList)
-	if err != nil {
-		log.Errorf("Handling of Persistent Volumes for PVCs of application failed: %v", volRepGroup.Spec.PVCLabelSelector)
+	requeue := false
 
-		return ctrl.Result{}, err
+	for _, pvc := range pvcList.Items {
+		volRep := &volrep.VolumeReplication{}
+
+		err = v.Get(ctx, types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}, volRep)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				if err = v.createVolumeReplicationCRForPVC(ctx, pvc); err == nil {
+					continue
+				}
+			}
+
+			// requeue on failure to ensure any PVC not having a corresponding VR CR
+			requeue = true
+
+			log.Error(err, "Failed to get or create VolumeReplication CR for PVC", pvc.Name, pvc.Namespace)
+		}
 	}
 
-	return ctrl.Result{}, nil
+	return ctrl.Result{Requeue: requeue}, nil
 }
 
 // HandlePersistentVolumeClaims handles PVCs in the VRG
@@ -234,7 +251,7 @@ func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumeClaims(
 		return pvcList, fmt.Errorf("failed to list PVC %w", err)
 	}
 
-	log.Info("PVC List: ", pvcList)
+	log.Info("Found PVCs, count: ", len(pvcList.Items))
 
 	return pvcList, nil
 }
@@ -293,6 +310,29 @@ func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumes(
 	log.Info("Total capacity Used: ", capacity.String())
 
 	return nil
+}
+
+// createVolumeReplicationCRForPVC creates a VolumeReplication CR with a PVC as its data source
+func (v *VolumeReplicationGroupReconciler) createVolumeReplicationCRForPVC(
+	ctx context.Context,
+	pvc corev1.PersistentVolumeClaim) error {
+	cr := &volrep.VolumeReplication{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pvc.Name,
+			Namespace: pvc.ObjectMeta.Namespace,
+		},
+		Spec: volrep.VolumeReplicationSpec{
+			DataSource: &corev1.TypedLocalObjectReference{
+				Kind: "PersistentVolumeClaim",
+				Name: pvc.Name,
+			},
+			State: "Primary",
+		},
+	}
+
+	log.Info("Creating CR: ", cr)
+
+	return v.Create(ctx, cr)
 }
 
 // SetupWithManager sets up the controller with the Manager.
