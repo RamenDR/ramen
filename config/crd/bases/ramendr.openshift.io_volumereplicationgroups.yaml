@@ -38,21 +38,20 @@ spec:
             type: object
           spec:
             description: "VolumeReplicationGroup (VRG) spec declares the desired replication
-              class and replication state of all the PVCs owned by a given application,
-              which are identified via the given PVC label selector.  For every PVC
-              created by the application, the VRG operator does the following: \t-
-              Create a VolumeReplication (VR) CR to enable storage level replication
-              \t  of volume data and set the volume state to primary, secondary, etc.
-              \ - Take the corresponding PV metadata in Kubernetes etcd and deposit
-              it in    the S3 store.  The url, access key and access id required to
-              access the    S3 store is specified via environment variables of the
-              VRG operator POD,    which is obtained from a secret resource.  - Manage
-              the lifecycle of VR CR and S3 data to match the CUD operations on    VRG
-              CR."
+              class and replication state of all the PVCs identified via the given
+              PVC label selector.  For each such PVC, the VRG will do the following:
+              \t- Create a VolumeReplication (VR) CR to enable storage level replication
+              \t  of volume data and set the desired replication state (primary, secondary,
+              \   etc).  - Take the corresponding PV metadata in Kubernetes etcd and
+              deposit it in    the S3 store.  The url, access key and access id required
+              to access the    S3 store is specified via environment variables of
+              the VRG operator POD,    which is obtained from a secret resource.  -
+              Manage the lifecycle of VR CR and S3 data according to CUD operations
+              on    the PVC and the VRG CR."
             properties:
-              pvcLabelSelector:
+              pvcSelector:
                 description: Label selector to identify all the PVCs that are in this
-                  group This operator will create and needs to be replicated
+                  group that needs to be replicated to the peer cluster.
                 properties:
                   matchExpressions:
                     description: matchExpressions is a list of label selector requirements.
@@ -95,18 +94,22 @@ spec:
                       are ANDed.
                     type: object
                 type: object
-              volumeReplicationClass:
-                description: ReplicationClass of all volumes in this replication group
-                  that is passed to VolumeReplication CR
-                type: string
-              volumeState:
+              replicationState:
                 description: Desired state of all volumes [primary or secondary] in
-                  this replication group that is passed to VolumeReplication CR
+                  this replication group; this value is propagated to children VolumeReplication
+                  CRs
+                enum:
+                - Primary
+                - Secondary
+                type: string
+              volumeReplicationClass:
+                description: ReplicationClass of all volumes in this replication group;
+                  this value is propagated to children VolumeReplication CRs
                 type: string
             required:
-            - pvcLabelSelector
+            - pvcSelector
+            - replicationState
             - volumeReplicationClass
-            - volumeState
             type: object
           status:
             description: 'VolumeReplicationGroupStatus defines the observed state

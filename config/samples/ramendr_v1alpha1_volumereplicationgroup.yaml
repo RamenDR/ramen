@@ -4,15 +4,15 @@ metadata:
   name: volumereplicationgroup-sample-1
 spec:
   # Add fields here
-  pvcLabelSelector:
-    matchExpressions:
-    - key: apptype
-      operator: NotIn
-      values:
-      - stateless
-    - {key: backend, operator: In, values: [ceph]}
+  pvcSelector:
+  #  matchExpressions:
+  #  - key: apptype
+  #    operator: NotIn
+  #    values:
+  #    - stateless
+  #  - {key: backend, operator: In, values: [ceph]}
     matchLabels:
       appclass: gold
       environment: dev.AZ1
   volumeReplicationClass: "WAN-DR-Low-RPO-Apps"
-  volumeState: "primary"
+  replicationState: "Primary"

@@ -714,6 +714,8 @@ github.com/kshvakov/clickhouse v1.3.5/go.mod h1:DMzX7FxRymoNkVgizH0DWAL8Cur7wHLg
 github.com/kube-storage/spec v0.0.0-20210302071931-ad3b1446aba1/go.mod h1:aEM5cuaELIjQPTe4LdyAoR2XvkC5vtd1qz8LgGLf4BQ=
 github.com/kube-storage/volume-replication-operator v0.0.0-20210315122249-959b4f2c3d6e h1:u4drcB/v4LoYVhaV6lzWtlyAFO4s/GrF+K1WFukeYMg=
 github.com/kube-storage/volume-replication-operator v0.0.0-20210315122249-959b4f2c3d6e/go.mod h1:HtKnJE24qHDt5FgOHiT7qI3om1hN1ni841FeI05PgDc=
+github.com/kube-storage/volume-replication-operator v0.0.0-20210317134542-e0d70fdea6d4 h1:Iwc8Ux17+7t1WJS0cdSDtuNmZ8FIAogypq2/GZS1F8A=
+github.com/kube-storage/volume-replication-operator v0.0.0-20210317134542-e0d70fdea6d4/go.mod h1:HtKnJE24qHDt5FgOHiT7qI3om1hN1ni841FeI05PgDc=
 github.com/kubernetes-csi/csi-lib-utils v0.9.1/go.mod h1:8E2jVUX9j3QgspwHXa6LwyN7IHQDjW9jX3kwoWnSC+M=
 github.com/kylelemons/godebug v0.0.0-20160406211939-eadb3ce320cb/go.mod h1:B69LEHPfb2qLo0BaaOLcbitczOKLWTsrBG9LczfCD4k=
 github.com/kylelemons/godebug v0.0.0-20170820004349-d65d576e9348/go.mod h1:B69LEHPfb2qLo0BaaOLcbitczOKLWTsrBG9LczfCD4k=
