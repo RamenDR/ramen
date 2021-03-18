@@ -5,7 +5,7 @@ resources:
 - bases/ramendr.openshift.io_volumereplicationgroups.yaml
 - bases/ramendr.openshift.io_clusterids.yaml
 - bases/ramendr.openshift.io_clusterpeers.yaml
-- bases/ramendr.openshift.io_ApplicationVolumeReplications.yaml
+- bases/ramendr.openshift.io_applicationvolumereplications.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:
