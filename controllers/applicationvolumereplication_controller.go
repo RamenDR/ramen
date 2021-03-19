@@ -344,22 +344,6 @@ func (r *ApplicationVolumeReplicationReconciler) createVRGClientManifest(name st
 		},
 		"spec": {
 		   "pvcSelector": {
-			  "matchExpressions": [
-				 {
-					"key": "apptype",
-					"operator": "NotIn",
-					"values": [
-					   "stateless"
-					]
-				 },
-				 {
-					"key": "backend",
-					"operator": "In",
-					"values": [
-					   "ceph"
-					]
-				 }
-			  ],
 			  "matchLabels": {
 				 "appclass": "gold",
 				 "environment": "dev.AZ1"

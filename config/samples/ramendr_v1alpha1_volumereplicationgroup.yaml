@@ -5,12 +5,6 @@ metadata:
 spec:
   # Add fields here
   pvcSelector:
-  #  matchExpressions:
-  #  - key: apptype
-  #    operator: NotIn
-  #    values:
-  #    - stateless
-  #  - {key: backend, operator: In, values: [ceph]}
     matchLabels:
       appclass: gold
       environment: dev.AZ1
