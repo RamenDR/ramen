@@ -190,7 +190,7 @@ func (r *ApplicationVolumeReplicationReconciler) createVRGManifestWork(
 	}
 
 	if err := r.doCreateOrUpdateManifestWork(
-		subscription.Name, subscription.Namespace, homeCluster, peerCluster); err != nil {
+		subscription.Name, subscription.Namespace, homeCluster); err != nil {
 		r.Log.Error(err, "failed to create or update manifest")
 
 		return empty, empty, err
@@ -281,10 +281,10 @@ func (r *ApplicationVolumeReplicationReconciler) extractHomeClusterAndPeerCluste
 }
 
 func (r *ApplicationVolumeReplicationReconciler) doCreateOrUpdateManifestWork(name string, namespace string,
-	homeCluster string, peerCluster string) error {
+	homeCluster string) error {
 	r.Log.Info("attempt to create and update ManifestWork")
 
-	manifestWork := r.createManifestWork(name, namespace, homeCluster, peerCluster)
+	manifestWork := r.createManifestWork(name, namespace, homeCluster)
 
 	found := &ocmworkv1.ManifestWork{}
 
@@ -311,8 +311,8 @@ func (r *ApplicationVolumeReplicationReconciler) doCreateOrUpdateManifestWork(na
 }
 
 func (r *ApplicationVolumeReplicationReconciler) createManifestWork(name string, namespace string,
-	homeCluster string, peerCluster string) *ocmworkv1.ManifestWork {
-	vrgClientManifest := r.createVRGClientManifest(name, namespace, homeCluster, peerCluster)
+	homeCluster string) *ocmworkv1.ManifestWork {
+	vrgClientManifest := r.createVRGClientManifest(name, namespace)
 
 	manifestwork := &ocmworkv1.ManifestWork{
 		ObjectMeta: metav1.ObjectMeta{
@@ -331,8 +331,8 @@ func (r *ApplicationVolumeReplicationReconciler) createManifestWork(name string,
 	return manifestwork
 }
 
-func (r *ApplicationVolumeReplicationReconciler) createVRGClientManifest(name string, namespace string,
-	homeCluster string, peerCluster string) *ocmworkv1.Manifest {
+func (r *ApplicationVolumeReplicationReconciler) createVRGClientManifest(name string,
+	namespace string) *ocmworkv1.Manifest {
 	// TODO: try to use the VRG object, then marshal it into byte array.
 	vrgClientJSON := []byte(fmt.Sprintf(`
 	{
@@ -343,38 +343,17 @@ func (r *ApplicationVolumeReplicationReconciler) createVRGClientManifest(name st
 		   "namespace": "%s"
 		},
 		"spec": {
-		   "affinedCluster": "us-central",
-		   "applicationLabels": {
-			  "matchExpressions": [
-				 {
-					"key": "apptype",
-					"operator": "NotIn",
-					"values": [
-					   "stateless"
-					]
-				 },
-				 {
-					"key": "backend",
-					"operator": "In",
-					"values": [
-					   "ceph"
-					]
-				 }
-			  ],
+		   "pvcSelector": {
 			  "matchLabels": {
 				 "appclass": "gold",
 				 "environment": "dev.AZ1"
 			  }
 		   },
-		   "applicationName": "sample-app",
-		   "asyncRPOGoalSeconds": 3600,
-		   "clusterPeersList": [
-			  "%s",
-			  "%s"
-		   ]
+		   "volumeReplicationClass": "volume-rep-class",
+		   "replicationState": "Primary"
 		}
 	 }
-	`, name, namespace, homeCluster, peerCluster))
+	`, name, namespace))
 	vrgClientManifest := &ocmworkv1.Manifest{}
 	vrgClientManifest.RawExtension = runtime.RawExtension{Raw: vrgClientJSON}
 

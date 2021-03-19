@@ -4,19 +4,9 @@ metadata:
   name: volumereplicationgroup-sample-1
 spec:
   # Add fields here
-  affinedCluster: us-central
-  applicationLabels:
-    matchExpressions:
-    - key: apptype
-      operator: NotIn
-      values:
-      - stateless
-    - {key: backend, operator: In, values: [ceph]}
+  pvcSelector:
     matchLabels:
       appclass: gold
       environment: dev.AZ1
-  applicationName: sample-app
-  asyncRPOGoalSeconds: 3600
-  clusterPeersList:
-  - us-northeast
-  - us-southwest
+  volumeReplicationClass: "WAN-DR-Low-RPO-Apps"
+  replicationState: "Primary"

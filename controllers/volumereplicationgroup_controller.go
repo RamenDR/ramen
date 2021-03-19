@@ -133,7 +133,7 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim) []reconci
 	}
 
 	for _, vrg := range vrgs.Items {
-		vrgLabelSelector := vrg.Spec.ApplicationLabels
+		vrgLabelSelector := vrg.Spec.PVCSelector
 		selector, err := metav1.LabelSelectorAsSelector(&vrgLabelSelector)
 		// continue if we fail to get the labels for this object hoping
 		// that pvc might actually belong to  some other vrg instead of
@@ -235,7 +235,7 @@ func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumeClaims(
 	volRepGroup *ramendrv1alpha1.VolumeReplicationGroup) (
 	*corev1.PersistentVolumeClaimList,
 	error) {
-	labelSelector := volRepGroup.Spec.ApplicationLabels
+	labelSelector := volRepGroup.Spec.PVCSelector
 	pvcList := &corev1.PersistentVolumeClaimList{}
 
 	log.Info("Label Selector: ", labels.Set(labelSelector.MatchLabels))
