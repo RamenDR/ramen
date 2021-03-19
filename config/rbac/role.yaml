@@ -25,7 +25,7 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - ApplicationVolumeReplications
+  - applicationvolumereplications
   verbs:
   - create
   - delete
@@ -37,13 +37,13 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - ApplicationVolumeReplications/finalizers
+  - applicationvolumereplications/finalizers
   verbs:
   - update
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - ApplicationVolumeReplications/status
+  - applicationvolumereplications/status
   verbs:
   - get
   - patch

@@ -56,9 +56,9 @@ func (r *ApplicationVolumeReplicationReconciler) SetupWithManager(mgr ctrl.Manag
 }
 
 //nolint:lll
-// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=ApplicationVolumeReplications,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=ApplicationVolumeReplications/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=ApplicationVolumeReplications/finalizers,verbs=update
+// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=applicationvolumereplications,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=applicationvolumereplications/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=applicationvolumereplications/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
