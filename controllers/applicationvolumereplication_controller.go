@@ -126,7 +126,7 @@ func (r *ApplicationVolumeReplicationReconciler) Reconcile(ctx context.Context, 
 			len(avr.Status.Decisions), len(subscriptionList.Items))
 		logger.Info(result)
 
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{Requeue: requeue}, nil
 	}
 
 	return ctrl.Result{Requeue: requeue}, nil
@@ -288,7 +288,7 @@ func (r *ApplicationVolumeReplicationReconciler) processUnpausedSubscription(
 		return nil, err
 	}
 
-	err = r.createOrUpdateManifestWorkForVRG(subscription.Name, subscription.Namespace, homeCluster, peerCluster)
+	err = r.createOrUpdateManifestWorkForVRG(subscription.Name, subscription.Namespace, homeCluster)
 	if err != nil {
 		r.Log.Error(err, fmt.Sprintf("Failed to create VRG for Subscription %s", subscription.Name))
 
@@ -447,10 +447,10 @@ func (r *ApplicationVolumeReplicationReconciler) filterClusters(
 // agent on the corresponding managed cluster can access this resource and deploy on the
 // managed cluster. We create one ManifestWork for each VRG CR.
 func (r *ApplicationVolumeReplicationReconciler) createOrUpdateManifestWorkForVRG(name string, namespace string,
-	homeCluster string, peerCluster string) error {
+	homeCluster string) error {
 	r.Log.Info("attempt to create or update ManifestWork for VRG", "name", name, "namespace", namespace)
 
-	manifestWork, err := r.createManifestWorkForVRG(name, namespace, homeCluster, peerCluster)
+	manifestWork, err := r.createManifestWorkForVRG(name, namespace, homeCluster)
 	if err != nil {
 		return err
 	}
@@ -506,8 +506,8 @@ func (r *ApplicationVolumeReplicationReconciler) createManifestWorkForPVs(
 }
 
 func (r *ApplicationVolumeReplicationReconciler) createManifestWorkForVRG(name string, namespace string,
-	homeCluster string, peerCluster string) (*ocmworkv1.ManifestWork, error) {
-	vrgClientManifest, err := r.createVRGClientManifest(name, namespace, homeCluster, peerCluster)
+	homeCluster string) (*ocmworkv1.ManifestWork, error) {
+	vrgClientManifest, err := r.createVRGClientManifest(name, namespace)
 	if err != nil {
 		return nil, err
 	}
@@ -536,10 +536,7 @@ func (r *ApplicationVolumeReplicationReconciler) createManifestWork(name string,
 	}
 }
 
-func (r *ApplicationVolumeReplicationReconciler) createVRGClientManifest(name string, namespace string,
-	homeCluster string, peerCluster string) (*ocmworkv1.Manifest, error) {
-	const AsyncRPOGoalSeconds = 3600
-
+func (r *ApplicationVolumeReplicationReconciler) createVRGClientManifest(name string, namespace string) (*ocmworkv1.Manifest, error) {
 	vrg := &ramendrv1alpha1.VolumeReplicationGroup{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "ramendr.openshift.io/v1alpha1",
@@ -550,20 +547,14 @@ func (r *ApplicationVolumeReplicationReconciler) createVRGClientManifest(name st
 			Namespace: namespace,
 		},
 		Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
-			AffinedCluster: "us-central",
-			ApplicationLabels: metav1.LabelSelector{
+			PVCSelector: metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					"appClass":    "gold",
 					"environment": "dev.AZ1",
 				},
 			},
-			ApplicationName:     "sample-app",
-			DesiredCluster:      "",
-			AsyncRPOGoalSeconds: AsyncRPOGoalSeconds,
-			ClusterPeersList: []string{
-				homeCluster,
-				peerCluster,
-			},
+			VolumeReplicationClass: "volume-rep-class",
+			ReplicationState: "Primary",
 		},
 	}
 

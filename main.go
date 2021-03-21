@@ -1,12 +1,9 @@
 /*
 Copyright 2021 The RamenDR authors.
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
+	http://www.apache.org/licenses/LICENSE-2.0
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -18,10 +15,12 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+	volrep "github.com/shyamsundarr/volrep-shim-operator/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -44,10 +43,11 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(ramendrv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(volrep.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
-func main() {
+func newManager() (ctrl.Manager, error) {
 	var (
 		metricsAddr          string
 		enableLeaderElection bool
@@ -64,6 +64,7 @@ func main() {
 	opts := zap.Options{
 		Development: true,
 	}
+
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
@@ -78,30 +79,10 @@ func main() {
 		LeaderElectionID:       "ae40cfcb.openshift.io",
 	})
 	if err != nil {
-		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
+		return mgr, fmt.Errorf("starting new manager failed %w", err)
 	}
 
-	setupReconcilers(mgr)
-
-	// +kubebuilder:scaffold:builder
-
-	if err := mgr.AddHealthzCheck("health", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up health check")
-		os.Exit(1)
-	}
-
-	if err := mgr.AddReadyzCheck("check", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up ready check")
-		os.Exit(1)
-	}
-
-	setupLog.Info("starting manager")
-
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error(err, "problem running manager")
-		os.Exit(1)
-	}
+	return mgr, nil
 }
 
 func setupReconcilers(mgr ctrl.Manager) {
@@ -123,3 +104,32 @@ func setupReconcilers(mgr ctrl.Manager) {
 		os.Exit(1)
 	}
 }
+
+func main() {
+	mgr, err := newManager()
+	if err != nil {
+		setupLog.Error(err, "unable to Get new manager")
+		os.Exit(1)
+	}
+
+	setupReconcilers(mgr)
+
+	// +kubebuilder:scaffold:builder
+	if err := mgr.AddHealthzCheck("health", healthz.Ping); err != nil {
+		setupLog.Error(err, "unable to set up health check")
+		os.Exit(1)
+	}
+
+	if err := mgr.AddReadyzCheck("check", healthz.Ping); err != nil {
+		setupLog.Error(err, "unable to set up ready check")
+		os.Exit(1)
+	}
+
+	setupLog.Info("starting manager")
+
+	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+		setupLog.Error(err, "problem running manager")
+		os.Exit(1)
+	}
+}
+

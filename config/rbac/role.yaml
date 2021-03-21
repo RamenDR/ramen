@@ -74,3 +74,15 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - replication.storage.ramen.io
+  resources:
+  - volumereplications
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch

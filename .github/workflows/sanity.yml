@@ -1,0 +1,62 @@
+name: PR and branch sanity
+on:
+  push:
+    tags:
+      - v*
+    branches:
+      - main
+  pull_request:
+    branches:
+      - '*'
+env:
+  GO_VERSION: "1.15"
+  # Uses image name IMG to build image in Makefile
+  IMG: "quay.io/ramendr/ramen-operator:sanity"
+defaults:
+  run:
+    shell: bash
+jobs:
+  golangci:
+    name: Golangci Lint
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v2
+
+      - name: GolangCI Lint
+        uses: golangci/golangci-lint-action@v2
+        with:
+          version: v1.37.1
+
+  build-image-and-ensure-clean-branch:
+    name: Build image and ensure clean branch
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v2
+
+      - name: Setup go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Build image
+        run: make docker-build
+
+      - name: Export image
+        run: docker save -o /tmp/ramen-operator.tar ${IMG}
+
+      - name: Save image artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: ramen-operator
+          path: /tmp/ramen-operator.tar
+          retention-days: 1
+
+      - name: Go tidy
+        run: go mod tidy
+
+      - name: Git branch sanity
+        run: |
+          echo "Failing if any auto generated files are updated, checking 'git status'"
+          git status --porcelain 2>&1 | tee /dev/stderr | (! read)

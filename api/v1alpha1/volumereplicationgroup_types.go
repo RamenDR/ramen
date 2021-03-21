@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,53 +18,38 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	volrep "github.com/shyamsundarr/volrep-shim-operator/api/v1alpha1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// VolumeTakeoverControlType -- takeover control when desiredCluster is different from affinedCluster
-type VolumeTakeoverControlType string
-
-// VolumeTakeoverControlType definitions
-const (
-	// Force promote the volume in a WAN DR setting
-	ForcePromote VolumeTakeoverControlType = "ForcePromote"
-)
-
-// VolumeReplicationGroupSpec defines the desired state of VolumeReplicationGroup
+// VolumeReplicationGroup (VRG) spec declares the desired replication class
+// and replication state of all the PVCs identified via the given PVC label
+// selector.  For each such PVC, the VRG will do the following:
+// 	- Create a VolumeReplication (VR) CR to enable storage level replication
+// 	  of volume data and set the desired replication state (primary, secondary,
+//    etc).
+//  - Take the corresponding PV metadata in Kubernetes etcd and deposit it in
+//    the S3 store.  The url, access key and access id required to access the
+//    S3 store is specified via environment variables of the VRG operator POD,
+//    which is obtained from a secret resource.
+//  - Manage the lifecycle of VR CR and S3 data according to CUD operations on
+//    the PVC and the VRG CR.
 type VolumeReplicationGroupSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Name of the application to replicate
-	ApplicationName string `json:"applicationName"`
+	// Label selector to identify all the PVCs that are in this group
+	// that needs to be replicated to the peer cluster.
+	PVCSelector metav1.LabelSelector `json:"pvcSelector"`
 
-	// Application label that is used to identify its PVs
-	ApplicationLabels metav1.LabelSelector `json:"applicationLabels"`
+	// ReplicationClass of all volumes in this replication group;
+	// this value is propagated to children VolumeReplication CRs
+	VolumeReplicationClass string `json:"volumeReplicationClass"`
 
-	// Cluster ID in ClusterPeers that has best storage performance affinity for the application
-	AffinedCluster string `json:"affinedCluster"`
-
-	// Desired cluster that should takeover the application from current active cluster.
-	// May be set either to:
-	// - secondary cluster ID (to migrate application or takeover application in case of a disaster)
-	// - nil (if application is not active in the affined cluster, takeback to affined cluster)
-	// +optional
-	DesiredCluster string `json:"desiredCluster,omitempty"`
-
-	// Volume Takeover Control: ForcePromote
-	// +optional
-	VolumeTakeoverControl VolumeTakeoverControlType `json:"volumeTakeoverControl,omitempty"`
-
-	// List of ClusterPeers
-	// For Metro DR only: a single ClusterPeers
-	// For WAN DR only: one or more ClusterPeers
-	// For MetroDR and WAN DR: one Metro DR ClusterPeer and one or more WAN DR ClusterPeers.
-	ClusterPeersList []string `json:"clusterPeersList"`
-
-	// WAN DR RPO goal in seconds
-	AsyncRPOGoalSeconds int64 `json:"asyncRPOGoalSeconds,omitempty"`
+	// Desired state of all volumes [primary or secondary] in this replication group;
+	// this value is propagated to children VolumeReplication CRs
+	ReplicationState volrep.ReplicationState `json:"replicationState"`
 }
 
 // VolumeReplicationGroupStatus defines the observed state of VolumeReplicationGroup

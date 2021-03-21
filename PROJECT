@@ -3,21 +3,21 @@ layout: go.kubebuilder.io/v3
 projectName: ramen
 repo: github.com/ramendr/ramen
 resources:
-- crdVersion: v1
+- crdVersion: v1alpha1
   group: ramendr
   kind: VolumeReplicationGroup
   version: v1alpha1
-- crdVersion: v1
+- crdVersion: v1alpha1
   group: ramendr
   kind: ClusterID
   version: v1alpha1
-- crdVersion: v1
+- crdVersion: v1alpha1
   group: ramendr
   kind: ClusterPeers
   version: v1alpha1
-- crdVersion: v1
+- crdVersion: v1alpha1
   group: ramendr
-  kind: AppVolumeReplication
+  kind: ApplicationVolumeReplication
   version: v1alpha1
 version: 3-alpha
 plugins:

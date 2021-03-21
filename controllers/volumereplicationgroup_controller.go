@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,16 +19,27 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"github.com/go-logr/logr"
 	"github.com/prometheus/common/log"
+	volrep "github.com/shyamsundarr/volrep-shim-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 )
@@ -40,10 +51,114 @@ type VolumeReplicationGroupReconciler struct {
 	Scheme *runtime.Scheme
 }
 
+func newPredicateFunc() predicate.Funcs {
+	// predicate functions send reconcile requests for create and delete events.
+	// For them the filtering of whether the pvc belongs to the any of the
+	// VolumeReplicationGroup CRs and identifying such a CR is done in the
+	// map function by comparing namespaces and labels.
+	// But for update of pvc, the reconcile request should be sent only for
+	// spec changes. Do that comparison here.
+	pvcPredicate := predicate.Funcs{
+		// This predicate function can be removed as the only thing it is
+		// doing currently is to log the pvc creation event that is received.
+		// Even without this predicate function, by default the reconcile
+		// request would be sent (i.e. equivalent of returning true from here).
+		// However having a log here will be useful for debugging purposes where
+		// one can verify and distinguish between below 2 events.
+		// 1) pvc creation for the application for which VRG CR exists.
+		//    (i.e. application is disaster protected). For this reconcile
+		//    logic will be triggered.
+		// 2) pvc creation for the application for which VRG CR does not exist
+		//    (i.e. application is not disaster protected). For this reconcile
+		//    logic is not triggered.
+		CreateFunc: func(e event.CreateEvent) bool {
+			log.Debug("create event from pvc")
+
+			return true
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldPVC, ok := e.ObjectOld.DeepCopyObject().(*corev1.PersistentVolumeClaim)
+			if !ok {
+				log.Error("Update: failed to read old PVC, not reconciling")
+
+				return false
+			}
+			newPVC, ok := e.ObjectNew.DeepCopyObject().(*corev1.PersistentVolumeClaim)
+			if !ok {
+				log.Error("Update: failed to read new PVC, not reconciling")
+
+				return false
+			}
+			log.Debug("Update event from pvc")
+
+			return !reflect.DeepEqual(oldPVC.Spec, newPVC.Spec)
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			log.Info("delete event from pvc")
+
+			// return false. Because, for delete event on a pvc, it is
+			// the finalizer which would actually delete the backed up
+			// pv and the VolumeReplication CR created for that pvc.
+			// In future if there arises a need to unconditionally
+			// do a reconcile, return true. If there is a need to do
+			// reconcile for certain conditions, then add the necessary
+			// checks here.
+			return false
+		},
+	}
+
+	return pvcPredicate
+}
+
+func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim) []reconcile.Request {
+	req := []reconcile.Request{}
+
+	var vrgs ramendrv1alpha1.VolumeReplicationGroupList
+
+	listOptions := []client.ListOption{
+		client.InNamespace(pvc.Namespace),
+	}
+
+	// decide if reconcile request needs to be sent to the
+	// corresponding VolumeReplicationGroup CR by:
+	// - whether there is a VolumeReplicationGroup CR in the namespace
+	//   to which the the pvc belongs to.
+	// - whether the labels on pvc match the label selectors from
+	//    VolumeReplicationGroup CR.
+	err := mgr.GetClient().List(context.TODO(), &vrgs, listOptions...)
+	if err != nil {
+		log.Errorf("failed to get list of VolumeReplicationGroup CRs")
+
+		return []reconcile.Request{}
+	}
+
+	for _, vrg := range vrgs.Items {
+		vrgLabelSelector := vrg.Spec.PVCSelector
+		selector, err := metav1.LabelSelectorAsSelector(&vrgLabelSelector)
+		// continue if we fail to get the labels for this object hoping
+		// that pvc might actually belong to  some other vrg instead of
+		// this. If not found, then reconcile request would not be sent
+		if err != nil {
+			log.Error("failed to get the label selector as selector")
+
+			continue
+		}
+
+		if selector.Matches(labels.Set(pvc.GetLabels())) {
+			log.Info("found volume replication group that belongs to namespace with matching labels: ", pvc.Namespace)
+
+			req = append(req, reconcile.Request{NamespacedName: types.NamespacedName{Name: vrg.Name, Namespace: vrg.Namespace}})
+		}
+	}
+
+	return req
+}
+
 // nolint: lll // disabling line length linter
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups/finalizers,verbs=update
+// +kubebuilder:rbac:groups=replication.storage.ramen.io,resources=volumereplications,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch
 
@@ -57,7 +172,11 @@ type VolumeReplicationGroupReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = v.Log.WithValues("volumereplicationgroup", req.NamespacedName)
+	_ = v.Log.WithValues("VolumeReplicationGroup", req.NamespacedName)
+
+	log.Info("entering reconcile")
+
+	defer log.Info("exiting reconcile")
 
 	// Fetch the VolumeReplicationGroup instance
 	volRepGroup := &ramendrv1alpha1.VolumeReplicationGroup{}
@@ -66,7 +185,8 @@ func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 			// Return and don't requeue
-			log.Info("VolumeReplicationGroup resource not found. Ignoring since object must be deleted")
+			log.Info("VolumeReplicationGroup resource not found. Ignoring since object must have been deleted: ",
+				req.NamespacedName)
 
 			return ctrl.Result{}, nil
 		}
@@ -81,91 +201,33 @@ func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 
 	pvcList, err := v.HandlePersistentVolumeClaims(ctx, volRepGroup)
 	if err != nil {
-		log.Error("Handling of Persistent Volume Claims of application failed", volRepGroup.Spec.ApplicationName)
+		log.Error(err, "Handling of Persistent Volume Claims of application failed")
 
 		return ctrl.Result{}, err
 	}
 
-	err = v.HandlePersistentVolumes(ctx, pvcList)
-	if err != nil {
-		log.Error("Handling of Persistent Volumes for PVCs of application failed", volRepGroup.Spec.ApplicationName)
+	requeue := false
 
-		return ctrl.Result{}, err
+	for _, pvc := range pvcList.Items {
+		volRep := &volrep.VolumeReplication{}
+
+		err = v.Get(ctx, types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}, volRep)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				if err = v.createVolumeReplicationCRForPVC(ctx, pvc); err == nil {
+					continue
+				}
+			}
+
+			// requeue on failure to ensure any PVC not having a corresponding VR CR
+			requeue = true
+
+			log.Error(err, "Failed to get or create VolumeReplication CR for PVC", pvc.Name, pvc.Namespace)
+		}
 	}
 
-	return ctrl.Result{}, nil
+	return ctrl.Result{Requeue: requeue}, nil
 }
-
-// Pseudo code for reconciler
-/*
-   // Check if the VolumeReplication CR already exists for the PVs of this application, if not create a new one
-   for all PVs of this application {
-       volRep := &appsv1.Deployment{}
-       err = v.Get(ctx, types.NamespacedName{Name: volRepGroup.Name, Namespace: volRepGroup.Namespace}, volRep)
-       if err != nil && errors.IsNotFound(err) {
-           // Define a new VolumeReplication CR
-           newVolRep := v.deploymentForMemcached(volRepGroup)
-           log.Info("Creating a new VolumeReplication CR",
-                    "Deployment.Namespace",
-                    newVolRep.Namespace,
-                    "Deployment.Name",
-                    newVolRep.Name)
-           err = v.Create(ctx, newVolRep)
-           if err != nil {
-               log.Error(err, "Failed to create new VolumeReplication CR",
-                         "Deployment.Namespace", newVolRep.Namespace,
-                         "Deployment.Name", newVolRep.Name)
-               return ctrl.Result{}, err
-           }
-           // VolumeReplication CR created successfully - return and requeue
-           return ctrl.Result{Requeue: true}, nil
-       } else if err != nil {
-           log.Error(err, "Failed to get VolumeReplication CR")
-           return ctrl.Result{}, err
-       }
-
-       log.Info(Labels Found: "%s\n", labelsForVolumeReplication(volRepGroup.Name))
-
-       // Ensure the VolumeReplication fields as the same as the VolumeReplicationGroup spec
-       size := volRepGroup.Spec.Size
-       if *volRep.Spec.Replicas != size {
-           volRep.Spec.Replicas = &size
-           err = v.Update(ctx, volRep)
-           if err != nil {
-               log.Error(err, "Failed to update Deployment",
-                         "Deployment.Namespace", volRep.Namespace, "Deployment.Name", volRep.Name)
-               return ctrl.Result{}, err
-           }
-           // Spec updated - return and requeue
-           return ctrl.Result{Requeue: true}, nil
-       }
-   }
-
-   // Update the VolumeReplicationGroup status using the children VolumeReplication CRs
-   // List the VolumeReplication CRs for this volRepGroup
-   volRepList := &corev1.VolumeReplicationList{}
-   listOpts := []client.ListOption{
-       client.InNamespace(volRepGroup.Namespace),
-       client.MatchingLabels(labelsForVolumeReplication(volRepGroup.Name)),
-   }
-   if err = v.List(ctx, volRepList, listOpts...); err != nil {
-       log.Error(err, "Failed to list VolumeReplication CRs",
-                 "VolumeReplicationGroup.Namespace", volRepGroup.Namespace,
-                 "VolumeReplicationGroup.Name", volRepGroup.Name)
-       return ctrl.Result{}, err
-   }
-   volRepNames := getVolRepNames(volRepList.Items)
-
-   // Update status.Nodes if needed
-   if !reflect.DeepEqual(volRepNames, volRepGroup.Status.VolumeReplications) {
-       volRepGroup.Status.VolumeReplications = volRepNames
-       err := v.Status().Update(ctx, volRepGroup)
-       if err != nil {
-           log.Error(err, "Failed to update VolumeReplicationGroup status")
-           return ctrl.Result{}, err
-       }
-   }
-*/
 
 // HandlePersistentVolumeClaims handles PVCs in the VRG
 func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumeClaims(
@@ -173,7 +235,7 @@ func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumeClaims(
 	volRepGroup *ramendrv1alpha1.VolumeReplicationGroup) (
 	*corev1.PersistentVolumeClaimList,
 	error) {
-	labelSelector := volRepGroup.Spec.ApplicationLabels
+	labelSelector := volRepGroup.Spec.PVCSelector
 	pvcList := &corev1.PersistentVolumeClaimList{}
 
 	log.Info("Label Selector: ", labels.Set(labelSelector.MatchLabels))
@@ -189,7 +251,7 @@ func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumeClaims(
 		return pvcList, fmt.Errorf("failed to list PVC %w", err)
 	}
 
-	log.Info("PVC List: ", pvcList)
+	log.Info("Found PVCs, count: ", len(pvcList.Items))
 
 	return pvcList, nil
 }
@@ -250,16 +312,52 @@ func (v *VolumeReplicationGroupReconciler) HandlePersistentVolumes(
 	return nil
 }
 
+// createVolumeReplicationCRForPVC creates a VolumeReplication CR with a PVC as its data source
+func (v *VolumeReplicationGroupReconciler) createVolumeReplicationCRForPVC(
+	ctx context.Context,
+	pvc corev1.PersistentVolumeClaim) error {
+	cr := &volrep.VolumeReplication{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pvc.Name,
+			Namespace: pvc.ObjectMeta.Namespace,
+		},
+		Spec: volrep.VolumeReplicationSpec{
+			DataSource: &corev1.TypedLocalObjectReference{
+				Kind: "PersistentVolumeClaim",
+				Name: pvc.Name,
+			},
+			State: "Primary",
+		},
+	}
+
+	log.Info("Creating CR: ", cr)
+
+	return v.Create(ctx, cr)
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (v *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	pvcPredicate := newPredicateFunc()
+	pvcMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
+		pvc, ok := obj.(*corev1.PersistentVolumeClaim)
+		if !ok {
+			// Not a pvc, returning empty
+			log.Errorf("pvc handler received non-pvc")
+
+			return []reconcile.Request{}
+		}
+
+		log.Info("pvc Namespace: ", pvc.Namespace)
+		req := filterPVC(mgr, pvc)
+
+		return req
+	}))
+
+	log.Info("Adding VRG and PVC controller")
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&ramendrv1alpha1.VolumeReplicationGroup{}).
-
-		// TODO: Add code to keep watching the PVCs that get
-		//       created for the application that is being
-		//       disaster protected.
-		// Watches(&corev1.PersistentVolumeClaim{}).
-
+		Watches(&source.Kind{Type: &corev1.PersistentVolumeClaim{}}, pvcMapFun, builder.WithPredicates(pvcPredicate)).
 		// The actual thing that the controller owns is
 		// the VolumeReplication CR. Change the below
 		// line when VolumeReplication CR is ready.
