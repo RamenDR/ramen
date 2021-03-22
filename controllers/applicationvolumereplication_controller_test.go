@@ -34,6 +34,7 @@ import (
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 )
 
 const subscriptionYAML = `apiVersion: apps.open-cluster-management.io/v1
@@ -196,6 +197,34 @@ var _ = Describe("ApplicationVolumeReplication controller", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, avr)).Should(Succeed())
+
+			// 4.0 Get the VRG Roles ManifestWork. The work is created per managed cluster in the AVR reconciler
+			vrgManifestLookupKey := types.NamespacedName{
+				Name:      "ramendr-vrg-roles",
+				Namespace: ManagedClusterNamespaceName,
+			}
+			createdVRGRolesManifest := &ocmworkv1.ManifestWork{}
+
+			By("Waiting for VRG roles ManifestWork creation....")
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, vrgManifestLookupKey, createdVRGRolesManifest)
+
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+
+			Expect(len(createdVRGRolesManifest.Spec.Workload.Manifests)).To(Equal(2))
+
+			vrgClusterRoleManifest := createdVRGRolesManifest.Spec.Workload.Manifests[0]
+			Expect(vrgClusterRoleManifest).ToNot(BeNil())
+			vrgClusterRole := &rbacv1.ClusterRole{}
+			err = yaml.Unmarshal(vrgClusterRoleManifest.RawExtension.Raw, &vrgClusterRole)
+			Expect(err).NotTo(HaveOccurred())
+
+			vrgClusterRoleBindingManifest := createdVRGRolesManifest.Spec.Workload.Manifests[1]
+			Expect(vrgClusterRoleBindingManifest).ToNot(BeNil())
+			vrgClusterRoleBinding := &rbacv1.ClusterRoleBinding{}
+			err = yaml.Unmarshal(vrgClusterRoleManifest.RawExtension.Raw, &vrgClusterRoleBinding)
+			Expect(err).NotTo(HaveOccurred())
 
 			// 5.0 Get the ManifestWork CR. The CR is created in the AVR Reconciler
 			manifestLookupKey := types.NamespacedName{

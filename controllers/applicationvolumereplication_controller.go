@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 
@@ -29,6 +30,7 @@ import (
 
 	"github.com/go-logr/logr"
 	errorswrapper "github.com/pkg/errors"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -115,7 +117,7 @@ func (r *ApplicationVolumeReplicationReconciler) Reconcile(ctx context.Context, 
 	if err := r.updateAVRStatus(ctx, avr, placementDecisions); err != nil {
 		logger.Error(err, "failed to update status")
 
-		return ctrl.Result{Requeue: true}, err
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	logger.Info("completed manifestwork for subscriptions")
@@ -204,9 +206,15 @@ func (r *ApplicationVolumeReplicationReconciler) createVRGManifestWork(
 		return empty, empty, fmt.Errorf("no peer cluster found for subscription %s", subscription.Name)
 	}
 
-	if err := r.doCreateOrUpdateManifestWork(
+	if err := r.createOrUpdateVRGRolesManifestWork(homeCluster); err != nil {
+		r.Log.Error(err, "failed to create or update VolumeReplicationGroup Roles manifest")
+
+		return empty, empty, err
+	}
+
+	if err := r.createOrUpdateVRGManifestWork(
 		subscription.Name, subscription.Namespace, homeCluster); err != nil {
-		r.Log.Error(err, "failed to create or update manifest")
+		r.Log.Error(err, "failed to create or update VolumeReplicationGroup manifest")
 
 		return empty, empty, err
 	}
@@ -295,39 +303,99 @@ func (r *ApplicationVolumeReplicationReconciler) extractHomeClusterAndPeerCluste
 	return homeCluster, peerCluster, nil
 }
 
-func (r *ApplicationVolumeReplicationReconciler) doCreateOrUpdateManifestWork(name string, namespace string,
-	homeCluster string) error {
-	r.Log.Info("attempt to create and update ManifestWork")
-
-	manifestWork := r.createManifestWork(name, namespace, homeCluster)
-
-	found := &ocmworkv1.ManifestWork{}
-
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: manifestWork.Name, Namespace: homeCluster}, found)
+func (r *ApplicationVolumeReplicationReconciler) createOrUpdateVRGRolesManifestWork(namespace string) error {
+	// TODO: Enhance to remember clusters where this has been checked to reduce repeated Gets of the object
+	manifestWork, err := r.generateVRGRolesManifestWork(namespace)
 	if err != nil {
-		if !errors.IsNotFound(err) {
-			r.Log.Error(err, "Could not fetch ManifestWork")
-
-			return errorswrapper.Wrap(err, "failed to fetch manifestWork")
-		}
-
-		r.Log.Info("Creating ManifestWork", "ManifestWork", manifestWork)
-
-		return r.Client.Create(context.TODO(), manifestWork)
-	} else if !reflect.DeepEqual(found.Spec, manifestWork.Spec) {
-		manifestWork.Spec.DeepCopyInto(&found.Spec)
-
-		r.Log.Info("Updating ManifestWork", "ManifestWork", manifestWork)
-
-		return r.Client.Update(context.TODO(), found)
+		return err
 	}
 
-	return nil
+	return r.createOrUpdateManifestWork(manifestWork, namespace)
 }
 
-func (r *ApplicationVolumeReplicationReconciler) createManifestWork(name string, namespace string,
-	homeCluster string) *ocmworkv1.ManifestWork {
-	vrgClientManifest := r.createVRGClientManifest(name, namespace)
+func (r *ApplicationVolumeReplicationReconciler) generateVRGRolesManifestWork(namespace string) (
+	*ocmworkv1.ManifestWork,
+	error) {
+	vrgClusterRole, err := r.generateVRGClusterRoleManifest()
+	if err != nil {
+		r.Log.Error(err, "failed to generate VolumeReplicationGroup ClusterRole manifest", "namespace", namespace)
+
+		return nil, err
+	}
+
+	vrgClusterRoleBinding, err := r.generateVRGClusterRoleBindingManifest()
+	if err != nil {
+		r.Log.Error(err, "failed to generate VolumeReplicationGroup ClusterRoleBinding manifest", "namespace", namespace)
+
+		return nil, err
+	}
+
+	manifestwork := &ocmworkv1.ManifestWork{
+		ObjectMeta: metav1.ObjectMeta{Name: "ramendr-vrg-roles", Namespace: namespace},
+		Spec: ocmworkv1.ManifestWorkSpec{
+			Workload: ocmworkv1.ManifestsTemplate{
+				Manifests: []ocmworkv1.Manifest{
+					*vrgClusterRole,
+					*vrgClusterRoleBinding,
+				},
+			},
+		},
+	}
+
+	return manifestwork, nil
+}
+
+func (r *ApplicationVolumeReplicationReconciler) generateVRGClusterRoleManifest() (*ocmworkv1.Manifest, error) {
+	return r.generateManifest(&rbacv1.ClusterRole{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit"},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"ramendr.openshift.io"},
+				Resources: []string{"volumereplicationgroups"},
+				Verbs:     []string{"create", "get", "list", "update", "delete"},
+			},
+		},
+	})
+}
+
+func (r *ApplicationVolumeReplicationReconciler) generateVRGClusterRoleBindingManifest() (*ocmworkv1.Manifest, error) {
+	return r.generateManifest(&rbacv1.ClusterRoleBinding{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit"},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "klusterlet-work-sa",
+				Namespace: "open-cluster-management-agent",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit",
+		},
+	})
+}
+
+func (r *ApplicationVolumeReplicationReconciler) createOrUpdateVRGManifestWork(name string, namespace string,
+	homeCluster string) error {
+	manifestWork, err := r.generateVRGManifestWork(name, namespace, homeCluster)
+	if err != nil {
+		return err
+	}
+
+	return r.createOrUpdateManifestWork(manifestWork, homeCluster)
+}
+
+func (r *ApplicationVolumeReplicationReconciler) generateVRGManifestWork(name string, namespace string,
+	homeCluster string) (*ocmworkv1.ManifestWork, error) {
+	vrgClientManifest, err := r.generateVRGManifest(name, namespace)
+	if err != nil {
+		r.Log.Error(err, "failed to generate VolumeReplication")
+
+		return nil, err
+	}
 
 	manifestwork := &ocmworkv1.ManifestWork{
 		ObjectMeta: metav1.ObjectMeta{
@@ -343,34 +411,66 @@ func (r *ApplicationVolumeReplicationReconciler) createManifestWork(name string,
 		},
 	}
 
-	return manifestwork
+	return manifestwork, nil
 }
 
-func (r *ApplicationVolumeReplicationReconciler) createVRGClientManifest(name string,
-	namespace string) *ocmworkv1.Manifest {
-	// TODO: try to use the VRG object, then marshal it into byte array.
-	vrgClientJSON := []byte(fmt.Sprintf(`
-	{
-		"apiVersion": "ramendr.openshift.io/v1alpha1",
-		"kind": "VolumeReplicationGroup",
-		"metadata": {
-			"name": "%s",
-			"namespace": "%s"
-		},
-		"spec": {
-			"pvcSelector": {
-				"matchLabels": {
-					"appclass": "gold",
-					"environment": "dev.AZ1"
-				}
+func (r *ApplicationVolumeReplicationReconciler) generateVRGManifest(name string,
+	namespace string) (*ocmworkv1.Manifest, error) {
+	return r.generateManifest(&ramendrv1alpha1.VolumeReplicationGroup{
+		TypeMeta:   metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
+			PVCSelector: metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"appclass":    "gold",
+					"environment": "dev.AZ1",
+				},
 			},
-			"volumeReplicationClass": "volume-rep-class",
-			"replicationState": "Primary"
-		}
-	}
-	`, name, namespace))
-	vrgClientManifest := &ocmworkv1.Manifest{}
-	vrgClientManifest.RawExtension = runtime.RawExtension{Raw: vrgClientJSON}
+			VolumeReplicationClass: "volume-rep-class",
+			ReplicationState:       "Primary",
+		},
+	})
+}
 
-	return vrgClientManifest
+func (r *ApplicationVolumeReplicationReconciler) generateManifest(obj interface{}) (*ocmworkv1.Manifest, error) {
+	objJSON, err := json.Marshal(obj)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal %v to JSON, error %w", obj, err)
+	}
+
+	manifest := &ocmworkv1.Manifest{}
+	manifest.RawExtension = runtime.RawExtension{Raw: objJSON}
+
+	return manifest, nil
+}
+
+func (r *ApplicationVolumeReplicationReconciler) createOrUpdateManifestWork(
+	work *ocmworkv1.ManifestWork,
+	managedClusternamespace string) error {
+	found := &ocmworkv1.ManifestWork{}
+
+	err := r.Client.Get(context.TODO(),
+		types.NamespacedName{Name: work.Name, Namespace: managedClusternamespace},
+		found)
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			r.Log.Error(err, "failed to fetch ManifestWork", "name", work.Name, "namespace", managedClusternamespace)
+
+			return errorswrapper.Wrap(err, "failed to fetch ManifestWork")
+		}
+
+		r.Log.Info("Creating", "ManifestWork", work)
+
+		return r.Client.Create(context.TODO(), work)
+	}
+
+	if !reflect.DeepEqual(found.Spec, work.Spec) {
+		work.Spec.DeepCopyInto(&found.Spec)
+
+		r.Log.Info("Updating", "ManifestWork", work)
+
+		return r.Client.Update(context.TODO(), found)
+	}
+
+	return nil
 }
