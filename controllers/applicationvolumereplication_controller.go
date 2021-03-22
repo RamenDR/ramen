@@ -115,7 +115,7 @@ func (r *ApplicationVolumeReplicationReconciler) Reconcile(ctx context.Context, 
 	if err := r.updateAVRStatus(ctx, avr, placementDecisions); err != nil {
 		logger.Error(err, "failed to update status")
 
-		return ctrl.Result{}, err
+		return ctrl.Result{Requeue: true}, err
 	}
 
 	logger.Info("Completed creating manifestwork", "Placement Decisions", len(avr.Status.Decisions),
