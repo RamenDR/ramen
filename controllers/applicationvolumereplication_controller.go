@@ -117,7 +117,7 @@ func (r *ApplicationVolumeReplicationReconciler) Reconcile(ctx context.Context, 
 	if err := r.updateAVRStatus(ctx, avr, placementDecisions); err != nil {
 		logger.Error(err, "failed to update status")
 
-		return ctrl.Result{Requeue: true}, err
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	logger.Info("completed manifestwork for subscriptions")
@@ -207,14 +207,14 @@ func (r *ApplicationVolumeReplicationReconciler) createVRGManifestWork(
 	}
 
 	if err := r.createOrUpdateVRGRolesManifestWork(homeCluster); err != nil {
-		r.Log.Error(err, "Failed to create or update VolumeReplicationGroup Roles manifest")
+		r.Log.Error(err, "failed to create or update VolumeReplicationGroup Roles manifest")
 
 		return empty, empty, err
 	}
 
 	if err := r.createOrUpdateVRGManifestWork(
 		subscription.Name, subscription.Namespace, homeCluster); err != nil {
-		r.Log.Error(err, "Failed to create or update VolumeReplicationGroup manifest")
+		r.Log.Error(err, "failed to create or update VolumeReplicationGroup manifest")
 
 		return empty, empty, err
 	}
@@ -318,14 +318,14 @@ func (r *ApplicationVolumeReplicationReconciler) generateVRGRolesManifestWork(na
 	error) {
 	vrgClusterRole, err := r.generateVRGClusterRoleManifest()
 	if err != nil {
-		r.Log.Error(err, "Failed to generate VolumeReplicationGroup ClusterRole manifest", "namespace", namespace)
+		r.Log.Error(err, "failed to generate VolumeReplicationGroup ClusterRole manifest", "namespace", namespace)
 
 		return nil, err
 	}
 
 	vrgClusterRoleBinding, err := r.generateVRGClusterRoleBindingManifest()
 	if err != nil {
-		r.Log.Error(err, "Failed to generate VolumeReplicationGroup ClusterRoleBinding manifest", "namespace", namespace)
+		r.Log.Error(err, "failed to generate VolumeReplicationGroup ClusterRoleBinding manifest", "namespace", namespace)
 
 		return nil, err
 	}
@@ -392,7 +392,7 @@ func (r *ApplicationVolumeReplicationReconciler) generateVRGManifestWork(name st
 	homeCluster string) (*ocmworkv1.ManifestWork, error) {
 	vrgClientManifest, err := r.generateVRGManifest(name, namespace)
 	if err != nil {
-		r.Log.Error(err, "Failed to generate VolumeReplication")
+		r.Log.Error(err, "failed to generate VolumeReplication")
 
 		return nil, err
 	}
@@ -454,7 +454,7 @@ func (r *ApplicationVolumeReplicationReconciler) createOrUpdateManifestWork(
 		found)
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			r.Log.Error(err, "Failed to fetch ManifestWork", "name", work.Name, "namespace", managedClusternamespace)
+			r.Log.Error(err, "failed to fetch ManifestWork", "name", work.Name, "namespace", managedClusternamespace)
 
 			return errorswrapper.Wrap(err, "failed to fetch ManifestWork")
 		}
