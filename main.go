@@ -20,6 +20,10 @@ import (
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+	spokeClusterV1 "github.com/open-cluster-management/api/cluster/v1"
+	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
+	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
+	subv1 "github.com/open-cluster-management/multicloud-operators-subscription/pkg/apis/apps/v1"
 	volrep "github.com/shyamsundarr/volrep-shim-operator/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -44,6 +48,10 @@ func init() {
 
 	utilruntime.Must(ramendrv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(volrep.AddToScheme(scheme))
+	utilruntime.Must(subv1.SchemeBuilder.AddToScheme(scheme))
+	utilruntime.Must(plrv1.AddToScheme(scheme))
+	utilruntime.Must(ocmworkv1.AddToScheme(scheme))
+	utilruntime.Must(spokeClusterV1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 

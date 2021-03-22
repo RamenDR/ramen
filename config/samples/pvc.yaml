@@ -6,7 +6,6 @@ metadata:
     appclass: gold
     environment: dev.AZ1
 spec:
-  storageClassName: "local-storage"
   accessModes:
     - ReadWriteOnce
   resources:

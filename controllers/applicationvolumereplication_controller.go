@@ -105,8 +105,7 @@ func (r *ApplicationVolumeReplicationReconciler) Reconcile(ctx context.Context, 
 		return ctrl.Result{}, errorswrapper.Wrap(err, "failed to list subscriptions")
 	}
 
-	placementDecisions := r.processSubscriptionList(subscriptionList)
-
+	placementDecisions, requeue := r.processSubscriptionList(subscriptionList)
 	if len(placementDecisions) == 0 {
 		logger.Error(nil, "no placement decisions were found", "namespace", avr.Namespace)
 
@@ -116,19 +115,33 @@ func (r *ApplicationVolumeReplicationReconciler) Reconcile(ctx context.Context, 
 	if err := r.updateAVRStatus(ctx, avr, placementDecisions); err != nil {
 		logger.Error(err, "failed to update status")
 
-		return ctrl.Result{}, err
+		return ctrl.Result{Requeue: true}, err
 	}
 
 	logger.Info("completed manifestwork for subscriptions")
 
-	return ctrl.Result{}, nil
+	return ctrl.Result{Requeue: requeue}, nil
 }
 
 func (r *ApplicationVolumeReplicationReconciler) processSubscriptionList(
-	subscriptionList *subv1.SubscriptionList) ramendrv1alpha1.SubscriptionPlacementDecisionMap {
+	subscriptionList *subv1.SubscriptionList) (
+	ramendrv1alpha1.SubscriptionPlacementDecisionMap, bool) {
 	placementDecisions := ramendrv1alpha1.SubscriptionPlacementDecisionMap{}
 
+	requeue := false
+
 	for _, subscription := range subscriptionList.Items {
+		// On the hub ignore any managed cluster subscriptions, as the hub maybe a managed cluster itself.
+		// SubscriptionSubscribed means this subscription is child sitting in managed cluster
+		// Placement.Local is true for a local subscription, and can be used in the absence of Status
+		if subscription.Status.Phase == subv1.SubscriptionSubscribed ||
+			(subscription.Spec.Placement != nil && subscription.Spec.Placement.Local != nil &&
+				*subscription.Spec.Placement.Local) {
+			r.Log.Info("skipping local subscription", "name", subscription.Name)
+
+			continue
+		}
+
 		// Create a ManifestWork that represents the VolumeReplicationGroup CR for the hub to
 		// deploy on the managed cluster. A manifest workload is defined as a set of Kubernetes
 		// resources. The ManifestWork must be created in the cluster namespace on the hub, so that
@@ -137,6 +150,8 @@ func (r *ApplicationVolumeReplicationReconciler) processSubscriptionList(
 		homeCluster, peerCluster, err := r.createVRGManifestWork(subscription)
 		if err != nil {
 			r.Log.Info("failed to create or update ManifestWork for", "subscription", subscription.Name, "error", err)
+
+			requeue = true
 
 			continue
 		}
@@ -150,7 +165,7 @@ func (r *ApplicationVolumeReplicationReconciler) processSubscriptionList(
 			"HomeCluster", homeCluster, "PeerCluster", peerCluster)
 	}
 
-	return placementDecisions
+	return placementDecisions, requeue
 }
 
 func (r *ApplicationVolumeReplicationReconciler) updateAVRStatus(
@@ -339,20 +354,20 @@ func (r *ApplicationVolumeReplicationReconciler) createVRGClientManifest(name st
 		"apiVersion": "ramendr.openshift.io/v1alpha1",
 		"kind": "VolumeReplicationGroup",
 		"metadata": {
-		   "name": "%s",
-		   "namespace": "%s"
+			"name": "%s",
+			"namespace": "%s"
 		},
 		"spec": {
-		   "pvcSelector": {
-			  "matchLabels": {
-				 "appclass": "gold",
-				 "environment": "dev.AZ1"
-			  }
-		   },
-		   "volumeReplicationClass": "volume-rep-class",
-		   "replicationState": "Primary"
+			"pvcSelector": {
+				"matchLabels": {
+					"appclass": "gold",
+					"environment": "dev.AZ1"
+				}
+			},
+			"volumeReplicationClass": "volume-rep-class",
+			"replicationState": "Primary"
 		}
-	 }
+	}
 	`, name, namespace))
 	vrgClientManifest := &ocmworkv1.Manifest{}
 	vrgClientManifest.RawExtension = runtime.RawExtension{Raw: vrgClientJSON}
