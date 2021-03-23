@@ -381,6 +381,47 @@ func (v *VolumeReplicationGroupReconciler) listPersistentVolumeClaims(
 	return pvcList, nil
 }
 
+// handlePersistentVolumeClaims creates VolumeReplication CR for each pvc
+// from pvcList. If it fails (even for one pvc), then requeue is set to true.
+// For now, keeping creation of VolumeReplication CR and backing up of PV
+// metadata in separate functions and calling them separately. In future,
+// if creation of VolumeReplication CR and backing up of pv metadata should
+// happen together (i.e for each pvc create VolumeReplication CR and then
+// backup corresponding PV metadata), then it can be put in a single function.
+func (v *VolumeReplicationGroupReconciler) handlePersistentVolumeClaims(
+	ctx context.Context,
+	volRepGroup *ramendrv1alpha1.VolumeReplicationGroup,
+	pvcList *corev1.PersistentVolumeClaimList) bool {
+	if requeue := v.createVolumeReplicationResources(ctx, volRepGroup, pvcList); requeue {
+		log.Error("failed to get or create VolumeReplication CRs for pvc list")
+
+		return requeue
+	}
+
+	if requeue := v.handlePersistentVolumes(ctx, pvcList); requeue {
+		log.Error("failed to handle Persistent Volumes for pvc list")
+
+		return requeue
+	}
+
+	return false
+}
+
+// HandlePersistentVolumes handles bound PVs
+func (v *VolumeReplicationGroupReconciler) handlePersistentVolumes(
+	ctx context.Context,
+	pvcList *corev1.PersistentVolumeClaimList) bool {
+	requeue := false
+
+	if err := v.printPersistentVolumes(ctx, pvcList); err != nil {
+		log.Error(err, "failed to print the persistent volumes for pvc list %w")
+
+		requeue = true
+	}
+
+	return requeue
+}
+
 // Prints the bound Persistent Volumes.
 func (v *VolumeReplicationGroupReconciler) printPersistentVolumes(
 	ctx context.Context,
@@ -437,21 +478,6 @@ func (v *VolumeReplicationGroupReconciler) printPersistentVolumes(
 	return nil
 }
 
-// HandlePersistentVolumes handles bound PVs
-func (v *VolumeReplicationGroupReconciler) handlePersistentVolumes(
-	ctx context.Context,
-	pvcList *corev1.PersistentVolumeClaimList) bool {
-	requeue := false
-
-	if err := v.printPersistentVolumes(ctx, pvcList); err != nil {
-		log.Error(err, "failed to print the persistent volumes for pvc list %w")
-
-		requeue = true
-	}
-
-	return requeue
-}
-
 func (v *VolumeReplicationGroupReconciler) createVolumeReplicationResources(
 	ctx context.Context,
 	volRepGroup *ramendrv1alpha1.VolumeReplicationGroup,
@@ -487,32 +513,6 @@ func (v *VolumeReplicationGroupReconciler) createVolumeReplicationResources(
 	}
 
 	return requeue
-}
-
-// handlePersistentVolumeClaims creates VolumeReplication CR for each pvc
-// from pvcList. If it fails (even for one pvc), then requeue is set to true.
-// For now, keeping creation of VolumeReplication CR and backing up of PV
-// metadata in separate functions and calling them separately. In future,
-// if creation of VolumeReplication CR and backing up of pv metadata should
-// happen together (i.e for each pvc create VolumeReplication CR and then
-// backup corresponding PV metadata), then it can be put in a single function.
-func (v *VolumeReplicationGroupReconciler) handlePersistentVolumeClaims(
-	ctx context.Context,
-	volRepGroup *ramendrv1alpha1.VolumeReplicationGroup,
-	pvcList *corev1.PersistentVolumeClaimList) bool {
-	if requeue := v.createVolumeReplicationResources(ctx, volRepGroup, pvcList); requeue {
-		log.Error("failed to get or create VolumeReplication CRs for pvc list")
-
-		return requeue
-	}
-
-	if requeue := v.handlePersistentVolumes(ctx, pvcList); requeue {
-		log.Error("failed to handle Persistent Volumes for pvc list")
-
-		return requeue
-	}
-
-	return false
 }
 
 // createVolumeReplicationCRForPVC creates a VolumeReplication CR with a PVC as its data source.
