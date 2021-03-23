@@ -1,0 +1,12 @@
+---
+# https://yamllint.readthedocs.io/en/stable/configuration.html
+
+extends: default
+ignore: |
+  config/**
+  hack/test/*
+rules:
+  indentation:
+    indent-sequences: consistent
+  line-length:
+    allow-non-breakable-inline-mappings: true
