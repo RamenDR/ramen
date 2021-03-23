@@ -20,12 +20,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// FailoverClusterMap defines the clusters used for failover per subscription. Key is subscription name
+type FailoverClusterMap map[string]string
 
 // ApplicationVolumeReplicationSpec defines the desired state of ApplicationVolumeReplication
 type ApplicationVolumeReplicationSpec struct {
-	FailedCluster string `json:"failedCluster,omitempty"`
+	FailedCluster    string             `json:"failedCluster,omitempty"`
+	FailoverClusters FailoverClusterMap `json:"statuses,omitempty"`
 }
 
 // SubscriptionPlacementDecision lists each subscription with its home and peer clusters
@@ -46,7 +47,7 @@ type ApplicationVolumeReplicationStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
-// ApplicationVolumeReplication is the Schema for the ApplicationVolumeReplications API
+// ApplicationVolumeReplication is the Schema for the applicationvolumereplications API
 type ApplicationVolumeReplication struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

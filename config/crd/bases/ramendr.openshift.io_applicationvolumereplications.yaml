@@ -19,7 +19,7 @@ spec:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ApplicationVolumeReplication is the Schema for the ApplicationVolumeReplications
+        description: ApplicationVolumeReplication is the Schema for the applicationvolumereplications
           API
         properties:
           apiVersion:
@@ -40,6 +40,12 @@ spec:
             properties:
               failedCluster:
                 type: string
+              statuses:
+                additionalProperties:
+                  type: string
+                description: FailoverClusterMap defines the clusters used for failover
+                  per subscription. Key is subscription name
+                type: object
             type: object
           status:
             description: ApplicationVolumeReplicationStatus defines the observed state
