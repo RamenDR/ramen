@@ -206,6 +206,8 @@ func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	// examine the DeletionTimestamp to determine whether the object is under deletion
 	if !volRepGroup.GetDeletionTimestamp().IsZero() {
 		if err := v.runAndRemoveFinalizer(ctx, volRepGroup, vrgFinalizerName); err != nil {
+			log.Errorf("failed to remove the finalizer from vrg: %s/%s", volRepGroup.Name, volRepGroup.Namespace)
+
 			return ctrl.Result{Requeue: true}, nil
 		}
 
@@ -213,8 +215,9 @@ func (v *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, nil
 	}
 
-	// Add finalizer if not present
-	if err := v.addFinalizer(ctx, volRepGroup, vrgFinalizerName); err != nil {
+	if err := v.addFinalizerIfNotPresent(ctx, volRepGroup, vrgFinalizerName); err != nil {
+		log.Errorf("failed to add the finalizer to vrg: %s/%s", volRepGroup.Name, volRepGroup.Namespace)
+
 		return ctrl.Result{Requeue: true}, nil
 	}
 
@@ -247,7 +250,9 @@ func containsString(values []string, s string) bool {
 	return false
 }
 
-func removeString(values []string, s string) (result []string) {
+func removeString(values []string, s string) []string {
+	result := []string{}
+
 	for _, item := range values {
 		if item == s {
 			continue
@@ -256,10 +261,10 @@ func removeString(values []string, s string) (result []string) {
 		result = append(result, item)
 	}
 
-	return
+	return result
 }
 
-func (v *VolumeReplicationGroupReconciler) addFinalizer(
+func (v *VolumeReplicationGroupReconciler) addFinalizerIfNotPresent(
 	ctx context.Context,
 	volRepGroup *ramendrv1alpha1.VolumeReplicationGroup,
 	finalizer string) error {
@@ -392,19 +397,21 @@ func (v *VolumeReplicationGroupReconciler) handlePersistentVolumeClaims(
 	ctx context.Context,
 	volRepGroup *ramendrv1alpha1.VolumeReplicationGroup,
 	pvcList *corev1.PersistentVolumeClaimList) bool {
-	if requeue := v.createVolumeReplicationResources(ctx, volRepGroup, pvcList); requeue {
+	requeue := true
+
+	if requeueResult := v.createVolumeReplicationResources(ctx, volRepGroup, pvcList); requeueResult {
 		log.Error("failed to get or create VolumeReplication CRs for pvc list")
 
 		return requeue
 	}
 
-	if requeue := v.handlePersistentVolumes(ctx, pvcList); requeue {
+	if requeueResult := v.handlePersistentVolumes(ctx, pvcList); requeueResult {
 		log.Error("failed to handle Persistent Volumes for pvc list")
 
 		return requeue
 	}
 
-	return false
+	return !requeue
 }
 
 // HandlePersistentVolumes handles bound PVs
