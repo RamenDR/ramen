@@ -75,7 +75,7 @@ rules:
   - patch
   - update
 - apiGroups:
-  - replication.storage.ramen.io
+  - replication.storage.openshift.io
   resources:
   - volumereplications
   verbs:

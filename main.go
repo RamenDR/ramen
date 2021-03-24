@@ -24,7 +24,8 @@ import (
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	subv1 "github.com/open-cluster-management/multicloud-operators-subscription/pkg/apis/apps/v1"
-	volrep "github.com/shyamsundarr/volrep-shim-operator/api/v1alpha1"
+
+	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
 	uberzap "go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"

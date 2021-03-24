@@ -23,7 +23,8 @@ import (
 	"reflect"
 
 	"github.com/go-logr/logr"
-	volrep "github.com/shyamsundarr/volrep-shim-operator/api/v1alpha1"
+
+	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -72,10 +73,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) er
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&ramendrv1alpha1.VolumeReplicationGroup{}).
 		Watches(&source.Kind{Type: &corev1.PersistentVolumeClaim{}}, pvcMapFun, builder.WithPredicates(pvcPredicate)).
-		// The actual thing that the controller owns is
-		// the VolumeReplication CR. Change the below
-		// line when VolumeReplication CR is ready.
-		Owns(&ramendrv1alpha1.VolumeReplicationGroup{}).
+		Owns(&volrep.VolumeReplication{}).
 		Complete(r)
 }
 
@@ -190,7 +188,7 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim, log logr.
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups/finalizers,verbs=update
-// +kubebuilder:rbac:groups=replication.storage.ramen.io,resources=volumereplications,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplications,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch
 
@@ -239,8 +237,8 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	if v.instance.Spec.ReplicationState != volrep.ReplicationPrimary &&
-		v.instance.Spec.ReplicationState != volrep.ReplicationSecondary {
+	if v.instance.Spec.ReplicationState != volrep.Primary &&
+		v.instance.Spec.ReplicationState != volrep.Secondary {
 		err := fmt.Errorf("invalid or unknown replication state detected (deleted %v, desired replicationState %v)",
 			v.instance.GetDeletionTimestamp().IsZero(),
 			v.instance.Spec.ReplicationState)
@@ -257,7 +255,7 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 		v.log = v.log.WithValues("Finalize", true)
 
 		return v.finalizeVRG()
-	case v.instance.Spec.ReplicationState == volrep.ReplicationPrimary:
+	case v.instance.Spec.ReplicationState == volrep.Primary:
 		return v.processAsPrimary()
 	default: // Secondary, not primary and not deleted
 		return v.processAsSecondary()
@@ -457,50 +455,143 @@ func (v *VRGInstance) createVolumeReplicationResources() bool {
 			log.Info("Requeuing as PersistentVolumeClaim is not bound",
 				"pvcPhase", pvc.Status.Phase)
 
+			// continue processing other PVCs and return the need to requeue.
 			requeue = true
 
-			// continue processing other PVCs and return the need to requeue
 			continue
 		}
 
-		volRep := &volrep.VolumeReplication{}
-
-		err := v.reconciler.Get(v.ctx, pvcNamespacedName, volRep)
-		if err != nil {
-			if errors.IsNotFound(err) {
-				requeue = v.createVolumeReplication(pvc)
-			} else {
-				// requeue on failure to ensure any PVC not having a corresponding VR CR
-				requeue = true
-				log.Error(err, "failed to get VolumeReplication resource")
-			}
+		// createOrUpdateVolumeReplicationResource returns false only if
+		//     - For the pvc there is a corresponding VolumeReplication (VR)
+		//       resource available who state matches with the state of
+		//       the VolumeReplicationGroup (VRG) resource and the status
+		//       is healthy.
+		// In such cases, no need to reconcile the VolumeReplicationGroup
+		// resource. Situations which need reconilation of VRG are:
+		//     i) VR was not not found and got created.
+		//     ii)VR was not found and its creation failed.
+		//     iii) VR state and VRG state did not match and VR update was done
+		//     iv) VR state and VRG state did not match and VR update failed
+		//     v) VR status is not shown as healthy
+		if requeueResult := v.createOrUpdateVolumeReplicationResource(pvc); requeueResult {
+			requeue = true
 		}
 	}
 
 	return requeue
 }
 
-func (v *VRGInstance) createVolumeReplication(
-	pvc corev1.PersistentVolumeClaim) (requeue bool) {
-	requeue = false
+func (v *VRGInstance) createOrUpdateVolumeReplicationResource(pvc corev1.PersistentVolumeClaim) bool {
+	requeue := true
+	volRep := &volrep.VolumeReplication{}
 
-	// Prior to creating VR, upload PV metadata to object store
-	if err := v.uploadPV(pvc); err != nil {
-		v.log.Error(err, "failed to upload PV metadata")
+	err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}, volRep)
+	if err != nil {
+		// As of now this function does not return anything. Calling this
+		// function means reconcile is needed if getting VolumeReplication
+		// resource failed. When the behavior of this function changes, then
+		// the return value has to be checked and appropriately handled.
+		v.createRelatedItems(pvc, err)
 
-		requeue = true
-		// PV metadata replication to object store has failed.
-		// No point in creating VR to enable PV data replication.
+		return requeue
+	}
+
+	if err := v.volRepStateCheck(volRep); err != nil {
+		return requeue
+	}
+
+	if err := v.volRepStatusCheck(volRep); err != nil {
+		return requeue
+	}
+
+	return !requeue
+}
+
+// This function does not return anything. Since, this function is
+// called upon not finding the VolumeReplication resource for the PVC,
+// it's return value is interpreted as true irrespective of whether it
+// successfully created the related items or not.
+// If successfully created everything, then to check the state and
+// status of the VolumeReplication resource a reconcile has to happen.
+// If something failed, then again to correctly create the necessary
+// resources (VolumeReplication CR and upload of PV metadata) a
+// reconcile is needed.
+//
+// This function assumes that error is not nil. The caller of this
+// function has to do the check for err being nil or not. If that
+// check is added here or if the entire logic of this function is
+// moved to the caller of this function, then the linter complains
+// due to "nestif" complexity being high.
+func (v *VRGInstance) createRelatedItems(pvc corev1.PersistentVolumeClaim, err error) {
+	if errors.IsNotFound(err) {
+		v.log.Info("Uploading PersistentVolume")
+
+		if err = v.uploadPV(pvc); err != nil {
+			v.log.Error(err, "failed to upload PV metadata")
+			// There's no point enabling PV data replication if
+			// replication of PV metadata to object store has failed.
+			return
+		}
+
+		if err = v.createVolumeReplicationForPVC(pvc); err != nil {
+			v.log.Info("Requeuing due to failure in creating VolumeReplication resource for pvc",
+				"errorValue", err)
+		}
+		// requeue is set to true if VR is freshly created. This is to ensure
+		// that in the next reconcile loop, VR status can be checked to see
+		// whether it is in a correct expected state or not.
 		return
 	}
 
-	if err := v.createVolumeReplicationForPVC(pvc); err != nil {
-		v.log.Error(err, "failed to create VolumeReplication resource")
+	// Being here means, creation of VolumeReplication resource failed.
+	v.log.Info("Requeuing due to failure in getting VolumeReplication resource for pvc",
+		"errorValue", err)
+}
 
-		requeue = true
+func (v *VRGInstance) volRepStateCheck(volRep *volrep.VolumeReplication) error {
+	if v.instance.Spec.ReplicationState == volRep.Spec.ReplicationState {
+		return nil
 	}
 
-	return
+	v.log.Info("VolumeReplicationGroup state and VolumeReplication state mismatch")
+
+	volRep.Spec.ReplicationState = v.instance.Spec.ReplicationState
+	if err := v.reconciler.Update(v.ctx, volRep); err != nil {
+		v.log.Info("Failed to update the VolumeReplicate state (%s/%s)", volRep.Name, volRep.Namespace)
+
+		return fmt.Errorf("failed to update the VolumeReplication state (%s/%s)", volRep.Name, volRep.Namespace)
+	}
+
+	// Reconcile has to happen irrespective of whether the state update
+	// succeeded or not.
+	return fmt.Errorf("updated the VolumeReplication resource (%s/%s). Reconciling", volRep.Name, volRep.Namespace)
+}
+
+func (v *VRGInstance) volRepStatusCheck(volRep *volrep.VolumeReplication) error {
+	// Currently it is not sure what is the expected State in the volrep.Status for
+	// each ReplicationState for volrep.spec. Hence, comparing only whether failures
+	// to determine the return value. If there are more tight constraints for the
+	// expected status of different states, then below conditions have to be changed.
+	if volRep.Spec.ReplicationState == volrep.Primary && volRep.Status.State == volrep.ReplicationFailure {
+		v.log.Info("Primary VolumeReplication is not replicating")
+
+		return fmt.Errorf("primary VolumeReplication resource not replicating %s/%s", volRep.Name, volRep.Namespace)
+	}
+
+	if volRep.Spec.ReplicationState == volrep.Secondary && volRep.Status.State == volrep.ReplicationFailure {
+		v.log.Info("Secondary VolumeReplication is not replicating/resyncing")
+
+		return fmt.Errorf("secondary VolumeReplication resource not replicating/resyncing %s/%s",
+			volRep.Name, volRep.Namespace)
+	}
+
+	if volRep.Spec.ReplicationState == volrep.Resync && volRep.Status.State != volrep.Resyncing {
+		v.log.Info("Resync VolumeReplication is not resyncing")
+
+		return fmt.Errorf("resync VolumeReplication resource not resyncing %s/%s", volRep.Name, volRep.Namespace)
+	}
+
+	return nil
 }
 
 // uploadPV checks if the VRG spec has been configured with an s3 endpoint,
@@ -609,16 +700,20 @@ func (v *VRGInstance) createVolumeReplicationForPVC(pvc corev1.PersistentVolumeC
 	cr := &volrep.VolumeReplication{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      pvc.Name,
-			Namespace: pvc.Namespace,
+			Namespace: pvc.ObjectMeta.Namespace,
 		},
 		Spec: volrep.VolumeReplicationSpec{
-			DataSource: &corev1.TypedLocalObjectReference{
+			DataSource: corev1.TypedLocalObjectReference{
 				Kind: "PersistentVolumeClaim",
 				Name: pvc.Name,
 			},
+			// Is it better to set the VolumeReplicationClass of VR
+			// by referring to StorageClass of the pvc instead of
+			// inheriting the VolumeReplicationClass from VRG?
+			VolumeReplicationClass: v.instance.Spec.VolumeReplicationClass,
 			// Get the state of VolumeReplication from
 			// VolumeReplicationGroupSpec
-			State: v.instance.Spec.ReplicationState,
+			ReplicationState: v.instance.Spec.ReplicationState,
 		},
 	}
 

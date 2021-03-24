@@ -98,9 +98,6 @@ spec:
                 description: Desired state of all volumes [primary or secondary] in
                   this replication group; this value is propagated to children VolumeReplication
                   CRs
-                enum:
-                - Primary
-                - Secondary
                 type: string
               s3Endpoint:
                 description: 'S3 Endpoint to replicate PV metadata; set this field,
