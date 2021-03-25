@@ -3,6 +3,7 @@ module github.com/ramendr/ramen
 go 1.15
 
 require (
+	github.com/aws/aws-sdk-go v1.38.3
 	github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
 	github.com/go-logr/logr v0.3.0
 	github.com/onsi/ginkgo v1.14.1
