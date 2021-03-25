@@ -19,9 +19,11 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"reflect"
 
 	"github.com/go-logr/logr"
+	"github.com/prometheus/common/log"
 	volrep "github.com/shyamsundarr/volrep-shim-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -603,4 +605,103 @@ func removeString(values []string, s string) []string {
 	}
 
 	return result
+}
+
+// Upload the PV of the given PVC to object store, if the
+// VRG has been configured with an s3Endpoint.
+// - Return an error if S3Endpoint is configured but the PV
+//   could not be uploaded for any reason.
+// - If S3Endpoint is not configured, the user does not want
+//   VRG to backup/replicate the PV to an object store and has
+// 	 other means to replicate PV metadata and is likely using
+//   the VRG as a single control point to manipulate replication
+// 	 of a group of VRs and thus a group of PVs.  However, log
+//   a warning once per VRG
+func (v *VolumeReplicationGroupReconciler) uploadPVofPVC(
+	ctx context.Context,
+	volRepGroup *ramendrv1alpha1.VolumeReplicationGroup,
+	pvc *corev1.PersistentVolumeClaim) error {
+	vrgName := volRepGroup.Name
+
+	s3Endpoint := volRepGroup.Spec.S3Endpoint
+	if s3EndpointIsUnconfiguredOrInvalid(s3Endpoint, vrgName) {
+		return nil
+	}
+
+	s3Conn, err := connectToS3Endpoint(ctx, v,
+		s3Endpoint,
+		types.NamespacedName{ /* secretName */
+			Name:      volRepGroup.Spec.S3SecretName,
+			Namespace: volRepGroup.Namespace,
+		},
+		vrgName, /* debugTag */
+	)
+	if err != nil {
+		return err
+	}
+
+	pv := corev1.PersistentVolume{}
+	volumeName := pvc.Spec.VolumeName
+	pvObjectKey := client.ObjectKey{
+		Name: volumeName,
+	}
+
+	if err := v.Get(ctx, pvObjectKey, &pv); err != nil {
+		return fmt.Errorf("failed to get upload PV %v of VRG %v err %w", volumeName, vrgName, err)
+	}
+
+	// Create the bucket, without caching or assuming its existence; use the VRG name
+	// as the bucket name
+	bucket := vrgName
+	if err := s3Conn.createBucket(bucket); err != nil {
+		v.log.Errorf("unable to create bucket %v for VRG %v", bucket, vrgName)
+
+		return err
+	}
+
+	if err := s3Conn.uploadPV(bucket, pv.Name, pv); err != nil {
+		return err
+	}
+
+	if err := s3Conn.verifyPVUpload(bucket, pv.Name, pv); err != nil {
+		return err
+	}
+
+	// Remove after Benamar uses this method in AVR
+	if _, err := s3Conn.downloadPVs(bucket); err != nil {
+		return err
+	}
+
+	return err
+}
+
+// If the given s3 endpoint for the given VRG is unconfigured or
+// invalid, log a warning message, but only once
+func s3EndpointIsUnconfiguredOrInvalid(s3Endpoint, vrgName string) (
+	invalid bool) {
+	invalid = true
+
+	if prevEndpoint, prevWarned := s3Warning[vrgName]; prevWarned &&
+		prevEndpoint == s3Endpoint {
+		return
+	}
+
+	if s3Endpoint == "" {
+		s3Warning[vrgName] = s3Endpoint
+		log.Warnf("Empty spec.S3Endpoint <%v> in VRG %v", s3Endpoint, vrgName)
+
+		return
+	}
+
+	_, err := url.ParseRequestURI(s3Endpoint)
+	if err != nil {
+		s3Warning[vrgName] = s3Endpoint
+		log.Warnf("Invalid spec.S3Endpoint <%v> in VRG %v ", s3Endpoint, vrgName)
+
+		return
+	}
+
+	invalid = false
+
+	return
 }
