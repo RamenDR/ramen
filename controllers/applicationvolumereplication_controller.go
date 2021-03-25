@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
 
 	spokeClusterV1 "github.com/open-cluster-management/api/cluster/v1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
@@ -123,6 +124,42 @@ func (r *ApplicationVolumeReplicationReconciler) Reconcile(ctx context.Context, 
 	logger.Info("completed manifestwork for subscriptions")
 
 	return ctrl.Result{Requeue: requeue}, nil
+}
+
+func IsManifestInAppliedState(mw *ocmworkv1.ManifestWork) bool {
+	isApplied := false
+	conditions := mw.Status.Conditions
+
+	if len(conditions) > 0 {
+		// sort conditions by timestamp. Index 0 = most recent
+		sort.Slice(conditions, func(a, b int) bool {
+			return conditions[b].LastTransitionTime.Before(&conditions[a].LastTransitionTime)
+		})
+
+		mostRecentTimestamp := conditions[0].LastTransitionTime
+
+		// loop through conditions until not in the most recent one anymore
+		for index := range conditions {
+			// only index 1+ needs exit check
+			if index > 0 {
+				timestamp := conditions[index].LastTransitionTime
+
+				// only evaluate conditions on most recent timestamp
+				if timestamp != mostRecentTimestamp {
+					break
+				}
+			}
+
+			// check if state is applied
+			if conditions[index].Type == "Applied" {
+				isApplied = true
+
+				break
+			}
+		}
+	}
+
+	return isApplied
 }
 
 func (r *ApplicationVolumeReplicationReconciler) processSubscriptionList(
