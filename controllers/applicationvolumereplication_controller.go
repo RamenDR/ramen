@@ -127,39 +127,65 @@ func (r *ApplicationVolumeReplicationReconciler) Reconcile(ctx context.Context, 
 }
 
 func IsManifestInAppliedState(mw *ocmworkv1.ManifestWork) bool {
-	isApplied := false
+	applied := false
+	degraded := false
 	conditions := mw.Status.Conditions
 
 	if len(conditions) > 0 {
-		// sort conditions by timestamp. Index 0 = most recent
-		sort.Slice(conditions, func(a, b int) bool {
-			return conditions[b].LastTransitionTime.Before(&conditions[a].LastTransitionTime)
-		})
+		// get most recent conditions that have ConditionTrue status
+		recentConditions := filterByConditionStatus(getMostRecentConditions(conditions), metav1.ConditionTrue)
 
-		mostRecentTimestamp := conditions[0].LastTransitionTime
-
-		// loop through conditions until not in the most recent one anymore
-		for index := range conditions {
-			// only index 1+ needs exit check
-			if index > 0 {
-				timestamp := conditions[index].LastTransitionTime
-
-				// only evaluate conditions on most recent timestamp
-				if timestamp != mostRecentTimestamp {
-					break
-				}
+		for _, condition := range recentConditions {
+			if condition.Type == ocmworkv1.WorkApplied {
+				applied = true
+			} else if condition.Type == ocmworkv1.WorkDegraded {
+				degraded = true
 			}
+		}
 
-			// check if state is applied
-			if conditions[index].Type == "Applied" {
-				isApplied = true
-
-				break
-			}
+		// if most recent timestamp contains Applied and Degraded states, don't trust it's actually Applied
+		if degraded {
+			applied = false
 		}
 	}
 
-	return isApplied
+	return applied
+}
+
+func filterByConditionStatus(conditions []metav1.Condition, status metav1.ConditionStatus) []metav1.Condition {
+	filtered := make([]metav1.Condition, 0)
+
+	for _, condition := range conditions {
+		if condition.Status == status {
+			filtered = append(filtered, condition)
+		}
+	}
+
+	return filtered
+}
+
+// return Conditions with most recent timestamps only (allows duplicates)
+func getMostRecentConditions(conditions []metav1.Condition) []metav1.Condition {
+	recentConditions := make([]metav1.Condition, 0)
+
+	// sort conditions by timestamp. Index 0 = most recent
+	sort.Slice(conditions, func(a, b int) bool {
+		return conditions[b].LastTransitionTime.Before(&conditions[a].LastTransitionTime)
+	})
+
+	mostRecentTimestamp := conditions[0].LastTransitionTime
+
+	// loop through conditions until not in the most recent one anymore
+	for index := range conditions {
+		// only keep conditions with most recent timestamp
+		if conditions[index].LastTransitionTime == mostRecentTimestamp {
+			recentConditions = append(recentConditions, conditions[index])
+		} else {
+			break
+		}
+	}
+
+	return recentConditions
 }
 
 func (r *ApplicationVolumeReplicationReconciler) processSubscriptionList(
