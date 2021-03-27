@@ -25,8 +25,7 @@ type FailoverClusterMap map[string]string
 
 // ApplicationVolumeReplicationSpec defines the desired state of ApplicationVolumeReplication
 type ApplicationVolumeReplicationSpec struct {
-	FailedCluster    string             `json:"failedCluster,omitempty"`
-	FailoverClusters FailoverClusterMap `json:"statuses,omitempty"`
+	FailoverClusters FailoverClusterMap `json:"FailoverClusters,omitempty"`
 }
 
 // SubscriptionPlacementDecision lists each subscription with its home and peer clusters
@@ -41,7 +40,7 @@ type SubscriptionPlacementDecisionMap map[string]*SubscriptionPlacementDecision
 // ApplicationVolumeReplicationStatus defines the observed state of ApplicationVolumeReplication
 type ApplicationVolumeReplicationStatus struct {
 	// Decisions are for subscription and by AVR namespace (which is app namespace)
-	Decisions SubscriptionPlacementDecisionMap `json:"statuses,omitempty"`
+	Decisions SubscriptionPlacementDecisionMap `json:"Decisions,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -38,9 +38,7 @@ spec:
             description: ApplicationVolumeReplicationSpec defines the desired state
               of ApplicationVolumeReplication
             properties:
-              failedCluster:
-                type: string
-              statuses:
+              FailoverClusters:
                 additionalProperties:
                   type: string
                 description: FailoverClusterMap defines the clusters used for failover
@@ -51,7 +49,7 @@ spec:
             description: ApplicationVolumeReplicationStatus defines the observed state
               of ApplicationVolumeReplication
             properties:
-              statuses:
+              Decisions:
                 additionalProperties:
                   description: SubscriptionPlacementDecision lists each subscription
                     with its home and peer clusters
