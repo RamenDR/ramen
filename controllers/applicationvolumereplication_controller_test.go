@@ -36,7 +36,8 @@ import (
 const (
 	ApplicationVolumeReplicationName          = "app-volume-replication-test"
 	ApplicationVolumeReplicationNamespaceName = "app-namespace"
-	ManagedClusterNamespaceName               = "remote-cluster"
+	EastManagedCluster                        = "east-cluster"
+	WestManagedCluster                        = "west-cluster"
 
 	timeout  = time.Second * 10
 	interval = time.Millisecond * 250
@@ -45,18 +46,18 @@ const (
 var (
 	localCluster = &spokeClusterV1.ManagedCluster{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "local-cluster",
+			Name: WestManagedCluster,
 			Labels: map[string]string{
-				"name": "local-cluster",
+				"name": WestManagedCluster,
 				"key1": "value1",
 			},
 		},
 	}
 	remoteCluster = &spokeClusterV1.ManagedCluster{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "remote-cluster",
+			Name: EastManagedCluster,
 			Labels: map[string]string{
-				"name": "remote-cluster",
+				"name": EastManagedCluster,
 				"key1": "value1",
 			},
 		},
@@ -64,8 +65,12 @@ var (
 
 	clusters = []*spokeClusterV1.ManagedCluster{localCluster, remoteCluster}
 
-	managedClusterNamespace = &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: "remote-cluster"},
+	eastManagedClusterNamespace = &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: EastManagedCluster},
+	}
+
+	westManagedClusterNamespace = &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: WestManagedCluster},
 	}
 
 	appNamespace = &corev1.Namespace{
@@ -81,8 +86,8 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 		When("Creating ApplicationVolumeReplication CR for the first time", func() {
 			It("The reconciler creates VolumeReplicationGroup CR embedded within a ManifestWork CR", func() {
 				ctx := context.Background()
-
-				Expect(k8sClient.Create(ctx, managedClusterNamespace)).NotTo(HaveOccurred(),
+				By("Creating east cluster namespace and app namespace")
+				Expect(k8sClient.Create(ctx, eastManagedClusterNamespace)).NotTo(HaveOccurred(),
 					"failed to create managed cluster namespace")
 				Expect(k8sClient.Create(ctx, appNamespace)).NotTo(HaveOccurred(), "failed to create app namespace")
 
@@ -114,7 +119,7 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 					Reason:         "",
 					LastUpdateTime: metav1.Now(),
 					Statuses: subv1.SubscriptionClusterStatusMap{
-						"remote-cluster": &subv1.SubscriptionPerClusterStatus{
+						EastManagedCluster: &subv1.SubscriptionPerClusterStatus{
 							SubscriptionPackageStatus: map[string]*subv1.SubscriptionUnitStatus{
 								"packages": {
 									Phase: subv1.SubscriptionSubscribed,
@@ -192,7 +197,7 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				// 4.0 Get the VRG Roles ManifestWork. The work is created per managed cluster in the AVR reconciler
 				vrgManifestLookupKey := types.NamespacedName{
 					Name:      "ramendr-vrg-roles",
-					Namespace: ManagedClusterNamespaceName,
+					Namespace: EastManagedCluster,
 				}
 				createdVRGRolesManifest := &ocmworkv1.ManifestWork{}
 
@@ -220,7 +225,7 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				By("Get ManifestWork")
 				manifestLookupKey := types.NamespacedName{
 					Name:      fmt.Sprintf("%s-%s-%s-mw", subscription.Name, subscription.Namespace, "vrg"),
-					Namespace: ManagedClusterNamespaceName,
+					Namespace: EastManagedCluster,
 				}
 				createdManifest := &ocmworkv1.ManifestWork{}
 
@@ -256,16 +261,20 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				}, timeout, interval).Should(BeTrue())
 
 				// 7.0 check that the home and peer clusters have been selected.
-				Expect(updatedAVR.Status.Decisions["subscription-1"].HomeCluster).Should(Equal("remote-cluster"))
-				Expect(updatedAVR.Status.Decisions["subscription-1"].PeerCluster).Should(Equal("local-cluster"))
+				Expect(updatedAVR.Status.Decisions["subscription-1"].HomeCluster).Should(Equal(EastManagedCluster))
+				Expect(updatedAVR.Status.Decisions["subscription-1"].PeerCluster).Should(Equal(WestManagedCluster))
 			})
 		})
 	})
 
 	Context("ApplicationVolumeReplication Reconciler", func() {
 		When("Subscription is paused", func() {
-			It("Should Unpause the subscription", func() {
+			It("Should failover", func() {
 				ctx := context.Background()
+				By("Creating cluster namespace")
+				Expect(k8sClient.Create(ctx, westManagedClusterNamespace)).NotTo(HaveOccurred(),
+					"failed to create managed cluster namespace")
+
 				By("Creating subscription")
 				subscription := &subv1.Subscription{
 					ObjectMeta: metav1.ObjectMeta{
@@ -296,7 +305,7 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 					Reason:         "",
 					LastUpdateTime: metav1.Now(),
 					Statuses: subv1.SubscriptionClusterStatusMap{
-						"remote-cluster": &subv1.SubscriptionPerClusterStatus{
+						EastManagedCluster: &subv1.SubscriptionPerClusterStatus{
 							SubscriptionPackageStatus: map[string]*subv1.SubscriptionUnitStatus{
 								"packages": {
 									Phase: subv1.SubscriptionSubscribed,
@@ -357,7 +366,7 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 						Namespace: ApplicationVolumeReplicationNamespaceName,
 					},
 					Spec: ramendrv1alpha1.ApplicationVolumeReplicationSpec{
-						FailoverClusters: ramendrv1alpha1.FailoverClusterMap{"subscription-2": "remote-cluster"},
+						FailoverClusters: ramendrv1alpha1.FailoverClusterMap{"subscription-2": WestManagedCluster},
 					},
 				}
 				Expect(k8sClient.Create(ctx, avr)).Should(Succeed())
@@ -368,7 +377,7 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				By("Creating ManifestWork")
 				manifestLookupKey := types.NamespacedName{
 					Name:      fmt.Sprintf("%s-%s-%s-mw", subscription.Name, subscription.Namespace, "pv"),
-					Namespace: ManagedClusterNamespaceName,
+					Namespace: WestManagedCluster,
 				}
 				createdManifest := &ocmworkv1.ManifestWork{}
 
