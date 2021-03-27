@@ -270,13 +270,13 @@ var _ = Describe("ApplicationVolumeReplication controller", func() {
 	})
 })
 
-var _ = Describe("isManifestInAppliedState", func() {
-	timeOld := time.Now().Local()
-	timeMostRecent := timeOld.Add(time.Second)
+// TODO: roll into single AVR block. Requires some refactoring to work with existing BeforeEach check.
+var _ = Describe("IsManifestInAppliedState checks ManifestWork", func() {
+	Context("with single timestamp", func() {
+		timeOld := time.Now().Local()
+		timeMostRecent := timeOld.Add(time.Second)
 
-	Describe("single timestamp", func() {
-		// test 1: only condition contains 'Applied'
-		It("'Applied' present", func() {
+		It("'Applied' present, Status False", func() {
 			mw := &ocmworkv1.ManifestWork{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "ramendr-vrg-roles",
@@ -284,8 +284,28 @@ var _ = Describe("isManifestInAppliedState", func() {
 				Status: ocmworkv1.ManifestWorkStatus{
 					Conditions: []metav1.Condition{
 						{
-							Type:               "Applied",
+							Type:               ocmworkv1.WorkApplied,
 							LastTransitionTime: metav1.Time{Time: timeMostRecent},
+							Status:             metav1.ConditionFalse,
+						},
+					},
+				},
+			}
+
+			Expect(controllers.IsManifestInAppliedState(mw)).To(Equal(false))
+		})
+
+		It("'Applied' present, Status true", func() {
+			mw := &ocmworkv1.ManifestWork{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "ramendr-vrg-roles",
+				},
+				Status: ocmworkv1.ManifestWorkStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:               ocmworkv1.WorkApplied,
+							LastTransitionTime: metav1.Time{Time: timeMostRecent},
+							Status:             metav1.ConditionTrue,
 						},
 					},
 				},
@@ -294,7 +314,6 @@ var _ = Describe("isManifestInAppliedState", func() {
 			Expect(controllers.IsManifestInAppliedState(mw)).To(Equal(true))
 		})
 
-		// test 2: only condition does not contain 'Applied'
 		It("'Applied' not present", func() {
 			mw := &ocmworkv1.ManifestWork{
 				ObjectMeta: metav1.ObjectMeta{
@@ -303,7 +322,7 @@ var _ = Describe("isManifestInAppliedState", func() {
 				Status: ocmworkv1.ManifestWorkStatus{
 					Conditions: []metav1.Condition{
 						{
-							Type:               "Processing",
+							Type:               ocmworkv1.WorkProgressing,
 							LastTransitionTime: metav1.Time{Time: timeMostRecent},
 						},
 					},
@@ -314,9 +333,11 @@ var _ = Describe("isManifestInAppliedState", func() {
 		})
 	})
 
-	Describe("multiple timestamps", func() {
-		// test 1: multiple timestamps, "Applied" is most recent, no equal timestamps
-		It("no duplicates, 'Applied' is most recent", func() {
+	Context("with multiple timestamps", func() {
+		timeOld := time.Now().Local()
+		timeMostRecent := timeOld.Add(time.Second)
+
+		It("no duplicate timestamps, 'Applied' is most recent", func() {
 			mw := &ocmworkv1.ManifestWork{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "ramendr-vrg-roles",
@@ -324,11 +345,12 @@ var _ = Describe("isManifestInAppliedState", func() {
 				Status: ocmworkv1.ManifestWorkStatus{
 					Conditions: []metav1.Condition{
 						{
-							Type:               "Applied",
+							Type:               ocmworkv1.WorkApplied,
 							LastTransitionTime: metav1.Time{Time: timeMostRecent},
+							Status:             metav1.ConditionTrue,
 						},
 						{
-							Type:               "Processing",
+							Type:               ocmworkv1.WorkProgressing,
 							LastTransitionTime: metav1.Time{Time: timeOld},
 						},
 					},
@@ -338,8 +360,7 @@ var _ = Describe("isManifestInAppliedState", func() {
 			Expect(controllers.IsManifestInAppliedState(mw)).To(Equal(true))
 		})
 
-		// test 2: multiple timestamps, "Applied" is NOT most recent
-		It("no duplicates, 'Applied' is not most recent", func() {
+		It("no duplicates timestamps, 'Applied' is not most recent", func() {
 			mw := &ocmworkv1.ManifestWork{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "ramendr-vrg-roles",
@@ -347,11 +368,11 @@ var _ = Describe("isManifestInAppliedState", func() {
 				Status: ocmworkv1.ManifestWorkStatus{
 					Conditions: []metav1.Condition{
 						{
-							Type:               "Processing",
+							Type:               ocmworkv1.WorkProgressing,
 							LastTransitionTime: metav1.Time{Time: timeMostRecent},
 						},
 						{
-							Type:               "Applied",
+							Type:               ocmworkv1.WorkApplied,
 							LastTransitionTime: metav1.Time{Time: timeOld},
 						},
 					},
@@ -361,8 +382,7 @@ var _ = Describe("isManifestInAppliedState", func() {
 			Expect(controllers.IsManifestInAppliedState(mw)).To(Equal(false))
 		})
 
-		// test 3: "Applied" is in most recent, includes equal timestamps
-		It("with duplicates, 'Applied' is most recent", func() {
+		It("with duplicate timestamps, 'Applied' is most recent", func() {
 			mw := &ocmworkv1.ManifestWork{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "ramendr-vrg-roles",
@@ -370,15 +390,17 @@ var _ = Describe("isManifestInAppliedState", func() {
 				Status: ocmworkv1.ManifestWorkStatus{
 					Conditions: []metav1.Condition{
 						{
-							Type:               "Applied",
+							Type:               ocmworkv1.WorkApplied,
 							LastTransitionTime: metav1.Time{Time: timeMostRecent},
+							Status:             metav1.ConditionTrue,
 						},
 						{
-							Type:               "Processing",
+							Type:               ocmworkv1.WorkProgressing,
 							LastTransitionTime: metav1.Time{Time: timeMostRecent},
+							Status:             metav1.ConditionUnknown,
 						},
 						{
-							Type:               "Processing",
+							Type:               ocmworkv1.WorkProgressing,
 							LastTransitionTime: metav1.Time{Time: timeOld},
 						},
 					},
@@ -388,8 +410,7 @@ var _ = Describe("isManifestInAppliedState", func() {
 			Expect(controllers.IsManifestInAppliedState(mw)).To(Equal(true))
 		})
 
-		// test 4: "Applied" is not most recent, but includes duplicate timestamps
-		It("with duplicates, 'Applied' is not most recent", func() {
+		It("with duplicate timestamps, 'Applied' is not most recent", func() {
 			mw := &ocmworkv1.ManifestWork{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "ramendr-vrg-roles",
@@ -397,15 +418,15 @@ var _ = Describe("isManifestInAppliedState", func() {
 				Status: ocmworkv1.ManifestWorkStatus{
 					Conditions: []metav1.Condition{
 						{
-							Type:               "Available",
+							Type:               ocmworkv1.WorkAvailable,
 							LastTransitionTime: metav1.Time{Time: timeMostRecent},
 						},
 						{
-							Type:               "Processing",
+							Type:               ocmworkv1.WorkProgressing,
 							LastTransitionTime: metav1.Time{Time: timeMostRecent},
 						},
 						{
-							Type:               "Applied",
+							Type:               ocmworkv1.WorkApplied,
 							LastTransitionTime: metav1.Time{Time: timeOld},
 						},
 					},
@@ -415,7 +436,30 @@ var _ = Describe("isManifestInAppliedState", func() {
 			Expect(controllers.IsManifestInAppliedState(mw)).To(Equal(false))
 		})
 
-		// test 5: error check - valid manifest with missing conditions
+		It("duplicate timestamps with Degraded and Applied status", func() {
+			mw := &ocmworkv1.ManifestWork{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "ramendr-vrg-roles",
+				},
+				Status: ocmworkv1.ManifestWorkStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:               ocmworkv1.WorkApplied,
+							LastTransitionTime: metav1.Time{Time: timeMostRecent},
+						},
+						{
+							Type:               ocmworkv1.WorkDegraded,
+							LastTransitionTime: metav1.Time{Time: timeMostRecent},
+						},
+					},
+				},
+			}
+
+			Expect(controllers.IsManifestInAppliedState(mw)).To(Equal(false))
+		})
+	})
+
+	Context("with no timestamps", func() {
 		It("manifest missing conditions", func() {
 			mw := &ocmworkv1.ManifestWork{
 				ObjectMeta: metav1.ObjectMeta{
