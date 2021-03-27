@@ -51,16 +51,35 @@ type VolumeReplicationGroupReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-type VRGInstance struct {
-	reconciler *VolumeReplicationGroupReconciler
-	ctx        context.Context
-	instance   *ramendrv1alpha1.VolumeReplicationGroup
-	pvcList    *corev1.PersistentVolumeClaimList
-}
+// SetupWithManager sets up the controller with the Manager.
+func (r *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	pvcPredicate := newPredicateFunc()
+	pvcMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
+		pvc, ok := obj.(*corev1.PersistentVolumeClaim)
+		if !ok {
+			// Not a pvc, returning empty
+			log.Errorf("pvc handler received non-pvc")
 
-const (
-	vrgFinalizerName = "volumereplicationgroup.storage.io"
-)
+			return []reconcile.Request{}
+		}
+
+		log.Info("pvc Namespace: ", pvc.Namespace)
+		req := filterPVC(mgr, pvc)
+
+		return req
+	}))
+
+	log.Info("Adding VRG and PVC controller")
+
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&ramendrv1alpha1.VolumeReplicationGroup{}).
+		Watches(&source.Kind{Type: &corev1.PersistentVolumeClaim{}}, pvcMapFun, builder.WithPredicates(pvcPredicate)).
+		// The actual thing that the controller owns is
+		// the VolumeReplication CR. Change the below
+		// line when VolumeReplication CR is ready.
+		Owns(&ramendrv1alpha1.VolumeReplicationGroup{}).
+		Complete(r)
+}
 
 func newPredicateFunc() predicate.Funcs {
 	// predicate functions send reconcile requests for create and delete events.
@@ -240,6 +259,39 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	}
 }
 
+type VRGInstance struct {
+	reconciler *VolumeReplicationGroupReconciler
+	ctx        context.Context
+	instance   *ramendrv1alpha1.VolumeReplicationGroup
+	pvcList    *corev1.PersistentVolumeClaimList
+}
+
+const (
+	vrgFinalizerName = "volumereplicationgroup.storage.io"
+)
+
+// updatePVCList fetches and updates the PVC list to process for the current instance of VRG
+func (v *VRGInstance) updatePVCList() error {
+	labelSelector := v.instance.Spec.PVCSelector
+
+	log.Info("Label Selector: ", labels.Set(labelSelector.MatchLabels))
+	log.Info("Namespace: ", v.instance.Namespace)
+	listOptions := []client.ListOption{
+		client.InNamespace(v.instance.Namespace),
+		client.MatchingLabels(labelSelector.MatchLabels),
+	}
+
+	if err := v.reconciler.List(v.ctx, v.pvcList, listOptions...); err != nil {
+		log.Error(err, "Failed to list PVC")
+
+		return fmt.Errorf("failed to list PVC %w", err)
+	}
+
+	log.Info("Found PVCs, count: ", len(v.pvcList.Items))
+
+	return nil
+}
+
 func (v *VRGInstance) finalizeVRG() (ctrl.Result, error) {
 	if !containsString(v.instance.ObjectMeta.Finalizers, vrgFinalizerName) {
 		return ctrl.Result{}, nil
@@ -261,78 +313,9 @@ func (v *VRGInstance) finalizeVRG() (ctrl.Result, error) {
 	return ctrl.Result{}, nil
 }
 
-// processAsPrimary reconciles the current instance of VRG as primary
-func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
-	if err := v.addFinalizer(vrgFinalizerName); err != nil {
-		log.Errorf("failed to add the finalizer to vrg: %s/%s", v.instance.Name, v.instance.Namespace)
-
-		return ctrl.Result{Requeue: true}, nil
-	}
-
-	requeue := false
-	requeue = v.handlePersistentVolumeClaims()
-
-	if requeue {
-		return ctrl.Result{Requeue: requeue}, nil
-	}
-
-	return ctrl.Result{}, nil
-}
-
-// processAsSecondary reconciles the current instance of VRG as secondary
-func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
-	return v.processAsPrimary()
-}
-
-// It might be better move the helper functions like these to a separate
-// package or a separate go file?
-func containsString(values []string, s string) bool {
-	for _, item := range values {
-		if item == s {
-			return true
-		}
-	}
-
-	return false
-}
-
-func removeString(values []string, s string) []string {
-	result := []string{}
-
-	for _, item := range values {
-		if item == s {
-			continue
-		}
-
-		result = append(result, item)
-	}
-
-	return result
-}
-
-func (v *VRGInstance) addFinalizer(finalizer string) error {
-	if !containsString(v.instance.ObjectMeta.Finalizers, finalizer) {
-		v.instance.ObjectMeta.Finalizers = append(v.instance.ObjectMeta.Finalizers, finalizer)
-		if err := v.reconciler.Update(v.ctx, v.instance); err != nil {
-			return fmt.Errorf("failed to add the finalizer to VRG CR %w", err)
-		}
-	}
-
-	return nil
-}
-
 func (v *VRGInstance) finalizeChildren() error {
 	if err := v.deleteRelatedItems(); err != nil {
 		return fmt.Errorf("failed to delete VolumeReplicationGroup related resources %w", err)
-	}
-
-	return nil
-}
-
-func (v *VRGInstance) removeFinalizer(finalizer string) error {
-	v.instance.ObjectMeta.Finalizers = removeString(v.instance.ObjectMeta.Finalizers, finalizer)
-	if err := v.reconciler.Update(v.ctx, v.instance); err != nil {
-		return fmt.Errorf("failed to remove the finalizer from VRG CR %w", err)
 	}
 
 	return nil
@@ -388,24 +371,40 @@ func (v *VRGInstance) deleteVolumeReplicationResources() error {
 	return nil
 }
 
-// updatePVCList fetches and updates the PVC list to process for the current instance of VRG
-func (v *VRGInstance) updatePVCList() error {
-	labelSelector := v.instance.Spec.PVCSelector
-
-	log.Info("Label Selector: ", labels.Set(labelSelector.MatchLabels))
-	log.Info("Namespace: ", v.instance.Namespace)
-	listOptions := []client.ListOption{
-		client.InNamespace(v.instance.Namespace),
-		client.MatchingLabels(labelSelector.MatchLabels),
+func (v *VRGInstance) removeFinalizer(finalizer string) error {
+	v.instance.ObjectMeta.Finalizers = removeString(v.instance.ObjectMeta.Finalizers, finalizer)
+	if err := v.reconciler.Update(v.ctx, v.instance); err != nil {
+		return fmt.Errorf("failed to remove the finalizer from VRG CR %w", err)
 	}
 
-	if err := v.reconciler.List(v.ctx, v.pvcList, listOptions...); err != nil {
-		log.Error(err, "Failed to list PVC")
+	return nil
+}
 
-		return fmt.Errorf("failed to list PVC %w", err)
+// processAsPrimary reconciles the current instance of VRG as primary
+func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
+	if err := v.addFinalizer(vrgFinalizerName); err != nil {
+		log.Errorf("failed to add the finalizer to vrg: %s/%s", v.instance.Name, v.instance.Namespace)
+
+		return ctrl.Result{Requeue: true}, nil
 	}
 
-	log.Info("Found PVCs, count: ", len(v.pvcList.Items))
+	requeue := false
+	requeue = v.handlePersistentVolumeClaims()
+
+	if requeue {
+		return ctrl.Result{Requeue: requeue}, nil
+	}
+
+	return ctrl.Result{}, nil
+}
+
+func (v *VRGInstance) addFinalizer(finalizer string) error {
+	if !containsString(v.instance.ObjectMeta.Finalizers, finalizer) {
+		v.instance.ObjectMeta.Finalizers = append(v.instance.ObjectMeta.Finalizers, finalizer)
+		if err := v.reconciler.Update(v.ctx, v.instance); err != nil {
+			return fmt.Errorf("failed to add the finalizer to VRG CR %w", err)
+		}
+	}
 
 	return nil
 }
@@ -433,6 +432,63 @@ func (v *VRGInstance) handlePersistentVolumeClaims() bool {
 	}
 
 	return !requeue
+}
+
+func (v *VRGInstance) createVolumeReplicationResources() bool {
+	requeue := false
+
+	for _, pvc := range v.pvcList.Items {
+		// if the PVC is not bound yet, dont proceed.
+		if pvc.Status.Phase != corev1.ClaimBound {
+			log.Errorf("PVC is not yet bound status: %v", pvc.Status.Phase)
+
+			requeue = true
+
+			// continue processing other PVCs and return the need to requeue
+			continue
+		}
+
+		volRep := &volrep.VolumeReplication{}
+
+		err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}, volRep)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				if err = v.createVolumeReplicationForPVC(pvc); err == nil {
+					continue
+				}
+			}
+
+			// requeue on failure to ensure any PVC not having a corresponding VR CR
+			requeue = true
+
+			log.Error(err, "failed to get or create VolumeReplication CR for PVC ", pvc.Name, pvc.Namespace)
+		}
+	}
+
+	return requeue
+}
+
+// createVolumeReplicationCRForPVC creates a VolumeReplication CR with a PVC as its data source.
+func (v *VRGInstance) createVolumeReplicationForPVC(pvc corev1.PersistentVolumeClaim) error {
+	cr := &volrep.VolumeReplication{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pvc.Name,
+			Namespace: pvc.ObjectMeta.Namespace,
+		},
+		Spec: volrep.VolumeReplicationSpec{
+			DataSource: &corev1.TypedLocalObjectReference{
+				Kind: "PersistentVolumeClaim",
+				Name: pvc.Name,
+			},
+			// Get the state of VolumeReplication from
+			// VolumeReplicationGroupSpec
+			State: v.instance.Spec.ReplicationState,
+		},
+	}
+
+	log.Info("Creating CR: ", cr)
+
+	return v.reconciler.Create(v.ctx, cr)
 }
 
 // HandlePersistentVolumes handles bound PVs
@@ -502,89 +558,33 @@ func (v *VRGInstance) printPersistentVolumes() error {
 	return nil
 }
 
-func (v *VRGInstance) createVolumeReplicationResources() bool {
-	requeue := false
+// processAsSecondary reconciles the current instance of VRG as secondary
+func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
+	return v.processAsPrimary()
+}
 
-	for _, pvc := range v.pvcList.Items {
-		// if the PVC is not bound yet, dont proceed.
-		if pvc.Status.Phase != corev1.ClaimBound {
-			log.Errorf("PVC is not yet bound status: %v", pvc.Status.Phase)
+// It might be better move the helper functions like these to a separate
+// package or a separate go file?
+func containsString(values []string, s string) bool {
+	for _, item := range values {
+		if item == s {
+			return true
+		}
+	}
 
-			requeue = true
+	return false
+}
 
-			// continue processing other PVCs and return the need to requeue
+func removeString(values []string, s string) []string {
+	result := []string{}
+
+	for _, item := range values {
+		if item == s {
 			continue
 		}
 
-		volRep := &volrep.VolumeReplication{}
-
-		err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}, volRep)
-		if err != nil {
-			if errors.IsNotFound(err) {
-				if err = v.createVolumeReplicationForPVC(pvc); err == nil {
-					continue
-				}
-			}
-
-			// requeue on failure to ensure any PVC not having a corresponding VR CR
-			requeue = true
-
-			log.Error(err, "failed to get or create VolumeReplication CR for PVC ", pvc.Name, pvc.Namespace)
-		}
+		result = append(result, item)
 	}
 
-	return requeue
-}
-
-// createVolumeReplicationCRForPVC creates a VolumeReplication CR with a PVC as its data source.
-func (v *VRGInstance) createVolumeReplicationForPVC(pvc corev1.PersistentVolumeClaim) error {
-	cr := &volrep.VolumeReplication{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      pvc.Name,
-			Namespace: pvc.ObjectMeta.Namespace,
-		},
-		Spec: volrep.VolumeReplicationSpec{
-			DataSource: &corev1.TypedLocalObjectReference{
-				Kind: "PersistentVolumeClaim",
-				Name: pvc.Name,
-			},
-			// Get the state of VolumeReplication from
-			// VolumeReplicationGroupSpec
-			State: v.instance.Spec.ReplicationState,
-		},
-	}
-
-	log.Info("Creating CR: ", cr)
-
-	return v.reconciler.Create(v.ctx, cr)
-}
-
-// SetupWithManager sets up the controller with the Manager.
-func (r *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	pvcPredicate := newPredicateFunc()
-	pvcMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
-		pvc, ok := obj.(*corev1.PersistentVolumeClaim)
-		if !ok {
-			// Not a pvc, returning empty
-			log.Errorf("pvc handler received non-pvc")
-
-			return []reconcile.Request{}
-		}
-
-		log.Info("pvc Namespace: ", pvc.Namespace)
-		req := filterPVC(mgr, pvc)
-
-		return req
-	}))
-
-	log.Info("Adding VRG and PVC controller")
-
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&ramendrv1alpha1.VolumeReplicationGroup{}).
-		Watches(&source.Kind{Type: &corev1.PersistentVolumeClaim{}}, pvcMapFun, builder.WithPredicates(pvcPredicate)).
-		// The actual thing that the controller owns is
-		// the VolumeReplication CR. Change the below
-		// line when VolumeReplication CR is ready.
-		Owns(&ramendrv1alpha1.VolumeReplicationGroup{}).
-		Complete(r)
+	return result
 }
