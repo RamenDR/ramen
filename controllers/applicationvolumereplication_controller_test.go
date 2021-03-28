@@ -305,7 +305,7 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 					Reason:         "",
 					LastUpdateTime: metav1.Now(),
 					Statuses: subv1.SubscriptionClusterStatusMap{
-						EastManagedCluster: &subv1.SubscriptionPerClusterStatus{
+						WestManagedCluster: &subv1.SubscriptionPerClusterStatus{
 							SubscriptionPackageStatus: map[string]*subv1.SubscriptionUnitStatus{
 								"packages": {
 									Phase: subv1.SubscriptionSubscribed,
@@ -423,6 +423,31 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				By(str)
 				Expect(labels["ramendr"]).To(Equal("protected"))
 				Expect(labels[subv1.LabelSubscriptionPause]).To(Equal("false"))
+				By("Updating AVR")
+				avrLookupKey := types.NamespacedName{
+					Name:      ApplicationVolumeReplicationName,
+					Namespace: ApplicationVolumeReplicationNamespaceName,
+				}
+				updatedAVR := &ramendrv1alpha1.ApplicationVolumeReplication{}
+
+				Eventually(func() bool {
+					err := k8sClient.Get(ctx, avrLookupKey, updatedAVR)
+
+					return err == nil
+				}, timeout, interval).Should(BeTrue(), "failed to wait for updated AVR")
+
+				updatedAVR.Spec.FailoverClusters["test"] = "fake"
+				err = k8sClient.Update(ctx, updatedAVR)
+				Expect(err).NotTo(HaveOccurred())
+
+				Eventually(func() bool {
+					err := k8sClient.Get(ctx, avrLookupKey, updatedAVR)
+
+					return err == nil
+				}, timeout, interval).Should(BeTrue(), "failed to wait for updated AVR")
+
+				Expect(updatedAVR.Status.Decisions["subscription-2"].HomeCluster).Should(Equal(WestManagedCluster))
+				Expect(updatedAVR.Status.Decisions["subscription-2"].PeerCluster).Should(Equal(EastManagedCluster))
 			})
 		})
 	})

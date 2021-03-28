@@ -53,6 +53,12 @@ const (
 	ManifestWorkNameFormat string = "%s-%s-%s-mw"
 	// RamenDRLabelName is the label used to pause/unpause a subsription
 	RamenDRLabelName string = "ramendr"
+
+	// VRG Type
+	MWTypeVRG string = "vrg"
+
+	// PV Type
+	MWTypePV string = "pv"
 )
 
 // ApplicationVolumeReplicationReconciler reconciles a ApplicationVolumeReplication object
@@ -199,9 +205,6 @@ func getMostRecentConditions(conditions []metav1.Condition) []metav1.Condition {
 	return recentConditions
 }
 
-func (r *ApplicationVolumeReplicationReconciler) processSubscriptionList(
-	subscriptionList *subv1.SubscriptionList) (
-	ramendrv1alpha1.SubscriptionPlacementDecisionMap, bool) {
 // For each subscription
 //		Check if it is paused for failover
 //			- restore PVs to the failed over cluster
@@ -268,35 +271,37 @@ func (r *ApplicationVolumeReplicationReconciler) processSubscription(
 	// Check to see if this subscription is paused for DR. If it is, then restore PVs to the new destination
 	// cluster, unpause the subscription, and skip it until the next reconciler iteration
 	if r.isSubsriptionPausedForDR(subscription.GetLabels()) {
-		if err := r.processPausedSubscription(avr, subscription); err != nil {
-			r.Log.Error(err, fmt.Sprintf("failed to process paused Subscription %s", subscription.Name))
+		newHomeCluster, err := r.processPausedSubscription(avr, subscription)
+		if err != nil {
+			r.Log.Error(err, fmt.Sprintf("failed to process paused Subscription (%v)", subscription))
+
+			return nil, requeue
+		}
+
+		r.Log.Info(fmt.Sprintf("Unpausing subscription %s for new home cluster %s", subscription.Name, newHomeCluster))
+
+		err = r.unpauseSubscription(subscription)
+		if err != nil {
+			r.Log.Error(err, "failed to unpause subscription", "name", subscription.Name)
 
 			return nil, requeue
 		}
 
 		// Subscription has been unpaused. Stop processing it and wait for the next Reconciler iteration
-		r.Log.Info("Subscription unpaused. Process it in the next reconciler iteration", "name", subscription.Name)
+		r.Log.Info("Subscription unpaused. It will be processed in the next reconciler iteration", "name", subscription.Name)
 
 		return nil, requeue
 	}
 
-	// Skip this subscription if a manifestwork already exist
-	found, err := r.findVRGManifestWork(avr, subscription)
+	exists, err := r.vrgManifestWorkAlreadyExists(avr, subscription)
 	if err != nil {
-		r.Log.Error(err, "Retry later", "name", subscription.Name)
-
 		return nil, requeue
 	}
 
-	if found {
-		r.Log.Info("Mainifestwork exists for subscription", "name", subscription.Name)
-
+	if exists {
 		return nil, !requeue
 	}
-
 	// This subscription is ready for manifest (VRG) creation
-	r.Log.Info("Subscription is unpaused", "Name", subscription.Name)
-
 	placementDecision, err := r.processUnpausedSubscription(subscription)
 	if err != nil {
 		r.Log.Error(err, "Failed to process unpaused subscription", "name", subscription.Name)
@@ -322,57 +327,91 @@ func (r *ApplicationVolumeReplicationReconciler) isSubsriptionPausedForDR(labels
 // to the target cluster and then it unpauses the subscription
 func (r *ApplicationVolumeReplicationReconciler) processPausedSubscription(
 	avr *ramendrv1alpha1.ApplicationVolumeReplication,
-	subscription *subv1.Subscription) error {
+	subscription *subv1.Subscription) (string, error) {
 	r.Log.Info("Processing paused subscription", "name", subscription.Name)
 
-	// find target cluster (which can be the failover cluster)
-	homeClusterName := r.findNextHomeCluster(avr, subscription)
+	// find new home cluster (could be the failover cluster)
+	newHomeCluster := r.findNextHomeCluster(avr, subscription)
 
-	if homeClusterName == "" {
-		return errorswrapper.New("failed to find new home cluster")
+	if newHomeCluster == "" {
+		return "", fmt.Errorf("failed to find new home cluster: avr %s, subscription %s", avr.Name, subscription.Name)
 	}
 
-	err := r.deleteExistingManfiestWork(avr, subscription)
+	mw, err := r.findManifestWork(subscription, newHomeCluster, MWTypePV)
 	if err != nil {
-		r.Log.Error(err, "Failed to delete existing manfiestWork")
-
-		return err
+		return "", fmt.Errorf("failed to get PV ManifestWork (%w)", err)
 	}
 
-	err = r.restorePVFromBackup(subscription, homeClusterName)
-	if err != nil {
-		r.Log.Error(err, "failed to restore PVs from Backups", "name", subscription.Name, "namespace", homeClusterName)
+	if mw != nil {
+		if IsManifestInAppliedState(mw) {
+			r.Log.Info(fmt.Sprintf("ManifestWork applied (%+v)", mw))
 
-		return err
-	}
-
-	return r.unpauseSubscription(subscription)
-}
-
-func (r *ApplicationVolumeReplicationReconciler) findVRGManifestWork(
-	avr *ramendrv1alpha1.ApplicationVolumeReplication,
-	subscription *subv1.Subscription) (bool, error) {
-	const notFound = false
-
-	r.Log.Info("AVR subscription", "name", avr.Status.Decisions[subscription.Name])
-
-	if d, found := avr.Status.Decisions[subscription.Name]; found {
-		mw := &ocmworkv1.ManifestWork{}
-		vrgMWName := fmt.Sprintf(ManifestWorkNameFormat, subscription.Name, subscription.Namespace, "vrg")
-
-		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: vrgMWName, Namespace: d.HomeCluster}, mw)
-		if err != nil {
-			if errors.IsNotFound(err) {
-				return notFound, nil
-			}
-
-			return notFound, errorswrapper.Wrap(err, "failed to retrieve manifestwork")
+			return newHomeCluster, nil
 		}
 
-		return found, nil
+		return "", fmt.Errorf("ManifestWork has not been applied yet (%+v)", mw)
 	}
 
-	return notFound, nil
+	err = r.deleteExistingManfiestWork(avr, subscription)
+	if err != nil {
+		return "", fmt.Errorf("failed to delete existing ManifestWork (%w)", err)
+	}
+
+	err = r.restorePVFromBackup(subscription, newHomeCluster)
+	if err != nil {
+		return "", fmt.Errorf("failed to restore PVs from Backups (%w)", err)
+	}
+
+	return newHomeCluster, nil
+}
+
+func (r *ApplicationVolumeReplicationReconciler) vrgManifestWorkAlreadyExists(
+	avr *ramendrv1alpha1.ApplicationVolumeReplication,
+	subscription *subv1.Subscription) (bool, error) {
+	if avr.Status.Decisions == nil {
+		return false, nil
+	}
+
+	if d, found := avr.Status.Decisions[subscription.Name]; found {
+		// Skip this subscription if a manifestwork already exist for it
+		mw, err := r.findManifestWork(subscription, d.HomeCluster, MWTypeVRG)
+		if err != nil {
+			r.Log.Error(err, "findManifestWork()", "name", subscription.Name)
+
+			return false, err
+		}
+
+		if mw != nil {
+			r.Log.Info(fmt.Sprintf("Mainifestwork exists for subscription %s (%v)", subscription.Name, mw))
+
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+func (r *ApplicationVolumeReplicationReconciler) findManifestWork(
+	subscription *subv1.Subscription,
+	homeCluster string,
+	mwType string) (*ocmworkv1.ManifestWork, error) {
+	if homeCluster != "" {
+		mw := &ocmworkv1.ManifestWork{}
+		mwName := fmt.Sprintf(ManifestWorkNameFormat, subscription.Name, subscription.Namespace, mwType)
+
+		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: mwName, Namespace: homeCluster}, mw)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				return nil, nil
+			}
+
+			return nil, errorswrapper.Wrap(err, "failed to retrieve manifestwork")
+		}
+
+		return mw, nil
+	}
+
+	return nil, nil
 }
 
 func (r *ApplicationVolumeReplicationReconciler) deleteExistingManfiestWork(
@@ -382,7 +421,7 @@ func (r *ApplicationVolumeReplicationReconciler) deleteExistingManfiestWork(
 
 	if d, found := avr.Status.Decisions[subscription.Name]; found {
 		mw := &ocmworkv1.ManifestWork{}
-		vrgMWName := fmt.Sprintf(ManifestWorkNameFormat, subscription.Name, subscription.Namespace, "vrg")
+		vrgMWName := fmt.Sprintf(ManifestWorkNameFormat, subscription.Name, subscription.Namespace, MWTypeVRG)
 
 		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: vrgMWName, Namespace: d.HomeCluster}, mw)
 		if err != nil {
@@ -434,12 +473,8 @@ func (r *ApplicationVolumeReplicationReconciler) createOrUpdatePVsManifestWork(
 func (r *ApplicationVolumeReplicationReconciler) unpauseSubscription(subscription *subv1.Subscription) error {
 	labels := subscription.GetLabels()
 	if labels == nil {
-		r.Log.Info("no labels found for subscription", "name", subscription.Name)
-
 		return fmt.Errorf("failed to find labels for subscription %s", subscription.Name)
 	}
-
-	r.Log.Info(fmt.Sprintf("Unpausing subscription (%v)", subscription))
 
 	labels[subv1.LabelSubscriptionPause] = "false"
 	subscription.SetLabels(labels)
@@ -449,7 +484,7 @@ func (r *ApplicationVolumeReplicationReconciler) unpauseSubscription(subscriptio
 
 func (r *ApplicationVolumeReplicationReconciler) processUnpausedSubscription(
 	subscription *subv1.Subscription) (ramendrv1alpha1.SubscriptionPlacementDecision, error) {
-	r.Log.Info("Getting placement rule for subscription", "name", subscription.Name)
+	r.Log.Info("Processing unpaused Subscription", "name", subscription.Name)
 
 	homeCluster, peerCluster, err := r.selectPlacementDecision(subscription)
 	if err != nil {
@@ -487,6 +522,7 @@ func (r *ApplicationVolumeReplicationReconciler) findNextHomeCluster(
 
 func (r *ApplicationVolumeReplicationReconciler) selectPlacementDecision(
 	subscription *subv1.Subscription) (string, string, error) {
+	r.Log.Info("Selecting placement decisions for subscription", "name", subscription.Name)
 	// The subscription phase describes the phasing of the subscriptions. Propagated means
 	// this subscription is the "parent" sitting in hub. Statuses is a map where the key is
 	// the cluster name and value is the aggregated status
@@ -695,7 +731,7 @@ func (r *ApplicationVolumeReplicationReconciler) generatePVManifestWork(
 	manifests := r.generatePVManifest(pvList)
 
 	return r.newManifestWork(
-		fmt.Sprintf(ManifestWorkNameFormat, name, namespace, "pv"),
+		fmt.Sprintf(ManifestWorkNameFormat, name, namespace, MWTypePV),
 		homeClusterName,
 		map[string]string{"app": "PV"},
 		manifests)
@@ -728,7 +764,7 @@ func (r *ApplicationVolumeReplicationReconciler) generateVRGManifestWork(name st
 	manifests := []ocmworkv1.Manifest{*vrgClientManifest}
 
 	return r.newManifestWork(
-		fmt.Sprintf(ManifestWorkNameFormat, name, namespace, "vrg"),
+		fmt.Sprintf(ManifestWorkNameFormat, name, namespace, MWTypeVRG),
 		homeCluster,
 		map[string]string{"app": "VRG"},
 		manifests), nil
