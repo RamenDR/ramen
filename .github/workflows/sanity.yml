@@ -59,4 +59,4 @@ jobs:
       - name: Git branch sanity
         run: |
           echo "Failing if any auto generated files are updated, checking 'git status'"
-          git status --porcelain 2>&1 | tee /dev/stderr | (! read)
+          git status --porcelain 2>&1 | tee /dev/stderr | (! read || git diff && ! read a)
