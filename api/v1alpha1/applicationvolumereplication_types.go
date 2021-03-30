@@ -26,6 +26,17 @@ type FailoverClusterMap map[string]string
 // ApplicationVolumeReplicationSpec defines the desired state of ApplicationVolumeReplication
 type ApplicationVolumeReplicationSpec struct {
 	FailoverClusters FailoverClusterMap `json:"FailoverClusters,omitempty"`
+	// S3 Endpoint to replicate PV metadata; this is for all VRGs.
+	// The value of this field, will be progated to every VRG.
+	// See VRG spec for more details.
+	S3Endpoint string `json:"s3Endpoint"`
+
+	// Name of k8s secret that contains the credentials to access the S3 endpoint.
+	// If S3Endpoint is used, also specify the k8s secret that contains the S3
+	// access key id and secret access key set using the keys: AWS_ACCESS_KEY_ID
+	// and AWS_SECRET_ACCESS_KEY.  The value of this field, will be progated to every VRG.
+	// See VRG spec for more details.
+	S3SecretName string `json:"s3SecretName"`
 }
 
 // SubscriptionPlacementDecision lists each subscription with its home and peer clusters

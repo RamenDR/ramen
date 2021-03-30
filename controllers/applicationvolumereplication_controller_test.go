@@ -29,6 +29,7 @@ import (
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	subv1 "github.com/open-cluster-management/multicloud-operators-subscription/pkg/apis/apps/v1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/controllers"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 )
@@ -187,6 +188,8 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 					},
 					Spec: ramendrv1alpha1.ApplicationVolumeReplicationSpec{
 						FailoverClusters: ramendrv1alpha1.FailoverClusterMap{},
+						S3Endpoint:       "path/to/s3Endpoint",
+						S3SecretName:     "SecretName",
 					},
 				}
 				Expect(k8sClient.Create(ctx, avr)).Should(Succeed())
@@ -367,6 +370,8 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 					},
 					Spec: ramendrv1alpha1.ApplicationVolumeReplicationSpec{
 						FailoverClusters: ramendrv1alpha1.FailoverClusterMap{"subscription-2": WestManagedCluster},
+						S3Endpoint:       "path/to/s3Endpoint",
+						S3SecretName:     "SecretName",
 					},
 				}
 				Expect(k8sClient.Create(ctx, avr)).Should(Succeed())

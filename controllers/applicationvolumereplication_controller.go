@@ -32,6 +32,7 @@ import (
 
 	"github.com/go-logr/logr"
 	errorswrapper "github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -100,7 +101,7 @@ func (r *ApplicationVolumeReplicationReconciler) Reconcile(ctx context.Context, 
 
 	avr := &ramendrv1alpha1.ApplicationVolumeReplication{}
 
-	err := r.Client.Get(context.TODO(), req.NamespacedName, avr)
+	err := r.Client.Get(ctx, req.NamespacedName, avr)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
@@ -113,7 +114,7 @@ func (r *ApplicationVolumeReplicationReconciler) Reconcile(ctx context.Context, 
 	subscriptionList := &subv1.SubscriptionList{}
 	listOptions := &client.ListOptions{Namespace: avr.Namespace}
 
-	err = r.Client.List(context.TODO(), subscriptionList, listOptions)
+	err = r.Client.List(ctx, subscriptionList, listOptions)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			logger.Error(err, "failed to find subscription list", "namespace", avr.Namespace)
@@ -302,7 +303,7 @@ func (r *ApplicationVolumeReplicationReconciler) processSubscription(
 		return nil, !requeue
 	}
 	// This subscription is ready for manifest (VRG) creation
-	placementDecision, err := r.processUnpausedSubscription(subscription)
+	placementDecision, err := r.processUnpausedSubscription(avr, subscription)
 	if err != nil {
 		r.Log.Error(err, "Failed to process unpaused subscription", "name", subscription.Name)
 
@@ -357,7 +358,7 @@ func (r *ApplicationVolumeReplicationReconciler) processPausedSubscription(
 		return "", fmt.Errorf("failed to delete existing ManifestWork (%w)", err)
 	}
 
-	err = r.restorePVFromBackup(subscription, newHomeCluster)
+	err = r.restorePVFromBackup(avr, subscription, newHomeCluster)
 	if err != nil {
 		return "", fmt.Errorf("failed to restore PVs from Backups (%w)", err)
 	}
@@ -441,11 +442,12 @@ func (r *ApplicationVolumeReplicationReconciler) deleteExistingManfiestWork(
 }
 
 func (r *ApplicationVolumeReplicationReconciler) restorePVFromBackup(
+	avr *ramendrv1alpha1.ApplicationVolumeReplication,
 	subscription *subv1.Subscription, homeCluster string) error {
 	r.Log.Info("Restoring PVs to new managed cluster", "name", homeCluster)
 
 	// TODO: get PVs from S3
-	pvList, err := r.listPVsFromS3Store()
+	pvList, err := r.listPVsFromS3Store(avr, subscription)
 	if err != nil {
 		return errorswrapper.Wrap(err, "failed to retrieve PVs from S3 store")
 	}
@@ -461,11 +463,14 @@ func (r *ApplicationVolumeReplicationReconciler) restorePVFromBackup(
 }
 
 func (r *ApplicationVolumeReplicationReconciler) createOrUpdatePVsManifestWork(
-	name string, namespace string, homeClusterName string, pvList []string) error {
+	name string, namespace string, homeClusterName string, pvList []corev1.PersistentVolume) error {
 	r.Log.Info("Creating manifest work for PVs", "subscription",
 		name, "cluster", homeClusterName, "PV count", len(pvList))
 
-	manifestWork := r.generatePVManifestWork(name, namespace, homeClusterName, pvList)
+	manifestWork, err := r.generatePVManifestWork(name, namespace, homeClusterName, pvList)
+	if err != nil {
+		return err
+	}
 
 	return r.createOrUpdateManifestWork(manifestWork, homeClusterName)
 }
@@ -483,6 +488,7 @@ func (r *ApplicationVolumeReplicationReconciler) unpauseSubscription(subscriptio
 }
 
 func (r *ApplicationVolumeReplicationReconciler) processUnpausedSubscription(
+	avr *ramendrv1alpha1.ApplicationVolumeReplication,
 	subscription *subv1.Subscription) (ramendrv1alpha1.SubscriptionPlacementDecision, error) {
 	r.Log.Info("Processing unpaused Subscription", "name", subscription.Name)
 
@@ -500,7 +506,8 @@ func (r *ApplicationVolumeReplicationReconciler) processUnpausedSubscription(
 	}
 
 	if err := r.createOrUpdateVRGManifestWork(
-		subscription.Name, subscription.Namespace, homeCluster); err != nil {
+		subscription.Name, subscription.Namespace, homeCluster,
+		avr.Spec.S3Endpoint, avr.Spec.S3SecretName); err != nil {
 		r.Log.Error(err, "failed to create or update VolumeReplicationGroup manifest")
 
 		return ramendrv1alpha1.SubscriptionPlacementDecision{}, err
@@ -657,9 +664,12 @@ func (r *ApplicationVolumeReplicationReconciler) createOrUpdateVRGRolesManifestW
 	return r.createOrUpdateManifestWork(manifestWork, namespace)
 }
 
-func (r *ApplicationVolumeReplicationReconciler) createOrUpdateVRGManifestWork(name string, namespace string,
-	homeCluster string) error {
-	manifestWork, err := r.generateVRGManifestWork(name, namespace, homeCluster)
+func (r *ApplicationVolumeReplicationReconciler) createOrUpdateVRGManifestWork(
+	name, namespace, homeCluster, s3Endpoint, s3SecretName string) error {
+	r.Log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%s:%s:%s",
+		name, namespace, homeCluster, s3Endpoint, s3SecretName))
+
+	manifestWork, err := r.generateVRGManifestWork(name, namespace, homeCluster, s3Endpoint, s3SecretName)
 	if err != nil {
 		return err
 	}
@@ -727,36 +737,46 @@ func (r *ApplicationVolumeReplicationReconciler) generateVRGClusterRoleBindingMa
 }
 
 func (r *ApplicationVolumeReplicationReconciler) generatePVManifestWork(
-	name string, namespace string, homeClusterName string, pvList []string) *ocmworkv1.ManifestWork {
-	manifests := r.generatePVManifest(pvList)
+	name string, namespace string, homeClusterName string,
+	pvList []corev1.PersistentVolume) (*ocmworkv1.ManifestWork, error) {
+	manifests, err := r.generatePVManifest(pvList)
+	if err != nil {
+		return nil, err
+	}
 
 	return r.newManifestWork(
 		fmt.Sprintf(ManifestWorkNameFormat, name, namespace, MWTypePV),
 		homeClusterName,
 		map[string]string{"app": "PV"},
-		manifests)
+		manifests), nil
 }
 
 // This function follow a slightly different pattern than the rest, simply because the pvList that come
 // from the S3 store will contain PV objects already converted to a string.
-func (r *ApplicationVolumeReplicationReconciler) generatePVManifest(pvList []string) []ocmworkv1.Manifest {
+func (r *ApplicationVolumeReplicationReconciler) generatePVManifest(
+	pvList []corev1.PersistentVolume) ([]ocmworkv1.Manifest, error) {
 	manifests := []ocmworkv1.Manifest{}
 
 	for _, pv := range pvList {
-		pvClientManifest := ocmworkv1.Manifest{}
-		pvClientManifest.RawExtension = runtime.RawExtension{Raw: []byte(pv)}
+		pvClientManifest, err := r.generateManifest(pv)
+		// Either all succeed or none
+		if err != nil {
+			r.Log.Error(err, "failed to generate VolumeReplication")
 
-		manifests = append(manifests, pvClientManifest)
+			return nil, err
+		}
+
+		manifests = append(manifests, *pvClientManifest)
 	}
 
-	return manifests
+	return manifests, nil
 }
 
-func (r *ApplicationVolumeReplicationReconciler) generateVRGManifestWork(name string, namespace string,
-	homeCluster string) (*ocmworkv1.ManifestWork, error) {
-	vrgClientManifest, err := r.generateVRGManifest(name, namespace)
+func (r *ApplicationVolumeReplicationReconciler) generateVRGManifestWork(
+	name, namespace, homeCluster, s3Endpoint, s3SecretName string) (*ocmworkv1.ManifestWork, error) {
+	vrgClientManifest, err := r.generateVRGManifest(name, namespace, s3Endpoint, s3SecretName)
 	if err != nil {
-		r.Log.Error(err, "failed to generate VolumeReplication")
+		r.Log.Error(err, "failed to generate VolumeReplicationGroup manifest")
 
 		return nil, err
 	}
@@ -770,8 +790,8 @@ func (r *ApplicationVolumeReplicationReconciler) generateVRGManifestWork(name st
 		manifests), nil
 }
 
-func (r *ApplicationVolumeReplicationReconciler) generateVRGManifest(name string,
-	namespace string) (*ocmworkv1.Manifest, error) {
+func (r *ApplicationVolumeReplicationReconciler) generateVRGManifest(
+	name, namespace, s3Endpoint, s3SecretName string) (*ocmworkv1.Manifest, error) {
 	return r.generateManifest(&ramendrv1alpha1.VolumeReplicationGroup{
 		TypeMeta:   metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
@@ -784,6 +804,8 @@ func (r *ApplicationVolumeReplicationReconciler) generateVRGManifest(name string
 			},
 			VolumeReplicationClass: "volume-rep-class",
 			ReplicationState:       "Primary",
+			S3Endpoint:             s3Endpoint,
+			S3SecretName:           s3SecretName,
 		},
 	})
 }
@@ -862,66 +884,91 @@ func (r *ApplicationVolumeReplicationReconciler) updateAVRStatus(
 	return nil
 }
 
-// --- UNIMPLEMENTED ---.  FAKE DATA INSIDE THAT WILL BE REPLACED WITH THE ACTUALL CALL TO S3 BUCKET FOR
-// EACH SUBSCRIPTION THAT WE ARE FAILING OVER TO A DIFFERENT MANAGED CLUSTER
-func (r *ApplicationVolumeReplicationReconciler) listPVsFromS3Store() ([]string, error) {
-	pv1 := `{
-		"apiVersion": "v1",
-		"kind": "PersistentVolume",
-		"metadata": {
-		   "name": "pv0001"
-		},
-		"spec": {
-		   "capacity": {
-			  "storage": "1Gi"
-		   },
-		   "accessModes": [
-			  "ReadWriteOnce"
-		   ],
-		   "nfs": {
-			  "path": "/tmp",
-			  "server": "172.17.0.2"
-		   },
-		   "persistentVolumeReclaimPolicy": "Recycle",
-		   "claimRef": {
-			  "name": "claim1",
-			  "namespace": "default"
-		   }
-		}
-	 }`
-
-	pv2 := `{
-		"apiVersion": "v1",
-		"kind": "PersistentVolume",
-		"metadata": {
-		   "name": "pv0002"
-		},
-		"spec": {
-		   "capacity": {
-			  "storage": "1Gi"
-		   },
-		   "accessModes": [
-			  "ReadWriteOnce"
-		   ],
-		   "nfs": {
-			  "path": "/tmp",
-			  "server": "172.17.0.2"
-		   },
-		   "persistentVolumeReclaimPolicy": "Recycle",
-		   "claimRef": {
-			  "name": "claim2",
-			  "namespace": "default"
-		   }
-		}
-	 }`
-
-	var pvList []string
-	pvList = append(pvList, pv1, pv2)
-	// THIS CHECK IS ONLY TO SATISFY THE LINTER WITHOUT MAKING TOO MUCH (UNNECESSARY) CHANGES TO THIS FUNCTION
-	// SO, IGNORE FOR NOW
-	if len(pvList) == 0 {
-		return pvList, fmt.Errorf("array length mismatch %d", len(pvList))
+func (r *ApplicationVolumeReplicationReconciler) listPVsFromS3Store(
+	avr *ramendrv1alpha1.ApplicationVolumeReplication,
+	subscription *subv1.Subscription) ([]corev1.PersistentVolume, error) {
+	s3SecretLookupKey := types.NamespacedName{
+		Name:      avr.Spec.S3SecretName,
+		Namespace: avr.Namespace,
 	}
+
+	s3Conn, err := connectToS3Endpoint(context.TODO(), r.Client, avr.Spec.S3Endpoint, s3SecretLookupKey, avr.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	s3Bucket := subscription.Namespace + "/" + subscription.Name
+
+	return s3Conn.downloadPVs(s3Bucket)
+}
+
+//nolint:gocritic
+//////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////
+// The code below will be deleted once PR-33 is merged. //
+//////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////
+
+//nolint:gofumpt
+type S3Connection struct {
+	// Fake S3 connection
+}
+
+func connectToS3Endpoint(ctx context.Context, r client.Reader,
+	s3Endpoint string, s3SecretName types.NamespacedName,
+	callerTag string) (*S3Connection, error) {
+	return &S3Connection{}, nil
+}
+
+func (s *S3Connection) downloadPVs(string) ([]corev1.PersistentVolume, error) {
+	pv1 := corev1.PersistentVolume{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PersistentVolume",
+			APIVersion: "ramendr.openshift.io/v1alpha1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pv0001",
+		},
+		Spec: corev1.PersistentVolumeSpec{
+			PersistentVolumeSource: corev1.PersistentVolumeSource{
+				CSI: &corev1.CSIPersistentVolumeSource{
+					VolumeHandle: "vol-id-1",
+				},
+			},
+			ClaimRef: &corev1.ObjectReference{
+				Name: "claim1",
+			},
+			StorageClassName: "sc-name",
+		},
+	}
+
+	pv2 := corev1.PersistentVolume{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PersistentVolume",
+			APIVersion: "ramendr.openshift.io/v1alpha1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pv0002",
+		},
+		Spec: corev1.PersistentVolumeSpec{
+			PersistentVolumeSource: corev1.PersistentVolumeSource{
+				CSI: &corev1.CSIPersistentVolumeSource{
+					VolumeHandle: "vol-id-1",
+				},
+			},
+			ClaimRef: &corev1.ObjectReference{
+				Name: "claim2",
+			},
+			StorageClassName: "sc-name",
+		},
+	}
+
+	pvList := []corev1.PersistentVolume{}
+	pvList = append(pvList, pv1, pv2)
 
 	return pvList, nil
 }
