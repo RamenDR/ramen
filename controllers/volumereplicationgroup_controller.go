@@ -617,14 +617,19 @@ func removeString(values []string, s string) []string {
 //   the VRG as a single control point to manipulate replication
 // 	 of a group of VRs and thus a group of PVs.  However, log
 //   a warning once per VRG
-func (v *VolumeReplicationGroupReconciler) uploadPVofPVC(
+func (v *VolumeReplicationGroupReconciler) uploadPV(
 	ctx context.Context,
 	volRepGroup *ramendrv1alpha1.VolumeReplicationGroup,
 	pvc *corev1.PersistentVolumeClaim) error {
 	vrgName := volRepGroup.Name
 
 	s3Endpoint := volRepGroup.Spec.S3Endpoint
-	if s3EndpointIsUnconfiguredOrInvalid(s3Endpoint, vrgName) {
+	if err := validateS3Endpoint(s3Endpoint, vrgName); err != nil {
+		return err
+	} else if s3Endpoint == "" {
+		// VRG is configured to run in a backup-less mode.  validateS3Endpoint()
+		// logs a warning message once about this backup-less mode; hence, no
+		// need to log any error here.
 		return nil
 	}
 
@@ -681,27 +686,17 @@ func s3EndpointIsUnconfiguredOrInvalid(s3Endpoint, vrgName string) (
 	invalid bool) {
 	invalid = true
 
+		return nil
+	}
+
 	if prevEndpoint, prevWarned := s3Warning[vrgName]; prevWarned &&
 		prevEndpoint == s3Endpoint {
-		return
+		return nil // previously warned about backup-less mode of operation
 	}
 
-	if s3Endpoint == "" {
-		s3Warning[vrgName] = s3Endpoint
-		log.Warnf("Empty spec.S3Endpoint <%v> in VRG %v", s3Endpoint, vrgName)
+	log.Warnf("Empty spec.S3Endpoint in VRG %v: running in backup-less mode.", vrgName)
 
-		return
-	}
+	s3Warning[vrgName] = s3Endpoint
 
-	_, err := url.ParseRequestURI(s3Endpoint)
-	if err != nil {
-		s3Warning[vrgName] = s3Endpoint
-		log.Warnf("Invalid spec.S3Endpoint <%v> in VRG %v ", s3Endpoint, vrgName)
-
-		return
-	}
-
-	invalid = false
-
-	return
+	return nil
 }

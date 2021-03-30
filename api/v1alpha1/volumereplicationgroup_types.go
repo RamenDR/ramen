@@ -59,7 +59,8 @@ type VolumeReplicationGroupSpec struct {
 	// https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
 	// If this field is not set, VRG may be used to simply control the replication
 	// state of all PVs in this group, under the expectation that the PV metadata
-	// is replicated by a different mechanism.
+	// is replicated by a different mechanism; this mode of operation may be
+	// referred to as backup-less mode.
 	S3Endpoint string `json:"s3Endpoint,omitempty"`
 
 	// Name of k8s secret that contains the credentials to access the S3 endpoint.
