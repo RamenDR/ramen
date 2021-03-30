@@ -655,9 +655,12 @@ func (v *VolumeReplicationGroupReconciler) uploadPV(
 		return fmt.Errorf("failed to get upload PV %v of VRG %v err %w", volumeName, vrgName, err)
 	}
 
-	// Create the bucket, without caching or assuming its existence; use the VRG name
-	// as the bucket name
-	bucket := vrgName
+	// Create a bucket name from the VRG's namespace and name, separating the
+	// two with a hyphen.  Note: VRG's namespace and name may also have dots or
+	// hyphens in their names.
+	bucket := volRepGroup.Namespace + "-" + vrgName
+
+	// Create the bucket, without caching or assuming its existence
 	if err := s3Conn.createBucket(bucket); err != nil {
 		v.log.Errorf("unable to create bucket %v for VRG %v", bucket, vrgName)
 
@@ -680,11 +683,16 @@ func (v *VolumeReplicationGroupReconciler) uploadPV(
 	return err
 }
 
-// If the given s3 endpoint for the given VRG is unconfigured or
-// invalid, log a warning message, but only once
-func s3EndpointIsUnconfiguredOrInvalid(s3Endpoint, vrgName string) (
-	invalid bool) {
-	invalid = true
+// If the the s3 endpoint is not set, then the VRG has been configured to run
+// in a backup-less mode to simply control VR CRs alone without backing up
+// PV k8s metadata to an object store.
+func validateS3Endpoint(s3Endpoint, vrgName string) error {
+	if s3Endpoint != "" {
+		_, err := url.ParseRequestURI(s3Endpoint)
+		if err != nil {
+			return fmt.Errorf("invalid spec.S3Endpoint <%s> in VRG %s err %w",
+				s3Endpoint, vrgName, err)
+		}
 
 		return nil
 	}
@@ -694,7 +702,8 @@ func s3EndpointIsUnconfiguredOrInvalid(s3Endpoint, vrgName string) (
 		return nil // previously warned about backup-less mode of operation
 	}
 
-	log.Warnf("Empty spec.S3Endpoint in VRG %v: running in backup-less mode.", vrgName)
+	log.Warnf("Empty spec.S3Endpoint in VRG %s: running in backup-less mode.",
+		vrgName)
 
 	s3Warning[vrgName] = s3Endpoint
 

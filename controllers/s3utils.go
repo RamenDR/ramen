@@ -104,7 +104,7 @@ func connectToS3Endpoint(ctx context.Context, r client.Reader,
 	s3Endpoint string, s3SecretName types.NamespacedName,
 	callerTag string) (*s3Connection, error) {
 	if s3Endpoint == "" {
-		return nil, fmt.Errorf("s3 endpoint has not been configured; tag:%v",
+		return nil, fmt.Errorf("s3 endpoint has not been configured; tag:%s",
 			callerTag)
 	}
 
@@ -116,7 +116,7 @@ func connectToS3Endpoint(ctx context.Context, r client.Reader,
 	accessID, secretAccessKey, err := getS3Secret(ctx, r, s3SecretName)
 	if err != nil {
 		return nil, errorswrapper.Wrapf(err,
-			"failed to get secret %v; tag %v",
+			"failed to get secret %v; tag %s",
 			s3SecretName, callerTag)
 	}
 
@@ -129,9 +129,9 @@ func connectToS3Endpoint(ctx context.Context, r client.Reader,
 		DisableSSL:       aws.Bool(true),
 		S3ForcePathStyle: aws.Bool(true),
 	})
-	if s3Session == nil || err != nil {
+	if err != nil {
 		return nil, errorswrapper.Wrapf(err,
-			"Failed to create new session for %v; tag %v",
+			"Failed to create new session for %s; tag %s",
 			s3Endpoint, callerTag)
 	}
 
@@ -177,8 +177,7 @@ func getS3Secret(ctx context.Context, r client.Reader,
 func (s *s3Connection) createBucket(bucket string) error {
 	if bucket == "" {
 		return fmt.Errorf("error: unspecified bucket name for "+
-			"endpoint %v tag %v",
-			s.endpoint, s.callerTag)
+			"endpoint %s tag %s", s.endpoint, s.callerTag)
 	}
 
 	_, err := s.client.CreateBucket(
@@ -257,18 +256,18 @@ func (s *s3Connection) verifyPVUpload(bucket string, pvKeySuffix string,
 
 	err := s.downloadObject(bucket, key, &downloadedPV)
 	if err != nil {
-		log.Infof("unable to downloadObject for caller %v from "+
-			"endpoint %v bucket %v key %v err %v",
+		log.Infof("unable to downloadObject for caller %s from "+
+			"endpoint %s bucket %s key %s err %v",
 			s.callerTag, s.endpoint, bucket, key, err)
 
 		return err
 	}
 
 	if !reflect.DeepEqual(verifyPV, downloadedPV) {
-		log.Infof("failed to verify PV for caller %v want %v got %v",
+		log.Infof("failed to verify PV for caller %s want %v got %v",
 			s.callerTag, verifyPV, downloadedPV)
 
-		return fmt.Errorf("failed to verify PV for caller %v want %v got %v",
+		return fmt.Errorf("failed to verify PV for caller %s want %v got %v",
 			s.callerTag, verifyPV, downloadedPV)
 	}
 
@@ -307,7 +306,8 @@ func (s *s3Connection) downloadTypedObjects(bucket string,
 
 	keys, err := s.listKeys(bucket, keyPrefix)
 	if err != nil {
-		log.Infof("unable to listKeys of type %v from endpoint %v bucket %v keyPrefix %v err %v",
+		log.Infof("unable to listKeys of type %v from endpoint %s bucket %s "+
+			"keyPrefix %s err %v",
 			objectType, s.endpoint, bucket, keyPrefix, err)
 
 		return nil, err
@@ -319,8 +319,8 @@ func (s *s3Connection) downloadTypedObjects(bucket string,
 	for i := range keys {
 		objectReceiver := objects.Index(i).Addr().Interface()
 		if err := s.downloadObject(bucket, keys[i], objectReceiver); err != nil {
-			log.Infof("unable to downloadObject endpoint %v bucket %v key %v err %v",
-				s.endpoint, bucket, keys[i], err)
+			log.Infof("unable to downloadObject endpoint %s bucket %s key %s "+
+				"err %v", s.endpoint, bucket, keys[i], err)
 
 			return nil, err
 		}
