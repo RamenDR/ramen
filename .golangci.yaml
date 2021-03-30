@@ -1,3 +1,5 @@
+---
+# yamllint disable rule:line-length
 # Ref template: https://github.com/golangci/golangci-lint/blob/v1.37.1/.golangci.example.yml
 
 # options for analysis running
@@ -52,6 +54,6 @@ linters:
     - godot
     - godox
     - paralleltest
-    - goerr113 # TODO: Need to introduce error definition and bring this back
-    - goheader # TODO: Introduce back post fixing linter errors
+    - goerr113  # TODO: Need to introduce error definition and bring this back
+    - goheader  # TODO: Introduce back post fixing linter errors
     - gci

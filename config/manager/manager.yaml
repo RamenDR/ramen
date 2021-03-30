@@ -29,7 +29,8 @@ spec:
         - /manager
         args:
         - --leader-elect
-        image: quay.io/ramendr/ramen-operator:latest
+        image: controller
+        imagePullPolicy: IfNotPresent
         name: manager
         securityContext:
           allowPrivilegeEscalation: false

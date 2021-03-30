@@ -1,5 +1,8 @@
+---
+# yamllint disable rule:line-length
+
 name: PR and branch sanity
-on:
+on:  # yamllint disable-line rule:truthy
   push:
     tags:
       - v*
@@ -16,6 +19,24 @@ defaults:
   run:
     shell: bash
 jobs:
+  lint:
+    name: Linters
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v2
+
+      - name: Install prereqs
+        run: |
+          echo 'APT::Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-pip ruby
+          sudo gem install mdl
+          sudo pip3 install yamllint
+
+      - name: Run linters
+        run: ./hack/pre-commit.sh
+
   golangci:
     name: Golangci Lint
     runs-on: ubuntu-20.04
@@ -60,3 +81,49 @@ jobs:
         run: |
           echo "Failing if any auto generated files are updated, checking 'git status'"
           git status --porcelain 2>&1 | tee /dev/stderr | (! read || git diff && ! read a)
+
+  deploy-check:
+    name: Check artifacts and operator deployment
+    needs: [build-image-and-ensure-clean-branch]
+    runs-on: ubuntu-20.04
+    strategy:
+      fail-fast: false
+      matrix:
+        KUBERNETES_VERSIONS: ["1.20.2"]
+    env:
+      KUBERNETES_VERSION: ${{ matrix.KUBERNETES_VERSIONS }}
+      KIND_VERSION: "v0.10.0"
+      KIND_CLUSTER_NAME: "sanity"
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v2
+
+      - name: Setup go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install kubectl
+        run: |
+          curl -LO "https://storage.googleapis.com/kubernetes-release/release/v${KUBERNETES_VERSION}/bin/linux/amd64/kubectl"
+          sudo install ./kubectl /usr/local/bin/
+
+      - name: Create Kind kubernetes cluster
+        run: ./hack/setup-kind-cluster.sh
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v1
+        with:
+          name: ramen-operator
+          path: /tmp
+
+      - name: Load image artifact
+        run: |
+          docker load -i /tmp/ramen-operator.tar
+          kind load docker-image "${IMG}" --name ${KIND_CLUSTER_NAME}
+
+      - name: Deploy operator
+        run: |
+          make deploy
+          kubectl get deployment -n ramen-system
+          kubectl -n ramen-system wait --for=condition=Available --timeout=60s deploy/ramen-controller-manager
