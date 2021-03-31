@@ -28,7 +28,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	errorswrapper "github.com/pkg/errors"
-	"github.com/prometheus/common/log"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -47,8 +46,7 @@ import (
 // *** create a new bucket ***
 // bucket := "subname-namespace" // should be all lowercase
 // if err := s3Conn.createBucket(bucket); err != nil {
-// 	fmt.Println(errorswrapper.Wrapf(err, "Unable to create a bucket: %s", bucket))
-// 	return
+// 	return err
 // }
 
 // *** Upload objects, optionally using a key prefix to easily find the objects later ***
@@ -59,16 +57,14 @@ import (
 // 	uploadPV.Spec.StorageClassName = "gold"
 // 	uploadPV.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimRetain
 // 	if err := s3Conn.uploadObject(bucket, pvKey, uploadPV); err != nil {
-// 		fmt.Println(errorswrapper.Wrapf(err, "Unable to upload: %s:%s", bucket, pvKey))
-// 		return
+// 		return err
 // 	}
 // }
 
 // *** Find objects in the bucket, optionally supplying a key prefix
 // keyPrefix := "v1.PersistentVolumes/"
 // if list, err := s3Conn.listKeys(bucket, keyPrefix); err != nil {
-// 	fmt.Println(errorswrapper.Wrapf(err, "Unable to download: %s:%s", bucket, keyPrefix))
-// 	return
+// 	return err
 // } else {
 // 	for _, key := range list {
 // 		fmt.Printf("%v ", key)
@@ -80,8 +76,7 @@ import (
 // key := keyPrefix + "pv2"
 // var downloadPV corev1.PersistentVolume
 // if err := s3Conn.downloadObject(bucket, key, &downloadPV); err != nil {
-// 	fmt.Println(errorswrapper.Wrapf(err, "Unable to download: %s:%s", bucket, key))
-// 	return
+// 	return err
 // }
 // }
 
@@ -115,9 +110,8 @@ func connectToS3Endpoint(ctx context.Context, r client.Reader,
 
 	accessID, secretAccessKey, err := getS3Secret(ctx, r, s3SecretName)
 	if err != nil {
-		return nil, errorswrapper.Wrapf(err,
-			"failed to get secret %v; tag %s",
-			s3SecretName, callerTag)
+		return nil, fmt.Errorf("failed to get secret %v; tag %s, %w",
+			s3SecretName, callerTag, err)
 	}
 
 	// Create an S3 client session
@@ -130,9 +124,8 @@ func connectToS3Endpoint(ctx context.Context, r client.Reader,
 		S3ForcePathStyle: aws.Bool(true),
 	})
 	if err != nil {
-		return nil, errorswrapper.Wrapf(err,
-			"Failed to create new session for %s; tag %s",
-			s3Endpoint, callerTag)
+		return nil, fmt.Errorf("failed to create new session for %s; tag %s, %w",
+			s3Endpoint, callerTag, err)
 	}
 
 	// Create a client session
@@ -161,10 +154,8 @@ func getS3Secret(ctx context.Context, r client.Reader,
 	s3AccessID, s3SecretAccessKey []byte, err error) {
 	secret := corev1.Secret{}
 	if err := r.Get(ctx, s3SecretName, &secret); err != nil {
-		log.Infof("Failed to get secret %v", s3SecretName)
-
-		return nil, nil, errorswrapper.Wrapf(err,
-			"Failed to get secret %v", s3SecretName)
+		return nil, nil, fmt.Errorf("failed to get secret %v, %w",
+			s3SecretName, err)
 	}
 
 	s3AccessID = secret.Data["AWS_ACCESS_KEY_ID"]
@@ -176,7 +167,7 @@ func getS3Secret(ctx context.Context, r client.Reader,
 // Create a bucket; don't return error if the bucket exists already
 func (s *s3Connection) createBucket(bucket string) error {
 	if bucket == "" {
-		return fmt.Errorf("error: unspecified bucket name for "+
+		return fmt.Errorf("empty bucket name for "+
 			"endpoint %s tag %s", s.endpoint, s.callerTag)
 	}
 
@@ -184,8 +175,8 @@ func (s *s3Connection) createBucket(bucket string) error {
 		&s3.CreateBucketInput{Bucket: &bucket})
 	if err != nil {
 		if !errorswrapper.As(err, s3.ErrCodeBucketAlreadyOwnedByYou) {
-			return errorswrapper.Wrapf(err, "Failed to create bucket %s",
-				bucket)
+			return fmt.Errorf("failed to create bucket %s, %w",
+				bucket, err)
 		}
 	}
 
@@ -201,8 +192,8 @@ func (s *s3Connection) uploadPV(bucket string, pvKeySuffix string,
 
 // Upload to the given bucket the given uploadContent with a key of
 // <objectType/keySuffix>, where objectType is the type of the uploadContent
-// parameter
-// - OK to call UploadTypedObject() concurrently from multiple goroutines safely.
+// parameter. OK to call UploadTypedObject() concurrently from multiple
+// goroutines safely.
 func (s *s3Connection) uploadTypedObject(bucket string, keySuffix string,
 	uploadContent interface{}) error {
 	keyPrefix := reflect.TypeOf(uploadContent).String() + "/"
@@ -225,13 +216,13 @@ func (s *s3Connection) uploadObject(bucket string, key string,
 
 	gzWriter := gzip.NewWriter(encodedUploadContent)
 	if err := json.NewEncoder(gzWriter).Encode(uploadContent); err != nil {
-		return errorswrapper.Wrapf(err,
-			"Failed to json encode %s:%s", bucket, key)
+		return fmt.Errorf("failed to json encode %s:%s, %w",
+			bucket, key, err)
 	}
 
 	if err := gzWriter.Close(); err != nil {
-		return errorswrapper.Wrapf(err,
-			"Failed to close gzip writer of %s:%s", bucket, key)
+		return fmt.Errorf("failed to close gzip writer of %s:%s, %w",
+			bucket, key, err)
 	}
 
 	if _, err := s.uploader.Upload(&s3manager.UploadInput{
@@ -239,8 +230,8 @@ func (s *s3Connection) uploadObject(bucket string, key string,
 		Key:    &key,
 		Body:   encodedUploadContent,
 	}); err != nil {
-		return errorswrapper.Wrapf(err,
-			"Failed to upload data of %s:%s", bucket, key)
+		return fmt.Errorf("failed to upload data of %s:%s, %w",
+			bucket, key, err)
 	}
 
 	return nil
@@ -256,17 +247,12 @@ func (s *s3Connection) verifyPVUpload(bucket string, pvKeySuffix string,
 
 	err := s.downloadObject(bucket, key, &downloadedPV)
 	if err != nil {
-		log.Infof("unable to downloadObject for caller %s from "+
-			"endpoint %s bucket %s key %s err %v",
+		return fmt.Errorf("unable to downloadObject for caller %s from "+
+			"endpoint %s bucket %s key %s, %w",
 			s.callerTag, s.endpoint, bucket, key, err)
-
-		return err
 	}
 
 	if !reflect.DeepEqual(verifyPV, downloadedPV) {
-		log.Infof("failed to verify PV for caller %s want %v got %v",
-			s.callerTag, verifyPV, downloadedPV)
-
 		return fmt.Errorf("failed to verify PV for caller %s want %v got %v",
 			s.callerTag, verifyPV, downloadedPV)
 	}
@@ -277,19 +263,17 @@ func (s *s3Connection) verifyPVUpload(bucket string, pvKeySuffix string,
 // Download the list of PVs in the bucket
 // - Download objects with key prefix:  "v1.PersistentVolume/"
 // - If bucket doesn't exists, will return ErrCodeNoSuchBucket "NoSuchBucket"
-func (s *s3Connection) downloadPVs(bucket string) (pvList []corev1.PersistentVolume, err error) {
+func (s *s3Connection) downloadPVs(bucket string) (
+	pvList []corev1.PersistentVolume, err error) {
 	result, err := s.downloadTypedObjects(bucket,
 		reflect.TypeOf(corev1.PersistentVolume{}))
 	if err != nil {
-		return nil, errorswrapper.Wrapf(err, "Unable to download: %s", bucket)
+		return nil, fmt.Errorf("unable to download: %s, %w", bucket, err)
 	}
 
 	pvList, ok := result.([]corev1.PersistentVolume)
 	if !ok {
-		err = fmt.Errorf("unable to download PV type: got %T", result)
-		// log.Info(err)
-
-		return nil, err
+		return nil, fmt.Errorf("unable to download PV type: got %T", result)
 	}
 
 	return pvList, nil
@@ -306,11 +290,9 @@ func (s *s3Connection) downloadTypedObjects(bucket string,
 
 	keys, err := s.listKeys(bucket, keyPrefix)
 	if err != nil {
-		log.Infof("unable to listKeys of type %v from endpoint %s bucket %s "+
-			"keyPrefix %s err %v",
+		return nil, fmt.Errorf("unable to listKeys of type %v "+
+			"from endpoint %s bucket %s keyPrefix %s, %w",
 			objectType, s.endpoint, bucket, keyPrefix, err)
-
-		return nil, err
 	}
 
 	objects := reflect.MakeSlice(reflect.SliceOf(objectType),
@@ -319,10 +301,9 @@ func (s *s3Connection) downloadTypedObjects(bucket string,
 	for i := range keys {
 		objectReceiver := objects.Index(i).Addr().Interface()
 		if err := s.downloadObject(bucket, keys[i], objectReceiver); err != nil {
-			log.Infof("unable to downloadObject endpoint %s bucket %s key %s "+
-				"err %v", s.endpoint, bucket, keys[i], err)
-
-			return nil, err
+			return nil, fmt.Errorf("unable to downloadObject from "+
+				"endpoint %s bucket %s key %s, %w",
+				s.endpoint, bucket, keys[i], err)
 		}
 	}
 
@@ -345,8 +326,8 @@ func (s *s3Connection) listKeys(bucket string, keyPrefix string) (
 		})
 		if err != nil {
 			return nil,
-				errorswrapper.Wrapf(err, "Failed to list objects in bucket %s:%s",
-					bucket, keyPrefix)
+				fmt.Errorf("failed to list objects in bucket %s:%s, %w",
+					bucket, keyPrefix, err)
 		}
 
 		for _, entry := range result.Contents {
@@ -365,14 +346,15 @@ func (s *s3Connection) listKeys(bucket string, keyPrefix string) (
 
 // Download the given object from the given bucket with the given key
 // - OK to call DownloadObject() concurrently from multiple goroutines safely.
-// - Only those type field name in the downloaded json blob that are also present
-// 	 in the downloadContent type will be filled; other fields will be dropped
-//	 without returning any error.  More info at documentation of json.Unmarshall()
+// - Assumes that the downloaded objects are json blobs that have been then
+//	 gzipped and hence, will attempt to unzip and decode the json blobs
+// - Only those type field name in the downloaded json blob that are also
+//	 present in the downloadContent type will be filled; other fields will be
+// 	 dropped without returning any error.  More info at documentation of
+//	 json.Unmarshall()
 // - Download may fail due to many reasons: RequestError (connection error),
 //	 NoSuchBucket, NoSuchKey, invalid gzip header, json unmarshall error,
 //	 InvalidParameter (e.g., empty key), etc.
-// - Assumes that the downloaded objects are json blobs that have been then gzipped
-//	 and hence, will attempt to unzip and decode the json blobs
 func (s *s3Connection) downloadObject(bucket string, key string,
 	downloadContent interface{}) error {
 	writerAt := &aws.WriteAtBuffer{}
@@ -380,24 +362,24 @@ func (s *s3Connection) downloadObject(bucket string, key string,
 		Bucket: &bucket,
 		Key:    &key,
 	}); err != nil {
-		return errorswrapper.Wrapf(err,
-			"Failed to download data of %s:%s", bucket, key)
+		return fmt.Errorf("failed to download data of %s:%s, %w",
+			bucket, key, err)
 	}
 
 	gzReader, err := gzip.NewReader(bytes.NewReader(writerAt.Bytes()))
 	if err != nil && !errorswrapper.Is(err, io.EOF) {
-		return errorswrapper.Wrapf(err,
-			"Failed to unzip data of %s:%s", bucket, key)
+		return fmt.Errorf("failed to unzip data of %s:%s, %w",
+			bucket, key, err)
 	}
 
 	if err := json.NewDecoder(gzReader).Decode(downloadContent); err != nil {
-		return errorswrapper.Wrapf(err,
-			"Failed to decode json decoder of %s:%s", bucket, key)
+		return fmt.Errorf("failed to decode json decoder of %s:%s, %w",
+			bucket, key, err)
 	}
 
 	if err := gzReader.Close(); err != nil {
-		return errorswrapper.Wrapf(err,
-			"Failed to close gzip reader of %s:%s", bucket, key)
+		return fmt.Errorf("failed to close gzip reader of %s:%s, %w",
+			bucket, key, err)
 	}
 
 	return nil
