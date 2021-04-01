@@ -272,9 +272,24 @@ func (r *ApplicationVolumeReplicationReconciler) processSubscription(
 	// Check to see if this subscription is paused for DR. If it is, then restore PVs to the new destination
 	// cluster, unpause the subscription, and skip it until the next reconciler iteration
 	if r.isSubsriptionPausedForDR(subscription.GetLabels()) {
-		newHomeCluster, err := r.processPausedSubscription(avr, subscription)
+		newHomeCluster, pvMW, err := r.processPausedSubscription(avr, subscription)
 		if err != nil {
 			r.Log.Error(err, fmt.Sprintf("failed to process paused Subscription (%v)", subscription))
+
+			return nil, requeue
+		}
+
+		if pvMW == nil {
+			pvMW, err = r.findManifestWork(subscription, newHomeCluster, MWTypePV)
+			if err != nil {
+				r.Log.Error(err, "Failed to find PV ManifestWork")
+
+				return nil, requeue
+			}
+		}
+
+		if pvMW != nil && !IsManifestInAppliedState(pvMW) {
+			r.Log.Info(fmt.Sprintf("ManifestWork has not been applied yet (%+v)", pvMW))
 
 			return nil, requeue
 		}
@@ -328,42 +343,38 @@ func (r *ApplicationVolumeReplicationReconciler) isSubsriptionPausedForDR(labels
 // to the target cluster and then it unpauses the subscription
 func (r *ApplicationVolumeReplicationReconciler) processPausedSubscription(
 	avr *ramendrv1alpha1.ApplicationVolumeReplication,
-	subscription *subv1.Subscription) (string, error) {
+	subscription *subv1.Subscription) (string, *ocmworkv1.ManifestWork, error) {
 	r.Log.Info("Processing paused subscription", "name", subscription.Name)
 
 	// find new home cluster (could be the failover cluster)
 	newHomeCluster := r.findNextHomeCluster(avr, subscription)
 
 	if newHomeCluster == "" {
-		return "", fmt.Errorf("failed to find new home cluster: avr %s, subscription %s", avr.Name, subscription.Name)
+		return "", nil, fmt.Errorf("failed to find new home cluster: avr %s, subscription %s", avr.Name, subscription.Name)
 	}
 
-	mw, err := r.findManifestWork(subscription, newHomeCluster, MWTypePV)
+	pvMW, err := r.findManifestWork(subscription, newHomeCluster, MWTypePV)
 	if err != nil {
-		return "", fmt.Errorf("failed to get PV ManifestWork (%w)", err)
+		return "", nil, fmt.Errorf("failed to get PV ManifestWork (%w)", err)
 	}
 
-	if mw != nil {
-		if IsManifestInAppliedState(mw) {
-			r.Log.Info(fmt.Sprintf("ManifestWork applied (%+v)", mw))
+	if pvMW != nil {
+		r.Log.Info("Found a PV ManfiestWork for cluster", "name", newHomeCluster)
 
-			return newHomeCluster, nil
-		}
-
-		return "", fmt.Errorf("ManifestWork has not been applied yet (%+v)", mw)
+		return newHomeCluster, pvMW, nil
 	}
 
 	err = r.deleteExistingManfiestWork(avr, subscription)
 	if err != nil {
-		return "", fmt.Errorf("failed to delete existing ManifestWork (%w)", err)
+		return "", nil, fmt.Errorf("failed to delete existing ManifestWork (%w)", err)
 	}
 
 	err = r.restorePVFromBackup(avr, subscription, newHomeCluster)
 	if err != nil {
-		return "", fmt.Errorf("failed to restore PVs from Backups (%w)", err)
+		return "", nil, fmt.Errorf("failed to restore PVs from Backups (%w)", err)
 	}
 
-	return newHomeCluster, nil
+	return newHomeCluster, nil, nil
 }
 
 func (r *ApplicationVolumeReplicationReconciler) vrgManifestWorkAlreadyExists(
