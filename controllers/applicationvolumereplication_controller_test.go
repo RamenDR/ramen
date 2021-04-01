@@ -412,6 +412,30 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(pv2.Name).Should(Equal("pv0002"))
 
+				// 5.2 update the status to Applied
+				timeOld := time.Now().Local()
+				timeMostRecent := timeOld.Add(time.Second)
+				pvManifestStatus := ocmworkv1.ManifestWorkStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:               ocmworkv1.WorkApplied,
+							LastTransitionTime: metav1.Time{Time: timeMostRecent},
+							Status:             metav1.ConditionTrue,
+							Reason:             "test",
+						},
+					},
+				}
+				createdManifest.Status = pvManifestStatus
+				err = k8sClient.Status().Update(ctx, createdManifest)
+				Expect(err).NotTo(HaveOccurred())
+
+				Eventually(func() bool {
+					err := k8sClient.Get(ctx, manifestLookupKey, createdManifest)
+
+					return err == nil && len(createdManifest.Status.Conditions) != 0
+				}, timeout, interval).Should(BeTrue(), "failed to wait for manifest creation")
+
+				////////////////////////////////////////
 				subLookupKey := types.NamespacedName{
 					Name:      "subscription-2",
 					Namespace: "app-namespace",
@@ -420,7 +444,8 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				Eventually(func() bool {
 					err := k8sClient.Get(ctx, subLookupKey, updatedSub)
 
-					return err == nil
+					return err == nil &&
+						updatedSub.GetLabels()[subv1.LabelSubscriptionPause] == "false"
 				}, timeout, interval).Should(BeTrue(), "failed to wait for subscription update")
 
 				labels := updatedSub.GetLabels()
@@ -438,18 +463,19 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				Eventually(func() bool {
 					err := k8sClient.Get(ctx, avrLookupKey, updatedAVR)
 
-					return err == nil
+					return err == nil && updatedAVR.Status.Decisions != nil &&
+						updatedAVR.Status.Decisions["subscription-2"].HomeCluster == WestManagedCluster
 				}, timeout, interval).Should(BeTrue(), "failed to wait for updated AVR")
 
-				updatedAVR.Spec.FailoverClusters["test"] = "fake"
-				err = k8sClient.Update(ctx, updatedAVR)
-				Expect(err).NotTo(HaveOccurred())
+				// updatedAVR.Spec.FailoverClusters["test"] = "fake"
+				// err = k8sClient.Update(ctx, updatedAVR)
+				// Expect(err).NotTo(HaveOccurred())
 
-				Eventually(func() bool {
-					err := k8sClient.Get(ctx, avrLookupKey, updatedAVR)
+				// Eventually(func() bool {
+				// 	err := k8sClient.Get(ctx, avrLookupKey, updatedAVR)
 
-					return err == nil
-				}, timeout, interval).Should(BeTrue(), "failed to wait for updated AVR")
+				// 	return err == nil
+				// }, timeout, interval).Should(BeTrue(), "failed to wait for updated AVR")
 
 				Expect(updatedAVR.Status.Decisions["subscription-2"].HomeCluster).Should(Equal(WestManagedCluster))
 				Expect(updatedAVR.Status.Decisions["subscription-2"].PeerCluster).Should(Equal(EastManagedCluster))
