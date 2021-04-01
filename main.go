@@ -107,11 +107,13 @@ func setupReconcilers(mgr ctrl.Manager) {
 		os.Exit(1)
 	}
 
-	if err := (&controllers.ApplicationVolumeReplicationReconciler{
+	avrReconciler := (&controllers.ApplicationVolumeReplicationReconciler{
 		Client: mgr.GetClient(),
 		Log:    ctrl.Log.WithName("controllers").WithName("ApplicationVolumeReplication"),
+		S3:     &controllers.S3StoreWrapper{},
 		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	})
+	if err := avrReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ApplicationVolumeReplication")
 		os.Exit(1)
 	}
