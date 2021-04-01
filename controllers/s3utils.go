@@ -384,3 +384,9 @@ func (s *s3Connection) downloadObject(bucket string, key string,
 
 	return nil
 }
+
+func constructBucketName(namespace, name string) (bucket string) {
+	bucket = namespace + "/" + name
+
+	return
+}

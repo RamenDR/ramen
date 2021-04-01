@@ -485,8 +485,6 @@ func (v *VRGInstance) createVolumeReplicationResources() bool {
 			log.Info("Creating VolumeReplication resource for PersistentVolumeClaim")
 
 			if err = v.createVolumeReplicationForPVC(pvc); err == nil {
-				log.Error(err, "failed to upload PV metadata")
-
 				continue
 			}
 		}
@@ -512,7 +510,7 @@ func (v *VRGInstance) uploadPV(pvc corev1.PersistentVolumeClaim) error {
 	// the two with a forward slash.  Note: VRG's namespace and name may also
 	// have dots or hyphens in their names.
 	vrgName := v.instance.Name
-	s3Bucket := v.instance.Namespace + "/" + vrgName
+	s3Bucket := constructBucketName(v.instance.Namespace, vrgName)
 
 	s3Endpoint := v.instance.Spec.S3Endpoint
 	if err := validateS3Endpoint(s3Endpoint, s3Bucket, v.log); err != nil {
