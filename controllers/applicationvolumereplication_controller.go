@@ -62,10 +62,17 @@ const (
 	MWTypePV string = "pv"
 )
 
+type S3StoreInterface interface {
+	DownloadPVs(ctx context.Context, r client.Reader,
+		s3Endpoint string, s3SecretName types.NamespacedName,
+		callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error)
+}
+
 // ApplicationVolumeReplicationReconciler reconciles a ApplicationVolumeReplication object
 type ApplicationVolumeReplicationReconciler struct {
 	client.Client
 	Log    logr.Logger
+	S3     S3StoreInterface
 	Scheme *runtime.Scheme
 }
 
@@ -279,18 +286,8 @@ func (r *ApplicationVolumeReplicationReconciler) processSubscription(
 			return nil, requeue
 		}
 
-		if pvMW == nil {
-			pvMW, err = r.findManifestWork(subscription, newHomeCluster, MWTypePV)
-			if err != nil {
-				r.Log.Error(err, "Failed to find PV ManifestWork")
-
-				return nil, requeue
-			}
-		}
-
-		if pvMW != nil && !IsManifestInAppliedState(pvMW) {
-			r.Log.Info(fmt.Sprintf("ManifestWork has not been applied yet (%+v)", pvMW))
-
+		wait := r.waitForManifest(subscription, newHomeCluster, pvMW)
+		if wait {
 			return nil, requeue
 		}
 
@@ -375,6 +372,30 @@ func (r *ApplicationVolumeReplicationReconciler) processPausedSubscription(
 	}
 
 	return newHomeCluster, nil, nil
+}
+
+func (r *ApplicationVolumeReplicationReconciler) waitForManifest(
+	subscription *subv1.Subscription, clusterName string, pvMW *ocmworkv1.ManifestWork) bool {
+	const wait = true
+
+	if pvMW == nil {
+		mw, err := r.findManifestWork(subscription, clusterName, MWTypePV)
+		if err != nil {
+			r.Log.Error(err, "Failed to find PV ManifestWork")
+
+			return wait
+		}
+
+		pvMW = mw
+	}
+
+	if pvMW != nil && !IsManifestInAppliedState(pvMW) {
+		r.Log.Info(fmt.Sprintf("ManifestWork has not been applied yet (%+v)", pvMW))
+
+		return wait
+	}
+
+	return !wait
 }
 
 func (r *ApplicationVolumeReplicationReconciler) vrgManifestWorkAlreadyExists(
@@ -903,83 +924,22 @@ func (r *ApplicationVolumeReplicationReconciler) listPVsFromS3Store(
 		Namespace: avr.Namespace,
 	}
 
-	s3Conn, err := connectToS3Endpoint(context.TODO(), r.Client, avr.Spec.S3Endpoint, s3SecretLookupKey, avr.Name)
+	s3Bucket := constructBucketName(subscription.Namespace, subscription.Name)
+
+	return r.S3.DownloadPVs(
+		context.TODO(), r.Client, avr.Spec.S3Endpoint, s3SecretLookupKey, avr.Name, s3Bucket)
+}
+
+type S3StoreWrapper struct{}
+
+func (s *S3StoreWrapper) DownloadPVs(ctx context.Context, r client.Reader,
+	s3Endpoint string, s3SecretName types.NamespacedName,
+	callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error) {
+	s3Conn, err := connectToS3Endpoint(
+		ctx, r, s3Endpoint, s3SecretName, callerTag)
 	if err != nil {
 		return nil, err
 	}
 
-	s3Bucket := subscription.Namespace + "/" + subscription.Name
-
 	return s3Conn.downloadPVs(s3Bucket)
-}
-
-//nolint:gocritic
-//////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////
-// The code below will be deleted once PR-33 is merged. //
-//////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////
-
-//nolint:gofumpt
-type S3Connection struct {
-	// Fake S3 connection
-}
-
-func connectToS3Endpoint(ctx context.Context, r client.Reader,
-	s3Endpoint string, s3SecretName types.NamespacedName,
-	callerTag string) (*S3Connection, error) {
-	return &S3Connection{}, nil
-}
-
-func (s *S3Connection) downloadPVs(string) ([]corev1.PersistentVolume, error) {
-	pv1 := corev1.PersistentVolume{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "PersistentVolume",
-			APIVersion: "ramendr.openshift.io/v1alpha1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "pv0001",
-		},
-		Spec: corev1.PersistentVolumeSpec{
-			PersistentVolumeSource: corev1.PersistentVolumeSource{
-				CSI: &corev1.CSIPersistentVolumeSource{
-					VolumeHandle: "vol-id-1",
-				},
-			},
-			ClaimRef: &corev1.ObjectReference{
-				Name: "claim1",
-			},
-			StorageClassName: "sc-name",
-		},
-	}
-
-	pv2 := corev1.PersistentVolume{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "PersistentVolume",
-			APIVersion: "ramendr.openshift.io/v1alpha1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "pv0002",
-		},
-		Spec: corev1.PersistentVolumeSpec{
-			PersistentVolumeSource: corev1.PersistentVolumeSource{
-				CSI: &corev1.CSIPersistentVolumeSource{
-					VolumeHandle: "vol-id-1",
-				},
-			},
-			ClaimRef: &corev1.ObjectReference{
-				Name: "claim2",
-			},
-			StorageClassName: "sc-name",
-		},
-	}
-
-	pvList := []corev1.PersistentVolume{}
-	pvList = append(pvList, pv1, pv2)
-
-	return pvList, nil
 }

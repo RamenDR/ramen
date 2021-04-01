@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	spokeClusterV1 "github.com/open-cluster-management/api/cluster/v1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
@@ -78,6 +79,59 @@ var (
 		ObjectMeta: metav1.ObjectMeta{Name: ApplicationVolumeReplicationNamespaceName},
 	}
 )
+
+type FakeS3StoreWrapper struct{}
+
+func (s *FakeS3StoreWrapper) DownloadPVs(ctx context.Context, r client.Reader,
+	s3Endpoint string, s3SecretName types.NamespacedName,
+	callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error) {
+	pv1 := corev1.PersistentVolume{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PersistentVolume",
+			APIVersion: "ramendr.openshift.io/v1alpha1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pv0001",
+		},
+		Spec: corev1.PersistentVolumeSpec{
+			PersistentVolumeSource: corev1.PersistentVolumeSource{
+				CSI: &corev1.CSIPersistentVolumeSource{
+					VolumeHandle: "vol-id-1",
+				},
+			},
+			ClaimRef: &corev1.ObjectReference{
+				Name: "claim1",
+			},
+			StorageClassName: "sc-name",
+		},
+	}
+
+	pv2 := corev1.PersistentVolume{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PersistentVolume",
+			APIVersion: "ramendr.openshift.io/v1alpha1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pv0002",
+		},
+		Spec: corev1.PersistentVolumeSpec{
+			PersistentVolumeSource: corev1.PersistentVolumeSource{
+				CSI: &corev1.CSIPersistentVolumeSource{
+					VolumeHandle: "vol-id-1",
+				},
+			},
+			ClaimRef: &corev1.ObjectReference{
+				Name: "claim2",
+			},
+			StorageClassName: "sc-name",
+		},
+	}
+
+	pvList := []corev1.PersistentVolume{}
+	pvList = append(pvList, pv1, pv2)
+
+	return pvList, nil
+}
 
 // +kubebuilder:docs-gen:collapse=Imports
 
@@ -435,7 +489,6 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 					return err == nil && len(createdManifest.Status.Conditions) != 0
 				}, timeout, interval).Should(BeTrue(), "failed to wait for manifest creation")
 
-				////////////////////////////////////////
 				subLookupKey := types.NamespacedName{
 					Name:      "subscription-2",
 					Namespace: "app-namespace",
