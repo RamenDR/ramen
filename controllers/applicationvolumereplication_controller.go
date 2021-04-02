@@ -46,19 +46,20 @@ import (
 )
 
 const (
+	// RamenDRLabelName is the label used to pause/unpause a subsription
+	RamenDRLabelName string = "ramendr"
+
 	// ManifestWorkNameFormat is a formated a string used to generate the manifest name
 	// The format is name-namespace-type-mw where:
 	// - name is the subscription name
 	// - namespace is the subscription namespace
 	// - type is either vrg OR pv string
 	ManifestWorkNameFormat string = "%s-%s-%s-mw"
-	// RamenDRLabelName is the label used to pause/unpause a subsription
-	RamenDRLabelName string = "ramendr"
 
-	// VRG Type
+	// ManifestWork VRG Type
 	MWTypeVRG string = "vrg"
 
-	// PV Type
+	// ManifestWork PV Type
 	MWTypePV string = "pv"
 )
 
@@ -279,21 +280,16 @@ func (r *ApplicationVolumeReplicationReconciler) processSubscription(
 	// Check to see if this subscription is paused for DR. If it is, then restore PVs to the new destination
 	// cluster, unpause the subscription, and skip it until the next reconciler iteration
 	if r.isSubsriptionPausedForDR(subscription.GetLabels()) {
-		newHomeCluster, pvMW, err := r.processPausedSubscription(avr, subscription)
-		if err != nil {
-			r.Log.Error(err, fmt.Sprintf("failed to process paused Subscription (%v)", subscription))
+		unpause := r.processPausedSubscription(avr, subscription)
+		if !unpause {
+			r.Log.Info(fmt.Sprintf("Paused subscription %s will be reprocessed later", subscription.Name))
 
 			return nil, requeue
 		}
 
-		wait := r.waitForManifest(subscription, newHomeCluster, pvMW)
-		if wait {
-			return nil, requeue
-		}
+		r.Log.Info("Unpausing subscription", "name", subscription.Name)
 
-		r.Log.Info(fmt.Sprintf("Unpausing subscription %s for new home cluster %s", subscription.Name, newHomeCluster))
-
-		err = r.unpauseSubscription(subscription)
+		err := r.unpauseSubscription(subscription)
 		if err != nil {
 			r.Log.Error(err, "failed to unpause subscription", "name", subscription.Name)
 
@@ -340,62 +336,56 @@ func (r *ApplicationVolumeReplicationReconciler) isSubsriptionPausedForDR(labels
 // to the target cluster and then it unpauses the subscription
 func (r *ApplicationVolumeReplicationReconciler) processPausedSubscription(
 	avr *ramendrv1alpha1.ApplicationVolumeReplication,
-	subscription *subv1.Subscription) (string, *ocmworkv1.ManifestWork, error) {
+	subscription *subv1.Subscription) bool {
 	r.Log.Info("Processing paused subscription", "name", subscription.Name)
 
-	// find new home cluster (could be the failover cluster)
-	newHomeCluster := r.findNextHomeCluster(avr, subscription)
+	const unpause = true
 
-	if newHomeCluster == "" {
-		return "", nil, fmt.Errorf("failed to find new home cluster: avr %s, subscription %s", avr.Name, subscription.Name)
+	if action, found := avr.Spec.DREnabledSubscriptions[subscription.Name]; found {
+		if action == ramendrv1alpha1.ActionUnpauseOnly {
+			r.Log.Info("Requested to unpause subscription without restoring PVs.", "name", subscription.Name)
+
+			return unpause
+		}
 	}
+	// find new home cluster (could be the failover cluster)
+	newHomeCluster, err := r.findNextHomeClusterFromPlacementRule(avr, subscription)
+	if err != nil || newHomeCluster == "" {
+		r.Log.Error(err, "Failed to find new home cluster for subscription", "name", subscription.Name)
+		// DON'T unpause
+		return !unpause
+	}
+
+	r.Log.Info("Found new home cluster", "name", newHomeCluster)
 
 	pvMW, err := r.findManifestWork(subscription, newHomeCluster, MWTypePV)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to get PV ManifestWork (%w)", err)
+		r.Log.Error(err,
+			fmt.Sprintf("Failed to find PV restore ManifestWork: avr %s, subscription %s", avr.Name, subscription.Name))
+		// DON'T unpause
+		return !unpause
 	}
 
 	if pvMW != nil {
-		r.Log.Info("Found a PV ManfiestWork for cluster", "name", newHomeCluster)
-
-		return newHomeCluster, pvMW, nil
+		// Unpause if the ManifestWork has been applied
+		return IsManifestInAppliedState(pvMW)
 	}
 
 	err = r.deleteExistingManfiestWork(avr, subscription)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to delete existing ManifestWork (%w)", err)
+		r.Log.Error(err, "Failed to existing manifestwork for subscription", "name", subscription.Name)
+
+		return !unpause
 	}
 
 	err = r.restorePVFromBackup(avr, subscription, newHomeCluster)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to restore PVs from Backups (%w)", err)
+		r.Log.Error(err, "Failed to restore PVs from backup for subscription", "name", subscription.Name)
+
+		return !unpause
 	}
 
-	return newHomeCluster, nil, nil
-}
-
-func (r *ApplicationVolumeReplicationReconciler) waitForManifest(
-	subscription *subv1.Subscription, clusterName string, pvMW *ocmworkv1.ManifestWork) bool {
-	const wait = true
-
-	if pvMW == nil {
-		mw, err := r.findManifestWork(subscription, clusterName, MWTypePV)
-		if err != nil {
-			r.Log.Error(err, "Failed to find PV ManifestWork")
-
-			return wait
-		}
-
-		pvMW = mw
-	}
-
-	if pvMW != nil && !IsManifestInAppliedState(pvMW) {
-		r.Log.Info(fmt.Sprintf("ManifestWork has not been applied yet (%+v)", pvMW))
-
-		return wait
-	}
-
-	return !wait
+	return !unpause
 }
 
 func (r *ApplicationVolumeReplicationReconciler) vrgManifestWorkAlreadyExists(
@@ -551,27 +541,56 @@ func (r *ApplicationVolumeReplicationReconciler) processUnpausedSubscription(
 	}, nil
 }
 
-func (r *ApplicationVolumeReplicationReconciler) findNextHomeCluster(
+func (r *ApplicationVolumeReplicationReconciler) findNextHomeClusterFromPlacementRule(
 	avr *ramendrv1alpha1.ApplicationVolumeReplication,
-	subscription *subv1.Subscription) string {
-	// FOR NOW the user has to specify the Failover Cluster.  Later we may derive that
-	// from the subscription/placementrule
-	return avr.Spec.FailoverClusters[subscription.Name]
+	subscription *subv1.Subscription) (string, error) {
+	r.Log.Info("Finding the next home cluster for subscription", "name", subscription.Name)
+
+	placementRule, err := r.getPlacementRule(subscription)
+	if err != nil {
+		return "", err
+	}
+
+	if len(placementRule.Status.Decisions) == 0 {
+		return "", fmt.Errorf("no decisions were found in placementRule %s", placementRule.Name)
+	}
+
+	return placementRule.Status.Decisions[0].ClusterName, nil
+	// if avr.Status.Decisions == nil {
+	// 	return ""
+	// }
+
+	// if d, found := avr.Status.Decisions[subscription.Name]; found {
+	// return avr.Spec.FailoverClusters[subscription.Name]
 }
 
 func (r *ApplicationVolumeReplicationReconciler) selectPlacementDecision(
 	subscription *subv1.Subscription) (string, string, error) {
 	r.Log.Info("Selecting placement decisions for subscription", "name", subscription.Name)
+
+	// get the placement rule fo this subscription
+	placementRule, err := r.getPlacementRule(subscription)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to retrieve placementRule using placementRef %s/%s",
+			placementRule.Namespace, placementRule.Name)
+	}
+
+	return r.extractHomeClusterAndPeerCluster(subscription, placementRule)
+}
+
+func (r *ApplicationVolumeReplicationReconciler) getPlacementRule(
+	subscription *subv1.Subscription) (*plrv1.PlacementRule, error) {
+	r.Log.Info("Getting placement decisions for subscription", "name", subscription.Name)
 	// The subscription phase describes the phasing of the subscriptions. Propagated means
 	// this subscription is the "parent" sitting in hub. Statuses is a map where the key is
 	// the cluster name and value is the aggregated status
 	if subscription.Status.Phase != subv1.SubscriptionPropagated || subscription.Status.Statuses == nil {
-		return "", "", fmt.Errorf("subscription %s not ready", subscription.Name)
+		return nil, fmt.Errorf("subscription %s not ready", subscription.Name)
 	}
 
 	pl := subscription.Spec.Placement
 	if pl == nil || pl.PlacementRef == nil {
-		return "", "", fmt.Errorf("placement not set for subscription %s", subscription.Name)
+		return nil, fmt.Errorf("placement not set for subscription %s", subscription.Name)
 	}
 
 	plRef := pl.PlacementRef
@@ -588,10 +607,10 @@ func (r *ApplicationVolumeReplicationReconciler) selectPlacementDecision(
 	err := r.Client.Get(context.TODO(),
 		types.NamespacedName{Name: plRef.Name, Namespace: plRef.Namespace}, placementRule)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to retrieve placementRule using placementRef %s/%s", plRef.Namespace, plRef.Name)
+		return nil, fmt.Errorf("failed to retrieve placementRule using placementRef %s/%s", plRef.Namespace, plRef.Name)
 	}
 
-	return r.extractHomeClusterAndPeerCluster(subscription, placementRule)
+	return placementRule, nil
 }
 
 func (r *ApplicationVolumeReplicationReconciler) extractHomeClusterAndPeerCluster(
