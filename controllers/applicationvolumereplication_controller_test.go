@@ -241,9 +241,9 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 						Namespace: ApplicationVolumeReplicationNamespaceName,
 					},
 					Spec: ramendrv1alpha1.ApplicationVolumeReplicationSpec{
-						FailoverClusters: ramendrv1alpha1.FailoverClusterMap{},
-						S3Endpoint:       "path/to/s3Endpoint",
-						S3SecretName:     "SecretName",
+						DREnabledSubscriptions: ramendrv1alpha1.DREnabledSubscriptionsMap{},
+						S3Endpoint:             "path/to/s3Endpoint",
+						S3SecretName:           "SecretName",
 					},
 				}
 				Expect(k8sClient.Create(ctx, avr)).Should(Succeed())
@@ -416,6 +416,19 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 					Expect(k8sClient.Delete(context.TODO(), placementRule)).NotTo(HaveOccurred())
 				}()
 
+				decision := plrv1.PlacementDecision{
+					ClusterName:      WestManagedCluster,
+					ClusterNamespace: "test",
+				}
+
+				plDecisions := []plrv1.PlacementDecision{decision}
+				placementRule.Status = plrv1.PlacementRuleStatus{
+					Decisions: plDecisions,
+				}
+
+				err = k8sClient.Status().Update(ctx, placementRule)
+				Expect(err).NotTo(HaveOccurred())
+
 				By("Creating AVR")
 				avr := &ramendrv1alpha1.ApplicationVolumeReplication{
 					ObjectMeta: metav1.ObjectMeta{
@@ -423,9 +436,10 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 						Namespace: ApplicationVolumeReplicationNamespaceName,
 					},
 					Spec: ramendrv1alpha1.ApplicationVolumeReplicationSpec{
-						FailoverClusters: ramendrv1alpha1.FailoverClusterMap{"subscription-2": WestManagedCluster},
-						S3Endpoint:       "path/to/s3Endpoint",
-						S3SecretName:     "SecretName",
+						DREnabledSubscriptions: ramendrv1alpha1.DREnabledSubscriptionsMap{
+							"subscription-2": ramendrv1alpha1.ActionFailover},
+						S3Endpoint:   "path/to/s3Endpoint",
+						S3SecretName: "SecretName",
 					},
 				}
 				Expect(k8sClient.Create(ctx, avr)).Should(Succeed())
@@ -487,7 +501,7 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 					err := k8sClient.Get(ctx, manifestLookupKey, createdManifest)
 
 					return err == nil && len(createdManifest.Status.Conditions) != 0
-				}, timeout, interval).Should(BeTrue(), "failed to wait for manifest creation")
+				}, timeout, interval).Should(BeTrue(), "failed to wait for PV manifest condition type to change to 'Applied'")
 
 				subLookupKey := types.NamespacedName{
 					Name:      "subscription-2",

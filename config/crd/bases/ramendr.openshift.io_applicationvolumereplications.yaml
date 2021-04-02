@@ -40,9 +40,14 @@ spec:
             properties:
               FailoverClusters:
                 additionalProperties:
+                  description: Action that will be taken by Ramen when a subscription
+                    is paused
+                  enum:
+                  - Failover
+                  - Failback
                   type: string
-                description: FailoverClusterMap defines the clusters used for failover
-                  per subscription. Key is subscription name
+                description: DREnabledSubscriptions holds Subscription name as the
+                  key and an Action as the value
                 type: object
               s3Endpoint:
                 description: S3 Endpoint to replicate PV metadata; this is for all
@@ -70,6 +75,8 @@ spec:
                   description: SubscriptionPlacementDecision lists each subscription
                     with its home and peer clusters
                   properties:
+                    PrevHomeCluster:
+                      type: string
                     homeCluster:
                       type: string
                     peerCluster:

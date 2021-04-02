@@ -20,12 +20,31 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// FailoverClusterMap defines the clusters used for failover per subscription. Key is subscription name
-type FailoverClusterMap map[string]string
+// Action that will be taken by Ramen when a subscription is paused
+// +kubebuilder:validation:Enum=Failover;Failback
+type Action string
+
+// These are the valid values for Action
+const (
+	// Failover, restore PVs to the new home cluster, and unpause subscription
+	ActionFailover Action = "Failover"
+
+	// Failback, restore PVs to the original home cluster, and unpause subscription
+	ActionFailback Action = "Failback"
+
+	// Unpause subscription only
+	ActionUnpauseOnly Action = "UnpauseOnly"
+)
+
+// DREnabledSubscriptionsMap defines the action used for failover per subscription.
+// Key is subscription name. Value is either empty, 'failover', or 'failback'
+type DREnabledSubscriptionsMap map[string]Action
 
 // ApplicationVolumeReplicationSpec defines the desired state of ApplicationVolumeReplication
 type ApplicationVolumeReplicationSpec struct {
-	FailoverClusters FailoverClusterMap `json:"FailoverClusters,omitempty"`
+	// DREnabledSubscriptions holds Subscription name as the key and an Action as the value
+	DREnabledSubscriptions DREnabledSubscriptionsMap `json:"FailoverClusters,omitempty"`
+
 	// S3 Endpoint to replicate PV metadata; this is for all VRGs.
 	// The value of this field, will be progated to every VRG.
 	// See VRG spec for more details.
@@ -41,8 +60,9 @@ type ApplicationVolumeReplicationSpec struct {
 
 // SubscriptionPlacementDecision lists each subscription with its home and peer clusters
 type SubscriptionPlacementDecision struct {
-	HomeCluster string `json:"homeCluster,omitempty"`
-	PeerCluster string `json:"peerCluster,omitempty"`
+	HomeCluster     string `json:"homeCluster,omitempty"`
+	PeerCluster     string `json:"peerCluster,omitempty"`
+	PrevHomeCluster string `json:"PrevHomeCluster,omitempty"`
 }
 
 // SubscriptionPlacementDecisionMap defines per subscription placement decision, key is subscription name
