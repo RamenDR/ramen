@@ -86,10 +86,10 @@ func FakeProgressCallback(avrName string, done bool) {
 	safeToProceed = done
 }
 
-type FakeS3StoreWrapper struct{}
+type FakePVDownloader struct{}
 
-func (s *FakeS3StoreWrapper) DownloadPVs(ctx context.Context, r client.Reader,
-	s3Endpoint string, s3SecretName types.NamespacedName,
+func (s FakePVDownloader) DownloadPVs(ctx context.Context, r client.Reader,
+	objStoreGetter controllers.ObjectStoreGetter, s3Endpoint string, s3SecretName types.NamespacedName,
 	callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error) {
 	pv1 := corev1.PersistentVolume{
 		TypeMeta: metav1.TypeMeta{

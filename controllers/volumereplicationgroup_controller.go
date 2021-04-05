@@ -46,13 +46,10 @@ import (
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
 type VolumeReplicationGroupReconciler struct {
 	client.Client
-	Log    logr.Logger
-	Scheme *runtime.Scheme
+	Log            logr.Logger
+	ObjStoreGetter ObjectStoreGetter
+	Scheme         *runtime.Scheme
 }
-
-// s3Warning is a map of s3 bucket to s3 endpoint to avoid repetitive
-// log messages when operating in backup-less mode.
-var s3Warning map[string]string
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -469,34 +466,41 @@ func (v *VRGInstance) createVolumeReplicationResources() bool {
 		volRep := &volrep.VolumeReplication{}
 
 		err := v.reconciler.Get(v.ctx, pvcNamespacedName, volRep)
-		if err != nil && errors.IsNotFound(err) {
-			log.Info("Uploading PersistentVolume")
-
-			if err = v.uploadPV(pvc); err != nil {
-				log.Error(err, "failed to upload PV metadata")
-
+		if err != nil {
+			if errors.IsNotFound(err) {
+				requeue = v.createVolumeReplication(pvc)
+			} else {
+				// requeue on failure to ensure any PVC not having a corresponding VR CR
 				requeue = true
-
-				// There's no point enabling PV data replication if
-				// replication of PV metadata to object store has failed.
-				break
-			}
-
-			log.Info("Creating VolumeReplication resource for PersistentVolumeClaim")
-
-			if err = v.createVolumeReplicationForPVC(pvc); err == nil {
-				continue
+				log.Error(err, "failed to get VolumeReplication resource")
 			}
 		}
-
-		log.Info("Requeuing due to failure in getting or creating VolumeReplication resource for PersistentVolumeClaim",
-			"errorValue", err)
-
-		// requeue on failure to ensure any PVC not having a corresponding VR CR
-		requeue = true
 	}
 
 	return requeue
+}
+
+func (v *VRGInstance) createVolumeReplication(
+	pvc corev1.PersistentVolumeClaim) (requeue bool) {
+	requeue = false
+
+	// Prior to creating VR, upload PV metadata to object store
+	if err := v.uploadPV(pvc); err != nil {
+		v.log.Error(err, "failed to upload PV metadata")
+
+		requeue = true
+		// PV metadata replication to object store has failed.
+		// No point in creating VR to enable PV data replication.
+		return
+	}
+
+	if err := v.createVolumeReplicationForPVC(pvc); err != nil {
+		v.log.Error(err, "failed to create VolumeReplication resource")
+
+		requeue = true
+	}
+
+	return
 }
 
 // uploadPV checks if the VRG spec has been configured with an s3 endpoint,
@@ -505,91 +509,97 @@ func (v *VRGInstance) createVolumeReplicationResources() bool {
 // s3 store and downloads it for verification.  If an s3 endpoint is not
 // configured, then it assumes that VRG is running in a backup-less mode and
 // does not return an error, but logs a one-time warning.
-func (v *VRGInstance) uploadPV(pvc corev1.PersistentVolumeClaim) error {
-	// Create an s3 bucket name from the VRG's namespace and name, separating
-	// the two with a forward slash.  Note: VRG's namespace and name may also
-	// have dots or hyphens in their names.
+func (v *VRGInstance) uploadPV(pvc corev1.PersistentVolumeClaim) (err error) {
 	vrgName := v.instance.Name
+	s3Endpoint := v.instance.Spec.S3Endpoint
 	s3Bucket := constructBucketName(v.instance.Namespace, vrgName)
 
-	s3Endpoint := v.instance.Spec.S3Endpoint
-	if err := validateS3Endpoint(s3Endpoint, s3Bucket, v.log); err != nil {
+	if err := v.validateS3Endpoint(s3Endpoint, s3Bucket); err != nil {
+		if errors.IsServiceUnavailable(err) {
+			// Implies unconfigured object store: backup-less mode
+			return nil
+		}
+
 		return err
-	} else if s3Endpoint == "" {
-		// VRG is configured to run in a backup-less mode.  validateS3Endpoint()
-		// logs a warning message once about this backup-less mode; hence, no
-		// need to log any error here.
-		return nil
 	}
 
-	s3Conn, err := connectToS3Endpoint(v.ctx, v.reconciler,
-		s3Endpoint,
-		types.NamespacedName{ /* secretName */
-			Name:      v.instance.Spec.S3SecretName,
-			Namespace: v.instance.Namespace,
-		},
-		vrgName, /* debugTag */
-	)
+	v.log.Info("Uploading PersistentVolume metadata to object store")
+
+	objectStore, err :=
+		v.reconciler.ObjStoreGetter.objectStore(v.ctx, v.reconciler,
+			s3Endpoint,
+			types.NamespacedName{ /* secretName */
+				Name:      v.instance.Spec.S3SecretName,
+				Namespace: v.instance.Namespace,
+			},
+			vrgName, /* debugTag */
+		)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get client for endpoint %s, err %w",
+			s3Endpoint, err)
 	}
 
 	pv := corev1.PersistentVolume{}
 	volumeName := pvc.Spec.VolumeName
-	pvObjectKey := client.ObjectKey{
-		Name: volumeName,
-	}
+	pvObjectKey := client.ObjectKey{Name: volumeName}
 
+	// Get PV from k8s
 	if err := v.reconciler.Get(v.ctx, pvObjectKey, &pv); err != nil {
 		return fmt.Errorf("failed to get PV metadata from k8s, %w", err)
 	}
 
-	// Create the s3Bucket, without caching or assuming its existence
-	if err := s3Conn.createBucket(s3Bucket); err != nil {
-		return fmt.Errorf("unable to create s3Bucket %s, %w",
-			s3Bucket, err)
+	// Create the bucket in object store, without assuming its existence
+	if err := objectStore.createBucket(s3Bucket); err != nil {
+		return fmt.Errorf("unable to create s3Bucket %s, %w", s3Bucket, err)
 	}
 
-	if err := s3Conn.uploadPV(s3Bucket, pv.Name, pv); err != nil {
-		return err
+	// Upload PV to object store
+	if err := objectStore.uploadPV(s3Bucket, pv.Name, pv); err != nil {
+		return fmt.Errorf("error uploading PV %s, err %w", pv.Name, err)
 	}
 
-	if err := s3Conn.verifyPVUpload(s3Bucket, pv.Name, pv); err != nil {
-		return err
+	// Verify upload of PV to object store
+	if err := objectStore.verifyPVUpload(s3Bucket, pv.Name, pv); err != nil {
+		return fmt.Errorf("error verifying PV %s, err %w", pv.Name, err)
 	}
 
-	// Remove after Benamar uses this method in AVR
-	if _, err := s3Conn.downloadPVs(s3Bucket); err != nil {
-		return err
-	}
-
-	return err
+	return nil
 }
+
+// backupLessWarning is a map with VRG name as the key
+var backupLessWarning = make(map[string]bool)
 
 // If the the s3 endpoint is not set, then the VRG has been configured to run
 // in a backup-less mode to simply control VR CRs alone without backing up
 // PV k8s metadata to an object store.
-func validateS3Endpoint(s3Endpoint, s3Bucket string, log logr.Logger) error {
+func (v *VRGInstance) validateS3Endpoint(s3Endpoint, s3Bucket string) error {
+	vrgName := v.instance.Name
+
 	if s3Endpoint != "" {
 		_, err := url.ParseRequestURI(s3Endpoint)
 		if err != nil {
 			return fmt.Errorf("invalid spec.S3Endpoint <%s> for "+
-				"s3Bucket %s, %w", s3Endpoint, s3Bucket, err)
+				"s3Bucket %s in VRG %s, %w", s3Endpoint, s3Bucket, vrgName, err)
 		}
+
+		backupLessWarning[vrgName] = false // Reset backup-less warning
 
 		return nil
 	}
 
-	if prevEndpoint, prevWarned := s3Warning[s3Bucket]; prevWarned &&
-		prevEndpoint == s3Endpoint {
-		return nil // previously warned about backup-less mode of operation
+	// No endpoint implies, backup-less mode
+	err := errors.NewServiceUnavailable("missing s3Endpoint in VRG.spec")
+
+	if prevWarned := backupLessWarning[vrgName]; prevWarned {
+		// previously logged warning about backup-less mode of operation
+		return err
 	}
 
-	log.Info("VolumeReplicationGroup ", s3Bucket, "running in backup-less mode.")
+	v.log.Info("VolumeReplicationGroup ", vrgName, " running in backup-less mode.")
 
-	s3Warning[s3Bucket] = s3Endpoint
+	backupLessWarning[vrgName] = true // Remember that an error was logged
 
-	return nil
+	return err
 }
 
 // createVolumeReplicationCRForPVC creates a VolumeReplication CR with a PVC as its data source.

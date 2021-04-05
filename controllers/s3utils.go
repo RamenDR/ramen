@@ -23,6 +23,7 @@ import (
 	"reflect"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -80,52 +81,79 @@ import (
 // }
 // }
 
-type s3Connection struct {
-	session    *session.Session
-	client     *s3.S3
-	uploader   *s3manager.Uploader
-	downloader *s3manager.Downloader
-	endpoint   string
-	callerTag  string
+// ObjectStoreGetter interface is exported because AVR test,
+// which is in controllers_test package, uses this interface.
+type ObjectStoreGetter interface {
+	// objectStore returns an object that satisfies objectStorer interface
+	objectStore(ctx context.Context, r client.Reader,
+		endpoint string, secretName types.NamespacedName,
+		callerTag string) (objectStorer, error)
 }
 
-var objectStoreConnections = map[string]*s3Connection{}
+type objectStorer interface {
+	createBucket(bucket string) error
+	uploadPV(bucket string, pvKeySuffix string,
+		pv corev1.PersistentVolume) error
+	uploadTypedObject(bucket string, keySuffix string,
+		uploadContent interface{}) error
+	uploadObject(bucket string, key string,
+		uploadContent interface{}) error
+	verifyPVUpload(bucket string, pvKeySuffix string,
+		verifyPV corev1.PersistentVolume) error
+	downloadPVs(bucket string) (pvList []corev1.PersistentVolume, err error)
+	downloadTypedObjects(bucket string,
+		objectType reflect.Type) (interface{}, error)
+	listKeys(bucket string, keyPrefix string) (keys []string, err error)
+	downloadObject(bucket string, key string, downloadContent interface{}) error
+}
 
-// Return a connection to the given S3 object store endpoint using
-// the given s3 secret
+// S3ObjectStoreGetter returns a concrete type that implements
+// the ObjectStoreGetter interface, allowing the concrete type
+// to be not exported.
+func S3ObjectStoreGetter() ObjectStoreGetter {
+	return s3ObjectStoreGetter{}
+}
+
+// s3ObjectStoreGetter is a private concrete type that implements
+// the ObjectStoreGetter interface.
+type s3ObjectStoreGetter struct{}
+
+// objectStore returns an S3 object store that satisfies
+// the objectStorer interface,  by either creating a new one or
+// returning a cached object store for the given endpoint.
 // - Return error if endpoint or secret is not configured, or if
-//   session creation fails
-func connectToS3Endpoint(ctx context.Context, r client.Reader,
-	s3Endpoint string, s3SecretName types.NamespacedName,
-	callerTag string) (*s3Connection, error) {
-	if s3Endpoint == "" {
+//   client session creation fails
+func (s3ObjectStoreGetter) objectStore(ctx context.Context,
+	r client.Reader, endpoint string, secretName types.NamespacedName,
+	callerTag string) (objectStorer, error) {
+	if endpoint == "" {
 		return nil, fmt.Errorf("s3 endpoint has not been configured; tag:%s",
 			callerTag)
 	}
 
 	// Use cached connection, if one exists
-	if s3Conn, ok := objectStoreConnections[s3Endpoint]; ok {
-		return s3Conn, nil
+	if s3ObjectStore, ok := s3ConnectionMap[endpoint]; ok {
+		return s3ObjectStore, nil
 	}
 
-	accessID, secretAccessKey, err := getS3Secret(ctx, r, s3SecretName)
+	accessID, secretAccessKey, err := getS3Secret(ctx, r, secretName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get secret %v; tag %s, %w",
-			s3SecretName, callerTag, err)
+			secretName, callerTag, err)
 	}
 
 	// Create an S3 client session
 	s3Session, err := session.NewSession(&aws.Config{
 		Credentials: credentials.NewStaticCredentials(string(accessID),
 			string(secretAccessKey), ""),
-		Endpoint:         aws.String(s3Endpoint),
+		Endpoint:         aws.String(endpoint),
 		Region:           aws.String("us-east-1"),
 		DisableSSL:       aws.Bool(true),
 		S3ForcePathStyle: aws.Bool(true),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new session for %s; tag %s, %w",
-			s3Endpoint, callerTag, err)
+			endpoint, callerTag, err)
 	}
 
 	// Create a client session
@@ -136,26 +164,26 @@ func connectToS3Endpoint(ctx context.Context, r client.Reader,
 	// does not support concurrent writers.
 	s3Uploader := s3manager.NewUploaderWithClient(s3Client)
 	s3Downloader := s3manager.NewDownloaderWithClient(s3Client)
-	s3Conn := &s3Connection{
+	s3Conn := &s3ObjectStore{
 		session:    s3Session,
 		client:     s3Client,
 		uploader:   s3Uploader,
 		downloader: s3Downloader,
-		endpoint:   s3Endpoint,
+		endpoint:   endpoint,
 		callerTag:  callerTag,
 	}
-	objectStoreConnections[s3Endpoint] = s3Conn
+	s3ConnectionMap[endpoint] = s3Conn
 
 	return s3Conn, nil
 }
 
 func getS3Secret(ctx context.Context, r client.Reader,
-	s3SecretName types.NamespacedName) (
+	secretName types.NamespacedName) (
 	s3AccessID, s3SecretAccessKey []byte, err error) {
 	secret := corev1.Secret{}
-	if err := r.Get(ctx, s3SecretName, &secret); err != nil {
+	if err := r.Get(ctx, secretName, &secret); err != nil {
 		return nil, nil, fmt.Errorf("failed to get secret %v, %w",
-			s3SecretName, err)
+			secretName, err)
 	}
 
 	s3AccessID = secret.Data["AWS_ACCESS_KEY_ID"]
@@ -164,19 +192,49 @@ func getS3Secret(ctx context.Context, r client.Reader,
 	return
 }
 
+type s3ObjectStore struct {
+	session    *session.Session
+	client     *s3.S3
+	uploader   *s3manager.Uploader
+	downloader *s3manager.Downloader
+	endpoint   string
+	callerTag  string
+}
+
+// S3 object store map with endpoint as the key to serve as cache
+var s3ConnectionMap = map[string]*s3ObjectStore{}
+
 // Create a bucket; don't return error if the bucket exists already
-func (s *s3Connection) createBucket(bucket string) error {
+func (s *s3ObjectStore) createBucket(bucket string) (err error) {
 	if bucket == "" {
 		return fmt.Errorf("empty bucket name for "+
 			"endpoint %s tag %s", s.endpoint, s.callerTag)
 	}
 
-	_, err := s.client.CreateBucket(
-		&s3.CreateBucketInput{Bucket: &bucket})
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("create bucket recovered for %s, with %v",
+				bucket, r)
+		}
+	}()
+
+	cbInput := &s3.CreateBucketInput{Bucket: &bucket}
+	if err = cbInput.Validate(); err != nil {
+		return fmt.Errorf("create bucket input validation failed for %s, err %w",
+			bucket, err)
+	}
+
+	_, err = s.client.CreateBucket(cbInput)
 	if err != nil {
-		if !errorswrapper.As(err, s3.ErrCodeBucketAlreadyOwnedByYou) {
-			return fmt.Errorf("failed to create bucket %s, %w",
-				bucket, err)
+		var aerr awserr.Error
+		if errorswrapper.As(err, &aerr) {
+			switch aerr.Code() {
+			case s3.ErrCodeBucketAlreadyExists:
+			case s3.ErrCodeBucketAlreadyOwnedByYou:
+			default:
+				return fmt.Errorf("failed to create bucket %s, %w",
+					bucket, err)
+			}
 		}
 	}
 
@@ -185,7 +243,8 @@ func (s *s3Connection) createBucket(bucket string) error {
 
 // A convenience method
 // - OK to call UploadPV() concurrently from multiple goroutines safely.
-func (s *s3Connection) uploadPV(bucket string, pvKeySuffix string,
+// - Expects the given bucket to be already present
+func (s *s3ObjectStore) uploadPV(bucket string, pvKeySuffix string,
 	pv corev1.PersistentVolume) error {
 	return s.uploadTypedObject(bucket, pvKeySuffix /* key suffix */, pv)
 }
@@ -194,7 +253,8 @@ func (s *s3Connection) uploadPV(bucket string, pvKeySuffix string,
 // <objectType/keySuffix>, where objectType is the type of the uploadContent
 // parameter. OK to call UploadTypedObject() concurrently from multiple
 // goroutines safely.
-func (s *s3Connection) uploadTypedObject(bucket string, keySuffix string,
+// - Expects the given bucket to be already present
+func (s *s3ObjectStore) uploadTypedObject(bucket string, keySuffix string,
 	uploadContent interface{}) error {
 	keyPrefix := reflect.TypeOf(uploadContent).String() + "/"
 	key := keyPrefix + keySuffix
@@ -210,7 +270,8 @@ func (s *s3Connection) uploadTypedObject(bucket string, keySuffix string,
 //	 a single forward slash, for each such occurrence
 // - Any formatting changes to this method should also be reflected in the
 //	 downloadObject() method
-func (s *s3Connection) uploadObject(bucket string, key string,
+// - Expects the given bucket to be already present
+func (s *s3ObjectStore) uploadObject(bucket string, key string,
 	uploadContent interface{}) error {
 	encodedUploadContent := &bytes.Buffer{}
 
@@ -238,7 +299,7 @@ func (s *s3Connection) uploadObject(bucket string, key string,
 }
 
 // Verify that the uploaded PV matches the given PV
-func (s *s3Connection) verifyPVUpload(bucket string, pvKeySuffix string,
+func (s *s3ObjectStore) verifyPVUpload(bucket string, pvKeySuffix string,
 	verifyPV corev1.PersistentVolume) error {
 	var downloadedPV corev1.PersistentVolume
 
@@ -263,7 +324,7 @@ func (s *s3Connection) verifyPVUpload(bucket string, pvKeySuffix string,
 // Download the list of PVs in the bucket
 // - Download objects with key prefix:  "v1.PersistentVolume/"
 // - If bucket doesn't exists, will return ErrCodeNoSuchBucket "NoSuchBucket"
-func (s *s3Connection) downloadPVs(bucket string) (
+func (s *s3ObjectStore) downloadPVs(bucket string) (
 	pvList []corev1.PersistentVolume, err error) {
 	result, err := s.downloadTypedObjects(bucket,
 		reflect.TypeOf(corev1.PersistentVolume{}))
@@ -284,7 +345,8 @@ func (s *s3Connection) downloadPVs(bucket string) (
 // - Example key prefix:  v1.PersistentVolumeClaim/
 // - Objects being downloaded should meet the decoding expectations of
 // 	 the downloadObject() method.
-func (s *s3Connection) downloadTypedObjects(bucket string,
+// - Returns a []objectType
+func (s *s3ObjectStore) downloadTypedObjects(bucket string,
 	objectType reflect.Type) (interface{}, error) {
 	keyPrefix := objectType.String() + "/"
 
@@ -314,7 +376,7 @@ func (s *s3Connection) downloadTypedObjects(bucket string,
 // List the keys (of objects) with the given keyPrefix in the given bucket.
 // - If bucket doesn't exists, will return ErrCodeNoSuchBucket "NoSuchBucket"
 // - Refer to aws documentation of s3.ListObjectsV2Input for more list options
-func (s *s3Connection) listKeys(bucket string, keyPrefix string) (
+func (s *s3ObjectStore) listKeys(bucket string, keyPrefix string) (
 	keys []string, err error) {
 	var nextContinuationToken *string
 
@@ -355,7 +417,7 @@ func (s *s3Connection) listKeys(bucket string, keyPrefix string) (
 // - Download may fail due to many reasons: RequestError (connection error),
 //	 NoSuchBucket, NoSuchKey, invalid gzip header, json unmarshall error,
 //	 InvalidParameter (e.g., empty key), etc.
-func (s *s3Connection) downloadObject(bucket string, key string,
+func (s *s3ObjectStore) downloadObject(bucket string, key string,
 	downloadContent interface{}) error {
 	writerAt := &aws.WriteAtBuffer{}
 	if _, err := s.downloader.Download(writerAt, &s3.GetObjectInput{
@@ -385,8 +447,20 @@ func (s *s3Connection) downloadObject(bucket string, key string,
 	return nil
 }
 
+// constructBucketName returns a bucket name formed using the input namespace
+// and name, separating the two with a hypen.
+// - The input namespace and name may have dots or hyphens.
+// - Bucket names must be between 3 and 63 characters long.
+// - Bucket names can consist only of lowercase letters, numbers, dots (.), and hyphens (-).
+// - Bucket names must begin and end with a letter or number.
+// - Bucket names must not be formatted as an IP address (for example, 192.168.5.4).
+// - Bucket names must be unique within a partition. A partition is a grouping of Regions.
+//   AWS currently has three partitions: aws (Standard Regions), aws-cn (China Regions),
+//   and aws-us-gov (AWS GovCloud [US] Regions).
+// - Buckets used with Amazon S3 Transfer Acceleration can't have dots (.) in their names.
+// Source: https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
 func constructBucketName(namespace, name string) (bucket string) {
-	bucket = namespace + "/" + name
+	bucket = namespace + "-" + name
 
 	return
 }
