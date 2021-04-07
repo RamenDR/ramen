@@ -512,6 +512,7 @@ func (v *VRGInstance) createVolumeReplication(
 func (v *VRGInstance) uploadPV(pvc corev1.PersistentVolumeClaim) (err error) {
 	vrgName := v.instance.Name
 	s3Endpoint := v.instance.Spec.S3Endpoint
+	s3Region := v.instance.Spec.S3Region
 	s3Bucket := constructBucketName(v.instance.Namespace, vrgName)
 
 	if err := v.validateS3Endpoint(s3Endpoint, s3Bucket); err != nil {
@@ -528,6 +529,7 @@ func (v *VRGInstance) uploadPV(pvc corev1.PersistentVolumeClaim) (err error) {
 	objectStore, err :=
 		v.reconciler.ObjStoreGetter.objectStore(v.ctx, v.reconciler,
 			s3Endpoint,
+			s3Region,
 			types.NamespacedName{ /* secretName */
 				Name:      v.instance.Spec.S3SecretName,
 				Namespace: v.instance.Namespace,

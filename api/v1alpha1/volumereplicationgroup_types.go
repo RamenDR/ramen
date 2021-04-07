@@ -63,6 +63,9 @@ type VolumeReplicationGroupSpec struct {
 	// referred to as backup-less mode.
 	S3Endpoint string `json:"s3Endpoint,omitempty"`
 
+	// S3 Region: https://docs.aws.amazon.com/general/latest/gr/rande.html
+	S3Region string `json:"s3Region,omitempty"`
+
 	// Name of k8s secret that contains the credentials to access the S3 endpoint.
 	// If S3Endpoint is used, also specify the k8s secret that contains the S3
 	// access key id and secret access key set using the keys: AWS_ACCESS_KEY_ID

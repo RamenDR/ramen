@@ -70,7 +70,7 @@ var ErrSameHomeCluster = errorswrapper.New("new home cluster is the same as curr
 
 type pvDownloader interface {
 	DownloadPVs(ctx context.Context, r client.Reader, objStoreGetter ObjectStoreGetter,
-		s3Endpoint string, s3SecretName types.NamespacedName,
+		s3Endpoint, s3Region string, s3SecretName types.NamespacedName,
 		callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error)
 }
 
@@ -1069,15 +1069,16 @@ func (r *ApplicationVolumeReplicationReconciler) listPVsFromS3Store(
 	s3Bucket := constructBucketName(subscription.Namespace, subscription.Name)
 
 	return r.PVDownloader.DownloadPVs(
-		context.TODO(), r.Client, r.ObjStoreGetter, avr.Spec.S3Endpoint, s3SecretLookupKey, avr.Name, s3Bucket)
+		context.TODO(), r.Client, r.ObjStoreGetter, avr.Spec.S3Endpoint, avr.Spec.S3Region,
+		s3SecretLookupKey, avr.Name, s3Bucket)
 }
 
 type ObjectStorePVDownloader struct{}
 
 func (s ObjectStorePVDownloader) DownloadPVs(ctx context.Context, r client.Reader,
-	objStoreGetter ObjectStoreGetter, s3Endpoint string, s3SecretName types.NamespacedName,
+	objStoreGetter ObjectStoreGetter, s3Endpoint, s3Region string, s3SecretName types.NamespacedName,
 	callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error) {
-	objectStore, err := objStoreGetter.objectStore(ctx, r, s3Endpoint, s3SecretName, callerTag)
+	objectStore, err := objStoreGetter.objectStore(ctx, r, s3Endpoint, s3Region, s3SecretName, callerTag)
 	if err != nil {
 		return nil, fmt.Errorf("error when downloading PVs, err %w", err)
 	}

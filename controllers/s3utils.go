@@ -86,7 +86,7 @@ import (
 type ObjectStoreGetter interface {
 	// objectStore returns an object that satisfies objectStorer interface
 	objectStore(ctx context.Context, r client.Reader,
-		endpoint string, secretName types.NamespacedName,
+		endpoint, region string, secretName types.NamespacedName,
 		callerTag string) (objectStorer, error)
 }
 
@@ -124,7 +124,7 @@ type s3ObjectStoreGetter struct{}
 // - Return error if endpoint or secret is not configured, or if
 //   client session creation fails
 func (s3ObjectStoreGetter) objectStore(ctx context.Context,
-	r client.Reader, endpoint string, secretName types.NamespacedName,
+	r client.Reader, endpoint, region string, secretName types.NamespacedName,
 	callerTag string) (objectStorer, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("s3 endpoint has not been configured; tag:%s",
@@ -147,7 +147,7 @@ func (s3ObjectStoreGetter) objectStore(ctx context.Context,
 		Credentials: credentials.NewStaticCredentials(string(accessID),
 			string(secretAccessKey), ""),
 		Endpoint:         aws.String(endpoint),
-		Region:           aws.String("us-east-1"),
+		Region:           aws.String(region),
 		DisableSSL:       aws.Bool(true),
 		S3ForcePathStyle: aws.Bool(true),
 	})

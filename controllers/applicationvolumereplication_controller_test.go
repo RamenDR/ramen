@@ -89,8 +89,9 @@ func FakeProgressCallback(avrName string, done bool) {
 type FakePVDownloader struct{}
 
 func (s FakePVDownloader) DownloadPVs(ctx context.Context, r client.Reader,
-	objStoreGetter controllers.ObjectStoreGetter, s3Endpoint string, s3SecretName types.NamespacedName,
-	callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error) {
+	objStoreGetter controllers.ObjectStoreGetter, s3Endpoint, s3Region string,
+	s3SecretName types.NamespacedName, callerTag string,
+	s3Bucket string) ([]corev1.PersistentVolume, error) {
 	pv1 := corev1.PersistentVolume{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PersistentVolume",
