@@ -97,10 +97,11 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	avrReconciler := (&ramencontrollers.ApplicationVolumeReplicationReconciler{
-		Client: k8sManager.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("ApplicationVolumeReplication"),
-		S3:     &FakeS3StoreWrapper{},
-		Scheme: k8sManager.GetScheme(),
+		Client:   k8sManager.GetClient(),
+		Log:      ctrl.Log.WithName("controllers").WithName("ApplicationVolumeReplication"),
+		S3:       &FakeS3StoreWrapper{},
+		Scheme:   k8sManager.GetScheme(),
+		Callback: FakeProgressCallback,
 	})
 	err = avrReconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())

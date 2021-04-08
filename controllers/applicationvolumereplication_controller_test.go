@@ -46,7 +46,7 @@ const (
 )
 
 var (
-	localCluster = &spokeClusterV1.ManagedCluster{
+	westCluster = &spokeClusterV1.ManagedCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: WestManagedCluster,
 			Labels: map[string]string{
@@ -55,7 +55,7 @@ var (
 			},
 		},
 	}
-	remoteCluster = &spokeClusterV1.ManagedCluster{
+	eastCluster = &spokeClusterV1.ManagedCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: EastManagedCluster,
 			Labels: map[string]string{
@@ -65,7 +65,7 @@ var (
 		},
 	}
 
-	clusters = []*spokeClusterV1.ManagedCluster{localCluster, remoteCluster}
+	clusters = []*spokeClusterV1.ManagedCluster{westCluster, eastCluster}
 
 	eastManagedClusterNamespace = &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: EastManagedCluster},
@@ -79,6 +79,13 @@ var (
 		ObjectMeta: metav1.ObjectMeta{Name: ApplicationVolumeReplicationNamespaceName},
 	}
 )
+
+var safeToProceed bool
+
+// FakeProgressCallback of function type
+func FakeProgressCallback(avrName string, done bool) {
+	safeToProceed = done
+}
 
 type FakeS3StoreWrapper struct{}
 
@@ -133,427 +140,511 @@ func (s *FakeS3StoreWrapper) DownloadPVs(ctx context.Context, r client.Reader,
 	return pvList, nil
 }
 
+func createSubscription(name, namespace, pause string) *subv1.Subscription {
+	subscription := &subv1.Subscription{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels: map[string]string{
+				"ramendr":                    "protected",
+				subv1.LabelSubscriptionPause: pause,
+			},
+		},
+		Spec: subv1.SubscriptionSpec{
+			Channel: "test/test-github-channel",
+			Placement: &plrv1.Placement{
+				PlacementRef: &corev1.ObjectReference{
+					Name: "sub-placement-rule",
+					Kind: "PlacementRule",
+				},
+			},
+		},
+	}
+
+	err := k8sClient.Create(context.TODO(), subscription)
+	Expect(err).NotTo(HaveOccurred())
+
+	return subscription
+}
+
+func updateSubscriptionStatus(subscription *subv1.Subscription, targetManagedCluster string) {
+	subStatus := subv1.SubscriptionStatus{
+		Phase:          "Propagated",
+		Reason:         "",
+		LastUpdateTime: metav1.Now(),
+		Statuses: subv1.SubscriptionClusterStatusMap{
+			targetManagedCluster: &subv1.SubscriptionPerClusterStatus{
+				SubscriptionPackageStatus: map[string]*subv1.SubscriptionUnitStatus{
+					"packages": {
+						Phase: subv1.SubscriptionSubscribed,
+					},
+				},
+			},
+		},
+	}
+
+	latestSub := getLatestSubscription(subscription.Name, subscription.Namespace)
+	latestSub.Status = subStatus
+
+	err := k8sClient.Status().Update(context.TODO(), latestSub)
+	if err != nil {
+		latestSub = getLatestSubscription(subscription.Name, subscription.Namespace)
+		latestSub.Status = subStatus
+		err = k8sClient.Status().Update(context.TODO(), latestSub)
+	}
+
+	Expect(err).NotTo(HaveOccurred())
+
+	subLookupKey := types.NamespacedName{Name: subscription.Name, Namespace: subscription.Namespace}
+	newSubscription := &subv1.Subscription{}
+
+	Eventually(func() bool {
+		err := k8sClient.Get(context.TODO(), subLookupKey, newSubscription)
+
+		return err == nil && newSubscription.Status.Phase == "Propagated"
+	}, timeout, interval).Should(BeTrue(), "failed to update subscription status")
+}
+
+func getLatestSubscription(name, namespace string) *subv1.Subscription {
+	subLookupKey := types.NamespacedName{Name: name, Namespace: namespace}
+	latestSub := &subv1.Subscription{}
+	err := k8sClient.Get(context.TODO(), subLookupKey, latestSub)
+	Expect(err).NotTo(HaveOccurred())
+
+	return latestSub
+}
+
+func pauseSubscription(subscription *subv1.Subscription) {
+	subLookupKey := types.NamespacedName{Name: subscription.Name, Namespace: subscription.Namespace}
+	newSubscription := &subv1.Subscription{}
+	err := k8sClient.Get(context.TODO(), subLookupKey, newSubscription)
+	Expect(err).NotTo(HaveOccurred())
+
+	labels := subscription.GetLabels()
+	Expect(labels).ToNot(BeNil())
+
+	labels[subv1.LabelSubscriptionPause] = "true"
+	newSubscription.SetLabels(labels)
+
+	err = k8sClient.Update(context.TODO(), newSubscription)
+	Expect(err).NotTo(HaveOccurred())
+
+	Eventually(func() bool {
+		err := k8sClient.Get(context.TODO(), subLookupKey, newSubscription)
+
+		return err == nil && newSubscription.GetLabels()[subv1.LabelSubscriptionPause] == "true"
+	}, timeout, interval).Should(BeTrue(), "failed to update subscription label to 'Pause'")
+}
+
+func createPlacementRule(name, namespace string) *plrv1.PlacementRule {
+	namereq := metav1.LabelSelectorRequirement{}
+	namereq.Key = "key1"
+	namereq.Operator = metav1.LabelSelectorOpIn
+
+	namereq.Values = []string{"value1"}
+	labelSelector := &metav1.LabelSelector{
+		MatchExpressions: []metav1.LabelSelectorRequirement{namereq},
+	}
+
+	placementRule := &plrv1.PlacementRule{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: plrv1.PlacementRuleSpec{
+			GenericPlacementFields: plrv1.GenericPlacementFields{
+				ClusterSelector: labelSelector,
+			},
+		},
+	}
+
+	err := k8sClient.Create(context.TODO(), placementRule)
+	Expect(err).NotTo(HaveOccurred())
+
+	return placementRule
+}
+
+func updatePlacementRuleStatus(placementRule *plrv1.PlacementRule, clusterName string) {
+	decision := plrv1.PlacementDecision{
+		ClusterName:      clusterName,
+		ClusterNamespace: "test",
+	}
+
+	plDecisions := []plrv1.PlacementDecision{decision}
+	placementRule.Status = plrv1.PlacementRuleStatus{
+		Decisions: plDecisions,
+	}
+
+	err := k8sClient.Status().Update(context.TODO(), placementRule)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+func createAVR(name, namespace string) *ramendrv1alpha1.ApplicationVolumeReplication {
+	avr := &ramendrv1alpha1.ApplicationVolumeReplication{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: ramendrv1alpha1.ApplicationVolumeReplicationSpec{
+			S3Endpoint:   "path/to/s3Endpoint",
+			S3SecretName: "SecretName",
+		},
+	}
+	Expect(k8sClient.Create(context.TODO(), avr)).Should(Succeed())
+
+	return avr
+}
+
+func setAVRSpecExpectationTo(avr *ramendrv1alpha1.ApplicationVolumeReplication,
+	subscriptionName, s3Endpoint string, action ramendrv1alpha1.Action) {
+	drEnabledSubscriptions := ramendrv1alpha1.DREnabledSubscriptionsMap{
+		subscriptionName: action,
+	}
+
+	latestAVR := getLatestAVR(avr.Name, avr.Namespace)
+	if s3Endpoint != "" {
+		latestAVR.Spec.S3Endpoint = s3Endpoint
+	}
+
+	latestAVR.Spec.DREnabledSubscriptions = drEnabledSubscriptions
+	err := k8sClient.Update(context.TODO(), latestAVR)
+	Expect(err).NotTo(HaveOccurred())
+
+	Eventually(func() bool {
+		latestAVR := getLatestAVR(avr.Name, avr.Namespace)
+		if val, found := latestAVR.Spec.DREnabledSubscriptions[subscriptionName]; found {
+			return action == val
+		}
+
+		return false
+	}, timeout, interval).Should(BeTrue(), "failed to update AVR DR action on time")
+}
+
+func getLatestAVR(name, namespace string) *ramendrv1alpha1.ApplicationVolumeReplication {
+	avrLookupKey := types.NamespacedName{
+		Name:      name,
+		Namespace: namespace,
+	}
+	latestAVR := &ramendrv1alpha1.ApplicationVolumeReplication{}
+	err := k8sClient.Get(context.TODO(), avrLookupKey, latestAVR)
+	Expect(err).NotTo(HaveOccurred())
+
+	return latestAVR
+}
+
+func createNamespaces() {
+	eastNamespaceLookupKey := types.NamespacedName{Name: eastManagedClusterNamespace.Name}
+	eastNamespaceObj := &corev1.Namespace{}
+
+	err := k8sClient.Get(context.TODO(), eastNamespaceLookupKey, eastNamespaceObj)
+	if err != nil {
+		Expect(k8sClient.Create(context.TODO(), eastManagedClusterNamespace)).NotTo(HaveOccurred(),
+			"failed to create east managed cluster namespace")
+	}
+
+	westNamespaceLookupKey := types.NamespacedName{Name: westManagedClusterNamespace.Name}
+	westNamespaceObj := &corev1.Namespace{}
+
+	err = k8sClient.Get(context.TODO(), westNamespaceLookupKey, westNamespaceObj)
+	if err != nil {
+		Expect(k8sClient.Create(context.TODO(), westManagedClusterNamespace)).NotTo(HaveOccurred(),
+			"failed to create west managed cluster namespace")
+	}
+
+	appNamespaceLookupKey := types.NamespacedName{Name: appNamespace.Name}
+	appNamespaceObj := &corev1.Namespace{}
+
+	err = k8sClient.Get(context.TODO(), appNamespaceLookupKey, appNamespaceObj)
+	if err != nil {
+		Expect(k8sClient.Create(context.TODO(), appNamespace)).NotTo(HaveOccurred(), "failed to create app namespace")
+	}
+}
+
+func createManagedClusters() {
+	for _, cl := range clusters {
+		mcLookupKey := types.NamespacedName{Name: cl.Name}
+		mcObj := &spokeClusterV1.ManagedCluster{}
+
+		err := k8sClient.Get(context.TODO(), mcLookupKey, mcObj)
+		if err != nil {
+			clinstance := cl.DeepCopy()
+
+			err := k8sClient.Create(context.TODO(), clinstance)
+			Expect(err).NotTo(HaveOccurred())
+		}
+	}
+}
+
+func updateManifestWorkStatus(name, namespace, clusterNamespace, mwType string) {
+	manifestLookupKey := types.NamespacedName{
+		Name:      fmt.Sprintf("%s-%s-%s-mw", name, namespace, mwType),
+		Namespace: clusterNamespace,
+	}
+	createdManifest := &ocmworkv1.ManifestWork{}
+
+	Eventually(func() bool {
+		err := k8sClient.Get(context.TODO(), manifestLookupKey, createdManifest)
+
+		return err == nil
+	}, timeout, interval).Should(BeTrue(), "failed to wait for manifest creation")
+
+	timeOld := time.Now().Local()
+	timeMostRecent := timeOld.Add(time.Second)
+	pvManifestStatus := ocmworkv1.ManifestWorkStatus{
+		Conditions: []metav1.Condition{
+			{
+				Type:               ocmworkv1.WorkApplied,
+				LastTransitionTime: metav1.Time{Time: timeMostRecent},
+				Status:             metav1.ConditionTrue,
+				Reason:             "test",
+			},
+		},
+	}
+	createdManifest.Status = pvManifestStatus
+
+	err := k8sClient.Status().Update(context.TODO(), createdManifest)
+	Expect(err).NotTo(HaveOccurred())
+
+	Eventually(func() bool {
+		err := k8sClient.Get(context.TODO(), manifestLookupKey, createdManifest)
+
+		return err == nil && len(createdManifest.Status.Conditions) != 0
+	}, timeout, interval).Should(BeTrue(), "failed to wait for PV manifest condition type to change to 'Applied'")
+}
+
+func InitialDeployment(subscriptionName, placementName, homeCluster string) (*subv1.Subscription,
+	*plrv1.PlacementRule, *ramendrv1alpha1.ApplicationVolumeReplication) {
+	createNamespaces()
+
+	subscription := createSubscription(subscriptionName, "app-namespace", "False")
+	updateSubscriptionStatus(subscription, homeCluster)
+
+	subLookupKey := types.NamespacedName{Name: subscription.Name, Namespace: subscription.Namespace}
+	createdSubscription := &subv1.Subscription{}
+	err := k8sClient.Get(context.TODO(), subLookupKey, createdSubscription)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(createdSubscription.Status.Phase).Should(Equal(subv1.SubscriptionPhase("Propagated")))
+
+	createManagedClusters()
+
+	placementRule := createPlacementRule(placementName, subscription.Namespace)
+
+	avr := createAVR(ApplicationVolumeReplicationName, ApplicationVolumeReplicationNamespaceName)
+
+	return subscription, placementRule, avr
+}
+
+func verifyVRGManifestWorkCreatedAsExpected(subscription *subv1.Subscription, managedCluster string) {
+	// 4.0 Get the VRG Roles ManifestWork. The work is created per managed cluster in the AVR reconciler
+	vrgManifestLookupKey := types.NamespacedName{
+		Name:      "ramendr-vrg-roles",
+		Namespace: managedCluster,
+	}
+	createdVRGRolesManifest := &ocmworkv1.ManifestWork{}
+
+	Eventually(func() bool {
+		err := k8sClient.Get(context.TODO(), vrgManifestLookupKey, createdVRGRolesManifest)
+
+		return err == nil
+	}, timeout, interval).Should(BeTrue())
+
+	Expect(len(createdVRGRolesManifest.Spec.Workload.Manifests)).To(Equal(2))
+
+	vrgClusterRoleManifest := createdVRGRolesManifest.Spec.Workload.Manifests[0]
+	Expect(vrgClusterRoleManifest).ToNot(BeNil())
+
+	vrgClusterRole := &rbacv1.ClusterRole{}
+	err := yaml.Unmarshal(vrgClusterRoleManifest.RawExtension.Raw, &vrgClusterRole)
+	Expect(err).NotTo(HaveOccurred())
+
+	vrgClusterRoleBindingManifest := createdVRGRolesManifest.Spec.Workload.Manifests[1]
+	Expect(vrgClusterRoleBindingManifest).ToNot(BeNil())
+
+	vrgClusterRoleBinding := &rbacv1.ClusterRoleBinding{}
+
+	err = yaml.Unmarshal(vrgClusterRoleManifest.RawExtension.Raw, &vrgClusterRoleBinding)
+	Expect(err).NotTo(HaveOccurred())
+
+	manifestLookupKey := types.NamespacedName{
+		Name:      fmt.Sprintf("%s-%s-%s-mw", subscription.Name, subscription.Namespace, "vrg"),
+		Namespace: managedCluster,
+	}
+	createdManifest := &ocmworkv1.ManifestWork{}
+
+	Eventually(func() bool {
+		err := k8sClient.Get(context.TODO(), manifestLookupKey, createdManifest)
+
+		return err == nil
+	}, timeout, interval).Should(BeTrue())
+
+	// 5.1 verify that VRG CR has been created and added to the ManifestWork
+	Expect(len(createdManifest.Spec.Workload.Manifests)).To(Equal(1))
+	vrgClientManifest := createdManifest.Spec.Workload.Manifests[0]
+
+	Expect(vrgClientManifest).ToNot(BeNil())
+
+	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
+
+	err = yaml.Unmarshal(vrgClientManifest.RawExtension.Raw, &vrg)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(vrg.Name).Should(Equal(subscription.Name))
+}
+
+func getManifestWorkCount(homeClusterNamespace string) int {
+	manifestWorkList := &ocmworkv1.ManifestWorkList{}
+	listOptions := &client.ListOptions{Namespace: homeClusterNamespace}
+
+	Expect(k8sClient.List(context.TODO(), manifestWorkList, listOptions)).NotTo(HaveOccurred())
+
+	return len(manifestWorkList.Items)
+}
+
+func verifyAVRStatusExpectation(subscription *subv1.Subscription, homeCluster, peerCluster, prevHomeCluster string) {
+	avrLookupKey := types.NamespacedName{
+		Name:      ApplicationVolumeReplicationName,
+		Namespace: ApplicationVolumeReplicationNamespaceName,
+	}
+
+	updatedAVR := &ramendrv1alpha1.ApplicationVolumeReplication{}
+
+	Eventually(func() bool {
+		err := k8sClient.Get(context.TODO(), avrLookupKey, updatedAVR)
+
+		if d, found := updatedAVR.Status.Decisions[subscription.Name]; err == nil && found {
+			return d.HomeCluster == homeCluster
+		}
+
+		return false
+	}, timeout, interval).Should(BeTrue())
+
+	// 7.0 check that the home and peer clusters have been selected.
+	Expect(updatedAVR.Status.Decisions[subscription.Name].HomeCluster).Should(Equal(homeCluster))
+	Expect(updatedAVR.Status.Decisions[subscription.Name].PeerCluster).Should(Equal(peerCluster))
+	Expect(updatedAVR.Status.Decisions[subscription.Name].PrevHomeCluster).Should(Equal(prevHomeCluster))
+}
+
+func expectSubscriptionIsPaused(subscription *subv1.Subscription) {
+	subLookupKey := types.NamespacedName{Name: subscription.Name, Namespace: subscription.Namespace}
+	updatedSubscription := &subv1.Subscription{}
+	err := k8sClient.Get(context.TODO(), subLookupKey, updatedSubscription)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(updatedSubscription.GetLabels()).ToNot(BeNil())
+	Expect(updatedSubscription.GetLabels()[subv1.LabelSubscriptionPause]).Should(Equal("true"))
+}
+
+func waitForCompletion() {
+	Eventually(func() bool {
+		return safeToProceed
+	}, timeout*2, interval).Should(BeTrue(), "failed to wait for hook to be called")
+}
+
 // +kubebuilder:docs-gen:collapse=Imports
 
 var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
-	// Define utility constants for object names and testing timeouts/durations and intervals.
-	Context("ApplicationVolumeReplication CR", func() {
-		When("Creating ApplicationVolumeReplication CR for the first time", func() {
-			It("The reconciler creates VolumeReplicationGroup CR embedded within a ManifestWork CR", func() {
-				ctx := context.Background()
-				By("Creating east cluster namespace and app namespace")
-				Expect(k8sClient.Create(ctx, eastManagedClusterNamespace)).NotTo(HaveOccurred(),
-					"failed to create managed cluster namespace")
-				Expect(k8sClient.Create(ctx, appNamespace)).NotTo(HaveOccurred(), "failed to create app namespace")
-
-				By("Creating a Subscription")
-				subscription := &subv1.Subscription{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "subscription-1",
-						Namespace: "app-namespace",
-					},
-					Spec: subv1.SubscriptionSpec{
-						Channel: "test/test-github-channel",
-						Placement: &plrv1.Placement{
-							PlacementRef: &corev1.ObjectReference{
-								Name: "sub-placement-rule",
-								Kind: "PlacementRule",
-							},
-						},
-					},
-				}
-
-				err := k8sClient.Create(context.TODO(), subscription)
-				Expect(err).NotTo(HaveOccurred())
-				defer func() {
-					Expect(k8sClient.Delete(context.TODO(), subscription)).NotTo(HaveOccurred())
-				}()
-
-				subStatus := subv1.SubscriptionStatus{
-					Phase:          "Propagated",
-					Reason:         "",
-					LastUpdateTime: metav1.Now(),
-					Statuses: subv1.SubscriptionClusterStatusMap{
-						EastManagedCluster: &subv1.SubscriptionPerClusterStatus{
-							SubscriptionPackageStatus: map[string]*subv1.SubscriptionUnitStatus{
-								"packages": {
-									Phase: subv1.SubscriptionSubscribed,
-								},
-							},
-						},
-					},
-				}
-
-				subscription.Status = subStatus
-				err = k8sClient.Status().Update(ctx, subscription)
-				Expect(err).NotTo(HaveOccurred())
-
-				subLookupKey := types.NamespacedName{Name: subscription.Name, Namespace: subscription.Namespace}
-				createdSubscription := &subv1.Subscription{}
-				err = k8sClient.Get(ctx, subLookupKey, createdSubscription)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(createdSubscription.Status.Phase).Should(Equal(subv1.SubscriptionPhase("Propagated")))
-
-				By("Creating Managed Clusters")
-				for _, cl := range clusters {
-					clinstance := cl.DeepCopy()
-
-					err = k8sClient.Create(context.TODO(), clinstance)
-					Expect(err).NotTo(HaveOccurred())
-
-					defer func() {
-						Expect(k8sClient.Delete(context.TODO(), clinstance)).NotTo(HaveOccurred())
-					}()
-				}
-
-				By("Creating PlacementRule")
-				namereq := metav1.LabelSelectorRequirement{}
-				namereq.Key = "key1"
-				namereq.Operator = metav1.LabelSelectorOpIn
-
-				namereq.Values = []string{"value1"}
-				labelSelector := &metav1.LabelSelector{
-					MatchExpressions: []metav1.LabelSelectorRequirement{namereq},
-				}
-
-				placementRule := &plrv1.PlacementRule{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "sub-placement-rule",
-						Namespace: "app-namespace",
-					},
-					Spec: plrv1.PlacementRuleSpec{
-						GenericPlacementFields: plrv1.GenericPlacementFields{
-							ClusterSelector: labelSelector,
-						},
-					},
-				}
-
-				err = k8sClient.Create(context.TODO(), placementRule)
-				Expect(err).NotTo(HaveOccurred())
-				defer func() {
-					Expect(k8sClient.Delete(context.TODO(), placementRule)).NotTo(HaveOccurred())
-				}()
-
-				By("Creating AVR CR")
-				avr := &ramendrv1alpha1.ApplicationVolumeReplication{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      ApplicationVolumeReplicationName,
-						Namespace: ApplicationVolumeReplicationNamespaceName,
-					},
-					Spec: ramendrv1alpha1.ApplicationVolumeReplicationSpec{
-						DREnabledSubscriptions: ramendrv1alpha1.DREnabledSubscriptionsMap{},
-						S3Endpoint:             "path/to/s3Endpoint",
-						S3SecretName:           "SecretName",
-					},
-				}
-				Expect(k8sClient.Create(ctx, avr)).Should(Succeed())
-				defer func() {
-					Expect(k8sClient.Delete(context.TODO(), avr)).NotTo(HaveOccurred())
-				}()
-
-				// 4.0 Get the VRG Roles ManifestWork. The work is created per managed cluster in the AVR reconciler
-				vrgManifestLookupKey := types.NamespacedName{
-					Name:      "ramendr-vrg-roles",
-					Namespace: EastManagedCluster,
-				}
-				createdVRGRolesManifest := &ocmworkv1.ManifestWork{}
-
-				By("Waiting for VRG roles ManifestWork creation....")
-				Eventually(func() bool {
-					err := k8sClient.Get(ctx, vrgManifestLookupKey, createdVRGRolesManifest)
-
-					return err == nil
-				}, timeout, interval).Should(BeTrue())
-
-				Expect(len(createdVRGRolesManifest.Spec.Workload.Manifests)).To(Equal(2))
-
-				vrgClusterRoleManifest := createdVRGRolesManifest.Spec.Workload.Manifests[0]
-				Expect(vrgClusterRoleManifest).ToNot(BeNil())
-				vrgClusterRole := &rbacv1.ClusterRole{}
-				err = yaml.Unmarshal(vrgClusterRoleManifest.RawExtension.Raw, &vrgClusterRole)
-				Expect(err).NotTo(HaveOccurred())
-
-				vrgClusterRoleBindingManifest := createdVRGRolesManifest.Spec.Workload.Manifests[1]
-				Expect(vrgClusterRoleBindingManifest).ToNot(BeNil())
-				vrgClusterRoleBinding := &rbacv1.ClusterRoleBinding{}
-				err = yaml.Unmarshal(vrgClusterRoleManifest.RawExtension.Raw, &vrgClusterRoleBinding)
-				Expect(err).NotTo(HaveOccurred())
-
-				By("Get ManifestWork")
-				manifestLookupKey := types.NamespacedName{
-					Name:      fmt.Sprintf("%s-%s-%s-mw", subscription.Name, subscription.Namespace, "vrg"),
-					Namespace: EastManagedCluster,
-				}
-				createdManifest := &ocmworkv1.ManifestWork{}
-
-				Eventually(func() bool {
-					err := k8sClient.Get(ctx, manifestLookupKey, createdManifest)
-
-					return err == nil
-				}, timeout, interval).Should(BeTrue())
-
-				defer func() {
-					Expect(k8sClient.Delete(context.TODO(), createdManifest)).NotTo(HaveOccurred())
-				}()
-
-				// 5.1 verify that VRG CR has been created and added to the ManifestWork
-				Expect(len(createdManifest.Spec.Workload.Manifests)).To(Equal(1))
-				vrgClientManifest := createdManifest.Spec.Workload.Manifests[0]
-				Expect(vrgClientManifest).ToNot(BeNil())
-				vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
-				err = yaml.Unmarshal(vrgClientManifest.RawExtension.Raw, &vrg)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(vrg.Name).Should(Equal(subscription.Name))
-
-				By("Retrieving the updated AVR CR. It should have the status updated on success")
-				avrLookupKey := types.NamespacedName{
-					Name:      ApplicationVolumeReplicationName,
-					Namespace: ApplicationVolumeReplicationNamespaceName,
-				}
-				updatedAVR := &ramendrv1alpha1.ApplicationVolumeReplication{}
-				Eventually(func() bool {
-					err := k8sClient.Get(ctx, avrLookupKey, updatedAVR)
-
-					return err == nil
-				}, timeout, interval).Should(BeTrue())
-
-				// 7.0 check that the home and peer clusters have been selected.
-				Expect(updatedAVR.Status.Decisions["subscription-1"].HomeCluster).Should(Equal(EastManagedCluster))
-				Expect(updatedAVR.Status.Decisions["subscription-1"].PeerCluster).Should(Equal(WestManagedCluster))
-			})
-		})
-	})
-
 	Context("ApplicationVolumeReplication Reconciler", func() {
-		When("Subscription is paused", func() {
-			It("Should failover", func() {
-				ctx := context.Background()
-				By("Creating cluster namespace")
-				Expect(k8sClient.Create(ctx, westManagedClusterNamespace)).NotTo(HaveOccurred(),
-					"failed to create managed cluster namespace")
+		subscription := &subv1.Subscription{}
+		placementRule := &plrv1.PlacementRule{}
+		avr := &ramendrv1alpha1.ApplicationVolumeReplication{}
 
-				By("Creating subscription")
-				subscription := &subv1.Subscription{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "subscription-2",
-						Namespace: "app-namespace",
-						Labels: map[string]string{
-							"ramendr":                    "protected",
-							subv1.LabelSubscriptionPause: "true",
-						},
-					},
-					Spec: subv1.SubscriptionSpec{
-						Channel: "test/test-github-channel",
-						Placement: &plrv1.Placement{
-							PlacementRef: &corev1.ObjectReference{
-								Name: "sub-placement-rule",
-								Kind: "PlacementRule",
-							},
-						},
-					},
-				}
-
-				err := k8sClient.Create(context.TODO(), subscription)
-				Expect(err).NotTo(HaveOccurred())
-
-				By("Updating subscription status")
-				subStatus := subv1.SubscriptionStatus{
-					Phase:          "Propagated",
-					Reason:         "",
-					LastUpdateTime: metav1.Now(),
-					Statuses: subv1.SubscriptionClusterStatusMap{
-						WestManagedCluster: &subv1.SubscriptionPerClusterStatus{
-							SubscriptionPackageStatus: map[string]*subv1.SubscriptionUnitStatus{
-								"packages": {
-									Phase: subv1.SubscriptionSubscribed,
-								},
-							},
-						},
-					},
-				}
-
-				subscription.Status = subStatus
-				err = k8sClient.Status().Update(ctx, subscription)
-				Expect(err).NotTo(HaveOccurred())
-
-				By("Creating 2 managed clusters")
-				for _, cl := range clusters {
-					clinstance := cl.DeepCopy()
-
-					err = k8sClient.Create(context.TODO(), clinstance)
-					Expect(err).NotTo(HaveOccurred())
-
-					defer func() {
-						Expect(k8sClient.Delete(context.TODO(), clinstance)).NotTo(HaveOccurred())
-					}()
-				}
-
-				By("Creating PlacementRule")
-				namereq := metav1.LabelSelectorRequirement{}
-				namereq.Key = "key1"
-				namereq.Operator = metav1.LabelSelectorOpIn
-
-				namereq.Values = []string{"value1"}
-				labelSelector := &metav1.LabelSelector{
-					MatchExpressions: []metav1.LabelSelectorRequirement{namereq},
-				}
-
-				placementRule := &plrv1.PlacementRule{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "sub-placement-rule",
-						Namespace: "app-namespace",
-					},
-					Spec: plrv1.PlacementRuleSpec{
-						GenericPlacementFields: plrv1.GenericPlacementFields{
-							ClusterSelector: labelSelector,
-						},
-					},
-				}
-
-				err = k8sClient.Create(context.TODO(), placementRule)
-				Expect(err).NotTo(HaveOccurred())
-				defer func() {
-					Expect(k8sClient.Delete(context.TODO(), placementRule)).NotTo(HaveOccurred())
-				}()
-
-				decision := plrv1.PlacementDecision{
-					ClusterName:      WestManagedCluster,
-					ClusterNamespace: "test",
-				}
-
-				plDecisions := []plrv1.PlacementDecision{decision}
-				placementRule.Status = plrv1.PlacementRuleStatus{
-					Decisions: plDecisions,
-				}
-
-				err = k8sClient.Status().Update(ctx, placementRule)
-				Expect(err).NotTo(HaveOccurred())
-
-				By("Creating AVR")
-				avr := &ramendrv1alpha1.ApplicationVolumeReplication{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      ApplicationVolumeReplicationName,
-						Namespace: ApplicationVolumeReplicationNamespaceName,
-					},
-					Spec: ramendrv1alpha1.ApplicationVolumeReplicationSpec{
-						DREnabledSubscriptions: ramendrv1alpha1.DREnabledSubscriptionsMap{
-							"subscription-2": ramendrv1alpha1.ActionFailover},
-						S3Endpoint:   "path/to/s3Endpoint",
-						S3SecretName: "SecretName",
-					},
-				}
-				Expect(k8sClient.Create(ctx, avr)).Should(Succeed())
-				defer func() {
-					Expect(k8sClient.Delete(context.TODO(), avr)).NotTo(HaveOccurred())
-				}()
-
-				By("Creating ManifestWork")
-				manifestLookupKey := types.NamespacedName{
-					Name:      fmt.Sprintf("%s-%s-%s-mw", subscription.Name, subscription.Namespace, "pv"),
-					Namespace: WestManagedCluster,
-				}
-				createdManifest := &ocmworkv1.ManifestWork{}
-
-				Eventually(func() bool {
-					err := k8sClient.Get(ctx, manifestLookupKey, createdManifest)
-
-					return err == nil
-				}, timeout, interval).Should(BeTrue(), "failed to wait for manifest creation")
-
-				defer func() {
-					Expect(k8sClient.Delete(context.TODO(), createdManifest)).NotTo(HaveOccurred())
-				}()
-
-				// 5.1 verify that PVs have been created and added to the ManifestWork
-				Expect(len(createdManifest.Spec.Workload.Manifests)).To(Equal(2))
-				pvClientManifest1 := createdManifest.Spec.Workload.Manifests[0]
-				Expect(pvClientManifest1).ToNot(BeNil())
-				pv1 := &corev1.PersistentVolume{}
-				err = yaml.Unmarshal(pvClientManifest1.RawExtension.Raw, &pv1)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(pv1.Name).Should(Equal("pv0001"))
-
-				pvClientManifest2 := createdManifest.Spec.Workload.Manifests[1]
-				Expect(pvClientManifest2).ToNot(BeNil())
-				pv2 := &corev1.PersistentVolume{}
-				err = yaml.Unmarshal(pvClientManifest2.RawExtension.Raw, &pv2)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(pv2.Name).Should(Equal("pv0002"))
-
-				// 5.2 update the status to Applied
-				timeOld := time.Now().Local()
-				timeMostRecent := timeOld.Add(time.Second)
-				pvManifestStatus := ocmworkv1.ManifestWorkStatus{
-					Conditions: []metav1.Condition{
-						{
-							Type:               ocmworkv1.WorkApplied,
-							LastTransitionTime: metav1.Time{Time: timeMostRecent},
-							Status:             metav1.ConditionTrue,
-							Reason:             "test",
-						},
-					},
-				}
-				createdManifest.Status = pvManifestStatus
-				err = k8sClient.Status().Update(ctx, createdManifest)
-				Expect(err).NotTo(HaveOccurred())
-
-				Eventually(func() bool {
-					err := k8sClient.Get(ctx, manifestLookupKey, createdManifest)
-
-					return err == nil && len(createdManifest.Status.Conditions) != 0
-				}, timeout, interval).Should(BeTrue(), "failed to wait for PV manifest condition type to change to 'Applied'")
-
-				subLookupKey := types.NamespacedName{
-					Name:      "subscription-2",
-					Namespace: "app-namespace",
-				}
-				updatedSub := &subv1.Subscription{}
-				Eventually(func() bool {
-					err := k8sClient.Get(ctx, subLookupKey, updatedSub)
-
-					return err == nil &&
-						updatedSub.GetLabels()[subv1.LabelSubscriptionPause] == "false"
-				}, timeout, interval).Should(BeTrue(), "failed to wait for subscription update")
-
-				labels := updatedSub.GetLabels()
-				str := fmt.Sprintf("now the label is %v", updatedSub)
-				By(str)
-				Expect(labels["ramendr"]).To(Equal("protected"))
-				Expect(labels[subv1.LabelSubscriptionPause]).To(Equal("false"))
-				By("Updating AVR")
-				avrLookupKey := types.NamespacedName{
-					Name:      ApplicationVolumeReplicationName,
-					Namespace: ApplicationVolumeReplicationNamespaceName,
-				}
-				updatedAVR := &ramendrv1alpha1.ApplicationVolumeReplication{}
-
-				Eventually(func() bool {
-					err := k8sClient.Get(ctx, avrLookupKey, updatedAVR)
-
-					return err == nil && updatedAVR.Status.Decisions != nil &&
-						updatedAVR.Status.Decisions["subscription-2"].HomeCluster == WestManagedCluster
-				}, timeout, interval).Should(BeTrue(), "failed to wait for updated AVR")
-
-				// updatedAVR.Spec.FailoverClusters["test"] = "fake"
-				// err = k8sClient.Update(ctx, updatedAVR)
-				// Expect(err).NotTo(HaveOccurred())
-
-				// Eventually(func() bool {
-				// 	err := k8sClient.Get(ctx, avrLookupKey, updatedAVR)
-
-				// 	return err == nil
-				// }, timeout, interval).Should(BeTrue(), "failed to wait for updated AVR")
-
-				Expect(updatedAVR.Status.Decisions["subscription-2"].HomeCluster).Should(Equal(WestManagedCluster))
-				Expect(updatedAVR.Status.Decisions["subscription-2"].PeerCluster).Should(Equal(EastManagedCluster))
+		When("Subscription is deployed for the first time", func() {
+			It("Should deploy subscription to EastManagedCluster", func() {
+				By("Initial Deployment")
+				safeToProceed = false
+				subscription, placementRule, avr = InitialDeployment("subscription-4", "sub-placement-rule", EastManagedCluster)
+				verifyVRGManifestWorkCreatedAsExpected(subscription, EastManagedCluster)
+				updateManifestWorkStatus(subscription.Name, subscription.Namespace, EastManagedCluster, "vrg")
+				verifyAVRStatusExpectation(subscription, EastManagedCluster, WestManagedCluster, "")
+				waitForCompletion()
+			})
+		})
+		When("Subscription is paused for failover", func() {
+			It("Should failover to WestManagedCluster", func() {
+				// ----------------------------- FAILOVER --------------------------------------
+				By("\n\n*** Failover - 1\n\n")
+				safeToProceed = false
+				pauseSubscription(subscription)
+				expectSubscriptionIsPaused(subscription)
+				updatePlacementRuleStatus(placementRule, WestManagedCluster)
+				updateSubscriptionStatus(subscription, WestManagedCluster)
+				setAVRSpecExpectationTo(avr, subscription.Name, "", ramendrv1alpha1.ActionFailover)
+				updateManifestWorkStatus(subscription.Name, subscription.Namespace, WestManagedCluster, "pv")
+				updateManifestWorkStatus(subscription.Name, subscription.Namespace, WestManagedCluster, "vrg")
+				verifyAVRStatusExpectation(subscription, WestManagedCluster, EastManagedCluster, EastManagedCluster)
+				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(3)) // MW for VRG+ROLES+PV
+				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // MW for ROLES
+				waitForCompletion()
+			})
+		})
+		When("Subscription is paused for failover for the second time", func() {
+			It("Should NOT do anything", func() {
+				By("\n\n*** Failover - 2: NOOP\n\n")
+				safeToProceed = false
+				pauseSubscription(subscription)
+				expectSubscriptionIsPaused(subscription)
+				updatePlacementRuleStatus(placementRule, WestManagedCluster)
+				updateSubscriptionStatus(subscription, WestManagedCluster)
+				// Force the reconciler to execute by changing one of the avr.Spec fields. We chose s3Endpoint
+				setAVRSpecExpectationTo(avr, subscription.Name, "newS3Endpoint", ramendrv1alpha1.ActionFailover)
+				verifyAVRStatusExpectation(subscription, WestManagedCluster, EastManagedCluster, EastManagedCluster)
+				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(3)) // MW for VRG+ROLES+PV
+				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // MW for ROLES
+				waitForCompletion()
+			})
+		})
+		When("Subscription is paused for failback", func() {
+			It("Should failback to EastManagedCluster", func() {
+				// ----------------------------- FAILBACK --------------------------------------
+				By("\n\n*** Failback - 1\n\n")
+				safeToProceed = false
+				pauseSubscription(subscription)
+				expectSubscriptionIsPaused(subscription)
+				updatePlacementRuleStatus(placementRule, EastManagedCluster)
+				updateSubscriptionStatus(subscription, EastManagedCluster)
+				setAVRSpecExpectationTo(avr, subscription.Name, "", ramendrv1alpha1.ActionFailback)
+				updateManifestWorkStatus(subscription.Name, subscription.Namespace, EastManagedCluster, "pv")
+				updateManifestWorkStatus(subscription.Name, subscription.Namespace, EastManagedCluster, "vrg")
+				verifyAVRStatusExpectation(subscription, EastManagedCluster, WestManagedCluster, "")
+				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(3)) // MW for VRG+ROLES+PV
+				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(1)) // MW for ROLES
+				waitForCompletion()
+			})
+		})
+		When("Subscription is paused for failback for the second time", func() {
+			It("Should NOT do anything", func() {
+				By("\n\n*** Failback - 2: NOOP\n\n")
+				safeToProceed = false
+				pauseSubscription(subscription)
+				expectSubscriptionIsPaused(subscription)
+				updatePlacementRuleStatus(placementRule, EastManagedCluster)
+				updateSubscriptionStatus(subscription, EastManagedCluster)
+				// Force the reconciler to execute by changing one of the avr.Spec fields. It is easier to change s3Endpoint
+				setAVRSpecExpectationTo(avr, subscription.Name, "path/to/s3Endpoint", ramendrv1alpha1.ActionFailback)
+				verifyAVRStatusExpectation(subscription, EastManagedCluster, WestManagedCluster, "")
+				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(3)) // MW for VRG+ROLES+PV
+				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(1)) // MW for ROLES
+				waitForCompletion()
+			})
+		})
+		When("Subscription is paused for failover after failback", func() {
+			It("Should failover to the WestManagedCluster", func() {
+				// ----------------------------- FAILOVER --------------------------------------
+				By("\n\n*** Failover - 3\n\n")
+				safeToProceed = false
+				pauseSubscription(subscription)
+				expectSubscriptionIsPaused(subscription)
+				updatePlacementRuleStatus(placementRule, WestManagedCluster)
+				updateSubscriptionStatus(subscription, WestManagedCluster)
+				setAVRSpecExpectationTo(avr, subscription.Name, "", ramendrv1alpha1.ActionFailover)
+				updateManifestWorkStatus(subscription.Name, subscription.Namespace, WestManagedCluster, "pv")
+				updateManifestWorkStatus(subscription.Name, subscription.Namespace, WestManagedCluster, "vrg")
+				verifyAVRStatusExpectation(subscription, WestManagedCluster, EastManagedCluster, EastManagedCluster)
+				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(3)) // MW for VRG+ROLES+PV
+				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // MW for ROLES
+				waitForCompletion()
 			})
 		})
 	})
-})
-
-// TODO: roll into single AVR block. Requires some refactoring to work with existing BeforeEach check.
-var _ = Describe("IsManifestInAppliedState checks ManifestWork", func() {
-	Context("with single timestamp", func() {
+	Context("IsManifestInAppliedState checks ManifestWork with single timestamp", func() {
 		timeOld := time.Now().Local()
 		timeMostRecent := timeOld.Add(time.Second)
 
@@ -614,7 +705,7 @@ var _ = Describe("IsManifestInAppliedState checks ManifestWork", func() {
 		})
 	})
 
-	Context("with multiple timestamps", func() {
+	Context("IsManifestInAppliedState checks ManifestWork with multiple timestamps", func() {
 		timeOld := time.Now().Local()
 		timeMostRecent := timeOld.Add(time.Second)
 
@@ -740,7 +831,7 @@ var _ = Describe("IsManifestInAppliedState checks ManifestWork", func() {
 		})
 	})
 
-	Context("with no timestamps", func() {
+	Context("IsManifestInAppliedState checks ManifestWork with no timestamps", func() {
 		It("manifest missing conditions", func() {
 			mw := &ocmworkv1.ManifestWork{
 				ObjectMeta: metav1.ObjectMeta{
