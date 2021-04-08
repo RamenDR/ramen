@@ -31,9 +31,6 @@ const (
 
 	// Failback, restore PVs to the original home cluster, and unpause subscription
 	ActionFailback Action = "Failback"
-
-	// Unpause subscription only
-	ActionUnpauseOnly Action = "UnpauseOnly"
 )
 
 // DREnabledSubscriptionsMap defines the action used for failover per subscription.
