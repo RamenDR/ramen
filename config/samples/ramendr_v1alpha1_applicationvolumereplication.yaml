@@ -3,4 +3,12 @@ kind: ApplicationVolumeReplication
 metadata:
   name: applicationvolumereplication-sample
 spec:
-  failedCluster: empty
+  pvcSelector:
+    matchLabels:
+      appclass: gold
+      environment: dev.AZ1
+  s3Endpoint: path/to/s3Endpoint
+  s3SecretName: SecretName
+  subscriptionSelector:
+    matchLabels:
+      app: theApp

@@ -40,7 +40,16 @@ type DREnabledSubscriptionsMap map[string]Action
 // ApplicationVolumeReplicationSpec defines the desired state of ApplicationVolumeReplication
 type ApplicationVolumeReplicationSpec struct {
 	// DREnabledSubscriptions holds Subscription name as the key and an Action as the value
-	DREnabledSubscriptions DREnabledSubscriptionsMap `json:"FailoverClusters,omitempty"`
+	DREnabledSubscriptions DREnabledSubscriptionsMap `json:"drEnabledSubscriptions,omitempty"`
+
+	// Label selector to identify all the subscriptions that belong to an application that
+	// needs DR protection. This selection is needed to select subscriptions on the hub
+	SubscriptionSelector metav1.LabelSelector `json:"subscriptionSelector"`
+
+	// Label selector to identify all the PVCs that need DR protection.
+	// This selector is assumed to be the same for all subscriptions that
+	// need DR protection. It will be passed in to the VRG when it is created
+	PVCSelector metav1.LabelSelector `json:"pvcSelector"`
 
 	// S3 Endpoint to replicate PV metadata; this is for all VRGs.
 	// The value of this field, will be progated to every VRG.
