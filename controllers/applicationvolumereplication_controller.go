@@ -148,7 +148,7 @@ func getMostRecentConditions(conditions []metav1.Condition) []metav1.Condition {
 	return recentConditions
 }
 
-func buildManifestWorkName(name, namespace, mwType string) string {
+func BuildManifestWorkName(name, namespace, mwType string) string {
 	return fmt.Sprintf(ManifestWorkNameFormat, name, namespace, mwType)
 }
 
@@ -195,9 +195,12 @@ func (r *ApplicationVolumeReplicationReconciler) Reconcile(ctx context.Context, 
 	}
 
 	subscriptionList := &subv1.SubscriptionList{}
-	listOptions := &client.ListOptions{Namespace: avr.Namespace}
+	listOptions := []client.ListOption{
+		client.InNamespace(avr.Namespace),
+		client.MatchingLabels(avr.Spec.SubscriptionSelector.MatchLabels),
+	}
 
-	err = r.Client.List(ctx, subscriptionList, listOptions)
+	err = r.Client.List(ctx, subscriptionList, listOptions...)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			logger.Error(err, "failed to find subscription list", "namespace", avr.Namespace)
@@ -380,7 +383,7 @@ func (r *ApplicationVolumeReplicationReconciler) processPausedSubscription(
 
 	r.Log.Info("Found new home cluster", "name", newHomeCluster)
 
-	mwName := buildManifestWorkName(subscription.Name, subscription.Namespace, MWTypePV)
+	mwName := BuildManifestWorkName(subscription.Name, subscription.Namespace, MWTypePV)
 
 	pvMW, err := r.findManifestWork(mwName, newHomeCluster)
 	if err != nil {
@@ -442,7 +445,7 @@ func (r *ApplicationVolumeReplicationReconciler) vrgManifestWorkAlreadyExists(
 
 	if d, found := avr.Status.Decisions[subscription.Name]; found {
 		// Skip this subscription if a manifestwork already exist for it
-		mwName := buildManifestWorkName(subscription.Name, subscription.Namespace, MWTypeVRG)
+		mwName := BuildManifestWorkName(subscription.Name, subscription.Namespace, MWTypeVRG)
 
 		mw, err := r.findManifestWork(mwName, d.HomeCluster)
 		if err != nil {
@@ -532,7 +535,7 @@ func (r *ApplicationVolumeReplicationReconciler) createOrUpdatePVsManifestWork(
 	r.Log.Info("Creating manifest work for PVs", "subscription",
 		name, "cluster", homeClusterName, "PV count", len(pvList))
 
-	mwName := buildManifestWorkName(name, namespace, MWTypePV)
+	mwName := BuildManifestWorkName(name, namespace, MWTypePV)
 
 	manifestWork, err := r.generatePVManifestWork(mwName, homeClusterName, pvList)
 	if err != nil {
@@ -582,8 +585,8 @@ func (r *ApplicationVolumeReplicationReconciler) processUnpausedSubscription(
 	}
 
 	if err := r.createOrUpdateVRGManifestWork(
-		subscription.Name, subscription.Namespace, homeCluster,
-		avr.Spec.S3Endpoint, avr.Spec.S3SecretName); err != nil {
+		subscription.Name, subscription.Namespace,
+		homeCluster, avr.Spec.S3Endpoint, avr.Spec.S3SecretName, avr.Spec.PVCSelector); err != nil {
 		r.Log.Error(err, "failed to create or update VolumeReplicationGroup manifest")
 
 		return ramendrv1alpha1.SubscriptionPlacementDecision{}, err
@@ -637,18 +640,20 @@ func (r *ApplicationVolumeReplicationReconciler) validateHomeClusterSelection(
 		return newHomeCluster, nil
 	}
 
-	if action, found := avr.Spec.DREnabledSubscriptions[subscription.Name]; found {
-		switch {
-		case action == ramendrv1alpha1.ActionFailover:
-			return r.validateFailover(avr, subscription, newHomeCluster)
-		case action == ramendrv1alpha1.ActionFailback:
-			return r.validateFailback(avr, subscription, newHomeCluster)
-		default:
-			return newHomeCluster, fmt.Errorf("unknown action %s", action)
-		}
+	action, found := avr.Spec.DREnabledSubscriptions[subscription.Name]
+	if !found {
+		return newHomeCluster, fmt.Errorf("action not found for subscription %s (%+v)",
+			subscription.Name, avr.Spec.DREnabledSubscriptions)
 	}
 
-	return newHomeCluster, nil
+	switch action {
+	case ramendrv1alpha1.ActionFailover:
+		return r.validateFailover(avr, subscription, newHomeCluster)
+	case ramendrv1alpha1.ActionFailback:
+		return r.validateFailback(avr, subscription, newHomeCluster)
+	default:
+		return newHomeCluster, fmt.Errorf("unknown action %s", action)
+	}
 }
 
 func (r *ApplicationVolumeReplicationReconciler) validateFailover(
@@ -838,11 +843,11 @@ func (r *ApplicationVolumeReplicationReconciler) createOrUpdateVRGRolesManifestW
 }
 
 func (r *ApplicationVolumeReplicationReconciler) createOrUpdateVRGManifestWork(
-	name, namespace, homeCluster, s3Endpoint, s3SecretName string) error {
+	name, namespace, homeCluster, s3Endpoint, s3SecretName string, pvcSelector metav1.LabelSelector) error {
 	r.Log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%s:%s:%s",
 		name, namespace, homeCluster, s3Endpoint, s3SecretName))
 
-	manifestWork, err := r.generateVRGManifestWork(name, namespace, homeCluster, s3Endpoint, s3SecretName)
+	manifestWork, err := r.generateVRGManifestWork(name, namespace, homeCluster, s3Endpoint, s3SecretName, pvcSelector)
 	if err != nil {
 		return err
 	}
@@ -945,8 +950,9 @@ func (r *ApplicationVolumeReplicationReconciler) generatePVManifest(
 }
 
 func (r *ApplicationVolumeReplicationReconciler) generateVRGManifestWork(
-	name, namespace, homeCluster, s3Endpoint, s3SecretName string) (*ocmworkv1.ManifestWork, error) {
-	vrgClientManifest, err := r.generateVRGManifest(name, namespace, s3Endpoint, s3SecretName)
+	name, namespace, homeCluster, s3Endpoint, s3SecretName string,
+	pvcSelector metav1.LabelSelector) (*ocmworkv1.ManifestWork, error) {
+	vrgClientManifest, err := r.generateVRGManifest(name, namespace, s3Endpoint, s3SecretName, pvcSelector)
 	if err != nil {
 		r.Log.Error(err, "failed to generate VolumeReplicationGroup manifest")
 
@@ -963,17 +969,12 @@ func (r *ApplicationVolumeReplicationReconciler) generateVRGManifestWork(
 }
 
 func (r *ApplicationVolumeReplicationReconciler) generateVRGManifest(
-	name, namespace, s3Endpoint, s3SecretName string) (*ocmworkv1.Manifest, error) {
+	name, namespace, s3Endpoint, s3SecretName string, pvcSelector metav1.LabelSelector) (*ocmworkv1.Manifest, error) {
 	return r.generateManifest(&ramendrv1alpha1.VolumeReplicationGroup{
 		TypeMeta:   metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 		Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
-			PVCSelector: metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"appclass":    "gold",
-					"environment": "dev.AZ1",
-				},
-			},
+			PVCSelector:            pvcSelector,
 			VolumeReplicationClass: "volume-rep-class",
 			ReplicationState:       "Primary",
 			S3Endpoint:             s3Endpoint,
