@@ -15,7 +15,6 @@ package controllers_test
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/ghodss/yaml"
@@ -286,6 +285,12 @@ func createAVR(name, namespace string) *ramendrv1alpha1.ApplicationVolumeReplica
 			Namespace: namespace,
 		},
 		Spec: ramendrv1alpha1.ApplicationVolumeReplicationSpec{
+			PVCSelector: metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"appclass":    "gold",
+					"environment": "dev.AZ1",
+				},
+			},
 			S3Endpoint:   "path/to/s3Endpoint",
 			S3SecretName: "SecretName",
 		},
@@ -377,7 +382,7 @@ func createManagedClusters() {
 
 func updateManifestWorkStatus(name, namespace, clusterNamespace, mwType string) {
 	manifestLookupKey := types.NamespacedName{
-		Name:      fmt.Sprintf("%s-%s-%s-mw", name, namespace, mwType),
+		Name:      controllers.BuildManifestWorkName(name, namespace, mwType),
 		Namespace: clusterNamespace,
 	}
 	createdManifest := &ocmworkv1.ManifestWork{}
@@ -466,7 +471,7 @@ func verifyVRGManifestWorkCreatedAsExpected(subscription *subv1.Subscription, ma
 	Expect(err).NotTo(HaveOccurred())
 
 	manifestLookupKey := types.NamespacedName{
-		Name:      fmt.Sprintf("%s-%s-%s-mw", subscription.Name, subscription.Namespace, "vrg"),
+		Name:      controllers.BuildManifestWorkName(subscription.Name, subscription.Namespace, "vrg"),
 		Namespace: managedCluster,
 	}
 	createdManifest := &ocmworkv1.ManifestWork{}
@@ -488,6 +493,7 @@ func verifyVRGManifestWorkCreatedAsExpected(subscription *subv1.Subscription, ma
 	err = yaml.Unmarshal(vrgClientManifest.RawExtension.Raw, &vrg)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(vrg.Name).Should(Equal(subscription.Name))
+	Expect(vrg.Spec.PVCSelector.MatchLabels["appclass"]).Should(Equal("gold"))
 }
 
 func getManifestWorkCount(homeClusterNamespace string) int {
