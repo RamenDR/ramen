@@ -51,15 +51,6 @@ type ApplicationVolumeReplicationSpec struct {
 	// need DR protection. It will be passed in to the VRG when it is created
 	PVCSelector metav1.LabelSelector `json:"pvcSelector"`
 
-	// Label selector to identify all the subscriptions that belong to an application that
-	// needs DR protection. This selection is needed to select subscriptions on the hub
-	SubscriptionSelector metav1.LabelSelector `json:"subscriptionSelector"`
-
-	// Label selector to identify all the PVCs that need DR protection.
-	// This selector is assumed to be the same for all subscriptions that
-	// need DR protection. It will be passed in to the VRG when it is created
-	PVCSelector metav1.LabelSelector `json:"pvcSelector"`
-
 	// S3 Endpoint to replicate PV metadata; this is for all VRGs.
 	// The value of this field, will be progated to every VRG.
 	// See VRG spec for more details.
@@ -76,11 +67,41 @@ type ApplicationVolumeReplicationSpec struct {
 	S3SecretName string `json:"s3SecretName"`
 }
 
+// DRState for each subscription
+// +kubebuilder:validation:Enum=Initial;Failing-over;Failed-over;Failing-back;Failed-back
+type DRState string
+
+// These are the valid values for DRState
+const (
+	// Initial, this is the state that will be recorded in the AVR status
+	// when initial deplyment has been performed successfully (per subscription)
+	Initial DRState = "Initial"
+
+	// FailingOver, state recorded in the AVR status per subscription when the failover
+	// is initiated but has not been completed yet
+	FailingOver DRState = "Failing-over"
+
+	// FailedOver, state recorded in the AVR status per subscription when the failover
+	// process has completed
+	FailedOver DRState = "Failed-over"
+
+	// FailingBack, state recorded in the AVR status per subscription when the failback
+	// is initiated but has not been completed yet
+	FailingBack DRState = "Failing-back"
+
+	// FailedBack, state recorded in the AVR status per subscription when the failback
+	// process has completed
+	FailedBack DRState = "Failed-back"
+)
+
+// LastKnownDRStateMap defines per subscription the last state, key is subscription name
+type LastKnownDRStateMap map[string]DRState
+
 // SubscriptionPlacementDecision lists each subscription with its home and peer clusters
 type SubscriptionPlacementDecision struct {
 	HomeCluster     string `json:"homeCluster,omitempty"`
 	PeerCluster     string `json:"peerCluster,omitempty"`
-	PrevHomeCluster string `json:"PrevHomeCluster,omitempty"`
+	PrevHomeCluster string `json:"prevHomeCluster,omitempty"`
 }
 
 // SubscriptionPlacementDecisionMap defines per subscription placement decision, key is subscription name
@@ -88,8 +109,9 @@ type SubscriptionPlacementDecisionMap map[string]*SubscriptionPlacementDecision
 
 // ApplicationVolumeReplicationStatus defines the observed state of ApplicationVolumeReplication
 type ApplicationVolumeReplicationStatus struct {
-	// Decisions are for subscription and by AVR namespace (which is app namespace)
-	Decisions SubscriptionPlacementDecisionMap `json:"Decisions,omitempty"`
+	Decisions         SubscriptionPlacementDecisionMap `json:"decisions,omitempty"`
+	LastKnownDRStates LastKnownDRStateMap              `json:"lastKnownDRStates,omitempty"`
+	LastUpdateTime    metav1.Time                      `json:"lastUpdateTime"`
 }
 
 // +kubebuilder:object:root=true

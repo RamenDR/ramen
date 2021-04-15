@@ -28,7 +28,7 @@ import (
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	subv1 "github.com/open-cluster-management/multicloud-operators-subscription/pkg/apis/apps/v1"
-	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -280,13 +280,13 @@ func updatePlacementRuleStatus(placementRule *plrv1.PlacementRule, clusterName s
 	Expect(err).NotTo(HaveOccurred())
 }
 
-func createAVR(name, namespace string) *ramendrv1alpha1.ApplicationVolumeReplication {
-	avr := &ramendrv1alpha1.ApplicationVolumeReplication{
+func createAVR(name, namespace string) *rmn.ApplicationVolumeReplication {
+	avr := &rmn.ApplicationVolumeReplication{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
-		Spec: ramendrv1alpha1.ApplicationVolumeReplicationSpec{
+		Spec: rmn.ApplicationVolumeReplicationSpec{
 			SubscriptionSelector: metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					"app": "myApp",
@@ -307,9 +307,9 @@ func createAVR(name, namespace string) *ramendrv1alpha1.ApplicationVolumeReplica
 	return avr
 }
 
-func setAVRSpecExpectationTo(avr *ramendrv1alpha1.ApplicationVolumeReplication,
-	subscriptionName, s3Endpoint string, action ramendrv1alpha1.Action) {
-	drEnabledSubscriptions := ramendrv1alpha1.DREnabledSubscriptionsMap{
+func setAVRSpecExpectationTo(avr *rmn.ApplicationVolumeReplication,
+	subscriptionName, s3Endpoint string, action rmn.Action) {
+	drEnabledSubscriptions := rmn.DREnabledSubscriptionsMap{
 		subscriptionName: action,
 	}
 
@@ -332,12 +332,12 @@ func setAVRSpecExpectationTo(avr *ramendrv1alpha1.ApplicationVolumeReplication,
 	}, timeout, interval).Should(BeTrue(), "failed to update AVR DR action on time")
 }
 
-func getLatestAVR(name, namespace string) *ramendrv1alpha1.ApplicationVolumeReplication {
+func getLatestAVR(name, namespace string) *rmn.ApplicationVolumeReplication {
 	avrLookupKey := types.NamespacedName{
 		Name:      name,
 		Namespace: namespace,
 	}
-	latestAVR := &ramendrv1alpha1.ApplicationVolumeReplication{}
+	latestAVR := &rmn.ApplicationVolumeReplication{}
 	err := k8sClient.Get(context.TODO(), avrLookupKey, latestAVR)
 	Expect(err).NotTo(HaveOccurred())
 
@@ -425,7 +425,7 @@ func updateManifestWorkStatus(name, namespace, clusterNamespace, mwType string) 
 }
 
 func InitialDeployment(subscriptionName, placementName, homeCluster string) (*subv1.Subscription,
-	*plrv1.PlacementRule, *ramendrv1alpha1.ApplicationVolumeReplication) {
+	*plrv1.PlacementRule, *rmn.ApplicationVolumeReplication) {
 	createNamespaces()
 
 	subscription := createSubscription(subscriptionName, "app-namespace", "False")
@@ -495,7 +495,7 @@ func verifyVRGManifestWorkCreatedAsExpected(subscription *subv1.Subscription, ma
 
 	Expect(vrgClientManifest).ToNot(BeNil())
 
-	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
+	vrg := &rmn.VolumeReplicationGroup{}
 
 	err = yaml.Unmarshal(vrgClientManifest.RawExtension.Raw, &vrg)
 	Expect(err).NotTo(HaveOccurred())
@@ -512,13 +512,14 @@ func getManifestWorkCount(homeClusterNamespace string) int {
 	return len(manifestWorkList.Items)
 }
 
-func verifyAVRStatusExpectation(subscription *subv1.Subscription, homeCluster, peerCluster, prevHomeCluster string) {
+func verifyAVRStatusExpectation(subscription *subv1.Subscription, homeCluster, peerCluster, prevHomeCluster string,
+	drState rmn.DRState) {
 	avrLookupKey := types.NamespacedName{
 		Name:      ApplicationVolumeReplicationName,
 		Namespace: ApplicationVolumeReplicationNamespaceName,
 	}
 
-	updatedAVR := &ramendrv1alpha1.ApplicationVolumeReplication{}
+	updatedAVR := &rmn.ApplicationVolumeReplication{}
 
 	Eventually(func() bool {
 		err := k8sClient.Get(context.TODO(), avrLookupKey, updatedAVR)
@@ -534,6 +535,7 @@ func verifyAVRStatusExpectation(subscription *subv1.Subscription, homeCluster, p
 	Expect(updatedAVR.Status.Decisions[subscription.Name].HomeCluster).Should(Equal(homeCluster))
 	Expect(updatedAVR.Status.Decisions[subscription.Name].PeerCluster).Should(Equal(peerCluster))
 	Expect(updatedAVR.Status.Decisions[subscription.Name].PrevHomeCluster).Should(Equal(prevHomeCluster))
+	Expect(updatedAVR.Status.LastKnownDRStates[subscription.Name]).Should(Equal(drState))
 }
 
 func expectSubscriptionIsPaused(subscription *subv1.Subscription) {
@@ -557,7 +559,7 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 	Context("ApplicationVolumeReplication Reconciler", func() {
 		subscription := &subv1.Subscription{}
 		placementRule := &plrv1.PlacementRule{}
-		avr := &ramendrv1alpha1.ApplicationVolumeReplication{}
+		avr := &rmn.ApplicationVolumeReplication{}
 
 		When("Subscription is deployed for the first time", func() {
 			It("Should deploy subscription to EastManagedCluster", func() {
@@ -566,7 +568,7 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				subscription, placementRule, avr = InitialDeployment("subscription-4", "sub-placement-rule", EastManagedCluster)
 				verifyVRGManifestWorkCreatedAsExpected(subscription, EastManagedCluster)
 				updateManifestWorkStatus(subscription.Name, subscription.Namespace, EastManagedCluster, "vrg")
-				verifyAVRStatusExpectation(subscription, EastManagedCluster, WestManagedCluster, "")
+				verifyAVRStatusExpectation(subscription, EastManagedCluster, WestManagedCluster, "", rmn.Initial)
 				waitForCompletion()
 			})
 		})
@@ -579,10 +581,10 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				expectSubscriptionIsPaused(subscription)
 				updatePlacementRuleStatus(placementRule, WestManagedCluster)
 				updateSubscriptionStatus(subscription, WestManagedCluster)
-				setAVRSpecExpectationTo(avr, subscription.Name, "", ramendrv1alpha1.ActionFailover)
+				setAVRSpecExpectationTo(avr, subscription.Name, "", rmn.ActionFailover)
 				updateManifestWorkStatus(subscription.Name, subscription.Namespace, WestManagedCluster, "pv")
 				updateManifestWorkStatus(subscription.Name, subscription.Namespace, WestManagedCluster, "vrg")
-				verifyAVRStatusExpectation(subscription, WestManagedCluster, EastManagedCluster, EastManagedCluster)
+				verifyAVRStatusExpectation(subscription, WestManagedCluster, EastManagedCluster, EastManagedCluster, rmn.FailedOver)
 				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(3)) // MW for VRG+ROLES+PV
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // MW for ROLES
 				waitForCompletion()
@@ -597,8 +599,8 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				updatePlacementRuleStatus(placementRule, WestManagedCluster)
 				updateSubscriptionStatus(subscription, WestManagedCluster)
 				// Force the reconciler to execute by changing one of the avr.Spec fields. We chose s3Endpoint
-				setAVRSpecExpectationTo(avr, subscription.Name, "newS3Endpoint", ramendrv1alpha1.ActionFailover)
-				verifyAVRStatusExpectation(subscription, WestManagedCluster, EastManagedCluster, EastManagedCluster)
+				setAVRSpecExpectationTo(avr, subscription.Name, "newS3Endpoint", rmn.ActionFailover)
+				verifyAVRStatusExpectation(subscription, WestManagedCluster, EastManagedCluster, EastManagedCluster, rmn.FailedOver)
 				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(3)) // MW for VRG+ROLES+PV
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // MW for ROLES
 				waitForCompletion()
@@ -613,10 +615,10 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				expectSubscriptionIsPaused(subscription)
 				updatePlacementRuleStatus(placementRule, EastManagedCluster)
 				updateSubscriptionStatus(subscription, EastManagedCluster)
-				setAVRSpecExpectationTo(avr, subscription.Name, "", ramendrv1alpha1.ActionFailback)
+				setAVRSpecExpectationTo(avr, subscription.Name, "", rmn.ActionFailback)
 				updateManifestWorkStatus(subscription.Name, subscription.Namespace, EastManagedCluster, "pv")
 				updateManifestWorkStatus(subscription.Name, subscription.Namespace, EastManagedCluster, "vrg")
-				verifyAVRStatusExpectation(subscription, EastManagedCluster, WestManagedCluster, "")
+				verifyAVRStatusExpectation(subscription, EastManagedCluster, WestManagedCluster, "", rmn.FailedBack)
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(3)) // MW for VRG+ROLES+PV
 				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(1)) // MW for ROLES
 				waitForCompletion()
@@ -631,8 +633,8 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				updatePlacementRuleStatus(placementRule, EastManagedCluster)
 				updateSubscriptionStatus(subscription, EastManagedCluster)
 				// Force the reconciler to execute by changing one of the avr.Spec fields. It is easier to change s3Endpoint
-				setAVRSpecExpectationTo(avr, subscription.Name, "path/to/s3Endpoint", ramendrv1alpha1.ActionFailback)
-				verifyAVRStatusExpectation(subscription, EastManagedCluster, WestManagedCluster, "")
+				setAVRSpecExpectationTo(avr, subscription.Name, "path/to/s3Endpoint", rmn.ActionFailback)
+				verifyAVRStatusExpectation(subscription, EastManagedCluster, WestManagedCluster, "", rmn.FailedBack)
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(3)) // MW for VRG+ROLES+PV
 				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(1)) // MW for ROLES
 				waitForCompletion()
@@ -647,10 +649,10 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				expectSubscriptionIsPaused(subscription)
 				updatePlacementRuleStatus(placementRule, WestManagedCluster)
 				updateSubscriptionStatus(subscription, WestManagedCluster)
-				setAVRSpecExpectationTo(avr, subscription.Name, "", ramendrv1alpha1.ActionFailover)
+				setAVRSpecExpectationTo(avr, subscription.Name, "", rmn.ActionFailover)
 				updateManifestWorkStatus(subscription.Name, subscription.Namespace, WestManagedCluster, "pv")
 				updateManifestWorkStatus(subscription.Name, subscription.Namespace, WestManagedCluster, "vrg")
-				verifyAVRStatusExpectation(subscription, WestManagedCluster, EastManagedCluster, EastManagedCluster)
+				verifyAVRStatusExpectation(subscription, WestManagedCluster, EastManagedCluster, EastManagedCluster, rmn.FailedOver)
 				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(3)) // MW for VRG+ROLES+PV
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // MW for ROLES
 				waitForCompletion()

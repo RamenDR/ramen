@@ -42,7 +42,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
 
 const (
@@ -158,7 +158,7 @@ func (r *ApplicationVolumeReplicationReconciler) SetupWithManager(mgr ctrl.Manag
 	pred := predicate.GenerationChangedPredicate{}
 
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&ramendrv1alpha1.ApplicationVolumeReplication{}).
+		For(&rmn.ApplicationVolumeReplication{}).
 		WithEventFilter(pred).
 		Complete(r)
 }
@@ -183,7 +183,7 @@ func (r *ApplicationVolumeReplicationReconciler) Reconcile(ctx context.Context, 
 
 	defer logger.Info("Exiting reconcile loop")
 
-	avr := &ramendrv1alpha1.ApplicationVolumeReplication{}
+	avr := &rmn.ApplicationVolumeReplication{}
 
 	err := r.Client.Get(ctx, req.NamespacedName, avr)
 	if err != nil {
@@ -212,24 +212,39 @@ func (r *ApplicationVolumeReplicationReconciler) Reconcile(ctx context.Context, 
 		return ctrl.Result{}, errorswrapper.Wrap(err, "failed to list subscriptions")
 	}
 
-	placementDecisions, requeue := r.processSubscriptions(avr, subscriptionList)
-	if len(placementDecisions) != 0 {
-		if err := r.updateAVRStatus(ctx, avr, placementDecisions); err != nil {
-			logger.Error(err, "failed to update status")
-
-			return ctrl.Result{Requeue: true}, nil
-		}
-
-		r.Log.Info(fmt.Sprintf("AVR (%+v)", avr))
+	a := AVRInstance{
+		reconciler:       r,
+		ctx:              ctx,
+		log:              logger,
+		instance:         avr,
+		subscriptionList: subscriptionList,
 	}
 
+	requeue := a.processSubscriptions()
+
+	if err := a.updateAVRStatus(); err != nil {
+		logger.Error(err, "failed to update status")
+
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	r.Log.Info(fmt.Sprintf("AVR (%+v)", avr))
+
 	logger.Info(fmt.Sprintf("Processed %d/%d subscriptions. AVR Status Decisions %d. Requeue? %v",
-		len(placementDecisions), len(subscriptionList.Items), len(avr.Status.Decisions), requeue))
+		len(a.instance.Status.Decisions), len(subscriptionList.Items), len(avr.Status.Decisions), requeue))
 
 	done := !requeue
-	r.Callback(avr.Name, done)
+	r.Callback(a.instance.Name, done)
 
 	return ctrl.Result{Requeue: requeue}, nil
+}
+
+type AVRInstance struct {
+	reconciler       *ApplicationVolumeReplicationReconciler
+	ctx              context.Context
+	log              logr.Logger
+	instance         *rmn.ApplicationVolumeReplication
+	subscriptionList *subv1.SubscriptionList
 }
 
 // For each subscription
@@ -248,83 +263,86 @@ func (r *ApplicationVolumeReplicationReconciler) Reconcile(ctx context.Context, 
 //		create or update ManifestWork
 // returns placement decisions which can be the decisions for only a subset of subscriptions
 //
-func (r *ApplicationVolumeReplicationReconciler) processSubscriptions(
-	avr *ramendrv1alpha1.ApplicationVolumeReplication,
-	subscriptionList *subv1.SubscriptionList) (ramendrv1alpha1.SubscriptionPlacementDecisionMap, bool) {
-	placementDecisions := ramendrv1alpha1.SubscriptionPlacementDecisionMap{}
-
-	r.Log.Info("Process subscriptions", "total", len(subscriptionList.Items))
+func (a *AVRInstance) processSubscriptions() bool {
+	a.log.Info("Process subscriptions", "total", len(a.subscriptionList.Items))
 
 	requeue := false
 
-	for idx, subscription := range subscriptionList.Items {
+	for idx, subscription := range a.subscriptionList.Items {
 		// On the hub ignore any managed cluster subscriptions, as the hub maybe a managed cluster itself.
 		// SubscriptionSubscribed means this subscription is child sitting in managed cluster
 		// Placement.Local is true for a local subscription, and can be used in the absence of Status
 		if subscription.Status.Phase == subv1.SubscriptionSubscribed ||
 			(subscription.Spec.Placement != nil && subscription.Spec.Placement.Local != nil &&
 				*subscription.Spec.Placement.Local) {
-			r.Log.Info("Skipping local subscription", "name", subscription.Name)
+			a.log.Info("Skipping local subscription", "name", subscription.Name)
 
 			continue
 		}
 
-		placementDecision, needRequeue := r.processSubscription(avr, &subscriptionList.Items[idx])
+		placementDecision, needRequeue := a.processSubscription(&a.subscriptionList.Items[idx])
 
 		if needRequeue {
-			r.Log.Info("Requeue for subscription", "name", subscription.Name)
+			a.log.Info("Requeue for subscription", "name", subscription.Name)
 
 			requeue = true
 
 			continue
 		}
 
+		if a.instance.Status.Decisions == nil {
+			a.instance.Status.Decisions = make(rmn.SubscriptionPlacementDecisionMap)
+		}
+
 		if placementDecision != nil {
-			placementDecisions[subscription.Name] = placementDecision
+			a.instance.Status.Decisions[subscription.Name] = placementDecision
 		}
 	}
 
-	r.Log.Info("Returning Placement Decisions", "Total", len(placementDecisions))
+	a.log.Info("Returning Placement Decisions", "Total", len(a.instance.Status.Decisions))
 
-	return placementDecisions, requeue
+	return requeue
 }
 
-func (r *ApplicationVolumeReplicationReconciler) processSubscription(
-	avr *ramendrv1alpha1.ApplicationVolumeReplication,
-	subscription *subv1.Subscription) (*ramendrv1alpha1.SubscriptionPlacementDecision, bool) {
-	r.Log.Info("Processing subscription", "name", subscription.Name)
+func (a *AVRInstance) processSubscription(
+	subscription *subv1.Subscription) (*rmn.SubscriptionPlacementDecision, bool) {
+	a.log.Info("Processing subscription", "name", subscription.Name)
+
+	a.log.Info(fmt.Sprintf("processSubscription: current state '%s'",
+		a.instance.Status.LastKnownDRStates[subscription.Name]))
 
 	const requeue = true
 	// Check to see if this subscription is paused for DR. If it is, then restore PVs to the new destination
 	// cluster, unpause the subscription, and skip it until the next reconciler iteration
-	if r.isSubsriptionPausedForDR(subscription.GetLabels()) {
-		r.Log.Info("Subscription is paused", "name", subscription.Name)
+	if a.isSubsriptionPausedForDR(subscription.GetLabels()) {
+		a.log.Info("Subscription is paused", "name", subscription.Name)
 
-		unpause := r.processPausedSubscription(avr, subscription)
+		unpause := a.processPausedSubscription(subscription)
 		if !unpause {
-			r.Log.Info(fmt.Sprintf("Paused subscription %s will be reprocessed later", subscription.Name))
+			a.log.Info(fmt.Sprintf("Paused subscription %s will be reprocessed later", subscription.Name))
 
 			return nil, requeue
 		}
 
-		r.Log.Info("Unpausing subscription", "name", subscription.Name)
+		a.log.Info("Unpausing subscription", "name", subscription.Name)
 
-		err := r.unpauseSubscription(subscription)
+		err := a.unpauseSubscription(subscription)
 		if err != nil {
-			r.Log.Error(err, "failed to unpause subscription", "name", subscription.Name)
+			a.log.Error(err, "failed to unpause subscription", "name", subscription.Name)
 
 			return nil, requeue
 		}
 
 		// Subscription has been unpaused. Stop processing it and wait for the next Reconciler iteration
-		r.Log.Info("Subscription unpaused. It will be processed in the next reconciler iteration", "name", subscription.Name)
+		a.log.Info("Subscription is unpaused. It will be processed in the next reconciler iteration",
+			"name", subscription.Name)
 
 		return nil, requeue
 	}
 
-	r.Log.Info("Subscription is unpaused", "name", subscription.Name)
+	a.log.Info("Subscription is unpaused", "name", subscription.Name)
 
-	exists, err := r.vrgManifestWorkAlreadyExists(avr, subscription)
+	exists, err := a.vrgManifestWorkAlreadyExists(subscription)
 	if err != nil {
 		return nil, requeue
 	}
@@ -333,19 +351,19 @@ func (r *ApplicationVolumeReplicationReconciler) processSubscription(
 		return nil, !requeue
 	}
 	// This subscription is ready for manifest (VRG) creation
-	placementDecision, err := r.processUnpausedSubscription(avr, subscription)
+	placementDecision, err := a.processUnpausedSubscription(subscription)
 	if err != nil {
-		r.Log.Error(err, "Failed to process unpaused subscription", "name", subscription.Name)
+		a.log.Error(err, "Failed to process unpaused subscription", "name", subscription.Name)
 
 		return nil, requeue
 	}
 
-	r.Log.Info(fmt.Sprintf("placementDecisions %+v - requeue: %t", placementDecision, !requeue))
+	a.log.Info(fmt.Sprintf("placementDecisions %+v - requeue: %t", placementDecision, !requeue))
 
 	return &placementDecision, !requeue
 }
 
-func (r *ApplicationVolumeReplicationReconciler) isSubsriptionPausedForDR(labels map[string]string) bool {
+func (a *AVRInstance) isSubsriptionPausedForDR(labels map[string]string) bool {
 	return labels != nil &&
 		labels[RamenDRLabelName] != "" &&
 		strings.EqualFold(labels[RamenDRLabelName], "protected") &&
@@ -356,25 +374,24 @@ func (r *ApplicationVolumeReplicationReconciler) isSubsriptionPausedForDR(labels
 // processPausedSubscription selects the target cluster from the subscription or
 // from the user selected cluster and restores all PVs (belonging to the subscription)
 // to the target cluster and then it unpauses the subscription
-func (r *ApplicationVolumeReplicationReconciler) processPausedSubscription(
-	avr *ramendrv1alpha1.ApplicationVolumeReplication,
+func (a *AVRInstance) processPausedSubscription(
 	subscription *subv1.Subscription) bool {
-	r.Log.Info("Processing paused subscription", "name", subscription.Name)
+	a.log.Info("Processing paused subscription", "name", subscription.Name)
 
 	const unpause = true
 
 	// find new home cluster (could be the failover cluster)
-	newHomeCluster, err := r.findNextHomeClusterFromPlacementRule(subscription)
+	newHomeCluster, err := a.findNextHomeClusterFromPlacementRule(subscription)
 	if err != nil {
-		r.Log.Error(err, "Failed to find new home cluster for subscription",
+		a.log.Error(err, "Failed to find new home cluster for subscription",
 			"name", subscription.Name, "newHomeCluster", newHomeCluster)
 		// DON'T unpause
 		return !unpause
 	}
 
-	newHomeCluster, err = r.validateHomeClusterSelection(avr, subscription, newHomeCluster)
+	newHomeCluster, err = a.validateHomeClusterSelection(subscription, newHomeCluster)
 	if err != nil {
-		r.Log.Info("Failed to validate new home cluster selection for subscription",
+		a.log.Info("Failed to validate new home cluster selection for subscription",
 			"name", subscription.Name, "newHomeCluster", newHomeCluster, "errMsg", err.Error())
 
 		// UNPAUSE if and only if the current cluster is the newly selected cluster. This inidicates
@@ -382,81 +399,81 @@ func (r *ApplicationVolumeReplicationReconciler) processPausedSubscription(
 		return unpause && (errorswrapper.Is(err, ErrSameHomeCluster))
 	}
 
-	r.Log.Info("Found new home cluster", "name", newHomeCluster)
+	a.log.Info("Found new home cluster", "name", newHomeCluster)
 
 	mwName := BuildManifestWorkName(subscription.Name, subscription.Namespace, MWTypePV)
 
-	pvMW, err := r.findManifestWork(mwName, newHomeCluster)
+	pvMW, err := a.findManifestWork(mwName, newHomeCluster)
 	if err != nil {
-		r.Log.Error(err,
-			fmt.Sprintf("Failed to find PV restore ManifestWork: avr %s, subscription %s", avr.Name, subscription.Name))
+		a.log.Error(err,
+			fmt.Sprintf("Failed to find 'PV restore' ManifestWork for subscription %s", subscription.Name))
 		// DON'T unpause
 		return !unpause
 	}
 
 	if pvMW != nil {
-		r.Log.Info(fmt.Sprintf("Found manifest work (%v)", pvMW))
+		a.log.Info(fmt.Sprintf("Found manifest work (%v)", pvMW))
 		// Unpause if the ManifestWork has been applied
 		return IsManifestInAppliedState(pvMW)
 	}
 
-	return r.cleanupAndRestore(avr, subscription, newHomeCluster)
+	return a.cleanupAndRestore(subscription, newHomeCluster)
 }
 
-func (r *ApplicationVolumeReplicationReconciler) cleanupAndRestore(
-	avr *ramendrv1alpha1.ApplicationVolumeReplication,
+func (a *AVRInstance) cleanupAndRestore(
 	subscription *subv1.Subscription,
 	newHomeCluster string) bool {
 	const unpause = true
 
 	pvMWName := fmt.Sprintf(ManifestWorkNameFormat, subscription.Name, subscription.Namespace, MWTypePV)
 
-	err := r.deleteExistingManfiestWork(avr, subscription, pvMWName)
+	err := a.deleteExistingManfiestWork(subscription, pvMWName)
 	if err != nil {
-		r.Log.Error(err, "Failed to delete existing PV manifestwork for subscription", "name", subscription.Name)
+		a.log.Error(err, "Failed to delete existing PV manifestwork for subscription", "name", subscription.Name)
 
 		return !unpause
 	}
 
 	vrgMWName := fmt.Sprintf(ManifestWorkNameFormat, subscription.Name, subscription.Namespace, MWTypeVRG)
 
-	err = r.deleteExistingManfiestWork(avr, subscription, vrgMWName)
+	err = a.deleteExistingManfiestWork(subscription, vrgMWName)
 	if err != nil {
-		r.Log.Error(err, "Failed to delete existing VRG manifestwork for subscription", "name", subscription.Name)
+		a.log.Error(err, "Failed to delete existing VRG manifestwork for subscription", "name", subscription.Name)
 
 		return !unpause
 	}
 
-	err = r.restorePVFromBackup(avr, subscription, newHomeCluster)
+	err = a.restorePVFromBackup(subscription, newHomeCluster)
 	if err != nil {
-		r.Log.Error(err, "Failed to restore PVs from backup for subscription", "name", subscription.Name)
+		a.log.Error(err, "Failed to restore PVs from backup for subscription", "name", subscription.Name)
 
 		return !unpause
 	}
+
+	a.moveToNextDRState(subscription.Name)
 
 	return unpause
 }
 
-func (r *ApplicationVolumeReplicationReconciler) vrgManifestWorkAlreadyExists(
-	avr *ramendrv1alpha1.ApplicationVolumeReplication,
+func (a *AVRInstance) vrgManifestWorkAlreadyExists(
 	subscription *subv1.Subscription) (bool, error) {
-	if avr.Status.Decisions == nil {
+	if a.instance.Status.Decisions == nil {
 		return false, nil
 	}
 
-	if d, found := avr.Status.Decisions[subscription.Name]; found {
+	if d, found := a.instance.Status.Decisions[subscription.Name]; found {
 		// Skip this subscription if a manifestwork already exist for it
 		mwName := BuildManifestWorkName(subscription.Name, subscription.Namespace, MWTypeVRG)
 
-		mw, err := r.findManifestWork(mwName, d.HomeCluster)
+		mw, err := a.findManifestWork(mwName, d.HomeCluster)
 		if err != nil {
-			r.Log.Error(err, "findManifestWork()", "name", subscription.Name)
+			a.log.Error(err, "findManifestWork()", "name", subscription.Name)
 
 			return false, err
 		}
 
 		if mw != nil {
-			r.Log.Info(fmt.Sprintf("Mainifestwork exists for subscription %s (%v)", subscription.Name, mw))
+			a.log.Info(fmt.Sprintf("Mainifestwork exists for subscription %s (%v)", subscription.Name, mw))
 
 			return true, nil
 		}
@@ -465,12 +482,12 @@ func (r *ApplicationVolumeReplicationReconciler) vrgManifestWorkAlreadyExists(
 	return false, nil
 }
 
-func (r *ApplicationVolumeReplicationReconciler) findManifestWork(
+func (a *AVRInstance) findManifestWork(
 	mwName, homeCluster string) (*ocmworkv1.ManifestWork, error) {
 	if homeCluster != "" {
 		mw := &ocmworkv1.ManifestWork{}
 
-		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: mwName, Namespace: homeCluster}, mw)
+		err := a.reconciler.Get(a.ctx, types.NamespacedName{Name: mwName, Namespace: homeCluster}, mw)
 		if err != nil {
 			if errors.IsNotFound(err) {
 				return nil, nil
@@ -485,15 +502,14 @@ func (r *ApplicationVolumeReplicationReconciler) findManifestWork(
 	return nil, nil
 }
 
-func (r *ApplicationVolumeReplicationReconciler) deleteExistingManfiestWork(
-	avr *ramendrv1alpha1.ApplicationVolumeReplication,
+func (a *AVRInstance) deleteExistingManfiestWork(
 	subscription *subv1.Subscription, mwName string) error {
-	r.Log.Info("Try to delete ManifestWork for subscription", "name", subscription.Name)
+	a.log.Info("Try to delete ManifestWork for subscription", "name", subscription.Name)
 
-	if d, found := avr.Status.Decisions[subscription.Name]; found {
+	if d, found := a.instance.Status.Decisions[subscription.Name]; found {
 		mw := &ocmworkv1.ManifestWork{}
 
-		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: mwName, Namespace: d.HomeCluster}, mw)
+		err := a.reconciler.Get(a.ctx, types.NamespacedName{Name: mwName, Namespace: d.HomeCluster}, mw)
 		if err != nil {
 			if errors.IsNotFound(err) {
 				return nil
@@ -502,56 +518,54 @@ func (r *ApplicationVolumeReplicationReconciler) deleteExistingManfiestWork(
 			return fmt.Errorf("failed to retrieve manifestwork for type: %s. Error: %w", mwName, err)
 		}
 
-		r.Log.Info("deleting ManifestWork", "name", mw.Name)
+		a.log.Info("deleting ManifestWork", "name", mw.Name)
 
-		return r.Client.Delete(context.TODO(), mw)
+		return a.reconciler.Delete(a.ctx, mw)
 	}
 
 	return nil
 }
 
-func (r *ApplicationVolumeReplicationReconciler) restorePVFromBackup(
-	avr *ramendrv1alpha1.ApplicationVolumeReplication,
+func (a *AVRInstance) restorePVFromBackup(
 	subscription *subv1.Subscription, homeCluster string) error {
-	r.Log.Info("Restoring PVs to new managed cluster", "name", homeCluster)
+	a.log.Info("Restoring PVs to new managed cluster", "name", homeCluster)
 
-	// TODO: get PVs from S3
-	pvList, err := r.listPVsFromS3Store(avr, subscription)
+	pvList, err := a.listPVsFromS3Store(subscription)
 	if err != nil {
 		return errorswrapper.Wrap(err, "failed to retrieve PVs from S3 store")
 	}
 
-	r.Log.Info(fmt.Sprintf("Found %d PVs for subscription %s", len(pvList), subscription.Name))
+	a.log.Info(fmt.Sprintf("Found %d PVs for subscription %s", len(pvList), subscription.Name))
 
 	if len(pvList) == 0 {
 		return nil
 	}
 
 	// Create manifestwork for all PVs for this subscription
-	return r.createOrUpdatePVsManifestWork(subscription.Name, subscription.Namespace, homeCluster, pvList)
+	return a.createOrUpdatePVsManifestWork(subscription.Name, subscription.Namespace, homeCluster, pvList)
 }
 
-func (r *ApplicationVolumeReplicationReconciler) createOrUpdatePVsManifestWork(
+func (a *AVRInstance) createOrUpdatePVsManifestWork(
 	name string, namespace string, homeClusterName string, pvList []corev1.PersistentVolume) error {
-	r.Log.Info("Creating manifest work for PVs", "subscription",
+	a.log.Info("Creating manifest work for PVs", "subscription",
 		name, "cluster", homeClusterName, "PV count", len(pvList))
 
 	mwName := BuildManifestWorkName(name, namespace, MWTypePV)
 
-	manifestWork, err := r.generatePVManifestWork(mwName, homeClusterName, pvList)
+	manifestWork, err := a.generatePVManifestWork(mwName, homeClusterName, pvList)
 	if err != nil {
 		return err
 	}
 
-	return r.createOrUpdateManifestWork(manifestWork, homeClusterName)
+	return a.createOrUpdateManifestWork(manifestWork, homeClusterName)
 }
 
-func (r *ApplicationVolumeReplicationReconciler) unpauseSubscription(subscription *subv1.Subscription) error {
+func (a *AVRInstance) unpauseSubscription(subscription *subv1.Subscription) error {
 	// Subscription might have been changed since we last read it.  Get the latest...
 	subLookupKey := types.NamespacedName{Name: subscription.Name, Namespace: subscription.Namespace}
 	latestSub := &subv1.Subscription{}
 
-	err := r.Client.Get(context.TODO(), subLookupKey, latestSub)
+	err := a.reconciler.Get(a.ctx, subLookupKey, latestSub)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve subscription %+v", subLookupKey)
 	}
@@ -564,38 +578,37 @@ func (r *ApplicationVolumeReplicationReconciler) unpauseSubscription(subscriptio
 	labels[subv1.LabelSubscriptionPause] = "false"
 	latestSub.SetLabels(labels)
 
-	return r.Client.Update(context.TODO(), latestSub)
+	return a.reconciler.Update(a.ctx, latestSub)
 }
 
-func (r *ApplicationVolumeReplicationReconciler) processUnpausedSubscription(
-	avr *ramendrv1alpha1.ApplicationVolumeReplication,
-	subscription *subv1.Subscription) (ramendrv1alpha1.SubscriptionPlacementDecision, error) {
-	r.Log.Info("Processing unpaused Subscription", "name", subscription.Name)
+func (a *AVRInstance) processUnpausedSubscription(
+	subscription *subv1.Subscription) (rmn.SubscriptionPlacementDecision, error) {
+	a.log.Info("Processing unpaused Subscription", "name", subscription.Name)
 
-	homeCluster, peerCluster, err := r.selectPlacementDecision(subscription)
+	homeCluster, peerCluster, err := a.selectPlacementDecision(subscription)
 	if err != nil {
-		r.Log.Info(fmt.Sprintf("Unable to select placement decision (%v)", err))
+		a.log.Info(fmt.Sprintf("Unable to select placement decision (%v)", err))
 
-		return ramendrv1alpha1.SubscriptionPlacementDecision{}, err
+		return rmn.SubscriptionPlacementDecision{}, err
 	}
 
-	if err := r.createOrUpdateVRGRolesManifestWork(homeCluster); err != nil {
-		r.Log.Error(err, "failed to create or update VolumeReplicationGroup Roles manifest")
+	if err := a.createOrUpdateVRGRolesManifestWork(homeCluster); err != nil {
+		a.log.Error(err, "failed to create or update VolumeReplicationGroup Roles manifest")
 
-		return ramendrv1alpha1.SubscriptionPlacementDecision{}, err
+		return rmn.SubscriptionPlacementDecision{}, err
 	}
 
-	if err := r.createOrUpdateVRGManifestWork(
+	if err := a.createOrUpdateVRGManifestWork(
 		subscription.Name, subscription.Namespace,
-		homeCluster, avr.Spec.S3Endpoint, avr.Spec.S3SecretName, avr.Spec.PVCSelector); err != nil {
-		r.Log.Error(err, "failed to create or update VolumeReplicationGroup manifest")
+		homeCluster, a.instance.Spec.S3Endpoint, a.instance.Spec.S3SecretName, a.instance.Spec.PVCSelector); err != nil {
+		a.log.Error(err, "failed to create or update VolumeReplicationGroup manifest")
 
-		return ramendrv1alpha1.SubscriptionPlacementDecision{}, err
+		return rmn.SubscriptionPlacementDecision{}, err
 	}
 
 	prevHomeCluster := ""
 
-	if d, found := avr.Status.Decisions[subscription.Name]; found {
+	if d, found := a.instance.Status.Decisions[subscription.Name]; found {
 		switch {
 		case d.PrevHomeCluster == "":
 			prevHomeCluster = d.HomeCluster
@@ -604,18 +617,20 @@ func (r *ApplicationVolumeReplicationReconciler) processUnpausedSubscription(
 		}
 	}
 
-	return ramendrv1alpha1.SubscriptionPlacementDecision{
+	a.moveToNextDRState(subscription.Name)
+
+	return rmn.SubscriptionPlacementDecision{
 		HomeCluster:     homeCluster,
 		PeerCluster:     peerCluster,
 		PrevHomeCluster: prevHomeCluster,
 	}, nil
 }
 
-func (r *ApplicationVolumeReplicationReconciler) findNextHomeClusterFromPlacementRule(
+func (a *AVRInstance) findNextHomeClusterFromPlacementRule(
 	subscription *subv1.Subscription) (string, error) {
-	r.Log.Info("Finding the next home cluster for subscription", "name", subscription.Name)
+	a.log.Info("Finding the next home cluster for subscription", "name", subscription.Name)
 
-	placementRule, err := r.getPlacementRule(subscription)
+	placementRule, err := a.getPlacementRule(subscription)
 	if err != nil {
 		return "", err
 	}
@@ -634,81 +649,78 @@ func (r *ApplicationVolumeReplicationReconciler) findNextHomeClusterFromPlacemen
 	return placementRule.Status.Decisions[0].ClusterName, nil
 }
 
-func (r *ApplicationVolumeReplicationReconciler) validateHomeClusterSelection(
-	avr *ramendrv1alpha1.ApplicationVolumeReplication,
+func (a *AVRInstance) validateHomeClusterSelection(
 	subscription *subv1.Subscription, newHomeCluster string) (string, error) {
-	if _, found := avr.Status.Decisions[subscription.Name]; !found {
+	if _, found := a.instance.Status.Decisions[subscription.Name]; !found {
 		return newHomeCluster, nil
 	}
 
-	action, found := avr.Spec.DREnabledSubscriptions[subscription.Name]
+	action, found := a.instance.Spec.DREnabledSubscriptions[subscription.Name]
 	if !found {
 		return newHomeCluster, fmt.Errorf("action not found for subscription %s (%+v)",
-			subscription.Name, avr.Spec.DREnabledSubscriptions)
+			subscription.Name, a.instance.Spec.DREnabledSubscriptions)
 	}
 
 	switch action {
-	case ramendrv1alpha1.ActionFailover:
-		return r.validateFailover(avr, subscription, newHomeCluster)
-	case ramendrv1alpha1.ActionFailback:
-		return r.validateFailback(avr, subscription, newHomeCluster)
+	case rmn.ActionFailover:
+		return a.validateFailover(subscription, newHomeCluster)
+	case rmn.ActionFailback:
+		return a.validateFailback(subscription, newHomeCluster)
 	default:
 		return newHomeCluster, fmt.Errorf("unknown action %s", action)
 	}
 }
 
-func (r *ApplicationVolumeReplicationReconciler) validateFailover(
-	avr *ramendrv1alpha1.ApplicationVolumeReplication,
+func (a *AVRInstance) validateFailover(
 	subscription *subv1.Subscription, newHomeCluster string) (string, error) {
-	if d, found := avr.Status.Decisions[subscription.Name]; found {
-		switch {
-		case d.PeerCluster == newHomeCluster:
+	if d, found := a.instance.Status.Decisions[subscription.Name]; found {
+		switch newHomeCluster {
+		case d.PeerCluster:
 			return newHomeCluster, nil
-		case d.HomeCluster == newHomeCluster:
+		case d.HomeCluster:
 			return newHomeCluster, errorswrapper.Wrap(ErrSameHomeCluster, newHomeCluster)
-		case d.PrevHomeCluster == newHomeCluster:
+		case d.PrevHomeCluster:
 			return newHomeCluster,
 				fmt.Errorf("miconfiguration detected on failover! (n:%s,p:%s)", newHomeCluster, d.PrevHomeCluster)
 		}
 	}
 
-	return newHomeCluster, fmt.Errorf("unknown error (n:%s,avrStatus:%v)", newHomeCluster, avr.Status)
+	return newHomeCluster, fmt.Errorf("unknown error (n:%s,avrStatus:%v)", newHomeCluster, a.instance.Status)
 }
 
-func (r *ApplicationVolumeReplicationReconciler) validateFailback(
-	avr *ramendrv1alpha1.ApplicationVolumeReplication,
+func (a *AVRInstance) validateFailback(
 	subscription *subv1.Subscription, newHomeCluster string) (string, error) {
-	if d, found := avr.Status.Decisions[subscription.Name]; found {
-		switch {
-		case d.PrevHomeCluster == newHomeCluster:
+	if d, found := a.instance.Status.Decisions[subscription.Name]; found {
+		switch newHomeCluster {
+		case d.PrevHomeCluster:
 			return newHomeCluster, nil
-		case d.HomeCluster == newHomeCluster:
+		case d.HomeCluster:
 			return newHomeCluster, errorswrapper.Wrap(ErrSameHomeCluster, newHomeCluster)
-		case d.PeerCluster == newHomeCluster:
+		case d.PeerCluster:
 			return "", fmt.Errorf("miconfiguration detected on failover! (n:%s,p:%s)", newHomeCluster, d.PrevHomeCluster)
 		}
 	}
 
-	return "", fmt.Errorf("unknown error (n:%s,avrStatus:%v)", newHomeCluster, avr.Status)
+	return "", fmt.Errorf("unknown error (n:%s,avrStatus:%v)", newHomeCluster, a.instance.Status)
 }
 
-func (r *ApplicationVolumeReplicationReconciler) selectPlacementDecision(
+func (a *AVRInstance) selectPlacementDecision(
 	subscription *subv1.Subscription) (string, string, error) {
-	r.Log.Info("Selecting placement decisions for subscription", "name", subscription.Name)
+	a.log.Info("Selecting placement decisions for subscription", "name", subscription.Name)
 
 	// get the placement rule fo this subscription
-	placementRule, err := r.getPlacementRule(subscription)
+	placementRule, err := a.getPlacementRule(subscription)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to retrieve placementRule using placementRef %s/%s",
 			placementRule.Namespace, placementRule.Name)
 	}
 
-	return r.extractHomeClusterAndPeerCluster(subscription, placementRule)
+	return a.extractHomeClusterAndPeerCluster(subscription, placementRule)
 }
 
-func (r *ApplicationVolumeReplicationReconciler) getPlacementRule(
+func (a *AVRInstance) getPlacementRule(
 	subscription *subv1.Subscription) (*plrv1.PlacementRule, error) {
-	r.Log.Info("Getting placement decisions for subscription", "name", subscription.Name)
+	a.log.Info("Getting placement decisions for subscription", "name", subscription.Name)
 	// The subscription phase describes the phasing of the subscriptions. Propagated means
 	// this subscription is the "parent" sitting in hub. Statuses is a map where the key is
 	// the cluster name and value is the aggregated status
@@ -732,7 +744,7 @@ func (r *ApplicationVolumeReplicationReconciler) getPlacementRule(
 	// get the placement rule fo this subscription
 	placementRule := &plrv1.PlacementRule{}
 
-	err := r.Client.Get(context.TODO(),
+	err := a.reconciler.Get(a.ctx,
 		types.NamespacedName{Name: plRef.Name, Namespace: plRef.Namespace}, placementRule)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve placementRule using placementRef %s/%s", plRef.Namespace, plRef.Name)
@@ -741,11 +753,11 @@ func (r *ApplicationVolumeReplicationReconciler) getPlacementRule(
 	return placementRule, nil
 }
 
-func (r *ApplicationVolumeReplicationReconciler) extractHomeClusterAndPeerCluster(
+func (a *AVRInstance) extractHomeClusterAndPeerCluster(
 	subscription *subv1.Subscription, placementRule *plrv1.PlacementRule) (string, string, error) {
 	const empty = ""
 
-	r.Log.Info(fmt.Sprintf("Extracting home and peer clusters from subscription (%s) and PlacementRule (%s)",
+	a.log.Info(fmt.Sprintf("Extracting home and peer clusters from subscription (%s) and PlacementRule (%s)",
 		subscription.Name, placementRule.Name))
 
 	subStatuses := subscription.Status.Statuses
@@ -758,7 +770,7 @@ func (r *ApplicationVolumeReplicationReconciler) extractHomeClusterAndPeerCluste
 
 	const maxClusterCount = 2
 
-	clmap, err := r.getManagedClustersUsingPlacementRule(placementRule, maxClusterCount)
+	clmap, err := a.getManagedClustersUsingPlacementRule(placementRule, maxClusterCount)
 	if err != nil {
 		return empty, empty, err
 	}
@@ -793,12 +805,12 @@ func (r *ApplicationVolumeReplicationReconciler) extractHomeClusterAndPeerCluste
 	return homeCluster, peerCluster, nil
 }
 
-func (r *ApplicationVolumeReplicationReconciler) getManagedClustersUsingPlacementRule(
+func (a *AVRInstance) getManagedClustersUsingPlacementRule(
 	placementRule *plrv1.PlacementRule, maxClusterCount int) (map[string]*spokeClusterV1.ManagedCluster, error) {
 	const requiredClusterReplicas = 1
 
 	clmap, err := utils.PlaceByGenericPlacmentFields(
-		r.Client, placementRule.Spec.GenericPlacementFields, nil, placementRule)
+		a.reconciler.Client, placementRule.Spec.GenericPlacementFields, nil, placementRule)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cluster map for placement %s error: %w", placementRule.Name, err)
 	}
@@ -808,7 +820,7 @@ func (r *ApplicationVolumeReplicationReconciler) getManagedClustersUsingPlacemen
 			placementRule.Name, requiredClusterReplicas, *placementRule.Spec.ClusterReplicas)
 	}
 
-	err = r.filterClusters(placementRule, clmap)
+	err = a.filterClusters(placementRule, clmap)
 	if err != nil {
 		return nil, fmt.Errorf("failed to filter clusters. Cluster len %d, error (%w)", len(clmap), err)
 	}
@@ -822,9 +834,9 @@ func (r *ApplicationVolumeReplicationReconciler) getManagedClustersUsingPlacemen
 }
 
 // --- UNIMPLEMENTED --- FAKE function *****
-func (r *ApplicationVolumeReplicationReconciler) filterClusters(
+func (a *AVRInstance) filterClusters(
 	placementRule *plrv1.PlacementRule, clmap map[string]*spokeClusterV1.ManagedCluster) error {
-	r.Log.Info("All good for now", "placementRule", placementRule.Name, "cluster len", len(clmap))
+	a.log.Info("All good for now", "placementRule", placementRule.Name, "cluster len", len(clmap))
 	// This is just to satisfy the linter for now.
 	if len(clmap) == 0 {
 		return fmt.Errorf("no clusters found for placementRule %s", placementRule.Name)
@@ -833,57 +845,57 @@ func (r *ApplicationVolumeReplicationReconciler) filterClusters(
 	return nil
 }
 
-func (r *ApplicationVolumeReplicationReconciler) createOrUpdateVRGRolesManifestWork(namespace string) error {
+func (a *AVRInstance) createOrUpdateVRGRolesManifestWork(namespace string) error {
 	// TODO: Enhance to remember clusters where this has been checked to reduce repeated Gets of the object
-	manifestWork, err := r.generateVRGRolesManifestWork(namespace)
+	manifestWork, err := a.generateVRGRolesManifestWork(namespace)
 	if err != nil {
 		return err
 	}
 
-	return r.createOrUpdateManifestWork(manifestWork, namespace)
+	return a.createOrUpdateManifestWork(manifestWork, namespace)
 }
 
-func (r *ApplicationVolumeReplicationReconciler) createOrUpdateVRGManifestWork(
+func (a *AVRInstance) createOrUpdateVRGManifestWork(
 	name, namespace, homeCluster, s3Endpoint, s3SecretName string, pvcSelector metav1.LabelSelector) error {
-	r.Log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%s:%s:%s",
+	a.log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%s:%s:%s",
 		name, namespace, homeCluster, s3Endpoint, s3SecretName))
 
-	manifestWork, err := r.generateVRGManifestWork(name, namespace, homeCluster, s3Endpoint, s3SecretName, pvcSelector)
+	manifestWork, err := a.generateVRGManifestWork(name, namespace, homeCluster, s3Endpoint, s3SecretName, pvcSelector)
 	if err != nil {
 		return err
 	}
 
-	return r.createOrUpdateManifestWork(manifestWork, homeCluster)
+	return a.createOrUpdateManifestWork(manifestWork, homeCluster)
 }
 
-func (r *ApplicationVolumeReplicationReconciler) generateVRGRolesManifestWork(namespace string) (
+func (a *AVRInstance) generateVRGRolesManifestWork(namespace string) (
 	*ocmworkv1.ManifestWork,
 	error) {
-	vrgClusterRole, err := r.generateVRGClusterRoleManifest()
+	vrgClusterRole, err := a.generateVRGClusterRoleManifest()
 	if err != nil {
-		r.Log.Error(err, "failed to generate VolumeReplicationGroup ClusterRole manifest", "namespace", namespace)
+		a.log.Error(err, "failed to generate VolumeReplicationGroup ClusterRole manifest", "namespace", namespace)
 
 		return nil, err
 	}
 
-	vrgClusterRoleBinding, err := r.generateVRGClusterRoleBindingManifest()
+	vrgClusterRoleBinding, err := a.generateVRGClusterRoleBindingManifest()
 	if err != nil {
-		r.Log.Error(err, "failed to generate VolumeReplicationGroup ClusterRoleBinding manifest", "namespace", namespace)
+		a.log.Error(err, "failed to generate VolumeReplicationGroup ClusterRoleBinding manifest", "namespace", namespace)
 
 		return nil, err
 	}
 
 	manifests := []ocmworkv1.Manifest{*vrgClusterRole, *vrgClusterRoleBinding}
 
-	return r.newManifestWork(
+	return a.newManifestWork(
 		"ramendr-vrg-roles",
 		namespace,
 		map[string]string{},
 		manifests), nil
 }
 
-func (r *ApplicationVolumeReplicationReconciler) generateVRGClusterRoleManifest() (*ocmworkv1.Manifest, error) {
-	return r.generateManifest(&rbacv1.ClusterRole{
+func (a *AVRInstance) generateVRGClusterRoleManifest() (*ocmworkv1.Manifest, error) {
+	return a.generateManifest(&rbacv1.ClusterRole{
 		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
 		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit"},
 		Rules: []rbacv1.PolicyRule{
@@ -896,8 +908,8 @@ func (r *ApplicationVolumeReplicationReconciler) generateVRGClusterRoleManifest(
 	})
 }
 
-func (r *ApplicationVolumeReplicationReconciler) generateVRGClusterRoleBindingManifest() (*ocmworkv1.Manifest, error) {
-	return r.generateManifest(&rbacv1.ClusterRoleBinding{
+func (a *AVRInstance) generateVRGClusterRoleBindingManifest() (*ocmworkv1.Manifest, error) {
+	return a.generateManifest(&rbacv1.ClusterRoleBinding{
 		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
 		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit"},
 		Subjects: []rbacv1.Subject{
@@ -915,14 +927,14 @@ func (r *ApplicationVolumeReplicationReconciler) generateVRGClusterRoleBindingMa
 	})
 }
 
-func (r *ApplicationVolumeReplicationReconciler) generatePVManifestWork(
+func (a *AVRInstance) generatePVManifestWork(
 	mwName, homeClusterName string, pvList []corev1.PersistentVolume) (*ocmworkv1.ManifestWork, error) {
-	manifests, err := r.generatePVManifest(pvList)
+	manifests, err := a.generatePVManifest(pvList)
 	if err != nil {
 		return nil, err
 	}
 
-	return r.newManifestWork(
+	return a.newManifestWork(
 		mwName,
 		homeClusterName,
 		map[string]string{"app": "PV"},
@@ -931,15 +943,15 @@ func (r *ApplicationVolumeReplicationReconciler) generatePVManifestWork(
 
 // This function follow a slightly different pattern than the rest, simply because the pvList that come
 // from the S3 store will contain PV objects already converted to a string.
-func (r *ApplicationVolumeReplicationReconciler) generatePVManifest(
+func (a *AVRInstance) generatePVManifest(
 	pvList []corev1.PersistentVolume) ([]ocmworkv1.Manifest, error) {
 	manifests := []ocmworkv1.Manifest{}
 
 	for _, pv := range pvList {
-		pvClientManifest, err := r.generateManifest(pv)
+		pvClientManifest, err := a.generateManifest(pv)
 		// Either all succeed or none
 		if err != nil {
-			r.Log.Error(err, "failed to generate VolumeReplication")
+			a.log.Error(err, "failed to generate VolumeReplication")
 
 			return nil, err
 		}
@@ -950,31 +962,31 @@ func (r *ApplicationVolumeReplicationReconciler) generatePVManifest(
 	return manifests, nil
 }
 
-func (r *ApplicationVolumeReplicationReconciler) generateVRGManifestWork(
+func (a *AVRInstance) generateVRGManifestWork(
 	name, namespace, homeCluster, s3Endpoint, s3SecretName string,
 	pvcSelector metav1.LabelSelector) (*ocmworkv1.ManifestWork, error) {
-	vrgClientManifest, err := r.generateVRGManifest(name, namespace, s3Endpoint, s3SecretName, pvcSelector)
+	vrgClientManifest, err := a.generateVRGManifest(name, namespace, s3Endpoint, s3SecretName, pvcSelector)
 	if err != nil {
-		r.Log.Error(err, "failed to generate VolumeReplicationGroup manifest")
+		a.log.Error(err, "failed to generate VolumeReplicationGroup manifest")
 
 		return nil, err
 	}
 
 	manifests := []ocmworkv1.Manifest{*vrgClientManifest}
 
-	return r.newManifestWork(
+	return a.newManifestWork(
 		fmt.Sprintf(ManifestWorkNameFormat, name, namespace, MWTypeVRG),
 		homeCluster,
 		map[string]string{"app": "VRG"},
 		manifests), nil
 }
 
-func (r *ApplicationVolumeReplicationReconciler) generateVRGManifest(
+func (a *AVRInstance) generateVRGManifest(
 	name, namespace, s3Endpoint, s3SecretName string, pvcSelector metav1.LabelSelector) (*ocmworkv1.Manifest, error) {
-	return r.generateManifest(&ramendrv1alpha1.VolumeReplicationGroup{
+	return a.generateManifest(&rmn.VolumeReplicationGroup{
 		TypeMeta:   metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
-		Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
+		Spec: rmn.VolumeReplicationGroupSpec{
 			PVCSelector:            pvcSelector,
 			VolumeReplicationClass: "volume-rep-class",
 			ReplicationState:       "Primary",
@@ -984,7 +996,7 @@ func (r *ApplicationVolumeReplicationReconciler) generateVRGManifest(
 	})
 }
 
-func (r *ApplicationVolumeReplicationReconciler) generateManifest(obj interface{}) (*ocmworkv1.Manifest, error) {
+func (a *AVRInstance) generateManifest(obj interface{}) (*ocmworkv1.Manifest, error) {
 	objJSON, err := json.Marshal(obj)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal %v to JSON, error %w", obj, err)
@@ -996,7 +1008,7 @@ func (r *ApplicationVolumeReplicationReconciler) generateManifest(obj interface{
 	return manifest, nil
 }
 
-func (r *ApplicationVolumeReplicationReconciler) newManifestWork(name string, mcNamespace string,
+func (a *AVRInstance) newManifestWork(name string, mcNamespace string,
 	labels map[string]string, manifests []ocmworkv1.Manifest) *ocmworkv1.ManifestWork {
 	return &ocmworkv1.ManifestWork{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1011,12 +1023,12 @@ func (r *ApplicationVolumeReplicationReconciler) newManifestWork(name string, mc
 	}
 }
 
-func (r *ApplicationVolumeReplicationReconciler) createOrUpdateManifestWork(
+func (a *AVRInstance) createOrUpdateManifestWork(
 	mw *ocmworkv1.ManifestWork,
 	managedClusternamespace string) error {
 	foundMW := &ocmworkv1.ManifestWork{}
 
-	err := r.Client.Get(context.TODO(),
+	err := a.reconciler.Get(a.ctx,
 		types.NamespacedName{Name: mw.Name, Namespace: managedClusternamespace},
 		foundMW)
 	if err != nil {
@@ -1024,53 +1036,48 @@ func (r *ApplicationVolumeReplicationReconciler) createOrUpdateManifestWork(
 			return errorswrapper.Wrap(err, fmt.Sprintf("failed to fetch ManifestWork %s", mw.Name))
 		}
 
-		r.Log.Info("Creating", "ManifestWork", mw)
+		a.log.Info("Creating", "ManifestWork", mw)
 
-		return r.Client.Create(context.TODO(), mw)
+		return a.reconciler.Create(a.ctx, mw)
 	}
 
 	if !reflect.DeepEqual(foundMW.Spec, mw.Spec) {
 		mw.Spec.DeepCopyInto(&foundMW.Spec)
 
-		r.Log.Info("ManifestWork exists. Updating", "ManifestWork", mw)
+		a.log.Info("ManifestWork exists. Updating", "ManifestWork", mw)
 
-		return r.Client.Update(context.TODO(), foundMW)
+		return a.reconciler.Update(a.ctx, foundMW)
 	}
 
 	return nil
 }
 
-func (r *ApplicationVolumeReplicationReconciler) updateAVRStatus(
-	ctx context.Context,
-	avr *ramendrv1alpha1.ApplicationVolumeReplication,
-	placementDecisions ramendrv1alpha1.SubscriptionPlacementDecisionMap) error {
-	r.Log.Info("Updated AVR status", "name", avr.Name)
+func (a *AVRInstance) updateAVRStatus() error {
+	a.log.Info("Updating AVR status")
 
-	avr.Status = ramendrv1alpha1.ApplicationVolumeReplicationStatus{
-		Decisions: placementDecisions,
-	}
-	if err := r.Client.Status().Update(ctx, avr); err != nil {
+	a.instance.Status.LastUpdateTime = metav1.Now()
+
+	if err := a.reconciler.Status().Update(a.ctx, a.instance); err != nil {
 		return errorswrapper.Wrap(err, "failed to update AVR status")
 	}
 
-	r.Log.Info(fmt.Sprintf("Updated AVR %s - Status %+v", avr.Name, avr.Status))
+	a.log.Info(fmt.Sprintf("Updated AVR Status %+v", a.instance.Status))
 
 	return nil
 }
 
-func (r *ApplicationVolumeReplicationReconciler) listPVsFromS3Store(
-	avr *ramendrv1alpha1.ApplicationVolumeReplication,
+func (a *AVRInstance) listPVsFromS3Store(
 	subscription *subv1.Subscription) ([]corev1.PersistentVolume, error) {
 	s3SecretLookupKey := types.NamespacedName{
-		Name:      avr.Spec.S3SecretName,
-		Namespace: avr.Namespace,
+		Name:      a.instance.Spec.S3SecretName,
+		Namespace: a.instance.Namespace,
 	}
 
 	s3Bucket := constructBucketName(subscription.Namespace, subscription.Name)
 
-	return r.PVDownloader.DownloadPVs(
-		context.TODO(), r.Client, r.ObjStoreGetter, avr.Spec.S3Endpoint, avr.Spec.S3Region,
-		s3SecretLookupKey, avr.Name, s3Bucket)
+	return a.reconciler.PVDownloader.DownloadPVs(
+		a.ctx, a.reconciler.Client, a.reconciler.ObjStoreGetter, a.instance.Spec.S3Endpoint, a.instance.Spec.S3Region,
+		s3SecretLookupKey, a.instance.Name, s3Bucket)
 }
 
 type ObjectStorePVDownloader struct{}
@@ -1084,4 +1091,32 @@ func (s ObjectStorePVDownloader) DownloadPVs(ctx context.Context, r client.Reade
 	}
 
 	return objectStore.downloadPVs(s3Bucket)
+}
+
+func (a *AVRInstance) moveToNextDRState(subscriptionName string) {
+	nextState := rmn.Initial
+
+	if state, found := a.instance.Status.LastKnownDRStates[subscriptionName]; found {
+		switch state {
+		case rmn.Initial:
+			nextState = rmn.FailingOver
+		case rmn.FailingOver:
+			nextState = rmn.FailedOver
+		case rmn.FailedOver:
+			nextState = rmn.FailingBack
+		case rmn.FailingBack:
+			nextState = rmn.FailedBack
+		case rmn.FailedBack:
+			nextState = rmn.FailingOver
+		}
+	}
+
+	if a.instance.Status.LastKnownDRStates == nil {
+		a.instance.Status.LastKnownDRStates = make(rmn.LastKnownDRStateMap)
+	}
+
+	a.log.Info(fmt.Sprintf("moveToNextDRState: current state '%s' - next state '%s'",
+		a.instance.Status.LastKnownDRStates[subscriptionName], nextState))
+
+	a.instance.Status.LastKnownDRStates[subscriptionName] = nextState
 }
