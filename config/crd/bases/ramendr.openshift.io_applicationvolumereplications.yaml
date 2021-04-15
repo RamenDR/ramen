@@ -169,21 +169,39 @@ spec:
             description: ApplicationVolumeReplicationStatus defines the observed state
               of ApplicationVolumeReplication
             properties:
-              Decisions:
+              decisions:
                 additionalProperties:
                   description: SubscriptionPlacementDecision lists each subscription
                     with its home and peer clusters
                   properties:
-                    PrevHomeCluster:
-                      type: string
                     homeCluster:
                       type: string
                     peerCluster:
                       type: string
+                    prevHomeCluster:
+                      type: string
                   type: object
-                description: Decisions are for subscription and by AVR namespace (which
-                  is app namespace)
+                description: SubscriptionPlacementDecisionMap defines per subscription
+                  placement decision, key is subscription name
                 type: object
+              lastKnownDRStates:
+                additionalProperties:
+                  description: DRState for each subscription
+                  enum:
+                  - Initial
+                  - Failing-over
+                  - Failed-over
+                  - Failing-back
+                  - Failed-back
+                  type: string
+                description: LastKnownDRStateMap defines per subscription the last
+                  state, key is subscription name
+                type: object
+              lastUpdateTime:
+                format: date-time
+                type: string
+            required:
+            - lastUpdateTime
             type: object
         type: object
     served: true
