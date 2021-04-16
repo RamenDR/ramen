@@ -81,8 +81,8 @@ import (
 // }
 // }
 
-// ObjectStoreGetter interface is exported because AVR test,
-// which is in controllers_test package, uses this interface.
+// ObjectStoreGetter interface is exported because test clients
+// use this interface.
 type ObjectStoreGetter interface {
 	// objectStore returns an object that satisfies objectStorer interface
 	objectStore(ctx context.Context, r client.Reader,
@@ -213,6 +213,7 @@ func (s *s3ObjectStore) createBucket(bucket string) (err error) {
 
 	defer func() {
 		if r := recover(); r != nil {
+			// change the named return err value
 			err = fmt.Errorf("create bucket recovered for %s, with %v",
 				bucket, r)
 		}

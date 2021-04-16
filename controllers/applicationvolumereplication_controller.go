@@ -68,7 +68,7 @@ const (
 
 var ErrSameHomeCluster = errorswrapper.New("new home cluster is the same as current home cluster")
 
-type pvDownloader interface {
+type PVDownloader interface {
 	DownloadPVs(ctx context.Context, r client.Reader, objStoreGetter ObjectStoreGetter,
 		s3Endpoint, s3Region string, s3SecretName types.NamespacedName,
 		callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error)
@@ -81,7 +81,7 @@ type ProgressCallback func(string, bool)
 type ApplicationVolumeReplicationReconciler struct {
 	client.Client
 	Log            logr.Logger
-	PVDownloader   pvDownloader
+	PVDownloader   PVDownloader
 	ObjStoreGetter ObjectStoreGetter
 	Scheme         *runtime.Scheme
 	Callback       ProgressCallback
