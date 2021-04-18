@@ -1,13 +1,14 @@
 # Ramen
 
 Ramen is a **disaster-recovery orchestrator** for stateful applications across
-a set of peer kubernetes clusters, that are deployed and managed using
+a set of peer kubernetes clusters which are deployed and managed using
 [open-cluster-management](https://open-cluster-management.io/concepts/architecture/)
-(**OCM**), and provides **cloud-native interfaces** to orchestrate the
-life-cycle of an application's state. These include:
+(**OCM**) and provides **cloud-native interfaces** to orchestrate the
+life-cycle of an application's state on PersistentVolumes. These include:
 
 - Failing over an application's state to a peer cluster on unavailability of
   the currently deployed cluster
+- Failing back an application's state to the previously deployed cluster
 - Migration of an application's state to a peer cluster
 
 Ramen relies on storage plugins providing support for the CSI addon
