@@ -99,20 +99,22 @@ func newManager() (ctrl.Manager, error) {
 
 func setupReconcilers(mgr ctrl.Manager) {
 	if err := (&controllers.VolumeReplicationGroupReconciler{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
-		Scheme: mgr.GetScheme(),
+		Client:         mgr.GetClient(),
+		Log:            ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
+		ObjStoreGetter: controllers.S3ObjectStoreGetter(),
+		Scheme:         mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VolumeReplicationGroup")
 		os.Exit(1)
 	}
 
 	avrReconciler := (&controllers.ApplicationVolumeReplicationReconciler{
-		Client:   mgr.GetClient(),
-		Log:      ctrl.Log.WithName("controllers").WithName("ApplicationVolumeReplication"),
-		S3:       &controllers.S3StoreWrapper{},
-		Scheme:   mgr.GetScheme(),
-		Callback: func(string, bool) {},
+		Client:         mgr.GetClient(),
+		Log:            ctrl.Log.WithName("controllers").WithName("ApplicationVolumeReplication"),
+		ObjStoreGetter: controllers.S3ObjectStoreGetter(),
+		PVDownloader:   controllers.ObjectStorePVDownloader{},
+		Scheme:         mgr.GetScheme(),
+		Callback:       func(string, bool) {},
 	})
 	if err := avrReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ApplicationVolumeReplication")

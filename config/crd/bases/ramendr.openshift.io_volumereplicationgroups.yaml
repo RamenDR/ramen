@@ -114,6 +114,9 @@ spec:
                   that the PV metadata is replicated by a different mechanism; this
                   mode of operation may be referred to as backup-less mode.'
                 type: string
+              s3Region:
+                description: 'S3 Region: https://docs.aws.amazon.com/general/latest/gr/rande.html'
+                type: string
               s3SecretName:
                 description: 'Name of k8s secret that contains the credentials to
                   access the S3 endpoint. If S3Endpoint is used, also specify the

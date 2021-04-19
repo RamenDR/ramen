@@ -68,9 +68,9 @@ const (
 
 var ErrSameHomeCluster = errorswrapper.New("new home cluster is the same as current home cluster")
 
-type S3StoreInterface interface {
-	DownloadPVs(ctx context.Context, r client.Reader,
-		s3Endpoint string, s3SecretName types.NamespacedName,
+type PVDownloader interface {
+	DownloadPVs(ctx context.Context, r client.Reader, objStoreGetter ObjectStoreGetter,
+		s3Endpoint, s3Region string, s3SecretName types.NamespacedName,
 		callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error)
 }
 
@@ -80,10 +80,11 @@ type ProgressCallback func(string, bool)
 // ApplicationVolumeReplicationReconciler reconciles a ApplicationVolumeReplication object
 type ApplicationVolumeReplicationReconciler struct {
 	client.Client
-	Log      logr.Logger
-	S3       S3StoreInterface
-	Scheme   *runtime.Scheme
-	Callback ProgressCallback
+	Log            logr.Logger
+	PVDownloader   PVDownloader
+	ObjStoreGetter ObjectStoreGetter
+	Scheme         *runtime.Scheme
+	Callback       ProgressCallback
 }
 
 func IsManifestInAppliedState(mw *ocmworkv1.ManifestWork) bool {
@@ -1067,20 +1068,20 @@ func (r *ApplicationVolumeReplicationReconciler) listPVsFromS3Store(
 
 	s3Bucket := constructBucketName(subscription.Namespace, subscription.Name)
 
-	return r.S3.DownloadPVs(
-		context.TODO(), r.Client, avr.Spec.S3Endpoint, s3SecretLookupKey, avr.Name, s3Bucket)
+	return r.PVDownloader.DownloadPVs(
+		context.TODO(), r.Client, r.ObjStoreGetter, avr.Spec.S3Endpoint, avr.Spec.S3Region,
+		s3SecretLookupKey, avr.Name, s3Bucket)
 }
 
-type S3StoreWrapper struct{}
+type ObjectStorePVDownloader struct{}
 
-func (s *S3StoreWrapper) DownloadPVs(ctx context.Context, r client.Reader,
-	s3Endpoint string, s3SecretName types.NamespacedName,
+func (s ObjectStorePVDownloader) DownloadPVs(ctx context.Context, r client.Reader,
+	objStoreGetter ObjectStoreGetter, s3Endpoint, s3Region string, s3SecretName types.NamespacedName,
 	callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error) {
-	s3Conn, err := connectToS3Endpoint(
-		ctx, r, s3Endpoint, s3SecretName, callerTag)
+	objectStore, err := objStoreGetter.objectStore(ctx, r, s3Endpoint, s3Region, s3SecretName, callerTag)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error when downloading PVs, err %w", err)
 	}
 
-	return s3Conn.downloadPVs(s3Bucket)
+	return objectStore.downloadPVs(s3Bucket)
 }
