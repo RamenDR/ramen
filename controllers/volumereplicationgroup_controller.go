@@ -872,9 +872,11 @@ func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 		return nil
 	}
 
-	// If state is already as desired, we're done
+	// If state is already as desired, check the status
 	if volRep.Spec.ReplicationState == state {
-		return nil
+		log.Info("VolumeReplication and VolumeReplicationGroup state match. Proceeding to status check")
+
+		return v.checkVRStatus(volRep)
 	}
 
 	volRep.Spec.ReplicationState = state
@@ -894,7 +896,7 @@ func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 
 // createVR creates a VolumeReplication CR with a PVC as its data source.
 func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volrep.ReplicationState) error {
-	cr := &volrep.VolumeReplication{
+	volRep := &volrep.VolumeReplication{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      vrNamespacedName.Name,
 			Namespace: vrNamespacedName.Namespace,
@@ -911,7 +913,88 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 		},
 	}
 
-	return v.reconciler.Create(v.ctx, cr)
+	// Let VRG receive notification for any changes to VolumeReplication CR
+	// created by VRG.
+	if err := ctrl.SetControllerReference(v.instance, volRep, v.reconciler.Scheme); err != nil {
+		return fmt.Errorf("failed to set owner reference to VolumeReplication resource (%s/%s)",
+			volRep.Name, volRep.Namespace)
+	}
+
+	v.log.Info("Creating VolumeReplication resource", "resource", volRep)
+
+	if err := v.reconciler.Create(v.ctx, volRep); err != nil {
+		return fmt.Errorf("failed to create VolumeReplication resource (%s)", vrNamespacedName)
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) checkVRStatus(volRep *volrep.VolumeReplication) error {
+	// When the generation in the status is updated, VRG would get a reconcile
+	// as it owns VolumeReplication resource.
+	if volRep.Generation != volRep.Status.ObservedGeneration {
+		v.log.Info("Generation from the resource and status not same")
+
+		return nil
+	}
+
+	switch {
+	case v.instance.Spec.ReplicationState == volrep.Primary:
+		return v.validateVRStatusAsPrimary(volRep)
+	case v.instance.Spec.ReplicationState == volrep.Secondary:
+		return v.validateVRStatusAsSecondary(volRep)
+	case v.instance.Spec.ReplicationState == volrep.Resync:
+		return fmt.Errorf("resync is not supported for VRG")
+	default:
+		return fmt.Errorf("invalid Replication State %s for VolumeReplicationGroup (%s:%s)",
+			string(v.instance.Spec.ReplicationState), v.instance.Name, v.instance.Namespace)
+	}
+}
+
+// So, VolumeReplication controller reflects the status of a VolRep resource as primary
+// only after the promotion of the associated storage volume to primary is successful.
+// Hence, checking whether the primary state is reflected in the status is sufficient
+// to verify whether the VolRep resource is in a healthy state not. However, checking
+// conditions of VolRep status may be required for maintaining correct status of VRG
+// when VRG status is implemented.
+//
+// TODO: If checking conditions of VolRep is necessary for VRG status, add that logic
+//       here when VRG status is implemented.
+func (v *VRGInstance) validateVRStatusAsPrimary(volRep *volrep.VolumeReplication) error {
+	if volRep.Status.State != volrep.PrimaryState {
+		v.log.Info("State is primary and status is not primary")
+
+		return fmt.Errorf("primary VolumeReplication resource status not same %s/%s (status: %s)",
+			volRep.Name, volRep.Namespace, volRep.Status.State)
+	}
+
+	v.log.Info("State in the spec and status match for primary")
+
+	return nil
+}
+
+// So, VolumeReplication controller reflects the status of a VolRep resource as secondary
+// only after the demotion of the associated storage volume to secondary is successful.
+// Hence, checking whether the secondary state is reflected in the status is sufficient.
+//
+// However, to check whether the secondary volume has done a successful resync of the
+// data or not is not visible via status. For that conditions has to be checked. If the
+// resync is not done, then the degraded condition would be set to true along with
+// resyncing condition. This would be required to properly update the status of VRG.
+//
+//TODO: If checking conditions of VolRep is necessary for VRG status, add that logic
+//       here when VRG status is implemented.
+func (v *VRGInstance) validateVRStatusAsSecondary(volRep *volrep.VolumeReplication) error {
+	if volRep.Status.State != volrep.SecondaryState {
+		v.log.Info("State is primary and status is not secondary")
+
+		return fmt.Errorf("secondary VolumeReplication resource status not same %s/%s (status: %s)",
+			volRep.Name, volRep.Namespace, volRep.Status.State)
+	}
+
+	v.log.Info("State in the spec and status match for secondary")
+
+	return nil
 }
 
 // deleteVR deletes a VolumeReplication instance if found
