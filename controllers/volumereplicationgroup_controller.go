@@ -247,7 +247,7 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	case !v.instance.GetDeletionTimestamp().IsZero():
 		v.log = v.log.WithValues("Finalize", true)
 
-		return v.finalizeVRG()
+		return v.processForDeletion()
 	case v.instance.Spec.ReplicationState == volrep.ReplicationPrimary:
 		return v.processAsPrimary()
 	default: // Secondary, not primary and not deleted
@@ -298,15 +298,19 @@ func (v *VRGInstance) updatePVCList() error {
 }
 
 // finalizeVRG cleans up managed resources and removes the VRG finalizer for resource deletion
-func (v *VRGInstance) finalizeVRG() (ctrl.Result, error) {
+func (v *VRGInstance) processForDeletion() (ctrl.Result, error) {
+	v.log.Info("Entering processing VolumeReplicationGroup")
+
+	defer v.log.Info("Exiting processing VolumeReplicationGroup")
+
 	if !containsString(v.instance.ObjectMeta.Finalizers, vrgFinalizerName) {
 		v.log.Info("Finalizer missing from resource", "finalizer", vrgFinalizerName)
 
 		return ctrl.Result{}, nil
 	}
 
-	if err := v.finalizeChildren(); err != nil {
-		v.log.Info("Failed to finalize child resources", "errorValue", err)
+	if v.reconcileVRsForDeletion() {
+		v.log.Info("Requeuing as reconciling VolumeReplication for deletion failed")
 
 		return ctrl.Result{Requeue: true}, nil
 	}
@@ -317,60 +321,83 @@ func (v *VRGInstance) finalizeVRG() (ctrl.Result, error) {
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	// stop reconciliation as the item is being deleted
 	return ctrl.Result{}, nil
 }
 
-// finalizeChildren cleans up children resources of a given VRG
-func (v *VRGInstance) finalizeChildren() error {
-	// add logic to perform the following things.
-	// - Remove the VolumeReplication CRs associated with pvcs
-	//   belonging to the application protected by this VolumeReplicationGroup CR.
-	// - Delete the backed up PV metadata from the backup store.
-	//
-	// As of now deletion of VolumeReplication CRs is done.
-	// TODO: Delete the backed up PV metadata from the backup store.
-	return v.deleteVolumeReplicationResources()
+// reconcileVRsForDeletion cleans up VR resources managed by VRG and also cleans up changes made to PVCs
+// TODO: Currently removes VR requests unconditionally, needs to ensure it is managed by VRG
+func (v *VRGInstance) reconcileVRsForDeletion() bool {
+	requeue := false
+
+	for idx := range v.pvcList.Items {
+		pvc := &v.pvcList.Items[idx]
+		pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
+		log := v.log.WithValues("pvc", pvcNamespacedName.String())
+
+		requeueResult, skip := v.preparePVCForVRProtection(pvc, log)
+		if requeueResult {
+			requeue = true
+
+			continue
+		}
+
+		if skip {
+			// Delete VR if present as we could be looping in reconcile post processing PVC for VR deletion
+			if err := v.deleteVR(pvcNamespacedName, log); err != nil {
+				log.Info("Requeuing due to failure in finalizing VolumeReplication resource for PersistentVolumeClaim",
+					"errorValue", err)
+
+				requeue = true
+			}
+
+			continue
+		}
+
+		if v.reconcileVRForDeletion(pvc, log) {
+			requeue = true
+
+			continue
+		}
+
+		log.Info("Successfully processed VolumeReplication for PersistentVolumeClaim")
+	}
+
+	// TODO: updateVRStatus even when resource requires a requeue
+
+	return requeue
 }
 
-// deleteVolumeReplicationResources cleans up VR resources managed by VRG
-// TODO: Currently removes VR requests unconditionally, needs to ensure it is managed by VRG
-func (v *VRGInstance) deleteVolumeReplicationResources() error {
-	vrList := &volrep.VolumeReplicationList{}
+func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
+	const requeue bool = true
 
-	listOptions := []client.ListOption{
-		client.InNamespace(v.instance.Namespace),
-	}
+	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 
-	if err := v.reconciler.List(v.ctx, vrList, listOptions...); err != nil {
-		if errors.IsNotFound(err) {
-			v.log.Info("No VolumeReplication resources found")
-
-			return nil
+	if v.instance.Spec.ReplicationState == volrep.ReplicationSecondary {
+		if v.reconcileVRAsSecondary(pvc, log) {
+			return requeue
 		}
+	} else if err := v.processVRAsPrimary(pvcNamespacedName, log); err != nil {
+		log.Info("Requeuing due to failure in getting or creating VolumeReplication resource for PersistentVolumeClaim",
+			"errorValue", err)
 
-		v.log.Error(err, "Failed to list VolumeReplication resources")
-
-		return fmt.Errorf("failed to list VolumeReplication resources, %w", err)
+		return requeue
 	}
 
-	v.log.Info("VolumeReplication resources found", "vrList", vrList)
+	if err := v.preparePVCForVRDeletion(pvc, log); err != nil {
+		log.Info("Requeuing due to failure in preparing PersistentVolumeClaim for VolumeReplication deletion",
+			"errorValue", err)
 
-	for idx := range vrList.Items {
-		// Stop at the first instance of failure and handle
-		// the deletion of remaining VolumeReplication CRs
-		// in the next reconcile request.
-		vr := vrList.Items[idx]
-		if err := v.reconciler.Delete(v.ctx, &vr); err != nil {
-			v.log.Error(err, "Failed to delete VolumeReplication resource", "name",
-				vr.Name, "namespace", vr.Namespace)
-
-			return fmt.Errorf("failed to delete VolumeReplication resource (%s/%s), %w",
-				vr.Namespace, vr.Name, err)
-		}
+		return requeue
 	}
 
-	return nil
+	if err := v.deleteVR(pvcNamespacedName, log); err != nil {
+		log.Info("Requeuing due to failure in finalizing VolumeReplication resource for PersistentVolumeClaim",
+			"errorValue", err)
+
+		return requeue
+	}
+
+	return !requeue
 }
 
 // removeFinalizer removes VRG finalizer form the resource
@@ -388,6 +415,10 @@ func (v *VRGInstance) removeFinalizer(finalizer string) error {
 
 // processAsPrimary reconciles the current instance of VRG as primary
 func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
+	v.log.Info("Entering processing VolumeReplicationGroup")
+
+	defer v.log.Info("Exiting processing VolumeReplicationGroup")
+
 	if err := v.addFinalizer(vrgFinalizerName); err != nil {
 		v.log.Info("Failed to add finalizer", "finalizer", vrgFinalizerName, "errorValue", err)
 
@@ -448,6 +479,16 @@ func (v *VRGInstance) reconcileVRsAsPrimary() bool {
 
 // processAsSecondary reconciles the current instance of VRG as secondary
 func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
+	v.log.Info("Entering processing VolumeReplicationGroup")
+
+	defer v.log.Info("Exiting processing VolumeReplicationGroup")
+
+	if err := v.addFinalizer(vrgFinalizerName); err != nil {
+		v.log.Info("Failed to add finalizer", "finalizer", vrgFinalizerName, "errorValue", err)
+
+		return ctrl.Result{Requeue: true}, nil
+	}
+
 	requeue := v.reconcileVRsAsSecondary()
 
 	// TODO: Update status
@@ -481,16 +522,7 @@ func (v *VRGInstance) reconcileVRsAsSecondary() bool {
 			continue
 		}
 
-		if !v.isPVCReadyForSecondary(pvc, log) {
-			requeue = true
-
-			continue
-		}
-
-		if err := v.processVRAsSecondary(pvcNamespacedName, log); err != nil {
-			log.Info("Requeuing due to failure in getting or creating VolumeReplication resource for PersistentVolumeClaim",
-				"errorValue", err)
-
+		if v.reconcileVRAsSecondary(pvc, log) {
 			requeue = true
 
 			continue
@@ -504,20 +536,38 @@ func (v *VRGInstance) reconcileVRsAsSecondary() bool {
 	return requeue
 }
 
+func (v *VRGInstance) reconcileVRAsSecondary(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
+	const requeue bool = true
+
+	if !v.isPVCReadyForSecondary(pvc, log) {
+		return requeue
+	}
+
+	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
+	if err := v.processVRAsSecondary(pvcNamespacedName, log); err != nil {
+		log.Info("Requeuing due to failure in getting or creating VolumeReplication resource for PersistentVolumeClaim",
+			"errorValue", err)
+
+		return requeue
+	}
+
+	return !requeue
+}
+
 // isPVCReadyForSecondary checks if a PVC is ready to be marked as Secondary
 func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
 	const ready bool = true
 
 	// If PVC is not being deleted, it is not ready for Secondary
 	if pvc.GetDeletionTimestamp().IsZero() {
-		log.Info("PersistentVolumeClaim cannot become Secondary, as it is not marked for deletion")
+		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolumeClaim is not marked for deletion")
 
 		return !ready
 	}
 
 	// If PVC is still in use, it is not ready for Secondary
 	if containsString(pvc.ObjectMeta.Finalizers, "kubernetes.io/pvc-protection") {
-		log.Info("PersistentVolumeClaim cannot become Secondary, as it is still in use")
+		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolumeClaim is still in use")
 
 		return !ready
 	}
@@ -547,22 +597,22 @@ func (v *VRGInstance) preparePVCForVRProtection(pvc *corev1.PersistentVolumeClai
 	}
 
 	// If PVC deleted but not yet protected with a finalizer, skip it!
-	if _, ok := pvc.Annotations[pvcVRFinalizerProtected]; !ok && !pvc.GetDeletionTimestamp().IsZero() {
-		log.Info("Skipping PersistentVolumeClaim marked for deletion and not yet protected")
+	if !containsString(pvc.Finalizers, pvcVRFinalizerProtected) && !pvc.GetDeletionTimestamp().IsZero() {
+		log.Info("Skipping PersistentVolumeClaim, as it is marked for deletion and not yet protected")
 
 		return !requeue, skip
 	}
 
 	// Add VR finalizer to PVC for deletion protection
 	if err := v.addProtectedFinalizerToPVC(pvc, log); err != nil {
-		log.Info("Requeuing as adding PersistentVolumeClaim finalizer failed", "errorValue", err)
+		log.Info("Requeuing, as adding PersistentVolumeClaim finalizer failed", "errorValue", err)
 
 		return requeue, !skip
 	}
 
 	// Change PV `reclaimPolicy` to "Retain"
 	if err := v.retainPVForPVC(*pvc, log); err != nil {
-		log.Info("Requeuing as retaining PersistentVolume failed", "errorValue", err)
+		log.Info("Requeuing, as retaining PersistentVolume failed", "errorValue", err)
 
 		return requeue, !skip
 	}
@@ -570,7 +620,7 @@ func (v *VRGInstance) preparePVCForVRProtection(pvc *corev1.PersistentVolumeClai
 	// If faulted post backing up PV but prior to VR creation, PVC on a failover will fail to attach,
 	// and it is better to not have silent data loss, but be explicit on the failure.
 	if err := v.uploadPV(*pvc); err != nil {
-		log.Info("Requeuing as uploading PersistentVolume failed", "errorValue", err)
+		log.Info("Requeuing, as uploading PersistentVolume failed", "errorValue", err)
 
 		return requeue, !skip
 	}
@@ -578,13 +628,34 @@ func (v *VRGInstance) preparePVCForVRProtection(pvc *corev1.PersistentVolumeClai
 	// Annotate that PVC protection is complete, skip if being deleted
 	if pvc.GetDeletionTimestamp().IsZero() {
 		if err := v.addProtectedAnnotationForPVC(pvc, log); err != nil {
-			log.Info("Requeuing as annotating PersistentVolumeClaim failed", "errorValue", err)
+			log.Info("Requeuing, as annotating PersistentVolumeClaim failed", "errorValue", err)
 
 			return requeue, !skip
 		}
 	}
 
 	return !requeue, !skip
+}
+
+// preparePVCForVRDeletion
+func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
+	log logr.Logger) error {
+	// If PVC does not have the VR finalizer we are done
+	if !containsString(pvc.Finalizers, pvcVRFinalizerProtected) {
+		return nil
+	}
+
+	// Change PV `reclaimPolicy` back to stored state
+	if err := v.undoPVRetentionForPVC(*pvc, log); err != nil {
+		return err
+	}
+
+	// TODO: Delete the PV from the backing store? But when is it safe to do so?
+	// We can delete the PV when VRG (and hence VR) is being deleted as primary, as that is when the
+	// application is finally being undeployed, and also the PV would be garbage collected.
+
+	// Remove VR finalizer from PVC and the annotation (PVC maybe left behind, so remove the annotation)
+	return v.removeProtectedFinalizerFromPVC(pvc, log)
 }
 
 // retainPVForPVC updates the PV reclaim policy to retain for a given PVC
@@ -614,6 +685,40 @@ func (v *VRGInstance) retainPVForPVC(pvc corev1.PersistentVolumeClaim, log logr.
 
 	if err := v.reconciler.Update(v.ctx, pv); err != nil {
 		log.Error(err, "Failed to update PersistentVolume reclaim policy")
+
+		return fmt.Errorf("failed to update PersistentVolume resource (%s) reclaim policy for"+
+			" PersistentVolumeClaim resource (%s/%s) belonging to VolumeReplicationGroup (%s/%s), %w",
+			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
+	}
+
+	return nil
+}
+
+// undoPVRetentionForPVC updates the PV reclaim policy back to its saved state
+func (v *VRGInstance) undoPVRetentionForPVC(pvc corev1.PersistentVolumeClaim, log logr.Logger) error {
+	// Get PV bound to PVC
+	pv := &corev1.PersistentVolume{}
+	pvObjectKey := client.ObjectKey{
+		Name: pvc.Spec.VolumeName,
+	}
+
+	if err := v.reconciler.Get(v.ctx, pvObjectKey, pv); err != nil {
+		log.Error(err, "Failed to get PersistentVolume", "volumeName", pvc.Spec.VolumeName)
+
+		return fmt.Errorf("failed to get PersistentVolume resource (%s) for"+
+			" PersistentVolumeClaim resource (%s/%s) belonging to VolumeReplicationGroup (%s/%s), %w",
+			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
+	}
+
+	if v, ok := pv.ObjectMeta.Annotations[pvVRAnnotationRetentionKey]; !ok || v != pvVRAnnotationRetentionValue {
+		return nil
+	}
+
+	pv.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimDelete
+	delete(pv.ObjectMeta.Annotations, pvVRAnnotationRetentionKey)
+
+	if err := v.reconciler.Update(v.ctx, pv); err != nil {
+		log.Error(err, "Failed to update PersistentVolume reclaim policy", "volumeName", pvc.Spec.VolumeName)
 
 		return fmt.Errorf("failed to update PersistentVolume resource (%s) reclaim policy for"+
 			" PersistentVolumeClaim resource (%s/%s) belonging to VolumeReplicationGroup (%s/%s), %w",
@@ -727,25 +832,25 @@ func (v *VRGInstance) validateS3Endpoint(s3Endpoint, s3Bucket string) error {
 // processVRAsPrimary processes VR to change its state to primary, with the assumption that the
 // related PVC is prepared for VR protection
 func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName, log logr.Logger) error {
-	return v.createOrUpdateVR(vrNamespacedName, volrep.ReplicationPrimary, true, log)
+	return v.createOrUpdateVR(vrNamespacedName, volrep.ReplicationPrimary, log)
 }
 
 // processVRAsSecondary processes VR to change its state to secondary, with the assumption that the
 // related PVC is prepared for VR as secondary
 func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName, log logr.Logger) error {
-	return v.createOrUpdateVR(vrNamespacedName, volrep.ReplicationSecondary, false, log)
+	return v.createOrUpdateVR(vrNamespacedName, volrep.ReplicationSecondary, log)
 }
 
 // createOrUpdateVR updates an existing VR resource if found, or creates it if required
+// TODO: We need to ensure VR is in the desired state and requeue if not
 func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 	state volrep.ReplicationState,
-	create bool,
 	log logr.Logger) error {
 	volRep := &volrep.VolumeReplication{}
 
 	err := v.reconciler.Get(v.ctx, vrNamespacedName, volRep)
 	if err != nil {
-		if !errors.IsNotFound(err) || !create {
+		if !errors.IsNotFound(err) {
 			log.Error(err, "Failed to get VolumeReplication resource", "resource", vrNamespacedName)
 
 			return fmt.Errorf("failed to get VolumeReplication resource"+
@@ -804,6 +909,26 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 	return v.reconciler.Create(v.ctx, cr)
 }
 
+// deleteVR deletes a VolumeReplication instance if found
+func (v *VRGInstance) deleteVR(vrNamespacedName types.NamespacedName, log logr.Logger) error {
+	cr := &volrep.VolumeReplication{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      vrNamespacedName.Name,
+			Namespace: vrNamespacedName.Namespace,
+		},
+	}
+
+	err := v.reconciler.Delete(v.ctx, cr)
+	if err == nil || errors.IsNotFound(err) {
+		return nil
+	}
+
+	log.Error(err, "Failed to delete VolumeReplication resource")
+
+	return fmt.Errorf("failed to delete VolumeReplication resource (%s/%s), %w",
+		vrNamespacedName.Namespace, vrNamespacedName.Name, err)
+}
+
 func (v *VRGInstance) addProtectedAnnotationForPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) error {
 	pvc.ObjectMeta.Annotations[pvcVRAnnotationProtectedKey] = pvcVRAnnotationProtectedValue
 
@@ -835,7 +960,7 @@ func (v *VRGInstance) addFinalizer(finalizer string) error {
 
 func (v *VRGInstance) addProtectedFinalizerToPVC(pvc *corev1.PersistentVolumeClaim,
 	log logr.Logger) error {
-	if _, ok := pvc.Annotations[pvcVRFinalizerProtected]; ok {
+	if containsString(pvc.Finalizers, pvcVRFinalizerProtected) {
 		return nil
 	}
 
@@ -859,17 +984,19 @@ func (v *VRGInstance) addFinalizerToPVC(pvc *corev1.PersistentVolumeClaim,
 	return nil
 }
 
-/* TODO: uncomment when used with delete workflow (make linter happy for now)
 func (v *VRGInstance) removeProtectedFinalizerFromPVC(pvc *corev1.PersistentVolumeClaim,
 	log logr.Logger) error {
 	return v.removeFinalizerFromPVC(pvc, pvcVRFinalizerProtected, log)
 }
 
+// removeFinalizerFromPVC removes the VR finalizer on PVC and also the protected annotation from the PVC
 func (v *VRGInstance) removeFinalizerFromPVC(pvc *corev1.PersistentVolumeClaim,
 	finalizer string,
 	log logr.Logger) error {
 	if containsString(pvc.ObjectMeta.Finalizers, finalizer) {
 		pvc.ObjectMeta.Finalizers = removeString(pvc.ObjectMeta.Finalizers, finalizer)
+		delete(pvc.ObjectMeta.Annotations, pvcVRAnnotationProtectedKey)
+
 		if err := v.reconciler.Update(v.ctx, pvc); err != nil {
 			log.Error(err, "Failed to remove finalizer", "finalizer", finalizer)
 
@@ -880,7 +1007,7 @@ func (v *VRGInstance) removeFinalizerFromPVC(pvc *corev1.PersistentVolumeClaim,
 	}
 
 	return nil
-}*/
+}
 
 // It might be better move the helper functions like these to a separate
 // package or a separate go file?
