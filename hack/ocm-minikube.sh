@@ -68,6 +68,25 @@ if ! command -v kustomize; then
 	curl -L https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv4.0.5/kustomize_v4.0.5_linux_amd64.tar.gz | tar -C${HOME}/.local/bin -xz
 fi
 
+until_true_or_n()
+{
+	set +x
+	n=${1}
+	shift
+	i=0
+	date
+	while ! "${@}"
+	do
+		test ${i} -lt ${n}
+		sleep 1
+		i=$((i+1))
+	done
+	date
+	unset -v i
+	unset -v n
+	set -x
+}
+
 kubectl apply -f https://raw.githubusercontent.com/kubernetes/cluster-registry/master/cluster-registry-crd.yaml
 set +e
 git clone https://github.com/open-cluster-management/registration-operator
@@ -78,6 +97,7 @@ set -e
 # registration-operator make deploy-hub requires go version 1.14.4 or greater
 	# https://golang.org/ref/mod#versions
 	# https://semver.org/spec/v2.0.0.html
+
 case ${NAME} in
 "Ubuntu")
 	deploy_arguments=GO_REQUIRED_MIN_VERSION:=
@@ -112,7 +132,7 @@ date
 kubectl --context hub -n open-cluster-management wait deployments --all --for condition=available
 date
 # https://github.com/kubernetes/kubernetes/issues/83242
-i=0; while ! kubectl --context hub -n open-cluster-management-hub wait deployments --all --for condition=available --timeout 0; do test $i -lt 90; sleep 1; i=$((i+1)); done; unset -v i
+until_true_or_n 90 kubectl --context hub -n open-cluster-management-hub wait deployments --all --for condition=available --timeout 0
 
 HUB_KUBECONFIG=/tmp/hub-config
 kubectl --context hub config view --flatten --minify >${HUB_KUBECONFIG}
@@ -134,10 +154,10 @@ spoke_add()
 	kubectl --context ${cluster_name} -n open-cluster-management wait deployments --all --for condition=available
 	date
 	# https://github.com/kubernetes/kubernetes/issues/83242
-	i=0; while ! kubectl --context ${cluster_name} -n open-cluster-management-agent wait deployments/klusterlet-registration-agent --for condition=available --timeout 0; do test $i -lt 60; sleep 1; i=$((i+1)); done; unset -v i
+	until_true_or_n 60 kubectl --context ${cluster_name} -n open-cluster-management-agent wait deployments/klusterlet-registration-agent --for condition=available --timeout 0
 
 	# hub register managed cluster
-	i=0; while ! kubectl --context hub get managedclusters/${cluster_name} --ignore-not-found=false; do test $i -lt 30; sleep 1; i=$((i+1)); done; unset -v i
+	until_true_or_n 30 kubectl --context hub get managedclusters/${cluster_name} --ignore-not-found=false
 	set +e
 	kubectl --context hub certificate approve $(kubectl --context hub get csr --field-selector spec.signerName=kubernetes.io/kube-apiserver-client --selector open-cluster-management.io/cluster-name=${cluster_name} -oname)
 	# error: one or more CSRs must be specified as <name> or -f <filename>
@@ -157,7 +177,7 @@ spoke_add()
 	condition=ready
 	condition=initialized
 	# Failed to pull image "busybox": rpc error: code = Unknown desc = Error response from daemon: toomanyrequests: You have reached your pull rate limit. You may increase the limit by authenticating and upgrading: https://www.docker.com/increase-rate-limit
-	i=0; while ! kubectl --context ${cluster_name} wait pods/hello --for condition=${condition} --timeout 0; do test $i -lt 150; sleep 1; i=$((i+1)); done; unset -v i
+	until_true_or_n 150 kubectl --context ${cluster_name} wait pods/hello --for condition=${condition} --timeout 0
 	unset -v condition
 	# delete may exceed 30 seconds
 	date
@@ -229,7 +249,7 @@ spoke_add_nonhub()
 	# test
 	kubectl --context hub apply -f examples/helmrepo-hub-channel
 	# https://github.com/kubernetes/kubernetes/issues/83242
-	i=0; while ! kubectl --context ${1} wait deployments --selector app=nginx-ingress --for condition=available --timeout 0; do test $i -lt 60; sleep 1; i=$((i+1)); done; unset -v i
+	until_true_or_n 60 kubectl --context ${1} wait deployments --selector app=nginx-ingress --for condition=available --timeout 0
 	kubectl --context hub delete -f examples/helmrepo-hub-channel
 	set +e
 	kubectl --context ${1} wait deployments --selector app=nginx-ingress --for delete --timeout 1m
@@ -267,7 +287,7 @@ kubectl --context hub apply -f subscriptions/book-import/application.yaml
 # Error from server (InternalError): error when creating "subscriptions/book-import/application.yaml": Internal error occurred: failed calling webhook "applications.apps.open-cluster-management.webhook": Post "https://multicluster-operators-application-svc.multicluster-operators.svc:443/app-validate?timeout=10s": dial tcp 10.106.210.84:443: connect: connection refused
 set -e
 # https://github.com/kubernetes/kubernetes/issues/83242
-i=0; while ! kubectl --context ${cluster_name} -n book-import wait deployments --all --for condition=available --timeout 0; do test $i -lt 30; sleep 1; i=$((i+1)); done; unset -v i
+until_true_or_n 30 kubectl --context ${cluster_name} -n book-import wait deployments --all --for condition=available --timeout 0
 set +e
 kubectl --context hub delete -f subscriptions/book-import/application.yaml
 # Error from server (NotFound): error when deleting "subscriptions/book-import/application.yaml": applications.app.k8s.io "book-import" not found
