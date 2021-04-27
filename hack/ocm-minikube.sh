@@ -260,6 +260,9 @@ spoke_add_nonhub()
 spoke_add_nonhub cluster1
 spoke_add_hub hub
 #spoke_add_nonhub cluster2
+unset -f spoke_add_nonhub
+unset -f spoke_add_hub
+unset -f spoke_add
 unset -v HUB_KUBECONFIG
 unset -v minikube_start_options
 unset -v deploy_arguments
@@ -303,3 +306,4 @@ set -e
 date
 cd ../
 unset -v cluster_name
+unset -f until_true_or_n
