@@ -427,7 +427,7 @@ func (a *AVRInstance) cleanupAndRestore(
 
 	pvMWName := fmt.Sprintf(ManifestWorkNameFormat, subscription.Name, subscription.Namespace, MWTypePV)
 
-	err := a.deleteExistingManfiestWork(subscription, pvMWName)
+	err := a.deleteExistingManifestWork(subscription, pvMWName)
 	if err != nil {
 		a.log.Error(err, "Failed to delete existing PV manifestwork for subscription", "name", subscription.Name)
 
@@ -436,7 +436,7 @@ func (a *AVRInstance) cleanupAndRestore(
 
 	vrgMWName := fmt.Sprintf(ManifestWorkNameFormat, subscription.Name, subscription.Namespace, MWTypeVRG)
 
-	err = a.deleteExistingManfiestWork(subscription, vrgMWName)
+	err = a.deleteExistingManifestWork(subscription, vrgMWName)
 	if err != nil {
 		a.log.Error(err, "Failed to delete existing VRG manifestwork for subscription", "name", subscription.Name)
 
@@ -502,7 +502,7 @@ func (a *AVRInstance) findManifestWork(
 	return nil, nil
 }
 
-func (a *AVRInstance) deleteExistingManfiestWork(
+func (a *AVRInstance) deleteExistingManifestWork(
 	subscription *subv1.Subscription, mwName string) error {
 	a.log.Info("Try to delete ManifestWork for subscription", "name", subscription.Name)
 
