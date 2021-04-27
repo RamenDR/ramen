@@ -1,0 +1,15 @@
+---
+apiVersion: ceph.rook.io/v1
+kind: CephBlockPool
+metadata:
+  name: replicapool
+  namespace: rook-ceph
+spec:
+  replicated:
+    size: 1
+  mirroring:
+    enabled: true
+    mode: image
+    snapshotSchedules:
+      - interval: 5m
+        startTime: 14:00:00-05:00
