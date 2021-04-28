@@ -178,7 +178,7 @@ func (r *ApplicationVolumeReplicationReconciler) SetupWithManager(mgr ctrl.Manag
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 func (r *ApplicationVolumeReplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := r.Log.WithValues("ApplicationVolumeReplication", req.NamespacedName)
+	logger := r.Log.WithValues("AVR", req.NamespacedName)
 	logger.Info("Entering reconcile loop")
 
 	defer logger.Info("Exiting reconcile loop")
@@ -195,21 +195,9 @@ func (r *ApplicationVolumeReplicationReconciler) Reconcile(ctx context.Context, 
 		return ctrl.Result{}, errorswrapper.Wrap(err, "failed to get AVR object")
 	}
 
-	subscriptionList := &subv1.SubscriptionList{}
-	listOptions := []client.ListOption{
-		client.InNamespace(avr.Namespace),
-		client.MatchingLabels(avr.Spec.SubscriptionSelector.MatchLabels),
-	}
-
-	err = r.Client.List(ctx, subscriptionList, listOptions...)
+	subList, err := r.getSubscriptionList(ctx, avr)
 	if err != nil {
-		if !errors.IsNotFound(err) {
-			logger.Error(err, "failed to find subscription list", "namespace", avr.Namespace)
-
-			return ctrl.Result{Requeue: true}, nil
-		}
-
-		return ctrl.Result{}, errorswrapper.Wrap(err, "failed to list subscriptions")
+		return ctrl.Result{}, err
 	}
 
 	a := AVRInstance{
@@ -217,21 +205,23 @@ func (r *ApplicationVolumeReplicationReconciler) Reconcile(ctx context.Context, 
 		ctx:              ctx,
 		log:              logger,
 		instance:         avr,
-		subscriptionList: subscriptionList,
+		needStatusUpdate: false,
+		subscriptionList: subList,
 	}
 
 	requeue := a.processSubscriptions()
 
-	if err := a.updateAVRStatus(); err != nil {
-		logger.Error(err, "failed to update status")
+	if a.needStatusUpdate {
+		if err := a.updateAVRStatus(); err != nil {
+			logger.Error(err, "failed to update status")
 
-		return ctrl.Result{Requeue: true}, nil
+			return ctrl.Result{Requeue: true}, nil
+		}
 	}
 
-	r.Log.Info(fmt.Sprintf("AVR (%+v)", avr))
-
-	logger.Info(fmt.Sprintf("Processed %d/%d subscriptions. AVR Status Decisions %d. Requeue? %v",
-		len(a.instance.Status.Decisions), len(subscriptionList.Items), len(avr.Status.Decisions), requeue))
+	logger.Info(fmt.Sprintf("AVR (%+v)", avr))
+	logger.Info(fmt.Sprintf("Made %d decision(s) out of %d subscription(s). Requeue? %v",
+		len(a.instance.Status.Decisions), len(subList.Items), requeue))
 
 	done := !requeue
 	r.Callback(a.instance.Name, done)
@@ -239,11 +229,159 @@ func (r *ApplicationVolumeReplicationReconciler) Reconcile(ctx context.Context, 
 	return ctrl.Result{Requeue: requeue}, nil
 }
 
+func (r *ApplicationVolumeReplicationReconciler) getSubscriptionList(ctx context.Context,
+	avr *rmn.ApplicationVolumeReplication) (*subv1.SubscriptionList, error) {
+	subscriptionList := &subv1.SubscriptionList{}
+	listOptions := []client.ListOption{
+		client.InNamespace(avr.Namespace),
+		client.MatchingLabels(avr.Spec.SubscriptionSelector.MatchLabels),
+	}
+
+	err := r.Client.List(ctx, subscriptionList, listOptions...)
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			r.Log.Error(err, "failed to find subscription list")
+
+			return nil, errorswrapper.Wrap(err, "No subscriptions found")
+		}
+
+		return nil, errorswrapper.Wrap(err, "failed to list subscriptions")
+	}
+
+	err = r.ensureValidSubscriptions(avr, subscriptionList)
+	if err != nil {
+		r.Log.Error(err, "unable to ensure subscriptions have the same placement rule")
+
+		return nil, err
+	}
+
+	return subscriptionList, nil
+}
+
+func (r *ApplicationVolumeReplicationReconciler) ensureValidSubscriptions(
+	avr *rmn.ApplicationVolumeReplication, subscriptions *subv1.SubscriptionList) error {
+	// Make sure that all subscriptions in subscription list have same placementRule
+	if err := r.ensureSubsHaveSamePlacementRule(avr, subscriptions); err != nil {
+		return err
+	}
+
+	// Make sure clusters referenced by the placementRule are in the DRClusterPeers for this AVR.
+	return r.ensurePlRuleClustersInDRClusterPeers(avr)
+}
+
+func (r *ApplicationVolumeReplicationReconciler) ensureSubsHaveSamePlacementRule(
+	avr *rmn.ApplicationVolumeReplication, subscriptions *subv1.SubscriptionList) error {
+	if len(subscriptions.Items) == 0 {
+		return fmt.Errorf("empty subscriptionList for avr %s", avr.Name)
+	}
+
+	for _, sub := range subscriptions.Items {
+		if sub.Spec.Placement == nil || sub.Spec.Placement.PlacementRef == nil {
+			return fmt.Errorf("invalid subscription placement object. SubName %s", sub.Name)
+		}
+
+		if !reflect.DeepEqual(avr.Spec.Placement, sub.Spec.Placement) {
+			return fmt.Errorf("mismatch between subscription placement and avr placement (subName %s)", sub.Name)
+		}
+	}
+
+	return nil
+}
+
+func (r *ApplicationVolumeReplicationReconciler) ensurePlRuleClustersInDRClusterPeers(
+	avr *rmn.ApplicationVolumeReplication) error {
+	clPeersRef := avr.Spec.DRClusterPeersRef
+	clusterPeers := &rmn.DRClusterPeers{}
+
+	if clPeersRef.Namespace == "" {
+		clPeersRef.Namespace = avr.Namespace
+	}
+
+	err := r.Client.Get(context.TODO(),
+		types.NamespacedName{Name: clPeersRef.Name, Namespace: clPeersRef.Namespace}, clusterPeers)
+	if err != nil {
+		return fmt.Errorf("failed to get cluster peers using %s/%s. Error (%w)", clPeersRef.Name, clPeersRef.Namespace, err)
+	}
+
+	if len(clusterPeers.Spec.ClusterNames) == 0 {
+		return fmt.Errorf("invalid DRClusterPeers configuration. Name %s", clusterPeers.Name)
+	}
+
+	plRef := avr.Spec.Placement.PlacementRef
+
+	if plRef.Namespace == "" {
+		plRef.Namespace = avr.Namespace
+	}
+
+	placementRule := &plrv1.PlacementRule{}
+
+	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: plRef.Name, Namespace: plRef.Namespace}, placementRule)
+	if err != nil {
+		return fmt.Errorf("failed to get placementrule error: %w", err)
+	}
+
+	const requiredClusterCount = 1
+
+	clmap, err := r.getManagedClustersUsingPlacementRule(placementRule, requiredClusterCount)
+	if err != nil {
+		return fmt.Errorf("failed to get cluster map for placement %s error: %w", placementRule.Name, err)
+	}
+
+	for clName := range clmap {
+		found := r.findClusterInDRClusterPeers(clusterPeers, clName)
+
+		if !found {
+			return fmt.Errorf("mismatch between PlRule managed clusters and DRClusterPeers. "+
+				"Cluster name %s not found in DRClusterPeers %v", clName, clusterPeers.Spec.ClusterNames)
+		}
+	}
+
+	return nil
+}
+
+func (r *ApplicationVolumeReplicationReconciler) getManagedClustersUsingPlacementRule(
+	placementRule *plrv1.PlacementRule, requiredClusterCount int) (map[string]*spokeClusterV1.ManagedCluster, error) {
+	const requiredClusterReplicas = 1
+
+	clmap, err := utils.PlaceByGenericPlacmentFields(
+		r.Client, placementRule.Spec.GenericPlacementFields, nil, placementRule)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cluster map for placement %s error: %w", placementRule.Name, err)
+	}
+
+	if placementRule.Spec.ClusterReplicas != nil && *placementRule.Spec.ClusterReplicas != requiredClusterReplicas {
+		return nil, fmt.Errorf("PlacementRule %s Required cluster replicas %d != %d",
+			placementRule.Name, requiredClusterReplicas, *placementRule.Spec.ClusterReplicas)
+	}
+
+	if len(clmap) != requiredClusterCount {
+		return nil, fmt.Errorf("wrong configuration for placementRule %s. "+
+			"Only %d Managed Cluster per placementRule is allowed. Found %d",
+			placementRule.Name, requiredClusterCount, len(clmap))
+	}
+
+	return clmap, nil
+}
+
+func (r *ApplicationVolumeReplicationReconciler) findClusterInDRClusterPeers(
+	clusterPeers *rmn.DRClusterPeers, clName string) bool {
+	const found = true
+
+	for i := range clusterPeers.Spec.ClusterNames {
+		if clusterPeers.Spec.ClusterNames[i] == clName {
+			return found
+		}
+	}
+
+	return !found
+}
+
 type AVRInstance struct {
 	reconciler       *ApplicationVolumeReplicationReconciler
 	ctx              context.Context
 	log              logr.Logger
 	instance         *rmn.ApplicationVolumeReplication
+	needStatusUpdate bool
 	subscriptionList *subv1.SubscriptionList
 }
 
@@ -296,6 +434,7 @@ func (a *AVRInstance) processSubscriptions() bool {
 
 		if placementDecision != nil {
 			a.instance.Status.Decisions[subscription.Name] = placementDecision
+			a.needStatusUpdate = true
 		}
 	}
 
@@ -450,7 +589,7 @@ func (a *AVRInstance) cleanupAndRestore(
 		return !unpause
 	}
 
-	a.moveToNextDRState(subscription.Name)
+	a.advanceToNextDRState(subscription.Name)
 
 	return unpause
 }
@@ -617,7 +756,7 @@ func (a *AVRInstance) processUnpausedSubscription(
 		}
 	}
 
-	a.moveToNextDRState(subscription.Name)
+	a.advanceToNextDRState(subscription.Name)
 
 	return rmn.SubscriptionPlacementDecision{
 		HomeCluster:     homeCluster,
@@ -655,10 +794,9 @@ func (a *AVRInstance) validateHomeClusterSelection(
 		return newHomeCluster, nil
 	}
 
-	action, found := a.instance.Spec.DREnabledSubscriptions[subscription.Name]
-	if !found {
-		return newHomeCluster, fmt.Errorf("action not found for subscription %s (%+v)",
-			subscription.Name, a.instance.Spec.DREnabledSubscriptions)
+	action := a.instance.Spec.Action
+	if action == "" {
+		return newHomeCluster, fmt.Errorf("action not set for AVR %s", a.instance.Name)
 	}
 
 	switch action {
@@ -711,8 +849,8 @@ func (a *AVRInstance) selectPlacementDecision(
 	// get the placement rule fo this subscription
 	placementRule, err := a.getPlacementRule(subscription)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to retrieve placementRule using placementRef %s/%s",
-			placementRule.Namespace, placementRule.Name)
+		return "", "", fmt.Errorf("failed to retrieve placementRule using placement %s (%w)",
+			subscription.Name, err)
 	}
 
 	return a.extractHomeClusterAndPeerCluster(subscription, placementRule)
@@ -768,81 +906,48 @@ func (a *AVRInstance) extractHomeClusterAndPeerCluster(
 				placementRule.Name, subscription.Name)
 	}
 
-	const maxClusterCount = 2
+	clusterPeers := &rmn.DRClusterPeers{}
+	clPeersRef := a.instance.Spec.DRClusterPeersRef
 
-	clmap, err := a.getManagedClustersUsingPlacementRule(placementRule, maxClusterCount)
+	if clPeersRef.Namespace == "" {
+		clPeersRef.Namespace = a.instance.Namespace
+	}
+
+	err := a.reconciler.Get(a.ctx,
+		types.NamespacedName{
+			Name:      clPeersRef.Name,
+			Namespace: clPeersRef.Namespace,
+		}, clusterPeers)
 	if err != nil {
-		return empty, empty, err
+		return empty, empty,
+			fmt.Errorf("failed to retrieve DRClusterPeers %s (%w)",
+				a.instance.Spec.DRClusterPeersRef.Name, err)
 	}
 
-	idx := 0
-
-	clusters := make([]spokeClusterV1.ManagedCluster, maxClusterCount)
-	for _, c := range clmap {
-		clusters[idx] = *c
-		idx++
+	if len(clusterPeers.Spec.ClusterNames) == 0 {
+		return empty, empty, fmt.Errorf("no clusters configured in DRClusterPeers %s", clusterPeers.Name)
 	}
 
-	d1 := clusters[0]
-	d2 := clusters[1]
+	cl1 := clusterPeers.Spec.ClusterNames[0]
+	cl2 := clusterPeers.Spec.ClusterNames[1]
 
 	var homeCluster string
 
 	var peerCluster string
 
 	switch {
-	case subStatuses[d1.Name] != nil:
-		homeCluster = d1.Name
-		peerCluster = d2.Name
-	case subStatuses[d2.Name] != nil:
-		homeCluster = d2.Name
-		peerCluster = d1.Name
+	case subStatuses[cl1] != nil:
+		homeCluster = cl1
+		peerCluster = cl2
+	case subStatuses[cl2] != nil:
+		homeCluster = cl2
+		peerCluster = cl1
 	default:
 		return empty, empty, fmt.Errorf("mismatch between placementRule %s decisions and subscription %s statuses",
 			placementRule.Name, subscription.Name)
 	}
 
 	return homeCluster, peerCluster, nil
-}
-
-func (a *AVRInstance) getManagedClustersUsingPlacementRule(
-	placementRule *plrv1.PlacementRule, maxClusterCount int) (map[string]*spokeClusterV1.ManagedCluster, error) {
-	const requiredClusterReplicas = 1
-
-	clmap, err := utils.PlaceByGenericPlacmentFields(
-		a.reconciler.Client, placementRule.Spec.GenericPlacementFields, nil, placementRule)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get cluster map for placement %s error: %w", placementRule.Name, err)
-	}
-
-	if placementRule.Spec.ClusterReplicas != nil && *placementRule.Spec.ClusterReplicas != requiredClusterReplicas {
-		return nil, fmt.Errorf("PlacementRule %s Required cluster replicas %d != %d",
-			placementRule.Name, requiredClusterReplicas, *placementRule.Spec.ClusterReplicas)
-	}
-
-	err = a.filterClusters(placementRule, clmap)
-	if err != nil {
-		return nil, fmt.Errorf("failed to filter clusters. Cluster len %d, error (%w)", len(clmap), err)
-	}
-
-	if len(clmap) != maxClusterCount {
-		return nil, fmt.Errorf("PlacementRule %s should have made %d decisions. Found %d",
-			placementRule.Name, maxClusterCount, len(clmap))
-	}
-
-	return clmap, nil
-}
-
-// --- UNIMPLEMENTED --- FAKE function *****
-func (a *AVRInstance) filterClusters(
-	placementRule *plrv1.PlacementRule, clmap map[string]*spokeClusterV1.ManagedCluster) error {
-	a.log.Info("All good for now", "placementRule", placementRule.Name, "cluster len", len(clmap))
-	// This is just to satisfy the linter for now.
-	if len(clmap) == 0 {
-		return fmt.Errorf("no clusters found for placementRule %s", placementRule.Name)
-	}
-
-	return nil
 }
 
 func (a *AVRInstance) createOrUpdateVRGRolesManifestWork(namespace string) error {
@@ -873,14 +978,14 @@ func (a *AVRInstance) generateVRGRolesManifestWork(namespace string) (
 	error) {
 	vrgClusterRole, err := a.generateVRGClusterRoleManifest()
 	if err != nil {
-		a.log.Error(err, "failed to generate VolumeReplicationGroup ClusterRole manifest", "namespace", namespace)
+		a.log.Error(err, "failed to generate VolumeReplicationGroup ClusterRole manifest")
 
 		return nil, err
 	}
 
 	vrgClusterRoleBinding, err := a.generateVRGClusterRoleBindingManifest()
 	if err != nil {
-		a.log.Error(err, "failed to generate VolumeReplicationGroup ClusterRoleBinding manifest", "namespace", namespace)
+		a.log.Error(err, "failed to generate VolumeReplicationGroup ClusterRoleBinding manifest")
 
 		return nil, err
 	}
@@ -1093,7 +1198,7 @@ func (s ObjectStorePVDownloader) DownloadPVs(ctx context.Context, r client.Reade
 	return objectStore.downloadPVs(s3Bucket)
 }
 
-func (a *AVRInstance) moveToNextDRState(subscriptionName string) {
+func (a *AVRInstance) advanceToNextDRState(subscriptionName string) {
 	nextState := rmn.Initial
 
 	if state, found := a.instance.Status.LastKnownDRStates[subscriptionName]; found {
@@ -1115,8 +1220,9 @@ func (a *AVRInstance) moveToNextDRState(subscriptionName string) {
 		a.instance.Status.LastKnownDRStates = make(rmn.LastKnownDRStateMap)
 	}
 
-	a.log.Info(fmt.Sprintf("moveToNextDRState: current state '%s' - next state '%s'",
+	a.log.Info(fmt.Sprintf("advanceToNextDRState: current state '%s' - next state '%s'",
 		a.instance.Status.LastKnownDRStates[subscriptionName], nextState))
 
 	a.instance.Status.LastKnownDRStates[subscriptionName] = nextState
+	a.needStatusUpdate = true
 }
