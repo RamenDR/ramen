@@ -19,7 +19,7 @@ package v1alpha1
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	volrep "github.com/shyamsundarr/volrep-shim-operator/api/v1alpha1"
+	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
 )
 
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.

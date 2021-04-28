@@ -23,7 +23,8 @@ import (
 	"reflect"
 
 	"github.com/go-logr/logr"
-	volrep "github.com/shyamsundarr/volrep-shim-operator/api/v1alpha1"
+
+	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -73,10 +74,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) er
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&ramendrv1alpha1.VolumeReplicationGroup{}).
 		Watches(&source.Kind{Type: &corev1.PersistentVolumeClaim{}}, pvcMapFun, builder.WithPredicates(pvcPredicate)).
-		// The actual thing that the controller owns is
-		// the VolumeReplication CR. Change the below
-		// line when VolumeReplication CR is ready.
-		Owns(&ramendrv1alpha1.VolumeReplicationGroup{}).
+		Owns(&volrep.VolumeReplication{}).
 		Complete(r)
 }
 
@@ -181,7 +179,7 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim, log logr.
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups/finalizers,verbs=update
-// +kubebuilder:rbac:groups=replication.storage.ramen.io,resources=volumereplications,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplications,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch;update;patch
 
@@ -230,8 +228,8 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	if v.instance.Spec.ReplicationState != volrep.ReplicationPrimary &&
-		v.instance.Spec.ReplicationState != volrep.ReplicationSecondary {
+	if v.instance.Spec.ReplicationState != volrep.Primary &&
+		v.instance.Spec.ReplicationState != volrep.Secondary {
 		err := fmt.Errorf("invalid or unknown replication state detected (deleted %v, desired replicationState %v)",
 			v.instance.GetDeletionTimestamp().IsZero(),
 			v.instance.Spec.ReplicationState)
@@ -248,7 +246,7 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 		v.log = v.log.WithValues("Finalize", true)
 
 		return v.processForDeletion()
-	case v.instance.Spec.ReplicationState == volrep.ReplicationPrimary:
+	case v.instance.Spec.ReplicationState == volrep.Primary:
 		return v.processAsPrimary()
 	default: // Secondary, not primary and not deleted
 		return v.processAsSecondary()
@@ -372,7 +370,7 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 
 	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 
-	if v.instance.Spec.ReplicationState == volrep.ReplicationSecondary {
+	if v.instance.Spec.ReplicationState == volrep.Secondary {
 		if v.reconcileVRAsSecondary(pvc, log) {
 			return requeue
 		}
@@ -836,13 +834,13 @@ func (v *VRGInstance) validateS3Endpoint(s3Endpoint, s3Bucket string) error {
 // processVRAsPrimary processes VR to change its state to primary, with the assumption that the
 // related PVC is prepared for VR protection
 func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName, log logr.Logger) error {
-	return v.createOrUpdateVR(vrNamespacedName, volrep.ReplicationPrimary, log)
+	return v.createOrUpdateVR(vrNamespacedName, volrep.Primary, log)
 }
 
 // processVRAsSecondary processes VR to change its state to secondary, with the assumption that the
 // related PVC is prepared for VR as secondary
 func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName, log logr.Logger) error {
-	return v.createOrUpdateVR(vrNamespacedName, volrep.ReplicationSecondary, log)
+	return v.createOrUpdateVR(vrNamespacedName, volrep.Secondary, log)
 }
 
 // createOrUpdateVR updates an existing VR resource if found, or creates it if required
@@ -875,11 +873,11 @@ func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 	}
 
 	// If state is already as desired, we're done
-	if volRep.Spec.State == state {
+	if volRep.Spec.ReplicationState == state {
 		return nil
 	}
 
-	volRep.Spec.State = state
+	volRep.Spec.ReplicationState = state
 	if err = v.reconciler.Update(v.ctx, volRep); err != nil {
 		log.Error(err, "Failed to update VolumeReplication resource",
 			"resource", vrNamespacedName,
@@ -902,12 +900,14 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 			Namespace: vrNamespacedName.Namespace,
 		},
 		Spec: volrep.VolumeReplicationSpec{
-			DataSource: &corev1.TypedLocalObjectReference{
+			DataSource: corev1.TypedLocalObjectReference{
 				Kind:     "PersistentVolumeClaim",
 				Name:     vrNamespacedName.Name,
 				APIGroup: new(string),
 			},
-			State: state,
+			ReplicationState: state,
+
+			VolumeReplicationClass: v.instance.Spec.VolumeReplicationClass,
 		},
 	}
 

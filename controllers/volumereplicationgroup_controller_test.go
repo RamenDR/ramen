@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
-	volrep "github.com/shyamsundarr/volrep-shim-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -214,7 +214,7 @@ func (v *vrgTest) createVRG(pvcLabels map[string]string) {
 		},
 		Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
 			PVCSelector:      metav1.LabelSelector{MatchLabels: pvcLabels},
-			ReplicationState: "Primary",
+			ReplicationState: "primary",
 		},
 	}
 	err := k8sClient.Create(context.TODO(), vrg)

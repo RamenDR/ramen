@@ -6,9 +6,9 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.4.1
   creationTimestamp: null
-  name: volumereplications.replication.storage.ramen.io
+  name: volumereplications.replication.storage.openshift.io
 spec:
-  group: replication.storage.ramen.io
+  group: replication.storage.openshift.io
   names:
     kind: VolumeReplication
     listKind: VolumeReplicationList
@@ -37,9 +37,8 @@ spec:
             description: VolumeReplicationSpec defines the desired state of VolumeReplication
             properties:
               dataSource:
-                description: 'This field can be used to specify either: * An existing
-                  PVC (PersistentVolumeClaim) It will enable the volume for replication
-                  and ensure its state is as desired.'
+                description: DataSource represents the object associated with the
+                  volume
                 properties:
                   apiGroup:
                     description: APIGroup is the group for the resource being referenced.
@@ -57,18 +56,25 @@ spec:
                 - kind
                 - name
                 type: object
-              state:
-                description: Specifies the desired replication state for the DataSource
-                enum:
-                - Primary
-                - Secondary
+              replicationState:
+                description: ReplicationState represents the replication operation
+                  to be performed on the volume. Supported operations are "primary",
+                  "secondary" and "resync"
                 type: string
+              volumeReplicationClass:
+                description: VolumeReplicationClass is the VolumeReplicationClass
+                  name for this VolumeReplication resource
+                type: string
+            required:
+            - dataSource
+            - replicationState
+            - volumeReplicationClass
             type: object
           status:
             description: VolumeReplicationStatus defines the observed state of VolumeReplication
             properties:
               conditions:
-                description: Conditions regarding status
+                description: Conditions are the list of conditions and their status.
                 items:
                   description: "Condition contains details for one aspect of the current
                     state of this API Resource. --- This struct is intended for direct
@@ -137,21 +143,21 @@ spec:
                   - type
                   type: object
                 type: array
+              lastCompletionTime:
+                format: date-time
+                type: string
+              lastStartTime:
+                format: date-time
+                type: string
+              message:
+                type: string
               observedGeneration:
-                description: 'ObservedGeneration reflects the generation of the most
-                  recently observed volume replication NOTE: As desired state may
-                  flip if user updates it before any actual change, the observed generation
-                  is reflected in status to aid ensuring actual state is the same
-                  as the current generation of desired state'
+                description: observedGeneration is the last generation change the
+                  operator has dealt with
                 format: int64
                 type: integer
               state:
-                description: ObservedState reflects the state observed at the generation
-                  in ObservedGeneration
-                enum:
-                - Primary
-                - Secondary
-                - Unknown
+                description: State captures the latest state of the replication operation
                 type: string
             type: object
         type: object
