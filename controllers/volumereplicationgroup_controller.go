@@ -899,8 +899,9 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 		},
 		Spec: volrep.VolumeReplicationSpec{
 			DataSource: &corev1.TypedLocalObjectReference{
-				Kind: "PersistentVolumeClaim",
-				Name: vrNamespacedName.Name,
+				Kind:     "PersistentVolumeClaim",
+				Name:     vrNamespacedName.Name,
+				APIGroup: new(string),
 			},
 			State: state,
 		},

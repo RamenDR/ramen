@@ -36,6 +36,7 @@ import (
 	subv1 "github.com/open-cluster-management/multicloud-operators-subscription/pkg/apis"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	ramencontrollers "github.com/ramendr/ramen/controllers"
+	volrep "github.com/shyamsundarr/volrep-shim-operator/api/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -84,6 +85,9 @@ var _ = BeforeSuite(func() {
 	err = ramendrv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
+	err = volrep.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
 	// +kubebuilder:scaffold:scheme
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
@@ -94,6 +98,14 @@ var _ = BeforeSuite(func() {
 	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: scheme.Scheme,
 	})
+	Expect(err).ToNot(HaveOccurred())
+
+	err = (&ramencontrollers.VolumeReplicationGroupReconciler{
+		Client:         k8sManager.GetClient(),
+		Log:            ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
+		ObjStoreGetter: ramencontrollers.S3ObjectStoreGetter(),
+		Scheme:         k8sManager.GetScheme(),
+	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
 	avrReconciler := (&ramencontrollers.ApplicationVolumeReplicationReconciler{
