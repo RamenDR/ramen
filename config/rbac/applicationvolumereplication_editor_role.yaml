@@ -2,12 +2,12 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: ApplicationVolumeReplication-editor-role
+  name: applicationvolumereplication-editor-role
 rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - ApplicationVolumeReplications
+  - applicationvolumereplications
   verbs:
   - create
   - delete
@@ -19,6 +19,6 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - ApplicationVolumeReplications/status
+  - applicationvolumereplications/status
   verbs:
   - get

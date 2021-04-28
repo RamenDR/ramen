@@ -34,44 +34,44 @@ const (
 	Async ReplicationPolicyType = "async"
 )
 
-// ClusterPeersSpec defines the desired state of ClusterPeers
-type ClusterPeersSpec struct {
+// DRClusterPeersSpec defines the desired state of DRClusterPeers
+type DRClusterPeersSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Members of the ClusterPeers set
-	ClusterIDs []string `json:"clusterIDs"`
+	// Members of the DRClusterPeers set
+	ClusterNames []string `json:"clusterNames"`
 
-	// Type of replication policy used by this ClusterPeers: sync or async
+	// Type of replication policy used by this DRClusterPeers: sync or async
 	ReplicationPolicy ReplicationPolicyType `json:"replicationPolicy"`
 }
 
-// ClusterPeersStatus defines the observed state of ClusterPeers
+// DRClusterPeersStatus defines the observed state of DRClusterPeers
 // INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 // Important: Run "make" to regenerate code after modifying this file
-type ClusterPeersStatus struct{}
+type DRClusterPeersStatus struct{}
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
-// ClusterPeers is the Schema for the clusterpeers API
-type ClusterPeers struct {
+// DRClusterPeers is the Schema for the drclusterpeers API
+type DRClusterPeers struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ClusterPeersSpec    `json:"spec,omitempty"`
-	Status *ClusterPeersStatus `json:"status,omitempty"`
+	Spec   DRClusterPeersSpec    `json:"spec,omitempty"`
+	Status *DRClusterPeersStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// ClusterPeersList contains a list of ClusterPeers
-type ClusterPeersList struct {
+// DRClusterPeersList contains a list of DRClusterPeers
+type DRClusterPeersList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []ClusterPeers `json:"items"`
+	Items           []DRClusterPeers `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&ClusterPeers{}, &ClusterPeersList{})
+	SchemeBuilder.Register(&DRClusterPeers{}, &DRClusterPeersList{})
 }
