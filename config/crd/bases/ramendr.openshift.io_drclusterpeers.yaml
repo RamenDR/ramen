@@ -6,20 +6,20 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.4.1
   creationTimestamp: null
-  name: clusterpeers.ramendr.openshift.io
+  name: drclusterpeers.ramendr.openshift.io
 spec:
   group: ramendr.openshift.io
   names:
-    kind: ClusterPeers
-    listKind: ClusterPeersList
-    plural: clusterpeers
-    singular: clusterpeers
+    kind: DRClusterPeers
+    listKind: DRClusterPeersList
+    plural: drclusterpeers
+    singular: drclusterpeers
   scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ClusterPeers is the Schema for the clusterpeers API
+        description: DRClusterPeers is the Schema for the drclusterpeers API
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -34,23 +34,23 @@ spec:
           metadata:
             type: object
           spec:
-            description: ClusterPeersSpec defines the desired state of ClusterPeers
+            description: DRClusterPeersSpec defines the desired state of DRClusterPeers
             properties:
-              clusterIDs:
-                description: Members of the ClusterPeers set
+              clusterNames:
+                description: Members of the DRClusterPeers set
                 items:
                   type: string
                 type: array
               replicationPolicy:
-                description: 'Type of replication policy used by this ClusterPeers:
+                description: 'Type of replication policy used by this DRClusterPeers:
                   sync or async'
                 type: string
             required:
-            - clusterIDs
+            - clusterNames
             - replicationPolicy
             type: object
           status:
-            description: 'ClusterPeersStatus defines the observed state of ClusterPeers
+            description: 'DRClusterPeersStatus defines the observed state of DRClusterPeers
               INSERT ADDITIONAL STATUS FIELD - define observed state of cluster Important:
               Run "make" to regenerate code after modifying this file'
             type: object

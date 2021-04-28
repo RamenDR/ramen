@@ -17,34 +17,42 @@ limitations under the License.
 package v1alpha1
 
 import (
+	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// Action that will be taken by Ramen when a subscription is paused
+// DRAction that will be taken by Ramen when a subscription is paused
 // +kubebuilder:validation:Enum=Failover;Failback
-type Action string
+type DRAction string
 
-// These are the valid values for Action
+// These are the valid values for DRAction
 const (
 	// Failover, restore PVs to the new home cluster, and unpause subscription
-	ActionFailover Action = "Failover"
+	ActionFailover DRAction = "Failover"
 
 	// Failback, restore PVs to the original home cluster, and unpause subscription
-	ActionFailback Action = "Failback"
+	ActionFailback DRAction = "Failback"
 )
 
-// DREnabledSubscriptionsMap defines the action used for failover per subscription.
-// Key is subscription name. Value is either empty, 'failover', or 'failback'
-type DREnabledSubscriptionsMap map[string]Action
+// DRClusterPeersReference holds a reference to DRClusterPeers
+type DRClusterPeersReference struct {
+	// `namespace` is the namespace of the cluster peers.
+	Namespace string `json:"namespace,omitempty"`
+	// `name` is the name of the cluster peers.
+	Name string `json:"name"`
+}
 
 // ApplicationVolumeReplicationSpec defines the desired state of ApplicationVolumeReplication
 type ApplicationVolumeReplicationSpec struct {
-	// DREnabledSubscriptions holds Subscription name as the key and an Action as the value
-	DREnabledSubscriptions DREnabledSubscriptionsMap `json:"drEnabledSubscriptions,omitempty"`
-
 	// Label selector to identify all the subscriptions that belong to an application that
 	// needs DR protection. This selection is needed to select subscriptions on the hub
 	SubscriptionSelector metav1.LabelSelector `json:"subscriptionSelector"`
+
+	// DRClusterPeersRef is the reference to the DRClusterPeers participating in the DR replication for this AVR
+	DRClusterPeersRef DRClusterPeersReference `json:"drClusterPeersRef"`
+
+	// Placement is used to subscriptions placements
+	Placement *plrv1.Placement `json:"placement,omitempty"`
 
 	// Label selector to identify all the PVCs that need DR protection.
 	// This selector is assumed to be the same for all subscriptions that
@@ -65,6 +73,9 @@ type ApplicationVolumeReplicationSpec struct {
 	// and AWS_SECRET_ACCESS_KEY.  The value of this field, will be progated to every VRG.
 	// See VRG spec for more details.
 	S3SecretName string `json:"s3SecretName"`
+
+	// Action is either failover or failback operation
+	Action DRAction `json:"action,omitempty"`
 }
 
 // DRState for each subscription
