@@ -288,8 +288,8 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	if v.instance.Spec.ReplicationState != volrep.Primary &&
-		v.instance.Spec.ReplicationState != volrep.Secondary {
+	if v.instance.Spec.ReplicationState != ramendrv1alpha1.Primary &&
+		v.instance.Spec.ReplicationState != ramendrv1alpha1.Secondary {
 		err := fmt.Errorf("invalid or unknown replication state detected (deleted %v, desired replicationState %v)",
 			v.instance.GetDeletionTimestamp().IsZero(),
 			v.instance.Spec.ReplicationState)
@@ -306,7 +306,7 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 		v.log = v.log.WithValues("Finalize", true)
 
 		return v.processForDeletion()
-	case v.instance.Spec.ReplicationState == volrep.Primary:
+	case v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary:
 		return v.processAsPrimary()
 	default: // Secondary, not primary and not deleted
 		return v.processAsSecondary()
@@ -423,7 +423,7 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 
 	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 
-	if v.instance.Spec.ReplicationState == volrep.Secondary {
+	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
 		requeueResult, skip := v.reconcileVRAsSecondary(pvc, log)
 		if requeueResult {
 			log.Info("Requeuing due to failure in reconciling VolumeReplication resource as secondary")
@@ -934,19 +934,19 @@ func (v *VRGInstance) validateS3Endpoint(s3Endpoint, s3Bucket string) error {
 // processVRAsPrimary processes VR to change its state to primary, with the assumption that the
 // related PVC is prepared for VR protection
 func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName, log logr.Logger) error {
-	return v.createOrUpdateVR(vrNamespacedName, volrep.Primary, log)
+	return v.createOrUpdateVR(vrNamespacedName, ramendrv1alpha1.Primary, log)
 }
 
 // processVRAsSecondary processes VR to change its state to secondary, with the assumption that the
 // related PVC is prepared for VR as secondary
 func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName, log logr.Logger) error {
-	return v.createOrUpdateVR(vrNamespacedName, volrep.Secondary, log)
+	return v.createOrUpdateVR(vrNamespacedName, ramendrv1alpha1.Secondary, log)
 }
 
 // createOrUpdateVR updates an existing VR resource if found, or creates it if required
 // TODO: We need to ensure VR is in the desired state and requeue if not
 func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
-	state volrep.ReplicationState,
+	state ramendrv1alpha1.ReplicationState,
 	log logr.Logger) error {
 	volRep := &volrep.VolumeReplication{}
 
@@ -973,13 +973,13 @@ func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 	}
 
 	// If state is already as desired, check the status
-	if volRep.Spec.ReplicationState == state {
+	if volRep.Spec.ReplicationState == volrep.ReplicationState(state) {
 		log.Info("VolumeReplication and VolumeReplicationGroup state match. Proceeding to status check")
 
 		return v.checkVRStatus(volRep)
 	}
 
-	volRep.Spec.ReplicationState = state
+	volRep.Spec.ReplicationState = volrep.ReplicationState(state)
 	if err = v.reconciler.Update(v.ctx, volRep); err != nil {
 		log.Error(err, "Failed to update VolumeReplication resource",
 			"resource", vrNamespacedName,
@@ -995,7 +995,7 @@ func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 }
 
 // createVR creates a VolumeReplication CR with a PVC as its data source.
-func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volrep.ReplicationState) error {
+func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state ramendrv1alpha1.ReplicationState) error {
 	volRep := &volrep.VolumeReplication{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      vrNamespacedName.Name,
@@ -1007,7 +1007,10 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 				Name:     vrNamespacedName.Name,
 				APIGroup: new(string),
 			},
-			ReplicationState: state,
+
+			// Convert to volrep.ReplicationState type
+			// explicitly. Otherwise compilation fails.
+			ReplicationState: volrep.ReplicationState(state),
 
 			VolumeReplicationClass: v.instance.Spec.VolumeReplicationClass,
 		},
@@ -1039,12 +1042,10 @@ func (v *VRGInstance) checkVRStatus(volRep *volrep.VolumeReplication) error {
 	}
 
 	switch {
-	case v.instance.Spec.ReplicationState == volrep.Primary:
+	case v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary:
 		return v.validateVRStatusAsPrimary(volRep)
-	case v.instance.Spec.ReplicationState == volrep.Secondary:
+	case v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary:
 		return v.validateVRStatusAsSecondary(volRep)
-	case v.instance.Spec.ReplicationState == volrep.Resync:
-		return fmt.Errorf("resync is not supported for VRG")
 	default:
 		return fmt.Errorf("invalid Replication State %s for VolumeReplicationGroup (%s:%s)",
 			string(v.instance.Spec.ReplicationState), v.instance.Name, v.instance.Namespace)
@@ -1064,8 +1065,7 @@ func (v *VRGInstance) validateVRStatusAsPrimary(volRep *volrep.VolumeReplication
 	if volRep.Status.State != volrep.PrimaryState {
 		v.log.Info("State is primary and status is not primary")
 
-		return fmt.Errorf("primary VolumeReplication resource status not same %s/%s (status: %s)",
-			volRep.Name, volRep.Namespace, volRep.Status.State)
+		return nil
 	}
 
 	v.log.Info("State in the spec and status match for primary")
@@ -1088,8 +1088,7 @@ func (v *VRGInstance) validateVRStatusAsSecondary(volRep *volrep.VolumeReplicati
 	if volRep.Status.State != volrep.SecondaryState {
 		v.log.Info("State is primary and status is not secondary")
 
-		return fmt.Errorf("secondary VolumeReplication resource status not same %s/%s (status: %s)",
-			volRep.Name, volRep.Namespace, volRep.Status.State)
+		return nil
 	}
 
 	v.log.Info("State in the spec and status match for secondary")
