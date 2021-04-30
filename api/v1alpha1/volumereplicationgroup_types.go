@@ -97,10 +97,33 @@ type VolumeReplicationGroupSpec struct {
 	S3SecretName string `json:"s3SecretName,omitempty"`
 }
 
+type ProtectedPVC struct {
+	// Name of the VolRep resource
+	Name string `json:"name,omitempty"`
+
+	// Conditions for each protected pvc
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+type ProtectedPVCMap map[string]*ProtectedPVC
+
 // VolumeReplicationGroupStatus defines the observed state of VolumeReplicationGroup
 // INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 // Important: Run "make" to regenerate code after modifying this file
-type VolumeReplicationGroupStatus struct{}
+type VolumeReplicationGroupStatus struct {
+	State State `json:"state,omitempty"`
+
+	// All the protected pvcs
+	ProtectedPVCs ProtectedPVCMap `json:"protectedPVCs,omitempty"`
+
+	// Conditions are the list of conditions and their status.
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// observedGeneration is the last generation change the operator has dealt with
+	// +optional
+	ObservedGeneration int64       `json:"observedGeneration,omitempty"`
+	LastUpdateTime     metav1.Time `json:"lastUpdateTime,omitempty"`
+}
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
@@ -111,8 +134,8 @@ type VolumeReplicationGroup struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   VolumeReplicationGroupSpec    `json:"spec,omitempty"`
-	Status *VolumeReplicationGroupStatus `json:"status,omitempty"`
+	Spec   VolumeReplicationGroupSpec   `json:"spec,omitempty"`
+	Status VolumeReplicationGroupStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true

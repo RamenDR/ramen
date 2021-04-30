@@ -79,6 +79,8 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 				v.waitForVRCountToMatch(expectedVRCount)
 			}
 		})
+
+		// TODO: Add tests for checking the status of VRG
 		It("cleans up after testing", func() {
 			for c := 0; c < len(vrgTests); c++ {
 				v := vrgTests[c]
