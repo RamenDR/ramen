@@ -18,8 +18,9 @@ import (
 )
 
 var _ = Describe("Test VolumeReplicationGroup", func() {
+	// Try the simple case of creating VRG, PVC, PV and
+	// check whether VolRep resources are created or not
 	var vrgTestCases []vrgTest
-
 	Context("in primary state", func() {
 		It("sets up PVCs, PVs and VRGs", func() {
 			for c := 0; c < 5; c++ {
@@ -41,6 +42,50 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			}
 		})
 	})
+
+	// Creates VRG. PVCs and PV are created with Status.Phase
+	// set to pending and VolRep should not be created until
+	// all the PVCs and PVs are bound. So, these tests then
+	// change the Status.Phase of PVCs and PVs to bound state,
+	// and then checks whether appropriate number of VolRep
+	// resources have been created or not.
+	var vrgTests []vrgTest
+	Context("in primary state", func() {
+		It("sets up non-bound PVCs, PVs and then bind them", func() {
+			for c := 0; c < 5; c++ {
+				// Test the scenario where the pvc is not bound yet
+				// and expect no VRs to be created.
+				v := newVRGTestCaseBindInfo(c, corev1.ClaimPending, corev1.VolumePending, false)
+				vrgTests = append(vrgTests, v)
+			}
+		})
+		It("expect no VR to be created as PVC not bound", func() {
+			for c := 0; c < len(vrgTests); c++ {
+				v := vrgTests[c]
+				v.waitForVRCountToMatch(0)
+			}
+		})
+		It("bind each pv to corresponding pvc", func() {
+			for c := 0; c < len(vrgTests); c++ {
+				v := vrgTests[c]
+				v.bindPVAndPVC()
+				v.verifyPVCBindingToPV(true)
+			}
+		})
+		It("waits for VRG to create a VR for each PVC bind", func() {
+			for c := 0; c < len(vrgTests); c++ {
+				v := vrgTests[c]
+				expectedVRCount := len(v.pvcNames)
+				v.waitForVRCountToMatch(expectedVRCount)
+			}
+		})
+		It("cleans up after testing", func() {
+			for c := 0; c < len(vrgTests); c++ {
+				v := vrgTests[c]
+				v.cleanup()
+			}
+		})
+	})
 })
 
 type vrgTest struct {
@@ -57,6 +102,18 @@ var testCaseNumber = 0
 // input pvcCount), a PV for each PVC, and a VRG in primary state, with
 // label selector that points to the PVCs created.
 func newVRGTestCase(pvcCount int) vrgTest {
+	return newVRGTestCaseBindInfo(pvcCount, corev1.ClaimBound, corev1.VolumeBound,
+		true)
+}
+
+// newVRGTestCaseBindInfo creates a new namespace, zero or more PVCs (equal
+// to the input pvcCount), a PV for each PVC, and a VRG in primary state,
+// with label selector that points to the PVCs created. Each PVC is created
+// with Status.Phase set to ClaimPending instead of ClaimBound. Expectation
+// is that, until pvc is not bound, VolRep resources should not be created
+// by VRG.
+func newVRGTestCaseBindInfo(pvcCount int, claimBindInfo corev1.PersistentVolumeClaimPhase,
+	volumeBindInfo corev1.PersistentVolumePhase, checkBind bool) vrgTest {
 	pvcLabels := map[string]string{}
 	objectNameSuffix := 'a' + testCaseNumber
 	testCaseNumber++ // each invocation of this function is a new test case
@@ -79,15 +136,17 @@ func newVRGTestCase(pvcCount int) vrgTest {
 	for i := 0; i < pvcCount; i++ {
 		pvName := fmt.Sprintf("pv-%c-%02d", objectNameSuffix, i)
 		pvcName := fmt.Sprintf("pvc-%c-%02d", objectNameSuffix, i)
-		v.createPVC(pvcName, v.namespace, pvName, pvcLabels)
-		v.createPV(pvName, pvcName)
+		v.createPVC(pvcName, v.namespace, pvName, pvcLabels, claimBindInfo)
+		v.createPV(pvName, pvcName, volumeBindInfo)
 		v.pvNames = append(v.pvNames, pvName)
 		v.pvcNames = append(v.pvcNames, pvcName)
 	}
 
 	v.createVRG(pvcLabels)
 
-	v.verifyPVCBindingToPV()
+	// If checkBind is true, then check whether PVCs and PVs are
+	// bound. Otherwise expect them to not have been bound.
+	v.verifyPVCBindingToPV(checkBind)
 
 	return v
 }
@@ -103,7 +162,7 @@ func (v *vrgTest) createNamespace() {
 		"failed to create namespace %s", v.namespace)
 }
 
-func (v *vrgTest) createPV(pvName, claimName string) {
+func (v *vrgTest) createPV(pvName, claimName string, bindInfo corev1.PersistentVolumePhase) {
 	By("creating PV " + pvName)
 
 	capacity := corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}
@@ -158,13 +217,14 @@ func (v *vrgTest) createPV(pvName, claimName string) {
 	Expect(err).To(SatisfyAny(BeNil(), MatchError(expectedErr)),
 		"failed to create PV %s", pvName)
 
-	pv.Status.Phase = corev1.VolumeBound
+	pv.Status.Phase = bindInfo
 	err = k8sClient.Status().Update(context.TODO(), pv)
 	Expect(err).To(BeNil(),
 		"failed to update status of PV %s", pvName)
 }
 
-func (v *vrgTest) createPVC(pvcName, namespace, volumeName string, labels map[string]string) {
+func (v *vrgTest) createPVC(pvcName, namespace, volumeName string, labels map[string]string,
+	bindInfo corev1.PersistentVolumeClaimPhase) {
 	By("creating PVC " + pvcName)
 
 	capacity := corev1.ResourceList{
@@ -196,12 +256,34 @@ func (v *vrgTest) createPVC(pvcName, namespace, volumeName string, labels map[st
 	Expect(err).To(SatisfyAny(BeNil(), MatchError(expectedErr)),
 		"failed to create PVC %s", pvcName)
 
-	pvc.Status.Phase = corev1.ClaimBound
+	pvc.Status.Phase = bindInfo
 	pvc.Status.AccessModes = accessModes
 	pvc.Status.Capacity = capacity
 	err = k8sClient.Status().Update(context.TODO(), pvc)
 	Expect(err).To(BeNil(),
 		"failed to update status of PVC %s", pvcName)
+}
+
+func (v *vrgTest) bindPVAndPVC() {
+	By("Waiting for PVC to get bound to PVs for " + v.vrgName)
+
+	for i := 0; i < len(v.pvcNames); i++ {
+		// Bind PV
+		pv := v.getPV(v.pvNames[i])
+		pv.Status.Phase = corev1.VolumeBound
+		err := k8sClient.Status().Update(context.TODO(), pv)
+		Expect(err).To(BeNil(),
+			"failed to update status of PV %s", v.pvNames[i])
+
+		i := i // capture i for use in closure
+
+		// Bind PVC
+		pvc := v.getPVC(v.pvcNames[i])
+		pvc.Status.Phase = corev1.ClaimBound
+		err = k8sClient.Status().Update(context.TODO(), pvc)
+		Expect(err).To(BeNil(),
+			"failed to update status of PVC %s", v.pvcNames[i])
+	}
 }
 
 func (v *vrgTest) createVRG(pvcLabels map[string]string) {
@@ -228,7 +310,7 @@ func (v *vrgTest) createVRG(pvcLabels map[string]string) {
 		"failed to create VRG %s in %s", v.vrgName, v.namespace)
 }
 
-func (v *vrgTest) verifyPVCBindingToPV() {
+func (v *vrgTest) verifyPVCBindingToPV(checkBind bool) {
 	By("Waiting for PVC to get bound to PVs for " + v.vrgName)
 
 	for i := 0; i < len(v.pvcNames); i++ {
@@ -237,7 +319,11 @@ func (v *vrgTest) verifyPVCBindingToPV() {
 		Eventually(func() bool {
 			pvc := v.getPVC(v.pvcNames[i])
 
-			return pvc.Status.Phase == corev1.ClaimBound
+			if checkBind == true {
+				return pvc.Status.Phase == corev1.ClaimBound
+			}
+
+			return pvc.Status.Phase != corev1.ClaimBound
 		}, timeout, interval).Should(BeTrue(),
 			"while waiting for PVC %s to bind with PV %s",
 			v.pvcNames[i], v.pvNames[i])

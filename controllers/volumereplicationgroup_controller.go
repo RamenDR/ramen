@@ -78,13 +78,13 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) er
 		Complete(r)
 }
 
+// pvcPredicateFunc sends reconcile requests for create and delete events.
+// For them the filtering of whether the pvc belongs to the any of the
+// VolumeReplicationGroup CRs and identifying such a CR is done in the
+// map function by comparing namespaces and labels.
+// But for update of pvc, the reconcile request should be sent only for
+// specific changes. Do that comparison here.
 func pvcPredicateFunc() predicate.Funcs {
-	// predicate functions send reconcile requests for create and delete events.
-	// For them the filtering of whether the pvc belongs to the any of the
-	// VolumeReplicationGroup CRs and identifying such a CR is done in the
-	// map function by comparing namespaces and labels.
-	// But for update of pvc, the reconcile request should be sent only for
-	// spec changes. Do that comparison here.
 	pvcPredicate := predicate.Funcs{
 		// NOTE: Create predicate is retained, to help with logging the event
 		CreateFunc: func(e event.CreateEvent) bool {
@@ -92,11 +92,23 @@ func pvcPredicateFunc() predicate.Funcs {
 
 			log.Info("Create event for PersistentVolumeClaim")
 
-			return true
+			pvc, ok := e.Object.DeepCopyObject().(*corev1.PersistentVolumeClaim)
+			if !ok {
+				log.Info("Failed to deep copy PersistentVolumeClaim")
+
+				return false
+			}
+
+			if pvc.Status.Phase == corev1.ClaimBound {
+				return true
+			}
+
+			log.Info("pvc which got created is not bound yet. Dont requeue")
+
+			return false
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			log := ctrl.Log.WithName("pvcmap").WithName("VolumeReplicationGroup")
-
 			oldPVC, ok := e.ObjectOld.DeepCopyObject().(*corev1.PersistentVolumeClaim)
 			if !ok {
 				log.Info("Failed to deep copy older PersistentVolumeClaim")
@@ -112,22 +124,70 @@ func pvcPredicateFunc() predicate.Funcs {
 
 			log.Info("Update event for PersistentVolumeClaim")
 
-			// TODO: If finalizers change then deep equal of spec fails to catch it, we may want more
-			// conditions here, compare finalizers and also status.state to catch bound PVCs
-			return !reflect.DeepEqual(oldPVC.Spec, newPVC.Spec)
+			return updateEventDecision(oldPVC, newPVC, log)
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			log := ctrl.Log.WithName("pvcmap").WithName("VolumeReplicationGroup")
-
-			log.Info("delete event for PersistentVolumeClaim")
-
-			// PVC deletes are not of interest, as the added finalizers by VRG would be removed
-			// when VRGs are deleted, which would trigger the delete of the PVC.
+			// PVC deletion is held back till VRG deletion. This is to
+			// avoid races between subscription deletion and updating
+			// VRG state. If VRG state is not updated prior to subscription
+			// cleanup, then PVC deletion (triggered by subscription
+			// cleanup) would leaving behind VolRep resource with stale
+			// state (as per the current VRG state).
 			return false
 		},
 	}
 
 	return pvcPredicate
+}
+
+func updateEventDecision(oldPVC *corev1.PersistentVolumeClaim,
+	newPVC *corev1.PersistentVolumeClaim,
+	log logr.Logger) bool {
+	const requeue bool = true
+
+	pvcNamespacedName := types.NamespacedName{Name: newPVC.Name, Namespace: newPVC.Namespace}
+	predicateLog := log.WithValues("pvc", pvcNamespacedName.String())
+	// If finalizers change then deep equal of spec fails to catch it, we may want more
+	// conditions here, compare finalizers and also status.phase to catch bound PVCs
+	if !reflect.DeepEqual(oldPVC.Spec, newPVC.Spec) {
+		predicateLog.Info("Reconciling due to change in spec")
+
+		return requeue
+	}
+
+	if oldPVC.Status.Phase != corev1.ClaimBound && newPVC.Status.Phase == corev1.ClaimBound {
+		predicateLog.Info("Reconciling due to phase change", "oldPhase", oldPVC.Status.Phase,
+			"newPhase", newPVC.Status.Phase)
+
+		return requeue
+	}
+
+	// This check may not be needed and can lead to some
+	// unnecessary reconciles being triggered when the
+	// pod that uses this pvc gets rescheduled to some
+	// other node and pvcInUse finalizer is removed as
+	// no pod is mounting it.
+	if containsString(oldPVC.ObjectMeta.Finalizers, pvcInUse) &&
+		!containsString(newPVC.ObjectMeta.Finalizers, pvcInUse) {
+		predicateLog.Info("Reconciling due to pvc not in use")
+
+		return requeue
+	}
+
+	// If newPVC is not yet bound, dont requeue.
+	// If the newPVC is being deleted and VR protection finalizer is
+	// not there, then dont requeue.
+	// skipResult false means, the above conditions are not met.
+	if skipResult := skipPVC(newPVC, predicateLog); !skipResult {
+		predicateLog.Info("Reconciling due to VR Protection finalizer")
+
+		return requeue
+	}
+
+	predicateLog.Info("Not Requeuing", "oldPVC Phase", oldPVC.Status.Phase,
+		"newPVC phase", newPVC.Status.Phase)
+
+	return !requeue
 }
 
 func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim, log logr.Logger) []reconcile.Request {
@@ -265,6 +325,7 @@ const (
 	// Finalizers
 	vrgFinalizerName        = "volumereplicationgroups.ramendr.openshift.io/vrg-protection"
 	pvcVRFinalizerProtected = "volumereplicationgroups.ramendr.openshift.io/pvc-vr-protection"
+	pvcInUse                = "kubernetes.io/pvc-protection"
 
 	// Annotations
 	pvcVRAnnotationProtectedKey   = "volumereplicationgroups.ramendr.openshift.io/vr-protected"
@@ -340,14 +401,6 @@ func (v *VRGInstance) reconcileVRsForDeletion() bool {
 		}
 
 		if skip {
-			// Delete VR if present as we could be looping in reconcile post processing PVC for VR deletion
-			if err := v.deleteVR(pvcNamespacedName, log); err != nil {
-				log.Info("Requeuing due to failure in finalizing VolumeReplication resource for PersistentVolumeClaim",
-					"errorValue", err)
-
-				requeue = true
-			}
-
 			continue
 		}
 
@@ -371,8 +424,17 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 
 	if v.instance.Spec.ReplicationState == volrep.Secondary {
-		if v.reconcileVRAsSecondary(pvc, log) {
+		requeueResult, skip := v.reconcileVRAsSecondary(pvc, log)
+		if requeueResult {
+			log.Info("Requeuing due to failure in reconciling VolumeReplication resource as secondary")
+
 			return requeue
+		}
+
+		if skip {
+			log.Info("Skipping further processing of VolumeReplication resource as it is not ready")
+
+			return !requeue
 		}
 	} else if err := v.processVRAsPrimary(pvcNamespacedName, log); err != nil {
 		log.Info("Requeuing due to failure in getting or creating VolumeReplication resource for PersistentVolumeClaim",
@@ -520,9 +582,14 @@ func (v *VRGInstance) reconcileVRsAsSecondary() bool {
 			continue
 		}
 
-		if v.reconcileVRAsSecondary(pvc, log) {
+		requeueResult, skip = v.reconcileVRAsSecondary(pvc, log)
+		if requeueResult {
 			requeue = true
 
+			continue
+		}
+
+		if skip {
 			continue
 		}
 
@@ -534,11 +601,19 @@ func (v *VRGInstance) reconcileVRsAsSecondary() bool {
 	return requeue
 }
 
-func (v *VRGInstance) reconcileVRAsSecondary(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
-	const requeue bool = true
+func (v *VRGInstance) reconcileVRAsSecondary(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, bool) {
+	const (
+		requeue bool = true
+		skip    bool = true
+	)
 
 	if !v.isPVCReadyForSecondary(pvc, log) {
-		return requeue
+		// 1) Dont requeue as a reconcile would be
+		//    triggered when the events that indicate
+		//    pvc being ready are caught by predicate.
+		// 2) skip as this pvc is not ready for marking
+		//    VolRep as secondary.
+		return !requeue, skip
 	}
 
 	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
@@ -546,10 +621,13 @@ func (v *VRGInstance) reconcileVRAsSecondary(pvc *corev1.PersistentVolumeClaim, 
 		log.Info("Requeuing due to failure in getting or creating VolumeReplication resource for PersistentVolumeClaim",
 			"errorValue", err)
 
-		return requeue
+		// Needs a requeue. And further processing of
+		// VolRep can be skipped as processVRAsSecondary
+		// failed.
+		return requeue, skip
 	}
 
-	return !requeue
+	return !requeue, !skip
 }
 
 // isPVCReadyForSecondary checks if a PVC is ready to be marked as Secondary
@@ -564,7 +642,7 @@ func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, 
 	}
 
 	// If PVC is still in use, it is not ready for Secondary
-	if containsString(pvc.ObjectMeta.Finalizers, "kubernetes.io/pvc-protection") {
+	if containsString(pvc.ObjectMeta.Finalizers, pvcInUse) {
 		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolumeClaim is still in use")
 
 		return !ready
@@ -587,17 +665,9 @@ func (v *VRGInstance) preparePVCForVRProtection(pvc *corev1.PersistentVolumeClai
 		return !requeue, !skip
 	}
 
-	// if the PVC is not bound yet, don't proceed. If PVC is deleted, it will eventually go away
-	if pvc.Status.Phase != corev1.ClaimBound {
-		log.Info("Requeuing as PersistentVolumeClaim is not bound", "pvcPhase", pvc.Status.Phase)
-
-		return requeue, !skip
-	}
-
-	// If PVC deleted but not yet protected with a finalizer, skip it!
-	if !containsString(pvc.Finalizers, pvcVRFinalizerProtected) && !pvc.GetDeletionTimestamp().IsZero() {
-		log.Info("Skipping PersistentVolumeClaim, as it is marked for deletion and not yet protected")
-
+	// Dont requeue. There will be a reconcile request
+	// when the predicate sees that pvc is ready.
+	if skipResult := skipPVC(pvc, log); skipResult {
 		return !requeue, skip
 	}
 
@@ -633,6 +703,36 @@ func (v *VRGInstance) preparePVCForVRProtection(pvc *corev1.PersistentVolumeClai
 	}
 
 	return !requeue, !skip
+}
+
+// This function indicates whether to proceed with the pvc processing
+// or not. It mainly checks the following things.
+// - Whether pvc is bound or not. If not bound, then no need to
+//   process the pvc any further. It can be skipped until it is ready.
+// - Whether the pvc is being deleted and VR protection finalizer is
+//   not there. If the finalizer is there, then VolumeReplicationGroup
+//   need to remove the finalizer for the pvc being deleted. However,
+//   if the finalizer is not there, then no need to process the pvc
+//   any further and it can be skipped. The pvc will go away eventually.
+func skipPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
+	if pvc.Status.Phase != corev1.ClaimBound {
+		log.Info("Skipping handling of VR as PersistentVolumeClaim is not bound", "pvcPhase", pvc.Status.Phase)
+
+		return true
+	}
+
+	return isPVCDeletedAndNotProtected(pvc, log)
+}
+
+func isPVCDeletedAndNotProtected(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
+	// If PVC deleted but not yet protected with a finalizer, skip it!
+	if !containsString(pvc.Finalizers, pvcVRFinalizerProtected) && !pvc.GetDeletionTimestamp().IsZero() {
+		log.Info("Skipping PersistentVolumeClaim, as it is marked for deletion and not yet protected")
+
+		return true
+	}
+
+	return false
 }
 
 // preparePVCForVRDeletion
