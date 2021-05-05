@@ -527,7 +527,7 @@ func (a *AVRInstance) processPausedSubscription(
 	const unpause = true
 
 	// find new home cluster (could be the failover cluster)
-	newHomeCluster, err := a.findNextHomeClusterFromPlacementRule(subscription)
+	newHomeCluster, err := a.findHomeClusterFromPlacementRule(subscription)
 	if err != nil {
 		a.log.Error(err, "Failed to find new home cluster for subscription",
 			"name", subscription.Name, "newHomeCluster", newHomeCluster)
@@ -649,31 +649,34 @@ func (a *AVRInstance) cleanupAndRestore(
 
 	a.advanceToNextDRState(subscription.Name)
 
-	return unpause
+	return !unpause
 }
 
 func (a *AVRInstance) vrgManifestWorkAlreadyExists(
 	subscription *subv1.Subscription) (bool, error) {
-	if a.instance.Status.Decisions == nil {
-		return false, nil
+	// find new home cluster (could be the failover cluster)
+	homeCluster, err := a.findHomeClusterFromPlacementRule(subscription)
+	if err != nil {
+		a.log.Error(err, "Failed to find home cluster for subscription",
+			"name", subscription.Name, "HomeCluster", homeCluster)
+
+		return false, err
 	}
 
-	if d, found := a.instance.Status.Decisions[subscription.Name]; found {
-		// Skip this subscription if a manifestwork already exist for it
-		mwName := BuildManifestWorkName(subscription.Name, subscription.Namespace, MWTypeVRG)
+	// Skip this subscription if a manifestwork already exist for it
+	mwName := BuildManifestWorkName(subscription.Name, subscription.Namespace, MWTypeVRG)
 
-		mw, err := a.findManifestWork(mwName, d.HomeCluster)
-		if err != nil {
-			a.log.Error(err, "findManifestWork()", "name", subscription.Name)
+	mw, err := a.findManifestWork(mwName, homeCluster)
+	if err != nil {
+		a.log.Error(err, "findManifestWork()", "name", subscription.Name)
 
-			return false, err
-		}
+		return false, err
+	}
 
-		if mw != nil {
-			a.log.Info(fmt.Sprintf("Mainifestwork exists for subscription %s (%v)", subscription.Name, mw))
+	if mw != nil {
+		a.log.Info(fmt.Sprintf("Mainifestwork exists for subscription %s (%v)", subscription.Name, mw))
 
-			return true, nil
-		}
+		return true, nil
 	}
 
 	return false, nil
@@ -838,7 +841,7 @@ func (a *AVRInstance) processUnpausedSubscription(
 	}, nil
 }
 
-func (a *AVRInstance) findNextHomeClusterFromPlacementRule(
+func (a *AVRInstance) findHomeClusterFromPlacementRule(
 	subscription *subv1.Subscription) (string, error) {
 	a.log.Info("Finding the next home cluster for subscription", "name", subscription.Name)
 
