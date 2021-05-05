@@ -549,7 +549,6 @@ func InitialDeployment(subscriptionName, placementName, homeCluster string) (*su
 		[]string{EastManagedCluster, WestManagedCluster})
 
 	placementRule := createPlacementRule(placementName, subscription.Namespace)
-
 	avr := createAVR(ApplicationVolumeReplicationName, ApplicationVolumeReplicationNamespaceName)
 
 	return subscription, placementRule, avr
@@ -675,6 +674,7 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				By("Initial Deployment")
 				safeToProceed = false
 				subscription, placementRule, avr = InitialDeployment("subscription-4", "sub-placement-rule", EastManagedCluster)
+				updatePlacementRuleStatus(placementRule, EastManagedCluster)
 				verifyVRGManifestWorkCreatedAsExpected(subscription, EastManagedCluster)
 				updateManifestWorkStatus(subscription.Name, subscription.Namespace, EastManagedCluster, "vrg")
 				verifyAVRStatusExpectation(subscription, EastManagedCluster, WestManagedCluster, "", rmn.Initial)
