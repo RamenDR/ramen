@@ -127,6 +127,7 @@ type ApplicationVolumeReplicationStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=avr
 
 // ApplicationVolumeReplication is the Schema for the applicationvolumereplications API
 type ApplicationVolumeReplication struct {
