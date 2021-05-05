@@ -13,9 +13,9 @@ spec:
     kind: ApplicationVolumeReplication
     listKind: ApplicationVolumeReplicationList
     plural: applicationvolumereplications
-    singular: applicationvolumereplication
     shortNames:
     - avr
+    singular: applicationvolumereplication
   scope: Namespaced
   versions:
   - name: v1alpha1
