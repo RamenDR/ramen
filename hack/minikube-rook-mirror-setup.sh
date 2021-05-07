@@ -1,6 +1,7 @@
 #!/bin/bash
 set -x
 set -e -o pipefail
+scriptdir="$(dirname "$(realpath "$0")")"
 
 ## Variables
 PRIMARY_CLUSTER="${PRIMARY_CLUSTER:-hub}"
@@ -46,9 +47,13 @@ echo SECONDARY_CLUSTER_PEER_TOKEN_SECRET_NAME is "$SECONDARY_CLUSTER_PEER_TOKEN_
 echo Token for the secondary cluster is "$SECONDARY_CLUSTER_SECRET"
 echo SECONDARY_CLUSTER_SITE_NAME is "${SECONDARY_CLUSTER_SITE_NAME}"
 
-kubectl -n rook-ceph create secret generic --context="${PRIMARY_CLUSTER}" "${SECONDARY_CLUSTER_SITE_NAME}" \
-        --from-literal=token="${SECONDARY_CLUSTER_SECRET}" \
-        --from-literal=pool="${POOL_NAME}"
+MIRROR_SECRET_YAML=$(mktemp --suffix .yaml)
+cp "${scriptdir}/rook-mirror-secret-template.yaml" "${MIRROR_SECRET_YAML}"
+sed -e "s,<name>,${SECONDARY_CLUSTER_SITE_NAME}," -i "${MIRROR_SECRET_YAML}"
+sed -e "s,<poolname>,${POOL_NAME}," -i "${MIRROR_SECRET_YAML}"
+sed -e "s,<token>,${SECONDARY_CLUSTER_SECRET}," -i "${MIRROR_SECRET_YAML}"
+kubectl apply -f "${MIRROR_SECRET_YAML}" --context="${PRIMARY_CLUSTER}"
+rm -f "${MIRROR_SECRET_YAML}"
 
 cat <<EOF | kubectl --context="${PRIMARY_CLUSTER}" apply -f -
 apiVersion: ceph.rook.io/v1

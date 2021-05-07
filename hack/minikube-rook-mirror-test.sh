@@ -8,6 +8,25 @@ SECONDARY_CLUSTER="${SECONDARY_CLUSTER:-cluster1}"
 STORAGECLASS_NAME="rook-ceph-block"
 PVC_NAME="rbd-pvc"
 
+function wait_for_condition() {
+    local count=15
+    local condition=${1}
+    local result
+    shift
+
+    while ((count > 0)); do
+        result=$("${@}")
+        if [[ "$result" == "$condition" ]]; then
+            return 0
+        fi
+        count=$((count - 1))
+        sleep 5
+    done
+
+    echo "Failed to meet $condition for command $*"
+    exit 1
+}
+
 ## Usage
 usage()
 {
@@ -34,6 +53,8 @@ spec:
   storageClassName: "${STORAGECLASS_NAME}"
 EOF
 
+wait_for_condition "Bound" kubectl get pvc "${PVC_NAME}" --context="${PRIMARY_CLUSTER}" -o jsonpath='{.status.phase}'
+
 cat <<EOF | kubectl --context="${PRIMARY_CLUSTER}" apply -f -
 apiVersion: replication.storage.openshift.io/v1alpha1
 kind: VolumeReplication
@@ -41,14 +62,13 @@ metadata:
   name: vr-sample
 spec:
   volumeReplicationClass: vrc-sample
-  replicationState: Primary
+  replicationState: primary
   dataSource:
     kind: PersistentVolumeClaim
     name: "${PVC_NAME}"
 EOF
 
-echo Sleeping...
-sleep 20
+wait_for_condition "Primary" kubectl get volumereplication vr-sample --context="${PRIMARY_CLUSTER}" -o jsonpath='{.status.state}'
 
 RBD_IMAGE_NAME=$(kubectl --context="${PRIMARY_CLUSTER}" get pv/"$(kubectl --context="${PRIMARY_CLUSTER}" get pvc/"${PVC_NAME}" -o jsonpath="{.spec.volumeName}")" -o jsonpath="{.spec.csi.volumeAttributes.imageName}")
 echo RBD_IMAGE_NAME is "${RBD_IMAGE_NAME}"
