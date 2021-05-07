@@ -2,6 +2,8 @@
 set -x
 set -e -o pipefail
 
+scriptdir="$(dirname "$(realpath "$0")")"
+
 ## Variables
 PROFILE="${PROFILE:-hub}"
 POOL_NAME="minikube"
@@ -16,12 +18,12 @@ usage()
 {
 	set +x
 	echo "Usage:"
-	echo "  $0 [create|start|stop|delete]"
+	echo "  $0 {create|start|stop|delete}"
 	echo "  Available environment variables:"
 	echo "    minikube PROFILE ${PROFILE}"
 	echo "    minikube kvm2 image dir IMAGE_DIR ${IMAGE_DIR}"
 	echo "    rook source ROOK_SRC ${ROOK_SRC}"
-	exit 0
+	exit 1
 }
 
 function wait_for_ssh() {
@@ -34,6 +36,25 @@ function wait_for_ssh() {
         sleep 1
     done
     echo ERROR: ssh did not come up >&2
+    exit 1
+}
+
+function wait_for_condition() {
+    local count=15
+    local condition=${1}
+    local result
+    shift
+
+    while ((count > 0)); do
+        result=$("${@}")
+        if [[ "$result" == "$condition" ]]; then
+            return 0
+        fi
+        count=$((count - 1))
+        sleep 5
+    done
+
+    echo "Failed to meet $condition for command $*"
     exit 1
 }
 
@@ -86,17 +107,21 @@ minikube ssh 'echo 1 | sudo tee /sys/bus/pci/rescan > /dev/null ; dmesg | grep v
 kubectl apply -f "${ROOK_SRC}/common.yaml" --context="${PROFILE}"
 kubectl apply -f "${ROOK_SRC}/crds.yaml" --context="${PROFILE}"
 # Fetch operator.yaml and enable CSI volume replication
-wget "${ROOK_SRC}/operator.yaml" -O /tmp/operator.yaml
-sed -e 's,CSI_ENABLE_VOLUME_REPLICATION: "false",CSI_ENABLE_VOLUME_REPLICATION: "true",' -i /tmp/operator.yaml
-sed -e 's,# CSI_VOLUME_REPLICATION_IMAGE: "quay.io/csiaddons/volumereplication-operator:v0.1.0",CSI_VOLUME_REPLICATION_IMAGE: "quay.io/csiaddons/volumereplication-operator:latest",' -i /tmp/operator.yaml
-sed -e 's,# CSI_ENABLE_OMAP_GENERATOR: "false",CSI_ENABLE_OMAP_GENERATOR: "true",' -i /tmp/operator.yaml
-kubectl apply -f /tmp/operator.yaml --context="${PROFILE}"
+TMP_OPERATOR_YAML=$(mktemp --suffix .yaml)
+wget "${ROOK_SRC}/operator.yaml" -O "${TMP_OPERATOR_YAML}"
+sed -e 's,CSI_ENABLE_VOLUME_REPLICATION: "false",CSI_ENABLE_VOLUME_REPLICATION: "true",' -i "${TMP_OPERATOR_YAML}"
+sed -e 's,# CSI_VOLUME_REPLICATION_IMAGE: "quay.io/csiaddons/volumereplication-operator:v0.1.0",CSI_VOLUME_REPLICATION_IMAGE: "quay.io/csiaddons/volumereplication-operator:latest",' -i "${TMP_OPERATOR_YAML}"
+sed -e 's,# CSI_ENABLE_OMAP_GENERATOR: "false",CSI_ENABLE_OMAP_GENERATOR: "true",' -i "${TMP_OPERATOR_YAML}"
+kubectl apply -f "${TMP_OPERATOR_YAML}" --context="${PROFILE}"
+rm -f "${TMP_OPERATOR_YAML}"
 # Create a dev ceph cluster
-kubectl apply -f ./dev-rook-cluster.yaml --context="${PROFILE}"
+kubectl apply -f "${scriptdir}/dev-rook-cluster.yaml" --context="${PROFILE}"
 kubectl apply -f "${ROOK_SRC}/toolbox.yaml" --context="${PROFILE}"
 
 # Create a mirroring enabled RBD pool
-kubectl apply -f ./dev-rook-rbdpool.yaml --context="${PROFILE}"
+kubectl apply -f "${scriptdir}/dev-rook-rbdpool.yaml" --context="${PROFILE}"
 
-# Ensure all deployments are up and running
-kubectl -n rook-ceph wait deployments --all --for condition=available --timeout=300s --context "${PROFILE}"
+# Ensure the pool is created and ready
+wait_for_condition "Ready" kubectl get cephblockpool -n rook-ceph replicapool -o jsonpath='{.status.phase}' --context="${PROFILE}"
+wait_for_condition "pool-peer-token-replicapool" kubectl get cephblockpool -n rook-ceph replicapool -o jsonpath='{.status.info.rbdMirrorBootstrapPeerSecretName}' --context="${PROFILE}"
+echo Setup succesful!
