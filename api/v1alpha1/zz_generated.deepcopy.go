@@ -21,7 +21,6 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -89,11 +88,6 @@ func (in *ApplicationVolumeReplicationSpec) DeepCopyInto(out *ApplicationVolumeR
 	*out = *in
 	in.SubscriptionSelector.DeepCopyInto(&out.SubscriptionSelector)
 	out.DRClusterPeersRef = in.DRClusterPeersRef
-	if in.Placement != nil {
-		in, out := &in.Placement, &out.Placement
-		*out = new(v1.Placement)
-		(*in).DeepCopyInto(*out)
-	}
 	in.PVCSelector.DeepCopyInto(&out.PVCSelector)
 }
 

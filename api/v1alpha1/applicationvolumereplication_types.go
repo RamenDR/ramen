@@ -17,7 +17,6 @@ limitations under the License.
 package v1alpha1
 
 import (
-	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -50,9 +49,6 @@ type ApplicationVolumeReplicationSpec struct {
 
 	// DRClusterPeersRef is the reference to the DRClusterPeers participating in the DR replication for this AVR
 	DRClusterPeersRef DRClusterPeersReference `json:"drClusterPeersRef"`
-
-	// Placement is used to subscriptions placements
-	Placement *plrv1.Placement `json:"placement,omitempty"`
 
 	// Label selector to identify all the PVCs that need DR protection.
 	// This selector is assumed to be the same for all subscriptions that
