@@ -90,11 +90,6 @@ func (in *ApplicationVolumeReplicationSpec) DeepCopyInto(out *ApplicationVolumeR
 	*out = *in
 	in.SubscriptionSelector.DeepCopyInto(&out.SubscriptionSelector)
 	out.DRClusterPeersRef = in.DRClusterPeersRef
-	if in.Placement != nil {
-		in, out := &in.Placement, &out.Placement
-		*out = new(v1.Placement)
-		(*in).DeepCopyInto(*out)
-	}
 	in.PVCSelector.DeepCopyInto(&out.PVCSelector)
 }
 
