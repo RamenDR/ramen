@@ -149,15 +149,14 @@ func (s FakePVDownloader) DownloadPVs(ctx context.Context, r client.Reader,
 	return pvList, nil
 }
 
-func createSubscription(name, namespace, pause string) *subv1.Subscription {
+func createSubscription(name, namespace string) *subv1.Subscription {
 	subscription := &subv1.Subscription{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 			Labels: map[string]string{
-				"app":                        "myApp",
-				"ramendr":                    "protected",
-				subv1.LabelSubscriptionPause: pause,
+				"app":     "myApp",
+				"ramendr": "protected",
 			},
 		},
 		Spec: subv1.SubscriptionSpec{
@@ -504,7 +503,7 @@ func updateManifestWorkStatus(name, namespace, clusterNamespace, mwType string) 
 		err := k8sClient.Get(context.TODO(), manifestLookupKey, createdManifest)
 
 		return err == nil
-	}, timeout, interval).Should(BeTrue(), "failed to wait for manifest creation")
+	}, timeout, interval).Should(BeTrue(), fmt.Sprintf("failed to wait for manifest creation for type %s", mwType))
 
 	timeOld := time.Now().Local()
 	timeMostRecent := timeOld.Add(time.Second)
@@ -534,7 +533,7 @@ func InitialDeployment(subscriptionName, placementName, homeCluster string) (*su
 	*plrv1.PlacementRule, *rmn.ApplicationVolumeReplication) {
 	createNamespaces()
 
-	subscription := createSubscription(subscriptionName, "app-namespace", "False")
+	subscription := createSubscription(subscriptionName, "app-namespace")
 	updateSubscriptionStatus(subscription, homeCluster)
 
 	subLookupKey := types.NamespacedName{Name: subscription.Name, Namespace: subscription.Namespace}
@@ -687,7 +686,7 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				waitForCompletion()
 			})
 		})
-		When("Subscription is paused for failover", func() {
+		When("DRAction changes to failover", func() {
 			It("Should failover to WestManagedCluster", func() {
 				// ----------------------------- FAILOVER --------------------------------------
 				By("\n\n*** Failover - 1\n\n")
@@ -708,7 +707,7 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				waitForCompletion()
 			})
 		})
-		When("Subscription is paused for failover for the second time", func() {
+		When("AVR Reconciler is called to failover the second time", func() {
 			It("Should NOT do anything", func() {
 				By("\n\n*** Failover - 2: NOOP\n\n")
 				safeToProceed = false
@@ -723,7 +722,7 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				waitForCompletion()
 			})
 		})
-		When("Subscription is paused for failback", func() {
+		When("DRAction is set to failback", func() {
 			It("Should failback to EastManagedCluster", func() {
 				// ----------------------------- FAILBACK --------------------------------------
 				By("\n\n*** Failback - 1\n\n")
@@ -744,7 +743,7 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				waitForCompletion()
 			})
 		})
-		When("Subscription is paused for failback for the second time", func() {
+		When("AVR Reconciler is called to failback for the second time", func() {
 			It("Should NOT do anything", func() {
 				By("\n\n*** Failback - 2: NOOP\n\n")
 				safeToProceed = false
@@ -759,7 +758,7 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				waitForCompletion()
 			})
 		})
-		When("Subscription is paused for failover after failback", func() {
+		When("DRAction is changed to failover after failback", func() {
 			It("Should failover to the WestManagedCluster", func() {
 				// ----------------------------- FAILOVER --------------------------------------
 				By("\n\n*** Failover - 3\n\n")
