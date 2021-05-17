@@ -20,16 +20,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// DRAction that will be taken by Ramen when a subscription is paused
+// DRAction which will be either a failover or failback action
 // +kubebuilder:validation:Enum=Failover;Failback
 type DRAction string
 
 // These are the valid values for DRAction
 const (
-	// Failover, restore PVs to the new home cluster, and unpause subscription
+	// Failover, restore PVs to the new home cluster and updates PlRule to it
 	ActionFailover DRAction = "Failover"
 
-	// Failback, restore PVs to the original home cluster, and unpause subscription
+	// Failback, restore PVs to the original home cluster and updates PlRule to it
 	ActionFailback DRAction = "Failback"
 )
 
