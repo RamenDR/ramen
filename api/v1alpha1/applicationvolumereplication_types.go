@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -26,11 +27,15 @@ type DRAction string
 
 // These are the valid values for DRAction
 const (
-	// Failover, restore PVs to the new home cluster and updates PlRule to it
+	// Failover, restore PVs to the TargetCluster
 	ActionFailover DRAction = "Failover"
 
-	// Failback, restore PVs to the original home cluster and updates PlRule to it
+	// Failback, restore PVs to the PreferredCluster
 	ActionFailback DRAction = "Failback"
+
+	// Relocate, restore PVs to the designated TargetCluster.  PreferredCluster will change
+	// to be the TargetCluster.
+	ActionRelocate DRAction = "Relocate"
 )
 
 // DRClusterPeersReference holds a reference to DRClusterPeers
@@ -43,12 +48,18 @@ type DRClusterPeersReference struct {
 
 // ApplicationVolumeReplicationSpec defines the desired state of ApplicationVolumeReplication
 type ApplicationVolumeReplicationSpec struct {
-	// Label selector to identify all the subscriptions that belong to an application that
-	// needs DR protection. This selection is needed to select subscriptions on the hub
-	SubscriptionSelector metav1.LabelSelector `json:"subscriptionSelector"`
+	// Placement is used by AVR
+	Placement *plrv1.Placement `json:"placement"`
 
 	// DRClusterPeersRef is the reference to the DRClusterPeers participating in the DR replication for this AVR
 	DRClusterPeersRef DRClusterPeersReference `json:"drClusterPeersRef"`
+
+	// PreferredCluster is the cluster name that the user preferred to run the application on
+	PreferredCluster string `json:"preferredCluster,omitempty"`
+
+	// FailoverCluster is the cluster name that the user wants to failover the application to.
+	// If not sepcified, then the AVR will select the surviving cluster from the DRClusterPeers
+	FailoverCluster string `json:"failoverCluster,omitempty"`
 
 	// Label selector to identify all the PVCs that need DR protection.
 	// This selector is assumed to be the same for all subscriptions that
@@ -74,51 +85,49 @@ type ApplicationVolumeReplicationSpec struct {
 	Action DRAction `json:"action,omitempty"`
 }
 
-// DRState for each subscription
+// DRState for keeping track of the DR placement
 // +kubebuilder:validation:Enum=Initial;Failing-over;Failed-over;Failing-back;Failed-back
 type DRState string
 
 // These are the valid values for DRState
 const (
 	// Initial, this is the state that will be recorded in the AVR status
-	// when initial deplyment has been performed successfully (per subscription)
+	// when initial deplyment has been performed successfully
 	Initial DRState = "Initial"
 
-	// FailingOver, state recorded in the AVR status per subscription when the failover
+	// FailingOver, state recorded in the AVR status when the failover
 	// is initiated but has not been completed yet
 	FailingOver DRState = "Failing-over"
 
-	// FailedOver, state recorded in the AVR status per subscription when the failover
+	// FailedOver, state recorded in the AVR status when the failover
 	// process has completed
 	FailedOver DRState = "Failed-over"
 
-	// FailingBack, state recorded in the AVR status per subscription when the failback
+	// FailingBack, state recorded in the AVR status when the failback
 	// is initiated but has not been completed yet
 	FailingBack DRState = "Failing-back"
 
-	// FailedBack, state recorded in the AVR status per subscription when the failback
+	// FailedBack, state recorded in the AVR status when the failback
 	// process has completed
 	FailedBack DRState = "Failed-back"
+
+	Relocating DRState = "Relocating"
+
+	Relocated DRState = "Relocated"
 )
 
-// LastKnownDRStateMap defines per subscription the last state, key is subscription name
-type LastKnownDRStateMap map[string]DRState
-
-// SubscriptionPlacementDecision lists each subscription with its home and peer clusters
-type SubscriptionPlacementDecision struct {
-	HomeCluster     string `json:"homeCluster,omitempty"`
-	PeerCluster     string `json:"peerCluster,omitempty"`
-	PrevHomeCluster string `json:"prevHomeCluster,omitempty"`
+// PlacementDecision holds references to the current successful placement
+type PlacementDecision struct {
+	HomeCluster          string `json:"homeCluster,omitempty"`
+	PeerCluster          string `json:"peerCluster,omitempty"`
+	PreferredHomeCluster string `json:"preferredHomeCluster,omitempty"`
 }
-
-// SubscriptionPlacementDecisionMap defines per subscription placement decision, key is subscription name
-type SubscriptionPlacementDecisionMap map[string]*SubscriptionPlacementDecision
 
 // ApplicationVolumeReplicationStatus defines the observed state of ApplicationVolumeReplication
 type ApplicationVolumeReplicationStatus struct {
-	Decisions         SubscriptionPlacementDecisionMap `json:"decisions,omitempty"`
-	LastKnownDRStates LastKnownDRStateMap              `json:"lastKnownDRStates,omitempty"`
-	LastUpdateTime    metav1.Time                      `json:"lastUpdateTime"`
+	Decision         PlacementDecision `json:"decisions,omitempty"`
+	LastKnownDRState DRState           `json:"lastKnownDRState,omitempty"`
+	LastUpdateTime   metav1.Time       `json:"lastUpdateTime"`
 }
 
 // +kubebuilder:object:root=true
