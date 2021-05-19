@@ -15,12 +15,15 @@ package controllers_test
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/ghodss/yaml"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -30,6 +33,7 @@ import (
 	subv1 "github.com/open-cluster-management/multicloud-operators-subscription/pkg/apis/apps/v1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
+	fndv2 "github.com/tjanssen3/multicloud-operators-foundation/v2/pkg/apis/view/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 )
@@ -235,6 +239,86 @@ func pauseSubscription(subscription *subv1.Subscription) {
 
 		return err == nil && newSubscription.GetLabels()[subv1.LabelSubscriptionPause] == "true"
 	}, timeout, interval).Should(BeTrue(), "failed to update subscription label to 'Pause'")
+}
+
+func createManagedClusterView(name, namespace string) *fndv2.ManagedClusterView {
+	mcv := &fndv2.ManagedClusterView{
+
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: fndv2.ViewSpec{
+			Scope: fndv2.ViewScope{
+				// intentionally blank
+			},
+		},
+	}
+
+	err := k8sClient.Create(context.TODO(), mcv)
+	if err != nil {
+		if errors.IsAlreadyExists(err) {
+			err = k8sClient.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, mcv)
+		}
+	}
+
+	Expect(err).NotTo(HaveOccurred())
+
+	return mcv
+}
+
+// create a VRG, then fake ManagedClusterView results
+func updateManagedClusterViewWithVRG(mcv *fndv2.ManagedClusterView, status metav1.ConditionStatus) {
+	vrg := &rmn.VolumeReplicationGroup{
+		TypeMeta:   metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "test-vrg", Namespace: "test"},
+		Spec: rmn.VolumeReplicationGroupSpec{
+			VolumeReplicationClass: "volume-rep-class",
+			ReplicationState:       "Primary",
+			PVCSelector: metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"appclass":    "gold",
+					"environment": "dev.AZ1",
+				},
+			},
+			S3Endpoint:   "path/to/s3Endpoint",
+			S3SecretName: "SecretName",
+		},
+	}
+
+	updateManagedClusterView(mcv, vrg, status)
+}
+
+// take an existing ManagedClusterView and apply the given resource to it as though it were "found"
+func updateManagedClusterView(mcv *fndv2.ManagedClusterView, resource interface{}, status metav1.ConditionStatus) {
+	// get raw bytes
+	objJSON, err := json.Marshal(resource)
+
+	Expect(err).NotTo(HaveOccurred())
+
+	// update Status, Result fields
+	reason := fndv2.ReasonGetResource
+	if status != metav1.ConditionTrue {
+		reason = fndv2.ReasonGetResourceFailed
+	}
+
+	mcv.Status = fndv2.ViewStatus{
+		Conditions: []metav1.Condition{
+			{
+				Type:               fndv2.ConditionViewProcessing,
+				LastTransitionTime: metav1.Time{Time: time.Now().Local()},
+				Status:             status,
+				Reason:             reason,
+			},
+		},
+		Result: runtime.RawExtension{
+			Raw: objJSON,
+		},
+	}
+
+	err = k8sClient.Status().Update(context.TODO(), mcv)
+
+	Expect(err).NotTo(HaveOccurred())
 }
 
 func createPlacementRule(name, namespace string) *plrv1.PlacementRule {
@@ -577,6 +661,10 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				// ----------------------------- FAILOVER --------------------------------------
 				By("\n\n*** Failover - 1\n\n")
 				safeToProceed = false
+
+				mcv := createManagedClusterView("mcv-avr-reconciler", WestManagedCluster)
+				updateManagedClusterViewWithVRG(mcv, metav1.ConditionTrue)
+
 				pauseSubscription(subscription)
 				expectSubscriptionIsPaused(subscription)
 				updatePlacementRuleStatus(placementRule, WestManagedCluster)
@@ -611,6 +699,10 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				// ----------------------------- FAILBACK --------------------------------------
 				By("\n\n*** Failback - 1\n\n")
 				safeToProceed = false
+
+				mcv := createManagedClusterView("mcv-avr-reconciler", EastManagedCluster)
+				updateManagedClusterViewWithVRG(mcv, metav1.ConditionTrue)
+
 				pauseSubscription(subscription)
 				expectSubscriptionIsPaused(subscription)
 				updatePlacementRuleStatus(placementRule, EastManagedCluster)
@@ -657,6 +749,28 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // MW for ROLES
 				waitForCompletion()
 			})
+		})
+		It("Should not unpause without valid ManagedClusterView", func() {
+			// ----------------------------- FAILOVER --------------------------------------
+			By("\n\n*** Failover - 1\n\n")
+			safeToProceed = false
+
+			mcv := createManagedClusterView("mcv-avr-reconciler", WestManagedCluster)
+			updateManagedClusterViewWithVRG(mcv, metav1.ConditionFalse)
+
+			pauseSubscription(subscription)
+			expectSubscriptionIsPaused(subscription)
+			updatePlacementRuleStatus(placementRule, WestManagedCluster)
+			updateSubscriptionStatus(subscription, WestManagedCluster)
+			setAVRSpecExpectationTo(avr, subscription.Name, "", rmn.ActionFailover)
+			updateManifestWorkStatus(subscription.Name, subscription.Namespace, WestManagedCluster, "pv")
+			updateManifestWorkStatus(subscription.Name, subscription.Namespace, WestManagedCluster, "vrg")
+			verifyAVRStatusExpectation(subscription, WestManagedCluster, EastManagedCluster, EastManagedCluster, rmn.FailedOver)
+			Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(3)) // MW for VRG+ROLES+PV
+			Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // MW for ROLES
+
+			// should still be paused because a valid ManagedClusterView hasn't been found
+			expectSubscriptionIsPaused(subscription)
 		})
 	})
 	Context("IsManifestInAppliedState checks ManifestWork with single timestamp", func() {

@@ -1,0 +1,18 @@
+# This will create a ManagedClusterView on the hub that looks for a PVC named 'pv1' on managed cluster 'cluster1'
+# This contains a lot of commented-out fields - this is for reference when creating your own ManagedClusterViews
+apiVersion: view.open-cluster-management.io/v1beta1
+kind: ManagedClusterView
+metadata:
+  name: olm-test-1
+  #  labels:   # OPTIONAL: define label matching scheme for clusters here
+  # managed-cluster: "true"
+  # namespace: cluster1  # Namespace: look for resource (defined in spec.scope) in managed cluster with name <namespace>. Note PVs, PVCs won't use this.
+spec:
+  scope:
+    #apiGroup: apps/v1  # OPTIONAL: use with Kind, Version
+    #kind: PersistentVolume  # OPTIONAL: use with APIGroup, Version
+    #version: v1  # OPTIONAL: use with Kind, APIGroup
+    resource: Deployment  # OPTIONAL: type of resource to look for (alternative: use Kind+APIGroup+Version)
+    name: olm-operator  # REQUIRED: name of resource to look for
+    namespace: olm  # OPTIONAL: namespace of resource on managedcluster
+    #updateIntervalSeconds: 1  # OPTIONAL: update interval for resource query
