@@ -37,6 +37,7 @@ import (
 	subv1 "github.com/open-cluster-management/multicloud-operators-subscription/pkg/apis"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	ramencontrollers "github.com/ramendr/ramen/controllers"
+	fndv2 "github.com/tjanssen3/multicloud-operators-foundation/v2/pkg/apis/view/v1beta1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -83,6 +84,9 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	err = ramendrv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = fndv2.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = volrep.AddToScheme(scheme.Scheme)

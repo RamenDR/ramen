@@ -25,6 +25,8 @@ import (
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	subv1 "github.com/open-cluster-management/multicloud-operators-subscription/pkg/apis/apps/v1"
+	fndv2 "github.com/tjanssen3/multicloud-operators-foundation/v2/pkg/apis/view/v1beta1"
+
 	uberzap "go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -53,6 +55,7 @@ func init() {
 	utilruntime.Must(plrv1.AddToScheme(scheme))
 	utilruntime.Must(ocmworkv1.AddToScheme(scheme))
 	utilruntime.Must(spokeClusterV1.AddToScheme(scheme))
+	utilruntime.Must(fndv2.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 

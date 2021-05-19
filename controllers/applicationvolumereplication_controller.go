@@ -29,6 +29,7 @@ import (
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	"github.com/open-cluster-management/multicloud-operators-placementrule/pkg/utils"
 	subv1 "github.com/open-cluster-management/multicloud-operators-subscription/pkg/apis/apps/v1"
+	fndv2 "github.com/tjanssen3/multicloud-operators-foundation/v2/pkg/apis/view/v1beta1"
 
 	"github.com/go-logr/logr"
 	errorswrapper "github.com/pkg/errors"
@@ -134,15 +135,17 @@ func getMostRecentConditions(conditions []metav1.Condition) []metav1.Condition {
 		return conditions[b].LastTransitionTime.Before(&conditions[a].LastTransitionTime)
 	})
 
-	mostRecentTimestamp := conditions[0].LastTransitionTime
+	if len(conditions) > 0 {
+		mostRecentTimestamp := conditions[0].LastTransitionTime
 
-	// loop through conditions until not in the most recent one anymore
-	for index := range conditions {
-		// only keep conditions with most recent timestamp
-		if conditions[index].LastTransitionTime == mostRecentTimestamp {
-			recentConditions = append(recentConditions, conditions[index])
-		} else {
-			break
+		// loop through conditions until not in the most recent one anymore
+		for index := range conditions {
+			// only keep conditions with most recent timestamp
+			if conditions[index].LastTransitionTime == mostRecentTimestamp {
+				recentConditions = append(recentConditions, conditions[index])
+			} else {
+				break
+			}
 		}
 	}
 
@@ -417,7 +420,53 @@ func (a *AVRInstance) processPausedSubscription(
 		return IsManifestInAppliedState(pvMW)
 	}
 
+	ready := a.reconciler.isManagedClusterReadyForFailback(subscription, newHomeCluster)
+	a.reconciler.Log.Info(newHomeCluster, "is ready for failback:", ready)
+
+	if !ready {
+		return !unpause
+	}
+
 	return a.cleanupAndRestore(subscription, newHomeCluster)
+}
+
+func (r *ApplicationVolumeReplicationReconciler) isManagedClusterReadyForFailback(
+	subscription *subv1.Subscription, newHomeCluster string) bool {
+	ready := false
+
+	// get VRG and verify status through ManagedClusterView
+	mcvMeta := metav1.ObjectMeta{
+		Name:      "mcv-avr-reconciler",
+		Namespace: newHomeCluster,
+	}
+
+	mcvViewscope := fndv2.ViewScope{
+		Resource:  "VolumeReplicationGroup",
+		Name:      subscription.Name,
+		Namespace: subscription.Namespace,
+	}
+
+	vrg := &rmn.VolumeReplicationGroup{}
+
+	err := r.getManagedClusterResource(mcvMeta, mcvViewscope, vrg)
+
+	if err == nil {
+		r.Log.Info("getManagedClusterResource success")
+		ready = r.isVRGReadyForFailover(vrg)
+	} else {
+		r.Log.Info("getManagedClusterResource failed with error:", err)
+	}
+
+	return ready
+}
+
+func (r *ApplicationVolumeReplicationReconciler) isVRGReadyForFailover(
+	vrg *rmn.VolumeReplicationGroup) bool {
+	ready := true
+
+	// TODO: really validate VRG status here
+
+	return ready
 }
 
 func (a *AVRInstance) cleanupAndRestore(
@@ -1064,6 +1113,83 @@ func (a *AVRInstance) updateAVRStatus() error {
 	a.log.Info(fmt.Sprintf("Updated AVR Status %+v", a.instance.Status))
 
 	return nil
+}
+
+/*
+Description: create a new ManagedClusterView object, or update the existing one with the same name.
+Requires:
+	1) meta: specifies MangedClusterView name and managed cluster search information
+	2) viewscope: once the managed cluster is found, use this information to find the resource.
+		Optional params: Namespace, Resource, Group, Version, Kind. Resource can be used by itself, Kind requires Version
+Returns: ManagedClusterView, error
+*/
+func (r *ApplicationVolumeReplicationReconciler) createOrGetManagedClusterView(
+	meta metav1.ObjectMeta, viewscope fndv2.ViewScope) (*fndv2.ManagedClusterView, error) {
+	mcv := &fndv2.ManagedClusterView{
+		ObjectMeta: meta,
+		Spec: fndv2.ViewSpec{
+			Scope: viewscope,
+		},
+	}
+
+	err := r.Create(context.TODO(), mcv)
+	errorDescription := ""
+
+	if errors.IsAlreadyExists(err) {
+		err = r.Get(context.TODO(), types.NamespacedName{Name: meta.Name, Namespace: meta.Namespace}, mcv)
+
+		if err != nil {
+			errorDescription = "failed to get existing ManagedClusterView"
+		} else {
+			mcv.Spec.Scope = viewscope // update scope to match input
+		}
+	} else {
+		errorDescription = "failed to create ManagedClusterView"
+	}
+
+	return mcv, errorswrapper.Wrap(err, errorDescription)
+}
+
+/*
+Description: queries a managed cluster for a resource type, and populates a variable with the results.
+Requires:
+	1) meta: information of the new/existing resource; defines which cluster(s) to search
+	2) viewscope: query information for managed cluster resource. Example: resource, name.
+	3) interface: empty variable to populate results into
+Returns: error if encountered (nil if no error occurred). See results on interface object.
+*/
+func (r *ApplicationVolumeReplicationReconciler) getManagedClusterResource(
+	meta metav1.ObjectMeta, viewscope fndv2.ViewScope, resource interface{}) error {
+	// create MCV first
+	mcv, err := r.createOrGetManagedClusterView(meta, viewscope)
+	if err != nil {
+		err = fmt.Errorf("could not get or create ManagedClusterView")
+
+		return errorswrapper.Wrap(err, "getManagedClusterResource failed")
+	}
+
+	// get query results
+	gotResource := false
+	err = fmt.Errorf("failed to find a resource with ManagedClusterView")
+
+	recentConditions := filterByConditionStatus(getMostRecentConditions(mcv.Status.Conditions), metav1.ConditionTrue)
+
+	if len(mcv.Status.Conditions) > 0 {
+		for _, condition := range recentConditions {
+			if !gotResource && condition.Type == fndv2.ConditionViewProcessing {
+				// convert raw data to usable object
+				err = json.Unmarshal(mcv.Status.Result.Raw, resource)
+
+				if err == nil {
+					gotResource = true
+				} else {
+					err = fmt.Errorf("failed to Unmarshal data from ManagedClusterView to resource")
+				}
+			}
+		}
+	}
+
+	return errorswrapper.Wrap(err, "getManagedClusterResource results")
 }
 
 func (a *AVRInstance) listPVsFromS3Store(
