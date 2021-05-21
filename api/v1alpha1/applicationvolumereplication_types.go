@@ -111,9 +111,9 @@ const (
 	// process has completed
 	FailedBack DRState = "Failed-back"
 
+	// TODO: implement the relocation
 	Relocating DRState = "Relocating"
-
-	Relocated DRState = "Relocated"
+	Relocated  DRState = "Relocated"
 )
 
 // PlacementDecision holds references to the current successful placement
