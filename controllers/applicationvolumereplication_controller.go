@@ -451,6 +451,8 @@ func (a *AVRInstance) processPlacement() bool {
 	a.log.Info(fmt.Sprintf("AVR (%+v)", a.instance))
 	a.log.Info(fmt.Sprintf("Made a decision %+v. Requeue? %v", a.instance.Status.Decision, requeue))
 
+	a.advanceToNextDRState()
+
 	return requeue
 }
 
@@ -464,24 +466,28 @@ func (a *AVRInstance) runPrerequisitesForUserAction() (bool, error) {
 		return a.runRelocatePrerequisites()
 	}
 
-	// Neither failover nor failback
+	// Not a failover, a failback, or a relocation.  Must be an initial deployement.
+	a.resetDRState()
+
 	return true, nil
 }
 
 func (a *AVRInstance) runFailoverPrerequisites() (bool, error) {
 	a.log.Info("Processing prerequisites for a failover", "Last State", a.instance.Status.LastKnownDRState)
+	a.setDRState(rmn.FailingOver)
 
 	return a.runPrerequisites(a.instance.Spec.FailoverCluster)
 }
 
 func (a *AVRInstance) runFailbackPrerequisites() (bool, error) {
-	a.log.Info("Processing prerequisites for a failback", "FinalState", a.instance.Status.LastKnownDRState)
+	a.log.Info("Processing prerequisites for a failback", "last State", a.instance.Status.LastKnownDRState)
+	a.setDRState(rmn.FailingBack)
 
 	return a.runPrerequisites(a.instance.Spec.PreferredCluster)
 }
 
 func (a *AVRInstance) runRelocatePrerequisites() (bool, error) {
-	a.log.Info("Processing prerequisites for a relocation", "FinalState", a.instance.Status.LastKnownDRState)
+	a.log.Info("Processing prerequisites for a relocation", "last State", a.instance.Status.LastKnownDRState)
 
 	// TODO: implement relocation
 	return true, nil
@@ -490,7 +496,7 @@ func (a *AVRInstance) runRelocatePrerequisites() (bool, error) {
 func (a *AVRInstance) runPrerequisites(targetCluster string) (bool, error) {
 	const done = true
 
-	newHomeCluster, err := a.findHomeCluster(targetCluster)
+	newHomeCluster, err := a.findNextHomeCluster(targetCluster)
 	if err != nil {
 		if errorswrapper.Is(err, ErrSameHomeCluster) {
 			return done, nil
@@ -498,14 +504,6 @@ func (a *AVRInstance) runPrerequisites(targetCluster string) (bool, error) {
 
 		return !done, err
 	}
-
-	return a.runRestore(newHomeCluster)
-}
-
-func (a *AVRInstance) runRestore(newHomeCluster string) (bool, error) {
-	const done = true
-
-	a.log.Info("Using new home cluster", "name", newHomeCluster)
 
 	mwName := BuildManifestWorkName(a.instance.Name, a.instance.Namespace, MWTypePV)
 
@@ -527,13 +525,24 @@ func (a *AVRInstance) runRestore(newHomeCluster string) (bool, error) {
 		return done, nil
 	}
 
-	// cleanup old manifests and restore PVs.
-	// At this point, always return NOT done whether cleanupAndRestore succeeds or
-	// not. We want the MW to be in Applied state before we proceed to creating the VRG MW
+	// Always return NOT done whether restore succeeds or not.
+	// We want the MW to be in Applied state before we proceed to creating the VRG MW
 	return !done, a.cleanupAndRestore(newHomeCluster)
 }
 
 func (a *AVRInstance) cleanupAndRestore(newHomeCluster string) error {
+	a.log.Info("Using new home cluster", "name", newHomeCluster)
+	// cleanup old manifests
+	err := a.cleanup()
+	if err != nil {
+		return err
+	}
+
+	// Restore PVs to the new home cluster
+	return a.restore(newHomeCluster)
+}
+
+func (a *AVRInstance) cleanup() error {
 	// first delete the MW for PVs
 	pvMWName := BuildManifestWorkName(a.instance.Name, a.instance.Namespace, MWTypePV)
 
@@ -554,15 +563,17 @@ func (a *AVRInstance) cleanupAndRestore(newHomeCluster string) error {
 		return err
 	}
 
+	return nil
+}
+
+func (a *AVRInstance) restore(newHomeCluster string) error {
 	// Restore from PV backup location
-	err = a.restorePVFromBackup(newHomeCluster)
+	err := a.restorePVFromBackup(newHomeCluster)
 	if err != nil {
 		a.log.Error(err, "Failed to restore PVs from backup")
 
 		return err
 	}
-
-	a.advanceToNextDRState(newHomeCluster)
 
 	return nil
 }
@@ -616,10 +627,12 @@ func (a *AVRInstance) vrgManifestWorkAlreadyExists() (bool, error) {
 	}
 
 	if mw == nil {
-		a.log.Info(fmt.Sprintf("Mainifestwork exists (%v)", mw))
+		a.log.Info(fmt.Sprintf("Mainifestwork (%s) does not exist", mwName))
 
 		return !exists, nil
 	}
+
+	a.log.Info(fmt.Sprintf("Mainifestwork exists (%v)", mw))
 
 	return exists, nil
 }
@@ -731,8 +744,6 @@ func (a *AVRInstance) processVRGManifestWork() (rmn.PlacementDecision, error) {
 		preferredHomeCluster = d.HomeCluster
 	}
 
-	a.advanceToNextDRState(homeCluster)
-
 	return rmn.PlacementDecision{
 		HomeCluster:          homeCluster,
 		PeerCluster:          peerCluster,
@@ -740,7 +751,7 @@ func (a *AVRInstance) processVRGManifestWork() (rmn.PlacementDecision, error) {
 	}, nil
 }
 
-func (a *AVRInstance) findHomeCluster(targetCluster string) (string, error) {
+func (a *AVRInstance) findNextHomeCluster(targetCluster string) (string, error) {
 	var newHomeCluster string
 
 	if targetCluster != "" {
@@ -1106,7 +1117,7 @@ func (a *AVRInstance) createOrUpdateManifestWork(
 	if !reflect.DeepEqual(foundMW.Spec, mw.Spec) {
 		mw.Spec.DeepCopyInto(&foundMW.Spec)
 
-		a.log.Info("ManifestWork exists. Updating", "ManifestWork", mw)
+		a.log.Info("ManifestWork exists.", "MW", mw)
 
 		return a.reconciler.Update(a.ctx, foundMW)
 	}
@@ -1154,42 +1165,41 @@ func (s ObjectStorePVDownloader) DownloadPVs(ctx context.Context, r client.Reade
 	return objectStore.downloadPVs(s3Bucket)
 }
 
-func (a *AVRInstance) advanceToNextDRState(newHomeCluster string) {
+func (a *AVRInstance) advanceToNextDRState() {
 	var nextState rmn.DRState
 
 	switch a.instance.Status.LastKnownDRState {
 	case rmn.DRState(""):
 		nextState = rmn.Initial
-	case rmn.Initial:
-		nextState = rmn.FailingOver
 	case rmn.FailingOver:
 		nextState = rmn.FailedOver
-	case rmn.FailedOver:
-		nextState = a.resolveNextStateAfterFailOver()
 	case rmn.FailingBack:
 		nextState = rmn.FailedBack
-	case rmn.FailedBack:
-		nextState = rmn.FailingOver
 	case rmn.Relocating:
 		nextState = rmn.Relocated
+	case rmn.Initial:
+	case rmn.FailedOver:
+	case rmn.FailedBack:
 	case rmn.Relocated:
-		nextState = rmn.FailingOver
+	default:
+		nextState = rmn.DRState("")
 	}
 
-	a.log.Info(fmt.Sprintf("advanceToNextDRState: curState '%s' - nextState '%s'. "+
-		"curHomeCluster '%s' - nextHomeCluster '%s'",
-		a.instance.Status.LastKnownDRState, nextState,
-		a.instance.Status.Decision.HomeCluster, newHomeCluster))
-
-	a.instance.Status.LastKnownDRState = nextState
-	a.needStatusUpdate = true
+	a.setDRState(nextState)
 }
 
-func (a *AVRInstance) resolveNextStateAfterFailOver() rmn.DRState {
-	// Are we failing over again...
-	if a.instance.Spec.Action == rmn.ActionFailover {
-		return rmn.FailingOver
+func (a *AVRInstance) resetDRState() {
+	a.log.Info("Resetting last known DR state", "lndrs", a.instance.Status.LastKnownDRState)
+
+	a.setDRState(rmn.DRState(""))
+}
+
+func (a *AVRInstance) setDRState(nextState rmn.DRState) {
+	if a.instance.Status.LastKnownDRState != nextState {
+		a.log.Info(fmt.Sprintf("LastKnownDRState: curState '%s' - nextState '%s'",
+			a.instance.Status.LastKnownDRState, nextState))
+
+		a.instance.Status.LastKnownDRState = nextState
+		a.needStatusUpdate = true
 	}
-	// default is failback
-	return rmn.FailingBack
 }
