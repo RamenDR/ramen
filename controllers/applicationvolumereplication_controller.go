@@ -21,6 +21,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/ghodss/yaml"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
 <<<<<<< HEAD
@@ -42,6 +43,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
+	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
 
@@ -63,7 +65,10 @@ const (
 	MWTypeRoles string = "roles"
 
 	// Ramen scheduler
-	RamenScheduler string = "Ramen"
+	RamenScheduler string = "ramen"
+
+	// Label for VRG to indicate whether to delete it or not
+	Deleting string = "deleting"
 )
 
 var ErrSameHomeCluster = errorswrapper.New("new home cluster is the same as current home cluster")
@@ -416,6 +421,14 @@ func (a *AVRInstance) startProcessing() bool {
 		}
 	}
 
+	// Now clean up the VRG in ReplicationState secondary
+	// TODO: Watch for ManagedClusterView changes and execute this block instead.
+	a.log.Info("Cleaning up VRG ManifestWork with ReplicationState as 'secondary'")
+	err := a.cleanupSecondaryVRGManifestWork()
+	if err != nil {
+		a.log.Info(fmt.Sprintf("Failed: %v", err))
+	}
+
 	a.log.Info("Completed processing placement for AVR", "name", a.instance.Name, "requeue", requeue)
 
 	return requeue
@@ -533,6 +546,8 @@ func (a *AVRInstance) runPrerequisites(targetCluster string) (bool, error) {
 			return !done, nil
 		}
 
+		a.log.Info(fmt.Sprintf("ManifestWork %s/%s in Applied state", pvMW.Namespace, pvMW.Name))
+
 		return done, nil
 	}
 
@@ -601,12 +616,12 @@ func (a *AVRInstance) cleanup() error {
 		return err
 	}
 
-	// Next, delete the MW for VRGs
+	// Next, Update VRG to secondary
 	vrgMWName := BuildManifestWorkName(a.instance.Name, a.instance.Namespace, MWTypeVRG)
 
-	err = a.deleteExistingManifestWork(vrgMWName)
+	err = a.updateVRGToSecondary(vrgMWName)
 	if err != nil {
-		a.log.Error(err, "Failed to delete existing VRG manifestwork")
+		a.log.Error(err, "Failed to update existing VRG manifestwork")
 
 		return err
 	}
@@ -631,17 +646,33 @@ func (a *AVRInstance) createVRGManifest() bool {
 
 	const requeue = true
 
-	exists, err := a.vrgManifestWorkAlreadyExists()
+	homeCluster, peerCluster, err := a.extractHomeClusterAndPeerCluster()
+	if err != nil {
+		a.log.Info(fmt.Sprintf("Unable to select placement decision (%v)", err))
+
+		return requeue
+	}
+
+	mw, err := a.vrgManifestWorkAlreadyExists(homeCluster)
 	if err != nil {
 		return requeue
 	}
 
-	if exists {
-		return !requeue
+	if mw != nil {
+		primary, err := a.isVRGPrimary(mw)
+		if err != nil {
+			a.log.Error(err, "Failed to check whether the VRG is primary or not", "mw", mw.Name)
+
+			return requeue
+		}
+		if primary {
+			// Found MW and the VRG already a primary
+			return !requeue
+		}
 	}
 
 	// VRG ManifestWork does not exist, start the process to create it
-	placementDecision, err := a.processVRGManifestWork()
+	placementDecision, err := a.processVRGManifestWork(homeCluster, peerCluster)
 	if err != nil {
 		a.log.Error(err, "Failed to process VRG ManifestWork", "avr", a.instance.Name)
 
@@ -656,33 +687,31 @@ func (a *AVRInstance) createVRGManifest() bool {
 	return !requeue
 }
 
-func (a *AVRInstance) vrgManifestWorkAlreadyExists() (bool, error) {
+func (a *AVRInstance) vrgManifestWorkAlreadyExists(homeCluster string) (*ocmworkv1.ManifestWork, error) {
 	if a.instance.Status.Decision == (rmn.PlacementDecision{}) {
-		return false, nil
+		return nil, nil
 	}
 
 	mwName := BuildManifestWorkName(a.instance.Name, a.instance.Namespace, MWTypeVRG)
 
 	const exists = true
 
-	d := a.instance.Status.Decision
-
-	mw, err := a.findManifestWork(mwName, d.HomeCluster)
+	mw, err := a.findManifestWork(mwName, homeCluster)
 	if err != nil {
 		a.log.Error(err, "failed to find ManifestWork")
 
-		return !exists, err
+		return nil, err
 	}
 
 	if mw == nil {
 		a.log.Info(fmt.Sprintf("Mainifestwork (%s) does not exist", mwName))
 
-		return !exists, nil
+		return nil, nil
 	}
 
 	a.log.Info(fmt.Sprintf("Mainifestwork exists (%v)", mw))
 
-	return exists, nil
+	return mw, nil
 }
 
 func (a *AVRInstance) findManifestWork(mwName, homeCluster string) (*ocmworkv1.ManifestWork, error) {
@@ -702,6 +731,18 @@ func (a *AVRInstance) findManifestWork(mwName, homeCluster string) (*ocmworkv1.M
 	}
 
 	return nil, nil
+}
+
+func (a *AVRInstance) isVRGPrimary(mw *ocmworkv1.ManifestWork) (bool, error) {
+	vrgClientManifest := &mw.Spec.Workload.Manifests[0]
+	vrg := &rmn.VolumeReplicationGroup{}
+
+	err := yaml.Unmarshal(vrgClientManifest.RawExtension.Raw, &vrg)
+	if err != nil {
+		return false, errorswrapper.Wrap(err, fmt.Sprintf("unable to update VRG object %s as secondary", vrg.Name))
+	}
+
+	return (vrg.Spec.ReplicationState == volrep.Primary), nil
 }
 
 func (a *AVRInstance) deleteExistingManifestWork(mwName string) error {
@@ -772,15 +813,8 @@ func (a *AVRInstance) createOrUpdatePVsManifestWork(
 	return a.createOrUpdateManifestWork(manifestWork, homeClusterName)
 }
 
-func (a *AVRInstance) processVRGManifestWork() (rmn.PlacementDecision, error) {
+func (a *AVRInstance) processVRGManifestWork(homeCluster, peerCluster string) (rmn.PlacementDecision, error) {
 	a.log.Info("Processing VRG ManifestWork")
-
-	homeCluster, peerCluster, err := a.extractHomeClusterAndPeerCluster()
-	if err != nil {
-		a.log.Info(fmt.Sprintf("Unable to select placement decision (%v)", err))
-
-		return rmn.PlacementDecision{}, err
-	}
 
 	if err := a.createOrUpdateVRGRolesManifestWork(homeCluster); err != nil {
 		a.log.Error(err, "failed to create or update VolumeReplicationGroup Roles manifest")
@@ -1077,7 +1111,7 @@ func (a *AVRInstance) generatePVManifest(
 		pvClientManifest, err := a.generateManifest(pv)
 		// Either all succeed or none
 		if err != nil {
-			a.log.Error(err, "failed to generate VolumeReplication")
+			a.log.Error(err, "failed to generate manifest for PV")
 
 			return nil, err
 		}
@@ -1115,7 +1149,7 @@ func (a *AVRInstance) generateVRGManifest(
 		Spec: rmn.VolumeReplicationGroupSpec{
 			PVCSelector:            pvcSelector,
 			VolumeReplicationClass: "volume-rep-class",
-			ReplicationState:       "Primary",
+			ReplicationState:       volrep.Primary,
 			S3Endpoint:             s3Endpoint,
 			S3SecretName:           s3SecretName,
 		},
@@ -1182,6 +1216,71 @@ func (a *AVRInstance) createOrUpdateManifestWork(
 	}
 
 	return nil
+}
+
+func (a *AVRInstance) updateVRGToSecondary(mwName string) error {
+	a.log.Info("Update ManifestWork", "name", mwName)
+
+	if a.instance.Status.Decision == (rmn.PlacementDecision{}) {
+		return nil
+	}
+
+	d := a.instance.Status.Decision
+	mw := &ocmworkv1.ManifestWork{}
+
+	err := a.reconciler.Get(a.ctx, types.NamespacedName{Name: mwName, Namespace: d.HomeCluster}, mw)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+
+		return fmt.Errorf("failed to retrieve manifestwork for type: %s. Error: %w", mwName, err)
+	}
+
+	a.log.Info("Found ManifestWork. Update the VRG manifest", "name", mw.Name)
+
+	if len(mw.Spec.Workload.Manifests) == 0 {
+		return fmt.Errorf("invalid VRG ManifestWork for type: %s", mwName)
+	}
+
+	vrgClientManifest := &mw.Spec.Workload.Manifests[0]
+	vrg := &rmn.VolumeReplicationGroup{}
+
+	err = yaml.Unmarshal(vrgClientManifest.RawExtension.Raw, &vrg)
+	if err != nil {
+		return errorswrapper.Wrap(err, fmt.Sprintf("unable to update VRG object %s as secondary", vrg.Name))
+	}
+
+	vrgLabels := vrg.GetLabels()
+	if vrgLabels == nil {
+		vrgLabels = make(map[string]string)
+	}
+
+	vrg.Spec.ReplicationState = volrep.Secondary
+
+	vrgClientManifest, err = a.generateManifest(vrg)
+	if err != nil {
+		a.log.Error(err, "failed to generate VolumeReplication")
+
+		return err
+	}
+
+	a.log.Info(fmt.Sprintf("VRG Manifest %v", vrg))
+
+	mw.Spec.Workload.Manifests[0] = *vrgClientManifest
+
+	mwLabels := mw.GetLabels()
+	if mwLabels == nil {
+		mwLabels = make(map[string]string)
+	}
+
+	// Now that the VRG will be secondary, Labeling the MW for deleting will cause
+	// two things, 1) the VRG will switch from primary to secondary, and once that
+	// complete, 2) delete the MW which cause the VRG in secondary to be also deleted.
+	mwLabels[Deleting] = "true"
+	mw.SetLabels(mwLabels)
+
+	return a.reconciler.Update(a.ctx, mw)
 }
 
 func (a *AVRInstance) updateAVRStatus() error {
@@ -1340,4 +1439,45 @@ func (a *AVRInstance) setDRState(nextState rmn.DRState) {
 		a.instance.Status.LastKnownDRState = nextState
 		a.needStatusUpdate = true
 	}
+}
+
+func (a *AVRInstance) cleanupSecondaryVRGManifestWork() error {
+	namereq := metav1.LabelSelectorRequirement{}
+	namereq.Key = Deleting
+	namereq.Operator = metav1.LabelSelectorOpIn
+	namereq.Values = append(namereq.Values, "true")
+
+	labelSelector := &metav1.LabelSelector{
+		MatchExpressions: []metav1.LabelSelectorRequirement{namereq},
+	}
+
+	a.log.Info(fmt.Sprintf("Using ManifestWork LabelSelector %v", labelSelector))
+
+	mwSelector, err := metav1.LabelSelectorAsSelector(labelSelector)
+	if err != nil {
+		return err
+	}
+
+	mwList := &ocmworkv1.ManifestWorkList{}
+
+	err = a.reconciler.List(context.TODO(), mwList, &client.ListOptions{LabelSelector: mwSelector})
+
+	if err != nil && !errors.IsNotFound(err) {
+		a.log.Error(err, "error listing ManifestWorks")
+
+		return err
+	}
+
+	for _, mw := range mwList.Items {
+		mwName := BuildManifestWorkName(a.instance.Name, a.instance.Namespace, MWTypeVRG)
+		if mwName == mw.Name {
+			// TODO: Use ManagedClusterView to check whether the VRG is ready for deletion
+			// TODO: call deleteExistingManifestWork once ManagedClusterView confirms that
+			// the VRG is in secondary state
+			a.log.Info("Deleting ManifestWork", "MW Name", mwName)
+			break
+		}
+	}
+
+	return nil
 }
