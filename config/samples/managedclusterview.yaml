@@ -4,14 +4,11 @@ apiVersion: view.open-cluster-management.io/v1beta1
 kind: ManagedClusterView
 metadata:
   name: mcv-test-1
-  # OPTIONAL: define label matching scheme for clusters here
-  #  labels:
-  #    managed-cluster: "true"
-  namespace: cluster1  # Namespace: look for resource (defined in spec.scope) in managed cluster with name <namespace>. Note PVs, PVCs won't use this.
+  namespace: cluster1  # Namespace: look for resource (defined in spec.scope) in managed cluster with name <namespace>
 spec:
   scope:
-    name: pv1  # REQUIRED: name of resource to look for
-    # namespace: olm  # OPTIONAL: namespace of resource on managedcluster
+    name: test-pv  # REQUIRED: name of resource to look for
+    # namespace: olm  # OPTIONAL: namespace of resource on managedcluster. Note PVs, PVCs won't use this.
 
     # two ways to define resource to query. Only use one.
     # 1) resource

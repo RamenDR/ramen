@@ -432,8 +432,6 @@ func (a *AVRInstance) processPausedSubscription(
 
 func (r *ApplicationVolumeReplicationReconciler) isManagedClusterReadyForFailback(
 	subscription *subv1.Subscription, newHomeCluster string) bool {
-	ready := false
-
 	// get VRG and verify status through ManagedClusterView
 	mcvMeta := metav1.ObjectMeta{
 		Name:      "mcv-avr-reconciler",
@@ -449,15 +447,15 @@ func (r *ApplicationVolumeReplicationReconciler) isManagedClusterReadyForFailbac
 	vrg := &rmn.VolumeReplicationGroup{}
 
 	err := r.getManagedClusterResource(mcvMeta, mcvViewscope, vrg)
-
-	if err == nil {
-		r.Log.Info("getManagedClusterResource success")
-		ready = r.isVRGReadyForFailover(vrg)
-	} else {
+	if err != nil {
 		r.Log.Info("getManagedClusterResource failed with error:", err)
+
+		return false
 	}
 
-	return ready
+	r.Log.Info("getManagedClusterResource success")
+
+	return r.isVRGReadyForFailover(vrg)
 }
 
 func (r *ApplicationVolumeReplicationReconciler) isVRGReadyForFailover(
@@ -1147,22 +1145,20 @@ func (r *ApplicationVolumeReplicationReconciler) createOrGetManagedClusterView(
 		},
 	}
 
-	err := r.Create(context.TODO(), mcv)
-	errorDescription := ""
-
-	if errors.IsAlreadyExists(err) {
-		err = r.Get(context.TODO(), types.NamespacedName{Name: meta.Name, Namespace: meta.Namespace}, mcv)
+	err := r.Get(context.TODO(), types.NamespacedName{Name: meta.Name, Namespace: meta.Namespace}, mcv)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			err = r.Create(context.TODO(), mcv)
+		}
 
 		if err != nil {
-			errorDescription = "failed to get existing ManagedClusterView"
-		} else {
-			mcv.Spec.Scope = viewscope // update scope to match input
+			return nil, errorswrapper.Wrap(err, "failed to createOrGetManagedClusterView")
 		}
-	} else {
-		errorDescription = "failed to create ManagedClusterView"
 	}
 
-	return mcv, errorswrapper.Wrap(err, errorDescription)
+	mcv.Spec.Scope = viewscope // set or update ViewScope with query params
+
+	return mcv, nil
 }
 
 /*
@@ -1184,27 +1180,31 @@ func (r *ApplicationVolumeReplicationReconciler) getManagedClusterResource(
 	}
 
 	// get query results
-	gotResource := false
-	err = fmt.Errorf("failed to find a resource with ManagedClusterView")
-
 	recentConditions := filterByConditionStatus(getMostRecentConditions(mcv.Status.Conditions), metav1.ConditionTrue)
 
-	if len(mcv.Status.Conditions) > 0 {
-		for _, condition := range recentConditions {
-			if !gotResource && condition.Type == fndv2.ConditionViewProcessing {
-				// convert raw data to usable object
-				err = json.Unmarshal(mcv.Status.Result.Raw, resource)
-
-				if err == nil {
-					gotResource = true
-				} else {
-					err = fmt.Errorf("failed to Unmarshal data from ManagedClusterView to resource")
-				}
-			}
+	// want single recent Condition with correct Type; otherwise: bad path
+	switch len(recentConditions) {
+	case 0:
+		err = fmt.Errorf("failed to find a resource with ManagedClusterView")
+	case 1:
+		if recentConditions[0].Type != fndv2.ConditionViewProcessing {
+			err = fmt.Errorf("found invalid Condition.Type for ManagedClusterView results")
 		}
+	default:
+		err = fmt.Errorf("found multiple resources with ManagedClusterView - this should not be possible")
 	}
 
-	return errorswrapper.Wrap(err, "getManagedClusterResource results")
+	if err != nil {
+		return errorswrapper.Wrap(err, "getManagedClusterResource results")
+	}
+
+	// good path: convert raw data to usable object
+	err = json.Unmarshal(mcv.Status.Result.Raw, resource)
+	if err != nil {
+		return errorswrapper.Wrap(err, "failed to Unmarshal data from ManagedClusterView to resource")
+	}
+
+	return nil // success
 }
 
 func (a *AVRInstance) listPVsFromS3Store(
