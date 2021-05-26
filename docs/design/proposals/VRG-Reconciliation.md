@@ -80,7 +80,7 @@ status:
       status: [true|false|unknown]
       observedGeneration: <generation>
       lastTransitionTime: <time>
-      reason: "Error"|"Skipped"|"Replicated"|"Replicating"
+      reason: "Error"|"Progressing"|"Replicating"
       message: <human readable string>
     ]
   ]
@@ -89,7 +89,7 @@ status:
     status: [true|false|unknown]
     observedGeneration: <generation>
     lastTransitionTime: <time>
-    reason: ["Replicated"|"Progressing"|"Error"]
+    reason: ["Replicating"|"Progressing"|"Error"]
     message: <human readable string>
   ]
 ```
@@ -101,7 +101,7 @@ status:
     - `status`
         - "Unknown" if VRG is not yet picked up for reconciliation
         - "True" if reconciliation is completed
-            - `reason` is "Replicated"
+            - `reason` is "Replicating"
         - "False" if reconciliation is progressing or has errors
             - `reason`: Progressing|Error
 - `status.protectedPVCs`:
@@ -110,18 +110,12 @@ status:
         - `type` "Available" is to denote availability status for PVC
         protection
         - `status`
-            - "True" if `reason` is one of "Replicated" or "Skipped"
-                - "Replicated" is to denote PVC is replicated
-                - "Skipped" if for any reason the PVC is skipped for
-                replication
-                    - **NOTE:** "Skipped" may not be present in the end, and
-                    feels like a placeholder as of now
-            - "False" if `reason` is one of "Error" or "Replicating", to
+            - "True" if `reason` is  "Replicating"
+            - "False" if `reason` is one of "Error" or "Progressing", to
             denote any hard errors or that reconciliation is in progress
         - **NOTE(s):**
             - Ideally if status.conditions.[Available].status is True, the all
-            PVC status should be true, with the reason as "Replicated" or
-            "Skipped"
+            PVC status should be true, with the reason as "Replicating"
             - An `observedGeneration` number for when the PVC was protected
             may not be required, as once it is protected it stays protected.
             It may prove useful though if any straggling PVCs were protected
