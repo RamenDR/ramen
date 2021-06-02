@@ -266,15 +266,14 @@ spec:
             description: ApplicationVolumeReplicationStatus defines the observed state
               of ApplicationVolumeReplication
             properties:
-              decisions:
-                description: PlacementDecision holds references to the current successful
-                  placement
+              clusterToClean:
+                type: string
+              decision:
+                description: PlacementDecision defines the decision made by controller
                 properties:
-                  homeCluster:
+                  clusterName:
                     type: string
-                  peerCluster:
-                    type: string
-                  preferredHomeCluster:
+                  clusterNamespace:
                     type: string
                 type: object
               lastKnownDRState:

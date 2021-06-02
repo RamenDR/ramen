@@ -77,7 +77,9 @@ type VolumeReplicationGroupSpec struct {
 // VolumeReplicationGroupStatus defines the observed state of VolumeReplicationGroup
 // INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 // Important: Run "make" to regenerate code after modifying this file
-type VolumeReplicationGroupStatus struct{}
+type VolumeReplicationGroupStatus struct {
+	ReplicationState volrep.ReplicationState `json:"replicationState"`
+}
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
