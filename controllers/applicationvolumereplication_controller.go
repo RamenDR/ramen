@@ -420,18 +420,20 @@ func (a *AVRInstance) processPausedSubscription(
 		return IsManifestInAppliedState(pvMW)
 	}
 
-	ready := a.reconciler.isManagedClusterReadyForFailback(subscription, newHomeCluster)
-	a.reconciler.Log.Info(newHomeCluster, "is ready for failback:", ready)
+	vrg, err := a.reconciler.getVRGFromManagedCluster(subscription, newHomeCluster)
+	if err != nil {
+		return !unpause
+	}
 
-	if !ready {
+	if !a.reconciler.isVRGReadyForFailback(vrg) {
 		return !unpause
 	}
 
 	return a.cleanupAndRestore(subscription, newHomeCluster)
 }
 
-func (r *ApplicationVolumeReplicationReconciler) isManagedClusterReadyForFailback(
-	subscription *subv1.Subscription, newHomeCluster string) bool {
+func (r *ApplicationVolumeReplicationReconciler) getVRGFromManagedCluster(
+	subscription *subv1.Subscription, newHomeCluster string) (*rmn.VolumeReplicationGroup, error) {
 	// get VRG and verify status through ManagedClusterView
 	mcvMeta := metav1.ObjectMeta{
 		Name:      "mcv-avr-reconciler",
@@ -447,18 +449,11 @@ func (r *ApplicationVolumeReplicationReconciler) isManagedClusterReadyForFailbac
 	vrg := &rmn.VolumeReplicationGroup{}
 
 	err := r.getManagedClusterResource(mcvMeta, mcvViewscope, vrg)
-	if err != nil {
-		r.Log.Info("getManagedClusterResource failed with error:", err)
 
-		return false
-	}
-
-	r.Log.Info("getManagedClusterResource success")
-
-	return r.isVRGReadyForFailover(vrg)
+	return vrg, err
 }
 
-func (r *ApplicationVolumeReplicationReconciler) isVRGReadyForFailover(
+func (r *ApplicationVolumeReplicationReconciler) isVRGReadyForFailback(
 	vrg *rmn.VolumeReplicationGroup) bool {
 	ready := true
 
