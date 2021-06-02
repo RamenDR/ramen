@@ -24,11 +24,7 @@ import (
 	"github.com/ghodss/yaml"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
-<<<<<<< HEAD
-	subv1 "github.com/open-cluster-management/multicloud-operators-subscription/pkg/apis/apps/v1"
 	fndv2 "github.com/tjanssen3/multicloud-operators-foundation/v2/pkg/apis/view/v1beta1"
-=======
->>>>>>> remove subscriptions and use one avr per plrule
 
 	"github.com/go-logr/logr"
 	errorswrapper "github.com/pkg/errors"
@@ -40,8 +36,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
@@ -69,6 +70,10 @@ const (
 
 	// Label for VRG to indicate whether to delete it or not
 	Deleting string = "deleting"
+
+	// Annotations for MW
+	AVRNameAnnotation      = "applicationvolumereplication.ramendr.openshift.io/avr-name"
+	AVRNamespaceAnnotation = "applicationvolumereplication.ramendr.openshift.io/avr-namespace"
 )
 
 var ErrSameHomeCluster = errorswrapper.New("new home cluster is the same as current home cluster")
@@ -80,7 +85,7 @@ type PVDownloader interface {
 }
 
 // ProgressCallback of function type
-type ProgressCallback func(string, bool)
+type ProgressCallback func(string)
 
 // ApplicationVolumeReplicationReconciler reconciles a ApplicationVolumeReplication object
 type ApplicationVolumeReplicationReconciler struct {
@@ -90,6 +95,21 @@ type ApplicationVolumeReplicationReconciler struct {
 	ObjStoreGetter ObjectStoreGetter
 	Scheme         *runtime.Scheme
 	Callback       ProgressCallback
+}
+
+func GetVRGFromManagedCluster(name, namespace, clusterName string) (*rmn.VolumeReplicationGroup, error) {
+	return &rmn.VolumeReplicationGroup{
+		TypeMeta:   metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Spec: rmn.VolumeReplicationGroupSpec{
+			PVCSelector:            metav1.LabelSelector{},
+			VolumeReplicationClass: "volume-rep-class",
+			ReplicationState:       volrep.Primary,
+		},
+		Status: &rmn.VolumeReplicationGroupStatus{
+			ReplicationState: volrep.Secondary,
+		},
+	}, nil
 }
 
 func IsManifestInAppliedState(mw *ocmworkv1.ManifestWork) bool {
@@ -163,13 +183,65 @@ func BuildManifestWorkName(name, namespace, mwType string) string {
 	return fmt.Sprintf(ManifestWorkNameFormat, name, namespace, mwType)
 }
 
+func ManifestWorkPredicateFunc() predicate.Funcs {
+	mwPredicate := predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			log := ctrl.Log.WithName("ManifestWork")
+
+			oldMW, ok := e.ObjectOld.DeepCopyObject().(*ocmworkv1.ManifestWork)
+			if !ok {
+				log.Info("Failed to deep copy older ManifestWork")
+
+				return false
+			}
+			newMW, ok := e.ObjectNew.DeepCopyObject().(*ocmworkv1.ManifestWork)
+			if !ok {
+				log.Info("Failed to deep copy newer ManifestWork")
+
+				return false
+			}
+
+			log.Info("Update event for ManifestWork")
+
+			return !reflect.DeepEqual(oldMW.Spec, newMW.Spec)
+		},
+	}
+
+	return mwPredicate
+}
+
+func filterMW(mw *ocmworkv1.ManifestWork) []ctrl.Request {
+	return []ctrl.Request{
+		reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      mw.Annotations[AVRNameAnnotation],
+				Namespace: mw.Annotations[AVRNamespaceAnnotation],
+			},
+		},
+	}
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *ApplicationVolumeReplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	pred := predicate.GenerationChangedPredicate{}
+	genChangedPred := predicate.GenerationChangedPredicate{}
+	mwPred := ManifestWorkPredicateFunc()
+
+	mwMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
+		mw, ok := obj.(*ocmworkv1.ManifestWork)
+		if !ok {
+			ctrl.Log.Info("ManifestWork map function received non-MW resource")
+
+			return []reconcile.Request{}
+		}
+
+		// ctrl.Log.Info(fmt.Sprintf("MapFunc for ManifestWork (%v)", mw))
+		return filterMW(mw)
+	}))
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&rmn.ApplicationVolumeReplication{}).
-		WithEventFilter(pred).
+		WithEventFilter(genChangedPred).
+		Watches(&source.Kind{Type: &ocmworkv1.ManifestWork{}}, mwMapFun, builder.WithPredicates(mwPred)).
 		Complete(r)
 }
 
@@ -177,6 +249,12 @@ func (r *ApplicationVolumeReplicationReconciler) SetupWithManager(mgr ctrl.Manag
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=applicationvolumereplications,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=applicationvolumereplications/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=applicationvolumereplications/finalizers,verbs=update
+// +kubebuilder:rbac:groups=apps.open-cluster-management.io,resources=placementrules,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps.open-cluster-management.io,resources=placementrules/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=managedclusters,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=work.open-cluster-management.io,resources=manifestworks,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusterpeers,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -219,30 +297,17 @@ func (r *ApplicationVolumeReplicationReconciler) Reconcile(ctx context.Context, 
 		return ctrl.Result{RequeueAfter: time.Second * initialWaitTime}, nil
 	}
 
-	// check if this is the initial deployement.  0 decision indicates that this is
-	// the first time using this placement rule.
-	if len(userPlRule.Status.Decisions) == 0 {
-		updated, err := r.updateUserPlacementRule(avrPlRule, userPlRule)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-
-		if updated {
-			const subWaitTime = 2
-			// Wait for a moment to give a chance to the user PlacementRule to run
-			return ctrl.Result{RequeueAfter: time.Second * subWaitTime}, nil
-		}
-	}
-
 	a := AVRInstance{
 		reconciler: r, ctx: ctx, log: logger, instance: avr, needStatusUpdate: false,
 		userPlacementRule: userPlRule, avrPlacementRule: avrPlRule,
 	}
 
 	requeue := a.startProcessing()
+	if !requeue {
+		r.Callback(a.instance.Name)
+	}
 
-	done := !requeue
-	r.Callback(a.instance.Name, done)
+	logger.Info("Finished processing", "Requeue?", requeue)
 
 	return ctrl.Result{Requeue: requeue}, nil
 }
@@ -355,10 +420,6 @@ func (r *ApplicationVolumeReplicationReconciler) addClusterPeersToPlacementRule(
 	clPeersRef := avr.Spec.DRClusterPeersRef
 	clusterPeers := &rmn.DRClusterPeers{}
 
-	if clPeersRef.Namespace == "" {
-		clPeersRef.Namespace = avr.Namespace
-	}
-
 	err := r.Client.Get(ctx,
 		types.NamespacedName{Name: clPeersRef.Name, Namespace: clPeersRef.Namespace}, clusterPeers)
 	if err != nil {
@@ -376,27 +437,9 @@ func (r *ApplicationVolumeReplicationReconciler) addClusterPeersToPlacementRule(
 		})
 	}
 
+	r.Log.Info(fmt.Sprintf("Added %v clusters to ClusterPeers %s", plRule.Spec.Clusters, clusterPeers.Name))
+
 	return nil
-}
-
-func (r *ApplicationVolumeReplicationReconciler) updateUserPlacementRule(
-	avrPlRule, userPlRule *plrv1.PlacementRule) (bool, error) {
-	const updated = true
-
-	if !reflect.DeepEqual(avrPlRule.Status.Decisions, userPlRule.Status.Decisions) {
-		avrPlRule.Status.DeepCopyInto(&userPlRule.Status)
-
-		r.Log.Info("Copied AVR PlacementRule Status into the User PlacementRule Status",
-			"Decisions", userPlRule.Status.Decisions)
-
-		if err := r.Status().Update(context.TODO(), userPlRule); err != nil {
-			return !updated, errorswrapper.Wrap(err, "failed to update userPlRule")
-		}
-
-		return updated, nil
-	}
-
-	return !updated, nil
 }
 
 type AVRInstance struct {
@@ -410,150 +453,312 @@ type AVRInstance struct {
 }
 
 func (a *AVRInstance) startProcessing() bool {
-	a.log.Info("Starting to process placement for AVR", "name", a.instance.Name)
-	requeue := a.processPlacement()
+	a.log.Info("Starting to process placement")
+
+	requeue := true
+
+	done, err := a.processPlacement()
+	if err != nil {
+		a.log.Info("Failed to process placement", "error", err)
+
+		return requeue
+	}
 
 	if a.needStatusUpdate {
 		if err := a.updateAVRStatus(); err != nil {
 			a.log.Error(err, "failed to update status")
 
-			requeue = true
+			return requeue
 		}
 	}
 
-	// Now clean up the VRG in ReplicationState secondary
-	// TODO: Watch for ManagedClusterView changes and execute this block instead.
-	a.log.Info("Cleaning up VRG ManifestWork with ReplicationState as 'secondary'")
-	err := a.cleanupSecondaryVRGManifestWork()
-	if err != nil {
-		a.log.Info(fmt.Sprintf("Failed: %v", err))
-	}
-
-	a.log.Info("Completed processing placement for AVR", "name", a.instance.Name, "requeue", requeue)
+	requeue = !done
+	a.log.Info("Completed processing placement", "requeue", requeue)
 
 	return requeue
 }
 
-func (a *AVRInstance) processPlacement() bool {
+func (a *AVRInstance) processPlacement() (bool, error) {
 	a.log.Info("Process AVR Placement", "name", a.avrPlacementRule)
 
-	requeue := true
+	switch a.instance.Spec.Action {
+	case rmn.ActionFailover:
+		return a.runFailover()
+	case rmn.ActionFailback:
+		return a.runFailback()
+	case rmn.ActionRelocate:
+		return a.runRelocate()
+	}
 
-	done, err := a.runPrerequisitesForUserAction()
+	// Not a failover, a failback, or a relocation.  Must be an initial deployment.
+	return a.runInitialDeployment()
+}
+
+func (a *AVRInstance) runInitialDeployment() (bool, error) {
+	a.log.Info("Running initial deployment")
+	a.resetDRState()
+
+	const done = true
+
+	// 1. Check if the user wants to use the preferredCluster
+	homeCluster := ""
+	homeClusterNamespace := ""
+
+	if a.instance.Spec.PreferredCluster != "" {
+		homeCluster = a.instance.Spec.PreferredCluster
+		homeClusterNamespace = homeCluster
+	}
+
+	if homeCluster == "" && len(a.avrPlacementRule.Status.Decisions) != 0 {
+		homeCluster = a.avrPlacementRule.Status.Decisions[0].ClusterName
+		homeClusterNamespace = a.avrPlacementRule.Status.Decisions[0].ClusterNamespace
+	}
+
+	if homeCluster == "" {
+		return !done, fmt.Errorf("PreferredCluster not set and unable to find home cluster in AVRPlacementRule (%s)",
+			a.avrPlacementRule.Name)
+	}
+
+	// We have a home cluster
+	err := a.updateUserPlRuleAndCreateVRGMW(homeCluster, homeClusterNamespace)
 	if err != nil {
-		a.log.Error(err, "processPlacement")
-
-		return requeue
+		return !done, err
 	}
 
-	if !done {
-		a.log.Info("Ran prerequisites but we'll wait until all outstanding operations complete")
-
-		return requeue
+	// All good, update the preferred decision and state
+	if len(a.userPlacementRule.Status.Decisions) > 0 {
+		a.instance.Status.PreferredDecision = a.userPlacementRule.Status.Decisions[0]
 	}
-
-	// Running prerequisits is complete.  That also mean that ManifestWork is applied as well.
-	// Now try to update user placementRule
-	neededUpdate, err := a.reconciler.updateUserPlacementRule(a.avrPlacementRule, a.userPlacementRule)
-	if err != nil {
-		a.log.Error(err, "processPlacement")
-
-		return requeue
-	}
-
-	// If we needed to update user placement rule, then we need to wait for it
-	// to have a chance to run. Hence, requeueing
-	if neededUpdate {
-		a.log.Info("PlacementRule was updated, but we'll give it a chance to run", "PlRuleDecisions",
-			a.userPlacementRule.Status.Decisions)
-
-		return requeue
-	}
-
-	requeue = a.createVRGManifest()
-
-	a.log.Info(fmt.Sprintf("AVR (%+v)", a.instance))
-	a.log.Info(fmt.Sprintf("Made a decision %+v. Requeue? %v", a.instance.Status.Decision, requeue))
 
 	a.advanceToNextDRState()
 
-	return requeue
+	a.log.Info(fmt.Sprintf("AVR (%+v)", a.instance))
+
+	return done, nil
 }
 
-func (a *AVRInstance) runPrerequisitesForUserAction() (bool, error) {
-	switch a.instance.Spec.Action {
-	case rmn.ActionFailover:
-		return a.runFailoverPrerequisites()
-	case rmn.ActionFailback:
-		return a.runFailbackPrerequisites()
-	case rmn.ActionRelocate:
-		return a.runRelocatePrerequisites()
+//
+// runFailover:
+// 1. If failoverCluster empty, then fail it and we are done
+// 2. If already failed over, then clean up and we are done
+// 3. Set VRG in the preferredCluster to secondary
+// 4. Restore PV to failoverCluster
+// 5. Update UserPlacementRule decision to failoverCluster
+// 6. Create VRG for the failoverCluster as Primary
+// 7. Update AVR status
+// 8. Delete VRG MW from preferredCluster once the VRG state has changed to Secondary
+//
+func (a *AVRInstance) runFailover() (bool, error) {
+	a.log.Info("Entering runFailover", "state", a.instance.Status.LastKnownDRState)
+
+	const done = true
+
+	// We are done if empty
+	if a.instance.Spec.FailoverCluster == "" {
+		return done, fmt.Errorf("failover cluster not set. FailoverCluster is a mandatory field")
 	}
 
-	// Not a failover, a failback, or a relocation.  Must be an initial deployement.
-	a.resetDRState()
+	newHomeCluster := a.instance.Spec.FailoverCluster
 
-	return true, nil
-}
+	// We are done if we have already failed over
+	if len(a.userPlacementRule.Status.Decisions) > 0 {
+		if a.instance.Spec.FailoverCluster == a.userPlacementRule.Status.Decisions[0].ClusterName {
+			a.log.Info("Already failed over", "state", a.instance.Status.LastKnownDRState)
 
-func (a *AVRInstance) runFailoverPrerequisites() (bool, error) {
-	a.log.Info("Processing prerequisites for a failover", "Last State", a.instance.Status.LastKnownDRState)
+			err := a.ensureCleanup()
+			if err != nil {
+				return !done, err
+			}
+
+			return done, nil
+		}
+	}
+
+	// Make sure we record the state that we are failing over
 	a.setDRState(rmn.FailingOver)
 
-	return a.runPrerequisites(a.instance.Spec.FailoverCluster)
+	// Save the current home cluster
+	curHomeCluster := ""
+	if len(a.userPlacementRule.Status.Decisions) > 0 {
+		curHomeCluster = a.userPlacementRule.Status.Decisions[0].ClusterName
+	}
+
+	// Set VRG in the failed cluster (preferred cluster) to secondary
+	err := a.updateVRGStateToSecondary(curHomeCluster)
+	if err != nil {
+		a.log.Error(err, "Failed to update existing VRG manifestwork to secondary")
+
+		return !done, err
+	}
+
+	result, err := a.runPlacementTask(newHomeCluster, "", curHomeCluster)
+	if err != nil {
+		return !done, err
+	}
+
+	a.advanceToNextDRState()
+	a.log.Info("Exiting runFailover", "state", a.instance.Status.LastKnownDRState)
+
+	return result, nil
 }
 
-func (a *AVRInstance) runFailbackPrerequisites() (bool, error) {
-	a.log.Info("Processing prerequisites for a failback", "last State", a.instance.Status.LastKnownDRState)
+//
+// runFailback:
+// 1. If preferredCluster not set, get it from AVR status
+// 2. If still empty, fail it
+// 3. If the preferredCluster is the failoverCluster, fail it
+// 4. If preferredCluster is the same as the userPlacementRule decision, do nothing
+// 5. If the VRG replication state has not transitioned to secondary yet, then wait
+// 6. Set VRG in the peer cluster to secondary
+// 7. Set VRG in the preferredCluster to secondary
+// 8. Restore PV to preferredCluster
+// 9. Update UserPlacementRule decision to preferredCluster
+// 10. Create VRG for the preferredCluster as Primary
+// 11. Update AVR status
+// 12. Delete VRG MW from failoverCluster once the VRG state has changed to Secondary
+//
+func (a *AVRInstance) runFailback() (bool, error) {
+	a.log.Info("Entering runFailback", "state", a.instance.Status.LastKnownDRState)
+
+	const done = true
+
+	// 1. We are done if empty
+	preferredCluster, preferredClusterNamespace := a.getPreferredClusterNamespaced()
+
+	if preferredCluster == "" {
+		return !done, fmt.Errorf("failback cluster not valid")
+	}
+
+	if preferredCluster == a.instance.Spec.FailoverCluster {
+		return !done, fmt.Errorf("failoverCluster and preferredCluster can't be the same %s/%s",
+			a.instance.Spec.FailoverCluster, preferredCluster)
+	}
+
+	// We are done if already failed back
+	if a.isAlreadyFailedBack(preferredCluster) {
+		err := a.ensureCleanup()
+		if err != nil {
+			return !done, err
+		}
+
+		return done, nil
+	}
+
+	// Make sure we record the state that we are failing over
 	a.setDRState(rmn.FailingBack)
 
-	return a.runPrerequisites(a.instance.Spec.PreferredCluster)
+	// Save the current home cluster
+	curHomeCluster := ""
+	if len(a.userPlacementRule.Status.Decisions) > 0 {
+		curHomeCluster = a.userPlacementRule.Status.Decisions[0].ClusterName
+	}
+
+	// During failback, both clusters should be up and both clusters should be secondaries.
+	ensured, err := a.processVRGForSecondaries(preferredCluster, curHomeCluster)
+	if err != nil || !ensured {
+		return !done, err
+	}
+
+	result, err := a.runPlacementTask(preferredCluster, preferredClusterNamespace, curHomeCluster)
+	if err != nil {
+		return !done, err
+	}
+
+	// 8. All good so far, update AVR decision and state
+	if len(a.userPlacementRule.Status.Decisions) > 0 {
+		a.instance.Status.PreferredDecision = a.userPlacementRule.Status.Decisions[0]
+	}
+
+	a.advanceToNextDRState()
+	a.log.Info("Exiting runFailback", "state", a.instance.Status.LastKnownDRState)
+
+	return result, nil
 }
 
-func (a *AVRInstance) runRelocatePrerequisites() (bool, error) {
+func (a *AVRInstance) runRelocate() (bool, error) {
 	a.log.Info("Processing prerequisites for a relocation", "last State", a.instance.Status.LastKnownDRState)
 
 	// TODO: implement relocation
 	return true, nil
 }
 
-func (a *AVRInstance) runPrerequisites(targetCluster string) (bool, error) {
-	const done = true
+func (a *AVRInstance) isAlreadyFailedBack(targetCluster string) bool {
+	if len(a.userPlacementRule.Status.Decisions) > 0 &&
+		targetCluster == a.userPlacementRule.Status.Decisions[0].ClusterName {
+		a.log.Info("Already failed back", "state", a.instance.Status.LastKnownDRState)
 
-	newHomeCluster, err := a.findNextHomeCluster(targetCluster)
-	if err != nil {
-		if errorswrapper.Is(err, ErrSameHomeCluster) {
-			return done, nil
+		return true
+	}
+
+	return false
+}
+
+func (a *AVRInstance) getPreferredClusterNamespaced() (string, string) {
+	preferredCluster := a.instance.Spec.PreferredCluster
+	preferredClusterNamespace := preferredCluster
+
+	if preferredCluster == "" {
+		if a.instance.Status.PreferredDecision != (plrv1.PlacementDecision{}) {
+			preferredCluster = a.instance.Status.PreferredDecision.ClusterName
+			preferredClusterNamespace = a.instance.Status.PreferredDecision.ClusterNamespace
 		}
-
-		return !done, err
 	}
 
-	mwName := BuildManifestWorkName(a.instance.Name, a.instance.Namespace, MWTypePV)
+	return preferredCluster, preferredClusterNamespace
+}
 
-	// Try to find whether we have already created a ManifestWork for this
-	pvMW, err := a.findManifestWork(mwName, newHomeCluster)
+func (a *AVRInstance) processVRGForSecondaries(preferredCluster, curHomeCluster string) (bool, error) {
+	const ensured = true
+
+	err := a.updateVRGStateToSecondary(curHomeCluster)
 	if err != nil {
-		a.log.Error(err, "Failed to find 'PV restore' ManifestWork")
+		a.log.Error(err, "Failed to update VRG to secondary")
 
-		return !done, err
+		return !ensured, err
 	}
 
-	if pvMW != nil {
-		a.log.Info(fmt.Sprintf("Found manifest work (%v)", pvMW))
+	// During failover, we have already updated VRG replication state for the
+	// preferred cluster to secondary. All we have to do at this point is to
+	// check whether the VRG has already transitioned to secondary. This call
+	// uses ManagedClusterView to check the VRG on the ManagedCluster.
+	secondary := a.ensureVRGIsSecondary(preferredCluster)
+	if !secondary {
+		a.log.Info("Still waiting for VRG to transition to secondary", "clusterName", preferredCluster)
 
-		if !IsManifestInAppliedState(pvMW) {
-			return !done, nil
-		}
-
-		a.log.Info(fmt.Sprintf("ManifestWork %s/%s in Applied state", pvMW.Namespace, pvMW.Name))
-
-		return done, nil
+		return !ensured, nil
 	}
 
-	// Always return NOT done whether restore succeeds or not.
-	// We want the MW to be in Applied state before we proceed to creating the VRG MW
-	return !done, a.cleanupAndRestore(newHomeCluster)
+	// Should we make sure that the current home cluster has already transitioned to secondary
+	// before we proceed with the failback? Is setting the ManifestWork VRG to secondary is enough?
+	// Nevertheless, we are checking here.  If this is an overkill, we can remove it.
+	secondary = a.ensureVRGIsSecondary(curHomeCluster)
+	if !secondary {
+		a.log.Info("Still waiting for VRG to transition to secondary", "clusterName", curHomeCluster)
+
+		return !ensured, nil
+	}
+
+	return ensured, nil
+}
+
+// runPlacementTast is a series of steps to creating, updating, and cleaning up
+// the necessary objects for the failover, failback, or relocation
+func (a *AVRInstance) runPlacementTask(targetCluster, targetClusterNamespace, oldHomeCluster string) (bool, error) {
+	// Restore PV to preferredCluster
+	err := a.createPVManifestWorkForRestore(targetCluster)
+	if err != nil {
+		return false, err
+	}
+
+	err = a.updateUserPlRuleAndCreateVRGMW(targetCluster, targetClusterNamespace)
+	if err != nil {
+		return false, err
+	}
+
+	// 9. Attempt to delete VRG MW from failed cluster once the VRG state has changed to Secondary
+	// This is attempt to clean up is not guaranteed to complete at this stage. Deleting the old VRG
+	// requires guaranteeing that the VRG has transitioned to secondary.
+	return a.cleanup(oldHomeCluster)
 }
 
 // outputs a string for use in creating a ManagedClusterView name
@@ -593,40 +798,66 @@ func (r *ApplicationVolumeReplicationReconciler) isVRGReadyForFailback(
 	return ready
 }
 
-func (a *AVRInstance) cleanupAndRestore(newHomeCluster string) error {
-	a.log.Info("Using new home cluster", "name", newHomeCluster)
-	// cleanup old manifests
-	err := a.cleanup()
+func (a *AVRInstance) updateUserPlRuleAndCreateVRGMW(homeCluster, homeClusterNamespace string) error {
+	err := a.updateUserPlacementRule(homeCluster, homeClusterNamespace)
 	if err != nil {
 		return err
 	}
 
-	// Restore PVs to the new home cluster
-	return a.restore(newHomeCluster)
-}
-
-func (a *AVRInstance) cleanup() error {
-	// first delete the MW for PVs
-	pvMWName := BuildManifestWorkName(a.instance.Name, a.instance.Namespace, MWTypePV)
-
-	err := a.deleteExistingManifestWork(pvMWName)
+	// Creating VRG ManifestWork will be running in parallel with ACM deploying app resources
+	err = a.createVRGManifestWork(homeCluster)
 	if err != nil {
-		a.log.Error(err, "Failed to delete existing PV manifestwork")
-
-		return err
-	}
-
-	// Next, Update VRG to secondary
-	vrgMWName := BuildManifestWorkName(a.instance.Name, a.instance.Namespace, MWTypeVRG)
-
-	err = a.updateVRGToSecondary(vrgMWName)
-	if err != nil {
-		a.log.Error(err, "Failed to update existing VRG manifestwork")
-
 		return err
 	}
 
 	return nil
+}
+
+func (a *AVRInstance) createPVManifestWorkForRestore(newPrimary string) error {
+	pvMWName := BuildManifestWorkName(a.instance.Name, a.instance.Namespace, MWTypePV)
+
+	existAndApplied, err := a.isManifestExistAndApplied(pvMWName, newPrimary)
+	if err != nil && !errors.IsNotFound(err) {
+		a.log.Error(err, "actuall here")
+
+		return err
+	}
+
+	if existAndApplied {
+		return nil
+	}
+
+	a.log.Info("Restore PVs", "newPrimary", newPrimary)
+
+	return a.restore(newPrimary)
+}
+
+func (a *AVRInstance) isManifestExistAndApplied(mwName, newPrimary string) (bool, error) {
+	// Try to find whether we have already created a ManifestWork for this
+	mw, err := a.findManifestWork(mwName, newPrimary)
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			a.log.Error(err, "Failed to find 'PV restore' ManifestWork")
+
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	if mw != nil {
+		a.log.Info(fmt.Sprintf("Found an existing manifest work (%v)", mw))
+		// Check if the MW is in Applied state
+		if IsManifestInAppliedState(mw) {
+			a.log.Info(fmt.Sprintf("ManifestWork %s/%s in Applied state", mw.Namespace, mw.Name))
+
+			return true, nil
+		}
+
+		a.log.Info("MW is not in applied state", "namespace/name", mw.Namespace+"/"+mw.Name)
+	}
+
+	return false, nil
 }
 
 func (a *AVRInstance) restore(newHomeCluster string) error {
@@ -641,21 +872,49 @@ func (a *AVRInstance) restore(newHomeCluster string) error {
 	return nil
 }
 
-func (a *AVRInstance) createVRGManifest() bool {
-	a.log.Info("Processing deployment", "Last State", a.instance.Status.LastKnownDRState)
-
-	const requeue = true
-
-	homeCluster, peerCluster, err := a.extractHomeClusterAndPeerCluster()
+func (a *AVRInstance) cleanup(fromCluster string) (bool, error) {
+	err := a.deletePVManifestWork(fromCluster)
 	if err != nil {
-		a.log.Info(fmt.Sprintf("Unable to select placement decision (%v)", err))
-
-		return requeue
+		return false, err
 	}
 
-	mw, err := a.vrgManifestWorkAlreadyExists(homeCluster)
+	return a.ensureOldVRGMWOnClusterDeleted(fromCluster)
+}
+
+func (a *AVRInstance) updateUserPlacementRule(homeCluster, homeClusterNamespace string) error {
+	a.log.Info("Updating userPlacementRule", "name", a.userPlacementRule.Name)
+
+	if homeClusterNamespace == "" {
+		homeClusterNamespace = homeCluster
+	}
+
+	newPD := []plrv1.PlacementDecision{
+		{
+			ClusterName:      homeCluster,
+			ClusterNamespace: homeClusterNamespace,
+		},
+	}
+
+	if !reflect.DeepEqual(newPD, a.userPlacementRule.Status.Decisions) {
+		a.userPlacementRule.Status.Decisions = newPD
+		if err := a.reconciler.Status().Update(a.ctx, a.userPlacementRule); err != nil {
+			a.log.Error(err, "failed to update user PlacementRule")
+
+			return fmt.Errorf("failed to update userPlRule %s (%w)", a.userPlacementRule.Name, err)
+		}
+
+		a.log.Info("Updated user PlacementRule status", "Decisions", a.userPlacementRule.Status.Decisions)
+	}
+
+	return nil
+}
+
+func (a *AVRInstance) createVRGManifestWork(homeCluster string) error {
+	a.log.Info("Processing deployment", "Last State", a.instance.Status.LastKnownDRState)
+
+	mw, err := a.vrgManifestWorkExists(homeCluster)
 	if err != nil {
-		return requeue
+		return err
 	}
 
 	if mw != nil {
@@ -663,53 +922,40 @@ func (a *AVRInstance) createVRGManifest() bool {
 		if err != nil {
 			a.log.Error(err, "Failed to check whether the VRG is primary or not", "mw", mw.Name)
 
-			return requeue
+			return err
 		}
+
 		if primary {
 			// Found MW and the VRG already a primary
-			return !requeue
+			return nil
 		}
 	}
 
-	// VRG ManifestWork does not exist, start the process to create it
-	placementDecision, err := a.processVRGManifestWork(homeCluster, peerCluster)
-	if err != nil {
-		a.log.Error(err, "Failed to process VRG ManifestWork", "avr", a.instance.Name)
-
-		return requeue
-	}
-
-	a.log.Info(fmt.Sprintf("placementDecisions %+v - requeue: %t", placementDecision, !requeue))
-
-	a.instance.Status.Decision = placementDecision
-	a.needStatusUpdate = true
-
-	return !requeue
+	// VRG ManifestWork does not exist, create it.
+	return a.processVRGManifestWork(homeCluster)
 }
 
-func (a *AVRInstance) vrgManifestWorkAlreadyExists(homeCluster string) (*ocmworkv1.ManifestWork, error) {
-	if a.instance.Status.Decision == (rmn.PlacementDecision{}) {
+func (a *AVRInstance) vrgManifestWorkExists(homeCluster string) (*ocmworkv1.ManifestWork, error) {
+	if a.instance.Status.PreferredDecision == (plrv1.PlacementDecision{}) {
 		return nil, nil
 	}
 
 	mwName := BuildManifestWorkName(a.instance.Name, a.instance.Namespace, MWTypeVRG)
 
-	const exists = true
-
 	mw, err := a.findManifestWork(mwName, homeCluster)
-	if err != nil {
+	if err != nil && !errors.IsNotFound(err) {
 		a.log.Error(err, "failed to find ManifestWork")
 
 		return nil, err
 	}
 
 	if mw == nil {
-		a.log.Info(fmt.Sprintf("Mainifestwork (%s) does not exist", mwName))
+		a.log.Info(fmt.Sprintf("Manifestwork %s does not exist for cluster %s", mwName, homeCluster))
 
 		return nil, nil
 	}
 
-	a.log.Info(fmt.Sprintf("Mainifestwork exists (%v)", mw))
+	a.log.Info(fmt.Sprintf("Manifestwork %s exists (%v)", mw.Name, mw))
 
 	return mw, nil
 }
@@ -721,10 +967,10 @@ func (a *AVRInstance) findManifestWork(mwName, homeCluster string) (*ocmworkv1.M
 		err := a.reconciler.Get(a.ctx, types.NamespacedName{Name: mwName, Namespace: homeCluster}, mw)
 		if err != nil {
 			if errors.IsNotFound(err) {
-				return nil, nil
+				return nil, fmt.Errorf("MW not found (%w)", err)
 			}
 
-			return nil, errorswrapper.Wrap(err, "failed to retrieve manifestwork")
+			return nil, fmt.Errorf("failed to retrieve manifestwork (%w)", err)
 		}
 
 		return mw, nil
@@ -739,23 +985,136 @@ func (a *AVRInstance) isVRGPrimary(mw *ocmworkv1.ManifestWork) (bool, error) {
 
 	err := yaml.Unmarshal(vrgClientManifest.RawExtension.Raw, &vrg)
 	if err != nil {
-		return false, errorswrapper.Wrap(err, fmt.Sprintf("unable to update VRG object %s as secondary", vrg.Name))
+		return false, errorswrapper.Wrap(err, fmt.Sprintf("unable to get vrg from ManifestWork %s", mw.Name))
 	}
 
 	return (vrg.Spec.ReplicationState == volrep.Primary), nil
 }
 
-func (a *AVRInstance) deleteExistingManifestWork(mwName string) error {
-	a.log.Info("Try to delete existing ManifestWork")
+func (a *AVRInstance) ensureCleanup() error {
+	a.log.Info("ensure cleanup ", "cluster", a.instance.Status.ClusterToClean)
 
-	if a.instance.Status.Decision == (rmn.PlacementDecision{}) {
+	if a.instance.Status.ClusterToClean != "" {
+		_, err := a.ensureOldVRGMWOnClusterDeleted(a.instance.Status.ClusterToClean)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// cleanupPVForRestore cleans up required PV fields, to ensure restore succeeds to a new cluster, and
+// rebinding the PV to a newly created PVC with the same claimRef succeeds
+func (a *AVRInstance) cleanupPVForRestore(pv *corev1.PersistentVolume) {
+	pv.ResourceVersion = ""
+	if pv.Spec.ClaimRef != nil {
+		pv.Spec.ClaimRef.UID = ""
+		pv.Spec.ClaimRef.ResourceVersion = ""
+		pv.Spec.ClaimRef.APIVersion = ""
+	}
+}
+
+func (a *AVRInstance) ensureOldVRGMWOnClusterDeleted(clusterName string) (bool, error) {
+	a.log.Info("Ensuring that previous cluster VRG MW is deleted for ", "cluster", clusterName)
+
+	const done = true
+
+	mwName := BuildManifestWorkName(a.instance.Name, a.instance.Namespace, MWTypeVRG)
+	mw := &ocmworkv1.ManifestWork{}
+
+	err := a.reconciler.Get(a.ctx, types.NamespacedName{Name: mwName, Namespace: clusterName}, mw)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// the MW is gone.  Check the VRG if it is deleted
+			if a.ensureVRGDeleted(clusterName) {
+				a.resetClusterToClean()
+
+				return done, nil
+			}
+
+			return !done, nil
+		}
+
+		return !done, fmt.Errorf("failed to retrieve manifestwork %s from %s (%w)", mwName, clusterName, err)
+	}
+
+	a.log.Info("VRG ManifestWork exists", "name", mw.Name, "clusterName", clusterName)
+	// The VRG's MW exists. That most likely means that the VRG Object in the managed cluster exists as well. That also
+	// means that we either didn't attempt to set the VRG to secondary, or the MangedCluster may not be reachable.
+	// In either cases, we have to make sure that the VRG for the MW was set to secondary (if it is not, then set it) OR
+	// the MW has not been applied yet. In that later case, we will just need return DONE and we will wait for the
+	// MW status state to change to 'Applied' in order to proceed with deleting the MW, which causes the VRG to be deleted.
+	updated, err := a.hasVRGStateBeenUpdatedToSecondary(clusterName)
+	if err != nil {
+		return !done, fmt.Errorf("failed to check whether VRG replication state has been updated to secondary (%w)", err)
+	}
+
+	if !updated {
+		err = a.updateVRGStateToSecondary(clusterName)
+		// in either case, we need to wait for the MW to go to applied state
+		return !done, err
+	}
+
+	if !IsManifestInAppliedState(mw) {
+		a.log.Info(fmt.Sprintf("ManifestWork %s/%s NOT in Applied state", mw.Namespace, mw.Name))
+		// Wait for MW to be applied. The AVR reconciliation will be called then
+		return done, nil
+	}
+
+	a.log.Info("VRG ManifestWork is in Applied state", "name", mw.Name, "cluster", clusterName)
+
+	if a.ensureVRGIsSecondary(clusterName) {
+		mwName := BuildManifestWorkName(a.instance.Name, a.instance.Namespace, MWTypeVRG)
+
+		err := a.deleteManifestWork(mwName, clusterName)
+		if err != nil {
+			return !done, err
+		}
+	}
+
+	// IF we get here, either the VRG has not transitioned to secondary (yet) or delete didn't succeed. In either cases,
+	// we need to make sure that the VRG object is deleted. IOW, we still have to wait
+	return !done, nil
+}
+
+func (a *AVRInstance) ensureVRGIsSecondary(clusterName string) bool {
+	vrg, err := GetVRGFromManagedCluster(a.instance.Name, a.instance.Namespace, clusterName)
+	if err != nil {
+		return false
+	}
+
+	if vrg.Status.ReplicationState != volrep.Secondary {
+		return false
+	}
+
+	return true
+}
+
+func (a *AVRInstance) ensureVRGDeleted(clusterName string) bool {
+	// _, err := GetVRGFromManagedCluster(a.instance.Name, a.instance.Namespace, clusterName)
+	a.log.Info("Getting VRG from ManagedCluster -- ***UNIMPLEMENTED***", "clusterName", clusterName)
+	// We only accept a NOT FOUND error status
+	return true // errors.IsNotFound(err)
+}
+
+func (a *AVRInstance) deletePVManifestWork(fromCluster string) error {
+	pvMWName := BuildManifestWorkName(a.instance.Name, a.instance.Namespace, MWTypePV)
+	pvMWNamespace := fromCluster
+
+	return a.deleteManifestWork(pvMWName, pvMWNamespace)
+}
+
+func (a *AVRInstance) deleteManifestWork(mwName, mwNamespace string) error {
+	a.log.Info("Delete ManifestWork from", "namespace", mwNamespace, "name", mwName)
+
+	if a.instance.Status.PreferredDecision == (plrv1.PlacementDecision{}) {
 		return nil
 	}
 
-	d := a.instance.Status.Decision
 	mw := &ocmworkv1.ManifestWork{}
 
-	err := a.reconciler.Get(a.ctx, types.NamespacedName{Name: mwName, Namespace: d.HomeCluster}, mw)
+	err := a.reconciler.Get(a.ctx, types.NamespacedName{Name: mwName, Namespace: mwNamespace}, mw)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil
@@ -764,7 +1123,7 @@ func (a *AVRInstance) deleteExistingManifestWork(mwName string) error {
 		return fmt.Errorf("failed to retrieve manifestwork for type: %s. Error: %w", mwName, err)
 	}
 
-	a.log.Info("deleting ManifestWork", "name", mw.Name)
+	a.log.Info("Deleting ManifestWork", "name", mw.Name, "namespace", mwNamespace)
 
 	return a.reconciler.Delete(a.ctx, mw)
 }
@@ -787,20 +1146,9 @@ func (a *AVRInstance) restorePVFromBackup(homeCluster string) error {
 	return a.createOrUpdatePVsManifestWork(a.instance.Name, a.instance.Namespace, homeCluster, pvList)
 }
 
-// cleanupPVForRestore cleans up required PV fields, to ensure restore succeeds to a new cluster, and
-// rebinding the PV to a newly created PVC with the same claimRef succeeds
-func (a *AVRInstance) cleanupPVForRestore(pv *corev1.PersistentVolume) {
-	pv.ResourceVersion = ""
-	if pv.Spec.ClaimRef != nil {
-		pv.Spec.ClaimRef.UID = ""
-		pv.Spec.ClaimRef.ResourceVersion = ""
-		pv.Spec.ClaimRef.APIVersion = ""
-	}
-}
-
 func (a *AVRInstance) createOrUpdatePVsManifestWork(
 	name string, namespace string, homeClusterName string, pvList []corev1.PersistentVolume) error {
-	a.log.Info("Creating manifest work for PVs", "AVR",
+	a.log.Info("Create manifest work for PVs", "AVR",
 		name, "cluster", homeClusterName, "PV count", len(pvList))
 
 	mwName := BuildManifestWorkName(name, namespace, MWTypePV)
@@ -813,13 +1161,13 @@ func (a *AVRInstance) createOrUpdatePVsManifestWork(
 	return a.createOrUpdateManifestWork(manifestWork, homeClusterName)
 }
 
-func (a *AVRInstance) processVRGManifestWork(homeCluster, peerCluster string) (rmn.PlacementDecision, error) {
-	a.log.Info("Processing VRG ManifestWork")
+func (a *AVRInstance) processVRGManifestWork(homeCluster string) error {
+	a.log.Info("Processing VRG ManifestWork", "cluster", homeCluster)
 
 	if err := a.createOrUpdateVRGRolesManifestWork(homeCluster); err != nil {
 		a.log.Error(err, "failed to create or update VolumeReplicationGroup Roles manifest")
 
-		return rmn.PlacementDecision{}, err
+		return err
 	}
 
 	if err := a.createOrUpdateVRGManifestWork(
@@ -827,185 +1175,10 @@ func (a *AVRInstance) processVRGManifestWork(homeCluster, peerCluster string) (r
 		homeCluster, a.instance.Spec.S3Endpoint, a.instance.Spec.S3SecretName, a.instance.Spec.PVCSelector); err != nil {
 		a.log.Error(err, "failed to create or update VolumeReplicationGroup manifest")
 
-		return rmn.PlacementDecision{}, err
+		return err
 	}
 
-	preferredHomeCluster := ""
-
-	d := a.instance.Status.Decision
-	if d.PreferredHomeCluster == "" {
-		preferredHomeCluster = d.HomeCluster
-	}
-
-	return rmn.PlacementDecision{
-		HomeCluster:          homeCluster,
-		PeerCluster:          peerCluster,
-		PreferredHomeCluster: preferredHomeCluster,
-	}, nil
-}
-
-func (a *AVRInstance) findNextHomeCluster(targetCluster string) (string, error) {
-	var newHomeCluster string
-
-	if targetCluster != "" {
-		newHomeCluster = targetCluster
-	} else {
-		homeCluster, err := a.findHomeClusterFromAVRPlRule()
-		if err != nil {
-			a.log.Error(err, "Failed to find new home cluster")
-
-			return "", err
-		}
-
-		newHomeCluster = homeCluster
-	}
-
-	newHomeCluster, err := a.validateHomeClusterSelection(newHomeCluster)
-	if err != nil {
-		a.log.Info("Failed to validate new home cluster selection", "newHomeCluster", newHomeCluster, "errMsg", err.Error())
-
-		return "", err
-	}
-
-	return newHomeCluster, nil
-}
-
-func (a *AVRInstance) findHomeClusterFromAVRPlRule() (string, error) {
-	a.log.Info("Finding the next home cluster from placementRule", "name", a.avrPlacementRule.Name)
-
-	if len(a.avrPlacementRule.Status.Decisions) == 0 {
-		return "", fmt.Errorf("no decisions were found in placementRule %s", a.avrPlacementRule.Name)
-	}
-
-	const requiredClusterReplicas = 1
-
-	if a.avrPlacementRule.Spec.ClusterReplicas != nil &&
-		*a.avrPlacementRule.Spec.ClusterReplicas != requiredClusterReplicas {
-		return "", fmt.Errorf("PlacementRule %s Required cluster replicas %d != %d",
-			a.avrPlacementRule.Name, requiredClusterReplicas, *a.avrPlacementRule.Spec.ClusterReplicas)
-	}
-
-	return a.avrPlacementRule.Status.Decisions[0].ClusterName, nil
-}
-
-func (a *AVRInstance) validateHomeClusterSelection(newHomeCluster string) (string, error) {
-	if a.instance.Status.Decision == (rmn.PlacementDecision{}) {
-		return newHomeCluster, nil
-	}
-
-	action := a.instance.Spec.Action
-	if action == "" {
-		return newHomeCluster, fmt.Errorf("action not set for AVR %s", a.instance.Name)
-	}
-
-	switch action {
-	case rmn.ActionFailover:
-		return a.validateFailover(newHomeCluster)
-	case rmn.ActionFailback:
-		return a.validateFailback(newHomeCluster)
-	case rmn.ActionRelocate:
-		return a.validateRelocation(newHomeCluster)
-	default:
-		return newHomeCluster, fmt.Errorf("unknown action %s", action)
-	}
-}
-
-func (a *AVRInstance) validateFailover(newHomeCluster string) (string, error) {
-	// If FailoverCluster is not empty, then don't validate anything.  Just use it.
-	if a.instance.Spec.FailoverCluster != "" {
-		if newHomeCluster != a.instance.Spec.FailoverCluster {
-			return newHomeCluster, fmt.Errorf("new HomeCluster %s not the same as the configured FailoverCluster %s",
-				newHomeCluster, a.instance.Spec.FailoverCluster)
-		}
-
-		return newHomeCluster, nil
-	}
-
-	if d := a.instance.Status.Decision; d != (rmn.PlacementDecision{}) {
-		switch newHomeCluster {
-		case d.PeerCluster:
-			return newHomeCluster, nil
-		case d.HomeCluster:
-			return newHomeCluster, errorswrapper.Wrap(ErrSameHomeCluster, newHomeCluster)
-		case d.PreferredHomeCluster:
-			return newHomeCluster,
-				fmt.Errorf("miconfiguration detected on failover! (n:%s,p:%s)", newHomeCluster, d.PreferredHomeCluster)
-		}
-	}
-
-	return newHomeCluster, fmt.Errorf("unknown error (n:%s,avrStatus:%v)", newHomeCluster, a.instance.Status)
-}
-
-func (a *AVRInstance) validateFailback(newHomeCluster string) (string, error) {
-	if d := a.instance.Status.Decision; d != (rmn.PlacementDecision{}) {
-		switch newHomeCluster {
-		case d.PreferredHomeCluster:
-			return newHomeCluster, nil
-		case d.HomeCluster:
-			return newHomeCluster, errorswrapper.Wrap(ErrSameHomeCluster, newHomeCluster)
-		case d.PeerCluster:
-			return "", fmt.Errorf("miconfiguration detected on failback! (n:%s,p:%s)", newHomeCluster, d.PreferredHomeCluster)
-		}
-	}
-
-	return "", fmt.Errorf("unknown error (n:%s,avrStatus:%v)", newHomeCluster, a.instance.Status)
-}
-
-func (a *AVRInstance) validateRelocation(newHomeCluster string) (string, error) {
-	// TODO: impelement relocation validation
-	return newHomeCluster, nil
-}
-
-func (a *AVRInstance) extractHomeClusterAndPeerCluster() (string, string, error) {
-	const empty = ""
-
-	a.log.Info("Extracting home and peer clusters", "PlRuleName", a.avrPlacementRule,
-		"UserPlRule", a.userPlacementRule.Name)
-
-	clusterPeers := &rmn.DRClusterPeers{}
-	clPeersRef := a.instance.Spec.DRClusterPeersRef
-
-	if clPeersRef.Namespace == "" {
-		clPeersRef.Namespace = a.instance.Namespace
-	}
-
-	err := a.reconciler.Get(a.ctx,
-		types.NamespacedName{
-			Name:      clPeersRef.Name,
-			Namespace: clPeersRef.Namespace,
-		}, clusterPeers)
-	if err != nil {
-		return empty, empty,
-			fmt.Errorf("failed to retrieve DRClusterPeers %s (%w)",
-				a.instance.Spec.DRClusterPeersRef.Name, err)
-	}
-
-	if len(clusterPeers.Spec.ClusterNames) == 0 {
-		return empty, empty, fmt.Errorf("no clusters configured in DRClusterPeers %s", clusterPeers.Name)
-	}
-
-	cl1 := clusterPeers.Spec.ClusterNames[0]
-	cl2 := clusterPeers.Spec.ClusterNames[1]
-
-	var homeCluster string
-
-	var peerCluster string
-
-	targetCluster := a.avrPlacementRule.Status.Decisions[0].ClusterName
-
-	switch {
-	case cl1 == targetCluster:
-		homeCluster = cl1
-		peerCluster = cl2
-	case cl2 == targetCluster:
-		homeCluster = cl2
-		peerCluster = cl1
-	default:
-		return empty, empty, fmt.Errorf("PlacementRule %s has no destionation matching DRClusterPeers %v - SubStatuses %v",
-			a.avrPlacementRule.Name, clusterPeers.Spec.ClusterNames, a.avrPlacementRule.Status.Decisions)
-	}
-
-	return homeCluster, peerCluster, nil
+	return nil
 }
 
 func (a *AVRInstance) createOrUpdateVRGRolesManifestWork(namespace string) error {
@@ -1173,7 +1346,12 @@ func (a *AVRInstance) newManifestWork(name string, mcNamespace string,
 	return &ocmworkv1.ManifestWork{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: mcNamespace, Labels: labels,
+			Namespace: mcNamespace,
+			Labels:    labels,
+			Annotations: map[string]string{
+				AVRNameAnnotation:      a.instance.Name,
+				AVRNamespaceAnnotation: a.instance.Namespace,
+			},
 		},
 		Spec: ocmworkv1.ManifestWorkSpec{
 			Workload: ocmworkv1.ManifestsTemplate{
@@ -1202,7 +1380,7 @@ func (a *AVRInstance) createOrUpdateManifestWork(
 		// 		mw.Name, mw.Namespace, err)
 		// }
 
-		a.log.Info("Creating ManifestWork", "MW", mw)
+		a.log.Info("Creating ManifestWork for", "cluster", managedClusternamespace, "MW", mw)
 
 		return a.reconciler.Create(a.ctx, mw)
 	}
@@ -1218,69 +1396,95 @@ func (a *AVRInstance) createOrUpdateManifestWork(
 	return nil
 }
 
-func (a *AVRInstance) updateVRGToSecondary(mwName string) error {
-	a.log.Info("Update ManifestWork", "name", mwName)
+func (a *AVRInstance) hasVRGStateBeenUpdatedToSecondary(clusterName string) (bool, error) {
+	vrgMWName := BuildManifestWorkName(a.instance.Name, a.instance.Namespace, MWTypeVRG)
+	a.log.Info("Check if VRG has been updated to secondary", "name", vrgMWName, "cluster", clusterName)
 
-	if a.instance.Status.Decision == (rmn.PlacementDecision{}) {
+	mw, err := a.findManifestWork(vrgMWName, clusterName)
+	if err != nil {
+		a.log.Error(err, "failed to update VRG state")
+
+		return false, err
+	}
+
+	vrg, err := a.getVRGFromManifestWork(mw)
+	if err != nil {
+		a.log.Error(err, "failed to update VRG state")
+
+		return false, err
+	}
+
+	if vrg.Spec.ReplicationState == volrep.Secondary {
+		a.log.Info("VRG MW already secondary on this cluster", "name", vrg.Name, "cluster", mw.Namespace)
+
+		return true, nil
+	}
+
+	return false, err
+}
+
+func (a *AVRInstance) updateVRGStateToSecondary(clusterName string) error {
+	vrgMWName := BuildManifestWorkName(a.instance.Name, a.instance.Namespace, MWTypeVRG)
+	a.log.Info("Updating VRG to secondary for MW", "name", vrgMWName, "cluster", clusterName)
+
+	mw, err := a.findManifestWork(vrgMWName, clusterName)
+	if err != nil {
+		a.log.Error(err, "failed to update VRG state")
+
+		return err
+	}
+
+	vrg, err := a.getVRGFromManifestWork(mw)
+	if err != nil {
+		a.log.Error(err, "failed to update VRG state")
+
+		return err
+	}
+
+	if vrg.Spec.ReplicationState == volrep.Secondary {
+		a.log.Info("VRG MW already secondary on this cluster", "name", vrg.Name, "cluster", mw.Namespace)
+		a.addClusterToClean(clusterName)
+
 		return nil
 	}
 
-	d := a.instance.Status.Decision
-	mw := &ocmworkv1.ManifestWork{}
+	vrg.Spec.ReplicationState = volrep.Secondary
 
-	err := a.reconciler.Get(a.ctx, types.NamespacedName{Name: mwName, Namespace: d.HomeCluster}, mw)
+	vrgClientManifest, err := a.generateManifest(vrg)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil
-		}
+		a.log.Error(err, "failed to generate manifest")
 
-		return fmt.Errorf("failed to retrieve manifestwork for type: %s. Error: %w", mwName, err)
+		return err
 	}
 
-	a.log.Info("Found ManifestWork. Update the VRG manifest", "name", mw.Name)
+	mw.Spec.Workload.Manifests[0] = *vrgClientManifest
 
+	err = a.reconciler.Update(a.ctx, mw)
+	if err != nil {
+		return fmt.Errorf("failed to update MW (%w)", err)
+	}
+
+	a.log.Info(fmt.Sprintf("Updated VRG to secondary. VRG (%v)", vrg))
+
+	a.addClusterToClean(clusterName)
+
+	return nil
+}
+
+func (a *AVRInstance) getVRGFromManifestWork(mw *ocmworkv1.ManifestWork) (*rmn.VolumeReplicationGroup, error) {
 	if len(mw.Spec.Workload.Manifests) == 0 {
-		return fmt.Errorf("invalid VRG ManifestWork for type: %s", mwName)
+		return nil, fmt.Errorf("invalid VRG ManifestWork for type: %s", mw.Name)
 	}
 
 	vrgClientManifest := &mw.Spec.Workload.Manifests[0]
 	vrg := &rmn.VolumeReplicationGroup{}
 
-	err = yaml.Unmarshal(vrgClientManifest.RawExtension.Raw, &vrg)
+	err := yaml.Unmarshal(vrgClientManifest.RawExtension.Raw, &vrg)
 	if err != nil {
-		return errorswrapper.Wrap(err, fmt.Sprintf("unable to update VRG object %s as secondary", vrg.Name))
+		return nil, fmt.Errorf("unable to unmarshal VRG object (%w)", err)
 	}
 
-	vrgLabels := vrg.GetLabels()
-	if vrgLabels == nil {
-		vrgLabels = make(map[string]string)
-	}
-
-	vrg.Spec.ReplicationState = volrep.Secondary
-
-	vrgClientManifest, err = a.generateManifest(vrg)
-	if err != nil {
-		a.log.Error(err, "failed to generate VolumeReplication")
-
-		return err
-	}
-
-	a.log.Info(fmt.Sprintf("VRG Manifest %v", vrg))
-
-	mw.Spec.Workload.Manifests[0] = *vrgClientManifest
-
-	mwLabels := mw.GetLabels()
-	if mwLabels == nil {
-		mwLabels = make(map[string]string)
-	}
-
-	// Now that the VRG will be secondary, Labeling the MW for deleting will cause
-	// two things, 1) the VRG will switch from primary to secondary, and once that
-	// complete, 2) delete the MW which cause the VRG in secondary to be also deleted.
-	mwLabels[Deleting] = "true"
-	mw.SetLabels(mwLabels)
-
-	return a.reconciler.Update(a.ctx, mw)
+	return vrg, nil
 }
 
 func (a *AVRInstance) updateAVRStatus() error {
@@ -1433,7 +1637,7 @@ func (a *AVRInstance) resetDRState() {
 
 func (a *AVRInstance) setDRState(nextState rmn.DRState) {
 	if a.instance.Status.LastKnownDRState != nextState {
-		a.log.Info(fmt.Sprintf("LastKnownDRState: curState '%s' - nextState '%s'",
+		a.log.Info(fmt.Sprintf("LastKnownDRState: Current State '%s'. Next State '%s'",
 			a.instance.Status.LastKnownDRState, nextState))
 
 		a.instance.Status.LastKnownDRState = nextState
@@ -1441,43 +1645,12 @@ func (a *AVRInstance) setDRState(nextState rmn.DRState) {
 	}
 }
 
-func (a *AVRInstance) cleanupSecondaryVRGManifestWork() error {
-	namereq := metav1.LabelSelectorRequirement{}
-	namereq.Key = Deleting
-	namereq.Operator = metav1.LabelSelectorOpIn
-	namereq.Values = append(namereq.Values, "true")
+func (a *AVRInstance) addClusterToClean(clusterName string) {
+	a.instance.Status.ClusterToClean = clusterName
+	a.needStatusUpdate = true
+}
 
-	labelSelector := &metav1.LabelSelector{
-		MatchExpressions: []metav1.LabelSelectorRequirement{namereq},
-	}
-
-	a.log.Info(fmt.Sprintf("Using ManifestWork LabelSelector %v", labelSelector))
-
-	mwSelector, err := metav1.LabelSelectorAsSelector(labelSelector)
-	if err != nil {
-		return err
-	}
-
-	mwList := &ocmworkv1.ManifestWorkList{}
-
-	err = a.reconciler.List(context.TODO(), mwList, &client.ListOptions{LabelSelector: mwSelector})
-
-	if err != nil && !errors.IsNotFound(err) {
-		a.log.Error(err, "error listing ManifestWorks")
-
-		return err
-	}
-
-	for _, mw := range mwList.Items {
-		mwName := BuildManifestWorkName(a.instance.Name, a.instance.Namespace, MWTypeVRG)
-		if mwName == mw.Name {
-			// TODO: Use ManagedClusterView to check whether the VRG is ready for deletion
-			// TODO: call deleteExistingManifestWork once ManagedClusterView confirms that
-			// the VRG is in secondary state
-			a.log.Info("Deleting ManifestWork", "MW Name", mwName)
-			break
-		}
-	}
-
-	return nil
+func (a *AVRInstance) resetClusterToClean() {
+	a.instance.Status.ClusterToClean = ""
+	a.needStatusUpdate = true
 }

@@ -116,18 +116,12 @@ const (
 	Relocated  DRState = "Relocated"
 )
 
-// PlacementDecision holds references to the current successful placement
-type PlacementDecision struct {
-	HomeCluster          string `json:"homeCluster,omitempty"`
-	PeerCluster          string `json:"peerCluster,omitempty"`
-	PreferredHomeCluster string `json:"preferredHomeCluster,omitempty"`
-}
-
 // ApplicationVolumeReplicationStatus defines the observed state of ApplicationVolumeReplication
 type ApplicationVolumeReplicationStatus struct {
-	Decision         PlacementDecision `json:"decisions,omitempty"`
-	LastKnownDRState DRState           `json:"lastKnownDRState,omitempty"`
-	LastUpdateTime   metav1.Time       `json:"lastUpdateTime"`
+	PreferredDecision plrv1.PlacementDecision `json:"decision,omitempty"`
+	ClusterToClean    string                  `json:"clusterToClean,omitempty"`
+	LastKnownDRState  DRState                 `json:"lastKnownDRState,omitempty"`
+	LastUpdateTime    metav1.Time             `json:"lastUpdateTime"`
 }
 
 // +kubebuilder:object:root=true
