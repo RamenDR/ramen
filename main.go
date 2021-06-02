@@ -114,7 +114,7 @@ func setupReconcilers(mgr ctrl.Manager) {
 		ObjStoreGetter: controllers.S3ObjectStoreGetter(),
 		PVDownloader:   controllers.ObjectStorePVDownloader{},
 		Scheme:         mgr.GetScheme(),
-		Callback:       func(string, bool) {},
+		Callback:       func(string) {},
 	})
 	if err := avrReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ApplicationVolumeReplication")

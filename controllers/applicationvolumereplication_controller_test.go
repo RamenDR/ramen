@@ -16,12 +16,12 @@ package controllers_test
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/ghodss/yaml"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -85,8 +85,8 @@ var (
 var safeToProceed bool
 
 // FakeProgressCallback of function type
-func FakeProgressCallback(avrName string, done bool) {
-	safeToProceed = done
+func FakeProgressCallback(avrName string) {
+	safeToProceed = true
 }
 
 type FakePVDownloader struct{}
@@ -178,7 +178,7 @@ func updateClonedPlacementRuleStatus(
 	clusterName string) {
 	decision := plrv1.PlacementDecision{
 		ClusterName:      clusterName,
-		ClusterNamespace: "test",
+		ClusterNamespace: clusterName,
 	}
 
 	clonedPlRuleLookupKey := types.NamespacedName{
@@ -329,7 +329,7 @@ func createDRClusterPeers(name, namespace string, clusters []string) {
 	Expect(err).NotTo(HaveOccurred())
 }
 
-func updateManifestWorkStatus(clusterNamespace, mwType string) {
+func updateManifestWorkStatus(clusterNamespace, mwType, workType string) {
 	manifestLookupKey := types.NamespacedName{
 		Name:      controllers.BuildManifestWorkName(AVRName, AVRNamespaceName, mwType),
 		Namespace: clusterNamespace,
@@ -347,7 +347,7 @@ func updateManifestWorkStatus(clusterNamespace, mwType string) {
 	pvManifestStatus := ocmworkv1.ManifestWorkStatus{
 		Conditions: []metav1.Condition{
 			{
-				Type:               ocmworkv1.WorkApplied,
+				Type:               workType,
 				LastTransitionTime: metav1.Time{Time: timeMostRecent},
 				Status:             metav1.ConditionTrue,
 				Reason:             "test",
@@ -366,6 +366,20 @@ func updateManifestWorkStatus(clusterNamespace, mwType string) {
 	}, timeout, interval).Should(BeTrue(), "failed to wait for PV manifest condition type to change to 'Applied'")
 }
 
+func waitForVRGMWDeletion(clusterNamespace string) {
+	manifestLookupKey := types.NamespacedName{
+		Name:      controllers.BuildManifestWorkName(AVRName, AVRNamespaceName, "vrg"),
+		Namespace: clusterNamespace,
+	}
+	createdManifest := &ocmworkv1.ManifestWork{}
+
+	Eventually(func() bool {
+		err := k8sClient.Get(context.TODO(), manifestLookupKey, createdManifest)
+
+		return errors.IsNotFound(err)
+	}, timeout, interval).Should(BeTrue(), "failed to wait for manifest deletion for type vrg")
+}
+
 func InitialDeployment(namespace, placementName, homeCluster string) (*plrv1.PlacementRule,
 	*rmn.ApplicationVolumeReplication) {
 	createNamespaces()
@@ -380,7 +394,7 @@ func InitialDeployment(namespace, placementName, homeCluster string) (*plrv1.Pla
 	return placementRule, avr
 }
 
-func verifyVRGManifestWorkCreatedAsExpected(managedCluster string, state volrep.ReplicationState, deleting bool) {
+func verifyVRGManifestWorkCreatedAsExpected(managedCluster string, state volrep.ReplicationState) {
 	vrgManifestLookupKey := types.NamespacedName{
 		Name:      "ramendr-vrg-roles",
 		Namespace: managedCluster,
@@ -423,9 +437,6 @@ func verifyVRGManifestWorkCreatedAsExpected(managedCluster string, state volrep.
 	}, timeout, interval).Should(BeTrue())
 
 	Expect(len(mw.Spec.Workload.Manifests)).To(Equal(1))
-	if deleting {
-		Expect(strconv.ParseBool(mw.GetLabels()["deleting"])).Should(Equal(deleting))
-	}
 
 	vrgClientManifest := mw.Spec.Workload.Manifests[0]
 
@@ -464,8 +475,7 @@ func verifyUserPlacementRuleDecision(name, namespace, homeCluster string) {
 	}, timeout, interval).Should(BeTrue())
 }
 
-func verifyAVRStatusExpectation(homeCluster, peerCluster, preferredHomeCluster string,
-	drState rmn.DRState) {
+func verifyAVRStatusPreferredClusterExpectation(drState rmn.DRState) {
 	avrLookupKey := types.NamespacedName{
 		Name:      AVRName,
 		Namespace: AVRNamespaceName,
@@ -476,17 +486,15 @@ func verifyAVRStatusExpectation(homeCluster, peerCluster, preferredHomeCluster s
 	Eventually(func() bool {
 		err := k8sClient.Get(context.TODO(), avrLookupKey, updatedAVR)
 
-		if d := updatedAVR.Status.Decision; err == nil && d != (rmn.PlacementDecision{}) {
-			return d.HomeCluster == homeCluster
+		if d := updatedAVR.Status.PreferredDecision; err == nil && d != (plrv1.PlacementDecision{}) {
+			return d.ClusterName == EastManagedCluster && updatedAVR.Status.LastKnownDRState == drState
 		}
 
 		return false
 	}, timeout, interval).Should(BeTrue(), "failed waiting for an updated AVR")
 
 	// 7.0 check that the home and peer clusters have been selected.
-	Expect(updatedAVR.Status.Decision.HomeCluster).Should(Equal(homeCluster))
-	Expect(updatedAVR.Status.Decision.PeerCluster).Should(Equal(peerCluster))
-	Expect(updatedAVR.Status.Decision.PreferredHomeCluster).Should(Equal(preferredHomeCluster))
+	Expect(updatedAVR.Status.PreferredDecision.ClusterName).Should(Equal(EastManagedCluster))
 	Expect(updatedAVR.Status.LastKnownDRState).Should(Equal(drState))
 }
 
@@ -509,30 +517,30 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				safeToProceed = false
 				userPlacementRule, avr = InitialDeployment(AVRNamespaceName, "sub-placement-rule", EastManagedCluster)
 				updateClonedPlacementRuleStatus(userPlacementRule, avr, EastManagedCluster)
-				verifyVRGManifestWorkCreatedAsExpected(EastManagedCluster, volrep.Primary, false)
-				updateManifestWorkStatus(EastManagedCluster, "vrg")
+				verifyVRGManifestWorkCreatedAsExpected(EastManagedCluster, volrep.Primary)
+				updateManifestWorkStatus(EastManagedCluster, "vrg", ocmworkv1.WorkApplied)
 				verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, EastManagedCluster)
-				verifyAVRStatusExpectation(EastManagedCluster, WestManagedCluster, "", rmn.Initial)
+				verifyAVRStatusPreferredClusterExpectation(rmn.Initial)
+				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(2)) // MWs for VRG and ROLES
 				waitForCompletion()
 			})
 		})
 		When("DRAction changes to failover", func() {
 			It("Should failover to Secondary (WestManagedCluster)", func() {
-				// ----------------------------- FAILOVER TO SECONDARY --------------------------------------
+				// ----------------------------- FAILOVER TO SECONDARY (WestManagedCluster) --------------------------------------
 				By("\n\n*** Failover - 1\n\n")
 				safeToProceed = false
 				updateClonedPlacementRuleStatus(userPlacementRule, avr, WestManagedCluster)
-				setAVRSpecExpectationTo(avr, "", rmn.ActionFailover, "", "")
-				updateManifestWorkStatus(WestManagedCluster, "pv")
-				updateManifestWorkStatus(WestManagedCluster, "vrg")
+				setAVRSpecExpectationTo(avr, "", rmn.ActionFailover, "", WestManagedCluster)
+				updateManifestWorkStatus(WestManagedCluster, "pv", ocmworkv1.WorkApplied)
+				updateManifestWorkStatus(WestManagedCluster, "vrg", ocmworkv1.WorkApplied)
 				verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, WestManagedCluster)
-				verifyAVRStatusExpectation(WestManagedCluster, EastManagedCluster, EastManagedCluster, rmn.FailedOver)
-				verifyVRGManifestWorkCreatedAsExpected(WestManagedCluster, volrep.Primary, false)
-				verifyVRGManifestWorkCreatedAsExpected(EastManagedCluster, volrep.Secondary, true)
-				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(3)) // MW for VRG+ROLES+PV
-				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(2)) // MW for ROLES
+				verifyAVRStatusPreferredClusterExpectation(rmn.FailedOver)
+				verifyVRGManifestWorkCreatedAsExpected(WestManagedCluster, volrep.Primary)
+				// verifyVRGManifestWorkCreatedAsExpected(EastManagedCluster, volrep.Secondary, true)
+				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(3)) // MWs for VRG+ROLES+PVs
+				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // MW for ROLES only
 				waitForCompletion()
-				Fail("tst")
 			})
 		})
 		When("AVR Reconciler is called to failover the second time to the same cluster", func() {
@@ -541,11 +549,11 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				safeToProceed = false
 				updateClonedPlacementRuleStatus(userPlacementRule, avr, WestManagedCluster)
 				// Force the reconciler to execute by changing one of the avr.Spec fields. We chose s3Endpoint
-				setAVRSpecExpectationTo(avr, "newS3Endpoint", rmn.ActionFailover, "", "")
+				setAVRSpecExpectationTo(avr, "newS3Endpoint", rmn.ActionFailover, "", WestManagedCluster)
 				verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, WestManagedCluster)
-				verifyAVRStatusExpectation(WestManagedCluster, EastManagedCluster, EastManagedCluster, rmn.FailedOver)
-				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(3)) // MW for VRG+ROLES+PV
-				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(2)) // MW for ROLES
+				verifyAVRStatusPreferredClusterExpectation(rmn.FailedOver)
+				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(3)) // MWs for VRG+ROLES+PVs
+				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // MWs for ROLES
 				waitForCompletion()
 			})
 		})
@@ -554,16 +562,19 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				// ----------------------------- FAILBACK TO PRIMARY --------------------------------------
 				By("\n\n*** Failback - 1\n\n")
 				safeToProceed = false
+				updateManifestWorkStatus(WestManagedCluster, "vrg", ocmworkv1.WorkProgressing)
 				updateClonedPlacementRuleStatus(userPlacementRule, avr, EastManagedCluster)
-				setAVRSpecExpectationTo(avr, "", rmn.ActionFailback, "", "")
-				updateManifestWorkStatus(EastManagedCluster, "pv")
-				updateManifestWorkStatus(EastManagedCluster, "vrg")
+				setAVRSpecExpectationTo(avr, "", rmn.ActionFailback, "", WestManagedCluster)
+				updateManifestWorkStatus(EastManagedCluster, "pv", ocmworkv1.WorkApplied)
+				updateManifestWorkStatus(EastManagedCluster, "vrg", ocmworkv1.WorkApplied)
+
 				verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, EastManagedCluster)
-				verifyAVRStatusExpectation(EastManagedCluster, WestManagedCluster, "", rmn.FailedBack)
-				verifyVRGManifestWorkCreatedAsExpected(EastManagedCluster, volrep.Primary, false)
-				verifyVRGManifestWorkCreatedAsExpected(WestManagedCluster, volrep.Secondary, true)
-				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(3)) // MW for VRG+ROLES+PV
-				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(2)) // MW for ROLES
+				verifyAVRStatusPreferredClusterExpectation(rmn.FailedBack)
+				verifyVRGManifestWorkCreatedAsExpected(EastManagedCluster, volrep.Primary)
+				verifyVRGManifestWorkCreatedAsExpected(WestManagedCluster, volrep.Secondary)
+
+				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(3)) // MWs for VRG+ROLES+PVs
+				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(2)) // MWs for ROLES+PVs
 				waitForCompletion()
 			})
 		})
@@ -571,13 +582,15 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 			It("Should NOT do anything", func() {
 				By("\n\n*** Failback - 2: NOOP\n\n")
 				safeToProceed = false
+				updateManifestWorkStatus(WestManagedCluster, "vrg", ocmworkv1.WorkApplied)
 				updateClonedPlacementRuleStatus(userPlacementRule, avr, EastManagedCluster)
 				// Force the reconciler to execute by changing one of the avr.Spec fields. It is easier to change s3Endpoint
-				setAVRSpecExpectationTo(avr, "path/to/s3Endpoint", rmn.ActionFailback, "", "")
+				setAVRSpecExpectationTo(avr, "path/to/s3Endpoint", rmn.ActionFailback, "", WestManagedCluster)
 				verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, EastManagedCluster)
-				verifyAVRStatusExpectation(EastManagedCluster, WestManagedCluster, "", rmn.FailedBack)
-				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(3)) // MW for VRG+ROLES+PV
-				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(2)) // MW for ROLES
+				verifyAVRStatusPreferredClusterExpectation(rmn.FailedBack)
+				waitForVRGMWDeletion(WestManagedCluster)
+				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(3)) // MWs for VRG+ROLES+PVs
+				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(1)) // MWs for ROLES+PVs
 				waitForCompletion()
 			})
 		})
@@ -588,14 +601,14 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				safeToProceed = false
 				updateClonedPlacementRuleStatus(userPlacementRule, avr, WestManagedCluster)
 				setAVRSpecExpectationTo(avr, "", rmn.ActionFailover, EastManagedCluster, WestManagedCluster)
-				updateManifestWorkStatus(WestManagedCluster, "pv")
-				updateManifestWorkStatus(WestManagedCluster, "vrg")
+				updateManifestWorkStatus(WestManagedCluster, "pv", ocmworkv1.WorkApplied)
+				updateManifestWorkStatus(WestManagedCluster, "vrg", ocmworkv1.WorkApplied)
 				verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, WestManagedCluster)
-				verifyAVRStatusExpectation(WestManagedCluster, EastManagedCluster, EastManagedCluster, rmn.FailedOver)
-				verifyVRGManifestWorkCreatedAsExpected(WestManagedCluster, volrep.Primary, false)
-				verifyVRGManifestWorkCreatedAsExpected(EastManagedCluster, volrep.Secondary, true)
-				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(3)) // MW for VRG+ROLES+PV
-				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(2)) // MW for ROLES
+				verifyAVRStatusPreferredClusterExpectation(rmn.FailedOver)
+				verifyVRGManifestWorkCreatedAsExpected(WestManagedCluster, volrep.Primary)
+				// verifyVRGManifestWorkCreatedAsExpected(EastManagedCluster, volrep.Secondary, true)
+				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(3)) // MW for VRG+ROLES+PVs
+				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // MWs for ROLES+PVs
 				waitForCompletion()
 			})
 		})
@@ -606,15 +619,15 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				safeToProceed = false
 				updateClonedPlacementRuleStatus(userPlacementRule, avr, EastManagedCluster)
 				// Force the reconciler to execute by changing one of the avr.Spec fields. It is easier to change s3Endpoint
-				setAVRSpecExpectationTo(avr, "path/to/s3Endpoint1", rmn.ActionFailover, WestManagedCluster, EastManagedCluster)
-				updateManifestWorkStatus(EastManagedCluster, "pv")
-				updateManifestWorkStatus(EastManagedCluster, "vrg")
+				setAVRSpecExpectationTo(avr, "path/to/s3Endpoint1", rmn.ActionFailover, "", EastManagedCluster)
+				updateManifestWorkStatus(EastManagedCluster, "pv", ocmworkv1.WorkApplied)
+				updateManifestWorkStatus(EastManagedCluster, "vrg", ocmworkv1.WorkApplied)
 				verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, EastManagedCluster)
-				verifyAVRStatusExpectation(EastManagedCluster, WestManagedCluster, "", rmn.FailedOver)
-				verifyVRGManifestWorkCreatedAsExpected(EastManagedCluster, volrep.Primary, false)
-				verifyVRGManifestWorkCreatedAsExpected(WestManagedCluster, volrep.Secondary, true)
+				verifyAVRStatusPreferredClusterExpectation(rmn.FailedOver)
+				verifyVRGManifestWorkCreatedAsExpected(EastManagedCluster, volrep.Primary)
+				// verifyVRGManifestWorkCreatedAsExpected(WestManagedCluster, volrep.Secondary, true)
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(3)) // MW for VRG+ROLES+PV
-				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(2)) // MW for ROLES
+				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(1)) // MW for ROLES
 				waitForCompletion()
 			})
 		})
@@ -625,14 +638,14 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				safeToProceed = false
 				updateClonedPlacementRuleStatus(userPlacementRule, avr, WestManagedCluster)
 				setAVRSpecExpectationTo(avr, "", rmn.ActionFailover, EastManagedCluster, WestManagedCluster)
-				updateManifestWorkStatus(WestManagedCluster, "pv")
-				updateManifestWorkStatus(WestManagedCluster, "vrg")
+				updateManifestWorkStatus(WestManagedCluster, "pv", ocmworkv1.WorkApplied)
+				updateManifestWorkStatus(WestManagedCluster, "vrg", ocmworkv1.WorkApplied)
 				verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, WestManagedCluster)
-				verifyAVRStatusExpectation(WestManagedCluster, EastManagedCluster, EastManagedCluster, rmn.FailedOver)
-				verifyVRGManifestWorkCreatedAsExpected(WestManagedCluster, volrep.Primary, false)
-				verifyVRGManifestWorkCreatedAsExpected(EastManagedCluster, volrep.Secondary, true)
+				verifyAVRStatusPreferredClusterExpectation(rmn.FailedOver)
+				verifyVRGManifestWorkCreatedAsExpected(WestManagedCluster, volrep.Primary)
+				// verifyVRGManifestWorkCreatedAsExpected(EastManagedCluster, volrep.Secondary, true)
 				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(3)) // MW for VRG+ROLES+PV
-				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(2)) // MW for ROLES
+				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // MW for ROLES
 				waitForCompletion()
 			})
 		})
@@ -643,14 +656,14 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				safeToProceed = false
 				updateClonedPlacementRuleStatus(userPlacementRule, avr, EastManagedCluster)
 				setAVRSpecExpectationTo(avr, "", rmn.ActionFailback, EastManagedCluster, WestManagedCluster)
-				updateManifestWorkStatus(EastManagedCluster, "pv")
-				updateManifestWorkStatus(EastManagedCluster, "vrg")
+				updateManifestWorkStatus(EastManagedCluster, "pv", ocmworkv1.WorkApplied)
+				updateManifestWorkStatus(EastManagedCluster, "vrg", ocmworkv1.WorkApplied)
 				verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, EastManagedCluster)
-				verifyAVRStatusExpectation(EastManagedCluster, WestManagedCluster, "", rmn.FailedBack)
-				verifyVRGManifestWorkCreatedAsExpected(EastManagedCluster, volrep.Primary, false)
-				verifyVRGManifestWorkCreatedAsExpected(WestManagedCluster, volrep.Secondary, true)
+				verifyAVRStatusPreferredClusterExpectation(rmn.FailedBack)
+				verifyVRGManifestWorkCreatedAsExpected(EastManagedCluster, volrep.Primary)
+				// verifyVRGManifestWorkCreatedAsExpected(WestManagedCluster, volrep.Secondary, true)
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(3)) // MW for VRG+ROLES+PV
-				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(2)) // MW for ROLES
+				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(1)) // MW for ROLES
 				waitForCompletion()
 			})
 		})
