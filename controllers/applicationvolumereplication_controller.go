@@ -420,7 +420,8 @@ func (a *AVRInstance) processPausedSubscription(
 		return IsManifestInAppliedState(pvMW)
 	}
 
-	vrg, err := a.reconciler.getVRGFromManagedCluster(subscription, newHomeCluster)
+	// TODO: remove the following calls when @BenamarMk's changes go in: getVRGFromManagedCluster, isVRGReadyForFailback
+	vrg, err := a.reconciler.getVRGFromManagedCluster(subscription.Name, subscription.Namespace, newHomeCluster)
 	if err != nil {
 		return !unpause
 	}
@@ -433,17 +434,17 @@ func (a *AVRInstance) processPausedSubscription(
 }
 
 func (r *ApplicationVolumeReplicationReconciler) getVRGFromManagedCluster(
-	subscription *subv1.Subscription, newHomeCluster string) (*rmn.VolumeReplicationGroup, error) {
+	name string, namespace string, managedCluster string) (*rmn.VolumeReplicationGroup, error) {
 	// get VRG and verify status through ManagedClusterView
 	mcvMeta := metav1.ObjectMeta{
 		Name:      "mcv-avr-reconciler",
-		Namespace: newHomeCluster,
+		Namespace: managedCluster,
 	}
 
 	mcvViewscope := fndv2.ViewScope{
 		Resource:  "VolumeReplicationGroup",
-		Name:      subscription.Name,
-		Namespace: subscription.Namespace,
+		Name:      name,
+		Namespace: namespace,
 	}
 
 	vrg := &rmn.VolumeReplicationGroup{}
