@@ -17,11 +17,11 @@ usage()
 	echo "  Available environment variables:"
 	echo "    minikube primary cluster PRIMARY_CLUSTER ${PRIMARY_CLUSTER}"
 	echo "    minikube secondary cluster SECONDARY_CLUSTER ${SECONDARY_CLUSTER}"
-	exit 0
+	exit 1
 }
 
 function wait_for_condition() {
-    local count=15
+    local count=61
     local condition=${1}
     local result
     shift
@@ -50,7 +50,7 @@ echo SECONDARY_CLUSTER_SITE_NAME is "${SECONDARY_CLUSTER_SITE_NAME}"
 MIRROR_SECRET_YAML=$(mktemp --suffix .yaml)
 cp "${scriptdir}/rook-mirror-secret-template.yaml" "${MIRROR_SECRET_YAML}"
 sed -e "s,<name>,${SECONDARY_CLUSTER_SITE_NAME}," -i "${MIRROR_SECRET_YAML}"
-sed -e "s,<poolname>,${POOL_NAME}," -i "${MIRROR_SECRET_YAML}"
+sed -e "s,<pool>,${POOL_NAME}," -i "${MIRROR_SECRET_YAML}"
 sed -e "s,<token>,${SECONDARY_CLUSTER_SECRET}," -i "${MIRROR_SECRET_YAML}"
 kubectl apply -f "${MIRROR_SECRET_YAML}" --context="${PRIMARY_CLUSTER}"
 rm -f "${MIRROR_SECRET_YAML}"
@@ -68,7 +68,7 @@ spec:
       - "${SECONDARY_CLUSTER_SITE_NAME}"
 EOF
 
-kubectl wait deployments -n rook-ceph --for condition=available rook-ceph-rbd-mirror-a --timeout=60s --context="${PRIMARY_CLUSTER}"
+#kubectl wait deployments -n rook-ceph --for condition=available rook-ceph-rbd-mirror-a --timeout=60s --context="${PRIMARY_CLUSTER}"
 
 wait_for_condition "OK" kubectl get cephblockpools.ceph.rook.io replicapool --context="${PRIMARY_CLUSTER}" -nrook-ceph -o jsonpath='{.status.mirroringStatus.summary.daemon_health}'
 echo RBD mirror daemon health OK
@@ -77,7 +77,7 @@ echo RBD mirror status health OK
 wait_for_condition "OK" kubectl get cephblockpools.ceph.rook.io replicapool --context="${PRIMARY_CLUSTER}" -nrook-ceph -o jsonpath='{.status.mirroringStatus.summary.image_health}'
 echo RBD mirror image summary health OK
 
-kubectl apply -f ./dev-rook-sc.yaml --context="${PRIMARY_CLUSTER}"
+kubectl apply -f "${scriptdir}"/dev-rook-sc.yaml --context="${PRIMARY_CLUSTER}"
 
 cat <<EOF | kubectl --context="${PRIMARY_CLUSTER}" apply -f -
 apiVersion: replication.storage.openshift.io/v1alpha1

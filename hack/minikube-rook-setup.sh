@@ -8,10 +8,10 @@ scriptdir="$(dirname "$(realpath "$0")")"
 PROFILE="${PROFILE:-hub}"
 POOL_NAME="minikube"
 
-IMAGE_DIR="${IMAGE_DIR:-"/var/lib/libvirt/images"}"
+IMAGE_DIR="${IMAGE_DIR:-"$HOME/.minikube/images"}"
 IMAGE_NAME="osd0"
 
-ROOK_SRC="${ROOK_SRC:-"https://raw.githubusercontent.com/rook/rook/release-1.6/cluster/examples/kubernetes/ceph/"}"
+ROOK_SRC="${ROOK_SRC:-"https://raw.githubusercontent.com/rook/rook/v1.6.5/cluster/examples/kubernetes/ceph/"}"
 
 ## Usage
 usage()
@@ -40,7 +40,7 @@ function wait_for_ssh() {
 }
 
 function wait_for_condition() {
-    local count=15
+    local count=61
     local condition=${1}
     local result
     shift
@@ -99,8 +99,12 @@ minikube ssh "sudo mkdir -p /mnt/vda1/rook/ && sudo ln -sf /mnt/vda1/rook/ /var/
 if [[ $(virsh pool-list | grep -wc "${POOL_NAME}") == 0 ]]; then
 	virsh pool-create-as --name "${POOL_NAME}" --type dir --target "${IMAGE_DIR}"
 fi
-virsh vol-create-as --pool "${POOL_NAME}" --name "${IMAGE_NAME}-${PROFILE}" --capacity 32G --format qcow2
-sudo virsh attach-disk --domain "${PROFILE}" --source "${IMAGE_DIR}/${IMAGE_NAME}-${PROFILE}" --target vdb --persistent --driver qemu --subdriver qcow2 --targetbus virtio
+if [ ! -f "${IMAGE_DIR}/${IMAGE_NAME}-${PROFILE}" ]; then
+	virsh vol-create-as --pool "${POOL_NAME}" --name "${IMAGE_NAME}-${PROFILE}" --capacity 32G --format qcow2
+fi
+if [[ $(minikube ssh 'echo 1 | sudo tee /sys/bus/pci/rescan > /dev/null ; dmesg | grep virtio_blk' --profile="${PROFILE}" | grep -wc vdb) == 0 ]]; then
+	sudo virsh attach-disk --domain "${PROFILE}" --source "${IMAGE_DIR}/${IMAGE_NAME}-${PROFILE}" --target vdb --persistent --driver qemu --subdriver qcow2 --targetbus virtio
+fi
 minikube ssh 'echo 1 | sudo tee /sys/bus/pci/rescan > /dev/null ; dmesg | grep virtio_blk' --profile="${PROFILE}"
 
 ## Install rook-ceph ##
