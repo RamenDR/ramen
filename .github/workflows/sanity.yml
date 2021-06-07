@@ -15,6 +15,7 @@ env:
   GO_VERSION: "1.15"
   # Uses image name IMG to build image in Makefile
   IMG: "quay.io/ramendr/ramen-operator:sanity"
+  IMG_NAME: "quay.io/ramendr/ramen-operator"
 defaults:
   run:
     shell: bash
@@ -127,3 +128,33 @@ jobs:
           make deploy
           kubectl get deployment -n ramen-system
           kubectl -n ramen-system wait --for=condition=Available --timeout=60s deploy/ramen-controller-manager
+
+  publish-image:
+    name: Publish built image
+    needs: [deploy-check, lint, golangci]
+    if: >
+      (github.event_name == 'push') &&
+      (github.ref == 'refs/heads/main')
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v1
+        with:
+          name: ramen-operator
+          path: /tmp
+
+      - name: Load image artifact
+        run: |
+          docker load -i /tmp/ramen-operator.tar
+
+      - name: Login to Quay
+        uses: docker/login-action@v1
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_ROBOT_TOKEN }}
+
+      - name: Push to Quay
+        run: |
+          docker tag "${IMG}" "${IMG_NAME}:main-canary"
+          docker push "${IMG_NAME}:main-canary"
