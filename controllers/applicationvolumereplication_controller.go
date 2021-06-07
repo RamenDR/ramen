@@ -541,8 +541,23 @@ func (a *AVRInstance) restorePVFromBackup(
 		return nil
 	}
 
+	for idx := range pvList {
+		a.cleanupPVForRestore(&pvList[idx])
+	}
+
 	// Create manifestwork for all PVs for this subscription
 	return a.createOrUpdatePVsManifestWork(subscription.Name, subscription.Namespace, homeCluster, pvList)
+}
+
+// cleanupPVForRestore cleans up required PV fields, to ensure restore succeeds to a new cluster, and
+// rebinding the PV to a newly created PVC with the same claimRef succeeds
+func (a *AVRInstance) cleanupPVForRestore(pv *corev1.PersistentVolume) {
+	pv.ResourceVersion = ""
+	if pv.Spec.ClaimRef != nil {
+		pv.Spec.ClaimRef.UID = ""
+		pv.Spec.ClaimRef.ResourceVersion = ""
+		pv.Spec.ClaimRef.APIVersion = ""
+	}
 }
 
 func (a *AVRInstance) createOrUpdatePVsManifestWork(
