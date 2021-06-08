@@ -1,6 +1,8 @@
 # Current Operator version
 VERSION ?= 0.0.1
 # Default bundle image tag
+IMAGE_TAG_BASE ?= quay.io/ramendr/ramen-operator
+BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:v$(VERSION)
 BUNDLE_IMG ?= controller-bundle:$(VERSION)
 # Options for 'bundle-build'
 ifneq ($(origin CHANNELS), undefined)
@@ -24,6 +26,15 @@ GOBIN=$(shell go env GOPATH)/bin
 else
 GOBIN=$(shell go env GOBIN)
 endif
+# Setting SHELL to bash allows bash commands to be executed by recipes.
+# This is a requirement for 'setup-envtest.sh' in the test target.
+# Options are set to exit when a recipe line exits non-zero or a piped command fails.
+SHELL = /usr/bin/env bash -o pipefail
+.SHELLFLAGS = -ec
+#all: build
+
+OS = $(shell go env GOOS)
+ARCH = $(shell go env GOARCH)
 
 all: manager
 
@@ -128,3 +139,28 @@ bundle: manifests kustomize
 .PHONY: bundle-build
 bundle-build:
 	docker build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+
+.PHONY: opm
+OPM = ./bin/opm
+opm:
+ifeq (,$(wildcard $(OPM)))
+ifeq (,$(shell which opm 2>/dev/null))
+	@{ \
+	set -e ;\
+	mkdir -p $(dir $(OPM)) ;\
+	curl -sSLo $(OPM) https://github.com/operator-framework/operator-registry/releases/download/v1.15.1/$(OS)-$(ARCH)-opm ;\
+	chmod +x $(OPM) ;\
+	}
+else
+OPM = $(shell which opm)
+endif
+endif
+BUNDLE_IMGS ?= $(BUNDLE_IMG)
+CATALOG_IMG ?= $(IMAGE_TAG_BASE)-catalog:v$(VERSION) ifneq ($(origin CATALOG_BASE_IMG), undefined) FROM_INDEX_OPT := --from-index $(CATALOG_BASE_IMG) endif
+.PHONY: catalog-build
+catalog-build: opm
+	$(OPM) index add --container-tool docker --mode semver --tag $(CATALOG_IMG) --bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT)
+
+.PHONY: catalog-push
+catalog-push: ## Push the catalog image.
+	$(MAKE) docker-push IMG=$(CATALOG_IMG)

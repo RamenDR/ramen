@@ -36,17 +36,11 @@ spec:
           spec:
             description: ClusterPeersSpec defines the desired state of ClusterPeers
             properties:
-              clusterIDs:
-                description: Members of the ClusterPeers set
-                items:
-                  type: string
-                type: array
               replicationPolicy:
                 description: 'Type of replication policy used by this ClusterPeers:
                   sync or async'
                 type: string
             required:
-            - clusterIDs
             - replicationPolicy
             type: object
           status:
