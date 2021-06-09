@@ -300,7 +300,7 @@ func createAVR(name, namespace string) *rmn.ApplicationVolumeReplication {
 					Kind: "PlacementRule",
 				},
 			},
-			DRClusterPeersRef: rmn.DRClusterPeersReference{
+			DRClusterPeersRef: corev1.ObjectReference{
 				Name:      DRClusterPeersName,
 				Namespace: namespace,
 			},
@@ -557,6 +557,9 @@ func verifyUserPlacementRuleDecision(name, namespace, homeCluster string) {
 
 		return err == nil && usrPlRule.Status.Decisions[0].ClusterName == homeCluster
 	}, timeout, interval).Should(BeTrue())
+
+	Expect(usrPlRule.ObjectMeta.Annotations[controllers.AVRNameAnnotation]).Should(Equal(AVRName))
+	Expect(usrPlRule.ObjectMeta.Annotations[controllers.AVRNamespaceAnnotation]).Should(Equal(AVRNamespaceName))
 }
 
 func verifyAVRStatusPreferredClusterExpectation(drState rmn.DRState) {
