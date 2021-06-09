@@ -69,7 +69,7 @@ const (
 	// Label for VRG to indicate whether to delete it or not
 	Deleting string = "deleting"
 
-	// Annotations for MW
+	// Annotations for MW and PlacementRule
 	AVRNameAnnotation      = "applicationvolumereplication.ramendr.openshift.io/avr-name"
 	AVRNamespaceAnnotation = "applicationvolumereplication.ramendr.openshift.io/avr-namespace"
 )
@@ -312,6 +312,10 @@ func (r *ApplicationVolumeReplicationReconciler) getPlacementRules(ctx context.C
 		return nil, nil, err
 	}
 
+	if err = r.annotatePlacementRule(ctx, avr, userPlRule); err != nil {
+		return nil, nil, err
+	}
+
 	avrPlRule, err := r.getOrClonePlacementRule(ctx, avr, userPlRule)
 	if err != nil {
 		return nil, nil, err
@@ -349,6 +353,40 @@ func (r *ApplicationVolumeReplicationReconciler) getUserPlacementRule(ctx contex
 	}
 
 	return userPlacementRule, nil
+}
+
+func (r *ApplicationVolumeReplicationReconciler) annotatePlacementRule(ctx context.Context,
+	avr *rmn.ApplicationVolumeReplication, plRule *plrv1.PlacementRule) error {
+	if plRule.ObjectMeta.Annotations == nil {
+		plRule.ObjectMeta.Annotations = map[string]string{}
+	}
+
+	ownerName := plRule.ObjectMeta.Annotations[AVRNameAnnotation]
+	ownerNamespace := plRule.ObjectMeta.Annotations[AVRNamespaceAnnotation]
+
+	if ownerName == "" {
+		plRule.ObjectMeta.Annotations[AVRNameAnnotation] = avr.Name
+		plRule.ObjectMeta.Annotations[AVRNamespaceAnnotation] = avr.Namespace
+
+		err := r.Update(ctx, plRule)
+		if err != nil {
+			r.Log.Error(err, "Failed to update PlacementRule annotation", "PlRuleName", plRule.Name)
+
+			return fmt.Errorf("failed to update PlacementRule %s annotation '%s/%s' (%w)",
+				plRule.Name, AVRNameAnnotation, avr.Name, err)
+		}
+
+		return nil
+	}
+
+	if ownerName != avr.Name || ownerNamespace != avr.Namespace {
+		r.Log.Info("PlacementRule not owned by this AVR", "PlRuleName", plRule.Name)
+
+		return fmt.Errorf("PlacementRule %s not owned by this AVR '%s/%s'",
+			plRule.Name, avr.Name, avr.Namespace)
+	}
+
+	return nil
 }
 
 func (r *ApplicationVolumeReplicationReconciler) getOrClonePlacementRule(ctx context.Context,

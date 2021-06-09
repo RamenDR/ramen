@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -38,21 +39,13 @@ const (
 	ActionRelocate DRAction = "Relocate"
 )
 
-// DRClusterPeersReference holds a reference to DRClusterPeers
-type DRClusterPeersReference struct {
-	// `namespace` is the namespace of the cluster peers.
-	Namespace string `json:"namespace,omitempty"`
-	// `name` is the name of the cluster peers.
-	Name string `json:"name"`
-}
-
 // ApplicationVolumeReplicationSpec defines the desired state of ApplicationVolumeReplication
 type ApplicationVolumeReplicationSpec struct {
 	// Placement is used by AVR
 	Placement *plrv1.Placement `json:"placement"`
 
 	// DRClusterPeersRef is the reference to the DRClusterPeers participating in the DR replication for this AVR
-	DRClusterPeersRef DRClusterPeersReference `json:"drClusterPeersRef"`
+	DRClusterPeersRef v1.ObjectReference `json:"drClusterPeersRef"`
 
 	// PreferredCluster is the cluster name that the user preferred to run the application on
 	PreferredCluster string `json:"preferredCluster,omitempty"`
