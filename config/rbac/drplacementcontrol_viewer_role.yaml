@@ -1,13 +1,13 @@
-# permissions for end users to view ApplicationVolumeReplications.
+# permissions for end users to view DRPlacementControls.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: applicationvolumereplication-viewer-role
+  name: drplacementcontrol-viewer-role
 rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - applicationvolumereplications
+  - drplacementcontrols
   verbs:
   - get
   - list
@@ -15,6 +15,6 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - applicationvolumereplications/status
+  - drplacementcontrols/status
   verbs:
   - get

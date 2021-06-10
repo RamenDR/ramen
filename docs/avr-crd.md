@@ -1,3 +1,3 @@
-# ApplicationVolumeReplication(AVR) CRD
+# DRPlacementControl(DRPC) CRD
 
 ## **Under construction**

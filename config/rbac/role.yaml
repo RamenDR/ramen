@@ -73,7 +73,7 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - applicationvolumereplications
+  - drplacementcontrols
   verbs:
   - create
   - delete
@@ -85,13 +85,13 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - applicationvolumereplications/finalizers
+  - drplacementcontrols/finalizers
   verbs:
   - update
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - applicationvolumereplications/status
+  - drplacementcontrols/status
   verbs:
   - get
   - patch
@@ -99,7 +99,7 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - drclusterpeers
+  - drpolicies
   verbs:
   - create
   - delete

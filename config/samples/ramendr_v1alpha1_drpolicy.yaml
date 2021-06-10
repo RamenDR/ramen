@@ -1,7 +1,7 @@
 apiVersion: ramendr.openshift.io/v1alpha1
-kind: DRClusterPeers
+kind: DRPolicy
 metadata:
-  name: drclusterpeers-sample
+  name: drpolicy-sample
 spec:
   # Add fields here
   foo: bar

@@ -1,7 +1,7 @@
 apiVersion: ramendr.openshift.io/v1alpha1
-kind: ApplicationVolumeReplication
+kind: DRPlacementControl
 metadata:
-  name: applicationvolumereplication-sample
+  name: drplacementcontrol-sample
 spec:
   pvcSelector:
     matchLabels:
