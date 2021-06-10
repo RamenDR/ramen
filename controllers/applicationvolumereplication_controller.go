@@ -459,7 +459,7 @@ func (r *ApplicationVolumeReplicationReconciler) addClusterPeersToPlacementRule(
 	clusterPeers := &rmn.DRClusterPeers{}
 
 	err := r.Client.Get(ctx,
-		types.NamespacedName{Name: clPeersRef.Name, Namespace: clPeersRef.Namespace}, clusterPeers)
+		types.NamespacedName{Name: clPeersRef.Name}, clusterPeers)
 	if err != nil {
 		return fmt.Errorf("failed to get cluster peers using %s/%s. Error (%w)",
 			clPeersRef.Name, clPeersRef.Namespace, err)
