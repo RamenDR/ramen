@@ -5,6 +5,7 @@ extends: default
 ignore: |
   config/**
   hack/test/*
+  bundle/**
 rules:
   indentation:
     indent-sequences: consistent

@@ -1,9 +1,10 @@
 # Current Operator version
 VERSION ?= 0.0.1
+IMG_TAG ?= main-canary
 # Default bundle image tag
 IMAGE_TAG_BASE ?= quay.io/ramendr/ramen-operator
-BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:v$(VERSION)
-BUNDLE_IMG ?= controller-bundle:$(VERSION)
+BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:$(IMG_TAG)
+
 # Options for 'bundle-build'
 ifneq ($(origin CHANNELS), undefined)
 BUNDLE_CHANNELS := --channels=$(CHANNELS)
@@ -16,7 +17,7 @@ BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 export SHELL := /bin/bash
 
 # Image URL to use all building/pushing image targets
-IMG ?= quay.io/ramendr/ramen-operator:latest
+IMG ?= $(IMAGE_TAG_BASE):$(IMG_TAG)
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
 
@@ -140,6 +141,10 @@ bundle: manifests kustomize
 bundle-build:
 	docker build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
+.PHONY: bundle-push
+bundle-push: ## Push the bundle image.
+	$(MAKE) docker-push IMG=$(BUNDLE_IMG)
+
 .PHONY: opm
 OPM = ./bin/opm
 opm:
@@ -148,6 +153,7 @@ ifeq (,$(shell which opm 2>/dev/null))
 	@{ \
 	set -e ;\
 	mkdir -p $(dir $(OPM)) ;\
+	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
 	curl -sSLo $(OPM) https://github.com/operator-framework/operator-registry/releases/download/v1.15.1/$(OS)-$(ARCH)-opm ;\
 	chmod +x $(OPM) ;\
 	}
@@ -156,7 +162,7 @@ OPM = $(shell which opm)
 endif
 endif
 BUNDLE_IMGS ?= $(BUNDLE_IMG)
-CATALOG_IMG ?= $(IMAGE_TAG_BASE)-catalog:v$(VERSION) ifneq ($(origin CATALOG_BASE_IMG), undefined) FROM_INDEX_OPT := --from-index $(CATALOG_BASE_IMG) endif
+CATALOG_IMG ?= $(IMAGE_TAG_BASE)-catalog:$(IMG_TAG) ifneq ($(origin CATALOG_BASE_IMG), undefined) FROM_INDEX_OPT := --from-index $(CATALOG_BASE_IMG) endif
 .PHONY: catalog-build
 catalog-build: opm
 	$(OPM) index add --container-tool docker --mode semver --tag $(CATALOG_IMG) --bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT)
