@@ -217,8 +217,7 @@ func createAVR(name, namespace string) *rmn.ApplicationVolumeReplication {
 				},
 			},
 			DRClusterPeersRef: corev1.ObjectReference{
-				Name:      DRClusterPeersName,
-				Namespace: namespace,
+				Name: DRClusterPeersName,
 			},
 			PVCSelector: metav1.LabelSelector{
 				MatchLabels: map[string]string{

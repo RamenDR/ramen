@@ -53,6 +53,7 @@ type DRClusterPeersStatus struct{}
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Cluster
 
 // DRClusterPeers is the Schema for the drclusterpeers API
 type DRClusterPeers struct {
