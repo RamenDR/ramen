@@ -38,6 +38,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -423,28 +424,39 @@ func (a *AVRInstance) processPausedSubscription(
 	// TODO: remove the following calls when @BenamarMk's changes go in: getVRGFromManagedCluster, isVRGReadyForFailback
 	vrg, err := a.reconciler.getVRGFromManagedCluster(subscription.Name, subscription.Namespace, newHomeCluster)
 	if err != nil {
+		a.reconciler.Log.Info("getVRGFromManagedCluster failed with error. Returning false:", err)
+
 		return !unpause
 	}
 
 	if !a.reconciler.isVRGReadyForFailback(vrg) {
+		a.reconciler.Log.Info("isVRGReadyForFailback failed with error. Returning false:", err)
+
 		return !unpause
 	}
 
 	return a.cleanupAndRestore(subscription, newHomeCluster)
 }
 
+// outputs a string for use in creating a ManagedClusterView name
+// example: when looking for a vrg with name 'demo' in the namespace 'ramen', input: ("demo", "ramen", "vrg")
+// this will give output "demo-ramen-vrg-mcv"
+func BuildManagedClusterViewName(resourceName, resourceNamespace, resource string) string {
+	return fmt.Sprintf("%s-%s-%s-mcv", resourceName, resourceNamespace, resource)
+}
+
 func (r *ApplicationVolumeReplicationReconciler) getVRGFromManagedCluster(
-	name string, namespace string, managedCluster string) (*rmn.VolumeReplicationGroup, error) {
+	resourceName string, resourceNamespace string, managedCluster string) (*rmn.VolumeReplicationGroup, error) {
 	// get VRG and verify status through ManagedClusterView
 	mcvMeta := metav1.ObjectMeta{
-		Name:      "mcv-avr-reconciler",
+		Name:      BuildManagedClusterViewName(resourceName, resourceNamespace, "vrg"),
 		Namespace: managedCluster,
 	}
 
 	mcvViewscope := fndv2.ViewScope{
 		Resource:  "VolumeReplicationGroup",
-		Name:      name,
-		Namespace: namespace,
+		Name:      resourceName,
+		Namespace: resourceNamespace,
 	}
 
 	vrg := &rmn.VolumeReplicationGroup{}
@@ -1117,7 +1129,7 @@ Requires:
 		Optional params: Namespace, Resource, Group, Version, Kind. Resource can be used by itself, Kind requires Version
 Returns: ManagedClusterView, error
 */
-func (r *ApplicationVolumeReplicationReconciler) createOrGetManagedClusterView(
+func (r *ApplicationVolumeReplicationReconciler) getOrCreateManagedClusterView(
 	meta metav1.ObjectMeta, viewscope fndv2.ViewScope) (*fndv2.ManagedClusterView, error) {
 	mcv := &fndv2.ManagedClusterView{
 		ObjectMeta: meta,
@@ -1133,11 +1145,13 @@ func (r *ApplicationVolumeReplicationReconciler) createOrGetManagedClusterView(
 		}
 
 		if err != nil {
-			return nil, errorswrapper.Wrap(err, "failed to createOrGetManagedClusterView")
+			return nil, errorswrapper.Wrap(err, "failed to getOrCreateManagedClusterView")
 		}
 	}
 
-	mcv.Spec.Scope = viewscope // set or update ViewScope with query params
+	if mcv.Spec.Scope != viewscope {
+		r.Log.Info("WARNING: existing ManagedClusterView has different ViewScope than desired one")
+	}
 
 	return mcv, nil
 }
@@ -1153,10 +1167,8 @@ Returns: error if encountered (nil if no error occurred). See results on interfa
 func (r *ApplicationVolumeReplicationReconciler) getManagedClusterResource(
 	meta metav1.ObjectMeta, viewscope fndv2.ViewScope, resource interface{}) error {
 	// create MCV first
-	mcv, err := r.createOrGetManagedClusterView(meta, viewscope)
+	mcv, err := r.getOrCreateManagedClusterView(meta, viewscope)
 	if err != nil {
-		err = fmt.Errorf("could not get or create ManagedClusterView")
-
 		return errorswrapper.Wrap(err, "getManagedClusterResource failed")
 	}
 
@@ -1166,10 +1178,10 @@ func (r *ApplicationVolumeReplicationReconciler) getManagedClusterResource(
 	// want single recent Condition with correct Type; otherwise: bad path
 	switch len(recentConditions) {
 	case 0:
-		err = fmt.Errorf("failed to find a resource with ManagedClusterView")
+		err = errors.NewNotFound(schema.GroupResource{}, "failed to find a resource")
 	case 1:
 		if recentConditions[0].Type != fndv2.ConditionViewProcessing {
-			err = fmt.Errorf("found invalid Condition.Type for ManagedClusterView results")
+			err = errors.NewNotFound(schema.GroupResource{}, "found invalid Condition.Type for ManagedClusterView results")
 		}
 	default:
 		err = fmt.Errorf("found multiple resources with ManagedClusterView - this should not be possible")
