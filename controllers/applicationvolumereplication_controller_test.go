@@ -242,10 +242,11 @@ func pauseSubscription(subscription *subv1.Subscription) {
 }
 
 func createManagedClusterView(name, namespace string) *fndv2.ManagedClusterView {
+	mcvName := controllers.BuildManagedClusterViewName(name, ApplicationVolumeReplicationNamespaceName, "vrg")
 	mcv := &fndv2.ManagedClusterView{
 
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
+			Name:      mcvName,
 			Namespace: namespace,
 		},
 		Spec: fndv2.ViewSpec{
@@ -258,7 +259,7 @@ func createManagedClusterView(name, namespace string) *fndv2.ManagedClusterView 
 	err := k8sClient.Create(context.TODO(), mcv)
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
-			err = k8sClient.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, mcv)
+			err = k8sClient.Get(context.TODO(), types.NamespacedName{Name: mcvName, Namespace: namespace}, mcv)
 		}
 	}
 
@@ -662,7 +663,7 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				By("\n\n*** Failover - 1\n\n")
 				safeToProceed = false
 
-				mcv := createManagedClusterView("mcv-avr-reconciler", WestManagedCluster)
+				mcv := createManagedClusterView("subscription-4", WestManagedCluster)
 				updateManagedClusterViewWithVRG(mcv, metav1.ConditionTrue)
 
 				pauseSubscription(subscription)
@@ -700,7 +701,7 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 				By("\n\n*** Failback - 1\n\n")
 				safeToProceed = false
 
-				mcv := createManagedClusterView("mcv-avr-reconciler", EastManagedCluster)
+				mcv := createManagedClusterView("subscription-4", EastManagedCluster)
 				updateManagedClusterViewWithVRG(mcv, metav1.ConditionTrue)
 
 				pauseSubscription(subscription)
@@ -752,10 +753,10 @@ var _ = Describe("ApplicationVolumeReplication Reconciler", func() {
 		})
 		It("Should not unpause without valid ManagedClusterView", func() {
 			// ----------------------------- FAILOVER --------------------------------------
-			By("\n\n*** Failover - 1\n\n")
+			By("\n\n*** Failover - 4\n\n")
 			safeToProceed = false
 
-			mcv := createManagedClusterView("mcv-avr-reconciler", WestManagedCluster)
+			mcv := createManagedClusterView("subscription-4", WestManagedCluster)
 			updateManagedClusterViewWithVRG(mcv, metav1.ConditionFalse)
 
 			pauseSubscription(subscription)
