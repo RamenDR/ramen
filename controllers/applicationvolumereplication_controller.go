@@ -136,17 +136,20 @@ func getMostRecentConditions(conditions []metav1.Condition) []metav1.Condition {
 		return conditions[b].LastTransitionTime.Before(&conditions[a].LastTransitionTime)
 	})
 
-	if len(conditions) > 0 {
-		mostRecentTimestamp := conditions[0].LastTransitionTime
+	if len(conditions) == 0 {
+		return recentConditions
+	}
 
-		// loop through conditions until not in the most recent one anymore
-		for index := range conditions {
-			// only keep conditions with most recent timestamp
-			if conditions[index].LastTransitionTime == mostRecentTimestamp {
-				recentConditions = append(recentConditions, conditions[index])
-			} else {
-				break
-			}
+	// len(conditions) > 0; conditions are sorted
+	mostRecentTimestamp := conditions[0].LastTransitionTime
+
+	// loop through conditions until not in the most recent one anymore
+	for index := range conditions {
+		// only keep conditions with most recent timestamp
+		if conditions[index].LastTransitionTime == mostRecentTimestamp {
+			recentConditions = append(recentConditions, conditions[index])
+		} else {
+			break
 		}
 	}
 
@@ -1122,41 +1125,6 @@ func (a *AVRInstance) updateAVRStatus() error {
 }
 
 /*
-Description: create a new ManagedClusterView object, or update the existing one with the same name.
-Requires:
-	1) meta: specifies MangedClusterView name and managed cluster search information
-	2) viewscope: once the managed cluster is found, use this information to find the resource.
-		Optional params: Namespace, Resource, Group, Version, Kind. Resource can be used by itself, Kind requires Version
-Returns: ManagedClusterView, error
-*/
-func (r *ApplicationVolumeReplicationReconciler) getOrCreateManagedClusterView(
-	meta metav1.ObjectMeta, viewscope fndv2.ViewScope) (*fndv2.ManagedClusterView, error) {
-	mcv := &fndv2.ManagedClusterView{
-		ObjectMeta: meta,
-		Spec: fndv2.ViewSpec{
-			Scope: viewscope,
-		},
-	}
-
-	err := r.Get(context.TODO(), types.NamespacedName{Name: meta.Name, Namespace: meta.Namespace}, mcv)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			err = r.Create(context.TODO(), mcv)
-		}
-
-		if err != nil {
-			return nil, errorswrapper.Wrap(err, "failed to getOrCreateManagedClusterView")
-		}
-	}
-
-	if mcv.Spec.Scope != viewscope {
-		r.Log.Info("WARNING: existing ManagedClusterView has different ViewScope than desired one")
-	}
-
-	return mcv, nil
-}
-
-/*
 Description: queries a managed cluster for a resource type, and populates a variable with the results.
 Requires:
 	1) meta: information of the new/existing resource; defines which cluster(s) to search
@@ -1198,6 +1166,41 @@ func (r *ApplicationVolumeReplicationReconciler) getManagedClusterResource(
 	}
 
 	return nil // success
+}
+
+/*
+Description: create a new ManagedClusterView object, or update the existing one with the same name.
+Requires:
+	1) meta: specifies MangedClusterView name and managed cluster search information
+	2) viewscope: once the managed cluster is found, use this information to find the resource.
+		Optional params: Namespace, Resource, Group, Version, Kind. Resource can be used by itself, Kind requires Version
+Returns: ManagedClusterView, error
+*/
+func (r *ApplicationVolumeReplicationReconciler) getOrCreateManagedClusterView(
+	meta metav1.ObjectMeta, viewscope fndv2.ViewScope) (*fndv2.ManagedClusterView, error) {
+	mcv := &fndv2.ManagedClusterView{
+		ObjectMeta: meta,
+		Spec: fndv2.ViewSpec{
+			Scope: viewscope,
+		},
+	}
+
+	err := r.Get(context.TODO(), types.NamespacedName{Name: meta.Name, Namespace: meta.Namespace}, mcv)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			err = r.Create(context.TODO(), mcv)
+		}
+
+		if err != nil {
+			return nil, errorswrapper.Wrap(err, "failed to getOrCreateManagedClusterView")
+		}
+	}
+
+	if mcv.Spec.Scope != viewscope {
+		r.Log.Info("WARNING: existing ManagedClusterView has different ViewScope than desired one")
+	}
+
+	return mcv, nil
 }
 
 func (a *AVRInstance) listPVsFromS3Store(

@@ -1,0 +1,11 @@
+# Create ManagedClusterView for a PV
+---
+apiVersion: view.open-cluster-management.io/v1beta1
+kind: ManagedClusterView
+metadata:
+  name: example-pv-mcv
+  namespace: cluster1
+spec:
+  scope:
+    name: test-pv
+    resource: PersistentVolume
