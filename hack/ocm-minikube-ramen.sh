@@ -131,14 +131,12 @@ ramen_deploy()
 	git --git-dir ${1}/.git --work-tree ${1} checkout -- config
 	ramen_branch_checkout_undo
 	kubectl --context ${2} -n ramen-system wait deployments --all --for condition=available
-	kubectl --context ${hub_cluster_name} label managedclusters/${2} region=${3} --overwrite
 	kubectl --context ${hub_cluster_name} label managedclusters/${2} name=${2} --overwrite
 }
 exit_stack_push unset -f ramen_deploy
 ramen_undeploy()
 {
 	kubectl --context ${hub_cluster_name} label managedclusters/${2} name-
-	kubectl --context ${hub_cluster_name} label managedclusters/${2} region-
 	ramen_branch_checkout ${1}
 	kube_context_set ${2}
 	make -C ${1} undeploy
@@ -272,11 +270,14 @@ application_sample_undeploy()
 	# error: no matching resources found
 	set -e
 	date
-	# TODO remove
-	kubectl --context ${1} -n busybox-sample patch persistentvolumeclaims/busybox-pvc --type json -p '[{"op":test,"path":/metadata/finalizers/0,"value":volumereplicationgroups.ramendr.openshift.io/pvc-vr-protection},{"op":remove,"path":/metadata/finalizers/0}]'
-	date
 	# TODO applicationvolumereplication finalizer delete volumereplicationgroup manifest work instead
-	kubectl --context ${hub_cluster_name} -n ${1} delete manifestworks/busybox-sub-busybox-sample-vrg-mw
+	kubectl --context ${1} -n busybox-sample get volumereplicationgroups/busybox-avr
+	kubectl --context ${hub_cluster_name} -n ${1} delete manifestworks/busybox-avr-busybox-sample-vrg-mw
+	date
+	set +e
+	kubectl --context ${1} -n busybox-sample wait volumereplicationgroups/busybox-avr --for delete
+	# error: no matching resources found
+	set -e
 	date
 	kubectl --context ${hub_cluster_name} delete -k ocm-ramen-samples/subscriptions
 	ramen_samples_branch_checkout_undo
@@ -300,9 +301,6 @@ for cluster_name in ${spoke_cluster_names}; do
 done; unset -v cluster_name
 for command in "${@:-deploy}"; do
 	case ${command} in
-	rook_ceph_deploy)
-		rook_ceph_deploy ${ramen_hack_directory_path_name} ${cluster_names}
-		;;
 	deploy)
 		hub_cluster_name=${hub_cluster_name} spoke_cluster_names=${spoke_cluster_names}\
 		${ramen_hack_directory_path_name}/ocm-minikube.sh
@@ -312,38 +310,43 @@ for command in "${@:-deploy}"; do
 		${ramen_hack_directory_path_name}/kubectl-install.sh ${HOME}/.local/bin
 		${ramen_hack_directory_path_name}/kustomize-install.sh ${HOME}/.local/bin
 		ramen_build ${ramen_directory_path_name}
-		i=0
 		for cluster_name in ${cluster_names}; do
-			ramen_deploy ${ramen_directory_path_name} ${cluster_name} region${i}
-			i=$((i+1))
+			ramen_deploy ${ramen_directory_path_name} ${cluster_name}
+		done; unset -v cluster_name
+		unset -v DOCKER_HOST
+		;;
+	undeploy)
+		for cluster_name in ${cluster_names}; do
+			ramen_undeploy ${ramen_directory_path_name} ${cluster_name}
+		done; unset -v cluster_name
+		rook_ceph_undeploy ${ramen_hack_directory_path_name} ${cluster_names}
+		;;
+	application_sample_deploy)
+		for cluster_name in ${cluster_names}; do
 			application_sample_namespace_and_s3_deploy ${cluster_name}
 		done
 		kubectl --context ${hub_cluster_name} label managedclusters/${cluster_name} region=west --overwrite
 		unset -v cluster_name
-		unset -v i
-		unset -v DOCKER_HOST
+		kubectl --context ${hub_cluster_name} get managedclusters --show-labels
 		. ${ramen_hack_directory_path_name}/until_true_or_n.sh
 		application_sample_deploy
 		unset -f until_true_or_n
-		;;
-	undeploy)
-		application_sample_undeploy
-		for cluster_name in ${cluster_names}; do
-			application_sample_namespace_and_s3_undeploy ${cluster_name}
-			ramen_undeploy ${ramen_directory_path_name} ${cluster_name}
-		done; unset -v cluster_name
-		rook_ceph_undeploy ${ramen_hack_directory_path_name} ${cluster_names}
 		;;
 	application_sample_undeploy)
 		application_sample_undeploy
 		for cluster_name in ${cluster_names}; do
 			application_sample_namespace_and_s3_undeploy ${cluster_name}
-		done; unset -v cluster_name
+		done
+		kubectl --context ${hub_cluster_name} label managedclusters/${cluster_name} region-
+		unset -v cluster_name
 		;;
 	ramen_undeploy)
 		for cluster_name in ${cluster_names}; do
                         ramen_undeploy ${ramen_directory_path_name} ${cluster_name}
                 done; unset -v cluster_name
+		;;
+	rook_ceph_deploy)
+		rook_ceph_deploy ${ramen_hack_directory_path_name} ${cluster_names}
 		;;
 	rook_ceph_undeploy)
 		rook_ceph_undeploy ${ramen_hack_directory_path_name} ${cluster_names}
