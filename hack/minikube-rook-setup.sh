@@ -8,7 +8,10 @@ scriptdir="$(dirname "$(realpath "$0")")"
 PROFILE="${PROFILE:-hub}"
 POOL_NAME="minikube"
 
-IMAGE_DIR="${IMAGE_DIR:-"$HOME/.minikube/images"}"
+if test -z "${IMAGE_DIR}"; then
+	IMAGE_DIR="$HOME/.minikube/images"
+	mkdir -p "${IMAGE_DIR}"
+fi
 IMAGE_NAME="osd0"
 
 ROOK_SRC="${ROOK_SRC:-"https://raw.githubusercontent.com/rook/rook/v1.6.5/cluster/examples/kubernetes/ceph/"}"

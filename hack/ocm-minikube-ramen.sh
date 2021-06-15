@@ -46,9 +46,7 @@ exit_stack_push unset -f rook_ceph_branch_checkout_undo
 rook_ceph_deploy()
 {
 	rook_ceph_branch_checkout ${1}/..
-	IMAGE_DIR=/var/lib/libvirt/images\
 	PROFILE=${2} ${1}/minikube-rook-setup.sh create
-	IMAGE_DIR=/var/lib/libvirt/images\
 	PROFILE=${3} ${1}/minikube-rook-setup.sh create
 	PRIMARY_CLUSTER=${2} SECONDARY_CLUSTER=${3} ${1}/minikube-rook-mirror-setup.sh
 	PRIMARY_CLUSTER=${3} SECONDARY_CLUSTER=${2} ${1}/minikube-rook-mirror-setup.sh
