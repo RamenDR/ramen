@@ -1,0 +1,12 @@
+# Create ManagedClusterView for a VRG
+---
+apiVersion: view.open-cluster-management.io/v1beta1
+kind: ManagedClusterView
+metadata:
+  name: example-vrg-mcv
+  namespace: cluster1
+spec:
+  scope:
+    name: volumereplicationgroup-sample-1
+    namespace: default
+    resource: VolumeReplicationGroup
