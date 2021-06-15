@@ -13,4 +13,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: quay.io/ramendr/ramen-operator
-  newTag: latest
+  newTag: main-canary

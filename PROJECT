@@ -3,23 +3,32 @@ layout: go.kubebuilder.io/v3
 projectName: ramen
 repo: github.com/ramendr/ramen
 resources:
-- crdVersion: v1alpha1
+- api:
+    crdVersion: v1alpha1
+    namespaced: true
+  controller: true
+  domain: openshift.io
   group: ramendr
   kind: VolumeReplicationGroup
+  path: github.com/ramendr/ramen/api/v1alpha1
   version: v1alpha1
-- crdVersion: v1alpha1
-  group: ramendr
-  kind: ClusterID
-  version: v1alpha1
-- crdVersion: v1alpha1
+- api:
+    crdVersion: v1alpha1
+  domain: openshift.io
   group: ramendr
   kind: ClusterPeers
+  path: github.com/ramendr/ramen/api/v1alpha1
   version: v1alpha1
-- crdVersion: v1alpha1
+- api:
+    crdVersion: v1alpha1
+    namespaced: true
+  controller: true
+  domain: openshift.io
   group: ramendr
   kind: ApplicationVolumeReplication
+  path: github.com/ramendr/ramen/api/v1alpha1
   version: v1alpha1
-version: 3-alpha
+version: "3"
 plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}

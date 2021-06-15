@@ -1,0 +1,147 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.4.1
+  creationTimestamp: null
+  name: volumereplicationgroups.ramendr.openshift.io
+spec:
+  group: ramendr.openshift.io
+  names:
+    kind: VolumeReplicationGroup
+    listKind: VolumeReplicationGroupList
+    plural: volumereplicationgroups
+    shortNames:
+    - vrg
+    singular: volumereplicationgroup
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: VolumeReplicationGroup is the Schema for the volumereplicationgroups
+          API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: "VolumeReplicationGroup (VRG) spec declares the desired replication
+              class and replication state of all the PVCs identified via the given
+              PVC label selector.  For each such PVC, the VRG will do the following:
+              \t- Create a VolumeReplication (VR) CR to enable storage level replication
+              \t  of volume data and set the desired replication state (primary, secondary,
+              \   etc).  - Take the corresponding PV metadata in Kubernetes etcd and
+              deposit it in    the S3 store.  The url, access key and access id required
+              to access the    S3 store is specified via environment variables of
+              the VRG operator POD,    which is obtained from a secret resource.  -
+              Manage the lifecycle of VR CR and S3 data according to CUD operations
+              on    the PVC and the VRG CR."
+            properties:
+              pvcSelector:
+                description: Label selector to identify all the PVCs that are in this
+                  group that needs to be replicated to the peer cluster.
+                properties:
+                  matchExpressions:
+                    description: matchExpressions is a list of label selector requirements.
+                      The requirements are ANDed.
+                    items:
+                      description: A label selector requirement is a selector that
+                        contains values, a key, and an operator that relates the key
+                        and values.
+                      properties:
+                        key:
+                          description: key is the label key that the selector applies
+                            to.
+                          type: string
+                        operator:
+                          description: operator represents a key's relationship to
+                            a set of values. Valid operators are In, NotIn, Exists
+                            and DoesNotExist.
+                          type: string
+                        values:
+                          description: values is an array of string values. If the
+                            operator is In or NotIn, the values array must be non-empty.
+                            If the operator is Exists or DoesNotExist, the values
+                            array must be empty. This array is replaced during a strategic
+                            merge patch.
+                          items:
+                            type: string
+                          type: array
+                      required:
+                      - key
+                      - operator
+                      type: object
+                    type: array
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: matchLabels is a map of {key,value} pairs. A single
+                      {key,value} in the matchLabels map is equivalent to an element
+                      of matchExpressions, whose key field is "key", the operator
+                      is "In", and the values array contains only "value". The requirements
+                      are ANDed.
+                    type: object
+                type: object
+              replicationState:
+                description: Desired state of all volumes [primary or secondary] in
+                  this replication group; this value is propagated to children VolumeReplication
+                  CRs
+                type: string
+              s3Endpoint:
+                description: 'S3 Endpoint to replicate PV metadata; set this field,
+                  along with a secret that contains the access-key-id and secret-access-key
+                  to enable VRG to replicate the PV metadata to the given s3 endpoint
+                  to a bucket with VRG''s name.  Thus the VRG name needs to be unique
+                  among other VRGs using the same S3Endpoint and it should also follow
+                  AWS bucket naming rules: https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
+                  If this field is not set, VRG may be used to simply control the
+                  replication state of all PVs in this group, under the expectation
+                  that the PV metadata is replicated by a different mechanism; this
+                  mode of operation may be referred to as backup-less mode.'
+                type: string
+              s3Region:
+                description: 'S3 Region: https://docs.aws.amazon.com/general/latest/gr/rande.html'
+                type: string
+              s3SecretName:
+                description: 'Name of k8s secret that contains the credentials to
+                  access the S3 endpoint. If S3Endpoint is used, also specify the
+                  k8s secret that contains the S3 access key id and secret access
+                  key set using the keys: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.  The
+                  secret should be present in the same namespace as the VRG'
+                type: string
+              volumeReplicationClass:
+                description: ReplicationClass of all volumes in this replication group;
+                  this value is propagated to children VolumeReplication CRs
+                type: string
+            required:
+            - pvcSelector
+            - replicationState
+            - volumeReplicationClass
+            type: object
+          status:
+            description: 'VolumeReplicationGroupStatus defines the observed state
+              of VolumeReplicationGroup INSERT ADDITIONAL STATUS FIELD - define observed
+              state of cluster Important: Run "make" to regenerate code after modifying
+              this file'
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []

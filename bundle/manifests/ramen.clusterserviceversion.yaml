@@ -1,0 +1,300 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: |-
+      [
+        {
+          "apiVersion": "ramendr.openshift.io/v1alpha1",
+          "kind": "ApplicationVolumeReplication",
+          "metadata": {
+            "name": "applicationvolumereplication-sample"
+          },
+          "spec": {
+            "pvcSelector": {
+              "matchLabels": {
+                "appclass": "gold",
+                "environment": "dev.AZ1"
+              }
+            },
+            "s3Endpoint": "path/to/s3Endpoint",
+            "s3SecretName": "SecretName",
+            "subscriptionSelector": {
+              "matchLabels": {
+                "app": "theApp"
+              }
+            }
+          }
+        },
+        {
+          "apiVersion": "ramendr.openshift.io/v1alpha1",
+          "kind": "ClusterPeers",
+          "metadata": {
+            "name": "clusterpeers-sample"
+          },
+          "spec": {
+            "foo": "bar"
+          }
+        },
+        {
+          "apiVersion": "ramendr.openshift.io/v1alpha1",
+          "kind": "VolumeReplicationGroup",
+          "metadata": {
+            "name": "volumereplicationgroup-sample-1"
+          },
+          "spec": {
+            "pvcSelector": {
+              "matchLabels": {
+                "appclass": "gold",
+                "environment": "dev.AZ1"
+              }
+            },
+            "replicationState": "Primary",
+            "volumeReplicationClass": "WAN-DR-Low-RPO-Apps"
+          }
+        }
+      ]
+    capabilities: Basic Install
+    operators.operatorframework.io/builder: operator-sdk-v1.7.1+git
+    operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
+  name: ramen.v0.0.1
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: ApplicationVolumeReplication is the Schema for the applicationvolumereplications
+        API
+      displayName: Application Volume Replication
+      kind: ApplicationVolumeReplication
+      name: applicationvolumereplications.ramendr.openshift.io
+      version: v1alpha1
+    - description: ClusterPeers is the Schema for the clusterpeers API
+      displayName: Cluster Peers
+      kind: ClusterPeers
+      name: clusterpeers.ramendr.openshift.io
+      version: v1alpha1
+    - description: VolumeReplicationGroup is the Schema for the volumereplicationgroups
+        API
+      displayName: Volume Replication Group
+      kind: VolumeReplicationGroup
+      name: volumereplicationgroups.ramendr.openshift.io
+      version: v1alpha1
+  description: Ramen is a disaster-recovery orchestrator for stateful applications
+    across a set of peer kubernetes clusters which are deployed and managed using
+    open-cluster-management (OCM) and provides cloud-native interfaces to orchestrate
+    the life-cycle of an application's state on PersistentVolumes.
+  displayName: RamenDR
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      clusterPermissions:
+      - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - persistentvolumeclaims
+          verbs:
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - ""
+          resources:
+          - persistentvolumes
+          verbs:
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - ramendr.openshift.io
+          resources:
+          - applicationvolumereplications
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - ramendr.openshift.io
+          resources:
+          - applicationvolumereplications/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - ramendr.openshift.io
+          resources:
+          - applicationvolumereplications/status
+          verbs:
+          - get
+          - patch
+          - update
+        - apiGroups:
+          - ramendr.openshift.io
+          resources:
+          - volumereplicationgroups
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - ramendr.openshift.io
+          resources:
+          - volumereplicationgroups/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - ramendr.openshift.io
+          resources:
+          - volumereplicationgroups/status
+          verbs:
+          - get
+          - patch
+          - update
+        - apiGroups:
+          - replication.storage.openshift.io
+          resources:
+          - volumereplications
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - authentication.k8s.io
+          resources:
+          - tokenreviews
+          verbs:
+          - create
+        - apiGroups:
+          - authorization.k8s.io
+          resources:
+          - subjectaccessreviews
+          verbs:
+          - create
+        serviceAccountName: ramen-controller-manager
+      deployments:
+      - name: ramen-controller-manager
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              control-plane: controller-manager
+          strategy: {}
+          template:
+            metadata:
+              labels:
+                control-plane: controller-manager
+            spec:
+              containers:
+              - args:
+                - --leader-elect
+                command:
+                - /manager
+                image: quay.io/ramendr/ramen-operator:main-canary
+                imagePullPolicy: IfNotPresent
+                livenessProbe:
+                  httpGet:
+                    path: /healthz
+                    port: 8081
+                  initialDelaySeconds: 15
+                  periodSeconds: 20
+                name: manager
+                readinessProbe:
+                  httpGet:
+                    path: /readyz
+                    port: 8081
+                  initialDelaySeconds: 5
+                  periodSeconds: 10
+                resources:
+                  limits:
+                    cpu: 100m
+                    memory: 30Mi
+                  requests:
+                    cpu: 100m
+                    memory: 20Mi
+                securityContext:
+                  allowPrivilegeEscalation: false
+              securityContext:
+                runAsUser: 65532
+              serviceAccountName: ramen-controller-manager
+              terminationGracePeriodSeconds: 10
+      permissions:
+      - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - coordination.k8s.io
+          resources:
+          - leases
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - ""
+          resources:
+          - events
+          verbs:
+          - create
+          - patch
+        serviceAccountName: ramen-controller-manager
+    strategy: deployment
+  installModes:
+  - supported: true
+    type: OwnNamespace
+  - supported: true
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - Storage
+  - Integration & Delivery
+  - OpenShift Optional
+  links:
+  - name: Ramen
+    url: https://ramen.domain
+  maintainers:
+  - email: bmekhiss@redhat.com
+    name: Benamar Mekhissi
+  - email: srangana@redhat.com
+    name: Shyam Ranganathan
+  - email: vdeenadh@redhat.com
+    name: Veera Deenadhayalan
+  maturity: alpha
+  provider:
+    name: ramen-operator
+    url: https://github.com/RamenDR/ramen
+  version: 0.0.1

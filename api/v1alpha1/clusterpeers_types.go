@@ -39,9 +39,6 @@ type ClusterPeersSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Members of the ClusterPeers set
-	ClusterIDs []string `json:"clusterIDs"`
-
 	// Type of replication policy used by this ClusterPeers: sync or async
 	ReplicationPolicy ReplicationPolicyType `json:"replicationPolicy"`
 }
