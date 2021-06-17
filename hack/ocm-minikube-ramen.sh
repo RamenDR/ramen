@@ -316,6 +316,7 @@ for command in "${@:-deploy}"; do
 		unset -v DOCKER_HOST
 		;;
 	undeploy)
+		. ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local; unset -f go_install
 		for cluster_name in ${cluster_names}; do
 			ramen_undeploy ${ramen_directory_path_name} ${cluster_name}
 		done; unset -v cluster_name
@@ -341,6 +342,7 @@ for command in "${@:-deploy}"; do
 		unset -v cluster_name
 		;;
 	ramen_undeploy)
+		. ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local; unset -f go_install
 		for cluster_name in ${cluster_names}; do
                         ramen_undeploy ${ramen_directory_path_name} ${cluster_name}
                 done; unset -v cluster_name
