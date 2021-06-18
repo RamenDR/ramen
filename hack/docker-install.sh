@@ -2,6 +2,9 @@
 # shellcheck disable=2046,2086
 docker_install()
 {
+	if command -v podman; then
+		return
+	fi
 	if test -w /var/run/docker.sock; then
 		DOCKER_HOST=unix:///var/run/docker.sock
 		return

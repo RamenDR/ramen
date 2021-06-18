@@ -25,44 +25,32 @@ exit_stack_pop()
 	unset -v x
 }
 exit_stack_push unset -f exit_stack_pop
-rook_ceph_branch_checkout()
-{
-return
-	git --git-dir ${1}/.git --work-tree ${1} checkout main
-	exit_stack_push git --git-dir ${1}/.git --work-tree ${1} checkout -
-	#git --git-dir ${1}/.git fetch https://github.com/ShyamsundarR/ramen rook-setup:rook-setup
-	git --git-dir ${1}/.git fetch https://github.com/hatfieldbrian/ramen rook-setup:rook-setup
-	exit_stack_pop
-	git --git-dir ${1}/.git --work-tree ${1} checkout rook-setup
-	exit_stack_push git --git-dir ${1}/.git --work-tree ${1} checkout -
-}
-exit_stack_push unset -f rook_ceph_branch_checkout
-rook_ceph_branch_checkout_undo()
-{
-return
-	exit_stack_pop
-}
-exit_stack_push unset -f rook_ceph_branch_checkout_undo
 rook_ceph_deploy()
 {
-	rook_ceph_branch_checkout ${1}/..
 	PROFILE=${2} ${1}/minikube-rook-setup.sh create
 	PROFILE=${3} ${1}/minikube-rook-setup.sh create
 	PRIMARY_CLUSTER=${2} SECONDARY_CLUSTER=${3} ${1}/minikube-rook-mirror-setup.sh
 	PRIMARY_CLUSTER=${3} SECONDARY_CLUSTER=${2} ${1}/minikube-rook-mirror-setup.sh
 	PRIMARY_CLUSTER=${2} SECONDARY_CLUSTER=${3} ${1}/minikube-rook-mirror-test.sh
 	PRIMARY_CLUSTER=${3} SECONDARY_CLUSTER=${2} ${1}/minikube-rook-mirror-test.sh
-	rook_ceph_branch_checkout_undo
 }
 exit_stack_push unset -f rook_ceph_deploy
 rook_ceph_undeploy()
 {
-	rook_ceph_branch_checkout ${1}/..
 	PROFILE=${3} ${1}/minikube-rook-setup.sh delete
 	PROFILE=${2} ${1}/minikube-rook-setup.sh delete
-	rook_ceph_branch_checkout_undo
 }
 exit_stack_push unset -f rook_ceph_undeploy
+minio_deploy()
+{
+	kubectl --context ${2} apply -f ${1}/minio-deployment.yaml
+}
+exit_stack_push unset -f minio_deploy
+minio_undeploy()
+{
+	kubectl --context ${2} delete -f ${1}/minio-deployment.yaml
+}
+exit_stack_push unset -f minio_undeploy
 ramen_branch_name=pr47_pr58_rbac2360357
 exit_stack_push unset -v ramen_branch_name
 ramen_branch_build()
@@ -150,18 +138,6 @@ ramen_undeploy()
 	set -e
 }
 exit_stack_push unset -f ramen_undeploy
-ocm_operator_build()
-{
-	set +e
-	git clone https://github.com/ShyamsundarR/${1}
-	# fatal: destination path '${1}' already exists and is not an empty directory.
-	set -e
-	git --git-dir ${1}/.git fetch https://github.com/ShyamsundarR/${1} pause-on-plchange:pause-on-plchange
-	make -C ${1} build-images TRAVIS_BUILD=0 DOCKER_HOST=${DOCKER_HOST}
-}
-#ocm_operator_build multicloud-operators-deployable
-#ocm_operator_build multicloud-operators-subscription
-unset -f ocm_operator_build
 ramen_samples_branch_name=shyam_test_benamar_update_placement_to_avr
 exit_stack_push unset -v ramen_samples_branch_name
 ramen_samples_branch_build()
@@ -219,7 +195,6 @@ exit_stack_push unset -f application_sample_namespace_and_s3_undeploy
 application_sample_deploy()
 {
 	ramen_samples_branch_checkout
-	kubectl --context ${hub_cluster_name} apply -f ocm-ramen-samples/minio-deployment.yaml
 	kubectl --context ${hub_cluster_name} apply -k ocm-ramen-samples/subscriptions
 	kubectl --context ${hub_cluster_name} -n ramen-samples get channels/ramen-gitops
 	kubectl --context ${hub_cluster_name} apply -f ocm-ramen-samples/subscriptions/busybox/mw-pv.yaml
@@ -305,6 +280,7 @@ for command in "${@:-deploy}"; do
 		hub_cluster_name=${hub_cluster_name} spoke_cluster_names=${spoke_cluster_names}\
 		${ramen_hack_directory_path_name}/ocm-minikube.sh
 		rook_ceph_deploy ${ramen_hack_directory_path_name} ${cluster_names}
+		minio_deploy ${ramen_hack_directory_path_name} ${hub_cluster_name}
 		. ${ramen_hack_directory_path_name}/docker-install.sh; docker_install ${HOME}/.local/bin; unset -f docker_install
 		. ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local; unset -f go_install
 		${ramen_hack_directory_path_name}/kubectl-install.sh ${HOME}/.local/bin
@@ -320,6 +296,7 @@ for command in "${@:-deploy}"; do
 		for cluster_name in ${cluster_names}; do
 			ramen_undeploy ${ramen_directory_path_name} ${cluster_name}
 		done; unset -v cluster_name
+		minio_undeploy ${ramen_hack_directory_path_name} ${hub_cluster_name}
 		rook_ceph_undeploy ${ramen_hack_directory_path_name} ${cluster_names}
 		;;
 	application_sample_deploy)
