@@ -79,10 +79,14 @@ ramen_branch_checkout()
 	exit_stack_pop
 	git --git-dir ${1}/.git --work-tree ${1} checkout ${2}
 	exit_stack_push git --git-dir ${1}/.git --work-tree ${1} checkout -
+	exit_stack_push git --git-dir ${1}/.git --work-tree ${1} checkout -- config
+	exit_stack_push git --git-dir ${1}/.git --work-tree ${1} status -s
 }
 exit_stack_push unset -f ramen_branch_checkout
 ramen_branch_checkout_undo()
 {
+	exit_stack_pop
+	exit_stack_pop
 	exit_stack_pop
 }
 exit_stack_push unset -f ramen_branch_checkout_undo
@@ -92,8 +96,6 @@ ramen_build()
 {
 	ramen_branch_checkout ${1}
 	make -C ${1} docker-build IMG=${ramen_image_name} DOCKER_HOST=${DOCKER_HOST}
-	git --git-dir ${1}/.git --work-tree ${1} status -s
-	git --git-dir ${1}/.git --work-tree ${1} checkout -- config
 	ramen_branch_checkout_undo
 }
 exit_stack_push unset -f ramen_build
@@ -115,8 +117,6 @@ ramen_deploy()
 	kube_context_set ${2}
 	make -C ${1} deploy IMG=${ramen_image_name}
 	kube_context_set_undo
-	git --git-dir ${1}/.git --work-tree ${1} status -s
-	git --git-dir ${1}/.git --work-tree ${1} checkout -- config
 	ramen_branch_checkout_undo
 	kubectl --context ${2} -n ramen-system wait deployments --all --for condition=available
 	kubectl --context ${hub_cluster_name} label managedclusters/${2} name=${2} --overwrite
@@ -129,8 +129,6 @@ ramen_undeploy()
 	kube_context_set ${2}
 	make -C ${1} undeploy
 	kube_context_set_undo
-	git --git-dir ${1}/.git --work-tree ${1} status -s
-	git --git-dir ${1}/.git --work-tree ${1} checkout -- config
 	ramen_branch_checkout_undo
 	set +e
 	kubectl --context ${2} -n ramen-system wait deployments --all --for delete
