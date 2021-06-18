@@ -25,7 +25,7 @@ metadata:
   labels:
     component: minio
 spec:
-  accessModes: [ "ReadWriteOnce" ]
+  accessModes: ["ReadWriteOnce"]
   storageClassName: "rook-ceph-block"
   resources:
     requests:
@@ -39,7 +39,7 @@ metadata:
   labels:
     component: minio
 spec:
-  accessModes: [ "ReadWriteOnce" ]
+  accessModes: ["ReadWriteOnce"]
   storageClassName: "rook-ceph-block"
   resources:
     requests:
@@ -64,35 +64,35 @@ spec:
         component: minio
     spec:
       volumes:
-      - name: storage
-        persistentVolumeClaim:
-          claimName: minio-storage-pvc
-          readOnly: false
-      - name: config
-        persistentVolumeClaim:
-          claimName: minio-config-pvc
-          readOnly: false
-      containers:
-      - name: minio
-        image: minio/minio:latest
-        imagePullPolicy: IfNotPresent
-        args:
-        - server
-        - /storage
-        - --config-dir=/config
-        env:
-        - name: MINIO_ACCESS_KEY
-          value: "minio"
-        - name: MINIO_SECRET_KEY
-          value: "minio123"
-        ports:
-        - containerPort: 9000
-          hostPort: 9000
-        volumeMounts:
         - name: storage
-          mountPath: "/storage"
+          persistentVolumeClaim:
+            claimName: minio-storage-pvc
+            readOnly: false
         - name: config
-          mountPath: "/config"
+          persistentVolumeClaim:
+            claimName: minio-config-pvc
+            readOnly: false
+      containers:
+        - name: minio
+          image: minio/minio:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - server
+            - /storage
+            - --config-dir=/config
+          env:
+            - name: MINIO_ACCESS_KEY
+              value: "minio"
+            - name: MINIO_SECRET_KEY
+              value: "minio123"
+          ports:
+            - containerPort: 9000
+              hostPort: 9000
+          volumeMounts:
+            - name: storage
+              mountPath: "/storage"
+            - name: config
+              mountPath: "/config"
 ---
 apiVersion: v1
 kind: Service
@@ -125,18 +125,19 @@ spec:
     spec:
       restartPolicy: OnFailure
       volumes:
-      - name: config
-        persistentVolumeClaim:
-          claimName: minio-config-pvc
-          readOnly: false
-      containers:
-      - name: mc
-        image: minio/mc:latest
-        imagePullPolicy: IfNotPresent
-        command:
-        - /bin/sh
-        - -c
-        - "mc --config-dir=/config config host add ramen http://minio:9000 minio minio123 && mc --config-dir=/config mb -p ramen/bucket"
-        volumeMounts:
         - name: config
-          mountPath: "/config"
+          persistentVolumeClaim:
+            claimName: minio-config-pvc
+            readOnly: false
+      containers:
+        - name: mc
+          image: minio/mc:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - "mc --config-dir=/config config host add ramen http://minio:9000
+               minio minio123 && mc --config-dir=/config mb -p ramen/bucket"
+          volumeMounts:
+            - name: config
+              mountPath: "/config"
