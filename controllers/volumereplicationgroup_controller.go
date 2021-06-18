@@ -179,7 +179,7 @@ func updateEventDecision(oldPVC *corev1.PersistentVolumeClaim,
 	// If the newPVC is being deleted and VR protection finalizer is
 	// not there, then dont requeue.
 	// skipResult false means, the above conditions are not met.
-	if skipResult := skipPVC(newPVC, predicateLog); !skipResult {
+	if skipResult, _ := skipPVC(newPVC, predicateLog); !skipResult {
 		predicateLog.Info("Reconciling due to VR Protection finalizer")
 
 		return requeue
@@ -307,7 +307,7 @@ const (
 )
 
 func (v *VRGInstance) processVRG() (ctrl.Result, error) {
-	v.createProtectedPVCMap()
+	v.initializeStatus()
 
 	if err := v.validateVRGState(); err != nil {
 		msg := "VolumeReplicationGroup state is invalid"
@@ -364,7 +364,7 @@ func (v *VRGInstance) validateVRGState() error {
 	return nil
 }
 
-func (v *VRGInstance) createProtectedPVCMap() {
+func (v *VRGInstance) initializeStatus() {
 	// create ProtectedPVCs map for status
 	if v.instance.Status.ProtectedPVCs == nil {
 		v.instance.Status.ProtectedPVCs = make(ramendrv1alpha1.ProtectedPVCMap)
@@ -593,6 +593,13 @@ func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
 	if err := v.addFinalizer(vrgFinalizerName); err != nil {
 		v.log.Info("Failed to add finalizer", "finalizer", vrgFinalizerName, "errorValue", err)
 
+		msg := "Failed to add finalizer to VolumeReplicationGroup"
+		setVRGErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+
+		if err = v.updateVRGStatus(false); err != nil {
+			v.log.Error(err, "VRG Status update failed")
+		}
+
 		return ctrl.Result{Requeue: true}, nil
 	}
 
@@ -661,9 +668,6 @@ func (v *VRGInstance) reconcileVRAsSecondary(pvc *corev1.PersistentVolumeClaim, 
 		// 2) skip as this pvc is not ready for marking
 		//    VolRep as secondary. Set the conditions to
 		//    PVCProgressing.
-		msg := "PVC not ready yet"
-		v.updateProtectedPVCCondition(pvc.Name, PVCProgressing, msg)
-
 		return !requeue, skip
 	}
 
@@ -678,14 +682,6 @@ func (v *VRGInstance) reconcileVRAsSecondary(pvc *corev1.PersistentVolumeClaim, 
 		return requeue, skip
 	}
 
-	// As of now, when the function processVRAsSecondary is
-	// being processed, the conditions.Status for each of
-	// the protected pvc is set (based on the situation).
-	// So, no need to do any extra status updates here. But,
-	// in future if this function does any more processing,
-	// then set the condition.Status to appropriate value
-	// based on the situation (if necessary).
-
 	return !requeue, !skip
 }
 
@@ -697,12 +693,18 @@ func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, 
 	if pvc.GetDeletionTimestamp().IsZero() {
 		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolumeClaim is not marked for deletion")
 
+		msg := "PVC not being deleted. Not ready to become Secondary"
+		v.updateProtectedPVCCondition(pvc.Name, PVCProgressing, msg)
+
 		return !ready
 	}
 
 	// If PVC is still in use, it is not ready for Secondary
 	if containsString(pvc.ObjectMeta.Finalizers, pvcInUse) {
 		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolumeClaim is still in use")
+
+		msg := "PVC still in use"
+		v.updateProtectedPVCCondition(pvc.Name, PVCProgressing, msg)
 
 		return !ready
 	}
@@ -725,20 +727,24 @@ func (v *VRGInstance) preparePVCForVRProtection(pvc *corev1.PersistentVolumeClai
 	}
 
 	// Dont requeue. There will be a reconcile request when predicate sees that pvc is ready.
-	if skipResult := skipPVC(pvc, log); skipResult {
+	if skipResult, msg := skipPVC(pvc, log); skipResult {
+		// @msg should not be nil as the decision is to skip the pvc.
+		// msg should contain info on why that decision was made.
+		if msg == "" {
+			msg = "PVC not ready"
+		}
 		// Since pvc is skipped, mark the condition for the PVC as progressing. Even for
 		// deletion this applies where if the VR protection finalizer is absent for pvc and
 		// it is being deleted.
-		msg := "PVC not ready yet"
 		v.updateProtectedPVCCondition(pvc.Name, PVCProgressing, msg)
 
 		return !requeue, skip
 	}
 
-	return v.pvcProtection(pvc, log)
+	return v.protectPVC(pvc, log)
 }
 
-func (v *VRGInstance) pvcProtection(pvc *corev1.PersistentVolumeClaim,
+func (v *VRGInstance) protectPVC(pvc *corev1.PersistentVolumeClaim,
 	log logr.Logger) (bool, bool) {
 	const (
 		requeue bool = true
@@ -798,25 +804,31 @@ func (v *VRGInstance) pvcProtection(pvc *corev1.PersistentVolumeClaim,
 //   need to remove the finalizer for the pvc being deleted. However,
 //   if the finalizer is not there, then no need to process the pvc
 //   any further and it can be skipped. The pvc will go away eventually.
-func skipPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
+func skipPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, string) {
 	if pvc.Status.Phase != corev1.ClaimBound {
 		log.Info("Skipping handling of VR as PersistentVolumeClaim is not bound", "pvcPhase", pvc.Status.Phase)
 
-		return true
+		msg := "PVC not bound yet"
+		// v.updateProtectedPVCCondition(pvc.Name, PVCProgressing, msg)
+
+		return true, msg
 	}
 
 	return isPVCDeletedAndNotProtected(pvc, log)
 }
 
-func isPVCDeletedAndNotProtected(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
+func isPVCDeletedAndNotProtected(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, string) {
 	// If PVC deleted but not yet protected with a finalizer, skip it!
 	if !containsString(pvc.Finalizers, pvcVRFinalizerProtected) && !pvc.GetDeletionTimestamp().IsZero() {
 		log.Info("Skipping PersistentVolumeClaim, as it is marked for deletion and not yet protected")
 
-		return true
+		msg := "Skipping pvc marked for deletion"
+		// v.updateProtectedPVCCondition(pvc.Name, PVCProgressing, msg)
+
+		return true, msg
 	}
 
-	return false
+	return false, ""
 }
 
 // preparePVCForVRDeletion
@@ -1018,13 +1030,13 @@ func (v *VRGInstance) validateS3Endpoint(s3Endpoint, s3Bucket string) error {
 // processVRAsPrimary processes VR to change its state to primary, with the assumption that the
 // related PVC is prepared for VR protection
 func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName, log logr.Logger) error {
-	return v.createOrUpdateVR(vrNamespacedName, ramendrv1alpha1.Primary, log)
+	return v.createOrUpdateVR(vrNamespacedName, volrep.Primary, log)
 }
 
 // processVRAsSecondary processes VR to change its state to secondary, with the assumption that the
 // related PVC is prepared for VR as secondary
 func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName, log logr.Logger) error {
-	return v.createOrUpdateVR(vrNamespacedName, ramendrv1alpha1.Secondary, log)
+	return v.createOrUpdateVR(vrNamespacedName, volrep.Secondary, log)
 }
 
 // createOrUpdateVR updates an existing VR resource if found, or creates it if required
@@ -1035,7 +1047,7 @@ func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName
 // would get a reconcile. And then the conditions for the appropriate Protected PVC can
 // be set as either Replicating or Error.
 func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
-	state ramendrv1alpha1.ReplicationState, log logr.Logger) error {
+	state volrep.ReplicationState, log logr.Logger) error {
 	volRep := &volrep.VolumeReplication{}
 
 	err := v.reconciler.Get(v.ctx, vrNamespacedName, volRep)
@@ -1068,7 +1080,7 @@ func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 		}
 
 		// Just created VolRep. Mark status.conditions as Progressing.
-		msg := "Created VOlumeReplication resource for PVC"
+		msg := "Created VolumeReplication resource for PVC"
 		v.updateProtectedPVCCondition(vrNamespacedName.Name, PVCProgressing, msg)
 
 		return nil
@@ -1078,15 +1090,15 @@ func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 }
 
 func (v *VRGInstance) updateVR(volRep *volrep.VolumeReplication,
-	state ramendrv1alpha1.ReplicationState, log logr.Logger) error {
+	state volrep.ReplicationState, log logr.Logger) error {
 	// If state is already as desired, check the status
-	if volRep.Spec.ReplicationState == volrep.ReplicationState(state) {
+	if volRep.Spec.ReplicationState == state {
 		log.Info("VolumeReplication and VolumeReplicationGroup state match. Proceeding to status check")
 
 		return v.checkVRStatus(volRep)
 	}
 
-	volRep.Spec.ReplicationState = volrep.ReplicationState(state)
+	volRep.Spec.ReplicationState = state
 	if err := v.reconciler.Update(v.ctx, volRep); err != nil {
 		log.Error(err, "Failed to update VolumeReplication resource",
 			"name", volRep.Name, "namespace", volRep.Namespace,
@@ -1109,7 +1121,7 @@ func (v *VRGInstance) updateVR(volRep *volrep.VolumeReplication,
 }
 
 // createVR creates a VolumeReplication CR with a PVC as its data source.
-func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state ramendrv1alpha1.ReplicationState) error {
+func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volrep.ReplicationState) error {
 	volRep := &volrep.VolumeReplication{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      vrNamespacedName.Name,
@@ -1124,7 +1136,7 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state rame
 
 			// Convert to volrep.ReplicationState type
 			// explicitly. Otherwise compilation fails.
-			ReplicationState: volrep.ReplicationState(state),
+			ReplicationState: state,
 
 			VolumeReplicationClass: v.instance.Spec.VolumeReplicationClass,
 		},
@@ -1187,6 +1199,15 @@ func (v *VRGInstance) updateStatusState() {
 	// in vrgCondition.Status being set to True.
 	if vrgCondition.Status == metav1.ConditionTrue {
 		v.instance.Status.State = StatusState
+
+		return
+	}
+
+	// If VRG available condition is not true and the reason
+	// is Error, then mark Status.State as UnknownState instead
+	// of Primary or Secondary.
+	if vrgCondition.Reason == VRGError {
+		v.instance.Status.State = ramendrv1alpha1.UnknownState
 
 		return
 	}
@@ -1261,7 +1282,7 @@ func (v *VRGInstance) updateVRGConditions() {
 			break
 		}
 
-		if condition.Reason == PVCError {
+		if condition.Reason == PVCError || condition.Reason == PVCErrorUnknown {
 			vrgReady = false
 			// If there is even a single protected pvc
 			// that saw some error, then entire VRG
@@ -1300,11 +1321,22 @@ func (v *VRGInstance) updateVRGConditions() {
 }
 
 func (v *VRGInstance) checkVRStatus(volRep *volrep.VolumeReplication) error {
+	// When the generation in the status is updated, VRG would get a reconcile
+	// as it owns VolumeReplication resource.
+	if volRep.Generation != volRep.Status.ObservedGeneration {
+		v.log.Info("Generation from the resource and status not same")
+
+		msg := "VolumeReplication generation not updated in status"
+		v.updateProtectedPVCCondition(volRep.Name, PVCProgressing, msg)
+
+		return nil
+	}
+
 	switch {
 	case v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary:
-		return v.validateVRStatusAsPrimary(volRep)
+		return v.validateVRStatus(volRep, ramendrv1alpha1.Primary)
 	case v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary:
-		return v.validateVRStatusAsSecondary(volRep)
+		return v.validateVRStatus(volRep, ramendrv1alpha1.Secondary)
 	default:
 		msg := "VolumeReplicationGroup state invalid"
 		v.updateProtectedPVCCondition(volRep.Name, PVCError, msg)
@@ -1314,110 +1346,71 @@ func (v *VRGInstance) checkVRStatus(volRep *volrep.VolumeReplication) error {
 	}
 }
 
-// VolumeReplication controller sets volRep.Status.State to primary only after the
-// successful promotion of the underlying storage volume consumed by the pvc.
-// It is necessary to get the appropriate condition out of different conditions
-// a VolRep status can have. Doing this may be helpful in getting a more
-// clear view of the VolumeReplication resource's current situation.
-func (v *VRGInstance) validateVRStatusAsPrimary(volRep *volrep.VolumeReplication) error {
-	// As of now, name of the VolumeReplication resource and pvc that it
-	// represents is same. So, using the name from volRep resource. In
-	// future if things change, some changes might have to be necessary.
-	if volRep.Status.State != volrep.PrimaryState {
-		v.log.Info("State is primary and status is not primary")
+// VolumeReplication controller sets volRep.Status.State to primary/secondary
+// only after the successful promotion/demotion of the underlying storage volume
+// consumed by the pvc.It is necessary to get the appropriate condition out of
+// different conditions a VolRep status can have. Doing this may be helpful in
+// getting a more clear view of the VolumeReplication resource's current situation.
+//
+// As of now, name of the VolumeReplication resource and pvc that it represents is
+// same. So, using the name from volRep resource to get protectedPVC condition from
+// vrg.Status. In future if things change, some changes might have to be necessary.
+func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state ramendrv1alpha1.ReplicationState) error {
+	var (
+		stateString = "unknown"
+		action      = "unknown"
+	)
 
-		// VolumeReplication status not being primary by this
-		// time means something is not correct. Generation has
-		// already been checked and without generation of the
-		// resource and its status matching, it would not have
-		// come here. So, mark it as error.
-		msg := "VolumeReplication status state and spec state not same"
-		v.updateProtectedPVCCondition(volRep.Name, PVCError, msg)
-
-		return nil
+	switch state {
+	case ramendrv1alpha1.Primary:
+		stateString = "primary"
+		action = "promoted"
+	case ramendrv1alpha1.Secondary:
+		stateString = "secondary"
+		action = "demoted"
 	}
 
 	volRepCondition := findCondition(volRep.Status.Conditions, volrepController.ConditionCompleted)
 	if volRepCondition == nil {
-		v.log.Info("failed to get the Completed condition from VolumeReplication resource")
+		v.log.Info("failed to get the Completed condition from VolumeReplication resource", "volRep",
+			volRep.Name)
 
-		msg := "Failed to get the Completed condition from VolumeReplication resource for pvc"
+		msg := "Failed to get the Completed condition from VolumeReplication resource for pvc."
 		v.updateProtectedPVCCondition(volRep.Name, PVCError, msg)
 
 		return nil
 	}
 
 	if volRepCondition.Status == metav1.ConditionFalse {
-		v.log.Info("VolumeReplication resource is not promoted", volRep.Name)
+		v.log.Info(fmt.Sprintf("VolumeReplication resource is not %s (%s)", action, volRep.Name))
 
-		msg := "VolumeReplication resource for pvc not promoted to primary"
+		msg := fmt.Sprintf("VolumeReplication resource for pvc not %s to %s", action, stateString)
 		v.updateProtectedPVCCondition(volRep.Name, PVCError, msg)
 
 		return nil
 	}
 
-	v.log.Info("State in the spec and status match for primary")
+	if volRepCondition.Status == metav1.ConditionUnknown {
+		v.log.Info(fmt.Sprintf("VolumeReplication resource is not %s (%s). ConditionStatus unknown",
+			action, volRep.Name))
 
-	msg := "VolumeReplication resource for the pvc is replicating"
-	v.updateProtectedPVCCondition(volRep.Name, PVCReplicating, msg)
-
-	return nil
-}
-
-// So, VolumeReplication controller reflects the status of a VolRep resource as secondary
-// only after the demotion of the associated storage volume to secondary is successful.
-// It is necessary to get the appropriate condition out of different conditions
-// a VolRep status can have. Doing this may be helpful in getting a more
-// clear view of the VolumeReplication resource's current situation.
-func (v *VRGInstance) validateVRStatusAsSecondary(volRep *volrep.VolumeReplication) error {
-	if volRep.Status.State != volrep.SecondaryState {
-		v.log.Info("State is secondary and status is not secondary")
-
-		// VolumeReplication status not being secondary by this
-		// time means something is not correct. Generation has
-		// already been checked and without generation of the
-		// resource and its status matching, it would not have
-		// come here. So, mark it as error.
-		msg := "VolumeReplication status state and spec state not same"
-		v.updateProtectedPVCCondition(volRep.Name, PVCError, msg)
+		msg := fmt.Sprintf("VolumeReplication resource for pvc not %s to %s. ConditionStatus unknown",
+			action, stateString)
+		v.updateProtectedPVCCondition(volRep.Name, PVCErrorUnknown, msg)
 
 		return nil
 	}
 
-	volrepCondition := findCondition(volRep.Status.Conditions, volrepController.ConditionCompleted)
-	if volrepCondition == nil {
-		v.log.Info("Failed to get the Completed condition for VolumeReplication resource")
+	v.log.Info(fmt.Sprintf("ConditionCompleted is true for state %s (Name: %s)", stateString, volRep.Name))
 
-		msg := "Failed to get the Completed condition from VolumeReplication resource for pvc"
-		v.updateProtectedPVCCondition(volRep.Name, PVCError, msg)
-
-		return nil
-	}
-
-	if volrepCondition.Status == metav1.ConditionFalse {
-		v.log.Info("VolumeReplication resource not demoted successfully", volRep.Name)
-
-		msg := "VolumeReplication resource for pvc not demoted to secondary"
-		v.updateProtectedPVCCondition(volRep.Name, PVCError, msg)
-
-		return nil
-	}
-
-	v.log.Info("State in the spec and status match for secondary")
-
-	// As of now, name of the VolumeReplication resource and pvc that it
-	// represents is same. So, using the name from volRep resource. In
-	// future if things change, some changes might have to be necessary.
 	// Being here means, status of VolumeReplication resource has been
 	// successfully updated to reflect the appropriate state. (i.e. the
-	// volume has been successfully demoted). So, marking the  condition
-	// as PVCReplicating. Even by checking different conditions of the
-	// VolRep resource it is difficult to determine whether the
+	// volume has been successfully promoted/demoted). So, marking the
+	// condition as PVCReplicating. Even by checking different conditions
+	// of the VolRep resource it is difficult to determine whether the
 	// replication has been completed or not.
-	msg := "Secondary VolumeReplication resource replicating"
+	msg := "VolumeReplication resource for the pvc is replicating"
 	v.updateProtectedPVCCondition(volRep.Name, PVCReplicating, msg)
-
-	v.log.Info("State in the spec and status match for primary")
 
 	return nil
 }

@@ -159,7 +159,11 @@ func setStatusCondition(existingConditions *[]metav1.Condition, newCondition met
 
 	existingCondition.Reason = newCondition.Reason
 	existingCondition.Message = newCondition.Message
-	existingCondition.ObservedGeneration = newCondition.ObservedGeneration
+
+	if existingCondition.ObservedGeneration != newCondition.ObservedGeneration {
+		existingCondition.ObservedGeneration = newCondition.ObservedGeneration
+		existingCondition.LastTransitionTime = metav1.NewTime(time.Now())
+	}
 }
 
 func findCondition(existingConditions []metav1.Condition, conditionType string) *metav1.Condition {
