@@ -10,16 +10,14 @@ ramen_hack_directory_path_name=$(dirname $0)
 # shellcheck source=./exit_stack.sh
 . $ramen_hack_directory_path_name/exit_stack.sh
 
-# pre-requisites
-command -v jq
-
 mkdir -p ${HOME}/.local/bin
 PATH=${HOME}/.local/bin:${PATH}
 
 ${ramen_hack_directory_path_name}/minikube-install.sh ${HOME}/.local/bin
 # 1.11 wait support
 # 1.19 certificates.k8s.io/v1 https://github.com/kubernetes/kubernetes/pull/91685
-${ramen_hack_directory_path_name}/kubectl-install.sh ${HOME}/.local/bin 1 19
+# 1.21 kustomize v4.0.5 https://github.com/kubernetes-sigs/kustomize#kubectl-integration
+${ramen_hack_directory_path_name}/kubectl-install.sh ${HOME}/.local/bin 1 21
 ${ramen_hack_directory_path_name}/kustomize-install.sh ${HOME}/.local/bin
 # shellcheck source=./until_true_or_n.sh
 . ${ramen_hack_directory_path_name}/until_true_or_n.sh
@@ -111,7 +109,7 @@ ocm_registration_operator_deploy_hub()
 	make -C registration-operator deploy-hub $ocm_registration_operator_make_arguments
 	ocm_registration_operator_checkout_undo
 	date
-	kubectl --context ${hub_cluster_name} -n open-cluster-management wait deployments --all --for condition=available
+	kubectl --context $hub_cluster_name -n open-cluster-management wait deployments/cluster-manager --for condition=available
 	date
 	# https://github.com/kubernetes/kubernetes/issues/83242
 	until_true_or_n 90 kubectl --context ${hub_cluster_name} -n open-cluster-management-hub wait deployments --all --for condition=available --timeout 0
@@ -121,7 +119,7 @@ ocm_registration_operator_undeploy_hub()
 	kubectl config use-context ${hub_cluster_name}
 	ocm_registration_operator_checkout
 	set +e
-	make -C registration-operator clean-hub ${ocm_registration_operator_make_arguments}
+	make -C registration-operator clean-hub-cr clean-hub-operator $ocm_registration_operator_make_arguments
 	# error: unable to recognize "deploy/cluster-manager/config/samples/operator_open-cluster-management_clustermanagers.cr.yaml": no matches for kind "ClusterManager" in version "operator.open-cluster-management.io/v1"
 	set -e
 	ocm_registration_operator_checkout_undo
@@ -157,7 +155,7 @@ application_sample_0_test()
 	application_sample_0_deploy ${1}
 	application_sample_0_undeploy ${1}
 }
-spoke_add()
+ocm_registration_operator_deploy_spoke()
 {
 	kubectl config use-context ${1}
 	ocm_registration_operator_checkout
@@ -167,7 +165,7 @@ spoke_add()
 	kubectl --context $1 apply -f registration-operator/vendor/github.com/open-cluster-management/api/work/v1/0000_00_work.open-cluster-management.io_manifestworks.crd.yaml
 	ocm_registration_operator_checkout_undo
 	date
-	kubectl --context ${1} -n open-cluster-management wait deployments --all --for condition=available
+	kubectl --context $1 -n open-cluster-management wait deployments/klusterlet --for condition=available
 	date
 	# https://github.com/kubernetes/kubernetes/issues/83242
 	until_true_or_n 90 kubectl --context ${1} -n open-cluster-management-agent wait deployments/klusterlet-registration-agent --for condition=available --timeout 0
@@ -181,24 +179,88 @@ spoke_add()
 	# Error from server (InternalError): Internal error occurred: failed calling webhook "managedclustermutators.admission.cluster.open-cluster-management.io": the server is currently unable to handle the request
 	set -e
 	date
-	kubectl --context ${hub_cluster_name} patch managedclusters/${1} -p $(jq -cn --arg clname "$1" '{"metadata":{"labels":{"name":$clname}}}') --type=merge
-	date
 	kubectl --context ${hub_cluster_name} wait managedclusters/${1} --for condition=ManagedClusterConditionAvailable
 	date
-	kubectl --context ${1} -n open-cluster-management-agent wait deployments --all --for condition=available --timeout 60s
+	kubectl --context $1 -n open-cluster-management-agent wait deployments/klusterlet-work-agent --for condition=available --timeout 90s
 	date
 	#application_sample_0_test ${1}
 }
+exit_stack_push unset -f ocm_registration_operator_deploy_spoke
 ocm_registration_operator_undeploy_spoke()
 {
 	kubectl config use-context ${1}
 	ocm_registration_operator_checkout
 	set +e
-	make -C registration-operator clean-spoke ${ocm_registration_operator_make_arguments}
+	make -C registration-operator clean-spoke-cr clean-spoke-operator $ocm_registration_operator_make_arguments
 	# error: unable to recognize "deploy/klusterlet/config/samples/operator_open-cluster-management_klusterlets.cr.yaml": no matches for kind "Klusterlet" in version "operator.open-cluster-management.io/v1"
 	set -e
 	ocm_registration_operator_checkout_undo
 }
+ocm_foundation_operator_kustomization_directory()
+{
+	echo https://github.com/open-cluster-management/multicloud-operators-foundation/deploy/foundation/$1?ref=b5df50deb87618e8c6057637705e94a58b5a19da
+}
+exit_stack_push unset -f ocm_foundation_operator_kustomization_directory
+ocm_foundation_operator_kubectl_hub()
+{
+	kubectl --context $hub_cluster_name $1 -k $(ocm_foundation_operator_kustomization_directory hub)
+}
+exit_stack_push unset -f ocm_foundation_operator_kubectl_hub
+ocm_foundation_operator_kubectl_spoke()
+{
+	set -- $1 $2 /tmp/$USER/open-cluster-management/foundation/klusterlet/$1
+	mkdir -p $3
+	cat <<-a >$3/kustomization.yaml
+	resources:
+	  - $(ocm_foundation_operator_kustomization_directory klusterlet)
+	namespace: $1
+	patchesJson6902:
+	  - target:
+	      group: work.open-cluster-management.io
+	      version: v1
+	      kind: ManifestWork
+	      name: klusterlet-addon-workmgr
+	    patch: |-
+	      - op: test
+	        path: /spec/workload/manifests/4/spec/template/spec/containers/0/args/2
+	        value: --cluster-name=cluster1
+	      - op: replace
+	        path: /spec/workload/manifests/4/spec/template/spec/containers/0/args/2
+	        value: --cluster-name=$1
+	a
+	kubectl --context $hub_cluster_name $2 -k $3
+}
+exit_stack_push unset -f ocm_foundation_operator_kubectl_spoke
+ocm_foundation_operator_deploy_hub()
+{
+	ocm_foundation_operator_kubectl_hub apply
+	kubectl --context $hub_cluster_name -n open-cluster-management wait deployments/ocm-controller --for condition=available
+}
+exit_stack_push unset -f ocm_foundation_operator_deploy_hub
+ocm_foundation_operator_undeploy_hub()
+{
+	ocm_foundation_operator_kubectl_hub delete
+	set +e
+	kubectl --context $hub_cluster_name -n open-cluster-management wait deployments/ocm-controller --for delete
+	# error: no matching resources found
+	set -e
+}
+exit_stack_push unset -f ocm_foundation_operator_undeploy_hub
+ocm_foundation_operator_deploy_spoke()
+{
+	ocm_foundation_operator_kubectl_spoke $1 apply
+	until_true_or_n 300 kubectl --context $1 -n open-cluster-management-agent wait deployments/klusterlet-addon-workmgr --for condition=available --timeout 0
+}
+exit_stack_push unset -f ocm_foundation_operator_deploy_spoke
+ocm_foundation_operator_undeploy_spoke()
+{
+	ocm_foundation_operator_kubectl_spoke $1 delete
+	set +e
+	kubectl --context $1 -n open-cluster-management-agent wait deployments/klusterlet-addon-workmgr --for delete
+	# error: no matching resources found
+	set -e
+}
+exit_stack_push unset -f ocm_foundation_operator_undeploy_spoke
 ocm_subscription_operator_checkout()
 {
 	set -- multicloud-operators-subscription
@@ -221,8 +283,20 @@ ocm_subscription_operator_deploy_hub()
 	kubectl --context ${hub_cluster_name} -n multicluster-operators wait deployments --all --for condition=available --timeout 2m
 	date
 }
+ocm_subscription_operator_deploy_spoke()
+{
+	# https://github.com/open-cluster-management-io/multicloud-operators-subscription/issues/16
+	kubectl --context $hub_cluster_name label managedclusters/$1 name=$1 --overwrite
+}
+exit_stack_push unset -f ocm_subscription_operator_deploy_spoke
+ocm_subscription_operator_undeploy_spoke()
+{
+	kubectl --context $hub_cluster_name label managedclusters/$1 name-
+}
+exit_stack_push unset -f ocm_subscription_operator_undeploy_spoke
 ocm_subscription_operator_deploy_spoke_hub()
 {
+	ocm_subscription_operator_deploy_spoke $1
 	cp -f ${HUB_KUBECONFIG} /tmp/$USER/kubeconfig
 	kubectl --context ${1} -n multicluster-operators delete secret appmgr-hub-kubeconfig --ignore-not-found
 	kubectl --context ${1} -n multicluster-operators create secret generic appmgr-hub-kubeconfig --from-file=kubeconfig=/tmp/$USER/kubeconfig
@@ -240,6 +314,7 @@ ocm_subscription_operator_deploy_spoke_hub()
 }
 ocm_subscription_operator_deploy_spoke_nonhub()
 {
+	ocm_subscription_operator_deploy_spoke $1
 	kubectl config use-context ${1}
 	ocm_subscription_operator_checkout
 	MANAGED_CLUSTER_NAME=${1}\
@@ -274,6 +349,12 @@ spoke_test()
 	spoke_test_deploy ${1}
 	spoke_test_undeploy ${1}
 }
+spoke_add()
+{
+	ocm_registration_operator_deploy_spoke $1
+	ocm_foundation_operator_deploy_spoke $1
+}
+exit_stack_push unset -f spoke_add
 spoke_add_hub()
 {
 	spoke_add ${1}
@@ -393,11 +474,19 @@ for cluster_name in ${spoke_cluster_names}; do
 		spoke_cluster_names_nonhub=${spoke_cluster_names_nonhub}\ ${cluster_name}
 	fi
 done
+for_each()
+{
+	for x in $1; do
+		eval $2 $x
+	done; unset -v x
+}
+exit_stack_push unset -f for_each
 for command in "${@:-deploy}"; do
         case ${command} in
         deploy)
 		minikube start ${minikube_start_options} --profile=${hub_cluster_name} --cpus=4
 		ocm_registration_operator_deploy_hub
+		ocm_foundation_operator_deploy_hub
 		ocm_subscription_operator_deploy_hub
 		mkdir -p /tmp/$USER
 		HUB_KUBECONFIG=/tmp/$USER/${hub_cluster_name}-config
@@ -420,10 +509,21 @@ for command in "${@:-deploy}"; do
 	ocm_registration_operator_undeploy_hub)
 		ocm_registration_operator_undeploy_hub
 		;;
+	foundation_operator_deploy)
+		ocm_foundation_operator_deploy_hub
+		for_each "$spoke_cluster_names" ocm_foundation_operator_deploy_spoke
+		;;
+	foundation_operator_undeploy)
+		for_each "$spoke_cluster_names" ocm_foundation_operator_undeploy_spoke
+		ocm_foundation_operator_undeploy_hub
+		;;
 	undeploy)
 		for cluster_name in ${spoke_cluster_names_nonhub} ${spoke_cluster_names_hub}; do
+			ocm_subscription_operator_undeploy_spoke $cluster_name
+			ocm_foundation_operator_undeploy_spoke $cluster_name
 			ocm_registration_operator_undeploy_spoke ${cluster_name}
 		done; unset -v cluster_name
+		ocm_foundation_operator_undeploy_hub
 		ocm_registration_operator_undeploy_hub
 		;;
 	delete)
@@ -442,7 +542,6 @@ unset -f application_sample_undeploy
 unset -f application_sample_deploy
 unset -f spoke_add_nonhub
 unset -f spoke_add_hub
-unset -f spoke_add
 unset -f spoke_test
 unset -f spoke_test_undeploy
 unset -f spoke_test_deploy

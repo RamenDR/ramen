@@ -72,7 +72,6 @@ ramen_deploy()
 	make -C ${1} deploy IMG=${ramen_image_name_colon_tag}
 	kube_context_set_undo
 	kubectl --context ${2} -n ramen-system wait deployments --all --for condition=available --timeout 60s
-	kubectl --context ${hub_cluster_name} label managedclusters/${2} name=${2} --overwrite
 	cat <<-a | kubectl --context ${2} apply -f -
 	apiVersion: replication.storage.openshift.io/v1alpha1
 	kind: VolumeReplicationClass
@@ -89,7 +88,6 @@ exit_stack_push unset -f ramen_deploy
 ramen_undeploy()
 {
 	kubectl --context ${2} delete volumereplicationclass/volume-rep-class
-	kubectl --context ${hub_cluster_name} label managedclusters/${2} name-
 	kube_context_set ${2}
 	make -C ${1} undeploy
 	kube_context_set_undo
