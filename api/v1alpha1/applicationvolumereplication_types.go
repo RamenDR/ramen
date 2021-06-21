@@ -41,8 +41,8 @@ const (
 
 // ApplicationVolumeReplicationSpec defines the desired state of ApplicationVolumeReplication
 type ApplicationVolumeReplicationSpec struct {
-	// Placement is used by AVR
-	Placement *plrv1.Placement `json:"placement"`
+	// PlacementRef is the reference to the PlacementRule used by AVR
+	PlacementRef v1.ObjectReference `json:"placement"`
 
 	// DRClusterPeersRef is the reference to the DRClusterPeers participating in the DR replication for this AVR
 	DRClusterPeersRef v1.ObjectReference `json:"drClusterPeersRef"`

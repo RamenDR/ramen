@@ -41,13 +41,8 @@ spec:
                 items:
                   type: string
                 type: array
-              replicationPolicy:
-                description: 'Type of replication policy used by this DRClusterPeers:
-                  sync or async'
-                type: string
             required:
             - clusterNames
-            - replicationPolicy
             type: object
           status:
             description: 'DRClusterPeersStatus defines the observed state of DRClusterPeers

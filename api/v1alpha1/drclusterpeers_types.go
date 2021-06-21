@@ -20,20 +20,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// ReplicationPolicyType  -- present condition of the cluster, as known to the admin
-type ReplicationPolicyType string
-
-// ReplicationPolicyType definitions
-const (
-	// Sync replication implies Metro-DR
-	Sync ReplicationPolicyType = "sync"
-	// Async replication implies WAN-DR
-	Async ReplicationPolicyType = "async"
-)
-
 // DRClusterPeersSpec defines the desired state of DRClusterPeers
 type DRClusterPeersSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
@@ -41,9 +27,6 @@ type DRClusterPeersSpec struct {
 
 	// Members of the DRClusterPeers set
 	ClusterNames []string `json:"clusterNames"`
-
-	// Type of replication policy used by this DRClusterPeers: sync or async
-	ReplicationPolicy ReplicationPolicyType `json:"replicationPolicy"`
 }
 
 // DRClusterPeersStatus defines the observed state of DRClusterPeers
