@@ -9,6 +9,7 @@ docker_install()
 		DOCKER_HOST=unix:///var/run/docker.sock
 		return
 	fi
+	# https://docs.docker.com/engine/security/rootless/#install
 	if ! command -v dockerd-rootless-setuptool.sh
 	# TODO or less than version ${2}
 	then
