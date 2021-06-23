@@ -6,20 +6,20 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.4.1
   creationTimestamp: null
-  name: drclusterpeers.ramendr.openshift.io
+  name: drpolicies.ramendr.openshift.io
 spec:
   group: ramendr.openshift.io
   names:
-    kind: DRClusterPeers
-    listKind: DRClusterPeersList
-    plural: drclusterpeers
-    singular: drclusterpeers
+    kind: DRPolicy
+    listKind: DRPolicyList
+    plural: drpolicies
+    singular: drpolicy
   scope: Cluster
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: DRClusterPeers is the Schema for the drclusterpeers API
+        description: DRPolicy is the Schema for the drpolicies API
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -34,10 +34,10 @@ spec:
           metadata:
             type: object
           spec:
-            description: DRClusterPeersSpec defines the desired state of DRClusterPeers
+            description: DRPolicySpec defines the desired state of DRPolicy
             properties:
               clusterNames:
-                description: Members of the DRClusterPeers set
+                description: Members of the DRPolicy set
                 items:
                   type: string
                 type: array
@@ -45,8 +45,8 @@ spec:
             - clusterNames
             type: object
           status:
-            description: 'DRClusterPeersStatus defines the observed state of DRClusterPeers
-              INSERT ADDITIONAL STATUS FIELD - define observed state of cluster Important:
+            description: 'DRPolicyStatus defines the observed state of DRPolicy INSERT
+              ADDITIONAL STATUS FIELD - define observed state of cluster Important:
               Run "make" to regenerate code after modifying this file'
             type: object
         type: object

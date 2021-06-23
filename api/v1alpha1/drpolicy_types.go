@@ -20,42 +20,42 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// DRClusterPeersSpec defines the desired state of DRClusterPeers
-type DRClusterPeersSpec struct {
+// DRPolicySpec defines the desired state of DRPolicy
+type DRPolicySpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Members of the DRClusterPeers set
+	// Members of the DRPolicy set
 	ClusterNames []string `json:"clusterNames"`
 }
 
-// DRClusterPeersStatus defines the observed state of DRClusterPeers
+// DRPolicyStatus defines the observed state of DRPolicy
 // INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 // Important: Run "make" to regenerate code after modifying this file
-type DRClusterPeersStatus struct{}
+type DRPolicyStatus struct{}
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster
 
-// DRClusterPeers is the Schema for the drclusterpeers API
-type DRClusterPeers struct {
+// DRPolicy is the Schema for the drpolicies API
+type DRPolicy struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   DRClusterPeersSpec    `json:"spec,omitempty"`
-	Status *DRClusterPeersStatus `json:"status,omitempty"`
+	Spec   DRPolicySpec    `json:"spec,omitempty"`
+	Status *DRPolicyStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// DRClusterPeersList contains a list of DRClusterPeers
-type DRClusterPeersList struct {
+// DRPolicyList contains a list of DRPolicy
+type DRPolicyList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []DRClusterPeers `json:"items"`
+	Items           []DRPolicy `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&DRClusterPeers{}, &DRClusterPeersList{})
+	SchemeBuilder.Register(&DRPolicy{}, &DRPolicyList{})
 }

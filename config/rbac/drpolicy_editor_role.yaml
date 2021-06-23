@@ -1,13 +1,13 @@
-# permissions for end users to edit ApplicationVolumeReplications.
+# permissions for end users to edit drpolicies.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: applicationvolumereplication-editor-role
+  name: drpolicy-editor-role
 rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - applicationvolumereplications
+  - drpolicies
   verbs:
   - create
   - delete
@@ -19,6 +19,6 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - applicationvolumereplications/status
+  - drpolicies/status
   verbs:
   - get

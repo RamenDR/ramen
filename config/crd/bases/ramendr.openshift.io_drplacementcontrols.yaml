@@ -6,22 +6,22 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.4.1
   creationTimestamp: null
-  name: applicationvolumereplications.ramendr.openshift.io
+  name: drplacementcontrols.ramendr.openshift.io
 spec:
   group: ramendr.openshift.io
   names:
-    kind: ApplicationVolumeReplication
-    listKind: ApplicationVolumeReplicationList
-    plural: applicationvolumereplications
+    kind: DRPlacementControl
+    listKind: DRPlacementControlList
+    plural: drplacementcontrols
     shortNames:
-    - avr
-    singular: applicationvolumereplication
+    - drpc
+    singular: drplacementcontrol
   scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ApplicationVolumeReplication is the Schema for the applicationvolumereplications
+        description: DRPlacementControl is the Schema for the drplacementcontrols
           API
         properties:
           apiVersion:
@@ -37,8 +37,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: ApplicationVolumeReplicationSpec defines the desired state
-              of ApplicationVolumeReplication
+            description: DRPlacementControlSpec defines the desired state of DRPlacementControl
             properties:
               action:
                 description: Action is either failover or failback operation
@@ -46,9 +45,9 @@ spec:
                 - Failover
                 - Failback
                 type: string
-              drClusterPeersRef:
-                description: DRClusterPeersRef is the reference to the DRClusterPeers
-                  participating in the DR replication for this AVR
+              drPolicyRef:
+                description: DRPolicyRef is the reference to the DRPolicy participating
+                  in the DR replication for this DRPC
                 properties:
                   apiVersion:
                     description: API version of the referent.
@@ -85,12 +84,12 @@ spec:
                 type: object
               failoverCluster:
                 description: FailoverCluster is the cluster name that the user wants
-                  to failover the application to. If not sepcified, then the AVR will
-                  select the surviving cluster from the DRClusterPeers
+                  to failover the application to. If not sepcified, then the DRPC
+                  will select the surviving cluster from the DRPolicy
                 type: string
-              placement:
+              placementRef:
                 description: PlacementRef is the reference to the PlacementRule used
-                  by AVR
+                  by DRPC
                 properties:
                   apiVersion:
                     description: API version of the referent.
@@ -193,27 +192,16 @@ spec:
                   for more details.'
                 type: string
             required:
-            - drClusterPeersRef
-            - placement
+            - drPolicyRef
+            - placementRef
             - pvcSelector
             - s3Endpoint
             - s3Region
             - s3SecretName
             type: object
           status:
-            description: ApplicationVolumeReplicationStatus defines the observed state
-              of ApplicationVolumeReplication
+            description: DRPlacementControlStatus defines the observed state of DRPlacementControl
             properties:
-              clusterToClean:
-                type: string
-              decision:
-                description: PlacementDecision defines the decision made by controller
-                properties:
-                  clusterName:
-                    type: string
-                  clusterNamespace:
-                    type: string
-                type: object
               lastKnownDRState:
                 description: DRState for keeping track of the DR placement
                 enum:
@@ -226,6 +214,14 @@ spec:
               lastUpdateTime:
                 format: date-time
                 type: string
+              preferredDecision:
+                description: PlacementDecision defines the decision made by controller
+                properties:
+                  clusterName:
+                    type: string
+                  clusterNamespace:
+                    type: string
+                type: object
             required:
             - lastUpdateTime
             type: object

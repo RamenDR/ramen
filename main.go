@@ -111,16 +111,16 @@ func setupReconcilers(mgr ctrl.Manager) {
 		os.Exit(1)
 	}
 
-	avrReconciler := (&controllers.ApplicationVolumeReplicationReconciler{
+	drpcReconciler := (&controllers.DRPlacementControlReconciler{
 		Client:         mgr.GetClient(),
-		Log:            ctrl.Log.WithName("controllers").WithName("ApplicationVolumeReplication"),
+		Log:            ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),
 		ObjStoreGetter: controllers.S3ObjectStoreGetter(),
 		PVDownloader:   controllers.ObjectStorePVDownloader{},
 		Scheme:         mgr.GetScheme(),
 		Callback:       func(string) {},
 	})
-	if err := avrReconciler.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ApplicationVolumeReplication")
+	if err := drpcReconciler.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "DRPlacementControl")
 		os.Exit(1)
 	}
 }

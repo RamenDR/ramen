@@ -39,19 +39,19 @@ const (
 	ActionRelocate DRAction = "Relocate"
 )
 
-// ApplicationVolumeReplicationSpec defines the desired state of ApplicationVolumeReplication
-type ApplicationVolumeReplicationSpec struct {
-	// PlacementRef is the reference to the PlacementRule used by AVR
-	PlacementRef v1.ObjectReference `json:"placement"`
+// DRPlacementControlSpec defines the desired state of DRPlacementControl
+type DRPlacementControlSpec struct {
+	// PlacementRef is the reference to the PlacementRule used by DRPC
+	PlacementRef v1.ObjectReference `json:"placementRef"`
 
-	// DRClusterPeersRef is the reference to the DRClusterPeers participating in the DR replication for this AVR
-	DRClusterPeersRef v1.ObjectReference `json:"drClusterPeersRef"`
+	// DRPolicyRef is the reference to the DRPolicy participating in the DR replication for this DRPC
+	DRPolicyRef v1.ObjectReference `json:"drPolicyRef"`
 
 	// PreferredCluster is the cluster name that the user preferred to run the application on
 	PreferredCluster string `json:"preferredCluster,omitempty"`
 
 	// FailoverCluster is the cluster name that the user wants to failover the application to.
-	// If not sepcified, then the AVR will select the surviving cluster from the DRClusterPeers
+	// If not sepcified, then the DRPC will select the surviving cluster from the DRPolicy
 	FailoverCluster string `json:"failoverCluster,omitempty"`
 
 	// Label selector to identify all the PVCs that need DR protection.
@@ -84,23 +84,23 @@ type DRState string
 
 // These are the valid values for DRState
 const (
-	// Initial, this is the state that will be recorded in the AVR status
+	// Initial, this is the state that will be recorded in the DRPC status
 	// when initial deplyment has been performed successfully
 	Initial DRState = "Initial"
 
-	// FailingOver, state recorded in the AVR status when the failover
+	// FailingOver, state recorded in the DRPC status when the failover
 	// is initiated but has not been completed yet
 	FailingOver DRState = "Failing-over"
 
-	// FailedOver, state recorded in the AVR status when the failover
+	// FailedOver, state recorded in the DRPC status when the failover
 	// process has completed
 	FailedOver DRState = "Failed-over"
 
-	// FailingBack, state recorded in the AVR status when the failback
+	// FailingBack, state recorded in the DRPC status when the failback
 	// is initiated but has not been completed yet
 	FailingBack DRState = "Failing-back"
 
-	// FailedBack, state recorded in the AVR status when the failback
+	// FailedBack, state recorded in the DRPC status when the failback
 	// process has completed
 	FailedBack DRState = "Failed-back"
 
@@ -109,36 +109,35 @@ const (
 	Relocated  DRState = "Relocated"
 )
 
-// ApplicationVolumeReplicationStatus defines the observed state of ApplicationVolumeReplication
-type ApplicationVolumeReplicationStatus struct {
-	PreferredDecision plrv1.PlacementDecision `json:"decision,omitempty"`
-	ClusterToClean    string                  `json:"clusterToClean,omitempty"`
+// DRPlacementControlStatus defines the observed state of DRPlacementControl
+type DRPlacementControlStatus struct {
+	PreferredDecision plrv1.PlacementDecision `json:"preferredDecision,omitempty"`
 	LastKnownDRState  DRState                 `json:"lastKnownDRState,omitempty"`
 	LastUpdateTime    metav1.Time             `json:"lastUpdateTime"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:shortName=avr
+// +kubebuilder:resource:shortName=drpc
 
-// ApplicationVolumeReplication is the Schema for the applicationvolumereplications API
-type ApplicationVolumeReplication struct {
+// DRPlacementControl is the Schema for the drplacementcontrols API
+type DRPlacementControl struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ApplicationVolumeReplicationSpec   `json:"spec,omitempty"`
-	Status ApplicationVolumeReplicationStatus `json:"status,omitempty"`
+	Spec   DRPlacementControlSpec   `json:"spec,omitempty"`
+	Status DRPlacementControlStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// ApplicationVolumeReplicationList contains a list of ApplicationVolumeReplication
-type ApplicationVolumeReplicationList struct {
+// DRPlacementControlList contains a list of DRPlacementControl
+type DRPlacementControlList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []ApplicationVolumeReplication `json:"items"`
+	Items           []DRPlacementControl `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&ApplicationVolumeReplication{}, &ApplicationVolumeReplicationList{})
+	SchemeBuilder.Register(&DRPlacementControl{}, &DRPlacementControlList{})
 }

@@ -1,13 +1,13 @@
-# permissions for end users to edit drclusterpeers.
+# permissions for end users to edit DRPlacementControls.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: drclusterpeers-editor-role
+  name: drplacementcontrol-editor-role
 rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - drclusterpeers
+  - drplacementcontrols
   verbs:
   - create
   - delete
@@ -19,6 +19,6 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - drclusterpeers/status
+  - drplacementcontrols/status
   verbs:
   - get

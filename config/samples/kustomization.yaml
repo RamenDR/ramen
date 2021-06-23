@@ -2,6 +2,6 @@
 resources:
 - ramendr_v1alpha1_volumereplicationgroup.yaml
 - ramendr_v1alpha1_clusterid.yaml
-- ramendr_v1alpha1_drclusterpeers.yaml
-- ramendr_v1alpha1_ApplicationVolumeReplication.yaml
+- ramendr_v1alpha1_drpolicy.yaml
+- ramendr_v1alpha1_DRPlacementControl.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples
