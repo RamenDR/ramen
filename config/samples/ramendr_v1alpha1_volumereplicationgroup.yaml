@@ -6,8 +6,11 @@ spec:
   pvcSelector:
     matchLabels:
       any-pvc-label: value
-  volumeReplicationClass: "storage-replication-class"
+  schedulingInterval: "1h"
   replicationState: "Primary"
+  replicationSelector:
+    matchLabels:
+      class: ramen
   s3Endpoint: "path/to/s3Endpoint"
   s3Region: "unknown"
   s3SecretName: secret-name-with-s3-credentials

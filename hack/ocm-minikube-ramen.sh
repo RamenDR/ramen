@@ -80,6 +80,7 @@ ramen_deploy()
 	spec:
 	  provisioner: rook-ceph.rbd.csi.ceph.com
 	  parameters:
+        schedulingInterval: "1m"
 	    replication.storage.openshift.io/replication-secret-name: rook-csi-rbd-provisioner
 	    replication.storage.openshift.io/replication-secret-namespace: rook-ceph
 	a

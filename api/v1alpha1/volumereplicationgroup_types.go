@@ -20,6 +20,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// Important: Run "make" to regenerate code after modifying this file
+
 // ReplicationState represents the replication operations to be performed on the volume
 type ReplicationState string
 
@@ -47,9 +49,9 @@ const (
 
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// VolumeReplicationGroup (VRG) spec declares the desired replication class
-// and replication state of all the PVCs identified via the given PVC label
-// selector.  For each such PVC, the VRG will do the following:
+// VolumeReplicationGroup (VRG) spec declares the desired schedule for data
+// replication and replication state of all PVCs identified via the given
+// PVC label selector. For each such PVC, the VRG will do the following:
 // 	- Create a VolumeReplication (VR) CR to enable storage level replication
 // 	  of volume data and set the desired replication state (primary, secondary,
 //    etc).
@@ -60,15 +62,21 @@ const (
 //  - Manage the lifecycle of VR CR and S3 data according to CUD operations on
 //    the PVC and the VRG CR.
 type VolumeReplicationGroupSpec struct {
-	// Important: Run "make" to regenerate code after modifying this file
-
 	// Label selector to identify all the PVCs that are in this group
 	// that needs to be replicated to the peer cluster.
 	PVCSelector metav1.LabelSelector `json:"pvcSelector"`
 
-	// ReplicationClass of all volumes in this replication group;
-	// this value is propagated to children VolumeReplication CRs
-	VolumeReplicationClass string `json:"volumeReplicationClass"`
+	// Label selector to identify the VolumeReplicationClass resources
+	// that are scanned to select an appropriate VolumeReplicationClass
+	// for the VolumeReplication resource.
+	//+optional
+	ReplicationClassSelector metav1.LabelSelector `json:"replicationClassSelector,omitempty"`
+
+	// scheduling Interval for replicating Persistent Volume
+	// data to a peer cluster. Interval is typically in the
+	// form <num><m,h,d>. Here <num> is a number, 'm' means
+	// minutes, 'h' means hours and 'd' stands for days.
+	SchedulingInterval string `json:"schedulingInterval"`
 
 	// Desired state of all volumes [primary or secondary] in this replication group;
 	// this value is propagated to children VolumeReplication CRs
@@ -85,7 +93,6 @@ type VolumeReplicationGroupSpec struct {
 	// is replicated by a different mechanism; this mode of operation may be
 	// referred to as backup-less mode.
 	S3Endpoint string `json:"s3Endpoint,omitempty"`
-
 	// S3 Region: https://docs.aws.amazon.com/general/latest/gr/rande.html
 	S3Region string `json:"s3Region,omitempty"`
 
@@ -109,7 +116,6 @@ type ProtectedPVCMap map[string]*ProtectedPVC
 
 // VolumeReplicationGroupStatus defines the observed state of VolumeReplicationGroup
 // INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-// Important: Run "make" to regenerate code after modifying this file
 type VolumeReplicationGroupStatus struct {
 	State State `json:"state,omitempty"`
 

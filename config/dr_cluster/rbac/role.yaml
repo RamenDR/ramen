@@ -76,3 +76,20 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - replication.storage.openshift.io
+  resources:
+  - volumereplicationclasses
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - storageclasses
+  verbs:
+  - get
+  - list

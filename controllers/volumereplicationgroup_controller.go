@@ -21,12 +21,14 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
+	"regexp"
 
 	"github.com/go-logr/logr"
 
 	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
 	volrepController "github.com/csi-addons/volume-replication-operator/controllers"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -228,6 +230,8 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim, log logr.
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups/finalizers,verbs=update
 // +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplications,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplicationclasses,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch;update;patch
 
@@ -248,11 +252,12 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	defer log.Info("Exiting reconcile loop")
 
 	v := VRGInstance{
-		reconciler: r,
-		ctx:        ctx,
-		log:        log,
-		instance:   &ramendrv1alpha1.VolumeReplicationGroup{},
-		pvcList:    &corev1.PersistentVolumeClaimList{},
+		reconciler:    r,
+		ctx:           ctx,
+		log:           log,
+		instance:      &ramendrv1alpha1.VolumeReplicationGroup{},
+		pvcList:       &corev1.PersistentVolumeClaimList{},
+		replClassList: &volrep.VolumeReplicationClassList{},
 	}
 
 	// Fetch the VolumeReplicationGroup instance
@@ -273,11 +278,13 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 }
 
 type VRGInstance struct {
-	reconciler *VolumeReplicationGroupReconciler
-	ctx        context.Context
-	log        logr.Logger
-	instance   *ramendrv1alpha1.VolumeReplicationGroup
-	pvcList    *corev1.PersistentVolumeClaimList
+	reconciler    *VolumeReplicationGroupReconciler
+	ctx           context.Context
+	log           logr.Logger
+	instance      *ramendrv1alpha1.VolumeReplicationGroup
+	pvcList       *corev1.PersistentVolumeClaimList
+	replClassList *volrep.VolumeReplicationClassList
+	vrcUpdated    bool
 }
 
 const (
@@ -322,6 +329,22 @@ func (v *VRGInstance) processVRG() (ctrl.Result, error) {
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	if err := v.validateSchedule(); err != nil {
+		v.log.Error(err, "Failed to validate the scheduling interval")
+
+		msg := "Failed to validate scheduling interval"
+		setVRGErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+
+		if err = v.updateVRGStatus(false); err != nil {
+			v.log.Error(err, "VRG Status update failed")
+
+			return ctrl.Result{Requeue: true}, nil
+		}
+
+		// No requeue, as there is no reconcile till user changes desired spec to a valid value
+		return ctrl.Result{}, nil
+	}
+
 	v.log = v.log.WithName("vrginstance").WithValues("State", v.instance.Spec.ReplicationState)
 
 	switch {
@@ -334,6 +357,27 @@ func (v *VRGInstance) processVRG() (ctrl.Result, error) {
 	default: // Secondary, not primary and not deleted
 		return v.processAsSecondary()
 	}
+}
+
+// TODO: Currently DRPC and VRG both validate the schedule. However,
+//       there is a difference. While DRPC validates the scheduling
+//       interval for DRPolicy resource, VRG validates for itself.
+//       Once DRPolicy reconciler is implemented, perhaps validating
+//       schedule can be moved to "utils" package and both VRG and
+//       DRPolicy can consume validateSchedule from utils package.
+func (v *VRGInstance) validateSchedule() error {
+	v.log.Info("Validating schedule")
+
+	if v.instance.Spec.SchedulingInterval == "" {
+		return fmt.Errorf("scheduling interval empty (%s)", v.instance.Name)
+	}
+
+	re := regexp.MustCompile(`^\d+[mhd]$`)
+	if !re.MatchString(v.instance.Spec.SchedulingInterval) {
+		return fmt.Errorf("failed to match the scheduling interval string %s", v.instance.Spec.SchedulingInterval)
+	}
+
+	return nil
 }
 
 func (v *VRGInstance) validateVRGState() error {
@@ -381,6 +425,26 @@ func (v *VRGInstance) updatePVCList() error {
 	}
 
 	v.log.Info("Found PersistentVolumeClaims", "count", len(v.pvcList.Items))
+
+	return nil
+}
+
+func (v *VRGInstance) updateReplicationClassList() error {
+	labelSelector := v.instance.Spec.ReplicationClassSelector
+
+	v.log.Info("Fetching VolumeReplicationClass", "labeled", labels.Set(labelSelector.MatchLabels))
+	listOptions := []client.ListOption{
+		client.MatchingLabels(labelSelector.MatchLabels),
+	}
+
+	if err := v.reconciler.List(v.ctx, v.replClassList, listOptions...); err != nil {
+		v.log.Error(err, "Failed to list Replication Classes",
+			"labeled", labels.Set(labelSelector.MatchLabels))
+
+		return fmt.Errorf("failed to list Replication Classes, %w", err)
+	}
+
+	v.log.Info("Found Replication Classes", "count", len(v.replClassList.Items))
 
 	return nil
 }
@@ -1109,6 +1173,12 @@ func (v *VRGInstance) updateVR(volRep *volrep.VolumeReplication,
 
 // createVR creates a VolumeReplication CR with a PVC as its data source.
 func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volrep.ReplicationState) error {
+	volumeReplicationClass, err := v.selectVolumeReplicationClass(vrNamespacedName)
+	if err != nil {
+		return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
+			v.instance.Name, err)
+	}
+
 	volRep := &volrep.VolumeReplication{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      vrNamespacedName.Name,
@@ -1120,12 +1190,8 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 				Name:     vrNamespacedName.Name,
 				APIGroup: new(string),
 			},
-
-			// Convert to volrep.ReplicationState type
-			// explicitly. Otherwise compilation fails.
-			ReplicationState: state,
-
-			VolumeReplicationClass: v.instance.Spec.VolumeReplicationClass,
+			ReplicationState:       state,
+			VolumeReplicationClass: volumeReplicationClass,
 		},
 	}
 
@@ -1143,6 +1209,105 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 	}
 
 	return nil
+}
+
+// namespacedName applies to both VolumeReplication resource and pvc as of now.
+// This is because, VolumeReplication resource for a pvc that is created by the
+// VolumeReplicationGroup has the same name as pvc. But in future if it changes
+// functions to be changed would be processVRAsPrimary(), processVRAsSecondary()
+// to either receive pvc NamespacedName or pvc itself as an additional argument.
+func (v *VRGInstance) selectVolumeReplicationClass(namespacedName types.NamespacedName) (string, error) {
+	className := ""
+
+	if !v.vrcUpdated {
+		if err := v.updateReplicationClassList(); err != nil {
+			v.log.Error(err, "Failed to get VolumeReplicationClass list")
+
+			return className, fmt.Errorf("failed to get VolumeReplicationClass list")
+		}
+
+		v.vrcUpdated = true
+	}
+
+	if len(v.replClassList.Items) == 0 {
+		v.log.Info("No VolumeReplicationClass available")
+
+		return className, fmt.Errorf("no VolumeReplicationClass available")
+	}
+
+	storageClass, err := v.getStorageClass(namespacedName)
+	if err != nil {
+		v.log.Info(fmt.Sprintf("Failed to get the storageclass of pvc %s",
+			namespacedName))
+
+		return className, fmt.Errorf("failed to get the storageclass of pvc %s (%w)",
+			namespacedName, err)
+	}
+
+	for index := range v.replClassList.Items {
+		replicationClass := &v.replClassList.Items[index]
+		if storageClass.Provisioner != replicationClass.Spec.Provisioner {
+			continue
+		}
+
+		schedulingInterval, found := replicationClass.Spec.Parameters["schedulingInterval"]
+		if !found {
+			// schedule not present in parameters of this replicationClass.
+			continue
+		}
+
+		// ReplicationClass that matches both VRG schedule and pvc provisioner
+		if schedulingInterval == v.instance.Spec.SchedulingInterval {
+			className = replicationClass.Name
+
+			break
+		}
+	}
+
+	if className == "" {
+		v.log.Info(fmt.Sprintf("No VolumeReplicationClass found to match provisioner and schedule %s/%s",
+			storageClass.Provisioner, v.instance.Spec.SchedulingInterval))
+
+		return className, fmt.Errorf("no VolumeReplicationClass found to match provisioner and schedule")
+	}
+
+	return className, nil
+}
+
+// if the fetched SCs are stashed, fetching it again for the next PVC can be avoided
+// saving a call to the API server
+func (v *VRGInstance) getStorageClass(namespacedName types.NamespacedName) (*storagev1.StorageClass, error) {
+	var pvc *corev1.PersistentVolumeClaim
+
+	for index := range v.pvcList.Items {
+		pvcItem := &v.pvcList.Items[index]
+
+		pvcNamespacedName := types.NamespacedName{Name: pvcItem.Name, Namespace: pvcItem.Namespace}
+		if pvcNamespacedName == namespacedName {
+			pvc = pvcItem
+
+			break
+		}
+	}
+
+	if pvc == nil {
+		v.log.Info("failed to get the pvc with namespaced name", namespacedName)
+
+		// Need the storage driver of pvc. If pvc is not found return error.
+		return nil, fmt.Errorf("failed to get the pvc with namespaced name %s", namespacedName)
+	}
+
+	scName := pvc.Spec.StorageClassName
+
+	storageClass := &storagev1.StorageClass{}
+	if err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: *scName}, storageClass); err != nil {
+		v.log.Info(fmt.Sprintf("Failed to get the storageclass %s", *scName))
+
+		return nil, fmt.Errorf("failed to get the storageclass with name %s (%w)",
+			*scName, err)
+	}
+
+	return storageClass, nil
 }
 
 func (v *VRGInstance) updateVRGStatus(updateConditions bool) error {

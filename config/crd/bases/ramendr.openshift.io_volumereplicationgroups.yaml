@@ -37,21 +37,67 @@ spec:
           metadata:
             type: object
           spec:
-            description: "VolumeReplicationGroup (VRG) spec declares the desired replication
-              class and replication state of all the PVCs identified via the given
-              PVC label selector.  For each such PVC, the VRG will do the following:
-              \t- Create a VolumeReplication (VR) CR to enable storage level replication
-              \t  of volume data and set the desired replication state (primary, secondary,
-              \   etc).  - Take the corresponding PV metadata in Kubernetes etcd and
-              deposit it in    the S3 store.  The url, access key and access id required
-              to access the    S3 store is specified via environment variables of
-              the VRG operator POD,    which is obtained from a secret resource.  -
-              Manage the lifecycle of VR CR and S3 data according to CUD operations
-              on    the PVC and the VRG CR."
+            description: "VolumeReplicationGroup (VRG) spec declares the desired schedule
+              for data replication and replication state of all PVCs identified via
+              the given PVC label selector. For each such PVC, the VRG will do the
+              following: \t- Create a VolumeReplication (VR) CR to enable storage
+              level replication \t  of volume data and set the desired replication
+              state (primary, secondary,    etc).  - Take the corresponding PV metadata
+              in Kubernetes etcd and deposit it in    the S3 store.  The url, access
+              key and access id required to access the    S3 store is specified via
+              environment variables of the VRG operator POD,    which is obtained
+              from a secret resource.  - Manage the lifecycle of VR CR and S3 data
+              according to CUD operations on    the PVC and the VRG CR."
             properties:
               pvcSelector:
                 description: Label selector to identify all the PVCs that are in this
                   group that needs to be replicated to the peer cluster.
+                properties:
+                  matchExpressions:
+                    description: matchExpressions is a list of label selector requirements.
+                      The requirements are ANDed.
+                    items:
+                      description: A label selector requirement is a selector that
+                        contains values, a key, and an operator that relates the key
+                        and values.
+                      properties:
+                        key:
+                          description: key is the label key that the selector applies
+                            to.
+                          type: string
+                        operator:
+                          description: operator represents a key's relationship to
+                            a set of values. Valid operators are In, NotIn, Exists
+                            and DoesNotExist.
+                          type: string
+                        values:
+                          description: values is an array of string values. If the
+                            operator is In or NotIn, the values array must be non-empty.
+                            If the operator is Exists or DoesNotExist, the values
+                            array must be empty. This array is replaced during a strategic
+                            merge patch.
+                          items:
+                            type: string
+                          type: array
+                      required:
+                      - key
+                      - operator
+                      type: object
+                    type: array
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: matchLabels is a map of {key,value} pairs. A single
+                      {key,value} in the matchLabels map is equivalent to an element
+                      of matchExpressions, whose key field is "key", the operator
+                      is "In", and the values array contains only "value". The requirements
+                      are ANDed.
+                    type: object
+                type: object
+              replicationClassSelector:
+                description: Label selector to identify the VolumeReplicationClass
+                  resources that are scanned to select an appropriate VolumeReplicationClass
+                  for the VolumeReplication resource.
                 properties:
                   matchExpressions:
                     description: matchExpressions is a list of label selector requirements.
@@ -121,20 +167,21 @@ spec:
                   key set using the keys: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.  The
                   secret should be present in the same namespace as the VRG'
                 type: string
-              volumeReplicationClass:
-                description: ReplicationClass of all volumes in this replication group;
-                  this value is propagated to children VolumeReplication CRs
+              schedulingInterval:
+                description: scheduling Interval for replicating Persistent Volume
+                  data to a peer cluster. Interval is typically in the form <num><m,h,d>.
+                  Here <num> is a number, 'm' means minutes, 'h' means hours and 'd'
+                  stands for days.
                 type: string
             required:
             - pvcSelector
             - replicationState
-            - volumeReplicationClass
+            - schedulingInterval
             type: object
           status:
-            description: 'VolumeReplicationGroupStatus defines the observed state
-              of VolumeReplicationGroup INSERT ADDITIONAL STATUS FIELD - define observed
-              state of cluster Important: Run "make" to regenerate code after modifying
-              this file'
+            description: VolumeReplicationGroupStatus defines the observed state of
+              VolumeReplicationGroup INSERT ADDITIONAL STATUS FIELD - define observed
+              state of cluster
             properties:
               conditions:
                 description: Conditions are the list of conditions and their status.

@@ -146,12 +146,13 @@ func IsManifestInAppliedState(mw *ocmworkv1.ManifestWork) bool {
 }
 
 func (mwu *MWUtil) CreateOrUpdateVRGManifestWork(
-	name, namespace, homeCluster, s3Endpoint, s3Region, s3SecretName string, pvcSelector metav1.LabelSelector) error {
+	name, namespace, homeCluster, s3Endpoint, s3Region, s3SecretName string, pvcSelector metav1.LabelSelector,
+	schedulingInterval string, replClassSelector metav1.LabelSelector) error {
 	mwu.Log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%s:%s:%s",
 		name, namespace, homeCluster, s3Endpoint, s3SecretName))
 
 	manifestWork, err := mwu.generateVRGManifestWork(name, namespace, homeCluster,
-		s3Endpoint, s3Region, s3SecretName, pvcSelector)
+		s3Endpoint, s3Region, s3SecretName, pvcSelector, schedulingInterval, replClassSelector)
 	if err != nil {
 		return err
 	}
@@ -161,9 +162,10 @@ func (mwu *MWUtil) CreateOrUpdateVRGManifestWork(
 
 func (mwu *MWUtil) generateVRGManifestWork(
 	name, namespace, homeCluster, s3Endpoint, s3Region, s3SecretName string,
-	pvcSelector metav1.LabelSelector) (*ocmworkv1.ManifestWork, error) {
+	pvcSelector metav1.LabelSelector, schedulingInterval string,
+	replClassSelector metav1.LabelSelector) (*ocmworkv1.ManifestWork, error) {
 	vrgClientManifest, err := mwu.generateVRGManifest(name, namespace, s3Endpoint,
-		s3Region, s3SecretName, pvcSelector)
+		s3Region, s3SecretName, pvcSelector, schedulingInterval, replClassSelector)
 	if err != nil {
 		mwu.Log.Error(err, "failed to generate VolumeReplicationGroup manifest")
 
@@ -181,17 +183,19 @@ func (mwu *MWUtil) generateVRGManifestWork(
 
 func (mwu *MWUtil) generateVRGManifest(
 	name, namespace, s3Endpoint, s3Region, s3SecretName string,
-	pvcSelector metav1.LabelSelector) (*ocmworkv1.Manifest, error) {
+	pvcSelector metav1.LabelSelector, schedulingInterval string,
+	replClassSelector metav1.LabelSelector) (*ocmworkv1.Manifest, error) {
 	return mwu.GenerateManifest(&rmn.VolumeReplicationGroup{
 		TypeMeta:   metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 		Spec: rmn.VolumeReplicationGroupSpec{
-			PVCSelector:            pvcSelector,
-			VolumeReplicationClass: "volume-rep-class",
-			ReplicationState:       rmn.Primary,
-			S3Endpoint:             s3Endpoint,
-			S3Region:               s3Region,
-			S3SecretName:           s3SecretName,
+			PVCSelector:              pvcSelector,
+			SchedulingInterval:       schedulingInterval,
+			ReplicationState:         rmn.Primary,
+			S3Endpoint:               s3Endpoint,
+			S3Region:                 s3Region,
+			S3SecretName:             s3SecretName,
+			ReplicationClassSelector: replClassSelector,
 		},
 	})
 }
@@ -425,8 +429,8 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 
 		// Let DRPC receive notification for any changes to ManifestWork CR created by it.
 		// if err := ctrl.SetControllerReference(d.instance, mw, d.reconciler.Scheme); err != nil {
-		// 	return fmt.Errorf("failed to set owner reference to ManifestWork resource (%s/%s) (%v)",
-		// 		mw.Name, mw.Namespace, err)
+		//	return fmt.Errorf("failed to set owner reference to ManifestWork resource (%s/%s) (%v)",
+		//		mw.Name, mw.Namespace, err)
 		// }
 
 		mwu.Log.Info("Creating ManifestWork for", "cluster", managedClusternamespace, "MW", mw)
