@@ -137,6 +137,16 @@ rules:
 - apiGroups:
   - replication.storage.openshift.io
   resources:
+  - volumereplicationclasses
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - replication.storage.openshift.io
+  resources:
   - volumereplications
   verbs:
   - create
@@ -146,6 +156,13 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - storageclasses
+  verbs:
+  - get
+  - list
 - apiGroups:
   - view.open-cluster-management.io
   resources:

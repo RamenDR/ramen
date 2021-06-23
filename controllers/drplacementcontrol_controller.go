@@ -27,6 +27,7 @@ import (
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	errorswrapper "github.com/pkg/errors"
+	cron "github.com/robfig/cron/v3"
 	fndv2 "github.com/tjanssen3/multicloud-operators-foundation/v2/pkg/apis/view/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -233,6 +234,20 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
+	schedule, err := r.getSchedule(ctx, drpc)
+	if err != nil {
+		logger.Error(err, "failed to get schedule")
+
+		return ctrl.Result{}, err
+	}
+
+	replicationClassSelector, err := r.getReplicationClassSelector(ctx, drpc)
+	if err != nil {
+		logger.Error(err, "failed to get replicationclass selector")
+
+		return ctrl.Result{}, err
+	}
+
 	// Make sure that we give time to the cloned PlacementRule to run and produces decisions
 	if len(drpcPlRule.Status.Decisions) == 0 {
 		const initialWaitTime = 5
@@ -240,14 +255,15 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{RequeueAfter: time.Second * initialWaitTime}, nil
 	}
 
-	d := DRPCInstance{
-		reconciler: r, ctx: ctx, log: logger, instance: drpc, needStatusUpdate: false,
-		userPlacementRule: userPlRule, drpcPlacementRule: drpcPlRule,
-		mwu: rmnutil.MWUtil{Client: r.Client, Ctx: ctx, Log: logger, InstName: drpc.Name, InstNamespace: drpc.Namespace},
-	}
+	d := r.getDRPCInstance(ctx, logger, drpc, drpcPlRule, userPlRule, schedule,
+		replicationClassSelector)
 
+	return r.processAndHandleResponse(&d)
+}
+
+func (r *DRPlacementControlReconciler) processAndHandleResponse(d *DRPCInstance) (ctrl.Result, error) {
 	requeue := d.startProcessing()
-	logger.Info("Finished processing", "Requeue?", requeue)
+	r.Log.Info("Finished processing", "Requeue?", requeue)
 
 	if !requeue {
 		r.Callback(d.instance.Name)
@@ -257,12 +273,29 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	if d.mcvRequestInProgress {
 		duration := d.getRequeueDuration()
-		logger.Info(fmt.Sprintf("Requeing after %v", duration))
+		r.Log.Info(fmt.Sprintf("Requeing after %v", duration))
 
 		return reconcile.Result{RequeueAfter: duration}, nil
 	}
 
 	return ctrl.Result{Requeue: true}, nil
+}
+
+func (r *DRPlacementControlReconciler) getDRPCInstance(ctx context.Context,
+	logger logr.Logger, drpc *rmn.DRPlacementControl, drpcPlRule *plrv1.PlacementRule,
+	userPlRule *plrv1.PlacementRule, schedule *string,
+	replicationClassSelector *metav1.LabelSelector) DRPCInstance {
+	d := DRPCInstance{
+		mwu: rmnutil.MWUtil{
+			Client: r.Client, Ctx: ctx, Log: logger,
+			InstName: drpc.Name, InstNamespace: drpc.Namespace,
+		},
+		reconciler: r, ctx: ctx, log: logger, instance: drpc, needStatusUpdate: false,
+		userPlacementRule: userPlRule, drpcPlacementRule: drpcPlRule, schedule: schedule,
+		replclassselect: replicationClassSelector,
+	}
+
+	return d
 }
 
 func (r *DRPlacementControlReconciler) getPlacementRules(ctx context.Context,
@@ -401,6 +434,55 @@ func (r *DRPlacementControlReconciler) clonePlacementRule(ctx context.Context,
 	return clonedPlRule, nil
 }
 
+func (r *DRPlacementControlReconciler) getSchedule(ctx context.Context,
+	drpc *rmn.DRPlacementControl) (*string, error) {
+	r.Log.Info("Getting schedule from DRPolicy")
+
+	clPeersRef := drpc.Spec.DRPolicyRef
+	clusterPeers := &rmn.DRPolicy{}
+	schedule := ""
+
+	err := r.Client.Get(ctx,
+		types.NamespacedName{Name: clPeersRef.Name}, clusterPeers)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cluster peers using %s/%s. Error (%w)",
+			clPeersRef.Name, clPeersRef.Namespace, err)
+	}
+
+	if clusterPeers.Spec.Schedule == nil {
+		return nil, fmt.Errorf("invalid DRPolicy configuration. Schedule empty (%s)", clusterPeers.Name)
+	}
+
+	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+	if _, err = parser.Parse(*clusterPeers.Spec.Schedule); err != nil {
+		return nil, fmt.Errorf("error parsing schedule %s", *clusterPeers.Spec.Schedule)
+	}
+
+	schedule = *clusterPeers.Spec.Schedule
+
+	return &schedule, nil
+}
+
+func (r *DRPlacementControlReconciler) getReplicationClassSelector(ctx context.Context,
+	drpc *rmn.DRPlacementControl) (*metav1.LabelSelector, error) {
+	r.Log.Info("Getting schedule from DRPolicy")
+
+	clPeersRef := drpc.Spec.DRPolicyRef
+	clusterPeers := &rmn.DRPolicy{}
+	replicationClassSelector := &metav1.LabelSelector{}
+
+	err := r.Client.Get(ctx,
+		types.NamespacedName{Name: clPeersRef.Name}, clusterPeers)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cluster peers using %s/%s. Error (%w)",
+			clPeersRef.Name, clPeersRef.Namespace, err)
+	}
+
+	*replicationClassSelector = clusterPeers.Spec.ReplicationClassSelector
+
+	return replicationClassSelector, nil
+}
+
 func (r *DRPlacementControlReconciler) addClusterPeersToPlacementRule(ctx context.Context,
 	drpc *rmn.DRPlacementControl, plRule *plrv1.PlacementRule) error {
 	clPeersRef := drpc.Spec.DRPolicyRef
@@ -414,7 +496,7 @@ func (r *DRPlacementControlReconciler) addClusterPeersToPlacementRule(ctx contex
 	}
 
 	if len(clusterPeers.Spec.ClusterNames) == 0 {
-		return fmt.Errorf("invalid DRPolicy configuration. Name %s", clusterPeers.Name)
+		return fmt.Errorf("invalid DRPolicy configuration. No clusters given. Name %s", clusterPeers.Name)
 	}
 
 	for idx := range clusterPeers.Spec.ClusterNames {
@@ -438,6 +520,8 @@ type DRPCInstance struct {
 	userPlacementRule    *plrv1.PlacementRule
 	drpcPlacementRule    *plrv1.PlacementRule
 	mwu                  rmnutil.MWUtil
+	schedule             *string
+	replclassselect      *metav1.LabelSelector
 }
 
 func (d *DRPCInstance) startProcessing() bool {
@@ -1251,7 +1335,7 @@ func (d *DRPCInstance) processVRGManifestWork(homeCluster string) error {
 		d.instance.Name, d.instance.Namespace,
 		homeCluster, d.instance.Spec.S3Endpoint,
 		d.instance.Spec.S3Region,
-		d.instance.Spec.S3SecretName, d.instance.Spec.PVCSelector); err != nil {
+		d.instance.Spec.S3SecretName, d.instance.Spec.PVCSelector, d.schedule, d.replclassselect); err != nil {
 		d.log.Error(err, "failed to create or update VolumeReplicationGroup manifest")
 
 		return fmt.Errorf("failed to create or update VolumeReplicationGroup manifest in namespace %s (%w)", homeCluster, err)

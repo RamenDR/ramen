@@ -47,9 +47,9 @@ const (
 
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// VolumeReplicationGroup (VRG) spec declares the desired replication class
-// and replication state of all the PVCs identified via the given PVC label
-// selector.  For each such PVC, the VRG will do the following:
+// VolumeReplicationGroup (VRG) spec declares the desired schedule for data
+// replication and replication state of all PVCs identified via the given
+// PVC label selector. For each such PVC, the VRG will do the following:
 // 	- Create a VolumeReplication (VR) CR to enable storage level replication
 // 	  of volume data and set the desired replication state (primary, secondary,
 //    etc).
@@ -66,9 +66,19 @@ type VolumeReplicationGroupSpec struct {
 	// that needs to be replicated to the peer cluster.
 	PVCSelector metav1.LabelSelector `json:"pvcSelector"`
 
-	// ReplicationClass of all volumes in this replication group;
-	// this value is propagated to children VolumeReplication CRs
-	VolumeReplicationClass string `json:"volumeReplicationClass"`
+	// Important: Run "make" to regenerate code after modifying this file
+
+	// Label selector to identify the VolumeReplicationClass resources
+	// that are scanned to select an appropriate VolumeReplicationClass
+	// for the VolumeReplication resource.
+	//+optional
+	ReplicationClassSelector metav1.LabelSelector `json:"replicationClassSelector,omitempty"`
+
+	// schedule is a cronspec (https://en.wikipedia.org/wiki/Cron#Overview) that
+	// can be used to schedule replication to occur at regular, time-based
+	// intervals.
+	//+kubebuilder:validation:Pattern=`^(\d+|\*)(/\d+)?(\s+(\d+|\*)(/\d+)?){4}$`
+	Schedule *string `json:"schedule"`
 
 	// Desired state of all volumes [primary or secondary] in this replication group;
 	// this value is propagated to children VolumeReplication CRs

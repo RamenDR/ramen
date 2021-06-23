@@ -25,8 +25,20 @@ type DRPolicySpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
+	// schedule is a cronspec (https://en.wikipedia.org/wiki/Cron#Overview) that
+	// can be used to schedule replication to occur at regular, time-based
+	// intervals.
+	//+kubebuilder:validation:Pattern=`^(\d+|\*)(/\d+)?(\s+(\d+|\*)(/\d+)?){4}$`
+	Schedule *string `json:"schedule"`
+
 	// Members of the DRPolicy set
 	ClusterNames []string `json:"clusterNames"`
+
+	// Label selector to identify all the VolumeReplicationClasses.
+	// This selector is assumed to be the same for all subscriptions that
+	// need DR protection. It will be passed in to the VRG when it is created
+	//+optional
+	ReplicationClassSelector metav1.LabelSelector `json:"replicationClassSelector,omitempty"`
 }
 
 // DRPolicyStatus defines the observed state of DRPolicy
