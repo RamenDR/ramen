@@ -25,8 +25,20 @@ type DRPolicySpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
+	// scheduling Interval for replicating Persistent Volume
+	// data to a peer cluster. Interval is typically in the
+	// form <num><m,h,d>. Here <num> is a number, 'm' means
+	// minutes, 'h' means hours and 'd' stands for days.
+	SchedulingInterval string `json:"schedulingInterval"`
+
 	// Members of the DRPolicy set
 	ClusterNames []string `json:"clusterNames"`
+
+	// Label selector to identify all the VolumeReplicationClasses.
+	// This selector is assumed to be the same for all subscriptions that
+	// need DR protection. It will be passed in to the VRG when it is created
+	//+optional
+	ReplicationClassSelector metav1.LabelSelector `json:"replicationClassSelector,omitempty"`
 }
 
 // DRPolicyStatus defines the observed state of DRPolicy

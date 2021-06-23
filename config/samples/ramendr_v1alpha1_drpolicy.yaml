@@ -3,6 +3,10 @@ kind: DRPolicy
 metadata:
   name: drpolicy-sample
 spec:
+  schedulingInterval: "1h"  # hourly
+  replicationClassSelector:
+    matchLabels:
+      class: ramen
   clusterNames:
   - east
   - west

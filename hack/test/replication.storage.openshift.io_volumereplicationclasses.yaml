@@ -1,0 +1,74 @@
+
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.4.1
+  creationTimestamp: null
+  name: volumereplicationclasses.replication.storage.openshift.io
+spec:
+  group: replication.storage.openshift.io
+  names:
+    kind: VolumeReplicationClass
+    listKind: VolumeReplicationClassList
+    plural: volumereplicationclasses
+    shortNames:
+    - vrc
+    singular: volumereplicationclass
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.provisioner
+      name: provisioner
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: VolumeReplicationClass is the Schema for the volumereplicationclasses
+          API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: VolumeReplicationClassSpec specifies parameters that an underlying
+              storage system uses when creating a volume replica. A specific VolumeReplicationClass
+              is used by specifying its name in a VolumeReplication object.
+            properties:
+              parameters:
+                additionalProperties:
+                  type: string
+                description: Parameters is a key-value map with storage provisioner
+                  specific configurations for creating volume replicas
+                type: object
+              provisioner:
+                description: Provisioner is the name of storage provisioner
+                type: string
+            required:
+            - provisioner
+            type: object
+          status:
+            description: VolumeReplicationClassStatus defines the observed state of
+              VolumeReplicationClass
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []

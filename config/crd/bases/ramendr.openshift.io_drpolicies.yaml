@@ -41,8 +41,61 @@ spec:
                 items:
                   type: string
                 type: array
+              replicationClassSelector:
+                description: Label selector to identify all the VolumeReplicationClasses.
+                  This selector is assumed to be the same for all subscriptions that
+                  need DR protection. It will be passed in to the VRG when it is created
+                properties:
+                  matchExpressions:
+                    description: matchExpressions is a list of label selector requirements.
+                      The requirements are ANDed.
+                    items:
+                      description: A label selector requirement is a selector that
+                        contains values, a key, and an operator that relates the key
+                        and values.
+                      properties:
+                        key:
+                          description: key is the label key that the selector applies
+                            to.
+                          type: string
+                        operator:
+                          description: operator represents a key's relationship to
+                            a set of values. Valid operators are In, NotIn, Exists
+                            and DoesNotExist.
+                          type: string
+                        values:
+                          description: values is an array of string values. If the
+                            operator is In or NotIn, the values array must be non-empty.
+                            If the operator is Exists or DoesNotExist, the values
+                            array must be empty. This array is replaced during a strategic
+                            merge patch.
+                          items:
+                            type: string
+                          type: array
+                      required:
+                      - key
+                      - operator
+                      type: object
+                    type: array
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: matchLabels is a map of {key,value} pairs. A single
+                      {key,value} in the matchLabels map is equivalent to an element
+                      of matchExpressions, whose key field is "key", the operator
+                      is "In", and the values array contains only "value". The requirements
+                      are ANDed.
+                    type: object
+                type: object
+              schedulingInterval:
+                description: scheduling Interval for replicating Persistent Volume
+                  data to a peer cluster. Interval is typically in the form <num><m,h,d>.
+                  Here <num> is a number, 'm' means minutes, 'h' means hours and 'd'
+                  stands for days.
+                type: string
             required:
             - clusterNames
+            - schedulingInterval
             type: object
           status:
             description: 'DRPolicyStatus defines the observed state of DRPolicy INSERT

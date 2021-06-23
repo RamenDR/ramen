@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"regexp"
 	"time"
 
 	"github.com/ghodss/yaml"
@@ -243,6 +244,18 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(ctx context.Context
 		return ctrl.Result{}, err
 	}
 
+	// Currently validation of schedule in DRPolicy is done here. When
+	// there is a reconciler for DRPolicy, then probably this validation
+	// has to be done there and can be removed from here.
+	err = r.validateSchedule(drPolicy)
+	if err != nil {
+		r.Log.Error(err, "failed to validate schedule")
+
+		// Should it be no requeue? as there is no reconcile till user
+		// changes desired spec to a valid value
+		return ctrl.Result{}, err
+	}
+
 	// Check if the drpc instance is marked for deletion, which is indicated by the
 	// deletion timestamp being set.
 	if drpc.GetDeletionTimestamp() != nil {
@@ -274,6 +287,10 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(ctx context.Context
 		mwu: rmnutil.MWUtil{Client: r.Client, Ctx: ctx, Log: r.Log, InstName: drpc.Name, InstNamespace: drpc.Namespace},
 	}
 
+	return r.processAndHandleResponse(&d)
+}
+
+func (r *DRPlacementControlReconciler) processAndHandleResponse(d *DRPCInstance) (ctrl.Result, error) {
 	requeue := d.startProcessing()
 	r.Log.Info("Finished processing", "Requeue?", requeue)
 
@@ -538,6 +555,21 @@ func (r *DRPlacementControlReconciler) clonePlacementRule(ctx context.Context,
 	}
 
 	return clonedPlRule, nil
+}
+
+func (r *DRPlacementControlReconciler) validateSchedule(drPolicy *rmn.DRPolicy) error {
+	r.Log.Info("Validating schedule from DRPolicy")
+
+	if drPolicy.Spec.SchedulingInterval == "" {
+		return fmt.Errorf("scheduling interval empty for the DRPolicy (%s)", drPolicy.Name)
+	}
+
+	re := regexp.MustCompile(`^\d+[mhd]$`)
+	if !re.MatchString(drPolicy.Spec.SchedulingInterval) {
+		return fmt.Errorf("failed to match the scheduling interval string %s", drPolicy.Spec.SchedulingInterval)
+	}
+
+	return nil
 }
 
 func (r *DRPlacementControlReconciler) deleteClonedPlacementRule(ctx context.Context,
@@ -1374,7 +1406,8 @@ func (d *DRPCInstance) processVRGManifestWork(homeCluster string) error {
 		d.instance.Name, d.instance.Namespace,
 		homeCluster, d.instance.Spec.S3Endpoint,
 		d.instance.Spec.S3Region,
-		d.instance.Spec.S3SecretName, d.instance.Spec.PVCSelector); err != nil {
+		d.instance.Spec.S3SecretName, d.instance.Spec.PVCSelector,
+		d.drPolicy.Spec.SchedulingInterval, d.drPolicy.Spec.ReplicationClassSelector); err != nil {
 		d.log.Error(err, "failed to create or update VolumeReplicationGroup manifest")
 
 		return fmt.Errorf("failed to create or update VolumeReplicationGroup manifest in namespace %s (%w)", homeCluster, err)
