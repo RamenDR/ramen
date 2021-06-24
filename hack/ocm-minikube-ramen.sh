@@ -93,32 +93,31 @@ ramen_branch_checkout_undo()
 	exit_stack_pop
 }
 exit_stack_push unset -f ramen_branch_checkout_undo
-ramen_operator_name=ramen-operator
-ramen_tag_name=v0.Npr58
-ramen_image_name=${ramen_operator_name}:${ramen_tag_name}
-exit_stack_push unset -v ramen_image_name ramen_tag_name ramen_operator_name
-podman_uninstall_docker_install()
-{
-	. ${ramen_hack_directory_path_name}/podman-uninstall.sh
-	. ${ramen_hack_directory_path_name}/docker-install.sh; docker_install ${HOME}/.local/bin; unset -f docker_install
-}
-exit_stack_push unset -v podman_uninstall_docker_install
-docker_uninstall_podman_install()
+ramen_image_directory_name=localhost
+ramen_image_name=ramen-operator
+ramen_image_tag=v0.Npr58
+ramen_image_name_colon_tag=${ramen_image_directory_name}/${ramen_image_name}:${ramen_image_tag}
+exit_stack_push unset -v ramen_image_name_colon_tag ramen_image_tag ramen_image_name ramen_image_directory_name
+ramen_build()
 {
 	${ramen_hack_directory_path_name}/docker-uninstall.sh ${HOME}/.local/bin
 	. ${ramen_hack_directory_path_name}/podman-docker-install.sh
-}
-exit_stack_push unset -v docker_uninstall_podman_install
-ramen_build()
-{
-	docker_uninstall_podman_install
+	. ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local; unset -f go_install
 	ramen_branch_checkout ${1}
-	make -C ${1} docker-build IMG=${ramen_image_name} DOCKER_HOST=${DOCKER_HOST}
+	make -C ${1} docker-build IMG=${ramen_image_name_colon_tag}
 	ramen_branch_checkout_undo
-	DOCKER_HOST=${DOCKER_HOST}\
-	docker save ${ramen_image_name} -o ${HOME}/.minikube/cache/images/${ramen_operator_name}_${ramen_tag_name}
 }
 exit_stack_push unset -f ramen_build
+ramen_archive()
+{
+	set -- ${HOME}/.minikube/cache/images/${ramen_image_directory_name}
+	mkdir -p ${1}
+	set -- ${1}/${ramen_image_name}_${ramen_image_tag}
+	# docker-archive doesn't support modifying existing images
+	rm -f ${1}
+	docker save ${ramen_image_name_colon_tag} -o ${1}
+}
+exit_stack_push unset -f ramen_archive
 kube_context_set()
 {
 	exit_stack_push kubectl config use-context $(kubectl config current-context)
@@ -132,11 +131,10 @@ kube_context_set_undo()
 exit_stack_push unset -f kube_context_set_undo
 ramen_deploy()
 {
-	#DOCKER_HOST=${DOCKER_HOST}\
-	minikube -p ${2} image load ${ramen_image_name}
+	minikube -p ${2} image load ${ramen_image_name_colon_tag}
 	ramen_branch_checkout ${1}
 	kube_context_set ${2}
-	make -C ${1} deploy IMG=${ramen_image_name}
+	make -C ${1} deploy IMG=${ramen_image_name_colon_tag}
 	kube_context_set_undo
 	ramen_branch_checkout_undo
 	kubectl --context ${2} -n ramen-system wait deployments --all --for condition=available --timeout 60s
@@ -294,6 +292,7 @@ for cluster_name in ${spoke_cluster_names}; do
 done; unset -v cluster_name
 ramen_deploy_all()
 {
+	. ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local; unset -f go_install
 	for cluster_name in ${cluster_names}; do
 		ramen_deploy ${ramen_directory_path_name} ${cluster_name}
 	done; unset -v cluster_name
@@ -301,6 +300,7 @@ ramen_deploy_all()
 exit_stack_push unset -v ramen_deploy_all
 ramen_undeploy_all()
 {
+	. ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local; unset -f go_install
 	for cluster_name in ${cluster_names}; do
 		ramen_undeploy ${ramen_directory_path_name} ${cluster_name}
 	done; unset -v cluster_name
@@ -314,12 +314,11 @@ for command in "${@:-deploy}"; do
 		${ramen_hack_directory_path_name}/ocm-minikube.sh
 		rook_ceph_deploy ${ramen_hack_directory_path_name} ${cluster_names}
 		minio_deploy ${ramen_hack_directory_path_name} ${hub_cluster_name}
-		. ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local; unset -f go_install
 		ramen_build ${ramen_directory_path_name}
+		ramen_archive
 		ramen_deploy_all
 		;;
 	undeploy)
-		. ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local; unset -f go_install
 		ramen_undeploy_all
 		minio_undeploy ${ramen_hack_directory_path_name} ${hub_cluster_name}
 		rook_ceph_undeploy ${ramen_hack_directory_path_name} ${cluster_names}
@@ -344,15 +343,15 @@ for command in "${@:-deploy}"; do
 		unset -v cluster_name
 		;;
 	ramen_build)
-		. ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local; unset -f go_install
 		ramen_build ${ramen_directory_path_name}
 		;;
+	ramen_archive)
+		ramen_archive
+		;;
 	ramen_deploy)
-		. ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local; unset -f go_install
 		ramen_deploy_all
 		;;
 	ramen_undeploy)
-		. ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local; unset -f go_install
 		ramen_undeploy_all
 		;;
 	rook_ceph_deploy)
