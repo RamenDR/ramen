@@ -54,31 +54,12 @@ minio_undeploy()
 	kubectl --context ${2} delete -f ${1}/minio-deployment.yaml
 }
 exit_stack_push unset -f minio_undeploy
-ramen_branch_name=pr47_pr58_rbac2360357
-exit_stack_push unset -v ramen_branch_name
-ramen_branch_build()
-{
-	set -- ${1} ${ramen_branch_name}
-	git --git-dir ${1}/.git --work-tree ${1} checkout main -b ${2}
-	exit_stack_push git --git-dir ${1}/.git --work-tree ${1} checkout -
-	git --git-dir ${1}/.git --work-tree ${1} pull --rebase https://github.com/ramendr/ramen main
-	#git --git-dir ${1}/.git --work-tree ${1} pull --rebase https://github.com/BenamarMk/ramen avr_per_subscription_placement       #51
-	#git --git-dir ${1}/.git --work-tree ${1} pull --rebase https://github.com/ShyamsundarR/ramen pr-51-1
-	#git --git-dir ${1}/.git --work-tree ${1} pull --rebase https://github.com/BenamarMk/ramen add_avr_plrule_to_manage_user_plrule #55
-	git --git-dir ${1}/.git --work-tree ${1} pull --rebase https://github.com/ShyamsundarR/ramen 2360357b37e76f1bcd5909598d49c1756780cd8e
-	git --git-dir ${1}/.git --work-tree ${1} pull --rebase https://github.com/BenamarMk/ramen add_preferredcluster_targetcluster    #58
-	# controllers/applicationvolumereplication_controller.go
-	# config/crd/bases/ramendr.openshift.io_applicationvolumereplications.yaml
-	git --git-dir ${1}/.git --work-tree ${1} push git@github.com:hatfieldbrian/ramen ${2}
-	exit_stack_pop
-}
-exit_stack_push unset -f ramen_branch_build
 ramen_branch_checkout()
 {
-	set -- ${1} ${ramen_branch_name}
+	set -- ${1} rename_and_refactor_avr_and_drclusterpeers
 	git --git-dir ${1}/.git --work-tree ${1} checkout main
 	exit_stack_push git --git-dir ${1}/.git --work-tree ${1} checkout -
-	git --git-dir ${1}/.git fetch https://github.com/hatfieldbrian/ramen ${2}:${2}
+	git --git-dir ${1}/.git fetch https://github.com/BenamarMk/ramen ${2}:${2}
 	exit_stack_pop
 	git --git-dir ${1}/.git --work-tree ${1} checkout ${2}
 	exit_stack_push git --git-dir ${1}/.git --work-tree ${1} checkout -
@@ -95,7 +76,7 @@ ramen_branch_checkout_undo()
 exit_stack_push unset -f ramen_branch_checkout_undo
 ramen_image_directory_name=localhost
 ramen_image_name=ramen-operator
-ramen_image_tag=v0.Npr58
+ramen_image_tag=v0.Npr78
 ramen_image_name_colon_tag=${ramen_image_directory_name}/${ramen_image_name}:${ramen_image_tag}
 exit_stack_push unset -v ramen_image_name_colon_tag ramen_image_tag ramen_image_name ramen_image_directory_name
 ramen_build()
@@ -139,10 +120,22 @@ ramen_deploy()
 	ramen_branch_checkout_undo
 	kubectl --context ${2} -n ramen-system wait deployments --all --for condition=available --timeout 60s
 	kubectl --context ${hub_cluster_name} label managedclusters/${2} name=${2} --overwrite
+	cat <<-a | kubectl --context ${2} apply -f -
+	apiVersion: replication.storage.openshift.io/v1alpha1
+	kind: VolumeReplicationClass
+	metadata:
+	  name: volume-rep-class
+	spec:
+	  provisioner: rook-ceph.rbd.csi.ceph.com
+	  parameters:
+	    replication.storage.openshift.io/replication-secret-name: rook-csi-rbd-provisioner
+	    replication.storage.openshift.io/replication-secret-namespace: rook-ceph
+	a
 }
 exit_stack_push unset -f ramen_deploy
 ramen_undeploy()
 {
+	kubectl --context ${2} delete volumereplicationclass/volume-rep-class
 	kubectl --context ${hub_cluster_name} label managedclusters/${2} name-
 	ramen_branch_checkout ${1}
 	kube_context_set ${2}
@@ -155,35 +148,22 @@ ramen_undeploy()
 	set -e
 }
 exit_stack_push unset -f ramen_undeploy
-ramen_samples_branch_name=shyam_test_benamar_update_placement_to_avr
-exit_stack_push unset -v ramen_samples_branch_name
-ramen_samples_branch_build()
-{
-	set -- ocm-ramen-samples ${ramen_samples_branch_name}
-	set +e
-	git clone https://github.com/RamenDR/${1}
-	# fatal: destination path 'ocm-ramen-samples' already exists and is not an empty directory.
-	set -e
-	git --git-dir ${1}/.git --work-tree ${1} checkout main -b ${2}
-	git --git-dir ${1}/.git --work-tree ${1} pull --ff-only https://github.com/ShyamsundarR/${1} test
-	git --git-dir ${1}/.git --work-tree ${1} pull --rebase https://github.com/BenamarMk/${1} update_placement_to_avr
-	git --git-dir ${1}/.git --work-tree ${1} push git@github.com:hatfieldbrian/${1} ${2}:${2}
-	git --git-dir ${1}/.git --work-tree ${1} checkout -
-}
-exit_stack_push unset -f ramen_samples_branch_build
 ramen_samples_branch_checkout()
 {
-	set -- ocm-ramen-samples ${ramen_samples_branch_name}
+	set -- ocm-ramen-samples test ShyamsundarR
+	set -- ocm-ramen-samples test hatfieldbrian
 	set +e
 	git clone https://github.com/RamenDR/${1}
 	# fatal: destination path 'ocm-ramen-samples' already exists and is not an empty directory.
 	set -e
 	git --git-dir ${1}/.git --work-tree ${1} checkout main
 	exit_stack_push git --git-dir ${1}/.git --work-tree ${1} checkout -
-	git --git-dir ${1}/.git --work-tree ${1} fetch https://github.com/hatfieldbrian/${1} ${2}:${2}
+	branch_name=${3}/${2}
+	git --git-dir ${1}/.git fetch https://github.com/${3}/${1} ${2}:${branch_name}
 	exit_stack_pop
-	git --git-dir ${1}/.git --work-tree ${1} checkout ${2}
+	git --git-dir ${1}/.git --work-tree ${1} checkout ${branch_name}
 	exit_stack_push git --git-dir ${1}/.git --work-tree ${1} checkout -
+	unset -v branch_name
 }
 exit_stack_push unset -f ramen_samples_branch_checkout
 ramen_samples_branch_checkout_undo()
@@ -194,17 +174,17 @@ exit_stack_push unset -f ramen_samples_branch_checkout_undo
 application_sample_namespace_and_s3_deploy()
 {
 	ramen_samples_branch_checkout
-	kubectl --context ${1} apply -f ocm-ramen-samples/subscriptions/busybox/namespace.yaml
-	kubectl --context ${1} apply -f ocm-ramen-samples/subscriptions/busybox/s3secret.yaml
+	kubectl create namespace busybox-sample --dry-run=client -o yaml | kubectl --context ${1} apply -f -
+	kubectl --context ${1} apply -f ocm-ramen-samples/subscriptions/busybox/s3secret.yaml -n busybox-sample
 	ramen_samples_branch_checkout_undo
 }
 exit_stack_push unset -f application_sample_namespace_and_s3_deploy
 application_sample_namespace_and_s3_undeploy()
 {
 	ramen_samples_branch_checkout
-	kubectl --context ${1} delete -f ocm-ramen-samples/subscriptions/busybox/s3secret.yaml
+	kubectl --context ${1} delete -f ocm-ramen-samples/subscriptions/busybox/s3secret.yaml -n busybox-sample
 	date
-	kubectl --context ${1} delete -f ocm-ramen-samples/subscriptions/busybox/namespace.yaml
+	kubectl --context ${1} delete namespace busybox-sample
 	date
 	ramen_samples_branch_checkout_undo
 }
@@ -214,26 +194,28 @@ application_sample_deploy()
 	ramen_samples_branch_checkout
 	kubectl --context ${hub_cluster_name} apply -k ocm-ramen-samples/subscriptions
 	kubectl --context ${hub_cluster_name} -n ramen-samples get channels/ramen-gitops
-	kubectl --context ${hub_cluster_name} apply -f ocm-ramen-samples/subscriptions/busybox/mw-pv.yaml
+	kubectl --context ${hub_cluster_name} apply -f ocm-ramen-samples/mw-pv.yaml
 	mkdir -p ocm-ramen-samples/subscriptions/busybox-${USER}
 	cat <<-a >ocm-ramen-samples/subscriptions/busybox-${USER}/kustomization.yaml
+	---
 	resources:
-	- ../busybox
+	  - ../busybox
 	patchesJson6902:
-	- target:
-	    group: ramendr.openshift.io
-	    version: v1alpha1
-	    kind: ApplicationVolumeReplication
-	    name: busybox-avr
-	  patch: |-
-	    - op: replace
-	      path: /spec/s3Endpoint
-	      value: $(minikube --profile=${hub_cluster_name} -n minio service --url minio)
+	  - target:
+	      group: ramendr.openshift.io
+	      version: v1alpha1
+	      kind: DRPlacementControl
+	      name: busybox-drpc
+	    patch: |-
+	      - op: replace
+	        path: /spec/s3Endpoint
+	        value: $(minikube --profile=${hub_cluster_name} -n minio service --url minio)
 	a
 	kubectl --context ${hub_cluster_name} apply -k ocm-ramen-samples/subscriptions/busybox-${USER}
 	ramen_samples_branch_checkout_undo
 	kubectl --context ${hub_cluster_name} -n busybox-sample get placementrules/busybox-placement
-	until_true_or_n 30 eval test \"\$\(kubectl --context ${hub_cluster_name} -n busybox-sample get subscriptions/busybox-sub -ojsonpath='{.status.phase}'\)\" = Propagated
+	until_true_or_n 90 eval test \"\$\(kubectl --context ${hub_cluster_name} -n busybox-sample get subscriptions/busybox-sub -ojsonpath='{.status.phase}'\)\" = Propagated
+	until_true_or_n 1 eval test -n \"\$\(kubectl --context ${hub_cluster_name} -n busybox-sample get placementrules/busybox-placement -ojsonpath='{.status.decisions[].clusterName}'\)\"
 	set -- $(kubectl --context ${hub_cluster_name} -n busybox-sample get placementrules/busybox-placement -ojsonpath='{.status.decisions[].clusterName}')
 	if test ${1} = ${hub_cluster_name}; then
 		subscription_name_suffix=-local
@@ -245,7 +227,7 @@ application_sample_deploy()
 	until_true_or_n 60 kubectl --context ${1} -n busybox-sample wait pods/busybox --for condition=ready --timeout 0
 	until_true_or_n 30 eval test \"\$\(kubectl --context ${1} -n busybox-sample get persistentvolumeclaims/busybox-pvc -ojsonpath='{.status.phase}'\)\" = Bound
 	date
-	until_true_or_n 90 kubectl --context ${1} -n busybox-sample get volumereplicationgroups/busybox-avr
+	until_true_or_n 90 kubectl --context ${1} -n busybox-sample get volumereplicationgroups/busybox-drpc
 	date
 }
 exit_stack_push unset -f application_sample_deploy
@@ -262,16 +244,19 @@ application_sample_undeploy()
 	# error: no matching resources found
 	set -e
 	date
-	# TODO applicationvolumereplication finalizer delete volumereplicationgroup manifest work instead
-	kubectl --context ${1} -n busybox-sample get volumereplicationgroups/busybox-avr
-	kubectl --context ${hub_cluster_name} -n ${1} delete manifestworks/busybox-avr-busybox-sample-vrg-mw
+	# TODO drplacementcontrols finalizer delete volumereplicationgroup manifest work instead
+	kubectl --context ${1} -n busybox-sample get volumereplicationgroups/busybox-drpc
+	kubectl --context ${hub_cluster_name} -n ${1} delete manifestworks/busybox-drpc-busybox-sample-vrg-mw
 	date
 	set +e
-	kubectl --context ${1} -n busybox-sample wait volumereplicationgroups/busybox-avr --for delete
+	kubectl --context ${1} -n busybox-sample wait volumereplicationgroups/busybox-drpc --for delete
 	# error: no matching resources found
 	set -e
 	date
+	kubectl --context ${hub_cluster_name} delete -f ocm-ramen-samples/mw-pv.yaml
+	date
 	kubectl --context ${hub_cluster_name} delete -k ocm-ramen-samples/subscriptions
+	date
 	ramen_samples_branch_checkout_undo
 }
 exit_stack_push unset -f application_sample_undeploy
@@ -283,13 +268,15 @@ hub_cluster_name=${hub_cluster_name:-hub}
 exit_stack_push unset -v hub_cluster_name
 spoke_cluster_names=${spoke_cluster_names:-${hub_cluster_name}\ cluster1}
 exit_stack_push unset -v spoke_cluster_names
-cluster_names=${hub_cluster_name}
-exit_stack_push unset -v cluster_names
 for cluster_name in ${spoke_cluster_names}; do
-	if test ${cluster_name} != ${hub_cluster_name}; then
-		cluster_names=${cluster_names}\ ${cluster_name}
+	if test ${cluster_name} = ${hub_cluster_name}; then
+		spoke_cluster_names_hub=${spoke_cluster_names_hub}\ ${cluster_name}
+	else
+		spoke_cluster_names_nonhub=${spoke_cluster_names_nonhub}\ ${cluster_name}
 	fi
 done; unset -v cluster_name
+cluster_names=${hub_cluster_name}\ ${spoke_cluster_names_nonhub}
+exit_stack_push unset -v cluster_names
 ramen_deploy_all()
 {
 	. ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local; unset -f go_install
@@ -326,10 +313,7 @@ for command in "${@:-deploy}"; do
 	application_sample_deploy)
 		for cluster_name in ${cluster_names}; do
 			application_sample_namespace_and_s3_deploy ${cluster_name}
-		done
-		kubectl --context ${hub_cluster_name} label managedclusters/${cluster_name} region=west --overwrite
-		unset -v cluster_name
-		kubectl --context ${hub_cluster_name} get managedclusters --show-labels
+		done; unset -v cluster_name
 		. ${ramen_hack_directory_path_name}/until_true_or_n.sh
 		application_sample_deploy
 		unset -f until_true_or_n
@@ -338,9 +322,7 @@ for command in "${@:-deploy}"; do
 		application_sample_undeploy
 		for cluster_name in ${cluster_names}; do
 			application_sample_namespace_and_s3_undeploy ${cluster_name}
-		done
-		kubectl --context ${hub_cluster_name} label managedclusters/${cluster_name} region-
-		unset -v cluster_name
+		done; unset -v cluster_name
 		;;
 	ramen_build)
 		ramen_build ${ramen_directory_path_name}
@@ -365,3 +347,13 @@ for command in "${@:-deploy}"; do
 		;;
 	esac
 done
+git_branch_delete()
+{
+	set +e
+	git --git-dir ${1}/.git branch -d ${2}
+	# error: branch '${2}' not found.
+	set -e
+}
+exit_stack_push unset -f git_branch_delete
+git_branch_delete ${ramen_directory_path_name} pr47_pr58_rbac2360357
+git_branch_delete ocm-ramen-samples shyam_test_benamar_update_placement_to_avr

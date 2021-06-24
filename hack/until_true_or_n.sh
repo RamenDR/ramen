@@ -2,7 +2,7 @@
 # shellcheck disable=2086
 until_true_or_n()
 {
-	case ${-} in *x*) { set +x; } 2>/dev/null; x='unset -v x; set -x';; esac
+	{ case ${-} in *x*) set +x; x='unset -v x; set -x';; esac; } 2>/dev/null
 	n=${1}
 	shift
 	date

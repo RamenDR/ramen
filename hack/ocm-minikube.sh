@@ -71,11 +71,8 @@ ocm_registration_operator_checkout()
 	set -e
 	git --git-dir ${1}/.git --work-tree ${1} checkout release-2.3
 	# managed cluster names other than cluster1 require
-	set +e
+	git --git-dir ${1}/.git --work-tree ${1} reset --hard f3b0287
 	git apply --directory ${1} ocm-minikube/${1}.diff
-	# error: patch failed: Makefile:36
-	# error: Makefile: patch does not apply
-	set -e
 }
 case ${NAME} in
 "Ubuntu")
@@ -155,6 +152,7 @@ spoke_add()
 
 	# hub register managed cluster
 	until_true_or_n 30 kubectl --context ${hub_cluster_name} get managedclusters/${1}
+	kubectl --context ${1} apply -f registration-operator/vendor/github.com/open-cluster-management/api/work/v1/0000_00_work.open-cluster-management.io_manifestworks.crd.yaml
 	set +e
 	kubectl --context ${hub_cluster_name} certificate approve $(kubectl --context ${hub_cluster_name} get csr --field-selector spec.signerName=kubernetes.io/kube-apiserver-client --selector open-cluster-management.io/cluster-name=${1} -oname)
 	# error: one or more CSRs must be specified as <name> or -f <filename>
