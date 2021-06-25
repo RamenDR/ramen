@@ -1,8 +1,8 @@
 #! /bin/bash
 set -e -o pipefail
 
-KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.20.2}"
-KIND_VERSION="${KIND_VERSION:-v0.10.0}"
+KIND_IMAGE="${KIND_IMAGE:-1.20.7@sha256:cbeaf907fc78ac97ce7b625e4bf0de16e3ea725daf6b04f930bd14c67c671ff9}"
+KIND_VERSION="${KIND_VERSION:-v0.11.1}"
 KIND_DIR="$(mktemp -d --tmpdir kind-XXXXXX)"
 KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-"$(basename "${KIND_DIR}" | tr "[:upper:]" "[:lower:]")"}"
 rmdir "${KIND_DIR}"
@@ -23,7 +23,7 @@ elif [[ ${KIND_VERSION} != v"$(${KIND_BIN} --version | cut -f 3 -d ' ')" ]]; the
 fi
 
 ${KIND_BIN} delete cluster --name "${KIND_CLUSTER_NAME}" || true
-${KIND_BIN} create cluster --name "${KIND_CLUSTER_NAME}" --image "kindest/node:v${KUBERNETES_VERSION}"
+${KIND_BIN} create cluster --name "${KIND_CLUSTER_NAME}" --image "kindest/node:v${KIND_IMAGE}" --wait 5m
 
 echo "${KIND_CLUSTER_NAME}"
 #kubectl config use-context kind-"${KIND_CLUSTER_NAME}"
