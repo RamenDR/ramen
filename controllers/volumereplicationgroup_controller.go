@@ -93,20 +93,7 @@ func pvcPredicateFunc() predicate.Funcs {
 
 			log.Info("Create event for PersistentVolumeClaim")
 
-			pvc, ok := e.Object.DeepCopyObject().(*corev1.PersistentVolumeClaim)
-			if !ok {
-				log.Info("Failed to deep copy PersistentVolumeClaim")
-
-				return false
-			}
-
-			if pvc.Status.Phase == corev1.ClaimBound {
-				return true
-			}
-
-			log.Info("pvc which got created is not bound yet. Dont requeue")
-
-			return false
+			return true
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			log := ctrl.Log.WithName("pvcmap").WithName("VolumeReplicationGroup")

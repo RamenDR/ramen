@@ -63,7 +63,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			for c := 0; c < 5; c++ {
 				// Test the scenario where the pvc is not bound yet
 				// and expect no VRs to be created.
-				v := newVRGTestCaseBindInfo(c, corev1.ClaimPending, corev1.VolumePending, false)
+				v := newVRGTestCaseBindInfo(c, corev1.ClaimPending, corev1.VolumePending, false, false)
 				vrgTests = append(vrgTests, v)
 			}
 		})
@@ -98,13 +98,12 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 	var vrgStatusTests []vrgTest
 	Context("in primary state status check", func() {
 		It("sets up non-bound PVCs, PVs and then bind them", func() {
-			v := newVRGTestCaseBindInfo(4, corev1.ClaimPending, corev1.VolumePending, false)
+			v := newVRGTestCaseBindInfo(4, corev1.ClaimPending, corev1.VolumePending, false, false)
 			vrgStatusTests = append(vrgStatusTests, v)
 		})
 		It("expect no VR to be created as PVC not bound and check status", func() {
 			v := vrgStatusTests[0]
 			v.waitForVRCountToMatch(0)
-			// v.verifyVRGStatusExpectation(false)
 		})
 		It("bind each pv to corresponding pvc", func() {
 			v := vrgStatusTests[0]
@@ -126,6 +125,64 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			v.cleanup()
 		})
 	})
+
+	// Changes the order in which VRG and PVC/PV are created.
+	var vrgStatus2Tests []vrgTest
+	Context("in primary state status check", func() {
+		It("sets up PVCs, PVs", func() {
+			v := newVRGTestCaseBindInfo(4, corev1.ClaimBound, corev1.VolumeBound, true, true)
+			vrgStatus2Tests = append(vrgStatus2Tests, v)
+		})
+		It("waits for VRG to create a VR for each PVC bind and checks status", func() {
+			v := vrgStatus2Tests[0]
+			expectedVRCount := len(v.pvcNames)
+			v.waitForVRCountToMatch(expectedVRCount)
+		})
+		It("waits for VRG to status to match", func() {
+			v := vrgStatus2Tests[0]
+			v.promoteVolReps()
+			v.verifyVRGStatusExpectation(true)
+		})
+		It("cleans up after testing", func() {
+			v := vrgStatus2Tests[0]
+			v.cleanup()
+		})
+	})
+
+	// Changes the order in which VRG and PVC/PV are created. VRG is created first and then
+	// PVC/PV are created (with ClaimPending and VolumePending status respectively). Then
+	// each of them is bound and the result should be same (i.e. VRG being available).
+	var vrgStatus3Tests []vrgTest
+	Context("in primary state status check", func() {
+		It("sets up non-bound PVCs, PVs and then bind them", func() {
+			v := newVRGTestCaseBindInfo(4, corev1.ClaimPending, corev1.VolumePending, false, true)
+			vrgStatus3Tests = append(vrgStatus3Tests, v)
+		})
+		It("expect no VR to be created as PVC not bound and check status", func() {
+			v := vrgStatus3Tests[0]
+			v.waitForVRCountToMatch(0)
+			// v.verifyVRGStatusExpectation(false)
+		})
+		It("bind each pv to corresponding pvc", func() {
+			v := vrgStatus3Tests[0]
+			v.bindPVAndPVC()
+			v.verifyPVCBindingToPV(true)
+		})
+		It("waits for VRG to create a VR for each PVC bind and checks status", func() {
+			v := vrgStatus3Tests[0]
+			expectedVRCount := len(v.pvcNames)
+			v.waitForVRCountToMatch(expectedVRCount)
+		})
+		It("waits for VRG to status to match", func() {
+			v := vrgStatus3Tests[0]
+			v.promoteVolReps()
+			v.verifyVRGStatusExpectation(true)
+		})
+		It("cleans up after testing", func() {
+			v := vrgStatus3Tests[0]
+			v.cleanup()
+		})
+	})
 })
 
 type vrgTest struct {
@@ -143,7 +200,7 @@ var testCaseNumber = 0
 // label selector that points to the PVCs created.
 func newVRGTestCase(pvcCount int) vrgTest {
 	return newVRGTestCaseBindInfo(pvcCount, corev1.ClaimBound, corev1.VolumeBound,
-		true)
+		true, false)
 }
 
 // newVRGTestCaseBindInfo creates a new namespace, zero or more PVCs (equal
@@ -153,7 +210,7 @@ func newVRGTestCase(pvcCount int) vrgTest {
 // is that, until pvc is not bound, VolRep resources should not be created
 // by VRG.
 func newVRGTestCaseBindInfo(pvcCount int, claimBindInfo corev1.PersistentVolumeClaimPhase,
-	volumeBindInfo corev1.PersistentVolumePhase, checkBind bool) vrgTest {
+	volumeBindInfo corev1.PersistentVolumePhase, checkBind, vrgFirst bool) vrgTest {
 	pvcLabels := map[string]string{}
 	objectNameSuffix := 'a' + testCaseNumber
 	testCaseNumber++ // each invocation of this function is a new test case
@@ -172,6 +229,23 @@ func newVRGTestCaseBindInfo(pvcCount int, claimBindInfo corev1.PersistentVolumeC
 		pvcLabels["environment"] = fmt.Sprintf("dev.AZ1-%c", objectNameSuffix)
 	}
 
+	if vrgFirst {
+		v.createVRG(pvcLabels)
+		v.createPVCandPV(pvcCount, claimBindInfo, volumeBindInfo, objectNameSuffix, pvcLabels)
+	} else {
+		v.createPVCandPV(pvcCount, claimBindInfo, volumeBindInfo, objectNameSuffix, pvcLabels)
+		v.createVRG(pvcLabels)
+	}
+
+	// If checkBind is true, then check whether PVCs and PVs are
+	// bound. Otherwise expect them to not have been bound.
+	v.verifyPVCBindingToPV(checkBind)
+
+	return v
+}
+
+func (v *vrgTest) createPVCandPV(pvcCount int, claimBindInfo corev1.PersistentVolumeClaimPhase,
+	volumeBindInfo corev1.PersistentVolumePhase, objectNameSuffix int, pvcLabels map[string]string) {
 	// Create the requested number of PVs and corresponding PVCs
 	for i := 0; i < pvcCount; i++ {
 		pvName := fmt.Sprintf("pv-%c-%02d", objectNameSuffix, i)
@@ -181,14 +255,6 @@ func newVRGTestCaseBindInfo(pvcCount int, claimBindInfo corev1.PersistentVolumeC
 		v.pvNames = append(v.pvNames, pvName)
 		v.pvcNames = append(v.pvcNames, pvcName)
 	}
-
-	v.createVRG(pvcLabels)
-
-	// If checkBind is true, then check whether PVCs and PVs are
-	// bound. Otherwise expect them to not have been bound.
-	v.verifyPVCBindingToPV(checkBind)
-
-	return v
 }
 
 func (v *vrgTest) createNamespace() {
@@ -245,9 +311,6 @@ func (v *vrgTest) createPV(pvName, claimName string, bindInfo corev1.PersistentV
 					},
 				},
 			},
-		},
-		Status: corev1.PersistentVolumeStatus{
-			Phase: corev1.VolumeBound,
 		},
 	}
 
