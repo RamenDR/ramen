@@ -44,6 +44,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	rmnutil "github.com/ramendr/ramen/controllers/util"
 )
 
 type PVDownloader interface {
@@ -58,6 +59,7 @@ type VolumeReplicationGroupReconciler struct {
 	PVDownloader   PVDownloader
 	ObjStoreGetter ObjectStoreGetter
 	Scheme         *runtime.Scheme
+	eventRecorder  *rmnutil.EventReporter
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -77,7 +79,9 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) er
 			log.WithValues("pvc", types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}))
 	}))
 
-	r.Log.Info("Adding VolumeReplicationGroup and PersistentVolumeClaims controllers")
+	r.eventRecorder = rmnutil.NewEventReporter(mgr.GetEventRecorderFor("controller_VolumeReplicationGroup"))
+
+	r.Log.Info("Adding VolumeReplicationGroup controller")
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&ramendrv1alpha1.VolumeReplicationGroup{}).
@@ -243,6 +247,7 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim, log logr.
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch;update;patch;create
+// +kubebuilder:rbac:groups=core,resources=events,verbs=get;create;patch;update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -313,6 +318,11 @@ func (v *VRGInstance) processVRG() (ctrl.Result, error) {
 	v.initializeStatus()
 
 	if err := v.validateVRGState(); err != nil {
+		// record the event
+		v.log.Error(err, "Failed to validate the spec state")
+		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonValidationFailed, err.Error())
+
 		msg := "VolumeReplicationGroup state is invalid"
 		setVRGErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
@@ -327,6 +337,9 @@ func (v *VRGInstance) processVRG() (ctrl.Result, error) {
 
 	if err := v.updatePVCList(); err != nil {
 		v.log.Error(err, "Failed to update PersistentVolumeClaims for resource")
+
+		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonValidationFailed, err.Error())
 
 		msg := "Failed to get list of pvcs"
 		setVRGErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
@@ -354,6 +367,10 @@ func (v *VRGInstance) processVRG() (ctrl.Result, error) {
 		return ctrl.Result{}, nil
 	}
 
+	return v.processVRGActions()
+}
+
+func (v *VRGInstance) processVRGActions() (ctrl.Result, error) {
 	v.log = v.log.WithName("vrginstance").WithValues("State", v.instance.Spec.ReplicationState)
 
 	switch {
@@ -584,6 +601,9 @@ func (v *VRGInstance) processForDeletion() (ctrl.Result, error) {
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeNormal,
+		rmnutil.EventReasonDeleteSuccess, "Deletion Success")
+
 	return ctrl.Result{}, nil
 }
 
@@ -710,6 +730,15 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 
 	requeue := v.reconcileVRsAsPrimary()
 
+	// If requeue is false, then VRG was successfully processed as primary.
+	// Hence the event to be generated is Success of type normal.
+	// Expectation is that, if something failed and requeue is true, then
+	// appropriate event might have been captured at the time of failure.
+	if !requeue {
+		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeNormal,
+			rmnutil.EventReasonPrimarySuccess, "Primary Success")
+	}
+
 	if err := v.updateVRGStatus(true); err != nil {
 		requeue = true
 	}
@@ -779,6 +808,15 @@ func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
 	}
 
 	requeue := v.reconcileVRsAsSecondary()
+
+	// If requeue is false, then VRG was successfully processed as Secondary.
+	// Hence the event to be generated is Success of type normal.
+	// Expectation is that, if something failed and requeue is true, then
+	// appropriate event might have been captured at the time of failure.
+	if !requeue {
+		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeNormal,
+			rmnutil.EventReasonSecondarySuccess, "Secondary Success")
+	}
 
 	if err := v.updateVRGStatus(true); err != nil {
 		requeue = true
@@ -948,6 +986,8 @@ func (v *VRGInstance) protectPVC(pvc *corev1.PersistentVolumeClaim,
 	// and it is better to not have silent data loss, but be explicit on the failure.
 	if err := v.uploadPVToS3Profiles(*pvc); err != nil {
 		log.Info("Requeuing, as uploading PersistentVolume failed", "errorValue", err)
+		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonPVUploadFailed, err.Error())
 
 		msg := "Failed to upload PV metadata"
 		v.updateProtectedPVCCondition(pvc.Name, PVCError, msg)
@@ -1247,6 +1287,8 @@ func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 		// Create VR for PVC
 		if err = v.createVR(vrNamespacedName, state); err != nil {
 			log.Error(err, "Failed to create VolumeReplication resource", "resource", vrNamespacedName)
+			rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
+				rmnutil.EventReasonVRCreateFailed, err.Error())
 
 			msg := "Failed to create VolumeReplication resource"
 			v.updateProtectedPVCCondition(vrNamespacedName.Name, PVCError, msg)
@@ -1280,6 +1322,8 @@ func (v *VRGInstance) updateVR(volRep *volrep.VolumeReplication,
 		log.Error(err, "Failed to update VolumeReplication resource",
 			"name", volRep.Name, "namespace", volRep.Namespace,
 			"state", state)
+		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonVRUpdateFailed, err.Error())
 
 		msg := "Failed to update VolumeReplication resource"
 		v.updateProtectedPVCCondition(volRep.Name, PVCError, msg)
