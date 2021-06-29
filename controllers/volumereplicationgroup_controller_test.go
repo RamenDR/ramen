@@ -3,11 +3,14 @@ package controllers_test
 import (
 	"context"
 	"fmt"
+	"time"
 
 	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
+	volrepController "github.com/csi-addons/volume-replication-operator/controllers"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	vrgController "github.com/ramendr/ramen/controllers"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -15,6 +18,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+const (
+	vrgtimeout  = time.Second * 222
+	vrginterval = time.Millisecond * 1315
 )
 
 var _ = Describe("Test VolumeReplicationGroup", func() {
@@ -84,6 +92,38 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 				v := vrgTests[c]
 				v.cleanup()
 			}
+		})
+	})
+
+	var vrgStatusTests []vrgTest
+	Context("in primary state status check", func() {
+		It("sets up non-bound PVCs, PVs and then bind them", func() {
+			v := newVRGTestCaseBindInfo(4, corev1.ClaimPending, corev1.VolumePending, false)
+			vrgStatusTests = append(vrgStatusTests, v)
+		})
+		It("expect no VR to be created as PVC not bound and check status", func() {
+			v := vrgStatusTests[0]
+			v.waitForVRCountToMatch(0)
+			// v.verifyVRGStatusExpectation(false)
+		})
+		It("bind each pv to corresponding pvc", func() {
+			v := vrgStatusTests[0]
+			v.bindPVAndPVC()
+			v.verifyPVCBindingToPV(true)
+		})
+		It("waits for VRG to create a VR for each PVC bind and checks status", func() {
+			v := vrgStatusTests[0]
+			expectedVRCount := len(v.pvcNames)
+			v.waitForVRCountToMatch(expectedVRCount)
+		})
+		It("waits for VRG to status to match", func() {
+			v := vrgStatusTests[0]
+			v.promoteVolReps()
+			v.verifyVRGStatusExpectation(true)
+		})
+		It("cleans up after testing", func() {
+			v := vrgStatusTests[0]
+			v.cleanup()
 		})
 	})
 })
@@ -368,6 +408,34 @@ func (v *vrgTest) getVRG(vrgName string) *ramendrv1alpha1.VolumeReplicationGroup
 	return vrg
 }
 
+func (v *vrgTest) verifyVRGStatusExpectation(expectedStatus bool) {
+	Eventually(func() bool {
+		vrg := v.getVRG(v.vrgName)
+		vrgAvailableCondition := checkConditions(vrg.Status.Conditions, vrgController.VRGConditionAvailable)
+
+		if expectedStatus == true {
+			return vrgAvailableCondition.Status == metav1.ConditionTrue
+		}
+
+		return vrgAvailableCondition.Status != metav1.ConditionTrue
+	}, vrgtimeout, vrginterval).Should(BeTrue(),
+		"while waiting for VRG TRUE condition %s/%s", v.vrgName, v.namespace)
+}
+
+func checkConditions(existingConditions []metav1.Condition, conditionType string) *metav1.Condition {
+	var requiredCondition *metav1.Condition
+
+	for i := range existingConditions {
+		if existingConditions[i].Type == conditionType {
+			requiredCondition = &existingConditions[i]
+
+			break
+		}
+	}
+
+	return requiredCondition
+}
+
 func (v *vrgTest) cleanup() {
 	v.cleanupPVCs()
 	v.cleanupVRG()
@@ -403,7 +471,7 @@ func (v *vrgTest) cleanupNamespace() {
 }
 
 func (v *vrgTest) waitForVRCountToMatch(vrCount int) {
-	By("Waiting for VRs to be deleted in " + v.namespace)
+	By("Waiting for VRs count to match " + v.namespace)
 
 	// selector, err := metav1.LabelSelectorAsSelector(&vrg.Spec.PVCSelector)
 	// Expect(err).To(BeNil())
@@ -422,6 +490,92 @@ func (v *vrgTest) waitForVRCountToMatch(vrCount int) {
 	}, timeout, interval).Should(BeNumerically("==", vrCount),
 		"while waiting for VR count of %d in VRG %s of namespace %s",
 		vrCount, v.vrgName, v.namespace)
+}
+
+func (v *vrgTest) promoteVolReps() {
+	By("Promoting VolumeReplication resources " + v.namespace)
+
+	volRepList := &volrep.VolumeReplicationList{}
+	listOptions := &client.ListOptions{
+		Namespace: v.namespace,
+	}
+	err := k8sClient.List(context.TODO(), volRepList, listOptions)
+	Expect(err).NotTo(HaveOccurred(), "failed to get a list of VRs in namespace %s", v.namespace)
+
+	for index := range volRepList.Items {
+		volRep := volRepList.Items[index]
+
+		volRepStatus := volrep.VolumeReplicationStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:               volrepController.ConditionCompleted,
+					Reason:             volrepController.Promoted,
+					ObservedGeneration: volRep.Generation,
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.NewTime(time.Now()),
+				},
+				{
+					Type:               volrepController.ConditionDegraded,
+					Reason:             volrepController.Healthy,
+					ObservedGeneration: volRep.Generation,
+					Status:             metav1.ConditionFalse,
+					LastTransitionTime: metav1.NewTime(time.Now()),
+				},
+				{
+					Type:               volrepController.ConditionResyncing,
+					Reason:             volrepController.NotResyncing,
+					ObservedGeneration: volRep.Generation,
+					Status:             metav1.ConditionFalse,
+					LastTransitionTime: metav1.NewTime(time.Now()),
+				},
+			},
+		}
+		volRepStatus.ObservedGeneration = volRep.Generation
+		volRepStatus.State = volrep.PrimaryState
+		volRepStatus.Message = "volume is marked primary"
+		volRep.Status = volRepStatus
+
+		err = k8sClient.Status().Update(context.TODO(), &volRep)
+		Expect(err).NotTo(HaveOccurred(), "failed to update the status of VolRep %s", volRep.Name)
+
+		volrepKey := types.NamespacedName{
+			Name:      volRep.Name,
+			Namespace: volRep.Namespace,
+		}
+
+		// VRG should not be ready until last but VolRep is ready.
+		if index < (len(volRepList.Items) - 1) {
+			v.waitForVolRepPromotion(volrepKey, false)
+		} else {
+			v.waitForVolRepPromotion(volrepKey, true)
+		}
+	}
+}
+
+func (v *vrgTest) waitForVolRepPromotion(vrNamespacedName types.NamespacedName, vrgready bool) {
+	updatedVolRep := volrep.VolumeReplication{}
+
+	Eventually(func() bool {
+		err := k8sClient.Get(context.TODO(), vrNamespacedName, &updatedVolRep)
+
+		return err == nil && len(updatedVolRep.Status.Conditions) == 3
+	}, vrgtimeout, vrginterval).Should(BeTrue(),
+		"failed to wait for volRep condition type to change to 'ConditionCompleted' (%d)",
+		len(updatedVolRep.Status.Conditions))
+
+	Eventually(func() bool {
+		vrg := v.getVRG(v.vrgName)
+		// as of now name of VolumeReplication resource created by the VolumeReplicationGroup
+		// is same as the pvc that it replicates. When that changes this has to be changed to
+		// use the right name to get the appropriate protected PVC condition from VRG status.
+		pvcAvailableCondition := checkConditions(vrg.Status.ProtectedPVCs[updatedVolRep.Name].Conditions,
+			vrgController.PVCConditionAvailable)
+
+		return pvcAvailableCondition.Status == metav1.ConditionTrue
+	}, vrgtimeout, vrginterval).Should(BeTrue(),
+		"while waiting for protected pvc condition %s/%s", updatedVolRep.Namespace, updatedVolRep.Name)
+
+	v.verifyVRGStatusExpectation(vrgready)
 }
 
 func (v *vrgTest) waitForNamespaceDeletion() {

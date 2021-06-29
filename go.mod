@@ -23,9 +23,7 @@ require (
 replace k8s.io/client-go => k8s.io/client-go v0.20.0
 
 // below: temporary measure to include multicloud-operators-foundation project with ManagedClusterView through forked repo
-require (
-	github.com/tjanssen3/multicloud-operators-foundation/v2 v2.0.0-20210512222428-660109db7f1d
-)
+require github.com/tjanssen3/multicloud-operators-foundation/v2 v2.0.0-20210512222428-660109db7f1d
 
 replace (
 	github.com/kubevirt/terraform-provider-kubevirt => github.com/nirarg/terraform-provider-kubevirt v0.0.0-20201222125919-101cee051ed3
