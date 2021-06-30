@@ -123,6 +123,10 @@ jobs:
           docker load -i /tmp/ramen-operator.tar
           kind load docker-image "${IMG}" --name ${KIND_CLUSTER_NAME}
 
+      - name: Deploy dependent CRDs
+        run: |
+          kubectl apply -f hack/test/
+
       - name: Deploy operator
         run: |
           make deploy

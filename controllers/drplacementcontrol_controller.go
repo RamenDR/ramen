@@ -46,7 +46,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
 
@@ -241,6 +240,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 // +kubebuilder:rbac:groups=apps.open-cluster-management.io,resources=placementrules/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=managedclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=work.open-cluster-management.io,resources=manifestworks,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=view.open-cluster-management.io,resources=managedclusterviews,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drpolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
@@ -573,7 +573,6 @@ func (d *DRPCInstance) runFailover() (bool, error) {
 	d.log.Info("Entering runFailover", "state", d.instance.Status.LastKnownDRState)
 
 	const done = true
-
 	// We are done if empty
 	if d.instance.Spec.FailoverCluster == "" {
 		return done, fmt.Errorf("failover cluster not set. FailoverCluster is a mandatory field")
@@ -606,6 +605,12 @@ func (d *DRPCInstance) runFailover() (bool, error) {
 
 	if curHomeCluster == "" {
 		curHomeCluster = d.instance.Status.PreferredDecision.ClusterName
+	}
+
+	if curHomeCluster == "" {
+		d.log.Info("Invalid Failover request. Current home cluster does not exists")
+
+		return done, fmt.Errorf("failover requested on invalid state %v", d.instance.Status)
 	}
 
 	// Set VRG in the failed cluster (preferred cluster) to secondary
@@ -835,8 +840,6 @@ func (d *DRPCInstance) createPVManifestWorkForRestore(newPrimary string) error {
 
 	existAndApplied, err := d.isManifestExistAndApplied(pvMWName, newPrimary)
 	if err != nil && !errors.IsNotFound(err) {
-		d.log.Error(err, "actuall here")
-
 		return err
 	}
 
@@ -994,23 +997,23 @@ func (d *DRPCInstance) vrgManifestWorkExists(homeCluster string) (*ocmworkv1.Man
 	return mw, nil
 }
 
-func (d *DRPCInstance) findManifestWork(mwName, homeCluster string) (*ocmworkv1.ManifestWork, error) {
-	if homeCluster != "" {
-		mw := &ocmworkv1.ManifestWork{}
-
-		err := d.reconciler.Get(d.ctx, types.NamespacedName{Name: mwName, Namespace: homeCluster}, mw)
-		if err != nil {
-			if errors.IsNotFound(err) {
-				return nil, fmt.Errorf("MW not found (%w)", err)
-			}
-
-			return nil, fmt.Errorf("failed to retrieve manifestwork (%w)", err)
-		}
-
-		return mw, nil
+func (d *DRPCInstance) findManifestWork(mwName, managedCluster string) (*ocmworkv1.ManifestWork, error) {
+	if managedCluster == "" {
+		return nil, fmt.Errorf("invalid cluster for MW %s", mwName)
 	}
 
-	return nil, nil
+	mw := &ocmworkv1.ManifestWork{}
+
+	err := d.reconciler.Get(d.ctx, types.NamespacedName{Name: mwName, Namespace: managedCluster}, mw)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, fmt.Errorf("MW not found (%w)", err)
+		}
+
+		return nil, fmt.Errorf("failed to retrieve manifestwork (%w)", err)
+	}
+
+	return mw, nil
 }
 
 func (d *DRPCInstance) isVRGPrimary(mw *ocmworkv1.ManifestWork) (bool, error) {
@@ -1022,7 +1025,7 @@ func (d *DRPCInstance) isVRGPrimary(mw *ocmworkv1.ManifestWork) (bool, error) {
 		return false, errorswrapper.Wrap(err, fmt.Sprintf("unable to get vrg from ManifestWork %s", mw.Name))
 	}
 
-	return (vrg.Spec.ReplicationState == volrep.Primary), nil
+	return (vrg.Spec.ReplicationState == rmn.Primary), nil
 }
 
 func (d *DRPCInstance) ensureCleanup() error {
@@ -1092,13 +1095,13 @@ func (d *DRPCInstance) ensureOldVRGMWOnClusterDeleted(clusterName string) (bool,
 		return !done, err
 	}
 
-	if !IsManifestInAppliedState(mw) {
-		d.log.Info(fmt.Sprintf("ManifestWork %s/%s NOT in Applied state", mw.Namespace, mw.Name))
-		// Wait for MW to be applied. The DRPC reconciliation will be called then
-		return done, nil
-	}
+	// if !IsManifestInAppliedState(mw) {
+	// 	d.log.Info(fmt.Sprintf("ManifestWork %s/%s NOT in Applied state", mw.Namespace, mw.Name))
+	// 	// Wait for MW to be applied. The DRPC reconciliation will be called then
+	// 	return done, nil
+	// }
 
-	d.log.Info("VRG ManifestWork is in Applied state", "name", mw.Name, "cluster", clusterName)
+	// d.log.Info("VRG ManifestWork is in Applied state", "name", mw.Name, "cluster", clusterName)
 
 	if d.ensureVRGIsSecondary(clusterName) {
 		err := d.deleteManifestWorks(clusterName)
@@ -1121,9 +1124,9 @@ func (d *DRPCInstance) ensureVRGIsSecondary(clusterName string) bool {
 		return errors.IsNotFound(err)
 	}
 
-	if vrg.Status == nil || vrg.Status.ReplicationState != volrep.Secondary {
+	if vrg.Status.State != rmn.SecondaryState {
 		d.log.Info(fmt.Sprintf("vrg status replication state for cluster %s is %v",
-			clusterName, vrg.Status.ReplicationState))
+			clusterName, vrg))
 
 		return false
 	}
@@ -1244,7 +1247,9 @@ func (d *DRPCInstance) processVRGManifestWork(homeCluster string) error {
 
 	if err := d.createOrUpdateVRGManifestWork(
 		d.instance.Name, d.instance.Namespace,
-		homeCluster, d.instance.Spec.S3Endpoint, d.instance.Spec.S3SecretName, d.instance.Spec.PVCSelector); err != nil {
+		homeCluster, d.instance.Spec.S3Endpoint,
+		d.instance.Spec.S3Region,
+		d.instance.Spec.S3SecretName, d.instance.Spec.PVCSelector); err != nil {
 		d.log.Error(err, "failed to create or update VolumeReplicationGroup manifest")
 
 		return err
@@ -1263,11 +1268,12 @@ func (d *DRPCInstance) createOrUpdateVRGRolesManifestWork(namespace string) erro
 }
 
 func (d *DRPCInstance) createOrUpdateVRGManifestWork(
-	name, namespace, homeCluster, s3Endpoint, s3SecretName string, pvcSelector metav1.LabelSelector) error {
+	name, namespace, homeCluster, s3Endpoint, s3Region, s3SecretName string, pvcSelector metav1.LabelSelector) error {
 	d.log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%s:%s:%s",
 		name, namespace, homeCluster, s3Endpoint, s3SecretName))
 
-	manifestWork, err := d.generateVRGManifestWork(name, namespace, homeCluster, s3Endpoint, s3SecretName, pvcSelector)
+	manifestWork, err := d.generateVRGManifestWork(name, namespace, homeCluster,
+		s3Endpoint, s3Region, s3SecretName, pvcSelector)
 	if err != nil {
 		return err
 	}
@@ -1368,9 +1374,10 @@ func (d *DRPCInstance) generatePVManifest(
 }
 
 func (d *DRPCInstance) generateVRGManifestWork(
-	name, namespace, homeCluster, s3Endpoint, s3SecretName string,
+	name, namespace, homeCluster, s3Endpoint, s3Region, s3SecretName string,
 	pvcSelector metav1.LabelSelector) (*ocmworkv1.ManifestWork, error) {
-	vrgClientManifest, err := d.generateVRGManifest(name, namespace, s3Endpoint, s3SecretName, pvcSelector)
+	vrgClientManifest, err := d.generateVRGManifest(name, namespace, s3Endpoint,
+		s3Region, s3SecretName, pvcSelector)
 	if err != nil {
 		d.log.Error(err, "failed to generate VolumeReplicationGroup manifest")
 
@@ -1387,15 +1394,17 @@ func (d *DRPCInstance) generateVRGManifestWork(
 }
 
 func (d *DRPCInstance) generateVRGManifest(
-	name, namespace, s3Endpoint, s3SecretName string, pvcSelector metav1.LabelSelector) (*ocmworkv1.Manifest, error) {
+	name, namespace, s3Endpoint, s3Region, s3SecretName string,
+	pvcSelector metav1.LabelSelector) (*ocmworkv1.Manifest, error) {
 	return d.generateManifest(&rmn.VolumeReplicationGroup{
 		TypeMeta:   metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 		Spec: rmn.VolumeReplicationGroupSpec{
 			PVCSelector:            pvcSelector,
 			VolumeReplicationClass: "volume-rep-class",
-			ReplicationState:       volrep.Primary,
+			ReplicationState:       rmn.Primary,
 			S3Endpoint:             s3Endpoint,
+			S3Region:               s3Region,
 			S3SecretName:           s3SecretName,
 		},
 	})
@@ -1486,7 +1495,7 @@ func (d *DRPCInstance) hasVRGStateBeenUpdatedToSecondary(clusterName string) (bo
 		return false, err
 	}
 
-	if vrg.Spec.ReplicationState == volrep.Secondary {
+	if vrg.Spec.ReplicationState == rmn.Secondary {
 		d.log.Info("VRG MW already secondary on this cluster", "name", vrg.Name, "cluster", mw.Namespace)
 
 		return true, nil
@@ -1517,13 +1526,13 @@ func (d *DRPCInstance) updateVRGStateToSecondary(clusterName string) error {
 		return err
 	}
 
-	if vrg.Spec.ReplicationState == volrep.Secondary {
+	if vrg.Spec.ReplicationState == rmn.Secondary {
 		d.log.Info(fmt.Sprintf("VRG %s already secondary on this cluster %s", vrg.Name, mw.Namespace))
 
 		return nil
 	}
 
-	vrg.Spec.ReplicationState = volrep.Secondary
+	vrg.Spec.ReplicationState = rmn.Secondary
 
 	vrgClientManifest, err := d.generateManifest(vrg)
 	if err != nil {

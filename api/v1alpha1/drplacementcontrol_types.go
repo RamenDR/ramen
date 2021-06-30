@@ -23,7 +23,7 @@ import (
 )
 
 // DRAction which will be either a failover or failback action
-// +kubebuilder:validation:Enum=Failover;Failback
+// +kubebuilder:validation:Enum=Failover;Failback;Relocate
 type DRAction string
 
 // These are the valid values for DRAction
