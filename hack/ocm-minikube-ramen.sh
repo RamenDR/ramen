@@ -54,29 +54,9 @@ minio_undeploy()
 	kubectl --context ${2} delete -f ${1}/minio-deployment.yaml
 }
 exit_stack_push unset -f minio_undeploy
-ramen_branch_checkout()
-{
-	set -- ${1} rename_and_refactor_avr_and_drclusterpeers
-	git --git-dir ${1}/.git --work-tree ${1} checkout main
-	exit_stack_push git --git-dir ${1}/.git --work-tree ${1} checkout -
-	git --git-dir ${1}/.git fetch https://github.com/BenamarMk/ramen ${2}:${2}
-	exit_stack_pop
-	git --git-dir ${1}/.git --work-tree ${1} checkout ${2}
-	exit_stack_push git --git-dir ${1}/.git --work-tree ${1} checkout -
-	exit_stack_push git --git-dir ${1}/.git --work-tree ${1} checkout -- :/config
-	exit_stack_push git --git-dir ${1}/.git --work-tree ${1} -c status.relativePaths=false status -s
-}
-exit_stack_push unset -f ramen_branch_checkout
-ramen_branch_checkout_undo()
-{
-	exit_stack_pop
-	exit_stack_pop
-	exit_stack_pop
-}
-exit_stack_push unset -f ramen_branch_checkout_undo
 ramen_image_directory_name=localhost
 ramen_image_name=ramen-operator
-ramen_image_tag=v0.Npr78
+ramen_image_tag=v0.N
 ramen_image_name_colon_tag=${ramen_image_directory_name}/${ramen_image_name}:${ramen_image_tag}
 exit_stack_push unset -v ramen_image_name_colon_tag ramen_image_tag ramen_image_name ramen_image_directory_name
 ramen_build()
@@ -84,9 +64,7 @@ ramen_build()
 	${ramen_hack_directory_path_name}/docker-uninstall.sh ${HOME}/.local/bin
 	. ${ramen_hack_directory_path_name}/podman-docker-install.sh
 	. ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local; unset -f go_install
-	ramen_branch_checkout ${1}
 	make -C ${1} docker-build IMG=${ramen_image_name_colon_tag}
-	ramen_branch_checkout_undo
 }
 exit_stack_push unset -f ramen_build
 ramen_archive()
@@ -113,11 +91,9 @@ exit_stack_push unset -f kube_context_set_undo
 ramen_deploy()
 {
 	minikube -p ${2} image load ${ramen_image_name_colon_tag}
-	ramen_branch_checkout ${1}
 	kube_context_set ${2}
 	make -C ${1} deploy IMG=${ramen_image_name_colon_tag}
 	kube_context_set_undo
-	ramen_branch_checkout_undo
 	kubectl --context ${2} -n ramen-system wait deployments --all --for condition=available --timeout 60s
 	kubectl --context ${hub_cluster_name} label managedclusters/${2} name=${2} --overwrite
 	cat <<-a | kubectl --context ${2} apply -f -
@@ -137,11 +113,9 @@ ramen_undeploy()
 {
 	kubectl --context ${2} delete volumereplicationclass/volume-rep-class
 	kubectl --context ${hub_cluster_name} label managedclusters/${2} name-
-	ramen_branch_checkout ${1}
 	kube_context_set ${2}
 	make -C ${1} undeploy
 	kube_context_set_undo
-	ramen_branch_checkout_undo
 	set +e
 	kubectl --context ${2} -n ramen-system wait deployments --all --for delete
 	# error: no matching resources found
