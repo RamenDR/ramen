@@ -1,12 +1,13 @@
 apiVersion: ramendr.openshift.io/v1alpha1
 kind: VolumeReplicationGroup
 metadata:
-  name: volumereplicationgroup-sample-1
+  name: volumereplicationgroup-sample
 spec:
-  # Add fields here
   pvcSelector:
     matchLabels:
-      appclass: gold
-      environment: dev.AZ1
-  volumeReplicationClass: "WAN-DR-Low-RPO-Apps"
+      any-pvc-label: value
+  volumeReplicationClass: "storage-replication-class"
   replicationState: "Primary"
+  s3Endpoint: "path/to/s3Endpoint"
+  s3Region: "unknown"
+  s3SecretName: secret-name-with-s3-credentials
