@@ -1,13 +1,13 @@
-# permissions for end users to view clusterpeers.
+# permissions for end users to view DRPlacementControls.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: clusterpeers-viewer-role
+  name: drplacementcontrol-viewer-role
 rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - clusterpeers
+  - drplacementcontrols
   verbs:
   - get
   - list
@@ -15,6 +15,6 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - clusterpeers/status
+  - drplacementcontrols/status
   verbs:
   - get

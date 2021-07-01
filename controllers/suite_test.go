@@ -112,14 +112,14 @@ var _ = BeforeSuite(func() {
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
-	avrReconciler := (&ramencontrollers.ApplicationVolumeReplicationReconciler{
+	drpcReconciler := (&ramencontrollers.DRPlacementControlReconciler{
 		Client:       k8sManager.GetClient(),
-		Log:          ctrl.Log.WithName("controllers").WithName("ApplicationVolumeReplication"),
+		Log:          ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),
 		PVDownloader: FakePVDownloader{},
 		Scheme:       k8sManager.GetScheme(),
 		Callback:     FakeProgressCallback,
 	})
-	err = avrReconciler.SetupWithManager(k8sManager)
+	err = drpcReconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
 	go func() {

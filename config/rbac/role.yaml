@@ -9,6 +9,50 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps.open-cluster-management.io
+  resources:
+  - placementrules
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps.open-cluster-management.io
+  resources:
+  - placementrules/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - cluster.open-cluster-management.io
+  resources:
+  - managedclusters
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - persistentvolumeclaims
   verbs:
   - get
@@ -29,7 +73,7 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - applicationvolumereplications
+  - drplacementcontrols
   verbs:
   - create
   - delete
@@ -41,17 +85,29 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - applicationvolumereplications/finalizers
+  - drplacementcontrols/finalizers
   verbs:
   - update
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - applicationvolumereplications/status
+  - drplacementcontrols/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - drpolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
   - ramendr.openshift.io
   resources:
@@ -82,6 +138,30 @@ rules:
   - replication.storage.openshift.io
   resources:
   - volumereplications
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - view.open-cluster-management.io
+  resources:
+  - managedclusterviews
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - work.open-cluster-management.io
+  resources:
+  - manifestworks
   verbs:
   - create
   - delete

@@ -6,20 +6,20 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.4.1
   creationTimestamp: null
-  name: clusterpeers.ramendr.openshift.io
+  name: drpolicies.ramendr.openshift.io
 spec:
   group: ramendr.openshift.io
   names:
-    kind: ClusterPeers
-    listKind: ClusterPeersList
-    plural: clusterpeers
-    singular: clusterpeers
-  scope: Namespaced
+    kind: DRPolicy
+    listKind: DRPolicyList
+    plural: drpolicies
+    singular: drpolicy
+  scope: Cluster
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ClusterPeers is the Schema for the clusterpeers API
+        description: DRPolicy is the Schema for the drpolicies API
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -34,24 +34,19 @@ spec:
           metadata:
             type: object
           spec:
-            description: ClusterPeersSpec defines the desired state of ClusterPeers
+            description: DRPolicySpec defines the desired state of DRPolicy
             properties:
-              clusterIDs:
-                description: Members of the ClusterPeers set
+              clusterNames:
+                description: Members of the DRPolicy set
                 items:
                   type: string
                 type: array
-              replicationPolicy:
-                description: 'Type of replication policy used by this ClusterPeers:
-                  sync or async'
-                type: string
             required:
-            - clusterIDs
-            - replicationPolicy
+            - clusterNames
             type: object
           status:
-            description: 'ClusterPeersStatus defines the observed state of ClusterPeers
-              INSERT ADDITIONAL STATUS FIELD - define observed state of cluster Important:
+            description: 'DRPolicyStatus defines the observed state of DRPolicy INSERT
+              ADDITIONAL STATUS FIELD - define observed state of cluster Important:
               Run "make" to regenerate code after modifying this file'
             type: object
         type: object

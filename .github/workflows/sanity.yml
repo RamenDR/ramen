@@ -123,11 +123,16 @@ jobs:
           docker load -i /tmp/ramen-operator.tar
           kind load docker-image "${IMG}" --name ${KIND_CLUSTER_NAME}
 
+      - name: Deploy dependent CRDs
+        run: |
+          kubectl apply -f hack/test/
+
       - name: Deploy operator
         run: |
           make deploy
           kubectl get deployment -n ramen-system
-          kubectl -n ramen-system wait --for=condition=Available --timeout=60s deploy/ramen-controller-manager
+          sleep 15
+          kubectl get pods -A
 
   publish-image:
     name: Publish built image

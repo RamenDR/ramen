@@ -14,7 +14,7 @@ set of peer clusters, across which application deployment and state needs to
 be managed for disaster recovery are, managed clusters of an OCM hub.
 
 The OCM hub orchestration is provided by Ramen using the
-[ApplicationVolumeReplication(AVR) CRD](docs/avr-crd.md).
+[DRPlacementControl(DRPC) CRD](docs/drpc-crd.md).
 
 ### Ceph-CSI as the volume provisioner
 

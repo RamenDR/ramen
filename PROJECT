@@ -17,7 +17,7 @@ resources:
   version: v1alpha1
 - crdVersion: v1alpha1
   group: ramendr
-  kind: ApplicationVolumeReplication
+  kind: DRPlacementControl
   version: v1alpha1
 version: 3-alpha
 plugins:
