@@ -3,5 +3,6 @@ kind: DRPolicy
 metadata:
   name: drpolicy-sample
 spec:
-  # Add fields here
-  foo: bar
+  clusterNames:
+  - east
+  - west

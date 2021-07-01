@@ -1,6 +1,6 @@
 ## Append samples you want in your CSV to this file as resources ##
 resources:
-- ramendr_v1alpha1_volumereplicationgroup.yaml
 - ramendr_v1alpha1_drpolicy.yaml
-- ramendr_v1alpha1_DRPlacementControl.yaml
+- ramendr_v1alpha1_drplacementcontrol.yaml
+- ramendr_v1alpha1_volumereplicationgroup.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples
