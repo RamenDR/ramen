@@ -1,5 +1,4 @@
-#!/bin/sh
-# shellcheck disable=2046,2086
+# shellcheck shell=sh disable=2046,2086
 docker_install()
 {
 	if test -w /var/run/docker.sock; then
