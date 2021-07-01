@@ -131,7 +131,8 @@ jobs:
         run: |
           make deploy
           kubectl get deployment -n ramen-system
-          kubectl -n ramen-system wait --for=condition=Available --timeout=60s deploy/ramen-controller-manager
+          sleep 15
+          kubectl get pods -A
 
   publish-image:
     name: Publish built image
