@@ -17,10 +17,10 @@ require (
 	k8s.io/api v0.20.5
 	k8s.io/apimachinery v0.20.5
 	k8s.io/client-go v12.0.0+incompatible
-	sigs.k8s.io/controller-runtime v0.7.0
+	sigs.k8s.io/controller-runtime v0.8.3
 )
 
-replace k8s.io/client-go => k8s.io/client-go v0.20.0
+replace k8s.io/client-go => k8s.io/client-go v0.20.5
 
 // below: temporary measure to include multicloud-operators-foundation project with ManagedClusterView through forked repo
 require github.com/tjanssen3/multicloud-operators-foundation/v2 v2.0.0-20210512222428-660109db7f1d
