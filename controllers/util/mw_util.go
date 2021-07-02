@@ -33,6 +33,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	dto "github.com/prometheus/client_model/go"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
+
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
 
@@ -498,4 +501,66 @@ func (mwu *MWUtil) deleteManifestWork(mwName, mwNamespace string) error {
 	mwu.Log.Info("Deleting ManifestWork", "name", mw.Name, "namespace", mwNamespace)
 
 	return mwu.Client.Delete(mwu.Ctx, mw)
+}
+
+func GetMetricValueSingle(name string, mfType dto.MetricType) (float64, error) {
+	mf, err := getMetricFamilyFromRegistry(name)
+	if err != nil {
+		return 0.0, fmt.Errorf("GetMetricValueSingle returned error finding MetricFamily: %w", err)
+	}
+
+	val, err := getMetricValueFromMetricFamilyByType(mf, mfType)
+	if err != nil {
+		return 0.0, fmt.Errorf("GetMetricValueSingle returned error finding Value: %w", err)
+	}
+
+	return val, nil
+}
+
+func getMetricFamilyFromRegistry(name string) (*dto.MetricFamily, error) {
+	metricsFamilies, err := metrics.Registry.Gather() // TODO: see if this can be made more generic
+	if err != nil {
+		return nil, fmt.Errorf("found error during Gather step of getMetricFamilyFromRegistry: %w", err)
+	}
+
+	if len(metricsFamilies) == 0 {
+		return nil, fmt.Errorf("couldn't get metricsFamilies from Prometheus Registry")
+	}
+
+	// TODO: find out if there's a better way to search than linear scan
+	for i := 0; i < len(metricsFamilies); i++ {
+		if *metricsFamilies[i].Name == name {
+			return metricsFamilies[i], nil
+		}
+	}
+
+	return nil, fmt.Errorf(fmt.Sprint("couldn't find MetricFamily with name", name))
+}
+
+func getMetricValueFromMetricFamilyByType(mf *dto.MetricFamily, mfType dto.MetricType) (float64, error) {
+	if *mf.Type != mfType {
+		return 0.0, fmt.Errorf("getMetricValueFromMetricFamilyByType passed invalid type. Wanted %s, got %s",
+			string(mfType), string(*mf.Type))
+	}
+
+	if len(mf.Metric) != 1 {
+		return 0.0, fmt.Errorf("getMetricValueFromMetricFamilyByType only supports Metric length=1")
+	}
+
+	switch mfType {
+	case dto.MetricType_COUNTER:
+		return *mf.Metric[0].Counter.Value, nil
+	case dto.MetricType_GAUGE:
+		return *mf.Metric[0].Gauge.Value, nil
+	case dto.MetricType_HISTOGRAM:
+		// Count is more useful for testing over Sum; get Sum elsewhere if needed
+		return float64(*mf.Metric[0].Histogram.SampleCount), nil
+	case dto.MetricType_SUMMARY:
+		fallthrough
+	case dto.MetricType_UNTYPED:
+		fallthrough
+	default:
+		return 0.0, fmt.Errorf("getMetricValueFromMetricFamilyByType doesn't support type %s yet. Implement this",
+			string(mfType))
+	}
 }

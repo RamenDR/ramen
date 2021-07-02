@@ -81,6 +81,10 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) er
 		Complete(r)
 }
 
+func init() {
+	// Register custom metrics with the global Prometheus registry here
+}
+
 // pvcPredicateFunc sends reconcile requests for create and delete events.
 // For them the filtering of whether the pvc belongs to the any of the
 // VolumeReplicationGroup CRs and identifying such a CR is done in the

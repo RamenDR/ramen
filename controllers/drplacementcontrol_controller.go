@@ -47,6 +47,9 @@ import (
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
 const (
@@ -60,6 +63,78 @@ const (
 )
 
 var ErrSameHomeCluster = errorswrapper.New("new home cluster is the same as current home cluster")
+
+// prometheus metrics
+type timerState string
+
+const (
+	timerStart timerState = "start"
+	timerStop  timerState = "stop"
+)
+
+type timerWrapper struct {
+	gauge          prometheus.Gauge     // used for "last only" fine-grained timer
+	histogram      prometheus.Histogram // used for cumulative data
+	timer          prometheus.Timer     // use prometheus.NewTimer to use/reuse this timer across reconciles
+	reconcileState rmn.DRState          // used to track for spurious reconcile avoidance
+}
+
+// set default values for guageWrapper
+func newTimerWrapper(gauge prometheus.Gauge, histogram prometheus.Histogram) timerWrapper {
+	wrapper := timerWrapper{}
+
+	wrapper.gauge = gauge
+	wrapper.timer = prometheus.Timer{}
+
+	wrapper.histogram = histogram
+
+	wrapper.reconcileState = rmn.Initial // should never use a timer from Initial state; "reserved"
+
+	return wrapper
+}
+
+var (
+	failoverTime = newTimerWrapper(
+		prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "ramen_failover_time",
+			Help: "Duration of the last failover event",
+		}),
+		prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "ramen_failover_histogram",
+			Help:    "Histogram of all failover timers (seconds)",
+			Buckets: prometheus.ExponentialBuckets(1.0, 2.0, 12), // start=1.0, factor=2.0, buckets=12
+		}),
+	)
+
+	failbackTime = newTimerWrapper(
+		prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "ramen_failback_time",
+			Help: "Duration of the last failback event",
+		}),
+		prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "ramen_failback_histogram",
+			Help:    "Histogram of all failback timers (seconds)",
+			Buckets: prometheus.ExponentialBuckets(1.0, 2.0, 12), // start=1.0, factor=2.0, buckets=12
+		}),
+	)
+
+	relocateTime = newTimerWrapper(
+		prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "ramen_relocate_time",
+			Help: "Duration of the last relocate time",
+		}),
+		prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "ramen_relocate_histogram",
+			Help:    "Histogram of all relocate timers (seconds)",
+			Buckets: prometheus.ExponentialBuckets(1.0, 2.0, 12), // start=1.0, factor=2.0, buckets=12
+		}),
+	)
+)
+
+func init() {
+	// register custom metrics with the global Prometheus registry
+	metrics.Registry.MustRegister(failbackTime.gauge, failoverTime.gauge, relocateTime.gauge)
+}
 
 type PVDownloader interface {
 	DownloadPVs(ctx context.Context, r client.Reader, objStoreGetter ObjectStoreGetter,
@@ -706,6 +781,41 @@ func (d *DRPCInstance) runInitialDeployment() (bool, error) {
 	return done, nil
 }
 
+func setMetricsTimerFromDRState(stateDR rmn.DRState, stateTimer timerState) {
+	switch stateDR {
+	case rmn.FailingOver:
+		setMetricsTimer(&failoverTime, stateTimer, stateDR)
+	case rmn.FailingBack:
+		setMetricsTimer(&failbackTime, stateTimer, stateDR)
+	case rmn.Relocating:
+		setMetricsTimer(&relocateTime, stateTimer, stateDR)
+	case rmn.FailedBack:
+		fallthrough
+	case rmn.FailedOver:
+		fallthrough
+	case rmn.Initial:
+		fallthrough
+	case rmn.Relocated:
+		fallthrough
+	default:
+		// not supported
+	}
+}
+
+func setMetricsTimer(wrapper *timerWrapper, desiredTimerState timerState, reconcileState rmn.DRState) {
+	switch desiredTimerState {
+	case timerStart:
+		if reconcileState != wrapper.reconcileState {
+			wrapper.reconcileState = reconcileState
+			wrapper.timer = *prometheus.NewTimer(prometheus.ObserverFunc(wrapper.gauge.Set))
+		}
+	case timerStop:
+		wrapper.timer.ObserveDuration()
+		wrapper.histogram.Observe(wrapper.timer.ObserveDuration().Seconds()) // add timer to histogram
+		wrapper.reconcileState = rmn.Initial                                 // "reserved" value
+	}
+}
+
 //
 // runFailover:
 // 1. If failoverCluster empty, then fail it and we are done
@@ -744,16 +854,10 @@ func (d *DRPCInstance) runFailover() (bool, error) {
 
 	// Make sure we record the state that we are failing over
 	d.setDRState(rmn.FailingOver)
+	setMetricsTimerFromDRState(rmn.FailingOver, timerStart)
 
 	// Save the current home cluster
-	curHomeCluster := ""
-	if len(d.userPlacementRule.Status.Decisions) > 0 {
-		curHomeCluster = d.userPlacementRule.Status.Decisions[0].ClusterName
-	}
-
-	if curHomeCluster == "" {
-		curHomeCluster = d.instance.Status.PreferredDecision.ClusterName
-	}
+	curHomeCluster := d.getCurrentHomeClusterName()
 
 	if curHomeCluster == "" {
 		d.log.Info("Invalid Failover request. Current home cluster does not exists")
@@ -776,8 +880,22 @@ func (d *DRPCInstance) runFailover() (bool, error) {
 
 	d.advanceToNextDRState()
 	d.log.Info("Exiting runFailover", "state", d.instance.Status.LastKnownDRState)
+	setMetricsTimerFromDRState(rmn.FailingOver, timerStop)
 
 	return result, nil
+}
+
+func (d *DRPCInstance) getCurrentHomeClusterName() string {
+	curHomeCluster := ""
+	if len(d.userPlacementRule.Status.Decisions) > 0 {
+		curHomeCluster = d.userPlacementRule.Status.Decisions[0].ClusterName
+	}
+
+	if curHomeCluster == "" {
+		curHomeCluster = d.instance.Status.PreferredDecision.ClusterName
+	}
+
+	return curHomeCluster
 }
 
 //
@@ -834,6 +952,7 @@ func (d *DRPCInstance) switchToPreferredCluster(drState rmn.DRState) (bool, erro
 
 	// Make sure we record the state that we are failing over
 	d.setDRState(drState)
+	setMetricsTimerFromDRState(drState, timerStart)
 
 	// During failback or relocation, both clusters should be up and both must be secondaries before we proceed
 	ensured, err := d.processVRGForSecondaries()
@@ -853,6 +972,7 @@ func (d *DRPCInstance) switchToPreferredCluster(drState rmn.DRState) (bool, erro
 
 	d.advanceToNextDRState()
 	d.log.Info("Done", "Last known state", d.instance.Status.LastKnownDRState)
+	setMetricsTimerFromDRState(drState, timerStop)
 
 	return result, nil
 }

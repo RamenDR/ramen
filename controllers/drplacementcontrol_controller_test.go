@@ -31,6 +31,7 @@ import (
 	spokeClusterV1 "github.com/open-cluster-management/api/cluster/v1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
+	dto "github.com/prometheus/client_model/go"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
@@ -741,6 +742,10 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				setDRPCSpecExpectationTo(drpc, "newS3Endpoint-1", rmn.ActionFailover, "")
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // MW for VRG ROLE only
 				waitForCompletion()
+
+				val, err := rmnutil.GetMetricValueSingle("ramen_failover_time", dto.MetricType_GAUGE)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(val).NotTo(Equal(0.0)) // failover time should be non-zero
 			})
 		})
 		When("DRPC Reconciler is called to failover the second time to the same cluster", func() {
@@ -796,6 +801,10 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				updateManagedClusterViewStatusAsNotFound(mcvWest)
 				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(2)) // Roles MWs
 				waitForCompletion()
+
+				val, err := rmnutil.GetMetricValueSingle("ramen_failback_time", dto.MetricType_GAUGE)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(val).NotTo(Equal(0.0)) // failover time should be non-zero
 			})
 		})
 		When("DRPC Reconciler is called to failback for the second time to the same cluster", func() {
@@ -876,6 +885,10 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				updateManagedClusterViewStatusAsNotFound(mcvWest)
 				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(2)) // Roles MWs
 				waitForCompletion()
+
+				val, err := rmnutil.GetMetricValueSingle("ramen_relocate_time", dto.MetricType_GAUGE)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(val).NotTo(Equal(0.0)) // relocate time should be non-zero
 			})
 			When("Deleting DRPC", func() {
 				It("Should delete VRG from Primary (EastManagedCluster)", func() {

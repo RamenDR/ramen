@@ -17,6 +17,6 @@ spec:
         - "--logtostderr=true"
         - "--v=10"
         ports:
-        - containerPort: 8443
+        - containerPort: 9289
           name: https
 
