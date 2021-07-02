@@ -33,6 +33,7 @@ import (
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
+	rmnutil "github.com/ramendr/ramen/controllers/util"
 	fndv2 "github.com/tjanssen3/multicloud-operators-foundation/v2/pkg/apis/view/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -418,7 +419,7 @@ func createDRPolicy(name, namespace string, clusters []string) {
 
 func updateManifestWorkStatus(clusterNamespace, mwType, workType string) {
 	manifestLookupKey := types.NamespacedName{
-		Name:      controllers.BuildManifestWorkName(DRPCName, DRPCNamespaceName, mwType),
+		Name:      rmnutil.ManifestWorkName(DRPCName, DRPCNamespaceName, mwType),
 		Namespace: clusterNamespace,
 	}
 	createdManifest := &ocmworkv1.ManifestWork{}
@@ -463,7 +464,7 @@ func updateManifestWorkStatus(clusterNamespace, mwType, workType string) {
 
 func waitForVRGMWDeletion(clusterNamespace string) {
 	manifestLookupKey := types.NamespacedName{
-		Name:      controllers.BuildManifestWorkName(DRPCName, DRPCNamespaceName, "vrg"),
+		Name:      rmnutil.ManifestWorkName(DRPCName, DRPCNamespaceName, "vrg"),
 		Namespace: clusterNamespace,
 	}
 	createdManifest := &ocmworkv1.ManifestWork{}
@@ -520,7 +521,7 @@ func verifyVRGManifestWorkCreatedAsPrimary(managedCluster string) {
 	Expect(err).NotTo(HaveOccurred())
 
 	manifestLookupKey := types.NamespacedName{
-		Name:      controllers.BuildManifestWorkName(DRPCName, DRPCNamespaceName, "vrg"),
+		Name:      rmnutil.ManifestWorkName(DRPCName, DRPCNamespaceName, "vrg"),
 		Namespace: managedCluster,
 	}
 	mw := &ocmworkv1.ManifestWork{}
@@ -569,8 +570,8 @@ func verifyUserPlacementRuleDecision(name, namespace, homeCluster string) {
 		return err == nil && usrPlRule.Status.Decisions[0].ClusterName == homeCluster
 	}, timeout, interval).Should(BeTrue())
 
-	Expect(usrPlRule.ObjectMeta.Annotations[controllers.DRPCNameAnnotation]).Should(Equal(DRPCName))
-	Expect(usrPlRule.ObjectMeta.Annotations[controllers.DRPCNamespaceAnnotation]).Should(Equal(DRPCNamespaceName))
+	Expect(usrPlRule.ObjectMeta.Annotations[rmnutil.DRPCNameAnnotation]).Should(Equal(DRPCName))
+	Expect(usrPlRule.ObjectMeta.Annotations[rmnutil.DRPCNamespaceAnnotation]).Should(Equal(DRPCNamespaceName))
 }
 
 func verifyDRPCStatusPreferredClusterExpectation(drState rmn.DRState) {
@@ -744,209 +745,6 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // MWs for ROLES
 				waitForCompletion()
 			})
-		})
-	})
-	Context("IsManifestInAppliedState checks ManifestWork with single timestamp", func() {
-		timeOld := time.Now().Local()
-		timeMostRecent := timeOld.Add(time.Second)
-
-		It("'Applied' present, Status False", func() {
-			mw := &ocmworkv1.ManifestWork{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "ramendr-vrg-roles",
-				},
-				Status: ocmworkv1.ManifestWorkStatus{
-					Conditions: []metav1.Condition{
-						{
-							Type:               ocmworkv1.WorkApplied,
-							LastTransitionTime: metav1.Time{Time: timeMostRecent},
-							Status:             metav1.ConditionFalse,
-						},
-					},
-				},
-			}
-
-			Expect(controllers.IsManifestInAppliedState(mw)).To(Equal(false))
-		})
-
-		It("'Applied' present, Status true", func() {
-			mw := &ocmworkv1.ManifestWork{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "ramendr-vrg-roles",
-				},
-				Status: ocmworkv1.ManifestWorkStatus{
-					Conditions: []metav1.Condition{
-						{
-							Type:               ocmworkv1.WorkApplied,
-							LastTransitionTime: metav1.Time{Time: timeMostRecent},
-							Status:             metav1.ConditionTrue,
-						},
-					},
-				},
-			}
-
-			Expect(controllers.IsManifestInAppliedState(mw)).To(Equal(true))
-		})
-
-		It("'Applied' not present", func() {
-			mw := &ocmworkv1.ManifestWork{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "ramendr-vrg-roles",
-				},
-				Status: ocmworkv1.ManifestWorkStatus{
-					Conditions: []metav1.Condition{
-						{
-							Type:               ocmworkv1.WorkProgressing,
-							LastTransitionTime: metav1.Time{Time: timeMostRecent},
-						},
-					},
-				},
-			}
-
-			Expect(controllers.IsManifestInAppliedState(mw)).To(Equal(false))
-		})
-	})
-
-	Context("IsManifestInAppliedState checks ManifestWork with multiple timestamps", func() {
-		timeOld := time.Now().Local()
-		timeMostRecent := timeOld.Add(time.Second)
-
-		It("no duplicate timestamps, 'Applied' is most recent", func() {
-			mw := &ocmworkv1.ManifestWork{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "ramendr-vrg-roles",
-				},
-				Status: ocmworkv1.ManifestWorkStatus{
-					Conditions: []metav1.Condition{
-						{
-							Type:               ocmworkv1.WorkApplied,
-							LastTransitionTime: metav1.Time{Time: timeMostRecent},
-							Status:             metav1.ConditionTrue,
-						},
-						{
-							Type:               ocmworkv1.WorkProgressing,
-							LastTransitionTime: metav1.Time{Time: timeOld},
-						},
-					},
-				},
-			}
-
-			Expect(controllers.IsManifestInAppliedState(mw)).To(Equal(true))
-		})
-
-		It("no duplicates timestamps, 'Applied' is not most recent", func() {
-			mw := &ocmworkv1.ManifestWork{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "ramendr-vrg-roles",
-				},
-				Status: ocmworkv1.ManifestWorkStatus{
-					Conditions: []metav1.Condition{
-						{
-							Type:               ocmworkv1.WorkProgressing,
-							LastTransitionTime: metav1.Time{Time: timeMostRecent},
-						},
-						{
-							Type:               ocmworkv1.WorkApplied,
-							LastTransitionTime: metav1.Time{Time: timeOld},
-						},
-					},
-				},
-			}
-
-			Expect(controllers.IsManifestInAppliedState(mw)).To(Equal(false))
-		})
-
-		It("with duplicate timestamps, 'Applied' is most recent", func() {
-			mw := &ocmworkv1.ManifestWork{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "ramendr-vrg-roles",
-				},
-				Status: ocmworkv1.ManifestWorkStatus{
-					Conditions: []metav1.Condition{
-						{
-							Type:               ocmworkv1.WorkApplied,
-							LastTransitionTime: metav1.Time{Time: timeMostRecent},
-							Status:             metav1.ConditionTrue,
-						},
-						{
-							Type:               ocmworkv1.WorkProgressing,
-							LastTransitionTime: metav1.Time{Time: timeMostRecent},
-							Status:             metav1.ConditionUnknown,
-						},
-						{
-							Type:               ocmworkv1.WorkProgressing,
-							LastTransitionTime: metav1.Time{Time: timeOld},
-						},
-					},
-				},
-			}
-
-			Expect(controllers.IsManifestInAppliedState(mw)).To(Equal(true))
-		})
-
-		It("with duplicate timestamps, 'Applied' is not most recent", func() {
-			mw := &ocmworkv1.ManifestWork{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "ramendr-vrg-roles",
-				},
-				Status: ocmworkv1.ManifestWorkStatus{
-					Conditions: []metav1.Condition{
-						{
-							Type:               ocmworkv1.WorkAvailable,
-							LastTransitionTime: metav1.Time{Time: timeMostRecent},
-						},
-						{
-							Type:               ocmworkv1.WorkProgressing,
-							LastTransitionTime: metav1.Time{Time: timeMostRecent},
-						},
-						{
-							Type:               ocmworkv1.WorkApplied,
-							LastTransitionTime: metav1.Time{Time: timeOld},
-						},
-					},
-				},
-			}
-
-			Expect(controllers.IsManifestInAppliedState(mw)).To(Equal(false))
-		})
-
-		It("duplicate timestamps with Degraded and Applied status", func() {
-			mw := &ocmworkv1.ManifestWork{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "ramendr-vrg-roles",
-				},
-				Status: ocmworkv1.ManifestWorkStatus{
-					Conditions: []metav1.Condition{
-						{
-							Type:               ocmworkv1.WorkApplied,
-							LastTransitionTime: metav1.Time{Time: timeMostRecent},
-						},
-						{
-							Type:               ocmworkv1.WorkDegraded,
-							LastTransitionTime: metav1.Time{Time: timeMostRecent},
-						},
-					},
-				},
-			}
-
-			Expect(controllers.IsManifestInAppliedState(mw)).To(Equal(false))
-		})
-	})
-
-	Context("IsManifestInAppliedState checks ManifestWork with no timestamps", func() {
-		It("manifest missing conditions", func() {
-			mw := &ocmworkv1.ManifestWork{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "ramendr-vrg-roles",
-				},
-				Status: ocmworkv1.ManifestWorkStatus{
-					Conditions: []metav1.Condition{
-						// empty
-					},
-				},
-			}
-
-			Expect(controllers.IsManifestInAppliedState(mw)).To(Equal(false))
 		})
 	})
 })

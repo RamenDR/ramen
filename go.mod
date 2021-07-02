@@ -9,13 +9,13 @@ require (
 	github.com/go-logr/logr v0.4.0
 	github.com/onsi/ginkgo v1.16.1
 	github.com/onsi/gomega v1.11.0
-	github.com/open-cluster-management/api v0.0.0-20210409125704-06f2aec1a73f
+	github.com/open-cluster-management/api v0.0.0-20210527013639-a6845f2ebcb1
 	github.com/open-cluster-management/multicloud-operators-placementrule v1.0.1-2020-06-08-14-28-27.0.20201118195339-05a8c4c89c12
 	github.com/open-cluster-management/multicloud-operators-subscription v1.2.2-2-20201130-59f96
 	github.com/pkg/errors v0.9.1
 	go.uber.org/zap v1.15.0
 	k8s.io/api v0.20.5
-	k8s.io/apimachinery v0.20.5
+	k8s.io/apimachinery v0.21.2
 	k8s.io/client-go v12.0.0+incompatible
 	sigs.k8s.io/controller-runtime v0.7.0
 )

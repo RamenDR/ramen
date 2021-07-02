@@ -20,18 +20,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"sort"
 	"time"
 
 	"github.com/ghodss/yaml"
+	"github.com/go-logr/logr"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
-	fndv2 "github.com/tjanssen3/multicloud-operators-foundation/v2/pkg/apis/view/v1beta1"
-
-	"github.com/go-logr/logr"
 	errorswrapper "github.com/pkg/errors"
+	fndv2 "github.com/tjanssen3/multicloud-operators-foundation/v2/pkg/apis/view/v1beta1"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -47,34 +44,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
+	rmnutil "github.com/ramendr/ramen/controllers/util"
 )
 
 const (
-	// ManifestWorkNameFormat is a formated a string used to generate the manifest name
-	// The format is name-namespace-type-mw where:
-	// - name is the DRPC name
-	// - namespace is the DRPC namespace
-	// - type is either "vrg", "pv", or "roles"
-	ManifestWorkNameFormat string = "%s-%s-%s-mw"
-
-	// ManifestWork VRG Type
-	MWTypeVRG string = "vrg"
-
-	// ManifestWork PV Type
-	MWTypePV string = "pv"
-
-	// ManifestWork Roles Type
-	MWTypeRoles string = "roles"
-
 	// Ramen scheduler
 	RamenScheduler string = "ramen"
 
 	// Label for VRG to indicate whether to delete it or not
 	Deleting string = "deleting"
-
-	// Annotations for MW and PlacementRule
-	DRPCNameAnnotation      = "drplacementcontrol.ramendr.openshift.io/drpc-name"
-	DRPCNamespaceAnnotation = "drplacementcontrol.ramendr.openshift.io/drpc-namespace"
 )
 
 var ErrSameHomeCluster = errorswrapper.New("new home cluster is the same as current home cluster")
@@ -96,77 +74,6 @@ type DRPlacementControlReconciler struct {
 	ObjStoreGetter ObjectStoreGetter
 	Scheme         *runtime.Scheme
 	Callback       ProgressCallback
-}
-
-func IsManifestInAppliedState(mw *ocmworkv1.ManifestWork) bool {
-	applied := false
-	degraded := false
-	conditions := mw.Status.Conditions
-
-	if len(conditions) > 0 {
-		// get most recent conditions that have ConditionTrue status
-		recentConditions := filterByConditionStatus(getMostRecentConditions(conditions), metav1.ConditionTrue)
-
-		for _, condition := range recentConditions {
-			if condition.Type == ocmworkv1.WorkApplied {
-				applied = true
-			} else if condition.Type == ocmworkv1.WorkDegraded {
-				degraded = true
-			}
-		}
-
-		// if most recent timestamp contains Applied and Degraded states, don't trust it's actually Applied
-		if degraded {
-			applied = false
-		}
-	}
-
-	return applied
-}
-
-func filterByConditionStatus(conditions []metav1.Condition, status metav1.ConditionStatus) []metav1.Condition {
-	filtered := make([]metav1.Condition, 0)
-
-	for _, condition := range conditions {
-		if condition.Status == status {
-			filtered = append(filtered, condition)
-		}
-	}
-
-	return filtered
-}
-
-// return Conditions with most recent timestamps only (allows duplicates)
-func getMostRecentConditions(conditions []metav1.Condition) []metav1.Condition {
-	recentConditions := make([]metav1.Condition, 0)
-
-	// sort conditions by timestamp. Index 0 = most recent
-	sort.Slice(conditions, func(a, b int) bool {
-		return conditions[b].LastTransitionTime.Before(&conditions[a].LastTransitionTime)
-	})
-
-	if len(conditions) == 0 {
-		return recentConditions
-	}
-
-	// len(conditions) > 0; conditions are sorted
-	mostRecentTimestamp := conditions[0].LastTransitionTime
-
-	// loop through conditions until not in the most recent one anymore
-	for index := range conditions {
-		// only keep conditions with most recent timestamp
-		if conditions[index].LastTransitionTime == mostRecentTimestamp {
-			recentConditions = append(recentConditions, conditions[index])
-		} else {
-			break
-		}
-	}
-
-	return recentConditions
-}
-
-func BuildManifestWorkName(name, namespace, mwType string) string {
-	return fmt.Sprintf(ManifestWorkNameFormat, name, namespace, mwType)
 }
 
 func ManifestWorkPredicateFunc() predicate.Funcs {
@@ -201,8 +108,8 @@ func filterMW(mw *ocmworkv1.ManifestWork) []ctrl.Request {
 	return []ctrl.Request{
 		reconcile.Request{
 			NamespacedName: types.NamespacedName{
-				Name:      mw.Annotations[DRPCNameAnnotation],
-				Namespace: mw.Annotations[DRPCNamespaceAnnotation],
+				Name:      mw.Annotations[rmnutil.DRPCNameAnnotation],
+				Namespace: mw.Annotations[rmnutil.DRPCNamespaceAnnotation],
 			},
 		},
 	}
@@ -288,6 +195,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	d := DRPCInstance{
 		reconciler: r, ctx: ctx, log: logger, instance: drpc, needStatusUpdate: false,
 		userPlacementRule: userPlRule, drpcPlacementRule: drpcPlRule,
+		mwu: rmnutil.MWUtil{Client: r.Client, Ctx: ctx, Log: logger, InstName: drpc.Name, InstNamespace: drpc.Namespace},
 	}
 
 	requeue := d.startProcessing()
@@ -351,19 +259,19 @@ func (r *DRPlacementControlReconciler) annotatePlacementRule(ctx context.Context
 		plRule.ObjectMeta.Annotations = map[string]string{}
 	}
 
-	ownerName := plRule.ObjectMeta.Annotations[DRPCNameAnnotation]
-	ownerNamespace := plRule.ObjectMeta.Annotations[DRPCNamespaceAnnotation]
+	ownerName := plRule.ObjectMeta.Annotations[rmnutil.DRPCNameAnnotation]
+	ownerNamespace := plRule.ObjectMeta.Annotations[rmnutil.DRPCNamespaceAnnotation]
 
 	if ownerName == "" {
-		plRule.ObjectMeta.Annotations[DRPCNameAnnotation] = drpc.Name
-		plRule.ObjectMeta.Annotations[DRPCNamespaceAnnotation] = drpc.Namespace
+		plRule.ObjectMeta.Annotations[rmnutil.DRPCNameAnnotation] = drpc.Name
+		plRule.ObjectMeta.Annotations[rmnutil.DRPCNamespaceAnnotation] = drpc.Namespace
 
 		err := r.Update(ctx, plRule)
 		if err != nil {
 			r.Log.Error(err, "Failed to update PlacementRule annotation", "PlRuleName", plRule.Name)
 
 			return fmt.Errorf("failed to update PlacementRule %s annotation '%s/%s' (%w)",
-				plRule.Name, DRPCNameAnnotation, drpc.Name, err)
+				plRule.Name, rmnutil.DRPCNameAnnotation, drpc.Name, err)
 		}
 
 		return nil
@@ -471,6 +379,7 @@ type DRPCInstance struct {
 	needStatusUpdate  bool
 	userPlacementRule *plrv1.PlacementRule
 	drpcPlacementRule *plrv1.PlacementRule
+	mwu               rmnutil.MWUtil
 }
 
 func (d *DRPCInstance) startProcessing() bool {
@@ -836,11 +745,11 @@ func (d *DRPCInstance) updateUserPlRuleAndCreateVRGMW(homeCluster, homeClusterNa
 }
 
 func (d *DRPCInstance) createPVManifestWorkForRestore(newPrimary string) error {
-	pvMWName := BuildManifestWorkName(d.instance.Name, d.instance.Namespace, MWTypePV)
+	pvMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypePV)
 
-	existAndApplied, err := d.isManifestExistAndApplied(pvMWName, newPrimary)
+	existAndApplied, err := d.mwu.ManifestExistAndApplied(pvMWName, newPrimary)
 	if err != nil && !errors.IsNotFound(err) {
-		return err
+		return fmt.Errorf("failed to check PV manifestwork status %s (%w)", pvMWName, err)
 	}
 
 	if existAndApplied {
@@ -852,34 +761,6 @@ func (d *DRPCInstance) createPVManifestWorkForRestore(newPrimary string) error {
 	d.log.Info("Restore PVs", "newPrimary", newPrimary)
 
 	return d.restore(newPrimary)
-}
-
-func (d *DRPCInstance) isManifestExistAndApplied(mwName, newPrimary string) (bool, error) {
-	// Try to find whether we have already created a ManifestWork for this
-	mw, err := d.findManifestWork(mwName, newPrimary)
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			d.log.Error(err, "Failed to find 'PV restore' ManifestWork")
-
-			return false, nil
-		}
-
-		return false, err
-	}
-
-	if mw != nil {
-		d.log.Info(fmt.Sprintf("Found an existing manifest work (%v)", mw))
-		// Check if the MW is in Applied state
-		if IsManifestInAppliedState(mw) {
-			d.log.Info(fmt.Sprintf("ManifestWork %s/%s in Applied state", mw.Namespace, mw.Name))
-
-			return true, nil
-		}
-
-		d.log.Info("MW is not in applied state", "namespace/name", mw.Namespace+"/"+mw.Name)
-	}
-
-	return false, nil
 }
 
 func (d *DRPCInstance) restore(newHomeCluster string) error {
@@ -975,14 +856,14 @@ func (d *DRPCInstance) vrgManifestWorkExists(homeCluster string) (*ocmworkv1.Man
 		return nil, nil
 	}
 
-	mwName := BuildManifestWorkName(d.instance.Name, d.instance.Namespace, MWTypeVRG)
+	mwName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
 
-	mw, err := d.findManifestWork(mwName, homeCluster)
+	mw, err := d.mwu.FindManifestWork(mwName, homeCluster)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			d.log.Error(err, "failed to find ManifestWork")
 
-			return nil, err
+			return nil, fmt.Errorf("failed to find ManifestWork %s (%w)", mwName, err)
 		}
 	}
 
@@ -993,25 +874,6 @@ func (d *DRPCInstance) vrgManifestWorkExists(homeCluster string) (*ocmworkv1.Man
 	}
 
 	d.log.Info(fmt.Sprintf("Manifestwork %s exists (%v)", mw.Name, mw))
-
-	return mw, nil
-}
-
-func (d *DRPCInstance) findManifestWork(mwName, managedCluster string) (*ocmworkv1.ManifestWork, error) {
-	if managedCluster == "" {
-		return nil, fmt.Errorf("invalid cluster for MW %s", mwName)
-	}
-
-	mw := &ocmworkv1.ManifestWork{}
-
-	err := d.reconciler.Get(d.ctx, types.NamespacedName{Name: mwName, Namespace: managedCluster}, mw)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("MW not found (%w)", err)
-		}
-
-		return nil, fmt.Errorf("failed to retrieve manifestwork (%w)", err)
-	}
 
 	return mw, nil
 }
@@ -1061,7 +923,7 @@ func (d *DRPCInstance) ensureOldVRGMWOnClusterDeleted(clusterName string) (bool,
 
 	const done = true
 
-	mwName := BuildManifestWorkName(d.instance.Name, d.instance.Namespace, MWTypeVRG)
+	mwName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
 	mw := &ocmworkv1.ManifestWork{}
 
 	err := d.reconciler.Get(d.ctx, types.NamespacedName{Name: mwName, Namespace: clusterName}, mw)
@@ -1141,18 +1003,22 @@ func (d *DRPCInstance) ensureVRGDeleted(clusterName string) bool {
 }
 
 func (d *DRPCInstance) deleteManifestWorks(clusterName string) error {
-	err := d.deleteVRGManifestWork(clusterName)
+	if d.instance.Status.PreferredDecision == (plrv1.PlacementDecision{}) {
+		return nil
+	}
+
+	err := d.mwu.DeleteVRGManifestWork(clusterName)
 	if err != nil {
 		d.log.Error(err, "failed to delete MW for VRG")
 
-		return err
+		return fmt.Errorf("failed to delete ManifestWork for VRG in namespace %s (%w)", clusterName, err)
 	}
 
-	err = d.deletePVManifestWork(clusterName)
+	err = d.mwu.DeletePVManifestWork(clusterName)
 	if err != nil {
 		d.log.Error(err, "failed to delete MW for PVs")
 
-		return err
+		return fmt.Errorf("failed to delete ManifestWork for PVs in namespace %s (%w)", clusterName, err)
 	}
 
 	//
@@ -1160,43 +1026,6 @@ func (d *DRPCInstance) deleteManifestWorks(clusterName string) error {
 	// TO KEEP IT CLEAN, SHOULD WE???
 	//
 	return nil
-}
-
-func (d *DRPCInstance) deletePVManifestWork(fromCluster string) error {
-	pvMWName := BuildManifestWorkName(d.instance.Name, d.instance.Namespace, MWTypePV)
-	pvMWNamespace := fromCluster
-
-	return d.deleteManifestWork(pvMWName, pvMWNamespace)
-}
-
-func (d *DRPCInstance) deleteVRGManifestWork(fromCluster string) error {
-	vrgMWName := BuildManifestWorkName(d.instance.Name, d.instance.Namespace, MWTypeVRG)
-	vrgMWNamespace := fromCluster
-
-	return d.deleteManifestWork(vrgMWName, vrgMWNamespace)
-}
-
-func (d *DRPCInstance) deleteManifestWork(mwName, mwNamespace string) error {
-	d.log.Info("Delete ManifestWork from", "namespace", mwNamespace, "name", mwName)
-
-	if d.instance.Status.PreferredDecision == (plrv1.PlacementDecision{}) {
-		return nil
-	}
-
-	mw := &ocmworkv1.ManifestWork{}
-
-	err := d.reconciler.Get(d.ctx, types.NamespacedName{Name: mwName, Namespace: mwNamespace}, mw)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil
-		}
-
-		return fmt.Errorf("failed to retrieve manifestwork for type: %s. Error: %w", mwName, err)
-	}
-
-	d.log.Info("Deleting ManifestWork", "name", mw.Name, "namespace", mwNamespace)
-
-	return d.reconciler.Delete(d.ctx, mw)
 }
 
 func (d *DRPCInstance) restorePVFromBackup(homeCluster string) error {
@@ -1218,274 +1047,42 @@ func (d *DRPCInstance) restorePVFromBackup(homeCluster string) error {
 	}
 
 	// Create manifestwork for all PVs for this DRPC
-	return d.createOrUpdatePVsManifestWork(d.instance.Name, d.instance.Namespace, homeCluster, pvList)
-}
-
-func (d *DRPCInstance) createOrUpdatePVsManifestWork(
-	name string, namespace string, homeClusterName string, pvList []corev1.PersistentVolume) error {
-	d.log.Info("Create manifest work for PVs", "DRPC",
-		name, "cluster", homeClusterName, "PV count", len(pvList))
-
-	mwName := BuildManifestWorkName(name, namespace, MWTypePV)
-
-	manifestWork, err := d.generatePVManifestWork(mwName, homeClusterName, pvList)
-	if err != nil {
-		return err
-	}
-
-	return d.createOrUpdateManifestWork(manifestWork, homeClusterName)
+	return d.mwu.CreateOrUpdatePVsManifestWork(d.instance.Name, d.instance.Namespace, homeCluster, pvList)
 }
 
 func (d *DRPCInstance) processVRGManifestWork(homeCluster string) error {
 	d.log.Info("Processing VRG ManifestWork", "cluster", homeCluster)
 
-	if err := d.createOrUpdateVRGRolesManifestWork(homeCluster); err != nil {
+	if err := d.mwu.CreateOrUpdateVRGRolesManifestWork(homeCluster); err != nil {
 		d.log.Error(err, "failed to create or update VolumeReplicationGroup Roles manifest")
 
-		return err
+		return fmt.Errorf("failed to create or update VolumeReplicationGroup Roles manifest in namespace %s (%w)",
+			homeCluster, err)
 	}
 
-	if err := d.createOrUpdateVRGManifestWork(
+	if err := d.mwu.CreateOrUpdateVRGManifestWork(
 		d.instance.Name, d.instance.Namespace,
 		homeCluster, d.instance.Spec.S3Endpoint,
 		d.instance.Spec.S3Region,
 		d.instance.Spec.S3SecretName, d.instance.Spec.PVCSelector); err != nil {
 		d.log.Error(err, "failed to create or update VolumeReplicationGroup manifest")
 
-		return err
-	}
-
-	return nil
-}
-
-func (d *DRPCInstance) createOrUpdateVRGRolesManifestWork(namespace string) error {
-	manifestWork, err := d.generateVRGRolesManifestWork(namespace)
-	if err != nil {
-		return err
-	}
-
-	return d.createOrUpdateManifestWork(manifestWork, namespace)
-}
-
-func (d *DRPCInstance) createOrUpdateVRGManifestWork(
-	name, namespace, homeCluster, s3Endpoint, s3Region, s3SecretName string, pvcSelector metav1.LabelSelector) error {
-	d.log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%s:%s:%s",
-		name, namespace, homeCluster, s3Endpoint, s3SecretName))
-
-	manifestWork, err := d.generateVRGManifestWork(name, namespace, homeCluster,
-		s3Endpoint, s3Region, s3SecretName, pvcSelector)
-	if err != nil {
-		return err
-	}
-
-	return d.createOrUpdateManifestWork(manifestWork, homeCluster)
-}
-
-func (d *DRPCInstance) generateVRGRolesManifestWork(namespace string) (*ocmworkv1.ManifestWork, error) {
-	vrgClusterRole, err := d.generateVRGClusterRoleManifest()
-	if err != nil {
-		d.log.Error(err, "failed to generate VolumeReplicationGroup ClusterRole manifest")
-
-		return nil, err
-	}
-
-	vrgClusterRoleBinding, err := d.generateVRGClusterRoleBindingManifest()
-	if err != nil {
-		d.log.Error(err, "failed to generate VolumeReplicationGroup ClusterRoleBinding manifest")
-
-		return nil, err
-	}
-
-	manifests := []ocmworkv1.Manifest{*vrgClusterRole, *vrgClusterRoleBinding}
-
-	return d.newManifestWork(
-		"ramendr-vrg-roles",
-		namespace,
-		map[string]string{},
-		manifests), nil
-}
-
-func (d *DRPCInstance) generateVRGClusterRoleManifest() (*ocmworkv1.Manifest, error) {
-	return d.generateManifest(&rbacv1.ClusterRole{
-		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
-		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit"},
-		Rules: []rbacv1.PolicyRule{
-			{
-				APIGroups: []string{"ramendr.openshift.io"},
-				Resources: []string{"volumereplicationgroups"},
-				Verbs:     []string{"create", "get", "list", "update", "delete"},
-			},
-		},
-	})
-}
-
-func (d *DRPCInstance) generateVRGClusterRoleBindingManifest() (*ocmworkv1.Manifest, error) {
-	return d.generateManifest(&rbacv1.ClusterRoleBinding{
-		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
-		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit"},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      "klusterlet-work-sa",
-				Namespace: "open-cluster-management-agent",
-			},
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "ClusterRole",
-			Name:     "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit",
-		},
-	})
-}
-
-func (d *DRPCInstance) generatePVManifestWork(
-	mwName, homeClusterName string, pvList []corev1.PersistentVolume) (*ocmworkv1.ManifestWork, error) {
-	manifests, err := d.generatePVManifest(pvList)
-	if err != nil {
-		return nil, err
-	}
-
-	return d.newManifestWork(
-		mwName,
-		homeClusterName,
-		map[string]string{"app": "PV"},
-		manifests), nil
-}
-
-// This function follow a slightly different pattern than the rest, simply because the pvList that come
-// from the S3 store will contain PV objects already converted to a string.
-func (d *DRPCInstance) generatePVManifest(
-	pvList []corev1.PersistentVolume) ([]ocmworkv1.Manifest, error) {
-	manifests := []ocmworkv1.Manifest{}
-
-	for _, pv := range pvList {
-		pvClientManifest, err := d.generateManifest(pv)
-		// Either all succeed or none
-		if err != nil {
-			d.log.Error(err, "failed to generate manifest for PV")
-
-			return nil, err
-		}
-
-		manifests = append(manifests, *pvClientManifest)
-	}
-
-	return manifests, nil
-}
-
-func (d *DRPCInstance) generateVRGManifestWork(
-	name, namespace, homeCluster, s3Endpoint, s3Region, s3SecretName string,
-	pvcSelector metav1.LabelSelector) (*ocmworkv1.ManifestWork, error) {
-	vrgClientManifest, err := d.generateVRGManifest(name, namespace, s3Endpoint,
-		s3Region, s3SecretName, pvcSelector)
-	if err != nil {
-		d.log.Error(err, "failed to generate VolumeReplicationGroup manifest")
-
-		return nil, err
-	}
-
-	manifests := []ocmworkv1.Manifest{*vrgClientManifest}
-
-	return d.newManifestWork(
-		fmt.Sprintf(ManifestWorkNameFormat, name, namespace, MWTypeVRG),
-		homeCluster,
-		map[string]string{"app": "VRG"},
-		manifests), nil
-}
-
-func (d *DRPCInstance) generateVRGManifest(
-	name, namespace, s3Endpoint, s3Region, s3SecretName string,
-	pvcSelector metav1.LabelSelector) (*ocmworkv1.Manifest, error) {
-	return d.generateManifest(&rmn.VolumeReplicationGroup{
-		TypeMeta:   metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
-		Spec: rmn.VolumeReplicationGroupSpec{
-			PVCSelector:            pvcSelector,
-			VolumeReplicationClass: "volume-rep-class",
-			ReplicationState:       rmn.Primary,
-			S3Endpoint:             s3Endpoint,
-			S3Region:               s3Region,
-			S3SecretName:           s3SecretName,
-		},
-	})
-}
-
-func (d *DRPCInstance) generateManifest(obj interface{}) (*ocmworkv1.Manifest, error) {
-	objJSON, err := json.Marshal(obj)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal %v to JSON, error %w", obj, err)
-	}
-
-	manifest := &ocmworkv1.Manifest{}
-	manifest.RawExtension = runtime.RawExtension{Raw: objJSON}
-
-	return manifest, nil
-}
-
-func (d *DRPCInstance) newManifestWork(name string, mcNamespace string,
-	labels map[string]string, manifests []ocmworkv1.Manifest) *ocmworkv1.ManifestWork {
-	return &ocmworkv1.ManifestWork{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: mcNamespace,
-			Labels:    labels,
-			Annotations: map[string]string{
-				DRPCNameAnnotation:      d.instance.Name,
-				DRPCNamespaceAnnotation: d.instance.Namespace,
-			},
-		},
-		Spec: ocmworkv1.ManifestWorkSpec{
-			Workload: ocmworkv1.ManifestsTemplate{
-				Manifests: manifests,
-			},
-		},
-	}
-}
-
-func (d *DRPCInstance) createOrUpdateManifestWork(
-	mw *ocmworkv1.ManifestWork,
-	managedClusternamespace string) error {
-	foundMW := &ocmworkv1.ManifestWork{}
-
-	err := d.reconciler.Get(d.ctx,
-		types.NamespacedName{Name: mw.Name, Namespace: managedClusternamespace},
-		foundMW)
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			return errorswrapper.Wrap(err, fmt.Sprintf("failed to fetch ManifestWork %s", mw.Name))
-		}
-
-		// Let DRPC receive notification for any changes to ManifestWork CR created by it.
-		// if err := ctrl.SetControllerReference(d.instance, mw, d.reconciler.Scheme); err != nil {
-		// 	return fmt.Errorf("failed to set owner reference to ManifestWork resource (%s/%s) (%v)",
-		// 		mw.Name, mw.Namespace, err)
-		// }
-
-		d.log.Info("Creating ManifestWork for", "cluster", managedClusternamespace, "MW", mw)
-
-		return d.reconciler.Create(d.ctx, mw)
-	}
-
-	if !reflect.DeepEqual(foundMW.Spec, mw.Spec) {
-		mw.Spec.DeepCopyInto(&foundMW.Spec)
-
-		d.log.Info("ManifestWork exists.", "MW", mw)
-
-		return d.reconciler.Update(d.ctx, foundMW)
+		return fmt.Errorf("failed to create or update VolumeReplicationGroup manifest in namespace %s (%w)", homeCluster, err)
 	}
 
 	return nil
 }
 
 func (d *DRPCInstance) hasVRGStateBeenUpdatedToSecondary(clusterName string) (bool, error) {
-	vrgMWName := BuildManifestWorkName(d.instance.Name, d.instance.Namespace, MWTypeVRG)
+	vrgMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
 	d.log.Info("Check if VRG has been updated to secondary", "name", vrgMWName, "cluster", clusterName)
 
-	mw, err := d.findManifestWork(vrgMWName, clusterName)
+	mw, err := d.mwu.FindManifestWork(vrgMWName, clusterName)
 	if err != nil {
 		d.log.Error(err, "failed to check whether VRG state is secondary")
 
-		return false, err
+		return false, fmt.Errorf("failed to check whether VRG state for %s is secondary, in namespace %s (%w)",
+			vrgMWName, clusterName, err)
 	}
 
 	vrg, err := d.getVRGFromManifestWork(mw)
@@ -1505,10 +1102,10 @@ func (d *DRPCInstance) hasVRGStateBeenUpdatedToSecondary(clusterName string) (bo
 }
 
 func (d *DRPCInstance) updateVRGStateToSecondary(clusterName string) error {
-	vrgMWName := BuildManifestWorkName(d.instance.Name, d.instance.Namespace, MWTypeVRG)
+	vrgMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
 	d.log.Info(fmt.Sprintf("Updating VRG ownedby MW %s to secondary for cluster %s", vrgMWName, clusterName))
 
-	mw, err := d.findManifestWork(vrgMWName, clusterName)
+	mw, err := d.mwu.FindManifestWork(vrgMWName, clusterName)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil
@@ -1516,7 +1113,8 @@ func (d *DRPCInstance) updateVRGStateToSecondary(clusterName string) error {
 
 		d.log.Error(err, "failed to update VRG state")
 
-		return err
+		return fmt.Errorf("failed to update VRG state for %s, in namespace %s (%w)",
+			vrgMWName, clusterName, err)
 	}
 
 	vrg, err := d.getVRGFromManifestWork(mw)
@@ -1534,11 +1132,11 @@ func (d *DRPCInstance) updateVRGStateToSecondary(clusterName string) error {
 
 	vrg.Spec.ReplicationState = rmn.Secondary
 
-	vrgClientManifest, err := d.generateManifest(vrg)
+	vrgClientManifest, err := d.mwu.GenerateManifest(vrg)
 	if err != nil {
 		d.log.Error(err, "failed to generate manifest")
 
-		return err
+		return fmt.Errorf("failed to generate VRG manifest (%w)", err)
 	}
 
 	mw.Spec.Workload.Manifests[0] = *vrgClientManifest
@@ -1600,7 +1198,8 @@ func (r *DRPlacementControlReconciler) getManagedClusterResource(
 	}
 
 	// get query results
-	recentConditions := filterByConditionStatus(getMostRecentConditions(mcv.Status.Conditions), metav1.ConditionTrue)
+	recentConditions := rmnutil.FilterByConditionStatus(
+		rmnutil.GetMostRecentConditions(mcv.Status.Conditions), metav1.ConditionTrue)
 
 	// want single recent Condition with correct Type; otherwise: bad path
 	switch len(recentConditions) {
