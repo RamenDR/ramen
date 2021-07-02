@@ -8,6 +8,9 @@ set -x
 set -e
 trap 'echo exit value: $?;trap - EXIT' EXIT
 
+# pre-requisites
+command -v jq
+
 mkdir -p ${HOME}/.local/bin
 PATH=${HOME}/.local/bin:${PATH}
 
@@ -159,6 +162,8 @@ spoke_add()
 	kubectl --context ${hub_cluster_name} patch managedclusters/${1} -p '{"spec":{"hubAcceptsClient":true}}' --type=merge
 	# Error from server (InternalError): Internal error occurred: failed calling webhook "managedclustermutators.admission.cluster.open-cluster-management.io": the server is currently unable to handle the request
 	set -e
+	date
+	kubectl --context ${hub_cluster_name} patch managedclusters/${1} -p $(jq -cn --arg clname "$1" '{"metadata":{"labels":{"name":$clname}}}') --type=merge
 	date
 	kubectl --context ${hub_cluster_name} wait managedclusters/${1} --for condition=ManagedClusterConditionAvailable
 	date
