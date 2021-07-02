@@ -11,5 +11,5 @@ spec:
     enabled: true
     mode: image
     snapshotSchedules:
-      - interval: 5m
+      - interval: 2m
         startTime: 14:00:00-05:00
