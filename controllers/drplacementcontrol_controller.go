@@ -45,6 +45,9 @@ import (
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
 const (
@@ -56,6 +59,26 @@ const (
 )
 
 var ErrSameHomeCluster = errorswrapper.New("new home cluster is the same as current home cluster")
+
+// prometheus metrics
+var (
+	drpLoops = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "ramen_drp_loops",
+			Help: "Number of times DRPlacementControl Reconcile loop has run",
+		},
+	)
+
+	failoverTime = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "ramen_failover_time",
+		Help: "Duration of the last failover event",
+	})
+)
+
+func init() {
+	// register custom metrics with the global Prometheus registry
+	metrics.Registry.MustRegister(drpLoops, failoverTime)
+}
 
 type PVDownloader interface {
 	DownloadPVs(ctx context.Context, r client.Reader, objStoreGetter ObjectStoreGetter,
@@ -165,6 +188,8 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	logger.Info("Entering reconcile loop")
 	defer logger.Info("Exiting reconcile loop")
+
+	drpLoops.Inc() // increment loop counter
 
 	drpc := &rmn.DRPlacementControl{}
 
@@ -505,6 +530,9 @@ func (d *DRPCInstance) runFailover() (bool, error) {
 
 	// Make sure we record the state that we are failing over
 	d.setDRState(rmn.FailingOver)
+
+	timer := prometheus.NewTimer(prometheus.ObserverFunc(failoverTime.Set))
+	defer timer.ObserveDuration() // stop timer when function returns (all cases)
 
 	// Save the current home cluster
 	curHomeCluster := ""
