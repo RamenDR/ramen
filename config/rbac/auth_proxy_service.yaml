@@ -8,7 +8,7 @@ metadata:
 spec:
   ports:
   - name: https
-    port: 8443
-    targetPort: https
+    port: 9289
+    targetPort: 9289
   selector:
     control-plane: controller-manager
