@@ -45,6 +45,9 @@ import (
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
 const (
@@ -56,6 +59,24 @@ const (
 )
 
 var ErrSameHomeCluster = errorswrapper.New("new home cluster is the same as current home cluster")
+
+// prometheus metrics
+var (
+	failoverTime = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "ramen_failover_time",
+		Help: "Duration of the last failover event",
+	})
+
+	failbackTime = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "ramen_failback_time",
+		Help: "Duration of the last failback event",
+	})
+)
+
+func init() {
+	// register custom metrics with the global Prometheus registry
+	metrics.Registry.MustRegister(failbackTime, failoverTime)
+}
 
 type PVDownloader interface {
 	DownloadPVs(ctx context.Context, r client.Reader, objStoreGetter ObjectStoreGetter,
@@ -506,15 +527,11 @@ func (d *DRPCInstance) runFailover() (bool, error) {
 	// Make sure we record the state that we are failing over
 	d.setDRState(rmn.FailingOver)
 
-	// Save the current home cluster
-	curHomeCluster := ""
-	if len(d.userPlacementRule.Status.Decisions) > 0 {
-		curHomeCluster = d.userPlacementRule.Status.Decisions[0].ClusterName
-	}
+	timer := prometheus.NewTimer(prometheus.ObserverFunc(failoverTime.Set))
+	defer timer.ObserveDuration() // stop timer when function returns (all cases)
 
-	if curHomeCluster == "" {
-		curHomeCluster = d.instance.Status.PreferredDecision.ClusterName
-	}
+	// Save the current home cluster
+	curHomeCluster := d.getCurrentHomeClusterName()
 
 	if curHomeCluster == "" {
 		d.log.Info("Invalid Failover request. Current home cluster does not exists")
@@ -539,6 +556,19 @@ func (d *DRPCInstance) runFailover() (bool, error) {
 	d.log.Info("Exiting runFailover", "state", d.instance.Status.LastKnownDRState)
 
 	return result, nil
+}
+
+func (d *DRPCInstance) getCurrentHomeClusterName() string {
+	curHomeCluster := ""
+	if len(d.userPlacementRule.Status.Decisions) > 0 {
+		curHomeCluster = d.userPlacementRule.Status.Decisions[0].ClusterName
+	}
+
+	if curHomeCluster == "" {
+		curHomeCluster = d.instance.Status.PreferredDecision.ClusterName
+	}
+
+	return curHomeCluster
 }
 
 //
@@ -585,6 +615,9 @@ func (d *DRPCInstance) runFailback() (bool, error) {
 
 	// Make sure we record the state that we are failing over
 	d.setDRState(rmn.FailingBack)
+
+	timer := prometheus.NewTimer(prometheus.ObserverFunc(failbackTime.Set))
+	defer timer.ObserveDuration() // stop timer when function returns (all cases)
 
 	// During failback, both clusters should be up and both clusters should be secondaries.
 	ensured, err := d.processVRGForSecondaries()

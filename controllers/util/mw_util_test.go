@@ -8,7 +8,21 @@ import (
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
+
+// register Prometheus metrics for testing
+func init() {
+	metrics.Registry.MustRegister(testGauge)
+}
+
+var testGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "ramen_test_gauge",
+	Help: "Test Gauge for use in MW_Util only",
+})
 
 var _ = Describe("DRPlacementControl Reconciler", func() {
 	Context("IsManifestInAppliedState checks ManifestWork with single timestamp", func() {
@@ -212,6 +226,28 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			}
 
 			Expect(rmnutil.IsManifestInAppliedState(mw)).To(Equal(false))
+		})
+	})
+
+	Context("GetMetricValueFromName tests Prometheus metrics", func() {
+		It("register custom metrics", func() {
+			// note: go_goroutines was picked because it's A) a supported type, B) does not use vector values
+			val, err := rmnutil.GetMetricValueSingle("ramen_test_gauge", dto.MetricType_GAUGE)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(val).To(Equal(0.0)) // unused: default to zero (float64)
+		})
+	})
+
+	Context("GetMetricValueFromName tests custom Prometheus metrics", func() {
+		It("test basic timer functionality", func() {
+			timer := prometheus.NewTimer(prometheus.ObserverFunc(testGauge.Set))
+			timer.ObserveDuration() // stop timer when function returns (all cases)
+
+			val, err := rmnutil.GetMetricValueSingle("ramen_test_gauge", dto.MetricType_GAUGE)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(val).NotTo(Equal(0.0)) // should be some small but non-zero value
 		})
 	})
 })
