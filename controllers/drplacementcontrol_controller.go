@@ -667,7 +667,7 @@ func (d *DRPCInstance) processVRGForSecondaries() (bool, error) {
 
 	if len(d.userPlacementRule.Status.Decisions) != 0 {
 		// clear current user PlacementRule's decision
-		err := d.updateUserPlacementRule("", "")
+		err := d.clearUserPlacementRuleStatus()
 		if err != nil {
 			return !ensured, err
 		}
@@ -810,8 +810,26 @@ func (d *DRPCInstance) updateUserPlacementRule(homeCluster, homeClusterNamespace
 		},
 	}
 
-	if !reflect.DeepEqual(newPD, d.userPlacementRule.Status.Decisions) {
-		d.userPlacementRule.Status.Decisions = newPD
+	status := plrv1.PlacementRuleStatus{
+		Decisions: newPD,
+	}
+
+	return d.updateUserPlacementRuleStatus(status)
+}
+
+func (d *DRPCInstance) clearUserPlacementRuleStatus() error {
+	d.log.Info("Updating userPlacementRule", "name", d.userPlacementRule.Name)
+
+	status := plrv1.PlacementRuleStatus{}
+
+	return d.updateUserPlacementRuleStatus(status)
+}
+
+func (d *DRPCInstance) updateUserPlacementRuleStatus(status plrv1.PlacementRuleStatus) error {
+	d.log.Info("Updating userPlacementRule", "name", d.userPlacementRule.Name)
+
+	if !reflect.DeepEqual(status, d.userPlacementRule.Status) {
+		d.userPlacementRule.Status = status
 		if err := d.reconciler.Status().Update(d.ctx, d.userPlacementRule); err != nil {
 			d.log.Error(err, "failed to update user PlacementRule")
 
