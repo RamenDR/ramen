@@ -766,5 +766,36 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				waitForCompletion()
 			})
 		})
+		When("DRAction is set to relocation", func() {
+			It("Should relocate to Primary (EastManagedCluster)", func() {
+				// ----------------------------- FAILBACK TO PRIMARY --------------------------------------
+				By("\n\n*** relocate\n\n")
+				safeToProceed = false
+
+				mcvEast := createManagedClusterView(EastManagedCluster)
+				mcvWest := createManagedClusterView(WestManagedCluster)
+
+				updateManifestWorkStatus(WestManagedCluster, "vrg", ocmworkv1.WorkProgressing)
+				updateClonedPlacementRuleStatus(userPlacementRule, drpc, EastManagedCluster)
+				setDRPCSpecExpectationTo(drpc, "", rmn.ActionRelocate, "")
+
+				updateManagedClusterViewWithVRG(mcvEast, rmn.Secondary)
+				updateManagedClusterViewWithVRG(mcvWest, rmn.Secondary)
+
+				updateManifestWorkStatus(WestManagedCluster, "vrg", ocmworkv1.WorkApplied)
+				updateManifestWorkStatus(EastManagedCluster, "pv", ocmworkv1.WorkApplied)
+				updateManifestWorkStatus(EastManagedCluster, "vrg", ocmworkv1.WorkApplied)
+
+				verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, EastManagedCluster)
+				verifyDRPCStatusPreferredClusterExpectation(rmn.Relocated)
+				verifyVRGManifestWorkCreatedAsPrimary(EastManagedCluster)
+
+				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(3)) // MWs for VRG+ROLES+PVs
+				waitForVRGMWDeletion(WestManagedCluster)
+				updateManagedClusterViewStatusAsNotFound(mcvWest)
+				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(1)) // MWs for ROLES
+				waitForCompletion()
+			})
+		})
 	})
 })

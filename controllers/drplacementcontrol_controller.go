@@ -557,13 +557,23 @@ func (d *DRPCInstance) runFailover() (bool, error) {
 func (d *DRPCInstance) runFailback() (bool, error) {
 	d.log.Info("Entering runFailback", "state", d.instance.Status.LastKnownDRState)
 
+	return d.switchToPreferredCluster(rmn.FailingBack)
+}
+
+func (d *DRPCInstance) runRelocate() (bool, error) {
+	d.log.Info("Entering runRelocate", "state", d.instance.Status.LastKnownDRState)
+
+	return d.switchToPreferredCluster(rmn.Relocating)
+}
+
+func (d *DRPCInstance) switchToPreferredCluster(drState rmn.DRState) (bool, error) {
 	const done = true
 
 	// 1. We are done if empty
 	preferredCluster, preferredClusterNamespace := d.getPreferredClusterNamespaced()
 
 	if preferredCluster == "" {
-		return !done, fmt.Errorf("failback cluster not valid")
+		return !done, fmt.Errorf("preferred cluster not valid")
 	}
 
 	if preferredCluster == d.instance.Spec.FailoverCluster {
@@ -572,7 +582,7 @@ func (d *DRPCInstance) runFailback() (bool, error) {
 	}
 
 	// We are done if already failed back
-	if d.isAlreadyFailedBack(preferredCluster) {
+	if d.hasAlreadySwitchedOver(preferredCluster) {
 		err := d.ensureCleanup()
 		if err != nil {
 			return !done, err
@@ -582,9 +592,9 @@ func (d *DRPCInstance) runFailback() (bool, error) {
 	}
 
 	// Make sure we record the state that we are failing over
-	d.setDRState(rmn.FailingBack)
+	d.setDRState(drState)
 
-	// During failback, both clusters should be up and both clusters should be secondaries.
+	// During failback or relocation, both clusters should be up and both must be secondaries before we proceed
 	ensured, err := d.processVRGForSecondaries()
 	if err != nil || !ensured {
 		return !done, err
@@ -601,16 +611,9 @@ func (d *DRPCInstance) runFailback() (bool, error) {
 	}
 
 	d.advanceToNextDRState()
-	d.log.Info("Exiting runFailback", "state", d.instance.Status.LastKnownDRState)
+	d.log.Info("Done", "Last known state", d.instance.Status.LastKnownDRState)
 
 	return result, nil
-}
-
-func (d *DRPCInstance) runRelocate() (bool, error) {
-	d.log.Info("Processing prerequisites for a relocation", "last State", d.instance.Status.LastKnownDRState)
-
-	// TODO: implement relocation
-	return true, nil
 }
 
 // runPlacementTast is a series of steps to creating, updating, and cleaning up
@@ -635,10 +638,11 @@ func (d *DRPCInstance) runPlacementTask(targetCluster, targetClusterNamespace st
 	return d.cleanup(clusterToSkip)
 }
 
-func (d *DRPCInstance) isAlreadyFailedBack(targetCluster string) bool {
+func (d *DRPCInstance) hasAlreadySwitchedOver(targetCluster string) bool {
 	if len(d.userPlacementRule.Status.Decisions) > 0 &&
 		targetCluster == d.userPlacementRule.Status.Decisions[0].ClusterName {
-		d.log.Info("Already failed back", "state", d.instance.Status.LastKnownDRState)
+		d.log.Info(fmt.Sprintf("Already switched over to cluster %s. LastKnownState %v",
+			targetCluster, d.instance.Status.LastKnownDRState))
 
 		return true
 	}
