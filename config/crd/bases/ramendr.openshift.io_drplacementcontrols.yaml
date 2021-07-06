@@ -211,6 +211,8 @@ spec:
                 - Failed-over
                 - Failing-back
                 - Failed-back
+                - Relocating
+                - Relocated
                 type: string
               lastUpdateTime:
                 format: date-time

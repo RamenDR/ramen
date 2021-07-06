@@ -79,7 +79,7 @@ type DRPlacementControlSpec struct {
 }
 
 // DRState for keeping track of the DR placement
-// +kubebuilder:validation:Enum=Initial;Failing-over;Failed-over;Failing-back;Failed-back
+// +kubebuilder:validation:Enum=Initial;Failing-over;Failed-over;Failing-back;Failed-back;Relocating;Relocated
 type DRState string
 
 // These are the valid values for DRState
