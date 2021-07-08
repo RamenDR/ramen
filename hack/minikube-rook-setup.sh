@@ -99,10 +99,38 @@ fi
 minikube ssh "sudo mkdir -p /mnt/vda1/rook/ && sudo ln -sf /mnt/vda1/rook/ /var/lib/rook" --profile="${PROFILE}"
 
 ## Create and attach an OSD disk for Ceph ##
-if [[ $(virsh pool-list | grep -wc "${POOL_NAME}") == 0 ]]; then
+pool=$(virsh pool-dumpxml $POOL_NAME)
+pool_target=${pool#*<target>}
+pool_target=${pool_target%</target>*}
+pool_target_path=${pool_target#*<path>}
+pool_target_path=${pool_target_path%</path>*}
+pool_target_path_set()
+{
+	echo "${pool%<target>*}"\<target\>"${pool_target%<path>*}"\<path\>"$IMAGE_DIR"\</path\>"${pool_target#*</path>}"\</target\>"${pool#*</target>}" >/tmp/$$
+	virsh pool-define /tmp/$$
+	rm -f /tmp/$$
+}
+pool_target_path_set_unqualified()
+{
+	test 'Pool '$POOL_NAME' XML configuration edited.' = "$(\
+	EDITOR=sed\ -i\ \''s,<path>.*</path>,<path>'$IMAGE_DIR'</path>,'\' virsh pool-edit $POOL_NAME \
+	)"
+}
+case $pool_target_path in
+$IMAGE_DIR)
+	;;
+?*)
+	pool_target_path_set
+	virsh pool-destroy $POOL_NAME
+	virsh pool-start $POOL_NAME
+	;;
+*)
 	virsh pool-create-as --name "${POOL_NAME}" --type dir --target "${IMAGE_DIR}"
-fi
-if [ ! -f "${IMAGE_DIR}/${IMAGE_NAME}-${PROFILE}" ]; then
+	;;
+esac
+unset -f pool_target_path_set pool_target_path_set_unqualified
+unset -v pool pool_target pool_target_path
+if ! virsh vol-info --pool "$POOL_NAME" "${IMAGE_NAME}-${PROFILE}"; then
 	virsh vol-create-as --pool "${POOL_NAME}" --name "${IMAGE_NAME}-${PROFILE}" --capacity 32G --format qcow2
 fi
 if [[ $(minikube ssh 'echo 1 | sudo tee /sys/bus/pci/rescan > /dev/null ; dmesg | grep virtio_blk' --profile="${PROFILE}" | grep -wc vdb) == 0 ]]; then
