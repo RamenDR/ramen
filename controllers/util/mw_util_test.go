@@ -53,7 +53,45 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			Expect(rmnutil.IsManifestInAppliedState(mw)).To(Equal(true))
 		})
 
-		It("'Applied' not present", func() {
+		It("'Available' present, Status False", func() {
+			mw := &ocmworkv1.ManifestWork{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "ramendr-vrg-roles",
+				},
+				Status: ocmworkv1.ManifestWorkStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:               ocmworkv1.WorkAvailable,
+							LastTransitionTime: metav1.Time{Time: timeMostRecent},
+							Status:             metav1.ConditionFalse,
+						},
+					},
+				},
+			}
+
+			Expect(rmnutil.IsManifestInAppliedState(mw)).To(Equal(false))
+		})
+
+		It("'Available' present, Status true", func() {
+			mw := &ocmworkv1.ManifestWork{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "ramendr-vrg-roles",
+				},
+				Status: ocmworkv1.ManifestWorkStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:               ocmworkv1.WorkAvailable,
+							LastTransitionTime: metav1.Time{Time: timeMostRecent},
+							Status:             metav1.ConditionTrue,
+						},
+					},
+				},
+			}
+
+			Expect(rmnutil.IsManifestInAppliedState(mw)).To(Equal(true))
+		})
+
+		It("'Applied' or 'Available' not present", func() {
 			mw := &ocmworkv1.ManifestWork{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "ramendr-vrg-roles",
@@ -99,6 +137,29 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			Expect(rmnutil.IsManifestInAppliedState(mw)).To(Equal(true))
 		})
 
+		It("no duplicate timestamps, 'Available' is most recent", func() {
+			mw := &ocmworkv1.ManifestWork{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "ramendr-vrg-roles",
+				},
+				Status: ocmworkv1.ManifestWorkStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:               ocmworkv1.WorkAvailable,
+							LastTransitionTime: metav1.Time{Time: timeMostRecent},
+							Status:             metav1.ConditionTrue,
+						},
+						{
+							Type:               ocmworkv1.WorkApplied,
+							LastTransitionTime: metav1.Time{Time: timeOld},
+						},
+					},
+				},
+			}
+
+			Expect(rmnutil.IsManifestInAppliedState(mw)).To(Equal(true))
+		})
+
 		It("no duplicates timestamps, 'Applied' is not most recent", func() {
 			mw := &ocmworkv1.ManifestWork{
 				ObjectMeta: metav1.ObjectMeta{
@@ -112,6 +173,28 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 						},
 						{
 							Type:               ocmworkv1.WorkApplied,
+							LastTransitionTime: metav1.Time{Time: timeOld},
+						},
+					},
+				},
+			}
+
+			Expect(rmnutil.IsManifestInAppliedState(mw)).To(Equal(false))
+		})
+
+		It("no duplicates timestamps, 'Available' is not most recent", func() {
+			mw := &ocmworkv1.ManifestWork{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "ramendr-vrg-roles",
+				},
+				Status: ocmworkv1.ManifestWorkStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:               ocmworkv1.WorkProgressing,
+							LastTransitionTime: metav1.Time{Time: timeMostRecent},
+						},
+						{
+							Type:               ocmworkv1.WorkAvailable,
 							LastTransitionTime: metav1.Time{Time: timeOld},
 						},
 					},
@@ -149,7 +232,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			Expect(rmnutil.IsManifestInAppliedState(mw)).To(Equal(true))
 		})
 
-		It("with duplicate timestamps, 'Applied' is not most recent", func() {
+		It("with duplicate timestamps, 'Applied' or 'Available' is not most recent", func() {
 			mw := &ocmworkv1.ManifestWork{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "ramendr-vrg-roles",
@@ -158,7 +241,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 					Conditions: []metav1.Condition{
 						{
 							Type:               ocmworkv1.WorkAvailable,
-							LastTransitionTime: metav1.Time{Time: timeMostRecent},
+							LastTransitionTime: metav1.Time{Time: timeOld},
 						},
 						{
 							Type:               ocmworkv1.WorkProgressing,
@@ -175,7 +258,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			Expect(rmnutil.IsManifestInAppliedState(mw)).To(Equal(false))
 		})
 
-		It("duplicate timestamps with Degraded and Applied status", func() {
+		It("duplicate timestamps with Degraded and Applied/Available status", func() {
 			mw := &ocmworkv1.ManifestWork{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "ramendr-vrg-roles",
@@ -188,6 +271,10 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 						},
 						{
 							Type:               ocmworkv1.WorkDegraded,
+							LastTransitionTime: metav1.Time{Time: timeMostRecent},
+						},
+						{
+							Type:               ocmworkv1.WorkAvailable,
 							LastTransitionTime: metav1.Time{Time: timeMostRecent},
 						},
 					},

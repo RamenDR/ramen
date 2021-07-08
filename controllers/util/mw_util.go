@@ -132,7 +132,7 @@ func IsManifestInAppliedState(mw *ocmworkv1.ManifestWork) bool {
 		recentConditions := FilterByConditionStatus(GetMostRecentConditions(conditions), metav1.ConditionTrue)
 
 		for _, condition := range recentConditions {
-			if condition.Type == ocmworkv1.WorkApplied {
+			if condition.Type == ocmworkv1.WorkApplied || condition.Type == ocmworkv1.WorkAvailable {
 				applied = true
 			} else if condition.Type == ocmworkv1.WorkDegraded {
 				degraded = true
