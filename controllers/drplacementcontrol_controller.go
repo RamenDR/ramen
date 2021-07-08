@@ -117,7 +117,6 @@ func filterMW(mw *ocmworkv1.ManifestWork) []ctrl.Request {
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	genChangedPred := predicate.GenerationChangedPredicate{}
 	mwPred := ManifestWorkPredicateFunc()
 
 	mwMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
@@ -134,7 +133,6 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&rmn.DRPlacementControl{}).
-		WithEventFilter(genChangedPred).
 		Watches(&source.Kind{Type: &ocmworkv1.ManifestWork{}}, mwMapFun, builder.WithPredicates(mwPred)).
 		Complete(r)
 }
@@ -917,9 +915,13 @@ func (d *DRPCInstance) ensureCleanup() error {
 
 	clusterToSkip := d.userPlacementRule.Status.Decisions[0].ClusterName
 
-	_, err := d.cleanup(clusterToSkip)
+	clean, err := d.cleanup(clusterToSkip)
 	if err != nil {
 		return err
+	}
+
+	if !clean {
+		return fmt.Errorf("failed to clean secondaries (%w)", err)
 	}
 
 	return nil
@@ -1001,6 +1003,10 @@ func (d *DRPCInstance) ensureVRGIsSecondary(clusterName string) bool {
 	vrg, err := d.reconciler.getVRGFromManagedCluster(d.instance.Name, d.instance.Namespace, clusterName)
 	if err != nil {
 		// VRG must have been deleted if the error is Not Found
+		if !errors.IsNotFound(err) {
+			d.log.Info("Failed to get VRG", "errorValue", err)
+		}
+
 		return errors.IsNotFound(err)
 	}
 
@@ -1216,19 +1222,23 @@ func (r *DRPlacementControlReconciler) getManagedClusterResource(
 	}
 
 	// get query results
-	recentConditions := rmnutil.FilterByConditionStatus(
-		rmnutil.GetMostRecentConditions(mcv.Status.Conditions), metav1.ConditionTrue)
+	recentConditions := rmnutil.GetMostRecentConditions(mcv.Status.Conditions)
 
 	// want single recent Condition with correct Type; otherwise: bad path
 	switch len(recentConditions) {
 	case 0:
-		err = errors.NewNotFound(schema.GroupResource{}, "failed to find a resource")
+		err = fmt.Errorf("missing ManagedClusterView conditions")
 	case 1:
-		if recentConditions[0].Type != fndv2.ConditionViewProcessing {
-			err = errors.NewNotFound(schema.GroupResource{}, "found invalid Condition.Type for ManagedClusterView results")
+		switch {
+		case recentConditions[0].Type != fndv2.ConditionViewProcessing:
+			err = fmt.Errorf("found invalid condition (%s) in ManagedClusterView", recentConditions[0].Type)
+		case recentConditions[0].Reason == fndv2.ReasonGetResourceFailed:
+			err = errors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
+		case recentConditions[0].Status != metav1.ConditionTrue:
+			err = fmt.Errorf("ManagedClusterView is not ready (reason: %s)", recentConditions[0].Reason)
 		}
 	default:
-		err = fmt.Errorf("found multiple resources with ManagedClusterView - this should not be possible")
+		err = fmt.Errorf("found multiple status conditions with ManagedClusterView")
 	}
 
 	if err != nil {

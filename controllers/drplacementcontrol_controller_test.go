@@ -235,6 +235,25 @@ func updateManagedClusterView(mcv *fndv2.ManagedClusterView, resource interface{
 	Expect(err).NotTo(HaveOccurred())
 }
 
+// take an existing ManagedClusterView and update status as NotFound
+func updateManagedClusterViewStatusAsNotFound(mcv *fndv2.ManagedClusterView) {
+	// update Status, Result fields
+	mcv.Status = fndv2.ViewStatus{
+		Conditions: []metav1.Condition{
+			{
+				Type:               fndv2.ConditionViewProcessing,
+				LastTransitionTime: metav1.Time{Time: time.Now().Local()},
+				Status:             metav1.ConditionFalse,
+				Reason:             fndv2.ReasonGetResourceFailed,
+			},
+		},
+	}
+
+	err := k8sClient.Status().Update(context.TODO(), mcv)
+
+	Expect(err).NotTo(HaveOccurred())
+}
+
 func createPlacementRule(name, namespace string) *plrv1.PlacementRule {
 	namereq := metav1.LabelSelectorRequirement{}
 	namereq.Key = "key1"
@@ -645,6 +664,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				verifyDRPCStatusPreferredClusterExpectation(rmn.FailedOver)
 				verifyVRGManifestWorkCreatedAsPrimary(WestManagedCluster)
 				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(3)) // MWs for VRG+ROLES+PVs
+				waitForVRGMWDeletion(EastManagedCluster)
+				updateManagedClusterViewStatusAsNotFound(mcvEast)
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // MW for ROLES only
 				waitForCompletion()
 			})
@@ -657,7 +678,6 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				mcvWest := createManagedClusterView(WestManagedCluster)
 				updateManagedClusterViewWithVRG(mcvWest, rmn.Primary)
 				mcvEast := createManagedClusterView(EastManagedCluster)
-				updateManagedClusterViewWithVRG(mcvEast, rmn.Secondary)
 
 				updateClonedPlacementRuleStatus(userPlacementRule, drpc, WestManagedCluster)
 				// Force the reconciler to execute by changing one of the drpc.Spec fields. We chose s3Endpoint
@@ -665,6 +685,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, WestManagedCluster)
 				verifyDRPCStatusPreferredClusterExpectation(rmn.FailedOver)
 				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(3)) // MWs for VRG+ROLES+PVs
+				waitForVRGMWDeletion(EastManagedCluster)
+				updateManagedClusterViewStatusAsNotFound(mcvEast)
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // MWs for ROLES
 				waitForCompletion()
 			})
@@ -694,6 +716,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				verifyVRGManifestWorkCreatedAsPrimary(EastManagedCluster)
 
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(3)) // MWs for VRG+ROLES+PVs
+				waitForVRGMWDeletion(WestManagedCluster)
+				updateManagedClusterViewStatusAsNotFound(mcvWest)
 				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(1)) // MWs for ROLES
 				waitForCompletion()
 			})
@@ -702,12 +726,6 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			It("Should NOT do anything", func() {
 				By("\n\n*** Failback - 2: NOOP\n\n")
 				safeToProceed = false
-
-				mcvEast := createManagedClusterView(EastManagedCluster)
-				mcvWest := createManagedClusterView(WestManagedCluster)
-
-				updateManagedClusterViewWithVRG(mcvEast, rmn.Secondary)
-				updateManagedClusterViewWithVRG(mcvWest, rmn.Secondary)
 
 				updateClonedPlacementRuleStatus(userPlacementRule, drpc, EastManagedCluster)
 				// Force the reconciler to execute by changing one of the drpc.Spec fields. It is easier to change s3Endpoint
@@ -742,6 +760,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				verifyVRGManifestWorkCreatedAsPrimary(WestManagedCluster)
 
 				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(3)) // MW for VRG+ROLES+PVs
+				waitForVRGMWDeletion(EastManagedCluster)
+				updateManagedClusterViewStatusAsNotFound(mcvEast)
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // MWs for ROLES
 				waitForCompletion()
 			})
