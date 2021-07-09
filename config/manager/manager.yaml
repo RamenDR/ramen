@@ -29,9 +29,14 @@ spec:
         - /manager
         args:
         - --leader-elect
-        image: controller
+        image: quay.io/ramendr/ramen-operator
         imagePullPolicy: IfNotPresent
         name: manager
+        ports:
+          - containerPort: 9289
+        env:
+          - name: PORT
+            value: "9289"
         securityContext:
           allowPrivilegeEscalation: false
         livenessProbe:

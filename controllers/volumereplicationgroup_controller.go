@@ -43,6 +43,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
@@ -77,6 +80,21 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) er
 		Watches(&source.Kind{Type: &corev1.PersistentVolumeClaim{}}, pvcMapFun, builder.WithPredicates(pvcPredicate)).
 		Owns(&volrep.VolumeReplication{}).
 		Complete(r)
+}
+
+// prometheus metrics
+var (
+	vrgLoops = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "ramen_vrg_loops",
+			Help: "Number of times VRG loop has run",
+		},
+	)
+)
+
+func init() {
+	// Register custom metrics with the global Prometheus registry
+	metrics.Registry.MustRegister(vrgLoops)
 }
 
 // pvcPredicateFunc sends reconcile requests for create and delete events.
@@ -246,6 +264,8 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	log.Info("Entering reconcile loop")
 
 	defer log.Info("Exiting reconcile loop")
+
+	vrgLoops.Inc() // increment dummy loop
 
 	v := VRGInstance{
 		reconciler: r,
