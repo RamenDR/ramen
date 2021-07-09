@@ -2,32 +2,9 @@
 # shellcheck disable=1090,2046,2086
 set -x
 set -e
-trap 'set -- ${?}; trap - EXIT; eval ${exit_stack}; echo exit status: ${1}' EXIT
-trap 'trap - ABRT' ABRT
-trap 'trap - QUIT' QUIT
-trap 'trap - TERM' TERM
-trap 'trap - INT' INT
-trap 'trap - HUP' HUP
-exit_stack_push()
-{
-	{ set +x; } 2>/dev/null
-	exit_stack=${*}\;${exit_stack}
-	set -x
-}
-exit_stack_push unset -v exit_stack
-exit_stack_push unset -f exit_stack_push
-exit_stack_pop()
-{
-	{ set +x; } 2>/dev/null
-	IFS=\; read -r x exit_stack <<-a
-	${exit_stack}
-	a
-	eval set -x; ${x}
-	{ set +x; } 2>/dev/null
-	unset -v x
-	set -x
-}
-exit_stack_push unset -f exit_stack_pop
+ramen_hack_directory_path_name=$(dirname $0)
+. $ramen_hack_directory_path_name/exit_stack.sh
+exit_stack_push unset -v ramen_hack_directory_path_name
 rook_ceph_deploy()
 {
 	PROFILE=${2} ${1}/minikube-rook-setup.sh create
@@ -95,7 +72,6 @@ ramen_deploy()
 	make -C ${1} deploy IMG=${ramen_image_name_colon_tag}
 	kube_context_set_undo
 	kubectl --context ${2} -n ramen-system wait deployments --all --for condition=available --timeout 60s
-	kubectl --context ${hub_cluster_name} label managedclusters/${2} name=${2} --overwrite
 	cat <<-a | kubectl --context ${2} apply -f -
 	apiVersion: replication.storage.openshift.io/v1alpha1
 	kind: VolumeReplicationClass
@@ -112,7 +88,6 @@ exit_stack_push unset -f ramen_deploy
 ramen_undeploy()
 {
 	kubectl --context ${2} delete volumereplicationclass/volume-rep-class
-	kubectl --context ${hub_cluster_name} label managedclusters/${2} name-
 	kube_context_set ${2}
 	make -C ${1} undeploy
 	kube_context_set_undo
@@ -234,8 +209,6 @@ application_sample_undeploy()
 	ramen_samples_branch_checkout_undo
 }
 exit_stack_push unset -f application_sample_undeploy
-ramen_hack_directory_path_name=$(dirname ${0})
-exit_stack_push unset -v ramen_hack_directory_path_name
 ramen_directory_path_name=${ramen_hack_directory_path_name}/..
 exit_stack_push unset -v ramen_directory_path_name
 hub_cluster_name=${hub_cluster_name:-hub}

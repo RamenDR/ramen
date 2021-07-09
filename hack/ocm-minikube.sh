@@ -6,25 +6,27 @@
 
 set -x
 set -e
-trap 'echo exit value: $?;trap - EXIT' EXIT
-
-# pre-requisites
-command -v jq
+ramen_hack_directory_path_name=$(dirname $0)
+# shellcheck source=./exit_stack.sh
+. $ramen_hack_directory_path_name/exit_stack.sh
 
 mkdir -p ${HOME}/.local/bin
 PATH=${HOME}/.local/bin:${PATH}
 
-ramen_hack_directory_path_name=$(dirname ${0})
 ${ramen_hack_directory_path_name}/minikube-install.sh ${HOME}/.local/bin
 # 1.11 wait support
 # 1.19 certificates.k8s.io/v1 https://github.com/kubernetes/kubernetes/pull/91685
-${ramen_hack_directory_path_name}/kubectl-install.sh ${HOME}/.local/bin 1 19
+# 1.21 kustomize v4.0.5 https://github.com/kubernetes-sigs/kustomize#kubectl-integration
+${ramen_hack_directory_path_name}/kubectl-install.sh ${HOME}/.local/bin 1 21
 ${ramen_hack_directory_path_name}/kustomize-install.sh ${HOME}/.local/bin
 # shellcheck source=./until_true_or_n.sh
 . ${ramen_hack_directory_path_name}/until_true_or_n.sh
 # TODO registration-operator go version minimum determine programatically
 # shellcheck source=./go-install.sh
 . ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local 1.15.2; unset -f go_install
+# shellcheck source=./git-checkout.sh
+. $ramen_hack_directory_path_name/git-checkout.sh
+exit_stack_push git_checkout_unset
 unset -v ramen_hack_directory_path_name
 
 minikube_start_options=--driver=kvm2
@@ -54,29 +56,46 @@ if ! command -v virsh; then
 	esac
 fi
 
-ocm_minikube_checkout()
+ocm_registration_operator_patch_old_undo()
 {
-	set +e
-	git clone https://github.com/ShyamsundarR/ocm-minikube
-	# fatal: destination path 'ocm-minikube' already exists and is not an empty directory.
-	set -e
-	git --git-dir ocm-minikube/.git --work-tree ocm-minikube checkout main
-	git --git-dir ocm-minikube/.git fetch https://github.com/ShyamsundarR/ocm-minikube main:shyam-main
-	git --git-dir ocm-minikube/.git --work-tree ocm-minikube checkout -
-	git --git-dir ocm-minikube/.git --work-tree ocm-minikube checkout shyam-main
+	git_checkout $1 --\ Makefile
 }
+exit_stack_push unset -f ocm_registration_operator_patch_old_undo
+ocm_registration_operator_patch_apply()
+{
+	cat <<'a' | git apply --directory $1 $2 -
+diff --git a/Makefile b/Makefile
+index fcf9775..58d7a44 100644
+--- a/Makefile
++++ b/Makefile
+@@ -118,7 +118,7 @@ deploy-spoke-operator: ensure-kustomize
+ 	$(KUSTOMIZE) build deploy/klusterlet/config | $(KUBECTL) apply -f -
+ 
+ apply-spoke-cr: bootstrap-secret
+-	$(KUSTOMIZE) build deploy/klusterlet/config/samples | $(SED_CMD) -e "s,quay.io/open-cluster-management/registration,$(REGISTRATION_IMAGE)," -e "s,quay.io/open-cluster-management/work,$(WORK_IMAGE)," | $(KUBECTL) apply -f -
++	$(KUSTOMIZE) build deploy/klusterlet/config/samples | $(SED_CMD) -e "s,cluster1,$(MANAGED_CLUSTER)," -e "s,quay.io/open-cluster-management/registration,$(REGISTRATION_IMAGE)," -e "s,quay.io/open-cluster-management/work,$(WORK_IMAGE)," | $(KUBECTL) apply -f -
+ 
+ clean-hub-cr:
+ 	$(KUBECTL) delete -k deploy/cluster-manager/config/samples --ignore-not-found
+a
+}
+exit_stack_push unset -f ocm_registration_operator_patch_apply
 ocm_registration_operator_checkout()
 {
 	set -- registration-operator
-	set +e
-	git clone https://github.com/open-cluster-management/${1}
-	# fatal: destination path 'registration-operator' already exists and is not an empty directory.
-	set -e
-	git --git-dir ${1}/.git --work-tree ${1} checkout release-2.3
-	# managed cluster names other than cluster1 require
-	git --git-dir ${1}/.git --work-tree ${1} reset --hard f3b0287
-	git apply --directory ${1} ocm-minikube/${1}.diff
+	git_clone_and_checkout https://github.com/open-cluster-management $1 release-2.3 c723e19
+	exit_stack_push git_checkout_undo $1
+	ocm_registration_operator_patch_old_undo $1
+	ocm_registration_operator_patch_apply $1
+	exit_stack_push ocm_registration_operator_patch_apply $1 --reverse
 }
+exit_stack_push unset -f ocm_registration_operator_checkout
+ocm_registration_operator_checkout_undo()
+{
+	exit_stack_pop
+	exit_stack_pop
+}
+exit_stack_push unset -f ocm_registration_operator_checkout_undo
 case ${NAME} in
 "Ubuntu")
 	ocm_registration_operator_make_arguments=GO_REQUIRED_MIN_VERSION:=
@@ -86,14 +105,11 @@ ocm_registration_operator_deploy_hub()
 {
 	kubectl --context ${hub_cluster_name} apply -f https://raw.githubusercontent.com/kubernetes/cluster-registry/master/cluster-registry-crd.yaml
 	kubectl config use-context ${hub_cluster_name}
-	set +e
-	make -C registration-operator deploy-hub ${ocm_registration_operator_make_arguments} #OLM_VERSION=latest
-	# FATA[0000] Failed to run packagemanifests: create catalog: error creating catalog source: catalogsources.operators.coreos.com "cluster-manager-catalog" already exists
-	set -e
+	ocm_registration_operator_checkout
+	make -C registration-operator deploy-hub $ocm_registration_operator_make_arguments
+	ocm_registration_operator_checkout_undo
 	date
-	kubectl --context ${hub_cluster_name} -n olm                     wait deployments --all --for condition=available --timeout 1m
-	date
-	kubectl --context ${hub_cluster_name} -n open-cluster-management wait deployments --all --for condition=available
+	kubectl --context $hub_cluster_name -n open-cluster-management wait deployments/cluster-manager --for condition=available
 	date
 	# https://github.com/kubernetes/kubernetes/issues/83242
 	until_true_or_n 90 kubectl --context ${hub_cluster_name} -n open-cluster-management-hub wait deployments --all --for condition=available --timeout 0
@@ -101,10 +117,12 @@ ocm_registration_operator_deploy_hub()
 ocm_registration_operator_undeploy_hub()
 {
 	kubectl config use-context ${hub_cluster_name}
+	ocm_registration_operator_checkout
 	set +e
-	make -C registration-operator clean-hub ${ocm_registration_operator_make_arguments}
+	make -C registration-operator clean-hub-cr clean-hub-operator $ocm_registration_operator_make_arguments
 	# error: unable to recognize "deploy/cluster-manager/config/samples/operator_open-cluster-management_clustermanagers.cr.yaml": no matches for kind "ClusterManager" in version "operator.open-cluster-management.io/v1"
 	set -e
+	ocm_registration_operator_checkout_undo
 }
 application_sample_0_deploy()
 {
@@ -137,25 +155,23 @@ application_sample_0_test()
 	application_sample_0_deploy ${1}
 	application_sample_0_undeploy ${1}
 }
-spoke_add()
+ocm_registration_operator_deploy_spoke()
 {
 	kubectl config use-context ${1}
-	set +e
+	ocm_registration_operator_checkout
 	MANAGED_CLUSTER=${1}\
 	HUB_KUBECONFIG=${HUB_KUBECONFIG}\
 	make -C registration-operator deploy-spoke ${ocm_registration_operator_make_arguments}
-	# FATA[0000] Failed to run packagemanifests: create catalog: error creating catalog source: catalogsources.operators.coreos.com "klusterlet-catalog" already exists
-	set -e
-
+	kubectl --context $1 apply -f registration-operator/vendor/github.com/open-cluster-management/api/work/v1/0000_00_work.open-cluster-management.io_manifestworks.crd.yaml
+	ocm_registration_operator_checkout_undo
 	date
-	kubectl --context ${1} -n open-cluster-management wait deployments --all --for condition=available
+	kubectl --context $1 -n open-cluster-management wait deployments/klusterlet --for condition=available
 	date
 	# https://github.com/kubernetes/kubernetes/issues/83242
 	until_true_or_n 90 kubectl --context ${1} -n open-cluster-management-agent wait deployments/klusterlet-registration-agent --for condition=available --timeout 0
 
 	# hub register managed cluster
 	until_true_or_n 30 kubectl --context ${hub_cluster_name} get managedclusters/${1}
-	kubectl --context ${1} apply -f registration-operator/vendor/github.com/open-cluster-management/api/work/v1/0000_00_work.open-cluster-management.io_manifestworks.crd.yaml
 	set +e
 	kubectl --context ${hub_cluster_name} certificate approve $(kubectl --context ${hub_cluster_name} get csr --field-selector spec.signerName=kubernetes.io/kube-apiserver-client --selector open-cluster-management.io/cluster-name=${1} -oname)
 	# error: one or more CSRs must be specified as <name> or -f <filename>
@@ -163,78 +179,166 @@ spoke_add()
 	# Error from server (InternalError): Internal error occurred: failed calling webhook "managedclustermutators.admission.cluster.open-cluster-management.io": the server is currently unable to handle the request
 	set -e
 	date
-	kubectl --context ${hub_cluster_name} patch managedclusters/${1} -p $(jq -cn --arg clname "$1" '{"metadata":{"labels":{"name":$clname}}}') --type=merge
-	date
 	kubectl --context ${hub_cluster_name} wait managedclusters/${1} --for condition=ManagedClusterConditionAvailable
 	date
-	kubectl --context ${1} -n open-cluster-management-agent wait deployments --all --for condition=available --timeout 60s
+	kubectl --context $1 -n open-cluster-management-agent wait deployments/klusterlet-work-agent --for condition=available --timeout 90s
 	date
 	#application_sample_0_test ${1}
 }
+exit_stack_push unset -f ocm_registration_operator_deploy_spoke
 ocm_registration_operator_undeploy_spoke()
 {
 	kubectl config use-context ${1}
+	ocm_registration_operator_checkout
 	set +e
-	make -C registration-operator clean-spoke ${ocm_registration_operator_make_arguments}
+	make -C registration-operator clean-spoke-cr clean-spoke-operator $ocm_registration_operator_make_arguments
 	# error: unable to recognize "deploy/klusterlet/config/samples/operator_open-cluster-management_klusterlets.cr.yaml": no matches for kind "Klusterlet" in version "operator.open-cluster-management.io/v1"
 	set -e
+	ocm_registration_operator_checkout_undo
 }
+ocm_foundation_operator_kustomization_directory()
+{
+	echo https://github.com/open-cluster-management/multicloud-operators-foundation/deploy/foundation/$1?ref=b5df50deb87618e8c6057637705e94a58b5a19da
+}
+exit_stack_push unset -f ocm_foundation_operator_kustomization_directory
+ocm_foundation_operator_kubectl_hub()
+{
+	kubectl --context $hub_cluster_name $1 -k $(ocm_foundation_operator_kustomization_directory hub)
+}
+exit_stack_push unset -f ocm_foundation_operator_kubectl_hub
+ocm_foundation_operator_kubectl_spoke()
+{
+	set -- $1 $2 /tmp/$USER/open-cluster-management/foundation/klusterlet/$1
+	mkdir -p $3
+	cat <<-a >$3/kustomization.yaml
+	resources:
+	  - $(ocm_foundation_operator_kustomization_directory klusterlet)
+	namespace: $1
+	patchesJson6902:
+	  - target:
+	      group: work.open-cluster-management.io
+	      version: v1
+	      kind: ManifestWork
+	      name: klusterlet-addon-workmgr
+	    patch: |-
+	      - op: test
+	        path: /spec/workload/manifests/4/spec/template/spec/containers/0/args/2
+	        value: --cluster-name=cluster1
+	      - op: replace
+	        path: /spec/workload/manifests/4/spec/template/spec/containers/0/args/2
+	        value: --cluster-name=$1
+	a
+	kubectl --context $hub_cluster_name $2 -k $3
+}
+exit_stack_push unset -f ocm_foundation_operator_kubectl_spoke
+ocm_foundation_operator_deploy_hub()
+{
+	ocm_foundation_operator_kubectl_hub apply
+	kubectl --context $hub_cluster_name -n open-cluster-management wait deployments/ocm-controller --for condition=available
+}
+exit_stack_push unset -f ocm_foundation_operator_deploy_hub
+ocm_foundation_operator_undeploy_hub()
+{
+	ocm_foundation_operator_kubectl_hub delete
+	set +e
+	kubectl --context $hub_cluster_name -n open-cluster-management wait deployments/ocm-controller --for delete
+	# error: no matching resources found
+	set -e
+}
+exit_stack_push unset -f ocm_foundation_operator_undeploy_hub
+ocm_foundation_operator_deploy_spoke()
+{
+	ocm_foundation_operator_kubectl_spoke $1 apply
+	until_true_or_n 300 kubectl --context $1 -n open-cluster-management-agent wait deployments/klusterlet-addon-workmgr --for condition=available --timeout 0
+}
+exit_stack_push unset -f ocm_foundation_operator_deploy_spoke
+ocm_foundation_operator_undeploy_spoke()
+{
+	ocm_foundation_operator_kubectl_spoke $1 delete
+	set +e
+	kubectl --context $1 -n open-cluster-management-agent wait deployments/klusterlet-addon-workmgr --for delete
+	# error: no matching resources found
+	set -e
+}
+exit_stack_push unset -f ocm_foundation_operator_undeploy_spoke
 ocm_subscription_operator_checkout()
 {
 	set -- multicloud-operators-subscription
-	set +e
-	git clone https://github.com/open-cluster-management/${1}
-	# fatal: destination path 'multicloud-operators-subscription' already exists and is not an empty directory.
-	set -e
-	set +e
-	git apply --directory ${1} ocm-minikube/${1}.diff
-	# error: patch failed: Makefile:209
-	# error: Makefile: patch does not apply
-	set -e
+	git_clone_and_checkout https://github.com/open-cluster-management $1 main c48c559
+	exit_stack_push git_checkout_undo $1
 }
+exit_stack_push unset -f ocm_subscription_operator_checkout
+ocm_subscription_operator_checkout_undo()
+{
+	exit_stack_pop
+}
+exit_stack_push unset -f ocm_subscription_operator_checkout_undo
 ocm_subscription_operator_deploy_hub()
 {
 	kubectl config use-context ${hub_cluster_name}
+	ocm_subscription_operator_checkout
 	USE_VENDORIZED_BUILD_HARNESS=faked make -C multicloud-operators-subscription deploy-community-hub
+	ocm_subscription_operator_checkout_undo
 	date
 	kubectl --context ${hub_cluster_name} -n multicluster-operators wait deployments --all --for condition=available --timeout 2m
 	date
 }
+ocm_subscription_operator_deploy_spoke()
+{
+	# https://github.com/open-cluster-management-io/multicloud-operators-subscription/issues/16
+	kubectl --context $hub_cluster_name label managedclusters/$1 name=$1 --overwrite
+}
+exit_stack_push unset -f ocm_subscription_operator_deploy_spoke
+ocm_subscription_operator_undeploy_spoke()
+{
+	kubectl --context $hub_cluster_name label managedclusters/$1 name-
+}
+exit_stack_push unset -f ocm_subscription_operator_undeploy_spoke
 ocm_subscription_operator_deploy_spoke_hub()
 {
+	ocm_subscription_operator_deploy_spoke $1
 	cp -f ${HUB_KUBECONFIG} /tmp/$USER/kubeconfig
 	kubectl --context ${1} -n multicluster-operators delete secret appmgr-hub-kubeconfig --ignore-not-found
 	kubectl --context ${1} -n multicluster-operators create secret generic appmgr-hub-kubeconfig --from-file=kubeconfig=/tmp/$USER/kubeconfig
+	ocm_subscription_operator_checkout
 	mkdir -p multicloud-operators-subscription/munge-manifests
 	cp multicloud-operators-subscription/deploy/managed/operator.yaml multicloud-operators-subscription/munge-manifests/operator.yaml
 	sed -i 's/<managed cluster name>/'"${1}"'/g' multicloud-operators-subscription/munge-manifests/operator.yaml
 	sed -i 's/<managed cluster namespace>/'"${1}"'/g' multicloud-operators-subscription/munge-manifests/operator.yaml
 	sed -i '0,/name: multicluster-operators-subscription/{s/name: multicluster-operators-subscription/name: multicluster-operators-subscription-mc/}' multicloud-operators-subscription/munge-manifests/operator.yaml
 	kubectl --context ${1} apply -f multicloud-operators-subscription/munge-manifests/operator.yaml
+	ocm_subscription_operator_checkout_undo
 	date
 	kubectl --context ${1} -n multicluster-operators wait deployments --all --for condition=available
 	date
 }
 ocm_subscription_operator_deploy_spoke_nonhub()
 {
+	ocm_subscription_operator_deploy_spoke $1
 	kubectl config use-context ${1}
+	ocm_subscription_operator_checkout
 	MANAGED_CLUSTER_NAME=${1}\
 	HUB_KUBECONFIG=${HUB_KUBECONFIG}\
 	USE_VENDORIZED_BUILD_HARNESS=faked\
 	make -C multicloud-operators-subscription deploy-community-managed
+	ocm_subscription_operator_checkout_undo
 	date
 	kubectl --context ${1} -n multicluster-operators wait deployments --all --for condition=available --timeout 1m
 	date
 }
 spoke_test_deploy()
 {
+	ocm_subscription_operator_checkout
 	kubectl --context ${hub_cluster_name} apply -f multicloud-operators-subscription/examples/helmrepo-hub-channel
+	ocm_subscription_operator_checkout_undo
 	# https://github.com/kubernetes/kubernetes/issues/83242
 	until_true_or_n 60 kubectl --context ${1} wait deployments --selector app=nginx-ingress --for condition=available --timeout 0
 }
 spoke_test_undeploy()
 {
+	ocm_subscription_operator_checkout
 	kubectl --context ${hub_cluster_name} delete -f multicloud-operators-subscription/examples/helmrepo-hub-channel
+	ocm_subscription_operator_checkout_undo
 	set +e
 	kubectl --context ${1} wait deployments --selector app=nginx-ingress --for delete --timeout 1m
 	# error: no matching resources found
@@ -245,6 +349,12 @@ spoke_test()
 	spoke_test_deploy ${1}
 	spoke_test_undeploy ${1}
 }
+spoke_add()
+{
+	ocm_registration_operator_deploy_spoke $1
+	ocm_foundation_operator_deploy_spoke $1
+}
+exit_stack_push unset -f spoke_add
 spoke_add_hub()
 {
 	spoke_add ${1}
@@ -258,36 +368,85 @@ spoke_add_nonhub()
 	ocm_subscription_operator_deploy_spoke_nonhub ${1}
 	#spoke_test ${1}
 }
+ocm_application_samples_patch_old_undo()
+{
+	git_checkout $1 --\ subscriptions/book-import/placementrule.yaml\ subscriptions/book-import/subscription.yaml
+}
+exit_stack_push unset -f ocm_application_samples_patch_old_undo
+ocm_application_samples_patch_apply()
+{
+	cat <<'a' | git apply --directory $1 $2 -
+diff --git a/subscriptions/book-import/kustomization.yaml b/subscriptions/book-import/kustomization.yaml
+index 8d35d3a..11d0760 100644
+--- a/subscriptions/book-import/kustomization.yaml
++++ b/subscriptions/book-import/kustomization.yaml
+@@ -1,5 +1,4 @@
+ resources:
+ - namespace.yaml
+-- application.yaml
+ - placementrule.yaml
+-- subscription.yaml
+\ No newline at end of file
++- subscription.yaml
+diff --git a/subscriptions/book-import/placementrule.yaml b/subscriptions/book-import/placementrule.yaml
+index ec72faf..293aae9 100644
+--- a/subscriptions/book-import/placementrule.yaml
++++ b/subscriptions/book-import/placementrule.yaml
+@@ -9,7 +9,7 @@ metadata:
+ spec:
+   clusterSelector:
+     matchLabels:
+-      'usage': 'development'
++      'usage': 'test'
+   clusterConditions:
+     - type: ManagedClusterConditionAvailable
+       status: "True"
+\ No newline at end of file
+diff --git a/subscriptions/book-import/subscription.yaml b/subscriptions/book-import/subscription.yaml
+index 69fcb6f..affcc9c 100644
+--- a/subscriptions/book-import/subscription.yaml
++++ b/subscriptions/book-import/subscription.yaml
+@@ -3,8 +3,8 @@ apiVersion: apps.open-cluster-management.io/v1
+ kind: Subscription
+ metadata:
+   annotations:
+-    apps.open-cluster-management.io/git-branch: master
+-    apps.open-cluster-management.io/git-path: book-import/app
++    apps.open-cluster-management.io/github-branch: main
++    apps.open-cluster-management.io/github-path: book-import
+   labels:
+     app: book-import
+   name: book-import
+a
+}
+exit_stack_push unset -f ocm_application_samples_patch_apply
 ocm_application_samples_checkout()
 {
 	set -- application-samples
-	set +e
-	git clone https://github.com/open-cluster-management/${1}
-	# fatal: destination path 'application-samples' already exists and is not an empty directory.
-	set -e
-	set +e
-	git apply --directory ${1} ocm-minikube/${1}.diff
-	# error: patch failed: subscriptions/book-import/placementrule.yaml:9
-	# error: subscriptions/book-import/placementrule.yaml: patch does not apply
-	# error: patch failed: subscriptions/book-import/subscription.yaml:3
-	# error: subscriptions/book-import/subscription.yaml: patch does not apply
-	set -e
+	git_clone_and_checkout https://github.com/open-cluster-management $1 main 65853af
+	exit_stack_push git_checkout_undo $1
+	ocm_application_samples_patch_old_undo $1
+	ocm_application_samples_patch_apply $1
+	exit_stack_push ocm_application_samples_patch_apply $1 --reverse
 }
+exit_stack_push unset -f ocm_application_samples_checkout
+ocm_application_samples_checkout_undo()
+{
+	exit_stack_pop
+	exit_stack_pop
+}
+exit_stack_push unset -f ocm_application_samples_checkout_undo
 application_sample_deploy()
 {
 	kubectl --context ${hub_cluster_name} apply -k application-samples/subscriptions/channel
 	kubectl --context ${hub_cluster_name} label managedclusters/${1} usage=test --overwrite
-	set +e
 	kubectl --context ${hub_cluster_name} apply -k application-samples/subscriptions/book-import
-	# Error from server (InternalError): error when creating "subscriptions/book-import": Internal error occurred: failed calling webhook "applications.apps.open-cluster-management.webhook": Post "https://multicluster-operators-application-svc.multicluster-operators.svc:443/app-validate?timeout=10s": dial tcp 10.106.210.84:443: connect: connection refused
-	set -e
 	# https://github.com/kubernetes/kubernetes/issues/83242
 	until_true_or_n 30 kubectl --context ${1} -n book-import wait deployments --all --for condition=available --timeout 0
 }
 application_sample_undeploy()
 {
-	kubectl --context ${hub_cluster_name} delete -k application-samples/subscriptions/book-import --ignore-not-found
-	# Error from server (NotFound): error when deleting "application-samples/subscriptions/book-import": applications.app.k8s.io "book-import" not found
+	kubectl --context ${hub_cluster_name} delete -k application-samples/subscriptions/book-import
 	date
 	set +e
 	kubectl --context ${1} -n book-import wait pods --all --for delete --timeout 1m
@@ -304,6 +463,7 @@ application_sample_test()
 	ocm_application_samples_checkout
 	application_sample_deploy ${1}
 	application_sample_undeploy ${1}
+	ocm_application_samples_checkout_undo
 }
 hub_cluster_name=${hub_cluster_name:-hub}
 spoke_cluster_names=${spoke_cluster_names:-${hub_cluster_name}\ cluster1}
@@ -314,14 +474,19 @@ for cluster_name in ${spoke_cluster_names}; do
 		spoke_cluster_names_nonhub=${spoke_cluster_names_nonhub}\ ${cluster_name}
 	fi
 done
+for_each()
+{
+	for x in $1; do
+		eval $2 $x
+	done; unset -v x
+}
+exit_stack_push unset -f for_each
 for command in "${@:-deploy}"; do
         case ${command} in
         deploy)
 		minikube start ${minikube_start_options} --profile=${hub_cluster_name} --cpus=4
-		ocm_minikube_checkout
-		ocm_registration_operator_checkout
 		ocm_registration_operator_deploy_hub
-		ocm_subscription_operator_checkout
+		ocm_foundation_operator_deploy_hub
 		ocm_subscription_operator_deploy_hub
 		mkdir -p /tmp/$USER
 		HUB_KUBECONFIG=/tmp/$USER/${hub_cluster_name}-config
@@ -344,10 +509,21 @@ for command in "${@:-deploy}"; do
 	ocm_registration_operator_undeploy_hub)
 		ocm_registration_operator_undeploy_hub
 		;;
+	foundation_operator_deploy)
+		ocm_foundation_operator_deploy_hub
+		for_each "$spoke_cluster_names" ocm_foundation_operator_deploy_spoke
+		;;
+	foundation_operator_undeploy)
+		for_each "$spoke_cluster_names" ocm_foundation_operator_undeploy_spoke
+		ocm_foundation_operator_undeploy_hub
+		;;
 	undeploy)
 		for cluster_name in ${spoke_cluster_names_nonhub} ${spoke_cluster_names_hub}; do
+			ocm_subscription_operator_undeploy_spoke $cluster_name
+			ocm_foundation_operator_undeploy_spoke $cluster_name
 			ocm_registration_operator_undeploy_spoke ${cluster_name}
 		done; unset -v cluster_name
+		ocm_foundation_operator_undeploy_hub
 		ocm_registration_operator_undeploy_hub
 		;;
 	delete)
@@ -364,10 +540,8 @@ unset -v hub_cluster_name
 unset -f application_sample_test
 unset -f application_sample_undeploy
 unset -f application_sample_deploy
-unset -f ocm_application_samples_checkout
 unset -f spoke_add_nonhub
 unset -f spoke_add_hub
-unset -f spoke_add
 unset -f spoke_test
 unset -f spoke_test_undeploy
 unset -f spoke_test_deploy
@@ -377,12 +551,11 @@ unset -f application_sample_0_deploy
 unset -f ocm_subscription_operator_deploy_spoke_nonhub
 unset -f ocm_subscription_operator_deploy_spoke_hub
 unset -f ocm_subscription_operator_deploy_hub
-unset -f ocm_subscription_operator_checkout
 unset -f ocm_registration_operator_undeploy_spoke
 unset -f ocm_registration_operator_undeploy_hub
 unset -f ocm_registration_operator_deploy_hub
 unset -v ocm_registration_operator_make_arguments
-unset -f ocm_registration_operator_checkout
-unset -f ocm_minikube_checkout
 unset -f until_true_or_n
 unset -v minikube_start_options
+git_branch_delete_force ocm-minikube shyam-main
+git_branch_delete registration-operator release-2.3
