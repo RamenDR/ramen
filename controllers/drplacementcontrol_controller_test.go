@@ -251,8 +251,21 @@ func updateManagedClusterViewStatusAsNotFound(mcv *fndv2.ManagedClusterView) {
 	}
 
 	err := k8sClient.Status().Update(context.TODO(), mcv)
-
 	Expect(err).NotTo(HaveOccurred())
+
+	mcvLatest := &fndv2.ManagedClusterView{}
+	mcvLookupKey := types.NamespacedName{
+		Name:      mcv.Name,
+		Namespace: mcv.Namespace,
+	}
+
+	Eventually(func() bool {
+		err := k8sClient.Get(context.TODO(), mcvLookupKey, mcvLatest)
+
+		return err == nil && len(mcvLatest.Status.Conditions) > 0 &&
+			mcvLatest.Status.Conditions[0].Reason == fndv2.ReasonGetResourceFailed
+	}, timeout, interval).Should(BeTrue(),
+		fmt.Sprintf("failed to wait for MCV.status.condition to change (%v)", mcvLatest))
 }
 
 func createPlacementRule(name, namespace string) *plrv1.PlacementRule {
@@ -599,7 +612,8 @@ func verifyUserPlacementRuleDecision(name, namespace, homeCluster string) {
 	Eventually(func() bool {
 		err := k8sClient.Get(context.TODO(), usrPlRuleLookupKey, usrPlRule)
 
-		return err == nil && usrPlRule.Status.Decisions[0].ClusterName == homeCluster
+		return err == nil && len(usrPlRule.Status.Decisions) > 0 &&
+			usrPlRule.Status.Decisions[0].ClusterName == homeCluster
 	}, timeout, interval).Should(BeTrue())
 
 	Expect(usrPlRule.ObjectMeta.Annotations[rmnutil.DRPCNameAnnotation]).Should(Equal(DRPCName))
@@ -640,7 +654,7 @@ func verifyDRPCStatusPreferredClusterExpectation(drState rmn.DRState) {
 		}
 
 		return false
-	}, timeout, interval).Should(BeTrue(), fmt.Sprintf("failed waiting for an updated DRPC. DRState %v", drState))
+	}, timeout, interval).Should(BeTrue(), fmt.Sprintf("failed waiting for an updated DRPC. State %v", drState))
 
 	Expect(updatedDRPC.Status.PreferredDecision.ClusterName).Should(Equal(EastManagedCluster))
 	Expect(updatedDRPC.Status.LastKnownDRState).Should(Equal(drState))
@@ -737,6 +751,9 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				mcvEast := createManagedClusterView(EastManagedCluster)
 				mcvWest := createManagedClusterView(WestManagedCluster)
 
+				updateManagedClusterViewWithVRG(mcvEast, rmn.Secondary)
+				updateManagedClusterViewWithVRG(mcvWest, rmn.Secondary)
+
 				updateManifestWorkStatus(WestManagedCluster, "vrg", ocmworkv1.WorkProgressing)
 				updateClonedPlacementRuleStatus(userPlacementRule, drpc, EastManagedCluster)
 				setDRPCSpecExpectationTo(drpc, "", rmn.ActionFailback, "")
@@ -753,6 +770,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(4)) // MWs for VRG+ROLES+PVs
 				waitForVRGMWDeletion(WestManagedCluster)
+
 				updateManagedClusterViewStatusAsNotFound(mcvWest)
 				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(2)) // MWs for ROLES
 				waitForCompletion()
@@ -763,12 +781,18 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				By("\n\n*** Failback - 2: NOOP\n\n")
 				safeToProceed = false
 
+				mcvEast := createManagedClusterView(EastManagedCluster)
+				mcvWest := createManagedClusterView(WestManagedCluster)
+
 				updateClonedPlacementRuleStatus(userPlacementRule, drpc, EastManagedCluster)
 				// Force the reconciler to execute by changing one of the drpc.Spec fields. It is easier to change s3Endpoint
 				setDRPCSpecExpectationTo(drpc, "path/to/s3Endpoint", rmn.ActionFailback, "")
+				updateManagedClusterViewWithVRG(mcvEast, rmn.Secondary)
+				updateManagedClusterViewWithVRG(mcvWest, rmn.Secondary)
 				verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, EastManagedCluster)
 				verifyDRPCStatusPreferredClusterExpectation(rmn.FailedBack)
 				waitForVRGMWDeletion(WestManagedCluster)
+				updateManagedClusterViewStatusAsNotFound(mcvWest)
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(4)) // MWs for VRG+ROLES+PVs
 				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(2)) // MWs for ROLES
 				waitForCompletion()
