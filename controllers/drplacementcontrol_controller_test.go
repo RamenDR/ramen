@@ -707,7 +707,6 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				updateManagedClusterViewWithVRG(mcvEast, rmn.Secondary)
 				updateManagedClusterViewWithVRG(mcvWest, rmn.Secondary)
 
-				updateManifestWorkStatus(WestManagedCluster, "vrg", ocmworkv1.WorkApplied)
 				updateManifestWorkStatus(EastManagedCluster, "pv", ocmworkv1.WorkApplied)
 				updateManifestWorkStatus(EastManagedCluster, "vrg", ocmworkv1.WorkApplied)
 
@@ -782,7 +781,6 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				updateManagedClusterViewWithVRG(mcvEast, rmn.Secondary)
 				updateManagedClusterViewWithVRG(mcvWest, rmn.Secondary)
 
-				updateManifestWorkStatus(WestManagedCluster, "vrg", ocmworkv1.WorkApplied)
 				updateManifestWorkStatus(EastManagedCluster, "pv", ocmworkv1.WorkApplied)
 				updateManifestWorkStatus(EastManagedCluster, "vrg", ocmworkv1.WorkApplied)
 
