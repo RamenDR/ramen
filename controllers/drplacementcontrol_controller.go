@@ -50,9 +50,6 @@ import (
 const (
 	// Ramen scheduler
 	RamenScheduler string = "ramen"
-
-	// Label for VRG to indicate whether to delete it or not
-	Deleting string = "deleting"
 )
 
 var ErrSameHomeCluster = errorswrapper.New("new home cluster is the same as current home cluster")
@@ -115,6 +112,45 @@ func filterMW(mw *ocmworkv1.ManifestWork) []ctrl.Request {
 	}
 }
 
+func ManagedClusterViewPredicateFunc() predicate.Funcs {
+	mcvPredicate := predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			log := ctrl.Log.WithName("MCV")
+
+			oldMCV, ok := e.ObjectOld.DeepCopyObject().(*fndv2.ManagedClusterView)
+			if !ok {
+				log.Info("Failed to deep copy older MCV")
+
+				return false
+			}
+			newMCV, ok := e.ObjectNew.DeepCopyObject().(*fndv2.ManagedClusterView)
+			if !ok {
+				log.Info("Failed to deep copy newer MCV")
+
+				return false
+			}
+
+			log.Info(fmt.Sprintf("Update event for MCV %s/%s: oldStatus %+v, newStatus %+v",
+				oldMCV.Name, oldMCV.Namespace, oldMCV.Status, newMCV.Status))
+
+			return !reflect.DeepEqual(oldMCV.Status, newMCV.Status)
+		},
+	}
+
+	return mcvPredicate
+}
+
+func filterMCV(mcv *fndv2.ManagedClusterView) []ctrl.Request {
+	return []ctrl.Request{
+		reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      mcv.Annotations[rmnutil.DRPCNameAnnotation],
+				Namespace: mcv.Annotations[rmnutil.DRPCNamespaceAnnotation],
+			},
+		},
+	}
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	mwPred := ManifestWorkPredicateFunc()
@@ -131,9 +167,23 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		return filterMW(mw)
 	}))
 
+	mcvPred := ManagedClusterViewPredicateFunc()
+
+	mcvMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
+		mcv, ok := obj.(*fndv2.ManagedClusterView)
+		if !ok {
+			ctrl.Log.Info("ManagedClusterView map function received non-MCV resource")
+
+			return []reconcile.Request{}
+		}
+
+		return filterMCV(mcv)
+	}))
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&rmn.DRPlacementControl{}).
 		Watches(&source.Kind{Type: &ocmworkv1.ManifestWork{}}, mwMapFun, builder.WithPredicates(mwPred)).
+		Watches(&source.Kind{Type: &fndv2.ManagedClusterView{}}, mcvMapFun, builder.WithPredicates(mcvPred)).
 		Complete(r)
 }
 
@@ -197,13 +247,22 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	requeue := d.startProcessing()
-	if !requeue {
-		r.Callback(d.instance.Name)
-	}
-
 	logger.Info("Finished processing", "Requeue?", requeue)
 
-	return ctrl.Result{Requeue: requeue}, nil
+	if !requeue {
+		r.Callback(d.instance.Name)
+
+		return ctrl.Result{}, nil
+	}
+
+	if d.mcvRequestInProgress {
+		duration := d.getRequeueDuration()
+		logger.Info(fmt.Sprintf("Requeing after %v", duration))
+
+		return reconcile.Result{RequeueAfter: duration}, nil
+	}
+
+	return ctrl.Result{Requeue: true}, nil
 }
 
 func (r *DRPlacementControlReconciler) getPlacementRules(ctx context.Context,
@@ -370,14 +429,15 @@ func (r *DRPlacementControlReconciler) addClusterPeersToPlacementRule(ctx contex
 }
 
 type DRPCInstance struct {
-	reconciler        *DRPlacementControlReconciler
-	ctx               context.Context
-	log               logr.Logger
-	instance          *rmn.DRPlacementControl
-	needStatusUpdate  bool
-	userPlacementRule *plrv1.PlacementRule
-	drpcPlacementRule *plrv1.PlacementRule
-	mwu               rmnutil.MWUtil
+	reconciler           *DRPlacementControlReconciler
+	ctx                  context.Context
+	log                  logr.Logger
+	instance             *rmn.DRPlacementControl
+	needStatusUpdate     bool
+	mcvRequestInProgress bool
+	userPlacementRule    *plrv1.PlacementRule
+	drpcPlacementRule    *plrv1.PlacementRule
+	mwu                  rmnutil.MWUtil
 }
 
 func (d *DRPCInstance) startProcessing() bool {
@@ -387,7 +447,7 @@ func (d *DRPCInstance) startProcessing() bool {
 
 	done, err := d.processPlacement()
 	if err != nil {
-		d.log.Info("Failed to process placement", "error", err)
+		d.log.Info("Process placement", "error", err)
 
 		return requeue
 	}
@@ -492,7 +552,7 @@ func (d *DRPCInstance) runFailover() (bool, error) {
 		if d.instance.Spec.FailoverCluster == d.userPlacementRule.Status.Decisions[0].ClusterName {
 			d.log.Info("Already failed over", "state", d.instance.Status.LastKnownDRState)
 
-			err := d.ensureCleanup()
+			err := d.ensureCleanup(d.instance.Spec.FailoverCluster)
 			if err != nil {
 				return !done, err
 			}
@@ -583,7 +643,7 @@ func (d *DRPCInstance) switchToPreferredCluster(drState rmn.DRState) (bool, erro
 
 	// We are done if already failed back
 	if d.hasAlreadySwitchedOver(preferredCluster) {
-		err := d.ensureCleanup()
+		err := d.ensureCleanup(preferredCluster)
 		if err != nil {
 			return !done, err
 		}
@@ -716,6 +776,10 @@ func (r *DRPlacementControlReconciler) getVRGFromManagedCluster(
 	mcvMeta := metav1.ObjectMeta{
 		Name:      BuildManagedClusterViewName(resourceName, resourceNamespace, "vrg"),
 		Namespace: managedCluster,
+		Annotations: map[string]string{
+			rmnutil.DRPCNameAnnotation:      resourceName,
+			rmnutil.DRPCNamespaceAnnotation: resourceNamespace,
+		},
 	}
 
 	mcvViewscope := fndv2.ViewScope{
@@ -792,15 +856,36 @@ func (d *DRPCInstance) cleanup(skipCluster string) (bool, error) {
 			continue
 		}
 
-		mwDeleted, err := d.ensureOldVRGMWOnClusterDeleted(cluster.Name)
+		// If VRG hasn't been deleted, then make sure that the MW for it is deleted and
+		// return and wait
+		mwDeleted, err := d.ensureVRGManifestWorkOnClusterDeleted(cluster.Name)
+		if err != nil {
+			return false, nil
+		}
+
+		if !mwDeleted {
+			return false, nil
+		}
+
+		d.log.Info("MW has been deleted. Check the VRG")
+
+		vrgDeleted, err := d.ensureVRGOnClusterDeleted(cluster.Name)
 		if err != nil {
 			d.log.Error(err, "failed to ensure that the VRG MW is deleted")
 
 			return false, err
 		}
 
-		if !mwDeleted {
+		if !vrgDeleted {
+			d.log.Info("VRG has not been deleted yet", "cluster", cluster.Name)
+
 			return false, nil
+		}
+
+		// MW is deleted, VRG is deleted, so we no longer need MCV for the VRG
+		err = d.deleteManagedClusterView(cluster.Name)
+		if err != nil {
+			return false, err
 		}
 	}
 
@@ -919,14 +1004,8 @@ func (d *DRPCInstance) isVRGPrimary(mw *ocmworkv1.ManifestWork) (bool, error) {
 	return (vrg.Spec.ReplicationState == rmn.Primary), nil
 }
 
-func (d *DRPCInstance) ensureCleanup() error {
+func (d *DRPCInstance) ensureCleanup(clusterToSkip string) error {
 	d.log.Info("ensure cleanup on secondaries")
-
-	if len(d.userPlacementRule.Status.Decisions) == 0 {
-		return nil
-	}
-
-	clusterToSkip := d.userPlacementRule.Status.Decisions[0].ClusterName
 
 	clean, err := d.cleanup(clusterToSkip)
 	if err != nil {
@@ -934,7 +1013,7 @@ func (d *DRPCInstance) ensureCleanup() error {
 	}
 
 	if !clean {
-		return fmt.Errorf("failed to clean secondaries (%w)", err)
+		return fmt.Errorf("failed to clean secondaries")
 	}
 
 	return nil
@@ -951,8 +1030,8 @@ func (d *DRPCInstance) cleanupPVForRestore(pv *corev1.PersistentVolume) {
 	}
 }
 
-func (d *DRPCInstance) ensureOldVRGMWOnClusterDeleted(clusterName string) (bool, error) {
-	d.log.Info("Ensuring that previous cluster VRG MW is deleted for ", "cluster", clusterName)
+func (d *DRPCInstance) ensureVRGOnClusterDeleted(clusterName string) (bool, error) {
+	d.log.Info("Ensuring VRG for the previous cluster is deleted", "cluster", clusterName)
 
 	const done = true
 
@@ -962,6 +1041,7 @@ func (d *DRPCInstance) ensureOldVRGMWOnClusterDeleted(clusterName string) (bool,
 	err := d.reconciler.Get(d.ctx, types.NamespacedName{Name: mwName, Namespace: clusterName}, mw)
 	if err != nil {
 		if errors.IsNotFound(err) {
+			d.log.Info("MW has been Deleted. Ensure VRG deleted as well", "cluster", clusterName)
 			// the MW is gone.  Check the VRG if it is deleted
 			if d.ensureVRGDeleted(clusterName) {
 				return done, nil
@@ -974,19 +1054,37 @@ func (d *DRPCInstance) ensureOldVRGMWOnClusterDeleted(clusterName string) (bool,
 	}
 
 	d.log.Info("VRG ManifestWork exists", "name", mw.Name, "clusterName", clusterName)
-	// The VRG's MW exists. That most likely means that the VRG Object in the managed cluster exists as well. That also
-	// means that we either didn't attempt to set the VRG to secondary, or the MangedCluster may not be reachable.
-	// In either cases, we have to make sure that the VRG for the MW was set to secondary (if it is not, then set it) OR
-	// the MW has not been applied yet. In that later case, we will just need return DONE and we will wait for the
-	// MW status state to change to 'Applied' in order to proceed with deleting the MW, which causes the VRG to be deleted.
+
+	return !done, nil
+}
+
+func (d *DRPCInstance) ensureVRGManifestWorkOnClusterDeleted(clusterName string) (bool, error) {
+	d.log.Info("Ensuring that MW for the VRG is deleted", "cluster", clusterName)
+
+	const done = true
+
+	mwName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
+	mw := &ocmworkv1.ManifestWork{}
+
+	err := d.reconciler.Get(d.ctx, types.NamespacedName{Name: mwName, Namespace: clusterName}, mw)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return done, nil
+		}
+
+		return !done, fmt.Errorf("failed to retrieve ManifestWork (%w)", err)
+	}
+
+	// We have to make sure that the VRG for the MW was set to secondary,
 	updated, err := d.hasVRGStateBeenUpdatedToSecondary(clusterName)
 	if err != nil {
 		return !done, fmt.Errorf("failed to check whether VRG replication state has been updated to secondary (%w)", err)
 	}
 
+	// If it is not set to secondary, then update it
 	if !updated {
 		err = d.updateVRGStateToSecondary(clusterName)
-		// in either case, we need to wait for the MW to go to applied state
+		// We need to wait for the MW to go to applied state
 		return !done, err
 	}
 
@@ -1003,8 +1101,11 @@ func (d *DRPCInstance) ensureOldVRGMWOnClusterDeleted(clusterName string) (bool,
 		if err != nil {
 			return !done, err
 		}
+
+		return done, nil
 	}
 
+	d.log.Info("Request not complete yet", "cluster", clusterName)
 	// IF we get here, either the VRG has not transitioned to secondary (yet) or delete didn't succeed. In either cases,
 	// we need to make sure that the VRG object is deleted. IOW, we still have to wait
 	return !done, nil
@@ -1013,14 +1114,22 @@ func (d *DRPCInstance) ensureOldVRGMWOnClusterDeleted(clusterName string) (bool,
 func (d *DRPCInstance) ensureVRGIsSecondary(clusterName string) bool {
 	d.log.Info(fmt.Sprintf("Ensure VRG %s is secondary on cluster %s", d.instance.Name, clusterName))
 
+	d.mcvRequestInProgress = false
+
 	vrg, err := d.reconciler.getVRGFromManagedCluster(d.instance.Name, d.instance.Namespace, clusterName)
 	if err != nil {
-		// VRG must have been deleted if the error is Not Found
+		// VRG must have been deleted if the error is NotFound
 		if !errors.IsNotFound(err) {
 			d.log.Info("Failed to get VRG", "errorValue", err)
 		}
 
-		return errors.IsNotFound(err)
+		if errors.IsNotFound(err) {
+			return true // ensured
+		}
+
+		d.mcvRequestInProgress = true
+
+		return false
 	}
 
 	if vrg.Status.State != rmn.SecondaryState {
@@ -1034,9 +1143,22 @@ func (d *DRPCInstance) ensureVRGIsSecondary(clusterName string) bool {
 }
 
 func (d *DRPCInstance) ensureVRGDeleted(clusterName string) bool {
-	_, err := d.reconciler.getVRGFromManagedCluster(d.instance.Name, d.instance.Namespace, clusterName)
-	// We only accept a NOT FOUND error status
-	return errors.IsNotFound(err)
+	d.mcvRequestInProgress = false
+
+	vrg, err := d.reconciler.getVRGFromManagedCluster(d.instance.Name, d.instance.Namespace, clusterName)
+	if err != nil {
+		d.log.Info("Failed to get VRG using MCV", "error", err)
+		// Only NotFound error is accepted
+		if errors.IsNotFound(err) {
+			return true // ensured
+		}
+
+		d.mcvRequestInProgress = true
+	}
+
+	d.log.Info(fmt.Sprintf("Got VRG using MCV -- %v", vrg))
+
+	return false
 }
 
 func (d *DRPCInstance) deleteManifestWorks(clusterName string) error {
@@ -1063,6 +1185,27 @@ func (d *DRPCInstance) deleteManifestWorks(clusterName string) error {
 	// TO KEEP IT CLEAN, SHOULD WE???
 	//
 	return nil
+}
+
+func (d *DRPCInstance) deleteManagedClusterView(clusterName string) error {
+	mcvName := BuildManagedClusterViewName(d.instance.Name, d.instance.Namespace, "vrg")
+
+	d.log.Info("Delete ManagedClusterView from", "namespace", clusterName, "name", mcvName)
+
+	mcv := &fndv2.ManagedClusterView{}
+
+	err := d.reconciler.Client.Get(d.ctx, types.NamespacedName{Name: mcvName, Namespace: clusterName}, mcv)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+
+		return fmt.Errorf("failed to retrieve ManagedClusterView for type: %s. Error: %w", mcvName, err)
+	}
+
+	d.log.Info("Deleting ManagedClusterView", "name", mcv.Name, "namespace", mcv.Namespace)
+
+	return d.reconciler.Client.Delete(d.ctx, mcv)
 }
 
 func (d *DRPCInstance) restorePVFromBackup(homeCluster string) error {
@@ -1244,6 +1387,7 @@ func (r *DRPlacementControlReconciler) getManagedClusterResource(
 	// get query results
 	recentConditions := rmnutil.GetMostRecentConditions(mcv.Status.Conditions)
 
+	r.Log.Info(fmt.Sprintf("MCV recent condtions: %v", recentConditions))
 	// want single recent Condition with correct Type; otherwise: bad path
 	switch len(recentConditions) {
 	case 0:
@@ -1294,6 +1438,7 @@ func (r *DRPlacementControlReconciler) getOrCreateManagedClusterView(
 	err := r.Get(context.TODO(), types.NamespacedName{Name: meta.Name, Namespace: meta.Namespace}, mcv)
 	if err != nil {
 		if errors.IsNotFound(err) {
+			r.Log.Info("Creating ManagedClusterView", "mcv", mcv)
 			err = r.Create(context.TODO(), mcv)
 		}
 
@@ -1372,4 +1517,29 @@ func (d *DRPCInstance) setDRState(nextState rmn.DRState) {
 		d.instance.Status.LastKnownDRState = nextState
 		d.needStatusUpdate = true
 	}
+}
+
+func (d *DRPCInstance) getRequeueDuration() time.Duration {
+	d.log.Info("Getting requeue duration", "last known DR state", d.instance.Status.LastKnownDRState)
+
+	const (
+		failoverRequeueDelay = 5
+		failbackRequeueDelay = 2
+	)
+
+	duration := time.Second // 1s
+
+	switch d.instance.Status.LastKnownDRState {
+	case rmn.FailingOver:
+		duration = time.Minute * failoverRequeueDelay
+	case rmn.FailingBack:
+	case rmn.Relocating:
+		duration = time.Second * failbackRequeueDelay
+	case rmn.Initial:
+	case rmn.FailedOver:
+	case rmn.FailedBack:
+	case rmn.Relocated:
+	}
+
+	return duration
 }
