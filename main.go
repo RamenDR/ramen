@@ -20,13 +20,12 @@ import (
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+
 	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
 	spokeClusterV1 "github.com/open-cluster-management/api/cluster/v1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
-	subv1 "github.com/open-cluster-management/multicloud-operators-subscription/pkg/apis/apps/v1"
 	fndv2 "github.com/tjanssen3/multicloud-operators-foundation/v2/pkg/apis/view/v1beta1"
-
 	uberzap "go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -44,18 +43,14 @@ import (
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
+
+	controllerType ramendrv1alpha1.ControllerType
 )
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(ramendrv1alpha1.AddToScheme(scheme))
-	utilruntime.Must(volrep.AddToScheme(scheme))
-	utilruntime.Must(subv1.SchemeBuilder.AddToScheme(scheme))
-	utilruntime.Must(plrv1.AddToScheme(scheme))
-	utilruntime.Must(ocmworkv1.AddToScheme(scheme))
-	utilruntime.Must(spokeClusterV1.AddToScheme(scheme))
-	utilruntime.Must(fndv2.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -79,8 +74,25 @@ func newManager() (ctrl.Manager, error) {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	options := ctrl.Options{Scheme: scheme}
+	ramenConfig := ramendrv1alpha1.RamenConfig{}
+
 	if configFile != "" {
-		options = controllers.LoadControllerConfig(configFile, scheme, setupLog)
+		options, ramenConfig = controllers.LoadControllerConfig(configFile, scheme, setupLog)
+	}
+
+	controllerType = ramenConfig.RamenControllerType
+	if !(controllerType == ramendrv1alpha1.DRManager || controllerType == ramendrv1alpha1.DROrchestrator) {
+		return nil, fmt.Errorf("invalid controller type specified (%s), should be one of [%s|%s]",
+			controllerType, ramendrv1alpha1.DROrchestrator, ramendrv1alpha1.DRManager)
+	}
+
+	if controllerType == ramendrv1alpha1.DROrchestrator {
+		utilruntime.Must(plrv1.AddToScheme(scheme))
+		utilruntime.Must(ocmworkv1.AddToScheme(scheme))
+		utilruntime.Must(spokeClusterV1.AddToScheme(scheme))
+		utilruntime.Must(fndv2.AddToScheme(scheme))
+	} else {
+		utilruntime.Must(volrep.AddToScheme(scheme))
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), options)
@@ -92,6 +104,23 @@ func newManager() (ctrl.Manager, error) {
 }
 
 func setupReconcilers(mgr ctrl.Manager) {
+	if controllerType == ramendrv1alpha1.DROrchestrator {
+		drpcReconciler := (&controllers.DRPlacementControlReconciler{
+			Client:         mgr.GetClient(),
+			Log:            ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),
+			ObjStoreGetter: controllers.S3ObjectStoreGetter(),
+			PVDownloader:   controllers.ObjectStorePVDownloader{},
+			Scheme:         mgr.GetScheme(),
+			Callback:       func(string) {},
+		})
+		if err := drpcReconciler.SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "DRPlacementControl")
+			os.Exit(1)
+		}
+
+		return
+	}
+
 	if err := (&controllers.VolumeReplicationGroupReconciler{
 		Client:         mgr.GetClient(),
 		Log:            ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
@@ -99,19 +128,6 @@ func setupReconcilers(mgr ctrl.Manager) {
 		Scheme:         mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VolumeReplicationGroup")
-		os.Exit(1)
-	}
-
-	drpcReconciler := (&controllers.DRPlacementControlReconciler{
-		Client:         mgr.GetClient(),
-		Log:            ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),
-		ObjStoreGetter: controllers.S3ObjectStoreGetter(),
-		PVDownloader:   controllers.ObjectStorePVDownloader{},
-		Scheme:         mgr.GetScheme(),
-		Callback:       func(string) {},
-	})
-	if err := drpcReconciler.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "DRPlacementControl")
 		os.Exit(1)
 	}
 }

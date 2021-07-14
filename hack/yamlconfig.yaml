@@ -4,6 +4,8 @@
 extends: default
 ignore: |
   config/**
+  config-dro/**
+  config-drm/**
   hack/test/*
 rules:
   indentation:
