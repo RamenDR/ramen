@@ -31,7 +31,7 @@ var (
 )
 
 func LoadControllerConfig(configFile string, scheme *runtime.Scheme,
-	log logr.Logger) (options ctrl.Options) {
+	log logr.Logger) (options ctrl.Options, ramenConfig ramendrv1alpha1.RamenConfig) {
 	if configFile == "" {
 		log.Info("Ramen config file not specified")
 
@@ -40,7 +40,6 @@ func LoadControllerConfig(configFile string, scheme *runtime.Scheme,
 
 	log.Info("loading Ramen config file ", "name", configFile)
 
-	ramenConfig := ramendrv1alpha1.RamenConfig{}
 	options.Scheme = scheme
 
 	options, err := options.AndFrom(
