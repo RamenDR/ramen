@@ -60,18 +60,12 @@ func init() {
 }
 
 func newManager() (ctrl.Manager, error) {
-	var (
-		metricsAddr          string
-		enableLeaderElection bool
-		probeAddr            string
-		portAddr             = 9443
-	)
+	var configFile string
 
-	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
-	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
+	flag.StringVar(&configFile, "config", "",
+		"The controller will load its initial configuration from this file. "+
+			"Omit this flag to use the default configuration values. "+
+			"Command-line flags override configuration from this file.")
 
 	opts := zap.Options{
 		Development: true,
@@ -82,17 +76,14 @@ func newManager() (ctrl.Manager, error) {
 
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
-
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
-		MetricsBindAddress:     metricsAddr,
-		Port:                   portAddr,
-		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "ae40cfcb.openshift.io",
-	})
+	options := ctrl.Options{Scheme: scheme}
+	if configFile != "" {
+		options = controllers.LoadControllerConfig(configFile, scheme, setupLog)
+	}
+
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), options)
 	if err != nil {
 		return mgr, fmt.Errorf("starting new manager failed %w", err)
 	}
