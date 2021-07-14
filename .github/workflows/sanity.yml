@@ -159,7 +159,8 @@ jobs:
     needs: [deploy-check, lint, golangci]
     if: >
       (github.event_name == 'push') &&
-      (github.ref == 'refs/heads/main')
+      (github.ref == 'refs/heads/main') &&
+      (github.repository == 'RamenDR/ramen')
     runs-on: ubuntu-20.04
     steps:
       - name: Download image artifact
