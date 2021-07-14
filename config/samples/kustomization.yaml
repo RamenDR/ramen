@@ -3,4 +3,5 @@ resources:
 - ramendr_v1alpha1_drpolicy.yaml
 - ramendr_v1alpha1_drplacementcontrol.yaml
 - ramendr_v1alpha1_volumereplicationgroup.yaml
+- ramendr_v1alpha1_ramenconfig.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples
