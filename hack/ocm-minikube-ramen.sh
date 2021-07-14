@@ -145,7 +145,6 @@ application_sample_deploy()
 	ramen_samples_branch_checkout
 	kubectl --context ${hub_cluster_name} apply -k ocm-ramen-samples/subscriptions
 	kubectl --context ${hub_cluster_name} -n ramen-samples get channels/ramen-gitops
-	kubectl --context ${hub_cluster_name} apply -f ocm-ramen-samples/mw-pv.yaml
 	mkdir -p ocm-ramen-samples/subscriptions/busybox-${USER}
 	cat <<-a >ocm-ramen-samples/subscriptions/busybox-${USER}/kustomization.yaml
 	---
@@ -203,8 +202,6 @@ application_sample_undeploy()
 	kubectl --context ${1} -n busybox-sample wait volumereplicationgroups/busybox-drpc --for delete
 	# error: no matching resources found
 	set -e
-	date
-	kubectl --context ${hub_cluster_name} delete -f ocm-ramen-samples/mw-pv.yaml
 	date
 	kubectl --context ${hub_cluster_name} delete -k ocm-ramen-samples/subscriptions
 	date
