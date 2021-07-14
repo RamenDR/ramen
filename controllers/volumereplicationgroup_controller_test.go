@@ -250,8 +250,21 @@ func (v *vrgTest) createPVCandPV(pvcCount int, claimBindInfo corev1.PersistentVo
 	for i := 0; i < pvcCount; i++ {
 		pvName := fmt.Sprintf("pv-%c-%02d", objectNameSuffix, i)
 		pvcName := fmt.Sprintf("pvc-%c-%02d", objectNameSuffix, i)
-		v.createPVC(pvcName, v.namespace, pvName, pvcLabels, claimBindInfo)
+
+		// Create PV first and then PVC. This is important to ensure that there
+		// is no race between the unit test and VRG reconciler in modifying PV.
+		// i.e. suppose VRG is already created and then this function is run,
+		// then if PVC is created first and then PV is created, the following
+		// rance happens.
+		// The moment PVC is created and its status.Phase is bound, then VRG
+		// races to modify the PV by changing its retaim policy. At the same
+		// time createPV tries to modify PV by changing its status.Phase to
+		// bound. This race causes the unit test to fail. Hence, to avoid this
+		// race, create PV first and then PVC. Until PVC is created and bound,
+		// VRG will not be able to reach PV. And by the time VRG reconciler
+		// reaches PV, it is already bound by this unit test.
 		v.createPV(pvName, pvcName, volumeBindInfo)
+		v.createPVC(pvcName, v.namespace, pvName, pvcLabels, claimBindInfo)
 		v.pvNames = append(v.pvNames, pvName)
 		v.pvcNames = append(v.pvcNames, pvcName)
 	}
