@@ -12,7 +12,7 @@ on:  # yamllint disable-line rule:truthy
     branches:
       - '*'
 env:
-  GO_VERSION: "1.15"
+  GO_VERSION: "1.16"
   # Uses image name IMG to build image in Makefile
   IMG: "quay.io/ramendr/ramen-operator:sanity"
   IMG_NAME: "quay.io/ramendr/ramen-operator"
