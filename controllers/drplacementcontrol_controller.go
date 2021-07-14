@@ -750,7 +750,18 @@ func (d *DRPCInstance) createPVManifestWorkForRestore(newPrimary string) error {
 	pvMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypePV)
 
 	existAndApplied, err := d.mwu.ManifestExistAndApplied(pvMWName, newPrimary)
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil {
+		if errors.IsNotFound(err) {
+			d.log.Info("Restore PVs", "newPrimary", newPrimary)
+
+			if err = d.restore(newPrimary); err != nil {
+				return err
+			}
+
+			// Just restored, wait for MW to generate change event and move to applied
+			return fmt.Errorf("created PV manifestwork (%s), waiting for status to be applied", pvMWName)
+		}
+
 		return fmt.Errorf("failed to check PV manifestwork status %s (%w)", pvMWName, err)
 	}
 
@@ -760,9 +771,7 @@ func (d *DRPCInstance) createPVManifestWorkForRestore(newPrimary string) error {
 		return nil
 	}
 
-	d.log.Info("Restore PVs", "newPrimary", newPrimary)
-
-	return d.restore(newPrimary)
+	return fmt.Errorf("waiting for PV manifestwork (%s) status to be applied", pvMWName)
 }
 
 func (d *DRPCInstance) restore(newHomeCluster string) error {
