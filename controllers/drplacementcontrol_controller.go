@@ -1088,6 +1088,13 @@ func (d *DRPCInstance) processVRGManifestWork(homeCluster string) error {
 			homeCluster, err)
 	}
 
+	if err := d.mwu.CreateOrUpdatePVRolesManifestWork(homeCluster); err != nil {
+		d.log.Error(err, "failed to create or update PersistentVolume Roles manifest")
+
+		return fmt.Errorf("failed to create or update PersistentVolume Roles manifest in namespace %s (%w)",
+			homeCluster, err)
+	}
+
 	if err := d.mwu.CreateOrUpdateVRGManifestWork(
 		d.instance.Name, d.instance.Namespace,
 		homeCluster, d.instance.Spec.S3Endpoint,

@@ -306,6 +306,72 @@ func (mwu *MWUtil) generateVRGClusterRoleBindingManifest() (*ocmworkv1.Manifest,
 	})
 }
 
+func (mwu *MWUtil) CreateOrUpdatePVRolesManifestWork(namespace string) error {
+	manifestWork, err := mwu.generatePVRolesManifestWork(namespace)
+	if err != nil {
+		return err
+	}
+
+	return mwu.createOrUpdateManifestWork(manifestWork, namespace)
+}
+
+func (mwu *MWUtil) generatePVRolesManifestWork(namespace string) (*ocmworkv1.ManifestWork, error) {
+	pvClusterRole, err := mwu.generatePVClusterRoleManifest()
+	if err != nil {
+		mwu.Log.Error(err, "failed to generate PersistentVolume ClusterRole manifest")
+
+		return nil, err
+	}
+
+	pvClusterRoleBinding, err := mwu.generatePVClusterRoleBindingManifest()
+	if err != nil {
+		mwu.Log.Error(err, "failed to generate PersistentVolume ClusterRoleBinding manifest")
+
+		return nil, err
+	}
+
+	manifests := []ocmworkv1.Manifest{*pvClusterRole, *pvClusterRoleBinding}
+
+	return mwu.newManifestWork(
+		"ramendr-pv-roles",
+		namespace,
+		map[string]string{},
+		manifests), nil
+}
+
+func (mwu *MWUtil) generatePVClusterRoleManifest() (*ocmworkv1.Manifest, error) {
+	return mwu.GenerateManifest(&rbacv1.ClusterRole{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:pv-edit"},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Resources: []string{"persistentvolumes"},
+				Verbs:     []string{"create", "get", "list", "update", "delete"},
+			},
+		},
+	})
+}
+
+func (mwu *MWUtil) generatePVClusterRoleBindingManifest() (*ocmworkv1.Manifest, error) {
+	return mwu.GenerateManifest(&rbacv1.ClusterRoleBinding{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:pv-edit"},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "klusterlet-work-sa",
+				Namespace: "open-cluster-management-agent",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "open-cluster-management:klusterlet-work-sa:agent:pv-edit",
+		},
+	})
+}
+
 func (mwu *MWUtil) CreateOrUpdatePVsManifestWork(
 	name string, namespace string, homeClusterName string, pvList []corev1.PersistentVolume) error {
 	mwu.Log.Info("Create manifest work for PVs", "DRPC",
