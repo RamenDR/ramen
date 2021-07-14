@@ -17,48 +17,47 @@ limitations under the License.
 package v1alpha1
 
 import (
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	cfg "sigs.k8s.io/controller-runtime/pkg/config/v1alpha1"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// RamenConfigSpec defines the desired state of RamenConfig
-type RamenConfigSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+// Definition of a S3 store profile that Ramen can use to replicate the etcd
+// cluster data of PVs.  A single S3 store profile can be used by one or more
+// VolumeReplicationGroup objects.  The name of the profile is maintained by the
+// container of this profile.
+type S3StoreProfile struct {
+	// Name of this profile
+	ProfileName string `json:"profileName"`
 
-	// Foo is an example field of RamenConfig. Edit ramenconfig_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
-}
+	// S3 compatible endpoint of this profile
+	S3CompatibleEndpoint string `json:"s3CompatibleEndpoint"`
 
-// RamenConfigStatus defines the observed state of RamenConfig
-type RamenConfigStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// S3 Region: https://docs.aws.amazon.com/general/latest/gr/rande.html
+	S3Region string `json:"s3Region,omitempty"`
+
+	// Reference to the secret that contains the S3 access key id and s3 secret
+	// access key with the keys AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
+	// respectively.
+	S3SecretRef v1.SecretReference `json:"s3SecretRef"`
 }
 
 //+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
 
-// RamenConfig is the Schema for the ramenconfigs API
+// RamenConfig is the Schema for the ramenconfig API
 type RamenConfig struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-
-	Spec   RamenConfigSpec   `json:"spec,omitempty"`
-	Status RamenConfigStatus `json:"status,omitempty"`
-}
-
-//+kubebuilder:object:root=true
-
-// RamenConfigList contains a list of RamenConfig
-type RamenConfigList struct {
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []RamenConfig `json:"items"`
+
+	// ControllerManagerConfigurationSpec returns the contfigurations for controllers
+	cfg.ControllerManagerConfigurationSpec `json:",inline"`
+
+	// Map of S3 store profiles
+	S3StoreProfiles []S3StoreProfile `json:"s3StoreProfiles,omitempty"`
 }
 
 func init() {
-	SchemeBuilder.Register(&RamenConfig{}, &RamenConfigList{})
+	SchemeBuilder.Register(&RamenConfig{})
 }
