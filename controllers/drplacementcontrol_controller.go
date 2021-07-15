@@ -315,7 +315,7 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(ctx context.Context
 	drpc *rmn.DRPlacementControl) (ctrl.Result, error) {
 	drPolicy, err := r.getDRPolicy(ctx, drpc.Spec.DRPolicyRef.Name, drpc.Spec.DRPolicyRef.Namespace)
 	if err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{}, fmt.Errorf("failed to get DRPolicy %w", err)
 	}
 
 	// Currently validation of schedule in DRPolicy is done here. When
