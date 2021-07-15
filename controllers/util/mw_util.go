@@ -489,14 +489,32 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 	return nil
 }
 
-func (mwu *MWUtil) DeletePVManifestWork(fromCluster string) error {
+func (mwu *MWUtil) DeleteManifestWorksForCluster(clusterName string) error {
+	err := mwu.deleteVRGManifestWork(clusterName)
+	if err != nil {
+		mwu.Log.Error(err, "failed to delete MW for VRG")
+
+		return fmt.Errorf("failed to delete ManifestWork for VRG in namespace %s (%w)", clusterName, err)
+	}
+
+	err = mwu.deletePVManifestWork(clusterName)
+	if err != nil {
+		mwu.Log.Error(err, "failed to delete MW for PVs")
+
+		return fmt.Errorf("failed to delete ManifestWork for PVs in namespace %s (%w)", clusterName, err)
+	}
+
+	return nil
+}
+
+func (mwu *MWUtil) deletePVManifestWork(fromCluster string) error {
 	pvMWName := mwu.BuildManifestWorkName(MWTypePV)
 	pvMWNamespace := fromCluster
 
 	return mwu.deleteManifestWork(pvMWName, pvMWNamespace)
 }
 
-func (mwu *MWUtil) DeleteVRGManifestWork(fromCluster string) error {
+func (mwu *MWUtil) deleteVRGManifestWork(fromCluster string) error {
 	vrgMWName := mwu.BuildManifestWorkName(MWTypeVRG)
 	vrgMWNamespace := fromCluster
 

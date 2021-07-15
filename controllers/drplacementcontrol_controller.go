@@ -37,6 +37,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -48,8 +49,13 @@ import (
 )
 
 const (
+	// DRPC CR finalizer
+	DRPCFinalizer string = "drpc.ramendr.openshift.io/finalizer"
+
 	// Ramen scheduler
 	RamenScheduler string = "ramen"
+
+	ClonedPlacementRuleNameFormat string = "clonedprule-%s-%s"
 )
 
 var ErrSameHomeCluster = errorswrapper.New("new home cluster is the same as current home cluster")
@@ -219,6 +225,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	err := r.Client.Get(ctx, req.NamespacedName, drpc)
 	if err != nil {
 		if errors.IsNotFound(err) {
+			logger.Info(fmt.Sprintf("DRCP object not found %v", req.NamespacedName))
 			// Request object not found, could have been deleted after reconcile request.
 			return ctrl.Result{}, nil
 		}
@@ -226,28 +233,49 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, errorswrapper.Wrap(err, "failed to get DRPC object")
 	}
 
-	drpcPlRule, userPlRule, err := r.getPlacementRules(ctx, drpc)
+	return r.reconcileDRPCInstance(ctx, drpc)
+}
+
+func (r *DRPlacementControlReconciler) reconcileDRPCInstance(ctx context.Context,
+	drpc *rmn.DRPlacementControl) (ctrl.Result, error) {
+	drPolicy, err := r.getDRPolicy(ctx, drpc.Spec.DRPolicyRef.Name, drpc.Spec.DRPolicyRef.Namespace)
 	if err != nil {
-		logger.Error(err, "failed to get PlacementRules")
+		return ctrl.Result{}, fmt.Errorf("failed to get DRPolicy %w", err)
+	}
+
+	// Check if the drpc instance is marked for deletion, which is indicated by the
+	// deletion timestamp being set.
+	if drpc.GetDeletionTimestamp() != nil {
+		return r.processDeletion(ctx, drpc)
+	}
+
+	err = r.addDRPCFinalizer(ctx, drpc)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	drpcPlRule, userPlRule, err := r.getPlacementRules(ctx, drpc, drPolicy)
+	if err != nil {
+		r.Log.Error(err, "failed to get PlacementRules")
 
 		return ctrl.Result{}, err
 	}
 
 	// Make sure that we give time to the cloned PlacementRule to run and produces decisions
-	if len(drpcPlRule.Status.Decisions) == 0 {
+	if drpcPlRule != nil && len(drpcPlRule.Status.Decisions) == 0 {
 		const initialWaitTime = 5
 
 		return ctrl.Result{RequeueAfter: time.Second * initialWaitTime}, nil
 	}
 
 	d := DRPCInstance{
-		reconciler: r, ctx: ctx, log: logger, instance: drpc, needStatusUpdate: false,
-		userPlacementRule: userPlRule, drpcPlacementRule: drpcPlRule,
-		mwu: rmnutil.MWUtil{Client: r.Client, Ctx: ctx, Log: logger, InstName: drpc.Name, InstNamespace: drpc.Namespace},
+		reconciler: r, ctx: ctx, log: r.Log, instance: drpc, needStatusUpdate: false,
+		userPlacementRule: userPlRule, drpcPlacementRule: drpcPlRule, drPolicy: drPolicy,
+		mwu: rmnutil.MWUtil{Client: r.Client, Ctx: ctx, Log: r.Log, InstName: drpc.Name, InstNamespace: drpc.Namespace},
 	}
 
 	requeue := d.startProcessing()
-	logger.Info("Finished processing", "Requeue?", requeue)
+	r.Log.Info("Finished processing", "Requeue?", requeue)
 
 	if !requeue {
 		r.Callback(d.instance.Name)
@@ -257,7 +285,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	if d.mcvRequestInProgress {
 		duration := d.getRequeueDuration()
-		logger.Info(fmt.Sprintf("Requeing after %v", duration))
+		r.Log.Info(fmt.Sprintf("Requeing after %v", duration))
 
 		return reconcile.Result{RequeueAfter: duration}, nil
 	}
@@ -265,8 +293,97 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	return ctrl.Result{Requeue: true}, nil
 }
 
+func (r *DRPlacementControlReconciler) getDRPolicy(ctx context.Context,
+	name, namespace string) (*rmn.DRPolicy, error) {
+	drPolicy := &rmn.DRPolicy{}
+
+	err := r.Client.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, drPolicy)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get DRPolicy %w", err)
+	}
+
+	return drPolicy, nil
+}
+
+func (r *DRPlacementControlReconciler) addDRPCFinalizer(ctx context.Context, drpc *rmn.DRPlacementControl) error {
+	if !controllerutil.ContainsFinalizer(drpc, DRPCFinalizer) {
+		controllerutil.AddFinalizer(drpc, DRPCFinalizer)
+
+		if err := r.Update(ctx, drpc); err != nil {
+			r.Log.Error(err, "Failed to add finalizer", "finalizer", DRPCFinalizer)
+
+			return fmt.Errorf("%w", err)
+		}
+	}
+
+	return nil
+}
+
+func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
+	drpc *rmn.DRPlacementControl) (ctrl.Result, error) {
+	r.Log.Info("Processing DRPC deletion")
+
+	if controllerutil.ContainsFinalizer(drpc, DRPCFinalizer) {
+		// Run finalization logic for dprc.
+		// If the finalization logic fails, don't remove the finalizer so
+		// that we can retry during the next reconciliation.
+		if err := r.finalizeDRPC(ctx, drpc); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// Remove DRPCFinalizer. The object will be deleted once
+		// the finalizer is removed
+		controllerutil.RemoveFinalizer(drpc, DRPCFinalizer)
+
+		err := r.Update(ctx, drpc)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to update drpc %w", err)
+		}
+
+		r.Callback(drpc.Name)
+	}
+
+	return ctrl.Result{}, nil
+}
+
+func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *rmn.DRPlacementControl) error {
+	r.Log.Info("Finalizing DRPC")
+
+	clonedPlRuleName := fmt.Sprintf(ClonedPlacementRuleNameFormat, drpc.Name, drpc.Namespace)
+	mwu := rmnutil.MWUtil{Client: r.Client, Ctx: ctx, Log: r.Log, InstName: drpc.Name, InstNamespace: drpc.Namespace}
+
+	preferredCluster := drpc.Spec.PreferredCluster
+	if preferredCluster == "" {
+		clonedPlRule, err := r.getClonedPlacementRule(ctx, clonedPlRuleName, drpc.Namespace)
+		if err != nil {
+			return fmt.Errorf("couldn't determine the preferred cluster name (%w)", err)
+		}
+
+		if len(clonedPlRule.Status.Decisions) != 0 {
+			preferredCluster = clonedPlRule.Status.Decisions[0].ClusterName
+		}
+	}
+
+	clustersToClean := []string{preferredCluster}
+	if drpc.Spec.FailoverCluster != "" {
+		clustersToClean = append(clustersToClean, drpc.Spec.FailoverCluster)
+	}
+
+	// delete manifestworks (VRG, PV, Roles)
+	for idx := range clustersToClean {
+		err := mwu.DeleteManifestWorksForCluster(clustersToClean[idx])
+		if err != nil {
+			return fmt.Errorf("%w", err)
+		}
+	}
+
+	// delete cloned placementrule
+	return r.deleteClonedPlacementRule(ctx, clonedPlRuleName, drpc.Namespace)
+}
+
 func (r *DRPlacementControlReconciler) getPlacementRules(ctx context.Context,
-	drpc *rmn.DRPlacementControl) (*plrv1.PlacementRule, *plrv1.PlacementRule, error) {
+	drpc *rmn.DRPlacementControl,
+	drPolicy *rmn.DRPolicy) (*plrv1.PlacementRule, *plrv1.PlacementRule, error) {
 	userPlRule, err := r.getUserPlacementRule(ctx, drpc)
 	if err != nil {
 		return nil, nil, err
@@ -276,9 +393,13 @@ func (r *DRPlacementControlReconciler) getPlacementRules(ctx context.Context,
 		return nil, nil, err
 	}
 
-	drpcPlRule, err := r.getOrClonePlacementRule(ctx, drpc, userPlRule)
-	if err != nil {
-		return nil, nil, err
+	var drpcPlRule *plrv1.PlacementRule
+	// create the cloned placementrule if and only if the Spec.PreferredCluster is not provided
+	if drpc.Spec.PreferredCluster == "" {
+		drpcPlRule, err = r.getOrClonePlacementRule(ctx, drpc, drPolicy, userPlRule)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
 	return drpcPlRule, userPlRule, nil
@@ -345,34 +466,45 @@ func (r *DRPlacementControlReconciler) annotatePlacementRule(ctx context.Context
 }
 
 func (r *DRPlacementControlReconciler) getOrClonePlacementRule(ctx context.Context,
-	drpc *rmn.DRPlacementControl, userPlRule *plrv1.PlacementRule) (*plrv1.PlacementRule, error) {
+	drpc *rmn.DRPlacementControl, drPolicy *rmn.DRPolicy,
+	userPlRule *plrv1.PlacementRule) (*plrv1.PlacementRule, error) {
 	r.Log.Info("Getting PlacementRule or cloning it", "placement", drpc.Spec.PlacementRef)
 
-	clonedPlRule := &plrv1.PlacementRule{}
-	clonedPlRuleName := fmt.Sprintf("%s-%s", userPlRule.Name, drpc.Name)
+	clonedPlRuleName := fmt.Sprintf(ClonedPlacementRuleNameFormat, drpc.Name, drpc.Namespace)
 
-	err := r.Client.Get(ctx, types.NamespacedName{
-		Name:      clonedPlRuleName,
-		Namespace: userPlRule.Namespace,
-	}, clonedPlRule)
+	clonedPlRule, err := r.getClonedPlacementRule(ctx, clonedPlRuleName, drpc.Namespace)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			clonedPlRule, err = r.clonePlacementRule(ctx, drpc, userPlRule, clonedPlRuleName)
+			clonedPlRule, err = r.clonePlacementRule(ctx, drPolicy, userPlRule, clonedPlRuleName)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create cloned placementrule error: %w", err)
 			}
 		} else {
 			r.Log.Error(err, "Failed to get drpc placementRule", "name", clonedPlRuleName)
 
-			return nil, fmt.Errorf("failed to get placementrule error: %w", err)
+			return nil, err
 		}
 	}
 
 	return clonedPlRule, nil
 }
 
+func (r *DRPlacementControlReconciler) getClonedPlacementRule(ctx context.Context,
+	clonedPlRuleName, namespace string) (*plrv1.PlacementRule, error) {
+	r.Log.Info("Getting cloned PlacementRule", "name", clonedPlRuleName)
+
+	clonedPlRule := &plrv1.PlacementRule{}
+
+	err := r.Client.Get(ctx, types.NamespacedName{Name: clonedPlRuleName, Namespace: namespace}, clonedPlRule)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get placementrule error: %w", err)
+	}
+
+	return clonedPlRule, nil
+}
+
 func (r *DRPlacementControlReconciler) clonePlacementRule(ctx context.Context,
-	drpc *rmn.DRPlacementControl, userPlRule *plrv1.PlacementRule,
+	drPolicy *rmn.DRPolicy, userPlRule *plrv1.PlacementRule,
 	clonedPlRuleName string) (*plrv1.PlacementRule, error) {
 	r.Log.Info("Creating a clone placementRule from", "name", userPlRule.Name)
 
@@ -384,7 +516,7 @@ func (r *DRPlacementControlReconciler) clonePlacementRule(ctx context.Context,
 	clonedPlRule.ResourceVersion = ""
 	clonedPlRule.Spec.SchedulerName = ""
 
-	err := r.addClusterPeersToPlacementRule(ctx, drpc, clonedPlRule)
+	err := r.addClusterPeersToPlacementRule(drPolicy, clonedPlRule)
 	if err != nil {
 		r.Log.Error(err, "Failed to add cluster peers to cloned placementRule", "name", clonedPlRuleName)
 
@@ -395,35 +527,44 @@ func (r *DRPlacementControlReconciler) clonePlacementRule(ctx context.Context,
 	if err != nil {
 		r.Log.Error(err, "failed to clone placement rule", "name", clonedPlRule.Name)
 
-		return nil, errorswrapper.Wrap(err, "failed to coone PlacementRule")
+		return nil, errorswrapper.Wrap(err, "failed to create PlacementRule")
 	}
 
 	return clonedPlRule, nil
 }
 
-func (r *DRPlacementControlReconciler) addClusterPeersToPlacementRule(ctx context.Context,
-	drpc *rmn.DRPlacementControl, plRule *plrv1.PlacementRule) error {
-	clPeersRef := drpc.Spec.DRPolicyRef
-	clusterPeers := &rmn.DRPolicy{}
-
-	err := r.Client.Get(ctx,
-		types.NamespacedName{Name: clPeersRef.Name}, clusterPeers)
+func (r *DRPlacementControlReconciler) deleteClonedPlacementRule(ctx context.Context,
+	name, namespace string) error {
+	plRule, err := r.getClonedPlacementRule(ctx, name, namespace)
 	if err != nil {
-		return fmt.Errorf("failed to get cluster peers using %s/%s. Error (%w)",
-			clPeersRef.Name, clPeersRef.Namespace, err)
+		return err
 	}
 
-	if len(clusterPeers.Spec.ClusterNames) == 0 {
-		return fmt.Errorf("invalid DRPolicy configuration. Name %s", clusterPeers.Name)
+	err = r.Client.Delete(ctx, plRule)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+
+		return fmt.Errorf("failed to delete cloned plRule %w", err)
 	}
 
-	for idx := range clusterPeers.Spec.ClusterNames {
+	return nil
+}
+
+func (r *DRPlacementControlReconciler) addClusterPeersToPlacementRule(
+	drPolicy *rmn.DRPolicy, plRule *plrv1.PlacementRule) error {
+	if len(drPolicy.Spec.ClusterNames) == 0 {
+		return fmt.Errorf("DRPolicy %s is missing DR clusters", drPolicy.Name)
+	}
+
+	for idx := range drPolicy.Spec.ClusterNames {
 		plRule.Spec.Clusters = append(plRule.Spec.Clusters, plrv1.GenericClusterReference{
-			Name: clusterPeers.Spec.ClusterNames[idx],
+			Name: drPolicy.Spec.ClusterNames[idx],
 		})
 	}
 
-	r.Log.Info(fmt.Sprintf("Added %v clusters to ClusterPeers %s", plRule.Spec.Clusters, clusterPeers.Name))
+	r.Log.Info(fmt.Sprintf("Added clusters %v to placementRule from DRPolicy %s", plRule.Spec.Clusters, drPolicy.Name))
 
 	return nil
 }
@@ -433,6 +574,7 @@ type DRPCInstance struct {
 	ctx                  context.Context
 	log                  logr.Logger
 	instance             *rmn.DRPlacementControl
+	drPolicy             *rmn.DRPolicy
 	needStatusUpdate     bool
 	mcvRequestInProgress bool
 	userPlacementRule    *plrv1.PlacementRule
@@ -467,7 +609,7 @@ func (d *DRPCInstance) startProcessing() bool {
 }
 
 func (d *DRPCInstance) processPlacement() (bool, error) {
-	d.log.Info("Process DRPC Placement", "name", d.drpcPlacementRule)
+	d.log.Info("Process DRPC Placement")
 
 	switch d.instance.Spec.Action {
 	case rmn.ActionFailover:
@@ -497,14 +639,14 @@ func (d *DRPCInstance) runInitialDeployment() (bool, error) {
 		homeClusterNamespace = homeCluster
 	}
 
-	if homeCluster == "" && len(d.drpcPlacementRule.Status.Decisions) != 0 {
+	if homeCluster == "" && d.drpcPlacementRule != nil && len(d.drpcPlacementRule.Status.Decisions) != 0 {
 		homeCluster = d.drpcPlacementRule.Status.Decisions[0].ClusterName
 		homeClusterNamespace = d.drpcPlacementRule.Status.Decisions[0].ClusterNamespace
 	}
 
 	if homeCluster == "" {
-		return !done, fmt.Errorf("PreferredCluster not set and unable to find home cluster in DRPCPlacementRule (%s)",
-			d.drpcPlacementRule.Name)
+		return !done, fmt.Errorf("PreferredCluster not set and unable to find home cluster in DRPCPlacementRule (%v)",
+			d.drpcPlacementRule)
 	}
 
 	// We have a home cluster
@@ -737,10 +879,10 @@ func (d *DRPCInstance) processVRGForSecondaries() (bool, error) {
 
 	failedCount := 0
 
-	for _, cluster := range d.drpcPlacementRule.Spec.Clusters {
-		err := d.updateVRGStateToSecondary(cluster.Name)
+	for _, clusterName := range d.drPolicy.Spec.ClusterNames {
+		err := d.updateVRGStateToSecondary(clusterName)
 		if err != nil {
-			d.log.Error(err, "Failed to update VRG to secondary", "cluster", cluster.Name)
+			d.log.Error(err, "Failed to update VRG to secondary", "cluster", clusterName)
 
 			failedCount++
 		}
@@ -752,9 +894,9 @@ func (d *DRPCInstance) processVRGForSecondaries() (bool, error) {
 		return !ensured, nil
 	}
 
-	for _, cluster := range d.drpcPlacementRule.Spec.Clusters {
-		if !d.ensureVRGIsSecondary(cluster.Name) {
-			d.log.Info("Still waiting for VRG to transition to secondary", "cluster", cluster.Name)
+	for _, clusterName := range d.drPolicy.Spec.ClusterNames {
+		if !d.ensureVRGIsSecondary(clusterName) {
+			d.log.Info("Still waiting for VRG to transition to secondary", "cluster", clusterName)
 
 			return !ensured, nil
 		}
@@ -858,14 +1000,14 @@ func (d *DRPCInstance) restore(newHomeCluster string) error {
 }
 
 func (d *DRPCInstance) cleanup(skipCluster string) (bool, error) {
-	for _, cluster := range d.drpcPlacementRule.Spec.Clusters {
-		if skipCluster == cluster.Name {
+	for _, clusterName := range d.drPolicy.Spec.ClusterNames {
+		if skipCluster == clusterName {
 			continue
 		}
 
 		// If VRG hasn't been deleted, then make sure that the MW for it is deleted and
 		// return and wait
-		mwDeleted, err := d.ensureVRGManifestWorkOnClusterDeleted(cluster.Name)
+		mwDeleted, err := d.ensureVRGManifestWorkOnClusterDeleted(clusterName)
 		if err != nil {
 			return false, nil
 		}
@@ -876,7 +1018,7 @@ func (d *DRPCInstance) cleanup(skipCluster string) (bool, error) {
 
 		d.log.Info("MW has been deleted. Check the VRG")
 
-		vrgDeleted, err := d.ensureVRGOnClusterDeleted(cluster.Name)
+		vrgDeleted, err := d.ensureVRGOnClusterDeleted(clusterName)
 		if err != nil {
 			d.log.Error(err, "failed to ensure that the VRG MW is deleted")
 
@@ -884,13 +1026,13 @@ func (d *DRPCInstance) cleanup(skipCluster string) (bool, error) {
 		}
 
 		if !vrgDeleted {
-			d.log.Info("VRG has not been deleted yet", "cluster", cluster.Name)
+			d.log.Info("VRG has not been deleted yet", "cluster", clusterName)
 
 			return false, nil
 		}
 
 		// MW is deleted, VRG is deleted, so we no longer need MCV for the VRG
-		err = d.deleteManagedClusterView(cluster.Name)
+		err = d.deleteManagedClusterView(clusterName)
 		if err != nil {
 			return false, err
 		}
@@ -1104,9 +1246,9 @@ func (d *DRPCInstance) ensureVRGManifestWorkOnClusterDeleted(clusterName string)
 	// d.log.Info("VRG ManifestWork is in Applied state", "name", mw.Name, "cluster", clusterName)
 
 	if d.ensureVRGIsSecondary(clusterName) {
-		err := d.deleteManifestWorks(clusterName)
+		err := d.mwu.DeleteManifestWorksForCluster(clusterName)
 		if err != nil {
-			return !done, err
+			return !done, fmt.Errorf("%w", err)
 		}
 
 		return done, nil
@@ -1166,32 +1308,6 @@ func (d *DRPCInstance) ensureVRGDeleted(clusterName string) bool {
 	d.log.Info(fmt.Sprintf("Got VRG using MCV -- %v", vrg))
 
 	return false
-}
-
-func (d *DRPCInstance) deleteManifestWorks(clusterName string) error {
-	if d.instance.Status.PreferredDecision == (plrv1.PlacementDecision{}) {
-		return nil
-	}
-
-	err := d.mwu.DeleteVRGManifestWork(clusterName)
-	if err != nil {
-		d.log.Error(err, "failed to delete MW for VRG")
-
-		return fmt.Errorf("failed to delete ManifestWork for VRG in namespace %s (%w)", clusterName, err)
-	}
-
-	err = d.mwu.DeletePVManifestWork(clusterName)
-	if err != nil {
-		d.log.Error(err, "failed to delete MW for PVs")
-
-		return fmt.Errorf("failed to delete ManifestWork for PVs in namespace %s (%w)", clusterName, err)
-	}
-
-	//
-	// NOTE: WE ARE NOT DELETING ROLES MW.  I SEE NO REASON TO DELETE THEM.
-	// TO KEEP IT CLEAN, SHOULD WE???
-	//
-	return nil
 }
 
 func (d *DRPCInstance) deleteManagedClusterView(clusterName string) error {
