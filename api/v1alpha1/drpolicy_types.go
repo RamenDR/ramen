@@ -27,6 +27,11 @@ type DRPolicySpec struct {
 
 	// Members of the DRPolicy set
 	ClusterNames []string `json:"clusterNames"`
+
+	// Name of the S3 profile in RamenConfig that should be used by this
+	// DRPolicy to store and forward PV related cluster state to the peer
+	// clusters.
+	S3ProfileName string `json:"s3ProfileName"`
 }
 
 // DRPolicyStatus defines the observed state of DRPolicy

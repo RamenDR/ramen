@@ -95,8 +95,7 @@ func FakeProgressCallback(drpcName string) {
 type FakePVDownloader struct{}
 
 func (s FakePVDownloader) DownloadPVs(ctx context.Context, r client.Reader,
-	objStoreGetter controllers.ObjectStoreGetter, s3Endpoint, s3Region string,
-	s3SecretName types.NamespacedName, callerTag string,
+	objStoreGetter controllers.ObjectStoreGetter, s3Profile, callerTag string,
 	s3Bucket string) ([]corev1.PersistentVolume, error) {
 	pv1 := corev1.PersistentVolume{
 		TypeMeta: metav1.TypeMeta{
@@ -192,8 +191,7 @@ func updateManagedClusterViewWithVRG(mcv *fndv2.ManagedClusterView, replicationS
 					"environment": "dev.AZ1",
 				},
 			},
-			S3Endpoint:   "path/to/s3Endpoint",
-			S3SecretName: "SecretName",
+			S3ProfileName: "FakeS3ProfileName",
 		},
 		Status: rmn.VolumeReplicationGroupStatus{
 			State: state,
@@ -334,8 +332,6 @@ func createDRPC(name, namespace string) *rmn.DRPlacementControl {
 					"environment": "dev.AZ1",
 				},
 			},
-			S3Endpoint:   "path/to/s3Endpoint",
-			S3SecretName: "SecretName",
 		},
 	}
 	Expect(k8sClient.Create(context.TODO(), drpc)).Should(Succeed())
@@ -344,11 +340,8 @@ func createDRPC(name, namespace string) *rmn.DRPlacementControl {
 }
 
 func setDRPCSpecExpectationTo(drpc *rmn.DRPlacementControl,
-	s3Endpoint string, action rmn.DRAction, preferredCluster string) {
+	action rmn.DRAction, preferredCluster string) {
 	latestDRPC := getLatestDRPC(drpc.Name, drpc.Namespace)
-	if s3Endpoint != "" {
-		latestDRPC.Spec.S3Endpoint = s3Endpoint
-	}
 
 	latestDRPC.Spec.Action = action
 	latestDRPC.Spec.PreferredCluster = preferredCluster
@@ -657,7 +650,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				updateManagedClusterViewWithVRG(mcvEast, rmn.Secondary)
 
 				updateClonedPlacementRuleStatus(userPlacementRule, drpc, WestManagedCluster)
-				setDRPCSpecExpectationTo(drpc, "", rmn.ActionFailover, "")
+				setDRPCSpecExpectationTo(drpc, rmn.ActionFailover, "")
 				updateManifestWorkStatus(WestManagedCluster, "pv", ocmworkv1.WorkApplied)
 				updateManifestWorkStatus(WestManagedCluster, "vrg", ocmworkv1.WorkApplied)
 				verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, WestManagedCluster)
@@ -681,7 +674,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 
 				updateClonedPlacementRuleStatus(userPlacementRule, drpc, WestManagedCluster)
 				// Force the reconciler to execute by changing one of the drpc.Spec fields. We chose s3Endpoint
-				setDRPCSpecExpectationTo(drpc, "newS3Endpoint", rmn.ActionFailover, "")
+				setDRPCSpecExpectationTo(drpc, rmn.ActionFailover, "")
 				verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, WestManagedCluster)
 				verifyDRPCStatusPreferredClusterExpectation(rmn.FailedOver)
 				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(3)) // MWs for VRG+ROLES+PVs
@@ -702,7 +695,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 
 				updateManifestWorkStatus(WestManagedCluster, "vrg", ocmworkv1.WorkProgressing)
 				updateClonedPlacementRuleStatus(userPlacementRule, drpc, EastManagedCluster)
-				setDRPCSpecExpectationTo(drpc, "", rmn.ActionFailback, "")
+				setDRPCSpecExpectationTo(drpc, rmn.ActionFailback, "")
 
 				updateManagedClusterViewWithVRG(mcvEast, rmn.Secondary)
 				updateManagedClusterViewWithVRG(mcvWest, rmn.Secondary)
@@ -728,7 +721,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 
 				updateClonedPlacementRuleStatus(userPlacementRule, drpc, EastManagedCluster)
 				// Force the reconciler to execute by changing one of the drpc.Spec fields. It is easier to change s3Endpoint
-				setDRPCSpecExpectationTo(drpc, "path/to/s3Endpoint", rmn.ActionFailback, "")
+				setDRPCSpecExpectationTo(drpc, rmn.ActionFailback, "")
 				verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, EastManagedCluster)
 				verifyDRPCStatusPreferredClusterExpectation(rmn.FailedBack)
 				waitForVRGMWDeletion(WestManagedCluster)
@@ -747,7 +740,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				mcvWest := createManagedClusterView(WestManagedCluster)
 
 				updateClonedPlacementRuleStatus(userPlacementRule, drpc, WestManagedCluster)
-				setDRPCSpecExpectationTo(drpc, "", rmn.ActionFailover, EastManagedCluster)
+				setDRPCSpecExpectationTo(drpc, rmn.ActionFailover, EastManagedCluster)
 
 				updateManagedClusterViewWithVRG(mcvEast, rmn.Secondary)
 				updateManagedClusterViewWithVRG(mcvWest, rmn.Secondary)
@@ -776,7 +769,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 
 				updateManifestWorkStatus(WestManagedCluster, "vrg", ocmworkv1.WorkProgressing)
 				updateClonedPlacementRuleStatus(userPlacementRule, drpc, EastManagedCluster)
-				setDRPCSpecExpectationTo(drpc, "", rmn.ActionRelocate, "")
+				setDRPCSpecExpectationTo(drpc, rmn.ActionRelocate, "")
 
 				updateManagedClusterViewWithVRG(mcvEast, rmn.Secondary)
 				updateManagedClusterViewWithVRG(mcvWest, rmn.Secondary)

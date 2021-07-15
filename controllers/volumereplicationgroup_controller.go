@@ -19,7 +19,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"reflect"
 
 	"github.com/go-logr/logr"
@@ -921,11 +920,10 @@ func (v *VRGInstance) undoPVRetentionForPVC(pvc corev1.PersistentVolumeClaim, lo
 // does not return an error, but logs a one-time warning.
 func (v *VRGInstance) uploadPV(pvc corev1.PersistentVolumeClaim) (err error) {
 	vrgName := v.instance.Name
-	s3Endpoint := v.instance.Spec.S3Endpoint
-	s3Region := v.instance.Spec.S3Region
+	s3ProfileName := v.instance.Spec.S3ProfileName
 	s3Bucket := constructBucketName(v.instance.Namespace, vrgName)
 
-	if err := v.validateS3Endpoint(s3Endpoint, s3Bucket); err != nil {
+	if err := v.validateS3Endpoint(s3ProfileName); err != nil {
 		if errors.IsServiceUnavailable(err) {
 			// Implies unconfigured object store: backup-less mode
 			return nil
@@ -938,17 +936,11 @@ func (v *VRGInstance) uploadPV(pvc corev1.PersistentVolumeClaim) (err error) {
 
 	objectStore, err :=
 		v.reconciler.ObjStoreGetter.objectStore(v.ctx, v.reconciler,
-			s3Endpoint,
-			s3Region,
-			types.NamespacedName{ /* secretName */
-				Name:      v.instance.Spec.S3SecretName,
-				Namespace: v.instance.Namespace,
-			},
-			vrgName, /* debugTag */
+			s3ProfileName, vrgName, /* debugTag */
 		)
 	if err != nil {
-		return fmt.Errorf("failed to get client for endpoint %s, err %w",
-			s3Endpoint, err)
+		return fmt.Errorf("failed to get client for s3Profile %s, err %w",
+			s3ProfileName, err)
 	}
 
 	pv := corev1.PersistentVolume{}
@@ -981,33 +973,27 @@ func (v *VRGInstance) uploadPV(pvc corev1.PersistentVolumeClaim) (err error) {
 // backupLessWarning is a map with VRG name as the key
 var backupLessWarning = make(map[string]bool)
 
-// If the the s3 endpoint is not set, then the VRG has been configured to run
+// If the the s3ProfileName is not set, then the VRG has been configured to run
 // in a backup-less mode to simply control VR CRs alone without backing up
-// PV k8s metadata to an object store.
-func (v *VRGInstance) validateS3Endpoint(s3Endpoint, s3Bucket string) error {
+// PV k8s metadata to a S3 object store.
+func (v *VRGInstance) validateS3Endpoint(s3ProfileName string) error {
 	vrgName := v.instance.Name
 
-	if s3Endpoint != "" {
-		_, err := url.ParseRequestURI(s3Endpoint)
-		if err != nil {
-			return fmt.Errorf("invalid spec.S3Endpoint <%s> for "+
-				"s3Bucket %s in VRG %s, %w", s3Endpoint, s3Bucket, vrgName, err)
-		}
-
+	if s3ProfileName != "" {
 		backupLessWarning[vrgName] = false // Reset backup-less warning
 
 		return nil
 	}
 
 	// No endpoint implies, backup-less mode
-	err := errors.NewServiceUnavailable("missing s3Endpoint in VRG.spec")
+	err := errors.NewServiceUnavailable("s3Profile not configured in VRG.spec")
 
 	if prevWarned := backupLessWarning[vrgName]; prevWarned {
 		// previously logged warning about backup-less mode of operation
 		return err
 	}
 
-	v.log.Info("VolumeReplicationGroup ", vrgName, " running in backup-less mode.")
+	v.log.Info("VolumeReplicationGroup ", vrgName, " is not configure to protect PV cluster state.")
 
 	backupLessWarning[vrgName] = true // Remember that an error was logged
 

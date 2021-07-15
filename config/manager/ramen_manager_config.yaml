@@ -9,4 +9,3 @@ webhook:
 leaderElection:
   leaderElect: true
   resourceName: leaderelection.ramendr.openshift.io
-#  resourceNamespace: ramen-system

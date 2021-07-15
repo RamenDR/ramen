@@ -59,8 +59,7 @@ var ErrSameHomeCluster = errorswrapper.New("new home cluster is the same as curr
 
 type PVDownloader interface {
 	DownloadPVs(ctx context.Context, r client.Reader, objStoreGetter ObjectStoreGetter,
-		s3Endpoint, s3Region string, s3SecretName types.NamespacedName,
-		callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error)
+		s3Profile string, callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error)
 }
 
 // ProgressCallback of function type
@@ -176,7 +175,20 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, errorswrapper.Wrap(err, "failed to get DRPC object")
 	}
 
-	drpcPlRule, userPlRule, err := r.getPlacementRules(ctx, drpc)
+	drPolicy := &rmn.DRPolicy{}
+
+	// Get DR Policy
+	err = r.Client.Get(ctx,
+		types.NamespacedName{
+			Name:      drpc.Spec.DRPolicyRef.Name,
+			Namespace: drpc.Spec.DRPolicyRef.Namespace,
+		},
+		drPolicy)
+	if err != nil {
+		return ctrl.Result{}, errorswrapper.Wrap(err, "failed to get DRPolicy")
+	}
+
+	drpcPlRule, userPlRule, err := r.getPlacementRules(ctx, drpc, drPolicy)
 	if err != nil {
 		logger.Error(err, "failed to get PlacementRules")
 
@@ -192,7 +204,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	d := DRPCInstance{
 		reconciler: r, ctx: ctx, log: logger, instance: drpc, needStatusUpdate: false,
-		userPlacementRule: userPlRule, drpcPlacementRule: drpcPlRule,
+		userPlacementRule: userPlRule, drpcPlacementRule: drpcPlRule, drPolicy: drPolicy,
 		mwu: rmnutil.MWUtil{Client: r.Client, Ctx: ctx, Log: logger, InstName: drpc.Name, InstNamespace: drpc.Namespace},
 	}
 
@@ -207,7 +219,8 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 }
 
 func (r *DRPlacementControlReconciler) getPlacementRules(ctx context.Context,
-	drpc *rmn.DRPlacementControl) (*plrv1.PlacementRule, *plrv1.PlacementRule, error) {
+	drpc *rmn.DRPlacementControl,
+	drPolicy *rmn.DRPolicy) (*plrv1.PlacementRule, *plrv1.PlacementRule, error) {
 	userPlRule, err := r.getUserPlacementRule(ctx, drpc)
 	if err != nil {
 		return nil, nil, err
@@ -217,7 +230,7 @@ func (r *DRPlacementControlReconciler) getPlacementRules(ctx context.Context,
 		return nil, nil, err
 	}
 
-	drpcPlRule, err := r.getOrClonePlacementRule(ctx, drpc, userPlRule)
+	drpcPlRule, err := r.getOrClonePlacementRule(ctx, drpc, drPolicy, userPlRule)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -286,7 +299,8 @@ func (r *DRPlacementControlReconciler) annotatePlacementRule(ctx context.Context
 }
 
 func (r *DRPlacementControlReconciler) getOrClonePlacementRule(ctx context.Context,
-	drpc *rmn.DRPlacementControl, userPlRule *plrv1.PlacementRule) (*plrv1.PlacementRule, error) {
+	drpc *rmn.DRPlacementControl, drPolicy *rmn.DRPolicy,
+	userPlRule *plrv1.PlacementRule) (*plrv1.PlacementRule, error) {
 	r.Log.Info("Getting PlacementRule or cloning it", "placement", drpc.Spec.PlacementRef)
 
 	clonedPlRule := &plrv1.PlacementRule{}
@@ -298,7 +312,7 @@ func (r *DRPlacementControlReconciler) getOrClonePlacementRule(ctx context.Conte
 	}, clonedPlRule)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			clonedPlRule, err = r.clonePlacementRule(ctx, drpc, userPlRule, clonedPlRuleName)
+			clonedPlRule, err = r.clonePlacementRule(ctx, drPolicy, userPlRule, clonedPlRuleName)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create cloned placementrule error: %w", err)
 			}
@@ -313,7 +327,7 @@ func (r *DRPlacementControlReconciler) getOrClonePlacementRule(ctx context.Conte
 }
 
 func (r *DRPlacementControlReconciler) clonePlacementRule(ctx context.Context,
-	drpc *rmn.DRPlacementControl, userPlRule *plrv1.PlacementRule,
+	drPolicy *rmn.DRPolicy, userPlRule *plrv1.PlacementRule,
 	clonedPlRuleName string) (*plrv1.PlacementRule, error) {
 	r.Log.Info("Creating a clone placementRule from", "name", userPlRule.Name)
 
@@ -325,7 +339,7 @@ func (r *DRPlacementControlReconciler) clonePlacementRule(ctx context.Context,
 	clonedPlRule.ResourceVersion = ""
 	clonedPlRule.Spec.SchedulerName = ""
 
-	err := r.addClusterPeersToPlacementRule(ctx, drpc, clonedPlRule)
+	err := r.addClusterPeersToPlacementRule(drPolicy, clonedPlRule)
 	if err != nil {
 		r.Log.Error(err, "Failed to add cluster peers to cloned placementRule", "name", clonedPlRuleName)
 
@@ -342,29 +356,19 @@ func (r *DRPlacementControlReconciler) clonePlacementRule(ctx context.Context,
 	return clonedPlRule, nil
 }
 
-func (r *DRPlacementControlReconciler) addClusterPeersToPlacementRule(ctx context.Context,
-	drpc *rmn.DRPlacementControl, plRule *plrv1.PlacementRule) error {
-	clPeersRef := drpc.Spec.DRPolicyRef
-	clusterPeers := &rmn.DRPolicy{}
-
-	err := r.Client.Get(ctx,
-		types.NamespacedName{Name: clPeersRef.Name}, clusterPeers)
-	if err != nil {
-		return fmt.Errorf("failed to get cluster peers using %s/%s. Error (%w)",
-			clPeersRef.Name, clPeersRef.Namespace, err)
+func (r *DRPlacementControlReconciler) addClusterPeersToPlacementRule(
+	drPolicy *rmn.DRPolicy, plRule *plrv1.PlacementRule) error {
+	if len(drPolicy.Spec.ClusterNames) == 0 {
+		return fmt.Errorf("DRPolicy %s is missing DR clusters", drPolicy.Name)
 	}
 
-	if len(clusterPeers.Spec.ClusterNames) == 0 {
-		return fmt.Errorf("invalid DRPolicy configuration. Name %s", clusterPeers.Name)
-	}
-
-	for idx := range clusterPeers.Spec.ClusterNames {
+	for idx := range drPolicy.Spec.ClusterNames {
 		plRule.Spec.Clusters = append(plRule.Spec.Clusters, plrv1.GenericClusterReference{
-			Name: clusterPeers.Spec.ClusterNames[idx],
+			Name: drPolicy.Spec.ClusterNames[idx],
 		})
 	}
 
-	r.Log.Info(fmt.Sprintf("Added %v clusters to ClusterPeers %s", plRule.Spec.Clusters, clusterPeers.Name))
+	r.Log.Info(fmt.Sprintf("Added clusters %v to placementRule from DRPolicy %s", plRule.Spec.Clusters, drPolicy.Name))
 
 	return nil
 }
@@ -374,6 +378,7 @@ type DRPCInstance struct {
 	ctx               context.Context
 	log               logr.Logger
 	instance          *rmn.DRPlacementControl
+	drPolicy          *rmn.DRPolicy
 	needStatusUpdate  bool
 	userPlacementRule *plrv1.PlacementRule
 	drpcPlacementRule *plrv1.PlacementRule
@@ -1090,9 +1095,8 @@ func (d *DRPCInstance) processVRGManifestWork(homeCluster string) error {
 
 	if err := d.mwu.CreateOrUpdateVRGManifestWork(
 		d.instance.Name, d.instance.Namespace,
-		homeCluster, d.instance.Spec.S3Endpoint,
-		d.instance.Spec.S3Region,
-		d.instance.Spec.S3SecretName, d.instance.Spec.PVCSelector); err != nil {
+		homeCluster, d.drPolicy.Spec.S3ProfileName,
+		d.instance.Spec.PVCSelector); err != nil {
 		d.log.Error(err, "failed to create or update VolumeReplicationGroup manifest")
 
 		return fmt.Errorf("failed to create or update VolumeReplicationGroup manifest in namespace %s (%w)", homeCluster, err)
@@ -1294,24 +1298,19 @@ func (r *DRPlacementControlReconciler) getOrCreateManagedClusterView(
 }
 
 func (d *DRPCInstance) listPVsFromS3Store() ([]corev1.PersistentVolume, error) {
-	s3SecretLookupKey := types.NamespacedName{
-		Name:      d.instance.Spec.S3SecretName,
-		Namespace: d.instance.Namespace,
-	}
-
 	s3Bucket := constructBucketName(d.instance.Namespace, d.instance.Name)
 
 	return d.reconciler.PVDownloader.DownloadPVs(
-		d.ctx, d.reconciler.Client, d.reconciler.ObjStoreGetter, d.instance.Spec.S3Endpoint, d.instance.Spec.S3Region,
-		s3SecretLookupKey, d.instance.Name, s3Bucket)
+		d.ctx, d.reconciler.Client, d.reconciler.ObjStoreGetter, d.drPolicy.Spec.S3ProfileName,
+		d.instance.Name, s3Bucket)
 }
 
 type ObjectStorePVDownloader struct{}
 
 func (s ObjectStorePVDownloader) DownloadPVs(ctx context.Context, r client.Reader,
-	objStoreGetter ObjectStoreGetter, s3Endpoint, s3Region string, s3SecretName types.NamespacedName,
+	objStoreGetter ObjectStoreGetter, s3Profile string,
 	callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error) {
-	objectStore, err := objStoreGetter.objectStore(ctx, r, s3Endpoint, s3Region, s3SecretName, callerTag)
+	objectStore, err := objStoreGetter.objectStore(ctx, r, s3Profile, callerTag)
 	if err != nil {
 		return nil, fmt.Errorf("error when downloading PVs, err %w", err)
 	}
