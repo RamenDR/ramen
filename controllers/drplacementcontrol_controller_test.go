@@ -261,6 +261,9 @@ func updateManagedClusterViewStatusAsNotFound(mcv *fndv2.ManagedClusterView) {
 
 	Eventually(func() bool {
 		err := k8sClient.Get(context.TODO(), mcvLookupKey, mcvLatest)
+		if errors.IsNotFound(err) {
+			return true
+		}
 
 		return err == nil && len(mcvLatest.Status.Conditions) > 0 &&
 			mcvLatest.Status.Conditions[0].Reason == fndv2.ReasonGetResourceFailed
