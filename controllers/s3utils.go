@@ -86,8 +86,7 @@ import (
 type ObjectStoreGetter interface {
 	// objectStore returns an object that satisfies objectStorer interface
 	objectStore(ctx context.Context, r client.Reader,
-		endpoint, region string, secretName types.NamespacedName,
-		callerTag string) (objectStorer, error)
+		s3Profile string, callerTag string) (objectStorer, error)
 }
 
 type objectStorer interface {
@@ -120,40 +119,44 @@ type s3ObjectStoreGetter struct{}
 
 // objectStore returns an S3 object store that satisfies
 // the objectStorer interface,  by either creating a new one or
-// returning a cached object store for the given endpoint.
+// returning a cached object store for the given s3 profile.
 // - Return error if endpoint or secret is not configured, or if
 //   client session creation fails
 func (s3ObjectStoreGetter) objectStore(ctx context.Context,
-	r client.Reader, endpoint, region string, secretName types.NamespacedName,
+	r client.Reader, s3ProfileName string,
 	callerTag string) (objectStorer, error) {
-	if endpoint == "" {
-		return nil, fmt.Errorf("s3 endpoint has not been configured; tag:%s",
-			callerTag)
+	s3StoreProfile, err := getRamenConfigS3StoreProfile(s3ProfileName)
+	if err != nil {
+		return nil, fmt.Errorf("error %w in profile %s; caller %s",
+			err, s3ProfileName, callerTag)
 	}
 
 	// Use cached connection, if one exists
-	if s3ObjectStore, ok := s3ConnectionMap[endpoint]; ok {
+	s3Endpoint := s3StoreProfile.S3CompatibleEndpoint
+	if s3ObjectStore, ok := s3ConnectionMap[s3Endpoint]; ok {
 		return s3ObjectStore, nil
 	}
 
-	accessID, secretAccessKey, err := getS3Secret(ctx, r, secretName)
+	accessID, secretAccessKey, err := getS3Secret(ctx, r, s3StoreProfile.S3SecretRef)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get secret %v; tag %s, %w",
-			secretName, callerTag, err)
+		return nil, fmt.Errorf("failed to get secret %v; caller %s, %w",
+			s3StoreProfile.S3SecretRef, callerTag, err)
 	}
+
+	s3Region := s3StoreProfile.S3Region
 
 	// Create an S3 client session
 	s3Session, err := session.NewSession(&aws.Config{
 		Credentials: credentials.NewStaticCredentials(string(accessID),
 			string(secretAccessKey), ""),
-		Endpoint:         aws.String(endpoint),
-		Region:           aws.String(region),
+		Endpoint:         aws.String(s3Endpoint),
+		Region:           aws.String(s3Region),
 		DisableSSL:       aws.Bool(true),
 		S3ForcePathStyle: aws.Bool(true),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create new session for %s; tag %s, %w",
-			endpoint, callerTag, err)
+		return nil, fmt.Errorf("failed to create new session for %s; caller %s, %w",
+			s3Endpoint, callerTag, err)
 	}
 
 	// Create a client session
@@ -169,21 +172,23 @@ func (s3ObjectStoreGetter) objectStore(ctx context.Context,
 		client:     s3Client,
 		uploader:   s3Uploader,
 		downloader: s3Downloader,
-		endpoint:   endpoint,
+		s3Endpoint: s3Endpoint,
 		callerTag:  callerTag,
 	}
-	s3ConnectionMap[endpoint] = s3Conn
+	s3ConnectionMap[s3Endpoint] = s3Conn
 
 	return s3Conn, nil
 }
 
 func getS3Secret(ctx context.Context, r client.Reader,
-	secretName types.NamespacedName) (
+	secretRef corev1.SecretReference) (
 	s3AccessID, s3SecretAccessKey []byte, err error) {
 	secret := corev1.Secret{}
-	if err := r.Get(ctx, secretName, &secret); err != nil {
+	if err := r.Get(ctx,
+		types.NamespacedName{Namespace: secretRef.Namespace, Name: secretRef.Name},
+		&secret); err != nil {
 		return nil, nil, fmt.Errorf("failed to get secret %v, %w",
-			secretName, err)
+			secretRef, err)
 	}
 
 	s3AccessID = secret.Data["AWS_ACCESS_KEY_ID"]
@@ -197,18 +202,18 @@ type s3ObjectStore struct {
 	client     *s3.S3
 	uploader   *s3manager.Uploader
 	downloader *s3manager.Downloader
-	endpoint   string
+	s3Endpoint string
 	callerTag  string
 }
 
-// S3 object store map with endpoint as the key to serve as cache
+// S3 object store map with s3Endpoint as the key to serve as cache
 var s3ConnectionMap = map[string]*s3ObjectStore{}
 
 // Create a bucket; don't return error if the bucket exists already
 func (s *s3ObjectStore) createBucket(bucket string) (err error) {
 	if bucket == "" {
 		return fmt.Errorf("empty bucket name for "+
-			"endpoint %s tag %s", s.endpoint, s.callerTag)
+			"endpoint %s caller %s", s.s3Endpoint, s.callerTag)
 	}
 
 	defer func() {
@@ -311,7 +316,7 @@ func (s *s3ObjectStore) verifyPVUpload(bucket string, pvKeySuffix string,
 	if err != nil {
 		return fmt.Errorf("unable to downloadObject for caller %s from "+
 			"endpoint %s bucket %s key %s, %w",
-			s.callerTag, s.endpoint, bucket, key, err)
+			s.callerTag, s.s3Endpoint, bucket, key, err)
 	}
 
 	if !reflect.DeepEqual(verifyPV, downloadedPV) {
@@ -355,7 +360,7 @@ func (s *s3ObjectStore) downloadTypedObjects(bucket string,
 	if err != nil {
 		return nil, fmt.Errorf("unable to listKeys of type %v "+
 			"from endpoint %s bucket %s keyPrefix %s, %w",
-			objectType, s.endpoint, bucket, keyPrefix, err)
+			objectType, s.s3Endpoint, bucket, keyPrefix, err)
 	}
 
 	objects := reflect.MakeSlice(reflect.SliceOf(objectType),
@@ -366,7 +371,7 @@ func (s *s3ObjectStore) downloadTypedObjects(bucket string,
 		if err := s.downloadObject(bucket, keys[i], objectReceiver); err != nil {
 			return nil, fmt.Errorf("unable to downloadObject from "+
 				"endpoint %s bucket %s key %s, %w",
-				s.endpoint, bucket, keys[i], err)
+				s.s3Endpoint, bucket, keys[i], err)
 		}
 	}
 

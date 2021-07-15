@@ -190,12 +190,12 @@ func GetMostRecentConditions(conditions []metav1.Condition) []metav1.Condition {
 }
 
 func (mwu *MWUtil) CreateOrUpdateVRGManifestWork(
-	name, namespace, homeCluster, s3Endpoint, s3Region, s3SecretName string, pvcSelector metav1.LabelSelector) error {
-	mwu.Log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%s:%s:%s",
-		name, namespace, homeCluster, s3Endpoint, s3SecretName))
+	name, namespace, homeCluster, s3ProfileName string, pvcSelector metav1.LabelSelector) error {
+	mwu.Log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%s:%s",
+		name, namespace, homeCluster, s3ProfileName))
 
 	manifestWork, err := mwu.generateVRGManifestWork(name, namespace, homeCluster,
-		s3Endpoint, s3Region, s3SecretName, pvcSelector)
+		s3ProfileName, pvcSelector)
 	if err != nil {
 		return err
 	}
@@ -204,10 +204,10 @@ func (mwu *MWUtil) CreateOrUpdateVRGManifestWork(
 }
 
 func (mwu *MWUtil) generateVRGManifestWork(
-	name, namespace, homeCluster, s3Endpoint, s3Region, s3SecretName string,
+	name, namespace, homeCluster, s3ProfileName string,
 	pvcSelector metav1.LabelSelector) (*ocmworkv1.ManifestWork, error) {
-	vrgClientManifest, err := mwu.generateVRGManifest(name, namespace, s3Endpoint,
-		s3Region, s3SecretName, pvcSelector)
+	vrgClientManifest, err := mwu.generateVRGManifest(name, namespace, s3ProfileName,
+		pvcSelector)
 	if err != nil {
 		mwu.Log.Error(err, "failed to generate VolumeReplicationGroup manifest")
 
@@ -224,7 +224,7 @@ func (mwu *MWUtil) generateVRGManifestWork(
 }
 
 func (mwu *MWUtil) generateVRGManifest(
-	name, namespace, s3Endpoint, s3Region, s3SecretName string,
+	name, namespace, s3ProfileName string,
 	pvcSelector metav1.LabelSelector) (*ocmworkv1.Manifest, error) {
 	return mwu.GenerateManifest(&rmn.VolumeReplicationGroup{
 		TypeMeta:   metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
@@ -233,9 +233,7 @@ func (mwu *MWUtil) generateVRGManifest(
 			PVCSelector:            pvcSelector,
 			VolumeReplicationClass: "volume-rep-class",
 			ReplicationState:       rmn.Primary,
-			S3Endpoint:             s3Endpoint,
-			S3Region:               s3Region,
-			S3SecretName:           s3SecretName,
+			S3ProfileName:          s3ProfileName,
 		},
 	})
 }

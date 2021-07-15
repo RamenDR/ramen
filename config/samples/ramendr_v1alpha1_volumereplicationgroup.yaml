@@ -7,7 +7,5 @@ spec:
     matchLabels:
       any-pvc-label: value
   volumeReplicationClass: "storage-replication-class"
-  replicationState: "Primary"
-  s3Endpoint: "path/to/s3Endpoint"
-  s3Region: "unknown"
-  s3SecretName: secret-name-with-s3-credentials
+  replicationState: "primary"
+  s3ProfileName: "Noobaa-on-Peer-Cluster"

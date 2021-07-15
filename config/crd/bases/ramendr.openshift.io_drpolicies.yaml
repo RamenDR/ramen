@@ -41,8 +41,14 @@ spec:
                 items:
                   type: string
                 type: array
+              s3ProfileName:
+                description: Name of the S3 profile in RamenConfig that should be
+                  used by this DRPolicy to store and forward PV related cluster state
+                  to the peer clusters.
+                type: string
             required:
             - clusterNames
+            - s3ProfileName
             type: object
           status:
             description: 'DRPolicyStatus defines the observed state of DRPolicy INSERT
