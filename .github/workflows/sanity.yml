@@ -138,8 +138,8 @@ jobs:
         run: |
           make deploy
           kubectl get deployment -n ramen-system
-          kubectl -n ramen-system wait --for=condition=Available --timeout=60s deploy/ramen-drm-controller-manager
-          kubectl -n ramen-system wait --for=condition=Available --timeout=60s deploy/ramen-dro-controller-manager
+          kubectl -n ramen-system wait --for=condition=Available --timeout=60s deploy/ramen-hub-operator
+          kubectl -n ramen-system wait --for=condition=Available --timeout=60s deploy/ramen-dr-cluster-operator
 
       - name: Display failure logs
         if: ${{ failure() }}
@@ -152,9 +152,9 @@ jobs:
           echo "===> Ramen POD describe <==="
           kubectl describe pods -n ramen-system
           echo "===> Ramen DR Orchestrator POD logs <==="
-          kubectl logs -n ramen-system deployment/ramen-dro-controller-manager -c manager
+          kubectl logs -n ramen-system deployment/ramen-hub-operator -c manager
           echo "===> Ramen DR Manager POD logs <==="
-          kubectl logs -n ramen-system deployment/ramen-drm-controller-manager -c manager
+          kubectl logs -n ramen-system deployment/ramen-dr-cluster-operator -c manager
           echo "===> END failure details <==="
 
   publish-image:
