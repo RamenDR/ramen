@@ -74,7 +74,7 @@ help: ## Display this help.
 ##@ Development
 
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=manager-role webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=operator-role webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
@@ -109,8 +109,11 @@ build: generate  ## Build manager binary.
 	go build -o bin/manager main.go
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
-run: generate manifests ## Run a controller from your host.
-	go run ./main.go
+run-hub: generate manifests ## Run DR Orchestrator controller from your host.
+	go run ./main.go --config=examples/dr_hub_config.yaml
+
+run-dr-cluster: generate manifests ## Run DR manager controller from your host.
+	go run ./main.go --config=examples/dr_cluster_config.yaml
 
 docker-build: test ## Build docker image with the manager.
 	docker build -t ${IMG} .
@@ -120,18 +123,41 @@ docker-push: ## Push docker image with the manager.
 
 ##@ Deployment
 
-install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build config/crd | kubectl apply -f -
+install: install-hub install-dr-cluster ## Install DR Orchestrator and DR Manager CRDs into the K8s cluster specified in ~/.kube/config.
 
-uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build config/crd | kubectl delete -f -
+uninstall: uninstall-hub uninstall-dr-cluster ## Uninstall DR Orchestrator and DR Manager CRDs from the K8s cluster specified in ~/.kube/config.
 
-deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default | kubectl apply -f -
+deploy: deploy-hub deploy-dr-cluster ## Deploy DR Orchestrator and DR Manager controller to the K8s cluster specified in ~/.kube/config.
 
-undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build config/default | kubectl delete -f -
+undeploy: undeploy-hub undeploy-dr-cluster ## Undeploy DR Orchestrator and DR Manager controller from the K8s cluster specified in ~/.kube/config.
+
+install-hub: manifests kustomize ## Install DR Orchestrator CRDs into the K8s cluster specified in ~/.kube/config.
+	$(KUSTOMIZE) build --load_restrictor none config/hub/crd | kubectl apply -f -
+
+uninstall-hub: manifests kustomize ## Uninstall DR Orchestrator CRDs from the K8s cluster specified in ~/.kube/config.
+	$(KUSTOMIZE) build --load_restrictor none config/hub/crd | kubectl delete -f -
+
+deploy-hub: manifests kustomize ## Deploy DR Orchestrator controller to the K8s cluster specified in ~/.kube/config.
+	cd config/hub/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	$(KUSTOMIZE) build --load_restrictor none config/hub/default | kubectl apply -f -
+
+undeploy-hub: ## Undeploy DR Orchestrator controller from the K8s cluster specified in ~/.kube/config.
+	$(KUSTOMIZE) build --load_restrictor none config/hub/default | kubectl delete -f -
+
+install-dr-cluster: manifests kustomize ## Install DR Manager CRDs into the K8s cluster specified in ~/.kube/config.
+	$(KUSTOMIZE) build --load_restrictor none config/dr_cluster/crd | kubectl apply -f -
+
+uninstall-dr-cluster: manifests kustomize ## Uninstall DR Manager CRDs from the K8s cluster specified in ~/.kube/config.
+	$(KUSTOMIZE) build --load_restrictor none config/dr_cluster/crd | kubectl delete -f -
+
+deploy-dr-cluster: manifests kustomize ## Deploy DR Manager controller to the K8s cluster specified in ~/.kube/config.
+	cd config/dr_cluster/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	$(KUSTOMIZE) build --load_restrictor none config/dr_cluster/default | kubectl apply -f -
+
+undeploy-dr-cluster: ## Undeploy DR Manager controller from the K8s cluster specified in ~/.kube/config.
+	$(KUSTOMIZE) build --load_restrictor none config/dr_cluster/default | kubectl delete -f -
+
+##@ Tools
 
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 controller-gen: ## Download controller-gen locally if necessary.
@@ -154,6 +180,8 @@ GOBIN=$(PROJECT_DIR)/bin go get $(2) ;\
 rm -rf $$TMP_DIR ;\
 }
 endef
+
+##@ Bundle
 
 .PHONY: bundle
 bundle: manifests kustomize ## Generate bundle manifests and metadata, then validate generated files.

@@ -25,6 +25,18 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+// ControllerType is the type of controller to run
+// +kubebuilder:validation:Enum=dr-hub;dr-cluster
+type ControllerType string
+
+const (
+	// DRCluster operates as the DR cluster controller on a peer cluster
+	DRCluster ControllerType = "dr-cluster"
+
+	// DRHub operates as the DR hub controller on a cluster managing DR across peer clusters
+	DRHub ControllerType = "dr-hub"
+)
+
 // Definition of a S3 store profile that Ramen can use to replicate the etcd
 // cluster data of PVs.  A single S3 store profile can be used by one or more
 // VolumeReplicationGroup objects.  The name of the profile is maintained by the
@@ -51,8 +63,11 @@ type S3StoreProfile struct {
 type RamenConfig struct {
 	metav1.TypeMeta `json:",inline"`
 
-	// ControllerManagerConfigurationSpec returns the contfigurations for controllers
+	// ControllerManagerConfigurationSpec returns the configurations for controllers
 	cfg.ControllerManagerConfigurationSpec `json:",inline"`
+
+	// RamenControllerType defines the type of controller to run
+	RamenControllerType ControllerType `json:"ramenControllerType"`
 
 	// Map of S3 store profiles
 	S3StoreProfiles []S3StoreProfile `json:"s3StoreProfiles,omitempty"`

@@ -1,5 +1,5 @@
 resources:
-- manager.yaml
+- ../../manager/manager.yaml
 
 generatorOptions:
   disableNameSuffixHash: true
@@ -7,7 +7,7 @@ generatorOptions:
 configMapGenerator:
 - files:
   - ramen_manager_config.yaml
-  name: ramen-manager-config
+  name: operator-config
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 images:

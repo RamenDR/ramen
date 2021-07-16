@@ -8,5 +8,5 @@ webhook:
   port: 9443
 leaderElection:
   leaderElect: true
-  resourceName: leaderelection.ramendr.openshift.io
-#  resourceNamespace: ramen-system
+  resourceName: drcluster.ramendr.openshift.io
+ramenControllerType: "dr-cluster"
