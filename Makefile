@@ -74,7 +74,7 @@ help: ## Display this help.
 ##@ Development
 
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=manager-role webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=operator-role webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
@@ -109,11 +109,11 @@ build: generate  ## Build manager binary.
 	go build -o bin/manager main.go
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
-run-dro: generate manifests ## Run DR Orchestrator controller from your host.
-	go run ./main.go --config=examples/drorchestrator_config.yaml
+run-hub: generate manifests ## Run DR Orchestrator controller from your host.
+	go run ./main.go --config=examples/dr_hub_config.yaml
 
-run-drm: generate manifests ## Run DR manager controller from your host.
-	go run ./main.go --config=examples/drmanager_config.yaml
+run-dr-cluster: generate manifests ## Run DR manager controller from your host.
+	go run ./main.go --config=examples/dr_cluster_config.yaml
 
 docker-build: test ## Build docker image with the manager.
 	docker build -t ${IMG} .
@@ -123,39 +123,39 @@ docker-push: ## Push docker image with the manager.
 
 ##@ Deployment
 
-install: install-dro install-drm ## Install DR Orchestrator and DR Manager CRDs into the K8s cluster specified in ~/.kube/config.
+install: install-hub install-dr-cluster ## Install DR Orchestrator and DR Manager CRDs into the K8s cluster specified in ~/.kube/config.
 
-uninstall: uninstall-dro uninstall-drm ## Uninstall DR Orchestrator and DR Manager CRDs from the K8s cluster specified in ~/.kube/config.
+uninstall: uninstall-hub uninstall-dr-cluster ## Uninstall DR Orchestrator and DR Manager CRDs from the K8s cluster specified in ~/.kube/config.
 
-deploy: deploy-dro deploy-drm ## Deploy DR Orchestrator and DR Manager controller to the K8s cluster specified in ~/.kube/config.
+deploy: deploy-hub deploy-dr-cluster ## Deploy DR Orchestrator and DR Manager controller to the K8s cluster specified in ~/.kube/config.
 
-undeploy: undeploy-dro undeploy-drm ## Undeploy DR Orchestrator and DR Manager controller from the K8s cluster specified in ~/.kube/config.
+undeploy: undeploy-hub undeploy-dr-cluster ## Undeploy DR Orchestrator and DR Manager controller from the K8s cluster specified in ~/.kube/config.
 
-install-dro: manifests kustomize ## Install DR Orchestrator CRDs into the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load_restrictor none config-dro/crd | kubectl apply -f -
+install-hub: manifests kustomize ## Install DR Orchestrator CRDs into the K8s cluster specified in ~/.kube/config.
+	$(KUSTOMIZE) build --load_restrictor none config/hub/crd | kubectl apply -f -
 
-uninstall-dro: manifests kustomize ## Uninstall DR Orchestrator CRDs from the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load_restrictor none config-dro/crd | kubectl delete -f -
+uninstall-hub: manifests kustomize ## Uninstall DR Orchestrator CRDs from the K8s cluster specified in ~/.kube/config.
+	$(KUSTOMIZE) build --load_restrictor none config/hub/crd | kubectl delete -f -
 
-deploy-dro: manifests kustomize ## Deploy DR Orchestrator controller to the K8s cluster specified in ~/.kube/config.
-	cd config-dro/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build --load_restrictor none config-dro/default | kubectl apply -f -
+deploy-hub: manifests kustomize ## Deploy DR Orchestrator controller to the K8s cluster specified in ~/.kube/config.
+	cd config/hub/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	$(KUSTOMIZE) build --load_restrictor none config/hub/default | kubectl apply -f -
 
-undeploy-dro: ## Undeploy DR Orchestrator controller from the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load_restrictor none config-dro/default | kubectl delete -f -
+undeploy-hub: ## Undeploy DR Orchestrator controller from the K8s cluster specified in ~/.kube/config.
+	$(KUSTOMIZE) build --load_restrictor none config/hub/default | kubectl delete -f -
 
-install-drm: manifests kustomize ## Install DR Manager CRDs into the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load_restrictor none config-drm/crd | kubectl apply -f -
+install-dr-cluster: manifests kustomize ## Install DR Manager CRDs into the K8s cluster specified in ~/.kube/config.
+	$(KUSTOMIZE) build --load_restrictor none config/dr_cluster/crd | kubectl apply -f -
 
-uninstall-drm: manifests kustomize ## Uninstall DR Manager CRDs from the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load_restrictor none config-drm/crd | kubectl delete -f -
+uninstall-dr-cluster: manifests kustomize ## Uninstall DR Manager CRDs from the K8s cluster specified in ~/.kube/config.
+	$(KUSTOMIZE) build --load_restrictor none config/dr_cluster/crd | kubectl delete -f -
 
-deploy-drm: manifests kustomize ## Deploy DR Manager controller to the K8s cluster specified in ~/.kube/config.
-	cd config-drm/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build --load_restrictor none config-drm/default | kubectl apply -f -
+deploy-dr-cluster: manifests kustomize ## Deploy DR Manager controller to the K8s cluster specified in ~/.kube/config.
+	cd config/dr_cluster/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	$(KUSTOMIZE) build --load_restrictor none config/dr_cluster/default | kubectl apply -f -
 
-undeploy-drm: ## Undeploy DR Manager controller from the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load_restrictor none config-drm/default | kubectl delete -f -
+undeploy-dr-cluster: ## Undeploy DR Manager controller from the K8s cluster specified in ~/.kube/config.
+	$(KUSTOMIZE) build --load_restrictor none config/dr_cluster/default | kubectl delete -f -
 
 ##@ Tools
 

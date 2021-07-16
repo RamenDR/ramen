@@ -8,5 +8,5 @@ webhook:
   port: 9443
 leaderElection:
   leaderElect: true
-  resourceName: drorchestrator.ramendr.openshift.io
-ramenControllerType: "drorchestrator"
+  resourceName: drcluster.ramendr.openshift.io
+ramenControllerType: "dr-cluster"

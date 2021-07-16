@@ -26,14 +26,15 @@ import (
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // ControllerType is the type of controller to run
+// +kubebuilder:validation:Enum=dr-hub;dr-cluster
 type ControllerType string
 
 const (
-	// DRManager runs the DRManager controller type
-	DRManager ControllerType = "drmanager"
+	// DRCluster operates as the DR cluster controller on a peer cluster
+	DRCluster ControllerType = "dr-cluster"
 
-	// DROrchestrator runs the DROrchestrator controller type
-	DROrchestrator ControllerType = "drorchestrator"
+	// DRHub operates as the DR hub controller on a cluster managing DR across peer clusters
+	DRHub ControllerType = "dr-hub"
 )
 
 // Definition of a S3 store profile that Ramen can use to replicate the etcd
@@ -65,7 +66,7 @@ type RamenConfig struct {
 	// ControllerManagerConfigurationSpec returns the configurations for controllers
 	cfg.ControllerManagerConfigurationSpec `json:",inline"`
 
-	// ControllerType defines the type of controller to run
+	// RamenControllerType defines the type of controller to run
 	RamenControllerType ControllerType `json:"ramenControllerType"`
 
 	// Map of S3 store profiles

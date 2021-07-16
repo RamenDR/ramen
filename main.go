@@ -81,12 +81,12 @@ func newManager() (ctrl.Manager, error) {
 	}
 
 	controllerType = ramenConfig.RamenControllerType
-	if !(controllerType == ramendrv1alpha1.DRManager || controllerType == ramendrv1alpha1.DROrchestrator) {
+	if !(controllerType == ramendrv1alpha1.DRCluster || controllerType == ramendrv1alpha1.DRHub) {
 		return nil, fmt.Errorf("invalid controller type specified (%s), should be one of [%s|%s]",
-			controllerType, ramendrv1alpha1.DROrchestrator, ramendrv1alpha1.DRManager)
+			controllerType, ramendrv1alpha1.DRHub, ramendrv1alpha1.DRCluster)
 	}
 
-	if controllerType == ramendrv1alpha1.DROrchestrator {
+	if controllerType == ramendrv1alpha1.DRHub {
 		utilruntime.Must(plrv1.AddToScheme(scheme))
 		utilruntime.Must(ocmworkv1.AddToScheme(scheme))
 		utilruntime.Must(spokeClusterV1.AddToScheme(scheme))
@@ -104,7 +104,7 @@ func newManager() (ctrl.Manager, error) {
 }
 
 func setupReconcilers(mgr ctrl.Manager) {
-	if controllerType == ramendrv1alpha1.DROrchestrator {
+	if controllerType == ramendrv1alpha1.DRHub {
 		drpcReconciler := (&controllers.DRPlacementControlReconciler{
 			Client:         mgr.GetClient(),
 			Log:            ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),

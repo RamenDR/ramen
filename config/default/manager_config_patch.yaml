@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: controller-manager
+  name: operator
   namespace: system
 spec:
   template:
@@ -17,4 +17,4 @@ spec:
       volumes:
       - name: ramen-manager-config-vol
         configMap:
-          name: ramen-manager-config
+          name: operator-config

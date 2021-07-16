@@ -1,4 +1,3 @@
----
 apiVersion: ramendr.openshift.io/v1alpha1
 kind: RamenConfig
 health:
@@ -8,7 +7,6 @@ metrics:
 webhook:
   port: 9443
 leaderElection:
-  # leaderElect: true // enable during in cluster execution
-  leaderElect: false
-  resourceName: drmanager.ramendr.openshift.io
-ramenControllerType: "drmanager"
+  leaderElect: true
+  resourceName: drhub.ramendr.openshift.io
+ramenControllerType: "dr-hub"
