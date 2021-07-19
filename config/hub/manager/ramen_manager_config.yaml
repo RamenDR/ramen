@@ -8,5 +8,5 @@ webhook:
   port: 9443
 leaderElection:
   leaderElect: true
-  resourceName: drhub.ramendr.openshift.io
+  resourceName: hub.ramendr.openshift.io
 ramenControllerType: "dr-hub"

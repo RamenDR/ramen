@@ -10,5 +10,5 @@ webhook:
 leaderElection:
   # leaderElect: true // enable during in cluster execution
   leaderElect: false
-  resourceName: drhub.ramendr.openshift.io
+  resourceName: hub.ramendr.openshift.io
 ramenControllerType: "dr-hub"
