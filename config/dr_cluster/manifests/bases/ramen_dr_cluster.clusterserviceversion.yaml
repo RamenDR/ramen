@@ -1,0 +1,57 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: '[]'
+    capabilities: Basic Install
+  name: ramen-dr-cluster.v0.0.0
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: VolumeReplicationGroup is the Schema for the volumereplicationgroups
+        API
+      displayName: Volume Replication Group
+      kind: VolumeReplicationGroup
+      name: volumereplicationgroups.ramendr.openshift.io
+      version: v1alpha1
+  description: Ramen is a disaster-recovery orchestrator for stateful applications
+    across a set of peer kubernetes clusters which are deployed and managed using
+    open-cluster-management (OCM) and provides cloud-native interfaces to orchestrate
+    the life-cycle of an application's state on PersistentVolumes.
+  displayName: RamenDR
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      deployments: null
+    strategy: ""
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - Storage
+  - Integration & Delivery
+  - OpenShift Optional
+  links:
+  - name: Ramen
+    url: https://ramen.domain
+  maintainers:
+  - email: bmekhiss@redhat.com
+    name: Benamar Mekhissi
+  - email: srangana@redhat.com
+    name: Shyam Ranganathan
+  - email: vdeenadh@redhat.com
+    name: Veera Deenadhayalan
+  maturity: alpha
+  provider:
+    name: Red Hat, Inc.
+  version: 0.0.0

@@ -29,11 +29,12 @@ BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 #
 # For example, running 'make bundle-build bundle-push catalog-build catalog-push' will build and push both
 # example.com/tmp-sdk-bundle:$VERSION and example.com/tmp-sdk-catalog:$VERSION.
-IMAGE_TAG_BASE ?= quay.io/ramendr/ramen-operator
+IMAGE_TAG_BASE ?= quay.io/ramendr/ramen
 
 # BUNDLE_IMG defines the image:tag used for the bundle.
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
-BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:v$(VERSION)
+BUNDLE_IMG_HUB ?= $(IMAGE_TAG_BASE)-hub-operator-bundle:v$(VERSION)
+BUNDLE_IMG_DRCLUSTER ?= $(IMAGE_TAG_BASE)-dr-cluster-operator-bundle:v$(VERSION)
 
 # Image URL to use all building/pushing image targets
 IMG ?= quay.io/ramendr/ramen-operator:latest
@@ -123,38 +124,38 @@ docker-push: ## Push docker image with the manager.
 
 ##@ Deployment
 
-install: install-hub install-dr-cluster ## Install DR Orchestrator and DR Manager CRDs into the K8s cluster specified in ~/.kube/config.
+install: install-hub install-dr-cluster ## Install hub and dr-cluster CRDs into the K8s cluster specified in ~/.kube/config.
 
-uninstall: uninstall-hub uninstall-dr-cluster ## Uninstall DR Orchestrator and DR Manager CRDs from the K8s cluster specified in ~/.kube/config.
+uninstall: uninstall-hub uninstall-dr-cluster ## Uninstall hub and dr-cluster CRDs from the K8s cluster specified in ~/.kube/config.
 
-deploy: deploy-hub deploy-dr-cluster ## Deploy DR Orchestrator and DR Manager controller to the K8s cluster specified in ~/.kube/config.
+deploy: deploy-hub deploy-dr-cluster ## Deploy hub and dr-cluster controller to the K8s cluster specified in ~/.kube/config.
 
-undeploy: undeploy-hub undeploy-dr-cluster ## Undeploy DR Orchestrator and DR Manager controller from the K8s cluster specified in ~/.kube/config.
+undeploy: undeploy-hub undeploy-dr-cluster ## Undeploy hub and dr-cluster controller from the K8s cluster specified in ~/.kube/config.
 
-install-hub: manifests kustomize ## Install DR Orchestrator CRDs into the K8s cluster specified in ~/.kube/config.
+install-hub: manifests kustomize ## Install hub CRDs into the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build --load_restrictor none config/hub/crd | kubectl apply -f -
 
-uninstall-hub: manifests kustomize ## Uninstall DR Orchestrator CRDs from the K8s cluster specified in ~/.kube/config.
+uninstall-hub: manifests kustomize ## Uninstall hub CRDs from the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build --load_restrictor none config/hub/crd | kubectl delete -f -
 
-deploy-hub: manifests kustomize ## Deploy DR Orchestrator controller to the K8s cluster specified in ~/.kube/config.
+deploy-hub: manifests kustomize ## Deploy hub controller to the K8s cluster specified in ~/.kube/config.
 	cd config/hub/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build --load_restrictor none config/hub/default | kubectl apply -f -
 
-undeploy-hub: ## Undeploy DR Orchestrator controller from the K8s cluster specified in ~/.kube/config.
+undeploy-hub: ## Undeploy hub controller from the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build --load_restrictor none config/hub/default | kubectl delete -f -
 
-install-dr-cluster: manifests kustomize ## Install DR Manager CRDs into the K8s cluster specified in ~/.kube/config.
+install-dr-cluster: manifests kustomize ## Install dr-cluster CRDs into the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build --load_restrictor none config/dr_cluster/crd | kubectl apply -f -
 
-uninstall-dr-cluster: manifests kustomize ## Uninstall DR Manager CRDs from the K8s cluster specified in ~/.kube/config.
+uninstall-dr-cluster: manifests kustomize ## Uninstall dr-cluster CRDs from the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build --load_restrictor none config/dr_cluster/crd | kubectl delete -f -
 
-deploy-dr-cluster: manifests kustomize ## Deploy DR Manager controller to the K8s cluster specified in ~/.kube/config.
+deploy-dr-cluster: manifests kustomize ## Deploy dr-cluster controller to the K8s cluster specified in ~/.kube/config.
 	cd config/dr_cluster/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build --load_restrictor none config/dr_cluster/default | kubectl apply -f -
 
-undeploy-dr-cluster: ## Undeploy DR Manager controller from the K8s cluster specified in ~/.kube/config.
+undeploy-dr-cluster: ## Undeploy dr-cluster controller from the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build --load_restrictor none config/dr_cluster/default | kubectl delete -f -
 
 ##@ Tools
@@ -184,19 +185,41 @@ endef
 ##@ Bundle
 
 .PHONY: bundle
-bundle: manifests kustomize ## Generate bundle manifests and metadata, then validate generated files.
-	operator-sdk generate kustomize manifests -q
-	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
-	$(KUSTOMIZE) build config/manifests | operator-sdk generate bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
-	operator-sdk bundle validate ./bundle
+bundle: bundle-hub bundle-dr-cluster ## Generate all bundle manifests and metadata, then validate generated files.
 
 .PHONY: bundle-build
-bundle-build: ## Build the bundle image.
-	docker build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+bundle-build: bundle-hub-build bundle-dr-cluster-build ## Build all bundle images.
 
 .PHONY: bundle-push
-bundle-push: ## Push the bundle image.
-	$(MAKE) docker-push IMG=$(BUNDLE_IMG)
+bundle-push: bundle-hub-push bundle-dr-cluster-push ## Push all bundle images.
+
+.PHONY: bundle-hub
+bundle-hub: manifests kustomize ## Generate hub bundle manifests and metadata, then validate generated files.
+	cd config/hub/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
+	$(KUSTOMIZE) build --load_restrictor none config/hub/manifests | operator-sdk generate bundle -q --package=ramen-hub --overwrite --output-dir=config/hub/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	operator-sdk bundle validate config/hub/bundle
+
+.PHONY: bundle-hub-build
+bundle-hub-build: bundle-hub ## Build the hub bundle image.
+	docker build -f bundle.Dockerfile -t $(BUNDLE_IMG_HUB) .
+
+.PHONY: bundle-hub-push
+bundle-hub-push: ## Push the hub bundle image.
+	$(MAKE) docker-push IMG=$(BUNDLE_IMG_HUB)
+
+.PHONY: bundle-dr-cluster
+bundle-dr-cluster: manifests kustomize ## Generate dr-cluster bundle manifests and metadata, then validate generated files.
+	cd config/dr_cluster/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
+	$(KUSTOMIZE) build --load_restrictor none config/dr_cluster/manifests | operator-sdk generate bundle -q --package=ramen-dr-cluster --overwrite --output-dir=config/dr_cluster/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	operator-sdk bundle validate config/dr_cluster/bundle
+
+.PHONY: bundle-dr-cluster-build
+bundle-dr-cluster-build: bundle-dr-cluster ## Build the dr-cluster bundle image.
+	docker build -f bundle.Dockerfile -t $(BUNDLE_IMG_DRCLUSTER) .
+
+.PHONY: bundle-dr-cluster-push
+bundle-dr-cluster-push: ## Push the dr-cluster bundle image.
+	$(MAKE) docker-push IMG=$(BUNDLE_IMG_DRCLUSTER)
 
 .PHONY: opm
 OPM = ./bin/opm
@@ -217,10 +240,10 @@ endif
 
 # A comma-separated list of bundle images (e.g. make catalog-build BUNDLE_IMGS=example.com/operator-bundle:v0.1.0,example.com/operator-bundle:v0.2.0).
 # These images MUST exist in a registry and be pull-able.
-BUNDLE_IMGS ?= $(BUNDLE_IMG)
+BUNDLE_IMGS ?= $(BUNDLE_IMG_HUB),$(BUNDLE_IMG_DRCLUSTER)
 
 # The image tag given to the resulting catalog image (e.g. make catalog-build CATALOG_IMG=example.com/operator-catalog:v0.2.0).
-CATALOG_IMG ?= $(IMAGE_TAG_BASE)-catalog:v$(VERSION)
+CATALOG_IMG ?= $(IMAGE_TAG_BASE)-operator-catalog:v$(VERSION)
 
 # Set CATALOG_BASE_IMG to an existing catalog image tag to add $BUNDLE_IMGS to that image.
 ifneq ($(origin CATALOG_BASE_IMG), undefined)
