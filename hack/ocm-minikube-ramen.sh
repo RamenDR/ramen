@@ -4,6 +4,7 @@ set -x
 set -e
 ramen_hack_directory_path_name=$(dirname $0)
 . $ramen_hack_directory_path_name/exit_stack.sh
+. $ramen_hack_directory_path_name/until_true_or_n.sh
 exit_stack_push unset -v ramen_hack_directory_path_name
 rook_ceph_deploy()
 {
@@ -72,29 +73,15 @@ ramen_deploy()
 	make -C $1 deploy-$3 IMG=$ramen_image_name_colon_tag
 	kube_context_set_undo
 	kubectl --context ${2} -n ramen-system wait deployments --all --for condition=available --timeout 60s
-	cat <<-a | kubectl --context ${2} apply -f -
-	apiVersion: replication.storage.openshift.io/v1alpha1
-	kind: VolumeReplicationClass
-	metadata:
-	  name: volume-rep-class
-	spec:
-	  provisioner: rook-ceph.rbd.csi.ceph.com
-	  parameters:
-        schedulingInterval: "1m"
-	    replication.storage.openshift.io/replication-secret-name: rook-csi-rbd-provisioner
-	    replication.storage.openshift.io/replication-secret-namespace: rook-ceph
-	a
-
 	# Add s3 profile to ramen config
 	ramen_config_map_name=ramen-${3}-operator-config
-	. ${ramen_hack_directory_path_name}/until_true_or_n.sh
 	until_true_or_n 90 kubectl --context ${2} -n ramen-system get configmap ${ramen_config_map_name}
-	unset -f until_true_or_n
-  dirName="${3}"
+	dirName="${3}"
 	if test ${dirName} = "dr-cluster"; then
-    dirName=dr_cluster
-  fi
+		dirName=dr_cluster
+	fi
 	cp ${1}/config/${dirName}/manager/ramen_manager_config.yaml /tmp/ramen_manager_config.yaml
+	unset -v dirName
 	cat <<-EOF >> /tmp/ramen_manager_config.yaml
 
 	s3StoreProfiles:
@@ -110,7 +97,7 @@ ramen_deploy()
 		create configmap ${ramen_config_map_name}\
 		--from-file=/tmp/ramen_manager_config.yaml -o yaml --dry-run=client |
 		kubectl --context ${2} -n ramen-system replace -f -
-	unset -f ramen_config_map_name
+	unset -v ramen_config_map_name
 }
 exit_stack_push unset -f ramen_deploy
 ramen_deploy_hub()
@@ -125,7 +112,6 @@ ramen_deploy_spoke()
 exit_stack_push unset -f ramen_deploy_spoke
 ramen_undeploy()
 {
-	kubectl --context ${2} delete volumereplicationclass/volume-rep-class
 	kube_context_set ${2}
 	make -C $1 undeploy-$3
 	kube_context_set_undo
@@ -262,9 +248,7 @@ for command in "${@:-deploy}"; do
 		for cluster_name in ${cluster_names}; do
 			application_sample_namespace_and_s3_deploy ${cluster_name}
 		done; unset -v cluster_name
-		. ${ramen_hack_directory_path_name}/until_true_or_n.sh
 		application_sample_deploy
-		unset -f until_true_or_n
 		;;
 	application_sample_undeploy)
 		application_sample_undeploy

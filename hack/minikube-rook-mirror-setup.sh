@@ -89,6 +89,7 @@ spec:
   parameters:
     replication.storage.openshift.io/replication-secret-name: rook-csi-rbd-provisioner
     replication.storage.openshift.io/replication-secret-namespace: rook-ceph
+    schedulingInterval: 1m
 EOF
 
 echo "Setup successfull!"
