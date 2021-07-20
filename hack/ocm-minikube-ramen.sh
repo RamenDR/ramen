@@ -97,57 +97,31 @@ ramen_undeploy()
 	set -e
 }
 exit_stack_push unset -f ramen_undeploy
-ramen_samples_branch_checkout()
-{
-	set -- ocm-ramen-samples test ShyamsundarR
-	set -- ocm-ramen-samples test hatfieldbrian
-	set +e
-	git clone https://github.com/RamenDR/${1}
-	# fatal: destination path 'ocm-ramen-samples' already exists and is not an empty directory.
-	set -e
-	git --git-dir ${1}/.git --work-tree ${1} checkout main
-	exit_stack_push git --git-dir ${1}/.git --work-tree ${1} checkout -
-	branch_name=${3}/${2}
-	git --git-dir ${1}/.git fetch https://github.com/${3}/${1} ${2}:${branch_name}
-	exit_stack_pop
-	git --git-dir ${1}/.git --work-tree ${1} checkout ${branch_name}
-	exit_stack_push git --git-dir ${1}/.git --work-tree ${1} checkout -
-	unset -v branch_name
-}
-exit_stack_push unset -f ramen_samples_branch_checkout
-ramen_samples_branch_checkout_undo()
-{
-	exit_stack_pop
-}
-exit_stack_push unset -f ramen_samples_branch_checkout_undo
+ocm_ramen_samples_git_ref=main
+exit_stack_push unset -v ocm_ramen_samples_git_ref
 application_sample_namespace_and_s3_deploy()
 {
-	ramen_samples_branch_checkout
 	kubectl create namespace busybox-sample --dry-run=client -o yaml | kubectl --context ${1} apply -f -
-	kubectl --context ${1} apply -f ocm-ramen-samples/subscriptions/busybox/s3secret.yaml -n busybox-sample
-	ramen_samples_branch_checkout_undo
+	kubectl --context $1 -n busybox-sample apply -f https://raw.githubusercontent.com/ramendr/ocm-ramen-samples/$ocm_ramen_samples_git_ref/subscriptions/busybox/s3secret.yaml
 }
 exit_stack_push unset -f application_sample_namespace_and_s3_deploy
 application_sample_namespace_and_s3_undeploy()
 {
-	ramen_samples_branch_checkout
-	kubectl --context ${1} delete -f ocm-ramen-samples/subscriptions/busybox/s3secret.yaml -n busybox-sample
+	kubectl --context $1 -n busybox-sample delete -f https://raw.githubusercontent.com/ramendr/ocm-ramen-samples/$ocm_ramen_samples_git_ref/subscriptions/busybox/s3secret.yaml
 	date
 	kubectl --context ${1} delete namespace busybox-sample
 	date
-	ramen_samples_branch_checkout_undo
 }
 exit_stack_push unset -f application_sample_namespace_and_s3_undeploy
 application_sample_deploy()
 {
-	ramen_samples_branch_checkout
-	kubectl --context ${hub_cluster_name} apply -k ocm-ramen-samples/subscriptions
+	kubectl --context $hub_cluster_name apply -k https://github.com/ramendr/ocm-ramen-samples/subscriptions?ref=$ocm_ramen_samples_git_ref
 	kubectl --context ${hub_cluster_name} -n ramen-samples get channels/ramen-gitops
-	mkdir -p ocm-ramen-samples/subscriptions/busybox-${USER}
-	cat <<-a >ocm-ramen-samples/subscriptions/busybox-${USER}/kustomization.yaml
+	mkdir -p /tmp/$USER/ocm-ramen-samples/subscriptions/busybox
+	cat <<-a >/tmp/$USER/ocm-ramen-samples/subscriptions/busybox/kustomization.yaml
 	---
 	resources:
-	  - ../busybox
+	  - https://github.com/ramendr/ocm-ramen-samples/subscriptions/busybox?ref=$ocm_ramen_samples_git_ref
 	patchesJson6902:
 	  - target:
 	      group: ramendr.openshift.io
@@ -159,8 +133,7 @@ application_sample_deploy()
 	        path: /spec/s3Endpoint
 	        value: $(minikube --profile=${hub_cluster_name} -n minio service --url minio)
 	a
-	kubectl --context ${hub_cluster_name} apply -k ocm-ramen-samples/subscriptions/busybox-${USER}
-	ramen_samples_branch_checkout_undo
+	kubectl --context $hub_cluster_name apply -k /tmp/$USER/ocm-ramen-samples/subscriptions/busybox
 	kubectl --context ${hub_cluster_name} -n busybox-sample get placementrules/busybox-placement
 	until_true_or_n 90 eval test \"\$\(kubectl --context ${hub_cluster_name} -n busybox-sample get subscriptions/busybox-sub -ojsonpath='{.status.phase}'\)\" = Propagated
 	until_true_or_n 1 eval test -n \"\$\(kubectl --context ${hub_cluster_name} -n busybox-sample get placementrules/busybox-placement -ojsonpath='{.status.decisions[].clusterName}'\)\"
@@ -183,9 +156,7 @@ application_sample_undeploy()
 {
 	set -- $(kubectl --context ${hub_cluster_name} -n busybox-sample get placementrules/busybox-placement -ojsonpath='{.status.decisions[].clusterName}')
 	kubectl --context ${1} delete persistentvolumes $(kubectl --context ${1} -n busybox-sample get persistentvolumeclaims/busybox-pvc -ojsonpath='{.spec.volumeName}') --wait=false
-	ramen_samples_branch_checkout
-	kubectl --context ${hub_cluster_name} delete -k ocm-ramen-samples/subscriptions/busybox-${USER}
-	rm -r ocm-ramen-samples/subscriptions/busybox-${USER}
+	kubectl --context $hub_cluster_name delete -k https://github.com/ramendr/ocm-ramen-samples/subscriptions/busybox?ref=$ocm_ramen_samples_git_ref
 	date
 	set +e
 	kubectl --context ${1} -n busybox-sample wait pods/busybox --for delete --timeout 2m
@@ -201,9 +172,8 @@ application_sample_undeploy()
 	# error: no matching resources found
 	set -e
 	date
-	kubectl --context ${hub_cluster_name} delete -k ocm-ramen-samples/subscriptions
+	kubectl --context $hub_cluster_name delete -k https://github.com/ramendr/ocm-ramen-samples/subscriptions?ref=$ocm_ramen_samples_git_ref
 	date
-	ramen_samples_branch_checkout_undo
 }
 exit_stack_push unset -f application_sample_undeploy
 ramen_directory_path_name=${ramen_hack_directory_path_name}/..
@@ -291,13 +261,3 @@ for command in "${@:-deploy}"; do
 		;;
 	esac
 done
-git_branch_delete()
-{
-	set +e
-	git --git-dir ${1}/.git branch -d ${2}
-	# error: branch '${2}' not found.
-	set -e
-}
-exit_stack_push unset -f git_branch_delete
-git_branch_delete ${ramen_directory_path_name} pr47_pr58_rbac2360357
-git_branch_delete ocm-ramen-samples shyam_test_benamar_update_placement_to_avr
