@@ -234,6 +234,8 @@ exit_stack_push unset -f ocm_foundation_operator_kubectl_spoke
 ocm_foundation_operator_deploy_hub()
 {
 	ocm_foundation_operator_kubectl_hub apply
+	kubectl --context $hub_cluster_name delete apiservices v1.clusterview.open-cluster-management.io v1alpha1.clusterview.open-cluster-management.io v1beta1.proxy.open-cluster-management.io
+	kubectl --context $hub_cluster_name -n open-cluster-management delete deployments/ocm-proxyserver services/ocm-proxyserver
 	kubectl --context $hub_cluster_name -n open-cluster-management wait deployments/ocm-controller --for condition=available
 }
 exit_stack_push unset -f ocm_foundation_operator_deploy_hub
