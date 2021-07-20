@@ -69,7 +69,7 @@ ramen_deploy()
 {
 	minikube -p ${2} image load ${ramen_image_name_colon_tag}
 	kube_context_set ${2}
-	make -C ${1} deploy IMG=${ramen_image_name_colon_tag}
+	make -C $1 deploy-$3 IMG=$ramen_image_name_colon_tag
 	kube_context_set_undo
 	kubectl --context ${2} -n ramen-system wait deployments --all --for condition=available --timeout 60s
 	cat <<-a | kubectl --context ${2} apply -f -
@@ -85,11 +85,21 @@ ramen_deploy()
 	a
 }
 exit_stack_push unset -f ramen_deploy
+ramen_deploy_hub()
+{
+	ramen_deploy $1 $2 hub
+}
+exit_stack_push unset -f ramen_deploy_hub
+ramen_deploy_spoke()
+{
+	ramen_deploy $1 $2 dr-cluster
+}
+exit_stack_push unset -f ramen_deploy_spoke
 ramen_undeploy()
 {
 	kubectl --context ${2} delete volumereplicationclass/volume-rep-class
 	kube_context_set ${2}
-	make -C ${1} undeploy
+	make -C $1 undeploy-$3
 	kube_context_set_undo
 	set +e
 	kubectl --context ${2} -n ramen-system wait deployments --all --for delete
@@ -97,6 +107,16 @@ ramen_undeploy()
 	set -e
 }
 exit_stack_push unset -f ramen_undeploy
+ramen_undeploy_hub()
+{
+	ramen_undeploy $1 $2 hub
+}
+exit_stack_push unset -f ramen_undeploy_hub
+ramen_undeploy_spoke()
+{
+	ramen_undeploy $1 $2 dr-cluster
+}
+exit_stack_push unset -f ramen_undeploy_spoke
 ocm_ramen_samples_git_ref=main
 exit_stack_push unset -v ocm_ramen_samples_git_ref
 application_sample_namespace_and_s3_deploy()
@@ -194,17 +214,19 @@ exit_stack_push unset -v cluster_names
 ramen_deploy_all()
 {
 	. ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local; unset -f go_install
-	for cluster_name in ${cluster_names}; do
-		ramen_deploy ${ramen_directory_path_name} ${cluster_name}
+	ramen_deploy_hub $ramen_directory_path_name $hub_cluster_name
+	for cluster_name in $spoke_cluster_names; do
+		ramen_deploy_spoke $ramen_directory_path_name $cluster_name
 	done; unset -v cluster_name
 }
 exit_stack_push unset -v ramen_deploy_all
 ramen_undeploy_all()
 {
 	. ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local; unset -f go_install
-	for cluster_name in ${cluster_names}; do
-		ramen_undeploy ${ramen_directory_path_name} ${cluster_name}
+	for cluster_name in $spoke_cluster_names; do
+		ramen_undeploy_spoke $ramen_directory_path_name $cluster_name
 	done; unset -v cluster_name
+	ramen_undeploy_hub $ramen_directory_path_name $hub_cluster_name
 }
 exit_stack_push unset -v ramen_undeploy_all
 exit_stack_push unset -v command
