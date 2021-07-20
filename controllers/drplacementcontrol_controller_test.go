@@ -689,7 +689,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				updateManifestWorkStatus(EastManagedCluster, "vrg", ocmworkv1.WorkApplied)
 				verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, EastManagedCluster)
 				verifyDRPCStatusPreferredClusterExpectation(rmn.Initial)
-				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(3)) // MWs for VRG and ROLES
+				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(2)) // MWs for VRG and ROLES
 				waitForCompletion()
 			})
 		})
@@ -699,6 +699,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				updateClonedPlacementRuleStatus(userPlacementRule, drpc, WestManagedCluster)
 				setDRPCSpecExpectationTo(drpc, "", rmn.ActionFailover, "")
 				verifyUserPlacementRuleDecisionUnchanged(userPlacementRule.Name, userPlacementRule.Namespace, EastManagedCluster)
+				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(2)) // MWs for PV and PV ROLE
 			})
 			It("Should failover to Secondary (WestManagedCluster)", func() {
 				// ----------------------------- FAILOVER TO SECONDARY (WestManagedCluster) --------------------------------------
@@ -720,7 +721,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				updateManagedClusterViewStatusAsNotFound(mcvEast)
 				// tickle the DRPC reconciler, should be removed once we watch for MCV resource updates
 				setDRPCSpecExpectationTo(drpc, "newS3Endpoint-1", rmn.ActionFailover, "")
-				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(2)) // MW for ROLES only
+				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // MW for VRG ROLE only
 				waitForCompletion()
 			})
 		})
@@ -741,7 +742,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(4)) // MWs for VRG+ROLES+PVs
 				waitForVRGMWDeletion(EastManagedCluster)
 				updateManagedClusterViewStatusAsNotFound(mcvEast)
-				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(2)) // MWs for ROLES
+				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // MWs for VRG ROLE only
 				waitForCompletion()
 			})
 		})

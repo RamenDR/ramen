@@ -811,6 +811,13 @@ func (d *DRPCInstance) updateUserPlRuleAndCreateVRGMW(homeCluster, homeClusterNa
 }
 
 func (d *DRPCInstance) createPVManifestWorkForRestore(newPrimary string) error {
+	if err := d.mwu.CreateOrUpdatePVRolesManifestWork(newPrimary); err != nil {
+		d.log.Error(err, "failed to create or update PersistentVolume Roles manifest")
+
+		return fmt.Errorf("failed to create or update PersistentVolume Roles manifest in namespace %s (%w)",
+			newPrimary, err)
+	}
+
 	pvMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypePV)
 
 	existAndApplied, err := d.mwu.ManifestExistAndApplied(pvMWName, newPrimary)
@@ -1237,13 +1244,6 @@ func (d *DRPCInstance) processVRGManifestWork(homeCluster string) error {
 		d.log.Error(err, "failed to create or update VolumeReplicationGroup Roles manifest")
 
 		return fmt.Errorf("failed to create or update VolumeReplicationGroup Roles manifest in namespace %s (%w)",
-			homeCluster, err)
-	}
-
-	if err := d.mwu.CreateOrUpdatePVRolesManifestWork(homeCluster); err != nil {
-		d.log.Error(err, "failed to create or update PersistentVolume Roles manifest")
-
-		return fmt.Errorf("failed to create or update PersistentVolume Roles manifest in namespace %s (%w)",
 			homeCluster, err)
 	}
 
