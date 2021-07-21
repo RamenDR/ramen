@@ -99,7 +99,11 @@ fi
 minikube ssh "sudo mkdir -p /mnt/vda1/rook/ && sudo ln -sf /mnt/vda1/rook/ /var/lib/rook" --profile="${PROFILE}"
 
 ## Create and attach an OSD disk for Ceph ##
+set +e
 pool=$(virsh pool-dumpxml $POOL_NAME)
+# error: failed to get pool 'minikube'
+# error: Storage pool not found: no storage pool with matching name 'minikube'
+set -e
 pool_target=${pool#*<target>}
 pool_target=${pool_target%</target>*}
 pool_target_path=${pool_target#*<path>}
