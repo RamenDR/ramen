@@ -77,8 +77,6 @@ echo RBD mirror status health OK
 wait_for_condition "OK" kubectl get cephblockpools.ceph.rook.io replicapool --context="${PRIMARY_CLUSTER}" -nrook-ceph -o jsonpath='{.status.mirroringStatus.summary.image_health}'
 echo RBD mirror image summary health OK
 
-kubectl apply -f "${scriptdir}"/dev-rook-sc.yaml --context="${PRIMARY_CLUSTER}"
-
 cat <<EOF | kubectl --context="${PRIMARY_CLUSTER}" apply -f -
 apiVersion: replication.storage.openshift.io/v1alpha1
 kind: VolumeReplicationClass

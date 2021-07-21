@@ -5,21 +5,24 @@ set -e
 ramen_hack_directory_path_name=$(dirname $0)
 . $ramen_hack_directory_path_name/exit_stack.sh
 . $ramen_hack_directory_path_name/until_true_or_n.sh
+exit_stack_push unset -f until_true_or_n
 exit_stack_push unset -v ramen_hack_directory_path_name
 rook_ceph_deploy()
 {
-	PROFILE=${2} ${1}/minikube-rook-setup.sh create
-	PROFILE=${3} ${1}/minikube-rook-setup.sh create
-	PRIMARY_CLUSTER=${2} SECONDARY_CLUSTER=${3} ${1}/minikube-rook-mirror-setup.sh
-	PRIMARY_CLUSTER=${3} SECONDARY_CLUSTER=${2} ${1}/minikube-rook-mirror-setup.sh
-	PRIMARY_CLUSTER=${2} SECONDARY_CLUSTER=${3} ${1}/minikube-rook-mirror-test.sh
-	PRIMARY_CLUSTER=${3} SECONDARY_CLUSTER=${2} ${1}/minikube-rook-mirror-test.sh
+	PROFILE=$1 $ramen_hack_directory_path_name/minikube-rook-setup.sh create
 }
 exit_stack_push unset -f rook_ceph_deploy
+rook_ceph_mirrors_deploy()
+{
+	PRIMARY_CLUSTER=$1 SECONDARY_CLUSTER=$2 $ramen_hack_directory_path_name/minikube-rook-mirror-setup.sh
+	PRIMARY_CLUSTER=$2 SECONDARY_CLUSTER=$1 $ramen_hack_directory_path_name/minikube-rook-mirror-setup.sh
+	PRIMARY_CLUSTER=$1 SECONDARY_CLUSTER=$2 $ramen_hack_directory_path_name/minikube-rook-mirror-test.sh
+	PRIMARY_CLUSTER=$2 SECONDARY_CLUSTER=$1 $ramen_hack_directory_path_name/minikube-rook-mirror-test.sh
+}
+exit_stack_push unset -f rook_ceph_mirrors_deploy
 rook_ceph_undeploy()
 {
-	PROFILE=${3} ${1}/minikube-rook-setup.sh delete
-	PROFILE=${2} ${1}/minikube-rook-setup.sh delete
+	PROFILE=$1 $ramen_hack_directory_path_name/minikube-rook-setup.sh delete
 }
 exit_stack_push unset -f rook_ceph_undeploy
 minio_deploy()
@@ -210,15 +213,29 @@ hub_cluster_name=${hub_cluster_name:-hub}
 exit_stack_push unset -v hub_cluster_name
 spoke_cluster_names=${spoke_cluster_names:-${hub_cluster_name}\ cluster1}
 exit_stack_push unset -v spoke_cluster_names
+cluster_names=$hub_cluster_name
 for cluster_name in ${spoke_cluster_names}; do
-	if test ${cluster_name} = ${hub_cluster_name}; then
-		spoke_cluster_names_hub=${spoke_cluster_names_hub}\ ${cluster_name}
-	else
-		spoke_cluster_names_nonhub=${spoke_cluster_names_nonhub}\ ${cluster_name}
+	if test $cluster_name != $hub_cluster_name; then
+		cluster_names=$cluster_names\ $cluster_name
 	fi
 done; unset -v cluster_name
-cluster_names=${hub_cluster_name}\ ${spoke_cluster_names_nonhub}
 exit_stack_push unset -v cluster_names
+rook_ceph_deploy_all()
+{
+	# volumes required: mirror sources, mirror targets, minio backend
+	for cluster_name in $cluster_names; do
+		rook_ceph_deploy $cluster_name
+	done; unset -v cluster_name
+	rook_ceph_mirrors_deploy $spoke_cluster_names
+}
+exit_stack_push unset -v rook_ceph_deploy_all
+rook_ceph_undeploy_all()
+{
+	for cluster_name in $cluster_names; do
+		rook_ceph_undeploy $cluster_name
+	done; unset -v cluster_name
+}
+exit_stack_push unset -v rook_ceph_undeploy_all
 ramen_deploy_all()
 {
 	. ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local; unset -f go_install
@@ -245,7 +262,7 @@ for command in "${@:-deploy}"; do
 	deploy)
 		hub_cluster_name=${hub_cluster_name} spoke_cluster_names=${spoke_cluster_names}\
 		${ramen_hack_directory_path_name}/ocm-minikube.sh
-		rook_ceph_deploy ${ramen_hack_directory_path_name} ${cluster_names}
+		rook_ceph_deploy_all
 		minio_deploy ${ramen_hack_directory_path_name} ${hub_cluster_name}
 		ramen_build ${ramen_directory_path_name}
 		ramen_deploy_all
@@ -253,17 +270,17 @@ for command in "${@:-deploy}"; do
 	undeploy)
 		ramen_undeploy_all
 		minio_undeploy ${ramen_hack_directory_path_name} ${hub_cluster_name}
-		rook_ceph_undeploy ${ramen_hack_directory_path_name} ${cluster_names}
+		rook_ceph_undeploy_all
 		;;
 	application_sample_deploy)
-		for cluster_name in ${cluster_names}; do
+		for cluster_name in $spoke_cluster_names; do
 			application_sample_namespace_and_s3_deploy ${cluster_name}
 		done; unset -v cluster_name
 		application_sample_deploy
 		;;
 	application_sample_undeploy)
 		application_sample_undeploy
-		for cluster_name in ${cluster_names}; do
+		for cluster_name in $spoke_cluster_names; do
 			application_sample_namespace_and_s3_undeploy ${cluster_name}
 		done; unset -v cluster_name
 		;;
@@ -277,10 +294,10 @@ for command in "${@:-deploy}"; do
 		ramen_undeploy_all
 		;;
 	rook_ceph_deploy)
-		rook_ceph_deploy ${ramen_hack_directory_path_name} ${cluster_names}
+		rook_ceph_deploy_all
 		;;
 	rook_ceph_undeploy)
-		rook_ceph_undeploy ${ramen_hack_directory_path_name} ${cluster_names}
+		rook_ceph_undeploy_all
 		;;
 	*)
 		echo subcommand unsupported: ${command}

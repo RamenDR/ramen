@@ -160,6 +160,9 @@ kubectl apply -f "${ROOK_SRC}/toolbox.yaml" --context="${PROFILE}"
 # Create a mirroring enabled RBD pool
 kubectl apply -f "${scriptdir}/dev-rook-rbdpool.yaml" --context="${PROFILE}"
 
+# Create a StorageClass
+kubectl apply -f "${scriptdir}"/dev-rook-sc.yaml --context="${PROFILE}"
+
 # Ensure the pool is created and ready
 wait_for_condition "Ready" kubectl get cephblockpool -n rook-ceph replicapool -o jsonpath='{.status.phase}' --context="${PROFILE}"
 wait_for_condition "pool-peer-token-replicapool" kubectl get cephblockpool -n rook-ceph replicapool -o jsonpath='{.status.info.rbdMirrorBootstrapPeerSecretName}' --context="${PROFILE}"
