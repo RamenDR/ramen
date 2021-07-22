@@ -1,5 +1,4 @@
-#!/bin/sh
-# shellcheck disable=2086
+# shellcheck shell=sh disable=2086
 until_true_or_n()
 {
 	{ case ${-} in *x*) set +x; x='unset -v x; set -x';; esac; } 2>/dev/null

@@ -26,6 +26,8 @@ function wait_for_condition() {
     echo "Failed to meet $condition for command $*"
     exit 1
 }
+# shellcheck source=./until_true_or_n.sh disable=1091
+. "$(dirname "$0")"/until_true_or_n.sh
 
 ## Usage
 usage()
@@ -81,7 +83,7 @@ kubectl --context="${PRIMARY_CLUSTER}" -n rook-ceph exec "${CEPH_TOOLBOX_POD}" -
 CEPH_TOOLBOX_POD=$(kubectl --context="${SECONDARY_CLUSTER}" -n rook-ceph get pods -l  app=rook-ceph-tools -o jsonpath='{.items[0].metadata.name}')
 echo CEPH_TOOLBOX_POD on secondary cluster is "$CEPH_TOOLBOX_POD"
 
-wait_for_condition "${RBD_IMAGE_NAME}" kubectl --context="${SECONDARY_CLUSTER}" -n rook-ceph exec "${CEPH_TOOLBOX_POD}" -- rbd ls "${RBD_IMAGE_NAME}" --pool=replicapool
+until_true_or_n 300 kubectl --context="${SECONDARY_CLUSTER}" -n rook-ceph exec "${CEPH_TOOLBOX_POD}" -- rbd info "${RBD_IMAGE_NAME}" --pool=replicapool
 
 kubectl --context="${PRIMARY_CLUSTER}" get volumereplication vr-sample -o yaml
 
