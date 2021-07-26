@@ -318,10 +318,14 @@ ocm_subscription_operator_deploy_spoke_nonhub()
 	ocm_subscription_operator_deploy_spoke $1
 	kubectl config use-context ${1}
 	ocm_subscription_operator_checkout
+	mkdir -p multicloud-operators-subscription/munge-manifests
+	cp multicloud-operators-subscription/deploy/managed/operator.yaml multicloud-operators-subscription/munge-manifests/operator.yaml
 	MANAGED_CLUSTER_NAME=${1}\
 	HUB_KUBECONFIG=${HUB_KUBECONFIG}\
 	USE_VENDORIZED_BUILD_HARNESS=faked\
 	make -C multicloud-operators-subscription deploy-community-managed
+	cp multicloud-operators-subscription/munge-manifests/operator.yaml multicloud-operators-subscription/deploy/managed/operator.yaml
+	# deploy/managed/operator.yaml is changed and will not be updated
 	ocm_subscription_operator_checkout_undo
 	date
 	kubectl --context ${1} -n multicluster-operators wait deployments --all --for condition=available --timeout 1m
