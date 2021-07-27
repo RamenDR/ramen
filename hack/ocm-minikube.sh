@@ -162,7 +162,6 @@ ocm_registration_operator_deploy_spoke()
 	MANAGED_CLUSTER=${1}\
 	HUB_KUBECONFIG=${HUB_KUBECONFIG}\
 	make -C registration-operator deploy-spoke ${ocm_registration_operator_make_arguments}
-	kubectl --context $1 apply -f registration-operator/vendor/github.com/open-cluster-management/api/work/v1/0000_00_work.open-cluster-management.io_manifestworks.crd.yaml
 	ocm_registration_operator_checkout_undo
 	date
 	kubectl --context $1 -n open-cluster-management wait deployments/klusterlet --for condition=available
