@@ -48,7 +48,7 @@ const (
 
 	timeout       = time.Second * 10
 	interval      = time.Millisecond * 250
-	updateRetries = 5
+	updateRetries = 2 // replace this with 5 when done testing.  It takes a long time for the test to complete
 )
 
 var (
@@ -658,14 +658,17 @@ func verifyDRPCStatusPreferredClusterExpectation(drState rmn.DRState) {
 		err := k8sClient.Get(context.TODO(), drpcLookupKey, updatedDRPC)
 
 		if d := updatedDRPC.Status.PreferredDecision; err == nil && d != (plrv1.PlacementDecision{}) {
-			return d.ClusterName == EastManagedCluster && updatedDRPC.Status.LastKnownDRState == drState
+			idx, _ := controllers.GetDRPCCondition(&updatedDRPC.Status, string(drState))
+
+			return d.ClusterName == EastManagedCluster && idx != -1
 		}
 
 		return false
 	}, timeout, interval).Should(BeTrue(), fmt.Sprintf("failed waiting for an updated DRPC. State %v", drState))
 
 	Expect(updatedDRPC.Status.PreferredDecision.ClusterName).Should(Equal(EastManagedCluster))
-	Expect(updatedDRPC.Status.LastKnownDRState).Should(Equal(drState))
+	_, condition := controllers.GetDRPCCondition(&updatedDRPC.Status, string(drState))
+	Expect(condition.Type).Should(Equal(string(drState)))
 }
 
 func waitForCompletion() {
@@ -693,9 +696,14 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				verifyVRGManifestWorkCreatedAsPrimary(EastManagedCluster)
 				updateManifestWorkStatus(EastManagedCluster, "vrg", ocmworkv1.WorkApplied)
 				verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, EastManagedCluster)
-				verifyDRPCStatusPreferredClusterExpectation(rmn.Initial)
+				verifyDRPCStatusPreferredClusterExpectation(rmn.Deployed)
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(2)) // MWs for VRG and ROLES
 				waitForCompletion()
+
+				drpc := getLatestDRPC(DRPCName, DRPCNamespaceName)
+				// At this point expect the DRPC has gone through 2 states:
+				// {Deploying, Deployed}
+				Expect(len(drpc.Status.Conditions)).To(Equal(2))
 			})
 		})
 		When("DRAction changes to failover", func() {
@@ -728,6 +736,11 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				setDRPCSpecExpectationTo(drpc, "newS3Endpoint-1", rmn.ActionFailover, "")
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // MW for VRG ROLE only
 				waitForCompletion()
+
+				drpc := getLatestDRPC(DRPCName, DRPCNamespaceName)
+				// At this point expect the DRPC has gone through 4 states:
+				// {Deploying, Deployed, FailingOver, FailedOver}
+				Expect(len(drpc.Status.Conditions)).To(Equal(4))
 			})
 		})
 		When("DRPC Reconciler is called to failover the second time to the same cluster", func() {
@@ -783,6 +796,11 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				updateManagedClusterViewStatusAsNotFound(mcvWest)
 				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(2)) // Roles MWs
 				waitForCompletion()
+
+				drpc := getLatestDRPC(DRPCName, DRPCNamespaceName)
+				// At this point expect the DRPC has gone through 6 states:
+				// {Deploying, Deployed, FailingOver, FailedOver, FailingBack, FailedBack}
+				Expect(len(drpc.Status.Conditions)).To(Equal(6))
 			})
 		})
 		When("DRPC Reconciler is called to failback for the second time to the same cluster", func() {
@@ -833,6 +851,11 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				updateManagedClusterViewStatusAsNotFound(mcvEast)
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(2)) // Roles MWs
 				waitForCompletion()
+
+				drpc := getLatestDRPC(DRPCName, DRPCNamespaceName)
+				// At this point expect the DRPC has gone through 6 states:
+				// {Deploying, Deployed, FailingOver, FailedOver, FailingBack, FailedBack}
+				Expect(len(drpc.Status.Conditions)).To(Equal(6))
 			})
 		})
 		When("DRAction is set to relocation", func() {
@@ -863,6 +886,11 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				updateManagedClusterViewStatusAsNotFound(mcvWest)
 				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(2)) // Roles MWs
 				waitForCompletion()
+
+				drpc := getLatestDRPC(DRPCName, DRPCNamespaceName)
+				// At this point expect the DRPC has gone through 8 states:
+				// {Deploying, Deployed, FailingOver, FailedOver, FailingBack, FailedBack, Relocating, Relocated}
+				Expect(len(drpc.Status.Conditions)).To(Equal(8))
 			})
 			When("Deleting DRPC", func() {
 				It("Should delete VRG from Primary (EastManagedCluster)", func() {
