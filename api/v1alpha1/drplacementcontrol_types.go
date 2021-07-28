@@ -29,14 +29,14 @@ type DRAction string
 // These are the valid values for DRAction
 const (
 	// Failover, restore PVs to the TargetCluster
-	ActionFailover DRAction = "Failover"
+	ActionFailover = DRAction("Failover")
 
 	// Failback, restore PVs to the PreferredCluster
-	ActionFailback DRAction = "Failback"
+	ActionFailback = DRAction("Failback")
 
 	// Relocate, restore PVs to the designated TargetCluster.  PreferredCluster will change
 	// to be the TargetCluster.
-	ActionRelocate DRAction = "Relocate"
+	ActionRelocate = DRAction("Relocate")
 )
 
 // DRPlacementControlSpec defines the desired state of DRPlacementControl
@@ -69,36 +69,72 @@ type DRState string
 
 // These are the valid values for DRState
 const (
-	// Initial, this is the state that will be recorded in the DRPC status
+	// Deploying, state recorded in the DRPC status to indicate that the
+	// initial deployment is in progress. Deploying means selecting the
+	// preffered cluster and creating a VRG MW for it and waiting for MW
+	// to be applied in the managed cluster
+	Deploying = DRState("Deploying")
+
+	// Deployed, this is the state that will be recorded in the DRPC status
 	// when initial deplyment has been performed successfully
-	Initial DRState = "Initial"
+	Deployed = DRState("Deployed")
 
 	// FailingOver, state recorded in the DRPC status when the failover
 	// is initiated but has not been completed yet
-	FailingOver DRState = "Failing-over"
+	FailingOver = DRState("FailingOver")
 
 	// FailedOver, state recorded in the DRPC status when the failover
 	// process has completed
-	FailedOver DRState = "Failed-over"
+	FailedOver = DRState("FailedOver")
 
 	// FailingBack, state recorded in the DRPC status when the failback
 	// is initiated but has not been completed yet
-	FailingBack DRState = "Failing-back"
+	FailingBack = DRState("FailingBack")
 
 	// FailedBack, state recorded in the DRPC status when the failback
 	// process has completed
-	FailedBack DRState = "Failed-back"
+	FailedBack = DRState("FailedBack")
 
-	// TODO: implement the relocation
-	Relocating DRState = "Relocating"
-	Relocated  DRState = "Relocated"
+	// Relocating, state recorded in the DRPC status to indicate that the
+	// relocation is in progress
+	Relocating = DRState("Relocating")
+
+	// Relocated, state recorded in
+	Relocated = DRState("Relocated")
 )
+
+// VRGResourceMeta represents the VRG resource.
+type VRGResourceMeta struct {
+	// Kind is the kind of the Kubernetes resource.
+	// +optional
+	Kind string `json:"kind"`
+
+	// Name is the name of the Kubernetes resource.
+	Name string `json:"name"`
+
+	// Name is the namespace of the Kubernetes resource.
+	Namespace string `json:"namespace"`
+
+	// LastUpdateTime metav1.Time `json:"lastUpdateTime"`
+}
+
+// VRGConditions represents the conditions of the resources deployed on a
+// managed cluster.
+type VRGConditions struct {
+	// ResourceMeta represents the VRG resoure.
+	// +required
+	ResourceMeta VRGResourceMeta `json:"resourceMeta,omitempty"`
+
+	// Conditions represents the conditions of this resource on a managed cluster.
+	// +required
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
 
 // DRPlacementControlStatus defines the observed state of DRPlacementControl
 type DRPlacementControlStatus struct {
-	PreferredDecision plrv1.PlacementDecision `json:"preferredDecision,omitempty"`
-	LastKnownDRState  DRState                 `json:"lastKnownDRState,omitempty"`
-	LastUpdateTime    metav1.Time             `json:"lastUpdateTime"`
+	PreferredDecision  plrv1.PlacementDecision `json:"preferredDecision,omitempty"`
+	Conditions         []metav1.Condition      `json:"conditions"`
+	ResourceConditions VRGConditions           `json:"resourceConditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
