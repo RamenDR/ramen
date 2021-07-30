@@ -7,6 +7,7 @@ on:  # yamllint disable-line rule:truthy
     tags:
       - v*
     branches:
+      - release-*
       - main
   pull_request:
     branches:
@@ -162,8 +163,10 @@ jobs:
     needs: [deploy-check, lint, golangci]
     if: >
       (github.event_name == 'push') &&
-      (github.ref == 'refs/heads/main') &&
-      (github.repository == 'RamenDR/ramen')
+      (github.ref == 'refs/heads/main' ||
+       startsWith(github.ref, 'refs/heads/release-') ||
+       startsWith(github.ref, 'refs/tags/v')) &&
+      (github.repository == 'ramendr/ramen')
     runs-on: ubuntu-20.04
     steps:
       - name: Download image artifact
@@ -185,5 +188,21 @@ jobs:
 
       - name: Push to Quay
         run: |
-          docker tag "${IMG}" "${IMG_NAME}:main-canary"
-          docker push "${IMG_NAME}:main-canary"
+          [[ "${{ github.ref }}" =~ ^refs\/(heads|tags)\/(release-)?(.*) ]]
+          echo "heads or tags? ${BASH_REMATCH[1]}"
+          echo "release? ${BASH_REMATCH[2]}"
+          echo "version? ${BASH_REMATCH[3]}"
+          TAG=""
+          if test "${BASH_REMATCH[1]}" = "heads"; then
+            if test "${BASH_REMATCH[2]}" = "" && test "${BASH_REMATCH[3]}" = "main"; then
+              TAG="canary"
+            elif test "${BASH_REMATCH[2]}" = "release-"; then
+              TAG="${BASH_REMATCH[3]}-canary"
+            fi
+          elif test "${BASH_REMATCH[1]}" == "tags" && test "${BASH_REMATCH[2]}" = ""; then
+            TAG="${BASH_REMATCH[3]}"
+          fi
+          test "${TAG}" = "" && exit 1
+          echo "Tagging as ${IMG_NAME}:${TAG}"
+          docker tag "${IMG}" "${IMG_NAME}:${TAG}"
+          docker push "${IMG_NAME}:${TAG}"
