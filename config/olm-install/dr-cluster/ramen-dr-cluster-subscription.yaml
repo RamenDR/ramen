@@ -1,0 +1,13 @@
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: ramen-dr-cluster-subscription
+  namespace: ramen-system
+spec:
+  channel: "alpha"
+  installPlanApproval: Automatic
+  name: ramen-dr-cluster
+  source: ramen-catalog
+  sourceNamespace: ramen-system
+  startingCSV: ramen-dr-cluster.v0.0.1

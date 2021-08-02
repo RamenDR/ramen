@@ -14,9 +14,9 @@ on:  # yamllint disable-line rule:truthy
       - '*'
 env:
   GO_VERSION: "1.16"
-  # Uses image name IMG to build image in Makefile
-  IMG: "quay.io/ramendr/ramen-operator:sanity"
-  IMG_NAME: "quay.io/ramendr/ramen-operator"
+  # Use IMAGE_TAG_BASE and IMAGE_TAG Makefile variables to build various images
+  IMAGE_TAG_BASE: "quay.io/ramendr/ramen"
+  IMAGE_TAG: "sanity"
 defaults:
   run:
     shell: bash
@@ -67,7 +67,7 @@ jobs:
         run: make docker-build
 
       - name: Export image
-        run: docker save -o /tmp/ramen-operator.tar ${IMG}
+        run: docker save -o /tmp/ramen-operator.tar ${IMAGE_TAG_BASE}-operator:${IMAGE_TAG}
 
       - name: Save image artifact
         uses: actions/upload-artifact@v2
@@ -129,7 +129,7 @@ jobs:
       - name: Load image artifact
         run: |
           docker load -i /tmp/ramen-operator.tar
-          kind load docker-image "${IMG}" --name ${KIND_CLUSTER_NAME}
+          kind load docker-image ${IMAGE_TAG_BASE}-operator:${IMAGE_TAG} --name ${KIND_CLUSTER_NAME}
 
       - name: Deploy dependent CRDs
         run: |
@@ -186,7 +186,7 @@ jobs:
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_ROBOT_TOKEN }}
 
-      - name: Push to Quay
+      - name: Determine image tag
         run: |
           [[ "${{ github.ref }}" =~ ^refs\/(heads|tags)\/(release-)?(.*) ]]
           echo "heads or tags? ${BASH_REMATCH[1]}"
@@ -203,6 +203,27 @@ jobs:
             TAG="${BASH_REMATCH[3]}"
           fi
           test "${TAG}" = "" && exit 1
-          echo "Tagging as ${IMG_NAME}:${TAG}"
-          docker tag "${IMG}" "${IMG_NAME}:${TAG}"
-          docker push "${IMG_NAME}:${TAG}"
+          echo "Publish image tag ${TAG}"
+          echo "publish_image_tag=${TAG}" >> $GITHUB_ENV
+
+      - name: Push operator image to Quay
+        run: |
+          docker tag "${IMAGE_TAG_BASE}-operator:${IMAGE_TAG}" "${IMAGE_TAG_BASE}-operator:${{ env.publish_image_tag }}"
+          docker push "${IMAGE_TAG_BASE}-operator:${{ env.publish_image_tag }}"
+
+      # TODO: We do not need to build bundles and catalogs each time, fix once we reach alpha
+      - name: Checkout source
+        uses: actions/checkout@v2
+
+      - name: Setup go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Build and push bundle images to Quay
+        run: |
+          IMAGE_TAG="${{ env.publish_image_tag }}" make bundle-build bundle-push
+
+      - name: Build and push catalog image to Quay
+        run: |
+          IMAGE_TAG="${{ env.publish_image_tag }}" make catalog-build catalog-push"
