@@ -1,0 +1,24 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ramen-system
+
+bases:
+- ../base
+
+resources:
+- ramen-hub-subscription.yaml
+
+# patch Subscriptions channel and version
+patches:
+- patch: |-
+    - op: replace
+      path: /spec/channel
+      value: alpha
+    - op: replace
+      path: /spec/startingCSV
+      value: ramen-hub.v0.0.1
+  target:
+    kind: Subscription
+    name: ramen-hub-subscription

@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ramen-system
+
+resources:
+- ramen-catalog.yaml
+- ramen-operator-group.yaml
+
+configurations:
+- catalog-source-kustomizeconfig.yaml
+
+# replace catalogsource image
+images:
+- name: ramen-operator-catalog
+  newName: quay.io/ramendr/ramen-operator-catalog
+  newTag: canary

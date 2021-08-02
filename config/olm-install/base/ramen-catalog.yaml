@@ -1,0 +1,10 @@
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: ramen-catalog
+  namespace: ramen-system
+spec:
+  displayName: Ramen Operators
+  image: ramen-operator-catalog:canary
+  sourceType: grpc
