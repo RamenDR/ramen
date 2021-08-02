@@ -699,6 +699,11 @@ func (d *DRPCInstance) runInitialDeployment() (bool, error) {
 
 	const done = true
 
+	if !d.isValidInitialDeploymentState() {
+		return done, fmt.Errorf("invalid state %v for the selected action %v",
+			d.getLastDRState(), d.instance.Spec.Action)
+	}
+
 	// 1. Check if the user wants to use the preferredCluster
 	homeCluster := ""
 	homeClusterNamespace := ""
@@ -762,6 +767,12 @@ func (d *DRPCInstance) runFailover() (bool, error) {
 	d.log.Info("Entering runFailover", "state", d.getLastDRState())
 
 	const done = true
+
+	if d.isFailbackInProgress() || d.isRelocationInProgress() {
+		return done, fmt.Errorf("invalid state %v for the selected action %v",
+			d.getLastDRState(), d.instance.Spec.Action)
+	}
+
 	// We are done if empty
 	if d.instance.Spec.FailoverCluster == "" {
 		return done, fmt.Errorf("failover cluster not set. FailoverCluster is a mandatory field")
@@ -783,6 +794,11 @@ func (d *DRPCInstance) runFailover() (bool, error) {
 		}
 	}
 
+	return d.switchToFailoverCluster(newHomeCluster)
+}
+
+func (d *DRPCInstance) switchToFailoverCluster(newHomeCluster string) (bool, error) {
+	const done = true
 	// Make sure we record the state that we are failing over
 	d.setDRState(rmn.FailingOver)
 
@@ -839,11 +855,21 @@ func (d *DRPCInstance) runFailover() (bool, error) {
 func (d *DRPCInstance) runFailback() (bool, error) {
 	d.log.Info("Entering runFailback", "state", d.getLastDRState())
 
+	if d.isFailoverInProgress() || d.isRelocationInProgress() {
+		return false, fmt.Errorf("invalid state %v for the selected action %v",
+			d.getLastDRState(), d.instance.Spec.Action)
+	}
+
 	return d.switchToPreferredCluster(rmn.FailingBack)
 }
 
 func (d *DRPCInstance) runRelocate() (bool, error) {
 	d.log.Info("Entering runRelocate", "state", d.getLastDRState())
+
+	if d.isFailbackInProgress() || d.isFailoverInProgress() {
+		return false, fmt.Errorf("invalid state %v for the selected action %v",
+			d.getLastDRState(), d.instance.Spec.Action)
+	}
 
 	return d.switchToPreferredCluster(rmn.Relocating)
 }
@@ -1774,7 +1800,7 @@ func (d *DRPCInstance) getLastDRState() rmn.DRState {
 		return rmn.DRState(condition.Type)
 	}
 
-	return ""
+	return rmn.DRState("")
 }
 
 func (d *DRPCInstance) getRequeueDuration() time.Duration {
@@ -1802,4 +1828,22 @@ func (d *DRPCInstance) getRequeueDuration() time.Duration {
 	}
 
 	return duration
+}
+
+func (d *DRPCInstance) isValidInitialDeploymentState() bool {
+	drState := d.getLastDRState()
+
+	return drState == rmn.DRState("") || drState == rmn.Deploying || drState == rmn.Deployed
+}
+
+func (d *DRPCInstance) isFailoverInProgress() bool {
+	return rmn.FailingOver == d.getLastDRState()
+}
+
+func (d *DRPCInstance) isFailbackInProgress() bool {
+	return rmn.FailingBack == d.getLastDRState()
+}
+
+func (d *DRPCInstance) isRelocationInProgress() bool {
+	return rmn.Relocating == d.getLastDRState()
 }
