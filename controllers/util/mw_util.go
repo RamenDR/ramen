@@ -149,13 +149,17 @@ func IsManifestInAppliedState(mw *ocmworkv1.ManifestWork) bool {
 }
 
 func (mwu *MWUtil) CreateOrUpdateVRGManifestWork(
-	name, namespace, homeCluster, s3Endpoint, s3Region, s3SecretName string, pvcSelector metav1.LabelSelector,
-	schedulingInterval string, replClassSelector metav1.LabelSelector) error {
-	mwu.Log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%s:%s:%s",
-		name, namespace, homeCluster, s3Endpoint, s3SecretName))
+	name, namespace, homeCluster string,
+	drPolicy *rmn.DRPolicy, pvcSelector metav1.LabelSelector) error {
+	s3ProfileList := drPolicy.S3UploadProfileList(homeCluster)
+	schedulingInterval := drPolicy.Spec.SchedulingInterval
+	replClassSelector := drPolicy.Spec.ReplicationClassSelector
+
+	mwu.Log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%s:%s",
+		name, namespace, homeCluster, s3ProfileList))
 
 	manifestWork, err := mwu.generateVRGManifestWork(name, namespace, homeCluster,
-		s3Endpoint, s3Region, s3SecretName, pvcSelector, schedulingInterval, replClassSelector)
+		s3ProfileList, pvcSelector, schedulingInterval, replClassSelector)
 	if err != nil {
 		return err
 	}
@@ -164,11 +168,11 @@ func (mwu *MWUtil) CreateOrUpdateVRGManifestWork(
 }
 
 func (mwu *MWUtil) generateVRGManifestWork(
-	name, namespace, homeCluster, s3Endpoint, s3Region, s3SecretName string,
+	name, namespace, homeCluster string, s3ProfileList []string,
 	pvcSelector metav1.LabelSelector, schedulingInterval string,
 	replClassSelector metav1.LabelSelector) (*ocmworkv1.ManifestWork, error) {
-	vrgClientManifest, err := mwu.generateVRGManifest(name, namespace, s3Endpoint,
-		s3Region, s3SecretName, pvcSelector, schedulingInterval, replClassSelector)
+	vrgClientManifest, err := mwu.generateVRGManifest(name, namespace, s3ProfileList,
+		pvcSelector, schedulingInterval, replClassSelector)
 	if err != nil {
 		mwu.Log.Error(err, "failed to generate VolumeReplicationGroup manifest")
 
@@ -185,7 +189,7 @@ func (mwu *MWUtil) generateVRGManifestWork(
 }
 
 func (mwu *MWUtil) generateVRGManifest(
-	name, namespace, s3Endpoint, s3Region, s3SecretName string,
+	name, namespace string, s3ProfileList []string,
 	pvcSelector metav1.LabelSelector, schedulingInterval string,
 	replClassSelector metav1.LabelSelector) (*ocmworkv1.Manifest, error) {
 	return mwu.GenerateManifest(&rmn.VolumeReplicationGroup{
@@ -195,9 +199,7 @@ func (mwu *MWUtil) generateVRGManifest(
 			PVCSelector:              pvcSelector,
 			SchedulingInterval:       schedulingInterval,
 			ReplicationState:         rmn.Primary,
-			S3Endpoint:               s3Endpoint,
-			S3Region:                 s3Region,
-			S3SecretName:             s3SecretName,
+			S3ProfileList:            s3ProfileList,
 			ReplicationClassSelector: replClassSelector,
 		},
 	})

@@ -36,10 +36,30 @@ spec:
           spec:
             description: DRPolicySpec defines the desired state of DRPolicy
             properties:
-              clusterNames:
-                description: Members of the DRPolicy set
+              drClusterSet:
+                description: The set of managed clusters governed by this policy,
+                  which have replication relationship enabled between them.
                 items:
-                  type: string
+                  description: Managed cluster information
+                  properties:
+                    name:
+                      description: Name of this managed cluster as configured in OCM/ACM
+                      type: string
+                    s3ProfileName:
+                      description: S3 profile name (in Ramen config) to use as a source
+                        to restore PV related cluster state during recovery or relocate
+                        actions of applications to this managed cluster;  hence, this
+                        S3 profile should be available to successfully move the workload
+                        to this managed cluster.  For applications that are active
+                        on this managed cluster, their PV related cluster state is
+                        stored to S3 profiles of all other managed clusters in the
+                        same DRPolicy to enable recovery or relocate actions on those
+                        managed clusters.
+                      type: string
+                  required:
+                  - name
+                  - s3ProfileName
+                  type: object
                 type: array
               replicationClassSelector:
                 description: Label selector to identify all the VolumeReplicationClasses.
@@ -94,7 +114,7 @@ spec:
                   stands for days.
                 type: string
             required:
-            - clusterNames
+            - drClusterSet
             - schedulingInterval
             type: object
           status:

@@ -82,26 +82,9 @@ type VolumeReplicationGroupSpec struct {
 	// this value is propagated to children VolumeReplication CRs
 	ReplicationState ReplicationState `json:"replicationState"`
 
-	// S3 Endpoint to replicate PV metadata; set this field, along with a secret
-	// that contains the access-key-id and secret-access-key to enable VRG to
-	// replicate the PV metadata to the given s3 endpoint to a bucket with
-	// VRG's name.  Thus the VRG name needs to be unique among other VRGs using
-	// the same S3Endpoint and it should also follow AWS bucket naming rules:
-	// https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
-	// If this field is not set, VRG may be used to simply control the replication
-	// state of all PVs in this group, under the expectation that the PV metadata
-	// is replicated by a different mechanism; this mode of operation may be
-	// referred to as backup-less mode.
-	S3Endpoint string `json:"s3Endpoint,omitempty"`
-	// S3 Region: https://docs.aws.amazon.com/general/latest/gr/rande.html
-	S3Region string `json:"s3Region,omitempty"`
-
-	// Name of k8s secret that contains the credentials to access the S3 endpoint.
-	// If S3Endpoint is used, also specify the k8s secret that contains the S3
-	// access key id and secret access key set using the keys: AWS_ACCESS_KEY_ID
-	// and AWS_SECRET_ACCESS_KEY.  The secret should be present in the same namespace
-	// as the VRG
-	S3SecretName string `json:"s3SecretName,omitempty"`
+	// List of unique S3 profiles in RamenConfig that should be used to store
+	// and forward PV related cluster state to peer DR clusters.
+	S3ProfileList []string `json:"s3ProfileName,omitempty"`
 }
 
 type ProtectedPVC struct {

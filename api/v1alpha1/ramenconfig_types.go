@@ -37,13 +37,26 @@ const (
 	DRHub ControllerType = "dr-hub"
 )
 
-// Definition of a S3 store profile that Ramen can use to replicate the etcd
-// cluster data of PVs.  A single S3 store profile can be used by one or more
-// VolumeReplicationGroup objects.  The name of the profile is maintained by the
-// container of this profile.
+// Profile of a S3 compatible store to replicate the relevant Kubernetes cluster
+// state (in etcd), such as PV state, across clusters protected by Ramen.
+// - DRProtectionControl and VolumeReplicationGroup objects specify the S3
+//   profile that should be used to protect the cluster state of the relevant
+//   PVs.
+// - A single S3 store profile can be used by multiple DRProtectionControl and
+//   VolumeReplicationGroup objects.
+// - Ramen uses one S3 bucket per VRG, with the bucknet name equal to VRG name.
+//   Ramen will create the bucket if one doesn't already exist.  Thus the VRG
+//   name needs to be unique among other VRGs using the same S3 endpoint.
+//   should also follow AWS bucket naming rules:
+//   https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
+// - If this field is not set, VRG may be used to simply control the replication
+//   state of all PVs in this group using the underlying VolumeReplication
+//   object, but the required cluster state should be replicated using a mechanism
+//   other than using the S3 store.
+// - See DRPolicy type for additional details about S3 configuration options
 type S3StoreProfile struct {
-	// Name of this profile
-	ProfileName string `json:"profileName"`
+	// Name of this S3 profile
+	S3ProfileName string `json:"s3ProfileName"`
 
 	// S3 compatible endpoint of this profile
 	S3CompatibleEndpoint string `json:"s3CompatibleEndpoint"`

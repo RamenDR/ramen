@@ -9,18 +9,16 @@ webhook:
 leaderElection:
   leaderElect: true
   resourceName: leaderelection.ramendr.openshift.io
-  resourceNamespace: ramen-system
 s3StoreProfiles:
-  - profileName: s3store-example1
-    s3CompatibleEndpoint: http://rook-ceph-rgw-ocs-storagecluster-cephobjectstore.openshift-storage.svc.cluster.local:80
+  - s3ProfileName: s3-profile-of-east
+    s3CompatibleEndpoint: http://rook-ceph-rgw-ocs-storagecluster-cephobjectstore.openshift-storage.svc.cluster.east:80
     s3Region: east
     s3SecretRef:
-      name: example-secret1
+      name: s3-secret-east
       namespace: default
-  - profileName: s3store-example2
+  - s3ProfileName: s3-profile-of-west
     s3Region: west
-    s3CompatibleEndpoint: http://rook-ceph-rgw-ocs-storagecluster-cephobjectstore.openshift-storage.svc.cluster.remote:80
+    s3CompatibleEndpoint: http://rook-ceph-rgw-ocs-storagecluster-cephobjectstore.openshift-storage.svc.cluster.west:80
     s3SecretRef:
-      name: example-secret2
+      name: s3-secret-west
       namespace: default
-

@@ -59,21 +59,6 @@ type DRPlacementControlSpec struct {
 	// need DR protection. It will be passed in to the VRG when it is created
 	PVCSelector metav1.LabelSelector `json:"pvcSelector"`
 
-	// S3 Endpoint to replicate PV metadata; this is for all VRGs.
-	// The value of this field, will be progated to every VRG.
-	// See VRG spec for more details.
-	S3Endpoint string `json:"s3Endpoint"`
-
-	// S3 Region: https://docs.aws.amazon.com/general/latest/gr/rande.html
-	S3Region string `json:"s3Region"`
-
-	// Name of k8s secret that contains the credentials to access the S3 endpoint.
-	// If S3Endpoint is used, also specify the k8s secret that contains the S3
-	// access key id and secret access key set using the keys: AWS_ACCESS_KEY_ID
-	// and AWS_SECRET_ACCESS_KEY.  The value of this field, will be progated to every VRG.
-	// See VRG spec for more details.
-	S3SecretName string `json:"s3SecretName"`
-
 	// Action is either failover or failback operation
 	Action DRAction `json:"action,omitempty"`
 }
