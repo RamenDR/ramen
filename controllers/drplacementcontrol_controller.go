@@ -425,9 +425,14 @@ func (r *DRPlacementControlReconciler) getUserPlacementRule(ctx context.Context,
 	}
 
 	scName := userPlacementRule.Spec.SchedulerName
-	if scName != "" && scName != RamenScheduler {
+	if scName != RamenScheduler {
 		return nil, fmt.Errorf("placementRule %s does not have the ramen scheduler. Scheduler used %s",
 			userPlacementRule.Name, scName)
+	}
+
+	if userPlacementRule.Spec.ClusterReplicas == nil || *userPlacementRule.Spec.ClusterReplicas != 1 {
+		r.Log.Info("User PlacementRule replica count is not set to 1, reconciliation will only" +
+			" schedule it to a single cluster")
 	}
 
 	return userPlacementRule, nil
@@ -940,13 +945,13 @@ func (r *DRPlacementControlReconciler) getVRGFromManagedCluster(
 }
 
 func (d *DRPCInstance) updateUserPlRuleAndCreateVRGMW(homeCluster, homeClusterNamespace string) error {
-	err := d.updateUserPlacementRule(homeCluster, homeClusterNamespace)
+	// Create VRG first, to leverage user PlacementRule decision to skip placement and move to cleanup
+	err := d.createVRGManifestWork(homeCluster)
 	if err != nil {
 		return err
 	}
 
-	// Creating VRG ManifestWork will be running in parallel with ACM deploying app resources
-	err = d.createVRGManifestWork(homeCluster)
+	err = d.updateUserPlacementRule(homeCluster, homeClusterNamespace)
 	if err != nil {
 		return err
 	}
