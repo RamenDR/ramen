@@ -84,6 +84,33 @@ ramen_deploy()
 	    replication.storage.openshift.io/replication-secret-name: rook-csi-rbd-provisioner
 	    replication.storage.openshift.io/replication-secret-namespace: rook-ceph
 	a
+
+	# Add s3 profile to ramen config
+	ramen_config_map_name=ramen-${3}-operator-config
+	. ${ramen_hack_directory_path_name}/until_true_or_n.sh
+	until_true_or_n 90 kubectl --context ${2} -n ramen-system get configmap ${ramen_config_map_name}
+	unset -f until_true_or_n
+  dirName="${3}"
+	if test ${dirName} = "dr-cluster"; then
+    dirName=dr_cluster
+  fi
+	cp ${1}/config/${dirName}/manager/ramen_manager_config.yaml /tmp/ramen_manager_config.yaml
+	cat <<-EOF >> /tmp/ramen_manager_config.yaml
+
+	s3StoreProfiles:
+	- s3ProfileName: minio-on-hub
+	  s3CompatibleEndpoint: $(minikube --profile=${hub_cluster_name} -n minio service --url minio)
+	  s3Region: us-east-1
+	  s3SecretRef:
+	    name: busybox-s3secret
+	    namespace: busybox-sample
+	EOF
+
+	kubectl --context ${2} -n ramen-system\
+		create configmap ${ramen_config_map_name}\
+		--from-file=/tmp/ramen_manager_config.yaml -o yaml --dry-run=client |
+		kubectl --context ${2} -n ramen-system replace -f -
+	unset -f ramen_config_map_name
 }
 exit_stack_push unset -f ramen_deploy
 ramen_deploy_hub()
@@ -138,23 +165,7 @@ application_sample_deploy()
 {
 	kubectl --context $hub_cluster_name apply -k https://github.com/ramendr/ocm-ramen-samples/subscriptions?ref=$ocm_ramen_samples_git_ref
 	kubectl --context ${hub_cluster_name} -n ramen-samples get channels/ramen-gitops
-	mkdir -p /tmp/$USER/ocm-ramen-samples/subscriptions/busybox
-	cat <<-a >/tmp/$USER/ocm-ramen-samples/subscriptions/busybox/kustomization.yaml
-	---
-	resources:
-	  - https://github.com/ramendr/ocm-ramen-samples/subscriptions/busybox?ref=$ocm_ramen_samples_git_ref
-	patchesJson6902:
-	  - target:
-	      group: ramendr.openshift.io
-	      version: v1alpha1
-	      kind: DRPlacementControl
-	      name: busybox-drpc
-	    patch: |-
-	      - op: replace
-	        path: /spec/s3Endpoint
-	        value: $(minikube --profile=${hub_cluster_name} -n minio service --url minio)
-	a
-	kubectl --context $hub_cluster_name apply -k /tmp/$USER/ocm-ramen-samples/subscriptions/busybox
+	kubectl --context $hub_cluster_name apply -k https://github.com/ramendr/ocm-ramen-samples/subscriptions/busybox?ref=$ocm_ramen_samples_git_ref
 	kubectl --context ${hub_cluster_name} -n busybox-sample get placementrules/busybox-placement
 	until_true_or_n 90 eval test \"\$\(kubectl --context ${hub_cluster_name} -n busybox-sample get subscriptions/busybox-sub -ojsonpath='{.status.phase}'\)\" = Propagated
 	until_true_or_n 1 eval test -n \"\$\(kubectl --context ${hub_cluster_name} -n busybox-sample get placementrules/busybox-placement -ojsonpath='{.status.decisions[].clusterName}'\)\"

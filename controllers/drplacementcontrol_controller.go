@@ -138,8 +138,7 @@ func init() {
 
 type PVDownloader interface {
 	DownloadPVs(ctx context.Context, r client.Reader, objStoreGetter ObjectStoreGetter,
-		s3Endpoint, s3Region string, s3SecretName types.NamespacedName,
-		callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error)
+		s3Profile string, callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error)
 }
 
 // ProgressCallback of function type
@@ -668,13 +667,13 @@ func (r *DRPlacementControlReconciler) deleteClonedPlacementRule(ctx context.Con
 
 func (r *DRPlacementControlReconciler) addClusterPeersToPlacementRule(
 	drPolicy *rmn.DRPolicy, plRule *plrv1.PlacementRule) error {
-	if len(drPolicy.Spec.ClusterNames) == 0 {
+	if len(drPolicy.Spec.DRClusterSet) == 0 {
 		return fmt.Errorf("DRPolicy %s is missing DR clusters", drPolicy.Name)
 	}
 
-	for idx := range drPolicy.Spec.ClusterNames {
+	for idx := range drPolicy.Spec.DRClusterSet {
 		plRule.Spec.Clusters = append(plRule.Spec.Clusters, plrv1.GenericClusterReference{
-			Name: drPolicy.Spec.ClusterNames[idx],
+			Name: drPolicy.Spec.DRClusterSet[idx].Name,
 		})
 	}
 
@@ -1038,7 +1037,9 @@ func (d *DRPCInstance) processVRGForSecondaries() (bool, error) {
 
 	failedCount := 0
 
-	for _, clusterName := range d.drPolicy.Spec.ClusterNames {
+	for _, drCluster := range d.drPolicy.Spec.DRClusterSet {
+		clusterName := drCluster.Name
+
 		err := d.updateVRGStateToSecondary(clusterName)
 		if err != nil {
 			d.log.Error(err, "Failed to update VRG to secondary", "cluster", clusterName)
@@ -1053,7 +1054,8 @@ func (d *DRPCInstance) processVRGForSecondaries() (bool, error) {
 		return !ensured, nil
 	}
 
-	for _, clusterName := range d.drPolicy.Spec.ClusterNames {
+	for _, drCluster := range d.drPolicy.Spec.DRClusterSet {
+		clusterName := drCluster.Name
 		if !d.ensureVRGIsSecondary(clusterName) {
 			d.log.Info("Still waiting for VRG to transition to secondary", "cluster", clusterName)
 
@@ -1159,7 +1161,8 @@ func (d *DRPCInstance) restore(newHomeCluster string) error {
 }
 
 func (d *DRPCInstance) cleanup(skipCluster string) (bool, error) {
-	for _, clusterName := range d.drPolicy.Spec.ClusterNames {
+	for _, drCluster := range d.drPolicy.Spec.DRClusterSet {
+		clusterName := drCluster.Name
 		if skipCluster == clusterName {
 			continue
 		}
@@ -1493,7 +1496,7 @@ func (d *DRPCInstance) deleteManagedClusterView(clusterName string) error {
 func (d *DRPCInstance) restorePVFromBackup(homeCluster string) error {
 	d.log.Info("Restoring PVs to new managed cluster", "name", homeCluster)
 
-	pvList, err := d.listPVsFromS3Store()
+	pvList, err := d.listPVsFromS3Store(homeCluster)
 	if err != nil {
 		return errorswrapper.Wrap(err, "failed to retrieve PVs from S3 store")
 	}
@@ -1524,10 +1527,7 @@ func (d *DRPCInstance) processVRGManifestWork(homeCluster string) error {
 
 	if err := d.mwu.CreateOrUpdateVRGManifestWork(
 		d.instance.Name, d.instance.Namespace,
-		homeCluster, d.instance.Spec.S3Endpoint,
-		d.instance.Spec.S3Region,
-		d.instance.Spec.S3SecretName, d.instance.Spec.PVCSelector,
-		d.drPolicy.Spec.SchedulingInterval, d.drPolicy.Spec.ReplicationClassSelector); err != nil {
+		homeCluster, d.drPolicy, d.instance.Spec.PVCSelector); err != nil {
 		d.log.Error(err, "failed to create or update VolumeReplicationGroup manifest")
 
 		return fmt.Errorf("failed to create or update VolumeReplicationGroup manifest in namespace %s (%w)", homeCluster, err)
@@ -1728,25 +1728,20 @@ func (r *DRPlacementControlReconciler) getOrCreateManagedClusterView(
 	return mcv, nil
 }
 
-func (d *DRPCInstance) listPVsFromS3Store() ([]corev1.PersistentVolume, error) {
-	s3SecretLookupKey := types.NamespacedName{
-		Name:      d.instance.Spec.S3SecretName,
-		Namespace: d.instance.Namespace,
-	}
-
+func (d *DRPCInstance) listPVsFromS3Store(homeCluster string) ([]corev1.PersistentVolume, error) {
 	s3Bucket := constructBucketName(d.instance.Namespace, d.instance.Name)
 
 	return d.reconciler.PVDownloader.DownloadPVs(
-		d.ctx, d.reconciler.Client, d.reconciler.ObjStoreGetter, d.instance.Spec.S3Endpoint, d.instance.Spec.S3Region,
-		s3SecretLookupKey, d.instance.Name, s3Bucket)
+		d.ctx, d.reconciler.Client, d.reconciler.ObjStoreGetter, d.drPolicy.S3DownloadProfile(homeCluster),
+		d.instance.Name, s3Bucket)
 }
 
 type ObjectStorePVDownloader struct{}
 
 func (s ObjectStorePVDownloader) DownloadPVs(ctx context.Context, r client.Reader,
-	objStoreGetter ObjectStoreGetter, s3Endpoint, s3Region string, s3SecretName types.NamespacedName,
+	objStoreGetter ObjectStoreGetter, s3Profile string,
 	callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error) {
-	objectStore, err := objStoreGetter.objectStore(ctx, r, s3Endpoint, s3Region, s3SecretName, callerTag)
+	objectStore, err := objStoreGetter.objectStore(ctx, r, s3Profile, callerTag)
 	if err != nil {
 		return nil, fmt.Errorf("error when downloading PVs, err %w", err)
 	}
