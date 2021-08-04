@@ -496,6 +496,16 @@ func updateManifestWorkStatus(clusterNamespace, mwType, workType string) {
 			},
 		},
 	}
+	// If work requires `applied`, add `available` as well to ensure a successful check
+	if workType == ocmworkv1.WorkApplied {
+		pvManifestStatus.Conditions = append(pvManifestStatus.Conditions, metav1.Condition{
+			Type:               ocmworkv1.WorkAvailable,
+			LastTransitionTime: metav1.Time{Time: timeMostRecent},
+			Status:             metav1.ConditionTrue,
+			Reason:             "test",
+		})
+	}
+
 	createdManifest.Status = pvManifestStatus
 
 	err := k8sClient.Status().Update(context.TODO(), createdManifest)

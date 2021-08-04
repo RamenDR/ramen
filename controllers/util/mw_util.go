@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"sort"
 
 	"github.com/go-logr/logr"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
@@ -124,69 +123,26 @@ func (mwu *MWUtil) FindManifestWork(mwName, managedCluster string) (*ocmworkv1.M
 
 func IsManifestInAppliedState(mw *ocmworkv1.ManifestWork) bool {
 	applied := false
+	available := false
 	degraded := false
 	conditions := mw.Status.Conditions
 
 	if len(conditions) > 0 {
-		// get most recent conditions that have ConditionTrue status
-		recentConditions := FilterByConditionStatus(GetMostRecentConditions(conditions), metav1.ConditionTrue)
-
-		for _, condition := range recentConditions {
-			if condition.Type == ocmworkv1.WorkApplied || condition.Type == ocmworkv1.WorkAvailable {
-				applied = true
-			} else if condition.Type == ocmworkv1.WorkDegraded {
-				degraded = true
+		for _, condition := range conditions {
+			if condition.Status == metav1.ConditionTrue {
+				switch {
+				case condition.Type == ocmworkv1.WorkApplied:
+					applied = true
+				case condition.Type == ocmworkv1.WorkAvailable:
+					available = true
+				case condition.Type == ocmworkv1.WorkDegraded:
+					degraded = true
+				}
 			}
 		}
-
-		// if most recent timestamp contains Applied and Degraded states, don't trust it's actually Applied
-		if degraded {
-			applied = false
-		}
 	}
 
-	return applied
-}
-
-func FilterByConditionStatus(conditions []metav1.Condition, status metav1.ConditionStatus) []metav1.Condition {
-	filtered := make([]metav1.Condition, 0)
-
-	for _, condition := range conditions {
-		if condition.Status == status {
-			filtered = append(filtered, condition)
-		}
-	}
-
-	return filtered
-}
-
-// return Conditions with most recent timestamps only (allows duplicates)
-func GetMostRecentConditions(conditions []metav1.Condition) []metav1.Condition {
-	recentConditions := make([]metav1.Condition, 0)
-
-	// sort conditions by timestamp. Index 0 = most recent
-	sort.Slice(conditions, func(a, b int) bool {
-		return conditions[b].LastTransitionTime.Before(&conditions[a].LastTransitionTime)
-	})
-
-	if len(conditions) == 0 {
-		return recentConditions
-	}
-
-	// len(conditions) > 0; conditions are sorted
-	mostRecentTimestamp := conditions[0].LastTransitionTime
-
-	// loop through conditions until not in the most recent one anymore
-	for index := range conditions {
-		// only keep conditions with most recent timestamp
-		if conditions[index].LastTransitionTime == mostRecentTimestamp {
-			recentConditions = append(recentConditions, conditions[index])
-		} else {
-			break
-		}
-	}
-
-	return recentConditions
+	return applied && available && !degraded
 }
 
 func (mwu *MWUtil) CreateOrUpdateVRGManifestWork(
