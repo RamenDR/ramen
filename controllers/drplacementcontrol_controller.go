@@ -1502,22 +1502,20 @@ func (r *DRPlacementControlReconciler) getManagedClusterResource(
 		return errorswrapper.Wrap(err, "getManagedClusterResource failed")
 	}
 
-	// get query results
-	recentConditions := rmnutil.GetMostRecentConditions(mcv.Status.Conditions)
+	r.Log.Info(fmt.Sprintf("MCV condtions: %v", mcv.Status.Conditions))
 
-	r.Log.Info(fmt.Sprintf("MCV recent condtions: %v", recentConditions))
 	// want single recent Condition with correct Type; otherwise: bad path
-	switch len(recentConditions) {
+	switch len(mcv.Status.Conditions) {
 	case 0:
 		err = fmt.Errorf("missing ManagedClusterView conditions")
 	case 1:
 		switch {
-		case recentConditions[0].Type != fndv2.ConditionViewProcessing:
-			err = fmt.Errorf("found invalid condition (%s) in ManagedClusterView", recentConditions[0].Type)
-		case recentConditions[0].Reason == fndv2.ReasonGetResourceFailed:
+		case mcv.Status.Conditions[0].Type != fndv2.ConditionViewProcessing:
+			err = fmt.Errorf("found invalid condition (%s) in ManagedClusterView", mcv.Status.Conditions[0].Type)
+		case mcv.Status.Conditions[0].Reason == fndv2.ReasonGetResourceFailed:
 			err = errors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
-		case recentConditions[0].Status != metav1.ConditionTrue:
-			err = fmt.Errorf("ManagedClusterView is not ready (reason: %s)", recentConditions[0].Reason)
+		case mcv.Status.Conditions[0].Status != metav1.ConditionTrue:
+			err = fmt.Errorf("ManagedClusterView is not ready (reason: %s)", mcv.Status.Conditions[0].Reason)
 		}
 	default:
 		err = fmt.Errorf("found multiple status conditions with ManagedClusterView")
