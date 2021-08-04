@@ -226,4 +226,5 @@ jobs:
 
       - name: Build and push catalog image to Quay
         run: |
-          IMAGE_TAG="${{ env.publish_image_tag }}" make catalog-build catalog-push"
+          IMAGE_TAG="${{ env.publish_image_tag }}" make catalog-build catalog-push
+      # TODO: Test built bundles and catalog based install
