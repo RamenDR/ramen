@@ -117,11 +117,11 @@ func S3ObjectStoreGetter() ObjectStoreGetter {
 // the ObjectStoreGetter interface.
 type s3ObjectStoreGetter struct{}
 
-// objectStore returns an S3 object store that satisfies
-// the objectStorer interface,  by either creating a new one or
-// returning a cached object store for the given s3 profile.
-// - Return error if endpoint or secret is not configured, or if
-//   client session creation fails
+// objectStore returns an S3 object store that satisfies the objectStorer
+// interface,  with a downloader and an uploader client connections, by either
+// creating a new connection or returning a previously established connection
+// for the given s3 profile.  Returns an error if s3 profile does not exists,
+// secret is not configured, or if client session creation fails.
 func (s3ObjectStoreGetter) objectStore(ctx context.Context,
 	r client.Reader, s3ProfileName string,
 	callerTag string) (objectStorer, error) {
@@ -209,7 +209,8 @@ type s3ObjectStore struct {
 // S3 object store map with s3Endpoint as the key to serve as cache
 var s3ConnectionMap = map[string]*s3ObjectStore{}
 
-// Create a bucket; don't return error if the bucket exists already
+// createBucket creates the given bucket; does not return an error if the bucket
+// exists already.
 func (s *s3ObjectStore) createBucket(bucket string) (err error) {
 	if bucket == "" {
 		return fmt.Errorf("empty bucket name for "+
@@ -247,7 +248,8 @@ func (s *s3ObjectStore) createBucket(bucket string) (err error) {
 	return nil
 }
 
-// A convenience method
+// uploadPV uploads the given PV to the given bucket with a key of
+// "v1.PersistentVolume/<pvKeySuffix>".
 // - OK to call UploadPV() concurrently from multiple goroutines safely.
 // - Expects the given bucket to be already present
 func (s *s3ObjectStore) uploadPV(bucket string, pvKeySuffix string,
@@ -255,10 +257,10 @@ func (s *s3ObjectStore) uploadPV(bucket string, pvKeySuffix string,
 	return s.uploadTypedObject(bucket, pvKeySuffix /* key suffix */, pv)
 }
 
-// Upload to the given bucket the given uploadContent with a key of
-// <objectType/keySuffix>, where objectType is the type of the uploadContent
-// parameter. OK to call UploadTypedObject() concurrently from multiple
-// goroutines safely.
+// uploadTypedObject uploads to the given bucket the given uploadContent with a
+// key of <objectType/keySuffix>, where objectType is the type of the
+// uploadContent parameter. OK to call UploadTypedObject() concurrently from
+// multiple goroutines safely.
 // - Expects the given bucket to be already present
 func (s *s3ObjectStore) uploadTypedObject(bucket string, keySuffix string,
 	uploadContent interface{}) error {
@@ -268,14 +270,14 @@ func (s *s3ObjectStore) uploadTypedObject(bucket string, keySuffix string,
 	return s.uploadObject(bucket, key, uploadContent)
 }
 
-// Upload the given object to the given bucket with the given key
+// uploadObject uploads the given object to the given bucket with the given key.
 // - OK to call UploadObject() concurrently from multiple goroutines safely.
 // - Upload may fail due to many reasons: RequestError (connection error),
-//	 NoSuchBucket, NoSuchKey, InvalidParameter (e.g., empty key), etc.
+//   NoSuchBucket, NoSuchKey, InvalidParameter (e.g., empty key), etc.
 // - Multiple consecutive forward slashes in the key are sqaushed to
-//	 a single forward slash, for each such occurrence
+//   a single forward slash, for each such occurrence
 // - Any formatting changes to this method should also be reflected in the
-//	 downloadObject() method
+//   downloadObject() method
 // - Expects the given bucket to be already present
 func (s *s3ObjectStore) uploadObject(bucket string, key string,
 	uploadContent interface{}) error {
@@ -304,7 +306,8 @@ func (s *s3ObjectStore) uploadObject(bucket string, key string,
 	return nil
 }
 
-// Verify that the uploaded PV matches the given PV
+// verifyPVUpload verifies that the PV in the input matches the PV object
+// with the given keySuffix in the given bucket.
 func (s *s3ObjectStore) verifyPVUpload(bucket string, pvKeySuffix string,
 	verifyPV corev1.PersistentVolume) error {
 	var downloadedPV corev1.PersistentVolume
@@ -327,8 +330,8 @@ func (s *s3ObjectStore) verifyPVUpload(bucket string, pvKeySuffix string,
 	return nil
 }
 
-// Download the list of PVs in the bucket
-// - Download objects with key prefix:  "v1.PersistentVolume/"
+// downloadPVs downloads all PVs in the given bucket.
+// - Downloads objects with key prefix:  "v1.PersistentVolume/"
 // - If bucket doesn't exists, will return ErrCodeNoSuchBucket "NoSuchBucket"
 func (s *s3ObjectStore) downloadPVs(bucket string) (
 	pvList []corev1.PersistentVolume, err error) {
@@ -346,8 +349,8 @@ func (s *s3ObjectStore) downloadPVs(bucket string) (
 	return pvList, nil
 }
 
-// Download all objects that have a key prefix of the given type and are also
-// of the given type
+// downloadTypedObjects downloads all objects of the given objectType that have
+// a key prefix as the given objectType.
 // - Example key prefix:  v1.PersistentVolumeClaim/
 // - Objects being downloaded should meet the decoding expectations of
 // 	 the downloadObject() method.
@@ -379,7 +382,7 @@ func (s *s3ObjectStore) downloadTypedObjects(bucket string,
 	return objects.Interface(), nil
 }
 
-// List the keys (of objects) with the given keyPrefix in the given bucket.
+// listKeys lists the keys (of objects) with the given keyPrefix in the given bucket.
 // - If bucket doesn't exists, will return ErrCodeNoSuchBucket "NoSuchBucket"
 // - Refer to aws documentation of s3.ListObjectsV2Input for more list options
 func (s *s3ObjectStore) listKeys(bucket string, keyPrefix string) (
@@ -412,17 +415,20 @@ func (s *s3ObjectStore) listKeys(bucket string, keyPrefix string) (
 	return
 }
 
-// Download the given object from the given bucket with the given key
+// downloadObject downloads an object from the given bucket with the given key,
+// unzips, decodes the json blob and stores the downloaded object in the
+// downloadContent parameter.  The caller is expected to use the correct type of
+// downloadContent parameter.
 // - OK to call DownloadObject() concurrently from multiple goroutines safely.
-// - Assumes that the downloaded objects are json blobs that have been then
-//	 gzipped and hence, will attempt to unzip and decode the json blobs
+// - Assumes that the object in S3 store are json blobs that have been then
+//   gzipped and hence, will unzip & decode the json blobs before returning it.
 // - Only those type field name in the downloaded json blob that are also
-//	 present in the downloadContent type will be filled; other fields will be
+//   present in the downloadContent type will be filled; other fields will be
 // 	 dropped without returning any error.  More info at documentation of
-//	 json.Unmarshall()
+//   json.Unmarshall().
 // - Download may fail due to many reasons: RequestError (connection error),
-//	 NoSuchBucket, NoSuchKey, invalid gzip header, json unmarshall error,
-//	 InvalidParameter (e.g., empty key), etc.
+//   NoSuchBucket, NoSuchKey, invalid gzip header, json unmarshall error,
+//   InvalidParameter (e.g., empty key), etc.
 func (s *s3ObjectStore) downloadObject(bucket string, key string,
 	downloadContent interface{}) error {
 	writerAt := &aws.WriteAtBuffer{}
