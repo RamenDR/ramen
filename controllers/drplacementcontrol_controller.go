@@ -482,7 +482,7 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 		clustersToClean = append(clustersToClean, drpc.Spec.FailoverCluster)
 	}
 
-	// delete manifestworks (VRG and Roles)
+	// delete manifestworks (VRG)
 	for idx := range clustersToClean {
 		err := mwu.DeleteManifestWorksForCluster(clustersToClean[idx])
 		if err != nil {
@@ -797,7 +797,7 @@ func (d *DRPCInstance) runInitialDeployment() (bool, error) {
 	d.setDRState(rmn.Deploying)
 
 	// Create VRG first, to leverage user PlacementRule decision to skip placement and move to cleanup
-	err := d.createVRGAndRolesManifestWorks(homeCluster)
+	err := d.createVRGManifestWork(homeCluster)
 	if err != nil {
 		return false, err
 	}
@@ -1122,7 +1122,7 @@ func (d *DRPCInstance) createManifestWorks(targetCluster string) (bool, error) {
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Create VRG first, to leverage user PlacementRule decision to skip placement and move to cleanup
-			err := d.createVRGAndRolesManifestWorks(targetCluster)
+			err := d.createVRGManifestWork(targetCluster)
 			if err != nil {
 				return !created, err
 			}
@@ -1346,16 +1346,9 @@ func (d *DRPCInstance) updateUserPlacementRuleStatus(status plrv1.PlacementRuleS
 	return nil
 }
 
-func (d *DRPCInstance) createVRGAndRolesManifestWorks(homeCluster string) error {
-	d.log.Info("Creating VRG/Roles ManifestWorks",
+func (d *DRPCInstance) createVRGManifestWork(homeCluster string) error {
+	d.log.Info("Creating VRG ManifestWork",
 		"Last State", d.getLastDRState(), "cluster", homeCluster)
-
-	if err := d.mwu.CreateOrUpdateVRGRolesManifestWork(homeCluster); err != nil {
-		d.log.Error(err, "failed to create or update VolumeReplicationGroup Roles manifest")
-
-		return fmt.Errorf("failed to create or update VolumeReplicationGroup Roles manifest in namespace %s (%w)",
-			homeCluster, err)
-	}
 
 	if err := d.mwu.CreateOrUpdateVRGManifestWork(
 		d.instance.Name, d.instance.Namespace,

@@ -105,6 +105,14 @@ func newManager() (ctrl.Manager, error) {
 
 func setupReconcilers(mgr ctrl.Manager) {
 	if controllerType == ramendrv1alpha1.DRHub {
+		if err := (&controllers.DRPolicyReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "DRPolicy")
+			os.Exit(1)
+		}
+
 		drpcReconciler := (&controllers.DRPlacementControlReconciler{
 			Client:   mgr.GetClient(),
 			Log:      ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),

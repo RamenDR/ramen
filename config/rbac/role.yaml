@@ -121,6 +121,20 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
+  - drpolicies/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - drpolicies/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
   - volumereplicationgroups
   verbs:
   - create

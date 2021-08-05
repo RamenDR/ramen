@@ -87,6 +87,25 @@ var (
 	}
 
 	schedulingInterval = "1h"
+
+	drPolicy = &rmn.DRPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: DRPolicyName,
+		},
+		Spec: rmn.DRPolicySpec{
+			DRClusterSet: []rmn.ManagedCluster{
+				{
+					Name:          EastManagedCluster,
+					S3ProfileName: "fakeS3Profile",
+				},
+				{
+					Name:          WestManagedCluster,
+					S3ProfileName: "fakeS3Profile",
+				},
+			},
+			SchedulingInterval: schedulingInterval,
+		},
+	}
 )
 
 var drstate string
@@ -439,20 +458,13 @@ func createManagedClusters() {
 	}
 }
 
-func createDRPolicy(name, namespace string, drClusterSet []rmn.ManagedCluster) {
-	drPolicy := &rmn.DRPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: rmn.DRPolicySpec{
-			DRClusterSet:       drClusterSet,
-			SchedulingInterval: schedulingInterval,
-		},
-	}
-
+func createDRPolicy() {
 	err := k8sClient.Create(context.TODO(), drPolicy)
 	Expect(err).NotTo(HaveOccurred())
+}
+
+func deleteDRPolicy() {
+	Expect(k8sClient.Delete(context.TODO(), drPolicy)).To(Succeed())
 }
 
 func updateManifestWorkStatus(clusterNamespace, mwType, workType string) {
@@ -529,17 +541,7 @@ func InitialDeployment(namespace, placementName, homeCluster string) (*plrv1.Pla
 	createNamespaces()
 
 	createManagedClusters()
-	createDRPolicy(DRPolicyName, DRPCNamespaceName,
-		[]rmn.ManagedCluster{
-			{
-				Name:          EastManagedCluster,
-				S3ProfileName: "fakeS3Profile",
-			},
-			{
-				Name:          WestManagedCluster,
-				S3ProfileName: "fakeS3Profile",
-			},
-		})
+	createDRPolicy()
 
 	placementRule := createPlacementRule(placementName, namespace)
 	drpc := createDRPC(DRPCName, DRPCNamespaceName)
@@ -549,7 +551,7 @@ func InitialDeployment(namespace, placementName, homeCluster string) (*plrv1.Pla
 
 func verifyVRGManifestWorkCreatedAsPrimary(managedCluster string) {
 	vrgManifestLookupKey := types.NamespacedName{
-		Name:      "ramendr-vrg-roles",
+		Name:      rmnutil.ClusterRolesManifestWorkName,
 		Namespace: managedCluster,
 	}
 	createdVRGRolesManifest := &ocmworkv1.ManifestWork{}
@@ -765,7 +767,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 
 				recoverToFailoverCluster(drpc, userPlacementRule)
 				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(2)) // MW for VRG+ROLES
-				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // Roles MWs
+				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // Roles MW
 
 				val, err := rmnutil.GetMetricValueSingle("ramen_failover_time", dto.MetricType_GAUGE)
 				Expect(err).NotTo(HaveOccurred())
@@ -796,7 +798,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 
 				recoverToFailoverCluster(drpc, userPlacementRule)
 				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(2)) // MW for VRG+ROLES
-				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // Roles MWs
+				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // Roles MW
 
 				drpc := getLatestDRPC(DRPCName, DRPCNamespaceName)
 				// At this point expect the DRPC status condition to have 2 types
@@ -814,7 +816,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 
 				relocateToPreferredCluster(drpc, userPlacementRule)
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(2)) // MWs for VRG+ROLES
-				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(1)) // Roles MWs
+				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(1)) // Roles MW
 
 				drpc = getLatestDRPC(DRPCName, DRPCNamespaceName)
 				// At this point expect the DRPC status condition to have 2 types
@@ -831,7 +833,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				By("\n\n*** DELETE DRPC ***\n\n")
 				deleteDRPC()
 				waitForCompletion("deleted")
-				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // Roles MWs
+				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // Roles MW
+				deleteDRPolicy()
 			})
 		})
 	})
