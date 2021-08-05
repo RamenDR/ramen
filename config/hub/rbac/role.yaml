@@ -89,6 +89,20 @@ rules:
   - update
   - watch
 - apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - drpolicies/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - drpolicies/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - view.open-cluster-management.io
   resources:
   - managedclusterviews

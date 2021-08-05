@@ -8,7 +8,7 @@ require (
 	github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
 	github.com/go-logr/logr v0.4.0
 	github.com/onsi/ginkgo v1.16.4
-	github.com/onsi/gomega v1.14.0
+	github.com/onsi/gomega v1.15.0
 	github.com/open-cluster-management/api v0.0.0-20210527013639-a6845f2ebcb1
 	github.com/open-cluster-management/multicloud-operators-foundation v0.0.0-20210722145122-534b4232f1c9
 	github.com/open-cluster-management/multicloud-operators-placementrule v1.2.2-2-20201130-98cfd.0.20210722134723-73b5f55a3813

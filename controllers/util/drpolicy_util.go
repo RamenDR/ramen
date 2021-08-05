@@ -20,6 +20,15 @@ import (
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
 
+func DrpolicyClusterNames(drpolicy *rmn.DRPolicy) []string {
+	clusterNames := make([]string, len(drpolicy.Spec.DRClusterSet))
+	for i := range drpolicy.Spec.DRClusterSet {
+		clusterNames[i] = drpolicy.Spec.DRClusterSet[i].Name
+	}
+
+	return clusterNames
+}
+
 // Return a list of unique S3 profiles to upload the relevant cluster state of
 // the given home cluster
 func s3UploadProfileList(drPolicy rmn.DRPolicy, homeCluster string) (s3ProfileList []string) {

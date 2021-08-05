@@ -104,6 +104,11 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).ToNot(HaveOccurred())
 
+	Expect((&ramencontrollers.DRPolicyReconciler{
+		Client: k8sManager.GetClient(),
+		Scheme: k8sManager.GetScheme(),
+	}).SetupWithManager(k8sManager)).To(Succeed())
+
 	err = (&ramencontrollers.VolumeReplicationGroupReconciler{
 		Client:         k8sManager.GetClient(),
 		Log:            ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
