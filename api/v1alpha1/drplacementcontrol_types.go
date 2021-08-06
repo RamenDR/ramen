@@ -64,7 +64,6 @@ type DRPlacementControlSpec struct {
 }
 
 // DRState for keeping track of the DR placement
-// +kubebuilder:validation:Enum=Initial;Failing-over;Failed-over;Failing-back;Failed-back;Relocating;Relocated
 type DRState string
 
 // These are the valid values for DRState
@@ -103,6 +102,18 @@ const (
 	Relocated = DRState("Relocated")
 )
 
+const (
+	ConditionAvailable   = "Available"
+	ConditionReconciling = "Reconciling"
+)
+
+const (
+	ReasonProgressing = "Progressing"
+	ReasonCleaning    = "Cleaning"
+	ReasonSuccess     = "Success"
+	ReasonUnknown     = "Unknown"
+)
+
 // VRGResourceMeta represents the VRG resource.
 type VRGResourceMeta struct {
 	// Kind is the kind of the Kubernetes resource.
@@ -132,6 +143,7 @@ type VRGConditions struct {
 
 // DRPlacementControlStatus defines the observed state of DRPlacementControl
 type DRPlacementControlStatus struct {
+	Phase              DRState                 `json:"phase"`
 	PreferredDecision  plrv1.PlacementDecision `json:"preferredDecision,omitempty"`
 	Conditions         []metav1.Condition      `json:"conditions"`
 	ResourceConditions VRGConditions           `json:"resourceConditions,omitempty"`
