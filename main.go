@@ -111,7 +111,7 @@ func setupReconcilers(mgr ctrl.Manager) {
 			ObjStoreGetter: controllers.S3ObjectStoreGetter(),
 			PVDownloader:   controllers.ObjectStorePVDownloader{},
 			Scheme:         mgr.GetScheme(),
-			Callback:       func(string) {},
+			Callback:       func(string, string) {},
 		})
 		if err := drpcReconciler.SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "DRPlacementControl")
