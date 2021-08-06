@@ -272,6 +272,9 @@ spec:
                   - type
                   type: object
                 type: array
+              phase:
+                description: DRState for keeping track of the DR placement
+                type: string
               preferredDecision:
                 description: PlacementDecision defines the decision made by controller
                 properties:
@@ -377,6 +380,7 @@ spec:
                 type: object
             required:
             - conditions
+            - phase
             type: object
         type: object
     served: true

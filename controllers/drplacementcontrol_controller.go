@@ -58,12 +58,6 @@ const (
 	ClonedPlacementRuleNameFormat string = "clonedprule-%s-%s"
 )
 
-const (
-	ReasonNotReady = "NotReady"
-	ReasonReady    = "Ready"
-	ReasonUnknown  = "Unknown"
-)
-
 var ErrSameHomeCluster = errorswrapper.New("new home cluster is the same as current home cluster")
 
 type PVDownloader interface {
@@ -73,7 +67,7 @@ type PVDownloader interface {
 }
 
 // ProgressCallback of function type
-type ProgressCallback func(string)
+type ProgressCallback func(string, string)
 
 // DRPlacementControlReconciler reconciles a DRPlacementControl object
 type DRPlacementControlReconciler struct {
@@ -103,8 +97,8 @@ func ManifestWorkPredicateFunc() predicate.Funcs {
 				return false
 			}
 
-			log.Info(fmt.Sprintf("Update event for MW %s/%s: oldStatus %+v, newStatus %+v",
-				oldMW.Name, oldMW.Namespace, oldMW.Status, newMW.Status))
+			// log.Info(fmt.Sprintf("Update event for MW %s/%s: oldStatus %+v, newStatus %+v",
+			//	oldMW.Name, oldMW.Namespace, oldMW.Status, newMW.Status))
 
 			return !reflect.DeepEqual(oldMW.Status, newMW.Status)
 		},
@@ -125,10 +119,9 @@ func filterMW(mw *ocmworkv1.ManifestWork) []ctrl.Request {
 }
 
 func ManagedClusterViewPredicateFunc() predicate.Funcs {
+	log := ctrl.Log.WithName("MCV")
 	mcvPredicate := predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			log := ctrl.Log.WithName("MCV")
-
 			oldMCV, ok := e.ObjectOld.DeepCopyObject().(*fndv2.ManagedClusterView)
 			if !ok {
 				log.Info("Failed to deep copy older MCV")
@@ -142,10 +135,15 @@ func ManagedClusterViewPredicateFunc() predicate.Funcs {
 				return false
 			}
 
-			log.Info(fmt.Sprintf("Update event for MCV %s/%s: oldStatus %+v, newStatus %+v",
-				oldMCV.Name, oldMCV.Namespace, oldMCV.Status, newMCV.Status))
+			// log.Info(fmt.Sprintf("Update event for MCV %s/%s: oldStatus %+v, newStatus %+v",
+			//	oldMCV.Name, oldMCV.Namespace, oldMCV.Status, newMCV.Status))
 
 			return !reflect.DeepEqual(oldMCV.Status, newMCV.Status)
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			log.Info("Delete event for MCV")
+
+			return false
 		},
 	}
 
@@ -199,30 +197,6 @@ func GetDRPCCondition(status *rmn.DRPlacementControlStatus, conditionType string
 	return -1, nil
 }
 
-func GetConditionReason(state rmn.DRState) string {
-	switch state {
-	case rmn.Deploying:
-		fallthrough
-	case rmn.FailingBack:
-		fallthrough
-	case rmn.FailingOver:
-		fallthrough
-	case rmn.Relocating:
-		return ReasonNotReady
-
-	case rmn.Deployed:
-		fallthrough
-	case rmn.FailedOver:
-		fallthrough
-	case rmn.FailedBack:
-		fallthrough
-	case rmn.Relocated:
-		return ReasonReady
-	}
-
-	return ReasonUnknown
-}
-
 // SetupWithManager sets up the controller with the Manager.
 func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	mwPred := ManifestWorkPredicateFunc()
@@ -235,7 +209,8 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 			return []reconcile.Request{}
 		}
 
-		// ctrl.Log.Info(fmt.Sprintf("MapFunc for ManifestWork (%v)", mw))
+		ctrl.Log.Info(fmt.Sprintf("Filtering ManifestWork (%v)", mw))
+
 		return filterMW(mw)
 	}))
 
@@ -248,6 +223,8 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 
 			return []reconcile.Request{}
 		}
+
+		ctrl.Log.Info(fmt.Sprintf("Filtering MCV %v", mcv))
 
 		return filterMCV(mcv)
 	}))
@@ -308,7 +285,6 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(ctx context.Context
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get DRPolicy %w", err)
 	}
-
 	// Check if the drpc instance is marked for deletion, which is indicated by the
 	// deletion timestamp being set.
 	if drpc.GetDeletionTimestamp() != nil {
@@ -344,7 +320,8 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(ctx context.Context
 	r.Log.Info("Finished processing", "Requeue?", requeue)
 
 	if !requeue {
-		r.Callback(d.instance.Name)
+		r.Log.Info("Done")
+		r.Callback(d.instance.Name, string(d.getLastDRState()))
 	}
 
 	if d.mcvRequestInProgress {
@@ -355,6 +332,8 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(ctx context.Context
 	}
 
 	if requeue {
+		r.Log.Info("Requeing No luck")
+
 		return ctrl.Result{Requeue: true}, nil
 	}
 
@@ -412,7 +391,7 @@ func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 			return ctrl.Result{}, fmt.Errorf("failed to update drpc %w", err)
 		}
 
-		r.Callback(drpc.Name)
+		r.Callback(drpc.Name, "deleted")
 	}
 
 	return ctrl.Result{}, nil
@@ -769,12 +748,17 @@ func (d *DRPCInstance) runFailover() (bool, error) {
 	d.log.Info("Entering runFailover", "state", d.getLastDRState())
 
 	const done = true
+
+	if d.isFailbackInProgress() || d.isRelocationInProgress() {
+		return done, fmt.Errorf("invalid state %s for the selected action %v",
+			d.getLastDRState(), d.instance.Spec.Action)
+	}
+
 	// We are done if empty
 	if d.instance.Spec.FailoverCluster == "" {
 		return done, fmt.Errorf("failover cluster not set. FailoverCluster is a mandatory field")
 	}
 
-	newHomeCluster := d.instance.Spec.FailoverCluster
 	// We are done if we have already failed over
 	if len(d.userPlacementRule.Status.Decisions) > 0 {
 		if d.instance.Spec.FailoverCluster == d.userPlacementRule.Status.Decisions[0].ClusterName {
@@ -790,6 +774,11 @@ func (d *DRPCInstance) runFailover() (bool, error) {
 		}
 	}
 
+	return d.switchToFailoverCluster()
+}
+
+func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
+	const done = true
 	// Make sure we record the state that we are failing over
 	d.setDRState(rmn.FailingOver)
 
@@ -816,6 +805,8 @@ func (d *DRPCInstance) runFailover() (bool, error) {
 
 		return !done, err
 	}
+
+	newHomeCluster := d.instance.Spec.FailoverCluster
 
 	result, err := d.runPlacementTask(newHomeCluster, "")
 	if err != nil {
@@ -846,11 +837,25 @@ func (d *DRPCInstance) runFailover() (bool, error) {
 func (d *DRPCInstance) runFailback() (bool, error) {
 	d.log.Info("Entering runFailback", "state", d.getLastDRState())
 
+	const done = true
+
+	if d.isFailoverInProgress() || d.isRelocationInProgress() {
+		return done, fmt.Errorf("invalid state %s for the selected action %v",
+			d.getLastDRState(), d.instance.Spec.Action)
+	}
+
 	return d.switchToPreferredCluster(rmn.FailingBack)
 }
 
 func (d *DRPCInstance) runRelocate() (bool, error) {
 	d.log.Info("Entering runRelocate", "state", d.getLastDRState())
+
+	const done = true
+
+	if d.isFailbackInProgress() || d.isFailoverInProgress() {
+		return done, fmt.Errorf("invalid state %s for the selected action %v",
+			d.getLastDRState(), d.instance.Spec.Action)
+	}
 
 	return d.switchToPreferredCluster(rmn.Relocating)
 }
@@ -1243,6 +1248,21 @@ func (d *DRPCInstance) isVRGPrimary(mw *ocmworkv1.ManifestWork) (bool, error) {
 func (d *DRPCInstance) ensureCleanup(clusterToSkip string) error {
 	d.log.Info("ensure cleanup on secondaries")
 
+	idx, condition := GetDRPCCondition(&d.instance.Status, rmn.ConditionReconciling)
+	d.log.Info(fmt.Sprintf("Condition %v", condition))
+
+	if idx == -1 {
+		return fmt.Errorf("condition not found. %v", d.instance.Status.Conditions)
+	}
+
+	if condition.Reason == rmn.ReasonSuccess && condition.Status == metav1.ConditionTrue {
+		return nil
+	}
+
+	if condition.Reason == rmn.ReasonProgressing {
+		d.updateCondition(condition, idx, rmn.ReasonCleaning, metav1.ConditionFalse)
+	}
+
 	clean, err := d.cleanup(clusterToSkip)
 	if err != nil {
 		return err
@@ -1252,7 +1272,17 @@ func (d *DRPCInstance) ensureCleanup(clusterToSkip string) error {
 		return fmt.Errorf("failed to clean secondaries")
 	}
 
+	d.updateCondition(condition, idx, rmn.ReasonSuccess, metav1.ConditionTrue)
+
 	return nil
+}
+
+func (d *DRPCInstance) updateCondition(condition *metav1.Condition, idx int, reason string,
+	status metav1.ConditionStatus) {
+	condition.Reason = reason
+	condition.Status = status
+	d.instance.Status.Conditions[idx] = *condition
+	d.needStatusUpdate = true
 }
 
 // cleanupPVForRestore cleans up required PV fields, to ensure restore succeeds to a new cluster, and
@@ -1560,27 +1590,43 @@ func (d *DRPCInstance) getVRGFromManifestWork(mw *ocmworkv1.ManifestWork) (*rmn.
 func (d *DRPCInstance) updateDRPCStatus() error {
 	d.log.Info("Updating DRPC status")
 
+	drpc := &rmn.DRPlacementControl{}
+	drpcLookupKey := types.NamespacedName{
+		Name:      d.instance.Name,
+		Namespace: d.instance.Namespace,
+	}
+
+	err := d.reconciler.Client.Get(d.ctx, drpcLookupKey, drpc)
+	if err != nil {
+		d.log.Error(err, "failed to update status1")
+
+		return fmt.Errorf("%w", err)
+	}
+
+	drpc.Status = d.instance.Status
+
 	if len(d.userPlacementRule.Status.Decisions) != 0 {
-		vrg, err := d.reconciler.getVRGFromManagedCluster(d.instance.Name, d.instance.Namespace,
+		vrg, err := d.reconciler.getVRGFromManagedCluster(drpc.Name, drpc.Namespace,
 			d.userPlacementRule.Status.Decisions[0].ClusterName)
 		if err != nil {
 			// VRG must have been deleted if the error is NotFound. In either case,
 			// we don't have a VRG
 			d.log.Info("Failed to get VRG from managed cluster", "errMsg", err)
-			d.instance.Status.ResourceConditions = rmn.VRGConditions{}
+
+			drpc.Status.ResourceConditions = rmn.VRGConditions{}
 		} else {
-			d.instance.Status.ResourceConditions.ResourceMeta.Kind = vrg.Kind
-			d.instance.Status.ResourceConditions.ResourceMeta.Name = vrg.Name
-			d.instance.Status.ResourceConditions.ResourceMeta.Namespace = vrg.Namespace
-			d.instance.Status.ResourceConditions.Conditions = vrg.Status.Conditions
+			drpc.Status.ResourceConditions.ResourceMeta.Kind = vrg.Kind
+			drpc.Status.ResourceConditions.ResourceMeta.Name = vrg.Name
+			drpc.Status.ResourceConditions.ResourceMeta.Namespace = vrg.Namespace
+			drpc.Status.ResourceConditions.Conditions = vrg.Status.Conditions
 		}
 	}
 
-	if err := d.reconciler.Status().Update(d.ctx, d.instance); err != nil {
+	if err := d.reconciler.Status().Update(d.ctx, drpc); err != nil {
 		return errorswrapper.Wrap(err, "failed to update DRPC status")
 	}
 
-	d.log.Info(fmt.Sprintf("Updated DRPC Status %+v", d.instance.Status))
+	d.log.Info(fmt.Sprintf("Updated DRPC Status %+v", drpc.Status))
 
 	return nil
 }
@@ -1653,7 +1699,7 @@ func (r *DRPlacementControlReconciler) getOrCreateManagedClusterView(
 	err := r.Get(context.TODO(), types.NamespacedName{Name: meta.Name, Namespace: meta.Namespace}, mcv)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			r.Log.Info("Creating ManagedClusterView", "mcv", mcv)
+			r.Log.Info(fmt.Sprintf("Creating ManagedClusterView %v", mcv))
 			err = r.Create(context.TODO(), mcv)
 		}
 
@@ -1717,42 +1763,139 @@ func (d *DRPCInstance) advanceToNextDRState() {
 	d.setDRState(nextState)
 }
 
-func (d *DRPCInstance) setDRState(state rmn.DRState) {
-	d.log.Info(fmt.Sprintf("Current State '%s'. Next State '%s'", d.getLastDRState(), state))
+func (d *DRPCInstance) setDRState(nextState rmn.DRState) {
+	if d.instance.Status.Phase != nextState {
+		d.log.Info(fmt.Sprintf("Phase: Current '%s'. Next '%s'",
+			d.instance.Status.Phase, nextState))
 
-	newCondition := metav1.Condition{
-		Type:               string(state),
-		Status:             metav1.ConditionTrue,
-		ObservedGeneration: d.getObservedGeneration(state),
-		LastTransitionTime: metav1.Now(),
-		Reason:             GetConditionReason(state),
-		Message:            fmt.Sprintf("Current state is %v", state),
+		d.instance.Status.Phase = nextState
+		d.updateConditions()
+		d.needStatusUpdate = true
 	}
-
-	d.needStatusUpdate = true
-	idx, existingCondition := GetDRPCCondition(&d.instance.Status, string(state))
-
-	switch {
-	case idx == -1:
-		d.instance.Status.Conditions = append(d.instance.Status.Conditions, newCondition)
-	case existingCondition.Type != string(state):
-		d.instance.Status.Conditions[idx] = newCondition
-	default:
-		d.needStatusUpdate = false
-	}
-
-	d.log.Info(fmt.Sprintf("Conditions '%v'", d.instance.Status.Conditions))
 }
 
-func (d *DRPCInstance) getObservedGeneration(state rmn.DRState) int64 {
-	conditions := rmnutil.GetMostRecentConditions(d.instance.Status.Conditions)
+func (d *DRPCInstance) updateConditions() {
+	d.log.Info(fmt.Sprintf("Current Conditions '%v'", d.instance.Status.Conditions))
 
-	var observedGeneration int64
-	if len(conditions) != 0 {
-		observedGeneration = conditions[0].ObservedGeneration
+	for _, condType := range []string{rmn.ConditionAvailable, rmn.ConditionReconciling} {
+		condition := d.newCondition(condType)
+
+		idx, _ := GetDRPCCondition(&d.instance.Status, condType)
+		if idx == -1 {
+			d.instance.Status.Conditions = append(d.instance.Status.Conditions, *condition)
+		} else {
+			d.instance.Status.Conditions[idx] = *condition
+		}
 	}
 
-	switch state {
+	d.log.Info(fmt.Sprintf("Updated Conditions '%v'", d.instance.Status.Conditions))
+}
+
+func (d *DRPCInstance) newCondition(condType string) *metav1.Condition {
+	return &metav1.Condition{
+		Type:   condType,
+		Status: d.getConditionStatus(condType),
+		// ObservedGeneration: d.getObservedGeneration(condType),
+		LastTransitionTime: metav1.Now(),
+		Reason:             d.getConditionReason(condType),
+		Message:            d.getConditionMessage(condType),
+	}
+}
+
+// func (d *DRPCInstance) getConditionType() string {
+// 	if d.instance.Status.Phase == "" {
+// 		return rmn.ConditionNotAvailable
+// 	}
+
+// 	return rmn.ConditionAvailable
+// }
+
+func (d *DRPCInstance) getConditionStatus(condType string) metav1.ConditionStatus {
+	if condType == rmn.ConditionAvailable {
+		return d.getConditionStatusForTypeAvailable()
+	} else if condType == rmn.ConditionReconciling {
+		return d.getConditionStatusForTypeReconciling()
+	}
+
+	return metav1.ConditionUnknown
+}
+
+func (d *DRPCInstance) getConditionStatusForTypeAvailable() metav1.ConditionStatus {
+	if d.isInFinalPhase() {
+		return metav1.ConditionTrue
+	}
+
+	if d.isInProgressingPhase() {
+		return metav1.ConditionFalse
+	}
+
+	return metav1.ConditionUnknown
+}
+
+func (d *DRPCInstance) getConditionStatusForTypeReconciling() metav1.ConditionStatus {
+	if d.isInFinalPhase() {
+		if d.reconciling() {
+			return metav1.ConditionFalse
+		}
+
+		return metav1.ConditionTrue
+	}
+
+	if d.isInProgressingPhase() {
+		return metav1.ConditionFalse
+	}
+
+	return metav1.ConditionUnknown
+}
+
+func (d *DRPCInstance) reconciling() bool {
+	idx, condition := GetDRPCCondition(&d.instance.Status, rmn.ConditionReconciling)
+	d.log.Info(fmt.Sprintf("Condition %v", condition))
+
+	if idx == -1 {
+		return false
+	}
+
+	if condition.Reason == rmn.ReasonSuccess && condition.Status == metav1.ConditionTrue {
+		return false
+	}
+
+	return true
+}
+
+func (d *DRPCInstance) getConditionReason(condType string) string {
+	if condType == rmn.ConditionAvailable {
+		return string(d.instance.Status.Phase)
+	} else if condType == rmn.ConditionReconciling {
+		return d.getReasonForConditionTypeReconciling()
+	}
+
+	return rmn.ReasonUnknown
+}
+
+func (d *DRPCInstance) getReasonForConditionTypeReconciling() string {
+	if d.isInFinalPhase() {
+		if d.reconciling() {
+			return rmn.ReasonCleaning
+		}
+
+		return rmn.ReasonSuccess
+	}
+
+	if d.isInProgressingPhase() {
+		return rmn.ReasonProgressing
+	}
+
+	return rmn.ReasonUnknown
+}
+
+func (d *DRPCInstance) getConditionMessage(condType string) string {
+	return fmt.Sprintf("Condition type %s", condType)
+}
+
+//nolint:exhaustive
+func (d *DRPCInstance) isInFinalPhase() bool {
+	switch d.instance.Status.Phase {
 	case rmn.Deployed:
 		fallthrough
 	case rmn.FailedOver:
@@ -1760,28 +1903,33 @@ func (d *DRPCInstance) getObservedGeneration(state rmn.DRState) int64 {
 	case rmn.FailedBack:
 		fallthrough
 	case rmn.Relocated:
-		return d.instance.Generation
-
-	case rmn.Deploying:
-	case rmn.FailingBack:
-	case rmn.FailingOver:
-	case rmn.Relocating:
+		return true
+	default:
+		return false
 	}
+}
 
-	return observedGeneration
+//nolint:exhaustive
+func (d *DRPCInstance) isInProgressingPhase() bool {
+	switch d.instance.Status.Phase {
+	case rmn.Deploying:
+		fallthrough
+	case rmn.FailingBack:
+		fallthrough
+	case rmn.FailingOver:
+		fallthrough
+	case rmn.Relocating:
+		return true
+	default:
+		return false
+	}
 }
 
 func (d *DRPCInstance) getLastDRState() rmn.DRState {
-	conditions := rmnutil.GetMostRecentConditions(d.instance.Status.Conditions)
-	condition := FilterByObservedGeneration(conditions)
-
-	if condition != nil {
-		return rmn.DRState(condition.Type)
-	}
-
-	return ""
+	return d.instance.Status.Phase
 }
 
+//nolint:exhaustive
 func (d *DRPCInstance) getRequeueDuration() time.Duration {
 	d.log.Info("Getting requeue duration", "last known DR state", d.getLastDRState())
 
@@ -1799,12 +1947,19 @@ func (d *DRPCInstance) getRequeueDuration() time.Duration {
 		fallthrough
 	case rmn.Relocating:
 		duration = failbackRequeueDelay
-	case rmn.Deploying:
-	case rmn.Deployed:
-	case rmn.FailedOver:
-	case rmn.FailedBack:
-	case rmn.Relocated:
 	}
 
 	return duration
+}
+
+func (d *DRPCInstance) isFailoverInProgress() bool {
+	return rmn.FailingOver == d.getLastDRState()
+}
+
+func (d *DRPCInstance) isFailbackInProgress() bool {
+	return rmn.FailingBack == d.getLastDRState()
+}
+
+func (d *DRPCInstance) isRelocationInProgress() bool {
+	return rmn.Relocating == d.getLastDRState()
 }
