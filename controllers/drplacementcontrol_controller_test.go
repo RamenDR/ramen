@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	spokeClusterV1 "github.com/open-cluster-management/api/cluster/v1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
@@ -756,7 +757,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				_, condition := controllers.GetDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
 				Expect(condition.Reason).To(Equal(string(rmn.Deployed)))
 
-				val, err := rmnutil.GetMetricValueSingle("ramen_initial_deploy_time", dto.MetricType_GAUGE)
+				val, err := rmnutil.GetMetricValueSingle("ramen_initial_deploy_time", dto.MetricType_GAUGE, metrics.Registry)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(val).NotTo(Equal(0.0)) // failover time should be non-zero
 			})
@@ -778,7 +779,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(2)) // MW for VRG+ROLES
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // Roles MW
 
-				val, err := rmnutil.GetMetricValueSingle("ramen_failover_time", dto.MetricType_GAUGE)
+				val, err := rmnutil.GetMetricValueSingle("ramen_failover_time", dto.MetricType_GAUGE, metrics.Registry)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(val).NotTo(Equal(0.0)) // failover time should be non-zero
 
@@ -813,7 +814,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(EastManagedCluster))
 				Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
 
-				val, err := rmnutil.GetMetricValueSingle("ramen_relocate_time", dto.MetricType_GAUGE)
+				val, err := rmnutil.GetMetricValueSingle("ramen_relocate_time", dto.MetricType_GAUGE, metrics.Registry)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(val).NotTo(Equal(0.0)) // failover time should be non-zero
 			})
@@ -834,6 +835,10 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
 				userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
 				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(EastManagedCluster))
+
+				val, err := rmnutil.GetMetricValueSingle("ramen_relocate_time", dto.MetricType_GAUGE, metrics.Registry)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(val).NotTo(Equal(0.0)) // relocate time should be non-zero
 			})
 		})
 		When("DRAction is changed to Failover after relocation", func() {

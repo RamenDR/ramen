@@ -29,6 +29,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -46,6 +47,9 @@ import (
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
 type PVDownloader interface {
@@ -103,8 +107,45 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) er
 		Complete(r)
 }
 
+// Prometheus metrics
+var (
+	protectedPVCCount = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "ramen_vrg_protected_pvcs",
+			Help: "Total count of PVCs protected across all VRGs",
+		},
+	)
+
+	initTimes = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "ramen_vrg_timer_to_init",
+			Help:    "Time it took to Initialize the VRG to Primary",
+			Buckets: prometheus.ExponentialBuckets(1.0, 2.0, 12), // start=1.0, factor=2.0, buckets=12
+		},
+	)
+
+	relocateTimes = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "ramen_vrg_timer_to_relocate",
+			Help:    "Time it took for the VRG to Relocate",
+			Buckets: prometheus.ExponentialBuckets(1.0, 2.0, 12), // start=1.0, factor=2.0, buckets=12
+		},
+	)
+
+	failoverTimes = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "ramen_vrg_timer_to_failover",
+			Help:    "Time it took for the VRG to Failover",
+			Buckets: prometheus.ExponentialBuckets(1.0, 2.0, 12), // start=1.0, factor=2.0, buckets=12
+		},
+	)
+
+	metricsTimersMap = make(map[string]timerInstanceVRG)
+)
+
 func init() {
 	// Register custom metrics with the global Prometheus registry here
+	metrics.Registry.MustRegister(protectedPVCCount, initTimes, relocateTimes, failoverTimes)
 }
 
 // pvcPredicateFunc sends reconcile requests for create and delete events.
@@ -323,6 +364,11 @@ type VRGInstance struct {
 	vrcUpdated          bool
 }
 
+type timerInstanceVRG struct {
+	timer *prometheus.Timer
+	state ramendrv1alpha1.State
+}
+
 const (
 	// Finalizers
 	vrgFinalizerName        = "volumereplicationgroups.ramendr.openshift.io/vrg-protection"
@@ -442,6 +488,16 @@ func (v *VRGInstance) validateVRGState() error {
 	}
 
 	return nil
+}
+
+func (v *VRGInstance) isVRGDataReady() bool {
+	clusterDataReady := meta.FindStatusCondition(v.instance.Status.Conditions, VRGConditionTypeClusterDataReady)
+
+	if len(v.pvcList.Items) > 0 {
+		return clusterDataReady != nil && clusterDataReady.Status == metav1.ConditionTrue
+	}
+
+	return true
 }
 
 func (v *VRGInstance) restorePVs() error {
@@ -742,6 +798,9 @@ func (v *VRGInstance) processForDeletion() (ctrl.Result, error) {
 	rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeNormal,
 		rmnutil.EventReasonDeleteSuccess, "Deletion Success")
 
+	// metrics: remove PVCs that were under protection for this VRG
+	protectedPVCCount.Sub(float64(len(v.pvcList.Items)))
+
 	return ctrl.Result{}, nil
 }
 
@@ -861,6 +920,10 @@ func (v *VRGInstance) removeFinalizer(finalizer string) error {
 func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 	v.log.Info("Entering processing VolumeReplicationGroup")
 
+	if v.isVRGDataReady() {
+		v.startTimer(ramendrv1alpha1.PrimaryState)
+	}
+
 	defer v.log.Info("Exiting processing VolumeReplicationGroup")
 
 	if err := v.addFinalizer(vrgFinalizerName); err != nil {
@@ -899,6 +962,8 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 	if !requeue {
 		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeNormal,
 			rmnutil.EventReasonPrimarySuccess, "Primary Success")
+
+		v.metricsTimerStop(ramendrv1alpha1.PrimaryState)
 	}
 
 	if err := v.updateVRGStatus(true); err != nil {
@@ -969,6 +1034,10 @@ func (v *VRGInstance) reconcileVRsAsPrimary() bool {
 func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
 	v.log.Info("Entering processing VolumeReplicationGroup")
 
+	if v.isVRGDataReady() {
+		v.startTimer(ramendrv1alpha1.SecondaryState)
+	}
+
 	defer v.log.Info("Exiting processing VolumeReplicationGroup")
 
 	if err := v.addFinalizer(vrgFinalizerName); err != nil {
@@ -993,6 +1062,7 @@ func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
 	if !requeue {
 		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeNormal,
 			rmnutil.EventReasonSecondarySuccess, "Secondary Success")
+		v.metricsTimerStop(ramendrv1alpha1.SecondaryState)
 	}
 
 	if err := v.updateVRGStatus(true); err != nil {
@@ -1170,6 +1240,9 @@ func (v *VRGInstance) protectPVC(pvc *corev1.PersistentVolumeClaim,
 			return requeue, !skip
 		}
 	}
+
+	// update metrics
+	protectedPVCCount.Inc()
 
 	return !requeue, !skip
 }
@@ -1528,6 +1601,62 @@ func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 	}
 
 	return v.updateVR(volRep, state, log)
+}
+
+func (v *VRGInstance) getUniqueVRGInstanceName() string {
+	return fmt.Sprintf("%s/%s", v.instance.Name, v.instance.Namespace)
+}
+
+func (v *VRGInstance) startTimer(desiredState ramendrv1alpha1.State) {
+	val, ok := metricsTimersMap[v.getUniqueVRGInstanceName()]
+	if !ok {
+		metricsTimersMap[v.getUniqueVRGInstanceName()] = timerInstanceVRG{state: ramendrv1alpha1.UnknownState, timer: nil}
+		val = metricsTimersMap[v.getUniqueVRGInstanceName()]
+	}
+
+	// determine which transition to track
+	switch {
+	case val.state == ramendrv1alpha1.UnknownState && desiredState == ramendrv1alpha1.PrimaryState:
+		v.metricsTimerStart(initTimes, ramendrv1alpha1.PrimaryState, val)
+	case val.state == ramendrv1alpha1.PrimaryState && desiredState == ramendrv1alpha1.SecondaryState:
+		v.metricsTimerStart(failoverTimes, ramendrv1alpha1.SecondaryState, val)
+	case val.state == ramendrv1alpha1.SecondaryState && desiredState == ramendrv1alpha1.PrimaryState:
+		v.metricsTimerStart(relocateTimes, ramendrv1alpha1.PrimaryState, val)
+	default:
+		// not supported
+	}
+}
+
+func (v *VRGInstance) metricsTimerStart(histogram prometheus.Histogram, desiredVRGState ramendrv1alpha1.State,
+	val timerInstanceVRG) {
+	if val.state == desiredVRGState {
+		return
+	}
+
+	if val.timer == nil && val.state != desiredVRGState {
+		val.timer = prometheus.NewTimer(prometheus.ObserverFunc(histogram.Observe)) // start new timer
+
+		metricsTimersMap[v.getUniqueVRGInstanceName()] = val // update existing value
+	}
+}
+
+func (v *VRGInstance) metricsTimerStop(newState ramendrv1alpha1.State) {
+	val, ok := metricsTimersMap[v.getUniqueVRGInstanceName()]
+	if !ok {
+		metricsTimersMap[v.getUniqueVRGInstanceName()] = timerInstanceVRG{state: ramendrv1alpha1.UnknownState, timer: nil}
+		val = metricsTimersMap[v.getUniqueVRGInstanceName()]
+
+		return // timer will always be nil here anyway, so just return
+	}
+
+	if val.timer != nil {
+		val.timer.ObserveDuration() // stop timer
+
+		val.state = newState
+		val.timer = nil
+
+		metricsTimersMap[v.getUniqueVRGInstanceName()] = val // update existing value
+	}
 }
 
 func (v *VRGInstance) updateVR(volRep *volrep.VolumeReplication,

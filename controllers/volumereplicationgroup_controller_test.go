@@ -14,16 +14,23 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	controllerUtil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	dto "github.com/prometheus/client_model/go"
+	rmnutil "github.com/ramendr/ramen/controllers/util"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
 const (
-	vrgtimeout  = time.Second * 222
-	vrginterval = time.Millisecond * 1315
+	vrgtimeout   = time.Second * 222
+	vrginterval  = time.Millisecond * 1315
+	pvSizeString = "1Gi"
 )
 
 type Empty struct{}
@@ -36,6 +43,11 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 		It("sets vrg for restore", func() {
 			newVRGTestCase(0)
 			waitForPVRestore()
+
+			vrgsInit, err := rmnutil.GetMetricValueSingle("ramen_vrg_timer_to_init", dto.MetricType_HISTOGRAM, metrics.Registry)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(vrgsInit).To(Equal(1.0))
 		})
 	})
 
@@ -50,11 +62,19 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			}
 		})
 		It("waits for VRG to create a VR for each PVC", func() {
+			totalPVCCount := 0
 			for c := 0; c < len(vrgTestCases); c++ {
 				v := vrgTestCases[c]
 				expectedVRCount := len(v.pvcNames)
 				v.waitForVRCountToMatch(expectedVRCount)
+
+				totalPVCCount += expectedVRCount
 			}
+
+			pvcs, err := rmnutil.GetMetricValueSingle("ramen_vrg_protected_pvcs", dto.MetricType_GAUGE, metrics.Registry)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(pvcs).To(Equal(float64(totalPVCCount)))
 		})
 		It("waits for VRG to status to match", func() {
 			for c := 0; c < len(vrgTestCases); c++ {
@@ -64,10 +84,18 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			}
 		})
 		It("cleans up after testing", func() {
-			for c := 0; c < len(vrgTestCases); c++ {
+			testCount := len(vrgTestCases)
+			for c := 0; c < testCount; c++ {
 				v := vrgTestCases[c]
+
 				v.cleanup()
 			}
+
+			// make sure the values have been cleared
+			val, err := rmnutil.GetMetricValueSingle("ramen_vrg_protected_pvcs", dto.MetricType_GAUGE, metrics.Registry)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(val).To(Equal(0.0))
 		})
 	})
 
@@ -124,6 +152,51 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 				v.promoteVolReps()
 				v.verifyVRGStatusExpectation(true)
 			}
+		})
+		It("change to secondary", func() { // should already be "primary"
+			// get the original count for the number of VRGs that have transitioned to Secondary
+			originalPVCCount, err := rmnutil.GetMetricValueSingle("ramen_vrg_timer_to_failover",
+				dto.MetricType_HISTOGRAM, metrics.Registry)
+			Expect(err).NotTo(HaveOccurred())
+
+			for c := 0; c < len(vrgTests); c++ {
+				v := vrgTests[c]
+
+				v.removeFinalizerFromPVCs("kubernetes.io/pvc-protection") // remove finalizer so VRG doesn't flag PVCs as "in use"
+				v.cleanupPVCs()                                           // delete PVCs so VRG can transition to secondary
+				v.updateVRGSpec(v.vrgName, ramendrv1alpha1.Secondary)     // update VRG to Secondary
+			}
+
+			for c := 0; c < len(vrgTests); c++ {
+				v := vrgTests[c]
+				v.waitForVRGSpecUpdate(v.vrgName, ramendrv1alpha1.Secondary)
+			}
+
+			for c := 0; c < len(vrgTests); c++ {
+				v := vrgTests[c]
+				v.waitForVolRepUpdate(volrep.Secondary)
+				// TODO: update volRep status to Secondary here
+			}
+
+			for c := 0; c < len(vrgTests); c++ {
+				v := vrgTests[c]
+				v.updateAndWaitForVRGStatus(v.vrgName, vrgController.VRGConditionTypeClusterDataReady,
+					metav1.ConditionTrue, vrgController.VRGConditionReasonReplicating)
+			}
+
+			for c := 0; c < len(vrgTests); c++ {
+				v := vrgTests[c]
+				v.waitForVRGStatus(vrgController.VRGConditionTypeClusterDataProtected, metav1.ConditionTrue)
+			}
+
+			// get the count for the number of VRGs that have transitioned to Secondary
+			newPVCCount, err := rmnutil.GetMetricValueSingle("ramen_vrg_timer_to_failover",
+				dto.MetricType_HISTOGRAM, metrics.Registry)
+
+			expectedPVCCount := originalPVCCount + float64(len(vrgTests))
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(newPVCCount).To(Equal(expectedPVCCount))
 		})
 		It("cleans up after testing", func() {
 			for c := 0; c < len(vrgTests); c++ {
@@ -472,7 +545,7 @@ func (v *vrgTest) createNamespace() {
 func (v *vrgTest) createPV(pvName, claimName string, bindInfo corev1.PersistentVolumePhase) {
 	By("creating PV " + pvName)
 
-	capacity := corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}
+	capacity := corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(pvSizeString)}
 	accessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
 	hostPathType := corev1.HostPathDirectoryOrCreate
 	pv := &corev1.PersistentVolume{
@@ -532,7 +605,7 @@ func (v *vrgTest) createPVC(pvcName, namespace, volumeName string, labels map[st
 	By("creating PVC " + pvcName)
 
 	capacity := corev1.ResourceList{
-		corev1.ResourceStorage: resource.MustParse("1Gi"),
+		corev1.ResourceStorage: resource.MustParse(pvSizeString),
 	}
 
 	storageclass := v.storageClass
@@ -867,6 +940,104 @@ func (v *vrgTest) waitForVRCountToMatch(vrCount int) {
 	}, timeout, interval).Should(BeNumerically("==", vrCount),
 		"while waiting for VR count of %d in VRG %s of namespace %s",
 		vrCount, v.vrgName, v.namespace)
+}
+
+func (v *vrgTest) updateVRGSpec(vrgName string, state ramendrv1alpha1.ReplicationState) {
+	Eventually(func() bool {
+		vrg := v.getVRG(vrgName)          // get most recent copy of VRG
+		vrg.Spec.ReplicationState = state // requires an extra step; will update along with status
+
+		err := k8sClient.Update(context.TODO(), vrg)
+
+		return err == nil
+	}, timeout, interval).Should(BeTrue(),
+		"while waiting for VRG %s to update Spec to %s",
+		vrgName, state)
+}
+
+func (v *vrgTest) waitForVRGSpecUpdate(vrgName string, state ramendrv1alpha1.ReplicationState) {
+	Eventually(func() bool {
+		vrg := v.getVRG(vrgName)
+
+		return vrg.Spec.ReplicationState == state
+	}, timeout, interval).Should(BeTrue(),
+		"while waiting for VRG %s to change Spec.ReplicationState to %s",
+		vrgName, state)
+}
+
+func (v *vrgTest) updateAndWaitForVRGStatus(vrgName string, conditionType string, condition metav1.ConditionStatus,
+	reason string) {
+	Eventually(func() bool {
+		vrg := v.getVRG(vrgName) // get most recent copy of VRG
+
+		conditions := meta.FindStatusCondition(vrg.Status.Conditions, conditionType)
+
+		conditions.ObservedGeneration = vrg.Generation
+		conditions.Status = condition
+		conditions.Reason = reason
+		conditions.Message = fmt.Sprintf("test: updateAndWaitForVRGStatus set %s to %s", condition, conditionType)
+
+		err := k8sClient.Status().Update(context.TODO(), vrg)
+		if err != nil {
+			return false
+		}
+
+		vrg = v.getVRG(vrgName)
+		conditions = meta.FindStatusCondition(vrg.Status.Conditions, conditionType)
+
+		return conditions.ObservedGeneration == vrg.Generation && conditions.Status == condition
+	}, timeout, interval).Should(BeTrue(),
+		"while waiting for VRG %s to update Spec of %s to %s",
+		vrgName, conditionType, condition)
+}
+
+func (v *vrgTest) waitForVRGStatus(conditionType string, condition metav1.ConditionStatus) {
+	vrgName := v.vrgName
+
+	Eventually(func() bool {
+		vrg := v.getVRG(vrgName)
+		conditions := meta.FindStatusCondition(vrg.Status.Conditions, conditionType)
+
+		return conditions.ObservedGeneration == vrg.Generation && conditions.Status == condition
+	}, timeout, interval).Should(BeTrue(),
+		"while waiting for VRG %s to update Status of %s to %s",
+		vrgName, conditionType, condition)
+}
+
+func (v *vrgTest) removeFinalizerFromPVCs(finalizer string) {
+	for _, pvcName := range v.pvcNames {
+		pvc := v.getPVC(pvcName)
+		controllerUtil.RemoveFinalizer(pvc, finalizer)
+
+		err := k8sClient.Update(context.TODO(), pvc)
+
+		Expect(err).NotTo(HaveOccurred())
+	}
+}
+
+func (v *vrgTest) waitForVolRepUpdate(state volrep.ReplicationState) {
+	Eventually(func() bool {
+		volRepList := &volrep.VolumeReplicationList{}
+		listOptions := &client.ListOptions{
+			Namespace: v.namespace,
+		}
+		err := k8sClient.List(context.TODO(), volRepList, listOptions)
+		Expect(err).NotTo(HaveOccurred(), "failed to get a list of VRs in namespace %s", v.namespace)
+
+		doneCount := 0
+
+		for index := range volRepList.Items {
+			volRep := volRepList.Items[index]
+
+			if volRep.Spec.ReplicationState == state {
+				doneCount++
+			}
+		}
+
+		return doneCount == len(volRepList.Items)
+	}, timeout, interval).Should(BeTrue(),
+		"while waiting for volReps for VRG %s to update Spec.ReplicationState to %s",
+		v.vrgName, state)
 }
 
 func (v *vrgTest) promoteVolReps() {

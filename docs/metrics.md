@@ -25,6 +25,13 @@ To get the list of all the Ramen metrics available and their descriptions,
 run the Ramen code, then run this command:
 `curl http://localhost:9289/metrics -s | grep "# HELP ramen_"`
 
+Important: single valued metrics show up as zero-valued by default, but vectors
+do not. If your environment does not manipulate all the vector-type metrics,
+then this list will be incomplete. To get a list of vectors, search the source
+code for their registration functions, which follow the convention
+`prometheus.NewTYPEVec(...)`, where `TYPE` can be a `Counter`, `Gauge`,
+`Histogram` or `Summary`.
+
 ## Prometheus Stack
 
 For more detailed information and querying, consider using the Prometheus
