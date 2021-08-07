@@ -315,6 +315,8 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			v.cleanup()
 		})
 	})
+	// TODO: Add tests to move VRG to Secondary
+	// TODO: Add tests to ensure delete as Secondary (check if delete as Primary is tested above)
 })
 
 type vrgTest struct {
