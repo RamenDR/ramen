@@ -1612,9 +1612,13 @@ func (v *VRGInstance) checkVRStatus(volRep *volrep.VolumeReplication) error {
 
 	switch {
 	case v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary:
-		return v.validateVRStatus(volRep, ramendrv1alpha1.Primary)
+		v.validateVRStatus(volRep, ramendrv1alpha1.Primary)
+
+		return nil
 	case v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary:
-		return v.validateVRStatus(volRep, ramendrv1alpha1.Secondary)
+		v.validateVRStatus(volRep, ramendrv1alpha1.Secondary)
+
+		return nil
 	default:
 		msg := "VolumeReplicationGroup state invalid"
 		v.updateProtectedPVCCondition(volRep.Name, PVCError, msg)
@@ -1624,16 +1628,12 @@ func (v *VRGInstance) checkVRStatus(volRep *volrep.VolumeReplication) error {
 	}
 }
 
-// VolumeReplication controller sets volRep.Status.State to primary/secondary
-// only after the successful promotion/demotion of the underlying storage volume
-// consumed by the pvc.It is necessary to get the appropriate condition out of
-// different conditions a VolRep status can have. Doing this may be helpful in
-// getting a more clear view of the VolumeReplication resource's current situation.
-//
-// As of now, name of the VolumeReplication resource and pvc that it represents is
-// same. So, using the name from volRep resource to get protectedPVC condition from
-// vrg.Status. In future if things change, some changes might have to be necessary.
-func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state ramendrv1alpha1.ReplicationState) error {
+// validateVRStatus validates if the VolumeReplication resource has the desired status for the
+// current generation.
+// - When replication state is Primary, only Completed condition is checked.
+// - When replication state is Secondary, all 3 conditions for Completed/Degraded/Resyncing is
+//   checked and ensured healthy.
+func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state ramendrv1alpha1.ReplicationState) {
 	var (
 		stateString = "unknown"
 		action      = "unknown"
@@ -1648,49 +1648,84 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 		action = "demoted"
 	}
 
-	volRepCondition := findCondition(volRep.Status.Conditions, volrepController.ConditionCompleted)
-	if volRepCondition == nil {
-		v.log.Info("failed to get the Completed condition from VolumeReplication resource", "volRep",
-			volRep.Name)
+	// it should be completed
+	conditionMet, msg := isVRConditionMet(volRep, volrepController.ConditionCompleted, metav1.ConditionTrue)
+	if !conditionMet {
+		v.updateProtectedPVCConditionHelper(volRep.Name, PVCError, msg,
+			fmt.Sprintf("VolumeReplication resource for pvc not %s to %s", action, stateString))
 
-		msg := "Failed to get the Completed condition from VolumeReplication resource for pvc."
-		v.updateProtectedPVCCondition(volRep.Name, PVCError, msg)
-
-		return nil
+		return
 	}
 
-	if volRepCondition.Status == metav1.ConditionFalse {
-		v.log.Info(fmt.Sprintf("VolumeReplication resource is not %s (%s)", action, volRep.Name))
+	// if primary, all checks are completed
+	if state == ramendrv1alpha1.Primary {
+		msg = "VolumeReplication resource for the pvc is replicating"
+		v.updateProtectedPVCCondition(volRep.Name, PVCReplicating, msg)
 
-		msg := fmt.Sprintf("VolumeReplication resource for pvc not %s to %s", action, stateString)
-		v.updateProtectedPVCCondition(volRep.Name, PVCError, msg)
+		return
+	}
 
-		return nil
+	// it should be resyncing, if secondary
+	conditionMet, msg = isVRConditionMet(volRep, volrepController.ConditionResyncing, metav1.ConditionTrue)
+	if !conditionMet {
+		v.updateProtectedPVCConditionHelper(volRep.Name, PVCError, msg,
+			"VolumeReplication resource for pvc not resyncing as Secondary")
+
+		return
+	}
+
+	// it should not be degraded, if secondary
+	/* TODO: This needs a fix for https://github.com/csi-addons/volume-replication-operator/issues/101 based on which
+	   this can be removed or uncommented.
+	conditionMet, msg = isVRConditionMet(volRep, volrepController.ConditionDegraded, metav1.ConditionFalse)
+	if !conditionMet {
+		v.updateProtectedPVCConditionHelper(volRep.Name, PVCError, msg,
+			"VolumeReplication resource for pvc is degraded")
+
+		return
+	}*/
+
+	msg = "VolumeReplication resource for the pvc is replicating"
+	v.updateProtectedPVCCondition(volRep.Name, PVCReplicating, msg)
+}
+
+func isVRConditionMet(volRep *volrep.VolumeReplication,
+	conditionType string,
+	desiredStatus metav1.ConditionStatus) (bool, string) {
+	volRepCondition := findCondition(volRep.Status.Conditions, conditionType)
+	if volRepCondition == nil {
+		msg := fmt.Sprintf("Failed to get the %s condition from status of VolumeReplication resource.", conditionType)
+
+		return false, msg
+	}
+
+	if volRep.Generation != volRepCondition.ObservedGeneration {
+		msg := fmt.Sprintf("Stale generation for condition %s from status of VolumeReplication resource.", conditionType)
+
+		return false, msg
 	}
 
 	if volRepCondition.Status == metav1.ConditionUnknown {
-		v.log.Info(fmt.Sprintf("VolumeReplication resource is not %s (%s). ConditionStatus unknown",
-			action, volRep.Name))
+		msg := fmt.Sprintf("Unknown status for condition %s from status of VolumeReplication resource.", conditionType)
 
-		msg := fmt.Sprintf("VolumeReplication resource for pvc not %s to %s. ConditionStatus unknown",
-			action, stateString)
-		v.updateProtectedPVCCondition(volRep.Name, PVCErrorUnknown, msg)
-
-		return nil
+		return false, msg
 	}
 
-	v.log.Info(fmt.Sprintf("ConditionCompleted is true for state %s (Name: %s)", stateString, volRep.Name))
+	if volRepCondition.Status != desiredStatus {
+		return false, ""
+	}
 
-	// Being here means, status of VolumeReplication resource has been
-	// successfully updated to reflect the appropriate state. (i.e. the
-	// volume has been successfully promoted/demoted). So, marking the
-	// condition as PVCReplicating. Even by checking different conditions
-	// of the VolRep resource it is difficult to determine whether the
-	// replication has been completed or not.
-	msg := "VolumeReplication resource for the pvc is replicating"
-	v.updateProtectedPVCCondition(volRep.Name, PVCReplicating, msg)
+	return true, ""
+}
 
-	return nil
+func (v *VRGInstance) updateProtectedPVCConditionHelper(name, reason, message, defaultMessage string) {
+	if message != "" {
+		v.updateProtectedPVCCondition(name, reason, message)
+
+		return
+	}
+
+	v.updateProtectedPVCCondition(name, reason, defaultMessage)
 }
 
 func (v *VRGInstance) updateProtectedPVCCondition(name, reason, message string) {
