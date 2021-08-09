@@ -34,10 +34,10 @@ import (
 	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
 	ocmclv1 "github.com/open-cluster-management/api/cluster/v1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
+	fndv2 "github.com/open-cluster-management/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	subv1 "github.com/open-cluster-management/multicloud-operators-subscription/pkg/apis"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	ramencontrollers "github.com/ramendr/ramen/controllers"
-	fndv2 "github.com/tjanssen3/multicloud-operators-foundation/v2/pkg/apis/view/v1beta1"
 	// +kubebuilder:scaffold:imports
 )
 
