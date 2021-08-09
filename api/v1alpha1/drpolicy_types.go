@@ -86,39 +86,3 @@ type DRPolicyList struct {
 func init() {
 	SchemeBuilder.Register(&DRPolicy{}, &DRPolicyList{})
 }
-
-// Return a list of unique S3 profiles to upload the relevant cluster state of
-// the given home cluster
-func (d *DRPolicy) S3UploadProfileList(homeCluster string) (s3ProfileList []string) {
-	for _, drCluster := range d.Spec.DRClusterSet {
-		if drCluster.Name != homeCluster {
-			// This drCluster is not the home cluster and is hence, a candidate to
-			// upload cluster state to if this S3 profile is not already on the list.
-			found := false
-
-			for _, s3ProfileName := range s3ProfileList {
-				if s3ProfileName == drCluster.S3ProfileName {
-					found = true
-				}
-			}
-
-			if !found {
-				s3ProfileList = append(s3ProfileList, drCluster.S3ProfileName)
-			}
-		}
-	}
-
-	return
-}
-
-// Return the S3 profile to download the relevant cluster state to the given
-// home cluster
-func (d *DRPolicy) S3DownloadProfile(homeCluster string) (s3Profile string) {
-	for _, drCluster := range d.Spec.DRClusterSet {
-		if drCluster.Name == homeCluster {
-			s3Profile = drCluster.S3ProfileName
-		}
-	}
-
-	return
-}

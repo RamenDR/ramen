@@ -1732,7 +1732,7 @@ func (d *DRPCInstance) listPVsFromS3Store(homeCluster string) ([]corev1.Persiste
 	s3Bucket := constructBucketName(d.instance.Namespace, d.instance.Name)
 
 	return d.reconciler.PVDownloader.DownloadPVs(
-		d.ctx, d.reconciler.Client, d.reconciler.ObjStoreGetter, d.drPolicy.S3DownloadProfile(homeCluster),
+		d.ctx, d.reconciler.Client, d.reconciler.ObjStoreGetter, rmnutil.S3DownloadProfile(*d.drPolicy, homeCluster),
 		d.instance.Name, s3Bucket)
 }
 
