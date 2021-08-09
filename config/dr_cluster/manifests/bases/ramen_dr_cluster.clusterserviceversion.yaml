@@ -20,7 +20,7 @@ spec:
     across a set of peer kubernetes clusters which are deployed and managed using
     open-cluster-management (OCM) and provides cloud-native interfaces to orchestrate
     the life-cycle of an application's state on PersistentVolumes.
-  displayName: RamenDR
+  displayName: Ramen DR Cluster Operator
   icon:
   - base64data: ""
     mediatype: ""
@@ -43,7 +43,7 @@ spec:
   - OpenShift Optional
   links:
   - name: Ramen
-    url: https://ramen.domain
+    url: https://github.com/RamenDR/ramen
   maintainers:
   - email: bmekhiss@redhat.com
     name: Benamar Mekhissi
