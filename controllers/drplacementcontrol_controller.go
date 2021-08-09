@@ -79,6 +79,9 @@ type DRPlacementControlReconciler struct {
 	Callback       ProgressCallback
 }
 
+/* Potential change in function logic using MCA would be as follows:
+- Add ManagedClusterAction watch and required predicates&filter, to trigger reconcile if its status changes
+*/
 func ManifestWorkPredicateFunc() predicate.Funcs {
 	mwPredicate := predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
@@ -967,6 +970,14 @@ func (d *DRPCInstance) createPVManifestWorkForRestore(newPrimary string) error {
 			newPrimary, err)
 	}
 
+	/* Potential change in function logic using MCA would be as follows:
+	GetPVs from S3
+	MCAUtil.Create (leverage Create skipping when CR exists)
+	MCAUtil.Status
+		- Completed; return nil
+		- Progressing; return retry error
+		- Error; return error
+	*/
 	pvMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypePV)
 
 	existAndApplied, err := d.mwu.ManifestExistAndApplied(pvMWName, newPrimary)
@@ -1009,6 +1020,8 @@ func (d *DRPCInstance) restore(newHomeCluster string) error {
 func (d *DRPCInstance) cleanup(skipCluster string) (bool, error) {
 	for _, clusterName := range d.drPolicy.Spec.ClusterNames {
 		if skipCluster == clusterName {
+			// Potential change in function logic using MCA would be as follows:
+			// - MCAUtil.GarbageCollect()
 			continue
 		}
 
