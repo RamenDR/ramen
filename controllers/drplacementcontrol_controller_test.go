@@ -30,7 +30,7 @@ import (
 
 	spokeClusterV1 "github.com/open-cluster-management/api/cluster/v1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
-	fndv2 "github.com/open-cluster-management/multicloud-operators-foundation/pkg/apis/view/v1beta1"
+	viewv1beta1 "github.com/open-cluster-management/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	dto "github.com/prometheus/client_model/go"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
@@ -143,7 +143,7 @@ func updateManagedClusterViewWithVRG(mcvNamespace string,
 	}
 
 	mcvName := controllers.BuildManagedClusterViewName(DRPCName, DRPCNamespaceName, "vrg")
-	mcv := &fndv2.ManagedClusterView{}
+	mcv := &viewv1beta1.ManagedClusterView{}
 	mcvLookupKey := types.NamespacedName{
 		Name:      mcvName,
 		Namespace: mcvNamespace,
@@ -160,22 +160,25 @@ func updateManagedClusterViewWithVRG(mcvNamespace string,
 }
 
 // take an existing ManagedClusterView and apply the given resource to it as though it were "found"
-func updateManagedClusterView(mcv *fndv2.ManagedClusterView, resource interface{}, status metav1.ConditionStatus) {
+func updateManagedClusterView(
+	mcv *viewv1beta1.ManagedClusterView,
+	resource interface{},
+	status metav1.ConditionStatus) {
 	// get raw bytes
 	objJSON, err := json.Marshal(resource)
 
 	Expect(err).NotTo(HaveOccurred())
 
 	// update Status, Result fields
-	reason := fndv2.ReasonGetResource
+	reason := viewv1beta1.ReasonGetResource
 	if status != metav1.ConditionTrue {
-		reason = fndv2.ReasonGetResourceFailed
+		reason = viewv1beta1.ReasonGetResourceFailed
 	}
 
-	mcv.Status = fndv2.ViewStatus{
+	mcv.Status = viewv1beta1.ViewStatus{
 		Conditions: []metav1.Condition{
 			{
-				Type:               fndv2.ConditionViewProcessing,
+				Type:               viewv1beta1.ConditionViewProcessing,
 				LastTransitionTime: metav1.Time{Time: time.Now().Local()},
 				Status:             status,
 				Reason:             reason,
@@ -210,7 +213,7 @@ func updateManagedClusterView(mcv *fndv2.ManagedClusterView, resource interface{
 func updateManagedClusterViewStatusAsNotFound(mcvNamespace string) {
 	// update Status, Result fields
 	mcvName := controllers.BuildManagedClusterViewName(DRPCName, DRPCNamespaceName, "vrg")
-	mcv := &fndv2.ManagedClusterView{}
+	mcv := &viewv1beta1.ManagedClusterView{}
 	mcvLookupKey := types.NamespacedName{
 		Name:      mcvName,
 		Namespace: mcvNamespace,
@@ -223,13 +226,13 @@ func updateManagedClusterViewStatusAsNotFound(mcvNamespace string) {
 	}, timeout, interval).Should(BeTrue(),
 		fmt.Sprintf("failed to wait for mcv creation (%v)", mcv))
 
-	status := fndv2.ViewStatus{
+	status := viewv1beta1.ViewStatus{
 		Conditions: []metav1.Condition{
 			{
-				Type:               fndv2.ConditionViewProcessing,
+				Type:               viewv1beta1.ConditionViewProcessing,
 				LastTransitionTime: metav1.Time{Time: time.Now().Local()},
 				Status:             metav1.ConditionFalse,
-				Reason:             fndv2.ReasonGetResourceFailed,
+				Reason:             viewv1beta1.ReasonGetResourceFailed,
 			},
 		},
 	}
@@ -246,7 +249,7 @@ func updateManagedClusterViewStatusAsNotFound(mcvNamespace string) {
 		}
 
 		result := err == nil && len(mcv.Status.Conditions) > 0 &&
-			mcv.Status.Conditions[0].Reason == fndv2.ReasonGetResourceFailed
+			mcv.Status.Conditions[0].Reason == viewv1beta1.ReasonGetResourceFailed
 
 		if !result {
 			mcv.Status = status
