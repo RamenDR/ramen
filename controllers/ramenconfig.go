@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"io/ioutil"
 	"os"
 
 	"github.com/ghodss/yaml"
@@ -71,7 +72,7 @@ func LoadRamenConfig(configFile string, log logr.Logger) (
 
 	log.Info("loading Ramen config file ", "name", configFile)
 
-	fileContents, err := os.ReadFile(configFile)
+	fileContents, err := ioutil.ReadFile(configFile)
 	if err != nil {
 		log.Error(err, "unable to load the config file")
 
