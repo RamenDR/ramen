@@ -19,6 +19,18 @@ rules:
   - update
   - watch
 - apiGroups:
+  - action.open-cluster-management.io
+  resources:
+  - managedclusteractions
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - apps.open-cluster-management.io
   resources:
   - placementrules

@@ -453,23 +453,7 @@ func (mwu *MWUtil) DeleteManifestWorksForCluster(clusterName string) error {
 		return fmt.Errorf("failed to delete ManifestWork for VRG in namespace %s (%w)", clusterName, err)
 	}
 
-	// Potential change in function logic using MCA would be as follows:
-	//  - Invoking PV MW deletion would not be performed
-	err = mwu.deletePVManifestWork(clusterName)
-	if err != nil {
-		mwu.Log.Error(err, "failed to delete MW for PVs")
-
-		return fmt.Errorf("failed to delete ManifestWork for PVs in namespace %s (%w)", clusterName, err)
-	}
-
 	return nil
-}
-
-func (mwu *MWUtil) deletePVManifestWork(fromCluster string) error {
-	pvMWName := mwu.BuildManifestWorkName(MWTypePV)
-	pvMWNamespace := fromCluster
-
-	return mwu.deleteManifestWork(pvMWName, pvMWNamespace)
 }
 
 func (mwu *MWUtil) deleteVRGManifestWork(fromCluster string) error {

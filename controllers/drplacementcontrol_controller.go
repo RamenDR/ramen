@@ -200,12 +200,13 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drplacementcontrols,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drplacementcontrols/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drplacementcontrols/finalizers,verbs=update
+// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drpolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps.open-cluster-management.io,resources=placementrules,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps.open-cluster-management.io,resources=placementrules/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=managedclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=work.open-cluster-management.io,resources=manifestworks,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=view.open-cluster-management.io,resources=managedclusterviews,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drpolicies,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=action.open-cluster-management.io,resources=managedclusteractions,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -275,6 +276,7 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(ctx context.Context
 		reconciler: r, ctx: ctx, log: r.Log, instance: drpc, needStatusUpdate: false,
 		userPlacementRule: userPlRule, drpcPlacementRule: drpcPlRule, drPolicy: drPolicy,
 		mwu: rmnutil.MWUtil{Client: r.Client, Ctx: ctx, Log: r.Log, InstName: drpc.Name, InstNamespace: drpc.Namespace},
+		mca: rmnutil.MCAUtil{Client: r.Client, Ctx: ctx, Log: r.Log, ParentName: drpc.Name, ParentNamespace: drpc.Namespace},
 	}
 
 	requeue := d.startProcessing()
@@ -590,6 +592,7 @@ type DRPCInstance struct {
 	userPlacementRule    *plrv1.PlacementRule
 	drpcPlacementRule    *plrv1.PlacementRule
 	mwu                  rmnutil.MWUtil
+	mca                  rmnutil.MCAUtil
 }
 
 func (d *DRPCInstance) startProcessing() bool {
@@ -970,58 +973,45 @@ func (d *DRPCInstance) createPVManifestWorkForRestore(newPrimary string) error {
 			newPrimary, err)
 	}
 
-	/* Potential change in function logic using MCA would be as follows:
-	GetPVs from S3
-	MCAUtil.Create (leverage Create skipping when CR exists)
-	MCAUtil.Status
-		- Completed; return nil
-		- Progressing; return retry error
-		- Error; return error
-	*/
-	pvMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypePV)
+	if err := d.restorePVFromBackup(newPrimary); err != nil {
+		d.log.Error(err, "Error restoring PersistentVolumes from backup")
 
-	existAndApplied, err := d.mwu.ManifestExistAndApplied(pvMWName, newPrimary)
+		return fmt.Errorf("error restoring PersistentVolumes from backup to namespace %s (%w)",
+			newPrimary, err)
+	}
+
+	status, err := d.mca.Status(newPrimary)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			d.log.Info("Restore PVs", "newPrimary", newPrimary)
+		d.log.Error(err, "Error checking restore status for PersistentVolumes from backup")
 
-			if err = d.restore(newPrimary); err != nil {
-				return err
-			}
-
-			// Just restored, wait for MW to generate change event and move to applied
-			return fmt.Errorf("created PV manifestwork (%s), waiting for status to be applied", pvMWName)
+		if status == rmnutil.MCAProgressing {
+			return fmt.Errorf("error checking restore status for PersistentVolumes from backup to namespace %s (%w)",
+				newPrimary, err)
 		}
 
-		return fmt.Errorf("failed to check PV manifestwork status %s (%w)", pvMWName, err)
+		// NOTE: The PV restore will NOT recover from this state
+		return fmt.Errorf("failed restoring PersistentVolumes from backup to namespace %s (%w)",
+			newPrimary, err)
 	}
 
-	if existAndApplied {
-		d.log.Info("MW for PVs exists and applied", "newPrimary", newPrimary)
-
-		return nil
-	}
-
-	return fmt.Errorf("waiting for PV manifestwork (%s) status to be applied", pvMWName)
-}
-
-func (d *DRPCInstance) restore(newHomeCluster string) error {
-	// Restore from PV backup location
-	err := d.restorePVFromBackup(newHomeCluster)
-	if err != nil {
-		d.log.Error(err, "Failed to restore PVs from backup")
-
-		return err
+	if status == rmnutil.MCAProgressing {
+		return fmt.Errorf("restore of PersistentVolumes from backup to namespace (%s) is progressing ", newPrimary)
 	}
 
 	return nil
 }
 
 func (d *DRPCInstance) cleanup(skipCluster string) (bool, error) {
+	// cleanup managedClusterActions for PVs in the cluster to skip first, before cleaning up secondaries
+	if err := d.mca.GarbageCollect(skipCluster); err != nil {
+		d.log.Error(err, "Failed to garbage collect ManagedClusterActions for PVs")
+
+		return false, fmt.Errorf("failed to garbage collect ManagedClusterActions for PVs in namespace (%s), %w",
+			skipCluster, err)
+	}
+
 	for _, clusterName := range d.drPolicy.Spec.ClusterNames {
 		if skipCluster == clusterName {
-			// Potential change in function logic using MCA would be as follows:
-			// - MCAUtil.GarbageCollect()
 			continue
 		}
 
@@ -1369,8 +1359,8 @@ func (d *DRPCInstance) restorePVFromBackup(homeCluster string) error {
 		d.cleanupPVForRestore(&pvList[idx])
 	}
 
-	// Create manifestwork for all PVs for this DRPC
-	return d.mwu.CreateOrUpdatePVsManifestWork(d.instance.Name, d.instance.Namespace, homeCluster, pvList)
+	// Create managedClusterAction for all PVs for this DRPC
+	return d.mca.Create(homeCluster, pvList)
 }
 
 func (d *DRPCInstance) processVRGManifestWork(homeCluster string) error {

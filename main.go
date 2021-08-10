@@ -24,6 +24,7 @@ import (
 	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
 	spokeClusterV1 "github.com/open-cluster-management/api/cluster/v1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
+	actionv1beta1 "github.com/open-cluster-management/multicloud-operators-foundation/pkg/apis/action/v1beta1"
 	fndv2 "github.com/open-cluster-management/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	uberzap "go.uber.org/zap"
@@ -91,6 +92,7 @@ func newManager() (ctrl.Manager, error) {
 		utilruntime.Must(ocmworkv1.AddToScheme(scheme))
 		utilruntime.Must(spokeClusterV1.AddToScheme(scheme))
 		utilruntime.Must(fndv2.AddToScheme(scheme))
+		utilruntime.Must(actionv1beta1.AddToScheme(scheme))
 	} else {
 		utilruntime.Must(volrep.AddToScheme(scheme))
 	}

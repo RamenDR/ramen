@@ -19,6 +19,7 @@ package controllers
 import (
 	"time"
 
+	"github.com/ramendr/ramen/controllers/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -144,7 +145,7 @@ func setStatusCondition(existingConditions *[]metav1.Condition, newCondition met
 		existingConditions = &[]metav1.Condition{}
 	}
 
-	existingCondition := findCondition(*existingConditions, newCondition.Type)
+	existingCondition := util.FindCondition(*existingConditions, newCondition.Type)
 	if existingCondition == nil {
 		newCondition.LastTransitionTime = metav1.NewTime(time.Now())
 		*existingConditions = append(*existingConditions, newCondition)
@@ -164,14 +165,4 @@ func setStatusCondition(existingConditions *[]metav1.Condition, newCondition met
 		existingCondition.ObservedGeneration = newCondition.ObservedGeneration
 		existingCondition.LastTransitionTime = metav1.NewTime(time.Now())
 	}
-}
-
-func findCondition(existingConditions []metav1.Condition, conditionType string) *metav1.Condition {
-	for i := range existingConditions {
-		if existingConditions[i].Type == conditionType {
-			return &existingConditions[i]
-		}
-	}
-
-	return nil
 }

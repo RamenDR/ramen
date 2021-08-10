@@ -43,6 +43,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/controllers/util"
 )
 
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
@@ -155,8 +156,8 @@ func updateEventDecision(oldPVC *corev1.PersistentVolumeClaim,
 	// pod that uses this pvc gets rescheduled to some
 	// other node and pvcInUse finalizer is removed as
 	// no pod is mounting it.
-	if containsString(oldPVC.ObjectMeta.Finalizers, pvcInUse) &&
-		!containsString(newPVC.ObjectMeta.Finalizers, pvcInUse) {
+	if util.ContainsString(oldPVC.ObjectMeta.Finalizers, pvcInUse) &&
+		!util.ContainsString(newPVC.ObjectMeta.Finalizers, pvcInUse) {
 		predicateLog.Info("Reconciling due to pvc not in use")
 
 		return requeue
@@ -391,7 +392,7 @@ func (v *VRGInstance) processForDeletion() (ctrl.Result, error) {
 
 	defer v.log.Info("Exiting processing VolumeReplicationGroup")
 
-	if !containsString(v.instance.ObjectMeta.Finalizers, vrgFinalizerName) {
+	if !util.ContainsString(v.instance.ObjectMeta.Finalizers, vrgFinalizerName) {
 		v.log.Info("Finalizer missing from resource", "finalizer", vrgFinalizerName)
 
 		return ctrl.Result{}, nil
@@ -489,7 +490,7 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 
 // removeFinalizer removes VRG finalizer form the resource
 func (v *VRGInstance) removeFinalizer(finalizer string) error {
-	v.instance.ObjectMeta.Finalizers = removeString(v.instance.ObjectMeta.Finalizers, finalizer)
+	v.instance.ObjectMeta.Finalizers = util.RemoveString(v.instance.ObjectMeta.Finalizers, finalizer)
 	if err := v.reconciler.Update(v.ctx, v.instance); err != nil {
 		v.log.Error(err, "Failed to remove finalizer", "finalizer", finalizer)
 
@@ -687,7 +688,7 @@ func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, 
 	}
 
 	// If PVC is still in use, it is not ready for Secondary
-	if containsString(pvc.ObjectMeta.Finalizers, pvcInUse) {
+	if util.ContainsString(pvc.ObjectMeta.Finalizers, pvcInUse) {
 		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolumeClaim is still in use")
 
 		msg := "PVC still in use"
@@ -806,7 +807,7 @@ func skipPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, string) 
 
 func isPVCDeletedAndNotProtected(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, string) {
 	// If PVC deleted but not yet protected with a finalizer, skip it!
-	if !containsString(pvc.Finalizers, pvcVRFinalizerProtected) && !pvc.GetDeletionTimestamp().IsZero() {
+	if !util.ContainsString(pvc.Finalizers, pvcVRFinalizerProtected) && !pvc.GetDeletionTimestamp().IsZero() {
 		log.Info("Skipping PersistentVolumeClaim, as it is marked for deletion and not yet protected")
 
 		msg := "Skipping pvc marked for deletion"
@@ -822,7 +823,7 @@ func isPVCDeletedAndNotProtected(pvc *corev1.PersistentVolumeClaim, log logr.Log
 func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 	log logr.Logger) error {
 	// If PVC does not have the VR finalizer we are done
-	if !containsString(pvc.Finalizers, pvcVRFinalizerProtected) {
+	if !util.ContainsString(pvc.Finalizers, pvcVRFinalizerProtected) {
 		return nil
 	}
 
@@ -1170,7 +1171,7 @@ func (v *VRGInstance) updateVRGStatus(updateConditions bool) error {
 }
 
 func (v *VRGInstance) updateStatusState() {
-	vrgCondition := findCondition(v.instance.Status.Conditions, VRGConditionAvailable)
+	vrgCondition := util.FindCondition(v.instance.Status.Conditions, VRGConditionAvailable)
 	if vrgCondition == nil {
 		v.log.Info("Failed to find the Available condition in status")
 
@@ -1255,7 +1256,7 @@ func (v *VRGInstance) updateVRGConditions() {
 	vrgProgressing := false
 
 	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
-		condition := findCondition(protectedPVC.Conditions, PVCConditionAvailable)
+		condition := util.FindCondition(protectedPVC.Conditions, PVCConditionAvailable)
 		if condition == nil {
 			vrgReady = false
 
@@ -1357,7 +1358,7 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 		action = "demoted"
 	}
 
-	volRepCondition := findCondition(volRep.Status.Conditions, volrepController.ConditionCompleted)
+	volRepCondition := util.FindCondition(volRep.Status.Conditions, volrepController.ConditionCompleted)
 	if volRepCondition == nil {
 		v.log.Info("failed to get the Completed condition from VolumeReplication resource", "volRep",
 			volRep.Name)
@@ -1473,7 +1474,7 @@ func (v *VRGInstance) addProtectedAnnotationForPVC(pvc *corev1.PersistentVolumeC
 
 // addFinalizer adds a finalizer to VRG, to act as deletion protection
 func (v *VRGInstance) addFinalizer(finalizer string) error {
-	if !containsString(v.instance.ObjectMeta.Finalizers, finalizer) {
+	if !util.ContainsString(v.instance.ObjectMeta.Finalizers, finalizer) {
 		v.instance.ObjectMeta.Finalizers = append(v.instance.ObjectMeta.Finalizers, finalizer)
 		if err := v.reconciler.Update(v.ctx, v.instance); err != nil {
 			v.log.Error(err, "Failed to add finalizer", "finalizer", finalizer)
@@ -1488,7 +1489,7 @@ func (v *VRGInstance) addFinalizer(finalizer string) error {
 
 func (v *VRGInstance) addProtectedFinalizerToPVC(pvc *corev1.PersistentVolumeClaim,
 	log logr.Logger) error {
-	if containsString(pvc.Finalizers, pvcVRFinalizerProtected) {
+	if util.ContainsString(pvc.Finalizers, pvcVRFinalizerProtected) {
 		return nil
 	}
 
@@ -1498,7 +1499,7 @@ func (v *VRGInstance) addProtectedFinalizerToPVC(pvc *corev1.PersistentVolumeCla
 func (v *VRGInstance) addFinalizerToPVC(pvc *corev1.PersistentVolumeClaim,
 	finalizer string,
 	log logr.Logger) error {
-	if !containsString(pvc.ObjectMeta.Finalizers, finalizer) {
+	if !util.ContainsString(pvc.ObjectMeta.Finalizers, finalizer) {
 		pvc.ObjectMeta.Finalizers = append(pvc.ObjectMeta.Finalizers, finalizer)
 		if err := v.reconciler.Update(v.ctx, pvc); err != nil {
 			log.Error(err, "Failed to add finalizer", "finalizer", finalizer)
@@ -1521,8 +1522,8 @@ func (v *VRGInstance) removeProtectedFinalizerFromPVC(pvc *corev1.PersistentVolu
 func (v *VRGInstance) removeFinalizerFromPVC(pvc *corev1.PersistentVolumeClaim,
 	finalizer string,
 	log logr.Logger) error {
-	if containsString(pvc.ObjectMeta.Finalizers, finalizer) {
-		pvc.ObjectMeta.Finalizers = removeString(pvc.ObjectMeta.Finalizers, finalizer)
+	if util.ContainsString(pvc.ObjectMeta.Finalizers, finalizer) {
+		pvc.ObjectMeta.Finalizers = util.RemoveString(pvc.ObjectMeta.Finalizers, finalizer)
 		delete(pvc.ObjectMeta.Annotations, pvcVRAnnotationProtectedKey)
 
 		if err := v.reconciler.Update(v.ctx, pvc); err != nil {
@@ -1535,30 +1536,4 @@ func (v *VRGInstance) removeFinalizerFromPVC(pvc *corev1.PersistentVolumeClaim,
 	}
 
 	return nil
-}
-
-// It might be better move the helper functions like these to a separate
-// package or a separate go file?
-func containsString(values []string, s string) bool {
-	for _, item := range values {
-		if item == s {
-			return true
-		}
-	}
-
-	return false
-}
-
-func removeString(values []string, s string) []string {
-	result := []string{}
-
-	for _, item := range values {
-		if item == s {
-			continue
-		}
-
-		result = append(result, item)
-	}
-
-	return result
 }
