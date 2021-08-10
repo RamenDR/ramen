@@ -74,7 +74,7 @@ func (mwu *MWUtil) BuildManifestWorkName(mwType string) string {
 	return ManifestWorkName(mwu.InstName, mwu.InstNamespace, mwType)
 }
 
-func (mwu *MWUtil) ManifestExistAndApplied(mwName, newPrimary string) (bool, error) {
+func (mwu *MWUtil) ManifestWorkExistsAndApplied(mwName, newPrimary string) (bool, error) {
 	// Try to find whether we have already created a ManifestWork for this
 	mw, err := mwu.FindManifestWork(mwName, newPrimary)
 	if err != nil {
@@ -88,10 +88,10 @@ func (mwu *MWUtil) ManifestExistAndApplied(mwName, newPrimary string) (bool, err
 	}
 
 	if mw != nil {
-		mwu.Log.Info(fmt.Sprintf("Found an existing manifest work (%v)", mw))
+		mwu.Log.Info(fmt.Sprintf("Found manifest work (%v)", mw))
 		// Check if the MW is in Applied state
 		if IsManifestInAppliedState(mw) {
-			mwu.Log.Info(fmt.Sprintf("ManifestWork %s/%s in Applied state", mw.Namespace, mw.Name))
+			mwu.Log.Info(fmt.Sprintf("ManifestWork %s/%s has been applied", mw.Namespace, mw.Name))
 
 			return true, nil
 		}
@@ -100,6 +100,32 @@ func (mwu *MWUtil) ManifestExistAndApplied(mwName, newPrimary string) (bool, err
 	}
 
 	return false, nil
+}
+
+func (mwu *MWUtil) ClearAndDeleteManifestWork(mwName, newPrimary string) error {
+	// Try to find whether we have already created a ManifestWork for this
+	mw, err := mwu.FindManifestWork(mwName, newPrimary)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+
+		return err
+	}
+
+	mwu.Log.Info(fmt.Sprintf("Clearing manifests of MW (%s)", mwName))
+
+	mw.Spec.Workload.Manifests = []ocmworkv1.Manifest{}
+
+	err = mwu.Client.Update(mwu.Ctx, mw)
+	if err != nil {
+		mwu.Log.Info(fmt.Sprintf("Failed to clear Manifests for (%s). No change", mwName))
+
+		return fmt.Errorf("failed to clear manifests %w", err)
+	}
+
+	// We successfully cleared the Manifests array. Next, delete the MW
+	return mwu.deleteManifestWork(mwName, newPrimary)
 }
 
 func (mwu *MWUtil) FindManifestWork(mwName, managedCluster string) (*ocmworkv1.ManifestWork, error) {
@@ -491,7 +517,7 @@ func (mwu *MWUtil) deleteManifestWork(mwName, mwNamespace string) error {
 		return fmt.Errorf("failed to retrieve manifestwork for type: %s. Error: %w", mwName, err)
 	}
 
-	mwu.Log.Info("Deleting ManifestWork", "name", mw.Name, "namespace", mwNamespace)
+	mwu.Log.Info(fmt.Sprintf("Deleting ManifestWork %v", mw))
 
 	err = mwu.Client.Delete(mwu.Ctx, mw)
 	if err != nil && !errors.IsNotFound(err) {

@@ -538,6 +538,9 @@ func updateManifestWorkStatus(clusterNamespace, mwType, workType string) {
 
 	Eventually(func() bool {
 		err := k8sClient.Get(context.TODO(), manifestLookupKey, createdManifest)
+		if errors.IsNotFound(err) {
+			return true
+		}
 
 		return err == nil && len(createdManifest.Status.Conditions) != 0
 	}, timeout, interval).Should(BeTrue(), "failed to wait for PV manifest condition type to change to 'Applied'")
@@ -723,7 +726,7 @@ func relocateToPreferredCluster(drpc *rmn.DRPlacementControl, userPlacementRule 
 	verifyDRPCStatusPreferredClusterExpectation(rmn.FailedBack)
 	verifyVRGManifestWorkCreatedAsPrimary(EastManagedCluster)
 
-	Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(4)) // MWs for VRG+ROLES+PVs
+	Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(3)) // MWs for VRG+ROLES
 	waitForVRGMWDeletion(WestManagedCluster)
 
 	updateManagedClusterViewStatusAsNotFound(WestManagedCluster)
@@ -790,7 +793,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, WestManagedCluster)
 				verifyDRPCStatusPreferredClusterExpectation(rmn.FailedOver)
 				verifyVRGManifestWorkCreatedAsPrimary(WestManagedCluster)
-				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(4)) // MWs for VRG+ROLES+PVs
+				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(3)) // MWs for VRG+ROLES
 				waitForVRGMWDeletion(EastManagedCluster)
 				updateManagedClusterViewStatusAsNotFound(EastManagedCluster)
 
@@ -833,7 +836,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				verifyDRPCStatusPreferredClusterExpectation(rmn.FailedOver)
 				verifyVRGManifestWorkCreatedAsPrimary(WestManagedCluster)
 
-				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(4)) // MW for VRG+ROLES+PVs
+				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(3)) // MW for VRG+ROLES
 				waitForVRGMWDeletion(EastManagedCluster)
 				updateManagedClusterViewStatusAsNotFound(EastManagedCluster)
 

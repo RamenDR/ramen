@@ -1054,7 +1054,7 @@ func (d *DRPCInstance) createPVManifestWorkForRestore(newPrimary string) error {
 
 	pvMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypePV)
 
-	existAndApplied, err := d.mwu.ManifestExistAndApplied(pvMWName, newPrimary)
+	existAndApplied, err := d.mwu.ManifestWorkExistsAndApplied(pvMWName, newPrimary)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			d.log.Info("Restore PVs", "newPrimary", newPrimary)
@@ -1073,10 +1073,16 @@ func (d *DRPCInstance) createPVManifestWorkForRestore(newPrimary string) error {
 	if existAndApplied {
 		d.log.Info("MW for PVs exists and applied", "newPrimary", newPrimary)
 
+		// At this point we don't need the PV MW anymore. Clear the manifests, and delete it.
+		err := d.mwu.ClearAndDeleteManifestWork(pvMWName, newPrimary)
+		if err != nil {
+			return fmt.Errorf("%w", err)
+		}
+
 		return nil
 	}
 
-	return fmt.Errorf("waiting for PV manifestwork (%s) status to be applied", pvMWName)
+	return fmt.Errorf("waiting for PV manifestwork (%s) to complete", pvMWName)
 }
 
 func (d *DRPCInstance) restore(newHomeCluster string) error {
