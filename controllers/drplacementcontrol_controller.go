@@ -26,7 +26,7 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/go-logr/logr"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
-	fndv2 "github.com/open-cluster-management/multicloud-operators-foundation/pkg/apis/view/v1beta1"
+	viewv1beta1 "github.com/open-cluster-management/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	errorswrapper "github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -188,13 +188,13 @@ func ManagedClusterViewPredicateFunc() predicate.Funcs {
 	log := ctrl.Log.WithName("MCV")
 	mcvPredicate := predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			oldMCV, ok := e.ObjectOld.DeepCopyObject().(*fndv2.ManagedClusterView)
+			oldMCV, ok := e.ObjectOld.DeepCopyObject().(*viewv1beta1.ManagedClusterView)
 			if !ok {
 				log.Info("Failed to deep copy older MCV")
 
 				return false
 			}
-			newMCV, ok := e.ObjectNew.DeepCopyObject().(*fndv2.ManagedClusterView)
+			newMCV, ok := e.ObjectNew.DeepCopyObject().(*viewv1beta1.ManagedClusterView)
 			if !ok {
 				log.Info("Failed to deep copy newer MCV")
 
@@ -215,7 +215,7 @@ func ManagedClusterViewPredicateFunc() predicate.Funcs {
 	return mcvPredicate
 }
 
-func filterMCV(mcv *fndv2.ManagedClusterView) []ctrl.Request {
+func filterMCV(mcv *viewv1beta1.ManagedClusterView) []ctrl.Request {
 	return []ctrl.Request{
 		reconcile.Request{
 			NamespacedName: types.NamespacedName{
@@ -260,7 +260,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	mcvPred := ManagedClusterViewPredicateFunc()
 
 	mcvMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
-		mcv, ok := obj.(*fndv2.ManagedClusterView)
+		mcv, ok := obj.(*viewv1beta1.ManagedClusterView)
 		if !ok {
 			ctrl.Log.Info("ManagedClusterView map function received non-MCV resource")
 
@@ -275,7 +275,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&rmn.DRPlacementControl{}).
 		Watches(&source.Kind{Type: &ocmworkv1.ManifestWork{}}, mwMapFun, builder.WithPredicates(mwPred)).
-		Watches(&source.Kind{Type: &fndv2.ManagedClusterView{}}, mcvMapFun, builder.WithPredicates(mcvPred)).
+		Watches(&source.Kind{Type: &viewv1beta1.ManagedClusterView{}}, mcvMapFun, builder.WithPredicates(mcvPred)).
 		Complete(r)
 }
 
@@ -1244,7 +1244,7 @@ func (r *DRPlacementControlReconciler) getVRGFromManagedCluster(
 		},
 	}
 
-	mcvViewscope := fndv2.ViewScope{
+	mcvViewscope := viewv1beta1.ViewScope{
 		Resource:  "VolumeReplicationGroup",
 		Name:      resourceName,
 		Namespace: resourceNamespace,
@@ -1608,7 +1608,7 @@ func (d *DRPCInstance) deleteManagedClusterView(clusterName string) error {
 
 	d.log.Info("Delete ManagedClusterView from", "namespace", clusterName, "name", mcvName)
 
-	mcv := &fndv2.ManagedClusterView{}
+	mcv := &viewv1beta1.ManagedClusterView{}
 
 	err := d.reconciler.Client.Get(d.ctx, types.NamespacedName{Name: mcvName, Namespace: clusterName}, mcv)
 	if err != nil {
@@ -1771,7 +1771,7 @@ Requires:
 Returns: error if encountered (nil if no error occurred). See results on interface object.
 */
 func (r *DRPlacementControlReconciler) getManagedClusterResource(
-	meta metav1.ObjectMeta, viewscope fndv2.ViewScope, resource interface{}) error {
+	meta metav1.ObjectMeta, viewscope viewv1beta1.ViewScope, resource interface{}) error {
 	// create MCV first
 	mcv, err := r.getOrCreateManagedClusterView(meta, viewscope)
 	if err != nil {
@@ -1786,9 +1786,9 @@ func (r *DRPlacementControlReconciler) getManagedClusterResource(
 		err = fmt.Errorf("missing ManagedClusterView conditions")
 	case 1:
 		switch {
-		case mcv.Status.Conditions[0].Type != fndv2.ConditionViewProcessing:
+		case mcv.Status.Conditions[0].Type != viewv1beta1.ConditionViewProcessing:
 			err = fmt.Errorf("found invalid condition (%s) in ManagedClusterView", mcv.Status.Conditions[0].Type)
-		case mcv.Status.Conditions[0].Reason == fndv2.ReasonGetResourceFailed:
+		case mcv.Status.Conditions[0].Reason == viewv1beta1.ReasonGetResourceFailed:
 			err = errors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
 		case mcv.Status.Conditions[0].Status != metav1.ConditionTrue:
 			err = fmt.Errorf("ManagedClusterView is not ready (reason: %s)", mcv.Status.Conditions[0].Reason)
@@ -1819,10 +1819,10 @@ Requires:
 Returns: ManagedClusterView, error
 */
 func (r *DRPlacementControlReconciler) getOrCreateManagedClusterView(
-	meta metav1.ObjectMeta, viewscope fndv2.ViewScope) (*fndv2.ManagedClusterView, error) {
-	mcv := &fndv2.ManagedClusterView{
+	meta metav1.ObjectMeta, viewscope viewv1beta1.ViewScope) (*viewv1beta1.ManagedClusterView, error) {
+	mcv := &viewv1beta1.ManagedClusterView{
 		ObjectMeta: meta,
-		Spec: fndv2.ViewSpec{
+		Spec: viewv1beta1.ViewSpec{
 			Scope: viewscope,
 		},
 	}
