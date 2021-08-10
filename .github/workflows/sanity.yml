@@ -13,7 +13,7 @@ on:  # yamllint disable-line rule:truthy
     branches:
       - '*'
 env:
-  GO_VERSION: "1.16"
+  GO_VERSION: "1.15"
   # Use IMAGE_TAG_BASE and IMAGE_TAG Makefile variables to build various images
   IMAGE_TAG_BASE: "quay.io/ramendr/ramen"
   IMAGE_TAG: "sanity"
