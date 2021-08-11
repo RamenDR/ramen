@@ -46,10 +46,17 @@ import (
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 )
 
+type PVDownloader interface {
+	DownloadPVs(ctx context.Context, r client.Reader, objStoreGetter ObjectStoreGetter,
+		s3Endpoint, s3Region string, s3SecretName types.NamespacedName,
+		callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error)
+}
+
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
 type VolumeReplicationGroupReconciler struct {
 	client.Client
 	Log            logr.Logger
+	PVDownloader   PVDownloader
 	ObjStoreGetter ObjectStoreGetter
 	Scheme         *runtime.Scheme
 }
@@ -398,6 +405,80 @@ func (v *VRGInstance) validateVRGState() error {
 	return nil
 }
 
+func (v *VRGInstance) restorePVs() error {
+	// TODO: refactor this per this comment: https://github.com/RamenDR/ramen/pull/197#discussion_r687246692
+	vrgCondition := findCondition(v.instance.Status.Conditions, VRGConditionAvailable)
+	if vrgCondition != nil {
+		v.log.Info("VRGConditionAvailable found. PV restore must have already been applied")
+
+		return nil
+	}
+
+	v.log.Info("Restoring PVs to this managed cluster")
+
+	pvList, err := v.listPVsFromS3Store()
+	if err != nil {
+		return fmt.Errorf("failed to retrieve PVs from S3 store (%w)", err)
+	}
+
+	v.log.Info(fmt.Sprintf("Found %d PVs", len(pvList)))
+
+	if len(pvList) == 0 {
+		return nil
+	}
+
+	for idx := range pvList {
+		err := v.restorePV(&pvList[idx])
+		if err != nil {
+			v.log.Error(err, "Stopping restore")
+
+			return err
+		}
+	}
+
+	v.log.Info(fmt.Sprintf("Restored %d PVs", len(pvList)))
+
+	return nil
+}
+
+func (v *VRGInstance) listPVsFromS3Store() ([]corev1.PersistentVolume, error) {
+	s3SecretLookupKey := types.NamespacedName{
+		Name:      v.instance.Spec.S3SecretName,
+		Namespace: v.instance.Namespace,
+	}
+
+	s3Bucket := constructBucketName(v.instance.Namespace, v.instance.Name)
+
+	return v.reconciler.PVDownloader.DownloadPVs(
+		v.ctx, v.reconciler.Client, v.reconciler.ObjStoreGetter, v.instance.Spec.S3Endpoint, v.instance.Spec.S3Region,
+		s3SecretLookupKey, v.instance.Name, s3Bucket)
+}
+
+func (v *VRGInstance) restorePV(pv *corev1.PersistentVolume) error {
+	v.cleanupPVForRestore(pv)
+
+	if err := v.reconciler.Create(v.ctx, pv); err != nil {
+		if !errors.IsAlreadyExists(err) {
+			// SHOULD WE CALL UPDATE(...) TO UPDATE THE RESOURCE HERE ???
+			// OR JUST ASSUME WHAT IS OUT THERE IS FINE
+			return fmt.Errorf("failed to create PV resource (%s) (%w)", pv.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// cleanupPVForRestore cleans up required PV fields, to ensure restore succeeds to a new cluster, and
+// rebinding the PV to a newly created PVC with the same claimRef succeeds
+func (v *VRGInstance) cleanupPVForRestore(pv *corev1.PersistentVolume) {
+	pv.ResourceVersion = ""
+	if pv.Spec.ClaimRef != nil {
+		pv.Spec.ClaimRef.UID = ""
+		pv.Spec.ClaimRef.ResourceVersion = ""
+		pv.Spec.ClaimRef.APIVersion = ""
+	}
+}
+
 func (v *VRGInstance) initializeStatus() {
 	// create ProtectedPVCs map for status
 	if v.instance.Status.ProtectedPVCs == nil {
@@ -586,8 +667,13 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	requeue := false
-	requeue = v.reconcileVRsAsPrimary()
+	if err := v.restorePVs(); err != nil {
+		v.log.Error(err, "Restoring PVs failed")
+		// Since updating status failed, reconcile
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	requeue := v.reconcileVRsAsPrimary()
 
 	if err := v.updateVRGStatus(true); err != nil {
 		requeue = true
