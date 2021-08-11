@@ -25,7 +25,6 @@ import (
 	"github.com/go-logr/logr"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	errorswrapper "github.com/pkg/errors"
-	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -44,14 +43,11 @@ const (
 	// The format is name-namespace-type-mw where:
 	// - name is the DRPC name
 	// - namespace is the DRPC namespace
-	// - type is either "vrg", "pv", or "roles"
+	// - type is either "vrg" or "roles"
 	ManifestWorkNameFormat string = "%s-%s-%s-mw"
 
 	// ManifestWork VRG Type
 	MWTypeVRG string = "vrg"
-
-	// ManifestWork PV Type
-	MWTypePV string = "pv"
 
 	// ManifestWork Roles Type
 	MWTypeRoles string = "roles"
@@ -75,34 +71,6 @@ func ManifestWorkName(name, namespace, mwType string) string {
 
 func (mwu *MWUtil) BuildManifestWorkName(mwType string) string {
 	return ManifestWorkName(mwu.InstName, mwu.InstNamespace, mwType)
-}
-
-func (mwu *MWUtil) ManifestExistAndApplied(mwName, newPrimary string) (bool, error) {
-	// Try to find whether we have already created a ManifestWork for this
-	mw, err := mwu.FindManifestWork(mwName, newPrimary)
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			mwu.Log.Error(err, "Failed to find 'PV restore' ManifestWork")
-
-			return false, nil
-		}
-
-		return false, err
-	}
-
-	if mw != nil {
-		mwu.Log.Info(fmt.Sprintf("Found an existing manifest work (%v)", mw))
-		// Check if the MW is in Applied state
-		if IsManifestInAppliedState(mw) {
-			mwu.Log.Info(fmt.Sprintf("ManifestWork %s/%s in Applied state", mw.Namespace, mw.Name))
-
-			return true, nil
-		}
-
-		mwu.Log.Info("MW is not in applied state", "namespace/name", mw.Namespace+"/"+mw.Name)
-	}
-
-	return false, nil
 }
 
 func (mwu *MWUtil) FindManifestWork(mwName, managedCluster string) (*ocmworkv1.ManifestWork, error) {
@@ -337,56 +305,6 @@ func (mwu *MWUtil) generatePVClusterRoleBindingManifest() (*ocmworkv1.Manifest, 
 	})
 }
 
-func (mwu *MWUtil) CreateOrUpdatePVsManifestWork(
-	name string, namespace string, homeClusterName string, pvList []corev1.PersistentVolume) error {
-	mwu.Log.Info("Create manifest work for PVs", "DRPC",
-		name, "cluster", homeClusterName, "PV count", len(pvList))
-
-	mwName := mwu.BuildManifestWorkName(MWTypePV)
-
-	manifestWork, err := mwu.generatePVManifestWork(mwName, homeClusterName, pvList)
-	if err != nil {
-		return err
-	}
-
-	return mwu.createOrUpdateManifestWork(manifestWork, homeClusterName)
-}
-
-func (mwu *MWUtil) generatePVManifestWork(
-	mwName, homeClusterName string, pvList []corev1.PersistentVolume) (*ocmworkv1.ManifestWork, error) {
-	manifests, err := mwu.generatePVManifest(pvList)
-	if err != nil {
-		return nil, err
-	}
-
-	return mwu.newManifestWork(
-		mwName,
-		homeClusterName,
-		map[string]string{"app": "PV"},
-		manifests), nil
-}
-
-// This function follow a slightly different pattern than the rest, simply because the pvList that come
-// from the S3 store will contain PV objects already converted to a string.
-func (mwu *MWUtil) generatePVManifest(
-	pvList []corev1.PersistentVolume) ([]ocmworkv1.Manifest, error) {
-	manifests := []ocmworkv1.Manifest{}
-
-	for _, pv := range pvList {
-		pvClientManifest, err := mwu.GenerateManifest(pv)
-		// Either all succeed or none
-		if err != nil {
-			mwu.Log.Error(err, "failed to generate manifest for PV")
-
-			return nil, err
-		}
-
-		manifests = append(manifests, *pvClientManifest)
-	}
-
-	return manifests, nil
-}
-
 func (mwu *MWUtil) GenerateManifest(obj interface{}) (*ocmworkv1.Manifest, error) {
 	objJSON, err := json.Marshal(obj)
 	if err != nil {
@@ -438,7 +356,7 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 		//		mw.Name, mw.Namespace, err)
 		// }
 
-		mwu.Log.Info("Creating ManifestWork for", "cluster", managedClusternamespace, "MW", mw)
+		mwu.Log.Info("Creating ManifestWork", "cluster", managedClusternamespace, "MW", mw)
 
 		return mwu.Client.Create(mwu.Ctx, mw)
 	}
@@ -446,7 +364,7 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 	if !reflect.DeepEqual(foundMW.Spec, mw.Spec) {
 		mw.Spec.DeepCopyInto(&foundMW.Spec)
 
-		mwu.Log.Info("ManifestWork exists.", "MW", mw)
+		mwu.Log.Info("ManifestWork exists.", "name", mw, "namespace", foundMW)
 
 		return mwu.Client.Update(mwu.Ctx, foundMW)
 	}
@@ -462,21 +380,7 @@ func (mwu *MWUtil) DeleteManifestWorksForCluster(clusterName string) error {
 		return fmt.Errorf("failed to delete ManifestWork for VRG in namespace %s (%w)", clusterName, err)
 	}
 
-	err = mwu.deletePVManifestWork(clusterName)
-	if err != nil {
-		mwu.Log.Error(err, "failed to delete MW for PVs")
-
-		return fmt.Errorf("failed to delete ManifestWork for PVs in namespace %s (%w)", clusterName, err)
-	}
-
 	return nil
-}
-
-func (mwu *MWUtil) deletePVManifestWork(fromCluster string) error {
-	pvMWName := mwu.BuildManifestWorkName(MWTypePV)
-	pvMWNamespace := fromCluster
-
-	return mwu.deleteManifestWork(pvMWName, pvMWNamespace)
 }
 
 func (mwu *MWUtil) deleteVRGManifestWork(fromCluster string) error {

@@ -29,7 +29,6 @@ import (
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	errorswrapper "github.com/pkg/errors"
 	fndv2 "github.com/tjanssen3/multicloud-operators-foundation/v2/pkg/apis/view/v1beta1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -140,6 +139,7 @@ type PVDownloader interface {
 	DownloadPVs(ctx context.Context, r client.Reader, objStoreGetter ObjectStoreGetter,
 		s3Profile string, callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error)
 }
+var WaitForPVRestoreToComplete = errorswrapper.New("Waiting for PV restore to complete")
 
 // ProgressCallback of function type
 type ProgressCallback func(string, string)
@@ -147,11 +147,9 @@ type ProgressCallback func(string, string)
 // DRPlacementControlReconciler reconciles a DRPlacementControl object
 type DRPlacementControlReconciler struct {
 	client.Client
-	Log            logr.Logger
-	PVDownloader   PVDownloader
-	ObjStoreGetter ObjectStoreGetter
-	Scheme         *runtime.Scheme
-	Callback       ProgressCallback
+	Log      logr.Logger
+	Scheme   *runtime.Scheme
+	Callback ProgressCallback
 }
 
 func ManifestWorkPredicateFunc() predicate.Funcs {
@@ -172,8 +170,7 @@ func ManifestWorkPredicateFunc() predicate.Funcs {
 				return false
 			}
 
-			// log.Info(fmt.Sprintf("Update event for MW %s/%s: oldStatus %+v, newStatus %+v",
-			//	oldMW.Name, oldMW.Namespace, oldMW.Status, newMW.Status))
+			log.Info(fmt.Sprintf("Update event for MW %s/%s", oldMW.Name, oldMW.Namespace))
 
 			return !reflect.DeepEqual(oldMW.Status, newMW.Status)
 		},
@@ -210,8 +207,7 @@ func ManagedClusterViewPredicateFunc() predicate.Funcs {
 				return false
 			}
 
-			// log.Info(fmt.Sprintf("Update event for MCV %s/%s: oldStatus %+v, newStatus %+v",
-			//	oldMCV.Name, oldMCV.Namespace, oldMCV.Status, newMCV.Status))
+			log.Info(fmt.Sprintf("Update event for MCV %s/%s", oldMCV.Name, oldMCV.Namespace))
 
 			return !reflect.DeepEqual(oldMCV.Status, newMCV.Status)
 		},
@@ -234,28 +230,6 @@ func filterMCV(mcv *fndv2.ManagedClusterView) []ctrl.Request {
 			},
 		},
 	}
-}
-
-func FilterByObservedGeneration(conditions []metav1.Condition) *metav1.Condition {
-	if len(conditions) == 0 {
-		return nil
-	}
-
-	if len(conditions) == 1 {
-		return &conditions[0]
-	}
-
-	latestCondition := &conditions[0]
-	highestObservedGeneration := int64(0)
-
-	for idx, condition := range conditions {
-		if condition.ObservedGeneration > highestObservedGeneration {
-			latestCondition = &conditions[idx]
-			highestObservedGeneration = condition.ObservedGeneration
-		}
-	}
-
-	return latestCondition
 }
 
 func GetDRPCCondition(status *rmn.DRPlacementControlStatus, conditionType string) (int, *metav1.Condition) {
@@ -284,7 +258,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 			return []reconcile.Request{}
 		}
 
-		ctrl.Log.Info(fmt.Sprintf("Filtering ManifestWork (%v)", mw))
+		ctrl.Log.Info(fmt.Sprintf("Filtering ManifestWork (%s/%s)", mw.Name, mw.Namespace))
 
 		return filterMW(mw)
 	}))
@@ -299,7 +273,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 			return []reconcile.Request{}
 		}
 
-		ctrl.Log.Info(fmt.Sprintf("Filtering MCV %v", mcv))
+		ctrl.Log.Info(fmt.Sprintf("Filtering MCV (%s/%s)", mcv.Name, mcv.Namespace))
 
 		return filterMCV(mcv)
 	}))
@@ -412,7 +386,7 @@ func (r *DRPlacementControlReconciler) processAndHandleResponse(d *DRPCInstance)
 	r.Log.Info("Finished processing", "Requeue?", requeue)
 
 	if !requeue {
-		r.Log.Info("Done")
+		r.Log.Info("Done reconciling")
 		r.Callback(d.instance.Name, string(d.getLastDRState()))
 	}
 
@@ -424,7 +398,7 @@ func (r *DRPlacementControlReconciler) processAndHandleResponse(d *DRPCInstance)
 	}
 
 	if requeue {
-		r.Log.Info("Requeing No luck")
+		r.Log.Info("Requeing...")
 
 		return ctrl.Result{Requeue: true}, nil
 	}
@@ -512,7 +486,7 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 		clustersToClean = append(clustersToClean, drpc.Spec.FailoverCluster)
 	}
 
-	// delete manifestworks (VRG, PV, Roles)
+	// delete manifestworks (VRG and Roles)
 	for idx := range clustersToClean {
 		err := mwu.DeleteManifestWorksForCluster(clustersToClean[idx])
 		if err != nil {
@@ -822,8 +796,14 @@ func (d *DRPCInstance) runInitialDeployment() (bool, error) {
 	// Make sure we record the state that we are deploying
 	d.setDRState(rmn.Deploying)
 
+	// Create VRG first, to leverage user PlacementRule decision to skip placement and move to cleanup
+	err := d.createVRGAndRolesManifestWorks(homeCluster)
+	if err != nil {
+		return false, err
+	}
+
 	// We have a home cluster
-	err := d.updateUserPlRuleAndCreateVRGMW(homeCluster, homeClusterNamespace)
+	err = d.updateUserPlacementRule(homeCluster, homeClusterNamespace)
 	if err != nil {
 		return !done, err
 	}
@@ -944,7 +924,9 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 
 	newHomeCluster := d.instance.Spec.FailoverCluster
 
-	result, err := d.runPlacementTask(newHomeCluster, "")
+	const restorePVs = true
+
+	result, err := d.runPlacementTask(newHomeCluster, "", restorePVs)
 	if err != nil {
 		return !done, err
 	}
@@ -1039,18 +1021,23 @@ func (d *DRPCInstance) switchToPreferredCluster(drState rmn.DRState) (bool, erro
 	d.setDRState(drState)
 	setMetricsTimerFromDRState(drState, timerStart)
 
-	// During failback or relocation, both clusters should be up and both must be secondaries before we proceed
-	ensured, err := d.processVRGForSecondaries()
-	if err != nil || !ensured {
-		return !done, err
+	// Skip switching to secondary if the preferredCluster already is or in progress to becoming primary
+	if !d.isVRGReadyForPlacementTask(preferredCluster) {
+		// During failback or relocation, both clusters should be up and both must be secondaries before we proceed.
+		ensured, err := d.processVRGForSecondaries()
+		if err != nil || !ensured {
+			return !done, err
+		}
 	}
 
-	result, err := d.runPlacementTask(preferredCluster, preferredClusterNamespace)
+	const restorePVs = true
+
+	result, err := d.runPlacementTask(preferredCluster, preferredClusterNamespace, restorePVs)
 	if err != nil {
 		return !done, err
 	}
 
-	// 8. All good so far, update DRPC decision and state
+	// All good so far, update DRPC decision and state
 	if len(d.userPlacementRule.Status.Decisions) > 0 {
 		d.instance.Status.PreferredDecision = d.userPlacementRule.Status.Decisions[0]
 	}
@@ -1062,26 +1049,111 @@ func (d *DRPCInstance) switchToPreferredCluster(drState rmn.DRState) (bool, erro
 	return result, nil
 }
 
-// runPlacementTast is a series of steps to creating, updating, and cleaning up
+// runPlacementTask is a series of steps to creating, updating, and cleaning up
 // the necessary objects for the failover, failback, or relocation
-func (d *DRPCInstance) runPlacementTask(targetCluster, targetClusterNamespace string) (bool, error) {
-	// Restore PV to preferredCluster
-	err := d.createPVManifestWorkForRestore(targetCluster)
+//nolint:cyclop
+func (d *DRPCInstance) runPlacementTask(targetCluster, targetClusterNamespace string, restorePVs bool) (bool, error) {
+	d.log.Info("runPlacementTask", "cluster", targetCluster, "restorePVs", restorePVs)
+
+	created, err := d.createManifestWorks(targetCluster)
 	if err != nil {
 		return false, err
 	}
 
-	err = d.updateUserPlRuleAndCreateVRGMW(targetCluster, targetClusterNamespace)
+	if created && restorePVs {
+		// We just created MWs. Give it time until the PV restore is complete
+		return false, fmt.Errorf("%w)", WaitForPVRestoreToComplete)
+	}
+
+	if !created {
+		updated, err := d.updateManifestWorkToPrimary(targetCluster)
+		if err != nil {
+			return false, err
+		}
+
+		if updated && restorePVs {
+			d.log.Info("runPlacementTask", "updated", updated, "restorePVs", restorePVs)
+			// We just updated MWs. Give it time until the PV restore is complete
+			return false, fmt.Errorf("%w)", WaitForPVRestoreToComplete)
+		}
+	}
+
+	// already a primary
+	if restorePVs {
+		restored, err := d.checkPVsHaveBeenRestored(targetCluster)
+		if err != nil {
+			return false, err
+		}
+
+		if !restored {
+			return false, fmt.Errorf("%w)", WaitForPVRestoreToComplete)
+		}
+	}
+
+	err = d.updateUserPlacementRule(targetCluster, targetClusterNamespace)
 	if err != nil {
 		return false, err
 	}
 
-	// 9. Attempt to delete VRG MW from failed clusters
+	// Attempt to delete VRG MW from failed clusters
 	// This is attempt to clean up is not guaranteed to complete at this stage. Deleting the old VRG
 	// requires guaranteeing that the VRG has transitioned to secondary.
 	clusterToSkip := targetCluster
 
 	return d.cleanup(clusterToSkip)
+}
+
+func (d *DRPCInstance) createManifestWorks(targetCluster string) (bool, error) {
+	mwName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
+
+	const created = true
+
+	_, err := d.mwu.FindManifestWork(mwName, targetCluster)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Create VRG first, to leverage user PlacementRule decision to skip placement and move to cleanup
+			err := d.createVRGAndRolesManifestWorks(targetCluster)
+			if err != nil {
+				return !created, err
+			}
+
+			return created, nil
+		}
+
+		d.log.Error(err, "failed to retrieve ManifestWork")
+
+		return !created, fmt.Errorf("failed to retrieve ManifestWork %s (%w)", mwName, err)
+	}
+
+	return !created, nil
+}
+
+func (d *DRPCInstance) updateManifestWorkToPrimary(targetCluster string) (bool, error) {
+	mwName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
+
+	const updated = true
+
+	mw, err := d.mwu.FindManifestWork(mwName, targetCluster)
+	if err != nil {
+		return !updated, fmt.Errorf("failed to find MW (%w)", err)
+	}
+
+	vrg, err := d.extractVRGFromManifestWork(mw)
+	if err != nil {
+		return !updated, err
+	}
+
+	if !d.isVRGPrimary(vrg) {
+		err := d.updateVRGManifestWork(targetCluster)
+		if err != nil {
+			return !updated, err
+		}
+
+		return updated, nil
+	}
+
+	// not updated
+	return !updated, nil
 }
 
 func (d *DRPCInstance) hasAlreadySwitchedOver(targetCluster string) bool {
@@ -1108,6 +1180,25 @@ func (d *DRPCInstance) getPreferredClusterNamespaced() (string, string) {
 	}
 
 	return preferredCluster, preferredClusterNamespace
+}
+
+func (d *DRPCInstance) isVRGReadyForPlacementTask(targetCluster string) bool {
+	mw, err := d.getVRGManifestWork(targetCluster)
+	if err != nil {
+		return false
+	}
+
+	// If we have no MW for VRG, then we are ready for placement
+	if mw == nil {
+		return true
+	}
+
+	vrg, err := d.extractVRGFromManifestWork(mw)
+	if err != nil {
+		return false
+	}
+
+	return d.isVRGPrimary(vrg)
 }
 
 func (d *DRPCInstance) processVRGForSecondaries() (bool, error) {
@@ -1182,68 +1273,6 @@ func (r *DRPlacementControlReconciler) getVRGFromManagedCluster(
 	err := r.getManagedClusterResource(mcvMeta, mcvViewscope, vrg)
 
 	return vrg, err
-}
-
-func (d *DRPCInstance) updateUserPlRuleAndCreateVRGMW(homeCluster, homeClusterNamespace string) error {
-	// Create VRG first, to leverage user PlacementRule decision to skip placement and move to cleanup
-	err := d.createVRGManifestWork(homeCluster)
-	if err != nil {
-		return err
-	}
-
-	err = d.updateUserPlacementRule(homeCluster, homeClusterNamespace)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (d *DRPCInstance) createPVManifestWorkForRestore(newPrimary string) error {
-	if err := d.mwu.CreateOrUpdatePVRolesManifestWork(newPrimary); err != nil {
-		d.log.Error(err, "failed to create or update PersistentVolume Roles manifest")
-
-		return fmt.Errorf("failed to create or update PersistentVolume Roles manifest in namespace %s (%w)",
-			newPrimary, err)
-	}
-
-	pvMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypePV)
-
-	existAndApplied, err := d.mwu.ManifestExistAndApplied(pvMWName, newPrimary)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			d.log.Info("Restore PVs", "newPrimary", newPrimary)
-
-			if err = d.restore(newPrimary); err != nil {
-				return err
-			}
-
-			// Just restored, wait for MW to generate change event and move to applied
-			return fmt.Errorf("created PV manifestwork (%s), waiting for status to be applied", pvMWName)
-		}
-
-		return fmt.Errorf("failed to check PV manifestwork status %s (%w)", pvMWName, err)
-	}
-
-	if existAndApplied {
-		d.log.Info("MW for PVs exists and applied", "newPrimary", newPrimary)
-
-		return nil
-	}
-
-	return fmt.Errorf("waiting for PV manifestwork (%s) status to be applied", pvMWName)
-}
-
-func (d *DRPCInstance) restore(newHomeCluster string) error {
-	// Restore from PV backup location
-	err := d.restorePVFromBackup(newHomeCluster)
-	if err != nil {
-		d.log.Error(err, "Failed to restore PVs from backup")
-
-		return err
-	}
-
-	return nil
 }
 
 func (d *DRPCInstance) cleanup(skipCluster string) (bool, error) {
@@ -1335,34 +1364,45 @@ func (d *DRPCInstance) updateUserPlacementRuleStatus(status plrv1.PlacementRuleS
 	return nil
 }
 
-func (d *DRPCInstance) createVRGManifestWork(homeCluster string) error {
-	d.log.Info("Processing deployment",
+func (d *DRPCInstance) createVRGAndRolesManifestWorks(homeCluster string) error {
+	d.log.Info("Creating VRG/Roles ManifestWorks",
 		"Last State", d.getLastDRState(), "cluster", homeCluster)
 
-	mw, err := d.vrgManifestWorkExists(homeCluster)
-	if err != nil {
-		return err
+	if err := d.mwu.CreateOrUpdateVRGRolesManifestWork(homeCluster); err != nil {
+		d.log.Error(err, "failed to create or update VolumeReplicationGroup Roles manifest")
+
+		return fmt.Errorf("failed to create or update VolumeReplicationGroup Roles manifest in namespace %s (%w)",
+			homeCluster, err)
 	}
 
-	if mw != nil {
-		primary, err := d.isVRGPrimary(mw)
-		if err != nil {
-			d.log.Error(err, "Failed to check whether the VRG is primary or not", "mw", mw.Name)
+	if err := d.mwu.CreateOrUpdateVRGManifestWork(
+		d.instance.Name, d.instance.Namespace,
+		homeCluster, d.instance.Spec.S3Endpoint,
+		d.instance.Spec.S3Region, d.instance.Spec.S3SecretName,
+		d.instance.Spec.PVCSelector); err != nil {
+		d.log.Error(err, "failed to create or update VolumeReplicationGroup manifest")
 
-			return err
-		}
-
-		if primary {
-			// Found MW and the VRG already a primary
-			return nil
-		}
+		return fmt.Errorf("failed to create or update VolumeReplicationGroup manifest in namespace %s (%w)", homeCluster, err)
 	}
 
-	// VRG ManifestWork does not exist, create it.
-	return d.processVRGManifestWork(homeCluster)
+	return nil
 }
 
-func (d *DRPCInstance) vrgManifestWorkExists(homeCluster string) (*ocmworkv1.ManifestWork, error) {
+func (d *DRPCInstance) updateVRGManifestWork(homeCluster string) error {
+	if err := d.mwu.CreateOrUpdateVRGManifestWork(
+		d.instance.Name, d.instance.Namespace,
+		homeCluster, d.instance.Spec.S3Endpoint,
+		d.instance.Spec.S3Region, d.instance.Spec.S3SecretName,
+		d.instance.Spec.PVCSelector); err != nil {
+		d.log.Error(err, "failed to update VolumeReplicationGroup manifest")
+
+		return fmt.Errorf("failed to update VolumeReplicationGroup manifest in namespace %s (%w)", homeCluster, err)
+	}
+
+	return nil
+}
+
+func (d *DRPCInstance) getVRGManifestWork(homeCluster string) (*ocmworkv1.ManifestWork, error) {
 	if d.instance.Status.PreferredDecision == (plrv1.PlacementDecision{}) {
 		return nil, nil
 	}
@@ -1384,21 +1424,31 @@ func (d *DRPCInstance) vrgManifestWorkExists(homeCluster string) (*ocmworkv1.Man
 		return nil, nil
 	}
 
-	d.log.Info(fmt.Sprintf("Manifestwork %s exists (%v)", mw.Name, mw))
+	d.log.Info(fmt.Sprintf("Manifestwork exists (%s/%s)", mw.Name, mw.Namespace))
 
 	return mw, nil
 }
 
-func (d *DRPCInstance) isVRGPrimary(mw *ocmworkv1.ManifestWork) (bool, error) {
-	vrgClientManifest := &mw.Spec.Workload.Manifests[0]
-	vrg := &rmn.VolumeReplicationGroup{}
+func (d *DRPCInstance) isVRGPrimary(vrg *rmn.VolumeReplicationGroup) bool {
+	return (vrg.Spec.ReplicationState == rmn.Primary)
+}
 
-	err := yaml.Unmarshal(vrgClientManifest.RawExtension.Raw, &vrg)
+func (d *DRPCInstance) checkPVsHaveBeenRestored(homeCluster string) (bool, error) {
+	vrg, err := d.reconciler.getVRGFromManagedCluster(d.instance.Name, d.instance.Namespace, homeCluster)
 	if err != nil {
-		return false, errorswrapper.Wrap(err, fmt.Sprintf("unable to get vrg from ManifestWork %s", mw.Name))
+		d.log.Info("Failed to get VRG through MCV", "error", err)
+
+		return false, err
 	}
 
-	return (vrg.Spec.ReplicationState == rmn.Primary), nil
+	vrgCondition := findCondition(vrg.Status.Conditions, VRGConditionAvailable)
+	if vrgCondition == nil {
+		d.log.Info("Waiting for PVs to be restored", "cluster", homeCluster)
+
+		return false, nil
+	}
+
+	return vrgCondition.Status == metav1.ConditionTrue, nil
 }
 
 func (d *DRPCInstance) ensureCleanup(clusterToSkip string) error {
@@ -1439,17 +1489,6 @@ func (d *DRPCInstance) updateCondition(condition *metav1.Condition, idx int, rea
 	condition.Status = status
 	d.instance.Status.Conditions[idx] = *condition
 	d.needStatusUpdate = true
-}
-
-// cleanupPVForRestore cleans up required PV fields, to ensure restore succeeds to a new cluster, and
-// rebinding the PV to a newly created PVC with the same claimRef succeeds
-func (d *DRPCInstance) cleanupPVForRestore(pv *corev1.PersistentVolume) {
-	pv.ResourceVersion = ""
-	if pv.Spec.ClaimRef != nil {
-		pv.Spec.ClaimRef.UID = ""
-		pv.Spec.ClaimRef.ResourceVersion = ""
-		pv.Spec.ClaimRef.APIVersion = ""
-	}
 }
 
 func (d *DRPCInstance) ensureVRGOnClusterDeleted(clusterName string) (bool, error) {
@@ -1604,49 +1643,6 @@ func (d *DRPCInstance) deleteManagedClusterView(clusterName string) error {
 	return d.reconciler.Client.Delete(d.ctx, mcv)
 }
 
-func (d *DRPCInstance) restorePVFromBackup(homeCluster string) error {
-	d.log.Info("Restoring PVs to new managed cluster", "name", homeCluster)
-
-	pvList, err := d.listPVsFromS3Store(homeCluster)
-	if err != nil {
-		return errorswrapper.Wrap(err, "failed to retrieve PVs from S3 store")
-	}
-
-	d.log.Info(fmt.Sprintf("Found %d PVs", len(pvList)))
-
-	if len(pvList) == 0 {
-		return nil
-	}
-
-	for idx := range pvList {
-		d.cleanupPVForRestore(&pvList[idx])
-	}
-
-	// Create manifestwork for all PVs for this DRPC
-	return d.mwu.CreateOrUpdatePVsManifestWork(d.instance.Name, d.instance.Namespace, homeCluster, pvList)
-}
-
-func (d *DRPCInstance) processVRGManifestWork(homeCluster string) error {
-	d.log.Info("Processing VRG ManifestWork", "cluster", homeCluster)
-
-	if err := d.mwu.CreateOrUpdateVRGRolesManifestWork(homeCluster); err != nil {
-		d.log.Error(err, "failed to create or update VolumeReplicationGroup Roles manifest")
-
-		return fmt.Errorf("failed to create or update VolumeReplicationGroup Roles manifest in namespace %s (%w)",
-			homeCluster, err)
-	}
-
-	if err := d.mwu.CreateOrUpdateVRGManifestWork(
-		d.instance.Name, d.instance.Namespace,
-		homeCluster, d.drPolicy, d.instance.Spec.PVCSelector); err != nil {
-		d.log.Error(err, "failed to create or update VolumeReplicationGroup manifest")
-
-		return fmt.Errorf("failed to create or update VolumeReplicationGroup manifest in namespace %s (%w)", homeCluster, err)
-	}
-
-	return nil
-}
-
 func (d *DRPCInstance) hasVRGStateBeenUpdatedToSecondary(clusterName string) (bool, error) {
 	vrgMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
 	d.log.Info("Check if VRG has been updated to secondary", "name", vrgMWName, "cluster", clusterName)
@@ -1659,7 +1655,7 @@ func (d *DRPCInstance) hasVRGStateBeenUpdatedToSecondary(clusterName string) (bo
 			vrgMWName, clusterName, err)
 	}
 
-	vrg, err := d.getVRGFromManifestWork(mw)
+	vrg, err := d.extractVRGFromManifestWork(mw)
 	if err != nil {
 		d.log.Error(err, "failed to check whether VRG state is secondary")
 
@@ -1691,7 +1687,7 @@ func (d *DRPCInstance) updateVRGStateToSecondary(clusterName string) error {
 			vrgMWName, clusterName, err)
 	}
 
-	vrg, err := d.getVRGFromManifestWork(mw)
+	vrg, err := d.extractVRGFromManifestWork(mw)
 	if err != nil {
 		d.log.Error(err, "failed to update VRG state")
 
@@ -1725,7 +1721,7 @@ func (d *DRPCInstance) updateVRGStateToSecondary(clusterName string) error {
 	return nil
 }
 
-func (d *DRPCInstance) getVRGFromManifestWork(mw *ocmworkv1.ManifestWork) (*rmn.VolumeReplicationGroup, error) {
+func (d *DRPCInstance) extractVRGFromManifestWork(mw *ocmworkv1.ManifestWork) (*rmn.VolumeReplicationGroup, error) {
 	if len(mw.Spec.Workload.Manifests) == 0 {
 		return nil, fmt.Errorf("invalid VRG ManifestWork for type: %s", mw.Name)
 	}
@@ -1867,27 +1863,6 @@ func (r *DRPlacementControlReconciler) getOrCreateManagedClusterView(
 	}
 
 	return mcv, nil
-}
-
-func (d *DRPCInstance) listPVsFromS3Store(homeCluster string) ([]corev1.PersistentVolume, error) {
-	s3Bucket := constructBucketName(d.instance.Namespace, d.instance.Name)
-
-	return d.reconciler.PVDownloader.DownloadPVs(
-		d.ctx, d.reconciler.Client, d.reconciler.ObjStoreGetter, rmnutil.S3DownloadProfile(*d.drPolicy, homeCluster),
-		d.instance.Name, s3Bucket)
-}
-
-type ObjectStorePVDownloader struct{}
-
-func (s ObjectStorePVDownloader) DownloadPVs(ctx context.Context, r client.Reader,
-	objStoreGetter ObjectStoreGetter, s3Profile string,
-	callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error) {
-	objectStore, err := objStoreGetter.objectStore(ctx, r, s3Profile, callerTag)
-	if err != nil {
-		return nil, fmt.Errorf("error when downloading PVs, err %w", err)
-	}
-
-	return objectStore.downloadPVs(s3Bucket)
 }
 
 func (d *DRPCInstance) advanceToNextDRState() {
