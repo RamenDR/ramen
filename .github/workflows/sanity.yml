@@ -14,8 +14,10 @@ on:  # yamllint disable-line rule:truthy
       - '*'
 env:
   GO_VERSION: "1.15"
-  # Use IMAGE_TAG_BASE and IMAGE_TAG Makefile variables to build various images
   IMAGE_TAG_BASE: "quay.io/ramendr/ramen"
+  IMAGE_REGISTRY: "quay.io"
+  IMAGE_REPOSITORY: "ramendr"
+  IMAGE_NAME: "ramen"
   IMAGE_TAG: "sanity"
 defaults:
   run:
