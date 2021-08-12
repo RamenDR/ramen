@@ -104,6 +104,7 @@ type objectStorer interface {
 		objectType reflect.Type) (interface{}, error)
 	listKeys(bucket string, keyPrefix string) (keys []string, err error)
 	downloadObject(bucket string, key string, downloadContent interface{}) error
+	deleteObject(bucket, keyPrefix string) error
 }
 
 // S3ObjectStoreGetter returns a concrete type that implements
@@ -167,13 +168,15 @@ func (s3ObjectStoreGetter) objectStore(ctx context.Context,
 	// does not support concurrent writers.
 	s3Uploader := s3manager.NewUploaderWithClient(s3Client)
 	s3Downloader := s3manager.NewDownloaderWithClient(s3Client)
+	s3BatchDeleter := s3manager.NewBatchDeleteWithClient(s3Client)
 	s3Conn := &s3ObjectStore{
-		session:    s3Session,
-		client:     s3Client,
-		uploader:   s3Uploader,
-		downloader: s3Downloader,
-		s3Endpoint: s3Endpoint,
-		callerTag:  callerTag,
+		session:      s3Session,
+		client:       s3Client,
+		uploader:     s3Uploader,
+		downloader:   s3Downloader,
+		batchDeleter: s3BatchDeleter,
+		s3Endpoint:   s3Endpoint,
+		callerTag:    callerTag,
 	}
 	s3ConnectionMap[s3Endpoint] = s3Conn
 
@@ -198,12 +201,13 @@ func getS3Secret(ctx context.Context, r client.Reader,
 }
 
 type s3ObjectStore struct {
-	session    *session.Session
-	client     *s3.S3
-	uploader   *s3manager.Uploader
-	downloader *s3manager.Downloader
-	s3Endpoint string
-	callerTag  string
+	session      *session.Session
+	client       *s3.S3
+	uploader     *s3manager.Uploader
+	downloader   *s3manager.Downloader
+	batchDeleter *s3manager.BatchDelete
+	s3Endpoint   string
+	callerTag    string
 }
 
 // S3 object store map with s3Endpoint as the key to serve as cache
@@ -457,6 +461,41 @@ func (s *s3ObjectStore) downloadObject(bucket string, key string,
 	}
 
 	return nil
+}
+
+// deleteObject() deletes from the given bucket any objects that have the given
+// the keyPrefix.  If the bucket doesn't exists, will return
+// ErrCodeNoSuchBucket "NoSuchBucket".
+func (s *s3ObjectStore) deleteObject(bucket string, keyPrefix string) (
+	err error) {
+	keys, err := s.listKeys(bucket, keyPrefix)
+	if err != nil {
+		return fmt.Errorf("unable to listKeys in deleteObjects "+
+			"from endpoint %s bucket %s keyPrefix %s, %w",
+			s.s3Endpoint, bucket, keyPrefix, err)
+	}
+
+	numObjects := len(keys)
+	delObjects := make([]s3manager.BatchDeleteObject, numObjects)
+
+	for i, key := range keys {
+		delObjects[i] = s3manager.BatchDeleteObject{
+			Object: &s3.DeleteObjectInput{
+				Key:    aws.String(key),
+				Bucket: aws.String(bucket),
+			},
+		}
+	}
+
+	if err = s.batchDeleter.Delete(aws.BackgroundContext(), &s3manager.DeleteObjectsIterator{
+		Objects: delObjects,
+	}); err != nil {
+		return fmt.Errorf("unable to deleteObjects "+
+			"from endpoint %s bucket %s keyPrefix %s, %w",
+			s.s3Endpoint, bucket, keyPrefix, err)
+	}
+
+	return
 }
 
 // constructBucketName returns a bucket name formed using the input namespace
