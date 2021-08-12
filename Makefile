@@ -24,20 +24,24 @@ BUNDLE_DEFAULT_CHANNEL := --default-channel=$(DEFAULT_CHANNEL)
 endif
 BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 
-# IMAGE_TAG_BASE defines the docker.io namespace and part of the image name for remote images.
-# This variable is used to construct full image tags for bundle and catalog images.
-# IMAGE_TAG defines the tag name for the image, and is used to construct full image tags for bundle
-# and catalog images as well.
-#
-# For example, running 'make bundle-build bundle-push catalog-build catalog-push' will build and push both
-# example.com/tmp-sdk-bundle:$IMAGE_TAG and example.com/tmp-sdk-catalog:$IMAGE_TAG.
-IMAGE_TAG_BASE ?= quay.io/ramendr/ramen
+IMAGE_REGISTRY ?= quay.io
+IMAGE_REPOSITORY ?= ramendr
+IMAGE_NAME ?= ramen
 IMAGE_TAG ?= latest
+IMAGE_TAG_BASE = $(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY)/$(IMAGE_NAME)
 
-# BUNDLE_IMG defines the image:tag used for the bundle.
-# You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
+HUB_NAME ?= $(IMAGE_NAME)-hub
+ifeq (dr,$(findstring dr,$(IMAGE_NAME)))
+	DRCLUSTER_NAME = $(IMAGE_NAME)-cluster
+	BUNDLE_IMG_DRCLUSTER = $(IMAGE_TAG_BASE)-cluster-operator-bundle:$(IMAGE_TAG)
+else
+	DRCLUSTER_NAME = $(IMAGE_NAME)-dr-cluster
+	BUNDLE_IMG_DRCLUSTER = $(IMAGE_TAG_BASE)-dr-cluster-operator-bundle:$(IMAGE_TAG)
+endif
+
+
+
 BUNDLE_IMG_HUB ?= $(IMAGE_TAG_BASE)-hub-operator-bundle:$(IMAGE_TAG)
-BUNDLE_IMG_DRCLUSTER ?= $(IMAGE_TAG_BASE)-dr-cluster-operator-bundle:$(IMAGE_TAG)
 
 # Image URL to use all building/pushing image targets
 IMG ?= $(IMAGE_TAG_BASE)-operator:$(IMAGE_TAG)
@@ -216,7 +220,7 @@ bundle-push: bundle-hub-push bundle-dr-cluster-push ## Push all bundle images.
 .PHONY: bundle-hub
 bundle-hub: manifests kustomize operator-sdk ## Generate hub bundle manifests and metadata, then validate generated files.
 	cd config/hub/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
-	$(KUSTOMIZE) build --load_restrictor none config/hub/manifests | $(OSDK) generate bundle -q --package=ramen-hub --overwrite --output-dir=config/hub/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	$(KUSTOMIZE) build --load_restrictor none config/hub/manifests/$(IMAGE_NAME) | $(OSDK) generate bundle -q --package=$(HUB_NAME) --overwrite --output-dir=config/hub/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(OSDK) bundle validate config/hub/bundle
 
 .PHONY: bundle-hub-build
@@ -230,7 +234,7 @@ bundle-hub-push: ## Push the hub bundle image.
 .PHONY: bundle-dr-cluster
 bundle-dr-cluster: manifests kustomize operator-sdk ## Generate dr-cluster bundle manifests and metadata, then validate generated files.
 	cd config/dr_cluster/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
-	$(KUSTOMIZE) build --load_restrictor none config/dr_cluster/manifests | $(OSDK) generate bundle -q --package=ramen-dr-cluster --overwrite --output-dir=config/dr_cluster/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	$(KUSTOMIZE) build --load_restrictor none config/dr_cluster/manifests/$(IMAGE_NAME) | $(OSDK) generate bundle -q --package=$(DRCLUSTER_NAME) --overwrite --output-dir=config/dr_cluster/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(OSDK) bundle validate config/dr_cluster/bundle
 
 .PHONY: bundle-dr-cluster-build
