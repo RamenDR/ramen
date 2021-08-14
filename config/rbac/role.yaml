@@ -163,6 +163,7 @@ rules:
   verbs:
   - get
   - list
+  - watch
 - apiGroups:
   - view.open-cluster-management.io
   resources:
