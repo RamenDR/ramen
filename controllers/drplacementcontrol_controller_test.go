@@ -693,7 +693,7 @@ func waitForCompletion(state string) {
 
 func relocateToPreferredCluster(drpc *rmn.DRPlacementControl, userPlacementRule *plrv1.PlacementRule) {
 	updateClonedPlacementRuleStatus(userPlacementRule, drpc, EastManagedCluster)
-	setDRPCSpecExpectationTo(drpc, "", rmn.ActionFailback, "")
+	setDRPCSpecExpectationTo(drpc, rmn.ActionFailback, "")
 
 	updateManagedClusterViewWithVRG(WestManagedCluster, rmn.Secondary)
 	updateManagedClusterViewWithVRG(EastManagedCluster, rmn.Secondary)
@@ -715,7 +715,7 @@ func relocateToPreferredCluster(drpc *rmn.DRPlacementControl, userPlacementRule 
 
 func recoverToFailoverCluster(drpc *rmn.DRPlacementControl, userPlacementRule *plrv1.PlacementRule) {
 	updateClonedPlacementRuleStatus(userPlacementRule, drpc, WestManagedCluster)
-	setDRPCSpecExpectationTo(drpc, "", rmn.ActionFailover, EastManagedCluster)
+	setDRPCSpecExpectationTo(drpc, rmn.ActionFailover, EastManagedCluster)
 
 	updateManifestWorkStatus(WestManagedCluster, "vrg", ocmworkv1.WorkApplied)
 
@@ -780,26 +780,6 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				val, err := rmnutil.GetMetricValueSingle("ramen_failover_time", dto.MetricType_GAUGE)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(val).NotTo(Equal(0.0)) // failover time should be non-zero
-			})
-		})
-		When("DRPC Reconciler is called to failover the second time to the same cluster", func() {
-			It("Should NOT do anything", func() {
-				By("\n\n*** Failover - 2: NOOP\n\n")
-				safeToProceed = false
-
-				mcvWest := createManagedClusterView(WestManagedCluster)
-				updateManagedClusterViewWithVRG(mcvWest, rmn.Primary)
-				mcvEast := createManagedClusterView(EastManagedCluster)
-
-				updateClonedPlacementRuleStatus(userPlacementRule, drpc, WestManagedCluster)
-				verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, WestManagedCluster)
-				verifyDRPCStatusPreferredClusterExpectation(rmn.FailedOver)
-				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(4)) // MWs for VRG+ROLES+PVs
-				waitForVRGMWDeletion(EastManagedCluster)
-				updateManagedClusterViewStatusAsNotFound(mcvEast)
-				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // MWs for VRG ROLE only
-				touchDRPCToForceReconcile(drpc)
-				waitForCompletion()
 			})
 		})
 		When("DRAction is set to failback", func() {

@@ -61,8 +61,6 @@ const (
 	ClonedPlacementRuleNameFormat string = "clonedprule-%s-%s"
 )
 
-var ErrSameHomeCluster = errorswrapper.New("new home cluster is the same as current home cluster")
-
 // prometheus metrics
 type timerState string
 
@@ -87,7 +85,7 @@ func newTimerWrapper(gauge prometheus.Gauge, histogram prometheus.Histogram) tim
 
 	wrapper.histogram = histogram
 
-	wrapper.reconcileState = rmn.Initial // should never use a timer from Initial state; "reserved"
+	wrapper.reconcileState = rmn.Deployed // should never use a timer from Initial state; "reserved"
 
 	return wrapper
 }
@@ -135,10 +133,6 @@ func init() {
 	metrics.Registry.MustRegister(failbackTime.gauge, failoverTime.gauge, relocateTime.gauge)
 }
 
-type PVDownloader interface {
-	DownloadPVs(ctx context.Context, r client.Reader, objStoreGetter ObjectStoreGetter,
-		s3Profile string, callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error)
-}
 var WaitForPVRestoreToComplete = errorswrapper.New("Waiting for PV restore to complete")
 
 // ProgressCallback of function type
@@ -832,7 +826,7 @@ func setMetricsTimerFromDRState(stateDR rmn.DRState, stateTimer timerState) {
 		fallthrough
 	case rmn.FailedOver:
 		fallthrough
-	case rmn.Initial:
+	case rmn.Deployed:
 		fallthrough
 	case rmn.Relocated:
 		fallthrough
@@ -851,7 +845,7 @@ func setMetricsTimer(wrapper *timerWrapper, desiredTimerState timerState, reconc
 	case timerStop:
 		wrapper.timer.ObserveDuration()
 		wrapper.histogram.Observe(wrapper.timer.ObserveDuration().Seconds()) // add timer to histogram
-		wrapper.reconcileState = rmn.Initial                                 // "reserved" value
+		wrapper.reconcileState = rmn.Deployed                                // "reserved" value
 	}
 }
 
@@ -932,7 +926,7 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 	}
 
 	d.advanceToNextDRState()
-	d.log.Info("Exiting runFailover", "state", d.instance.Status.LastKnownDRState)
+	d.log.Info("Exiting runFailover", "state", d.getLastDRState())
 	setMetricsTimerFromDRState(rmn.FailingOver, timerStop)
 
 	return result, nil
@@ -1043,7 +1037,7 @@ func (d *DRPCInstance) switchToPreferredCluster(drState rmn.DRState) (bool, erro
 	}
 
 	d.advanceToNextDRState()
-	d.log.Info("Done", "Last known state", d.instance.Status.LastKnownDRState)
+	d.log.Info("Done", "Last known state", d.getLastDRState())
 	setMetricsTimerFromDRState(drState, timerStop)
 
 	return result, nil
@@ -1377,8 +1371,7 @@ func (d *DRPCInstance) createVRGAndRolesManifestWorks(homeCluster string) error 
 
 	if err := d.mwu.CreateOrUpdateVRGManifestWork(
 		d.instance.Name, d.instance.Namespace,
-		homeCluster, d.instance.Spec.S3Endpoint,
-		d.instance.Spec.S3Region, d.instance.Spec.S3SecretName,
+		homeCluster, d.drPolicy,
 		d.instance.Spec.PVCSelector); err != nil {
 		d.log.Error(err, "failed to create or update VolumeReplicationGroup manifest")
 
@@ -1391,8 +1384,7 @@ func (d *DRPCInstance) createVRGAndRolesManifestWorks(homeCluster string) error 
 func (d *DRPCInstance) updateVRGManifestWork(homeCluster string) error {
 	if err := d.mwu.CreateOrUpdateVRGManifestWork(
 		d.instance.Name, d.instance.Namespace,
-		homeCluster, d.instance.Spec.S3Endpoint,
-		d.instance.Spec.S3Region, d.instance.Spec.S3SecretName,
+		homeCluster, d.drPolicy,
 		d.instance.Spec.PVCSelector); err != nil {
 		d.log.Error(err, "failed to update VolumeReplicationGroup manifest")
 

@@ -48,8 +48,7 @@ import (
 
 type PVDownloader interface {
 	DownloadPVs(ctx context.Context, r client.Reader, objStoreGetter ObjectStoreGetter,
-		s3Endpoint, s3Region string, s3SecretName types.NamespacedName,
-		callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error)
+		s3Profile string, callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error)
 }
 
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
@@ -416,42 +415,52 @@ func (v *VRGInstance) restorePVs() error {
 
 	v.log.Info("Restoring PVs to this managed cluster")
 
-	pvList, err := v.listPVsFromS3Store()
-	if err != nil {
-		return fmt.Errorf("failed to retrieve PVs from S3 store (%w)", err)
-	}
-
-	v.log.Info(fmt.Sprintf("Found %d PVs", len(pvList)))
-
-	if len(pvList) == 0 {
-		return nil
-	}
-
-	for idx := range pvList {
-		err := v.restorePV(&pvList[idx])
+	for _, s3ProfileName := range v.instance.Spec.S3ProfileList {
+		pvList, err := v.listPVsFromS3Store(s3ProfileName)
 		if err != nil {
-			v.log.Error(err, "Stopping restore")
-
-			return err
+			return fmt.Errorf("failed to retrieve PVs from S3 store (%w)", err)
 		}
-	}
 
-	v.log.Info(fmt.Sprintf("Restored %d PVs", len(pvList)))
+		v.log.Info(fmt.Sprintf("Found %d PVs", len(pvList)))
+
+		if len(pvList) == 0 {
+			return nil
+		}
+
+		for idx := range pvList {
+			err := v.restorePV(&pvList[idx])
+			if err != nil {
+				v.log.Error(err, "Stopping restore")
+
+				return err
+			}
+		}
+
+		v.log.Info(fmt.Sprintf("Restored %d PVs using profile %s", len(pvList), s3ProfileName))
+	}
 
 	return nil
 }
 
-func (v *VRGInstance) listPVsFromS3Store() ([]corev1.PersistentVolume, error) {
-	s3SecretLookupKey := types.NamespacedName{
-		Name:      v.instance.Spec.S3SecretName,
-		Namespace: v.instance.Namespace,
-	}
-
+func (v *VRGInstance) listPVsFromS3Store(s3ProfileName string) ([]corev1.PersistentVolume, error) {
 	s3Bucket := constructBucketName(v.instance.Namespace, v.instance.Name)
 
 	return v.reconciler.PVDownloader.DownloadPVs(
-		v.ctx, v.reconciler.Client, v.reconciler.ObjStoreGetter, v.instance.Spec.S3Endpoint, v.instance.Spec.S3Region,
-		s3SecretLookupKey, v.instance.Name, s3Bucket)
+		v.ctx, v.reconciler.Client, v.reconciler.ObjStoreGetter, s3ProfileName,
+		v.instance.Name, s3Bucket)
+}
+
+type ObjectStorePVDownloader struct{}
+
+func (s ObjectStorePVDownloader) DownloadPVs(ctx context.Context, r client.Reader,
+	objStoreGetter ObjectStoreGetter, s3Profile string,
+	callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error) {
+	objectStore, err := objStoreGetter.objectStore(ctx, r, s3Profile, callerTag)
+	if err != nil {
+		return nil, fmt.Errorf("error when downloading PVs, err %w", err)
+	}
+
+	return objectStore.downloadPVs(s3Bucket)
 }
 
 func (v *VRGInstance) restorePV(pv *corev1.PersistentVolume) error {
