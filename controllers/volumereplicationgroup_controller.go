@@ -240,9 +240,9 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim, log logr.
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups/finalizers,verbs=update
 // +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplications,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplicationclasses,verbs=get;list;watch;update;patch
-// +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list
+// +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;update;patch
-// +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch;update;patch;create
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -425,10 +425,6 @@ func (v *VRGInstance) restorePVs() error {
 		}
 
 		v.log.Info(fmt.Sprintf("Found %d PVs", len(pvList)))
-
-		if len(pvList) == 0 {
-			return nil
-		}
 
 		for idx := range pvList {
 			err := v.restorePV(&pvList[idx])

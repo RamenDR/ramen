@@ -123,7 +123,7 @@ run-hub: generate manifests ## Run DR Orchestrator controller from your host.
 run-dr-cluster: generate manifests ## Run DR manager controller from your host.
 	go run ./main.go --config=examples/dr_cluster_config.yaml
 
-docker-build: test ## Build docker image with the manager.
+docker-build: ## Build docker image with the manager.
 	docker build -t ${IMG} .
 
 docker-push: ## Push docker image with the manager.

@@ -33,6 +33,7 @@ rules:
   resources:
   - persistentvolumes
   verbs:
+  - create
   - get
   - list
   - patch
@@ -93,3 +94,4 @@ rules:
   verbs:
   - get
   - list
+  - watch

@@ -467,7 +467,9 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 	if preferredCluster == "" {
 		clonedPlRule, err := r.getClonedPlacementRule(ctx, clonedPlRuleName, drpc.Namespace)
 		if err != nil {
-			return fmt.Errorf("couldn't determine the preferred cluster name (%w)", err)
+			r.Log.Info("Cloned placement rule not found")
+
+			return nil
 		}
 
 		if len(clonedPlRule.Status.Decisions) != 0 {
@@ -488,8 +490,12 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 		}
 	}
 
-	// delete cloned placementrule
-	return r.deleteClonedPlacementRule(ctx, clonedPlRuleName, drpc.Namespace)
+	// delete cloned placementrule, if created
+	if drpc.Spec.PreferredCluster == "" {
+		return r.deleteClonedPlacementRule(ctx, clonedPlRuleName, drpc.Namespace)
+	}
+
+	return nil
 }
 
 func (r *DRPlacementControlReconciler) getPlacementRules(ctx context.Context,
@@ -1450,19 +1456,23 @@ func (d *DRPCInstance) ensureCleanup(clusterToSkip string) error {
 	d.log.Info("ensure cleanup on secondaries")
 
 	idx, condition := GetDRPCCondition(&d.instance.Status, rmn.ConditionReconciling)
-	d.log.Info(fmt.Sprintf("Condition %v", condition))
-
 	if idx == -1 {
-		return fmt.Errorf("condition not found. %v", d.instance.Status.Conditions)
+		d.log.Info("Generating new condition")
+		condition = d.newCondition(rmn.ConditionReconciling)
+		d.needStatusUpdate = true
 	}
 
-	if condition.Reason == rmn.ReasonSuccess && condition.Status == metav1.ConditionTrue {
+	d.log.Info(fmt.Sprintf("Condition %v", condition))
+
+	if condition.Reason == rmn.ReasonSuccess &&
+		condition.Status == metav1.ConditionTrue &&
+		condition.ObservedGeneration == d.instance.Generation {
+		d.log.Info("Condition values tallied, cleaup is considered complete")
+
 		return nil
 	}
 
-	if condition.Reason == rmn.ReasonProgressing {
-		d.updateCondition(condition, idx, rmn.ReasonCleaning, metav1.ConditionFalse)
-	}
+	d.updateCondition(condition, idx, rmn.ReasonCleaning, metav1.ConditionFalse)
 
 	clean, err := d.cleanup(clusterToSkip)
 	if err != nil {
@@ -1482,6 +1492,7 @@ func (d *DRPCInstance) updateCondition(condition *metav1.Condition, idx int, rea
 	status metav1.ConditionStatus) {
 	condition.Reason = reason
 	condition.Status = status
+	condition.ObservedGeneration = d.instance.Generation
 	d.instance.Status.Conditions[idx] = *condition
 	d.needStatusUpdate = true
 }
@@ -1918,6 +1929,7 @@ func (d *DRPCInstance) newCondition(condType string) *metav1.Condition {
 		LastTransitionTime: metav1.Now(),
 		Reason:             d.getConditionReason(condType),
 		Message:            d.getConditionMessage(condType),
+		ObservedGeneration: d.instance.Generation,
 	}
 }
 
@@ -1968,14 +1980,25 @@ func (d *DRPCInstance) getConditionStatusForTypeReconciling() metav1.ConditionSt
 }
 
 func (d *DRPCInstance) reconciling() bool {
+	// Deployed phase requires no cleanup and further reconcile for cleanup
+	if d.instance.Status.Phase == rmn.Deployed {
+		d.log.Info("Initial deployed phase detected")
+
+		return false
+	}
+
 	idx, condition := GetDRPCCondition(&d.instance.Status, rmn.ConditionReconciling)
 	d.log.Info(fmt.Sprintf("Condition %v", condition))
 
 	if idx == -1 {
-		return false
+		d.log.Info("Found missing reconciling condition")
+
+		return true
 	}
 
-	if condition.Reason == rmn.ReasonSuccess && condition.Status == metav1.ConditionTrue {
+	if condition.Reason == rmn.ReasonSuccess &&
+		condition.Status == metav1.ConditionTrue &&
+		condition.ObservedGeneration == d.instance.Generation {
 		return false
 	}
 
