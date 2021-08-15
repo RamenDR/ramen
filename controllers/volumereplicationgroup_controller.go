@@ -406,15 +406,18 @@ func (v *VRGInstance) validateVRGState() error {
 
 func (v *VRGInstance) restorePVs() error {
 	// TODO: refactor this per this comment: https://github.com/RamenDR/ramen/pull/197#discussion_r687246692
-	vrgCondition := findCondition(v.instance.Status.Conditions, VRGConditionAvailable)
-	if vrgCondition != nil {
+	vrgCondition := findCondition(v.instance.Status.Conditions, PVConditionMetadataAvailable)
+	if vrgCondition != nil && vrgCondition.Status == metav1.ConditionTrue {
 		v.log.Info("VRGConditionAvailable found. PV restore must have already been applied")
 
 		return nil
 	}
 
-	v.log.Info("Restoring PVs to this managed cluster")
+	msg := "Restoring PV metadata"
+	setPVMetadataProgressingCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
+	v.log.Info(fmt.Sprintf("Restoring PVs to this managed cluster %v", v.instance.Spec.S3ProfileList))
+	// TODO: this is added in the last minute while merging.  More thought will be put in this
 	for _, s3ProfileName := range v.instance.Spec.S3ProfileList {
 		pvList, err := v.listPVsFromS3Store(s3ProfileName)
 		if err != nil {
@@ -435,6 +438,8 @@ func (v *VRGInstance) restorePVs() error {
 				return err
 			}
 		}
+
+		setPVMetadataAvailableCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
 		v.log.Info(fmt.Sprintf("Restored %d PVs using profile %s", len(pvList), s3ProfileName))
 	}
@@ -677,7 +682,15 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 	}
 
 	if err := v.restorePVs(); err != nil {
-		v.log.Error(err, "Restoring PVs failed")
+		v.log.Info("Restoring PVs failed", "errorValue", err)
+
+		msg := "Failed to restore PVs"
+		setPVMetadataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+
+		if err = v.updateVRGStatus(false); err != nil {
+			v.log.Error(err, "VRG Status update failed")
+		}
+
 		// Since updating status failed, reconcile
 		return ctrl.Result{Requeue: true}, nil
 	}
