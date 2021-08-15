@@ -33,6 +33,10 @@ const (
 )
 
 const (
+	PVConditionMetadataAvailable = "MetadataAvailable"
+)
+
+const (
 	VRGReplicating = "Replicating"
 	VRGProgressing = "Progressing"
 	VRGError       = "Error"
@@ -43,6 +47,12 @@ const (
 	PVCProgressing  = "Progressing"
 	PVCError        = "Error"
 	PVCErrorUnknown = "UnknownError"
+)
+
+const (
+	PVMetadataRestored    = "Restored"
+	PVMetadataProgressing = "Progressing"
+	PVMetadataError       = "Error"
 )
 
 // Just when VRG has been picked up for reconciliation when nothing has been
@@ -135,6 +145,39 @@ func setPVCErrorUnknownCondition(conditions *[]metav1.Condition, observedGenerat
 		Reason:             PVCErrorUnknown,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionUnknown,
+		Message:            message,
+	})
+}
+
+// sets conditions when PV meatadata is restored
+func setPVMetadataAvailableCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               PVConditionMetadataAvailable,
+		Reason:             PVMetadataRestored,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		Message:            message,
+	})
+}
+
+// sets conditions when PV metadata is being restored
+func setPVMetadataProgressingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               PVConditionMetadataAvailable,
+		Reason:             PVMetadataProgressing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+	})
+}
+
+// sets conditions when PV metadata failed to restore
+func setPVMetadataErrorCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               PVConditionMetadataAvailable,
+		Reason:             PVMetadataError,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
 		Message:            message,
 	})
 }

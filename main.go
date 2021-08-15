@@ -123,6 +123,7 @@ func setupReconcilers(mgr ctrl.Manager) {
 		Client:         mgr.GetClient(),
 		Log:            ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
 		ObjStoreGetter: controllers.S3ObjectStoreGetter(),
+		PVDownloader:   controllers.ObjectStorePVDownloader{},
 		Scheme:         mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VolumeReplicationGroup")

@@ -814,6 +814,7 @@ func (d *DRPCInstance) runInitialDeployment() (bool, error) {
 	return done, nil
 }
 
+//nolint:exhaustive
 func setMetricsTimerFromDRState(stateDR rmn.DRState, stateTimer timerState) {
 	switch stateDR {
 	case rmn.FailingOver:
@@ -822,6 +823,8 @@ func setMetricsTimerFromDRState(stateDR rmn.DRState, stateTimer timerState) {
 		setMetricsTimer(&failbackTime, stateTimer, stateDR)
 	case rmn.Relocating:
 		setMetricsTimer(&relocateTime, stateTimer, stateDR)
+	// case rmn.Deploying:
+	// TODO: setMetricsTimer(&deployTime, stateTimer, stateDR)
 	case rmn.FailedBack:
 		fallthrough
 	case rmn.FailedOver:
@@ -1433,7 +1436,7 @@ func (d *DRPCInstance) checkPVsHaveBeenRestored(homeCluster string) (bool, error
 		return false, err
 	}
 
-	vrgCondition := findCondition(vrg.Status.Conditions, VRGConditionAvailable)
+	vrgCondition := findCondition(vrg.Status.Conditions, PVConditionMetadataAvailable)
 	if vrgCondition == nil {
 		d.log.Info("Waiting for PVs to be restored", "cluster", homeCluster)
 

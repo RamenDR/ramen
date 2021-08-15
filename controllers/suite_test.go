@@ -108,6 +108,7 @@ var _ = BeforeSuite(func() {
 		Client:         k8sManager.GetClient(),
 		Log:            ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
 		ObjStoreGetter: ramencontrollers.S3ObjectStoreGetter(),
+		PVDownloader:   FakePVDownloader{},
 		Scheme:         k8sManager.GetScheme(),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())

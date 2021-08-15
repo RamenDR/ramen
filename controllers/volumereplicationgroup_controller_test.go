@@ -580,6 +580,7 @@ func (v *vrgTest) createVRG(pvcLabels map[string]string) {
 			ReplicationState:         "primary",
 			SchedulingInterval:       schedulingInterval,
 			ReplicationClassSelector: metav1.LabelSelector{MatchLabels: replicationClassLabels},
+			S3ProfileList:            []string{"fakeS3Profile"},
 		},
 	}
 	err := k8sClient.Create(context.TODO(), vrg)
@@ -928,4 +929,16 @@ func (v *vrgTest) waitForNamespaceDeletion() {
 		return err == nil
 	}, timeout, interval).Should(BeTrue(),
 		"while waiting for namespace %s to be deleted", v.namespace)
+}
+
+type FakePVDownloader struct{}
+
+func (s FakePVDownloader) DownloadPVs(ctx context.Context, r client.Reader,
+	objStoreGetter vrgController.ObjectStoreGetter, s3Profile, callerTag string,
+	s3Bucket string) ([]corev1.PersistentVolume, error) {
+	// TODO: Create PVs to restore
+	pvList := []corev1.PersistentVolume{}
+	// pvList = append(pvList, *pv1, *pv2)
+
+	return pvList, nil
 }

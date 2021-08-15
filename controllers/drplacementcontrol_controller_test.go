@@ -121,8 +121,8 @@ func updateManagedClusterViewWithVRG(mcvNamespace string, replicationState rmn.R
 			State: state,
 			Conditions: []metav1.Condition{
 				{
-					Type:               controllers.VRGConditionAvailable,
-					Reason:             controllers.VRGReplicating,
+					Type:               controllers.PVConditionMetadataAvailable,
+					Reason:             controllers.PVMetadataRestored,
 					ObservedGeneration: 0,
 					Status:             metav1.ConditionTrue,
 					Message:            "Testing VRG",
@@ -383,29 +383,6 @@ func getLatestDRPC(name, namespace string) *rmn.DRPlacementControl {
 	return latestDRPC
 }
 
-func touchDRPCToForceReconcile(drpc *rmn.DRPlacementControl) {
-	latestDRPC := getLatestDRPC(drpc.Name, drpc.Namespace)
-
-	// Format time for use as a label according to the rules that a label must
-	// consists of alphanumeric characters, '-', '_' or '.', and must start and
-	// end with an alphanumeric character.
-	timeOfRequest := time.Now().Format("2006-01-02_17.04.05.000000")
-
-	if latestDRPC.Labels == nil {
-		latestDRPC.Labels = make(map[string]string)
-	}
-
-	latestDRPC.Labels["ReconcileRequest"] = timeOfRequest
-	err := k8sClient.Update(context.TODO(), latestDRPC)
-	Expect(err).NotTo(HaveOccurred())
-
-	Eventually(func() bool {
-		latestDRPC := getLatestDRPC(drpc.Name, drpc.Namespace)
-
-		return latestDRPC.Labels["ReconcileRequest"] == timeOfRequest
-	}, timeout, interval).Should(BeTrue(), "failed to update DRPC ReconcileRequest label")
-}
-
 func createNamespaces() {
 	eastNamespaceLookupKey := types.NamespacedName{Name: eastManagedClusterNamespace.Name}
 	eastNamespaceObj := &corev1.Namespace{}
@@ -470,10 +447,10 @@ func updateManifestWorkStatus(clusterNamespace, mwType, workType string) {
 		Name:      rmnutil.ManifestWorkName(DRPCName, DRPCNamespaceName, mwType),
 		Namespace: clusterNamespace,
 	}
-	createdManifest := &ocmworkv1.ManifestWork{}
+	mw := &ocmworkv1.ManifestWork{}
 
 	Eventually(func() bool {
-		err := k8sClient.Get(context.TODO(), manifestLookupKey, createdManifest)
+		err := k8sClient.Get(context.TODO(), manifestLookupKey, mw)
 
 		return err == nil
 	}, timeout, interval).Should(BeTrue(),
@@ -501,22 +478,22 @@ func updateManifestWorkStatus(clusterNamespace, mwType, workType string) {
 		})
 	}
 
-	createdManifest.Status = pvManifestStatus
+	mw.Status = pvManifestStatus
 
-	err := k8sClient.Status().Update(context.TODO(), createdManifest)
+	err := k8sClient.Status().Update(context.TODO(), mw)
 	if err != nil {
 		// try again
-		Expect(k8sClient.Get(context.TODO(), manifestLookupKey, createdManifest)).NotTo(HaveOccurred())
-		createdManifest.Status = pvManifestStatus
-		err = k8sClient.Status().Update(context.TODO(), createdManifest)
+		Expect(k8sClient.Get(context.TODO(), manifestLookupKey, mw)).NotTo(HaveOccurred())
+		mw.Status = pvManifestStatus
+		err = k8sClient.Status().Update(context.TODO(), mw)
 	}
 
 	Expect(err).NotTo(HaveOccurred())
 
 	Eventually(func() bool {
-		err := k8sClient.Get(context.TODO(), manifestLookupKey, createdManifest)
+		err := k8sClient.Get(context.TODO(), manifestLookupKey, mw)
 
-		return err == nil && len(createdManifest.Status.Conditions) != 0
+		return err == nil && len(mw.Status.Conditions) != 0
 	}, timeout, interval).Should(BeTrue(), "failed to wait for PV manifest condition type to change to 'Applied'")
 }
 
