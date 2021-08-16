@@ -153,17 +153,17 @@ undeploy-hub: ## Undeploy hub controller from the K8s cluster specified in ~/.ku
 	$(KUSTOMIZE) build --load_restrictor none config/hub/default | kubectl delete -f -
 
 install-dr-cluster: manifests kustomize ## Install dr-cluster CRDs into the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load_restrictor none config/dr_cluster/crd | kubectl apply -f -
+	$(KUSTOMIZE) build --load_restrictor none config/dr-cluster/crd | kubectl apply -f -
 
 uninstall-dr-cluster: manifests kustomize ## Uninstall dr-cluster CRDs from the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load_restrictor none config/dr_cluster/crd | kubectl delete -f -
+	$(KUSTOMIZE) build --load_restrictor none config/dr-cluster/crd | kubectl delete -f -
 
 deploy-dr-cluster: manifests kustomize ## Deploy dr-cluster controller to the K8s cluster specified in ~/.kube/config.
-	cd config/dr_cluster/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build --load_restrictor none config/dr_cluster/default | kubectl apply -f -
+	cd config/dr-cluster/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	$(KUSTOMIZE) build --load_restrictor none config/dr-cluster/default | kubectl apply -f -
 
 undeploy-dr-cluster: ## Undeploy dr-cluster controller from the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load_restrictor none config/dr_cluster/default | kubectl delete -f -
+	$(KUSTOMIZE) build --load_restrictor none config/dr-cluster/default | kubectl delete -f -
 
 ##@ Tools
 
@@ -233,9 +233,9 @@ bundle-hub-push: ## Push the hub bundle image.
 
 .PHONY: bundle-dr-cluster
 bundle-dr-cluster: manifests kustomize operator-sdk ## Generate dr-cluster bundle manifests and metadata, then validate generated files.
-	cd config/dr_cluster/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
-	$(KUSTOMIZE) build --load_restrictor none config/dr_cluster/manifests/$(IMAGE_NAME) | $(OSDK) generate bundle -q --package=$(DRCLUSTER_NAME) --overwrite --output-dir=config/dr_cluster/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
-	$(OSDK) bundle validate config/dr_cluster/bundle
+	cd config/dr-cluster/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
+	$(KUSTOMIZE) build --load_restrictor none config/dr-cluster/manifests/$(IMAGE_NAME) | $(OSDK) generate bundle -q --package=$(DRCLUSTER_NAME) --overwrite --output-dir=config/dr-cluster/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	$(OSDK) bundle validate config/dr-cluster/bundle
 
 .PHONY: bundle-dr-cluster-build
 bundle-dr-cluster-build: bundle-dr-cluster ## Build the dr-cluster bundle image.
