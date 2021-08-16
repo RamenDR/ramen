@@ -143,9 +143,9 @@ type VRGConditions struct {
 
 // DRPlacementControlStatus defines the observed state of DRPlacementControl
 type DRPlacementControlStatus struct {
-	Phase              DRState                 `json:"phase"`
+	Phase              DRState                 `json:"phase,omitempty"`
 	PreferredDecision  plrv1.PlacementDecision `json:"preferredDecision,omitempty"`
-	Conditions         []metav1.Condition      `json:"conditions"`
+	Conditions         []metav1.Condition      `json:"conditions,omitempty"`
 	ResourceConditions VRGConditions           `json:"resourceConditions,omitempty"`
 }
 
