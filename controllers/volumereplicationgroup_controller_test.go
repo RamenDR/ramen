@@ -580,7 +580,7 @@ func (v *vrgTest) createVRG(pvcLabels map[string]string) {
 			ReplicationState:         "primary",
 			SchedulingInterval:       schedulingInterval,
 			ReplicationClassSelector: metav1.LabelSelector{MatchLabels: replicationClassLabels},
-			S3ProfileList:            []string{"fakeS3Profile"},
+			// S3ProfileList:            []string{"fakeS3Profile"},
 		},
 	}
 	err := k8sClient.Create(context.TODO(), vrg)
