@@ -42,6 +42,7 @@ ramen_build()
 	. ${ramen_hack_directory_path_name}/podman-docker-install.sh
 	. ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local; unset -f go_install
 	make -C ${1} docker-build IMG=${ramen_image_name_colon_tag}
+	ramen_archive
 }
 exit_stack_push unset -f ramen_build
 ramen_archive()
@@ -128,11 +129,19 @@ ramen_undeploy()
 	kubectl --context ${2} delete volumereplicationclass/volume-rep-class
 	kube_context_set ${2}
 	make -C $1 undeploy-$3
+	# Error from server (NotFound): error when deleting "STDIN": namespaces "ramen-system" not found
+	# Error from server (NotFound): error when deleting "STDIN": serviceaccounts "ramen-hub-operator" not found
+	# Error from server (NotFound): error when deleting "STDIN": roles.rbac.authorization.k8s.io "ramen-hub-leader-election-role" not found
+	# Error from server (NotFound): error when deleting "STDIN": rolebindings.rbac.authorization.k8s.io "ramen-hub-leader-election-rolebinding" not found
+	# Error from server (NotFound): error when deleting "STDIN": configmaps "ramen-hub-operator-config" not found
+	# Error from server (NotFound): error when deleting "STDIN": services "ramen-hub-operator-metrics-service" not found
+	# Error from server (NotFound): error when deleting "STDIN": deployments.apps "ramen-hub-operator" not found
+	# Makefile:149: recipe for target 'undeploy-hub' failed
+	# make: *** [undeploy-hub] Error 1
 	kube_context_set_undo
-	set +e
-	kubectl --context ${2} -n ramen-system wait deployments --all --for delete
-	# error: no matching resources found
-	set -e
+	minikube -p $2 ssh docker image rm $ramen_image_name_colon_tag
+	# Error: No such image: $ramen_image_name_colon_tag
+	# ssh: Process exited with status 1
 }
 exit_stack_push unset -f ramen_undeploy
 ramen_undeploy_hub()
@@ -238,7 +247,9 @@ ramen_undeploy_all()
 	for cluster_name in $spoke_cluster_names; do
 		ramen_undeploy_spoke $ramen_directory_path_name $cluster_name
 	done; unset -v cluster_name
+	set +e # TODO remove once each resource is owned by hub or spoke but not both
 	ramen_undeploy_hub $ramen_directory_path_name $hub_cluster_name
+	set -e
 }
 exit_stack_push unset -v ramen_undeploy_all
 exit_stack_push unset -v command
@@ -250,7 +261,6 @@ for command in "${@:-deploy}"; do
 		rook_ceph_deploy ${ramen_hack_directory_path_name} ${cluster_names}
 		minio_deploy ${ramen_hack_directory_path_name} ${hub_cluster_name}
 		ramen_build ${ramen_directory_path_name}
-		ramen_archive
 		ramen_deploy_all
 		;;
 	undeploy)
@@ -274,9 +284,6 @@ for command in "${@:-deploy}"; do
 		;;
 	ramen_build)
 		ramen_build ${ramen_directory_path_name}
-		;;
-	ramen_archive)
-		ramen_archive
 		;;
 	ramen_deploy)
 		ramen_deploy_all
