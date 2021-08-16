@@ -97,10 +97,33 @@ func FakeProgressCallback(drpcName string, state string) {
 }
 
 // create a VRG, then fake ManagedClusterView results
-func updateManagedClusterViewWithVRG(mcvNamespace string, replicationState rmn.ReplicationState) {
+func updateManagedClusterViewWithVRG(mcvNamespace string,
+	replicationState rmn.ReplicationState, addVRGPVCondition bool) {
 	state := rmn.PrimaryState
 	if replicationState != rmn.Primary {
 		state = rmn.SecondaryState
+	}
+
+	conType := controllers.VRGConditionAvailable
+	reason := controllers.VRGReplicating
+
+	if addVRGPVCondition {
+		conType = controllers.PVConditionMetadataAvailable
+		reason = controllers.PVMetadataRestored
+	}
+
+	vrgStatus := rmn.VolumeReplicationGroupStatus{
+		State: state,
+		Conditions: []metav1.Condition{
+			{
+				Type:               conType,
+				Reason:             reason,
+				ObservedGeneration: 0,
+				Status:             metav1.ConditionTrue,
+				Message:            "Testing VRG",
+				LastTransitionTime: metav1.Now(),
+			},
+		},
 	}
 
 	vrg := &rmn.VolumeReplicationGroup{
@@ -111,25 +134,12 @@ func updateManagedClusterViewWithVRG(mcvNamespace string, replicationState rmn.R
 			ReplicationState:   replicationState,
 			PVCSelector: metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"appclass":    "gold",
-					"environment": "dev.AZ1",
+					"appclass": "gold",
 				},
 			},
 			S3ProfileList: []string{"fakeS3Profile"},
 		},
-		Status: rmn.VolumeReplicationGroupStatus{
-			State: state,
-			Conditions: []metav1.Condition{
-				{
-					Type:               controllers.PVConditionMetadataAvailable,
-					Reason:             controllers.PVMetadataRestored,
-					ObservedGeneration: 0,
-					Status:             metav1.ConditionTrue,
-					Message:            "Testing VRG",
-					LastTransitionTime: metav1.Now(),
-				},
-			},
-		},
+		Status: vrgStatus,
 	}
 
 	mcvName := controllers.BuildManagedClusterViewName(DRPCName, DRPCNamespaceName, "vrg")
@@ -672,12 +682,12 @@ func relocateToPreferredCluster(drpc *rmn.DRPlacementControl, userPlacementRule 
 	updateClonedPlacementRuleStatus(userPlacementRule, drpc, EastManagedCluster)
 	setDRPCSpecExpectationTo(drpc, rmn.ActionFailback, "")
 
-	updateManagedClusterViewWithVRG(WestManagedCluster, rmn.Secondary)
-	updateManagedClusterViewWithVRG(EastManagedCluster, rmn.Secondary)
+	updateManagedClusterViewWithVRG(WestManagedCluster, rmn.Secondary, false)
+	updateManagedClusterViewWithVRG(EastManagedCluster, rmn.Secondary, false)
 
 	updateManifestWorkStatus(EastManagedCluster, "vrg", ocmworkv1.WorkApplied)
 
-	updateManagedClusterViewWithVRG(EastManagedCluster, rmn.Primary)
+	updateManagedClusterViewWithVRG(EastManagedCluster, rmn.Primary, true)
 
 	verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, EastManagedCluster)
 	verifyDRPCStatusPreferredClusterExpectation(rmn.FailedBack)
@@ -696,8 +706,8 @@ func recoverToFailoverCluster(drpc *rmn.DRPlacementControl, userPlacementRule *p
 
 	updateManifestWorkStatus(WestManagedCluster, "vrg", ocmworkv1.WorkApplied)
 
-	updateManagedClusterViewWithVRG(WestManagedCluster, rmn.Primary)
-	updateManagedClusterViewWithVRG(EastManagedCluster, rmn.Secondary)
+	updateManagedClusterViewWithVRG(WestManagedCluster, rmn.Primary, true)
+	updateManagedClusterViewWithVRG(EastManagedCluster, rmn.Secondary, false)
 
 	verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, WestManagedCluster)
 	verifyDRPCStatusPreferredClusterExpectation(rmn.FailedOver)

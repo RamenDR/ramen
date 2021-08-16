@@ -720,7 +720,7 @@ func (d *DRPCInstance) startProcessing() bool {
 
 	done, err := d.processPlacement()
 	if err != nil {
-		d.log.Info("Process placement", "error", err)
+		d.log.Info("Process placement", "error", err.Error())
 
 		return requeue
 	}
@@ -1018,8 +1018,13 @@ func (d *DRPCInstance) switchToPreferredCluster(drState rmn.DRState) (bool, erro
 	d.setDRState(drState)
 	setMetricsTimerFromDRState(drState, timerStart)
 
-	// Skip switching to secondary if the preferredCluster already is or in progress to becoming primary
-	if !d.isVRGReadyForPlacementTask(preferredCluster) {
+	// During failback/relocate, the preferredCluster is does not contain a VRG or the VRG is already
+	// secondary. We need to skip checking if the VRG for it is secondary to avoid messing up with the
+	// order of execution (it could be refactored better to avoid this complexity). IOW, if we first update
+	// VRG in all clusters to secondaries, then we call runPlacementTask. If runPlacementTask does not complete
+	// in one shot, then coming back to this loop will reset the preferredCluster to secondary again.
+	clusterToSkip := preferredCluster
+	if !d.ensureVRGIsSecondary(clusterToSkip) {
 		// During failback or relocation, both clusters should be up and both must be secondaries before we proceed.
 		ensured, err := d.processVRGForSecondaries()
 		if err != nil || !ensured {
@@ -1081,6 +1086,8 @@ func (d *DRPCInstance) runPlacementTask(targetCluster, targetClusterNamespace st
 		if err != nil {
 			return false, err
 		}
+
+		d.log.Info("Checked whether PVs have been restored", "Yes?", restored)
 
 		if !restored {
 			return false, fmt.Errorf("%w)", WaitForPVRestoreToComplete)
@@ -1179,25 +1186,6 @@ func (d *DRPCInstance) getPreferredClusterNamespaced() (string, string) {
 	return preferredCluster, preferredClusterNamespace
 }
 
-func (d *DRPCInstance) isVRGReadyForPlacementTask(targetCluster string) bool {
-	mw, err := d.getVRGManifestWork(targetCluster)
-	if err != nil {
-		return false
-	}
-
-	// If we have no MW for VRG, then we are ready for placement
-	if mw == nil {
-		return true
-	}
-
-	vrg, err := d.extractVRGFromManifestWork(mw)
-	if err != nil {
-		return false
-	}
-
-	return d.isVRGPrimary(vrg)
-}
-
 func (d *DRPCInstance) processVRGForSecondaries() (bool, error) {
 	const ensured = true
 
@@ -1228,16 +1216,7 @@ func (d *DRPCInstance) processVRGForSecondaries() (bool, error) {
 		return !ensured, nil
 	}
 
-	for _, drCluster := range d.drPolicy.Spec.DRClusterSet {
-		clusterName := drCluster.Name
-		if !d.ensureVRGIsSecondary(clusterName) {
-			d.log.Info("Still waiting for VRG to transition to secondary", "cluster", clusterName)
-
-			return !ensured, nil
-		}
-	}
-
-	return ensured, nil
+	return d.ensureVRGIsSecondary(""), nil
 }
 
 // outputs a string for use in creating a ManagedClusterView name
@@ -1397,38 +1376,13 @@ func (d *DRPCInstance) updateVRGManifestWork(homeCluster string) error {
 	return nil
 }
 
-func (d *DRPCInstance) getVRGManifestWork(homeCluster string) (*ocmworkv1.ManifestWork, error) {
-	if d.instance.Status.PreferredDecision == (plrv1.PlacementDecision{}) {
-		return nil, nil
-	}
-
-	mwName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
-
-	mw, err := d.mwu.FindManifestWork(mwName, homeCluster)
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			d.log.Error(err, "failed to find ManifestWork")
-
-			return nil, fmt.Errorf("failed to find ManifestWork %s (%w)", mwName, err)
-		}
-	}
-
-	if mw == nil {
-		d.log.Info(fmt.Sprintf("Manifestwork %s does not exist for cluster %s", mwName, homeCluster))
-
-		return nil, nil
-	}
-
-	d.log.Info(fmt.Sprintf("Manifestwork exists (%s/%s)", mw.Name, mw.Namespace))
-
-	return mw, nil
-}
-
 func (d *DRPCInstance) isVRGPrimary(vrg *rmn.VolumeReplicationGroup) bool {
 	return (vrg.Spec.ReplicationState == rmn.Primary)
 }
 
 func (d *DRPCInstance) checkPVsHaveBeenRestored(homeCluster string) (bool, error) {
+	d.log.Info("Checking whether PVs have been restored", "cluster", homeCluster)
+
 	vrg, err := d.reconciler.getVRGFromManagedCluster(d.instance.Name, d.instance.Namespace, homeCluster)
 	if err != nil {
 		d.log.Info("Failed to get VRG through MCV", "error", err)
@@ -1552,7 +1506,7 @@ func (d *DRPCInstance) ensureVRGManifestWorkOnClusterDeleted(clusterName string)
 
 	// d.log.Info("VRG ManifestWork is in Applied state", "name", mw.Name, "cluster", clusterName)
 
-	if d.ensureVRGIsSecondary(clusterName) {
+	if d.ensureVRGIsSecondaryOnCluster(clusterName) {
 		err := d.mwu.DeleteManifestWorksForCluster(clusterName)
 		if err != nil {
 			return !done, fmt.Errorf("%w", err)
@@ -1567,21 +1521,41 @@ func (d *DRPCInstance) ensureVRGManifestWorkOnClusterDeleted(clusterName string)
 	return !done, nil
 }
 
-func (d *DRPCInstance) ensureVRGIsSecondary(clusterName string) bool {
+// ensureVRGIsSecondary iterates through all the clusters int he DRCluster set, and for each cluster,
+// it checks whether the VRG (if exists) is secondary.
+// It returns true if all clusters report secondary for the VRG, otherwise, it returns false
+func (d *DRPCInstance) ensureVRGIsSecondary(clusterToSkip string) bool {
+	for _, drCluster := range d.drPolicy.Spec.DRClusterSet {
+		clusterName := drCluster.Name
+		if clusterToSkip == clusterName {
+			continue
+		}
+
+		if !d.ensureVRGIsSecondaryOnCluster(clusterName) {
+			d.log.Info("Still waiting for VRG to transition to secondary", "cluster", clusterName)
+
+			return false
+		}
+	}
+
+	return true
+}
+
+//
+// ensureVRGIsSecondaryOnCluster returns true whether the VRG is secondary or it does not exists on the cluster
+//
+func (d *DRPCInstance) ensureVRGIsSecondaryOnCluster(clusterName string) bool {
 	d.log.Info(fmt.Sprintf("Ensure VRG %s is secondary on cluster %s", d.instance.Name, clusterName))
 
 	d.mcvRequestInProgress = false
 
 	vrg, err := d.reconciler.getVRGFromManagedCluster(d.instance.Name, d.instance.Namespace, clusterName)
 	if err != nil {
-		// VRG must have been deleted if the error is NotFound
-		if !errors.IsNotFound(err) {
-			d.log.Info("Failed to get VRG", "errorValue", err)
-		}
-
 		if errors.IsNotFound(err) {
 			return true // ensured
 		}
+
+		d.log.Info("Failed to get VRG", "errorValue", err)
 
 		d.mcvRequestInProgress = true
 
