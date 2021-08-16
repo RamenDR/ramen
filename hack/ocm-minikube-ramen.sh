@@ -80,12 +80,7 @@ ramen_deploy()
 	# Add s3 profile to ramen config
 	ramen_config_map_name=ramen-${3}-operator-config
 	until_true_or_n 90 kubectl --context ${2} -n ramen-system get configmap ${ramen_config_map_name}
-	dirName="${3}"
-	if test ${dirName} = "dr-cluster"; then
-		dirName=dr_cluster
-	fi
-	cp ${1}/config/${dirName}/manager/ramen_manager_config.yaml /tmp/ramen_manager_config.yaml
-	unset -v dirName
+	cp ${1}/config/${3}/manager/ramen_manager_config.yaml /tmp/ramen_manager_config.yaml
 	cat <<-EOF >> /tmp/ramen_manager_config.yaml
 
 	s3StoreProfiles:

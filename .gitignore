@@ -21,7 +21,7 @@ testbin/*
 # Operator SDK generated files
 
 bundle.Dockerfile
-config/dr_cluster/bundle
+config/dr-cluster/bundle
 config/hub/bundle
 
 # editor and IDE paraphernalia
