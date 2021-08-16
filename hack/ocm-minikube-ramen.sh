@@ -145,17 +145,19 @@ ramen_undeploy_spoke()
 	ramen_undeploy $1 $2 dr-cluster
 }
 exit_stack_push unset -f ramen_undeploy_spoke
+ocm_ramen_samples_github_name=ramendr
+ocm_ramen_samples_github_name=hatfieldbrian
 ocm_ramen_samples_git_ref=main
 exit_stack_push unset -v ocm_ramen_samples_git_ref
 application_sample_namespace_and_s3_deploy()
 {
 	kubectl create namespace busybox-sample --dry-run=client -o yaml | kubectl --context ${1} apply -f -
-	kubectl --context $1 -n busybox-sample apply -f https://raw.githubusercontent.com/ramendr/ocm-ramen-samples/$ocm_ramen_samples_git_ref/subscriptions/busybox/s3secret.yaml
+	kubectl --context $1 -n busybox-sample apply -f https://raw.githubusercontent.com/$ocm_ramen_samples_github_name/ocm-ramen-samples/$ocm_ramen_samples_git_ref/subscriptions/busybox/s3secret.yaml
 }
 exit_stack_push unset -f application_sample_namespace_and_s3_deploy
 application_sample_namespace_and_s3_undeploy()
 {
-	kubectl --context $1 -n busybox-sample delete -f https://raw.githubusercontent.com/ramendr/ocm-ramen-samples/$ocm_ramen_samples_git_ref/subscriptions/busybox/s3secret.yaml
+	kubectl --context $1 -n busybox-sample delete -f https://raw.githubusercontent.com/$ocm_ramen_samples_github_name/ocm-ramen-samples/$ocm_ramen_samples_git_ref/subscriptions/busybox/s3secret.yaml
 	date
 	kubectl --context ${1} delete namespace busybox-sample
 	date
@@ -163,9 +165,9 @@ application_sample_namespace_and_s3_undeploy()
 exit_stack_push unset -f application_sample_namespace_and_s3_undeploy
 application_sample_deploy()
 {
-	kubectl --context $hub_cluster_name apply -k https://github.com/ramendr/ocm-ramen-samples/subscriptions?ref=$ocm_ramen_samples_git_ref
+	kubectl --context $hub_cluster_name apply -k https://github.com/$ocm_ramen_samples_github_name/ocm-ramen-samples/subscriptions?ref=$ocm_ramen_samples_git_ref
 	kubectl --context ${hub_cluster_name} -n ramen-samples get channels/ramen-gitops
-	kubectl --context $hub_cluster_name apply -k https://github.com/ramendr/ocm-ramen-samples/subscriptions/busybox?ref=$ocm_ramen_samples_git_ref
+	kubectl --context $hub_cluster_name apply -k https://github.com/$ocm_ramen_samples_github_name/ocm-ramen-samples/subscriptions/busybox?ref=$ocm_ramen_samples_git_ref
 	kubectl --context ${hub_cluster_name} -n busybox-sample get placementrules/busybox-placement
 	until_true_or_n 90 eval test \"\$\(kubectl --context ${hub_cluster_name} -n busybox-sample get subscriptions/busybox-sub -ojsonpath='{.status.phase}'\)\" = Propagated
 	until_true_or_n 1 eval test -n \"\$\(kubectl --context ${hub_cluster_name} -n busybox-sample get placementrules/busybox-placement -ojsonpath='{.status.decisions[].clusterName}'\)\"
@@ -188,7 +190,7 @@ application_sample_undeploy()
 {
 	set -- $(kubectl --context ${hub_cluster_name} -n busybox-sample get placementrules/busybox-placement -ojsonpath='{.status.decisions[].clusterName}')
 	kubectl --context ${1} delete persistentvolumes $(kubectl --context ${1} -n busybox-sample get persistentvolumeclaims/busybox-pvc -ojsonpath='{.spec.volumeName}') --wait=false
-	kubectl --context $hub_cluster_name delete -k https://github.com/ramendr/ocm-ramen-samples/subscriptions/busybox?ref=$ocm_ramen_samples_git_ref
+	kubectl --context $hub_cluster_name delete -k https://github.com/$ocm_ramen_samples_github_name/ocm-ramen-samples/subscriptions/busybox?ref=$ocm_ramen_samples_git_ref
 	date
 	set +e
 	kubectl --context ${1} -n busybox-sample wait pods/busybox --for delete --timeout 2m
@@ -204,7 +206,7 @@ application_sample_undeploy()
 	# error: no matching resources found
 	set -e
 	date
-	kubectl --context $hub_cluster_name delete -k https://github.com/ramendr/ocm-ramen-samples/subscriptions?ref=$ocm_ramen_samples_git_ref
+	kubectl --context $hub_cluster_name delete -k https://github.com/$ocm_ramen_samples_github_name/ocm-ramen-samples/subscriptions?ref=$ocm_ramen_samples_git_ref
 	date
 }
 exit_stack_push unset -f application_sample_undeploy
