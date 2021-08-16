@@ -240,9 +240,9 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim, log logr.
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups/finalizers,verbs=update
 // +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplications,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplicationclasses,verbs=get;list;watch;update;patch
-// +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list
+// +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;update;patch
-// +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch;update;patch;create
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -417,31 +417,44 @@ func (v *VRGInstance) restorePVs() error {
 	setPVMetadataProgressingCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
 	v.log.Info(fmt.Sprintf("Restoring PVs to this managed cluster %v", v.instance.Spec.S3ProfileList))
-	// TODO: this is added in the last minute while merging.  More thought will be put in this
+
+	success := true
+
 	for _, s3ProfileName := range v.instance.Spec.S3ProfileList {
 		pvList, err := v.listPVsFromS3Store(s3ProfileName)
 		if err != nil {
-			return fmt.Errorf("failed to retrieve PVs from S3 store (%w)", err)
+			success = false
+
+			v.log.Error(err, "failed to retrieve PVs from S3 store", "ProfileName", s3ProfileName)
 		}
 
 		v.log.Info(fmt.Sprintf("Found %d PVs", len(pvList)))
 
-		if len(pvList) == 0 {
-			return nil
-		}
-
 		for idx := range pvList {
 			err := v.restorePV(&pvList[idx])
 			if err != nil {
-				v.log.Error(err, "Stopping restore")
+				success = false
 
-				return err
+				v.log.Error(err, "Restore PVs failed", "ProfileName", s3ProfileName)
 			}
+		}
+
+		if !success {
+			// go to the next profile
+			continue
 		}
 
 		setPVMetadataAvailableCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
 		v.log.Info(fmt.Sprintf("Restored %d PVs using profile %s", len(pvList), s3ProfileName))
+
+		success = true
+
+		break
+	}
+
+	if !success {
+		return fmt.Errorf("failed to restorePVs using profile list (%v)", v.instance.Spec.S3ProfileList)
 	}
 
 	return nil
@@ -684,7 +697,7 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 	if err := v.restorePVs(); err != nil {
 		v.log.Info("Restoring PVs failed", "errorValue", err)
 
-		msg := "Failed to restore PVs"
+		msg := fmt.Sprintf("Failed to restore PVs (%v)", err.Error())
 		setPVMetadataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
 		if err = v.updateVRGStatus(false); err != nil {
