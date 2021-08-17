@@ -27,12 +27,12 @@ rook_ceph_undeploy()
 exit_stack_push unset -f rook_ceph_undeploy
 minio_deploy()
 {
-	kubectl --context ${2} apply -f ${1}/minio-deployment.yaml
+	kubectl --context $1 apply -f $ramen_hack_directory_path_name/minio-deployment.yaml
 }
 exit_stack_push unset -f minio_deploy
 minio_undeploy()
 {
-	kubectl --context ${2} delete -f ${1}/minio-deployment.yaml
+	kubectl --context $1 delete -f $ramen_hack_directory_path_name/minio-deployment.yaml
 }
 exit_stack_push unset -f minio_undeploy
 ramen_image_directory_name=localhost
@@ -89,8 +89,8 @@ ramen_deploy()
 	cat <<-EOF >> /tmp/ramen_manager_config.yaml
 
 	s3StoreProfiles:
-	- s3ProfileName: minio-on-hub
-	  s3CompatibleEndpoint: $(minikube --profile=${hub_cluster_name} -n minio service --url minio)
+	- s3ProfileName: $s3_store_profile_name
+	  s3CompatibleEndpoint: $(minikube --profile=$s3_store_cluster_name -n minio service --url minio)
 	  s3Region: us-east-1
 	  s3SecretRef:
 	    name: busybox-s3secret
@@ -162,7 +162,28 @@ application_sample_namespace_and_s3_undeploy()
 exit_stack_push unset -f application_sample_namespace_and_s3_undeploy
 application_sample_deploy()
 {
-	kubectl --context $hub_cluster_name apply -k https://github.com/$ocm_ramen_samples_git_path/ocm-ramen-samples/subscriptions?ref=$ocm_ramen_samples_git_ref
+	set -- /tmp/$USER/ocm-ramen-samples/subscriptions $spoke_cluster_names
+	mkdir -p $1
+	cat <<-a >$1/kustomization.yaml
+	resources:
+	  - https://github.com/$ocm_ramen_samples_git_path/ocm-ramen-samples/subscriptions?ref=$ocm_ramen_samples_git_ref
+	patchesJson6902:
+	  - target:
+	      group: ramendr.openshift.io
+	      version: v1alpha1
+	      kind: DRPolicy
+	      name: dr-policy
+	    patch: |-
+	      - op: replace
+	        path: /spec/drClusterSet
+	        value:
+	          - name: $2
+	            s3ProfileName: $s3_store_profile_name
+	          - name: $3
+	            s3ProfileName: $s3_store_profile_name
+	a
+	kubectl --context $hub_cluster_name apply -k $1
+	set --
 	kubectl --context ${hub_cluster_name} -n ramen-samples get channels/ramen-gitops
 	kubectl --context $hub_cluster_name apply -k https://github.com/$ocm_ramen_samples_git_path/ocm-ramen-samples/subscriptions/busybox?ref=$ocm_ramen_samples_git_ref
 	kubectl --context ${hub_cluster_name} -n busybox-sample get placementrules/busybox-placement
@@ -256,6 +277,9 @@ ramen_undeploy_all()
 	set -e
 }
 exit_stack_push unset -v ramen_undeploy_all
+s3_store_cluster_name=$hub_cluster_name
+s3_store_profile_name=minio-on-$s3_store_cluster_name
+exit_stack_push unset -v s3_store_profile_name s3_store_cluster_name
 exit_stack_push unset -v command
 for command in "${@:-deploy}"; do
 	case ${command} in
@@ -263,13 +287,13 @@ for command in "${@:-deploy}"; do
 		hub_cluster_name=${hub_cluster_name} spoke_cluster_names=${spoke_cluster_names}\
 		${ramen_hack_directory_path_name}/ocm-minikube.sh
 		rook_ceph_deploy_all
-		minio_deploy ${ramen_hack_directory_path_name} ${hub_cluster_name}
+		minio_deploy $s3_store_cluster_name
 		ramen_build ${ramen_directory_path_name}
 		ramen_deploy_all
 		;;
 	undeploy)
 		ramen_undeploy_all
-		minio_undeploy ${ramen_hack_directory_path_name} ${hub_cluster_name}
+		minio_undeploy $s3_store_cluster_name
 		rook_ceph_undeploy_all
 		;;
 	application_sample_deploy)
