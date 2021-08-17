@@ -194,10 +194,6 @@ application_sample_undeploy()
 	# error: no matching resources found
 	set -e
 	date
-	# TODO drplacementcontrols finalizer delete volumereplicationgroup manifest work instead
-	kubectl --context ${1} -n busybox-sample get volumereplicationgroups/busybox-drpc
-	kubectl --context ${hub_cluster_name} -n ${1} delete manifestworks/busybox-drpc-busybox-sample-vrg-mw
-	date
 	set +e
 	kubectl --context ${1} -n busybox-sample wait volumereplicationgroups/busybox-drpc --for delete
 	# error: no matching resources found
