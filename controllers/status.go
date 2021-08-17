@@ -60,6 +60,7 @@ const (
 func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionAvailable,
+		Reason:             "none",
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionUnknown,
 		Message:            message,
