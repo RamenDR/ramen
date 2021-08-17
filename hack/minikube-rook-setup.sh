@@ -137,10 +137,13 @@ unset -v pool pool_target pool_target_path
 if ! virsh vol-info --pool "$POOL_NAME" "${IMAGE_NAME}-${PROFILE}"; then
 	virsh vol-create-as --pool "${POOL_NAME}" --name "${IMAGE_NAME}-${PROFILE}" --capacity 32G --format qcow2
 fi
-if [[ $(minikube ssh 'echo 1 | sudo tee /sys/bus/pci/rescan > /dev/null ; dmesg | grep virtio_blk' --profile="${PROFILE}" | grep -wc vdb) == 0 ]]; then
+if ! virsh domblkinfo --domain "$PROFILE" --device vdb; then
 	sudo virsh attach-disk --domain "${PROFILE}" --source "${IMAGE_DIR}/${IMAGE_NAME}-${PROFILE}" --target vdb --persistent --driver qemu --subdriver qcow2 --targetbus virtio
 fi
+set +e
 minikube ssh 'echo 1 | sudo tee /sys/bus/pci/rescan > /dev/null ; dmesg | grep virtio_blk' --profile="${PROFILE}"
+# ssh: Process exited with status 1
+set -e
 
 ## Install rook-ceph ##
 kubectl apply -f "${ROOK_SRC}/common.yaml" --context="${PROFILE}"
