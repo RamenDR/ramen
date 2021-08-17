@@ -27,6 +27,14 @@ const (
 )
 
 var _ = Describe("Test VolumeReplicationGroup", func() {
+	// Test first restore
+	Context("restore test case", func() {
+		It("sets vrg for restore", func() {
+			newVRGTestCase(0)
+			waitForPVRestore()
+		})
+	})
+
 	// Try the simple case of creating VRG, PVC, PV and
 	// check whether VolRep resources are created or not
 	var vrgTestCases []vrgTest
@@ -582,7 +590,7 @@ func (v *vrgTest) createVRG(pvcLabels map[string]string) {
 			ReplicationState:         "primary",
 			SchedulingInterval:       schedulingInterval,
 			ReplicationClassSelector: metav1.LabelSelector{MatchLabels: replicationClassLabels},
-			// S3ProfileList:            []string{"fakeS3Profile"},
+			S3ProfileList:            []string{"fakeS3Profile"},
 		},
 	}
 	err := k8sClient.Create(context.TODO(), vrg)
@@ -933,14 +941,99 @@ func (v *vrgTest) waitForNamespaceDeletion() {
 		"while waiting for namespace %s to be deleted", v.namespace)
 }
 
+var PVsToRestore = []string{"pv0001", "pv0002", "pv0002", "pv0004"}
+
+//nolint:scopelint
+func waitForPVRestore() {
+	type Empty struct{}
+
+	pvSet := map[string]Empty{}
+
+	for _, pvName := range PVsToRestore {
+		pvLookupKey := types.NamespacedName{Name: pvName}
+		pv := &corev1.PersistentVolume{}
+
+		Eventually(func() bool {
+			err := k8sClient.Get(context.TODO(), pvLookupKey, pv)
+			if err != nil {
+				return false
+			}
+
+			Expect(pv.ObjectMeta.Annotations[vrgController.PVRestoreAnnotation]).Should(Equal("True"))
+
+			pvSet[pvName] = Empty{}
+
+			return true
+		}, timeout, interval).Should(BeTrue(),
+			"while waiting for PV %s to be restored", pvName)
+	}
+
+	// The expectation is to only add pv0001, pv0002, and pv0004
+	// The fourth PV should have been skipped because it exists
+	// and managed by ramen
+	Expect(len(pvSet)).To(Equal(3))
+}
+
 type FakePVDownloader struct{}
 
 func (s FakePVDownloader) DownloadPVs(ctx context.Context, r client.Reader,
 	objStoreGetter vrgController.ObjectStoreGetter, s3Profile, callerTag string,
 	s3Bucket string) ([]corev1.PersistentVolume, error) {
-	// TODO: Create PVs to restore
+	capacity := corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}
+	accessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
+	hostPathType := corev1.HostPathDirectoryOrCreate
+
 	pvList := []corev1.PersistentVolume{}
-	// pvList = append(pvList, *pv1, *pv2)
+
+	for _, pvName := range PVsToRestore {
+		pv := &corev1.PersistentVolume{
+			ObjectMeta: metav1.ObjectMeta{Name: pvName},
+			Spec: corev1.PersistentVolumeSpec{
+				Capacity: capacity,
+				PersistentVolumeSource: corev1.PersistentVolumeSource{
+					HostPath: &corev1.HostPathVolumeSource{
+						Path: "/tmp/kube",
+						Type: &hostPathType,
+					},
+				},
+				AccessModes: accessModes,
+				ClaimRef: &corev1.ObjectReference{
+					Kind:      "PersistentVolumeClaim",
+					Namespace: "my-namespace",
+					Name:      "claimName",
+				},
+				PersistentVolumeReclaimPolicy: "Delete",
+				StorageClassName:              "manual",
+				MountOptions:                  []string{},
+				NodeAffinity: &corev1.VolumeNodeAffinity{
+					Required: &corev1.NodeSelector{
+						NodeSelectorTerms: []corev1.NodeSelectorTerm{
+							{
+								MatchExpressions: []corev1.NodeSelectorRequirement{
+									{
+										Key:      "KeyNode",
+										Operator: corev1.NodeSelectorOpIn,
+										Values: []string{
+											"node1",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		pvList = append(pvList, *pv)
+	}
 
 	return pvList, nil
+}
+
+type FakePVUploader struct{}
+
+func (s FakePVUploader) UploadPV(v interface{}, s3ProfileName string, pvc corev1.PersistentVolumeClaim) error {
+	// TODO: upload fake PV
+	return nil
 }

@@ -126,11 +126,23 @@ var (
 			Buckets: prometheus.ExponentialBuckets(1.0, 2.0, 12), // start=1.0, factor=2.0, buckets=12
 		}),
 	)
+
+	deployTime = newTimerWrapper(
+		prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "ramen_initial_deploy_time",
+			Help: "Duration of the last initial deploy time",
+		}),
+		prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "ramen_initial_deploy_histogram",
+			Help:    "Histogram of all initial deploymet timers (seconds)",
+			Buckets: prometheus.ExponentialBuckets(1.0, 2.0, 12), // start=1.0, factor=2.0, buckets=12
+		}),
+	)
 )
 
 func init() {
 	// register custom metrics with the global Prometheus registry
-	metrics.Registry.MustRegister(failbackTime.gauge, failoverTime.gauge, relocateTime.gauge)
+	metrics.Registry.MustRegister(failbackTime.gauge, failoverTime.gauge, relocateTime.gauge, deployTime.gauge)
 }
 
 var WaitForPVRestoreToComplete = errorswrapper.New("Waiting for PV restore to complete")
@@ -795,6 +807,7 @@ func (d *DRPCInstance) runInitialDeployment() (bool, error) {
 
 	// Make sure we record the state that we are deploying
 	d.setDRState(rmn.Deploying)
+	setMetricsTimerFromDRState(rmn.Deploying, timerStart)
 
 	// Create VRG first, to leverage user PlacementRule decision to skip placement and move to cleanup
 	err := d.createVRGAndRolesManifestWorks(homeCluster)
@@ -816,11 +829,11 @@ func (d *DRPCInstance) runInitialDeployment() (bool, error) {
 	d.advanceToNextDRState()
 
 	d.log.Info(fmt.Sprintf("DRPC (%+v)", d.instance))
+	setMetricsTimerFromDRState(rmn.Deployed, timerStop)
 
 	return done, nil
 }
 
-//nolint:exhaustive
 func setMetricsTimerFromDRState(stateDR rmn.DRState, stateTimer timerState) {
 	switch stateDR {
 	case rmn.FailingOver:
@@ -829,8 +842,8 @@ func setMetricsTimerFromDRState(stateDR rmn.DRState, stateTimer timerState) {
 		setMetricsTimer(&failbackTime, stateTimer, stateDR)
 	case rmn.Relocating:
 		setMetricsTimer(&relocateTime, stateTimer, stateDR)
-	// case rmn.Deploying:
-	// TODO: setMetricsTimer(&deployTime, stateTimer, stateDR)
+	case rmn.Deploying:
+		setMetricsTimer(&deployTime, stateTimer, stateDR)
 	case rmn.FailedBack:
 		fallthrough
 	case rmn.FailedOver:
@@ -1024,7 +1037,7 @@ func (d *DRPCInstance) switchToPreferredCluster(drState rmn.DRState) (bool, erro
 	d.setDRState(drState)
 	setMetricsTimerFromDRState(drState, timerStart)
 
-	// During failback/relocate, the preferredCluster is does not contain a VRG or the VRG is already
+	// During failback/relocate, the preferredCluster does not contain a VRG or the VRG is already
 	// secondary. We need to skip checking if the VRG for it is secondary to avoid messing up with the
 	// order of execution (it could be refactored better to avoid this complexity). IOW, if we first update
 	// VRG in all clusters to secondaries, then we call runPlacementTask. If runPlacementTask does not complete
@@ -1403,7 +1416,7 @@ func (d *DRPCInstance) checkPVsHaveBeenRestored(homeCluster string) (bool, error
 		return false, nil
 	}
 
-	return vrgCondition.Status == metav1.ConditionTrue, nil
+	return vrgCondition.Status == metav1.ConditionTrue && vrgCondition.ObservedGeneration == vrg.Generation, nil
 }
 
 func (d *DRPCInstance) ensureCleanup(clusterToSkip string) error {
@@ -1422,7 +1435,7 @@ func (d *DRPCInstance) ensureCleanup(clusterToSkip string) error {
 	if condition.Reason == rmn.ReasonSuccess &&
 		condition.Status == metav1.ConditionTrue &&
 		condition.ObservedGeneration == d.instance.Generation {
-		d.log.Info("Condition values tallied, cleaup is considered complete")
+		d.log.Info("Condition values tallied, cleanup is considered complete")
 
 		return nil
 	}

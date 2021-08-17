@@ -47,9 +47,17 @@ import (
 	rmnutil "github.com/ramendr/ramen/controllers/util"
 )
 
+const (
+	PVRestoreAnnotation = "drplacementcontrol.ramendr.openshift.io/ramen-restore"
+)
+
 type PVDownloader interface {
 	DownloadPVs(ctx context.Context, r client.Reader, objStoreGetter ObjectStoreGetter,
 		s3Profile string, callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error)
+}
+
+type PVUploader interface {
+	UploadPV(v interface{}, s3ProfileName string, pvc corev1.PersistentVolumeClaim) error
 }
 
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
@@ -57,6 +65,7 @@ type VolumeReplicationGroupReconciler struct {
 	client.Client
 	Log            logr.Logger
 	PVDownloader   PVDownloader
+	PVUploader     PVUploader
 	ObjStoreGetter ObjectStoreGetter
 	Scheme         *runtime.Scheme
 	eventRecorder  *rmnutil.EventReporter
@@ -424,39 +433,37 @@ func (v *VRGInstance) validateVRGState() error {
 func (v *VRGInstance) restorePVs() error {
 	// TODO: refactor this per this comment: https://github.com/RamenDR/ramen/pull/197#discussion_r687246692
 	vrgCondition := findCondition(v.instance.Status.Conditions, PVConditionMetadataAvailable)
-	if vrgCondition != nil && vrgCondition.Status == metav1.ConditionTrue {
+	if vrgCondition != nil && vrgCondition.Status == metav1.ConditionTrue &&
+		vrgCondition.ObservedGeneration == v.instance.Generation {
 		v.log.Info("VRGConditionAvailable found. PV restore must have already been applied")
 
 		return nil
 	}
 
+	if len(v.instance.Spec.S3ProfileList) == 0 {
+		return fmt.Errorf("invalid S3ProfileList")
+	}
+
 	msg := "Restoring PV metadata"
 	setPVMetadataProgressingCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
-	v.log.Info(fmt.Sprintf("Restoring PVs to this managed cluster %v", v.instance.Spec.S3ProfileList))
+	v.log.Info(fmt.Sprintf("Restoring PVs to this managed cluster. ProfileList: %v", v.instance.Spec.S3ProfileList))
 
-	success := true
+	success := false
 
 	for _, s3ProfileName := range v.instance.Spec.S3ProfileList {
 		pvList, err := v.listPVsFromS3Store(s3ProfileName)
 		if err != nil {
-			success = false
-
 			v.log.Error(err, "failed to retrieve PVs from S3 store", "ProfileName", s3ProfileName)
+
+			continue
 		}
 
 		v.log.Info(fmt.Sprintf("Found %d PVs", len(pvList)))
 
-		for idx := range pvList {
-			err := v.restorePV(&pvList[idx])
-			if err != nil {
-				success = false
-
-				v.log.Error(err, "Restore PVs failed", "ProfileName", s3ProfileName)
-			}
-		}
-
-		if !success {
+		err = v.restorePVMetadata(pvList)
+		if err != nil {
+			success = false
 			// go to the next profile
 			continue
 		}
@@ -498,16 +505,62 @@ func (s ObjectStorePVDownloader) DownloadPVs(ctx context.Context, r client.Reade
 	return objectStore.downloadPVs(s3Bucket)
 }
 
-func (v *VRGInstance) restorePV(pv *corev1.PersistentVolume) error {
-	v.cleanupPVForRestore(pv)
+func (v *VRGInstance) restorePVMetadata(pvList []corev1.PersistentVolume) error {
+	numRestored := 0
 
-	if err := v.reconciler.Create(v.ctx, pv); err != nil {
-		if !errors.IsAlreadyExists(err) {
-			// SHOULD WE CALL UPDATE(...) TO UPDATE THE RESOURCE HERE ???
-			// OR JUST ASSUME WHAT IS OUT THERE IS FINE
-			return fmt.Errorf("failed to create PV resource (%s) (%w)", pv.Name, err)
+	for idx := range pvList {
+		pv := &pvList[idx]
+		v.cleanupPVForRestore(pv)
+		v.addPVRestoreAnnotation(pv)
+
+		if err := v.reconciler.Create(v.ctx, pv); err != nil {
+			if errors.IsAlreadyExists(err) {
+				err := v.validatePVExistence(pv)
+				if err != nil {
+					v.log.Info("PV exists. Ignoring and moving to next PV", "error", err.Error())
+					// ignoring any errors
+					continue
+				}
+
+				// Valid PV exists and it is managed by Ramen
+				numRestored++
+
+				continue
+			}
+
+			v.log.Info("Failed to restore PV", "name", pv.Name, "Error", err)
+
+			continue
 		}
+
+		numRestored++
 	}
+
+	if numRestored != len(pvList) {
+		return fmt.Errorf("failed to restore all PVs. Total %d. Restored %d", len(pvList), numRestored)
+	}
+
+	v.log.Info("Success restoring PVs", "Total", numRestored)
+
+	return nil
+}
+
+func (v *VRGInstance) validatePVExistence(pv *corev1.PersistentVolume) error {
+	existingPV := &corev1.PersistentVolume{}
+
+	err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: pv.Name}, existingPV)
+	if err != nil {
+		return fmt.Errorf("failed to get existing PV (%w)", err)
+	}
+
+	if existingPV.ObjectMeta.Annotations == nil ||
+		existingPV.ObjectMeta.Annotations[PVRestoreAnnotation] == "" {
+		return fmt.Errorf("found PV object not restored by Ramen for PV %s", existingPV.Name)
+	}
+
+	// Should we check and see if PV in being deleted? Should we just treat it as exists
+	// and then we don't care if deletion takes place later, which is what we do now?
+	v.log.Info("PV exists and managed by Ramen", "PV", existingPV)
 
 	return nil
 }
@@ -521,6 +574,15 @@ func (v *VRGInstance) cleanupPVForRestore(pv *corev1.PersistentVolume) {
 		pv.Spec.ClaimRef.ResourceVersion = ""
 		pv.Spec.ClaimRef.APIVersion = ""
 	}
+}
+
+// addPVRestoreAnnotation adds annotation to the PV indicating that the PV is restored by Ramen
+func (v *VRGInstance) addPVRestoreAnnotation(pv *corev1.PersistentVolume) {
+	if pv.ObjectMeta.Annotations == nil {
+		pv.ObjectMeta.Annotations = map[string]string{}
+	}
+
+	pv.ObjectMeta.Annotations[PVRestoreAnnotation] = "True"
 }
 
 func (v *VRGInstance) initializeStatus() {
@@ -984,7 +1046,7 @@ func (v *VRGInstance) protectPVC(pvc *corev1.PersistentVolumeClaim,
 
 	// If faulted post backing up PV but prior to VR creation, PVC on a failover will fail to attach,
 	// and it is better to not have silent data loss, but be explicit on the failure.
-	if err := v.uploadPVToS3Profiles(*pvc); err != nil {
+	if err := v.uploadPVToS3Stores(*pvc); err != nil {
 		log.Info("Requeuing, as uploading PersistentVolume failed", "errorValue", err)
 		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
 			rmnutil.EventReasonPVUploadFailed, err.Error())
@@ -1142,9 +1204,9 @@ func (v *VRGInstance) undoPVRetentionForPVC(pvc corev1.PersistentVolumeClaim, lo
 }
 
 // Upload PV to the list of S3 stores in the VRG spec
-func (v *VRGInstance) uploadPVToS3Profiles(pvc corev1.PersistentVolumeClaim) (err error) {
+func (v *VRGInstance) uploadPVToS3Stores(pvc corev1.PersistentVolumeClaim) (err error) {
 	for _, s3ProfileName := range v.instance.Spec.S3ProfileList {
-		if err := v.uploadPV(s3ProfileName, pvc); err != nil {
+		if err := v.reconciler.PVUploader.UploadPV(v, s3ProfileName, pvc); err != nil {
 			return fmt.Errorf("error uploading PV %s using profile %s, err %w", pvc.Name, s3ProfileName, err)
 		}
 	}
@@ -1152,19 +1214,21 @@ func (v *VRGInstance) uploadPVToS3Profiles(pvc corev1.PersistentVolumeClaim) (er
 	return
 }
 
-// uploadPV checks if the VRG spec has been configured with an s3 endpoint,
+type ObjectStorePVUploader struct{}
+
+// UploadPV checks if the VRG spec has been configured with an s3 endpoint,
 // connects to the object store, gets the PV metadata of the input PVC from
 // etcd, creates a bucket in s3 store, uploads the PV metadata to s3 store and
 // downloads it for verification.  If an s3 endpoint is not configured, then
 // it assumes that VRG is running in a mode that doesn't require Ramen to
 // protect PV related cluster state and hence, does not return an error, but
 // logs a one-time message.
-func (v *VRGInstance) uploadPV(s3ProfileName string,
+func (ObjectStorePVUploader) UploadPV(v interface{}, s3ProfileName string,
 	pvc corev1.PersistentVolumeClaim) (err error) {
-	vrgName := v.instance.Name
-	s3Bucket := constructBucketName(v.instance.Namespace, vrgName)
+	vrgName := v.(*VRGInstance).instance.Name
+	s3Bucket := constructBucketName(v.(*VRGInstance).instance.Namespace, vrgName)
 
-	if err := v.checkS3Profile(s3ProfileName); err != nil {
+	if err := v.(*VRGInstance).checkS3Profile(s3ProfileName); err != nil {
 		if errors.IsServiceUnavailable(err) {
 			// Assume that the object store is unconfigured and don't treat this
 			// as an error.  Return to caller as there is no work to do.
@@ -1175,11 +1239,11 @@ func (v *VRGInstance) uploadPV(s3ProfileName string,
 		return err
 	}
 
-	v.log.Info("Uploading PersistentVolume metadata to object store")
+	v.(*VRGInstance).log.Info("Uploading PersistentVolume metadata to object store")
 
 	objectStore, err :=
-		v.reconciler.ObjStoreGetter.objectStore(v.ctx, v.reconciler,
-			s3ProfileName, vrgName, /* debugTag */
+		v.(*VRGInstance).reconciler.ObjStoreGetter.objectStore(v.(*VRGInstance).ctx,
+			v.(*VRGInstance).reconciler, s3ProfileName, vrgName, /* debugTag */
 		)
 	if err != nil {
 		return fmt.Errorf("failed to get client for s3Profile %s, err %w",
@@ -1191,7 +1255,7 @@ func (v *VRGInstance) uploadPV(s3ProfileName string,
 	pvObjectKey := client.ObjectKey{Name: volumeName}
 
 	// Get PV from k8s
-	if err := v.reconciler.Get(v.ctx, pvObjectKey, &pv); err != nil {
+	if err := v.(*VRGInstance).reconciler.Get(v.(*VRGInstance).ctx, pvObjectKey, &pv); err != nil {
 		return fmt.Errorf("failed to get PV metadata from k8s, %w", err)
 	}
 
@@ -1493,8 +1557,8 @@ func (v *VRGInstance) updateVRGStatus(updateConditions bool) error {
 	v.instance.Status.LastUpdateTime = metav1.Now()
 
 	if err := v.reconciler.Status().Update(v.ctx, v.instance); err != nil {
-		v.log.Info(fmt.Sprintf("Failed to update VRG status (%s/%s)",
-			v.instance.Name, v.instance.Namespace))
+		v.log.Info(fmt.Sprintf("Failed to update VRG status (%s/%s/%v)",
+			v.instance.Name, v.instance.Namespace, err))
 
 		return fmt.Errorf("failed to update VRG status (%s/%s)", v.instance.Name, v.instance.Namespace)
 	}
