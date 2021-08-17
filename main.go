@@ -17,6 +17,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -27,6 +28,7 @@ import (
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	fndv2 "github.com/tjanssen3/multicloud-operators-foundation/v2/pkg/apis/view/v1beta1"
 	uberzap "go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -41,8 +43,9 @@ import (
 )
 
 var (
-	scheme   = runtime.NewScheme()
-	setupLog = ctrl.Log.WithName("setup")
+	scheme          = runtime.NewScheme()
+	setupLog        = ctrl.Log.WithName("setup")
+	developmentMode bool
 
 	controllerType ramendrv1alpha1.ControllerType
 )
@@ -54,6 +57,33 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
+func getLogOptions() zap.Options {
+	if strings.EqualFold(os.Getenv("DEVELOPMENT_MODE"), "true") {
+		developmentMode = true
+	}
+	lvl := uberzap.NewAtomicLevelAt(uberzap.PanicLevel)
+
+	opts := zap.Options{
+		ZapOpts: []uberzap.Option{
+			uberzap.AddCaller(),
+		},
+	}
+
+	// configure the timestamp for logging
+	enConfig := uberzap.NewProductionEncoderConfig()
+	enConfig.TimeKey = "timestamp"
+	enConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	opts.Encoder = zapcore.NewJSONEncoder(enConfig)
+
+	if developmentMode {
+		opts.ZapOpts = append(opts.ZapOpts, uberzap.Development())
+		lvl = uberzap.NewAtomicLevelAt(uberzap.WarnLevel)
+	}
+
+	opts.StacktraceLevel = &lvl
+	return opts
+}
+
 func newManager() (ctrl.Manager, error) {
 	var configFile string
 
@@ -62,13 +92,7 @@ func newManager() (ctrl.Manager, error) {
 			"Omit this flag to use the default configuration values. "+
 			"Command-line flags override configuration from this file.")
 
-	opts := zap.Options{
-		Development: true,
-		ZapOpts: []uberzap.Option{
-			uberzap.AddCaller(),
-		},
-	}
-
+	opts := getLogOptions()
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
