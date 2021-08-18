@@ -56,6 +56,13 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 				v.waitForVRCountToMatch(expectedVRCount)
 			}
 		})
+		It("waits for VRG to status to match", func() {
+			for c := 0; c < len(vrgTestCases); c++ {
+				v := vrgTestCases[c]
+				v.promoteVolReps()
+				v.verifyVRGStatusExpectation(true)
+			}
+		})
 		It("cleans up after testing", func() {
 			for c := 0; c < len(vrgTestCases); c++ {
 				v := vrgTestCases[c]
@@ -109,6 +116,13 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 				v := vrgTests[c]
 				expectedVRCount := len(v.pvcNames)
 				v.waitForVRCountToMatch(expectedVRCount)
+			}
+		})
+		It("waits for VRG to status to match", func() {
+			for c := 0; c < len(vrgTests); c++ {
+				v := vrgTests[c]
+				v.promoteVolReps()
+				v.verifyVRGStatusExpectation(true)
 			}
 		})
 		It("cleans up after testing", func() {
@@ -1043,12 +1057,9 @@ func (s FakePVUploader) UploadPV(v interface{}, s3ProfileName string, pvc *corev
 
 type FakePVDeleter struct{}
 
-func (s FakePVDeleter) DeletePV(v interface{}, s3ProfileName string, pvc *corev1.PersistentVolumeClaim) error {
-	_, ok := UploadedPVs[pvc.Spec.VolumeName]
-	if ok {
-		delete(UploadedPVs, pvc.Spec.VolumeName)
-	} else {
-		Fail(fmt.Sprintf("PV %s not found", pvc.Spec.VolumeName))
+func (s FakePVDeleter) DeletePVs(v interface{}, s3ProfileName string) error {
+	for key := range UploadedPVs {
+		delete(UploadedPVs, key)
 	}
 
 	return nil

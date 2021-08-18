@@ -47,10 +47,6 @@ import (
 	rmnutil "github.com/ramendr/ramen/controllers/util"
 )
 
-const (
-	PVRestoreAnnotation = "drplacementcontrol.ramendr.openshift.io/ramen-restore"
-)
-
 type PVDownloader interface {
 	DownloadPVs(ctx context.Context, r client.Reader, objStoreGetter ObjectStoreGetter,
 		s3Profile string, callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error)
@@ -61,7 +57,7 @@ type PVUploader interface {
 }
 
 type PVDeleter interface {
-	DeletePV(v interface{}, s3ProfileName string, pvc *corev1.PersistentVolumeClaim) error
+	DeletePVs(v interface{}, s3ProfileName string) error
 }
 
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
@@ -326,6 +322,7 @@ const (
 	pvcVRAnnotationProtectedValue = "protected"
 	pvVRAnnotationRetentionKey    = "volumereplicationgroups.ramendr.openshift.io/vr-retained"
 	pvVRAnnotationRetentionValue  = "retained"
+	PVRestoreAnnotation           = "volumereplicationgroups.ramendr.openshift.io/ramen-restore"
 )
 
 func (v *VRGInstance) processVRG() (ctrl.Result, error) {
@@ -662,6 +659,15 @@ func (v *VRGInstance) processForDeletion() (ctrl.Result, error) {
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
+		if err := v.deletePVsFromS3Stores(v.log); err != nil {
+			v.log.Info("Requeuing due to failure in deleting PV metadata from S3 stores",
+				"errorValue", err)
+
+			return ctrl.Result{Requeue: true}, nil
+		}
+	}
+
 	if err := v.removeFinalizer(vrgFinalizerName); err != nil {
 		v.log.Info("Failed to remove finalizer", "finalizer", vrgFinalizerName, "errorValue", err)
 
@@ -710,6 +716,11 @@ func (v *VRGInstance) reconcileVRsForDeletion() bool {
 func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
 	const requeue bool = true
 
+	var (
+		err       error
+		available = true
+	)
+
 	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
@@ -725,8 +736,22 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 
 			return !requeue
 		}
-	} else if err := v.processVRAsPrimary(pvcNamespacedName, log); err != nil {
+	} else if available, err = v.processVRAsPrimary(pvcNamespacedName, log); err != nil {
 		log.Info("Requeuing due to failure in getting or creating VolumeReplication resource for PersistentVolumeClaim",
+			"errorValue", err)
+
+		return requeue
+	}
+
+	// Ensure VR is available at the required state before deletion (do this for Secondary as well?)
+	if !available {
+		return requeue
+	}
+
+	// Deleting VR first may end-up recreating the VR if reconcile for this PVC is interrupted, but that is better than
+	// leaking a VR as that would result in leaking a volume on the storage system
+	if err := v.deleteVR(pvcNamespacedName, log); err != nil {
+		log.Info("Requeuing due to failure in finalizing VolumeReplication resource for PersistentVolumeClaim",
 			"errorValue", err)
 
 		return requeue
@@ -737,22 +762,6 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 			"errorValue", err)
 
 		return requeue
-	}
-
-	if err := v.deleteVR(pvcNamespacedName, log); err != nil {
-		log.Info("Requeuing due to failure in finalizing VolumeReplication resource for PersistentVolumeClaim",
-			"errorValue", err)
-
-		return requeue
-	}
-
-	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
-		if err := v.deletePVFromS3Stores(pvc, log); err != nil {
-			log.Info("Requeuing due to failure in deleting PV metadata from S3 stores",
-				"errorValue", err)
-
-			return requeue
-		}
 	}
 
 	return !requeue
@@ -849,7 +858,7 @@ func (v *VRGInstance) reconcileVRsAsPrimary() bool {
 			continue
 		}
 
-		if err := v.processVRAsPrimary(pvcNamespacedName, log); err != nil {
+		if _, err := v.processVRAsPrimary(pvcNamespacedName, log); err != nil {
 			log.Info("Requeuing due to failure in getting or creating VolumeReplication resource for PersistentVolumeClaim",
 				"errorValue", err)
 
@@ -961,7 +970,7 @@ func (v *VRGInstance) reconcileVRAsSecondary(pvc *corev1.PersistentVolumeClaim, 
 	}
 
 	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
-	if err := v.processVRAsSecondary(pvcNamespacedName, log); err != nil {
+	if _, err := v.processVRAsSecondary(pvcNamespacedName, log); err != nil {
 		log.Info("Requeuing due to failure in getting or creating VolumeReplication resource for PersistentVolumeClaim",
 			"errorValue", err)
 
@@ -1291,12 +1300,12 @@ func (ObjectStorePVUploader) UploadPV(v interface{}, s3ProfileName string,
 	return nil
 }
 
-func (v *VRGInstance) deletePVFromS3Stores(pvc *corev1.PersistentVolumeClaim, log logr.Logger) error {
-	log.Info("Delete PV from s3 stores", "PV", pvc.Spec.VolumeName, "s3Profiles", v.instance.Spec.S3ProfileList)
+func (v *VRGInstance) deletePVsFromS3Stores(log logr.Logger) error {
+	log.Info("Delete PVs from s3 stores", "s3Profiles", v.instance.Spec.S3ProfileList)
 
 	for _, s3ProfileName := range v.instance.Spec.S3ProfileList {
-		if err := v.reconciler.PVDeleter.DeletePV(v, s3ProfileName, pvc); err != nil {
-			return fmt.Errorf("error deleting PV %s using profile %s, err %w", pvc.Name, s3ProfileName, err)
+		if err := v.reconciler.PVDeleter.DeletePVs(v, s3ProfileName); err != nil {
+			return fmt.Errorf("error deleting PVs using profile %s, err %w", s3ProfileName, err)
 		}
 	}
 
@@ -1305,8 +1314,7 @@ func (v *VRGInstance) deletePVFromS3Stores(pvc *corev1.PersistentVolumeClaim, lo
 
 type ObjectStorePVDeleter struct{}
 
-func (ObjectStorePVDeleter) DeletePV(v interface{}, s3ProfileName string,
-	pvc *corev1.PersistentVolumeClaim) (err error) {
+func (ObjectStorePVDeleter) DeletePVs(v interface{}, s3ProfileName string) (err error) {
 	vrgName := v.(*VRGInstance).instance.Name
 	s3Bucket := constructBucketName(v.(*VRGInstance).instance.Namespace, vrgName)
 
@@ -1320,8 +1328,9 @@ func (ObjectStorePVDeleter) DeletePV(v interface{}, s3ProfileName string,
 	}
 
 	// Delete PV to object store
-	if err := objectStore.deleteObject(s3Bucket, pvc.Spec.VolumeName); err != nil {
-		return fmt.Errorf("error deleting PV %s, err %w", pvc.Spec.VolumeName, err)
+	keyPrefix := reflect.TypeOf(corev1.PersistentVolume{}).String() + "/"
+	if err := objectStore.deleteObject(s3Bucket, keyPrefix); err != nil {
+		return fmt.Errorf("error deleting PV objects, err %w", err)
 	}
 
 	return nil
@@ -1360,13 +1369,13 @@ func (v *VRGInstance) checkS3Profile(s3ProfileName string) error {
 
 // processVRAsPrimary processes VR to change its state to primary, with the assumption that the
 // related PVC is prepared for VR protection
-func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName, log logr.Logger) error {
+func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName, log logr.Logger) (bool, error) {
 	return v.createOrUpdateVR(vrNamespacedName, volrep.Primary, log)
 }
 
 // processVRAsSecondary processes VR to change its state to secondary, with the assumption that the
 // related PVC is prepared for VR as secondary
-func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName, log logr.Logger) error {
+func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName, log logr.Logger) (bool, error) {
 	return v.createOrUpdateVR(vrNamespacedName, volrep.Secondary, log)
 }
 
@@ -1378,7 +1387,9 @@ func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName
 // would get a reconcile. And then the conditions for the appropriate Protected PVC can
 // be set as either Replicating or Error.
 func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
-	state volrep.ReplicationState, log logr.Logger) error {
+	state volrep.ReplicationState, log logr.Logger) (bool, error) {
+	const available = true
+
 	volRep := &volrep.VolumeReplication{}
 
 	err := v.reconciler.Get(v.ctx, vrNamespacedName, volRep)
@@ -1393,7 +1404,7 @@ func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 			msg := "Failed to get VolumeReplication resource"
 			v.updateProtectedPVCCondition(vrNamespacedName.Name, PVCErrorUnknown, msg)
 
-			return fmt.Errorf("failed to get VolumeReplication resource"+
+			return !available, fmt.Errorf("failed to get VolumeReplication resource"+
 				" (%s/%s) belonging to VolumeReplicationGroup (%s/%s), %w",
 				vrNamespacedName.Namespace, vrNamespacedName.Name, v.instance.Namespace, v.instance.Name, err)
 		}
@@ -1407,7 +1418,7 @@ func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 			msg := "Failed to create VolumeReplication resource"
 			v.updateProtectedPVCCondition(vrNamespacedName.Name, PVCError, msg)
 
-			return fmt.Errorf("failed to create VolumeReplication resource"+
+			return !available, fmt.Errorf("failed to create VolumeReplication resource"+
 				" (%s/%s) belonging to VolumeReplicationGroup (%s/%s), %w",
 				vrNamespacedName.Namespace, vrNamespacedName.Name, v.instance.Namespace, v.instance.Name, err)
 		}
@@ -1416,14 +1427,16 @@ func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 		msg := "Created VolumeReplication resource for PVC"
 		v.updateProtectedPVCCondition(vrNamespacedName.Name, PVCProgressing, msg)
 
-		return nil
+		return !available, nil
 	}
 
 	return v.updateVR(volRep, state, log)
 }
 
 func (v *VRGInstance) updateVR(volRep *volrep.VolumeReplication,
-	state volrep.ReplicationState, log logr.Logger) error {
+	state volrep.ReplicationState, log logr.Logger) (bool, error) {
+	const available = true
+
 	// If state is already as desired, check the status
 	if volRep.Spec.ReplicationState == state {
 		log.Info("VolumeReplication and VolumeReplicationGroup state match. Proceeding to status check")
@@ -1442,7 +1455,7 @@ func (v *VRGInstance) updateVR(volRep *volrep.VolumeReplication,
 		msg := "Failed to update VolumeReplication resource"
 		v.updateProtectedPVCCondition(volRep.Name, PVCError, msg)
 
-		return fmt.Errorf("failed to update VolumeReplication resource"+
+		return !available, fmt.Errorf("failed to update VolumeReplication resource"+
 			" (%s/%s) as %s, belonging to VolumeReplicationGroup (%s/%s), %w",
 			volRep.Namespace, volRep.Name, state,
 			v.instance.Namespace, v.instance.Name, err)
@@ -1452,7 +1465,7 @@ func (v *VRGInstance) updateVR(volRep *volrep.VolumeReplication,
 	msg := "Updated VolumeReplication resource for PVC"
 	v.updateProtectedPVCCondition(volRep.Name, PVCProgressing, msg)
 
-	return nil
+	return !available, nil
 }
 
 // createVR creates a VolumeReplication CR with a PVC as its data source.
@@ -1756,7 +1769,9 @@ func (v *VRGInstance) updateVRGConditions() {
 	setVRGErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 }
 
-func (v *VRGInstance) checkVRStatus(volRep *volrep.VolumeReplication) error {
+func (v *VRGInstance) checkVRStatus(volRep *volrep.VolumeReplication) (bool, error) {
+	const available = true
+
 	// When the generation in the status is updated, VRG would get a reconcile
 	// as it owns VolumeReplication resource.
 	if volRep.Generation != volRep.Status.ObservedGeneration {
@@ -1765,23 +1780,19 @@ func (v *VRGInstance) checkVRStatus(volRep *volrep.VolumeReplication) error {
 		msg := "VolumeReplication generation not updated in status"
 		v.updateProtectedPVCCondition(volRep.Name, PVCProgressing, msg)
 
-		return nil
+		return !available, nil
 	}
 
 	switch {
 	case v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary:
-		v.validateVRStatus(volRep, ramendrv1alpha1.Primary)
-
-		return nil
+		return v.validateVRStatus(volRep, ramendrv1alpha1.Primary), nil
 	case v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary:
-		v.validateVRStatus(volRep, ramendrv1alpha1.Secondary)
-
-		return nil
+		return v.validateVRStatus(volRep, ramendrv1alpha1.Secondary), nil
 	default:
 		msg := "VolumeReplicationGroup state invalid"
 		v.updateProtectedPVCCondition(volRep.Name, PVCError, msg)
 
-		return fmt.Errorf("invalid Replication State %s for VolumeReplicationGroup (%s:%s)",
+		return !available, fmt.Errorf("invalid Replication State %s for VolumeReplicationGroup (%s:%s)",
 			string(v.instance.Spec.ReplicationState), v.instance.Name, v.instance.Namespace)
 	}
 }
@@ -1791,11 +1802,13 @@ func (v *VRGInstance) checkVRStatus(volRep *volrep.VolumeReplication) error {
 // - When replication state is Primary, only Completed condition is checked.
 // - When replication state is Secondary, all 3 conditions for Completed/Degraded/Resyncing is
 //   checked and ensured healthy.
-func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state ramendrv1alpha1.ReplicationState) {
+func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state ramendrv1alpha1.ReplicationState) bool {
 	var (
 		stateString = "unknown"
 		action      = "unknown"
 	)
+
+	const available = true
 
 	switch state {
 	case ramendrv1alpha1.Primary:
@@ -1812,7 +1825,7 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 		v.updateProtectedPVCConditionHelper(volRep.Name, PVCError, msg,
 			fmt.Sprintf("VolumeReplication resource for pvc not %s to %s", action, stateString))
 
-		return
+		return !available
 	}
 
 	// if primary, all checks are completed
@@ -1820,7 +1833,7 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 		msg = "VolumeReplication resource for the pvc is replicating"
 		v.updateProtectedPVCCondition(volRep.Name, PVCReplicating, msg)
 
-		return
+		return available
 	}
 
 	// it should be resyncing, if secondary
@@ -1829,7 +1842,7 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 		v.updateProtectedPVCConditionHelper(volRep.Name, PVCError, msg,
 			"VolumeReplication resource for pvc not resyncing as Secondary")
 
-		return
+		return !available
 	}
 
 	// it should not be degraded, if secondary
@@ -1845,6 +1858,8 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 
 	msg = "VolumeReplication resource for the pvc is replicating"
 	v.updateProtectedPVCCondition(volRep.Name, PVCReplicating, msg)
+
+	return available
 }
 
 func isVRConditionMet(volRep *volrep.VolumeReplication,
