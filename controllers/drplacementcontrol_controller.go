@@ -500,6 +500,13 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 		if err != nil {
 			return fmt.Errorf("%w", err)
 		}
+
+		mcvName := BuildManagedClusterViewName(drpc.Name, drpc.Namespace, "vrg")
+		// Delete MCV for the VRG
+		err = r.deleteManagedClusterView(clustersToClean[idx], mcvName)
+		if err != nil {
+			return err
+		}
 	}
 
 	// delete cloned placementrule, if created
@@ -508,6 +515,25 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 	}
 
 	return nil
+}
+
+func (r *DRPlacementControlReconciler) deleteManagedClusterView(clusterName, mcvName string) error {
+	r.Log.Info("Delete ManagedClusterView from", "namespace", clusterName, "name", mcvName)
+
+	mcv := &viewv1beta1.ManagedClusterView{}
+
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: mcvName, Namespace: clusterName}, mcv)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+
+		return fmt.Errorf("failed to retrieve ManagedClusterView for type: %s. Error: %w", mcvName, err)
+	}
+
+	r.Log.Info("Deleting ManagedClusterView", "name", mcv.Name, "namespace", mcv.Namespace)
+
+	return r.Client.Delete(context.TODO(), mcv)
 }
 
 func (r *DRPlacementControlReconciler) getPlacementRules(ctx context.Context,
@@ -716,6 +742,115 @@ func (r *DRPlacementControlReconciler) addClusterPeersToPlacementRule(
 	r.Log.Info(fmt.Sprintf("Added clusters %v to placementRule from DRPolicy %s", plRule.Spec.Clusters, drPolicy.Name))
 
 	return nil
+}
+
+/*
+Description: queries a managed cluster for a resource type, and populates a variable with the results.
+Requires:
+	1) meta: information of the new/existing resource; defines which cluster(s) to search
+	2) viewscope: query information for managed cluster resource. Example: resource, name.
+	3) interface: empty variable to populate results into
+Returns: error if encountered (nil if no error occurred). See results on interface object.
+*/
+func (r *DRPlacementControlReconciler) getManagedClusterResource(
+	meta metav1.ObjectMeta, viewscope viewv1beta1.ViewScope, resource interface{}) error {
+	// create MCV first
+	mcv, err := r.getOrCreateManagedClusterView(meta, viewscope)
+	if err != nil {
+		return errorswrapper.Wrap(err, "getManagedClusterResource failed")
+	}
+
+	r.Log.Info(fmt.Sprintf("MCV condtions: %v", mcv.Status.Conditions))
+
+	// want single recent Condition with correct Type; otherwise: bad path
+	switch len(mcv.Status.Conditions) {
+	case 0:
+		err = fmt.Errorf("missing ManagedClusterView conditions")
+	case 1:
+		switch {
+		case mcv.Status.Conditions[0].Type != viewv1beta1.ConditionViewProcessing:
+			err = fmt.Errorf("found invalid condition (%s) in ManagedClusterView", mcv.Status.Conditions[0].Type)
+		case mcv.Status.Conditions[0].Reason == viewv1beta1.ReasonGetResourceFailed:
+			err = errors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
+		case mcv.Status.Conditions[0].Status != metav1.ConditionTrue:
+			err = fmt.Errorf("ManagedClusterView is not ready (reason: %s)", mcv.Status.Conditions[0].Reason)
+		}
+	default:
+		err = fmt.Errorf("found multiple status conditions with ManagedClusterView")
+	}
+
+	if err != nil {
+		return errorswrapper.Wrap(err, "getManagedClusterResource results")
+	}
+
+	// good path: convert raw data to usable object
+	err = json.Unmarshal(mcv.Status.Result.Raw, resource)
+	if err != nil {
+		return errorswrapper.Wrap(err, "failed to Unmarshal data from ManagedClusterView to resource")
+	}
+
+	return nil // success
+}
+
+/*
+Description: create a new ManagedClusterView object, or update the existing one with the same name.
+Requires:
+	1) meta: specifies MangedClusterView name and managed cluster search information
+	2) viewscope: once the managed cluster is found, use this information to find the resource.
+		Optional params: Namespace, Resource, Group, Version, Kind. Resource can be used by itself, Kind requires Version
+Returns: ManagedClusterView, error
+*/
+func (r *DRPlacementControlReconciler) getOrCreateManagedClusterView(
+	meta metav1.ObjectMeta, viewscope viewv1beta1.ViewScope) (*viewv1beta1.ManagedClusterView, error) {
+	mcv := &viewv1beta1.ManagedClusterView{
+		ObjectMeta: meta,
+		Spec: viewv1beta1.ViewSpec{
+			Scope: viewscope,
+		},
+	}
+
+	err := r.Get(context.TODO(), types.NamespacedName{Name: meta.Name, Namespace: meta.Namespace}, mcv)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			r.Log.Info(fmt.Sprintf("Creating ManagedClusterView %v", mcv))
+			err = r.Create(context.TODO(), mcv)
+		}
+
+		if err != nil {
+			return nil, errorswrapper.Wrap(err, "failed to getOrCreateManagedClusterView")
+		}
+	}
+
+	if mcv.Spec.Scope != viewscope {
+		r.Log.Info("WARNING: existing ManagedClusterView has different ViewScope than desired one")
+	}
+
+	return mcv, nil
+}
+
+func (r *DRPlacementControlReconciler) getVRGFromManagedCluster(
+	resourceName string, resourceNamespace string, managedCluster string) (*rmn.VolumeReplicationGroup, error) {
+	// get VRG and verify status through ManagedClusterView
+	mcvMeta := metav1.ObjectMeta{
+		Name:      BuildManagedClusterViewName(resourceName, resourceNamespace, "vrg"),
+		Namespace: managedCluster,
+		Annotations: map[string]string{
+			rmnutil.DRPCNameAnnotation:      resourceName,
+			rmnutil.DRPCNamespaceAnnotation: resourceNamespace,
+		},
+	}
+
+	mcvViewscope := viewv1beta1.ViewScope{
+		Resource:  "VolumeReplicationGroup",
+		Name:      resourceName,
+		Namespace: resourceNamespace,
+	}
+
+	vrg := &rmn.VolumeReplicationGroup{}
+
+	err := r.getManagedClusterResource(mcvMeta, mcvViewscope, vrg)
+
+	return vrg, err
 }
 
 type DRPCInstance struct {
@@ -1245,31 +1380,6 @@ func BuildManagedClusterViewName(resourceName, resourceNamespace, resource strin
 	return fmt.Sprintf("%s-%s-%s-mcv", resourceName, resourceNamespace, resource)
 }
 
-func (r *DRPlacementControlReconciler) getVRGFromManagedCluster(
-	resourceName string, resourceNamespace string, managedCluster string) (*rmn.VolumeReplicationGroup, error) {
-	// get VRG and verify status through ManagedClusterView
-	mcvMeta := metav1.ObjectMeta{
-		Name:      BuildManagedClusterViewName(resourceName, resourceNamespace, "vrg"),
-		Namespace: managedCluster,
-		Annotations: map[string]string{
-			rmnutil.DRPCNameAnnotation:      resourceName,
-			rmnutil.DRPCNamespaceAnnotation: resourceNamespace,
-		},
-	}
-
-	mcvViewscope := viewv1beta1.ViewScope{
-		Resource:  "VolumeReplicationGroup",
-		Name:      resourceName,
-		Namespace: resourceNamespace,
-	}
-
-	vrg := &rmn.VolumeReplicationGroup{}
-
-	err := r.getManagedClusterResource(mcvMeta, mcvViewscope, vrg)
-
-	return vrg, err
-}
-
 func (d *DRPCInstance) cleanup(skipCluster string) (bool, error) {
 	for _, drCluster := range d.drPolicy.Spec.DRClusterSet {
 		clusterName := drCluster.Name
@@ -1303,8 +1413,9 @@ func (d *DRPCInstance) cleanup(skipCluster string) (bool, error) {
 			return false, nil
 		}
 
+		mcvName := BuildManagedClusterViewName(d.instance.Name, d.instance.Namespace, "vrg")
 		// MW is deleted, VRG is deleted, so we no longer need MCV for the VRG
-		err = d.deleteManagedClusterView(clusterName)
+		err = d.reconciler.deleteManagedClusterView(clusterName, mcvName)
 		if err != nil {
 			return false, err
 		}
@@ -1609,27 +1720,6 @@ func (d *DRPCInstance) ensureVRGDeleted(clusterName string) bool {
 	return false
 }
 
-func (d *DRPCInstance) deleteManagedClusterView(clusterName string) error {
-	mcvName := BuildManagedClusterViewName(d.instance.Name, d.instance.Namespace, "vrg")
-
-	d.log.Info("Delete ManagedClusterView from", "namespace", clusterName, "name", mcvName)
-
-	mcv := &viewv1beta1.ManagedClusterView{}
-
-	err := d.reconciler.Client.Get(d.ctx, types.NamespacedName{Name: mcvName, Namespace: clusterName}, mcv)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil
-		}
-
-		return fmt.Errorf("failed to retrieve ManagedClusterView for type: %s. Error: %w", mcvName, err)
-	}
-
-	d.log.Info("Deleting ManagedClusterView", "name", mcv.Name, "namespace", mcv.Namespace)
-
-	return d.reconciler.Client.Delete(d.ctx, mcv)
-}
-
 func (d *DRPCInstance) hasVRGStateBeenUpdatedToSecondary(clusterName string) (bool, error) {
 	vrgMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
 	d.log.Info("Check if VRG has been updated to secondary", "name", vrgMWName, "cluster", clusterName)
@@ -1766,90 +1856,6 @@ func (d *DRPCInstance) updateDRPCStatus() error {
 	d.log.Info(fmt.Sprintf("Updated DRPC Status %+v", drpc.Status))
 
 	return nil
-}
-
-/*
-Description: queries a managed cluster for a resource type, and populates a variable with the results.
-Requires:
-	1) meta: information of the new/existing resource; defines which cluster(s) to search
-	2) viewscope: query information for managed cluster resource. Example: resource, name.
-	3) interface: empty variable to populate results into
-Returns: error if encountered (nil if no error occurred). See results on interface object.
-*/
-func (r *DRPlacementControlReconciler) getManagedClusterResource(
-	meta metav1.ObjectMeta, viewscope viewv1beta1.ViewScope, resource interface{}) error {
-	// create MCV first
-	mcv, err := r.getOrCreateManagedClusterView(meta, viewscope)
-	if err != nil {
-		return errorswrapper.Wrap(err, "getManagedClusterResource failed")
-	}
-
-	r.Log.Info(fmt.Sprintf("MCV condtions: %v", mcv.Status.Conditions))
-
-	// want single recent Condition with correct Type; otherwise: bad path
-	switch len(mcv.Status.Conditions) {
-	case 0:
-		err = fmt.Errorf("missing ManagedClusterView conditions")
-	case 1:
-		switch {
-		case mcv.Status.Conditions[0].Type != viewv1beta1.ConditionViewProcessing:
-			err = fmt.Errorf("found invalid condition (%s) in ManagedClusterView", mcv.Status.Conditions[0].Type)
-		case mcv.Status.Conditions[0].Reason == viewv1beta1.ReasonGetResourceFailed:
-			err = errors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
-		case mcv.Status.Conditions[0].Status != metav1.ConditionTrue:
-			err = fmt.Errorf("ManagedClusterView is not ready (reason: %s)", mcv.Status.Conditions[0].Reason)
-		}
-	default:
-		err = fmt.Errorf("found multiple status conditions with ManagedClusterView")
-	}
-
-	if err != nil {
-		return errorswrapper.Wrap(err, "getManagedClusterResource results")
-	}
-
-	// good path: convert raw data to usable object
-	err = json.Unmarshal(mcv.Status.Result.Raw, resource)
-	if err != nil {
-		return errorswrapper.Wrap(err, "failed to Unmarshal data from ManagedClusterView to resource")
-	}
-
-	return nil // success
-}
-
-/*
-Description: create a new ManagedClusterView object, or update the existing one with the same name.
-Requires:
-	1) meta: specifies MangedClusterView name and managed cluster search information
-	2) viewscope: once the managed cluster is found, use this information to find the resource.
-		Optional params: Namespace, Resource, Group, Version, Kind. Resource can be used by itself, Kind requires Version
-Returns: ManagedClusterView, error
-*/
-func (r *DRPlacementControlReconciler) getOrCreateManagedClusterView(
-	meta metav1.ObjectMeta, viewscope viewv1beta1.ViewScope) (*viewv1beta1.ManagedClusterView, error) {
-	mcv := &viewv1beta1.ManagedClusterView{
-		ObjectMeta: meta,
-		Spec: viewv1beta1.ViewSpec{
-			Scope: viewscope,
-		},
-	}
-
-	err := r.Get(context.TODO(), types.NamespacedName{Name: meta.Name, Namespace: meta.Namespace}, mcv)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			r.Log.Info(fmt.Sprintf("Creating ManagedClusterView %v", mcv))
-			err = r.Create(context.TODO(), mcv)
-		}
-
-		if err != nil {
-			return nil, errorswrapper.Wrap(err, "failed to getOrCreateManagedClusterView")
-		}
-	}
-
-	if mcv.Spec.Scope != viewscope {
-		r.Log.Info("WARNING: existing ManagedClusterView has different ViewScope than desired one")
-	}
-
-	return mcv, nil
 }
 
 func (d *DRPCInstance) advanceToNextDRState() {
