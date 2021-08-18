@@ -57,7 +57,11 @@ type PVDownloader interface {
 }
 
 type PVUploader interface {
-	UploadPV(v interface{}, s3ProfileName string, pvc corev1.PersistentVolumeClaim) error
+	UploadPV(v interface{}, s3ProfileName string, pvc *corev1.PersistentVolumeClaim) error
+}
+
+type PVDeleter interface {
+	DeletePV(v interface{}, s3ProfileName string, pvc *corev1.PersistentVolumeClaim) error
 }
 
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
@@ -66,6 +70,7 @@ type VolumeReplicationGroupReconciler struct {
 	Log            logr.Logger
 	PVDownloader   PVDownloader
 	PVUploader     PVUploader
+	PVDeleter      PVDeleter
 	ObjStoreGetter ObjectStoreGetter
 	Scheme         *runtime.Scheme
 	eventRecorder  *rmnutil.EventReporter
@@ -741,6 +746,15 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 		return requeue
 	}
 
+	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
+		if err := v.deletePVFromS3Stores(pvc, log); err != nil {
+			log.Info("Requeuing due to failure in deleting PV metadata from S3 stores",
+				"errorValue", err)
+
+			return requeue
+		}
+	}
+
 	return !requeue
 }
 
@@ -1046,7 +1060,7 @@ func (v *VRGInstance) protectPVC(pvc *corev1.PersistentVolumeClaim,
 
 	// If faulted post backing up PV but prior to VR creation, PVC on a failover will fail to attach,
 	// and it is better to not have silent data loss, but be explicit on the failure.
-	if err := v.uploadPVToS3Stores(*pvc); err != nil {
+	if err := v.uploadPVToS3Stores(pvc); err != nil {
 		log.Info("Requeuing, as uploading PersistentVolume failed", "errorValue", err)
 		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
 			rmnutil.EventReasonPVUploadFailed, err.Error())
@@ -1204,7 +1218,7 @@ func (v *VRGInstance) undoPVRetentionForPVC(pvc corev1.PersistentVolumeClaim, lo
 }
 
 // Upload PV to the list of S3 stores in the VRG spec
-func (v *VRGInstance) uploadPVToS3Stores(pvc corev1.PersistentVolumeClaim) (err error) {
+func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim) (err error) {
 	for _, s3ProfileName := range v.instance.Spec.S3ProfileList {
 		if err := v.reconciler.PVUploader.UploadPV(v, s3ProfileName, pvc); err != nil {
 			return fmt.Errorf("error uploading PV %s using profile %s, err %w", pvc.Name, s3ProfileName, err)
@@ -1224,7 +1238,7 @@ type ObjectStorePVUploader struct{}
 // protect PV related cluster state and hence, does not return an error, but
 // logs a one-time message.
 func (ObjectStorePVUploader) UploadPV(v interface{}, s3ProfileName string,
-	pvc corev1.PersistentVolumeClaim) (err error) {
+	pvc *corev1.PersistentVolumeClaim) (err error) {
 	vrgName := v.(*VRGInstance).instance.Name
 	s3Bucket := constructBucketName(v.(*VRGInstance).instance.Namespace, vrgName)
 
@@ -1272,6 +1286,42 @@ func (ObjectStorePVUploader) UploadPV(v interface{}, s3ProfileName string,
 	// Verify upload of PV to object store
 	if err := objectStore.verifyPVUpload(s3Bucket, pv.Name, pv); err != nil {
 		return fmt.Errorf("error verifying PV %s, err %w", pv.Name, err)
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) deletePVFromS3Stores(pvc *corev1.PersistentVolumeClaim, log logr.Logger) error {
+	log.Info("Delete PV from s3 stores", "PV", pvc.Spec.VolumeName, "s3Profiles", v.instance.Spec.S3ProfileList)
+
+	for _, s3ProfileName := range v.instance.Spec.S3ProfileList {
+		if err := v.reconciler.PVDeleter.DeletePV(v, s3ProfileName, pvc); err != nil {
+			return fmt.Errorf("error deleting PV %s using profile %s, err %w", pvc.Name, s3ProfileName, err)
+		}
+	}
+
+	return nil
+}
+
+type ObjectStorePVDeleter struct{}
+
+func (ObjectStorePVDeleter) DeletePV(v interface{}, s3ProfileName string,
+	pvc *corev1.PersistentVolumeClaim) (err error) {
+	vrgName := v.(*VRGInstance).instance.Name
+	s3Bucket := constructBucketName(v.(*VRGInstance).instance.Namespace, vrgName)
+
+	v.(*VRGInstance).log.Info("Deleting PersistentVolume metadata from object store", "Profile Name", s3ProfileName)
+
+	objectStore, err := v.(*VRGInstance).reconciler.ObjStoreGetter.objectStore(
+		v.(*VRGInstance).ctx, v.(*VRGInstance).reconciler, s3ProfileName, vrgName)
+	if err != nil {
+		return fmt.Errorf("failed to get client for s3Profile %s, err %w",
+			s3ProfileName, err)
+	}
+
+	// Delete PV to object store
+	if err := objectStore.deleteObject(s3Bucket, pvc.Spec.VolumeName); err != nil {
+		return fmt.Errorf("error deleting PV %s, err %w", pvc.Spec.VolumeName, err)
 	}
 
 	return nil

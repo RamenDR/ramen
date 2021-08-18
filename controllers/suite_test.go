@@ -115,6 +115,7 @@ var _ = BeforeSuite(func() {
 		ObjStoreGetter: ramencontrollers.S3ObjectStoreGetter(),
 		PVDownloader:   FakePVDownloader{},
 		PVUploader:     FakePVUploader{},
+		PVDeleter:      FakePVDeleter{},
 		Scheme:         k8sManager.GetScheme(),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
