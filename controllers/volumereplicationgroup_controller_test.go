@@ -26,6 +26,10 @@ const (
 	vrginterval = time.Millisecond * 1315
 )
 
+type Empty struct{}
+
+var UploadedPVs = map[string]Empty{}
+
 var _ = Describe("Test VolumeReplicationGroup", func() {
 	// Test first restore
 	Context("restore test case", func() {
@@ -945,8 +949,6 @@ var PVsToRestore = []string{"pv0001", "pv0002", "pv0002", "pv0004"}
 
 //nolint:scopelint
 func waitForPVRestore() {
-	type Empty struct{}
-
 	pvSet := map[string]Empty{}
 
 	for _, pvName := range PVsToRestore {
@@ -1033,7 +1035,21 @@ func (s FakePVDownloader) DownloadPVs(ctx context.Context, r client.Reader,
 
 type FakePVUploader struct{}
 
-func (s FakePVUploader) UploadPV(v interface{}, s3ProfileName string, pvc corev1.PersistentVolumeClaim) error {
-	// TODO: upload fake PV
+func (s FakePVUploader) UploadPV(v interface{}, s3ProfileName string, pvc *corev1.PersistentVolumeClaim) error {
+	UploadedPVs[pvc.Spec.VolumeName] = Empty{}
+
+	return nil
+}
+
+type FakePVDeleter struct{}
+
+func (s FakePVDeleter) DeletePV(v interface{}, s3ProfileName string, pvc *corev1.PersistentVolumeClaim) error {
+	_, ok := UploadedPVs[pvc.Spec.VolumeName]
+	if ok {
+		delete(UploadedPVs, pvc.Spec.VolumeName)
+	} else {
+		Fail(fmt.Sprintf("PV %s not found", pvc.Spec.VolumeName))
+	}
+
 	return nil
 }
