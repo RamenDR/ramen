@@ -29,6 +29,7 @@ import (
 	viewv1beta1 "github.com/open-cluster-management/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	errorswrapper "github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -141,9 +142,10 @@ type ProgressCallback func(string, string)
 // DRPlacementControlReconciler reconciles a DRPlacementControl object
 type DRPlacementControlReconciler struct {
 	client.Client
-	Log      logr.Logger
-	Scheme   *runtime.Scheme
-	Callback ProgressCallback
+	Log           logr.Logger
+	Scheme        *runtime.Scheme
+	Callback      ProgressCallback
+	eventRecorder *rmnutil.EventReporter
 }
 
 func ManifestWorkPredicateFunc() predicate.Funcs {
@@ -272,6 +274,8 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		return filterMCV(mcv)
 	}))
 
+	r.eventRecorder = rmnutil.NewEventReporter(mgr.GetEventRecorderFor("controller_DRPlacementControl"))
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&rmn.DRPlacementControl{}).
 		Watches(&source.Kind{Type: &ocmworkv1.ManifestWork{}}, mwMapFun, builder.WithPredicates(mwPred)).
@@ -290,6 +294,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 // +kubebuilder:rbac:groups=view.open-cluster-management.io,resources=managedclusterviews,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drpolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=events,verbs=get;create;patch;update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -781,8 +786,13 @@ func (d *DRPCInstance) runInitialDeployment() (bool, error) {
 	}
 
 	if homeCluster == "" {
-		return !done, fmt.Errorf("PreferredCluster not set and unable to find home cluster in DRPCPlacementRule (%v)",
+		err := fmt.Errorf("PreferredCluster not set and unable to find home cluster in DRPCPlacementRule (%v)",
 			d.drpcPlacementRule)
+		// needStatusUpdate is not set. Still better to capture the event to report later
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonDeployFail, err.Error())
+
+		return !done, err
 	}
 
 	// We are done if the initial deployment is already complete
@@ -792,6 +802,12 @@ func (d *DRPCInstance) runInitialDeployment() (bool, error) {
 
 		return done, nil
 	}
+
+	return d.startDeploying(homeCluster, homeClusterNamespace)
+}
+
+func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) (bool, error) {
+	const done = true
 
 	// Make sure we record the state that we are deploying
 	d.setDRState(rmn.Deploying)
@@ -805,6 +821,9 @@ func (d *DRPCInstance) runInitialDeployment() (bool, error) {
 	// We have a home cluster
 	err = d.updateUserPlacementRule(homeCluster, homeClusterNamespace)
 	if err != nil {
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonDeployFail, err.Error())
+
 		return !done, err
 	}
 
@@ -913,14 +932,19 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 
 	if curHomeCluster == "" {
 		d.log.Info("Invalid Failover request. Current home cluster does not exists")
+		err := fmt.Errorf("failover requested on invalid state %v", d.instance.Status)
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonSwitchFailed, err.Error())
 
-		return done, fmt.Errorf("failover requested on invalid state %v", d.instance.Status)
+		return done, err
 	}
 
 	// Set VRG in the failed cluster (preferred cluster) to secondary
 	err := d.updateVRGStateToSecondary(curHomeCluster)
 	if err != nil {
 		d.log.Error(err, "Failed to update existing VRG manifestwork to secondary")
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonSwitchFailed, err.Error())
 
 		return !done, err
 	}
@@ -931,6 +955,9 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 
 	result, err := d.runPlacementTask(newHomeCluster, "", restorePVs)
 	if err != nil {
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonSwitchFailed, err.Error())
+
 		return !done, err
 	}
 
@@ -1875,8 +1902,55 @@ func (d *DRPCInstance) setDRState(nextState rmn.DRState) {
 
 		d.instance.Status.Phase = nextState
 		d.updateConditions()
+
+		d.reportEvent(nextState)
+
 		d.needStatusUpdate = true
 	}
+}
+
+func (d *DRPCInstance) reportEvent(nextState rmn.DRState) {
+	eventReason := "unknown state"
+	eventType := corev1.EventTypeWarning
+	msg := "next state not known"
+
+	switch nextState {
+	case rmn.Deploying:
+		eventReason = rmnutil.EventReasonDeploying
+		eventType = corev1.EventTypeNormal
+		msg = "Deploying the application and VRG"
+	case rmn.Deployed:
+		eventReason = rmnutil.EventReasonDeploySuccess
+		eventType = corev1.EventTypeNormal
+		msg = "Successfully deployed the application and VRG"
+	case rmn.FailingOver:
+		eventReason = rmnutil.EventReasonFailingOver
+		eventType = corev1.EventTypeWarning
+		msg = "Failing over the application and VRG"
+	case rmn.FailedOver:
+		eventReason = rmnutil.EventReasonFailoverSuccess
+		eventType = corev1.EventTypeNormal
+		msg = "Successfully failedover the application and VRG"
+	case rmn.FailingBack:
+		eventReason = rmnutil.EventReasonFailingBack
+		eventType = corev1.EventTypeNormal
+		msg = "Failing back the application and VRG"
+	case rmn.FailedBack:
+		eventReason = rmnutil.EventReasonFailbackSuccess
+		eventType = corev1.EventTypeNormal
+		msg = "Successfully failedback the application and VRG"
+	case rmn.Relocating:
+		eventReason = rmnutil.EventReasonRelocating
+		eventType = corev1.EventTypeNormal
+		msg = "Relocating the application and VRG"
+	case rmn.Relocated:
+		eventReason = rmnutil.EventReasonRelocationSuccess
+		eventType = corev1.EventTypeNormal
+		msg = "Successfully relocated the application and VRG"
+	}
+
+	rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, eventType,
+		eventReason, msg)
 }
 
 func (d *DRPCInstance) updateConditions() {
