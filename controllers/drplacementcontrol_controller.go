@@ -60,6 +60,10 @@ const (
 	RamenScheduler string = "ramen"
 
 	ClonedPlacementRuleNameFormat string = "clonedprule-%s-%s"
+
+	// SanityCheckDelay is used to frequencly update the DRPC status when the reconciler is idle.
+	// This is needed in order to sync up the DRPC status and the VRG status.
+	SanityCheckDelay = time.Minute * 10
 )
 
 // prometheus metrics
@@ -393,6 +397,9 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(ctx context.Context
 }
 
 func (r *DRPlacementControlReconciler) processAndHandleResponse(d *DRPCInstance) (ctrl.Result, error) {
+	// Last status update time BEFORE we start processing
+	beforeProcessing := d.instance.Status.LastUpdateTime
+
 	requeue := d.startProcessing()
 	r.Log.Info("Finished processing", "Requeue?", requeue)
 
@@ -414,9 +421,12 @@ func (r *DRPlacementControlReconciler) processAndHandleResponse(d *DRPCInstance)
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	const sanityCheckDelay = 10 // for 10 mins
+	// Last status update time AFTER processing
+	afterProcessing := d.instance.Status.LastUpdateTime
+	requeueTimeDuration := r.getSanityCheckDelay(beforeProcessing, afterProcessing)
+	r.Log.Info("Requeue time", "duration", requeueTimeDuration)
 
-	return ctrl.Result{RequeueAfter: time.Minute * sanityCheckDelay}, nil
+	return ctrl.Result{RequeueAfter: requeueTimeDuration}, nil
 }
 
 func (r *DRPlacementControlReconciler) getDRPolicy(ctx context.Context,
@@ -749,6 +759,38 @@ func (r *DRPlacementControlReconciler) addClusterPeersToPlacementRule(
 	return nil
 }
 
+// statusUpdateTimeElapsed returns whether it is time to update DRPC status or not
+// DRPC status is updated at least once every SanityCheckDelay in order to refresh
+// the VRG status.
+func (d *DRPCInstance) statusUpdateTimeElapsed() bool {
+	return d.instance.Status.LastUpdateTime.Add(SanityCheckDelay).Before(time.Now())
+}
+
+// getSanityCheckDelay returns the reconciliation requeue time duration when no requeue
+// has been requested. We want the reconciliation to run at least once every SanityCheckDelay
+// in order to refresh DRPC status with VRG status. The reconciliation will be called at any time.
+// If it is called before the SanityCheckDelay has elapsed, and the DRPC status was not updated,
+// then we must return the remaining time rather than the full SanityCheckDelay to prevent
+// starving the status update, which is scheduled for at least once every SanityCheckDelay.
+//
+// Example: Assume at 10:00am was the last time when the reconciler ran and updated the status.
+// The SanityCheckDelay is hard coded to 10 minutes.  If nothing is happening in the system that
+// requires the reconciler to run, then the next run would be at 10:10am. If however, for any reason
+// the reconciler is called, let's say, at 10:08am, and no update to the DRPC status was needed,
+// then the requeue time duration should be 2 minutes and NOT the full SanityCheckDelay. That is:
+// 10:00am + SanityCheckDelay - 10:08am = 2mins
+//nolint:gosimple
+func (r *DRPlacementControlReconciler) getSanityCheckDelay(
+	beforeProcessing metav1.Time, afterProcessing metav1.Time) time.Duration {
+	if beforeProcessing != afterProcessing {
+		return SanityCheckDelay
+	}
+
+	// No change to the update time
+	// The linter mistakenly is asking to use time.Until instead of time.Sub... Disabling
+	return beforeProcessing.Add(SanityCheckDelay).Sub(time.Now())
+}
+
 /*
 Description: queries a managed cluster for a resource type, and populates a variable with the results.
 Requires:
@@ -883,7 +925,7 @@ func (d *DRPCInstance) startProcessing() bool {
 		return requeue
 	}
 
-	if d.needStatusUpdate {
+	if d.needStatusUpdate || d.statusUpdateTimeElapsed() {
 		if err := d.updateDRPCStatus(); err != nil {
 			d.log.Error(err, "failed to update status")
 
@@ -1875,6 +1917,8 @@ func (d *DRPCInstance) updateDRPCStatus() error {
 			drpc.Status.ResourceConditions.Conditions = vrg.Status.Conditions
 		}
 	}
+
+	drpc.Status.LastUpdateTime = metav1.Now()
 
 	if err := d.reconciler.Status().Update(d.ctx, drpc); err != nil {
 		return errorswrapper.Wrap(err, "failed to update DRPC status")

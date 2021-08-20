@@ -253,6 +253,9 @@ spec:
                   - type
                   type: object
                 type: array
+              lastUpdateTime:
+                format: date-time
+                type: string
               phase:
                 description: DRState for keeping track of the DR placement
                 type: string
@@ -359,6 +362,8 @@ spec:
                     - namespace
                     type: object
                 type: object
+            required:
+            - lastUpdateTime
             type: object
         type: object
     served: true
