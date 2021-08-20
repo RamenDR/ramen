@@ -46,9 +46,6 @@ import (
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
 const (
@@ -64,111 +61,6 @@ const (
 	// This is needed in order to sync up the DRPC status and the VRG status.
 	SanityCheckDelay = time.Minute * 10
 )
-
-// prometheus metrics
-type timerState string
-
-const (
-	timerStart timerState = "start"
-	timerStop  timerState = "stop"
-)
-
-type timerWrapper struct {
-	gauge          prometheus.Gauge     // used for "last only" fine-grained timer
-	histogram      prometheus.Histogram // used for cumulative data
-	timer          prometheus.Timer     // use prometheus.NewTimer to use/reuse this timer across reconciles
-	reconcileState rmn.DRState          // used to track for spurious reconcile avoidance
-}
-
-// set default values for guageWrapper
-func newTimerWrapper(gauge prometheus.Gauge, histogram prometheus.Histogram) timerWrapper {
-	wrapper := timerWrapper{}
-
-	wrapper.gauge = gauge
-	wrapper.timer = prometheus.Timer{}
-
-	wrapper.histogram = histogram
-
-	wrapper.reconcileState = rmn.Deployed // should never use a timer from Initial state; "reserved"
-
-	return wrapper
-}
-
-var (
-	failoverTime = newTimerWrapper(
-		prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "ramen_failover_time",
-			Help: "Duration of the last failover event",
-		}),
-		prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name:    "ramen_failover_histogram",
-			Help:    "Histogram of all failover timers (seconds)",
-			Buckets: prometheus.ExponentialBuckets(1.0, 2.0, 12), // start=1.0, factor=2.0, buckets=12
-		}),
-	)
-
-	relocateTime = newTimerWrapper(
-		prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "ramen_relocate_time",
-			Help: "Duration of the last relocate time",
-		}),
-		prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name:    "ramen_relocate_histogram",
-			Help:    "Histogram of all relocate timers (seconds)",
-			Buckets: prometheus.ExponentialBuckets(1.0, 2.0, 12), // start=1.0, factor=2.0, buckets=12
-		}),
-	)
-
-	deployTime = newTimerWrapper(
-		prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "ramen_initial_deploy_time",
-			Help: "Duration of the last initial deploy time",
-		}),
-		prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name:    "ramen_initial_deploy_histogram",
-			Help:    "Histogram of all initial deploymet timers (seconds)",
-			Buckets: prometheus.ExponentialBuckets(1.0, 2.0, 12), // start=1.0, factor=2.0, buckets=12
-		}),
-	)
-)
-
-func setMetricsTimerFromDRState(stateDR rmn.DRState, stateTimer timerState) {
-	switch stateDR {
-	case rmn.FailingOver:
-		setMetricsTimer(&failoverTime, stateTimer, stateDR)
-	case rmn.Relocating:
-		setMetricsTimer(&relocateTime, stateTimer, stateDR)
-	case rmn.Deploying:
-		setMetricsTimer(&deployTime, stateTimer, stateDR)
-	case rmn.FailedOver:
-		fallthrough
-	case rmn.Deployed:
-		fallthrough
-	case rmn.Relocated:
-		fallthrough
-	default:
-		// not supported
-	}
-}
-
-func setMetricsTimer(wrapper *timerWrapper, desiredTimerState timerState, reconcileState rmn.DRState) {
-	switch desiredTimerState {
-	case timerStart:
-		if reconcileState != wrapper.reconcileState {
-			wrapper.reconcileState = reconcileState
-			wrapper.timer = *prometheus.NewTimer(prometheus.ObserverFunc(wrapper.gauge.Set))
-		}
-	case timerStop:
-		wrapper.timer.ObserveDuration()
-		wrapper.histogram.Observe(wrapper.timer.ObserveDuration().Seconds()) // add timer to histogram
-		wrapper.reconcileState = rmn.Deployed                                // "reserved" value
-	}
-}
-
-func init() {
-	// register custom metrics with the global Prometheus registry
-	metrics.Registry.MustRegister(failoverTime.gauge, relocateTime.gauge, deployTime.gauge)
-}
 
 var WaitForPVRestoreToComplete = errorswrapper.New("Waiting for PV restore to complete")
 
