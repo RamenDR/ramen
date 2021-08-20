@@ -737,6 +737,10 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				Expect(len(drpc.Status.Conditions)).To(Equal(2))
 				_, condition := controllers.GetDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
 				Expect(condition.Reason).To(Equal(string(rmn.Deployed)))
+
+				val, err := rmnutil.GetMetricValueSingle("ramen_initial_deploy_time", dto.MetricType_GAUGE)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(val).NotTo(Equal(0.0)) // failover time should be non-zero
 			})
 		})
 		When("DRAction changes to Failover", func() {
@@ -789,6 +793,11 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
 				userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
 				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(EastManagedCluster))
+				Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
+
+				val, err := rmnutil.GetMetricValueSingle("ramen_relocate_time", dto.MetricType_GAUGE)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(val).NotTo(Equal(0.0)) // failover time should be non-zero
 			})
 		})
 		When("DRAction is cleared after relocation", func() {
