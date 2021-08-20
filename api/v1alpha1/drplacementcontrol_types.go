@@ -125,8 +125,6 @@ type VRGResourceMeta struct {
 
 	// Name is the namespace of the Kubernetes resource.
 	Namespace string `json:"namespace"`
-
-	// LastUpdateTime metav1.Time `json:"lastUpdateTime"`
 }
 
 // VRGConditions represents the conditions of the resources deployed on a
@@ -147,6 +145,7 @@ type DRPlacementControlStatus struct {
 	PreferredDecision  plrv1.PlacementDecision `json:"preferredDecision,omitempty"`
 	Conditions         []metav1.Condition      `json:"conditions,omitempty"`
 	ResourceConditions VRGConditions           `json:"resourceConditions,omitempty"`
+	LastUpdateTime     metav1.Time             `json:"lastUpdateTime"`
 }
 
 // +kubebuilder:object:root=true
