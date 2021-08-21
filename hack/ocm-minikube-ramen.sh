@@ -35,9 +35,9 @@ minio_undeploy()
 	kubectl --context $1 delete -f $ramen_hack_directory_path_name/minio-deployment.yaml
 }
 exit_stack_push unset -f minio_undeploy
-ramen_image_directory_name=localhost
-ramen_image_name=ramen-operator
-ramen_image_tag=v0.N
+ramen_image_directory_name=${ramen_image_directory_name-localhost}
+ramen_image_name=${ramen_image_name-ramen-operator}
+ramen_image_tag=${ramen_image_tag-v0.N}
 ramen_image_name_colon_tag=${ramen_image_directory_name}/${ramen_image_name}:${ramen_image_tag}
 exit_stack_push unset -v ramen_image_name_colon_tag ramen_image_tag ramen_image_name ramen_image_directory_name
 ramen_build()
@@ -78,6 +78,16 @@ ramen_deploy()
 	kube_context_set_undo
 	kubectl --context ${2} -n ramen-system wait deployments --all --for condition=available --timeout 60s
 	# Add s3 profile to ramen config
+	cat <<EOF | kubectl --context ${2} apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: s3secret
+  namespace: ramen-system
+stringData:
+  AWS_ACCESS_KEY_ID: "minio"
+  AWS_SECRET_ACCESS_KEY: "minio123"
+EOF
 	ramen_config_map_name=ramen-${3}-operator-config
 	until_true_or_n 90 kubectl --context ${2} -n ramen-system get configmap ${ramen_config_map_name}
 	cp ${1}/config/${3}/manager/ramen_manager_config.yaml /tmp/ramen_manager_config.yaml
@@ -88,8 +98,8 @@ ramen_deploy()
 	  s3CompatibleEndpoint: $(minikube --profile=$s3_store_cluster_name -n minio service --url minio)
 	  s3Region: us-east-1
 	  s3SecretRef:
-	    name: busybox-s3secret
-	    namespace: busybox-sample
+	    name: s3secret
+	    namespace: ramen-system
 	EOF
 
 	kubectl --context ${2} -n ramen-system\
@@ -141,20 +151,6 @@ exit_stack_push unset -f ramen_undeploy_spoke
 ocm_ramen_samples_git_ref=${ocm_ramen_samples_git_ref-main}
 ocm_ramen_samples_git_path=${ocm_ramen_samples_git_path-ramendr}
 exit_stack_push unset -v ocm_ramen_samples_git_ref
-application_sample_namespace_and_s3_deploy()
-{
-	kubectl create namespace busybox-sample --dry-run=client -o yaml | kubectl --context ${1} apply -f -
-	kubectl --context $1 -n busybox-sample apply -f https://raw.githubusercontent.com/$ocm_ramen_samples_git_path/ocm-ramen-samples/$ocm_ramen_samples_git_ref/subscriptions/busybox/s3secret.yaml
-}
-exit_stack_push unset -f application_sample_namespace_and_s3_deploy
-application_sample_namespace_and_s3_undeploy()
-{
-	kubectl --context $1 -n busybox-sample delete -f https://raw.githubusercontent.com/$ocm_ramen_samples_git_path/ocm-ramen-samples/$ocm_ramen_samples_git_ref/subscriptions/busybox/s3secret.yaml
-	date
-	kubectl --context ${1} delete namespace busybox-sample
-	date
-}
-exit_stack_push unset -f application_sample_namespace_and_s3_undeploy
 application_sample_deploy()
 {
 	set -- /tmp/$USER/ocm-ramen-samples/subscriptions $spoke_cluster_names
@@ -272,6 +268,10 @@ s3_store_cluster_name=$hub_cluster_name
 s3_store_profile_name=minio-on-$s3_store_cluster_name
 exit_stack_push unset -v s3_store_profile_name s3_store_cluster_name
 exit_stack_push unset -v command
+# ENV variable to skip building ramen
+#   - deploy will expect pre-loaded local docker image named
+#     ${ramen_image_directory_name}/${ramen_image_name}:${ramen_image_tag}
+skip_ramen_build=${skip_ramen_build:-false}
 for command in "${@:-deploy}"; do
 	case ${command} in
 	deploy)
@@ -279,7 +279,9 @@ for command in "${@:-deploy}"; do
 		${ramen_hack_directory_path_name}/ocm-minikube.sh
 		rook_ceph_deploy_all
 		minio_deploy $s3_store_cluster_name
-		ramen_build ${ramen_directory_path_name}
+		if [ "$skip_ramen_build" = false ] ; then
+		    ramen_build ${ramen_directory_path_name}
+		fi
 		ramen_deploy_all
 		;;
 	undeploy)
@@ -288,16 +290,10 @@ for command in "${@:-deploy}"; do
 		rook_ceph_undeploy_all
 		;;
 	application_sample_deploy)
-		for cluster_name in $spoke_cluster_names; do
-			application_sample_namespace_and_s3_deploy ${cluster_name}
-		done; unset -v cluster_name
 		application_sample_deploy
 		;;
 	application_sample_undeploy)
 		application_sample_undeploy
-		for cluster_name in $spoke_cluster_names; do
-			application_sample_namespace_and_s3_undeploy ${cluster_name}
-		done; unset -v cluster_name
 		;;
 	ramen_build)
 		ramen_build ${ramen_directory_path_name}
