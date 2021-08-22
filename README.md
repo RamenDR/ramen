@@ -1,27 +1,30 @@
 # Ramen
 
-Ramen is a **disaster-recovery orchestrator** for stateful applications across
-a set of peer kubernetes clusters which are deployed and managed using
-[open-cluster-management](https://open-cluster-management.io/concepts/architecture/)
-(**OCM**) and provides **cloud-native interfaces** to orchestrate the
-life-cycle of an application's state on PersistentVolumes. These include:
+Ramen is an [open-cluster-management (OCM)](https://open-cluster-management.io/concepts/architecture/)
+[placement](https://open-cluster-management.io/concepts/placement/) extension
+that provides recovery and relocation services for
+[workloads](https://kubernetes.io/docs/concepts/workloads/), and their
+persistent data, across a set of OCM managed clusters. Ramen provides
+cloud-native interfaces to orchestrate the placement of workloads and their
+data on PersistentVolumes, which include:
 
-- Failing over an application's state to a peer cluster on unavailability of
-  the currently deployed cluster
-- Failing back an application's state to the previously deployed cluster
-- Migration of an application's state to a peer cluster
+- Relocating workloads to a peer cluster, for planned migrations across clusters
+- Recovering workloads to a peer cluster, due to unplanned loss of a cluster
 
-Ramen relies on storage plugins providing support for the CSI addon
-[storage replication extensions](https://github.com/csi-addons/volume-replication-operator)
-, of which [ceph-csi](https://github.com/ceph/ceph-csi/) is a sample
-implementation.
+Ramen relies on storage plugins providing support for the CSI
+[storage replication addon](https://github.com/csi-addons/volume-replication-operator),
+of which [ceph-csi](https://github.com/ceph/ceph-csi/) is a sample implementation.
 
 For details regarding use-cases for Ramen see the [motivation](docs/motivation.md)
 guide.
 
 ## Getting Started and Documentation
 
-For installation, deployment, and administration, see the [install](docs/install.md)
+For installation, see the [install](docs/install.md) guide.
+
+For configuration, see the [configure](docs/configure.md) guide.
+
+For usage of Ramen to orchestrate placement of workloads, see the [usage](docs/usage.md)
 guide.
 
 ## Contributing
@@ -45,4 +48,4 @@ are currently **alpha**. There are no releases as yet.
 
 ## Licensing
 
-Ramen is under the Apache 2.0 license.
+Ramen is under the [Apache 2.0 license.](LICENSE)
