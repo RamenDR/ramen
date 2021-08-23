@@ -342,6 +342,14 @@ func (s *s3ObjectStore) downloadPVs(bucket string) (
 	result, err := s.downloadTypedObjects(bucket,
 		reflect.TypeOf(corev1.PersistentVolume{}))
 	if err != nil {
+		// TODO: Fix this in higher layers once we have related S3 fixes
+		var aerr awserr.Error
+		if errorswrapper.As(err, &aerr) {
+			if aerr.Code() == s3.ErrCodeNoSuchBucket {
+				return pvList, nil
+			}
+		}
+
 		return nil, fmt.Errorf("unable to download: %s, %w", bucket, err)
 	}
 
