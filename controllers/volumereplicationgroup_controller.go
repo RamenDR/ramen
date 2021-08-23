@@ -346,22 +346,6 @@ func (v *VRGInstance) processVRG() (ctrl.Result, error) {
 		return ctrl.Result{}, nil
 	}
 
-	if err := v.updatePVCList(); err != nil {
-		v.log.Error(err, "Failed to update PersistentVolumeClaims for resource")
-
-		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
-			rmnutil.EventReasonValidationFailed, err.Error())
-
-		msg := "Failed to get list of pvcs"
-		setVRGErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
-
-		if err = v.updateVRGStatus(false); err != nil {
-			v.log.Error(err, "VRG Status update failed")
-		}
-
-		return ctrl.Result{Requeue: true}, nil
-	}
-
 	if err := v.validateSchedule(); err != nil {
 		v.log.Error(err, "Failed to validate the scheduling interval")
 
@@ -376,6 +360,22 @@ func (v *VRGInstance) processVRG() (ctrl.Result, error) {
 
 		// No requeue, as there is no reconcile till user changes desired spec to a valid value
 		return ctrl.Result{}, nil
+	}
+
+	if err := v.updatePVCList(); err != nil {
+		v.log.Error(err, "Failed to update PersistentVolumeClaims for resource")
+
+		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonValidationFailed, err.Error())
+
+		msg := "Failed to get list of pvcs"
+		setVRGErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+
+		if err = v.updateVRGStatus(false); err != nil {
+			v.log.Error(err, "VRG Status update failed")
+		}
+
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	return v.processVRGActions()
