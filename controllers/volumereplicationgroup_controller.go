@@ -1495,14 +1495,14 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 	// Let VRG receive notification for any changes to VolumeReplication CR
 	// created by VRG.
 	if err := ctrl.SetControllerReference(v.instance, volRep, v.reconciler.Scheme); err != nil {
-		return fmt.Errorf("failed to set owner reference to VolumeReplication resource (%s/%s)",
-			volRep.Name, volRep.Namespace)
+		return fmt.Errorf("failed to set owner reference to VolumeReplication resource (%s/%s), %w",
+			volRep.Name, volRep.Namespace, err)
 	}
 
 	v.log.Info("Creating VolumeReplication resource", "resource", volRep)
 
 	if err := v.reconciler.Create(v.ctx, volRep); err != nil {
-		return fmt.Errorf("failed to create VolumeReplication resource (%s)", vrNamespacedName)
+		return fmt.Errorf("failed to create VolumeReplication resource (%s), %w", vrNamespacedName, err)
 	}
 
 	return nil
