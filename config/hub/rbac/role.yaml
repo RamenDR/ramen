@@ -16,18 +16,6 @@ rules:
   - patch
   - update
 - apiGroups:
-  - ""
-  resources:
-  - secrets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
   - apps.open-cluster-management.io
   resources:
   - placementrules
@@ -52,12 +40,8 @@ rules:
   resources:
   - managedclusters
   verbs:
-  - create
-  - delete
   - get
   - list
-  - patch
-  - update
   - watch
 - apiGroups:
   - ramendr.openshift.io
