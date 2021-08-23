@@ -2,7 +2,6 @@ package controllers_test
 
 import (
 	"context"
-	"fmt"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -25,13 +24,7 @@ var _ = Describe("DrpolicyController", func() {
 			func(g Gomega) {
 				clusterNames := sets.String{}
 				g.Expect(util.ClusterRolesList(context.TODO(), k8sClient, &clusterNames)).To(Succeed())
-				fmt.Fprintf(
-					GinkgoWriter,
-					"expect: %v\nactual: %v\n",
-					*clusterNamesCurrent,
-					clusterNames,
-				)
-				g.Expect(clusterNamesCurrent.Equal(clusterNames)).To(BeTrue())
+				g.Expect(clusterNames.UnsortedList()).To(ConsistOf(clusterNamesCurrent.UnsortedList()))
 			},
 			10,
 			0.25,
