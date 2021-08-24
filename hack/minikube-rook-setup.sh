@@ -149,13 +149,35 @@ set -e
 kubectl apply -f "${ROOK_SRC}/common.yaml" --context="${PROFILE}"
 kubectl apply -f "${ROOK_SRC}/crds.yaml" --context="${PROFILE}"
 # Fetch operator.yaml and enable CSI volume replication
-TMP_OPERATOR_YAML=$(mktemp --suffix .yaml)
-wget "${ROOK_SRC}/operator.yaml" -O "${TMP_OPERATOR_YAML}"
-sed -e 's,CSI_ENABLE_VOLUME_REPLICATION: "false",CSI_ENABLE_VOLUME_REPLICATION: "true",' -i "${TMP_OPERATOR_YAML}"
-sed -e 's,# CSI_VOLUME_REPLICATION_IMAGE: "quay.io/csiaddons/volumereplication-operator:v0.1.0",CSI_VOLUME_REPLICATION_IMAGE: "quay.io/csiaddons/volumereplication-operator:latest",' -i "${TMP_OPERATOR_YAML}"
-sed -e 's,# CSI_ENABLE_OMAP_GENERATOR: "false",CSI_ENABLE_OMAP_GENERATOR: "true",' -i "${TMP_OPERATOR_YAML}"
-kubectl apply -f "${TMP_OPERATOR_YAML}" --context="${PROFILE}"
-rm -f "${TMP_OPERATOR_YAML}"
+set -- "$(mktemp --directory)"
+cat <<a >"$1"/kustomization.yaml
+resources:
+  - ${ROOK_SRC}/operator.yaml
+patchesJson6902:
+  - target:
+      kind: ConfigMap
+      name: rook-ceph-operator-config
+      namespace: rook-ceph
+    patch: |-
+      - op: add
+        path: /data/CSI_ENABLE_VOLUME_REPLICATION
+        value: 'true'
+      - op: add
+        path: /data/CSI_VOLUME_REPLICATION_IMAGE
+        value: quay.io/csiaddons/volumereplication-operator:latest
+      - op: add
+        path: /data/CSI_ENABLE_OMAP_GENERATOR
+        value: 'true'
+      - op: add
+        path: /data/ROOK_CSI_ALLOW_UNSUPPORTED_VERSION
+        value: 'true'
+      - op: add
+        path: /data/ROOK_CSI_CEPH_IMAGE
+        value: quay.io/cephcsi/cephcsi:canary
+a
+kubectl --context "$PROFILE" apply -k "$1"
+rm -rf "$1"
+set --
 # Create a dev ceph cluster
 kubectl apply -f "${scriptdir}/dev-rook-cluster.yaml" --context="${PROFILE}"
 kubectl apply -f "${ROOK_SRC}/toolbox.yaml" --context="${PROFILE}"
