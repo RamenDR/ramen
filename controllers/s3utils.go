@@ -91,6 +91,9 @@ type ObjectStoreGetter interface {
 
 type objectStorer interface {
 	createBucket(bucket string) error
+	deleteBucket(bucket string) error
+	purgeBucket(bucket string) error
+	// listBuckets() (buckets []string, err error)
 	uploadPV(bucket string, pvKeySuffix string,
 		pv corev1.PersistentVolume) error
 	uploadTypedObject(bucket string, keySuffix string,
@@ -247,6 +250,82 @@ func (s *s3ObjectStore) createBucket(bucket string) (err error) {
 					bucket, err)
 			}
 		}
+	}
+
+	return nil
+}
+
+// deleteBucket deletes the S3 bucket.  Fails to delete if the bucket contains
+// any objects.
+func (s *s3ObjectStore) deleteBucket(bucket string) (
+	err error) {
+	if bucket == "" {
+		return fmt.Errorf("empty bucket name for "+
+			"endpoint %s caller %s", s.s3Endpoint, s.callerTag)
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			// change the named return err value
+			err = fmt.Errorf("delete bucket recovered for %s, with %v",
+				bucket, r)
+		}
+	}()
+
+	dbInput := &s3.DeleteBucketInput{Bucket: &bucket}
+	if err = dbInput.Validate(); err != nil {
+		return fmt.Errorf("delete bucket input validation failed for %s, err %w",
+			bucket, err)
+	}
+
+	_, err = s.client.DeleteBucket(dbInput)
+	if err != nil && !isAwsErrCodeNoSuchBucket(err) {
+		return fmt.Errorf("failed to delete bucket %s, %w",
+			bucket, err)
+	}
+
+	return nil
+}
+
+// purgeBucket empties the content of the given bucket.
+func (s *s3ObjectStore) purgeBucket(bucket string) (
+	err error) {
+	if bucket == "" {
+		return fmt.Errorf("empty bucket name for "+
+			"endpoint %s caller %s", s.s3Endpoint, s.callerTag)
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			// change the named return err value
+			err = fmt.Errorf("purge bucket recovered for %s, with %v",
+				bucket, r)
+		}
+	}()
+
+	keys, err := s.listKeys(bucket, "")
+	if err != nil {
+		if isAwsErrCodeNoSuchBucket(err) {
+			return nil // Not an error
+		}
+
+		return fmt.Errorf("unable to listKeys "+
+			"from endpoint %s bucket %s, %w",
+			s.s3Endpoint, bucket, err)
+	}
+
+	for _, key := range keys {
+		err = s.deleteObject(bucket, key)
+		if err != nil {
+			return fmt.Errorf("failed to delete object %s in bucket %s, %w",
+				key, bucket, err)
+		}
+	}
+
+	err = s.deleteBucket(bucket)
+	if err != nil {
+		return fmt.Errorf("failed to delete bucket %s, %w",
+			bucket, err)
 	}
 
 	return nil
@@ -504,6 +583,19 @@ func (s *s3ObjectStore) deleteObject(bucket string, keyPrefix string) (
 	}
 
 	return
+}
+
+// isAwsErrCodeNoSuchBucket returns true if the given input `err` has wrapped
+// the awserr.ErrCodeNoSuchBucket anywhere in its chain of errors.
+func isAwsErrCodeNoSuchBucket(err error) bool {
+	var aerr awserr.Error
+	if errorswrapper.As(err, &aerr) {
+		if aerr.Code() == s3.ErrCodeNoSuchBucket {
+			return true
+		}
+	}
+
+	return false
 }
 
 // constructBucketName returns a bucket name formed using the input namespace

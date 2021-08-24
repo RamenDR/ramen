@@ -1320,8 +1320,6 @@ func (ObjectStorePVDeleter) DeletePVs(v interface{}, s3ProfileName string) (err 
 	vrgName := v.(*VRGInstance).instance.Name
 	s3Bucket := constructBucketName(v.(*VRGInstance).instance.Namespace, vrgName)
 
-	v.(*VRGInstance).log.Info("Deleting PersistentVolume metadata from object store", "Profile Name", s3ProfileName)
-
 	objectStore, err := v.(*VRGInstance).reconciler.ObjStoreGetter.objectStore(
 		v.(*VRGInstance).ctx, v.(*VRGInstance).reconciler, s3ProfileName, vrgName)
 	if err != nil {
@@ -1329,11 +1327,17 @@ func (ObjectStorePVDeleter) DeletePVs(v interface{}, s3ProfileName string) (err 
 			s3ProfileName, err)
 	}
 
-	// Delete PV to object store
-	keyPrefix := reflect.TypeOf(corev1.PersistentVolume{}).String() + "/"
-	if err := objectStore.deleteObject(s3Bucket, keyPrefix); err != nil {
-		return fmt.Errorf("error deleting PV objects, err %w", err)
+	v.(*VRGInstance).log.Info("Delete s3 bucket containing PV related cluster data from",
+		"S3 bucket", s3Bucket, "S3 profile", s3ProfileName)
+
+	// Delete all PVs from this VRG's S3 bucket
+	if err := objectStore.purgeBucket(s3Bucket); err != nil {
+		return fmt.Errorf("error purging S3 bucket %s of S3 profile %s, %w",
+			s3Bucket, s3ProfileName, err)
 	}
+
+	v.(*VRGInstance).log.Info("Deleted s3 bucket containing PV related cluster data from",
+		"S3 bucket", s3Bucket, "S3 profile", s3ProfileName)
 
 	return nil
 }
