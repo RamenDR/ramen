@@ -22,17 +22,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// DRAction which will be either a failover or failback action
-// +kubebuilder:validation:Enum=Failover;Failback;Relocate
+// DRAction which will be either a Failover or Relocate action
+// +kubebuilder:validation:Enum=Failover;Relocate
 type DRAction string
 
 // These are the valid values for DRAction
 const (
 	// Failover, restore PVs to the TargetCluster
 	ActionFailover = DRAction("Failover")
-
-	// Failback, restore PVs to the PreferredCluster
-	ActionFailback = DRAction("Failback")
 
 	// Relocate, restore PVs to the designated TargetCluster.  PreferredCluster will change
 	// to be the TargetCluster.
@@ -59,7 +56,7 @@ type DRPlacementControlSpec struct {
 	// need DR protection. It will be passed in to the VRG when it is created
 	PVCSelector metav1.LabelSelector `json:"pvcSelector"`
 
-	// Action is either failover or failback operation
+	// Action is either Failover or Relocate operation
 	Action DRAction `json:"action,omitempty"`
 }
 
@@ -85,14 +82,6 @@ const (
 	// FailedOver, state recorded in the DRPC status when the failover
 	// process has completed
 	FailedOver = DRState("FailedOver")
-
-	// FailingBack, state recorded in the DRPC status when the failback
-	// is initiated but has not been completed yet
-	FailingBack = DRState("FailingBack")
-
-	// FailedBack, state recorded in the DRPC status when the failback
-	// process has completed
-	FailedBack = DRState("FailedBack")
 
 	// Relocating, state recorded in the DRPC status to indicate that the
 	// relocation is in progress

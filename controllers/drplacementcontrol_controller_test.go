@@ -685,7 +685,7 @@ func waitForCompletion(state string) {
 
 func relocateToPreferredCluster(drpc *rmn.DRPlacementControl, userPlacementRule *plrv1.PlacementRule) {
 	updateClonedPlacementRuleStatus(userPlacementRule, drpc, EastManagedCluster)
-	setDRPCSpecExpectationTo(drpc, rmn.ActionFailback, "")
+	setDRPCSpecExpectationTo(drpc, rmn.ActionRelocate, "")
 
 	updateManagedClusterViewWithVRG(WestManagedCluster, rmn.Secondary, false)
 	updateManagedClusterViewWithVRG(EastManagedCluster, rmn.Secondary, false)
@@ -695,14 +695,14 @@ func relocateToPreferredCluster(drpc *rmn.DRPlacementControl, userPlacementRule 
 	updateManagedClusterViewWithVRG(EastManagedCluster, rmn.Primary, true)
 
 	verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, EastManagedCluster)
-	verifyDRPCStatusPreferredClusterExpectation(rmn.FailedBack)
+	verifyDRPCStatusPreferredClusterExpectation(rmn.Relocated)
 	verifyVRGManifestWorkCreatedAsPrimary(EastManagedCluster)
 
 	waitForVRGMWDeletion(WestManagedCluster)
 
 	updateManagedClusterViewStatusAsNotFound(WestManagedCluster)
 
-	waitForCompletion(string(rmn.FailedBack))
+	waitForCompletion(string(rmn.Relocated))
 }
 
 func recoverToFailoverCluster(drpc *rmn.DRPlacementControl, userPlacementRule *plrv1.PlacementRule) {
@@ -774,10 +774,10 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				Expect(val).NotTo(Equal(0.0)) // failover time should be non-zero
 			})
 		})
-		When("DRAction is set to failback", func() {
-			It("Should failback to Primary (EastManagedCluster)", func() {
-				// ----------------------------- FAILBACK TO PRIMARY --------------------------------------
-				By("\n\n*** Failback - 1\n\n")
+		When("DRAction is set to relocate", func() {
+			It("Should relocate to Primary (EastManagedCluster)", func() {
+				// ----------------------------- RELOCATION TO PRIMARY --------------------------------------
+				By("\n\n*** Relocate - 1\n\n")
 
 				relocateToPreferredCluster(drpc, userPlacementRule)
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(2)) // MWs for VRG+ROLES
@@ -785,13 +785,13 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				drpc = getLatestDRPC(DRPCName, DRPCNamespaceName)
 				// At this point expect the DRPC status condition to have 2 types
 				// {Available and Reconciling}
-				// Final type is 'FailedBack'
+				// Final type is 'Relocate'
 				Expect(len(drpc.Status.Conditions)).To(Equal(2))
 				_, condition := controllers.GetDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
-				Expect(condition.Reason).To(Equal(string(rmn.FailedBack)))
+				Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
 			})
 		})
-		When("DRAction is changed to failover after failback", func() {
+		When("DRAction is changed to failover after relocation", func() {
 			It("Should failover again to Secondary (WestManagedCluster)", func() {
 				// ----------------------------- FAILOVER TO SECONDARY --------------------------------------
 				By("\n\n*** Failover - 3\n\n")
@@ -811,7 +811,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		})
 		When("DRAction is set to relocation", func() {
 			It("Should relocate to Primary (EastManagedCluster)", func() {
-				// ----------------------------- FAILBACK TO PRIMARY --------------------------------------
+				// ----------------------------- RELOCATION TO PRIMARY --------------------------------------
 				By("\n\n*** relocate\n\n")
 
 				relocateToPreferredCluster(drpc, userPlacementRule)
@@ -821,10 +821,10 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				drpc = getLatestDRPC(DRPCName, DRPCNamespaceName)
 				// At this point expect the DRPC status condition to have 2 types
 				// {Available and Reconciling}
-				// Final type is 'FailedBack'
+				// Final type is 'Relocated'
 				Expect(len(drpc.Status.Conditions)).To(Equal(2))
 				_, condition := controllers.GetDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
-				Expect(condition.Reason).To(Equal(string(rmn.FailedBack)))
+				Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
 			})
 		})
 		When("Deleting DRPC", func() {

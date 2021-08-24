@@ -89,13 +89,6 @@ const (
 	// failover
 	EventReasonFailoverSuccess = "DRPCFailoverSuccess"
 
-	// EventsReasonFailingBack is an event generated when DRPC starts failing back
-	EventReasonFailingBack = "DRPCFailingBack"
-
-	// EventReasonFailbackSuccess is an event generated when DRPC does a successful
-	// failback
-	EventReasonFailbackSuccess = "DRPCFailbackSuccess"
-
 	// EventReasonRelocating is an event generated when DRPC starts relocating
 	EventReasonRelocating = "DRPCRelocating"
 
