@@ -40,10 +40,9 @@ spec:
             description: DRPlacementControlSpec defines the desired state of DRPlacementControl
             properties:
               action:
-                description: Action is either failover or failback operation
+                description: Action is either Failover or Relocate operation
                 enum:
                 - Failover
-                - Failback
                 - Relocate
                 type: string
               drPolicyRef:

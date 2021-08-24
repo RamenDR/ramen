@@ -108,18 +108,6 @@ var (
 		}),
 	)
 
-	failbackTime = newTimerWrapper(
-		prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "ramen_failback_time",
-			Help: "Duration of the last failback event",
-		}),
-		prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name:    "ramen_failback_histogram",
-			Help:    "Histogram of all failback timers (seconds)",
-			Buckets: prometheus.ExponentialBuckets(1.0, 2.0, 12), // start=1.0, factor=2.0, buckets=12
-		}),
-	)
-
 	relocateTime = newTimerWrapper(
 		prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "ramen_relocate_time",
@@ -147,7 +135,7 @@ var (
 
 func init() {
 	// register custom metrics with the global Prometheus registry
-	metrics.Registry.MustRegister(failbackTime.gauge, failoverTime.gauge, relocateTime.gauge, deployTime.gauge)
+	metrics.Registry.MustRegister(failoverTime.gauge, relocateTime.gauge, deployTime.gauge)
 }
 
 var WaitForPVRestoreToComplete = errorswrapper.New("Waiting for PV restore to complete")
@@ -949,13 +937,11 @@ func (d *DRPCInstance) processPlacement() (bool, error) {
 	switch d.instance.Spec.Action {
 	case rmn.ActionFailover:
 		return d.runFailover()
-	case rmn.ActionFailback:
-		return d.runFailback()
 	case rmn.ActionRelocate:
 		return d.runRelocate()
 	}
 
-	// Not a failover, a failback, or a relocation.  Must be an initial deployment.
+	// Not a failover or a relocation.  Must be an initial deployment.
 	return d.runInitialDeployment()
 }
 
@@ -1038,14 +1024,10 @@ func setMetricsTimerFromDRState(stateDR rmn.DRState, stateTimer timerState) {
 	switch stateDR {
 	case rmn.FailingOver:
 		setMetricsTimer(&failoverTime, stateTimer, stateDR)
-	case rmn.FailingBack:
-		setMetricsTimer(&failbackTime, stateTimer, stateDR)
 	case rmn.Relocating:
 		setMetricsTimer(&relocateTime, stateTimer, stateDR)
 	case rmn.Deploying:
 		setMetricsTimer(&deployTime, stateTimer, stateDR)
-	case rmn.FailedBack:
-		fallthrough
 	case rmn.FailedOver:
 		fallthrough
 	case rmn.Deployed:
@@ -1087,7 +1069,7 @@ func (d *DRPCInstance) runFailover() (bool, error) {
 
 	const done = true
 
-	if d.isFailbackInProgress() || d.isRelocationInProgress() {
+	if d.isRelocationInProgress() {
 		return done, fmt.Errorf("invalid state %s for the selected action %v",
 			d.getLastDRState(), d.instance.Spec.Action)
 	}
@@ -1175,40 +1157,12 @@ func (d *DRPCInstance) getCurrentHomeClusterName() string {
 	return curHomeCluster
 }
 
-//
-// runFailback:
-// 1. If preferredCluster not set, get it from DRPC status
-// 2. If still empty, fail it
-// 3. If the preferredCluster is the failoverCluster, fail it
-// 4. If preferredCluster is the same as the userPlacementRule decision, do nothing
-// 5. Clear the user PlacementRule decision
-// 6. Update VRG.Spec.ReplicationState to secondary for all DR clusters
-// 7. Ensure that the VRG status reflects the previous step.  If not, then wait.
-// 8. Restore PV to preferredCluster
-// 9. Update UserPlacementRule decision to preferredCluster
-// 10. Create VRG for the preferredCluster as Primary
-// 11. Update DRPC status
-// 12. Delete VRG MW from failoverCluster once the VRG state has changed to Secondary
-//
-func (d *DRPCInstance) runFailback() (bool, error) {
-	d.log.Info("Entering runFailback", "state", d.getLastDRState())
-
-	const done = true
-
-	if d.isFailoverInProgress() || d.isRelocationInProgress() {
-		return done, fmt.Errorf("invalid state %s for the selected action %v",
-			d.getLastDRState(), d.instance.Spec.Action)
-	}
-
-	return d.switchToPreferredCluster(rmn.FailingBack)
-}
-
 func (d *DRPCInstance) runRelocate() (bool, error) {
 	d.log.Info("Entering runRelocate", "state", d.getLastDRState())
 
 	const done = true
 
-	if d.isFailbackInProgress() || d.isFailoverInProgress() {
+	if d.isFailoverInProgress() {
 		return done, fmt.Errorf("invalid state %s for the selected action %v",
 			d.getLastDRState(), d.instance.Spec.Action)
 	}
@@ -1245,14 +1199,14 @@ func (d *DRPCInstance) switchToPreferredCluster(drState rmn.DRState) (bool, erro
 	d.setDRState(drState)
 	setMetricsTimerFromDRState(drState, timerStart)
 
-	// During failback/relocate, the preferredCluster does not contain a VRG or the VRG is already
+	// During relocate, the preferredCluster does not contain a VRG or the VRG is already
 	// secondary. We need to skip checking if the VRG for it is secondary to avoid messing up with the
 	// order of execution (it could be refactored better to avoid this complexity). IOW, if we first update
 	// VRG in all clusters to secondaries, then we call runPlacementTask. If runPlacementTask does not complete
 	// in one shot, then coming back to this loop will reset the preferredCluster to secondary again.
 	clusterToSkip := preferredCluster
 	if !d.ensureVRGIsSecondary(clusterToSkip) {
-		// During failback or relocation, both clusters should be up and both must be secondaries before we proceed.
+		// During relocation, both clusters should be up and both must be secondaries before we proceed.
 		ensured, err := d.processVRGForSecondaries()
 		if err != nil || !ensured {
 			return !done, err
@@ -1279,7 +1233,7 @@ func (d *DRPCInstance) switchToPreferredCluster(drState rmn.DRState) (bool, erro
 }
 
 // runPlacementTask is a series of steps to creating, updating, and cleaning up
-// the necessary objects for the failover, failback, or relocation
+// the necessary objects for the failover or relocation
 //nolint:cyclop
 func (d *DRPCInstance) runPlacementTask(targetCluster, targetClusterNamespace string, restorePVs bool) (bool, error) {
 	d.log.Info("runPlacementTask", "cluster", targetCluster, "restorePVs", restorePVs)
@@ -1942,13 +1896,10 @@ func (d *DRPCInstance) advanceToNextDRState() {
 		nextState = rmn.Deployed
 	case rmn.FailingOver:
 		nextState = rmn.FailedOver
-	case rmn.FailingBack:
-		nextState = rmn.FailedBack
 	case rmn.Relocating:
 		nextState = rmn.Relocated
 	case rmn.Deployed:
 	case rmn.FailedOver:
-	case rmn.FailedBack:
 	case rmn.Relocated:
 	}
 
@@ -1991,14 +1942,6 @@ func (d *DRPCInstance) reportEvent(nextState rmn.DRState) {
 		eventReason = rmnutil.EventReasonFailoverSuccess
 		eventType = corev1.EventTypeNormal
 		msg = "Successfully failedover the application and VRG"
-	case rmn.FailingBack:
-		eventReason = rmnutil.EventReasonFailingBack
-		eventType = corev1.EventTypeNormal
-		msg = "Failing back the application and VRG"
-	case rmn.FailedBack:
-		eventReason = rmnutil.EventReasonFailbackSuccess
-		eventType = corev1.EventTypeNormal
-		msg = "Successfully failedback the application and VRG"
 	case rmn.Relocating:
 		eventReason = rmnutil.EventReasonRelocating
 		eventType = corev1.EventTypeNormal
@@ -2143,8 +2086,6 @@ func (d *DRPCInstance) isInFinalPhase() bool {
 		fallthrough
 	case rmn.FailedOver:
 		fallthrough
-	case rmn.FailedBack:
-		fallthrough
 	case rmn.Relocated:
 		return true
 	default:
@@ -2156,8 +2097,6 @@ func (d *DRPCInstance) isInFinalPhase() bool {
 func (d *DRPCInstance) isInProgressingPhase() bool {
 	switch d.instance.Status.Phase {
 	case rmn.Deploying:
-		fallthrough
-	case rmn.FailingBack:
 		fallthrough
 	case rmn.FailingOver:
 		fallthrough
@@ -2177,8 +2116,8 @@ func (d *DRPCInstance) getRequeueDuration() time.Duration {
 	d.log.Info("Getting requeue duration", "last known DR state", d.getLastDRState())
 
 	const (
-		failoverRequeueDelay = time.Minute * 5
-		failbackRequeueDelay = time.Second * 2
+		failoverRequeueDelay   = time.Minute * 5
+		relocationRequeueDelay = time.Second * 2
 	)
 
 	duration := time.Second // second
@@ -2186,10 +2125,8 @@ func (d *DRPCInstance) getRequeueDuration() time.Duration {
 	switch d.getLastDRState() {
 	case rmn.FailingOver:
 		duration = failoverRequeueDelay
-	case rmn.FailingBack:
-		fallthrough
 	case rmn.Relocating:
-		duration = failbackRequeueDelay
+		duration = relocationRequeueDelay
 	}
 
 	return duration
@@ -2197,10 +2134,6 @@ func (d *DRPCInstance) getRequeueDuration() time.Duration {
 
 func (d *DRPCInstance) isFailoverInProgress() bool {
 	return rmn.FailingOver == d.getLastDRState()
-}
-
-func (d *DRPCInstance) isFailbackInProgress() bool {
-	return rmn.FailingBack == d.getLastDRState()
 }
 
 func (d *DRPCInstance) isRelocationInProgress() bool {
