@@ -5,13 +5,11 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/controllers/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-
-	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/controllers/util"
 )
 
 var _ = Describe("DrpolicyController", func() {
