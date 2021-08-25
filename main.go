@@ -114,10 +114,11 @@ func setupReconcilers(mgr ctrl.Manager) {
 		}
 
 		drpcReconciler := (&controllers.DRPlacementControlReconciler{
-			Client:   mgr.GetClient(),
-			Log:      ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),
-			Scheme:   mgr.GetScheme(),
-			Callback: func(string, string) {},
+			Client:    mgr.GetClient(),
+			Log:       ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),
+			MCVGetter: controllers.ManagedClusterViewGetterImpl{Client: mgr.GetClient()},
+			Scheme:    mgr.GetScheme(),
+			Callback:  func(string, string) {},
 		})
 		if err := drpcReconciler.SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "DRPlacementControl")
