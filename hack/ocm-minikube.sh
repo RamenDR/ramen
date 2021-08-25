@@ -262,10 +262,12 @@ ocm_foundation_operator_undeploy_spoke()
 	set -e
 }
 exit_stack_push unset -f ocm_foundation_operator_undeploy_spoke
+ocm_subscription_operator_git_ref=c48c55969bc4385bc694acd8bc92e5bf4e0181d3
+exit_stack_push unset -v ocm_subscription_operator_git_ref
 ocm_subscription_operator_checkout()
 {
 	set -- multicloud-operators-subscription
-	git_clone_and_checkout https://github.com/open-cluster-management $1 main c48c559
+	git_clone_and_checkout https://github.com/open-cluster-management $1 main $ocm_subscription_operator_git_ref
 	exit_stack_push git_checkout_undo $1
 }
 exit_stack_push unset -f ocm_subscription_operator_checkout
@@ -284,10 +286,54 @@ ocm_subscription_operator_deploy_hub()
 	kubectl --context ${hub_cluster_name} -n multicluster-operators wait deployments --all --for condition=available --timeout 2m
 	date
 }
+exit_stack_push unset -f ocm_subscription_operator_deploy_hub
 ocm_subscription_operator_deploy_spoke()
 {
+	set -- $1 open-cluster-management subscription managed "$2"
+	set -- $1 $2 multicloud-operators-$3 $4 /tmp/$USER/$2/$3/$4/$1 "$5"
 	# https://github.com/open-cluster-management-io/multicloud-operators-subscription/issues/16
 	kubectl --context $hub_cluster_name label managedclusters/$1 name=$1 --overwrite
+	ocm_subscription_operator_checkout
+	kubectl --context $1 apply -f $3/deploy/common
+	ocm_subscription_operator_checkout_undo
+	cp -f $HUB_KUBECONFIG /tmp/$USER/kubeconfig
+	kubectl --context $1 -n multicluster-operators delete secret appmgr-hub-kubeconfig --ignore-not-found
+	kubectl --context $1 -n multicluster-operators create secret generic appmgr-hub-kubeconfig --from-file=kubeconfig=/tmp/$USER/kubeconfig
+	mkdir -p $5
+	cat <<-a >$5/kustomization.yaml
+	resources:
+	  - https://raw.githubusercontent.com/$2/$3/$ocm_subscription_operator_git_ref/deploy/$4/operator.yaml
+	patchesJson6902:
+	  - target:
+	      group: apps
+	      version: v1
+	      kind: Deployment
+	      name: multicluster-operators-subscription
+	      namespace: multicluster-operators
+	    patch: |-
+	      - op: test
+	        path: /spec/template/spec/containers/0/command/2
+	        value: --cluster-name=<managed cluster name>
+	      - op: replace
+	        path: /spec/template/spec/containers/0/command/2
+	        value: --cluster-name=$1
+	      - op: test
+	        path: /spec/template/spec/containers/0/command/3
+	        value: --cluster-namespace=<managed cluster namespace>
+	      - op: replace
+	        path: /spec/template/spec/containers/0/command/3
+	        value: --cluster-namespace=$1
+	      - op: test
+	        path: /metadata/name
+	        value: multicluster-operators-subscription
+	      - op: replace
+	        path: /metadata/name
+	        value: multicluster-operators-subscription$6
+	a
+	kubectl --context $1 apply -k $5
+	date
+	kubectl --context $1 -n multicluster-operators wait deployments --all --for condition=available --timeout 1m
+	date
 }
 exit_stack_push unset -f ocm_subscription_operator_deploy_spoke
 ocm_subscription_operator_undeploy_spoke()
@@ -297,40 +343,14 @@ ocm_subscription_operator_undeploy_spoke()
 exit_stack_push unset -f ocm_subscription_operator_undeploy_spoke
 ocm_subscription_operator_deploy_spoke_hub()
 {
-	ocm_subscription_operator_deploy_spoke $1
-	cp -f ${HUB_KUBECONFIG} /tmp/$USER/kubeconfig
-	kubectl --context ${1} -n multicluster-operators delete secret appmgr-hub-kubeconfig --ignore-not-found
-	kubectl --context ${1} -n multicluster-operators create secret generic appmgr-hub-kubeconfig --from-file=kubeconfig=/tmp/$USER/kubeconfig
-	ocm_subscription_operator_checkout
-	mkdir -p multicloud-operators-subscription/munge-manifests
-	cp multicloud-operators-subscription/deploy/managed/operator.yaml multicloud-operators-subscription/munge-manifests/operator.yaml
-	sed -i 's/<managed cluster name>/'"${1}"'/g' multicloud-operators-subscription/munge-manifests/operator.yaml
-	sed -i 's/<managed cluster namespace>/'"${1}"'/g' multicloud-operators-subscription/munge-manifests/operator.yaml
-	sed -i '0,/name: multicluster-operators-subscription/{s/name: multicluster-operators-subscription/name: multicluster-operators-subscription-mc/}' multicloud-operators-subscription/munge-manifests/operator.yaml
-	kubectl --context ${1} apply -f multicloud-operators-subscription/munge-manifests/operator.yaml
-	ocm_subscription_operator_checkout_undo
-	date
-	kubectl --context ${1} -n multicluster-operators wait deployments --all --for condition=available
-	date
+	ocm_subscription_operator_deploy_spoke $1 '-mc'
 }
+exit_stack_push unset -f ocm_subscription_operator_deploy_spoke_hub
 ocm_subscription_operator_deploy_spoke_nonhub()
 {
-	ocm_subscription_operator_deploy_spoke $1
-	kubectl config use-context ${1}
-	ocm_subscription_operator_checkout
-	mkdir -p multicloud-operators-subscription/munge-manifests
-	cp multicloud-operators-subscription/deploy/managed/operator.yaml multicloud-operators-subscription/munge-manifests/operator.yaml
-	MANAGED_CLUSTER_NAME=${1}\
-	HUB_KUBECONFIG=${HUB_KUBECONFIG}\
-	USE_VENDORIZED_BUILD_HARNESS=faked\
-	make -C multicloud-operators-subscription deploy-community-managed
-	cp multicloud-operators-subscription/munge-manifests/operator.yaml multicloud-operators-subscription/deploy/managed/operator.yaml
-	# deploy/managed/operator.yaml is changed and will not be updated
-	ocm_subscription_operator_checkout_undo
-	date
-	kubectl --context ${1} -n multicluster-operators wait deployments --all --for condition=available --timeout 1m
-	date
+	ocm_subscription_operator_deploy_spoke $1 ''
 }
+exit_stack_push unset -f ocm_subscription_operator_deploy_spoke_nonhub
 spoke_test_deploy()
 {
 	ocm_subscription_operator_checkout
@@ -553,9 +573,6 @@ unset -f spoke_test_deploy
 unset -f application_sample_0_test
 unset -f application_sample_0_undeploy
 unset -f application_sample_0_deploy
-unset -f ocm_subscription_operator_deploy_spoke_nonhub
-unset -f ocm_subscription_operator_deploy_spoke_hub
-unset -f ocm_subscription_operator_deploy_hub
 unset -f ocm_registration_operator_undeploy_spoke
 unset -f ocm_registration_operator_undeploy_hub
 unset -f ocm_registration_operator_deploy_hub
