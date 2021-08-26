@@ -42,10 +42,10 @@ spec:
               the given PVC label selector. For each such PVC, the VRG will do the
               following: \t- Create a VolumeReplication (VR) CR to enable storage
               level replication \t  of volume data and set the desired replication
-              state (primary, secondary,    etc).  - Take the corresponding PV metadata
-              in Kubernetes etcd and deposit it in    the S3 store.  The url, access
-              key and access id required to access the    S3 store is specified via
-              environment variables of the VRG operator POD,    which is obtained
+              state (primary, secondary,    etc).  - Take the corresponding PV cluster
+              data in Kubernetes etcd and deposit it in    the S3 store.  The url,
+              access key and access id required to access the    S3 store is specified
+              via environment variables of the VRG operator POD,    which is obtained
               from a secret resource.  - Manage the lifecycle of VR CR and S3 data
               according to CUD operations on    the PVC and the VRG CR."
             properties:
@@ -169,7 +169,8 @@ spec:
               state of cluster
             properties:
               conditions:
-                description: Conditions are the list of conditions and their status.
+                description: Conditions are the list of VRG's summary conditions and
+                  their status.
                 items:
                   description: "Condition contains details for one aspect of the current
                     state of this API Resource. --- This struct is intended for direct

@@ -24,11 +24,11 @@ import (
 
 // VRG condition types
 const (
-	VRGConditionAvailable        = "Available"
+	VRGConditionDataReady        = "DataReady"
 	VRGConditionClusterDataReady = "ClusterDataReady"
 )
 
-// VRGConditionAvailable reasons
+// VRG condition reasons
 const (
 	VRGReplicating = "Replicating"
 	VRGProgressing = "Progressing"
@@ -59,7 +59,14 @@ const (
 // figured out yet.
 func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionAvailable,
+		Type:               VRGConditionDataReady,
+		Reason:             "none",
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionUnknown,
+		Message:            message,
+	})
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionClusterDataReady,
 		Reason:             "none",
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionUnknown,
@@ -67,10 +74,10 @@ func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration i
 	})
 }
 
-// sets conditions when VRG is replicating
-func setVRGReplicatingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+// sets conditions when VRG is data replicating
+func setVRGDataReplicatingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionAvailable,
+		Type:               VRGConditionDataReady,
 		Reason:             VRGReplicating,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
@@ -78,10 +85,10 @@ func setVRGReplicatingCondition(conditions *[]metav1.Condition, observedGenerati
 	})
 }
 
-// sets conditions when VRG is progressing
-func setVRGProgressingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+// sets conditions when VRG data is progressing
+func setVRGDataProgressingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionAvailable,
+		Type:               VRGConditionDataReady,
 		Reason:             VRGProgressing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
@@ -90,9 +97,9 @@ func setVRGProgressingCondition(conditions *[]metav1.Condition, observedGenerati
 }
 
 // sets conditions when VRG sees failures in data sync
-func setVRGErrorCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+func setVRGDataErrorCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionAvailable,
+		Type:               VRGConditionDataReady,
 		Reason:             VRGError,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,

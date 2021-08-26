@@ -337,7 +337,7 @@ func (v *VRGInstance) processVRG() (ctrl.Result, error) {
 			rmnutil.EventReasonValidationFailed, err.Error())
 
 		msg := "VolumeReplicationGroup state is invalid"
-		setVRGErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
 		if err = v.updateVRGStatus(false); err != nil {
 			v.log.Error(err, "Status update failed")
@@ -352,7 +352,7 @@ func (v *VRGInstance) processVRG() (ctrl.Result, error) {
 		v.log.Error(err, "Failed to validate the scheduling interval")
 
 		msg := "Failed to validate scheduling interval"
-		setVRGErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
 		if err = v.updateVRGStatus(false); err != nil {
 			v.log.Error(err, "VRG Status update failed")
@@ -371,7 +371,7 @@ func (v *VRGInstance) processVRG() (ctrl.Result, error) {
 			rmnutil.EventReasonValidationFailed, err.Error())
 
 		msg := "Failed to get list of pvcs"
-		setVRGErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
 		if err = v.updateVRGStatus(false); err != nil {
 			v.log.Error(err, "VRG Status update failed")
@@ -792,7 +792,7 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 		v.log.Info("Failed to add finalizer", "finalizer", vrgFinalizerName, "errorValue", err)
 
 		msg := "Failed to add finalizer to VolumeReplicationGroup"
-		setVRGErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
 		if err = v.updateVRGStatus(false); err != nil {
 			v.log.Error(err, "VRG Status update failed")
@@ -896,7 +896,7 @@ func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
 		v.log.Info("Failed to add finalizer", "finalizer", vrgFinalizerName, "errorValue", err)
 
 		msg := "Failed to add finalizer to VolumeReplicationGroup"
-		setVRGErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
 		if err = v.updateVRGStatus(false); err != nil {
 			v.log.Error(err, "VRG Status update failed")
@@ -1637,8 +1637,8 @@ func (v *VRGInstance) updateVRGStatus(updateConditions bool) error {
 }
 
 func (v *VRGInstance) updateStatusState() {
-	vrgCondition := findCondition(v.instance.Status.Conditions, VRGConditionAvailable)
-	if vrgCondition == nil {
+	dataReadyCondition := findCondition(v.instance.Status.Conditions, VRGConditionDataReady)
+	if dataReadyCondition == nil {
 		v.log.Info("Failed to find the Available condition in status")
 
 		return
@@ -1650,8 +1650,8 @@ func (v *VRGInstance) updateStatusState() {
 	// only after successful transition of the resource
 	// (from primary->secondary or vise versa). That
 	// successful completion of transition can be seen
-	// in vrgCondition.Status being set to True.
-	if vrgCondition.Status == metav1.ConditionTrue {
+	// in dataReadyCondition.Status being set to True.
+	if dataReadyCondition.Status == metav1.ConditionTrue {
 		v.instance.Status.State = StatusState
 
 		return
@@ -1660,7 +1660,7 @@ func (v *VRGInstance) updateStatusState() {
 	// If VRG available condition is not true and the reason
 	// is Error, then mark Status.State as UnknownState instead
 	// of Primary or Secondary.
-	if vrgCondition.Reason == VRGError {
+	if dataReadyCondition.Reason == VRGError {
 		v.instance.Status.State = ramendrv1alpha1.UnknownState
 
 		return
@@ -1752,7 +1752,7 @@ func (v *VRGInstance) updateVRGConditions() {
 		v.log.Info("Marking VRG available with replicating reason")
 
 		msg := "PVCs in the VolumeReplicationGroup group are replicating"
-		setVRGReplicatingCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+		setVRGDataReplicatingCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
 		return
 	}
@@ -1761,7 +1761,7 @@ func (v *VRGInstance) updateVRGConditions() {
 		v.log.Info("Marking VRG not available with progressing reason")
 
 		msg := "VolumeReplicationGroup is progressing"
-		setVRGProgressingCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+		setVRGDataProgressingCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
 		return
 	}
@@ -1770,8 +1770,8 @@ func (v *VRGInstance) updateVRGConditions() {
 	// Set Error condition for VRG.
 	v.log.Info("Marking VRG not available with error. All PVCs are not ready")
 
-	msg := "All PVCs of the VolumeReplicationGroup are not available"
-	setVRGErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+	msg := "All PVCs of the VolumeReplicationGroup are not ready"
+	setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 }
 
 func (v *VRGInstance) checkVRStatus(volRep *volrep.VolumeReplication) (bool, error) {
