@@ -115,6 +115,7 @@ func setupReconcilers(mgr ctrl.Manager) {
 
 		drpcReconciler := (&controllers.DRPlacementControlReconciler{
 			Client:    mgr.GetClient(),
+			APIReader: mgr.GetAPIReader(),
 			Log:       ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),
 			MCVGetter: controllers.ManagedClusterViewGetterImpl{Client: mgr.GetClient()},
 			Scheme:    mgr.GetScheme(),
@@ -130,6 +131,7 @@ func setupReconcilers(mgr ctrl.Manager) {
 
 	if err := (&controllers.VolumeReplicationGroupReconciler{
 		Client:         mgr.GetClient(),
+		APIReader:      mgr.GetAPIReader(),
 		Log:            ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
 		ObjStoreGetter: controllers.S3ObjectStoreGetter(),
 		PVDownloader:   controllers.ObjectStorePVDownloader{},

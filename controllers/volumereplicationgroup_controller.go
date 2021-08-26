@@ -63,6 +63,7 @@ type PVDeleter interface {
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
 type VolumeReplicationGroupReconciler struct {
 	client.Client
+	APIReader      client.Reader
 	Log            logr.Logger
 	PVDownloader   PVDownloader
 	PVUploader     PVUploader
@@ -287,7 +288,7 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	// Fetch the VolumeReplicationGroup instance
-	if err := r.Get(ctx, req.NamespacedName, v.instance); err != nil {
+	if err := r.APIReader.Get(ctx, req.NamespacedName, v.instance); err != nil {
 		if errors.IsNotFound(err) {
 			log.Info("Resource not found")
 

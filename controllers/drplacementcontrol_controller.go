@@ -145,7 +145,7 @@ type ProgressCallback func(string, string)
 
 type ManagedClusterViewGetter interface {
 	GetVRGFromManagedCluster(
-		resourceName, resourceNamespace, managedCluster, caller string) (*rmn.VolumeReplicationGroup, error)
+		resourceName, resourceNamespace, managedCluster string) (*rmn.VolumeReplicationGroup, error)
 }
 
 type ManagedClusterViewGetterImpl struct {
@@ -153,8 +153,8 @@ type ManagedClusterViewGetterImpl struct {
 }
 
 func (m ManagedClusterViewGetterImpl) GetVRGFromManagedCluster(
-	resourceName, resourceNamespace, managedCluster, caller string) (*rmn.VolumeReplicationGroup, error) {
-	logger := ctrl.Log.WithName("MCV").WithValues("caller", caller)
+	resourceName, resourceNamespace, managedCluster string) (*rmn.VolumeReplicationGroup, error) {
+	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName)
 	// get VRG and verify status through ManagedClusterView
 	mcvMeta := metav1.ObjectMeta{
 		Name:      BuildManagedClusterViewName(resourceName, resourceNamespace, "vrg"),
@@ -265,6 +265,7 @@ func (m ManagedClusterViewGetterImpl) getOrCreateManagedClusterView(
 // DRPlacementControlReconciler reconciles a DRPlacementControl object
 type DRPlacementControlReconciler struct {
 	client.Client
+	APIReader     client.Reader
 	Log           logr.Logger
 	MCVGetter     ManagedClusterViewGetter
 	Scheme        *runtime.Scheme
@@ -436,7 +437,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	drpc := &rmn.DRPlacementControl{}
 
-	err := r.Client.Get(ctx, req.NamespacedName, drpc)
+	err := r.APIReader.Get(ctx, req.NamespacedName, drpc)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			logger.Info(fmt.Sprintf("DRCP object not found %v", req.NamespacedName))
@@ -903,115 +904,6 @@ func (r *DRPlacementControlReconciler) getSanityCheckDelay(
 	return time.Until(beforeProcessing.Add(SanityCheckDelay))
 }
 
-/*
-Description: queries a managed cluster for a resource type, and populates a variable with the results.
-Requires:
-	1) meta: information of the new/existing resource; defines which cluster(s) to search
-	2) viewscope: query information for managed cluster resource. Example: resource, name.
-	3) interface: empty variable to populate results into
-Returns: error if encountered (nil if no error occurred). See results on interface object.
-*/
-func (r *DRPlacementControlReconciler) getManagedClusterResource(
-	meta metav1.ObjectMeta, viewscope viewv1beta1.ViewScope, resource interface{}) error {
-	// create MCV first
-	mcv, err := r.getOrCreateManagedClusterView(meta, viewscope)
-	if err != nil {
-		return errorswrapper.Wrap(err, "getManagedClusterResource failed")
-	}
-
-	r.Log.Info(fmt.Sprintf("MCV condtions: %v", mcv.Status.Conditions))
-
-	// want single recent Condition with correct Type; otherwise: bad path
-	switch len(mcv.Status.Conditions) {
-	case 0:
-		err = fmt.Errorf("missing ManagedClusterView conditions")
-	case 1:
-		switch {
-		case mcv.Status.Conditions[0].Type != viewv1beta1.ConditionViewProcessing:
-			err = fmt.Errorf("found invalid condition (%s) in ManagedClusterView", mcv.Status.Conditions[0].Type)
-		case mcv.Status.Conditions[0].Reason == viewv1beta1.ReasonGetResourceFailed:
-			err = errors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
-		case mcv.Status.Conditions[0].Status != metav1.ConditionTrue:
-			err = fmt.Errorf("ManagedClusterView is not ready (reason: %s)", mcv.Status.Conditions[0].Reason)
-		}
-	default:
-		err = fmt.Errorf("found multiple status conditions with ManagedClusterView")
-	}
-
-	if err != nil {
-		return errorswrapper.Wrap(err, "getManagedClusterResource results")
-	}
-
-	// good path: convert raw data to usable object
-	err = json.Unmarshal(mcv.Status.Result.Raw, resource)
-	if err != nil {
-		return errorswrapper.Wrap(err, "failed to Unmarshal data from ManagedClusterView to resource")
-	}
-
-	return nil // success
-}
-
-/*
-Description: create a new ManagedClusterView object, or update the existing one with the same name.
-Requires:
-	1) meta: specifies MangedClusterView name and managed cluster search information
-	2) viewscope: once the managed cluster is found, use this information to find the resource.
-		Optional params: Namespace, Resource, Group, Version, Kind. Resource can be used by itself, Kind requires Version
-Returns: ManagedClusterView, error
-*/
-func (r *DRPlacementControlReconciler) getOrCreateManagedClusterView(
-	meta metav1.ObjectMeta, viewscope viewv1beta1.ViewScope) (*viewv1beta1.ManagedClusterView, error) {
-	mcv := &viewv1beta1.ManagedClusterView{
-		ObjectMeta: meta,
-		Spec: viewv1beta1.ViewSpec{
-			Scope: viewscope,
-		},
-	}
-
-	err := r.Get(context.TODO(), types.NamespacedName{Name: meta.Name, Namespace: meta.Namespace}, mcv)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			r.Log.Info(fmt.Sprintf("Creating ManagedClusterView %v", mcv))
-			err = r.Create(context.TODO(), mcv)
-		}
-
-		if err != nil {
-			return nil, errorswrapper.Wrap(err, "failed to getOrCreateManagedClusterView")
-		}
-	}
-
-	if mcv.Spec.Scope != viewscope {
-		r.Log.Info("WARNING: existing ManagedClusterView has different ViewScope than desired one")
-	}
-
-	return mcv, nil
-}
-
-func (r *DRPlacementControlReconciler) getVRGFromManagedCluster(
-	resourceName string, resourceNamespace string, managedCluster string) (*rmn.VolumeReplicationGroup, error) {
-	// get VRG and verify status through ManagedClusterView
-	mcvMeta := metav1.ObjectMeta{
-		Name:      BuildManagedClusterViewName(resourceName, resourceNamespace, "vrg"),
-		Namespace: managedCluster,
-		Annotations: map[string]string{
-			rmnutil.DRPCNameAnnotation:      resourceName,
-			rmnutil.DRPCNamespaceAnnotation: resourceNamespace,
-		},
-	}
-
-	mcvViewscope := viewv1beta1.ViewScope{
-		Resource:  "VolumeReplicationGroup",
-		Name:      resourceName,
-		Namespace: resourceNamespace,
-	}
-
-	vrg := &rmn.VolumeReplicationGroup{}
-
-	err := r.getManagedClusterResource(mcvMeta, mcvViewscope, vrg)
-
-	return vrg, err
-}
-
 type DRPCInstance struct {
 	reconciler           *DRPlacementControlReconciler
 	ctx                  context.Context
@@ -1287,13 +1179,7 @@ func (d *DRPCInstance) runRelocate() (bool, error) {
 			d.getLastDRState(), d.instance.Spec.Action)
 	}
 
-	return d.switchToPreferredCluster(rmn.Relocating)
-}
-
-func (d *DRPCInstance) switchToPreferredCluster(drState rmn.DRState) (bool, error) {
-	const done = true
-
-	// 1. We are done if empty
+	// We are done if empty
 	preferredCluster, preferredClusterNamespace := d.getPreferredClusterNamespaced()
 
 	if preferredCluster == "" {
@@ -1315,6 +1201,30 @@ func (d *DRPCInstance) switchToPreferredCluster(drState rmn.DRState) (bool, erro
 		return done, nil
 	}
 
+	curHomeCluster := d.getCurrentHomeClusterName()
+
+	if curHomeCluster == "" {
+		d.log.Info("Invalid Relocation request. Current home cluster does not exists")
+		err := fmt.Errorf("relocation requested on invalid state %v", d.instance.Status)
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonSwitchFailed, err.Error())
+
+		return done, err
+	}
+
+	// IF it has already started relocation, then the curHomeCluster will not be valid.
+	if !d.isRelocationInProgress() && !d.readyToSwitchOver(curHomeCluster) {
+		return !done, fmt.Errorf(
+			fmt.Sprintf("relocation to %s not allowed at this time. VRG on %s not ready",
+				preferredCluster, curHomeCluster))
+	}
+
+	return d.switchToPreferredCluster(preferredCluster, preferredClusterNamespace, rmn.Relocating)
+}
+
+func (d *DRPCInstance) switchToPreferredCluster(preferredCluster, preferredClusterNamespace string,
+	drState rmn.DRState) (bool, error) {
+	const done = true
 	// Make sure we record the state that we are failing over
 	d.setDRState(drState)
 	setMetricsTimerFromDRState(drState, timerStart)
@@ -1471,6 +1381,38 @@ func (d *DRPCInstance) hasAlreadySwitchedOver(targetCluster string) bool {
 	}
 
 	return false
+}
+
+func (d *DRPCInstance) readyToSwitchOver(homeCluster string) bool {
+	const ready = true
+
+	d.log.Info("Checking whether VRG is available", "cluster", homeCluster)
+
+	vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name, d.instance.Namespace, homeCluster)
+	if err != nil {
+		d.log.Info("Failed to get VRG through MCV", "error", err)
+
+		return !ready
+	}
+
+	dataReadyCondition := findCondition(vrg.Status.Conditions, VRGConditionTypeDataReady)
+	if dataReadyCondition == nil {
+		d.log.Info("VRG Condition not available", "cluster", homeCluster)
+
+		return !ready
+	}
+
+	clusterDataReadyCondition := findCondition(vrg.Status.Conditions, VRGConditionTypeClusterDataReady)
+	if clusterDataReadyCondition == nil {
+		d.log.Info("VRG Condition ClusterData not available", "cluster", homeCluster)
+
+		return !ready
+	}
+
+	return dataReadyCondition.Status == metav1.ConditionTrue &&
+		dataReadyCondition.ObservedGeneration == vrg.Generation &&
+		clusterDataReadyCondition.Status == metav1.ConditionTrue &&
+		clusterDataReadyCondition.ObservedGeneration == vrg.Generation
 }
 
 func (d *DRPCInstance) getPreferredClusterNamespaced() (string, string) {
@@ -1654,11 +1596,11 @@ func (d *DRPCInstance) checkPVsHaveBeenRestored(homeCluster string) (bool, error
 	d.log.Info("Checking whether PVs have been restored", "cluster", homeCluster)
 
 	vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name,
-		d.instance.Namespace, homeCluster, "checkPVsHaveBeenRestored")
+		d.instance.Namespace, homeCluster)
 	if err != nil {
 		d.log.Info("Failed to get VRG through MCV", "error", err)
 
-		return false, err
+		return false, fmt.Errorf("%w", err)
 	}
 
 	clusterDataReady := findCondition(vrg.Status.Conditions, VRGConditionTypeClusterDataReady)
@@ -1829,7 +1771,7 @@ func (d *DRPCInstance) ensureVRGIsSecondaryOnCluster(clusterName string) bool {
 	d.mcvRequestInProgress = false
 
 	vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name,
-		d.instance.Namespace, clusterName, "ensureVRGIsSecondaryOnCluster")
+		d.instance.Namespace, clusterName)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return true // ensured
@@ -1856,7 +1798,7 @@ func (d *DRPCInstance) ensureVRGDeleted(clusterName string) bool {
 	d.mcvRequestInProgress = false
 
 	vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name,
-		d.instance.Namespace, clusterName, "ensureVRGDeleted")
+		d.instance.Namespace, clusterName)
 	if err != nil {
 		d.log.Info("Failed to get VRG using MCV", "error", err)
 		// Only NotFound error is accepted
@@ -1971,7 +1913,7 @@ func (d *DRPCInstance) updateDRPCStatus() error {
 
 	if len(d.userPlacementRule.Status.Decisions) != 0 {
 		vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name, d.instance.Namespace,
-			d.userPlacementRule.Status.Decisions[0].ClusterName, "updateDRPCStatus")
+			d.userPlacementRule.Status.Decisions[0].ClusterName)
 		if err != nil {
 			// VRG must have been deleted if the error is NotFound. In either case,
 			// we don't have a VRG
@@ -1991,7 +1933,7 @@ func (d *DRPCInstance) updateDRPCStatus() error {
 	if err := d.reconciler.Status().Update(d.ctx, d.instance); err != nil {
 		return errorswrapper.Wrap(err, "failed to update DRPC status")
 	}
-	time.Sleep(time.Second * 3)
+
 	d.log.Info(fmt.Sprintf("Updated DRPC Status %+v", d.instance.Status))
 
 	return nil

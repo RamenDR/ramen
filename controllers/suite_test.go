@@ -111,6 +111,7 @@ var _ = BeforeSuite(func() {
 
 	err = (&ramencontrollers.VolumeReplicationGroupReconciler{
 		Client:         k8sManager.GetClient(),
+		APIReader:      k8sManager.GetAPIReader(),
 		Log:            ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
 		ObjStoreGetter: ramencontrollers.S3ObjectStoreGetter(),
 		PVDownloader:   FakePVDownloader{},
@@ -122,6 +123,7 @@ var _ = BeforeSuite(func() {
 
 	drpcReconciler := (&ramencontrollers.DRPlacementControlReconciler{
 		Client:    k8sManager.GetClient(),
+		APIReader: k8sManager.GetAPIReader(),
 		Log:       ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),
 		MCVGetter: FakeMCVGetter{},
 		Scheme:    k8sManager.GetScheme(),
