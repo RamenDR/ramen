@@ -24,24 +24,18 @@ import (
 
 // VRG condition types
 const (
-	VRGConditionAvailable = "Available"
+	VRGConditionAvailable        = "Available"
+	VRGConditionClusterDataReady = "ClusterDataReady"
 )
 
-// Protected PVC condition types
-const (
-	PVCConditionAvailable = "Available"
-)
-
-const (
-	PVConditionMetadataAvailable = "MetadataAvailable"
-)
-
+// VRGConditionAvailable reasons
 const (
 	VRGReplicating = "Replicating"
 	VRGProgressing = "Progressing"
 	VRGError       = "Error"
 )
 
+// PVCConditionAvailable reasons
 const (
 	PVCReplicating  = "Replicating"
 	PVCProgressing  = "Progressing"
@@ -49,10 +43,16 @@ const (
 	PVCErrorUnknown = "UnknownError"
 )
 
+// PVC condition types
 const (
-	PVMetadataRestored    = "Restored"
-	PVMetadataProgressing = "Progressing"
-	PVMetadataError       = "Error"
+	PVCConditionAvailable = "Available"
+)
+
+// VRGConditionClusterDataReady reasons
+const (
+	VRGClusterDataRestored    = "Restored"
+	VRGClusterDataProgressing = "Progressing"
+	VRGClusterDataError       = "Error"
 )
 
 // Just when VRG has been picked up for reconciliation when nothing has been
@@ -150,33 +150,33 @@ func setPVCErrorUnknownCondition(conditions *[]metav1.Condition, observedGenerat
 	})
 }
 
-// sets conditions when PV meatadata is restored
-func setPVMetadataAvailableCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+// sets conditions when PV cluster data is restored
+func setVRGClusterDataReadyCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               PVConditionMetadataAvailable,
-		Reason:             PVMetadataRestored,
+		Type:               VRGConditionClusterDataReady,
+		Reason:             VRGClusterDataRestored,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
 		Message:            message,
 	})
 }
 
-// sets conditions when PV metadata is being restored
-func setPVMetadataProgressingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+// sets conditions when PV cluster data is being restored
+func setVRGClusterDataProgressingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               PVConditionMetadataAvailable,
-		Reason:             PVMetadataProgressing,
+		Type:               VRGConditionClusterDataReady,
+		Reason:             VRGClusterDataProgressing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,
 	})
 }
 
-// sets conditions when PV metadata failed to restore
-func setPVMetadataErrorCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+// sets conditions when PV cluster data failed to restore
+func setVRGClusterDataErrorCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               PVConditionMetadataAvailable,
-		Reason:             PVMetadataError,
+		Type:               VRGConditionClusterDataReady,
+		Reason:             VRGClusterDataError,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,

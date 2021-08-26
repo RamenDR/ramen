@@ -1586,14 +1586,14 @@ func (d *DRPCInstance) checkPVsHaveBeenRestored(homeCluster string) (bool, error
 		return false, err
 	}
 
-	vrgCondition := findCondition(vrg.Status.Conditions, PVConditionMetadataAvailable)
-	if vrgCondition == nil {
+	clusterDataReady := findCondition(vrg.Status.Conditions, VRGConditionClusterDataReady)
+	if clusterDataReady == nil {
 		d.log.Info("Waiting for PVs to be restored", "cluster", homeCluster)
 
 		return false, nil
 	}
 
-	return vrgCondition.Status == metav1.ConditionTrue && vrgCondition.ObservedGeneration == vrg.Generation, nil
+	return clusterDataReady.Status == metav1.ConditionTrue && clusterDataReady.ObservedGeneration == vrg.Generation, nil
 }
 
 func (d *DRPCInstance) ensureCleanup(clusterToSkip string) error {

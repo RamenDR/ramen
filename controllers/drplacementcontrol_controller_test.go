@@ -117,7 +117,7 @@ func FakeProgressCallback(drpcName string, state string) {
 
 // create a VRG, then fake ManagedClusterView results
 func updateManagedClusterViewWithVRG(mcvNamespace string,
-	replicationState rmn.ReplicationState, addVRGPVCondition bool) {
+	replicationState rmn.ReplicationState, addVRGClusterDataReadyCondition bool) {
 	state := rmn.PrimaryState
 	if replicationState != rmn.Primary {
 		state = rmn.SecondaryState
@@ -126,9 +126,9 @@ func updateManagedClusterViewWithVRG(mcvNamespace string,
 	conType := controllers.VRGConditionAvailable
 	reason := controllers.VRGReplicating
 
-	if addVRGPVCondition {
-		conType = controllers.PVConditionMetadataAvailable
-		reason = controllers.PVMetadataRestored
+	if addVRGClusterDataReadyCondition {
+		conType = controllers.VRGConditionClusterDataReady
+		reason = controllers.VRGClusterDataRestored
 	}
 
 	vrgStatus := rmn.VolumeReplicationGroupStatus{

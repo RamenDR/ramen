@@ -436,10 +436,10 @@ func (v *VRGInstance) validateVRGState() error {
 
 func (v *VRGInstance) restorePVs() error {
 	// TODO: refactor this per this comment: https://github.com/RamenDR/ramen/pull/197#discussion_r687246692
-	vrgCondition := findCondition(v.instance.Status.Conditions, PVConditionMetadataAvailable)
-	if vrgCondition != nil && vrgCondition.Status == metav1.ConditionTrue &&
-		vrgCondition.ObservedGeneration == v.instance.Generation {
-		v.log.Info("VRGConditionAvailable found. PV restore must have already been applied")
+	clusterDataReady := findCondition(v.instance.Status.Conditions, VRGConditionClusterDataReady)
+	if clusterDataReady != nil && clusterDataReady.Status == metav1.ConditionTrue &&
+		clusterDataReady.ObservedGeneration == v.instance.Generation {
+		v.log.Info("VRG's ClusterDataReady condition found. PV restore must have already been applied")
 
 		return nil
 	}
@@ -448,8 +448,8 @@ func (v *VRGInstance) restorePVs() error {
 		return fmt.Errorf("invalid S3ProfileList")
 	}
 
-	msg := "Restoring PV metadata"
-	setPVMetadataProgressingCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+	msg := "Restoring PV cluster data"
+	setVRGClusterDataProgressingCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
 	v.log.Info(fmt.Sprintf("Restoring PVs to this managed cluster. ProfileList: %v", v.instance.Spec.S3ProfileList))
 
@@ -465,14 +465,14 @@ func (v *VRGInstance) restorePVs() error {
 
 		v.log.Info(fmt.Sprintf("Found %d PVs", len(pvList)))
 
-		err = v.restorePVMetadata(pvList)
+		err = v.restorePVClusterData(pvList)
 		if err != nil {
 			success = false
 			// go to the next profile
 			continue
 		}
 
-		setPVMetadataAvailableCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+		setVRGClusterDataReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
 		v.log.Info(fmt.Sprintf("Restored %d PVs using profile %s", len(pvList), s3ProfileName))
 
@@ -509,7 +509,7 @@ func (s ObjectStorePVDownloader) DownloadPVs(ctx context.Context, r client.Reade
 	return objectStore.downloadPVs(s3Bucket)
 }
 
-func (v *VRGInstance) restorePVMetadata(pvList []corev1.PersistentVolume) error {
+func (v *VRGInstance) restorePVClusterData(pvList []corev1.PersistentVolume) error {
 	numRestored := 0
 
 	for idx := range pvList {
@@ -663,7 +663,7 @@ func (v *VRGInstance) processForDeletion() (ctrl.Result, error) {
 
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
 		if err := v.deletePVsFromS3Stores(v.log); err != nil {
-			v.log.Info("Requeuing due to failure in deleting PV metadata from S3 stores",
+			v.log.Info("Requeuing due to failure in deleting PV cluster data from S3 stores",
 				"errorValue", err)
 
 			return ctrl.Result{Requeue: true}, nil
@@ -805,7 +805,7 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 		v.log.Info("Restoring PVs failed", "errorValue", err)
 
 		msg := fmt.Sprintf("Failed to restore PVs (%v)", err.Error())
-		setPVMetadataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+		setVRGClusterDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
 		if err = v.updateVRGStatus(false); err != nil {
 			v.log.Error(err, "VRG Status update failed")
@@ -1246,8 +1246,8 @@ func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim, log 
 type ObjectStorePVUploader struct{}
 
 // UploadPV checks if the VRG spec has been configured with an s3 endpoint,
-// connects to the object store, gets the PV metadata of the input PVC from
-// etcd, creates a bucket in s3 store, uploads the PV metadata to s3 store and
+// connects to the object store, gets the PV cluster data of the input PVC from
+// etcd, creates a bucket in s3 store, uploads the PV cluster data to s3 store and
 // downloads it for verification.  If an s3 endpoint is not configured, then
 // it assumes that VRG is running in a mode that doesn't require Ramen to
 // protect PV related cluster data and hence, does not return an error, but
@@ -1285,7 +1285,7 @@ func (ObjectStorePVUploader) UploadPV(v interface{}, s3ProfileName string,
 
 	// Get PV from k8s
 	if err := v.(*VRGInstance).reconciler.Get(v.(*VRGInstance).ctx, pvObjectKey, &pv); err != nil {
-		return fmt.Errorf("failed to get PV metadata from k8s, %w", err)
+		return fmt.Errorf("failed to get PV cluster data from k8s, %w", err)
 	}
 
 	// Create the bucket in object store, without assuming its existence
