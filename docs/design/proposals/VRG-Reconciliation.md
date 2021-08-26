@@ -21,7 +21,7 @@ namespace level resource that ensures the following:
     reconciling them
     - Ensures PVs backing the PVCs are retained for the duration that they
     are protected
-    - Backs up the PV metadata to an external S3 store, to enable restoring
+    - Backs up the PV cluster data to an external S3 store, to enable restoring
     them on a remote peer cluster
 - Creates and manages VR resource for PVCs that need to be protected
 - Manages state changes in VRG by ensuring VRs reach the same desired state,
@@ -62,12 +62,8 @@ spec:
         - Desired state of all volumes [`primary` or `secondary`] in this
         replication group; this value is propagated to created
         VolumeReplication CRs
-    - S3Endpoint
-        - S3 Endpoint to replicate PV metadata
-        - **NOTE:** As we move S3 end point configuration this may change
-    - S3SecretName
-        - S3 Endpoint to replicate PV metadata
-        - **NOTE:** As we move S3 end point configuration this may change
+    - S3Profiles
+        - S3 Profiles to replicate PV cluster data
 
 ### Status
 
@@ -126,7 +122,7 @@ status:
 
 - Status may change for the same observed generation, as PVCs are created
 - Should there be a per PVC condition that it's backing PV was backed up?
-  To denote that replication at storage maybe missing, but PV metadata may exist?
+  To denote that replication at storage maybe missing, but PV cluster data may exist?
 
 ### VRG Example
 
@@ -142,8 +138,9 @@ spec:
       appname: myapp
   volumeReplicationClass: "vr-class-sample"
   replicationState: "Primary"
-  s3Endpoint: http://objectstore.svc:9000
-  s3SecretName: vrg-objectstore-secret
+  s3ProfileList:
+    s3ProfileEast
+    s3ProfileWest
 ```
 
 ## VRG reconciliation
@@ -172,7 +169,7 @@ are taken to ensure the same:
     - Bound PV needs to be retained, till the PVC is deleted by the user on
     the cluster where it is "Primary", this ensures underlying storage volume
     is retained across the DR instances when replicated
-1. Backup Bound PV's metadata
+1. Backup Bound PV's cluster data
 1. Finally, add `vr-protected` annotation to PVC, to enable optimizing repeat
   of steps above
 
@@ -239,7 +236,7 @@ are taken to ensure the same:
     - When a VRG is deleted as Primary, it should mean the PVCs protected are
     no longer required. Deleting a VR when marked primary would also garbage
     collect the storage volume, hence this state may serve as the decision
-    point to delete the backed up PV metadata
+    point to delete the backed up PV cluster data
 1. How/when do we make the VRG restore from the S3 store if desired,
   when created?
     - This would be in lieu of the OCM hub taking restore actions, in a

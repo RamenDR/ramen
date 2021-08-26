@@ -22,7 +22,7 @@ Ramen also works as part of the [OCM managed clusters] to orchestrate,
 
 - [VolumeReplication](https://github.com/csi-addons/volume-replication-operator/blob/main/api/v1alpha1/volumereplication_types.go)
   resources for all PVCs of an application
-- Preserving metadata regarding each PVC that is replicated
+- Preserving cluster data regarding each PVC that is replicated
 
 VolumeReplication resources require storage providers to support
 [CSI extensions](https://github.com/csi-addons/spec) that enable managing
@@ -39,11 +39,11 @@ kubernetes cluster to manage VRG resources.
 
 ### S3 store
 
-Ramen preserves metadata related to VolumeReplication resources in an S3
+Ramen preserves cluster data related to PV resources in an S3
 compatible object store. An S3 store endpoint is hence required as part of the
 setup.
 
-Ramen specifically stores PV metadata for a replicated PVC, to restore the same
+Ramen specifically stores PV cluster data for a replicated PVC, to restore the same
 across peer cluster prior to deploying the PVCs of the application, to ensure
 proper binding of the PVC resources to the replicated storage end points.
 
