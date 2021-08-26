@@ -15,8 +15,9 @@ package controllers_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/ghodss/yaml"
@@ -24,14 +25,12 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	spokeClusterV1 "github.com/open-cluster-management/api/cluster/v1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
-	viewv1beta1 "github.com/open-cluster-management/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	dto "github.com/prometheus/client_model/go"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
@@ -120,26 +119,31 @@ var restorePVs = true
 
 type FakeMCVGetter struct{}
 
+//nolint:dogsled
+func getFunctionNameAtIndex(idx int) string {
+	pc, _, _, _ := runtime.Caller(idx)
+	data := runtime.FuncForPC(pc).Name()
+	result := strings.Split(data, ".")
+
+	return result[len(result)-1]
+}
+
 func (f FakeMCVGetter) GetVRGFromManagedCluster(
-	resourceName, resourceNamespace, managedCluster, caller string) (*rmn.VolumeReplicationGroup, error) {
-
-	conType := controllers.VRGConditionAvailable
-	reason := controllers.VRGReplicating
-
+	resourceName, resourceNamespace, managedCluster string) (*rmn.VolumeReplicationGroup, error) {
+	conType := controllers.VRGConditionTypeDataReady
+	reason := controllers.VRGConditionReasonReplicating
 	vrgStatus := rmn.VolumeReplicationGroupStatus{
 		State: rmn.PrimaryState,
 		Conditions: []metav1.Condition{
 			{
 				Type:               conType,
 				Reason:             reason,
-				ObservedGeneration: 0,
 				Status:             metav1.ConditionTrue,
 				Message:            "Testing VRG",
 				LastTransitionTime: metav1.Now(),
 			},
 		},
 	}
-
 	vrg := &rmn.VolumeReplicationGroup{
 		TypeMeta:   metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
 		ObjectMeta: metav1.ObjectMeta{Name: DRPCName, Namespace: DRPCNamespaceName},
@@ -156,189 +160,35 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(
 		Status: vrgStatus,
 	}
 
-	switch caller {
+	switch getFunctionNameAtIndex(2) {
 	case "updateDRPCStatus":
 		return vrg, nil
 	case "checkPVsHaveBeenRestored":
 		if restorePVs {
-			vrg.Status.Conditions[0].Type = controllers.PVConditionMetadataAvailable
-			vrg.Status.Conditions[0].Reason = controllers.PVMetadataRestored
+			vrg.Status.Conditions[0].Type = controllers.VRGConditionTypeClusterDataReady
+			vrg.Status.Conditions[0].Reason = controllers.VRGConditionReasonClusterDataRestored
 		}
+
 		return vrg, nil
 	case "ensureVRGIsSecondaryOnCluster":
 		vrg.Status.State = rmn.SecondaryState
+
 		return vrg, nil
 	case "ensureVRGDeleted":
 		return nil, errors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
 	case "readyToSwitchOver":
+		vrg.Status.Conditions = append(vrg.Status.Conditions, metav1.Condition{
+			Type:               controllers.VRGConditionTypeClusterDataReady,
+			Reason:             controllers.VRGConditionReasonClusterDataRestored,
+			Status:             metav1.ConditionTrue,
+			Message:            "Testing VRG",
+			LastTransitionTime: metav1.Now(),
+		})
+
 		return vrg, nil
 	}
 
-	return nil, fmt.Errorf("unknonw caller %s", caller)
-}
-
-// create a VRG, then fake ManagedClusterView results
-func updateManagedClusterViewWithVRG(mcvNamespace string,
-	replicationState rmn.ReplicationState, addVRGClusterDataReadyCondition bool) {
-	state := rmn.PrimaryState
-	if replicationState != rmn.Primary {
-		state = rmn.SecondaryState
-	}
-
-	conType := controllers.VRGConditionTypeDataReady
-	reason := controllers.VRGConditionReasonReplicating
-
-	if addVRGClusterDataReadyCondition {
-		conType = controllers.VRGConditionTypeClusterDataReady
-		reason = controllers.VRGConditionReasonClusterDataRestored
-	}
-
-	vrgStatus := rmn.VolumeReplicationGroupStatus{
-		State: state,
-		Conditions: []metav1.Condition{
-			{
-				Type:               conType,
-				Reason:             reason,
-				ObservedGeneration: 0,
-				Status:             metav1.ConditionTrue,
-				Message:            "Testing VRG",
-				LastTransitionTime: metav1.Now(),
-			},
-		},
-	}
-
-	vrg := &rmn.VolumeReplicationGroup{
-		TypeMeta:   metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
-		ObjectMeta: metav1.ObjectMeta{Name: DRPCName, Namespace: DRPCNamespaceName},
-		Spec: rmn.VolumeReplicationGroupSpec{
-			SchedulingInterval: schedulingInterval,
-			ReplicationState:   replicationState,
-			PVCSelector: metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"appclass": "gold",
-				},
-			},
-			S3ProfileList: []string{"fakeS3Profile"},
-		},
-		Status: vrgStatus,
-	}
-
-	mcvName := controllers.BuildManagedClusterViewName(DRPCName, DRPCNamespaceName, "vrg")
-	mcv := &viewv1beta1.ManagedClusterView{}
-	mcvLookupKey := types.NamespacedName{
-		Name:      mcvName,
-		Namespace: mcvNamespace,
-	}
-
-	Eventually(func() bool {
-		err := k8sClient.Get(context.TODO(), mcvLookupKey, mcv)
-
-		return err == nil
-	}, timeout, interval).Should(BeTrue(),
-		fmt.Sprintf("failed to wait for mcv creation (%v)", mcv))
-
-	updateManagedClusterView(mcv, vrg, metav1.ConditionTrue)
-}
-
-// take an existing ManagedClusterView and apply the given resource to it as though it were "found"
-func updateManagedClusterView(
-	mcv *viewv1beta1.ManagedClusterView,
-	resource interface{},
-	status metav1.ConditionStatus) {
-	// get raw bytes
-	objJSON, err := json.Marshal(resource)
-
-	Expect(err).NotTo(HaveOccurred())
-
-	// update Status, Result fields
-	reason := viewv1beta1.ReasonGetResource
-	if status != metav1.ConditionTrue {
-		reason = viewv1beta1.ReasonGetResourceFailed
-	}
-
-	mcv.Status = viewv1beta1.ViewStatus{
-		Conditions: []metav1.Condition{
-			{
-				Type:               viewv1beta1.ConditionViewProcessing,
-				LastTransitionTime: metav1.Time{Time: time.Now().Local()},
-				Status:             status,
-				Reason:             reason,
-			},
-		},
-		Result: runtime.RawExtension{
-			Raw: objJSON,
-		},
-	}
-
-	err = k8sClient.Status().Update(context.TODO(), mcv)
-	if err != nil {
-		mcvLookupKey := types.NamespacedName{
-			Name:      mcv.Name,
-			Namespace: mcv.Namespace,
-		}
-		err = k8sClient.Get(context.TODO(), mcvLookupKey, mcv)
-
-		if err == nil {
-			err = k8sClient.Status().Update(context.TODO(), mcv)
-		}
-
-		if errors.IsNotFound(err) {
-			err = nil
-		}
-	}
-
-	Expect(err).NotTo(HaveOccurred())
-}
-
-// take an existing ManagedClusterView and update status as NotFound
-func updateManagedClusterViewStatusAsNotFound(mcvNamespace string) {
-	// update Status, Result fields
-	mcvName := controllers.BuildManagedClusterViewName(DRPCName, DRPCNamespaceName, "vrg")
-	mcv := &viewv1beta1.ManagedClusterView{}
-	mcvLookupKey := types.NamespacedName{
-		Name:      mcvName,
-		Namespace: mcvNamespace,
-	}
-
-	Eventually(func() bool {
-		err := k8sClient.Get(context.TODO(), mcvLookupKey, mcv)
-
-		return err == nil
-	}, timeout, interval).Should(BeTrue(),
-		fmt.Sprintf("failed to wait for mcv creation (%v)", mcv))
-
-	status := viewv1beta1.ViewStatus{
-		Conditions: []metav1.Condition{
-			{
-				Type:               viewv1beta1.ConditionViewProcessing,
-				LastTransitionTime: metav1.Time{Time: time.Now().Local()},
-				Status:             metav1.ConditionFalse,
-				Reason:             viewv1beta1.ReasonGetResourceFailed,
-			},
-		},
-	}
-
-	mcv.Status = status
-
-	Eventually(func() bool {
-		err := k8sClient.Status().Update(context.TODO(), mcv)
-		if err != nil {
-			err2 := k8sClient.Get(context.TODO(), mcvLookupKey, mcv)
-			if errors.IsNotFound(err2) {
-				return true
-			}
-		}
-
-		result := err == nil && len(mcv.Status.Conditions) > 0 &&
-			mcv.Status.Conditions[0].Reason == viewv1beta1.ReasonGetResourceFailed
-
-		if !result {
-			mcv.Status = status
-		}
-
-		return result
-	}, timeout, interval).Should(BeTrue(),
-		fmt.Sprintf("failed to wait for MCV.status.condition to change (%+v) (%#v)", mcv, mcv))
+	return nil, fmt.Errorf("unknonw caller %s", getFunctionNameAtIndex(2))
 }
 
 func createPlacementRule(name, namespace string) *plrv1.PlacementRule {
@@ -727,7 +577,7 @@ func verifyDRPCStatusPreferredClusterExpectation(drState rmn.DRState) {
 
 		if d := updatedDRPC.Status.PreferredDecision; err == nil && d != (plrv1.PlacementDecision{}) {
 			idx, condition := controllers.GetDRPCCondition(&updatedDRPC.Status, rmn.ConditionAvailable)
-			fmt.Println(fmt.Sprintf("idx %d, clusterName %s, reason %s", idx, d.ClusterName, condition.Reason))
+
 			return d.ClusterName == EastManagedCluster && idx != -1 && condition.Reason == string(drState)
 		}
 
@@ -744,24 +594,6 @@ func waitForCompletion(state string) {
 		return drstate == state
 	}, timeout*2, interval).Should(BeTrue(), "failed to wait for hook to be called")
 }
-
-// func waitUntilDRPCPhaseIsReflected(drState rmn.DRState) {
-// 	drpcLookupKey := types.NamespacedName{
-// 		Name:      DRPCName,
-// 		Namespace: DRPCNamespaceName,
-// 	}
-
-// 	Eventually(func() bool {
-// 		latestDRPC := &rmn.DRPlacementControl{}
-// 		err := k8sClient.Get(context.TODO(), drpcLookupKey, latestDRPC)
-// 		if err != nil {
-// 			return false
-// 		}
-
-// 		return latestDRPC.Status.Phase == drState
-// 	}, timeout, interval).Should(BeTrue(),
-// 		fmt.Sprintf("failed waiting for DRPC state to reflect the actual state %v", drState))
-// }
 
 func relocateToPreferredCluster(drpc *rmn.DRPlacementControl, userPlacementRule *plrv1.PlacementRule) {
 	updateClonedPlacementRuleStatus(userPlacementRule, drpc, EastManagedCluster)
