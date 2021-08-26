@@ -778,16 +778,21 @@ func (d *DRPCInstance) statusUpdateTimeElapsed() bool {
 // the reconciler is called, let's say, at 10:08am, and no update to the DRPC status was needed,
 // then the requeue time duration should be 2 minutes and NOT the full SanityCheckDelay. That is:
 // 10:00am + SanityCheckDelay - 10:08am = 2mins
-//nolint:gosimple
 func (r *DRPlacementControlReconciler) getSanityCheckDelay(
 	beforeProcessing metav1.Time, afterProcessing metav1.Time) time.Duration {
 	if beforeProcessing != afterProcessing {
+		// DRPC's VRG status update processing time has changed during this
+		// iteration of the reconcile loop.  Hence, the next attempt to update
+		// the status should be after a delay of a standard polling interval
+		// duration.
 		return SanityCheckDelay
 	}
 
-	// No change to the update time
-	// The linter mistakenly is asking to use time.Until instead of time.Sub... Disabling
-	return beforeProcessing.Add(SanityCheckDelay).Sub(time.Now())
+	// DRPC's VRG status update processing time has NOT changed during this
+	// iteration of the reconcile loop.  Hence, the next attempt to update the
+	// status should be after the remaining duration of this polling interval has
+	// elapsed: (beforeProcessing + SantityCheckDelay - time.Now())
+	return time.Until(beforeProcessing.Add(SanityCheckDelay))
 }
 
 /*
