@@ -863,7 +863,18 @@ func (v *VRGInstance) reconcileVRsAsPrimary() bool {
 		if _, err := v.processVRAsPrimary(pvcNamespacedName, log); err != nil {
 			log.Info("Requeuing due to failure in getting or creating VolumeReplication resource for PersistentVolumeClaim",
 				"errorValue", err)
+		}
 
+		// Protect the PVC's PV object stored in etcd by uploading it to S3
+		// store(s).  Note that the VRG is responsible only to protect the PV
+		// object of each PVC of the subscription.  However, the PVC object
+		// itself is assumed to be protected along with other k8s objects in the
+		// subscription, such as, the deployment, pods, services, etc., by an
+		// entity external to the VRG a la IaC.
+		if err := v.uploadPVToS3Stores(pvc, log); err != nil {
+			log.Info("Requeuing due to failure to upload PV object to S3 store(s)",
+				"errorValue", err)
+			// TODO: use requeueAfter time duration.
 			requeue = true
 
 			continue
@@ -1069,19 +1080,6 @@ func (v *VRGInstance) protectPVC(pvc *corev1.PersistentVolumeClaim,
 		return requeue, !skip
 	}
 
-	// If faulted post backing up PV but prior to VR creation, PVC on a failover will fail to attach,
-	// and it is better to not have silent data loss, but be explicit on the failure.
-	if err := v.uploadPVToS3Stores(pvc); err != nil {
-		log.Info("Requeuing, as uploading PersistentVolume failed", "errorValue", err)
-		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
-			rmnutil.EventReasonPVUploadFailed, err.Error())
-
-		msg := "Failed to upload PV metadata"
-		v.updateProtectedPVCCondition(pvc.Name, PVCError, msg)
-
-		return requeue, !skip
-	}
-
 	// Annotate that PVC protection is complete, skip if being deleted
 	if pvc.GetDeletionTimestamp().IsZero() {
 		if err := v.addProtectedAnnotationForPVC(pvc, log); err != nil {
@@ -1229,9 +1227,15 @@ func (v *VRGInstance) undoPVRetentionForPVC(pvc corev1.PersistentVolumeClaim, lo
 }
 
 // Upload PV to the list of S3 stores in the VRG spec
-func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim) (err error) {
+func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (err error) {
 	for _, s3ProfileName := range v.instance.Spec.S3ProfileList {
 		if err := v.reconciler.PVUploader.UploadPV(v, s3ProfileName, pvc); err != nil {
+			msg := "Failed to upload PV cluster data to s3Profile " + s3ProfileName
+			v.updateProtectedPVCCondition(pvc.Name, PVCError, msg)
+			log.Error(err, msg)
+			rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
+				rmnutil.EventReasonPVUploadFailed, err.Error())
+
 			return fmt.Errorf("error uploading PV %s using profile %s, err %w", pvc.Name, s3ProfileName, err)
 		}
 	}
@@ -1246,7 +1250,7 @@ type ObjectStorePVUploader struct{}
 // etcd, creates a bucket in s3 store, uploads the PV metadata to s3 store and
 // downloads it for verification.  If an s3 endpoint is not configured, then
 // it assumes that VRG is running in a mode that doesn't require Ramen to
-// protect PV related cluster state and hence, does not return an error, but
+// protect PV related cluster data and hence, does not return an error, but
 // logs a one-time message.
 func (ObjectStorePVUploader) UploadPV(v interface{}, s3ProfileName string,
 	pvc *corev1.PersistentVolumeClaim) (err error) {
@@ -1264,7 +1268,7 @@ func (ObjectStorePVUploader) UploadPV(v interface{}, s3ProfileName string,
 		return err
 	}
 
-	v.(*VRGInstance).log.Info("Uploading PersistentVolume metadata to object store")
+	v.(*VRGInstance).log.Info("Uploading PersistentVolume resource to object store")
 
 	objectStore, err :=
 		v.(*VRGInstance).reconciler.ObjStoreGetter.objectStore(v.(*VRGInstance).ctx,
@@ -1292,11 +1296,6 @@ func (ObjectStorePVUploader) UploadPV(v interface{}, s3ProfileName string,
 	// Upload PV to object store
 	if err := objectStore.uploadPV(s3Bucket, pv.Name, pv); err != nil {
 		return fmt.Errorf("error uploading PV %s, err %w", pv.Name, err)
-	}
-
-	// Verify upload of PV to object store
-	if err := objectStore.verifyPVUpload(s3Bucket, pv.Name, pv); err != nil {
-		return fmt.Errorf("error verifying PV %s, err %w", pv.Name, err)
 	}
 
 	return nil
@@ -1342,33 +1341,33 @@ func (ObjectStorePVDeleter) DeletePVs(v interface{}, s3ProfileName string) (err 
 	return nil
 }
 
-// clusterStateUnprotected is a map with VRG name as the key
-var clusterStateUnprotected = make(map[string]bool)
+// pvClusterDataUnprotected is a map with VRG name as the key
+var pvClusterDataUnprotected = make(map[string]bool)
 
 // If the the s3ProfileName is not set, then the VRG has been configured to run
-// in a mode that doesn't require protection of PV related cluster state.
+// in a mode that doesn't require protection of PV related cluster data.
 func (v *VRGInstance) checkS3Profile(s3ProfileName string) error {
 	vrgName := v.instance.Name
 
 	if s3ProfileName != "" {
-		clusterStateUnprotected[vrgName] = false
+		pvClusterDataUnprotected[vrgName] = false
 
 		return nil
 	}
 
 	// No endpoint could mean that the user does not want Ramen to protect PV
-	// related cluster state.
+	// related cluster data.
 	err := errors.NewServiceUnavailable("s3Profile not configured in VRG.spec")
 
-	if prevWarned := clusterStateUnprotected[vrgName]; prevWarned {
+	if prevWarned := pvClusterDataUnprotected[vrgName]; prevWarned {
 		// previously logged warning about backup-less mode of operation
 		return err
 	}
 
-	v.log.Info("VolumeReplicationGroup ", vrgName, " is not configured to protect PV cluster state.")
+	v.log.Info("VolumeReplicationGroup ", vrgName, " is not configured to protect PV cluster data.")
 
 	// Remember that a message was logged already to avoid repetitive warning for the same VRG.
-	clusterStateUnprotected[vrgName] = true
+	pvClusterDataUnprotected[vrgName] = true
 
 	return err
 }
@@ -1966,6 +1965,9 @@ func (v *VRGInstance) addProtectedAnnotationForPVC(pvc *corev1.PersistentVolumeC
 	pvc.ObjectMeta.Annotations[pvcVRAnnotationProtectedKey] = pvcVRAnnotationProtectedValue
 
 	if err := v.reconciler.Update(v.ctx, pvc); err != nil {
+		// TODO: Should we set the PVC condition to error?
+		// msg := "Failed to add protected annotatation to PVC"
+		// v.updateProtectedPVCCondition(pvc.Name, PVCError, msg)
 		log.Error(err, "Failed to update PersistentVolumeClaim annotation")
 
 		return fmt.Errorf("failed to update PersistentVolumeClaim (%s/%s) annotation (%s) belonging to"+
