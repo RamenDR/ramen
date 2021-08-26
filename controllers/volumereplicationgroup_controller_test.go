@@ -738,7 +738,7 @@ func (v *vrgTest) getVRG(vrgName string) *ramendrv1alpha1.VolumeReplicationGroup
 func (v *vrgTest) verifyVRGStatusExpectation(expectedStatus bool) {
 	Eventually(func() bool {
 		vrg := v.getVRG(v.vrgName)
-		vrgAvailableCondition := checkConditions(vrg.Status.Conditions, vrgController.VRGConditionAvailable)
+		vrgAvailableCondition := checkConditions(vrg.Status.Conditions, vrgController.VRGConditionDataReady)
 
 		if expectedStatus == true {
 			return vrgAvailableCondition.Status == metav1.ConditionTrue

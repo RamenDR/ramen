@@ -123,7 +123,7 @@ func updateManagedClusterViewWithVRG(mcvNamespace string,
 		state = rmn.SecondaryState
 	}
 
-	conType := controllers.VRGConditionAvailable
+	conType := controllers.VRGConditionDataReady
 	reason := controllers.VRGReplicating
 
 	if addVRGClusterDataReadyCondition {
