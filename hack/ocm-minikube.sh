@@ -235,6 +235,13 @@ ocm_foundation_operator_deploy_hub()
 	ocm_foundation_operator_kubectl_hub apply
 	kubectl --context $hub_cluster_name delete apiservices v1.clusterview.open-cluster-management.io v1alpha1.clusterview.open-cluster-management.io v1beta1.proxy.open-cluster-management.io
 	kubectl --context $hub_cluster_name -n open-cluster-management delete deployments/ocm-proxyserver services/ocm-proxyserver
+	# Start of ocm-controller failure workaround for the issue where the
+	# controller crashes due to improper rolers and missing CRD issues.
+	kubectl --context $hub_cluster_name -n open-cluster-management scale deployments/ocm-controller --replicas=0
+	sleep 1
+	kubectl --context $hub_cluster_name -n open-cluster-management scale deployments/ocm-controller --replicas=1
+	# End of ocm-controller failure workaround for the issue where the
+	# controller crashes due to improper rolers and missing CRD issues.
 	kubectl --context $hub_cluster_name -n open-cluster-management wait deployments/ocm-controller --for condition=available
 }
 exit_stack_push unset -f ocm_foundation_operator_deploy_hub
