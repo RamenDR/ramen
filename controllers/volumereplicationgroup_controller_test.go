@@ -738,13 +738,13 @@ func (v *vrgTest) getVRG(vrgName string) *ramendrv1alpha1.VolumeReplicationGroup
 func (v *vrgTest) verifyVRGStatusExpectation(expectedStatus bool) {
 	Eventually(func() bool {
 		vrg := v.getVRG(v.vrgName)
-		vrgAvailableCondition := checkConditions(vrg.Status.Conditions, vrgController.VRGConditionDataReady)
+		dataReadyCondition := checkConditions(vrg.Status.Conditions, vrgController.VRGConditionTypeDataReady)
 
 		if expectedStatus == true {
-			return vrgAvailableCondition.Status == metav1.ConditionTrue
+			return dataReadyCondition.Status == metav1.ConditionTrue
 		}
 
-		return vrgAvailableCondition.Status != metav1.ConditionTrue
+		return dataReadyCondition.Status != metav1.ConditionTrue
 	}, vrgtimeout, vrginterval).Should(BeTrue(),
 		"while waiting for VRG TRUE condition %s/%s", v.vrgName, v.namespace)
 }
@@ -935,10 +935,10 @@ func (v *vrgTest) waitForVolRepPromotion(vrNamespacedName types.NamespacedName, 
 		// as of now name of VolumeReplication resource created by the VolumeReplicationGroup
 		// is same as the pvc that it replicates. When that changes this has to be changed to
 		// use the right name to get the appropriate protected PVC condition from VRG status.
-		pvcAvailableCondition := checkConditions(vrg.Status.ProtectedPVCs[updatedVolRep.Name].Conditions,
-			vrgController.PVCConditionAvailable)
+		dataReadyCondition := checkConditions(vrg.Status.ProtectedPVCs[updatedVolRep.Name].Conditions,
+			vrgController.VRGConditionTypeDataReady)
 
-		return pvcAvailableCondition.Status == metav1.ConditionTrue
+		return dataReadyCondition.Status == metav1.ConditionTrue
 	}, vrgtimeout, vrginterval).Should(BeTrue(),
 		"while waiting for protected pvc condition %s/%s", updatedVolRep.Namespace, updatedVolRep.Name)
 

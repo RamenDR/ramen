@@ -22,52 +22,38 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// VRG condition types
+// VRG condition types.  The ClusterDataReady condition only applies to the VRG
+// summary level and does not show up at the PVC level.
 const (
-	VRGConditionDataReady        = "DataReady"
-	VRGConditionClusterDataReady = "ClusterDataReady"
+	// PV data is ready. When failing over or relocating an app to a different
+	// cluster, app's PVC will be able to access the storage volume only after
+	// this condition is true.
+	VRGConditionTypeDataReady = "DataReady"
+
+	// PV ClusterData is ready.  When failing over or relocating an app to a
+	// different cluster, deploying the app prior to ClusterDataReady condition
+	// could result in the PVCs binding to newly created PVs instead of binding
+	// to their corresponding replicated PVs.  App's PVC should be deployed only
+	// after this condition is true.
+	VRGConditionTypeClusterDataReady = "ClusterDataReady"
 )
 
 // VRG condition reasons
 const (
-	VRGReplicating = "Replicating"
-	VRGProgressing = "Progressing"
-	VRGError       = "Error"
-)
-
-// PVCConditionAvailable reasons
-const (
-	PVCReplicating  = "Replicating"
-	PVCProgressing  = "Progressing"
-	PVCError        = "Error"
-	PVCErrorUnknown = "UnknownError"
-)
-
-// PVC condition types
-const (
-	PVCConditionAvailable = "Available"
-)
-
-// VRGConditionClusterDataReady reasons
-const (
-	VRGClusterDataRestored    = "Restored"
-	VRGClusterDataProgressing = "Progressing"
-	VRGClusterDataError       = "Error"
+	VRGConditionReasonInitializing        = "Initializing"
+	VRGConditionReasonReplicating         = "Replicating"
+	VRGConditionReasonProgressing         = "Progressing"
+	VRGConditionReasonClusterDataRestored = "Restored"
+	VRGConditionReasonError               = "Error"
+	VRGConditionReasonErrorUnknown        = "UnknownError"
 )
 
 // Just when VRG has been picked up for reconciliation when nothing has been
 // figured out yet.
 func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionDataReady,
-		Reason:             "none",
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		Message:            message,
-	})
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionClusterDataReady,
-		Reason:             "none",
+		Type:               VRGConditionTypeDataReady,
+		Reason:             VRGConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionUnknown,
 		Message:            message,
@@ -77,8 +63,8 @@ func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration i
 // sets conditions when VRG is data replicating
 func setVRGDataReplicatingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionDataReady,
-		Reason:             VRGReplicating,
+		Type:               VRGConditionTypeDataReady,
+		Reason:             VRGConditionReasonReplicating,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
 		Message:            message,
@@ -88,8 +74,8 @@ func setVRGDataReplicatingCondition(conditions *[]metav1.Condition, observedGene
 // sets conditions when VRG data is progressing
 func setVRGDataProgressingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionDataReady,
-		Reason:             VRGProgressing,
+		Type:               VRGConditionTypeDataReady,
+		Reason:             VRGConditionReasonProgressing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,
@@ -99,44 +85,8 @@ func setVRGDataProgressingCondition(conditions *[]metav1.Condition, observedGene
 // sets conditions when VRG sees failures in data sync
 func setVRGDataErrorCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionDataReady,
-		Reason:             VRGError,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionFalse,
-		Message:            message,
-	})
-}
-
-// sets conditions when PVC data is replicating
-func setPVCReplicatingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               PVCConditionAvailable,
-		Reason:             PVCReplicating,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionTrue,
-		Message:            message,
-	})
-}
-
-// sets conditions when VolumeReplication resource creation
-// request has been just made for the PVC.
-func setPVCProgressingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               PVCConditionAvailable,
-		Reason:             PVCProgressing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionFalse,
-		Message:            message,
-	})
-}
-
-// sets conditions when VolumeReplication resource
-// associated with the PVC is not replicating due
-// some problem.
-func setPVCErrorCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               PVCConditionAvailable,
-		Reason:             PVCError,
+		Type:               VRGConditionTypeDataReady,
+		Reason:             VRGConditionReasonError,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,
@@ -147,10 +97,10 @@ func setPVCErrorCondition(conditions *[]metav1.Condition, observedGeneration int
 // to get the VolumeReplication resource from kube API
 // server and it is not known what the current state of
 // the VolumeReplication resource (including its existence).
-func setPVCErrorUnknownCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+func setVRGDataErrorUnknownCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               PVCConditionAvailable,
-		Reason:             PVCErrorUnknown,
+		Type:               VRGConditionTypeDataReady,
+		Reason:             VRGConditionReasonErrorUnknown,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionUnknown,
 		Message:            message,
@@ -160,8 +110,8 @@ func setPVCErrorUnknownCondition(conditions *[]metav1.Condition, observedGenerat
 // sets conditions when PV cluster data is restored
 func setVRGClusterDataReadyCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionClusterDataReady,
-		Reason:             VRGClusterDataRestored,
+		Type:               VRGConditionTypeClusterDataReady,
+		Reason:             VRGConditionReasonClusterDataRestored,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
 		Message:            message,
@@ -171,8 +121,8 @@ func setVRGClusterDataReadyCondition(conditions *[]metav1.Condition, observedGen
 // sets conditions when PV cluster data is being restored
 func setVRGClusterDataProgressingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionClusterDataReady,
-		Reason:             VRGClusterDataProgressing,
+		Type:               VRGConditionTypeClusterDataReady,
+		Reason:             VRGConditionReasonProgressing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,
@@ -182,8 +132,8 @@ func setVRGClusterDataProgressingCondition(conditions *[]metav1.Condition, obser
 // sets conditions when PV cluster data failed to restore
 func setVRGClusterDataErrorCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionClusterDataReady,
-		Reason:             VRGClusterDataError,
+		Type:               VRGConditionTypeClusterDataReady,
+		Reason:             VRGConditionReasonError,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,

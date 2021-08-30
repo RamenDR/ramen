@@ -1586,7 +1586,7 @@ func (d *DRPCInstance) checkPVsHaveBeenRestored(homeCluster string) (bool, error
 		return false, err
 	}
 
-	clusterDataReady := findCondition(vrg.Status.Conditions, VRGConditionClusterDataReady)
+	clusterDataReady := findCondition(vrg.Status.Conditions, VRGConditionTypeClusterDataReady)
 	if clusterDataReady == nil {
 		d.log.Info("Waiting for PVs to be restored", "cluster", homeCluster)
 
