@@ -22,20 +22,27 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// VRG condition types.  The ClusterDataReady condition only applies to the VRG
-// summary level and does not show up at the PVC level.
+// VRG status condition types.  These condition are applicable at the VRG
+// summary level and at the individual PVC level.  The ClusterDataReady
+// condition is only applicable at the VRG summary level and is not a condition
+// that applies to individual PVCs.
 const (
 	// PV data is ready. When failing over or relocating an app to a different
 	// cluster, app's PVC will be able to access the storage volume only after
 	// this condition is true.
 	VRGConditionTypeDataReady = "DataReady"
 
-	// PV ClusterData is ready.  When failing over or relocating an app to a
+	// PV cluster data is ready.  When failing over or relocating an app to a
 	// different cluster, deploying the app prior to ClusterDataReady condition
 	// could result in the PVCs binding to newly created PVs instead of binding
 	// to their corresponding replicated PVs.  App's PVC should be deployed only
 	// after this condition is true.
 	VRGConditionTypeClusterDataReady = "ClusterDataReady"
+
+	// PV cluster data is protected.  This condition indicates whether an app,
+	// which is active in a cluster, has all its PV related cluster data
+	// protected from a disaster by uploading it to the required S3 store(s).
+	VRGConditionTypeClusterDataProtected = "ClusterDataProtected"
 )
 
 // VRG condition reasons
@@ -46,6 +53,10 @@ const (
 	VRGConditionReasonClusterDataRestored = "Restored"
 	VRGConditionReasonError               = "Error"
 	VRGConditionReasonErrorUnknown        = "UnknownError"
+	VRGConditionReasonUploading           = "Uploading"
+	VRGConditionReasonUploaded            = "Uploaded"
+	VRGConditionReasonUploadFailed        = "UploadFailed"
+	VRGConditionReasonMissingS3Profile    = "MissingS3Profile"
 )
 
 // Just when VRG has been picked up for reconciliation when nothing has been
@@ -53,6 +64,20 @@ const (
 func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeDataReady,
+		Reason:             VRGConditionReasonInitializing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionUnknown,
+		Message:            message,
+	})
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeClusterDataReady,
+		Reason:             VRGConditionReasonInitializing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionUnknown,
+		Message:            message,
+	})
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeClusterDataProtected,
 		Reason:             VRGConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionUnknown,
@@ -134,6 +159,39 @@ func setVRGClusterDataErrorCondition(conditions *[]metav1.Condition, observedGen
 	setStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeClusterDataReady,
 		Reason:             VRGConditionReasonError,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+	})
+}
+
+// sets conditions when PV cluster data is protected
+func setVRGClusterDataProtectedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeClusterDataProtected,
+		Reason:             VRGConditionReasonUploaded,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		Message:            message,
+	})
+}
+
+// sets conditions when PV cluster data is being protected
+func setVRGClusterDataProtectingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeClusterDataProtected,
+		Reason:             VRGConditionReasonUploading,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+	})
+}
+
+// sets conditions when PV cluster data failed to be protected
+func setVRGClusterDataUnprotectedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeClusterDataProtected,
+		Reason:             VRGConditionReasonUploadFailed,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,
