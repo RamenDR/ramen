@@ -95,15 +95,13 @@ type ProtectedPVC struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-type ProtectedPVCMap map[string]*ProtectedPVC
-
 // VolumeReplicationGroupStatus defines the observed state of VolumeReplicationGroup
 // INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 type VolumeReplicationGroupStatus struct {
 	State State `json:"state,omitempty"`
 
 	// All the protected pvcs
-	ProtectedPVCs ProtectedPVCMap `json:"protectedPVCs,omitempty"`
+	ProtectedPVCs []ProtectedPVC `json:"protectedPVCs,omitempty"`
 
 	// Conditions are the list of VRG's summary conditions and their status.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
