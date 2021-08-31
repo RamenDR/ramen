@@ -935,7 +935,22 @@ func (v *vrgTest) waitForVolRepPromotion(vrNamespacedName types.NamespacedName, 
 		// as of now name of VolumeReplication resource created by the VolumeReplicationGroup
 		// is same as the pvc that it replicates. When that changes this has to be changed to
 		// use the right name to get the appropriate protected PVC condition from VRG status.
-		dataReadyCondition := checkConditions(vrg.Status.ProtectedPVCs[updatedVolRep.Name].Conditions,
+		var protectedPVC *ramendrv1alpha1.ProtectedPVC
+		for index := range vrg.Status.ProtectedPVCs {
+			curPVC := &vrg.Status.ProtectedPVCs[index]
+			if curPVC.Name == updatedVolRep.Name {
+				protectedPVC = curPVC
+
+				break
+			}
+		}
+
+		// failed to get the protectedPVC. Returning false
+		if protectedPVC == nil {
+			return false
+		}
+
+		dataReadyCondition := checkConditions(protectedPVC.Conditions,
 			vrgController.VRGConditionTypeDataReady)
 
 		return dataReadyCondition.Status == metav1.ConditionTrue

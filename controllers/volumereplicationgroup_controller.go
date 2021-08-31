@@ -593,7 +593,7 @@ func (v *VRGInstance) addPVRestoreAnnotation(pv *corev1.PersistentVolume) {
 func (v *VRGInstance) initializeStatus() {
 	// create ProtectedPVCs map for status
 	if v.instance.Status.ProtectedPVCs == nil {
-		v.instance.Status.ProtectedPVCs = make(ramendrv1alpha1.ProtectedPVCMap)
+		v.instance.Status.ProtectedPVCs = []ramendrv1alpha1.ProtectedPVC{}
 
 		// Set the VRG available condition.status to unknown as nothing is
 		// known at this point
@@ -1909,16 +1909,23 @@ func (v *VRGInstance) updateProtectedPVCConditionHelper(name, reason, message, d
 }
 
 func (v *VRGInstance) updateProtectedPVCDataCondition(name, reason, message string) {
-	if pvcProtected, found := v.instance.Status.ProtectedPVCs[name]; found {
+	for index := range v.instance.Status.ProtectedPVCs {
+		pvcProtected := &v.instance.Status.ProtectedPVCs[index]
+		if pvcProtected.Name != name {
+			continue
+		}
+
 		setProtectedPVCDataCondition(pvcProtected, reason, message, v.instance.Generation)
-		v.instance.Status.ProtectedPVCs[name] = pvcProtected
+		// No need to append it as an already existing entry from the list is being modified.
 
 		return
 	}
 
 	pvcProtected := &ramendrv1alpha1.ProtectedPVC{Name: name}
 	setProtectedPVCDataCondition(pvcProtected, reason, message, v.instance.Generation)
-	v.instance.Status.ProtectedPVCs[name] = pvcProtected
+
+	// created a new instance. Add it to the list
+	v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *pvcProtected)
 }
 
 func setProtectedPVCDataCondition(protectedPVC *ramendrv1alpha1.ProtectedPVC, reason, message string,

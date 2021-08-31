@@ -248,7 +248,8 @@ spec:
                 format: int64
                 type: integer
               protectedPVCs:
-                additionalProperties:
+                description: All the protected pvcs
+                items:
                   properties:
                     conditions:
                       description: Conditions for each protected pvc
@@ -328,8 +329,7 @@ spec:
                       description: Name of the VolRep resource
                       type: string
                   type: object
-                description: All the protected pvcs
-                type: object
+                type: array
               state:
                 description: State captures the latest state of the replication operation
                 type: string
