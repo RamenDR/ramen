@@ -495,9 +495,16 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(ctx context.Context
 		return ctrl.Result{RequeueAfter: time.Second * initialWaitTime}, nil
 	}
 
+	vrgs, err := r.getVRGsFromManagedClusters(drpc, drPolicy)
+	if err != nil {
+		r.Log.Error(err, "Failed to query for VRGs in the ManagedClusters", "Clusters", drPolicy.Spec.DRClusterSet)
+
+		return ctrl.Result{}, err
+	}
+
 	d := DRPCInstance{
 		reconciler: r, ctx: ctx, log: r.Log, instance: drpc, needStatusUpdate: false,
-		userPlacementRule: userPlRule, drpcPlacementRule: drpcPlRule, drPolicy: drPolicy,
+		userPlacementRule: userPlRule, drpcPlacementRule: drpcPlRule, drPolicy: drPolicy, vrgs: vrgs,
 		mwu: rmnutil.MWUtil{Client: r.Client, Ctx: ctx, Log: r.Log, InstName: drpc.Name, InstNamespace: drpc.Namespace},
 	}
 
@@ -678,6 +685,9 @@ func (r *DRPlacementControlReconciler) getPlacementRules(ctx context.Context,
 		if err != nil {
 			return nil, nil, err
 		}
+	} else {
+		r.Log.Info("Preferred cluster is configured. Dynamic selection is disabled",
+			"PreferredCluster", drpc.Spec.PreferredCluster)
 	}
 
 	return drpcPlRule, userPlRule, nil
@@ -816,6 +826,30 @@ func (r *DRPlacementControlReconciler) clonePlacementRule(ctx context.Context,
 	return clonedPlRule, nil
 }
 
+func (r *DRPlacementControlReconciler) getVRGsFromManagedClusters(drpc *rmn.DRPlacementControl,
+	drPolicy *rmn.DRPolicy) (map[string]*rmn.VolumeReplicationGroup, error) {
+	vrgs := map[string]*rmn.VolumeReplicationGroup{}
+
+	for _, drCluster := range drPolicy.Spec.DRClusterSet {
+		vrg, err := r.MCVGetter.GetVRGFromManagedCluster(drpc.Name, drpc.Namespace, drCluster.Name)
+		if err != nil {
+			r.Log.Info("Failed to get VRG", "cluster", drCluster.Name, "error", err)
+			// Only NotFound error is accepted
+			if errors.IsNotFound(err) {
+				continue
+			}
+
+			return vrgs, fmt.Errorf("failed to retrieve VRG from %s. err (%w)", drCluster.Name, err)
+		}
+
+		vrgs[drCluster.Name] = vrg
+	}
+
+	r.Log.Info("VRGs location", "VRGs", vrgs)
+
+	return vrgs, nil
+}
+
 func (r *DRPlacementControlReconciler) validateSchedule(drPolicy *rmn.DRPolicy) error {
 	r.Log.Info("Validating schedule from DRPolicy")
 
@@ -914,6 +948,7 @@ type DRPCInstance struct {
 	mcvRequestInProgress bool
 	userPlacementRule    *plrv1.PlacementRule
 	drpcPlacementRule    *plrv1.PlacementRule
+	vrgs                 map[string]*rmn.VolumeReplicationGroup
 	mwu                  rmnutil.MWUtil
 }
 
@@ -944,7 +979,7 @@ func (d *DRPCInstance) startProcessing() bool {
 }
 
 func (d *DRPCInstance) processPlacement() (bool, error) {
-	d.log.Info("Process DRPC Placement")
+	d.log.Info("Process DRPC Placement", "DRAction", d.instance.Spec.Action)
 
 	switch d.instance.Spec.Action {
 	case rmn.ActionFailover:
@@ -962,7 +997,42 @@ func (d *DRPCInstance) runInitialDeployment() (bool, error) {
 
 	const done = true
 
-	// 1. Check if the user wants to use the preferredCluster
+	homeCluster, homeClusterNamespace := d.getHomeCluster()
+
+	if homeCluster == "" {
+		err := fmt.Errorf("PreferredCluster not set and unable to find home cluster in DRPCPlacementRule (%v)",
+			d.drpcPlacementRule)
+		// needStatusUpdate is not set. Still better to capture the event to report later
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonDeployFail, err.Error())
+
+		return !done, err
+	}
+
+	d.log.Info(fmt.Sprintf("Using homeCluster %s for initial deployment, uPlRule Decision %v",
+		homeCluster, d.userPlacementRule.Status.Decisions))
+
+	clusterName, deployed := d.isDeployed(homeCluster)
+	if deployed && clusterName != homeCluster {
+		return done, nil
+	}
+
+	if deployed && d.isUserPlRuleUpdated(homeCluster) {
+		// If for whatever reason, the DRPC status is missing (i.e. DRPC could have been deleted mistakingly and
+		// recreated again), we should update it with whatever status we are at.
+		if d.getLastDRState() == rmn.DRState("") {
+			d.instance.Status.PreferredDecision = d.userPlacementRule.Status.Decisions[0]
+			d.setDRState(rmn.Deployed)
+		}
+
+		return done, nil
+	}
+
+	return d.startDeploying(homeCluster, homeClusterNamespace)
+}
+
+func (d *DRPCInstance) getHomeCluster() (string, string) {
+	// Check if the user wants to use the preferredCluster
 	homeCluster := ""
 	homeClusterNamespace := ""
 
@@ -976,25 +1046,71 @@ func (d *DRPCInstance) runInitialDeployment() (bool, error) {
 		homeClusterNamespace = d.drpcPlacementRule.Status.Decisions[0].ClusterNamespace
 	}
 
-	if homeCluster == "" {
-		err := fmt.Errorf("PreferredCluster not set and unable to find home cluster in DRPCPlacementRule (%v)",
-			d.drpcPlacementRule)
-		// needStatusUpdate is not set. Still better to capture the event to report later
-		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
-			rmnutil.EventReasonDeployFail, err.Error())
+	return homeCluster, homeClusterNamespace
+}
 
-		return !done, err
+// isDeployed check to see if the initial deployment is already complete to this
+// homeCluster or elsewhere
+func (d *DRPCInstance) isDeployed(homeCluster string) (string, bool) {
+	if d.isAlreadyDeployedAndProtected(homeCluster) {
+		d.log.Info(fmt.Sprintf("Already deployed to %s. Last state: %s",
+			homeCluster, d.getLastDRState()))
+
+		return homeCluster, true
 	}
 
-	// We are done if the initial deployment is already complete
-	if len(d.userPlacementRule.Status.Decisions) > 0 {
-		d.log.Info(fmt.Sprintf("Already deployed to %s. Last state %s",
-			d.userPlacementRule.Status.Decisions[0].ClusterName, d.getLastDRState()))
+	clusterName, found := d.isAlreadyDeployedElsewhere(homeCluster)
+	if found {
+		errMsg := fmt.Sprintf("Failed to place deployment on cluster %s, as it is active on another cluster",
+			homeCluster)
+		d.log.Info(errMsg)
 
-		return done, nil
+		return clusterName, true
 	}
 
-	return d.startDeploying(homeCluster, homeClusterNamespace)
+	return "", false
+}
+
+func (d *DRPCInstance) isUserPlRuleUpdated(homeCluster string) bool {
+	return len(d.userPlacementRule.Status.Decisions) > 0 &&
+		d.userPlacementRule.Status.Decisions[0].ClusterName == homeCluster
+}
+
+// isAlreadyFullyDeployedAndProtected will check whether a VRG exists in the homeCluster and
+// it is in protected state, and primary.
+func (d *DRPCInstance) isAlreadyDeployedAndProtected(homeCluster string) bool {
+	d.log.Info(fmt.Sprintf("isAlreadyDeployedAndProtected? - %+v", d.vrgs))
+
+	vrg, found := d.vrgs[homeCluster]
+	if !found {
+		d.log.Info("VRG not found on cluster", "clusterName", homeCluster)
+
+		return false
+	}
+
+	// TODO:
+	// 		UNCOMMENT THIS CODE ONCE PR #255 IS MERGED
+	//
+	// dataProtectedCondition := findCondition(vrg.Status.Conditions, VRGConditionTypeClusterDataProtected)
+	// if dataProtectedCondition == nil {
+	// 	d.log.Info("VRG is not protected yet", "cluster", homeCluster)
+	//
+	// 	return false
+	// }
+
+	return d.isVRGPrimary(vrg)
+}
+
+func (d *DRPCInstance) isAlreadyDeployedElsewhere(clusterToSkip string) (string, bool) {
+	for clusterName := range d.vrgs {
+		if clusterName == clusterToSkip {
+			continue
+		}
+
+		return clusterName, true
+	}
+
+	return "", false
 }
 
 func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) (bool, error) {
@@ -1094,7 +1210,7 @@ func (d *DRPCInstance) runFailover() (bool, error) {
 	// We are done if we have already failed over
 	if len(d.userPlacementRule.Status.Decisions) > 0 {
 		if d.instance.Spec.FailoverCluster == d.userPlacementRule.Status.Decisions[0].ClusterName {
-			d.log.Info(fmt.Sprintf("Already failed over to %s. Last state %s",
+			d.log.Info(fmt.Sprintf("Already failed over to %s. Last state: %s",
 				d.userPlacementRule.Status.Decisions[0].ClusterName, d.getLastDRState()))
 
 			err := d.ensureCleanup(d.instance.Spec.FailoverCluster)
@@ -1179,9 +1295,9 @@ func (d *DRPCInstance) runRelocate() (bool, error) {
 			d.getLastDRState(), d.instance.Spec.Action)
 	}
 
-	// We are done if empty
-	preferredCluster, preferredClusterNamespace := d.getPreferredClusterNamespaced()
-
+	preferredCluster := d.instance.Spec.PreferredCluster
+	preferredClusterNamespace := preferredCluster
+	// We are done if empty. Relocation requires preferredCluster to be configured
 	if preferredCluster == "" {
 		return !done, fmt.Errorf("preferred cluster not valid")
 	}
@@ -1374,7 +1490,7 @@ func (d *DRPCInstance) updateManifestWorkToPrimary(targetCluster string) (bool, 
 func (d *DRPCInstance) hasAlreadySwitchedOver(targetCluster string) bool {
 	if len(d.userPlacementRule.Status.Decisions) > 0 &&
 		targetCluster == d.userPlacementRule.Status.Decisions[0].ClusterName {
-		d.log.Info(fmt.Sprintf("Already switched over to cluster %s. Last state %v",
+		d.log.Info(fmt.Sprintf("Already switched over to cluster %s. Last state: %v",
 			targetCluster, d.getLastDRState()))
 
 		return true
@@ -1391,6 +1507,10 @@ func (d *DRPCInstance) readyToSwitchOver(homeCluster string) bool {
 	vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name, d.instance.Namespace, homeCluster)
 	if err != nil {
 		d.log.Info("Failed to get VRG through MCV", "error", err)
+		// Only NotFound error is accepted
+		if errors.IsNotFound(err) {
+			return ready
+		}
 
 		return !ready
 	}
@@ -1413,20 +1533,6 @@ func (d *DRPCInstance) readyToSwitchOver(homeCluster string) bool {
 		dataReadyCondition.ObservedGeneration == vrg.Generation &&
 		clusterDataReadyCondition.Status == metav1.ConditionTrue &&
 		clusterDataReadyCondition.ObservedGeneration == vrg.Generation
-}
-
-func (d *DRPCInstance) getPreferredClusterNamespaced() (string, string) {
-	preferredCluster := d.instance.Spec.PreferredCluster
-	preferredClusterNamespace := preferredCluster
-
-	if preferredCluster == "" {
-		if d.instance.Status.PreferredDecision != (plrv1.PlacementDecision{}) {
-			preferredCluster = d.instance.Status.PreferredDecision.ClusterName
-			preferredClusterNamespace = d.instance.Status.PreferredDecision.ClusterNamespace
-		}
-	}
-
-	return preferredCluster, preferredClusterNamespace
 }
 
 func (d *DRPCInstance) processVRGForSecondaries() (bool, error) {
@@ -1561,7 +1667,7 @@ func (d *DRPCInstance) updateUserPlacementRuleStatus(status plrv1.PlacementRuleS
 
 func (d *DRPCInstance) createVRGManifestWork(homeCluster string) error {
 	d.log.Info("Creating VRG ManifestWork",
-		"Last State", d.getLastDRState(), "cluster", homeCluster)
+		"Last State:", d.getLastDRState(), "cluster", homeCluster)
 
 	if err := d.mwu.CreateOrUpdateVRGManifestWork(
 		d.instance.Name, d.instance.Namespace,
@@ -1690,7 +1796,7 @@ func (d *DRPCInstance) ensureVRGOnClusterDeleted(clusterName string) (bool, erro
 }
 
 func (d *DRPCInstance) ensureVRGManifestWorkOnClusterDeleted(clusterName string) (bool, error) {
-	d.log.Info("Ensuring that MW for the VRG is deleted", "cluster", clusterName)
+	d.log.Info("Ensuring MW for the VRG is deleted", "cluster", clusterName)
 
 	const done = true
 

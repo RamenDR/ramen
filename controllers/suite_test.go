@@ -46,6 +46,7 @@ import (
 
 var (
 	cfg       *rest.Config
+	apiReader client.Reader
 	k8sClient client.Client
 	testEnv   *envtest.Environment
 )
@@ -139,6 +140,8 @@ var _ = BeforeSuite(func() {
 
 	k8sClient = k8sManager.GetClient()
 	Expect(k8sClient).ToNot(BeNil())
+	apiReader = k8sManager.GetAPIReader()
+	Expect(apiReader).ToNot(BeNil())
 }, 60)
 
 var _ = AfterSuite(func() {
