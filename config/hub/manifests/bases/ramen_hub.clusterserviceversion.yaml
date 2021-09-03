@@ -4,7 +4,7 @@ metadata:
   annotations:
     alm-examples: '[]'
     capabilities: Basic Install
-  name: ramen-hub.v0.0.0
+  name: ramen-hub-operator.v0.0.0
   namespace: placeholder
 spec:
   apiservicedefinitions: {}

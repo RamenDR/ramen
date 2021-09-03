@@ -18,7 +18,7 @@ patches:
       value: alpha
     - op: replace
       path: /spec/startingCSV
-      value: ramen-dr-cluster.v0.0.1
+      value: ramen-dr-cluster-operator.v0.0.1
   target:
     kind: Subscription
     name: ramen-dr-cluster-subscription
