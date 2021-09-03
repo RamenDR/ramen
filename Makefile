@@ -33,12 +33,12 @@ IMAGE_NAME ?= ramen
 IMAGE_TAG ?= latest
 IMAGE_TAG_BASE = $(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY)/$(IMAGE_NAME)
 
-HUB_NAME ?= $(IMAGE_NAME)-hub
+HUB_NAME ?= $(IMAGE_NAME)-hub-operator
 ifeq (dr,$(findstring dr,$(IMAGE_NAME)))
-	DRCLUSTER_NAME = $(IMAGE_NAME)-cluster
+	DRCLUSTER_NAME = $(IMAGE_NAME)-cluster-operator
 	BUNDLE_IMG_DRCLUSTER = $(IMAGE_TAG_BASE)-cluster-operator-bundle:$(IMAGE_TAG)
 else
-	DRCLUSTER_NAME = $(IMAGE_NAME)-dr-cluster
+	DRCLUSTER_NAME = $(IMAGE_NAME)-dr-cluster-operator
 	BUNDLE_IMG_DRCLUSTER = $(IMAGE_TAG_BASE)-dr-cluster-operator-bundle:$(IMAGE_TAG)
 endif
 
