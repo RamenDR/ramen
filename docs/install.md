@@ -9,26 +9,27 @@ cluster to orchestrate the [placement](https://open-cluster-management.io/concep
 of [workloads](https://kubernetes.io/docs/concepts/workloads/) and their attachment
 to PersistentVolumes, on [OCM managed clusters](https://open-cluster-management.io/concepts/managedcluster/).
 
-[Ramen hub](#ramen-hub) and [Ramen cluster](#ramen-cluster) components hence
-require an OCM managed multi-cluster setup for their operation.
+[Ramen hub](#ramen-hub-operator) and [Ramen cluster](#ramen-cluster-operator)
+operators hence require an OCM managed multi-cluster setup for their
+operation.
 
 ### OCM Managed Cluster supporting VolumeReplication CRD
 
-Ramen also works as part of the [OCM managed clusters](https://open-cluster-management.io/concepts/managedcluster/)
-to orchestrate,
+Ramen works as part of the [OCM managed clusters](https://open-cluster-management.io/concepts/managedcluster/)
+to orchestrate:
 
 - [VolumeReplication](https://github.com/csi-addons/volume-replication-operator/blob/main/api/v1alpha1/volumereplication_types.go)
   resources for all PVCs of a workload
 - Preserving relevant cluster data regarding each PVC that is replicated
 
-VolumeReplication resources require storage providers to support
+VolumeReplication custom resources require storage providers to support
 [CSI extensions](https://github.com/csi-addons/spec) that enable managing
-volume replication features for volumes provisioned by the storage provider.
+replication features for provisioned volumes.
 [Ceph-CSI](https://github.com/ceph/ceph-csi/) is one such storage provider
 that supports the required extensions.
 
-[Ramen cluster](#ramen-cluster) component hence should be deployed to OCM
-managed clusters that support VolumeReplication extensions.
+[Ramen cluster operator](#ramen-cluster-operator) hence should be deployed
+to OCM managed clusters that support VolumeReplication extensions.
 
 ### S3 store
 
@@ -65,7 +66,7 @@ Installation and deployment require the following tools at specified versions
       kubectl version
       ```
 
-## Ramen hub
+## Ramen hub operator
 
 `ramen-hub-operator` is the controller for managing the life cycle of user
 created [DRPlacementControl (DRPC)](drpc-crd.md) Ramen API resources and
@@ -89,11 +90,14 @@ deployment:
 kubectl get deployments -n ramen-system ramen-hub-operator
 ```
 
-## Ramen cluster
+## Ramen cluster operator
 
 `ramen-dr-cluster-operator` is the controller for managing the life cycle of
 [VolumeReplicationGroup](vrg-crd.md) Ramen API resources and is installed on
 the **OCM managed clusters**.
+
+**NOTE**: Lifecycle of VolumeReplicationGroup resources are managed by
+[Ramen hub](#ramen-hub-operator) on required OCM managed clusters.
 
 ### Install ramen-dr-cluster-operator
 
