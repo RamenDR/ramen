@@ -58,11 +58,13 @@ type S3StoreProfile struct {
 	// Name of this S3 profile
 	S3ProfileName string `json:"s3ProfileName"`
 
-	// S3 compatible endpoint of this profile
+	// S3 compatible endpoint of the object store of this S3 profile
 	S3CompatibleEndpoint string `json:"s3CompatibleEndpoint"`
 
-	// S3 Region: https://docs.aws.amazon.com/general/latest/gr/rande.html
-	S3Region string `json:"s3Region,omitempty"`
+	// S3 Region; the AWS go client SDK does not have a default region; hence,
+	// this is a mandatory field.
+	// https://docs.aws.amazon.com/sdk-for-go/v1/developer-guide/configuring-sdk.html
+	S3Region string `json:"s3Region"`
 
 	// Reference to the secret that contains the S3 access key id and s3 secret
 	// access key with the keys AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
