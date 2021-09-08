@@ -174,7 +174,7 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(
 		return vrg, nil
 	case "ensureVRGDeleted":
 		return nil, errors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
-	case "readyToSwitchOver":
+	case "isCurrentHomeClusterReadyForRelocation":
 		vrg.Status.Conditions = append(vrg.Status.Conditions, metav1.Condition{
 			Type:               controllers.VRGConditionTypeClusterDataReady,
 			Reason:             controllers.VRGConditionReasonClusterDataRestored,
@@ -682,7 +682,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 
 				drpc := getLatestDRPC()
 				// At this point expect the DRPC status condition to have 2 types
-				// {Available and Reconciling}
+				// {Available and PeerReady}
 				// Final state is 'Deployed'
 				Expect(drpc.Status.Phase).To(Equal(rmn.Deployed))
 				Expect(len(drpc.Status.Conditions)).To(Equal(2))
@@ -690,7 +690,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				Expect(condition.Reason).To(Equal(string(rmn.Deployed)))
 			})
 		})
-		When("DRAction changes to failover", func() {
+		When("DRAction changes to Failover", func() {
 			It("Should not failover to Secondary (WestManagedCluster) till PV manifest is applied", func() {
 				By("\n\n*** Failover - 1\n\n")
 				restorePVs = false
@@ -723,7 +723,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(WestManagedCluster))
 			})
 		})
-		When("DRAction is set to relocate", func() {
+		When("DRAction is set to Relocate", func() {
 			It("Should relocate to Primary (EastManagedCluster)", func() {
 				// ----------------------------- RELOCATION TO PRIMARY --------------------------------------
 				By("\n\n*** Relocate - 1\n\n")
@@ -760,7 +760,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(EastManagedCluster))
 			})
 		})
-		When("DRAction is changed to failover after relocation", func() {
+		When("DRAction is changed to Failover after relocation", func() {
 			It("Should failover again to Secondary (WestManagedCluster)", func() {
 				// ----------------------------- FAILOVER TO SECONDARY --------------------------------------
 				By("\n\n*** Failover - 3\n\n")
@@ -815,10 +815,10 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(WestManagedCluster))
 			})
 		})
-		When("DRAction is set to relocation", func() {
+		When("DRAction is set to Relocate", func() {
 			It("Should relocate to Primary (EastManagedCluster)", func() {
 				// ----------------------------- RELOCATION TO PRIMARY --------------------------------------
-				By("\n\n*** relocate\n\n")
+				By("\n\n*** relocate 2\n\n")
 				relocateToPreferredCluster(userPlacementRule)
 				Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(2)) // MWs for VRG+ROLES
 				Expect(getManifestWorkCount(WestManagedCluster)).Should(Equal(1)) // Roles MW
