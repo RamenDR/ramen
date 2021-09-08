@@ -1775,10 +1775,7 @@ func (v *VRGInstance) updateVRGDataReadyCondition() {
 	}
 
 	if vrgReady {
-		v.log.Info("Marking VRG available with replicating reason")
-
-		msg := "PVCs in the VolumeReplicationGroup group are replicating"
-		setVRGDataReplicatingCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+		v.vrgReadyStatus()
 
 		return
 	}
@@ -1798,6 +1795,23 @@ func (v *VRGInstance) updateVRGDataReadyCondition() {
 
 	msg := "All PVCs of the VolumeReplicationGroup are not ready"
 	setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+}
+
+func (v *VRGInstance) vrgReadyStatus() {
+	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
+		v.log.Info("Marking VRG ready with replicating reason")
+
+		msg := "PVCs in the VolumeReplicationGroup group are replicating"
+		setVRGDataReplicatingCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+
+		return
+	}
+
+	// VRG as primary
+	v.log.Info("Marking VRG data ready after establishing replication")
+
+	msg := "PVCs in the VolumeReplicationGroup are ready for use"
+	setVRGAsPrimaryReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 }
 
 // updateVRGClusterDataProtectedCondition updates the VRG summary level
@@ -1914,8 +1928,8 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 
 	// if primary, all checks are completed
 	if state == ramendrv1alpha1.Primary {
-		msg = "VolumeReplication resource for the pvc is replicating"
-		v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonReplicating, msg)
+		msg = "PVC in the VolumeReplicationGroup is ready for use"
+		v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonReady, msg)
 
 		return available
 	}
@@ -2006,6 +2020,8 @@ func setPVCDataReadyCondition(protectedPVC *ramendrv1alpha1.ProtectedPVC, reason
 		setVRGDataErrorCondition(&protectedPVC.Conditions, observedGeneration, message)
 	case reason == VRGConditionReasonReplicating:
 		setVRGDataReplicatingCondition(&protectedPVC.Conditions, observedGeneration, message)
+	case reason == VRGConditionReasonReady:
+		setVRGAsPrimaryReadyCondition(&protectedPVC.Conditions, observedGeneration, message)
 	case reason == VRGConditionReasonProgressing:
 		setVRGDataProgressingCondition(&protectedPVC.Conditions, observedGeneration, message)
 	case reason == VRGConditionReasonErrorUnknown:

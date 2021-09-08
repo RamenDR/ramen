@@ -741,7 +741,17 @@ func (v *vrgTest) verifyVRGStatusExpectation(expectedStatus bool) {
 		dataReadyCondition := checkConditions(vrg.Status.Conditions, vrgController.VRGConditionTypeDataReady)
 
 		if expectedStatus == true {
-			return dataReadyCondition.Status == metav1.ConditionTrue
+			// reasons for success can be different for Primary and
+			// secondary. Validate that as well.
+			if vrg.Spec.ReplicationState == ramendrv1alpha1.Primary {
+				return dataReadyCondition.Status == metav1.ConditionTrue && dataReadyCondition.Reason ==
+					vrgController.VRGConditionReasonReady
+			}
+
+			if vrg.Spec.ReplicationState == ramendrv1alpha1.Secondary {
+				return dataReadyCondition.Status == metav1.ConditionTrue && dataReadyCondition.Reason ==
+					vrgController.VRGConditionReasonReplicating
+			}
 		}
 
 		return dataReadyCondition.Status != metav1.ConditionTrue
@@ -950,14 +960,34 @@ func (v *vrgTest) waitForVolRepPromotion(vrNamespacedName types.NamespacedName, 
 			return false
 		}
 
-		dataReadyCondition := checkConditions(protectedPVC.Conditions,
-			vrgController.VRGConditionTypeDataReady)
-
-		return dataReadyCondition.Status == metav1.ConditionTrue
+		return v.checkProtectedPVCSuccess(vrg, protectedPVC)
 	}, vrgtimeout, vrginterval).Should(BeTrue(),
 		"while waiting for protected pvc condition %s/%s", updatedVolRep.Namespace, updatedVolRep.Name)
 
 	v.verifyVRGStatusExpectation(vrgready)
+}
+
+func (v *vrgTest) checkProtectedPVCSuccess(vrg *ramendrv1alpha1.VolumeReplicationGroup,
+	protectedPVC *ramendrv1alpha1.ProtectedPVC) bool {
+	success := false
+	dataReadyCondition := checkConditions(protectedPVC.Conditions,
+		vrgController.VRGConditionTypeDataReady)
+
+	switch {
+	case vrg.Spec.ReplicationState == ramendrv1alpha1.Primary:
+		if dataReadyCondition.Status == metav1.ConditionTrue && dataReadyCondition.Reason ==
+			vrgController.VRGConditionReasonReady {
+			success = true
+		}
+
+	case vrg.Spec.ReplicationState == ramendrv1alpha1.Secondary:
+		if dataReadyCondition.Status == metav1.ConditionTrue && dataReadyCondition.Reason ==
+			vrgController.VRGConditionReasonReplicating {
+			success = true
+		}
+	}
+
+	return success
 }
 
 func (v *vrgTest) waitForNamespaceDeletion() {

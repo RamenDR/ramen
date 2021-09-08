@@ -49,6 +49,7 @@ const (
 const (
 	VRGConditionReasonInitializing        = "Initializing"
 	VRGConditionReasonReplicating         = "Replicating"
+	VRGConditionReasonReady               = "Ready"
 	VRGConditionReasonProgressing         = "Progressing"
 	VRGConditionReasonClusterDataRestored = "Restored"
 	VRGConditionReasonError               = "Error"
@@ -84,11 +85,23 @@ func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration i
 	})
 }
 
-// sets conditions when VRG is data replicating
+// sets conditions when VRG as Secondary is replicating the data with Primary.
 func setVRGDataReplicatingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeDataReady,
 		Reason:             VRGConditionReasonReplicating,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		Message:            message,
+	})
+}
+
+// sets conditions when Primary VRG data replication is established
+func setVRGAsPrimaryReadyCondition(conditions *[]metav1.Condition, observedGeneration int64,
+	message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeDataReady,
+		Reason:             VRGConditionReasonReady,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
 		Message:            message,
