@@ -84,7 +84,7 @@ func (mwu *MWUtil) FindManifestWork(mwName, managedCluster string) (*ocmworkv1.M
 	err := mwu.Client.Get(mwu.Ctx, types.NamespacedName{Name: mwName, Namespace: managedCluster}, mw)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("MW not found (%w)", err)
+			return nil, fmt.Errorf("%w", err)
 		}
 
 		return nil, fmt.Errorf("failed to retrieve manifestwork (%w)", err)
