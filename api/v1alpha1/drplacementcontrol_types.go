@@ -92,8 +92,8 @@ const (
 )
 
 const (
-	ConditionAvailable   = "Available"
-	ConditionReconciling = "Reconciling"
+	ConditionAvailable = "Available"
+	ConditionPeerReady = "PeerReady"
 )
 
 const (
