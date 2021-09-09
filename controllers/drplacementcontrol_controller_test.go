@@ -713,7 +713,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 
 				drpc = getLatestDRPC()
 				// At this point expect the DRPC status condition to have 2 types
-				// {Available and Reconciling}
+				// {Available and PeerReady}
 				// Final state is 'FailedOver'
 				Expect(drpc.Status.Phase).To(Equal(rmn.FailedOver))
 				Expect(len(drpc.Status.Conditions)).To(Equal(2))
@@ -732,7 +732,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 
 				drpc = getLatestDRPC()
 				// At this point expect the DRPC status condition to have 2 types
-				// {Available and Reconciling}
+				// {Available and PeerReady}
 				// Final state is 'Relocated'
 				Expect(drpc.Status.Phase).To(Equal(rmn.Relocated))
 				Expect(len(drpc.Status.Conditions)).To(Equal(2))
@@ -749,7 +749,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				waitForCompletion(string(rmn.Relocated))
 				drpc = getLatestDRPC()
 				// At this point expect the DRPC status condition to have 2 types
-				// {Available and Reconciling}
+				// {Available and PeerReady}
 				// Final state didn't change and it is 'Relocated' even though we tried to run
 				// initial deployment
 				Expect(drpc.Status.Phase).To(Equal(rmn.Relocated))
@@ -770,7 +770,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 
 				drpc := getLatestDRPC()
 				// At this point expect the DRPC status condition to have 2 types
-				// {Available and Reconciling}
+				// {Available and PeerReady}
 				// Final state is 'FailedOver'
 				Expect(drpc.Status.Phase).To(Equal(rmn.FailedOver))
 				Expect(len(drpc.Status.Conditions)).To(Equal(2))
@@ -788,7 +788,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				waitForCompletion(string(rmn.FailedOver))
 				drpc = getLatestDRPC()
 				// At this point expect the DRPC status condition to have 2 types
-				// {Available and Reconciling}
+				// {Available and PeerReady}
 				// Final state didn't change and it is 'FailedOver' even though we tried to run
 				// initial deployment
 				Expect(drpc.Status.Phase).To(Equal(rmn.FailedOver))
@@ -807,7 +807,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				waitForCompletion(string(rmn.FailedOver))
 				drpc = getLatestDRPC()
 				// At this point expect the DRPC status condition to have 2 types
-				// {Available and Reconciling}
+				// {Available and PeerReady}
 				// Final state didn't change and it is 'FailedOver' even though we tried to run
 				// initial deployment. But the status remains cleared.
 				Expect(drpc.Status.Phase).To(Equal(rmn.DRState("")))
@@ -825,7 +825,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 
 				drpc = getLatestDRPC()
 				// At this point expect the DRPC status condition to have 2 types
-				// {Available and Reconciling}
+				// {Available and PeerReady}
 				// Final state is 'Relocated'
 				Expect(drpc.Status.Phase).To(Equal(rmn.Relocated))
 				Expect(len(drpc.Status.Conditions)).To(Equal(2))

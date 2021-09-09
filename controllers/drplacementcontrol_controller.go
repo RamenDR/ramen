@@ -1338,7 +1338,8 @@ func (d *DRPCInstance) runRelocate() (bool, error) {
 		return !done, fmt.Errorf("no VRGs exists. Can't relocate")
 	}
 
-	if !d.isCurrentHomeClusterReadyForRelocation() {
+	// For relocation, the current home cluster is not the preferredCluster
+	if !d.isCurrentHomeClusterReadyForRelocation(preferredCluster) {
 		d.log.Info("Waiting for current home cluster to be ready for relocation")
 
 		return !done, nil
@@ -1347,16 +1348,25 @@ func (d *DRPCInstance) runRelocate() (bool, error) {
 	return d.relocate(preferredCluster, preferredClusterNamespace, rmn.Relocating)
 }
 
-func (d *DRPCInstance) relocate(preferredCluster, preferredClusterNamespace string,
-	drState rmn.DRState) (bool, error) {
+func (d *DRPCInstance) relocate(preferredCluster, preferredClusterNamespace string, drState rmn.DRState) (bool, error) {
 	const done = true
 	// Make sure we record the state that we are failing over
 	d.setDRState(drState)
 	setMetricsTimerFromDRState(drState, timerStart)
 
+	// Setting up relocation insures that all VRGs in all managed cluster are secondaries
 	err := d.setupRelocation(preferredCluster)
 	if err != nil {
 		return !done, err
+	}
+
+	// After we insured that all clusters are secondaries, we then insure
+	// that the current home cluster is ready for relocation.
+	// For relocation, the current home cluster is not the preferredCluster
+	if !d.isCurrentHomeClusterReadyForRelocation(preferredCluster) {
+		d.log.Info("Waiting for current home cluster to be ready for relocation")
+
+		return !done, nil
 	}
 
 	const restorePVs = true
@@ -1502,20 +1512,32 @@ func (d *DRPCInstance) hasAlreadySwitchedOver(targetCluster string) bool {
 	return false
 }
 
-func (d *DRPCInstance) isCurrentHomeClusterReadyForRelocation() bool {
+//nolint:cyclop
+func (d *DRPCInstance) isCurrentHomeClusterReadyForRelocation(targetCluster string) bool {
 	const ready = true
+	// This should not happen for relocation
+	if len(d.vrgs) == 0 {
+		d.log.Info("VRG count is 0. Should not happen for relocation")
 
-	homeCluster := d.findPrimaryCluster()
-	// If no cluster is a primary, then we will assume that the cluster(s) is ready for relocation
-	if homeCluster == "" {
-		// we will assume that len(d.vrgs) is greater than 0
-		return true
+		return !ready
+	}
+	// IF len is greater than 1, then the only possibility for this to happen is
+	// when the targetCluster has already been moved to primary. We must insure
+	// that condition is true
+	if len(d.vrgs) > 1 {
+		return d.findPrimaryCluster() == targetCluster
+	}
+	// We have 1 VRG and that VRG may or may not be a primary. But we know that
+	// it is the current home cluster.
+	curHomeCluster := ""
+	for cn := range d.vrgs {
+		curHomeCluster = cn
 	}
 
-	d.log.Info("Checking whether VRG is available", "cluster", homeCluster)
+	d.log.Info("Getting latest VRG object", "cluster", curHomeCluster)
 
 	// Get fresh VRG
-	vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name, d.instance.Namespace, homeCluster)
+	vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name, d.instance.Namespace, curHomeCluster)
 	if err != nil {
 		d.log.Info("Failed to get VRG through MCV", "error", err)
 		// Only NotFound error is accepted
@@ -1528,14 +1550,14 @@ func (d *DRPCInstance) isCurrentHomeClusterReadyForRelocation() bool {
 
 	dataReadyCondition := findCondition(vrg.Status.Conditions, VRGConditionTypeDataReady)
 	if dataReadyCondition == nil {
-		d.log.Info("VRG Condition not available", "cluster", homeCluster)
+		d.log.Info("VRG Condition not available", "cluster", curHomeCluster)
 
 		return !ready
 	}
 
 	clusterDataReadyCondition := findCondition(vrg.Status.Conditions, VRGConditionTypeClusterDataReady)
 	if clusterDataReadyCondition == nil {
-		d.log.Info("VRG Condition ClusterData not available", "cluster", homeCluster)
+		d.log.Info("VRG Condition ClusterData not available", "cluster", curHomeCluster)
 
 		return !ready
 	}
@@ -1713,11 +1735,11 @@ func (d *DRPCInstance) checkPVsHaveBeenRestored(homeCluster string) (bool, error
 func (d *DRPCInstance) ensureCleanup(clusterToSkip string) error {
 	d.log.Info("ensure cleanup on secondaries")
 
-	idx, condition := GetDRPCCondition(&d.instance.Status, rmn.ConditionReconciling)
+	idx, condition := GetDRPCCondition(&d.instance.Status, rmn.ConditionPeerReady)
 
 	if idx == -1 {
 		d.log.Info("Generating new condition")
-		condition = d.newCondition(rmn.ConditionReconciling)
+		condition = d.newCondition(rmn.ConditionPeerReady)
 		d.instance.Status.Conditions = append(d.instance.Status.Conditions, *condition)
 		idx = len(d.instance.Status.Conditions) - 1
 		d.needStatusUpdate = true
@@ -2074,7 +2096,7 @@ func (d *DRPCInstance) reportEvent(nextState rmn.DRState) {
 func (d *DRPCInstance) updateConditions() {
 	d.log.Info(fmt.Sprintf("Current Conditions '%v'", d.instance.Status.Conditions))
 
-	for _, condType := range []string{rmn.ConditionAvailable, rmn.ConditionReconciling} {
+	for _, condType := range []string{rmn.ConditionAvailable, rmn.ConditionPeerReady} {
 		condition := d.newCondition(condType)
 
 		idx, _ := GetDRPCCondition(&d.instance.Status, condType)
@@ -2103,8 +2125,8 @@ func (d *DRPCInstance) newCondition(condType string) *metav1.Condition {
 func (d *DRPCInstance) getConditionStatus(condType string) metav1.ConditionStatus {
 	if condType == rmn.ConditionAvailable {
 		return d.getConditionStatusForTypeAvailable()
-	} else if condType == rmn.ConditionReconciling {
-		return d.getConditionStatusForTypeReconciling()
+	} else if condType == rmn.ConditionPeerReady {
+		return d.getConditionStatusForTypePeerReady()
 	}
 
 	return metav1.ConditionUnknown
@@ -2122,9 +2144,9 @@ func (d *DRPCInstance) getConditionStatusForTypeAvailable() metav1.ConditionStat
 	return metav1.ConditionUnknown
 }
 
-func (d *DRPCInstance) getConditionStatusForTypeReconciling() metav1.ConditionStatus {
+func (d *DRPCInstance) getConditionStatusForTypePeerReady() metav1.ConditionStatus {
 	if d.isInFinalPhase() {
-		if d.reconciling() {
+		if !d.peerReady() {
 			return metav1.ConditionFalse
 		}
 
@@ -2138,45 +2160,45 @@ func (d *DRPCInstance) getConditionStatusForTypeReconciling() metav1.ConditionSt
 	return metav1.ConditionUnknown
 }
 
-func (d *DRPCInstance) reconciling() bool {
-	// Deployed phase requires no cleanup and further reconcile for cleanup
+func (d *DRPCInstance) peerReady() bool {
+	// Deployed phase requires no cleanup and no further reconcile for cleanup
 	if d.instance.Status.Phase == rmn.Deployed {
 		d.log.Info("Initial deployed phase detected")
 
-		return false
+		return true
 	}
 
-	idx, condition := GetDRPCCondition(&d.instance.Status, rmn.ConditionReconciling)
-	d.log.Info(fmt.Sprintf("Condition %v", condition))
+	idx, condition := GetDRPCCondition(&d.instance.Status, rmn.ConditionPeerReady)
+	d.log.Info(fmt.Sprintf("DRPC Condition %v", condition))
 
 	if idx == -1 {
-		d.log.Info("Found missing reconciling condition")
+		d.log.Info("Found missing PeerReady condition")
 
-		return true
+		return false
 	}
 
 	if condition.Reason == rmn.ReasonSuccess &&
 		condition.Status == metav1.ConditionTrue &&
 		condition.ObservedGeneration == d.instance.Generation {
-		return false
+		return true
 	}
 
-	return true
+	return false
 }
 
 func (d *DRPCInstance) getConditionReason(condType string) string {
 	if condType == rmn.ConditionAvailable {
 		return string(d.instance.Status.Phase)
-	} else if condType == rmn.ConditionReconciling {
-		return d.getReasonForConditionTypeReconciling()
+	} else if condType == rmn.ConditionPeerReady {
+		return d.getReasonForConditionTypePeerReady()
 	}
 
 	return rmn.ReasonUnknown
 }
 
-func (d *DRPCInstance) getReasonForConditionTypeReconciling() string {
+func (d *DRPCInstance) getReasonForConditionTypePeerReady() string {
 	if d.isInFinalPhase() {
-		if d.reconciling() {
+		if !d.peerReady() {
 			return rmn.ReasonCleaning
 		}
 
