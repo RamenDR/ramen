@@ -36,6 +36,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -95,6 +96,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) er
 	r.Log.Info("Adding VolumeReplicationGroup controller")
 
 	return ctrl.NewControllerManagedBy(mgr).
+		WithOptions(ctrlcontroller.Options{MaxConcurrentReconciles: getMaxConcurrentReconciles()}).
 		For(&ramendrv1alpha1.VolumeReplicationGroup{}).
 		Watches(&source.Kind{Type: &corev1.PersistentVolumeClaim{}}, pvcMapFun, builder.WithPredicates(pvcPredicate)).
 		Owns(&volrep.VolumeReplication{}).
