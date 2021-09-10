@@ -86,6 +86,10 @@ type RamenConfig struct {
 
 	// Map of S3 store profiles
 	S3StoreProfiles []S3StoreProfile `json:"s3StoreProfiles,omitempty"`
+
+	// MaxConcurrentReconciles is the maximum number of concurrent Reconciles which can be run.
+	// Defaults to 1.
+	MaxConcurrentReconciles int
 }
 
 func init() {

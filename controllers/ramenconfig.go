@@ -136,3 +136,18 @@ func getRamenConfigS3StoreProfile(profileName string) (
 
 	return s3StoreProfile, nil
 }
+
+func getMaxConcurrentReconciles() int {
+	const defaultMaxConcurrentReconciles = 1
+
+	ramenConfig, err := ReadRamenConfig()
+	if err != nil {
+		return defaultMaxConcurrentReconciles
+	}
+
+	if ramenConfig.MaxConcurrentReconciles == 0 {
+		return defaultMaxConcurrentReconciles
+	}
+
+	return ramenConfig.MaxConcurrentReconciles
+}
