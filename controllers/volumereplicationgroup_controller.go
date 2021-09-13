@@ -866,6 +866,10 @@ func (v *VRGInstance) reconcileVRsAsPrimary() bool {
 		if _, err := v.processVRAsPrimary(pvcNamespacedName, log); err != nil {
 			log.Info("Requeuing due to failure in getting or creating VolumeReplication resource for PersistentVolumeClaim",
 				"errorValue", err)
+
+			requeue = true
+
+			continue
 		}
 
 		// Protect the PVC's PV object stored in etcd by uploading it to S3
