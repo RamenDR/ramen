@@ -750,7 +750,7 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 
 	// Ensure VR is available at the required state before deletion (do this for Secondary as well?)
 	if !available {
-		return requeue
+		return !requeue
 	}
 
 	// Deleting VR first may end-up recreating the VR if reconcile for this PVC is interrupted, but that is better than
