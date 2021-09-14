@@ -694,6 +694,18 @@ func (v *VRGInstance) reconcileVRsForDeletion() bool {
 		pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 		log := v.log.WithValues("pvc", pvcNamespacedName.String())
 
+		// If the pvc does not have the VR protection finalizer, then one of the
+		// 2 possibilities (assuming pvc is not being deleted).
+		// 1) This pvc has not yet been processed by VRG before this deletion came on VRG
+		// 2) The VolRep resource associated with this pvc has been successfully deleted and
+		//    the VR protection finalizer has been successfully removed. No need to process.
+		if !containsString(pvc.Finalizers, pvcVRFinalizerProtected) {
+			log.Info(fmt.Sprintf("pvc %s does not contain VR protection finalizer. Skipping it",
+				pvcNamespacedName))
+
+			continue
+		}
+
 		requeueResult, skip := v.preparePVCForVRProtection(pvc, log)
 		if requeueResult {
 			requeue = true
