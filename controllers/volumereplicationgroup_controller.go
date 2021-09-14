@@ -261,8 +261,7 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim, log logr.
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch;update;patch;create
 // +kubebuilder:rbac:groups=core,resources=events,verbs=get;create;patch;update
-// +kubebuilder:rbac:groups="",namespace=system,resources=secrets,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=secrets,verbs=list;watch
+// +kubebuilder:rbac:groups="",namespace=system,resources=secrets,verbs=get
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -495,8 +494,13 @@ func (v *VRGInstance) listPVsFromS3Store(s3ProfileName string) ([]corev1.Persist
 	s3Bucket := constructBucketName(v.instance.Namespace, v.instance.Name)
 
 	return v.reconciler.PVDownloader.DownloadPVs(
-		v.ctx, v.reconciler.Client, v.reconciler.ObjStoreGetter, s3ProfileName,
-		v.instance.Name, s3Bucket)
+		v.ctx,
+		v.reconciler.APIReader,
+		v.reconciler.ObjStoreGetter,
+		s3ProfileName,
+		v.instance.Name,
+		s3Bucket,
+	)
 }
 
 type ObjectStorePVDownloader struct{}
@@ -1312,8 +1316,11 @@ func (ObjectStorePVUploader) UploadPV(v interface{}, s3ProfileName string,
 	}
 
 	objectStore, err :=
-		v.(*VRGInstance).reconciler.ObjStoreGetter.objectStore(v.(*VRGInstance).ctx,
-			v.(*VRGInstance).reconciler, s3ProfileName, vrgName, /* debugTag */
+		v.(*VRGInstance).reconciler.ObjStoreGetter.objectStore(
+			v.(*VRGInstance).ctx,
+			v.(*VRGInstance).reconciler.APIReader,
+			s3ProfileName,
+			vrgName, /* debugTag */
 		)
 	if err != nil {
 		return fmt.Errorf("error connecting to object store when uploading PV %s to s3Profile %s, %w",
@@ -1363,7 +1370,11 @@ func (ObjectStorePVDeleter) DeletePVs(v interface{}, s3ProfileName string) (err 
 	s3Bucket := constructBucketName(v.(*VRGInstance).instance.Namespace, vrgName)
 
 	objectStore, err := v.(*VRGInstance).reconciler.ObjStoreGetter.objectStore(
-		v.(*VRGInstance).ctx, v.(*VRGInstance).reconciler, s3ProfileName, vrgName)
+		v.(*VRGInstance).ctx,
+		v.(*VRGInstance).reconciler.APIReader,
+		s3ProfileName,
+		vrgName,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to get client for s3Profile %s, err %w",
 			s3ProfileName, err)
