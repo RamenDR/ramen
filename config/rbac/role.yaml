@@ -7,13 +7,6 @@ metadata:
   name: operator-role
 rules:
 - apiGroups:
-  - ""
-  resources:
-  - secrets
-  verbs:
-  - list
-  - watch
-- apiGroups:
   - apps.open-cluster-management.io
   resources:
   - placementrules
@@ -216,5 +209,3 @@ rules:
   - secrets
   verbs:
   - get
-  - list
-  - watch
