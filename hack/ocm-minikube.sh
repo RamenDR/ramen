@@ -195,39 +195,34 @@ ocm_registration_operator_undeploy_spoke()
 	set -e
 	ocm_registration_operator_checkout_undo
 }
-ocm_foundation_operator_kustomization_directory()
+ocm_foundation_operator_git_ref=${ocm_foundation_operator_git_ref:-dc43ec703e62594e3942c7f06d38d1897550ffea}
+exit_stack_push unset -v ocm_foundation_operator_git_ref
+ocm_foundation_operator_image_tag=${ocm_foundation_operator_image_name:-2.4.0\-$ocm_foundation_operator_git_ref}
+exit_stack_push unset -v ocm_foundation_operator_image_tag
+ocm_foundation_operator_kubectl()
 {
-	echo https://github.com/open-cluster-management/multicloud-operators-foundation/deploy/foundation/$1?ref=b5df50deb87618e8c6057637705e94a58b5a19da
+	set -- foundation/$1 $2 $3 $4
+	set -- $1 /tmp/$USER/open-cluster-management/$1/$2 $3 $4
+	mkdir -p $2
+	cat <<-a >$2/kustomization.yaml
+	resources:
+	  - https://github.com/open-cluster-management/multicloud-operators-foundation/deploy/$1?ref=$ocm_foundation_operator_git_ref
+	namespace: $4
+	images:
+	  - name: quay.io/open-cluster-management/multicloud-manager
+	    newTag: $ocm_foundation_operator_image_tag
+	a
+	kubectl --context $hub_cluster_name $3 -k $2
 }
-exit_stack_push unset -f ocm_foundation_operator_kustomization_directory
+exit_stack_push unset -f ocm_foundation_operator_kubectl
 ocm_foundation_operator_kubectl_hub()
 {
-	kubectl --context $hub_cluster_name $1 -k $(ocm_foundation_operator_kustomization_directory hub)
+	ocm_foundation_operator_kubectl hub $hub_cluster_name $1
 }
 exit_stack_push unset -f ocm_foundation_operator_kubectl_hub
 ocm_foundation_operator_kubectl_spoke()
 {
-	set -- $1 $2 /tmp/$USER/open-cluster-management/foundation/klusterlet/$1
-	mkdir -p $3
-	cat <<-a >$3/kustomization.yaml
-	resources:
-	  - $(ocm_foundation_operator_kustomization_directory klusterlet)
-	namespace: $1
-	patchesJson6902:
-	  - target:
-	      group: work.open-cluster-management.io
-	      version: v1
-	      kind: ManifestWork
-	      name: klusterlet-addon-workmgr
-	    patch: |-
-	      - op: test
-	        path: /spec/workload/manifests/4/spec/template/spec/containers/0/args/2
-	        value: --cluster-name=cluster1
-	      - op: replace
-	        path: /spec/workload/manifests/4/spec/template/spec/containers/0/args/2
-	        value: --cluster-name=$1
-	a
-	kubectl --context $hub_cluster_name $2 -k $3
+	ocm_foundation_operator_kubectl klusterlet $1 $2 $1
 }
 exit_stack_push unset -f ocm_foundation_operator_kubectl_spoke
 ocm_foundation_operator_deploy_hub()
@@ -247,7 +242,14 @@ ocm_foundation_operator_deploy_hub()
 exit_stack_push unset -f ocm_foundation_operator_deploy_hub
 ocm_foundation_operator_undeploy_hub()
 {
+	set +e
 	ocm_foundation_operator_kubectl_hub delete
+	# Error from server (NotFound): error when deleting "/tmp/$USER/open-cluster-management/foundation/hub/hub": services "ocm-proxyserver" not found
+	# Error from server (NotFound): error when deleting "/tmp/$USER/open-cluster-management/foundation/hub/hub": deployments.apps "ocm-proxyserver" not found
+	# Error from server (NotFound): error when deleting "/tmp/$USER/open-cluster-management/foundation/hub/hub": apiservices.apiregistration.k8s.io "v1.clusterview.open-cluster-management.io" not found
+	# Error from server (NotFound): error when deleting "/tmp/$USER/open-cluster-management/foundation/hub/hub": apiservices.apiregistration.k8s.io "v1alpha1.clusterview.open-cluster-management.io" not found
+	# Error from server (NotFound): error when deleting "/tmp/$USER/open-cluster-management/foundation/hub/hub": apiservices.apiregistration.k8s.io "v1beta1.proxy.open-cluster-management.io" not found
+	set -e
 	set +e
 	kubectl --context $hub_cluster_name -n open-cluster-management wait deployments/ocm-controller --for delete
 	# error: no matching resources found
