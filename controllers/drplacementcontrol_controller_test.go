@@ -15,6 +15,7 @@ package controllers_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -25,6 +26,8 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	machineryruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -169,21 +172,11 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(
 
 		return vrg, nil
 	case "ensureVRGIsSecondaryOnCluster":
-		vrg.Status.State = rmn.SecondaryState
+		return moveVRGToSecondary(managedCluster, "vrg")
 
-		return vrg, nil
 	case "ensureVRGDeleted":
 		return nil, errors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
-	case "isCurrentHomeClusterReadyForRelocation":
-		vrg.Status.Conditions = append(vrg.Status.Conditions, metav1.Condition{
-			Type:               controllers.VRGConditionTypeClusterDataReady,
-			Reason:             controllers.VRGConditionReasonClusterDataRestored,
-			Status:             metav1.ConditionTrue,
-			Message:            "Testing VRG",
-			LastTransitionTime: metav1.Now(),
-		})
 
-		return vrg, nil
 	case "getVRGsFromManagedClusters":
 		return getVRGFromManifestWork(managedCluster)
 	}
@@ -208,6 +201,25 @@ func getVRGFromManifestWork(managedCluster string) (*rmn.VolumeReplicationGroup,
 	vrg := &rmn.VolumeReplicationGroup{}
 	err = yaml.Unmarshal(mw.Spec.Workload.Manifests[0].Raw, vrg)
 	Expect(err).NotTo(HaveOccurred())
+
+	// Always report conditions as a success?
+	vrg.Status.Conditions = append(vrg.Status.Conditions, metav1.Condition{
+		Type:               controllers.VRGConditionTypeClusterDataReady,
+		Reason:             controllers.VRGConditionReasonClusterDataRestored,
+		Status:             metav1.ConditionTrue,
+		Message:            "Testing VRG",
+		LastTransitionTime: metav1.Now(),
+		ObservedGeneration: vrg.Generation,
+	})
+
+	vrg.Status.Conditions = append(vrg.Status.Conditions, metav1.Condition{
+		Type:               controllers.VRGConditionTypeDataReady,
+		Reason:             controllers.VRGConditionReasonReplicating,
+		Status:             metav1.ConditionTrue,
+		Message:            "Testing VRG",
+		LastTransitionTime: metav1.Now(),
+		ObservedGeneration: vrg.Generation,
+	})
 
 	return vrg, nil
 }
@@ -402,6 +414,43 @@ func createDRPolicy() {
 
 func deleteDRPolicy() {
 	Expect(k8sClient.Delete(context.TODO(), drPolicy)).To(Succeed())
+}
+
+func moveVRGToSecondary(clusterNamespace, mwType string) (*rmn.VolumeReplicationGroup, error) {
+	manifestLookupKey := types.NamespacedName{
+		Name:      rmnutil.ManifestWorkName(DRPCName, DRPCNamespaceName, mwType),
+		Namespace: clusterNamespace,
+	}
+	mw := &ocmworkv1.ManifestWork{}
+
+	err := k8sClient.Get(context.TODO(), manifestLookupKey, mw)
+	if errors.IsNotFound(err) {
+		return nil, errors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
+	}
+
+	Expect(err).NotTo(HaveOccurred())
+
+	vrgClientManifest := &mw.Spec.Workload.Manifests[0]
+	vrg := &rmn.VolumeReplicationGroup{}
+
+	err = yaml.Unmarshal(vrgClientManifest.RawExtension.Raw, &vrg)
+	Expect(err).NotTo(HaveOccurred())
+
+	if vrg.Spec.ReplicationState == rmn.Secondary {
+		vrg.Status.State = rmn.SecondaryState
+		objJSON, err := json.Marshal(vrg)
+		Expect(err).NotTo(HaveOccurred())
+
+		manifest := &ocmworkv1.Manifest{}
+		manifest.RawExtension = machineryruntime.RawExtension{Raw: objJSON}
+
+		mw.Spec.Workload.Manifests[0] = *manifest
+
+		err = k8sClient.Status().Update(context.TODO(), mw)
+		Expect(err).NotTo(HaveOccurred())
+	}
+
+	return vrg, nil
 }
 
 func updateManifestWorkStatus(clusterNamespace, mwType, workType string) {
