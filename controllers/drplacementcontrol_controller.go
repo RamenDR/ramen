@@ -874,6 +874,13 @@ func (r *DRPlacementControlReconciler) getVRGsFromManagedClusters(drpc *rmn.DRPl
 	vrgs := map[string]*rmn.VolumeReplicationGroup{}
 
 	for _, drCluster := range drPolicy.Spec.DRClusterSet {
+		// Only fetch failover cluster VRG if action is Failover
+		if drpc.Spec.Action == rmn.ActionFailover && drpc.Spec.FailoverCluster != drCluster.Name {
+			r.Log.Info("Skipping fetching VRG", "cluster", drCluster.Name)
+
+			continue
+		}
+
 		vrg, err := r.MCVGetter.GetVRGFromManagedCluster(drpc.Name, drpc.Namespace, drCluster.Name)
 		if err != nil {
 			r.Log.Info("Failed to get VRG", "cluster", drCluster.Name, "error", err)
