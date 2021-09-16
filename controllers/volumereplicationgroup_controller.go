@@ -1234,35 +1234,59 @@ func (v *VRGInstance) undoPVRetentionForPVC(pvc corev1.PersistentVolumeClaim, lo
 
 // Upload PV to the list of S3 stores in the VRG spec
 func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (err error) {
-	s3Profiles := []string{}
+	// Find the ProtectedPVC of the given PVC in v.instance.Status.ProtectedPVCs[]
+	protectedPVC := v.findProtectedPVC(pvc.Name)
+	// Find the ClusterDataProtected condition of the given PVC in ProtectedPVC.Conditions
+	clusterDataProtected := findCondition(protectedPVC.Conditions, VRGConditionTypeClusterDataProtected)
 
+	// Optimization: skip uploading the PV of this PVC if it was uploaded previously
+	if clusterDataProtected != nil && clusterDataProtected.Status == metav1.ConditionTrue &&
+		clusterDataProtected.ObservedGeneration == v.instance.Generation {
+		// v.log.Info("PV cluster data already protected")
+		return nil
+	}
+
+	s3Profiles := []string{}
+	// Upload the PV to all the S3 profiles in the VRG spec
 	for _, s3ProfileName := range v.instance.Spec.S3ProfileList {
 		if err := v.reconciler.PVUploader.UploadPV(v, s3ProfileName, pvc); err != nil {
-			msg := "Failed to upload PV cluster data to s3Profile " + s3ProfileName
+			msg := fmt.Sprintf("Error uploading PV cluster data to s3Profile %s, %v",
+				s3ProfileName, err)
 			v.updatePVCClusterDataProtectedCondition(pvc.Name, VRGConditionReasonUploadFailed, msg)
 			log.Error(err, msg)
 			rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
 				rmnutil.EventReasonPVUploadFailed, err.Error())
 
-			return fmt.Errorf("error uploading PV %s using profile %s, err %w", pvc.Name, s3ProfileName, err)
+			return fmt.Errorf("error uploading cluster data of PV %s to S3 profile %s, %w",
+				pvc.Name, s3ProfileName, err)
 		}
 
+		// Successfully uploaded to S3ProfileName
 		s3Profiles = append(s3Profiles, s3ProfileName)
 	}
 
-	if len(s3Profiles) > 0 {
-		msg := "PV cluster data uploaded to S3 profile(s): " +
-			fmt.Sprintf("%v", s3Profiles)
-		v.updatePVCClusterDataProtectedCondition(pvc.Name,
-			VRGConditionReasonUploaded, msg)
+	numProfilesToUpload := len(v.instance.Spec.S3ProfileList)
+	if numProfilesToUpload > 0 {
+		numProfilesUploaded := len(s3Profiles)
+		msg := fmt.Sprintf("Done uploading PV cluster data to %d of %d S3 profile(s): %v",
+			numProfilesUploaded, numProfilesToUpload, s3Profiles)
+		v.log.Info(msg)
+		// Set ClusterDataProtected condition to true if PV was uploaded to all the profiles
+		if numProfilesUploaded == numProfilesToUpload {
+			v.updatePVCClusterDataProtectedCondition(pvc.Name,
+				VRGConditionReasonUploaded, msg)
+		}
 	} else {
-		msg := "PV cluster data cannot be protected because " +
-			"VRG spec has no S3 profiles"
+		msg := "Error uploading PV cluster data because VRG spec has no S3 profiles"
 		v.updatePVCClusterDataProtectedCondition(pvc.Name,
 			VRGConditionReasonMissingS3Profile, msg)
+		v.log.Info(msg)
+
+		return fmt.Errorf("error uploading cluster data of PV %s because VRG spec has no S3 profiles",
+			pvc.Name)
 	}
 
-	return
+	return nil
 }
 
 type ObjectStorePVUploader struct{}
@@ -1290,15 +1314,13 @@ func (ObjectStorePVUploader) UploadPV(v interface{}, s3ProfileName string,
 		return err
 	}
 
-	v.(*VRGInstance).log.Info("Uploading PersistentVolume resource to object store")
-
 	objectStore, err :=
 		v.(*VRGInstance).reconciler.ObjStoreGetter.objectStore(v.(*VRGInstance).ctx,
 			v.(*VRGInstance).reconciler, s3ProfileName, vrgName, /* debugTag */
 		)
 	if err != nil {
-		return fmt.Errorf("failed to get client for s3Profile %s, err %w",
-			s3ProfileName, err)
+		return fmt.Errorf("error connecting to object store when uploading PV %s to s3Profile %s, %w",
+			pvc.Name, s3ProfileName, err)
 	}
 
 	pv := corev1.PersistentVolume{}
@@ -1307,12 +1329,14 @@ func (ObjectStorePVUploader) UploadPV(v interface{}, s3ProfileName string,
 
 	// Get PV from k8s
 	if err := v.(*VRGInstance).reconciler.Get(v.(*VRGInstance).ctx, pvObjectKey, &pv); err != nil {
-		return fmt.Errorf("failed to get PV cluster data from k8s, %w", err)
+		return fmt.Errorf("error reading from K8s cluster when uploading PV %s to s3Profile %s, %w",
+			pvc.Name, s3ProfileName, err)
 	}
 
 	// Create the bucket in object store, without assuming its existence
 	if err := objectStore.createBucket(s3Bucket); err != nil {
-		return fmt.Errorf("unable to create s3Bucket %s, %w", s3Bucket, err)
+		return fmt.Errorf("error creating bucket %s when uploading PV %s to s3Profile %s, %w",
+			s3Bucket, pvc.Name, s3ProfileName, err)
 	}
 
 	// Upload PV to object store
@@ -1995,24 +2019,18 @@ func (v *VRGInstance) updatePVCDataReadyConditionHelper(name, reason, message, d
 	v.updatePVCDataReadyCondition(name, reason, defaultMessage)
 }
 
-func (v *VRGInstance) updatePVCDataReadyCondition(name, reason, message string) {
-	for index := range v.instance.Status.ProtectedPVCs {
-		pvcProtected := &v.instance.Status.ProtectedPVCs[index]
-		if pvcProtected.Name != name {
-			continue
-		}
-
-		setPVCDataReadyCondition(pvcProtected, reason, message, v.instance.Generation)
+func (v *VRGInstance) updatePVCDataReadyCondition(pvcName, reason, message string) {
+	if protectedPVC := v.findProtectedPVC(pvcName); protectedPVC != nil {
+		setPVCDataReadyCondition(protectedPVC, reason, message, v.instance.Generation)
 		// No need to append it as an already existing entry from the list is being modified.
-
 		return
 	}
 
-	pvcProtected := &ramendrv1alpha1.ProtectedPVC{Name: name}
-	setPVCDataReadyCondition(pvcProtected, reason, message, v.instance.Generation)
+	protectedPVC := &ramendrv1alpha1.ProtectedPVC{Name: pvcName}
+	setPVCDataReadyCondition(protectedPVC, reason, message, v.instance.Generation)
 
 	// created a new instance. Add it to the list
-	v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *pvcProtected)
+	v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
 }
 
 func setPVCDataReadyCondition(protectedPVC *ramendrv1alpha1.ProtectedPVC, reason, message string,
@@ -2033,20 +2051,14 @@ func setPVCDataReadyCondition(protectedPVC *ramendrv1alpha1.ProtectedPVC, reason
 	}
 }
 
-func (v *VRGInstance) updatePVCClusterDataProtectedCondition(name, reason, message string) {
-	for index := range v.instance.Status.ProtectedPVCs {
-		protectedPVC := &v.instance.Status.ProtectedPVCs[index]
-		if protectedPVC.Name != name {
-			continue
-		}
-
+func (v *VRGInstance) updatePVCClusterDataProtectedCondition(pvcName, reason, message string) {
+	if protectedPVC := v.findProtectedPVC(pvcName); protectedPVC != nil {
 		setPVCClusterDataProtectedCondition(protectedPVC, reason, message, v.instance.Generation)
 		// No need to append it as an already existing entry from the list is being modified.
-
 		return
 	}
 
-	protectedPVC := &ramendrv1alpha1.ProtectedPVC{Name: name}
+	protectedPVC := &ramendrv1alpha1.ProtectedPVC{Name: pvcName}
 	setPVCClusterDataProtectedCondition(protectedPVC, reason, message, v.instance.Generation)
 	v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
 }
@@ -2168,6 +2180,18 @@ func (v *VRGInstance) removeFinalizerFromPVC(pvc *corev1.PersistentVolumeClaim,
 			return fmt.Errorf("failed to remove finalizer (%s) from PersistentVolumeClaim resource"+
 				" (%s/%s) detected as part of VolumeReplicationGroup (%s/%s), %w",
 				finalizer, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// findProtectedPVC returns the &VRG.Status.ProtectedPVC[x] for the given pvcName
+func (v *VRGInstance) findProtectedPVC(pvcName string) *ramendrv1alpha1.ProtectedPVC {
+	for index := range v.instance.Status.ProtectedPVCs {
+		protectedPVC := &v.instance.Status.ProtectedPVCs[index]
+		if protectedPVC.Name == pvcName {
+			return protectedPVC
 		}
 	}
 

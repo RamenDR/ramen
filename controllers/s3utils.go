@@ -131,8 +131,8 @@ func (s3ObjectStoreGetter) objectStore(ctx context.Context,
 	callerTag string) (objectStorer, error) {
 	s3StoreProfile, err := getRamenConfigS3StoreProfile(s3ProfileName)
 	if err != nil {
-		return nil, fmt.Errorf("error %w in profile %s; caller %s",
-			err, s3ProfileName, callerTag)
+		return nil, fmt.Errorf("failed to get profile %s for caller %s, %w",
+			s3ProfileName, callerTag, err)
 	}
 
 	// Use cached connection, if one exists
@@ -143,7 +143,7 @@ func (s3ObjectStoreGetter) objectStore(ctx context.Context,
 
 	accessID, secretAccessKey, err := getS3Secret(ctx, r, s3StoreProfile.S3SecretRef)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get secret %v; caller %s, %w",
+		return nil, fmt.Errorf("failed to get secret %v for caller %s, %w",
 			s3StoreProfile.S3SecretRef, callerTag, err)
 	}
 
@@ -159,7 +159,7 @@ func (s3ObjectStoreGetter) objectStore(ctx context.Context,
 		S3ForcePathStyle: aws.Bool(true),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create new session for %s; caller %s, %w",
+		return nil, fmt.Errorf("failed to create new session for %s for caller %s, %w",
 			s3Endpoint, callerTag, err)
 	}
 
