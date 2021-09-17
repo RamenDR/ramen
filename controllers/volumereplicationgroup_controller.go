@@ -764,7 +764,8 @@ func (v *VRGInstance) reconcileVRsForDeletion() bool {
 			continue
 		}
 
-		log.Info("Successfully processed VolumeReplication for PersistentVolumeClaim")
+		log.Info("Successfully processed VolumeReplication for PersistentVolumeClaim", "VR instance",
+			v.instance.Name, "PVC", pvcNamespacedName)
 	}
 
 	return requeue
