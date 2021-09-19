@@ -418,13 +418,13 @@ func (d *DRPCInstance) relocate(preferredCluster, preferredClusterNamespace stri
 	d.setDRState(drState)
 	setMetricsTimerFromDRState(drState, timerStart)
 
-	// Setting up relocation insures that all VRGs in all managed cluster are secondaries
+	// Setting up relocation ensures that all VRGs in all managed cluster are secondaries
 	err := d.setupRelocation(preferredCluster)
 	if err != nil {
 		return !done, err
 	}
 
-	// After we insured that all clusters are secondaries, we then insure
+	// After we ensured that all clusters are secondaries, we then ensure
 	// that the current home cluster is ready for relocation.
 	// For relocation, the current home cluster is not the preferredCluster
 	if !d.isCurrentHomeClusterReadyForRelocation(preferredCluster) {
@@ -586,7 +586,7 @@ func (d *DRPCInstance) isCurrentHomeClusterReadyForRelocation(targetCluster stri
 		return !ready
 	}
 	// IF len is greater than 1, then the only possibility for this to happen is
-	// when the targetCluster has already been moved to primary. We must insure
+	// when the targetCluster has already been moved to primary. We must ensure
 	// that condition is true
 	if len(d.vrgs) > 1 {
 		return d.findPrimaryCluster() == targetCluster
@@ -1344,7 +1344,7 @@ func (d *DRPCInstance) isRelocationInProgress() bool {
 func (d *DRPCInstance) isInProgress(targetCluster string) bool {
 	const inprogress = true
 
-	// IF no vrg Manifestwork for the failoverCluster, then we are not inpgrogress
+	// IF no vrg Manifestwork for the targetCluster, then we are not inpgrogress
 	mwName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
 
 	_, err := d.mwu.FindManifestWork(mwName, targetCluster)
