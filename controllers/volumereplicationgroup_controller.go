@@ -1246,13 +1246,25 @@ func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim, log 
 		return nil
 	}
 
+	// Error out if VRG has no S3 profiles
+	numProfilesToUpload := len(v.instance.Spec.S3ProfileList)
+	if numProfilesToUpload == 0 {
+		msg := "Error uploading PV cluster data because VRG spec has no S3 profiles"
+		v.updatePVCClusterDataProtectedCondition(pvc.Name,
+			VRGConditionReasonUploadError, msg)
+		v.log.Info(msg)
+
+		return fmt.Errorf("error uploading cluster data of PV %s because VRG spec has no S3 profiles",
+			pvc.Name)
+	}
+
 	s3Profiles := []string{}
 	// Upload the PV to all the S3 profiles in the VRG spec
 	for _, s3ProfileName := range v.instance.Spec.S3ProfileList {
 		if err := v.reconciler.PVUploader.UploadPV(v, s3ProfileName, pvc); err != nil {
 			msg := fmt.Sprintf("Error uploading PV cluster data to s3Profile %s, %v",
 				s3ProfileName, err)
-			v.updatePVCClusterDataProtectedCondition(pvc.Name, VRGConditionReasonUploadFailed, msg)
+			v.updatePVCClusterDataProtectedCondition(pvc.Name, VRGConditionReasonUploadError, msg)
 			log.Error(err, msg)
 			rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
 				rmnutil.EventReasonPVUploadFailed, err.Error())
@@ -1265,25 +1277,18 @@ func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim, log 
 		s3Profiles = append(s3Profiles, s3ProfileName)
 	}
 
-	numProfilesToUpload := len(v.instance.Spec.S3ProfileList)
-	if numProfilesToUpload > 0 {
-		numProfilesUploaded := len(s3Profiles)
-		msg := fmt.Sprintf("Done uploading PV cluster data to %d of %d S3 profile(s): %v",
-			numProfilesUploaded, numProfilesToUpload, s3Profiles)
-		v.log.Info(msg)
-		// Set ClusterDataProtected condition to true if PV was uploaded to all the profiles
-		if numProfilesUploaded == numProfilesToUpload {
-			v.updatePVCClusterDataProtectedCondition(pvc.Name,
-				VRGConditionReasonUploaded, msg)
-		}
-	} else {
-		msg := "Error uploading PV cluster data because VRG spec has no S3 profiles"
+	numProfilesUploaded := len(s3Profiles)
+	msg := fmt.Sprintf("Done uploading PV cluster data to %d of %d S3 profile(s): %v",
+		numProfilesUploaded, numProfilesToUpload, s3Profiles)
+	v.log.Info(msg)
+	// Set ClusterDataProtected condition to true if PV was uploaded to all the profiles
+	if numProfilesUploaded == numProfilesToUpload {
 		v.updatePVCClusterDataProtectedCondition(pvc.Name,
-			VRGConditionReasonMissingS3Profile, msg)
-		v.log.Info(msg)
-
-		return fmt.Errorf("error uploading cluster data of PV %s because VRG spec has no S3 profiles",
-			pvc.Name)
+			VRGConditionReasonUploaded, msg)
+	} else {
+		// Merely defensive as we don't expect to reach here
+		v.updatePVCClusterDataProtectedCondition(pvc.Name,
+			VRGConditionReasonUploadError, msg)
 	}
 
 	return nil
@@ -1293,25 +1298,17 @@ type ObjectStorePVUploader struct{}
 
 // UploadPV checks if the VRG spec has been configured with an s3 endpoint,
 // connects to the object store, gets the PV cluster data of the input PVC from
-// etcd, creates a bucket in s3 store, uploads the PV cluster data to s3 store and
-// downloads it for verification.  If an s3 endpoint is not configured, then
-// it assumes that VRG is running in a mode that doesn't require Ramen to
-// protect PV related cluster data and hence, does not return an error, but
-// logs a one-time message.
+// etcd, creates a bucket in s3 store, uploads the PV cluster data to s3 store.
 func (ObjectStorePVUploader) UploadPV(v interface{}, s3ProfileName string,
 	pvc *corev1.PersistentVolumeClaim) (err error) {
 	vrgName := v.(*VRGInstance).instance.Name
 	s3Bucket := constructBucketName(v.(*VRGInstance).instance.Namespace, vrgName)
 
-	if err := v.(*VRGInstance).checkS3Profile(s3ProfileName); err != nil {
-		if errors.IsServiceUnavailable(err) {
-			// Assume that the object store is unconfigured and don't treat this
-			// as an error.  Return to caller as there is no work to do.
-			return nil
-		}
-
-		// Return unknown error
-		return err
+	// Defensive check
+	if s3ProfileName == "" {
+		// Return error
+		return fmt.Errorf("error uploading cluster data of PV %s because VRG spec has no S3 profiles",
+			pvc.Name)
 	}
 
 	objectStore, err :=
@@ -1385,37 +1382,6 @@ func (ObjectStorePVDeleter) DeletePVs(v interface{}, s3ProfileName string) (err 
 		"S3 bucket", s3Bucket, "S3 profile", s3ProfileName)
 
 	return nil
-}
-
-// pvClusterDataUnprotected is a map with VRG name as the key
-var pvClusterDataUnprotected = make(map[string]bool)
-
-// If the the s3ProfileName is not set, then the VRG has been configured to run
-// in a mode that doesn't require protection of PV related cluster data.
-func (v *VRGInstance) checkS3Profile(s3ProfileName string) error {
-	vrgName := v.instance.Name
-
-	if s3ProfileName != "" {
-		pvClusterDataUnprotected[vrgName] = false
-
-		return nil
-	}
-
-	// No endpoint could mean that the user does not want Ramen to protect PV
-	// related cluster data.
-	err := errors.NewServiceUnavailable("s3Profile not configured in VRG.spec")
-
-	if prevWarned := pvClusterDataUnprotected[vrgName]; prevWarned {
-		// previously logged warning about backup-less mode of operation
-		return err
-	}
-
-	v.log.Info("VolumeReplicationGroup ", vrgName, " is not configured to protect PV cluster data.")
-
-	// Remember that a message was logged already to avoid repetitive warning for the same VRG.
-	pvClusterDataUnprotected[vrgName] = true
-
-	return err
 }
 
 // processVRAsPrimary processes VR to change its state to primary, with the assumption that the
@@ -2070,7 +2036,7 @@ func setPVCClusterDataProtectedCondition(protectedPVC *ramendrv1alpha1.Protected
 		setVRGClusterDataProtectedCondition(&protectedPVC.Conditions, observedGeneration, message)
 	case reason == VRGConditionReasonUploading:
 		setVRGClusterDataProtectingCondition(&protectedPVC.Conditions, observedGeneration, message)
-	case reason == VRGConditionReasonUploadFailed:
+	case reason == VRGConditionReasonUploadError:
 		setVRGClusterDataUnprotectedCondition(&protectedPVC.Conditions, observedGeneration, message)
 	default:
 		// if appropriate reason is not provided, then treat it as an unknown condition.
