@@ -333,7 +333,7 @@ func ManifestWorkPredicateFunc() predicate.Funcs {
 }
 
 func filterMW(mw *ocmworkv1.ManifestWork) []ctrl.Request {
-	if mw.Annotations[rmnutil.DRPCNameAnnotation] == "" || 
+	if mw.Annotations[rmnutil.DRPCNameAnnotation] == "" ||
 		mw.Annotations[rmnutil.DRPCNamespaceAnnotation] == "" {
 		return []ctrl.Request{}
 	}
@@ -380,7 +380,7 @@ func ManagedClusterViewPredicateFunc() predicate.Funcs {
 }
 
 func filterMCV(mcv *viewv1beta1.ManagedClusterView) []ctrl.Request {
-	if mcv.Annotations[rmnutil.DRPCNameAnnotation] == "" || 
+	if mcv.Annotations[rmnutil.DRPCNameAnnotation] == "" ||
 		mcv.Annotations[rmnutil.DRPCNamespaceAnnotation] == "" {
 		return []ctrl.Request{}
 	}

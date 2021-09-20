@@ -110,11 +110,13 @@ func (d *DRPCInstance) runInitialDeployment() (bool, error) {
 		homeCluster, d.userPlacementRule.Status.Decisions))
 
 	// Check if we already deployed in the homeCluster or elsewhere
-	clusterName, deployed := d.isDeployed(homeCluster)
+	deployed, clusterName := d.isDeployed(homeCluster)
 	if deployed && clusterName != homeCluster {
+		// IF deployed on cluster that is not the preferred HomeCluster, then we are done
 		return done, nil
 	}
 
+	// Ensure that initial deployment is complete
 	if deployed && d.isUserPlRuleUpdated(homeCluster) {
 		// If for whatever reason, the DRPC status is missing (i.e. DRPC could have been deleted mistakingly and
 		// recreated again), we should update it with whatever status we are at.
@@ -149,24 +151,24 @@ func (d *DRPCInstance) getHomeCluster() (string, string) {
 
 // isDeployed check to see if the initial deployment is already complete to this
 // homeCluster or elsewhere
-func (d *DRPCInstance) isDeployed(homeCluster string) (string, bool) {
-	if d.isVRGDeployedAndProtected(homeCluster) {
-		d.log.Info(fmt.Sprintf("Already deployed to %s. Last state: %s",
+func (d *DRPCInstance) isDeployed(homeCluster string) (bool, string) {
+	if d.isVRGAlreadyDeployedOnTargetCluster(homeCluster) {
+		d.log.Info(fmt.Sprintf("Already deployed on homeCluster %s. Last state: %s",
 			homeCluster, d.getLastDRState()))
 
-		return homeCluster, true
+		return true, homeCluster
 	}
 
-	clusterName, found := d.isAlreadyDeployedElsewhere(homeCluster)
+	clusterName, found := d.isVRGAlreadyDeployedElsewhere(homeCluster)
 	if found {
-		errMsg := fmt.Sprintf("Failed to place deployment on cluster %s, as it is active on another cluster",
-			homeCluster)
+		errMsg := fmt.Sprintf("Failed to place deployment on cluster %s, as it is active on cluster %s",
+			homeCluster, clusterName)
 		d.log.Info(errMsg)
 
-		return clusterName, true
+		return true, clusterName
 	}
 
-	return "", false
+	return false, ""
 }
 
 func (d *DRPCInstance) isUserPlRuleUpdated(homeCluster string) bool {
@@ -174,21 +176,12 @@ func (d *DRPCInstance) isUserPlRuleUpdated(homeCluster string) bool {
 		d.userPlacementRule.Status.Decisions[0].ClusterName == homeCluster
 }
 
-// isAlreadyFullyDeployedAndProtected will check whether a VRG exists in the targetCluster and
+// isVRGAlreadyDeployedOnTargetCluster will check whether a VRG exists in the targetCluster and
 // whether it is in protected state, and primary.
-func (d *DRPCInstance) isVRGDeployedAndProtected(targetCluster string) bool {
+func (d *DRPCInstance) isVRGAlreadyDeployedOnTargetCluster(targetCluster string) bool {
 	d.log.Info(fmt.Sprintf("isAlreadyDeployedAndProtected? - %+v", d.vrgs))
 
-	vrg := d.getCachedVRG(targetCluster)
-	if vrg == nil {
-		return false
-	}
-
-	if !d.isVRGProtected(vrg) {
-		return false
-	}
-
-	return d.isVRGPrimary(vrg)
+	return d.getCachedVRG(targetCluster) != nil
 }
 
 func (d *DRPCInstance) getCachedVRG(clusterName string) *rmn.VolumeReplicationGroup {
@@ -202,20 +195,7 @@ func (d *DRPCInstance) getCachedVRG(clusterName string) *rmn.VolumeReplicationGr
 	return vrg
 }
 
-func (d *DRPCInstance) isVRGProtected(vrg *rmn.VolumeReplicationGroup) bool {
-	// TODO:
-	// 		UNCOMMENT THIS CODE ONCE PR #255 IS MERGED
-	//
-	// dataProtectedCondition := findCondition(vrg.Status.Conditions, VRGConditionTypeClusterDataProtected)
-	// if dataProtectedCondition == nil {
-	// 	d.log.Info("VRG is not protected yet", "cluster", targetCluster)
-	//
-	// 	return false
-	// }
-	return true
-}
-
-func (d *DRPCInstance) isAlreadyDeployedElsewhere(clusterToSkip string) (string, bool) {
+func (d *DRPCInstance) isVRGAlreadyDeployedElsewhere(clusterToSkip string) (string, bool) {
 	for clusterName := range d.vrgs {
 		if clusterName == clusterToSkip {
 			continue
@@ -334,17 +314,22 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 		return done, err
 	}
 
-	// Set VRG in the failed cluster (preferred cluster) to secondary
-	err := d.updateVRGStateToSecondary(curHomeCluster)
-	if err != nil {
-		d.log.Error(err, "Failed to update existing VRG manifestwork to secondary")
-		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
-			rmnutil.EventReasonSwitchFailed, err.Error())
-
-		return !done, err
-	}
-
 	newHomeCluster := d.instance.Spec.FailoverCluster
+
+	// Flip the ReplicationState for the current home cluster to secondary if
+	// we have not done so. IF current home cluster and the new home cluster are the same,
+	// then we are far along in processing the failover
+	if curHomeCluster != newHomeCluster {
+		// Set VRG in the failed cluster (preferred cluster) to secondary
+		err := d.updateVRGStateToSecondary(curHomeCluster)
+		if err != nil {
+			d.log.Error(err, "Failed to update existing VRG manifestwork to secondary")
+			rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+				rmnutil.EventReasonSwitchFailed, err.Error())
+
+			return !done, err
+		}
+	}
 
 	const restorePVs = true
 
@@ -402,35 +387,9 @@ func (d *DRPCInstance) runRelocate() (bool, error) {
 	preferredCluster := d.instance.Spec.PreferredCluster
 	preferredClusterNamespace := preferredCluster
 
-	// Relocation requires preferredCluster to be configured
-	if preferredCluster == "" {
-		return !done, fmt.Errorf("preferred cluster not valid")
-	}
-
-	// No VRGs found, invalid state, possibly deployment was not started
-	if len(d.vrgs) == 0 {
-		return !done, fmt.Errorf("no VRGs exists. Can't relocate")
-	}
-
-	// Check for at most a single cluster in primary state
-	if d.areMultipleVRGsPrimary() {
-		return !done, fmt.Errorf("multiple primaries in transition detected")
-	}
-
-	// Pre-relocate cleanup
-	ready, homeCluster, secondaries := d.arePeersReady()
-	if !ready {
-		if homeCluster == "" {
-			// Ensure preferred cluster is not reporting as secondary
-			if clusterListContains(secondaries, preferredCluster) {
-				return !done, fmt.Errorf("cannot cleanup secondaries, as no valid primary found")
-			}
-		}
-
-		// Ensure secondaries have transitioned to the required state
-		if !d.ensureVRGIsSecondaryEverywhere(homeCluster) {
-			return !done, fmt.Errorf("waiting for VRGs to move to secondaries everywhere")
-		}
+	homeCluster, err := d.validateRelocation(preferredCluster)
+	if err != nil {
+		return !done, err
 	}
 
 	// We are done if already relocated; if there were secondaries they are cleaned up above
@@ -491,6 +450,41 @@ func (d *DRPCInstance) arePeersReady() (bool, string, []string) {
 	return len(peerClusters) == 0, homeCluster, peerClusters
 }
 
+func (d *DRPCInstance) validateRelocation(preferredCluster string) (string, error) {
+	// Relocation requires preferredCluster to be configured
+	if preferredCluster == "" {
+		return "", fmt.Errorf("preferred cluster not valid")
+	}
+
+	// No VRGs found, invalid state, possibly deployment was not started
+	if len(d.vrgs) == 0 {
+		return "", fmt.Errorf("no VRGs exists. Can't relocate")
+	}
+
+	// Check for at most a single cluster in primary state
+	if d.areMultipleVRGsPrimary() {
+		return "", fmt.Errorf("multiple primaries in transition detected")
+	}
+
+	// Pre-relocate cleanup
+	ready, homeCluster, secondaries := d.arePeersReady()
+	if !ready {
+		if homeCluster == "" {
+			// Ensure preferred cluster is not reporting as secondary
+			if clusterListContains(secondaries, preferredCluster) {
+				return "", fmt.Errorf("cannot cleanup secondaries, as no valid primary found")
+			}
+		}
+
+		// Ensure secondaries have transitioned to the required state
+		if !d.ensureVRGIsSecondaryEverywhere(homeCluster) {
+			return "", fmt.Errorf("waiting for VRGs to move to secondaries everywhere")
+		}
+	}
+
+	return homeCluster, nil
+}
+
 func (d *DRPCInstance) readyToSwitchOver(homeCluster string) bool {
 	const ready = true
 
@@ -500,14 +494,14 @@ func (d *DRPCInstance) readyToSwitchOver(homeCluster string) bool {
 
 	dataReadyCondition := findCondition(vrg.Status.Conditions, VRGConditionTypeDataReady)
 	if dataReadyCondition == nil {
-		d.log.Info("VRG Condition not available", "cluster", homeCluster)
+		d.log.Info("VRG DataReady condition not available", "cluster", homeCluster)
 
 		return !ready
 	}
 
 	clusterDataReadyCondition := findCondition(vrg.Status.Conditions, VRGConditionTypeClusterDataReady)
 	if clusterDataReadyCondition == nil {
-		d.log.Info("VRG Condition ClusterData not available", "cluster", homeCluster)
+		d.log.Info("VRG ClusterData condition not available", "cluster", homeCluster)
 
 		return !ready
 	}
@@ -816,9 +810,7 @@ func (d *DRPCInstance) checkPVsHaveBeenRestored(homeCluster string) (bool, error
 	vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name,
 		d.instance.Namespace, homeCluster)
 	if err != nil {
-		d.log.Info("Failed to get VRG through MCV", "error", err)
-
-		return false, fmt.Errorf("%w", err)
+		return false, fmt.Errorf("failed to VRG using MCV (error: %w)", err)
 	}
 
 	clusterDataReady := findCondition(vrg.Status.Conditions, VRGConditionTypeClusterDataReady)
@@ -991,16 +983,19 @@ func (d *DRPCInstance) ensureVRGDeleted(clusterName string) bool {
 	vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name,
 		d.instance.Namespace, clusterName)
 	if err != nil {
-		d.log.Info("Failed to get VRG using MCV", "error", err)
 		// Only NotFound error is accepted
 		if errors.IsNotFound(err) {
 			return true // ensured
 		}
 
+		d.log.Info("Failed to get VRG", "error", err)
+
 		d.mcvRequestInProgress = true
+		// Retry again
+		return false
 	}
 
-	d.log.Info(fmt.Sprintf("Got VRG using MCV -- %v", vrg))
+	d.log.Info(fmt.Sprintf("VRG not deleted(%v)", vrg))
 
 	return false
 }
