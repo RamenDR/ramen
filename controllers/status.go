@@ -55,8 +55,7 @@ const (
 	VRGConditionReasonErrorUnknown        = "UnknownError"
 	VRGConditionReasonUploading           = "Uploading"
 	VRGConditionReasonUploaded            = "Uploaded"
-	VRGConditionReasonUploadFailed        = "UploadFailed"
-	VRGConditionReasonMissingS3Profile    = "MissingS3Profile"
+	VRGConditionReasonUploadError         = "UploadError"
 )
 
 // Just when VRG has been picked up for reconciliation when nothing has been
@@ -191,7 +190,7 @@ func setVRGClusterDataProtectingCondition(conditions *[]metav1.Condition, observ
 func setVRGClusterDataUnprotectedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeClusterDataProtected,
-		Reason:             VRGConditionReasonUploadFailed,
+		Reason:             VRGConditionReasonUploadError,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,
