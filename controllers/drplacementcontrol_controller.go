@@ -28,6 +28,7 @@ import (
 	viewv1beta1 "github.com/open-cluster-management/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	errorswrapper "github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -70,6 +71,8 @@ type ProgressCallback func(string, string)
 type ManagedClusterViewGetter interface {
 	GetVRGFromManagedCluster(
 		resourceName, resourceNamespace, managedCluster string) (*rmn.VolumeReplicationGroup, error)
+
+	GetNamespaceFromManagedCluster(resourceName, resourceNamespace, managedCluster string) (*corev1.Namespace, error)
 }
 
 type ManagedClusterViewGetterImpl struct {
@@ -100,6 +103,28 @@ func (m ManagedClusterViewGetterImpl) GetVRGFromManagedCluster(
 	err := m.getManagedClusterResource(mcvMeta, mcvViewscope, vrg, logger)
 
 	return vrg, err
+}
+
+func (m ManagedClusterViewGetterImpl) GetNamespaceFromManagedCluster(
+	resourceName, managedCluster, namespaceString string) (*corev1.Namespace, error) {
+	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName)
+
+	// get Namespace and verify status through ManagedClusterView
+	mcvMeta := metav1.ObjectMeta{
+		Name:      BuildManagedClusterViewName(resourceName, namespaceString, rmnutil.MWTypeNS),
+		Namespace: managedCluster,
+	}
+
+	mcvViewscope := viewv1beta1.ViewScope{
+		Resource: "Namespace",
+		Name:     namespaceString,
+	}
+
+	namespace := &corev1.Namespace{}
+
+	err := m.getManagedClusterResource(mcvMeta, mcvViewscope, namespace, logger)
+
+	return namespace, err
 }
 
 /*
@@ -566,8 +591,15 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 			return fmt.Errorf("%w", err)
 		}
 
-		mcvName := BuildManagedClusterViewName(drpc.Name, drpc.Namespace, "vrg")
+		mcvName := BuildManagedClusterViewName(drpc.Name, drpc.Namespace, rmnutil.MWTypeVRG)
 		// Delete MCV for the VRG
+		err = r.deleteManagedClusterView(clustersToClean[idx], mcvName)
+		if err != nil {
+			return err
+		}
+
+		mcvName = BuildManagedClusterViewName(drpc.Name, drpc.Namespace, rmnutil.MWTypeNS)
+		// Delete MCV for Namespace
 		err = r.deleteManagedClusterView(clustersToClean[idx], mcvName)
 		if err != nil {
 			return err
