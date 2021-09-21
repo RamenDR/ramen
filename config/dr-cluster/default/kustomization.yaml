@@ -12,6 +12,26 @@ namePrefix: ramen-dr-cluster-
 #commonLabels:
 #  someName: someValue
 
+transformers:
+- |-
+  apiVersion: builtin
+  kind: LabelTransformer
+  metadata:
+    name: temporary
+  labels:
+    app: ramen-dr-cluster
+  fieldSpecs:
+  - kind: Deployment
+    path: metadata/labels
+  - kind: Deployment
+    path: spec/selector/matchLabels
+  - kind: Deployment
+    path: spec/template/metadata/labels
+  - kind: Service
+    path: metadata/labels
+  - kind: Service
+    path: spec/selector
+
 bases:
 - ../crd
 - ../rbac
