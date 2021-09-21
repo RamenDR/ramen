@@ -24,6 +24,7 @@ import (
 	"github.com/ghodss/yaml"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	errorswrapper "github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -129,6 +130,16 @@ func getFunctionNameAtIndex(idx int) string {
 	result := strings.Split(data, ".")
 
 	return result[len(result)-1]
+}
+
+func (f FakeMCVGetter) GetNamespaceFromManagedCluster(
+	resourceName, managedCluster, namespaceString string) (*corev1.Namespace, error) {
+	appNamespaceLookupKey := types.NamespacedName{Name: namespaceString}
+	appNamespaceObj := &corev1.Namespace{}
+
+	err := k8sClient.Get(context.TODO(), appNamespaceLookupKey, appNamespaceObj)
+
+	return appNamespaceObj, errorswrapper.Wrap(err, "failed to get Namespace from managedcluster")
 }
 
 func (f FakeMCVGetter) GetVRGFromManagedCluster(

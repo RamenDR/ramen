@@ -26,6 +26,7 @@ import (
 	"github.com/go-logr/logr"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	errorswrapper "github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -50,8 +51,9 @@ const (
 	// - type is "vrg"
 	ManifestWorkNameFormat string = "%s-%s-%s-mw"
 
-	// ManifestWork VRG Type
+	// ManifestWork Types
 	MWTypeVRG string = "vrg"
+	MWTypeNS  string = "ns"
 
 	// Annotations for MW and PlacementRule
 	DRPCNameAnnotation      = "drplacementcontrol.ramendr.openshift.io/drpc-name"
@@ -171,6 +173,31 @@ func (mwu *MWUtil) generateVRGManifest(
 			S3ProfileList:            s3ProfileList,
 			ReplicationClassSelector: replClassSelector,
 		},
+	})
+}
+
+func (mwu *MWUtil) CreateOrUpdateNamespaceManifest(
+	name string, namespaceName string, managedClusterNamespace string) error {
+	manifest, err := mwu.generateNamespaceManifest(namespaceName)
+	if err != nil {
+		return err
+	}
+
+	labels := map[string]string{}
+	manifests := []ocmworkv1.Manifest{
+		*manifest,
+	}
+
+	mwName := fmt.Sprintf(ManifestWorkNameFormat, name, namespaceName, MWTypeNS)
+	manifestWork := mwu.newManifestWork(mwName, managedClusterNamespace, labels, manifests)
+
+	return mwu.createOrUpdateManifestWork(manifestWork, managedClusterNamespace)
+}
+
+func (mwu *MWUtil) generateNamespaceManifest(name string) (*ocmworkv1.Manifest, error) {
+	return mwu.GenerateManifest(&corev1.Namespace{
+		TypeMeta:   metav1.TypeMeta{Kind: "Namespace", APIVersion: "v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: name},
 	})
 }
 
@@ -371,21 +398,24 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 }
 
 func (mwu *MWUtil) DeleteManifestWorksForCluster(clusterName string) error {
-	err := mwu.deleteVRGManifestWork(clusterName)
+	// VRG
+	err := mwu.deleteManifestWorkWrapper(clusterName, MWTypeVRG)
 	if err != nil {
 		mwu.Log.Error(err, "failed to delete MW for VRG")
 
 		return fmt.Errorf("failed to delete ManifestWork for VRG in namespace %s (%w)", clusterName, err)
 	}
 
+	// The ManifestWork that created a Namespace is intentionally left on the server
+
 	return nil
 }
 
-func (mwu *MWUtil) deleteVRGManifestWork(fromCluster string) error {
-	vrgMWName := mwu.BuildManifestWorkName(MWTypeVRG)
-	vrgMWNamespace := fromCluster
+func (mwu *MWUtil) deleteManifestWorkWrapper(fromCluster string, mwType string) error {
+	mwName := mwu.BuildManifestWorkName(mwType)
+	mwNamespace := fromCluster
 
-	return mwu.deleteManifestWork(vrgMWName, vrgMWNamespace)
+	return mwu.deleteManifestWork(mwName, mwNamespace)
 }
 
 func (mwu *MWUtil) deleteManifestWork(mwName, mwNamespace string) error {
