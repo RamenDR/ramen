@@ -204,10 +204,10 @@ func getVRGFromManifestWork(managedCluster string) (*rmn.VolumeReplicationGroup,
 
 	// Always report conditions as a success?
 	vrg.Status.Conditions = append(vrg.Status.Conditions, metav1.Condition{
-		Type:               controllers.VRGConditionTypeClusterDataReady,
-		Reason:             controllers.VRGConditionReasonClusterDataRestored,
+		Type:               controllers.VRGConditionTypeClusterDataProtected,
+		Reason:             controllers.VRGConditionReasonUploaded,
 		Status:             metav1.ConditionTrue,
-		Message:            "Testing VRG",
+		Message:            "Cluster data protected",
 		LastTransitionTime: metav1.Now(),
 		ObservedGeneration: vrg.Generation,
 	})

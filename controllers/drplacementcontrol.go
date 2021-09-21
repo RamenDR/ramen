@@ -485,6 +485,9 @@ func (d *DRPCInstance) validateRelocation(preferredCluster string) (string, erro
 	return homeCluster, nil
 }
 
+// readyToSwitchOver checks whether the PV data is ready and the cluster data has been protected.
+// ClusterDataProtected condition indicates whether all PV related cluster data for an App (Managed
+// by this DRPC instance) has been protected (uploaded to the S3 store(s)) or not.
 func (d *DRPCInstance) readyToSwitchOver(homeCluster string) bool {
 	const ready = true
 
@@ -499,17 +502,18 @@ func (d *DRPCInstance) readyToSwitchOver(homeCluster string) bool {
 		return !ready
 	}
 
-	clusterDataReadyCondition := findCondition(vrg.Status.Conditions, VRGConditionTypeClusterDataReady)
-	if clusterDataReadyCondition == nil {
+	clusterDataProtectedCondition := findCondition(vrg.Status.Conditions, VRGConditionTypeClusterDataProtected)
+	if clusterDataProtectedCondition == nil {
 		d.log.Info("VRG ClusterData condition not available", "cluster", homeCluster)
 
 		return !ready
 	}
 
+	// Allow switch over when PV data is ready and the cluster data is protected
 	return dataReadyCondition.Status == metav1.ConditionTrue &&
 		dataReadyCondition.ObservedGeneration == vrg.Generation &&
-		clusterDataReadyCondition.Status == metav1.ConditionTrue &&
-		clusterDataReadyCondition.ObservedGeneration == vrg.Generation
+		clusterDataProtectedCondition.Status == metav1.ConditionTrue &&
+		clusterDataProtectedCondition.ObservedGeneration == vrg.Generation
 }
 
 func (d *DRPCInstance) relocate(preferredCluster, preferredClusterNamespace string, drState rmn.DRState) (bool, error) {
@@ -813,6 +817,8 @@ func (d *DRPCInstance) checkPVsHaveBeenRestored(homeCluster string) (bool, error
 		return false, fmt.Errorf("failed to VRG using MCV (error: %w)", err)
 	}
 
+	// ClusterDataReady condition tells us whether the PVs have been applied on the
+	// target cluster or not
 	clusterDataReady := findCondition(vrg.Status.Conditions, VRGConditionTypeClusterDataReady)
 	if clusterDataReady == nil {
 		d.log.Info("Waiting for PVs to be restored", "cluster", homeCluster)
