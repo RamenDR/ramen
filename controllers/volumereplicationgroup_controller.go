@@ -1902,8 +1902,8 @@ func (v *VRGInstance) checkVRStatus(volRep *volrep.VolumeReplication) (bool, err
 //   checked and ensured healthy.
 func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state ramendrv1alpha1.ReplicationState) bool {
 	var (
-		stateString = "unknown"
-		action      = "unknown"
+		stateString string
+		action      string
 	)
 
 	const available = true
@@ -1934,27 +1934,38 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 		return available
 	}
 
-	// it should be resyncing, if secondary
-	conditionMet, msg = isVRConditionMet(volRep, volrepController.ConditionResyncing, metav1.ConditionTrue)
-	if !conditionMet {
-		v.updatePVCDataReadyConditionHelper(volRep.Name, VRGConditionReasonError, msg,
-			"VolumeReplication resource for pvc not resyncing as Secondary")
+	return v.validateAdditionalVRStatusForSecondary(volRep)
+}
 
-		return !available
+func (v *VRGInstance) validateAdditionalVRStatusForSecondary(volRep *volrep.VolumeReplication) bool {
+	const available = true
+
+	// it should be syncing or not degraded, if secondary
+	conditionMet, _ := isVRConditionMet(volRep, volrepController.ConditionResyncing, metav1.ConditionTrue)
+	if !conditionMet {
+		conditionMet, msg := isVRConditionMet(volRep, volrepController.ConditionResyncing, metav1.ConditionFalse)
+		if !conditionMet {
+			v.updatePVCDataReadyConditionHelper(volRep.Name, VRGConditionReasonError, msg,
+				"VolumeReplication resource for pvc not syncing as Secondary")
+
+			return !available
+		}
+
+		conditionMet, msg = isVRConditionMet(volRep, volrepController.ConditionDegraded, metav1.ConditionFalse)
+		if !conditionMet {
+			v.updatePVCDataReadyConditionHelper(volRep.Name, VRGConditionReasonError, msg,
+				"VolumeReplication resource for pvc is not syncing and is degraded as Secondary")
+
+			return !available
+		}
+
+		msg = "VolumeReplication resource for the pvc is in sync as Secondary"
+		v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonReplicating, msg)
+
+		return available
 	}
 
-	// it should not be degraded, if secondary
-	/* TODO: This needs a fix for https://github.com/csi-addons/volume-replication-operator/issues/101 based on which
-	   this can be removed or uncommented.
-	conditionMet, msg = isVRConditionMet(volRep, volrepController.ConditionDegraded, metav1.ConditionFalse)
-	if !conditionMet {
-		v.updateProtectedPVCConditionHelper(volRep.Name, VRGConditionReasonError, msg,
-			"VolumeReplication resource for pvc is degraded")
-
-		return
-	}*/
-
-	msg = "VolumeReplication resource for the pvc is replicating"
+	msg := "VolumeReplication resource for the pvc is syncing as Secondary"
 	v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonReplicating, msg)
 
 	return available
