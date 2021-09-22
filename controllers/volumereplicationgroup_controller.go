@@ -302,17 +302,25 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 			req.NamespacedName, err)
 	}
 
+	// Save a copy of the instance status to be used for the VRG status update comparison
+	v.instance.Status.DeepCopyInto(&v.savedInstanceStatus)
+
+	if v.savedInstanceStatus.ProtectedPVCs == nil {
+		v.savedInstanceStatus.ProtectedPVCs = []ramendrv1alpha1.ProtectedPVC{}
+	}
+
 	return v.processVRG()
 }
 
 type VRGInstance struct {
-	reconciler    *VolumeReplicationGroupReconciler
-	ctx           context.Context
-	log           logr.Logger
-	instance      *ramendrv1alpha1.VolumeReplicationGroup
-	pvcList       *corev1.PersistentVolumeClaimList
-	replClassList *volrep.VolumeReplicationClassList
-	vrcUpdated    bool
+	reconciler          *VolumeReplicationGroupReconciler
+	ctx                 context.Context
+	log                 logr.Logger
+	instance            *ramendrv1alpha1.VolumeReplicationGroup
+	savedInstanceStatus ramendrv1alpha1.VolumeReplicationGroupStatus
+	pvcList             *corev1.PersistentVolumeClaimList
+	replClassList       *volrep.VolumeReplicationClassList
+	vrcUpdated          bool
 }
 
 const (
@@ -1657,16 +1665,22 @@ func (v *VRGInstance) updateVRGStatus(updateConditions bool) error {
 	v.updateStatusState()
 
 	v.instance.Status.ObservedGeneration = v.instance.Generation
-	v.instance.Status.LastUpdateTime = metav1.Now()
 
-	if err := v.reconciler.Status().Update(v.ctx, v.instance); err != nil {
-		v.log.Info(fmt.Sprintf("Failed to update VRG status (%s/%s/%v)",
-			v.instance.Name, v.instance.Namespace, err))
+	if !reflect.DeepEqual(v.savedInstanceStatus, v.instance.Status) {
+		v.instance.Status.LastUpdateTime = metav1.Now()
+		if err := v.reconciler.Status().Update(v.ctx, v.instance); err != nil {
+			v.log.Info(fmt.Sprintf("Failed to update VRG status (%s/%s/%v)",
+				v.instance.Name, v.instance.Namespace, err))
 
-		return fmt.Errorf("failed to update VRG status (%s/%s)", v.instance.Name, v.instance.Namespace)
+			return fmt.Errorf("failed to update VRG status (%s/%s)", v.instance.Name, v.instance.Namespace)
+		}
+
+		v.log.Info(fmt.Sprintf("Updated VRG Status %+v", v.instance.Status))
+
+		return nil
 	}
 
-	v.log.Info(fmt.Sprintf("Updated VRG Status %+v", v.instance.Status))
+	v.log.Info(fmt.Sprintf("Nothing to update %+v", v.instance.Status))
 
 	return nil
 }
