@@ -44,11 +44,12 @@ import (
 )
 
 const (
-	DRPCName           = "app-volume-replication-test"
-	DRPCNamespaceName  = "app-namespace"
-	EastManagedCluster = "east-cluster"
-	WestManagedCluster = "west-cluster"
-	DRPolicyName       = "my-dr-peers"
+	DRPCName              = "app-volume-replication-test"
+	DRPCNamespaceName     = "app-namespace"
+	UserPlacementRuleName = "user-placement-rule"
+	EastManagedCluster    = "east-cluster"
+	WestManagedCluster    = "west-cluster"
+	DRPolicyName          = "my-dr-peers"
 
 	timeout       = time.Second * 10
 	interval      = time.Millisecond * 250
@@ -292,7 +293,7 @@ func createDRPC(name, namespace string) *rmn.DRPlacementControl {
 		},
 		Spec: rmn.DRPlacementControlSpec{
 			PlacementRef: corev1.ObjectReference{
-				Name: "sub-placement-rule",
+				Name: UserPlacementRuleName,
 				Kind: "PlacementRule",
 			},
 			DRPolicyRef: corev1.ObjectReference{
@@ -309,6 +310,11 @@ func createDRPC(name, namespace string) *rmn.DRPlacementControl {
 	Expect(k8sClient.Create(context.TODO(), drpc)).Should(Succeed())
 
 	return drpc
+}
+
+func deleteUserPlacementRule() {
+	userPlacementRule := getLatestUserPlacementRule(UserPlacementRuleName, DRPCNamespaceName)
+	Expect(k8sClient.Delete(context.TODO(), userPlacementRule)).Should(Succeed())
 }
 
 func deleteDRPC() {
@@ -720,7 +726,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		When("An Application is deployed for the first time", func() {
 			It("Should deploy to EastManagedCluster", func() {
 				By("Initial Deployment")
-				userPlacementRule, drpc = InitialDeployment(DRPCNamespaceName, "sub-placement-rule", EastManagedCluster)
+				userPlacementRule, drpc = InitialDeployment(DRPCNamespaceName, UserPlacementRuleName, EastManagedCluster)
 				updateClonedPlacementRuleStatus(userPlacementRule, drpc, EastManagedCluster)
 				verifyVRGManifestWorkCreatedAsPrimary(EastManagedCluster)
 				updateManifestWorkStatus(EastManagedCluster, "vrg", ocmworkv1.WorkApplied)
@@ -893,6 +899,17 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(EastManagedCluster))
 			})
 		})
+
+		When("Deleting user PlacementRule", func() {
+			It("Should cleanup DRPC", func() {
+				// ----------------------------- DELETE DRPC from PRIMARY --------------------------------------
+				By("\n\n*** DELETE User PlacementRule ***\n\n")
+				deleteUserPlacementRule()
+				// waitForCompletion("deleted")
+				// Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // Roles MW
+			})
+		})
+
 		When("Deleting DRPC", func() {
 			It("Should delete VRG from Primary (EastManagedCluster)", func() {
 				// ----------------------------- DELETE DRPC from PRIMARY --------------------------------------
