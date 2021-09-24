@@ -1040,7 +1040,7 @@ func (d *DRPCInstance) ensureVRGIsSecondaryOnCluster(clusterName string) bool {
 	}
 
 	if vrg.Status.State != rmn.SecondaryState {
-		d.log.Info(fmt.Sprintf("vrg status replication state for cluster %s is %v",
+		d.log.Info(fmt.Sprintf("vrg status replication state for cluster %s is %+v",
 			clusterName, vrg))
 
 		return false

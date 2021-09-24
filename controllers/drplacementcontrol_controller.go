@@ -56,7 +56,7 @@ const (
 	// Ramen scheduler
 	RamenScheduler string = "ramen"
 
-	ClonedPlacementRuleNameFormat string = "clonedprule-%s-%s"
+	ClonedPlacementRuleNameFormat string = "drpc-plrule-%s-%s"
 
 	// SanityCheckDelay is used to frequencly update the DRPC status when the reconciler is idle.
 	// This is needed in order to sync up the DRPC status and the VRG status.
@@ -224,6 +224,15 @@ type DRPlacementControlReconciler struct {
 
 func ManifestWorkPredicateFunc() predicate.Funcs {
 	mwPredicate := predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return false
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return false
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			log := ctrl.Log.WithName("ManifestWork")
 
@@ -268,6 +277,15 @@ func filterMW(mw *ocmworkv1.ManifestWork) []ctrl.Request {
 func ManagedClusterViewPredicateFunc() predicate.Funcs {
 	log := ctrl.Log.WithName("MCV")
 	mcvPredicate := predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return false
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return false
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			oldMCV, ok := e.ObjectOld.DeepCopyObject().(*viewv1beta1.ManagedClusterView)
 			if !ok {
@@ -286,11 +304,6 @@ func ManagedClusterViewPredicateFunc() predicate.Funcs {
 
 			return !reflect.DeepEqual(oldMCV.Status, newMCV.Status)
 		},
-		DeleteFunc: func(e event.DeleteEvent) bool {
-			log.Info("Delete event for MCV")
-
-			return false
-		},
 	}
 
 	return mcvPredicate
@@ -307,6 +320,44 @@ func filterMCV(mcv *viewv1beta1.ManagedClusterView) []ctrl.Request {
 			NamespacedName: types.NamespacedName{
 				Name:      mcv.Annotations[rmnutil.DRPCNameAnnotation],
 				Namespace: mcv.Annotations[rmnutil.DRPCNamespaceAnnotation],
+			},
+		},
+	}
+}
+
+func PlacementRulePredicateFunc() predicate.Funcs {
+	log := ctrl.Log.WithName("UserPlRule")
+	usrPlRulePredicate := predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return false
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return false
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			log.Info("Delete event")
+
+			return true
+		},
+	}
+
+	return usrPlRulePredicate
+}
+
+func filterUsrPlRule(usrPlRule *plrv1.PlacementRule) []ctrl.Request {
+	if usrPlRule.Annotations[rmnutil.DRPCNameAnnotation] == "" ||
+		usrPlRule.Annotations[rmnutil.DRPCNamespaceAnnotation] == "" {
+		return []ctrl.Request{}
+	}
+
+	return []ctrl.Request{
+		reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      usrPlRule.Annotations[rmnutil.DRPCNameAnnotation],
+				Namespace: usrPlRule.Annotations[rmnutil.DRPCNamespaceAnnotation],
 			},
 		},
 	}
@@ -333,8 +384,6 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	mwMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
 		mw, ok := obj.(*ocmworkv1.ManifestWork)
 		if !ok {
-			ctrl.Log.Info("ManifestWork map function received non-MW resource")
-
 			return []reconcile.Request{}
 		}
 
@@ -348,14 +397,25 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	mcvMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
 		mcv, ok := obj.(*viewv1beta1.ManagedClusterView)
 		if !ok {
-			ctrl.Log.Info("ManagedClusterView map function received non-MCV resource")
-
 			return []reconcile.Request{}
 		}
 
 		ctrl.Log.Info(fmt.Sprintf("Filtering MCV (%s/%s)", mcv.Name, mcv.Namespace))
 
 		return filterMCV(mcv)
+	}))
+
+	usrPlRulePred := PlacementRulePredicateFunc()
+
+	usrPlRuleMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
+		usrPlRule, ok := obj.(*plrv1.PlacementRule)
+		if !ok {
+			return []reconcile.Request{}
+		}
+
+		ctrl.Log.Info(fmt.Sprintf("Filtering User PlacementRule (%s/%s)", usrPlRule.Name, usrPlRule.Namespace))
+
+		return filterUsrPlRule(usrPlRule)
 	}))
 
 	r.eventRecorder = rmnutil.NewEventReporter(mgr.GetEventRecorderFor("controller_DRPlacementControl"))
@@ -365,6 +425,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		For(&rmn.DRPlacementControl{}).
 		Watches(&source.Kind{Type: &ocmworkv1.ManifestWork{}}, mwMapFun, builder.WithPredicates(mwPred)).
 		Watches(&source.Kind{Type: &viewv1beta1.ManagedClusterView{}}, mcvMapFun, builder.WithPredicates(mcvPred)).
+		Watches(&source.Kind{Type: &plrv1.PlacementRule{}}, usrPlRuleMapFun, builder.WithPredicates(usrPlRulePred)).
 		Complete(r)
 }
 
@@ -423,28 +484,29 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(ctx context.Context
 	// has to be done there and can be removed from here.
 	err = r.validateSchedule(drPolicy)
 	if err != nil {
-		r.Log.Error(err, "failed to validate schedule")
-
-		// Should it be no requeue? as there is no reconcile till user
-		// changes desired spec to a valid value
 		return ctrl.Result{}, err
 	}
 
-	// Check if the drpc instance is marked for deletion, which is indicated by the
-	// deletion timestamp being set.
-	if drpc.GetDeletionTimestamp() != nil {
-		return r.processDeletion(ctx, drpc)
-	}
-
-	err = r.addDRPCFinalizer(ctx, drpc)
+	usrPlRule, err := r.getUserPlacementRule(ctx, drpc)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	drpcPlRule, userPlRule, err := r.getPlacementRules(ctx, drpc, drPolicy)
-	if err != nil {
-		r.Log.Error(err, "failed to get PlacementRules")
+	// If either drpc or User PlacementRule is deleted, then we must cleanup.
+	if r.isBeingDeleted(drpc, usrPlRule) {
+		// DPRC depends on User PlacementRule. If DRPC or/and the User PlacementRule is deleted,
+		// then the DRPC should be deleted as well. The least we should do here is to clean up DPRC.
+		return r.processDeletion(ctx, drpc, usrPlRule)
+	}
 
+	err = r.addFinalizers(ctx, drpc, usrPlRule)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// We only create DRPC PlacementRule if the preferred cluster is not configured
+	drpcPlRule, err := r.getDRPCPlacementRule(ctx, drpc, usrPlRule, drPolicy)
+	if err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -457,18 +519,24 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(ctx context.Context
 
 	vrgs, err := r.getVRGsFromManagedClusters(drpc, drPolicy)
 	if err != nil {
-		r.Log.Error(err, "Failed to query for VRGs in the ManagedClusters", "Clusters", drPolicy.Spec.DRClusterSet)
-
 		return ctrl.Result{}, err
 	}
 
 	d := DRPCInstance{
 		reconciler: r, ctx: ctx, log: r.Log, instance: drpc, needStatusUpdate: false,
-		userPlacementRule: userPlRule, drpcPlacementRule: drpcPlRule, drPolicy: drPolicy, vrgs: vrgs,
+		userPlacementRule: usrPlRule, drpcPlacementRule: drpcPlRule, drPolicy: drPolicy, vrgs: vrgs,
 		mwu: rmnutil.MWUtil{Client: r.Client, Ctx: ctx, Log: r.Log, InstName: drpc.Name, InstNamespace: drpc.Namespace},
 	}
 
+	r.Log.Info(fmt.Sprintf("PlacementRule is: (%+v)", usrPlRule))
+
 	return r.processAndHandleResponse(&d)
+}
+
+// isBeingDeleted returns true if DRPC or User PlacementRule are being deleted
+func (r *DRPlacementControlReconciler) isBeingDeleted(drpc *rmn.DRPlacementControl,
+	usrPlRule *plrv1.PlacementRule) bool {
+	return !drpc.GetDeletionTimestamp().IsZero() || !usrPlRule.GetDeletionTimestamp().IsZero()
 }
 
 func (r *DRPlacementControlReconciler) processAndHandleResponse(d *DRPCInstance) (ctrl.Result, error) {
@@ -518,12 +586,23 @@ func (r *DRPlacementControlReconciler) getDRPolicy(ctx context.Context,
 	return drPolicy, nil
 }
 
-func (r *DRPlacementControlReconciler) addDRPCFinalizer(ctx context.Context, drpc *rmn.DRPlacementControl) error {
-	if !controllerutil.ContainsFinalizer(drpc, DRPCFinalizer) {
-		controllerutil.AddFinalizer(drpc, DRPCFinalizer)
+func (r DRPlacementControlReconciler) addFinalizers(ctx context.Context,
+	drpc *rmn.DRPlacementControl, usrPlRule *plrv1.PlacementRule) error {
+	err := r.addFinalizer(ctx, drpc, DRPCFinalizer)
+	if err != nil {
+		return err
+	}
 
-		if err := r.Update(ctx, drpc); err != nil {
-			r.Log.Error(err, "Failed to add finalizer", "finalizer", DRPCFinalizer)
+	return r.addFinalizer(ctx, usrPlRule, DRPCFinalizer)
+}
+
+func (r *DRPlacementControlReconciler) addFinalizer(ctx context.Context,
+	obj client.Object, finalizer string) error {
+	if !controllerutil.ContainsFinalizer(obj, finalizer) {
+		controllerutil.AddFinalizer(obj, finalizer)
+
+		if err := r.Update(ctx, obj); err != nil {
+			r.Log.Error(err, "Failed to add finalizer", "finalizer", finalizer)
 
 			return fmt.Errorf("%w", err)
 		}
@@ -533,8 +612,18 @@ func (r *DRPlacementControlReconciler) addDRPCFinalizer(ctx context.Context, drp
 }
 
 func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
-	drpc *rmn.DRPlacementControl) (ctrl.Result, error) {
+	drpc *rmn.DRPlacementControl, usrPlRule *plrv1.PlacementRule) (ctrl.Result, error) {
 	r.Log.Info("Processing DRPC deletion")
+
+	if controllerutil.ContainsFinalizer(usrPlRule, DRPCFinalizer) {
+		// Remove DRPCFinalizer from User PlacementRule.
+		controllerutil.RemoveFinalizer(usrPlRule, DRPCFinalizer)
+
+		err := r.Update(ctx, usrPlRule)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to update User PlacementRule %w", err)
+		}
+	}
 
 	if controllerutil.ContainsFinalizer(drpc, DRPCFinalizer) {
 		// Run finalization logic for dprc.
@@ -544,8 +633,7 @@ func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 			return ctrl.Result{}, err
 		}
 
-		// Remove DRPCFinalizer. The object will be deleted once
-		// the finalizer is removed
+		// Remove DRPCFinalizer from DRPC.
 		controllerutil.RemoveFinalizer(drpc, DRPCFinalizer)
 
 		err := r.Update(ctx, drpc)
@@ -633,31 +721,26 @@ func (r *DRPlacementControlReconciler) deleteManagedClusterView(clusterName, mcv
 	return r.Client.Delete(context.TODO(), mcv)
 }
 
-func (r *DRPlacementControlReconciler) getPlacementRules(ctx context.Context,
-	drpc *rmn.DRPlacementControl,
-	drPolicy *rmn.DRPolicy) (*plrv1.PlacementRule, *plrv1.PlacementRule, error) {
-	userPlRule, err := r.getUserPlacementRule(ctx, drpc)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if err = r.annotatePlacementRule(ctx, drpc, userPlRule); err != nil {
-		return nil, nil, err
-	}
-
+func (r *DRPlacementControlReconciler) getDRPCPlacementRule(ctx context.Context,
+	drpc *rmn.DRPlacementControl, usrPlRule *plrv1.PlacementRule,
+	drPolicy *rmn.DRPolicy) (*plrv1.PlacementRule, error) {
 	var drpcPlRule *plrv1.PlacementRule
 	// create the cloned placementrule if and only if the Spec.PreferredCluster is not provided
 	if drpc.Spec.PreferredCluster == "" {
-		drpcPlRule, err = r.getOrClonePlacementRule(ctx, drpc, drPolicy, userPlRule)
+		var err error
+
+		drpcPlRule, err = r.getOrClonePlacementRule(ctx, drpc, drPolicy, usrPlRule)
 		if err != nil {
-			return nil, nil, err
+			r.Log.Error(err, "failed to get DRPC PlacementRule")
+
+			return nil, err
 		}
 	} else {
 		r.Log.Info("Preferred cluster is configured. Dynamic selection is disabled",
 			"PreferredCluster", drpc.Spec.PreferredCluster)
 	}
 
-	return drpcPlRule, userPlRule, nil
+	return drpcPlRule, nil
 }
 
 func (r *DRPlacementControlReconciler) getUserPlacementRule(ctx context.Context,
@@ -668,27 +751,33 @@ func (r *DRPlacementControlReconciler) getUserPlacementRule(ctx context.Context,
 		drpc.Spec.PlacementRef.Namespace = drpc.Namespace
 	}
 
-	userPlacementRule := &plrv1.PlacementRule{}
+	usrPlRule := &plrv1.PlacementRule{}
 
 	err := r.Client.Get(ctx,
 		types.NamespacedName{Name: drpc.Spec.PlacementRef.Name, Namespace: drpc.Spec.PlacementRef.Namespace},
-		userPlacementRule)
+		usrPlRule)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get placementrule error: %w", err)
 	}
 
-	scName := userPlacementRule.Spec.SchedulerName
+	scName := usrPlRule.Spec.SchedulerName
 	if scName != RamenScheduler {
 		return nil, fmt.Errorf("placementRule %s does not have the ramen scheduler. Scheduler used %s",
-			userPlacementRule.Name, scName)
+			usrPlRule.Name, scName)
 	}
 
-	if userPlacementRule.Spec.ClusterReplicas == nil || *userPlacementRule.Spec.ClusterReplicas != 1 {
+	if usrPlRule.Spec.ClusterReplicas == nil || *usrPlRule.Spec.ClusterReplicas != 1 {
 		r.Log.Info("User PlacementRule replica count is not set to 1, reconciliation will only" +
 			" schedule it to a single cluster")
 	}
 
-	return userPlacementRule, nil
+	if usrPlRule.GetDeletionTimestamp().IsZero() {
+		if err = r.annotatePlacementRule(ctx, drpc, usrPlRule); err != nil {
+			return nil, err
+		}
+	}
+
+	return usrPlRule, nil
 }
 
 func (r *DRPlacementControlReconciler) annotatePlacementRule(ctx context.Context,
@@ -828,12 +917,18 @@ func (r *DRPlacementControlReconciler) validateSchedule(drPolicy *rmn.DRPolicy) 
 	r.Log.Info("Validating schedule from DRPolicy")
 
 	if drPolicy.Spec.SchedulingInterval == "" {
-		return fmt.Errorf("scheduling interval empty for the DRPolicy (%s)", drPolicy.Name)
+		msg := fmt.Sprintf("scheduling interval empty for the DRPolicy (%s)", drPolicy.Name)
+		r.Log.Info("Failed to validate schedule", "msg", msg)
+
+		return fmt.Errorf("%s", msg)
 	}
 
 	re := regexp.MustCompile(`^\d+[mhd]$`)
 	if !re.MatchString(drPolicy.Spec.SchedulingInterval) {
-		return fmt.Errorf("failed to match the scheduling interval string %s", drPolicy.Spec.SchedulingInterval)
+		msg := fmt.Sprintf("failed to match the scheduling interval string %s", drPolicy.Spec.SchedulingInterval)
+		r.Log.Info("Failed to validate schedule", "msg", msg)
+
+		return fmt.Errorf("%s", msg)
 	}
 
 	return nil
