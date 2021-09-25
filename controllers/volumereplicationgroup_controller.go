@@ -466,14 +466,23 @@ func (v *VRGInstance) restorePVs() error {
 	success := false
 
 	for _, s3ProfileName := range v.instance.Spec.S3ProfileList {
-		pvList, err := v.listPVsFromS3Store(s3ProfileName)
+		pvList, err := v.fetchPVClusterDataFromS3Store(s3ProfileName)
 		if err != nil {
-			v.log.Error(err, "failed to retrieve PVs from S3 store", "ProfileName", s3ProfileName)
+			v.log.Error(err, fmt.Sprintf("error fetching PV cluster data from S3 profile %s", s3ProfileName))
 
 			continue
 		}
 
 		v.log.Info(fmt.Sprintf("Found %d PVs", len(pvList)))
+
+		err = v.sanityCheckPVClusterData(pvList)
+		if err != nil {
+			errMsg := fmt.Sprintf("error found during sanity check of PV cluster data in S3 store %s", s3ProfileName)
+			v.log.Error(err, errMsg)
+			v.log.Error(err, "Resolve the conflict in the above S3 store to deploy the application")
+
+			return fmt.Errorf("%s: %w", errMsg, err)
+		}
 
 		err = v.restorePVClusterData(pvList)
 		if err != nil {
@@ -498,7 +507,7 @@ func (v *VRGInstance) restorePVs() error {
 	return nil
 }
 
-func (v *VRGInstance) listPVsFromS3Store(s3ProfileName string) ([]corev1.PersistentVolume, error) {
+func (v *VRGInstance) fetchPVClusterDataFromS3Store(s3ProfileName string) ([]corev1.PersistentVolume, error) {
 	s3Bucket := constructBucketName(v.instance.Namespace, v.instance.Name)
 
 	return v.reconciler.PVDownloader.DownloadPVs(
@@ -509,6 +518,47 @@ func (v *VRGInstance) listPVsFromS3Store(s3ProfileName string) ([]corev1.Persist
 		v.instance.Name,
 		s3Bucket,
 	)
+}
+
+// sanityCheckPVClusterData returns an error if there are PVs in the input
+// pvList that have conflicting claimRefs that point to the same PVC name but
+// different PVC UID.
+//
+// Under normal circumstances, each PV in the S3 store will point to a unique
+// PVC and the sanity check will succeed.  In the case of failover related
+// split-brain error scenarios, there can be multiple clusters that concurrently
+// have the same VRG in primary state.  During the split-brain scenario, if the
+// VRG is configured to use the same S3 store for both download and upload of
+// cluster data and, if the application added a new PVC to the application on
+// each cluster after failover, the S3 store could end up with multiple PVs for
+// the same PVC because each of the clusters uploaded its unique PV to the S3
+// store, thus resulting in ambiguous PVs for the same PVC.  If the S3 store
+// ends up in such a situation, Ramen cannot determine with certainty which PV
+// among the conflicting PVs should be restored to the cluster, and thus fails
+// the sanity check.
+func (v *VRGInstance) sanityCheckPVClusterData(pvList []corev1.PersistentVolume) error {
+	pvMap := map[string]corev1.PersistentVolume{}
+	// Scan the PVs and create a map of PVs that have conflicting claimRefs
+	for _, thisPV := range pvList {
+		claimName := thisPV.Spec.ClaimRef.Name
+
+		prevPV, found := pvMap[claimName]
+		if !found {
+			pvMap[claimName] = thisPV
+
+			continue
+		}
+
+		msg := fmt.Sprintf("when restoring PV cluster data, detected conflicting claimName %s in PVs %s and %s",
+			claimName, prevPV.Name, thisPV.Name)
+		v.log.Info(msg)
+		// v.log.Info(fmt.Sprintf("First PV %v", prevPV))
+		// v.log.Info(fmt.Sprintf("Second PV %v", thisPV))
+
+		return fmt.Errorf(msg)
+	}
+
+	return nil
 }
 
 type ObjectStorePVDownloader struct{}
