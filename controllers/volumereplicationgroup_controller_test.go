@@ -1004,7 +1004,7 @@ func (v *vrgTest) waitForNamespaceDeletion() {
 		"while waiting for namespace %s to be deleted", v.namespace)
 }
 
-var PVsToRestore = []string{"pv0001", "pv0002", "pv0002", "pv0004"}
+var PVsToRestore = []string{"pv0001", "pv0002", "pv0003"}
 
 //nolint:scopelint
 func waitForPVRestore() {
@@ -1029,9 +1029,6 @@ func waitForPVRestore() {
 			"while waiting for PV %s to be restored", pvName)
 	}
 
-	// The expectation is to only add pv0001, pv0002, and pv0004
-	// The fourth PV should have been skipped because it exists
-	// and managed by ramen
 	Expect(len(pvSet)).To(Equal(3))
 }
 
@@ -1061,7 +1058,7 @@ func (s FakePVDownloader) DownloadPVs(ctx context.Context, r client.Reader,
 				ClaimRef: &corev1.ObjectReference{
 					Kind:      "PersistentVolumeClaim",
 					Namespace: "my-namespace",
-					Name:      "claimName",
+					Name:      "PVC_of_" + pvName,
 				},
 				PersistentVolumeReclaimPolicy: "Delete",
 				StorageClassName:              "manual",
