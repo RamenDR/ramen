@@ -663,7 +663,7 @@ func (v *VRGInstance) updateReplicationClassList() error {
 		return fmt.Errorf("failed to list Replication Classes, %w", err)
 	}
 
-	v.log.Info("Found Replication Classes", "count", len(v.replClassList.Items))
+	v.log.Info("Number of Replication Classes", "count", len(v.replClassList.Items))
 
 	return nil
 }
@@ -1701,7 +1701,7 @@ func (v *VRGInstance) updateVRGStatus(updateConditions bool) error {
 func (v *VRGInstance) updateStatusState() {
 	dataReadyCondition := findCondition(v.instance.Status.Conditions, VRGConditionTypeDataReady)
 	if dataReadyCondition == nil {
-		v.log.Info("Failed to find the Available condition in status")
+		v.log.Info("Failed to find the DataReady condition in status")
 
 		return
 	}
@@ -1755,6 +1755,7 @@ func getStatusStateFromSpecState(state ramendrv1alpha1.ReplicationState) ramendr
 // condition is updated elsewhere.
 func (v *VRGInstance) updateVRGConditions() {
 	v.updateVRGDataReadyCondition()
+	v.updateVRGDataProtectedCondition()
 	v.updateVRGClusterDataProtectedCondition()
 }
 
@@ -1800,6 +1801,9 @@ func (v *VRGInstance) updateVRGDataReadyCondition() {
 			vrgReady = false
 			// When will we hit this condition? If it is due to a race condition,
 			// why treat it as an error instead of progressing?
+			v.log.Info("Failed to find condition %s for vrg %s/%s", VRGConditionTypeDataReady,
+				v.instance.Name, v.instance.Namespace)
+
 			break
 		}
 
@@ -1814,11 +1818,13 @@ func (v *VRGInstance) updateVRGDataReadyCondition() {
 		if dataReadyCondition.Reason == VRGConditionReasonError ||
 			dataReadyCondition.Reason == VRGConditionReasonErrorUnknown {
 			vrgReady = false
-			// If there is even a single protected pvc
-			// that saw some error, then entire VRG
-			// should mark its condition as error. So
-			// set vrgPogressing to false.
+			// If there is even a single protected pvc that saw an error,
+			// then entire VRG should mark its condition as error. Set
+			// vrgPogressing to false.
 			vrgProgressing = false
+
+			v.log.Info("Condition %s has error reason %s for vrg %s/%s", VRGConditionTypeDataReady,
+				dataReadyCondition.Reason, v.instance.Name, v.instance.Namespace)
 
 			break
 		}
@@ -1831,7 +1837,7 @@ func (v *VRGInstance) updateVRGDataReadyCondition() {
 	}
 
 	if vrgProgressing {
-		v.log.Info("Marking VRG not available with progressing reason")
+		v.log.Info("Marking VRG not DataReady with progressing reason")
 
 		msg := "VolumeReplicationGroup is progressing"
 		setVRGDataProgressingCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
@@ -1841,10 +1847,73 @@ func (v *VRGInstance) updateVRGDataReadyCondition() {
 
 	// None of the VRG Ready and VRG Progressing conditions are met.
 	// Set Error condition for VRG.
-	v.log.Info("Marking VRG not available with error. All PVCs are not ready")
+	v.log.Info("Marking VRG not DataReady with error. All PVCs are not ready")
 
 	msg := "All PVCs of the VolumeReplicationGroup are not ready"
 	setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+}
+
+func (v *VRGInstance) updateVRGDataProtectedCondition() {
+	vrgProtected := true
+	vrgReplicating := false
+
+	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
+		dataProtectedCondition := findCondition(protectedPVC.Conditions, VRGConditionTypeDataProtected)
+		if dataProtectedCondition == nil {
+			vrgProtected = false
+			vrgReplicating = false
+
+			v.log.Info(fmt.Sprintf("Failed to find condition %s for vrg", VRGConditionTypeDataProtected))
+
+			break
+		}
+
+		// VRGConditionReasonReplicating => VRG secondary, VRGConditionReasonReady => VRG Primary
+		if dataProtectedCondition.Reason == VRGConditionReasonReplicating ||
+			dataProtectedCondition.Reason == VRGConditionReasonReady {
+			vrgProtected = false
+			vrgReplicating = true
+
+			continue
+		}
+
+		if dataProtectedCondition.Reason == VRGConditionReasonError ||
+			dataProtectedCondition.Reason == VRGConditionReasonErrorUnknown {
+			vrgProtected = false
+			// Even a single pvc seeing error means, entire VRG marks this
+			// condition as error. Set vrgReplicating to false
+			vrgReplicating = false
+
+			v.log.Info(fmt.Sprintf("Condition %s has error reason %s for vrg",
+				VRGConditionTypeDataProtected, dataProtectedCondition.Reason))
+
+			break
+		}
+	}
+
+	if vrgProtected {
+		v.log.Info("Marking VRG data protected after completing replication")
+
+		msg := "PVCs in the VolumeReplicationGroup are data protected "
+		setVRGAsDataProtectedCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+
+		return
+	}
+
+	if vrgReplicating {
+		v.log.Info("Marking VRG data protection false with replicating reason")
+
+		msg := "VolumeReplicationGroup is replicating"
+		setVRGDataProtectionProgressCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+
+		return
+	}
+
+	// VRG is neither Data Protected nor Replicating
+	v.log.Info("Marking VRG data not protected with error. All PVCs are not ready")
+
+	msg := "All PVCs of the VolumeReplicationGroup are not ready"
+	setVRGAsDataNotProtectedCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 }
 
 func (v *VRGInstance) vrgReadyStatus() {
@@ -1970,8 +2039,14 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 	// it should be completed
 	conditionMet, msg := isVRConditionMet(volRep, volrepController.ConditionCompleted, metav1.ConditionTrue)
 	if !conditionMet {
+		defaultMsg := fmt.Sprintf("VolumeReplication resource for pvc not %s to %s", action, stateString)
 		v.updatePVCDataReadyConditionHelper(volRep.Name, VRGConditionReasonError, msg,
-			fmt.Sprintf("VolumeReplication resource for pvc not %s to %s", action, stateString))
+			defaultMsg)
+
+		v.updatePVCDataProtectedConditionHelper(volRep.Name, VRGConditionReasonError, msg,
+			defaultMsg)
+
+		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", defaultMsg, volRep.Name, volRep.Namespace))
 
 		return !available
 	}
@@ -1981,42 +2056,102 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 		msg = "PVC in the VolumeReplicationGroup is ready for use"
 		v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonReady, msg)
 
+		v.updatePVCDataProtectedCondition(volRep.Name, VRGConditionReasonReady, msg)
+
+		v.log.Info(fmt.Sprintf("VolumeReplication resource %s/%s is ready for use", volRep.Name,
+			volRep.Namespace))
+
 		return available
 	}
 
 	return v.validateAdditionalVRStatusForSecondary(volRep)
 }
 
+// Return available if resync is happening as secondary or resync is complete as secondary.
+// i.e. For VolRep the following conditions should be met
+// 1) Data Sync is happening
+//    VolRep.Status.Conditions[Degraded].Status = True &&
+//    VolRep.Status.Conditions[Resyncing].Status = True
+// 2) Data Sync is complete.
+//    VolRep.Status.Conditions[Degraded].Status = False &&
+//    VolRep.Status.Conditions[Resyncing].Status = False
+//
+// With 1st condition being met,
+// ProtectedPVC.Conditions[DataReady] = True
+// ProtectedPVC.Conditions[DataProtected] = False
+//
+// With 2nd condition being met,
+// ProtectedPVC.Conditions[DataReady] = True
+// ProtectedPVC.Conditions[DataProtected] = True
 func (v *VRGInstance) validateAdditionalVRStatusForSecondary(volRep *volrep.VolumeReplication) bool {
 	const available = true
 
-	// it should be syncing or not degraded, if secondary
 	conditionMet, _ := isVRConditionMet(volRep, volrepController.ConditionResyncing, metav1.ConditionTrue)
 	if !conditionMet {
-		conditionMet, msg := isVRConditionMet(volRep, volrepController.ConditionResyncing, metav1.ConditionFalse)
-		if !conditionMet {
-			v.updatePVCDataReadyConditionHelper(volRep.Name, VRGConditionReasonError, msg,
-				"VolumeReplication resource for pvc not syncing as Secondary")
-
-			return !available
-		}
-
-		conditionMet, msg = isVRConditionMet(volRep, volrepController.ConditionDegraded, metav1.ConditionFalse)
-		if !conditionMet {
-			v.updatePVCDataReadyConditionHelper(volRep.Name, VRGConditionReasonError, msg,
-				"VolumeReplication resource for pvc is not syncing and is degraded as Secondary")
-
-			return !available
-		}
-
-		msg = "VolumeReplication resource for the pvc is in sync as Secondary"
-		v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonReplicating, msg)
-
-		return available
+		return v.checkResyncCompletionAsSecondary(volRep)
 	}
 
-	msg := "VolumeReplication resource for the pvc is syncing as Secondary"
+	conditionMet, msg := isVRConditionMet(volRep, volrepController.ConditionDegraded, metav1.ConditionTrue)
+	if !conditionMet {
+		v.updatePVCDataProtectedConditionHelper(volRep.Name, VRGConditionReasonError, msg,
+			"VolumeReplication resource for pvc is not in Degraded condition while resyncing")
+
+		v.updatePVCDataReadyConditionHelper(volRep.Name, VRGConditionReasonError, msg,
+			"VolumeReplication resource for pvc is not in Degraded condition while resyncing")
+
+		v.log.Info(fmt.Sprintf("VolumeReplication resource is not in degraded condition while"+
+			" resyncing is true (%s/%s)", volRep.Name, volRep.Namespace))
+
+		return !available
+	}
+
+	msg = "VolumeReplication resource for the pvc is syncing as Secondary"
 	v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonReplicating, msg)
+	v.updatePVCDataProtectedCondition(volRep.Name, VRGConditionReasonReplicating, msg)
+
+	v.log.Info(fmt.Sprintf("VolumeReplication resource for the pvc is syncing as Secondary (%s/%s)",
+		volRep.Name, volRep.Namespace))
+
+	return available
+}
+
+func (v *VRGInstance) checkResyncCompletionAsSecondary(volRep *volrep.VolumeReplication) bool {
+	const available = true
+
+	conditionMet, msg := isVRConditionMet(volRep, volrepController.ConditionResyncing, metav1.ConditionFalse)
+	if !conditionMet {
+		defaultMsg := "VolumeReplication resource for pvc not syncing as Secondary"
+		v.updatePVCDataReadyConditionHelper(volRep.Name, VRGConditionReasonError, msg,
+			defaultMsg)
+
+		v.updatePVCDataProtectedConditionHelper(volRep.Name, VRGConditionReasonError, msg,
+			defaultMsg)
+
+		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", defaultMsg, volRep.Name, volRep.Namespace))
+
+		return !available
+	}
+
+	conditionMet, msg = isVRConditionMet(volRep, volrepController.ConditionDegraded, metav1.ConditionFalse)
+	if !conditionMet {
+		defaultMsg := "VolumeReplication resource for pvc is not syncing and is degraded as Secondary"
+		v.updatePVCDataReadyConditionHelper(volRep.Name, VRGConditionReasonError, msg,
+			defaultMsg)
+
+		v.updatePVCDataProtectedConditionHelper(volRep.Name, VRGConditionReasonError, msg,
+			defaultMsg)
+
+		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", defaultMsg, volRep.Name, volRep.Namespace))
+
+		return !available
+	}
+
+	msg = "VolumeReplication resource for the pvc as Secondary is in sync with Primary"
+	v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonReplicated, msg)
+	v.updatePVCDataProtectedCondition(volRep.Name, VRGConditionReasonDataProtected, msg)
+
+	v.log.Info(fmt.Sprintf("data sync completed as both degraded and resyncing are false for"+
+		" secondary VolRep (%s/%s)", volRep.Name, volRep.Namespace))
 
 	return available
 }
@@ -2050,6 +2185,10 @@ func isVRConditionMet(volRep *volrep.VolumeReplication,
 	return true, ""
 }
 
+// nolint: unparam
+// Disabling unparam linter as currently every invokation of this
+// function sends reason as VRGConditionReasonError and the linter
+// complains about this function always receiving the same reason.
 func (v *VRGInstance) updatePVCDataReadyConditionHelper(name, reason, message, defaultMessage string) {
 	if message != "" {
 		v.updatePVCDataReadyCondition(name, reason, message)
@@ -2074,6 +2213,34 @@ func (v *VRGInstance) updatePVCDataReadyCondition(pvcName, reason, message strin
 	v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
 }
 
+// nolint: unparam
+// Disabling unparam linter as currently every invokation of this
+// function sends reason as VRGConditionReasonError and the linter
+// complains about this function always receiving the same reason.
+func (v *VRGInstance) updatePVCDataProtectedConditionHelper(name, reason, message, defaultMessage string) {
+	if message != "" {
+		v.updatePVCDataProtectedCondition(name, reason, message)
+
+		return
+	}
+
+	v.updatePVCDataProtectedCondition(name, reason, defaultMessage)
+}
+
+func (v *VRGInstance) updatePVCDataProtectedCondition(pvcName, reason, message string) {
+	if protectedPVC := v.findProtectedPVC(pvcName); protectedPVC != nil {
+		setPVCDataProtectedCondition(protectedPVC, reason, message, v.instance.Generation)
+		// No need to append it as an already existing entry from the list is being modified.
+		return
+	}
+
+	protectedPVC := &ramendrv1alpha1.ProtectedPVC{Name: pvcName}
+	setPVCDataProtectedCondition(protectedPVC, reason, message, v.instance.Generation)
+
+	// created a new instance. Add it to the list
+	v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
+}
+
 func setPVCDataReadyCondition(protectedPVC *ramendrv1alpha1.ProtectedPVC, reason, message string,
 	observedGeneration int64) {
 	switch {
@@ -2081,6 +2248,8 @@ func setPVCDataReadyCondition(protectedPVC *ramendrv1alpha1.ProtectedPVC, reason
 		setVRGDataErrorCondition(&protectedPVC.Conditions, observedGeneration, message)
 	case reason == VRGConditionReasonReplicating:
 		setVRGDataReplicatingCondition(&protectedPVC.Conditions, observedGeneration, message)
+	case reason == VRGConditionReasonReplicated:
+		setVRGDataReplicatedCondition(&protectedPVC.Conditions, observedGeneration, message)
 	case reason == VRGConditionReasonReady:
 		setVRGAsPrimaryReadyCondition(&protectedPVC.Conditions, observedGeneration, message)
 	case reason == VRGConditionReasonProgressing:
@@ -2091,6 +2260,34 @@ func setPVCDataReadyCondition(protectedPVC *ramendrv1alpha1.ProtectedPVC, reason
 		// if appropriate reason is not provided, then treat it as an unknown condition.
 		message = "Unknown reason: " + reason
 		setVRGDataErrorCondition(&protectedPVC.Conditions, observedGeneration, message)
+	}
+}
+
+func setPVCDataProtectedCondition(protectedPVC *ramendrv1alpha1.ProtectedPVC, reason, message string,
+	observedGeneration int64) {
+	switch {
+	case reason == VRGConditionReasonError:
+		setVRGAsDataNotProtectedCondition(&protectedPVC.Conditions, observedGeneration, message)
+
+	// When VRG = Secondary && VolRep's Degraded = True && Resyncing = True
+	case reason == VRGConditionReasonReplicating:
+		setVRGDataProtectionProgressCondition(&protectedPVC.Conditions, observedGeneration, message)
+
+	// When VRG = Primary
+	case reason == VRGConditionReasonReady:
+		setVRGDataProtectionProgressCondition(&protectedPVC.Conditions, observedGeneration, message)
+
+	// When VRG = Secondary && VolRep's Degraded = False && Resyncing = False
+	case reason == VRGConditionReasonDataProtected:
+		setVRGAsDataProtectedCondition(&protectedPVC.Conditions, observedGeneration, message)
+	case reason == VRGConditionReasonProgressing:
+		setVRGAsDataNotProtectedCondition(&protectedPVC.Conditions, observedGeneration, message)
+	case reason == VRGConditionReasonErrorUnknown:
+		setVRGDataErrorUnknownCondition(&protectedPVC.Conditions, observedGeneration, message)
+	default:
+		// if appropriate reason is not provided, then treat it as an unknown condition.
+		message = "Unknown reason: " + reason
+		setVRGDataErrorUnknownCondition(&protectedPVC.Conditions, observedGeneration, message)
 	}
 }
 

@@ -32,6 +32,10 @@ const (
 	// this condition is true.
 	VRGConditionTypeDataReady = "DataReady"
 
+	// PV data is protected. This means that, the PV data from the storage
+	// is in complete sync with its remote peer.
+	VRGConditionTypeDataProtected = "DataProtected"
+
 	// PV cluster data is ready.  When failing over or relocating an app to a
 	// different cluster, deploying the app prior to ClusterDataReady condition
 	// could result in the PVCs binding to newly created PVs instead of binding
@@ -49,7 +53,9 @@ const (
 const (
 	VRGConditionReasonInitializing        = "Initializing"
 	VRGConditionReasonReplicating         = "Replicating"
+	VRGConditionReasonReplicated          = "Replicated"
 	VRGConditionReasonReady               = "Ready"
+	VRGConditionReasonDataProtected       = "DataProtected"
 	VRGConditionReasonProgressing         = "Progressing"
 	VRGConditionReasonClusterDataRestored = "Restored"
 	VRGConditionReasonError               = "Error"
@@ -64,6 +70,13 @@ const (
 func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeDataReady,
+		Reason:             VRGConditionReasonInitializing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionUnknown,
+		Message:            message,
+	})
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeDataProtected,
 		Reason:             VRGConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionUnknown,
@@ -92,6 +105,60 @@ func setVRGDataReplicatingCondition(conditions *[]metav1.Condition, observedGene
 		Reason:             VRGConditionReasonReplicating,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
+		Message:            message,
+	})
+}
+
+// sets conditions when VRG as Secondary has completed its data sync with Primary.
+func setVRGDataReplicatedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeDataReady,
+		Reason:             VRGConditionReasonReplicated,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		Message:            message,
+	})
+}
+
+// sets conditions when VRG DataProtected is correct which means
+// VR reports: Degraded: True and Resync: True
+// This is useful when there is a known Primary, for example post failover,
+// or even post relocate before VRG deletion on old secondary (as the
+// condition may change based on VR catching up to a new primary elsewhere)
+// VR reports: Degraded: False and Resync: False
+// This is useful when there are no known primaries and a final sync of
+// data is complete across secondaries
+func setVRGAsDataProtectedCondition(conditions *[]metav1.Condition, observedGeneration int64,
+	message string) {
+	// This means, for this VRG (as secondary) data sync has happened
+	// with a remote peer. Hence DataProtected is true
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeDataProtected,
+		Reason:             VRGConditionReasonDataProtected,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		Message:            message,
+	})
+}
+
+func setVRGAsDataNotProtectedCondition(conditions *[]metav1.Condition, observedGeneration int64,
+	message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeDataProtected,
+		Reason:             VRGConditionReasonError,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+	})
+}
+
+func setVRGDataProtectionProgressCondition(conditions *[]metav1.Condition, observedGeneration int64,
+	message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeDataProtected,
+		Reason:             VRGConditionReasonReplicating,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
 		Message:            message,
 	})
 }
