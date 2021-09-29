@@ -183,8 +183,12 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(
 		}
 
 		return vrg, nil
+
 	case "ensureVRGIsSecondaryOnCluster":
-		return moveVRGToSecondary(managedCluster, "vrg")
+		return moveVRGToSecondary(managedCluster, "vrg", false)
+
+	case "ensureDataProtectedOnCluster":
+		return moveVRGToSecondary(managedCluster, "vrg", true)
 
 	case "ensureVRGDeleted":
 		return nil, errors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
@@ -433,11 +437,32 @@ func deleteDRPolicy() {
 	Expect(k8sClient.Delete(context.TODO(), drPolicy)).To(Succeed())
 }
 
-func moveVRGToSecondary(clusterNamespace, mwType string) (*rmn.VolumeReplicationGroup, error) {
+func moveVRGToSecondary(clusterNamespace, mwType string, protectData bool) (*rmn.VolumeReplicationGroup, error) {
 	manifestLookupKey := types.NamespacedName{
 		Name:      rmnutil.ManifestWorkName(DRPCName, DRPCNamespaceName, mwType),
 		Namespace: clusterNamespace,
 	}
+
+	vrg, err := updateVRGMW(manifestLookupKey, protectData)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, err
+		}
+
+		// If the resource is changed when MW is being
+		// updated, then it can fail. Try again.
+		vrg, err = updateVRGMW(manifestLookupKey, protectData)
+		if err != nil && errors.IsNotFound(err) {
+			return nil, err
+		}
+	}
+
+	Expect(err).NotTo(HaveOccurred(), "erros %w in updating MW", err)
+
+	return vrg, err
+}
+
+func updateVRGMW(manifestLookupKey types.NamespacedName, dataProtected bool) (*rmn.VolumeReplicationGroup, error) {
 	mw := &ocmworkv1.ManifestWork{}
 
 	err := k8sClient.Get(context.TODO(), manifestLookupKey, mw)
@@ -455,6 +480,9 @@ func moveVRGToSecondary(clusterNamespace, mwType string) (*rmn.VolumeReplication
 
 	if vrg.Spec.ReplicationState == rmn.Secondary {
 		vrg.Status.State = rmn.SecondaryState
+
+		updateDataProtectedCondition(dataProtected, vrg)
+
 		objJSON, err := json.Marshal(vrg)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -463,11 +491,35 @@ func moveVRGToSecondary(clusterNamespace, mwType string) (*rmn.VolumeReplication
 
 		mw.Spec.Workload.Manifests[0] = *manifest
 
-		err = k8sClient.Status().Update(context.TODO(), mw)
-		Expect(err).NotTo(HaveOccurred())
+		err = k8sClient.Update(context.TODO(), mw)
+		// Expect(err).NotTo(HaveOccurred(), "erros %w in updating MW", err)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update VRG ManifestWork %w", err)
+		}
 	}
 
 	return vrg, nil
+}
+
+func updateDataProtectedCondition(dataProtected bool, vrg *rmn.VolumeReplicationGroup) {
+	if dataProtected {
+		if len(vrg.Status.Conditions) == 0 {
+			vrg.Status.Conditions = append(vrg.Status.Conditions, metav1.Condition{
+				Type:               controllers.VRGConditionTypeDataProtected,
+				Reason:             controllers.VRGConditionReasonDataProtected,
+				Status:             metav1.ConditionTrue,
+				Message:            "Data Protected",
+				LastTransitionTime: metav1.Now(),
+				ObservedGeneration: vrg.Generation,
+			})
+		} else {
+			vrg.Status.Conditions[0].Type = controllers.VRGConditionTypeDataProtected
+			vrg.Status.Conditions[0].Reason = controllers.VRGConditionReasonDataProtected
+			vrg.Status.Conditions[0].Status = metav1.ConditionTrue
+			vrg.Status.Conditions[0].ObservedGeneration = vrg.Generation
+			vrg.Status.Conditions[0].LastTransitionTime = metav1.Now()
+		}
+	}
 }
 
 func updateManifestWorkStatus(clusterNamespace, mwType, workType string) {
