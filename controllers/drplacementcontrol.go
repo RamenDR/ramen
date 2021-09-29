@@ -4,7 +4,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -574,6 +574,10 @@ func (d *DRPCInstance) setupRelocation(preferredCluster string) error {
 		}
 	}
 
+	if !d.ensureDataProtected(clusterToSkip) {
+		return fmt.Errorf("waiting for complete data resync to happen to target cluster")
+	}
+
 	return nil
 }
 
@@ -974,9 +978,9 @@ func (d *DRPCInstance) ensureVRGManifestWorkOnClusterDeleted(clusterName string)
 	}
 
 	// if !IsManifestInAppliedState(mw) {
-	// 	d.log.Info(fmt.Sprintf("ManifestWork %s/%s NOT in Applied state", mw.Namespace, mw.Name))
-	// 	// Wait for MW to be applied. The DRPC reconciliation will be called then
-	// 	return done, nil
+	//	d.log.Info(fmt.Sprintf("ManifestWork %s/%s NOT in Applied state", mw.Namespace, mw.Name))
+	//	// Wait for MW to be applied. The DRPC reconciliation will be called then
+	//	return done, nil
 	// }
 
 	// d.log.Info("VRG ManifestWork is in Applied state", "name", mw.Name, "cluster", clusterName)
@@ -1017,9 +1021,7 @@ func (d *DRPCInstance) ensureVRGIsSecondaryEverywhere(clusterToSkip string) bool
 	return true
 }
 
-//
 // ensureVRGIsSecondaryOnCluster returns true whether the VRG is secondary or it does not exists on the cluster
-//
 func (d *DRPCInstance) ensureVRGIsSecondaryOnCluster(clusterName string) bool {
 	d.log.Info(fmt.Sprintf("Ensure VRG %s is secondary on cluster %s", d.instance.Name, clusterName))
 
@@ -1041,6 +1043,76 @@ func (d *DRPCInstance) ensureVRGIsSecondaryOnCluster(clusterName string) bool {
 
 	if vrg.Status.State != rmn.SecondaryState {
 		d.log.Info(fmt.Sprintf("vrg status replication state for cluster %s is %+v",
+			clusterName, vrg))
+
+		return false
+	}
+
+	return true
+}
+
+// Check for DataProtected condition to be true everywhere except the
+// preferredCluster where the app is being relocated to.
+// This is because, preferredCluster wont have a VRG in a secondary state when
+// relocate is started at first. preferredCluster will get VRG as primary when DRPC is
+// about to move the workload to the preferredCluser. And before doing that, DataProtected
+// has to be ensured. This can only be done at the other cluster which has been moved to
+// secondary by now.
+func (d *DRPCInstance) ensureDataProtected(targetCluster string) bool {
+	for _, drCluster := range d.drPolicy.Spec.DRClusterSet {
+		clusterName := drCluster.Name
+		if targetCluster == clusterName {
+			continue
+		}
+
+		if !d.ensureDataProtectedOnCluster(clusterName) {
+			d.log.Info("Still waiting for data sync to complete", "cluster", clusterName)
+
+			return false
+		}
+	}
+
+	return true
+}
+
+func (d *DRPCInstance) ensureDataProtectedOnCluster(clusterName string) bool {
+	// this check is done only for relocation. Since this function can be called during
+	// failover as well, trying to ensure that data is completely synced in the new
+	// cluster where the app is going to be placed might not be successful. Only for
+	// relocate this check is made.
+	d.log.Info(fmt.Sprintf("Ensure VRG %s as secondary has the data protected on  %s",
+		d.instance.Name, clusterName))
+
+	d.mcvRequestInProgress = false
+
+	vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name,
+		d.instance.Namespace, clusterName)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// expectation is that VRG should be present. Otherwise, this function
+			// would not have been called. Return false
+			d.log.Info("VRG not found", "errorValue", err)
+
+			return false
+		}
+
+		d.log.Info("Failed to get VRG", "errorValue", err)
+
+		d.mcvRequestInProgress = true
+
+		return false
+	}
+
+	dataProtectedCondition := findCondition(vrg.Status.Conditions, VRGConditionTypeDataProtected)
+	if dataProtectedCondition == nil {
+		d.log.Info(fmt.Sprintf("VRG DataProtected condition not available for cluster %s (%v)",
+			clusterName, vrg))
+
+		return false
+	}
+
+	if dataProtectedCondition.Status != metav1.ConditionTrue {
+		d.log.Info(fmt.Sprintf("VRG data protection is not complete for cluster %s for %v",
 			clusterName, vrg))
 
 		return false
