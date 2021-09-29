@@ -478,8 +478,8 @@ func (v *VRGInstance) restorePVs() error {
 		err = v.sanityCheckPVClusterData(pvList)
 		if err != nil {
 			errMsg := fmt.Sprintf("error found during sanity check of PV cluster data in S3 store %s", s3ProfileName)
-			v.log.Error(err, errMsg)
-			v.log.Error(err, "Resolve the conflict in the above S3 store to deploy the application")
+			v.log.Info(errMsg)
+			v.log.Error(err, fmt.Sprintf("Resolve PV conflict in the S3 store %s to deploy the application", s3ProfileName))
 
 			return fmt.Errorf("%s: %w", errMsg, err)
 		}
@@ -540,20 +540,19 @@ func (v *VRGInstance) sanityCheckPVClusterData(pvList []corev1.PersistentVolume)
 	pvMap := map[string]corev1.PersistentVolume{}
 	// Scan the PVs and create a map of PVs that have conflicting claimRefs
 	for _, thisPV := range pvList {
-		claimName := thisPV.Spec.ClaimRef.Name
+		claimRef := thisPV.Spec.ClaimRef
+		claimKey := fmt.Sprintf("%s/%s", claimRef.Namespace, claimRef.Name)
 
-		prevPV, found := pvMap[claimName]
+		prevPV, found := pvMap[claimKey]
 		if !found {
-			pvMap[claimName] = thisPV
+			pvMap[claimKey] = thisPV
 
 			continue
 		}
 
-		msg := fmt.Sprintf("when restoring PV cluster data, detected conflicting claimName %s in PVs %s and %s",
-			claimName, prevPV.Name, thisPV.Name)
+		msg := fmt.Sprintf("when restoring PV cluster data, detected conflicting claimKey %s in PVs %s and %s",
+			claimKey, prevPV.Name, thisPV.Name)
 		v.log.Info(msg)
-		// v.log.Info(fmt.Sprintf("First PV %v", prevPV))
-		// v.log.Info(fmt.Sprintf("Second PV %v", thisPV))
 
 		return fmt.Errorf(msg)
 	}
