@@ -536,7 +536,8 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(ctx context.Context
 // isBeingDeleted returns true if DRPC or User PlacementRule are being deleted
 func (r *DRPlacementControlReconciler) isBeingDeleted(drpc *rmn.DRPlacementControl,
 	usrPlRule *plrv1.PlacementRule) bool {
-	return !drpc.GetDeletionTimestamp().IsZero() || !usrPlRule.GetDeletionTimestamp().IsZero()
+	return !drpc.GetDeletionTimestamp().IsZero() ||
+		(usrPlRule != nil && !usrPlRule.GetDeletionTimestamp().IsZero())
 }
 
 func (r *DRPlacementControlReconciler) processAndHandleResponse(d *DRPCInstance) (ctrl.Result, error) {
@@ -615,7 +616,7 @@ func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 	drpc *rmn.DRPlacementControl, usrPlRule *plrv1.PlacementRule) (ctrl.Result, error) {
 	r.Log.Info("Processing DRPC deletion")
 
-	if controllerutil.ContainsFinalizer(usrPlRule, DRPCFinalizer) {
+	if usrPlRule != nil && controllerutil.ContainsFinalizer(usrPlRule, DRPCFinalizer) {
 		// Remove DRPCFinalizer from User PlacementRule.
 		controllerutil.RemoveFinalizer(usrPlRule, DRPCFinalizer)
 
@@ -757,6 +758,10 @@ func (r *DRPlacementControlReconciler) getUserPlacementRule(ctx context.Context,
 		types.NamespacedName{Name: drpc.Spec.PlacementRef.Name, Namespace: drpc.Spec.PlacementRef.Namespace},
 		usrPlRule)
 	if err != nil {
+		if errors.IsNotFound(err) && !drpc.GetDeletionTimestamp().IsZero() {
+			return nil, nil
+		}
+
 		return nil, fmt.Errorf("failed to get placementrule error: %w", err)
 	}
 
