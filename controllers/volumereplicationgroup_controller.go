@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"regexp"
 
 	"github.com/go-logr/logr"
 
@@ -358,22 +357,6 @@ func (v *VRGInstance) processVRG() (ctrl.Result, error) {
 		return ctrl.Result{}, nil
 	}
 
-	if err := v.validateSchedule(); err != nil {
-		v.log.Error(err, "Failed to validate the scheduling interval")
-
-		msg := "Failed to validate scheduling interval"
-		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
-
-		if err = v.updateVRGStatus(false); err != nil {
-			v.log.Error(err, "VRG Status update failed")
-
-			return ctrl.Result{Requeue: true}, nil
-		}
-
-		// No requeue, as there is no reconcile till user changes desired spec to a valid value
-		return ctrl.Result{}, nil
-	}
-
 	if err := v.updatePVCList(); err != nil {
 		v.log.Error(err, "Failed to update PersistentVolumeClaims for resource")
 
@@ -406,27 +389,6 @@ func (v *VRGInstance) processVRGActions() (ctrl.Result, error) {
 	default: // Secondary, not primary and not deleted
 		return v.processAsSecondary()
 	}
-}
-
-// TODO: Currently DRPC and VRG both validate the schedule. However,
-//       there is a difference. While DRPC validates the scheduling
-//       interval for DRPolicy resource, VRG validates for itself.
-//       Once DRPolicy reconciler is implemented, perhaps validating
-//       schedule can be moved to "utils" package and both VRG and
-//       DRPolicy can consume validateSchedule from utils package.
-func (v *VRGInstance) validateSchedule() error {
-	v.log.Info("Validating schedule")
-
-	if v.instance.Spec.SchedulingInterval == "" {
-		return fmt.Errorf("scheduling interval empty (%s)", v.instance.Name)
-	}
-
-	re := regexp.MustCompile(`^\d+[mhd]$`)
-	if !re.MatchString(v.instance.Spec.SchedulingInterval) {
-		return fmt.Errorf("failed to match the scheduling interval string %s", v.instance.Spec.SchedulingInterval)
-	}
-
-	return nil
 }
 
 func (v *VRGInstance) validateVRGState() error {
@@ -565,12 +527,12 @@ type ObjectStorePVDownloader struct{}
 func (s ObjectStorePVDownloader) DownloadPVs(ctx context.Context, r client.Reader,
 	objStoreGetter ObjectStoreGetter, s3Profile string,
 	callerTag string, s3Bucket string) ([]corev1.PersistentVolume, error) {
-	objectStore, err := objStoreGetter.objectStore(ctx, r, s3Profile, callerTag)
+	objectStore, err := objStoreGetter.ObjectStore(ctx, r, s3Profile, callerTag)
 	if err != nil {
 		return nil, fmt.Errorf("error when downloading PVs, err %w", err)
 	}
 
-	return objectStore.downloadPVs(s3Bucket)
+	return objectStore.DownloadPVs(s3Bucket)
 }
 
 func (v *VRGInstance) restorePVClusterData(pvList []corev1.PersistentVolume) error {
@@ -1385,7 +1347,7 @@ func (ObjectStorePVUploader) UploadPV(v interface{}, s3ProfileName string,
 	}
 
 	objectStore, err :=
-		v.(*VRGInstance).reconciler.ObjStoreGetter.objectStore(
+		v.(*VRGInstance).reconciler.ObjStoreGetter.ObjectStore(
 			v.(*VRGInstance).ctx,
 			v.(*VRGInstance).reconciler.APIReader,
 			s3ProfileName,
@@ -1407,13 +1369,13 @@ func (ObjectStorePVUploader) UploadPV(v interface{}, s3ProfileName string,
 	}
 
 	// Create the bucket in object store, without assuming its existence
-	if err := objectStore.createBucket(s3Bucket); err != nil {
+	if err := objectStore.CreateBucket(s3Bucket); err != nil {
 		return fmt.Errorf("error creating bucket %s when uploading PV %s to s3Profile %s, %w",
 			s3Bucket, pvc.Name, s3ProfileName, err)
 	}
 
 	// Upload PV to object store
-	if err := objectStore.uploadPV(s3Bucket, pv.Name, pv); err != nil {
+	if err := objectStore.UploadPV(s3Bucket, pv.Name, pv); err != nil {
 		return fmt.Errorf("error uploading PV %s, err %w", pv.Name, err)
 	}
 
@@ -1438,7 +1400,7 @@ func (ObjectStorePVDeleter) DeletePVs(v interface{}, s3ProfileName string) (err 
 	vrgName := v.(*VRGInstance).instance.Name
 	s3Bucket := constructBucketName(v.(*VRGInstance).instance.Namespace, vrgName)
 
-	objectStore, err := v.(*VRGInstance).reconciler.ObjStoreGetter.objectStore(
+	objectStore, err := v.(*VRGInstance).reconciler.ObjStoreGetter.ObjectStore(
 		v.(*VRGInstance).ctx,
 		v.(*VRGInstance).reconciler.APIReader,
 		s3ProfileName,
@@ -1453,7 +1415,7 @@ func (ObjectStorePVDeleter) DeletePVs(v interface{}, s3ProfileName string) (err 
 		"S3 bucket", s3Bucket, "S3 profile", s3ProfileName)
 
 	// Delete all PVs from this VRG's S3 bucket
-	if err := objectStore.purgeBucket(s3Bucket); err != nil {
+	if err := objectStore.PurgeBucket(s3Bucket); err != nil {
 		return fmt.Errorf("error purging S3 bucket %s of S3 profile %s, %w",
 			s3Bucket, s3ProfileName, err)
 	}

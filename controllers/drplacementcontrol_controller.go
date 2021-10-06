@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"regexp"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -479,12 +478,8 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(ctx context.Context
 		return ctrl.Result{}, fmt.Errorf("failed to get DRPolicy %w", err)
 	}
 
-	// Currently validation of schedule in DRPolicy is done here. When
-	// there is a reconciler for DRPolicy, then probably this validation
-	// has to be done there and can be removed from here.
-	err = r.validateSchedule(drPolicy)
-	if err != nil {
-		return ctrl.Result{}, err
+	if err := rmnutil.DrpolicyValidated(drPolicy); err != nil {
+		return ctrl.Result{}, fmt.Errorf("DRPolicy not valid %w", err)
 	}
 
 	usrPlRule, err := r.getUserPlacementRule(ctx, drpc)
@@ -916,27 +911,6 @@ func (r *DRPlacementControlReconciler) getVRGsFromManagedClusters(drpc *rmn.DRPl
 	r.Log.Info("VRGs location", "VRGs", vrgs)
 
 	return vrgs, nil
-}
-
-func (r *DRPlacementControlReconciler) validateSchedule(drPolicy *rmn.DRPolicy) error {
-	r.Log.Info("Validating schedule from DRPolicy")
-
-	if drPolicy.Spec.SchedulingInterval == "" {
-		msg := fmt.Sprintf("scheduling interval empty for the DRPolicy (%s)", drPolicy.Name)
-		r.Log.Info("Failed to validate schedule", "msg", msg)
-
-		return fmt.Errorf("%s", msg)
-	}
-
-	re := regexp.MustCompile(`^\d+[mhd]$`)
-	if !re.MatchString(drPolicy.Spec.SchedulingInterval) {
-		msg := fmt.Sprintf("failed to match the scheduling interval string %s", drPolicy.Spec.SchedulingInterval)
-		r.Log.Info("Failed to validate schedule", "msg", msg)
-
-		return fmt.Errorf("%s", msg)
-	}
-
-	return nil
 }
 
 func (r *DRPlacementControlReconciler) deleteClonedPlacementRule(ctx context.Context,
