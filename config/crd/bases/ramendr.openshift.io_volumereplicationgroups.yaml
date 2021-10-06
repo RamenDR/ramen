@@ -157,6 +157,7 @@ spec:
                   data to a peer cluster. Interval is typically in the form <num><m,h,d>.
                   Here <num> is a number, 'm' means minutes, 'h' means hours and 'd'
                   stands for days.
+                pattern: ^\d+[mhd]$
                 type: string
             required:
             - pvcSelector

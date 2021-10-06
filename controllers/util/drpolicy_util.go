@@ -17,6 +17,11 @@ limitations under the License.
 package util
 
 import (
+	"errors"
+
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
 
@@ -27,6 +32,22 @@ func DrpolicyClusterNames(drpolicy *rmn.DRPolicy) []string {
 	}
 
 	return clusterNames
+}
+
+func DrpolicyValidatedConditionGet(drpolicy *rmn.DRPolicy) *metav1.Condition {
+	return meta.FindStatusCondition(drpolicy.Status.Conditions, rmn.DRPolicyValidated)
+}
+
+func DrpolicyValidated(drpolicy *rmn.DRPolicy) error {
+	if condition := DrpolicyValidatedConditionGet(drpolicy); condition != nil {
+		if condition.Status != metav1.ConditionTrue {
+			return errors.New(condition.Message)
+		}
+
+		return nil
+	}
+
+	return errors.New(`validated condition absent`)
 }
 
 // Return a list of unique S3 profiles to upload the relevant cluster state

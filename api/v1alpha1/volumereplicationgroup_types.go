@@ -76,6 +76,8 @@ type VolumeReplicationGroupSpec struct {
 	// data to a peer cluster. Interval is typically in the
 	// form <num><m,h,d>. Here <num> is a number, 'm' means
 	// minutes, 'h' means hours and 'd' stands for days.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^\d+[mhd]$`
 	SchedulingInterval string `json:"schedulingInterval"`
 
 	// Desired state of all volumes [primary or secondary] in this replication group;

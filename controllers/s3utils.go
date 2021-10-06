@@ -46,7 +46,7 @@ import (
 // }
 // *** create a new bucket ***
 // bucket := "subname-namespace" // should be all lowercase
-// if err := s3Conn.createBucket(bucket); err != nil {
+// if err := s3Conn.CreateBucket(bucket); err != nil {
 // 	return err
 // }
 
@@ -57,14 +57,14 @@ import (
 // 	uploadPV.Name = pvKey
 // 	uploadPV.Spec.StorageClassName = "gold"
 // 	uploadPV.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimRetain
-// 	if err := s3Conn.uploadObject(bucket, pvKey, uploadPV); err != nil {
+// 	if err := s3Conn.UploadObject(bucket, pvKey, uploadPV); err != nil {
 // 		return err
 // 	}
 // }
 
 // *** Find objects in the bucket, optionally supplying a key prefix
 // keyPrefix := "v1.PersistentVolumes/"
-// if list, err := s3Conn.listKeys(bucket, keyPrefix); err != nil {
+// if list, err := s3Conn.ListKeys(bucket, keyPrefix); err != nil {
 // 	return err
 // } else {
 // 	for _, key := range list {
@@ -84,30 +84,30 @@ import (
 // ObjectStoreGetter interface is exported because test clients
 // use this interface.
 type ObjectStoreGetter interface {
-	// objectStore returns an object that satisfies objectStorer interface
-	objectStore(ctx context.Context, r client.Reader,
-		s3Profile string, callerTag string) (objectStorer, error)
+	// ObjectStore returns an object that satisfies ObjectStorer interface
+	ObjectStore(ctx context.Context, r client.Reader,
+		s3Profile string, callerTag string) (ObjectStorer, error)
 }
 
-type objectStorer interface {
-	createBucket(bucket string) error
-	deleteBucket(bucket string) error
-	purgeBucket(bucket string) error
+type ObjectStorer interface {
+	CreateBucket(bucket string) error
+	DeleteBucket(bucket string) error
+	PurgeBucket(bucket string) error
 	// listBuckets() (buckets []string, err error)
-	uploadPV(bucket string, pvKeySuffix string,
+	UploadPV(bucket string, pvKeySuffix string,
 		pv corev1.PersistentVolume) error
-	uploadTypedObject(bucket string, keySuffix string,
+	UploadTypedObject(bucket string, keySuffix string,
 		uploadContent interface{}) error
-	uploadObject(bucket string, key string,
+	UploadObject(bucket string, key string,
 		uploadContent interface{}) error
-	verifyPVUpload(bucket string, pvKeySuffix string,
+	VerifyPVUpload(bucket string, pvKeySuffix string,
 		verifyPV corev1.PersistentVolume) error
-	downloadPVs(bucket string) (pvList []corev1.PersistentVolume, err error)
-	downloadTypedObjects(bucket string,
+	DownloadPVs(bucket string) (pvList []corev1.PersistentVolume, err error)
+	DownloadTypedObjects(bucket string,
 		objectType reflect.Type) (interface{}, error)
-	listKeys(bucket string, keyPrefix string) (keys []string, err error)
-	downloadObject(bucket string, key string, downloadContent interface{}) error
-	deleteObject(bucket, keyPrefix string) error
+	ListKeys(bucket string, keyPrefix string) (keys []string, err error)
+	DownloadObject(bucket string, key string, downloadContent interface{}) error
+	DeleteObject(bucket, keyPrefix string) error
 }
 
 // S3ObjectStoreGetter returns a concrete type that implements
@@ -121,14 +121,14 @@ func S3ObjectStoreGetter() ObjectStoreGetter {
 // the ObjectStoreGetter interface.
 type s3ObjectStoreGetter struct{}
 
-// objectStore returns an S3 object store that satisfies the objectStorer
+// ObjectStore returns an S3 object store that satisfies the ObjectStorer
 // interface,  with a downloader and an uploader client connections, by either
 // creating a new connection or returning a previously established connection
 // for the given s3 profile.  Returns an error if s3 profile does not exists,
 // secret is not configured, or if client session creation fails.
-func (s3ObjectStoreGetter) objectStore(ctx context.Context,
+func (s3ObjectStoreGetter) ObjectStore(ctx context.Context,
 	r client.Reader, s3ProfileName string,
-	callerTag string) (objectStorer, error) {
+	callerTag string) (ObjectStorer, error) {
 	s3StoreProfile, err := getRamenConfigS3StoreProfile(s3ProfileName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get profile %s for caller %s, %w",
@@ -216,9 +216,9 @@ type s3ObjectStore struct {
 // S3 object store map with s3Endpoint as the key to serve as cache
 var s3ConnectionMap = map[string]*s3ObjectStore{}
 
-// createBucket creates the given bucket; does not return an error if the bucket
+// CreateBucket creates the given bucket; does not return an error if the bucket
 // exists already.
-func (s *s3ObjectStore) createBucket(bucket string) (err error) {
+func (s *s3ObjectStore) CreateBucket(bucket string) (err error) {
 	if bucket == "" {
 		return fmt.Errorf("empty bucket name for "+
 			"endpoint %s caller %s", s.s3Endpoint, s.callerTag)
@@ -255,9 +255,9 @@ func (s *s3ObjectStore) createBucket(bucket string) (err error) {
 	return nil
 }
 
-// deleteBucket deletes the S3 bucket.  Fails to delete if the bucket contains
+// DeleteBucket deletes the S3 bucket.  Fails to delete if the bucket contains
 // any objects.
-func (s *s3ObjectStore) deleteBucket(bucket string) (
+func (s *s3ObjectStore) DeleteBucket(bucket string) (
 	err error) {
 	if bucket == "" {
 		return fmt.Errorf("empty bucket name for "+
@@ -287,8 +287,8 @@ func (s *s3ObjectStore) deleteBucket(bucket string) (
 	return nil
 }
 
-// purgeBucket empties the content of the given bucket.
-func (s *s3ObjectStore) purgeBucket(bucket string) (
+// PurgeBucket empties the content of the given bucket.
+func (s *s3ObjectStore) PurgeBucket(bucket string) (
 	err error) {
 	if bucket == "" {
 		return fmt.Errorf("empty bucket name for "+
@@ -303,26 +303,26 @@ func (s *s3ObjectStore) purgeBucket(bucket string) (
 		}
 	}()
 
-	keys, err := s.listKeys(bucket, "")
+	keys, err := s.ListKeys(bucket, "")
 	if err != nil {
 		if isAwsErrCodeNoSuchBucket(err) {
 			return nil // Not an error
 		}
 
-		return fmt.Errorf("unable to listKeys "+
+		return fmt.Errorf("unable to ListKeys "+
 			"from endpoint %s bucket %s, %w",
 			s.s3Endpoint, bucket, err)
 	}
 
 	for _, key := range keys {
-		err = s.deleteObject(bucket, key)
+		err = s.DeleteObject(bucket, key)
 		if err != nil {
 			return fmt.Errorf("failed to delete object %s in bucket %s, %w",
 				key, bucket, err)
 		}
 	}
 
-	err = s.deleteBucket(bucket)
+	err = s.DeleteBucket(bucket)
 	if err != nil {
 		return fmt.Errorf("failed to delete bucket %s, %w",
 			bucket, err)
@@ -331,38 +331,38 @@ func (s *s3ObjectStore) purgeBucket(bucket string) (
 	return nil
 }
 
-// uploadPV uploads the given PV to the given bucket with a key of
+// UploadPV uploads the given PV to the given bucket with a key of
 // "v1.PersistentVolume/<pvKeySuffix>".
 // - OK to call UploadPV() concurrently from multiple goroutines safely.
 // - Expects the given bucket to be already present
-func (s *s3ObjectStore) uploadPV(bucket string, pvKeySuffix string,
+func (s *s3ObjectStore) UploadPV(bucket string, pvKeySuffix string,
 	pv corev1.PersistentVolume) error {
-	return s.uploadTypedObject(bucket, pvKeySuffix /* key suffix */, pv)
+	return s.UploadTypedObject(bucket, pvKeySuffix /* key suffix */, pv)
 }
 
-// uploadTypedObject uploads to the given bucket the given uploadContent with a
+// UploadTypedObject uploads to the given bucket the given uploadContent with a
 // key of <objectType/keySuffix>, where objectType is the type of the
 // uploadContent parameter. OK to call UploadTypedObject() concurrently from
 // multiple goroutines safely.
 // - Expects the given bucket to be already present
-func (s *s3ObjectStore) uploadTypedObject(bucket string, keySuffix string,
+func (s *s3ObjectStore) UploadTypedObject(bucket string, keySuffix string,
 	uploadContent interface{}) error {
 	keyPrefix := reflect.TypeOf(uploadContent).String() + "/"
 	key := keyPrefix + keySuffix
 
-	return s.uploadObject(bucket, key, uploadContent)
+	return s.UploadObject(bucket, key, uploadContent)
 }
 
-// uploadObject uploads the given object to the given bucket with the given key.
+// UploadObject uploads the given object to the given bucket with the given key.
 // - OK to call UploadObject() concurrently from multiple goroutines safely.
 // - Upload may fail due to many reasons: RequestError (connection error),
 //   NoSuchBucket, NoSuchKey, InvalidParameter (e.g., empty key), etc.
 // - Multiple consecutive forward slashes in the key are sqaushed to
 //   a single forward slash, for each such occurrence
 // - Any formatting changes to this method should also be reflected in the
-//   downloadObject() method
+//   DownloadObject() method
 // - Expects the given bucket to be already present
-func (s *s3ObjectStore) uploadObject(bucket string, key string,
+func (s *s3ObjectStore) UploadObject(bucket string, key string,
 	uploadContent interface{}) error {
 	encodedUploadContent := &bytes.Buffer{}
 
@@ -389,18 +389,18 @@ func (s *s3ObjectStore) uploadObject(bucket string, key string,
 	return nil
 }
 
-// verifyPVUpload verifies that the PV in the input matches the PV object
+// VerifyPVUpload verifies that the PV in the input matches the PV object
 // with the given keySuffix in the given bucket.
-func (s *s3ObjectStore) verifyPVUpload(bucket string, pvKeySuffix string,
+func (s *s3ObjectStore) VerifyPVUpload(bucket string, pvKeySuffix string,
 	verifyPV corev1.PersistentVolume) error {
 	var downloadedPV corev1.PersistentVolume
 
 	keyPrefix := reflect.TypeOf(verifyPV).String() + "/"
 	key := keyPrefix + pvKeySuffix
 
-	err := s.downloadObject(bucket, key, &downloadedPV)
+	err := s.DownloadObject(bucket, key, &downloadedPV)
 	if err != nil {
-		return fmt.Errorf("unable to downloadObject for caller %s from "+
+		return fmt.Errorf("unable to DownloadObject for caller %s from "+
 			"endpoint %s bucket %s key %s, %w",
 			s.callerTag, s.s3Endpoint, bucket, key, err)
 	}
@@ -413,12 +413,12 @@ func (s *s3ObjectStore) verifyPVUpload(bucket string, pvKeySuffix string,
 	return nil
 }
 
-// downloadPVs downloads all PVs in the given bucket.
+// DownloadPVs downloads all PVs in the given bucket.
 // - Downloads objects with key prefix:  "v1.PersistentVolume/"
 // - If bucket doesn't exists, will return ErrCodeNoSuchBucket "NoSuchBucket"
-func (s *s3ObjectStore) downloadPVs(bucket string) (
+func (s *s3ObjectStore) DownloadPVs(bucket string) (
 	pvList []corev1.PersistentVolume, err error) {
-	result, err := s.downloadTypedObjects(bucket,
+	result, err := s.DownloadTypedObjects(bucket,
 		reflect.TypeOf(corev1.PersistentVolume{}))
 	if err != nil {
 		// TODO: Fix this in higher layers once we have related S3 fixes
@@ -440,19 +440,19 @@ func (s *s3ObjectStore) downloadPVs(bucket string) (
 	return pvList, nil
 }
 
-// downloadTypedObjects downloads all objects of the given objectType that have
+// DownloadTypedObjects downloads all objects of the given objectType that have
 // a key prefix as the given objectType.
 // - Example key prefix:  v1.PersistentVolumeClaim/
 // - Objects being downloaded should meet the decoding expectations of
-// 	 the downloadObject() method.
+// 	 the DownloadObject() method.
 // - Returns a []objectType
-func (s *s3ObjectStore) downloadTypedObjects(bucket string,
+func (s *s3ObjectStore) DownloadTypedObjects(bucket string,
 	objectType reflect.Type) (interface{}, error) {
 	keyPrefix := objectType.String() + "/"
 
-	keys, err := s.listKeys(bucket, keyPrefix)
+	keys, err := s.ListKeys(bucket, keyPrefix)
 	if err != nil {
-		return nil, fmt.Errorf("unable to listKeys of type %v "+
+		return nil, fmt.Errorf("unable to ListKeys of type %v "+
 			"from endpoint %s bucket %s keyPrefix %s, %w",
 			objectType, s.s3Endpoint, bucket, keyPrefix, err)
 	}
@@ -462,8 +462,8 @@ func (s *s3ObjectStore) downloadTypedObjects(bucket string,
 
 	for i := range keys {
 		objectReceiver := objects.Index(i).Addr().Interface()
-		if err := s.downloadObject(bucket, keys[i], objectReceiver); err != nil {
-			return nil, fmt.Errorf("unable to downloadObject from "+
+		if err := s.DownloadObject(bucket, keys[i], objectReceiver); err != nil {
+			return nil, fmt.Errorf("unable to DownloadObject from "+
 				"endpoint %s bucket %s key %s, %w",
 				s.s3Endpoint, bucket, keys[i], err)
 		}
@@ -473,10 +473,10 @@ func (s *s3ObjectStore) downloadTypedObjects(bucket string,
 	return objects.Interface(), nil
 }
 
-// listKeys lists the keys (of objects) with the given keyPrefix in the given bucket.
+// ListKeys lists the keys (of objects) with the given keyPrefix in the given bucket.
 // - If bucket doesn't exists, will return ErrCodeNoSuchBucket "NoSuchBucket"
 // - Refer to aws documentation of s3.ListObjectsV2Input for more list options
-func (s *s3ObjectStore) listKeys(bucket string, keyPrefix string) (
+func (s *s3ObjectStore) ListKeys(bucket string, keyPrefix string) (
 	keys []string, err error) {
 	var nextContinuationToken *string
 
@@ -506,7 +506,7 @@ func (s *s3ObjectStore) listKeys(bucket string, keyPrefix string) (
 	return
 }
 
-// downloadObject downloads an object from the given bucket with the given key,
+// DownloadObject downloads an object from the given bucket with the given key,
 // unzips, decodes the json blob and stores the downloaded object in the
 // downloadContent parameter.  The caller is expected to use the correct type of
 // downloadContent parameter.
@@ -520,7 +520,7 @@ func (s *s3ObjectStore) listKeys(bucket string, keyPrefix string) (
 // - Download may fail due to many reasons: RequestError (connection error),
 //   NoSuchBucket, NoSuchKey, invalid gzip header, json unmarshall error,
 //   InvalidParameter (e.g., empty key), etc.
-func (s *s3ObjectStore) downloadObject(bucket string, key string,
+func (s *s3ObjectStore) DownloadObject(bucket string, key string,
 	downloadContent interface{}) error {
 	writerAt := &aws.WriteAtBuffer{}
 	if _, err := s.downloader.Download(writerAt, &s3.GetObjectInput{
@@ -550,14 +550,14 @@ func (s *s3ObjectStore) downloadObject(bucket string, key string,
 	return nil
 }
 
-// deleteObject() deletes from the given bucket any objects that have the given
+// DeleteObject() deletes from the given bucket any objects that have the given
 // the keyPrefix.  If the bucket doesn't exists, will return
 // ErrCodeNoSuchBucket "NoSuchBucket".
-func (s *s3ObjectStore) deleteObject(bucket string, keyPrefix string) (
+func (s *s3ObjectStore) DeleteObject(bucket string, keyPrefix string) (
 	err error) {
-	keys, err := s.listKeys(bucket, keyPrefix)
+	keys, err := s.ListKeys(bucket, keyPrefix)
 	if err != nil {
-		return fmt.Errorf("unable to listKeys in deleteObjects "+
+		return fmt.Errorf("unable to ListKeys in DeleteObjects "+
 			"from endpoint %s bucket %s keyPrefix %s, %w",
 			s.s3Endpoint, bucket, keyPrefix, err)
 	}
@@ -577,7 +577,7 @@ func (s *s3ObjectStore) deleteObject(bucket string, keyPrefix string) (
 	if err = s.batchDeleter.Delete(aws.BackgroundContext(), &s3manager.DeleteObjectsIterator{
 		Objects: delObjects,
 	}); err != nil {
-		return fmt.Errorf("unable to deleteObjects "+
+		return fmt.Errorf("unable to DeleteObjects "+
 			"from endpoint %s bucket %s keyPrefix %s, %w",
 			s.s3Endpoint, bucket, keyPrefix, err)
 	}

@@ -43,6 +43,8 @@ type DRPolicySpec struct {
 	// data to a peer cluster. Interval is typically in the
 	// form <num><m,h,d>. Here <num> is a number, 'm' means
 	// minutes, 'h' means hours and 'd' stands for days.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^\d+[mhd]$`
 	SchedulingInterval string `json:"schedulingInterval"`
 
 	// Label selector to identify all the VolumeReplicationClasses.
@@ -59,7 +61,13 @@ type DRPolicySpec struct {
 // DRPolicyStatus defines the observed state of DRPolicy
 // INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 // Important: Run "make" to regenerate code after modifying this file
-type DRPolicyStatus struct{}
+type DRPolicyStatus struct {
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+const (
+	DRPolicyValidated string = `Validated`
+)
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
@@ -70,8 +78,8 @@ type DRPolicy struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   DRPolicySpec    `json:"spec,omitempty"`
-	Status *DRPolicyStatus `json:"status,omitempty"`
+	Spec   DRPolicySpec   `json:"spec,omitempty"`
+	Status DRPolicyStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -33,7 +34,9 @@ import (
 // DRPolicyReconciler reconciles a DRPolicy object
 type DRPolicyReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	APIReader         client.Reader
+	Scheme            *runtime.Scheme
+	ObjectStoreGetter ObjectStoreGetter
 }
 
 //nolint:lll
@@ -68,6 +71,10 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	case true:
 		log.Info("create/update")
 
+		if err := validate(ctx, drpolicy, r.APIReader, r.Client, r.ObjectStoreGetter, log); err != nil {
+			return ctrl.Result{}, fmt.Errorf(`validate: %w`, err)
+		}
+
 		if err := finalizerAdd(ctx, drpolicy, r.Client, log); err != nil {
 			return ctrl.Result{}, fmt.Errorf("finalizer add update: %w", err)
 		}
@@ -88,6 +95,67 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func validate(ctx context.Context, drpolicy *ramen.DRPolicy, apiReader client.Reader,
+	client client.Client, objectStoreGetter ObjectStoreGetter, log logr.Logger,
+) error {
+	var (
+		conditionSetTrue  func(reason, message string) error
+		conditionSetFalse func(reason string, err error) error
+	)
+
+	if condition := util.DrpolicyValidatedConditionGet(drpolicy); condition != nil {
+		if condition.Status == metav1.ConditionTrue {
+			log.Info(`valid -> valid`)
+
+			return nil
+		}
+
+		conditionUpdate := func(status metav1.ConditionStatus, reason, message string) error {
+			util.ConditionUpdate(drpolicy, condition, status, reason, message)
+
+			return client.Status().Update(ctx, drpolicy)
+		}
+		conditionSetFalse = func(reason string, err error) error {
+			log.Info(`invalid -> invalid`)
+
+			return err
+		}
+		conditionSetTrue = func(reason, message string) error {
+			log.Info(`invalid -> valid`)
+
+			return conditionUpdate(metav1.ConditionTrue, reason, message)
+		}
+	} else {
+		conditionAppend := func(status metav1.ConditionStatus, reason, message string) error {
+			util.ConditionAppend(drpolicy, &drpolicy.Status.Conditions, ramen.DRPolicyValidated, status, reason, message)
+
+			return client.Status().Update(ctx, drpolicy)
+		}
+		conditionSetFalse = func(reason string, err error) error {
+			log.Info(`empty -> invalid`)
+			if err1 := conditionAppend(metav1.ConditionFalse, reason, err.Error()); err1 != nil {
+				err = err1
+			}
+
+			return err
+		}
+		conditionSetTrue = func(reason, message string) error {
+			log.Info(`empty -> valid`)
+
+			return conditionAppend(metav1.ConditionTrue, reason, message)
+		}
+	}
+
+	for i := range drpolicy.Spec.DRClusterSet {
+		cluster := drpolicy.Spec.DRClusterSet[i]
+		if _, err := objectStoreGetter.ObjectStore(ctx, apiReader, cluster.S3ProfileName, `drpolicy validation`); err != nil {
+			return conditionSetFalse(`s3ConnectionFailed`, fmt.Errorf(`%s: %w`, cluster.S3ProfileName, err))
+		}
+	}
+
+	return conditionSetTrue(`Succeeded`, `drpolicy validated`)
 }
 
 const finalizerName = "drpolicies.ramendr.openshift.io/ramen"
