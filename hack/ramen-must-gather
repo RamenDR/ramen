@@ -1,0 +1,167 @@
+#!/bin/bash
+
+function usage {
+	echo "ramen-must-gather [appNamespace [hubClusterName [managedClusterNames...]]]"
+	echo "default appNamespace is current namespace"
+	echo "default hubClusterName is 'hub'"
+	echo "default managedClusterNames are all clusters in your kubeconfig"
+	echo
+	echo "Output: A .tar.gz file containing the gathered cluster data"
+}
+
+# Compute default command line parameters
+# Default namespace is the current namespace
+DefaultNamespace=$(kubectl config view --minify \
+	-ojsonpath='{.contexts[0].context.namespace}')
+# Default clusters are all clusters in the kubeconfig
+DefaultManagedClusters=$(kubectl config view \
+	-ojsonpath='{.contexts[*].context.cluster}')
+
+# Process the command line arguments
+AppNs=${1-"${DefaultNamespace}"}; shift
+HubCluster=${1-"hub"}; shift
+ManagedClusters=( "${*-"${DefaultManagedClusters}"}" )
+
+# CRs to gather in hub
+HubClusterResources=( subscriptions drpc placementrules )
+
+# CRs to gather in managed clusters
+ManagedClusterResources=( subscriptions vrg vr pvc pv pod )
+
+# List of 'namespace;deploymentName;podName' to collect logs
+# in the hub cluster.
+HubClusterLogList=(
+		'ramen-system;ramen-hub-operator;manager'
+	)
+
+# List of 'namespace;deploymentName;podName' to collect logs
+# in the managed clusters.
+ManagedClusterLogList=(
+		'ramen-system;ramen-dr-cluster-operator;manager'
+	  'rook-ceph;csi-rbdplugin-provisioner;volume-replication'
+	)
+
+function setup_traps()
+{
+	trap 'set -- $?; trap - EXIT; echo exit status: $1' EXIT
+	trap 'trap - ABRT' ABRT
+	trap 'trap - QUIT' QUIT
+	trap 'trap - TERM' TERM
+	trap 'trap - INT' INT
+	trap 'trap - HUP' HUP
+}
+
+function create_and_cd_to_output_dir()
+{
+	UserDir=$PWD
+	cd /tmp/
+	OutDir=ramen_must_gather.$HOSTNAME.$(date +%Y-%m-%d_%H.%M.%S)
+	set -ex
+	mkdir -p "$OutDir"
+	cd "$OutDir"
+}
+
+function tar_output_dir()
+{
+	cd ../
+	[ -z "$OutDir" ] && echo "Cannot tar unspecified dir" && exit -1
+	[ ! -d "$OutDir" ] && echo "Dir $OutDir does not exist" && exit -1
+	tar -czvf "$OutDir.tar.gz" "$OutDir/"
+	rm -rf "${OutDir:?}/"
+	mv "$OutDir.tar.gz" "$UserDir/"
+	cd "$UserDir/"
+	ls -l "$OutDir.tar.gz"
+}
+
+function gather_log()
+{
+	local clusterName=$1
+	local logLine=$2
+	local oldIFS="$IFS"
+	IFS=';' read -r -a logEntry <<< "$logLine"
+	local deplNs=${logEntry[0]}
+	local deplName=${logEntry[1]}
+	local deplPod=${logEntry[2]}
+	kubectl --context "$clusterName" -n "$deplNs" logs \
+		deployments/"$deplName" "$deplPod" > \
+		"$clusterName.logs.$deplNs.$deplName.$deplPod.txt"
+	IFS="$oldIFS"
+}
+
+function gather_from_hub_cluster()
+{
+	local clusterName="$HubCluster"
+	echo hubCluster: "$clusterName"
+
+	# Gather objects of interest
+	for object in "${HubClusterResources[@]}"; do
+		kubectl --context "$clusterName" -n "$AppNs" get "$object" -o yaml > \
+			"$clusterName.$object.txt"
+	done
+
+	# Gather logs of interest
+	for logLine in "${HubClusterLogList[@]}"; do
+		gather_log "$clusterName" "$logLine"
+	done
+}
+
+function gather_from_managed_cluster()
+{
+	local clusterName=$1
+	echo managedCluster: "$clusterName"
+
+	# Gather objects of interest
+	for object in "${ManagedClusterResources[@]}"; do
+		kubectl --context "$clusterName" -n "$AppNs" get "$object" -o yaml > \
+			"$clusterName.$object.txt"
+	done
+
+	# Gather logs of interest
+	for logLine in "${ManagedClusterLogList=[@]}"; do
+		gather_log "$clusterName" "$logLine"
+	done
+}
+
+# Gather from cluster, irrespective of whether it is hub or managed cluster.
+function gather_from_cluster()
+{
+	local clusterName=$1
+	# Gather deployments in cluster
+	kubectl --context "$clusterName" get deployments.apps -A > \
+		"$clusterName.deployments.brief.txt"
+	kubectl --context "$clusterName" get deployments.apps -A -oyaml > \
+		"$clusterName.deployments.verbose.txt"
+
+	# Gather hub-cluster or managed-cluster specific resources
+	if [ "$clusterName" = "$HubCluster" ]; then # hub cluster
+		gather_from_hub_cluster
+	else  # this is a managed cluster
+		gather_from_managed_cluster "$clusterName"
+	fi
+}
+
+function gather_from_clusters()
+{
+	# Input should be an unique list of hub and managed clusters
+	echo "Cluster list" "$@"
+	for clusterName in "$@"; do
+		gather_from_cluster "$clusterName"
+	done
+}
+
+function main()
+{
+	create_and_cd_to_output_dir
+
+	# shellcheck disable=SC2068
+	if grep -q "$HubCluster" <<< "${ManagedClusters[*]}"; then
+		# ManagedClusters[] contains HubCluster
+		gather_from_clusters ${ManagedClusters[@]}
+	else
+		# ManagedClusters[] does not contain HubCluster
+		gather_from_clusters "$HubCluster" ${ManagedClusters[@]}
+	fi
+	tar_output_dir
+}
+
+main
