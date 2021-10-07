@@ -18,7 +18,23 @@ spec:
     singular: drplacementcontrol
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .spec.preferredCluster
+      name: preferredCluster
+      type: string
+    - jsonPath: .spec.failoverCluster
+      name: failoverCluster
+      type: string
+    - jsonPath: .spec.action
+      name: desiredState
+      type: string
+    - jsonPath: .status.phase
+      name: currentState
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: DRPlacementControl is the Schema for the drplacementcontrols
@@ -347,6 +363,11 @@ spec:
                   resourceMeta:
                     description: ResourceMeta represents the VRG resoure.
                     properties:
+                      generation:
+                        description: A sequence number representing a specific generation
+                          of the desired state.
+                        format: int64
+                        type: integer
                       kind:
                         description: Kind is the kind of the Kubernetes resource.
                         type: string
@@ -354,9 +375,11 @@ spec:
                         description: Name is the name of the Kubernetes resource.
                         type: string
                       namespace:
-                        description: Name is the namespace of the Kubernetes resource.
+                        description: Namespace is the namespace of the Kubernetes
+                          resource.
                         type: string
                     required:
+                    - generation
                     - name
                     - namespace
                     type: object
