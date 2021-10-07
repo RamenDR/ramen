@@ -29,36 +29,19 @@ func DrpolicyClusterNames(drpolicy *rmn.DRPolicy) []string {
 	return clusterNames
 }
 
-// Return a list of unique S3 profiles to upload the relevant cluster state of
-// the given home cluster
-func s3UploadProfileList(drPolicy rmn.DRPolicy, homeCluster string) (s3ProfileList []string) {
+// Return a list of unique S3 profiles to upload the relevant cluster state
+func S3UploadProfileList(drPolicy rmn.DRPolicy) (s3ProfileList []string) {
 	for _, drCluster := range drPolicy.Spec.DRClusterSet {
-		if drCluster.Name != homeCluster {
-			// This drCluster is not the home cluster and is hence, a candidate to
-			// upload cluster state to if this S3 profile is not already on the list.
-			found := false
+		found := false
 
-			for _, s3ProfileName := range s3ProfileList {
-				if s3ProfileName == drCluster.S3ProfileName {
-					found = true
-				}
-			}
-
-			if !found {
-				s3ProfileList = append(s3ProfileList, drCluster.S3ProfileName)
+		for _, s3ProfileName := range s3ProfileList {
+			if s3ProfileName == drCluster.S3ProfileName {
+				found = true
 			}
 		}
-	}
 
-	return
-}
-
-// Return the S3 profile to download the relevant cluster state to the given
-// home cluster
-func S3DownloadProfile(drPolicy rmn.DRPolicy, homeCluster string) (s3Profile string) {
-	for _, drCluster := range drPolicy.Spec.DRClusterSet {
-		if drCluster.Name == homeCluster {
-			s3Profile = drCluster.S3ProfileName
+		if !found {
+			s3ProfileList = append(s3ProfileList, drCluster.S3ProfileName)
 		}
 	}
 
