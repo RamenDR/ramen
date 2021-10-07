@@ -122,7 +122,7 @@ func IsManifestInAppliedState(mw *ocmworkv1.ManifestWork) bool {
 func (mwu *MWUtil) CreateOrUpdateVRGManifestWork(
 	name, namespace, homeCluster string,
 	drPolicy *rmn.DRPolicy, pvcSelector metav1.LabelSelector) error {
-	s3ProfileList := s3UploadProfileList(*drPolicy, homeCluster)
+	s3ProfileList := S3UploadProfileList(*drPolicy)
 	schedulingInterval := drPolicy.Spec.SchedulingInterval
 	replClassSelector := drPolicy.Spec.ReplicationClassSelector
 
