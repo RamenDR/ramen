@@ -719,7 +719,7 @@ func verifyDRPCStatusPreferredClusterExpectation(drState rmn.DRState) {
 		err := k8sClient.Get(context.TODO(), drpcLookupKey, updatedDRPC)
 
 		if d := updatedDRPC.Status.PreferredDecision; err == nil && d != (plrv1.PlacementDecision{}) {
-			idx, condition := controllers.GetDRPCCondition(&updatedDRPC.Status, rmn.ConditionAvailable)
+			idx, condition := getDRPCCondition(&updatedDRPC.Status, rmn.ConditionAvailable)
 
 			return d.ClusterName == EastManagedCluster && idx != -1 && condition.Reason == string(drState)
 		}
@@ -728,7 +728,7 @@ func verifyDRPCStatusPreferredClusterExpectation(drState rmn.DRState) {
 	}, timeout, interval).Should(BeTrue(), fmt.Sprintf("failed waiting for an updated DRPC. State %v", drState))
 
 	Expect(updatedDRPC.Status.PreferredDecision.ClusterName).Should(Equal(EastManagedCluster))
-	_, condition := controllers.GetDRPCCondition(&updatedDRPC.Status, rmn.ConditionAvailable)
+	_, condition := getDRPCCondition(&updatedDRPC.Status, rmn.ConditionAvailable)
 	Expect(condition.Reason).Should(Equal(string(drState)))
 }
 
@@ -751,6 +751,34 @@ func waitForCompletion(expectedState string) {
 		return drstate == expectedState
 	}, timeout*2, interval).Should(BeTrue(),
 		fmt.Sprintf("failed to waiting for state to match. expecting: %s, found %s", expectedState, drstate))
+}
+
+func waitForUpdateDRPCStatus() {
+	Eventually(func() bool {
+		drpc := getLatestDRPC()
+
+		for _, condition := range drpc.Status.Conditions {
+			if condition.ObservedGeneration != drpc.Generation {
+				return false
+			}
+		}
+
+		return true
+	}, timeout, interval).Should(BeTrue(), "failed to see an updated DRPC status")
+}
+
+func getDRPCCondition(status *rmn.DRPlacementControlStatus, conditionType string) (int, *metav1.Condition) {
+	if len(status.Conditions) == 0 {
+		return -1, nil
+	}
+
+	for i := range status.Conditions {
+		if status.Conditions[i].Type == conditionType {
+			return i, &status.Conditions[i]
+		}
+	}
+
+	return -1, nil
 }
 
 func relocateToPreferredCluster(userPlacementRule *plrv1.PlacementRule) {
@@ -782,7 +810,6 @@ func recoverToFailoverCluster(userPlacementRule *plrv1.PlacementRule) {
 }
 
 // +kubebuilder:docs-gen:collapse=Imports
-
 var _ = Describe("DRPlacementControl Reconciler", func() {
 	Context("DRPlacementControl Reconciler", func() {
 		userPlacementRule := &plrv1.PlacementRule{}
@@ -804,8 +831,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				// {Available and PeerReady}
 				// Final state is 'Deployed'
 				Expect(drpc.Status.Phase).To(Equal(rmn.Deployed))
-				Expect(len(drpc.Status.Conditions)).To(Equal(2))
-				_, condition := controllers.GetDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
+				Expect(len(drpc.Status.Conditions)).To(Equal(1))
+				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
 				Expect(condition.Reason).To(Equal(string(rmn.Deployed)))
 
 				val, err := rmnutil.GetMetricValueSingle("ramen_initial_deploy_time", dto.MetricType_GAUGE)
@@ -840,7 +867,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				// Final state is 'FailedOver'
 				Expect(drpc.Status.Phase).To(Equal(rmn.FailedOver))
 				Expect(len(drpc.Status.Conditions)).To(Equal(2))
-				_, condition := controllers.GetDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
+				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
 				Expect(condition.Reason).To(Equal(string(rmn.FailedOver)))
 				userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
 				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(WestManagedCluster))
@@ -859,7 +886,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				// Final state is 'Relocated'
 				Expect(drpc.Status.Phase).To(Equal(rmn.Relocated))
 				Expect(len(drpc.Status.Conditions)).To(Equal(2))
-				_, condition := controllers.GetDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
+				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
 				Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
 				userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
 				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(EastManagedCluster))
@@ -882,7 +909,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				// initial deployment
 				Expect(drpc.Status.Phase).To(Equal(rmn.Relocated))
 				Expect(len(drpc.Status.Conditions)).To(Equal(2))
-				_, condition := controllers.GetDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
+				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
 				Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
 				userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
 				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(EastManagedCluster))
@@ -902,7 +929,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				// Final state is 'FailedOver'
 				Expect(drpc.Status.Phase).To(Equal(rmn.FailedOver))
 				Expect(len(drpc.Status.Conditions)).To(Equal(2))
-				_, condition := controllers.GetDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
+				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
 				Expect(condition.Reason).To(Equal(string(rmn.FailedOver)))
 				userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
 				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(WestManagedCluster))
@@ -912,8 +939,10 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			It("Should not do anything", func() {
 				// ----------------------------- Clear DRAction --------------------------------------
 				By("\n\n>>> clearing DRAction")
+				drstate = "none"
 				setDRPCSpecExpectationTo("")
 				waitForCompletion(string(rmn.FailedOver))
+				waitForUpdateDRPCStatus()
 				drpc = getLatestDRPC()
 				// At this point expect the DRPC status condition to have 2 types
 				// {Available and PeerReady}
@@ -921,7 +950,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				// initial deployment
 				Expect(drpc.Status.Phase).To(Equal(rmn.FailedOver))
 				Expect(len(drpc.Status.Conditions)).To(Equal(2))
-				_, condition := controllers.GetDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
+				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
 				Expect(condition.Reason).To(Equal(string(rmn.FailedOver)))
 				userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
 				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(WestManagedCluster))
@@ -957,7 +986,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				// Final state is 'Relocated'
 				Expect(drpc.Status.Phase).To(Equal(rmn.Relocated))
 				Expect(len(drpc.Status.Conditions)).To(Equal(2))
-				_, condition := controllers.GetDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
+				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
 				Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
 				userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
 				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(EastManagedCluster))
@@ -969,6 +998,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				// ----------------------------- DELETE DRPC from PRIMARY --------------------------------------
 				By("\n\n*** DELETE User PlacementRule ***\n\n")
 				deleteUserPlacementRule()
+				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionPeerReady)
+				Expect(condition).NotTo(BeNil())
 				// waitForCompletion("deleted")
 				// Expect(getManifestWorkCount(EastManagedCluster)).Should(Equal(1)) // Roles MW
 			})

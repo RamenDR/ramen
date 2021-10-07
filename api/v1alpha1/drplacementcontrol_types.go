@@ -100,7 +100,7 @@ const (
 	ReasonProgressing = "Progressing"
 	ReasonCleaning    = "Cleaning"
 	ReasonSuccess     = "Success"
-	ReasonUnknown     = "Unknown"
+	ReasonNotStarted  = "NotStarted"
 )
 
 // VRGResourceMeta represents the VRG resource.
@@ -112,8 +112,11 @@ type VRGResourceMeta struct {
 	// Name is the name of the Kubernetes resource.
 	Name string `json:"name"`
 
-	// Name is the namespace of the Kubernetes resource.
+	// Namespace is the namespace of the Kubernetes resource.
 	Namespace string `json:"namespace"`
+
+	// A sequence number representing a specific generation of the desired state.
+	Generation int64 `json:"generation"`
 }
 
 // VRGConditions represents the conditions of the resources deployed on a
@@ -139,6 +142,11 @@ type DRPlacementControlStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:JSONPath=".metadata.creationTimestamp",name=Age,type=date
+// +kubebuilder:printcolumn:JSONPath=".spec.preferredCluster",name=preferredCluster,type=string
+// +kubebuilder:printcolumn:JSONPath=".spec.failoverCluster",name=failoverCluster,type=string
+// +kubebuilder:printcolumn:JSONPath=".spec.action",name=desiredState,type=string
+// +kubebuilder:printcolumn:JSONPath=".status.phase",name=currentState,type=string
 // +kubebuilder:resource:shortName=drpc
 
 // DRPlacementControl is the Schema for the drplacementcontrols API
