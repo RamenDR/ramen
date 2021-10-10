@@ -283,18 +283,18 @@ func (d *DRPCInstance) runFailover() (bool, error) {
 	}
 
 	// VRG is primary in the failoverCluster, we are done if we have already failed over
-	if len(d.userPlacementRule.Status.Decisions) > 0 {
-		if d.instance.Spec.FailoverCluster == d.userPlacementRule.Status.Decisions[0].ClusterName {
-			d.log.Info(fmt.Sprintf("Already failed over to %s. Last state: %s",
-				d.userPlacementRule.Status.Decisions[0].ClusterName, d.getLastDRState()))
-
-			err := d.ensureCleanup(d.instance.Spec.FailoverCluster)
-			if err != nil {
-				return !done, err
-			}
-
-			return done, nil
+	if d.hasAlreadySwitchedOver(d.instance.Spec.FailoverCluster) {
+		err := d.ensureVRGInSyncWithDRPolicy(d.instance.Spec.FailoverCluster)
+		if err != nil {
+			return !done, err
 		}
+
+		err = d.ensureCleanup(d.instance.Spec.FailoverCluster)
+		if err != nil {
+			return !done, err
+		}
+
+		return done, nil
 	}
 
 	return d.switchToFailoverCluster()
@@ -398,7 +398,12 @@ func (d *DRPCInstance) runRelocate() (bool, error) {
 
 	// We are done if already relocated; if there were secondaries they are cleaned up above
 	if d.hasAlreadySwitchedOver(preferredCluster) {
-		err := d.ensureCleanup(preferredCluster)
+		err := d.ensureVRGInSyncWithDRPolicy(preferredCluster)
+		if err != nil {
+			return !done, err
+		}
+
+		err = d.ensureCleanup(preferredCluster)
 		if err != nil {
 			return !done, err
 		}
@@ -666,8 +671,8 @@ func (d *DRPCInstance) getVRGFromManifestWork(clusterName string) (*rmn.VolumeRe
 func (d *DRPCInstance) hasAlreadySwitchedOver(targetCluster string) bool {
 	if len(d.userPlacementRule.Status.Decisions) > 0 &&
 		targetCluster == d.userPlacementRule.Status.Decisions[0].ClusterName {
-		d.log.Info(fmt.Sprintf("Already switched over to cluster %s. Last state: %v",
-			targetCluster, d.getLastDRState()))
+		d.log.Info(fmt.Sprintf("Already '%v' to cluster %s",
+			d.getLastDRState(), targetCluster))
 
 		return true
 	}
@@ -873,6 +878,51 @@ func (d *DRPCInstance) checkPVsHaveBeenRestored(homeCluster string) (bool, error
 	}
 
 	return clusterDataReady.Status == metav1.ConditionTrue && clusterDataReady.ObservedGeneration == vrg.Generation, nil
+}
+
+func (d *DRPCInstance) ensureVRGInSyncWithDRPolicy(clusterName string) error {
+	vrgMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
+	d.log.Info(fmt.Sprintf("Checking if VRG %s is in sync with DRPolicy %s", vrgMWName, d.drPolicy.Name))
+
+	mw, err := d.mwu.FindManifestWork(vrgMWName, clusterName)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+
+		return fmt.Errorf("failed to check whether VRG %s is in sync with %s (%w)",
+			vrgMWName, d.drPolicy.Name, err)
+	}
+
+	vrg, err := d.extractVRGFromManifestWork(mw)
+	if err != nil {
+		return err
+	}
+
+	s3ProfileList := rmnutil.S3UploadProfileList(*d.drPolicy)
+	if !reflect.DeepEqual(vrg.Spec.S3ProfileList, s3ProfileList) ||
+		vrg.Spec.SchedulingInterval != d.drPolicy.Spec.SchedulingInterval {
+		vrg.Spec.S3ProfileList = s3ProfileList
+		vrg.Spec.SchedulingInterval = d.drPolicy.Spec.SchedulingInterval
+
+		vrgClientManifest, err := d.mwu.GenerateManifest(vrg)
+		if err != nil {
+			d.log.Error(err, "failed to generate manifest")
+
+			return fmt.Errorf("failed to generate VRG manifest (%w)", err)
+		}
+
+		mw.Spec.Workload.Manifests[0] = *vrgClientManifest
+
+		err = d.reconciler.Update(d.ctx, mw)
+		if err != nil {
+			return fmt.Errorf("failed to update MW (%w)", err)
+		}
+	}
+
+	d.log.Info(fmt.Sprintf("VRG %s is in sync with DRPolicy %s", vrgMWName, d.drPolicy.Name))
+
+	return nil
 }
 
 func (d *DRPCInstance) ensureCleanup(clusterToSkip string) error {

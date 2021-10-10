@@ -258,6 +258,21 @@ func ManifestWorkPredicateFunc() predicate.Funcs {
 	return mwPredicate
 }
 
+func getMWMapFun() handler.EventHandler {
+	mwMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
+		mw, ok := obj.(*ocmworkv1.ManifestWork)
+		if !ok {
+			return []reconcile.Request{}
+		}
+
+		ctrl.Log.Info(fmt.Sprintf("Filtering ManifestWork (%s/%s)", mw.Name, mw.Namespace))
+
+		return filterMW(mw)
+	}))
+
+	return mwMapFun
+}
+
 func filterMW(mw *ocmworkv1.ManifestWork) []ctrl.Request {
 	if mw.Annotations[rmnutil.DRPCNameAnnotation] == "" ||
 		mw.Annotations[rmnutil.DRPCNamespaceAnnotation] == "" {
@@ -309,6 +324,21 @@ func ManagedClusterViewPredicateFunc() predicate.Funcs {
 	return mcvPredicate
 }
 
+func getMCVMapFun() handler.EventHandler {
+	mcvMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
+		mcv, ok := obj.(*viewv1beta1.ManagedClusterView)
+		if !ok {
+			return []reconcile.Request{}
+		}
+
+		ctrl.Log.Info(fmt.Sprintf("Filtering MCV (%s/%s)", mcv.Name, mcv.Namespace))
+
+		return filterMCV(mcv)
+	}))
+
+	return mcvMapFun
+}
+
 func filterMCV(mcv *viewv1beta1.ManagedClusterView) []ctrl.Request {
 	if mcv.Annotations[rmnutil.DRPCNameAnnotation] == "" ||
 		mcv.Annotations[rmnutil.DRPCNamespaceAnnotation] == "" {
@@ -347,6 +377,21 @@ func PlacementRulePredicateFunc() predicate.Funcs {
 	return usrPlRulePredicate
 }
 
+func getUserPlRuleMapFun() handler.EventHandler {
+	usrPlRuleMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
+		usrPlRule, ok := obj.(*plrv1.PlacementRule)
+		if !ok {
+			return []reconcile.Request{}
+		}
+
+		ctrl.Log.Info(fmt.Sprintf("Filtering User PlacementRule (%s/%s)", usrPlRule.Name, usrPlRule.Namespace))
+
+		return filterUsrPlRule(usrPlRule)
+	}))
+
+	return usrPlRuleMapFun
+}
+
 func filterUsrPlRule(usrPlRule *plrv1.PlacementRule) []ctrl.Request {
 	if usrPlRule.Annotations[rmnutil.DRPCNameAnnotation] == "" ||
 		usrPlRule.Annotations[rmnutil.DRPCNamespaceAnnotation] == "" {
@@ -361,6 +406,59 @@ func filterUsrPlRule(usrPlRule *plrv1.PlacementRule) []ctrl.Request {
 			},
 		},
 	}
+}
+
+func DRPolicyPredicateFunc() predicate.Funcs {
+	log := ctrl.Log.WithName("DRPolicy")
+	policyPredicate := predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			log.Info(fmt.Sprintf("DRPolicy updated %s", e.ObjectNew.GetName()))
+
+			return e.ObjectOld.GetGeneration() != e.ObjectNew.GetGeneration()
+		},
+	}
+
+	return policyPredicate
+}
+
+func getPolicyMapFunction(mgr ctrl.Manager) handler.EventHandler {
+	policyMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
+		policy, ok := obj.(*rmn.DRPolicy)
+		if !ok {
+			return []reconcile.Request{}
+		}
+
+		ctrl.Log.Info(fmt.Sprintf("Filtering DRPolicy (%s)", policy.Name))
+
+		listOptions := []client.ListOption{}
+		var drpcs rmn.DRPlacementControlList
+		err := mgr.GetClient().List(context.TODO(), &drpcs, listOptions...)
+		if err != nil {
+			return []reconcile.Request{}
+		}
+
+		return filterDRPolicy(policy, drpcs)
+	}))
+
+	return policyMapFun
+}
+
+func filterDRPolicy(policy *rmn.DRPolicy, drpcs rmn.DRPlacementControlList) []ctrl.Request {
+	if len(drpcs.Items) == 0 {
+		return []ctrl.Request{}
+	}
+
+	reqs := []ctrl.Request{}
+
+	for _, drpc := range drpcs.Items {
+		if drpc.Spec.DRPolicyRef.Name == policy.Name {
+			reqs = append(reqs, ctrl.Request{
+				NamespacedName: types.NamespacedName{Name: drpc.Name},
+			})
+		}
+	}
+
+	return reqs
 }
 
 func GetDRPCCondition(status *rmn.DRPlacementControlStatus, conditionType string) (int, *metav1.Condition) {
@@ -380,43 +478,16 @@ func GetDRPCCondition(status *rmn.DRPlacementControlStatus, conditionType string
 // SetupWithManager sets up the controller with the Manager.
 func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	mwPred := ManifestWorkPredicateFunc()
-
-	mwMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
-		mw, ok := obj.(*ocmworkv1.ManifestWork)
-		if !ok {
-			return []reconcile.Request{}
-		}
-
-		ctrl.Log.Info(fmt.Sprintf("Filtering ManifestWork (%s/%s)", mw.Name, mw.Namespace))
-
-		return filterMW(mw)
-	}))
+	mwMapFun := getMWMapFun()
 
 	mcvPred := ManagedClusterViewPredicateFunc()
-
-	mcvMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
-		mcv, ok := obj.(*viewv1beta1.ManagedClusterView)
-		if !ok {
-			return []reconcile.Request{}
-		}
-
-		ctrl.Log.Info(fmt.Sprintf("Filtering MCV (%s/%s)", mcv.Name, mcv.Namespace))
-
-		return filterMCV(mcv)
-	}))
+	mcvMapFun := getMCVMapFun()
 
 	usrPlRulePred := PlacementRulePredicateFunc()
+	usrPlRuleMapFun := getUserPlRuleMapFun()
 
-	usrPlRuleMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
-		usrPlRule, ok := obj.(*plrv1.PlacementRule)
-		if !ok {
-			return []reconcile.Request{}
-		}
-
-		ctrl.Log.Info(fmt.Sprintf("Filtering User PlacementRule (%s/%s)", usrPlRule.Name, usrPlRule.Namespace))
-
-		return filterUsrPlRule(usrPlRule)
-	}))
+	policyPred := DRPolicyPredicateFunc()
+	policyMapFun := getPolicyMapFunction(mgr)
 
 	r.eventRecorder = rmnutil.NewEventReporter(mgr.GetEventRecorderFor("controller_DRPlacementControl"))
 
@@ -426,6 +497,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		Watches(&source.Kind{Type: &ocmworkv1.ManifestWork{}}, mwMapFun, builder.WithPredicates(mwPred)).
 		Watches(&source.Kind{Type: &viewv1beta1.ManagedClusterView{}}, mcvMapFun, builder.WithPredicates(mcvPred)).
 		Watches(&source.Kind{Type: &plrv1.PlacementRule{}}, usrPlRuleMapFun, builder.WithPredicates(usrPlRulePred)).
+		Watches(&source.Kind{Type: &rmn.DRPolicy{}}, policyMapFun, builder.WithPredicates(policyPred)).
 		Complete(r)
 }
 
@@ -582,6 +654,20 @@ func (r *DRPlacementControlReconciler) getDRPolicy(ctx context.Context,
 		r.Log.Error(err, "failed to get DRPolicy")
 
 		return nil, fmt.Errorf("%w", err)
+	}
+
+	if drPolicy.ObjectMeta.Annotations == nil {
+		drPolicy.ObjectMeta.Annotations = map[string]string{}
+		drPolicy.ObjectMeta.Annotations[rmnutil.DRPCNameAnnotation] = name
+		drPolicy.ObjectMeta.Annotations[rmnutil.DRPCNamespaceAnnotation] = namespace
+
+		err := r.Update(ctx, drPolicy)
+		if err != nil {
+			r.Log.Error(err, "Failed to update DRPolicy annotation", "name", drPolicy.Name)
+
+			return nil, fmt.Errorf("failed to update DRPolicy %s annotation '%s/%s' (%w)",
+				drPolicy.Name, rmnutil.DRPCNameAnnotation, name, err)
+		}
 	}
 
 	return drPolicy, nil
