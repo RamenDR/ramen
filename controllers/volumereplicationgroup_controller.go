@@ -1297,10 +1297,12 @@ func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim, log 
 	// Upload the PV to all the S3 profiles in the VRG spec
 	for _, s3ProfileName := range v.instance.Spec.S3ProfileList {
 		if err := v.reconciler.PVUploader.UploadPV(v, s3ProfileName, pvc); err != nil {
-			msg := fmt.Sprintf("Error uploading PV cluster data to s3Profile %s, %v",
-				s3ProfileName, err)
+			log.Error(err, fmt.Sprintf("Error uploading PV cluster data to s3Profile %s, %v",
+				s3ProfileName, err))
+
+			msg := fmt.Sprintf("Error uploading PV cluster data to s3Profile %s",
+				s3ProfileName)
 			v.updatePVCClusterDataProtectedCondition(pvc.Name, VRGConditionReasonUploadError, msg)
-			log.Error(err, msg)
 			rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
 				rmnutil.EventReasonPVUploadFailed, err.Error())
 
