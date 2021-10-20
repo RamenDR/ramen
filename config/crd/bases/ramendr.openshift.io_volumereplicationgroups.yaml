@@ -162,6 +162,7 @@ spec:
             required:
             - pvcSelector
             - replicationState
+            - s3ProfileName
             - schedulingInterval
             type: object
           status:

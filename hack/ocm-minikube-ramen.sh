@@ -95,6 +95,7 @@ EOF
 
 	s3StoreProfiles:
 	- s3ProfileName: $s3_store_profile_name
+	  s3BucketName: $s3_store_profile_name
 	  s3CompatibleEndpoint: $(minikube --profile=$s3_store_cluster_name -n minio service --url minio)
 	  s3Region: us-east-1
 	  s3SecretRef:

@@ -1036,7 +1036,7 @@ type FakePVDownloader struct{}
 
 func (s FakePVDownloader) DownloadPVs(ctx context.Context, r client.Reader,
 	objStoreGetter vrgController.ObjectStoreGetter, s3Profile, callerTag string,
-	s3Bucket string) ([]corev1.PersistentVolume, error) {
+	keyPrefix string) ([]corev1.PersistentVolume, error) {
 	capacity := corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}
 	accessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
 	hostPathType := corev1.HostPathDirectoryOrCreate

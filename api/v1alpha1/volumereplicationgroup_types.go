@@ -86,7 +86,7 @@ type VolumeReplicationGroupSpec struct {
 
 	// List of unique S3 profiles in RamenConfig that should be used to store
 	// and forward PV related cluster state to peer DR clusters.
-	S3ProfileList []string `json:"s3ProfileName,omitempty"`
+	S3ProfileList []string `json:"s3ProfileName"`
 }
 
 type ProtectedPVC struct {
