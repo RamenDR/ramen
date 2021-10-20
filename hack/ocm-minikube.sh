@@ -56,74 +56,104 @@ if ! command -v virsh; then
 	esac
 fi
 
-ocm_registration_operator_patch_old_undo()
+json6902_test_and_replace_yaml()
 {
-	git_checkout $1 --\ Makefile
+	printf '
+      - op: test
+        path: %s
+        value: %s
+      - op: replace
+        path: %s
+        value: %s' $1 $2 $1 $3
 }
-exit_stack_push unset -f ocm_registration_operator_patch_old_undo
-ocm_registration_operator_patch_apply()
+exit_stack_push unset -f json6902_test_and_replace_yaml
+ocm_registration_operator_git_ref=c723e190c454110797d89e67bcb33250b35e1fd7
+exit_stack_push unset -v ocm_registration_operator_git_ref
+ocm_registration_operator_image_spec()
 {
-	cat <<'a' | git apply --directory $1 $2 -
-diff --git a/Makefile b/Makefile
-index fcf9775..58d7a44 100644
---- a/Makefile
-+++ b/Makefile
-@@ -118,7 +118,7 @@ deploy-spoke-operator: ensure-kustomize
- 	$(KUSTOMIZE) build deploy/klusterlet/config | $(KUBECTL) apply -f -
- 
- apply-spoke-cr: bootstrap-secret
--	$(KUSTOMIZE) build deploy/klusterlet/config/samples | $(SED_CMD) -e "s,quay.io/open-cluster-management/registration,$(REGISTRATION_IMAGE)," -e "s,quay.io/open-cluster-management/work,$(WORK_IMAGE)," | $(KUBECTL) apply -f -
-+	$(KUSTOMIZE) build deploy/klusterlet/config/samples | $(SED_CMD) -e "s,cluster1,$(MANAGED_CLUSTER)," -e "s,quay.io/open-cluster-management/registration,$(REGISTRATION_IMAGE)," -e "s,quay.io/open-cluster-management/work,$(WORK_IMAGE)," | $(KUBECTL) apply -f -
- 
- clean-hub-cr:
- 	$(KUBECTL) delete -k deploy/cluster-manager/config/samples --ignore-not-found
-a
+	set /spec/$1ImagePullSpec quay.io/open-cluster-management/$1
+	json6902_test_and_replace_yaml $1 $2 $2:latest
 }
-exit_stack_push unset -f ocm_registration_operator_patch_apply
-ocm_registration_operator_checkout()
+exit_stack_push unset -f ocm_registration_operator_image_spec
+ocm_registration_operator_image_specs()
 {
-	set -- registration-operator
-	git_clone_and_checkout https://github.com/open-cluster-management $1 release-2.3 c723e19
-	exit_stack_push git_checkout_undo $1
-	ocm_registration_operator_patch_old_undo $1
-	ocm_registration_operator_patch_apply $1
-	exit_stack_push ocm_registration_operator_patch_apply $1 --reverse
+	for image_name in "$@"; do
+		ocm_registration_operator_image_spec $image_name
+	done; unset -v image_name
 }
-exit_stack_push unset -f ocm_registration_operator_checkout
-ocm_registration_operator_checkout_undo()
+exit_stack_push unset -f ocm_registration_operator_image_specs
+ocm_registration_operator_kubectl()
 {
-	exit_stack_pop
-	exit_stack_pop
+	kubectl --context $1 $3 -k https://github.com/open-cluster-management/registration-operator/deploy/$2/config?ref=$ocm_registration_operator_git_ref
 }
-exit_stack_push unset -f ocm_registration_operator_checkout_undo
-case ${NAME} in
-"Ubuntu")
-	ocm_registration_operator_make_arguments=GO_REQUIRED_MIN_VERSION:=
-	;;
-esac
+exit_stack_push unset -f ocm_registration_operator_kubectl
+ocm_registration_operator_kustomization_directory_path_name()
+{
+	echo /tmp/$USER/open-cluster-management/registration/$1/$2
+}
+exit_stack_push unset -f ocm_registration_operator_kustomization_directory_path_name
+ocm_registration_operator_cr_kubectl()
+{
+	set -- $1 $2 $3 $4 "$5" "$6" "$7" $(ocm_registration_operator_kustomization_directory_path_name $3 $1)
+	mkdir -p $8
+	cat <<-a >$8/kustomization.yaml
+	resources:
+	  - https://raw.githubusercontent.com/open-cluster-management/registration-operator/$ocm_registration_operator_git_ref/deploy/$3/config/samples/operator_open-cluster-management_$4s.cr.yaml
+	patchesJson6902:
+	  - target:
+	      group: operator.open-cluster-management.io
+	      version: v1
+	      kind: $2
+	      name: $3
+	    patch: |-$(ocm_registration_operator_image_specs registration work $5)$6
+	a
+	kubectl --context $1 $7 -k $8
+}
+exit_stack_push unset -f ocm_registration_operator_cr_kubectl
+ocm_registration_operator_deploy()
+{
+	set -- $1 $2 $3 $4 "$5" "$6" apply
+	ocm_registration_operator_kubectl $1 $3 $7
+	ocm_registration_operator_cr_kubectl $1	$2 $3 $4 "$5" "$6" $7
+}
+exit_stack_push unset -f ocm_registration_operator_deploy
+ocm_registration_operator_undeploy()
+{
+	set -- $1 $2 $3 $4 "$5" "$6" delete\ --ignore-not-found
+	ocm_registration_operator_cr_kubectl $1 $2 $3 $4 "$5" "$6" "$7"
+	ocm_registration_operator_kubectl $1 $3 "$7"
+}
+exit_stack_push unset -f ocm_registration_operator_undeploy
+ocm_registration_operator_hub()
+{
+	ocm_registration_operator_$2 $1 ClusterManager cluster-manager clustermanager placement ''
+}
+exit_stack_push unset -f ocm_registration_operator_hub
+ocm_registration_operator_spoke()
+{
+	ocm_registration_operator_$2 $1 Klusterlet klusterlet klusterlet '' \
+		"$(json6902_test_and_replace_yaml /spec/clusterName cluster1 $1)"
+}
+exit_stack_push unset -f ocm_registration_operator_spoke
 ocm_registration_operator_deploy_hub()
 {
-	kubectl --context ${hub_cluster_name} apply -f https://raw.githubusercontent.com/kubernetes/cluster-registry/master/cluster-registry-crd.yaml
-	kubectl config use-context ${hub_cluster_name}
-	ocm_registration_operator_checkout
-	make -C registration-operator deploy-hub $ocm_registration_operator_make_arguments
-	ocm_registration_operator_checkout_undo
+	set -- $hub_cluster_name
+	kubectl --context $1 apply -f https://raw.githubusercontent.com/kubernetes/cluster-registry/master/cluster-registry-crd.yaml
+	ocm_registration_operator_hub $1 deploy
 	date
-	kubectl --context $hub_cluster_name -n open-cluster-management wait deployments/cluster-manager --for condition=available
+	kubectl --context $1 -n open-cluster-management wait deployments/cluster-manager --for condition=available
 	date
 	# https://github.com/kubernetes/kubernetes/issues/83242
-	until_true_or_n 90 kubectl --context ${hub_cluster_name} -n open-cluster-management-hub wait deployments --all --for condition=available --timeout 0
+	until_true_or_n 90 kubectl --context $1 -n open-cluster-management-hub wait deployments --all --for condition=available --timeout 0
 }
+exit_stack_push unset -f ocm_registration_operator_deploy_hub
 ocm_registration_operator_undeploy_hub()
 {
-	kubectl config use-context ${hub_cluster_name}
-	ocm_registration_operator_checkout
-	set +e
-	make -C registration-operator clean-hub-cr clean-hub-operator $ocm_registration_operator_make_arguments
-	# error: unable to recognize "deploy/cluster-manager/config/samples/operator_open-cluster-management_clustermanagers.cr.yaml": no matches for kind "ClusterManager" in version "operator.open-cluster-management.io/v1"
-	set -e
-	ocm_registration_operator_checkout_undo
+	set -- $hub_cluster_name
+	ocm_registration_operator_hub $1 undeploy
+	kubectl --context $1 delete -f https://raw.githubusercontent.com/kubernetes/cluster-registry/master/cluster-registry-crd.yaml
 }
+exit_stack_push unset -f ocm_registration_operator_undeploy_hub
 application_sample_0_deploy()
 {
 	mkdir -p /tmp/$USER/ocm-minikube
@@ -155,14 +185,29 @@ application_sample_0_test()
 	application_sample_0_deploy ${1}
 	application_sample_0_undeploy ${1}
 }
+ocm_registration_operator_bootstrap_kubectl()
+{
+	set -- $1 "$2" $(ocm_registration_operator_kustomization_directory_path_name klusterlet $1)/bootstrap
+	mkdir -p $3
+	cat <<-a >$3/kustomization.yaml
+	secretGenerator:
+	  - name: bootstrap-hub-kubeconfig
+	    namespace: open-cluster-management-agent
+	    files:
+	      - kubeconfig=hub-kubeconfig
+	    type: Opaque
+	generatorOptions:
+	  disableNameSuffixHash: true
+	a
+	cp -f $HUB_KUBECONFIG $3/hub-kubeconfig
+	kubectl --context $1 $2 -k $3
+}
+exit_stack_push unset -f ocm_registration_operator_bootstrap_kubectl
 ocm_registration_operator_deploy_spoke()
 {
-	kubectl config use-context ${1}
-	ocm_registration_operator_checkout
-	MANAGED_CLUSTER=${1}\
-	HUB_KUBECONFIG=${HUB_KUBECONFIG}\
-	make -C registration-operator deploy-spoke ${ocm_registration_operator_make_arguments}
-	ocm_registration_operator_checkout_undo
+	kubectl create namespace open-cluster-management-agent --dry-run=client -o yaml | kubectl --context $1 apply -f -
+	ocm_registration_operator_bootstrap_kubectl $1 apply
+	ocm_registration_operator_spoke $1 deploy
 	date
 	kubectl --context $1 -n open-cluster-management wait deployments/klusterlet --for condition=available
 	date
@@ -187,14 +232,11 @@ ocm_registration_operator_deploy_spoke()
 exit_stack_push unset -f ocm_registration_operator_deploy_spoke
 ocm_registration_operator_undeploy_spoke()
 {
-	kubectl config use-context ${1}
-	ocm_registration_operator_checkout
-	set +e
-	make -C registration-operator clean-spoke-cr clean-spoke-operator $ocm_registration_operator_make_arguments
-	# error: unable to recognize "deploy/klusterlet/config/samples/operator_open-cluster-management_klusterlets.cr.yaml": no matches for kind "Klusterlet" in version "operator.open-cluster-management.io/v1"
-	set -e
-	ocm_registration_operator_checkout_undo
+	ocm_registration_operator_spoke $1 undeploy
+	ocm_registration_operator_bootstrap_kubectl $1 delete\ --ignore-not-found
+	kubectl --context $1 delete namespace open-cluster-management-agent --ignore-not-found
 }
+exit_stack_push unset -f ocm_registration_operator_undeploy_spoke
 ocm_foundation_operator_git_ref=${ocm_foundation_operator_git_ref:-dc43ec703e62594e3942c7f06d38d1897550ffea}
 exit_stack_push unset -v ocm_foundation_operator_git_ref
 ocm_foundation_operator_image_tag=${ocm_foundation_operator_image_name:-2.4.0\-$ocm_foundation_operator_git_ref}
@@ -494,6 +536,7 @@ application_sample_undeploy()
 }
 application_sample_test()
 {
+	set -- $spoke_cluster_names_nonhub
 	ocm_application_samples_checkout
 	application_sample_deploy ${1}
 	application_sample_undeploy ${1}
@@ -515,57 +558,52 @@ for_each()
 	done; unset -v x
 }
 exit_stack_push unset -f for_each
+deploy()
+{
+	minikube start $minikube_start_options --profile=$hub_cluster_name --cpus=4
+	ocm_registration_operator_deploy_hub
+	ocm_foundation_operator_deploy_hub
+	ocm_subscription_operator_deploy_hub
+	mkdir -p /tmp/$USER
+	HUB_KUBECONFIG=/tmp/$USER/$hub_cluster_name-config
+	exit_stack_push unset -v HUB_KUBECONFIG
+	kubectl --context $hub_cluster_name config view --flatten --minify >$HUB_KUBECONFIG
+	for cluster_name in $spoke_cluster_names_hub   ; do spoke_add_hub    $cluster_name; done; unset -v cluster_name
+	for cluster_name in $spoke_cluster_names_nonhub; do spoke_add_nonhub $cluster_name; done; unset -v cluster_name
+}
+exit_stack_push unset -f deploy
+foundation_operator_deploy()
+{
+	ocm_foundation_operator_deploy_hub
+	for_each "$spoke_cluster_names" ocm_foundation_operator_deploy_spoke
+}
+exit_stack_push unset -f foundation_operator_deploy
+foundation_operator_undeploy()
+{
+	for_each "$spoke_cluster_names" ocm_foundation_operator_undeploy_spoke
+	ocm_foundation_operator_undeploy_hub
+}
+exit_stack_push unset -f foundation_operator_undeploy
+undeploy()
+{
+	for cluster_name in $spoke_cluster_names_nonhub $spoke_cluster_names_hub; do
+		ocm_subscription_operator_undeploy_spoke $cluster_name
+		ocm_foundation_operator_undeploy_spoke $cluster_name
+		ocm_registration_operator_undeploy_spoke $cluster_name
+	done; unset -v cluster_name
+	ocm_foundation_operator_undeploy_hub
+	ocm_registration_operator_undeploy_hub
+}
+exit_stack_push unset -f undeploy
+delete()
+{
+	for cluster_name in $spoke_cluster_names_nonhub $hub_cluster_name; do
+		minikube delete -p $cluster_name
+	done; unset -v cluster_name
+}
+exit_stack_push unset -f delete
 for command in "${@:-deploy}"; do
-        case ${command} in
-        deploy)
-		minikube start ${minikube_start_options} --profile=${hub_cluster_name} --cpus=4
-		ocm_registration_operator_deploy_hub
-		ocm_foundation_operator_deploy_hub
-		ocm_subscription_operator_deploy_hub
-		mkdir -p /tmp/$USER
-		HUB_KUBECONFIG=/tmp/$USER/${hub_cluster_name}-config
-		kubectl --context ${hub_cluster_name} config view --flatten --minify >${HUB_KUBECONFIG}
-		for cluster_name in ${spoke_cluster_names_hub}   ; do spoke_add_hub    ${cluster_name}; done; unset -v cluster_name
-		for cluster_name in ${spoke_cluster_names_nonhub}; do spoke_add_nonhub ${cluster_name}; done; unset -v cluster_name
-		unset -v HUB_KUBECONFIG
-		;;
-	test)
-		for cluster_name in ${spoke_cluster_names_nonhub}; do
-			application_sample_test ${cluster_name}
-			break
-		done; unset -v cluster_name
-		;;
-	ocm_registration_operator_undeploy_spoke_hub)
-		for cluster_name in ${spoke_cluster_names_hub}; do
-			ocm_registration_operator_undeploy_spoke ${cluster_name}
-		done; unset -v cluster_name
-		;;
-	ocm_registration_operator_undeploy_hub)
-		ocm_registration_operator_undeploy_hub
-		;;
-	foundation_operator_deploy)
-		ocm_foundation_operator_deploy_hub
-		for_each "$spoke_cluster_names" ocm_foundation_operator_deploy_spoke
-		;;
-	foundation_operator_undeploy)
-		for_each "$spoke_cluster_names" ocm_foundation_operator_undeploy_spoke
-		ocm_foundation_operator_undeploy_hub
-		;;
-	undeploy)
-		for cluster_name in ${spoke_cluster_names_nonhub} ${spoke_cluster_names_hub}; do
-			ocm_subscription_operator_undeploy_spoke $cluster_name
-			ocm_foundation_operator_undeploy_spoke $cluster_name
-			ocm_registration_operator_undeploy_spoke ${cluster_name}
-		done; unset -v cluster_name
-		ocm_foundation_operator_undeploy_hub
-		ocm_registration_operator_undeploy_hub
-		;;
-	delete)
-		for cluster_name in ${spoke_cluster_names_nonhub} ${hub_cluster_name}; do
-			minikube delete -p ${cluster_name}
-		done; unset -v cluster_name
-		;;
-	esac
+	$command
 done
 unset -v spoke_cluster_names_nonhub
 unset -v spoke_cluster_names_hub
@@ -582,11 +620,5 @@ unset -f spoke_test_deploy
 unset -f application_sample_0_test
 unset -f application_sample_0_undeploy
 unset -f application_sample_0_deploy
-unset -f ocm_registration_operator_undeploy_spoke
-unset -f ocm_registration_operator_undeploy_hub
-unset -f ocm_registration_operator_deploy_hub
-unset -v ocm_registration_operator_make_arguments
 unset -f until_true_or_n
 unset -v minikube_start_options
-git_branch_delete_force ocm-minikube shyam-main
-git_branch_delete registration-operator release-2.3
