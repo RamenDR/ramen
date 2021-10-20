@@ -51,35 +51,36 @@ type fakeObjectStorer struct{}
 func (fakeObjectStorer) CreateBucket(bucket string) error { return nil }
 func (fakeObjectStorer) DeleteBucket(bucket string) error { return nil }
 func (fakeObjectStorer) PurgeBucket(bucket string) error  { return nil }
-func (fakeObjectStorer) UploadPV(bucket string, pvKeySuffix string, pv corev1.PersistentVolume) error {
+func (fakeObjectStorer) UploadPV(pvKeyPrefix, pvKeySuffix string, pv corev1.PersistentVolume) error {
 	return nil
 }
 
-func (fakeObjectStorer) UploadTypedObject(bucket string, keySuffix string, uploadContent interface{}) error {
+func (fakeObjectStorer) UploadTypedObject(pvKeyPrefix, keySuffix string, uploadContent interface{}) error {
 	return nil
 }
 
-func (fakeObjectStorer) UploadObject(bucket string, key string, uploadContent interface{}) error {
+func (fakeObjectStorer) UploadObject(key string, uploadContent interface{}) error {
 	return nil
 }
 
-func (fakeObjectStorer) VerifyPVUpload(bucket string, pvKeySuffix string, verifyPV corev1.PersistentVolume) error {
+func (fakeObjectStorer) VerifyPVUpload(pvKeyPrefix, pvKeySuffix string,
+	verifyPV corev1.PersistentVolume) error {
 	return nil
 }
 
-func (fakeObjectStorer) DownloadPVs(bucket string) ([]corev1.PersistentVolume, error) {
+func (fakeObjectStorer) DownloadPVs(pvKeyPrefix string) ([]corev1.PersistentVolume, error) {
 	return []corev1.PersistentVolume{}, nil
 }
 
-func (fakeObjectStorer) DownloadTypedObjects(bucket string, objectType reflect.Type) (interface{}, error) {
+func (fakeObjectStorer) DownloadTypedObjects(keyPrefix string, objectType reflect.Type) (interface{}, error) {
 	return nil, nil
 }
 
-func (fakeObjectStorer) ListKeys(bucket string, keyPrefix string) ([]string, error) {
+func (fakeObjectStorer) ListKeys(keyPrefix string) ([]string, error) {
 	return []string{}, nil
 }
 
-func (fakeObjectStorer) DownloadObject(bucket string, key string, downloadContent interface{}) error {
+func (fakeObjectStorer) DownloadObject(key string, downloadContent interface{}) error {
 	return nil
 }
-func (fakeObjectStorer) DeleteObject(bucket, keyPrefix string) error { return nil }
+func (fakeObjectStorer) DeleteObjects(keyPrefix string) error { return nil }

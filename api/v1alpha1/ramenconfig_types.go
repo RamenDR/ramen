@@ -37,6 +37,15 @@ const (
 	DRHub ControllerType = "dr-hub"
 )
 
+// When naming a S3 bucket, follow the bucket naming rules at:
+// https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
+// - Bucket names must be between 3 and 63 characters long.
+// - Bucket names can consist only of lowercase letters, numbers, dots (.), and hyphens (-).
+// - Bucket names must begin and end with a letter or number.
+// - Bucket names must not be formatted as an IP address (for example, 192.168.5.4).
+// - Bucket names must be unique within a partition. A partition is a grouping of Regions.
+// - Buckets used with Amazon S3 Transfer Acceleration can't have dots (.) in their names.
+
 // Profile of a S3 compatible store to replicate the relevant Kubernetes cluster
 // state (in etcd), such as PV state, across clusters protected by Ramen.
 // - DRProtectionControl and VolumeReplicationGroup objects specify the S3
@@ -44,19 +53,25 @@ const (
 //   PVs.
 // - A single S3 store profile can be used by multiple DRProtectionControl and
 //   VolumeReplicationGroup objects.
-// - Ramen uses one S3 bucket per VRG, with the bucknet name equal to VRG name.
-//   Ramen will create the bucket if one doesn't already exist.  Thus the VRG
-//   name needs to be unique among other VRGs using the same S3 endpoint.
-//   should also follow AWS bucket naming rules:
-//   https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
-// - If this field is not set, VRG may be used to simply control the replication
-//   state of all PVs in this group using the underlying VolumeReplication
-//   object, but the required cluster state should be replicated using a mechanism
-//   other than using the S3 store.
 // - See DRPolicy type for additional details about S3 configuration options
 type S3StoreProfile struct {
 	// Name of this S3 profile
 	S3ProfileName string `json:"s3ProfileName"`
+
+	// Name of the S3 bucket to protect and recover PV related cluster-data of
+	// subscriptions protected by this DR policy.  This S3 bucket name is used
+	// across all DR policies that use this S3 profile. Objects deposited in
+	// this bucket are prefixed with the namespace-qualified name of the VRG to
+	// uniquely identify objects of a particular subscription (an instance of an
+	// application).  A single S3 bucket at a given endpoint may be shared by
+	// multiple DR placements that are concurrently active in a given hub.
+	// However, sharing an S3 bucket across multiple hub clusters can cause
+	// object key name conflicts of cluster data uploaded to the bucket,
+	// resulting in undefined and undesired side-effects. Hence, do not share an
+	// S3 bucket at a given S3 endpoint across multiple hub clusters.  Bucket
+	// name should follow AWS bucket naming rules:
+	// https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
+	S3Bucket string `json:"s3Bucket"`
 
 	// S3 compatible endpoint of the object store of this S3 profile
 	S3CompatibleEndpoint string `json:"s3CompatibleEndpoint"`

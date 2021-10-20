@@ -134,6 +134,14 @@ func getRamenConfigS3StoreProfile(profileName string) (
 		return s3StoreProfile, err
 	}
 
+	s3Bucket := s3StoreProfile.S3Bucket
+	if s3Bucket == "" {
+		err = fmt.Errorf("s3 bucket has not been configured in s3 profile %s",
+			profileName)
+
+		return s3StoreProfile, err
+	}
+
 	return s3StoreProfile, nil
 }
 

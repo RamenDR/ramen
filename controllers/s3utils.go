@@ -90,24 +90,21 @@ type ObjectStoreGetter interface {
 }
 
 type ObjectStorer interface {
-	CreateBucket(bucket string) error
-	DeleteBucket(bucket string) error
-	PurgeBucket(bucket string) error
-	// listBuckets() (buckets []string, err error)
-	UploadPV(bucket string, pvKeySuffix string,
+	UploadPV(pvKeyPrefix, pvKeySuffix string,
 		pv corev1.PersistentVolume) error
-	UploadTypedObject(bucket string, keySuffix string,
+	UploadTypedObject(keyPrefix, keySuffix string,
 		uploadContent interface{}) error
-	UploadObject(bucket string, key string,
+	UploadObject(key string,
 		uploadContent interface{}) error
-	VerifyPVUpload(bucket string, pvKeySuffix string,
+	VerifyPVUpload(pvKeyPrefix, pvKeySuffix string,
 		verifyPV corev1.PersistentVolume) error
-	DownloadPVs(bucket string) (pvList []corev1.PersistentVolume, err error)
-	DownloadTypedObjects(bucket string,
+	DownloadPVs(pvKeyPrefix string) (
+		pvList []corev1.PersistentVolume, err error)
+	DownloadTypedObjects(keyPrefix string,
 		objectType reflect.Type) (interface{}, error)
-	ListKeys(bucket string, keyPrefix string) (keys []string, err error)
-	DownloadObject(bucket string, key string, downloadContent interface{}) error
-	DeleteObject(bucket, keyPrefix string) error
+	ListKeys(keyPrefix string) (keys []string, err error)
+	DownloadObject(key string, downloadContent interface{}) error
+	DeleteObjects(keyPrefix string) error
 }
 
 // S3ObjectStoreGetter returns a concrete type that implements
@@ -179,6 +176,7 @@ func (s3ObjectStoreGetter) ObjectStore(ctx context.Context,
 		downloader:   s3Downloader,
 		batchDeleter: s3BatchDeleter,
 		s3Endpoint:   s3Endpoint,
+		s3Bucket:     s3StoreProfile.S3Bucket,
 		callerTag:    callerTag,
 	}
 	s3ConnectionMap[s3Endpoint] = s3Conn
@@ -210,6 +208,7 @@ type s3ObjectStore struct {
 	downloader   *s3manager.Downloader
 	batchDeleter *s3manager.BatchDelete
 	s3Endpoint   string
+	s3Bucket     string
 	callerTag    string
 }
 
@@ -303,7 +302,7 @@ func (s *s3ObjectStore) PurgeBucket(bucket string) (
 		}
 	}()
 
-	keys, err := s.ListKeys(bucket, "")
+	keys, err := s.ListKeys("")
 	if err != nil {
 		if isAwsErrCodeNoSuchBucket(err) {
 			return nil // Not an error
@@ -315,7 +314,7 @@ func (s *s3ObjectStore) PurgeBucket(bucket string) (
 	}
 
 	for _, key := range keys {
-		err = s.DeleteObject(bucket, key)
+		err = s.DeleteObjects(key)
 		if err != nil {
 			return fmt.Errorf("failed to delete object %s in bucket %s, %w",
 				key, bucket, err)
@@ -331,29 +330,29 @@ func (s *s3ObjectStore) PurgeBucket(bucket string) (
 	return nil
 }
 
-// UploadPV uploads the given PV to the given bucket with a key of
-// "v1.PersistentVolume/<pvKeySuffix>".
+// UploadPV uploads the given PV to the bucket with a key of
+// "<pvKeyPrefix><v1.PersistentVolume/><pvKeySuffix>".
+// - pvKeyPrefix should have any required delimiters like '/'
 // - OK to call UploadPV() concurrently from multiple goroutines safely.
-// - Expects the given bucket to be already present
-func (s *s3ObjectStore) UploadPV(bucket string, pvKeySuffix string,
+func (s *s3ObjectStore) UploadPV(pvKeyPrefix, pvKeySuffix string,
 	pv corev1.PersistentVolume) error {
-	return s.UploadTypedObject(bucket, pvKeySuffix /* key suffix */, pv)
+	return s.UploadTypedObject(pvKeyPrefix, pvKeySuffix, pv)
 }
 
-// UploadTypedObject uploads to the given bucket the given uploadContent with a
-// key of <objectType/keySuffix>, where objectType is the type of the
+// UploadTypedObject uploads to the bucket the given uploadContent with a
+// key of <keyPrefix><objectType/>keySuffix>, where objectType is the type of the
 // uploadContent parameter. OK to call UploadTypedObject() concurrently from
 // multiple goroutines safely.
-// - Expects the given bucket to be already present
-func (s *s3ObjectStore) UploadTypedObject(bucket string, keySuffix string,
+// - keyPrefix should have any required delimiters like '/'
+func (s *s3ObjectStore) UploadTypedObject(keyPrefix, keySuffix string,
 	uploadContent interface{}) error {
-	keyPrefix := reflect.TypeOf(uploadContent).String() + "/"
-	key := keyPrefix + keySuffix
+	keyInfix := reflect.TypeOf(uploadContent).String() + "/"
+	key := keyPrefix + keyInfix + keySuffix
 
-	return s.UploadObject(bucket, key, uploadContent)
+	return s.UploadObject(key, uploadContent)
 }
 
-// UploadObject uploads the given object to the given bucket with the given key.
+// UploadObject uploads the given object to the bucket with the given key.
 // - OK to call UploadObject() concurrently from multiple goroutines safely.
 // - Upload may fail due to many reasons: RequestError (connection error),
 //   NoSuchBucket, NoSuchKey, InvalidParameter (e.g., empty key), etc.
@@ -361,10 +360,10 @@ func (s *s3ObjectStore) UploadTypedObject(bucket string, keySuffix string,
 //   a single forward slash, for each such occurrence
 // - Any formatting changes to this method should also be reflected in the
 //   DownloadObject() method
-// - Expects the given bucket to be already present
-func (s *s3ObjectStore) UploadObject(bucket string, key string,
+func (s *s3ObjectStore) UploadObject(key string,
 	uploadContent interface{}) error {
 	encodedUploadContent := &bytes.Buffer{}
+	bucket := s.s3Bucket
 
 	gzWriter := gzip.NewWriter(encodedUploadContent)
 	if err := json.NewEncoder(gzWriter).Encode(uploadContent); err != nil {
@@ -390,15 +389,16 @@ func (s *s3ObjectStore) UploadObject(bucket string, key string,
 }
 
 // VerifyPVUpload verifies that the PV in the input matches the PV object
-// with the given keySuffix in the given bucket.
-func (s *s3ObjectStore) VerifyPVUpload(bucket string, pvKeySuffix string,
+// with the given keySuffix in the bucket.
+func (s *s3ObjectStore) VerifyPVUpload(pvKeyPrefix, pvKeySuffix string,
 	verifyPV corev1.PersistentVolume) error {
 	var downloadedPV corev1.PersistentVolume
 
-	keyPrefix := reflect.TypeOf(verifyPV).String() + "/"
-	key := keyPrefix + pvKeySuffix
+	keyInfix := reflect.TypeOf(verifyPV).String() + "/"
+	key := pvKeyPrefix + keyInfix + pvKeySuffix
+	bucket := s.s3Bucket
 
-	err := s.DownloadObject(bucket, key, &downloadedPV)
+	err := s.DownloadObject(key, &downloadedPV)
 	if err != nil {
 		return fmt.Errorf("unable to DownloadObject for caller %s from "+
 			"endpoint %s bucket %s key %s, %w",
@@ -413,22 +413,16 @@ func (s *s3ObjectStore) VerifyPVUpload(bucket string, pvKeySuffix string,
 	return nil
 }
 
-// DownloadPVs downloads all PVs in the given bucket.
-// - Downloads objects with key prefix:  "v1.PersistentVolume/"
+// DownloadPVs downloads all PVs in the bucket.
+// - Downloads PVs with the given key prefix.
 // - If bucket doesn't exists, will return ErrCodeNoSuchBucket "NoSuchBucket"
-func (s *s3ObjectStore) DownloadPVs(bucket string) (
+func (s *s3ObjectStore) DownloadPVs(pvKeyPrefix string) (
 	pvList []corev1.PersistentVolume, err error) {
-	result, err := s.DownloadTypedObjects(bucket,
-		reflect.TypeOf(corev1.PersistentVolume{}))
-	if err != nil {
-		// TODO: Fix this in higher layers once we have related S3 fixes
-		var aerr awserr.Error
-		if errorswrapper.As(err, &aerr) {
-			if aerr.Code() == s3.ErrCodeNoSuchBucket {
-				return pvList, nil
-			}
-		}
+	objectType := reflect.TypeOf(corev1.PersistentVolume{})
+	bucket := s.s3Bucket
 
+	result, err := s.DownloadTypedObjects(pvKeyPrefix, objectType)
+	if err != nil {
 		return nil, fmt.Errorf("unable to download: %s, %w", bucket, err)
 	}
 
@@ -441,20 +435,24 @@ func (s *s3ObjectStore) DownloadPVs(bucket string) (
 }
 
 // DownloadTypedObjects downloads all objects of the given objectType that have
-// a key prefix as the given objectType.
-// - Example key prefix:  v1.PersistentVolumeClaim/
+// the given key prefix followed by the given object's objectType keyInfix.
+// - Example key prefix:  namespace/vrgName/
+//   Example key infix:  v1.PersistentVolumeClaim/
+//   Example new key prefix: namespace/vrgName/v1.PersistentVolumeClaim/
 // - Objects being downloaded should meet the decoding expectations of
-// 	 the DownloadObject() method.
+//   the DownloadObject() method.
 // - Returns a []objectType
-func (s *s3ObjectStore) DownloadTypedObjects(bucket string,
+func (s *s3ObjectStore) DownloadTypedObjects(keyPrefix string,
 	objectType reflect.Type) (interface{}, error) {
-	keyPrefix := objectType.String() + "/"
+	keyInfix := objectType.String() + "/"
+	newKeyPrefix := keyPrefix + keyInfix
+	bucket := s.s3Bucket
 
-	keys, err := s.ListKeys(bucket, keyPrefix)
+	keys, err := s.ListKeys(newKeyPrefix)
 	if err != nil {
 		return nil, fmt.Errorf("unable to ListKeys of type %v "+
 			"from endpoint %s bucket %s keyPrefix %s, %w",
-			objectType, s.s3Endpoint, bucket, keyPrefix, err)
+			objectType, s.s3Endpoint, bucket, newKeyPrefix, err)
 	}
 
 	objects := reflect.MakeSlice(reflect.SliceOf(objectType),
@@ -462,7 +460,7 @@ func (s *s3ObjectStore) DownloadTypedObjects(bucket string,
 
 	for i := range keys {
 		objectReceiver := objects.Index(i).Addr().Interface()
-		if err := s.DownloadObject(bucket, keys[i], objectReceiver); err != nil {
+		if err := s.DownloadObject(keys[i], objectReceiver); err != nil {
 			return nil, fmt.Errorf("unable to DownloadObject from "+
 				"endpoint %s bucket %s key %s, %w",
 				s.s3Endpoint, bucket, keys[i], err)
@@ -473,12 +471,14 @@ func (s *s3ObjectStore) DownloadTypedObjects(bucket string,
 	return objects.Interface(), nil
 }
 
-// ListKeys lists the keys (of objects) with the given keyPrefix in the given bucket.
+// ListKeys lists the keys (of objects) with the given keyPrefix in the bucket.
 // - If bucket doesn't exists, will return ErrCodeNoSuchBucket "NoSuchBucket"
 // - Refer to aws documentation of s3.ListObjectsV2Input for more list options
-func (s *s3ObjectStore) ListKeys(bucket string, keyPrefix string) (
+func (s *s3ObjectStore) ListKeys(keyPrefix string) (
 	keys []string, err error) {
 	var nextContinuationToken *string
+
+	bucket := s.s3Bucket
 
 	for gotAllObjects := false; !gotAllObjects; {
 		result, err := s.client.ListObjectsV2(&s3.ListObjectsV2Input{
@@ -506,7 +506,7 @@ func (s *s3ObjectStore) ListKeys(bucket string, keyPrefix string) (
 	return
 }
 
-// DownloadObject downloads an object from the given bucket with the given key,
+// DownloadObject downloads an object from the bucket with the given key,
 // unzips, decodes the json blob and stores the downloaded object in the
 // downloadContent parameter.  The caller is expected to use the correct type of
 // downloadContent parameter.
@@ -515,14 +515,16 @@ func (s *s3ObjectStore) ListKeys(bucket string, keyPrefix string) (
 //   gzipped and hence, will unzip & decode the json blobs before returning it.
 // - Only those type field name in the downloaded json blob that are also
 //   present in the downloadContent type will be filled; other fields will be
-// 	 dropped without returning any error.  More info at documentation of
+//   dropped without returning any error.  More info at documentation of
 //   json.Unmarshall().
 // - Download may fail due to many reasons: RequestError (connection error),
 //   NoSuchBucket, NoSuchKey, invalid gzip header, json unmarshall error,
 //   InvalidParameter (e.g., empty key), etc.
-func (s *s3ObjectStore) DownloadObject(bucket string, key string,
+func (s *s3ObjectStore) DownloadObject(key string,
 	downloadContent interface{}) error {
+	bucket := s.s3Bucket
 	writerAt := &aws.WriteAtBuffer{}
+
 	if _, err := s.downloader.Download(writerAt, &s3.GetObjectInput{
 		Bucket: &bucket,
 		Key:    &key,
@@ -550,12 +552,14 @@ func (s *s3ObjectStore) DownloadObject(bucket string, key string,
 	return nil
 }
 
-// DeleteObject() deletes from the given bucket any objects that have the given
+// DeleteObjects() deletes from the bucket any objects that have the given
 // the keyPrefix.  If the bucket doesn't exists, will return
 // ErrCodeNoSuchBucket "NoSuchBucket".
-func (s *s3ObjectStore) DeleteObject(bucket string, keyPrefix string) (
+func (s *s3ObjectStore) DeleteObjects(keyPrefix string) (
 	err error) {
-	keys, err := s.ListKeys(bucket, keyPrefix)
+	bucket := s.s3Bucket
+
+	keys, err := s.ListKeys(keyPrefix)
 	if err != nil {
 		return fmt.Errorf("unable to ListKeys in DeleteObjects "+
 			"from endpoint %s bucket %s keyPrefix %s, %w",
@@ -582,7 +586,7 @@ func (s *s3ObjectStore) DeleteObject(bucket string, keyPrefix string) (
 			s.s3Endpoint, bucket, keyPrefix, err)
 	}
 
-	return
+	return nil
 }
 
 // isAwsErrCodeNoSuchBucket returns true if the given input `err` has wrapped
@@ -596,22 +600,4 @@ func isAwsErrCodeNoSuchBucket(err error) bool {
 	}
 
 	return false
-}
-
-// constructBucketName returns a bucket name formed using the input namespace
-// and name, separating the two with a hypen.
-// - The input namespace and name may have dots or hyphens.
-// - Bucket names must be between 3 and 63 characters long.
-// - Bucket names can consist only of lowercase letters, numbers, dots (.), and hyphens (-).
-// - Bucket names must begin and end with a letter or number.
-// - Bucket names must not be formatted as an IP address (for example, 192.168.5.4).
-// - Bucket names must be unique within a partition. A partition is a grouping of Regions.
-//   AWS currently has three partitions: aws (Standard Regions), aws-cn (China Regions),
-//   and aws-us-gov (AWS GovCloud [US] Regions).
-// - Buckets used with Amazon S3 Transfer Acceleration can't have dots (.) in their names.
-// Source: https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
-func constructBucketName(namespace, name string) (bucket string) {
-	bucket = namespace + "-" + name
-
-	return
 }
