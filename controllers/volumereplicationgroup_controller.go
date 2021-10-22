@@ -1801,8 +1801,8 @@ func (v *VRGInstance) updateVRGDataReadyCondition() {
 			vrgReady = false
 			// When will we hit this condition? If it is due to a race condition,
 			// why treat it as an error instead of progressing?
-			v.log.Info("Failed to find condition %s for vrg %s/%s", VRGConditionTypeDataReady,
-				v.instance.Name, v.instance.Namespace)
+			v.log.Info(fmt.Sprintf("Failed to find condition %s for vrg %s/%s", VRGConditionTypeDataReady,
+				v.instance.Name, v.instance.Namespace))
 
 			break
 		}
@@ -1823,8 +1823,8 @@ func (v *VRGInstance) updateVRGDataReadyCondition() {
 			// vrgPogressing to false.
 			vrgProgressing = false
 
-			v.log.Info("Condition %s has error reason %s for vrg %s/%s", VRGConditionTypeDataReady,
-				dataReadyCondition.Reason, v.instance.Name, v.instance.Namespace)
+			v.log.Info(fmt.Sprintf("Condition %s has error reason %s for vrg %s/%s", VRGConditionTypeDataReady,
+				dataReadyCondition.Reason, v.instance.Name, v.instance.Namespace))
 
 			break
 		}
