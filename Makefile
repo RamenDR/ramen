@@ -42,6 +42,13 @@ else
 	BUNDLE_IMG_DRCLUSTER = $(IMAGE_TAG_BASE)-dr-cluster-operator-bundle:$(IMAGE_TAG)
 endif
 
+# SKIP_RANGE is a build time var, that provides a valid value for:
+# - olm.skipRange annotation, in the olm bundle CSV
+SKIP_RANGE ?=
+
+# REPLACES is a build time var, that provides a valid value for:
+# - spec.replaces value, in the olm bundle CSV
+REPLACES ?=
 
 
 BUNDLE_IMG_HUB ?= $(IMAGE_TAG_BASE)-hub-operator-bundle:$(IMAGE_TAG)
@@ -223,6 +230,10 @@ bundle-push: bundle-hub-push bundle-dr-cluster-push ## Push all bundle images.
 .PHONY: bundle-hub
 bundle-hub: manifests kustomize operator-sdk ## Generate hub bundle manifests and metadata, then validate generated files.
 	cd config/hub/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
+	cd config/hub/manifests/$(IMAGE_NAME) && $(KUSTOMIZE) edit add patch --name ramen-hub-operator.v0.0.0 --kind ClusterServiceVersion\
+		--patch '[{"op": "add", "path": "/metadata/annotations/olm.skipRange", "value": "$(SKIP_RANGE)"}]' && \
+		$(KUSTOMIZE) edit add patch --name ramen-hub-operator.v0.0.0 --kind ClusterServiceVersion\
+		--patch '[{"op": "replace", "path": "/spec/replaces", "value": "$(REPLACES)"}]'
 	$(KUSTOMIZE) build --load_restrictor none config/hub/manifests/$(IMAGE_NAME) | $(OSDK) generate bundle -q --package=$(HUB_NAME) --overwrite --output-dir=config/hub/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(OSDK) bundle validate config/hub/bundle
 
@@ -237,6 +248,10 @@ bundle-hub-push: ## Push the hub bundle image.
 .PHONY: bundle-dr-cluster
 bundle-dr-cluster: manifests kustomize operator-sdk ## Generate dr-cluster bundle manifests and metadata, then validate generated files.
 	cd config/dr-cluster/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
+	cd config/dr-cluster/manifests/$(IMAGE_NAME) && $(KUSTOMIZE) edit add patch --name ramen-dr-cluster-operator.v0.0.0 --kind ClusterServiceVersion\
+		--patch '[{"op": "add", "path": "/metadata/annotations/olm.skipRange", "value": "$(SKIP_RANGE)"}]' && \
+		$(KUSTOMIZE) edit add patch --name ramen-dr-cluster-operator.v0.0.0 --kind ClusterServiceVersion\
+		--patch '[{"op": "replace", "path": "/spec/replaces", "value": "$(REPLACES)"}]'
 	$(KUSTOMIZE) build --load_restrictor none config/dr-cluster/manifests/$(IMAGE_NAME) | $(OSDK) generate bundle -q --package=$(DRCLUSTER_NAME) --overwrite --output-dir=config/dr-cluster/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(OSDK) bundle validate config/dr-cluster/bundle
 
