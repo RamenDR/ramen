@@ -132,18 +132,13 @@ func (s3ObjectStoreGetter) ObjectStore(ctx context.Context,
 			s3ProfileName, callerTag, err)
 	}
 
-	// Use cached connection, if one exists
-	s3Endpoint := s3StoreProfile.S3CompatibleEndpoint
-	if s3ObjectStore, ok := s3ConnectionMap[s3Endpoint]; ok {
-		return s3ObjectStore, nil
-	}
-
 	accessID, secretAccessKey, err := getS3Secret(ctx, r, s3StoreProfile.S3SecretRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get secret %v for caller %s, %w",
 			s3StoreProfile.S3SecretRef, callerTag, err)
 	}
 
+	s3Endpoint := s3StoreProfile.S3CompatibleEndpoint
 	s3Region := s3StoreProfile.S3Region
 
 	// Create an S3 client session
@@ -179,7 +174,6 @@ func (s3ObjectStoreGetter) ObjectStore(ctx context.Context,
 		s3Bucket:     s3StoreProfile.S3Bucket,
 		callerTag:    callerTag,
 	}
-	s3ConnectionMap[s3Endpoint] = s3Conn
 
 	return s3Conn, nil
 }
@@ -211,9 +205,6 @@ type s3ObjectStore struct {
 	s3Bucket     string
 	callerTag    string
 }
-
-// S3 object store map with s3Endpoint as the key to serve as cache
-var s3ConnectionMap = map[string]*s3ObjectStore{}
 
 // CreateBucket creates the given bucket; does not return an error if the bucket
 // exists already.
