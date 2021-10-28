@@ -168,7 +168,7 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(
 			PVCSelector: metav1.LabelSelector{
 				MatchLabels: map[string]string{"appclass": "gold"},
 			},
-			S3ProfileList: []string{"fakeS3Profile"},
+			S3Profiles: []string{"fakeS3Profile"},
 		},
 		Status: vrgStatus,
 	}

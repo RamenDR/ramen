@@ -145,7 +145,7 @@ spec:
                   this replication group; this value is propagated to children VolumeReplication
                   CRs
                 type: string
-              s3ProfileName:
+              s3Profiles:
                 description: List of unique S3 profiles in RamenConfig that should
                   be used to store and forward PV related cluster state to peer DR
                   clusters.
@@ -162,7 +162,7 @@ spec:
             required:
             - pvcSelector
             - replicationState
-            - s3ProfileName
+            - s3Profiles
             - schedulingInterval
             type: object
           status:

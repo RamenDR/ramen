@@ -414,8 +414,8 @@ func (in *VolumeReplicationGroupSpec) DeepCopyInto(out *VolumeReplicationGroupSp
 	*out = *in
 	in.PVCSelector.DeepCopyInto(&out.PVCSelector)
 	in.ReplicationClassSelector.DeepCopyInto(&out.ReplicationClassSelector)
-	if in.S3ProfileList != nil {
-		in, out := &in.S3ProfileList, &out.S3ProfileList
+	if in.S3Profiles != nil {
+		in, out := &in.S3Profiles, &out.S3Profiles
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}

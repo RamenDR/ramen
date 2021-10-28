@@ -122,15 +122,15 @@ func IsManifestInAppliedState(mw *ocmworkv1.ManifestWork) bool {
 func (mwu *MWUtil) CreateOrUpdateVRGManifestWork(
 	name, namespace, homeCluster string,
 	drPolicy *rmn.DRPolicy, pvcSelector metav1.LabelSelector) error {
-	s3ProfileList := S3UploadProfileList(*drPolicy)
+	s3Profiles := S3UploadProfileList(*drPolicy)
 	schedulingInterval := drPolicy.Spec.SchedulingInterval
 	replClassSelector := drPolicy.Spec.ReplicationClassSelector
 
 	mwu.Log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%s:%s",
-		name, namespace, homeCluster, s3ProfileList))
+		name, namespace, homeCluster, s3Profiles))
 
 	manifestWork, err := mwu.generateVRGManifestWork(name, namespace, homeCluster,
-		s3ProfileList, pvcSelector, schedulingInterval, replClassSelector)
+		s3Profiles, pvcSelector, schedulingInterval, replClassSelector)
 	if err != nil {
 		return err
 	}
@@ -139,10 +139,10 @@ func (mwu *MWUtil) CreateOrUpdateVRGManifestWork(
 }
 
 func (mwu *MWUtil) generateVRGManifestWork(
-	name, namespace, homeCluster string, s3ProfileList []string,
+	name, namespace, homeCluster string, s3Profiles []string,
 	pvcSelector metav1.LabelSelector, schedulingInterval string,
 	replClassSelector metav1.LabelSelector) (*ocmworkv1.ManifestWork, error) {
-	vrgClientManifest, err := mwu.generateVRGManifest(name, namespace, s3ProfileList,
+	vrgClientManifest, err := mwu.generateVRGManifest(name, namespace, s3Profiles,
 		pvcSelector, schedulingInterval, replClassSelector)
 	if err != nil {
 		mwu.Log.Error(err, "failed to generate VolumeReplicationGroup manifest")
@@ -160,7 +160,7 @@ func (mwu *MWUtil) generateVRGManifestWork(
 }
 
 func (mwu *MWUtil) generateVRGManifest(
-	name, namespace string, s3ProfileList []string,
+	name, namespace string, s3Profiles []string,
 	pvcSelector metav1.LabelSelector, schedulingInterval string,
 	replClassSelector metav1.LabelSelector) (*ocmworkv1.Manifest, error) {
 	return mwu.GenerateManifest(&rmn.VolumeReplicationGroup{
@@ -170,7 +170,7 @@ func (mwu *MWUtil) generateVRGManifest(
 			PVCSelector:              pvcSelector,
 			SchedulingInterval:       schedulingInterval,
 			ReplicationState:         rmn.Primary,
-			S3ProfileList:            s3ProfileList,
+			S3Profiles:               s3Profiles,
 			ReplicationClassSelector: replClassSelector,
 		},
 	})

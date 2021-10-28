@@ -138,7 +138,7 @@ spec:
       appname: myapp
   volumeReplicationClass: "vr-class-sample"
   replicationState: "Primary"
-  s3ProfileList:
+  s3Profiles:
     s3ProfileEast
     s3ProfileWest
 ```

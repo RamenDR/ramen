@@ -418,18 +418,18 @@ func (v *VRGInstance) restorePVs() error {
 		return nil
 	}
 
-	if len(v.instance.Spec.S3ProfileList) == 0 {
-		return fmt.Errorf("invalid S3ProfileList")
+	if len(v.instance.Spec.S3Profiles) == 0 {
+		return fmt.Errorf("no S3Profiles configured")
 	}
 
 	msg := "Restoring PV cluster data"
 	setVRGClusterDataProgressingCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
-	v.log.Info(fmt.Sprintf("Restoring PVs to this managed cluster. ProfileList: %v", v.instance.Spec.S3ProfileList))
+	v.log.Info(fmt.Sprintf("Restoring PVs to this managed cluster. ProfileList: %v", v.instance.Spec.S3Profiles))
 
 	success := false
 
-	for _, s3ProfileName := range v.instance.Spec.S3ProfileList {
+	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
 		pvList, err := v.fetchPVClusterDataFromS3Store(s3ProfileName)
 		if err != nil {
 			v.log.Error(err, fmt.Sprintf("error fetching PV cluster data from S3 profile %s", s3ProfileName))
@@ -465,7 +465,7 @@ func (v *VRGInstance) restorePVs() error {
 	}
 
 	if !success {
-		return fmt.Errorf("failed to restorePVs using profile list (%v)", v.instance.Spec.S3ProfileList)
+		return fmt.Errorf("failed to restorePVs using profile list (%v)", v.instance.Spec.S3Profiles)
 	}
 
 	return nil
@@ -1284,7 +1284,7 @@ func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim, log 
 	}
 
 	// Error out if VRG has no S3 profiles
-	numProfilesToUpload := len(v.instance.Spec.S3ProfileList)
+	numProfilesToUpload := len(v.instance.Spec.S3Profiles)
 	if numProfilesToUpload == 0 {
 		msg := "Error uploading PV cluster data because VRG spec has no S3 profiles"
 		v.updatePVCClusterDataProtectedCondition(pvc.Name,
@@ -1297,7 +1297,7 @@ func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim, log 
 
 	s3Profiles := []string{}
 	// Upload the PV to all the S3 profiles in the VRG spec
-	for _, s3ProfileName := range v.instance.Spec.S3ProfileList {
+	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
 		if err := v.reconciler.PVUploader.UploadPV(v, s3ProfileName, pvc); err != nil {
 			log.Error(err, fmt.Sprintf("Error uploading PV cluster data to s3Profile %s, %v",
 				s3ProfileName, err))
@@ -1383,9 +1383,9 @@ func (ObjectStorePVUploader) UploadPV(v interface{}, s3ProfileName string,
 }
 
 func (v *VRGInstance) deleteClusterDataInS3Stores(log logr.Logger) error {
-	log.Info("Delete cluster data in", "s3Profiles", v.instance.Spec.S3ProfileList)
+	log.Info("Delete cluster data in", "s3Profiles", v.instance.Spec.S3Profiles)
 
-	for _, s3ProfileName := range v.instance.Spec.S3ProfileList {
+	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
 		if err := v.reconciler.PVDeleter.DeletePVs(v, s3ProfileName); err != nil {
 			return fmt.Errorf("error deleting PVs using profile %s, err %w", s3ProfileName, err)
 		}
