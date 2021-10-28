@@ -71,7 +71,8 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	case true:
 		log.Info("create/update")
 
-		if err := validate(ctx, drpolicy, r.APIReader, r.Client, r.ObjectStoreGetter, log); err != nil {
+		listKeyPrefix := req.NamespacedName.String()
+		if err := validate(ctx, drpolicy, r.APIReader, r.Client, r.ObjectStoreGetter, log, listKeyPrefix); err != nil {
 			return ctrl.Result{}, fmt.Errorf(`validate: %w`, err)
 		}
 
@@ -98,7 +99,7 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 func validate(ctx context.Context, drpolicy *ramen.DRPolicy, apiReader client.Reader,
-	client client.Client, objectStoreGetter ObjectStoreGetter, log logr.Logger,
+	client client.Client, objectStoreGetter ObjectStoreGetter, log logr.Logger, listKeyPrefix string,
 ) error {
 	var (
 		conditionSetTrue  func(reason, message string) error
@@ -150,12 +151,28 @@ func validate(ctx context.Context, drpolicy *ramen.DRPolicy, apiReader client.Re
 
 	for i := range drpolicy.Spec.DRClusterSet {
 		cluster := drpolicy.Spec.DRClusterSet[i]
-		if _, err := objectStoreGetter.ObjectStore(ctx, apiReader, cluster.S3ProfileName, `drpolicy validation`); err != nil {
-			return conditionSetFalse(`s3ConnectionFailed`, fmt.Errorf(`%s: %w`, cluster.S3ProfileName, err))
+		if reason, err := validateS3Profile(ctx, apiReader, objectStoreGetter,
+			cluster.S3ProfileName, listKeyPrefix); err != nil {
+			return conditionSetFalse(reason, err)
 		}
 	}
 
 	return conditionSetTrue(`Succeeded`, `drpolicy validated`)
+}
+
+func validateS3Profile(ctx context.Context, apiReader client.Reader,
+	objectStoreGetter ObjectStoreGetter, s3ProfileName, listKeyPrefix string,
+) (string, error) {
+	objectStore, err := objectStoreGetter.ObjectStore(ctx, apiReader, s3ProfileName, `drpolicy validation`)
+	if err != nil {
+		return `s3ConnectionFailed`, fmt.Errorf(`%s: %w`, s3ProfileName, err)
+	}
+
+	if _, err := objectStore.ListKeys(listKeyPrefix); err != nil {
+		return `s3ListFailed`, fmt.Errorf(`%s: %w`, s3ProfileName, err)
+	}
+
+	return "", nil
 }
 
 const finalizerName = "drpolicies.ramendr.openshift.io/ramen"
