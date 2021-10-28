@@ -51,18 +51,18 @@ func DrpolicyValidated(drpolicy *rmn.DRPolicy) error {
 }
 
 // Return a list of unique S3 profiles to upload the relevant cluster state
-func S3UploadProfileList(drPolicy rmn.DRPolicy) (s3ProfileList []string) {
+func S3UploadProfileList(drPolicy rmn.DRPolicy) (s3Profiles []string) {
 	for _, drCluster := range drPolicy.Spec.DRClusterSet {
 		found := false
 
-		for _, s3ProfileName := range s3ProfileList {
+		for _, s3ProfileName := range s3Profiles {
 			if s3ProfileName == drCluster.S3ProfileName {
 				found = true
 			}
 		}
 
 		if !found {
-			s3ProfileList = append(s3ProfileList, drCluster.S3ProfileName)
+			s3Profiles = append(s3Profiles, drCluster.S3ProfileName)
 		}
 	}
 
