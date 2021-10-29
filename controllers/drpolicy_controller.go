@@ -71,18 +71,24 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	case true:
 		log.Info("create/update")
 
+		validatedSetTrue, validatedSetFalse := validatedSetFuncs(ctx, drpolicy, r.Client, log)
+
 		listKeyPrefix := req.NamespacedName.String()
-		if err := validate(ctx, drpolicy, r.APIReader, r.Client, r.ObjectStoreGetter, log, listKeyPrefix); err != nil {
-			return ctrl.Result{}, fmt.Errorf(`validate: %w`, err)
+		if reason, err := validate(ctx, drpolicy, r.APIReader, r.ObjectStoreGetter, listKeyPrefix); err != nil {
+			return ctrl.Result{}, fmt.Errorf("validate: %w", validatedSetFalse(reason, err))
 		}
 
 		if err := finalizerAdd(ctx, drpolicy, r.Client, log); err != nil {
-			return ctrl.Result{}, fmt.Errorf("finalizer add update: %w", err)
+			return ctrl.Result{}, fmt.Errorf("finalizer add update: %w",
+				validatedSetFalse("FinalizerAddFailed", err))
 		}
 
 		if err := manifestWorkUtil.ClusterRolesCreate(drpolicy); err != nil {
-			return ctrl.Result{}, fmt.Errorf("cluster roles create: %w", err)
+			return ctrl.Result{}, fmt.Errorf("cluster roles create: %w",
+				validatedSetFalse("ClusterRolesCreateFailed", err))
 		}
+
+		return ctrl.Result{}, validatedSetTrue("Succeeded", "drpolicy validated")
 	default:
 		log.Info("delete")
 
@@ -98,19 +104,31 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{}, nil
 }
 
-func validate(ctx context.Context, drpolicy *ramen.DRPolicy, apiReader client.Reader,
-	client client.Client, objectStoreGetter ObjectStoreGetter, log logr.Logger, listKeyPrefix string,
-) error {
-	var (
-		conditionSetTrue  func(reason, message string) error
-		conditionSetFalse func(reason string, err error) error
-	)
-
+func validatedSetFuncs(
+	ctx context.Context,
+	drpolicy *ramen.DRPolicy,
+	client client.Client,
+	log logr.Logger,
+) (
+	conditionSetTrue func(reason, message string) error,
+	conditionSetFalse func(reason string, err error) error,
+) {
 	if condition := util.DrpolicyValidatedConditionGet(drpolicy); condition != nil {
 		if condition.Status == metav1.ConditionTrue {
-			log.Info(`valid -> valid`)
+			return func(reason, message string) error {
+					log.Info("valid -> valid")
 
-			return nil
+					return nil
+				},
+				func(reason string, err error) error {
+					log.Info("valid -> invalid")
+
+					return error1stUnless2ndNotNil(
+						err,
+						statusConditionUpdate(ctx, drpolicy, client, condition, metav1.ConditionTrue,
+							reason, err.Error()),
+					)
+				}
 		}
 
 		conditionSetFalse = func(reason string, err error) error {
@@ -127,13 +145,12 @@ func validate(ctx context.Context, drpolicy *ramen.DRPolicy, apiReader client.Re
 		conditionSetFalse = func(reason string, err error) error {
 			message := err.Error()
 			log.Info("empty -> invalid", "reason", reason, "message", message)
-			if err1 := statusConditionAppend(ctx, drpolicy, client, ramen.DRPolicyValidated, metav1.ConditionFalse, reason,
-				message,
-			); err1 != nil {
-				return err1
-			}
 
-			return err
+			return error1stUnless2ndNotNil(
+				err,
+				statusConditionAppend(ctx, drpolicy, client, ramen.DRPolicyValidated, metav1.ConditionFalse,
+					reason, message),
+			)
 		}
 		conditionSetTrue = func(reason, message string) error {
 			log.Info(`empty -> valid`)
@@ -142,15 +159,21 @@ func validate(ctx context.Context, drpolicy *ramen.DRPolicy, apiReader client.Re
 		}
 	}
 
+	return conditionSetTrue, conditionSetFalse
+}
+
+func validate(ctx context.Context, drpolicy *ramen.DRPolicy, apiReader client.Reader,
+	objectStoreGetter ObjectStoreGetter, listKeyPrefix string,
+) (string, error) {
 	for i := range drpolicy.Spec.DRClusterSet {
 		cluster := drpolicy.Spec.DRClusterSet[i]
 		if reason, err := validateS3Profile(ctx, apiReader, objectStoreGetter,
 			cluster.S3ProfileName, listKeyPrefix); err != nil {
-			return conditionSetFalse(reason, err)
+			return reason, err
 		}
 	}
 
-	return conditionSetTrue(`Succeeded`, `drpolicy validated`)
+	return "", nil
 }
 
 func statusConditionUpdateIfReasonOrMessageDiffers(
@@ -177,11 +200,10 @@ func statusConditionUpdateIfReasonOrMessageDiffers(
 		"new message", message,
 	)
 
-	if err1 := statusConditionUpdate(ctx, drpolicy, client, condition, condition.Status, reason, message); err1 != nil {
-		return err1
-	}
-
-	return err
+	return error1stUnless2ndNotNil(
+		err,
+		statusConditionUpdate(ctx, drpolicy, client, condition, condition.Status, reason, message),
+	)
 }
 
 func statusConditionUpdate(
@@ -206,6 +228,14 @@ func statusConditionAppend(
 	util.ConditionAppend(drpolicy, &drpolicy.Status.Conditions, conditionType, status, reason, message)
 
 	return client.Status().Update(ctx, drpolicy)
+}
+
+func error1stUnless2ndNotNil(a, b error) error {
+	if b != nil {
+		return b
+	}
+
+	return a
 }
 
 func validateS3Profile(ctx context.Context, apiReader client.Reader,
