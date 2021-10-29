@@ -113,31 +113,24 @@ func validate(ctx context.Context, drpolicy *ramen.DRPolicy, apiReader client.Re
 			return nil
 		}
 
-		conditionUpdate := func(status metav1.ConditionStatus, reason, message string) error {
-			util.ConditionUpdate(drpolicy, condition, status, reason, message)
-
-			return client.Status().Update(ctx, drpolicy)
-		}
 		conditionSetFalse = func(reason string, err error) error {
-			log.Info(`invalid -> invalid`)
-
-			return err
+			return statusConditionUpdateIfReasonOrMessageDiffers(ctx, drpolicy, client, condition, reason, err, log,
+				"invalid -> invalid",
+			)
 		}
 		conditionSetTrue = func(reason, message string) error {
 			log.Info(`invalid -> valid`)
 
-			return conditionUpdate(metav1.ConditionTrue, reason, message)
+			return statusConditionUpdate(ctx, drpolicy, client, condition, metav1.ConditionTrue, reason, message)
 		}
 	} else {
-		conditionAppend := func(status metav1.ConditionStatus, reason, message string) error {
-			util.ConditionAppend(drpolicy, &drpolicy.Status.Conditions, ramen.DRPolicyValidated, status, reason, message)
-
-			return client.Status().Update(ctx, drpolicy)
-		}
 		conditionSetFalse = func(reason string, err error) error {
-			log.Info(`empty -> invalid`)
-			if err1 := conditionAppend(metav1.ConditionFalse, reason, err.Error()); err1 != nil {
-				err = err1
+			message := err.Error()
+			log.Info("empty -> invalid", "reason", reason, "message", message)
+			if err1 := statusConditionAppend(ctx, drpolicy, client, ramen.DRPolicyValidated, metav1.ConditionFalse, reason,
+				message,
+			); err1 != nil {
+				return err1
 			}
 
 			return err
@@ -145,7 +138,7 @@ func validate(ctx context.Context, drpolicy *ramen.DRPolicy, apiReader client.Re
 		conditionSetTrue = func(reason, message string) error {
 			log.Info(`empty -> valid`)
 
-			return conditionAppend(metav1.ConditionTrue, reason, message)
+			return statusConditionAppend(ctx, drpolicy, client, ramen.DRPolicyValidated, metav1.ConditionTrue, reason, message)
 		}
 	}
 
@@ -158,6 +151,61 @@ func validate(ctx context.Context, drpolicy *ramen.DRPolicy, apiReader client.Re
 	}
 
 	return conditionSetTrue(`Succeeded`, `drpolicy validated`)
+}
+
+func statusConditionUpdateIfReasonOrMessageDiffers(
+	ctx context.Context,
+	drpolicy *ramen.DRPolicy,
+	client client.Client,
+	condition *metav1.Condition,
+	reason string,
+	err error,
+	log logr.Logger,
+	logMessage string,
+) error {
+	message := err.Error()
+	if condition.Reason == reason && condition.Message == message {
+		log.Info(logMessage, "reason", reason, "message", message)
+
+		return err
+	}
+
+	log.Info(logMessage,
+		"old reason", condition.Reason,
+		"new reason", reason,
+		"old message", condition.Message,
+		"new message", message,
+	)
+
+	if err1 := statusConditionUpdate(ctx, drpolicy, client, condition, condition.Status, reason, message); err1 != nil {
+		return err1
+	}
+
+	return err
+}
+
+func statusConditionUpdate(
+	ctx context.Context,
+	drpolicy *ramen.DRPolicy,
+	client client.Client,
+	condition *metav1.Condition,
+	status metav1.ConditionStatus, reason, message string,
+) error {
+	util.ConditionUpdate(drpolicy, condition, status, reason, message)
+
+	return client.Status().Update(ctx, drpolicy)
+}
+
+func statusConditionAppend(
+	ctx context.Context,
+	drpolicy *ramen.DRPolicy,
+	client client.Client,
+	conditionType string,
+	status metav1.ConditionStatus, reason, message string,
+) error {
+	util.ConditionAppend(drpolicy, &drpolicy.Status.Conditions, conditionType, status, reason, message)
+
+	return client.Status().Update(ctx, drpolicy)
 }
 
 func validateS3Profile(ctx context.Context, apiReader client.Reader,
