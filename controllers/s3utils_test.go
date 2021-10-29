@@ -29,8 +29,9 @@ import (
 type fakeObjectStoreGetter struct{}
 
 const (
-	s3ProfileNameConnectSucc = `fakeS3Profile`
-	s3ProfileNameConnectFail = s3ProfileNameConnectSucc + `ConnectFail`
+	s3ProfileNameConnectSucc  = "fakeS3Profile"
+	s3ProfileNameConnectFail  = s3ProfileNameConnectSucc + "ConnectFail"
+	s3ProfileNameConnectFail2 = s3ProfileNameConnectFail + "2"
 )
 
 func (fakeObjectStoreGetter) ObjectStore(
@@ -39,7 +40,10 @@ func (fakeObjectStoreGetter) ObjectStore(
 	s3ProfileName string,
 	callerTag string,
 ) (controllers.ObjectStorer, error) {
-	if s3ProfileName == s3ProfileNameConnectFail {
+	switch s3ProfileName {
+	case s3ProfileNameConnectFail:
+		fallthrough
+	case s3ProfileNameConnectFail2:
 		return fakeObjectStorer{}, errors.New(`object store connection failed`)
 	}
 

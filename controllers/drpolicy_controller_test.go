@@ -6,6 +6,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
+	gomegaTypes "github.com/onsi/gomega/types"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/util"
 	corev1 "k8s.io/api/core/v1"
@@ -34,7 +35,9 @@ var _ = Describe("DrpolicyController", func() {
 			0.25,
 		).Should(Succeed())
 	}
-	validatedConditionExpect := func(drpolicy *ramen.DRPolicy, status metav1.ConditionStatus) {
+	validatedConditionExpect := func(drpolicy *ramen.DRPolicy, status metav1.ConditionStatus,
+		messageMatcher gomegaTypes.GomegaMatcher,
+	) {
 		Eventually(
 			func(g Gomega) {
 				g.Expect(apiReader.Get(
@@ -54,7 +57,7 @@ var _ = Describe("DrpolicyController", func() {
 							`ObservedGeneration`: Ignore(),
 							`LastTransitionTime`: Ignore(),
 							`Reason`:             Ignore(),
-							`Message`:            Ignore(),
+							`Message`:            messageMatcher,
 						}),
 					},
 				))
@@ -121,8 +124,8 @@ var _ = Describe("DrpolicyController", func() {
 		})
 	})
 	When(`a drpolicy is created containing an s3 profile that connects successfully`, func() {
-		It(`should set its validated status condition to true`, func() {
-			validatedConditionExpect(drpolicy, metav1.ConditionTrue)
+		It("should set its validated status condition's status to true", func() {
+			validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
 		})
 	})
 	When("TODO a 1st drpolicy is updated to add some clusters and remove some other clusters", func() {
@@ -188,17 +191,28 @@ var _ = Describe("DrpolicyController", func() {
 		drpolicy.Spec.SchedulingInterval = `00m`
 	})
 	When(`a drpolicy is created containing an s3 profile that connects unsuccessfully`, func() {
-		It(`should set its validated status condition to false`, func() {
+		It("should set its validated status condition's status to false and "+
+			"message to specify the name of the first listed s3 profile that connected unsuccessfully", func() {
 			drpolicy.Spec.DRClusterSet[1].S3ProfileName = s3ProfileNameConnectFail
 			Expect(k8sClient.Create(context.TODO(), drpolicy)).To(Succeed())
-			validatedConditionExpect(drpolicy, metav1.ConditionFalse)
+			validatedConditionExpect(drpolicy, metav1.ConditionFalse, HavePrefix(s3ProfileNameConnectFail+": "))
 		})
 	})
-	When(`a drpolicy is updated containing an s3 profile that connects successfully`, func() {
-		It(`should update its validated status condition to true`, func() {
+	When("a drpolicy is updated containing an s3 profile that connects unsuccessfully "+
+		"ordered before one that previously connected unsuccessfully", func() {
+		It("should change its validated status condition"+
+			"message to specify the name of the first listed s3 profile that connected unsuccessfully", func() {
+			drpolicy.Spec.DRClusterSet[0].S3ProfileName = s3ProfileNameConnectFail2
+			Expect(k8sClient.Update(context.TODO(), drpolicy)).To(Succeed())
+			validatedConditionExpect(drpolicy, metav1.ConditionFalse, HavePrefix(s3ProfileNameConnectFail2+": "))
+		})
+	})
+	When("a drpolicy is updated containing s3 profiles that all connect successfully", func() {
+		It("should update its validated status condition's status to true", func() {
+			drpolicy.Spec.DRClusterSet[0].S3ProfileName = s3ProfileNameConnectSucc
 			drpolicy.Spec.DRClusterSet[1].S3ProfileName = s3ProfileNameConnectSucc
 			Expect(k8sClient.Update(context.TODO(), drpolicy)).To(Succeed())
-			validatedConditionExpect(drpolicy, metav1.ConditionTrue)
+			validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
 		})
 	})
 	Specify(`drpolicy delete`, func() {
