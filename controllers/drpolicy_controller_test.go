@@ -2,11 +2,14 @@ package controllers_test
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
 	gomegaTypes "github.com/onsi/gomega/types"
+	workv1 "github.com/open-cluster-management/api/work/v1"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/util"
 	corev1 "k8s.io/api/core/v1"
@@ -79,17 +82,38 @@ var _ = Describe("DrpolicyController", func() {
 	}
 	drpolicyDeleteAndConfirm := func(drpolicy *ramen.DRPolicy) {
 		Expect(k8sClient.Delete(context.TODO(), drpolicy)).To(Succeed())
-		Eventually(func(g Gomega) {
-			g.Expect(apiReader.Get(context.TODO(), types.NamespacedName{Name: drpolicy.Name}, drpolicy)).ToNot(Succeed())
-		}, 10, 0.25).Should(Succeed())
+		Eventually(func() bool {
+			return errors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{Name: drpolicy.Name}, drpolicy))
+		}, 10, 0.25).Should(BeTrue())
+	}
+	namespaceDeleteAndConfirm := func(namespaceName string) {
+		// TODO: debug namespace delete not finalized
+		if true {
+			return
+		}
+		namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespaceName}}
+		Expect(k8sClient.Delete(context.TODO(), namespace)).To(Succeed())
+		Eventually(func() bool {
+			err := apiReader.Get(context.TODO(), types.NamespacedName{Name: namespaceName}, namespace)
+			s, _ := (json.MarshalIndent(*namespace, "", "  "))
+			fmt.Println(string(s))
+
+			return errors.IsNotFound(err)
+		}, 30, 15).Should(BeTrue())
 	}
 	drpolicyDelete := func(drpolicy *ramen.DRPolicy, clusterNamesExpected sets.String) {
 		drpolicyDeleteAndConfirm(drpolicy)
 		for _, clusterName := range clusterNamesCurrent.Difference(clusterNamesExpected).UnsortedList() {
-			Expect(k8sClient.Delete(
-				context.TODO(),
-				&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: clusterName}},
-			)).To(Succeed())
+			manifestWorkName := types.NamespacedName{
+				Name:      util.ClusterRolesManifestWorkName,
+				Namespace: clusterName,
+			}
+			Eventually(func() bool {
+				manifestWork := &workv1.ManifestWork{}
+
+				return errors.IsNotFound(apiReader.Get(context.TODO(), manifestWorkName, manifestWork))
+			}, 10, 0.25).Should(BeTrue())
+			namespaceDeleteAndConfirm(clusterName)
 			*clusterNamesCurrent = clusterNamesCurrent.Delete(clusterName)
 		}
 		clusterRolesExpect()
@@ -117,6 +141,18 @@ var _ = Describe("DrpolicyController", func() {
 	var drpolicy *ramen.DRPolicy
 	Specify(`a drpolicy`, func() {
 		drpolicy = &drpolicies[0]
+	})
+	When("a drpolicy is created specifying a cluster name and a namespace of the same name does not exist", func() {
+		It("should set its validated status condition's status to false", func() {
+			Expect(k8sClient.Create(context.TODO(), drpolicy)).To(Succeed())
+			validatedConditionExpect(drpolicy, metav1.ConditionFalse, Ignore())
+		})
+	})
+	Specify("drpolicy delete", func() {
+		drpolicyDeleteAndConfirm(drpolicy)
+	})
+	Specify("a drpolicy", func() {
+		drpolicy.ObjectMeta = objectMetas[0]
 	})
 	When("a 1st drpolicy is created", func() {
 		It("should create a cluster roles manifest work for each cluster specified in a 1st drpolicy", func() {
