@@ -71,24 +71,24 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	case true:
 		log.Info("create/update")
 
-		validatedSetTrue, validatedSetFalse := validatedSetFuncs(ctx, drpolicy, r.Client, log)
+		b := &bar{ctx, drpolicy, r.Client, log}
 
 		listKeyPrefix := req.NamespacedName.String()
 		if reason, err := validate(ctx, drpolicy, r.APIReader, r.ObjectStoreGetter, listKeyPrefix); err != nil {
-			return ctrl.Result{}, fmt.Errorf("validate: %w", validatedSetFalse(reason, err))
+			return ctrl.Result{}, fmt.Errorf("validate: %w", b.validatedSetFalse(reason, err))
 		}
 
 		if err := finalizerAdd(ctx, drpolicy, r.Client, log); err != nil {
 			return ctrl.Result{}, fmt.Errorf("finalizer add update: %w",
-				validatedSetFalse("FinalizerAddFailed", err))
+				b.validatedSetFalse("FinalizerAddFailed", err))
 		}
 
 		if err := manifestWorkUtil.ClusterRolesCreate(drpolicy); err != nil {
 			return ctrl.Result{}, fmt.Errorf("cluster roles create: %w",
-				validatedSetFalse("ClusterRolesCreateFailed", err))
+				b.validatedSetFalse("ClusterRolesCreateFailed", err))
 		}
 
-		return ctrl.Result{}, validatedSetTrue("Succeeded", "drpolicy validated")
+		return ctrl.Result{}, b.validatedSetTrue("Succeeded", "drpolicy validated")
 	default:
 		log.Info("delete")
 
@@ -104,62 +104,68 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{}, nil
 }
 
-func validatedSetFuncs(
-	ctx context.Context,
-	drpolicy *ramen.DRPolicy,
-	client client.Client,
-	log logr.Logger,
-) (
-	conditionSetTrue func(reason, message string) error,
-	conditionSetFalse func(reason string, err error) error,
-) {
-	if condition := util.DrpolicyValidatedConditionGet(drpolicy); condition != nil {
-		if condition.Status == metav1.ConditionTrue {
-			return func(reason, message string) error {
-					log.Info("valid -> valid")
+type bar struct {
+	ctx      context.Context
+	drpolicy *ramen.DRPolicy
+	client   client.Client
+	log      logr.Logger
+}
 
-					return nil
-				},
-				func(reason string, err error) error {
-					log.Info("valid -> invalid")
+func (b *bar) validatedSetTrue(reason, message string) error {
+	return b.validatedSet(
+		func(condition *metav1.Condition) error {
+			b.log.Info("valid -> valid")
 
-					return error1stUnless2ndNotNil(
-						err,
-						statusConditionUpdate(ctx, drpolicy, client, condition, metav1.ConditionTrue,
-							reason, err.Error()),
-					)
-				}
-		}
+			return nil
+		},
+		func(condition *metav1.Condition) error {
+			b.log.Info("invalid -> valid")
 
-		conditionSetFalse = func(reason string, err error) error {
-			return statusConditionUpdateIfReasonOrMessageDiffers(ctx, drpolicy, client, condition, reason, err, log,
-				"invalid -> invalid",
-			)
-		}
-		conditionSetTrue = func(reason, message string) error {
-			log.Info(`invalid -> valid`)
+			return b.statusConditionUpdate(condition, metav1.ConditionTrue, reason, message)
+		},
+		func() error {
+			b.log.Info("empty -> valid")
 
-			return statusConditionUpdate(ctx, drpolicy, client, condition, metav1.ConditionTrue, reason, message)
-		}
-	} else {
-		conditionSetFalse = func(reason string, err error) error {
-			message := err.Error()
-			log.Info("empty -> invalid", "reason", reason, "message", message)
+			return b.statusConditionAppend(ramen.DRPolicyValidated, metav1.ConditionTrue, reason, message)
+		},
+	)
+}
+
+func (b *bar) validatedSetFalse(reason string, err error) error {
+	return b.validatedSet(
+		func(condition *metav1.Condition) error {
+			b.log.Info("valid -> invalid")
 
 			return error1stUnless2ndNotNil(
 				err,
-				statusConditionAppend(ctx, drpolicy, client, ramen.DRPolicyValidated, metav1.ConditionFalse,
-					reason, message),
+				b.statusConditionUpdate(condition, metav1.ConditionTrue, reason, err.Error()),
 			)
-		}
-		conditionSetTrue = func(reason, message string) error {
-			log.Info(`empty -> valid`)
+		},
+		func(condition *metav1.Condition) error {
+			return b.statusConditionUpdateIfReasonOrMessageDiffers(condition, reason, err, "invalid -> invalid")
+		},
+		func() error {
+			message := err.Error()
+			b.log.Info("empty -> invalid", "reason", reason, "message", message)
 
-			return statusConditionAppend(ctx, drpolicy, client, ramen.DRPolicyValidated, metav1.ConditionTrue, reason, message)
+			return error1stUnless2ndNotNil(
+				err,
+				b.statusConditionAppend(ramen.DRPolicyValidated, metav1.ConditionFalse, reason, message),
+			)
+		},
+	)
+}
+
+func (b *bar) validatedSet(foo1, foo2 func(*metav1.Condition) error, foo3 func() error) error {
+	if condition := util.DrpolicyValidatedConditionGet(b.drpolicy); condition != nil {
+		if condition.Status == metav1.ConditionTrue {
+			return foo1(condition)
 		}
+
+		return foo2(condition)
 	}
 
-	return conditionSetTrue, conditionSetFalse
+	return foo3()
 }
 
 func validate(ctx context.Context, drpolicy *ramen.DRPolicy, apiReader client.Reader,
@@ -176,24 +182,20 @@ func validate(ctx context.Context, drpolicy *ramen.DRPolicy, apiReader client.Re
 	return "", nil
 }
 
-func statusConditionUpdateIfReasonOrMessageDiffers(
-	ctx context.Context,
-	drpolicy *ramen.DRPolicy,
-	client client.Client,
+func (b *bar) statusConditionUpdateIfReasonOrMessageDiffers(
 	condition *metav1.Condition,
 	reason string,
 	err error,
-	log logr.Logger,
 	logMessage string,
 ) error {
 	message := err.Error()
 	if condition.Reason == reason && condition.Message == message {
-		log.Info(logMessage, "reason", reason, "message", message)
+		b.log.Info(logMessage, "reason", reason, "message", message)
 
 		return err
 	}
 
-	log.Info(logMessage,
+	b.log.Info(logMessage,
 		"old reason", condition.Reason,
 		"new reason", reason,
 		"old message", condition.Message,
@@ -202,32 +204,26 @@ func statusConditionUpdateIfReasonOrMessageDiffers(
 
 	return error1stUnless2ndNotNil(
 		err,
-		statusConditionUpdate(ctx, drpolicy, client, condition, condition.Status, reason, message),
+		b.statusConditionUpdate(condition, condition.Status, reason, message),
 	)
 }
 
-func statusConditionUpdate(
-	ctx context.Context,
-	drpolicy *ramen.DRPolicy,
-	client client.Client,
+func (b *bar) statusConditionUpdate(
 	condition *metav1.Condition,
 	status metav1.ConditionStatus, reason, message string,
 ) error {
-	util.ConditionUpdate(drpolicy, condition, status, reason, message)
+	util.ConditionUpdate(b.drpolicy, condition, status, reason, message)
 
-	return client.Status().Update(ctx, drpolicy)
+	return b.client.Status().Update(b.ctx, b.drpolicy)
 }
 
-func statusConditionAppend(
-	ctx context.Context,
-	drpolicy *ramen.DRPolicy,
-	client client.Client,
+func (b *bar) statusConditionAppend(
 	conditionType string,
 	status metav1.ConditionStatus, reason, message string,
 ) error {
-	util.ConditionAppend(drpolicy, &drpolicy.Status.Conditions, conditionType, status, reason, message)
+	util.ConditionAppend(b.drpolicy, &b.drpolicy.Status.Conditions, conditionType, status, reason, message)
 
-	return client.Status().Update(ctx, drpolicy)
+	return b.client.Status().Update(b.ctx, b.drpolicy)
 }
 
 func error1stUnless2ndNotNil(a, b error) error {
