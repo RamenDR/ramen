@@ -144,7 +144,7 @@ func (m ManagedClusterViewGetterImpl) getManagedClusterResource(
 		return errorswrapper.Wrap(err, "getManagedClusterResource failed")
 	}
 
-	logger.Info(fmt.Sprintf("MCV condtions: %v", mcv.Status.Conditions))
+	logger.Info(fmt.Sprintf("MCV Conditions: %v", mcv.Status.Conditions))
 
 	// want single recent Condition with correct Type; otherwise: bad path
 	switch len(mcv.Status.Conditions) {

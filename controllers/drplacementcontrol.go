@@ -306,6 +306,9 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 
 	// VRG is primary in the failoverCluster, we are done if we have already failed over
 	if d.hasAlreadySwitchedOver(d.instance.Spec.FailoverCluster) {
+		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
+			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
+
 		err := d.EnsureCleanup(d.instance.Spec.FailoverCluster)
 		if err != nil {
 			return !done, err
@@ -369,7 +372,7 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 	d.advanceToNextDRState()
 	d.setMetricsTimerFromDRState(rmn.FailedOver)
 	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
-		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Failover completed")
+		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Completed")
 	d.log.Info("Failover completed", "state", d.getLastDRState())
 
 	// The failover is complete, but we still need to clean up other
@@ -445,6 +448,9 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 
 	// We are done if already relocated; if there were secondaries they are cleaned up above
 	if d.hasAlreadySwitchedOver(preferredCluster) {
+		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
+			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
+
 		err := d.EnsureCleanup(preferredCluster)
 		if err != nil {
 			return !done, err
@@ -608,7 +614,7 @@ func (d *DRPCInstance) relocate(preferredCluster, preferredClusterNamespace stri
 	d.advanceToNextDRState()
 	d.setMetricsTimerFromDRState(d.getLastDRState())
 	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
-		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Relocation completed")
+		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Completed")
 	d.log.Info("Relocation completed", "State", d.getLastDRState())
 
 	// The relocation is complete, but we still need to clean up the previous
