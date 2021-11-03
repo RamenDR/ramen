@@ -57,7 +57,7 @@ var _ = Describe("DrpolicyController", func() {
 						ramen.DRPolicyValidated: MatchAllFields(Fields{
 							`Type`:               Ignore(),
 							`Status`:             Equal(status),
-							`ObservedGeneration`: Ignore(),
+							`ObservedGeneration`: Equal(drpolicy.Generation),
 							`LastTransitionTime`: Ignore(),
 							`Reason`:             Ignore(),
 							`Message`:            messageMatcher,
@@ -249,6 +249,20 @@ var _ = Describe("DrpolicyController", func() {
 			drpolicy.Spec.DRClusterSet[1].S3ProfileName = s3ProfileNameConnectSucc
 			Expect(k8sClient.Update(context.TODO(), drpolicy)).To(Succeed())
 			validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
+		})
+	})
+	When("a previously valid drpolicy is updated containing a different s3 profile that connects successfully", func() {
+		It("should update its validated status condition's observed generation", func() {
+			drpolicy.Spec.DRClusterSet[0].S3ProfileName = s3ProfileNameConnectSucc2
+			Expect(k8sClient.Update(context.TODO(), drpolicy)).To(Succeed())
+			validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
+		})
+	})
+	When("a previously valid drpolicy is updated containing an s3 profile connects unsuccessfully", func() {
+		It("should update its validated status condition's status to false", func() {
+			drpolicy.Spec.DRClusterSet[0].S3ProfileName = s3ProfileNameConnectFail
+			Expect(k8sClient.Update(context.TODO(), drpolicy)).To(Succeed())
+			validatedConditionExpect(drpolicy, metav1.ConditionFalse, HavePrefix(s3ProfileNameConnectFail+": "))
 		})
 	})
 	Specify(`drpolicy delete`, func() {

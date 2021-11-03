@@ -30,6 +30,7 @@ type fakeObjectStoreGetter struct{}
 
 const (
 	s3ProfileNameConnectSucc  = "fakeS3Profile"
+	s3ProfileNameConnectSucc2 = s3ProfileNameConnectSucc + "1"
 	s3ProfileNameConnectFail  = s3ProfileNameConnectSucc + "ConnectFail"
 	s3ProfileNameConnectFail2 = s3ProfileNameConnectFail + "2"
 )
