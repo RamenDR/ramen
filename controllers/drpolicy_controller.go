@@ -73,14 +73,13 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 		b := &bar{ctx, drpolicy, r.Client, log}
 
-		listKeyPrefix := req.NamespacedName.String()
-		if reason, err := validate(ctx, drpolicy, r.APIReader, r.ObjectStoreGetter, listKeyPrefix); err != nil {
-			return ctrl.Result{}, fmt.Errorf("validate: %w", b.validatedSetFalse(reason, err))
-		}
-
 		if err := finalizerAdd(ctx, drpolicy, r.Client, log); err != nil {
 			return ctrl.Result{}, fmt.Errorf("finalizer add update: %w",
 				b.validatedSetFalse("FinalizerAddFailed", err))
+		}
+
+		if reason, err := validate(ctx, drpolicy, r.APIReader, r.ObjectStoreGetter, req.NamespacedName.String()); err != nil {
+			return ctrl.Result{}, fmt.Errorf("validate: %w", b.validatedSetFalse(reason, err))
 		}
 
 		if err := manifestWorkUtil.ClusterRolesCreate(drpolicy); err != nil {
@@ -112,19 +111,27 @@ type bar struct {
 }
 
 func (b *bar) validatedSetTrue(reason, message string) error {
+	generation := b.drpolicy.Generation
+
 	return b.validatedSet(
 		func(condition *metav1.Condition) error {
-			b.log.Info("valid -> valid")
+			const logMessage = "valid -> valid"
+			if condition.ObservedGeneration == generation {
+				b.log.Info(logMessage, "generation", generation)
 
-			return nil
+				return nil
+			}
+			b.log.Info(logMessage, "old generation", condition.ObservedGeneration, "new generation", generation)
+
+			return b.statusConditionUpdate(condition, metav1.ConditionTrue, reason, message)
 		},
 		func(condition *metav1.Condition) error {
-			b.log.Info("invalid -> valid")
+			b.log.Info("invalid -> valid", "old generation", condition.ObservedGeneration, "new generation", generation)
 
 			return b.statusConditionUpdate(condition, metav1.ConditionTrue, reason, message)
 		},
 		func() error {
-			b.log.Info("empty -> valid")
+			b.log.Info("empty -> valid", "generation", generation)
 
 			return b.statusConditionAppend(ramen.DRPolicyValidated, metav1.ConditionTrue, reason, message)
 		},
@@ -132,21 +139,42 @@ func (b *bar) validatedSetTrue(reason, message string) error {
 }
 
 func (b *bar) validatedSetFalse(reason string, err error) error {
+	message := err.Error()
+	generation := b.drpolicy.Generation
+
 	return b.validatedSet(
 		func(condition *metav1.Condition) error {
-			b.log.Info("valid -> invalid")
+			b.log.Info("valid -> invalid", "reason", reason, "message", message,
+				"old generation", condition.ObservedGeneration, "new generation", generation,
+			)
 
 			return error1stUnless2ndNotNil(
 				err,
-				b.statusConditionUpdate(condition, metav1.ConditionTrue, reason, err.Error()),
+				b.statusConditionUpdate(condition, metav1.ConditionFalse, reason, err.Error()),
 			)
 		},
 		func(condition *metav1.Condition) error {
-			return b.statusConditionUpdateIfReasonOrMessageDiffers(condition, reason, err, "invalid -> invalid")
+			const logMessage = "invalid -> invalid"
+			if condition.Reason == reason && condition.Message == message &&
+				condition.ObservedGeneration == generation {
+				b.log.Info(logMessage, "reason", reason, "message", message, "generation", generation)
+
+				return err
+			}
+
+			b.log.Info(logMessage,
+				"old reason", condition.Reason, "new reason", reason,
+				"old message", condition.Message, "new message", message,
+				"old generation", condition.ObservedGeneration, "new generation", generation,
+			)
+
+			return error1stUnless2ndNotNil(
+				err,
+				b.statusConditionUpdate(condition, condition.Status, reason, message),
+			)
 		},
 		func() error {
-			message := err.Error()
-			b.log.Info("empty -> invalid", "reason", reason, "message", message)
+			b.log.Info("empty -> invalid", "reason", reason, "message", message, "generation", generation)
 
 			return error1stUnless2ndNotNil(
 				err,
@@ -173,39 +201,13 @@ func validate(ctx context.Context, drpolicy *ramen.DRPolicy, apiReader client.Re
 ) (string, error) {
 	for i := range drpolicy.Spec.DRClusterSet {
 		cluster := drpolicy.Spec.DRClusterSet[i]
-		if reason, err := validateS3Profile(ctx, apiReader, objectStoreGetter,
+		if reason, err := s3ProfileValidate(ctx, apiReader, objectStoreGetter,
 			cluster.S3ProfileName, listKeyPrefix); err != nil {
 			return reason, err
 		}
 	}
 
 	return "", nil
-}
-
-func (b *bar) statusConditionUpdateIfReasonOrMessageDiffers(
-	condition *metav1.Condition,
-	reason string,
-	err error,
-	logMessage string,
-) error {
-	message := err.Error()
-	if condition.Reason == reason && condition.Message == message {
-		b.log.Info(logMessage, "reason", reason, "message", message)
-
-		return err
-	}
-
-	b.log.Info(logMessage,
-		"old reason", condition.Reason,
-		"new reason", reason,
-		"old message", condition.Message,
-		"new message", message,
-	)
-
-	return error1stUnless2ndNotNil(
-		err,
-		b.statusConditionUpdate(condition, condition.Status, reason, message),
-	)
 }
 
 func (b *bar) statusConditionUpdate(
@@ -234,7 +236,7 @@ func error1stUnless2ndNotNil(a, b error) error {
 	return a
 }
 
-func validateS3Profile(ctx context.Context, apiReader client.Reader,
+func s3ProfileValidate(ctx context.Context, apiReader client.Reader,
 	objectStoreGetter ObjectStoreGetter, s3ProfileName, listKeyPrefix string,
 ) (string, error) {
 	objectStore, err := objectStoreGetter.ObjectStore(ctx, apiReader, s3ProfileName, `drpolicy validation`)
