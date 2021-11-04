@@ -34,12 +34,8 @@ func DrpolicyClusterNames(drpolicy *rmn.DRPolicy) []string {
 	return clusterNames
 }
 
-func DrpolicyValidatedConditionGet(drpolicy *rmn.DRPolicy) *metav1.Condition {
-	return meta.FindStatusCondition(drpolicy.Status.Conditions, rmn.DRPolicyValidated)
-}
-
 func DrpolicyValidated(drpolicy *rmn.DRPolicy) error {
-	if condition := DrpolicyValidatedConditionGet(drpolicy); condition != nil {
+	if condition := meta.FindStatusCondition(drpolicy.Status.Conditions, rmn.DRPolicyValidated); condition != nil {
 		if condition.Status != metav1.ConditionTrue {
 			return errors.New(condition.Message)
 		}

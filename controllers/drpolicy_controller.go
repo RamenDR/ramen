@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -65,29 +66,26 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, client.IgnoreNotFound(fmt.Errorf("get: %w", err))
 	}
 
+	u := &objectUpdater{ctx, drpolicy, r.Client, log}
 	manifestWorkUtil := util.MWUtil{Client: r.Client, Ctx: ctx, Log: log, InstName: "", InstNamespace: ""}
 
 	switch drpolicy.ObjectMeta.DeletionTimestamp.IsZero() {
 	case true:
 		log.Info("create/update")
 
-		b := &bar{ctx, drpolicy, r.Client, log}
-
-		if err := finalizerAdd(ctx, drpolicy, r.Client, log); err != nil {
-			return ctrl.Result{}, fmt.Errorf("finalizer add update: %w",
-				b.validatedSetFalse("FinalizerAddFailed", err))
+		if err := u.finalizerAdd(); err != nil {
+			return ctrl.Result{}, fmt.Errorf("finalizer add update: %w", u.validatedSetFalse("FinalizerAddFailed", err))
 		}
 
 		if reason, err := validate(ctx, drpolicy, r.APIReader, r.ObjectStoreGetter, req.NamespacedName.String()); err != nil {
-			return ctrl.Result{}, fmt.Errorf("validate: %w", b.validatedSetFalse(reason, err))
+			return ctrl.Result{}, fmt.Errorf("validate: %w", u.validatedSetFalse(reason, err))
 		}
 
 		if err := manifestWorkUtil.ClusterRolesCreate(drpolicy); err != nil {
-			return ctrl.Result{}, fmt.Errorf("cluster roles create: %w",
-				b.validatedSetFalse("ClusterRolesCreateFailed", err))
+			return ctrl.Result{}, fmt.Errorf("cluster roles create: %w", u.validatedSetFalse("ClusterRolesCreateFailed", err))
 		}
 
-		return ctrl.Result{}, b.validatedSetTrue("Succeeded", "drpolicy validated")
+		return ctrl.Result{}, u.validatedSetTrue("Succeeded", "drpolicy validated")
 	default:
 		log.Info("delete")
 
@@ -95,7 +93,7 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, fmt.Errorf("cluster roles delete: %w", err)
 		}
 
-		if err := finalizerRemove(ctx, drpolicy, r.Client, log); err != nil {
+		if err := u.finalizerRemove(); err != nil {
 			return ctrl.Result{}, fmt.Errorf("finalizer remove update: %w", err)
 		}
 	}
@@ -103,104 +101,11 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{}, nil
 }
 
-type bar struct {
-	ctx      context.Context
-	drpolicy *ramen.DRPolicy
-	client   client.Client
-	log      logr.Logger
-}
-
-func (b *bar) validatedSetTrue(reason, message string) error {
-	generation := b.drpolicy.Generation
-
-	return b.validatedSet(
-		func(condition *metav1.Condition) error {
-			const logMessage = "valid -> valid"
-			if condition.ObservedGeneration == generation {
-				b.log.Info(logMessage, "generation", generation)
-
-				return nil
-			}
-			b.log.Info(logMessage, "old generation", condition.ObservedGeneration, "new generation", generation)
-
-			return b.statusConditionUpdate(condition, metav1.ConditionTrue, reason, message)
-		},
-		func(condition *metav1.Condition) error {
-			b.log.Info("invalid -> valid", "old generation", condition.ObservedGeneration, "new generation", generation)
-
-			return b.statusConditionUpdate(condition, metav1.ConditionTrue, reason, message)
-		},
-		func() error {
-			b.log.Info("empty -> valid", "generation", generation)
-
-			return b.statusConditionAppend(ramen.DRPolicyValidated, metav1.ConditionTrue, reason, message)
-		},
-	)
-}
-
-func (b *bar) validatedSetFalse(reason string, err error) error {
-	message := err.Error()
-	generation := b.drpolicy.Generation
-
-	return b.validatedSet(
-		func(condition *metav1.Condition) error {
-			b.log.Info("valid -> invalid", "reason", reason, "message", message,
-				"old generation", condition.ObservedGeneration, "new generation", generation,
-			)
-
-			return error1stUnless2ndNotNil(
-				err,
-				b.statusConditionUpdate(condition, metav1.ConditionFalse, reason, err.Error()),
-			)
-		},
-		func(condition *metav1.Condition) error {
-			const logMessage = "invalid -> invalid"
-			if condition.Reason == reason && condition.Message == message &&
-				condition.ObservedGeneration == generation {
-				b.log.Info(logMessage, "reason", reason, "message", message, "generation", generation)
-
-				return err
-			}
-
-			b.log.Info(logMessage,
-				"old reason", condition.Reason, "new reason", reason,
-				"old message", condition.Message, "new message", message,
-				"old generation", condition.ObservedGeneration, "new generation", generation,
-			)
-
-			return error1stUnless2ndNotNil(
-				err,
-				b.statusConditionUpdate(condition, condition.Status, reason, message),
-			)
-		},
-		func() error {
-			b.log.Info("empty -> invalid", "reason", reason, "message", message, "generation", generation)
-
-			return error1stUnless2ndNotNil(
-				err,
-				b.statusConditionAppend(ramen.DRPolicyValidated, metav1.ConditionFalse, reason, message),
-			)
-		},
-	)
-}
-
-func (b *bar) validatedSet(foo1, foo2 func(*metav1.Condition) error, foo3 func() error) error {
-	if condition := util.DrpolicyValidatedConditionGet(b.drpolicy); condition != nil {
-		if condition.Status == metav1.ConditionTrue {
-			return foo1(condition)
-		}
-
-		return foo2(condition)
-	}
-
-	return foo3()
-}
-
 func validate(ctx context.Context, drpolicy *ramen.DRPolicy, apiReader client.Reader,
 	objectStoreGetter ObjectStoreGetter, listKeyPrefix string,
 ) (string, error) {
 	for i := range drpolicy.Spec.DRClusterSet {
-		cluster := drpolicy.Spec.DRClusterSet[i]
+		cluster := &drpolicy.Spec.DRClusterSet[i]
 		if reason, err := s3ProfileValidate(ctx, apiReader, objectStoreGetter,
 			cluster.S3ProfileName, listKeyPrefix); err != nil {
 			return reason, err
@@ -208,32 +113,6 @@ func validate(ctx context.Context, drpolicy *ramen.DRPolicy, apiReader client.Re
 	}
 
 	return "", nil
-}
-
-func (b *bar) statusConditionUpdate(
-	condition *metav1.Condition,
-	status metav1.ConditionStatus, reason, message string,
-) error {
-	util.ConditionUpdate(b.drpolicy, condition, status, reason, message)
-
-	return b.client.Status().Update(b.ctx, b.drpolicy)
-}
-
-func (b *bar) statusConditionAppend(
-	conditionType string,
-	status metav1.ConditionStatus, reason, message string,
-) error {
-	util.ConditionAppend(b.drpolicy, &b.drpolicy.Status.Conditions, conditionType, status, reason, message)
-
-	return b.client.Status().Update(b.ctx, b.drpolicy)
-}
-
-func error1stUnless2ndNotNil(a, b error) error {
-	if b != nil {
-		return b
-	}
-
-	return a
 }
 
 func s3ProfileValidate(ctx context.Context, apiReader client.Reader,
@@ -251,29 +130,86 @@ func s3ProfileValidate(ctx context.Context, apiReader client.Reader,
 	return "", nil
 }
 
+type objectUpdater struct {
+	ctx    context.Context
+	object *ramen.DRPolicy
+	client client.Client
+	log    logr.Logger
+}
+
+func (u *objectUpdater) validatedSetTrue(reason, message string) error {
+	return u.validatedSet(metav1.ConditionTrue, reason, message)
+}
+
+func (u *objectUpdater) validatedSetFalse(reason string, err error) error {
+	if err1 := u.validatedSet(metav1.ConditionFalse, reason, err.Error()); err1 != nil {
+		return err1
+	}
+
+	return err
+}
+
+func (u *objectUpdater) validatedSet(status metav1.ConditionStatus, reason, message string) error {
+	return u.statusConditionSet(ramen.DRPolicyValidated, status, reason, message)
+}
+
+func (u *objectUpdater) statusConditionSet(conditionType string, status metav1.ConditionStatus, reason, message string,
+) error {
+	conditions := &u.object.Status.Conditions
+	generation := u.object.GetGeneration()
+
+	if condition := meta.FindStatusCondition(*conditions, conditionType); condition != nil {
+		if condition.Status == status &&
+			condition.Reason == reason &&
+			condition.Message == message &&
+			condition.ObservedGeneration == generation {
+			u.log.Info("condition unchanged", "type", conditionType,
+				"status", status, "reason", reason, "message", message, "generation", generation,
+			)
+
+			return nil
+		}
+
+		u.log.Info("condition update", "type", conditionType,
+			"old status", condition.Status, "new status", status,
+			"old reason", condition.Reason, "new reason", reason,
+			"old message", condition.Message, "new message", message,
+			"old generation", condition.ObservedGeneration, "new generation", generation,
+		)
+		util.ConditionUpdate(u.object, condition, status, reason, message)
+	} else {
+		u.log.Info("condition append", "type", conditionType,
+			"status", status, "reason", reason, "message", message, "generation", generation,
+		)
+		util.ConditionAppend(u.object, conditions, conditionType, status, reason, message)
+	}
+
+	return u.client.Status().Update(u.ctx, u.object)
+}
+
 const finalizerName = "drpolicies.ramendr.openshift.io/ramen"
 
-func finalizerAdd(ctx context.Context, drpolicy *ramen.DRPolicy, client client.Client, log logr.Logger) error {
-	finalizerCount := len(drpolicy.ObjectMeta.Finalizers)
-	controllerutil.AddFinalizer(drpolicy, finalizerName)
+func (u *objectUpdater) finalizerAdd() error {
+	finalizerCount := len(u.object.ObjectMeta.Finalizers)
+	controllerutil.AddFinalizer(u.object, finalizerName)
 
-	if len(drpolicy.ObjectMeta.Finalizers) != finalizerCount {
-		log.Info("finalizer add")
+	if len(u.object.ObjectMeta.Finalizers) != finalizerCount {
+		u.log.Info("finalizer add")
 
-		return client.Update(ctx, drpolicy)
+		return u.client.Update(u.ctx, u.object)
 	}
 
 	return nil
 }
 
-func finalizerRemove(ctx context.Context, drpolicy *ramen.DRPolicy, client client.Client, log logr.Logger) error {
-	finalizerCount := len(drpolicy.ObjectMeta.Finalizers)
-	controllerutil.RemoveFinalizer(drpolicy, finalizerName)
+func (u *objectUpdater) finalizerRemove() error {
+	finalizerCount := len(u.object.ObjectMeta.Finalizers)
+	controllerutil.RemoveFinalizer(u.object, finalizerName)
 
-	if len(drpolicy.ObjectMeta.Finalizers) != finalizerCount {
-		log.Info("finalizer remove")
+	if len(u.object.ObjectMeta.Finalizers) != finalizerCount {
+		u.log.Info("finalizer remove")
 
-		return client.Update(ctx, drpolicy)
+		return u.client.Update(u.ctx, u.object)
 	}
 
 	return nil
