@@ -419,6 +419,8 @@ func (v *VRGInstance) restorePVs() error {
 	}
 
 	if len(v.instance.Spec.S3Profiles) == 0 {
+		v.log.Info("No S3 profiles configured")
+
 		return fmt.Errorf("no S3Profiles configured")
 	}
 
@@ -427,7 +429,23 @@ func (v *VRGInstance) restorePVs() error {
 
 	v.log.Info(fmt.Sprintf("Restoring PVs to this managed cluster. ProfileList: %v", v.instance.Spec.S3Profiles))
 
-	success := false
+	success, err := v.fetchAndRestorePV()
+
+	if !success {
+		errMsg := fmt.Sprintf("failed to restorePVs using profile list (%v)", v.instance.Spec.S3Profiles)
+		v.log.Info(errMsg)
+
+		return fmt.Errorf("%s: %w", errMsg, err)
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) fetchAndRestorePV() (bool, error) {
+	var (
+		success = false
+		err     error
+	)
 
 	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
 		pvList, err := v.fetchPVClusterDataFromS3Store(s3ProfileName)
@@ -445,7 +463,7 @@ func (v *VRGInstance) restorePVs() error {
 			v.log.Info(errMsg)
 			v.log.Error(err, fmt.Sprintf("Resolve PV conflict in the S3 store %s to deploy the application", s3ProfileName))
 
-			return fmt.Errorf("%s: %w", errMsg, err)
+			return success, fmt.Errorf("%s: %w", errMsg, err)
 		}
 
 		err = v.restorePVClusterData(pvList)
@@ -455,6 +473,7 @@ func (v *VRGInstance) restorePVs() error {
 			continue
 		}
 
+		msg := "Restored PV cluster data"
 		setVRGClusterDataReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
 		v.log.Info(fmt.Sprintf("Restored %d PVs using profile %s", len(pvList), s3ProfileName))
@@ -464,11 +483,7 @@ func (v *VRGInstance) restorePVs() error {
 		break
 	}
 
-	if !success {
-		return fmt.Errorf("failed to restorePVs using profile list (%v)", v.instance.Spec.S3Profiles)
-	}
-
-	return nil
+	return success, err
 }
 
 func (v *VRGInstance) fetchPVClusterDataFromS3Store(s3ProfileName string) ([]corev1.PersistentVolume, error) {
@@ -875,6 +890,8 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 		return ctrl.Result{Requeue: requeue}, nil
 	}
 
+	v.log.Info("Successfully processed vrg as primary")
+
 	return ctrl.Result{}, nil
 }
 
@@ -968,6 +985,8 @@ func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
 
 		return ctrl.Result{Requeue: requeue}, nil
 	}
+
+	v.log.Info("Successfully processed vrg as secondary")
 
 	return ctrl.Result{}, nil
 }
@@ -1295,11 +1314,38 @@ func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim, log 
 			pvc.Name)
 	}
 
+	s3Profiles, err := v.PVUploadToObjectStore(pvc, log)
+	if err != nil {
+		return fmt.Errorf("error uploading PV cluster data to the list of s3 profiles")
+	}
+
+	numProfilesUploaded := len(s3Profiles)
+	// Set ClusterDataProtected condition to true if PV was uploaded to all the profiles
+	if numProfilesUploaded == numProfilesToUpload {
+		msg := fmt.Sprintf("Done uploading PV cluster data to %d of %d S3 profile(s): %v",
+			numProfilesUploaded, numProfilesToUpload, s3Profiles)
+		v.log.Info(msg)
+		v.updatePVCClusterDataProtectedCondition(pvc.Name,
+			VRGConditionReasonUploaded, msg)
+	} else {
+		// Merely defensive as we don't expect to reach here
+		msg := fmt.Sprintf("Uploaded PV cluster data to only  %d of %d S3 profile(s): %v",
+			numProfilesUploaded, numProfilesToUpload, s3Profiles)
+		v.log.Info(msg)
+		v.updatePVCClusterDataProtectedCondition(pvc.Name,
+			VRGConditionReasonUploadError, msg)
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) PVUploadToObjectStore(pvc *corev1.PersistentVolumeClaim,
+	log logr.Logger) ([]string, error) {
 	s3Profiles := []string{}
 	// Upload the PV to all the S3 profiles in the VRG spec
 	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
 		if err := v.reconciler.PVUploader.UploadPV(v, s3ProfileName, pvc); err != nil {
-			log.Error(err, fmt.Sprintf("Error uploading PV cluster data to s3Profile %s, %v",
+			log.Error(err, fmt.Sprintf("error uploading PV cluster data to s3Profile %s, %v",
 				s3ProfileName, err))
 
 			msg := fmt.Sprintf("Error uploading PV cluster data to s3Profile %s",
@@ -1308,7 +1354,7 @@ func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim, log 
 			rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
 				rmnutil.EventReasonPVUploadFailed, err.Error())
 
-			return fmt.Errorf("error uploading cluster data of PV %s to S3 profile %s, %w",
+			return s3Profiles, fmt.Errorf("error uploading cluster data of PV %s to S3 profile %s, %w",
 				pvc.Name, s3ProfileName, err)
 		}
 
@@ -1316,21 +1362,7 @@ func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim, log 
 		s3Profiles = append(s3Profiles, s3ProfileName)
 	}
 
-	numProfilesUploaded := len(s3Profiles)
-	msg := fmt.Sprintf("Done uploading PV cluster data to %d of %d S3 profile(s): %v",
-		numProfilesUploaded, numProfilesToUpload, s3Profiles)
-	v.log.Info(msg)
-	// Set ClusterDataProtected condition to true if PV was uploaded to all the profiles
-	if numProfilesUploaded == numProfilesToUpload {
-		v.updatePVCClusterDataProtectedCondition(pvc.Name,
-			VRGConditionReasonUploaded, msg)
-	} else {
-		// Merely defensive as we don't expect to reach here
-		v.updatePVCClusterDataProtectedCondition(pvc.Name,
-			VRGConditionReasonUploadError, msg)
-	}
-
-	return nil
+	return s3Profiles, nil
 }
 
 type ObjectStorePVUploader struct{}
@@ -1520,6 +1552,8 @@ func (v *VRGInstance) updateVR(volRep *volrep.VolumeReplication,
 			v.instance.Namespace, v.instance.Name, err)
 	}
 
+	log.Info("Updated the state of VolRep (%s/%s) to %s", volRep.Name, volRep.Namespace,
+		state)
 	// Just updated the state of the VolRep. Mark it as progressing.
 	msg := "Updated VolumeReplication resource for PVC"
 	v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonProgressing, msg)
@@ -1626,6 +1660,9 @@ func (v *VRGInstance) selectVolumeReplicationClass(namespacedName types.Namespac
 
 		return className, fmt.Errorf("no VolumeReplicationClass found to match provisioner and schedule")
 	}
+
+	v.log.Info(fmt.Sprintf("Found VolumeReplicationClass that matches provisioner and schedule %s/%s",
+		storageClass.Provisioner, v.instance.Spec.SchedulingInterval))
 
 	return className, nil
 }
@@ -1745,12 +1782,12 @@ func getStatusStateFromSpecState(state ramendrv1alpha1.ReplicationState) ramendr
 	}
 }
 
-// updateVRGConditions updates two summary conditions VRGConditionTypeDataReady
-// & VRGConditionTypeClusterDataProtected at the VRG level based on the
-// corresponding PVC level conditions in the VRG:
+// updateVRGConditions updates three summary conditions VRGConditionTypeDataReady,
+// VRGConditionTypeClusterDataProtected and VRGConditionDataProtected at the VRG
+// level based on the corresponding PVC level conditions in the VRG:
 //
 // The VRGConditionTypeClusterDataReady summary condition is not a PVC level
-// condition is updated elsewhere.
+// condition and is updated elsewhere.
 func (v *VRGInstance) updateVRGConditions() {
 	v.updateVRGDataReadyCondition()
 	v.updateVRGDataProtectedCondition()
@@ -1990,7 +2027,7 @@ func (v *VRGInstance) checkVRStatus(volRep *volrep.VolumeReplication) (bool, err
 	// When the generation in the status is updated, VRG would get a reconcile
 	// as it owns VolumeReplication resource.
 	if volRep.Generation != volRep.Status.ObservedGeneration {
-		v.log.Info("Generation from the resource and status not same")
+		v.log.Info("Generation from the resource and status not same for VolRep %s/%s", volRep.Name, volRep.Namespace)
 
 		msg := "VolumeReplication generation not updated in status"
 		v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonProgressing, msg)
