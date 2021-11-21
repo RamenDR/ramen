@@ -309,6 +309,13 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
+		ready := d.isVRGConditionDataReady(d.instance.Spec.FailoverCluster)
+		if !ready {
+			d.log.Info("VRGCondition not ready")
+
+			return !done, nil
+		}
+
 		err := d.EnsureCleanup(d.instance.Spec.FailoverCluster)
 		if err != nil {
 			return !done, err
@@ -349,17 +356,9 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 
 	newHomeCluster := d.instance.Spec.FailoverCluster
 
-	// Flip the ReplicationState for the current home cluster to secondary if
-	// we have not done so. IF current home cluster and the new home cluster are the same,
-	// then we are far along in processing the failover
-	err := d.changeToSecondaryIfCurrentNotNewHomeCluster(curHomeCluster, newHomeCluster)
-	if err != nil {
-		return !done, err
-	}
-
 	const restorePVs = true
 
-	err = d.executeRelocation(newHomeCluster, "", restorePVs)
+	err := d.executeRelocation(newHomeCluster, "", restorePVs)
 	if err != nil {
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), err.Error())
@@ -391,25 +390,6 @@ func (d *DRPCInstance) getCurrentHomeClusterName() string {
 	}
 
 	return curHomeCluster
-}
-
-func (d *DRPCInstance) changeToSecondaryIfCurrentNotNewHomeCluster(curHomeCluster, newHomeCluster string) error {
-	if curHomeCluster != newHomeCluster {
-		// Set VRG in the failed cluster (preferred cluster) to secondary
-		err := d.updateVRGStateToSecondary(curHomeCluster)
-		if err != nil {
-			msg := "Failed to update existing VRG manifestwork to secondary"
-			d.log.Error(err, msg)
-			d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
-				d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), msg)
-			rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
-				rmnutil.EventReasonSwitchFailed, err.Error())
-
-			return err
-		}
-	}
-
-	return nil
 }
 
 // runRelocate checks if pre-conditions for relocation are met, and if so performs the relocation
@@ -550,15 +530,45 @@ func (d *DRPCInstance) validateRelocation(preferredCluster string) (string, erro
 // ClusterDataProtected condition indicates whether all PV related cluster data for an App (Managed
 // by this DRPC instance) has been protected (uploaded to the S3 store(s)) or not.
 func (d *DRPCInstance) readyToSwitchOver(homeCluster string) bool {
-	const ready = true
-
 	d.log.Info("Checking whether VRG is available", "cluster", homeCluster)
 
+	// Allow switch over when PV data is ready and the cluster data is protected
+	return d.isVRGConditionDataReady(homeCluster) && d.isVRGConditionClusterDataReady(homeCluster)
+}
+
+func (d *DRPCInstance) isVRGConditionDataReady(homeCluster string) bool {
+	const ready = true
+
+	d.log.Info("Checking whether VRG DataReay is true", "cluster", homeCluster)
+
 	vrg := d.vrgs[homeCluster]
+
+	if vrg == nil {
+		d.log.Info("VRG not available on cluster", "cluster", homeCluster)
+
+		return !ready
+	}
 
 	dataReadyCondition := findCondition(vrg.Status.Conditions, VRGConditionTypeDataReady)
 	if dataReadyCondition == nil {
 		d.log.Info("VRG DataReady condition not available", "cluster", homeCluster)
+
+		return !ready
+	}
+
+	return dataReadyCondition.Status == metav1.ConditionTrue &&
+		dataReadyCondition.ObservedGeneration == vrg.Generation
+}
+
+func (d *DRPCInstance) isVRGConditionClusterDataReady(homeCluster string) bool {
+	const ready = true
+
+	d.log.Info("Checking whether VRG ClusterDataReay is true", "cluster", homeCluster)
+
+	vrg := d.vrgs[homeCluster]
+
+	if vrg == nil {
+		d.log.Info("VRG not available on cluster", "cluster", homeCluster)
 
 		return !ready
 	}
@@ -570,10 +580,7 @@ func (d *DRPCInstance) readyToSwitchOver(homeCluster string) bool {
 		return !ready
 	}
 
-	// Allow switch over when PV data is ready and the cluster data is protected
-	return dataReadyCondition.Status == metav1.ConditionTrue &&
-		dataReadyCondition.ObservedGeneration == vrg.Generation &&
-		clusterDataProtectedCondition.Status == metav1.ConditionTrue &&
+	return clusterDataProtectedCondition.Status == metav1.ConditionTrue &&
 		clusterDataProtectedCondition.ObservedGeneration == vrg.Generation
 }
 
