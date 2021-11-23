@@ -32,6 +32,7 @@ IMAGE_REPOSITORY ?= ramendr
 IMAGE_NAME ?= ramen
 IMAGE_TAG ?= latest
 IMAGE_TAG_BASE = $(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY)/$(IMAGE_NAME)
+RBAC_PROXY_IMG ?= "gcr.io/kubebuilder/kube-rbac-proxy:v0.8.0"
 
 HUB_NAME ?= $(IMAGE_NAME)-hub-operator
 ifeq (dr,$(findstring dr,$(IMAGE_NAME)))
@@ -156,6 +157,7 @@ uninstall-hub: manifests kustomize ## Uninstall hub CRDs from the K8s cluster sp
 	$(KUSTOMIZE) build --load_restrictor none config/hub/crd | kubectl delete -f -
 
 deploy-hub: manifests kustomize ## Deploy hub controller to the K8s cluster specified in ~/.kube/config.
+	cd config/hub/default && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
 	cd config/hub/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build --load_restrictor none config/hub/default | kubectl apply -f -
 
@@ -169,6 +171,7 @@ uninstall-dr-cluster: manifests kustomize ## Uninstall dr-cluster CRDs from the 
 	$(KUSTOMIZE) build --load_restrictor none config/dr-cluster/crd | kubectl delete -f -
 
 deploy-dr-cluster: manifests kustomize ## Deploy dr-cluster controller to the K8s cluster specified in ~/.kube/config.
+	cd config/dr-cluster/default && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
 	cd config/dr-cluster/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build --load_restrictor none config/dr-cluster/default | kubectl apply -f -
 
@@ -229,6 +232,7 @@ bundle-push: bundle-hub-push bundle-dr-cluster-push ## Push all bundle images.
 
 .PHONY: bundle-hub
 bundle-hub: manifests kustomize operator-sdk ## Generate hub bundle manifests and metadata, then validate generated files.
+	cd config/hub/default && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
 	cd config/hub/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	cd config/hub/manifests/$(IMAGE_NAME) && $(KUSTOMIZE) edit add patch --name ramen-hub-operator.v0.0.0 --kind ClusterServiceVersion\
 		--patch '[{"op": "add", "path": "/metadata/annotations/olm.skipRange", "value": "$(SKIP_RANGE)"}]' && \
@@ -247,6 +251,7 @@ bundle-hub-push: ## Push the hub bundle image.
 
 .PHONY: bundle-dr-cluster
 bundle-dr-cluster: manifests kustomize operator-sdk ## Generate dr-cluster bundle manifests and metadata, then validate generated files.
+	cd config/dr-cluster/default && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
 	cd config/dr-cluster/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	cd config/dr-cluster/manifests/$(IMAGE_NAME) && $(KUSTOMIZE) edit add patch --name ramen-dr-cluster-operator.v0.0.0 --kind ClusterServiceVersion\
 		--patch '[{"op": "add", "path": "/metadata/annotations/olm.skipRange", "value": "$(SKIP_RANGE)"}]' && \
