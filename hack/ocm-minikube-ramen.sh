@@ -81,13 +81,14 @@ kube_context_set_undo()
 exit_stack_push unset -f kube_context_set_undo
 ramen_deploy_hub_or_spoke()
 {
-	minikube -p ${2} image load ${ramen_image_name_colon_tag}
-	kube_context_set ${2}
-	make -C $1 deploy-$3 IMG=$ramen_image_name_colon_tag
+	minikube -p $1 image load $ramen_image_name_colon_tag
+	. $ramen_hack_directory_path_name/go-install.sh; go_install $HOME/.local; unset -f go_install
+	kube_context_set $1
+	make -C $ramen_directory_path_name deploy-$2 IMG=$ramen_image_name_colon_tag
 	kube_context_set_undo
-	kubectl --context ${2} -n ramen-system wait deployments --all --for condition=available --timeout 60s
+	kubectl --context $1 -n ramen-system wait deployments --all --for condition=available --timeout 60s
 	# Add s3 profile to ramen config
-	cat <<-EOF | kubectl --context $2 apply -f -
+	cat <<-EOF | kubectl --context $1 apply -f -
 	apiVersion: v1
 	kind: Secret
 	metadata:
@@ -97,49 +98,50 @@ ramen_deploy_hub_or_spoke()
 	  AWS_ACCESS_KEY_ID: "minio"
 	  AWS_SECRET_ACCESS_KEY: "minio123"
 	EOF
-	ramen_config_map_name=ramen-${3}-operator-config
-	until_true_or_n 90 kubectl --context ${2} -n ramen-system get configmap ${ramen_config_map_name}
-	cp ${1}/config/${3}/manager/ramen_manager_config.yaml /tmp/ramen_manager_config.yaml
-	set -- $1 $2 $3 $spoke_cluster_names
+	ramen_config_map_name=ramen-$2-operator-config
+	until_true_or_n 90 kubectl --context $1 -n ramen-system get configmap $ramen_config_map_name
+	cp $ramen_directory_path_name/config/$2/manager/ramen_manager_config.yaml /tmp/ramen_manager_config.yaml
+	set -- $1 $2 $spoke_cluster_names
 	cat <<-EOF >>/tmp/ramen_manager_config.yaml
 	s3StoreProfiles:
-	- s3ProfileName: minio-on-$4
+	- s3ProfileName: minio-on-$3
 	  s3BucketName: ramen
-	  s3CompatibleEndpoint: $(minikube --profile $4 -n minio service --url minio)
+	  s3CompatibleEndpoint: $(minikube --profile $3 -n minio service --url minio)
 	  s3Region: us-east-1
 	  s3SecretRef:
 	    name: s3secret
 	    namespace: ramen-system
-	- s3ProfileName: minio-on-$5
+	- s3ProfileName: minio-on-$4
 	  s3BucketName: ramen
-	  s3CompatibleEndpoint: $(minikube --profile $5 -n minio service --url minio)
+	  s3CompatibleEndpoint: $(minikube --profile $4 -n minio service --url minio)
 	  s3Region: us-west-1
 	  s3SecretRef:
 	    name: s3secret
 	    namespace: ramen-system
 	EOF
 
-	kubectl --context ${2} -n ramen-system\
+	kubectl --context $1 -n ramen-system\
 		create configmap ${ramen_config_map_name}\
 		--from-file=/tmp/ramen_manager_config.yaml -o yaml --dry-run=client |
-		kubectl --context ${2} -n ramen-system replace -f -
+		kubectl --context $1 -n ramen-system replace -f -
 	unset -v ramen_config_map_name
 }
 exit_stack_push unset -f ramen_deploy_hub_or_spoke
 ramen_deploy_hub()
 {
-	ramen_deploy_hub_or_spoke $1 $2 hub
+	ramen_deploy_hub_or_spoke $hub_cluster_name hub
+	ramen_samples_channel_and_drpolicy_deploy
 }
 exit_stack_push unset -f ramen_deploy_hub
 ramen_deploy_spoke()
 {
-	ramen_deploy_hub_or_spoke $1 $2 dr-cluster
+	ramen_deploy_hub_or_spoke $1 dr-cluster
 }
 exit_stack_push unset -f ramen_deploy_spoke
 ramen_undeploy_hub_or_spoke()
 {
-	kube_context_set ${2}
-	make -C $1 undeploy-$3
+	kube_context_set $1
+	make -C $ramen_directory_path_name undeploy-$2
 	# Error from server (NotFound): error when deleting "STDIN": namespaces "ramen-system" not found
 	# Error from server (NotFound): error when deleting "STDIN": serviceaccounts "ramen-hub-operator" not found
 	# Error from server (NotFound): error when deleting "STDIN": roles.rbac.authorization.k8s.io "ramen-hub-leader-election-role" not found
@@ -150,19 +152,20 @@ ramen_undeploy_hub_or_spoke()
 	# Makefile:149: recipe for target 'undeploy-hub' failed
 	# make: *** [undeploy-hub] Error 1
 	kube_context_set_undo
-	minikube -p $2 ssh -- docker image rm $ramen_image_name_colon_tag
+	minikube -p $1 ssh -- docker image rm $ramen_image_name_colon_tag
 	# Error: No such image: $ramen_image_name_colon_tag
 	# ssh: Process exited with status 1
 }
 exit_stack_push unset -f ramen_undeploy_hub_or_spoke
 ramen_undeploy_hub()
 {
-	ramen_undeploy_hub_or_spoke $1 $2 hub
+	ramen_samples_channel_and_drpolicy_undeploy
+	ramen_undeploy_hub_or_spoke $hub_cluster_name hub
 }
 exit_stack_push unset -f ramen_undeploy_hub
 ramen_undeploy_spoke()
 {
-	ramen_undeploy_hub_or_spoke $1 $2 dr-cluster
+	ramen_undeploy_hub_or_spoke $1 dr-cluster
 }
 exit_stack_push unset -f ramen_undeploy_spoke
 ocm_ramen_samples_git_ref=${ocm_ramen_samples_git_ref-main}
@@ -261,7 +264,6 @@ application_sample_undeploy_wait_and_namespace_undeploy()
 exit_stack_push unset -f application_sample_undeploy_wait_and_namespace_undeploy
 application_sample_deploy()
 {
-	ramen_samples_channel_and_drpolicy_deploy
 	set -- $spoke_cluster_names
 	application_sample_place $1 '' preferred github.com '' \?ref=$ocm_ramen_samples_git_ref
 }
@@ -285,7 +287,6 @@ application_sample_undeploy()
 	set -- $(kubectl --context ${hub_cluster_name} -n busybox-sample get placementrules/busybox-placement -ojsonpath='{.status.decisions[].clusterName}')
 	kubectl --context $hub_cluster_name delete -k https://github.com/$ocm_ramen_samples_git_path/ocm-ramen-samples/subscriptions/busybox?ref=$ocm_ramen_samples_git_ref
 	application_sample_undeploy_wait_and_namespace_undeploy $1
-	ramen_samples_channel_and_drpolicy_undeploy
 }
 exit_stack_push unset -f application_sample_undeploy
 ramen_directory_path_name=${ramen_hack_directory_path_name}/..
@@ -328,21 +329,15 @@ rook_ceph_volume_replication_image_latest_deploy()
 exit_stack_push unset -f rook_ceph_volume_replication_image_latest_deploy
 ramen_deploy()
 {
-	. ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local; unset -f go_install
-	ramen_deploy_hub $ramen_directory_path_name $hub_cluster_name
-	for cluster_name in $spoke_cluster_names; do
-		ramen_deploy_spoke $ramen_directory_path_name $cluster_name
-	done; unset -v cluster_name
+	ramen_deploy_hub
+	for cluster_name in $spoke_cluster_names; do ramen_deploy_spoke $cluster_name; done; unset -v cluster_name
 }
 exit_stack_push unset -f ramen_deploy
 ramen_undeploy()
 {
-	. ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local; unset -f go_install
-	for cluster_name in $spoke_cluster_names; do
-		ramen_undeploy_spoke $ramen_directory_path_name $cluster_name
-	done; unset -v cluster_name
+	for cluster_name in $spoke_cluster_names; do ramen_undeploy_spoke $cluster_name; done; unset -v cluster_name
 	set +e # TODO remove once each resource is owned by hub or spoke but not both
-	ramen_undeploy_hub $ramen_directory_path_name $hub_cluster_name
+	ramen_undeploy_hub
 	set -e
 }
 exit_stack_push unset -f ramen_undeploy
