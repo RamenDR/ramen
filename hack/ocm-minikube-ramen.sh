@@ -105,14 +105,14 @@ ramen_deploy_hub_or_spoke()
 	cat <<-EOF >>/tmp/ramen_manager_config.yaml
 	s3StoreProfiles:
 	- s3ProfileName: minio-on-$3
-	  s3BucketName: ramen
+	  s3Bucket: bucket
 	  s3CompatibleEndpoint: $(minikube --profile $3 -n minio service --url minio)
 	  s3Region: us-east-1
 	  s3SecretRef:
 	    name: s3secret
 	    namespace: ramen-system
 	- s3ProfileName: minio-on-$4
-	  s3BucketName: ramen
+	  s3Bucket: bucket
 	  s3CompatibleEndpoint: $(minikube --profile $4 -n minio service --url minio)
 	  s3Region: us-west-1
 	  s3SecretRef:
