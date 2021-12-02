@@ -60,7 +60,11 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			for c := 0; c < len(vrgTestCases); c++ {
 				v := vrgTestCases[c]
 				v.promoteVolReps()
-				v.verifyVRGStatusExpectation(true)
+				if c != 0 {
+					v.verifyVRGStatusExpectation(true)
+				} else {
+					v.verifyVRGStatusExpectation(false)
+				}
 			}
 		})
 		It("cleans up after testing", func() {
@@ -122,7 +126,11 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			for c := 0; c < len(vrgTests); c++ {
 				v := vrgTests[c]
 				v.promoteVolReps()
-				v.verifyVRGStatusExpectation(true)
+				if c != 0 {
+					v.verifyVRGStatusExpectation(true)
+				} else {
+					v.verifyVRGStatusExpectation(false)
+				}
 			}
 		})
 		It("cleans up after testing", func() {

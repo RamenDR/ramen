@@ -1790,7 +1790,7 @@ func (v *VRGInstance) updateVRGConditions() {
 //    VRG.conditions.Available.Reason = Progressing
 //
 func (v *VRGInstance) updateVRGDataReadyCondition() {
-	vrgReady := true
+	vrgReady := len(v.instance.Status.ProtectedPVCs) != 0
 	vrgProgressing := false
 
 	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
