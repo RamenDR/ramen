@@ -7,6 +7,7 @@ import (
 
 	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
 	volrepController "github.com/csi-addons/volume-replication-operator/controllers"
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
@@ -1044,7 +1045,7 @@ type FakePVDownloader struct{}
 
 func (s FakePVDownloader) DownloadPVs(ctx context.Context, r client.Reader,
 	objStoreGetter vrgController.ObjectStoreGetter, s3Profile, callerTag string,
-	keyPrefix string) ([]corev1.PersistentVolume, error) {
+	keyPrefix string, log logr.Logger) ([]corev1.PersistentVolume, error) {
 	capacity := corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}
 	accessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
 	hostPathType := corev1.HostPathDirectoryOrCreate

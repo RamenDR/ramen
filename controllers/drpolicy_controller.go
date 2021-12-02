@@ -67,6 +67,12 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	u := &objectUpdater{ctx, drpolicy, r.Client, log}
+
+	ramenConfig, err := ReadRamenConfig(log)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("ramen config read: %w", u.validatedSetFalse("RamenConfigReadFailed", err))
+	}
+
 	manifestWorkUtil := util.MWUtil{Client: r.Client, Ctx: ctx, Log: log, InstName: "", InstNamespace: ""}
 
 	switch drpolicy.ObjectMeta.DeletionTimestamp.IsZero() {
@@ -77,11 +83,13 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, fmt.Errorf("finalizer add update: %w", u.validatedSetFalse("FinalizerAddFailed", err))
 		}
 
-		if reason, err := validate(ctx, drpolicy, r.APIReader, r.ObjectStoreGetter, req.NamespacedName.String()); err != nil {
+		if reason, err := validate(ctx, drpolicy, r.APIReader, r.ObjectStoreGetter, req.NamespacedName.String(),
+			log,
+		); err != nil {
 			return ctrl.Result{}, fmt.Errorf("validate: %w", u.validatedSetFalse(reason, err))
 		}
 
-		if err := manifestWorkUtil.ClusterRolesCreate(drpolicy); err != nil {
+		if err := manifestWorkUtil.ClusterRolesCreate(drpolicy, &ramenConfig); err != nil {
 			return ctrl.Result{}, fmt.Errorf("cluster roles create: %w", u.validatedSetFalse("ClusterRolesCreateFailed", err))
 		}
 
@@ -103,11 +111,12 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 func validate(ctx context.Context, drpolicy *ramen.DRPolicy, apiReader client.Reader,
 	objectStoreGetter ObjectStoreGetter, listKeyPrefix string,
+	log logr.Logger,
 ) (string, error) {
 	for i := range drpolicy.Spec.DRClusterSet {
 		cluster := &drpolicy.Spec.DRClusterSet[i]
 		if reason, err := s3ProfileValidate(ctx, apiReader, objectStoreGetter,
-			cluster.S3ProfileName, listKeyPrefix); err != nil {
+			cluster.S3ProfileName, listKeyPrefix, log); err != nil {
 			return reason, err
 		}
 	}
@@ -117,14 +126,15 @@ func validate(ctx context.Context, drpolicy *ramen.DRPolicy, apiReader client.Re
 
 func s3ProfileValidate(ctx context.Context, apiReader client.Reader,
 	objectStoreGetter ObjectStoreGetter, s3ProfileName, listKeyPrefix string,
+	log logr.Logger,
 ) (string, error) {
-	objectStore, err := objectStoreGetter.ObjectStore(ctx, apiReader, s3ProfileName, `drpolicy validation`)
+	objectStore, err := objectStoreGetter.ObjectStore(ctx, apiReader, s3ProfileName, "drpolicy validation", log)
 	if err != nil {
-		return `s3ConnectionFailed`, fmt.Errorf(`%s: %w`, s3ProfileName, err)
+		return "s3ConnectionFailed", fmt.Errorf("%s: %w", s3ProfileName, err)
 	}
 
 	if _, err := objectStore.ListKeys(listKeyPrefix); err != nil {
-		return `s3ListFailed`, fmt.Errorf(`%s: %w`, s3ProfileName, err)
+		return "s3ListFailed", fmt.Errorf("%s: %w", s3ProfileName, err)
 	}
 
 	return "", nil

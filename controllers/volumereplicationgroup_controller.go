@@ -49,7 +49,7 @@ import (
 
 type PVDownloader interface {
 	DownloadPVs(ctx context.Context, r client.Reader, objStoreGetter ObjectStoreGetter,
-		s3Profile, s3KeyPrefix, debugTag string) ([]corev1.PersistentVolume, error)
+		s3Profile, s3KeyPrefix, debugTag string, log logr.Logger) ([]corev1.PersistentVolume, error)
 }
 
 type PVUploader interface {
@@ -95,7 +95,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) er
 	r.Log.Info("Adding VolumeReplicationGroup controller")
 
 	return ctrl.NewControllerManagedBy(mgr).
-		WithOptions(ctrlcontroller.Options{MaxConcurrentReconciles: getMaxConcurrentReconciles()}).
+		WithOptions(ctrlcontroller.Options{MaxConcurrentReconciles: getMaxConcurrentReconciles(r.Log)}).
 		For(&ramendrv1alpha1.VolumeReplicationGroup{}).
 		Watches(&source.Kind{Type: &corev1.PersistentVolumeClaim{}}, pvcMapFun, builder.WithPredicates(pvcPredicate)).
 		Owns(&volrep.VolumeReplication{}).
@@ -496,6 +496,7 @@ func (v *VRGInstance) fetchPVClusterDataFromS3Store(s3ProfileName string) ([]cor
 		s3ProfileName,
 		s3KeyPrefix,
 		v.namespacedName, // debugTag
+		v.log,
 	)
 }
 
@@ -543,8 +544,8 @@ type ObjectStorePVDownloader struct{}
 
 func (s ObjectStorePVDownloader) DownloadPVs(ctx context.Context, r client.Reader,
 	objStoreGetter ObjectStoreGetter, s3Profile, s3KeyPrefix string,
-	debugTag string) ([]corev1.PersistentVolume, error) {
-	objectStore, err := objStoreGetter.ObjectStore(ctx, r, s3Profile, debugTag)
+	debugTag string, log logr.Logger) ([]corev1.PersistentVolume, error) {
+	objectStore, err := objStoreGetter.ObjectStore(ctx, r, s3Profile, debugTag, log)
 	if err != nil {
 		return nil, fmt.Errorf("error when downloading PVs, err %w", err)
 	}
@@ -1388,6 +1389,7 @@ func (ObjectStorePVUploader) UploadPV(v interface{}, s3ProfileName string,
 			vrg.reconciler.APIReader,
 			s3ProfileName,
 			vrg.namespacedName, /* debugTag */
+			vrg.log,
 		)
 	if err != nil {
 		return fmt.Errorf("error connecting to object store when uploading PV %s to s3Profile %s, %w",
@@ -1439,6 +1441,7 @@ func (ObjectStorePVDeleter) DeletePVs(v interface{}, s3ProfileName string) (err 
 		vrg.reconciler.APIReader,
 		s3ProfileName,
 		vrg.namespacedName, // debugTag
+		vrg.log,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to get client for s3Profile %s, err %w",

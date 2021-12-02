@@ -100,10 +100,11 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
+	options, err := ramenConfigCreate(scheme.Scheme, ctrl.Log)
+	Expect(err).NotTo(HaveOccurred())
+
 	// test controller behavior
-	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
-		Scheme: scheme.Scheme,
-	})
+	k8sManager, err := ctrl.NewManager(cfg, *options)
 	Expect(err).ToNot(HaveOccurred())
 
 	Expect((&ramencontrollers.DRPolicyReconciler{

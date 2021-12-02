@@ -21,6 +21,7 @@ import (
 	"errors"
 	"reflect"
 
+	"github.com/go-logr/logr"
 	"github.com/ramendr/ramen/controllers"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,6 +41,7 @@ func (fakeObjectStoreGetter) ObjectStore(
 	apiReader client.Reader,
 	s3ProfileName string,
 	callerTag string,
+	log logr.Logger,
 ) (controllers.ObjectStorer, error) {
 	switch s3ProfileName {
 	case s3ProfileNameConnectFail:

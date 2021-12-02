@@ -13,14 +13,15 @@ require (
 	github.com/open-cluster-management/multicloud-operators-foundation v0.0.0-20210722145122-534b4232f1c9
 	github.com/open-cluster-management/multicloud-operators-placementrule v1.2.2-2-20201130-98cfd.0.20210722134723-73b5f55a3813
 	github.com/open-cluster-management/multicloud-operators-subscription v1.2.3-1-20210407-9f32325.0.20210722135022-ea2db38695ef
+	github.com/operator-framework/api v0.1.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.9.0
 	github.com/prometheus/client_model v0.2.0
-	github.com/prometheus/common v0.15.0
 	go.uber.org/zap v1.18.1
 	k8s.io/api v0.21.3
 	k8s.io/apimachinery v0.21.3
 	k8s.io/client-go v12.0.0+incompatible
+	k8s.io/component-base v0.21.0
 	k8s.io/kube-openapi v0.0.0-20210305001622-591a79e4bda7
 	sigs.k8s.io/controller-runtime v0.9.0-beta.4
 )

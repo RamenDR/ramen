@@ -25,6 +25,8 @@ import (
 
 	"github.com/go-logr/logr"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
+	operatorsv1 "github.com/operator-framework/api/pkg/operators/v1"
+	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	errorswrapper "github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -178,7 +180,7 @@ func (mwu *MWUtil) generateVRGManifest(
 
 func (mwu *MWUtil) CreateOrUpdateNamespaceManifest(
 	name string, namespaceName string, managedClusterNamespace string) error {
-	manifest, err := mwu.generateNamespaceManifest(namespaceName)
+	manifest, err := mwu.GenerateManifest(namespace(namespaceName))
 	if err != nil {
 		return err
 	}
@@ -194,11 +196,11 @@ func (mwu *MWUtil) CreateOrUpdateNamespaceManifest(
 	return mwu.createOrUpdateManifestWork(manifestWork, managedClusterNamespace)
 }
 
-func (mwu *MWUtil) generateNamespaceManifest(name string) (*ocmworkv1.Manifest, error) {
-	return mwu.GenerateManifest(&corev1.Namespace{
+func namespace(name string) *corev1.Namespace {
+	return &corev1.Namespace{
 		TypeMeta:   metav1.TypeMeta{Kind: "Namespace", APIVersion: "v1"},
 		ObjectMeta: metav1.ObjectMeta{Name: name},
-	})
+	}
 }
 
 func ClusterRolesList(ctx context.Context, client client.Client, clusterNames *sets.String) error {
@@ -219,12 +221,12 @@ func ClusterRolesList(ctx context.Context, client client.Client, clusterNames *s
 
 var clusterRolesMutex sync.Mutex
 
-func (mwu *MWUtil) ClusterRolesCreate(drpolicy *rmn.DRPolicy) error {
+func (mwu *MWUtil) ClusterRolesCreate(drpolicy *rmn.DRPolicy, ramenConfig *rmn.RamenConfig) error {
 	clusterRolesMutex.Lock()
 	defer clusterRolesMutex.Unlock()
 
 	for _, clusterName := range DrpolicyClusterNames(drpolicy) {
-		if err := mwu.createOrUpdateClusterRolesManifestWork(clusterName); err != nil {
+		if err := mwu.createOrUpdateClusterRolesManifestWork(clusterName, ramenConfig); err != nil {
 			return err
 		}
 	}
@@ -261,8 +263,8 @@ func (mwu *MWUtil) ClusterRolesDelete(drpolicy *rmn.DRPolicy) error {
 	return nil
 }
 
-func (mwu *MWUtil) createOrUpdateClusterRolesManifestWork(namespace string) error {
-	manifestWork, err := mwu.generateClusterRolesManifestWork(namespace)
+func (mwu *MWUtil) createOrUpdateClusterRolesManifestWork(namespace string, ramenConfig *rmn.RamenConfig) error {
+	manifestWork, err := mwu.generateClusterRolesManifestWork(namespace, ramenConfig)
 	if err != nil {
 		return err
 	}
@@ -270,35 +272,42 @@ func (mwu *MWUtil) createOrUpdateClusterRolesManifestWork(namespace string) erro
 	return mwu.createOrUpdateManifestWork(manifestWork, namespace)
 }
 
-func (mwu *MWUtil) generateClusterRolesManifestWork(namespace string) (*ocmworkv1.ManifestWork, error) {
-	vrgClusterRole, err := mwu.generateVRGClusterRoleManifest()
-	if err != nil {
-		mwu.Log.Error(err, "failed to generate VolumeReplicationGroup ClusterRole manifest")
-
-		return nil, err
+func (mwu *MWUtil) generateClusterRolesManifestWork(
+	clusterName string,
+	ramenConfig *rmn.RamenConfig,
+) (*ocmworkv1.ManifestWork, error) {
+	objects := [...]interface{}{
+		vrgClusterRole,
+		vrgClusterRoleBinding,
+		namespace(ramenConfig.DrClusterOperator.NamespaceName),
+		olmClusterRole,
+		olmRoleBinding(ramenConfig.DrClusterOperator.NamespaceName),
+		operatorGroup(ramenConfig.DrClusterOperator.NamespaceName),
+		catalogSource(ramenConfig.DrClusterOperator.NamespaceName, ramenConfig.DrClusterOperator.CatalogSourceImageName),
+		subscription(ramenConfig.DrClusterOperator.NamespaceName, ramenConfig.DrClusterOperator.ClusterServiceVersionName),
 	}
+	manifests := make([]ocmworkv1.Manifest, len(objects))
 
-	vrgClusterRoleBinding, err := mwu.generateVRGClusterRoleBindingManifest()
-	if err != nil {
-		mwu.Log.Error(err, "failed to generate VolumeReplicationGroup ClusterRoleBinding manifest")
+	for i, object := range objects {
+		manifest, err := mwu.GenerateManifest(object)
+		if err != nil {
+			mwu.Log.Error(err, "failed to generate manifest", "object", object)
 
-		return nil, err
-	}
+			return nil, err
+		}
 
-	manifests := []ocmworkv1.Manifest{
-		*vrgClusterRole,
-		*vrgClusterRoleBinding,
+		manifests[i] = *manifest
 	}
 
 	return mwu.newManifestWork(
 		ClusterRolesManifestWorkName,
-		namespace,
+		clusterName,
 		map[string]string{},
 		manifests), nil
 }
 
-func (mwu *MWUtil) generateVRGClusterRoleManifest() (*ocmworkv1.Manifest, error) {
-	return mwu.GenerateManifest(&rbacv1.ClusterRole{
+var (
+	vrgClusterRole = &rbacv1.ClusterRole{
 		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
 		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit"},
 		Rules: []rbacv1.PolicyRule{
@@ -308,11 +317,9 @@ func (mwu *MWUtil) generateVRGClusterRoleManifest() (*ocmworkv1.Manifest, error)
 				Verbs:     []string{"create", "get", "list", "update", "delete"},
 			},
 		},
-	})
-}
+	}
 
-func (mwu *MWUtil) generateVRGClusterRoleBindingManifest() (*ocmworkv1.Manifest, error) {
-	return mwu.GenerateManifest(&rbacv1.ClusterRoleBinding{
+	vrgClusterRoleBinding = &rbacv1.ClusterRoleBinding{
 		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
 		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit"},
 		Subjects: []rbacv1.Subject{
@@ -327,7 +334,80 @@ func (mwu *MWUtil) generateVRGClusterRoleBindingManifest() (*ocmworkv1.Manifest,
 			Kind:     "ClusterRole",
 			Name:     "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit",
 		},
-	})
+	}
+
+	olmClusterRole = &rbacv1.ClusterRole{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:olm-edit"},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"operators.coreos.com"},
+				Resources: []string{"operatorgroups"},
+				Verbs:     []string{"create", "get", "list", "update", "delete"},
+			},
+			{
+				APIGroups: []string{"operators.coreos.com"},
+				Resources: []string{"catalogsources"},
+				Verbs:     []string{"create", "get", "list", "update", "delete"},
+			},
+		},
+	}
+)
+
+func olmRoleBinding(namespaceName string) *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		TypeMeta: metav1.TypeMeta{Kind: "RoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "open-cluster-management:klusterlet-work-sa:agent:olm-edit",
+			Namespace: namespaceName,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "klusterlet-work-sa",
+				Namespace: "open-cluster-management-agent",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "open-cluster-management:klusterlet-work-sa:agent:olm-edit",
+		},
+	}
+}
+
+func operatorGroup(namespaceName string) *operatorsv1.OperatorGroup {
+	return &operatorsv1.OperatorGroup{
+		TypeMeta:   metav1.TypeMeta{Kind: "OperatorGroup", APIVersion: "operators.coreos.com/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "ramen-operator-group", Namespace: namespaceName},
+	}
+}
+
+func catalogSource(namespaceName, imageName string) *operatorsv1alpha1.CatalogSource {
+	return &operatorsv1alpha1.CatalogSource{
+		TypeMeta:   metav1.TypeMeta{Kind: "CatalogSource", APIVersion: "operators.coreos.com/v1alpha1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "ramen-catalog", Namespace: namespaceName},
+		Spec: operatorsv1alpha1.CatalogSourceSpec{
+			SourceType:  "grpc",
+			Image:       imageName,
+			DisplayName: "Ramen Operators",
+		},
+	}
+}
+
+func subscription(namespaceName, clusterServiceVersionName string) *operatorsv1alpha1.Subscription {
+	return &operatorsv1alpha1.Subscription{
+		TypeMeta:   metav1.TypeMeta{Kind: "Subscription", APIVersion: "operators.coreos.com/v1alpha1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "ramen-dr-cluster-subscription", Namespace: namespaceName},
+		Spec: &operatorsv1alpha1.SubscriptionSpec{
+			CatalogSource:          "ramen-catalog",
+			CatalogSourceNamespace: namespaceName,
+			Package:                "ramen-dr-cluster-operator",
+			Channel:                "alpha",
+			StartingCSV:            clusterServiceVersionName,
+			InstallPlanApproval:    "Automatic",
+		},
+	}
 }
 
 func (mwu *MWUtil) GenerateManifest(obj interface{}) (*ocmworkv1.Manifest, error) {

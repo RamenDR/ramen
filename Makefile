@@ -37,10 +37,10 @@ RBAC_PROXY_IMG ?= "gcr.io/kubebuilder/kube-rbac-proxy:v0.8.0"
 HUB_NAME ?= $(IMAGE_NAME)-hub-operator
 ifeq (dr,$(findstring dr,$(IMAGE_NAME)))
 	DRCLUSTER_NAME = $(IMAGE_NAME)-cluster-operator
-	BUNDLE_IMG_DRCLUSTER = $(IMAGE_TAG_BASE)-cluster-operator-bundle:$(IMAGE_TAG)
+	BUNDLE_IMG_DRCLUSTER ?= $(IMAGE_TAG_BASE)-cluster-operator-bundle:$(IMAGE_TAG)
 else
 	DRCLUSTER_NAME = $(IMAGE_NAME)-dr-cluster-operator
-	BUNDLE_IMG_DRCLUSTER = $(IMAGE_TAG_BASE)-dr-cluster-operator-bundle:$(IMAGE_TAG)
+	BUNDLE_IMG_DRCLUSTER ?= $(IMAGE_TAG_BASE)-dr-cluster-operator-bundle:$(IMAGE_TAG)
 endif
 
 # SKIP_RANGE is a build time var, that provides a valid value for:
@@ -135,7 +135,7 @@ run-hub: generate manifests ## Run DR Orchestrator controller from your host.
 run-dr-cluster: generate manifests ## Run DR manager controller from your host.
 	go run ./main.go --config=examples/dr_cluster_config.yaml
 
-docker-build: test ## Build docker image with the manager.
+docker-build: ## Build docker image with the manager.
 	docker build -t ${IMG} .
 
 docker-push: ## Push docker image with the manager.
@@ -298,12 +298,19 @@ ifneq ($(origin CATALOG_BASE_IMG), undefined)
 FROM_INDEX_OPT := --from-index $(CATALOG_BASE_IMG)
 endif
 
+BUNDLE_PULL_TOOL ?= docker
+
 # Build a catalog image by adding bundle images to an empty catalog using the operator package manager tool, 'opm'.
 # This recipe invokes 'opm' in 'semver' bundle add mode. For more information on add modes, see:
 # https://github.com/operator-framework/community-operators/blob/7f1438c/docs/packaging-operator.md#updating-your-existing-operator
 .PHONY: catalog-build
 catalog-build: opm ## Build a catalog image.
-	$(OPM) index add --container-tool docker --mode semver --tag $(CATALOG_IMG) --bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT)
+	$(OPM) index add\
+		--mode semver\
+		--tag $(CATALOG_IMG)\
+		--bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT)\
+		--pull-tool $(BUNDLE_PULL_TOOL)\
+		--build-tool docker\
 
 # Push the catalog image.
 .PHONY: catalog-push

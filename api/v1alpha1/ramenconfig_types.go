@@ -105,6 +105,18 @@ type RamenConfig struct {
 	// MaxConcurrentReconciles is the maximum number of concurrent Reconciles which can be run.
 	// Defaults to 1.
 	MaxConcurrentReconciles int
+
+	// dr-cluster operator configuration
+	DrClusterOperator struct {
+		// namespace name
+		NamespaceName string `json:"namespaceName" default:"ramen-system"`
+
+		// catalog source image name
+		CatalogSourceImageName string `json:"catalogSourceImageName" default:"quay.io/ramendr/ramen-operator-catalog:canary"`
+
+		// cluster service version name
+		ClusterServiceVersionName string `json:"clusterServiceVersionName" default:"ramen-dr-cluster-operator.v0.0.1"`
+	} `json:"drClusterOperator"`
 }
 
 func init() {
