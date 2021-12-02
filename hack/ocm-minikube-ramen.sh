@@ -8,6 +8,8 @@ ramen_hack_directory_path_name=$(dirname $0)
 exit_stack_push unset -f true_if_exit_status_and_stderr
 . $ramen_hack_directory_path_name/until_true_or_n.sh
 exit_stack_push unset -f until_true_or_n
+. $ramen_hack_directory_path_name/olm.sh
+exit_stack_push olm_unset
 exit_stack_push unset -v ramen_hack_directory_path_name
 rook_ceph_deploy_spoke()
 {
@@ -29,45 +31,290 @@ rook_ceph_undeploy_spoke()
 exit_stack_push unset -f rook_ceph_undeploy_spoke
 minio_deploy()
 {
-	for cluster_name in $spoke_cluster_names; do
-		kubectl --context $cluster_name apply -f $ramen_hack_directory_path_name/minio-deployment.yaml
-		date
-		kubectl --context $cluster_name -n minio wait deployments/minio --for condition=available --timeout 60s
-		date
-	done; unset -v cluster_name
+	kubectl --context $1 apply -f $ramen_hack_directory_path_name/minio-deployment.yaml
+	date
+	kubectl --context $1 -n minio wait deployments/minio --for condition=available --timeout 60s
+	date
 }
 exit_stack_push unset -f minio_deploy
 minio_undeploy()
 {
-	for cluster_name in $spoke_cluster_names; do
-		kubectl --context $cluster_name delete -f $ramen_hack_directory_path_name/minio-deployment.yaml
-	done; unset -v cluster_name
+	kubectl --context $1 delete -f $ramen_hack_directory_path_name/minio-deployment.yaml
 }
 exit_stack_push unset -f minio_undeploy
-ramen_image_directory_name=${ramen_image_directory_name-localhost}
-ramen_image_name=${ramen_image_name-ramen-operator}
-ramen_image_tag=${ramen_image_tag-v0.N}
-ramen_image_name_colon_tag=${ramen_image_directory_name}/${ramen_image_name}:${ramen_image_tag}
-exit_stack_push unset -v ramen_image_name_colon_tag ramen_image_tag ramen_image_name ramen_image_directory_name
-ramen_build()
+minio_deploy_spokes()
 {
+	for cluster_name in $spoke_cluster_names; do minio_deploy $cluster_name; done; unset -v cluster_name
+}
+exit_stack_push unset -f minio_deploy_spokes
+minio_undeploy_spokes()
+{
+	for cluster_name in $spoke_cluster_names; do minio_undeploy $cluster_name; done; unset -v cluster_name
+}
+exit_stack_push unset -f minio_undeploy_spokes
+image_registry_port_number=5000
+exit_stack_push unset -v image_registry_port_number
+image_registry_address=localhost:$image_registry_port_number
+exit_stack_push unset -v image_registry_address
+image_registry_container_name=myregistry
+exit_stack_push unset -v image_registry_container_name
+image_registry_deploy_command="docker run -d --name $image_registry_container_name -p $image_registry_port_number:$image_registry_port_number docker.io/library/registry:2"
+exit_stack_push unset -v image_registry_deploy_command
+image_registry_undeploy_command="docker container stop $image_registry_container_name;docker container rm -v $image_registry_container_name"
+exit_stack_push unset -v image_registry_undeploy_command
+image_registry_deploy_localhost()
+{
+	$image_registry_deploy_command
+}
+exit_stack_push unset -f image_registry_deploy_localhost
+image_registry_undeploy_localhost()
+{
+	eval $image_registry_undeploy_command
+}
+exit_stack_push unset -f image_registry_undeploy_localhost
+image_registry_deploy_cluster()
+{
+#	minikube -p $cluster_name addons enable registry
+	minikube -p $cluster_name ssh -- "$image_registry_deploy_command"
+}
+exit_stack_push unset -f image_registry_deploy_cluster
+image_registry_undeploy_cluster()
+{
+#	minikube -p $cluster_name addons disable registry
+	minikube -p $cluster_name ssh -- "$image_registry_undeploy_command"
+}
+exit_stack_push unset -f image_registry_undeploy_cluster
+image_registry_deploy_spokes()
+{
+	for cluster_name in $spoke_cluster_names; do image_registry_deploy_cluster $cluster_name; done; unset -v cluster_name
+}
+exit_stack_push unset -f image_registry_deploy_spokes
+image_registry_undeploy_spokes()
+{
+	for cluster_name in $spoke_cluster_names; do image_registry_undeploy_cluster $cluster_name; done; unset -v cluster_name
+}
+exit_stack_push unset -f image_registry_undeploy_spokes
+image_archive()
+{
+	set -- $1 $(echo $1|tr : _)
+	set -- $1 $HOME/.minikube/cache/images/$(dirname $2) $(basename $2)
+	mkdir -p $2
+	set -- $1 $2/$3
+	# docker-archive doesn't support modifying existing images
+	rm -f $2
+	docker image save $1 -o $2
+}
+exit_stack_push unset -f image_archive
+image_load_cluster()
+{
+	minikube -p $1 image load $2
+}
+exit_stack_push unset -f image_load_cluster
+image_and_containers_exited_using_remove_cluster()
+{
+	minikube -p $1 ssh -- docker container rm \$\(docker container ls --all --filter ancestor=$2 --filter status=exited --quiet\)\;docker image rm $2
+}
+exit_stack_push unset -f image_and_containers_exited_using_remove_cluster
+image_remove_cluster()
+{
+	minikube -p $1 ssh -- docker image rm $2
+}
+exit_stack_push unset -f image_remove_cluster
+image_push_cluster()
+{
+	minikube -p $1 ssh -- docker image push $2
+}
+exit_stack_push unset -f image_push_cluster
+ramen_image_directory_name=${ramen_image_directory_name-ramendr}
+exit_stack_push unset -v ramen_image_directory_name
+ramen_image_name_prefix=ramen
+exit_stack_push unset -v ramen_image_name_prefix
+ramen_image_tag=${ramen_image_tag-canary}
+exit_stack_push unset -v ramen_image_tag
+ramen_image_reference()
+{
+	echo ${1:+$1/}${ramen_image_directory_name:+$ramen_image_directory_name/}$ramen_image_name_prefix-$2:$ramen_image_tag
+}
+exit_stack_push unset -f ramen_image_reference
+ramen_image_reference_registry_local()
+{
+	ramen_image_reference $image_registry_address $1
+}
+exit_stack_push unset -f ramen_image_reference_registry_local
+ramen_manager_image_reference=$(ramen_image_reference "${ramen_manager_image_registry_address-localhost}" operator)
+exit_stack_push unset -v ramen_manager_image_reference
+ramen_manager_image_build()
+{
+# ENV variable to skip building ramen
+#   - expects docker image named:
+#     [$ramen_manager_image_registry_address/][$ramen_image_directory_name/]ramen-operator:$ramen_image_tag
+	if test "${skip_ramen_build:-false}" != false; then
+		return
+	fi
 	${ramen_hack_directory_path_name}/docker-uninstall.sh ${HOME}/.local/bin
 	. ${ramen_hack_directory_path_name}/podman-docker-install.sh
 	. ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local; unset -f go_install
-	make -C $ramen_directory_path_name docker-build IMG=$ramen_image_name_colon_tag
-	ramen_archive
+	make -C $ramen_directory_path_name docker-build IMG=$ramen_manager_image_reference
 }
-exit_stack_push unset -f ramen_build
-ramen_archive()
+exit_stack_push unset -f ramen_manager_image_build
+ramen_manager_image_archive()
 {
-	set -- ${HOME}/.minikube/cache/images/${ramen_image_directory_name}
-	mkdir -p ${1}
-	set -- ${1}/${ramen_image_name}_${ramen_image_tag}
-	# docker-archive doesn't support modifying existing images
-	rm -f ${1}
-	docker save ${ramen_image_name_colon_tag} -o ${1}
+	image_archive $ramen_manager_image_reference
 }
-exit_stack_push unset -f ramen_archive
+exit_stack_push unset -f ramen_manager_image_archive
+ramen_manager_image_load_cluster()
+{
+	image_load_cluster $1 $ramen_manager_image_reference
+}
+exit_stack_push unset -f ramen_manager_image_load_cluster
+ramen_manager_image_remove_cluster()
+{
+	image_remove_cluster $1 $ramen_manager_image_reference
+}
+exit_stack_push unset -f ramen_manager_image_remove_cluster
+ramen_bundle_image_reference()
+{
+	ramen_image_reference_registry_local $1-operator-bundle
+}
+exit_stack_push unset -f ramen_bundle_image_reference
+ramen_bundle_image_spoke_reference=$(ramen_bundle_image_reference dr-cluster)
+exit_stack_push unset -v ramen_bundle_image_spoke_reference
+ramen_bundle_image_build()
+{
+	make -C $ramen_directory_path_name bundle-$1-build\
+		IMG=$ramen_manager_image_reference\
+		BUNDLE_IMG_DRCLUSTER=$ramen_bundle_image_spoke_reference\
+		IMAGE_TAG=$ramen_image_tag\
+
+}
+exit_stack_push unset -f ramen_bundle_image_build
+ramen_bundle_image_spoke_build()
+{
+	ramen_bundle_image_build dr-cluster
+}
+exit_stack_push unset -f ramen_bundle_image_spoke_build
+ramen_bundle_image_spoke_push()
+{
+	podman push --tls-verify=false $ramen_bundle_image_spoke_reference
+}
+exit_stack_push unset -f ramen_bundle_image_spoke_push
+ramen_bundle_image_spoke_archive()
+{
+	image_archive $ramen_bundle_image_spoke_reference
+}
+exit_stack_push unset -f ramen_bundle_image_spoke_archive
+ramen_bundle_image_spoke_load_cluster()
+{
+	image_load_cluster $1 $ramen_bundle_image_spoke_reference
+}
+exit_stack_push unset -f ramen_bundle_image_spoke_load_cluster
+ramen_bundle_image_spoke_remove_cluster()
+{
+	image_and_containers_exited_using_remove_cluster $1 $ramen_bundle_image_spoke_reference
+}
+exit_stack_push unset -f ramen_bundle_image_spoke_remove_cluster
+ramen_bundle_image_spoke_push_cluster()
+{
+	image_push_cluster $1 $ramen_bundle_image_spoke_reference
+}
+exit_stack_push unset -f ramen_bundle_image_spoke_push_cluster
+ramen_catalog_image_reference=$(ramen_image_reference_registry_local operator-catalog)
+exit_stack_push unset -v ramen_catalog_image_reference
+ramen_catalog_image_build()
+{
+	make -C $ramen_directory_path_name catalog-build\
+		BUNDLE_IMGS=$1\
+		BUNDLE_PULL_TOOL=none\ --skip-tls\
+		CATALOG_IMG=$ramen_catalog_image_reference\
+
+}
+exit_stack_push unset -f ramen_catalog_image_build
+ramen_catalog_image_spoke_build()
+{
+	ramen_catalog_image_build $ramen_bundle_image_spoke_reference
+}
+exit_stack_push unset -f ramen_catalog_image_spoke_build
+ramen_catalog_image_archive()
+{
+	image_archive $ramen_catalog_image_reference
+}
+exit_stack_push unset -f ramen_catalog_image_archive
+ramen_catalog_image_load_cluster()
+{
+	image_load_cluster $1 $ramen_catalog_image_reference
+}
+exit_stack_push unset -f ramen_catalog_image_load_cluster
+ramen_catalog_image_remove_cluster()
+{
+	image_remove_cluster $1 $ramen_catalog_image_reference
+}
+exit_stack_push unset -f ramen_catalog_image_remove_cluster
+ramen_catalog_image_push_cluster()
+{
+	image_push_cluster $1 $ramen_catalog_image_reference
+}
+exit_stack_push unset -f ramen_catalog_image_push_cluster
+ramen_images_build()
+{
+	ramen_manager_image_build
+	ramen_bundle_image_spoke_build
+	image_registry_deploy_localhost
+	exit_stack_push image_registry_undeploy_localhost
+	ramen_bundle_image_spoke_push
+	ramen_catalog_image_spoke_build
+	exit_stack_pop
+}
+exit_stack_push unset -f ramen_images_build
+ramen_images_archive()
+{
+	ramen_manager_image_archive
+	ramen_bundle_image_spoke_archive
+	ramen_catalog_image_archive
+}
+exit_stack_push unset -f ramen_images_archive
+ramen_images_build_and_archive()
+{
+	ramen_images_build
+	ramen_images_archive
+}
+exit_stack_push unset -f ramen_images_build_and_archive
+ramen_images_load_spoke()
+{
+	ramen_manager_image_load_cluster $1
+	ramen_bundle_image_spoke_load_cluster $1
+	ramen_catalog_image_load_cluster $1
+}
+exit_stack_push unset -f ramen_images_load_spoke
+ramen_images_push_spoke()
+{
+	ramen_bundle_image_spoke_push_cluster $1
+	ramen_catalog_image_push_cluster $1
+}
+exit_stack_push unset -f ramen_images_push_spoke
+ramen_images_deploy_spoke()
+{
+	ramen_images_load_spoke	$1
+	image_registry_deploy_cluster $1
+	ramen_images_push_spoke	$1
+}
+exit_stack_push unset -f ramen_images_deploy_spoke
+ramen_images_undeploy_spoke()
+{
+	ramen_catalog_image_remove_cluster $1
+	ramen_bundle_image_spoke_remove_cluster $1
+	ramen_manager_image_remove_cluster $1
+}
+exit_stack_push unset -f ramen_images_undeploy_spoke
+ramen_images_deploy_spokes()
+{
+	for cluster_name in $spoke_cluster_names; do ramen_images_deploy_spoke $cluster_name; done; unset -v cluster_name
+}
+exit_stack_push unset -f ramen_images_deploy_spokes
+ramen_images_undeploy_spokes()
+{
+	for cluster_name in $spoke_cluster_names; do ramen_images_undeploy_spoke $cluster_name; done; unset -v cluster_name
+}
+exit_stack_push unset -f ramen_images_undeploy_spokes
 kube_context_set()
 {
 	exit_stack_push kubectl config use-context $(kubectl config current-context)
@@ -81,12 +328,17 @@ kube_context_set_undo()
 exit_stack_push unset -f kube_context_set_undo
 ramen_deploy_hub_or_spoke()
 {
-	minikube -p $1 image load $ramen_image_name_colon_tag
+	ramen_manager_image_load_cluster $1
 	. $ramen_hack_directory_path_name/go-install.sh; go_install $HOME/.local; unset -f go_install
 	kube_context_set $1
-	make -C $ramen_directory_path_name deploy-$2 IMG=$ramen_image_name_colon_tag
+	make -C $ramen_directory_path_name deploy-$2 IMG=$ramen_manager_image_reference
 	kube_context_set_undo
 	kubectl --context $1 -n ramen-system wait deployments --all --for condition=available --timeout 60s
+	ramen_config_deploy_hub_or_spoke $1 $2
+}
+exit_stack_push unset -f ramen_deploy_hub_or_spoke
+ramen_config_deploy_hub_or_spoke()
+{
 	# Add s3 profile to ramen config
 	cat <<-EOF | kubectl --context $1 apply -f -
 	apiVersion: v1
@@ -118,6 +370,9 @@ ramen_deploy_hub_or_spoke()
 	  s3SecretRef:
 	    name: s3secret
 	    namespace: ramen-system
+	drClusterOperator:
+	  namespaceName: ramen-system
+	  catalogSourceImageName: $ramen_catalog_image_reference
 	EOF
 
 	kubectl --context $1 -n ramen-system\
@@ -126,7 +381,12 @@ ramen_deploy_hub_or_spoke()
 		kubectl --context $1 -n ramen-system replace -f -
 	unset -v ramen_config_map_name
 }
-exit_stack_push unset -f ramen_deploy_hub_or_spoke
+exit_stack_push unset -f ramen_config_deploy_hub_or_spoke
+ramen_config_deploy_spoke()
+{
+	ramen_config_deploy_hub_or_spoke $1 dr-cluster
+}
+exit_stack_push unset -f ramen_config_deploy_hub_or_spoke
 ramen_deploy_hub()
 {
 	ramen_deploy_hub_or_spoke $hub_cluster_name hub
@@ -152,15 +412,17 @@ ramen_undeploy_hub_or_spoke()
 	# Makefile:149: recipe for target 'undeploy-hub' failed
 	# make: *** [undeploy-hub] Error 1
 	kube_context_set_undo
-	minikube -p $1 ssh -- docker image rm $ramen_image_name_colon_tag
-	# Error: No such image: $ramen_image_name_colon_tag
+	ramen_manager_image_remove_cluster $1
+	# Error: No such image: $ramen_manager_image_reference
 	# ssh: Process exited with status 1
 }
 exit_stack_push unset -f ramen_undeploy_hub_or_spoke
 ramen_undeploy_hub()
 {
 	ramen_samples_channel_and_drpolicy_undeploy
+	set +e # TODO remove once each resource is owned by hub or spoke but not both
 	ramen_undeploy_hub_or_spoke $hub_cluster_name hub
+	set -e
 }
 exit_stack_push unset -f ramen_undeploy_hub
 ramen_undeploy_spoke()
@@ -168,11 +430,33 @@ ramen_undeploy_spoke()
 	ramen_undeploy_hub_or_spoke $1 dr-cluster
 }
 exit_stack_push unset -f ramen_undeploy_spoke
+ramen_deploy_spokes()
+{
+	for cluster_name in $spoke_cluster_names; do ramen_deploy_spoke $cluster_name; done; unset -v cluster_name
+}
+exit_stack_push unset -f ramen_deploy_spokes
+ramen_undeploy_spokes()
+{
+	for cluster_name in $spoke_cluster_names; do ramen_undeploy_spoke $cluster_name; done; unset -v cluster_name
+}
+exit_stack_push unset -f ramen_undeploy_spokes
+olm_deploy_spokes()
+{
+	for cluster_name in $spoke_cluster_names; do olm_deploy $cluster_name; done; unset -v cluster_name
+}
+exit_stack_push unset -f olm_deploy_spokes
+olm_undeploy_spokes()
+{
+	for cluster_name in $spoke_cluster_names; do olm_undeploy $cluster_name; done; unset -v cluster_name
+}
+exit_stack_push unset -f olm_undeploy_spokes
 ocm_ramen_samples_git_ref=${ocm_ramen_samples_git_ref-main}
 ocm_ramen_samples_git_path=${ocm_ramen_samples_git_path-ramendr}
 exit_stack_push unset -v ocm_ramen_samples_git_ref
+exit_stack_push unset -v ocm_ramen_samples_git_path
 ramen_samples_channel_and_drpolicy_deploy()
 {
+	ramen_images_deploy_spokes
 	set -- ocm-ramen-samples/subscriptions
 	set -- /tmp/$USER/$1 $1 $spoke_cluster_names
 	mkdir -p $1
@@ -195,6 +479,11 @@ ramen_samples_channel_and_drpolicy_deploy()
 	            s3ProfileName: minio-on-$4
 	a
 	kubectl --context $hub_cluster_name apply -k $1
+	for cluster_name in $spoke_cluster_names; do
+		until_true_or_n 300 kubectl --context $cluster_name -n ramen-system wait deployments ramen-dr-cluster-operator --for condition=available --timeout 0
+		image_registry_undeploy_cluster $cluster_name
+		ramen_config_deploy_spoke $cluster_name
+	done; unset -v cluster_name
 	kubectl --context $hub_cluster_name -n ramen-samples get channels/ramen-gitops
 }
 exit_stack_push unset -f ramen_samples_channel_and_drpolicy_deploy
@@ -203,6 +492,15 @@ ramen_samples_channel_and_drpolicy_undeploy()
 	date
 	kubectl --context $hub_cluster_name delete -k https://github.com/$ocm_ramen_samples_git_path/ocm-ramen-samples/subscriptions?ref=$ocm_ramen_samples_git_ref
 	date
+	for cluster_name in $spoke_cluster_names; do
+		true_if_exit_status_and_stderr 1 'error: no matching resources found' \
+		kubectl --context $cluster_name -n ramen-system wait deployments ramen-dr-cluster-operator --for delete
+		# TODO remove once drpolicy controller does this
+		kubectl --context $cluster_name delete\
+			customresourcedefinitions.apiextensions.k8s.io/volumereplicationgroups.ramendr.openshift.io\
+
+		ramen_images_undeploy_spoke $cluster_name
+	done; unset -v cluster_name
 }
 exit_stack_push unset -f ramen_samples_channel_and_drpolicy_undeploy
 application_sample_place()
@@ -228,7 +526,6 @@ application_sample_place()
 	        path: /spec/$3Cluster
 	        value: $1
 	a
-	kubectl create namespace busybox-sample --dry-run=client -o yaml | kubectl --context $1 apply -f -
 	kubectl --context $hub_cluster_name apply -k $5
 	until_true_or_n 90 eval test \"\$\(kubectl --context ${hub_cluster_name} -n busybox-sample get subscriptions/busybox-sub -ojsonpath='{.status.phase}'\)\" = Propagated
 	until_true_or_n 30 eval test \"\$\(kubectl --context $hub_cluster_name -n busybox-sample get placementrules/busybox-placement -ojsonpath='{.status.decisions[].clusterName}'\)\" = $1
@@ -257,9 +554,10 @@ application_sample_undeploy_wait_and_namespace_undeploy()
 	date
 	true_if_exit_status_and_stderr 1 'error: no matching resources found' \
 	kubectl --context $1 -n busybox-sample wait persistentvolumeclaims/busybox-pvc --for delete
-	date
-	kubectl --context $1 delete $2 namespace/busybox-sample
-	date
+	# TODO remove once drplacement controller does this
+	kubectl --context $hub_cluster_name -n $1 delete manifestworks/busybox-drpc-busybox-sample-ns-mw #--ignore-not-found
+	true_if_exit_status_and_stderr 1 'error: no matching resources found' \
+	kubectl --context $1 wait namespace/busybox-sample --for delete
 }
 exit_stack_push unset -f application_sample_undeploy_wait_and_namespace_undeploy
 application_sample_deploy()
@@ -330,35 +628,28 @@ exit_stack_push unset -f rook_ceph_volume_replication_image_latest_deploy
 ramen_deploy()
 {
 	ramen_deploy_hub
-	for cluster_name in $spoke_cluster_names; do ramen_deploy_spoke $cluster_name; done; unset -v cluster_name
 }
 exit_stack_push unset -f ramen_deploy
 ramen_undeploy()
 {
-	for cluster_name in $spoke_cluster_names; do ramen_undeploy_spoke $cluster_name; done; unset -v cluster_name
-	set +e # TODO remove once each resource is owned by hub or spoke but not both
 	ramen_undeploy_hub
-	set -e
 }
 exit_stack_push unset -f ramen_undeploy
 deploy()
 {
 	hub_cluster_name=$hub_cluster_name spoke_cluster_names=$spoke_cluster_names $ramen_hack_directory_path_name/ocm-minikube.sh
 	rook_ceph_deploy
-	minio_deploy
-# ENV variable to skip building ramen
-#   - deploy will expect pre-loaded local docker image named
-#     ${ramen_image_directory_name}/${ramen_image_name}:${ramen_image_tag}
-	if test "${skip_ramen_build:-false}" = false; then
-		ramen_build
-	fi
+	minio_deploy_spokes
+	ramen_images_build_and_archive
+	olm_deploy_spokes
 	ramen_deploy
 }
 exit_stack_push unset -f deploy
 undeploy()
 {
 	ramen_undeploy
-	minio_undeploy
+	olm_undeploy_spokes
+	minio_undeploy_spokes
 	rook_ceph_undeploy
 }
 exit_stack_push unset -f undeploy

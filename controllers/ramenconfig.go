@@ -21,10 +21,10 @@ import (
 	"io/ioutil"
 	"net/url"
 	"os"
+	"reflect"
 
 	"github.com/ghodss/yaml"
 	"github.com/go-logr/logr"
-	"github.com/prometheus/common/log"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -66,7 +66,7 @@ func LoadControllerConfig(configFile string, scheme *runtime.Scheme,
 // RamenConfig file for every S3 store profile access turns out to be more
 // expensive, we may need to enhance this logic to load it only when
 // RamenConfig has changed.
-func ReadRamenConfig() (ramenConfig ramendrv1alpha1.RamenConfig, err error) {
+func ReadRamenConfig(log logr.Logger) (ramenConfig ramendrv1alpha1.RamenConfig, err error) {
 	if cachedRamenConfigFileName == "" {
 		err = fmt.Errorf("config file not specified")
 
@@ -91,12 +91,14 @@ func ReadRamenConfig() (ramenConfig ramendrv1alpha1.RamenConfig, err error) {
 		return
 	}
 
+	drClusterOperatorValuesDefaultIfZero(&ramenConfig, log)
+
 	return
 }
 
-func getRamenConfigS3StoreProfile(profileName string) (
+func getRamenConfigS3StoreProfile(profileName string, log logr.Logger) (
 	s3StoreProfile ramendrv1alpha1.S3StoreProfile, err error) {
-	ramenConfig, err := ReadRamenConfig()
+	ramenConfig, err := ReadRamenConfig(log)
 	if err != nil {
 		return s3StoreProfile, err
 	}
@@ -145,10 +147,10 @@ func getRamenConfigS3StoreProfile(profileName string) (
 	return s3StoreProfile, nil
 }
 
-func getMaxConcurrentReconciles() int {
+func getMaxConcurrentReconciles(log logr.Logger) int {
 	const defaultMaxConcurrentReconciles = 1
 
-	ramenConfig, err := ReadRamenConfig()
+	ramenConfig, err := ReadRamenConfig(log)
 	if err != nil {
 		return defaultMaxConcurrentReconciles
 	}
@@ -158,4 +160,21 @@ func getMaxConcurrentReconciles() int {
 	}
 
 	return ramenConfig.MaxConcurrentReconciles
+}
+
+func drClusterOperatorValuesDefaultIfZero(ramenConfig *ramendrv1alpha1.RamenConfig, log logr.Logger) {
+	value := reflect.ValueOf(&ramenConfig.DrClusterOperator).Elem()
+	typ := value.Type()
+
+	for i := 0; i < value.NumField(); i++ {
+		v := value.Field(i)
+		field := typ.Field(i)
+		zero := v.IsZero()
+
+		if zero {
+			v.SetString(field.Tag.Get("default"))
+		}
+
+		log.Info("dr cluster operator", field.Name, v.String(), "default", zero)
+	}
 }

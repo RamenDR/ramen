@@ -28,6 +28,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/go-logr/logr"
 	errorswrapper "github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -86,7 +87,7 @@ import (
 type ObjectStoreGetter interface {
 	// ObjectStore returns an object that satisfies ObjectStorer interface
 	ObjectStore(ctx context.Context, r client.Reader,
-		s3Profile string, callerTag string) (ObjectStorer, error)
+		s3Profile string, callerTag string, log logr.Logger) (ObjectStorer, error)
 }
 
 type ObjectStorer interface {
@@ -125,8 +126,8 @@ type s3ObjectStoreGetter struct{}
 // secret is not configured, or if client session creation fails.
 func (s3ObjectStoreGetter) ObjectStore(ctx context.Context,
 	r client.Reader, s3ProfileName string,
-	callerTag string) (ObjectStorer, error) {
-	s3StoreProfile, err := getRamenConfigS3StoreProfile(s3ProfileName)
+	callerTag string, log logr.Logger) (ObjectStorer, error) {
+	s3StoreProfile, err := getRamenConfigS3StoreProfile(s3ProfileName, log)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get profile %s for caller %s, %w",
 			s3ProfileName, callerTag, err)
