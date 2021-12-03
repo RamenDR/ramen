@@ -374,8 +374,8 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Completed")
 	d.log.Info("Failover completed", "state", d.getLastDRState())
 
-	// The failover is complete, but we still need to clean up other
-	// secondaries, hence, returning a NOT done
+	// The failover is complete, but we still need to clean up the failed primary.
+	// hence, returning a NOT done
 	return !done, nil
 }
 
@@ -693,27 +693,6 @@ func (d *DRPCInstance) executeRelocation(targetCluster, targetClusterNamespace s
 		return err
 	}
 
-	clusterToSkip := targetCluster
-
-	// Cleaning up the previous VRG primary requires many steps. In this step, we update
-	// the VRG to secondary, and then the subsequent steps, we clean them up.
-	return d.updateOtherVRGsToSecondary(clusterToSkip)
-}
-
-func (d *DRPCInstance) updateOtherVRGsToSecondary(clusterToSkip string) error {
-	for _, drCluster := range d.drPolicy.Spec.DRClusterSet {
-		clusterName := drCluster.Name
-		if clusterToSkip == clusterName {
-			continue
-		}
-
-		err := d.updateVRGStateToSecondary(clusterName)
-		if err != nil {
-			return err
-		}
-	}
-
-	// We need to wait for the MW to go to applied state
 	return nil
 }
 
