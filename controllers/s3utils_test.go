@@ -77,7 +77,11 @@ type fakeObjectStorer struct{}
 func (fakeObjectStorer) CreateBucket(bucket string) error { return nil }
 func (fakeObjectStorer) DeleteBucket(bucket string) error { return nil }
 func (fakeObjectStorer) PurgeBucket(bucket string) error  { return nil }
-func (fakeObjectStorer) UploadPV(pvKeyPrefix, pvKeySuffix string, pv corev1.PersistentVolume) error {
+func (fakeObjectStorer) UploadPV(pvKeyPrefix, pvKeySuffix string, pv *corev1.PersistentVolume) error {
+	return nil
+}
+
+func (fakeObjectStorer) UploadPVC(pvcKeyPrefix, pvcKeySuffix string, pvc *corev1.PersistentVolumeClaim) error {
 	return nil
 }
 
@@ -94,8 +98,9 @@ func (fakeObjectStorer) VerifyPVUpload(pvKeyPrefix, pvKeySuffix string,
 	return nil
 }
 
-func (fakeObjectStorer) DownloadPVs(pvKeyPrefix string) ([]corev1.PersistentVolume, error) {
-	return []corev1.PersistentVolume{}, nil
+func (fakeObjectStorer) DownloadPVsAndPVCs(pvKeyPrefix string) ([]corev1.PersistentVolume,
+	[]corev1.PersistentVolumeClaim, error) {
+	return []corev1.PersistentVolume{}, []corev1.PersistentVolumeClaim{}, nil
 }
 
 func (fakeObjectStorer) DownloadTypedObjects(keyPrefix string, objectType reflect.Type) (interface{}, error) {

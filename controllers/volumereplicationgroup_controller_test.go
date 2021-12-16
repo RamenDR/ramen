@@ -1049,46 +1049,65 @@ func waitForPVRestore() {
 
 type FakePVDownloader struct{}
 
-func (s FakePVDownloader) DownloadPVs(ctx context.Context, r client.Reader,
+func (s FakePVDownloader) DownloadPVsAndPVCs(ctx context.Context, r client.Reader,
 	objStoreGetter vrgController.ObjectStoreGetter, s3Profile, callerTag string,
-	keyPrefix string, log logr.Logger) ([]corev1.PersistentVolume, error) {
+	keyPrefix string, log logr.Logger) ([]corev1.PersistentVolume, []corev1.PersistentVolumeClaim, error) {
 	capacity := corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}
+	pvList := []corev1.PersistentVolume{}
+	// pvcList := []corev1.PersistentVolumeClaim{}
+
+	var i int
+
+	for _, pvName := range PVsToRestore {
+		objectNameSuffix := 'a' + testCaseNumber - 1
+		namespace := fmt.Sprintf("envtest-ns-%c", objectNameSuffix)
+		pvcName := fmt.Sprintf("pvc-%c-%02d", objectNameSuffix, i)
+		i++
+
+		pv := createPVObject(pvName, pvcName, namespace, capacity)
+
+		pvList = append(pvList, *pv)
+		// pvc := createPVCObject(pvName, pvcName, namespace, capacity)
+		// pvcList = append(pvcList, *pvc)
+	}
+
+	return pvList, nil, nil
+}
+
+func createPVObject(pvName, pvcName, namespace string,
+	capacity corev1.ResourceList) *corev1.PersistentVolume {
 	accessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
 	hostPathType := corev1.HostPathDirectoryOrCreate
 
-	pvList := []corev1.PersistentVolume{}
-
-	for _, pvName := range PVsToRestore {
-		pv := &corev1.PersistentVolume{
-			ObjectMeta: metav1.ObjectMeta{Name: pvName},
-			Spec: corev1.PersistentVolumeSpec{
-				Capacity: capacity,
-				PersistentVolumeSource: corev1.PersistentVolumeSource{
-					HostPath: &corev1.HostPathVolumeSource{
-						Path: "/tmp/kube",
-						Type: &hostPathType,
-					},
+	return &corev1.PersistentVolume{
+		ObjectMeta: metav1.ObjectMeta{Name: pvName},
+		Spec: corev1.PersistentVolumeSpec{
+			Capacity: capacity,
+			PersistentVolumeSource: corev1.PersistentVolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: "/tmp/kube",
+					Type: &hostPathType,
 				},
-				AccessModes: accessModes,
-				ClaimRef: &corev1.ObjectReference{
-					Kind:      "PersistentVolumeClaim",
-					Namespace: "my-namespace",
-					Name:      "PVC_of_" + pvName,
-				},
-				PersistentVolumeReclaimPolicy: "Delete",
-				StorageClassName:              "manual",
-				MountOptions:                  []string{},
-				NodeAffinity: &corev1.VolumeNodeAffinity{
-					Required: &corev1.NodeSelector{
-						NodeSelectorTerms: []corev1.NodeSelectorTerm{
-							{
-								MatchExpressions: []corev1.NodeSelectorRequirement{
-									{
-										Key:      "KeyNode",
-										Operator: corev1.NodeSelectorOpIn,
-										Values: []string{
-											"node1",
-										},
+			},
+			AccessModes: accessModes,
+			ClaimRef: &corev1.ObjectReference{
+				Kind:      "PersistentVolumeClaim",
+				Namespace: namespace,
+				Name:      pvcName,
+			},
+			PersistentVolumeReclaimPolicy: "Delete",
+			StorageClassName:              "manual",
+			MountOptions:                  []string{},
+			NodeAffinity: &corev1.VolumeNodeAffinity{
+				Required: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "KeyNode",
+									Operator: corev1.NodeSelectorOpIn,
+									Values: []string{
+										"node1",
 									},
 								},
 							},
@@ -1096,17 +1115,34 @@ func (s FakePVDownloader) DownloadPVs(ctx context.Context, r client.Reader,
 					},
 				},
 			},
-		}
-
-		pvList = append(pvList, *pv)
+		},
 	}
-
-	return pvList, nil
 }
+
+// func createPVCObject(pvName, pvcName, namespace string,
+// 	capacity corev1.ResourceList) *corev1.PersistentVolumeClaim {
+// 	storageclass := "manual"
+// 	accessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
+
+// 	return &corev1.PersistentVolumeClaim{
+// 		TypeMeta: metav1.TypeMeta{},
+// 		ObjectMeta: metav1.ObjectMeta{
+// 			Name:      pvcName,
+// 			Labels:    map[string]string{},
+// 			Namespace: namespace,
+// 		},
+// 		Spec: corev1.PersistentVolumeClaimSpec{
+// 			AccessModes:      accessModes,
+// 			Resources:        corev1.ResourceRequirements{Requests: capacity},
+// 			VolumeName:       pvName,
+// 			StorageClassName: &storageclass,
+// 		},
+// 	}
+// }
 
 type FakePVUploader struct{}
 
-func (s FakePVUploader) UploadPV(v interface{}, s3ProfileName string, pvc *corev1.PersistentVolumeClaim) error {
+func (s FakePVUploader) UploadPVAndPVC(v interface{}, s3ProfileName string, pvc *corev1.PersistentVolumeClaim) error {
 	UploadedPVs[pvc.Spec.VolumeName] = Empty{}
 
 	return nil

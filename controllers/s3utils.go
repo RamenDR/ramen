@@ -92,15 +92,17 @@ type ObjectStoreGetter interface {
 
 type ObjectStorer interface {
 	UploadPV(pvKeyPrefix, pvKeySuffix string,
-		pv corev1.PersistentVolume) error
+		pv *corev1.PersistentVolume) error
+	UploadPVC(pvcKeyPrefix, pvcKeySuffix string,
+		pvc *corev1.PersistentVolumeClaim) error
 	UploadTypedObject(keyPrefix, keySuffix string,
 		uploadContent interface{}) error
 	UploadObject(key string,
 		uploadContent interface{}) error
 	VerifyPVUpload(pvKeyPrefix, pvKeySuffix string,
 		verifyPV corev1.PersistentVolume) error
-	DownloadPVs(pvKeyPrefix string) (
-		pvList []corev1.PersistentVolume, err error)
+	DownloadPVsAndPVCs(keyPrefix string) (pvList []corev1.PersistentVolume,
+		pvcList []corev1.PersistentVolumeClaim, err error)
 	DownloadTypedObjects(keyPrefix string,
 		objectType reflect.Type) (interface{}, error)
 	ListKeys(keyPrefix string) (keys []string, err error)
@@ -327,8 +329,17 @@ func (s *s3ObjectStore) PurgeBucket(bucket string) (
 // - pvKeyPrefix should have any required delimiters like '/'
 // - OK to call UploadPV() concurrently from multiple goroutines safely.
 func (s *s3ObjectStore) UploadPV(pvKeyPrefix, pvKeySuffix string,
-	pv corev1.PersistentVolume) error {
-	return s.UploadTypedObject(pvKeyPrefix, pvKeySuffix, pv)
+	pv *corev1.PersistentVolume) error {
+	return s.UploadTypedObject(pvKeyPrefix, pvKeySuffix, *pv)
+}
+
+// UploadPVC uploads the given PVC to the bucket with a key of
+// "<pvKeyPrefix><v1.PersistentVolumeClaim/><pvKeySuffix>".
+// - pvKeyPrefix should have any required delimiters like '/'
+// - OK to call UploadPVC() concurrently from multiple goroutines safely.
+func (s *s3ObjectStore) UploadPVC(pvcKeyPrefix, pvcKeySuffix string,
+	pvc *corev1.PersistentVolumeClaim) error {
+	return s.UploadTypedObject(pvcKeyPrefix, pvcKeySuffix, *pvc)
 }
 
 // UploadTypedObject uploads to the bucket the given uploadContent with a
@@ -405,25 +416,37 @@ func (s *s3ObjectStore) VerifyPVUpload(pvKeyPrefix, pvKeySuffix string,
 	return nil
 }
 
-// DownloadPVs downloads all PVs in the bucket.
-// - Downloads PVs with the given key prefix.
+// DownloadPVsAndPVCs downloads all PVs and the PVCs in the bucket.
+// - Downloads PVs and PVCs with the given key prefix.
 // - If bucket doesn't exists, will return ErrCodeNoSuchBucket "NoSuchBucket"
-func (s *s3ObjectStore) DownloadPVs(pvKeyPrefix string) (
-	pvList []corev1.PersistentVolume, err error) {
+func (s *s3ObjectStore) DownloadPVsAndPVCs(keyPrefix string) (
+	pvList []corev1.PersistentVolume, pvcList []corev1.PersistentVolumeClaim, err error) {
 	objectType := reflect.TypeOf(corev1.PersistentVolume{})
 	bucket := s.s3Bucket
 
-	result, err := s.DownloadTypedObjects(pvKeyPrefix, objectType)
+	result, err := s.DownloadTypedObjects(keyPrefix, objectType)
 	if err != nil {
-		return nil, fmt.Errorf("unable to download: %s, %w", bucket, err)
+		return nil, nil, fmt.Errorf("unable to download: %s, %w", bucket, err)
 	}
 
 	pvList, ok := result.([]corev1.PersistentVolume)
 	if !ok {
-		return nil, fmt.Errorf("unable to download PV type: got %T", result)
+		return nil, nil, fmt.Errorf("unable to download PV type: got %T", result)
 	}
 
-	return pvList, nil
+	objectType = reflect.TypeOf(corev1.PersistentVolumeClaim{})
+
+	result, err = s.DownloadTypedObjects(keyPrefix, objectType)
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to download: %s, %w", bucket, err)
+	}
+
+	pvcList, ok = result.([]corev1.PersistentVolumeClaim)
+	if !ok {
+		return nil, nil, fmt.Errorf("unable to download PVC type: got %T", result)
+	}
+
+	return pvList, pvcList, nil
 }
 
 // DownloadTypedObjects downloads all objects of the given objectType that have
