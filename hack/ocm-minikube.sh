@@ -27,6 +27,9 @@ ${ramen_hack_directory_path_name}/kustomize-install.sh ${HOME}/.local/bin
 # shellcheck source=./git-checkout.sh
 . $ramen_hack_directory_path_name/git-checkout.sh
 exit_stack_push git_checkout_unset
+# shellcheck source=./github-url.sh
+. $ramen_hack_directory_path_name/github-url.sh
+exit_stack_push github_url_unset
 unset -v ramen_hack_directory_path_name
 
 minikube_start_options=--driver=kvm2
@@ -64,14 +67,14 @@ json6902_test_and_replace_yaml()
         value: %s
       - op: replace
         path: %s
-        value: %s' $1 $2 $1 $3
+        value: %s' $1 "$2" $1 "$3"
 }
 exit_stack_push unset -f json6902_test_and_replace_yaml
 ocm_registration_operator_git_ref=c723e190c454110797d89e67bcb33250b35e1fd7
 exit_stack_push unset -v ocm_registration_operator_git_ref
 ocm_registration_operator_image_spec()
 {
-	set /spec/$1ImagePullSpec quay.io/open-cluster-management/$1
+	set -- /spec/$1ImagePullSpec quay.io/open-cluster-management/$1
 	json6902_test_and_replace_yaml $1 $2 $2:latest
 }
 exit_stack_push unset -f ocm_registration_operator_image_spec
@@ -199,7 +202,7 @@ ocm_registration_operator_bootstrap_kubectl()
 	generatorOptions:
 	  disableNameSuffixHash: true
 	a
-	cp -f $HUB_KUBECONFIG $3/hub-kubeconfig
+	cp -f $hub_kubeconfig_file_path_name $3/hub-kubeconfig
 	kubectl --context $1 $2 -k $3
 }
 exit_stack_push unset -f ocm_registration_operator_bootstrap_kubectl
@@ -209,7 +212,7 @@ ocm_registration_operator_deploy_spoke()
 	ocm_registration_operator_bootstrap_kubectl $1 apply
 	ocm_registration_operator_spoke $1 deploy
 	date
-	kubectl --context $1 -n open-cluster-management wait deployments/klusterlet --for condition=available
+	kubectl --context $1 -n open-cluster-management wait deployments/klusterlet --for condition=available --timeout 60s
 	date
 	# https://github.com/kubernetes/kubernetes/issues/83242
 	until_true_or_n 90 kubectl --context ${1} -n open-cluster-management-agent wait deployments/klusterlet-registration-agent --for condition=available --timeout 0
@@ -313,136 +316,261 @@ ocm_foundation_operator_undeploy_spoke()
 	set -e
 }
 exit_stack_push unset -f ocm_foundation_operator_undeploy_spoke
-ocm_subscription_operator_git_ref=c48c55969bc4385bc694acd8bc92e5bf4e0181d3
-exit_stack_push unset -v ocm_subscription_operator_git_ref
-ocm_subscription_operator_checkout()
+foundation_operator_deploy_spokes()
 {
-	set -- multicloud-operators-subscription
-	git_clone_and_checkout https://github.com/open-cluster-management $1 main $ocm_subscription_operator_git_ref
-	exit_stack_push git_checkout_undo $1
+	for_each "$spoke_cluster_names" ocm_foundation_operator_deploy_spoke
 }
-exit_stack_push unset -f ocm_subscription_operator_checkout
-ocm_subscription_operator_checkout_undo()
+exit_stack_push unset -f foundation_operator_deploy_spokes
+foundation_operator_undeploy_spokes()
 {
-	exit_stack_pop
+	for_each "$spoke_cluster_names" ocm_foundation_operator_undeploy_spoke
 }
-exit_stack_push unset -f ocm_subscription_operator_checkout_undo
-ocm_subscription_operator_deploy_hub()
+exit_stack_push unset -f foundation_operator_undeploy_spokes
+foundation_operator_deploy()
 {
-	kubectl config use-context ${hub_cluster_name}
-	ocm_subscription_operator_checkout
-	USE_VENDORIZED_BUILD_HARNESS=faked make -C multicloud-operators-subscription deploy-community-hub
-	ocm_subscription_operator_checkout_undo
-	date
-	kubectl --context ${hub_cluster_name} -n multicluster-operators wait deployments --all --for condition=available --timeout 2m
-	date
+	ocm_foundation_operator_deploy_hub
+	foundation_operator_deploy_spokes
 }
-exit_stack_push unset -f ocm_subscription_operator_deploy_hub
-ocm_subscription_operator_deploy_spoke()
+exit_stack_push unset -f foundation_operator_deploy
+foundation_operator_undeploy()
 {
-	set -- $1 open-cluster-management subscription managed "$2"
-	set -- $1 $2 multicloud-operators-$3 $4 /tmp/$USER/$2/$3/$4/$1 "$5"
-	# https://github.com/open-cluster-management-io/multicloud-operators-subscription/issues/16
-	kubectl --context $hub_cluster_name label managedclusters/$1 name=$1 --overwrite
-	ocm_subscription_operator_checkout
-	kubectl --context $1 apply -f $3/deploy/common
-	ocm_subscription_operator_checkout_undo
-	cp -f $HUB_KUBECONFIG /tmp/$USER/kubeconfig
-	kubectl --context $1 -n multicluster-operators delete secret appmgr-hub-kubeconfig --ignore-not-found
-	kubectl --context $1 -n multicluster-operators create secret generic appmgr-hub-kubeconfig --from-file=kubeconfig=/tmp/$USER/kubeconfig
-	mkdir -p $5
-	cat <<-a >$5/kustomization.yaml
+	foundation_operator_undeploy_spokes
+	ocm_foundation_operator_undeploy_hub
+}
+exit_stack_push unset -f foundation_operator_undeploy
+subscription_operator_release_name=2.3
+exit_stack_push unset -v subscription_operator_release_name
+subscription_operator_git_ref=c48c55969bc4385bc694acd8bc92e5bf4e0181d3
+exit_stack_push unset -v subscription_operator_git_ref
+subscription_operator_file_names_deploy_common="
+apps.open-cluster-management.io_channels_crd.yaml
+apps.open-cluster-management.io_deployables_crd.yaml
+apps.open-cluster-management.io_helmreleases_crd.yaml
+apps.open-cluster-management.io_placementrules_crd.yaml
+apps.open-cluster-management.io_subscriptions.yaml
+clusterrole.yaml
+clusterrole_binding.yaml
+namespace.yaml
+service.yaml
+service_account.yaml
+"
+subscription_operator_file_names_deploy_hub="
+application-operator.yaml
+operator.yaml
+"
+subscription_operator_file_names_deploy_managed="
+operator.yaml
+"
+subscription_operator_file_names_examples_helmrepo_hub_channel="
+00-namespace.yaml
+01-channel.yaml
+02-placement.yaml
+02-subscription.yaml
+"
+exit_stack_push unset -v subscription_operator_file_names_deploy_common
+exit_stack_push unset -v subscription_operator_file_names_deploy_hub
+exit_stack_push unset -v subscription_operator_file_names_deploy_managed
+exit_stack_push unset -v subscription_operator_file_names_examples_helmrepo_hub_channel
+subscription_operator_file_url()
+{
+	github_url_file open-cluster-management/multicloud-operators-subscription $1 $subscription_operator_git_ref
+}
+exit_stack_push unset -f subscription_operator_file_url
+subscription_operator_file_urls()
+{
+	for file_name in $1; do
+		echo "$3"$(subscription_operator_file_url $2$file_name)
+	done; unset -v file_name
+}
+exit_stack_push unset -f subscription_operator_file_urls
+subscription_operator_file_urls_kubectl()
+{
+	kubectl --context $1 $2 $(subscription_operator_file_urls "$3" $4 '-f ')
+}
+exit_stack_push unset -f subscription_operator_file_urls_kubectl
+subscription_operator_file_urls_kustomization()
+{
+	subscription_operator_file_urls "$1" $2 '  - '
+}
+exit_stack_push unset -f subscription_operator_file_urls_kustomization
+subscription_operator_kubectl_common()
+{
+	subscription_operator_file_urls_kubectl $1 $2 "$subscription_operator_file_names_deploy_common" deploy/common/
+}
+exit_stack_push unset -f subscription_operator_kubectl_common
+subscription_operator_deploy_common()
+{
+	subscription_operator_kubectl_common $1 apply
+}
+exit_stack_push unset -f subscription_operator_deploy_common
+subscription_operator_undeploy_common()
+{
+	subscription_operator_kubectl_common $1 delete
+}
+exit_stack_push unset -f subscription_operator_undeploy_common
+subscription_operator_kubectl()
+{
+	set -- $1 "$2" $3 "$4" "$5" "$6" open-cluster-management multicluster-operators subscription
+	set -- $1 "$2" $3 "$4" "$5" "$6" $7 $8 $9 /tmp/$USER/$7/$9/$1/$2
+	mkdir -p ${10}
+	cat <<-a >${10}/kustomization.yaml
 	resources:
-	  - https://raw.githubusercontent.com/$2/$3/$ocm_subscription_operator_git_ref/deploy/$4/operator.yaml
+	$(subscription_operator_file_urls_kustomization "$6" deploy/$1/)
 	patchesJson6902:
 	  - target:
 	      group: apps
 	      version: v1
 	      kind: Deployment
-	      name: multicluster-operators-subscription
-	      namespace: multicluster-operators
-	    patch: |-
-	      - op: test
-	        path: /spec/template/spec/containers/0/command/2
-	        value: --cluster-name=<managed cluster name>
-	      - op: replace
-	        path: /spec/template/spec/containers/0/command/2
-	        value: --cluster-name=$1
-	      - op: test
-	        path: /spec/template/spec/containers/0/command/3
-	        value: --cluster-namespace=<managed cluster namespace>
-	      - op: replace
-	        path: /spec/template/spec/containers/0/command/3
-	        value: --cluster-namespace=$1
-	      - op: test
-	        path: /metadata/name
-	        value: multicluster-operators-subscription
-	      - op: replace
-	        path: /metadata/name
-	        value: multicluster-operators-subscription$6
+	      name: $8-$9
+	      namespace: $8
+	    patch: |-\
+	$(json6902_test_and_replace_yaml /metadata/name $8-$9 $8-$9$4)\
+	$(json6902_test_and_replace_yaml /spec/template/spec/containers/0/image\
+		quay.io/$7/$8-$9:latest\
+		quay.io/$7/$8-$9:$subscription_operator_release_name-$subscription_operator_git_ref\
+	)\
+	$5
 	a
-	kubectl --context $1 apply -k $5
+	kubectl --context $2 $3 -k ${10}
+}
+exit_stack_push unset -f subscription_operator_kubectl
+subscription_operator_kubectl_hub()
+{
+	subscription_operator_kubectl hub $hub_cluster_name $1 '' '' "$subscription_operator_file_names_deploy_hub"
+}
+exit_stack_push unset -f subscription_operator_kubectl_hub
+subscription_operator_kubectl_spoke()
+{
+	subscription_operator_kubectl managed $1 $2 "$3" "$4" "$subscription_operator_file_names_deploy_managed"
+}
+exit_stack_push unset -f subscription_operator_kubectl_spoke
+subscription_operator_deploy_hub()
+{
+	subscription_operator_kubectl_hub apply
+	date
+	kubectl --context ${hub_cluster_name} -n multicluster-operators wait deployments --all --for condition=available --timeout 2m
+	date
+}
+exit_stack_push unset -f subscription_operator_deploy_hub
+subscription_operator_undeploy_hub()
+{
+	subscription_operator_kubectl_hub delete
+}
+exit_stack_push unset -f subscription_operator_undeploy_hub
+subscription_operator_deploy_spoke()
+{
+	# https://github.com/open-cluster-management-io/multicloud-operators-subscription/issues/16
+	kubectl --context $hub_cluster_name label managedclusters/$1 name=$1 --overwrite
+	cp -f $hub_kubeconfig_file_path_name /tmp/$USER/kubeconfig
+	kubectl create secret generic appmgr-hub-kubeconfig --from-file=kubeconfig=/tmp/$USER/kubeconfig --dry-run=client -oyaml|kubectl --context $1 -n multicluster-operators apply -f -
+	subscription_operator_kubectl_spoke $1 apply "$2" "$(\
+	json6902_test_and_replace_yaml /spec/template/spec/containers/0/command/2 --cluster-name='<managed cluster name>' --cluster-name=$1)$(\
+	json6902_test_and_replace_yaml /spec/template/spec/containers/0/command/3 --cluster-namespace='<managed cluster namespace>' --cluster-namespace=$1)"
 	date
 	kubectl --context $1 -n multicluster-operators wait deployments --all --for condition=available --timeout 1m
 	date
 }
-exit_stack_push unset -f ocm_subscription_operator_deploy_spoke
-ocm_subscription_operator_undeploy_spoke()
+exit_stack_push unset -f subscription_operator_deploy_spoke
+subscription_operator_deploy_spoke_hub()
 {
+	subscription_operator_deploy_spoke $1 -mc
+}
+exit_stack_push unset -f subscription_operator_deploy_spoke_hub
+subscription_operator_deploy_spoke_nonhub()
+{
+	subscription_operator_deploy_spoke $1 ''
+}
+exit_stack_push unset -f subscription_operator_deploy_spoke_nonhub
+subscription_operator_undeploy_spoke()
+{
+	subscription_operator_kubectl_spoke $1 delete $2
+	kubectl --context $1 -n multicluster-operators delete secret appmgr-hub-kubeconfig
 	kubectl --context $hub_cluster_name label managedclusters/$1 name-
 }
-exit_stack_push unset -f ocm_subscription_operator_undeploy_spoke
-ocm_subscription_operator_deploy_spoke_hub()
+exit_stack_push unset -f subscription_operator_undeploy_spoke
+subscription_operator_undeploy_spoke_hub()
 {
-	ocm_subscription_operator_deploy_spoke $1 '-mc'
+	subscription_operator_undeploy_spoke $1 -mc
 }
-exit_stack_push unset -f ocm_subscription_operator_deploy_spoke_hub
-ocm_subscription_operator_deploy_spoke_nonhub()
+exit_stack_push unset -f subscription_operator_undeploy_spoke_hub
+subscription_operator_undeploy_spoke_nonhub()
 {
-	ocm_subscription_operator_deploy_spoke $1 ''
+	subscription_operator_undeploy_spoke $1 ''
 }
-exit_stack_push unset -f ocm_subscription_operator_deploy_spoke_nonhub
-spoke_test_deploy()
+exit_stack_push unset -f subscription_operator_undeploy_spoke_nonhub
+subscription_operator_test_kubectl()
 {
-	ocm_subscription_operator_checkout
-	kubectl --context ${hub_cluster_name} apply -f multicloud-operators-subscription/examples/helmrepo-hub-channel
-	ocm_subscription_operator_checkout_undo
+	set -- $1 $2 /tmp/$USER/open-cluster-management/subscription-test
+	mkdir -p $3
+	cat <<-a >$3/kustomization.yaml
+	resources:
+	$(subscription_operator_file_urls_kustomization "$subscription_operator_file_names_examples_helmrepo_hub_channel" examples/helmrepo-hub-channel/)
+	patchesJson6902:
+	  - target:
+	      group: apps.open-cluster-management.io
+	      version: v1
+	      kind: PlacementRule
+	      name: nginx-pr
+	    patch: |-
+	      - op: add
+	        path: /spec/clusterSelector
+	        value: {}
+	      - op: add
+	        path: /spec/clusterSelector/matchLabels
+	        value:
+	          name: $1
+	a
+	kubectl --context $hub_cluster_name $2 -k $3
+}
+exit_stack_push unset -f subscription_operator_test_kubectl
+subscription_operator_test_deploy()
+{
+	subscription_operator_test_kubectl $1 apply
 	# https://github.com/kubernetes/kubernetes/issues/83242
-	until_true_or_n 60 kubectl --context ${1} wait deployments --selector app=nginx-ingress --for condition=available --timeout 0
+	until_true_or_n 90 kubectl --context $1 wait deployments --selector app=nginx-ingress --for condition=available --timeout 0
 }
-spoke_test_undeploy()
+exit_stack_push unset -f subscription_operator_test_deploy
+subscription_operator_test_undeploy()
 {
-	ocm_subscription_operator_checkout
-	kubectl --context ${hub_cluster_name} delete -f multicloud-operators-subscription/examples/helmrepo-hub-channel
-	ocm_subscription_operator_checkout_undo
+	subscription_operator_test_kubectl $1 delete
 	set +e
 	kubectl --context ${1} wait deployments --selector app=nginx-ingress --for delete --timeout 1m
 	# error: no matching resources found
 	set -e
 }
-spoke_test()
+exit_stack_push unset -f subscription_operator_test_undeploy
+subscription_operator_test()
 {
-	spoke_test_deploy ${1}
-	spoke_test_undeploy ${1}
+	set -- $spoke_cluster_names
+	subscription_operator_test_deploy $1
+	subscription_operator_test_undeploy $1
 }
-spoke_add()
+exit_stack_push unset -f subscription_operator_test
+subscription_operator_deploy()
 {
-	ocm_registration_operator_deploy_spoke $1
-	ocm_foundation_operator_deploy_spoke $1
+	for_each "$hub_cluster_name $spoke_cluster_names_nonhub" subscription_operator_deploy_common
+	subscription_operator_deploy_hub
+	for_each "$spoke_cluster_names_hub"    subscription_operator_deploy_spoke_hub
+	for_each "$spoke_cluster_names_nonhub" subscription_operator_deploy_spoke_nonhub
 }
-exit_stack_push unset -f spoke_add
+exit_stack_push unset -f subscription_operator_deploy
+subscription_operator_undeploy()
+{
+	for_each "$spoke_cluster_names_nonhub" subscription_operator_undeploy_spoke_nonhub
+	for_each "$spoke_cluster_names_hub"    subscription_operator_undeploy_spoke_hub
+	subscription_operator_undeploy_hub
+	for_each "$spoke_cluster_names_nonhub $hub_cluster_name" subscription_operator_undeploy_common
+}
+exit_stack_push unset -f subscription_operator_undeploy
 spoke_add_hub()
 {
-	spoke_add ${1}
+	ocm_registration_operator_deploy_spoke $1
 	kubectl --context ${hub_cluster_name} label managedclusters/${1} local-cluster=true --overwrite
-	ocm_subscription_operator_deploy_spoke_hub ${1}
 }
 spoke_add_nonhub()
 {
 	minikube start ${minikube_start_options} --profile=${1}
-	spoke_add ${1}
-	ocm_subscription_operator_deploy_spoke_nonhub ${1}
-	#spoke_test ${1}
+	ocm_registration_operator_deploy_spoke $1
 }
 ocm_application_samples_patch_old_undo()
 {
@@ -558,41 +686,53 @@ for_each()
 	done; unset -v x
 }
 exit_stack_push unset -f for_each
-deploy()
+hub_kubeconfig_file_path_name=/tmp/$USER/$hub_cluster_name-config
+exit_stack_push unset -v hub_kubeconfig_file_path_name
+hub_kubeconfig_file_create()
+{
+	mkdir -p $(dirname $hub_kubeconfig_file_path_name)
+	kubectl --context $hub_cluster_name config view --flatten --minify >$hub_kubeconfig_file_path_name
+}
+exit_stack_push unset -f hub_kubeconfig_file_create
+deploy_hub()
 {
 	minikube start $minikube_start_options --profile=$hub_cluster_name --cpus=4
 	ocm_registration_operator_deploy_hub
-	ocm_foundation_operator_deploy_hub
-	ocm_subscription_operator_deploy_hub
-	mkdir -p /tmp/$USER
-	HUB_KUBECONFIG=/tmp/$USER/$hub_cluster_name-config
-	exit_stack_push unset -v HUB_KUBECONFIG
-	kubectl --context $hub_cluster_name config view --flatten --minify >$HUB_KUBECONFIG
+}
+exit_stack_push unset -f deploy_hub
+undeploy_hub()
+{
+	ocm_registration_operator_undeploy_hub
+}
+exit_stack_push unset -f undeploy_hub
+deploy_spokes()
+{
+	hub_kubeconfig_file_create
 	for cluster_name in $spoke_cluster_names_hub   ; do spoke_add_hub    $cluster_name; done; unset -v cluster_name
 	for cluster_name in $spoke_cluster_names_nonhub; do spoke_add_nonhub $cluster_name; done; unset -v cluster_name
 }
-exit_stack_push unset -f deploy
-foundation_operator_deploy()
-{
-	ocm_foundation_operator_deploy_hub
-	for_each "$spoke_cluster_names" ocm_foundation_operator_deploy_spoke
-}
-exit_stack_push unset -f foundation_operator_deploy
-foundation_operator_undeploy()
-{
-	for_each "$spoke_cluster_names" ocm_foundation_operator_undeploy_spoke
-	ocm_foundation_operator_undeploy_hub
-}
-exit_stack_push unset -f foundation_operator_undeploy
-undeploy()
+exit_stack_push unset -f deploy_spokes
+undeploy_spokes()
 {
 	for cluster_name in $spoke_cluster_names_nonhub $spoke_cluster_names_hub; do
-		ocm_subscription_operator_undeploy_spoke $cluster_name
-		ocm_foundation_operator_undeploy_spoke $cluster_name
 		ocm_registration_operator_undeploy_spoke $cluster_name
 	done; unset -v cluster_name
-	ocm_foundation_operator_undeploy_hub
-	ocm_registration_operator_undeploy_hub
+}
+exit_stack_push unset -f undeploy_spokes
+deploy()
+{
+	deploy_hub
+	deploy_spokes
+	foundation_operator_deploy
+	subscription_operator_deploy
+}
+exit_stack_push unset -f deploy
+undeploy()
+{
+	subscription_operator_undeploy
+	foundation_operator_undeploy
+	undeploy_spokes
+	undeploy_hub
 }
 exit_stack_push unset -f undeploy
 delete()
@@ -602,6 +742,7 @@ delete()
 	done; unset -v cluster_name
 }
 exit_stack_push unset -f delete
+exit_stack_push unset -v command
 for command in "${@:-deploy}"; do
 	$command
 done
@@ -614,9 +755,6 @@ unset -f application_sample_undeploy
 unset -f application_sample_deploy
 unset -f spoke_add_nonhub
 unset -f spoke_add_hub
-unset -f spoke_test
-unset -f spoke_test_undeploy
-unset -f spoke_test_deploy
 unset -f application_sample_0_test
 unset -f application_sample_0_undeploy
 unset -f application_sample_0_deploy
