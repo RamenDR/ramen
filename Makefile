@@ -111,8 +111,9 @@ else ifneq ($(GOLANGCI_VERSION),$(GOLANGCI_INSTALLED_VER))
 endif
 
 .PHONY: lint
-lint: golangci-bin ## Run configured golangci-lint linters against the code.
-	testbin/golangci-lint run ./...
+lint: golangci-bin ## Run configured golangci-lint and pre-commit.sh linters against the code.
+	testbin/golangci-lint run ./... 
+	hack/pre-commit.sh
 
 # Run tests
 ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
