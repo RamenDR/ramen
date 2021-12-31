@@ -100,19 +100,19 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 
 GOLANGCI_URL := https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh
 GOLANGCI_VERSION := 1.37.1
-GOLANGCI_INSTALLED_VER := $(shell $(GOBIN)/golangci-lint version --format=short 2>&1)
+GOLANGCI_INSTALLED_VER := $(shell testbin/golangci-lint version --format=short 2>&1)
 .PHONY: golangci-bin
 golangci-bin: ## Download and install goloanci-lint locally if necessary.
 ifeq (,$(GOLANGCI_INSTALLED_VER))
-	$(info Installing golangci-lint (version: $(GOLANGCI_VERSION)) into $(GOBIN))
-	curl -sSfL $(GOLANGCI_URL) | sh -s -- -b $(GOBIN) v$(GOLANGCI_VERSION)
+	$(info Installing golangci-lint (version: $(GOLANGCI_VERSION)) into testbin)
+	curl -sSfL $(GOLANGCI_URL) | sh -s -- -b testbin v$(GOLANGCI_VERSION)
 else ifneq ($(GOLANGCI_VERSION),$(GOLANGCI_INSTALLED_VER))
 	$(error Incorrect version ($(GOLANGCI_INSTALLED_VER)) for golanci-lint found, expecting $(GOLANGCI_VERSION))
 endif
 
 .PHONY: lint
 lint: golangci-bin ## Run configured golangci-lint linters against the code.
-	$(GOBIN)/golangci-lint run ./...
+	testbin/golangci-lint run ./...
 
 # Run tests
 ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
