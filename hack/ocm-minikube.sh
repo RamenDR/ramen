@@ -32,32 +32,45 @@ exit_stack_push git_checkout_unset
 exit_stack_push github_url_unset
 unset -v ramen_hack_directory_path_name
 
-minikube_start_options=--driver=kvm2
+minikube_start_options="--driver=kvm2 --network=default"
+minikube_start_additional_hub_options=--cpus=4
 . /etc/os-release # NAME
 
-if ! command -v virsh; then
-	# https://minikube.sigs.k8s.io/docs/drivers/kvm2/
-	case ${NAME} in
-	"Red Hat Enterprise Linux Server")
-		# https://access.redhat.com/articles/1344173#Q_how-install-virtualization-packages
-		sudo yum install libvirt -y
-		;;
-	"Ubuntu")
-		# https://help.ubuntu.com/community/KVM/Installation
-		sudo apt-get update
-		if false # test ${VERSION_ID} -ge "18.10"
-		then
-			sudo apt-get install qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils -y
-		else
-			sudo apt-get install qemu-kvm libvirt-bin ubuntu-vm-builder bridge-utils -y
-		fi
-		# shellcheck disable=SC2012
-		sudo adduser ${LOGNAME} $(ls -l /var/run/libvirt/libvirt-sock|cut -d\  -f4)
-		echo 'relogin for permission to access /var/run/libvirt/libvirt-sock, then rerun'
-		false; exit
-		;;
-	esac
-fi
+ensure_libvirt_default_network_exists()
+{
+	if ! virsh net-dumpxml default >/dev/null 2>&1 ; then
+		echo 'libvirt network default is required as it is used as the common network for all the minikube instances'
+		exit 1
+	fi
+}
+
+minikube_validate()
+{
+	if ! command -v virsh; then
+		# https://minikube.sigs.k8s.io/docs/drivers/kvm2/
+		case ${NAME} in
+		"Red Hat Enterprise Linux Server")
+			# https://access.redhat.com/articles/1344173#Q_how-install-virtualization-packages
+			sudo yum install libvirt -y
+			;;
+		"Ubuntu")
+			# https://help.ubuntu.com/community/KVM/Installation
+			sudo apt-get update
+			if false # test ${VERSION_ID} -ge "18.10"
+			then
+				sudo apt-get install qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils -y
+			else
+				sudo apt-get install qemu-kvm libvirt-bin ubuntu-vm-builder bridge-utils -y
+			fi
+			# shellcheck disable=SC2012
+			sudo adduser ${LOGNAME} $(ls -l /var/run/libvirt/libvirt-sock|cut -d\  -f4)
+			echo 'relogin for permission to access /var/run/libvirt/libvirt-sock, then rerun'
+			false; exit
+			;;
+		esac
+	fi
+	ensure_libvirt_default_network_exists
+}
 
 json6902_test_and_replace_yaml()
 {
@@ -141,7 +154,7 @@ exit_stack_push unset -f ocm_registration_operator_spoke
 ocm_registration_operator_deploy_hub()
 {
 	set -- $hub_cluster_name
-	kubectl --context $1 apply -f https://raw.githubusercontent.com/kubernetes/cluster-registry/master/cluster-registry-crd.yaml
+	#kubectl --context $1 apply -f https://raw.githubusercontent.com/kubernetes/cluster-registry/master/cluster-registry-crd.yaml
 	ocm_registration_operator_hub $1 deploy
 	date
 	kubectl --context $1 -n open-cluster-management wait deployments/cluster-manager --for condition=available
@@ -154,7 +167,7 @@ ocm_registration_operator_undeploy_hub()
 {
 	set -- $hub_cluster_name
 	ocm_registration_operator_hub $1 undeploy
-	kubectl --context $1 delete -f https://raw.githubusercontent.com/kubernetes/cluster-registry/master/cluster-registry-crd.yaml
+	#kubectl --context $1 delete -f https://raw.githubusercontent.com/kubernetes/cluster-registry/master/cluster-registry-crd.yaml
 }
 exit_stack_push unset -f ocm_registration_operator_undeploy_hub
 application_sample_0_deploy()
@@ -562,6 +575,19 @@ subscription_operator_undeploy()
 	for_each "$spoke_cluster_names_nonhub $hub_cluster_name" subscription_operator_undeploy_common
 }
 exit_stack_push unset -f subscription_operator_undeploy
+minikube_start()
+{
+	minikube_validate
+	minikube start ${minikube_start_options} --profile=${1} ${2}
+}
+minikube_start_hub()
+{
+	minikube_start "${hub_cluster_name}" "${minikube_start_additional_hub_options}"
+}
+minikube_start_spokes()
+{
+	for cluster_name in $spoke_cluster_names_nonhub; do minikube_start "${cluster_name}" ; done; unset -v cluster_name
+}
 spoke_add_hub()
 {
 	ocm_registration_operator_deploy_spoke $1
@@ -569,7 +595,6 @@ spoke_add_hub()
 }
 spoke_add_nonhub()
 {
-	minikube start ${minikube_start_options} --profile=${1}
 	ocm_registration_operator_deploy_spoke $1
 }
 ocm_application_samples_patch_old_undo()
@@ -696,7 +721,6 @@ hub_kubeconfig_file_create()
 exit_stack_push unset -f hub_kubeconfig_file_create
 deploy_hub()
 {
-	minikube start $minikube_start_options --profile=$hub_cluster_name --cpus=4
 	ocm_registration_operator_deploy_hub
 }
 exit_stack_push unset -f deploy_hub
@@ -721,6 +745,8 @@ undeploy_spokes()
 exit_stack_push unset -f undeploy_spokes
 deploy()
 {
+	minikube_start_hub
+	minikube_start_spokes
 	deploy_hub
 	deploy_spokes
 	foundation_operator_deploy
