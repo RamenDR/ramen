@@ -27,11 +27,11 @@ var _ = Describe("DrpolicyController", func() {
 	clusterNames := func(drpolicy *ramen.DRPolicy) sets.String {
 		return sets.NewString(util.DrpolicyClusterNames(drpolicy)...)
 	}
-	clusterRolesExpect := func() {
+	drClustersExpect := func() {
 		Eventually(
 			func(g Gomega) {
 				clusterNames := sets.String{}
-				g.Expect(util.ClusterRolesList(context.TODO(), k8sClient, &clusterNames)).To(Succeed())
+				g.Expect(util.DrClustersList(context.TODO(), k8sClient, &clusterNames)).To(Succeed())
 				g.Expect(clusterNames.UnsortedList()).To(ConsistOf(clusterNamesCurrent.UnsortedList()))
 			},
 			timeout,
@@ -78,7 +78,7 @@ var _ = Describe("DrpolicyController", func() {
 			*clusterNamesCurrent = clusterNamesCurrent.Insert(clusterName)
 		}
 		Expect(k8sClient.Create(context.TODO(), drpolicy)).To(Succeed())
-		clusterRolesExpect()
+		drClustersExpect()
 	}
 	drpolicyDeleteAndConfirm := func(drpolicy *ramen.DRPolicy) {
 		Expect(k8sClient.Delete(context.TODO(), drpolicy)).To(Succeed())
@@ -105,7 +105,7 @@ var _ = Describe("DrpolicyController", func() {
 		drpolicyDeleteAndConfirm(drpolicy)
 		for _, clusterName := range clusterNamesCurrent.Difference(clusterNamesExpected).UnsortedList() {
 			manifestWorkName := types.NamespacedName{
-				Name:      util.ClusterRolesManifestWorkName,
+				Name:      util.DrClusterManifestWorkName,
 				Namespace: clusterName,
 			}
 			Eventually(func() bool {
@@ -116,7 +116,7 @@ var _ = Describe("DrpolicyController", func() {
 			namespaceDeleteAndConfirm(clusterName)
 			*clusterNamesCurrent = clusterNamesCurrent.Delete(clusterName)
 		}
-		clusterRolesExpect()
+		drClustersExpect()
 	}
 	clusters := [...]ramen.ManagedCluster{
 		{Name: `cluster0`, S3ProfileName: s3ProfileNameConnectSucc},
@@ -155,7 +155,7 @@ var _ = Describe("DrpolicyController", func() {
 		drpolicy.ObjectMeta = objectMetas[0]
 	})
 	When("a 1st drpolicy is created", func() {
-		It("should create a cluster roles manifest work for each cluster specified in a 1st drpolicy", func() {
+		It("should create a drcluster manifest work for each cluster specified in a 1st drpolicy", func() {
 			drpolicyCreate(drpolicy)
 		})
 	})
@@ -165,26 +165,26 @@ var _ = Describe("DrpolicyController", func() {
 		})
 	})
 	When("TODO a 1st drpolicy is updated to add some clusters and remove some other clusters", func() {
-		It("should create a cluster roles manifest work for each cluster added and "+
-			"delete a cluster roles manifest work for each cluster removed", func() {
+		It("should create a drcluster manifest work for each cluster added and "+
+			"delete a drcluster manifest work for each cluster removed", func() {
 		})
 	})
 	When("a 2nd drpolicy is created specifying some clusters in a 1st drpolicy and some not", func() {
-		It("should create a cluster roles manifest work for each cluster specified in a 2nd drpolicy but not a 1st drpolicy",
+		It("should create a drcluster manifest work for each cluster specified in a 2nd drpolicy but not a 1st drpolicy",
 			func() {
 				drpolicyCreate(&drpolicies[1])
 			},
 		)
 	})
 	When("a 1st drpolicy is deleted", func() {
-		It("should delete a cluster roles manifest work for each cluster specified in a 1st drpolicy but not a 2nd drpolicy",
+		It("should delete a drcluster manifest work for each cluster specified in a 1st drpolicy but not a 2nd drpolicy",
 			func() {
 				drpolicyDelete(drpolicy, clusterNames(&drpolicies[1]))
 			},
 		)
 	})
 	When("a 2nd drpolicy is deleted", func() {
-		It("should delete a cluster roles manifest work for each cluster specified in a 2nd drpolicy", func() {
+		It("should delete a drcluster manifest work for each cluster specified in a 2nd drpolicy", func() {
 			drpolicyDelete(&drpolicies[1], clusterNamesNone)
 		})
 	})

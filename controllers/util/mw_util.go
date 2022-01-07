@@ -44,7 +44,7 @@ import (
 )
 
 const (
-	ClusterRolesManifestWorkName = "ramendr-roles"
+	DrClusterManifestWorkName = "ramen-dr-cluster"
 
 	// ManifestWorkNameFormat is a formated a string used to generate the manifest name
 	// The format is name-namespace-type-mw where:
@@ -203,7 +203,7 @@ func namespace(name string) *corev1.Namespace {
 	}
 }
 
-func ClusterRolesList(ctx context.Context, client client.Client, clusterNames *sets.String) error {
+func DrClustersList(ctx context.Context, client client.Client, clusterNames *sets.String) error {
 	manifestworks := &ocmworkv1.ManifestWorkList{}
 	if err := client.List(ctx, manifestworks); err != nil {
 		return fmt.Errorf("manifestworks list: %w", err)
@@ -211,7 +211,7 @@ func ClusterRolesList(ctx context.Context, client client.Client, clusterNames *s
 
 	for i := range manifestworks.Items {
 		manifestwork := &manifestworks.Items[i]
-		if manifestwork.ObjectMeta.Name == ClusterRolesManifestWorkName {
+		if manifestwork.ObjectMeta.Name == DrClusterManifestWorkName {
 			*clusterNames = clusterNames.Insert(manifestwork.ObjectMeta.Namespace)
 		}
 	}
@@ -219,14 +219,14 @@ func ClusterRolesList(ctx context.Context, client client.Client, clusterNames *s
 	return nil
 }
 
-var clusterRolesMutex sync.Mutex
+var drClustersMutex sync.Mutex
 
-func (mwu *MWUtil) ClusterRolesCreate(drpolicy *rmn.DRPolicy, ramenConfig *rmn.RamenConfig) error {
-	clusterRolesMutex.Lock()
-	defer clusterRolesMutex.Unlock()
+func (mwu *MWUtil) DrClustersDeploy(drpolicy *rmn.DRPolicy, ramenConfig *rmn.RamenConfig) error {
+	drClustersMutex.Lock()
+	defer drClustersMutex.Unlock()
 
 	for _, clusterName := range DrpolicyClusterNames(drpolicy) {
-		if err := mwu.createOrUpdateClusterRolesManifestWork(clusterName, ramenConfig); err != nil {
+		if err := mwu.createOrUpdateDrClusterManifestWork(clusterName, ramenConfig); err != nil {
 			return err
 		}
 	}
@@ -234,12 +234,12 @@ func (mwu *MWUtil) ClusterRolesCreate(drpolicy *rmn.DRPolicy, ramenConfig *rmn.R
 	return nil
 }
 
-func (mwu *MWUtil) ClusterRolesDelete(drpolicy *rmn.DRPolicy) error {
+func (mwu *MWUtil) DrClustersUndeploy(drpolicy *rmn.DRPolicy) error {
 	drpolicies := rmn.DRPolicyList{}
 	clusterNames := sets.String{}
 
-	clusterRolesMutex.Lock()
-	defer clusterRolesMutex.Unlock()
+	drClustersMutex.Lock()
+	defer drClustersMutex.Unlock()
 
 	if err := mwu.Client.List(mwu.Ctx, &drpolicies); err != nil {
 		return fmt.Errorf("drpolicies list: %w", err)
@@ -254,7 +254,7 @@ func (mwu *MWUtil) ClusterRolesDelete(drpolicy *rmn.DRPolicy) error {
 
 	for _, clusterName := range DrpolicyClusterNames(drpolicy) {
 		if !clusterNames.Has(clusterName) {
-			if err := mwu.deleteManifestWork(ClusterRolesManifestWorkName, clusterName); err != nil {
+			if err := mwu.deleteManifestWork(DrClusterManifestWorkName, clusterName); err != nil {
 				return err
 			}
 		}
@@ -263,8 +263,8 @@ func (mwu *MWUtil) ClusterRolesDelete(drpolicy *rmn.DRPolicy) error {
 	return nil
 }
 
-func (mwu *MWUtil) createOrUpdateClusterRolesManifestWork(namespace string, ramenConfig *rmn.RamenConfig) error {
-	manifestWork, err := mwu.generateClusterRolesManifestWork(namespace, ramenConfig)
+func (mwu *MWUtil) createOrUpdateDrClusterManifestWork(namespace string, ramenConfig *rmn.RamenConfig) error {
+	manifestWork, err := mwu.generateDrClusterManifestWork(namespace, ramenConfig)
 	if err != nil {
 		return err
 	}
@@ -272,7 +272,7 @@ func (mwu *MWUtil) createOrUpdateClusterRolesManifestWork(namespace string, rame
 	return mwu.createOrUpdateManifestWork(manifestWork, namespace)
 }
 
-func (mwu *MWUtil) generateClusterRolesManifestWork(
+func (mwu *MWUtil) generateDrClusterManifestWork(
 	clusterName string,
 	ramenConfig *rmn.RamenConfig,
 ) (*ocmworkv1.ManifestWork, error) {
@@ -300,7 +300,7 @@ func (mwu *MWUtil) generateClusterRolesManifestWork(
 	}
 
 	return mwu.newManifestWork(
-		ClusterRolesManifestWorkName,
+		DrClusterManifestWorkName,
 		clusterName,
 		map[string]string{},
 		manifests), nil

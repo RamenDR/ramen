@@ -89,16 +89,16 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, fmt.Errorf("validate: %w", u.validatedSetFalse(reason, err))
 		}
 
-		if err := manifestWorkUtil.ClusterRolesCreate(drpolicy, &ramenConfig); err != nil {
-			return ctrl.Result{}, fmt.Errorf("cluster roles create: %w", u.validatedSetFalse("ClusterRolesCreateFailed", err))
+		if err := manifestWorkUtil.DrClustersDeploy(drpolicy, &ramenConfig); err != nil {
+			return ctrl.Result{}, fmt.Errorf("drclusters deploy: %w", u.validatedSetFalse("DrClustersDeployFailed", err))
 		}
 
 		return ctrl.Result{}, u.validatedSetTrue("Succeeded", "drpolicy validated")
 	default:
 		log.Info("delete")
 
-		if err := manifestWorkUtil.ClusterRolesDelete(drpolicy); err != nil {
-			return ctrl.Result{}, fmt.Errorf("cluster roles delete: %w", err)
+		if err := manifestWorkUtil.DrClustersUndeploy(drpolicy); err != nil {
+			return ctrl.Result{}, fmt.Errorf("drclusters undeploy: %w", err)
 		}
 
 		if err := u.finalizerRemove(); err != nil {

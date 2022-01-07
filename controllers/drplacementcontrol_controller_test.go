@@ -606,7 +606,7 @@ func InitialDeployment(namespace, placementName, homeCluster string) (*plrv1.Pla
 
 func verifyVRGManifestWorkCreatedAsPrimary(managedCluster string) {
 	vrgManifestLookupKey := types.NamespacedName{
-		Name:      rmnutil.ClusterRolesManifestWorkName,
+		Name:      rmnutil.DrClusterManifestWorkName,
 		Namespace: managedCluster,
 	}
 	createdVRGRolesManifest := &ocmworkv1.ManifestWork{}
