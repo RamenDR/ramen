@@ -11,7 +11,7 @@ true_if_exit_status_and_stderr()
 	tee_pid=$!
 	case $- in *e*) e=-e; set +e;; *) e= ; esac
 	"$@" 2>$stderr_pipe_name1
-	set $e -- $?
+	set "$e" -- $?
 	unset -v e
 	stderr=$(cat $stderr_pipe_name2)
 	wait $tee_pid
