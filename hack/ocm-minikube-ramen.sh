@@ -1,5 +1,5 @@
 #!/bin/sh
-# shellcheck disable=1090,2046,2086
+# shellcheck disable=1090,2046,2086,1091
 set -x
 set -e
 ramen_hack_directory_path_name=$(dirname $0)
