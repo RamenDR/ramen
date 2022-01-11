@@ -121,7 +121,7 @@ pool_target_path_set_unqualified()
 	)"
 }
 case $pool_target_path in
-$IMAGE_DIR)
+"$IMAGE_DIR")
 	;;
 ?*)
 	pool_target_path_set
