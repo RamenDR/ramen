@@ -23,7 +23,7 @@ import (
 
 const (
 	vrgtimeout  = time.Second * 222
-	vrginterval = time.Millisecond * 1315
+	vrginterval = time.Millisecond * 10
 )
 
 type Empty struct{}

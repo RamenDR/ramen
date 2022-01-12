@@ -53,7 +53,7 @@ const (
 	DRPolicyName          = "my-dr-peers"
 
 	timeout       = time.Second * 10
-	interval      = time.Millisecond * 250
+	interval      = time.Millisecond * 10
 	updateRetries = 2 // replace this with 5 when done testing.  It takes a long time for the test to complete
 )
 
