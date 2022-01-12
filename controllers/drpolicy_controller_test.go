@@ -34,8 +34,8 @@ var _ = Describe("DrpolicyController", func() {
 				g.Expect(util.ClusterRolesList(context.TODO(), k8sClient, &clusterNames)).To(Succeed())
 				g.Expect(clusterNames.UnsortedList()).To(ConsistOf(clusterNamesCurrent.UnsortedList()))
 			},
-			10,
-			0.25,
+			timeout,
+			interval,
 		).Should(Succeed())
 	}
 	validatedConditionExpect := func(drpolicy *ramen.DRPolicy, status metav1.ConditionStatus,
@@ -65,8 +65,8 @@ var _ = Describe("DrpolicyController", func() {
 					},
 				))
 			},
-			5,
-			0.25,
+			timeout,
+			interval,
 		).Should(Succeed())
 	}
 	drpolicyCreate := func(drpolicy *ramen.DRPolicy) {
@@ -84,7 +84,7 @@ var _ = Describe("DrpolicyController", func() {
 		Expect(k8sClient.Delete(context.TODO(), drpolicy)).To(Succeed())
 		Eventually(func() bool {
 			return errors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{Name: drpolicy.Name}, drpolicy))
-		}, 10, 0.25).Should(BeTrue())
+		}, timeout, interval).Should(BeTrue())
 	}
 	namespaceDeleteAndConfirm := func(namespaceName string) {
 		// TODO: debug namespace delete not finalized
@@ -99,7 +99,7 @@ var _ = Describe("DrpolicyController", func() {
 			fmt.Println(string(s))
 
 			return errors.IsNotFound(err)
-		}, 30, 15).Should(BeTrue())
+		}, timeout*3, interval).Should(BeTrue())
 	}
 	drpolicyDelete := func(drpolicy *ramen.DRPolicy, clusterNamesExpected sets.String) {
 		drpolicyDeleteAndConfirm(drpolicy)
@@ -112,7 +112,7 @@ var _ = Describe("DrpolicyController", func() {
 				manifestWork := &workv1.ManifestWork{}
 
 				return errors.IsNotFound(apiReader.Get(context.TODO(), manifestWorkName, manifestWork))
-			}, 10, 0.25).Should(BeTrue())
+			}, timeout, interval).Should(BeTrue())
 			namespaceDeleteAndConfirm(clusterName)
 			*clusterNamesCurrent = clusterNamesCurrent.Delete(clusterName)
 		}
