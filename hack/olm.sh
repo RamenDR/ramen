@@ -18,7 +18,7 @@ olm_operators_deploy()
 	olm_operators_kubectl $1 apply
 	kubectl --context $1 rollout status -w -n olm deployment/olm-operator
 	kubectl --context $1 rollout status -w -n olm deployment/catalog-operator
-	until_true_or_n 30 eval test \"\$\(kubectl --context $1 get -n olm csv/packageserver -o jsonpath='{.status.phase}'\)\" = Succeeded
+	until_true_or_n 300 eval test \"\$\(kubectl --context $1 get -n olm csv/packageserver -o jsonpath='{.status.phase}'\)\" = Succeeded
 	kubectl --context $1 rollout status -w -n olm deployment/packageserver
 }
 olm_deploy()
