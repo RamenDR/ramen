@@ -56,32 +56,78 @@ image_registry_port_number=5000
 exit_stack_push unset -v image_registry_port_number
 image_registry_address=localhost:$image_registry_port_number
 exit_stack_push unset -v image_registry_address
-image_registry_container_name=myregistry
-exit_stack_push unset -v image_registry_container_name
-image_registry_deploy_command="docker run -d --name $image_registry_container_name -p $image_registry_port_number:$image_registry_port_number docker.io/library/registry:2"
-exit_stack_push unset -v image_registry_deploy_command
-image_registry_undeploy_command="docker container stop $image_registry_container_name;docker container rm -v $image_registry_container_name"
-exit_stack_push unset -v image_registry_undeploy_command
-image_registry_deploy_localhost()
+image_registry_deployment_name=myregistry
+exit_stack_push unset -v image_registry_deployment_name
+image_registry_container_image_reference=docker.io/library/registry:2
+exit_stack_push unset -v image_registry_container_image_reference
+image_registry_container_deploy_command="docker run -d --name $image_registry_deployment_name -p $image_registry_port_number:$image_registry_port_number $image_registry_container_image_reference"
+exit_stack_push unset -v image_registry_container_deploy_command
+image_registry_container_undeploy_command="docker container stop $image_registry_deployment_name;docker container rm -v $image_registry_deployment_name"
+exit_stack_push unset -v image_registry_container_undeploy_command
+image_registry_container_deploy_localhost()
 {
-	$image_registry_deploy_command
+	$image_registry_container_deploy_command
 }
-exit_stack_push unset -f image_registry_deploy_localhost
-image_registry_undeploy_localhost()
+exit_stack_push unset -f image_registry_container_deploy_localhost
+image_registry_container_undeploy_localhost()
 {
-	eval $image_registry_undeploy_command
+	eval $image_registry_container_undeploy_command
 }
-exit_stack_push unset -f image_registry_undeploy_localhost
+exit_stack_push unset -f image_registry_container_undeploy_localhost
+image_registry_container_deploy_cluster()
+{
+	minikube -p $1 ssh -- "$image_registry_container_deploy_command"
+}
+exit_stack_push unset -f image_registry_container_deploy_cluster
+image_registry_container_undeploy_cluster()
+{
+	minikube -p $1 ssh -- "$image_registry_container_undeploy_command"
+}
+exit_stack_push unset -f image_registry_container_undeploy_cluster
+image_registry_addon_deploy_cluster()
+{
+	minikube -p $1 addons enable registry
+	date
+	kubectl --context $1 -n kube-system -l kubernetes.io/minikube-addons=registry wait --for condition=ready pods
+	date
+	# Get http://localhost:5000/v2/: read tcp 127.0.0.1:36378->127.0.0.1:5000: read: connection reset by peer
+	until_true_or_n 30 minikube -p $1 ssh -- curl http://$image_registry_address/v2/
+}
+exit_stack_push unset -f image_registry_addon_deploy_cluster
+image_registry_addon_undeploy_cluster()
+{
+	minikube -p $1 addons disable registry
+	date
+	kubectl --context $1 -n kube-system -l kubernetes.io/minikube-addons=registry wait --for delete all --timeout 60s
+	date
+}
+exit_stack_push unset -f image_registry_addon_undeploy_cluster
+image_registry_deployment_deploy_cluster()
+{
+	kubectl create --dry-run=client -o yaml deployment $image_registry_deployment_name --image $image_registry_container_image_reference --port $image_registry_port_number|kubectl --context $1 apply -f -
+	kubectl --context $1 wait deployment/$image_registry_deployment_name --for condition=available
+}
+exit_stack_push unset -f image_registry_deployment_deploy_cluster
+image_registry_deployment_address()
+{
+	kubectl --context $1 get $(kubectl --context $1 get pod -l app=$image_registry_deployment_name -o name) --template='{{.status.podIP}}':$image_registry_port_number
+}
+exit_stack_push unset -f image_registry_deployment_address
+image_registry_deployment_undeploy_cluster()
+{
+	kubectl --context $1 delete deployment/$image_registry_deployment_name
+}
+exit_stack_push unset -f image_registry_deployment_undeploy_cluster
+image_registry_deploy_cluster_method=addon
+exit_stack_push unset -v image_registry_deploy_cluster_method
 image_registry_deploy_cluster()
 {
-#	minikube -p $cluster_name addons enable registry
-	minikube -p $cluster_name ssh -- "$image_registry_deploy_command"
+	image_registry_${image_registry_deploy_cluster_method}_deploy_cluster $1
 }
 exit_stack_push unset -f image_registry_deploy_cluster
 image_registry_undeploy_cluster()
 {
-#	minikube -p $cluster_name addons disable registry
-	minikube -p $cluster_name ssh -- "$image_registry_undeploy_command"
+	image_registry_${image_registry_deploy_cluster_method}_undeploy_cluster $1
 }
 exit_stack_push unset -f image_registry_undeploy_cluster
 image_registry_deploy_spokes()
@@ -258,8 +304,8 @@ ramen_images_build()
 {
 	ramen_manager_image_build
 	ramen_bundle_image_spoke_build
-	image_registry_deploy_localhost
-	exit_stack_push image_registry_undeploy_localhost
+	image_registry_container_deploy_localhost
+	exit_stack_push image_registry_container_undeploy_localhost
 	ramen_bundle_image_spoke_push
 	ramen_catalog_image_spoke_build
 	exit_stack_pop
@@ -300,6 +346,7 @@ ramen_images_deploy_spoke()
 exit_stack_push unset -f ramen_images_deploy_spoke
 ramen_images_undeploy_spoke()
 {
+	image_registry_undeploy_cluster $1
 	ramen_catalog_image_remove_cluster $1
 	ramen_bundle_image_spoke_remove_cluster $1
 	ramen_manager_image_remove_cluster $1
@@ -481,7 +528,6 @@ ramen_samples_channel_and_drpolicy_deploy()
 	kubectl --context $hub_cluster_name apply -k $1
 	for cluster_name in $spoke_cluster_names; do
 		until_true_or_n 300 kubectl --context $cluster_name -n ramen-system wait deployments ramen-dr-cluster-operator --for condition=available --timeout 0
-		image_registry_undeploy_cluster $cluster_name
 		ramen_config_deploy_spoke $cluster_name
 	done; unset -v cluster_name
 	kubectl --context $hub_cluster_name -n ramen-samples get channels/ramen-gitops
