@@ -14,7 +14,7 @@ if test -z "${IMAGE_DIR}"; then
 fi
 IMAGE_NAME="osd0"
 
-ROOK_SRC="${ROOK_SRC:-"https://raw.githubusercontent.com/rook/rook/v1.6.5/cluster/examples/kubernetes/ceph/"}"
+ROOK_SRC="${ROOK_SRC:-"https://raw.githubusercontent.com/rook/rook/release-1.8/deploy/examples"}"
 
 ## Usage
 usage()
@@ -149,6 +149,8 @@ set -e
 kubectl apply -f "${ROOK_SRC}/common.yaml" --context="${PROFILE}"
 kubectl apply -f "${ROOK_SRC}/crds.yaml" --context="${PROFILE}"
 # Fetch operator.yaml and enable CSI volume replication
+kubectl create -f https://raw.githubusercontent.com/csi-addons/volume-replication-operator/v0.1.0/config/crd/bases/replication.storage.openshift.io_volumereplications.yaml --context="${PROFILE}"
+kubectl create -f https://raw.githubusercontent.com/csi-addons/volume-replication-operator/v0.1.0/config/crd/bases/replication.storage.openshift.io_volumereplicationclasses.yaml --context="${PROFILE}"
 set -- "$(mktemp --directory)"
 cat <<a >"$1"/kustomization.yaml
 resources:

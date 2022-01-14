@@ -1,3 +1,5 @@
+# Copy of:
+#  github.com/rook/rook/blob/release-1.8/deploy/examples/cluster-test.yaml
 ---
 kind: ConfigMap
 apiVersion: v1
@@ -9,18 +11,23 @@ data:
     [global]
     osd_pool_default_size = 1
     mon_warn_on_pool_no_redundancy = false
+    bdev_flock_retry = 20
+    bluefs_buffered_io = false
 ---
 apiVersion: ceph.rook.io/v1
 kind: CephCluster
 metadata:
-  name: rook-ceph
+  name: my-cluster
   namespace: rook-ceph
 spec:
   dataDirHostPath: /var/lib/rook
   cephVersion:
-    image: ceph/ceph:v15
+    image: quay.io/ceph/ceph:v16.2.6
     allowUnsupported: true
   mon:
+    count: 1
+    allowMultiplePerNode: true
+  mgr:
     count: 1
     allowMultiplePerNode: true
   dashboard:
@@ -30,10 +37,24 @@ spec:
   storage:
     useAllNodes: true
     useAllDevices: true
-  network:
-    provider: host
   healthCheck:
     daemonHealth:
       mon:
         interval: 45s
         timeout: 600s
+  disruptionManagement:
+    managePodBudgets: true
+  network:
+    provider: host
+---
+apiVersion: ceph.rook.io/v1
+kind: CephBlockPool
+metadata:
+  name: device-health-metrics
+  namespace: rook-ceph
+spec:
+  name: device_health_metrics
+  failureDomain: host
+  replicated:
+    size: 1
+    requireSafeReplicaSize: false
