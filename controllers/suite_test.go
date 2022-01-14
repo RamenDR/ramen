@@ -17,6 +17,7 @@ limitations under the License.
 package controllers_test
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -62,6 +63,9 @@ func TestAPIs(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+	if _, set := os.LookupEnv("KUBEBUILDER_ASSETS"); !set {
+		Expect(os.Setenv("KUBEBUILDER_ASSETS", "../testbin/bin")).To(Succeed())
+	}
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
