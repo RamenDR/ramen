@@ -412,10 +412,9 @@ ramen_deploy_hub_or_spoke()
 	ramen_config_deploy_hub_or_spoke $1 $2
 }
 exit_stack_push unset -f ramen_deploy_hub_or_spoke
-ramen_config_deploy_hub_or_spoke()
+ramen_s3_secret_kubectl_cluster()
 {
-	# Add s3 profile to ramen config
-	cat <<-EOF | kubectl --context $1 apply -f -
+	cat <<-EOF | kubectl --context $1 $2 -f -
 	apiVersion: v1
 	kind: Secret
 	metadata:
@@ -425,22 +424,53 @@ ramen_config_deploy_hub_or_spoke()
 	  AWS_ACCESS_KEY_ID: "minio"
 	  AWS_SECRET_ACCESS_KEY: "minio123"
 	EOF
-	ramen_config_map_name=ramen-$2-operator-config
-	until_true_or_n 90 kubectl --context $1 -n ramen-system get configmap $ramen_config_map_name
-	cp $ramen_directory_path_name/config/$2/manager/ramen_manager_config.yaml /tmp/ramen_manager_config.yaml
-	set -- $1 $2 $spoke_cluster_names
-	cat <<-EOF >>/tmp/ramen_manager_config.yaml
+}
+exit_stack_push unset -f ramen_s3_secret_kubectl_cluster
+ramen_s3_secret_deploy_cluster()
+{
+	ramen_s3_secret_kubectl_cluster $1 apply
+}
+exit_stack_push unset -f ramen_s3_secret_deploy_cluster
+ramen_s3_secret_undeploy_cluster()
+{
+	ramen_s3_secret_kubectl_cluster $1 delete
+}
+exit_stack_push unset -f ramen_s3_secret_undeploy_cluster
+ramen_config_map_name()
+{
+	echo ramen-$1-operator-config
+}
+exit_stack_push unset -f ramen_config_map_name
+ramen_config_file_path_name()
+{
+	echo $ramen_directory_path_name/config/$1/manager/ramen_manager_config.yaml
+}
+exit_stack_push unset -f ramen_config_file_path_name
+ramen_config_replace_hub_or_spoke()
+{
+	kubectl create configmap $(ramen_config_map_name $2) --from-file=$3 -o yaml --dry-run=client |\
+		kubectl --context $1 -n ramen-system replace -f -
+}
+exit_stack_push unset -f ramen_config_replace_hub_or_spoke
+ramen_config_deploy_hub_or_spoke()
+{
+	ramen_s3_secret_deploy_cluster $1
+	until_true_or_n 90 kubectl --context $1 -n ramen-system get configmap $(ramen_config_map_name $2)
+	set -- $1 $2 /tmp/$USER/ramen/$2
+	mkdir -p $3
+	set -- $1 $2 $3/ramen_manager_config.yaml $spoke_cluster_names
+	cat $(ramen_config_file_path_name $2) - <<-EOF >$3
 	s3StoreProfiles:
-	- s3ProfileName: minio-on-$3
+	- s3ProfileName: minio-on-$4
 	  s3Bucket: bucket
-	  s3CompatibleEndpoint: $(minikube --profile $3 -n minio service --url minio)
+	  s3CompatibleEndpoint: $(minikube --profile $4 -n minio service --url minio)
 	  s3Region: us-east-1
 	  s3SecretRef:
 	    name: s3secret
 	    namespace: ramen-system
-	- s3ProfileName: minio-on-$4
+	- s3ProfileName: minio-on-$5
 	  s3Bucket: bucket
-	  s3CompatibleEndpoint: $(minikube --profile $4 -n minio service --url minio)
+	  s3CompatibleEndpoint: $(minikube --profile $5 -n minio service --url minio)
 	  s3Region: us-west-1
 	  s3SecretRef:
 	    name: s3secret
@@ -448,19 +478,15 @@ ramen_config_deploy_hub_or_spoke()
 	drClusterOperator:
 	  deploymentAutomationEnabled: true
 	EOF
-
-	kubectl --context $1 -n ramen-system\
-		create configmap ${ramen_config_map_name}\
-		--from-file=/tmp/ramen_manager_config.yaml -o yaml --dry-run=client |
-		kubectl --context $1 -n ramen-system replace -f -
-	unset -v ramen_config_map_name
+	ramen_config_replace_hub_or_spoke $1 $2 $3
 }
 exit_stack_push unset -f ramen_config_deploy_hub_or_spoke
-ramen_config_deploy_spoke()
+ramen_config_undeploy_hub_or_spoke()
 {
-	ramen_config_deploy_hub_or_spoke $1 dr-cluster
+	ramen_config_replace_hub_or_spoke $1 $2 $(ramen_config_file_path_name $2)
+	ramen_s3_secret_undeploy_cluster $1
 }
-exit_stack_push unset -f ramen_config_deploy_hub_or_spoke
+exit_stack_push unset -f ramen_config_undeploy_hub_or_spoke
 ramen_deploy_hub()
 {
 	ramen_deploy_hub_or_spoke $hub_cluster_name hub
@@ -474,6 +500,7 @@ ramen_deploy_spoke()
 exit_stack_push unset -f ramen_deploy_spoke
 ramen_undeploy_hub_or_spoke()
 {
+	ramen_config_undeploy_hub_or_spoke $1 $2
 	kube_context_set $1
 	make -C $ramen_directory_path_name undeploy-$2
 	# Error from server (NotFound): error when deleting "STDIN": namespaces "ramen-system" not found
@@ -559,7 +586,7 @@ ramen_samples_channel_and_drpolicy_deploy()
 		until_true_or_n 300 kubectl --context $cluster_name get namespaces/ramen-system
 		ramen_catalog_deploy_cluster $cluster_name
 		until_true_or_n 300 kubectl --context $cluster_name -n ramen-system wait deployments ramen-dr-cluster-operator --for condition=available --timeout 0
-		ramen_config_deploy_spoke $cluster_name
+		ramen_s3_secret_deploy_cluster $cluster_name # TODO remove once automated
 	done; unset -v cluster_name
 	kubectl --context $hub_cluster_name -n ramen-samples get channels/ramen-gitops
 }
@@ -567,6 +594,7 @@ exit_stack_push unset -f ramen_samples_channel_and_drpolicy_deploy
 ramen_samples_channel_and_drpolicy_undeploy()
 {
 	for cluster_name in $spoke_cluster_names; do
+		ramen_s3_secret_undeploy_cluster $cluster_name # TODO remove once automated
 		ramen_catalog_undeploy_cluster $cluster_name
 	done; unset -v cluster_name
 	date
