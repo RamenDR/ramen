@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/ghodss/yaml"
 	"github.com/go-logr/logr"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	operatorsv1 "github.com/operator-framework/api/pkg/operators/v1"
@@ -215,7 +216,13 @@ func (mwu *MWUtil) CreateOrUpdateDrClusterManifestWork(
 		vrgClusterRole,
 		vrgClusterRoleBinding,
 	}
+
 	if ramenConfig.DrClusterOperator.DeploymentAutomationEnabled {
+		configMap, err := configMap(drClusterOperatorNamespaceName, ramenConfig)
+		if err != nil {
+			return err
+		}
+
 		objects = append(objects,
 			namespace(drClusterOperatorNamespaceName),
 			olmClusterRole,
@@ -229,6 +236,7 @@ func (mwu *MWUtil) CreateOrUpdateDrClusterManifestWork(
 				drClusterOperatorCatalogSourceNamespaceName,
 				drClusterOperatorClusterServiceVersionName,
 			),
+			configMap,
 		)
 	}
 
@@ -348,6 +356,28 @@ func subscription(
 			InstallPlanApproval:    "Automatic",
 		},
 	}
+}
+
+func configMap(namespaceName string, ramenConfigHub *rmn.RamenConfig) (*corev1.ConfigMap, error) {
+	ramenConfigDrCluster := *ramenConfigHub
+	ramenConfigDrCluster.LeaderElection.ResourceName = "dr-cluster.ramendr.openshift.io"
+	ramenConfigDrCluster.RamenControllerType = rmn.DRCluster
+
+	ramenConfigDrClusterYaml, err := yaml.Marshal(ramenConfigDrCluster)
+	if err != nil {
+		return nil, fmt.Errorf("config map yaml marshal %w", err)
+	}
+
+	return &corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{Kind: "ConfigMap", APIVersion: "v1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ramen-dr-cluster-operator-config",
+			Namespace: namespaceName,
+		},
+		Data: map[string]string{
+			"ramen_manager_config.yaml": string(ramenConfigDrClusterYaml),
+		},
+	}, nil
 }
 
 func (mwu *MWUtil) GenerateManifest(obj interface{}) (*ocmworkv1.Manifest, error) {

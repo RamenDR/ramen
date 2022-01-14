@@ -104,31 +104,31 @@ type RamenConfig struct {
 
 	// MaxConcurrentReconciles is the maximum number of concurrent Reconciles which can be run.
 	// Defaults to 1.
-	MaxConcurrentReconciles int
+	MaxConcurrentReconciles int `json:",omitempty"`
 
 	// dr-cluster operator deployment/undeployment automation configuration
 	DrClusterOperator struct {
 		// dr-cluster operator deployment/undeployment automation enabled
-		DeploymentAutomationEnabled bool `json:"deploymentAutomationEnabled"`
+		DeploymentAutomationEnabled bool `json:"deploymentAutomationEnabled,omitempty"`
 
 		// channel name
-		ChannelName string `json:"channelName"`
+		ChannelName string `json:"channelName,omitempty"`
 
 		// package name
-		PackageName string `json:"packageName"`
+		PackageName string `json:"packageName,omitempty"`
 
 		// namespace name
-		NamespaceName string `json:"namespaceName"`
+		NamespaceName string `json:"namespaceName,omitempty"`
 
 		// catalog source name
-		CatalogSourceName string `json:"catalogSourceName"`
+		CatalogSourceName string `json:"catalogSourceName,omitempty"`
 
 		// catalog source namespace name
-		CatalogSourceNamespaceName string `json:"catalogSourceNamespaceName"`
+		CatalogSourceNamespaceName string `json:"catalogSourceNamespaceName,omitempty"`
 
 		// cluster service version name
-		ClusterServiceVersionName string `json:"clusterServiceVersionName"`
-	} `json:"drClusterOperator"`
+		ClusterServiceVersionName string `json:"clusterServiceVersionName,omitempty"`
+	} `json:"drClusterOperator,omitempty"`
 }
 
 func init() {
