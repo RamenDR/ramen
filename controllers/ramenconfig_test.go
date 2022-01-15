@@ -17,70 +17,44 @@ limitations under the License.
 package controllers_test
 
 import (
+	"context"
 	"fmt"
-	"io/ioutil"
-	"path/filepath"
 
 	"github.com/ghodss/yaml"
-	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
-	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	config "k8s.io/component-base/config/v1alpha1"
-	controller_runtime "sigs.k8s.io/controller-runtime"
-	controller_runtime_config "sigs.k8s.io/controller-runtime/pkg/config/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func ramenConfigStore(ramenConfig *ramen.RamenConfig, fileName string) error {
-	data, err := yaml.Marshal(ramenConfig)
+func configMapUpdate(
+	ctx context.Context,
+	client client.Client,
+	configMap *corev1.ConfigMap,
+	ramenConfig *ramen.RamenConfig,
+) error {
+	ramenConfigYaml, err := yaml.Marshal(ramenConfig)
 	if err != nil {
-		return fmt.Errorf("yaml marshal %v: %w", ramenConfig, err)
+		return fmt.Errorf("config map yaml marshal %w", err)
 	}
 
-	return ioutil.WriteFile(fileName, data, 0o600)
+	configMap.Data[controllers.ConfigMapRamenConfigKeyName] = string(ramenConfigYaml)
+
+	return client.Update(ctx, configMap)
 }
 
-func ramenConfigCreate(scheme *runtime.Scheme, log logr.Logger) (*controller_runtime.Options, error) {
-	dirName, err := ioutil.TempDir("", "ramen-test-")
+func s3ProfilesStore(
+	ctx context.Context,
+	apiReader client.Reader,
+	client client.Client,
+	s3Profiles []ramen.S3StoreProfile,
+) error {
+	configMap, ramenConfig, err := controllers.ConfigMapGet(ctx, apiReader)
 	if err != nil {
-		return nil, fmt.Errorf("temporary directory create: %w", err)
+		return fmt.Errorf("config map get %w", err)
 	}
 
-	fileName := filepath.Join(dirName, "config.yaml")
+	ramenConfig.S3StoreProfiles = s3Profiles
 
-	if err := ramenConfigStore(
-		&ramen.RamenConfig{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "RamenConfig",
-				APIVersion: ramen.GroupVersion.String(),
-			},
-			ControllerManagerConfigurationSpec: controller_runtime_config.ControllerManagerConfigurationSpec{
-				LeaderElection: &config.LeaderElectionConfiguration{
-					LeaderElect: new(bool),
-				},
-			},
-			RamenControllerType: ramen.DRHub,
-			S3StoreProfiles: []ramen.S3StoreProfile{
-				{
-					S3ProfileName:        "asdf",
-					S3Bucket:             "bucket",
-					S3CompatibleEndpoint: "http://192.168.39.223:30000",
-					S3Region:             "us-east-1",
-					S3SecretRef: v1.SecretReference{
-						Name:      "s3secret",
-						Namespace: "ramen-system",
-					},
-				},
-			},
-		},
-		fileName,
-	); err != nil {
-		return nil, err
-	}
-
-	options, _ := controllers.LoadControllerConfig(fileName, scheme, log)
-
-	return &options, nil
+	return configMapUpdate(ctx, client, configMap, ramenConfig)
 }

@@ -109,6 +109,24 @@ var (
 
 	schedulingInterval = "1h"
 
+	s3Secret = &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "s3secret"},
+		StringData: map[string]string{
+			"AWS_ACCESS_KEY_ID":     awsAccessKeyIDSucc,
+			"AWS_SECRET_ACCESS_KEY": "",
+		},
+	}
+
+	s3Profiles = []rmn.S3StoreProfile{
+		{
+			S3ProfileName:        "fakeS3Profile",
+			S3Bucket:             bucketNameSucc,
+			S3CompatibleEndpoint: "http://192.168.39.223:30000",
+			S3Region:             "us-east-1",
+			S3SecretRef:          corev1.SecretReference{Name: s3Secret.Name},
+		},
+	}
+
 	asyncDRPolicy = &rmn.DRPolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: AsyncDRPolicyName,
@@ -117,12 +135,12 @@ var (
 			DRClusterSet: []rmn.ManagedCluster{
 				{
 					Name:          East1ManagedCluster,
-					S3ProfileName: "fakeS3Profile",
+					S3ProfileName: s3Profiles[0].S3ProfileName,
 					Region:        "east",
 				},
 				{
 					Name:          West1ManagedCluster,
-					S3ProfileName: "fakeS3Profile",
+					S3ProfileName: s3Profiles[0].S3ProfileName,
 					Region:        "west",
 				},
 			},
@@ -138,12 +156,12 @@ var (
 			DRClusterSet: []rmn.ManagedCluster{
 				{
 					Name:          East1ManagedCluster,
-					S3ProfileName: "fakeS3Profile",
+					S3ProfileName: s3Profiles[0].S3ProfileName,
 					Region:        "east",
 				},
 				{
 					Name:          East2ManagedCluster,
-					S3ProfileName: "fakeS3Profile",
+					S3ProfileName: s3Profiles[0].S3ProfileName,
 					Region:        "east",
 				},
 			},
@@ -151,6 +169,24 @@ var (
 		},
 	}
 )
+
+func s3SecretNamespaceSet() {
+	s3Secret.Namespace = configMap.Namespace
+
+	for i := range s3Profiles {
+		s3Profiles[i].S3SecretRef.Namespace = s3Secret.Namespace
+	}
+}
+
+func s3SecretAndProfilesCreate() {
+	Expect(k8sClient.Create(context.TODO(), s3Secret)).To(Succeed())
+	Expect(s3ProfilesStore(context.TODO(), apiReader, k8sClient, s3Profiles)).To(Succeed())
+}
+
+func s3SecretAndProfilesDelete() {
+	Expect(s3ProfilesStore(context.TODO(), apiReader, k8sClient, []rmn.S3StoreProfile{})).To(Succeed())
+	Expect(k8sClient.Delete(context.TODO(), s3Secret)).To(Succeed())
+}
 
 var drstate string
 
@@ -210,7 +246,7 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(
 			PVCSelector: metav1.LabelSelector{
 				MatchLabels: map[string]string{"appclass": "gold"},
 			},
-			S3Profiles: []string{"fakeS3Profile"},
+			S3Profiles: []string{s3Profiles[0].S3ProfileName},
 		},
 		Status: vrgStatus,
 	}
@@ -1091,6 +1127,10 @@ func verifyFailoverToSecondary(userPlacementRule *plrv1.PlacementRule, fromClust
 
 // +kubebuilder:docs-gen:collapse=Imports
 var _ = Describe("DRPlacementControl Reconciler", func() {
+	Specify("s3 profiles and secret", func() {
+		s3SecretNamespaceSet()
+		s3SecretAndProfilesCreate()
+	})
 	Context("DRPlacementControl Reconciler Async DR", func() {
 		userPlacementRule := &plrv1.PlacementRule{}
 		drpc := &rmn.DRPlacementControl{}
@@ -1289,5 +1329,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				deleteDRPolicySync()
 			})
 		})
+	})
+	Specify("s3 profiles and secret delete", func() {
+		s3SecretAndProfilesDelete()
 	})
 })

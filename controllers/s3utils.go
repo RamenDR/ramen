@@ -127,13 +127,13 @@ type s3ObjectStoreGetter struct{}
 func (s3ObjectStoreGetter) ObjectStore(ctx context.Context,
 	r client.Reader, s3ProfileName string,
 	callerTag string, log logr.Logger) (ObjectStorer, error) {
-	s3StoreProfile, err := getRamenConfigS3StoreProfile(s3ProfileName, log)
+	s3StoreProfile, err := GetRamenConfigS3StoreProfile(ctx, r, s3ProfileName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get profile %s for caller %s, %w",
 			s3ProfileName, callerTag, err)
 	}
 
-	accessID, secretAccessKey, err := getS3Secret(ctx, r, s3StoreProfile.S3SecretRef)
+	accessID, secretAccessKey, err := GetS3Secret(ctx, r, s3StoreProfile.S3SecretRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get secret %v for caller %s, %w",
 			s3StoreProfile.S3SecretRef, callerTag, err)
@@ -179,7 +179,7 @@ func (s3ObjectStoreGetter) ObjectStore(ctx context.Context,
 	return s3Conn, nil
 }
 
-func getS3Secret(ctx context.Context, r client.Reader,
+func GetS3Secret(ctx context.Context, r client.Reader,
 	secretRef corev1.SecretReference) (
 	s3AccessID, s3SecretAccessKey []byte, err error) {
 	secret := corev1.Secret{}

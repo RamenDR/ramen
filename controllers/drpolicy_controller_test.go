@@ -81,6 +81,9 @@ var _ = Describe("DrpolicyController", func() {
 		Expect(k8sClient.Create(context.TODO(), drpolicy)).To(Succeed())
 		drClustersExpect()
 	}
+	drpolicyUpdate := func(drpolicy *ramen.DRPolicy) {
+		Expect(k8sClient.Update(context.TODO(), drpolicy)).To(Succeed())
+	}
 	drpolicyDeleteAndConfirm := func(drpolicy *ramen.DRPolicy) {
 		Expect(k8sClient.Delete(context.TODO(), drpolicy)).To(Succeed())
 		Eventually(func() bool {
@@ -123,29 +126,113 @@ var _ = Describe("DrpolicyController", func() {
 		{"198.51.100.17/24", "198.51.100.18/24", "198.51.100.19/24"}, // valid CIDR
 		{"1111.51.100.14/24", "aaa.51.100.15/24", "00.51.100.16/24"}, // invalid CIDR
 	}
-	clusters := [...]ramen.ManagedCluster{
-		{Name: `cluster0`, S3ProfileName: s3ProfileNameConnectSucc, Region: "east"},
-		{Name: `cluster1`, S3ProfileName: s3ProfileNameConnectSucc, Region: "west"},
-		{Name: `cluster2`, S3ProfileName: s3ProfileNameConnectSucc, Region: "east"},
+	s3SecretStringData := func(accessID, secretKey string) map[string]string {
+		return map[string]string{
+			"AWS_ACCESS_KEY_ID":     accessID,
+			"AWS_SECRET_ACCESS_KEY": secretKey,
+		}
 	}
-	objectMetas := [...]metav1.ObjectMeta{
-		{Name: `drpolicy0`},
-		{Name: `drpolicy1`},
+	s3SecretCreate := func(s3Secret *corev1.Secret) {
+		Expect(k8sClient.Create(context.TODO(), s3Secret)).To(Succeed())
+	}
+	s3SecretUpdate := func(s3Secret *corev1.Secret) {
+		Expect(k8sClient.Update(context.TODO(), s3Secret)).To(Succeed())
+	}
+	s3SecretUpdateAccessID := func(s3Secret *corev1.Secret, accessID string) {
+		s3Secret.StringData = s3SecretStringData(accessID, s3Secret.StringData["AWS_SECRET_ACCESS_KEY"])
+		s3SecretUpdate(s3Secret)
+	}
+	s3SecretDelete := func(s3Secret *corev1.Secret) {
+		Expect(k8sClient.Delete(context.TODO(), s3Secret)).To(Succeed())
+	}
+	s3Secrets := [...]corev1.Secret{
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "s3secret0"},
+			StringData: s3SecretStringData(awsAccessKeyIDSucc, ""),
+		},
+	}
+	var s3SecretObjectMetas [len(s3Secrets)]metav1.ObjectMeta
+	s3SecretObjectMetaReset := func(i uint) {
+		s3Secrets[i].ObjectMeta = s3SecretObjectMetas[i]
+	}
+	s3SecretsNamespaceNameSet := func() {
+		namespaceName := configMap.Namespace
+		for i := range s3Secrets {
+			s3Secrets[i].Namespace = namespaceName
+			s3SecretObjectMetas[i] = s3Secrets[i].ObjectMeta
+		}
+	}
+	s3SecretsCreate := func() {
+		for i := range s3Secrets {
+			s3SecretCreate(&s3Secrets[i])
+		}
+	}
+	s3SecretsDelete := func() {
+		for i := range s3Secrets {
+			s3SecretDelete(&s3Secrets[i])
+		}
+	}
+	var s3SecretNumber uint = 0
+	s3ProfileNew := func(profileNameSuffix, bucketName string) ramen.S3StoreProfile {
+		return ramen.S3StoreProfile{
+			S3ProfileName:        "s3profile" + profileNameSuffix,
+			S3Bucket:             bucketName,
+			S3CompatibleEndpoint: "http://192.168.39.223:30000",
+			S3Region:             "us-east-1",
+			S3SecretRef:          corev1.SecretReference{Name: s3Secrets[s3SecretNumber].Name},
+		}
+	}
+	s3Profiles := []ramen.S3StoreProfile{
+		s3ProfileNew("0", bucketNameSucc),
+		s3ProfileNew("1", bucketNameSucc2),
+		s3ProfileNew("2", bucketNameFail),
+		s3ProfileNew("3", bucketNameFail2),
+	}
+	s3ProfilesSecretNamespaceNameSet := func() {
+		namespaceName := s3Secrets[s3SecretNumber].Namespace
+		for i := range s3Profiles {
+			s3Profiles[i].S3SecretRef.Namespace = namespaceName
+		}
+	}
+	s3ProfilesUpdate := func() {
+		Expect(s3ProfilesStore(context.TODO(), apiReader, k8sClient, s3Profiles)).To(Succeed())
+	}
+	Specify("s3 profiles and secrets", func() {
+		s3SecretsNamespaceNameSet()
+		s3SecretsCreate()
+		s3ProfilesSecretNamespaceNameSet()
+		s3ProfilesUpdate()
+	})
+	clusters := [...]ramen.ManagedCluster{
+		{Name: "cluster0", S3ProfileName: s3Profiles[0].S3ProfileName, Region: "east"},
+		{Name: "cluster1", S3ProfileName: s3Profiles[0].S3ProfileName, Region: "west"},
+		{Name: "cluster2", S3ProfileName: s3Profiles[0].S3ProfileName, Region: "east"},
 	}
 	drpolicies := [...]ramen.DRPolicy{
 		{
-			ObjectMeta: objectMetas[0],
+			ObjectMeta: metav1.ObjectMeta{Name: "drpolicy0"},
 			Spec:       ramen.DRPolicySpec{DRClusterSet: clusters[0:2], SchedulingInterval: `00m`},
 		},
 		{
-			ObjectMeta: objectMetas[1],
+			ObjectMeta: metav1.ObjectMeta{Name: "drpolicy1"},
 			Spec:       ramen.DRPolicySpec{DRClusterSet: clusters[1:3], SchedulingInterval: `9999999d`},
 		},
 	}
+	var drpolicyObjectMetas [len(drpolicies)]metav1.ObjectMeta
+	func() {
+		for i := range drpolicies {
+			drpolicyObjectMetas[i] = drpolicies[i].ObjectMeta
+		}
+	}()
+	drpolicyObjectMetaReset := func(i uint) {
+		drpolicies[i].ObjectMeta = drpolicyObjectMetas[i]
+	}
 	clusterNamesNone := sets.String{}
 	var drpolicy *ramen.DRPolicy
+	var drpolicyNumber uint
 	Specify(`a drpolicy`, func() {
-		drpolicy = &drpolicies[0]
+		drpolicyNumber = 0
+		drpolicy = &drpolicies[drpolicyNumber]
 	})
 	When("a drpolicy is created specifying a cluster name and a namespace of the same name does not exist", func() {
 		It("should set its validated status condition's status to false", func() {
@@ -157,7 +244,7 @@ var _ = Describe("DrpolicyController", func() {
 		drpolicyDeleteAndConfirm(drpolicy)
 	})
 	Specify("a drpolicy", func() {
-		drpolicy.ObjectMeta = objectMetas[0]
+		drpolicyObjectMetaReset(drpolicyNumber)
 	})
 	When("a drpolicy with valid CIDRs", func() {
 		It("should succeed", func() {
@@ -169,27 +256,27 @@ var _ = Describe("DrpolicyController", func() {
 	When("a drpolicy with invalid CIDRs", func() {
 		It("should set validation status to false", func() {
 			drpolicy.Spec.DRClusterSet[0].CIDRs = cidrs[1]
-			Expect(k8sClient.Update(context.TODO(), drpolicy)).To(Succeed())
+			drpolicyUpdate(drpolicy)
 			validatedConditionExpect(drpolicy, metav1.ConditionFalse, Ignore())
 		})
 	})
 	Specify("remove invalid CIDRs and update", func() {
 		drpolicy.Spec.DRClusterSet[0].CIDRs = nil
-		Expect(k8sClient.Update(context.TODO(), drpolicy)).To(Succeed())
+		drpolicyUpdate(drpolicy)
 		validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
 	})
 	Specify("drpolicy delete", func() {
 		drpolicyDeleteAndConfirm(drpolicy)
 	})
 	Specify("a drpolicy", func() {
-		drpolicy.ObjectMeta = objectMetas[0]
+		drpolicyObjectMetaReset(drpolicyNumber)
 	})
 	When("a 1st drpolicy is created", func() {
 		It("should create a drcluster manifest work for each cluster specified in a 1st drpolicy", func() {
 			drpolicyCreate(drpolicy)
 		})
 	})
-	When(`a drpolicy is created containing an s3 profile that connects successfully`, func() {
+	When("a drpolicy is created referencing an s3 profile that connects successfully", func() {
 		It("should set its validated status condition's status to true", func() {
 			validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
 		})
@@ -219,7 +306,7 @@ var _ = Describe("DrpolicyController", func() {
 		})
 	})
 	Specify(`a drpolicy`, func() {
-		drpolicy.ObjectMeta = objectMetas[0]
+		drpolicyObjectMetaReset(drpolicyNumber)
 	})
 	When(`a drpolicy creation request contains an invalid scheduling interval`, func() {
 		It(`should fail`, func() {
@@ -256,46 +343,106 @@ var _ = Describe("DrpolicyController", func() {
 	Specify(`a drpolicy`, func() {
 		drpolicy.Spec.SchedulingInterval = `00m`
 	})
-	When(`a drpolicy is created containing an s3 profile that connects unsuccessfully`, func() {
+	When("a drpolicy is created referencing an s3 profile that connects unsuccessfully", func() {
 		It("should set its validated status condition's status to false and "+
 			"message to specify the name of the first listed s3 profile that connected unsuccessfully", func() {
-			drpolicy.Spec.DRClusterSet[1].S3ProfileName = s3ProfileNameConnectFail
+			s3ProfileName := s3Profiles[2].S3ProfileName
+			drpolicy.Spec.DRClusterSet[1].S3ProfileName = s3ProfileName
 			Expect(k8sClient.Create(context.TODO(), drpolicy)).To(Succeed())
-			validatedConditionExpect(drpolicy, metav1.ConditionFalse, HavePrefix(s3ProfileNameConnectFail+": "))
+			validatedConditionExpect(drpolicy, metav1.ConditionFalse, HavePrefix(s3ProfileName+": "))
 		})
 	})
-	When("a drpolicy is updated containing an s3 profile that connects unsuccessfully "+
+	When("a drpolicy is updated referencing an s3 profile that connects unsuccessfully "+
 		"ordered before one that previously connected unsuccessfully", func() {
 		It("should change its validated status condition"+
 			"message to specify the name of the first listed s3 profile that connected unsuccessfully", func() {
-			drpolicy.Spec.DRClusterSet[0].S3ProfileName = s3ProfileNameConnectFail2
-			Expect(k8sClient.Update(context.TODO(), drpolicy)).To(Succeed())
-			validatedConditionExpect(drpolicy, metav1.ConditionFalse, HavePrefix(s3ProfileNameConnectFail2+": "))
+			s3ProfileName := s3Profiles[3].S3ProfileName
+			drpolicy.Spec.DRClusterSet[0].S3ProfileName = s3ProfileName
+			drpolicyUpdate(drpolicy)
+			validatedConditionExpect(drpolicy, metav1.ConditionFalse, HavePrefix(s3ProfileName+": "))
 		})
 	})
-	When("a drpolicy is updated containing s3 profiles that all connect successfully", func() {
+	When("a drpolicy is updated referencing s3 profiles that all connect successfully", func() {
 		It("should update its validated status condition's status to true", func() {
-			drpolicy.Spec.DRClusterSet[0].S3ProfileName = s3ProfileNameConnectSucc
-			drpolicy.Spec.DRClusterSet[1].S3ProfileName = s3ProfileNameConnectSucc
-			Expect(k8sClient.Update(context.TODO(), drpolicy)).To(Succeed())
+			s3ProfileName := s3Profiles[0].S3ProfileName
+			drpolicy.Spec.DRClusterSet[0].S3ProfileName = s3ProfileName
+			drpolicy.Spec.DRClusterSet[1].S3ProfileName = s3ProfileName
+			drpolicyUpdate(drpolicy)
 			validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
 		})
 	})
-	When("a previously valid drpolicy is updated containing a different s3 profile that connects successfully", func() {
+	When("a valid drpolicy is updated referencing a different s3 profile that connects successfully", func() {
 		It("should update its validated status condition's observed generation", func() {
-			drpolicy.Spec.DRClusterSet[0].S3ProfileName = s3ProfileNameConnectSucc2
-			Expect(k8sClient.Update(context.TODO(), drpolicy)).To(Succeed())
+			s3ProfileName := s3Profiles[1].S3ProfileName
+			drpolicy.Spec.DRClusterSet[0].S3ProfileName = s3ProfileName
+			drpolicyUpdate(drpolicy)
 			validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
 		})
 	})
-	When("a previously valid drpolicy is updated containing an s3 profile connects unsuccessfully", func() {
+	var s3Profile *ramen.S3StoreProfile
+	Specify("an s3 profile", func() {
+		s3Profile = &s3Profiles[2]
+	})
+	When("a valid drpolicy is updated referencing an s3 profile connects unsuccessfully", func() {
 		It("should update its validated status condition's status to false", func() {
-			drpolicy.Spec.DRClusterSet[0].S3ProfileName = s3ProfileNameConnectFail
-			Expect(k8sClient.Update(context.TODO(), drpolicy)).To(Succeed())
-			validatedConditionExpect(drpolicy, metav1.ConditionFalse, HavePrefix(s3ProfileNameConnectFail+": "))
+			drpolicy.Spec.DRClusterSet[0].S3ProfileName = s3Profile.S3ProfileName
+			drpolicyUpdate(drpolicy)
+			validatedConditionExpect(drpolicy, metav1.ConditionFalse, HavePrefix(s3Profile.S3ProfileName+": "))
+		})
+	})
+	drpolicyFix := func() {
+		When("an invalid drpolicy's referenced s3 profile is updated to connect successfully", func() {
+			It("shoud update its validated status condition's status to true", func() {
+				s3Profile.S3Bucket = bucketNameSucc
+				s3ProfilesUpdate()
+				validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
+			})
+		})
+	}
+	drpolicyFix()
+	When("a valid drpolicy's referenced s3 profile is updated to connect unsuccessfully", func() {
+		It("shoud update its validated status condition's status to false", func() {
+			s3Profile.S3Bucket = bucketNameFail
+			s3ProfilesUpdate()
+			validatedConditionExpect(drpolicy, metav1.ConditionFalse, HavePrefix(s3Profile.S3ProfileName+": "))
+		})
+	})
+	drpolicyFix()
+	var s3Secret *corev1.Secret
+	Specify("s3 secret", func() {
+		s3Secret = &s3Secrets[s3SecretNumber]
+		Expect(s3Profile.S3SecretRef.Namespace).To(Equal(s3Secret.Namespace))
+		Expect(s3Profile.S3SecretRef.Name).To(Equal(s3Secret.Name))
+	})
+	When("a valid drpolicy's referenced s3 profile's secret is updated to connect unsuccessfully", func() {
+		It("shoud update its validated status condition's status to false", func() {
+			s3SecretUpdateAccessID(s3Secret, awsAccessKeyIDFail)
+			validatedConditionExpect(drpolicy, metav1.ConditionFalse, HavePrefix(s3Profile.S3ProfileName+": "))
+		})
+	})
+	When("an invalid drpolicy's referenced s3 profile's secret is updated to connect successfully", func() {
+		It("shoud update its validated status condition's status to true", func() {
+			s3SecretUpdateAccessID(s3Secret, awsAccessKeyIDSucc)
+			validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
+		})
+	})
+	When("a valid drpolicy's referenced s3 profile's secret is deleted", func() {
+		It("should update its validated status condition's status to false", func() {
+			s3SecretDelete(s3Secret)
+			validatedConditionExpect(drpolicy, metav1.ConditionFalse, HavePrefix(s3Profile.S3ProfileName+": "))
+		})
+	})
+	When("an invalid drpolicy's referenced s3 profile's secret is re-created", func() {
+		It("should update its validated status condition's status to true", func() {
+			s3SecretObjectMetaReset(s3SecretNumber)
+			s3SecretCreate(s3Secret)
+			validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
 		})
 	})
 	Specify(`drpolicy delete`, func() {
 		drpolicyDeleteAndConfirm(drpolicy)
+	})
+	Specify("s3 secrets delete", func() {
+		s3SecretsDelete()
 	})
 })
