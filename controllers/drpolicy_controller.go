@@ -23,13 +23,20 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/util"
@@ -51,6 +58,8 @@ const ReasonValidationFailed = "ValidationFailed"
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drpolicies/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drpolicies/finalizers,verbs=update
 // +kubebuilder:rbac:groups=work.open-cluster-management.io,resources=manifestworks,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -74,9 +83,9 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	u := &objectUpdater{ctx, drpolicy, r.Client, log}
 
-	ramenConfig, err := ReadRamenConfig(log)
+	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("ramen config read: %w", u.validatedSetFalse("RamenConfigReadFailed", err))
+		return ctrl.Result{}, fmt.Errorf("config map get: %w", u.validatedSetFalse("ConfigMapGetFailed", err))
 	}
 
 	manifestWorkUtil := util.MWUtil{Client: r.Client, Ctx: ctx, Log: log, InstName: "", InstNamespace: ""}
@@ -109,7 +118,7 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// TODO: New condition type is needed for clusters deploy and fencing
 	// handled after this function.
-	if err := drClustersDeploy(drpolicy, &manifestWorkUtil, &ramenConfig); err != nil {
+	if err := drClustersDeploy(drpolicy, &manifestWorkUtil, ramenConfig); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drclusters deploy: %w", u.validatedSetFalse("DrClustersDeployFailed", err))
 	}
 
@@ -415,5 +424,73 @@ func (u *objectUpdater) finalizerRemove() error {
 func (r *DRPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&ramen.DRPolicy{}).
+		Watches(
+			&source.Kind{Type: &corev1.ConfigMap{}},
+			handler.EnqueueRequestsFromMapFunc(r.configMapMapFunc),
+			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
+		).
+		Watches(
+			&source.Kind{Type: &corev1.Secret{}},
+			handler.EnqueueRequestsFromMapFunc(r.secretMapFunc),
+			builder.WithPredicates(createOrDeleteOrResourceVersionUpdatePredicate{}),
+		).
 		Complete(r)
+}
+
+func (r *DRPolicyReconciler) configMapMapFunc(configMap client.Object) []reconcile.Request {
+	if configMap.GetName() != HubOperatorConfigMapName || configMap.GetNamespace() != NamespaceName() {
+		return []reconcile.Request{}
+	}
+
+	drpolicies := &ramen.DRPolicyList{}
+	if err := r.Client.List(context.TODO(), drpolicies); err != nil {
+		return []reconcile.Request{}
+	}
+
+	requests := make([]reconcile.Request, len(drpolicies.Items))
+	for i, drpolicy := range drpolicies.Items {
+		requests[i].Name = drpolicy.GetName()
+	}
+
+	return requests
+}
+
+func (r *DRPolicyReconciler) secretMapFunc(secret client.Object) (requests []reconcile.Request) {
+	if secret.GetNamespace() != NamespaceName() {
+		return
+	}
+
+	drpolicies := &ramen.DRPolicyList{}
+	if err := r.Client.List(context.TODO(), drpolicies); err != nil {
+		return
+	}
+
+	_, ramenConfig, err := ConfigMapGet(context.TODO(), r.APIReader)
+	if err != nil {
+		return
+	}
+
+	for _, drpolicy := range drpolicies.Items {
+		for _, drCluster := range drpolicy.Spec.DRClusterSet {
+			s3Profile := RamenConfigS3StoreProfilePointerGet(ramenConfig, drCluster.S3ProfileName)
+			if s3Profile == nil {
+				continue
+			}
+
+			if s3Profile.S3SecretRef.Namespace == secret.GetNamespace() &&
+				s3Profile.S3SecretRef.Name == secret.GetName() {
+				requests = append(requests,
+					reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Name: drpolicy.GetName(),
+						},
+					},
+				)
+
+				break
+			}
+		}
+	}
+
+	return requests
 }

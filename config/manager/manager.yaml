@@ -35,6 +35,10 @@ spec:
         env:
           - name: PORT
             value: "9289"
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
         securityContext:
           allowPrivilegeEscalation: false
         livenessProbe:

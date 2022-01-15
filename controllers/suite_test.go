@@ -29,13 +29,15 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	config "k8s.io/component-base/config/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	controller_runtime_config "sigs.k8s.io/controller-runtime/pkg/config/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
-
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
 	ocmclv1 "github.com/open-cluster-management/api/cluster/v1"
@@ -57,6 +59,7 @@ var (
 	apiReader client.Reader
 	k8sClient client.Client
 	testEnv   *envtest.Environment
+	configMap *corev1.ConfigMap
 )
 
 func TestAPIs(t *testing.T) {
@@ -89,8 +92,8 @@ var _ = BeforeSuite(func() {
 
 	ramenNamespace, set := os.LookupEnv("POD_NAMESPACE")
 	if !set {
-		Expect(os.Setenv("POD_NAMESPACE", "ns-envtest")).To(Succeed())
 		ramenNamespace = "ns-envtest"
+		Expect(os.Setenv("POD_NAMESPACE", ramenNamespace)).To(Succeed())
 	}
 
 	By("bootstrapping test environment")
@@ -137,12 +140,32 @@ var _ = BeforeSuite(func() {
 	Expect(k8sClient).NotTo(BeNil())
 
 	createOperatorNamespace(ramenNamespace)
+	ramenConfig := &ramendrv1alpha1.RamenConfig{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "RamenConfig",
+			APIVersion: ramendrv1alpha1.GroupVersion.String(),
+		},
+		ControllerManagerConfigurationSpec: controller_runtime_config.ControllerManagerConfigurationSpec{
+			LeaderElection: &config.LeaderElectionConfiguration{
+				LeaderElect:  new(bool),
+				ResourceName: ramencontrollers.HubLeaderElectionResourceName,
+			},
+		},
+		RamenControllerType: ramendrv1alpha1.DRHub,
+	}
+	configMap, err = ramencontrollers.ConfigMapNew(
+		ramenNamespace,
+		ramencontrollers.HubOperatorConfigMapName,
+		ramenConfig,
+	)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(k8sClient.Create(context.TODO(), configMap)).To(Succeed())
 
-	options, err := ramenConfigCreate(scheme.Scheme, ctrl.Log)
+	options, err := manager.Options{Scheme: scheme.Scheme}.AndFrom(ramenConfig)
 	Expect(err).NotTo(HaveOccurred())
 
 	// test controller behavior
-	k8sManager, err := ctrl.NewManager(cfg, *options)
+	k8sManager, err := ctrl.NewManager(cfg, options)
 	Expect(err).ToNot(HaveOccurred())
 
 	Expect((&ramencontrollers.DRPolicyReconciler{
@@ -187,6 +210,7 @@ var _ = BeforeSuite(func() {
 }, 60)
 
 var _ = AfterSuite(func() {
+	Expect(k8sClient.Delete(context.TODO(), configMap)).To(Succeed())
 	By("tearing down the test environment")
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())

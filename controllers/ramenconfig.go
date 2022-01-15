@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net/url"
@@ -25,8 +26,35 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/go-logr/logr"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+const (
+	NamespaceNameDefault                               = "ramen-system"
+	hubName                                            = "hub"
+	drClusterName                                      = "dr-cluster"
+	operatorNamePrefix                                 = "ramen-"
+	operatorNameSuffix                                 = "-operator"
+	hubOperatorNameDefault                             = operatorNamePrefix + hubName + operatorNameSuffix
+	drClusterOperatorNameDefault                       = operatorNamePrefix + drClusterName + operatorNameSuffix
+	configMapNameSuffix                                = "-config"
+	HubOperatorConfigMapName                           = hubOperatorNameDefault + configMapNameSuffix
+	drClusterOperatorConfigMapName                     = drClusterOperatorNameDefault + configMapNameSuffix
+	leaderElectionResourceNameSuffix                   = ".ramendr.openshift.io"
+	HubLeaderElectionResourceName                      = hubName + leaderElectionResourceNameSuffix
+	drClusterLeaderElectionResourceName                = drClusterName + leaderElectionResourceNameSuffix
+	ConfigMapRamenConfigKeyName                        = "ramen_manager_config.yaml"
+	drClusterOperatorPackageNameDefault                = drClusterOperatorNameDefault
+	drClusterOperatorChannelNameDefault                = "alpha"
+	drClusterOperatorNamespaceNameDefault              = NamespaceNameDefault
+	drClusterOperatorCatalogSourceNameDefault          = "ramen-catalog"
+	drClusterOperatorCatalogSourceNamespaceNameDefault = drClusterOperatorNamespaceNameDefault
+	drClusterOperatorClusterServiceVersionNameDefault  = drClusterOperatorPackageNameDefault + ".v0.0.1"
 )
 
 var cachedRamenConfigFileName string
@@ -65,7 +93,7 @@ func LoadControllerConfig(configFile string, scheme *runtime.Scheme,
 // RamenConfig file for every S3 store profile access turns out to be more
 // expensive, we may need to enhance this logic to load it only when
 // RamenConfig has changed.
-func ReadRamenConfig(log logr.Logger) (ramenConfig ramendrv1alpha1.RamenConfig, err error) {
+func ReadRamenConfigFile(log logr.Logger) (ramenConfig ramendrv1alpha1.RamenConfig, err error) {
 	if cachedRamenConfigFileName == "" {
 		err = fmt.Errorf("config file not specified")
 
@@ -93,61 +121,72 @@ func ReadRamenConfig(log logr.Logger) (ramenConfig ramendrv1alpha1.RamenConfig, 
 	return
 }
 
-func getRamenConfigS3StoreProfile(profileName string, log logr.Logger) (
+func GetRamenConfigS3StoreProfile(ctx context.Context, apiReader client.Reader, profileName string) (
 	s3StoreProfile ramendrv1alpha1.S3StoreProfile, err error) {
-	ramenConfig, err := ReadRamenConfig(log)
+	_, ramenConfig, err := ConfigMapGet(ctx, apiReader)
 	if err != nil {
 		return s3StoreProfile, err
 	}
 
-	profileExists := false
+	s3StoreProfilePointer := RamenConfigS3StoreProfilePointerGet(ramenConfig, profileName)
 
-	for _, s3Profile := range ramenConfig.S3StoreProfiles {
-		if s3Profile.S3ProfileName == profileName {
-			s3StoreProfile = s3Profile
-			profileExists = true
-
-			break // found profile
-		}
-	}
-
-	if !profileExists {
+	if s3StoreProfilePointer == nil {
 		err = fmt.Errorf("s3 profile %s not found in RamenConfig", profileName)
 
 		return s3StoreProfile, err
 	}
 
+	s3StoreProfile = *s3StoreProfilePointer
+
+	err = s3StoreProfileFormatCheck(&s3StoreProfile)
+
+	return
+}
+
+func RamenConfigS3StoreProfilePointerGet(ramenConfig *ramendrv1alpha1.RamenConfig, profileName string,
+) *ramendrv1alpha1.S3StoreProfile {
+	for i := range ramenConfig.S3StoreProfiles {
+		s3Profile := &ramenConfig.S3StoreProfiles[i]
+		if s3Profile.S3ProfileName == profileName {
+			return s3Profile
+		}
+	}
+
+	return nil
+}
+
+func s3StoreProfileFormatCheck(s3StoreProfile *ramendrv1alpha1.S3StoreProfile) (err error) {
 	s3Endpoint := s3StoreProfile.S3CompatibleEndpoint
 	if s3Endpoint == "" {
 		err = fmt.Errorf("s3 endpoint has not been configured in s3 profile %s",
-			profileName)
+			s3StoreProfile.S3ProfileName)
 
-		return s3StoreProfile, err
+		return err
 	}
 
 	_, err = url.ParseRequestURI(s3Endpoint)
 	if err != nil {
 		err = fmt.Errorf("invalid s3 endpoint <%s> in "+
-			"profile %s, reason: %w", s3Endpoint, profileName, err)
+			"profile %s, reason: %w", s3Endpoint, s3StoreProfile.S3ProfileName, err)
 
-		return s3StoreProfile, err
+		return err
 	}
 
 	s3Bucket := s3StoreProfile.S3Bucket
 	if s3Bucket == "" {
 		err = fmt.Errorf("s3 bucket has not been configured in s3 profile %s",
-			profileName)
+			s3StoreProfile.S3ProfileName)
 
-		return s3StoreProfile, err
+		return err
 	}
 
-	return s3StoreProfile, nil
+	return nil
 }
 
 func getMaxConcurrentReconciles(log logr.Logger) int {
 	const defaultMaxConcurrentReconciles = 1
 
-	ramenConfig, err := ReadRamenConfig(log)
+	ramenConfig, err := ReadRamenConfigFile(log)
 	if err != nil {
 		return defaultMaxConcurrentReconciles
 	}
@@ -159,14 +198,53 @@ func getMaxConcurrentReconciles(log logr.Logger) int {
 	return ramenConfig.MaxConcurrentReconciles
 }
 
-const (
-	drClusterOperatorChannelNameDefault                = "alpha"
-	drClusterOperatorPackageNameDefault                = "ramen-dr-cluster-operator"
-	drClusterOperatorNamespaceNameDefault              = "ramen-system"
-	drClusterOperatorCatalogSourceNameDefault          = "ramen-catalog"
-	drClusterOperatorCatalogSourceNamespaceNameDefault = drClusterOperatorNamespaceNameDefault
-	drClusterOperatorClusterServiceVersionNameDefault  = drClusterOperatorPackageNameDefault + ".v0.0.1"
-)
+func ConfigMapNew(
+	namespaceName string,
+	name string,
+	ramenConfig *ramendrv1alpha1.RamenConfig,
+) (*corev1.ConfigMap, error) {
+	ramenConfigYaml, err := yaml.Marshal(ramenConfig)
+	if err != nil {
+		return nil, fmt.Errorf("config map yaml marshal %w", err)
+	}
+
+	return &corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{Kind: "ConfigMap", APIVersion: "v1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespaceName,
+		},
+		Data: map[string]string{
+			ConfigMapRamenConfigKeyName: string(ramenConfigYaml),
+		},
+	}, nil
+}
+
+func ConfigMapGet(
+	ctx context.Context,
+	apiReader client.Reader,
+) (configMap *corev1.ConfigMap, ramenConfig *ramendrv1alpha1.RamenConfig, err error) {
+	configMap = &corev1.ConfigMap{}
+	if err = apiReader.Get(
+		ctx,
+		types.NamespacedName{
+			Namespace: NamespaceName(),
+			Name:      HubOperatorConfigMapName,
+		},
+		configMap,
+	); err != nil {
+		return
+	}
+
+	ramenConfig = &ramendrv1alpha1.RamenConfig{}
+	err = yaml.Unmarshal([]byte(configMap.Data[ConfigMapRamenConfigKeyName]), ramenConfig)
+
+	return
+}
+
+func NamespaceName() string {
+	return os.Getenv("POD_NAMESPACE")
+}
 
 func drClusterOperatorChannelNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
 	if ramenConfig.DrClusterOperator.ChannelName == "" {

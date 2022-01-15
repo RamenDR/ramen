@@ -18,7 +18,7 @@ package controllers_test
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"reflect"
 
 	"github.com/go-logr/logr"
@@ -30,10 +30,13 @@ import (
 type fakeObjectStoreGetter struct{}
 
 const (
-	s3ProfileNameConnectSucc  = "fakeS3Profile"
-	s3ProfileNameConnectSucc2 = s3ProfileNameConnectSucc + "1"
-	s3ProfileNameConnectFail  = s3ProfileNameConnectSucc + "ConnectFail"
-	s3ProfileNameConnectFail2 = s3ProfileNameConnectFail + "2"
+	bucketNameSucc  = "bucket"
+	bucketNameSucc2 = bucketNameSucc + "2"
+	bucketNameFail  = bucketNameSucc + "Fail"
+	bucketNameFail2 = bucketNameFail + "2"
+
+	awsAccessKeyIDSucc = "succ"
+	awsAccessKeyIDFail = "fail"
 )
 
 func (fakeObjectStoreGetter) ObjectStore(
@@ -43,11 +46,27 @@ func (fakeObjectStoreGetter) ObjectStore(
 	callerTag string,
 	log logr.Logger,
 ) (controllers.ObjectStorer, error) {
-	switch s3ProfileName {
-	case s3ProfileNameConnectFail:
+	s3StoreProfile, err := controllers.GetRamenConfigS3StoreProfile(ctx, apiReader, s3ProfileName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get profile %s for caller %s, %w", s3ProfileName, callerTag, err)
+	}
+
+	switch s3StoreProfile.S3Bucket {
+	case bucketNameFail:
 		fallthrough
-	case s3ProfileNameConnectFail2:
-		return fakeObjectStorer{}, errors.New(`object store connection failed`)
+	case bucketNameFail2:
+		return nil, fmt.Errorf("bucket '%v' invalid", s3StoreProfile.S3Bucket)
+	}
+
+	accessID, _, err := controllers.GetS3Secret(ctx, apiReader, s3StoreProfile.S3SecretRef)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get secret %v for caller %s, %w",
+			s3StoreProfile.S3SecretRef, callerTag, err)
+	}
+
+	accessIDString := string(accessID)
+	if accessIDString == awsAccessKeyIDFail {
+		return nil, fmt.Errorf("AWS_ACCESS_KEY_ID '%v' invalid", accessIDString)
 	}
 
 	return fakeObjectStorer{}, nil
