@@ -122,16 +122,11 @@ func IsManifestInAppliedState(mw *ocmworkv1.ManifestWork) bool {
 
 func (mwu *MWUtil) CreateOrUpdateVRGManifestWork(
 	name, namespace, homeCluster string,
-	drPolicy *rmn.DRPolicy, pvcSelector metav1.LabelSelector) error {
-	s3Profiles := S3UploadProfileList(*drPolicy)
-	schedulingInterval := drPolicy.Spec.SchedulingInterval
-	replClassSelector := drPolicy.Spec.ReplicationClassSelector
+	vrg rmn.VolumeReplicationGroup) error {
+	mwu.Log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%s:%+v",
+		name, namespace, homeCluster, vrg))
 
-	mwu.Log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%s:%s",
-		name, namespace, homeCluster, s3Profiles))
-
-	manifestWork, err := mwu.generateVRGManifestWork(name, namespace, homeCluster,
-		s3Profiles, pvcSelector, schedulingInterval, replClassSelector)
+	manifestWork, err := mwu.generateVRGManifestWork(name, namespace, homeCluster, vrg)
 	if err != nil {
 		return err
 	}
@@ -139,12 +134,9 @@ func (mwu *MWUtil) CreateOrUpdateVRGManifestWork(
 	return mwu.createOrUpdateManifestWork(manifestWork, homeCluster)
 }
 
-func (mwu *MWUtil) generateVRGManifestWork(
-	name, namespace, homeCluster string, s3Profiles []string,
-	pvcSelector metav1.LabelSelector, schedulingInterval string,
-	replClassSelector metav1.LabelSelector) (*ocmworkv1.ManifestWork, error) {
-	vrgClientManifest, err := mwu.generateVRGManifest(name, namespace, s3Profiles,
-		pvcSelector, schedulingInterval, replClassSelector)
+func (mwu *MWUtil) generateVRGManifestWork(name, namespace, homeCluster string,
+	vrg rmn.VolumeReplicationGroup) (*ocmworkv1.ManifestWork, error) {
+	vrgClientManifest, err := mwu.generateVRGManifest(vrg)
 	if err != nil {
 		mwu.Log.Error(err, "failed to generate VolumeReplicationGroup manifest")
 
@@ -160,21 +152,8 @@ func (mwu *MWUtil) generateVRGManifestWork(
 		manifests), nil
 }
 
-func (mwu *MWUtil) generateVRGManifest(
-	name, namespace string, s3Profiles []string,
-	pvcSelector metav1.LabelSelector, schedulingInterval string,
-	replClassSelector metav1.LabelSelector) (*ocmworkv1.Manifest, error) {
-	return mwu.GenerateManifest(&rmn.VolumeReplicationGroup{
-		TypeMeta:   metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
-		Spec: rmn.VolumeReplicationGroupSpec{
-			PVCSelector:              pvcSelector,
-			SchedulingInterval:       schedulingInterval,
-			ReplicationState:         rmn.Primary,
-			S3Profiles:               s3Profiles,
-			ReplicationClassSelector: replClassSelector,
-		},
-	})
+func (mwu *MWUtil) generateVRGManifest(vrg rmn.VolumeReplicationGroup) (*ocmworkv1.Manifest, error) {
+	return mwu.GenerateManifest(vrg)
 }
 
 func (mwu *MWUtil) CreateOrUpdateNamespaceManifest(
