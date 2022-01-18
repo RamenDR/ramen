@@ -11,6 +11,7 @@ import (
 	gomegaTypes "github.com/onsi/gomega/types"
 	workv1 "github.com/open-cluster-management/api/work/v1"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/controllers"
 	"github.com/ramendr/ramen/controllers/util"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -31,7 +32,7 @@ var _ = Describe("DrpolicyController", func() {
 		Eventually(
 			func(g Gomega) {
 				clusterNames := sets.String{}
-				g.Expect(util.DrClustersList(context.TODO(), k8sClient, &clusterNames)).To(Succeed())
+				g.Expect(controllers.DrClustersDeployedSet(context.TODO(), k8sClient, &clusterNames)).To(Succeed())
 				g.Expect(clusterNames.UnsortedList()).To(ConsistOf(clusterNamesCurrent.UnsortedList()))
 			},
 			timeout,

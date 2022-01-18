@@ -98,7 +98,7 @@ image_registry_addon_undeploy_cluster()
 {
 	minikube -p $1 addons disable registry
 	date
-	kubectl --context $1 -n kube-system -l kubernetes.io/minikube-addons=registry wait --for delete all --timeout 60s
+	kubectl --context $1 -n kube-system -l kubernetes.io/minikube-addons=registry wait --for delete all --timeout 2m
 	date
 }
 exit_stack_push unset -f image_registry_addon_undeploy_cluster
@@ -362,6 +362,34 @@ ramen_images_undeploy_spokes()
 	for cluster_name in $spoke_cluster_names; do ramen_images_undeploy_spoke $cluster_name; done; unset -v cluster_name
 }
 exit_stack_push unset -f ramen_images_undeploy_spokes
+ramen_catalog_kubectl()
+{
+	cat <<-a|kubectl --context $1 $2 -f -
+	kind: CatalogSource
+	apiVersion: operators.coreos.com/v1alpha1
+	metadata:
+	  name: ramen-catalog
+	  namespace: ramen-system
+	spec:
+	  sourceType: grpc
+	  image: $ramen_catalog_image_reference
+	  displayName: "Ramen Operators"
+	a
+}
+exit_stack_push unset -f ramen_catalog_deploy_cluster
+ramen_catalog_deploy_cluster()
+{
+	ramen_catalog_kubectl $1 apply
+	until_true_or_n 30 eval test \"\$\(kubectl --context $1 -n ramen-system get catalogsources.operators.coreos.com/ramen-catalog -ojsonpath='{.status.connectionState.lastObservedState}'\)\" = READY
+}
+exit_stack_push unset -f ramen_catalog_deploy_cluster
+ramen_catalog_undeploy_cluster()
+{
+	ramen_catalog_kubectl $1 delete
+	true_if_exit_status_and_stderr 1 'error: no matching resources found' \
+	kubectl --context $1 -n ramen-system wait catalogsources.operators.coreos.com/ramen-catalog --for delete
+}
+exit_stack_push unset -f ramen_catalog_undeploy_cluster
 kube_context_set()
 {
 	exit_stack_push kubectl config use-context $(kubectl config current-context)
@@ -418,8 +446,7 @@ ramen_config_deploy_hub_or_spoke()
 	    name: s3secret
 	    namespace: ramen-system
 	drClusterOperator:
-	  namespaceName: ramen-system
-	  catalogSourceImageName: $ramen_catalog_image_reference
+	  deploymentAutomationEnable: true
 	EOF
 
 	kubectl --context $1 -n ramen-system\
@@ -503,7 +530,9 @@ exit_stack_push unset -v ocm_ramen_samples_git_ref
 exit_stack_push unset -v ocm_ramen_samples_git_path
 ramen_samples_channel_and_drpolicy_deploy()
 {
-	ramen_images_deploy_spokes
+	for cluster_name in $spoke_cluster_names; do
+		ramen_images_deploy_spoke $cluster_name
+	done; unset -v cluster_name
 	set -- ocm-ramen-samples/subscriptions
 	set -- /tmp/$USER/$1 $1 $spoke_cluster_names
 	mkdir -p $1
@@ -527,6 +556,8 @@ ramen_samples_channel_and_drpolicy_deploy()
 	a
 	kubectl --context $hub_cluster_name apply -k $1
 	for cluster_name in $spoke_cluster_names; do
+		until_true_or_n 300 kubectl --context $cluster_name get namespaces/ramen-system
+		ramen_catalog_deploy_cluster $cluster_name
 		until_true_or_n 300 kubectl --context $cluster_name -n ramen-system wait deployments ramen-dr-cluster-operator --for condition=available --timeout 0
 		ramen_config_deploy_spoke $cluster_name
 	done; unset -v cluster_name
@@ -535,6 +566,9 @@ ramen_samples_channel_and_drpolicy_deploy()
 exit_stack_push unset -f ramen_samples_channel_and_drpolicy_deploy
 ramen_samples_channel_and_drpolicy_undeploy()
 {
+	for cluster_name in $spoke_cluster_names; do
+		ramen_catalog_undeploy_cluster $cluster_name
+	done; unset -v cluster_name
 	date
 	kubectl --context $hub_cluster_name delete -k https://github.com/$ocm_ramen_samples_git_path/ocm-ramen-samples/subscriptions?ref=$ocm_ramen_samples_git_ref
 	date
@@ -574,7 +608,7 @@ application_sample_place()
 	a
 	kubectl --context $hub_cluster_name apply -k $5
 	until_true_or_n 90 eval test \"\$\(kubectl --context ${hub_cluster_name} -n busybox-sample get subscriptions/busybox-sub -ojsonpath='{.status.phase}'\)\" = Propagated
-	until_true_or_n 30 eval test \"\$\(kubectl --context $hub_cluster_name -n busybox-sample get placementrules/busybox-placement -ojsonpath='{.status.decisions[].clusterName}'\)\" = $1
+	until_true_or_n 120 eval test \"\$\(kubectl --context $hub_cluster_name -n busybox-sample get placementrules/busybox-placement -ojsonpath='{.status.decisions[].clusterName}'\)\" = $1
 	if test ${1} = ${hub_cluster_name}; then
 		subscription_name_suffix=-local
 	else
@@ -582,7 +616,7 @@ application_sample_place()
 	fi
 	until_true_or_n 30 eval test \"\$\(kubectl --context ${1} -n busybox-sample get subscriptions/busybox-sub${subscription_name_suffix} -ojsonpath='{.status.phase}'\)\" = Subscribed
 	unset -v subscription_name_suffix
-	until_true_or_n 60 kubectl --context ${1} -n busybox-sample wait pods/busybox --for condition=ready --timeout 0
+	until_true_or_n 120 kubectl --context $1 -n busybox-sample wait pods/busybox --for condition=ready --timeout 0
 	until_true_or_n 30 eval test \"\$\(kubectl --context ${1} -n busybox-sample get persistentvolumeclaims/busybox-pvc -ojsonpath='{.status.phase}'\)\" = Bound
 	date
 	until_true_or_n 90 kubectl --context ${1} -n busybox-sample get volumereplicationgroups/busybox-drpc
@@ -596,10 +630,10 @@ application_sample_undeploy_wait_and_namespace_undeploy()
 	kubectl --context ${1} -n busybox-sample wait pods/busybox --for delete --timeout 2m
 	date
 	true_if_exit_status_and_stderr 1 'error: no matching resources found' \
-	kubectl --context ${1} -n busybox-sample wait volumereplicationgroups/busybox-drpc --for delete
+	kubectl --context $1 -n busybox-sample wait volumereplicationgroups/busybox-drpc --for delete --timeout 2m
 	date
 	true_if_exit_status_and_stderr 1 'error: no matching resources found' \
-	kubectl --context $1 -n busybox-sample wait persistentvolumeclaims/busybox-pvc --for delete
+	kubectl --context $1 -n busybox-sample wait persistentvolumeclaims/busybox-pvc --for delete --timeout 2m
 	# TODO remove once drplacement controller does this
 	kubectl --context $hub_cluster_name -n $1 delete manifestworks/busybox-drpc-busybox-sample-ns-mw #--ignore-not-found
 	true_if_exit_status_and_stderr 1 'error: no matching resources found' \

@@ -106,16 +106,28 @@ type RamenConfig struct {
 	// Defaults to 1.
 	MaxConcurrentReconciles int
 
-	// dr-cluster operator configuration
+	// dr-cluster operator deployment/undeployment automation configuration
 	DrClusterOperator struct {
-		// namespace name
-		NamespaceName string `json:"namespaceName" default:"ramen-system"`
+		// dr-cluster operator deployment/undeployment automation enable
+		DeploymentAutomationEnable bool `json:"deploymentAutomationEnable"`
 
-		// catalog source image name
-		CatalogSourceImageName string `json:"catalogSourceImageName" default:"quay.io/ramendr/ramen-operator-catalog:canary"`
+		// channel name
+		ChannelName string `json:"channelName"`
+
+		// package name
+		PackageName string `json:"packageName"`
+
+		// namespace name
+		NamespaceName string `json:"namespaceName"`
+
+		// catalog source name
+		CatalogSourceName string `json:"catalogSourceName"`
+
+		// catalog source namespace name
+		CatalogSourceNamespaceName string `json:"catalogSourceNamespaceName"`
 
 		// cluster service version name
-		ClusterServiceVersionName string `json:"clusterServiceVersionName" default:"ramen-dr-cluster-operator.v0.0.1"`
+		ClusterServiceVersionName string `json:"clusterServiceVersionName"`
 	} `json:"drClusterOperator"`
 }
 
