@@ -21,7 +21,6 @@ import (
 	"io/ioutil"
 	"net/url"
 	"os"
-	"reflect"
 
 	"github.com/ghodss/yaml"
 	"github.com/go-logr/logr"
@@ -90,8 +89,6 @@ func ReadRamenConfig(log logr.Logger) (ramenConfig ramendrv1alpha1.RamenConfig, 
 
 		return
 	}
-
-	drClusterOperatorValuesDefaultIfZero(&ramenConfig, log)
 
 	return
 }
@@ -162,19 +159,59 @@ func getMaxConcurrentReconciles(log logr.Logger) int {
 	return ramenConfig.MaxConcurrentReconciles
 }
 
-func drClusterOperatorValuesDefaultIfZero(ramenConfig *ramendrv1alpha1.RamenConfig, log logr.Logger) {
-	value := reflect.ValueOf(&ramenConfig.DrClusterOperator).Elem()
-	typ := value.Type()
+const (
+	drClusterOperatorChannelNameDefault                = "alpha"
+	drClusterOperatorPackageNameDefault                = "ramen-dr-cluster-operator"
+	drClusterOperatorNamespaceNameDefault              = "ramen-system"
+	drClusterOperatorCatalogSourceNameDefault          = "ramen-catalog"
+	drClusterOperatorCatalogSourceNamespaceNameDefault = drClusterOperatorNamespaceNameDefault
+	drClusterOperatorClusterServiceVersionNameDefault  = drClusterOperatorPackageNameDefault + ".v0.0.1"
+)
 
-	for i := 0; i < value.NumField(); i++ {
-		v := value.Field(i)
-		field := typ.Field(i)
-		zero := v.IsZero()
-
-		if zero {
-			v.SetString(field.Tag.Get("default"))
-		}
-
-		log.Info("dr cluster operator", field.Name, v.String(), "default", zero)
+func drClusterOperatorChannelNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
+	if ramenConfig.DrClusterOperator.ChannelName == "" {
+		return drClusterOperatorChannelNameDefault
 	}
+
+	return ramenConfig.DrClusterOperator.ChannelName
+}
+
+func drClusterOperatorPackageNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
+	if ramenConfig.DrClusterOperator.PackageName == "" {
+		return drClusterOperatorPackageNameDefault
+	}
+
+	return ramenConfig.DrClusterOperator.PackageName
+}
+
+func drClusterOperatorNamespaceNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
+	if ramenConfig.DrClusterOperator.NamespaceName == "" {
+		return drClusterOperatorNamespaceNameDefault
+	}
+
+	return ramenConfig.DrClusterOperator.NamespaceName
+}
+
+func drClusterOperatorCatalogSourceNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
+	if ramenConfig.DrClusterOperator.CatalogSourceName == "" {
+		return drClusterOperatorCatalogSourceNameDefault
+	}
+
+	return ramenConfig.DrClusterOperator.CatalogSourceName
+}
+
+func drClusterOperatorCatalogSourceNamespaceNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
+	if ramenConfig.DrClusterOperator.CatalogSourceNamespaceName == "" {
+		return drClusterOperatorCatalogSourceNamespaceNameDefault
+	}
+
+	return ramenConfig.DrClusterOperator.CatalogSourceNamespaceName
+}
+
+func drClusterOperatorClusterServiceVersionNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
+	if ramenConfig.DrClusterOperator.ClusterServiceVersionName == "" {
+		return drClusterOperatorClusterServiceVersionNameDefault
+	}
+
+	return ramenConfig.DrClusterOperator.ClusterServiceVersionName
 }

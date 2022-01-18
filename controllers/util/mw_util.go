@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"sync"
 
 	"github.com/go-logr/logr"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
@@ -34,7 +33,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	dto "github.com/prometheus/client_model/go"
@@ -203,89 +201,38 @@ func namespace(name string) *corev1.Namespace {
 	}
 }
 
-func DrClustersList(ctx context.Context, client client.Client, clusterNames *sets.String) error {
-	manifestworks := &ocmworkv1.ManifestWorkList{}
-	if err := client.List(ctx, manifestworks); err != nil {
-		return fmt.Errorf("manifestworks list: %w", err)
-	}
-
-	for i := range manifestworks.Items {
-		manifestwork := &manifestworks.Items[i]
-		if manifestwork.ObjectMeta.Name == DrClusterManifestWorkName {
-			*clusterNames = clusterNames.Insert(manifestwork.ObjectMeta.Namespace)
-		}
-	}
-
-	return nil
-}
-
-var drClustersMutex sync.Mutex
-
-func (mwu *MWUtil) DrClustersDeploy(drpolicy *rmn.DRPolicy, ramenConfig *rmn.RamenConfig) error {
-	drClustersMutex.Lock()
-	defer drClustersMutex.Unlock()
-
-	for _, clusterName := range DrpolicyClusterNames(drpolicy) {
-		if err := mwu.createOrUpdateDrClusterManifestWork(clusterName, ramenConfig); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (mwu *MWUtil) DrClustersUndeploy(drpolicy *rmn.DRPolicy) error {
-	drpolicies := rmn.DRPolicyList{}
-	clusterNames := sets.String{}
-
-	drClustersMutex.Lock()
-	defer drClustersMutex.Unlock()
-
-	if err := mwu.Client.List(mwu.Ctx, &drpolicies); err != nil {
-		return fmt.Errorf("drpolicies list: %w", err)
-	}
-
-	for i := range drpolicies.Items {
-		drpolicy1 := &drpolicies.Items[i]
-		if drpolicy1.ObjectMeta.Name != drpolicy.ObjectMeta.Name {
-			clusterNames = clusterNames.Insert(DrpolicyClusterNames(drpolicy1)...)
-		}
-	}
-
-	for _, clusterName := range DrpolicyClusterNames(drpolicy) {
-		if !clusterNames.Has(clusterName) {
-			if err := mwu.deleteManifestWork(DrClusterManifestWorkName, clusterName); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-func (mwu *MWUtil) createOrUpdateDrClusterManifestWork(namespace string, ramenConfig *rmn.RamenConfig) error {
-	manifestWork, err := mwu.generateDrClusterManifestWork(namespace, ramenConfig)
-	if err != nil {
-		return err
-	}
-
-	return mwu.createOrUpdateManifestWork(manifestWork, namespace)
-}
-
-func (mwu *MWUtil) generateDrClusterManifestWork(
+func (mwu *MWUtil) CreateOrUpdateDrClusterManifestWork(
 	clusterName string,
 	ramenConfig *rmn.RamenConfig,
-) (*ocmworkv1.ManifestWork, error) {
-	objects := [...]interface{}{
+	drClusterOperatorChannelName string,
+	drClusterOperatorPackageName string,
+	drClusterOperatorNamespaceName string,
+	drClusterOperatorCatalogSourceName string,
+	drClusterOperatorCatalogSourceNamespaceName string,
+	drClusterOperatorClusterServiceVersionName string,
+) error {
+	objects := []interface{}{
 		vrgClusterRole,
 		vrgClusterRoleBinding,
-		namespace(ramenConfig.DrClusterOperator.NamespaceName),
-		olmClusterRole,
-		olmRoleBinding(ramenConfig.DrClusterOperator.NamespaceName),
-		operatorGroup(ramenConfig.DrClusterOperator.NamespaceName),
-		catalogSource(ramenConfig.DrClusterOperator.NamespaceName, ramenConfig.DrClusterOperator.CatalogSourceImageName),
-		subscription(ramenConfig.DrClusterOperator.NamespaceName, ramenConfig.DrClusterOperator.ClusterServiceVersionName),
 	}
+	if ramenConfig.DrClusterOperator.DeploymentAutomationEnable {
+		objects = append(objects,
+			namespace(drClusterOperatorNamespaceName),
+			olmClusterRole,
+			olmRoleBinding(drClusterOperatorNamespaceName),
+			operatorGroup(drClusterOperatorNamespaceName),
+			operatorGroup(drClusterOperatorNamespaceName),
+			subscription(
+				drClusterOperatorChannelName,
+				drClusterOperatorPackageName,
+				drClusterOperatorNamespaceName,
+				drClusterOperatorCatalogSourceName,
+				drClusterOperatorCatalogSourceNamespaceName,
+				drClusterOperatorClusterServiceVersionName,
+			),
+		)
+	}
+
 	manifests := make([]ocmworkv1.Manifest, len(objects))
 
 	for i, object := range objects {
@@ -293,17 +240,21 @@ func (mwu *MWUtil) generateDrClusterManifestWork(
 		if err != nil {
 			mwu.Log.Error(err, "failed to generate manifest", "object", object)
 
-			return nil, err
+			return err
 		}
 
 		manifests[i] = *manifest
 	}
 
-	return mwu.newManifestWork(
-		DrClusterManifestWorkName,
+	return mwu.createOrUpdateManifestWork(
+		mwu.newManifestWork(
+			DrClusterManifestWorkName,
+			clusterName,
+			map[string]string{},
+			manifests,
+		),
 		clusterName,
-		map[string]string{},
-		manifests), nil
+	)
 }
 
 var (
@@ -345,11 +296,6 @@ var (
 				Resources: []string{"operatorgroups"},
 				Verbs:     []string{"create", "get", "list", "update", "delete"},
 			},
-			{
-				APIGroups: []string{"operators.coreos.com"},
-				Resources: []string{"catalogsources"},
-				Verbs:     []string{"create", "get", "list", "update", "delete"},
-			},
 		},
 	}
 )
@@ -383,27 +329,22 @@ func operatorGroup(namespaceName string) *operatorsv1.OperatorGroup {
 	}
 }
 
-func catalogSource(namespaceName, imageName string) *operatorsv1alpha1.CatalogSource {
-	return &operatorsv1alpha1.CatalogSource{
-		TypeMeta:   metav1.TypeMeta{Kind: "CatalogSource", APIVersion: "operators.coreos.com/v1alpha1"},
-		ObjectMeta: metav1.ObjectMeta{Name: "ramen-catalog", Namespace: namespaceName},
-		Spec: operatorsv1alpha1.CatalogSourceSpec{
-			SourceType:  "grpc",
-			Image:       imageName,
-			DisplayName: "Ramen Operators",
-		},
-	}
-}
-
-func subscription(namespaceName, clusterServiceVersionName string) *operatorsv1alpha1.Subscription {
+func subscription(
+	channelName string,
+	packageName string,
+	namespaceName string,
+	catalogSourceName string,
+	catalogSourceNamespaceName string,
+	clusterServiceVersionName string,
+) *operatorsv1alpha1.Subscription {
 	return &operatorsv1alpha1.Subscription{
 		TypeMeta:   metav1.TypeMeta{Kind: "Subscription", APIVersion: "operators.coreos.com/v1alpha1"},
 		ObjectMeta: metav1.ObjectMeta{Name: "ramen-dr-cluster-subscription", Namespace: namespaceName},
 		Spec: &operatorsv1alpha1.SubscriptionSpec{
-			CatalogSource:          "ramen-catalog",
-			CatalogSourceNamespace: namespaceName,
-			Package:                "ramen-dr-cluster-operator",
-			Channel:                "alpha",
+			CatalogSource:          catalogSourceName,
+			CatalogSourceNamespace: catalogSourceNamespaceName,
+			Package:                packageName,
+			Channel:                channelName,
 			StartingCSV:            clusterServiceVersionName,
 			InstallPlanApproval:    "Automatic",
 		},
@@ -495,10 +436,10 @@ func (mwu *MWUtil) deleteManifestWorkWrapper(fromCluster string, mwType string) 
 	mwName := mwu.BuildManifestWorkName(mwType)
 	mwNamespace := fromCluster
 
-	return mwu.deleteManifestWork(mwName, mwNamespace)
+	return mwu.DeleteManifestWork(mwName, mwNamespace)
 }
 
-func (mwu *MWUtil) deleteManifestWork(mwName, mwNamespace string) error {
+func (mwu *MWUtil) DeleteManifestWork(mwName, mwNamespace string) error {
 	mwu.Log.Info("Delete ManifestWork from", "namespace", mwNamespace, "name", mwName)
 
 	mw := &ocmworkv1.ManifestWork{}
