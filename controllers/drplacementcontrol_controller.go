@@ -60,6 +60,9 @@ const (
 	// SanityCheckDelay is used to frequencly update the DRPC status when the reconciler is idle.
 	// This is needed in order to sync up the DRPC status and the VRG status.
 	SanityCheckDelay = time.Minute * 10
+
+	OCMBackupLabelKey   string = "cluster.open-cluster-management.io/backup"
+	OCMBackupLabelValue string = "resource"
 )
 
 var WaitForPVRestoreToComplete = errorswrapper.New("Waiting for PV restore to complete")
@@ -528,7 +531,7 @@ func (r *DRPlacementControlReconciler) recordFailure(drpc *rmn.DRPlacementContro
 
 func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 	drpc *rmn.DRPlacementControl, usrPlRule *plrv1.PlacementRule) (*DRPCInstance, error) {
-	err := r.addFinalizers(ctx, drpc, usrPlRule)
+	err := r.addLabelsAndFinalizers(ctx, drpc, usrPlRule)
 	if err != nil {
 		return nil, err
 	}
@@ -623,29 +626,63 @@ func (r *DRPlacementControlReconciler) getDRPolicy(ctx context.Context,
 	return drPolicy, nil
 }
 
-func (r DRPlacementControlReconciler) addFinalizers(ctx context.Context,
+func (r DRPlacementControlReconciler) addLabelsAndFinalizers(ctx context.Context,
 	drpc *rmn.DRPlacementControl, usrPlRule *plrv1.PlacementRule) error {
-	err := r.addFinalizer(ctx, drpc, DRPCFinalizer)
-	if err != nil {
-		return err
+	// add label and finalizer to DRPC
+	labelAdded := r.addLabel(drpc, OCMBackupLabelKey, OCMBackupLabelValue)
+	finalizerAdded := r.addFinalizer(drpc, DRPCFinalizer)
+
+	if labelAdded || finalizerAdded {
+		if err := r.Update(ctx, drpc); err != nil {
+			r.Log.Error(err, "Failed to add label and finalizer to drpc")
+
+			return fmt.Errorf("%w", err)
+		}
 	}
 
-	return r.addFinalizer(ctx, usrPlRule, DRPCFinalizer)
-}
-
-func (r *DRPlacementControlReconciler) addFinalizer(ctx context.Context,
-	obj client.Object, finalizer string) error {
-	if !controllerutil.ContainsFinalizer(obj, finalizer) {
-		controllerutil.AddFinalizer(obj, finalizer)
-
-		if err := r.Update(ctx, obj); err != nil {
-			r.Log.Error(err, "Failed to add finalizer", "finalizer", finalizer)
+	// add finalizer to User PlacementRule
+	finalizerAdded = r.addFinalizer(usrPlRule, DRPCFinalizer)
+	if finalizerAdded {
+		if err := r.Update(ctx, usrPlRule); err != nil {
+			r.Log.Error(err, "Failed to add finalizer to user placement rule")
 
 			return fmt.Errorf("%w", err)
 		}
 	}
 
 	return nil
+}
+
+func (r *DRPlacementControlReconciler) addLabel(drpc *rmn.DRPlacementControl, key, value string) bool {
+	const labelAdded = true
+
+	labels := drpc.GetLabels()
+	if labels == nil {
+		r.Log.Info("no labels found for DRPC", "name", drpc.Name)
+
+		labels = map[string]string{}
+	}
+
+	if _, ok := labels[key]; !ok {
+		labels[key] = value
+		drpc.SetLabels(labels)
+
+		return labelAdded
+	}
+
+	return !labelAdded
+}
+
+func (r *DRPlacementControlReconciler) addFinalizer(obj client.Object, finalizer string) bool {
+	const finalizerAdded = true
+
+	if !controllerutil.ContainsFinalizer(obj, finalizer) {
+		controllerutil.AddFinalizer(obj, finalizer)
+
+		return finalizerAdded
+	}
+
+	return !finalizerAdded
 }
 
 func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
