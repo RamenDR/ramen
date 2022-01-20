@@ -215,12 +215,11 @@ func (mwu *MWUtil) CreateOrUpdateDrClusterManifestWork(
 		vrgClusterRole,
 		vrgClusterRoleBinding,
 	}
-	if ramenConfig.DrClusterOperator.DeploymentAutomationEnable {
+	if ramenConfig.DrClusterOperator.DeploymentAutomationEnabled {
 		objects = append(objects,
 			namespace(drClusterOperatorNamespaceName),
 			olmClusterRole,
 			olmRoleBinding(drClusterOperatorNamespaceName),
-			operatorGroup(drClusterOperatorNamespaceName),
 			operatorGroup(drClusterOperatorNamespaceName),
 			subscription(
 				drClusterOperatorChannelName,
