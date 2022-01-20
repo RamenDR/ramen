@@ -446,7 +446,7 @@ ramen_config_deploy_hub_or_spoke()
 	    name: s3secret
 	    namespace: ramen-system
 	drClusterOperator:
-	  deploymentAutomationEnable: true
+	  deploymentAutomationEnabled: true
 	EOF
 
 	kubectl --context $1 -n ramen-system\

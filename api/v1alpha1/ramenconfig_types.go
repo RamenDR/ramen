@@ -108,8 +108,8 @@ type RamenConfig struct {
 
 	// dr-cluster operator deployment/undeployment automation configuration
 	DrClusterOperator struct {
-		// dr-cluster operator deployment/undeployment automation enable
-		DeploymentAutomationEnable bool `json:"deploymentAutomationEnable"`
+		// dr-cluster operator deployment/undeployment automation enabled
+		DeploymentAutomationEnabled bool `json:"deploymentAutomationEnabled"`
 
 		// channel name
 		ChannelName string `json:"channelName"`
