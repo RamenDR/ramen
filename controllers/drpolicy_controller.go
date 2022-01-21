@@ -75,32 +75,8 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	manifestWorkUtil := util.MWUtil{Client: r.Client, Ctx: ctx, Log: log, InstName: "", InstNamespace: ""}
 
-	switch drpolicy.ObjectMeta.DeletionTimestamp.IsZero() {
-	case true:
-		log.Info("create/update")
-
-		if err := u.finalizerAdd(); err != nil {
-			return ctrl.Result{}, fmt.Errorf("finalizer add update: %w", u.validatedSetFalse("FinalizerAddFailed", err))
-		}
-
-		reason, err := validateDRPolicy(ctx, drpolicy, r.APIReader, r.ObjectStoreGetter, req.NamespacedName.String(), log)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("validate: %w", u.validatedSetFalse(reason, err))
-		}
-
-		// TODO: New condition type is needed for clusters deploy and fencing
-		// handled after this function.
-		if err := drClustersDeploy(drpolicy, &manifestWorkUtil, &ramenConfig); err != nil {
-			return ctrl.Result{}, fmt.Errorf("drclusters deploy: %w", u.validatedSetFalse("DrClustersDeployFailed", err))
-		}
-
-		if err := u.clusterFenceHandle(); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to handle cluster fencing: %w",
-				u.validatedSetFalse("FencingHandlingFailed", err))
-		}
-
-		return ctrl.Result{}, u.validatedSetTrue("Succeeded", "drpolicy validated")
-	default:
+	// DRPolicy is marked for deletion
+	if !drpolicy.ObjectMeta.DeletionTimestamp.IsZero() {
 		log.Info("delete")
 
 		if err := drClustersUndeploy(drpolicy, &manifestWorkUtil); err != nil {
@@ -110,9 +86,33 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if err := u.finalizerRemove(); err != nil {
 			return ctrl.Result{}, fmt.Errorf("finalizer remove update: %w", err)
 		}
+
+		return ctrl.Result{}, nil
 	}
 
-	return ctrl.Result{}, nil
+	log.Info("create/update")
+
+	if err := u.finalizerAdd(); err != nil {
+		return ctrl.Result{}, fmt.Errorf("finalizer add update: %w", u.validatedSetFalse("FinalizerAddFailed", err))
+	}
+
+	reason, err := validateDRPolicy(ctx, drpolicy, r.APIReader, r.ObjectStoreGetter, req.NamespacedName.String(), log)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("validate: %w", u.validatedSetFalse(reason, err))
+	}
+
+	// TODO: New condition type is needed for clusters deploy and fencing
+	// handled after this function.
+	if err := drClustersDeploy(drpolicy, &manifestWorkUtil, &ramenConfig); err != nil {
+		return ctrl.Result{}, fmt.Errorf("drclusters deploy: %w", u.validatedSetFalse("DrClustersDeployFailed", err))
+	}
+
+	if err := u.clusterFenceHandle(); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to handle cluster fencing: %w",
+			u.validatedSetFalse("FencingHandlingFailed", err))
+	}
+
+	return ctrl.Result{}, u.validatedSetTrue("Succeeded", "drpolicy validated")
 }
 
 func validateDRPolicy(ctx context.Context, drpolicy *ramen.DRPolicy, apiReader client.Reader,
