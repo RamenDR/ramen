@@ -88,8 +88,15 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, fmt.Errorf("validate: %w", u.validatedSetFalse(reason, err))
 		}
 
+		// TODO: New condition type is needed for clusters deploy and fencing
+		// handled after this function.
 		if err := drClustersDeploy(drpolicy, &manifestWorkUtil, &ramenConfig); err != nil {
 			return ctrl.Result{}, fmt.Errorf("drclusters deploy: %w", u.validatedSetFalse("DrClustersDeployFailed", err))
+		}
+
+		if err := u.clusterFenceHandle(); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to handle cluster fencing: %w",
+				u.validatedSetFalse("FencingHandlingFailed", err))
 		}
 
 		return ctrl.Result{}, u.validatedSetTrue("Succeeded", "drpolicy validated")
@@ -156,6 +163,44 @@ type objectUpdater struct {
 	log    logr.Logger
 }
 
+func (u *objectUpdater) clusterFenceHandle() error {
+	if u.object.Status.DRClusters == nil {
+		u.object.Status.DRClusters = make(map[string]ramen.ClusterStatus)
+	}
+
+	for _, managedCluster := range u.object.Spec.DRClusterSet {
+		// TODO:
+		// 1) For now by default fenceStatus is ClusterFenceStateUnfenced.
+		//    However, we need to handle explicit unfencing operation to unfence
+		//    a fenced cluster below, by deleting the fencing CR created by
+		//    ramen.
+		//
+		// 2) How to differentiate between ClusterFenceStateUnfenced being
+		//    set because a manually fenced cluster is manually unfenced against the
+		//    requirement to unfence a cluster that has been fenced by ramen.
+		//
+		// 3) Handle Ramen driven fencing here
+		if managedCluster.ClusterFence == ramen.ClusterFenceStateUnfenced ||
+			managedCluster.ClusterFence == ramen.ClusterFenceState("") {
+			clusterStatus := ramen.ClusterStatus{Name: managedCluster.Name}
+			clusterStatus.Status = ramen.ClusterUnfenced
+			u.object.Status.DRClusters[managedCluster.Name] = clusterStatus
+		}
+
+		if managedCluster.ClusterFence == ramen.ClusterFenceStateManuallyFenced {
+			clusterStatus := ramen.ClusterStatus{Name: managedCluster.Name}
+			clusterStatus.Status = ramen.ClusterFenced
+			u.object.Status.DRClusters[managedCluster.Name] = clusterStatus
+		}
+
+		if managedCluster.ClusterFence == ramen.ClusterFenceStateFenced {
+			return fmt.Errorf("currently DRPolicy cant handle ClusterFenceStateFenced")
+		}
+	}
+
+	return nil
+}
+
 func (u *objectUpdater) validatedSetTrue(reason, message string) error {
 	return u.validatedSet(metav1.ConditionTrue, reason, message)
 }
@@ -203,6 +248,10 @@ func (u *objectUpdater) statusConditionSet(conditionType string, status metav1.C
 		util.ConditionAppend(u.object, conditions, conditionType, status, reason, message)
 	}
 
+	return u.statusUpdate()
+}
+
+func (u *objectUpdater) statusUpdate() error {
 	return u.client.Status().Update(u.ctx, u.object)
 }
 
