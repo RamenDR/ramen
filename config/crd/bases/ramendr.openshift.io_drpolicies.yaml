@@ -42,6 +42,14 @@ spec:
                 items:
                   description: Managed cluster information
                   properties:
+                    cidrs:
+                      description: CIDRs is a list of CIDR strings. An admin can use
+                        this field to indicate the CIDRs that are used or could potentially
+                        be used for the nodes in this managed cluster.  These will
+                        be used for the cluster fencing operation for sync/Metro DR.
+                      items:
+                        type: string
+                      type: array
                     clusterFence:
                       description: ClusterFence is a string that determines the fencing
                         state of the cluster.
