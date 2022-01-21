@@ -613,11 +613,14 @@ func (v *vrgTest) createVRG(pvcLabels map[string]string) {
 			Namespace: v.namespace,
 		},
 		Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
-			PVCSelector:              metav1.LabelSelector{MatchLabels: pvcLabels},
-			ReplicationState:         "primary",
-			SchedulingInterval:       schedulingInterval,
-			ReplicationClassSelector: metav1.LabelSelector{MatchLabels: replicationClassLabels},
-			S3Profiles:               []string{"fakeS3Profile"},
+			PVCSelector:      metav1.LabelSelector{MatchLabels: pvcLabels},
+			ReplicationState: "primary",
+			Async: ramendrv1alpha1.VRGAsyncSpec{
+				Mode:                     ramendrv1alpha1.AsyncModeEnabled,
+				SchedulingInterval:       schedulingInterval,
+				ReplicationClassSelector: metav1.LabelSelector{MatchLabels: replicationClassLabels},
+			},
+			S3Profiles: []string{"fakeS3Profile"},
 		},
 	}
 	err := k8sClient.Create(context.TODO(), vrg)

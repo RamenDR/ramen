@@ -163,8 +163,11 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(
 		TypeMeta:   metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
 		ObjectMeta: metav1.ObjectMeta{Name: DRPCName, Namespace: DRPCNamespaceName},
 		Spec: rmn.VolumeReplicationGroupSpec{
-			SchedulingInterval: schedulingInterval,
-			ReplicationState:   rmn.Primary,
+			Async: rmn.VRGAsyncSpec{
+				Mode:               rmn.AsyncModeEnabled,
+				SchedulingInterval: schedulingInterval,
+			},
+			ReplicationState: rmn.Primary,
 			PVCSelector: metav1.LabelSelector{
 				MatchLabels: map[string]string{"appclass": "gold"},
 			},
