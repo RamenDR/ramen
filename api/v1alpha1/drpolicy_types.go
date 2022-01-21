@@ -20,12 +20,26 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// ClusterFenceState which will be either Unfenced, or Fenced or ManuallyFenced
+// +kubebuilder:validation:Enum=Unfenced;Fenced;ManuallyFenced
+type ClusterFenceState string
+
+const (
+	ClusterFenceStateUnfenced       = ClusterFenceState("Unfenced")
+	ClusterFenceStateFenced         = ClusterFenceState("Fenced")
+	ClusterFenceStateManuallyFenced = ClusterFenceState("ManuallyFenced")
+)
+
 type Region string
 
 // Managed cluster information
 type ManagedCluster struct {
 	// Name of this managed cluster as configured in OCM/ACM
 	Name string `json:"name"`
+
+	// ClusterFence is a string that determines the fencing state of the
+	// cluster.
+	ClusterFence ClusterFenceState `json:"clusterFence,omitempty"`
 
 	// Region of a managed cluster determines it DR group.
 	// All managed clusters in a region are considered to be in a sync group.
@@ -64,11 +78,25 @@ type DRPolicySpec struct {
 	DRClusterSet []ManagedCluster `json:"drClusterSet"`
 }
 
+// +kubebuilder:validation:Enum=Unfenced;Fenced
+type FenceStatus string
+
+const (
+	ClusterFenced   = FenceStatus("Fenced")
+	ClusterUnfenced = FenceStatus("Unfenced")
+)
+
+type ClusterStatus struct {
+	Name   string      `json:"string,omitempty"`
+	Status FenceStatus `json:"status,omitempty"`
+}
+
 // DRPolicyStatus defines the observed state of DRPolicy
 // INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 // Important: Run "make" to regenerate code after modifying this file
 type DRPolicyStatus struct {
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition       `json:"conditions,omitempty"`
+	DRClusters map[string]ClusterStatus `json:"drClusters,omitempty"`
 }
 
 const (
