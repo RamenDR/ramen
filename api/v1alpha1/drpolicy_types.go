@@ -20,10 +20,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type Region string
+
 // Managed cluster information
 type ManagedCluster struct {
 	// Name of this managed cluster as configured in OCM/ACM
 	Name string `json:"name"`
+
+	// Region of a managed cluster determines it DR group.
+	// All managed clusters in a region are considered to be in a sync group.
+	Region Region `json:"region"`
 
 	// S3 profile name (in Ramen config) to use as a source to restore PV
 	// related cluster state during recovery or relocate actions of applications

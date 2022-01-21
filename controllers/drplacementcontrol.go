@@ -898,11 +898,21 @@ func (d *DRPCInstance) generateVRG() rmn.VolumeReplicationGroup {
 }
 
 func (d *DRPCInstance) generateVRGSpecAsync() rmn.VRGAsyncSpec {
-	return rmn.VRGAsyncSpec{
-		ReplicationClassSelector: d.drPolicy.Spec.ReplicationClassSelector,
-		SchedulingInterval:       d.drPolicy.Spec.SchedulingInterval,
-		Mode:                     rmn.AsyncModeEnabled,
+	spec := rmn.VRGAsyncSpec{}
+
+	if dRPolicySupportsRegional(d.drPolicy) {
+		spec = rmn.VRGAsyncSpec{
+			ReplicationClassSelector: d.drPolicy.Spec.ReplicationClassSelector,
+			SchedulingInterval:       d.drPolicy.Spec.SchedulingInterval,
+			Mode:                     rmn.AsyncModeEnabled,
+		}
 	}
+
+	return spec
+}
+
+func dRPolicySupportsRegional(drpolicy *rmn.DRPolicy) bool {
+	return rmnutil.DrpolicyRegionNamesAsASet(drpolicy).Len() > 1
 }
 
 func (d *DRPCInstance) ensureNamespaceExistsOnManagedCluster(homeCluster string) error {

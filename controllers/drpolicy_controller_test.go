@@ -120,9 +120,9 @@ var _ = Describe("DrpolicyController", func() {
 		drClustersExpect()
 	}
 	clusters := [...]ramen.ManagedCluster{
-		{Name: `cluster0`, S3ProfileName: s3ProfileNameConnectSucc},
-		{Name: `cluster1`, S3ProfileName: s3ProfileNameConnectSucc},
-		{Name: `cluster2`, S3ProfileName: s3ProfileNameConnectSucc},
+		{Name: `cluster0`, S3ProfileName: s3ProfileNameConnectSucc, Region: "east"},
+		{Name: `cluster1`, S3ProfileName: s3ProfileNameConnectSucc, Region: "west"},
+		{Name: `cluster2`, S3ProfileName: s3ProfileNameConnectSucc, Region: "east"},
 	}
 	objectMetas := [...]metav1.ObjectMeta{
 		{Name: `drpolicy0`},

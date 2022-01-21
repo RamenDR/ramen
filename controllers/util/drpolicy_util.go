@@ -21,6 +21,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
@@ -32,6 +33,19 @@ func DrpolicyClusterNames(drpolicy *rmn.DRPolicy) []string {
 	}
 
 	return clusterNames
+}
+
+func DrpolicyRegionNames(drpolicy *rmn.DRPolicy) []string {
+	regionNames := make([]string, len(drpolicy.Spec.DRClusterSet))
+	for i := range drpolicy.Spec.DRClusterSet {
+		regionNames[i] = string(drpolicy.Spec.DRClusterSet[i].Region)
+	}
+
+	return regionNames
+}
+
+func DrpolicyRegionNamesAsASet(drpolicy *rmn.DRPolicy) sets.String {
+	return sets.NewString(DrpolicyRegionNames(drpolicy)...)
 }
 
 func DrpolicyValidated(drpolicy *rmn.DRPolicy) error {
