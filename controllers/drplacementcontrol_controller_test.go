@@ -102,10 +102,12 @@ var (
 				{
 					Name:          EastManagedCluster,
 					S3ProfileName: "fakeS3Profile",
+					Region:        "east",
 				},
 				{
 					Name:          WestManagedCluster,
 					S3ProfileName: "fakeS3Profile",
+					Region:        "west",
 				},
 			},
 			SchedulingInterval: schedulingInterval,
