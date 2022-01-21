@@ -359,6 +359,26 @@ func (v *VRGInstance) processVRG() (ctrl.Result, error) {
 		return ctrl.Result{}, nil
 	}
 
+	// If neither of Async or Sync mode is provided, then
+	// dont requeue. Just return error.
+	if err := v.validateVRGMode(); err != nil {
+		// record the event
+		v.log.Error(err, "Failed to validate the spec mode")
+		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonValidationFailed, err.Error())
+
+		msg := "VolumeReplicationGroup mode is invalid"
+		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+
+		if err = v.updateVRGStatus(false); err != nil {
+			v.log.Error(err, "Status update failed")
+			// Since updating status failed, reconcile
+			return ctrl.Result{Requeue: true}, nil
+		}
+		// No requeue, as there is no reconcile till user changes desired spec to a valid value
+		return ctrl.Result{}, nil
+	}
+
 	if err := v.updatePVCList(); err != nil {
 		v.log.Error(err, "Failed to update PersistentVolumeClaims for resource")
 
@@ -399,6 +419,35 @@ func (v *VRGInstance) validateVRGState() error {
 		err := fmt.Errorf("invalid or unknown replication state detected (deleted %v, desired replicationState %v)",
 			!v.instance.GetDeletionTimestamp().IsZero(),
 			v.instance.Spec.ReplicationState)
+
+		v.log.Error(err, "Invalid request detected")
+
+		return err
+	}
+
+	return nil
+}
+
+// Expectation is that either the sync mode (for MetroDR)
+// or the async mode (for RegionalDR) is enabled. If none of
+// them is enabled, then return error.
+// This needs more thought as this function is making a
+// compulsion that either of sync or async mode should be there.
+func (v *VRGInstance) validateVRGMode() error {
+	async := false
+	sync := false
+
+	if v.instance.Spec.Async.Mode == ramendrv1alpha1.AsyncModeEnabled {
+		async = true
+	}
+
+	if v.instance.Spec.Sync.Mode == ramendrv1alpha1.SyncModeEnabled {
+		sync = true
+	}
+
+	if !sync && !async {
+		err := fmt.Errorf("neither of sync or async mode is enabled (deleted %v)",
+			!v.instance.GetDeletionTimestamp().IsZero())
 
 		v.log.Error(err, "Invalid request detected")
 
@@ -725,14 +774,28 @@ func (v *VRGInstance) processForDeletion() (ctrl.Result, error) {
 	return ctrl.Result{}, nil
 }
 
+// For now, for reginalDR (i.e. async mode enabled),
+// VolRep resources created by VRG have to be deletion
+// when VRG is deleted. For MetroDR (i.e. sync mode enabled)
+// nothing has to be done. So whether this VRG resource require
+// a requeue is a logical OR of whether async mode requires a
+// requeue and whether sync more requires a requeue.
 func (v *VRGInstance) deleteVRGHandleMode() bool {
 	asyncModeRequeue := false
+	syncModeRequeue := false
 
 	if v.instance.Spec.Async.Mode == ramendrv1alpha1.AsyncModeEnabled {
 		asyncModeRequeue = v.reconcileVRsForDeletion()
 	}
 
-	return asyncModeRequeue
+	// for now nothing to do for MetroDR. VRG does not create VolRep or
+	// any other resource for MetroDR. Hence set syncModeRequeue to false
+	// indicating metroDR does not require a requeue.
+	if v.instance.Spec.Sync.Mode == ramendrv1alpha1.SyncModeEnabled {
+		syncModeRequeue = false
+	}
+
+	return asyncModeRequeue || syncModeRequeue
 }
 
 // reconcileVRsForDeletion cleans up VR resources managed by VRG and also cleans up changes made to PVCs
@@ -909,6 +972,7 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 
 func (v *VRGInstance) handleVRGMode(state ramendrv1alpha1.ReplicationState) bool {
 	asyncNeedRequeue := false
+	syncNeedRequeue := false
 
 	if v.instance.Spec.Async.Mode == ramendrv1alpha1.AsyncModeEnabled {
 		if state == ramendrv1alpha1.Primary {
@@ -920,7 +984,29 @@ func (v *VRGInstance) handleVRGMode(state ramendrv1alpha1.ReplicationState) bool
 		}
 	}
 
-	return asyncNeedRequeue
+	if v.instance.Spec.Sync.Mode == ramendrv1alpha1.SyncModeEnabled {
+		// mark all PVCs as protected.
+		v.markAllPVCsProtected()
+
+		syncNeedRequeue = false
+	}
+
+	return asyncNeedRequeue || syncNeedRequeue
+}
+
+func (v *VRGInstance) markAllPVCsProtected() {
+	v.log.Info("marking all pvc resources ready for use and protected")
+
+	msg := "PVC in the VolumeReplicationGroup is ready for use"
+
+	for idx := range v.pvcList.Items {
+		pvc := &v.pvcList.Items[idx]
+
+		// Each protected PVC condition in VRG status has the same name
+		// as PVC. Use that.
+		v.updatePVCDataReadyCondition(pvc.Name, VRGConditionReasonReady, msg)
+		v.updatePVCDataProtectedCondition(pvc.Name, VRGConditionReasonReady, msg)
+	}
 }
 
 // reconcileVRsAsPrimary creates/updates VolumeReplication CR for each pvc

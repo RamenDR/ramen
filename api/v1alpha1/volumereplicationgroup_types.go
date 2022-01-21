@@ -51,6 +51,10 @@ const (
 // +kubebuilder:validation:Enum=Enabled;Disabled
 type AsyncMode string
 
+// SyncMode which will be either Enabled or Disabled
+// +kubebuilder:validation:Enum=Enabled;Disabled
+type SyncMode string
+
 // These are the valid values for AsyncMode
 const (
 	// AsyncMode enabled for DR
@@ -58,6 +62,15 @@ const (
 
 	// AsyncMode disabled for DR
 	AsyncModeDisabled = AsyncMode("Disabled")
+)
+
+// These are the valid values for SyncMode
+const (
+	// AsyncMode enabled for DR
+	SyncModeEnabled = SyncMode("Enabled")
+
+	// AsyncMode disabled for DR
+	SyncModeDisabled = SyncMode("Disabled")
 )
 
 // VRGAsyncSpec has the parameters associated with RegionalDR
@@ -78,6 +91,12 @@ type VRGAsyncSpec struct {
 
 	// Mode determines if AsyncDR is enabled or not
 	Mode AsyncMode `json:"mode"`
+}
+
+// VRGSyncSpec has the parameters associated with MetroDR
+type VRGSyncSpec struct {
+	// Mode determines if SyncDR is enabled or not
+	Mode SyncMode `json:"mode"`
 }
 
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
@@ -108,6 +127,7 @@ type VolumeReplicationGroupSpec struct {
 	S3Profiles []string `json:"s3Profiles"`
 
 	Async VRGAsyncSpec `json:"async,omitempty"`
+	Sync  VRGSyncSpec  `json:"sync,omitempty"`
 }
 
 type ProtectedPVC struct {
