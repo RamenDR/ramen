@@ -952,6 +952,24 @@ func dRPolicySupportsRegional(drpolicy *rmn.DRPolicy) bool {
 	return rmnutil.DrpolicyRegionNamesAsASet(drpolicy).Len() > 1
 }
 
+func dRPolicySupportsMetro(drpolicy *rmn.DRPolicy) (supportsMetro bool, metroMap map[rmn.Region][]string) {
+	allRegionsMap := make(map[rmn.Region][]string)
+	metroMap = make(map[rmn.Region][]string)
+
+	for _, v := range drpolicy.Spec.DRClusterSet {
+		allRegionsMap[v.Region] = append(allRegionsMap[v.Region], v.Name)
+	}
+
+	for k, v := range allRegionsMap {
+		if len(v) > 1 {
+			supportsMetro = true
+			metroMap[k] = v
+		}
+	}
+
+	return supportsMetro, metroMap
+}
+
 func isMetroAction(drpolicy *rmn.DRPolicy, from string, to string) bool {
 	var regionFrom, regionTo rmn.Region
 
