@@ -37,6 +37,12 @@ type ManagedCluster struct {
 	// Name of this managed cluster as configured in OCM/ACM
 	Name string `json:"name"`
 
+	// CIDRs is a list of CIDR strings. An admin can use this field to indicate
+	// the CIDRs that are used or could potentially be used for the nodes in
+	// this managed cluster.  These will be used for the cluster fencing
+	// operation for sync/Metro DR.
+	CIDRs []string `json:"cidrs,omitempty"`
+
 	// ClusterFence is a string that determines the fencing state of the
 	// cluster.
 	ClusterFence ClusterFenceState `json:"clusterFence,omitempty"`
