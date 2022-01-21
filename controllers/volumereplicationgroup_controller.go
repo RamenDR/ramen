@@ -667,7 +667,7 @@ func (v *VRGInstance) updatePVCList() error {
 }
 
 func (v *VRGInstance) updateReplicationClassList() error {
-	labelSelector := v.instance.Spec.ReplicationClassSelector
+	labelSelector := v.instance.Spec.Async.ReplicationClassSelector
 
 	v.log.Info("Fetching VolumeReplicationClass", "labeled", labels.Set(labelSelector.MatchLabels))
 	listOptions := []client.ListOption{
@@ -698,7 +698,7 @@ func (v *VRGInstance) processForDeletion() (ctrl.Result, error) {
 		return ctrl.Result{}, nil
 	}
 
-	if v.reconcileVRsForDeletion() {
+	if v.deleteVRGHandleMode() {
 		v.log.Info("Requeuing as reconciling VolumeReplication for deletion failed")
 
 		return ctrl.Result{Requeue: true}, nil
@@ -723,6 +723,16 @@ func (v *VRGInstance) processForDeletion() (ctrl.Result, error) {
 		rmnutil.EventReasonDeleteSuccess, "Deletion Success")
 
 	return ctrl.Result{}, nil
+}
+
+func (v *VRGInstance) deleteVRGHandleMode() bool {
+	asyncModeRequeue := false
+
+	if v.instance.Spec.Async.Mode == ramendrv1alpha1.AsyncModeEnabled {
+		asyncModeRequeue = v.reconcileVRsForDeletion()
+	}
+
+	return asyncModeRequeue
 }
 
 // reconcileVRsForDeletion cleans up VR resources managed by VRG and also cleans up changes made to PVCs
@@ -871,7 +881,7 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	requeue := v.reconcileVRsAsPrimary()
+	requeue := v.handleVRGMode(ramendrv1alpha1.Primary)
 
 	// If requeue is false, then VRG was successfully processed as primary.
 	// Hence the event to be generated is Success of type normal.
@@ -895,6 +905,22 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 	v.log.Info("Successfully processed vrg as primary")
 
 	return ctrl.Result{}, nil
+}
+
+func (v *VRGInstance) handleVRGMode(state ramendrv1alpha1.ReplicationState) bool {
+	asyncNeedRequeue := false
+
+	if v.instance.Spec.Async.Mode == ramendrv1alpha1.AsyncModeEnabled {
+		if state == ramendrv1alpha1.Primary {
+			asyncNeedRequeue = v.reconcileVRsAsPrimary()
+		}
+
+		if state == ramendrv1alpha1.Secondary {
+			asyncNeedRequeue = v.reconcileVRsAsSecondary()
+		}
+	}
+
+	return asyncNeedRequeue
 }
 
 // reconcileVRsAsPrimary creates/updates VolumeReplication CR for each pvc
@@ -967,7 +993,7 @@ func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	requeue := v.reconcileVRsAsSecondary()
+	requeue := v.handleVRGMode(ramendrv1alpha1.Secondary)
 
 	// If requeue is false, then VRG was successfully processed as Secondary.
 	// Hence the event to be generated is Success of type normal.
@@ -1651,7 +1677,7 @@ func (v *VRGInstance) selectVolumeReplicationClass(namespacedName types.Namespac
 		}
 
 		// ReplicationClass that matches both VRG schedule and pvc provisioner
-		if schedulingInterval == v.instance.Spec.SchedulingInterval {
+		if schedulingInterval == v.instance.Spec.Async.SchedulingInterval {
 			className = replicationClass.Name
 
 			break
@@ -1660,13 +1686,13 @@ func (v *VRGInstance) selectVolumeReplicationClass(namespacedName types.Namespac
 
 	if className == "" {
 		v.log.Info(fmt.Sprintf("No VolumeReplicationClass found to match provisioner and schedule %s/%s",
-			storageClass.Provisioner, v.instance.Spec.SchedulingInterval))
+			storageClass.Provisioner, v.instance.Spec.Async.SchedulingInterval))
 
 		return className, fmt.Errorf("no VolumeReplicationClass found to match provisioner and schedule")
 	}
 
 	v.log.Info(fmt.Sprintf("Found VolumeReplicationClass that matches provisioner and schedule %s/%s",
-		storageClass.Provisioner, v.instance.Spec.SchedulingInterval))
+		storageClass.Provisioner, v.instance.Spec.Async.SchedulingInterval))
 
 	return className, nil
 }
