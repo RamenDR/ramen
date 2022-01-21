@@ -17,11 +17,14 @@ limitations under the License.
 package util
 
 import (
+	"context"
 	"errors"
+	"fmt"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
@@ -77,4 +80,14 @@ func S3UploadProfileList(drPolicy rmn.DRPolicy) (s3Profiles []string) {
 	}
 
 	return
+}
+
+func GetAllDRPolicies(ctx context.Context, client client.Reader) (rmn.DRPolicyList, error) {
+	drpolicies := rmn.DRPolicyList{}
+
+	if err := client.List(ctx, &drpolicies); err != nil {
+		return drpolicies, fmt.Errorf("unable to fetch drpolicies: %w", err)
+	}
+
+	return drpolicies, nil
 }
