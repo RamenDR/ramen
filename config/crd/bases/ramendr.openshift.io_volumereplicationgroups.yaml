@@ -172,6 +172,18 @@ spec:
                 items:
                   type: string
                 type: array
+              sync:
+                description: VRGSyncSpec has the parameters associated with MetroDR
+                properties:
+                  mode:
+                    description: Mode determines if SyncDR is enabled or not
+                    enum:
+                    - Enabled
+                    - Disabled
+                    type: string
+                required:
+                - mode
+                type: object
             required:
             - pvcSelector
             - replicationState

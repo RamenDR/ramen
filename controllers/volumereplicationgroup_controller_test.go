@@ -620,6 +620,9 @@ func (v *vrgTest) createVRG(pvcLabels map[string]string) {
 				SchedulingInterval:       schedulingInterval,
 				ReplicationClassSelector: metav1.LabelSelector{MatchLabels: replicationClassLabels},
 			},
+			Sync: ramendrv1alpha1.VRGSyncSpec{
+				Mode: ramendrv1alpha1.SyncModeDisabled,
+			},
 			S3Profiles: []string{"fakeS3Profile"},
 		},
 	}
