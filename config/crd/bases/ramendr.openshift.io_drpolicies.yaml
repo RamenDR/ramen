@@ -45,6 +45,11 @@ spec:
                     name:
                       description: Name of this managed cluster as configured in OCM/ACM
                       type: string
+                    region:
+                      description: Region of a managed cluster determines it DR group.
+                        All managed clusters in a region are considered to be in a
+                        sync group.
+                      type: string
                     s3ProfileName:
                       description: S3 profile name (in Ramen config) to use as a source
                         to restore PV related cluster state during recovery or relocate
@@ -58,6 +63,7 @@ spec:
                       type: string
                   required:
                   - name
+                  - region
                   - s3ProfileName
                   type: object
                 type: array
