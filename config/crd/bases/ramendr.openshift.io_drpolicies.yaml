@@ -42,6 +42,14 @@ spec:
                 items:
                   description: Managed cluster information
                   properties:
+                    clusterFence:
+                      description: ClusterFence is a string that determines the fencing
+                        state of the cluster.
+                      enum:
+                      - Unfenced
+                      - Fenced
+                      - ManuallyFenced
+                      type: string
                     name:
                       description: Name of this managed cluster as configured in OCM/ACM
                       type: string
@@ -198,6 +206,18 @@ spec:
                   - type
                   type: object
                 type: array
+              drClusters:
+                additionalProperties:
+                  properties:
+                    status:
+                      enum:
+                      - Unfenced
+                      - Fenced
+                      type: string
+                    string:
+                      type: string
+                  type: object
+                type: object
             type: object
         type: object
     served: true
