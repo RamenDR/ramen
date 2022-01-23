@@ -96,7 +96,7 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	log.Info("create/update")
 
-	if err := u.finalizerAdd(); err != nil {
+	if err := u.addLabelsAndFinalizers(); err != nil {
 		return ctrl.Result{}, fmt.Errorf("finalizer add update: %w", u.validatedSetFalse("FinalizerAddFailed", err))
 	}
 
@@ -344,12 +344,16 @@ func (u *objectUpdater) statusUpdate() error {
 
 const finalizerName = "drpolicies.ramendr.openshift.io/ramen"
 
-func (u *objectUpdater) finalizerAdd() error {
-	finalizerCount := len(u.object.ObjectMeta.Finalizers)
-	controllerutil.AddFinalizer(u.object, finalizerName)
+func (u *objectUpdater) addLabelsAndFinalizers() error {
+	labelAdded, labels := util.AddLabel(&u.object.ObjectMeta, util.OCMBackupLabelKey, util.OCMBackupLabelValue)
+	finalizerAdded := util.AddFinalizer(u.object, finalizerName)
 
-	if len(u.object.ObjectMeta.Finalizers) != finalizerCount {
-		u.log.Info("finalizer add")
+	if finalizerAdded || labelAdded {
+		u.log.Info("finalizer or label add")
+
+		if labelAdded {
+			u.object.SetLabels(labels)
+		}
 
 		return u.client.Update(u.ctx, u.object)
 	}
