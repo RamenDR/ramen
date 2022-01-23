@@ -6,11 +6,13 @@ spec:
   pvcSelector:
     matchLabels:
       any-pvc-label: value
-  schedulingInterval: "1h"
   replicationState: "Primary"
-  replicationSelector:
-    matchLabels:
-      class: ramen
   s3ProfileNames:
     - s3-profile-of-east
     - s3-profile-of-west
+  async:
+    mode: Enabled
+    schedulingInterval: "10m"
+    replicationSelector:
+      matchLabels:
+        class: ramen
