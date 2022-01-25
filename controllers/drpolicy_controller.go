@@ -19,6 +19,8 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"net"
+	"strings"
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -133,6 +135,11 @@ func validateDRPolicy(ctx context.Context, drpolicy *ramen.DRPolicy, apiReader c
 		return ReasonValidationFailed, err
 	}
 
+	err = validateCIDRsFormat(drpolicy, log)
+	if err != nil {
+		return ReasonValidationFailed, err
+	}
+
 	return "", nil
 }
 
@@ -241,6 +248,36 @@ func s3ProfileValidate(ctx context.Context, apiReader client.Reader,
 	}
 
 	return "", nil
+}
+
+func validateCIDRsFormat(drpolicy *ramen.DRPolicy, log logr.Logger) error {
+	// validate the CIDRs format
+	for i := range drpolicy.Spec.DRClusterSet {
+		cluster := &drpolicy.Spec.DRClusterSet[i]
+		if err := ParseCIDRs(cluster, log); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func ParseCIDRs(cluster *ramen.ManagedCluster, log logr.Logger) error {
+	invalidCidrs := []string{}
+
+	for i := range cluster.CIDRs {
+		if _, _, err := net.ParseCIDR(cluster.CIDRs[i]); err != nil {
+			invalidCidrs = append(invalidCidrs, cluster.CIDRs[i])
+
+			log.Error(err, ReasonValidationFailed)
+		}
+	}
+
+	if len(invalidCidrs) > 0 {
+		return fmt.Errorf("cluster %s has invalid CIDRs %s", cluster.Name, strings.Join(invalidCidrs, ", "))
+	}
+
+	return nil
 }
 
 type objectUpdater struct {
