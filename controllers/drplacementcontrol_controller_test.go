@@ -390,32 +390,20 @@ func clearDRPCStatus() {
 	Expect(err).NotTo(HaveOccurred())
 }
 
-func createNamespaces() {
-	eastNamespaceLookupKey := types.NamespacedName{Name: eastManagedClusterNamespace.Name}
-	eastNamespaceObj := &corev1.Namespace{}
+func createNamespace(ns *corev1.Namespace) {
+	nsName := types.NamespacedName{Name: ns.Name}
 
-	err := k8sClient.Get(context.TODO(), eastNamespaceLookupKey, eastNamespaceObj)
+	err := k8sClient.Get(context.TODO(), nsName, &corev1.Namespace{})
 	if err != nil {
-		Expect(k8sClient.Create(context.TODO(), eastManagedClusterNamespace)).NotTo(HaveOccurred(),
-			"failed to create east managed cluster namespace")
+		Expect(k8sClient.Create(context.TODO(), ns)).NotTo(HaveOccurred(),
+			"failed to create %v managed cluster namespace", ns.Name)
 	}
+}
 
-	westNamespaceLookupKey := types.NamespacedName{Name: westManagedClusterNamespace.Name}
-	westNamespaceObj := &corev1.Namespace{}
-
-	err = k8sClient.Get(context.TODO(), westNamespaceLookupKey, westNamespaceObj)
-	if err != nil {
-		Expect(k8sClient.Create(context.TODO(), westManagedClusterNamespace)).NotTo(HaveOccurred(),
-			"failed to create west managed cluster namespace")
-	}
-
-	appNamespaceLookupKey := types.NamespacedName{Name: appNamespace.Name}
-	appNamespaceObj := &corev1.Namespace{}
-
-	err = k8sClient.Get(context.TODO(), appNamespaceLookupKey, appNamespaceObj)
-	if err != nil {
-		Expect(k8sClient.Create(context.TODO(), appNamespace)).NotTo(HaveOccurred(), "failed to create app namespace")
-	}
+func createNamespacesAsync() {
+	createNamespace(eastManagedClusterNamespace)
+	createNamespace(westManagedClusterNamespace)
+	createNamespace(appNamespace)
 }
 
 func createManagedClusters() {
@@ -598,7 +586,7 @@ func waitForVRGMWDeletion(clusterNamespace string) {
 
 func InitialDeployment(namespace, placementName, homeCluster string) (*plrv1.PlacementRule,
 	*rmn.DRPlacementControl) {
-	createNamespaces()
+	createNamespacesAsync()
 
 	createManagedClusters()
 	createDRPolicy()
