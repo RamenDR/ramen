@@ -77,7 +77,7 @@ var (
 		},
 	}
 
-	clusters = []*spokeClusterV1.ManagedCluster{west1Cluster, east1Cluster}
+	asyncClusters = []*spokeClusterV1.ManagedCluster{west1Cluster, east1Cluster}
 
 	east1ManagedClusterNamespace = &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: East1ManagedCluster},
@@ -93,7 +93,7 @@ var (
 
 	schedulingInterval = "1h"
 
-	drPolicy = &rmn.DRPolicy{
+	asyncDRPolicy = &rmn.DRPolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: DRPolicyName,
 		},
@@ -406,8 +406,8 @@ func createNamespacesAsync() {
 	createNamespace(appNamespace)
 }
 
-func createManagedClusters() {
-	for _, cl := range clusters {
+func createManagedClustersAsync() {
+	for _, cl := range asyncClusters {
 		mcLookupKey := types.NamespacedName{Name: cl.Name}
 		mcObj := &spokeClusterV1.ManagedCluster{}
 
@@ -421,13 +421,13 @@ func createManagedClusters() {
 	}
 }
 
-func createDRPolicy() {
-	err := k8sClient.Create(context.TODO(), drPolicy)
+func createDRPolicyAsync() {
+	err := k8sClient.Create(context.TODO(), asyncDRPolicy)
 	Expect(err).NotTo(HaveOccurred())
 }
 
-func deleteDRPolicy() {
-	Expect(k8sClient.Delete(context.TODO(), drPolicy)).To(Succeed())
+func deleteDRPolicyAsync() {
+	Expect(k8sClient.Delete(context.TODO(), asyncDRPolicy)).To(Succeed())
 }
 
 func moveVRGToSecondary(clusterNamespace, mwType string, protectData bool) (*rmn.VolumeReplicationGroup, error) {
@@ -584,12 +584,12 @@ func waitForVRGMWDeletion(clusterNamespace string) {
 	}, timeout, interval).Should(BeTrue(), "failed to wait for manifest deletion for type vrg")
 }
 
-func InitialDeployment(namespace, placementName, homeCluster string) (*plrv1.PlacementRule,
+func InitialDeploymentAsync(namespace, placementName, homeCluster string) (*plrv1.PlacementRule,
 	*rmn.DRPlacementControl) {
 	createNamespacesAsync()
 
-	createManagedClusters()
-	createDRPolicy()
+	createManagedClustersAsync()
+	createDRPolicyAsync()
 
 	placementRule := createPlacementRule(placementName, namespace)
 	drpc := createDRPC(DRPCName, DRPCNamespaceName)
