@@ -816,7 +816,7 @@ func recoverToFailoverCluster(userPlacementRule *plrv1.PlacementRule) {
 
 // +kubebuilder:docs-gen:collapse=Imports
 var _ = Describe("DRPlacementControl Reconciler", func() {
-	Context("DRPlacementControl Reconciler", func() {
+	Context("DRPlacementControl Reconciler Async DR", func() {
 		userPlacementRule := &plrv1.PlacementRule{}
 		drpc := &rmn.DRPlacementControl{}
 		When("An Application is deployed for the first time", func() {
