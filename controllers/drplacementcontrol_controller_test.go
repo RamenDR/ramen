@@ -63,7 +63,7 @@ var (
 			Name: West1ManagedCluster,
 			Labels: map[string]string{
 				"name": West1ManagedCluster,
-				"key1": "value1",
+				"key1": "west1",
 			},
 		},
 	}
@@ -72,7 +72,7 @@ var (
 			Name: East1ManagedCluster,
 			Labels: map[string]string{
 				"name": East1ManagedCluster,
-				"key1": "value2",
+				"key1": "east1",
 			},
 		},
 	}
@@ -250,7 +250,7 @@ func createPlacementRule(name, namespace string) *plrv1.PlacementRule {
 	namereq.Key = "key1"
 	namereq.Operator = metav1.LabelSelectorOpIn
 
-	namereq.Values = []string{"value1"}
+	namereq.Values = []string{"west1"}
 	labelSelector := &metav1.LabelSelector{
 		MatchExpressions: []metav1.LabelSelectorRequirement{namereq},
 	}
