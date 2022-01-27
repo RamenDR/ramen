@@ -100,7 +100,7 @@ ocm_registration_operator_image_specs()
 exit_stack_push unset -f ocm_registration_operator_image_specs
 ocm_registration_operator_kubectl()
 {
-	kubectl --context $1 $3 -k https://github.com/open-cluster-management/registration-operator/deploy/$2/config?ref=$ocm_registration_operator_git_ref
+	kubectl --context $1 $3 -k https://github.com/stolostron/registration-operator/deploy/$2/config?ref=$ocm_registration_operator_git_ref
 }
 exit_stack_push unset -f ocm_registration_operator_kubectl
 ocm_registration_operator_kustomization_directory_path_name()
@@ -114,7 +114,7 @@ ocm_registration_operator_cr_kubectl()
 	mkdir -p $8
 	cat <<-a >$8/kustomization.yaml
 	resources:
-	  - https://raw.githubusercontent.com/open-cluster-management/registration-operator/$ocm_registration_operator_git_ref/deploy/$3/config/samples/operator_open-cluster-management_$4s.cr.yaml
+	  - https://raw.githubusercontent.com/stolostron/registration-operator/$ocm_registration_operator_git_ref/deploy/$3/config/samples/operator_open-cluster-management_$4s.cr.yaml
 	patchesJson6902:
 	  - target:
 	      group: operator.open-cluster-management.io
@@ -264,7 +264,7 @@ ocm_foundation_operator_kubectl()
 	mkdir -p $2
 	cat <<-a >$2/kustomization.yaml
 	resources:
-	  - https://github.com/open-cluster-management/multicloud-operators-foundation/deploy/$1?ref=$ocm_foundation_operator_git_ref
+	  - https://github.com/stolostron/multicloud-operators-foundation/deploy/$1?ref=$ocm_foundation_operator_git_ref
 	namespace: $4
 	images:
 	  - name: quay.io/open-cluster-management/multicloud-manager
@@ -386,7 +386,7 @@ exit_stack_push unset -v subscription_operator_file_names_deploy_managed
 exit_stack_push unset -v subscription_operator_file_names_examples_helmrepo_hub_channel
 subscription_operator_file_url()
 {
-	github_url_file open-cluster-management/multicloud-operators-subscription $1 $subscription_operator_git_ref
+	github_url_file stolostron/multicloud-operators-subscription $1 $subscription_operator_git_ref
 }
 exit_stack_push unset -f subscription_operator_file_url
 subscription_operator_file_urls()
@@ -652,7 +652,7 @@ exit_stack_push unset -f ocm_application_samples_patch_apply
 ocm_application_samples_checkout()
 {
 	set -- application-samples
-	git_clone_and_checkout https://github.com/open-cluster-management $1 main 65853af
+	git_clone_and_checkout https://github.com/stolostron $1 main 65853af
 	exit_stack_push git_checkout_undo $1
 	ocm_application_samples_patch_old_undo $1
 	ocm_application_samples_patch_apply $1
