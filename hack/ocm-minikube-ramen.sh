@@ -578,8 +578,10 @@ ramen_samples_channel_and_drpolicy_deploy()
 	        value:
 	          - name: $3
 	            s3ProfileName: minio-on-$3
+	            region: east
 	          - name: $4
 	            s3ProfileName: minio-on-$4
+	            region: west
 	a
 	kubectl --context $hub_cluster_name apply -k $1
 	for cluster_name in $spoke_cluster_names; do
