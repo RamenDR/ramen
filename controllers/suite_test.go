@@ -17,12 +17,16 @@ limitations under the License.
 package controllers_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -36,10 +40,12 @@ import (
 	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
 	ocmclv1 "github.com/open-cluster-management/api/cluster/v1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
-	viewv1beta1 "github.com/open-cluster-management/multicloud-operators-foundation/pkg/apis/view/v1beta1"
-	subv1 "github.com/open-cluster-management/multicloud-operators-subscription/pkg/apis"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	ramencontrollers "github.com/ramendr/ramen/controllers"
+	cpcv1 "github.com/stolostron/config-policy-controller/api/v1"
+	gppv1 "github.com/stolostron/governance-policy-propagator/api/v1"
+	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
+	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -61,10 +67,30 @@ func TestAPIs(t *testing.T) {
 		[]Reporter{printer.NewlineReporter{}})
 }
 
+func createOperatorNamespace(ramenNamespace string) {
+	ramenNamespaceLookupKey := types.NamespacedName{Name: ramenNamespace}
+	ramenNamespaceObj := &corev1.Namespace{}
+
+	err := k8sClient.Get(context.TODO(), ramenNamespaceLookupKey, ramenNamespaceObj)
+	if err != nil {
+		ramenNamespaceObj = &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: ramenNamespace},
+		}
+		Expect(k8sClient.Create(context.TODO(), ramenNamespaceObj)).NotTo(HaveOccurred(),
+			"failed to create operator namespace")
+	}
+}
+
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 	if _, set := os.LookupEnv("KUBEBUILDER_ASSETS"); !set {
 		Expect(os.Setenv("KUBEBUILDER_ASSETS", "../testbin/bin")).To(Succeed())
+	}
+
+	ramenNamespace, set := os.LookupEnv("POD_NAMESPACE")
+	if !set {
+		Expect(os.Setenv("POD_NAMESPACE", "ns-envtest")).To(Succeed())
+		ramenNamespace = "ns-envtest"
 	}
 
 	By("bootstrapping test environment")
@@ -86,13 +112,19 @@ var _ = BeforeSuite(func() {
 	err = ocmclv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	err = subv1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = ramendrv1alpha1.AddToScheme(scheme.Scheme)
+	err = plrv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = viewv1beta1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = cpcv1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = gppv1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = ramendrv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = volrep.AddToScheme(scheme.Scheme)
@@ -103,6 +135,8 @@ var _ = BeforeSuite(func() {
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+
+	createOperatorNamespace(ramenNamespace)
 
 	options, err := ramenConfigCreate(scheme.Scheme, ctrl.Log)
 	Expect(err).NotTo(HaveOccurred())
