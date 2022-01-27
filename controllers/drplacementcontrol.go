@@ -930,6 +930,7 @@ func (d *DRPCInstance) generateVRG() rmn.VolumeReplicationGroup {
 	}
 
 	vrg.Spec.Async = d.generateVRGSpecAsync()
+	vrg.Spec.Sync = d.generateVRGSpecSync()
 
 	return vrg
 }
@@ -942,6 +943,18 @@ func (d *DRPCInstance) generateVRGSpecAsync() rmn.VRGAsyncSpec {
 			ReplicationClassSelector: d.drPolicy.Spec.ReplicationClassSelector,
 			SchedulingInterval:       d.drPolicy.Spec.SchedulingInterval,
 			Mode:                     rmn.AsyncModeEnabled,
+		}
+	}
+
+	return spec
+}
+
+func (d *DRPCInstance) generateVRGSpecSync() rmn.VRGSyncSpec {
+	spec := rmn.VRGSyncSpec{}
+
+	if supports, _ := dRPolicySupportsMetro(d.drPolicy); supports {
+		spec = rmn.VRGSyncSpec{
+			Mode: rmn.SyncModeEnabled,
 		}
 	}
 
