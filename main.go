@@ -22,10 +22,9 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 
 	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
-	spokeClusterV1 "github.com/open-cluster-management/api/cluster/v1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
-	viewv1beta1 "github.com/open-cluster-management/multicloud-operators-foundation/pkg/apis/view/v1beta1"
-	plrv1 "github.com/open-cluster-management/multicloud-operators-placementrule/pkg/apis/apps/v1"
+	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
+	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	uberzap "go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -89,7 +88,6 @@ func newManager() (ctrl.Manager, error) {
 	if controllerType == ramendrv1alpha1.DRHub {
 		utilruntime.Must(plrv1.AddToScheme(scheme))
 		utilruntime.Must(ocmworkv1.AddToScheme(scheme))
-		utilruntime.Must(spokeClusterV1.AddToScheme(scheme))
 		utilruntime.Must(viewv1beta1.AddToScheme(scheme))
 	} else {
 		utilruntime.Must(volrep.AddToScheme(scheme))
