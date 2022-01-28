@@ -408,7 +408,7 @@ ramen_deploy_hub_or_spoke()
 	kube_context_set $1
 	make -C $ramen_directory_path_name deploy-$2 IMG=$ramen_manager_image_reference
 	kube_context_set_undo
-	kubectl --context $1 -n ramen-system wait deployments --all --for condition=available --timeout 60s
+	kubectl --context $1 -n ramen-system wait deployments --all --for condition=available --timeout 2m
 	ramen_config_deploy_hub_or_spoke $1 $2
 }
 exit_stack_push unset -f ramen_deploy_hub_or_spoke
@@ -421,8 +421,8 @@ ramen_s3_secret_kubectl_cluster()
 	  name: s3secret
 	  namespace: ramen-system
 	stringData:
-	  AWS_ACCESS_KEY_ID: "minio"
-	  AWS_SECRET_ACCESS_KEY: "minio123"
+	  AWS_ACCESS_KEY_ID: minio
+	  AWS_SECRET_ACCESS_KEY: minio123
 	EOF
 }
 exit_stack_push unset -f ramen_s3_secret_kubectl_cluster
