@@ -926,6 +926,7 @@ func (d *DRPCInstance) generateVRG() rmn.VolumeReplicationGroup {
 			PVCSelector:      d.instance.Spec.PVCSelector,
 			ReplicationState: rmn.Primary,
 			S3Profiles:       rmnutil.S3UploadProfileList(*d.drPolicy),
+			Sync:             rmn.VRGSyncSpec{Mode: rmn.SyncModeDisabled},
 		},
 	}
 
