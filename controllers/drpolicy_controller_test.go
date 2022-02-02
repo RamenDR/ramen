@@ -119,6 +119,10 @@ var _ = Describe("DrpolicyController", func() {
 		}
 		drClustersExpect()
 	}
+	cidrs := [][]string{
+		{"198.51.100.17/24", "198.51.100.18/24", "198.51.100.19/24"}, // valid CIDR
+		{"1111.51.100.14/24", "aaa.51.100.15/24", "00.51.100.16/24"}, // invalid CIDR
+	}
 	clusters := [...]ramen.ManagedCluster{
 		{Name: `cluster0`, S3ProfileName: s3ProfileNameConnectSucc, Region: "east"},
 		{Name: `cluster1`, S3ProfileName: s3ProfileNameConnectSucc, Region: "west"},
@@ -148,6 +152,31 @@ var _ = Describe("DrpolicyController", func() {
 			Expect(k8sClient.Create(context.TODO(), drpolicy)).To(Succeed())
 			validatedConditionExpect(drpolicy, metav1.ConditionFalse, Ignore())
 		})
+	})
+	Specify("drpolicy delete", func() {
+		drpolicyDeleteAndConfirm(drpolicy)
+	})
+	Specify("a drpolicy", func() {
+		drpolicy.ObjectMeta = objectMetas[0]
+	})
+	When("a drpolicy with valid CIDRs", func() {
+		It("should succeed", func() {
+			drpolicy.Spec.DRClusterSet[0].CIDRs = cidrs[0]
+			drpolicyCreate(drpolicy)
+			validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
+		})
+	})
+	When("a drpolicy with invalid CIDRs", func() {
+		It("should set validation status to false", func() {
+			drpolicy.Spec.DRClusterSet[0].CIDRs = cidrs[1]
+			Expect(k8sClient.Update(context.TODO(), drpolicy)).To(Succeed())
+			validatedConditionExpect(drpolicy, metav1.ConditionFalse, Ignore())
+		})
+	})
+	Specify("remove invalid CIDRs and update", func() {
+		drpolicy.Spec.DRClusterSet[0].CIDRs = nil
+		Expect(k8sClient.Update(context.TODO(), drpolicy)).To(Succeed())
+		validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
 	})
 	Specify("drpolicy delete", func() {
 		drpolicyDeleteAndConfirm(drpolicy)
