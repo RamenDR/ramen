@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -99,6 +100,63 @@ type VRGSyncSpec struct {
 	Mode SyncMode `json:"mode"`
 }
 
+// VolSyncReplicationDestinationSpec defines the configuration for the VolSync
+// protected PVC to be used by the destination cluster (Secondary)
+type VolSyncReplicationDestinationSpec struct {
+	// protectedPVC contains the information about the PVC protected by VolSync
+	//+optional
+	ProtectedPVC ProtectedPVC `json:"protectedPVCs,omitempty"`
+
+	// sshKeys is the name of a Secret that contains the SSH keys to be used for
+	// authentication.
+	//+optional
+	SSHKeys string `json:"sshKeys,omitempty"`
+}
+
+// VolSyncReplicationSourceSpec defines the configuration for the VolSync
+// protected PVC to be used by the source cluster (Primary)
+type VolSyncReplicationSourceSpec struct {
+	// pvcName is the name of the PVC that VolSync will replicate to the destinatioin
+	PVCName string `json:"pvcName"`
+
+	// address is the address to connect to for incoming SSH replication
+	// connections.
+	Address string `json:"address"`
+	// sshKeys is the name of a Secret that contains the SSH keys to be used for
+	// authentication.
+	//+optional
+	SSHKeys string `json:"sshKeys,omitempty"`
+}
+
+// VolSyncRsyncSpec defines the ReplicationDestination specs for the Secondary VRG, or
+// the ReplicationSource specs for the Primary VRG
+type VolSyncRsyncSpec struct {
+	// rdSpec array contains the PVCs information that will/are be/being protected by VolSync
+	//+optional
+	RDSpec []VolSyncReplicationDestinationSpec `json:"rdSpec,omitempty"`
+
+	// rsSpec array contains the PVCs information that have been configured for the VolSync Replication Destination
+	//+optional
+	RSSpec []VolSyncReplicationSourceSpec `json:"rsSpec,omitempty"`
+}
+
+// VolSyncReplicationDestinationInfo defines the VolSync PVC information that
+// the ReplicationDestination was setup for.
+type VolSyncReplicationDestinationInfo struct {
+	// pvcName is the name of the PVC that will be replicated by VolSync
+	PVCName string `json:"pvcName"`
+
+	// address is the address to connect to for incoming SSH replication connections.
+	Address string `json:"address"`
+}
+
+// VolSyncReplicationStatus defines the observed state of VolSyncReplication
+type VolSyncReplicationStatus struct {
+	// Info about the created RDs (should only be filled out if using VolSync and VRG ReplicationState is secondary)
+	//+optional
+	RDInfo []VolSyncReplicationDestinationInfo `json:"rdInfo,omitempty"`
+}
+
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // VolumeReplicationGroup (VRG) spec declares the desired schedule for data
@@ -128,13 +186,35 @@ type VolumeReplicationGroupSpec struct {
 
 	Async VRGAsyncSpec `json:"async,omitempty"`
 	Sync  VRGSyncSpec  `json:"sync,omitempty"`
+
+	// volsync defines the configuration when using VolSync plugin for replication.
+	//+optional
+	VolSync *VolSyncRsyncSpec `json:"volSync,omitempty"`
 }
 
 type ProtectedPVC struct {
-	// Name of the VolRep resource
+	// VolSync can be used to denote whether this PVC is protected by VolSync. Defaults to "false".
+	//+optional
+	VolSyncEnabled bool `json:"volSyncEnabled,omitempty"`
+
+	// Name of the VolRep/PVC resource
+	//+optional
 	Name string `json:"name,omitempty"`
 
-	// Conditions for each protected pvc
+	// Name of the StorageClass required by the claim.
+	//+optional
+	StorageClassName *string `json:"storageClassName,omitempty"`
+
+	// AccessModes set in the claim to be replicated
+	//+optional
+	AccessModes []corev1.PersistentVolumeAccessMode `json:"accessModes,omitempty"`
+
+	// Resources set in the claim to be replicated
+	//+optional
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	// Conditions for this protected pvc
+	//+optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
@@ -145,6 +225,10 @@ type VolumeReplicationGroupStatus struct {
 
 	// All the protected pvcs
 	ProtectedPVCs []ProtectedPVC `json:"protectedPVCs,omitempty"`
+
+	// vsrStatus defines the VolSyn replication status when using VolSync replication.
+	//+optional
+	VSRStatus *VolSyncReplicationStatus `json:"vsrStatus,omitempty"`
 
 	// Conditions are the list of VRG's summary conditions and their status.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
