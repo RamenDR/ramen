@@ -1,3 +1,4 @@
 resources:
-- ../../samples/ramendr_v1alpha1_drpolicy.yaml
-- ../../samples/ramendr_v1alpha1_drplacementcontrol.yaml
+  - ../../samples/ramendr_v1alpha1_drpolicy.yaml
+  - ../../samples/ramendr_v1alpha1_drplacementcontrol.yaml
+  - ../../samples/ramendr_v1alpha1_metrodr_drpolicy.yaml

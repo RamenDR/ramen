@@ -1,0 +1,15 @@
+apiVersion: ramendr.openshift.io/v1alpha1
+kind: DRPolicy
+metadata:
+  name: metrodr-drpolicy-sample
+spec:
+  drClusterSet:
+    - name: east1
+      region: east
+      s3ProfileName: s3-profile-of-east1
+      cidrs:
+        - "192.168.39.45/32"
+      clusterFence: ManuallyFenced # Unfenced | Fenced
+    - name: east2
+      region: east
+      s3ProfileName: s3-profile-of-eest2
