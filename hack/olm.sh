@@ -1,5 +1,5 @@
 #!/bin/sh
-# shellcheck disable=1090,2086
+# shellcheck disable=1090,2086,1091
 . "$(dirname $0)"/until_true_or_n.sh
 olm_kubectl()
 {
