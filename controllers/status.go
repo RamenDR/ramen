@@ -313,3 +313,50 @@ func findCondition(existingConditions []metav1.Condition, conditionType string) 
 
 	return nil
 }
+
+const (
+	VolSyncProtectedPVCConditionTypeReady = "SetupReady"
+)
+
+// Condition reasons
+const (
+	VolSyncProtectedPVCInitializing = "Initializing"
+	VolSyncProtectedPVCReady        = "Ready"
+	VolSyncProtectedPVCError        = "Error"
+)
+
+// sets conditions when Primary VolSync has finished setting up the Replication Source
+func setVolSyncProtectedPVCConditionReady(conditions *[]metav1.Condition, observedGeneration int64,
+	message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VolSyncProtectedPVCConditionTypeReady,
+		Reason:             VolSyncProtectedPVCReady,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		Message:            message,
+	})
+}
+
+// sets conditions when Primary VolSync is in the process of initializing the Replication Source
+func setVolSyncProtectedPVCConditionInitializing(conditions *[]metav1.Condition, observedGeneration int64,
+	message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VolSyncProtectedPVCConditionTypeReady,
+		Reason:             VolSyncProtectedPVCInitializing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+	})
+}
+
+// sets conditions when Primary anccountered an error initializing the Replication Source
+func setVolSyncProtectedPVCConditionError(conditions *[]metav1.Condition, observedGeneration int64,
+	message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VolSyncProtectedPVCConditionTypeReady,
+		Reason:             VolSyncProtectedPVCError,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+	})
+}

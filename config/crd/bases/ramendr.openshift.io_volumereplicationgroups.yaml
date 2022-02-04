@@ -319,9 +319,9 @@ spec:
                               description: Name of the StorageClass required by the
                                 claim.
                               type: string
-                            volSyncEnabled:
-                              description: VolSync can be used to denote whether this
-                                PVC is protected by VolSync. Defaults to "false".
+                            volSyncPVC:
+                              description: VolSyncPVC can be used to denote whether
+                                this PVC is protected by VolSync. Defaults to "false".
                               type: boolean
                           type: object
                         sshKeys:
@@ -561,8 +561,8 @@ spec:
                     storageClassName:
                       description: Name of the StorageClass required by the claim.
                       type: string
-                    volSyncEnabled:
-                      description: VolSync can be used to denote whether this PVC
+                    volSyncPVC:
+                      description: VolSyncPVC can be used to denote whether this PVC
                         is protected by VolSync. Defaults to "false".
                       type: boolean
                   type: object

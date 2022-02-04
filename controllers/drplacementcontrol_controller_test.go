@@ -558,7 +558,7 @@ func moveVRGToSecondary(clusterNamespace, mwType string, protectData bool) (*rmn
 		}
 	}
 
-	Expect(err).NotTo(HaveOccurred(), "erros %w in updating MW", err)
+	Expect(err).NotTo(HaveOccurred(), "errors %w in updating MW", err)
 
 	return vrg, err
 }

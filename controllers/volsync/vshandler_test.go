@@ -111,6 +111,7 @@ var _ = Describe("VolSync Handler", func() {
 			rdSpec := ramendrv1alpha1.VolSyncReplicationDestinationSpec{
 				ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 					Name: "mytestpvc",
+					VolSyncPVC: true,
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceStorage: capacity,
@@ -359,6 +360,7 @@ var _ = Describe("VolSync Handler", func() {
 			rdSpec = ramendrv1alpha1.VolSyncReplicationDestinationSpec{
 				ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 					Name:             pvcName,
+					VolSyncPVC:       true,
 					StorageClassName: &pvcStorageClassName,
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
@@ -532,6 +534,7 @@ var _ = Describe("VolSync Handler", func() {
 				rdSpec := ramendrv1alpha1.VolSyncReplicationDestinationSpec{
 					ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 						Name:             pvcNamePrefix + strconv.Itoa(i),
+						VolSyncPVC:       true,
 						StorageClassName: &pvcStorageClassName,
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
@@ -560,6 +563,7 @@ var _ = Describe("VolSync Handler", func() {
 				otherOwnerRdSpec := ramendrv1alpha1.VolSyncReplicationDestinationSpec{
 					ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 						Name:             pvcNamePrefixOtherOwner + strconv.Itoa(i),
+						VolSyncPVC:       true,
 						StorageClassName: &pvcStorageClassName,
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
