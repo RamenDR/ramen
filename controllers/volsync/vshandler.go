@@ -50,16 +50,18 @@ type VSHandler struct {
 	log                logr.Logger
 	owner              metav1.Object
 	schedulingInterval string
+	volSyncProfile     *ramendrv1alpha1.VolSyncProfile
 }
 
 func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, owner metav1.Object,
-	schedulingInterval string) *VSHandler {
+	schedulingInterval string, volSyncProfile *ramendrv1alpha1.VolSyncProfile) *VSHandler {
 	return &VSHandler{
 		ctx:                ctx,
 		client:             client,
 		log:                log,
 		owner:              owner,
 		schedulingInterval: schedulingInterval,
+		volSyncProfile:     volSyncProfile,
 	}
 }
 
@@ -97,7 +99,7 @@ func (v *VSHandler) ReconcileRD(
 		//TODO: VolumeSnapshotClassName
 
 		rd.Spec.Rsync = &volsyncv1alpha1.ReplicationDestinationRsyncSpec{
-			ServiceType: &rsyncServiceType,
+			ServiceType: v.getRsyncServiceType(),
 			SSHKeys:     sshKeys,
 
 			ReplicationDestinationVolumeOptions: volsyncv1alpha1.ReplicationDestinationVolumeOptions{
@@ -441,6 +443,19 @@ func (v *VSHandler) addFinalizerAndUpdate(obj client.Object, finalizer string) e
 		}
 	}
 	return nil
+}
+
+func (v *VSHandler) getRsyncServiceType() *corev1.ServiceType {
+	if v.volSyncProfile != nil && v.volSyncProfile.ServiceType != nil {
+		return v.volSyncProfile.ServiceType
+	}
+	// If the service type to use is not in the volsyncprofile (contained in the ramenconfig), then use the default
+	return &DefaultRsyncServiceType
+}
+
+// This function is here to allow tests to override the volsyncProfile
+func (v *VSHandler) SetVolSyncProfile(volSyncProfile *ramendrv1alpha1.VolSyncProfile) {
+	v.volSyncProfile = volSyncProfile
 }
 
 // Convert from schedulingInterval which is in the format of <num><m,h,d>
