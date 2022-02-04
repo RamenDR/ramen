@@ -282,7 +282,8 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 		ctx:            ctx,
 		log:            log,
 		instance:       &ramendrv1alpha1.VolumeReplicationGroup{},
-		pvcList:        &corev1.PersistentVolumeClaimList{},
+		volRepPVCs:     []corev1.PersistentVolumeClaim{},
+		volSyncPVCs:    []corev1.PersistentVolumeClaim{},
 		replClassList:  &volrep.VolumeReplicationClassList{},
 		namespacedName: req.NamespacedName.String(),
 	}
@@ -317,7 +318,8 @@ type VRGInstance struct {
 	log                 logr.Logger
 	instance            *ramendrv1alpha1.VolumeReplicationGroup
 	savedInstanceStatus ramendrv1alpha1.VolumeReplicationGroupStatus
-	pvcList             *corev1.PersistentVolumeClaimList
+	volRepPVCs          []corev1.PersistentVolumeClaim
+	volSyncPVCs         []corev1.PersistentVolumeClaim
 	replClassList       *volrep.VolumeReplicationClassList
 	vrcUpdated          bool
 	namespacedName      string
@@ -721,14 +723,54 @@ func (v *VRGInstance) updatePVCList() error {
 		client.MatchingLabels(labelSelector.MatchLabels),
 	}
 
-	if err := v.reconciler.List(v.ctx, v.pvcList, listOptions...); err != nil {
+	pvcList := &corev1.PersistentVolumeClaimList{}
+	if err := v.reconciler.List(v.ctx, pvcList, listOptions...); err != nil {
 		v.log.Error(err, "Failed to list PersistentVolumeClaims",
 			"labeled", labels.Set(labelSelector.MatchLabels))
 
 		return fmt.Errorf("failed to list PersistentVolumeClaims, %w", err)
 	}
 
-	v.log.Info("Found PersistentVolumeClaims", "count", len(v.pvcList.Items))
+	// Separate PVCs targeted for VolRep from PVCs targeted for VolSync
+	if !v.vrcUpdated {
+		if err := v.updateReplicationClassList(); err != nil {
+			v.log.Error(err, "Failed to get VolumeReplicationClass list")
+
+			return fmt.Errorf("failed to get VolumeReplicationClass list")
+		}
+
+		v.vrcUpdated = true
+	}
+
+	if len(v.replClassList.Items) == 0 {
+		v.log.Info("No VolumeReplicationClass available")
+
+		return fmt.Errorf("no VolumeReplicationClass available")
+	}
+
+	for idx := range pvcList.Items {
+		pvc := &pvcList.Items[idx]
+		pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
+
+		storageClass, err := v.getStorageClass(pvcNamespacedName)
+		if err != nil {
+			v.log.Info(fmt.Sprintf("Failed to get the storageclass of pvc %s", pvcNamespacedName))
+
+			return fmt.Errorf("failed to get the storageclass of pvc %s (%w)", pvcNamespacedName, err)
+		}
+
+		for index := range v.replClassList.Items {
+			replicationClass := &v.replClassList.Items[index]
+			if storageClass.Provisioner != replicationClass.Spec.Provisioner {
+				v.volSyncPVCs = append(v.volSyncPVCs, *pvc)
+			} else {
+				v.volRepPVCs = append(v.volRepPVCs, *pvc)
+			}
+		}
+	}
+
+	v.log.Info(fmt.Sprintf("Found %d PVCs targeted for VolRep and %d targeted for VolSync",
+		len(v.volRepPVCs), len(v.volSyncPVCs)))
 
 	return nil
 }
@@ -806,8 +848,8 @@ func (v *VRGInstance) deleteVRGHandleMode() bool {
 func (v *VRGInstance) reconcileVRsForDeletion() bool {
 	requeue := false
 
-	for idx := range v.pvcList.Items {
-		pvc := &v.pvcList.Items[idx]
+	for idx := range v.volRepPVCs {
+		pvc := &v.volRepPVCs[idx]
 		pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 		log := v.log.WithValues("pvc", pvcNamespacedName.String())
 
@@ -987,7 +1029,22 @@ func (v *VRGInstance) handleVRGMode(state ramendrv1alpha1.ReplicationState) (res
 		result = v.reconcileVRsAsSecondary()
 	}
 
-	return result
+	return asyncNeedRequeue || syncNeedRequeue
+}
+
+func (v *VRGInstance) markAllPVCsProtected() {
+	v.log.Info("marking all pvc resources ready for use and protected")
+
+	msg := "PVC in the VolumeReplicationGroup is ready for use"
+
+	for idx := range v.volRepPVCs {
+		pvc := &v.volRepPVCs[idx]
+
+		// Each protected PVC condition in VRG status has the same name
+		// as PVC. Use that.
+		v.updatePVCDataReadyCondition(pvc.Name, VRGConditionReasonReady, msg)
+		v.updatePVCDataProtectedCondition(pvc.Name, VRGConditionReasonReady, msg)
+	}
 }
 
 // reconcileVRsAsPrimary creates/updates VolumeReplication CR for each pvc
@@ -995,8 +1052,8 @@ func (v *VRGInstance) handleVRGMode(state ramendrv1alpha1.ReplicationState) (res
 func (v *VRGInstance) reconcileVRsAsPrimary() bool {
 	requeue := false
 
-	for idx := range v.pvcList.Items {
-		pvc := &v.pvcList.Items[idx]
+	for idx := range v.volRepPVCs {
+		pvc := &v.volRepPVCs[idx]
 		pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 		log := v.log.WithValues("pvc", pvcNamespacedName.String())
 
@@ -1090,8 +1147,8 @@ func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
 func (v *VRGInstance) reconcileVRsAsSecondary() bool {
 	requeue := false
 
-	for idx := range v.pvcList.Items {
-		pvc := &v.pvcList.Items[idx]
+	for idx := range v.volRepPVCs {
+		pvc := &v.volRepPVCs[idx]
 		pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 		log := v.log.WithValues("pvc", pvcNamespacedName.String())
 
@@ -1819,8 +1876,8 @@ func (v *VRGInstance) selectVolumeReplicationClass(namespacedName types.Namespac
 func (v *VRGInstance) getStorageClass(namespacedName types.NamespacedName) (*storagev1.StorageClass, error) {
 	var pvc *corev1.PersistentVolumeClaim
 
-	for index := range v.pvcList.Items {
-		pvcItem := &v.pvcList.Items[index]
+	for idx := range v.volRepPVCs {
+		pvcItem := &v.volRepPVCs[idx]
 
 		pvcNamespacedName := types.NamespacedName{Name: pvcItem.Name, Namespace: pvcItem.Namespace}
 		if pvcNamespacedName == namespacedName {
