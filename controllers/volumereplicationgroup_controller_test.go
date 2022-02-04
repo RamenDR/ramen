@@ -1164,6 +1164,7 @@ func waitForPVRestore(pvList []corev1.PersistentVolume) {
 	}
 
 	Expect(pvCount == len(pvList))
+	PVsToRestore = []string{}
 }
 
 type FakePVDownloader struct{}

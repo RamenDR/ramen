@@ -70,8 +70,8 @@ func (v *VSHandler) ReconcileRD(
 
 	l := v.log.WithValues("rdSpec", rdSpec)
 
-	if rdSpec.ProtectedPVC.VolSyncEnabled {
-		return nil, fmt.Errorf("protectedPVC %s is not VolSyncEnabled", rdSpec.ProtectedPVC.Name)
+	if !rdSpec.ProtectedPVC.VolSyncPVC {
+		return nil, fmt.Errorf("protectedPVC %s is not VolSync Enabled", rdSpec.ProtectedPVC.Name)
 	}
 
 	rd := &volsyncv1alpha1.ReplicationDestination{

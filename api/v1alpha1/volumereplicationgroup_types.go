@@ -128,9 +128,9 @@ type VolSyncReplicationSourceSpec struct {
 	SSHKeys string `json:"sshKeys,omitempty"`
 }
 
-// VolSyncRsyncSpec defines the ReplicationDestination specs for the Secondary VRG, or
+// VolSynccSpec defines the ReplicationDestination specs for the Secondary VRG, or
 // the ReplicationSource specs for the Primary VRG
-type VolSyncRsyncSpec struct {
+type VolSyncSpec struct {
 	// rdSpec array contains the PVCs information that will/are be/being protected by VolSync
 	//+optional
 	RDSpec []VolSyncReplicationDestinationSpec `json:"rdSpec,omitempty"`
@@ -189,17 +189,17 @@ type VolumeReplicationGroupSpec struct {
 
 	// volsync defines the configuration when using VolSync plugin for replication.
 	//+optional
-	VolSync *VolSyncRsyncSpec `json:"volSync,omitempty"`
+	VolSync VolSyncSpec `json:"volSync,omitempty"`
 }
 
 type ProtectedPVC struct {
-	// VolSync can be used to denote whether this PVC is protected by VolSync. Defaults to "false".
-	//+optional
-	VolSyncEnabled bool `json:"volSyncEnabled,omitempty"`
-
 	// Name of the VolRep/PVC resource
 	//+optional
 	Name string `json:"name,omitempty"`
+
+	// VolSyncPVC can be used to denote whether this PVC is protected by VolSync. Defaults to "false".
+	//+optional
+	VolSyncPVC bool `json:"volSyncPVC,omitempty"`
 
 	// Name of the StorageClass required by the claim.
 	//+optional
@@ -228,7 +228,7 @@ type VolumeReplicationGroupStatus struct {
 
 	// vsrStatus defines the VolSyn replication status when using VolSync replication.
 	//+optional
-	VSRStatus *VolSyncReplicationStatus `json:"vsrStatus,omitempty"`
+	VolSyncRepStatus VolSyncReplicationStatus `json:"vsrStatus,omitempty"`
 
 	// Conditions are the list of VRG's summary conditions and their status.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
