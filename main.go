@@ -21,6 +21,7 @@ import (
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 
+	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	cpcv1 "github.com/stolostron/config-policy-controller/api/v1"
@@ -94,6 +95,7 @@ func newManager() (ctrl.Manager, error) {
 		utilruntime.Must(gppv1.AddToScheme(scheme))
 	} else {
 		utilruntime.Must(volrep.AddToScheme(scheme))
+		utilruntime.Must(volsyncv1alpha1.AddToScheme(scheme))
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), options)
