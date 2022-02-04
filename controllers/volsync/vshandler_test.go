@@ -96,7 +96,7 @@ var _ = Describe("VolSync Handler", func() {
 		Expect(ownerCm.GetName()).NotTo(BeEmpty())
 		owner = ownerCm
 
-		vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, owner, schedulingInterval)
+		vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, owner, schedulingInterval, &ramendrv1alpha1.VolSyncProfile{})
 	})
 
 	AfterEach(func() {
@@ -139,13 +139,40 @@ var _ = Describe("VolSync Handler", func() {
 				Expect(ownerMatches(createdRD, owner.GetName(), "ConfigMap"))
 
 				// Check common fields
-				Expect(*createdRD.Spec.Rsync.ServiceType).To(Equal(corev1.ServiceTypeLoadBalancer))
 				Expect(createdRD.Spec.Rsync.CopyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
 				Expect(*createdRD.Spec.Rsync.SSHKeys).To(Equal(rdSpec.SSHKeys))
 				Expect(*createdRD.Spec.Rsync.Capacity).To(Equal(capacity))
 				Expect(createdRD.Spec.Rsync.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
 				Expect(createdRD.Spec.Trigger).To(BeNil()) // No schedule should be set
 				Expect(createdRD.GetLabels()).To(HaveKeyWithValue(volsync.VSRGReplicationSourceLabel, owner.GetName()))
+			})
+
+			Context("When empty volsyncProfile is specified", func() {
+				It("Should use the default rsync service type in the ReplicationDestination", func() {
+					Expect(*createdRD.Spec.Rsync.ServiceType).To(Equal(volsync.DefaultRsyncServiceType))
+				})
+			})
+
+			Context("When no volsyncProfile is specified", func() {
+				BeforeEach(func() {
+					vsHandler.SetVolSyncProfile(nil)
+				})
+				It("Should use the default rsync service type in the ReplicationDestination", func() {
+					Expect(*createdRD.Spec.Rsync.ServiceType).To(Equal(volsync.DefaultRsyncServiceType))
+				})
+			})
+
+			Context("When a volsyncProfile is specified with serviceType", func() {
+				var typeClusterIP = corev1.ServiceTypeClusterIP
+				BeforeEach(func() {
+					vsHandler.SetVolSyncProfile(&ramendrv1alpha1.VolSyncProfile{
+						VolSyncProfileName: "default",
+						ServiceType:        &typeClusterIP,
+					})
+				})
+				It("Should use the rsync service type in the VolSyncProfile", func() {
+					Expect(*createdRD.Spec.Rsync.ServiceType).To(Equal(typeClusterIP))
+				})
 			})
 
 			Context("When storageClassName is not specified", func() {
@@ -527,7 +554,7 @@ var _ = Describe("VolSync Handler", func() {
 			}
 			Expect(k8sClient.Create(ctx, otherOwnerCm)).To(Succeed())
 			Expect(otherOwnerCm.GetName()).NotTo(BeEmpty())
-			otherVSHandler := volsync.NewVSHandler(ctx, k8sClient, logger, otherOwnerCm, schedulingInterval)
+			otherVSHandler := volsync.NewVSHandler(ctx, k8sClient, logger, otherOwnerCm, schedulingInterval, nil)
 
 			for i := 0; i < 2; i++ {
 				otherOwnerRdSpec := ramendrv1alpha1.VolSyncReplicationDestinationSpec{
@@ -640,7 +667,7 @@ var _ = Describe("VolSync Handler", func() {
 			}
 			Expect(k8sClient.Create(ctx, otherOwnerCm)).To(Succeed())
 			Expect(otherOwnerCm.GetName()).NotTo(BeEmpty())
-			otherVSHandler := volsync.NewVSHandler(ctx, k8sClient, logger, otherOwnerCm, schedulingInterval)
+			otherVSHandler := volsync.NewVSHandler(ctx, k8sClient, logger, otherOwnerCm, schedulingInterval, nil)
 
 			for i := 0; i < 2; i++ {
 				otherOwnerRsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
