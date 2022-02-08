@@ -811,6 +811,96 @@ func getDRPCCondition(status *rmn.DRPlacementControlStatus, conditionType string
 	return -1, nil
 }
 
+func runFailoverAction(userPlacementRule *plrv1.PlacementRule, fromCluster, toCluster string, isSyncDR bool) {
+	if isSyncDR {
+		fenceCluster(fromCluster)
+	}
+
+	recoverToFailoverCluster(userPlacementRule, fromCluster, toCluster)
+	Expect(getManifestWorkCount(toCluster)).Should(Equal(2))   // MW for VRG+ROLES
+	Expect(getManifestWorkCount(fromCluster)).Should(Equal(1)) // Roles MW
+
+	drpc := getLatestDRPC()
+	// At this point expect the DRPC status condition to have 2 types
+	// {Available and PeerReady}
+	// Final state is 'FailedOver'
+	Expect(drpc.Status.Phase).To(Equal(rmn.FailedOver))
+	Expect(len(drpc.Status.Conditions)).To(Equal(2))
+	_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
+	Expect(condition.Reason).To(Equal(string(rmn.FailedOver)))
+
+	userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
+	Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(toCluster))
+}
+
+func clearDRActionAfterFailover(userPlacementRule *plrv1.PlacementRule, preferredCluster, failoverCluster string) {
+	drstate = "none"
+
+	setDRPCSpecExpectationTo("", preferredCluster, failoverCluster)
+	waitForCompletion(string(rmn.FailedOver))
+	waitForUpdateDRPCStatus()
+
+	drpc := getLatestDRPC()
+	// At this point expect the DRPC status condition to have 2 types
+	// {Available and PeerReady}
+	// Final state didn't change and it is 'FailedOver' even though we tried to run
+	// initial deployment
+	Expect(drpc.Status.Phase).To(Equal(rmn.FailedOver))
+	Expect(len(drpc.Status.Conditions)).To(Equal(2))
+	_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
+	Expect(condition.Reason).To(Equal(string(rmn.FailedOver)))
+
+	userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
+	Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(failoverCluster))
+}
+
+func runRelocateAction(userPlacementRule *plrv1.PlacementRule, fromCluster string, isSyncDR bool) {
+	toCluster1 := "east1-cluster"
+
+	if isSyncDR {
+		unfenceCluster(toCluster1)
+	}
+
+	relocateToPreferredCluster(userPlacementRule, fromCluster)
+	Expect(getManifestWorkCount(toCluster1)).Should(Equal(2)) // MWs for VRG+ROLES
+	Expect(getManifestWorkCount(fromCluster)).Should(Equal(1))
+
+	drpc := getLatestDRPC()
+	// At this point expect the DRPC status condition to have 2 types
+	// {Available and PeerReady}
+	// Final state is 'Relocated'
+	Expect(drpc.Status.Phase).To(Equal(rmn.Relocated))
+	Expect(len(drpc.Status.Conditions)).To(Equal(2))
+	_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
+	Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
+
+	userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
+	Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(toCluster1))
+	Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
+
+	val, err := rmnutil.GetMetricValueSingle("ramen_relocate_time", dto.MetricType_GAUGE)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(val).NotTo(Equal(0.0)) // failover time should be non-zero
+}
+
+func clearDRActionAfterRelocate(userPlacementRule *plrv1.PlacementRule, preferredCluster, failoverCluster string) {
+	setDRPCSpecExpectationTo("", preferredCluster, failoverCluster)
+	waitForCompletion(string(rmn.Relocated))
+
+	drpc := getLatestDRPC()
+	// At this point expect the DRPC status condition to have 2 types
+	// {Available and PeerReady}
+	// Final state didn't change and it is 'Relocated' even though we tried to run
+	// initial deployment
+	Expect(drpc.Status.Phase).To(Equal(rmn.Relocated))
+	Expect(len(drpc.Status.Conditions)).To(Equal(2))
+	_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
+	Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
+
+	userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
+	Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(preferredCluster))
+}
+
 func relocateToPreferredCluster(userPlacementRule *plrv1.PlacementRule, fromCluster string) {
 	toCluster1 := "east1-cluster"
 
@@ -1031,83 +1121,27 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			It("Should relocate to Primary (East1ManagedCluster)", func() {
 				// ----------------------------- RELOCATION TO PRIMARY --------------------------------------
 				By("\n\n*** Relocate - 1\n\n")
-				relocateToPreferredCluster(userPlacementRule, West1ManagedCluster)
-				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(2)) // MWs for VRG+ROLES
-
-				drpc = getLatestDRPC()
-				// At this point expect the DRPC status condition to have 2 types
-				// {Available and PeerReady}
-				// Final state is 'Relocated'
-				Expect(drpc.Status.Phase).To(Equal(rmn.Relocated))
-				Expect(len(drpc.Status.Conditions)).To(Equal(2))
-				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
-				Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
-				userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
-				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(East1ManagedCluster))
-				Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
-
-				val, err := rmnutil.GetMetricValueSingle("ramen_relocate_time", dto.MetricType_GAUGE)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(val).NotTo(Equal(0.0)) // failover time should be non-zero
+				runRelocateAction(userPlacementRule, West1ManagedCluster, false)
 			})
 		})
 		When("DRAction is cleared after relocation", func() {
 			It("Should not do anything", func() {
 				// ----------------------------- Clear DRAction --------------------------------------
-				setDRPCSpecExpectationTo("", East1ManagedCluster, West1ManagedCluster)
-				waitForCompletion(string(rmn.Relocated))
-				drpc = getLatestDRPC()
-				// At this point expect the DRPC status condition to have 2 types
-				// {Available and PeerReady}
-				// Final state didn't change and it is 'Relocated' even though we tried to run
-				// initial deployment
-				Expect(drpc.Status.Phase).To(Equal(rmn.Relocated))
-				Expect(len(drpc.Status.Conditions)).To(Equal(2))
-				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
-				Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
-				userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
-				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(East1ManagedCluster))
+				clearDRActionAfterRelocate(userPlacementRule, East1ManagedCluster, West1ManagedCluster)
 			})
 		})
 		When("DRAction is changed to Failover after relocation", func() {
 			It("Should failover again to Secondary (West1ManagedCluster)", func() {
 				// ----------------------------- FAILOVER TO SECONDARY --------------------------------------
 				By("\n\n*** Failover - 3\n\n")
-				recoverToFailoverCluster(userPlacementRule, East1ManagedCluster, West1ManagedCluster)
-				Expect(getManifestWorkCount(West1ManagedCluster)).Should(Equal(2)) // MW for VRG+ROLES
-				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1)) // Roles MW
-
-				drpc := getLatestDRPC()
-				// At this point expect the DRPC status condition to have 2 types
-				// {Available and PeerReady}
-				// Final state is 'FailedOver'
-				Expect(drpc.Status.Phase).To(Equal(rmn.FailedOver))
-				Expect(len(drpc.Status.Conditions)).To(Equal(2))
-				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
-				Expect(condition.Reason).To(Equal(string(rmn.FailedOver)))
-				userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
-				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(West1ManagedCluster))
+				runFailoverAction(userPlacementRule, East1ManagedCluster, West1ManagedCluster, false)
 			})
 		})
 		When("DRAction is cleared after failover", func() {
 			It("Should not do anything", func() {
 				// ----------------------------- Clear DRAction --------------------------------------
 				By("\n\n>>> clearing DRAction")
-				drstate = "none"
-				setDRPCSpecExpectationTo("", East1ManagedCluster, West1ManagedCluster)
-				waitForCompletion(string(rmn.FailedOver))
-				waitForUpdateDRPCStatus()
-				drpc = getLatestDRPC()
-				// At this point expect the DRPC status condition to have 2 types
-				// {Available and PeerReady}
-				// Final state didn't change and it is 'FailedOver' even though we tried to run
-				// initial deployment
-				Expect(drpc.Status.Phase).To(Equal(rmn.FailedOver))
-				Expect(len(drpc.Status.Conditions)).To(Equal(2))
-				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
-				Expect(condition.Reason).To(Equal(string(rmn.FailedOver)))
-				userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
-				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(West1ManagedCluster))
+				clearDRActionAfterFailover(userPlacementRule, East1ManagedCluster, West1ManagedCluster)
 			})
 		})
 		When("DRAction is cleared but DRPC status is empty", func() {
@@ -1130,20 +1164,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			It("Should relocate to Primary (East1ManagedCluster)", func() {
 				// ----------------------------- RELOCATION TO PRIMARY --------------------------------------
 				By("\n\n*** relocate 2\n\n")
-				relocateToPreferredCluster(userPlacementRule, West1ManagedCluster)
-				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(2)) // MWs for VRG+ROLES
-				Expect(getManifestWorkCount(West1ManagedCluster)).Should(Equal(1)) // Roles MW
-
-				drpc = getLatestDRPC()
-				// At this point expect the DRPC status condition to have 2 types
-				// {Available and PeerReady}
-				// Final state is 'Relocated'
-				Expect(drpc.Status.Phase).To(Equal(rmn.Relocated))
-				Expect(len(drpc.Status.Conditions)).To(Equal(2))
-				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
-				Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
-				userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
-				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(East1ManagedCluster))
+				runRelocateAction(userPlacementRule, West1ManagedCluster, false)
 			})
 		})
 
@@ -1152,6 +1173,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				// ----------------------------- DELETE DRPC from PRIMARY --------------------------------------
 				By("\n\n*** DELETE User PlacementRule ***\n\n")
 				deleteUserPlacementRule()
+				drpc := getLatestDRPC()
 				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionPeerReady)
 				Expect(condition).NotTo(BeNil())
 				// waitForCompletion("deleted")
@@ -1200,81 +1222,27 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			It("Should relocate to Primary (East1ManagedCluster)", func() {
 				// ----------------------------- RELOCATION TO PRIMARY FOR SYNC DR -------------------
 				By("\n\n*** relocate 2\n\n")
-				unfenceCluster(East1ManagedCluster)
-				relocateToPreferredCluster(userPlacementRule, East2ManagedCluster)
-				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(2)) // MWs for VRG+ROLES
-				Expect(getManifestWorkCount(East2ManagedCluster)).Should(Equal(1)) // Roles MW
-
-				drpc = getLatestDRPC()
-				// At this point expect the DRPC status condition to have 2 types
-				// {Available and PeerReady}
-				// Final state is 'Relocated'
-				Expect(drpc.Status.Phase).To(Equal(rmn.Relocated))
-				Expect(len(drpc.Status.Conditions)).To(Equal(2))
-				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
-				Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
-				userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
-				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(East1ManagedCluster))
+				runRelocateAction(userPlacementRule, East2ManagedCluster, true)
 			})
 		})
 		When("DRAction is cleared after relocation", func() {
 			It("Should not do anything", func() {
 				// ----------------------------- Clear DRAction --------------------------------------
-				setDRPCSpecExpectationTo("", East1ManagedCluster, East2ManagedCluster)
-				waitForCompletion(string(rmn.Relocated))
-				drpc = getLatestDRPC()
-				// At this point expect the DRPC status condition to have 2 types
-				// {Available and PeerReady}
-				// Final state didn't change and it is 'Relocated' even though we tried to run
-				// initial deployment
-				Expect(drpc.Status.Phase).To(Equal(rmn.Relocated))
-				Expect(len(drpc.Status.Conditions)).To(Equal(2))
-				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
-				Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
-				userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
-				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(East1ManagedCluster))
+				clearDRActionAfterRelocate(userPlacementRule, East1ManagedCluster, East2ManagedCluster)
 			})
 		})
 		When("DRAction is changed to Failover after relocation", func() {
 			It("Should failover again to Secondary (East2ManagedCluster)", func() {
 				// ----------------------------- FAILOVER TO SECONDARY FOR SYNC DR--------------------
 				By("\n\n*** Failover - 3\n\n")
-				fenceCluster(East1ManagedCluster)
-				recoverToFailoverCluster(userPlacementRule, East1ManagedCluster, East2ManagedCluster)
-				Expect(getManifestWorkCount(East2ManagedCluster)).Should(Equal(2)) // MW for VRG+ROLES
-				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1)) // Roles MW
-
-				drpc := getLatestDRPC()
-				// At this point expect the DRPC status condition to have 2 types
-				// {Available and PeerReady}
-				// Final state is 'FailedOver'
-				Expect(drpc.Status.Phase).To(Equal(rmn.FailedOver))
-				Expect(len(drpc.Status.Conditions)).To(Equal(2))
-				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
-				Expect(condition.Reason).To(Equal(string(rmn.FailedOver)))
-				userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
-				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(East2ManagedCluster))
+				runFailoverAction(userPlacementRule, East1ManagedCluster, East2ManagedCluster, true)
 			})
 		})
 		When("DRAction is cleared after failover", func() {
 			It("Should not do anything", func() {
 				// ----------------------------- Clear DRAction --------------------------------------
 				By("\n\n>>> clearing DRAction")
-				drstate = "none"
-				setDRPCSpecExpectationTo("", East1ManagedCluster, East2ManagedCluster)
-				waitForCompletion(string(rmn.FailedOver))
-				waitForUpdateDRPCStatus()
-				drpc = getLatestDRPC()
-				// At this point expect the DRPC status condition to have 2 types
-				// {Available and PeerReady}
-				// Final state didn't change and it is 'FailedOver' even though we tried to run
-				// initial deployment
-				Expect(drpc.Status.Phase).To(Equal(rmn.FailedOver))
-				Expect(len(drpc.Status.Conditions)).To(Equal(2))
-				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
-				Expect(condition.Reason).To(Equal(string(rmn.FailedOver)))
-				userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
-				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(East2ManagedCluster))
+				clearDRActionAfterFailover(userPlacementRule, East1ManagedCluster, East2ManagedCluster)
 			})
 		})
 		When("DRAction is cleared but DRPC status is empty", func() {
@@ -1297,21 +1265,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			It("Should relocate to Primary (East1ManagedCluster)", func() {
 				// ----------------------------- RELOCATION TO PRIMARY FOR SYNC DR------------------------
 				By("\n\n*** relocate 2\n\n")
-				unfenceCluster(East1ManagedCluster)
-				relocateToPreferredCluster(userPlacementRule, East2ManagedCluster)
-				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(2)) // MWs for VRG+ROLES
-				Expect(getManifestWorkCount(East2ManagedCluster)).Should(Equal(1)) // Roles MW
-
-				drpc = getLatestDRPC()
-				// At this point expect the DRPC status condition to have 2 types
-				// {Available and PeerReady}
-				// Final state is 'Relocated'
-				Expect(drpc.Status.Phase).To(Equal(rmn.Relocated))
-				Expect(len(drpc.Status.Conditions)).To(Equal(2))
-				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
-				Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
-				userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
-				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(East1ManagedCluster))
+				runRelocateAction(userPlacementRule, East2ManagedCluster, true)
 			})
 		})
 		When("Deleting user PlacementRule", func() {
