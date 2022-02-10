@@ -24,6 +24,7 @@ s3StoreProfiles:
       namespace: default
 drClusterOperator:
   deploymentAutomationEnabled: true
+  s3SecretDistributionEnabled: true
   channelName: alpha
   packageName: ramen-dr-cluster-operator
   namespaceName: ramen-system
