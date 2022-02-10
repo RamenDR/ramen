@@ -950,15 +950,15 @@ func (d *DRPCInstance) generateVRGSpecAsync() rmn.VRGAsyncSpec {
 }
 
 func (d *DRPCInstance) generateVRGSpecSync() rmn.VRGSyncSpec {
-	spec := rmn.VRGSyncSpec{}
-
 	if supports, _ := dRPolicySupportsMetro(d.drPolicy); supports {
-		spec = rmn.VRGSyncSpec{
+		return rmn.VRGSyncSpec{
 			Mode: rmn.SyncModeEnabled,
 		}
 	}
 
-	return spec
+	return rmn.VRGSyncSpec{
+		Mode: rmn.SyncModeDisabled,
+	}
 }
 
 func dRPolicySupportsRegional(drpolicy *rmn.DRPolicy) bool {
