@@ -199,7 +199,7 @@ type ProtectedPVC struct {
 
 	// VolSyncPVC can be used to denote whether this PVC is protected by VolSync. Defaults to "false".
 	//+optional
-	VolSyncPVC bool `json:"volSyncPVC,omitempty"`
+	ProtectedByVolSync bool `json:"protectedByVolSync,omitempty"`
 
 	// Name of the StorageClass required by the claim.
 	//+optional
