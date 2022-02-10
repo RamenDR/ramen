@@ -94,7 +94,7 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if !drpolicy.ObjectMeta.DeletionTimestamp.IsZero() {
 		log.Info("delete")
 
-		if err := drClustersUndeploy(drpolicy, &manifestWorkUtil); err != nil {
+		if err := drClustersUndeploy(drpolicy, &manifestWorkUtil, ramenConfig); err != nil {
 			return ctrl.Result{}, fmt.Errorf("drclusters undeploy: %w", err)
 		}
 
