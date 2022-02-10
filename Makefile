@@ -258,6 +258,7 @@ bundle-hub: manifests kustomize operator-sdk ## Generate hub bundle manifests an
 	$(SED_CMD) -e "s,namespaceName: ramen-system,namespaceName: $(OPERATOR_SUGGESTED_NAMESPACE)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
 	$(SED_CMD) -e "s,clusterServiceVersionName: ramen-dr-cluster-operator.v0.0.1,clusterServiceVersionName: $(DRCLUSTER_NAME).v$(VERSION)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
 	$(SED_CMD) -e "s,deploymentAutomationEnabled: true,deploymentAutomationEnabled: $(AUTO_CONFIGURE_DR_CLUSTER)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
+	$(SED_CMD) -e "s,s3SecretDistributionEnabled: true,s3SecretDistributionEnabled: $(AUTO_CONFIGURE_DR_CLUSTER)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
 	cat config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml >> config/hub/manager/ramen_manager_config.yaml
 	$(KUSTOMIZE) build --load_restrictor none config/hub/manifests/$(IMAGE_NAME) | $(OSDK) generate bundle -q --package=$(HUB_NAME) --overwrite --output-dir=config/hub/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(OSDK) bundle validate config/hub/bundle

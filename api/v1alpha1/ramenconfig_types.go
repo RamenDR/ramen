@@ -111,6 +111,9 @@ type RamenConfig struct {
 		// dr-cluster operator deployment/undeployment automation enabled
 		DeploymentAutomationEnabled bool `json:"deploymentAutomationEnabled,omitempty"`
 
+		// Enable s3 secret distribution and management across dr-clusters
+		S3SecretDistributionEnabled bool `json:"s3SecretDistributionEnabled,omitempty"`
+
 		// channel name
 		ChannelName string `json:"channelName,omitempty"`
 

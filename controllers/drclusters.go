@@ -169,6 +169,11 @@ func drClusterSecretsDeploy(
 	drpolicy *rmn.DRPolicy,
 	secretsUtil *util.SecretsUtil,
 	rmnCfg *rmn.RamenConfig) error {
+	if !rmnCfg.DrClusterOperator.DeploymentAutomationEnabled ||
+		!rmnCfg.DrClusterOperator.S3SecretDistributionEnabled {
+		return nil
+	}
+
 	for _, secretName := range drPolicySecretNames(drpolicy, rmnCfg).List() {
 		if err := secretsUtil.AddSecretToCluster(secretName, clusterName, NamespaceName()); err != nil {
 			return fmt.Errorf("drcluster '%v' secret add '%v': %w", clusterName, secretName, err)
@@ -305,6 +310,11 @@ func drClustersUndeploySecrets(
 	drpolicies rmn.DRPolicyList,
 	secretsUtil *util.SecretsUtil,
 	ramenConfig *rmn.RamenConfig) error {
+	if !ramenConfig.DrClusterOperator.DeploymentAutomationEnabled ||
+		!ramenConfig.DrClusterOperator.S3SecretDistributionEnabled {
+		return nil
+	}
+
 	mustHaveS3Secrets := map[string]sets.String{}
 
 	// Determine S3 secrets that must continue to exist per cluster in the policy being deleted
