@@ -110,8 +110,8 @@ var _ = Describe("VolSync Handler", func() {
 
 			rdSpec := ramendrv1alpha1.VolSyncReplicationDestinationSpec{
 				ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
-					Name: "mytestpvc",
-					VolSyncPVC: true,
+					Name:               "mytestpvc",
+					ProtectedByVolSync: true,
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceStorage: capacity,
@@ -359,9 +359,9 @@ var _ = Describe("VolSync Handler", func() {
 		BeforeEach(func() {
 			rdSpec = ramendrv1alpha1.VolSyncReplicationDestinationSpec{
 				ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
-					Name:             pvcName,
-					VolSyncPVC:       true,
-					StorageClassName: &pvcStorageClassName,
+					Name:               pvcName,
+					ProtectedByVolSync: true,
+					StorageClassName:   &pvcStorageClassName,
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceStorage: pvcCapacity,
@@ -533,9 +533,9 @@ var _ = Describe("VolSync Handler", func() {
 			for i := 0; i < 10; i++ {
 				rdSpec := ramendrv1alpha1.VolSyncReplicationDestinationSpec{
 					ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
-						Name:             pvcNamePrefix + strconv.Itoa(i),
-						VolSyncPVC:       true,
-						StorageClassName: &pvcStorageClassName,
+						Name:               pvcNamePrefix + strconv.Itoa(i),
+						ProtectedByVolSync: true,
+						StorageClassName:   &pvcStorageClassName,
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
 								corev1.ResourceStorage: pvcCapacity,
@@ -562,9 +562,9 @@ var _ = Describe("VolSync Handler", func() {
 			for i := 0; i < 2; i++ {
 				otherOwnerRdSpec := ramendrv1alpha1.VolSyncReplicationDestinationSpec{
 					ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
-						Name:             pvcNamePrefixOtherOwner + strconv.Itoa(i),
-						VolSyncPVC:       true,
-						StorageClassName: &pvcStorageClassName,
+						Name:               pvcNamePrefixOtherOwner + strconv.Itoa(i),
+						ProtectedByVolSync: true,
+						StorageClassName:   &pvcStorageClassName,
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
 								corev1.ResourceStorage: pvcCapacity,

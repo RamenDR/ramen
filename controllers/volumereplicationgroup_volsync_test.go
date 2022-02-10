@@ -269,10 +269,10 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 					testVsrg.Spec.VolSync.RDSpec = []ramendrv1alpha1.VolSyncReplicationDestinationSpec{
 						{
 							ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
-								Name:             "testingpvc-a",
-								VolSyncPVC:       true,
-								StorageClassName: &storageClassName,
-								AccessModes:      testAccessModes,
+								Name:               "testingpvc-a",
+								ProtectedByVolSync: true,
+								StorageClassName:   &storageClassName,
+								AccessModes:        testAccessModes,
 
 								Resources: corev1.ResourceRequirements{Requests: testCapacity0},
 							},
@@ -280,10 +280,10 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 						},
 						{
 							ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
-								Name:             "testingpvc-b",
-								VolSyncPVC:       true,
-								StorageClassName: &storageClassName,
-								AccessModes:      testAccessModes,
+								Name:               "testingpvc-b",
+								ProtectedByVolSync: true,
+								StorageClassName:   &storageClassName,
+								AccessModes:        testAccessModes,
 
 								Resources: corev1.ResourceRequirements{Requests: testCapacity1},
 							},
