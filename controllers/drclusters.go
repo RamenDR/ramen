@@ -113,41 +113,84 @@ func subscription(
 
 var drClustersMutex sync.Mutex
 
+func objectsToDeploy(hubOperatorRamenConfig *rmn.RamenConfig) ([]interface{}, error) {
+	objects := []interface{}{}
+
+	drClusterOperatorRamenConfig := *hubOperatorRamenConfig
+	ramenConfig := &drClusterOperatorRamenConfig
+	drClusterOperatorNamespaceName := drClusterOperatorNamespaceNameOrDefault(ramenConfig)
+	ramenConfig.LeaderElection.ResourceName = drClusterLeaderElectionResourceName
+	ramenConfig.RamenControllerType = rmn.DRCluster
+
+	drClusterOperatorConfigMap, err := ConfigMapNew(
+		drClusterOperatorNamespaceName,
+		drClusterOperatorConfigMapName,
+		ramenConfig,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return append(objects,
+		util.Namespace(drClusterOperatorNamespaceName),
+		olmClusterRole,
+		olmRoleBinding(drClusterOperatorNamespaceName),
+		operatorGroup(drClusterOperatorNamespaceName),
+		subscription(
+			drClusterOperatorNamespaceName,
+			drClusterOperatorChannelNameOrDefault(ramenConfig),
+			drClusterOperatorPackageNameOrDefault(ramenConfig),
+			drClusterOperatorCatalogSourceNameOrDefault(ramenConfig),
+			drClusterOperatorCatalogSourceNamespaceNameOrDefault(ramenConfig),
+			drClusterOperatorClusterServiceVersionNameOrDefault(ramenConfig),
+		),
+		drClusterOperatorConfigMap,
+	), nil
+}
+
+func drPolicySecretNames(drpolicy *rmn.DRPolicy, rmnCfg *rmn.RamenConfig) sets.String {
+	secretNames := sets.String{}
+
+	for _, managedCluster := range drpolicy.Spec.DRClusterSet {
+		for _, s3Profile := range rmnCfg.S3StoreProfiles {
+			if managedCluster.S3ProfileName == s3Profile.S3ProfileName {
+				secretNames.Insert(s3Profile.S3SecretRef.Name)
+
+				break
+			}
+		}
+	}
+
+	return secretNames
+}
+
+func drClusterSecretsDeploy(
+	clusterName string,
+	drpolicy *rmn.DRPolicy,
+	secretsUtil *util.SecretsUtil,
+	rmnCfg *rmn.RamenConfig) error {
+	for _, secretName := range drPolicySecretNames(drpolicy, rmnCfg).List() {
+		if err := secretsUtil.AddSecretToCluster(secretName, clusterName, NamespaceName()); err != nil {
+			return fmt.Errorf("drcluster '%v' secret add '%v': %w", clusterName, secretName, err)
+		}
+	}
+
+	return nil
+}
+
 func drClustersDeploy(drpolicy *rmn.DRPolicy, mwu *util.MWUtil, hubOperatorRamenConfig *rmn.RamenConfig) error {
 	objects := []interface{}{}
 
 	if hubOperatorRamenConfig.DrClusterOperator.DeploymentAutomationEnabled {
-		drClusterOperatorRamenConfig := *hubOperatorRamenConfig
-		ramenConfig := &drClusterOperatorRamenConfig
-		drClusterOperatorNamespaceName := drClusterOperatorNamespaceNameOrDefault(ramenConfig)
-		ramenConfig.LeaderElection.ResourceName = drClusterLeaderElectionResourceName
-		ramenConfig.RamenControllerType = rmn.DRCluster
+		var err error
 
-		drClusterOperatorConfigMap, err := ConfigMapNew(
-			drClusterOperatorNamespaceName,
-			drClusterOperatorConfigMapName,
-			ramenConfig,
-		)
+		objects, err = objectsToDeploy(hubOperatorRamenConfig)
 		if err != nil {
 			return err
 		}
-
-		objects = append(objects,
-			util.Namespace(drClusterOperatorNamespaceName),
-			olmClusterRole,
-			olmRoleBinding(drClusterOperatorNamespaceName),
-			operatorGroup(drClusterOperatorNamespaceName),
-			subscription(
-				drClusterOperatorNamespaceName,
-				drClusterOperatorChannelNameOrDefault(ramenConfig),
-				drClusterOperatorPackageNameOrDefault(ramenConfig),
-				drClusterOperatorCatalogSourceNameOrDefault(ramenConfig),
-				drClusterOperatorCatalogSourceNamespaceNameOrDefault(ramenConfig),
-				drClusterOperatorClusterServiceVersionNameOrDefault(ramenConfig),
-			),
-			drClusterOperatorConfigMap,
-		)
 	}
+
+	secretsUtil := util.SecretsUtil{Client: mwu.Client, Ctx: mwu.Ctx, Log: mwu.Log}
 
 	drClustersMutex.Lock()
 	defer drClustersMutex.Unlock()
@@ -156,14 +199,17 @@ func drClustersDeploy(drpolicy *rmn.DRPolicy, mwu *util.MWUtil, hubOperatorRamen
 		if err := mwu.CreateOrUpdateDrClusterManifestWork(clusterName, objects...); err != nil {
 			return fmt.Errorf("drcluster '%v' manifest work create or update: %w", clusterName, err)
 		}
+
+		if err := drClusterSecretsDeploy(clusterName, drpolicy, &secretsUtil, hubOperatorRamenConfig); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-func drClustersUndeploy(drpolicy *rmn.DRPolicy, mwu *util.MWUtil) error {
+func drClustersUndeploy(drpolicy *rmn.DRPolicy, mwu *util.MWUtil, ramenConfig *rmn.RamenConfig) error {
 	drpolicies := rmn.DRPolicyList{}
-	clusterNames := sets.String{}
 
 	drClustersMutex.Lock()
 	defer drClustersMutex.Unlock()
@@ -171,6 +217,18 @@ func drClustersUndeploy(drpolicy *rmn.DRPolicy, mwu *util.MWUtil) error {
 	if err := mwu.Client.List(mwu.Ctx, &drpolicies); err != nil {
 		return fmt.Errorf("drpolicies list: %w", err)
 	}
+
+	if err := drClustersUndeployManifests(drpolicy, drpolicies, mwu); err != nil {
+		return err
+	}
+
+	secretsUtil := util.SecretsUtil{Client: mwu.Client, Ctx: mwu.Ctx, Log: mwu.Log}
+
+	return drClustersUndeploySecrets(drpolicy, drpolicies, &secretsUtil, ramenConfig)
+}
+
+func drClustersUndeployManifests(drpolicy *rmn.DRPolicy, drpolicies rmn.DRPolicyList, mwu *util.MWUtil) error {
+	clusterNames := sets.String{}
 
 	for i := range drpolicies.Items {
 		drpolicy1 := &drpolicies.Items[i]
@@ -183,6 +241,92 @@ func drClustersUndeploy(drpolicy *rmn.DRPolicy, mwu *util.MWUtil) error {
 		if !clusterNames.Has(clusterName) {
 			if err := mwu.DeleteManifestWork(util.DrClusterManifestWorkName, clusterName); err != nil {
 				return fmt.Errorf("drcluster '%v' manifest work delete: %w", clusterName, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func drClusterMustHaveS3Profiles(drpolicies rmn.DRPolicyList,
+	clusterName string,
+	ignorePolicy *rmn.DRPolicy) sets.String {
+	mustHaveS3Profiles := sets.String{}
+
+	for idx, drpolicy := range drpolicies.Items {
+		// Skip the policy being ignored (used for delete)
+		if (ignorePolicy != nil) && (ignorePolicy.ObjectMeta.Name == drpolicy.ObjectMeta.Name) {
+			continue
+		}
+
+		for _, cluster := range util.DrpolicyClusterNames(&drpolicies.Items[idx]) {
+			// Skip if not the current cluster
+			if cluster != clusterName {
+				continue
+			}
+
+			// Add all S3Profiles across clusters in the policy to the current cluster
+			for _, managedCluster := range drpolicy.Spec.DRClusterSet {
+				mustHaveS3Profiles = mustHaveS3Profiles.Insert(managedCluster.S3ProfileName)
+			}
+
+			break
+		}
+	}
+
+	return mustHaveS3Profiles
+}
+
+// drClusterMustHaveSecrets determines s3 secrets that must exist on the passed in clusterName
+// It optionally ignores a specified ignorePolicy, which is typically useful when a policy is being
+// deleted.
+func drClusterMustHaveSecrets(
+	drpolicies rmn.DRPolicyList,
+	clusterName string,
+	ignorePolicy *rmn.DRPolicy,
+	ramenConfig *rmn.RamenConfig) sets.String {
+	mustHaveS3Secrets := sets.String{}
+
+	mustHaveS3Profiles := drClusterMustHaveS3Profiles(drpolicies, clusterName, ignorePolicy)
+
+	// Determine s3Secrets that must continue to exist on the cluster, based on other profiles
+	// that should still be present. This is done as multiple profiles MAY point to the same secret
+	for _, s3Profile := range ramenConfig.S3StoreProfiles {
+		if mustHaveS3Profiles.Has(s3Profile.S3ProfileName) {
+			mustHaveS3Secrets = mustHaveS3Secrets.Insert(s3Profile.S3SecretRef.Name)
+		}
+	}
+
+	return mustHaveS3Secrets
+}
+
+func drClustersUndeploySecrets(
+	drpolicy *rmn.DRPolicy,
+	drpolicies rmn.DRPolicyList,
+	secretsUtil *util.SecretsUtil,
+	ramenConfig *rmn.RamenConfig) error {
+	mustHaveS3Secrets := map[string]sets.String{}
+
+	// Determine S3 secrets that must continue to exist per cluster in the policy being deleted
+	for _, clusterName := range util.DrpolicyClusterNames(drpolicy) {
+		mustHaveS3Secrets[clusterName] = drClusterMustHaveSecrets(drpolicies, clusterName, drpolicy, ramenConfig)
+	}
+
+	// Determine S3 secrets that maybe deleted, based on policy being deleted
+	mayDeleteS3Secrets := drPolicySecretNames(drpolicy, ramenConfig)
+
+	// For each cluster in the must have S3 secrets list, check and delete
+	// S3Profiles that maybe deleted, iff absent in the must have list
+	for clusterName, mustHaveS3Secrets := range mustHaveS3Secrets {
+		for _, s3SecretToDelete := range mayDeleteS3Secrets.List() {
+			if mustHaveS3Secrets.Has(s3SecretToDelete) {
+				continue
+			}
+
+			// Delete s3profile secret from current cluster
+			if err := secretsUtil.RemoveSecretFromCluster(s3SecretToDelete, clusterName, NamespaceName()); err != nil {
+				return fmt.Errorf("drcluster '%v' s3Profile '%v' secrets delete: %w",
+					clusterName, s3SecretToDelete, err)
 			}
 		}
 	}

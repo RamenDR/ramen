@@ -9,4 +9,4 @@ webhook:
 leaderElection:
   leaderElect: true
   resourceName: hub.ramendr.openshift.io
-ramenControllerType: "dr-hub"
+ramenControllerType: dr-hub
