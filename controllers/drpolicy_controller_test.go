@@ -105,22 +105,42 @@ var _ = Describe("DrpolicyController", func() {
 			return errors.IsNotFound(err)
 		}, timeout*3, interval).Should(BeTrue())
 	}
-	drpolicyDelete := func(drpolicy *ramen.DRPolicy, clusterNamesExpected sets.String) {
-		drpolicyDeleteAndConfirm(drpolicy)
-		for _, clusterName := range clusterNamesCurrent.Difference(clusterNamesExpected).UnsortedList() {
-			manifestWorkName := types.NamespacedName{
+	drClusterManifestWorkGet := func(clusterName string, manifestWork *workv1.ManifestWork) error {
+		return apiReader.Get(
+			context.TODO(),
+			types.NamespacedName{
 				Name:      util.DrClusterManifestWorkName,
 				Namespace: clusterName,
-			}
+			},
+			manifestWork,
+		)
+	}
+	drpolicyDelete := func(drpolicy *ramen.DRPolicy, clusterNamesExpected sets.String) {
+		drpolicyDeleteAndConfirm(drpolicy)
+		drClusterManifestWorkAbsenceExpect := func(clusterName string) {
 			Eventually(func() bool {
 				manifestWork := &workv1.ManifestWork{}
 
-				return errors.IsNotFound(apiReader.Get(context.TODO(), manifestWorkName, manifestWork))
+				return errors.IsNotFound(drClusterManifestWorkGet(clusterName, manifestWork))
 			}, timeout, interval).Should(BeTrue())
+		}
+		for _, clusterName := range clusterNamesCurrent.Difference(clusterNamesExpected).UnsortedList() {
+			drClusterManifestWorkAbsenceExpect(clusterName)
 			namespaceDeleteAndConfirm(clusterName)
 			*clusterNamesCurrent = clusterNamesCurrent.Delete(clusterName)
 		}
 		drClustersExpect()
+	}
+	drClusterManifestWorkUpdateExpect := func(manifestWork *workv1.ManifestWork) {
+		clusterName := manifestWork.GetNamespace()
+		resourceVersionOld := manifestWork.GetResourceVersion()
+		Eventually(func() bool {
+			if err := drClusterManifestWorkGet(clusterName, manifestWork); err != nil {
+				return false
+			}
+
+			return manifestWork.GetResourceVersion() != resourceVersionOld
+		}, timeout, interval).Should(BeTrue())
 	}
 	cidrs := [][]string{
 		{"198.51.100.17/24", "198.51.100.18/24", "198.51.100.19/24"}, // valid CIDR
@@ -195,7 +215,7 @@ var _ = Describe("DrpolicyController", func() {
 		}
 	}
 	s3ProfilesUpdate := func() {
-		Expect(s3ProfilesStore(context.TODO(), apiReader, k8sClient, s3Profiles)).To(Succeed())
+		s3ProfilesStore(s3Profiles)
 	}
 	Specify("s3 profiles and secrets", func() {
 		s3SecretsNamespaceNameSet()
@@ -437,6 +457,32 @@ var _ = Describe("DrpolicyController", func() {
 			s3SecretObjectMetaReset(s3SecretNumber)
 			s3SecretCreate(s3Secret)
 			validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
+		})
+	})
+	drClusterOperatorDeploymentAutomationEnableOrDisable := func(enable bool, comparator string) {
+		clusterNames := util.DrpolicyClusterNames(drpolicy)
+		manifestWorks := make([]workv1.ManifestWork, len(clusterNames))
+		for i, clusterName := range clusterNames {
+			Expect(drClusterManifestWorkGet(clusterName, &manifestWorks[i])).To(Succeed())
+		}
+		ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = enable
+		configMapUpdate()
+		for i := range manifestWorks {
+			manifestWork := &manifestWorks[i]
+			manifestCount := len(manifestWork.Spec.Workload.Manifests)
+			drClusterManifestWorkUpdateExpect(manifestWork)
+			Expect(len(manifestWork.Spec.Workload.Manifests)).To(BeNumerically(comparator, manifestCount))
+		}
+		validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
+	}
+	When("a valid drpolicy's ramen config is updated to enable drcluster operator installation automation", func() {
+		It("should increase the manifest count for each of its managed clusters", func() {
+			drClusterOperatorDeploymentAutomationEnableOrDisable(true, ">")
+		})
+	})
+	When("a valid drpolicy's ramen config is updated to disable drcluster operator installation automation", func() {
+		It("should decrease the manifest count for each of its managed clusters", func() {
+			drClusterOperatorDeploymentAutomationEnableOrDisable(false, "<")
 		})
 	})
 	Specify(`drpolicy delete`, func() {

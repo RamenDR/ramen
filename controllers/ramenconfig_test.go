@@ -18,43 +18,24 @@ package controllers_test
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/ghodss/yaml"
+	. "github.com/onsi/gomega"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
-	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func configMapUpdate(
-	ctx context.Context,
-	client client.Client,
-	configMap *corev1.ConfigMap,
-	ramenConfig *ramen.RamenConfig,
-) error {
+func configMapUpdate() {
 	ramenConfigYaml, err := yaml.Marshal(ramenConfig)
-	if err != nil {
-		return fmt.Errorf("config map yaml marshal %w", err)
-	}
+	Expect(err).To(Succeed())
 
 	configMap.Data[controllers.ConfigMapRamenConfigKeyName] = string(ramenConfigYaml)
 
-	return client.Update(ctx, configMap)
+	Expect(k8sClient.Update(context.TODO(), configMap)).To(Succeed())
 }
 
-func s3ProfilesStore(
-	ctx context.Context,
-	apiReader client.Reader,
-	client client.Client,
-	s3Profiles []ramen.S3StoreProfile,
-) error {
-	configMap, ramenConfig, err := controllers.ConfigMapGet(ctx, apiReader)
-	if err != nil {
-		return fmt.Errorf("config map get %w", err)
-	}
-
+func s3ProfilesStore(s3Profiles []ramen.S3StoreProfile) {
 	ramenConfig.S3StoreProfiles = s3Profiles
 
-	return configMapUpdate(ctx, client, configMap, ramenConfig)
+	configMapUpdate()
 }

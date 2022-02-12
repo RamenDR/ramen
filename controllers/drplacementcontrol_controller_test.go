@@ -180,11 +180,11 @@ func s3SecretNamespaceSet() {
 
 func s3SecretAndProfilesCreate() {
 	Expect(k8sClient.Create(context.TODO(), s3Secret)).To(Succeed())
-	Expect(s3ProfilesStore(context.TODO(), apiReader, k8sClient, s3Profiles)).To(Succeed())
+	s3ProfilesStore(s3Profiles)
 }
 
 func s3SecretAndProfilesDelete() {
-	Expect(s3ProfilesStore(context.TODO(), apiReader, k8sClient, []rmn.S3StoreProfile{})).To(Succeed())
+	s3ProfilesStore([]rmn.S3StoreProfile{})
 	Expect(k8sClient.Delete(context.TODO(), s3Secret)).To(Succeed())
 }
 
