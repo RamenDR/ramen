@@ -35,26 +35,23 @@ import (
 )
 
 const (
-	NamespaceNameDefault                               = "ramen-system"
-	hubName                                            = "hub"
-	drClusterName                                      = "dr-cluster"
-	operatorNamePrefix                                 = "ramen-"
-	operatorNameSuffix                                 = "-operator"
-	hubOperatorNameDefault                             = operatorNamePrefix + hubName + operatorNameSuffix
-	drClusterOperatorNameDefault                       = operatorNamePrefix + drClusterName + operatorNameSuffix
-	configMapNameSuffix                                = "-config"
-	HubOperatorConfigMapName                           = hubOperatorNameDefault + configMapNameSuffix
-	drClusterOperatorConfigMapName                     = drClusterOperatorNameDefault + configMapNameSuffix
-	leaderElectionResourceNameSuffix                   = ".ramendr.openshift.io"
-	HubLeaderElectionResourceName                      = hubName + leaderElectionResourceNameSuffix
-	drClusterLeaderElectionResourceName                = drClusterName + leaderElectionResourceNameSuffix
-	ConfigMapRamenConfigKeyName                        = "ramen_manager_config.yaml"
-	drClusterOperatorPackageNameDefault                = drClusterOperatorNameDefault
-	drClusterOperatorChannelNameDefault                = "alpha"
-	drClusterOperatorNamespaceNameDefault              = NamespaceNameDefault
-	drClusterOperatorCatalogSourceNameDefault          = "ramen-catalog"
-	drClusterOperatorCatalogSourceNamespaceNameDefault = drClusterOperatorNamespaceNameDefault
-	drClusterOperatorClusterServiceVersionNameDefault  = drClusterOperatorPackageNameDefault + ".v0.0.1"
+	hubName                                           = "hub"
+	drClusterName                                     = "dr-cluster"
+	operatorNamePrefix                                = "ramen-"
+	operatorNameSuffix                                = "-operator"
+	hubOperatorNameDefault                            = operatorNamePrefix + hubName + operatorNameSuffix
+	drClusterOperatorNameDefault                      = operatorNamePrefix + drClusterName + operatorNameSuffix
+	configMapNameSuffix                               = "-config"
+	HubOperatorConfigMapName                          = hubOperatorNameDefault + configMapNameSuffix
+	drClusterOperatorConfigMapName                    = drClusterOperatorNameDefault + configMapNameSuffix
+	leaderElectionResourceNameSuffix                  = ".ramendr.openshift.io"
+	HubLeaderElectionResourceName                     = hubName + leaderElectionResourceNameSuffix
+	drClusterLeaderElectionResourceName               = drClusterName + leaderElectionResourceNameSuffix
+	ConfigMapRamenConfigKeyName                       = "ramen_manager_config.yaml"
+	drClusterOperatorPackageNameDefault               = drClusterOperatorNameDefault
+	drClusterOperatorChannelNameDefault               = "alpha"
+	drClusterOperatorCatalogSourceNameDefault         = "ramen-catalog"
+	drClusterOperatorClusterServiceVersionNameDefault = drClusterOperatorPackageNameDefault + ".v0.0.1"
 )
 
 var cachedRamenConfigFileName string
@@ -264,7 +261,7 @@ func drClusterOperatorPackageNameOrDefault(ramenConfig *ramendrv1alpha1.RamenCon
 
 func drClusterOperatorNamespaceNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
 	if ramenConfig.DrClusterOperator.NamespaceName == "" {
-		return drClusterOperatorNamespaceNameDefault
+		return NamespaceName()
 	}
 
 	return ramenConfig.DrClusterOperator.NamespaceName
@@ -280,7 +277,7 @@ func drClusterOperatorCatalogSourceNameOrDefault(ramenConfig *ramendrv1alpha1.Ra
 
 func drClusterOperatorCatalogSourceNamespaceNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
 	if ramenConfig.DrClusterOperator.CatalogSourceNamespaceName == "" {
-		return drClusterOperatorCatalogSourceNamespaceNameDefault
+		return NamespaceName()
 	}
 
 	return ramenConfig.DrClusterOperator.CatalogSourceNamespaceName
