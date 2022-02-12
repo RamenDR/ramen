@@ -55,11 +55,12 @@ import (
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
 var (
-	cfg       *rest.Config
-	apiReader client.Reader
-	k8sClient client.Client
-	testEnv   *envtest.Environment
-	configMap *corev1.ConfigMap
+	cfg         *rest.Config
+	apiReader   client.Reader
+	k8sClient   client.Client
+	testEnv     *envtest.Environment
+	configMap   *corev1.ConfigMap
+	ramenConfig *ramendrv1alpha1.RamenConfig
 )
 
 func TestAPIs(t *testing.T) {
@@ -140,7 +141,7 @@ var _ = BeforeSuite(func() {
 	Expect(k8sClient).NotTo(BeNil())
 
 	createOperatorNamespace(ramenNamespace)
-	ramenConfig := &ramendrv1alpha1.RamenConfig{
+	ramenConfig = &ramendrv1alpha1.RamenConfig{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "RamenConfig",
 			APIVersion: ramendrv1alpha1.GroupVersion.String(),
