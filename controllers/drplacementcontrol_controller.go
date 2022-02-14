@@ -62,8 +62,6 @@ const (
 	SanityCheckDelay = time.Minute * 10
 )
 
-var WaitForPVRestoreToComplete = errorswrapper.New("Waiting for PV restore to complete")
-
 var InitialWaitTimeForDRPCPlacementRule = errorswrapper.New("Waiting for DRPC Placement to produces placement decision")
 
 // ProgressCallback of function type

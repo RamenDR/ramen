@@ -35,6 +35,7 @@ import (
 
 	spokeClusterV1 "github.com/open-cluster-management/api/cluster/v1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
+
 	dto "github.com/prometheus/client_model/go"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
@@ -42,6 +43,7 @@ import (
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
@@ -57,6 +59,22 @@ const (
 	updateRetries = 2 // replace this with 5 when done testing.  It takes a long time for the test to complete
 	pvcCount      = 2 // Count of fake PVCs reported in the VRG status
 )
+
+var (
+	DRPCName                        = "app-volume-replication-test"
+	DRPCNamespaceName               = "app-namespace"
+	UserPlacementRuleName           = "user-placement-rule"
+	DRPolicyName                    = "my-dr-peers"
+	VolSyncDeploySourceCluster      = ""
+	VolSyncDeployDestinationCluster = ""
+)
+
+func initNames(name, namespace, userPlacementRuleName, drPolicyName string) {
+	DRPCName = name
+	DRPCNamespaceName = namespace
+	UserPlacementRuleName = userPlacementRuleName
+	DRPolicyName = drPolicyName
+}
 
 var (
 	west1Cluster = &spokeClusterV1.ManagedCluster{
@@ -107,6 +125,16 @@ var (
 	}
 
 	schedulingInterval = "1h"
+)
+
+var drstate string
+
+// FakeProgressCallback of function type
+func FakeProgressCallback(drpcName string, state string) {
+	drstate = state
+}
+
+var restorePVs = true
 
 	drClusters = []rmn.DRCluster{}
 
@@ -137,10 +165,6 @@ var drstate string
 func FakeProgressCallback(drpcName string, state string) {
 	drstate = state
 }
-
-var restorePVs = true
-
-type FakeMCVGetter struct{}
 
 //nolint:dogsled
 func getFunctionNameAtIndex(idx int) string {
@@ -264,6 +288,30 @@ func getVRGFromManifestWork(managedCluster string) (*rmn.VolumeReplicationGroup,
 		LastTransitionTime: metav1.Now(),
 		ObservedGeneration: vrg.Generation,
 	})
+
+	storageClassName := "fakeStorageClass"
+	capacity := corev1.ResourceList{
+		corev1.ResourceStorage: resource.MustParse("1Gi"),
+	}
+
+	if VolSyncDeploySourceCluster == managedCluster {
+		vrg.Status.ProtectedPVCs = append(vrg.Status.ProtectedPVCs, rmn.ProtectedPVC{
+			Name:               "TestPVC",
+			ProtectedByVolSync: true,
+			StorageClassName:   &storageClassName,
+			AccessModes:        []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			Resources:          corev1.ResourceRequirements{Requests: capacity},
+		})
+	}
+
+	if VolSyncDeployDestinationCluster == managedCluster {
+		vrg.Status.VolSyncRepStatus.RDInfo = []rmn.VolSyncReplicationDestinationInfo{}
+		rdInfo := rmn.VolSyncReplicationDestinationInfo{
+			PVCName: "TestPVC",
+			Address: "1.1.1.1",
+		}
+		vrg.Status.VolSyncRepStatus.RDInfo = append(vrg.Status.VolSyncRepStatus.RDInfo, rdInfo)
+	}
 
 	return vrg, nil
 }
@@ -423,7 +471,7 @@ func createNamespace(ns *corev1.Namespace) {
 	}
 }
 
-func createNamespacesAsync() {
+func createNamespacesAsync(appNamespace *corev1.Namespace) {
 	createNamespace(east1ManagedClusterNamespace)
 	createNamespace(west1ManagedClusterNamespace)
 	createNamespace(appNamespace)
@@ -535,7 +583,7 @@ func deleteDRClustersAsync() {
 }
 
 func deleteDRPolicyAsync() {
-	Expect(k8sClient.Delete(context.TODO(), asyncDRPolicy)).To(Succeed())
+	Expect(k8sClient.Delete(context.TODO(), getAsyncDRPolicy())).To(Succeed())
 }
 
 func moveVRGToSecondary(clusterNamespace, mwType string, protectData bool) (*rmn.VolumeReplicationGroup, error) {
@@ -692,9 +740,9 @@ func waitForVRGMWDeletion(clusterNamespace string) {
 	}, timeout, interval).Should(BeTrue(), "failed to wait for manifest deletion for type vrg")
 }
 
-func InitialDeploymentAsync(namespace, placementName, homeCluster string) (*plrv1.PlacementRule,
+func InitialDeploymentAsync(homeCluster string) (*plrv1.PlacementRule,
 	*rmn.DRPlacementControl) {
-	createNamespacesAsync()
+	createNamespacesAsync(getNamespace(DRPCNamespaceName))
 
 	createManagedClustersAsync()
 	createDRClustersAsync()
@@ -856,6 +904,32 @@ func waitForCompletion(expectedState string) {
 		return drstate == expectedState
 	}, timeout*2, interval).Should(BeTrue(),
 		fmt.Sprintf("failed to waiting for state to match. expecting: %s, found %s", expectedState, drstate))
+}
+
+func waitForVolSyncSetup(srcCluster, dstCluster string) {
+	var dstVolSync rmn.VolSyncSpec
+	var srcVolSync rmn.VolSyncSpec
+
+	Eventually(func() bool {
+		srcVRG, err := getVRGFromManifestWork(srcCluster)
+		if err != nil {
+			return false
+		}
+
+		dstVRG, err := getVRGFromManifestWork(dstCluster)
+		if err != nil {
+			return false
+		}
+
+		if srcVRG == nil || dstVRG == nil {
+			return false
+		}
+
+		dstVolSync = dstVRG.Spec.VolSync
+		srcVolSync = srcVRG.Spec.VolSync
+		return len(dstVolSync.RDSpec) != 0 && len(srcVolSync.RSSpec) != 0
+	}, timeout, interval).Should(BeTrue(),
+		fmt.Sprintf("RDSpec and RSSpec not the same %v/%v", dstVolSync, srcVolSync))
 }
 
 func waitForUpdateDRPCStatus() {
