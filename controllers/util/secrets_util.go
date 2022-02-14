@@ -46,10 +46,11 @@ const (
 
 	// nolint:lll
 	// See: https://github.com/stolostron/rhacm-docs/blob/2.4_stage/governance/custom_template.adoc#special-annotation-for-reprocessing
-	policyTriggerAnnotation = "policy.open-cluster-management.io/trigger-update"
+	PolicyTriggerAnnotation = "policy.open-cluster-management.io/trigger-update"
+	intialTriggerValue      = 0
 
 	// Finalizer on the secret
-	secretPolicyFinalizer string = "drpolicies.ramendr.openshift.io/policy-protection"
+	SecretPolicyFinalizer string = "drpolicies.ramendr.openshift.io/policy-protection"
 )
 
 type SecretsUtil struct {
@@ -58,12 +59,12 @@ type SecretsUtil struct {
 	Log logr.Logger
 }
 
-func (sutil *SecretsUtil) generatePolicyResourceNames(
-	s3Secret string) (policyName, plBindingName, plRuleName, configPolicyName string) {
-	return fmt.Sprintf(secretResourceNameFormat, secretPolicyBaseName, s3Secret),
-		fmt.Sprintf(secretResourceNameFormat, secretPlBindingBaseName, s3Secret),
-		fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, s3Secret),
-		fmt.Sprintf(secretResourceNameFormat, secretConfigPolicyBaseName, s3Secret)
+func GeneratePolicyResourceNames(
+	secret string) (policyName, plBindingName, plRuleName, configPolicyName string) {
+	return fmt.Sprintf(secretResourceNameFormat, secretPolicyBaseName, secret),
+		fmt.Sprintf(secretResourceNameFormat, secretPlBindingBaseName, secret),
+		fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, secret),
+		fmt.Sprintf(secretResourceNameFormat, secretConfigPolicyBaseName, secret)
 }
 
 func newPlacementRuleBinding(
@@ -148,7 +149,7 @@ func newPolicy(name, namespace, triggerValue string, object runtime.RawExtension
 			Name:      name,
 			Namespace: namespace,
 			Annotations: map[string]string{
-				policyTriggerAnnotation: triggerValue,
+				PolicyTriggerAnnotation: triggerValue,
 			},
 		},
 		Spec: gppv1.PolicySpec{
@@ -164,9 +165,11 @@ func newPolicy(name, namespace, triggerValue string, object runtime.RawExtension
 }
 
 func (sutil *SecretsUtil) createPolicyResources(secret *corev1.Secret, cluster, namespace string) error {
-	policyName, plBindingName, plRuleName, configPolicyName := sutil.generatePolicyResourceNames(secret.Name)
+	policyName, plBindingName, plRuleName, configPolicyName := GeneratePolicyResourceNames(secret.Name)
 
-	if AddFinalizer(secret, secretPolicyFinalizer) {
+	sutil.Log.Info("Creating secret policy", "secret", secret.Name, "cluster", cluster)
+
+	if AddFinalizer(secret, SecretPolicyFinalizer) {
 		if err := sutil.Client.Update(sutil.Ctx, secret); err != nil {
 			sutil.Log.Error(err, "unable to add finalizer to secret", "secret", secret.Name, "cluster", cluster)
 
@@ -185,7 +188,7 @@ func (sutil *SecretsUtil) createPolicyResources(secret *corev1.Secret, cluster, 
 	}
 
 	plRuleBindingObject := newPlacementRuleBinding(plBindingName, namespace, plRuleName, subjects)
-	if err := sutil.Client.Create(sutil.Ctx, plRuleBindingObject); !errors.IsAlreadyExists(err) {
+	if err := sutil.Client.Create(sutil.Ctx, plRuleBindingObject); err != nil && !errors.IsAlreadyExists(err) {
 		sutil.Log.Error(err, "unable to create placement binding", "secret", secret.Name, "cluster", cluster)
 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to create placement binding (secret: %s, cluster: %s)",
@@ -197,9 +200,11 @@ func (sutil *SecretsUtil) createPolicyResources(secret *corev1.Secret, cluster, 
 	secretObject := newS3ConfigurationSecret(s3SecretRef)
 	configObject := newConfigurationPolicy(configPolicyName, runtime.RawExtension{Object: secretObject})
 
+	sutil.Log.Info("Initializing secret policy trigger", "secret", secret.Name, "trigger", intialTriggerValue)
+
 	policyObject := newPolicy(policyName, namespace,
-		strconv.Itoa(int(secret.Generation)), runtime.RawExtension{Object: configObject})
-	if err := sutil.Client.Create(sutil.Ctx, policyObject); !errors.IsAlreadyExists(err) {
+		strconv.Itoa(int(intialTriggerValue)), runtime.RawExtension{Object: configObject})
+	if err := sutil.Client.Create(sutil.Ctx, policyObject); err != nil && !errors.IsAlreadyExists(err) {
 		sutil.Log.Error(err, "unable to create policy", "secret", secret.Name, "cluster", cluster)
 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to create policy (secret: %s, cluster: %s)",
@@ -208,7 +213,7 @@ func (sutil *SecretsUtil) createPolicyResources(secret *corev1.Secret, cluster, 
 
 	// Create a PlacementRule, including cluster
 	plRuleObject := newPlacementRule(plRuleName, namespace, []string{cluster})
-	if err := sutil.Client.Create(sutil.Ctx, plRuleObject); !errors.IsAlreadyExists(err) {
+	if err := sutil.Client.Create(sutil.Ctx, plRuleObject); err != nil && !errors.IsAlreadyExists(err) {
 		sutil.Log.Error(err, "unable to create placement rule", "secret", secret.Name, "cluster", cluster)
 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to create placement rule (secret: %s, cluster: %s)",
@@ -219,7 +224,9 @@ func (sutil *SecretsUtil) createPolicyResources(secret *corev1.Secret, cluster, 
 }
 
 func (sutil *SecretsUtil) deletePolicyResources(secret *corev1.Secret, namespace string) error {
-	policyName, plBindingName, plRuleName, _ := sutil.generatePolicyResourceNames(secret.Name)
+	policyName, plBindingName, plRuleName, _ := GeneratePolicyResourceNames(secret.Name)
+
+	sutil.Log.Info("Deleting secret policy", "secret", secret.Name)
 
 	plRuleBindingObject := &gppv1.PlacementBinding{
 		ObjectMeta: metav1.ObjectMeta{
@@ -227,7 +234,7 @@ func (sutil *SecretsUtil) deletePolicyResources(secret *corev1.Secret, namespace
 			Namespace: namespace,
 		},
 	}
-	if err := sutil.Client.Delete(sutil.Ctx, plRuleBindingObject); !errors.IsNotFound(err) {
+	if err := sutil.Client.Delete(sutil.Ctx, plRuleBindingObject); err != nil && !errors.IsNotFound(err) {
 		sutil.Log.Error(err, "unable to delete placement binding", "secret", secret.Name)
 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to delete placement binding (secret: %s)", secret.Name))
@@ -239,7 +246,7 @@ func (sutil *SecretsUtil) deletePolicyResources(secret *corev1.Secret, namespace
 			Namespace: namespace,
 		},
 	}
-	if err := sutil.Client.Delete(sutil.Ctx, policyObject); !errors.IsNotFound(err) {
+	if err := sutil.Client.Delete(sutil.Ctx, policyObject); err != nil && !errors.IsNotFound(err) {
 		sutil.Log.Error(err, "unable to delete policy", "secret", secret.Name)
 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to delete policy (secret: %s)", secret.Name))
@@ -251,7 +258,7 @@ func (sutil *SecretsUtil) deletePolicyResources(secret *corev1.Secret, namespace
 			Namespace: namespace,
 		},
 	}
-	if err := sutil.Client.Delete(sutil.Ctx, plRuleObject); !errors.IsNotFound(err) {
+	if err := sutil.Client.Delete(sutil.Ctx, plRuleObject); err != nil && !errors.IsNotFound(err) {
 		sutil.Log.Error(err, "unable to delete placement rule", "secret", secret.Name)
 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to delete placement rule (secret: %s)",
@@ -259,8 +266,8 @@ func (sutil *SecretsUtil) deletePolicyResources(secret *corev1.Secret, namespace
 	}
 
 	// Remove finalizer from secret. Allow secret deletion and recreation ordering for policy tickle
-	if controllerutil.ContainsFinalizer(secret, secretPolicyFinalizer) {
-		controllerutil.RemoveFinalizer(secret, secretPolicyFinalizer)
+	if controllerutil.ContainsFinalizer(secret, SecretPolicyFinalizer) {
+		controllerutil.RemoveFinalizer(secret, SecretPolicyFinalizer)
 
 		if err := sutil.Client.Update(sutil.Ctx, secret); err != nil {
 			sutil.Log.Error(err, "unable to remove finalizer from secret", "secret", secret.Name)
@@ -277,15 +284,17 @@ func inspectClusters(
 	clusters []plrv1.GenericClusterReference,
 	cluster string,
 	add bool) (bool, []plrv1.GenericClusterReference) {
-	found := true
+	found := false
 	survivors := []plrv1.GenericClusterReference{}
 
 	// Check if cluster is already part of placement rule
 	for _, plCluster := range clusters {
 		if plCluster.Name == cluster {
 			if add {
-				return found, clusters
+				return true, clusters
 			}
+
+			found = true
 
 			continue
 		}
@@ -293,50 +302,56 @@ func inspectClusters(
 		survivors = append(survivors, plCluster)
 	}
 
-	return !found, survivors
+	return found, survivors
 }
 
 func (sutil *SecretsUtil) updatePlacementRule(
 	plRule *plrv1.PlacementRule,
 	secret *corev1.Secret,
 	cluster, namespace string,
-	add bool) error {
+	add bool) (bool, error) {
+	deleted := true
 	found, survivors := inspectClusters(plRule.Spec.Clusters, cluster, add)
 
 	switch add {
 	case true:
 		if found {
-			return nil
+			return !deleted, nil
 		}
 
 		plRule.Spec.Clusters = append(plRule.Spec.Clusters, plrv1.GenericClusterReference{Name: cluster})
 	case false:
 		if len(survivors) == 0 {
-			return sutil.deletePolicyResources(secret, namespace)
+			sutil.Log.Info("Deleting empty secret policy", "secret", secret.Name)
+
+			return deleted, sutil.deletePolicyResources(secret, namespace)
 		}
 
 		if !found {
-			return nil
+			return !deleted, nil
 		}
 
 		plRule.Spec.Clusters = survivors
 	}
 
+	sutil.Log.Info("Updating placement rule for secret policy", "secret", secret.Name, "clusters", plRule.Spec.Clusters)
+
 	err := sutil.Client.Update(sutil.Ctx, plRule)
 	if err != nil {
 		sutil.Log.Error(err, "unable to update placement rule", "placementRule", plRule.Name, "cluster", cluster)
 
-		return errorswrapper.Wrap(err, fmt.Sprintf("unable to update placement rule (placementRule: %s, cluster: %s)",
-			plRule.Name, cluster))
+		return !deleted, errorswrapper.Wrap(err,
+			fmt.Sprintf("unable to update placement rule (placementRule: %s, cluster: %s)", plRule.Name, cluster))
 	}
 
-	return nil
+	return !deleted, nil
 }
 
 func (sutil *SecretsUtil) ticklePolicy(secret *corev1.Secret, namespace string) error {
 	policyName := fmt.Sprintf(secretResourceNameFormat, secretPolicyBaseName, secret.Name)
 	policyObject := gppv1.Policy{}
 
+	// TODO: Read directly from the API server? May read a cached older trigger and update it to the same value?
 	if err := sutil.Client.Get(sutil.Ctx,
 		types.NamespacedName{Namespace: namespace, Name: policyName},
 		&policyObject); err != nil {
@@ -346,10 +361,10 @@ func (sutil *SecretsUtil) ticklePolicy(secret *corev1.Secret, namespace string) 
 	}
 
 	// Compare policy annotation to secret generation and trigger policy update if required
-	secretGenerationInPolicy := 0
+	triggerValueInPolicy := 0
 
 	for annotation, value := range policyObject.GetAnnotations() {
-		if annotation == policyTriggerAnnotation {
+		if annotation == PolicyTriggerAnnotation {
 			intValue, err := strconv.Atoi(value)
 			if err != nil {
 				sutil.Log.Error(err, "invalid policy trigger annotation value", "value", value)
@@ -357,17 +372,17 @@ func (sutil *SecretsUtil) ticklePolicy(secret *corev1.Secret, namespace string) 
 				return errorswrapper.Wrap(err, fmt.Sprintf("invalid policy trigger annotation value (value: %s)", value))
 			}
 
-			secretGenerationInPolicy = intValue
+			triggerValueInPolicy = intValue
 
 			break
 		}
 	}
 
-	if secret.Generation == int64(secretGenerationInPolicy) {
-		return nil
-	}
+	triggerValueInPolicy++
 
-	policyObject.Annotations[policyTriggerAnnotation] = strconv.Itoa(int(secret.Generation))
+	sutil.Log.Info("Updating secret policy trigger", "secret", secret.Name, "trigger", triggerValueInPolicy)
+
+	policyObject.Annotations[PolicyTriggerAnnotation] = strconv.Itoa(triggerValueInPolicy)
 	if err := sutil.Client.Update(sutil.Ctx, &policyObject); err != nil {
 		sutil.Log.Error(err, "unable to trigger policy update", "secret", secret.Name)
 
@@ -381,24 +396,31 @@ func (sutil *SecretsUtil) updatePolicyResources(
 	plRule *plrv1.PlacementRule,
 	secret *corev1.Secret, cluster, namespace string,
 	add bool) error {
-	if err := sutil.updatePlacementRule(plRule, secret, cluster, namespace, add); err != nil {
+	deleted, err := sutil.updatePlacementRule(plRule, secret, cluster, namespace, add)
+	if err != nil {
 		return err
 	}
 
-	return sutil.ticklePolicy(secret, namespace)
+	if !deleted {
+		return sutil.ticklePolicy(secret, namespace)
+	}
+
+	return nil
 }
 
-func (sutil *SecretsUtil) ensureS3SecretResources(s3Secret, namespace string) (*corev1.Secret, error) {
+func (sutil *SecretsUtil) ensureS3SecretResources(secretName, namespace string) (*corev1.Secret, error) {
 	secret := corev1.Secret{}
 	if err := sutil.Client.Get(sutil.Ctx,
-		types.NamespacedName{Namespace: namespace, Name: s3Secret},
+		types.NamespacedName{Namespace: namespace, Name: secretName},
 		&secret); err != nil {
 		if !errors.IsNotFound(err) {
 			return nil, errorswrapper.Wrap(err, "failed to get secret object")
 		}
 
 		// Cleanup policy for missing secret
-		secret.Name = s3Secret
+		sutil.Log.Info("Cleaning up secret policy", "secret", secretName)
+
+		secret.Name = secretName
 
 		return nil, sutil.deletePolicyResources(&secret, namespace)
 	}
@@ -408,25 +430,27 @@ func (sutil *SecretsUtil) ensureS3SecretResources(s3Secret, namespace string) (*
 	}
 
 	// Cleanup policy if secret is deleted
+	sutil.Log.Info("Cleaning up secret policy", "secret", secretName)
+
 	return nil, sutil.deletePolicyResources(&secret, namespace)
 }
 
-func (sutil *SecretsUtil) AddSecretToCluster(s3Secret, clusterName, namespace string) error {
-	sutil.Log.Info("Add Secret", "cluster", clusterName, "s3Secret", s3Secret)
+func (sutil *SecretsUtil) AddSecretToCluster(secretName, clusterName, namespace string) error {
+	sutil.Log.Info("Add Secret", "cluster", clusterName, "secret", secretName)
 
-	secret, err := sutil.ensureS3SecretResources(s3Secret, namespace)
+	secret, err := sutil.ensureS3SecretResources(secretName, namespace)
 	if err != nil {
 		return err
 	}
 
 	if secret == nil {
-		return fmt.Errorf("failed to find secret (secret: %s, cluster: %s)", s3Secret, clusterName)
+		return fmt.Errorf("failed to find secret (secret: %s, cluster: %s)", secretName, clusterName)
 	}
 
 	plRule := &plrv1.PlacementRule{}
 	plRuleName := types.NamespacedName{
 		Namespace: namespace,
-		Name:      fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, s3Secret),
+		Name:      fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, secretName),
 	}
 
 	// Fetch secret placement rule, create secret resources if not found
@@ -442,10 +466,10 @@ func (sutil *SecretsUtil) AddSecretToCluster(s3Secret, clusterName, namespace st
 	return sutil.updatePolicyResources(plRule, secret, clusterName, namespace, true)
 }
 
-func (sutil *SecretsUtil) RemoveSecretFromCluster(s3Secret, clusterName, namespace string) error {
-	sutil.Log.Info("Delete Secret", "cluster", clusterName, "s3Secret", s3Secret)
+func (sutil *SecretsUtil) RemoveSecretFromCluster(secretName, clusterName, namespace string) error {
+	sutil.Log.Info("Remove Secret", "cluster", clusterName, "secret", secretName)
 
-	secret, err := sutil.ensureS3SecretResources(s3Secret, namespace)
+	secret, err := sutil.ensureS3SecretResources(secretName, namespace)
 	if err != nil {
 		return err
 	}
@@ -457,7 +481,7 @@ func (sutil *SecretsUtil) RemoveSecretFromCluster(s3Secret, clusterName, namespa
 	plRule := &plrv1.PlacementRule{}
 	plRuleName := types.NamespacedName{
 		Namespace: namespace,
-		Name:      fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, s3Secret),
+		Name:      fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, secretName),
 	}
 
 	// Fetch secret placement rule, success if not found
