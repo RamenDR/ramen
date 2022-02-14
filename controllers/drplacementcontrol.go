@@ -38,6 +38,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
+var WaitForPVRestoreToComplete = errorswrapper.New("Waiting for PV restore to complete...")
+var WaitForVolSyncDestRepToComplete = errorswrapper.New("Waiting for VolSync RD to complete...")
+var WaitForVolSyncSrcRepToComplete = errorswrapper.New("Waiting for VolSync RS to complete...")
+var WaitForVolSyncManifestWorkCreation = errorswrapper.New("Waiting for VolSync ManifestWork to be created...")
+var WaitForVolSyncRDInfoAvailibility = errorswrapper.New("Waiting for VolSync RDInfo...")
+
 type DRPCInstance struct {
 	reconciler           *DRPlacementControlReconciler
 	ctx                  context.Context
@@ -119,12 +125,22 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 	// Check if we already deployed in the homeCluster or elsewhere
 	deployed, clusterName := d.isDeployed(homeCluster)
 	if deployed && clusterName != homeCluster {
-		// IF deployed on cluster that is not the preferred HomeCluster, then we are done
-		return done, nil
+		// IF deployed on cluster that is not the preferred HomeCluster, and
+		// VolSync is not used, then we are done
+		if !d.isVolSyncReplicationNeeded(homeCluster) {
+			return done, nil
+		}
 	}
 
 	// Ensure that initial deployment is complete
 	if deployed && d.isUserPlRuleUpdated(homeCluster) {
+		if d.isVolSyncReplicationNeeded(homeCluster) {
+			err := d.EnsureVolSyncReplicationSetup(homeCluster)
+			if err != nil {
+				return !done, err
+			}
+		}
+
 		// If for whatever reason, the DRPC status is missing (i.e. DRPC could have been deleted mistakingly and
 		// recreated again), we should update it with whatever status we are at.
 		if d.getLastDRState() == rmn.DRState("") {
@@ -296,7 +312,7 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 	// NOTE: If an initial spec started with the failover action, it will be failed over to the
 	// provided failover cluster. This is an inadvertent outcome, but deemed not an issue.
 	failoverClusterVRG, ok := d.vrgs[d.instance.Spec.FailoverCluster]
-	if !ok {
+	if !ok || d.isVRGSecondary(failoverClusterVRG) {
 		return d.switchToFailoverCluster()
 	}
 
@@ -323,7 +339,20 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 			return !done, nil
 		}
 
-		err := d.EnsureCleanup(d.instance.Spec.FailoverCluster)
+		err := d.resetRDInfoOnPrimary(d.instance.Spec.FailoverCluster)
+		if err != nil {
+			return !done, err
+		}
+
+		clusterToSkip := d.instance.Spec.FailoverCluster
+		err = d.EnsureCleanup(clusterToSkip)
+		if err != nil {
+			return !done, err
+		}
+
+		// Make sure we have updated list of VRGs
+
+		err = d.EnsureVolSyncReplicationSetup(d.instance.Spec.FailoverCluster)
 		if err != nil {
 			return !done, err
 		}
@@ -1148,7 +1177,7 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
 			metav1.ConditionFalse, rmn.ReasonCleaning, msg)
 
-		return fmt.Errorf("failed to clean secondaries")
+		return fmt.Errorf("waiting to clean secondaries")
 	}
 
 	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
