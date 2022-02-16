@@ -13,6 +13,7 @@ import (
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
 	"github.com/ramendr/ramen/controllers/util"
+	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	validationErrors "k8s.io/kube-openapi/pkg/validation/errors"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var _ = Describe("DrpolicyController", func() {
@@ -159,8 +161,13 @@ var _ = Describe("DrpolicyController", func() {
 		Expect(k8sClient.Update(context.TODO(), s3Secret)).To(Succeed())
 	}
 	s3SecretUpdateAccessID := func(s3Secret *corev1.Secret, accessID string) {
-		s3Secret.StringData = s3SecretStringData(accessID, s3Secret.StringData["AWS_SECRET_ACCESS_KEY"])
-		s3SecretUpdate(s3Secret)
+		secretFetched := &corev1.Secret{}
+		Expect(k8sClient.Get(
+			context.TODO(),
+			types.NamespacedName{Name: s3Secret.Name, Namespace: s3Secret.Namespace},
+			secretFetched)).To(Succeed())
+		secretFetched.StringData = s3SecretStringData(accessID, secretFetched.StringData["AWS_SECRET_ACCESS_KEY"])
+		s3SecretUpdate(secretFetched)
 	}
 	s3SecretDelete := func(s3Secret *corev1.Secret) {
 		Expect(k8sClient.Delete(context.TODO(), s3Secret)).To(Succeed())
@@ -192,6 +199,101 @@ var _ = Describe("DrpolicyController", func() {
 			s3SecretDelete(&s3Secrets[i])
 		}
 	}
+	// For each policy combination that may exist, add an entry for use in ensuring secret is created as desired:
+	// - Initial map takes keys that are ordered combinations of drPolicy names that may co-exist
+	// - Internal map takes kyes that are secret names with a list of strings as its value containing the cluster
+	// list that it should be available on
+	drPoliciesAndSecrets := map[string]map[string][]string{
+		"drpolicy0": {
+			"s3secret0": {"cluster0", "cluster1"},
+		},
+		"drpolicy1": {
+			"s3secret0": {"cluster1", "cluster2"},
+		},
+		"drpolicy0drpolicy1": {
+			"s3secret0": {"cluster0", "cluster1", "cluster2"},
+		},
+	}
+	var plRuleNames [len(s3Secrets)]string
+	s3SecretsPolicyNamesSet := func() {
+		for idx := range s3Secrets {
+			_, _, plRuleNames[idx], _ = util.GeneratePolicyResourceNames(s3Secrets[idx].Name)
+		}
+	}
+	plRuleContains := func(plRule plrv1.PlacementRule, clusters []string) bool {
+		for _, cluster := range clusters {
+			found := false
+			for _, specCluster := range plRule.Spec.Clusters {
+				if specCluster.Name == cluster {
+					found = true
+
+					break
+				}
+			}
+
+			if !found {
+				return false
+			}
+		}
+
+		return true
+	}
+	getPlRuleForSecrets := func() []plrv1.PlacementRule {
+		plRuleList := &plrv1.PlacementRuleList{}
+		listOptions := &client.ListOptions{Namespace: configMap.Namespace}
+
+		Expect(apiReader.List(context.TODO(), plRuleList, listOptions)).NotTo(HaveOccurred())
+
+		foundPlRules := []plrv1.PlacementRule{}
+		for _, plRule := range plRuleList.Items {
+			for _, plRuleName := range plRuleNames {
+				if plRule.Name != plRuleName {
+					continue
+				}
+				foundPlRules = append(foundPlRules, plRule)
+
+				break
+			}
+		}
+
+		return foundPlRules
+	}
+	vaildateSecretDistribution := func(drPolicies []ramen.DRPolicy) {
+		plRules := getPlRuleForSecrets()
+
+		// If no policies are present, expect no secret placement rules
+		if drPolicies == nil {
+			Expect(len(plRules)).To(Equal(0))
+
+			return
+		}
+
+		// Construct drpolicies name
+		policyCombinationName := ""
+		for _, drpolicy := range drPolicies {
+			policyCombinationName += drpolicy.Name
+		}
+
+		// Ensure list of secrets for the policy name has as many placement rules
+		Expect(len(plRules) == len(drPoliciesAndSecrets[policyCombinationName])).To(BeTrue())
+
+		// Range through secrets in drpolicies name and ensure cluster list is the same
+		for secretName, clusterList := range drPoliciesAndSecrets[policyCombinationName] {
+			found := false
+			_, _, plRuleName, _ := util.GeneratePolicyResourceNames(secretName)
+
+			for _, plRule := range plRules {
+				if plRule.Name != plRuleName {
+					continue
+				}
+				Expect(plRuleContains(plRule, clusterList)).To(BeTrue())
+				found = true
+
+				break
+			}
+			Expect(found).To(BeTrue())
+		}
+	}
 	var s3SecretNumber uint = 0
 	s3ProfileNew := func(profileNameSuffix, bucketName string) ramen.S3StoreProfile {
 		return ramen.S3StoreProfile{
@@ -219,6 +321,7 @@ var _ = Describe("DrpolicyController", func() {
 	}
 	Specify("s3 profiles and secrets", func() {
 		s3SecretsNamespaceNameSet()
+		s3SecretsPolicyNamesSet()
 		s3SecretsCreate()
 		s3ProfilesSecretNamespaceNameSet()
 		s3ProfilesUpdate()
@@ -254,6 +357,25 @@ var _ = Describe("DrpolicyController", func() {
 		drpolicyNumber = 0
 		drpolicy = &drpolicies[drpolicyNumber]
 	})
+
+	drClusterOperatorDeploymentAutomationEnableOrDisable := func(enable bool, comparator string) {
+		clusterNames := util.DrpolicyClusterNames(drpolicy)
+		manifestWorks := make([]workv1.ManifestWork, len(clusterNames))
+		for i, clusterName := range clusterNames {
+			Expect(drClusterManifestWorkGet(clusterName, &manifestWorks[i])).To(Succeed())
+		}
+		ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = enable
+		ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = enable
+		configMapUpdate()
+		for i := range manifestWorks {
+			manifestWork := &manifestWorks[i]
+			manifestCount := len(manifestWork.Spec.Workload.Manifests)
+			drClusterManifestWorkUpdateExpect(manifestWork)
+			Expect(len(manifestWork.Spec.Workload.Manifests)).To(BeNumerically(comparator, manifestCount))
+		}
+		validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
+	}
+
 	When("a drpolicy is created specifying a cluster name and a namespace of the same name does not exist", func() {
 		It("should set its validated status condition's status to false", func() {
 			Expect(k8sClient.Create(context.TODO(), drpolicy)).To(Succeed())
@@ -273,6 +395,11 @@ var _ = Describe("DrpolicyController", func() {
 			validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
 		})
 	})
+	When("a valid drpolicy's ramen config is updated to enable drcluster operator installation automation", func() {
+		It("should increase the manifest count for each of its managed clusters", func() {
+			drClusterOperatorDeploymentAutomationEnableOrDisable(true, ">")
+		})
+	})
 	When("a drpolicy with invalid CIDRs", func() {
 		It("should set validation status to false", func() {
 			drpolicy.Spec.DRClusterSet[0].CIDRs = cidrs[1]
@@ -287,6 +414,7 @@ var _ = Describe("DrpolicyController", func() {
 	})
 	Specify("drpolicy delete", func() {
 		drpolicyDeleteAndConfirm(drpolicy)
+		vaildateSecretDistribution(nil)
 	})
 	Specify("a drpolicy", func() {
 		drpolicyObjectMetaReset(drpolicyNumber)
@@ -294,6 +422,7 @@ var _ = Describe("DrpolicyController", func() {
 	When("a 1st drpolicy is created", func() {
 		It("should create a drcluster manifest work for each cluster specified in a 1st drpolicy", func() {
 			drpolicyCreate(drpolicy)
+			vaildateSecretDistribution(drpolicies[0:1])
 		})
 	})
 	When("a drpolicy is created referencing an s3 profile that connects successfully", func() {
@@ -310,6 +439,7 @@ var _ = Describe("DrpolicyController", func() {
 		It("should create a drcluster manifest work for each cluster specified in a 2nd drpolicy but not a 1st drpolicy",
 			func() {
 				drpolicyCreate(&drpolicies[1])
+				vaildateSecretDistribution(drpolicies[0:2])
 			},
 		)
 	})
@@ -317,12 +447,14 @@ var _ = Describe("DrpolicyController", func() {
 		It("should delete a drcluster manifest work for each cluster specified in a 1st drpolicy but not a 2nd drpolicy",
 			func() {
 				drpolicyDelete(drpolicy, clusterNames(&drpolicies[1]))
+				vaildateSecretDistribution(drpolicies[1:2])
 			},
 		)
 	})
 	When("a 2nd drpolicy is deleted", func() {
 		It("should delete a drcluster manifest work for each cluster specified in a 2nd drpolicy", func() {
 			drpolicyDelete(&drpolicies[1], clusterNamesNone)
+			vaildateSecretDistribution(nil)
 		})
 	})
 	Specify(`a drpolicy`, func() {
@@ -389,6 +521,7 @@ var _ = Describe("DrpolicyController", func() {
 			drpolicy.Spec.DRClusterSet[1].S3ProfileName = s3ProfileName
 			drpolicyUpdate(drpolicy)
 			validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
+			vaildateSecretDistribution(drpolicies[0:1])
 		})
 	})
 	When("a valid drpolicy is updated referencing a different s3 profile that connects successfully", func() {
@@ -397,6 +530,7 @@ var _ = Describe("DrpolicyController", func() {
 			drpolicy.Spec.DRClusterSet[0].S3ProfileName = s3ProfileName
 			drpolicyUpdate(drpolicy)
 			validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
+			vaildateSecretDistribution(drpolicies[0:1])
 		})
 	})
 	var s3Profile *ramen.S3StoreProfile
@@ -416,6 +550,7 @@ var _ = Describe("DrpolicyController", func() {
 				s3Profile.S3Bucket = bucketNameSucc
 				s3ProfilesUpdate()
 				validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
+				vaildateSecretDistribution(drpolicies[0:1])
 			})
 		})
 	}
@@ -450,6 +585,7 @@ var _ = Describe("DrpolicyController", func() {
 		It("should update its validated status condition's status to false", func() {
 			s3SecretDelete(s3Secret)
 			validatedConditionExpect(drpolicy, metav1.ConditionFalse, HavePrefix(s3Profile.S3ProfileName+": "))
+			vaildateSecretDistribution(nil)
 		})
 	})
 	When("an invalid drpolicy's referenced s3 profile's secret is re-created", func() {
@@ -457,27 +593,7 @@ var _ = Describe("DrpolicyController", func() {
 			s3SecretObjectMetaReset(s3SecretNumber)
 			s3SecretCreate(s3Secret)
 			validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
-		})
-	})
-	drClusterOperatorDeploymentAutomationEnableOrDisable := func(enable bool, comparator string) {
-		clusterNames := util.DrpolicyClusterNames(drpolicy)
-		manifestWorks := make([]workv1.ManifestWork, len(clusterNames))
-		for i, clusterName := range clusterNames {
-			Expect(drClusterManifestWorkGet(clusterName, &manifestWorks[i])).To(Succeed())
-		}
-		ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = enable
-		configMapUpdate()
-		for i := range manifestWorks {
-			manifestWork := &manifestWorks[i]
-			manifestCount := len(manifestWork.Spec.Workload.Manifests)
-			drClusterManifestWorkUpdateExpect(manifestWork)
-			Expect(len(manifestWork.Spec.Workload.Manifests)).To(BeNumerically(comparator, manifestCount))
-		}
-		validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
-	}
-	When("a valid drpolicy's ramen config is updated to enable drcluster operator installation automation", func() {
-		It("should increase the manifest count for each of its managed clusters", func() {
-			drClusterOperatorDeploymentAutomationEnableOrDisable(true, ">")
+			vaildateSecretDistribution(drpolicies[0:1])
 		})
 	})
 	When("a valid drpolicy's ramen config is updated to disable drcluster operator installation automation", func() {
