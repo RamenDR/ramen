@@ -1668,8 +1668,8 @@ func (v *VRGInstance) updateVR(volRep *volrep.VolumeReplication,
 			v.instance.Namespace, v.instance.Name, err)
 	}
 
-	log.Info("Updated the state of VolRep (%s/%s) to %s", volRep.Name, volRep.Namespace,
-		state)
+	log.Info(fmt.Sprintf("Updated VolumeReplication resource (%s/%s) with state %s",
+		volRep.Name, volRep.Namespace, state))
 	// Just updated the state of the VolRep. Mark it as progressing.
 	msg := "Updated VolumeReplication resource for PVC"
 	v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonProgressing, msg)
@@ -1800,7 +1800,7 @@ func (v *VRGInstance) getStorageClass(namespacedName types.NamespacedName) (*sto
 	}
 
 	if pvc == nil {
-		v.log.Info("failed to get the pvc with namespaced name", namespacedName)
+		v.log.Info(fmt.Sprintf("failed to get the pvc with namespaced name (%s)", namespacedName))
 
 		// Need the storage driver of pvc. If pvc is not found return error.
 		return nil, fmt.Errorf("failed to get the pvc with namespaced name %s", namespacedName)
@@ -2143,7 +2143,8 @@ func (v *VRGInstance) checkVRStatus(volRep *volrep.VolumeReplication) (bool, err
 	// When the generation in the status is updated, VRG would get a reconcile
 	// as it owns VolumeReplication resource.
 	if volRep.Generation != volRep.Status.ObservedGeneration {
-		v.log.Info("Generation from the resource and status not same for VolRep %s/%s", volRep.Name, volRep.Namespace)
+		v.log.Info(fmt.Sprintf("Generation mismatch in status for VolumeReplication resource (%s/%s)",
+			volRep.Name, volRep.Namespace))
 
 		msg := "VolumeReplication generation not updated in status"
 		v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonProgressing, msg)
