@@ -575,6 +575,93 @@ subscription_operator_undeploy()
 	for_each "$spoke_cluster_names_nonhub $hub_cluster_name" subscription_operator_undeploy_common
 }
 exit_stack_push unset -f subscription_operator_undeploy
+policy_operator_deploy_hub()
+{
+	# Create the namespace
+	policy_hub_ns="open-cluster-management"
+	kubectl --context ${1} get ns ${policy_hub_ns}
+	if [ $(kubectl --context ${1} get ns ${policy_hub_ns} | grep -c ${policy_hub_ns}) -ne 1 ]; then
+		kubectl --context ${1} create ns ${policy_hub_ns};
+	fi
+
+	# Apply the CRDs
+	policy_git_path="https://raw.githubusercontent.com/open-cluster-management-io/governance-policy-propagator/main/deploy"
+	kubectl --context ${1} apply -f ${policy_git_path}/crds/policy.open-cluster-management.io_policies.yaml
+	kubectl --context ${1} apply -f ${policy_git_path}/crds/policy.open-cluster-management.io_placementbindings.yaml
+	kubectl --context ${1} apply -f ${policy_git_path}/crds/policy.open-cluster-management.io_policyautomations.yaml
+	kubectl --context ${1} apply -f ${policy_git_path}/crds/policy.open-cluster-management.io_policysets.yaml
+
+	# Deploy the policy-propagator
+	kubectl --context ${1} apply -f ${policy_git_path}/operator.yaml -n ${policy_hub_ns}
+
+	# Ensure operator is running
+	until_true_or_n 300 kubectl --context ${1} -n ${policy_hub_ns} wait deployments/governance-policy-propagator --for condition=available --timeout 0
+}
+exit_stack_push unset -f policy_operator_deploy_hub
+policy_operator_undeploy_hub()
+{
+	echo "TODO: Undeploy policy framework on hub!!!"
+}
+exit_stack_push unset -f policy_operator_undeploy_hub
+policy_operator_deploy_spoke()
+{
+	# Create the namespace
+	policy_mc_ns="open-cluster-management-agent-addon"
+	if [ $(kubectl --context ${1} get ns ${policy_mc_ns} | grep -c ${policy_mc_ns}) -ne 1 ]; then
+		kubectl --context ${1} create ns ${policy_mc_ns};
+	fi
+
+	# Create the secret to authenticate with the hub
+	kubectl --context ${1} -n ${policy_mc_ns} create secret generic hub-kubeconfig --from-file=kubeconfig=${hub_kubeconfig_file_path_name} --dry-run=client -oyaml|kubectl --context ${1} -n ${policy_mc_ns} apply -f -
+
+	# Apply the policy CRD
+	ocm_git_path="https://raw.githubusercontent.com/open-cluster-management-io"
+	kubectl --context ${1} apply -f ${ocm_git_path}/governance-policy-propagator/main/deploy/crds/policy.open-cluster-management.io_policies.yaml
+
+	# TODO: Should loop through components and invoke a common routine here
+	# Deploy the spec synchronization component
+	policy_component="governance-policy-spec-sync"
+	kubectl --context ${1} apply -f ${ocm_git_path}/${policy_component}/main/deploy/operator.yaml -n ${policy_mc_ns}
+	kubectl --context ${1} set env deployment/${policy_component} -n ${policy_mc_ns} --containers="${policy_component}" WATCH_NAMESPACE=${1}
+	# Ensure operator is running
+	until_true_or_n 300 kubectl --context ${1} -n ${policy_mc_ns} wait deployments/${policy_component} --for condition=available --timeout 0
+
+	# Deploy the status synchronization component
+	policy_component="governance-policy-status-sync"
+	kubectl --context ${1} apply -f ${ocm_git_path}/${policy_component}/main/deploy/operator.yaml -n ${policy_mc_ns}
+	kubectl --context ${1} set env deployment/${policy_component} -n ${policy_mc_ns} --containers="${policy_component}" WATCH_NAMESPACE=${1}
+	# Ensure operator is running
+	until_true_or_n 300 kubectl --context ${1} -n ${policy_mc_ns} wait deployments/${policy_component} --for condition=available --timeout 0
+
+	# Deploy the template synchronization component
+	policy_component="governance-policy-template-sync"
+	kubectl --context ${1} apply -f ${ocm_git_path}/${policy_component}/main/deploy/operator.yaml -n ${policy_mc_ns}
+	kubectl --context ${1} set env deployment/${policy_component} -n ${policy_mc_ns} --containers="${policy_component}" WATCH_NAMESPACE=${1}
+	# Ensure operator is running
+	until_true_or_n 300 kubectl --context ${1} -n ${policy_mc_ns} wait deployments/${policy_component} --for condition=available --timeout 0
+
+	# Apply the configuration policy CRD
+	policy_component="config-policy-controller"
+	kubectl --context ${1} apply -f ${ocm_git_path}/${policy_component}/main/deploy/crds/policy.open-cluster-management.io_configurationpolicies.yaml
+
+	# Deploy the configuration controller
+	kubectl --context ${1} apply -f ${ocm_git_path}/${policy_component}/main/deploy/operator.yaml -n ${policy_mc_ns}
+	kubectl --context ${1} set env deployment/${policy_component} -n ${policy_mc_ns} --containers=${policy_component} WATCH_NAMESPACE=${1}
+	# Ensure operator is running
+	until_true_or_n 300 kubectl --context ${1} -n ${policy_mc_ns} wait deployments/${policy_component} --for condition=available --timeout 0
+}
+exit_stack_push unset -f policy_operator_deploy_spoke
+policy_operator_undeploy_spoke()
+{
+	echo "TODO: Undeploy policy framework on spoke!!!"
+}
+exit_stack_push unset -f policy_operator_undeploy_spoke
+policy_operator_deploy()
+{
+	for_each "$hub_cluster_name"    policy_operator_deploy_hub
+	for_each "$spoke_cluster_names" policy_operator_deploy_spoke
+}
+exit_stack_push unset -f policy_operator_deploy
 minikube_start()
 {
 	minikube_validate
@@ -751,10 +838,12 @@ deploy()
 	deploy_spokes
 	foundation_operator_deploy
 	subscription_operator_deploy
+	policy_operator_deploy
 }
 exit_stack_push unset -f deploy
 undeploy()
 {
+	policy_operator_undeploy
 	subscription_operator_undeploy
 	foundation_operator_undeploy
 	undeploy_spokes

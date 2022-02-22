@@ -60,6 +60,11 @@ const ReasonValidationFailed = "ValidationFailed"
 // +kubebuilder:rbac:groups=work.open-cluster-management.io,resources=manifestworks,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=list;watch
+// +kubebuilder:rbac:groups="policy.open-cluster-management.io",resources=placementbindings,verbs=list;watch
+// +kubebuilder:rbac:groups="policy.open-cluster-management.io",resources=policies,verbs=list;watch
+// +kubebuilder:rbac:groups="",namespace=system,resources=secrets,verbs=get;update
+// +kubebuilder:rbac:groups="policy.open-cluster-management.io",namespace=system,resources=placementbindings,verbs=get;create;update;delete
+// +kubebuilder:rbac:groups="policy.open-cluster-management.io",namespace=system,resources=policies,verbs=get;create;update;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.

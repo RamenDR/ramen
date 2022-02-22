@@ -477,6 +477,7 @@ ramen_config_deploy_hub_or_spoke()
 	    namespace: ramen-system
 	drClusterOperator:
 	  deploymentAutomationEnabled: true
+	  s3SecretDistributionEnabled: true
 	EOF
 	ramen_config_replace_hub_or_spoke $1 $2 $3
 }
@@ -588,7 +589,7 @@ ramen_samples_channel_and_drpolicy_deploy()
 		until_true_or_n 300 kubectl --context $cluster_name get namespaces/ramen-system
 		ramen_catalog_deploy_cluster $cluster_name
 		until_true_or_n 300 kubectl --context $cluster_name -n ramen-system wait deployments ramen-dr-cluster-operator --for condition=available --timeout 0
-		ramen_s3_secret_deploy_cluster $cluster_name # TODO remove once automated
+		#ramen_s3_secret_deploy_cluster $cluster_name # TODO remove once automated
 	done; unset -v cluster_name
 	kubectl --context $hub_cluster_name -n ramen-samples get channels/ramen-gitops
 }
