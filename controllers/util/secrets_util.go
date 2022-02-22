@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// NOTE: Added to skip creating shadow manifests for localSecret struct
+// +kubebuilder:skip
 package util
 
 import (
@@ -29,7 +31,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
+	runtime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -71,6 +73,10 @@ func newPlacementRuleBinding(
 	name, namespace, placementRuleName string,
 	subjects []gppv1.Subject) *gppv1.PlacementBinding {
 	return &gppv1.PlacementBinding{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PlacementBinding",
+			APIVersion: "policy.open-cluster-management.io/v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
@@ -94,6 +100,10 @@ func newPlacementRule(name string, namespace string,
 	}
 
 	return &plrv1.PlacementRule{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PlacementRule",
+			APIVersion: "apps.open-cluster-management.io/v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
@@ -106,27 +116,82 @@ func newPlacementRule(name string, namespace string,
 	}
 }
 
-func newS3ConfigurationSecret(s3SecretRef corev1.SecretReference) *corev1.Secret {
-	return &corev1.Secret{
+// localSecret is added to provide for an interface that can convert the "template" value in secret.Data
+// and store it as a policy object. Currently the actual secret.Data is a map of []byte, which hence garbles
+// the value of the template secret value in the policy. Using stringData which is a map of string does not
+// work with the configuration controllers, as values from actual secret's data is encoded in base64 twice.
+// This needs to be tracked with OCM and fixed, at which point we can remove the local copy and adapt to
+// the fix.
+type localSecret struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Data              map[string]string `json:"data,omitempty"`
+}
+
+// DeepCopyObject interfaces required to use localSecret as a runtime.Object
+// Lifted from generated deep copy file for other resources
+func (in *localSecret) DeepCopyObject() runtime.Object {
+	return in.DeepCopy()
+}
+
+// DeepCopy is for copying the receiver, creating a new ClusterStatus.
+func (in *localSecret) DeepCopy() *localSecret {
+	if in == nil {
+		return nil
+	}
+
+	out := new(localSecret)
+
+	in.DeepCopyInto(out)
+
+	return out
+}
+
+// DeepCopyInto is for copying the receiver, writing into out. in must be non-nil.
+func (in *localSecret) DeepCopyInto(out *localSecret) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
+
+	if in.Data != nil {
+		in, out := &in.Data, &out.Data
+		*out = make(map[string]string, len(*in))
+
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
+}
+
+func newS3ConfigurationSecret(s3SecretRef corev1.SecretReference) *localSecret {
+	return &localSecret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: "v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      s3SecretRef.Name,
 			Namespace: s3SecretRef.Namespace,
 		},
-		Data: map[string][]byte{
-			"AWS_ACCESS_KEY_ID": []byte("'{{ fromSecret " +
-				"\"" + s3SecretRef.Namespace + "\"" +
-				"\"" + s3SecretRef.Name + "\"" +
-				"\"AWS_ACCESS_KEY_ID\" }}'"),
-			"AWS_SECRET_ACCESS_KEY": []byte("'{{ fromSecret " +
-				"\"" + s3SecretRef.Namespace + "\"" +
-				"\"" + s3SecretRef.Name + "\"" +
-				"\"AWS_SECRET_ACCESS_KEY\" }}'"),
+		Data: map[string]string{
+			"AWS_ACCESS_KEY_ID": "{{hub fromSecret " +
+				"\"" + s3SecretRef.Namespace + "\"" + " " +
+				"\"" + s3SecretRef.Name + "\"" + " " +
+				"\"AWS_ACCESS_KEY_ID\" hub}}",
+			"AWS_SECRET_ACCESS_KEY": "{{hub fromSecret " +
+				"\"" + s3SecretRef.Namespace + "\"" + " " +
+				"\"" + s3SecretRef.Name + "\"" + " " +
+				"\"AWS_SECRET_ACCESS_KEY\" hub}}",
 		},
 	}
 }
 
 func newConfigurationPolicy(name string, object runtime.RawExtension) *cpcv1.ConfigurationPolicy {
 	return &cpcv1.ConfigurationPolicy{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ConfigurationPolicy",
+			APIVersion: "policy.open-cluster-management.io/v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
@@ -145,6 +210,10 @@ func newConfigurationPolicy(name string, object runtime.RawExtension) *cpcv1.Con
 
 func newPolicy(name, namespace, triggerValue string, object runtime.RawExtension) *gppv1.Policy {
 	return &gppv1.Policy{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Policy",
+			APIVersion: "policy.open-cluster-management.io/v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,

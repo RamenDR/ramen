@@ -57,6 +57,20 @@ rules:
   - list
   - watch
 - apiGroups:
+  - policy.open-cluster-management.io
+  resources:
+  - placementbindings
+  verbs:
+  - list
+  - watch
+- apiGroups:
+  - policy.open-cluster-management.io
+  resources:
+  - policies
+  verbs:
+  - list
+  - watch
+- apiGroups:
   - ramendr.openshift.io
   resources:
   - drplacementcontrols
@@ -146,3 +160,22 @@ rules:
   - secrets
   verbs:
   - get
+  - update
+- apiGroups:
+  - policy.open-cluster-management.io
+  resources:
+  - placementbindings
+  verbs:
+  - create
+  - delete
+  - get
+  - update
+- apiGroups:
+  - policy.open-cluster-management.io
+  resources:
+  - policies
+  verbs:
+  - create
+  - delete
+  - get
+  - update
