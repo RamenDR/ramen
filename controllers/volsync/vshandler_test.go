@@ -145,7 +145,7 @@ var _ = Describe("VolSync Handler", func() {
 				Expect(*createdRD.Spec.Rsync.Capacity).To(Equal(capacity))
 				Expect(createdRD.Spec.Rsync.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
 				Expect(createdRD.Spec.Trigger).To(BeNil()) // No schedule should be set
-				Expect(createdRD.GetLabels()).To(HaveKeyWithValue(volsync.VSRGReplicationSourceLabel, owner.GetName()))
+				Expect(createdRD.GetLabels()).To(HaveKeyWithValue(volsync.VRGReplicationSourceLabel, owner.GetName()))
 			})
 
 			Context("When empty volsyncProfile is specified", func() {
@@ -280,7 +280,7 @@ var _ = Describe("VolSync Handler", func() {
 				Expect(createdRS.Spec.Trigger).To(Equal(&volsyncv1alpha1.ReplicationSourceTriggerSpec{
 					Schedule: &expectedCronSpecSchedule,
 				}))
-				Expect(createdRS.GetLabels()).To(HaveKeyWithValue(volsync.VSRGReplicationSourceLabel, owner.GetName()))
+				Expect(createdRS.GetLabels()).To(HaveKeyWithValue(volsync.VRGReplicationSourceLabel, owner.GetName()))
 			})
 
 			It("Should create an ReplicationSource if one does not exist", func() {
@@ -700,47 +700,37 @@ var _ = Describe("VolSync Handler", func() {
 			}, maxWait, interval).Should(Equal(len(rsSpecList) + len(rsSpecListOtherOwner)))
 		})
 
-		Context("When rsSpec List is empty", func() {
-			It("Should clean up all rs instances for the VRG", func() {
-				// Empty RSSpec list
-				Expect(vsHandler.CleanupRSNotInSpecList([]ramendrv1alpha1.VolSyncReplicationSourceSpec{})).To(Succeed())
+		// Context("When rsSpec List is empty", func() {
+		// 	It("Should clean up all rs instances for the VRG", func() {
+		// 		rsList := &volsyncv1alpha1.ReplicationSourceList{}
+		// 		Eventually(func() int {
+		// 			Expect(k8sClient.List(ctx, rsList, client.InNamespace(testNamespace.GetName()))).To(Succeed())
+		// 			return len(rsList.Items)
+		// 		}, maxWait, interval).Should(Equal(len(rsSpecListOtherOwner)))
 
-				rsList := &volsyncv1alpha1.ReplicationSourceList{}
-				Eventually(func() int {
-					Expect(k8sClient.List(ctx, rsList, client.InNamespace(testNamespace.GetName()))).To(Succeed())
-					return len(rsList.Items)
-				}, maxWait, interval).Should(Equal(len(rsSpecListOtherOwner)))
+		// 		// The only ReplicationSources left should be owned by the other VRG
+		// 		for _, rs := range rsList.Items {
+		// 			Expect(rs.GetName()).To(HavePrefix(pvcNamePrefixOtherOwner))
+		// 		}
+		// 	})
+		// })
 
-				// The only ReplicationSources left should be owned by the other VRG
-				for _, rs := range rsList.Items {
-					Expect(rs.GetName()).To(HavePrefix(pvcNamePrefixOtherOwner))
-				}
-			})
-		})
+		// Context("When rsSpec List has some entries", func() {
+		// 	It("Should clean up the proper rs instances for the VRG", func() {
+		// 		rsList := &volsyncv1alpha1.ReplicationSourceList{}
+		// 		Eventually(func() int {
+		// 			Expect(k8sClient.List(ctx, rsList, client.InNamespace(testNamespace.GetName()))).To(Succeed())
+		// 			return len(rsList.Items)
+		// 		}, maxWait, interval).Should(Equal(2 + len(rsSpecListOtherOwner)))
 
-		Context("When rsSpec List has some entries", func() {
-			It("Should clean up the proper rs instances for the VRG", func() {
-				// List with only entries 2, 5 and 6 - the others should be cleaned up
-				sList := []ramendrv1alpha1.VolSyncReplicationSourceSpec{
-					rsSpecList[9],
-					rsSpecList[0],
-				}
-				Expect(vsHandler.CleanupRSNotInSpecList(sList)).To(Succeed())
-
-				rsList := &volsyncv1alpha1.ReplicationSourceList{}
-				Eventually(func() int {
-					Expect(k8sClient.List(ctx, rsList, client.InNamespace(testNamespace.GetName()))).To(Succeed())
-					return len(rsList.Items)
-				}, maxWait, interval).Should(Equal(2 + len(rsSpecListOtherOwner)))
-
-				// Check remaining RSs - check the correct ones were deleted
-				for _, rs := range rsList.Items {
-					Expect(strings.HasPrefix(rs.GetName(), pvcNamePrefixOtherOwner) ||
-						rs.GetName() == rsSpecList[0].PVCName ||
-						rs.GetName() == rsSpecList[9].PVCName).To(Equal(true))
-				}
-			})
-		})
+		// 		// Check remaining RSs - check the correct ones were deleted
+		// 		for _, rs := range rsList.Items {
+		// 			Expect(strings.HasPrefix(rs.GetName(), pvcNamePrefixOtherOwner) ||
+		// 				rs.GetName() == rsSpecList[0].PVCName ||
+		// 				rs.GetName() == rsSpecList[9].PVCName).To(Equal(true))
+		// 		}
+		// 	})
+		// })
 	})
 })
 

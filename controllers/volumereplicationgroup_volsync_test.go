@@ -58,11 +58,11 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 
 		var testVsrg *ramendrv1alpha1.VolumeReplicationGroup
 
-		Context("When VSRG created on primary", func() {
+		Context("When VRG created on primary", func() {
 			JustBeforeEach(func() {
 				testVsrg = &ramendrv1alpha1.VolumeReplicationGroup{
 					ObjectMeta: metav1.ObjectMeta{
-						GenerateName: "test-vsrg-east-",
+						GenerateName: "test-vrg-east-",
 						Namespace:    testNamespace.GetName(),
 					},
 					Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
@@ -102,7 +102,6 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 
 			Context("When matching PVCs are bound", func() {
 				var boundPvcs []corev1.PersistentVolumeClaim
-				testSshKeys := "testsshkeys"
 				JustBeforeEach(func() {
 					boundPvcs = []corev1.PersistentVolumeClaim{} // Reset for each test
 
@@ -141,41 +140,19 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 					Expect(foundBoundPVC2).To(BeTrue())
 				})
 
-				Context("When RSSpec entries are added to vsrg spec", func() {
+				Context("When RSSpec entries are added to vrg spec", func() {
 					It("Should create ReplicationSources for each", func() {
-						// Update the vsrg spec with some RSSpec entries
-						testVsrg.Spec.VolSync.RSSpec = []ramendrv1alpha1.VolSyncReplicationSourceSpec{
-							{
-								PVCName: boundPvcs[0].GetName(),
-								Address: "1.2.0.10",
-								SSHKeys: testSshKeys,
-							},
-							{
-								PVCName: boundPvcs[1].GetName(),
-								Address: "1.2.1.10",
-								SSHKeys: testSshKeys,
-							},
-							{
-								PVCName: boundPvcs[2].GetName(),
-								Address: "1.2.2.10",
-								SSHKeys: testSshKeys,
-							},
-						}
-						Expect(k8sClient.Update(testCtx, testVsrg)).To(Succeed())
-
 						allRSs := &volsyncv1alpha1.ReplicationSourceList{}
 						Eventually(func() int {
 							Expect(k8sClient.List(testCtx, allRSs,
 								client.InNamespace(testNamespace.GetName()))).To(Succeed())
 							return len(allRSs.Items)
-						}, testMaxWait, testInterval).Should(Equal(len(testVsrg.Spec.VolSync.RSSpec)))
+						}, testMaxWait, testInterval).Should(Equal(len(testVsrg.Status.ProtectedPVCs)))
 
 						rs0 := &volsyncv1alpha1.ReplicationSource{}
 						Expect(k8sClient.Get(testCtx, types.NamespacedName{
 							Name: boundPvcs[0].GetName(), Namespace: testNamespace.GetName()}, rs0)).To(Succeed())
 						Expect(rs0.Spec.SourcePVC).To(Equal(boundPvcs[0].GetName()))
-						Expect(*rs0.Spec.Rsync.Address).To(Equal(testVsrg.Spec.VolSync.RSSpec[0].Address))
-						Expect(*rs0.Spec.Rsync.SSHKeys).To(Equal(testVsrg.Spec.VolSync.RSSpec[0].SSHKeys))
 						Expect(rs0.Spec.Trigger).NotTo(BeNil())
 						Expect(*rs0.Spec.Trigger.Schedule).To(Equal("* */1 * * *")) // scheduling interval was set to 1h
 
@@ -183,8 +160,6 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 						Expect(k8sClient.Get(testCtx, types.NamespacedName{
 							Name: boundPvcs[1].GetName(), Namespace: testNamespace.GetName()}, rs1)).To(Succeed())
 						Expect(rs1.Spec.SourcePVC).To(Equal(boundPvcs[1].GetName()))
-						Expect(*rs1.Spec.Rsync.Address).To(Equal(testVsrg.Spec.VolSync.RSSpec[1].Address))
-						Expect(*rs1.Spec.Rsync.SSHKeys).To(Equal(testVsrg.Spec.VolSync.RSSpec[1].SSHKeys))
 						Expect(rs1.Spec.Trigger).NotTo(BeNil())
 						Expect(*rs1.Spec.Trigger.Schedule).To(Equal("* */1 * * *")) // scheduling interval was set to 1h
 
@@ -192,8 +167,6 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 						Expect(k8sClient.Get(testCtx, types.NamespacedName{
 							Name: boundPvcs[2].GetName(), Namespace: testNamespace.GetName()}, rs2)).To(Succeed())
 						Expect(rs2.Spec.SourcePVC).To(Equal(boundPvcs[2].GetName()))
-						Expect(*rs2.Spec.Rsync.Address).To(Equal(testVsrg.Spec.VolSync.RSSpec[2].Address))
-						Expect(*rs2.Spec.Rsync.SSHKeys).To(Equal(testVsrg.Spec.VolSync.RSSpec[2].SSHKeys))
 						Expect(rs2.Spec.Trigger).NotTo(BeNil())
 						Expect(*rs2.Spec.Trigger.Schedule).To(Equal("* */1 * * *")) // scheduling interval was set to 1h
 					})
@@ -219,7 +192,7 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 			JustBeforeEach(func() {
 				testVsrg = &ramendrv1alpha1.VolumeReplicationGroup{
 					ObjectMeta: metav1.ObjectMeta{
-						GenerateName: "test-vsrg-east-",
+						GenerateName: "test-vrg-east-",
 						Namespace:    testNamespace.GetName(),
 					},
 					Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
@@ -264,7 +237,7 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 				rd1 := &volsyncv1alpha1.ReplicationDestination{}
 
 				JustBeforeEach(func() {
-					// Update the vsrg spec with some RDSpec entries
+					// Update the vrg spec with some RDSpec entries
 					Expect(k8sClient.Get(testCtx, client.ObjectKeyFromObject(testVsrg), testVsrg)).To(Succeed())
 					testVsrg.Spec.VolSync.RDSpec = []ramendrv1alpha1.VolSyncReplicationDestinationSpec{
 						{
@@ -355,32 +328,6 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 						}
 						Expect(k8sClient.Status().Update(testCtx, rd1)).To(Succeed())
 
-					})
-
-					It("VSRG status should be updated with proper RDInfo", func() {
-						Eventually(func() int {
-							err := k8sClient.Get(testCtx, client.ObjectKeyFromObject(testVsrg), testVsrg)
-							if err != nil {
-								return 0
-							}
-							return len(testVsrg.Status.VolSyncRepStatus.RDInfo)
-						}, testMaxWait, testInterval).Should(Equal(2))
-
-						// Confirm the RDInfo is set correctly
-						foundRdInfo0 := false
-						foundRdInfo1 := false
-						for _, rdInfo := range testVsrg.Status.VolSyncRepStatus.RDInfo {
-							if rdInfo.PVCName == testVsrg.Spec.VolSync.RDSpec[0].ProtectedPVC.Name {
-								foundRdInfo0 = true
-								Expect(rdInfo.Address).To(Equal(rd0Address))
-							}
-							if rdInfo.PVCName == testVsrg.Spec.VolSync.RDSpec[1].ProtectedPVC.Name {
-								foundRdInfo1 = true
-								Expect(rdInfo.Address).To(Equal(rd1Address))
-							}
-						}
-						Expect(foundRdInfo0).To(BeTrue())
-						Expect(foundRdInfo1).To(BeTrue())
 					})
 				})
 			})

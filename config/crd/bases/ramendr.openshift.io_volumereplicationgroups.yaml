@@ -330,31 +330,6 @@ spec:
                           type: string
                       type: object
                     type: array
-                  rsSpec:
-                    description: rsSpec array contains the PVCs information that have
-                      been configured for the VolSync Replication Destination
-                    items:
-                      description: VolSyncReplicationSourceSpec defines the configuration
-                        for the VolSync protected PVC to be used by the source cluster
-                        (Primary)
-                      properties:
-                        address:
-                          description: address is the address to connect to for incoming
-                            SSH replication connections.
-                          type: string
-                        pvcName:
-                          description: pvcName is the name of the PVC that VolSync
-                            will replicate to the destinatioin
-                          type: string
-                        sshKeys:
-                          description: sshKeys is the name of a Secret that contains
-                            the SSH keys to be used for authentication.
-                          type: string
-                      required:
-                      - address
-                      - pvcName
-                      type: object
-                    type: array
                 type: object
             required:
             - pvcSelector
@@ -570,32 +545,6 @@ spec:
               state:
                 description: State captures the latest state of the replication operation
                 type: string
-              vsrStatus:
-                description: vsrStatus defines the VolSyn replication status when
-                  using VolSync replication.
-                properties:
-                  rdInfo:
-                    description: Info about the created RDs (should only be filled
-                      out if using VolSync and VRG ReplicationState is secondary)
-                    items:
-                      description: VolSyncReplicationDestinationInfo defines the VolSync
-                        PVC information that the ReplicationDestination was setup
-                        for.
-                      properties:
-                        address:
-                          description: address is the address to connect to for incoming
-                            SSH replication connections.
-                          type: string
-                        pvcName:
-                          description: pvcName is the name of the PVC that will be
-                            replicated by VolSync
-                          type: string
-                      required:
-                      - address
-                      - pvcName
-                      type: object
-                    type: array
-                type: object
             type: object
         type: object
     served: true
