@@ -125,16 +125,6 @@ var (
 	}
 
 	schedulingInterval = "1h"
-)
-
-var drstate string
-
-// FakeProgressCallback of function type
-func FakeProgressCallback(drpcName string, state string) {
-	drstate = state
-}
-
-var restorePVs = true
 
 	drClusters = []rmn.DRCluster{}
 
@@ -147,8 +137,10 @@ var restorePVs = true
 			SchedulingInterval: schedulingInterval,
 		},
 	}
+}
 
-	syncDRPolicy = &rmn.DRPolicy{
+func getSyncDRPolicy() *rmn.DRPolicy {
+	return &rmn.DRPolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: SyncDRPolicyName,
 		},
@@ -157,13 +149,23 @@ var restorePVs = true
 			SchedulingInterval: schedulingInterval,
 		},
 	}
-)
+}
 
 var drstate string
 
 // FakeProgressCallback of function type
 func FakeProgressCallback(drpcName string, state string) {
 	drstate = state
+}
+
+var restorePVs = true
+
+type FakeMCVGetter struct{}
+
+func getNamespaceObj(namespaceName string) *corev1.Namespace {
+	return &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: namespaceName},
+	}
 }
 
 //nolint:dogsled
@@ -270,6 +272,9 @@ func getVRGFromManifestWork(managedCluster string) (*rmn.VolumeReplicationGroup,
 	err = yaml.Unmarshal(mw.Spec.Workload.Manifests[0].Raw, vrg)
 	Expect(err).NotTo(HaveOccurred())
 
+	// Fake generation:
+	vrg.Generation = 1
+
 	// Always report conditions as a success?
 	vrg.Status.Conditions = append(vrg.Status.Conditions, metav1.Condition{
 		Type:               controllers.VRGConditionTypeClusterDataProtected,
@@ -302,15 +307,6 @@ func getVRGFromManifestWork(managedCluster string) (*rmn.VolumeReplicationGroup,
 			AccessModes:        []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 			Resources:          corev1.ResourceRequirements{Requests: capacity},
 		})
-	}
-
-	if VolSyncDeployDestinationCluster == managedCluster {
-		vrg.Status.VolSyncRepStatus.RDInfo = []rmn.VolSyncReplicationDestinationInfo{}
-		rdInfo := rmn.VolSyncReplicationDestinationInfo{
-			PVCName: "TestPVC",
-			Address: "1.1.1.1",
-		}
-		vrg.Status.VolSyncRepStatus.RDInfo = append(vrg.Status.VolSyncRepStatus.RDInfo, rdInfo)
 	}
 
 	return vrg, nil
@@ -592,21 +588,14 @@ func moveVRGToSecondary(clusterNamespace, mwType string, protectData bool) (*rmn
 		Namespace: clusterNamespace,
 	}
 
-	vrg, err := updateVRGMW(manifestLookupKey, protectData)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, err
-		}
+	var vrg *rmn.VolumeReplicationGroup
+	var err error
 
-		// If the resource is changed when MW is being
-		// updated, then it can fail. Try again.
+	Eventually(func() bool {
 		vrg, err = updateVRGMW(manifestLookupKey, protectData)
-		if err != nil && errors.IsNotFound(err) {
-			return nil, err
-		}
-	}
-
-	Expect(err).NotTo(HaveOccurred(), "errors %w in updating MW", err)
+		return err == nil || errors.IsNotFound(err)
+	}, timeout, interval).Should(BeTrue(),
+		fmt.Sprintf("failed to wait for manifestwork update %s cluster %s", mwType, clusterNamespace))
 
 	return vrg, err
 }
@@ -641,7 +630,6 @@ func updateVRGMW(manifestLookupKey types.NamespacedName, dataProtected bool) (*r
 		mw.Spec.Workload.Manifests[0] = *manifest
 
 		err = k8sClient.Update(context.TODO(), mw)
-		// Expect(err).NotTo(HaveOccurred(), "erros %w in updating MW", err)
 		if err != nil {
 			return nil, fmt.Errorf("failed to update VRG ManifestWork %w", err)
 		}
@@ -740,9 +728,9 @@ func waitForVRGMWDeletion(clusterNamespace string) {
 	}, timeout, interval).Should(BeTrue(), "failed to wait for manifest deletion for type vrg")
 }
 
-func InitialDeploymentAsync(homeCluster string) (*plrv1.PlacementRule,
+func InitialDeploymentAsync(namespace, placementName, homeCluster string) (*plrv1.PlacementRule,
 	*rmn.DRPlacementControl) {
-	createNamespacesAsync(getNamespace(DRPCNamespaceName))
+	createNamespacesAsync(getNamespaceObj(DRPCNamespaceName))
 
 	createManagedClustersAsync()
 	createDRClustersAsync()
@@ -903,7 +891,7 @@ func waitForCompletion(expectedState string) {
 	Eventually(func() bool {
 		return drstate == expectedState
 	}, timeout*2, interval).Should(BeTrue(),
-		fmt.Sprintf("failed to waiting for state to match. expecting: %s, found %s", expectedState, drstate))
+		fmt.Sprintf("failed waiting for state to match. expecting: %s, found %s", expectedState, drstate))
 }
 
 func waitForVolSyncSetup(srcCluster, dstCluster string) {
@@ -911,23 +899,17 @@ func waitForVolSyncSetup(srcCluster, dstCluster string) {
 	var srcVolSync rmn.VolSyncSpec
 
 	Eventually(func() bool {
-		srcVRG, err := getVRGFromManifestWork(srcCluster)
-		if err != nil {
-			return false
-		}
-
 		dstVRG, err := getVRGFromManifestWork(dstCluster)
 		if err != nil {
 			return false
 		}
 
-		if srcVRG == nil || dstVRG == nil {
+		if dstVRG == nil {
 			return false
 		}
 
 		dstVolSync = dstVRG.Spec.VolSync
-		srcVolSync = srcVRG.Spec.VolSync
-		return len(dstVolSync.RDSpec) != 0 && len(srcVolSync.RSSpec) != 0
+		return len(dstVolSync.RDSpec) != 0
 	}, timeout, interval).Should(BeTrue(),
 		fmt.Sprintf("RDSpec and RSSpec not the same %v/%v", dstVolSync, srcVolSync))
 }
@@ -1097,7 +1079,9 @@ func relocateToPreferredCluster(userPlacementRule *plrv1.PlacementRule, fromClus
 	verifyDRPCStatusPreferredClusterExpectation(rmn.Relocated)
 	verifyVRGManifestWorkCreatedAsPrimary(toCluster1)
 
-	waitForVRGMWDeletion(fromCluster)
+	if VolSyncDeploySourceCluster == "" && VolSyncDeployDestinationCluster == "" {
+		waitForVRGMWDeletion(West1ManagedCluster)
+	}
 
 	waitForCompletion(string(rmn.Relocated))
 }
@@ -1111,7 +1095,9 @@ func recoverToFailoverCluster(userPlacementRule *plrv1.PlacementRule, fromCluste
 	verifyDRPCStatusPreferredClusterExpectation(rmn.FailedOver)
 	verifyVRGManifestWorkCreatedAsPrimary(toCluster)
 
-	waitForVRGMWDeletion(fromCluster)
+	if VolSyncDeploySourceCluster == "" && VolSyncDeployDestinationCluster == "" {
+		waitForVRGMWDeletion(fromCluster)
+	}
 
 	waitForCompletion(string(rmn.FailedOver))
 }
@@ -1164,7 +1150,7 @@ func deleteDRClustersSync() {
 }
 
 func deleteDRPolicySync() {
-	Expect(k8sClient.Delete(context.TODO(), syncDRPolicy)).To(Succeed())
+	Expect(k8sClient.Delete(context.TODO(), getSyncDRPolicy())).To(Succeed())
 }
 
 func getLatestDRCluster(cluster string) *rmn.DRCluster {
@@ -1516,4 +1502,74 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			})
 		})
 	})
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+	Specify("delete s3 profiles and secret", func() {
+		s3ProfilesDelete()
+=======
+
+	Context("DRPlacementControl Reconciler Async DR for VolSync", func() {
+		userPlacementRule := &plrv1.PlacementRule{}
+		drpc := &rmn.DRPlacementControl{}
+		When("An Application is deployed for the first time using VolSync", func() {
+			It("Should deploy VRG to East and West", func() {
+				By("Initial Deployment")
+				VolSyncDeploySourceCluster = East1ManagedCluster
+				VolSyncDeployDestinationCluster = West1ManagedCluster
+				initNames("volsync-drpc-name", "volsync-drpc-namespace",
+					"volsync-user-pl-rule-name", "volsync-dr-policy-name")
+				userPlacementRule, drpc = InitialDeploymentAsync(DRPCNamespaceName, UserPlacementRuleName, East1ManagedCluster)
+				updateClonedPlacementRuleStatus(userPlacementRule, drpc, East1ManagedCluster)
+				verifyVRGManifestWorkCreatedAsPrimary(East1ManagedCluster)
+				updateManifestWorkStatus(East1ManagedCluster, "vrg", ocmworkv1.WorkApplied)
+				verifyUserPlacementRuleDecision(userPlacementRule.Name, userPlacementRule.Namespace, East1ManagedCluster)
+				verifyDRPCStatusPreferredClusterExpectation(rmn.Deployed)
+				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(2)) // MWs for VRG and ROLES
+				waitForCompletion(string(rmn.Deployed))
+				waitForVolSyncSetup(East1ManagedCluster, West1ManagedCluster)
+
+				drpc := getLatestDRPC()
+				// At this point expect the DRPC status condition to have 2 types
+				// {Available and PeerReady}
+				// Final state is 'Deployed'
+				Expect(drpc.Status.Phase).To(Equal(rmn.Deployed))
+				Expect(len(drpc.Status.Conditions)).To(Equal(2))
+				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
+				Expect(condition.Reason).To(Equal(string(rmn.Deployed)))
+				VolSyncDeploySourceCluster = ""
+				VolSyncDeployDestinationCluster = ""
+			})
+		})
+		When("DRAction changes to Failover for VolSync", func() {
+			It("Should failover to Secondary (West1ManagedCluster) when using VolSync", func() {
+				// ----------------------------- FAILOVER TO SECONDARY (West1ManagedCluster) --------------------------------------
+				By("\n\nFailover\n\n")
+				VolSyncDeploySourceCluster = West1ManagedCluster
+				VolSyncDeployDestinationCluster = East1ManagedCluster
+				recoverToFailoverCluster(userPlacementRule, East1ManagedCluster, West1ManagedCluster)
+				Expect(getManifestWorkCount(West1ManagedCluster)).Should(Equal(2)) // MW for VRG+ROLES
+				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(2)) // Roles MW
+				waitForVolSyncSetup(West1ManagedCluster, East1ManagedCluster)
+
+				drpc = getLatestDRPC()
+				// At this point expect the DRPC status condition to have 2 types
+				// {Available and PeerReady}
+				// Final state is 'FailedOver'
+				Expect(drpc.Status.Phase).To(Equal(rmn.FailedOver))
+				Expect(len(drpc.Status.Conditions)).To(Equal(2))
+				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
+				Expect(condition.Reason).To(Equal(string(rmn.FailedOver)))
+				userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
+				Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(West1ManagedCluster))
+				VolSyncDeploySourceCluster = ""
+				VolSyncDeployDestinationCluster = ""
+			})
+		})
+		Specify("s3 profiles and secret delete", func() {
+			s3SecretAndProfilesDelete()
+		})
+>>>>>>> simplify ramen volsync orchestration
+	})
+>>>>>>> simplify ramen volsync orchestration
 })

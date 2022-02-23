@@ -522,7 +522,7 @@ func (r *DRPlacementControlReconciler) recordFailure(drpc *rmn.DRPlacementContro
 	if needsUpdate {
 		err := r.updateDRPCStatus(drpc, usrPlRule)
 		if err != nil {
-			r.Log.Info("Failed to update DRPC status", err)
+			r.Log.Info(fmt.Sprintf("Failed to update DRPC status (%v)", err))
 		}
 	}
 }

@@ -47,22 +47,30 @@ const (
 	// which is active in a cluster, has all its PV related cluster data
 	// protected from a disaster by uploading it to the required S3 store(s).
 	VRGConditionTypeClusterDataProtected = "ClusterDataProtected"
+
+	// VolSync
+	VRGConditionTypeVolSyncRepSourceSetup      = "ReplicationSourceSetup"
+	VRGConditionTypeVolSyncRepDestinationSetup = "ReplicationDestinationSetup"
+	VRGConditionTypeVolSyncPVsRestored         = "PVsRestored"
 )
 
 // VRG condition reasons
 const (
-	VRGConditionReasonInitializing        = "Initializing"
-	VRGConditionReasonReplicating         = "Replicating"
-	VRGConditionReasonReplicated          = "Replicated"
-	VRGConditionReasonReady               = "Ready"
-	VRGConditionReasonDataProtected       = "DataProtected"
-	VRGConditionReasonProgressing         = "Progressing"
-	VRGConditionReasonClusterDataRestored = "Restored"
-	VRGConditionReasonError               = "Error"
-	VRGConditionReasonErrorUnknown        = "UnknownError"
-	VRGConditionReasonUploading           = "Uploading"
-	VRGConditionReasonUploaded            = "Uploaded"
-	VRGConditionReasonUploadError         = "UploadError"
+	VRGConditionReasonInitializing           = "Initializing"
+	VRGConditionReasonReplicating            = "Replicating"
+	VRGConditionReasonReplicated             = "Replicated"
+	VRGConditionReasonReady                  = "Ready"
+	VRGConditionReasonDataProtected          = "DataProtected"
+	VRGConditionReasonProgressing            = "Progressing"
+	VRGConditionReasonClusterDataRestored    = "Restored"
+	VRGConditionReasonError                  = "Error"
+	VRGConditionReasonErrorUnknown           = "UnknownError"
+	VRGConditionReasonUploading              = "Uploading"
+	VRGConditionReasonUploaded               = "Uploaded"
+	VRGConditionReasonUploadError            = "UploadError"
+	VRGConditionReasonVolSyncRepSourceInited = "SourceInitialized"
+	VRGConditionReasonVolSyncRepDestInited   = "DestinationInitialized"
+	VRGConditionReasonVolSyncPVsRestored     = "Restored"
 )
 
 // Just when VRG has been picked up for reconciliation when nothing has been
@@ -91,6 +99,27 @@ func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration i
 	})
 	setStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeClusterDataProtected,
+		Reason:             VRGConditionReasonInitializing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionUnknown,
+		Message:            message,
+	})
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeVolSyncRepSourceSetup,
+		Reason:             VRGConditionReasonInitializing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionUnknown,
+		Message:            message,
+	})
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeVolSyncRepDestinationSetup,
+		Reason:             VRGConditionReasonInitializing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionUnknown,
+		Message:            message,
+	})
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeVolSyncPVsRestored,
 		Reason:             VRGConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionUnknown,
@@ -314,23 +343,12 @@ func findCondition(existingConditions []metav1.Condition, conditionType string) 
 	return nil
 }
 
-const (
-	VolSyncProtectedPVCConditionTypeReady = "SetupReady"
-)
-
-// Condition reasons
-const (
-	VolSyncProtectedPVCInitializing = "Initializing"
-	VolSyncProtectedPVCReady        = "Ready"
-	VolSyncProtectedPVCError        = "Error"
-)
-
 // sets conditions when Primary VolSync has finished setting up the Replication Source
-func setVolSyncProtectedPVCConditionReady(conditions *[]metav1.Condition, observedGeneration int64,
+func setVRGConditionTypeVolSyncRepSourceSetupComplete(conditions *[]metav1.Condition, observedGeneration int64,
 	message string) {
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               VolSyncProtectedPVCConditionTypeReady,
-		Reason:             VolSyncProtectedPVCReady,
+		Type:               VRGConditionTypeVolSyncRepSourceSetup,
+		Reason:             VRGConditionReasonVolSyncRepSourceInited,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
 		Message:            message,
@@ -338,11 +356,11 @@ func setVolSyncProtectedPVCConditionReady(conditions *[]metav1.Condition, observ
 }
 
 // sets conditions when Primary VolSync is in the process of initializing the Replication Source
-func setVolSyncProtectedPVCConditionInitializing(conditions *[]metav1.Condition, observedGeneration int64,
+func setVRGConditionTypeVolSyncRepSourceSetupInitializing(conditions *[]metav1.Condition, observedGeneration int64,
 	message string) {
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               VolSyncProtectedPVCConditionTypeReady,
-		Reason:             VolSyncProtectedPVCInitializing,
+		Type:               VRGConditionTypeVolSyncRepSourceSetup,
+		Reason:             VRGConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,
@@ -350,11 +368,83 @@ func setVolSyncProtectedPVCConditionInitializing(conditions *[]metav1.Condition,
 }
 
 // sets conditions when Primary anccountered an error initializing the Replication Source
-func setVolSyncProtectedPVCConditionError(conditions *[]metav1.Condition, observedGeneration int64,
+func setVRGConditionTypeVolSyncRepSourceSetupError(conditions *[]metav1.Condition, observedGeneration int64,
 	message string) {
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               VolSyncProtectedPVCConditionTypeReady,
-		Reason:             VolSyncProtectedPVCError,
+		Type:               VRGConditionTypeVolSyncRepSourceSetup,
+		Reason:             VRGConditionReasonError,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+	})
+}
+
+// sets conditions when Primary VolSync has finished setting up the Replication Destination
+func setVRGConditionTypeVolSyncRepDestSetupComplete(conditions *[]metav1.Condition, observedGeneration int64,
+	message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeVolSyncRepDestinationSetup,
+		Reason:             VRGConditionReasonVolSyncRepSourceInited,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		Message:            message,
+	})
+}
+
+// sets conditions when Primary VolSync is in the process of initializing the Replication Destination
+func setVRGConditionTypeVolSyncRepDestSetupInitializing(conditions *[]metav1.Condition, observedGeneration int64,
+	message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeVolSyncRepDestinationSetup,
+		Reason:             VRGConditionReasonInitializing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+	})
+}
+
+// sets conditions when Primary anccountered an error initializing the Replication Destination
+func setVRGConditionTypeVolSyncRepDestSetupError(conditions *[]metav1.Condition, observedGeneration int64,
+	message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeVolSyncRepDestinationSetup,
+		Reason:             VRGConditionReasonError,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+	})
+}
+
+// sets conditions when Primary VolSync has finished setting up the Replication Destination
+func setVRGConditionTypeVolSyncPVRestoreComplete(conditions *[]metav1.Condition, observedGeneration int64,
+	message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeVolSyncPVsRestored,
+		Reason:             VRGConditionReasonVolSyncPVsRestored,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		Message:            message,
+	})
+}
+
+// sets conditions when Primary VolSync is in the process of initializing the Replication Destination
+func setVRGConditionTypeVolSyncPVRestoring(conditions *[]metav1.Condition, observedGeneration int64,
+	message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeVolSyncPVsRestored,
+		Reason:             VRGConditionReasonInitializing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+	})
+}
+
+// sets conditions when Primary anccountered an error initializing the Replication Destination
+func setVRGConditionTypeVolSyncPVRestoreError(conditions *[]metav1.Condition, observedGeneration int64,
+	message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeVolSyncPVsRestored,
+		Reason:             VRGConditionReasonError,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,

@@ -134,10 +134,6 @@ type VolSyncSpec struct {
 	// rdSpec array contains the PVCs information that will/are be/being protected by VolSync
 	//+optional
 	RDSpec []VolSyncReplicationDestinationSpec `json:"rdSpec,omitempty"`
-
-	// rsSpec array contains the PVCs information that have been configured for the VolSync Replication Destination
-	//+optional
-	RSSpec []VolSyncReplicationSourceSpec `json:"rsSpec,omitempty"`
 }
 
 // VolSyncReplicationDestinationInfo defines the VolSync PVC information that
@@ -148,13 +144,6 @@ type VolSyncReplicationDestinationInfo struct {
 
 	// address is the address to connect to for incoming SSH replication connections.
 	Address string `json:"address"`
-}
-
-// VolSyncReplicationStatus defines the observed state of VolSyncReplication
-type VolSyncReplicationStatus struct {
-	// Info about the created RDs (should only be filled out if using VolSync and VRG ReplicationState is secondary)
-	//+optional
-	RDInfo []VolSyncReplicationDestinationInfo `json:"rdInfo,omitempty"`
 }
 
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
@@ -225,10 +214,6 @@ type VolumeReplicationGroupStatus struct {
 
 	// All the protected pvcs
 	ProtectedPVCs []ProtectedPVC `json:"protectedPVCs,omitempty"`
-
-	// vsrStatus defines the VolSyn replication status when using VolSync replication.
-	//+optional
-	VolSyncRepStatus VolSyncReplicationStatus `json:"vsrStatus,omitempty"`
 
 	// Conditions are the list of VRG's summary conditions and their status.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
