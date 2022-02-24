@@ -163,7 +163,7 @@ func (in *localSecret) DeepCopyInto(out *localSecret) {
 	}
 }
 
-func newS3ConfigurationSecret(s3SecretRef corev1.SecretReference) *localSecret {
+func newS3ConfigurationSecret(s3SecretRef corev1.SecretReference, targetns string) *localSecret {
 	return &localSecret{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Secret",
@@ -171,7 +171,7 @@ func newS3ConfigurationSecret(s3SecretRef corev1.SecretReference) *localSecret {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      s3SecretRef.Name,
-			Namespace: s3SecretRef.Namespace,
+			Namespace: targetns,
 		},
 		Data: map[string]string{
 			"AWS_ACCESS_KEY_ID": "{{hub fromSecret " +
@@ -233,7 +233,7 @@ func newPolicy(name, namespace, triggerValue string, object runtime.RawExtension
 	}
 }
 
-func (sutil *SecretsUtil) createPolicyResources(secret *corev1.Secret, cluster, namespace string) error {
+func (sutil *SecretsUtil) createPolicyResources(secret *corev1.Secret, cluster, namespace, targetns string) error {
 	policyName, plBindingName, plRuleName, configPolicyName := GeneratePolicyResourceNames(secret.Name)
 
 	sutil.Log.Info("Creating secret policy", "secret", secret.Name, "cluster", cluster)
@@ -266,7 +266,7 @@ func (sutil *SecretsUtil) createPolicyResources(secret *corev1.Secret, cluster, 
 
 	// Create a Policy object for the secret
 	s3SecretRef := corev1.SecretReference{Name: secret.Name, Namespace: namespace}
-	secretObject := newS3ConfigurationSecret(s3SecretRef)
+	secretObject := newS3ConfigurationSecret(s3SecretRef, targetns)
 	configObject := newConfigurationPolicy(configPolicyName, runtime.RawExtension{Object: secretObject})
 
 	sutil.Log.Info("Initializing secret policy trigger", "secret", secret.Name, "trigger", intialTriggerValue)
@@ -504,7 +504,7 @@ func (sutil *SecretsUtil) ensureS3SecretResources(secretName, namespace string) 
 	return nil, sutil.deletePolicyResources(&secret, namespace)
 }
 
-func (sutil *SecretsUtil) AddSecretToCluster(secretName, clusterName, namespace string) error {
+func (sutil *SecretsUtil) AddSecretToCluster(secretName, clusterName, namespace, targetns string) error {
 	sutil.Log.Info("Add Secret", "cluster", clusterName, "secret", secretName)
 
 	secret, err := sutil.ensureS3SecretResources(secretName, namespace)
@@ -529,7 +529,7 @@ func (sutil *SecretsUtil) AddSecretToCluster(secretName, clusterName, namespace 
 			return errorswrapper.Wrap(err, "failed to get placementRule object")
 		}
 
-		return sutil.createPolicyResources(secret, clusterName, namespace)
+		return sutil.createPolicyResources(secret, clusterName, namespace, targetns)
 	}
 
 	return sutil.updatePolicyResources(plRule, secret, clusterName, namespace, true)

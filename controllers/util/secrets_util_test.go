@@ -192,6 +192,7 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(secretsUtil.AddSecretToCluster(
 					secretNames[0],
 					clusterNames[0],
+					tstNamespace,
 					tstNamespace)).Should(HaveOccurred())
 			})
 			It("Does not create an associated secret policy", func() {
@@ -206,6 +207,7 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(secretsUtil.AddSecretToCluster(
 					secretNames[0],
 					clusterNames[0],
+					tstNamespace,
 					tstNamespace)).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
@@ -224,6 +226,7 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(secretsUtil.AddSecretToCluster(
 					secretNames[0],
 					clusterNames[0],
+					tstNamespace,
 					tstNamespace)).Should(HaveOccurred())
 			})
 			It("No longer protects the secret with a finalizer", func() {
@@ -242,6 +245,7 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(secretsUtil.AddSecretToCluster(
 					secretNames[0],
 					clusterNames[0],
+					tstNamespace,
 					tstNamespace)).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
@@ -260,6 +264,7 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(secretsUtil.AddSecretToCluster(
 					secretNames[0],
 					clusterNames[0],
+					tstNamespace,
 					tstNamespace)).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
@@ -275,6 +280,7 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(secretsUtil.AddSecretToCluster(
 					secretNames[0],
 					clusterNames[1],
+					tstNamespace,
 					tstNamespace)).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
@@ -294,6 +300,7 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(secretsUtil.AddSecretToCluster(
 					secretNames[1],
 					clusterNames[0],
+					tstNamespace,
 					tstNamespace)).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
