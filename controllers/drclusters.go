@@ -189,7 +189,11 @@ func drClusterSecretsDeploy(
 	}
 
 	for _, secretName := range drPolicySecrets.List() {
-		if err := secretsUtil.AddSecretToCluster(secretName, clusterName, NamespaceName()); err != nil {
+		if err := secretsUtil.AddSecretToCluster(
+			secretName,
+			clusterName,
+			NamespaceName(),
+			drClusterOperatorNamespaceNameOrDefault(rmnCfg)); err != nil {
 			return fmt.Errorf("drcluster '%v' secret add '%v': %w", clusterName, secretName, err)
 		}
 	}
