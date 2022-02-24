@@ -148,20 +148,29 @@ func objectsToDeploy(hubOperatorRamenConfig *rmn.RamenConfig) ([]interface{}, er
 	), nil
 }
 
-func drPolicySecretNames(drpolicy *rmn.DRPolicy, rmnCfg *rmn.RamenConfig) sets.String {
+func drPolicySecretNames(drpolicy *rmn.DRPolicy, rmnCfg *rmn.RamenConfig) (sets.String, error) {
 	secretNames := sets.String{}
 
 	for _, managedCluster := range drpolicy.Spec.DRClusterSet {
+		mcProfileFound := false
+
 		for _, s3Profile := range rmnCfg.S3StoreProfiles {
 			if managedCluster.S3ProfileName == s3Profile.S3ProfileName {
 				secretNames.Insert(s3Profile.S3SecretRef.Name)
 
+				mcProfileFound = true
+
 				break
 			}
 		}
+
+		if !mcProfileFound {
+			return secretNames, fmt.Errorf("missing profile name (%s) in config for policy (%s)",
+				managedCluster.S3ProfileName, drpolicy.Name)
+		}
 	}
 
-	return secretNames
+	return secretNames, nil
 }
 
 func drClusterSecretsDeploy(
@@ -174,7 +183,12 @@ func drClusterSecretsDeploy(
 		return nil
 	}
 
-	for _, secretName := range drPolicySecretNames(drpolicy, rmnCfg).List() {
+	drPolicySecrets, err := drPolicySecretNames(drpolicy, rmnCfg)
+	if err != nil {
+		return err
+	}
+
+	for _, secretName := range drPolicySecrets.List() {
 		if err := secretsUtil.AddSecretToCluster(secretName, clusterName, NamespaceName()); err != nil {
 			return fmt.Errorf("drcluster '%v' secret add '%v': %w", clusterName, secretName, err)
 		}
@@ -253,7 +267,7 @@ func drClustersUndeployManifests(drpolicy *rmn.DRPolicy, drpolicies rmn.DRPolicy
 	return nil
 }
 
-func drClusterMustHaveS3Profiles(drpolicies rmn.DRPolicyList,
+func drClusterListMustHaveS3Profiles(drpolicies rmn.DRPolicyList,
 	clusterName string,
 	ignorePolicy *rmn.DRPolicy) sets.String {
 	mustHaveS3Profiles := sets.String{}
@@ -282,17 +296,17 @@ func drClusterMustHaveS3Profiles(drpolicies rmn.DRPolicyList,
 	return mustHaveS3Profiles
 }
 
-// drClusterMustHaveSecrets determines s3 secrets that must exist on the passed in clusterName
+// drClusterListMustHaveSecrets lists s3 secrets that must exist on the passed in clusterName
 // It optionally ignores a specified ignorePolicy, which is typically useful when a policy is being
 // deleted.
-func drClusterMustHaveSecrets(
+func drClusterListMustHaveSecrets(
 	drpolicies rmn.DRPolicyList,
 	clusterName string,
 	ignorePolicy *rmn.DRPolicy,
 	ramenConfig *rmn.RamenConfig) sets.String {
 	mustHaveS3Secrets := sets.String{}
 
-	mustHaveS3Profiles := drClusterMustHaveS3Profiles(drpolicies, clusterName, ignorePolicy)
+	mustHaveS3Profiles := drClusterListMustHaveS3Profiles(drpolicies, clusterName, ignorePolicy)
 
 	// Determine s3Secrets that must continue to exist on the cluster, based on other profiles
 	// that should still be present. This is done as multiple profiles MAY point to the same secret
@@ -319,11 +333,14 @@ func drClustersUndeploySecrets(
 
 	// Determine S3 secrets that must continue to exist per cluster in the policy being deleted
 	for _, clusterName := range util.DrpolicyClusterNames(drpolicy) {
-		mustHaveS3Secrets[clusterName] = drClusterMustHaveSecrets(drpolicies, clusterName, drpolicy, ramenConfig)
+		mustHaveS3Secrets[clusterName] = drClusterListMustHaveSecrets(drpolicies, clusterName, drpolicy, ramenConfig)
 	}
 
 	// Determine S3 secrets that maybe deleted, based on policy being deleted
-	mayDeleteS3Secrets := drPolicySecretNames(drpolicy, ramenConfig)
+	mayDeleteS3Secrets, err := drPolicySecretNames(drpolicy, ramenConfig)
+	if err != nil {
+		return err
+	}
 
 	// For each cluster in the must have S3 secrets list, check and delete
 	// S3Profiles that maybe deleted, iff absent in the must have list
