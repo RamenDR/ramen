@@ -1094,7 +1094,7 @@ func verifyInitialDRPCDeployment(userPlacementRule *plrv1.PlacementRule, drpc *r
 	// {Available and PeerReady}
 	// Final state is 'Deployed'
 	Expect(latestDRPC.Status.Phase).To(Equal(rmn.Deployed))
-	Expect(len(latestDRPC.Status.Conditions)).To(Equal(1))
+	Expect(len(latestDRPC.Status.Conditions)).To(Equal(2))
 	_, condition := getDRPCCondition(&latestDRPC.Status, rmn.ConditionAvailable)
 	Expect(condition.Reason).To(Equal(string(rmn.Deployed)))
 
