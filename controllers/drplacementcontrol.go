@@ -131,6 +131,9 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 			d.setDRState(rmn.Deployed)
 			d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 				d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Already deployed")
+
+			d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
+				metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
 		}
 
 		return done, nil
@@ -146,6 +149,9 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 
 	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Initial deployment completed")
+
+	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
+		metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
 
 	return result, nil
 }
@@ -499,6 +505,17 @@ func (d *DRPCInstance) areMultipleVRGsPrimary() bool {
 	return numOfPrimaries > 1
 }
 
+func (d *DRPCInstance) validatePeerReady() bool {
+	condition := findCondition(d.instance.Status.Conditions, rmn.ConditionPeerReady)
+	d.log.Info(fmt.Sprintf("Condition %v", condition))
+
+	if condition == nil || condition.Status == metav1.ConditionTrue {
+		return true
+	}
+
+	return false
+}
+
 func (d *DRPCInstance) arePeersReady() (bool, string, []string) {
 	var peerClusters []string
 
@@ -532,7 +549,6 @@ func (d *DRPCInstance) validateRelocation(preferredCluster string) (string, erro
 	if d.areMultipleVRGsPrimary() {
 		return "", fmt.Errorf("multiple primaries in transition detected")
 	}
-
 	// Pre-relocate cleanup
 	ready, homeCluster, secondaries := d.arePeersReady()
 	if !ready {
@@ -623,14 +639,17 @@ func (d *DRPCInstance) isVRGConditionClusterDataReady(homeCluster string) bool {
 
 func (d *DRPCInstance) relocate(preferredCluster, preferredClusterNamespace string, drState rmn.DRState) (bool, error) {
 	const done = true
+
+	if !d.validatePeerReady() {
+		return !done, fmt.Errorf("clean up on secondaries pending (%+v)", d.instance)
+	}
+
 	// Make sure we record the state that we are failing over
 	d.setDRState(drState)
 	d.setMetricsTimerFromDRState(drState)
 	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Starting relocation")
-	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
-		metav1.ConditionFalse, rmn.ReasonNotStarted,
-		fmt.Sprintf("Started relocation to cluster %q", preferredCluster))
+
 	// Setting up relocation ensures that all VRGs in all managed cluster are secondaries
 	err := d.setupRelocation(preferredCluster)
 	if err != nil {
@@ -659,6 +678,11 @@ func (d *DRPCInstance) relocate(preferredCluster, preferredClusterNamespace stri
 	d.setMetricsTimerFromDRState(d.getLastDRState())
 	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Completed")
+
+	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
+		metav1.ConditionFalse, rmn.ReasonNotStarted,
+		fmt.Sprintf("Started relocation to cluster %q", preferredCluster))
+
 	d.log.Info("Relocation completed", "State", d.getLastDRState())
 
 	// The relocation is complete, but we still need to clean up the previous
