@@ -54,6 +54,8 @@ const (
 	drClusterOperatorClusterServiceVersionNameDefault = drClusterOperatorPackageNameDefault + ".v0.0.1"
 )
 
+var ControllerType ramendrv1alpha1.ControllerType
+
 var cachedRamenConfigFileName string
 
 func LoadControllerConfig(configFile string, scheme *runtime.Scheme,
@@ -221,12 +223,17 @@ func ConfigMapGet(
 	ctx context.Context,
 	apiReader client.Reader,
 ) (configMap *corev1.ConfigMap, ramenConfig *ramendrv1alpha1.RamenConfig, err error) {
+	configMapName := HubOperatorConfigMapName
+	if ControllerType != ramendrv1alpha1.DRHub {
+		configMapName = drClusterOperatorConfigMapName
+	}
+
 	configMap = &corev1.ConfigMap{}
 	if err = apiReader.Get(
 		ctx,
 		types.NamespacedName{
 			Namespace: NamespaceName(),
-			Name:      HubOperatorConfigMapName,
+			Name:      configMapName,
 		},
 		configMap,
 	); err != nil {
