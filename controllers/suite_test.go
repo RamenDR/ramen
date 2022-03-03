@@ -86,6 +86,9 @@ func createOperatorNamespace(ramenNamespace string) {
 }
 
 var _ = BeforeSuite(func() {
+	// default controller type to DRHub
+	ramencontrollers.ControllerType = ramendrv1alpha1.DRHub
+
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 	if _, set := os.LookupEnv("KUBEBUILDER_ASSETS"); !set {
 		Expect(os.Setenv("KUBEBUILDER_ASSETS", "../testbin/bin")).To(Succeed())
