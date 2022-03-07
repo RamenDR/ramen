@@ -133,17 +133,6 @@ var _ = Describe("DrpolicyController", func() {
 		}
 		drClustersExpect()
 	}
-	drClusterManifestWorkUpdateExpect := func(manifestWork *workv1.ManifestWork) {
-		clusterName := manifestWork.GetNamespace()
-		resourceVersionOld := manifestWork.GetResourceVersion()
-		Eventually(func() bool {
-			if err := drClusterManifestWorkGet(clusterName, manifestWork); err != nil {
-				return false
-			}
-
-			return manifestWork.GetResourceVersion() != resourceVersionOld
-		}, timeout, interval).Should(BeTrue())
-	}
 	cidrs := [][]string{
 		{"198.51.100.17/24", "198.51.100.18/24", "198.51.100.19/24"}, // valid CIDR
 		{"1111.51.100.14/24", "aaa.51.100.15/24", "00.51.100.16/24"}, // invalid CIDR
@@ -358,7 +347,7 @@ var _ = Describe("DrpolicyController", func() {
 		drpolicy = &drpolicies[drpolicyNumber]
 	})
 
-	drClusterOperatorDeploymentAutomationEnableOrDisable := func(enable bool, comparator string) {
+	drClusterOperatorDeploymentAutomationEnableOrDisable := func(enable bool) {
 		clusterNames := util.DrpolicyClusterNames(drpolicy)
 		manifestWorks := make([]workv1.ManifestWork, len(clusterNames))
 		for i, clusterName := range clusterNames {
@@ -369,9 +358,18 @@ var _ = Describe("DrpolicyController", func() {
 		configMapUpdate()
 		for i := range manifestWorks {
 			manifestWork := &manifestWorks[i]
-			manifestCount := len(manifestWork.Spec.Workload.Manifests)
-			drClusterManifestWorkUpdateExpect(manifestWork)
-			Expect(len(manifestWork.Spec.Workload.Manifests)).To(BeNumerically(comparator, manifestCount))
+			expectedCount := 2
+			if enable {
+				expectedCount = 8
+			}
+			clusterName := manifestWork.GetNamespace()
+			Eventually(func() bool {
+				if err := drClusterManifestWorkGet(clusterName, manifestWork); err != nil {
+					return false
+				}
+
+				return len(manifestWork.Spec.Workload.Manifests) == expectedCount
+			}, timeout, interval).Should(BeTrue())
 		}
 		validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
 	}
@@ -397,7 +395,7 @@ var _ = Describe("DrpolicyController", func() {
 	})
 	When("a valid drpolicy's ramen config is updated to enable drcluster operator installation automation", func() {
 		It("should increase the manifest count for each of its managed clusters", func() {
-			drClusterOperatorDeploymentAutomationEnableOrDisable(true, ">")
+			drClusterOperatorDeploymentAutomationEnableOrDisable(true)
 		})
 	})
 	When("a drpolicy with invalid CIDRs", func() {
@@ -422,6 +420,7 @@ var _ = Describe("DrpolicyController", func() {
 	When("a 1st drpolicy is created", func() {
 		It("should create a drcluster manifest work for each cluster specified in a 1st drpolicy", func() {
 			drpolicyCreate(drpolicy)
+			validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
 			vaildateSecretDistribution(drpolicies[0:1])
 		})
 	})
@@ -439,6 +438,7 @@ var _ = Describe("DrpolicyController", func() {
 		It("should create a drcluster manifest work for each cluster specified in a 2nd drpolicy but not a 1st drpolicy",
 			func() {
 				drpolicyCreate(&drpolicies[1])
+				validatedConditionExpect(&drpolicies[1], metav1.ConditionTrue, Ignore())
 				vaildateSecretDistribution(drpolicies[0:2])
 			},
 		)
@@ -598,7 +598,7 @@ var _ = Describe("DrpolicyController", func() {
 	})
 	When("a valid drpolicy's ramen config is updated to disable drcluster operator installation automation", func() {
 		It("should decrease the manifest count for each of its managed clusters", func() {
-			drClusterOperatorDeploymentAutomationEnableOrDisable(false, "<")
+			drClusterOperatorDeploymentAutomationEnableOrDisable(false)
 		})
 	})
 	Specify(`drpolicy delete`, func() {
