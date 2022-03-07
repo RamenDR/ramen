@@ -655,7 +655,7 @@ func (v *VRGInstance) restorePVClusterData(pvList []corev1.PersistentVolume) err
 		return fmt.Errorf("failed to restore all PVs. Total %d. Restored %d", len(pvList), numRestored)
 	}
 
-	v.log.Info("Success restoring PVs", "Total", numRestored)
+	v.log.Info("Success restoring PVs and PVCs", "Total", numRestored)
 
 	return nil
 }
@@ -667,14 +667,6 @@ func (v *VRGInstance) restorePVCClusterData(pvcList []corev1.PersistentVolumeCla
 		pvc := &pvcList[idx]
 		v.cleanupPVCForRestore(pvc)
 		v.addPVCRestoreAnnotation(pvc)
-
-		// VRG now owns the PVC instead of the appsub.
-		// TODO: remove this block once ACM fixes the issue detailed here:
-		// https://github.com/stolostron/backlog/issues/20167
-		if err := ctrl.SetControllerReference(v.instance, pvc, v.reconciler.Scheme); err != nil {
-			return fmt.Errorf("failed to set owner reference to PVC resource (%s/%s), %w",
-				pvc.Name, pvc.Namespace, err)
-		}
 
 		if err := v.reconciler.Create(v.ctx, pvc); err != nil {
 			if errors.IsAlreadyExists(err) {
@@ -1432,22 +1424,6 @@ func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 	err := v.removeProtectedFinalizerFromPVC(pvc, log)
 	if err != nil {
 		return err
-	}
-
-	if !pvc.GetDeletionTimestamp().IsZero() {
-		return nil
-	}
-
-	err = v.reconciler.Delete(v.ctx, pvc)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil
-		}
-
-		msg := fmt.Sprintf("Failed to delete PVC %s", pvc.Name)
-		log.Error(err, msg)
-
-		return fmt.Errorf("%s (%w)", msg, err)
 	}
 
 	return nil
