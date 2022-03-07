@@ -301,7 +301,8 @@ var _ = Describe("IsManifestInAppliedState", func() {
 	Context("GetMetricValueFromName tests custom Prometheus metrics", func() {
 		It("basic timer functionality", func() {
 			timer := prometheus.NewTimer(prometheus.ObserverFunc(testGauge.Set))
-			timer.ObserveDuration() // stop timer when function returns (all cases)
+			time.Sleep(1 * time.Second) // let the observer gather some time
+			timer.ObserveDuration()     // stop timer when function returns (all cases)
 
 			val, err := rmnutil.GetMetricValueSingle("ramen_test_gauge", dto.MetricType_GAUGE)
 
