@@ -239,6 +239,11 @@ func validateS3Profiles(ctx context.Context, apiReader client.Reader,
 	objectStoreGetter ObjectStoreGetter, drpolicy *ramen.DRPolicy, listKeyPrefix string, log logr.Logger) (string, error) {
 	for i := range drpolicy.Spec.DRClusterSet {
 		cluster := &drpolicy.Spec.DRClusterSet[i]
+		if cluster.ClusterFence == ramen.ClusterFenceStateFenced ||
+			cluster.ClusterFence == ramen.ClusterFenceStateManuallyFenced {
+			continue
+		}
+
 		if reason, err := s3ProfileValidate(ctx, apiReader, objectStoreGetter,
 			cluster.S3ProfileName, listKeyPrefix, log); err != nil {
 			return reason, err
