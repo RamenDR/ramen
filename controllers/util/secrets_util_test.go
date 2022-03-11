@@ -33,16 +33,20 @@ import (
 
 var _ = Describe("Secrets_Util", func() {
 	const (
-		secretsCount  = 2
+		secretsCount  = 3
 		clustersCount = 2
 	)
 
 	var (
-		secretNames                           = [secretsCount]string{"secreta", "secretb"}
+		secretNames = [secretsCount]string{
+			"secreta",
+			"secretb",
+			"0123456789012345678901234567890123456789012345678900000", // 55 chars
+		}
 		clusterNames                          = [clustersCount]string{"clusterEast", "clusterWest"}
 		policyName, plBindingName, plRuleName [secretsCount]string
 		secrets                               [secretsCount]*corev1.Secret
-		tstNamespace                          = "default"
+		tstNamespace                          = "default" // 7 chars
 	)
 
 	BeforeEach(func() {
@@ -187,6 +191,49 @@ var _ = Describe("Secrets_Util", func() {
 	}
 
 	Context("AddSecretToCluster", func() {
+		When("Secret namespace.name length exceeds limits (> 63 characters)", func() {
+			It("Returns an error", func() {
+				Expect(secretsUtil.AddSecretToCluster(
+					secretNames[2]+"00000", // 60 chars
+					clusterNames[0],
+					tstNamespace, // "default" 7 chars
+					tstNamespace)).Should(HaveOccurred())
+			})
+			It("Does not create an associated secret policy", func() {
+				Expect(plRuleAbsent(plRuleName[2], tstNamespace)).Should(BeTrue())
+			})
+		})
+		When("Secret namespace.name length exceeds limits by 1 (", func() {
+			It("Returns an error", func() {
+				Expect(secretsUtil.AddSecretToCluster(
+					secretNames[2]+"0", // 56 chars
+					clusterNames[0],
+					tstNamespace, // "default" 7 chars
+					tstNamespace)).Should(HaveOccurred())
+			})
+			It("Does not create an associated secret policy", func() {
+				Expect(plRuleAbsent(plRuleName[2], tstNamespace)).Should(BeTrue())
+			})
+		})
+		When("Secret namespace.name length is exactly 63 characters", func() {
+			Specify("Create the secret", func() {
+				Expect(k8sClient.Create(context.TODO(), secrets[2])).To(Succeed())
+			})
+			It("Returns success", func() {
+				Expect(secretsUtil.AddSecretToCluster(
+					secretNames[2],
+					clusterNames[0],
+					tstNamespace,
+					tstNamespace)).To(Succeed())
+			})
+			It("Protects the secret with a finalizer", func() {
+				Expect(finalizerPresent(secretNames[2])).Should(BeTrue())
+			})
+			It("Creates a associated policy for the secret including the cluster", func() {
+				Expect(plRuleContains(plRuleName[2], tstNamespace, clusterNames[:1])).Should(BeTrue())
+				Expect(policyContains(policyName[2], tstNamespace, 0)).Should(BeTrue())
+			})
+		})
 		When("Secret is missing", func() {
 			It("Returns an error", func() {
 				Expect(secretsUtil.AddSecretToCluster(
@@ -317,6 +364,26 @@ var _ = Describe("Secrets_Util", func() {
 		})
 	})
 	Context("Removing secrets from clusters", func() {
+		When("The only cluster is removed from a secret", func() {
+			It("Returns success", func() {
+				Expect(secretsUtil.RemoveSecretFromCluster(
+					secretNames[2],
+					clusterNames[0],
+					tstNamespace)).To(Succeed())
+			})
+			It("No longer protects the secret with a finalizer", func() {
+				Expect(finalizerAbsent(secretNames[2])).To(BeTrue())
+			})
+			It("Cleans up the associated policy for the secret", func() {
+				Expect(plRuleAbsent(plRuleName[2], tstNamespace)).Should(BeTrue())
+			})
+			It("Does not block deletion of the secret", func() {
+				By("Delete the secret")
+				Expect(k8sClient.Delete(context.TODO(), secrets[2])).To(Succeed())
+				By("Ensuring secret is deleted")
+				Eventually(secretAbsent(secretNames[2]), timeout, interval).Should(BeTrue())
+			})
+		})
 		When("A cluster is removed from an updated secret with multiple cluster associations", func() {
 			Specify("Update the secret", func() {
 				Expect(updateSecret(secrets[0], "update2")).Should(BeTrue())

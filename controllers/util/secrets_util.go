@@ -38,11 +38,13 @@ import (
 )
 
 const (
-	secretResourcesBaseName    = "ramen-secret"
-	secretPolicyBaseName       = secretResourcesBaseName + "-policy"
-	secretPlRuleBaseName       = secretResourcesBaseName + "-plrule"
-	secretPlBindingBaseName    = secretResourcesBaseName + "-plbinding"
-	secretConfigPolicyBaseName = secretResourcesBaseName + "-config-policy"
+	// nolint:lll
+	// Ref: https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/2.4/html/governance/governance#governance-architecture
+	policyNameLengthLimit = 63
+
+	secretPlRuleBaseName       = "plrule"
+	secretPlBindingBaseName    = "plbinding"
+	secretConfigPolicyBaseName = "cfg-policy"
 
 	secretResourceNameFormat string = "%s-%s"
 
@@ -63,7 +65,8 @@ type SecretsUtil struct {
 
 func GeneratePolicyResourceNames(
 	secret string) (policyName, plBindingName, plRuleName, configPolicyName string) {
-	return fmt.Sprintf(secretResourceNameFormat, secretPolicyBaseName, secret),
+	// policyName is the same as secret name, to retain name length restrictions
+	return secret,
 		fmt.Sprintf(secretResourceNameFormat, secretPlBindingBaseName, secret),
 		fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, secret),
 		fmt.Sprintf(secretResourceNameFormat, secretConfigPolicyBaseName, secret)
@@ -417,7 +420,7 @@ func (sutil *SecretsUtil) updatePlacementRule(
 }
 
 func (sutil *SecretsUtil) ticklePolicy(secret *corev1.Secret, namespace string) error {
-	policyName := fmt.Sprintf(secretResourceNameFormat, secretPolicyBaseName, secret.Name)
+	policyName := secret.Name
 	policyObject := gppv1.Policy{}
 
 	// TODO: Read directly from the API server? May read a cached older trigger and update it to the same value?
@@ -506,6 +509,11 @@ func (sutil *SecretsUtil) ensureS3SecretResources(secretName, namespace string) 
 
 func (sutil *SecretsUtil) AddSecretToCluster(secretName, clusterName, namespace, targetns string) error {
 	sutil.Log.Info("Add Secret", "cluster", clusterName, "secret", secretName)
+
+	if len(secretName)+len(namespace)+len(".") > policyNameLengthLimit {
+		return fmt.Errorf("secret namespace.name (%s.%s) length exceeds maximum character limit (%d)",
+			secretName, namespace, policyNameLengthLimit)
+	}
 
 	secret, err := sutil.ensureS3SecretResources(secretName, namespace)
 	if err != nil {
