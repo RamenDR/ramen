@@ -36,9 +36,15 @@ import (
 )
 
 const (
-	VolumeSnapshotKind                 string = "VolumeSnapshot"
-	VolumeSnapshotGroup                string = "snapshot.storage.k8s.io"
-	VolumeSnapshotVersion              string = "v1"
+	VolumeSnapshotKind    string = "VolumeSnapshot"
+	VolumeSnapshotGroup   string = "snapshot.storage.k8s.io"
+	VolumeSnapshotVersion string = "v1"
+	ServiceExportKind     string = "ServiceExport"
+	ServiceExportGroup    string = "multicluster.x-k8s.io"
+	ServiceExportVersion  string = "v1alpha1"
+)
+
+const (
 	VolumeSnapshotProtectFinalizerName string = "volsyncreplicationgroups.ramendr.openshift.io/volumesnapshot-protection"
 	VRGReplicationSourceLabel          string = "volsyncreplicationgroup-owner"
 	FinalSyncTriggerString             string = "vrg-final-sync"
@@ -51,6 +57,7 @@ type VSHandler struct {
 	owner              metav1.Object
 	schedulingInterval string
 	volSyncProfile     *ramendrv1alpha1.VolSyncProfile
+	volSyncPVCs        []corev1.PersistentVolumeClaim
 }
 
 func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, owner metav1.Object,
@@ -62,6 +69,7 @@ func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, ow
 		owner:              owner,
 		schedulingInterval: schedulingInterval,
 		volSyncProfile:     volSyncProfile,
+		volSyncPVCs:        []corev1.PersistentVolumeClaim{},
 	}
 }
 
@@ -118,6 +126,11 @@ func (v *VSHandler) ReconcileRD(
 
 	l.V(1).Info("ReplicationDestination createOrUpdate Complete", "op", op)
 
+	err = v.reconcileServiceExportForRD(rd)
+	if err != nil {
+		return nil, err
+	}
+
 	//
 	// Now check status - only return an RDInfo if we have an address filled out in the ReplicationDestination Status
 	//
@@ -145,6 +158,9 @@ func (v *VSHandler) ReconcileRS(
 		},
 	}
 
+	//FIXME: getVolumeSnapshotClass
+	//rsSpec
+
 	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, rs, func() error {
 		if err := ctrl.SetControllerReference(v.owner, rs, v.client.Scheme()); err != nil {
 			l.Error(err, "unable to set controller reference")
@@ -164,13 +180,13 @@ func (v *VSHandler) ReconcileRS(
 			}
 		} else {
 			// Set schedule
-			cronSpecSchedule, err := ConvertSchedulingIntervalToCronSpec(v.schedulingInterval)
+			scheduleCronSpec, err := v.getScheduleCronSpec()
 			if err != nil {
 				l.Error(err, "unable to parse schedulingInterval")
 				return err
 			}
 			rs.Spec.Trigger = &volsyncv1alpha1.ReplicationSourceTriggerSpec{
-				Schedule: cronSpecSchedule,
+				Schedule: scheduleCronSpec,
 			}
 		}
 
@@ -210,7 +226,7 @@ func (v *VSHandler) ReconcileRS(
 }
 
 func (v *VSHandler) DeleteRS(rsName string) error {
-	// Remove any ReplicationSource owned (by parent vrg owner) that is not in the provided rsSpecList
+	// Remove any ReplicationSource owned (by parent vsrg owner) that is not in the provided rsSpecList
 	currentRSListByOwner, err := v.listRSByOwner()
 	if err != nil {
 		return err
@@ -231,7 +247,7 @@ func (v *VSHandler) DeleteRS(rsName string) error {
 }
 
 func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncReplicationDestinationSpec) error {
-	// Remove any ReplicationDestination owned (by parent vrg owner) that is not in the provided rdSpecList
+	// Remove any ReplicationDestination owned (by parent vsrg owner) that is not in the provided rdSpecList
 	currentRDListByOwner, err := v.listRDByOwner()
 	if err != nil {
 		return err
@@ -254,6 +270,46 @@ func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncR
 		}
 	}
 
+	return nil
+}
+
+// Make sure a ServiceExport exists to export the service for this RD to remote clusters
+// See: https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/2.4/html/services/services-overview#enable-service-discovery-submariner
+func (v *VSHandler) reconcileServiceExportForRD(rd *volsyncv1alpha1.ReplicationDestination) error {
+	// Using unstructured to avoid needing to require serviceexport in client scheme
+	svcExport := &unstructured.Unstructured{}
+	svcExport.Object = map[string]interface{}{
+		"metadata": map[string]interface{}{
+			"name":      getLocalServiceNameForRD(rd.GetName()), // Get name of the local service (this needs to be exported)
+			"namespace": rd.GetNamespace(),
+		},
+	}
+	svcExport.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   ServiceExportGroup,
+		Kind:    ServiceExportKind,
+		Version: ServiceExportVersion,
+	})
+
+	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, svcExport, func() error {
+		// Make this ServiceExport owned by the replication destination itself rather than the VRG
+		// This way on relocate scenarios or failover/failback, when the RD is cleaned up the associated
+		// ServiceExport will get cleaned up with it.
+		if err := ctrl.SetControllerReference(v.owner, svcExport, v.client.Scheme()); err != nil {
+			v.log.Error(err, "unable to set controller reference", "resource", svcExport)
+			return err
+		}
+
+		return nil
+	})
+
+	v.log.V(1).Info("ServiceExport createOrUpdate Complete", "op", op)
+	if err != nil {
+		v.log.Error(err, "error creating or updating ServiceExport", "replication destination name", rd.GetName(),
+			"namespace", rd.GetNamespace())
+		return err
+	}
+
+	v.log.V(1).Info("ServiceExport Reconcile Complete")
 	return nil
 }
 
@@ -448,9 +504,39 @@ func (v *VSHandler) getRsyncServiceType() *corev1.ServiceType {
 	return &DefaultRsyncServiceType
 }
 
+/*
+func (v *VSHandler) getVolumeSnapshotClassFromStorageClass(storageClass string) error {
+	v.log.Info("Fetching VolumeReplicationClasses")
+	volumeSnapshotClassList := snapshots.Volu
+	if err := v.reconciler.List(v.ctx, v.replClassList, listOptions...); err != nil {
+		v.log.Error(err, "Failed to list Replication Classes",
+			"labeled", labels.Set(labelSelector.MatchLabels))
+
+		return fmt.Errorf("failed to list Replication Classes, %w", err)
+	}
+
+	return nil
+}
+*/
+
 // This function is here to allow tests to override the volsyncProfile
 func (v *VSHandler) SetVolSyncProfile(volSyncProfile *ramendrv1alpha1.VolSyncProfile) {
 	v.volSyncProfile = volSyncProfile
+}
+
+func (v *VSHandler) getScheduleCronSpec() (*string, error) {
+	if v.schedulingInterval != "" {
+		return ConvertSchedulingIntervalToCronSpec(v.schedulingInterval)
+	}
+	/*
+		// Fall-back to getting scheduling interval from VolSyncProfile
+		if v.volSyncProfile != nil && v.volSyncProfile.SchedulingInterval != "" {
+			return ConvertSchedulingIntervalToCronSpec(v.volSyncProfile.SchedulingInterval)
+		}
+	*/
+
+	// Use default value if not specified
+	return &DefaultScheduleCronSpec, nil
 }
 
 // Convert from schedulingInterval which is in the format of <num><m,h,d>
@@ -495,8 +581,14 @@ func addVRGOwnerLabel(owner, obj metav1.Object) {
 }
 
 func getReplicationDestinationName(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec) string {
+	//TODO: may need to include clustername to avoid service name collisions cross-cluster
 	return rdSpec.ProtectedPVC.Name // Use PVC name as name of ReplicationDestination
 }
 func getReplicationSourceName(rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec) string {
 	return rsSpec.PVCName // Use PVC name as name of ReplicationSource
+}
+
+// Service name that VolSync will create locally in the same namespace as the ReplicationDestination
+func getLocalServiceNameForRD(rdName string) string {
+	return "volsync-rsync-dst-" + rdName // This is the name VolSync will pick
 }
