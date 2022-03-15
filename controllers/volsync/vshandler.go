@@ -45,8 +45,8 @@ const (
 )
 
 const (
-	VolumeSnapshotProtectFinalizerName string = "volsyncreplicationgroups.ramendr.openshift.io/volumesnapshot-protection"
-	VRGReplicationSourceLabel          string = "volsyncreplicationgroup-owner"
+	VolumeSnapshotProtectFinalizerName string = "volumereplicationgroups.ramendr.openshift.io/volumesnapshot-protection"
+	VRGOwnerLabel                      string = "volumereplicationgroups-owner"
 	FinalSyncTriggerString             string = "vrg-final-sync"
 )
 
@@ -226,7 +226,7 @@ func (v *VSHandler) ReconcileRS(
 }
 
 func (v *VSHandler) DeleteRS(rsName string) error {
-	// Remove any ReplicationSource owned (by parent vsrg owner) that is not in the provided rsSpecList
+	// Remove any ReplicationSource owned (by parent vrg owner) that is not in the provided rsSpecList
 	currentRSListByOwner, err := v.listRSByOwner()
 	if err != nil {
 		return err
@@ -247,7 +247,7 @@ func (v *VSHandler) DeleteRS(rsName string) error {
 }
 
 func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncReplicationDestinationSpec) error {
-	// Remove any ReplicationDestination owned (by parent vsrg owner) that is not in the provided rdSpecList
+	// Remove any ReplicationDestination owned (by parent vrg owner) that is not in the provided rdSpecList
 	currentRDListByOwner, err := v.listRDByOwner()
 	if err != nil {
 		return err
@@ -331,10 +331,10 @@ func (v *VSHandler) listRDByOwner() (volsyncv1alpha1.ReplicationDestinationList,
 	return rdList, nil
 }
 
-// Lists only RS/RD with VRGReplicationSourceLabel that matches the owner
+// Lists only RS/RD with VRGOwnerLabel that matches the owner
 func (v *VSHandler) listByOwner(list client.ObjectList) error {
 	matchLabels := map[string]string{
-		VRGReplicationSourceLabel: v.owner.GetName(),
+		VRGOwnerLabel: v.owner.GetName(),
 	}
 	listOptions := []client.ListOption{
 		client.InNamespace(v.owner.GetNamespace()),
@@ -528,12 +528,6 @@ func (v *VSHandler) getScheduleCronSpec() (*string, error) {
 	if v.schedulingInterval != "" {
 		return ConvertSchedulingIntervalToCronSpec(v.schedulingInterval)
 	}
-	/*
-		// Fall-back to getting scheduling interval from VolSyncProfile
-		if v.volSyncProfile != nil && v.volSyncProfile.SchedulingInterval != "" {
-			return ConvertSchedulingIntervalToCronSpec(v.volSyncProfile.SchedulingInterval)
-		}
-	*/
 
 	// Use default value if not specified
 	return &DefaultScheduleCronSpec, nil
@@ -576,7 +570,7 @@ func addVRGOwnerLabel(owner, obj metav1.Object) {
 	if labels == nil {
 		labels = make(map[string]string)
 	}
-	labels[VRGReplicationSourceLabel] = owner.GetName()
+	labels[VRGOwnerLabel] = owner.GetName()
 	obj.SetLabels(labels)
 }
 
