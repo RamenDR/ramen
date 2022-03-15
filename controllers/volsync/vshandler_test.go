@@ -1,13 +1,14 @@
 package volsync_test
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
+	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/volsync"
 )
 
@@ -85,7 +87,7 @@ var _ = Describe("VolSync Handler", func() {
 
 		// Create dummy resource to be the "owner" of the RDs and RSs
 		// Using a configmap for now - in reality this owner resource will
-		// be a DRPC
+		// be a VRG
 		ownerCm := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: "dummycm-owner-",
@@ -146,6 +148,23 @@ var _ = Describe("VolSync Handler", func() {
 				Expect(createdRD.Spec.Rsync.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
 				Expect(createdRD.Spec.Trigger).To(BeNil()) // No schedule should be set
 				Expect(createdRD.GetLabels()).To(HaveKeyWithValue(volsync.VRGReplicationSourceLabel, owner.GetName()))
+
+				// Check that the service export is created for this RD
+				svcExport := &unstructured.Unstructured{}
+				svcExport.SetGroupVersionKind(schema.GroupVersionKind{
+					Group:   volsync.ServiceExportGroup,
+					Kind:    volsync.ServiceExportKind,
+					Version: volsync.ServiceExportVersion,
+				})
+				Eventually(func() error {
+					return k8sClient.Get(ctx, client.ObjectKey{
+						Name:      fmt.Sprintf("volsync-rsync-dst-%s", createdRD.GetName()),
+						Namespace: createdRD.GetNamespace(),
+					}, svcExport)
+				}, maxWait, interval).Should(Succeed())
+
+				// The created service export should be owned by the replication destination, not our VRG
+				Expect(ownerMatches(svcExport, createdRD.GetName(), "ReplicationDestination"))
 			})
 
 			Context("When empty volsyncProfile is specified", func() {
@@ -164,15 +183,15 @@ var _ = Describe("VolSync Handler", func() {
 			})
 
 			Context("When a volsyncProfile is specified with serviceType", func() {
-				var typeClusterIP = corev1.ServiceTypeClusterIP
+				var typeLoadBalancer = corev1.ServiceTypeLoadBalancer
 				BeforeEach(func() {
 					vsHandler.SetVolSyncProfile(&ramendrv1alpha1.VolSyncProfile{
 						VolSyncProfileName: "default",
-						ServiceType:        &typeClusterIP,
+						ServiceType:        &typeLoadBalancer,
 					})
 				})
 				It("Should use the rsync service type in the VolSyncProfile", func() {
-					Expect(*createdRD.Spec.Rsync.ServiceType).To(Equal(typeClusterIP))
+					Expect(*createdRD.Spec.Rsync.ServiceType).To(Equal(typeLoadBalancer))
 				})
 			})
 

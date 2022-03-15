@@ -20,6 +20,7 @@ require (
 	github.com/stolostron/multicloud-operators-foundation v1.0.0-2021-10-26-20-16-14.0.20220119065659-a58b01295a6f
 	github.com/stolostron/multicloud-operators-placementrule v1.2.4-0-20220112-8eedb3f
 	go.uber.org/zap v1.19.0
+	golang.org/x/crypto v0.0.0-20211215153901-e495a2d5b3d3
 	k8s.io/api v0.22.6
 	k8s.io/apimachinery v0.22.6
 	k8s.io/client-go v12.0.0+incompatible

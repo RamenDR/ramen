@@ -20,4 +20,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-var DefaultRsyncServiceType corev1.ServiceType = corev1.ServiceTypeLoadBalancer
+var DefaultRsyncServiceType corev1.ServiceType = corev1.ServiceTypeClusterIP
+
+var DefaultScheduleCronSpec string = "*/10 * * * *" // Every 10 mins FIXME: what value to use as default?
