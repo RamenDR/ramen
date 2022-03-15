@@ -147,7 +147,7 @@ var _ = Describe("VolSync Handler", func() {
 				Expect(*createdRD.Spec.Rsync.Capacity).To(Equal(capacity))
 				Expect(createdRD.Spec.Rsync.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
 				Expect(createdRD.Spec.Trigger).To(BeNil()) // No schedule should be set
-				Expect(createdRD.GetLabels()).To(HaveKeyWithValue(volsync.VRGReplicationSourceLabel, owner.GetName()))
+				Expect(createdRD.GetLabels()).To(HaveKeyWithValue(volsync.VRGOwnerLabel, owner.GetName()))
 
 				// Check that the service export is created for this RD
 				svcExport := &unstructured.Unstructured{}
@@ -299,7 +299,7 @@ var _ = Describe("VolSync Handler", func() {
 				Expect(createdRS.Spec.Trigger).To(Equal(&volsyncv1alpha1.ReplicationSourceTriggerSpec{
 					Schedule: &expectedCronSpecSchedule,
 				}))
-				Expect(createdRS.GetLabels()).To(HaveKeyWithValue(volsync.VRGReplicationSourceLabel, owner.GetName()))
+				Expect(createdRS.GetLabels()).To(HaveKeyWithValue(volsync.VRGOwnerLabel, owner.GetName()))
 			})
 
 			It("Should create an ReplicationSource if one does not exist", func() {
