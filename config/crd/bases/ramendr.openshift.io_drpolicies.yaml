@@ -138,7 +138,6 @@ spec:
                 type: string
             required:
             - drClusterSet
-            - schedulingInterval
             type: object
           status:
             description: 'DRPolicyStatus defines the observed state of DRPolicy INSERT

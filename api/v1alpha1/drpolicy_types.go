@@ -71,7 +71,7 @@ type DRPolicySpec struct {
 	// minutes, 'h' means hours and 'd' stands for days.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Pattern=`^\d+[mhd]$`
-	SchedulingInterval string `json:"schedulingInterval"`
+	SchedulingInterval string `json:"schedulingInterval,omitempty"`
 
 	// Label selector to identify all the VolumeReplicationClasses.
 	// This selector is assumed to be the same for all subscriptions that
