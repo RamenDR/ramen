@@ -79,6 +79,7 @@ func (fakeObjectStoreGetter) ObjectStore(
 	if !ok {
 		objectStorer = fakeObjectStorer{
 			name:       s3ProfileName,
+			url:        s3StoreProfile.S3CompatibleEndpoint,
 			bucketName: s3StoreProfile.S3Bucket,
 			objects:    make(map[string]interface{}),
 		}
@@ -90,9 +91,13 @@ func (fakeObjectStoreGetter) ObjectStore(
 
 type fakeObjectStorer struct {
 	name       string
+	url        string
 	bucketName string
 	objects    map[string]interface{}
 }
+
+func (f fakeObjectStorer) AddressComponent1() string { return f.url }
+func (f fakeObjectStorer) AddressComponent2() string { return f.bucketName }
 
 func (f fakeObjectStorer) UploadObject(key string, object interface{}) error {
 	if f.bucketName == bucketNameUploadAwsErr {

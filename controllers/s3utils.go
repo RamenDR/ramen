@@ -100,6 +100,8 @@ type ObjectStorer interface {
 	DownloadObject(key string, objectPointer interface{}) error
 	ListKeys(keyPrefix string) (keys []string, err error)
 	DeleteObjects(keyPrefix string) error
+	AddressComponent1() string
+	AddressComponent2() string
 }
 
 // S3ObjectStoreGetter returns a concrete type that implements
@@ -207,6 +209,14 @@ type s3ObjectStore struct {
 	s3Bucket     string
 	callerTag    string
 	name         string
+}
+
+func (s *s3ObjectStore) AddressComponent1() string {
+	return s.s3Endpoint
+}
+
+func (s *s3ObjectStore) AddressComponent2() string {
+	return s.s3Bucket
 }
 
 // CreateBucket creates the given bucket; does not return an error if the bucket

@@ -337,6 +337,56 @@ rules:
   - list
   - watch
 - apiGroups:
+  - velero.io
+  resources:
+  - backups
+  verbs:
+  - create
+  - delete
+  - get
+  - patch
+  - update
+- apiGroups:
+  - velero.io
+  resources:
+  - backupstoragelocations
+  verbs:
+  - create
+  - delete
+  - get
+  - patch
+  - update
+- apiGroups:
+  - velero.io
+  resources:
+  - deletebackuprequests
+  verbs:
+  - create
+  - delete
+  - get
+  - patch
+  - update
+- apiGroups:
+  - velero.io
+  resources:
+  - downloadrequests
+  verbs:
+  - create
+  - delete
+  - get
+  - patch
+  - update
+- apiGroups:
+  - velero.io
+  resources:
+  - restores
+  verbs:
+  - create
+  - delete
+  - get
+  - patch
+  - update
+- apiGroups:
   - view.open-cluster-management.io
   resources:
   - managedclusterviews

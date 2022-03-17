@@ -53,6 +53,7 @@ const (
 	drClusterOperatorCatalogSourceNameDefault         = "ramen-catalog"
 	drClusterOperatorClusterServiceVersionNameDefault = drClusterOperatorPackageNameDefault + ".v0.0.1"
 	DefaultCephFSCSIDriverName                        = "openshift-storage.cephfs.csi.ceph.com"
+	VeleroNamespaceNameDefault                        = "velero"
 )
 
 // FIXME

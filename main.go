@@ -30,6 +30,7 @@ import (
 	gppv1 "github.com/stolostron/governance-policy-propagator/api/v1"
 	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
+	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	uberzap "go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -101,6 +102,7 @@ func newManager() (ctrl.Manager, error) {
 		utilruntime.Must(cpcv1.AddToScheme(scheme))
 		utilruntime.Must(gppv1.AddToScheme(scheme))
 	} else {
+		utilruntime.Must(velero.AddToScheme(scheme))
 		utilruntime.Must(volrep.AddToScheme(scheme))
 		utilruntime.Must(volsyncv1alpha1.AddToScheme(scheme))
 		utilruntime.Must(snapv1.AddToScheme(scheme))
