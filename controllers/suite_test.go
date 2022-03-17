@@ -57,6 +57,7 @@ import (
 	ramencontrollers "github.com/ramendr/ramen/controllers"
 	"github.com/ramendr/ramen/controllers/util"
 	"github.com/ramendr/ramen/controllers/volsync"
+	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -92,17 +93,18 @@ func TestAPIs(t *testing.T) {
 		[]Reporter{printer.NewlineReporter{}})
 }
 
+func namespaceCreate(name string) {
+	Expect(k8sClient.Create(context.TODO(),
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}})).To(Succeed())
+}
+
 func createOperatorNamespace(ramenNamespace string) {
 	ramenNamespaceLookupKey := types.NamespacedName{Name: ramenNamespace}
 	ramenNamespaceObj := &corev1.Namespace{}
 
 	err := k8sClient.Get(context.TODO(), ramenNamespaceLookupKey, ramenNamespaceObj)
 	if err != nil {
-		ramenNamespaceObj = &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: ramenNamespace},
-		}
-		Expect(k8sClient.Create(context.TODO(), ramenNamespaceObj)).NotTo(HaveOccurred(),
-			"failed to create operator namespace")
+		namespaceCreate(ramenNamespace)
 	}
 }
 
@@ -178,6 +180,7 @@ var _ = BeforeSuite(func() {
 
 	err = snapv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
+	Expect(velero.AddToScheme(scheme.Scheme)).To(Succeed())
 
 	// +kubebuilder:scaffold:scheme
 
@@ -185,6 +188,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
+	namespaceCreate(ramencontrollers.VeleroNamespaceNameDefault)
 	createOperatorNamespace(ramenNamespace)
 	ramenConfig = &ramendrv1alpha1.RamenConfig{
 		TypeMeta: metav1.TypeMeta{

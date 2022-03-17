@@ -21,6 +21,7 @@ require (
 	github.com/stolostron/governance-policy-propagator v0.0.0-20220511204303-f1c56f6da1bf
 	github.com/stolostron/multicloud-operators-foundation v0.0.0-20220315092956-6dc184852d56
 	github.com/stolostron/multicloud-operators-placementrule v1.2.4-1-20220311-8eedb3f.0.20220411162042-3de0a2f908f1
+	github.com/vmware-tanzu/velero v1.8.1
 	go.uber.org/zap v1.23.0
 	golang.org/x/crypto v0.0.0-20220829220503-c86fa9a7ed90
 	golang.org/x/time v0.0.0-20220722155302-e5dcc9cfc0b9

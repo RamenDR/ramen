@@ -804,6 +804,43 @@ func (v *VRGInstance) reconcileAsPrimary() bool {
 	return requeueForVolSync || requeueForVolRep
 }
 
+func (v *VRGInstance) kubeObjectsProtect() error {
+	errors := make([]error, 0, len(v.instance.Spec.S3Profiles))
+
+	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
+		// TODO reuse objectStore kube objects from pv upload
+		objectStore, err := v.reconciler.ObjStoreGetter.ObjectStore(
+			v.ctx,
+			v.reconciler.APIReader,
+			s3ProfileName,
+			v.namespacedName,
+			v.log,
+		)
+		if err != nil {
+			v.log.Error(err, "kube objects protect object store access", "profile", s3ProfileName)
+			errors = append(errors, err)
+
+			continue
+		}
+
+		if err := kubeObjectsProtect(v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.log,
+			objectStore.AddressComponent1(),
+			objectStore.AddressComponent2(),
+			v.s3KeyPrefix(),
+			v.instance.Namespace,
+			VeleroNamespaceNameDefault,
+		); err != nil {
+			errors = append(errors, err)
+		}
+	}
+
+	if len(errors) > 0 {
+		return errors[0]
+	}
+
+	return nil
+}
+
 // processAsSecondary reconciles the current instance of VRG as secondary
 func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
 	v.log.Info("Entering processing VolumeReplicationGroup as Secondary")
@@ -879,8 +916,10 @@ func (v *VRGInstance) handleVRGMode(state ramendrv1alpha1.ReplicationState) (res
 func (v *VRGInstance) updateVRGStatus(updateConditions bool) error {
 	v.log.Info("Updating VRG status")
 
+	var err1 error
+
 	if updateConditions {
-		v.updateVRGConditions()
+		err1 = v.updateVRGConditions()
 	}
 
 	v.updateStatusState()
@@ -901,13 +940,13 @@ func (v *VRGInstance) updateVRGStatus(updateConditions bool) error {
 			" DataReady Condition (%s)",
 			len(v.volRepPVCs), len(v.volSyncPVCs), dataReadyCondition))
 
-		return nil
+		return err1
 	}
 
 	v.log.Info(fmt.Sprintf("Nothing to update VolRep pvccount (%d), VolSync pvccount(%d)",
 		len(v.volRepPVCs), len(v.volSyncPVCs)))
 
-	return nil
+	return err1
 }
 
 func (v *VRGInstance) updateStatusState() {
@@ -965,11 +1004,12 @@ func getStatusStateFromSpecState(state ramendrv1alpha1.ReplicationState) ramendr
 //
 // The VRGConditionTypeClusterDataReady summary condition is not a PVC level
 // condition and is updated elsewhere.
-func (v *VRGInstance) updateVRGConditions() {
+func (v *VRGInstance) updateVRGConditions() error {
 	v.updateVRGDataReadyCondition()
 	v.updateVRGDataProtectedCondition()
-	v.updateVRGClusterDataProtectedCondition()
 	v.updateVRGLastGroupSyncTime()
+
+	return v.updateVRGClusterDataProtectedCondition()
 }
 
 func (v *VRGInstance) updateVRGDataReadyCondition() {
@@ -1013,7 +1053,12 @@ func (v *VRGInstance) vrgReadyStatus() {
 	setVRGAsPrimaryReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 }
 
-func (v *VRGInstance) updateVRGClusterDataProtectedCondition() {
+func (v *VRGInstance) updateVRGClusterDataProtectedCondition() error {
+	// TODO skip for secondaries?
+	if err := v.kubeObjectsProtect(); err != nil {
+		return err
+	}
+
 	volSyncAggregatedCond := v.aggregateVolSyncClusterDataProtectedCondition()
 	if volSyncAggregatedCond != nil {
 		setStatusCondition(&v.instance.Status.Conditions, *volSyncAggregatedCond)
@@ -1022,6 +1067,8 @@ func (v *VRGInstance) updateVRGClusterDataProtectedCondition() {
 	if len(v.volRepPVCs) != 0 {
 		v.aggregateVolRepClusterDataProtectedCondition()
 	}
+
+	return nil
 }
 
 func (v *VRGInstance) updateVRGLastGroupSyncTime() {
