@@ -1427,7 +1427,7 @@ func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim, log 
 			pvc.Name)
 	}
 
-	s3Profiles, err := v.PVUploadToObjectStore(pvc, log)
+	s3Profiles, err := v.PVUploadToObjectStores(pvc, log)
 	if err != nil {
 		return fmt.Errorf("error uploading PV cluster data to the list of s3 profiles")
 	}
@@ -1452,26 +1452,30 @@ func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim, log 
 	return nil
 }
 
-func (v *VRGInstance) PVUploadToObjectStore(pvc *corev1.PersistentVolumeClaim,
+func (v *VRGInstance) PVUploadToObjectStore(s3ProfileName string, pvc *corev1.PersistentVolumeClaim) error {
+	if err := v.reconciler.PVUploader.UploadPV(v, s3ProfileName, pvc); err != nil {
+		err := fmt.Errorf("error uploading PV cluster data to s3Profile %s, %w", s3ProfileName, err)
+
+		return err
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) PVUploadToObjectStores(pvc *corev1.PersistentVolumeClaim,
 	log logr.Logger) ([]string, error) {
 	s3Profiles := []string{}
 	// Upload the PV to all the S3 profiles in the VRG spec
 	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
-		if err := v.reconciler.PVUploader.UploadPV(v, s3ProfileName, pvc); err != nil {
-			log.Error(err, fmt.Sprintf("error uploading PV cluster data to s3Profile %s, %v",
-				s3ProfileName, err))
-
-			msg := fmt.Sprintf("Error uploading PV cluster data to s3Profile %s",
-				s3ProfileName)
-			v.updatePVCClusterDataProtectedCondition(pvc.Name, VRGConditionReasonUploadError, msg)
+		err := v.PVUploadToObjectStore(s3ProfileName, pvc)
+		if err != nil {
+			v.updatePVCClusterDataProtectedCondition(pvc.Name, VRGConditionReasonUploadError, err.Error())
 			rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
 				rmnutil.EventReasonPVUploadFailed, err.Error())
 
-			return s3Profiles, fmt.Errorf("error uploading cluster data of PV %s to S3 profile %s, %w",
-				pvc.Name, s3ProfileName, err)
+			return s3Profiles, err
 		}
 
-		// Successfully uploaded to S3ProfileName
 		s3Profiles = append(s3Profiles, s3ProfileName)
 	}
 
