@@ -1110,8 +1110,9 @@ func (s FakePVDownloader) DownloadPVs(ctx context.Context, r client.Reader,
 
 type FakePVUploader struct{}
 
-func (s FakePVUploader) UploadPV(v interface{}, s3ProfileName string, pvc *corev1.PersistentVolumeClaim) error {
-	UploadedPVs[pvc.Spec.VolumeName] = Empty{}
+func (s FakePVUploader) UploadPV(objectStore vrgController.ObjectStorer,
+	pvKeyPrefix string, pv *corev1.PersistentVolume) error {
+	UploadedPVs[pv.Name] = Empty{}
 
 	return nil
 }
