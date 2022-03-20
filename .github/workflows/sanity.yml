@@ -69,7 +69,7 @@ jobs:
         run: make docker-build
 
       - name: Run unit tests
-        run: make test
+        run: GO_TEST_GINKGO_ARGS="" make test
 
       - name: Export image
         run: docker save -o /tmp/ramen-operator.tar ${IMAGE_TAG_BASE}-operator:${IMAGE_TAG}
