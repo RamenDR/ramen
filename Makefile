@@ -84,6 +84,8 @@ ifeq ($(GOHOSTOS),darwin)
 	endif
 endif
 
+GO_TEST_GINKGO_ARGS ?= -test.v -ginkgo.v -ginkgo.failFast
+
 all: build
 
 ##@ General
@@ -134,7 +136,7 @@ setup-envtest:
 	source ${ENVTEST_ASSETS_DIR}/setup-envtest.sh; fetch_envtest_tools $(ENVTEST_ASSETS_DIR)
 
 test: generate manifests setup-envtest ## Run tests.
-	source ${ENVTEST_ASSETS_DIR}/setup-envtest.sh; setup_envtest_env $(ENVTEST_ASSETS_DIR); go test ./... -coverprofile cover.out
+	source ${ENVTEST_ASSETS_DIR}/setup-envtest.sh; setup_envtest_env $(ENVTEST_ASSETS_DIR); go test ./... -coverprofile cover.out $(GO_TEST_GINKGO_ARGS)
 
 ##@ Build
 
