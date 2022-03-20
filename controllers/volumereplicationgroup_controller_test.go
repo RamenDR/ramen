@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	vrgtimeout  = time.Second * 222
+	vrgtimeout  = time.Second * 10
 	vrginterval = time.Millisecond * 10
 )
 
