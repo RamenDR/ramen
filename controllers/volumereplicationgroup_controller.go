@@ -497,7 +497,9 @@ func (v *VRGInstance) fetchAndRestorePV() (bool, error) {
 	)
 
 	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
-		pvList, err := v.fetchPVClusterDataFromS3Store(s3ProfileName)
+		var pvList []corev1.PersistentVolume
+
+		pvList, err = v.fetchPVClusterDataFromS3Store(s3ProfileName)
 		if err != nil {
 			v.log.Error(err, fmt.Sprintf("error fetching PV cluster data from S3 profile %s", s3ProfileName))
 
