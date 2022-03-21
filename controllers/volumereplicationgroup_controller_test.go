@@ -32,6 +32,9 @@ type Empty struct{}
 var UploadedPVs = map[string]Empty{}
 
 var _ = Describe("Test VolumeReplicationGroup", func() {
+	Specify("s3 profiles and secret", func() {
+		s3ProfilesSetup()
+	})
 	// Test first restore
 	Context("restore test case", func() {
 		It("sets vrg for restore", func() {
@@ -352,6 +355,9 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 	})
 	// TODO: Add tests to move VRG to Secondary
 	// TODO: Add tests to ensure delete as Secondary (check if delete as Primary is tested above)
+	Specify("delete s3 profiles and secret", func() {
+		s3ProfilesDelete()
+	})
 })
 
 type vrgTest struct {
