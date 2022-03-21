@@ -53,6 +53,7 @@ const (
 	West1ManagedCluster   = "west1-cluster"
 	AsyncDRPolicyName     = "my-async-dr-peers"
 	SyncDRPolicyName      = "my-sync-dr-peers"
+	S3ProfileName         = "fakeS3Profile"
 
 	timeout       = time.Second * 10
 	interval      = time.Millisecond * 10
@@ -109,24 +110,6 @@ var (
 
 	schedulingInterval = "1h"
 
-	s3Secret = &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "s3secret"},
-		StringData: map[string]string{
-			"AWS_ACCESS_KEY_ID":     awsAccessKeyIDSucc,
-			"AWS_SECRET_ACCESS_KEY": "",
-		},
-	}
-
-	s3Profiles = []rmn.S3StoreProfile{
-		{
-			S3ProfileName:        "fakeS3Profile",
-			S3Bucket:             bucketNameSucc,
-			S3CompatibleEndpoint: "http://192.168.39.223:30000",
-			S3Region:             "us-east-1",
-			S3SecretRef:          corev1.SecretReference{Name: s3Secret.Name},
-		},
-	}
-
 	asyncDRPolicy = &rmn.DRPolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: AsyncDRPolicyName,
@@ -135,12 +118,12 @@ var (
 			DRClusterSet: []rmn.ManagedCluster{
 				{
 					Name:          East1ManagedCluster,
-					S3ProfileName: s3Profiles[0].S3ProfileName,
+					S3ProfileName: S3ProfileName,
 					Region:        "east",
 				},
 				{
 					Name:          West1ManagedCluster,
-					S3ProfileName: s3Profiles[0].S3ProfileName,
+					S3ProfileName: S3ProfileName,
 					Region:        "west",
 				},
 			},
@@ -156,12 +139,12 @@ var (
 			DRClusterSet: []rmn.ManagedCluster{
 				{
 					Name:          East1ManagedCluster,
-					S3ProfileName: s3Profiles[0].S3ProfileName,
+					S3ProfileName: S3ProfileName,
 					Region:        "east",
 				},
 				{
 					Name:          East2ManagedCluster,
-					S3ProfileName: s3Profiles[0].S3ProfileName,
+					S3ProfileName: S3ProfileName,
 					Region:        "east",
 				},
 			},
@@ -170,22 +153,60 @@ var (
 	}
 )
 
-func s3SecretNamespaceSet() {
-	s3Secret.Namespace = configMap.Namespace
+func newS3Secret(ns string) *corev1.Secret {
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "s3secret", Namespace: ns},
+		StringData: map[string]string{
+			"AWS_ACCESS_KEY_ID":     awsAccessKeyIDSucc,
+			"AWS_SECRET_ACCESS_KEY": "",
+		},
+	}
 
-	for i := range s3Profiles {
-		s3Profiles[i].S3SecretRef.Namespace = s3Secret.Namespace
+	return secret
+}
+
+func newS3Profiles() []rmn.S3StoreProfile {
+	return []rmn.S3StoreProfile{
+		{
+			S3ProfileName:        S3ProfileName,
+			S3Bucket:             bucketNameSucc,
+			S3CompatibleEndpoint: "http://192.168.39.223:30000",
+			S3Region:             "us-east-1",
+		},
 	}
 }
 
-func s3SecretAndProfilesCreate() {
-	Expect(k8sClient.Create(context.TODO(), s3Secret)).To(Succeed())
-	s3ProfilesStore(s3Profiles)
+func s3ProfilesSetup() {
+	s3profiles := newS3Profiles()
+	secret := newS3Secret(configMap.Namespace)
+	s3ProfilesSetSecretRef(s3profiles, secret)
+	Expect(k8sClient.Create(context.TODO(), secret)).To(Succeed())
+	s3ProfilesStore(s3profiles)
 }
 
-func s3SecretAndProfilesDelete() {
+func s3ProfileSetSecretRef(s3profile *rmn.S3StoreProfile, secret *corev1.Secret) {
+	s3profile.S3SecretRef = corev1.SecretReference{
+		Name:      secret.Name,
+		Namespace: secret.Namespace,
+	}
+}
+
+func s3ProfilesSetSecretRef(s3p []rmn.S3StoreProfile, secret *corev1.Secret) {
+	for i := range s3p {
+		s3ProfileSetSecretRef(&s3p[i], secret)
+	}
+}
+
+func s3ProfilesDelete() {
+	s3s := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ramenConfig.S3StoreProfiles[0].S3SecretRef.Name,
+			Namespace: ramenConfig.S3StoreProfiles[0].S3SecretRef.Namespace,
+		},
+	}
+
 	s3ProfilesStore([]rmn.S3StoreProfile{})
-	Expect(k8sClient.Delete(context.TODO(), s3Secret)).To(Succeed())
+	Expect(k8sClient.Delete(context.TODO(), s3s)).To(Succeed())
 }
 
 var drstate string
@@ -246,7 +267,7 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(
 			PVCSelector: metav1.LabelSelector{
 				MatchLabels: map[string]string{"appclass": "gold"},
 			},
-			S3Profiles: []string{s3Profiles[0].S3ProfileName},
+			S3Profiles: []string{S3ProfileName},
 		},
 		Status: vrgStatus,
 	}
@@ -1128,8 +1149,7 @@ func verifyFailoverToSecondary(userPlacementRule *plrv1.PlacementRule, fromClust
 // +kubebuilder:docs-gen:collapse=Imports
 var _ = Describe("DRPlacementControl Reconciler", func() {
 	Specify("s3 profiles and secret", func() {
-		s3SecretNamespaceSet()
-		s3SecretAndProfilesCreate()
+		s3ProfilesSetup()
 	})
 	Context("DRPlacementControl Reconciler Async DR", func() {
 		userPlacementRule := &plrv1.PlacementRule{}
@@ -1330,7 +1350,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			})
 		})
 	})
-	Specify("s3 profiles and secret delete", func() {
-		s3SecretAndProfilesDelete()
+	Specify("delete s3 profiles and secret", func() {
+		s3ProfilesDelete()
 	})
 })
