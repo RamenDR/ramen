@@ -21,7 +21,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -61,6 +63,7 @@ var (
 	testEnv     *envtest.Environment
 	configMap   *corev1.ConfigMap
 	ramenConfig *ramendrv1alpha1.RamenConfig
+	testLog     logr.Logger
 )
 
 func TestAPIs(t *testing.T) {
@@ -86,10 +89,13 @@ func createOperatorNamespace(ramenNamespace string) {
 }
 
 var _ = BeforeSuite(func() {
+	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+	testLog = ctrl.Log.WithName("tester")
+	testLog.Info("Starting the controller test suite", "time", time.Now())
+
 	// default controller type to DRHub
 	ramencontrollers.ControllerType = ramendrv1alpha1.DRHub
 
-	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 	if _, set := os.LookupEnv("KUBEBUILDER_ASSETS"); !set {
 		Expect(os.Setenv("KUBEBUILDER_ASSETS", "../testbin/bin")).To(Succeed())
 	}

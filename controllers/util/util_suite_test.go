@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/ramendr/ramen/controllers/util"
@@ -32,6 +33,7 @@ var (
 	k8sClient   client.Client
 	testEnv     *envtest.Environment
 	secretsUtil util.SecretsUtil
+	testLog     logr.Logger
 )
 
 func TestUtil(t *testing.T) {
@@ -41,6 +43,9 @@ func TestUtil(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+	testLog = ctrl.Log.WithName("tester")
+	testLog.Info("Starting the utils test suite", "time", time.Now())
+
 	By("Setting up KUBEBUILDER_ASSETS for envtest")
 	if _, set := os.LookupEnv("KUBEBUILDER_ASSETS"); !set {
 		Expect(os.Setenv("KUBEBUILDER_ASSETS", "../../testbin/bin")).To(Succeed())
