@@ -32,6 +32,10 @@ type Empty struct{}
 var UploadedPVs = map[string]Empty{}
 
 var _ = Describe("Test VolumeReplicationGroup", func() {
+	Specify("s3 profiles and secret", func() {
+		s3SecretNamespaceSet()
+		s3SecretAndProfilesCreate()
+	})
 	// Test first restore
 	Context("restore test case", func() {
 		It("sets vrg for restore", func() {
