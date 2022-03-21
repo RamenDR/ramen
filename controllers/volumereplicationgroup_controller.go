@@ -1481,7 +1481,7 @@ func (v *VRGInstance) PVUploadToObjectStore(s3ProfileName string, pvc *corev1.Pe
 
 func (v *VRGInstance) PVUploadToObjectStores(pvc *corev1.PersistentVolumeClaim,
 	log logr.Logger) ([]string, error) {
-	s3Profiles := []string{}
+	succeededProfiles := []string{}
 	// Upload the PV to all the S3 profiles in the VRG spec
 	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
 		err := v.PVUploadToObjectStore(s3ProfileName, pvc)
@@ -1490,13 +1490,13 @@ func (v *VRGInstance) PVUploadToObjectStores(pvc *corev1.PersistentVolumeClaim,
 			rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
 				rmnutil.EventReasonPVUploadFailed, err.Error())
 
-			return s3Profiles, err
+			return succeededProfiles, err
 		}
 
-		s3Profiles = append(s3Profiles, s3ProfileName)
+		succeededProfiles = append(succeededProfiles, s3ProfileName)
 	}
 
-	return s3Profiles, nil
+	return succeededProfiles, nil
 }
 
 type ObjectStorePVUploader struct{}
