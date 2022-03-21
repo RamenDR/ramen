@@ -106,6 +106,7 @@ type ObjectStorer interface {
 	ListKeys(keyPrefix string) (keys []string, err error)
 	DownloadObject(key string, downloadContent interface{}) error
 	DeleteObjects(keyPrefix string) error
+	GetName() string
 }
 
 // S3ObjectStoreGetter returns a concrete type that implements
@@ -174,6 +175,7 @@ func (s3ObjectStoreGetter) ObjectStore(ctx context.Context,
 		s3Endpoint:   s3Endpoint,
 		s3Bucket:     s3StoreProfile.S3Bucket,
 		callerTag:    callerTag,
+		name:         s3ProfileName,
 	}
 
 	return s3Conn, nil
@@ -205,6 +207,7 @@ type s3ObjectStore struct {
 	s3Endpoint   string
 	s3Bucket     string
 	callerTag    string
+	name         string
 }
 
 // CreateBucket creates the given bucket; does not return an error if the bucket
@@ -579,6 +582,10 @@ func (s *s3ObjectStore) DeleteObjects(keyPrefix string) (
 	}
 
 	return nil
+}
+
+func (s *s3ObjectStore) GetName() string {
+	return s.name
 }
 
 // isAwsErrCodeNoSuchBucket returns true if the given input `err` has wrapped

@@ -69,10 +69,14 @@ func (fakeObjectStoreGetter) ObjectStore(
 		return nil, fmt.Errorf("AWS_ACCESS_KEY_ID '%v' invalid", accessIDString)
 	}
 
-	return fakeObjectStorer{}, nil
+	return fakeObjectStorer{
+		name: s3ProfileName,
+	}, nil
 }
 
-type fakeObjectStorer struct{}
+type fakeObjectStorer struct {
+	name string
+}
 
 func (fakeObjectStorer) CreateBucket(bucket string) error { return nil }
 func (fakeObjectStorer) DeleteBucket(bucket string) error { return nil }
@@ -80,6 +84,8 @@ func (fakeObjectStorer) PurgeBucket(bucket string) error  { return nil }
 func (fakeObjectStorer) UploadPV(pvKeyPrefix, pvKeySuffix string, pv corev1.PersistentVolume) error {
 	return nil
 }
+
+func (f fakeObjectStorer) GetName() string { return f.name }
 
 func (fakeObjectStorer) UploadTypedObject(pvKeyPrefix, keySuffix string, uploadContent interface{}) error {
 	return nil
