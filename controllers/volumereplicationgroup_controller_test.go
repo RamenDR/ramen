@@ -29,7 +29,7 @@ const (
 
 type Empty struct{}
 
-var UploadedPVs = map[string]Empty{}
+var UploadedPVs = make(map[string]interface{})
 
 var _ = Describe("Test VolumeReplicationGroup", func() {
 	Specify("s3 profiles and secret", func() {
@@ -1114,7 +1114,8 @@ type FakePVUploader struct{}
 
 func (s FakePVUploader) UploadPV(objectStore vrgController.ObjectStorer,
 	pvKeyPrefix string, pv *corev1.PersistentVolume) error {
-	UploadedPVs[pv.Name] = Empty{}
+	key := objectStore.GetName() + pvKeyPrefix + pv.Name
+	UploadedPVs[key] = pv
 
 	return nil
 }
