@@ -417,7 +417,7 @@ func newVRGTestCaseBindInfo(pvcCount int, testTemplate *template, checkBind, vrg
 		replicationClass: testTemplate.replicationClassName,
 	}
 
-	By("Creating namespace " + v.namespace)
+	testLog.Info("creating namespace", "ns", v.namespace)
 	v.createNamespace()
 	v.createSC(testTemplate)
 	v.createVRC(testTemplate)
@@ -472,7 +472,7 @@ func (v *vrgTest) createPVCandPV(pvcCount int, claimBindInfo corev1.PersistentVo
 }
 
 func (v *vrgTest) createNamespace() {
-	By("creating namespace " + v.namespace)
+	testLog.Info("creating namespace", "ns", v.namespace)
 
 	appNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: v.namespace}}
 	err := k8sClient.Create(context.TODO(), appNamespace)
@@ -483,7 +483,7 @@ func (v *vrgTest) createNamespace() {
 }
 
 func (v *vrgTest) createPV(pvName, claimName string, bindInfo corev1.PersistentVolumePhase) {
-	By("creating PV " + pvName)
+	testLog.Info("creating PV", "pv", pvName)
 
 	capacity := corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}
 	accessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
@@ -542,7 +542,7 @@ func (v *vrgTest) createPV(pvName, claimName string, bindInfo corev1.PersistentV
 
 func (v *vrgTest) createPVC(pvcName, namespace, volumeName string, labels map[string]string,
 	bindInfo corev1.PersistentVolumeClaimPhase) {
-	By("creating PVC " + pvcName)
+	testLog.Info("creating PVC", "pvc", pvcName)
 
 	capacity := corev1.ResourceList{
 		corev1.ResourceStorage: resource.MustParse("1Gi"),
@@ -584,7 +584,7 @@ func (v *vrgTest) createPVC(pvcName, namespace, volumeName string, labels map[st
 }
 
 func (v *vrgTest) bindPVAndPVC() {
-	By("Waiting for PVC to get bound to PVs for " + v.vrgName)
+	testLog.Info("waiting for PVC to get bound to PVs for", "vrg", v.vrgName)
 
 	for i := 0; i < len(v.pvcNames); i++ {
 		// Bind PV
@@ -606,7 +606,7 @@ func (v *vrgTest) bindPVAndPVC() {
 }
 
 func (v *vrgTest) createVRG(pvcLabels map[string]string) {
-	By("creating VRG " + v.vrgName)
+	testLog.Info("creating VRG", "vrg", v.vrgName)
 
 	schedulingInterval := "1h"
 	replicationClassLabels := map[string]string{"protection": "ramen"}
@@ -642,7 +642,7 @@ func (v *vrgTest) createVRG(pvcLabels map[string]string) {
 }
 
 func (v *vrgTest) createVRC(testTemplate *template) {
-	By("creating VRC " + v.replicationClass)
+	testLog.Info("creating VRC", "vrc", v.replicationClass)
 
 	parameters := make(map[string]string)
 
@@ -676,7 +676,7 @@ func (v *vrgTest) createVRC(testTemplate *template) {
 }
 
 func (v *vrgTest) createSC(testTemplate *template) {
-	By("creating StorageClass " + v.storageClass)
+	testLog.Info("creating StorageClass", "sc", v.storageClass)
 
 	sc := &storagev1.StorageClass{
 		ObjectMeta: metav1.ObjectMeta{
@@ -697,7 +697,7 @@ func (v *vrgTest) createSC(testTemplate *template) {
 }
 
 func (v *vrgTest) verifyPVCBindingToPV(checkBind bool) {
-	By("Waiting for PVC to get bound to PVs for " + v.vrgName)
+	testLog.Info("Waiting for PVC to get bound to PVs for", "vrg", v.vrgName)
 
 	for i := 0; i < len(v.pvcNames); i++ {
 		_ = v.getPV(v.pvNames[i])
@@ -857,7 +857,7 @@ func (v *vrgTest) cleanupVRC() {
 }
 
 func (v *vrgTest) cleanupNamespace() {
-	By("deleting namespace " + v.namespace)
+	testLog.Info("deleting namespace", "ns", v.namespace)
 
 	appNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: v.namespace}}
 	err := k8sClient.Delete(context.TODO(), appNamespace)
@@ -867,7 +867,7 @@ func (v *vrgTest) cleanupNamespace() {
 }
 
 func (v *vrgTest) waitForVRCountToMatch(vrCount int) {
-	By("Waiting for VRs count to match " + v.namespace)
+	testLog.Info("waiting for VRs count to match", "ns", v.namespace)
 
 	// selector, err := metav1.LabelSelectorAsSelector(&vrg.Spec.PVCSelector)
 	// Expect(err).To(BeNil())
@@ -889,7 +889,7 @@ func (v *vrgTest) waitForVRCountToMatch(vrCount int) {
 }
 
 func (v *vrgTest) promoteVolReps() {
-	By("Promoting VolumeReplication resources " + v.namespace)
+	testLog.Info("promoting VolumeReplication resources", "ns", v.namespace)
 
 	volRepList := &volrep.VolumeReplicationList{}
 	listOptions := &client.ListOptions{
@@ -1010,7 +1010,7 @@ func (v *vrgTest) checkProtectedPVCSuccess(vrg *ramendrv1alpha1.VolumeReplicatio
 }
 
 func (v *vrgTest) waitForNamespaceDeletion() {
-	By("Waiting for namespace deletion " + v.namespace)
+	testLog.Info("waiting for namespace deletion", "ns", v.namespace)
 
 	appNamespace := &corev1.Namespace{}
 	nsObjectKey := client.ObjectKey{Name: v.namespace}
