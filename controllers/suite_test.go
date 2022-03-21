@@ -189,7 +189,7 @@ var _ = BeforeSuite(func() {
 		Client:         k8sManager.GetClient(),
 		APIReader:      k8sManager.GetAPIReader(),
 		Log:            ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
-		ObjStoreGetter: ramencontrollers.S3ObjectStoreGetter(),
+		ObjStoreGetter: fakeObjectStoreGetter{},
 		PVDownloader:   FakePVDownloader{},
 		PVUploader:     FakePVUploader{},
 		PVDeleter:      FakePVDeleter{},
