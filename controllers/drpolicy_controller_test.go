@@ -11,6 +11,7 @@ import (
 	gomegaTypes "github.com/onsi/gomega/types"
 	workv1 "github.com/open-cluster-management/api/work/v1"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
 	"github.com/ramendr/ramen/controllers/util"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
@@ -605,6 +606,7 @@ var _ = Describe("DrpolicyController", func() {
 		drpolicyDeleteAndConfirm(drpolicy)
 	})
 	Specify("s3 secrets delete", func() {
+		s3ProfilesStore([]rmn.S3StoreProfile{})
 		s3SecretsDelete()
 	})
 })
