@@ -3,6 +3,7 @@ package controllers_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
@@ -26,8 +27,6 @@ const (
 	vrginterval = time.Millisecond * 10
 )
 
-type Empty struct{}
-
 var UploadedPVs = make(map[string]interface{})
 
 var _ = Describe("Test VolumeReplicationGroup", func() {
@@ -36,9 +35,16 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 	})
 	// Test first restore
 	Context("restore test case", func() {
-		It("sets vrg for restore", func() {
-			newVRGTestCase(0)
-			waitForPVRestore()
+		It("populates the S3 store with PVs and starts vrg as primary to check that the PVs are restored", func() {
+			numPVs := 3
+			vtest := newVRGTestCase(0)
+			vrgNamespacedName := vtest.namespace + "/" + vtest.vrgName + "/"
+			pvList := generateFakePVs("pv", numPVs)
+			populateS3Store(S3ProfileName, vrgNamespacedName, pvList)
+			waitForPVRestore(pvList)
+			// profile name, keyprefix, numPVs
+			// waitForPVRestore(S3ProfileName, numPVs)
+			cleanupS3Store()
 		})
 	})
 
@@ -472,6 +478,85 @@ func (v *vrgTest) createPVCandPV(pvcCount int, claimBindInfo corev1.PersistentVo
 	}
 }
 
+func cleanupS3Store() {
+	UploadedPVs = make(map[string]interface{})
+}
+
+func generateFakePVs(pvNamePrefix string, count int) []corev1.PersistentVolume {
+	pvList := []corev1.PersistentVolume{}
+
+	// The generator has a limit of 9999 unique names.
+	if count > 9999 {
+		return pvList
+	}
+
+	for i := 1; i <= count; i++ {
+		pvName := fmt.Sprintf("%s%04d", pvNamePrefix, i)
+		pv := getSamplePV(pvName)
+		pvList = append(pvList, pv)
+	}
+
+	return pvList
+}
+
+func getSamplePV(pvName string) corev1.PersistentVolume {
+	capacity := corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}
+	accessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
+	hostPathType := corev1.HostPathDirectoryOrCreate
+
+	pv := corev1.PersistentVolume{
+		ObjectMeta: metav1.ObjectMeta{Name: pvName},
+		Spec: corev1.PersistentVolumeSpec{
+			Capacity: capacity,
+			PersistentVolumeSource: corev1.PersistentVolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: "/tmp/kube",
+					Type: &hostPathType,
+				},
+			},
+			AccessModes: accessModes,
+			ClaimRef: &corev1.ObjectReference{
+				Kind:      "PersistentVolumeClaim",
+				Namespace: "my-namespace",
+				Name:      "PVC_of_" + pvName,
+			},
+			PersistentVolumeReclaimPolicy: "Delete",
+			StorageClassName:              "manual",
+			MountOptions:                  []string{},
+			NodeAffinity: &corev1.VolumeNodeAffinity{
+				Required: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "KeyNode",
+									Operator: corev1.NodeSelectorOpIn,
+									Values: []string{
+										"node1",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	return pv
+}
+
+func populateS3Store(s3ProfileName string, vrgNamespacedName string, pvList []corev1.PersistentVolume) {
+	// If you look at the FakePVUploader implementation, you will see that
+	// the key is concatenation of the objectStoreName(same as
+	// s3ProfileName), VRG NamespacedName and the pvName. We populate the object
+	// store in identical manner here.
+	for _, pv := range pvList {
+		key := s3ProfileName + vrgNamespacedName + pv.Name
+		UploadedPVs[key] = pv
+	}
+}
+
 func (v *vrgTest) createNamespace() {
 	By("creating namespace " + v.namespace)
 
@@ -628,7 +713,7 @@ func (v *vrgTest) createVRG(pvcLabels map[string]string) {
 			Sync: ramendrv1alpha1.VRGSyncSpec{
 				Mode: ramendrv1alpha1.SyncModeDisabled,
 			},
-			S3Profiles: []string{"fakeS3Profile"},
+			S3Profiles: []string{S3ProfileName},
 		},
 	}
 	err := k8sClient.Create(context.TODO(), vrg)
@@ -1024,85 +1109,42 @@ func (v *vrgTest) waitForNamespaceDeletion() {
 		"while waiting for namespace %s to be deleted", v.namespace)
 }
 
-var PVsToRestore = []string{"pv0001", "pv0002", "pv0003"}
+func waitForPVRestore(pvList []corev1.PersistentVolume) {
+	var pvCount int
 
-//nolint:scopelint
-func waitForPVRestore() {
-	pvSet := map[string]Empty{}
-
-	for _, pvName := range PVsToRestore {
-		pvLookupKey := types.NamespacedName{Name: pvName}
-		pv := &corev1.PersistentVolume{}
+	for _, pv := range pvList {
+		pvLookupKey := types.NamespacedName{Name: pv.Name}
+		restoredPV := &corev1.PersistentVolume{}
 
 		Eventually(func() bool {
-			err := k8sClient.Get(context.TODO(), pvLookupKey, pv)
+			err := k8sClient.Get(context.TODO(), pvLookupKey, restoredPV)
 			if err != nil {
 				return false
 			}
 
-			Expect(pv.ObjectMeta.Annotations[vrgController.PVRestoreAnnotation]).Should(Equal("True"))
+			Expect(restoredPV.ObjectMeta.Annotations[vrgController.PVRestoreAnnotation]).Should(Equal("True"))
 
-			pvSet[pvName] = Empty{}
+			pvCount++
 
 			return true
 		}, timeout, interval).Should(BeTrue(),
-			"while waiting for PV %s to be restored", pvName)
+			"while waiting for PV %s to be restored", pv)
 	}
 
-	Expect(len(pvSet)).To(Equal(3))
+	Expect(pvCount == len(pvList))
 }
 
 type FakePVDownloader struct{}
 
 func (s FakePVDownloader) DownloadPVs(objStore vrgController.ObjectStorer, keyPrefix string) (
 	[]corev1.PersistentVolume, error) {
-	capacity := corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}
-	accessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
-	hostPathType := corev1.HostPathDirectoryOrCreate
-
 	pvList := []corev1.PersistentVolume{}
+	fullPrefix := objStore.GetName() + keyPrefix
 
-	for _, pvName := range PVsToRestore {
-		pv := &corev1.PersistentVolume{
-			ObjectMeta: metav1.ObjectMeta{Name: pvName},
-			Spec: corev1.PersistentVolumeSpec{
-				Capacity: capacity,
-				PersistentVolumeSource: corev1.PersistentVolumeSource{
-					HostPath: &corev1.HostPathVolumeSource{
-						Path: "/tmp/kube",
-						Type: &hostPathType,
-					},
-				},
-				AccessModes: accessModes,
-				ClaimRef: &corev1.ObjectReference{
-					Kind:      "PersistentVolumeClaim",
-					Namespace: "my-namespace",
-					Name:      "PVC_of_" + pvName,
-				},
-				PersistentVolumeReclaimPolicy: "Delete",
-				StorageClassName:              "manual",
-				MountOptions:                  []string{},
-				NodeAffinity: &corev1.VolumeNodeAffinity{
-					Required: &corev1.NodeSelector{
-						NodeSelectorTerms: []corev1.NodeSelectorTerm{
-							{
-								MatchExpressions: []corev1.NodeSelectorRequirement{
-									{
-										Key:      "KeyNode",
-										Operator: corev1.NodeSelectorOpIn,
-										Values: []string{
-											"node1",
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
+	for k, v := range UploadedPVs {
+		if strings.HasPrefix(k, fullPrefix) {
+			pvList = append(pvList, v.(corev1.PersistentVolume))
 		}
-
-		pvList = append(pvList, *pv)
 	}
 
 	return pvList, nil
