@@ -31,6 +31,7 @@ var UploadedPVs = make(map[string]interface{})
 
 var _ = Describe("Test VolumeReplicationGroup", func() {
 	Specify("s3 profiles and secret", func() {
+		s3SecretReset()
 		s3SecretNamespaceSet()
 		s3SecretAndProfilesCreate()
 	})
