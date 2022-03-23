@@ -776,28 +776,13 @@ func (v *VRGInstance) processForDeletion() (ctrl.Result, error) {
 	return ctrl.Result{}, nil
 }
 
-// For now, for reginalDR (i.e. async mode enabled),
-// VolRep resources created by VRG have to be deletion
-// when VRG is deleted. For MetroDR (i.e. sync mode enabled)
-// nothing has to be done. So whether this VRG resource require
-// a requeue is a logical OR of whether async mode requires a
-// requeue and whether sync more requires a requeue.
+// For now, async mode and sync mode can be enabled only in either or fashion
+// and the function reconcileVRsForDeletion is capable of handling it for both.
+// However, in the future, we may want to enable both modes at the same time
+// and might call different functions for those modes. This function is in
+// preparation of that need.
 func (v *VRGInstance) deleteVRGHandleMode() bool {
-	asyncModeRequeue := false
-	syncModeRequeue := false
-
-	if v.instance.Spec.Async.Mode == ramendrv1alpha1.AsyncModeEnabled {
-		asyncModeRequeue = v.reconcileVRsForDeletion()
-	}
-
-	// for now nothing to do for MetroDR. VRG does not create VolRep or
-	// any other resource for MetroDR. Hence set syncModeRequeue to false
-	// indicating metroDR does not require a requeue.
-	if v.instance.Spec.Sync.Mode == ramendrv1alpha1.SyncModeEnabled {
-		syncModeRequeue = false
-	}
-
-	return asyncModeRequeue || syncModeRequeue
+	return v.reconcileVRsForDeletion()
 }
 
 // reconcileVRsForDeletion cleans up VR resources managed by VRG and also cleans up changes made to PVCs
@@ -972,43 +957,21 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 	return ctrl.Result{}, nil
 }
 
-func (v *VRGInstance) handleVRGMode(state ramendrv1alpha1.ReplicationState) bool {
-	asyncNeedRequeue := false
-	syncNeedRequeue := false
-
-	if v.instance.Spec.Async.Mode == ramendrv1alpha1.AsyncModeEnabled {
-		if state == ramendrv1alpha1.Primary {
-			asyncNeedRequeue = v.reconcileVRsAsPrimary()
-		}
-
-		if state == ramendrv1alpha1.Secondary {
-			asyncNeedRequeue = v.reconcileVRsAsSecondary()
-		}
+// For now, async mode and sync mode can be enabled only in either or fashion
+// and the functions reconcileVRsAsPrimary reconcileVRsAsSecondary are capable
+// of handling it for both. However, in the future, we may want to enable both
+// the modes at the same time and might call different functions for those
+// modes. This function is in preparation of that need.
+func (v *VRGInstance) handleVRGMode(state ramendrv1alpha1.ReplicationState) (result bool) {
+	if state == ramendrv1alpha1.Primary {
+		result = v.reconcileVRsAsPrimary()
 	}
 
-	if v.instance.Spec.Sync.Mode == ramendrv1alpha1.SyncModeEnabled {
-		// mark all PVCs as protected.
-		v.markAllPVCsProtected()
-
-		syncNeedRequeue = false
+	if state == ramendrv1alpha1.Secondary {
+		result = v.reconcileVRsAsSecondary()
 	}
 
-	return asyncNeedRequeue || syncNeedRequeue
-}
-
-func (v *VRGInstance) markAllPVCsProtected() {
-	v.log.Info("marking all pvc resources ready for use and protected")
-
-	msg := "PVC in the VolumeReplicationGroup is ready for use"
-
-	for idx := range v.pvcList.Items {
-		pvc := &v.pvcList.Items[idx]
-
-		// Each protected PVC condition in VRG status has the same name
-		// as PVC. Use that.
-		v.updatePVCDataReadyCondition(pvc.Name, VRGConditionReasonReady, msg)
-		v.updatePVCDataProtectedCondition(pvc.Name, VRGConditionReasonReady, msg)
-	}
+	return result
 }
 
 // reconcileVRsAsPrimary creates/updates VolumeReplication CR for each pvc
@@ -1579,13 +1542,51 @@ func (ObjectStorePVDeleter) DeletePVs(v interface{}, s3ProfileName string) (err 
 // processVRAsPrimary processes VR to change its state to primary, with the assumption that the
 // related PVC is prepared for VR protection
 func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName, log logr.Logger) (bool, error) {
-	return v.createOrUpdateVR(vrNamespacedName, volrep.Primary, log)
+	if v.instance.Spec.Async.Mode == ramendrv1alpha1.AsyncModeEnabled {
+		return v.createOrUpdateVR(vrNamespacedName, volrep.Primary, log)
+	}
+
+	// TODO: createOrUpdateVR does two things. It modifies the VR and also
+	// updates the PVC Conditions. For the sync mode, we only want the latter.
+	// In the future, it would be better to refactor createOrUpdateVR into two
+	// functions. For now, we are only updating the conditions for the sync
+	// mode below. As there is no VolRep involved in sync mode, the
+	// availability is always true. Also, the refactor should work for the
+	// condition where both async and sync are enabled at the same time.
+	if v.instance.Spec.Sync.Mode == ramendrv1alpha1.SyncModeEnabled {
+		msg := "PVC in the VolumeReplicationGroup is ready for use"
+		v.updatePVCDataReadyCondition(vrNamespacedName.Name, VRGConditionReasonReady, msg)
+		v.updatePVCDataProtectedCondition(vrNamespacedName.Name, VRGConditionReasonReady, msg)
+
+		return true, nil
+	}
+
+	return true, nil
 }
 
 // processVRAsSecondary processes VR to change its state to secondary, with the assumption that the
 // related PVC is prepared for VR as secondary
 func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName, log logr.Logger) (bool, error) {
-	return v.createOrUpdateVR(vrNamespacedName, volrep.Secondary, log)
+	if v.instance.Spec.Async.Mode == ramendrv1alpha1.AsyncModeEnabled {
+		return v.createOrUpdateVR(vrNamespacedName, volrep.Secondary, log)
+	}
+
+	// TODO: createOrUpdateVR does two things. It modifies the VR and also
+	// updates the PVC Conditions. For the sync mode, we only want the latter.
+	// In the future, it would be better to refactor createOrUpdateVR into two
+	// functions. For now, we are only updating the conditions for the sync
+	// mode below. As there is no VolRep involved in sync mode, the
+	// availability is always true. Also, the refactor should work for the
+	// condition where both async and sync are enabled at the same time.
+	if v.instance.Spec.Sync.Mode == ramendrv1alpha1.SyncModeEnabled {
+		msg := "VolumeReplication resource for the pvc as Secondary is in sync with Primary"
+		v.updatePVCDataReadyCondition(vrNamespacedName.Name, VRGConditionReasonReplicated, msg)
+		v.updatePVCDataProtectedCondition(vrNamespacedName.Name, VRGConditionReasonDataProtected, msg)
+
+		return true, nil
+	}
+
+	return true, nil
 }
 
 // createOrUpdateVR updates an existing VR resource if found, or creates it if required
