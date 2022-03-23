@@ -644,6 +644,21 @@ func (v *VRGInstance) restorePVClusterData(pvList []corev1.PersistentVolume) err
 	return nil
 }
 
+func (v *VRGInstance) updateExistingPVForSync(pv *corev1.PersistentVolume) error {
+	// In case of sync mode, the pv is never deleted as part of the
+	// failover/relocate process. Hence, the restore may not be
+	// required and the annotation for restore can be missing for
+	// the sync mode.
+	v.cleanupPVForRestore(pv)
+	v.addPVRestoreAnnotation(pv)
+
+	if err := v.reconciler.Update(v.ctx, pv); err != nil {
+		return fmt.Errorf("failed to cleanup existing PV for sync DR PV: %v, err: %w", pv.Name, err)
+	}
+
+	return nil
+}
+
 func (v *VRGInstance) validatePVExistence(pv *corev1.PersistentVolume) error {
 	existingPV := &corev1.PersistentVolume{}
 
@@ -652,16 +667,27 @@ func (v *VRGInstance) validatePVExistence(pv *corev1.PersistentVolume) error {
 		return fmt.Errorf("failed to get existing PV (%w)", err)
 	}
 
-	if existingPV.ObjectMeta.Annotations == nil ||
-		existingPV.ObjectMeta.Annotations[PVRestoreAnnotation] == "" {
-		return fmt.Errorf("found PV object not restored by Ramen for PV %s", existingPV.Name)
+	if existingPV.ObjectMeta.Annotations != nil &&
+		existingPV.ObjectMeta.Annotations[PVRestoreAnnotation] == "True" {
+		// Should we check and see if PV in being deleted? Should we just treat it as exists
+		// and then we don't care if deletion takes place later, which is what we do now?
+		v.log.Info("PV exists and managed by Ramen", "PV", existingPV)
+
+		return nil
 	}
 
-	// Should we check and see if PV in being deleted? Should we just treat it as exists
-	// and then we don't care if deletion takes place later, which is what we do now?
-	v.log.Info("PV exists and managed by Ramen", "PV", existingPV)
+	// Right now, we can only have either Sync mode or Async mode. In case of
+	// sync mode, the pv is never deleted as part of the failover/relocate
+	// process. Hence, the restore is not required and the annotation for
+	// restore can be missing for the sync mode. Skip the check for the
+	// annotation in this case.
+	if v.instance.Spec.Sync.Mode == ramendrv1alpha1.SyncModeEnabled {
+		v.log.Info("PV exists, will update for sync", "PV", existingPV)
 
-	return nil
+		return v.updateExistingPVForSync(existingPV)
+	}
+
+	return fmt.Errorf("found PV object not restored by Ramen for PV %s", existingPV.Name)
 }
 
 // cleanupPVForRestore cleans up required PV fields, to ensure restore succeeds to a new cluster, and
