@@ -264,13 +264,9 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 						},
 					}
 
-					Eventually(func() bool {
-						err := k8sClient.Update(testCtx, testVsrg)
-						if err != nil {
-							return false
-						}
-						return true
-					}, testMaxWait, testInterval).Should(BeTrue())
+					Eventually(func() error {
+						return k8sClient.Update(testCtx, testVsrg)
+					}, testMaxWait, testInterval).Should(Succeed())
 
 					Expect(k8sClient.Update(testCtx, testVsrg)).To(Succeed())
 

@@ -21,10 +21,9 @@ import (
 	"fmt"
 	"strings"
 
-	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	"github.com/go-logr/logr"
-	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -33,15 +32,20 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
+	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1" //TODO: could use v1beta1 to support openshift 4.6
+	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 )
 
 const (
-	VolumeSnapshotKind    string = "VolumeSnapshot"
-	VolumeSnapshotGroup   string = "snapshot.storage.k8s.io"
-	VolumeSnapshotVersion string = "v1"
-	ServiceExportKind     string = "ServiceExport"
-	ServiceExportGroup    string = "multicluster.x-k8s.io"
-	ServiceExportVersion  string = "v1alpha1"
+	ServiceExportKind    string = "ServiceExport"
+	ServiceExportGroup   string = "multicluster.x-k8s.io"
+	ServiceExportVersion string = "v1alpha1"
+
+	VolumeSnapshotKind                     string = "VolumeSnapshot"
+	VolumeSnapshotIsDefaultAnnotation      string = "snapshot.storage.kubernetes.io/is-default-class"
+	VolumeSnapshotIsDefaultAnnotationValue string = "true"
 )
 
 const (
@@ -56,20 +60,27 @@ type VSHandler struct {
 	log                logr.Logger
 	owner              metav1.Object
 	schedulingInterval string
-	volSyncProfile     *ramendrv1alpha1.VolSyncProfile
-	volSyncPVCs        []corev1.PersistentVolumeClaim
+	volSyncProfile     *ramendrv1alpha1.VolSyncProfile //TODO: remove?
+	/*
+	  TODO: could do something similiar to ReplicationClassSelector metav1.LabelSelector (see DRPolicy_types and
+	  this is also inherited by the VRG).  The replicationClassSelector is a labelSelector that can be used to allow
+	  the user to pick replicationclasses.  Right now replicationclass is picked based on a replicationClassList
+	  that is loaded using the labelSelector and then if the Provisioner on the replicationclass matches
+	  the storageclass provisioner then it's assumed to be a match.  We can do the same thing with volumeSnapshotclasses
+	*/
+	volumeSnapshotClassList *snapv1.VolumeSnapshotClassList
 }
 
 func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, owner metav1.Object,
 	schedulingInterval string, volSyncProfile *ramendrv1alpha1.VolSyncProfile) *VSHandler {
 	return &VSHandler{
-		ctx:                ctx,
-		client:             client,
-		log:                log,
-		owner:              owner,
-		schedulingInterval: schedulingInterval,
-		volSyncProfile:     volSyncProfile,
-		volSyncPVCs:        []corev1.PersistentVolumeClaim{},
+		ctx:                     ctx,
+		client:                  client,
+		log:                     log,
+		owner:                   owner,
+		schedulingInterval:      schedulingInterval,
+		volSyncProfile:          volSyncProfile,
+		volumeSnapshotClassList: nil, // Do not initialize until we need it
 	}
 }
 
@@ -84,7 +95,7 @@ func (v *VSHandler) ReconcileRD(
 
 	rd := &volsyncv1alpha1.ReplicationDestination{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      getReplicationDestinationName(rdSpec),
+			Name:      getReplicationDestinationName(rdSpec.ProtectedPVC.Name),
 			Namespace: v.owner.GetNamespace(),
 		},
 	}
@@ -114,7 +125,8 @@ func (v *VSHandler) ReconcileRD(
 				CopyMethod:       volsyncv1alpha1.CopyMethodSnapshot,
 				Capacity:         rdSpec.ProtectedPVC.Resources.Requests.Storage(),
 				StorageClassName: rdSpec.ProtectedPVC.StorageClassName,
-				AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				//AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				AccessModes: rdSpec.ProtectedPVC.AccessModes,
 			},
 		}
 
@@ -153,13 +165,14 @@ func (v *VSHandler) ReconcileRS(
 
 	rs := &volsyncv1alpha1.ReplicationSource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      getReplicationSourceName(rsSpec),
+			Name:      getReplicationSourceName(rsSpec.PVCName),
 			Namespace: v.owner.GetNamespace(),
 		},
 	}
 
 	//FIXME: getVolumeSnapshotClass
 	//rsSpec
+	//v.getVolumeSnapshotClassFromPVCStorageClass(rsSpec.PVCName)
 
 	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, rs, func() error {
 		if err := ctrl.SetControllerReference(v.owner, rs, v.client.Scheme()); err != nil {
@@ -192,9 +205,14 @@ func (v *VSHandler) ReconcileRS(
 
 		//TODO: VolumeSnapshotClassName or potentially Clone in some cases?
 
+		// Remote service address created for the ReplicationDestination on the secondary
+		// The secondary namespace will be the same as primary namespace so use the vrg.Namespace
+		remoteAddress := getRemoteServiceNameForRDFromPVCName(rsSpec.PVCName, v.owner.GetNamespace())
+
 		rs.Spec.Rsync = &volsyncv1alpha1.ReplicationSourceRsyncSpec{
-			SSHKeys: &rsSpec.SSHKeys,
-			Address: &rsSpec.Address,
+			SSHKeys: &rsSpec.SSHKeys, //FIXME:
+			//Address: &rsSpec.Address,
+			Address: &remoteAddress,
 
 			ReplicationSourceVolumeOptions: volsyncv1alpha1.ReplicationSourceVolumeOptions{
 				CopyMethod: volsyncv1alpha1.CopyMethodSnapshot,
@@ -255,7 +273,7 @@ func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncR
 	for _, rd := range currentRDListByOwner.Items {
 		foundInSpecList := false
 		for _, rdSpec := range rdSpecList {
-			if rd.GetName() == getReplicationDestinationName(rdSpec) {
+			if rd.GetName() == getReplicationDestinationName(rdSpec.ProtectedPVC.Name) {
 				foundInSpecList = true
 				break
 			}
@@ -356,7 +374,7 @@ func (v *VSHandler) EnsurePVCfromRD(rdSpec ramendrv1alpha1.VolSyncReplicationDes
 	rdInst := &volsyncv1alpha1.ReplicationDestination{}
 	err := v.client.Get(v.ctx,
 		types.NamespacedName{
-			Name:      getReplicationDestinationName(rdSpec),
+			Name:      getReplicationDestinationName(rdSpec.ProtectedPVC.Name),
 			Namespace: v.owner.GetNamespace(),
 		}, rdInst)
 	if err != nil {
@@ -382,7 +400,7 @@ func (v *VSHandler) EnsurePVCfromRD(rdSpec ramendrv1alpha1.VolSyncReplicationDes
 	// Make copy of the ref and make sure API group is filled out correctly (shouldn't really need this part)
 	vsImageRef := latestImage.DeepCopy()
 	if vsImageRef.APIGroup == nil || *vsImageRef.APIGroup == "" {
-		vsGroup := VolumeSnapshotGroup
+		vsGroup := snapv1.GroupName
 		vsImageRef.APIGroup = &vsGroup
 	}
 	l.V(1).Info("Latest Image for ReplicationDestination", "latestImage	", vsImageRef)
@@ -452,12 +470,7 @@ func (v *VSHandler) ensurePVCFromSnapshot(rdSpec ramendrv1alpha1.VolSyncReplicat
 
 func (v *VSHandler) validateSnapshotAndAddFinalizer(volumeSnapshotRef corev1.TypedLocalObjectReference) error {
 	// Using unstructured to avoid needing to require VolumeSnapshot in client scheme
-	volSnap := &unstructured.Unstructured{}
-	volSnap.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   *volumeSnapshotRef.APIGroup,
-		Kind:    volumeSnapshotRef.Kind,
-		Version: VolumeSnapshotVersion,
-	})
+	volSnap := &snapv1.VolumeSnapshot{}
 	err := v.client.Get(v.ctx, types.NamespacedName{
 		Name:      volumeSnapshotRef.Name,
 		Namespace: v.owner.GetNamespace(),
@@ -504,20 +517,72 @@ func (v *VSHandler) getRsyncServiceType() *corev1.ServiceType {
 	return &DefaultRsyncServiceType
 }
 
-/*
-func (v *VSHandler) getVolumeSnapshotClassFromStorageClass(storageClass string) error {
-	v.log.Info("Fetching VolumeReplicationClasses")
-	volumeSnapshotClassList := snapshots.Volu
-	if err := v.reconciler.List(v.ctx, v.replClassList, listOptions...); err != nil {
-		v.log.Error(err, "Failed to list Replication Classes",
-			"labeled", labels.Set(labelSelector.MatchLabels))
-
-		return fmt.Errorf("failed to list Replication Classes, %w", err)
+//TODO: could update this func to take the pvc resource itself - depends on what is passed to ReconcileRS()
+func (v *VSHandler) getVolumeSnapshotClassFromPVCStorageClass(storageClassName string) (string, error) {
+	storageClass := &storagev1.StorageClass{}
+	if err := v.client.Get(v.ctx, types.NamespacedName{Name: storageClassName}, storageClass); err != nil {
+		v.log.Error(err, "Failed to get StorageClass", "name", storageClassName)
+		return "", err
 	}
 
-	return nil
+	volumeSnapshotClasses, err := v.getVolumeSnapshotClasses()
+	if err != nil {
+		return "", err
+	}
+
+	var matchedVolumeSnapshotClassName string
+	for _, volumeSnapshotClass := range volumeSnapshotClasses {
+		if volumeSnapshotClass.Driver == storageClass.Provisioner {
+			v.log.Info("   > Found VolumeSnapshotClass", "name", volumeSnapshotClass.GetName()) //TODO: remove
+			// Match the first one where driver/provisioner == the storage class provisioner
+			// But keep looping - if we find the default storageVolumeClass, use it instead
+			if matchedVolumeSnapshotClassName == "" || isDefaultVolumeSnapshotClass(volumeSnapshotClass) {
+				matchedVolumeSnapshotClassName = volumeSnapshotClass.GetName()
+			}
+		}
+	}
+
+	if matchedVolumeSnapshotClassName == "" {
+		noVSCFoundErr := fmt.Errorf("unable to find matching volumesnapshotclass for storage provisioner %s",
+			storageClass.Provisioner)
+		v.log.Error(noVSCFoundErr, "No VolumeSnapshotClass found")
+		return "", noVSCFoundErr
+	}
+
+	return matchedVolumeSnapshotClassName, nil
 }
-*/
+
+func isDefaultVolumeSnapshotClass(volumeSnapshotClass snapv1.VolumeSnapshotClass) bool {
+	isDefaultAnnotation, ok := volumeSnapshotClass.Annotations[VolumeSnapshotIsDefaultAnnotation]
+	return ok && isDefaultAnnotation == VolumeSnapshotIsDefaultAnnotationValue
+}
+
+func (v *VSHandler) getVolumeSnapshotClasses() ([]snapv1.VolumeSnapshotClass, error) {
+	if v.volumeSnapshotClassList == nil {
+		// Load the list if it hasn't been initialized yet
+		labelSelector := metav1.LabelSelector{} // No label selector for the moment
+		v.log.Info("Fetching VolumeSnapshotClass", "labeled", labelSelector)
+		selector, err := metav1.LabelSelectorAsSelector(&labelSelector)
+		if err != nil {
+			v.log.Error(err, "Unable to use volume snapshot label selector", "labelSelector", labelSelector)
+			return nil, err
+		}
+		listOptions := []client.ListOption{
+			client.MatchingLabelsSelector{
+				Selector: selector,
+			},
+		}
+
+		vscList := &snapv1.VolumeSnapshotClassList{}
+		if err := v.client.List(v.ctx, vscList, listOptions...); err != nil {
+			v.log.Error(err, "Failed to list VolumeSnapshotClasses", "labelSelector", labelSelector)
+			return nil, err
+		}
+		v.volumeSnapshotClassList = vscList
+	}
+
+	return v.volumeSnapshotClassList.Items, nil
+}
 
 // This function is here to allow tests to override the volsyncProfile
 func (v *VSHandler) SetVolSyncProfile(volSyncProfile *ramendrv1alpha1.VolSyncProfile) {
@@ -574,15 +639,26 @@ func addVRGOwnerLabel(owner, obj metav1.Object) {
 	obj.SetLabels(labels)
 }
 
-func getReplicationDestinationName(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec) string {
-	//TODO: may need to include clustername to avoid service name collisions cross-cluster
-	return rdSpec.ProtectedPVC.Name // Use PVC name as name of ReplicationDestination
+func getReplicationDestinationName(pvcName string) string {
+	return pvcName // Use PVC name as name of ReplicationDestination
 }
-func getReplicationSourceName(rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec) string {
-	return rsSpec.PVCName // Use PVC name as name of ReplicationSource
+
+func getReplicationSourceName(pvcName string) string {
+	return pvcName // Use PVC name as name of ReplicationSource
 }
 
 // Service name that VolSync will create locally in the same namespace as the ReplicationDestination
+func getLocalServiceNameForRDFromPVCName(pvcName string) string {
+	return getLocalServiceNameForRD(getReplicationDestinationName(pvcName))
+}
+
 func getLocalServiceNameForRD(rdName string) string {
-	return "volsync-rsync-dst-" + rdName // This is the name VolSync will pick
+	// This is the name VolSync will use for the service
+	return fmt.Sprintf("volsync-rsync-dst-%s", rdName)
+}
+
+// This is the remote service name that can be accessed from another cluster.  This assumes submariner and that
+// a ServiceExport is created for the service on the cluster that has the ReplicationDestination
+func getRemoteServiceNameForRDFromPVCName(pvcName, rdNamespace string) string {
+	return fmt.Sprintf("%s.%s.svc.clusterset.local", getLocalServiceNameForRDFromPVCName(pvcName), rdNamespace)
 }

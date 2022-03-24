@@ -8,6 +8,7 @@ require (
 	github.com/csi-addons/volume-replication-operator v0.1.0
 	github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
 	github.com/go-logr/logr v0.4.0
+	github.com/kubernetes-csi/external-snapshotter/client/v4 v4.2.0
 	github.com/onsi/ginkgo v1.16.4
 	github.com/onsi/gomega v1.15.0
 	github.com/open-cluster-management/api v0.0.0-20210527013639-a6845f2ebcb1
