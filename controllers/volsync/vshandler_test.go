@@ -119,6 +119,7 @@ var _ = Describe("VolSync Handler", func() {
 							corev1.ResourceStorage: capacity,
 						},
 					},
+					AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 				},
 				SSHKeys: "testkey123",
 			}
@@ -268,7 +269,6 @@ var _ = Describe("VolSync Handler", func() {
 		Context("When reconciling RSSpec", func() {
 			rsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
 				PVCName: "mytestpvc",
-				Address: "https://testing.abc.org",
 				SSHKeys: "testkey123",
 			}
 
@@ -293,7 +293,8 @@ var _ = Describe("VolSync Handler", func() {
 				Expect(createdRS.Spec.SourcePVC).To(Equal(rsSpec.PVCName))
 				Expect(createdRS.Spec.Rsync.CopyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
 				Expect(*createdRS.Spec.Rsync.SSHKeys).To(Equal(rsSpec.SSHKeys))
-				Expect(*createdRS.Spec.Rsync.Address).To(Equal(rsSpec.Address))
+				Expect(*createdRS.Spec.Rsync.Address).To(Equal("volsync-rsync-dst-" +
+					rsSpec.PVCName + "." + testNamespace.GetName() + ".svc.clusterset.local"))
 
 				Expect(createdRS.Spec.Trigger).ToNot(BeNil())
 				Expect(createdRS.Spec.Trigger).To(Equal(&volsyncv1alpha1.ReplicationSourceTriggerSpec{
@@ -438,7 +439,7 @@ var _ = Describe("VolSync Handler", func() {
 				}
 				Expect(k8sClient.Create(ctx, rd)).To(Succeed())
 
-				apiGrp := volsync.VolumeSnapshotGroup
+				apiGrp := "snapshot.storage.k8s.io"
 				// Now force update the status to report a volume snapshot as latestImage
 				rd.Status = &volsyncv1alpha1.ReplicationDestinationStatus{
 					LatestImage: &corev1.TypedLocalObjectReference{
@@ -483,7 +484,7 @@ var _ = Describe("VolSync Handler", func() {
 					Expect(pvc.GetName()).To(Equal(pvcName))
 					Expect(pvc.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
 					Expect(*pvc.Spec.StorageClassName).To(Equal(pvcStorageClassName))
-					apiGrp := volsync.VolumeSnapshotGroup
+					apiGrp := "snapshot.storage.k8s.io"
 					Expect(pvc.Spec.DataSource).To(Equal(&corev1.TypedLocalObjectReference{
 						Name:     latestImageSnapshotName,
 						APIGroup: &apiGrp,
@@ -777,9 +778,9 @@ func createSnapshot(snapshotName, namespace string) (*unstructured.Unstructured,
 		},
 	}
 	volSnap.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   volsync.VolumeSnapshotGroup,
+		Group:   "snapshot.storage.k8s.io",
 		Kind:    volsync.VolumeSnapshotKind,
-		Version: volsync.VolumeSnapshotVersion,
+		Version: "v1",
 	})
 
 	return volSnap, k8sClient.Create(ctx, volSnap)

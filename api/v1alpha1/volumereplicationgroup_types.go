@@ -116,7 +116,7 @@ type VolSyncReplicationDestinationSpec struct {
 // VolSyncReplicationSourceSpec defines the configuration for the VolSync
 // protected PVC to be used by the source cluster (Primary)
 type VolSyncReplicationSourceSpec struct {
-	// pvcName is the name of the PVC that VolSync will replicate to the destinatioin
+	// pvcName is the name of the PVC that VolSync will replicate to the destination
 	PVCName string `json:"pvcName"`
 
 	// address is the address to connect to for incoming SSH replication
