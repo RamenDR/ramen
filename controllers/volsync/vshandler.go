@@ -72,14 +72,14 @@ type VSHandler struct {
 }
 
 func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, owner metav1.Object,
-	schedulingInterval string, volSyncProfile *ramendrv1alpha1.VolSyncProfile) *VSHandler {
+	schedulingInterval string) *VSHandler {
 	return &VSHandler{
 		ctx:                     ctx,
 		client:                  client,
 		log:                     log,
 		owner:                   owner,
 		schedulingInterval:      schedulingInterval,
-		volSyncProfile:          volSyncProfile,
+		volSyncProfile:          nil, // No volsync profile atm by default - could be added later
 		volumeSnapshotClassList: nil, // Do not initialize until we need it
 	}
 }
