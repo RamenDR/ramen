@@ -114,6 +114,7 @@ var _ = Describe("VolSync Handler", func() {
 				ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 					Name:               "mytestpvc",
 					ProtectedByVolSync: true,
+					StorageClassName:   &testStorageClassName,
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceStorage: capacity,
@@ -147,6 +148,8 @@ var _ = Describe("VolSync Handler", func() {
 				Expect(*createdRD.Spec.Rsync.SSHKeys).To(Equal(rdSpec.SSHKeys))
 				Expect(*createdRD.Spec.Rsync.Capacity).To(Equal(capacity))
 				Expect(createdRD.Spec.Rsync.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
+				Expect(*createdRD.Spec.Rsync.StorageClassName).To(Equal(testStorageClassName))
+				Expect(*createdRD.Spec.Rsync.VolumeSnapshotClassName).To(Equal(testVolumeSnapshotClassName))
 				Expect(createdRD.Spec.Trigger).To(BeNil()) // No schedule should be set
 				Expect(createdRD.GetLabels()).To(HaveKeyWithValue(volsync.VRGOwnerLabel, owner.GetName()))
 
@@ -196,70 +199,48 @@ var _ = Describe("VolSync Handler", func() {
 				})
 			})
 
-			Context("When storageClassName is not specified", func() {
-				It("Should create an RD with no storage class name specified", func() {
-					Expect(createdRD.Spec.Rsync.StorageClassName).To(BeNil())
-					// Expect RDInfo to be nil (only should return an RDInfo if the RD.Status.Address is set)
-					Expect(returnedRDInfo).To(BeNil())
-				})
-			})
-			Context("When storageClassName is specified", func() {
-				scName := "mystorageclass1"
+			Context("When replication destination already exists with status.address specified", func() {
+				myTestAddress := "https://fakeaddress.abc.org:8888"
 				BeforeEach(func() {
-					// Set a storageclass for the PVC in the RDSpec
-					rdSpec.ProtectedPVC.StorageClassName = &scName
-				})
-				It("Should create an RD with proper storage class name", func() {
-					Expect(*createdRD.Spec.Rsync.StorageClassName).To(Equal(scName))
-					// Expect RDInfo to be nil (only should return an RDInfo if the RD.Status.Address is set)
-					Expect(returnedRDInfo).To(BeNil())
-				})
+					// Pre-create a replication destination - and fill out Status.Address
+					rdPrecreate := &volsyncv1alpha1.ReplicationDestination{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      rdSpec.ProtectedPVC.Name,
+							Namespace: testNamespace.GetName(),
+						},
+						// Empty spec - will expect the reconcile to fill this out properly for us (i.e. update)
+						Spec: volsyncv1alpha1.ReplicationDestinationSpec{},
+					}
+					Expect(k8sClient.Create(ctx, rdPrecreate)).To(Succeed())
 
-				Context("When replication destination already exists with status.address specified", func() {
-					myTestAddress := "https://fakeaddress.abc.org:8888"
-					BeforeEach(func() {
-						// Pre-create a replication destination - and fill out Status.Address
-						rdPrecreate := &volsyncv1alpha1.ReplicationDestination{
-							ObjectMeta: metav1.ObjectMeta{
-								Name:      rdSpec.ProtectedPVC.Name,
-								Namespace: testNamespace.GetName(),
-							},
-							// Empty spec - will expect the reconcile to fill this out properly for us (i.e. update)
-							Spec: volsyncv1alpha1.ReplicationDestinationSpec{},
+					//
+					// Make sure the RD is created and update Status to set an address
+					// (Simulating what the volsync controller would do)
+					//
+					Eventually(func() error {
+						return k8sClient.Get(ctx, client.ObjectKeyFromObject(rdPrecreate), rdPrecreate)
+					}, maxWait, interval).Should(Succeed())
+					// Fake the address in the status
+					rdPrecreate.Status = &volsyncv1alpha1.ReplicationDestinationStatus{
+						Rsync: &volsyncv1alpha1.ReplicationDestinationRsyncStatus{
+							Address: &myTestAddress,
+							SSHKeys: &rdSpec.SSHKeys,
+						},
+					}
+					Expect(k8sClient.Status().Update(ctx, rdPrecreate)).To(Succeed())
+					Eventually(func() *string {
+						err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rdPrecreate), rdPrecreate)
+						if err != nil || rdPrecreate.Status == nil || rdPrecreate.Status.Rsync == nil {
+							return nil
 						}
-						Expect(k8sClient.Create(ctx, rdPrecreate)).To(Succeed())
+						return rdPrecreate.Status.Rsync.Address
+					}, maxWait, interval).Should(Not(BeNil()))
+				})
 
-						//
-						// Make sure the RD is created and update Status to set an address
-						// (Simulating what the volsync controller would do)
-						//
-						Eventually(func() error {
-							return k8sClient.Get(ctx, client.ObjectKeyFromObject(rdPrecreate), rdPrecreate)
-						}, maxWait, interval).Should(Succeed())
-						// Fake the address in the status
-						rdPrecreate.Status = &volsyncv1alpha1.ReplicationDestinationStatus{
-							Rsync: &volsyncv1alpha1.ReplicationDestinationRsyncStatus{
-								Address: &myTestAddress,
-								SSHKeys: &rdSpec.SSHKeys,
-							},
-						}
-						Expect(k8sClient.Status().Update(ctx, rdPrecreate)).To(Succeed())
-						Eventually(func() *string {
-							err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rdPrecreate), rdPrecreate)
-							if err != nil || rdPrecreate.Status == nil || rdPrecreate.Status.Rsync == nil {
-								return nil
-							}
-							return rdPrecreate.Status.Rsync.Address
-						}, maxWait, interval).Should(Not(BeNil()))
-					})
-
-					It("Should properly update Replication destination and return rdInfo", func() {
-						// Common JustBeforeEach will run reconcileRD and check spec is proper
-
-						Expect(*createdRD.Spec.Rsync.StorageClassName).To(Equal(scName)) // Check storage class
-						// Expect RDInfo to NOT be nil - address was filled out so it should have been returned
-						Expect(returnedRDInfo).ToNot(BeNil())
-					})
+				It("Should properly update Replication destination and return rdInfo", func() {
+					// Common JustBeforeEach will run reconcileRD and check spec is proper
+					// Expect RDInfo to NOT be nil - address was filled out so it should have been returned
+					Expect(returnedRDInfo).ToNot(BeNil())
 				})
 			})
 		})
@@ -267,8 +248,20 @@ var _ = Describe("VolSync Handler", func() {
 
 	Describe("Reconcile ReplicationSource", func() {
 		Context("When reconciling RSSpec", func() {
+			capacity := resource.MustParse("3Gi")
+
 			rsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
-				PVCName: "mytestpvc",
+				ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
+					Name:               "mytestpvc",
+					ProtectedByVolSync: true,
+					StorageClassName:   &testStorageClassName,
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceStorage: capacity,
+						},
+					},
+					AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				},
 				SSHKeys: "testkey123",
 			}
 
@@ -283,18 +276,20 @@ var _ = Describe("VolSync Handler", func() {
 				// RS should be created with name=PVCName
 				Eventually(func() error {
 					return k8sClient.Get(ctx,
-						types.NamespacedName{Name: rsSpec.PVCName, Namespace: testNamespace.GetName()}, createdRS)
+						types.NamespacedName{Name: rsSpec.ProtectedPVC.Name, Namespace: testNamespace.GetName()}, createdRS)
 				}, maxWait, interval).Should(Succeed())
 
 				// Expect the RS should be owned by owner
 				Expect(ownerMatches(createdRS, owner.GetName(), "ConfigMap"))
 
 				// Check common fields
-				Expect(createdRS.Spec.SourcePVC).To(Equal(rsSpec.PVCName))
+				Expect(createdRS.Spec.SourcePVC).To(Equal(rsSpec.ProtectedPVC.Name))
 				Expect(createdRS.Spec.Rsync.CopyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
 				Expect(*createdRS.Spec.Rsync.SSHKeys).To(Equal(rsSpec.SSHKeys))
 				Expect(*createdRS.Spec.Rsync.Address).To(Equal("volsync-rsync-dst-" +
-					rsSpec.PVCName + "." + testNamespace.GetName() + ".svc.clusterset.local"))
+					rsSpec.ProtectedPVC.Name + "." + testNamespace.GetName() + ".svc.clusterset.local"))
+
+				Expect(*createdRS.Spec.Rsync.VolumeSnapshotClassName).To(Equal(testVolumeSnapshotClassName))
 
 				Expect(createdRS.Spec.Trigger).ToNot(BeNil())
 				Expect(createdRS.Spec.Trigger).To(Equal(&volsyncv1alpha1.ReplicationSourceTriggerSpec{
@@ -312,7 +307,7 @@ var _ = Describe("VolSync Handler", func() {
 					// Pre-create a replication destination - and fill out Status.Address
 					rsPrecreate := &volsyncv1alpha1.ReplicationSource{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      rsSpec.PVCName,
+							Name:      rsSpec.ProtectedPVC.Name,
 							Namespace: testNamespace.GetName(),
 							Labels: map[string]string{
 								"customlabel1": "somevaluehere",
@@ -347,7 +342,10 @@ var _ = Describe("VolSync Handler", func() {
 						// Check that the manual sync triggger is set correctly on the RS
 						Eventually(func() string {
 							err := k8sClient.Get(ctx,
-								types.NamespacedName{Name: rsSpec.PVCName, Namespace: testNamespace.GetName()}, createdRS)
+								types.NamespacedName{
+									Name:      rsSpec.ProtectedPVC.Name,
+									Namespace: testNamespace.GetName()},
+								createdRS)
 							if err != nil || createdRS.Spec.Trigger == nil {
 								return ""
 							}
@@ -373,7 +371,6 @@ var _ = Describe("VolSync Handler", func() {
 	Describe("Ensure PVC from ReplicationDestination", func() {
 		pvcName := "testpvc1"
 		pvcCapacity := resource.MustParse("1Gi")
-		pvcStorageClassName := "teststorageclass"
 
 		var rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec
 		BeforeEach(func() {
@@ -381,7 +378,7 @@ var _ = Describe("VolSync Handler", func() {
 				ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 					Name:               pvcName,
 					ProtectedByVolSync: true,
-					StorageClassName:   &pvcStorageClassName,
+					StorageClassName:   &testStorageClassName,
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceStorage: pvcCapacity,
@@ -483,7 +480,7 @@ var _ = Describe("VolSync Handler", func() {
 
 					Expect(pvc.GetName()).To(Equal(pvcName))
 					Expect(pvc.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
-					Expect(*pvc.Spec.StorageClassName).To(Equal(pvcStorageClassName))
+					Expect(*pvc.Spec.StorageClassName).To(Equal(testStorageClassName))
 					apiGrp := "snapshot.storage.k8s.io"
 					Expect(pvc.Spec.DataSource).To(Equal(&corev1.TypedLocalObjectReference{
 						Name:     latestImageSnapshotName,
@@ -540,7 +537,6 @@ var _ = Describe("VolSync Handler", func() {
 		pvcNamePrefix := "test-pvc-rdcleanuptests-"
 		pvcNamePrefixOtherOwner := "otherowner-test-pvc-rdcleanuptests-"
 		pvcCapacity := resource.MustParse("1Gi")
-		pvcStorageClassName := "teststorageclass"
 
 		var rdSpecList []ramendrv1alpha1.VolSyncReplicationDestinationSpec
 		var rdSpecListOtherOwner []ramendrv1alpha1.VolSyncReplicationDestinationSpec
@@ -555,7 +551,7 @@ var _ = Describe("VolSync Handler", func() {
 					ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 						Name:               pvcNamePrefix + strconv.Itoa(i),
 						ProtectedByVolSync: true,
-						StorageClassName:   &pvcStorageClassName,
+						StorageClassName:   &testStorageClassName,
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
 								corev1.ResourceStorage: pvcCapacity,
@@ -584,7 +580,7 @@ var _ = Describe("VolSync Handler", func() {
 					ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 						Name:               pvcNamePrefixOtherOwner + strconv.Itoa(i),
 						ProtectedByVolSync: true,
-						StorageClassName:   &pvcStorageClassName,
+						StorageClassName:   &testStorageClassName,
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
 								corev1.ResourceStorage: pvcCapacity,
@@ -673,8 +669,9 @@ var _ = Describe("VolSync Handler", func() {
 			// Precreate some ReplicationSources
 			for i := 0; i < 10; i++ {
 				rsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
-					PVCName: pvcNamePrefix + strconv.Itoa(i),
-					Address: "10.1.2.3",
+					ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
+						Name: pvcNamePrefix + strconv.Itoa(i),
+					},
 					SSHKeys: "thisismykey",
 				}
 
@@ -695,8 +692,9 @@ var _ = Describe("VolSync Handler", func() {
 
 			for i := 0; i < 2; i++ {
 				otherOwnerRsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
-					PVCName: pvcNamePrefixOtherOwner + strconv.Itoa(i),
-					Address: "9.9.9.9",
+					ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
+						Name: pvcNamePrefixOtherOwner + strconv.Itoa(i),
+					},
 					SSHKeys: "testsecret",
 				}
 				rsSpecListOtherOwner = append(rsSpecListOtherOwner, otherOwnerRsSpec)
