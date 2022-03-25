@@ -98,7 +98,7 @@ var _ = Describe("VolSync Handler", func() {
 		Expect(ownerCm.GetName()).NotTo(BeEmpty())
 		owner = ownerCm
 
-		vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, owner, schedulingInterval, &ramendrv1alpha1.VolSyncProfile{})
+		vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, owner, schedulingInterval)
 	})
 
 	AfterEach(func() {
@@ -577,7 +577,7 @@ var _ = Describe("VolSync Handler", func() {
 			}
 			Expect(k8sClient.Create(ctx, otherOwnerCm)).To(Succeed())
 			Expect(otherOwnerCm.GetName()).NotTo(BeEmpty())
-			otherVSHandler := volsync.NewVSHandler(ctx, k8sClient, logger, otherOwnerCm, schedulingInterval, nil)
+			otherVSHandler := volsync.NewVSHandler(ctx, k8sClient, logger, otherOwnerCm, schedulingInterval)
 
 			for i := 0; i < 2; i++ {
 				otherOwnerRdSpec := ramendrv1alpha1.VolSyncReplicationDestinationSpec{
@@ -691,7 +691,7 @@ var _ = Describe("VolSync Handler", func() {
 			}
 			Expect(k8sClient.Create(ctx, otherOwnerCm)).To(Succeed())
 			Expect(otherOwnerCm.GetName()).NotTo(BeEmpty())
-			otherVSHandler := volsync.NewVSHandler(ctx, k8sClient, logger, otherOwnerCm, schedulingInterval, nil)
+			otherVSHandler := volsync.NewVSHandler(ctx, k8sClient, logger, otherOwnerCm, schedulingInterval)
 
 			for i := 0; i < 2; i++ {
 				otherOwnerRsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
