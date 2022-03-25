@@ -34,7 +34,7 @@ import (
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
-	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1" //TODO: could use v1beta1 to support openshift 4.6
+	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 )
 
@@ -93,6 +93,16 @@ func (v *VSHandler) ReconcileRD(
 		return nil, fmt.Errorf("protectedPVC %s is not VolSync Enabled", rdSpec.ProtectedPVC.Name)
 	}
 
+	volumeSnapshotClassName, err := v.getVolumeSnapshotClassFromPVCStorageClass(rdSpec.ProtectedPVC.StorageClassName)
+	if err != nil {
+		return nil, err
+	}
+
+	pvcAccessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce} // Default value
+	if len(rdSpec.ProtectedPVC.AccessModes) > 0 {
+		pvcAccessModes = rdSpec.ProtectedPVC.AccessModes
+	}
+
 	rd := &volsyncv1alpha1.ReplicationDestination{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      getReplicationDestinationName(rdSpec.ProtectedPVC.Name),
@@ -115,18 +125,16 @@ func (v *VSHandler) ReconcileRD(
 			sshKeys = &rdSpec.SSHKeys
 		}
 
-		//TODO: VolumeSnapshotClassName
-
 		rd.Spec.Rsync = &volsyncv1alpha1.ReplicationDestinationRsyncSpec{
 			ServiceType: v.getRsyncServiceType(),
 			SSHKeys:     sshKeys,
 
 			ReplicationDestinationVolumeOptions: volsyncv1alpha1.ReplicationDestinationVolumeOptions{
-				CopyMethod:       volsyncv1alpha1.CopyMethodSnapshot,
-				Capacity:         rdSpec.ProtectedPVC.Resources.Requests.Storage(),
-				StorageClassName: rdSpec.ProtectedPVC.StorageClassName,
-				//AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-				AccessModes: rdSpec.ProtectedPVC.AccessModes,
+				CopyMethod:              volsyncv1alpha1.CopyMethodSnapshot,
+				Capacity:                rdSpec.ProtectedPVC.Resources.Requests.Storage(),
+				StorageClassName:        rdSpec.ProtectedPVC.StorageClassName,
+				AccessModes:             pvcAccessModes,
+				VolumeSnapshotClassName: &volumeSnapshotClassName,
 			},
 		}
 
@@ -158,21 +166,33 @@ func (v *VSHandler) ReconcileRD(
 	}, nil
 }
 
-// Returns true only if runFinalSynchronization was true and the final sync is done
-func (v *VSHandler) ReconcileRS(
-	rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec, runFinalSynchronization bool) (bool, error) {
-	l := v.log.WithValues("rsSpec", rsSpec)
+// Returns true only if runFinalSync is true and the final sync is done
+func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec,
+	runFinalSync bool) (finalSyncComplete bool, err error) {
+
+	l := v.log.WithValues("rsSpec", rsSpec, "runFinalSync", runFinalSync)
+
+	if !rsSpec.ProtectedPVC.ProtectedByVolSync {
+		return false, fmt.Errorf("protectedPVC %s is not VolSync Enabled", rsSpec.ProtectedPVC.Name)
+	}
+
+	finalSyncComplete = false
+
+	volumeSnapshotClassName, err := v.getVolumeSnapshotClassFromPVCStorageClass(rsSpec.ProtectedPVC.StorageClassName)
+	if err != nil {
+		return
+	}
+
+	// Remote service address created for the ReplicationDestination on the secondary
+	// The secondary namespace will be the same as primary namespace so use the vrg.Namespace
+	remoteAddress := getRemoteServiceNameForRDFromPVCName(rsSpec.ProtectedPVC.Name, v.owner.GetNamespace())
 
 	rs := &volsyncv1alpha1.ReplicationSource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      getReplicationSourceName(rsSpec.PVCName),
+			Name:      getReplicationSourceName(rsSpec.ProtectedPVC.Name),
 			Namespace: v.owner.GetNamespace(),
 		},
 	}
-
-	//FIXME: getVolumeSnapshotClass
-	//rsSpec
-	//v.getVolumeSnapshotClassFromPVCStorageClass(rsSpec.PVCName)
 
 	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, rs, func() error {
 		if err := ctrl.SetControllerReference(v.owner, rs, v.client.Scheme()); err != nil {
@@ -182,9 +202,9 @@ func (v *VSHandler) ReconcileRS(
 
 		addVRGOwnerLabel(v.owner, rs)
 
-		rs.Spec.SourcePVC = rsSpec.PVCName
+		rs.Spec.SourcePVC = rsSpec.ProtectedPVC.Name
 
-		if runFinalSynchronization {
+		if runFinalSync {
 			l.V(1).Info("ReplicationSource - final sync")
 			// Change the schedule to instead use a keyword trigger - to trigger
 			// a final sync to happen
@@ -203,19 +223,16 @@ func (v *VSHandler) ReconcileRS(
 			}
 		}
 
-		//TODO: VolumeSnapshotClassName or potentially Clone in some cases?
-
-		// Remote service address created for the ReplicationDestination on the secondary
-		// The secondary namespace will be the same as primary namespace so use the vrg.Namespace
-		remoteAddress := getRemoteServiceNameForRDFromPVCName(rsSpec.PVCName, v.owner.GetNamespace())
-
 		rs.Spec.Rsync = &volsyncv1alpha1.ReplicationSourceRsyncSpec{
-			SSHKeys: &rsSpec.SSHKeys, //FIXME:
-			//Address: &rsSpec.Address,
+			SSHKeys: &rsSpec.SSHKeys,
 			Address: &remoteAddress,
 
 			ReplicationSourceVolumeOptions: volsyncv1alpha1.ReplicationSourceVolumeOptions{
-				CopyMethod: volsyncv1alpha1.CopyMethodSnapshot,
+				// Always using CopyMethod of snapshot for now - could use 'Clone' CopyMethod for specific
+				// storage classes that support it in the future
+				CopyMethod:              volsyncv1alpha1.CopyMethodSnapshot,
+				VolumeSnapshotClassName: &volumeSnapshotClassName,
+				// Not setting storageclassname - volsync can find that from the sourcePVC
 			},
 		}
 
@@ -230,7 +247,7 @@ func (v *VSHandler) ReconcileRS(
 	//
 	// For final sync only - check status to make sure the final sync is complete
 	//
-	if runFinalSynchronization {
+	if runFinalSync {
 		if rs.Status == nil || rs.Status.LastManualSync != FinalSyncTriggerString {
 			l.V(1).Info("ReplicationSource running final sync - waiting for status to mark completion ...")
 			return false, nil
@@ -517,10 +534,14 @@ func (v *VSHandler) getRsyncServiceType() *corev1.ServiceType {
 	return &DefaultRsyncServiceType
 }
 
-//TODO: could update this func to take the pvc resource itself - depends on what is passed to ReconcileRS()
-func (v *VSHandler) getVolumeSnapshotClassFromPVCStorageClass(storageClassName string) (string, error) {
+func (v *VSHandler) getVolumeSnapshotClassFromPVCStorageClass(storageClassName *string) (string, error) {
+	if storageClassName == nil || *storageClassName == "" {
+		err := fmt.Errorf("no storageClassName given, cannot proceed")
+		v.log.Error(err, "Failed to get StorageClass")
+		return "", err
+	}
 	storageClass := &storagev1.StorageClass{}
-	if err := v.client.Get(v.ctx, types.NamespacedName{Name: storageClassName}, storageClass); err != nil {
+	if err := v.client.Get(v.ctx, types.NamespacedName{Name: *storageClassName}, storageClass); err != nil {
 		v.log.Error(err, "Failed to get StorageClass", "name", storageClassName)
 		return "", err
 	}
@@ -533,7 +554,6 @@ func (v *VSHandler) getVolumeSnapshotClassFromPVCStorageClass(storageClassName s
 	var matchedVolumeSnapshotClassName string
 	for _, volumeSnapshotClass := range volumeSnapshotClasses {
 		if volumeSnapshotClass.Driver == storageClass.Provisioner {
-			v.log.Info("   > Found VolumeSnapshotClass", "name", volumeSnapshotClass.GetName()) //TODO: remove
 			// Match the first one where driver/provisioner == the storage class provisioner
 			// But keep looping - if we find the default storageVolumeClass, use it instead
 			if matchedVolumeSnapshotClassName == "" || isDefaultVolumeSnapshotClass(volumeSnapshotClass) {

@@ -94,9 +94,8 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary() bool {
 		}
 
 		rsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
-			PVCName: pvc.Name,
-			Address: "address.of.destination.ip", //FIXME:
-			SSHKeys: "test-volsync-ssh-keys",     //FIXME:
+			ProtectedPVC: *protectedPVC,
+			SSHKeys:      "test-volsync-ssh-keys", //FIXME:
 		}
 
 		_, err := v.volSyncHandler.ReconcileRS(rsSpec, false /* Schedule sync normally */)
@@ -111,8 +110,6 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary() bool {
 		}
 
 		setVRGConditionTypeVolSyncRepSourceSetupComplete(&protectedPVC.Conditions, v.instance.Generation, "Ready")
-
-		//TODO: cleanup any RS that is not in rsSpec?
 
 		// Cleanup - this VRG is primary, cleanup if necessary
 		// remove ReplicationDestinations that would have been created when this VRG was
@@ -143,9 +140,8 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() bool {
 		for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
 			if protectedPVC.ProtectedByVolSync {
 				rsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
-					PVCName: protectedPVC.Name,
-					Address: "address.of.destination.ip", //FIXME:
-					SSHKeys: "test-volsync-ssh-keys",     //FIXME:
+					ProtectedPVC: protectedPVC,
+					SSHKeys:      "test-volsync-ssh-keys", //FIXME:
 				}
 
 				finalSyncComplete, err := v.volSyncHandler.ReconcileRS(rsSpec, true)

@@ -103,7 +103,7 @@ type VRGSyncSpec struct {
 // VolSyncReplicationDestinationSpec defines the configuration for the VolSync
 // protected PVC to be used by the destination cluster (Secondary)
 type VolSyncReplicationDestinationSpec struct {
-	// protectedPVC contains the information about the PVC protected by VolSync
+	// protectedPVC contains the information about the PVC to be protected by VolSync
 	//+optional
 	ProtectedPVC ProtectedPVC `json:"protectedPVCs,omitempty"`
 
@@ -116,12 +116,10 @@ type VolSyncReplicationDestinationSpec struct {
 // VolSyncReplicationSourceSpec defines the configuration for the VolSync
 // protected PVC to be used by the source cluster (Primary)
 type VolSyncReplicationSourceSpec struct {
-	// pvcName is the name of the PVC that VolSync will replicate to the destination
-	PVCName string `json:"pvcName"`
+	// protectedPVC contains the information about the PVC to be protected by VolSync
+	//+optional
+	ProtectedPVC ProtectedPVC `json:"protectedPVCs,omitempty"`
 
-	// address is the address to connect to for incoming SSH replication
-	// connections.
-	Address string `json:"address"`
 	// sshKeys is the name of a Secret that contains the SSH keys to be used for
 	// authentication.
 	//+optional
@@ -147,7 +145,7 @@ type VolSyncReplicationDestinationInfo struct {
 	PVCName string `json:"pvcName"`
 
 	// address is the address to connect to for incoming SSH replication connections.
-	Address string `json:"address"`
+	Address string `json:"address"` // This could be removed - do we need VolSyncReplDestinationInfo at all anymore?
 }
 
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
