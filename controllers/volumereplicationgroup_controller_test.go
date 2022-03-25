@@ -870,6 +870,16 @@ func (v *vrgTest) getVRG(vrgName string) *ramendrv1alpha1.VolumeReplicationGroup
 	return vrg
 }
 
+func (v *vrgTest) isAnyPVCProtectedByVolSync(vrg *ramendrv1alpha1.VolumeReplicationGroup) bool {
+	for _, protectedPVC := range vrg.Status.ProtectedPVCs {
+		if protectedPVC.ProtectedByVolSync {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (v *vrgTest) verifyVRGStatusExpectation(expectedStatus bool) {
 	Eventually(func() bool {
 		vrg := v.getVRG(v.vrgName)
@@ -889,6 +899,10 @@ func (v *vrgTest) verifyVRGStatusExpectation(expectedStatus bool) {
 				return dataReadyCondition.Status == metav1.ConditionTrue && dataReadyCondition.Reason ==
 					vrgController.VRGConditionReasonReplicating
 			}
+		}
+
+		if v.isAnyPVCProtectedByVolSync(vrg) {
+			return true
 		}
 
 		return dataReadyCondition.Status != metav1.ConditionTrue
