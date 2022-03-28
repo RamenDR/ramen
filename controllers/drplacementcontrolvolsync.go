@@ -5,6 +5,7 @@ import (
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
+	"github.com/ramendr/ramen/controllers/volsync"
 	"k8s.io/apimachinery/pkg/api/errors"
 )
 
@@ -20,13 +21,25 @@ func (d *DRPCInstance) EnsureVolSyncReplicationSetup(homeCluster string) error {
 		return nil
 	}
 
+	err = d.ensureVolSyncReplicationCommon(homeCluster)
+	if err != nil {
+		return err
+	}
+
 	return d.ensureVolSyncReplicationDestination(homeCluster)
 }
 
-func (d *DRPCInstance) ensureVolSyncReplicationDestination(srcCluster string) error {
-	d.log.Info("Ensuring VolSync replication destination")
+func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
+	// TODO: Check if we need this block here.
+	// We can check for condition per PVC instead
+	// ready := d.isVRGConditionDataReady(srcCluster)
+	// if !ready {
+	// 	d.log.Info("Waiting... VRG condition not ready")
 
-	// Make sure we have Source and Destination VRGs
+	// 	return fmt.Errorf("VRG condition not ready")
+	// }
+
+	// Make sure we have Source and Destination VRGs - Source should already have been created at this point
 	const maxNumberOfVRGs = 2
 	if len(d.vrgs) != maxNumberOfVRGs {
 		// Create the destination VRG
@@ -38,11 +51,48 @@ func (d *DRPCInstance) ensureVolSyncReplicationDestination(srcCluster string) er
 		return WaitForVolSyncManifestWorkCreation
 	}
 
+	_, found := d.vrgs[srcCluster]
+	if !found {
+		return fmt.Errorf("failed to find source VolSync VRG in cluster %s. VRGs %v", srcCluster, d.vrgs)
+	}
+
+	// Now we should have a source and destination VRG created
+	// Since we will use VolSync - create/ensure & propagate a shared ssh rsync secret to both the src and dst clusters
+	sshSecretNameHub := fmt.Sprintf("%s-rsync-sshsecret-hub", d.instance.GetName())
+
+	// Ensure/Create the secret on the hub
+	sshSecretHub, err := volsync.ReconcileVolSyncReplicationSecret(d.ctx, d.reconciler.Client, d.instance,
+		sshSecretNameHub, d.instance.GetNamespace(), d.log)
+	if err != nil {
+		d.log.Error(err, "Unable to create ssh secret on hub for VolSync")
+		return err
+	}
+
+	// Propagate the secret to all clusters (to be named sshSecretNameCluster on the clusters)
+	// Note that VRG spec will not contain the ssh secret name, we're going to name based on the VRG name itself
+	sshSecretNameCluster := volsync.GetVolSyncSSHSecretNameFromVRGName(d.instance.GetName()) // VRG name == DRPC name
+
+	clustersToPropagateSecret := []string{}
+	for clusterName := range d.vrgs {
+		clustersToPropagateSecret = append(clustersToPropagateSecret, clusterName)
+	}
+	err = volsync.PropagateSecretToClusters(d.ctx, d.reconciler.Client, sshSecretHub,
+		d.instance, clustersToPropagateSecret, sshSecretNameCluster, d.instance.GetNamespace(), d.log)
+	if err != nil {
+		d.log.Error(err, "Error propagating secret to clusters", "clustersToPropagateSecret", clustersToPropagateSecret)
+		return err
+	}
+
+	return nil
+}
+
+func (d *DRPCInstance) ensureVolSyncReplicationDestination(srcCluster string) error {
 	srcVRG, found := d.vrgs[srcCluster]
 	if !found {
 		return fmt.Errorf("failed to find source VolSync VRG in cluster %s. VRGs %v", srcCluster, d.vrgs)
 	}
 
+	d.log.Info("Ensuring VolSync replication destination")
 	if len(srcVRG.Status.ProtectedPVCs) == 0 {
 		d.log.Info("waiting for the source cluster to provide the list of Protected PVCs")
 
@@ -109,7 +159,6 @@ func (d *DRPCInstance) updateDestinationVRG(clusterName string, srcVRG *rmn.Volu
 
 		rdSpec := rmn.VolSyncReplicationDestinationSpec{
 			ProtectedPVC: protectedPVC,
-			SSHKeys:      "test-volsync-ssh-keys", //FIXME:
 		}
 
 		dstVRG.Spec.VolSync.RDSpec = append(dstVRG.Spec.VolSync.RDSpec, rdSpec)
@@ -224,7 +273,7 @@ func (d *DRPCInstance) createVolSyncDestManifestWork(srcCluster string) error {
 
 		err := d.ensureNamespaceExistsOnManagedCluster(dstCluster)
 		if err != nil {
-			return fmt.Errorf("Creating ManifestWork couldn't ensure namespace '%s' on cluster %s exists",
+			return fmt.Errorf("creating ManifestWork couldn't ensure namespace '%s' on cluster %s exists",
 				d.instance.Namespace, drCluster.Name)
 		}
 

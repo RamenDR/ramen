@@ -324,10 +324,6 @@ spec:
                                 claim.
                               type: string
                           type: object
-                        sshKeys:
-                          description: sshKeys is the name of a Secret that contains
-                            the SSH keys to be used for authentication.
-                          type: string
                       type: object
                     type: array
                   runFinalSync:

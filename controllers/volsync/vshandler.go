@@ -84,13 +84,23 @@ func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, ow
 	}
 }
 
+// returns replication destination only if create/update is successful and the RD is considered available.
+// Callers should assume getting a nil replication destination back means they should retry/requeue.
 func (v *VSHandler) ReconcileRD(
-	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec) (*ramendrv1alpha1.VolSyncReplicationDestinationInfo, error) {
+	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec) (*volsyncv1alpha1.ReplicationDestination, error) {
 
 	l := v.log.WithValues("rdSpec", rdSpec)
 
 	if !rdSpec.ProtectedPVC.ProtectedByVolSync {
 		return nil, fmt.Errorf("protectedPVC %s is not VolSync Enabled", rdSpec.ProtectedPVC.Name)
+	}
+
+	// Pre-allocated shared secret - DRPC will generate and propagate this secret from hub to clusters
+	sshKeysSecretName := GetVolSyncSSHSecretNameFromVRGName(v.owner.GetName())
+	// Need to confirm this secret exists on the cluster before proceeding, otherwise volsync will generate it
+	secretExists, err := v.validateSecretExists(sshKeysSecretName)
+	if err != nil || !secretExists {
+		return nil, err
 	}
 
 	volumeSnapshotClassName, err := v.getVolumeSnapshotClassFromPVCStorageClass(rdSpec.ProtectedPVC.StorageClassName)
@@ -118,16 +128,9 @@ func (v *VSHandler) ReconcileRD(
 
 		addVRGOwnerLabel(v.owner, rd)
 
-		// Pre-allocated shared secret
-		var sshKeys *string
-		if rdSpec.SSHKeys != "" {
-			// If SSHKeys is not specified, RD will create its own secret
-			sshKeys = &rdSpec.SSHKeys
-		}
-
 		rd.Spec.Rsync = &volsyncv1alpha1.ReplicationDestinationRsyncSpec{
 			ServiceType: v.getRsyncServiceType(),
-			SSHKeys:     sshKeys,
+			SSHKeys:     &sshKeysSecretName,
 
 			ReplicationDestinationVolumeOptions: volsyncv1alpha1.ReplicationDestinationVolumeOptions{
 				CopyMethod:              volsyncv1alpha1.CopyMethodSnapshot,
@@ -160,23 +163,33 @@ func (v *VSHandler) ReconcileRD(
 	}
 
 	l.V(1).Info("ReplicationDestination Reconcile Complete")
-	return &ramendrv1alpha1.VolSyncReplicationDestinationInfo{
-		PVCName: rdSpec.ProtectedPVC.Name,
-		Address: *rd.Status.Rsync.Address,
-	}, nil
+	return rd, nil
 }
 
 // Returns true only if runFinalSync is true and the final sync is done
+// Returns replication source only if create/update is successful
+// Callers should assume getting a nil replication source back means they should retry/requeue.
 func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec,
-	runFinalSync bool) (finalSyncComplete bool, err error) {
+	runFinalSync bool) (finalSyncComplete bool, replicationSource *volsyncv1alpha1.ReplicationSource, err error) {
 
 	l := v.log.WithValues("rsSpec", rsSpec, "runFinalSync", runFinalSync)
 
 	if !rsSpec.ProtectedPVC.ProtectedByVolSync {
-		return false, fmt.Errorf("protectedPVC %s is not VolSync Enabled", rsSpec.ProtectedPVC.Name)
+		return false, nil, fmt.Errorf("protectedPVC %s is not VolSync Enabled", rsSpec.ProtectedPVC.Name)
 	}
 
 	finalSyncComplete = false
+	replicationSource = nil
+	err = nil
+
+	// Pre-allocated shared secret - DRPC will generate and propagate this secret from hub to clusters
+	sshKeysSecretName := GetVolSyncSSHSecretNameFromVRGName(v.owner.GetName())
+	// Need to confirm this secret exists on the cluster before proceeding, otherwise volsync will generate it
+	secretExists := false
+	secretExists, err = v.validateSecretExists(sshKeysSecretName)
+	if err != nil || !secretExists {
+		return
+	}
 
 	volumeSnapshotClassName, err := v.getVolumeSnapshotClassFromPVCStorageClass(rsSpec.ProtectedPVC.StorageClassName)
 	if err != nil {
@@ -224,7 +237,7 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 		}
 
 		rs.Spec.Rsync = &volsyncv1alpha1.ReplicationSourceRsyncSpec{
-			SSHKeys: &rsSpec.SSHKeys,
+			SSHKeys: &sshKeysSecretName,
 			Address: &remoteAddress,
 
 			ReplicationSourceVolumeOptions: volsyncv1alpha1.ReplicationSourceVolumeOptions{
@@ -241,8 +254,13 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 
 	l.V(1).Info("ReplicationSource createOrUpdate Complete", "op", op)
 	if err != nil {
-		return false, err
+		return
 	}
+
+	// Could consider checking the RS status here and only returning sucessfully if the RS status has proceeded
+	// far enough (similar to what we do with reconcileRD)
+
+	replicationSource = rs // Replication source exists
 
 	//
 	// For final sync only - check status to make sure the final sync is complete
@@ -250,18 +268,43 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	if runFinalSync {
 		if rs.Status == nil || rs.Status.LastManualSync != FinalSyncTriggerString {
 			l.V(1).Info("ReplicationSource running final sync - waiting for status to mark completion ...")
-			return false, nil
+			finalSyncComplete = false
+			return
 		}
 		l.V(1).Info("ReplicationSource final sync comple")
-		return true, nil
+		finalSyncComplete = true
+		return
 	}
 
 	l.V(1).Info("ReplicationSource Reconcile Complete")
-	return false, nil
+	return
+}
+
+func (v *VSHandler) validateSecretExists(secretName string) (bool, error) {
+	secret := &corev1.Secret{}
+
+	err := v.client.Get(v.ctx,
+		types.NamespacedName{
+			Name:      secretName,
+			Namespace: v.owner.GetNamespace(),
+		}, secret)
+	if err != nil {
+		if !kerrors.IsNotFound(err) {
+			v.log.Error(err, "Failed to get secret", "secretName", secretName)
+			return false, err
+		}
+
+		// Secret is not found
+		v.log.Info("Secret not found", "secretName", secretName)
+		return false, nil
+	}
+
+	v.log.Info("Secret exists", "secretName", secretName)
+	return true, nil
 }
 
 func (v *VSHandler) DeleteRS(rsName string) error {
-	// Remove any ReplicationSource owned (by parent vrg owner) that is not in the provided rsSpecList
+	// Remove a ReplicationSource by name that is owned (by parent vrg owner)
 	currentRSListByOwner, err := v.listRSByOwner()
 	if err != nil {
 		return err
