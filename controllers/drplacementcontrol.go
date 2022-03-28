@@ -1702,5 +1702,8 @@ func (d *DRPCInstance) setMetricsTimer(
 
 func (d *DRPCInstance) setDRPCCondition(conditions *[]metav1.Condition, condType string,
 	observedGeneration int64, status metav1.ConditionStatus, reason, msg string) {
-	d.needStatusUpdate = SetDRPCStatusCondition(conditions, condType, observedGeneration, status, reason, msg)
+	needStatusUpdate := SetDRPCStatusCondition(conditions, condType, observedGeneration, status, reason, msg)
+	if !d.needStatusUpdate {
+		d.needStatusUpdate = needStatusUpdate
+	}
 }
