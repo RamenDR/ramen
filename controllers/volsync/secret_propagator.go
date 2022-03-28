@@ -22,6 +22,10 @@ import (
 
 //TODO: update roles for whoever calls this (drplacementcontrol) - will need permissions on policies, placementrules, placementbindings
 
+func GetVolSyncSSHSecretNameFromVRGName(vrgName string) string {
+	return fmt.Sprintf("%s-rsync-sshsecret", vrgName)
+}
+
 // Should be run from a hub - assumes the source secret exists on the hub cluster and should be propagated
 // to destClusters.
 // Creates Policy/PlacementRule/PlacementBinding on the hub in the same namespace as the source secret

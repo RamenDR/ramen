@@ -106,11 +106,6 @@ type VolSyncReplicationDestinationSpec struct {
 	// protectedPVC contains the information about the PVC to be protected by VolSync
 	//+optional
 	ProtectedPVC ProtectedPVC `json:"protectedPVCs,omitempty"`
-
-	// sshKeys is the name of a Secret that contains the SSH keys to be used for
-	// authentication.
-	//+optional
-	SSHKeys string `json:"sshKeys,omitempty"`
 }
 
 // VolSyncReplicationSourceSpec defines the configuration for the VolSync
@@ -119,11 +114,6 @@ type VolSyncReplicationSourceSpec struct {
 	// protectedPVC contains the information about the PVC to be protected by VolSync
 	//+optional
 	ProtectedPVC ProtectedPVC `json:"protectedPVCs,omitempty"`
-
-	// sshKeys is the name of a Secret that contains the SSH keys to be used for
-	// authentication.
-	//+optional
-	SSHKeys string `json:"sshKeys,omitempty"`
 }
 
 // VolSynccSpec defines the ReplicationDestination specs for the Secondary VRG, or

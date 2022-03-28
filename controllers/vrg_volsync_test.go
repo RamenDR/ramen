@@ -16,6 +16,7 @@ import (
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/controllers/volsync"
 )
 
 const (
@@ -180,17 +181,15 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 			"ramentest": "backmeup",
 		}
 
-		var testVsrg *ramendrv1alpha1.VolumeReplicationGroup
+		var testVrg *ramendrv1alpha1.VolumeReplicationGroup
 
 		testAccessModes := []corev1.PersistentVolumeAccessMode{
 			corev1.ReadWriteOnce,
 		}
 
-		testSshKeys := "secondarytestsshkeys"
-
 		Context("When VRG created on secondary", func() {
 			JustBeforeEach(func() {
-				testVsrg = &ramendrv1alpha1.VolumeReplicationGroup{
+				testVrg = &ramendrv1alpha1.VolumeReplicationGroup{
 					ObjectMeta: metav1.ObjectMeta{
 						GenerateName: "test-vrg-east-",
 						Namespace:    testNamespace.GetName(),
@@ -211,14 +210,14 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 					},
 				}
 
-				Expect(k8sClient.Create(testCtx, testVsrg)).To(Succeed())
+				Expect(k8sClient.Create(testCtx, testVrg)).To(Succeed())
 
 				Eventually(func() []string {
-					err := k8sClient.Get(testCtx, client.ObjectKeyFromObject(testVsrg), testVsrg)
+					err := k8sClient.Get(testCtx, client.ObjectKeyFromObject(testVrg), testVrg)
 					if err != nil {
 						return []string{}
 					}
-					return testVsrg.GetFinalizers()
+					return testVrg.GetFinalizers()
 				}, testMaxWait, testInterval).Should(
 					ContainElement("volumereplicationgroups.ramendr.openshift.io/vrg-protection"))
 			})
@@ -238,8 +237,8 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 
 				JustBeforeEach(func() {
 					// Update the vrg spec with some RDSpec entries
-					Expect(k8sClient.Get(testCtx, client.ObjectKeyFromObject(testVsrg), testVsrg)).To(Succeed())
-					testVsrg.Spec.VolSync.RDSpec = []ramendrv1alpha1.VolSyncReplicationDestinationSpec{
+					Expect(k8sClient.Get(testCtx, client.ObjectKeyFromObject(testVrg), testVrg)).To(Succeed())
+					testVrg.Spec.VolSync.RDSpec = []ramendrv1alpha1.VolSyncReplicationDestinationSpec{
 						{
 							ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 								Name:               "testingpvc-a",
@@ -249,7 +248,6 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 
 								Resources: corev1.ResourceRequirements{Requests: testCapacity0},
 							},
-							SSHKeys: testSshKeys,
 						},
 						{
 							ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
@@ -260,35 +258,34 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 
 								Resources: corev1.ResourceRequirements{Requests: testCapacity1},
 							},
-							SSHKeys: testSshKeys,
 						},
 					}
 
 					Eventually(func() error {
-						return k8sClient.Update(testCtx, testVsrg)
+						return k8sClient.Update(testCtx, testVrg)
 					}, testMaxWait, testInterval).Should(Succeed())
 
-					Expect(k8sClient.Update(testCtx, testVsrg)).To(Succeed())
+					Expect(k8sClient.Update(testCtx, testVrg)).To(Succeed())
 
 					allRDs := &volsyncv1alpha1.ReplicationDestinationList{}
 					Eventually(func() int {
 						Expect(k8sClient.List(testCtx, allRDs,
 							client.InNamespace(testNamespace.GetName()))).To(Succeed())
 						return len(allRDs.Items)
-					}, testMaxWait, testInterval).Should(Equal(len(testVsrg.Spec.VolSync.RDSpec)))
+					}, testMaxWait, testInterval).Should(Equal(len(testVrg.Spec.VolSync.RDSpec)))
 
 					testLogger.Info("Found RDs", "allRDs", allRDs)
 
-					Expect(k8sClient.Get(testCtx, types.NamespacedName{Name: testVsrg.Spec.VolSync.RDSpec[0].ProtectedPVC.Name,
+					Expect(k8sClient.Get(testCtx, types.NamespacedName{Name: testVrg.Spec.VolSync.RDSpec[0].ProtectedPVC.Name,
 						Namespace: testNamespace.GetName()}, rd0)).To(Succeed())
-					Expect(k8sClient.Get(testCtx, types.NamespacedName{Name: testVsrg.Spec.VolSync.RDSpec[1].ProtectedPVC.Name,
+					Expect(k8sClient.Get(testCtx, types.NamespacedName{Name: testVrg.Spec.VolSync.RDSpec[1].ProtectedPVC.Name,
 						Namespace: testNamespace.GetName()}, rd1)).To(Succeed())
 				})
 
 				It("Should create ReplicationDestinations for each", func() {
 					Expect(rd0.Spec.Trigger).To(BeNil()) // Rsync, so destination will not have schedule
 					Expect(rd0.Spec.Rsync).NotTo(BeNil())
-					Expect(*rd0.Spec.Rsync.SSHKeys).To(Equal(testSshKeys))
+					Expect(*rd0.Spec.Rsync.SSHKeys).To(Equal(volsync.GetVolSyncSSHSecretNameFromVRGName(testVrg.GetName())))
 					Expect(*rd0.Spec.Rsync.StorageClassName).To(Equal(testStorageClassName))
 					Expect(rd0.Spec.Rsync.AccessModes).To(Equal(testAccessModes))
 					Expect(rd0.Spec.Rsync.CopyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
@@ -296,7 +293,7 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 
 					Expect(rd1.Spec.Trigger).To(BeNil()) // Rsync, so destination will not have schedule
 					Expect(rd1.Spec.Rsync).NotTo(BeNil())
-					Expect(*rd1.Spec.Rsync.SSHKeys).To(Equal(testSshKeys))
+					Expect(*rd1.Spec.Rsync.SSHKeys).To(Equal(volsync.GetVolSyncSSHSecretNameFromVRGName(testVrg.GetName())))
 					Expect(*rd1.Spec.Rsync.StorageClassName).To(Equal(testStorageClassName))
 					Expect(rd1.Spec.Rsync.AccessModes).To(Equal(testAccessModes))
 					Expect(rd1.Spec.Rsync.CopyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
@@ -310,7 +307,6 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 						// fake address set in status on the ReplicationDestinations
 						rd0.Status = &volsyncv1alpha1.ReplicationDestinationStatus{
 							Rsync: &volsyncv1alpha1.ReplicationDestinationRsyncStatus{
-								SSHKeys: &testSshKeys,
 								Address: &rd0Address,
 							},
 						}
@@ -318,7 +314,6 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 
 						rd1.Status = &volsyncv1alpha1.ReplicationDestinationStatus{
 							Rsync: &volsyncv1alpha1.ReplicationDestinationRsyncStatus{
-								SSHKeys: &testSshKeys,
 								Address: &rd1Address,
 							},
 						}

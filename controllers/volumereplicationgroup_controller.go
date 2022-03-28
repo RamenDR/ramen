@@ -743,7 +743,7 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 }
 
 func (v *VRGInstance) reconcileAsPrimary() bool {
-	if len(v.volSyncPVCs) != 0 && !v.reconcileVolSyncAsPrimary() {
+	if len(v.volSyncPVCs) != 0 && v.reconcileVolSyncAsPrimary() {
 		return true // requeue
 	}
 
@@ -796,7 +796,7 @@ func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
 }
 
 func (v *VRGInstance) reconcileAsSecondary() bool {
-	if !v.reconcileVolSyncAsSecondary() {
+	if v.reconcileVolSyncAsSecondary() {
 		return true // requeue
 	}
 

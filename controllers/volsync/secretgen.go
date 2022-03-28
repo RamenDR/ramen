@@ -57,6 +57,7 @@ func generateNewVolSyncReplicationSecret(secretName, secretNamespace string, log
 	priv, pub, err := generateKeyPair(log)
 	if err != nil {
 		log.Error(err, "Unable to generate new secret for VolSync replication")
+		return nil, err
 	}
 
 	secret := &corev1.Secret{
