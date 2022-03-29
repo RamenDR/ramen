@@ -330,6 +330,10 @@ spec:
                           type: string
                       type: object
                     type: array
+                  runFinalSync:
+                    description: runFinalSync used to indicate whether final sync
+                      is needed. Final sync is needed for relocation only.
+                    type: boolean
                 type: object
             required:
             - pvcSelector

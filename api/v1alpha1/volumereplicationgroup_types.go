@@ -134,6 +134,10 @@ type VolSyncSpec struct {
 	// rdSpec array contains the PVCs information that will/are be/being protected by VolSync
 	//+optional
 	RDSpec []VolSyncReplicationDestinationSpec `json:"rdSpec,omitempty"`
+
+	// runFinalSync used to indicate whether final sync is needed. Final sync is needed for relocation only.
+	//+optional
+	RunFinalSync bool `json:"runFinalSync,omitempty"`
 }
 
 // VolSyncReplicationDestinationInfo defines the VolSync PVC information that

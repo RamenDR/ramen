@@ -95,8 +95,8 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary() bool {
 
 		rsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
 			PVCName: pvc.Name,
-			Address: fmt.Sprintf("rd.%s.%s.svc.clusterset.local", pvc.Name, pvc.Namespace),
-			SSHKeys: "test-volsync-ssh-keys", //FIXME:
+			Address: "address.of.destination.ip", //FIXME:
+			SSHKeys: "test-volsync-ssh-keys",     //FIXME:
 		}
 
 		_, err := v.volSyncHandler.ReconcileRS(rsSpec, false /* Schedule sync normally */)
@@ -137,6 +137,35 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary() bool {
 
 func (v *VRGInstance) reconcileVolSyncAsSecondary() bool {
 	v.log.Info("Reconcile VolSync as Secondary", "RDSpec", v.instance.Spec.VolSync.RDSpec)
+
+	if v.instance.Spec.VolSync.RunFinalSync {
+		var notAllFinalSynsAreComplete bool
+		for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
+			if protectedPVC.ProtectedByVolSync {
+				rsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
+					PVCName: protectedPVC.Name,
+					Address: "address.of.destination.ip", //FIXME:
+					SSHKeys: "test-volsync-ssh-keys",     //FIXME:
+				}
+
+				finalSyncComplete, err := v.volSyncHandler.ReconcileRS(rsSpec, true)
+				if err != nil {
+					v.log.Info(fmt.Sprintf("Failed to run final sync for rsSpec %v. Error %v",
+						rsSpec, err))
+
+				}
+
+				if !finalSyncComplete {
+					notAllFinalSynsAreComplete = true
+				}
+			}
+		}
+
+		if notAllFinalSynsAreComplete {
+			return false
+		}
+	}
+
 	// If we are secondary, and RDSpec is not set, then we don't want to have any PVC
 	// flagged as a VolSync PVC.
 	if v.instance.Spec.VolSync.RDSpec == nil {
