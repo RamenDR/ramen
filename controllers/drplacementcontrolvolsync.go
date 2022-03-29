@@ -58,7 +58,7 @@ func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 
 	// Now we should have a source and destination VRG created
 	// Since we will use VolSync - create/ensure & propagate a shared ssh rsync secret to both the src and dst clusters
-	sshSecretNameHub := fmt.Sprintf("%s-rsync-sshsecret-hub", d.instance.GetName())
+	sshSecretNameHub := fmt.Sprintf("%s-vs-secret-hub", d.instance.GetName())
 
 	// Ensure/Create the secret on the hub
 	sshSecretHub, err := volsync.ReconcileVolSyncReplicationSecret(d.ctx, d.reconciler.Client, d.instance,
