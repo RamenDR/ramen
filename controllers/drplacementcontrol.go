@@ -498,16 +498,16 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 		return !done, err
 	}
 
-	if homeCluster != "" && homeCluster != preferredCluster {
-		// Ensure secondaries have transitioned to the required state. If Not, force them
-		if !d.ensureVRGIsSecondaryEverywhere("") {
-			if !d.moveVRGToSecondaryEverywhere() {
-				return !done, fmt.Errorf("failed to move VRG to secondary everywhere")
-			}
+	// if homeCluster != "" && homeCluster != preferredCluster {
+	// 	// Ensure secondaries have transitioned to the required state. If Not, force them
+	// 	if !d.ensureVRGIsSecondaryEverywhere("") {
+	// 		if !d.moveVRGToSecondaryEverywhere() {
+	// 			return !done, fmt.Errorf("failed to move VRG to secondary everywhere")
+	// 		}
 
-			return !done, nil
-		}
-	}
+	// 		return !done, nil
+	// 	}
+	// }
 
 	// We are done if already relocated; if there were secondaries they are cleaned up above
 	if homeCluster != "" && d.hasAlreadySwitchedOver(preferredCluster) {
@@ -760,7 +760,7 @@ func (d *DRPCInstance) setupRelocation(preferredCluster string) error {
 	}
 
 	if !d.ensureDataProtected(clusterToSkip) {
-		return fmt.Errorf("waiting for complete data resync to happen to target cluster")
+		return fmt.Errorf("waiting for data protection...")
 	}
 
 	return nil

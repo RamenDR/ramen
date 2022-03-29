@@ -842,7 +842,9 @@ func (v *VRGInstance) updateVRGStatus(updateConditions bool) error {
 		v.updateVRGConditions()
 	}
 
-	v.updateStatusState()
+	if !v.isFinalSyncInProgress() {
+		v.updateStatusState()
+	}
 
 	v.instance.Status.ObservedGeneration = v.instance.Generation
 
@@ -959,8 +961,15 @@ func (v *VRGInstance) updateVRGConditions() {
 //    VRG.conditions.Available.Reason = Progressing
 //
 func (v *VRGInstance) updateVRGDataReadyCondition() {
-	vrgReady := len(v.instance.Status.ProtectedPVCs) != 0 ||
-		v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary
+	volSyncAggregatedCond := v.aggregateVolSyncDataReadyCondition()
+	if len(v.volRepPVCs) == 0 && volSyncAggregatedCond != nil {
+		v.log.Info("No VolRep PVCs. Not aggregating VRG DataReady condition for it")
+		setStatusCondition(&v.instance.Status.Conditions, *volSyncAggregatedCond)
+
+		return
+	} // otherwise, use the condition result of the PVCs targeted for VolRep
+
+	vrgReady := len(v.instance.Status.ProtectedPVCs) != 0
 	vrgProgressing := false
 
 	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
@@ -1029,6 +1038,14 @@ func (v *VRGInstance) updateVRGDataReadyCondition() {
 }
 
 func (v *VRGInstance) updateVRGDataProtectedCondition() {
+	volSyncAggregatedCond := v.aggregateVolSyncDataProtectedCondition()
+	if len(v.volRepPVCs) == 0 && volSyncAggregatedCond != nil {
+		v.log.Info("No VolRep PVCs. Not aggregating VRG DataProtected condition for it")
+		setStatusCondition(&v.instance.Status.Conditions, *volSyncAggregatedCond)
+
+		return
+	} // otherwise, use the condition result of the PVCs targeted for VolRep
+
 	vrgProtected := true
 	vrgReplicating := false
 
@@ -1120,6 +1137,14 @@ func (v *VRGInstance) vrgReadyStatus() {
 // protecting condition, set the VRG level condition to protecting.  If not, set
 // the VRG level condition to true.
 func (v *VRGInstance) updateVRGClusterDataProtectedCondition() {
+	volSyncAggregatedCond := v.aggregateVolSyncClusterDataProtectedCondition()
+	if len(v.volRepPVCs) == 0 && volSyncAggregatedCond != nil {
+		v.log.Info("No VolRep PVCs. Not aggregating VRG ClusterDataProtected condition for it")
+		setStatusCondition(&v.instance.Status.Conditions, *volSyncAggregatedCond)
+
+		return
+	} // otherwise, use the condition result of the PVCs targeted for VolRep
+
 	atleastOneProtecting := false
 	atleastOneError := false
 
