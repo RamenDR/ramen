@@ -1407,23 +1407,12 @@ func (v *VRGInstance) s3KeyPrefix() string {
 
 func (v *VRGInstance) restorePVsForVolRep() error {
 	v.log.Info("Restoring VolRep PVs")
-	// TODO: refactor this per this comment: https://github.com/RamenDR/ramen/pull/197#discussion_r687246692
-	clusterDataReady := findCondition(v.instance.Status.Conditions, VRGConditionTypeClusterDataReady)
-	if clusterDataReady != nil && clusterDataReady.Status == metav1.ConditionTrue &&
-		clusterDataReady.ObservedGeneration == v.instance.Generation {
-		v.log.Info("VRG's ClusterDataReady condition found. PV restore must have already been applied")
-
-		return nil
-	}
-
+	
 	if len(v.instance.Spec.S3Profiles) == 0 {
 		v.log.Info("No S3 profiles configured")
 
 		return fmt.Errorf("no S3Profiles configured")
 	}
-
-	msg := "Restoring PV cluster data"
-	setVRGClusterDataProgressingCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
 	v.log.Info(fmt.Sprintf("Restoring PVs to this managed cluster. ProfileList: %v", v.instance.Spec.S3Profiles))
 
@@ -1472,9 +1461,6 @@ func (v *VRGInstance) fetchAndRestorePV() (bool, error) {
 			// go to the next profile
 			continue
 		}
-
-		msg := "Restored PV cluster data"
-		setVRGClusterDataReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
 		v.log.Info(fmt.Sprintf("Restored %d PVs using profile %s", len(pvList), s3ProfileName))
 
