@@ -104,27 +104,6 @@ func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration i
 		Status:             metav1.ConditionUnknown,
 		Message:            message,
 	})
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionTypeVolSyncRepSourceSetup,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		Message:            message,
-	})
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionTypeVolSyncRepDestinationSetup,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		Message:            message,
-	})
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionTypeVolSyncPVsRestored,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		Message:            message,
-	})
 }
 
 // sets conditions when VRG as Secondary is replicating the data with Primary.
@@ -247,17 +226,6 @@ func setVRGClusterDataReadyCondition(conditions *[]metav1.Condition, observedGen
 		Reason:             VRGConditionReasonClusterDataRestored,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
-		Message:            message,
-	})
-}
-
-// sets conditions when PV cluster data is being restored
-func setVRGClusterDataProgressingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionTypeClusterDataReady,
-		Reason:             VRGConditionReasonProgressing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionFalse,
 		Message:            message,
 	})
 }

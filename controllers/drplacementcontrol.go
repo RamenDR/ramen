@@ -653,8 +653,7 @@ func (d *DRPCInstance) readyToSwitchOver(homeCluster string, preferredCluster st
 
 func (d *DRPCInstance) checkReadinessAfterActionChange(homeCluster string) bool {
 	return d.isVRGConditionReady(homeCluster, VRGConditionTypeDataReady) &&
-		(d.isVRGConditionReady(homeCluster, VRGConditionTypeVolSyncRepSourceSetup) ||
-			d.isVRGConditionReady(homeCluster, VRGConditionTypeClusterDataProtected))
+		d.isVRGConditionReady(homeCluster, VRGConditionTypeClusterDataProtected)
 }
 
 func (d *DRPCInstance) isVRGConditionReady(homeCluster string, conditionType string) bool {
