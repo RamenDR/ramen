@@ -1407,7 +1407,7 @@ func (v *VRGInstance) s3KeyPrefix() string {
 
 func (v *VRGInstance) restorePVsForVolRep() error {
 	v.log.Info("Restoring VolRep PVs")
-	
+
 	if len(v.instance.Spec.S3Profiles) == 0 {
 		v.log.Info("No S3 profiles configured")
 
@@ -1574,7 +1574,7 @@ func (v *VRGInstance) restorePVClusterData(pvList []corev1.PersistentVolume) err
 		return fmt.Errorf("failed to restore all PVs. Total %d. Restored %d", len(pvList), numRestored)
 	}
 
-	v.log.Info("Success restoring PVs", "Total", numRestored)
+	v.log.Info("Success restoring VolRep PVs", "Total", numRestored)
 
 	return nil
 }

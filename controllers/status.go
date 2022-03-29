@@ -50,27 +50,30 @@ const (
 
 	// VolSync
 	VRGConditionTypeVolSyncRepSourceSetup      = "ReplicationSourceSetup"
+	VRGConditionTypeVolSyncFinalSyncInProgress = "FinalSyncInProgress"
 	VRGConditionTypeVolSyncRepDestinationSetup = "ReplicationDestinationSetup"
 	VRGConditionTypeVolSyncPVsRestored         = "PVsRestored"
 )
 
 // VRG condition reasons
 const (
-	VRGConditionReasonInitializing           = "Initializing"
-	VRGConditionReasonReplicating            = "Replicating"
-	VRGConditionReasonReplicated             = "Replicated"
-	VRGConditionReasonReady                  = "Ready"
-	VRGConditionReasonDataProtected          = "DataProtected"
-	VRGConditionReasonProgressing            = "Progressing"
-	VRGConditionReasonClusterDataRestored    = "Restored"
-	VRGConditionReasonError                  = "Error"
-	VRGConditionReasonErrorUnknown           = "UnknownError"
-	VRGConditionReasonUploading              = "Uploading"
-	VRGConditionReasonUploaded               = "Uploaded"
-	VRGConditionReasonUploadError            = "UploadError"
-	VRGConditionReasonVolSyncRepSourceInited = "SourceInitialized"
-	VRGConditionReasonVolSyncRepDestInited   = "DestinationInitialized"
-	VRGConditionReasonVolSyncPVsRestored     = "Restored"
+	VRGConditionReasonInitializing               = "Initializing"
+	VRGConditionReasonReplicating                = "Replicating"
+	VRGConditionReasonReplicated                 = "Replicated"
+	VRGConditionReasonReady                      = "Ready"
+	VRGConditionReasonDataProtected              = "DataProtected"
+	VRGConditionReasonProgressing                = "Progressing"
+	VRGConditionReasonClusterDataRestored        = "Restored"
+	VRGConditionReasonError                      = "Error"
+	VRGConditionReasonErrorUnknown               = "UnknownError"
+	VRGConditionReasonUploading                  = "Uploading"
+	VRGConditionReasonUploaded                   = "Uploaded"
+	VRGConditionReasonUploadError                = "UploadError"
+	VRGConditionReasonVolSyncRepSourceInited     = "SourceInitialized"
+	VRGConditionReasonVolSyncRepDestInited       = "DestinationInitialized"
+	VRGConditionReasonVolSyncPVsRestored         = "Restored"
+	VRGConditionReasonVolSyncFinalSyncInProgress = "Syncing"
+	VRGConditionReasonVolSyncFinalSyncComplete   = "Synced"
 )
 
 // Just when VRG has been picked up for reconciliation when nothing has been
@@ -340,6 +343,39 @@ func setVRGConditionTypeVolSyncRepSourceSetupError(conditions *[]metav1.Conditio
 	message string) {
 	setStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeVolSyncRepSourceSetup,
+		Reason:             VRGConditionReasonError,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+	})
+}
+
+func setVRGConditionTypeVolSyncFinalSyncInProgress(conditions *[]metav1.Condition, observedGeneration int64,
+	message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeVolSyncFinalSyncInProgress,
+		Reason:             VRGConditionReasonReplicating,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		Message:            message,
+	})
+}
+
+func setVRGConditionTypeVolSyncFinalSyncComplete(conditions *[]metav1.Condition, observedGeneration int64,
+	message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeVolSyncFinalSyncInProgress,
+		Reason:             VRGConditionReasonVolSyncFinalSyncComplete,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+	})
+}
+
+func setVRGConditionTypeVolSyncFinalSyncError(conditions *[]metav1.Condition, observedGeneration int64,
+	message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeVolSyncFinalSyncInProgress,
 		Reason:             VRGConditionReasonError,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
