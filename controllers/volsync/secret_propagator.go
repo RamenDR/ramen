@@ -20,10 +20,8 @@ import (
 	plrulev1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 )
 
-//TODO: update roles for whoever calls this (drplacementcontrol) - will need permissions on policies, placementrules, placementbindings
-
 func GetVolSyncSSHSecretNameFromVRGName(vrgName string) string {
-	return fmt.Sprintf("%s-rsync-sshsecret", vrgName)
+	return fmt.Sprintf("%s-vs-secret", vrgName)
 }
 
 // Should be run from a hub - assumes the source secret exists on the hub cluster and should be propagated
@@ -33,9 +31,9 @@ func PropagateSecretToClusters(ctx context.Context, k8sClient client.Client, sou
 	ownerObject metav1.Object, destClusters []string, destSecretName, destSecretNamespace string,
 	log logr.Logger) error {
 
-	secretPropagationPolicyName := "rmn-" + sourceSecret.GetName() + "-secret-prop-policy"
-	secretPropagationPolicyPlacementRuleName := secretPropagationPolicyName + "-pl-rule"
-	secretPropagationPolicyPlacementBindingName := secretPropagationPolicyName + "-binding"
+	secretPropagationPolicyName := ownerObject.GetName() + "-vs-secret"
+	secretPropagationPolicyPlacementRuleName := secretPropagationPolicyName
+	secretPropagationPolicyPlacementBindingName := secretPropagationPolicyName
 
 	logWithValues := log.WithValues("sourceSecretName", sourceSecret.GetName(),
 		"sourceSecretNamespace", sourceSecret.GetNamespace(), "policyName", secretPropagationPolicyName,
