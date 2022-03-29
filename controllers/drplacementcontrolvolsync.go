@@ -26,15 +26,6 @@ func (d *DRPCInstance) EnsureVolSyncReplicationSetup(homeCluster string) error {
 func (d *DRPCInstance) ensureVolSyncReplicationDestination(srcCluster string) error {
 	d.log.Info("Ensuring VolSync replication destination")
 
-	// TODO: Check if we need this block here.
-	// We can check for condition per PVC instead
-	// ready := d.isVRGConditionDataReady(srcCluster)
-	// if !ready {
-	// 	d.log.Info("Waiting... VRG condition not ready")
-
-	// 	return fmt.Errorf("VRG condition not ready")
-	// }
-
 	// Make sure we have Source and Destination VRGs
 	const maxNumberOfVRGs = 2
 	if len(d.vrgs) != maxNumberOfVRGs {
