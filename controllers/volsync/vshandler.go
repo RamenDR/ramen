@@ -372,7 +372,7 @@ func (v *VSHandler) reconcileServiceExportForRD(rd *volsyncv1alpha1.ReplicationD
 		// Make this ServiceExport owned by the replication destination itself rather than the VRG
 		// This way on relocate scenarios or failover/failback, when the RD is cleaned up the associated
 		// ServiceExport will get cleaned up with it.
-		if err := ctrl.SetControllerReference(v.owner, svcExport, v.client.Scheme()); err != nil {
+		if err := ctrlutil.SetOwnerReference(rd, svcExport, v.client.Scheme()); err != nil {
 			v.log.Error(err, "unable to set controller reference", "resource", svcExport)
 			return err
 		}

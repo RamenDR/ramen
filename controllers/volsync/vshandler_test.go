@@ -179,7 +179,7 @@ var _ = Describe("VolSync Handler", func() {
 					}, maxWait, interval).Should(Succeed())
 
 					// Expect the RD should be owned by owner
-					Expect(ownerMatches(createdRD, owner.GetName(), "ConfigMap", true /*should be controller*/))
+					Expect(ownerMatches(createdRD, owner.GetName(), "ConfigMap", true /*should be controller*/)).To(BeTrue())
 
 					// Check common fields
 					Expect(createdRD.Spec.Rsync.CopyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
@@ -207,8 +207,7 @@ var _ = Describe("VolSync Handler", func() {
 					}, maxWait, interval).Should(Succeed())
 
 					// The created service export should be owned by the replication destination, not our VRG
-					Expect(ownerMatches(svcExport,
-						createdRD.GetName(), "ReplicationDestination", true /*should be controller*/))
+					Expect(ownerMatches(svcExport, createdRD.GetName(), "ReplicationDestination", false)).To(BeTrue())
 				})
 
 				Context("When empty volsyncProfile is specified", func() {
@@ -362,7 +361,7 @@ var _ = Describe("VolSync Handler", func() {
 					}, maxWait, interval).Should(Succeed())
 
 					// Expect the RS should be owned by owner
-					Expect(ownerMatches(createdRS, owner.GetName(), "ConfigMap", true /* Should be controller */))
+					Expect(ownerMatches(createdRS, owner.GetName(), "ConfigMap", true /* Should be controller */)).To(BeTrue())
 
 					// Check common fields
 					Expect(createdRS.Spec.SourcePVC).To(Equal(rsSpec.ProtectedPVC.Name))
