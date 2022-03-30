@@ -19,6 +19,7 @@ package volsync
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -49,9 +50,8 @@ const (
 )
 
 const (
-	VolumeSnapshotProtectFinalizerName string = "volumereplicationgroups.ramendr.openshift.io/volumesnapshot-protection"
-	VRGOwnerLabel                      string = "volumereplicationgroups-owner"
-	FinalSyncTriggerString             string = "vrg-final-sync"
+	VRGOwnerLabel          string = "volumereplicationgroups-owner"
+	FinalSyncTriggerString string = "vrg-final-sync"
 )
 
 type VSHandler struct {
@@ -465,7 +465,7 @@ func (v *VSHandler) EnsurePVCfromRD(rdSpec ramendrv1alpha1.VolSyncReplicationDes
 	}
 	l.V(1).Info("Latest Image for ReplicationDestination", "latestImage	", vsImageRef)
 
-	if err := v.validateSnapshotAndAddFinalizer(*vsImageRef); err != nil {
+	if err := v.validateSnapshotAndAddVRGOwnerRef(*vsImageRef); err != nil {
 		return err
 	}
 
@@ -528,7 +528,7 @@ func (v *VSHandler) ensurePVCFromSnapshot(rdSpec ramendrv1alpha1.VolSyncReplicat
 	return nil
 }
 
-func (v *VSHandler) validateSnapshotAndAddFinalizer(volumeSnapshotRef corev1.TypedLocalObjectReference) error {
+func (v *VSHandler) validateSnapshotAndAddVRGOwnerRef(volumeSnapshotRef corev1.TypedLocalObjectReference) error {
 	// Using unstructured to avoid needing to require VolumeSnapshot in client scheme
 	volSnap := &snapv1.VolumeSnapshot{}
 	err := v.client.Get(v.ctx, types.NamespacedName{
@@ -541,8 +541,8 @@ func (v *VSHandler) validateSnapshotAndAddFinalizer(volumeSnapshotRef corev1.Typ
 		return err
 	}
 
-	if err := v.addFinalizerAndUpdate(volSnap, VolumeSnapshotProtectFinalizerName); err != nil {
-		v.log.Error(err, "Unable to add finalizer to VolumeSnapshot", "volumeSnapshotRef", volumeSnapshotRef)
+	if err := v.addVRGOwnerReferenceAndUpdate(volSnap); err != nil {
+		v.log.Error(err, "Unable to update VolumeSnapshot", "volumeSnapshotRef", volumeSnapshotRef)
 		return err
 	}
 
@@ -550,19 +550,15 @@ func (v *VSHandler) validateSnapshotAndAddFinalizer(volumeSnapshotRef corev1.Typ
 	return nil
 }
 
-func (v *VSHandler) addFinalizer(obj client.Object, finalizer string) (updated bool) {
-	updated = false
-	if !ctrlutil.ContainsFinalizer(obj, finalizer) {
-		ctrlutil.AddFinalizer(obj, finalizer)
-		updated = true
-	}
-	return updated
-}
+func (v *VSHandler) addVRGOwnerReferenceAndUpdate(obj client.Object) error {
+	currentOwnerRefs := obj.GetOwnerReferences()
+	ctrlutil.SetOwnerReference(v.owner, obj, v.client.Scheme())
 
-func (v *VSHandler) addFinalizerAndUpdate(obj client.Object, finalizer string) error {
-	if v.addFinalizer(obj, finalizer) {
+	needsUpdate := !reflect.DeepEqual(obj.GetOwnerReferences(), currentOwnerRefs)
+
+	if needsUpdate {
 		if err := v.client.Update(v.ctx, obj); err != nil {
-			v.log.Error(err, "Failed to add finalizer", "finalizer", finalizer)
+			v.log.Error(err, "Failed to add VRG owner reference to obj", "obj name", obj.GetName())
 			return fmt.Errorf("%w", err)
 		}
 	}

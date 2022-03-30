@@ -81,7 +81,7 @@ var _ = Describe("Secretgen", func() {
 				}, maxWait, interval).Should(Succeed())
 
 				// Expect the secret should be owned by owner
-				Expect(ownerMatches(newSecret, owner.GetName(), "ConfigMap"))
+				Expect(ownerMatches(newSecret, owner.GetName(), "ConfigMap", true))
 
 				// Check secret data
 				Expect(len(newSecret.Data)).To(Equal(4))
