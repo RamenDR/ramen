@@ -179,7 +179,7 @@ var _ = Describe("VolSync Handler", func() {
 					}, maxWait, interval).Should(Succeed())
 
 					// Expect the RD should be owned by owner
-					Expect(ownerMatches(createdRD, owner.GetName(), "ConfigMap"))
+					Expect(ownerMatches(createdRD, owner.GetName(), "ConfigMap", true /*should be controller*/))
 
 					// Check common fields
 					Expect(createdRD.Spec.Rsync.CopyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
@@ -207,7 +207,8 @@ var _ = Describe("VolSync Handler", func() {
 					}, maxWait, interval).Should(Succeed())
 
 					// The created service export should be owned by the replication destination, not our VRG
-					Expect(ownerMatches(svcExport, createdRD.GetName(), "ReplicationDestination"))
+					Expect(ownerMatches(svcExport,
+						createdRD.GetName(), "ReplicationDestination", true /*should be controller*/))
 				})
 
 				Context("When empty volsyncProfile is specified", func() {
@@ -361,7 +362,7 @@ var _ = Describe("VolSync Handler", func() {
 					}, maxWait, interval).Should(Succeed())
 
 					// Expect the RS should be owned by owner
-					Expect(ownerMatches(createdRS, owner.GetName(), "ConfigMap"))
+					Expect(ownerMatches(createdRS, owner.GetName(), "ConfigMap", true /* Should be controller */))
 
 					// Check common fields
 					Expect(createdRS.Spec.SourcePVC).To(Equal(rsSpec.ProtectedPVC.Name))
@@ -576,7 +577,7 @@ var _ = Describe("VolSync Handler", func() {
 					}))
 				})
 
-				It("Should create PVC, latestImage VolumeSnapshot should have a finalizer added", func() {
+				It("Should create PVC, latestImage VolumeSnapshot should have VRG owner ref added", func() {
 					Eventually(func() bool {
 						err := k8sClient.Get(ctx, types.NamespacedName{
 							Name:      latestImageSnapshotName,
@@ -585,8 +586,11 @@ var _ = Describe("VolSync Handler", func() {
 						if err != nil {
 							return false
 						}
-						return len(latestImageSnap.GetFinalizers()) == 1 &&
-							latestImageSnap.GetFinalizers()[0] == volsync.VolumeSnapshotProtectFinalizerName
+
+						// Expect that owner configmap (which is faking our vrg) has been added as an owner
+						// on the VolumeSnapshot - it should NOT be a controller, as the replicationdestination
+						// will be the controller owning it
+						return ownerMatches(latestImageSnap, owner.GetName(), "ConfigMap", false /* not controller */)
 					}, maxWait, interval).Should(BeTrue())
 				})
 
@@ -908,10 +912,12 @@ var _ = Describe("VolSync Handler", func() {
 	})
 })
 
-func ownerMatches(obj metav1.Object, ownerName, ownerKind string) bool {
+func ownerMatches(obj metav1.Object, ownerName, ownerKind string, ownerIsController bool) bool {
 	for _, ownerRef := range obj.GetOwnerReferences() {
 		if ownerRef.Name == ownerName && ownerRef.Kind == ownerKind {
-			return true
+			// owner is there, check if controller or not
+			isController := ownerRef.Controller != nil && *ownerRef.Controller
+			return ownerIsController == isController
 		}
 	}
 
