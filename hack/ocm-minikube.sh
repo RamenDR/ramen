@@ -129,6 +129,16 @@ operator/operator.yaml
 exit_stack_push unset -v registration_operator_file_path_names_clustermanager
 exit_stack_push unset -v registration_operator_file_path_names_klusterlet
 exit_stack_push unset -v registration_operator_file_path_names_common
+v0_y_0() { echo v0.$1.0; }
+y=6
+registration_image_tag=$(v0_y_0 $y)
+work_image_tag=$registration_image_tag
+placement_image_tag=$(v0_y_0 $((y-3)))
+unset -v y
+unset -f v0_y_0
+exit_stack_push unset -v placement_image_tag
+exit_stack_push unset -v work_image_tag
+exit_stack_push unset -v registration_image_tag
 registration_operator_file_url()
 {
 	github_url_file stolostron/registration-operator $1 $registration_operator_git_ref
@@ -136,18 +146,10 @@ registration_operator_file_url()
 exit_stack_push unset -f registration_operator_file_url
 registration_operator_image_spec()
 {
-	set -- /spec/$1ImagePullSpec quay.io/open-cluster-management/$1
-	# TODO replace latest with version matching operator and manifests
-	json6902_test_and_replace_yaml $1 $2 $2:latest
+	set -- $1 quay.io/open-cluster-management/$1 $2
+	json6902_test_and_replace_yaml /spec/$1ImagePullSpec $2 $2:$3
 }
 exit_stack_push unset -f registration_operator_image_spec
-registration_operator_image_specs()
-{
-	for image_name in "$@"; do
-		registration_operator_image_spec $image_name
-	done; unset -v image_name
-}
-exit_stack_push unset -f registration_operator_image_specs
 registration_operator_kubectl()
 {
 	set -- $1 $2 $3 "$4" "$5"\
@@ -184,9 +186,9 @@ registration_operator_kustomization_directory_path_name()
 exit_stack_push unset -f registration_operator_kustomization_directory_path_name
 registration_operator_cr_kubectl()
 {
-	set -- $1 $2 $3 $4 "$5" "$6" "$7" $(registration_operator_kustomization_directory_path_name $3 $1/cr)
-	mkdir -p $8
-	cat <<-a >$8/kustomization.yaml
+	set -- $1 $2 $3 $4 "$5" "$6" $(registration_operator_kustomization_directory_path_name $3 $1/cr)
+	mkdir -p $7
+	cat <<-a >$7/kustomization.yaml
 	resources:
 	  - $(registration_operator_file_url deploy/$3/config/samples/operator_open-cluster-management_$4s.cr.yaml)
 	patchesJson6902:
@@ -195,39 +197,38 @@ registration_operator_cr_kubectl()
 	      version: v1
 	      kind: $2
 	      name: $3
-	    patch: |-$(registration_operator_image_specs registration work $5)$6
+	    patch: |-\
+$(registration_operator_image_spec registration $registration_image_tag)\
+$(registration_operator_image_spec work $work_image_tag)\
+$5
 	a
-	kubectl --context $1 $7 -k $8
+	kubectl --context $1 $6 -k $7
 }
 exit_stack_push unset -f registration_operator_cr_kubectl
 registration_operator_deploy_hub_or_spoke()
 {
-	set -- $1 $2 $3 $4 "$5" "$6" "$7" apply
-	registration_operator_kubectl $1 $3 $4 "$6" $8
-	registration_operator_cr_kubectl $1 $2 $3 $4 "$5" "$7" $8
+	set -- $1 $2 $3 $4 "$5" "$6" apply
+	registration_operator_kubectl $1 $3 $4 "$5" $7
+	registration_operator_cr_kubectl $1 $2 $3 $4 "$6" $7
 }
 exit_stack_push unset -f registration_operator_deploy_hub_or_spoke
 registration_operator_undeploy_hub_or_spoke()
 {
-	set -- $1 $2 $3 $4 "$5" "$6" "$7" delete\ --ignore-not-found
-	registration_operator_cr_kubectl $1 $2 $3 $4 "$5" "$7" "$8"
-	registration_operator_kubectl $1 $3 $4 "$6" "$8"
+	set -- $1 $2 $3 $4 "$5" "$6" delete\ --ignore-not-found
+	registration_operator_cr_kubectl $1 $2 $3 $4 "$6" "$7"
+	registration_operator_kubectl $1 $3 $4 "$5" "$7"
 }
 exit_stack_push unset -f registration_operator_undeploy_hub_or_spoke
 registration_operator_hub()
 {
 	registration_operator_$2_hub_or_spoke $1 ClusterManager cluster-manager clustermanager\
-		placement\
 		"$registration_operator_file_path_names_cluster_manager"\
-		''
+		"$(registration_operator_image_spec placement $placement_image_tag)"
 }
 exit_stack_push unset -f registration_operator_hub
 registration_operator_spoke()
 {
-	# https://github.com/koalaman/shellcheck/issues/923
-	# shellcheck disable=2026
 	registration_operator_$2_hub_or_spoke $1 Klusterlet klusterlet klusterlet\
-		''\
 		"$registration_operator_file_path_names_klusterlet"\
 		"$(json6902_test_and_replace_yaml /spec/clusterName cluster1 $1)"
 }
