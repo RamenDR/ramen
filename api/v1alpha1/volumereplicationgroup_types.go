@@ -128,16 +128,6 @@ type VolSyncSpec struct {
 	RunFinalSync bool `json:"runFinalSync,omitempty"`
 }
 
-// VolSyncReplicationDestinationInfo defines the VolSync PVC information that
-// the ReplicationDestination was setup for.
-type VolSyncReplicationDestinationInfo struct {
-	// pvcName is the name of the PVC that will be replicated by VolSync
-	PVCName string `json:"pvcName"`
-
-	// address is the address to connect to for incoming SSH replication connections.
-	Address string `json:"address"` // This could be removed - do we need VolSyncReplDestinationInfo at all anymore?
-}
-
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // VolumeReplicationGroup (VRG) spec declares the desired schedule for data
