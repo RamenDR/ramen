@@ -85,6 +85,17 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary() (requeue bool) {
 		return
 	}
 
+	// Extra check - do not continue on and protect PVCs until the spec has been cleared of RDs.  This is to prevent
+	// a scenario where we might have a replicationdestination still running locally (with exported service) and
+	// then create a replicationsource that then connects to it, instead of connecting to a replicationdestination
+	// on the secondary cluster
+	if len(v.instance.Spec.VolSync.RDSpec) != 0 {
+		v.log.Info("Spec contains RDSpecs (on primary) - will not continue to reconcile ReplicationSources " +
+			"until RDSpec is empty")
+		requeue = true
+		return
+	}
+
 	// First time: Add all VolSync PVCs to the protected PVC list and set their ready condition to initializing
 	for _, pvc := range v.volSyncPVCs {
 		newProtectedPVC := &ramendrv1alpha1.ProtectedPVC{
@@ -142,7 +153,6 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() (requeue bool) {
 	requeue = false
 
 	if v.instance.Spec.VolSync.RunFinalSync {
-		var notAllFinalSynsAreComplete bool
 		for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
 			if protectedPVC.ProtectedByVolSync {
 				rsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
@@ -157,15 +167,17 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() (requeue bool) {
 				}
 
 				if !finalSyncComplete {
-					notAllFinalSynsAreComplete = true
+					requeue = true
 				}
 			}
 		}
 
-		if notAllFinalSynsAreComplete {
-			requeue = true
+		if requeue {
+			v.log.Info("Waiting for final sync of ReplicationSources to complete ...")
 			return
 		}
+
+		v.log.Info("Final sync of ReplicationSources is complete")
 	}
 
 	// If we are secondary, and RDSpec is not set, then we don't want to have any PVC
