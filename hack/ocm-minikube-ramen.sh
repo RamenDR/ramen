@@ -344,14 +344,24 @@ ramen_images_deploy_spoke()
 	ramen_images_push_spoke	$1
 }
 exit_stack_push unset -f ramen_images_deploy_spoke
-ramen_images_undeploy_spoke()
+ramen_images_undeploy_spoke_common()
 {
 	image_registry_undeploy_cluster $1
 	ramen_catalog_image_remove_cluster $1
 	ramen_bundle_image_spoke_remove_cluster $1
+}
+exit_stack_push unset -f ramen_images_undeploy_spoke_common
+ramen_images_undeploy_spoke_nonhub()
+{
+	ramen_images_undeploy_spoke_common $1
 	ramen_manager_image_remove_cluster $1
 }
-exit_stack_push unset -f ramen_images_undeploy_spoke
+exit_stack_push unset -f ramen_images_undeploy_spoke_nonhub
+ramen_images_undeploy_spoke_hub()
+{
+	ramen_images_undeploy_spoke_common $1
+}
+exit_stack_push unset -f ramen_images_undeploy_spoke_hub
 ramen_images_deploy_spokes()
 {
 	for cluster_name in $spoke_cluster_names; do ramen_images_deploy_spoke $cluster_name; done; unset -v cluster_name
@@ -433,9 +443,28 @@ ramen_s3_secret_deploy_cluster()
 exit_stack_push unset -f ramen_s3_secret_deploy_cluster
 ramen_s3_secret_undeploy_cluster()
 {
-	ramen_s3_secret_kubectl_cluster $1 delete
+	ramen_s3_secret_kubectl_cluster $1 delete\ "$2"
 }
 exit_stack_push unset -f ramen_s3_secret_undeploy_cluster
+ramen_s3_secret_distribution_enabled=${ramen_s3_secret_distribution_enabled-true}
+exit_stack_push unset -v ramen_s3_secret_distribution_enabled
+ramen_s3_secret_deploy_cluster_wait()
+{
+	until_true_or_n 30 kubectl --context $1 -n ramen-system get secret/s3secret
+}
+exit_stack_push unset -f ramen_s3_secret_deploy_cluster_wait
+ramen_s3_secret_undeploy_cluster_wait()
+{
+	true_if_exit_status_and_stderr 1 'error: no matching resources found' \
+	kubectl --context $1 -n ramen-system wait secret/s3secret --for delete
+}
+exit_stack_push unset -f ramen_s3_secret_undeploy_cluster_wait
+if test ramen_s3_secret_distribution_enabled = true; then
+	secret_function_name_suffix=_wait
+else
+	secret_function_name_suffix=
+fi
+exit_stack_push unset -v secret_function_name_suffix
 ramen_config_map_name()
 {
 	echo ramen-$1-operator-config
@@ -477,7 +506,7 @@ ramen_config_deploy_hub_or_spoke()
 	    namespace: ramen-system
 	drClusterOperator:
 	  deploymentAutomationEnabled: true
-	  s3SecretDistributionEnabled: true
+	  s3SecretDistributionEnabled: $ramen_s3_secret_distribution_enabled
 	EOF
 	ramen_config_replace_hub_or_spoke $1 $2 $3
 }
@@ -504,27 +533,14 @@ ramen_undeploy_hub_or_spoke()
 	ramen_config_undeploy_hub_or_spoke $1 $2
 	kube_context_set $1
 	make -C $ramen_directory_path_name undeploy-$2
-	# Error from server (NotFound): error when deleting "STDIN": namespaces "ramen-system" not found
-	# Error from server (NotFound): error when deleting "STDIN": serviceaccounts "ramen-hub-operator" not found
-	# Error from server (NotFound): error when deleting "STDIN": roles.rbac.authorization.k8s.io "ramen-hub-leader-election-role" not found
-	# Error from server (NotFound): error when deleting "STDIN": rolebindings.rbac.authorization.k8s.io "ramen-hub-leader-election-rolebinding" not found
-	# Error from server (NotFound): error when deleting "STDIN": configmaps "ramen-hub-operator-config" not found
-	# Error from server (NotFound): error when deleting "STDIN": services "ramen-hub-operator-metrics-service" not found
-	# Error from server (NotFound): error when deleting "STDIN": deployments.apps "ramen-hub-operator" not found
-	# Makefile:149: recipe for target 'undeploy-hub' failed
-	# make: *** [undeploy-hub] Error 1
 	kube_context_set_undo
 	ramen_manager_image_remove_cluster $1
-	# Error: No such image: $ramen_manager_image_reference
-	# ssh: Process exited with status 1
 }
 exit_stack_push unset -f ramen_undeploy_hub_or_spoke
 ramen_undeploy_hub()
 {
 	ramen_samples_channel_and_drpolicy_undeploy
-	set +e # TODO remove once each resource is owned by hub or spoke but not both
 	ramen_undeploy_hub_or_spoke $hub_cluster_name hub
-	set -e
 }
 exit_stack_push unset -f ramen_undeploy_hub
 ramen_undeploy_spoke()
@@ -615,28 +631,47 @@ ramen_samples_channel_and_drpolicy_deploy()
 		until_true_or_n 300 kubectl --context $cluster_name get namespaces/ramen-system
 		ramen_catalog_deploy_cluster $cluster_name
 		until_true_or_n 300 kubectl --context $cluster_name -n ramen-system wait deployments ramen-dr-cluster-operator --for condition=available --timeout 0
-		#ramen_s3_secret_deploy_cluster $cluster_name # TODO remove once automated
+		ramen_s3_secret_deploy_cluster$secret_function_name_suffix $cluster_name
 	done; unset -v cluster_name
 	kubectl --context $hub_cluster_name -n ramen-samples get channels/ramen-gitops
 }
 exit_stack_push unset -f ramen_samples_channel_and_drpolicy_deploy
 ramen_samples_channel_and_drpolicy_undeploy()
 {
+	set --
 	for cluster_name in $spoke_cluster_names; do
-		ramen_s3_secret_undeploy_cluster $cluster_name # TODO remove once automated
+#spec.startingCSV\
+		set -- $# "$@" $(kubectl --context $cluster_name -n ramen-system get subscriptions.operators.coreos.com/ramen-dr-cluster-subscription -ojsonpath=\{.\
+status.installedCSV\
+\}); test $(($1+2)) -eq $#; shift
 		ramen_catalog_undeploy_cluster $cluster_name
 	done; unset -v cluster_name
 	date
 	kubectl --context $hub_cluster_name delete -k https://github.com/$ocm_ramen_samples_git_path/ocm-ramen-samples/subscriptions?ref=$ocm_ramen_samples_git_ref
 	date
 	for cluster_name in $spoke_cluster_names; do
+		date
+		kubectl --context $cluster_name -n ramen-system delete clusterserviceversions.operators.coreos.com/$1 --ignore-not-found
+		shift
+		date
 		true_if_exit_status_and_stderr 1 'error: no matching resources found' \
 		kubectl --context $cluster_name -n ramen-system wait deployments ramen-dr-cluster-operator --for delete
+		date
 		# TODO remove once drpolicy controller does this
-		kubectl --context $cluster_name delete\
-			customresourcedefinitions.apiextensions.k8s.io/volumereplicationgroups.ramendr.openshift.io\
-
-		ramen_images_undeploy_spoke $cluster_name
+		kubectl --context $cluster_name delete customresourcedefinitions.apiextensions.k8s.io/volumereplicationgroups.ramendr.openshift.io
+		date
+	done; unset -v cluster_name
+	for cluster_name in $spoke_cluster_names_nonhub; do
+		date
+		ramen_s3_secret_undeploy_cluster$secret_function_name_suffix $cluster_name --ignore-not-found
+		date
+		true_if_exit_status_and_stderr 1 'error: no matching resources found' \
+		kubectl --context $cluster_name wait namespaces/ramen-system --for delete --timeout 2m
+		date
+		ramen_images_undeploy_spoke_nonhub $cluster_name
+	done; unset -v cluster_name
+	for cluster_name in $spoke_cluster_names_hub; do
+		ramen_images_undeploy_spoke_hub $cluster_name
 	done; unset -v cluster_name
 }
 exit_stack_push unset -f ramen_samples_channel_and_drpolicy_undeploy
@@ -730,6 +765,15 @@ hub_cluster_name=${hub_cluster_name:-hub}
 exit_stack_push unset -v hub_cluster_name
 spoke_cluster_names=${spoke_cluster_names:-cluster1\ $hub_cluster_name}
 exit_stack_push unset -v spoke_cluster_names
+for cluster_name in $spoke_cluster_names; do
+	if test $cluster_name = $hub_cluster_name; then
+		spoke_cluster_names_hub=$spoke_cluster_names_hub\ $cluster_name
+	else
+		spoke_cluster_names_nonhub=$spoke_cluster_names_nonhub\ $cluster_name
+	fi
+done; unset -v cluster_name
+exit_stack_push unset -v spoke_cluster_names_hub
+exit_stack_push unset -v spoke_cluster_names_nonhub
 rook_ceph_deploy()
 {
 	# volumes required: mirror sources, mirror targets, minio backend
