@@ -98,7 +98,7 @@ func (v *VSHandler) ReconcileRD(
 	// Pre-allocated shared secret - DRPC will generate and propagate this secret from hub to clusters
 	sshKeysSecretName := GetVolSyncSSHSecretNameFromVRGName(v.owner.GetName())
 	// Need to confirm this secret exists on the cluster before proceeding, otherwise volsync will generate it
-	secretExists, err := v.validateSecretExists(sshKeysSecretName)
+	secretExists, err := v.validateSecretAndAddVRGOwnerRef(sshKeysSecretName)
 	if err != nil || !secretExists {
 		return nil, err
 	}
@@ -186,7 +186,7 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	sshKeysSecretName := GetVolSyncSSHSecretNameFromVRGName(v.owner.GetName())
 	// Need to confirm this secret exists on the cluster before proceeding, otherwise volsync will generate it
 	secretExists := false
-	secretExists, err = v.validateSecretExists(sshKeysSecretName)
+	secretExists, err = v.validateSecretAndAddVRGOwnerRef(sshKeysSecretName)
 	if err != nil || !secretExists {
 		return
 	}
@@ -280,7 +280,7 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	return
 }
 
-func (v *VSHandler) validateSecretExists(secretName string) (bool, error) {
+func (v *VSHandler) validateSecretAndAddVRGOwnerRef(secretName string) (bool, error) {
 	secret := &corev1.Secret{}
 
 	err := v.client.Get(v.ctx,
@@ -300,6 +300,13 @@ func (v *VSHandler) validateSecretExists(secretName string) (bool, error) {
 	}
 
 	v.log.Info("Secret exists", "secretName", secretName)
+
+	if err := v.addVRGOwnerReferenceAndUpdate(secret); err != nil {
+		v.log.Error(err, "Unable to update secret", "secretName", secretName)
+		return true, err
+	}
+
+	v.log.V(1).Info("VolSync secret validated and protected with finalizer", "secretName", secretName)
 	return true, nil
 }
 
