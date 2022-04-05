@@ -192,6 +192,17 @@ var _ = Describe("VolSync Handler", func() {
 					Expect(createdRD.Spec.Trigger).To(BeNil()) // No schedule should be set
 					Expect(createdRD.GetLabels()).To(HaveKeyWithValue(volsync.VRGOwnerLabel, owner.GetName()))
 
+					// Check that the secret has been updated to have our vrg as owner
+					Eventually(func() bool {
+						err := k8sClient.Get(ctx, client.ObjectKeyFromObject(dummySSHSecret), dummySSHSecret)
+						if err != nil {
+							return false
+						}
+
+						// The ssh secret should be updated to be owned by the VRG
+						return ownerMatches(dummySSHSecret, owner.GetName(), "ConfigMap", false)
+					}, maxWait, interval).Should(BeTrue())
+
 					// Check that the service export is created for this RD
 					svcExport := &unstructured.Unstructured{}
 					svcExport.SetGroupVersionKind(schema.GroupVersionKind{
@@ -362,6 +373,17 @@ var _ = Describe("VolSync Handler", func() {
 
 					// Expect the RS should be owned by owner
 					Expect(ownerMatches(createdRS, owner.GetName(), "ConfigMap", true /* Should be controller */)).To(BeTrue())
+
+					// Check that the volsync ssh secret has been updated to have our vrg as owner
+					Eventually(func() bool {
+						err := k8sClient.Get(ctx, client.ObjectKeyFromObject(dummySSHSecret), dummySSHSecret)
+						if err != nil {
+							return false
+						}
+
+						// The ssh secret should be updated to be owned by the VRG
+						return ownerMatches(dummySSHSecret, owner.GetName(), "ConfigMap", false)
+					}, maxWait, interval).Should(BeTrue())
 
 					// Check common fields
 					Expect(createdRS.Spec.SourcePVC).To(Equal(rsSpec.ProtectedPVC.Name))
