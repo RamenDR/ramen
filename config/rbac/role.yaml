@@ -35,6 +35,16 @@ rules:
 - apiGroups:
   - apps.open-cluster-management.io
   resources:
+  - placementrules/finalizers
+  verbs:
+  - create
+  - delete
+  - get
+  - patch
+  - update
+- apiGroups:
+  - apps.open-cluster-management.io
+  resources:
   - placementrules/status
   verbs:
   - get
@@ -48,6 +58,26 @@ rules:
   - get
   - list
   - watch
+- apiGroups:
+  - cluster.open-cluster-management.io
+  resources:
+  - placementdecisions
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cluster.open-cluster-management.io
+  resources:
+  - placementdecisions/status
+  verbs:
+  - get
+  - patch
+  - update
 - apiGroups:
   - ""
   resources:
