@@ -77,9 +77,6 @@ type fakeObjectStorer struct {
 	name string
 }
 
-func (fakeObjectStorer) CreateBucket(bucket string) error { return nil }
-func (fakeObjectStorer) DeleteBucket(bucket string) error { return nil }
-func (fakeObjectStorer) PurgeBucket(bucket string) error  { return nil }
 func (fakeObjectStorer) UploadPV(pvKeyPrefix, pvKeySuffix string, pv corev1.PersistentVolume) error {
 	return nil
 }
