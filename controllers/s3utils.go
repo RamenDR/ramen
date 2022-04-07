@@ -93,18 +93,9 @@ type ObjectStoreGetter interface {
 type ObjectStorer interface {
 	UploadPV(pvKeyPrefix, pvKeySuffix string,
 		pv corev1.PersistentVolume) error
-	UploadTypedObject(keyPrefix, keySuffix string,
-		uploadContent interface{}) error
-	UploadObject(key string,
-		uploadContent interface{}) error
-	VerifyPVUpload(pvKeyPrefix, pvKeySuffix string,
-		verifyPV corev1.PersistentVolume) error
 	DownloadPVs(pvKeyPrefix string) (
 		pvList []corev1.PersistentVolume, err error)
-	DownloadTypedObjects(keyPrefix string,
-		objectType reflect.Type) (interface{}, error)
 	ListKeys(keyPrefix string) (keys []string, err error)
-	DownloadObject(key string, downloadContent interface{}) error
 	DeleteObjects(keyPrefix string) error
 	GetName() string
 }
