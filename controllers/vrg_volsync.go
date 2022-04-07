@@ -87,17 +87,6 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary() (requeue bool) {
 		return
 	}
 
-	// Extra check - do not continue on and protect PVCs until the spec has been cleared of RDs.  This is to prevent
-	// a scenario where we might have a replicationdestination still running locally (with exported service) and
-	// then create a replicationsource that then connects to it, instead of connecting to a replicationdestination
-	// on the secondary cluster
-	if len(v.instance.Spec.VolSync.RDSpec) != 0 {
-		v.log.Info("Spec contains RDSpecs (on primary) - will not continue to reconcile ReplicationSources " +
-			"until RDSpec is empty")
-		requeue = true
-		return
-	}
-
 	// First time: Add all VolSync PVCs to the protected PVC list and set their ready condition to initializing
 	for _, pvc := range v.volSyncPVCs {
 		newProtectedPVC := &ramendrv1alpha1.ProtectedPVC{
@@ -166,7 +155,7 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() (requeue bool) {
 					v.log.Info(fmt.Sprintf("Failed to run final sync for rsSpec %v. Error %v",
 						rsSpec, err))
 
-					requeue = false
+					requeue = true
 					setVRGConditionTypeVolSyncFinalSyncError(&v.instance.Status.ProtectedPVCs[idx].Conditions,
 						v.instance.Generation, "Final sync error")
 
@@ -174,7 +163,7 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() (requeue bool) {
 				}
 
 				if !finalSyncComplete {
-					requeue = false
+					requeue = true
 					setVRGConditionTypeVolSyncFinalSyncInProgress(&v.instance.Status.ProtectedPVCs[idx].Conditions,
 						v.instance.Generation, "Final sync in-progress")
 
@@ -223,15 +212,6 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() (requeue bool) {
 		if rd == nil {
 			// Replication destination is not ready yet, indicate we should requeue after the for loop is complete
 			requeue = true
-		}
-
-		// Cleanup - this VRG is secondary, cleanup if necessary
-		// remove ReplicationSources that would have been created when this VRG was primary
-		if err := v.volSyncHandler.DeleteRS(rdSpec.ProtectedPVC.Name); err != nil {
-			v.log.Error(err, "Failed to delete RS from when this VRG instance was primary")
-
-			requeue = true
-			return
 		}
 
 		// setVRGConditionTypeVolSyncRepDestSetupComplete(&protectedPVC.Conditions, v.instance.Generation, "Ready")
@@ -382,7 +362,7 @@ func (v *VRGInstance) aggregateVolSyncClusterDataProtectedCondition() *v1.Condit
 
 	// TODO: For ClusterDataRady and ClusterDataProtected condition, should probably use the same
 	// condition as DataProtected.  That is; if DataProtected is true, then, ClusterDataRady and ClusterDataProtected
-	// should also be true.  For now, treat them separate with hardcodeded values. 
+	// should also be true.  For now, treat them separate with hardcodeded values.
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
 		for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
 			if protectedPVC.ProtectedByVolSync {
