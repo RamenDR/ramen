@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -113,6 +114,14 @@ func (v *VSHandler) ReconcileRD(
 		pvcAccessModes = rdSpec.ProtectedPVC.AccessModes
 	}
 
+	// Check if a ReplicationSource is still here (Can happen if transitioning from primary to secondary)
+	// Before creating a new RD for this PVC, make sure any ReplicationSource for this PVC is cleaned up first
+	// This avoids a scenario where we create an RD that immediately syncs with an RS that still exists locally
+	err = v.DeleteRS(rdSpec.ProtectedPVC.Name)
+	if err != nil {
+		return nil, err
+	}
+
 	rd := &volsyncv1alpha1.ReplicationDestination{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      getReplicationDestinationName(rdSpec.ProtectedPVC.Name),
@@ -182,6 +191,12 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	replicationSource = nil
 	err = nil
 
+	// Confirm PVC exists and add our VRG as ownerRef - TODO: possibly move this to prepareForFinalSync
+	err = v.validatePVCAndAddVRGOwnerRef(rsSpec.ProtectedPVC.Name)
+	if err != nil {
+		return
+	}
+
 	// Pre-allocated shared secret - DRPC will generate and propagate this secret from hub to clusters
 	sshKeysSecretName := GetVolSyncSSHSecretNameFromVRGName(v.owner.GetName())
 	// Need to confirm this secret exists on the cluster before proceeding, otherwise volsync will generate it
@@ -191,7 +206,8 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 		return
 	}
 
-	volumeSnapshotClassName, err := v.getVolumeSnapshotClassFromPVCStorageClass(rsSpec.ProtectedPVC.StorageClassName)
+	var volumeSnapshotClassName string
+	volumeSnapshotClassName, err = v.getVolumeSnapshotClassFromPVCStorageClass(rsSpec.ProtectedPVC.StorageClassName)
 	if err != nil {
 		return
 	}
@@ -199,6 +215,15 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	// Remote service address created for the ReplicationDestination on the secondary
 	// The secondary namespace will be the same as primary namespace so use the vrg.Namespace
 	remoteAddress := getRemoteServiceNameForRDFromPVCName(rsSpec.ProtectedPVC.Name, v.owner.GetNamespace())
+
+	// Check if a ReplicationDestination is still here (Can happen if transitioning from secondary to primary)
+	// Before creating a new RS for this PVC, make sure any ReplicationDestination for this PVC is cleaned up first
+	// This avoids a scenario where we create an RS that immediately connects back to an RD that still exists locally
+	// Need to be sure ReconcileRS is never called prior to restoring any PVC that need to be restored from RDs first
+	err = v.DeleteRD(rsSpec.ProtectedPVC.Name)
+	if err != nil {
+		return
+	}
 
 	rs := &volsyncv1alpha1.ReplicationSource{
 		ObjectMeta: metav1.ObjectMeta{
@@ -280,6 +305,36 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	return
 }
 
+func (v *VSHandler) validatePVCAndAddVRGOwnerRef(pvcName string) error {
+	pvc := &corev1.PersistentVolumeClaim{}
+
+	err := v.client.Get(v.ctx,
+		types.NamespacedName{
+			Name:      pvcName,
+			Namespace: v.owner.GetNamespace(),
+		}, pvc)
+	if err != nil {
+		if !kerrors.IsNotFound(err) {
+			v.log.Error(err, "Failed to get PVC", "pvcName", pvcName)
+			return err
+		}
+
+		// PVC is not found
+		v.log.Info("PVC not found", "pvcName", pvcName)
+		return err
+	}
+
+	v.log.Info("PVC exists", "pvcName", pvcName)
+
+	if err = v.addVRGOwnerReferenceAndUpdate(pvc); err != nil {
+		v.log.Error(err, "Unable to update PVC", "pvcName", pvcName)
+		return err
+	}
+
+	v.log.V(1).Info("PVC validated and VRG ownerRef added", "pvcName", pvcName)
+	return nil
+}
+
 func (v *VSHandler) validateSecretAndAddVRGOwnerRef(secretName string) (bool, error) {
 	secret := &corev1.Secret{}
 
@@ -306,11 +361,11 @@ func (v *VSHandler) validateSecretAndAddVRGOwnerRef(secretName string) (bool, er
 		return true, err
 	}
 
-	v.log.V(1).Info("VolSync secret validated and protected with finalizer", "secretName", secretName)
+	v.log.V(1).Info("VolSync secret validated and VRG ownerRef added", "secretName", secretName)
 	return true, nil
 }
 
-func (v *VSHandler) DeleteRS(rsName string) error {
+func (v *VSHandler) DeleteRS(pvcName string) error {
 	// Remove a ReplicationSource by name that is owned (by parent vrg owner)
 	currentRSListByOwner, err := v.listRSByOwner()
 	if err != nil {
@@ -318,12 +373,33 @@ func (v *VSHandler) DeleteRS(rsName string) error {
 	}
 
 	for _, rs := range currentRSListByOwner.Items {
-		if rs.GetName() == rsName {
+		if rs.GetName() == getReplicationSourceName(pvcName) {
 			// Delete the ReplicationSource, log errors with cleanup but continue on
 			if err := v.client.Delete(v.ctx, &rs); err != nil {
 				v.log.Error(err, "Error cleaning up ReplicationSource", "name", rs.GetName())
 			} else {
 				v.log.Info("Deleted ReplicationSource", "name", rs.GetName())
+			}
+		}
+	}
+
+	return nil
+}
+
+func (v *VSHandler) DeleteRD(pvcName string) error {
+	// Remove a ReplicationDestination by name that is owned (by parent vrg owner)
+	currentRDListByOwner, err := v.listRDByOwner()
+	if err != nil {
+		return err
+	}
+
+	for _, rd := range currentRDListByOwner.Items {
+		if rd.GetName() == getReplicationDestinationName(pvcName) {
+			// Delete the ReplicationDestination, log errors with cleanup but continue on
+			if err := v.client.Delete(v.ctx, &rd); err != nil {
+				v.log.Error(err, "Error cleaning up ReplicationDestination", "name", rd.GetName())
+			} else {
+				v.log.Info("Deleted ReplicationDestination", "name", rd.GetName())
 			}
 		}
 	}
@@ -487,7 +563,7 @@ func (v *VSHandler) ensurePVCFromSnapshot(rdSpec ramendrv1alpha1.VolSyncReplicat
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      rdSpec.ProtectedPVC.Name,
 			Namespace: v.owner.GetNamespace(),
-			Labels:    map[string]string{"appname": "busybox"}, //FIXME
+			Labels:    map[string]string{"appname": "busybox"}, //FIXME:
 		},
 	}
 
@@ -553,7 +629,7 @@ func (v *VSHandler) validateSnapshotAndAddVRGOwnerRef(volumeSnapshotRef corev1.T
 		return err
 	}
 
-	v.log.V(1).Info("VolumeSnapshot validated and protected with finalizer", "volumeSnapshotRef", volumeSnapshotRef)
+	v.log.V(1).Info("VolumeSnapshot validated and VRG ownerRef added", "volumeSnapshotRef", volumeSnapshotRef)
 	return nil
 }
 
@@ -677,15 +753,28 @@ func ConvertSchedulingIntervalToCronSpec(schedulingInterval string) (*string, er
 
 	num := schedulingInterval[:len(schedulingInterval)-1]
 
+	numInt, err := strconv.Atoi(num)
+	if err != nil {
+		return nil, fmt.Errorf("scheduling interval prefix %s cannot be convered to an int value", num)
+	}
+
 	var cronSpec string
 
 	switch mhd {
 	case "m":
 		cronSpec = fmt.Sprintf("*/%s * * * *", num)
 	case "h":
-		cronSpec = fmt.Sprintf("* */%s * * *", num)
+		//TODO: cronspec has a max here of 23 hours - do we try to convert into days?
+		cronSpec = fmt.Sprintf("0 */%s * * *", num)
 	case "d":
-		cronSpec = fmt.Sprintf("* * */%s * *", num)
+		if numInt > 28 {
+			// Max # of days in interval we'll allow is 28 - otherwise there are issues converting to a cronspec
+			// which is expected to be a day of the month (1-31).  I.e. if we tried to set to */31 we'd get
+			// every 31st day of the month
+			num = "28"
+
+		}
+		cronSpec = fmt.Sprintf("0 0 */%s * *", num)
 	}
 
 	if cronSpec == "" {
