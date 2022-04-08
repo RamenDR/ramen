@@ -1,6 +1,6 @@
 package volsync
 
-//FIXME: move this somewhere that makes sense
+// FIXME: move this somewhere that makes sense
 
 import (
 	"context"
@@ -29,8 +29,8 @@ func GetVolSyncSSHSecretNameFromVRGName(vrgName string) string {
 // Creates Policy/PlacementRule/PlacementBinding on the hub in the same namespace as the source secret
 func PropagateSecretToClusters(ctx context.Context, k8sClient client.Client, sourceSecret *corev1.Secret,
 	ownerObject metav1.Object, destClusters []string, destSecretName, destSecretNamespace string,
-	log logr.Logger) error {
-
+	log logr.Logger,
+) error {
 	secretPropagationPolicyName := ownerObject.GetName() + "-vs-secret"
 	secretPropagationPolicyPlacementRuleName := secretPropagationPolicyName
 	secretPropagationPolicyPlacementBindingName := secretPropagationPolicyName
@@ -65,11 +65,7 @@ func PropagateSecretToClusters(ctx context.Context, k8sClient client.Client, sou
 		return err
 	}
 
-	if err := sp.reconcileSecretPropagationPlacementBinding(); err != nil {
-		return err
-	}
-
-	return nil
+	return sp.reconcileSecretPropagationPlacementBinding()
 }
 
 type secretPropagator struct {
@@ -102,7 +98,8 @@ func (sp *secretPropagator) reconcileSecretPropagationPolicy() error {
 	op, err := ctrlutil.CreateOrUpdate(sp.Context, sp.Client, policy, func() error {
 		if err := ctrl.SetControllerReference(sp.Owner, policy, sp.Client.Scheme()); err != nil {
 			sp.Log.Error(err, "unable to set controller reference on policy")
-			return err
+
+			return fmt.Errorf("%w", err)
 		}
 
 		policy.Spec = policyv1.PolicySpec{
@@ -120,8 +117,10 @@ func (sp *secretPropagator) reconcileSecretPropagationPolicy() error {
 	})
 	if err != nil {
 		sp.Log.Error(err, "Error creating or updating secret propagation policy")
-		return err
+
+		return fmt.Errorf("error creating or updating secret propagation policy (%w)", err)
 	}
+
 	sp.Log.V(1).Info("Secret propagation policy createOrUpdate Complete", "op", op)
 
 	return nil
@@ -145,10 +144,12 @@ func (sp *secretPropagator) getEmbeddedConfigPolicy() (*cfgpolicyv1.Configuratio
 		"type": "Opaque",
 		"data": secretData,
 	}
+
 	secretObjDefinitionRaw, err := json.Marshal(secretObjDefinition)
 	if err != nil {
 		sp.Log.Error(err, "Unable to encode object definition for secret")
-		return nil, err
+
+		return nil, fmt.Errorf("unable to encode secret (%w)", err)
 	}
 
 	embeddedConfigPolicy := &cfgpolicyv1.ConfigurationPolicy{
@@ -177,7 +178,6 @@ func (sp *secretPropagator) getEmbeddedConfigPolicy() (*cfgpolicyv1.Configuratio
 }
 
 func (sp *secretPropagator) reconcileSecretPropagationPlacementRule() error {
-
 	placementRule := &plrulev1.PlacementRule{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      sp.PlacementRuleName,
@@ -193,7 +193,8 @@ func (sp *secretPropagator) reconcileSecretPropagationPlacementRule() error {
 	op, err := ctrlutil.CreateOrUpdate(sp.Context, sp.Client, placementRule, func() error {
 		if err := ctrl.SetControllerReference(sp.Owner, placementRule, sp.Client.Scheme()); err != nil {
 			sp.Log.Error(err, "unable to set controller reference")
-			return err
+
+			return fmt.Errorf("%w", err)
 		}
 
 		placementRule.Spec = plrulev1.PlacementRuleSpec{
@@ -210,11 +211,12 @@ func (sp *secretPropagator) reconcileSecretPropagationPlacementRule() error {
 
 		return nil
 	})
-
 	if err != nil {
 		sp.Log.Error(err, "Error creating or updating secret propagation placement rule")
-		return err
+
+		return fmt.Errorf("error creating or updating secret propagation placement rule (%w)", err)
 	}
+
 	sp.Log.V(1).Info("Secret propagation policy placementrule createOrUpdate Complete", "op", op)
 
 	return nil
@@ -231,7 +233,8 @@ func (sp *secretPropagator) reconcileSecretPropagationPlacementBinding() error {
 	op, err := ctrlutil.CreateOrUpdate(sp.Context, sp.Client, placementBinding, func() error {
 		if err := ctrl.SetControllerReference(sp.Owner, placementBinding, sp.Client.Scheme()); err != nil {
 			sp.Log.Error(err, "unable to set controller reference")
-			return err
+
+			return fmt.Errorf("%w", err)
 		}
 
 		placementBinding.PlacementRef = policyv1.PlacementSubject{
@@ -250,11 +253,12 @@ func (sp *secretPropagator) reconcileSecretPropagationPlacementBinding() error {
 
 		return nil
 	})
-
 	if err != nil {
 		sp.Log.Error(err, "Error creating or updating secret propagation placement binding")
-		return err
+
+		return fmt.Errorf("error creating or updating secret propagation placement binding (%w)", err)
 	}
+
 	sp.Log.V(1).Info("Secret propagation policy placementbinding createOrUpdate Complete", "op", op)
 
 	return nil

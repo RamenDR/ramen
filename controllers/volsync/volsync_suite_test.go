@@ -25,11 +25,11 @@ var (
 	testEnv                     *envtest.Environment
 	cancel                      context.CancelFunc
 	ctx                         context.Context
-	testStorageClassName        string = "test.storageclass"
+	testStorageClassName        = "test.storageclass"
 	testStorageClass            *storagev1.StorageClass
-	testVolumeSnapshotClassName string = "test.vol.snapclass"
+	testVolumeSnapshotClassName = "test.vol.snapclass"
 	testVolumeSnapshotClass     *snapv1.VolumeSnapshotClass
-	testStorageDriverName       string = "test.storage.provisioner"
+	testStorageDriverName       = "test.storage.provisioner"
 )
 
 func TestVolsync(t *testing.T) {

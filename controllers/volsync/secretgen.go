@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 
 	"golang.org/x/crypto/ssh"
 
@@ -20,20 +21,22 @@ import (
 
 const keyBitSize = 4096
 
-//TODO: update roles for whoever calls this (drplacementcontrol) - will need permissions to read/update/create secrets
+// TODO: update roles for whoever calls this (drplacementcontrol) - will need permissions to read/update/create secrets
 
 // Creates a new volsync replication secret on the cluster (should be called on the hub cluster).  If the secret
 // already exists, nop
 func ReconcileVolSyncReplicationSecret(ctx context.Context, k8sClient client.Client, ownerObject metav1.Object,
-	secretName, secretNamespace string, log logr.Logger) (*corev1.Secret, error) {
-
+	secretName, secretNamespace string, log logr.Logger) (*corev1.Secret, error,
+) {
 	existingSecret := &corev1.Secret{}
 	// See if it exists already
 	err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: secretNamespace}, existingSecret)
 	if err != nil && !kerrors.IsNotFound(err) {
 		log.Error(err, "failed to get secret")
-		return nil, err
+
+		return nil, fmt.Errorf("failed to get secret (%w)", err)
 	}
+
 	if err == nil { // Found the secret, going to assume it doesn't need modification
 		return existingSecret, nil
 	}
@@ -45,18 +48,27 @@ func ReconcileVolSyncReplicationSecret(ctx context.Context, k8sClient client.Cli
 
 	if err := ctrl.SetControllerReference(ownerObject, secret, k8sClient.Scheme()); err != nil {
 		log.Error(err, "unable to set controller reference on secret")
-		return nil, err
+
+		return nil, fmt.Errorf("%w", err)
 	}
 
 	log.Info("Creating new volsync rsync secret", "secretName", secretName)
+
 	err = k8sClient.Create(ctx, secret)
-	return secret, err
+	if err != nil {
+		log.Error(err, "Error creating secret", "secretName", secretName)
+
+		return nil, fmt.Errorf("error creating secret for volsync (%w)", err)
+	}
+
+	return secret, nil
 }
 
 func generateNewVolSyncReplicationSecret(secretName, secretNamespace string, log logr.Logger) (*corev1.Secret, error) {
 	priv, pub, err := generateKeyPair(log)
 	if err != nil {
 		log.Error(err, "Unable to generate new secret for VolSync replication")
+
 		return nil, err
 	}
 
@@ -92,11 +104,14 @@ func generateNewPrivateKey(log logr.Logger) (*rsa.PrivateKey, error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, keyBitSize)
 	if err != nil {
 		log.Error(err, "Unable to generate new rsa private key")
-		return nil, err
+
+		return nil, fmt.Errorf("unable to generate new rsa private key (%w)", err)
 	}
+
 	if err = privateKey.Validate(); err != nil {
 		log.Error(err, "Error validating new rsa private key")
-		return nil, err
+
+		return nil, fmt.Errorf("error validating new rsa private key (%w)", err)
 	}
 
 	return privateKey, nil
@@ -107,13 +122,15 @@ func getPrivateKeyPEMBytes(privateKey *rsa.PrivateKey) []byte {
 		Type:  "RSA PRIVATE KEY",
 		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
 	}
+
 	return pem.EncodeToMemory(privateKeyPEMBlock)
 }
 
 func getPublicKeyBytes(privateKey *rsa.PrivateKey) ([]byte, error) {
 	pub, err := ssh.NewPublicKey(&privateKey.PublicKey)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating new public key (%w)", err)
 	}
+
 	return ssh.MarshalAuthorizedKey(pub), nil
 }
