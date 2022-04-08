@@ -191,12 +191,6 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	replicationSource = nil
 	err = nil
 
-	// Confirm PVC exists and add our VRG as ownerRef - TODO: possibly move this to prepareForFinalSync
-	err = v.validatePVCAndAddVRGOwnerRef(rsSpec.ProtectedPVC.Name)
-	if err != nil {
-		return
-	}
-
 	// Pre-allocated shared secret - DRPC will generate and propagate this secret from hub to clusters
 	sshKeysSecretName := GetVolSyncSSHSecretNameFromVRGName(v.owner.GetName())
 	// Need to confirm this secret exists on the cluster before proceeding, otherwise volsync will generate it
@@ -224,6 +218,8 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	if err != nil {
 		return
 	}
+
+	//TODO: if runFinalSync, do we check the PVC and make sure it's not in use? then proceed?
 
 	rs := &volsyncv1alpha1.ReplicationSource{
 		ObjectMeta: metav1.ObjectMeta{
@@ -298,6 +294,8 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 		}
 		l.V(1).Info("ReplicationSource final sync comple")
 		finalSyncComplete = true
+
+		//TODO: should we remove the PVC now?
 		return
 	}
 
@@ -305,7 +303,57 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	return
 }
 
-func (v *VSHandler) validatePVCAndAddVRGOwnerRef(pvcName string) error {
+// This doesn't need to specifically be in VSHandler - could be useful for non-volsync scenarios?
+// Will look at annotations on the PVC, make sure the reconcile option from ACM is set to merge (or not exists)
+// and then will remove ACM annotations and also add VRG as the owner.  This is to break the connection between
+// the appsub and the PVC itself.  This way we can proceed to remove the app without the PVC being removed.
+// We need the PVC left behind so we can fun a final sync on it (see ReconcileRS() with runFinalSync=true)
+func (v *VSHandler) PreparePVCForFinalSync(pvcName string) (pvcPreparationComplete bool, err error) {
+	pvcPreparationComplete = false
+	err = nil
+
+	l := v.log.WithValues("pvcName", pvcName)
+
+	// Confirm PVC exists and add our VRG as ownerRef
+	var pvc *corev1.PersistentVolumeClaim
+	pvc, err = v.validatePVCAndAddVRGOwnerRef(pvcName)
+	if err != nil {
+		l.Error(err, "unable to validate PVC or add ownership")
+		return
+	}
+
+	// Check for annotation that indicates the PVC whether the ACM appsub will keep reconciling by re-taking
+	// ownership of the PVC - if annotation is "mergeAndOwn" we need to wait for it to be removed or change to "merge"
+	reconcileOption, ok := pvc.Annotations["apps.open-cluster-management.io/reconcile-option"]
+	if ok && reconcileOption != "merge" {
+		l.Info("pvc is still owned by appsub, need to wait", "pvc reconcile-option annotation", reconcileOption)
+		return
+	}
+
+	// No annotation, or annotation is set to merge, we're good to go
+	updatedAnnotations := map[string]string{}
+
+	for currAnnotationKey, currAnnotationValue := range pvc.Annotations {
+		// We want to only preserve annotations not from ACM (i.e. remove all ACM annotations to break ownership)
+		if !strings.HasPrefix(currAnnotationKey, "apps.open-cluster-management.io") {
+			updatedAnnotations[currAnnotationKey] = currAnnotationValue
+		}
+	}
+
+	pvc.Annotations = updatedAnnotations
+
+	err = v.client.Update(v.ctx, pvc)
+	if err != nil {
+		l.Error(err, "Error updating annotations on PVC to break appsub ownership")
+		return
+	}
+
+	pvcPreparationComplete = true
+	l.Info("pvc ready for final sync")
+	return
+}
+
+func (v *VSHandler) validatePVCAndAddVRGOwnerRef(pvcName string) (*corev1.PersistentVolumeClaim, error) {
 	pvc := &corev1.PersistentVolumeClaim{}
 
 	err := v.client.Get(v.ctx,
@@ -316,23 +364,23 @@ func (v *VSHandler) validatePVCAndAddVRGOwnerRef(pvcName string) error {
 	if err != nil {
 		if !kerrors.IsNotFound(err) {
 			v.log.Error(err, "Failed to get PVC", "pvcName", pvcName)
-			return err
+			return nil, err
 		}
 
 		// PVC is not found
 		v.log.Info("PVC not found", "pvcName", pvcName)
-		return err
+		return nil, err
 	}
 
 	v.log.Info("PVC exists", "pvcName", pvcName)
 
 	if err = v.addVRGOwnerReferenceAndUpdate(pvc); err != nil {
 		v.log.Error(err, "Unable to update PVC", "pvcName", pvcName)
-		return err
+		return nil, err
 	}
 
 	v.log.V(1).Info("PVC validated and VRG ownerRef added", "pvcName", pvcName)
-	return nil
+	return pvc, nil
 }
 
 func (v *VSHandler) validateSecretAndAddVRGOwnerRef(secretName string) (bool, error) {
