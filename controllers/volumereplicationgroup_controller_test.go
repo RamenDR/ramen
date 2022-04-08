@@ -874,16 +874,18 @@ func (v *vrgTest) verifyVRGStatusExpectation(expectedStatus bool) {
 	Eventually(func() bool {
 		vrg := v.getVRG(v.vrgName)
 		dataReadyCondition := checkConditions(vrg.Status.Conditions, vrgController.VRGConditionTypeDataReady)
+		if dataReadyCondition == nil {
+			return false
+		}
 
 		if expectedStatus == true {
 			// reasons for success can be different for Primary and
 			// secondary. Validate that as well.
-			if vrg.Spec.ReplicationState == ramendrv1alpha1.Primary {
+			switch vrg.Spec.ReplicationState {
+			case ramendrv1alpha1.Primary:
 				return dataReadyCondition.Status == metav1.ConditionTrue && dataReadyCondition.Reason ==
 					vrgController.VRGConditionReasonReady
-			}
-
-			if vrg.Spec.ReplicationState == ramendrv1alpha1.Secondary {
+			case ramendrv1alpha1.Secondary:
 				return dataReadyCondition.Status == metav1.ConditionTrue && dataReadyCondition.Reason ==
 					vrgController.VRGConditionReasonReplicating
 			}
