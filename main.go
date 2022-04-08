@@ -80,12 +80,13 @@ func newManager() (ctrl.Manager, error) {
 	}
 
 	controllers.ControllerType = ramenConfig.RamenControllerType
-	if !(controllers.ControllerType == ramendrv1alpha1.DRCluster || controllers.ControllerType == ramendrv1alpha1.DRHub) {
+	if !(controllers.ControllerType == ramendrv1alpha1.DRClusterType ||
+		controllers.ControllerType == ramendrv1alpha1.DRHubType) {
 		return nil, fmt.Errorf("invalid controller type specified (%s), should be one of [%s|%s]",
-			controllers.ControllerType, ramendrv1alpha1.DRHub, ramendrv1alpha1.DRCluster)
+			controllers.ControllerType, ramendrv1alpha1.DRHubType, ramendrv1alpha1.DRClusterType)
 	}
 
-	if controllers.ControllerType == ramendrv1alpha1.DRHub {
+	if controllers.ControllerType == ramendrv1alpha1.DRHubType {
 		utilruntime.Must(plrv1.AddToScheme(scheme))
 		utilruntime.Must(ocmworkv1.AddToScheme(scheme))
 		utilruntime.Must(viewv1beta1.AddToScheme(scheme))
@@ -104,7 +105,7 @@ func newManager() (ctrl.Manager, error) {
 }
 
 func setupReconcilers(mgr ctrl.Manager) {
-	if controllers.ControllerType == ramendrv1alpha1.DRHub {
+	if controllers.ControllerType == ramendrv1alpha1.DRHubType {
 		if err := (&controllers.DRPolicyReconciler{
 			Client:            mgr.GetClient(),
 			APIReader:         mgr.GetAPIReader(),
@@ -115,15 +116,22 @@ func setupReconcilers(mgr ctrl.Manager) {
 			os.Exit(1)
 		}
 
-		drpcReconciler := (&controllers.DRPlacementControlReconciler{
+		if err := (&controllers.DRClusterReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "DRCluster")
+			os.Exit(1)
+		}
+
+		if err := (&controllers.DRPlacementControlReconciler{
 			Client:    mgr.GetClient(),
 			APIReader: mgr.GetAPIReader(),
 			Log:       ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),
 			MCVGetter: controllers.ManagedClusterViewGetterImpl{Client: mgr.GetClient()},
 			Scheme:    mgr.GetScheme(),
 			Callback:  func(string, string) {},
-		})
-		if err := drpcReconciler.SetupWithManager(mgr); err != nil {
+		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "DRPlacementControl")
 			os.Exit(1)
 		}

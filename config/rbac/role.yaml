@@ -125,6 +125,32 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
+  - drclusters
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - drclusters/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - drclusters/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
   - drplacementcontrols
   verbs:
   - create
