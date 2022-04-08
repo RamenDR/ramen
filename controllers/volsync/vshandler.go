@@ -832,6 +832,64 @@ func ConvertSchedulingIntervalToCronSpec(schedulingInterval string) (*string, er
 	return &cronSpec, nil
 }
 
+func (v *VSHandler) GetRSLastSyncTime(pvcName string) (*metav1.Time, error) {
+	l := v.log.WithValues("pvcName", pvcName)
+
+	// Get RD instance
+	rs := &volsyncv1alpha1.ReplicationSource{}
+	err := v.client.Get(v.ctx,
+		types.NamespacedName{
+			Name:      getReplicationSourceName(pvcName),
+			Namespace: v.owner.GetNamespace(),
+		}, rs)
+	if err != nil {
+		if !kerrors.IsNotFound(err) {
+			l.Error(err, "Failed to get ReplicationSource")
+			return nil, err
+		}
+		
+		l.Info("No ReplicationSource found")
+		return nil, nil
+	}
+
+	return rs.Status.LastSyncTime, nil
+}
+
+func (v *VSHandler) GetRDLatestImage(pvcName string) (*corev1.TypedLocalObjectReference, error) {
+	l := v.log.WithValues("pvcName", pvcName)
+
+	// Get RD instance
+	rdInst := &volsyncv1alpha1.ReplicationDestination{}
+	err := v.client.Get(v.ctx,
+		types.NamespacedName{
+			Name:      getReplicationDestinationName(pvcName),
+			Namespace: v.owner.GetNamespace(),
+		}, rdInst)
+	if err != nil {
+		if !kerrors.IsNotFound(err) {
+			l.Error(err, "Failed to get ReplicationDestination")
+			return nil, err
+		}
+		// If not found, nothing to restore
+		l.Info("No ReplicationDestination found")
+
+		return nil, nil
+	}
+
+	var latestImage *corev1.TypedLocalObjectReference
+	if rdInst.Status == nil {
+		latestImage = rdInst.Status.LatestImage
+	}
+
+	if latestImage == nil || latestImage.Name == "" || latestImage.Kind != VolumeSnapshotKind {
+		noSnapErr := fmt.Errorf("unable to find LatestImage from ReplicationDestination %s", rdInst.GetName())
+		
+		return nil, noSnapErr
+	}
+
+	return latestImage.DeepCopy(), nil
+}
+
 func addVRGOwnerLabel(owner, obj metav1.Object) {
 	// Set vrg label to owner name - enables lookups by owner label
 	labels := obj.GetLabels()

@@ -490,7 +490,7 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	preferredClusterNamespace := preferredCluster
 
 	// Before relocating to the preferredCluster, we must ensure that the peers are secondaries.
-	homeCluster, err := d.isReadyForRelocation(preferredCluster)
+	curHomeCluster, err := d.isReadyForRelocation(preferredCluster)
 	if err != nil {
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), err.Error())
@@ -498,19 +498,8 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 		return !done, err
 	}
 
-	// if homeCluster != "" && homeCluster != preferredCluster {
-	// 	// Ensure secondaries have transitioned to the required state. If Not, force them
-	// 	if !d.ensureVRGIsSecondaryEverywhere("") {
-	// 		if !d.moveVRGToSecondaryEverywhere() {
-	// 			return !done, fmt.Errorf("failed to move VRG to secondary everywhere")
-	// 		}
-
-	// 		return !done, nil
-	// 	}
-	// }
-
 	// We are done if already relocated; if there were secondaries they are cleaned up above
-	if homeCluster != "" && d.hasAlreadySwitchedOver(preferredCluster) {
+	if curHomeCluster != "" && d.hasAlreadySwitchedOver(preferredCluster) {
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
@@ -546,14 +535,30 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	}
 
 	// Check if current primary (that is not the preferred cluster), is ready to switch over
-	if homeCluster != "" && homeCluster != preferredCluster && !d.readyToSwitchOver(homeCluster, preferredCluster) {
-		errMsg := fmt.Sprintf("current cluster (%s) has not completed protection actions", homeCluster)
+	if curHomeCluster != "" && curHomeCluster != preferredCluster && !d.readyToSwitchOver(curHomeCluster, preferredCluster) {
+		errMsg := fmt.Sprintf("current cluster (%s) has not completed protection actions", curHomeCluster)
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), errMsg)
 
 		return !done, fmt.Errorf(errMsg)
 	}
 
+	if !d.validatePeerReady() {
+		return !done, fmt.Errorf("clean up on secondaries pending (%+v)", d.instance)
+	}
+
+	if curHomeCluster != preferredCluster {
+		if d.hasVRGTakenPVCsOwnership(curHomeCluster) {
+			err := d.sendRequestToTakePVCsOwnership(curHomeCluster)
+			if err != nil {
+				return !done, err
+			}
+
+			d.log.Info("VRG has not taken ownership of PVCs yet. Waiting...")
+
+			return !done, nil
+		}
+	}
 	return d.relocate(preferredCluster, preferredClusterNamespace, rmn.Relocating)
 }
 
@@ -680,12 +685,49 @@ func (d *DRPCInstance) isVRGConditionReady(homeCluster string, conditionType str
 		condition.ObservedGeneration == vrg.Generation
 }
 
+func (d *DRPCInstance) hasVRGTakenPVCsOwnership(clusterName string) bool {
+	vrgFromMCV := d.vrgs[clusterName]
+
+	if vrgFromMCV == nil {
+		d.log.Info(fmt.Sprintf("VRG not available on cluster %s", clusterName))
+
+		return false
+	}
+
+	if !vrgFromMCV.Spec.TakePVCsOwnership {
+		return false
+	}
+
+	return vrgFromMCV.Status.PVCsOwnershipTaken
+}
+
+func (d *DRPCInstance) sendRequestToTakePVCsOwnership(clusterName string) error {
+	vrg, err := d.getVRGFromManifestWork(clusterName)
+	if err != nil {
+		return err
+	}
+
+	if vrg.Spec.TakePVCsOwnership {
+		d.log.Info(fmt.Sprintf("VRG %s has already set to take PVCs ownership for this cluster %s",
+			vrg.Name, clusterName))
+
+		return nil
+	}
+
+	vrg.Spec.TakePVCsOwnership = true
+
+	err = d.updateManifestWork(clusterName, vrg)
+	if err != nil {
+		return err
+	}
+
+	d.log.Info(fmt.Sprintf("Updated VRG running in cluster %s to take PVCs onwership. VRG (%v)", clusterName, vrg))
+
+	return nil
+}
+
 func (d *DRPCInstance) relocate(preferredCluster, preferredClusterNamespace string, drState rmn.DRState) (bool, error) {
 	const done = true
-
-	if !d.validatePeerReady() {
-		return !done, fmt.Errorf("clean up on secondaries pending (%+v)", d.instance)
-	}
 
 	// Make sure we record the state that we are failing over
 	d.setDRState(drState)
@@ -1445,30 +1487,16 @@ func (d *DRPCInstance) ensureVRGDeleted(clusterName string) bool {
 }
 
 func (d *DRPCInstance) updateVRGState(clusterName string, state rmn.ReplicationState, runFinalSync bool) error {
-	vrgMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
-	d.log.Info(fmt.Sprintf("Updating VRG ownedby MW %s to secondary for cluster %s", vrgMWName, clusterName))
+	d.log.Info(fmt.Sprintf("Updating VRG to secondary for cluster %s", clusterName))
 
-	mw, err := d.mwu.FindManifestWork(vrgMWName, clusterName)
+	vrg, err := d.getVRGFromManifestWork(clusterName)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil
-		}
-
-		d.log.Error(err, "failed to update VRG state")
-
-		return fmt.Errorf("failed to update VRG state for %s, in namespace %s (%w)",
-			vrgMWName, clusterName, err)
-	}
-
-	vrg, err := d.extractVRGFromManifestWork(mw)
-	if err != nil {
-		d.log.Error(err, "failed to update VRG state")
-
-		return err
+		return fmt.Errorf("failed to update VRG state. ClusterName %s (%w)",
+			clusterName, err)
 	}
 
 	if vrg.Spec.ReplicationState == state {
-		d.log.Info(fmt.Sprintf("VRG %s already %s on this cluster %s", vrg.Name, state, mw.Namespace))
+		d.log.Info(fmt.Sprintf("VRG %s already %s on this cluster %s", vrg.Name, state, clusterName))
 
 		return nil
 	}
@@ -1476,18 +1504,9 @@ func (d *DRPCInstance) updateVRGState(clusterName string, state rmn.ReplicationS
 	vrg.Spec.ReplicationState = state
 	vrg.Spec.VolSync.RunFinalSync = runFinalSync
 
-	vrgClientManifest, err := d.mwu.GenerateManifest(vrg)
+	err = d.updateManifestWork(clusterName, vrg)
 	if err != nil {
-		d.log.Error(err, "failed to generate manifest")
-
-		return fmt.Errorf("failed to generate VRG manifest (%w)", err)
-	}
-
-	mw.Spec.Workload.Manifests[0] = *vrgClientManifest
-
-	err = d.reconciler.Update(d.ctx, mw)
-	if err != nil {
-		return fmt.Errorf("failed to update MW (%w)", err)
+		return err
 	}
 
 	d.log.Info(fmt.Sprintf("Updated VRG running in cluster %s to secondary. VRG (%v)", clusterName, vrg))
@@ -1509,6 +1528,26 @@ func (d *DRPCInstance) extractVRGFromManifestWork(mw *ocmworkv1.ManifestWork) (*
 	}
 
 	return vrg, nil
+}
+
+func (d *DRPCInstance) updateManifestWork(clusterName string, vrg *rmn.VolumeReplicationGroup) error {
+	vrgMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
+
+	mw, err := d.mwu.FindManifestWork(vrgMWName, clusterName)
+	if err != nil {
+		return err
+	}
+
+	vrgClientManifest, err := d.mwu.GenerateManifest(vrg)
+	if err != nil {
+		d.log.Error(err, "failed to generate manifest")
+
+		return fmt.Errorf("failed to generate VRG manifest (%w)", err)
+	}
+
+	mw.Spec.Workload.Manifests[0] = *vrgClientManifest
+
+	return d.reconciler.Update(d.ctx, mw)
 }
 
 func (d *DRPCInstance) advanceToNextDRState() {

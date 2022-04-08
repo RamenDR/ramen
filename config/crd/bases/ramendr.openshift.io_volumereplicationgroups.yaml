@@ -184,6 +184,10 @@ spec:
                 required:
                 - mode
                 type: object
+              takePVCsOwnership:
+                description: takePVCsOwnership can be used to tell VRG to take ownership
+                  of all PVCs. Defaults to "false".
+                type: boolean
               volSync:
                 description: volsync defines the configuration when using VolSync
                   plugin for replication.
@@ -542,6 +546,8 @@ spec:
                       type: string
                   type: object
                 type: array
+              pvcsOwnershipTaken:
+                type: boolean
               state:
                 description: State captures the latest state of the replication operation
                 type: string
