@@ -22,4 +22,4 @@ import (
 
 var DefaultRsyncServiceType corev1.ServiceType = corev1.ServiceTypeClusterIP
 
-var DefaultScheduleCronSpec string = "*/10 * * * *" // Every 10 mins FIXME: what value to use as default?
+var DefaultScheduleCronSpec = "*/10 * * * *" // Every 10 mins FIXME: what value to use as default?

@@ -3,9 +3,6 @@ package volsync_test
 import (
 	"crypto/x509"
 	"encoding/pem"
-	"fmt"
-	"math/rand"
-	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -19,10 +16,6 @@ import (
 
 	"github.com/ramendr/ramen/controllers/volsync"
 )
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
 
 var _ = Describe("Secretgen", func() {
 	var testNamespace *corev1.Namespace
@@ -60,7 +53,7 @@ var _ = Describe("Secretgen", func() {
 	})
 
 	Describe("Reconcile volsync rsync secret", func() {
-		testSecretName := fmt.Sprintf("test-secret-%d", rand.Intn(1000))
+		testSecretName := "test-secret-abc"
 
 		JustBeforeEach(func() {
 			testSecret, err := volsync.ReconcileVolSyncReplicationSecret(ctx, k8sClient, owner,
@@ -144,8 +137,9 @@ func validateKeyPair(privateKeyData, publicKeyData []byte) {
 	sshSigner, err := ssh.ParsePrivateKey(privateKeyData)
 	Expect(err).NotTo(HaveOccurred())
 
-	sshPubKey, _, _, _, err := ssh.ParseAuthorizedKey(publicKeyData)
+	sshPubKey, comment, _, _, err := ssh.ParseAuthorizedKey(publicKeyData)
 	Expect(err).NotTo(HaveOccurred())
+	Expect(comment).To(Equal(""))
 
 	Expect(sshSigner.PublicKey()).To(Equal(sshPubKey))
 }
