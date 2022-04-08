@@ -20,6 +20,11 @@ spec:
       kind: DRPolicy
       name: drpolicies.ramendr.openshift.io
       version: v1alpha1
+    - description: DRCluster is the Schema for the drclusters API
+      displayName: DRCluster
+      kind: DRCluster
+      name: drclusters.ramendr.openshift.io
+      version: v1alpha1
   description: Ramen is a disaster-recovery orchestrator for stateful applications
     across a set of peer kubernetes clusters which are deployed and managed using
     open-cluster-management (OCM) and provides cloud-native interfaces to orchestrate

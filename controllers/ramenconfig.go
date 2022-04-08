@@ -224,7 +224,7 @@ func ConfigMapGet(
 	apiReader client.Reader,
 ) (configMap *corev1.ConfigMap, ramenConfig *ramendrv1alpha1.RamenConfig, err error) {
 	configMapName := HubOperatorConfigMapName
-	if ControllerType != ramendrv1alpha1.DRHub {
+	if ControllerType != ramendrv1alpha1.DRHubType {
 		configMapName = drClusterOperatorConfigMapName
 	}
 

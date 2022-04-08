@@ -30,11 +30,11 @@ import (
 type ControllerType string
 
 const (
-	// DRCluster operates as the DR cluster controller on a peer cluster
-	DRCluster ControllerType = "dr-cluster"
+	// DRClusterType operates as the DR cluster controller on a peer cluster
+	DRClusterType ControllerType = "dr-cluster"
 
-	// DRHub operates as the DR hub controller on a cluster managing DR across peer clusters
-	DRHub ControllerType = "dr-hub"
+	// DRHubType operates as the DR hub controller on a cluster managing DR across peer clusters
+	DRHubType ControllerType = "dr-hub"
 )
 
 // When naming a S3 bucket, follow the bucket naming rules at:

@@ -1,0 +1,7 @@
+apiVersion: ramendr.openshift.io/v1alpha1
+kind: DRCluster
+metadata:
+  name: drcluster-sample
+spec:
+  # Add fields here
+  foo: bar

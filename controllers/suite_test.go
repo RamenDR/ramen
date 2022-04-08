@@ -44,12 +44,13 @@ import (
 	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
 	ocmclv1 "github.com/open-cluster-management/api/cluster/v1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
-	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
-	ramencontrollers "github.com/ramendr/ramen/controllers"
 	cpcv1 "github.com/stolostron/config-policy-controller/api/v1"
 	gppv1 "github.com/stolostron/governance-policy-propagator/api/v1"
 	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
+
+	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	ramencontrollers "github.com/ramendr/ramen/controllers"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -93,8 +94,8 @@ var _ = BeforeSuite(func() {
 	testLog = ctrl.Log.WithName("tester")
 	testLog.Info("Starting the controller test suite", "time", time.Now())
 
-	// default controller type to DRHub
-	ramencontrollers.ControllerType = ramendrv1alpha1.DRHub
+	// default controller type to DRHubType
+	ramencontrollers.ControllerType = ramendrv1alpha1.DRHubType
 
 	if _, set := os.LookupEnv("KUBEBUILDER_ASSETS"); !set {
 		Expect(os.Setenv("KUBEBUILDER_ASSETS", "../testbin/bin")).To(Succeed())
@@ -161,7 +162,7 @@ var _ = BeforeSuite(func() {
 				ResourceName: ramencontrollers.HubLeaderElectionResourceName,
 			},
 		},
-		RamenControllerType: ramendrv1alpha1.DRHub,
+		RamenControllerType: ramendrv1alpha1.DRHubType,
 	}
 	configMap, err = ramencontrollers.ConfigMapNew(
 		ramenNamespace,
