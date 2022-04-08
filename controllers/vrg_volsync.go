@@ -246,7 +246,7 @@ func (v *VRGInstance) isFinalSyncInProgress() bool {
 }
 
 func (v *VRGInstance) aggregateVolSyncDataReadyCondition() *v1.Condition {
-	notReady := false
+	ready := true
 	dataReadyCondition := &v1.Condition{
 		Type:               VRGConditionTypeDataReady,
 		Reason:             "Inapplicable",
@@ -264,134 +264,140 @@ func (v *VRGInstance) aggregateVolSyncDataReadyCondition() *v1.Condition {
 			if protectedPVC.ProtectedByVolSync {
 				condition := findCondition(protectedPVC.Conditions, VRGConditionTypeVolSyncRepSourceSetup)
 				if condition == nil || condition.Status != v1.ConditionTrue {
-					notReady = true
+					ready = false
+					v.log.Info(fmt.Sprintf("VolSync RS hasn't been setup yet for PVC %s", protectedPVC.Name))
 
 					break
 				}
 			}
 		}
 
-		if notReady {
-			dataReadyCondition.Reason = VRGConditionReasonReady
+		dataReadyCondition.Reason = VRGConditionReasonReady
+
+		if !ready {
 			dataReadyCondition.Status = v1.ConditionFalse
 			dataReadyCondition.Message = "Not all VolSync PVCs are ready"
 
 			return dataReadyCondition
 		}
 
-		dataReadyCondition.Reason = VRGConditionReasonReady
 		dataReadyCondition.Status = v1.ConditionTrue
 		dataReadyCondition.Message = "All VolSync PVCs are ready"
 
 		return dataReadyCondition
 	}
 
-	// else
-	// TODO: Determine If we have an RD status for each PVC.  For now assume DataReady for all
-	dataReadyCondition.Reason = VRGConditionReasonReady
-	dataReadyCondition.Status = v1.ConditionTrue
-	dataReadyCondition.Message = "Assuming Data readiness"
-
+	// Not primary -- DataReady NOT applicable
 	return dataReadyCondition
 }
 
 func (v *VRGInstance) aggregateVolSyncDataProtectedCondition() *v1.Condition {
-	notReady := false
-	dataReadyCondition := &v1.Condition{
-		Type:               VRGConditionTypeDataProtected,
-		Reason:             "Inapplicable",
-		ObservedGeneration: v.instance.Generation,
-		Status:             v1.ConditionTrue,
-		Message:            "Inapplicable",
+	if len(v.volSyncPVCs) == 0 {
+		return &v1.Condition{
+			Type:               VRGConditionTypeDataProtected,
+			Reason:             "Inapplicable",
+			ObservedGeneration: v.instance.Generation,
+			Status:             v1.ConditionTrue,
+			Message:            "Inapplicable",
+		}
 	}
 
+	return v.buildDataProtectedCondition()
+}
+
+func (v *VRGInstance) aggregateVolSyncClusterDataProtectedCondition() *v1.Condition {
 	if len(v.volSyncPVCs) == 0 {
-		return dataReadyCondition
+		return &v1.Condition{
+			Type:               VRGConditionTypeClusterDataProtected,
+			Reason:             "Inapplicable",
+			ObservedGeneration: v.instance.Generation,
+			Status:             v1.ConditionTrue,
+			Message:            "Inapplicable",
+		}
 	}
+
+	// For ClusterDataReady and ClusterDataProtected condition, will use the same condition as DataProtected.
+	// That is; if DataProtected is true, then, ClusterDataRady and ClusterDataProtected should also be true.
+	condition := v.buildDataProtectedCondition()
+	condition.Type = VRGConditionTypeClusterDataProtected
+
+	return condition
+}
+
+func (v *VRGInstance) buildDataProtectedCondition() *v1.Condition {
+	ready := true
+	protectedByVolSyncCount := 0
 
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
 		for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
 			if protectedPVC.ProtectedByVolSync {
-				condition := findCondition(protectedPVC.Conditions, VRGConditionTypeVolSyncFinalSyncInProgress)
+				protectedByVolSyncCount++
+				condition := findCondition(protectedPVC.Conditions, VRGConditionTypeVolSyncRepSourceSetup)
+				if condition == nil || condition.Status != v1.ConditionTrue {
+					ready = false
+					v.log.Info(fmt.Sprintf("VolSync RS hasn't been setup yet for PVC %s", protectedPVC.Name))
+
+					break
+				}
+
+				// IFF however, we are running the final sync, then we have to wait
+				condition = findCondition(protectedPVC.Conditions, VRGConditionTypeVolSyncFinalSyncInProgress)
 				if condition != nil && condition.Status != v1.ConditionTrue {
-					notReady = true
+					ready = false
+					v.log.Info(fmt.Sprintf("VolSync RS is in progress for PVC %s", protectedPVC.Name))
+
+					break
+				}
+
+				// Check now if we have synced up at least once for this PVC
+				lastSyncTime, err := v.volSyncHandler.GetRSLastSyncTime(protectedPVC.Name)
+				if err != nil {
+					ready = false
+					v.log.Info(fmt.Sprintf("Failed to get lastSyncTime from RS for PVC %s", protectedPVC.Name))
+
+					break
+				}
+
+				if lastSyncTime == nil || lastSyncTime.IsZero() {
+					ready = false
+					v.log.Info(fmt.Sprintf("VolSync RS has not synced up yet for PVC %s", protectedPVC.Name))
 
 					break
 				}
 			}
-			// TODO: Determine from RS if we have synced up at least once, otherwise, set notReady to true
-		}
 
-		if notReady {
-			dataReadyCondition.Reason = VRGConditionReasonDataProtected
-			dataReadyCondition.Status = v1.ConditionFalse
-			dataReadyCondition.Message = "Not all VolSync PVCs are protected"
-
-			return dataReadyCondition
-		}
-
-		dataReadyCondition.Reason = VRGConditionReasonDataProtected
-		dataReadyCondition.Status = v1.ConditionTrue
-		dataReadyCondition.Message = "All VolSync PVCs are protected"
-
-		return dataReadyCondition
-	}
-
-	// else
-	// TODO: Determine from RD status if we have the latestImage for each PVC. For now assuming DataProtected for all
-	dataReadyCondition.Reason = VRGConditionReasonDataProtected
-	dataReadyCondition.Status = v1.ConditionTrue
-	dataReadyCondition.Message = "Assuming Data protection"
-
-	return dataReadyCondition
-}
-
-func (v *VRGInstance) aggregateVolSyncClusterDataProtectedCondition() *v1.Condition {
-	notReady := false
-	dataReadyCondition := &v1.Condition{
-		Type:               VRGConditionTypeClusterDataProtected,
-		Reason:             "Inapplicable",
-		ObservedGeneration: v.instance.Generation,
-		Status:             v1.ConditionTrue,
-		Message:            "Inapplicable",
-	}
-
-	if len(v.volSyncPVCs) == 0 {
-		return dataReadyCondition
-	}
-
-	// TODO: For ClusterDataRady and ClusterDataProtected condition, should probably use the same
-	// condition as DataProtected.  That is; if DataProtected is true, then, ClusterDataRady and ClusterDataProtected
-	// should also be true.  For now, treat them separate with hardcodeded values.
-	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
-		for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
-			if protectedPVC.ProtectedByVolSync {
-				condition := findCondition(protectedPVC.Conditions, VRGConditionTypeVolSyncRepSourceSetup)
-				if condition == nil || condition.Status != v1.ConditionTrue {
-					notReady = true
-				}
+			if ready && len(v.volSyncPVCs) != protectedByVolSyncCount {
+				ready = false
+				v.log.Info(fmt.Sprintf("VolSync PVCs count does not match with the ready PVCs %d/%d",
+					len(v.volSyncPVCs), protectedByVolSyncCount))
 			}
 		}
+	} else {
+		for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
+			v.log.Info("Reconcile RD as Secondary", "RDSpec", rdSpec)
+			latestImage, err := v.volSyncHandler.GetRDLatestImage(rdSpec.ProtectedPVC.Name)
+			if err != nil || latestImage == nil {
+				ready = false
+				v.log.Info(fmt.Sprintf("Failed to retrieve latestImage for RD %s", rdSpec.ProtectedPVC.Name))
 
-		if notReady {
-			dataReadyCondition.Reason = "NotSaved"
-			dataReadyCondition.Status = v1.ConditionFalse
-			dataReadyCondition.Message = "Not all VolSync PVCs have thier ClusterData protected"
-
-			return dataReadyCondition
+				break
+			}
 		}
-
-		dataReadyCondition.Reason = "Saved"
-		dataReadyCondition.Status = v1.ConditionTrue
-		dataReadyCondition.Message = "All VolSync PVCs have thier ClusterData protected"
-
-		return dataReadyCondition
 	}
 
-	// else
-	dataReadyCondition.Reason = "Saved"
-	dataReadyCondition.Status = v1.ConditionTrue
-	dataReadyCondition.Message = "Assuming ClusterData protection"
+	dataReadyCondition := &v1.Condition{
+		Type:               VRGConditionTypeDataProtected,
+		Reason:             VRGConditionReasonDataProtected,
+		ObservedGeneration: v.instance.Generation,
+	}
+
+	if !ready {
+		dataReadyCondition.Status = v1.ConditionFalse
+		dataReadyCondition.Message = "Not all VolSync PVCs are protected"
+	} else {
+		dataReadyCondition.Status = v1.ConditionTrue
+		dataReadyCondition.Message = "All VolSync PVCs are protected"
+	}
 
 	return dataReadyCondition
 }
