@@ -640,9 +640,32 @@ ramen_samples_channel_and_drpolicy_undeploy()
 {
 	set --
 	for cluster_name in $spoke_cluster_names; do
-#spec.startingCSV\
+#apiVersion: operators.coreos.com/v1alpha1
+#kind: Subscription
+#metadata:
+#  name: ramen-dr-cluster-subscription
+#  namespace: ramen-system
+#spec:
+#  channel: alpha
+#  installPlanApproval: Automatic
+#  name: ramen-dr-cluster-operator
+#  source: ramen-catalog
+#  sourceNamespace: ramen-system
+#  startingCSV: ramen-dr-cluster-operator.v0.0.1
+#status
+#  conditions:
+#    - message: 'constraints not satisfiable: subscription ramen-dr-cluster-subscription
+#        requires ramen-catalog/ramen-system/alpha/ramen-dr-cluster-operator.v0.0.1,
+#        subscription ramen-dr-cluster-subscription exists, clusterserviceversion ramen-dr-cluster-operator.v0.0.1
+#        exists and is not referenced by a subscription, @existing/ramen-system//ramen-dr-cluster-operator.v0.0.1
+#        and ramen-catalog/ramen-system/alpha/ramen-dr-cluster-operator.v0.0.1 provide
+#        VolumeReplicationGroup (ramendr.openshift.io/v1alpha1)'
+#      reason: ConstraintsNotSatisfiable
+#      status: "True"
+#      type: ResolutionFailed
+#status.installedCSV\
 		set -- $# "$@" $(kubectl --context $cluster_name -n ramen-system get subscriptions.operators.coreos.com/ramen-dr-cluster-subscription -ojsonpath=\{.\
-status.installedCSV\
+spec.startingCSV\
 \}); test $(($1+2)) -eq $#; shift
 		ramen_catalog_undeploy_cluster $cluster_name
 	done; unset -v cluster_name
