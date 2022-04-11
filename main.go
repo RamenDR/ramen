@@ -14,6 +14,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -40,6 +41,7 @@ import (
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
+	"github.com/ramendr/ramen/controllers/volsync"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -143,6 +145,12 @@ func setupReconcilers(mgr ctrl.Manager) {
 		}
 
 		return
+	}
+
+	// Index fields that are required for VSHandler
+	if err := volsync.IndexFieldsForVSHandler(context.Background(), mgr.GetFieldIndexer()); err != nil {
+		setupLog.Error(err, "unable to index fields for controller", "controller", "VolumeReplicationGroup")
+		os.Exit(1)
 	}
 
 	if err := (&controllers.VolumeReplicationGroupReconciler{

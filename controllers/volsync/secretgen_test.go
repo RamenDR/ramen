@@ -12,6 +12,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/ramendr/ramen/controllers/volsync"
@@ -107,6 +108,11 @@ var _ = Describe("Secretgen", func() {
 					},
 				}
 				Expect(k8sClient.Create(ctx, existingSecret)).To(Succeed())
+
+				// Make sure secret has been created, and in client cache
+				Eventually(func() error {
+					return k8sClient.Get(ctx, client.ObjectKeyFromObject(existingSecret), existingSecret)
+				}, maxWait, interval).Should(Succeed())
 			})
 
 			It("Should leave the existing secret unchanged", func() {
