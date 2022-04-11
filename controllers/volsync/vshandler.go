@@ -48,6 +48,8 @@ const (
 	VolumeSnapshotKind                     string = "VolumeSnapshot"
 	VolumeSnapshotIsDefaultAnnotation      string = "snapshot.storage.kubernetes.io/is-default-class"
 	VolumeSnapshotIsDefaultAnnotationValue string = "true"
+
+	PodVolumePVCClaimIndexName string = "spec.volumes.persistentVolumeClaim.claimName"
 )
 
 const (
@@ -83,6 +85,21 @@ func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, ow
 		volSyncProfile:          nil, // No volsync profile atm by default - could be added later
 		volumeSnapshotClassList: nil, // Do not initialize until we need it
 	}
+}
+
+// VSHandler requires an index on pods to keep track of persistent volume claims mounted
+func IndexFieldsForVSHandler(ctx context.Context, fieldIndexer client.FieldIndexer) error {
+	return fieldIndexer.IndexField(ctx, &corev1.Pod{}, PodVolumePVCClaimIndexName, func(o client.Object) []string {
+		var res []string
+		for _, vol := range o.(*corev1.Pod).Spec.Volumes {
+			if vol.PersistentVolumeClaim == nil {
+				continue
+			}
+			// just return the raw field value -- the indexer will take care of dealing with namespaces for us
+			res = append(res, vol.PersistentVolumeClaim.ClaimName)
+		}
+		return res
+	})
 }
 
 // returns replication destination only if create/update is successful and the RD is considered available.
@@ -219,7 +236,23 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 		return
 	}
 
-	//TODO: if runFinalSync, do we check the PVC and make sure it's not in use? then proceed?
+	// If runFinalSync, check the PVC and make sure it's not in use before proceeding
+	if runFinalSync {
+		// If in final sync and the source PVC no longer exists, this could be from
+		// a 2nd call to runFinalSync and we may have already cleaned up the PVC - so if pvc does not
+		// exist, treat the same as not in use - continue on with reconcile of the RS (and therefore
+		// check status to confirm final sync is complete)
+		var existsAndInUse bool
+		existsAndInUse, err = v.pvcExistsAndInUse(rsSpec.ProtectedPVC.Name)
+		if err != nil {
+			l.Error(err, "error checking if pvc is in use")
+			return
+		}
+		if existsAndInUse {
+			l.Info("pvc is still in use, not reconciling RS for final sync yet ...")
+			return
+		}
+	}
 
 	rs := &volsyncv1alpha1.ReplicationSource{
 		ObjectMeta: metav1.ObjectMeta{
@@ -292,10 +325,12 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 			finalSyncComplete = false
 			return
 		}
-		l.V(1).Info("ReplicationSource final sync comple")
+		l.V(1).Info("ReplicationSource final sync complete")
 		finalSyncComplete = true
 
-		//TODO: should we remove the PVC now?
+		// Final sync is done, make sure PVC is cleaned up
+		l.Info("Cleanup after final sync")
+		err = v.deletePVC(rsSpec.ProtectedPVC.Name)
 		return
 	}
 
@@ -308,18 +343,16 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 // and then will remove ACM annotations and also add VRG as the owner.  This is to break the connection between
 // the appsub and the PVC itself.  This way we can proceed to remove the app without the PVC being removed.
 // We need the PVC left behind so we can fun a final sync on it (see ReconcileRS() with runFinalSync=true)
-func (v *VSHandler) PreparePVCForFinalSync(pvcName string) (pvcPreparationComplete bool, err error) {
-	pvcPreparationComplete = false
-	err = nil
-
+//
+// Returns true if pvc preparation for final sync is complete
+func (v *VSHandler) PreparePVCForFinalSync(pvcName string) (bool, error) {
 	l := v.log.WithValues("pvcName", pvcName)
 
 	// Confirm PVC exists and add our VRG as ownerRef
-	var pvc *corev1.PersistentVolumeClaim
-	pvc, err = v.validatePVCAndAddVRGOwnerRef(pvcName)
+	pvc, err := v.validatePVCAndAddVRGOwnerRef(pvcName)
 	if err != nil {
 		l.Error(err, "unable to validate PVC or add ownership")
-		return
+		return false, err
 	}
 
 	// Check for annotation that indicates the PVC whether the ACM appsub will keep reconciling by re-taking
@@ -327,7 +360,7 @@ func (v *VSHandler) PreparePVCForFinalSync(pvcName string) (pvcPreparationComple
 	reconcileOption, ok := pvc.Annotations["apps.open-cluster-management.io/reconcile-option"]
 	if ok && reconcileOption != "merge" {
 		l.Info("pvc is still owned by appsub, need to wait", "pvc reconcile-option annotation", reconcileOption)
-		return
+		return false, nil
 	}
 
 	// No annotation, or annotation is set to merge, we're good to go
@@ -345,15 +378,72 @@ func (v *VSHandler) PreparePVCForFinalSync(pvcName string) (pvcPreparationComple
 	err = v.client.Update(v.ctx, pvc)
 	if err != nil {
 		l.Error(err, "Error updating annotations on PVC to break appsub ownership")
-		return
+		return false, err
 	}
 
-	pvcPreparationComplete = true
 	l.Info("pvc ready for final sync")
-	return
+	return true, nil
 }
 
-func (v *VSHandler) validatePVCAndAddVRGOwnerRef(pvcName string) (*corev1.PersistentVolumeClaim, error) {
+// Will return true only if the pvc exists and in use - will not throw error if PVC not found
+func (v *VSHandler) pvcExistsAndInUse(pvcName string) (bool, error) {
+	_, err := v.getPVC(pvcName)
+	if err != nil {
+		if kerrors.IsNotFound(err) {
+			return false, nil // No error just indicate not exists and not in use
+		}
+		return false, err // error accessing the PVC, return it
+	}
+	v.log.V(1).Info("pvc found", "pvcName", pvcName)
+
+	return v.isPvcInUse(pvcName)
+}
+
+func (v *VSHandler) isPvcInUse(pvcName string) (bool, error) {
+	podUsingPVCList := &corev1.PodList{}
+	err := v.client.List(context.Background(),
+		podUsingPVCList, // Our custom index - needs to be setup in the cache (see IndexFieldsForVSHandler())
+		client.MatchingFields{PodVolumePVCClaimIndexName: pvcName},
+		client.InNamespace(v.owner.GetNamespace()))
+
+	if err != nil {
+		v.log.Error(err, "unable to lookup pods to see if they are using pvc", "pvcName", pvcName)
+		return false, err
+	}
+
+	if len(podUsingPVCList.Items) == 0 {
+		return false /* Not in use by any pod */, nil
+	}
+
+	inUsePodNames := []string{}
+	for _, pod := range podUsingPVCList.Items {
+		inUsePodNames = append(inUsePodNames, pod.GetName())
+	}
+	v.log.Info("pvc is in use by pod(s)", "pvcName", pvcName, "inUsePodNames", inUsePodNames)
+
+	return true, nil
+}
+
+func (v *VSHandler) deletePVC(pvcName string) error {
+	pvcToDelete := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pvcName,
+			Namespace: v.owner.GetNamespace(),
+		},
+	}
+	err := v.client.Delete(v.ctx, pvcToDelete)
+	if err != nil {
+		if !kerrors.IsNotFound(err) {
+			v.log.Error(err, "error deleting pvc", "pvcName", pvcName)
+			return err
+		}
+	} else {
+		v.log.Info("deleted pvc", "pvcName", pvcName)
+	}
+	return nil
+}
+
+func (v *VSHandler) getPVC(pvcName string) (*corev1.PersistentVolumeClaim, error) {
 	pvc := &corev1.PersistentVolumeClaim{}
 
 	err := v.client.Get(v.ctx,
@@ -369,6 +459,15 @@ func (v *VSHandler) validatePVCAndAddVRGOwnerRef(pvcName string) (*corev1.Persis
 
 		// PVC is not found
 		v.log.Info("PVC not found", "pvcName", pvcName)
+		return nil, err
+	}
+
+	return pvc, nil
+}
+
+func (v *VSHandler) validatePVCAndAddVRGOwnerRef(pvcName string) (*corev1.PersistentVolumeClaim, error) {
+	pvc, err := v.getPVC(pvcName)
+	if err != nil {
 		return nil, err
 	}
 
@@ -420,7 +519,9 @@ func (v *VSHandler) DeleteRS(pvcName string) error {
 		return err
 	}
 
-	for _, rs := range currentRSListByOwner.Items {
+	for i := range currentRSListByOwner.Items {
+		rs := currentRSListByOwner.Items[i]
+
 		if rs.GetName() == getReplicationSourceName(pvcName) {
 			// Delete the ReplicationSource, log errors with cleanup but continue on
 			if err := v.client.Delete(v.ctx, &rs); err != nil {
@@ -441,7 +542,9 @@ func (v *VSHandler) DeleteRD(pvcName string) error {
 		return err
 	}
 
-	for _, rd := range currentRDListByOwner.Items {
+	for i := range currentRDListByOwner.Items {
+		rd := currentRDListByOwner.Items[i]
+
 		if rd.GetName() == getReplicationDestinationName(pvcName) {
 			// Delete the ReplicationDestination, log errors with cleanup but continue on
 			if err := v.client.Delete(v.ctx, &rd); err != nil {
@@ -461,7 +564,9 @@ func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncR
 	if err != nil {
 		return err
 	}
-	for _, rd := range currentRDListByOwner.Items {
+	for i := range currentRDListByOwner.Items {
+		rd := currentRDListByOwner.Items[i]
+
 		foundInSpecList := false
 		for _, rdSpec := range rdSpecList {
 			if rd.GetName() == getReplicationDestinationName(rdSpec.ProtectedPVC.Name) {
@@ -683,7 +788,11 @@ func (v *VSHandler) validateSnapshotAndAddVRGOwnerRef(volumeSnapshotRef corev1.T
 
 func (v *VSHandler) addVRGOwnerReferenceAndUpdate(obj client.Object) error {
 	currentOwnerRefs := obj.GetOwnerReferences()
-	ctrlutil.SetOwnerReference(v.owner, obj, v.client.Scheme())
+
+	err := ctrlutil.SetOwnerReference(v.owner, obj, v.client.Scheme())
+	if err != nil {
+		return err
+	}
 
 	needsUpdate := !reflect.DeepEqual(obj.GetOwnerReferences(), currentOwnerRefs)
 
