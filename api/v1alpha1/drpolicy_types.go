@@ -81,7 +81,10 @@ type DRPolicySpec struct {
 
 	// The set of managed clusters governed by this policy, which have
 	// replication relationship enabled between them.
-	DRClusterSet []ManagedCluster `json:"drClusterSet"`
+	DRClusterSet []ManagedCluster `json:"drClusterSet,omitempty"`
+
+	// List of DRCluster resources that are governed by this policy
+	DRClusters []string `json:"drClusters,omitempty"`
 }
 
 // +kubebuilder:validation:Enum=Unfenced;Fenced

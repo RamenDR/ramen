@@ -83,6 +83,12 @@ spec:
                   - s3ProfileName
                   type: object
                 type: array
+              drClusters:
+                description: List of DRCluster resources that are governed by this
+                  policy
+                items:
+                  type: string
+                type: array
               replicationClassSelector:
                 description: Label selector to identify all the VolumeReplicationClasses.
                   This selector is assumed to be the same for all subscriptions that
@@ -136,8 +142,6 @@ spec:
                   stands for days.
                 pattern: ^\d+[mhd]$
                 type: string
-            required:
-            - drClusterSet
             type: object
           status:
             description: 'DRPolicyStatus defines the observed state of DRPolicy INSERT
