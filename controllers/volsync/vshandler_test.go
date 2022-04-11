@@ -202,6 +202,7 @@ var _ = Describe("VolSync Handler", func() {
 					It("Should delete the existing ReplicationSource", func() {
 						Eventually(func() bool {
 							err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rs), rs)
+
 							return kerrors.IsNotFound(err)
 						}, maxWait, interval).Should(BeTrue())
 					})
@@ -281,7 +282,7 @@ var _ = Describe("VolSync Handler", func() {
 					})
 
 					Context("When a volsyncProfile is specified with serviceType", func() {
-						var typeLoadBalancer = corev1.ServiceTypeLoadBalancer
+						typeLoadBalancer := corev1.ServiceTypeLoadBalancer
 						BeforeEach(func() {
 							vsHandler.SetVolSyncProfile(&ramendrv1alpha1.VolSyncProfile{
 								VolSyncProfileName: "default",
@@ -326,6 +327,7 @@ var _ = Describe("VolSync Handler", func() {
 								if err != nil || rdPrecreate.Status == nil || rdPrecreate.Status.Rsync == nil {
 									return nil
 								}
+
 								return rdPrecreate.Status.Rsync.Address
 							}, maxWait, interval).Should(Not(BeNil()))
 						})
@@ -446,6 +448,7 @@ var _ = Describe("VolSync Handler", func() {
 					It("Should delete the existing ReplicationDestination", func() {
 						Eventually(func() bool {
 							err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rd), rd)
+
 							return kerrors.IsNotFound(err)
 						}, maxWait, interval).Should(BeTrue())
 					})
@@ -464,11 +467,13 @@ var _ = Describe("VolSync Handler", func() {
 							err := k8sClient.Get(ctx,
 								types.NamespacedName{
 									Name:      rsSpec.ProtectedPVC.Name,
-									Namespace: testNamespace.GetName()},
+									Namespace: testNamespace.GetName(),
+								},
 								createdRS)
 							if err != nil {
 								return false
 							}
+
 							return ownerMatches(createdRS, owner.GetName(), "ConfigMap",
 								true /* Should be controller */)
 						}, maxWait, interval).Should(BeTrue())
@@ -590,7 +595,6 @@ var _ = Describe("VolSync Handler", func() {
 							Context("When the pvc is no longer in use", func() {
 								It("Should update the trigger on the RS and return true when replication is complete"+
 									" and also delete the pvc after replication complete", func() {
-
 									// Run ReconcileRS - indicate final sync
 									finalSyncDone, returnedRS, err := vsHandler.ReconcileRS(rsSpec, true)
 									Expect(err).ToNot(HaveOccurred())
@@ -602,11 +606,13 @@ var _ = Describe("VolSync Handler", func() {
 										err := k8sClient.Get(ctx,
 											types.NamespacedName{
 												Name:      rsSpec.ProtectedPVC.Name,
-												Namespace: testNamespace.GetName()},
+												Namespace: testNamespace.GetName(),
+											},
 											createdRS)
 										if err != nil || createdRS.Spec.Trigger == nil {
 											return ""
 										}
+
 										return createdRS.Spec.Trigger.Manual
 									}, maxWait, interval).Should(Equal(volsync.FinalSyncTriggerString))
 
@@ -630,13 +636,14 @@ var _ = Describe("VolSync Handler", func() {
 												// PVC protection finalizer is added automatically to PVC - but testenv
 												// doesn't have anything that will remove it for us - we're good as long
 												// as the pvc is marked for deletion
-												//return true
 
 												testPVC.Finalizers = []string{} // Clear finalizers
 												Expect(k8sClient.Update(ctx, testPVC)).To(Succeed())
 											}
+
 											return false // try again
 										}
+
 										return kerrors.IsNotFound(err)
 									}, maxWait, interval).Should(BeTrue())
 
@@ -744,6 +751,7 @@ var _ = Describe("VolSync Handler", func() {
 					if err != nil {
 						return false
 					}
+
 					return rd.Status != nil && rd.Status.LatestImage != nil
 				}, maxWait, interval).Should(BeTrue())
 			})
@@ -943,6 +951,7 @@ var _ = Describe("VolSync Handler", func() {
 			allRDs := &volsyncv1alpha1.ReplicationDestinationList{}
 			Eventually(func() int {
 				Expect(k8sClient.List(ctx, allRDs, client.InNamespace(testNamespace.GetName()))).To(Succeed())
+
 				return len(allRDs.Items)
 			}, maxWait, interval).Should(Equal(len(rdSpecList) + len(rdSpecListOtherOwner)))
 		})
@@ -955,6 +964,7 @@ var _ = Describe("VolSync Handler", func() {
 				rdList := &volsyncv1alpha1.ReplicationDestinationList{}
 				Eventually(func() int {
 					Expect(k8sClient.List(ctx, rdList, client.InNamespace(testNamespace.GetName()))).To(Succeed())
+
 					return len(rdList.Items)
 				}, maxWait, interval).Should(Equal(len(rdSpecListOtherOwner)))
 
@@ -978,6 +988,7 @@ var _ = Describe("VolSync Handler", func() {
 				rdList := &volsyncv1alpha1.ReplicationDestinationList{}
 				Eventually(func() int {
 					Expect(k8sClient.List(ctx, rdList, client.InNamespace(testNamespace.GetName()))).To(Succeed())
+
 					return len(rdList.Items)
 				}, maxWait, interval).Should(Equal(3 + len(rdSpecListOtherOwner)))
 
@@ -1001,6 +1012,7 @@ var _ = Describe("VolSync Handler", func() {
 			remainingRDs := &volsyncv1alpha1.ReplicationDestinationList{}
 			Eventually(func() int {
 				Expect(k8sClient.List(ctx, remainingRDs, client.InNamespace(testNamespace.GetName()))).To(Succeed())
+
 				return len(remainingRDs.Items)
 			}, maxWait, interval).Should(Equal(len(rdSpecList) + len(rdSpecListOtherOwner) - 2))
 
@@ -1018,6 +1030,7 @@ var _ = Describe("VolSync Handler", func() {
 			remainingRDs := &volsyncv1alpha1.ReplicationDestinationList{}
 			Eventually(func() int {
 				Expect(k8sClient.List(ctx, remainingRDs, client.InNamespace(testNamespace.GetName()))).To(Succeed())
+
 				return len(remainingRDs.Items)
 			}, maxWait, interval).Should(Equal(len(rdSpecList) + len(rdSpecListOtherOwner)))
 		})
@@ -1123,6 +1136,7 @@ var _ = Describe("VolSync Handler", func() {
 			allRSs := &volsyncv1alpha1.ReplicationSourceList{}
 			Eventually(func() int {
 				Expect(k8sClient.List(ctx, allRSs, client.InNamespace(testNamespace.GetName()))).To(Succeed())
+
 				return len(allRSs.Items)
 			}, maxWait, interval).Should(Equal(len(rsSpecList) + len(rsSpecListOtherOwner)))
 		})
@@ -1137,6 +1151,7 @@ var _ = Describe("VolSync Handler", func() {
 			remainingRSs := &volsyncv1alpha1.ReplicationSourceList{}
 			Eventually(func() int {
 				Expect(k8sClient.List(ctx, remainingRSs, client.InNamespace(testNamespace.GetName()))).To(Succeed())
+
 				return len(remainingRSs.Items)
 			}, maxWait, interval).Should(Equal(len(rsSpecList) + len(rsSpecListOtherOwner) - 2))
 		})
@@ -1149,9 +1164,9 @@ var _ = Describe("VolSync Handler", func() {
 			remainingRSs := &volsyncv1alpha1.ReplicationSourceList{}
 			Eventually(func() int {
 				Expect(k8sClient.List(ctx, remainingRSs, client.InNamespace(testNamespace.GetName()))).To(Succeed())
+
 				return len(remainingRSs.Items)
 			}, maxWait, interval).Should(Equal(len(rsSpecList) + len(rsSpecListOtherOwner)))
-
 		})
 	})
 
@@ -1207,6 +1222,7 @@ var _ = Describe("VolSync Handler", func() {
 						if err != nil {
 							return 0
 						}
+
 						return len(testPVC.Annotations)
 					}, maxWait, interval).Should(Equal(len(initialAnnotations) - 2))
 					// We had 2 acm annotations in initialAnnotations
@@ -1234,6 +1250,7 @@ var _ = Describe("VolSync Handler", func() {
 						if ok {
 							Expect(val).To(Equal("merge"))
 						}
+
 						return ok
 					}, maxWait, interval).Should(BeTrue())
 				})
@@ -1247,6 +1264,7 @@ var _ = Describe("VolSync Handler", func() {
 						if err != nil {
 							return 0
 						}
+
 						return len(testPVC.Annotations)
 					}, maxWait, interval).Should(Equal(len(initialAnnotations) - 2))
 					// We had 2 acm annotations in initialAnnotations
@@ -1270,7 +1288,9 @@ var _ = Describe("VolSync Handler", func() {
 						if err != nil {
 							return false
 						}
+
 						_, ok := testPVC.Annotations["apps.open-cluster-management.io/reconcile-option"]
+
 						return ok
 					}, maxWait, interval).Should(BeTrue())
 				})
@@ -1289,6 +1309,7 @@ func ownerMatches(obj metav1.Object, ownerName, ownerKind string, ownerIsControl
 		if ownerRef.Name == ownerName && ownerRef.Kind == ownerKind {
 			// owner is there, check if controller or not
 			isController := ownerRef.Controller != nil && *ownerRef.Controller
+
 			return ownerIsController == isController
 		}
 	}
@@ -1325,9 +1346,8 @@ func createSnapshot(snapshotName, namespace string) *unstructured.Unstructured {
 	return volSnap
 }
 
-func createDummyPVC(pvcName,
-	namespace string, capacity resource.Quantity, annotations map[string]string) *corev1.PersistentVolumeClaim {
-
+func createDummyPVC(pvcName, namespace string, capacity resource.Quantity,
+	annotations map[string]string) *corev1.PersistentVolumeClaim {
 	// Create a dummy pvc to protect so the reconcile can proceed properly
 	dummyPVC := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
