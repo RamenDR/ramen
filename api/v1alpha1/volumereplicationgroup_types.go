@@ -161,10 +161,6 @@ type VolumeReplicationGroupSpec struct {
 	// volsync defines the configuration when using VolSync plugin for replication.
 	//+optional
 	VolSync VolSyncSpec `json:"volSync,omitempty"`
-
-	// takePVCsOwnership can be used to tell VRG to take ownership of all PVCs. Defaults to "false".
-	//+optional
-	TakePVCsOwnership bool `json:"takePVCsOwnership,omitempty"`
 }
 
 type ProtectedPVC struct {
