@@ -547,18 +547,6 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 		return !done, fmt.Errorf("clean up on secondaries pending (%+v)", d.instance)
 	}
 
-	if curHomeCluster != preferredCluster {
-		if d.hasVRGTakenPVCsOwnership(curHomeCluster) {
-			err := d.sendRequestToTakePVCsOwnership(curHomeCluster)
-			if err != nil {
-				return !done, err
-			}
-
-			d.log.Info("VRG has not taken ownership of PVCs yet. Waiting...")
-
-			return !done, nil
-		}
-	}
 	return d.relocate(preferredCluster, preferredClusterNamespace, rmn.Relocating)
 }
 
@@ -683,47 +671,6 @@ func (d *DRPCInstance) isVRGConditionReady(homeCluster string, conditionType str
 
 	return condition.Status == metav1.ConditionTrue &&
 		condition.ObservedGeneration == vrg.Generation
-}
-
-func (d *DRPCInstance) hasVRGTakenPVCsOwnership(clusterName string) bool {
-	vrgFromMCV := d.vrgs[clusterName]
-
-	if vrgFromMCV == nil {
-		d.log.Info(fmt.Sprintf("VRG not available on cluster %s", clusterName))
-
-		return false
-	}
-
-	if !vrgFromMCV.Spec.TakePVCsOwnership {
-		return false
-	}
-
-	return vrgFromMCV.Status.PVCsOwnershipTaken
-}
-
-func (d *DRPCInstance) sendRequestToTakePVCsOwnership(clusterName string) error {
-	vrg, err := d.getVRGFromManifestWork(clusterName)
-	if err != nil {
-		return err
-	}
-
-	if vrg.Spec.TakePVCsOwnership {
-		d.log.Info(fmt.Sprintf("VRG %s has already set to take PVCs ownership for this cluster %s",
-			vrg.Name, clusterName))
-
-		return nil
-	}
-
-	vrg.Spec.TakePVCsOwnership = true
-
-	err = d.updateManifestWork(clusterName, vrg)
-	if err != nil {
-		return err
-	}
-
-	d.log.Info(fmt.Sprintf("Updated VRG running in cluster %s to take PVCs onwership. VRG (%v)", clusterName, vrg))
-
-	return nil
 }
 
 func (d *DRPCInstance) relocate(preferredCluster, preferredClusterNamespace string, drState rmn.DRState) (bool, error) {
