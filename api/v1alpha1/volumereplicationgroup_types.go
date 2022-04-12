@@ -116,7 +116,7 @@ type VRGSyncSpec struct {
 type VolumeReplicationGroupSpec struct {
 	// Label selector to identify all the PVCs that are in this group
 	// that needs to be replicated to the peer cluster.
-	PVCSelector metav1.LabelSelector `json:"pvcSelector"`
+	PVCSelector metav1.LabelSelector `json:"pvcSelector,omitempty"`
 
 	// Desired state of all volumes [primary or secondary] in this replication group;
 	// this value is propagated to children VolumeReplication CRs
