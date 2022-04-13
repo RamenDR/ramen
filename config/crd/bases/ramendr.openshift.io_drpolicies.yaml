@@ -36,53 +36,6 @@ spec:
           spec:
             description: DRPolicySpec defines the desired state of DRPolicy
             properties:
-              drClusterSet:
-                description: The set of managed clusters governed by this policy,
-                  which have replication relationship enabled between them.
-                items:
-                  description: Managed cluster information
-                  properties:
-                    cidrs:
-                      description: CIDRs is a list of CIDR strings. An admin can use
-                        this field to indicate the CIDRs that are used or could potentially
-                        be used for the nodes in this managed cluster.  These will
-                        be used for the cluster fencing operation for sync/Metro DR.
-                      items:
-                        type: string
-                      type: array
-                    clusterFence:
-                      description: ClusterFence is a string that determines the fencing
-                        state of the cluster.
-                      enum:
-                      - Unfenced
-                      - Fenced
-                      - ManuallyFenced
-                      type: string
-                    name:
-                      description: Name of this managed cluster as configured in OCM/ACM
-                      type: string
-                    region:
-                      description: Region of a managed cluster determines it DR group.
-                        All managed clusters in a region are considered to be in a
-                        sync group.
-                      type: string
-                    s3ProfileName:
-                      description: S3 profile name (in Ramen config) to use as a source
-                        to restore PV related cluster state during recovery or relocate
-                        actions of applications to this managed cluster;  hence, this
-                        S3 profile should be available to successfully move the workload
-                        to this managed cluster.  For applications that are active
-                        on this managed cluster, their PV related cluster state is
-                        stored to S3 profiles of all other managed clusters in the
-                        same DRPolicy to enable recovery or relocate actions on those
-                        managed clusters.
-                      type: string
-                  required:
-                  - name
-                  - region
-                  - s3ProfileName
-                  type: object
-                type: array
               drClusters:
                 description: List of DRCluster resources that are governed by this
                   policy
@@ -217,18 +170,6 @@ spec:
                   - type
                   type: object
                 type: array
-              drClusters:
-                additionalProperties:
-                  properties:
-                    status:
-                      enum:
-                      - Unfenced
-                      - Fenced
-                      type: string
-                    string:
-                      type: string
-                  type: object
-                type: object
             type: object
         type: object
     served: true

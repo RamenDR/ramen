@@ -20,6 +20,18 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// ClusterFenceState which will be either Unfenced, or Fenced or ManuallyFenced
+// +kubebuilder:validation:Enum=Unfenced;Fenced;ManuallyFenced
+type ClusterFenceState string
+
+const (
+	ClusterFenceStateUnfenced       = ClusterFenceState("Unfenced")
+	ClusterFenceStateFenced         = ClusterFenceState("Fenced")
+	ClusterFenceStateManuallyFenced = ClusterFenceState("ManuallyFenced")
+)
+
+type Region string
+
 // DRClusterSpec defines the desired state of DRCluster
 type DRClusterSpec struct {
 	// CIDRs is a list of CIDR strings. An admin can use this field to indicate
@@ -45,9 +57,22 @@ type DRClusterSpec struct {
 	S3ProfileName string `json:"s3ProfileName"`
 }
 
+// +kubebuilder:validation:Enum=Unfenced;Fenced
+type FenceStatus string
+
+const (
+	ClusterFenced   = FenceStatus("Fenced")
+	ClusterUnfenced = FenceStatus("Unfenced")
+)
+
+const (
+	DRClusterValidated string = `Validated`
+)
+
 // DRClusterStatus defines the observed state of DRCluster
 type DRClusterStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Fenced     FenceStatus        `json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true
