@@ -547,7 +547,44 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 		return !done, fmt.Errorf("clean up on secondaries pending (%+v)", d.instance)
 	}
 
+	if curHomeCluster != preferredCluster {
+		result, err := d.prepareForFinalSync(curHomeCluster)
+		if err != nil {
+			return !done, err
+		}
+
+		if result != done {
+			return !done, nil
+		}
+	}
+
 	return d.relocate(preferredCluster, preferredClusterNamespace, rmn.Relocating)
+}
+
+func (d *DRPCInstance) prepareForFinalSync(homeCluster string) (bool, error) {
+	const done = true
+
+	vrg := d.vrgs[homeCluster]
+
+	if vrg == nil {
+		d.log.Info("VRG not available on cluster", "cluster", homeCluster)
+
+		return !done, fmt.Errorf("VRG not found on Cluster %s", homeCluster)
+	}
+
+	if !vrg.Status.FinalSyncComplete {
+		err := d.updateVRGToRunFinalSync(homeCluster, true)
+		if err != nil {
+			return !done, err
+		}
+
+		// updated VRG to run final sync. Give it time...
+		return !done, nil
+	}
+
+	d.log.Info("Running final sync complete ", "cluster", homeCluster)
+
+	return done, nil
 }
 
 func clusterListContains(clNames []string, cName string) bool {
@@ -809,7 +846,7 @@ func (d *DRPCInstance) createVRGManifestWorkAsPrimary(targetCluster string) (boo
 			return false, nil
 		}
 
-		err := d.updateVRGState(targetCluster, rmn.Primary, false)
+		err := d.updateVRGState(targetCluster, rmn.Primary)
 		if err != nil {
 			d.log.Info(fmt.Sprintf("Failed to update VRG to secondary on cluster %s. Err (%v)", targetCluster, err))
 
@@ -885,7 +922,7 @@ func (d *DRPCInstance) moveVRGToSecondaryOnPeers(clusterToSkip string) error {
 			continue
 		}
 
-		err := d.updateVRGState(clusterName, rmn.Secondary, false)
+		err := d.updateVRGState(clusterName, rmn.Secondary)
 		if err != nil {
 			d.log.Info(fmt.Sprintf("Failed to update VRG to secondary on cluster %s. Err (%v)", clusterName, err))
 			needRetry = true
@@ -1433,7 +1470,7 @@ func (d *DRPCInstance) ensureVRGDeleted(clusterName string) bool {
 	return false
 }
 
-func (d *DRPCInstance) updateVRGState(clusterName string, state rmn.ReplicationState, runFinalSync bool) error {
+func (d *DRPCInstance) updateVRGState(clusterName string, state rmn.ReplicationState) error {
 	d.log.Info(fmt.Sprintf("Updating VRG to secondary for cluster %s", clusterName))
 
 	vrg, err := d.getVRGFromManifestWork(clusterName)
@@ -1449,6 +1486,37 @@ func (d *DRPCInstance) updateVRGState(clusterName string, state rmn.ReplicationS
 	}
 
 	vrg.Spec.ReplicationState = state
+	if state == rmn.Secondary {
+		// Turn off the final sync flag
+		vrg.Spec.VolSync.RunFinalSync = false
+	}
+
+	err = d.updateManifestWork(clusterName, vrg)
+	if err != nil {
+		return err
+	}
+
+	d.log.Info(fmt.Sprintf("Updated VRG %s running in cluster %s to secondary", vrg.Name, clusterName))
+
+	return nil
+}
+
+func (d *DRPCInstance) updateVRGToRunFinalSync(clusterName string, runFinalSync bool) error {
+	d.log.Info(fmt.Sprintf("Updating VRG to run final sync on cluster %s", clusterName))
+
+	vrg, err := d.getVRGFromManifestWork(clusterName)
+	if err != nil {
+		return fmt.Errorf("failed to update VRG state. ClusterName %s (%w)",
+			clusterName, err)
+	}
+
+	if vrg.Spec.VolSync.RunFinalSync == runFinalSync {
+		d.log.Info(fmt.Sprintf("VRG %s on cluster %s already has the final sync set to %v", 
+			vrg.Name, clusterName, runFinalSync))
+
+		return nil
+	}
+
 	vrg.Spec.VolSync.RunFinalSync = runFinalSync
 
 	err = d.updateManifestWork(clusterName, vrg)
@@ -1456,7 +1524,8 @@ func (d *DRPCInstance) updateVRGState(clusterName string, state rmn.ReplicationS
 		return err
 	}
 
-	d.log.Info(fmt.Sprintf("Updated VRG running in cluster %s to secondary. VRG (%v)", clusterName, vrg))
+	d.log.Info(fmt.Sprintf("Updated VRG %s running in cluster %s to run the final sync", 
+		vrg.Name, clusterName))
 
 	return nil
 }

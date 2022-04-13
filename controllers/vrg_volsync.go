@@ -111,7 +111,8 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary() (requeue bool) {
 			ProtectedPVC: *protectedPVC,
 		}
 
-		_, rs, err := v.volSyncHandler.ReconcileRS(rsSpec, false /* Schedule sync normally */)
+		// reconcile RS and if run final sync if it is true
+		finalSyncComplete, rs, err := v.volSyncHandler.ReconcileRS(rsSpec, v.instance.Spec.VolSync.RunFinalSync)
 		if err != nil {
 			v.log.Info(fmt.Sprintf("Failed to reconcile VolSync Replication Source for rsSpec %v. Error %v",
 				rsSpec, err))
@@ -126,11 +127,20 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary() (requeue bool) {
 		} else {
 			setVRGConditionTypeVolSyncRepSourceSetupComplete(&protectedPVC.Conditions, v.instance.Generation, "Ready")
 		}
+
+		if v.instance.Spec.VolSync.RunFinalSync && !finalSyncComplete {
+			requeue = true
+		}
 	}
 
 	if requeue {
 		v.log.Info("Not all ReplicationSources completed setup. We'll retry...")
+
 		return
+	}
+
+	if v.instance.Spec.VolSync.RunFinalSync {
+		v.instance.Status.FinalSyncComplete = true
 	}
 
 	v.log.Info("Successfully reconciled VolSync as Primary")
@@ -142,46 +152,6 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() (requeue bool) {
 	v.log.Info("Reconcile VolSync as Secondary", "RDSpec", v.instance.Spec.VolSync.RDSpec)
 
 	requeue = false
-
-	if v.instance.Spec.VolSync.RunFinalSync {
-		for idx, protectedPVC := range v.instance.Status.ProtectedPVCs {
-			if protectedPVC.ProtectedByVolSync {
-				rsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
-					ProtectedPVC: protectedPVC,
-				}
-
-				finalSyncComplete, _, err := v.volSyncHandler.ReconcileRS(rsSpec, true /* run final sync */)
-				if err != nil {
-					v.log.Info(fmt.Sprintf("Failed to run final sync for rsSpec %v. Error %v",
-						rsSpec, err))
-
-					requeue = true
-					setVRGConditionTypeVolSyncFinalSyncError(&v.instance.Status.ProtectedPVCs[idx].Conditions,
-						v.instance.Generation, "Final sync error")
-
-					continue
-				}
-
-				if !finalSyncComplete {
-					requeue = true
-					setVRGConditionTypeVolSyncFinalSyncInProgress(&v.instance.Status.ProtectedPVCs[idx].Conditions,
-						v.instance.Generation, "Final sync in-progress")
-
-					continue
-				}
-
-				setVRGConditionTypeVolSyncFinalSyncComplete(&v.instance.Status.ProtectedPVCs[idx].Conditions,
-					v.instance.Generation, "Final sync complete")
-			}
-		}
-
-		if requeue {
-			v.log.Info("Waiting for final sync of ReplicationSources to complete ...")
-			return
-		}
-
-		v.log.Info("Final sync of ReplicationSources is complete")
-	}
 
 	// If we are secondary, and RDSpec is not set, then we don't want to have any PVC
 	// flagged as a VolSync PVC.
@@ -197,6 +167,9 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() (requeue bool) {
 		v.instance.Status.ProtectedPVCs = v.instance.Status.ProtectedPVCs[:idx]
 		v.log.Info("Protected PVCs left", "ProtectedPVCs", v.instance.Status.ProtectedPVCs)
 	}
+
+	// Reset status finalsync flag
+	v.instance.Status.FinalSyncComplete = false
 
 	// Reconcile RDSpec (deletion or replication)
 	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
