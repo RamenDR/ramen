@@ -16,6 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -37,6 +38,102 @@ func init() {
 var UploadedPVs = make(map[string]interface{})
 
 var _ = Describe("Test VolumeReplicationGroup", func() {
+	conditionExpect := func(conditions []metav1.Condition, typ string) *metav1.Condition {
+		condition := meta.FindStatusCondition(conditions, typ)
+		Expect(condition).ToNot(BeNil())
+
+		return condition
+	}
+	conditionStatusReasonExpect := func(condition *metav1.Condition, status metav1.ConditionStatus, reason string) {
+		Expect(condition.Status).To(Equal(status))
+		Expect(condition.Reason).To(Equal(reason))
+	}
+	var vrg *ramendrv1alpha1.VolumeReplicationGroup
+	vrgConditionExpect := func(typ string) *metav1.Condition {
+		return conditionExpect(vrg.Status.Conditions, typ)
+	}
+	vrgConditionStatusReasonExpect := func(typ string, status metav1.ConditionStatus, reason string) *metav1.Condition {
+		condition := vrgConditionExpect(typ)
+		conditionStatusReasonExpect(condition, status, reason)
+
+		return condition
+	}
+	vrgGet := func() {
+		Expect(apiReader.Get(context.TODO(), types.NamespacedName{
+			Namespace: vrg.Namespace, Name: vrg.Name,
+		}, vrg)).To(Succeed())
+	}
+	var dataReadyCondition *metav1.Condition
+	When("ReplicationState is invalid", func() {
+		It("should set DataReady status=False reason=Error", func() {
+			vrg = &ramendrv1alpha1.VolumeReplicationGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "asdf",
+				},
+				Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
+					PVCSelector:      metav1.LabelSelector{},
+					ReplicationState: "invalid",
+					S3Profiles:       []string{},
+					Async: ramendrv1alpha1.VRGAsyncSpec{
+						Mode:               ramendrv1alpha1.AsyncModeDisabled,
+						SchedulingInterval: "0m",
+					},
+					Sync: ramendrv1alpha1.VRGSyncSpec{
+						Mode: ramendrv1alpha1.SyncModeDisabled,
+					},
+				},
+			}
+			Expect(k8sClient.Create(context.TODO(), vrg)).To(Succeed())
+			Eventually(func() int {
+				vrgGet()
+
+				return len(vrg.Status.Conditions)
+			}, timeout, interval).ShouldNot(BeZero())
+			dataReadyCondition = vrgConditionStatusReasonExpect("DataReady", metav1.ConditionFalse, "Error")
+		})
+		It("should set DataProtected status=Unknown reason=Initializing", func() {
+			vrgConditionStatusReasonExpect("DataProtected", metav1.ConditionUnknown, "Initializing")
+		})
+		It("should set ClusterDataReady status=Unknown reason=Initializing", func() {
+			vrgConditionStatusReasonExpect("ClusterDataReady", metav1.ConditionUnknown, "Initializing")
+		})
+		It("should set ClusterDataProtected status=Unknown reason=Initializing", func() {
+			vrgConditionStatusReasonExpect("ClusterDataProtected", metav1.ConditionUnknown, "Initializing")
+		})
+	})
+	When("ReplicationState is primary, but sync and async are disabled", func() {
+		It("should change DataReady message", func() {
+			vrg.Spec.ReplicationState = "primary"
+			dataReadyConditionMessage := dataReadyCondition.Message
+			Expect(k8sClient.Update(context.TODO(), vrg)).To(Succeed())
+			Eventually(func() string {
+				vrgGet()
+				dataReadyCondition = vrgConditionExpect("DataReady")
+
+				return dataReadyCondition.Message
+			}, timeout, interval).ShouldNot(Equal(dataReadyConditionMessage))
+			vrgConditionStatusReasonExpect("DataReady", metav1.ConditionFalse, "Error")
+		})
+	})
+	When("ReplicationState is primary and sync is enabled, but s3 profiles are absent", func() {
+		It("should set ClusterDataReady status=False reason=Error", func() {
+			vrg.Spec.Sync.Mode = ramendrv1alpha1.SyncModeEnabled
+			Expect(k8sClient.Update(context.TODO(), vrg)).To(Succeed())
+			var clusterDataReadyCondition *metav1.Condition
+			Eventually(func() metav1.ConditionStatus {
+				vrgGet()
+				clusterDataReadyCondition = vrgConditionExpect("ClusterDataReady")
+
+				return clusterDataReadyCondition.Status
+			}, timeout, interval).Should(Equal(metav1.ConditionFalse))
+			Expect(clusterDataReadyCondition.Reason).To(Equal("Error"))
+		})
+	})
+	Specify("Vrg delete", func() {
+		Expect(k8sClient.Delete(context.TODO(), vrg)).To(Succeed())
+	})
+
 	// Test first restore
 	Context("restore test case", func() {
 		restoreTestTemplate := &template{
