@@ -412,6 +412,8 @@ spec:
                   - type
                   type: object
                 type: array
+              finalSyncComplete:
+                type: boolean
               lastUpdateTime:
                 format: date-time
                 type: string
@@ -542,8 +544,6 @@ spec:
                       type: string
                   type: object
                 type: array
-              pvcsOwnershipTaken:
-                type: boolean
               state:
                 description: State captures the latest state of the replication operation
                 type: string

@@ -205,7 +205,8 @@ type VolumeReplicationGroupStatus struct {
 	ObservedGeneration int64       `json:"observedGeneration,omitempty"`
 	LastUpdateTime     metav1.Time `json:"lastUpdateTime,omitempty"`
 
-	PVCsOwnershipTaken bool `json:"pvcsOwnershipTaken,omitempty"`
+	FinalSyncComplete bool `json:"finalSyncComplete,omitempty"`
+
 }
 
 // +kubebuilder:object:root=true
