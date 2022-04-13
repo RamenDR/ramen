@@ -19,15 +19,11 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"net"
-	"strings"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -86,70 +82,68 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, client.IgnoreNotFound(fmt.Errorf("get: %w", err))
 	}
 
-	u := &objectUpdater{ctx, drpolicy, r.Client, log}
+	u := &drpolicyUpdater{ctx, drpolicy, r.Client, log}
 
 	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("config map get: %w", u.validatedSetFalse("ConfigMapGetFailed", err))
 	}
 
-	manifestWorkUtil := util.MWUtil{Client: r.Client, Ctx: ctx, Log: log, InstName: "", InstNamespace: ""}
+	drclusters := &ramen.DRClusterList{}
+
+	// TODO: Is this namespaced listing?
+	if err := r.Client.List(ctx, drclusters); err != nil {
+		return ctrl.Result{}, fmt.Errorf("drclusters list: %w", u.validatedSetFalse("drClusterListFailed", err))
+	}
+
+	secretsUtil := &util.SecretsUtil{Client: r.Client, Ctx: ctx, Log: log}
 
 	// DRPolicy is marked for deletion
-	if !drpolicy.ObjectMeta.DeletionTimestamp.IsZero() {
-		log.Info("delete")
-
-		if err := drClustersUndeploy(drpolicy, &manifestWorkUtil, ramenConfig); err != nil {
-			return ctrl.Result{}, fmt.Errorf("drclusters undeploy: %w", err)
-		}
-
-		if err := u.finalizerRemove(); err != nil {
-			return ctrl.Result{}, fmt.Errorf("finalizer remove update: %w", err)
-		}
-
-		return ctrl.Result{}, nil
+	if !drpolicy.ObjectMeta.DeletionTimestamp.IsZero() &&
+		controllerutil.ContainsFinalizer(drpolicy, drPolicyFinalizerName) {
+		return ctrl.Result{}, u.deleteDRPolicy(drclusters, secretsUtil, ramenConfig)
 	}
 
 	log.Info("create/update")
+
+	reason, err := validateDRPolicy(ctx, drpolicy, drclusters, r.APIReader)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("validate: %w", u.validatedSetFalse(reason, err))
+	}
 
 	if err := u.addLabelsAndFinalizers(); err != nil {
 		return ctrl.Result{}, fmt.Errorf("finalizer add update: %w", u.validatedSetFalse("FinalizerAddFailed", err))
 	}
 
-	reason, err := validateDRPolicy(ctx, drpolicy, r.APIReader, r.ObjectStoreGetter, req.NamespacedName.String(), log)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("validate: %w", u.validatedSetFalse(reason, err))
-	}
-
-	// TODO: New condition type is needed for clusters deploy and fencing
-	// handled after this function.
-	if err := drClustersDeploy(drpolicy, &manifestWorkUtil, ramenConfig); err != nil {
-		return ctrl.Result{}, fmt.Errorf("drclusters deploy: %w", u.validatedSetFalse("DrClustersDeployFailed", err))
-	}
-
-	if err := u.clusterFenceHandle(); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to handle cluster fencing: %w",
-			u.validatedSetFalse("FencingHandlingFailed", err))
+	if err := drPolicyDeploy(drpolicy, drclusters, secretsUtil, ramenConfig); err != nil {
+		return ctrl.Result{}, fmt.Errorf("drpolicy deploy: %w", u.validatedSetFalse("DrClustersDeployFailed", err))
 	}
 
 	return ctrl.Result{}, u.validatedSetTrue("Succeeded", "drpolicy validated")
 }
 
-func validateDRPolicy(ctx context.Context, drpolicy *ramen.DRPolicy, apiReader client.Reader,
-	objectStoreGetter ObjectStoreGetter, listKeyPrefix string,
-	log logr.Logger,
-) (string, error) {
-	reason, err := validateS3Profiles(ctx, apiReader, objectStoreGetter, drpolicy, listKeyPrefix, log)
-	if err != nil {
-		return reason, err
+func validateDRPolicy(ctx context.Context,
+	drpolicy *ramen.DRPolicy,
+	drclusters *ramen.DRClusterList,
+	apiReader client.Reader) (string, error) {
+	// TODO: Ensure DRClusters exist and are validated? Also ensure they are not in a deleted state!?
+	// If new DRPolicy and clusters are deleted, then fail reconciliation?
+	found := 0
+
+	for _, specCluster := range drpolicy.Spec.DRClusters {
+		for _, cluster := range drclusters.Items {
+			if cluster.Name == specCluster {
+				found++
+			}
+		}
 	}
 
-	err = validateManagedClusters(ctx, apiReader, drpolicy)
-	if err != nil {
-		return ReasonValidationFailed, err
+	if found != len(drpolicy.Spec.DRClusters) {
+		return ReasonValidationFailed, fmt.Errorf("failed to find DRClusters specified in policy (%v)",
+			drpolicy.Spec.DRClusters)
 	}
 
-	err = validateCIDRsFormat(drpolicy, log)
+	err := validatePolicyConflicts(ctx, apiReader, drpolicy, drclusters)
 	if err != nil {
 		return ReasonValidationFailed, err
 	}
@@ -157,11 +151,11 @@ func validateDRPolicy(ctx context.Context, drpolicy *ramen.DRPolicy, apiReader c
 	return "", nil
 }
 
-func haveOverlappingMetroZones(d1 *ramen.DRPolicy, d2 *ramen.DRPolicy) bool {
+func haveOverlappingMetroZones(d1 *ramen.DRPolicy, d2 *ramen.DRPolicy, drclusters *ramen.DRClusterList) bool {
 	d1ClusterNames := sets.NewString(util.DrpolicyClusterNames(d1)...)
-	d1SupportsMetro, d1MetroRegions := dRPolicySupportsMetro(d1)
+	d1SupportsMetro, d1MetroRegions := dRPolicySupportsMetro(d1, drclusters.Items)
 	d2ClusterNames := sets.NewString(util.DrpolicyClusterNames(d2)...)
-	d2SupportsMetro, d2MetroRegions := dRPolicySupportsMetro(d2)
+	d2SupportsMetro, d2MetroRegions := dRPolicySupportsMetro(d2, drclusters.Items)
 	commonClusters := d1ClusterNames.Intersection(d2ClusterNames)
 
 	// No common managed clusters, so we are good
@@ -192,7 +186,7 @@ func haveOverlappingMetroZones(d1 *ramen.DRPolicy, d2 *ramen.DRPolicy) bool {
 
 // If two drpolicies have common managed cluster(s) and at least one of them is
 // a metro supported drpolicy, then fail.
-func hasConflictingDRPolicy(match *ramen.DRPolicy, list ramen.DRPolicyList) error {
+func hasConflictingDRPolicy(match *ramen.DRPolicy, drclusters *ramen.DRClusterList, list ramen.DRPolicyList) error {
 	// Valid cases
 	// [e1,w1] [e1,c1]
 	// [e1,w1] [e1,w1]
@@ -213,7 +207,7 @@ func hasConflictingDRPolicy(match *ramen.DRPolicy, list ramen.DRPolicyList) erro
 		}
 
 		// None of the common managed clusters should belong to Metro Regions in either of the drpolicies.
-		if haveOverlappingMetroZones(match, drp) {
+		if haveOverlappingMetroZones(match, drp, drclusters) {
 			return fmt.Errorf("drpolicy: %v has overlapping metro region with another drpolicy %v", match.Name, drp.Name)
 		}
 	}
@@ -221,13 +215,16 @@ func hasConflictingDRPolicy(match *ramen.DRPolicy, list ramen.DRPolicyList) erro
 	return nil
 }
 
-func validateManagedClusters(ctx context.Context, apiReader client.Reader, drpolicy *ramen.DRPolicy) error {
+func validatePolicyConflicts(ctx context.Context,
+	apiReader client.Reader,
+	drpolicy *ramen.DRPolicy,
+	drclusters *ramen.DRClusterList) error {
 	drpolicies, err := util.GetAllDRPolicies(ctx, apiReader)
 	if err != nil {
 		return fmt.Errorf("validate managed cluster in drpolicy %v failed: %w", drpolicy.Name, err)
 	}
 
-	err = hasConflictingDRPolicy(drpolicy, drpolicies)
+	err = hasConflictingDRPolicy(drpolicy, drclusters, drpolicies)
 	if err != nil {
 		return fmt.Errorf("validate managed cluster in drpolicy failed: %w", err)
 	}
@@ -235,199 +232,67 @@ func validateManagedClusters(ctx context.Context, apiReader client.Reader, drpol
 	return nil
 }
 
-func validateS3Profiles(ctx context.Context, apiReader client.Reader,
-	objectStoreGetter ObjectStoreGetter, drpolicy *ramen.DRPolicy, listKeyPrefix string, log logr.Logger) (string, error) {
-	for i := range drpolicy.Spec.DRClusterSet {
-		cluster := &drpolicy.Spec.DRClusterSet[i]
-		if cluster.ClusterFence == ramen.ClusterFenceStateFenced ||
-			cluster.ClusterFence == ramen.ClusterFenceStateManuallyFenced {
-			continue
-		}
-
-		if reason, err := s3ProfileValidate(ctx, apiReader, objectStoreGetter,
-			cluster.S3ProfileName, listKeyPrefix, log); err != nil {
-			return reason, err
-		}
-	}
-
-	return "", nil
-}
-
-func s3ProfileValidate(ctx context.Context, apiReader client.Reader,
-	objectStoreGetter ObjectStoreGetter, s3ProfileName, listKeyPrefix string,
-	log logr.Logger,
-) (string, error) {
-	objectStore, err := objectStoreGetter.ObjectStore(ctx, apiReader, s3ProfileName, "drpolicy validation", log)
-	if err != nil {
-		return "s3ConnectionFailed", fmt.Errorf("%s: %w", s3ProfileName, err)
-	}
-
-	if _, err := objectStore.ListKeys(listKeyPrefix); err != nil {
-		return "s3ListFailed", fmt.Errorf("%s: %w", s3ProfileName, err)
-	}
-
-	return "", nil
-}
-
-func validateCIDRsFormat(drpolicy *ramen.DRPolicy, log logr.Logger) error {
-	// validate the CIDRs format
-	for i := range drpolicy.Spec.DRClusterSet {
-		cluster := &drpolicy.Spec.DRClusterSet[i]
-		if err := ParseCIDRs(cluster, log); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func ParseCIDRs(cluster *ramen.ManagedCluster, log logr.Logger) error {
-	invalidCidrs := []string{}
-
-	for i := range cluster.CIDRs {
-		if _, _, err := net.ParseCIDR(cluster.CIDRs[i]); err != nil {
-			invalidCidrs = append(invalidCidrs, cluster.CIDRs[i])
-
-			log.Error(err, ReasonValidationFailed)
-		}
-	}
-
-	if len(invalidCidrs) > 0 {
-		return fmt.Errorf("cluster %s has invalid CIDRs %s", cluster.Name, strings.Join(invalidCidrs, ", "))
-	}
-
-	return nil
-}
-
-type objectUpdater struct {
+type drpolicyUpdater struct {
 	ctx    context.Context
 	object *ramen.DRPolicy
 	client client.Client
 	log    logr.Logger
 }
 
-func (u *objectUpdater) clusterFenceHandle() error {
-	if u.object.Status.DRClusters == nil {
-		u.object.Status.DRClusters = make(map[string]ramen.ClusterStatus)
+func (u *drpolicyUpdater) deleteDRPolicy(drclusters *ramen.DRClusterList,
+	secretsUtil *util.SecretsUtil,
+	ramenConfig *ramen.RamenConfig) error {
+	u.log.Info("delete")
+
+	if err := drPolicyUndeploy(u.object, drclusters, secretsUtil, ramenConfig); err != nil {
+		return fmt.Errorf("drpolicy undeploy: %w", err)
 	}
 
-	for _, managedCluster := range u.object.Spec.DRClusterSet {
-		// TODO:
-		// 1) For now by default fenceStatus is ClusterFenceStateUnfenced.
-		//    However, we need to handle explicit unfencing operation to unfence
-		//    a fenced cluster below, by deleting the fencing CR created by
-		//    ramen.
-		//
-		// 2) How to differentiate between ClusterFenceStateUnfenced being
-		//    set because a manually fenced cluster is manually unfenced against the
-		//    requirement to unfence a cluster that has been fenced by ramen.
-		//
-		// 3) Handle Ramen driven fencing here
-		if managedCluster.ClusterFence == ramen.ClusterFenceStateUnfenced ||
-			managedCluster.ClusterFence == ramen.ClusterFenceState("") {
-			clusterStatus := ramen.ClusterStatus{Name: managedCluster.Name}
-			clusterStatus.Status = ramen.ClusterUnfenced
-			u.object.Status.DRClusters[managedCluster.Name] = clusterStatus
-		}
-
-		if managedCluster.ClusterFence == ramen.ClusterFenceStateManuallyFenced {
-			clusterStatus := ramen.ClusterStatus{Name: managedCluster.Name}
-			clusterStatus.Status = ramen.ClusterFenced
-			u.object.Status.DRClusters[managedCluster.Name] = clusterStatus
-		}
-
-		if managedCluster.ClusterFence == ramen.ClusterFenceStateFenced {
-			return fmt.Errorf("currently DRPolicy cant handle ClusterFenceStateFenced")
-		}
+	if err := u.finalizerRemove(); err != nil {
+		return fmt.Errorf("finalizer remove update: %w", err)
 	}
 
 	return nil
 }
 
-func (u *objectUpdater) validatedSetTrue(reason, message string) error {
-	return u.validatedSet(metav1.ConditionTrue, reason, message)
+func (u *drpolicyUpdater) validatedSetTrue(reason, message string) error {
+	return u.statusConditionSet(ramen.DRPolicyValidated, metav1.ConditionTrue, reason, message)
 }
 
-func (u *objectUpdater) validatedSetFalse(reason string, err error) error {
-	if err1 := u.validatedSet(metav1.ConditionFalse, reason, err.Error()); err1 != nil {
+func (u *drpolicyUpdater) validatedSetFalse(reason string, err error) error {
+	if err1 := u.statusConditionSet(ramen.DRPolicyValidated, metav1.ConditionFalse, reason, err.Error()); err1 != nil {
 		return err1
 	}
 
 	return err
 }
 
-func (u *objectUpdater) validatedSet(status metav1.ConditionStatus, reason, message string) error {
-	return u.statusConditionSet(ramen.DRPolicyValidated, status, reason, message)
-}
-
-func (u *objectUpdater) statusConditionSet(conditionType string, status metav1.ConditionStatus, reason, message string,
+func (u *drpolicyUpdater) statusConditionSet(conditionType string,
+	status metav1.ConditionStatus,
+	reason, message string,
 ) error {
 	conditions := &u.object.Status.Conditions
-	generation := u.object.GetGeneration()
 
-	if condition := meta.FindStatusCondition(*conditions, conditionType); condition != nil {
-		if condition.Status == status &&
-			condition.Reason == reason &&
-			condition.Message == message &&
-			condition.ObservedGeneration == generation {
-			u.log.Info("condition unchanged", "type", conditionType,
-				"status", status, "reason", reason, "message", message, "generation", generation,
-			)
-
-			return nil
-		}
-
-		u.log.Info("condition update", "type", conditionType,
-			"old status", condition.Status, "new status", status,
-			"old reason", condition.Reason, "new reason", reason,
-			"old message", condition.Message, "new message", message,
-			"old generation", condition.ObservedGeneration, "new generation", generation,
-		)
-		util.ConditionUpdate(u.object, condition, status, reason, message)
-	} else {
-		u.log.Info("condition append", "type", conditionType,
-			"status", status, "reason", reason, "message", message, "generation", generation,
-		)
-		util.ConditionAppend(u.object, conditions, conditionType, status, reason, message)
+	if util.GenericStatusConditionSet(u.object, conditions, conditionType,
+		status, reason, message, u.log) {
+		return u.statusUpdate()
 	}
 
-	return u.statusUpdate()
+	return nil
 }
 
-func (u *objectUpdater) statusUpdate() error {
+func (u *drpolicyUpdater) statusUpdate() error {
 	return u.client.Status().Update(u.ctx, u.object)
 }
 
-const finalizerName = "drpolicies.ramendr.openshift.io/ramen"
+const drPolicyFinalizerName = "drpolicies.ramendr.openshift.io/ramen"
 
-func (u *objectUpdater) addLabelsAndFinalizers() error {
-	labelAdded, labels := util.AddLabel(&u.object.ObjectMeta, util.OCMBackupLabelKey, util.OCMBackupLabelValue)
-	finalizerAdded := util.AddFinalizer(u.object, finalizerName)
-
-	if finalizerAdded || labelAdded {
-		u.log.Info("finalizer or label add")
-
-		if labelAdded {
-			u.object.SetLabels(labels)
-		}
-
-		return u.client.Update(u.ctx, u.object)
-	}
-
-	return nil
+func (u *drpolicyUpdater) addLabelsAndFinalizers() error {
+	return util.GenericAddLabelsAndFinalizers(u.ctx, u.object, drPolicyFinalizerName, u.client, u.log)
 }
 
-func (u *objectUpdater) finalizerRemove() error {
-	finalizerCount := len(u.object.ObjectMeta.Finalizers)
-	controllerutil.RemoveFinalizer(u.object, finalizerName)
-
-	if len(u.object.ObjectMeta.Finalizers) != finalizerCount {
-		u.log.Info("finalizer remove")
-
-		return u.client.Update(u.ctx, u.object)
-	}
-
-	return nil
+func (u *drpolicyUpdater) finalizerRemove() error {
+	return util.GenericFinalizerRemove(u.ctx, u.object, drPolicyFinalizerName, u.client, u.log)
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -465,42 +330,23 @@ func (r *DRPolicyReconciler) configMapMapFunc(configMap client.Object) []reconci
 	return requests
 }
 
-func (r *DRPolicyReconciler) secretMapFunc(secret client.Object) (requests []reconcile.Request) {
+func (r *DRPolicyReconciler) secretMapFunc(secret client.Object) []reconcile.Request {
 	if secret.GetNamespace() != NamespaceName() {
-		return
+		return []reconcile.Request{}
 	}
 
 	drpolicies := &ramen.DRPolicyList{}
 	if err := r.Client.List(context.TODO(), drpolicies); err != nil {
-		return
+		return []reconcile.Request{}
 	}
 
-	_, ramenConfig, err := ConfigMapGet(context.TODO(), r.APIReader)
-	if err != nil {
-		return
-	}
-
-	for _, drpolicy := range drpolicies.Items {
-		for _, drCluster := range drpolicy.Spec.DRClusterSet {
-			s3Profile := RamenConfigS3StoreProfilePointerGet(ramenConfig, drCluster.S3ProfileName)
-			if s3Profile == nil {
-				continue
-			}
-
-			if s3Profile.S3SecretRef.Namespace == secret.GetNamespace() &&
-				s3Profile.S3SecretRef.Name == secret.GetName() {
-				requests = append(requests,
-					reconcile.Request{
-						NamespacedName: types.NamespacedName{
-							Name: drpolicy.GetName(),
-						},
-					},
-				)
-
-				break
-			}
-		}
+	// TODO: Add optimzation to only reconcile polocies that refer to the changed secret
+	requests := make([]reconcile.Request, len(drpolicies.Items))
+	for i, drpolicy := range drpolicies.Items {
+		requests[i].Name = drpolicy.GetName()
 	}
 
 	return requests
 }
+
+// TODO: Add a watcher for DRCluster changes (possibly its s3store value changes)

@@ -117,8 +117,10 @@ func setupReconcilers(mgr ctrl.Manager) {
 		}
 
 		if err := (&controllers.DRClusterReconciler{
-			Client: mgr.GetClient(),
-			Scheme: mgr.GetScheme(),
+			Client:            mgr.GetClient(),
+			APIReader:         mgr.GetAPIReader(),
+			Scheme:            mgr.GetScheme(),
+			ObjectStoreGetter: controllers.S3ObjectStoreGetter(),
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "DRCluster")
 			os.Exit(1)

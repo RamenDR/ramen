@@ -545,6 +545,20 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 		return nil, fmt.Errorf("DRPolicy not valid %w", err)
 	}
 
+	drClusters := []rmn.DRCluster{}
+
+	for _, managedCluster := range rmnutil.DrpolicyClusterNames(drPolicy) {
+		drCluster := &rmn.DRCluster{}
+
+		err := r.Client.Get(ctx, types.NamespacedName{Name: managedCluster, Namespace: NamespaceName()}, drCluster)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get DRCluster (%s) %w", managedCluster, err)
+		}
+
+		// TODO: What if the DRCluster is deleted? If new DRPC fail reconciliation
+		drClusters = append(drClusters, *drCluster)
+	}
+
 	// We only create DRPC PlacementRule if the preferred cluster is not configured
 	drpcPlRule, err := r.getDRPCPlacementRule(ctx, drpc, usrPlRule, drPolicy)
 	if err != nil {
@@ -562,8 +576,8 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 	}
 
 	d := &DRPCInstance{
-		reconciler: r, ctx: ctx, log: r.Log, instance: drpc, needStatusUpdate: false,
-		userPlacementRule: usrPlRule, drpcPlacementRule: drpcPlRule, drPolicy: drPolicy, vrgs: vrgs,
+		reconciler: r, ctx: ctx, log: r.Log, instance: drpc, needStatusUpdate: false, userPlacementRule: usrPlRule,
+		drpcPlacementRule: drpcPlRule, drPolicy: drPolicy, drClusters: drClusters, vrgs: vrgs,
 		mwu: rmnutil.MWUtil{Client: r.Client, Ctx: ctx, Log: r.Log, InstName: drpc.Name, InstNamespace: drpc.Namespace},
 	}
 
@@ -629,14 +643,10 @@ func (r *DRPlacementControlReconciler) getDRPolicy(ctx context.Context,
 func (r DRPlacementControlReconciler) addLabelsAndFinalizers(ctx context.Context,
 	drpc *rmn.DRPlacementControl, usrPlRule *plrv1.PlacementRule) error {
 	// add label and finalizer to DRPC
-	labelAdded, labels := rmnutil.AddLabel(&drpc.ObjectMeta, rmnutil.OCMBackupLabelKey, rmnutil.OCMBackupLabelValue)
+	labelAdded := rmnutil.AddLabel(drpc, rmnutil.OCMBackupLabelKey, rmnutil.OCMBackupLabelValue)
 	finalizerAdded := rmnutil.AddFinalizer(drpc, DRPCFinalizer)
 
 	if labelAdded || finalizerAdded {
-		if labelAdded {
-			drpc.SetLabels(labels)
-		}
-
 		if err := r.Update(ctx, drpc); err != nil {
 			r.Log.Error(err, "Failed to add label and finalizer to drpc")
 
@@ -936,27 +946,27 @@ func (r *DRPlacementControlReconciler) getVRGsFromManagedClusters(drpc *rmn.DRPl
 	drPolicy *rmn.DRPolicy) (map[string]*rmn.VolumeReplicationGroup, error) {
 	vrgs := map[string]*rmn.VolumeReplicationGroup{}
 
-	for _, drCluster := range drPolicy.Spec.DRClusterSet {
+	for _, drCluster := range rmnutil.DrpolicyClusterNames(drPolicy) {
 		// Only fetch failover cluster VRG if action is Failover
-		if drpc.Spec.Action == rmn.ActionFailover && drpc.Spec.FailoverCluster != drCluster.Name {
-			r.Log.Info("Skipping fetching VRG", "cluster", drCluster.Name)
+		if drpc.Spec.Action == rmn.ActionFailover && drpc.Spec.FailoverCluster != drCluster {
+			r.Log.Info("Skipping fetching VRG", "cluster", drCluster)
 
 			continue
 		}
 
-		vrg, err := r.MCVGetter.GetVRGFromManagedCluster(drpc.Name, drpc.Namespace, drCluster.Name)
+		vrg, err := r.MCVGetter.GetVRGFromManagedCluster(drpc.Name, drpc.Namespace, drCluster)
 		if err != nil {
 			// Only NotFound error is accepted
 			if errors.IsNotFound(err) {
-				r.Log.Info(fmt.Sprintf("VRG not found on %q", drCluster.Name))
+				r.Log.Info(fmt.Sprintf("VRG not found on %q", drCluster))
 
 				continue
 			}
 
-			return vrgs, fmt.Errorf("failed to retrieve VRG from %s. err (%w)", drCluster.Name, err)
+			return vrgs, fmt.Errorf("failed to retrieve VRG from %s. err (%w)", drCluster, err)
 		}
 
-		vrgs[drCluster.Name] = vrg
+		vrgs[drCluster] = vrg
 	}
 
 	r.Log.Info("VRGs location", "VRGs", vrgs)
@@ -985,14 +995,12 @@ func (r *DRPlacementControlReconciler) deleteClonedPlacementRule(ctx context.Con
 
 func (r *DRPlacementControlReconciler) addClusterPeersToPlacementRule(
 	drPolicy *rmn.DRPolicy, plRule *plrv1.PlacementRule) error {
-	if len(drPolicy.Spec.DRClusterSet) == 0 {
+	if len(rmnutil.DrpolicyClusterNames(drPolicy)) == 0 {
 		return fmt.Errorf("DRPolicy %s is missing DR clusters", drPolicy.Name)
 	}
 
-	for idx := range drPolicy.Spec.DRClusterSet {
-		plRule.Spec.Clusters = append(plRule.Spec.Clusters, plrv1.GenericClusterReference{
-			Name: drPolicy.Spec.DRClusterSet[idx].Name,
-		})
+	for _, v := range rmnutil.DrpolicyClusterNames(drPolicy) {
+		plRule.Spec.Clusters = append(plRule.Spec.Clusters, plrv1.GenericClusterReference{Name: v})
 	}
 
 	r.Log.Info(fmt.Sprintf("Added clusters %v to placementRule from DRPolicy %s", plRule.Spec.Clusters, drPolicy.Name))

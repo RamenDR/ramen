@@ -44,6 +44,7 @@ type DRPCInstance struct {
 	log                  logr.Logger
 	instance             *rmn.DRPlacementControl
 	drPolicy             *rmn.DRPolicy
+	drClusters           []rmn.DRCluster
 	needStatusUpdate     bool
 	mcvRequestInProgress bool
 	userPlacementRule    *plrv1.PlacementRule
@@ -333,19 +334,20 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 	return d.switchToFailoverCluster()
 }
 
-func (d *DRPCInstance) checkClusterFenced(cluster string) (bool, error) {
-	// return error if the DRPolicy' status for the currentHomeCluster is not found
-	clusterStatus, found := d.drPolicy.Status.DRClusters[cluster]
-	if !found {
-		return false, fmt.Errorf("failed to get the fencing status for the cluster %s", cluster)
+func (d *DRPCInstance) checkClusterFenced(cluster string, drClusters []rmn.DRCluster) (bool, error) {
+	for i := range drClusters {
+		if drClusters[i].Name != cluster {
+			continue
+		}
+
+		if drClusters[i].Status.Fenced != rmn.ClusterFenced {
+			return false, nil
+		}
+
+		return true, nil
 	}
 
-	// return error if the current home cluster is not yet fenced
-	if clusterStatus.Status != rmn.ClusterFenced {
-		return false, nil
-	}
-
-	return true, nil
+	return false, fmt.Errorf("failed to get the fencing status for the cluster %s", cluster)
 }
 
 func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
@@ -375,8 +377,8 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 		return done, err
 	}
 
-	if isMetroAction(d.drPolicy, curHomeCluster, d.instance.Spec.FailoverCluster) {
-		fenced, err := d.checkClusterFenced(curHomeCluster)
+	if isMetroAction(d.drPolicy, d.drClusters, curHomeCluster, d.instance.Spec.FailoverCluster) {
+		fenced, err := d.checkClusterFenced(curHomeCluster, d.drClusters)
 		if err != nil {
 			return !done, err
 		}
@@ -574,9 +576,9 @@ func (d *DRPCInstance) validateRelocation(preferredCluster string) (string, erro
 func (d *DRPCInstance) readyToSwitchOver(homeCluster string, preferredCluster string) bool {
 	d.log.Info("Checking whether VRG is available", "cluster", homeCluster)
 
-	if isMetroAction(d.drPolicy, homeCluster, preferredCluster) {
+	if isMetroAction(d.drPolicy, d.drClusters, homeCluster, preferredCluster) {
 		// check fencing status in the preferredCluster
-		fenced, err := d.checkClusterFenced(preferredCluster)
+		fenced, err := d.checkClusterFenced(preferredCluster, d.drClusters)
 		if err != nil {
 			return false
 		}
@@ -817,9 +819,7 @@ func (d *DRPCInstance) moveVRGToSecondaryEverywhere() bool {
 
 	failedCount := 0
 
-	for _, drCluster := range d.drPolicy.Spec.DRClusterSet {
-		clusterName := drCluster.Name
-
+	for _, clusterName := range rmnutil.DrpolicyClusterNames(d.drPolicy) {
 		err := d.updateVRGStateToSecondary(clusterName)
 		if err != nil {
 			d.log.Error(err, "Failed to update VRG to secondary", "cluster", clusterName)
@@ -845,8 +845,7 @@ func BuildManagedClusterViewName(resourceName, resourceNamespace, resource strin
 }
 
 func (d *DRPCInstance) cleanupSecondaries(skipCluster string) (bool, error) {
-	for _, drCluster := range d.drPolicy.Spec.DRClusterSet {
-		clusterName := drCluster.Name
+	for _, clusterName := range rmnutil.DrpolicyClusterNames(d.drPolicy) {
 		if skipCluster == clusterName {
 			continue
 		}
@@ -949,7 +948,7 @@ func (d *DRPCInstance) generateVRG() rmn.VolumeReplicationGroup {
 		Spec: rmn.VolumeReplicationGroupSpec{
 			PVCSelector:      d.instance.Spec.PVCSelector,
 			ReplicationState: rmn.Primary,
-			S3Profiles:       rmnutil.S3UploadProfileList(*d.drPolicy),
+			S3Profiles:       rmnutil.DRPolicyS3Profiles(d.drPolicy, d.drClusters).List(),
 		},
 	}
 
@@ -960,7 +959,7 @@ func (d *DRPCInstance) generateVRG() rmn.VolumeReplicationGroup {
 }
 
 func (d *DRPCInstance) generateVRGSpecAsync() rmn.VRGAsyncSpec {
-	if dRPolicySupportsRegional(d.drPolicy) {
+	if dRPolicySupportsRegional(d.drPolicy, d.drClusters) {
 		return rmn.VRGAsyncSpec{
 			ReplicationClassSelector: d.drPolicy.Spec.ReplicationClassSelector,
 			SchedulingInterval:       d.drPolicy.Spec.SchedulingInterval,
@@ -975,7 +974,7 @@ func (d *DRPCInstance) generateVRGSpecAsync() rmn.VRGAsyncSpec {
 }
 
 func (d *DRPCInstance) generateVRGSpecSync() rmn.VRGSyncSpec {
-	if supports, _ := dRPolicySupportsMetro(d.drPolicy); supports {
+	if supports, _ := dRPolicySupportsMetro(d.drPolicy, d.drClusters); supports {
 		return rmn.VRGSyncSpec{
 			Mode: rmn.SyncModeEnabled,
 		}
@@ -986,16 +985,24 @@ func (d *DRPCInstance) generateVRGSpecSync() rmn.VRGSyncSpec {
 	}
 }
 
-func dRPolicySupportsRegional(drpolicy *rmn.DRPolicy) bool {
-	return rmnutil.DrpolicyRegionNamesAsASet(drpolicy).Len() > 1
+func dRPolicySupportsRegional(drpolicy *rmn.DRPolicy, drClusters []rmn.DRCluster) bool {
+	return rmnutil.DrpolicyRegionNamesAsASet(drpolicy, drClusters).Len() > 1
 }
 
-func dRPolicySupportsMetro(drpolicy *rmn.DRPolicy) (supportsMetro bool, metroMap map[rmn.Region][]string) {
+func dRPolicySupportsMetro(drpolicy *rmn.DRPolicy, drclusters []rmn.DRCluster) (
+	supportsMetro bool,
+	metroMap map[rmn.Region][]string) {
 	allRegionsMap := make(map[rmn.Region][]string)
 	metroMap = make(map[rmn.Region][]string)
 
-	for _, v := range drpolicy.Spec.DRClusterSet {
-		allRegionsMap[v.Region] = append(allRegionsMap[v.Region], v.Name)
+	for _, managedCluster := range rmnutil.DrpolicyClusterNames(drpolicy) {
+		for _, v := range drclusters {
+			if v.Name == managedCluster {
+				allRegionsMap[v.Spec.Region] = append(
+					allRegionsMap[v.Spec.Region],
+					managedCluster)
+			}
+		}
 	}
 
 	for k, v := range allRegionsMap {
@@ -1008,20 +1015,34 @@ func dRPolicySupportsMetro(drpolicy *rmn.DRPolicy) (supportsMetro bool, metroMap
 	return supportsMetro, metroMap
 }
 
-func isMetroAction(drpolicy *rmn.DRPolicy, from string, to string) bool {
+func isMetroAction(drpolicy *rmn.DRPolicy, drClusters []rmn.DRCluster, from string, to string) bool {
 	var regionFrom, regionTo rmn.Region
 
-	for _, managedCluster := range drpolicy.Spec.DRClusterSet {
-		if managedCluster.Name == from {
-			regionFrom = managedCluster.Region
+	for _, managedCluster := range rmnutil.DrpolicyClusterNames(drpolicy) {
+		if managedCluster == from {
+			regionFrom = drClusterRegion(drClusters, managedCluster)
 		}
 
-		if managedCluster.Name == to {
-			regionTo = managedCluster.Region
+		if managedCluster == to {
+			regionTo = drClusterRegion(drClusters, managedCluster)
 		}
 	}
 
 	return regionFrom == regionTo
+}
+
+func drClusterRegion(drClusters []rmn.DRCluster, cluster string) (region rmn.Region) {
+	for _, drCluster := range drClusters {
+		if drCluster.Name != cluster {
+			continue
+		}
+
+		region = drCluster.Spec.Region
+
+		return
+	}
+
+	return
 }
 
 func (d *DRPCInstance) ensureNamespaceExistsOnManagedCluster(homeCluster string) error {
@@ -1204,8 +1225,7 @@ func (d *DRPCInstance) ensureVRGManifestWorkOnClusterDeleted(clusterName string)
 // a cluster if provided. It returns true if all clusters report secondary for the VRG,
 // otherwise, it returns false
 func (d *DRPCInstance) ensureVRGIsSecondaryEverywhere(clusterToSkip string) bool {
-	for _, drCluster := range d.drPolicy.Spec.DRClusterSet {
-		clusterName := drCluster.Name
+	for _, clusterName := range rmnutil.DrpolicyClusterNames(d.drPolicy) {
 		if clusterToSkip == clusterName {
 			continue
 		}
@@ -1258,8 +1278,7 @@ func (d *DRPCInstance) ensureVRGIsSecondaryOnCluster(clusterName string) bool {
 // has to be ensured. This can only be done at the other cluster which has been moved to
 // secondary by now.
 func (d *DRPCInstance) ensureDataProtected(targetCluster string) bool {
-	for _, drCluster := range d.drPolicy.Spec.DRClusterSet {
-		clusterName := drCluster.Name
+	for _, clusterName := range rmnutil.DrpolicyClusterNames(d.drPolicy) {
 		if targetCluster == clusterName {
 			continue
 		}
