@@ -79,34 +79,45 @@ const (
 // Just when VRG has been picked up for reconciliation when nothing has been
 // figured out yet.
 func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionTypeDataReady,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		Message:            message,
-	})
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionTypeDataProtected,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		Message:            message,
-	})
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionTypeClusterDataReady,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		Message:            message,
-	})
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionTypeClusterDataProtected,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		Message:            message,
-	})
+	if len(*conditions) > 0 {
+		return
+	}
+
+	time := metav1.NewTime(time.Now())
+	*conditions = []metav1.Condition{
+		{
+			Type:               VRGConditionTypeDataReady,
+			Reason:             VRGConditionReasonInitializing,
+			ObservedGeneration: observedGeneration,
+			Status:             metav1.ConditionUnknown,
+			LastTransitionTime: time,
+			Message:            message,
+		},
+		{
+			Type:               VRGConditionTypeDataProtected,
+			Reason:             VRGConditionReasonInitializing,
+			ObservedGeneration: observedGeneration,
+			Status:             metav1.ConditionUnknown,
+			LastTransitionTime: time,
+			Message:            message,
+		},
+		{
+			Type:               VRGConditionTypeClusterDataReady,
+			Reason:             VRGConditionReasonInitializing,
+			ObservedGeneration: observedGeneration,
+			Status:             metav1.ConditionUnknown,
+			LastTransitionTime: time,
+			Message:            message,
+		},
+		{
+			Type:               VRGConditionTypeClusterDataProtected,
+			Reason:             VRGConditionReasonInitializing,
+			ObservedGeneration: observedGeneration,
+			Status:             metav1.ConditionUnknown,
+			LastTransitionTime: time,
+			Message:            message,
+		},
+	}
 }
 
 // sets conditions when VRG as Secondary is replicating the data with Primary.

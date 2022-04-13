@@ -310,12 +310,14 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	v.volSyncHandler = volsync.NewVSHandler(ctx, r.Client, log, v.instance,
 		v.instance.Spec.Async.SchedulingInterval, v.instance.Spec.Async.VolumeSnapshotClassSelector)
 
+	if v.instance.Status.ProtectedPVCs == nil {
+		v.instance.Status.ProtectedPVCs = []ramendrv1alpha1.ProtectedPVC{}
+	}
 	// Save a copy of the instance status to be used for the VRG status update comparison
 	v.instance.Status.DeepCopyInto(&v.savedInstanceStatus)
 
-	if v.savedInstanceStatus.ProtectedPVCs == nil {
-		v.savedInstanceStatus.ProtectedPVCs = []ramendrv1alpha1.ProtectedPVC{}
-	}
+	setVRGInitialCondition(&v.instance.Status.Conditions, v.instance.Generation,
+		"Initializing VolumeReplicationGroup")
 
 	res, err := v.processVRG()
 	log.Info(fmt.Sprintf("VolRep count %d, VolSync count %d", len(v.volRepPVCs), len(v.volSyncPVCs)))
@@ -352,8 +354,6 @@ const (
 )
 
 func (v *VRGInstance) processVRG() (ctrl.Result, error) {
-	v.initializeStatus()
-
 	if err := v.validateVRGState(); err != nil {
 		// record the event
 		v.log.Error(err, "Failed to validate the spec state")
@@ -472,11 +472,23 @@ func (v *VRGInstance) validateVRGMode() error {
 
 func (v *VRGInstance) restorePVs() error {
 	clusterDataReady := findCondition(v.instance.Status.Conditions, VRGConditionTypeClusterDataReady)
-	if clusterDataReady != nil && clusterDataReady.Status == metav1.ConditionTrue &&
-		clusterDataReady.ObservedGeneration == v.instance.Generation {
-		v.log.Info("VRG's ClusterDataReady condition found. PV restore must have already been applied")
+	if clusterDataReady != nil {
+		v.log.Info("ClusterDataReady condition",
+			"status", clusterDataReady.Status,
+			"reason", clusterDataReady.Reason,
+			"message", clusterDataReady.Message,
+			"observedGeneration", clusterDataReady.ObservedGeneration,
+			"generation", v.instance.Generation,
+		)
 
-		return nil
+		if clusterDataReady.Status == metav1.ConditionTrue &&
+			clusterDataReady.ObservedGeneration == v.instance.Generation {
+			v.log.Info("VRG's ClusterDataReady condition found. PV restore must have already been applied")
+
+			return nil
+		}
+	} else {
+		v.log.Info("ClusterDataReady condition absent")
 	}
 
 	err := v.restorePVsForVolSync()
@@ -498,17 +510,6 @@ func (v *VRGInstance) restorePVs() error {
 	setVRGClusterDataReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
 	return nil
-}
-
-func (v *VRGInstance) initializeStatus() {
-	// create ProtectedPVCs map for status
-	if v.instance.Status.ProtectedPVCs == nil {
-		v.instance.Status.ProtectedPVCs = []ramendrv1alpha1.ProtectedPVC{}
-
-		// Set the VRG conditions to unknown as nothing is known at this point
-		msg := "Initializing VolumeReplicationGroup"
-		setVRGInitialCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
-	}
 }
 
 // updatePVCList fetches and updates the PVC list to process for the current instance of VRG
