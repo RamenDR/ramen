@@ -62,7 +62,10 @@ var _ = BeforeSuite(func() {
 	err = snapv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{Scheme: scheme.Scheme})
+	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
+		Scheme:             scheme.Scheme,
+		MetricsBindAddress: "0",
+	})
 	Expect(err).ToNot(HaveOccurred())
 
 	// Index fields that are required for VSHandler
