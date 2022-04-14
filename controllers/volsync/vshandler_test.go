@@ -66,6 +66,112 @@ var _ = Describe("VolSync Handler - utils", func() {
 	})
 })
 
+var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
+	logger := zap.New(zap.UseDevMode(true), zap.WriteTo(GinkgoWriter))
+	schedulingInterval := "1h"
+
+	Describe("Get volume snapshot classes", func() {
+		Context("With no label selector", func() {
+			var vsHandler *volsync.VSHandler
+
+			BeforeEach(func() {
+				vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, nil,
+					schedulingInterval, metav1.LabelSelector{})
+			})
+
+			It("GetVolumeSnapshotClasses() should find all volume snapshot classes", func() {
+				vsClasses, err := vsHandler.GetVolumeSnapshotClasses()
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(len(vsClasses)).To(Equal(totalStorageClassCount))
+			})
+
+			It("GetVolumeSnapshotClassFromPVCStorageClass() should find the default volume snapshot class "+
+				"that matches the driver from the storageclass", func() {
+				vsClassName, err := vsHandler.GetVolumeSnapshotClassFromPVCStorageClass(&testStorageClassName)
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(vsClassName).To(Equal(testDefaultVolumeSnapshotClass.GetName()))
+			})
+		})
+
+		Context("With simple label selector", func() {
+			var vsHandler *volsync.VSHandler
+
+			BeforeEach(func() {
+				vsClassLabelSelector := metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"i-like-ramen": "true",
+					},
+				}
+
+				vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, nil,
+					schedulingInterval, vsClassLabelSelector)
+			})
+
+			It("GetVolumeSnapshotClasses() should find matching volume snapshot classes", func() {
+				vsClasses, err := vsHandler.GetVolumeSnapshotClasses()
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(len(vsClasses)).To(Equal(2))
+
+				vscAFound := false
+				vscBFound := false
+				for _, vsc := range vsClasses {
+					if vsc.GetName() == volumeSnapshotClassA.GetName() {
+						vscAFound = true
+					}
+					if vsc.GetName() == volumeSnapshotClassB.GetName() {
+						vscBFound = true
+					}
+				}
+				Expect(vscAFound).To(BeTrue())
+				Expect(vscBFound).To(BeTrue())
+			})
+
+			It("GetVolumeSnapshotClassFromPVCStorageClass() should not find a match if no volume snapshot "+
+				"classes matche the driver from the storageclass", func() {
+				vsClassName, err := vsHandler.GetVolumeSnapshotClassFromPVCStorageClass(&testStorageClassName)
+				Expect(err).To(HaveOccurred())
+				Expect(vsClassName).To(Equal(""))
+				Expect(err.Error()).To(ContainSubstring("unable to find matching volumesnapshotclass"))
+			})
+		})
+
+		Context("With more complex label selector", func() {
+			var vsHandler *volsync.VSHandler
+
+			BeforeEach(func() {
+				vsClassLabelSelector := metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"i-like-ramen": "true",
+						"abc":          "b",
+					},
+				}
+
+				vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, nil,
+					schedulingInterval, vsClassLabelSelector)
+			})
+
+			It("GetVolumeSnapshotClasses() should find matching volume snapshot classes", func() {
+				vsClasses, err := vsHandler.GetVolumeSnapshotClasses()
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(len(vsClasses)).To(Equal(1))
+				Expect(vsClasses[0].GetName()).To(Equal(volumeSnapshotClassB.GetName()))
+			})
+
+			It("GetVolumeSnapshotClassFromPVCStorageClass() should not find a match if no volume snapshot "+
+				"classes matche the driver from the storageclass", func() {
+				storageClassName := storageClassAandB.GetName()
+				vsClassName, err := vsHandler.GetVolumeSnapshotClassFromPVCStorageClass(&storageClassName)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(vsClassName).To(Equal(volumeSnapshotClassB.GetName()))
+			})
+		})
+	})
+})
+
 var _ = Describe("VolSync Handler", func() {
 	var testNamespace *corev1.Namespace
 	logger := zap.New(zap.UseDevMode(true), zap.WriteTo(GinkgoWriter))
@@ -99,7 +205,7 @@ var _ = Describe("VolSync Handler", func() {
 		Expect(ownerCm.GetName()).NotTo(BeEmpty())
 		owner = ownerCm
 
-		vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, owner, schedulingInterval)
+		vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, owner, schedulingInterval, metav1.LabelSelector{})
 	})
 
 	AfterEach(func() {
@@ -881,7 +987,8 @@ var _ = Describe("VolSync Handler", func() {
 			}
 			Expect(k8sClient.Create(ctx, otherOwnerCm)).To(Succeed())
 			Expect(otherOwnerCm.GetName()).NotTo(BeEmpty())
-			otherVSHandler := volsync.NewVSHandler(ctx, k8sClient, logger, otherOwnerCm, schedulingInterval)
+			otherVSHandler := volsync.NewVSHandler(ctx, k8sClient, logger, otherOwnerCm,
+				schedulingInterval, metav1.LabelSelector{})
 
 			for i := 0; i < 2; i++ {
 				otherOwnerRdSpec := ramendrv1alpha1.VolSyncReplicationDestinationSpec{
@@ -1070,7 +1177,8 @@ var _ = Describe("VolSync Handler", func() {
 			}
 			Expect(k8sClient.Create(ctx, otherOwnerCm)).To(Succeed())
 			Expect(otherOwnerCm.GetName()).NotTo(BeEmpty())
-			otherVSHandler := volsync.NewVSHandler(ctx, k8sClient, logger, otherOwnerCm, schedulingInterval)
+			otherVSHandler := volsync.NewVSHandler(ctx, k8sClient, logger, otherOwnerCm,
+				schedulingInterval, metav1.LabelSelector{})
 
 			for i := 0; i < 2; i++ {
 				otherOwnerRsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
