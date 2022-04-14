@@ -306,7 +306,8 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 			req.NamespacedName, err)
 	}
 
-	v.volSyncHandler = volsync.NewVSHandler(ctx, r.Client, log, v.instance, v.instance.Spec.Async.SchedulingInterval)
+	v.volSyncHandler = volsync.NewVSHandler(ctx, r.Client, log, v.instance,
+		v.instance.Spec.Async.SchedulingInterval, v.instance.Spec.Async.VolumeSnapshotClassSelector)
 
 	// Save a copy of the instance status to be used for the VRG status update comparison
 	v.instance.Status.DeepCopyInto(&v.savedInstanceStatus)

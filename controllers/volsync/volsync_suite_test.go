@@ -23,15 +23,21 @@ import (
 )
 
 var (
-	k8sClient                   client.Client
-	testEnv                     *envtest.Environment
-	cancel                      context.CancelFunc
-	ctx                         context.Context
-	testStorageClassName        = "test.storageclass"
-	testStorageClass            *storagev1.StorageClass
-	testVolumeSnapshotClassName = "test.vol.snapclass"
-	testVolumeSnapshotClass     *snapv1.VolumeSnapshotClass
-	testStorageDriverName       = "test.storage.provisioner"
+	k8sClient                      client.Client
+	testEnv                        *envtest.Environment
+	cancel                         context.CancelFunc
+	ctx                            context.Context
+	testStorageClassName           = "test.storageclass"
+	testStorageClass               *storagev1.StorageClass
+	testVolumeSnapshotClassName    = "test.vol.snapclass"
+	testDefaultVolumeSnapshotClass *snapv1.VolumeSnapshotClass
+	testStorageDriverName          = "test.storage.provisioner"
+
+	storageDriverAandB     = "this-is-driver-a-b"
+	totalStorageClassCount = 0
+	storageClassAandB      *storagev1.StorageClass
+	volumeSnapshotClassA   *snapv1.VolumeSnapshotClass
+	volumeSnapshotClassB   *snapv1.VolumeSnapshotClass
 )
 
 func TestVolsync(t *testing.T) {
@@ -90,14 +96,55 @@ var _ = BeforeSuite(func() {
 	Expect(k8sClient.Create(ctx, testStorageClass)).To(Succeed())
 
 	// Create dummy volumeSnapshotClass resource to use in tests
-	testVolumeSnapshotClass = &snapv1.VolumeSnapshotClass{
+	testDefaultVolumeSnapshotClass = &snapv1.VolumeSnapshotClass{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testVolumeSnapshotClassName,
+			Annotations: map[string]string{
+				"snapshot.storage.kubernetes.io/is-default-class": "true",
+			},
 		},
 		Driver:         testStorageDriverName,
 		DeletionPolicy: snapv1.VolumeSnapshotContentDelete,
 	}
-	Expect(k8sClient.Create(ctx, testVolumeSnapshotClass)).To(Succeed())
+	Expect(k8sClient.Create(ctx, testDefaultVolumeSnapshotClass)).To(Succeed())
+	totalStorageClassCount++
+
+	// Create dummy storageClass resource to use in tests
+	storageClassAandB = &storagev1.StorageClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "testing-storage-class-a-b",
+		},
+		Provisioner: storageDriverAandB,
+	}
+	Expect(k8sClient.Create(ctx, storageClassAandB)).To(Succeed())
+
+	volumeSnapshotClassA = &snapv1.VolumeSnapshotClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "thisis-testvsclassa",
+			Labels: map[string]string{
+				"i-like-ramen": "true",
+				"abc":          "a",
+			},
+		},
+		Driver:         storageDriverAandB,
+		DeletionPolicy: snapv1.VolumeSnapshotContentDelete,
+	}
+	Expect(k8sClient.Create(ctx, volumeSnapshotClassA)).To(Succeed())
+	totalStorageClassCount++
+
+	volumeSnapshotClassB = &snapv1.VolumeSnapshotClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "thisis-testvsclassb",
+			Labels: map[string]string{
+				"i-like-ramen": "true",
+				"abc":          "b",
+			},
+		},
+		Driver:         storageDriverAandB, // Same storagedriver as volsnapclassA
+		DeletionPolicy: snapv1.VolumeSnapshotContentDelete,
+	}
+	Expect(k8sClient.Create(ctx, volumeSnapshotClassB)).To(Succeed())
+	totalStorageClassCount++
 })
 
 var _ = AfterSuite(func() {

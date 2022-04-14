@@ -1082,9 +1082,10 @@ func (d *DRPCInstance) generateVRG() rmn.VolumeReplicationGroup {
 func (d *DRPCInstance) generateVRGSpecAsync() rmn.VRGAsyncSpec {
 	if dRPolicySupportsRegional(d.drPolicy, d.drClusters) {
 		return rmn.VRGAsyncSpec{
-			ReplicationClassSelector: d.drPolicy.Spec.ReplicationClassSelector,
-			SchedulingInterval:       d.drPolicy.Spec.SchedulingInterval,
-			Mode:                     rmn.AsyncModeEnabled,
+			ReplicationClassSelector:    d.drPolicy.Spec.ReplicationClassSelector,
+			VolumeSnapshotClassSelector: d.drPolicy.Spec.VolumeSnapshotClassSelector,
+			SchedulingInterval:          d.drPolicy.Spec.SchedulingInterval,
+			Mode:                        rmn.AsyncModeEnabled,
 		}
 	}
 

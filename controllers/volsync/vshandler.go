@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -36,7 +37,6 @@ import (
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
-	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 )
 
@@ -59,32 +59,27 @@ const (
 )
 
 type VSHandler struct {
-	ctx                context.Context
-	client             client.Client
-	log                logr.Logger
-	owner              metav1.Object
-	schedulingInterval string
-	volSyncProfile     *ramendrv1alpha1.VolSyncProfile // TODO: remove?
-	/*
-	  TODO: could do something similar to ReplicationClassSelector metav1.LabelSelector (see DRPolicy_types and
-	  this is also inherited by the VRG).  The replicationClassSelector is a labelSelector that can be used to allow
-	  the user to pick replicationclasses.  Right now replicationclass is picked based on a replicationClassList
-	  that is loaded using the labelSelector and then if the Provisioner on the replicationclass matches
-	  the storageclass provisioner then it's assumed to be a match.  We can do the same thing with volumeSnapshotclasses
-	*/
-	volumeSnapshotClassList *snapv1.VolumeSnapshotClassList
+	ctx                         context.Context
+	client                      client.Client
+	log                         logr.Logger
+	owner                       metav1.Object
+	schedulingInterval          string
+	volSyncProfile              *ramendrv1alpha1.VolSyncProfile // TODO: remove?
+	volumeSnapshotClassSelector metav1.LabelSelector            // volume snapshot classes to be filtered label selector
+	volumeSnapshotClassList     *snapv1.VolumeSnapshotClassList
 }
 
 func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, owner metav1.Object,
-	schedulingInterval string) *VSHandler {
+	schedulingInterval string, volumeSnapshotClassSelector metav1.LabelSelector) *VSHandler {
 	return &VSHandler{
-		ctx:                     ctx,
-		client:                  client,
-		log:                     log,
-		owner:                   owner,
-		schedulingInterval:      schedulingInterval,
-		volSyncProfile:          nil, // No volsync profile atm by default - could be added later
-		volumeSnapshotClassList: nil, // Do not initialize until we need it
+		ctx:                         ctx,
+		client:                      client,
+		log:                         log,
+		owner:                       owner,
+		schedulingInterval:          schedulingInterval,
+		volSyncProfile:              nil, // No volsync profile atm by default - could be added later
+		volumeSnapshotClassSelector: volumeSnapshotClassSelector,
+		volumeSnapshotClassList:     nil, // Do not initialize until we need it
 	}
 }
 
@@ -163,7 +158,7 @@ func (v *VSHandler) createOrUpdateRD(
 ) {
 	l := v.log.WithValues("rdSpec", rdSpec)
 
-	volumeSnapshotClassName, err := v.getVolumeSnapshotClassFromPVCStorageClass(rdSpec.ProtectedPVC.StorageClassName)
+	volumeSnapshotClassName, err := v.GetVolumeSnapshotClassFromPVCStorageClass(rdSpec.ProtectedPVC.StorageClassName)
 	if err != nil {
 		return nil, err
 	}
@@ -325,7 +320,7 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 ) {
 	l := v.log.WithValues("rsSpec", rsSpec, "runFinalSync", runFinalSync)
 
-	volumeSnapshotClassName, err := v.getVolumeSnapshotClassFromPVCStorageClass(rsSpec.ProtectedPVC.StorageClassName)
+	volumeSnapshotClassName, err := v.GetVolumeSnapshotClassFromPVCStorageClass(rsSpec.ProtectedPVC.StorageClassName)
 	if err != nil {
 		return nil, err
 	}
@@ -909,7 +904,7 @@ func (v *VSHandler) getRsyncServiceType() *corev1.ServiceType {
 	return &DefaultRsyncServiceType
 }
 
-func (v *VSHandler) getVolumeSnapshotClassFromPVCStorageClass(storageClassName *string) (string, error) {
+func (v *VSHandler) GetVolumeSnapshotClassFromPVCStorageClass(storageClassName *string) (string, error) {
 	if storageClassName == nil || *storageClassName == "" {
 		err := fmt.Errorf("no storageClassName given, cannot proceed")
 		v.log.Error(err, "Failed to get StorageClass")
@@ -924,7 +919,7 @@ func (v *VSHandler) getVolumeSnapshotClassFromPVCStorageClass(storageClassName *
 		return "", fmt.Errorf("error getting storage class (%w)", err)
 	}
 
-	volumeSnapshotClasses, err := v.getVolumeSnapshotClasses()
+	volumeSnapshotClasses, err := v.GetVolumeSnapshotClasses()
 	if err != nil {
 		return "", err
 	}
@@ -958,15 +953,14 @@ func isDefaultVolumeSnapshotClass(volumeSnapshotClass snapv1.VolumeSnapshotClass
 	return ok && isDefaultAnnotation == VolumeSnapshotIsDefaultAnnotationValue
 }
 
-func (v *VSHandler) getVolumeSnapshotClasses() ([]snapv1.VolumeSnapshotClass, error) {
+func (v *VSHandler) GetVolumeSnapshotClasses() ([]snapv1.VolumeSnapshotClass, error) {
 	if v.volumeSnapshotClassList == nil {
 		// Load the list if it hasn't been initialized yet
-		labelSelector := metav1.LabelSelector{} // No label selector for the moment
-		v.log.Info("Fetching VolumeSnapshotClass", "labeled", labelSelector)
+		v.log.Info("Fetching VolumeSnapshotClass", "labelSelector", v.volumeSnapshotClassSelector)
 
-		selector, err := metav1.LabelSelectorAsSelector(&labelSelector)
+		selector, err := metav1.LabelSelectorAsSelector(&v.volumeSnapshotClassSelector)
 		if err != nil {
-			v.log.Error(err, "Unable to use volume snapshot label selector", "labelSelector", labelSelector)
+			v.log.Error(err, "Unable to use volume snapshot label selector", "labelSelector", v.volumeSnapshotClassSelector)
 
 			return nil, fmt.Errorf("unable to use volume snapshot label selector (%w)", err)
 		}
@@ -979,7 +973,7 @@ func (v *VSHandler) getVolumeSnapshotClasses() ([]snapv1.VolumeSnapshotClass, er
 
 		vscList := &snapv1.VolumeSnapshotClassList{}
 		if err := v.client.List(v.ctx, vscList, listOptions...); err != nil {
-			v.log.Error(err, "Failed to list VolumeSnapshotClasses", "labelSelector", labelSelector)
+			v.log.Error(err, "Failed to list VolumeSnapshotClasses", "labelSelector", v.volumeSnapshotClassSelector)
 
 			return nil, fmt.Errorf("error listing volumesnapshotclasses (%w)", err)
 		}
