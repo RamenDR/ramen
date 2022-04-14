@@ -175,7 +175,8 @@ func (d *DRPCInstance) isVolSyncReplicationRequired(homeCluster string) (bool, e
 	vrg := d.vrgs[homeCluster]
 
 	if vrg == nil {
-		d.log.Info(fmt.Sprintf("VRG not available on cluster %s - VRGs %v", homeCluster, d.vrgs))
+		d.log.Info(fmt.Sprintf("isVolSyncReplicationRequired: VRG not available on cluster %s - VRGs %v", 
+			homeCluster, d.vrgs))
 
 		return false, fmt.Errorf("failed to find VRG on homeCluster %s", homeCluster)
 	}
@@ -194,7 +195,7 @@ func (d *DRPCInstance) getVolSyncPVCCount(homeCluster string) int {
 	vrg := d.vrgs[homeCluster]
 
 	if vrg == nil {
-		d.log.Info("VRG not available on cluster", "cluster", homeCluster)
+		d.log.Info(fmt.Sprintf("getVolSyncPVCCount: VRG not available on cluster %s", homeCluster))
 
 		return pvcCount
 	}

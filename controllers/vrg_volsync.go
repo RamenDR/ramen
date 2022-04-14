@@ -112,7 +112,7 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary() (requeue bool) {
 		}
 
 		// reconcile RS and if run final sync if it is true
-		finalSyncComplete, rs, err := v.volSyncHandler.ReconcileRS(rsSpec, v.instance.Spec.VolSync.RunFinalSync)
+		finalSyncComplete, rs, err := v.volSyncHandler.ReconcileRS(rsSpec, v.instance.Spec.RunFinalSync)
 		if err != nil {
 			v.log.Info(fmt.Sprintf("Failed to reconcile VolSync Replication Source for rsSpec %v. Error %v",
 				rsSpec, err))
@@ -128,7 +128,7 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary() (requeue bool) {
 			setVRGConditionTypeVolSyncRepSourceSetupComplete(&protectedPVC.Conditions, v.instance.Generation, "Ready")
 		}
 
-		if v.instance.Spec.VolSync.RunFinalSync && !finalSyncComplete {
+		if v.instance.Spec.RunFinalSync && !finalSyncComplete {
 			requeue = true
 		}
 	}
@@ -139,7 +139,7 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary() (requeue bool) {
 		return
 	}
 
-	if v.instance.Spec.VolSync.RunFinalSync {
+	if v.instance.Spec.RunFinalSync {
 		v.instance.Status.FinalSyncComplete = true
 	}
 

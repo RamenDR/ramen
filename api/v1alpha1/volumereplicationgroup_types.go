@@ -122,10 +122,6 @@ type VolSyncSpec struct {
 	// rdSpec array contains the PVCs information that will/are be/being protected by VolSync
 	//+optional
 	RDSpec []VolSyncReplicationDestinationSpec `json:"rdSpec,omitempty"`
-
-	// runFinalSync used to indicate whether final sync is needed. Final sync is needed for relocation only.
-	//+optional
-	RunFinalSync bool `json:"runFinalSync,omitempty"`
 }
 
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
@@ -161,6 +157,11 @@ type VolumeReplicationGroupSpec struct {
 	// volsync defines the configuration when using VolSync plugin for replication.
 	//+optional
 	VolSync VolSyncSpec `json:"volSync,omitempty"`
+
+	// runFinalSync used to indicate whether final sync is needed. Final sync is needed for
+	// relocation only, and for VolSync only
+	//+optional
+	RunFinalSync bool `json:"runFinalSync,omitempty"`
 }
 
 type ProtectedPVC struct {
