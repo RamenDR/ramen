@@ -579,7 +579,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 		mwu: rmnutil.MWUtil{Client: r.Client, Ctx: ctx, Log: r.Log, InstName: drpc.Name, InstNamespace: drpc.Namespace},
 	}
 
-	r.Log.Info(fmt.Sprintf("PlacementRule is: (%+v)", usrPlRule))
+	r.Log.Info(fmt.Sprintf("PlacementRule Status is: (%+v)", usrPlRule.Status))
 
 	return d, nil
 }
@@ -1055,8 +1055,6 @@ func (r *DRPlacementControlReconciler) getSanityCheckDelay(
 
 func (r *DRPlacementControlReconciler) updateUserPlacementRuleStatus(
 	usrPlRule *plrv1.PlacementRule, newStatus plrv1.PlacementRuleStatus) error {
-	r.Log.Info("Updating userPlacementRule", "name", usrPlRule.Name)
-
 	if !reflect.DeepEqual(newStatus, usrPlRule.Status) {
 		usrPlRule.Status = newStatus
 		if err := r.Status().Update(context.TODO(), usrPlRule); err != nil {

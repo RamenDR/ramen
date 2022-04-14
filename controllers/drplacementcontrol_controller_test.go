@@ -208,7 +208,7 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(
 	conType := controllers.VRGConditionTypeDataReady
 	reason := controllers.VRGConditionReasonReplicating
 	vrgStatus := rmn.VolumeReplicationGroupStatus{
-		State: rmn.PrimaryState,
+		State:             rmn.PrimaryState,
 		FinalSyncComplete: true,
 		Conditions: []metav1.Condition{
 			{
@@ -217,12 +217,15 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(
 				Status:             metav1.ConditionTrue,
 				Message:            "Testing VRG",
 				LastTransitionTime: metav1.Now(),
+				ObservedGeneration: 1,
 			},
 		},
 		ProtectedPVCs: []rmn.ProtectedPVC{},
 	}
 	vrg := baseVRG.DeepCopy()
 	vrg.Status = vrgStatus
+
+	vrg.Generation = 1
 
 	switch getFunctionNameAtIndex(2) {
 	case "updateDRPCStatus":
@@ -249,7 +252,40 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(
 		return nil, errors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
 
 	case "getVRGsFromManagedClusters":
-		return getVRGFromManifestWork(managedCluster)
+		vrgFromMW, err := getVRGFromManifestWork(managedCluster)
+		if err != nil {
+			return nil, err
+		}
+		if vrgFromMW != nil {
+			vrgFromMW.Generation = 1
+			vrgFromMW.Status = vrgStatus
+			vrgFromMW.Status.Conditions = append(vrgFromMW.Status.Conditions, metav1.Condition{
+				Type:               controllers.VRGConditionTypeClusterDataReady,
+				Reason:             controllers.VRGConditionReasonClusterDataRestored,
+				Status:             metav1.ConditionTrue,
+				Message:            "Cluster Data Ready",
+				LastTransitionTime: metav1.Now(),
+				ObservedGeneration: vrgFromMW.Generation,
+			})
+			vrgFromMW.Status.Conditions = append(vrgFromMW.Status.Conditions, metav1.Condition{
+				Type:               controllers.VRGConditionTypeClusterDataProtected,
+				Reason:             controllers.VRGConditionReasonClusterDataRestored,
+				Status:             metav1.ConditionTrue,
+				Message:            "Cluster Data Protected",
+				LastTransitionTime: metav1.Now(),
+				ObservedGeneration: vrgFromMW.Generation,
+			})
+			vrgFromMW.Status.Conditions = append(vrgFromMW.Status.Conditions, metav1.Condition{
+				Type:               controllers.VRGConditionTypeDataProtected,
+				Reason:             controllers.VRGConditionReasonDataProtected,
+				Status:             metav1.ConditionTrue,
+				Message:            "Data Protected",
+				LastTransitionTime: metav1.Now(),
+				ObservedGeneration: vrgFromMW.Generation,
+			})
+		}
+
+		return vrgFromMW, nil
 	}
 
 	return nil, fmt.Errorf("unknown caller %s", getFunctionNameAtIndex(2))
@@ -290,7 +326,16 @@ func getVRGFromManifestWork(managedCluster string) (*rmn.VolumeReplicationGroup,
 		Type:               controllers.VRGConditionTypeDataReady,
 		Reason:             controllers.VRGConditionReasonReplicating,
 		Status:             metav1.ConditionTrue,
-		Message:            "Testing VRG",
+		Message:            "Data Read",
+		LastTransitionTime: metav1.Now(),
+		ObservedGeneration: vrg.Generation,
+	})
+
+	vrg.Status.Conditions = append(vrg.Status.Conditions, metav1.Condition{
+		Type:               controllers.VRGConditionTypeClusterDataReady,
+		Reason:             controllers.VRGConditionReasonClusterDataRestored,
+		Status:             metav1.ConditionTrue,
+		Message:            "Cluster Data Protected",
 		LastTransitionTime: metav1.Now(),
 		ObservedGeneration: vrg.Generation,
 	})
@@ -1510,6 +1555,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		s3ProfilesDelete()
 =======
 
+<<<<<<< HEAD
 	Context("DRPlacementControl Reconciler Async DR for VolSync", func() {
 		userPlacementRule := &plrv1.PlacementRule{}
 		drpc := &rmn.DRPlacementControl{}
@@ -1570,7 +1616,6 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		Specify("s3 profiles and secret delete", func() {
 			s3SecretAndProfilesDelete()
 		})
->>>>>>> simplify ramen volsync orchestration
 	})
 >>>>>>> simplify ramen volsync orchestration
 })

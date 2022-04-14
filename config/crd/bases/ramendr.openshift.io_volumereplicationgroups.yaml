@@ -165,6 +165,10 @@ spec:
                   this replication group; this value is propagated to children VolumeReplication
                   CRs
                 type: string
+              runFinalSync:
+                description: runFinalSync used to indicate whether final sync is needed.
+                  Final sync is needed for relocation only, and for VolSync only
+                type: boolean
               s3Profiles:
                 description: List of unique S3 profiles in RamenConfig that should
                   be used to store and forward PV related cluster state to peer DR
@@ -326,10 +330,6 @@ spec:
                           type: object
                       type: object
                     type: array
-                  runFinalSync:
-                    description: runFinalSync used to indicate whether final sync
-                      is needed. Final sync is needed for relocation only.
-                    type: boolean
                 type: object
             required:
             - pvcSelector
