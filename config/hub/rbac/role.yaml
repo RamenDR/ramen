@@ -91,14 +91,24 @@ rules:
   resources:
   - placementbindings
   verbs:
+  - create
+  - delete
+  - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - policy.open-cluster-management.io
   resources:
   - policies
   verbs:
+  - create
+  - delete
+  - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - ramendr.openshift.io
@@ -202,6 +212,17 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

@@ -862,7 +862,7 @@ func (d *DRPCInstance) createVRGManifestWorkAsPrimary(targetCluster string) (boo
 
 		err := d.updateVRGState(targetCluster, rmn.Primary)
 		if err != nil {
-			d.log.Info(fmt.Sprintf("Failed to update VRG to secondary on cluster %s. Err (%v)", targetCluster, err))
+			d.log.Info(fmt.Sprintf("Failed to update VRG to primary on cluster %s. Err (%v)", targetCluster, err))
 
 			return false, err
 		}
