@@ -7,11 +7,13 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/ramendr/ramen/controllers/volsync"
 
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -60,22 +62,20 @@ var _ = BeforeSuite(func() {
 	err = snapv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	// k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{Scheme: scheme.Scheme})
-	// Expect(err).ToNot(HaveOccurred())
+	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{Scheme: scheme.Scheme})
+	Expect(err).ToNot(HaveOccurred())
 
-	// // Index fields that are required for VSHandler
-	// err = volsync.IndexFieldsForVSHandler(context.TODO(), k8sManager.GetFieldIndexer())
-	// Expect(err).ToNot(HaveOccurred())
+	// Index fields that are required for VSHandler
+	err = volsync.IndexFieldsForVSHandler(context.TODO(), k8sManager.GetFieldIndexer())
+	Expect(err).ToNot(HaveOccurred())
 
-	// go func() {
-	// 	defer GinkgoRecover()
-	// 	err = k8sManager.Start(ctx)
-	// 	Expect(err).ToNot(HaveOccurred())
-	// }()
+	go func() {
+		defer GinkgoRecover()
+		err = k8sManager.Start(ctx)
+		Expect(err).ToNot(HaveOccurred())
+	}()
 
-	// k8sClient = k8sManager.GetClient()
-
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	k8sClient = k8sManager.GetClient()
 
 	// Create dummy storageClass resource to use in tests
 	testStorageClass = &storagev1.StorageClass{
