@@ -103,67 +103,67 @@ var _ = Describe("DrpolicyController", func() {
 				if specCluster.Name == cluster {
 					found = true
 
-	// 				break
-	// 			}
-	// 		}
+					break
+				}
+			}
 
-	// 		if !found {
-	// 			return false
-	// 		}
-	// 	}
+			if !found {
+				return false
+			}
+		}
 
-	// 	return true
-	// }
-	// getPlRuleForSecrets := func() []plrv1.PlacementRule {
-	// 	plRuleList := &plrv1.PlacementRuleList{}
-	// 	listOptions := &client.ListOptions{Namespace: configMap.Namespace}
+		return true
+	}
+	getPlRuleForSecrets := func() []plrv1.PlacementRule {
+		plRuleList := &plrv1.PlacementRuleList{}
+		listOptions := &client.ListOptions{Namespace: configMap.Namespace}
 
-	// 	Expect(apiReader.List(context.TODO(), plRuleList, listOptions)).NotTo(HaveOccurred())
+		Expect(apiReader.List(context.TODO(), plRuleList, listOptions)).NotTo(HaveOccurred())
 
-	// 	foundPlRules := []plrv1.PlacementRule{}
-	// 	for _, plRule := range plRuleList.Items {
-	// 		for _, plRuleName := range plRuleNames {
-	// 			if plRule.Name != plRuleName {
-	// 				continue
-	// 			}
-	// 			foundPlRules = append(foundPlRules, plRule)
+		foundPlRules := []plrv1.PlacementRule{}
+		for _, plRule := range plRuleList.Items {
+			for _, plRuleName := range plRuleNames {
+				if plRule.Name != plRuleName {
+					continue
+				}
+				foundPlRules = append(foundPlRules, plRule)
 
-	// 			break
-	// 		}
-	// 	}
+				break
+			}
+		}
 
-	// 	return foundPlRules
-	// }
-	// vaildateSecretDistribution := func(drPolicies []ramen.DRPolicy) {
-	// 	plRules := getPlRuleForSecrets()
+		return foundPlRules
+	}
+	vaildateSecretDistribution := func(drPolicies []ramen.DRPolicy) {
+		plRules := getPlRuleForSecrets()
 
-	// 	// If no policies are present, expect no secret placement rules
-	// 	if drPolicies == nil {
-	// 		Expect(len(plRules)).To(Equal(0))
+		// If no policies are present, expect no secret placement rules
+		if drPolicies == nil {
+			Expect(len(plRules)).To(Equal(0))
 
-	// 		return
-	// 	}
+			return
+		}
 
-	// 	// Construct drpolicies name
-	// 	policyCombinationName := ""
-	// 	for _, drpolicy := range drPolicies {
-	// 		policyCombinationName += drpolicy.Name
-	// 	}
+		// Construct drpolicies name
+		policyCombinationName := ""
+		for _, drpolicy := range drPolicies {
+			policyCombinationName += drpolicy.Name
+		}
 
-	// 	// Ensure list of secrets for the policy name has as many placement rules
-	// 	Expect(len(plRules) == len(drPoliciesAndSecrets[policyCombinationName])).To(BeTrue())
+		// Ensure list of secrets for the policy name has as many placement rules
+		Expect(len(plRules) == len(drPoliciesAndSecrets[policyCombinationName])).To(BeTrue())
 
-	// 	// Range through secrets in drpolicies name and ensure cluster list is the same
-	// 	for secretName, clusterList := range drPoliciesAndSecrets[policyCombinationName] {
-	// 		found := false
-	// 		_, _, plRuleName, _ := util.GeneratePolicyResourceNames(secretName)
+		// Range through secrets in drpolicies name and ensure cluster list is the same
+		for secretName, clusterList := range drPoliciesAndSecrets[policyCombinationName] {
+			found := false
+			_, _, plRuleName, _ := util.GeneratePolicyResourceNames(secretName)
 
-	// 		for _, plRule := range plRules {
-	// 			if plRule.Name != plRuleName {
-	// 				continue
-	// 			}
-	// 			Expect(plRuleContains(plRule, clusterList)).To(BeTrue())
-	// 			found = true
+			for _, plRule := range plRules {
+				if plRule.Name != plRuleName {
+					continue
+				}
+				Expect(plRuleContains(plRule, clusterList)).To(BeTrue())
+				found = true
 
 				break
 			}

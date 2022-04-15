@@ -507,6 +507,36 @@ func (v *VRGInstance) initializeStatus() {
 
 // updatePVCList fetches and updates the PVC list to process for the current instance of VRG
 func (v *VRGInstance) updatePVCList() error {
+	if v.instance.Spec.VolSync.Disabled {
+		labelSelector := v.instance.Spec.PVCSelector
+
+		v.log.Info("Fetching PersistentVolumeClaims", "labeled", labels.Set(labelSelector.MatchLabels))
+		listOptions := []client.ListOption{
+			client.InNamespace(v.instance.Namespace),
+			client.MatchingLabels(labelSelector.MatchLabels),
+		}
+
+		pvcList := &corev1.PersistentVolumeClaimList{}
+		if err := v.reconciler.List(v.ctx, pvcList, listOptions...); err != nil {
+			v.log.Error(err, "Failed to list PersistentVolumeClaims",
+				"labeled", labels.Set(labelSelector.MatchLabels))
+
+			return fmt.Errorf("failed to list PersistentVolumeClaims, %w", err)
+		}
+
+		v.volRepPVCs = make([]corev1.PersistentVolumeClaim, len(pvcList.Items))
+		total := copy(v.volRepPVCs, pvcList.Items)
+
+		v.log.Info("Found PersistentVolumeClaims", "count", total)
+
+		return nil
+	}
+
+	// Processing PVCs for VolSync and VolRep
+	return v.updatePVCListForAll()
+}
+
+func (v *VRGInstance) updatePVCListForAll() error {
 	labelSelector := v.instance.Spec.PVCSelector
 
 	v.log.Info("Fetching PersistentVolumeClaims", "labeled", labels.Set(labelSelector.MatchLabels))
@@ -624,7 +654,7 @@ func (v *VRGInstance) separatePVCsUsingStorageClassProvisioner(pvcList *corev1.P
 
 // finalizeVRG cleans up managed resources and removes the VRG finalizer for resource deletion
 func (v *VRGInstance) processForDeletion() (ctrl.Result, error) {
-	v.log.Info("Entering processing VolumeReplicationGroup")
+	v.log.Info("Entering processing VolumeReplicationGroup for deletion")
 
 	defer v.log.Info("Exiting processing VolumeReplicationGroup")
 
@@ -685,7 +715,7 @@ func (v *VRGInstance) removeFinalizer(finalizer string) error {
 
 // processAsPrimary reconciles the current instance of VRG as primary
 func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
-	v.log.Info("Entering processing VolumeReplicationGroup")
+	v.log.Info("Entering processing VolumeReplicationGroup as Primary")
 
 	defer v.log.Info("Exiting processing VolumeReplicationGroup")
 
@@ -743,16 +773,19 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 }
 
 func (v *VRGInstance) reconcileAsPrimary() bool {
-	if len(v.volSyncPVCs) != 0 && v.reconcileVolSyncAsPrimary() {
-		return true // requeue
+	requeueForVolSync := false
+	if len(v.volSyncPVCs) != 0 {
+		requeueForVolSync = v.reconcileVolSyncAsPrimary()
 	}
 
-	return v.reconcileVolRepsAsPrimary()
+	requeueForVolRep := v.reconcileVolRepsAsPrimary()
+
+	return requeueForVolSync || requeueForVolRep
 }
 
 // processAsSecondary reconciles the current instance of VRG as secondary
 func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
-	v.log.Info("Entering processing VolumeReplicationGroup")
+	v.log.Info("Entering processing VolumeReplicationGroup as Secondary")
 
 	defer v.log.Info("Exiting processing VolumeReplicationGroup")
 

@@ -73,7 +73,8 @@ func (v *VRGInstance) restorePVsForVolSync() error {
 }
 
 func (v *VRGInstance) reconcileVolSyncAsPrimary() (requeue bool) {
-	v.log.Info("Reconciling VolSync as Primary", "volSync", v.instance.Spec.VolSync)
+	v.log.Info(fmt.Sprintf("Reconciling VolSync as Primary. VolSyncPVCs %d. VolSyncSpec %+v", 
+		len(v.volSyncPVCs), v.instance.Spec.VolSync))
 
 	requeue = false
 
@@ -220,16 +221,14 @@ func (v *VRGInstance) isFinalSyncInProgress() bool {
 
 func (v *VRGInstance) aggregateVolSyncDataReadyCondition() *v1.Condition {
 	ready := true
-	dataReadyCondition := &v1.Condition{
-		Type:               VRGConditionTypeDataReady,
-		Reason:             "Inapplicable",
-		ObservedGeneration: v.instance.Generation,
-		Status:             v1.ConditionTrue,
-		Message:            "Inapplicable",
+	if len(v.volSyncPVCs) == 0 {
+		return nil
 	}
 
-	if len(v.volSyncPVCs) == 0 {
-		return dataReadyCondition
+	dataReadyCondition := &v1.Condition{
+		Type:               VRGConditionTypeDataReady,
+		ObservedGeneration: v.instance.Generation,
+		Status:             v1.ConditionTrue,
 	}
 
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
@@ -239,7 +238,7 @@ func (v *VRGInstance) aggregateVolSyncDataReadyCondition() *v1.Condition {
 				if condition == nil || condition.Status != v1.ConditionTrue {
 					ready = false
 					v.log.Info(fmt.Sprintf("VolSync RS hasn't been setup yet for PVC %s", protectedPVC.Name))
-
+					v.log.Info(fmt.Sprintf("VolSync RS hasn't been setup yet for PVC %+v", protectedPVC))
 					break
 				}
 			}
@@ -266,13 +265,7 @@ func (v *VRGInstance) aggregateVolSyncDataReadyCondition() *v1.Condition {
 
 func (v *VRGInstance) aggregateVolSyncDataProtectedCondition() *v1.Condition {
 	if len(v.volSyncPVCs) == 0 {
-		return &v1.Condition{
-			Type:               VRGConditionTypeDataProtected,
-			Reason:             "Inapplicable",
-			ObservedGeneration: v.instance.Generation,
-			Status:             v1.ConditionTrue,
-			Message:            "Inapplicable",
-		}
+		return nil
 	}
 
 	return v.buildDataProtectedCondition()
@@ -280,13 +273,7 @@ func (v *VRGInstance) aggregateVolSyncDataProtectedCondition() *v1.Condition {
 
 func (v *VRGInstance) aggregateVolSyncClusterDataProtectedCondition() *v1.Condition {
 	if len(v.volSyncPVCs) == 0 {
-		return &v1.Condition{
-			Type:               VRGConditionTypeClusterDataProtected,
-			Reason:             "Inapplicable",
-			ObservedGeneration: v.instance.Generation,
-			Status:             v1.ConditionTrue,
-			Message:            "Inapplicable",
-		}
+		return nil
 	}
 
 	// For ClusterDataReady and ClusterDataProtected condition, will use the same condition as DataProtected.
