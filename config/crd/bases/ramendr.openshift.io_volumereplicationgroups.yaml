@@ -192,6 +192,10 @@ spec:
                 description: volsync defines the configuration when using VolSync
                   plugin for replication.
                 properties:
+                  disabled:
+                    description: disabled when set, all the VolSync code is bypassed.
+                      Default is 'false'
+                    type: boolean
                   rdSpec:
                     description: rdSpec array contains the PVCs information that will/are
                       be/being protected by VolSync

@@ -122,6 +122,9 @@ type VolSyncSpec struct {
 	// rdSpec array contains the PVCs information that will/are be/being protected by VolSync
 	//+optional
 	RDSpec []VolSyncReplicationDestinationSpec `json:"rdSpec,omitempty"`
+
+	// disabled when set, all the VolSync code is bypassed. Default is 'false'
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
@@ -207,7 +210,6 @@ type VolumeReplicationGroupStatus struct {
 	LastUpdateTime     metav1.Time `json:"lastUpdateTime,omitempty"`
 
 	FinalSyncComplete bool `json:"finalSyncComplete,omitempty"`
-
 }
 
 // +kubebuilder:object:root=true

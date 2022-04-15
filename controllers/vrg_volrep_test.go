@@ -743,6 +743,9 @@ func (v *vrgTest) createVRG() {
 			Sync: ramendrv1alpha1.VRGSyncSpec{
 				Mode: ramendrv1alpha1.SyncModeDisabled,
 			},
+			VolSync: ramendrv1alpha1.VolSyncSpec{
+				Disabled: true,
+			},
 			S3Profiles: []string{s3Profiles[0].S3ProfileName},
 		},
 	}

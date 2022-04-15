@@ -1063,12 +1063,16 @@ func (v *VSHandler) GetRSLastSyncTime(pvcName string) (*metav1.Time, error) {
 			l.Error(err, "Failed to get ReplicationSource")
 			return nil, err
 		}
-		
+
 		l.Info("No ReplicationSource found")
 		return nil, nil
 	}
 
-	return rs.Status.LastSyncTime, nil
+	if rs.Status != nil {
+		return rs.Status.LastSyncTime, nil
+	}
+
+	return nil, nil
 }
 
 func (v *VSHandler) GetRDLatestImage(pvcName string) (*corev1.TypedLocalObjectReference, error) {
@@ -1093,13 +1097,13 @@ func (v *VSHandler) GetRDLatestImage(pvcName string) (*corev1.TypedLocalObjectRe
 	}
 
 	var latestImage *corev1.TypedLocalObjectReference
-	if rdInst.Status == nil {
+	if rdInst.Status != nil {
 		latestImage = rdInst.Status.LatestImage
 	}
 
 	if latestImage == nil || latestImage.Name == "" || latestImage.Kind != VolumeSnapshotKind {
 		noSnapErr := fmt.Errorf("unable to find LatestImage from ReplicationDestination %s", rdInst.GetName())
-		
+
 		return nil, noSnapErr
 	}
 

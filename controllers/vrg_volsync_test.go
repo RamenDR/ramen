@@ -12,17 +12,22 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
+	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/volsync"
+	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 )
 
 const (
-	testMaxWait          = 20 * time.Second
-	testInterval         = 250 * time.Millisecond
-	testStorageClassName = "fakestorageclass"
+	testMaxWait             = 20 * time.Second
+	testInterval            = 250 * time.Millisecond
+	testStorageClassName    = "fakestorageclass"
+	testVolumeSnapshotClass = "fakevolumesnapshotclass"
 )
 
 var _ = Describe("VolumeReplicationGroupController", func() {
@@ -93,6 +98,10 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 					return testVsrg.GetFinalizers()
 				}, testMaxWait, testInterval).Should(
 					ContainElement("volumereplicationgroups.ramendr.openshift.io/vrg-protection"))
+
+				createSecret(testVsrg.GetName(), testNamespace.Name)
+				createSC()
+				createVSC()
 			})
 
 			Context("When no matching PVCs are bound", func() {
@@ -155,21 +164,21 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 							Name: boundPvcs[0].GetName(), Namespace: testNamespace.GetName()}, rs0)).To(Succeed())
 						Expect(rs0.Spec.SourcePVC).To(Equal(boundPvcs[0].GetName()))
 						Expect(rs0.Spec.Trigger).NotTo(BeNil())
-						Expect(*rs0.Spec.Trigger.Schedule).To(Equal("* */1 * * *")) // scheduling interval was set to 1h
+						Expect(*rs0.Spec.Trigger.Schedule).To(Equal("0 */1 * * *")) // scheduling interval was set to 1h
 
 						rs1 := &volsyncv1alpha1.ReplicationSource{}
 						Expect(k8sClient.Get(testCtx, types.NamespacedName{
 							Name: boundPvcs[1].GetName(), Namespace: testNamespace.GetName()}, rs1)).To(Succeed())
 						Expect(rs1.Spec.SourcePVC).To(Equal(boundPvcs[1].GetName()))
 						Expect(rs1.Spec.Trigger).NotTo(BeNil())
-						Expect(*rs1.Spec.Trigger.Schedule).To(Equal("* */1 * * *")) // scheduling interval was set to 1h
+						Expect(*rs1.Spec.Trigger.Schedule).To(Equal("0 */1 * * *")) // scheduling interval was set to 1h
 
 						rs2 := &volsyncv1alpha1.ReplicationSource{}
 						Expect(k8sClient.Get(testCtx, types.NamespacedName{
 							Name: boundPvcs[2].GetName(), Namespace: testNamespace.GetName()}, rs2)).To(Succeed())
 						Expect(rs2.Spec.SourcePVC).To(Equal(boundPvcs[2].GetName()))
 						Expect(rs2.Spec.Trigger).NotTo(BeNil())
-						Expect(*rs2.Spec.Trigger.Schedule).To(Equal("* */1 * * *")) // scheduling interval was set to 1h
+						Expect(*rs2.Spec.Trigger.Schedule).To(Equal("0 */1 * * *")) // scheduling interval was set to 1h
 					})
 				})
 			})
@@ -220,6 +229,10 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 					return testVrg.GetFinalizers()
 				}, testMaxWait, testInterval).Should(
 					ContainElement("volumereplicationgroups.ramendr.openshift.io/vrg-protection"))
+
+				createSecret(testVrg.GetName(), testNamespace.Name)
+				createSC()
+				createVSC()
 			})
 
 			Context("When RDSpec entries are added to vrg spec", func() {
@@ -289,7 +302,7 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 					Expect(*rd0.Spec.Rsync.StorageClassName).To(Equal(testStorageClassName))
 					Expect(rd0.Spec.Rsync.AccessModes).To(Equal(testAccessModes))
 					Expect(rd0.Spec.Rsync.CopyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
-					Expect(*rd0.Spec.Rsync.ServiceType).To(Equal(corev1.ServiceTypeLoadBalancer))
+					Expect(*rd0.Spec.Rsync.ServiceType).To(Equal(corev1.ServiceTypeClusterIP))
 
 					Expect(rd1.Spec.Trigger).To(BeNil()) // Rsync, so destination will not have schedule
 					Expect(rd1.Spec.Rsync).NotTo(BeNil())
@@ -297,7 +310,7 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 					Expect(*rd1.Spec.Rsync.StorageClassName).To(Equal(testStorageClassName))
 					Expect(rd1.Spec.Rsync.AccessModes).To(Equal(testAccessModes))
 					Expect(rd1.Spec.Rsync.CopyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
-					Expect(*rd1.Spec.Rsync.ServiceType).To(Equal(corev1.ServiceTypeLoadBalancer))
+					Expect(*rd1.Spec.Rsync.ServiceType).To(Equal(corev1.ServiceTypeClusterIP))
 				})
 
 				Context("When ReplicationDestinations have address set in status", func() {
@@ -361,4 +374,54 @@ func createPVC(ctx context.Context, namespace string, labels map[string]string,
 	Expect(k8sClient.Status().Update(ctx, pvc)).To(Succeed())
 
 	return pvc
+}
+
+func createSecret(vrgName, namespace string) {
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      volsync.GetVolSyncSSHSecretNameFromVRGName(vrgName),
+			Namespace: namespace,
+		},
+	}
+	Expect(k8sClient.Create(context.TODO(), secret)).To(Succeed())
+	Expect(secret.GetName()).NotTo(BeEmpty())
+}
+
+func createSC() {
+	sc := &storagev1.StorageClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testStorageClassName,
+		},
+		Provisioner: "manual.storage.com",
+	}
+
+	err := k8sClient.Create(context.TODO(), sc)
+	if err != nil {
+		if errors.IsAlreadyExists(err) {
+			err = k8sClient.Get(context.TODO(), types.NamespacedName{Name: sc.Name}, sc)
+		}
+	}
+
+	Expect(err).NotTo(HaveOccurred(),
+		"failed to create/get StorageClass %s", sc.Name)
+}
+
+func createVSC() {
+	vsc := &snapv1.VolumeSnapshotClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testVolumeSnapshotClass,
+		},
+		Driver:         "manual.storage.com",
+		DeletionPolicy: snapv1.VolumeSnapshotContentDelete,
+	}
+
+	err := k8sClient.Create(context.TODO(), vsc)
+	if err != nil {
+		if errors.IsAlreadyExists(err) {
+			err = k8sClient.Get(context.TODO(), types.NamespacedName{Name: vsc.Name}, vsc)
+		}
+	}
+
+	Expect(err).NotTo(HaveOccurred(),
+		"failed to create/get StorageClass %s", vsc.Name)
 }
