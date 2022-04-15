@@ -465,10 +465,11 @@ func (v *VSHandler) pvcExistsAndInUse(pvcName string) (bool, error) {
 
 func (v *VSHandler) isPvcInUse(pvcName string) (bool, error) {
 	podUsingPVCList := &corev1.PodList{}
-	listOptions := []client.ListOption{
-		client.InNamespace(v.owner.GetNamespace()),
-	}
-	err := v.client.List(context.Background(), podUsingPVCList, listOptions...)
+
+	err := v.client.List(context.Background(),
+		podUsingPVCList, // Our custom index - needs to be setup in the cache (see IndexFieldsForVSHandler())
+		client.MatchingFields{PodVolumePVCClaimIndexName: pvcName},
+		client.InNamespace(v.owner.GetNamespace()))
 	if err != nil {
 		v.log.Error(err, "unable to lookup pods to see if they are using pvc", "pvcName", pvcName)
 
