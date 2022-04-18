@@ -326,92 +326,11 @@ func setVRGConditionTypeVolSyncRepSourceSetupComplete(conditions *[]metav1.Condi
 	})
 }
 
-// sets conditions when Primary VolSync is in the process of initializing the Replication Source
-func setVRGConditionTypeVolSyncRepSourceSetupInitializing(conditions *[]metav1.Condition, observedGeneration int64,
-	message string) {
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionTypeVolSyncRepSourceSetup,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionFalse,
-		Message:            message,
-	})
-}
-
 // sets conditions when Primary anccountered an error initializing the Replication Source
 func setVRGConditionTypeVolSyncRepSourceSetupError(conditions *[]metav1.Condition, observedGeneration int64,
 	message string) {
 	setStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeVolSyncRepSourceSetup,
-		Reason:             VRGConditionReasonError,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionFalse,
-		Message:            message,
-	})
-}
-
-func setVRGConditionTypeVolSyncFinalSyncInProgress(conditions *[]metav1.Condition, observedGeneration int64,
-	message string) {
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionTypeVolSyncFinalSyncInProgress,
-		Reason:             VRGConditionReasonReplicating,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionTrue,
-		Message:            message,
-	})
-}
-
-func setVRGConditionTypeVolSyncFinalSyncComplete(conditions *[]metav1.Condition, observedGeneration int64,
-	message string) {
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionTypeVolSyncFinalSyncInProgress,
-		Reason:             VRGConditionReasonVolSyncFinalSyncComplete,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionFalse,
-		Message:            message,
-	})
-}
-
-func setVRGConditionTypeVolSyncFinalSyncError(conditions *[]metav1.Condition, observedGeneration int64,
-	message string) {
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionTypeVolSyncFinalSyncInProgress,
-		Reason:             VRGConditionReasonError,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionFalse,
-		Message:            message,
-	})
-}
-
-// sets conditions when Primary VolSync has finished setting up the Replication Destination
-func setVRGConditionTypeVolSyncRepDestSetupComplete(conditions *[]metav1.Condition, observedGeneration int64,
-	message string) {
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionTypeVolSyncRepDestinationSetup,
-		Reason:             VRGConditionReasonVolSyncRepSourceInited,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionTrue,
-		Message:            message,
-	})
-}
-
-// sets conditions when Primary VolSync is in the process of initializing the Replication Destination
-func setVRGConditionTypeVolSyncRepDestSetupInitializing(conditions *[]metav1.Condition, observedGeneration int64,
-	message string) {
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionTypeVolSyncRepDestinationSetup,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionFalse,
-		Message:            message,
-	})
-}
-
-// sets conditions when Primary anccountered an error initializing the Replication Destination
-func setVRGConditionTypeVolSyncRepDestSetupError(conditions *[]metav1.Condition, observedGeneration int64,
-	message string) {
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionTypeVolSyncRepDestinationSetup,
 		Reason:             VRGConditionReasonError,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
@@ -427,18 +346,6 @@ func setVRGConditionTypeVolSyncPVRestoreComplete(conditions *[]metav1.Condition,
 		Reason:             VRGConditionReasonVolSyncPVsRestored,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
-		Message:            message,
-	})
-}
-
-// sets conditions when Primary VolSync is in the process of initializing the Replication Destination
-func setVRGConditionTypeVolSyncPVRestoring(conditions *[]metav1.Condition, observedGeneration int64,
-	message string) {
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               VRGConditionTypeVolSyncPVsRestored,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionFalse,
 		Message:            message,
 	})
 }

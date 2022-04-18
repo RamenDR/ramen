@@ -35,8 +35,7 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 	testLogger := zap.New(zap.UseDevMode(true), zap.WriteTo(GinkgoWriter))
 	var testCtx context.Context
 	var cancel context.CancelFunc
-	//PVsToRestore = []string{}
-
+	
 	BeforeEach(func() {
 		testCtx, cancel = context.WithCancel(context.TODO())
 
@@ -95,6 +94,7 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 					if err != nil {
 						return []string{}
 					}
+
 					return testVsrg.GetFinalizers()
 				}, testMaxWait, testInterval).Should(
 					ContainElement("volumereplicationgroups.ramendr.openshift.io/vrg-protection"))
@@ -126,6 +126,7 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 						if err != nil {
 							return 0
 						}
+
 						return len(testVsrg.Status.ProtectedPVCs)
 					}, testMaxWait, testInterval).Should(Equal(len(boundPvcs)))
 				})
@@ -156,19 +157,22 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 						Eventually(func() int {
 							Expect(k8sClient.List(testCtx, allRSs,
 								client.InNamespace(testNamespace.GetName()))).To(Succeed())
+
 							return len(allRSs.Items)
 						}, testMaxWait, testInterval).Should(Equal(len(testVsrg.Status.ProtectedPVCs)))
 
 						rs0 := &volsyncv1alpha1.ReplicationSource{}
 						Expect(k8sClient.Get(testCtx, types.NamespacedName{
-							Name: boundPvcs[0].GetName(), Namespace: testNamespace.GetName()}, rs0)).To(Succeed())
+							Name: boundPvcs[0].GetName(), Namespace: testNamespace.GetName(),
+						}, rs0)).To(Succeed())
 						Expect(rs0.Spec.SourcePVC).To(Equal(boundPvcs[0].GetName()))
 						Expect(rs0.Spec.Trigger).NotTo(BeNil())
 						Expect(*rs0.Spec.Trigger.Schedule).To(Equal("0 */1 * * *")) // scheduling interval was set to 1h
 
 						rs1 := &volsyncv1alpha1.ReplicationSource{}
 						Expect(k8sClient.Get(testCtx, types.NamespacedName{
-							Name: boundPvcs[1].GetName(), Namespace: testNamespace.GetName()}, rs1)).To(Succeed())
+							Name: boundPvcs[1].GetName(), Namespace: testNamespace.GetName(),
+						}, rs1)).To(Succeed())
 						Expect(rs1.Spec.SourcePVC).To(Equal(boundPvcs[1].GetName()))
 						Expect(rs1.Spec.Trigger).NotTo(BeNil())
 						Expect(*rs1.Spec.Trigger.Schedule).To(Equal("0 */1 * * *")) // scheduling interval was set to 1h
@@ -226,6 +230,7 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 					if err != nil {
 						return []string{}
 					}
+
 					return testVrg.GetFinalizers()
 				}, testMaxWait, testInterval).Should(
 					ContainElement("volumereplicationgroups.ramendr.openshift.io/vrg-protection"))
@@ -284,6 +289,7 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 					Eventually(func() int {
 						Expect(k8sClient.List(testCtx, allRDs,
 							client.InNamespace(testNamespace.GetName()))).To(Succeed())
+
 						return len(allRDs.Items)
 					}, testMaxWait, testInterval).Should(Equal(len(testVrg.Spec.VolSync.RDSpec)))
 
@@ -342,7 +348,6 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 
 func createPVC(ctx context.Context, namespace string, labels map[string]string,
 	bindInfo corev1.PersistentVolumeClaimPhase) *corev1.PersistentVolumeClaim {
-
 	capacity := corev1.ResourceList{
 		corev1.ResourceStorage: resource.MustParse("1Gi"),
 	}

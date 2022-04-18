@@ -37,6 +37,7 @@ import (
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 
 	dto "github.com/prometheus/client_model/go"
+	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
@@ -239,6 +240,7 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(
 		if err != nil {
 			return nil, err
 		}
+
 		if vrgFromMW != nil {
 			vrgFromMW.Generation = 1
 			vrgFromMW.Status = vrgStatus
@@ -266,6 +268,13 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(
 				LastTransitionTime: metav1.Now(),
 				ObservedGeneration: vrgFromMW.Generation,
 			})
+
+			newProtectedPVC := &ramendrv1alpha1.ProtectedPVC{
+				Name: "random name",
+			}
+
+			vrgFromMW.Status.ProtectedPVCs = append(vrgFromMW.Status.ProtectedPVCs, *newProtectedPVC)
+
 		}
 
 		return vrgFromMW, nil
@@ -603,10 +612,12 @@ func moveVRGToSecondary(clusterNamespace, mwType string, protectData bool) (*rmn
 	}
 
 	var vrg *rmn.VolumeReplicationGroup
+
 	var err error
 
 	Eventually(func() bool {
 		vrg, err = updateVRGMW(manifestLookupKey, protectData)
+
 		return err == nil || errors.IsNotFound(err)
 	}, timeout, interval).Should(BeTrue(),
 		fmt.Sprintf("failed to wait for manifestwork update %s cluster %s", mwType, clusterNamespace))
@@ -906,26 +917,6 @@ func waitForCompletion(expectedState string) {
 		return drstate == expectedState
 	}, timeout*2, interval).Should(BeTrue(),
 		fmt.Sprintf("failed waiting for state to match. expecting: %s, found %s", expectedState, drstate))
-}
-
-func waitForVolSyncSetup(srcCluster, dstCluster string) {
-	var dstVolSync rmn.VolSyncSpec
-	var srcVolSync rmn.VolSyncSpec
-
-	Eventually(func() bool {
-		dstVRG, err := getVRGFromManifestWork(dstCluster)
-		if err != nil {
-			return false
-		}
-
-		if dstVRG == nil {
-			return false
-		}
-
-		dstVolSync = dstVRG.Spec.VolSync
-		return len(dstVolSync.RDSpec) != 0
-	}, timeout, interval).Should(BeTrue(),
-		fmt.Sprintf("RDSpec and RSSpec not the same %v/%v", dstVolSync, srcVolSync))
 }
 
 func waitForUpdateDRPCStatus() {

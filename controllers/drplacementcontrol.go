@@ -40,7 +40,7 @@ import (
 
 var WaitForPVRestoreToComplete = errorswrapper.New("Waiting for PV restore to complete...")
 var WaitForVolSyncDestRepToComplete = errorswrapper.New("Waiting for VolSync RD to complete...")
-var WaitForVolSyncSrcRepToComplete = errorswrapper.New("Waiting for VolSync RS to complete...")
+var WaitForSourceCluster = errorswrapper.New("Waiting for the primary cluster to provide the list of Protected PVCs...")
 var WaitForVolSyncManifestWorkCreation = errorswrapper.New("Waiting for VolSync ManifestWork to be created...")
 var WaitForVolSyncRDInfoAvailibility = errorswrapper.New("Waiting for VolSync RDInfo...")
 
@@ -343,6 +343,7 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		}
 
 		clusterToSkip := d.instance.Spec.FailoverCluster
+		
 		err = d.EnsureCleanup(clusterToSkip)
 		if err != nil {
 			return !done, err
@@ -519,6 +520,7 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 		}
 
 		clusterToSkip := preferredCluster
+		
 		err = d.EnsureCleanup(clusterToSkip)
 		if err != nil {
 			return !done, err
@@ -535,7 +537,8 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	}
 
 	// Check if current primary (that is not the preferred cluster), is ready to switch over
-	if curHomeCluster != "" && curHomeCluster != preferredCluster && !d.readyToSwitchOver(curHomeCluster, preferredCluster) {
+	if curHomeCluster != "" && curHomeCluster != preferredCluster && 
+		!d.readyToSwitchOver(curHomeCluster, preferredCluster) {
 		errMsg := fmt.Sprintf("current cluster (%s) has not completed protection actions", curHomeCluster)
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), errMsg)
@@ -553,7 +556,7 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 			return !done, err
 		}
 
-		if result != done {
+		if !result {
 			return !done, nil
 		}
 	}
@@ -590,16 +593,6 @@ func (d *DRPCInstance) prepareForFinalSync(homeCluster string) (bool, error) {
 	d.log.Info("Running final sync complete ", "cluster", homeCluster)
 
 	return done, nil
-}
-
-func clusterListContains(clNames []string, cName string) bool {
-	for _, clName := range clNames {
-		if clName == cName {
-			return true
-		}
-	}
-
-	return false
 }
 
 func (d *DRPCInstance) areMultipleVRGsPrimary() bool {
@@ -800,7 +793,7 @@ func (d *DRPCInstance) setupRelocation(preferredCluster string) error {
 	}
 
 	if !d.ensureDataProtected(clusterToSkip) {
-		return fmt.Errorf("waiting for data protection...")
+		return fmt.Errorf("waiting for data protection")
 	}
 
 	return nil
@@ -944,6 +937,7 @@ func (d *DRPCInstance) moveVRGToSecondaryOnPeers(clusterToSkip string) error {
 		err := d.updateVRGState(clusterName, rmn.Secondary)
 		if err != nil {
 			d.log.Info(fmt.Sprintf("Failed to update VRG to secondary on cluster %s. Err (%v)", clusterName, err))
+			
 			needRetry = true
 
 			continue
@@ -1255,8 +1249,9 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 	// IFF we have VolSync PVCs, then no need to clean up
 	homeCluster := clusterToSkip
 	repReq, err := d.isVolSyncReplicationRequired(homeCluster)
+	
 	if err != nil {
-		return fmt.Errorf("failed to ensure VRG is secondary on peers (%w)", err)
+		return fmt.Errorf("failed to check if VolSync replication is required (%w)", err)
 	}
 
 	if repReq {
@@ -1572,7 +1567,7 @@ func (d *DRPCInstance) updateManifestWork(clusterName string, vrg *rmn.VolumeRep
 
 	mw, err := d.mwu.FindManifestWork(vrgMWName, clusterName)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w", err)
 	}
 
 	vrgClientManifest, err := d.mwu.GenerateManifest(vrg)

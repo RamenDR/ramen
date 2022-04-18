@@ -559,6 +559,7 @@ func (v *VRGInstance) updatePVCListForAll() error {
 	}
 
 	v.log.Info(fmt.Sprintf("Found %d PVCs using matching lables %v", len(pvcList.Items), labelSelector.MatchLabels))
+	
 	if !v.vrcUpdated {
 		if err := v.updateReplicationClassList(); err != nil {
 			v.log.Error(err, "Failed to get VolumeReplicationClass list")
@@ -638,10 +639,12 @@ func (v *VRGInstance) separatePVCsUsingStorageClassProvisioner(pvcList *corev1.P
 		}
 
 		replicationClassMatchFound := false
+		
 		for _, replicationClass := range v.replClassList.Items {
 			if storageClass.Provisioner == replicationClass.Spec.Provisioner {
 				v.volRepPVCs = append(v.volRepPVCs, *pvc)
 				replicationClassMatchFound = true
+				
 				break
 			}
 		}
@@ -858,21 +861,6 @@ func (v *VRGInstance) handleVRGMode(state ramendrv1alpha1.ReplicationState) (res
 	return result
 }
 
-func (v *VRGInstance) markAllPVCsProtected() {
-	v.log.Info("marking all pvc resources ready for use and protected")
-
-	msg := "PVC in the VolumeReplicationGroup is ready for use"
-
-	for idx := range v.volRepPVCs {
-		pvc := &v.volRepPVCs[idx]
-
-		// Each protected PVC condition in VRG status has the same name
-		// as PVC. Use that.
-		v.updatePVCDataReadyCondition(pvc.Name, VRGConditionReasonReady, msg)
-		v.updatePVCDataProtectedCondition(pvc.Name, VRGConditionReasonReady, msg)
-	}
-}
-
 func (v *VRGInstance) updateVRGStatus(updateConditions bool) error {
 	v.log.Info("Updating VRG status")
 
@@ -1019,6 +1007,7 @@ func (v *VRGInstance) updateVRGDataReadyCondition() {
 		}
 
 		v.log.Info("Condition for DataReady", "cond", condition, "protectedPVC", protectedPVC)
+		
 		if condition == nil {
 			vrgReady = false
 			// When will we hit this condition? If it is due to a race condition,
@@ -1094,6 +1083,7 @@ func (v *VRGInstance) updateVRGDataProtectedCondition() {
 		} else {
 			condition = findCondition(protectedPVC.Conditions, VRGConditionTypeDataProtected)
 		}
+		
 		if condition == nil {
 			vrgProtected = false
 			vrgReplicating = false
