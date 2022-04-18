@@ -1047,18 +1047,20 @@ func (v *VSHandler) GetRSLastSyncTime(pvcName string) (*metav1.Time, error) {
 
 	// Get RD instance
 	rs := &volsyncv1alpha1.ReplicationSource{}
+
 	err := v.client.Get(v.ctx,
 		types.NamespacedName{
 			Name:      getReplicationSourceName(pvcName),
-			Namespace: v.owner.GetNamespace(),
-		}, rs)
+			Namespace: v.owner.GetNamespace()}, rs)
 	if err != nil {
 		if !kerrors.IsNotFound(err) {
 			l.Error(err, "Failed to get ReplicationSource")
-			return nil, err
+
+			return nil, fmt.Errorf("%w", err)
 		}
 
 		l.Info("No ReplicationSource found")
+
 		return nil, nil
 	}
 
@@ -1074,6 +1076,7 @@ func (v *VSHandler) GetRDLatestImage(pvcName string) (*corev1.TypedLocalObjectRe
 
 	// Get RD instance
 	rdInst := &volsyncv1alpha1.ReplicationDestination{}
+
 	err := v.client.Get(v.ctx,
 		types.NamespacedName{
 			Name:      getReplicationDestinationName(pvcName),
@@ -1082,7 +1085,8 @@ func (v *VSHandler) GetRDLatestImage(pvcName string) (*corev1.TypedLocalObjectRe
 	if err != nil {
 		if !kerrors.IsNotFound(err) {
 			l.Error(err, "Failed to get ReplicationDestination")
-			return nil, err
+
+			return nil, fmt.Errorf("%w", err)
 		}
 		// If not found, nothing to restore
 		l.Info("No ReplicationDestination found")

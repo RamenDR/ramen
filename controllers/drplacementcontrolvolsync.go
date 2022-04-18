@@ -30,15 +30,6 @@ func (d *DRPCInstance) EnsureVolSyncReplicationSetup(homeCluster string) error {
 }
 
 func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
-	// TODO: Check if we need this block here.
-	// We can check for condition per PVC instead
-	// ready := d.isVRGConditionDataReady(srcCluster)
-	// if !ready {
-	// 	d.log.Info("Waiting... VRG condition not ready")
-
-	// 	return fmt.Errorf("VRG condition not ready")
-	// }
-
 	// Make sure we have Source and Destination VRGs - Source should already have been created at this point
 	const maxNumberOfVRGs = 2
 	if len(d.vrgs) != maxNumberOfVRGs {
@@ -65,7 +56,8 @@ func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 		sshSecretNameHub, d.instance.GetNamespace(), d.log)
 	if err != nil {
 		d.log.Error(err, "Unable to create ssh secret on hub for VolSync")
-		return err
+
+		return fmt.Errorf("%w", err)
 	}
 
 	// Propagate the secret to all clusters (to be named sshSecretNameCluster on the clusters)
@@ -76,11 +68,13 @@ func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 	for clusterName := range d.vrgs {
 		clustersToPropagateSecret = append(clustersToPropagateSecret, clusterName)
 	}
+
 	err = volsync.PropagateSecretToClusters(d.ctx, d.reconciler.Client, sshSecretHub,
 		d.instance, clustersToPropagateSecret, sshSecretNameCluster, d.instance.GetNamespace(), d.log)
 	if err != nil {
 		d.log.Error(err, "Error propagating secret to clusters", "clustersToPropagateSecret", clustersToPropagateSecret)
-		return err
+
+		return fmt.Errorf("%w", err)
 	}
 
 	return nil
@@ -93,10 +87,11 @@ func (d *DRPCInstance) ensureVolSyncReplicationDestination(srcCluster string) er
 	}
 
 	d.log.Info("Ensuring VolSync replication destination")
-	if len(srcVRG.Status.ProtectedPVCs) == 0 {
-		d.log.Info("waiting for the source cluster to provide the list of Protected PVCs")
 
-		return WaitForVolSyncSrcRepToComplete
+	if len(srcVRG.Status.ProtectedPVCs) == 0 {
+		d.log.Info("ProtectedPVCs on pirmary cluster is empty")
+
+		return WaitForSourceCluster
 	}
 
 	for dstCluster, dstVRG := range d.vrgs {
@@ -130,7 +125,8 @@ func (d *DRPCInstance) containsMismatchVolSyncPVCs(srcVRG *rmn.VolumeReplication
 			continue
 		}
 
-		var mismatch = true // assume a mismatch
+		var mismatch = true
+
 		for _, rdSpec := range dstVRG.Spec.VolSync.RDSpec {
 			if protectedPVC.Name == rdSpec.ProtectedPVC.Name {
 				mismatch = false
@@ -152,6 +148,7 @@ func (d *DRPCInstance) updateDestinationVRG(clusterName string, srcVRG *rmn.Volu
 	dstVRG *rmn.VolumeReplicationGroup) error {
 	// clear RDInfo
 	dstVRG.Spec.VolSync.RDSpec = nil
+
 	for _, protectedPVC := range srcVRG.Status.ProtectedPVCs {
 		if !protectedPVC.ProtectedByVolSync {
 			continue
@@ -175,10 +172,14 @@ func (d *DRPCInstance) isVolSyncReplicationRequired(homeCluster string) (bool, e
 	vrg := d.vrgs[homeCluster]
 
 	if vrg == nil {
-		d.log.Info(fmt.Sprintf("isVolSyncReplicationRequired: VRG not available on cluster %s - VRGs %v", 
+		d.log.Info(fmt.Sprintf("isVolSyncReplicationRequired: VRG not available on cluster %s - VRGs %v",
 			homeCluster, d.vrgs))
 
 		return false, fmt.Errorf("failed to find VRG on homeCluster %s", homeCluster)
+	}
+
+	if len(vrg.Status.ProtectedPVCs) == 0 {
+		return false, WaitForSourceCluster
 	}
 
 	for _, protectedPVC := range vrg.Status.ProtectedPVCs {
@@ -240,6 +241,7 @@ func (d *DRPCInstance) updateVRGSpec(clusterName string, tgtVRG *rmn.VolumeRepli
 	}
 
 	vrg.Spec.VolSync.RDSpec = tgtVRG.Spec.VolSync.RDSpec
+
 	vrgClientManifest, err := d.mwu.GenerateManifest(vrg)
 	if err != nil {
 		d.log.Error(err, "failed to generate manifest")
