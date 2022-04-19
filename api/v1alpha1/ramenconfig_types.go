@@ -87,14 +87,6 @@ type S3StoreProfile struct {
 	S3SecretRef v1.SecretReference `json:"s3SecretRef"`
 }
 
-type VolSyncProfile struct {
-	VolSyncProfileName string `json:"volSyncProfileName"`
-
-	// serviceType determines the Service type that will be created for incoming
-	// rsync SSH connections.
-	ServiceType *v1.ServiceType `json:"serviceType,omitempty"`
-}
-
 //+kubebuilder:object:root=true
 
 // RamenConfig is the Schema for the ramenconfig API
@@ -109,9 +101,6 @@ type RamenConfig struct {
 
 	// Map of S3 store profiles
 	S3StoreProfiles []S3StoreProfile `json:"s3StoreProfiles,omitempty"`
-
-	// VolSyncProfiles
-	VolSyncProfiles []VolSyncProfile `json:"volSyncProfiles,omitempty"`
 
 	// MaxConcurrentReconciles is the maximum number of concurrent Reconciles which can be run.
 	// Defaults to 1.

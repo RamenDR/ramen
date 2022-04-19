@@ -342,6 +342,7 @@ var _ = Describe("VolSync Handler", func() {
 						Expect(*createdRD.Spec.Rsync.VolumeSnapshotClassName).To(Equal(testVolumeSnapshotClassName))
 						Expect(createdRD.Spec.Trigger).To(BeNil()) // No schedule should be set
 						Expect(createdRD.GetLabels()).To(HaveKeyWithValue(volsync.VRGOwnerLabel, owner.GetName()))
+						Expect(*createdRD.Spec.Rsync.ServiceType).To(Equal(volsync.DefaultRsyncServiceType))
 
 						// Check that the secret has been updated to have our vrg as owner
 						Eventually(func() bool {
@@ -372,33 +373,35 @@ var _ = Describe("VolSync Handler", func() {
 						Expect(ownerMatches(svcExport, createdRD.GetName(), "ReplicationDestination", false)).To(BeTrue())
 					})
 
-					Context("When empty volsyncProfile is specified", func() {
-						It("Should use the default rsync service type in the ReplicationDestination", func() {
-							Expect(*createdRD.Spec.Rsync.ServiceType).To(Equal(volsync.DefaultRsyncServiceType))
-						})
-					})
-
-					Context("When no volsyncProfile is specified", func() {
-						BeforeEach(func() {
-							vsHandler.SetVolSyncProfile(nil)
-						})
-						It("Should use the default rsync service type in the ReplicationDestination", func() {
-							Expect(*createdRD.Spec.Rsync.ServiceType).To(Equal(volsync.DefaultRsyncServiceType))
-						})
-					})
-
-					Context("When a volsyncProfile is specified with serviceType", func() {
-						typeLoadBalancer := corev1.ServiceTypeLoadBalancer
-						BeforeEach(func() {
-							vsHandler.SetVolSyncProfile(&ramendrv1alpha1.VolSyncProfile{
-								VolSyncProfileName: "default",
-								ServiceType:        &typeLoadBalancer,
+					/*
+						Context("When empty volsyncProfile is specified", func() {
+							It("Should use the default rsync service type in the ReplicationDestination", func() {
+								Expect(*createdRD.Spec.Rsync.ServiceType).To(Equal(volsync.DefaultRsyncServiceType))
 							})
 						})
-						It("Should use the rsync service type in the VolSyncProfile", func() {
-							Expect(*createdRD.Spec.Rsync.ServiceType).To(Equal(typeLoadBalancer))
+
+						Context("When no volsyncProfile is specified", func() {
+							BeforeEach(func() {
+								vsHandler.SetVolSyncProfile(nil)
+							})
+							It("Should use the default rsync service type in the ReplicationDestination", func() {
+								Expect(*createdRD.Spec.Rsync.ServiceType).To(Equal(volsync.DefaultRsyncServiceType))
+							})
 						})
-					})
+
+						Context("When a volsyncProfile is specified with serviceType", func() {
+							typeLoadBalancer := corev1.ServiceTypeLoadBalancer
+							BeforeEach(func() {
+								vsHandler.SetVolSyncProfile(&ramendrv1alpha1.VolSyncProfile{
+									VolSyncProfileName: "default",
+									ServiceType:        &typeLoadBalancer,
+								})
+							})
+							It("Should use the rsync service type in the VolSyncProfile", func() {
+								Expect(*createdRD.Spec.Rsync.ServiceType).To(Equal(typeLoadBalancer))
+							})
+						})
+					*/
 
 					Context("When replication destination already exists with status.address specified", func() {
 						myTestAddress := "https://fakeaddress.abc.org:8888"
