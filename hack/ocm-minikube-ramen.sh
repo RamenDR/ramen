@@ -208,6 +208,12 @@ ramen_manager_image_archive()
 	image_archive $ramen_manager_image_reference
 }
 exit_stack_push unset -f ramen_manager_image_archive
+ramen_manager_image_build_and_archive()
+{
+	ramen_manager_image_build
+	ramen_manager_image_archive
+}
+exit_stack_push unset -f ramen_manager_image_build_and_archive
 ramen_manager_image_load_cluster()
 {
 	image_load_cluster $1 $ramen_manager_image_reference
