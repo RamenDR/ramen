@@ -64,8 +64,7 @@ type VSHandler struct {
 	log                         logr.Logger
 	owner                       metav1.Object
 	schedulingInterval          string
-	volSyncProfile              *ramendrv1alpha1.VolSyncProfile // TODO: remove?
-	volumeSnapshotClassSelector metav1.LabelSelector            // volume snapshot classes to be filtered label selector
+	volumeSnapshotClassSelector metav1.LabelSelector // volume snapshot classes to be filtered label selector
 	volumeSnapshotClassList     *snapv1.VolumeSnapshotClassList
 }
 
@@ -77,7 +76,6 @@ func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, ow
 		log:                         log,
 		owner:                       owner,
 		schedulingInterval:          schedulingInterval,
-		volSyncProfile:              nil, // No volsync profile atm by default - could be added later
 		volumeSnapshotClassSelector: volumeSnapshotClassSelector,
 		volumeSnapshotClassList:     nil, // Do not initialize until we need it
 	}
@@ -888,10 +886,7 @@ func (v *VSHandler) addVRGOwnerReferenceAndUpdate(obj client.Object) error {
 }
 
 func (v *VSHandler) getRsyncServiceType() *corev1.ServiceType {
-	if v.volSyncProfile != nil && v.volSyncProfile.ServiceType != nil {
-		return v.volSyncProfile.ServiceType
-	}
-	// If the service type to use is not in the volsyncprofile (contained in the ramenconfig), then use the default
+	// Use default right now - in future we may use a volsyncProfile
 	return &DefaultRsyncServiceType
 }
 
@@ -975,10 +970,12 @@ func (v *VSHandler) GetVolumeSnapshotClasses() ([]snapv1.VolumeSnapshotClass, er
 	return v.volumeSnapshotClassList.Items, nil
 }
 
+/*
 // This function is here to allow tests to override the volsyncProfile
 func (v *VSHandler) SetVolSyncProfile(volSyncProfile *ramendrv1alpha1.VolSyncProfile) {
 	v.volSyncProfile = volSyncProfile
 }
+*/
 
 func (v *VSHandler) getScheduleCronSpec() (*string, error) {
 	if v.schedulingInterval != "" {
