@@ -804,15 +804,6 @@ func (v *VSHandler) ensurePVCFromSnapshot(rdSpec ramendrv1alpha1.VolSyncReplicat
 	}
 
 	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, pvc, func() error {
-		// TODO: confirm we want to do this - likely we want the users app to take over ownership
-		if err := ctrl.SetControllerReference(v.owner, pvc, v.client.Scheme()); err != nil {
-			v.log.Error(err, "unable to set controller reference")
-
-			return fmt.Errorf("%w", err)
-		}
-
-		// TODO: needs finalizer?  r.addFinalizer(pvc, pvcFinalizerName)
-
 		if pvc.Status.Phase == corev1.ClaimBound {
 			// Assume no changes are required
 			l.V(1).Info("PVC already bound")
@@ -1051,7 +1042,8 @@ func (v *VSHandler) GetRSLastSyncTime(pvcName string) (*metav1.Time, error) {
 	err := v.client.Get(v.ctx,
 		types.NamespacedName{
 			Name:      getReplicationSourceName(pvcName),
-			Namespace: v.owner.GetNamespace()}, rs)
+			Namespace: v.owner.GetNamespace(),
+		}, rs)
 	if err != nil {
 		if !kerrors.IsNotFound(err) {
 			l.Error(err, "Failed to get ReplicationSource")
