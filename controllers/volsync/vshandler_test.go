@@ -924,21 +924,20 @@ var _ = Describe("VolSync Handler", func() {
 					}, maxWait, interval).Should(BeTrue())
 				})
 
-				//TODO:
-				/*
-					Context("When pvc to be restored has labels", func() {
-						BeforeEach(func() {
-							rdSpec.Labels = map[string]string{
-								"testlabel1": "mylabel1",
-								"testlabel2": "protecthisPVC",
-							}
-						})
-
-						It("Should create PVC with labels", func() {
-							Expect(pvc.Labels).To(Equal(rdSpec.Labels))
-						})
+				Context("When pvc to be restored has labels", func() {
+					BeforeEach(func() {
+						rdSpec.ProtectedPVC.Labels = map[string]string{
+							"testlabel1": "mylabel1",
+							"testlabel2": "protecthisPVC",
+						}
 					})
-				*/
+
+					It("Should create PVC with labels", func() {
+						for k, v := range rdSpec.ProtectedPVC.Labels {
+							Expect(pvc.Labels).To(HaveKeyWithValue(k, v))
+						}
+					})
+				})
 
 				Context("When pvc to be restored has already been created", func() {
 					It("ensure PVC should not fail", func() {

@@ -797,7 +797,6 @@ func (v *VSHandler) ensurePVCFromSnapshot(rdSpec ramendrv1alpha1.VolSyncReplicat
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      rdSpec.ProtectedPVC.Name,
 			Namespace: v.owner.GetNamespace(),
-			Labels:    map[string]string{"appname": "busybox"}, // FIXME:
 		},
 	}
 
@@ -809,7 +808,13 @@ func (v *VSHandler) ensurePVCFromSnapshot(rdSpec ramendrv1alpha1.VolSyncReplicat
 			return nil
 		}
 
-		// TODO: pvc.Labels = rdSpec.Labels
+		if pvc.Labels == nil {
+			pvc.Labels = rdSpec.ProtectedPVC.Labels
+		} else {
+			for key, val := range rdSpec.ProtectedPVC.Labels {
+				pvc.Labels[key] = val
+			}
+		}
 
 		accessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce} // Default value
 		if len(rdSpec.ProtectedPVC.AccessModes) > 0 {
