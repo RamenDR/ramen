@@ -17,7 +17,6 @@ limitations under the License.
 package controllers
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -418,7 +417,7 @@ func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim, log 
 			pvc.Name)
 	}
 
-	s3Profiles, err := v.PVUploadToObjectStore(pvc, log)
+	s3Profiles, err := v.PVUploadToObjectStores(pvc, log)
 	if err != nil {
 		return fmt.Errorf("error uploading PV cluster data to the list of s3 profiles")
 	}
@@ -443,76 +442,80 @@ func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim, log 
 	return nil
 }
 
-func (v *VRGInstance) PVUploadToObjectStore(pvc *corev1.PersistentVolumeClaim,
-	log logr.Logger) ([]string, error) {
-	s3Profiles := []string{}
-	// Upload the PV to all the S3 profiles in the VRG spec
-	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
-		if err := v.reconciler.PVUploader.UploadPV(v, s3ProfileName, pvc); err != nil {
-			log.Error(err, fmt.Sprintf("error uploading PV cluster data to s3Profile %s, %v",
-				s3ProfileName, err))
-
-			msg := fmt.Sprintf("Error uploading PV cluster data to s3Profile %s",
-				s3ProfileName)
-			v.updatePVCClusterDataProtectedCondition(pvc.Name, VRGConditionReasonUploadError, msg)
-			rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
-				rmnutil.EventReasonPVUploadFailed, err.Error())
-
-			return s3Profiles, fmt.Errorf("error uploading cluster data of PV %s to S3 profile %s, %w",
-				pvc.Name, s3ProfileName, err)
-		}
-
-		// Successfully uploaded to S3ProfileName
-		s3Profiles = append(s3Profiles, s3ProfileName)
-	}
-
-	return s3Profiles, nil
-}
-
-type ObjectStorePVUploader struct{}
-
-// UploadPV checks if the VRG spec has been configured with an s3 endpoint,
-// connects to the object store, gets the PV cluster data of the input PVC from
-// etcd, creates a bucket in s3 store, uploads the PV cluster data to s3 store.
-func (ObjectStorePVUploader) UploadPV(v interface{}, s3ProfileName string,
-	pvc *corev1.PersistentVolumeClaim) (err error) {
-	vrg, ok := v.(*VRGInstance)
-	if !ok {
-		return fmt.Errorf("error uploading PV, input is not VRGInstance")
-	}
-
+func (v *VRGInstance) PVUploadToObjectStore(s3ProfileName string, pvc *corev1.PersistentVolumeClaim) error {
 	if s3ProfileName == "" {
 		return fmt.Errorf("error uploading cluster data of PV %s because VRG spec has no S3 profiles",
 			pvc.Name)
 	}
 
-	objectStore, err :=
-		vrg.reconciler.ObjStoreGetter.ObjectStore(
-			vrg.ctx,
-			vrg.reconciler.APIReader,
-			s3ProfileName,
-			vrg.namespacedName, /* debugTag */
-			vrg.log,
-		)
+	objectStore, err := v.getObjectStore(s3ProfileName)
 	if err != nil {
 		return fmt.Errorf("error connecting to object store when uploading PV %s to s3Profile %s, %w",
 			pvc.Name, s3ProfileName, err)
 	}
 
+	pv, err := v.getPVFromPVC(pvc)
+	if err != nil {
+		return fmt.Errorf("error reading from K8s cluster when uploading PV %s to s3Profile %s, %w",
+			pvc.Name, s3ProfileName, err)
+	}
+
+	if err := v.reconciler.PVUploader.UploadPV(objectStore, v.s3KeyPrefix(), &pv); err != nil {
+		err := fmt.Errorf("error uploading PV cluster data to s3Profile %s, %w", s3ProfileName, err)
+
+		return err
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) PVUploadToObjectStores(pvc *corev1.PersistentVolumeClaim,
+	log logr.Logger) ([]string, error) {
+	succeededProfiles := []string{}
+	// Upload the PV to all the S3 profiles in the VRG spec
+	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
+		err := v.PVUploadToObjectStore(s3ProfileName, pvc)
+		if err != nil {
+			v.updatePVCClusterDataProtectedCondition(pvc.Name, VRGConditionReasonUploadError, err.Error())
+			rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
+				rmnutil.EventReasonPVUploadFailed, err.Error())
+
+			return succeededProfiles, err
+		}
+
+		succeededProfiles = append(succeededProfiles, s3ProfileName)
+	}
+
+	return succeededProfiles, nil
+}
+
+type ObjectStorePVUploader struct{}
+
+func (v *VRGInstance) getPVFromPVC(pvc *corev1.PersistentVolumeClaim) (corev1.PersistentVolume, error) {
 	pv := corev1.PersistentVolume{}
 	volumeName := pvc.Spec.VolumeName
 	pvObjectKey := client.ObjectKey{Name: volumeName}
 
 	// Get PV from k8s
-	if err := vrg.reconciler.Get(vrg.ctx, pvObjectKey, &pv); err != nil {
-		return fmt.Errorf("error reading from K8s cluster when uploading PV %s to s3Profile %s, %w",
-			pvc.Name, s3ProfileName, err)
+	if err := v.reconciler.Get(v.ctx, pvObjectKey, &pv); err != nil {
+		return pv, fmt.Errorf("failed to get PV %w", err)
 	}
 
-	s3KeyPrefix := vrg.s3KeyPrefix()
+	return pv, nil
+}
 
-	// Upload PV to object store
-	if err := objectStore.UploadPV(s3KeyPrefix, pv.Name, pv); err != nil {
+func (v *VRGInstance) getObjectStore(s3ProfileName string) (ObjectStorer, error) {
+	return v.reconciler.ObjStoreGetter.ObjectStore(v.ctx, v.reconciler.APIReader,
+		s3ProfileName, v.namespacedName, v.log)
+}
+
+// UploadPV checks if the VRG spec has been configured with an s3 endpoint,
+// connects to the object store, gets the PV cluster data of the input PVC from
+// etcd, creates a bucket in s3 store, uploads the PV cluster data to s3 store.
+func (ObjectStorePVUploader) UploadPV(objectStore ObjectStorer,
+	pvKeyPrefix string, pv *corev1.PersistentVolume) (err error) {
+	err = objectStore.UploadPV(pvKeyPrefix, pv.Name, *pv)
+	if err != nil {
 		return fmt.Errorf("error uploading PV %s, err %w", pv.Name, err)
 	}
 
@@ -1475,15 +1478,12 @@ func (v *VRGInstance) fetchAndRestorePV() (bool, error) {
 func (v *VRGInstance) fetchPVClusterDataFromS3Store(s3ProfileName string) ([]corev1.PersistentVolume, error) {
 	s3KeyPrefix := v.s3KeyPrefix()
 
-	return v.reconciler.PVDownloader.DownloadPVs(
-		v.ctx,
-		v.reconciler.APIReader,
-		v.reconciler.ObjStoreGetter,
-		s3ProfileName,
-		s3KeyPrefix,
-		v.namespacedName, // debugTag
-		v.log,
-	)
+	objectStore, err := v.getObjectStore(s3ProfileName)
+	if err != nil {
+		return nil, fmt.Errorf("error when downloading PVs, err %w", err)
+	}
+
+	return v.reconciler.PVDownloader.DownloadPVs(objectStore, s3KeyPrefix)
 }
 
 // sanityCheckPVClusterData returns an error if there are PVs in the input
@@ -1528,14 +1528,8 @@ func (v *VRGInstance) sanityCheckPVClusterData(pvList []corev1.PersistentVolume)
 
 type ObjectStorePVDownloader struct{}
 
-func (s ObjectStorePVDownloader) DownloadPVs(ctx context.Context, r client.Reader,
-	objStoreGetter ObjectStoreGetter, s3Profile, s3KeyPrefix string,
-	debugTag string, log logr.Logger) ([]corev1.PersistentVolume, error) {
-	objectStore, err := objStoreGetter.ObjectStore(ctx, r, s3Profile, debugTag, log)
-	if err != nil {
-		return nil, fmt.Errorf("error when downloading PVs, err %w", err)
-	}
-
+func (s ObjectStorePVDownloader) DownloadPVs(objectStore ObjectStorer, s3KeyPrefix string) (
+	[]corev1.PersistentVolume, error) {
 	return objectStore.DownloadPVs(s3KeyPrefix)
 }
 
