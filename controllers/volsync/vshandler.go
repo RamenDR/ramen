@@ -56,6 +56,9 @@ const (
 
 	SchedulingIntervalMinLength int = 2
 	CronSpecMaxDayOfMonth       int = 28
+
+	VolSyncDoNotDeleteLabel    = "volsync.backube/do-not-delete" // TODO: point to volsync constant once it is available
+	VolSyncDoNotDeleteLabelVal = "true"                          // TODO: point to volsync constant once it is available
 )
 
 type VSHandler struct {
@@ -858,26 +861,60 @@ func (v *VSHandler) validateSnapshotAndAddVRGOwnerRef(volumeSnapshotRef corev1.T
 		return fmt.Errorf("error getting volumesnapshot (%w)", err)
 	}
 
-	if err := v.addVRGOwnerReferenceAndUpdate(volSnap); err != nil {
-		v.log.Error(err, "Unable to update VolumeSnapshot", "volumeSnapshotRef", volumeSnapshotRef)
+	labelsUpdated := false
 
+	// Add Label to indicate that VolSync should not delete/cleanup this Snapshot
+	snapLabels := volSnap.GetLabels()
+	if snapLabels == nil {
+		snapLabels = map[string]string{}
+	}
+
+	val, ok := snapLabels[VolSyncDoNotDeleteLabel]
+	if !ok || val != VolSyncDoNotDeleteLabelVal {
+		snapLabels[VolSyncDoNotDeleteLabel] = VolSyncDoNotDeleteLabelVal
+
+		labelsUpdated = true
+		volSnap.Labels = snapLabels
+	}
+
+	ownerRefUpdated, err := v.addVRGOwnerReference(volSnap)
+	if err != nil {
 		return err
 	}
 
-	v.log.V(1).Info("VolumeSnapshot validated and VRG ownerRef added", "volumeSnapshotRef", volumeSnapshotRef)
+	if labelsUpdated || ownerRefUpdated {
+		if err := v.client.Update(v.ctx, volSnap); err != nil {
+			v.log.Error(err, "Failed to add do-not-delete label or VRG owner reference to snapshot",
+				"snapshot name", volSnap.GetName())
+
+			return fmt.Errorf("failed to add do-not-delete label or VRG owner reference to object (%w)", err)
+		}
+
+		v.log.Info("VolumeSnapshot validated, volsync do-not-delete label and VRG ownerRef added",
+			"volumeSnapshotRef", volumeSnapshotRef)
+	}
 
 	return nil
 }
 
-func (v *VSHandler) addVRGOwnerReferenceAndUpdate(obj client.Object) error {
+func (v *VSHandler) addVRGOwnerReference(obj client.Object) (bool, error) {
 	currentOwnerRefs := obj.GetOwnerReferences()
 
 	err := ctrlutil.SetOwnerReference(v.owner, obj, v.client.Scheme())
 	if err != nil {
-		return fmt.Errorf("%w", err)
+		return false, fmt.Errorf("%w", err)
 	}
 
 	needsUpdate := !reflect.DeepEqual(obj.GetOwnerReferences(), currentOwnerRefs)
+
+	return needsUpdate, nil
+}
+
+func (v *VSHandler) addVRGOwnerReferenceAndUpdate(obj client.Object) error {
+	needsUpdate, err := v.addVRGOwnerReference(obj)
+	if err != nil {
+		return err
+	}
 
 	if needsUpdate {
 		if err := v.client.Update(v.ctx, obj); err != nil {
