@@ -339,6 +339,13 @@ func (in *ProtectedPVC) DeepCopyInto(out *ProtectedPVC) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.Labels != nil {
+		in, out := &in.Labels, &out.Labels
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	if in.AccessModes != nil {
 		in, out := &in.AccessModes, &out.AccessModes
 		*out = make([]corev1.PersistentVolumeAccessMode, len(*in))

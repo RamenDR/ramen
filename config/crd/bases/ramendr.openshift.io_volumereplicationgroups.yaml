@@ -339,6 +339,11 @@ spec:
                                 - type
                                 type: object
                               type: array
+                            labels:
+                              additionalProperties:
+                                type: string
+                              description: Labels for the PVC
+                              type: object
                             name:
                               description: Name of the VolRep/PVC resource
                               type: string
@@ -555,6 +560,11 @@ spec:
                         - type
                         type: object
                       type: array
+                    labels:
+                      additionalProperties:
+                        type: string
+                      description: Labels for the PVC
+                      type: object
                     name:
                       description: Name of the VolRep/PVC resource
                       type: string

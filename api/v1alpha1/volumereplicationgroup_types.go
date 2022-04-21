@@ -186,6 +186,10 @@ type ProtectedPVC struct {
 	//+optional
 	StorageClassName *string `json:"storageClassName,omitempty"`
 
+	// Labels for the PVC
+	//+optional
+	Labels map[string]string `json:"labels,omitempty"`
+
 	// AccessModes set in the claim to be replicated
 	//+optional
 	AccessModes []corev1.PersistentVolumeAccessMode `json:"accessModes,omitempty"`
