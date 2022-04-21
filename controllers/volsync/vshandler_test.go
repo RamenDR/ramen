@@ -922,6 +922,12 @@ var _ = Describe("VolSync Handler", func() {
 						// will be the controller owning it
 						return ownerMatches(latestImageSnap, owner.GetName(), "ConfigMap", false /* not controller */)
 					}, maxWait, interval).Should(BeTrue())
+
+					// The volumesnapshot should also have the volsync do-not-delete label added
+					snapLabels := latestImageSnap.GetLabels()
+					val, ok := snapLabels["volsync.backube/do-not-delete"]
+					Expect(ok).To(BeTrue())
+					Expect(val).To(Equal("true"))
 				})
 
 				Context("When pvc to be restored has labels", func() {
