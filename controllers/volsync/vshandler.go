@@ -30,8 +30,10 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/reference"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -59,6 +61,9 @@ const (
 
 	VolSyncDoNotDeleteLabel    = "volsync.backube/do-not-delete" // TODO: point to volsync constant once it is available
 	VolSyncDoNotDeleteLabelVal = "true"                          // TODO: point to volsync constant once it is available
+
+	ACMAppSubDoNotDeleteLabel    = "do-not-delete" // See: https://issues.redhat.com/browse/ACM-1256
+	ACMAppSubDoNotDeleteLabelVal = "true"
 )
 
 type VSHandler struct {
@@ -410,6 +415,19 @@ func (v *VSHandler) PreparePVCForFinalSync(pvcName string) (bool, error) {
 		return false, err
 	}
 
+	/*
+	  TODO: the rest of this function is:
+	  - Waiting for reconcile option to be set to "merge"
+	  - Removing annotations on the PVC to "break" ACM's ownership so it will not delete the PVC
+	    when the appsub is removed
+
+	  These steps will not be required once: https://issues.redhat.com/browse/ACM-1256 is completed
+	  (in ACM 2.6 timeframe) as the above step validatePVCAndAddVRGOwnerRef() will add the "do-not-delete"
+	  label to the PVC which would then prevent ACM from cleaning up the PVC when the appsub is removed.
+
+	  So this function can end here once the above enhancement is done
+	*/
+
 	// Check for annotation that indicates the PVC whether the ACM appsub will keep reconciling by re-taking
 	// ownership of the PVC - if annotation is "mergeAndOwn" we need to wait for it to be removed or change to "merge"
 	reconcileOption, ok := pvc.Annotations["apps.open-cluster-management.io/reconcile-option"]
@@ -523,6 +541,8 @@ func (v *VSHandler) getPVC(pvcName string) (*corev1.PersistentVolumeClaim, error
 	return pvc, nil
 }
 
+// Adds owner ref and ACM "do-not-delete" label to indicate that when the appsub is removed, ACM
+// should not cleanup this PVC - we want it left behind so we can run a final sync
 func (v *VSHandler) validatePVCAndAddVRGOwnerRef(pvcName string) (*corev1.PersistentVolumeClaim, error) {
 	pvc, err := v.getPVC(pvcName)
 	if err != nil {
@@ -531,13 +551,14 @@ func (v *VSHandler) validatePVCAndAddVRGOwnerRef(pvcName string) (*corev1.Persis
 
 	v.log.Info("PVC exists", "pvcName", pvcName)
 
-	if err = v.addVRGOwnerReferenceAndUpdate(pvc); err != nil {
-		v.log.Error(err, "Unable to update PVC", "pvcName", pvcName)
-
+	// Add Label to indicate that ACM should not delete/cleanup this pvc when the appsub is removed
+	// and add VRG as owner
+	err = v.addLabelAndVRGOwnerRefAndUpdate(pvc, ACMAppSubDoNotDeleteLabel, ACMAppSubDoNotDeleteLabelVal)
+	if err != nil {
 		return nil, err
 	}
 
-	v.log.V(1).Info("PVC validated and VRG ownerRef added", "pvcName", pvcName)
+	v.log.V(1).Info("PVC validated", "pvc name", pvcName)
 
 	return pvc, nil
 }
@@ -571,7 +592,7 @@ func (v *VSHandler) validateSecretAndAddVRGOwnerRef(secretName string) (bool, er
 		return true, err
 	}
 
-	v.log.V(1).Info("VolSync secret validated and VRG ownerRef added", "secretName", secretName)
+	v.log.V(1).Info("VolSync secret validated", "secret name", secretName)
 
 	return true, nil
 }
@@ -847,6 +868,7 @@ func (v *VSHandler) ensurePVCFromSnapshot(rdSpec ramendrv1alpha1.VolSyncReplicat
 	return nil
 }
 
+// Adds owner ref and VolSync "do-not-delete" label to indicate volsync should not cleanup this snapshot
 func (v *VSHandler) validateSnapshotAndAddVRGOwnerRef(volumeSnapshotRef corev1.TypedLocalObjectReference) error {
 	// Using unstructured to avoid needing to require VolumeSnapshot in client scheme
 	volSnap := &snapv1.VolumeSnapshot{}
@@ -861,38 +883,13 @@ func (v *VSHandler) validateSnapshotAndAddVRGOwnerRef(volumeSnapshotRef corev1.T
 		return fmt.Errorf("error getting volumesnapshot (%w)", err)
 	}
 
-	labelsUpdated := false
-
-	// Add Label to indicate that VolSync should not delete/cleanup this Snapshot
-	snapLabels := volSnap.GetLabels()
-	if snapLabels == nil {
-		snapLabels = map[string]string{}
-	}
-
-	val, ok := snapLabels[VolSyncDoNotDeleteLabel]
-	if !ok || val != VolSyncDoNotDeleteLabelVal {
-		snapLabels[VolSyncDoNotDeleteLabel] = VolSyncDoNotDeleteLabelVal
-
-		labelsUpdated = true
-		volSnap.Labels = snapLabels
-	}
-
-	ownerRefUpdated, err := v.addVRGOwnerReference(volSnap)
+	// Add Label to indicate that VolSync should not delete/cleanup this Snapshot and add VRG as owner
+	err = v.addLabelAndVRGOwnerRefAndUpdate(volSnap, VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal)
 	if err != nil {
 		return err
 	}
 
-	if labelsUpdated || ownerRefUpdated {
-		if err := v.client.Update(v.ctx, volSnap); err != nil {
-			v.log.Error(err, "Failed to add do-not-delete label or VRG owner reference to snapshot",
-				"snapshot name", volSnap.GetName())
-
-			return fmt.Errorf("failed to add do-not-delete label or VRG owner reference to object (%w)", err)
-		}
-
-		v.log.Info("VolumeSnapshot validated, volsync do-not-delete label and VRG ownerRef added",
-			"volumeSnapshotRef", volumeSnapshotRef)
-	}
+	v.log.V(1).Info("VolumeSnapshot validated", "volumesnapshot name", volSnap.GetName())
 
 	return nil
 }
@@ -910,6 +907,45 @@ func (v *VSHandler) addVRGOwnerReference(obj client.Object) (bool, error) {
 	return needsUpdate, nil
 }
 
+func (v *VSHandler) addLabelAndVRGOwnerRefAndUpdate(obj client.Object, labelName, labelValue string) error {
+	labelsUpdated := false
+
+	// Add Label to indicate that owner should not delete/cleanup this object
+	labels := obj.GetLabels()
+	if labels == nil {
+		labels = map[string]string{}
+	}
+
+	val, ok := labels[labelName]
+	if !ok || val != labelValue {
+		labels[labelName] = labelValue
+
+		labelsUpdated = true
+
+		obj.SetLabels(labels)
+	}
+
+	ownerRefUpdated, err := v.addVRGOwnerReference(obj)
+	if err != nil {
+		return err
+	}
+
+	if labelsUpdated || ownerRefUpdated {
+		objKindAndName := getKindAndName(v.client.Scheme(), obj)
+
+		if err := v.client.Update(v.ctx, obj); err != nil {
+			v.log.Error(err, "Failed to add label or VRG owner reference to obj", "obj", objKindAndName)
+
+			return fmt.Errorf("failed to add %s label or VRG owner reference to %s (%w)", labelName, objKindAndName, err)
+		}
+
+		v.log.Info("label and VRG ownerRef added to object",
+			"obj", objKindAndName, "labelName", labelName, "label value", labelValue)
+	}
+
+	return nil
+}
+
 func (v *VSHandler) addVRGOwnerReferenceAndUpdate(obj client.Object) error {
 	needsUpdate, err := v.addVRGOwnerReference(obj)
 	if err != nil {
@@ -917,11 +953,15 @@ func (v *VSHandler) addVRGOwnerReferenceAndUpdate(obj client.Object) error {
 	}
 
 	if needsUpdate {
-		if err := v.client.Update(v.ctx, obj); err != nil {
-			v.log.Error(err, "Failed to add VRG owner reference to obj", "obj name", obj.GetName())
+		objKindAndName := getKindAndName(v.client.Scheme(), obj)
 
-			return fmt.Errorf("failed to add VRG owner reference to object (%w)", err)
+		if err := v.client.Update(v.ctx, obj); err != nil {
+			v.log.Error(err, "Failed to add VRG owner reference to obj", "obj", objKindAndName)
+
+			return fmt.Errorf("failed to add VRG owner reference to %s (%w)", objKindAndName, err)
 		}
+
+		v.log.Info("VRG ownerRef added to object", "obj", objKindAndName)
 	}
 
 	return nil
@@ -1172,4 +1212,13 @@ func getLocalServiceNameForRD(rdName string) string {
 // a ServiceExport is created for the service on the cluster that has the ReplicationDestination
 func getRemoteServiceNameForRDFromPVCName(pvcName, rdNamespace string) string {
 	return fmt.Sprintf("%s.%s.svc.clusterset.local", getLocalServiceNameForRDFromPVCName(pvcName), rdNamespace)
+}
+
+func getKindAndName(scheme *runtime.Scheme, obj client.Object) string {
+	ref, err := reference.GetReference(scheme, obj)
+	if err != nil {
+		return obj.GetName()
+	}
+
+	return ref.Kind + "/" + ref.Name
 }
