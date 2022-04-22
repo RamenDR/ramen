@@ -121,53 +121,6 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	return ctrl.Result{}, u.validatedSetTrue("Succeeded", "drcluster validated")
 }
 
-type drclusterUpdater struct {
-	ctx    context.Context
-	object *ramen.DRCluster
-	client client.Client
-	log    logr.Logger
-}
-
-func (u *drclusterUpdater) validatedSetTrue(reason, message string) error {
-	return u.statusConditionSet(ramen.DRClusterValidated, metav1.ConditionTrue, reason, message)
-}
-
-func (u *drclusterUpdater) validatedSetFalse(reason string, err error) error {
-	if err1 := u.statusConditionSet(ramen.DRClusterValidated, metav1.ConditionFalse, reason, err.Error()); err1 != nil {
-		return err1
-	}
-
-	return err
-}
-
-func (u *drclusterUpdater) statusConditionSet(
-	conditionType string,
-	status metav1.ConditionStatus,
-	reason, message string,
-) error {
-	conditions := &u.object.Status.Conditions
-
-	if util.GenericStatusConditionSet(u.object, conditions, conditionType, status, reason, message, u.log) {
-		return u.statusUpdate()
-	}
-
-	return nil
-}
-
-func (u *drclusterUpdater) statusUpdate() error {
-	return u.client.Status().Update(u.ctx, u.object)
-}
-
-const drClusterFinalizerName = "drclusters.ramendr.openshift.io/ramen"
-
-func (u *drclusterUpdater) addLabelsAndFinalizers() error {
-	return util.GenericAddLabelsAndFinalizers(u.ctx, u.object, drClusterFinalizerName, u.client, u.log)
-}
-
-func (u *drclusterUpdater) finalizerRemove() error {
-	return util.GenericFinalizerRemove(u.ctx, u.object, drClusterFinalizerName, u.client, u.log)
-}
-
 func validateDRCluster(ctx context.Context, drcluster *ramen.DRCluster, apiReader client.Reader,
 	objectStoreGetter ObjectStoreGetter, listKeyPrefix string,
 	log logr.Logger,
@@ -236,6 +189,53 @@ func validateCIDRsFormat(drcluster *ramen.DRCluster, log logr.Logger) error {
 	}
 
 	return nil
+}
+
+type drclusterUpdater struct {
+	ctx    context.Context
+	object *ramen.DRCluster
+	client client.Client
+	log    logr.Logger
+}
+
+func (u *drclusterUpdater) validatedSetTrue(reason, message string) error {
+	return u.statusConditionSet(ramen.DRClusterValidated, metav1.ConditionTrue, reason, message)
+}
+
+func (u *drclusterUpdater) validatedSetFalse(reason string, err error) error {
+	if err1 := u.statusConditionSet(ramen.DRClusterValidated, metav1.ConditionFalse, reason, err.Error()); err1 != nil {
+		return err1
+	}
+
+	return err
+}
+
+func (u *drclusterUpdater) statusConditionSet(
+	conditionType string,
+	status metav1.ConditionStatus,
+	reason, message string,
+) error {
+	conditions := &u.object.Status.Conditions
+
+	if util.GenericStatusConditionSet(u.object, conditions, conditionType, status, reason, message, u.log) {
+		return u.statusUpdate()
+	}
+
+	return nil
+}
+
+func (u *drclusterUpdater) statusUpdate() error {
+	return u.client.Status().Update(u.ctx, u.object)
+}
+
+const drClusterFinalizerName = "drclusters.ramendr.openshift.io/ramen"
+
+func (u *drclusterUpdater) addLabelsAndFinalizers() error {
+	return util.GenericAddLabelsAndFinalizers(u.ctx, u.object, drClusterFinalizerName, u.client, u.log)
+}
+
+func (u *drclusterUpdater) finalizerRemove() error {
+	return util.GenericFinalizerRemove(u.ctx, u.object, drClusterFinalizerName, u.client, u.log)
 }
 
 func (u *drclusterUpdater) clusterFenceHandle() error {
