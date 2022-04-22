@@ -51,6 +51,7 @@ import (
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	ramencontrollers "github.com/ramendr/ramen/controllers"
+	"github.com/ramendr/ramen/controllers/util"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -65,6 +66,15 @@ var (
 	configMap   *corev1.ConfigMap
 	ramenConfig *ramendrv1alpha1.RamenConfig
 	testLog     logr.Logger
+
+	timeout  = time.Second * 10
+	interval = time.Millisecond * 10
+
+	plRuleNames []string
+
+	s3Secrets      [1]corev1.Secret
+	s3Profiles     [6]ramendrv1alpha1.S3StoreProfile
+	ramenNamespace = "ns-envtest"
 )
 
 func TestAPIs(t *testing.T) {
@@ -101,10 +111,11 @@ var _ = BeforeSuite(func() {
 		Expect(os.Setenv("KUBEBUILDER_ASSETS", "../testbin/bin")).To(Succeed())
 	}
 
-	ramenNamespace, set := os.LookupEnv("POD_NAMESPACE")
+	rNs, set := os.LookupEnv("POD_NAMESPACE")
 	if !set {
-		ramenNamespace = "ns-envtest"
 		Expect(os.Setenv("POD_NAMESPACE", ramenNamespace)).To(Succeed())
+	} else {
+		ramenNamespace = rNs
 	}
 
 	By("bootstrapping test environment")
@@ -164,6 +175,8 @@ var _ = BeforeSuite(func() {
 		},
 		RamenControllerType: ramendrv1alpha1.DRHubType,
 	}
+	ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = true
+	ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = true
 	configMap, err = ramencontrollers.ConfigMapNew(
 		ramenNamespace,
 		ramencontrollers.HubOperatorConfigMapName,
@@ -172,12 +185,77 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient.Create(context.TODO(), configMap)).To(Succeed())
 
+	s3Secrets[0] = corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: configMap.Namespace, Name: "s3secret0"},
+		StringData: map[string]string{
+			"AWS_ACCESS_KEY_ID":     awsAccessKeyIDSucc,
+			"AWS_SECRET_ACCESS_KEY": "",
+		},
+	}
+	s3ProfileNew := func(profileNameSuffix, bucketName string) ramendrv1alpha1.S3StoreProfile {
+		return ramendrv1alpha1.S3StoreProfile{
+			S3ProfileName:        "s3profile" + profileNameSuffix,
+			S3Bucket:             bucketName,
+			S3CompatibleEndpoint: "http://192.168.39.223:30000",
+			S3Region:             "us-east-1",
+			S3SecretRef:          corev1.SecretReference{Name: s3Secrets[0].Name},
+		}
+	}
+
+	s3Profiles[0] = s3ProfileNew("0", bucketNameSucc)
+	s3Profiles[1] = s3ProfileNew("1", bucketNameSucc2)
+	s3Profiles[2] = s3ProfileNew("2", bucketNameFail)
+	s3Profiles[3] = s3ProfileNew("3", bucketNameFail2)
+	s3Profiles[4] = s3ProfileNew("4", bucketListFail)
+
+	s3SecretsPolicyNamesSet := func() {
+		for idx := range s3Secrets {
+			_, _, v, _ := util.GeneratePolicyResourceNames(s3Secrets[idx].Name)
+			plRuleNames = append(plRuleNames, v)
+		}
+	}
+	s3SecretCreate := func(s3Secret *corev1.Secret) {
+		Expect(k8sClient.Create(context.TODO(), s3Secret)).To(Succeed())
+	}
+	s3SecretsCreate := func() {
+		for i := range s3Secrets {
+			s3SecretCreate(&s3Secrets[i])
+		}
+	}
+	s3ProfilesSecretNamespaceNameSet := func() {
+		namespaceName := s3Secrets[0].Namespace
+		for i := range s3Profiles {
+			s3Profiles[i].S3SecretRef.Namespace = namespaceName
+		}
+	}
+	s3Profiles[5] = ramendrv1alpha1.S3StoreProfile{
+		S3ProfileName:        "drc-s3profile",
+		S3Bucket:             bucketNameSucc,
+		S3CompatibleEndpoint: "http://192.168.39.223:30000",
+		S3Region:             "us-east-1",
+		S3SecretRef:          corev1.SecretReference{Name: s3Secrets[0].Name},
+	}
+	s3ProfilesUpdate := func() {
+		s3ProfilesStore(s3Profiles[0:])
+	}
+	s3SecretsPolicyNamesSet()
+	s3SecretsCreate()
+	s3ProfilesSecretNamespaceNameSet()
+	s3ProfilesUpdate()
+
 	options, err := manager.Options{Scheme: scheme.Scheme}.AndFrom(ramenConfig)
 	Expect(err).NotTo(HaveOccurred())
 
 	// test controller behavior
 	k8sManager, err := ctrl.NewManager(cfg, options)
 	Expect(err).ToNot(HaveOccurred())
+
+	Expect((&ramencontrollers.DRClusterReconciler{
+		Client:            k8sManager.GetClient(),
+		APIReader:         k8sManager.GetAPIReader(),
+		Scheme:            k8sManager.GetScheme(),
+		ObjectStoreGetter: fakeObjectStoreGetter{},
+	}).SetupWithManager(k8sManager)).To(Succeed())
 
 	Expect((&ramencontrollers.DRPolicyReconciler{
 		Client:            k8sManager.GetClient(),
