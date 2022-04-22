@@ -151,37 +151,21 @@ func validateDRPolicy(ctx context.Context,
 	return "", nil
 }
 
-func haveOverlappingMetroZones(d1 *ramen.DRPolicy, d2 *ramen.DRPolicy, drclusters *ramen.DRClusterList) bool {
-	d1ClusterNames := sets.NewString(util.DrpolicyClusterNames(d1)...)
-	d1SupportsMetro, d1MetroRegions := dRPolicySupportsMetro(d1, drclusters.Items)
-	d2ClusterNames := sets.NewString(util.DrpolicyClusterNames(d2)...)
-	d2SupportsMetro, d2MetroRegions := dRPolicySupportsMetro(d2, drclusters.Items)
-	commonClusters := d1ClusterNames.Intersection(d2ClusterNames)
-
-	// No common managed clusters, so we are good
-	if commonClusters.Len() == 0 {
-		return false
+func validatePolicyConflicts(ctx context.Context,
+	apiReader client.Reader,
+	drpolicy *ramen.DRPolicy,
+	drclusters *ramen.DRClusterList) error {
+	drpolicies, err := util.GetAllDRPolicies(ctx, apiReader)
+	if err != nil {
+		return fmt.Errorf("validate managed cluster in drpolicy %v failed: %w", drpolicy.Name, err)
 	}
 
-	// Lets check if the metro clusters in DRPolicy d2 belong to common managed clusters list
-	if d2SupportsMetro {
-		for _, v := range d2MetroRegions {
-			if sets.NewString(v...).HasAny(commonClusters.List()...) {
-				return true
-			}
-		}
+	err = hasConflictingDRPolicy(drpolicy, drclusters, drpolicies)
+	if err != nil {
+		return fmt.Errorf("validate managed cluster in drpolicy failed: %w", err)
 	}
 
-	// Lets check if the metro clusters in DRPolicy d1 belong to common managed clusters list
-	if d1SupportsMetro {
-		for _, v := range d1MetroRegions {
-			if sets.NewString(v...).HasAny(commonClusters.List()...) {
-				return true
-			}
-		}
-	}
-
-	return false
+	return nil
 }
 
 // If two drpolicies have common managed cluster(s) and at least one of them is
@@ -215,21 +199,37 @@ func hasConflictingDRPolicy(match *ramen.DRPolicy, drclusters *ramen.DRClusterLi
 	return nil
 }
 
-func validatePolicyConflicts(ctx context.Context,
-	apiReader client.Reader,
-	drpolicy *ramen.DRPolicy,
-	drclusters *ramen.DRClusterList) error {
-	drpolicies, err := util.GetAllDRPolicies(ctx, apiReader)
-	if err != nil {
-		return fmt.Errorf("validate managed cluster in drpolicy %v failed: %w", drpolicy.Name, err)
+func haveOverlappingMetroZones(d1 *ramen.DRPolicy, d2 *ramen.DRPolicy, drclusters *ramen.DRClusterList) bool {
+	d1ClusterNames := sets.NewString(util.DrpolicyClusterNames(d1)...)
+	d1SupportsMetro, d1MetroRegions := dRPolicySupportsMetro(d1, drclusters.Items)
+	d2ClusterNames := sets.NewString(util.DrpolicyClusterNames(d2)...)
+	d2SupportsMetro, d2MetroRegions := dRPolicySupportsMetro(d2, drclusters.Items)
+	commonClusters := d1ClusterNames.Intersection(d2ClusterNames)
+
+	// No common managed clusters, so we are good
+	if commonClusters.Len() == 0 {
+		return false
 	}
 
-	err = hasConflictingDRPolicy(drpolicy, drclusters, drpolicies)
-	if err != nil {
-		return fmt.Errorf("validate managed cluster in drpolicy failed: %w", err)
+	// Lets check if the metro clusters in DRPolicy d2 belong to common managed clusters list
+	if d2SupportsMetro {
+		for _, v := range d2MetroRegions {
+			if sets.NewString(v...).HasAny(commonClusters.List()...) {
+				return true
+			}
+		}
 	}
 
-	return nil
+	// Lets check if the metro clusters in DRPolicy d1 belong to common managed clusters list
+	if d1SupportsMetro {
+		for _, v := range d1MetroRegions {
+			if sets.NewString(v...).HasAny(commonClusters.List()...) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 type drpolicyUpdater struct {
