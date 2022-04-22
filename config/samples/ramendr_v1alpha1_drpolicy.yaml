@@ -7,10 +7,6 @@ spec:
   replicationClassSelector:
     matchLabels:
       class: ramen
-  drClusterSet:
-    - name: east
-      region: east
-      s3ProfileName: s3-profile-of-east
-    - name: west
-      region: west
-      s3ProfileName: s3-profile-of-west
+  drClusters:
+    - east
+    - west
