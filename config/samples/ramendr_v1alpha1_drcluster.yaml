@@ -1,7 +1,7 @@
 apiVersion: ramendr.openshift.io/v1alpha1
 kind: DRCluster
 metadata:
-  name: drcluster-sample
+  name: east
 spec:
-  # Add fields here
-  foo: bar
+  region: east
+  s3ProfileName: s3-profile-of-east
