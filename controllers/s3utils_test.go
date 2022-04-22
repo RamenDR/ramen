@@ -33,6 +33,7 @@ const (
 	bucketNameSucc2 = bucketNameSucc + "2"
 	bucketNameFail  = bucketNameSucc + "Fail"
 	bucketNameFail2 = bucketNameFail + "2"
+	bucketListFail  = bucketNameSucc + "ListFail"
 
 	awsAccessKeyIDSucc = "succ"
 	awsAccessKeyIDFail = "fail"
@@ -69,12 +70,14 @@ func (fakeObjectStoreGetter) ObjectStore(
 	}
 
 	return fakeObjectStorer{
-		name: s3ProfileName,
+		name:       s3ProfileName,
+		bucketName: s3StoreProfile.S3Bucket,
 	}, nil
 }
 
 type fakeObjectStorer struct {
-	name string
+	name       string
+	bucketName string
 }
 
 func (fakeObjectStorer) UploadPV(pvKeyPrefix, pvKeySuffix string, pv corev1.PersistentVolume) error {
@@ -87,7 +90,11 @@ func (fakeObjectStorer) DownloadPVs(pvKeyPrefix string) ([]corev1.PersistentVolu
 	return []corev1.PersistentVolume{}, nil
 }
 
-func (fakeObjectStorer) ListKeys(keyPrefix string) ([]string, error) {
+func (f fakeObjectStorer) ListKeys(keyPrefix string) ([]string, error) {
+	if f.bucketName == bucketListFail {
+		return nil, fmt.Errorf("Failing bucket listing")
+	}
+
 	return []string{}, nil
 }
 

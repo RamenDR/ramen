@@ -30,9 +30,6 @@ const (
 var UploadedPVs = make(map[string]interface{})
 
 var _ = Describe("Test VolumeReplicationGroup", func() {
-	Specify("s3 profiles and secret", func() {
-		s3ProfilesSetup()
-	})
 	// Test first restore
 	Context("restore test case", func() {
 		It("populates the S3 store with PVs and starts vrg as primary to check that the PVs are restored", func() {
@@ -40,7 +37,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			vtest := newVRGTestCase(0)
 			vrgNamespacedName := vtest.namespace + "/" + vtest.vrgName + "/"
 			pvList := generateFakePVs("pv", numPVs)
-			populateS3Store(S3ProfileName, vrgNamespacedName, pvList)
+			populateS3Store(s3Profiles[0].S3ProfileName, vrgNamespacedName, pvList)
 			waitForPVRestore(pvList)
 			// profile name, keyprefix, numPVs
 			// waitForPVRestore(S3ProfileName, numPVs)
@@ -360,9 +357,6 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 	})
 	// TODO: Add tests to move VRG to Secondary
 	// TODO: Add tests to ensure delete as Secondary (check if delete as Primary is tested above)
-	Specify("delete s3 profiles and secret", func() {
-		s3ProfilesDelete()
-	})
 })
 
 type vrgTest struct {
@@ -713,7 +707,7 @@ func (v *vrgTest) createVRG(pvcLabels map[string]string) {
 			Sync: ramendrv1alpha1.VRGSyncSpec{
 				Mode: ramendrv1alpha1.SyncModeDisabled,
 			},
-			S3Profiles: []string{S3ProfileName},
+			S3Profiles: []string{s3Profiles[0].S3ProfileName},
 		},
 	}
 	err := k8sClient.Create(context.TODO(), vrg)

@@ -53,10 +53,7 @@ const (
 	West1ManagedCluster   = "west1-cluster"
 	AsyncDRPolicyName     = "my-async-dr-peers"
 	SyncDRPolicyName      = "my-sync-dr-peers"
-	S3ProfileName         = "fakeS3Profile"
 
-	timeout       = time.Second * 10
-	interval      = time.Millisecond * 10
 	updateRetries = 2 // replace this with 5 when done testing.  It takes a long time for the test to complete
 )
 
@@ -110,23 +107,14 @@ var (
 
 	schedulingInterval = "1h"
 
+	drClusters = []rmn.DRCluster{}
+
 	asyncDRPolicy = &rmn.DRPolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: AsyncDRPolicyName,
 		},
 		Spec: rmn.DRPolicySpec{
-			DRClusterSet: []rmn.ManagedCluster{
-				{
-					Name:          East1ManagedCluster,
-					S3ProfileName: S3ProfileName,
-					Region:        "east",
-				},
-				{
-					Name:          West1ManagedCluster,
-					S3ProfileName: S3ProfileName,
-					Region:        "west",
-				},
-			},
+			DRClusters:         []string{East1ManagedCluster, West1ManagedCluster},
 			SchedulingInterval: schedulingInterval,
 		},
 	}
@@ -136,78 +124,11 @@ var (
 			Name: SyncDRPolicyName,
 		},
 		Spec: rmn.DRPolicySpec{
-			DRClusterSet: []rmn.ManagedCluster{
-				{
-					Name:          East1ManagedCluster,
-					S3ProfileName: S3ProfileName,
-					Region:        "east",
-				},
-				{
-					Name:          East2ManagedCluster,
-					S3ProfileName: S3ProfileName,
-					Region:        "east",
-				},
-			},
+			DRClusters:         []string{East1ManagedCluster, East2ManagedCluster},
 			SchedulingInterval: schedulingInterval,
 		},
 	}
 )
-
-func newS3Secret(ns string) *corev1.Secret {
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "s3secret", Namespace: ns},
-		StringData: map[string]string{
-			"AWS_ACCESS_KEY_ID":     awsAccessKeyIDSucc,
-			"AWS_SECRET_ACCESS_KEY": "",
-		},
-	}
-
-	return secret
-}
-
-func newS3Profiles() []rmn.S3StoreProfile {
-	return []rmn.S3StoreProfile{
-		{
-			S3ProfileName:        S3ProfileName,
-			S3Bucket:             bucketNameSucc,
-			S3CompatibleEndpoint: "http://192.168.39.223:30000",
-			S3Region:             "us-east-1",
-		},
-	}
-}
-
-func s3ProfilesSetup() {
-	s3profiles := newS3Profiles()
-	secret := newS3Secret(configMap.Namespace)
-	s3ProfilesSetSecretRef(s3profiles, secret)
-	Expect(k8sClient.Create(context.TODO(), secret)).To(Succeed())
-	s3ProfilesStore(s3profiles)
-}
-
-func s3ProfileSetSecretRef(s3profile *rmn.S3StoreProfile, secret *corev1.Secret) {
-	s3profile.S3SecretRef = corev1.SecretReference{
-		Name:      secret.Name,
-		Namespace: secret.Namespace,
-	}
-}
-
-func s3ProfilesSetSecretRef(s3p []rmn.S3StoreProfile, secret *corev1.Secret) {
-	for i := range s3p {
-		s3ProfileSetSecretRef(&s3p[i], secret)
-	}
-}
-
-func s3ProfilesDelete() {
-	s3s := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      ramenConfig.S3StoreProfiles[0].S3SecretRef.Name,
-			Namespace: ramenConfig.S3StoreProfiles[0].S3SecretRef.Namespace,
-		},
-	}
-
-	s3ProfilesStore([]rmn.S3StoreProfile{})
-	Expect(k8sClient.Delete(context.TODO(), s3s)).To(Succeed())
-}
 
 var drstate string
 
@@ -267,7 +188,7 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(
 			PVCSelector: metav1.LabelSelector{
 				MatchLabels: map[string]string{"appclass": "gold"},
 			},
-			S3Profiles: []string{S3ProfileName},
+			S3Profiles: []string{s3Profiles[0].S3ProfileName},
 		},
 		Status: vrgStatus,
 	}
@@ -515,9 +436,94 @@ func createManagedClustersAsync() {
 	}
 }
 
-func createDRPolicyAsync() {
-	err := k8sClient.Create(context.TODO(), asyncDRPolicy)
+func populateDRClusters() {
+	drClusters = nil
+	drClusters = append(drClusters,
+		rmn.DRCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: East1ManagedCluster, Namespace: ramenNamespace},
+			Spec:       rmn.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "east"},
+		},
+		rmn.DRCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: West1ManagedCluster, Namespace: ramenNamespace},
+			Spec:       rmn.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "west"},
+		},
+		rmn.DRCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: East2ManagedCluster, Namespace: ramenNamespace},
+			Spec:       rmn.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "east"},
+		},
+	)
+}
+
+func createDRClusters(inClusters []*spokeClusterV1.ManagedCluster) {
+	for _, managedCluster := range inClusters {
+		for idx := range drClusters {
+			if managedCluster.Name == drClusters[idx].Name {
+				err := k8sClient.Create(context.TODO(), &drClusters[idx])
+				Expect(err).NotTo(HaveOccurred())
+			}
+		}
+	}
+}
+
+func createDRClustersAsync() {
+	createDRClusters(asyncClusters)
+}
+
+func createDRPolicy(inDRPolicy *rmn.DRPolicy) {
+	err := k8sClient.Create(context.TODO(), inDRPolicy)
 	Expect(err).NotTo(HaveOccurred())
+	Eventually(func() bool {
+		drpolicy := &rmn.DRPolicy{}
+		Expect(apiReader.Get(context.TODO(), types.NamespacedName{Name: inDRPolicy.Name}, drpolicy)).To(Succeed())
+
+		for _, condition := range drpolicy.Status.Conditions {
+			if condition.Type != rmn.DRPolicyValidated {
+				continue
+			}
+
+			if condition.ObservedGeneration != drpolicy.Generation {
+				return false
+			}
+
+			if condition.Status == metav1.ConditionTrue {
+				return true
+			}
+
+			return false
+		}
+
+		return false
+	}, timeout, interval).Should(BeTrue())
+}
+
+func createDRPolicyAsync() {
+	createDRPolicy(asyncDRPolicy)
+}
+
+func deleteDRCluster(inDRCluster *rmn.DRCluster) {
+	Expect(k8sClient.Delete(context.TODO(), inDRCluster)).To(Succeed())
+	Eventually(func() bool {
+		drcluster := &rmn.DRCluster{}
+
+		return errors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{
+			Namespace: inDRCluster.Namespace,
+			Name:      inDRCluster.Name,
+		}, drcluster))
+	}, timeout, interval).Should(BeTrue())
+}
+
+func deleteDRClusters(inClusters []*spokeClusterV1.ManagedCluster) {
+	for _, managedCluster := range inClusters {
+		for idx := range drClusters {
+			if managedCluster.Name == drClusters[idx].Name {
+				deleteDRCluster(&drClusters[idx])
+			}
+		}
+	}
+}
+
+func deleteDRClustersAsync() {
+	deleteDRClusters(asyncClusters)
 }
 
 func deleteDRPolicyAsync() {
@@ -683,6 +689,7 @@ func InitialDeploymentAsync(namespace, placementName, homeCluster string) (*plrv
 	createNamespacesAsync()
 
 	createManagedClustersAsync()
+	createDRClustersAsync()
 	createDRPolicyAsync()
 
 	placementRule := createPlacementRule(placementName, namespace)
@@ -704,7 +711,7 @@ func verifyVRGManifestWorkCreatedAsPrimary(managedCluster string) {
 		return err == nil
 	}, timeout, interval).Should(BeTrue())
 
-	Expect(len(createdVRGRolesManifest.Spec.Workload.Manifests)).To(Equal(2))
+	Expect(len(createdVRGRolesManifest.Spec.Workload.Manifests)).To(Equal(8))
 
 	vrgClusterRoleManifest := createdVRGRolesManifest.Spec.Workload.Manifests[0]
 	Expect(vrgClusterRoleManifest).ToNot(BeNil())
@@ -999,6 +1006,7 @@ func InitialDeploymentSync(namespace, placementName, homeCluster string) (*plrv1
 	createNamespacesSync()
 
 	createManagedClustersSync()
+	createDRClustersSync()
 	createDRPolicySync()
 
 	placementRule := createPlacementRule(placementName, namespace)
@@ -1022,37 +1030,41 @@ func createManagedClustersSync() {
 	}
 }
 
+func createDRClustersSync() {
+	createDRClusters(syncClusters)
+}
+
 func createDRPolicySync() {
-	err := k8sClient.Create(context.TODO(), syncDRPolicy)
-	Expect(err).NotTo(HaveOccurred())
+	createDRPolicy(syncDRPolicy)
+}
+
+func deleteDRClustersSync() {
+	deleteDRClusters(syncClusters)
 }
 
 func deleteDRPolicySync() {
 	Expect(k8sClient.Delete(context.TODO(), syncDRPolicy)).To(Succeed())
 }
 
-func getLatestSyncDRPolicy() *rmn.DRPolicy {
-	drpolicyLookupKey := types.NamespacedName{
-		Name: SyncDRPolicyName,
+func getLatestDRCluster(cluster string) *rmn.DRCluster {
+	drclusterLookupKey := types.NamespacedName{
+		Name:      cluster,
+		Namespace: ramenNamespace,
 	}
-	latestDRPolicy := &rmn.DRPolicy{}
-	err := apiReader.Get(context.TODO(), drpolicyLookupKey, latestDRPolicy)
+	latestDRCluster := &rmn.DRCluster{}
+	err := apiReader.Get(context.TODO(), drclusterLookupKey, latestDRCluster)
 	Expect(err).NotTo(HaveOccurred())
 
-	return latestDRPolicy
+	return latestDRCluster
 }
 
 func fenceCluster(cluster string) {
 	localRetries := 0
 	for localRetries < updateRetries {
-		latestDRPolicy := getLatestSyncDRPolicy()
-		for i := range latestDRPolicy.Spec.DRClusterSet {
-			if latestDRPolicy.Spec.DRClusterSet[i].Name == cluster {
-				latestDRPolicy.Spec.DRClusterSet[i].ClusterFence = rmn.ClusterFenceStateManuallyFenced
-			}
-		}
+		latestDRCluster := getLatestDRCluster(cluster)
+		latestDRCluster.Spec.ClusterFence = rmn.ClusterFenceStateManuallyFenced
 
-		err := k8sClient.Update(context.TODO(), latestDRPolicy)
+		err := k8sClient.Update(context.TODO(), latestDRCluster)
 		if errors.IsConflict(err) {
 			localRetries++
 
@@ -1065,23 +1077,19 @@ func fenceCluster(cluster string) {
 	}
 
 	Eventually(func() bool {
-		latestDRPolicy := getLatestSyncDRPolicy()
+		latestDRCluster := getLatestDRCluster(cluster)
 
-		return latestDRPolicy.Status.DRClusters[cluster].Status == rmn.ClusterFenced
-	}, timeout, interval).Should(BeTrue(), "failed to update DRPolicy on time")
+		return latestDRCluster.Status.Fenced == rmn.ClusterFenced
+	}, timeout, interval).Should(BeTrue(), "failed to update DRCluster on time")
 }
 
 func unfenceCluster(cluster string) {
 	localRetries := 0
 	for localRetries < updateRetries {
-		latestDRPolicy := getLatestSyncDRPolicy()
-		for i := range latestDRPolicy.Spec.DRClusterSet {
-			if latestDRPolicy.Spec.DRClusterSet[i].Name == cluster {
-				latestDRPolicy.Spec.DRClusterSet[i].ClusterFence = rmn.ClusterFenceStateUnfenced
-			}
-		}
+		latestDRCluster := getLatestDRCluster(cluster)
+		latestDRCluster.Spec.ClusterFence = rmn.ClusterFenceStateUnfenced
 
-		err := k8sClient.Update(context.TODO(), latestDRPolicy)
+		err := k8sClient.Update(context.TODO(), latestDRCluster)
 		if errors.IsConflict(err) {
 			localRetries++
 
@@ -1094,10 +1102,10 @@ func unfenceCluster(cluster string) {
 	}
 
 	Eventually(func() bool {
-		latestDRPolicy := getLatestSyncDRPolicy()
+		latestDRCluster := getLatestDRCluster(cluster)
 
-		return latestDRPolicy.Status.DRClusters[cluster].Status == rmn.ClusterUnfenced
-	}, timeout, interval).Should(BeTrue(), "failed to update DRPolicy on time")
+		return latestDRCluster.Status.Fenced == rmn.ClusterUnfenced
+	}, timeout, interval).Should(BeTrue(), "failed to update DRCluster on time")
 }
 
 func verifyInitialDRPCDeployment(userPlacementRule *plrv1.PlacementRule, drpc *rmn.DRPlacementControl,
@@ -1148,8 +1156,8 @@ func verifyFailoverToSecondary(userPlacementRule *plrv1.PlacementRule, fromClust
 
 // +kubebuilder:docs-gen:collapse=Imports
 var _ = Describe("DRPlacementControl Reconciler", func() {
-	Specify("s3 profiles and secret", func() {
-		s3ProfilesSetup()
+	Specify("DRClusters", func() {
+		populateDRClusters()
 	})
 	Context("DRPlacementControl Reconciler Async DR", func() {
 		userPlacementRule := &plrv1.PlacementRule{}
@@ -1249,12 +1257,16 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				waitForCompletion("deleted")
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1)) // Roles MW
 				deleteDRPolicyAsync()
+				deleteDRClustersAsync()
 			})
 		})
 	})
 	Context("DRPlacementControl Reconciler Sync DR", func() {
 		userPlacementRule := &plrv1.PlacementRule{}
 		drpc := &rmn.DRPlacementControl{}
+		Specify("DRClusters", func() {
+			populateDRClusters()
+		})
 		When("An Application is deployed for the first time", func() {
 			It("Should deploy to East1ManagedCluster", func() {
 				By("Initial Deployment")
@@ -1347,10 +1359,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				waitForCompletion("deleted")
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1)) // Roles MW
 				deleteDRPolicySync()
+				deleteDRClustersSync()
 			})
 		})
-	})
-	Specify("delete s3 profiles and secret", func() {
-		s3ProfilesDelete()
 	})
 })

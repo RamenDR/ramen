@@ -18,7 +18,6 @@ package util_test
 
 import (
 	"context"
-	"strconv"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -100,7 +99,7 @@ var _ = Describe("Secrets_Util", func() {
 		return true
 	}
 
-	policyContains := func(policyName, namespace string, expectedTrigger int) bool {
+	policyContains := func(policyName, namespace string, secret *corev1.Secret) bool {
 		policyObject := &gppv1.Policy{}
 		if err := k8sClient.Get(
 			context.TODO(),
@@ -109,14 +108,17 @@ var _ = Describe("Secrets_Util", func() {
 			return false
 		}
 
+		apiSecret := &corev1.Secret{}
+		if err := k8sClient.Get(
+			context.TODO(),
+			types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace},
+			apiSecret); err != nil {
+			return false
+		}
+
 		for annotation, value := range policyObject.Annotations {
 			if annotation == util.PolicyTriggerAnnotation {
-				triggerValue, err := strconv.Atoi(value)
-				if err != nil || triggerValue != expectedTrigger {
-					return false
-				}
-
-				return true
+				return apiSecret.ResourceVersion == value
 			}
 		}
 
@@ -231,7 +233,7 @@ var _ = Describe("Secrets_Util", func() {
 			})
 			It("Creates a associated policy for the secret including the cluster", func() {
 				Expect(plRuleContains(plRuleName[2], tstNamespace, clusterNames[:1])).Should(BeTrue())
-				Expect(policyContains(policyName[2], tstNamespace, 0)).Should(BeTrue())
+				Expect(policyContains(policyName[2], tstNamespace, secrets[2])).Should(BeTrue())
 			})
 		})
 		When("Secret is missing", func() {
@@ -262,7 +264,7 @@ var _ = Describe("Secrets_Util", func() {
 			})
 			It("Creates a associated policy for the secret including the cluster", func() {
 				Expect(plRuleContains(plRuleName[0], tstNamespace, clusterNames[:1])).Should(BeTrue())
-				Expect(policyContains(policyName[0], tstNamespace, 0)).Should(BeTrue())
+				Expect(policyContains(policyName[0], tstNamespace, secrets[0])).Should(BeTrue())
 			})
 		})
 		When("Secret is removed", func() {
@@ -300,7 +302,7 @@ var _ = Describe("Secrets_Util", func() {
 			})
 			It("Creates a associated policy for the secret including the cluster", func() {
 				Expect(plRuleContains(plRuleName[0], tstNamespace, clusterNames[:1])).Should(BeTrue())
-				Expect(policyContains(policyName[0], tstNamespace, 0)).Should(BeTrue())
+				Expect(policyContains(policyName[0], tstNamespace, secrets[0])).Should(BeTrue())
 			})
 		})
 		When("Secret is updated", func() {
@@ -319,7 +321,7 @@ var _ = Describe("Secrets_Util", func() {
 			})
 			It("Creates a associated policy for the secret including the cluster", func() {
 				Expect(plRuleContains(plRuleName[0], tstNamespace, clusterNames[:1])).Should(BeTrue())
-				Expect(policyContains(policyName[0], tstNamespace, 1)).Should(BeTrue())
+				Expect(policyContains(policyName[0], tstNamespace, secrets[0])).Should(BeTrue())
 			})
 		})
 		When("Another cluster is added to the secret", func() {
@@ -335,7 +337,7 @@ var _ = Describe("Secrets_Util", func() {
 			})
 			It("Creates a associated policy for the secret including the cluster", func() {
 				Expect(plRuleContains(plRuleName[0], tstNamespace, clusterNames[0:])).Should(BeTrue())
-				Expect(policyContains(policyName[0], tstNamespace, 2)).Should(BeTrue())
+				Expect(policyContains(policyName[0], tstNamespace, secrets[0])).Should(BeTrue())
 			})
 		})
 		// Second policy
@@ -355,11 +357,11 @@ var _ = Describe("Secrets_Util", func() {
 			})
 			It("Creates a associated policy for the secret including the cluster", func() {
 				Expect(plRuleContains(plRuleName[1], tstNamespace, clusterNames[:1])).Should(BeTrue())
-				Expect(policyContains(policyName[1], tstNamespace, 0)).Should(BeTrue())
+				Expect(policyContains(policyName[1], tstNamespace, secrets[1])).Should(BeTrue())
 			})
 			It("Retains the associated policy with the older secret", func() {
 				Expect(plRuleContains(plRuleName[0], tstNamespace, clusterNames[0:])).Should(BeTrue())
-				Expect(policyContains(policyName[0], tstNamespace, 2)).Should(BeTrue())
+				Expect(policyContains(policyName[0], tstNamespace, secrets[0])).Should(BeTrue())
 			})
 		})
 	})
@@ -399,7 +401,7 @@ var _ = Describe("Secrets_Util", func() {
 			})
 			It("Updates the associated policy for the secret excuding the cluster", func() {
 				Expect(plRuleContains(plRuleName[0], tstNamespace, clusterNames[1:2])).Should(BeTrue())
-				Expect(policyContains(policyName[0], tstNamespace, 3)).Should(BeTrue())
+				Expect(policyContains(policyName[0], tstNamespace, secrets[0])).Should(BeTrue())
 			})
 		})
 		When("A cluster is removed again from a secret with multiple cluster associations", func() {
@@ -414,7 +416,7 @@ var _ = Describe("Secrets_Util", func() {
 			})
 			It("Updates the associated policy for the secret excuding the cluster", func() {
 				Expect(plRuleContains(plRuleName[0], tstNamespace, clusterNames[1:2])).Should(BeTrue())
-				Expect(policyContains(policyName[0], tstNamespace, 4)).Should(BeTrue())
+				Expect(policyContains(policyName[0], tstNamespace, secrets[0])).Should(BeTrue())
 			})
 		})
 		When("The last cluster is removed from the secret", func() {
