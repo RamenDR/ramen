@@ -35,9 +35,12 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 	testLogger := zap.New(zap.UseDevMode(true), zap.WriteTo(GinkgoWriter))
 	var testCtx context.Context
 	var cancel context.CancelFunc
-	
+
 	BeforeEach(func() {
 		testCtx, cancel = context.WithCancel(context.TODO())
+
+		// Common setup of fake s3 profile
+		s3ProfilesSetup()
 
 		// Create namespace for test
 		testNamespace = &corev1.Namespace{
@@ -52,6 +55,9 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 	AfterEach(func() {
 		// All resources are namespaced, so this should clean it all up
 		Expect(k8sClient.Delete(testCtx, testNamespace)).To(Succeed())
+
+		// Teardown of common s3 profile
+		s3ProfilesDelete()
 
 		cancel()
 	})
@@ -179,7 +185,8 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 
 						rs2 := &volsyncv1alpha1.ReplicationSource{}
 						Expect(k8sClient.Get(testCtx, types.NamespacedName{
-							Name: boundPvcs[2].GetName(), Namespace: testNamespace.GetName()}, rs2)).To(Succeed())
+							Name: boundPvcs[2].GetName(), Namespace: testNamespace.GetName(),
+						}, rs2)).To(Succeed())
 						Expect(rs2.Spec.SourcePVC).To(Equal(boundPvcs[2].GetName()))
 						Expect(rs2.Spec.Trigger).NotTo(BeNil())
 						Expect(*rs2.Spec.Trigger.Schedule).To(Equal("0 */1 * * *")) // scheduling interval was set to 1h
@@ -295,10 +302,14 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 
 					testLogger.Info("Found RDs", "allRDs", allRDs)
 
-					Expect(k8sClient.Get(testCtx, types.NamespacedName{Name: testVrg.Spec.VolSync.RDSpec[0].ProtectedPVC.Name,
-						Namespace: testNamespace.GetName()}, rd0)).To(Succeed())
-					Expect(k8sClient.Get(testCtx, types.NamespacedName{Name: testVrg.Spec.VolSync.RDSpec[1].ProtectedPVC.Name,
-						Namespace: testNamespace.GetName()}, rd1)).To(Succeed())
+					Expect(k8sClient.Get(testCtx, types.NamespacedName{
+						Name:      testVrg.Spec.VolSync.RDSpec[0].ProtectedPVC.Name,
+						Namespace: testNamespace.GetName(),
+					}, rd0)).To(Succeed())
+					Expect(k8sClient.Get(testCtx, types.NamespacedName{
+						Name:      testVrg.Spec.VolSync.RDSpec[1].ProtectedPVC.Name,
+						Namespace: testNamespace.GetName(),
+					}, rd1)).To(Succeed())
 				})
 
 				It("Should create ReplicationDestinations for each", func() {
@@ -337,13 +348,11 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 							},
 						}
 						Expect(k8sClient.Status().Update(testCtx, rd1)).To(Succeed())
-
 					})
 				})
 			})
 		})
 	})
-
 })
 
 func createPVC(ctx context.Context, namespace string, labels map[string]string,
