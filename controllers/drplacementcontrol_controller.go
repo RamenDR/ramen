@@ -469,7 +469,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.Log.WithValues("DRPC", req.NamespacedName)
 
-	logger.Info("Entering reconcile loop")
+	logger.Info("1. Entering reconcile loop")
 	defer logger.Info("Exiting reconcile loop")
 
 	drpc := &rmn.DRPlacementControl{}

@@ -1296,7 +1296,7 @@ func (d *DRPCInstance) namespaceExistsOnManagedCluster(cluster string) (bool, er
 			return !exists, nil
 		}
 
-		d.log.Error(err, "failed get Namespace from ManagedCluster")
+		d.log.Info(fmt.Sprintf("Failed to get Namespace from ManagedCluster -- Err: %v", err.Error()))
 
 		return !exists, errorswrapper.Wrap(err, "failed to get Namespace from managedcluster")
 	}
