@@ -1435,10 +1435,18 @@ func (v *VRGInstance) fetchAndRestorePV() (bool, error) {
 	var (
 		success = false
 		err     error
+		NoS3    = false
 	)
 
 	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
 		var pvList []corev1.PersistentVolume
+
+		if s3ProfileName == "NoS3" {
+			v.log.Info(fmt.Sprintf("Restored %d PVs using profile %s", len(pvList), s3ProfileName))
+			NoS3 = true
+
+			continue
+		}
 
 		pvList, err = v.fetchPVClusterDataFromS3Store(s3ProfileName)
 		if err != nil {
@@ -1447,7 +1455,8 @@ func (v *VRGInstance) fetchAndRestorePV() (bool, error) {
 			continue
 		}
 
-		v.log.Info(fmt.Sprintf("Found %d PVs", len(pvList)))
+		v.log.Info(fmt.Sprintf("Found %d PVs in s3 store whose profile name is %s",
+			len(pvList), s3ProfileName))
 
 		err = v.sanityCheckPVClusterData(pvList)
 		if err != nil {
@@ -1470,6 +1479,10 @@ func (v *VRGInstance) fetchAndRestorePV() (bool, error) {
 		success = true
 
 		break
+	}
+
+	if NoS3 {
+		return true, nil
 	}
 
 	return success, err
