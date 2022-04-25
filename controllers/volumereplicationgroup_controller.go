@@ -263,7 +263,7 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim, log logr.
 // +kubebuilder:rbac:groups=volsync.backube,resources=replicationsources,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=multicluster.x-k8s.io,resources=serviceexports,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=get;create;patch;update
-// +kubebuilder:rbac:groups="",namespace=system,resources=secrets,verbs=get
+// +kubebuilder:rbac:groups="",namespace=system,resources=secrets,verbs=get,watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -559,7 +559,7 @@ func (v *VRGInstance) updatePVCListForAll() error {
 	}
 
 	v.log.Info(fmt.Sprintf("Found %d PVCs using matching lables %v", len(pvcList.Items), labelSelector.MatchLabels))
-	
+
 	if !v.vrcUpdated {
 		if err := v.updateReplicationClassList(); err != nil {
 			v.log.Error(err, "Failed to get VolumeReplicationClass list")
@@ -639,12 +639,12 @@ func (v *VRGInstance) separatePVCsUsingStorageClassProvisioner(pvcList *corev1.P
 		}
 
 		replicationClassMatchFound := false
-		
+
 		for _, replicationClass := range v.replClassList.Items {
 			if storageClass.Provisioner == replicationClass.Spec.Provisioner {
 				v.volRepPVCs = append(v.volRepPVCs, *pvc)
 				replicationClassMatchFound = true
-				
+
 				break
 			}
 		}
@@ -1007,7 +1007,7 @@ func (v *VRGInstance) updateVRGDataReadyCondition() {
 		}
 
 		v.log.Info("Condition for DataReady", "cond", condition, "protectedPVC", protectedPVC)
-		
+
 		if condition == nil {
 			vrgReady = false
 			// When will we hit this condition? If it is due to a race condition,
@@ -1083,7 +1083,7 @@ func (v *VRGInstance) updateVRGDataProtectedCondition() {
 		} else {
 			condition = findCondition(protectedPVC.Conditions, VRGConditionTypeDataProtected)
 		}
-		
+
 		if condition == nil {
 			vrgProtected = false
 			vrgReplicating = false
