@@ -828,15 +828,15 @@ func (v *VSHandler) ensurePVCFromSnapshot(rdSpec ramendrv1alpha1.VolSyncReplicat
 	pvcNeedsRecreation := false
 
 	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, pvc, func() error {
+		if !pvc.CreationTimestamp.IsZero() && !objectRefMatches(pvc.Spec.DataSource, &snapshotRef) {
+			// If this pvc already exists and not pointing to our desired snapshot, we will need to
+			// delete it and re-create as we cannot update the datasource
+			pvcNeedsRecreation = true
+			return nil
+		}
 		if pvc.Status.Phase == corev1.ClaimBound {
 			// PVC already bound at this point
 			l.V(1).Info("PVC already bound")
-
-			// If this pvc is somehow old and not pointing to our desired snapshot, we will need to
-			// delete it and re-create
-			if !objectRefMatches(pvc.Spec.DataSource, &snapshotRef) {
-				pvcNeedsRecreation = true
-			}
 
 			return nil
 		}
@@ -875,13 +875,14 @@ func (v *VSHandler) ensurePVCFromSnapshot(rdSpec ramendrv1alpha1.VolSyncReplicat
 	if pvcNeedsRecreation {
 		needsRecreateErr := fmt.Errorf("pvc has incorrect datasource, will need to delete and recreate, pvc: %s",
 			pvc.GetName())
-		v.log.Error(needsRecreateErr, "Need to delete pvc")
+		v.log.Error(needsRecreateErr, "Need to delete pvc (pvc restored from snapshot)")
 
 		delErr := v.client.Delete(v.ctx, pvc)
 		if delErr != nil {
 			v.log.Error(delErr, "Error deleting pvc", "pvc name", pvc.GetName())
 		}
 
+		// Return error to indicate the ensurePVC should be attempted again
 		return needsRecreateErr
 	}
 
@@ -1250,5 +1251,5 @@ func objectRefMatches(a, b *corev1.TypedLocalObjectReference) bool {
 		return false
 	}
 
-	return a.APIGroup == b.APIGroup && a.Kind == b.Kind && a.Name == b.Name
+	return a.Kind == b.Kind && a.Name == b.Name
 }

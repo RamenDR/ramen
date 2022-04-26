@@ -952,6 +952,90 @@ var _ = Describe("VolSync Handler", func() {
 						Expect(vsHandler.EnsurePVCfromRD(rdSpec)).To(Succeed())
 					})
 				})
+
+				Context("When pvc to be restored has already been created but has incorrect datasource", func() {
+					var updatedImageSnap *unstructured.Unstructured
+
+					JustBeforeEach(func() {
+						//pvc.Spec.DataSource
+
+						// Simulate incorrect datasource by changing the latestImage in the replicationdestionation
+						// status - this way the datasource on the previously created PVC will no longer match
+						// our desired datasource
+						updatedImageSnap = createSnapshot("new-snap-00001", testNamespace.GetName())
+
+						// Update the replication destination to point to this new image
+						rd := &volsyncv1alpha1.ReplicationDestination{}
+						Expect(k8sClient.Get(ctx, types.NamespacedName{
+							Name:      pvcName,
+							Namespace: testNamespace.GetName(),
+						}, rd)).To(Succeed())
+						rd.Status.LatestImage.Name = updatedImageSnap.GetName()
+						Expect(k8sClient.Status().Update(ctx, rd)).To(Succeed())
+
+						// Make sure the update is picked up by the cache before proceeding
+						Eventually(func() bool {
+							err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rd), rd)
+							if err != nil {
+								return false
+							}
+
+							return rd.Status != nil && rd.Status.LatestImage.Name == updatedImageSnap.GetName()
+						}, maxWait, interval).Should(BeTrue())
+					})
+
+					It("ensure PVC should delete the pvc with incorrect datasource and return err", func() {
+						// At this point we should have a PVC from previous but it should have a datasource
+						// that maches our old snapshot - the rd has been updated with a new latest image
+						// Expect ensurePVC from RD to remove the old one and return an error
+						err := vsHandler.EnsurePVCfromRD(rdSpec)
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring("incorrect datasource"))
+
+						// Check that the PVC was deleted
+						Eventually(func() bool {
+							err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pvc), pvc)
+							if err == nil {
+								if !pvc.GetDeletionTimestamp().IsZero() {
+									// PVC protection finalizer is added automatically to PVC - but testenv
+									// doesn't have anything that will remove it for us - we're good as long
+									// as the pvc is marked for deletion
+
+									pvc.Finalizers = []string{} // Clear finalizers
+									Expect(k8sClient.Update(ctx, pvc)).To(Succeed())
+								}
+
+								return false // try again
+							}
+
+							return kerrors.IsNotFound(err)
+						}, maxWait, interval).Should(BeTrue())
+
+						//
+						// Now should be able to re-try ensurePVC and get a new one with proper datasource
+						//
+						Expect(vsHandler.EnsurePVCfromRD(rdSpec)).NotTo(HaveOccurred())
+
+						pvcNew := &corev1.PersistentVolumeClaim{}
+						Eventually(func() error {
+							return k8sClient.Get(ctx, types.NamespacedName{
+								Name:      pvcName,
+								Namespace: testNamespace.GetName(),
+							}, pvcNew)
+						}, maxWait, interval).Should(Succeed())
+
+						Expect(pvcNew.GetName()).To(Equal(pvcName))
+						Expect(pvcNew.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
+						Expect(*pvcNew.Spec.StorageClassName).To(Equal(testStorageClassName))
+						apiGrp := "snapshot.storage.k8s.io"
+						Expect(pvcNew.Spec.DataSource).To(Equal(&corev1.TypedLocalObjectReference{
+							Name:     updatedImageSnap.GetName(),
+							APIGroup: &apiGrp,
+							Kind:     volsync.VolumeSnapshotKind,
+						}))
+					})
+				})
+
 			})
 		})
 	})
