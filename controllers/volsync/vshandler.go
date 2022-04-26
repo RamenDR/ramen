@@ -60,7 +60,7 @@ const (
 	CronSpecMaxDayOfMonth       int = 28
 
 	VolSyncDoNotDeleteLabel    = "volsync.backube/do-not-delete" // TODO: point to volsync constant once it is available
-	VolSyncDoNotDeleteLabelVal = "true"                          // TODO: point to volsync constant once it is available
+	VolSyncDoNotDeleteLabelVal = "true"
 
 	ACMAppSubDoNotDeleteLabel    = "do-not-delete" // See: https://issues.redhat.com/browse/ACM-1256
 	ACMAppSubDoNotDeleteLabelVal = "true"
@@ -260,6 +260,7 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 
 	//
 	// For final sync only - check status to make sure the final sync is complete
+	// and also run cleanup (removes PVC we just ran the final sync from)
 	//
 	if runFinalSync && isFinalSyncComplete(replicationSource, l) {
 		return true, replicationSource, v.cleanupAfterRSFinalSync(rsSpec)
@@ -824,10 +825,18 @@ func (v *VSHandler) ensurePVCFromSnapshot(rdSpec ramendrv1alpha1.VolSyncReplicat
 		},
 	}
 
+	pvcNeedsRecreation := false
+
 	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, pvc, func() error {
 		if pvc.Status.Phase == corev1.ClaimBound {
-			// Assume no changes are required
+			// PVC already bound at this point
 			l.V(1).Info("PVC already bound")
+
+			// If this pvc is somehow old and not pointing to our desired snapshot, we will need to
+			// delete it and re-create
+			if !objectRefMatches(pvc.Spec.DataSource, &snapshotRef) {
+				pvcNeedsRecreation = true
+			}
 
 			return nil
 		}
@@ -861,6 +870,19 @@ func (v *VSHandler) ensurePVCFromSnapshot(rdSpec ramendrv1alpha1.VolSyncReplicat
 		l.Error(err, "Unable to createOrUpdate PVC from snapshot")
 
 		return fmt.Errorf("error creating or updating PVC from snapshot (%w)", err)
+	}
+
+	if pvcNeedsRecreation {
+		needsRecreateErr := fmt.Errorf("pvc has incorrect datasource, will need to delete and recreate, pvc: %s",
+			pvc.GetName())
+		v.log.Error(needsRecreateErr, "Need to delete pvc")
+
+		delErr := v.client.Delete(v.ctx, pvc)
+		if delErr != nil {
+			v.log.Error(delErr, "Error deleting pvc", "pvc name", pvc.GetName())
+		}
+
+		return needsRecreateErr
 	}
 
 	l.V(1).Info("PVC createOrUpdate Complete", "op", op)
@@ -1052,19 +1074,15 @@ func (v *VSHandler) GetVolumeSnapshotClasses() ([]snapv1.VolumeSnapshotClass, er
 	return v.volumeSnapshotClassList.Items, nil
 }
 
-/*
-// This function is here to allow tests to override the volsyncProfile
-func (v *VSHandler) SetVolSyncProfile(volSyncProfile *ramendrv1alpha1.VolSyncProfile) {
-	v.volSyncProfile = volSyncProfile
-}
-*/
-
 func (v *VSHandler) getScheduleCronSpec() (*string, error) {
 	if v.schedulingInterval != "" {
 		return ConvertSchedulingIntervalToCronSpec(v.schedulingInterval)
 	}
 
 	// Use default value if not specified
+	v.log.Info("Warning - scheduling interval is empty, using default Schedule for volsync",
+		"DefaultScheduleCronSpec", DefaultScheduleCronSpec)
+
 	return &DefaultScheduleCronSpec, nil
 }
 
@@ -1134,7 +1152,9 @@ func (v *VSHandler) GetRSLastSyncTime(pvcName string) (*metav1.Time, error) {
 
 		return nil, nil
 	}
+
 	l.Info(fmt.Sprintf("rs.Status %+v", rs.Status))
+
 	if rs.Status != nil {
 		return rs.Status.LastSyncTime, nil
 	}
@@ -1221,4 +1241,16 @@ func getKindAndName(scheme *runtime.Scheme, obj client.Object) string {
 	}
 
 	return ref.Kind + "/" + ref.Name
+}
+
+func objectRefMatches(a, b *corev1.TypedLocalObjectReference) bool {
+	if a == nil {
+		return b == nil
+	}
+
+	if b == nil {
+		return false
+	}
+
+	return a.APIGroup == b.APIGroup && a.Kind == b.Kind && a.Name == b.Name
 }

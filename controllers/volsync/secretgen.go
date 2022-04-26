@@ -21,8 +21,6 @@ import (
 
 const keyBitSize = 4096
 
-// TODO: update roles for whoever calls this (drplacementcontrol) - will need permissions to read/update/create secrets
-
 // Creates a new volsync replication secret on the cluster (should be called on the hub cluster).  If the secret
 // already exists, nop
 func ReconcileVolSyncReplicationSecret(ctx context.Context, k8sClient client.Client, ownerObject metav1.Object,
