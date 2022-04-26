@@ -626,6 +626,12 @@ func (v *VRGInstance) deleteClusterDataInS3Stores(log logr.Logger) error {
 	log.Info("Delete cluster data in", "s3Profiles", v.instance.Spec.S3Profiles)
 
 	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
+		if s3ProfileName == "NoS3" {
+			v.log.Info("NoS3 available to clean")
+
+			continue
+		}
+
 		if err := v.reconciler.PVDeleter.DeletePVs(v, s3ProfileName); err != nil {
 			return fmt.Errorf("error deleting PVs using profile %s, err %w", s3ProfileName, err)
 		}
@@ -1442,7 +1448,7 @@ func (v *VRGInstance) fetchAndRestorePV() (bool, error) {
 		var pvList []corev1.PersistentVolume
 
 		if s3ProfileName == "NoS3" {
-			v.log.Info(fmt.Sprintf("Restored %d PVs using profile %s", len(pvList), s3ProfileName))
+			v.log.Info("NoS3 available to fetch")
 			NoS3 = true
 
 			continue

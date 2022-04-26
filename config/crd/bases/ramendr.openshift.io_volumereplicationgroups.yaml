@@ -161,6 +161,11 @@ spec:
                 - mode
                 - schedulingInterval
                 type: object
+              prepareForFinalSync:
+                description: PrepareForFinalSync when set, it tells VRG to prepare
+                  for the final sync from source to destination cluster. Final sync
+                  is needed for relocation only, and for VolSync only
+                type: boolean
               pvcSelector:
                 description: Label selector to identify all the PVCs that are in this
                   group that needs to be replicated to the peer cluster.
@@ -396,6 +401,8 @@ spec:
               VolumeReplicationGroup INSERT ADDITIONAL STATUS FIELD - define observed
               state of cluster
             properties:
+              PrepareForFinalSyncComplete:
+                type: boolean
               conditions:
                 description: Conditions are the list of VRG's summary conditions and
                   their status.
