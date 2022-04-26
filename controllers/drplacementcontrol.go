@@ -340,7 +340,17 @@ func (d *DRPCInstance) checkClusterFenced(cluster string, drClusters []rmn.DRClu
 			continue
 		}
 
-		if drClusters[i].Status.Fenced != rmn.ClusterFenced {
+		drClusterFencedCondition := findCondition(drClusters[i].Status.Conditions, rmn.DRClusterConditionTypeFenced)
+		if drClusterFencedCondition == nil {
+			d.log.Info("drCluster fenced condition not available", "cluster", drClusters[i].Name)
+
+			return false, nil
+		}
+
+		if drClusterFencedCondition.Status != metav1.ConditionTrue ||
+			drClusterFencedCondition.ObservedGeneration != drClusters[i].Generation {
+			d.log.Info("drCluster fenced condition is not true", "cluster", drClusters[i].Name)
+
 			return false, nil
 		}
 

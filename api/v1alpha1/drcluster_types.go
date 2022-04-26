@@ -57,22 +57,26 @@ type DRClusterSpec struct {
 	S3ProfileName string `json:"s3ProfileName"`
 }
 
-// +kubebuilder:validation:Enum=Unfenced;Fenced
-type FenceStatus string
-
 const (
-	ClusterFenced   = FenceStatus("Fenced")
-	ClusterUnfenced = FenceStatus("Unfenced")
-)
-
-const (
+	// DRCluster has been validated
 	DRClusterValidated string = `Validated`
+
+	// everything is clean. No fencing CRs present
+	// in this cluster
+	DRClusterConditionTypeClean = "Clean"
+
+	// Fencing CR to fence off this cluster
+	// has been created
+	DRClusterConditionTypeFenced = "Fenced"
+
+	// fencing CR to unfence this cluster has
+	// been created
+	DRClusterConditionTypeUnfenced = "Unfenced"
 )
 
 // DRClusterStatus defines the observed state of DRCluster
 type DRClusterStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
-	Fenced     FenceStatus        `json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true
