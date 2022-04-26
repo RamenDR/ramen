@@ -167,6 +167,11 @@ type VolumeReplicationGroupSpec struct {
 	//+optional
 	VolSync VolSyncSpec `json:"volSync,omitempty"`
 
+	// PrepareForFinalSync when set, it tells VRG to prepare for the final sync from source to destination
+	// cluster. Final sync is needed for relocation only, and for VolSync only
+	//+optional
+	PrepareForFinalSync bool `json:"prepareForFinalSync,omitempty"`
+
 	// runFinalSync used to indicate whether final sync is needed. Final sync is needed for
 	// relocation only, and for VolSync only
 	//+optional
@@ -219,6 +224,7 @@ type VolumeReplicationGroupStatus struct {
 	ObservedGeneration int64       `json:"observedGeneration,omitempty"`
 	LastUpdateTime     metav1.Time `json:"lastUpdateTime,omitempty"`
 
+	PrepareForFinalSyncComplete bool `json:"PrepareForFinalSyncComplete,omitempty"`
 	FinalSyncComplete bool `json:"finalSyncComplete,omitempty"`
 }
 

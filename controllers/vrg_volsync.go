@@ -91,6 +91,8 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary() (requeue bool) {
 		return
 	}
 
+	finalSyncPrepareCount := 0
+
 	// First time: Add all VolSync PVCs to the protected PVC list and set their ready condition to initializing
 	for _, pvc := range v.volSyncPVCs {
 		newProtectedPVC := &ramendrv1alpha1.ProtectedPVC{
@@ -116,7 +118,18 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary() (requeue bool) {
 			ProtectedPVC: *protectedPVC,
 		}
 
-		// reconcile RS and if run final sync if it is true
+		if v.instance.Spec.PrepareForFinalSync {
+			prepared, err := v.volSyncHandler.PreparePVCForFinalSync(pvc.Name)
+			if err != nil || !prepared {
+				requeue = true
+
+				continue
+			}
+
+			finalSyncPrepareCount++
+		}
+
+		// reconcile RS and if runFinalSync is true, then one final sync will be run
 		finalSyncComplete, rs, err := v.volSyncHandler.ReconcileRS(rsSpec, v.instance.Spec.RunFinalSync)
 		if err != nil {
 			v.log.Info(fmt.Sprintf("Failed to reconcile VolSync Replication Source for rsSpec %v. Error %v",
@@ -142,6 +155,10 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary() (requeue bool) {
 		v.log.Info("Not all ReplicationSources completed setup. We'll retry...")
 
 		return
+	}
+
+	if v.instance.Spec.PrepareForFinalSync {
+		v.instance.Status.PrepareForFinalSyncComplete = true
 	}
 
 	if v.instance.Spec.RunFinalSync {
@@ -174,7 +191,8 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() (requeue bool) {
 		v.log.Info("Protected PVCs left", "ProtectedPVCs", v.instance.Status.ProtectedPVCs)
 	}
 
-	// Reset status finalsync flag
+	// Reset status finalsync flags
+	v.instance.Status.PrepareForFinalSyncComplete = false
 	v.instance.Status.FinalSyncComplete = false
 
 	// Reconcile RDSpec (deletion or replication)
@@ -227,20 +245,20 @@ func (v *VRGInstance) isFinalSyncInProgress() bool {
 }
 
 func (v *VRGInstance) aggregateVolSyncDataReadyCondition() *v1.Condition {
-	if len(v.volSyncPVCs) == 0 {
-		return nil
-	}
-
 	dataReadyCondition := &v1.Condition{
 		Type:               VRGConditionTypeDataReady,
+		Reason:             VRGConditionReasonReady,
 		ObservedGeneration: v.instance.Generation,
 		Status:             v1.ConditionTrue,
+		Message:            "Not applicable",
 	}
 
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
-		ready := v.isVolSyncReplicationSourceSetupComplete()
+		if len(v.volSyncPVCs) == 0 {
+			return nil
+		}
 
-		dataReadyCondition.Reason = VRGConditionReasonReady
+		ready := v.isVolSyncReplicationSourceSetupComplete()
 
 		if !ready {
 			dataReadyCondition.Status = v1.ConditionFalse
@@ -255,15 +273,11 @@ func (v *VRGInstance) aggregateVolSyncDataReadyCondition() *v1.Condition {
 		return dataReadyCondition
 	}
 
-	// Not primary -- DataReady NOT applicable
+	// Not primary -- DataReady NOT applicable. Return default
 	return dataReadyCondition
 }
 
 func (v *VRGInstance) aggregateVolSyncDataProtectedCondition() *v1.Condition {
-	if len(v.volSyncPVCs) == 0 {
-		return nil
-	}
-
 	return v.buildDataProtectedCondition()
 }
 
@@ -281,6 +295,16 @@ func (v *VRGInstance) aggregateVolSyncClusterDataProtectedCondition() *v1.Condit
 }
 
 func (v *VRGInstance) buildDataProtectedCondition() *v1.Condition {
+	if len(v.volSyncPVCs) == 0 {
+		return &v1.Condition{
+			Type:               VRGConditionTypeDataProtected,
+			Reason:             VRGConditionReasonDataProtected,
+			ObservedGeneration: v.instance.Generation,
+			Status:             v1.ConditionTrue,
+			Message:            "Not applicable",
+		}
+	}
+
 	ready := true
 
 	protectedByVolSyncCount := 0
@@ -341,7 +365,8 @@ func (v *VRGInstance) buildDataProtectedCondition() *v1.Condition {
 			latestImage, err := v.volSyncHandler.GetRDLatestImage(rdSpec.ProtectedPVC.Name)
 			if err != nil || latestImage == nil {
 				ready = false
-				v.log.Info(fmt.Sprintf("Failed to retrieve latestImage for RD %s", rdSpec.ProtectedPVC.Name))
+				v.log.Info(fmt.Sprintf("Failed to retrieve latestImage for RD %s -- Err %v",
+					rdSpec.ProtectedPVC.Name, err))
 
 				break
 			}
@@ -375,7 +400,6 @@ func (v VRGInstance) isVolSyncReplicationSourceSetupComplete() bool {
 				ready = false
 
 				v.log.Info(fmt.Sprintf("VolSync RS hasn't been setup yet for PVC %s", protectedPVC.Name))
-				v.log.Info(fmt.Sprintf("VolSync RS hasn't been setup yet for PVC %+v", protectedPVC))
 
 				break
 			}

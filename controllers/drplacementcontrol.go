@@ -343,7 +343,7 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		}
 
 		clusterToSkip := d.instance.Spec.FailoverCluster
-		
+
 		err = d.EnsureCleanup(clusterToSkip)
 		if err != nil {
 			return !done, err
@@ -505,22 +505,22 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
 		// Make sure VolRep 'Data' and VolSync 'setup' conditions are ready
-		ready := d.checkReadinessAfterRelocate(preferredCluster)
-		if !ready {
-			d.log.Info("VRGCondition not ready to finish relocation")
+		// ready := d.checkReadinessAfterRelocate(preferredCluster)
+		// if !ready {
+		// 	d.log.Info("VRGCondition not ready to finish relocation")
 
-			return !done, nil
-		}
+		// 	return !done, nil
+		// }
 
 		// If we have VolSync replication, this is the perfect time to reset the RDSpec
 		// on the primary. This will cause the RD to be cleared on the primary
-		err := d.resetVolSyncRDOnPrimary(preferredCluster)
+		err = d.resetVolSyncRDOnPrimary(preferredCluster)
 		if err != nil {
 			return !done, err
 		}
 
 		clusterToSkip := preferredCluster
-		
+
 		err = d.EnsureCleanup(clusterToSkip)
 		if err != nil {
 			return !done, err
@@ -537,7 +537,7 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	}
 
 	// Check if current primary (that is not the preferred cluster), is ready to switch over
-	if curHomeCluster != "" && curHomeCluster != preferredCluster && 
+	if curHomeCluster != "" && curHomeCluster != preferredCluster &&
 		!d.readyToSwitchOver(curHomeCluster, preferredCluster) {
 		errMsg := fmt.Sprintf("current cluster (%s) has not completed protection actions", curHomeCluster)
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
@@ -552,6 +552,26 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 
 	if curHomeCluster != "" && curHomeCluster != preferredCluster {
 		result, err := d.prepareForFinalSync(curHomeCluster)
+		if err != nil {
+			return !done, err
+		}
+
+		if !result {
+			return !done, nil
+		}
+	}
+
+	if len(d.userPlacementRule.Status.Decisions) != 0 {
+		// clear current user PlacementRule's decision
+		err := d.clearUserPlacementRuleStatus()
+		if err != nil {
+			return !done, err
+		}
+	}
+
+	if curHomeCluster != "" && curHomeCluster != preferredCluster {
+		// Ensure final sync has been taken
+		result, err := d.runFinalSync(curHomeCluster)
 		if err != nil {
 			return !done, err
 		}
@@ -577,20 +597,49 @@ func (d *DRPCInstance) prepareForFinalSync(homeCluster string) (bool, error) {
 		return !done, fmt.Errorf("VRG not found on Cluster %s", homeCluster)
 	}
 
-	if !vrg.Status.FinalSyncComplete {
-		err := d.updateVRGToRunFinalSync(homeCluster, true)
+	if !vrg.Status.PrepareForFinalSyncComplete {
+		err := d.updateVRGToPrepareForFinalSync(homeCluster)
 		if err != nil {
 			return !done, err
 		}
 
 		// updated VRG to run final sync. Give it time...
-		d.log.Info(fmt.Sprintf("Updated VRG %s to run final sync. Giving it time to run on cluster %s",
-			vrg.Name, homeCluster))
+		d.log.Info(fmt.Sprintf("Giving enough time to prepare for final sync on cluster %s", homeCluster))
 
 		return !done, nil
 	}
 
-	d.log.Info("Running final sync complete ", "cluster", homeCluster)
+	d.log.Info("Preparing for final sync completed", "cluster", homeCluster)
+
+	return done, nil
+}
+
+func (d *DRPCInstance) runFinalSync(homeCluster string) (bool, error) {
+	d.log.Info(fmt.Sprintf("Running final sync on cluster %s", homeCluster))
+
+	const done = true
+
+	vrg := d.vrgs[homeCluster]
+
+	if vrg == nil {
+		d.log.Info(fmt.Sprintf("runFinalSync: VRG not available on cluster %s", homeCluster))
+
+		return !done, fmt.Errorf("VRG not found on Cluster %s", homeCluster)
+	}
+
+	if !vrg.Status.FinalSyncComplete {
+		err := d.updateVRGToRunFinalSync(homeCluster)
+		if err != nil {
+			return !done, err
+		}
+
+		// updated VRG to run final sync. Give it time...
+		d.log.Info(fmt.Sprintf("Giving it enough time to run final sync on cluster %s", homeCluster))
+
+		return !done, nil
+	}
+
+	d.log.Info("Running final sync completed", "cluster", homeCluster)
 
 	return done, nil
 }
@@ -661,16 +710,21 @@ func (d *DRPCInstance) isReadyForRelocation(preferredCluster string) (string, er
 // ClusterDataProtected condition indicates whether all PV related cluster data for an App (Managed
 // by this DRPC instance) has been protected (uploaded to the S3 store(s)) or not.
 func (d *DRPCInstance) readyToSwitchOver(homeCluster string, preferredCluster string) bool {
-	d.log.Info(fmt.Sprintf("Checking if VRG is available on cluster %s", homeCluster))
+	d.log.Info(fmt.Sprintf("Checking if VRG Data is available on cluster %s", homeCluster))
 
 	if isMetroAction(d.drPolicy, d.drClusters, homeCluster, preferredCluster) {
 		// check fencing status in the preferredCluster
 		fenced, err := d.checkClusterFenced(preferredCluster, d.drClusters)
 		if err != nil {
+			d.log.Info(fmt.Sprintf("Checking if Cluster %s is Fenced failed %v",
+				preferredCluster, err.Error()))
+
 			return false
 		}
 
 		if fenced {
+			d.log.Info(fmt.Sprintf("Cluster %s is Fenced", preferredCluster))
+
 			return false
 		}
 	}
@@ -766,14 +820,6 @@ func (d *DRPCInstance) relocate(preferredCluster, preferredClusterNamespace stri
 
 func (d *DRPCInstance) setupRelocation(preferredCluster string) error {
 	d.log.Info(fmt.Sprintf("setupRelocation to preferredCluster %s", preferredCluster))
-
-	if len(d.userPlacementRule.Status.Decisions) != 0 {
-		// clear current user PlacementRule's decision
-		err := d.clearUserPlacementRuleStatus()
-		if err != nil {
-			return err
-		}
-	}
 
 	// During relocation, the preferredCluster does not contain a VRG or the VRG is already
 	// secondary. We need to skip checking if the VRG for it is secondary to avoid messing up with the
@@ -937,7 +983,7 @@ func (d *DRPCInstance) moveVRGToSecondaryOnPeers(clusterToSkip string) error {
 		err := d.updateVRGState(clusterName, rmn.Secondary)
 		if err != nil {
 			d.log.Info(fmt.Sprintf("Failed to update VRG to secondary on cluster %s. Err (%v)", clusterName, err))
-			
+
 			needRetry = true
 
 			continue
@@ -1249,7 +1295,7 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 	// IFF we have VolSync PVCs, then no need to clean up
 	homeCluster := clusterToSkip
 	repReq, err := d.isVolSyncReplicationRequired(homeCluster)
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to check if VolSync replication is required (%w)", err)
 	}
@@ -1503,7 +1549,8 @@ func (d *DRPCInstance) updateVRGState(clusterName string, state rmn.ReplicationS
 
 	vrg.Spec.ReplicationState = state
 	if state == rmn.Secondary {
-		// Turn off the final sync flag
+		// Turn off the final sync flags
+		vrg.Spec.PrepareForFinalSync = false
 		vrg.Spec.RunFinalSync = false
 	}
 
@@ -1517,7 +1564,37 @@ func (d *DRPCInstance) updateVRGState(clusterName string, state rmn.ReplicationS
 	return nil
 }
 
-func (d *DRPCInstance) updateVRGToRunFinalSync(clusterName string, runFinalSync bool) error {
+func (d *DRPCInstance) updateVRGToPrepareForFinalSync(clusterName string) error {
+	d.log.Info(fmt.Sprintf("Updating VRG to prepare for final sync on cluster %s", clusterName))
+
+	vrg, err := d.getVRGFromManifestWork(clusterName)
+	if err != nil {
+		return fmt.Errorf("failed to update VRG state. ClusterName %s (%w)",
+			clusterName, err)
+	}
+
+	if vrg.Spec.PrepareForFinalSync {
+		d.log.Info(fmt.Sprintf("VRG %s on cluster %s already has the prepare for final sync flag set",
+			vrg.Name, clusterName))
+
+		return nil
+	}
+
+	vrg.Spec.PrepareForFinalSync = true
+	vrg.Spec.RunFinalSync = false
+
+	err = d.updateManifestWork(clusterName, vrg)
+	if err != nil {
+		return err
+	}
+
+	d.log.Info(fmt.Sprintf("Updated VRG %s running in cluster %s to prepare for the final sync",
+		vrg.Name, clusterName))
+
+	return nil
+}
+
+func (d *DRPCInstance) updateVRGToRunFinalSync(clusterName string) error {
 	d.log.Info(fmt.Sprintf("Updating VRG to run final sync on cluster %s", clusterName))
 
 	vrg, err := d.getVRGFromManifestWork(clusterName)
@@ -1526,14 +1603,15 @@ func (d *DRPCInstance) updateVRGToRunFinalSync(clusterName string, runFinalSync 
 			clusterName, err)
 	}
 
-	if vrg.Spec.RunFinalSync == runFinalSync {
-		d.log.Info(fmt.Sprintf("VRG %s on cluster %s already has the final sync flag set to '%v'",
-			vrg.Name, clusterName, runFinalSync))
+	if vrg.Spec.RunFinalSync {
+		d.log.Info(fmt.Sprintf("VRG %s on cluster %s already has the final sync flag set",
+			vrg.Name, clusterName))
 
 		return nil
 	}
 
-	vrg.Spec.RunFinalSync = runFinalSync
+	vrg.Spec.RunFinalSync = true
+	vrg.Spec.PrepareForFinalSync = false
 
 	err = d.updateManifestWork(clusterName, vrg)
 	if err != nil {
