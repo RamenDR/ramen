@@ -34,6 +34,10 @@ spec:
     - jsonPath: .status.phase
       name: currentState
       type: string
+    - jsonPath: .status.conditions[1].status
+      name: PeerReady
+      priority: 2
+      type: string
     name: v1alpha1
     schema:
       openAPIV3Schema:

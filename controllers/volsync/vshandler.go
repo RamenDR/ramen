@@ -1153,8 +1153,6 @@ func (v *VSHandler) GetRSLastSyncTime(pvcName string) (*metav1.Time, error) {
 		return nil, nil
 	}
 
-	l.Info(fmt.Sprintf("rs.Status %+v", rs.Status))
-
 	if rs.Status != nil {
 		return rs.Status.LastSyncTime, nil
 	}
