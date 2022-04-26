@@ -886,6 +886,20 @@ func getDRPCCondition(status *rmn.DRPlacementControlStatus, conditionType string
 	return -1, nil
 }
 
+func getDRClusterCondition(status *rmn.DRClusterStatus, conditionType string) *metav1.Condition {
+	if len(status.Conditions) == 0 {
+		return nil
+	}
+
+	for i := range status.Conditions {
+		if status.Conditions[i].Type == conditionType {
+			return &status.Conditions[i]
+		}
+	}
+
+	return nil
+}
+
 func runFailoverAction(userPlacementRule *plrv1.PlacementRule, fromCluster, toCluster string, isSyncDR bool) {
 	if isSyncDR {
 		fenceCluster(fromCluster)
@@ -1090,7 +1104,17 @@ func fenceCluster(cluster string) {
 	Eventually(func() bool {
 		latestDRCluster := getLatestDRCluster(cluster)
 
-		return latestDRCluster.Status.Fenced == rmn.ClusterFenced
+		drClusterFencedCondition := getDRClusterCondition(&latestDRCluster.Status,
+			rmn.DRClusterConditionTypeFenced)
+		if drClusterFencedCondition == nil {
+			return false
+		}
+
+		if drClusterFencedCondition.ObservedGeneration != latestDRCluster.Generation {
+			return false
+		}
+
+		return drClusterFencedCondition.Status == metav1.ConditionTrue
 	}, timeout, interval).Should(BeTrue(), "failed to update DRCluster on time")
 }
 
@@ -1115,7 +1139,17 @@ func unfenceCluster(cluster string) {
 	Eventually(func() bool {
 		latestDRCluster := getLatestDRCluster(cluster)
 
-		return latestDRCluster.Status.Fenced == rmn.ClusterUnfenced
+		drClusterUnfencedCondition := getDRClusterCondition(&latestDRCluster.Status,
+			rmn.DRClusterConditionTypeUnfenced)
+		if drClusterUnfencedCondition == nil {
+			return false
+		}
+
+		if drClusterUnfencedCondition.ObservedGeneration != latestDRCluster.Generation {
+			return false
+		}
+
+		return drClusterUnfencedCondition.Status == metav1.ConditionTrue
 	}, timeout, interval).Should(BeTrue(), "failed to update DRCluster on time")
 }
 
