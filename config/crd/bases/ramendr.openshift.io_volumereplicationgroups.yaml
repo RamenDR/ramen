@@ -18,7 +18,14 @@ spec:
     singular: volumereplicationgroup
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.replicationState
+      name: desiredState
+      type: string
+    - jsonPath: .status.state
+      name: currentState
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: VolumeReplicationGroup is the Schema for the volumereplicationgroups
