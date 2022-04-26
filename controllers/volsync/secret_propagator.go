@@ -1,7 +1,5 @@
 package volsync
 
-// FIXME: move this somewhere that makes sense
-
 import (
 	"context"
 	"encoding/json"
