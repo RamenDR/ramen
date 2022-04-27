@@ -117,6 +117,9 @@ type VRGResourceMeta struct {
 
 	// A sequence number representing a specific generation of the desired state.
 	Generation int64 `json:"generation"`
+
+	// List of PVCs that are protected by the VRG resource
+	ProtectedPVCs []string `json:"protectedpvcs,omitempty"`
 }
 
 // VRGConditions represents the conditions of the resources deployed on a

@@ -55,6 +55,7 @@ const (
 	SyncDRPolicyName      = "my-sync-dr-peers"
 
 	updateRetries = 2 // replace this with 5 when done testing.  It takes a long time for the test to complete
+	pvcCount      = 2 // Count of fake PVCs reported in the VRG status
 )
 
 var (
@@ -160,6 +161,22 @@ func (f FakeMCVGetter) GetNamespaceFromManagedCluster(
 	return appNamespaceObj, errorswrapper.Wrap(err, "failed to get Namespace from managedcluster")
 }
 
+var baseVRG = &rmn.VolumeReplicationGroup{
+	TypeMeta:   metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
+	ObjectMeta: metav1.ObjectMeta{Name: DRPCName, Namespace: DRPCNamespaceName},
+	Spec: rmn.VolumeReplicationGroupSpec{
+		Async: rmn.VRGAsyncSpec{
+			Mode:               rmn.AsyncModeEnabled,
+			SchedulingInterval: schedulingInterval,
+		},
+		ReplicationState: rmn.Primary,
+		PVCSelector: metav1.LabelSelector{
+			MatchLabels: map[string]string{"appclass": "gold"},
+		},
+		S3Profiles: []string{s3Profiles[0].S3ProfileName},
+	},
+}
+
 func (f FakeMCVGetter) GetVRGFromManagedCluster(
 	resourceName, resourceNamespace, managedCluster string) (*rmn.VolumeReplicationGroup, error) {
 	conType := controllers.VRGConditionTypeDataReady
@@ -175,26 +192,17 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(
 				LastTransitionTime: metav1.Now(),
 			},
 		},
+		ProtectedPVCs: []rmn.ProtectedPVC{},
 	}
-	vrg := &rmn.VolumeReplicationGroup{
-		TypeMeta:   metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
-		ObjectMeta: metav1.ObjectMeta{Name: DRPCName, Namespace: DRPCNamespaceName},
-		Spec: rmn.VolumeReplicationGroupSpec{
-			Async: rmn.VRGAsyncSpec{
-				Mode:               rmn.AsyncModeEnabled,
-				SchedulingInterval: schedulingInterval,
-			},
-			ReplicationState: rmn.Primary,
-			PVCSelector: metav1.LabelSelector{
-				MatchLabels: map[string]string{"appclass": "gold"},
-			},
-			S3Profiles: []string{s3Profiles[0].S3ProfileName},
-		},
-		Status: vrgStatus,
-	}
+	vrg := baseVRG.DeepCopy()
+	vrg.Status = vrgStatus
 
 	switch getFunctionNameAtIndex(2) {
 	case "updateDRPCStatus":
+		for i := 0; i < pvcCount; i++ {
+			vrg.Status.ProtectedPVCs = append(vrg.Status.ProtectedPVCs, rmn.ProtectedPVC{Name: fmt.Sprintf("fakePVC%d", i)})
+		}
+
 		return vrg, nil
 	case "checkPVsHaveBeenRestored":
 		if restorePVs {
@@ -217,7 +225,7 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(
 		return getVRGFromManifestWork(managedCluster)
 	}
 
-	return nil, fmt.Errorf("unknonw caller %s", getFunctionNameAtIndex(2))
+	return nil, fmt.Errorf("unknown caller %s", getFunctionNameAtIndex(2))
 }
 
 func getVRGFromManifestWork(managedCluster string) (*rmn.VolumeReplicationGroup, error) {
@@ -815,7 +823,10 @@ func verifyDRPCStatusPreferredClusterExpectation(drState rmn.DRState) {
 		if d := updatedDRPC.Status.PreferredDecision; err == nil && d != (plrv1.PlacementDecision{}) {
 			idx, condition := getDRPCCondition(&updatedDRPC.Status, rmn.ConditionAvailable)
 
-			return d.ClusterName == East1ManagedCluster && idx != -1 && condition.Reason == string(drState)
+			return d.ClusterName == East1ManagedCluster &&
+				idx != -1 &&
+				condition.Reason == string(drState) &&
+				len(updatedDRPC.Status.ResourceConditions.ResourceMeta.ProtectedPVCs) == pvcCount
 		}
 
 		return false
