@@ -1082,6 +1082,13 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 			drpc.Status.ResourceConditions.ResourceMeta.Namespace = vrg.Namespace
 			drpc.Status.ResourceConditions.ResourceMeta.Generation = vrg.Generation
 			drpc.Status.ResourceConditions.Conditions = vrg.Status.Conditions
+
+			protectedPVCs := []string{}
+			for _, protectedPVC := range vrg.Status.ProtectedPVCs {
+				protectedPVCs = append(protectedPVCs, protectedPVC.Name)
+			}
+
+			drpc.Status.ResourceConditions.ResourceMeta.ProtectedPVCs = protectedPVCs
 		}
 	}
 
