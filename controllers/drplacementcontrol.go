@@ -100,6 +100,7 @@ func (d *DRPCInstance) processPlacement() (bool, error) {
 	return d.RunInitialDeployment()
 }
 
+//nolint:funlen
 func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 	d.log.Info("Running initial deployment")
 
@@ -335,23 +336,7 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 			return !done, nil
 		}
 
-		// If we have VolSync replication, this is the perfect time to reset the RDSpec
-		// on the primary. This will cause the RD to be cleared on the primary
-		err := d.resetVolSyncRDOnPrimary(d.instance.Spec.FailoverCluster)
-		if err != nil {
-			return !done, err
-		}
-
-		clusterToSkip := d.instance.Spec.FailoverCluster
-
-		err = d.EnsureCleanup(clusterToSkip)
-		if err != nil {
-			return !done, err
-		}
-
-		// After we ensured peers are clean, The VolSync ReplicationSource (RS) will automatically get
-		// created, but for the ReplicationDestination, we need to explicitly tell the VRG to create it.
-		err = d.EnsureVolSyncReplicationSetup(d.instance.Spec.FailoverCluster)
+		err := d.ensureCleanupAndVolSyncReplicationSetup(d.instance.Spec.FailoverCluster)
 		if err != nil {
 			return !done, err
 		}
@@ -504,31 +489,7 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
-		// Make sure VolRep 'Data' and VolSync 'setup' conditions are ready
-		// ready := d.checkReadinessAfterRelocate(preferredCluster)
-		// if !ready {
-		// 	d.log.Info("VRGCondition not ready to finish relocation")
-
-		// 	return !done, nil
-		// }
-
-		// If we have VolSync replication, this is the perfect time to reset the RDSpec
-		// on the primary. This will cause the RD to be cleared on the primary
-		err = d.resetVolSyncRDOnPrimary(preferredCluster)
-		if err != nil {
-			return !done, err
-		}
-
-		clusterToSkip := preferredCluster
-
-		err = d.EnsureCleanup(clusterToSkip)
-		if err != nil {
-			return !done, err
-		}
-
-		// After we ensured peers are clean, The VolSync ReplicationSource (RS) will automatically get
-		// created, but for the ReplicationDestination, we need to explicitly tell the VRG to create it.
-		err = d.EnsureVolSyncReplicationSetup(preferredCluster)
+		err = d.ensureCleanupAndVolSyncReplicationSetup(preferredCluster)
 		if err != nil {
 			return !done, err
 		}
@@ -551,27 +512,7 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	}
 
 	if curHomeCluster != "" && curHomeCluster != preferredCluster {
-		result, err := d.prepareForFinalSync(curHomeCluster)
-		if err != nil {
-			return !done, err
-		}
-
-		if !result {
-			return !done, nil
-		}
-	}
-
-	if len(d.userPlacementRule.Status.Decisions) != 0 {
-		// clear current user PlacementRule's decision
-		err := d.clearUserPlacementRuleStatus()
-		if err != nil {
-			return !done, err
-		}
-	}
-
-	if curHomeCluster != "" && curHomeCluster != preferredCluster {
-		// Ensure final sync has been taken
-		result, err := d.runFinalSync(curHomeCluster)
+		result, err := d.quiesceAndRunFinalSync(curHomeCluster)
 		if err != nil {
 			return !done, err
 		}
@@ -582,6 +523,64 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	}
 
 	return d.relocate(preferredCluster, preferredClusterNamespace, rmn.Relocating)
+}
+
+func (d *DRPCInstance) ensureCleanupAndVolSyncReplicationSetup(targetCluster string) error {
+	// If we have VolSync replication, this is the perfect time to reset the RDSpec
+	// on the primary. This will cause the RD to be cleared on the primary
+	err := d.resetVolSyncRDOnPrimary(targetCluster)
+	if err != nil {
+		return err
+	}
+
+	clusterToSkip := targetCluster
+
+	err = d.EnsureCleanup(clusterToSkip)
+	if err != nil {
+		return err
+	}
+
+	// After we ensured peers are clean, The VolSync ReplicationSource (RS) will automatically get
+	// created, but for the ReplicationDestination, we need to explicitly tell the VRG to create it.
+	err = d.EnsureVolSyncReplicationSetup(targetCluster)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) {
+	const done = true
+
+	result, err := d.prepareForFinalSync(homeCluster)
+	if err != nil {
+		return !done, err
+	}
+
+	if !result {
+		return !done, nil
+	}
+
+	if len(d.userPlacementRule.Status.Decisions) != 0 {
+		// clear current user PlacementRule's decision
+		err := d.clearUserPlacementRuleStatus()
+		if err != nil {
+			return !done, err
+		}
+	}
+
+	// Ensure final sync has been taken
+	result, err = d.runFinalSync(homeCluster)
+	if err != nil {
+		return !done, err
+	}
+
+	if !result {
+		return !done, nil
+	}
+
+	return done, nil
 }
 
 func (d *DRPCInstance) prepareForFinalSync(homeCluster string) (bool, error) {
@@ -1263,6 +1262,7 @@ func (d *DRPCInstance) checkPVsHaveBeenRestored(homeCluster string) (bool, error
 	return clusterDataReady.Status == metav1.ConditionTrue && clusterDataReady.ObservedGeneration == vrg.Generation, nil
 }
 
+//nolint:funlen
 func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 	d.log.Info("ensuring cleanup on secondaries")
 
