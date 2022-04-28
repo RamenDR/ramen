@@ -19,7 +19,6 @@ package controllers_test
 import (
 	"context"
 	"fmt"
-	"reflect"
 
 	"github.com/go-logr/logr"
 	"github.com/ramendr/ramen/controllers"
@@ -69,44 +68,27 @@ func (fakeObjectStoreGetter) ObjectStore(
 		return nil, fmt.Errorf("AWS_ACCESS_KEY_ID '%v' invalid", accessIDString)
 	}
 
-	return fakeObjectStorer{}, nil
+	return fakeObjectStorer{
+		name: s3ProfileName,
+	}, nil
 }
 
-type fakeObjectStorer struct{}
+type fakeObjectStorer struct {
+	name string
+}
 
-func (fakeObjectStorer) CreateBucket(bucket string) error { return nil }
-func (fakeObjectStorer) DeleteBucket(bucket string) error { return nil }
-func (fakeObjectStorer) PurgeBucket(bucket string) error  { return nil }
 func (fakeObjectStorer) UploadPV(pvKeyPrefix, pvKeySuffix string, pv corev1.PersistentVolume) error {
 	return nil
 }
 
-func (fakeObjectStorer) UploadTypedObject(pvKeyPrefix, keySuffix string, uploadContent interface{}) error {
-	return nil
-}
-
-func (fakeObjectStorer) UploadObject(key string, uploadContent interface{}) error {
-	return nil
-}
-
-func (fakeObjectStorer) VerifyPVUpload(pvKeyPrefix, pvKeySuffix string,
-	verifyPV corev1.PersistentVolume) error {
-	return nil
-}
+func (f fakeObjectStorer) GetName() string { return f.name }
 
 func (fakeObjectStorer) DownloadPVs(pvKeyPrefix string) ([]corev1.PersistentVolume, error) {
 	return []corev1.PersistentVolume{}, nil
-}
-
-func (fakeObjectStorer) DownloadTypedObjects(keyPrefix string, objectType reflect.Type) (interface{}, error) {
-	return nil, nil
 }
 
 func (fakeObjectStorer) ListKeys(keyPrefix string) ([]string, error) {
 	return []string{}, nil
 }
 
-func (fakeObjectStorer) DownloadObject(key string, downloadContent interface{}) error {
-	return nil
-}
 func (fakeObjectStorer) DeleteObjects(keyPrefix string) error { return nil }
