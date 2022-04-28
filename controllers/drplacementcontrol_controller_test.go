@@ -192,8 +192,7 @@ var baseVRG = &rmn.VolumeReplicationGroup{
 	TypeMeta:   metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
 	ObjectMeta: metav1.ObjectMeta{Name: DRPCName, Namespace: DRPCNamespaceName},
 	Spec: rmn.VolumeReplicationGroupSpec{
-		Async: rmn.VRGAsyncSpec{
-			Mode:               rmn.AsyncModeEnabled,
+		Async: &rmn.VRGAsyncSpec{
 			SchedulingInterval: schedulingInterval,
 		},
 		ReplicationState: rmn.Primary,

@@ -455,16 +455,8 @@ func (v *VRGInstance) validateVRGState() error {
 // This needs more thought as this function is making a
 // compulsion that either of sync or async mode should be there.
 func (v *VRGInstance) validateVRGMode() error {
-	async := false
-	sync := false
-
-	if v.instance.Spec.Async.Mode == ramendrv1alpha1.AsyncModeEnabled {
-		async = true
-	}
-
-	if v.instance.Spec.Sync.Mode == ramendrv1alpha1.SyncModeEnabled {
-		sync = true
-	}
+	async := v.instance.Spec.Async != nil
+	sync := v.instance.Spec.Sync != nil
 
 	if !sync && !async {
 		err := fmt.Errorf("neither of sync or async mode is enabled (deleted %v)",

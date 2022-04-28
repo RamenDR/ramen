@@ -321,7 +321,7 @@ func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 	// when the VRG is primary. Furthermore, we need to clear the PV claimRef
 	// in order for the PV to go to the Available status phase.
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary &&
-		v.instance.Spec.Sync.Mode == ramendrv1alpha1.SyncModeEnabled {
+		v.instance.Spec.Sync != nil {
 		if err := v.clearPVClaimRefMembers(pvc); err != nil {
 			return err
 		}
@@ -786,7 +786,7 @@ func (v *VRGInstance) DeletePVs(s3ProfileName string) (err error) {
 //  - a boolean indicating if VR is already at the desired state
 //  - any errors during processing
 func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName, log logr.Logger) (bool, bool, error) {
-	if v.instance.Spec.Async.Mode == ramendrv1alpha1.AsyncModeEnabled {
+	if v.instance.Spec.Async != nil {
 		return v.createOrUpdateVR(vrNamespacedName, volrep.Primary, log)
 	}
 
@@ -797,7 +797,7 @@ func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName, 
 	// mode below. As there is no VolRep involved in sync mode, the
 	// availability is always true. Also, the refactor should work for the
 	// condition where both async and sync are enabled at the same time.
-	if v.instance.Spec.Sync.Mode == ramendrv1alpha1.SyncModeEnabled {
+	if v.instance.Spec.Sync != nil {
 		msg := "PVC in the VolumeReplicationGroup is ready for use"
 		v.updatePVCDataReadyCondition(vrNamespacedName.Name, VRGConditionReasonReady, msg)
 		v.updatePVCDataProtectedCondition(vrNamespacedName.Name, VRGConditionReasonReady, msg)
@@ -815,7 +815,7 @@ func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName, 
 //  - a boolean indicating if VR is already at the desired state
 //  - any errors during processing
 func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName, log logr.Logger) (bool, bool, error) {
-	if v.instance.Spec.Async.Mode == ramendrv1alpha1.AsyncModeEnabled {
+	if v.instance.Spec.Async != nil {
 		return v.createOrUpdateVR(vrNamespacedName, volrep.Secondary, log)
 	}
 
@@ -826,7 +826,7 @@ func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName
 	// mode below. As there is no VolRep involved in sync mode, the
 	// availability is always true. Also, the refactor should work for the
 	// condition where both async and sync are enabled at the same time.
-	if v.instance.Spec.Sync.Mode == ramendrv1alpha1.SyncModeEnabled {
+	if v.instance.Spec.Sync != nil {
 		msg := "VolumeReplication resource for the pvc as Secondary is in sync with Primary"
 		v.updatePVCDataReadyCondition(vrNamespacedName.Name, VRGConditionReasonReplicated, msg)
 		v.updatePVCDataProtectedCondition(vrNamespacedName.Name, VRGConditionReasonDataProtected, msg)
@@ -1743,7 +1743,7 @@ func (v *VRGInstance) validatePVExistence(pv *corev1.PersistentVolume) error {
 	// process. Hence, the restore is not required and the annotation for
 	// restore can be missing for the sync mode. Skip the check for the
 	// annotation in this case.
-	if v.instance.Spec.Sync.Mode == ramendrv1alpha1.SyncModeEnabled {
+	if v.instance.Spec.Sync != nil {
 		v.log.Info("PV exists, will update for sync", "PV", existingPV)
 
 		return v.updateExistingPVForSync(existingPV)

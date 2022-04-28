@@ -69,12 +69,8 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 					},
 					Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
 						ReplicationState: ramendrv1alpha1.Primary,
-						Async: ramendrv1alpha1.VRGAsyncSpec{
-							Mode:               ramendrv1alpha1.AsyncModeEnabled,
+						Async: &ramendrv1alpha1.VRGAsyncSpec{
 							SchedulingInterval: "1h",
-						},
-						Sync: ramendrv1alpha1.VRGSyncSpec{
-							Mode: ramendrv1alpha1.SyncModeDisabled,
 						},
 						PVCSelector: metav1.LabelSelector{
 							MatchLabels: testMatchLabels,
@@ -207,12 +203,8 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 					},
 					Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
 						ReplicationState: ramendrv1alpha1.Secondary,
-						Async: ramendrv1alpha1.VRGAsyncSpec{
-							Mode:               ramendrv1alpha1.AsyncModeEnabled,
+						Async: &ramendrv1alpha1.VRGAsyncSpec{
 							SchedulingInterval: "1h",
-						},
-						Sync: ramendrv1alpha1.VRGSyncSpec{
-							Mode: ramendrv1alpha1.SyncModeDisabled,
 						},
 						PVCSelector: metav1.LabelSelector{
 							MatchLabels: testMatchLabels,
