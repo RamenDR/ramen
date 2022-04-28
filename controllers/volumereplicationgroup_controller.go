@@ -956,28 +956,26 @@ func (v *VRGInstance) updateVRGConditions() {
 
 func (v *VRGInstance) updateVRGDataReadyCondition() {
 	volSyncAggregatedCond := v.aggregateVolSyncDataReadyCondition()
-	if len(v.volRepPVCs) == 0 && volSyncAggregatedCond != nil {
-		v.log.Info("No VolRep PVCs. Not aggregating VRG DataReady condition for it")
+	if volSyncAggregatedCond != nil {
 		setStatusCondition(&v.instance.Status.Conditions, *volSyncAggregatedCond)
-
-		return
 	} 
 	
 	// otherwise, use the condition result of the PVCs targeted for VolRep
-	v.aggregateVolRepDataReadyCondition()
+	if len(v.volRepPVCs) != 0 {
+		v.aggregateVolRepDataReadyCondition()
+	}
 }
 
 func (v *VRGInstance) updateVRGDataProtectedCondition() {
 	volSyncAggregatedCond := v.aggregateVolSyncDataProtectedCondition()
-	if len(v.volRepPVCs) == 0 && volSyncAggregatedCond != nil {
-		v.log.Info("No VolRep PVCs. Not aggregating VRG DataProtected condition for it")
+	if volSyncAggregatedCond != nil {
 		setStatusCondition(&v.instance.Status.Conditions, *volSyncAggregatedCond)
-
-		return
 	} 
 	
 	// otherwise, use the condition result of the PVCs targeted for VolRep
-	v.aggregateVolRepDataProtectedCondition()
+	if len(v.volRepPVCs) != 0 {
+		v.aggregateVolRepDataProtectedCondition()
+	}
 }
 
 func (v *VRGInstance) vrgReadyStatus() {
@@ -999,15 +997,13 @@ func (v *VRGInstance) vrgReadyStatus() {
 
 func (v *VRGInstance) updateVRGClusterDataProtectedCondition() {
 	volSyncAggregatedCond := v.aggregateVolSyncClusterDataProtectedCondition()
-	if len(v.volRepPVCs) == 0 && volSyncAggregatedCond != nil {
-		v.log.Info("No VolRep PVCs. Not aggregating VRG ClusterDataProtected condition for it")
+	if volSyncAggregatedCond != nil {
 		setStatusCondition(&v.instance.Status.Conditions, *volSyncAggregatedCond)
-
-		return
 	} 
 	
-	// otherwise, use the condition result of the PVCs targeted for VolRep
-	v.aggregateVolRepClusterDataProtectedCondition()
+	if len(v.volRepPVCs) != 0 {
+		v.aggregateVolRepClusterDataProtectedCondition()
+	}
 }
 
 // It might be better move the helper functions like these to a separate

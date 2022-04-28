@@ -34,8 +34,12 @@ spec:
     - jsonPath: .status.phase
       name: currentState
       type: string
+    - jsonPath: .status.progression
+      name: progression
+      priority: 2
+      type: string
     - jsonPath: .status.conditions[1].status
-      name: PeerReady
+      name: peer ready
       priority: 2
       type: string
     name: v1alpha1
@@ -286,6 +290,8 @@ spec:
                   clusterNamespace:
                     type: string
                 type: object
+              progression:
+                type: string
               resourceConditions:
                 description: VRGConditions represents the conditions of the resources
                   deployed on a managed cluster.
