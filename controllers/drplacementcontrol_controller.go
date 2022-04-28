@@ -531,14 +531,14 @@ func (r *DRPlacementControlReconciler) recordFailure(drpc *rmn.DRPlacementContro
 
 func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 	drpc *rmn.DRPlacementControl, usrPlRule *plrv1.PlacementRule) (*DRPCInstance, error) {
-	err := r.addLabelsAndFinalizers(ctx, drpc, usrPlRule)
-	if err != nil {
-		return nil, err
-	}
-
-	drPolicy, err := r.getDRPolicy(ctx, drpc.Spec.DRPolicyRef.Name, drpc.Spec.DRPolicyRef.Namespace)
+	drPolicy, err := r.getDRPolicy(ctx, drpc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get DRPolicy %w", err)
+	}
+
+	err = r.addLabelsAndFinalizers(ctx, drpc, usrPlRule)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := rmnutil.DrpolicyValidated(drPolicy); err != nil {
@@ -627,14 +627,24 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(d *DRPCInstance) (c
 }
 
 func (r *DRPlacementControlReconciler) getDRPolicy(ctx context.Context,
-	name, namespace string) (*rmn.DRPolicy, error) {
+	drpc *rmn.DRPlacementControl) (*rmn.DRPolicy, error) {
 	drPolicy := &rmn.DRPolicy{}
+	name := drpc.Spec.DRPolicyRef.Name
+	namespace := drpc.Spec.DRPolicyRef.Namespace
 
 	err := r.Client.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, drPolicy)
 	if err != nil {
 		r.Log.Error(err, "failed to get DRPolicy")
 
 		return nil, fmt.Errorf("%w", err)
+	}
+
+	if !drPolicy.ObjectMeta.DeletionTimestamp.IsZero() &&
+		!controllerutil.ContainsFinalizer(drpc, DRPCFinalizer) {
+		// If drpolicy is deleted and drpc finalizer is not present then return
+		// error to fail drpc reconciliation
+		return nil, fmt.Errorf("drPolicy '%s/%s' referred by the DRPC is deleted, DRPC reconciliation would fail",
+			name, namespace)
 	}
 
 	return drPolicy, nil
