@@ -918,10 +918,10 @@ var _ = Describe("VolSync Handler", func() {
 							return false
 						}
 
-						// Expect that owner configmap (which is faking our vrg) has been added as an owner
+						// Expect that the new pvc has been added as an owner
 						// on the VolumeSnapshot - it should NOT be a controller, as the replicationdestination
 						// will be the controller owning it
-						return ownerMatches(latestImageSnap, owner.GetName(), "ConfigMap", false /* not controller */)
+						return ownerMatches(latestImageSnap, pvc.GetName(), "PersistentVolumeClaim", false /* not controller */)
 					}, maxWait, interval).Should(BeTrue())
 
 					// The volumesnapshot should also have the volsync do-not-delete label added
