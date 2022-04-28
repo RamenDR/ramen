@@ -27,6 +27,8 @@ import (
 const (
 	maxWait  = 10 * time.Second
 	interval = 250 * time.Millisecond
+
+	APIGrp = "snapshot.storage.k8s.io"
 )
 
 var _ = Describe("VolSync Handler - utils", func() {
@@ -842,8 +844,7 @@ var _ = Describe("VolSync Handler", func() {
 					},
 				}
 				Expect(k8sClient.Create(ctx, rd)).To(Succeed())
-
-				apiGrp := "snapshot.storage.k8s.io"
+				apiGrp := APIGrp
 				// Now force update the status to report a volume snapshot as latestImage
 				rd.Status = &volsyncv1alpha1.ReplicationDestinationStatus{
 					LatestImage: &corev1.TypedLocalObjectReference{
@@ -896,7 +897,7 @@ var _ = Describe("VolSync Handler", func() {
 					Expect(pvc.GetName()).To(Equal(pvcName))
 					Expect(pvc.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
 					Expect(*pvc.Spec.StorageClassName).To(Equal(testStorageClassName))
-					apiGrp := "snapshot.storage.k8s.io"
+					apiGrp := APIGrp
 					Expect(pvc.Spec.DataSource).To(Equal(&corev1.TypedLocalObjectReference{
 						Name:     latestImageSnapshotName,
 						APIGroup: &apiGrp,
@@ -957,8 +958,6 @@ var _ = Describe("VolSync Handler", func() {
 					var updatedImageSnap *unstructured.Unstructured
 
 					JustBeforeEach(func() {
-						//pvc.Spec.DataSource
-
 						// Simulate incorrect datasource by changing the latestImage in the replicationdestionation
 						// status - this way the datasource on the previously created PVC will no longer match
 						// our desired datasource
@@ -1027,7 +1026,7 @@ var _ = Describe("VolSync Handler", func() {
 						Expect(pvcNew.GetName()).To(Equal(pvcName))
 						Expect(pvcNew.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
 						Expect(*pvcNew.Spec.StorageClassName).To(Equal(testStorageClassName))
-						apiGrp := "snapshot.storage.k8s.io"
+						apiGrp := APIGrp
 						Expect(pvcNew.Spec.DataSource).To(Equal(&corev1.TypedLocalObjectReference{
 							Name:     updatedImageSnap.GetName(),
 							APIGroup: &apiGrp,

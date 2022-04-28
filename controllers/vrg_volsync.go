@@ -154,7 +154,7 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary() (requeue bool) {
 	if requeue {
 		v.log.Info("Not all ReplicationSources completed setup. We'll retry...")
 
-		return
+		return requeue
 	}
 
 	if v.instance.Spec.PrepareForFinalSync {

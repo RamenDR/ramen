@@ -10,7 +10,13 @@ import (
 )
 
 func (d *DRPCInstance) EnsureVolSyncReplicationSetup(homeCluster string) error {
-	vsRepNeeded, err := d.isVolSyncReplicationRequired(homeCluster)
+	if d.volSyncDisabled {
+		d.log.Info("VolSync is disabled")
+
+		return nil
+	}
+
+	vsRepNeeded, err := d.IsVolSyncReplicationRequired(homeCluster)
 	if err != nil {
 		return err
 	}
@@ -31,6 +37,8 @@ func (d *DRPCInstance) EnsureVolSyncReplicationSetup(homeCluster string) error {
 
 func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 	// Make sure we have Source and Destination VRGs - Source should already have been created at this point
+	d.instance.Status.Progression = "EnsuringVolSyncSetup"
+
 	const maxNumberOfVRGs = 2
 	if len(d.vrgs) != maxNumberOfVRGs {
 		// Create the destination VRG
@@ -164,7 +172,13 @@ func (d *DRPCInstance) updateDestinationVRG(clusterName string, srcVRG *rmn.Volu
 	return d.updateVRGSpec(clusterName, dstVRG)
 }
 
-func (d *DRPCInstance) isVolSyncReplicationRequired(homeCluster string) (bool, error) {
+func (d *DRPCInstance) IsVolSyncReplicationRequired(homeCluster string) (bool, error) {
+	if d.volSyncDisabled {
+		d.log.Info("VolSync is disabled")
+
+		return false, nil
+	}
+
 	const required = true
 
 	d.log.Info("Checking whether we have VolSync PVCs that need replication", "cluster", homeCluster)
@@ -280,8 +294,7 @@ func (d *DRPCInstance) createVolSyncDestManifestWork(srcCluster string) error {
 				d.instance.Namespace, drCluster.Name)
 		}
 
-		vrg := d.generateVRG()
-		vrg.Spec.ReplicationState = rmn.Secondary
+		vrg := d.generateVRG(rmn.Secondary)
 
 		if err := d.mwu.CreateOrUpdateVRGManifestWork(
 			d.instance.Name, d.instance.Namespace,
@@ -298,7 +311,13 @@ func (d *DRPCInstance) createVolSyncDestManifestWork(srcCluster string) error {
 	return nil
 }
 
-func (d *DRPCInstance) resetVolSyncRDOnPrimary(clusterName string) error {
+func (d *DRPCInstance) ResetVolSyncRDOnPrimary(clusterName string) error {
+	if d.volSyncDisabled {
+		d.log.Info("VolSync is disabled")
+
+		return nil
+	}
+
 	vrgMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
 	d.log.Info(fmt.Sprintf("Resetting RD VRG ownedby MW %s for cluster %s", vrgMWName, clusterName))
 

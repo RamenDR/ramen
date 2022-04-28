@@ -83,11 +83,11 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() bool {
 		log.Info("Successfully processed VolumeReplication for PersistentVolumeClaim")
 	}
 	// We don't need the final sync preparation for VolRep. Just mark it complete
-	if v.instance.Spec.PrepareForFinalSync {
+	if v.instance.Spec.PrepareForFinalSync && len(v.volSyncPVCs) == 0 {
 		v.instance.Status.PrepareForFinalSyncComplete = true
 	}
 	// We don't need to run the final sync for VolRep. Just mark it complete
-	if v.instance.Spec.RunFinalSync {
+	if v.instance.Spec.RunFinalSync && len(v.volSyncPVCs) == 0 {
 		v.instance.Status.FinalSyncComplete = true
 	}
 
@@ -1703,12 +1703,11 @@ func (v *VRGInstance) aggregateVolRepDataReadyCondition() {
 	vrgProgressing := false
 
 	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
-		var condition *metav1.Condition
 		if protectedPVC.ProtectedByVolSync {
-			condition = findCondition(protectedPVC.Conditions, VRGConditionTypeVolSyncRepSourceSetup)
-		} else {
-			condition = findCondition(protectedPVC.Conditions, VRGConditionTypeDataReady)
+			continue
 		}
+
+		condition := findCondition(protectedPVC.Conditions, VRGConditionTypeDataReady)
 
 		v.log.Info("Condition for DataReady", "cond", condition, "protectedPVC", protectedPVC)
 
@@ -1773,12 +1772,11 @@ func (v *VRGInstance) aggregateVolRepDataProtectedCondition() {
 	vrgReplicating := false
 
 	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
-		var condition *metav1.Condition
 		if protectedPVC.ProtectedByVolSync {
-			condition = findCondition(protectedPVC.Conditions, VRGConditionTypeVolSyncRepSourceSetup)
-		} else {
-			condition = findCondition(protectedPVC.Conditions, VRGConditionTypeDataProtected)
+			continue
 		}
+
+		condition := findCondition(protectedPVC.Conditions, VRGConditionTypeDataProtected)
 
 		if condition == nil {
 			vrgProtected = false
@@ -1848,17 +1846,11 @@ func (v *VRGInstance) aggregateVolRepClusterDataProtectedCondition() {
 	atleastOneError := false
 
 	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
-		var condition *metav1.Condition
 		if protectedPVC.ProtectedByVolSync {
-			condition = findCondition(protectedPVC.Conditions, VRGConditionTypeVolSyncRepSourceSetup)
-			if condition != nil && condition.Reason == VRGConditionReasonVolSyncRepSourceInited {
-				v.log.Info(fmt.Sprintf("Skip ClusterDataProtected for VolSync PVC. Name %s", protectedPVC.Name))
-
-				continue
-			}
-		} else {
-			condition = findCondition(protectedPVC.Conditions, VRGConditionTypeClusterDataProtected)
+			continue
 		}
+
+		condition := findCondition(protectedPVC.Conditions, VRGConditionTypeClusterDataProtected)
 
 		if condition == nil ||
 			condition.Reason == VRGConditionReasonUploading {
