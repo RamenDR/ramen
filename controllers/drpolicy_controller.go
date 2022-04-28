@@ -97,7 +97,6 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	secretsUtil := &util.SecretsUtil{Client: r.Client, Ctx: ctx, Log: log}
-
 	// DRPolicy is marked for deletion
 	if !drpolicy.ObjectMeta.DeletionTimestamp.IsZero() &&
 		controllerutil.ContainsFinalizer(drpolicy, drPolicyFinalizerName) {
@@ -243,6 +242,18 @@ func (u *drpolicyUpdater) deleteDRPolicy(drclusters *ramen.DRClusterList,
 	secretsUtil *util.SecretsUtil,
 	ramenConfig *ramen.RamenConfig) error {
 	u.log.Info("delete")
+
+	drpcs := ramen.DRPlacementControlList{}
+	if err := secretsUtil.Client.List(secretsUtil.Ctx, &drpcs); err != nil {
+		return fmt.Errorf("drpcs list: %w", err)
+	}
+
+	for i := range drpcs.Items {
+		drpc1 := &drpcs.Items[i]
+		if u.object.ObjectMeta.Name == drpc1.Spec.DRPolicyRef.Name {
+			return fmt.Errorf("this drpolicy is referenced in existing drpc resource name '%v' ", drpc1.Name)
+		}
+	}
 
 	if err := drPolicyUndeploy(u.object, drclusters, secretsUtil, ramenConfig); err != nil {
 		return fmt.Errorf("drpolicy undeploy: %w", err)
