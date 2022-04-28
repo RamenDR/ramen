@@ -73,13 +73,6 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 					PVCSelector:      metav1.LabelSelector{},
 					ReplicationState: "invalid",
 					S3Profiles:       []string{},
-					Async: ramendrv1alpha1.VRGAsyncSpec{
-						Mode:               ramendrv1alpha1.AsyncModeDisabled,
-						SchedulingInterval: "0m",
-					},
-					Sync: ramendrv1alpha1.VRGSyncSpec{
-						Mode: ramendrv1alpha1.SyncModeDisabled,
-					},
 				},
 			}
 			Expect(k8sClient.Create(context.TODO(), vrg)).To(Succeed())
@@ -116,7 +109,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 	})
 	When("ReplicationState is primary and sync is enabled, but s3 profiles are absent", func() {
 		It("should set ClusterDataReady status=False reason=Error", func() {
-			vrg.Spec.Sync.Mode = ramendrv1alpha1.SyncModeEnabled
+			vrg.Spec.Sync = &ramendrv1alpha1.VRGSyncSpec{}
 			Expect(k8sClient.Update(context.TODO(), vrg)).To(Succeed())
 			var clusterDataReadyCondition *metav1.Condition
 			Eventually(func() metav1.ConditionStatus {
@@ -900,13 +893,9 @@ func (v *vrgTest) createVRG() {
 		Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
 			PVCSelector:      metav1.LabelSelector{MatchLabels: v.pvcLabels},
 			ReplicationState: "primary",
-			Async: ramendrv1alpha1.VRGAsyncSpec{
-				Mode:                     ramendrv1alpha1.AsyncModeEnabled,
+			Async: &ramendrv1alpha1.VRGAsyncSpec{
 				SchedulingInterval:       schedulingInterval,
 				ReplicationClassSelector: metav1.LabelSelector{MatchLabels: replicationClassLabels},
-			},
-			Sync: ramendrv1alpha1.VRGSyncSpec{
-				Mode: ramendrv1alpha1.SyncModeDisabled,
 			},
 			VolSync: ramendrv1alpha1.VolSyncSpec{
 				Disabled: true,

@@ -627,8 +627,16 @@ func (in *VolumeReplicationGroupSpec) DeepCopyInto(out *VolumeReplicationGroupSp
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
-	in.Async.DeepCopyInto(&out.Async)
-	out.Sync = in.Sync
+	if in.Async != nil {
+		in, out := &in.Async, &out.Async
+		*out = new(VRGAsyncSpec)
+		(*in).DeepCopyInto(*out)
+	}
+	if in.Sync != nil {
+		in, out := &in.Sync, &out.Sync
+		*out = new(VRGSyncSpec)
+		**out = **in
+	}
 	in.VolSync.DeepCopyInto(&out.VolSync)
 }
 

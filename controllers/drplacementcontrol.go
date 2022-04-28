@@ -1211,32 +1211,24 @@ func (d *DRPCInstance) generateVRG(repState rmn.ReplicationState) rmn.VolumeRepl
 	return vrg
 }
 
-func (d *DRPCInstance) generateVRGSpecAsync() rmn.VRGAsyncSpec {
+func (d *DRPCInstance) generateVRGSpecAsync() *rmn.VRGAsyncSpec {
 	if dRPolicySupportsRegional(d.drPolicy, d.drClusters) {
-		return rmn.VRGAsyncSpec{
+		return &rmn.VRGAsyncSpec{
 			ReplicationClassSelector:    d.drPolicy.Spec.ReplicationClassSelector,
 			VolumeSnapshotClassSelector: d.drPolicy.Spec.VolumeSnapshotClassSelector,
 			SchedulingInterval:          d.drPolicy.Spec.SchedulingInterval,
-			Mode:                        rmn.AsyncModeEnabled,
 		}
 	}
 
-	return rmn.VRGAsyncSpec{
-		SchedulingInterval: "365d", // this is mandatory, spoof it!
-		Mode:               rmn.AsyncModeDisabled,
-	}
+	return nil
 }
 
-func (d *DRPCInstance) generateVRGSpecSync() rmn.VRGSyncSpec {
+func (d *DRPCInstance) generateVRGSpecSync() *rmn.VRGSyncSpec {
 	if supports, _ := dRPolicySupportsMetro(d.drPolicy, d.drClusters); supports {
-		return rmn.VRGSyncSpec{
-			Mode: rmn.SyncModeEnabled,
-		}
+		return &rmn.VRGSyncSpec{}
 	}
 
-	return rmn.VRGSyncSpec{
-		Mode: rmn.SyncModeDisabled,
-	}
+	return nil
 }
 
 func dRPolicySupportsRegional(drpolicy *rmn.DRPolicy, drClusters []rmn.DRCluster) bool {

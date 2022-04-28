@@ -48,32 +48,6 @@ const (
 	UnknownState State = "Unknown"
 )
 
-// AsyncMode which will be either Enabled or Disabled
-// +kubebuilder:validation:Enum=Enabled;Disabled
-type AsyncMode string
-
-// SyncMode which will be either Enabled or Disabled
-// +kubebuilder:validation:Enum=Enabled;Disabled
-type SyncMode string
-
-// These are the valid values for AsyncMode
-const (
-	// AsyncMode enabled for DR
-	AsyncModeEnabled = AsyncMode("Enabled")
-
-	// AsyncMode disabled for DR
-	AsyncModeDisabled = AsyncMode("Disabled")
-)
-
-// These are the valid values for SyncMode
-const (
-	// AsyncMode enabled for DR
-	SyncModeEnabled = SyncMode("Enabled")
-
-	// AsyncMode disabled for DR
-	SyncModeDisabled = SyncMode("Disabled")
-)
-
 // VRGAsyncSpec has the parameters associated with RegionalDR
 type VRGAsyncSpec struct {
 	// Label selector to identify the VolumeReplicationClass resources
@@ -95,16 +69,10 @@ type VRGAsyncSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Pattern=`^\d+[mhd]$`
 	SchedulingInterval string `json:"schedulingInterval"`
-
-	// Mode determines if AsyncDR is enabled or not
-	Mode AsyncMode `json:"mode"`
 }
 
 // VRGSyncSpec has the parameters associated with MetroDR
-type VRGSyncSpec struct {
-	// Mode determines if SyncDR is enabled or not
-	Mode SyncMode `json:"mode"`
-}
+type VRGSyncSpec struct{}
 
 // VolSyncReplicationDestinationSpec defines the configuration for the VolSync
 // protected PVC to be used by the destination cluster (Secondary)
@@ -175,8 +143,10 @@ type VolumeReplicationGroupSpec struct {
 	// and forward PV related cluster state to peer DR clusters.
 	S3Profiles []string `json:"s3Profiles"`
 
-	Async VRGAsyncSpec `json:"async,omitempty"`
-	Sync  VRGSyncSpec  `json:"sync,omitempty"`
+	// +optional
+	Async *VRGAsyncSpec `json:"async,omitempty"`
+	// +optional
+	Sync *VRGSyncSpec `json:"sync,omitempty"`
 
 	// volsync defines the configuration when using VolSync plugin for replication.
 	//+optional
