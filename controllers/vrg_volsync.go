@@ -74,6 +74,7 @@ func (v *VRGInstance) restorePVsForVolSync() error {
 	return nil
 }
 
+//nolint:funlen,gocognit,cyclop
 func (v *VRGInstance) reconcileVolSyncAsPrimary() (requeue bool) {
 	v.log.Info(fmt.Sprintf("Reconciling VolSync as Primary. VolSyncPVCs %d. VolSyncSpec %+v",
 		len(v.volSyncPVCs), v.instance.Spec.VolSync))
@@ -131,7 +132,7 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary() (requeue bool) {
 
 		// reconcile RS and if runFinalSync is true, then one final sync will be run
 		finalSyncComplete, rs, err := v.volSyncHandler.ReconcileRS(rsSpec, v.instance.Spec.RunFinalSync)
-		if err != nil {
+		if err != nil { //nolint:gocritic
 			v.log.Info(fmt.Sprintf("Failed to reconcile VolSync Replication Source for rsSpec %v. Error %v",
 				rsSpec, err))
 
@@ -140,7 +141,6 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary() (requeue bool) {
 
 			requeue = true
 		} else if rs == nil {
-			// Replication source is not ready yet //TODO: do we need a condition for this?
 			requeue = true
 		} else {
 			setVRGConditionTypeVolSyncRepSourceSetupComplete(&protectedPVC.Conditions, v.instance.Generation, "Ready")
@@ -225,25 +225,6 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() (requeue bool) {
 	return requeue
 }
 
-func (v *VRGInstance) isFinalSyncInProgress() bool {
-	status := false
-
-	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
-		if protectedPVC.ProtectedByVolSync {
-			condition := findCondition(protectedPVC.Conditions, VRGConditionTypeVolSyncFinalSyncInProgress)
-			if condition != nil && condition.Status == v1.ConditionTrue {
-				status = true
-
-				break
-			}
-		}
-	}
-
-	v.log.Info(fmt.Sprintf("Is final sync in-progress? %v", status))
-
-	return status
-}
-
 func (v *VRGInstance) aggregateVolSyncDataReadyCondition() *v1.Condition {
 	dataReadyCondition := &v1.Condition{
 		Type:               VRGConditionTypeDataReady,
@@ -294,6 +275,7 @@ func (v *VRGInstance) aggregateVolSyncClusterDataProtectedCondition() *v1.Condit
 	return condition
 }
 
+//nolint:gocognit,funlen,gocyclo,cyclop
 func (v *VRGInstance) buildDataProtectedCondition() *v1.Condition {
 	if len(v.volSyncPVCs) == 0 {
 		return &v1.Condition{
@@ -309,6 +291,7 @@ func (v *VRGInstance) buildDataProtectedCondition() *v1.Condition {
 
 	protectedByVolSyncCount := 0
 
+	//nolint:nestif
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
 		for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
 			if protectedPVC.ProtectedByVolSync {

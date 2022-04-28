@@ -85,10 +85,14 @@ func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 		return fmt.Errorf("%w", err)
 	}
 
+	d.instance.Status.Progression = ""
+
 	return nil
 }
 
 func (d *DRPCInstance) ensureVolSyncReplicationDestination(srcCluster string) error {
+	d.instance.Status.Progression = "SettingUpVolSyncDest"
+
 	srcVRG, found := d.vrgs[srcCluster]
 	if !found {
 		return fmt.Errorf("failed to find source VolSync VRG in cluster %s. VRGs %v", srcCluster, d.vrgs)
@@ -123,6 +127,8 @@ func (d *DRPCInstance) ensureVolSyncReplicationDestination(srcCluster string) er
 		break
 	}
 
+	d.instance.Status.Progression = ""
+
 	return nil
 }
 
@@ -133,7 +139,7 @@ func (d *DRPCInstance) containsMismatchVolSyncPVCs(srcVRG *rmn.VolumeReplication
 			continue
 		}
 
-		var mismatch = true
+		mismatch := true
 
 		for _, rdSpec := range dstVRG.Spec.VolSync.RDSpec {
 			if protectedPVC.Name == rdSpec.ProtectedPVC.Name {

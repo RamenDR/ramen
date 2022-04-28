@@ -883,6 +883,7 @@ func (v *vrgTest) isAnyPVCProtectedByVolSync(vrg *ramendrv1alpha1.VolumeReplicat
 	return false
 }
 
+//nolint:gocognit
 func (v *vrgTest) verifyVRGStatusExpectation(expectedStatus bool) {
 	Eventually(func() bool {
 		vrg := v.getVRG(v.vrgName)

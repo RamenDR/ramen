@@ -37,7 +37,6 @@ import (
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 
 	dto "github.com/prometheus/client_model/go"
-	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
@@ -187,14 +186,15 @@ var baseVRG = &rmn.VolumeReplicationGroup{
 	},
 }
 
+//nolint:funlen
 func (f FakeMCVGetter) GetVRGFromManagedCluster(
 	resourceName, resourceNamespace, managedCluster string) (*rmn.VolumeReplicationGroup, error) {
 	conType := controllers.VRGConditionTypeDataReady
 	reason := controllers.VRGConditionReasonReplicating
 	vrgStatus := rmn.VolumeReplicationGroupStatus{
-		State:             rmn.PrimaryState,
+		State:                       rmn.PrimaryState,
 		PrepareForFinalSyncComplete: true,
-		FinalSyncComplete: true,
+		FinalSyncComplete:           true,
 		Conditions: []metav1.Condition{
 			{
 				Type:               conType,
@@ -270,12 +270,11 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(
 				ObservedGeneration: vrgFromMW.Generation,
 			})
 
-			newProtectedPVC := &ramendrv1alpha1.ProtectedPVC{
+			newProtectedPVC := &rmn.ProtectedPVC{
 				Name: "random name",
 			}
 
 			vrgFromMW.Status.ProtectedPVCs = append(vrgFromMW.Status.ProtectedPVCs, *newProtectedPVC)
-
 		}
 
 		return vrgFromMW, nil

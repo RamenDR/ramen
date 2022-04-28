@@ -38,11 +38,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
-var WaitForPVRestoreToComplete = errorswrapper.New("Waiting for PV restore to complete...")
-var WaitForVolSyncDestRepToComplete = errorswrapper.New("Waiting for VolSync RD to complete...")
-var WaitForSourceCluster = errorswrapper.New("Waiting for the primary cluster to provide the list of Protected PVCs...")
-var WaitForVolSyncManifestWorkCreation = errorswrapper.New("Waiting for VolSync ManifestWork to be created...")
-var WaitForVolSyncRDInfoAvailibility = errorswrapper.New("Waiting for VolSync RDInfo...")
+var (
+	WaitForPVRestoreToComplete         error = errorswrapper.New("Waiting for PV restore to complete...")
+	WaitForVolSyncDestRepToComplete    error = errorswrapper.New("Waiting for VolSync RD to complete...")
+	WaitForSourceCluster               error = errorswrapper.New("Waiting for primary to provide Protected PVCs...")
+	WaitForVolSyncManifestWorkCreation error = errorswrapper.New("Waiting for VolSync ManifestWork to be created...")
+	WaitForVolSyncRDInfoAvailibility   error = errorswrapper.New("Waiting for VolSync RDInfo...")
+)
 
 type DRPCInstance struct {
 	reconciler           *DRPlacementControlReconciler
@@ -53,12 +55,12 @@ type DRPCInstance struct {
 	drClusters           []rmn.DRCluster
 	needStatusUpdate     bool
 	mcvRequestInProgress bool
+	volSyncDisabled      bool
 	userPlacementRule    *plrv1.PlacementRule
 	drpcPlacementRule    *plrv1.PlacementRule
 	vrgs                 map[string]*rmn.VolumeReplicationGroup
 	mwu                  rmnutil.MWUtil
 	metricsTimer         timerInstance
-	volSyncDisabled      bool
 }
 
 func (d *DRPCInstance) startProcessing() bool {
@@ -149,6 +151,8 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 			d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
 				metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
 		}
+
+		d.instance.Status.Progression = ""
 
 		return done, nil
 	}
@@ -473,7 +477,7 @@ func (d *DRPCInstance) getCurrentHomeClusterName() string {
 //  - Check if we already relocated to the preferredCluster, and ensure cleanup actions
 //  - Check if current primary (that is not the preferred cluster), is ready to switch over
 //  - Relocate!
-func (d *DRPCInstance) RunRelocate() (bool, error) {
+func (d *DRPCInstance) RunRelocate() (bool, error) { //nolint:gocognit,cyclop
 	d.log.Info("Entering RunRelocate", "state", d.getLastDRState())
 
 	const done = true
@@ -570,12 +574,14 @@ func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) 
 
 	if !result {
 		d.instance.Status.Progression = "PreparingFinalSync"
+
 		return !done, nil
 	}
 
 	if len(d.userPlacementRule.Status.Decisions) != 0 {
 		// clear current user PlacementRule's decision
 		d.instance.Status.Progression = "ClearingPlRule"
+
 		err := d.clearUserPlacementRuleStatus()
 		if err != nil {
 			return !done, err
@@ -590,10 +596,12 @@ func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) 
 
 	if !result {
 		d.instance.Status.Progression = "RunningFinalSync"
+
 		return !done, nil
 	}
 
 	d.instance.Status.Progression = "FinalSyncComplete"
+
 	return done, nil
 }
 
@@ -602,9 +610,9 @@ func (d *DRPCInstance) prepareForFinalSync(homeCluster string) (bool, error) {
 
 	const done = true
 
-	vrg := d.vrgs[homeCluster]
+	vrg, ok := d.vrgs[homeCluster]
 
-	if vrg == nil {
+	if !ok {
 		d.log.Info(fmt.Sprintf("prepareForFinalSync: VRG not available on cluster %s", homeCluster))
 
 		return !done, fmt.Errorf("VRG not found on Cluster %s", homeCluster)
@@ -632,9 +640,9 @@ func (d *DRPCInstance) runFinalSync(homeCluster string) (bool, error) {
 
 	const done = true
 
-	vrg := d.vrgs[homeCluster]
+	vrg, ok := d.vrgs[homeCluster]
 
-	if vrg == nil {
+	if !ok {
 		d.log.Info(fmt.Sprintf("runFinalSync: VRG not available on cluster %s", homeCluster))
 
 		return !done, fmt.Errorf("VRG not found on Cluster %s", homeCluster)
@@ -1309,8 +1317,8 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 
 	// IFF we have VolSync PVCs, then no need to clean up
 	homeCluster := clusterToSkip
-	repReq, err := d.IsVolSyncReplicationRequired(homeCluster)
 
+	repReq, err := d.IsVolSyncReplicationRequired(homeCluster)
 	if err != nil {
 		return fmt.Errorf("failed to check if VolSync replication is required (%w)", err)
 	}
