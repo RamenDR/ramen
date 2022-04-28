@@ -225,7 +225,7 @@ type VolumeReplicationGroupStatus struct {
 	LastUpdateTime     metav1.Time `json:"lastUpdateTime,omitempty"`
 
 	PrepareForFinalSyncComplete bool `json:"PrepareForFinalSyncComplete,omitempty"`
-	FinalSyncComplete bool `json:"finalSyncComplete,omitempty"`
+	FinalSyncComplete           bool `json:"finalSyncComplete,omitempty"`
 }
 
 // +kubebuilder:object:root=true

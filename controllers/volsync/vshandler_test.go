@@ -1034,7 +1034,6 @@ var _ = Describe("VolSync Handler", func() {
 						}))
 					})
 				})
-
 			})
 		})
 	})

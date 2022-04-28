@@ -1457,6 +1457,7 @@ func (v *VRGInstance) fetchAndRestorePV() (bool, error) {
 
 		if s3ProfileName == "NoS3" {
 			v.log.Info("NoS3 available to fetch")
+
 			NoS3 = true
 
 			continue
@@ -1698,6 +1699,7 @@ func (v *VRGInstance) addPVRestoreAnnotation(pv *corev1.PersistentVolume) {
 //    VRG.conditions.Available.Status = false
 //    VRG.conditions.Available.Reason = Progressing
 //
+//nolint:funlen
 func (v *VRGInstance) aggregateVolRepDataReadyCondition() {
 	vrgReady := len(v.instance.Status.ProtectedPVCs) != 0
 	vrgProgressing := false
@@ -1767,6 +1769,7 @@ func (v *VRGInstance) aggregateVolRepDataReadyCondition() {
 	setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 }
 
+//nolint:funlen,gocognit
 func (v *VRGInstance) aggregateVolRepDataProtectedCondition() {
 	vrgProtected := true
 	vrgReplicating := false

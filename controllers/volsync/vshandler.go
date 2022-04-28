@@ -814,6 +814,7 @@ func (v *VSHandler) EnsurePVCfromRD(rdSpec ramendrv1alpha1.VolSyncReplicationDes
 	return v.ensurePVCFromSnapshot(rdSpec, *vsImageRef)
 }
 
+//nolint:funlen,gocognit,cyclop
 func (v *VSHandler) ensurePVCFromSnapshot(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	snapshotRef corev1.TypedLocalObjectReference) error {
 	l := v.log.WithValues("pvcName", rdSpec.ProtectedPVC.Name, "snapshotRef", snapshotRef)
@@ -832,6 +833,7 @@ func (v *VSHandler) ensurePVCFromSnapshot(rdSpec ramendrv1alpha1.VolSyncReplicat
 			// If this pvc already exists and not pointing to our desired snapshot, we will need to
 			// delete it and re-create as we cannot update the datasource
 			pvcNeedsRecreation = true
+
 			return nil
 		}
 		if pvc.Status.Phase == corev1.ClaimBound {
