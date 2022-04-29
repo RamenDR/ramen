@@ -286,7 +286,7 @@ var _ = Describe("DRClusterController", func() {
 			It("reports NOT validated with reason FencingHandlingFailed", func() {
 				drcluster.Spec.ClusterFence = "Fenced"
 				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
-				validatedConditionExpect(drcluster, false, metav1.ConditionFalse, Equal("FencingHandlingFailed"), Ignore())
+				validatedConditionExpect(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore())
 			})
 		})
 		When("deleting a DRCluster with an invalid fencing status", func() {
