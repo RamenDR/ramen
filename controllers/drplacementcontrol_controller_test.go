@@ -1139,17 +1139,17 @@ func unfenceCluster(cluster string) {
 	Eventually(func() bool {
 		latestDRCluster := getLatestDRCluster(cluster)
 
-		drClusterUnfencedCondition := getDRClusterCondition(&latestDRCluster.Status,
-			rmn.DRClusterConditionTypeUnfenced)
-		if drClusterUnfencedCondition == nil {
+		drClusterFencedCondition := getDRClusterCondition(&latestDRCluster.Status,
+			rmn.DRClusterConditionTypeFenced)
+		if drClusterFencedCondition == nil {
 			return false
 		}
 
-		if drClusterUnfencedCondition.ObservedGeneration != latestDRCluster.Generation {
+		if drClusterFencedCondition.ObservedGeneration != latestDRCluster.Generation {
 			return false
 		}
 
-		return drClusterUnfencedCondition.Status == metav1.ConditionTrue
+		return drClusterFencedCondition.Status == metav1.ConditionFalse
 	}, timeout, interval).Should(BeTrue(), "failed to update DRCluster on time")
 }
 

@@ -68,10 +68,6 @@ const (
 	// Fencing CR to fence off this cluster
 	// has been created
 	DRClusterConditionTypeFenced = "Fenced"
-
-	// fencing CR to unfence this cluster has
-	// been created
-	DRClusterConditionTypeUnfenced = "Unfenced"
 )
 
 // DRClusterStatus defines the observed state of DRCluster
