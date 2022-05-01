@@ -24,6 +24,7 @@ import (
 	gomegaTypes "github.com/onsi/gomega/types"
 	workv1 "github.com/open-cluster-management/api/work/v1"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/controllers"
 	"github.com/ramendr/ramen/controllers/util"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -32,8 +33,8 @@ import (
 )
 
 var _ = Describe("DRClusterController", func() {
-	validatedConditionExpect := func(drcluster *ramen.DRCluster, disabled bool, status metav1.ConditionStatus,
-		reasonMatcher, messageMatcher gomegaTypes.GomegaMatcher,
+	conditionExpect := func(drcluster *ramen.DRCluster, disabled bool, status metav1.ConditionStatus,
+		reasonMatcher, messageMatcher gomegaTypes.GomegaMatcher, conditionType string,
 	) {
 		Eventually(
 			func(g Gomega) {
@@ -48,7 +49,7 @@ var _ = Describe("DRClusterController", func() {
 					},
 					IgnoreExtras,
 					Elements{
-						ramen.DRClusterValidated: MatchAllFields(Fields{
+						conditionType: MatchAllFields(Fields{
 							`Type`:               Ignore(),
 							`Status`:             Equal(status),
 							`ObservedGeneration`: Equal(drcluster.Generation),
@@ -107,6 +108,9 @@ var _ = Describe("DRClusterController", func() {
 	cidrs := [][]string{
 		{"198.51.100.17/24", "198.51.100.18/24", "198.51.100.19/24"}, // valid CIDR
 		{"1111.51.100.14/24", "aaa.51.100.15/24", "00.51.100.16/24"}, // invalid CIDR
+
+		{"198.51.100.20/24", "198.51.100.21/24", "198.51.100.22/24"}, // valid CIDR
+		{"198.51.100.23/24", "198.51.100.24/24", "198.51.100.25/24"}, // valid CIDR
 	}
 
 	drclusters := []ramen.DRCluster{}
@@ -121,8 +125,31 @@ var _ = Describe("DRClusterController", func() {
 				Spec: ramen.DRClusterSpec{
 					S3ProfileName: s3Profiles[0].S3ProfileName,
 					CIDRs:         cidrs[0],
+					Region:        "east",
 				},
-			})
+			},
+			ramen.DRCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "drc-cluster1",
+					Namespace: ramenNamespace,
+				},
+				Spec: ramen.DRClusterSpec{
+					S3ProfileName: s3Profiles[0].S3ProfileName,
+					CIDRs:         cidrs[2],
+					Region:        "east",
+				},
+			},
+		)
+	}
+
+	syncDRPolicy := &ramen.DRPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "sync-drpolicy-drcluster-tests",
+		},
+		Spec: ramen.DRPolicySpec{
+			DRClusters:         []string{"drc-cluster0", "drc-cluster1"},
+			SchedulingInterval: schedulingInterval,
+		},
 	}
 
 	createDRClusterNamespaces := func() {
@@ -134,15 +161,63 @@ var _ = Describe("DRClusterController", func() {
 		}
 	}
 
-	var drcluster *ramen.DRCluster
+	deleteDRClusterNamespaces := func() {
+		for _, drcluster := range drclusters {
+			Expect(k8sClient.Delete(
+				context.TODO(),
+				&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: drcluster.Name}},
+			)).To(Succeed())
+		}
+	}
 
+	createPolicies := func() {
+		policy := syncDRPolicy.DeepCopy()
+		Expect(k8sClient.Create(
+			context.TODO(), policy)).To(Succeed())
+	}
+
+	createOtherDRClusters := func() {
+		for i := range drclusters {
+			if i == 0 {
+				continue
+			}
+			cluster := drclusters[i].DeepCopy()
+			Expect(k8sClient.Create(context.TODO(), cluster)).To(Succeed())
+		}
+	}
+
+	deleteOtherDRClusters := func() {
+		for i := range drclusters {
+			if i == 0 {
+				continue
+			}
+			cluster := drclusters[i].DeepCopy()
+			Expect(k8sClient.Delete(context.TODO(), cluster)).To(Succeed())
+		}
+	}
+
+	drpolicyDeleteAndConfirm := func(drpolicy *ramen.DRPolicy) {
+		policy := drpolicy.DeepCopy()
+		Expect(k8sClient.Delete(context.TODO(), policy)).To(Succeed())
+		Eventually(func() bool {
+			return errors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{Name: policy.Name}, policy))
+		}, timeout, interval).Should(BeTrue())
+	}
+
+	drpolicyDelete := func(drpolicy *ramen.DRPolicy) {
+		drpolicyDeleteAndConfirm(drpolicy)
+	}
+
+	var drcluster *ramen.DRCluster
 	Specify("initialize tests", func() {
 		populateDRClusters()
 		createDRClusterNamespaces()
+		createOtherDRClusters()
 	})
 
 	Context("DRCluster resource S3Profile validation", func() {
 		Specify("create a drcluster copy for changes", func() {
+			createPolicies()
 			drcluster = drclusters[0].DeepCopy()
 		})
 		When("an S3Profile is missing in config", func() {
@@ -150,7 +225,8 @@ var _ = Describe("DRClusterController", func() {
 				By("creating a new DRCluster with an invalid S3Profile")
 				drcluster.Spec.S3ProfileName = "missing"
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
-				validatedConditionExpect(drcluster, false, metav1.ConditionFalse, Equal("s3ConnectionFailed"), Ignore())
+				conditionExpect(drcluster, false, metav1.ConditionFalse, Equal("s3ConnectionFailed"), Ignore(),
+					ramen.DRClusterValidated)
 			})
 		})
 		When("an S3Profile fails listing", func() {
@@ -158,7 +234,8 @@ var _ = Describe("DRClusterController", func() {
 				By("modifying a DRCluster with an invalid S3Profile that fails listing")
 				drcluster.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
 				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
-				validatedConditionExpect(drcluster, false, metav1.ConditionFalse, Equal("s3ListFailed"), Ignore())
+				conditionExpect(drcluster, false, metav1.ConditionFalse, Equal("s3ListFailed"), Ignore(),
+					ramen.DRClusterValidated)
 			})
 		})
 		When("fenced", func() {
@@ -166,7 +243,9 @@ var _ = Describe("DRClusterController", func() {
 				By("fencing an existing DRCluster with an invalid S3Profile")
 				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateManuallyFenced
 				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
-				validatedConditionExpect(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore())
+				conditionExpect(drcluster, false, metav1.ConditionTrue,
+					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
+					ramen.DRClusterConditionTypeFenced)
 			})
 		})
 		When("S3Profile is valid", func() {
@@ -175,7 +254,8 @@ var _ = Describe("DRClusterController", func() {
 				drcluster.Spec.S3ProfileName = s3Profiles[0].S3ProfileName
 				drcluster.Spec.ClusterFence = ""
 				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
-				validatedConditionExpect(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore())
+				conditionExpect(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
+					ramen.DRClusterValidated)
 			})
 		})
 		When("S3Profile is changed to an invalid profile in ramen config", func() {
@@ -183,12 +263,14 @@ var _ = Describe("DRClusterController", func() {
 				By("modifying a DRCluster with the new valid S3Profile")
 				drcluster.Spec.S3ProfileName = s3Profiles[5].S3ProfileName
 				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
-				validatedConditionExpect(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore())
+				conditionExpect(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
+					ramen.DRClusterValidated)
 				By("changing the S3Profile in ramen config to an invalid value")
 				newS3Profiles := s3Profiles[0:]
 				s3Profiles[5].S3Bucket = bucketNameFail
 				s3ProfilesStore(newS3Profiles)
-				validatedConditionExpect(drcluster, false, metav1.ConditionFalse, Equal("s3ConnectionFailed"), Ignore())
+				conditionExpect(drcluster, false, metav1.ConditionFalse, Equal("s3ConnectionFailed"), Ignore(),
+					ramen.DRClusterValidated)
 				// TODO: Ensure when changing S3Profile, dr-cluster's ramen config is updated in MW
 			})
 		})
@@ -197,15 +279,18 @@ var _ = Describe("DRClusterController", func() {
 				By("modifying a DRCluster with a valid S3Profile")
 				drcluster.Spec.S3ProfileName = s3Profiles[0].S3ProfileName
 				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
-				validatedConditionExpect(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore())
+				conditionExpect(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
+					ramen.DRClusterValidated)
 				By("modifying a DRCluster with an invalid S3Profile that fails listing")
 				drcluster.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
 				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
-				validatedConditionExpect(drcluster, false, metav1.ConditionFalse, Equal("s3ListFailed"), Ignore())
+				conditionExpect(drcluster, false, metav1.ConditionFalse, Equal("s3ListFailed"), Ignore(),
+					ramen.DRClusterValidated)
 			})
 		})
 		When("deleting a DRCluster with an invalid s3Profile", func() {
 			It("is successful", func() {
+				drpolicyDelete(syncDRPolicy)
 				drclusterDelete(drcluster)
 			})
 		})
@@ -213,6 +298,7 @@ var _ = Describe("DRClusterController", func() {
 
 	Context("DRCluster resource CIDR validation", func() {
 		Specify("create a drcluster copy for changes", func() {
+			createPolicies()
 			drcluster = drclusters[0].DeepCopy()
 		})
 		When("provided CIDR value is incorrect", func() {
@@ -220,19 +306,28 @@ var _ = Describe("DRClusterController", func() {
 				By("creating a new DRCluster with an invalid CIDR")
 				drcluster.Spec.CIDRs = cidrs[1]
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
-				validatedConditionExpect(drcluster, false, metav1.ConditionFalse, Equal("ValidationFailed"), Ignore())
+				conditionExpect(drcluster, false, metav1.ConditionFalse, Equal("ValidationFailed"), Ignore(),
+					ramen.DRClusterValidated)
 			})
 		})
 		When("provided CIDR value is changed to be correct", func() {
 			It("reports validated", func() {
 				drcluster.Spec.CIDRs = cidrs[0]
 				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
-				validatedConditionExpect(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore())
+				conditionExpect(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
+					ramen.DRClusterValidated)
 			})
 		})
 		When("deleting a DRCluster with a valid CIDR value", func() {
 			It("is successful", func() {
+				// For DRCluster deletion, it should not be referenced
+				// by any DRPolicy. Hence remove the DRPolicy as well
+				// before deleting DRCluster
+				drpolicyDelete(syncDRPolicy)
 				drclusterDelete(drcluster)
+
+				// recreate DRPolicy
+				createPolicies()
 				drcluster = drclusters[0].DeepCopy()
 			})
 		})
@@ -240,18 +335,21 @@ var _ = Describe("DRClusterController", func() {
 			It("reports validated", func() {
 				By("creating a new DRCluster with an valid CIDR")
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
-				validatedConditionExpect(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore())
+				conditionExpect(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
+					ramen.DRClusterValidated)
 			})
 		})
 		When("provided CIDR value is changed to be incorrect", func() {
 			It("reports NOT validated with reason ValidationFailed", func() {
 				drcluster.Spec.CIDRs = cidrs[1]
 				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
-				validatedConditionExpect(drcluster, false, metav1.ConditionFalse, Equal("ValidationFailed"), Ignore())
+				conditionExpect(drcluster, false, metav1.ConditionFalse,
+					Equal("ValidationFailed"), Ignore(), ramen.DRClusterValidated)
 			})
 		})
 		When("deleting a DRCluster with an invalid CIDR value", func() {
 			It("is successful", func() {
+				drpolicyDelete(syncDRPolicy)
 				drclusterDelete(drcluster)
 			})
 		})
@@ -259,38 +357,53 @@ var _ = Describe("DRClusterController", func() {
 
 	Context("DRCluster resource fencing validation", func() {
 		Specify("create a drcluster copy for changes", func() {
+			createPolicies()
 			drcluster = drclusters[0].DeepCopy()
 		})
 		When("provided Fencing value is empty", func() {
 			It("reports validated with status fencing as Unfenced", func() {
 				drcluster.Spec.ClusterFence = ""
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
-				validatedConditionExpect(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore())
+				conditionExpect(drcluster, false, metav1.ConditionFalse,
+					Equal(controllers.DRClusterConditionReasonClean), Ignore(),
+					ramen.DRClusterConditionTypeFenced)
 			})
 		})
 		When("provided Fencing value is Unfenced", func() {
 			It("reports validated with status fencing as Unfenced", func() {
 				drcluster.Spec.ClusterFence = "Unfenced"
 				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
-				validatedConditionExpect(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore())
+				// When Unfence is set, DRCluster controller first unfences the
+				// cluster (i.e. itself through a peer cluster) and then cleans
+				// up the fencing resource. So, by the time this check is made,
+				// either the cluster should have been unfenced or completely
+				// cleaned
+				conditionExpect(drcluster, false, metav1.ConditionFalse,
+					BeElementOf(controllers.DRClusterConditionReasonUnfenced, controllers.DRClusterConditionReasonClean),
+					Ignore(), ramen.DRClusterConditionTypeFenced)
 			})
 		})
 		When("provided Fencing value is ManuallyFenced", func() {
 			It("reports validated with status fencing as Fenced", func() {
 				drcluster.Spec.ClusterFence = "ManuallyFenced"
 				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
-				validatedConditionExpect(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore())
+				conditionExpect(drcluster, false, metav1.ConditionTrue,
+					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
+					ramen.DRClusterConditionTypeFenced)
 			})
 		})
 		When("provided Fencing value is Fenced", func() {
 			It("reports NOT validated with reason FencingHandlingFailed", func() {
 				drcluster.Spec.ClusterFence = "Fenced"
 				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
-				validatedConditionExpect(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore())
+				conditionExpect(drcluster, false, metav1.ConditionTrue,
+					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
+					ramen.DRClusterConditionTypeFenced)
 			})
 		})
 		When("deleting a DRCluster with an invalid fencing status", func() {
 			It("is successful", func() {
+				drpolicyDelete(syncDRPolicy)
 				drclusterDelete(drcluster)
 			})
 		})
@@ -298,6 +411,7 @@ var _ = Describe("DRClusterController", func() {
 
 	Context("DRCluster resource cluster name validation", func() {
 		Specify("create a drcluster copy for changes", func() {
+			createPolicies()
 			drcluster = drclusters[0].DeepCopy()
 		})
 		// TODO: We need ManagedCluster validation and tests, just not namespace validation
@@ -305,7 +419,8 @@ var _ = Describe("DRClusterController", func() {
 			It("reports NOT validated with reason DrClustersDeployFailed", func() {
 				drcluster.Name = "drc-missing"
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
-				validatedConditionExpect(drcluster, false, metav1.ConditionFalse, Equal("DrClustersDeployFailed"), Ignore())
+				conditionExpect(drcluster, false, metav1.ConditionFalse, Equal("DrClustersDeployFailed"), Ignore(),
+					ramen.DRClusterValidated)
 				drclusterDelete(drcluster)
 			})
 		})
@@ -313,11 +428,13 @@ var _ = Describe("DRClusterController", func() {
 			It("reports validated", func() {
 				drcluster = drclusters[0].DeepCopy()
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
-				validatedConditionExpect(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore())
+				conditionExpect(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
+					ramen.DRClusterValidated)
 			})
 		})
 		When("deleting a DRCluster with all valid values", func() {
 			It("is successful", func() {
+				drpolicyDelete(syncDRPolicy)
 				drclusterDelete(drcluster)
 			})
 		})
@@ -333,14 +450,23 @@ var _ = Describe("DRClusterController", func() {
 			It("does NOT create Subscription related manifests", func() {
 				By("creating a valid DRCluster")
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
-				validatedConditionExpect(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore())
+				conditionExpect(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
+					ramen.DRClusterValidated)
 				ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = false
 				ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = false
 				configMapUpdate()
-				validatedConditionExpect(drcluster, true, metav1.ConditionTrue, Equal("Succeeded"), Ignore())
+				conditionExpect(drcluster, true, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
+					ramen.DRClusterValidated)
 				ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = true
 				ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = true
 				configMapUpdate()
+			})
+		})
+		When("deleting a DRCluster with all valid values", func() {
+			It("is successful", func() {
+				drclusterDelete(drcluster)
+				deleteOtherDRClusters()
+				deleteDRClusterNamespaces()
 			})
 		})
 	})
