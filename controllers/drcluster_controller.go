@@ -114,6 +114,8 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			return ctrl.Result{}, fmt.Errorf("finalizer remove update: %w", err)
 		}
 
+		log.Info("delete")
+
 		return ctrl.Result{}, nil
 	}
 
@@ -286,8 +288,7 @@ func (u *drclusterUpdater) finalizerRemove() error {
 // 3) Handle Ramen driven fencing here
 //
 func (u *drclusterUpdater) clusterFenceHandle() (bool, error) {
-	if u.object.Spec.ClusterFence == ramen.ClusterFenceStateUnfenced ||
-		u.object.Spec.ClusterFence == ramen.ClusterFenceState("") {
+	if u.object.Spec.ClusterFence == ramen.ClusterFenceStateUnfenced {
 		return u.clusterUnfence()
 	}
 
