@@ -154,10 +154,6 @@ func (r DRClusterReconciler) processFencing(u *drclusterUpdater) (ctrl.Result, e
 }
 
 func (u *drclusterUpdater) initializeStatus() {
-	if u.object.Status.Conditions == nil {
-		u.object.Status.Conditions = []metav1.Condition{}
-	}
-
 	// Set the DRCluster conditions to unknown as nothing is known at this point
 	msg := "Initializing DRCluster"
 	setDRClusterInitialCondition(&u.object.Status.Conditions, u.object.Generation, msg)
@@ -562,13 +558,6 @@ func setDRClusterInitialCondition(conditions *[]metav1.Condition, observedGenera
 		Message:            message,
 	})
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               ramen.DRClusterConditionTypeUnfenced,
-		Reason:             DRClusterConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		Message:            message,
-	})
-	setStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeClean,
 		Reason:             DRClusterConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
@@ -590,13 +579,6 @@ func setDRClusterFencingCondition(conditions *[]metav1.Condition, observedGenera
 		Reason:             DRClusterConditionReasonFencing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
-		Message:            message,
-	})
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               ramen.DRClusterConditionTypeUnfenced,
-		Reason:             DRClusterConditionReasonFencing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionTrue,
 		Message:            message,
 	})
 	setStatusCondition(conditions, metav1.Condition{
@@ -626,13 +608,6 @@ func setDRClusterUnfencingCondition(conditions *[]metav1.Condition, observedGene
 		Message:            message,
 	})
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               ramen.DRClusterConditionTypeUnfenced,
-		Reason:             DRClusterConditionReasonUnfencing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionFalse,
-		Message:            message,
-	})
-	setStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeClean,
 		Reason:             DRClusterConditionReasonUnfencing,
 		ObservedGeneration: observedGeneration,
@@ -656,13 +631,6 @@ func setDRClusterCleaningCondition(conditions *[]metav1.Condition, observedGener
 		Reason:             DRClusterConditionReasonCleaning,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
-		Message:            message,
-	})
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               ramen.DRClusterConditionTypeUnfenced,
-		Reason:             DRClusterConditionReasonCleaning,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionTrue,
 		Message:            message,
 	})
 	setStatusCondition(conditions, metav1.Condition{
@@ -698,13 +666,6 @@ func setDRClusterFencedCondition(conditions *[]metav1.Condition, observedGenerat
 		Message:            message,
 	})
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               ramen.DRClusterConditionTypeUnfenced,
-		Reason:             DRClusterConditionReasonFenced,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionFalse,
-		Message:            message,
-	})
-	setStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeClean,
 		Reason:             DRClusterConditionReasonFenced,
 		ObservedGeneration: observedGeneration,
@@ -726,13 +687,6 @@ func setDRClusterUnfencedCondition(conditions *[]metav1.Condition, observedGener
 		Message:            message,
 	})
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               ramen.DRClusterConditionTypeUnfenced,
-		Reason:             DRClusterConditionReasonUnfenced,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionTrue,
-		Message:            message,
-	})
-	setStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeClean,
 		Reason:             DRClusterConditionReasonFenced,
 		ObservedGeneration: observedGeneration,
@@ -751,13 +705,6 @@ func setDRClusterCleanCondition(conditions *[]metav1.Condition, observedGenerati
 		Reason:             DRClusterConditionReasonClean,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
-		Message:            message,
-	})
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               ramen.DRClusterConditionTypeUnfenced,
-		Reason:             DRClusterConditionReasonClean,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionTrue,
 		Message:            message,
 	})
 	setStatusCondition(conditions, metav1.Condition{
@@ -785,13 +732,6 @@ func setDRClusterFencingFailedCondition(conditions *[]metav1.Condition, observed
 		Message:            message,
 	})
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               ramen.DRClusterConditionTypeUnfenced,
-		Reason:             DRClusterConditionReasonFenceError,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionTrue,
-		Message:            message,
-	})
-	setStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeClean,
 		Reason:             DRClusterConditionReasonFenceError,
 		ObservedGeneration: observedGeneration,
@@ -815,13 +755,6 @@ func setDRClusterUnfencingFailedCondition(conditions *[]metav1.Condition, observ
 		Message:            message,
 	})
 	setStatusCondition(conditions, metav1.Condition{
-		Type:               ramen.DRClusterConditionTypeUnfenced,
-		Reason:             DRClusterConditionReasonUnfenceError,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionFalse,
-		Message:            message,
-	})
-	setStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeClean,
 		Reason:             DRClusterConditionReasonUnfenceError,
 		ObservedGeneration: observedGeneration,
@@ -841,13 +774,6 @@ func setDRClusterCleaningFailedCondition(conditions *[]metav1.Condition, observe
 		Reason:             DRClusterConditionReasonCleanError,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
-		Message:            message,
-	})
-	setStatusCondition(conditions, metav1.Condition{
-		Type:               ramen.DRClusterConditionTypeUnfenced,
-		Reason:             DRClusterConditionReasonCleanError,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionTrue,
 		Message:            message,
 	})
 	setStatusCondition(conditions, metav1.Condition{
