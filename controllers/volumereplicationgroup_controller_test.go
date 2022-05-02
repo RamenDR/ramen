@@ -375,6 +375,7 @@ type vrgTest struct {
 	storageClass     string
 	replicationClass string
 	pvcLabels        map[string]string
+	pvcCount         int
 }
 
 // newVRGTestCase creates a new namespace, zero or more PVCs (equal to the
@@ -434,6 +435,7 @@ func newVRGTestCaseBindInfo(pvcCount int, testTemplate *template, checkBind, vrg
 		storageClass:     testTemplate.storageClassName,
 		replicationClass: testTemplate.replicationClassName,
 		pvcLabels:        make(map[string]string),
+		pvcCount:         pvcCount,
 	}
 
 	By("Creating namespace " + v.namespace)
@@ -449,9 +451,9 @@ func newVRGTestCaseBindInfo(pvcCount int, testTemplate *template, checkBind, vrg
 
 	if vrgFirst {
 		v.createVRG()
-		v.createPVCandPV(pvcCount, testTemplate.ClaimBindInfo, testTemplate.VolumeBindInfo)
+		v.createPVCandPV(testTemplate.ClaimBindInfo, testTemplate.VolumeBindInfo)
 	} else {
-		v.createPVCandPV(pvcCount, testTemplate.ClaimBindInfo, testTemplate.VolumeBindInfo)
+		v.createPVCandPV(testTemplate.ClaimBindInfo, testTemplate.VolumeBindInfo)
 		v.createVRG()
 	}
 
@@ -462,10 +464,10 @@ func newVRGTestCaseBindInfo(pvcCount int, testTemplate *template, checkBind, vrg
 	return v
 }
 
-func (v *vrgTest) createPVCandPV(pvcCount int, claimBindInfo corev1.PersistentVolumeClaimPhase,
+func (v *vrgTest) createPVCandPV(claimBindInfo corev1.PersistentVolumeClaimPhase,
 	volumeBindInfo corev1.PersistentVolumePhase) {
 	// Create the requested number of PVs and corresponding PVCs
-	for i := 0; i < pvcCount; i++ {
+	for i := 0; i < v.pvcCount; i++ {
 		pvName := fmt.Sprintf("pv-%v-%02d", v.uniqueID, i)
 		pvcName := fmt.Sprintf("pvc-%v-%02d", v.uniqueID, i)
 
