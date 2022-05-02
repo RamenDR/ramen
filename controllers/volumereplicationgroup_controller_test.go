@@ -51,7 +51,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 		}
 		It("populates the S3 store with PVs and starts vrg as primary to check that the PVs are restored", func() {
 			numPVs := 3
-			vtest := newVRGTestCaseBindInfo(0, restoreTestTemplate, true, false)
+			vtest := newVRGTestCaseCreateAndStart(0, restoreTestTemplate, true, false)
 			vrgNamespacedName := vtest.namespace + "/" + vtest.vrgName + "/"
 			pvList := generateFakePVs("pv", numPVs)
 			populateS3Store(s3Profiles[0].S3ProfileName, vrgNamespacedName, pvList)
@@ -78,7 +78,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 		}
 		It("sets up PVCs, PVs and VRGs", func() {
 			for c := 0; c < 5; c++ {
-				v := newVRGTestCaseBindInfo(c, createTestTemplate, true, false)
+				v := newVRGTestCaseCreateAndStart(c, createTestTemplate, true, false)
 				vrgTestCases = append(vrgTestCases, v)
 			}
 		})
@@ -131,7 +131,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			for c := 0; c < 5; c++ {
 				// Test the scenario where the pvc is not bound yet
 				// and expect no VRs to be created.
-				v := newVRGTestCaseBindInfo(c, vrgTestTemplate, false, false)
+				v := newVRGTestCaseCreateAndStart(c, vrgTestTemplate, false, false)
 				vrgTests = append(vrgTests, v)
 			}
 		})
@@ -177,7 +177,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 	var vrgStatusTests []vrgTest
 	Context("in primary state status check pending to bound", func() {
 		It("sets up non-bound PVCs, PVs and then bind them", func() {
-			v := newVRGTestCaseBindInfo(4, vrgTestTemplate, false, false)
+			v := newVRGTestCaseCreateAndStart(4, vrgTestTemplate, false, false)
 			vrgStatusTests = append(vrgStatusTests, v)
 		})
 		It("expect no VR to be created as PVC not bound and check status", func() {
@@ -220,7 +220,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 	var vrgStatus2Tests []vrgTest
 	Context("in primary state status check bound", func() {
 		It("sets up PVCs, PVs", func() {
-			v := newVRGTestCaseBindInfo(4, vrgTest2Template, true, true)
+			v := newVRGTestCaseCreateAndStart(4, vrgTest2Template, true, true)
 			vrgStatus2Tests = append(vrgStatus2Tests, v)
 		})
 		It("waits for VRG to create a VR for each PVC bind and checks status", func() {
@@ -255,7 +255,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 	var vrgStatus3Tests []vrgTest
 	Context("in primary state status check create VRG first", func() {
 		It("sets up non-bound PVCs, PVs and then bind them", func() {
-			v := newVRGTestCaseBindInfo(4, vrgTest3Template, false, true)
+			v := newVRGTestCaseCreateAndStart(4, vrgTest3Template, false, true)
 			vrgStatus3Tests = append(vrgStatus3Tests, v)
 		})
 		It("expect no VR to be created as PVC not bound and check status", func() {
@@ -299,7 +299,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 	}
 	Context("schedule test, provisioner does not match", func() {
 		It("sets up non-bound PVCs, PVs and then bind them", func() {
-			v := newVRGTestCaseBindInfo(4, vrgScheduleTestTemplate, true, true)
+			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTestTemplate, true, true)
 			vrgScheduleTests = append(vrgScheduleTests, v)
 		})
 		It("expect no VR to be created as PVC not bound and check status", func() {
@@ -332,7 +332,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 	}
 	Context("schedule tests schedue does not match", func() {
 		It("sets up non-bound PVCs, PVs and then bind them", func() {
-			v := newVRGTestCaseBindInfo(4, vrgScheduleTest2Template, true, true)
+			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest2Template, true, true)
 			vrgSchedule2Tests = append(vrgSchedule2Tests, v)
 		})
 		It("expect no VR to be created as PVC not bound and check status", func() {
@@ -365,7 +365,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 	}
 	Context("schedule tests replicationclass does not have labels", func() {
 		It("sets up non-bound PVCs, PVs and then bind them", func() {
-			v := newVRGTestCaseBindInfo(4, vrgScheduleTest3Template, true, true)
+			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest3Template, true, true)
 			vrgSchedule3Tests = append(vrgSchedule3Tests, v)
 		})
 		It("expect no VR to be created as VR not created and check status", func() {
@@ -424,13 +424,13 @@ func newRandomNamespaceSuffix() string {
 	return string(randomSuffix)
 }
 
-// newVRGTestCaseBindInfo creates a new namespace, zero or more PVCs (equal
+// newVRGTestCaseCreateAndStart creates a new namespace, zero or more PVCs (equal
 // to the input pvcCount), a PV for each PVC, and a VRG in primary state,
 // with label selector that points to the PVCs created. Each PVC is created
 // with Status.Phase set to ClaimPending instead of ClaimBound. Expectation
 // is that, until pvc is not bound, VolRep resources should not be created
 // by VRG.
-func newVRGTestCaseBindInfo(pvcCount int, testTemplate *template, checkBind, vrgFirst bool) vrgTest {
+func newVRGTestCaseCreateAndStart(pvcCount int, testTemplate *template, checkBind, vrgFirst bool) vrgTest {
 	objectNameSuffix := newRandomNamespaceSuffix()
 
 	v := vrgTest{
