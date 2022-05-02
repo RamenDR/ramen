@@ -397,6 +397,7 @@ type vrgTest struct {
 	pvcLabels        map[string]string
 	pvcCount         int
 	checkBind        bool
+	vrgFirst         bool
 }
 
 type template struct {
@@ -440,6 +441,7 @@ func newVRGTestCaseBindInfo(pvcCount int, testTemplate *template, checkBind, vrg
 		pvcLabels:        make(map[string]string),
 		pvcCount:         pvcCount,
 		checkBind:        checkBind,
+		vrgFirst:         vrgFirst,
 	}
 
 	By("Creating namespace " + v.namespace)
@@ -453,7 +455,7 @@ func newVRGTestCaseBindInfo(pvcCount int, testTemplate *template, checkBind, vrg
 		v.pvcLabels["environment"] = fmt.Sprintf("dev.AZ1-%v", objectNameSuffix)
 	}
 
-	if vrgFirst {
+	if v.vrgFirst {
 		v.createVRG()
 		v.createPVCandPV(testTemplate.ClaimBindInfo, testTemplate.VolumeBindInfo)
 	} else {
