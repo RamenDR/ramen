@@ -379,7 +379,8 @@ var _ = Describe("DRClusterController", func() {
 				// either the cluster should have been unfenced or completely
 				// cleaned
 				conditionExpect(drcluster, false, metav1.ConditionFalse,
-					BeElementOf(controllers.DRClusterConditionReasonUnfenced, controllers.DRClusterConditionReasonClean),
+					BeElementOf(controllers.DRClusterConditionReasonUnfenced, controllers.DRClusterConditionReasonCleaning,
+						controllers.DRClusterConditionReasonClean),
 					Ignore(), ramen.DRClusterConditionTypeFenced)
 			})
 		})
