@@ -396,6 +396,7 @@ type vrgTest struct {
 	replicationClass string
 	pvcLabels        map[string]string
 	pvcCount         int
+	checkBind        bool
 }
 
 type template struct {
@@ -438,6 +439,7 @@ func newVRGTestCaseBindInfo(pvcCount int, testTemplate *template, checkBind, vrg
 		replicationClass: testTemplate.replicationClassName,
 		pvcLabels:        make(map[string]string),
 		pvcCount:         pvcCount,
+		checkBind:        checkBind,
 	}
 
 	By("Creating namespace " + v.namespace)
@@ -461,7 +463,7 @@ func newVRGTestCaseBindInfo(pvcCount int, testTemplate *template, checkBind, vrg
 
 	// If checkBind is true, then check whether PVCs and PVs are
 	// bound. Otherwise expect them to not have been bound.
-	v.verifyPVCBindingToPV(checkBind)
+	v.verifyPVCBindingToPV(v.checkBind)
 
 	return v
 }
@@ -796,7 +798,7 @@ func (v *vrgTest) createSC(testTemplate *template) {
 		"failed to create/get StorageClass %s/%s", v.storageClass, v.vrgName)
 }
 
-func (v *vrgTest) verifyPVCBindingToPV(checkBind bool) {
+func (v *vrgTest) verifyPVCBindingToPV(shouldBeBound bool) {
 	By("Waiting for PVC to get bound to PVs for " + v.vrgName)
 
 	for i := 0; i < len(v.pvcNames); i++ {
@@ -805,7 +807,7 @@ func (v *vrgTest) verifyPVCBindingToPV(checkBind bool) {
 		Eventually(func() bool {
 			pvc := v.getPVC(v.pvcNames[i])
 
-			if checkBind == true {
+			if shouldBeBound == true {
 				return pvc.Status.Phase == corev1.ClaimBound
 			}
 
