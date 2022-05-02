@@ -398,6 +398,7 @@ type vrgTest struct {
 	pvcCount         int
 	checkBind        bool
 	vrgFirst         bool
+	template         *template
 }
 
 type template struct {
@@ -442,12 +443,13 @@ func newVRGTestCaseBindInfo(pvcCount int, testTemplate *template, checkBind, vrg
 		pvcCount:         pvcCount,
 		checkBind:        checkBind,
 		vrgFirst:         vrgFirst,
+		template:         testTemplate,
 	}
 
 	By("Creating namespace " + v.namespace)
 	v.createNamespace()
-	v.createSC(testTemplate)
-	v.createVRC(testTemplate)
+	v.createSC(v.template)
+	v.createVRC(v.template)
 
 	// Setup PVC labels
 	if pvcCount > 0 {
@@ -457,9 +459,9 @@ func newVRGTestCaseBindInfo(pvcCount int, testTemplate *template, checkBind, vrg
 
 	if v.vrgFirst {
 		v.createVRG()
-		v.createPVCandPV(testTemplate.ClaimBindInfo, testTemplate.VolumeBindInfo)
+		v.createPVCandPV(v.template.ClaimBindInfo, v.template.VolumeBindInfo)
 	} else {
-		v.createPVCandPV(testTemplate.ClaimBindInfo, testTemplate.VolumeBindInfo)
+		v.createPVCandPV(v.template.ClaimBindInfo, v.template.VolumeBindInfo)
 		v.createVRG()
 	}
 
