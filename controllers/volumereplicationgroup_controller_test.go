@@ -51,10 +51,11 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 		}
 		It("populates the S3 store with PVs and starts vrg as primary to check that the PVs are restored", func() {
 			numPVs := 3
-			vtest := newVRGTestCaseCreateAndStart(0, restoreTestTemplate, true, false)
+			vtest := newVRGTestCaseCreate(0, restoreTestTemplate, true, false)
 			vrgNamespacedName := vtest.namespace + "/" + vtest.vrgName + "/"
 			pvList := generateFakePVs("pv", numPVs)
 			populateS3Store(s3Profiles[0].S3ProfileName, vrgNamespacedName, pvList)
+			vtest.VRGTestCaseStart()
 			waitForPVRestore(pvList)
 			// profile name, keyprefix, numPVs
 			// waitForPVRestore(S3ProfileName, numPVs)
