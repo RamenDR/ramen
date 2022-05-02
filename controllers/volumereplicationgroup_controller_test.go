@@ -374,6 +374,7 @@ type vrgTest struct {
 	vrgName          string
 	storageClass     string
 	replicationClass string
+	pvcLabels        map[string]string
 }
 
 // newVRGTestCase creates a new namespace, zero or more PVCs (equal to the
@@ -424,7 +425,6 @@ func newRandomNamespaceSuffix() string {
 // is that, until pvc is not bound, VolRep resources should not be created
 // by VRG.
 func newVRGTestCaseBindInfo(pvcCount int, testTemplate *template, checkBind, vrgFirst bool) vrgTest {
-	pvcLabels := map[string]string{}
 	objectNameSuffix := newRandomNamespaceSuffix()
 
 	v := vrgTest{
@@ -433,6 +433,7 @@ func newVRGTestCaseBindInfo(pvcCount int, testTemplate *template, checkBind, vrg
 		vrgName:          fmt.Sprintf("vrg-%v", objectNameSuffix),
 		storageClass:     testTemplate.storageClassName,
 		replicationClass: testTemplate.replicationClassName,
+		pvcLabels:        make(map[string]string),
 	}
 
 	By("Creating namespace " + v.namespace)
@@ -442,16 +443,16 @@ func newVRGTestCaseBindInfo(pvcCount int, testTemplate *template, checkBind, vrg
 
 	// Setup PVC labels
 	if pvcCount > 0 {
-		pvcLabels["appclass"] = "platinum"
-		pvcLabels["environment"] = fmt.Sprintf("dev.AZ1-%v", objectNameSuffix)
+		v.pvcLabels["appclass"] = "platinum"
+		v.pvcLabels["environment"] = fmt.Sprintf("dev.AZ1-%v", objectNameSuffix)
 	}
 
 	if vrgFirst {
-		v.createVRG(pvcLabels)
-		v.createPVCandPV(pvcCount, testTemplate.ClaimBindInfo, testTemplate.VolumeBindInfo, pvcLabels)
+		v.createVRG()
+		v.createPVCandPV(pvcCount, testTemplate.ClaimBindInfo, testTemplate.VolumeBindInfo)
 	} else {
-		v.createPVCandPV(pvcCount, testTemplate.ClaimBindInfo, testTemplate.VolumeBindInfo, pvcLabels)
-		v.createVRG(pvcLabels)
+		v.createPVCandPV(pvcCount, testTemplate.ClaimBindInfo, testTemplate.VolumeBindInfo)
+		v.createVRG()
 	}
 
 	// If checkBind is true, then check whether PVCs and PVs are
@@ -462,7 +463,7 @@ func newVRGTestCaseBindInfo(pvcCount int, testTemplate *template, checkBind, vrg
 }
 
 func (v *vrgTest) createPVCandPV(pvcCount int, claimBindInfo corev1.PersistentVolumeClaimPhase,
-	volumeBindInfo corev1.PersistentVolumePhase, pvcLabels map[string]string) {
+	volumeBindInfo corev1.PersistentVolumePhase) {
 	// Create the requested number of PVs and corresponding PVCs
 	for i := 0; i < pvcCount; i++ {
 		pvName := fmt.Sprintf("pv-%v-%02d", v.uniqueID, i)
@@ -481,7 +482,7 @@ func (v *vrgTest) createPVCandPV(pvcCount int, claimBindInfo corev1.PersistentVo
 		// VRG will not be able to reach PV. And by the time VRG reconciler
 		// reaches PV, it is already bound by this unit test.
 		v.createPV(pvName, pvcName, volumeBindInfo)
-		v.createPVC(pvcName, v.namespace, pvName, pvcLabels, claimBindInfo)
+		v.createPVC(pvcName, v.namespace, pvName, v.pvcLabels, claimBindInfo)
 		v.pvNames = append(v.pvNames, pvName)
 		v.pvcNames = append(v.pvcNames, pvcName)
 	}
@@ -700,7 +701,7 @@ func (v *vrgTest) bindPVAndPVC() {
 	}
 }
 
-func (v *vrgTest) createVRG(pvcLabels map[string]string) {
+func (v *vrgTest) createVRG() {
 	By("creating VRG " + v.vrgName)
 
 	schedulingInterval := "1h"
@@ -712,7 +713,7 @@ func (v *vrgTest) createVRG(pvcLabels map[string]string) {
 			Namespace: v.namespace,
 		},
 		Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
-			PVCSelector:      metav1.LabelSelector{MatchLabels: pvcLabels},
+			PVCSelector:      metav1.LabelSelector{MatchLabels: v.pvcLabels},
 			ReplicationState: "primary",
 			Async: ramendrv1alpha1.VRGAsyncSpec{
 				Mode:                     ramendrv1alpha1.AsyncModeEnabled,
