@@ -64,7 +64,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 
 	// Try the simple case of creating VRG, PVC, PV and
 	// check whether VolRep resources are created or not
-	var vrgTestCases []vrgTest
+	var vrgTestCases []*vrgTest
 	Context("in primary state", func() {
 		createTestTemplate := &template{
 			ClaimBindInfo:          corev1.ClaimBound,
@@ -114,7 +114,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 	// change the Status.Phase of PVCs and PVs to bound state,
 	// and then checks whether appropriate number of VolRep
 	// resources have been created or not.
-	var vrgTests []vrgTest
+	var vrgTests []*vrgTest
 	vrgTestTemplate := &template{
 		ClaimBindInfo:          corev1.ClaimPending,
 		VolumeBindInfo:         corev1.VolumePending,
@@ -174,7 +174,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 		})
 	})
 
-	var vrgStatusTests []vrgTest
+	var vrgStatusTests []*vrgTest
 	Context("in primary state status check pending to bound", func() {
 		It("sets up non-bound PVCs, PVs and then bind them", func() {
 			v := newVRGTestCaseCreateAndStart(4, vrgTestTemplate, false, false)
@@ -217,7 +217,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 		scProvisioner:          "manual.storage.com",
 		replicationClassLabels: map[string]string{"protection": "ramen"},
 	}
-	var vrgStatus2Tests []vrgTest
+	var vrgStatus2Tests []*vrgTest
 	Context("in primary state status check bound", func() {
 		It("sets up PVCs, PVs", func() {
 			v := newVRGTestCaseCreateAndStart(4, vrgTest2Template, true, true)
@@ -252,7 +252,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 		scProvisioner:          "manual.storage.com",
 		replicationClassLabels: map[string]string{"protection": "ramen"},
 	}
-	var vrgStatus3Tests []vrgTest
+	var vrgStatus3Tests []*vrgTest
 	Context("in primary state status check create VRG first", func() {
 		It("sets up non-bound PVCs, PVs and then bind them", func() {
 			v := newVRGTestCaseCreateAndStart(4, vrgTest3Template, false, true)
@@ -286,7 +286,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 
 	// VolumeReplicationClass provisioner and StorageClass provisioner
 	// does not match. VolumeReplication resources should not be created.
-	var vrgScheduleTests []vrgTest
+	var vrgScheduleTests []*vrgTest
 	vrgScheduleTestTemplate := &template{
 		ClaimBindInfo:          corev1.ClaimBound,
 		VolumeBindInfo:         corev1.VolumeBound,
@@ -319,7 +319,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 
 	// provisioner match. But schedule does not match. Again,
 	// VolumeReplication resource should not be created.
-	var vrgSchedule2Tests []vrgTest
+	var vrgSchedule2Tests []*vrgTest
 	vrgScheduleTest2Template := &template{
 		ClaimBindInfo:          corev1.ClaimBound,
 		VolumeBindInfo:         corev1.VolumeBound,
@@ -352,7 +352,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 
 	// provisioner and schedule match. But replicationClass
 	// does not have the labels that VRG expects to find.
-	var vrgSchedule3Tests []vrgTest
+	var vrgSchedule3Tests []*vrgTest
 	vrgScheduleTest3Template := &template{
 		ClaimBindInfo:          corev1.ClaimBound,
 		VolumeBindInfo:         corev1.VolumeBound,
@@ -424,16 +424,10 @@ func newRandomNamespaceSuffix() string {
 	return string(randomSuffix)
 }
 
-// newVRGTestCaseCreateAndStart creates a new namespace, zero or more PVCs (equal
-// to the input pvcCount), a PV for each PVC, and a VRG in primary state,
-// with label selector that points to the PVCs created. Each PVC is created
-// with Status.Phase set to ClaimPending instead of ClaimBound. Expectation
-// is that, until pvc is not bound, VolRep resources should not be created
-// by VRG.
-func newVRGTestCaseCreateAndStart(pvcCount int, testTemplate *template, checkBind, vrgFirst bool) vrgTest {
+func newVRGTestCaseCreate(pvcCount int, testTemplate *template, checkBind, vrgFirst bool) *vrgTest {
 	objectNameSuffix := newRandomNamespaceSuffix()
 
-	v := vrgTest{
+	v := &vrgTest{
 		uniqueID:         objectNameSuffix,
 		namespace:        fmt.Sprintf("envtest-ns-%v", objectNameSuffix),
 		vrgName:          fmt.Sprintf("vrg-%v", objectNameSuffix),
@@ -446,16 +440,19 @@ func newVRGTestCaseCreateAndStart(pvcCount int, testTemplate *template, checkBin
 		template:         testTemplate,
 	}
 
-	By("Creating namespace " + v.namespace)
-	v.createNamespace()
-	v.createSC(v.template)
-	v.createVRC(v.template)
-
-	// Setup PVC labels
 	if pvcCount > 0 {
 		v.pvcLabels["appclass"] = "platinum"
 		v.pvcLabels["environment"] = fmt.Sprintf("dev.AZ1-%v", objectNameSuffix)
 	}
+
+	return v
+}
+
+func (v *vrgTest) VRGTestCaseStart() {
+	By("Creating namespace " + v.namespace)
+	v.createNamespace()
+	v.createSC(v.template)
+	v.createVRC(v.template)
 
 	if v.vrgFirst {
 		v.createVRG()
@@ -468,6 +465,18 @@ func newVRGTestCaseCreateAndStart(pvcCount int, testTemplate *template, checkBin
 	// If checkBind is true, then check whether PVCs and PVs are
 	// bound. Otherwise expect them to not have been bound.
 	v.verifyPVCBindingToPV(v.checkBind)
+}
+
+// newVRGTestCaseCreateAndStart creates a new namespace, zero or more PVCs (equal
+// to the input pvcCount), a PV for each PVC, and a VRG in primary state,
+// with label selector that points to the PVCs created. Each PVC is created
+// with Status.Phase set to ClaimPending instead of ClaimBound. Expectation
+// is that, until pvc is not bound, VolRep resources should not be created
+// by VRG.
+func newVRGTestCaseCreateAndStart(pvcCount int, testTemplate *template, checkBind, vrgFirst bool) *vrgTest {
+	v := newVRGTestCaseCreate(pvcCount, testTemplate, checkBind, vrgFirst)
+
+	v.VRGTestCaseStart()
 
 	return v
 }
