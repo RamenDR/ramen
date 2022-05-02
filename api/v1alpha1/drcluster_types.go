@@ -25,9 +25,10 @@ import (
 type ClusterFenceState string
 
 const (
-	ClusterFenceStateUnfenced       = ClusterFenceState("Unfenced")
-	ClusterFenceStateFenced         = ClusterFenceState("Fenced")
-	ClusterFenceStateManuallyFenced = ClusterFenceState("ManuallyFenced")
+	ClusterFenceStateUnfenced         = ClusterFenceState("Unfenced")
+	ClusterFenceStateFenced           = ClusterFenceState("Fenced")
+	ClusterFenceStateManuallyFenced   = ClusterFenceState("ManuallyFenced")
+	ClusterFenceStateManuallyUnfenced = ClusterFenceState("ManuallyUnfenced")
 )
 
 type Region string
