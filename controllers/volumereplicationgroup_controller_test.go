@@ -39,9 +39,19 @@ var UploadedPVs = make(map[string]interface{})
 var _ = Describe("Test VolumeReplicationGroup", func() {
 	// Test first restore
 	Context("restore test case", func() {
+		restoreTestTemplate := &template{
+			ClaimBindInfo:          corev1.ClaimBound,
+			VolumeBindInfo:         corev1.VolumeBound,
+			schedulingInterval:     "1h",
+			storageClassName:       "manual",
+			replicationClassName:   "test-replicationclass",
+			vrcProvisioner:         "manual.storage.com",
+			scProvisioner:          "manual.storage.com",
+			replicationClassLabels: map[string]string{"protection": "ramen"},
+		}
 		It("populates the S3 store with PVs and starts vrg as primary to check that the PVs are restored", func() {
 			numPVs := 3
-			vtest := newVRGTestCase(0)
+			vtest := newVRGTestCaseBindInfo(0, restoreTestTemplate, true, false)
 			vrgNamespacedName := vtest.namespace + "/" + vtest.vrgName + "/"
 			pvList := generateFakePVs("pv", numPVs)
 			populateS3Store(s3Profiles[0].S3ProfileName, vrgNamespacedName, pvList)
@@ -56,9 +66,19 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 	// check whether VolRep resources are created or not
 	var vrgTestCases []vrgTest
 	Context("in primary state", func() {
+		createTestTemplate := &template{
+			ClaimBindInfo:          corev1.ClaimBound,
+			VolumeBindInfo:         corev1.VolumeBound,
+			schedulingInterval:     "1h",
+			storageClassName:       "manual",
+			replicationClassName:   "test-replicationclass",
+			vrcProvisioner:         "manual.storage.com",
+			scProvisioner:          "manual.storage.com",
+			replicationClassLabels: map[string]string{"protection": "ramen"},
+		}
 		It("sets up PVCs, PVs and VRGs", func() {
 			for c := 0; c < 5; c++ {
-				v := newVRGTestCase(c)
+				v := newVRGTestCaseBindInfo(c, createTestTemplate, true, false)
 				vrgTestCases = append(vrgTestCases, v)
 			}
 		})
@@ -376,24 +396,6 @@ type vrgTest struct {
 	replicationClass string
 	pvcLabels        map[string]string
 	pvcCount         int
-}
-
-// newVRGTestCase creates a new namespace, zero or more PVCs (equal to the
-// input pvcCount), a PV for each PVC, and a VRG in primary state, with
-// label selector that points to the PVCs created.
-func newVRGTestCase(pvcCount int) vrgTest {
-	testTemplate := &template{
-		ClaimBindInfo:          corev1.ClaimBound,
-		VolumeBindInfo:         corev1.VolumeBound,
-		schedulingInterval:     "1h",
-		storageClassName:       "manual",
-		replicationClassName:   "test-replicationclass",
-		vrcProvisioner:         "manual.storage.com",
-		scProvisioner:          "manual.storage.com",
-		replicationClassLabels: map[string]string{"protection": "ramen"},
-	}
-
-	return newVRGTestCaseBindInfo(pvcCount, testTemplate, true, false)
 }
 
 type template struct {
