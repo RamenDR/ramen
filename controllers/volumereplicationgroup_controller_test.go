@@ -367,6 +367,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 })
 
 type vrgTest struct {
+	uniqueID         string
 	namespace        string
 	pvNames          []string
 	pvcNames         []string
@@ -427,6 +428,7 @@ func newVRGTestCaseBindInfo(pvcCount int, testTemplate *template, checkBind, vrg
 	objectNameSuffix := newRandomNamespaceSuffix()
 
 	v := vrgTest{
+		uniqueID:         objectNameSuffix,
 		namespace:        fmt.Sprintf("envtest-ns-%v", objectNameSuffix),
 		vrgName:          fmt.Sprintf("vrg-%v", objectNameSuffix),
 		storageClass:     testTemplate.storageClassName,
@@ -446,11 +448,9 @@ func newVRGTestCaseBindInfo(pvcCount int, testTemplate *template, checkBind, vrg
 
 	if vrgFirst {
 		v.createVRG(pvcLabels)
-		v.createPVCandPV(pvcCount, testTemplate.ClaimBindInfo, testTemplate.VolumeBindInfo,
-			objectNameSuffix, pvcLabels)
+		v.createPVCandPV(pvcCount, testTemplate.ClaimBindInfo, testTemplate.VolumeBindInfo, pvcLabels)
 	} else {
-		v.createPVCandPV(pvcCount, testTemplate.ClaimBindInfo, testTemplate.VolumeBindInfo,
-			objectNameSuffix, pvcLabels)
+		v.createPVCandPV(pvcCount, testTemplate.ClaimBindInfo, testTemplate.VolumeBindInfo, pvcLabels)
 		v.createVRG(pvcLabels)
 	}
 
@@ -462,11 +462,11 @@ func newVRGTestCaseBindInfo(pvcCount int, testTemplate *template, checkBind, vrg
 }
 
 func (v *vrgTest) createPVCandPV(pvcCount int, claimBindInfo corev1.PersistentVolumeClaimPhase,
-	volumeBindInfo corev1.PersistentVolumePhase, objectNameSuffix string, pvcLabels map[string]string) {
+	volumeBindInfo corev1.PersistentVolumePhase, pvcLabels map[string]string) {
 	// Create the requested number of PVs and corresponding PVCs
 	for i := 0; i < pvcCount; i++ {
-		pvName := fmt.Sprintf("pv-%v-%02d", objectNameSuffix, i)
-		pvcName := fmt.Sprintf("pvc-%v-%02d", objectNameSuffix, i)
+		pvName := fmt.Sprintf("pv-%v-%02d", v.uniqueID, i)
+		pvcName := fmt.Sprintf("pvc-%v-%02d", v.uniqueID, i)
 
 		// Create PV first and then PVC. This is important to ensure that there
 		// is no race between the unit test and VRG reconciler in modifying PV.
