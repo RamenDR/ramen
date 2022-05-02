@@ -3,6 +3,7 @@ package controllers_test
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -23,9 +24,15 @@ import (
 )
 
 const (
-	vrgtimeout  = time.Second * 10
-	vrginterval = time.Millisecond * 10
+	vrgtimeout   = time.Second * 10
+	vrginterval  = time.Millisecond * 10
+	letters      = "abcdefghijklmnopqrstuxwxyz"
+	namespaceLen = 5
 )
+
+func init() {
+	rand.Seed(time.Now().Unix())
+}
 
 var UploadedPVs = make(map[string]interface{})
 
@@ -368,9 +375,6 @@ type vrgTest struct {
 	replicationClass string
 }
 
-// Use to generate unique object names across multiple VRG test cases
-var testCaseNumber = 0
-
 // newVRGTestCase creates a new namespace, zero or more PVCs (equal to the
 // input pvcCount), a PV for each PVC, and a VRG in primary state, with
 // label selector that points to the PVCs created.
@@ -400,6 +404,18 @@ type template struct {
 	replicationClassLabels map[string]string
 }
 
+//nolint:gosec
+// we want the math rand version here and not the crypto rand. This way we can debug the tests by repeating the seed.
+func newRandomNamespaceSuffix() string {
+	randomSuffix := make([]byte, namespaceLen)
+
+	for i := range randomSuffix {
+		randomSuffix[i] = letters[rand.Intn(len(letters))]
+	}
+
+	return string(randomSuffix)
+}
+
 // newVRGTestCaseBindInfo creates a new namespace, zero or more PVCs (equal
 // to the input pvcCount), a PV for each PVC, and a VRG in primary state,
 // with label selector that points to the PVCs created. Each PVC is created
@@ -408,12 +424,11 @@ type template struct {
 // by VRG.
 func newVRGTestCaseBindInfo(pvcCount int, testTemplate *template, checkBind, vrgFirst bool) vrgTest {
 	pvcLabels := map[string]string{}
-	objectNameSuffix := 'a' + testCaseNumber
-	testCaseNumber++ // each invocation of this function is a new test case
+	objectNameSuffix := newRandomNamespaceSuffix()
 
 	v := vrgTest{
-		namespace:        fmt.Sprintf("envtest-ns-%c", objectNameSuffix),
-		vrgName:          fmt.Sprintf("vrg-%c", objectNameSuffix),
+		namespace:        fmt.Sprintf("envtest-ns-%v", objectNameSuffix),
+		vrgName:          fmt.Sprintf("vrg-%v", objectNameSuffix),
 		storageClass:     testTemplate.storageClassName,
 		replicationClass: testTemplate.replicationClassName,
 	}
@@ -426,7 +441,7 @@ func newVRGTestCaseBindInfo(pvcCount int, testTemplate *template, checkBind, vrg
 	// Setup PVC labels
 	if pvcCount > 0 {
 		pvcLabels["appclass"] = "platinum"
-		pvcLabels["environment"] = fmt.Sprintf("dev.AZ1-%c", objectNameSuffix)
+		pvcLabels["environment"] = fmt.Sprintf("dev.AZ1-%v", objectNameSuffix)
 	}
 
 	if vrgFirst {
@@ -447,11 +462,11 @@ func newVRGTestCaseBindInfo(pvcCount int, testTemplate *template, checkBind, vrg
 }
 
 func (v *vrgTest) createPVCandPV(pvcCount int, claimBindInfo corev1.PersistentVolumeClaimPhase,
-	volumeBindInfo corev1.PersistentVolumePhase, objectNameSuffix int, pvcLabels map[string]string) {
+	volumeBindInfo corev1.PersistentVolumePhase, objectNameSuffix string, pvcLabels map[string]string) {
 	// Create the requested number of PVs and corresponding PVCs
 	for i := 0; i < pvcCount; i++ {
-		pvName := fmt.Sprintf("pv-%c-%02d", objectNameSuffix, i)
-		pvcName := fmt.Sprintf("pvc-%c-%02d", objectNameSuffix, i)
+		pvName := fmt.Sprintf("pv-%v-%02d", objectNameSuffix, i)
+		pvcName := fmt.Sprintf("pvc-%v-%02d", objectNameSuffix, i)
 
 		// Create PV first and then PVC. This is important to ensure that there
 		// is no race between the unit test and VRG reconciler in modifying PV.
