@@ -52,6 +52,7 @@ const (
 	// ManifestWork Types
 	MWTypeVRG string = "vrg"
 	MWTypeNS  string = "ns"
+	MWTypeNF  string = "nf"
 
 	// Annotations for MW and PlacementRule
 	DRPCNameAnnotation      = "drplacementcontrol.ramendr.openshift.io/drpc-name"
@@ -151,6 +152,50 @@ func (mwu *MWUtil) generateVRGManifestWork(name, namespace, homeCluster string,
 
 func (mwu *MWUtil) generateVRGManifest(vrg rmn.VolumeReplicationGroup) (*ocmworkv1.Manifest, error) {
 	return mwu.GenerateManifest(vrg)
+}
+
+// NetworkFence MW creation
+// FixMe: When csiaddons is imported
+//        use NetworkFence from that
+func (mwu *MWUtil) CreateOrUpdateNFManifestWork(
+	name, namespace, homeCluster string,
+	nf NetworkFence) error {
+	mwu.Log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%s:%+v",
+		name, namespace, homeCluster, nf))
+
+	manifestWork, err := mwu.generateNFManifestWork(name, namespace, homeCluster, nf)
+	if err != nil {
+		return err
+	}
+
+	return mwu.createOrUpdateManifestWork(manifestWork, homeCluster)
+}
+
+func (mwu *MWUtil) generateNFManifestWork(name, namespace, homeCluster string,
+	nf NetworkFence) (*ocmworkv1.ManifestWork, error) {
+	nfClientManifest, err := mwu.generateNFManifest(nf)
+	if err != nil {
+		mwu.Log.Error(err, "failed to generate NetworkFence manifest")
+
+		return nil, err
+	}
+
+	manifests := []ocmworkv1.Manifest{*nfClientManifest}
+
+	// manifest work name for NetworkFence resource is
+	// "name-type-mw"
+	// name: name of the resource received from higher layer
+	//       that wants to create the NetworkFence resource
+	// type: type of the resource for this ManifestWork
+	return mwu.newManifestWork(
+		fmt.Sprintf(ManifestWorkNameFormat, name, namespace, MWTypeNF),
+		homeCluster,
+		map[string]string{"app": "NF"},
+		manifests), nil
+}
+
+func (mwu *MWUtil) generateNFManifest(nf NetworkFence) (*ocmworkv1.Manifest, error) {
+	return mwu.GenerateManifest(nf)
 }
 
 func (mwu *MWUtil) CreateOrUpdateNamespaceManifest(
