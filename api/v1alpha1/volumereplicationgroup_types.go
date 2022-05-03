@@ -111,7 +111,7 @@ type VRGSyncSpec struct {
 type VolSyncReplicationDestinationSpec struct {
 	// protectedPVC contains the information about the PVC to be protected by VolSync
 	//+optional
-	ProtectedPVC ProtectedPVC `json:"protectedPVCs,omitempty"`
+	ProtectedPVC ProtectedPVC `json:"protectedPVC,omitempty"`
 }
 
 // VolSyncReplicationSourceSpec defines the configuration for the VolSync
@@ -119,7 +119,7 @@ type VolSyncReplicationDestinationSpec struct {
 type VolSyncReplicationSourceSpec struct {
 	// protectedPVC contains the information about the PVC to be protected by VolSync
 	//+optional
-	ProtectedPVC ProtectedPVC `json:"protectedPVCs,omitempty"`
+	ProtectedPVC ProtectedPVC `json:"protectedPVC,omitempty"`
 }
 
 // VolSynccSpec defines the ReplicationDestination specs for the Secondary VRG, or
@@ -224,7 +224,7 @@ type VolumeReplicationGroupStatus struct {
 	ObservedGeneration int64       `json:"observedGeneration,omitempty"`
 	LastUpdateTime     metav1.Time `json:"lastUpdateTime,omitempty"`
 
-	PrepareForFinalSyncComplete bool `json:"PrepareForFinalSyncComplete,omitempty"`
+	PrepareForFinalSyncComplete bool `json:"prepareForFinalSyncComplete,omitempty"`
 	FinalSyncComplete           bool `json:"finalSyncComplete,omitempty"`
 }
 

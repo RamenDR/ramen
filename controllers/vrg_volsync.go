@@ -263,7 +263,7 @@ func (v *VRGInstance) aggregateVolSyncDataProtectedCondition() *v1.Condition {
 }
 
 func (v *VRGInstance) aggregateVolSyncClusterDataProtectedCondition() *v1.Condition {
-	if len(v.volSyncPVCs) == 0 {
+	if len(v.volSyncPVCs) == 0 && len(v.instance.Spec.VolSync.RDSpec) == 0 {
 		return nil
 	}
 
@@ -277,7 +277,7 @@ func (v *VRGInstance) aggregateVolSyncClusterDataProtectedCondition() *v1.Condit
 
 //nolint:gocognit,funlen,gocyclo,cyclop
 func (v *VRGInstance) buildDataProtectedCondition() *v1.Condition {
-	if len(v.volSyncPVCs) == 0 {
+	if len(v.volSyncPVCs) == 0 && len(v.instance.Spec.VolSync.RDSpec) == 0 {
 		return &v1.Condition{
 			Type:               VRGConditionTypeDataProtected,
 			Reason:             VRGConditionReasonDataProtected,
@@ -350,21 +350,21 @@ func (v *VRGInstance) buildDataProtectedCondition() *v1.Condition {
 		}
 	}
 
-	dataReadyCondition := &v1.Condition{
+	dataProtectedCondition := &v1.Condition{
 		Type:               VRGConditionTypeDataProtected,
 		Reason:             VRGConditionReasonDataProtected,
 		ObservedGeneration: v.instance.Generation,
 	}
 
 	if !ready {
-		dataReadyCondition.Status = v1.ConditionFalse
-		dataReadyCondition.Message = "Not all VolSync PVCs are protected"
+		dataProtectedCondition.Status = v1.ConditionFalse
+		dataProtectedCondition.Message = "Not all VolSync PVCs are protected"
 	} else {
-		dataReadyCondition.Status = v1.ConditionTrue
-		dataReadyCondition.Message = "All VolSync PVCs are protected"
+		dataProtectedCondition.Status = v1.ConditionTrue
+		dataProtectedCondition.Message = "All VolSync PVCs are protected"
 	}
 
-	return dataReadyCondition
+	return dataProtectedCondition
 }
 
 func (v VRGInstance) isVolSyncReplicationSourceSetupComplete() bool {

@@ -262,7 +262,7 @@ spec:
                         for the VolSync protected PVC to be used by the destination
                         cluster (Secondary)
                       properties:
-                        protectedPVCs:
+                        protectedPVC:
                           description: protectedPVC contains the information about
                             the PVC to be protected by VolSync
                           properties:
@@ -408,8 +408,6 @@ spec:
               VolumeReplicationGroup INSERT ADDITIONAL STATUS FIELD - define observed
               state of cluster
             properties:
-              PrepareForFinalSyncComplete:
-                type: boolean
               conditions:
                 description: Conditions are the list of VRG's summary conditions and
                   their status.
@@ -491,6 +489,8 @@ spec:
                   operator has dealt with
                 format: int64
                 type: integer
+              prepareForFinalSyncComplete:
+                type: boolean
               protectedPVCs:
                 description: All the protected pvcs
                 items:

@@ -51,9 +51,9 @@ type DRPCInstance struct {
 	ctx                  context.Context
 	log                  logr.Logger
 	instance             *rmn.DRPlacementControl
+	savedInstanceStatus  rmn.DRPlacementControlStatus
 	drPolicy             *rmn.DRPolicy
 	drClusters           []rmn.DRCluster
-	needStatusUpdate     bool
 	mcvRequestInProgress bool
 	volSyncDisabled      bool
 	userPlacementRule    *plrv1.PlacementRule
@@ -759,22 +759,22 @@ func (d *DRPCInstance) checkReadinessAfterFailover(homeCluster string) bool {
 		d.isVRGConditionReady(homeCluster, VRGConditionTypeClusterDataReady)
 }
 
-func (d *DRPCInstance) isVRGConditionReady(homeCluster string, conditionType string) bool {
+func (d *DRPCInstance) isVRGConditionReady(cluster string, conditionType string) bool {
 	const ready = true
 
-	d.log.Info(fmt.Sprintf("Checking if VRG is %s on cluster %s", conditionType, homeCluster))
+	d.log.Info(fmt.Sprintf("Checking if VRG is %s on cluster %s", conditionType, cluster))
 
-	vrg := d.vrgs[homeCluster]
+	vrg := d.vrgs[cluster]
 
 	if vrg == nil {
-		d.log.Info(fmt.Sprintf("isVRGConditionReady: VRG not available on cluster %s", homeCluster))
+		d.log.Info(fmt.Sprintf("isVRGConditionReady: VRG not available on cluster %s", cluster))
 
 		return !ready
 	}
 
 	condition := findCondition(vrg.Status.Conditions, conditionType)
 	if condition == nil {
-		d.log.Info(fmt.Sprintf("VRG %s condition not available on cluster %s", conditionType, homeCluster))
+		d.log.Info(fmt.Sprintf("VRG %s condition not available on cluster %s", conditionType, cluster))
 
 		return !ready
 	}
@@ -1265,7 +1265,7 @@ func (d *DRPCInstance) isVRGSecondary(vrg *rmn.VolumeReplicationGroup) bool {
 }
 
 func (d *DRPCInstance) checkPVsHaveBeenRestored(homeCluster string) (bool, error) {
-	d.log.Info("Checking whether PVs have been restored", "cluster", homeCluster)
+	d.log.Info("Checking if PVs have been restored", "cluster", homeCluster)
 
 	vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name,
 		d.instance.Namespace, homeCluster)
@@ -1285,7 +1285,7 @@ func (d *DRPCInstance) checkPVsHaveBeenRestored(homeCluster string) (bool, error
 	return clusterDataReady.Status == metav1.ConditionTrue && clusterDataReady.ObservedGeneration == vrg.Generation, nil
 }
 
-//nolint:funlen
+//nolint:funlen,gocognit,cyclop
 func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 	d.log.Info("ensuring cleanup on secondaries")
 
@@ -1300,8 +1300,6 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 		condition = findCondition(d.instance.Status.Conditions, rmn.ConditionPeerReady)
 	}
 
-	d.log.Info(fmt.Sprintf("Condition %v", condition))
-
 	if condition.Reason == rmn.ReasonSuccess &&
 		condition.Status == metav1.ConditionTrue &&
 		condition.ObservedGeneration == d.instance.Generation {
@@ -1309,6 +1307,8 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 
 		return nil
 	}
+
+	d.log.Info(fmt.Sprintf("PeerReady Condition %v", condition))
 
 	err := d.moveVRGToSecondaryOnPeers(clusterToSkip)
 	if err != nil {
@@ -1325,6 +1325,26 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 
 	if repReq {
 		d.log.Info("No need to clean up secondaries. VolSync needs both VRGs")
+
+		peersReady := true
+
+		for _, drCluster := range d.drPolicy.Spec.DRClusterSet {
+			clusterName := drCluster.Name
+			if clusterToSkip == clusterName {
+				continue
+			}
+
+			if !d.isVRGConditionReady(clusterName, VRGConditionTypeDataReady) {
+				peersReady = false
+
+				break
+			}
+		}
+
+		if !peersReady {
+			return fmt.Errorf("still waiting for peer to be ready")
+		}
+
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
 			metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
 
@@ -1709,22 +1729,17 @@ func (d *DRPCInstance) setDRState(nextState rmn.DRState) {
 
 		d.instance.Status.Phase = nextState
 		d.reportEvent(nextState)
-		d.needStatusUpdate = true
 	}
 }
 
 func (d *DRPCInstance) shouldUpdateStatus() bool {
-	if d.needStatusUpdate {
-		return true
-	}
-
 	for _, condition := range d.instance.Status.Conditions {
 		if condition.ObservedGeneration != d.instance.Generation {
 			return true
 		}
 	}
 
-	return false
+	return !reflect.DeepEqual(d.savedInstanceStatus, d.instance.Status)
 }
 
 func (d *DRPCInstance) reportEvent(nextState rmn.DRState) {
@@ -1955,8 +1970,5 @@ func (d *DRPCInstance) setMetricsTimer(
 
 func (d *DRPCInstance) setDRPCCondition(conditions *[]metav1.Condition, condType string,
 	observedGeneration int64, status metav1.ConditionStatus, reason, msg string) {
-	needStatusUpdate := SetDRPCStatusCondition(conditions, condType, observedGeneration, status, reason, msg)
-	if !d.needStatusUpdate {
-		d.needStatusUpdate = needStatusUpdate
-	}
+	SetDRPCStatusCondition(conditions, condType, observedGeneration, status, reason, msg)
 }
