@@ -317,19 +317,12 @@ func (v *VRGInstance) buildDataProtectedCondition() *v1.Condition {
 				}
 
 				// Check now if we have synced up at least once for this PVC
-				lastSyncTime, err := v.volSyncHandler.GetRSLastSyncTime(protectedPVC.Name)
-				if err != nil {
+				rsDataProtected, err := v.volSyncHandler.IsRSDataProtected(protectedPVC.Name)
+				if err != nil || !rsDataProtected {
 					ready = false
 
-					v.log.Info(fmt.Sprintf("Failed to get lastSyncTime from RS for PVC %s", protectedPVC.Name))
-
-					break
-				}
-
-				if lastSyncTime == nil || lastSyncTime.IsZero() {
-					ready = false
-
-					v.log.Info(fmt.Sprintf("VolSync RS has not synced up yet for PVC %s", protectedPVC.Name))
+					v.log.Info(fmt.Sprintf("First sync has not yet completed for VolSync RS %s -- Err %v",
+						protectedPVC.Name, err))
 
 					break
 				}
@@ -345,10 +338,11 @@ func (v *VRGInstance) buildDataProtectedCondition() *v1.Condition {
 	} else {
 		for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
 			v.log.Info("Reconcile RD as Secondary", "RDSpec", rdSpec)
-			latestImage, err := v.volSyncHandler.GetRDLatestImage(rdSpec.ProtectedPVC.Name)
-			if err != nil || latestImage == nil {
+			rdDataProtected, err := v.volSyncHandler.IsRDDataProtected(rdSpec.ProtectedPVC.Name)
+			if err != nil || !rdDataProtected {
 				ready = false
-				v.log.Info(fmt.Sprintf("Failed to retrieve latestImage for RD %s -- Err %v",
+
+				v.log.Info(fmt.Sprintf("First sync has not yet completed for VolSync RD %s -- Err %v",
 					rdSpec.ProtectedPVC.Name, err))
 
 				break

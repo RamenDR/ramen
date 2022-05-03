@@ -144,18 +144,37 @@ func (v *VSHandler) ReconcileRD(
 		return nil, err
 	}
 
-	//
-	// Now check status - only return an RDInfo if we have an address filled out in the ReplicationDestination Status
-	//
-	if rd.Status == nil || rd.Status.Rsync == nil || rd.Status.Rsync.Address == nil {
-		l.V(1).Info("ReplicationDestination waiting for Address ...")
-
+	if !rdStatusReady(rd, l) {
 		return nil, nil
 	}
 
 	l.V(1).Info("ReplicationDestination Reconcile Complete")
 
 	return rd, nil
+}
+
+// For ReplicationDestination - considered ready when a sync has completed
+// - rsync address should be filled out in the status
+// - latest image should be set properly in the status (at least one sync cycle has completed and we have a snapshot)
+func rdStatusReady(rd *volsyncv1alpha1.ReplicationDestination, log logr.Logger) bool {
+	if rd.Status == nil {
+		return false
+	}
+
+	if rd.Status.Rsync == nil || rd.Status.Rsync.Address == nil {
+		log.V(1).Info("ReplicationDestination waiting for Address ...")
+
+		return false
+	}
+
+	// Additional check to make sure 1 sync has completed (i.e. latest image is set)
+	if !isLatestImageReady(rd.Status.LatestImage) {
+		log.V(1).Info("ReplicationDestination waiting for latest image to be set (sync complete) ...")
+
+		return false
+	}
+
+	return true
 }
 
 func (v *VSHandler) createOrUpdateRD(
@@ -218,6 +237,7 @@ func (v *VSHandler) createOrUpdateRD(
 // Returns replication source only if create/update is successful
 // Callers should assume getting a nil replication source back means they should retry/requeue.
 // Returns true/false if final sync is complete, and also returns an RS if one was reconciled.
+//nolint:cyclop
 func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec,
 	runFinalSync bool) (bool /* finalSyncComplete */, *volsyncv1alpha1.ReplicationSource, error,
 ) {
@@ -255,8 +275,12 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 		return false, nil, err
 	}
 
-	// Could consider checking the RS status here and only returning successfully if the RS status has proceeded
-	// far enough (similar to what we do with reconcileRD)
+	// Only return the RS if we've successfully completed a sync
+	if !isRSLastSyncTimeReady(replicationSource.Status) {
+		l.V(1).Info("ReplicationSource waiting for last sync time to be set (sync complete) ...")
+
+		return false, nil, nil
+	}
 
 	//
 	// For final sync only - check status to make sure the final sync is complete
@@ -767,33 +791,13 @@ func (v *VSHandler) listByOwner(list client.ObjectList) error {
 func (v *VSHandler) EnsurePVCfromRD(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec) error {
 	l := v.log.WithValues("rdSpec", rdSpec)
 
-	// Get RD instance
-	rdInst := &volsyncv1alpha1.ReplicationDestination{}
-
-	err := v.client.Get(v.ctx,
-		types.NamespacedName{
-			Name:      getReplicationDestinationName(rdSpec.ProtectedPVC.Name),
-			Namespace: v.owner.GetNamespace(),
-		}, rdInst)
+	latestImage, err := v.getRDLatestImage(rdSpec.ProtectedPVC.Name)
 	if err != nil {
-		if !kerrors.IsNotFound(err) {
-			l.Error(err, "Failed to get ReplicationDestination")
-
-			return fmt.Errorf("error getting replicationdestination (%w)", err)
-		}
-		// If not found, nothing to restore
-		l.Info("No ReplicationDestination found, not restoring PVC for this rdSpec")
-
-		return nil
+		return err
 	}
 
-	var latestImage *corev1.TypedLocalObjectReference
-	if rdInst.Status != nil {
-		latestImage = rdInst.Status.LatestImage
-	}
-
-	if latestImage == nil || latestImage.Name == "" || latestImage.Kind != VolumeSnapshotKind {
-		noSnapErr := fmt.Errorf("unable to find LatestImage from ReplicationDestination %s", rdInst.GetName())
+	if !isLatestImageReady(latestImage) {
+		noSnapErr := fmt.Errorf("unable to find LatestImage from ReplicationDestination %s", rdSpec.ProtectedPVC.Name)
 		l.Error(noSnapErr, "No latestImage")
 
 		return noSnapErr
@@ -1163,7 +1167,7 @@ func ConvertSchedulingIntervalToCronSpec(schedulingInterval string) (*string, er
 	return &cronSpec, nil
 }
 
-func (v *VSHandler) GetRSLastSyncTime(pvcName string) (*metav1.Time, error) {
+func (v *VSHandler) IsRSDataProtected(pvcName string) (bool, error) {
 	l := v.log.WithValues("pvcName", pvcName)
 
 	// Get RD instance
@@ -1178,22 +1182,26 @@ func (v *VSHandler) GetRSLastSyncTime(pvcName string) (*metav1.Time, error) {
 		if !kerrors.IsNotFound(err) {
 			l.Error(err, "Failed to get ReplicationSource")
 
-			return nil, fmt.Errorf("%w", err)
+			return false, fmt.Errorf("%w", err)
 		}
 
-		l.Info("No ReplicationSource found")
+		l.Info("No ReplicationSource found", "pvcName", pvcName)
 
-		return nil, nil
+		return false, nil
 	}
 
-	if rs.Status != nil {
-		return rs.Status.LastSyncTime, nil
-	}
-
-	return nil, nil
+	return isRSLastSyncTimeReady(rs.Status), nil
 }
 
-func (v *VSHandler) GetRDLatestImage(pvcName string) (*corev1.TypedLocalObjectReference, error) {
+func isRSLastSyncTimeReady(rsStatus *volsyncv1alpha1.ReplicationSourceStatus) bool {
+	if rsStatus != nil && rsStatus.LastSyncTime != nil && !rsStatus.LastSyncTime.IsZero() {
+		return true
+	}
+
+	return false
+}
+
+func (v *VSHandler) getRDLatestImage(pvcName string) (*corev1.TypedLocalObjectReference, error) {
 	l := v.log.WithValues("pvcName", pvcName)
 
 	// Get RD instance
@@ -1208,9 +1216,9 @@ func (v *VSHandler) GetRDLatestImage(pvcName string) (*corev1.TypedLocalObjectRe
 		if !kerrors.IsNotFound(err) {
 			l.Error(err, "Failed to get ReplicationDestination")
 
-			return nil, fmt.Errorf("%w", err)
+			return nil, fmt.Errorf("error getting replicationdestination (%w)", err)
 		}
-		// If not found, nothing to restore
+
 		l.Info("No ReplicationDestination found")
 
 		return nil, nil
@@ -1221,13 +1229,25 @@ func (v *VSHandler) GetRDLatestImage(pvcName string) (*corev1.TypedLocalObjectRe
 		latestImage = rdInst.Status.LatestImage
 	}
 
-	if latestImage == nil || latestImage.Name == "" || latestImage.Kind != VolumeSnapshotKind {
-		noSnapErr := fmt.Errorf("unable to find LatestImage from ReplicationDestination %s", rdInst.GetName())
+	return latestImage, nil
+}
 
-		return nil, noSnapErr
+// Returns true if at least one sync has completed (we'll consider this "data protected")
+func (v *VSHandler) IsRDDataProtected(pvcName string) (bool, error) {
+	latestImage, err := v.getRDLatestImage(pvcName)
+	if err != nil {
+		return false, err
 	}
 
-	return latestImage.DeepCopy(), nil
+	return isLatestImageReady(latestImage), nil
+}
+
+func isLatestImageReady(latestImage *corev1.TypedLocalObjectReference) bool {
+	if latestImage == nil || latestImage.Name == "" || latestImage.Kind != VolumeSnapshotKind {
+		return false
+	}
+
+	return true
 }
 
 func addVRGOwnerLabel(owner, obj metav1.Object) {
