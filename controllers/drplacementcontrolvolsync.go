@@ -10,6 +10,8 @@ import (
 )
 
 func (d *DRPCInstance) EnsureVolSyncReplicationSetup(homeCluster string) error {
+	d.log.Info(fmt.Sprintf("Ensure VolSync replication has been setup for cluster %s", homeCluster))
+
 	if d.volSyncDisabled {
 		d.log.Info("VolSync is disabled")
 
@@ -187,7 +189,7 @@ func (d *DRPCInstance) IsVolSyncReplicationRequired(homeCluster string) (bool, e
 
 	const required = true
 
-	d.log.Info("Checking whether we have VolSync PVCs that need replication", "cluster", homeCluster)
+	d.log.Info("Checking if there are PVCs for VolSync replication...", "cluster", homeCluster)
 
 	vrg := d.vrgs[homeCluster]
 

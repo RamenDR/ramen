@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/go-logr/logr"
 
@@ -362,7 +363,7 @@ func (v *VRGInstance) processVRG() (ctrl.Result, error) {
 		msg := "VolumeReplicationGroup state is invalid"
 		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
-		if err = v.updateVRGStatus(false); err != nil {
+		if _, err = v.updateVRGStatus(false); err != nil {
 			v.log.Error(err, "Status update failed")
 			// Since updating status failed, reconcile
 			return ctrl.Result{Requeue: true}, nil
@@ -382,7 +383,7 @@ func (v *VRGInstance) processVRG() (ctrl.Result, error) {
 		msg := "VolumeReplicationGroup mode is invalid"
 		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
-		if err = v.updateVRGStatus(false); err != nil {
+		if _, err = v.updateVRGStatus(false); err != nil {
 			v.log.Error(err, "Status update failed")
 			// Since updating status failed, reconcile
 			return ctrl.Result{Requeue: true}, nil
@@ -400,7 +401,7 @@ func (v *VRGInstance) processVRG() (ctrl.Result, error) {
 		msg := "Failed to get list of pvcs"
 		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
-		if err = v.updateVRGStatus(false); err != nil {
+		if _, err = v.updateVRGStatus(false); err != nil {
 			v.log.Error(err, "VRG Status update failed")
 		}
 
@@ -733,7 +734,7 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 		msg := "Failed to add finalizer to VolumeReplicationGroup"
 		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
-		if err = v.updateVRGStatus(false); err != nil {
+		if _, err = v.updateVRGStatus(false); err != nil {
 			v.log.Error(err, "VRG Status update failed")
 		}
 
@@ -746,7 +747,7 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 		msg := fmt.Sprintf("Failed to restore PVs (%v)", err.Error())
 		setVRGClusterDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
-		if err = v.updateVRGStatus(false); err != nil {
+		if _, err = v.updateVRGStatus(false); err != nil {
 			v.log.Error(err, "VRG Status update failed")
 		}
 
@@ -765,14 +766,15 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 			rmnutil.EventReasonPrimarySuccess, "Primary Success")
 	}
 
-	if err := v.updateVRGStatus(true); err != nil {
+	statusUpdateRequeueRequested, err := v.updateVRGStatus(true)
+	if err != nil {
 		requeue = true
 	}
 
-	if requeue {
-		v.log.Info("Requeuing resource")
+	if requeue || statusUpdateRequeueRequested {
+		v.log.Info("Requeuing resource as Primary")
 
-		return ctrl.Result{Requeue: requeue}, nil
+		return ctrl.Result{RequeueAfter: time.Second * 1}, nil
 	}
 
 	v.log.Info("Successfully processed vrg as primary")
@@ -803,7 +805,7 @@ func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
 		msg := "Failed to add finalizer to VolumeReplicationGroup"
 		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
-		if err = v.updateVRGStatus(false); err != nil {
+		if _, err = v.updateVRGStatus(false); err != nil {
 			v.log.Error(err, "VRG Status update failed")
 		}
 
@@ -821,14 +823,15 @@ func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
 			rmnutil.EventReasonSecondarySuccess, "Secondary Success")
 	}
 
-	if err := v.updateVRGStatus(true); err != nil {
+	statusUpdateRequeueRequested, err := v.updateVRGStatus(true)
+	if err != nil {
 		requeue = true
 	}
 
-	if requeue {
-		v.log.Info("Requeuing resource")
+	if requeue || statusUpdateRequeueRequested {
+		v.log.Info("Requeuing resource as Secondary")
 
-		return ctrl.Result{Requeue: requeue}, nil
+		return ctrl.Result{RequeueAfter: time.Second * 1}, nil
 	}
 
 	v.log.Info("Successfully processed vrg as secondary")
@@ -861,7 +864,7 @@ func (v *VRGInstance) handleVRGMode(state ramendrv1alpha1.ReplicationState) (res
 	return result
 }
 
-func (v *VRGInstance) updateVRGStatus(updateConditions bool) error {
+func (v *VRGInstance) updateVRGStatus(updateConditions bool) (bool, error) {
 	v.log.Info("Updating VRG status")
 
 	if updateConditions {
@@ -878,17 +881,17 @@ func (v *VRGInstance) updateVRGStatus(updateConditions bool) error {
 			v.log.Info(fmt.Sprintf("Failed to update VRG status (%s/%s/%v/%+v)",
 				v.instance.Name, v.instance.Namespace, err, v.instance.Status))
 
-			return fmt.Errorf("failed to update VRG status (%s/%s)", v.instance.Name, v.instance.Namespace)
+			return true, fmt.Errorf("failed to update VRG status (%s/%s)", v.instance.Name, v.instance.Namespace)
 		}
 
 		v.log.Info(fmt.Sprintf("Updated VRG Status %+v", v.instance.Status))
 
-		return nil
+		return !v.areRequiredConditionsReady(), nil
 	}
 
 	v.log.Info(fmt.Sprintf("Nothing to update %+v", v.instance.Status))
 
-	return nil
+	return !v.areRequiredConditionsReady(), nil
 }
 
 func (v *VRGInstance) updateStatusState() {
@@ -1002,6 +1005,25 @@ func (v *VRGInstance) updateVRGClusterDataProtectedCondition() {
 	if len(v.volRepPVCs) != 0 {
 		v.aggregateVolRepClusterDataProtectedCondition()
 	}
+}
+
+func (v *VRGInstance) areRequiredConditionsReady() bool {
+	condition := findCondition(v.instance.Status.Conditions, VRGConditionTypeDataReady)
+	if condition == nil || condition.Status != metav1.ConditionTrue {
+		return false
+	}
+
+	condition = findCondition(v.instance.Status.Conditions, VRGConditionTypeDataProtected)
+	if condition == nil || condition.Status != metav1.ConditionTrue {
+		return false
+	}
+
+	condition = findCondition(v.instance.Status.Conditions, VRGConditionTypeClusterDataProtected)
+	if condition == nil || condition.Status != metav1.ConditionTrue {
+		return false
+	}
+
+	return true
 }
 
 // It might be better move the helper functions like these to a separate
