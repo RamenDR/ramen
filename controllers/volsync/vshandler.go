@@ -167,13 +167,6 @@ func rdStatusReady(rd *volsyncv1alpha1.ReplicationDestination, log logr.Logger) 
 		return false
 	}
 
-	// Additional check to make sure 1 sync has completed (i.e. latest image is set)
-	if !isLatestImageReady(rd.Status.LatestImage) {
-		log.V(1).Info("ReplicationDestination waiting for latest image to be set (sync complete) ...")
-
-		return false
-	}
-
 	return true
 }
 
@@ -237,7 +230,6 @@ func (v *VSHandler) createOrUpdateRD(
 // Returns replication source only if create/update is successful
 // Callers should assume getting a nil replication source back means they should retry/requeue.
 // Returns true/false if final sync is complete, and also returns an RS if one was reconciled.
-//nolint:cyclop
 func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec,
 	runFinalSync bool) (bool /* finalSyncComplete */, *volsyncv1alpha1.ReplicationSource, error,
 ) {
@@ -273,13 +265,6 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	replicationSource, err := v.createOrUpdateRS(rsSpec, sshKeysSecretName, runFinalSync)
 	if err != nil {
 		return false, nil, err
-	}
-
-	// Only return the RS if we've successfully completed a sync
-	if !isRSLastSyncTimeReady(replicationSource.Status) {
-		l.V(1).Info("ReplicationSource waiting for last sync time to be set (sync complete) ...")
-
-		return false, nil, nil
 	}
 
 	//
