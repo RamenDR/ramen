@@ -530,6 +530,7 @@ func (r *DRPlacementControlReconciler) recordFailure(drpc *rmn.DRPlacementContro
 	}
 }
 
+//nolint:funlen,cyclop
 func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 	drpc *rmn.DRPlacementControl, usrPlRule *plrv1.PlacementRule) (*DRPCInstance, error) {
 	drPolicy, err := r.getDRPolicy(ctx, drpc)
@@ -537,8 +538,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 		return nil, fmt.Errorf("failed to get DRPolicy %w", err)
 	}
 
-	err = r.addLabelsAndFinalizers(ctx, drpc, usrPlRule)
-	if err != nil {
+	if err := r.addLabelsAndFinalizers(ctx, drpc, usrPlRule); err != nil {
 		return nil, err
 	}
 
@@ -582,15 +582,27 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 	}
 
 	d := &DRPCInstance{
-		reconciler: r, ctx: ctx, log: r.Log, instance: drpc, userPlacementRule: usrPlRule,
-		drpcPlacementRule: drpcPlRule, drPolicy: drPolicy, drClusters: drClusters, vrgs: vrgs,
-		mwu: rmnutil.MWUtil{Client: r.Client, Ctx: ctx, Log: r.Log, InstName: drpc.Name, InstNamespace: drpc.Namespace},
-		volSyncDisabled: ramenConfig.VolSync.Disabled,
+		reconciler:        r,
+		ctx:               ctx,
+		log:               r.Log,
+		instance:          drpc,
+		userPlacementRule: usrPlRule,
+		drpcPlacementRule: drpcPlRule,
+		drPolicy:          drPolicy,
+		drClusters:        drClusters,
+		vrgs:              vrgs,
+		volSyncDisabled:   ramenConfig.VolSync.Disabled,
+		mwu: rmnutil.MWUtil{
+			Client:        r.Client,
+			Ctx:           ctx,
+			Log:           r.Log,
+			InstName:      drpc.Name,
+			InstNamespace: drpc.Namespace,
+		},
 	}
 
 	// Save the instance status
 	d.instance.Status.DeepCopyInto(&d.savedInstanceStatus)
-
 	r.Log.Info(fmt.Sprintf("PlacementRule Status is: (%+v)", usrPlRule.Status))
 
 	return d, nil
@@ -967,18 +979,18 @@ func (r *DRPlacementControlReconciler) getVRGsFromManagedClusters(drpc *rmn.DRPl
 	vrgs := map[string]*rmn.VolumeReplicationGroup{}
 
 	for _, drCluster := range rmnutil.DrpolicyClusterNames(drPolicy) {
-		// Only fetch failover cluster VRG if action is Failover
-		if drpc.Spec.Action == rmn.ActionFailover && drpc.Spec.FailoverCluster != drCluster {
-			r.Log.Info("Skipping fetching VRG", "cluster", drCluster)
-
-			continue
-		}
-
 		vrg, err := r.MCVGetter.GetVRGFromManagedCluster(drpc.Name, drpc.Namespace, drCluster)
 		if err != nil {
 			// Only NotFound error is accepted
 			if errors.IsNotFound(err) {
 				r.Log.Info(fmt.Sprintf("VRG not found on %q", drCluster))
+
+				continue
+			}
+
+			if drpc.Spec.Action == rmn.ActionFailover && drpc.Spec.FailoverCluster != drCluster {
+				r.Log.Info(fmt.Sprintf("Skipping fetching VRG from %s due to failure. Error (%v)",
+					drCluster, err))
 
 				continue
 			}

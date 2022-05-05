@@ -141,8 +141,6 @@ spec:
                       are ANDed.
                     type: object
                 type: object
-            required:
-            - drClusterSet
             type: object
           status:
             description: 'DRPolicyStatus defines the observed state of DRPolicy INSERT

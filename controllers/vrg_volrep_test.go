@@ -90,7 +90,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 				v.waitForVRCountToMatch(expectedVRCount)
 			}
 		})
-		It("waits for VRG to status to match", func() {
+		It("waits for VRG status to match", func() {
 			for c := 0; c < len(vrgTestCases); c++ {
 				v := vrgTestCases[c]
 				v.promoteVolReps()
@@ -156,7 +156,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 				v.waitForVRCountToMatch(expectedVRCount)
 			}
 		})
-		It("waits for VRG to status to match", func() {
+		It("waits for VRG status to match", func() {
 			for c := 0; c < len(vrgTests); c++ {
 				v := vrgTests[c]
 				v.promoteVolReps()
@@ -195,7 +195,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			expectedVRCount := len(v.pvcNames)
 			v.waitForVRCountToMatch(expectedVRCount)
 		})
-		It("waits for VRG to status to match", func() {
+		It("waits for VRG status to match", func() {
 			v := vrgStatusTests[0]
 			v.promoteVolReps()
 			v.verifyVRGStatusExpectation(true)
@@ -229,7 +229,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			expectedVRCount := len(v.pvcNames)
 			v.waitForVRCountToMatch(expectedVRCount)
 		})
-		It("waits for VRG to status to match", func() {
+		It("waits for VRG status to match", func() {
 			v := vrgStatus2Tests[0]
 			v.promoteVolReps()
 			v.verifyVRGStatusExpectation(true)
@@ -274,7 +274,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			expectedVRCount := len(v.pvcNames)
 			v.waitForVRCountToMatch(expectedVRCount)
 		})
-		It("waits for VRG to status to match", func() {
+		It("waits for VRG status to match", func() {
 			v := vrgStatus3Tests[0]
 			v.promoteVolReps()
 			v.verifyVRGStatusExpectation(true)
@@ -308,7 +308,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			v.waitForVRCountToMatch(0)
 			// v.verifyVRGStatusExpectation(false)
 		})
-		It("waits for VRG to status to match", func() {
+		It("waits for VRG status to match", func() {
 			v := vrgScheduleTests[0]
 			v.verifyVRGStatusExpectation(false)
 		})
@@ -341,7 +341,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			v.waitForVRCountToMatch(0)
 			// v.verifyVRGStatusExpectation(false)
 		})
-		It("waits for VRG to status to match", func() {
+		It("waits for VRG status to match", func() {
 			v := vrgSchedule2Tests[0]
 			v.verifyVRGStatusExpectation(false)
 		})
@@ -374,7 +374,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			v.waitForVRCountToMatch(0)
 			// v.verifyVRGStatusExpectation(false)
 		})
-		It("waits for VRG to status to match", func() {
+		It("waits for VRG status to match", func() {
 			v := vrgSchedule3Tests[0]
 			v.verifyVRGStatusExpectation(false)
 		})

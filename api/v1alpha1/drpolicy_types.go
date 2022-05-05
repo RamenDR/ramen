@@ -43,7 +43,7 @@ type DRPolicySpec struct {
 	// need DR protection. It will be passed in to the VRG when it is created
 	//+optional
 	VolumeSnapshotClassSelector metav1.LabelSelector `json:"volumeSnapshotClassSelector,omitempty"`
-	
+
 	// List of DRCluster resources that are governed by this policy
 	DRClusters []string `json:"drClusters,omitempty"`
 }

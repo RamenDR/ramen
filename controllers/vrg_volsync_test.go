@@ -39,9 +39,6 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 	BeforeEach(func() {
 		testCtx, cancel = context.WithCancel(context.TODO())
 
-		// Common setup of fake s3 profile
-		s3ProfilesSetup()
-
 		// Create namespace for test
 		testNamespace = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
@@ -55,9 +52,6 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 	AfterEach(func() {
 		// All resources are namespaced, so this should clean it all up
 		Expect(k8sClient.Delete(testCtx, testNamespace)).To(Succeed())
-
-		// Teardown of common s3 profile
-		s3ProfilesDelete()
 
 		cancel()
 	})
@@ -88,7 +82,7 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 						PVCSelector: metav1.LabelSelector{
 							MatchLabels: testMatchLabels,
 						},
-						S3Profiles: []string{"fakeS3Profile"},
+						S3Profiles: []string{s3Profiles[0].S3ProfileName},
 						VolSync:    ramendrv1alpha1.VolSyncSpec{},
 					},
 				}

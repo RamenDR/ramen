@@ -1328,8 +1328,7 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 
 		peersReady := true
 
-		for _, drCluster := range d.drPolicy.Spec.DRClusterSet {
-			clusterName := drCluster.Name
+		for _, clusterName := range rmnutil.DrpolicyClusterNames(d.drPolicy) {
 			if clusterToSkip == clusterName {
 				continue
 			}
