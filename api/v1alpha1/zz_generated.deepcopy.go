@@ -292,6 +292,7 @@ func (in *DRPolicyList) DeepCopyObject() runtime.Object {
 func (in *DRPolicySpec) DeepCopyInto(out *DRPolicySpec) {
 	*out = *in
 	in.ReplicationClassSelector.DeepCopyInto(&out.ReplicationClassSelector)
+	in.VolumeSnapshotClassSelector.DeepCopyInto(&out.VolumeSnapshotClassSelector)
 	if in.DRClusters != nil {
 		in, out := &in.DRClusters, &out.DRClusters
 		*out = make([]string, len(*in))

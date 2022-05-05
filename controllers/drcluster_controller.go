@@ -177,9 +177,11 @@ func validateS3Profile(ctx context.Context, apiReader client.Reader,
 		return "", nil
 	}
 
-	if reason, err := s3ProfileValidate(ctx, apiReader, objectStoreGetter,
-		drcluster.Spec.S3ProfileName, listKeyPrefix, log); err != nil {
-		return reason, err
+	if drcluster.Spec.S3ProfileName != NoS3StoreAvailable {
+		if reason, err := s3ProfileValidate(ctx, apiReader, objectStoreGetter,
+			drcluster.Spec.S3ProfileName, listKeyPrefix, log); err != nil {
+			return reason, err
+		}
 	}
 
 	return "", nil

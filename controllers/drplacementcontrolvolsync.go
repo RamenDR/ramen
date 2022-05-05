@@ -289,8 +289,7 @@ func (d *DRPCInstance) createVolSyncDestManifestWork(srcCluster string) error {
 		"Last State:", d.getLastDRState(), "homeCluster", srcCluster)
 
 	// Create or update ManifestWork for all the peers
-	for _, drCluster := range d.drPolicy.Spec.DRClusterSet {
-		dstCluster := drCluster.Name
+	for _, dstCluster := range rmnutil.DrpolicyClusterNames(d.drPolicy) {
 		if dstCluster == srcCluster {
 			// skip source cluster
 			continue
@@ -299,7 +298,7 @@ func (d *DRPCInstance) createVolSyncDestManifestWork(srcCluster string) error {
 		err := d.ensureNamespaceExistsOnManagedCluster(dstCluster)
 		if err != nil {
 			return fmt.Errorf("creating ManifestWork couldn't ensure namespace '%s' on cluster %s exists",
-				d.instance.Namespace, drCluster.Name)
+				d.instance.Namespace, dstCluster)
 		}
 
 		vrg := d.generateVRG(rmn.Secondary)

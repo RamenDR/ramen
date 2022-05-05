@@ -120,6 +120,16 @@ var (
 			SchedulingInterval: schedulingInterval,
 		},
 	}
+
+	syncDRPolicy = &rmn.DRPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: SyncDRPolicyName,
+		},
+		Spec: rmn.DRPolicySpec{
+			DRClusters:         []string{East1ManagedCluster, East2ManagedCluster},
+			SchedulingInterval: schedulingInterval,
+		},
+	}
 )
 
 func getSyncDRPolicy() *rmn.DRPolicy {
@@ -186,7 +196,7 @@ var baseVRG = &rmn.VolumeReplicationGroup{
 	},
 }
 
-//nolint:funlen
+//nolint:funlen,cyclop
 func (f FakeMCVGetter) GetVRGFromManagedCluster(
 	resourceName, resourceNamespace, managedCluster string) (*rmn.VolumeReplicationGroup, error) {
 	conType := controllers.VRGConditionTypeDataReady
@@ -1503,14 +1513,4 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			})
 		})
 	})
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
->>>>>>> Fix VRG/VolSync unit tests
-	Specify("delete s3 profiles and secret", func() {
-		s3ProfilesDelete()
-	})
->>>>>>> simplify ramen volsync orchestration
 })
