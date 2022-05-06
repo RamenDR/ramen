@@ -1,0 +1,7 @@
+apiVersion: ramendr.openshift.io/v1alpha1
+kind: S3BucketView
+metadata:
+  name: s3bucketview-sample
+spec:
+  # Add fields here
+  foo: bar

@@ -118,40 +118,17 @@ func newManager() (ctrl.Manager, error) {
 
 func setupReconcilers(mgr ctrl.Manager) {
 	if controllers.ControllerType == ramendrv1alpha1.DRHubType {
-		if err := (&controllers.DRPolicyReconciler{
-			Client:            mgr.GetClient(),
-			APIReader:         mgr.GetAPIReader(),
-			Scheme:            mgr.GetScheme(),
-			ObjectStoreGetter: controllers.S3ObjectStoreGetter(),
-		}).SetupWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create controller", "controller", "DRPolicy")
-			os.Exit(1)
-		}
-
-		if err := (&controllers.DRClusterReconciler{
-			Client:            mgr.GetClient(),
-			APIReader:         mgr.GetAPIReader(),
-			Scheme:            mgr.GetScheme(),
-			MCVGetter:         rmnutil.ManagedClusterViewGetterImpl{Client: mgr.GetClient()},
-			ObjectStoreGetter: controllers.S3ObjectStoreGetter(),
-		}).SetupWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create controller", "controller", "DRCluster")
-			os.Exit(1)
-		}
-
-		if err := (&controllers.DRPlacementControlReconciler{
-			Client:    mgr.GetClient(),
-			APIReader: mgr.GetAPIReader(),
-			Log:       ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),
-			MCVGetter: rmnutil.ManagedClusterViewGetterImpl{Client: mgr.GetClient()},
-			Scheme:    mgr.GetScheme(),
-			Callback:  func(string, string) {},
-		}).SetupWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create controller", "controller", "DRPlacementControl")
-			os.Exit(1)
-		}
+		setupReconcilersHub(mgr)
 
 		return
+	}
+
+	if err := (&controllers.S3BucketViewReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "S3BucketView")
+		os.Exit(1)
 	}
 
 	// Index fields that are required for VSHandler
@@ -168,6 +145,41 @@ func setupReconcilers(mgr ctrl.Manager) {
 		Scheme:         mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VolumeReplicationGroup")
+		os.Exit(1)
+	}
+}
+
+func setupReconcilersHub(mgr ctrl.Manager) {
+	if err := (&controllers.DRPolicyReconciler{
+		Client:            mgr.GetClient(),
+		APIReader:         mgr.GetAPIReader(),
+		Scheme:            mgr.GetScheme(),
+		ObjectStoreGetter: controllers.S3ObjectStoreGetter(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "DRPolicy")
+		os.Exit(1)
+	}
+
+	if err := (&controllers.DRClusterReconciler{
+		Client:            mgr.GetClient(),
+		APIReader:         mgr.GetAPIReader(),
+		Scheme:            mgr.GetScheme(),
+		MCVGetter:         rmnutil.ManagedClusterViewGetterImpl{Client: mgr.GetClient()},
+		ObjectStoreGetter: controllers.S3ObjectStoreGetter(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "DRCluster")
+		os.Exit(1)
+	}
+
+	if err := (&controllers.DRPlacementControlReconciler{
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Log:       ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),
+		MCVGetter: rmnutil.ManagedClusterViewGetterImpl{Client: mgr.GetClient()},
+		Scheme:    mgr.GetScheme(),
+		Callback:  func(string, string) {},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "DRPlacementControl")
 		os.Exit(1)
 	}
 }
