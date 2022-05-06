@@ -1,4 +1,5 @@
 ## Append samples you want in your CSV to this file as resources ##
 resources:
 - ramendr_v1alpha1_drcluster.yaml
+- ramendr_v1alpha1_s3bucketview.yaml
 #+kubebuilder:scaffold:manifestskustomizesamples
