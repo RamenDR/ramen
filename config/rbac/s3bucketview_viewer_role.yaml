@@ -1,0 +1,20 @@
+# permissions for end users to view s3bucketviews.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: s3bucketview-viewer-role
+rules:
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - s3bucketviews
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - s3bucketviews/status
+  verbs:
+  - get

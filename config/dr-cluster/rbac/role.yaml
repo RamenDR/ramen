@@ -48,6 +48,32 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
+  - s3bucketviews
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - s3bucketviews/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - s3bucketviews/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
   - volumereplicationgroups
   verbs:
   - create
