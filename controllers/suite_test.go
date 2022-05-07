@@ -67,6 +67,8 @@ var (
 	ramenConfig *ramendrv1alpha1.RamenConfig
 	testLog     logr.Logger
 
+	namespaceDeletionSupported bool
+
 	timeout  = time.Second * 10
 	interval = time.Millisecond * 10
 
@@ -124,6 +126,10 @@ var _ = BeforeSuite(func() {
 			filepath.Join("..", "config", "crd", "bases"),
 			filepath.Join("..", "hack", "test"),
 		},
+	}
+
+	if testEnv.UseExistingCluster != nil && *testEnv.UseExistingCluster == true {
+		namespaceDeletionSupported = true
 	}
 
 	var err error
