@@ -292,9 +292,6 @@ var _ = BeforeSuite(func() {
 		APIReader:      k8sManager.GetAPIReader(),
 		Log:            ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
 		ObjStoreGetter: fakeObjectStoreGetter{},
-		PVDownloader:   FakePVDownloader{},
-		PVUploader:     FakePVUploader{},
-		PVDeleter:      FakePVDeleter{},
 		Scheme:         k8sManager.GetScheme(),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())

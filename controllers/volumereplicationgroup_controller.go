@@ -48,26 +48,11 @@ import (
 	"github.com/ramendr/ramen/controllers/volsync"
 )
 
-type PVDownloader interface {
-	DownloadPVs(objStore ObjectStorer, s3KeyPrefix string) ([]corev1.PersistentVolume, error)
-}
-
-type PVUploader interface {
-	UploadPV(objectStore ObjectStorer, pvKeyPrefix string, pv *corev1.PersistentVolume) error
-}
-
-type PVDeleter interface {
-	DeletePVs(v interface{}, s3ProfileName string) error
-}
-
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
 type VolumeReplicationGroupReconciler struct {
 	client.Client
 	APIReader      client.Reader
 	Log            logr.Logger
-	PVDownloader   PVDownloader
-	PVUploader     PVUploader
-	PVDeleter      PVDeleter
 	ObjStoreGetter ObjectStoreGetter
 	Scheme         *runtime.Scheme
 	eventRecorder  *rmnutil.EventReporter

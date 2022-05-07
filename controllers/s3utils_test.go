@@ -19,6 +19,7 @@ package controllers_test
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	"github.com/ramendr/ramen/controllers"
@@ -80,14 +81,30 @@ type fakeObjectStorer struct {
 	bucketName string
 }
 
-func (fakeObjectStorer) UploadPV(pvKeyPrefix, pvKeySuffix string, pv corev1.PersistentVolume) error {
+func (f fakeObjectStorer) fullPrefix(keyPrefix string) string {
+	return f.GetName() + keyPrefix
+}
+
+func (f fakeObjectStorer) UploadPV(pvKeyPrefix, pvKeySuffix string, pv corev1.PersistentVolume) error {
+	key := f.fullPrefix(pvKeyPrefix) + pv.Name
+	UploadedPVs[key] = pv
+
 	return nil
 }
 
 func (f fakeObjectStorer) GetName() string { return f.name }
 
-func (fakeObjectStorer) DownloadPVs(pvKeyPrefix string) ([]corev1.PersistentVolume, error) {
-	return []corev1.PersistentVolume{}, nil
+func (f fakeObjectStorer) DownloadPVs(pvKeyPrefix string) ([]corev1.PersistentVolume, error) {
+	fullPrefix := f.fullPrefix(pvKeyPrefix)
+	pvList := []corev1.PersistentVolume{}
+
+	for k, v := range UploadedPVs {
+		if strings.HasPrefix(k, fullPrefix) {
+			pvList = append(pvList, v.(corev1.PersistentVolume))
+		}
+	}
+
+	return pvList, nil
 }
 
 func (f fakeObjectStorer) ListKeys(keyPrefix string) ([]string, error) {
@@ -95,7 +112,22 @@ func (f fakeObjectStorer) ListKeys(keyPrefix string) ([]string, error) {
 		return nil, fmt.Errorf("Failing bucket listing")
 	}
 
-	return []string{}, nil
+	fullPrefix := f.fullPrefix(keyPrefix)
+	keys := []string{}
+
+	for k := range UploadedPVs {
+		if strings.HasPrefix(k, fullPrefix) {
+			keys = append(keys, k)
+		}
+	}
+
+	return keys, nil
 }
 
-func (fakeObjectStorer) DeleteObjects(keyPrefix string) error { return nil }
+func (fakeObjectStorer) DeleteObjects(keyPrefix string) error {
+	for key := range UploadedPVs {
+		delete(UploadedPVs, key)
+	}
+
+	return nil
+}
