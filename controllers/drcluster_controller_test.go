@@ -29,6 +29,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -159,12 +160,28 @@ var _ = Describe("DRClusterController", func() {
 		}
 	}
 
+	namespaceDeletionConfirm := func(name string) {
+		namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}
+		Eventually(func() error {
+			return k8sClient.Get(context.TODO(), types.NamespacedName{Name: namespace.Name}, namespace)
+		}, timeout, interval).Should(
+			MatchError(errors.NewNotFound(schema.GroupResource{Resource: "namespaces"}, namespace.Name)),
+			"%v", namespace,
+		)
+	}
+
 	deleteDRClusterNamespaces := func() {
+		if !namespaceDeletionSupported {
+			return
+		}
 		for _, drcluster := range drclusters {
 			Expect(k8sClient.Delete(
 				context.TODO(),
 				&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: drcluster.Name}},
 			)).To(Succeed())
+		}
+		for i := range drclusters {
+			namespaceDeletionConfirm(drclusters[i].Name)
 		}
 	}
 
