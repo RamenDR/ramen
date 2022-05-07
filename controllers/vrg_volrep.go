@@ -468,8 +468,8 @@ func (v *VRGInstance) PVUploadToObjectStore(s3ProfileName string, pvc *corev1.Pe
 			pvc.Name, s3ProfileName, err)
 	}
 
-	if err := v.reconciler.PVUploader.UploadPV(objectStore, v.s3KeyPrefix(), &pv); err != nil {
-		err := fmt.Errorf("error uploading PV cluster data to s3Profile %s, %w", s3ProfileName, err)
+	if err := objectStore.UploadPV(v.s3KeyPrefix(), pv.Name, pv); err != nil {
+		err := fmt.Errorf("error uploading PV %s kube object to s3Profile %s, %w", pv.Name, s3ProfileName, err)
 
 		return err
 	}
@@ -496,8 +496,6 @@ func (v *VRGInstance) PVUploadToObjectStores(pvc *corev1.PersistentVolumeClaim,
 
 	return succeededProfiles, nil
 }
-
-type ObjectStorePVUploader struct{}
 
 func (v *VRGInstance) getPVFromPVC(pvc *corev1.PersistentVolumeClaim) (corev1.PersistentVolume, error) {
 	pv := corev1.PersistentVolume{}
@@ -546,19 +544,6 @@ func (v *VRGInstance) cacheObjectStorer(s3ProfileName string, objectStore Object
 		storer: objectStore,
 		err:    err,
 	}
-}
-
-// UploadPV checks if the VRG spec has been configured with an s3 endpoint,
-// connects to the object store, gets the PV cluster data of the input PVC from
-// etcd, creates a bucket in s3 store, uploads the PV cluster data to s3 store.
-func (ObjectStorePVUploader) UploadPV(objectStore ObjectStorer,
-	pvKeyPrefix string, pv *corev1.PersistentVolume) (err error) {
-	err = objectStore.UploadPV(pvKeyPrefix, pv.Name, *pv)
-	if err != nil {
-		return fmt.Errorf("error uploading PV %s, err %w", pv.Name, err)
-	}
-
-	return nil
 }
 
 // reconcileVRsForDeletion cleans up VR resources managed by VRG and also cleans up changes made to PVCs
@@ -671,7 +656,7 @@ func (v *VRGInstance) deleteClusterDataInS3Stores(log logr.Logger) error {
 			continue
 		}
 
-		if err := v.reconciler.PVDeleter.DeletePVs(v, s3ProfileName); err != nil {
+		if err := v.DeletePVs(s3ProfileName); err != nil {
 			return fmt.Errorf("error deleting PVs using profile %s, err %w", s3ProfileName, err)
 		}
 	}
@@ -679,30 +664,23 @@ func (v *VRGInstance) deleteClusterDataInS3Stores(log logr.Logger) error {
 	return nil
 }
 
-type ObjectStorePVDeleter struct{}
-
-func (ObjectStorePVDeleter) DeletePVs(v interface{}, s3ProfileName string) (err error) {
-	vrg, ok := v.(*VRGInstance)
-	if !ok {
-		return fmt.Errorf("error deleting cluster data, input is not VRGInstance")
-	}
-
-	objectStore, err := vrg.reconciler.ObjStoreGetter.ObjectStore(
-		vrg.ctx,
-		vrg.reconciler.APIReader,
+func (v *VRGInstance) DeletePVs(s3ProfileName string) (err error) {
+	objectStore, err := v.reconciler.ObjStoreGetter.ObjectStore(
+		v.ctx,
+		v.reconciler.APIReader,
 		s3ProfileName,
-		vrg.namespacedName, // debugTag
-		vrg.log,
+		v.namespacedName, // debugTag
+		v.log,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to get client for s3Profile %s, err %w",
 			s3ProfileName, err)
 	}
 
-	s3KeyPrefix := vrg.s3KeyPrefix()
+	s3KeyPrefix := v.s3KeyPrefix()
 	msg := fmt.Sprintf("delete PVs with key prefix %s in profile %s",
 		s3KeyPrefix, s3ProfileName)
-	vrg.log.Info(msg)
+	v.log.Info(msg)
 
 	// Delete all PVs from this VRG's S3 bucket
 	if err := objectStore.DeleteObjects(s3KeyPrefix); err != nil {
@@ -1542,7 +1520,7 @@ func (v *VRGInstance) fetchPVClusterDataFromS3Store(s3ProfileName string) ([]cor
 		return nil, fmt.Errorf("error when downloading PVs, err %w", err)
 	}
 
-	return v.reconciler.PVDownloader.DownloadPVs(objectStore, s3KeyPrefix)
+	return objectStore.DownloadPVs(s3KeyPrefix)
 }
 
 // sanityCheckPVClusterData returns an error if there are PVs in the input
@@ -1583,13 +1561,6 @@ func (v *VRGInstance) sanityCheckPVClusterData(pvList []corev1.PersistentVolume)
 	}
 
 	return nil
-}
-
-type ObjectStorePVDownloader struct{}
-
-func (s ObjectStorePVDownloader) DownloadPVs(objectStore ObjectStorer, s3KeyPrefix string) (
-	[]corev1.PersistentVolume, error) {
-	return objectStore.DownloadPVs(s3KeyPrefix)
 }
 
 func (v *VRGInstance) restorePVClusterData(pvList []corev1.PersistentVolume) error {

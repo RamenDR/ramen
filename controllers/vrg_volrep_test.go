@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
-	"strings"
 	"time"
 
 	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
@@ -1283,40 +1282,4 @@ func waitForPVRestore(pvList []corev1.PersistentVolume) {
 	}
 
 	Expect(pvCount == len(pvList))
-}
-
-type FakePVDownloader struct{}
-
-func (s FakePVDownloader) DownloadPVs(objStore vrgController.ObjectStorer, keyPrefix string) (
-	[]corev1.PersistentVolume, error) {
-	pvList := []corev1.PersistentVolume{}
-	fullPrefix := objStore.GetName() + keyPrefix
-
-	for k, v := range UploadedPVs {
-		if strings.HasPrefix(k, fullPrefix) {
-			pvList = append(pvList, v.(corev1.PersistentVolume))
-		}
-	}
-
-	return pvList, nil
-}
-
-type FakePVUploader struct{}
-
-func (s FakePVUploader) UploadPV(objectStore vrgController.ObjectStorer,
-	pvKeyPrefix string, pv *corev1.PersistentVolume) error {
-	key := objectStore.GetName() + pvKeyPrefix + pv.Name
-	UploadedPVs[key] = pv
-
-	return nil
-}
-
-type FakePVDeleter struct{}
-
-func (s FakePVDeleter) DeletePVs(v interface{}, s3ProfileName string) error {
-	for key := range UploadedPVs {
-		delete(UploadedPVs, key)
-	}
-
-	return nil
 }
