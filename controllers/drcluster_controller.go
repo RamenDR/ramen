@@ -40,7 +40,8 @@ import (
 
 // DRClusterReconciler reconciles a DRCluster object
 type DRClusterReconciler struct {
-	client.Client
+	client.Writer
+	client.StatusWriter
 	APIReader         client.Reader
 	Scheme            *runtime.Scheme
 	ObjectStoreGetter ObjectStoreGetter
@@ -88,12 +89,12 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	defer log.Info("reconcile exit")
 
 	drcluster := &ramen.DRCluster{}
-	if err := r.Client.Get(ctx, req.NamespacedName, drcluster); err != nil {
+	if err := r.APIReader.Get(ctx, req.NamespacedName, drcluster); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(fmt.Errorf("get: %w", err))
 	}
 
 	var manifestWorkUtil util.MWUtil
-	u := &drclusterUpdater{ctx, drcluster, r.Client, log, r, manifestWorkUtil}
+	u := &drclusterUpdater{ctx, drcluster, r.Writer, r.StatusWriter, log, r, manifestWorkUtil}
 	u.initializeStatus()
 
 	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
@@ -102,7 +103,7 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	manifestWorkUtil = util.MWUtil{
-		Client: r.Client, APIReader: r.APIReader, Ctx: ctx, Log: log, InstName: "", InstNamespace: "",
+		Client: r.Writer, APIReader: r.APIReader, Ctx: ctx, Log: log, InstName: "", InstNamespace: "",
 	}
 	u.mwUtil = manifestWorkUtil
 
@@ -236,12 +237,13 @@ func (r DRClusterReconciler) processFencing(u *drclusterUpdater) (ctrl.Result, e
 }
 
 type drclusterUpdater struct {
-	ctx        context.Context
-	object     *ramen.DRCluster
-	client     client.Client
-	log        logr.Logger
-	reconciler *DRClusterReconciler
-	mwUtil     util.MWUtil
+	ctx          context.Context
+	object       *ramen.DRCluster
+	client       client.Writer
+	statusWriter client.StatusWriter
+	log          logr.Logger
+	reconciler   *DRClusterReconciler
+	mwUtil       util.MWUtil
 }
 
 func (u *drclusterUpdater) validatedSetFalse(reason string, err error) error {
@@ -267,7 +269,7 @@ func (u *drclusterUpdater) statusConditionSet(
 }
 
 func (u *drclusterUpdater) statusUpdate() error {
-	return u.client.Status().Update(u.ctx, u.object)
+	return u.statusWriter.Update(u.ctx, u.object)
 }
 
 const drClusterFinalizerName = "drclusters.ramendr.openshift.io/ramen"
@@ -587,7 +589,7 @@ func (r *DRClusterReconciler) drClusterConfigMapMapFunc(configMap client.Object)
 	}
 
 	drcusters := &ramen.DRClusterList{}
-	if err := r.Client.List(context.TODO(), drcusters); err != nil {
+	if err := r.APIReader.List(context.TODO(), drcusters); err != nil {
 		return []reconcile.Request{}
 	}
 

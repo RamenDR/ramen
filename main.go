@@ -118,7 +118,8 @@ func setupReconcilers(mgr ctrl.Manager) {
 		}
 
 		if err := (&controllers.DRClusterReconciler{
-			Client:            mgr.GetClient(),
+			Writer:            mgr.GetClient(),
+			StatusWriter:      mgr.GetClient().Status(),
 			APIReader:         mgr.GetAPIReader(),
 			Scheme:            mgr.GetScheme(),
 			ObjectStoreGetter: controllers.S3ObjectStoreGetter(),

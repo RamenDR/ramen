@@ -60,7 +60,7 @@ const (
 )
 
 type MWUtil struct {
-	client.Client
+	Client        client.Writer
 	APIReader     client.Reader
 	Ctx           context.Context
 	Log           logr.Logger
