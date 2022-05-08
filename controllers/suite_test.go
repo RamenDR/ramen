@@ -279,12 +279,13 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	drpcReconciler := (&ramencontrollers.DRPlacementControlReconciler{
-		Client:    k8sManager.GetClient(),
-		APIReader: k8sManager.GetAPIReader(),
-		Log:       ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),
-		MCVGetter: FakeMCVGetter{},
-		Scheme:    k8sManager.GetScheme(),
-		Callback:  FakeProgressCallback,
+		Writer:       k8sManager.GetClient(),
+		StatusWriter: k8sManager.GetClient().Status(),
+		APIReader:    k8sManager.GetAPIReader(),
+		Log:          ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),
+		MCVGetter:    FakeMCVGetter{},
+		Scheme:       k8sManager.GetScheme(),
+		Callback:     FakeProgressCallback,
 	})
 	err = drpcReconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())

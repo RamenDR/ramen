@@ -213,7 +213,8 @@ func (m ManagedClusterViewGetterImpl) getOrCreateManagedClusterView(
 
 // DRPlacementControlReconciler reconciles a DRPlacementControl object
 type DRPlacementControlReconciler struct {
-	client.Client
+	client.Writer
+	client.StatusWriter
 	APIReader     client.Reader
 	Log           logr.Logger
 	MCVGetter     ManagedClusterViewGetter
@@ -549,7 +550,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 	for _, managedCluster := range rmnutil.DrpolicyClusterNames(drPolicy) {
 		drCluster := &rmn.DRCluster{}
 
-		err := r.Client.Get(ctx, types.NamespacedName{Name: managedCluster, Namespace: NamespaceName()}, drCluster)
+		err := r.APIReader.Get(ctx, types.NamespacedName{Name: managedCluster, Namespace: NamespaceName()}, drCluster)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get DRCluster (%s) %w", managedCluster, err)
 		}
@@ -578,7 +579,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 		reconciler: r, ctx: ctx, log: r.Log, instance: drpc, needStatusUpdate: false, userPlacementRule: usrPlRule,
 		drpcPlacementRule: drpcPlRule, drPolicy: drPolicy, drClusters: drClusters, vrgs: vrgs,
 		mwu: rmnutil.MWUtil{
-			Client: r.Client, APIReader: r.APIReader, Ctx: ctx, Log: r.Log,
+			Client: r.Writer, APIReader: r.APIReader, Ctx: ctx, Log: r.Log,
 			InstName: drpc.Name, InstNamespace: drpc.Namespace,
 		},
 	}
@@ -634,7 +635,7 @@ func (r *DRPlacementControlReconciler) getDRPolicy(ctx context.Context,
 	name := drpc.Spec.DRPolicyRef.Name
 	namespace := drpc.Spec.DRPolicyRef.Namespace
 
-	err := r.Client.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, drPolicy)
+	err := r.APIReader.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, drPolicy)
 	if err != nil {
 		r.Log.Error(err, "failed to get DRPolicy")
 
@@ -659,7 +660,7 @@ func (r DRPlacementControlReconciler) addLabelsAndFinalizers(ctx context.Context
 	finalizerAdded := rmnutil.AddFinalizer(drpc, DRPCFinalizer)
 
 	if labelAdded || finalizerAdded {
-		if err := r.Update(ctx, drpc); err != nil {
+		if err := r.Writer.Update(ctx, drpc); err != nil {
 			r.Log.Error(err, "Failed to add label and finalizer to drpc")
 
 			return fmt.Errorf("%w", err)
@@ -669,7 +670,7 @@ func (r DRPlacementControlReconciler) addLabelsAndFinalizers(ctx context.Context
 	// add finalizer to User PlacementRule
 	finalizerAdded = rmnutil.AddFinalizer(usrPlRule, DRPCFinalizer)
 	if finalizerAdded {
-		if err := r.Update(ctx, usrPlRule); err != nil {
+		if err := r.Writer.Update(ctx, usrPlRule); err != nil {
 			r.Log.Error(err, "Failed to add finalizer to user placement rule")
 
 			return fmt.Errorf("%w", err)
@@ -687,7 +688,7 @@ func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 		// Remove DRPCFinalizer from User PlacementRule.
 		controllerutil.RemoveFinalizer(usrPlRule, DRPCFinalizer)
 
-		err := r.Update(ctx, usrPlRule)
+		err := r.Writer.Update(ctx, usrPlRule)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update User PlacementRule %w", err)
 		}
@@ -704,7 +705,7 @@ func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 		// Remove DRPCFinalizer from DRPC.
 		controllerutil.RemoveFinalizer(drpc, DRPCFinalizer)
 
-		err := r.Update(ctx, drpc)
+		err := r.Writer.Update(ctx, drpc)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update drpc %w", err)
 		}
@@ -720,7 +721,7 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 
 	clonedPlRuleName := fmt.Sprintf(ClonedPlacementRuleNameFormat, drpc.Name, drpc.Namespace)
 	mwu := rmnutil.MWUtil{
-		Client: r.Client, APIReader: r.APIReader, Ctx: ctx, Log: r.Log,
+		Client: r.Writer, APIReader: r.APIReader, Ctx: ctx, Log: r.Log,
 		InstName: drpc.Name, InstNamespace: drpc.Namespace,
 	}
 
@@ -778,7 +779,7 @@ func (r *DRPlacementControlReconciler) deleteManagedClusterView(clusterName, mcv
 
 	mcv := &viewv1beta1.ManagedClusterView{}
 
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: mcvName, Namespace: clusterName}, mcv)
+	err := r.APIReader.Get(context.TODO(), types.NamespacedName{Name: mcvName, Namespace: clusterName}, mcv)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil
@@ -789,7 +790,7 @@ func (r *DRPlacementControlReconciler) deleteManagedClusterView(clusterName, mcv
 
 	r.Log.Info("Deleting ManagedClusterView", "name", mcv.Name, "namespace", mcv.Namespace)
 
-	return r.Client.Delete(context.TODO(), mcv)
+	return r.Writer.Delete(context.TODO(), mcv)
 }
 
 func (r *DRPlacementControlReconciler) getDRPCPlacementRule(ctx context.Context,
@@ -824,7 +825,7 @@ func (r *DRPlacementControlReconciler) getUserPlacementRule(ctx context.Context,
 
 	usrPlRule := &plrv1.PlacementRule{}
 
-	err := r.Client.Get(ctx,
+	err := r.APIReader.Get(ctx,
 		types.NamespacedName{Name: drpc.Spec.PlacementRef.Name, Namespace: drpc.Spec.PlacementRef.Namespace},
 		usrPlRule)
 	if err != nil {
@@ -868,7 +869,7 @@ func (r *DRPlacementControlReconciler) annotatePlacementRule(ctx context.Context
 		plRule.ObjectMeta.Annotations[rmnutil.DRPCNameAnnotation] = drpc.Name
 		plRule.ObjectMeta.Annotations[rmnutil.DRPCNamespaceAnnotation] = drpc.Namespace
 
-		err := r.Update(ctx, plRule)
+		err := r.Writer.Update(ctx, plRule)
 		if err != nil {
 			r.Log.Error(err, "Failed to update PlacementRule annotation", "PlRuleName", plRule.Name)
 
@@ -919,7 +920,7 @@ func (r *DRPlacementControlReconciler) getClonedPlacementRule(ctx context.Contex
 
 	clonedPlRule := &plrv1.PlacementRule{}
 
-	err := r.Client.Get(ctx, types.NamespacedName{Name: clonedPlRuleName, Namespace: namespace}, clonedPlRule)
+	err := r.APIReader.Get(ctx, types.NamespacedName{Name: clonedPlRuleName, Namespace: namespace}, clonedPlRule)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get placementrule error: %w", err)
 	}
@@ -947,7 +948,7 @@ func (r *DRPlacementControlReconciler) clonePlacementRule(ctx context.Context,
 		return nil, err
 	}
 
-	err = r.Create(ctx, clonedPlRule)
+	err = r.Writer.Create(ctx, clonedPlRule)
 	if err != nil {
 		r.Log.Error(err, "failed to clone placement rule", "name", clonedPlRule.Name)
 
@@ -996,7 +997,7 @@ func (r *DRPlacementControlReconciler) deleteClonedPlacementRule(ctx context.Con
 		return err
 	}
 
-	err = r.Client.Delete(ctx, plRule)
+	err = r.Writer.Delete(ctx, plRule)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil
@@ -1066,7 +1067,7 @@ func (r *DRPlacementControlReconciler) updateUserPlacementRuleStatus(
 
 	if !reflect.DeepEqual(newStatus, usrPlRule.Status) {
 		usrPlRule.Status = newStatus
-		if err := r.Status().Update(context.TODO(), usrPlRule); err != nil {
+		if err := r.StatusWriter.Update(context.TODO(), usrPlRule); err != nil {
 			r.Log.Error(err, "failed to update user PlacementRule")
 
 			return fmt.Errorf("failed to update userPlRule %s (%w)", usrPlRule.Name, err)
@@ -1114,7 +1115,7 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 		}
 	}
 
-	if err := r.Status().Update(context.TODO(), drpc); err != nil {
+	if err := r.StatusWriter.Update(context.TODO(), drpc); err != nil {
 		return errorswrapper.Wrap(err, "failed to update DRPC status")
 	}
 
