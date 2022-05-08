@@ -156,7 +156,7 @@ func (f FakeMCVGetter) GetNamespaceFromManagedCluster(
 	appNamespaceLookupKey := types.NamespacedName{Name: namespaceString}
 	appNamespaceObj := &corev1.Namespace{}
 
-	err := k8sClient.Get(context.TODO(), appNamespaceLookupKey, appNamespaceObj)
+	err := apiReader.Get(context.TODO(), appNamespaceLookupKey, appNamespaceObj)
 
 	return appNamespaceObj, errorswrapper.Wrap(err, "failed to get Namespace from managedcluster")
 }
@@ -236,7 +236,7 @@ func getVRGFromManifestWork(managedCluster string) (*rmn.VolumeReplicationGroup,
 
 	mw := &ocmworkv1.ManifestWork{}
 
-	err := k8sClient.Get(context.TODO(), manifestLookupKey, mw)
+	err := apiReader.Get(context.TODO(), manifestLookupKey, mw)
 	if errors.IsNotFound(err) {
 		return nil, errors.NewNotFound(schema.GroupResource{},
 			fmt.Sprintf("requested resource not found in ManagedCluster %s", managedCluster))
@@ -314,7 +314,7 @@ func updateClonedPlacementRuleStatus(
 	clonedPlRule := &plrv1.PlacementRule{}
 
 	Eventually(func() bool {
-		err := k8sClient.Get(context.TODO(), clonedPlRuleLookupKey, clonedPlRule)
+		err := apiReader.Get(context.TODO(), clonedPlRuleLookupKey, clonedPlRule)
 
 		return err == nil
 	}, timeout, interval).Should(BeTrue(), "failed to get cloned PlacementRule")
@@ -324,7 +324,7 @@ func updateClonedPlacementRuleStatus(
 		Decisions: plDecisions,
 	}
 
-	err := k8sClient.Status().Update(context.TODO(), clonedPlRule)
+	err := statusWriter.Update(context.TODO(), clonedPlRule)
 	Expect(err).NotTo(HaveOccurred())
 }
 
@@ -409,14 +409,14 @@ func clearDRPCStatus() {
 	latestDRPC := getLatestDRPC()
 	latestDRPC.Status = rmn.DRPlacementControlStatus{}
 	latestDRPC.Status.LastUpdateTime = metav1.Now()
-	err := k8sClient.Status().Update(context.TODO(), latestDRPC)
+	err := statusWriter.Update(context.TODO(), latestDRPC)
 	Expect(err).NotTo(HaveOccurred())
 }
 
 func createNamespace(ns *corev1.Namespace) {
 	nsName := types.NamespacedName{Name: ns.Name}
 
-	err := k8sClient.Get(context.TODO(), nsName, &corev1.Namespace{})
+	err := apiReader.Get(context.TODO(), nsName, &corev1.Namespace{})
 	if err != nil {
 		Expect(k8sClient.Create(context.TODO(), ns)).NotTo(HaveOccurred(),
 			"failed to create %v managed cluster namespace", ns.Name)
@@ -434,7 +434,7 @@ func createManagedClustersAsync() {
 		mcLookupKey := types.NamespacedName{Name: cl.Name}
 		mcObj := &spokeClusterV1.ManagedCluster{}
 
-		err := k8sClient.Get(context.TODO(), mcLookupKey, mcObj)
+		err := apiReader.Get(context.TODO(), mcLookupKey, mcObj)
 		if err != nil {
 			clinstance := cl.DeepCopy()
 
@@ -566,7 +566,7 @@ func moveVRGToSecondary(clusterNamespace, mwType string, protectData bool) (*rmn
 func updateVRGMW(manifestLookupKey types.NamespacedName, dataProtected bool) (*rmn.VolumeReplicationGroup, error) {
 	mw := &ocmworkv1.ManifestWork{}
 
-	err := k8sClient.Get(context.TODO(), manifestLookupKey, mw)
+	err := apiReader.Get(context.TODO(), manifestLookupKey, mw)
 	if errors.IsNotFound(err) {
 		return nil, errors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
 	}
@@ -631,7 +631,7 @@ func updateManifestWorkStatus(clusterNamespace, mwType, workType string) {
 	mw := &ocmworkv1.ManifestWork{}
 
 	Eventually(func() bool {
-		err := k8sClient.Get(context.TODO(), manifestLookupKey, mw)
+		err := apiReader.Get(context.TODO(), manifestLookupKey, mw)
 
 		return err == nil
 	}, timeout, interval).Should(BeTrue(),
@@ -661,18 +661,18 @@ func updateManifestWorkStatus(clusterNamespace, mwType, workType string) {
 
 	mw.Status = pvManifestStatus
 
-	err := k8sClient.Status().Update(context.TODO(), mw)
+	err := statusWriter.Update(context.TODO(), mw)
 	if err != nil {
 		// try again
-		Expect(k8sClient.Get(context.TODO(), manifestLookupKey, mw)).NotTo(HaveOccurred())
+		Expect(apiReader.Get(context.TODO(), manifestLookupKey, mw)).NotTo(HaveOccurred())
 		mw.Status = pvManifestStatus
-		err = k8sClient.Status().Update(context.TODO(), mw)
+		err = statusWriter.Update(context.TODO(), mw)
 	}
 
 	Expect(err).NotTo(HaveOccurred())
 
 	Eventually(func() bool {
-		err := k8sClient.Get(context.TODO(), manifestLookupKey, mw)
+		err := apiReader.Get(context.TODO(), manifestLookupKey, mw)
 
 		return err == nil && len(mw.Status.Conditions) != 0
 	}, timeout, interval).Should(BeTrue(), "failed to wait for PV manifest condition type to change to 'Applied'")
@@ -686,7 +686,7 @@ func waitForVRGMWDeletion(clusterNamespace string) {
 	createdManifest := &ocmworkv1.ManifestWork{}
 
 	Eventually(func() bool {
-		err := k8sClient.Get(context.TODO(), manifestLookupKey, createdManifest)
+		err := apiReader.Get(context.TODO(), manifestLookupKey, createdManifest)
 
 		return errors.IsNotFound(err)
 	}, timeout, interval).Should(BeTrue(), "failed to wait for manifest deletion for type vrg")
@@ -714,7 +714,7 @@ func verifyVRGManifestWorkCreatedAsPrimary(managedCluster string) {
 	createdVRGRolesManifest := &ocmworkv1.ManifestWork{}
 
 	Eventually(func() bool {
-		err := k8sClient.Get(context.TODO(), vrgManifestLookupKey, createdVRGRolesManifest)
+		err := apiReader.Get(context.TODO(), vrgManifestLookupKey, createdVRGRolesManifest)
 
 		return err == nil
 	}, timeout, interval).Should(BeTrue())
@@ -743,7 +743,7 @@ func verifyVRGManifestWorkCreatedAsPrimary(managedCluster string) {
 	mw := &ocmworkv1.ManifestWork{}
 
 	Eventually(func() bool {
-		err := k8sClient.Get(context.TODO(), manifestLookupKey, mw)
+		err := apiReader.Get(context.TODO(), manifestLookupKey, mw)
 
 		return err == nil
 	}, timeout, interval).Should(BeTrue())
@@ -767,7 +767,7 @@ func getManifestWorkCount(homeClusterNamespace string) int {
 	manifestWorkList := &ocmworkv1.ManifestWorkList{}
 	listOptions := &client.ListOptions{Namespace: homeClusterNamespace}
 
-	Expect(k8sClient.List(context.TODO(), manifestWorkList, listOptions)).NotTo(HaveOccurred())
+	Expect(apiReader.List(context.TODO(), manifestWorkList, listOptions)).NotTo(HaveOccurred())
 
 	return len(manifestWorkList.Items)
 }
@@ -781,7 +781,7 @@ func verifyUserPlacementRuleDecision(name, namespace, homeCluster string) {
 	usrPlRule := &plrv1.PlacementRule{}
 
 	Eventually(func() bool {
-		err := k8sClient.Get(context.TODO(), usrPlRuleLookupKey, usrPlRule)
+		err := apiReader.Get(context.TODO(), usrPlRuleLookupKey, usrPlRule)
 
 		return err == nil && len(usrPlRule.Status.Decisions) > 0 &&
 			usrPlRule.Status.Decisions[0].ClusterName == homeCluster
@@ -800,7 +800,7 @@ func verifyUserPlacementRuleDecisionUnchanged(name, namespace, homeCluster strin
 	usrPlRule := &plrv1.PlacementRule{}
 
 	Consistently(func() bool {
-		err := k8sClient.Get(context.TODO(), usrPlRuleLookupKey, usrPlRule)
+		err := apiReader.Get(context.TODO(), usrPlRuleLookupKey, usrPlRule)
 
 		return err == nil && usrPlRule.Status.Decisions[0].ClusterName == homeCluster
 	}, timeout, interval).Should(BeTrue())
@@ -818,7 +818,7 @@ func verifyDRPCStatusPreferredClusterExpectation(drState rmn.DRState) {
 	updatedDRPC := &rmn.DRPlacementControl{}
 
 	Eventually(func() bool {
-		err := k8sClient.Get(context.TODO(), drpcLookupKey, updatedDRPC)
+		err := apiReader.Get(context.TODO(), drpcLookupKey, updatedDRPC)
 
 		if d := updatedDRPC.Status.PreferredDecision; err == nil && d != (plrv1.PlacementDecision{}) {
 			idx, condition := getDRPCCondition(&updatedDRPC.Status, rmn.ConditionAvailable)
@@ -845,7 +845,7 @@ func getLatestUserPlacementRule(name, namespace string) *plrv1.PlacementRule {
 
 	usrPlRule := &plrv1.PlacementRule{}
 
-	err := k8sClient.Get(context.TODO(), usrPlRuleLookupKey, usrPlRule)
+	err := apiReader.Get(context.TODO(), usrPlRuleLookupKey, usrPlRule)
 	Expect(err).NotTo(HaveOccurred())
 
 	return usrPlRule
@@ -1067,7 +1067,7 @@ func createManagedClustersSync() {
 		mcLookupKey := types.NamespacedName{Name: cl.Name}
 		mcObj := &spokeClusterV1.ManagedCluster{}
 
-		err := k8sClient.Get(context.TODO(), mcLookupKey, mcObj)
+		err := apiReader.Get(context.TODO(), mcLookupKey, mcObj)
 		if err != nil {
 			clinstance := cl.DeepCopy()
 

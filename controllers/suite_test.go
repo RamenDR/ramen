@@ -59,13 +59,14 @@ import (
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
 var (
-	cfg         *rest.Config
-	apiReader   client.Reader
-	k8sClient   client.Client
-	testEnv     *envtest.Environment
-	configMap   *corev1.ConfigMap
-	ramenConfig *ramendrv1alpha1.RamenConfig
-	testLog     logr.Logger
+	cfg          *rest.Config
+	apiReader    client.Reader
+	k8sClient    client.Writer
+	statusWriter client.StatusWriter
+	testEnv      *envtest.Environment
+	configMap    *corev1.ConfigMap
+	ramenConfig  *ramendrv1alpha1.RamenConfig
+	testLog      logr.Logger
 
 	timeout  = time.Second * 10
 	interval = time.Millisecond * 10
@@ -89,7 +90,7 @@ func createOperatorNamespace(ramenNamespace string) {
 	ramenNamespaceLookupKey := types.NamespacedName{Name: ramenNamespace}
 	ramenNamespaceObj := &corev1.Namespace{}
 
-	err := k8sClient.Get(context.TODO(), ramenNamespaceLookupKey, ramenNamespaceObj)
+	err := apiReader.Get(context.TODO(), ramenNamespaceLookupKey, ramenNamespaceObj)
 	if err != nil {
 		ramenNamespaceObj = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: ramenNamespace},
@@ -157,9 +158,11 @@ var _ = BeforeSuite(func() {
 
 	// +kubebuilder:scaffold:scheme
 
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	client, err := client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
-	Expect(k8sClient).NotTo(BeNil())
+	Expect(client).NotTo(BeNil())
+	k8sClient = client
+	apiReader = client
 
 	createOperatorNamespace(ramenNamespace)
 	ramenConfig = &ramendrv1alpha1.RamenConfig{
@@ -298,6 +301,8 @@ var _ = BeforeSuite(func() {
 
 	k8sClient = k8sManager.GetClient()
 	Expect(k8sClient).ToNot(BeNil())
+	statusWriter = k8sManager.GetClient().Status()
+	Expect(statusWriter).ToNot(BeNil())
 	apiReader = k8sManager.GetAPIReader()
 	Expect(apiReader).ToNot(BeNil())
 }, 60)
