@@ -258,7 +258,8 @@ var _ = BeforeSuite(func() {
 	}).SetupWithManager(k8sManager)).To(Succeed())
 
 	Expect((&ramencontrollers.DRPolicyReconciler{
-		Client:            k8sManager.GetClient(),
+		Writer:            k8sManager.GetClient(),
+		StatusWriter:      k8sManager.GetClient().Status(),
 		APIReader:         k8sManager.GetAPIReader(),
 		Scheme:            k8sManager.GetScheme(),
 		ObjectStoreGetter: fakeObjectStoreGetter{},

@@ -80,9 +80,10 @@ var _ = BeforeSuite(func() {
 	Expect(k8sClient).NotTo(BeNil())
 
 	secretsUtil = util.SecretsUtil{
-		Client: k8sClient,
-		Ctx:    context.TODO(),
-		Log:    ctrl.Log.WithName("secrets_util"),
+		Client:    k8sClient,
+		APIReader: k8sClient,
+		Ctx:       context.TODO(),
+		Log:       ctrl.Log.WithName("secrets_util"),
 	}
 })
 

@@ -145,7 +145,7 @@ func drClusterUndeploy(drcluster *rmn.DRCluster, mwu *util.MWUtil) error {
 	clusterNames := sets.String{}
 	drpolicies := rmn.DRPolicyList{}
 
-	if err := mwu.Client.List(mwu.Ctx, &drpolicies); err != nil {
+	if err := mwu.APIReader.List(mwu.Ctx, &drpolicies); err != nil {
 		return fmt.Errorf("drpolicies list: %w", err)
 	}
 

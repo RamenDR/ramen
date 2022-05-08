@@ -72,7 +72,6 @@ type ProgressCallback func(string, string)
 type ManagedClusterViewGetter interface {
 	GetVRGFromManagedCluster(
 		resourceName, resourceNamespace, managedCluster string) (*rmn.VolumeReplicationGroup, error)
-
 	GetNamespaceFromManagedCluster(resourceName, resourceNamespace, managedCluster string) (*corev1.Namespace, error)
 }
 
@@ -578,7 +577,10 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 	d := &DRPCInstance{
 		reconciler: r, ctx: ctx, log: r.Log, instance: drpc, needStatusUpdate: false, userPlacementRule: usrPlRule,
 		drpcPlacementRule: drpcPlRule, drPolicy: drPolicy, drClusters: drClusters, vrgs: vrgs,
-		mwu: rmnutil.MWUtil{Client: r.Client, Ctx: ctx, Log: r.Log, InstName: drpc.Name, InstNamespace: drpc.Namespace},
+		mwu: rmnutil.MWUtil{
+			Client: r.Client, APIReader: r.APIReader, Ctx: ctx, Log: r.Log,
+			InstName: drpc.Name, InstNamespace: drpc.Namespace,
+		},
 	}
 
 	r.Log.Info(fmt.Sprintf("PlacementRule is: (%+v)", usrPlRule))
@@ -717,7 +719,10 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 	r.Log.Info("Finalizing DRPC")
 
 	clonedPlRuleName := fmt.Sprintf(ClonedPlacementRuleNameFormat, drpc.Name, drpc.Namespace)
-	mwu := rmnutil.MWUtil{Client: r.Client, Ctx: ctx, Log: r.Log, InstName: drpc.Name, InstNamespace: drpc.Namespace}
+	mwu := rmnutil.MWUtil{
+		Client: r.Client, APIReader: r.APIReader, Ctx: ctx, Log: r.Log,
+		InstName: drpc.Name, InstNamespace: drpc.Namespace,
+	}
 
 	preferredCluster := drpc.Spec.PreferredCluster
 	if preferredCluster == "" {

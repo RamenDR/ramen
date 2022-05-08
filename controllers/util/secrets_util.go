@@ -56,9 +56,10 @@ const (
 )
 
 type SecretsUtil struct {
-	client.Client
-	Ctx context.Context
-	Log logr.Logger
+	Client    client.Writer
+	APIReader client.Reader
+	Ctx       context.Context
+	Log       logr.Logger
 }
 
 func GeneratePolicyResourceNames(
@@ -237,7 +238,7 @@ func newPolicy(name, namespace, triggerValue string, object runtime.RawExtension
 func (sutil *SecretsUtil) createPolicyResources(secret *corev1.Secret, cluster, namespace, targetns string) error {
 	policyName, plBindingName, plRuleName, configPolicyName := GeneratePolicyResourceNames(secret.Name)
 
-	sutil.Log.Info("Creating secret policy", "secret", secret.Name, "cluster", cluster)
+	sutil.Log.Info("Creating secret policy", "secret", secret.Name, "cluster", cluster, "namespace", namespace)
 
 	if AddFinalizer(secret, SecretPolicyFinalizer) {
 		if err := sutil.Client.Update(sutil.Ctx, secret); err != nil {
@@ -421,8 +422,7 @@ func (sutil *SecretsUtil) ticklePolicy(secret *corev1.Secret, namespace string) 
 	policyName := secret.Name
 	policyObject := gppv1.Policy{}
 
-	// TODO: Read directly from the API server? May read a cached older trigger and update it to the same value?
-	if err := sutil.Client.Get(sutil.Ctx,
+	if err := sutil.APIReader.Get(sutil.Ctx,
 		types.NamespacedName{Namespace: namespace, Name: policyName},
 		&policyObject); err != nil {
 		sutil.Log.Error(err, "unable to get policy", "secret", secret.Name)
@@ -466,7 +466,7 @@ func (sutil *SecretsUtil) updatePolicyResources(
 
 func (sutil *SecretsUtil) ensureS3SecretResources(secretName, namespace string) (*corev1.Secret, error) {
 	secret := corev1.Secret{}
-	if err := sutil.Client.Get(sutil.Ctx,
+	if err := sutil.APIReader.Get(sutil.Ctx,
 		types.NamespacedName{Namespace: namespace, Name: secretName},
 		&secret); err != nil {
 		if !errors.IsNotFound(err) {
@@ -515,7 +515,7 @@ func (sutil *SecretsUtil) AddSecretToCluster(secretName, clusterName, namespace,
 	}
 
 	// Fetch secret placement rule, create secret resources if not found
-	err = sutil.Client.Get(sutil.Ctx, plRuleName, plRule)
+	err = sutil.APIReader.Get(sutil.Ctx, plRuleName, plRule)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return errorswrapper.Wrap(err, "failed to get placementRule object")
@@ -546,7 +546,7 @@ func (sutil *SecretsUtil) RemoveSecretFromCluster(secretName, clusterName, names
 	}
 
 	// Fetch secret placement rule, success if not found
-	err = sutil.Client.Get(sutil.Ctx, plRuleName, plRule)
+	err = sutil.APIReader.Get(sutil.Ctx, plRuleName, plRule)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return errorswrapper.Wrap(err, "failed to get placementRule object")

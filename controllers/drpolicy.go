@@ -83,7 +83,7 @@ func drPolicyUndeploy(
 	drClustersMutex.Lock()
 	defer drClustersMutex.Unlock()
 
-	if err := secretsUtil.Client.List(secretsUtil.Ctx, &drpolicies); err != nil {
+	if err := secretsUtil.APIReader.List(secretsUtil.Ctx, &drpolicies); err != nil {
 		return fmt.Errorf("drpolicies list: %w", err)
 	}
 

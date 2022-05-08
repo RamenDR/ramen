@@ -107,7 +107,8 @@ func newManager() (ctrl.Manager, error) {
 func setupReconcilers(mgr ctrl.Manager) {
 	if controllers.ControllerType == ramendrv1alpha1.DRHubType {
 		if err := (&controllers.DRPolicyReconciler{
-			Client:            mgr.GetClient(),
+			Writer:            mgr.GetClient(),
+			StatusWriter:      mgr.GetClient().Status(),
 			APIReader:         mgr.GetAPIReader(),
 			Scheme:            mgr.GetScheme(),
 			ObjectStoreGetter: controllers.S3ObjectStoreGetter(),

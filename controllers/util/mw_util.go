@@ -61,6 +61,7 @@ const (
 
 type MWUtil struct {
 	client.Client
+	APIReader     client.Reader
 	Ctx           context.Context
 	Log           logr.Logger
 	InstName      string
@@ -82,7 +83,7 @@ func (mwu *MWUtil) FindManifestWork(mwName, managedCluster string) (*ocmworkv1.M
 
 	mw := &ocmworkv1.ManifestWork{}
 
-	err := mwu.Client.Get(mwu.Ctx, types.NamespacedName{Name: mwName, Namespace: managedCluster}, mw)
+	err := mwu.APIReader.Get(mwu.Ctx, types.NamespacedName{Name: mwName, Namespace: managedCluster}, mw)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, fmt.Errorf("%w", err)
@@ -327,7 +328,7 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 	managedClusternamespace string) error {
 	foundMW := &ocmworkv1.ManifestWork{}
 
-	err := mwu.Client.Get(mwu.Ctx,
+	err := mwu.APIReader.Get(mwu.Ctx,
 		types.NamespacedName{Name: mw.Name, Namespace: managedClusternamespace},
 		foundMW)
 	if err != nil {
@@ -383,7 +384,7 @@ func (mwu *MWUtil) DeleteManifestWork(mwName, mwNamespace string) error {
 
 	mw := &ocmworkv1.ManifestWork{}
 
-	err := mwu.Client.Get(mwu.Ctx, types.NamespacedName{Name: mwName, Namespace: mwNamespace}, mw)
+	err := mwu.APIReader.Get(mwu.Ctx, types.NamespacedName{Name: mwName, Namespace: mwNamespace}, mw)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil

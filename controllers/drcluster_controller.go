@@ -101,7 +101,9 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, fmt.Errorf("config map get: %w", u.validatedSetFalse("ConfigMapGetFailed", err))
 	}
 
-	manifestWorkUtil = util.MWUtil{Client: r.Client, Ctx: ctx, Log: log, InstName: "", InstNamespace: ""}
+	manifestWorkUtil = util.MWUtil{
+		Client: r.Client, APIReader: r.APIReader, Ctx: ctx, Log: log, InstName: "", InstNamespace: "",
+	}
 	u.mwUtil = manifestWorkUtil
 
 	// DRCluster is marked for deletion

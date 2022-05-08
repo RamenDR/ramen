@@ -40,7 +40,8 @@ import (
 
 // DRPolicyReconciler reconciles a DRPolicy object
 type DRPolicyReconciler struct {
-	client.Client
+	client.Writer
+	client.StatusWriter
 	APIReader         client.Reader
 	Scheme            *runtime.Scheme
 	ObjectStoreGetter ObjectStoreGetter
@@ -78,11 +79,11 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	defer log.Info("reconcile exit")
 
 	drpolicy := &ramen.DRPolicy{}
-	if err := r.Client.Get(ctx, req.NamespacedName, drpolicy); err != nil {
+	if err := r.APIReader.Get(ctx, req.NamespacedName, drpolicy); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(fmt.Errorf("get: %w", err))
 	}
 
-	u := &drpolicyUpdater{ctx, drpolicy, r.Client, log}
+	u := &drpolicyUpdater{ctx, drpolicy, r.Writer, r.StatusWriter, log}
 
 	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
 	if err != nil {
@@ -92,11 +93,11 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	drclusters := &ramen.DRClusterList{}
 
 	// TODO: Is this namespaced listing?
-	if err := r.Client.List(ctx, drclusters); err != nil {
+	if err := r.APIReader.List(ctx, drclusters); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drclusters list: %w", u.validatedSetFalse("drClusterListFailed", err))
 	}
 
-	secretsUtil := &util.SecretsUtil{Client: r.Client, Ctx: ctx, Log: log}
+	secretsUtil := &util.SecretsUtil{Client: r.Writer, APIReader: r.APIReader, Ctx: ctx, Log: log}
 	// DRPolicy is marked for deletion
 	if !drpolicy.ObjectMeta.DeletionTimestamp.IsZero() &&
 		controllerutil.ContainsFinalizer(drpolicy, drPolicyFinalizerName) {
@@ -232,10 +233,11 @@ func haveOverlappingMetroZones(d1 *ramen.DRPolicy, d2 *ramen.DRPolicy, drcluster
 }
 
 type drpolicyUpdater struct {
-	ctx    context.Context
-	object *ramen.DRPolicy
-	client client.Client
-	log    logr.Logger
+	ctx          context.Context
+	object       *ramen.DRPolicy
+	client       client.Writer
+	statusWriter client.StatusWriter
+	log          logr.Logger
 }
 
 func (u *drpolicyUpdater) deleteDRPolicy(drclusters *ramen.DRClusterList,
@@ -244,7 +246,7 @@ func (u *drpolicyUpdater) deleteDRPolicy(drclusters *ramen.DRClusterList,
 	u.log.Info("delete")
 
 	drpcs := ramen.DRPlacementControlList{}
-	if err := secretsUtil.Client.List(secretsUtil.Ctx, &drpcs); err != nil {
+	if err := secretsUtil.APIReader.List(secretsUtil.Ctx, &drpcs); err != nil {
 		return fmt.Errorf("drpcs list: %w", err)
 	}
 
@@ -293,7 +295,7 @@ func (u *drpolicyUpdater) statusConditionSet(conditionType string,
 }
 
 func (u *drpolicyUpdater) statusUpdate() error {
-	return u.client.Status().Update(u.ctx, u.object)
+	return u.statusWriter.Update(u.ctx, u.object)
 }
 
 const drPolicyFinalizerName = "drpolicies.ramendr.openshift.io/ramen"
@@ -329,7 +331,7 @@ func (r *DRPolicyReconciler) configMapMapFunc(configMap client.Object) []reconci
 	}
 
 	drpolicies := &ramen.DRPolicyList{}
-	if err := r.Client.List(context.TODO(), drpolicies); err != nil {
+	if err := r.APIReader.List(context.TODO(), drpolicies); err != nil {
 		return []reconcile.Request{}
 	}
 
@@ -347,7 +349,7 @@ func (r *DRPolicyReconciler) secretMapFunc(secret client.Object) []reconcile.Req
 	}
 
 	drpolicies := &ramen.DRPolicyList{}
-	if err := r.Client.List(context.TODO(), drpolicies); err != nil {
+	if err := r.APIReader.List(context.TODO(), drpolicies); err != nil {
 		return []reconcile.Request{}
 	}
 
