@@ -97,7 +97,7 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, fmt.Errorf("drclusters list: %w", u.validatedSetFalse("drClusterListFailed", err))
 	}
 
-	secretsUtil := &util.SecretsUtil{Client: r.Writer, APIReader: r.APIReader, Ctx: ctx, Log: log}
+	secretsUtil := &util.SecretsUtil{Writer: r.Writer, APIReader: r.APIReader, Ctx: ctx, Log: log}
 	// DRPolicy is marked for deletion
 	if !drpolicy.ObjectMeta.DeletionTimestamp.IsZero() &&
 		controllerutil.ContainsFinalizer(drpolicy, drPolicyFinalizerName) {

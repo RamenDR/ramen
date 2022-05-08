@@ -56,7 +56,7 @@ const (
 )
 
 type SecretsUtil struct {
-	Client    client.Writer
+	Writer    client.Writer
 	APIReader client.Reader
 	Ctx       context.Context
 	Log       logr.Logger
@@ -241,7 +241,7 @@ func (sutil *SecretsUtil) createPolicyResources(secret *corev1.Secret, cluster, 
 	sutil.Log.Info("Creating secret policy", "secret", secret.Name, "cluster", cluster, "namespace", namespace)
 
 	if AddFinalizer(secret, SecretPolicyFinalizer) {
-		if err := sutil.Client.Update(sutil.Ctx, secret); err != nil {
+		if err := sutil.Writer.Update(sutil.Ctx, secret); err != nil {
 			sutil.Log.Error(err, "unable to add finalizer to secret", "secret", secret.Name, "cluster", cluster)
 
 			return errorswrapper.Wrap(err, fmt.Sprintf("unable to add finalizer to secret (secret: %s, cluster: %s)",
@@ -259,7 +259,7 @@ func (sutil *SecretsUtil) createPolicyResources(secret *corev1.Secret, cluster, 
 	}
 
 	plRuleBindingObject := newPlacementRuleBinding(plBindingName, namespace, plRuleName, subjects)
-	if err := sutil.Client.Create(sutil.Ctx, plRuleBindingObject); err != nil && !errors.IsAlreadyExists(err) {
+	if err := sutil.Writer.Create(sutil.Ctx, plRuleBindingObject); err != nil && !errors.IsAlreadyExists(err) {
 		sutil.Log.Error(err, "unable to create placement binding", "secret", secret.Name, "cluster", cluster)
 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to create placement binding (secret: %s, cluster: %s)",
@@ -275,7 +275,7 @@ func (sutil *SecretsUtil) createPolicyResources(secret *corev1.Secret, cluster, 
 
 	policyObject := newPolicy(policyName, namespace,
 		secret.ResourceVersion, runtime.RawExtension{Object: configObject})
-	if err := sutil.Client.Create(sutil.Ctx, policyObject); err != nil && !errors.IsAlreadyExists(err) {
+	if err := sutil.Writer.Create(sutil.Ctx, policyObject); err != nil && !errors.IsAlreadyExists(err) {
 		sutil.Log.Error(err, "unable to create policy", "secret", secret.Name, "cluster", cluster)
 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to create policy (secret: %s, cluster: %s)",
@@ -284,7 +284,7 @@ func (sutil *SecretsUtil) createPolicyResources(secret *corev1.Secret, cluster, 
 
 	// Create a PlacementRule, including cluster
 	plRuleObject := newPlacementRule(plRuleName, namespace, []string{cluster})
-	if err := sutil.Client.Create(sutil.Ctx, plRuleObject); err != nil && !errors.IsAlreadyExists(err) {
+	if err := sutil.Writer.Create(sutil.Ctx, plRuleObject); err != nil && !errors.IsAlreadyExists(err) {
 		sutil.Log.Error(err, "unable to create placement rule", "secret", secret.Name, "cluster", cluster)
 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to create placement rule (secret: %s, cluster: %s)",
@@ -305,7 +305,7 @@ func (sutil *SecretsUtil) deletePolicyResources(secret *corev1.Secret, namespace
 			Namespace: namespace,
 		},
 	}
-	if err := sutil.Client.Delete(sutil.Ctx, plRuleBindingObject); err != nil && !errors.IsNotFound(err) {
+	if err := sutil.Writer.Delete(sutil.Ctx, plRuleBindingObject); err != nil && !errors.IsNotFound(err) {
 		sutil.Log.Error(err, "unable to delete placement binding", "secret", secret.Name)
 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to delete placement binding (secret: %s)", secret.Name))
@@ -317,7 +317,7 @@ func (sutil *SecretsUtil) deletePolicyResources(secret *corev1.Secret, namespace
 			Namespace: namespace,
 		},
 	}
-	if err := sutil.Client.Delete(sutil.Ctx, policyObject); err != nil && !errors.IsNotFound(err) {
+	if err := sutil.Writer.Delete(sutil.Ctx, policyObject); err != nil && !errors.IsNotFound(err) {
 		sutil.Log.Error(err, "unable to delete policy", "secret", secret.Name)
 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to delete policy (secret: %s)", secret.Name))
@@ -329,7 +329,7 @@ func (sutil *SecretsUtil) deletePolicyResources(secret *corev1.Secret, namespace
 			Namespace: namespace,
 		},
 	}
-	if err := sutil.Client.Delete(sutil.Ctx, plRuleObject); err != nil && !errors.IsNotFound(err) {
+	if err := sutil.Writer.Delete(sutil.Ctx, plRuleObject); err != nil && !errors.IsNotFound(err) {
 		sutil.Log.Error(err, "unable to delete placement rule", "secret", secret.Name)
 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to delete placement rule (secret: %s)",
@@ -340,7 +340,7 @@ func (sutil *SecretsUtil) deletePolicyResources(secret *corev1.Secret, namespace
 	if controllerutil.ContainsFinalizer(secret, SecretPolicyFinalizer) {
 		controllerutil.RemoveFinalizer(secret, SecretPolicyFinalizer)
 
-		if err := sutil.Client.Update(sutil.Ctx, secret); err != nil {
+		if err := sutil.Writer.Update(sutil.Ctx, secret); err != nil {
 			sutil.Log.Error(err, "unable to remove finalizer from secret", "secret", secret.Name)
 
 			return errorswrapper.Wrap(err, fmt.Sprintf("unable to remove finalizer from secret (secret: %s)",
@@ -407,7 +407,7 @@ func (sutil *SecretsUtil) updatePlacementRule(
 
 	sutil.Log.Info("Updating placement rule for secret policy", "secret", secret.Name, "clusters", plRule.Spec.Clusters)
 
-	err := sutil.Client.Update(sutil.Ctx, plRule)
+	err := sutil.Writer.Update(sutil.Ctx, plRule)
 	if err != nil {
 		sutil.Log.Error(err, "unable to update placement rule", "placementRule", plRule.Name, "cluster", cluster)
 
@@ -439,7 +439,7 @@ func (sutil *SecretsUtil) ticklePolicy(secret *corev1.Secret, namespace string) 
 	sutil.Log.Info("Updating secret policy trigger", "secret", secret.Name, "trigger", secret.ResourceVersion)
 
 	policyObject.Annotations[PolicyTriggerAnnotation] = secret.ResourceVersion
-	if err := sutil.Client.Update(sutil.Ctx, &policyObject); err != nil {
+	if err := sutil.Writer.Update(sutil.Ctx, &policyObject); err != nil {
 		sutil.Log.Error(err, "unable to trigger policy update", "secret", secret.Name)
 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to trigger policy update (secret: %s)", secret.Name))

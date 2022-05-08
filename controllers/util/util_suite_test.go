@@ -83,7 +83,7 @@ var _ = BeforeSuite(func() {
 	apiReader = client
 
 	secretsUtil = util.SecretsUtil{
-		Client:    k8sClient,
+		Writer:    k8sClient,
 		APIReader: apiReader,
 		Ctx:       context.TODO(),
 		Log:       ctrl.Log.WithName("secrets_util"),
