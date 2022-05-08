@@ -57,8 +57,9 @@ const (
 
 type SecretsUtil struct {
 	client.Client
-	Ctx context.Context
-	Log logr.Logger
+	APIReader client.Reader
+	Ctx       context.Context
+	Log       logr.Logger
 }
 
 func GeneratePolicyResourceNames(
@@ -237,7 +238,7 @@ func newPolicy(name, namespace, triggerValue string, object runtime.RawExtension
 func (sutil *SecretsUtil) createPolicyResources(secret *corev1.Secret, cluster, namespace, targetns string) error {
 	policyName, plBindingName, plRuleName, configPolicyName := GeneratePolicyResourceNames(secret.Name)
 
-	sutil.Log.Info("Creating secret policy", "secret", secret.Name, "cluster", cluster)
+	sutil.Log.Info("Creating secret policy", "secret", secret.Name, "cluster", cluster, "namespace", namespace)
 
 	if AddFinalizer(secret, SecretPolicyFinalizer) {
 		if err := sutil.Client.Update(sutil.Ctx, secret); err != nil {
@@ -515,7 +516,7 @@ func (sutil *SecretsUtil) AddSecretToCluster(secretName, clusterName, namespace,
 	}
 
 	// Fetch secret placement rule, create secret resources if not found
-	err = sutil.Client.Get(sutil.Ctx, plRuleName, plRule)
+	err = sutil.APIReader.Get(sutil.Ctx, plRuleName, plRule)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return errorswrapper.Wrap(err, "failed to get placementRule object")
