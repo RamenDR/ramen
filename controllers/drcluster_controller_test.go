@@ -192,20 +192,14 @@ var _ = Describe("DRClusterController", func() {
 	}
 
 	createOtherDRClusters := func() {
-		for i := range drclusters {
-			if i == 0 {
-				continue
-			}
+		for i := 1; i < len(drclusters); i++ {
 			cluster := drclusters[i].DeepCopy()
 			Expect(k8sClient.Create(context.TODO(), cluster)).To(Succeed())
 		}
 	}
 
 	deleteOtherDRClusters := func() {
-		for i := range drclusters {
-			if i == 0 {
-				continue
-			}
+		for i := 1; i < len(drclusters); i++ {
 			cluster := drclusters[i].DeepCopy()
 			Expect(k8sClient.Delete(context.TODO(), cluster)).To(Succeed())
 		}
@@ -481,10 +475,16 @@ var _ = Describe("DRClusterController", func() {
 		When("deleting a DRCluster with all valid values", func() {
 			It("is successful", func() {
 				drclusterDelete(drcluster)
-				deleteOtherDRClusters()
-				deleteDRClusterNamespaces()
 			})
 		})
+	})
+
+	Specify("Delete other DRClusters", func() {
+		deleteOtherDRClusters()
+	})
+
+	Specify("Delete namespaces named the same as DRClusters", func() {
+		deleteDRClusterNamespaces()
 	})
 
 	Context("DRCluster resource deletion validation", func() {
