@@ -107,7 +107,8 @@ func newManager() (ctrl.Manager, error) {
 func setupReconcilers(mgr ctrl.Manager) {
 	if controllers.ControllerType == ramendrv1alpha1.DRHubType {
 		if err := (&controllers.DRPolicyReconciler{
-			Client:            mgr.GetClient(),
+			Writer:            mgr.GetClient(),
+			StatusWriter:      mgr.GetClient().Status(),
 			APIReader:         mgr.GetAPIReader(),
 			Scheme:            mgr.GetScheme(),
 			ObjectStoreGetter: controllers.S3ObjectStoreGetter(),
@@ -117,7 +118,8 @@ func setupReconcilers(mgr ctrl.Manager) {
 		}
 
 		if err := (&controllers.DRClusterReconciler{
-			Client:            mgr.GetClient(),
+			Writer:            mgr.GetClient(),
+			StatusWriter:      mgr.GetClient().Status(),
 			APIReader:         mgr.GetAPIReader(),
 			Scheme:            mgr.GetScheme(),
 			ObjectStoreGetter: controllers.S3ObjectStoreGetter(),
@@ -127,12 +129,13 @@ func setupReconcilers(mgr ctrl.Manager) {
 		}
 
 		if err := (&controllers.DRPlacementControlReconciler{
-			Client:    mgr.GetClient(),
-			APIReader: mgr.GetAPIReader(),
-			Log:       ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),
-			MCVGetter: controllers.ManagedClusterViewGetterImpl{Client: mgr.GetClient()},
-			Scheme:    mgr.GetScheme(),
-			Callback:  func(string, string) {},
+			Writer:       mgr.GetClient(),
+			StatusWriter: mgr.GetClient().Status(),
+			APIReader:    mgr.GetAPIReader(),
+			Log:          ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),
+			MCVGetter:    controllers.ManagedClusterViewGetterImpl{Writer: mgr.GetClient(), APIReader: mgr.GetAPIReader()},
+			Scheme:       mgr.GetScheme(),
+			Callback:     func(string, string) {},
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "DRPlacementControl")
 			os.Exit(1)
@@ -142,7 +145,8 @@ func setupReconcilers(mgr ctrl.Manager) {
 	}
 
 	if err := (&controllers.VolumeReplicationGroupReconciler{
-		Client:         mgr.GetClient(),
+		Writer:         mgr.GetClient(),
+		StatusWriter:   mgr.GetClient().Status(),
 		APIReader:      mgr.GetAPIReader(),
 		Log:            ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
 		ObjStoreGetter: controllers.S3ObjectStoreGetter(),

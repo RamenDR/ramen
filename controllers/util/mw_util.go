@@ -60,7 +60,8 @@ const (
 )
 
 type MWUtil struct {
-	client.Client
+	Writer        client.Writer
+	APIReader     client.Reader
 	Ctx           context.Context
 	Log           logr.Logger
 	InstName      string
@@ -82,7 +83,7 @@ func (mwu *MWUtil) FindManifestWork(mwName, managedCluster string) (*ocmworkv1.M
 
 	mw := &ocmworkv1.ManifestWork{}
 
-	err := mwu.Client.Get(mwu.Ctx, types.NamespacedName{Name: mwName, Namespace: managedCluster}, mw)
+	err := mwu.APIReader.Get(mwu.Ctx, types.NamespacedName{Name: mwName, Namespace: managedCluster}, mw)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, fmt.Errorf("%w", err)
@@ -327,7 +328,7 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 	managedClusternamespace string) error {
 	foundMW := &ocmworkv1.ManifestWork{}
 
-	err := mwu.Client.Get(mwu.Ctx,
+	err := mwu.APIReader.Get(mwu.Ctx,
 		types.NamespacedName{Name: mw.Name, Namespace: managedClusternamespace},
 		foundMW)
 	if err != nil {
@@ -343,7 +344,7 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 
 		mwu.Log.Info("Creating ManifestWork", "cluster", managedClusternamespace, "MW", mw)
 
-		return mwu.Client.Create(mwu.Ctx, mw)
+		return mwu.Writer.Create(mwu.Ctx, mw)
 	}
 
 	if !reflect.DeepEqual(foundMW.Spec, mw.Spec) {
@@ -351,7 +352,7 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 
 		mwu.Log.Info("ManifestWork exists.", "name", mw, "namespace", foundMW)
 
-		return mwu.Client.Update(mwu.Ctx, foundMW)
+		return mwu.Writer.Update(mwu.Ctx, foundMW)
 	}
 
 	return nil
@@ -383,7 +384,7 @@ func (mwu *MWUtil) DeleteManifestWork(mwName, mwNamespace string) error {
 
 	mw := &ocmworkv1.ManifestWork{}
 
-	err := mwu.Client.Get(mwu.Ctx, types.NamespacedName{Name: mwName, Namespace: mwNamespace}, mw)
+	err := mwu.APIReader.Get(mwu.Ctx, types.NamespacedName{Name: mwName, Namespace: mwNamespace}, mw)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil
@@ -394,7 +395,7 @@ func (mwu *MWUtil) DeleteManifestWork(mwName, mwNamespace string) error {
 
 	mwu.Log.Info("Deleting ManifestWork", "name", mw.Name, "namespace", mwNamespace)
 
-	err = mwu.Client.Delete(mwu.Ctx, mw)
+	err = mwu.Writer.Delete(mwu.Ctx, mw)
 	if err != nil && !errors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete MW. Error %w", err)
 	}

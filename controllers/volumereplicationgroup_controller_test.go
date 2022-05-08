@@ -651,7 +651,7 @@ func (v *vrgTest) createPV(pvName, claimName string, bindInfo corev1.PersistentV
 		"failed to create PV %s", pvName)
 
 	pv.Status.Phase = bindInfo
-	err = k8sClient.Status().Update(context.TODO(), pv)
+	err = statusWriter.Update(context.TODO(), pv)
 	Expect(err).To(BeNil(),
 		"failed to update status of PV %s", pvName)
 }
@@ -694,7 +694,7 @@ func (v *vrgTest) createPVC(pvcName, namespace, volumeName string, labels map[st
 	pvc.Status.Phase = bindInfo
 	pvc.Status.AccessModes = accessModes
 	pvc.Status.Capacity = capacity
-	err = k8sClient.Status().Update(context.TODO(), pvc)
+	err = statusWriter.Update(context.TODO(), pvc)
 	Expect(err).To(BeNil(),
 		"failed to update status of PVC %s", pvcName)
 }
@@ -706,7 +706,7 @@ func (v *vrgTest) bindPVAndPVC() {
 		// Bind PV
 		pv := v.getPV(v.pvNames[i])
 		pv.Status.Phase = corev1.VolumeBound
-		err := k8sClient.Status().Update(context.TODO(), pv)
+		err := statusWriter.Update(context.TODO(), pv)
 		Expect(err).To(BeNil(),
 			"failed to update status of PV %s", v.pvNames[i])
 
@@ -715,7 +715,7 @@ func (v *vrgTest) bindPVAndPVC() {
 		// Bind PVC
 		pvc := v.getPVC(v.pvcNames[i])
 		pvc.Status.Phase = corev1.ClaimBound
-		err = k8sClient.Status().Update(context.TODO(), pvc)
+		err = statusWriter.Update(context.TODO(), pvc)
 		Expect(err).To(BeNil(),
 			"failed to update status of PVC %s", v.pvcNames[i])
 	}
@@ -783,7 +783,7 @@ func (v *vrgTest) createVRC(testTemplate *template) {
 	err := k8sClient.Create(context.TODO(), vrc)
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
-			err = k8sClient.Get(context.TODO(), types.NamespacedName{Name: v.replicationClass}, vrc)
+			err = apiReader.Get(context.TODO(), types.NamespacedName{Name: v.replicationClass}, vrc)
 		}
 	}
 
@@ -804,7 +804,7 @@ func (v *vrgTest) createSC(testTemplate *template) {
 	err := k8sClient.Create(context.TODO(), sc)
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
-			err = k8sClient.Get(context.TODO(), types.NamespacedName{Name: v.storageClass}, sc)
+			err = apiReader.Get(context.TODO(), types.NamespacedName{Name: v.storageClass}, sc)
 		}
 	}
 
@@ -835,7 +835,7 @@ func (v *vrgTest) verifyPVCBindingToPV(shouldBeBound bool) {
 func (v *vrgTest) getPV(pvName string) *corev1.PersistentVolume {
 	pvLookupKey := types.NamespacedName{Name: pvName}
 	pv := &corev1.PersistentVolume{}
-	err := k8sClient.Get(context.TODO(), pvLookupKey, pv)
+	err := apiReader.Get(context.TODO(), pvLookupKey, pv)
 	Expect(err).NotTo(HaveOccurred(),
 		"failed to get PV %s", pvName)
 
@@ -849,7 +849,7 @@ func (v *vrgTest) getPVC(pvcName string) *corev1.PersistentVolumeClaim {
 	}
 
 	pvc := &corev1.PersistentVolumeClaim{}
-	err := k8sClient.Get(context.TODO(), key, pvc)
+	err := apiReader.Get(context.TODO(), key, pvc)
 	Expect(err).NotTo(HaveOccurred(),
 		"failed to get PVC %s", pvcName)
 
@@ -863,7 +863,7 @@ func (v *vrgTest) getVRG(vrgName string) *ramendrv1alpha1.VolumeReplicationGroup
 	}
 
 	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
-	err := k8sClient.Get(context.TODO(), key, vrg)
+	err := apiReader.Get(context.TODO(), key, vrg)
 	Expect(err).NotTo(HaveOccurred(),
 		"failed to get VRG %s", vrgName)
 
@@ -943,7 +943,7 @@ func (v *vrgTest) cleanupSC() {
 
 	sc := &storagev1.StorageClass{}
 
-	err := k8sClient.Get(context.TODO(), key, sc)
+	err := apiReader.Get(context.TODO(), key, sc)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return
@@ -962,7 +962,7 @@ func (v *vrgTest) cleanupVRC() {
 
 	vrc := &volrep.VolumeReplicationClass{}
 
-	err := k8sClient.Get(context.TODO(), key, vrc)
+	err := apiReader.Get(context.TODO(), key, vrc)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return
@@ -996,7 +996,7 @@ func (v *vrgTest) waitForVRCountToMatch(vrCount int) {
 			Namespace: v.namespace,
 		}
 		volRepList := &volrep.VolumeReplicationList{}
-		err := k8sClient.List(context.TODO(), volRepList, listOptions)
+		err := apiReader.List(context.TODO(), volRepList, listOptions)
 		Expect(err).NotTo(HaveOccurred(),
 			"failed to get a list of VRs in namespace %s", v.namespace)
 
@@ -1013,7 +1013,7 @@ func (v *vrgTest) promoteVolReps() {
 	listOptions := &client.ListOptions{
 		Namespace: v.namespace,
 	}
-	err := k8sClient.List(context.TODO(), volRepList, listOptions)
+	err := apiReader.List(context.TODO(), volRepList, listOptions)
 	Expect(err).NotTo(HaveOccurred(), "failed to get a list of VRs in namespace %s", v.namespace)
 
 	for index := range volRepList.Items {
@@ -1049,7 +1049,7 @@ func (v *vrgTest) promoteVolReps() {
 		volRepStatus.Message = "volume is marked primary"
 		volRep.Status = volRepStatus
 
-		err = k8sClient.Status().Update(context.TODO(), &volRep)
+		err = statusWriter.Update(context.TODO(), &volRep)
 		Expect(err).NotTo(HaveOccurred(), "failed to update the status of VolRep %s", volRep.Name)
 
 		volrepKey := types.NamespacedName{
@@ -1070,7 +1070,7 @@ func (v *vrgTest) waitForVolRepPromotion(vrNamespacedName types.NamespacedName, 
 	updatedVolRep := volrep.VolumeReplication{}
 
 	Eventually(func() bool {
-		err := k8sClient.Get(context.TODO(), vrNamespacedName, &updatedVolRep)
+		err := apiReader.Get(context.TODO(), vrNamespacedName, &updatedVolRep)
 
 		return err == nil && len(updatedVolRep.Status.Conditions) == 3
 	}, vrgtimeout, vrginterval).Should(BeTrue(),
@@ -1134,7 +1134,7 @@ func (v *vrgTest) waitForNamespaceDeletion() {
 	nsObjectKey := client.ObjectKey{Name: v.namespace}
 
 	Eventually(func() bool {
-		err := k8sClient.Get(context.TODO(), nsObjectKey, appNamespace)
+		err := apiReader.Get(context.TODO(), nsObjectKey, appNamespace)
 
 		return err == nil
 	}, timeout, interval).Should(BeTrue(),
@@ -1149,7 +1149,7 @@ func waitForPVRestore(pvList []corev1.PersistentVolume) {
 		restoredPV := &corev1.PersistentVolume{}
 
 		Eventually(func() bool {
-			err := k8sClient.Get(context.TODO(), pvLookupKey, restoredPV)
+			err := apiReader.Get(context.TODO(), pvLookupKey, restoredPV)
 			if err != nil {
 				return false
 			}

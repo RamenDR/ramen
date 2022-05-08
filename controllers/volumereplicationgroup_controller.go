@@ -61,7 +61,8 @@ type PVDeleter interface {
 
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
 type VolumeReplicationGroupReconciler struct {
-	client.Client
+	client.Writer
+	StatusWriter   client.StatusWriter
 	APIReader      client.Reader
 	Log            logr.Logger
 	PVDownloader   PVDownloader
@@ -219,7 +220,7 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim, log logr.
 	//   to which the the pvc belongs to.
 	// - whether the labels on pvc match the label selectors from
 	//    VolumeReplicationGroup CR.
-	err := mgr.GetClient().List(context.TODO(), &vrgs, listOptions...)
+	err := mgr.GetAPIReader().List(context.TODO(), &vrgs, listOptions...)
 	if err != nil {
 		log.Error(err, "Failed to get list of VolumeReplicationGroup resources")
 
@@ -652,7 +653,7 @@ func (v *VRGInstance) updateExistingPVForSync(pv *corev1.PersistentVolume) error
 func (v *VRGInstance) validatePVExistence(pv *corev1.PersistentVolume) error {
 	existingPV := &corev1.PersistentVolume{}
 
-	err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: pv.Name}, existingPV)
+	err := v.reconciler.APIReader.Get(v.ctx, types.NamespacedName{Name: pv.Name}, existingPV)
 	if err != nil {
 		return fmt.Errorf("failed to get existing PV (%w)", err)
 	}
@@ -721,7 +722,7 @@ func (v *VRGInstance) updatePVCList() error {
 		client.MatchingLabels(labelSelector.MatchLabels),
 	}
 
-	if err := v.reconciler.List(v.ctx, v.pvcList, listOptions...); err != nil {
+	if err := v.reconciler.APIReader.List(v.ctx, v.pvcList, listOptions...); err != nil {
 		v.log.Error(err, "Failed to list PersistentVolumeClaims",
 			"labeled", labels.Set(labelSelector.MatchLabels))
 
@@ -741,7 +742,7 @@ func (v *VRGInstance) updateReplicationClassList() error {
 		client.MatchingLabels(labelSelector.MatchLabels),
 	}
 
-	if err := v.reconciler.List(v.ctx, v.replClassList, listOptions...); err != nil {
+	if err := v.reconciler.APIReader.List(v.ctx, v.replClassList, listOptions...); err != nil {
 		v.log.Error(err, "Failed to list Replication Classes",
 			"labeled", labels.Set(labelSelector.MatchLabels))
 
@@ -1325,7 +1326,7 @@ func (v *VRGInstance) retainPVForPVC(pvc corev1.PersistentVolumeClaim, log logr.
 		Name: pvc.Spec.VolumeName,
 	}
 
-	if err := v.reconciler.Get(v.ctx, pvObjectKey, pv); err != nil {
+	if err := v.reconciler.APIReader.Get(v.ctx, pvObjectKey, pv); err != nil {
 		log.Error(err, "Failed to get PersistentVolume", "volumeName", pvc.Spec.VolumeName)
 
 		return fmt.Errorf("failed to get PersistentVolume resource (%s) for"+
@@ -1365,7 +1366,7 @@ func (v *VRGInstance) undoPVRetentionForPVC(pvc corev1.PersistentVolumeClaim, lo
 		Name: pvc.Spec.VolumeName,
 	}
 
-	if err := v.reconciler.Get(v.ctx, pvObjectKey, pv); err != nil {
+	if err := v.reconciler.APIReader.Get(v.ctx, pvObjectKey, pv); err != nil {
 		log.Error(err, "Failed to get PersistentVolume", "volumeName", pvc.Spec.VolumeName)
 
 		return fmt.Errorf("failed to get PersistentVolume resource (%s) for"+
@@ -1497,7 +1498,7 @@ func (v *VRGInstance) getPVFromPVC(pvc *corev1.PersistentVolumeClaim) (corev1.Pe
 	pvObjectKey := client.ObjectKey{Name: volumeName}
 
 	// Get PV from k8s
-	if err := v.reconciler.Get(v.ctx, pvObjectKey, &pv); err != nil {
+	if err := v.reconciler.APIReader.Get(v.ctx, pvObjectKey, &pv); err != nil {
 		return pv, fmt.Errorf("failed to get PV %w", err)
 	}
 
@@ -1630,7 +1631,7 @@ func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 
 	volRep := &volrep.VolumeReplication{}
 
-	err := v.reconciler.Get(v.ctx, vrNamespacedName, volRep)
+	err := v.reconciler.APIReader.Get(v.ctx, vrNamespacedName, volRep)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			log.Error(err, "Failed to get VolumeReplication resource", "resource", vrNamespacedName)
@@ -1840,7 +1841,7 @@ func (v *VRGInstance) getStorageClass(namespacedName types.NamespacedName) (*sto
 	scName := pvc.Spec.StorageClassName
 
 	storageClass := &storagev1.StorageClass{}
-	if err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: *scName}, storageClass); err != nil {
+	if err := v.reconciler.APIReader.Get(v.ctx, types.NamespacedName{Name: *scName}, storageClass); err != nil {
 		v.log.Info(fmt.Sprintf("Failed to get the storageclass %s", *scName))
 
 		return nil, fmt.Errorf("failed to get the storageclass with name %s (%w)",
@@ -1863,7 +1864,7 @@ func (v *VRGInstance) updateVRGStatus(updateConditions bool) error {
 
 	if !reflect.DeepEqual(v.savedInstanceStatus, v.instance.Status) {
 		v.instance.Status.LastUpdateTime = metav1.Now()
-		if err := v.reconciler.Status().Update(v.ctx, v.instance); err != nil {
+		if err := v.reconciler.StatusWriter.Update(v.ctx, v.instance); err != nil {
 			v.log.Info(fmt.Sprintf("Failed to update VRG status (%s/%s/%v)",
 				v.instance.Name, v.instance.Namespace, err))
 

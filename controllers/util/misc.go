@@ -33,7 +33,7 @@ func GenericAddLabelsAndFinalizers(
 	ctx context.Context,
 	object client.Object,
 	finalizerName string,
-	client client.Client,
+	client client.Writer,
 	log logr.Logger) error {
 	labelAdded := AddLabel(object, OCMBackupLabelKey, OCMBackupLabelValue)
 	finalizerAdded := AddFinalizer(object, finalizerName)
@@ -51,7 +51,7 @@ func GenericFinalizerRemove(
 	ctx context.Context,
 	object client.Object,
 	finalizerName string,
-	client client.Client,
+	client client.Writer,
 	log logr.Logger) error {
 	finalizerCount := len(object.GetFinalizers())
 	controllerutil.RemoveFinalizer(object, finalizerName)

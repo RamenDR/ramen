@@ -1185,7 +1185,7 @@ func (d *DRPCInstance) ensureVRGManifestWorkOnClusterDeleted(clusterName string)
 	mwName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
 	mw := &ocmworkv1.ManifestWork{}
 
-	err := d.reconciler.Get(d.ctx, types.NamespacedName{Name: mwName, Namespace: clusterName}, mw)
+	err := d.reconciler.APIReader.Get(d.ctx, types.NamespacedName{Name: mwName, Namespace: clusterName}, mw)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return done, nil
@@ -1433,7 +1433,7 @@ func (d *DRPCInstance) updateVRGStateToSecondary(clusterName string) error {
 
 	mw.Spec.Workload.Manifests[0] = *vrgClientManifest
 
-	err = d.reconciler.Update(d.ctx, mw)
+	err = d.reconciler.Writer.Update(d.ctx, mw)
 	if err != nil {
 		return fmt.Errorf("failed to update MW (%w)", err)
 	}
