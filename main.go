@@ -145,7 +145,8 @@ func setupReconcilers(mgr ctrl.Manager) {
 	}
 
 	if err := (&controllers.VolumeReplicationGroupReconciler{
-		Client:         mgr.GetClient(),
+		Writer:         mgr.GetClient(),
+		StatusWriter:   mgr.GetClient().Status(),
 		APIReader:      mgr.GetAPIReader(),
 		Log:            ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
 		ObjStoreGetter: controllers.S3ObjectStoreGetter(),

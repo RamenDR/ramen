@@ -267,7 +267,8 @@ var _ = BeforeSuite(func() {
 	}).SetupWithManager(k8sManager)).To(Succeed())
 
 	err = (&ramencontrollers.VolumeReplicationGroupReconciler{
-		Client:         k8sManager.GetClient(),
+		Writer:         k8sManager.GetClient(),
+		StatusWriter:   k8sManager.GetClient().Status(),
 		APIReader:      k8sManager.GetAPIReader(),
 		Log:            ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
 		ObjStoreGetter: fakeObjectStoreGetter{},
