@@ -201,7 +201,7 @@ var _ = Describe("DRClusterController", func() {
 	deleteOtherDRClusters := func() {
 		for i := 1; i < len(drclusters); i++ {
 			cluster := drclusters[i].DeepCopy()
-			Expect(k8sClient.Delete(context.TODO(), cluster)).To(Succeed())
+			drclusterDelete(cluster)
 		}
 	}
 
