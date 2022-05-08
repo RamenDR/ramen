@@ -67,14 +67,14 @@ var _ = Describe("Secrets_Util", func() {
 	plRuleAbsent := func(plRuleName, namespace string) bool {
 		plRule := &plrv1.PlacementRule{}
 
-		return errors.IsNotFound(k8sClient.Get(context.TODO(),
+		return errors.IsNotFound(apiReader.Get(context.TODO(),
 			types.NamespacedName{Name: plRuleName, Namespace: namespace},
 			plRule))
 	}
 
 	plRuleContains := func(plRuleName, namespace string, clusters []string) bool {
 		plRule := &plrv1.PlacementRule{}
-		if err := k8sClient.Get(
+		if err := apiReader.Get(
 			context.TODO(),
 			types.NamespacedName{Name: plRuleName, Namespace: namespace},
 			plRule); err != nil {
@@ -101,7 +101,7 @@ var _ = Describe("Secrets_Util", func() {
 
 	policyContains := func(policyName, namespace string, secret *corev1.Secret) bool {
 		policyObject := &gppv1.Policy{}
-		if err := k8sClient.Get(
+		if err := apiReader.Get(
 			context.TODO(),
 			types.NamespacedName{Name: policyName, Namespace: namespace},
 			policyObject); err != nil {
@@ -109,7 +109,7 @@ var _ = Describe("Secrets_Util", func() {
 		}
 
 		apiSecret := &corev1.Secret{}
-		if err := k8sClient.Get(
+		if err := apiReader.Get(
 			context.TODO(),
 			types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace},
 			apiSecret); err != nil {
@@ -127,7 +127,7 @@ var _ = Describe("Secrets_Util", func() {
 
 	finalizerPresent := func(secretName string) bool {
 		secret := &corev1.Secret{}
-		if err := k8sClient.Get(
+		if err := apiReader.Get(
 			context.TODO(),
 			types.NamespacedName{
 				Name:      secretName,
@@ -147,7 +147,7 @@ var _ = Describe("Secrets_Util", func() {
 
 	finalizerAbsent := func(secretName string) bool {
 		secret := &corev1.Secret{}
-		if err := k8sClient.Get(context.TODO(),
+		if err := apiReader.Get(context.TODO(),
 			types.NamespacedName{
 				Name:      secretName,
 				Namespace: tstNamespace,
@@ -166,7 +166,7 @@ var _ = Describe("Secrets_Util", func() {
 
 	updateSecret := func(secret *corev1.Secret, value string) bool {
 		secretFetched := &corev1.Secret{}
-		if err := k8sClient.Get(
+		if err := apiReader.Get(
 			context.TODO(),
 			types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace},
 			secretFetched); err != nil {
@@ -184,7 +184,7 @@ var _ = Describe("Secrets_Util", func() {
 	secretAbsent := func(secretName string) bool {
 		secret := &corev1.Secret{}
 
-		return errors.IsNotFound(k8sClient.Get(
+		return errors.IsNotFound(apiReader.Get(
 			context.TODO(),
 			types.NamespacedName{
 				Name:      secretName,

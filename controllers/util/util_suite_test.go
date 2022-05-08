@@ -30,7 +30,8 @@ const (
 
 var (
 	cfg         *rest.Config
-	k8sClient   client.Client
+	k8sClient   client.Writer
+	apiReader   client.Reader
 	testEnv     *envtest.Environment
 	secretsUtil util.SecretsUtil
 	testLog     logr.Logger
@@ -75,13 +76,15 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	By("Creating a k8s client")
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	client, err := client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
-	Expect(k8sClient).NotTo(BeNil())
+	Expect(client).NotTo(BeNil())
+	k8sClient = client
+	apiReader = client
 
 	secretsUtil = util.SecretsUtil{
 		Client:    k8sClient,
-		APIReader: k8sClient,
+		APIReader: apiReader,
 		Ctx:       context.TODO(),
 		Log:       ctrl.Log.WithName("secrets_util"),
 	}
