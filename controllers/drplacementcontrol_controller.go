@@ -580,7 +580,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 		reconciler: r, ctx: ctx, log: r.Log, instance: drpc, needStatusUpdate: false, userPlacementRule: usrPlRule,
 		drpcPlacementRule: drpcPlRule, drPolicy: drPolicy, drClusters: drClusters, vrgs: vrgs,
 		mwu: rmnutil.MWUtil{
-			Client: r.Writer, APIReader: r.APIReader, Ctx: ctx, Log: r.Log,
+			Writer: r.Writer, APIReader: r.APIReader, Ctx: ctx, Log: r.Log,
 			InstName: drpc.Name, InstNamespace: drpc.Namespace,
 		},
 	}
@@ -722,7 +722,7 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 
 	clonedPlRuleName := fmt.Sprintf(ClonedPlacementRuleNameFormat, drpc.Name, drpc.Namespace)
 	mwu := rmnutil.MWUtil{
-		Client: r.Writer, APIReader: r.APIReader, Ctx: ctx, Log: r.Log,
+		Writer: r.Writer, APIReader: r.APIReader, Ctx: ctx, Log: r.Log,
 		InstName: drpc.Name, InstNamespace: drpc.Namespace,
 	}
 

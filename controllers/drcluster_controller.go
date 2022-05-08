@@ -103,7 +103,7 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	manifestWorkUtil = util.MWUtil{
-		Client: r.Writer, APIReader: r.APIReader, Ctx: ctx, Log: log, InstName: "", InstNamespace: "",
+		Writer: r.Writer, APIReader: r.APIReader, Ctx: ctx, Log: log, InstName: "", InstNamespace: "",
 	}
 	u.mwUtil = manifestWorkUtil
 
