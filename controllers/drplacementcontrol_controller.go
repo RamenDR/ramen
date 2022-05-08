@@ -76,7 +76,8 @@ type ManagedClusterViewGetter interface {
 }
 
 type ManagedClusterViewGetterImpl struct {
-	client.Client
+	client.Writer
+	APIReader client.Reader
 }
 
 func (m ManagedClusterViewGetterImpl) GetVRGFromManagedCluster(
@@ -192,11 +193,11 @@ func (m ManagedClusterViewGetterImpl) getOrCreateManagedClusterView(
 		},
 	}
 
-	err := m.Get(context.TODO(), types.NamespacedName{Name: meta.Name, Namespace: meta.Namespace}, mcv)
+	err := m.APIReader.Get(context.TODO(), types.NamespacedName{Name: meta.Name, Namespace: meta.Namespace}, mcv)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			logger.Info(fmt.Sprintf("Creating ManagedClusterView %v", mcv))
-			err = m.Create(context.TODO(), mcv)
+			err = m.Writer.Create(context.TODO(), mcv)
 		}
 
 		if err != nil {

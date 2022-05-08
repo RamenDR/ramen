@@ -133,7 +133,7 @@ func setupReconcilers(mgr ctrl.Manager) {
 			StatusWriter: mgr.GetClient().Status(),
 			APIReader:    mgr.GetAPIReader(),
 			Log:          ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),
-			MCVGetter:    controllers.ManagedClusterViewGetterImpl{Client: mgr.GetClient()},
+			MCVGetter:    controllers.ManagedClusterViewGetterImpl{Writer: mgr.GetClient(), APIReader: mgr.GetAPIReader()},
 			Scheme:       mgr.GetScheme(),
 			Callback:     func(string, string) {},
 		}).SetupWithManager(mgr); err != nil {
