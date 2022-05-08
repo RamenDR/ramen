@@ -75,7 +75,7 @@ var (
 	timeout  = time.Second * 10
 	interval = time.Millisecond * 10
 
-	plRuleNames []string
+	plRuleNames map[string]struct{}
 
 	s3Secrets      [1]corev1.Secret
 	s3Profiles     [6]ramendrv1alpha1.S3StoreProfile
@@ -224,9 +224,10 @@ var _ = BeforeSuite(func() {
 	s3Profiles[4] = s3ProfileNew("4", bucketListFail)
 
 	s3SecretsPolicyNamesSet := func() {
+		plRuleNames = make(map[string]struct{}, len(s3Secrets))
 		for idx := range s3Secrets {
 			_, _, v, _ := util.GeneratePolicyResourceNames(s3Secrets[idx].Name)
-			plRuleNames = append(plRuleNames, v)
+			plRuleNames[v] = struct{}{}
 		}
 	}
 	s3SecretCreate := func(s3Secret *corev1.Secret) {
