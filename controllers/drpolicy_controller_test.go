@@ -96,24 +96,6 @@ var _ = Describe("DrpolicyController", func() {
 		},
 	}
 
-	plRuleContains := func(plRule plrv1.PlacementRule, clusters []string) bool {
-		for _, cluster := range clusters {
-			found := false
-			for _, specCluster := range plRule.Spec.Clusters {
-				if specCluster.Name == cluster {
-					found = true
-
-					break
-				}
-			}
-
-			if !found {
-				return false
-			}
-		}
-
-		return true
-	}
 	getPlRuleForSecrets := func() []plrv1.PlacementRule {
 		plRuleList := &plrv1.PlacementRuleList{}
 		listOptions := &client.ListOptions{Namespace: configMap.Namespace}
@@ -151,7 +133,7 @@ var _ = Describe("DrpolicyController", func() {
 		}
 
 		// Ensure list of secrets for the policy name has as many placement rules
-		Expect(len(plRules) == len(drPoliciesAndSecrets[policyCombinationName])).To(BeTrue())
+		Expect(len(plRules)).To(Equal(len(drPoliciesAndSecrets[policyCombinationName])))
 
 		// Range through secrets in drpolicies name and ensure cluster list is the same
 		for secretName, clusterList := range drPoliciesAndSecrets[policyCombinationName] {
@@ -162,7 +144,13 @@ var _ = Describe("DrpolicyController", func() {
 				if plRule.Name != plRuleName {
 					continue
 				}
-				Expect(plRuleContains(plRule, clusterList)).To(BeTrue())
+
+				Expect(func() (clusterNames []string) {
+					for _, cluster := range plRule.Spec.Clusters {
+						clusterNames = append(clusterNames, cluster.Name)
+					}
+					return
+				}()).To(ConsistOf(clusterList))
 				found = true
 
 				break
