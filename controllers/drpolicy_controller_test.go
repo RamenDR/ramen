@@ -202,12 +202,20 @@ var _ = Describe("DrpolicyController", func() {
 	Specify("initialize tests", func() {
 		populateDRClusters()
 		for idx := range drClusters {
+			drcluster := &drClusters[idx]
 			Expect(k8sClient.Create(
 				context.TODO(),
-				&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: drClusters[idx].Name}},
+				&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: drcluster.Name}},
 			)).To(Succeed())
-			Expect(k8sClient.Create(context.TODO(), &drClusters[idx])).To(Succeed())
-			// TODO: Validate cluster resource is reconciled
+			Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+			drclusterConditionExpect(
+				drcluster,
+				!ramenConfig.DrClusterOperator.DeploymentAutomationEnabled,
+				metav1.ConditionTrue,
+				Equal("Succeeded"),
+				Ignore(),
+				ramen.DRClusterValidated,
+			)
 		}
 	})
 	Specify(`a drpolicy`, func() {
