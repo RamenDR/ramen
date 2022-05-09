@@ -334,6 +334,10 @@ func (s *s3ObjectStore) PurgeBucket(bucket string) (
 	return nil
 }
 
+func typedKey(prefix, suffix string, typ reflect.Type) string {
+	return prefix + typ.String() + "/" + suffix
+}
+
 // UploadPV uploads the given PV to the bucket with a key of
 // "<pvKeyPrefix><v1.PersistentVolume/><pvKeySuffix>".
 // - pvKeyPrefix should have any required delimiters like '/'
@@ -350,10 +354,14 @@ func UploadPV(s ObjectStorer, pvKeyPrefix, pvKeySuffix string,
 // - keyPrefix should have any required delimiters like '/'
 func uploadTypedObject(s ObjectStorer, keyPrefix, keySuffix string,
 	uploadContent interface{}) error {
-	keyInfix := reflect.TypeOf(uploadContent).String() + "/"
-	key := keyPrefix + keyInfix + keySuffix
+	key := typedKey(keyPrefix, keySuffix, reflect.TypeOf(uploadContent))
 
 	return s.UploadObject(key, uploadContent)
+}
+
+func DeleteTypedObjects(s ObjectStorer, keyPrefix, keySuffix string, object interface{},
+) error {
+	return s.DeleteObjects(typedKey(keyPrefix, keySuffix, reflect.TypeOf(object)))
 }
 
 // UploadObject uploads the given object to the bucket with the given key.
@@ -401,8 +409,7 @@ func VerifyPVUpload(s ObjectStorer, pvKeyPrefix, pvKeySuffix string,
 	verifyPV corev1.PersistentVolume) error {
 	var downloadedPV corev1.PersistentVolume
 
-	keyInfix := reflect.TypeOf(verifyPV).String() + "/"
-	key := pvKeyPrefix + keyInfix + pvKeySuffix
+	key := typedKey(pvKeyPrefix, pvKeySuffix, reflect.TypeOf(verifyPV))
 
 	if err := s.DownloadObject(key, &downloadedPV); err != nil {
 		return errorswrapper.WithMessage(err, "VerifyPVUpload")
@@ -437,8 +444,7 @@ func DownloadTypedObjects(s ObjectStorer, keyPrefix string, objectsPointer inter
 ) error {
 	objectsValue := reflect.ValueOf(objectsPointer).Elem()
 	objectType := objectsValue.Type().Elem()
-	keyInfix := objectType.String() + "/"
-	newKeyPrefix := keyPrefix + keyInfix
+	newKeyPrefix := typedKey(keyPrefix, "", objectType)
 
 	keys, err := s.ListKeys(newKeyPrefix)
 	if err != nil {
