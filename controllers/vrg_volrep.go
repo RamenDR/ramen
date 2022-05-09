@@ -468,7 +468,7 @@ func (v *VRGInstance) PVUploadToObjectStore(s3ProfileName string, pvc *corev1.Pe
 			pvc.Name, s3ProfileName, err)
 	}
 
-	if err := objectStore.UploadPV(v.s3KeyPrefix(), pv.Name, pv); err != nil {
+	if err := UploadPV(objectStore, v.s3KeyPrefix(), pv.Name, pv); err != nil {
 		err := fmt.Errorf("error uploading PV %s kube object to s3Profile %s, %w", pv.Name, s3ProfileName, err)
 
 		return err
@@ -1520,7 +1520,7 @@ func (v *VRGInstance) fetchPVClusterDataFromS3Store(s3ProfileName string) ([]cor
 		return nil, fmt.Errorf("error when downloading PVs, err %w", err)
 	}
 
-	return objectStore.DownloadPVs(s3KeyPrefix)
+	return downloadPVs(objectStore, s3KeyPrefix)
 }
 
 // sanityCheckPVClusterData returns an error if there are PVs in the input

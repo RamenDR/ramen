@@ -676,7 +676,7 @@ func (v *VRGInstance) processForDeletion() (ctrl.Result, error) {
 
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
 		if err := v.deleteClusterDataInS3Stores(v.log); err != nil {
-			v.log.Info("Requeuing due to failure in deleting PV cluster data from S3 stores",
+			v.log.Info("Requeuing due to failure in deleting cluster data from S3 stores",
 				"errorValue", err)
 
 			return ctrl.Result{Requeue: true}, nil
