@@ -304,6 +304,7 @@ type VRGInstance struct {
 	savedInstanceStatus ramendrv1alpha1.VolumeReplicationGroupStatus
 	pvcList             *corev1.PersistentVolumeClaimList
 	replClassList       *volrep.VolumeReplicationClassList
+	vrgObjectProtected  metav1.ConditionStatus
 	vrcUpdated          bool
 	namespacedName      string
 }
@@ -959,10 +960,12 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 func (v *VRGInstance) handleVRGMode(state ramendrv1alpha1.ReplicationState) (result bool) {
 	if state == ramendrv1alpha1.Primary {
 		result = v.reconcileVRsAsPrimary()
+		v.vrgObjectProtect(&result)
 	}
 
 	if state == ramendrv1alpha1.Secondary {
 		result = v.reconcileVRsAsSecondary()
+		v.vrgObjectProtected = metav1.ConditionUnknown
 	}
 
 	return result
@@ -1017,6 +1020,34 @@ func (v *VRGInstance) reconcileVRsAsPrimary() bool {
 	}
 
 	return requeue
+}
+
+func (v *VRGInstance) vrgObjectProtect(requeue *bool) {
+	v.vrgObjectProtected = metav1.ConditionTrue
+	fail := func(err error) {
+		*requeue = true
+		v.vrgObjectProtected = metav1.ConditionFalse
+		rmnutil.ReportIfNotPresent(
+			v.reconciler.eventRecorder,
+			v.instance,
+			corev1.EventTypeWarning,
+			rmnutil.EventReasonVrgUploadFailed,
+			err.Error(),
+		)
+	}
+
+	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
+		objectStore, err := v.getObjectStore(s3ProfileName)
+		if err != nil {
+			fail(err)
+
+			continue
+		}
+
+		if err := UploadTypedObject(objectStore, v.s3KeyPrefix(), "", *v.instance); err != nil {
+			fail(err)
+		}
+	}
 }
 
 // processAsSecondary reconciles the current instance of VRG as secondary
@@ -2117,9 +2148,18 @@ func (v *VRGInstance) updateVRGClusterDataProtectedCondition() {
 	}
 
 	// All PVCs in the VRG are in protected state because not a single PVC is in
-	// error condition and not a single PVC is in protecting condition.  Hence,
-	// the VRG's cluster data protection condition is met.
-	msg := "Cluster data of all PVs are protected"
+	// error condition and not a single PVC is in protecting condition.
+	v.log.Info("Cluster data of all PVs are protected")
+
+	if v.vrgObjectProtected != metav1.ConditionTrue {
+		msg := "VRG object unprotected"
+		setVRGClusterDataUnprotectedCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+		v.log.Info(msg)
+
+		return
+	}
+
+	msg := "Kube objects are protected"
 	setVRGClusterDataProtectedCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 	v.log.Info(msg)
 }

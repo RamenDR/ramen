@@ -53,6 +53,9 @@ const (
 	// EventReasonPVUploadFailed is used when VRG fails to upload PV cluster data
 	EventReasonPVUploadFailed = "PVUploadFailed"
 
+	// EventReasonVrgUploadFailed is used when VRG fails to upload VRG object
+	EventReasonVrgUploadFailed = "VrgUploadFailed"
+
 	// EventReasonPrimarySuccess is an event generated when VRG is successfully
 	// processed as Primary.
 	EventReasonPrimarySuccess = "PrimaryVRGProcessSuccess"
