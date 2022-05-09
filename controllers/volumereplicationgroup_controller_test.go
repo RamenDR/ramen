@@ -33,8 +33,6 @@ func init() {
 	rand.Seed(time.Now().Unix())
 }
 
-var UploadedPVs = make(map[string]interface{})
-
 var _ = Describe("Test VolumeReplicationGroup", func() {
 	// Test first restore
 	Context("restore test case", func() {
@@ -53,12 +51,14 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			vtest := newVRGTestCaseCreate(0, restoreTestTemplate, true, false)
 			vrgNamespacedName := vtest.namespace + "/" + vtest.vrgName + "/"
 			pvList := generateFakePVs("pv", numPVs)
-			populateS3Store(s3Profiles[0].S3ProfileName, vrgNamespacedName, pvList)
+			objectStorer, err := fakeObjectStoreGetter{}.ObjectStore(
+				context.TODO(), apiReader, s3Profiles[0].S3ProfileName, "", testLog,
+			)
+			Expect(err).To(BeNil())
+			populateS3Store(objectStorer, vrgNamespacedName, pvList)
 			vtest.VRGTestCaseStart()
 			waitForPVRestore(pvList)
-			// profile name, keyprefix, numPVs
-			// waitForPVRestore(S3ProfileName, numPVs)
-			cleanupS3Store()
+			cleanupS3Store(objectStorer)
 		})
 	})
 
@@ -507,8 +507,8 @@ func (v *vrgTest) createPVCandPV(claimBindInfo corev1.PersistentVolumeClaimPhase
 	}
 }
 
-func cleanupS3Store() {
-	UploadedPVs = make(map[string]interface{})
+func cleanupS3Store(objectStorer vrgController.ObjectStorer) {
+	Expect(objectStorer.DeleteObjects("")).To(Succeed())
 }
 
 func generateFakePVs(pvNamePrefix string, count int) []corev1.PersistentVolume {
@@ -575,14 +575,12 @@ func getSamplePV(pvName string) corev1.PersistentVolume {
 	return pv
 }
 
-func populateS3Store(s3ProfileName string, vrgNamespacedName string, pvList []corev1.PersistentVolume) {
-	// If you look at the FakePVUploader implementation, you will see that
-	// the key is concatenation of the objectStoreName(same as
-	// s3ProfileName), VRG NamespacedName and the pvName. We populate the object
-	// store in identical manner here.
+func populateS3Store(objectStorer vrgController.ObjectStorer,
+	vrgNamespacedName string, pvList []corev1.PersistentVolume) {
 	for _, pv := range pvList {
-		key := s3ProfileName + vrgNamespacedName + pv.Name
-		UploadedPVs[key] = pv
+		Expect(
+			vrgController.UploadPV(objectStorer, vrgNamespacedName, pv.Name, pv),
+		).To(Succeed())
 	}
 }
 
@@ -1159,7 +1157,7 @@ func waitForPVRestore(pvList []corev1.PersistentVolume) {
 
 			return true
 		}, timeout, interval).Should(BeTrue(),
-			"while waiting for PV %s to be restored", pv)
+			"while waiting for PV %s to be restored", pv.Name)
 	}
 
 	Expect(pvCount == len(pvList))

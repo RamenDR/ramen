@@ -19,11 +19,11 @@ package controllers_test
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/go-logr/logr"
 	"github.com/ramendr/ramen/controllers"
-	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -39,6 +39,8 @@ const (
 	awsAccessKeyIDSucc = "succ"
 	awsAccessKeyIDFail = "fail"
 )
+
+var fakeObjectStorers = make(map[string]fakeObjectStorer)
 
 func (fakeObjectStoreGetter) ObjectStore(
 	ctx context.Context,
@@ -70,41 +72,35 @@ func (fakeObjectStoreGetter) ObjectStore(
 		return nil, fmt.Errorf("AWS_ACCESS_KEY_ID '%v' invalid", accessIDString)
 	}
 
-	return fakeObjectStorer{
-		name:       s3ProfileName,
-		bucketName: s3StoreProfile.S3Bucket,
-	}, nil
+	objectStorer, ok := fakeObjectStorers[s3ProfileName]
+	if !ok {
+		objectStorer = fakeObjectStorer{
+			name:       s3ProfileName,
+			bucketName: s3StoreProfile.S3Bucket,
+			objects:    make(map[string]interface{}),
+		}
+		fakeObjectStorers[s3ProfileName] = objectStorer
+	}
+
+	return objectStorer, nil
 }
 
 type fakeObjectStorer struct {
 	name       string
 	bucketName string
+	objects    map[string]interface{}
 }
 
-func (f fakeObjectStorer) fullPrefix(keyPrefix string) string {
-	return f.GetName() + keyPrefix
-}
-
-func (f fakeObjectStorer) UploadPV(pvKeyPrefix, pvKeySuffix string, pv corev1.PersistentVolume) error {
-	key := f.fullPrefix(pvKeyPrefix) + pv.Name
-	UploadedPVs[key] = pv
+func (f fakeObjectStorer) UploadObject(key string, object interface{}) error {
+	f.objects[key] = object
 
 	return nil
 }
 
-func (f fakeObjectStorer) GetName() string { return f.name }
+func (f fakeObjectStorer) DownloadObject(key string, objectPointer interface{}) error {
+	reflect.ValueOf(objectPointer).Elem().Set(reflect.ValueOf(f.objects[key]))
 
-func (f fakeObjectStorer) DownloadPVs(pvKeyPrefix string) ([]corev1.PersistentVolume, error) {
-	fullPrefix := f.fullPrefix(pvKeyPrefix)
-	pvList := []corev1.PersistentVolume{}
-
-	for k, v := range UploadedPVs {
-		if strings.HasPrefix(k, fullPrefix) {
-			pvList = append(pvList, v.(corev1.PersistentVolume))
-		}
-	}
-
-	return pvList, nil
+	return nil
 }
 
 func (f fakeObjectStorer) ListKeys(keyPrefix string) ([]string, error) {
@@ -112,11 +108,10 @@ func (f fakeObjectStorer) ListKeys(keyPrefix string) ([]string, error) {
 		return nil, fmt.Errorf("Failing bucket listing")
 	}
 
-	fullPrefix := f.fullPrefix(keyPrefix)
 	keys := []string{}
 
-	for k := range UploadedPVs {
-		if strings.HasPrefix(k, fullPrefix) {
+	for k := range f.objects {
+		if strings.HasPrefix(k, keyPrefix) {
 			keys = append(keys, k)
 		}
 	}
@@ -124,9 +119,11 @@ func (f fakeObjectStorer) ListKeys(keyPrefix string) ([]string, error) {
 	return keys, nil
 }
 
-func (fakeObjectStorer) DeleteObjects(keyPrefix string) error {
-	for key := range UploadedPVs {
-		delete(UploadedPVs, key)
+func (f fakeObjectStorer) DeleteObjects(keyPrefix string) error {
+	for key := range f.objects {
+		if strings.HasPrefix(key, keyPrefix) {
+			delete(f.objects, key)
+		}
 	}
 
 	return nil
