@@ -283,15 +283,16 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	defer log.Info("Exiting reconcile loop")
 
 	v := VRGInstance{
-		reconciler:     r,
-		ctx:            ctx,
-		log:            log,
-		instance:       &ramendrv1alpha1.VolumeReplicationGroup{},
-		volRepPVCs:     []corev1.PersistentVolumeClaim{},
-		volSyncPVCs:    []corev1.PersistentVolumeClaim{},
-		replClassList:  &volrep.VolumeReplicationClassList{},
-		namespacedName: req.NamespacedName.String(),
-		objectStorers:  make(map[string]cachedObjectStorer),
+		reconciler:         r,
+		ctx:                ctx,
+		log:                log,
+		instance:           &ramendrv1alpha1.VolumeReplicationGroup{},
+		volRepPVCs:         []corev1.PersistentVolumeClaim{},
+		volSyncPVCs:        []corev1.PersistentVolumeClaim{},
+		vrgObjectProtected: metav1.ConditionUnknown,
+		replClassList:      &volrep.VolumeReplicationClassList{},
+		namespacedName:     req.NamespacedName.String(),
+		objectStorers:      make(map[string]cachedObjectStorer),
 	}
 
 	// Fetch the VolumeReplicationGroup instance
@@ -340,6 +341,7 @@ type VRGInstance struct {
 	volRepPVCs          []corev1.PersistentVolumeClaim
 	volSyncPVCs         []corev1.PersistentVolumeClaim
 	replClassList       *volrep.VolumeReplicationClassList
+	vrgObjectProtected  metav1.ConditionStatus
 	vrcUpdated          bool
 	namespacedName      string
 	volSyncHandler      *volsync.VSHandler
