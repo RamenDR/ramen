@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"reflect"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -92,8 +93,13 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, client.IgnoreNotFound(fmt.Errorf("get: %w", err))
 	}
 
-	var manifestWorkUtil util.MWUtil
-	u := &drclusterInstance{ctx, drcluster, r.Client, log, r, manifestWorkUtil}
+	manifestWorkUtil := &util.MWUtil{Client: r.Client, Ctx: ctx, Log: log, InstName: "", InstNamespace: ""}
+
+	u := &drclusterInstance{
+		ctx: ctx, object: drcluster, client: r.Client, log: log, reconciler: r,
+		mwUtil: manifestWorkUtil,
+	}
+
 	u.initializeStatus()
 
 	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
@@ -101,15 +107,12 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, fmt.Errorf("config map get: %w", u.validatedSetFalse("ConfigMapGetFailed", err))
 	}
 
-	manifestWorkUtil = util.MWUtil{Client: r.Client, Ctx: ctx, Log: log, InstName: "", InstNamespace: ""}
-	u.mwUtil = manifestWorkUtil
-
 	// DRCluster is marked for deletion
 	if !drcluster.ObjectMeta.DeletionTimestamp.IsZero() {
 		log.Info("delete")
 
 		// Undeploy manifests
-		if err := drClusterUndeploy(drcluster, &manifestWorkUtil); err != nil {
+		if err := drClusterUndeploy(drcluster, manifestWorkUtil); err != nil {
 			return ctrl.Result{}, fmt.Errorf("drclusters undeploy: %w", err)
 		}
 
@@ -131,7 +134,7 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, fmt.Errorf("validate: %w", u.validatedSetFalse(reason, err))
 	}
 
-	if err := drClusterDeploy(drcluster, &manifestWorkUtil, ramenConfig); err != nil {
+	if err := drClusterDeploy(drcluster, manifestWorkUtil, ramenConfig); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drclusters deploy: %w", u.validatedSetFalse("DrClustersDeployFailed", err))
 	}
 
@@ -143,11 +146,20 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 }
 
 func (u *drclusterInstance) initializeStatus() {
-	// TODO: Only initialize those conditions whose status is
-	//       not available.
-	// Set the DRCluster conditions to unknown as nothing is known at this point
-	msg := "Initializing DRCluster"
-	setDRClusterInitialCondition(&u.object.Status.Conditions, u.object.Generation, msg)
+	// Save a copy of the instance status to be used for the DRCluster status update comparison
+	u.object.Status.DeepCopyInto(&u.savedInstanceStatus)
+
+	if u.savedInstanceStatus.Conditions == nil {
+		u.savedInstanceStatus.Conditions = []metav1.Condition{}
+	}
+
+	if u.object.Status.Conditions == nil {
+		// TODO: Only initialize those conditions whose status is
+		//       not available.
+		// Set the DRCluster conditions to unknown as nothing is known at this point
+		msg := "Initializing DRCluster"
+		setDRClusterInitialCondition(&u.object.Status.Conditions, u.object.Generation, msg)
+	}
 }
 
 func validateDRCluster(ctx context.Context, drcluster *ramen.DRCluster, apiReader client.Reader,
@@ -236,12 +248,13 @@ func (r DRClusterReconciler) processFencing(u *drclusterInstance) (ctrl.Result, 
 }
 
 type drclusterInstance struct {
-	ctx        context.Context
-	object     *ramen.DRCluster
-	client     client.Client
-	log        logr.Logger
-	reconciler *DRClusterReconciler
-	mwUtil     util.MWUtil
+	ctx                 context.Context
+	object              *ramen.DRCluster
+	client              client.Client
+	log                 logr.Logger
+	reconciler          *DRClusterReconciler
+	savedInstanceStatus ramen.DRClusterStatus
+	mwUtil              *util.MWUtil
 }
 
 func (u *drclusterInstance) validatedSetFalse(reason string, err error) error {
@@ -267,7 +280,22 @@ func (u *drclusterInstance) statusConditionSet(
 }
 
 func (u *drclusterInstance) statusUpdate() error {
-	return u.client.Status().Update(u.ctx, u.object)
+	if !reflect.DeepEqual(u.savedInstanceStatus, u.object.Status) {
+		if err := u.client.Status().Update(u.ctx, u.object); err != nil {
+			u.log.Info(fmt.Sprintf("Failed to update drCluster status (%s/%s/%v)",
+				u.object.Name, u.object.Namespace, err))
+
+			return fmt.Errorf("failed to update drCluster status (%s/%s)", u.object.Name, u.object.Namespace)
+		}
+
+		u.log.Info(fmt.Sprintf("Updated drCluster Status %+v", u.object.Status))
+
+		return nil
+	}
+
+	u.log.Info(fmt.Sprintf("Nothing to update %+v", u.object.Status))
+
+	return nil
 }
 
 const drClusterFinalizerName = "drclusters.ramendr.openshift.io/ramen"
