@@ -93,7 +93,7 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	var manifestWorkUtil util.MWUtil
-	u := &drclusterUpdater{ctx, drcluster, r.Client, log, r, manifestWorkUtil}
+	u := &drclusterInstance{ctx, drcluster, r.Client, log, r, manifestWorkUtil}
 	u.initializeStatus()
 
 	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
@@ -142,7 +142,7 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	return r.processFencing(u)
 }
 
-func (u *drclusterUpdater) initializeStatus() {
+func (u *drclusterInstance) initializeStatus() {
 	// TODO: Only initialize those conditions whose status is
 	//       not available.
 	// Set the DRCluster conditions to unknown as nothing is known at this point
@@ -222,7 +222,7 @@ func validateCIDRsFormat(drcluster *ramen.DRCluster, log logr.Logger) error {
 	return nil
 }
 
-func (r DRClusterReconciler) processFencing(u *drclusterUpdater) (ctrl.Result, error) {
+func (r DRClusterReconciler) processFencing(u *drclusterInstance) (ctrl.Result, error) {
 	requeue, err := u.clusterFenceHandle()
 	if err != nil {
 		if updateErr := u.statusUpdate(); updateErr != nil {
@@ -235,7 +235,7 @@ func (r DRClusterReconciler) processFencing(u *drclusterUpdater) (ctrl.Result, e
 	return ctrl.Result{Requeue: requeue}, u.statusUpdate()
 }
 
-type drclusterUpdater struct {
+type drclusterInstance struct {
 	ctx        context.Context
 	object     *ramen.DRCluster
 	client     client.Client
@@ -244,7 +244,7 @@ type drclusterUpdater struct {
 	mwUtil     util.MWUtil
 }
 
-func (u *drclusterUpdater) validatedSetFalse(reason string, err error) error {
+func (u *drclusterInstance) validatedSetFalse(reason string, err error) error {
 	if err1 := u.statusConditionSet(ramen.DRClusterValidated, metav1.ConditionFalse, reason, err.Error()); err1 != nil {
 		return err1
 	}
@@ -252,7 +252,7 @@ func (u *drclusterUpdater) validatedSetFalse(reason string, err error) error {
 	return err
 }
 
-func (u *drclusterUpdater) statusConditionSet(
+func (u *drclusterInstance) statusConditionSet(
 	conditionType string,
 	status metav1.ConditionStatus,
 	reason, message string,
@@ -266,17 +266,17 @@ func (u *drclusterUpdater) statusConditionSet(
 	return nil
 }
 
-func (u *drclusterUpdater) statusUpdate() error {
+func (u *drclusterInstance) statusUpdate() error {
 	return u.client.Status().Update(u.ctx, u.object)
 }
 
 const drClusterFinalizerName = "drclusters.ramendr.openshift.io/ramen"
 
-func (u *drclusterUpdater) addLabelsAndFinalizers() error {
+func (u *drclusterInstance) addLabelsAndFinalizers() error {
 	return util.GenericAddLabelsAndFinalizers(u.ctx, u.object, drClusterFinalizerName, u.client, u.log)
 }
 
-func (u *drclusterUpdater) finalizerRemove() error {
+func (u *drclusterInstance) finalizerRemove() error {
 	return util.GenericFinalizerRemove(u.ctx, u.object, drClusterFinalizerName, u.client, u.log)
 }
 
@@ -292,7 +292,7 @@ func (u *drclusterUpdater) finalizerRemove() error {
 //
 // 3) Handle Ramen driven fencing here
 //
-func (u *drclusterUpdater) clusterFenceHandle() (bool, error) {
+func (u *drclusterInstance) clusterFenceHandle() (bool, error) {
 	if u.object.Spec.ClusterFence == ramen.ClusterFenceStateUnfenced {
 		return u.clusterUnfence()
 	}
@@ -323,7 +323,7 @@ func (u *drclusterUpdater) clusterFenceHandle() (bool, error) {
 	return false, nil
 }
 
-func (u *drclusterUpdater) clusterFence() (bool, error) {
+func (u *drclusterInstance) clusterFence() (bool, error) {
 	// Ideally, here it should collect all the DRClusters available
 	// in the cluster and then match the appropriate peer cluster
 	// out of them by looking at the storage relationships. However,
@@ -347,7 +347,7 @@ func (u *drclusterUpdater) clusterFence() (bool, error) {
 	return u.fenceClusterOnCluster(&peerCluster)
 }
 
-func (u *drclusterUpdater) clusterUnfence() (bool, error) {
+func (u *drclusterInstance) clusterUnfence() (bool, error) {
 	// Ideally, here it should collect all the DRClusters available
 	// in the cluster and then match the appropriate peer cluster
 	// out of them by looking at the storage relationships. However,
@@ -396,7 +396,7 @@ func (u *drclusterUpdater) clusterUnfence() (bool, error) {
 //    Create the fencing CR MW with Fenced state
 //    return requeue, nil
 // endif
-func (u *drclusterUpdater) fenceClusterOnCluster(peerCluster *ramen.DRCluster) (bool, error) {
+func (u *drclusterInstance) fenceClusterOnCluster(peerCluster *ramen.DRCluster) (bool, error) {
 	u.log.Info(fmt.Sprintf("initiating the cluster fence from the cluster %s", peerCluster.Name))
 	// TODO: Check if NetworkFence resource exist via MCV and
 	//       take appropriate decisions?
@@ -427,7 +427,7 @@ func (u *drclusterUpdater) fenceClusterOnCluster(peerCluster *ramen.DRCluster) (
 //    return requeue, nil
 // endif
 // TODO: Remove the below linter check skipper
-func (u *drclusterUpdater) unfenceClusterOnCluster(peerCluster *ramen.DRCluster) (bool, error) {
+func (u *drclusterInstance) unfenceClusterOnCluster(peerCluster *ramen.DRCluster) (bool, error) {
 	u.log.Info(fmt.Sprintf("initiating the cluster unfence from the cluster %s", peerCluster.Name))
 	// TODO: Check if NetworkFence resource exist via MCV and
 	//       take appropriate decisions?
@@ -452,7 +452,7 @@ func (u *drclusterUpdater) unfenceClusterOnCluster(peerCluster *ramen.DRCluster)
 //
 // * Proceed to delete the ManifestWork for the fencingCR
 // * Issue a requeue
-func (u *drclusterUpdater) cleanCluster(peerCluster ramen.DRCluster) (bool, error) {
+func (u *drclusterInstance) cleanCluster(peerCluster ramen.DRCluster) (bool, error) {
 	u.log.Info(fmt.Sprintf("cleaning the cluster fence resource from the cluster %s", peerCluster.Name))
 	// TODO: delete the fencing CR MW.
 
@@ -838,7 +838,7 @@ func setDRClusterCleaningFailedCondition(conditions *[]metav1.Condition, observe
 	})
 }
 
-func (u *drclusterUpdater) createNFManifestWork(targetCluster *ramen.DRCluster, peerCluster *ramen.DRCluster,
+func (u *drclusterInstance) createNFManifestWork(targetCluster *ramen.DRCluster, peerCluster *ramen.DRCluster,
 	log logr.Logger) error {
 	// create NetworkFence ManifestWork
 	log.Info(fmt.Sprintf("Creating NetworkFence ManifestWork on cluster %s to perform fencing op on cluster %s",
