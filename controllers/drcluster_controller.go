@@ -321,34 +321,33 @@ func (u *drclusterInstance) finalizerRemove() error {
 // 3) Handle Ramen driven fencing here
 //
 func (u *drclusterInstance) clusterFenceHandle() (bool, error) {
-	if u.object.Spec.ClusterFence == ramen.ClusterFenceStateUnfenced {
+	switch u.object.Spec.ClusterFence {
+	case ramen.ClusterFenceStateUnfenced:
 		return u.clusterUnfence()
-	}
 
-	if u.object.Spec.ClusterFence == ramen.ClusterFenceStateManuallyFenced {
+	case ramen.ClusterFenceStateManuallyFenced:
 		setDRClusterFencedCondition(&u.object.Status.Conditions, u.object.Generation, "Cluster Manually fenced")
 		// no requeue is needed and no error as this is a manual fence
 		return false, nil
-	}
 
-	if u.object.Spec.ClusterFence == ramen.ClusterFenceStateManuallyUnfenced {
+	case ramen.ClusterFenceStateManuallyUnfenced:
 		setDRClusterCleanCondition(&u.object.Status.Conditions, u.object.Generation,
 			"Cluster Manually Unfenced and clean")
 		// no requeue is needed and no error as this is a manual unfence
 		return false, nil
-	}
 
-	if u.object.Spec.ClusterFence == ramen.ClusterFenceStateFenced {
+	case ramen.ClusterFenceStateFenced:
 		return u.clusterFence()
+
+	default:
+		// This is needed when a DRCluster is created fresh without any fencing related information.
+		// That is cluster being clean without any NetworkFence CR. Or is it? What if someone just
+		// edits the resource and removes the entire line that has fencing state? Should that be
+		// treated as cluster being clean or unfence?
+		setDRClusterCleanCondition(&u.object.Status.Conditions, u.object.Generation, "Cluster Clean")
+
+		return false, nil
 	}
-
-	// This is needed when a DRCluster is created fresh without any fencing related information.
-	// That is cluster being clean without any NetworkFence CR. Or is it? What if someone just
-	// edits the resource and removes the entire line that has fencing state? Should that be
-	// treated as cluster being clean or unfence?
-	setDRClusterCleanCondition(&u.object.Status.Conditions, u.object.Generation, "Cluster Clean")
-
-	return false, nil
 }
 
 func (u *drclusterInstance) clusterFence() (bool, error) {
