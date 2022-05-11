@@ -754,29 +754,29 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 			preferredCluster = clonedPlRule.Status.Decisions[0].ClusterName
 		}
 	}
-
-	clustersToClean := []string{preferredCluster}
-	if drpc.Spec.FailoverCluster != "" {
-		clustersToClean = append(clustersToClean, drpc.Spec.FailoverCluster)
+    
+	drPolicy, err := r.getDRPolicy(ctx, drpc)
+	if err != nil {
+		return fmt.Errorf("failed to get DRPolicy while finalizing DRPC (%w)", err)
 	}
 
 	// delete manifestworks (VRG)
-	for idx := range clustersToClean {
-		err := mwu.DeleteManifestWorksForCluster(clustersToClean[idx])
+	for _, drClusterName := range rmnutil.DrpolicyClusterNames(drPolicy) {
+		err := mwu.DeleteManifestWorksForCluster(drClusterName)
 		if err != nil {
 			return fmt.Errorf("%w", err)
 		}
 
 		mcvName := BuildManagedClusterViewName(drpc.Name, drpc.Namespace, rmnutil.MWTypeVRG)
 		// Delete MCV for the VRG
-		err = r.deleteManagedClusterView(clustersToClean[idx], mcvName)
+		err = r.deleteManagedClusterView(drClusterName, mcvName)
 		if err != nil {
 			return err
 		}
 
 		mcvName = BuildManagedClusterViewName(drpc.Name, drpc.Namespace, rmnutil.MWTypeNS)
 		// Delete MCV for Namespace
-		err = r.deleteManagedClusterView(clustersToClean[idx], mcvName)
+		err = r.deleteManagedClusterView(drClusterName, mcvName)
 		if err != nil {
 			return err
 		}
