@@ -520,276 +520,297 @@ var _ = Describe("VolSync Handler", func() {
 					}, maxWait, interval).Should(Succeed())
 				})
 
-				Context("When a RD exists for the pvc to protect, failover scenario (secondary -> primary)", func() {
-					var rd *volsyncv1alpha1.ReplicationDestination
-					JustBeforeEach(func() {
-						// Pre-create an RD for the PVC (simulate scenario where secondary has failed over to primary)
-						rd = &volsyncv1alpha1.ReplicationDestination{
-							ObjectMeta: metav1.ObjectMeta{
-								Name:      rsSpec.ProtectedPVC.Name,
-								Namespace: testNamespace.GetName(),
-								Labels: map[string]string{
-									// Need to simulate that it's owned by our VRG by using our label
-									volsync.VRGOwnerLabel: owner.GetName(),
-								},
-							},
-							Spec: volsyncv1alpha1.ReplicationDestinationSpec{},
-						}
-						Expect(k8sClient.Create(ctx, rd)).To(Succeed())
-
-						// Make sure the replicationdestination is created to avoid any timing issues
-						Eventually(func() error {
-							return k8sClient.Get(ctx, client.ObjectKeyFromObject(rd), rd)
-						}, maxWait, interval).Should(Succeed())
-
-						// Run ReconcileRS - Not running final sync so this should return false
-						finalSyncDone, returnedRS, err := vsHandler.ReconcileRS(rsSpec, false)
+				Context("When no running pod is mounting the PVC to be protected", func() {
+					It("Should return a nil replication source and no RS should be created", func() {
+						// Run another reconcile - we have the ssh secret now but the pvc is not in use by
+						// a running pod
+						finalSyncCompl, rs, err := vsHandler.ReconcileRS(rsSpec, false)
 						Expect(err).ToNot(HaveOccurred())
-						Expect(finalSyncDone).To(BeFalse())
-						Expect(returnedRS).NotTo(BeNil())
+						Expect(finalSyncCompl).To(BeFalse())
+						Expect(rs).To(BeNil())
 
-						// RS should be created with name=PVCName
-						Eventually(func() error {
-							return k8sClient.Get(ctx, types.NamespacedName{
-								Name:      rsSpec.ProtectedPVC.Name,
-								Namespace: testNamespace.GetName(),
-							}, createdRS)
-						}, maxWait, interval).Should(Succeed())
-					})
-
-					It("Should delete the existing ReplicationDestination", func() {
-						Eventually(func() bool {
-							err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rd), rd)
-
-							return kerrors.IsNotFound(err)
-						}, maxWait, interval).Should(BeTrue())
+						// ReconcileRS should not have created the replication source - since the secret isn't there
+						Consistently(func() error {
+							return k8sClient.Get(ctx,
+								types.NamespacedName{Name: rsSpec.ProtectedPVC.Name, Namespace: testNamespace.GetName()}, createdRS)
+						}, 1*time.Second, interval).ShouldNot(BeNil())
 					})
 				})
 
-				Context("When reconciling RS with no previous RD", func() {
-					var returnedRS *volsyncv1alpha1.ReplicationSource
-
+				Context("When the PVC to be protected is mounted by a pod that is NOT running", func() {
 					JustBeforeEach(func() {
-						finalSyncDone := false
-						var err error
+						// Create PVC and pod that is mounting it (pod phase will be "Pending" by default)
+						createDummyPVCAndMountingPod(testPVCName, testNamespace.GetName(),
+							capacity, map[string]string{"a": "b"}, corev1.PodPending)
+					})
 
-						// Run ReconcileRS - Not running final sync so this should return false
-						finalSyncDone, returnedRS, err = vsHandler.ReconcileRS(rsSpec, false)
+					It("Should return a nil replication source and no RS should be created", func() {
+						// Run another reconcile - a pod is mounting the PVC but it is not in running state
+						// a running pod
+						finalSyncCompl, rs, err := vsHandler.ReconcileRS(rsSpec, false)
 						Expect(err).ToNot(HaveOccurred())
-						Expect(finalSyncDone).To(BeFalse())
+						Expect(finalSyncCompl).To(BeFalse())
+						Expect(rs).To(BeNil())
 
-						// RS should be created with name=PVCName and owner is our vrg
-						Eventually(func() bool {
-							err := k8sClient.Get(ctx,
-								types.NamespacedName{
-									Name:      rsSpec.ProtectedPVC.Name,
-									Namespace: testNamespace.GetName(),
-								},
-								createdRS)
-							if err != nil {
-								return false
-							}
+						// ReconcileRS should not have created the replication source - since the secret isn't there
+						Consistently(func() error {
+							return k8sClient.Get(ctx,
+								types.NamespacedName{Name: rsSpec.ProtectedPVC.Name, Namespace: testNamespace.GetName()}, createdRS)
+						}, 1*time.Second, interval).ShouldNot(BeNil())
+					})
+				})
 
-							return ownerMatches(createdRS, owner.GetName(), "ConfigMap",
-								true /* Should be controller */)
-						}, maxWait, interval).Should(BeTrue())
+				Context("When the PVC to be protected is mounted by a running pod", func() {
+					var podMountingPVC *corev1.Pod
+					var testPVC *corev1.PersistentVolumeClaim
 
-						// Check that the volsync ssh secret has been updated to have our vrg as owner
-						Eventually(func() bool {
-							err := k8sClient.Get(ctx, client.ObjectKeyFromObject(dummySSHSecret), dummySSHSecret)
-							if err != nil {
-								return false
-							}
-
-							// The ssh secret should be updated to be owned by the VRG
-							return ownerMatches(dummySSHSecret, owner.GetName(), "ConfigMap", false)
-						}, maxWait, interval).Should(BeTrue())
-
-						// Check common fields
-						Expect(createdRS.Spec.SourcePVC).To(Equal(rsSpec.ProtectedPVC.Name))
-						Expect(createdRS.Spec.Rsync.CopyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
-						// Note owner here is faking out a VRG - ssh key name will be based on the owner (VRG) name
-						Expect(*createdRS.Spec.Rsync.SSHKeys).To(Equal(volsync.GetVolSyncSSHSecretNameFromVRGName(owner.GetName())))
-						Expect(*createdRS.Spec.Rsync.Address).To(Equal("volsync-rsync-dst-" +
-							rsSpec.ProtectedPVC.Name + "." + testNamespace.GetName() + ".svc.clusterset.local"))
-
-						Expect(*createdRS.Spec.Rsync.VolumeSnapshotClassName).To(Equal(testVolumeSnapshotClassName))
-
-						Expect(createdRS.Spec.Trigger).ToNot(BeNil())
-						Expect(createdRS.Spec.Trigger).To(Equal(&volsyncv1alpha1.ReplicationSourceTriggerSpec{
-							Schedule: &expectedCronSpecSchedule,
-						}))
-						Expect(createdRS.GetLabels()).To(HaveKeyWithValue(volsync.VRGOwnerLabel, owner.GetName()))
+					// Fake out pod mounting and in Running state
+					JustBeforeEach(func() {
+						// Create PVC and pod that is mounting it (and set pod phase to "Running")
+						testPVC, podMountingPVC = createDummyPVCAndMountingPod(testPVCName, testNamespace.GetName(),
+							capacity, nil, corev1.PodRunning)
 					})
 
-					It("Should create an ReplicationSource if one does not exist", func() {
-						// All checks here performed in the JustBeforeEach(common checks)
-						Expect(returnedRS).NotTo(BeNil())
-					})
-
-					Context("When replication source already exists", func() {
-						var rsPrecreate *volsyncv1alpha1.ReplicationSource
-
-						BeforeEach(func() {
-							// Pre-create a replication destination - and fill out Status.Address
-							rsPrecreate = &volsyncv1alpha1.ReplicationSource{
+					Context("When a RD exists for the pvc to protect, failover scenario (secondary -> primary)", func() {
+						var rd *volsyncv1alpha1.ReplicationDestination
+						JustBeforeEach(func() {
+							// Pre-create an RD for the PVC (simulate scenario where secondary has failed over to primary)
+							rd = &volsyncv1alpha1.ReplicationDestination{
 								ObjectMeta: metav1.ObjectMeta{
 									Name:      rsSpec.ProtectedPVC.Name,
 									Namespace: testNamespace.GetName(),
 									Labels: map[string]string{
-										"customlabel1": "somevaluehere",
+										// Need to simulate that it's owned by our VRG by using our label
+										volsync.VRGOwnerLabel: owner.GetName(),
 									},
 								},
-								// Will expect the reconcile to fill this out properly for us (i.e. update)
-								Spec: volsyncv1alpha1.ReplicationSourceSpec{
-									Rsync: &volsyncv1alpha1.ReplicationSourceRsyncSpec{},
-								},
+								Spec: volsyncv1alpha1.ReplicationDestinationSpec{},
 							}
-							Expect(k8sClient.Create(ctx, rsPrecreate)).To(Succeed())
+							Expect(k8sClient.Create(ctx, rd)).To(Succeed())
 
-							//
-							// Make sure the RS is created
-							//
+							// Make sure the replicationdestination is created to avoid any timing issues
 							Eventually(func() error {
-								return k8sClient.Get(ctx, client.ObjectKeyFromObject(rsPrecreate), rsPrecreate)
+								return k8sClient.Get(ctx, client.ObjectKeyFromObject(rd), rd)
+							}, maxWait, interval).Should(Succeed())
+
+							// Run ReconcileRS again - Not running final sync so this should return false
+							finalSyncDone, returnedRS, err := vsHandler.ReconcileRS(rsSpec, false)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(finalSyncDone).To(BeFalse())
+							Expect(returnedRS).NotTo(BeNil())
+
+							// RS should be created with name=PVCName
+							Eventually(func() error {
+								return k8sClient.Get(ctx, types.NamespacedName{
+									Name:      rsSpec.ProtectedPVC.Name,
+									Namespace: testNamespace.GetName(),
+								}, createdRS)
 							}, maxWait, interval).Should(Succeed())
 						})
 
-						It("Should properly update ReplicationSource and return rsInfo", func() {
-							// all checks here performed in the JustBeforeEach(common checks)
+						It("Should delete the existing ReplicationDestination", func() {
+							Eventually(func() bool {
+								err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rd), rd)
+
+								return kerrors.IsNotFound(err)
+							}, maxWait, interval).Should(BeTrue())
+						})
+					})
+
+					Context("When reconciling RS with no previous RD", func() {
+						var returnedRS *volsyncv1alpha1.ReplicationSource
+
+						JustBeforeEach(func() {
+							finalSyncDone := false
+							var err error
+
+							// Run ReconcileRS - Not running final sync so this should return false
+							finalSyncDone, returnedRS, err = vsHandler.ReconcileRS(rsSpec, false)
+							Expect(err).ToNot(HaveOccurred())
+							Expect(finalSyncDone).To(BeFalse())
+
+							// RS should be created with name=PVCName and owner is our vrg
+							Eventually(func() bool {
+								err := k8sClient.Get(ctx,
+									types.NamespacedName{
+										Name:      rsSpec.ProtectedPVC.Name,
+										Namespace: testNamespace.GetName(),
+									},
+									createdRS)
+								if err != nil {
+									return false
+								}
+
+								return ownerMatches(createdRS, owner.GetName(), "ConfigMap",
+									true /* Should be controller */)
+							}, maxWait, interval).Should(BeTrue())
+
+							// Check that the volsync ssh secret has been updated to have our vrg as owner
+							Eventually(func() bool {
+								err := k8sClient.Get(ctx, client.ObjectKeyFromObject(dummySSHSecret), dummySSHSecret)
+								if err != nil {
+									return false
+								}
+
+								// The ssh secret should be updated to be owned by the VRG
+								return ownerMatches(dummySSHSecret, owner.GetName(), "ConfigMap", false)
+							}, maxWait, interval).Should(BeTrue())
+
+							// Check common fields
+							Expect(createdRS.Spec.SourcePVC).To(Equal(rsSpec.ProtectedPVC.Name))
+							Expect(createdRS.Spec.Rsync.CopyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
+							// Note owner here is faking out a VRG - ssh key name will be based on the owner (VRG) name
+							Expect(*createdRS.Spec.Rsync.SSHKeys).To(Equal(volsync.GetVolSyncSSHSecretNameFromVRGName(owner.GetName())))
+							Expect(*createdRS.Spec.Rsync.Address).To(Equal("volsync-rsync-dst-" +
+								rsSpec.ProtectedPVC.Name + "." + testNamespace.GetName() + ".svc.clusterset.local"))
+
+							Expect(*createdRS.Spec.Rsync.VolumeSnapshotClassName).To(Equal(testVolumeSnapshotClassName))
+
+							Expect(createdRS.Spec.Trigger).ToNot(BeNil())
+							Expect(createdRS.Spec.Trigger).To(Equal(&volsyncv1alpha1.ReplicationSourceTriggerSpec{
+								Schedule: &expectedCronSpecSchedule,
+							}))
+							Expect(createdRS.GetLabels()).To(HaveKeyWithValue(volsync.VRGOwnerLabel, owner.GetName()))
+						})
+
+						It("Should create an ReplicationSource if one does not exist", func() {
+							// All checks here performed in the JustBeforeEach(common checks)
 							Expect(returnedRS).NotTo(BeNil())
 						})
 
-						It("Should expect reconcileRS to return a replicationsource", func() {
-							// reconcile should return our RS
-							Expect(returnedRS).NotTo(BeNil())
-						})
+						Context("When replication source already exists", func() {
+							var rsPrecreate *volsyncv1alpha1.ReplicationSource
 
-						Context("When running a final sync", func() {
-							var testPVC *corev1.PersistentVolumeClaim
 							BeforeEach(func() {
-								// Create dummy PVC
-								pvcCapacity := resource.MustParse("1Gi")
-								testPVC = createDummyPVC(rsSpec.ProtectedPVC.Name, testNamespace.GetName(), pvcCapacity, nil)
+								// Pre-create a replication destination - and fill out Status.Address
+								rsPrecreate = &volsyncv1alpha1.ReplicationSource{
+									ObjectMeta: metav1.ObjectMeta{
+										Name:      rsSpec.ProtectedPVC.Name,
+										Namespace: testNamespace.GetName(),
+										Labels: map[string]string{
+											"customlabel1": "somevaluehere",
+										},
+									},
+									// Will expect the reconcile to fill this out properly for us (i.e. update)
+									Spec: volsyncv1alpha1.ReplicationSourceSpec{
+										Rsync: &volsyncv1alpha1.ReplicationSourceRsyncSpec{},
+									},
+								}
+								Expect(k8sClient.Create(ctx, rsPrecreate)).To(Succeed())
+
+								//
+								// Make sure the RS is created
+								//
+								Eventually(func() error {
+									return k8sClient.Get(ctx, client.ObjectKeyFromObject(rsPrecreate), rsPrecreate)
+								}, maxWait, interval).Should(Succeed())
 							})
 
-							Context("When the pvc is still in use", func() {
-								BeforeEach(func() {
-									// Create a pod to mount the PVC so it shows up as in-use
-									// Create a dummy pvc to protect so the reconcile can proceed properly
-									dummyPod := &corev1.Pod{
-										ObjectMeta: metav1.ObjectMeta{
-											GenerateName: "test-pod-",
-											Namespace:    testNamespace.GetName(),
-										},
-										Spec: corev1.PodSpec{
-											Containers: []corev1.Container{
-												{
-													Name:  "testcontainer1",
-													Image: "testimage1",
-												},
-											},
-											Volumes: []corev1.Volume{
-												{
-													Name: "testvol1",
-													VolumeSource: corev1.VolumeSource{
-														PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-															ClaimName: testPVCName,
-														},
-													},
-												},
-											},
-										},
-									}
-									Expect(k8sClient.Create(ctx, dummyPod)).To(Succeed())
-
-									// Make sure the pod is created to avoid any timing issues
-									Eventually(func() error {
-										return k8sClient.Get(ctx, client.ObjectKeyFromObject(dummyPod), dummyPod)
-									}, maxWait, interval).Should(Succeed())
-								})
-
-								It("Should not complete the final sync", func() {
-									finalSyncDone, returnedRS, err := vsHandler.ReconcileRS(rsSpec, true)
-									Expect(err).NotTo(HaveOccurred()) // Not considered an error, we should just wait
-									Expect(returnedRS).To(BeNil())
-									Expect(finalSyncDone).To(BeFalse())
-								})
+							It("Should properly update ReplicationSource and return rsInfo", func() {
+								// all checks here performed in the JustBeforeEach(common checks)
+								Expect(returnedRS).NotTo(BeNil())
 							})
 
-							Context("When the pvc is no longer in use", func() {
-								It("Should update the trigger on the RS and return true when replication is complete"+
-									" and also delete the pvc after replication complete", func() {
-									// Run ReconcileRS - indicate final sync
-									finalSyncDone, returnedRS, err := vsHandler.ReconcileRS(rsSpec, true)
-									Expect(err).ToNot(HaveOccurred())
-									Expect(finalSyncDone).To(BeFalse()) // Should not return true since sync has not completed
-									Expect(returnedRS).NotTo(BeNil())
+							It("Should expect reconcileRS to return a replicationsource", func() {
+								// reconcile should return our RS
+								Expect(returnedRS).NotTo(BeNil())
+							})
 
-									// Check that the manual sync triggger is set correctly on the RS
-									Eventually(func() string {
-										err := k8sClient.Get(ctx,
-											types.NamespacedName{
-												Name:      rsSpec.ProtectedPVC.Name,
-												Namespace: testNamespace.GetName(),
-											},
-											createdRS)
-										if err != nil || createdRS.Spec.Trigger == nil {
-											return ""
-										}
+							Context("When running a final sync", func() {
+								Context("When the pvc is still in use", func() {
+									It("Should not complete the final sync", func() {
+										finalSyncDone, returnedRS, err := vsHandler.ReconcileRS(rsSpec, true)
+										Expect(err).NotTo(HaveOccurred()) // Not considered an error, we should just wait
+										Expect(returnedRS).To(BeNil())
+										Expect(finalSyncDone).To(BeFalse())
+									})
+								})
 
-										return createdRS.Spec.Trigger.Manual
-									}, maxWait, interval).Should(Equal(volsync.FinalSyncTriggerString))
+								Context("When the pvc is no longer in use", func() {
+									JustBeforeEach(func() {
+										// Pod mounting PVC is created above - delete it to simulate removing app
+										// Fake out the pod in "Running" Phase
+										Expect(k8sClient.Delete(ctx, podMountingPVC)).To(Succeed())
+										Eventually(func() bool {
+											err := k8sClient.Get(ctx, client.ObjectKeyFromObject(podMountingPVC), podMountingPVC)
 
-									// We have triggered a final sync - manually update the status on the RS to
-									// simulate that it has completed the sync and confirm ReconcileRS correctly sees the update
-									now := metav1.Now()
-									createdRS.Status = &volsyncv1alpha1.ReplicationSourceStatus{
-										LastManualSync: volsync.FinalSyncTriggerString,
-										LastSyncTime:   &now,
-									}
-									Expect(k8sClient.Status().Update(ctx, createdRS)).To(Succeed())
+											return kerrors.IsNotFound(err)
+										}, maxWait, interval).Should(BeTrue())
+									})
 
-									Eventually(func() bool {
-										// Make sure the update has been picked up by the client cache
-										err := k8sClient.Get(ctx, client.ObjectKeyFromObject(createdRS), createdRS)
-										if err != nil {
-											return false
-										}
+									It("Should update the trigger on the RS and return true when replication is complete"+
+										" and also delete the pvc after replication complete", func() {
+										// Run ReconcileRS - indicate final sync
+										finalSyncDone, returnedRS, err := vsHandler.ReconcileRS(rsSpec, true)
+										Expect(err).ToNot(HaveOccurred())
+										Expect(finalSyncDone).To(BeFalse()) // Should not return true since sync has not completed
+										Expect(returnedRS).NotTo(BeNil())
 
-										return createdRS.Status != nil && createdRS.Status.LastManualSync != ""
-									}, maxWait, interval).Should(BeTrue())
-
-									finalSyncDone, returnedRS, err = vsHandler.ReconcileRS(rsSpec, true)
-									Expect(err).ToNot(HaveOccurred())
-									Expect(finalSyncDone).To(BeTrue())
-									Expect(returnedRS).NotTo(BeNil())
-
-									// Now check to see if the pvc was removed
-									Eventually(func() bool {
-										err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testPVC), testPVC)
-										if err == nil {
-											if !testPVC.GetDeletionTimestamp().IsZero() {
-												// PVC protection finalizer is added automatically to PVC - but testenv
-												// doesn't have anything that will remove it for us - we're good as long
-												// as the pvc is marked for deletion
-
-												testPVC.Finalizers = []string{} // Clear finalizers
-												Expect(k8sClient.Update(ctx, testPVC)).To(Succeed())
+										// Check that the manual sync triggger is set correctly on the RS
+										Eventually(func() string {
+											err := k8sClient.Get(ctx,
+												types.NamespacedName{
+													Name:      rsSpec.ProtectedPVC.Name,
+													Namespace: testNamespace.GetName(),
+												},
+												createdRS)
+											if err != nil || createdRS.Spec.Trigger == nil {
+												return ""
 											}
 
-											return false // try again
+											return createdRS.Spec.Trigger.Manual
+										}, maxWait, interval).Should(Equal(volsync.FinalSyncTriggerString))
+
+										// We have triggered a final sync - manually update the status on the RS to
+										// simulate that it has completed the sync and confirm ReconcileRS correctly sees the update
+										now := metav1.Now()
+										createdRS.Status = &volsyncv1alpha1.ReplicationSourceStatus{
+											LastManualSync: volsync.FinalSyncTriggerString,
+											LastSyncTime:   &now,
 										}
+										Expect(k8sClient.Status().Update(ctx, createdRS)).To(Succeed())
 
-										return kerrors.IsNotFound(err)
-									}, maxWait, interval).Should(BeTrue())
+										Eventually(func() bool {
+											// Make sure the update has been picked up by the client cache
+											err := k8sClient.Get(ctx, client.ObjectKeyFromObject(createdRS), createdRS)
+											if err != nil {
+												return false
+											}
 
-									// Run reconcileRS with final sync again, even with PVC removed it should be able to
-									// reconcile RS and check from the status that the final sync is complete
-									finalSyncDone, returnedRS, err = vsHandler.ReconcileRS(rsSpec, true)
-									Expect(err).ToNot(HaveOccurred())
-									Expect(finalSyncDone).To(BeTrue())
-									Expect(returnedRS).NotTo(BeNil())
+											return createdRS.Status != nil && createdRS.Status.LastManualSync != ""
+										}, maxWait, interval).Should(BeTrue())
+
+										finalSyncDone, returnedRS, err = vsHandler.ReconcileRS(rsSpec, true)
+										Expect(err).ToNot(HaveOccurred())
+										Expect(finalSyncDone).To(BeTrue())
+										Expect(returnedRS).NotTo(BeNil())
+
+										// Now check to see if the pvc was removed
+										Eventually(func() bool {
+											err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testPVC), testPVC)
+											if err == nil {
+												if !testPVC.GetDeletionTimestamp().IsZero() {
+													// PVC protection finalizer is added automatically to PVC - but testenv
+													// doesn't have anything that will remove it for us - we're good as long
+													// as the pvc is marked for deletion
+
+													testPVC.Finalizers = []string{} // Clear finalizers
+													Expect(k8sClient.Update(ctx, testPVC)).To(Succeed())
+												}
+
+												return false // try again
+											}
+
+											return kerrors.IsNotFound(err)
+										}, maxWait, interval).Should(BeTrue())
+
+										// Run reconcileRS with final sync again, even with PVC removed it should be able to
+										// reconcile RS and check from the status that the final sync is complete
+										finalSyncDone, returnedRS, err = vsHandler.ReconcileRS(rsSpec, true)
+										Expect(err).ToNot(HaveOccurred())
+										Expect(finalSyncDone).To(BeTrue())
+										Expect(returnedRS).NotTo(BeNil())
+									})
 								})
 							})
 						})
@@ -1347,13 +1368,23 @@ var _ = Describe("VolSync Handler", func() {
 					}, dummySSHSecretOtherOwner)
 			}, maxWait, interval).Should(Succeed())
 
+			capacity := resource.MustParse("50Mi")
+
 			for _, rsSpec := range rsSpecList {
+				// Create the PVC to be protected and pod that is mounting it (and set pod phase to "Running")
+				createDummyPVCAndMountingPod(rsSpec.ProtectedPVC.Name, testNamespace.GetName(),
+					capacity, nil, corev1.PodRunning)
+
 				// create RSs using our vsHandler
 				_, returnedRS, err := vsHandler.ReconcileRS(rsSpec, false)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(returnedRS).NotTo(BeNil())
 			}
 			for _, rsSpecOtherOwner := range rsSpecListOtherOwner {
+				// Create the PVC to be protected and pod that is mounting it (and set pod phase to "Running")
+				createDummyPVCAndMountingPod(rsSpecOtherOwner.ProtectedPVC.Name, testNamespace.GetName(),
+					capacity, nil, corev1.PodRunning)
+
 				// create other RSs using another vsHandler (will be owned by another VRG)
 				_, returnedRS, err := otherVSHandler.ReconcileRS(rsSpecOtherOwner, false)
 				Expect(err).NotTo(HaveOccurred())
@@ -1608,4 +1639,62 @@ func createDummyPVC(pvcName, namespace string, capacity resource.Quantity,
 	}, maxWait, interval).Should(Succeed())
 
 	return dummyPVC
+}
+
+func createDummyPVCAndMountingPod(pvcName, namespace string, capacity resource.Quantity,
+	annotations map[string]string, desiredPodPhase corev1.PodPhase) (*corev1.PersistentVolumeClaim, *corev1.Pod) {
+	// Create the PVC
+	pvc := createDummyPVC(pvcName, namespace, capacity, annotations)
+
+	// Create the pod which is mounting the pvc
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: "test-pod-",
+			Namespace:    namespace,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:  "c1",
+					Image: "testimage123",
+				},
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: "myvol1",
+					VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvc.GetName(),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+
+	Eventually(func() error {
+		// Make sure the pod has been picked up by the cache
+		return k8sClient.Get(ctx, client.ObjectKeyFromObject(pod), pod)
+	}, maxWait, interval).Should(Succeed())
+
+	// Default phase will be "Pending"
+	if desiredPodPhase != corev1.PodPending {
+		// Set the pod phase
+		pod.Status.Phase = desiredPodPhase
+		Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
+
+		Eventually(func() bool {
+			// Make sure the pod status update has been picked up by the cache
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pod), pod)
+			if err != nil {
+				return false
+			}
+
+			return pod.Status.Phase == desiredPodPhase
+		}, maxWait, interval).Should(BeTrue())
+	}
+
+	return pvc, pod
 }
