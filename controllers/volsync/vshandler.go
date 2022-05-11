@@ -257,7 +257,7 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 		return false, nil, err
 	}
 
-	pvcOk, err := v.validatePVCBeforeFinalSync(rsSpec, runFinalSync)
+	pvcOk, err := v.validatePVCBeforeRS(rsSpec, runFinalSync)
 	if !pvcOk || err != nil {
 		return false, nil, err
 	}
@@ -285,30 +285,61 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 // a 2nd call to runFinalSync and we may have already cleaned up the PVC - so if pvc does not
 // exist, treat the same as not in use - continue on with reconcile of the RS (and therefore
 // check status to confirm final sync is complete)
-func (v *VSHandler) validatePVCBeforeFinalSync(rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec,
+func (v *VSHandler) validatePVCBeforeRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec,
 	runFinalSync bool) (bool, error,
 ) {
-	if !runFinalSync {
-		return true, nil // No validation when not doing final sync, returning true
-	}
-
 	l := v.log.WithValues("rsSpec", rsSpec, "runFinalSync", runFinalSync)
 
-	// If runFinalSync, check the PVC and make sure it's not in use before proceeding
-	existsAndInUse, err := v.pvcExistsAndInUse(rsSpec.ProtectedPVC.Name)
-	if err != nil {
-		l.Error(err, "error checking if pvc is in use")
+	if runFinalSync {
+		// If runFinalSync, check the PVC and make sure it's not in use (not mounted by any pod) before proceeding
+		// as we want the app to be quiesced/removed before running final sync
+		existsAndInUse, err := v.pvcExistsAndInUse(rsSpec.ProtectedPVC.Name, false)
+		if err != nil {
+			l.Error(err, "error checking if pvc is in use")
 
+			return false, err
+		}
+
+		if existsAndInUse {
+			l.Info("pvc is still in use, not reconciling RS for final sync yet ...")
+
+			return false, nil
+		}
+
+		return true, nil // Good to proceed - PVC is not in use (or does not exist - should not happen)
+	}
+
+	// Not running final sync - if we have not yet created an RS for this PVC, then make sure a pod has mounted
+	// the PVC and is in "Running" state before attempting to create an RS.
+	// This is a best effort to confirm the app that is using the PVC is started before trying to replicate the PVC.
+	_, err := v.getRS(getReplicationSourceName(rsSpec.ProtectedPVC.Name))
+	if err != nil && kerrors.IsNotFound(err) {
+		l.Info("ReplicationSource does not exist yet. " +
+			"validating that the PVC to be protected is in use by a running pod ...")
+		// RS does not yet exist - consider PVC is ok if it's mounted and in use by running pod
+		inUseByRunningPod, err := v.pvcExistsAndInUse(rsSpec.ProtectedPVC.Name, true /* Check mounting pod is Running */)
+		if err != nil {
+			return false, err
+		}
+
+		if !inUseByRunningPod {
+			l.Info("PVC is not in use by running pod, not creating RS yet ...")
+
+			return false, nil
+		}
+
+		l.Info("PVC is use by running pod, proceeding to create RS ...")
+
+		return true, nil
+	}
+
+	if err != nil {
+		// Err looking up the RS, return it
 		return false, err
 	}
 
-	if existsAndInUse {
-		l.Info("pvc is still in use, not reconciling RS for final sync yet ...")
-
-		return false, nil
-	}
-
-	return true, nil // Good to proceed - PVC exists but is not in use or does not exist
+	// Replication source already exists, no need for any pvc checking
+	return true, nil
 }
 
 func isFinalSyncComplete(replicationSource *volsyncv1alpha1.ReplicationSource, log logr.Logger) bool {
@@ -472,10 +503,12 @@ func (v *VSHandler) PreparePVCForFinalSync(pvcName string) (bool, error) {
 }
 
 // Will return true only if the pvc exists and in use - will not throw error if PVC not found
-func (v *VSHandler) pvcExistsAndInUse(pvcName string) (bool, error) {
+func (v *VSHandler) pvcExistsAndInUse(pvcName string, inUsePodMustBeRunning bool) (bool, error) {
 	_, err := v.getPVC(pvcName)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
+			v.log.Info("PVC not found", "pvcName", pvcName)
+
 			return false, nil // No error just indicate not exists and not in use
 		}
 
@@ -484,10 +517,10 @@ func (v *VSHandler) pvcExistsAndInUse(pvcName string) (bool, error) {
 
 	v.log.V(1).Info("pvc found", "pvcName", pvcName)
 
-	return v.isPvcInUse(pvcName)
+	return v.isPvcInUse(pvcName, inUsePodMustBeRunning)
 }
 
-func (v *VSHandler) isPvcInUse(pvcName string) (bool, error) {
+func (v *VSHandler) isPvcInUse(pvcName string, inUsePodMustBeRunning bool) (bool, error) {
 	podUsingPVCList := &corev1.PodList{}
 
 	err := v.client.List(context.Background(),
@@ -504,12 +537,23 @@ func (v *VSHandler) isPvcInUse(pvcName string) (bool, error) {
 		return false /* Not in use by any pod */, nil
 	}
 
-	inUsePodNames := []string{}
+	inUseByRunningPod := false
+
+	inUsePods := []string{}
 	for _, pod := range podUsingPVCList.Items {
-		inUsePodNames = append(inUsePodNames, pod.GetName())
+		inUsePods = append(inUsePods, fmt.Sprintf("pod: %s, phase: %s", pod.GetName(), pod.Status.Phase))
+
+		if pod.Status.Phase == corev1.PodRunning {
+			// Assuming in use by running pod if at least 1 pod mounting the PVC is in Running phase
+			inUseByRunningPod = true
+		}
 	}
 
-	v.log.Info("pvc is in use by pod(s)", "pvcName", pvcName, "inUsePodNames", inUsePodNames)
+	v.log.Info("pvc is in use by pod(s)", "pvcName", pvcName, "pods", inUsePods)
+
+	if inUsePodMustBeRunning {
+		return inUseByRunningPod, nil
+	}
 
 	return true, nil
 }
@@ -606,6 +650,21 @@ func (v *VSHandler) validateSecretAndAddVRGOwnerRef(secretName string) (bool, er
 	v.log.V(1).Info("VolSync secret validated", "secret name", secretName)
 
 	return true, nil
+}
+
+func (v *VSHandler) getRS(name string) (*volsyncv1alpha1.ReplicationSource, error) {
+	rs := &volsyncv1alpha1.ReplicationSource{}
+
+	err := v.client.Get(v.ctx,
+		types.NamespacedName{
+			Name:      name,
+			Namespace: v.owner.GetNamespace(),
+		}, rs)
+	if err != nil {
+		return nil, fmt.Errorf("%w", err)
+	}
+
+	return rs, nil
 }
 
 func (v *VSHandler) DeleteRS(pvcName string) error {
