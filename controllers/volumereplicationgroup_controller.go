@@ -969,7 +969,7 @@ func (v *VRGInstance) updateVRGDataReadyCondition() {
 
 func (v *VRGInstance) updateVRGDataProtectedCondition() {
 	volSyncAggregatedCond := v.aggregateVolSyncDataProtectedCondition()
-	if volSyncAggregatedCond != nil {
+	if volSyncAggregatedCond != nil && len(v.volRepPVCs) == 0 {
 		setStatusCondition(&v.instance.Status.Conditions, *volSyncAggregatedCond)
 	}
 

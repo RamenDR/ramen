@@ -263,21 +263,29 @@ func (v *VRGInstance) aggregateVolSyncDataProtectedCondition() *v1.Condition {
 }
 
 func (v *VRGInstance) aggregateVolSyncClusterDataProtectedCondition() *v1.Condition {
-	if len(v.volSyncPVCs) == 0 && len(v.instance.Spec.VolSync.RDSpec) == 0 {
+	// For VolSync, clusterDataProtectedCondition is the same as dataProtecedCondition - so copy it
+	dataProtectedCondition := findCondition(v.instance.Status.Conditions, VRGConditionTypeDataProtected)
+
+	if dataProtectedCondition == nil {
 		return nil
 	}
 
-	// For ClusterDataReady and ClusterDataProtected condition, will use the same condition as DataProtected.
-	// That is; if DataProtected is true, then, ClusterDataRady and ClusterDataProtected should also be true.
-	condition := v.buildDataProtectedCondition()
-	condition.Type = VRGConditionTypeClusterDataProtected
+	clusterDataProtectedCondition := dataProtectedCondition.DeepCopy()
+	clusterDataProtectedCondition.Type = VRGConditionTypeClusterDataProtected
 
-	return condition
+	return clusterDataProtectedCondition
 }
 
 //nolint:gocognit,funlen,gocyclo,cyclop
 func (v *VRGInstance) buildDataProtectedCondition() *v1.Condition {
 	if len(v.volSyncPVCs) == 0 && len(v.instance.Spec.VolSync.RDSpec) == 0 {
+		condition := findCondition(v.instance.Status.Conditions, VRGConditionTypeClusterDataProtected)
+		if condition != nil && condition.Status == v1.ConditionTrue {
+			v.log.Info(fmt.Sprintf("No VolSync PVCs. Using previous condition %v", condition.Type))
+
+			return condition
+		}
+
 		return &v1.Condition{
 			Type:               VRGConditionTypeDataProtected,
 			Reason:             VRGConditionReasonDataProtected,
@@ -327,13 +335,13 @@ func (v *VRGInstance) buildDataProtectedCondition() *v1.Condition {
 					break
 				}
 			}
+		}
 
-			if ready && len(v.volSyncPVCs) != protectedByVolSyncCount {
-				ready = false
+		if ready && len(v.volSyncPVCs) != protectedByVolSyncCount {
+			ready = false
 
-				v.log.Info(fmt.Sprintf("VolSync PVCs count does not match with the ready PVCs %d/%d",
-					len(v.volSyncPVCs), protectedByVolSyncCount))
-			}
+			v.log.Info(fmt.Sprintf("VolSync PVCs count does not match with the ready PVCs %d/%d",
+				len(v.volSyncPVCs), protectedByVolSyncCount))
 		}
 	} else {
 		for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
