@@ -107,6 +107,12 @@ func (d *DRPCInstance) processPlacement() (bool, error) {
 func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 	d.log.Info("Running initial deployment")
 
+	if !d.isDeployingOrDeployed() {
+		d.instance.Status.ActionStartTime = &metav1.Time{Time: time.Now()}
+		d.instance.Status.ActionDuration = nil
+		d.setDRState(rmn.Initiating)
+	}
+
 	const done = true
 
 	homeCluster, homeClusterNamespace := d.getHomeCluster()
@@ -153,6 +159,11 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 		}
 
 		d.instance.Status.Progression = ""
+
+		if d.instance.Status.ActionDuration == nil {
+			duration := time.Since(d.instance.Status.ActionStartTime.Time)
+			d.instance.Status.ActionDuration = &metav1.Duration{Duration: duration}
+		}
 
 		return done, nil
 	}
@@ -298,6 +309,12 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 func (d *DRPCInstance) RunFailover() (bool, error) {
 	d.log.Info("Entering RunFailover", "state", d.getLastDRState())
 
+	if !d.isFailingOverOrFailedOver() {
+		d.instance.Status.ActionStartTime = &metav1.Time{Time: time.Now()}
+		d.instance.Status.ActionDuration = nil
+		d.setDRState(rmn.Initiating)
+	}
+
 	const done = true
 
 	// We are done if empty
@@ -350,6 +367,11 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		}
 
 		d.instance.Status.Progression = ""
+
+		if d.instance.Status.ActionDuration == nil {
+			duration := time.Since(d.instance.Status.ActionStartTime.Time)
+			d.instance.Status.ActionDuration = &metav1.Duration{Duration: duration}
+		}
 
 		return done, nil
 	}
@@ -480,6 +502,12 @@ func (d *DRPCInstance) getCurrentHomeClusterName() string {
 func (d *DRPCInstance) RunRelocate() (bool, error) { //nolint:gocognit,cyclop
 	d.log.Info("Entering RunRelocate", "state", d.getLastDRState())
 
+	if !d.isRelocatingOrRelocated() {
+		d.instance.Status.ActionStartTime = &metav1.Time{Time: time.Now()}
+		d.instance.Status.ActionDuration = nil
+		d.setDRState(rmn.Initiating)
+	}
+
 	const done = true
 
 	preferredCluster := d.instance.Spec.PreferredCluster
@@ -507,6 +535,11 @@ func (d *DRPCInstance) RunRelocate() (bool, error) { //nolint:gocognit,cyclop
 		}
 
 		d.instance.Status.Progression = ""
+
+		if d.instance.Status.ActionDuration == nil {
+			duration := time.Since(d.instance.Status.ActionStartTime.Time)
+			d.instance.Status.ActionDuration = &metav1.Duration{Duration: duration}
+		}
 
 		return done, nil
 	}
@@ -1713,6 +1746,7 @@ func (d *DRPCInstance) advanceToNextDRState() {
 		nextState = rmn.FailedOver
 	case rmn.Relocating:
 		nextState = rmn.Relocated
+	case rmn.Initiating:
 	case rmn.Deployed:
 	case rmn.FailedOver:
 	case rmn.Relocated:
@@ -1806,6 +1840,8 @@ func (d *DRPCInstance) isInFinalPhase() bool {
 //nolint:exhaustive
 func (d *DRPCInstance) isInProgressingPhase() bool {
 	switch d.instance.Status.Phase {
+	case rmn.Initiating:
+		fallthrough
 	case rmn.Deploying:
 		fallthrough
 	case rmn.FailingOver:
@@ -1970,4 +2006,45 @@ func (d *DRPCInstance) setMetricsTimer(
 func (d *DRPCInstance) setDRPCCondition(conditions *[]metav1.Condition, condType string,
 	observedGeneration int64, status metav1.ConditionStatus, reason, msg string) {
 	SetDRPCStatusCondition(conditions, condType, observedGeneration, status, reason, msg)
+}
+
+func (d *DRPCInstance) isDeployingOrDeployed() bool {
+	switch d.getLastDRState() {
+	case "":
+		fallthrough
+	case rmn.Initiating:
+		fallthrough
+	case rmn.Deploying:
+		fallthrough
+	case rmn.Deployed:
+		return true
+	}
+
+	return false
+}
+
+func (d *DRPCInstance) isFailingOverOrFailedOver() bool {
+	switch d.getLastDRState() {
+	case rmn.Initiating:
+		fallthrough
+	case rmn.FailingOver:
+		fallthrough
+	case rmn.FailedOver:
+		return true
+	}
+
+	return false
+}
+
+func (d *DRPCInstance) isRelocatingOrRelocated() bool {
+	switch d.getLastDRState() {
+	case rmn.Initiating:
+		fallthrough
+	case rmn.Relocating:
+		fallthrough
+	case rmn.Relocated:
+		return true
+	}
+
+	return false
 }

@@ -38,6 +38,14 @@ spec:
       name: progression
       priority: 2
       type: string
+    - jsonPath: .status.actionStartTime
+      name: start time
+      priority: 2
+      type: string
+    - jsonPath: .status.actionDuration
+      name: duration
+      priority: 2
+      type: string
     - jsonPath: .status.conditions[1].status
       name: peer ready
       priority: 2
@@ -207,6 +215,11 @@ spec:
           status:
             description: DRPlacementControlStatus defines the observed state of DRPlacementControl
             properties:
+              actionDuration:
+                type: string
+              actionStartTime:
+                format: date-time
+                type: string
               conditions:
                 items:
                   description: "Condition contains details for one aspect of the current

@@ -41,6 +41,11 @@ type DRState string
 
 // These are the valid values for DRState
 const (
+	// Initiating, state recorded in the DRPC status to indicate that this
+	// action (Deploy/Failover/Relocate) is preparing for execution. There
+	// is NO follow up state called 'Initiated'
+	Initiating = DRState("Initiating")
+
 	// Deploying, state recorded in the DRPC status to indicate that the
 	// initial deployment is in progress. Deploying means selecting the
 	// preffered cluster and creating a VRG MW for it and waiting for MW
@@ -137,6 +142,8 @@ type VRGConditions struct {
 // DRPlacementControlStatus defines the observed state of DRPlacementControl
 type DRPlacementControlStatus struct {
 	Phase              DRState                 `json:"phase,omitempty"`
+	ActionStartTime    *metav1.Time            `json:"actionStartTime,omitempty"`
+	ActionDuration     *metav1.Duration        `json:"actionDuration,omitempty"`
 	Progression        string                  `json:"progression,omitempty"`
 	PreferredDecision  plrv1.PlacementDecision `json:"preferredDecision,omitempty"`
 	Conditions         []metav1.Condition      `json:"conditions,omitempty"`
@@ -152,6 +159,8 @@ type DRPlacementControlStatus struct {
 // +kubebuilder:printcolumn:JSONPath=".spec.action",name=desiredState,type=string
 // +kubebuilder:printcolumn:JSONPath=".status.phase",name=currentState,type=string
 // +kubebuilder:printcolumn:JSONPath=".status.progression",name=progression,type=string,priority=2
+// +kubebuilder:printcolumn:JSONPath=".status.actionStartTime",name=start time,type=string,priority=2
+// +kubebuilder:printcolumn:JSONPath=".status.actionDuration",name=duration,type=string,priority=2
 // +kubebuilder:printcolumn:JSONPath=".status.conditions[1].status",name=peer ready,type=string,priority=2
 // +kubebuilder:resource:shortName=drpc
 
