@@ -571,18 +571,50 @@ ramen_samples_channel_and_drpolicy_deploy()
 	  - target:
 	      group: ramendr.openshift.io
 	      version: v1alpha1
+	      kind: DRCluster
+	      name: hub
+	    patch: |-
+	      - op: add
+	        path: /spec/region
+	        value: $4
+	      - op: replace
+	        path: /spec/s3ProfileName
+	        value: minio-on-$4
+	      - op: replace
+	        path: /metadata/name
+	        value: $4
+	      - op: replace
+	        path: /metadata/namespace
+	        value: ramen-system
+	  - target:
+	      group: ramendr.openshift.io
+	      version: v1alpha1
+	      kind: DRCluster
+	      name: cluster1
+	    patch: |-
+	      - op: add
+	        path: /spec/region
+	        value: $3
+	      - op: replace
+	        path: /spec/s3ProfileName
+	        value: minio-on-$3
+	      - op: replace
+	        path: /metadata/name
+	        value: $3
+	      - op: replace
+	        path: /metadata/namespace
+	        value: ramen-system
+	  - target:
+	      group: ramendr.openshift.io
+	      version: v1alpha1
 	      kind: DRPolicy
 	      name: dr-policy
 	    patch: |-
 	      - op: replace
-	        path: /spec/drClusterSet
+	        path: /spec/drClusters
 	        value:
-	          - name: $3
-	            s3ProfileName: minio-on-$3
-	            region: east
-	          - name: $4
-	            s3ProfileName: minio-on-$4
-	            region: west
+	          - $3
+	          - $4
 	a
 	kubectl --context $hub_cluster_name apply -k $1
 	for cluster_name in $spoke_cluster_names; do

@@ -1,0 +1,24 @@
+# permissions for end users to edit drclusters.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: drcluster-editor-role
+rules:
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - drclusters
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - drclusters/status
+  verbs:
+  - get

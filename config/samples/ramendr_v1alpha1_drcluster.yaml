@@ -1,0 +1,7 @@
+apiVersion: ramendr.openshift.io/v1alpha1
+kind: DRCluster
+metadata:
+  name: east
+spec:
+  region: east
+  s3ProfileName: s3-profile-of-east

@@ -34,4 +34,13 @@ resources:
   kind: DRPlacementControl
   path: github.com/ramendr/ramen/api/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: openshift.io
+  group: ramendr
+  kind: DRCluster
+  path: github.com/ramendr/ramen/api/v1alpha1
+  version: v1alpha1
 version: "3"

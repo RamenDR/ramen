@@ -21,7 +21,6 @@ package util
 import (
 	"context"
 	"fmt"
-	"strconv"
 
 	"github.com/go-logr/logr"
 	errorswrapper "github.com/pkg/errors"
@@ -51,7 +50,6 @@ const (
 	// nolint:lll
 	// See: https://github.com/stolostron/rhacm-docs/blob/2.4_stage/governance/custom_template.adoc#special-annotation-for-reprocessing
 	PolicyTriggerAnnotation = "policy.open-cluster-management.io/trigger-update"
-	intialTriggerValue      = 0
 
 	// Finalizer on the secret
 	SecretPolicyFinalizer string = "drpolicies.ramendr.openshift.io/policy-protection"
@@ -272,10 +270,10 @@ func (sutil *SecretsUtil) createPolicyResources(secret *corev1.Secret, cluster, 
 	secretObject := newS3ConfigurationSecret(s3SecretRef, targetns)
 	configObject := newConfigurationPolicy(configPolicyName, runtime.RawExtension{Object: secretObject})
 
-	sutil.Log.Info("Initializing secret policy trigger", "secret", secret.Name, "trigger", intialTriggerValue)
+	sutil.Log.Info("Initializing secret policy trigger", "secret", secret.Name, "trigger", secret.ResourceVersion)
 
 	policyObject := newPolicy(policyName, namespace,
-		strconv.Itoa(int(intialTriggerValue)), runtime.RawExtension{Object: configObject})
+		secret.ResourceVersion, runtime.RawExtension{Object: configObject})
 	if err := sutil.Client.Create(sutil.Ctx, policyObject); err != nil && !errors.IsAlreadyExists(err) {
 		sutil.Log.Error(err, "unable to create policy", "secret", secret.Name, "cluster", cluster)
 
@@ -432,29 +430,15 @@ func (sutil *SecretsUtil) ticklePolicy(secret *corev1.Secret, namespace string) 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to get policy (secret: %s)", secret.Name))
 	}
 
-	// Compare policy annotation to secret generation and trigger policy update if required
-	triggerValueInPolicy := 0
-
 	for annotation, value := range policyObject.GetAnnotations() {
-		if annotation == PolicyTriggerAnnotation {
-			intValue, err := strconv.Atoi(value)
-			if err != nil {
-				sutil.Log.Error(err, "invalid policy trigger annotation value", "value", value)
-
-				return errorswrapper.Wrap(err, fmt.Sprintf("invalid policy trigger annotation value (value: %s)", value))
-			}
-
-			triggerValueInPolicy = intValue
-
-			break
+		if annotation == PolicyTriggerAnnotation && value == secret.ResourceVersion {
+			return nil
 		}
 	}
 
-	triggerValueInPolicy++
+	sutil.Log.Info("Updating secret policy trigger", "secret", secret.Name, "trigger", secret.ResourceVersion)
 
-	sutil.Log.Info("Updating secret policy trigger", "secret", secret.Name, "trigger", triggerValueInPolicy)
-
-	policyObject.Annotations[PolicyTriggerAnnotation] = strconv.Itoa(triggerValueInPolicy)
+	policyObject.Annotations[PolicyTriggerAnnotation] = secret.ResourceVersion
 	if err := sutil.Client.Update(sutil.Ctx, &policyObject); err != nil {
 		sutil.Log.Error(err, "unable to trigger policy update", "secret", secret.Name)
 

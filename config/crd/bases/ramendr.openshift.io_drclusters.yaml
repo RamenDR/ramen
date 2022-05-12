@@ -6,20 +6,20 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.4.1
   creationTimestamp: null
-  name: drpolicies.ramendr.openshift.io
+  name: drclusters.ramendr.openshift.io
 spec:
   group: ramendr.openshift.io
   names:
-    kind: DRPolicy
-    listKind: DRPolicyList
-    plural: drpolicies
-    singular: drpolicy
-  scope: Cluster
+    kind: DRCluster
+    listKind: DRClusterList
+    plural: drclusters
+    singular: drcluster
+  scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: DRPolicy is the Schema for the drpolicies API
+        description: DRCluster is the Schema for the drclusters API
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -34,72 +34,43 @@ spec:
           metadata:
             type: object
           spec:
-            description: DRPolicySpec defines the desired state of DRPolicy
+            description: DRClusterSpec defines the desired state of DRCluster
             properties:
-              drClusters:
-                description: List of DRCluster resources that are governed by this
-                  policy
+              cidrs:
+                description: CIDRs is a list of CIDR strings. An admin can use this
+                  field to indicate the CIDRs that are used or could potentially be
+                  used for the nodes in this managed cluster.  These will be used
+                  for the cluster fencing operation for sync/Metro DR.
                 items:
                   type: string
                 type: array
-              replicationClassSelector:
-                description: Label selector to identify all the VolumeReplicationClasses.
-                  This selector is assumed to be the same for all subscriptions that
-                  need DR protection. It will be passed in to the VRG when it is created
-                properties:
-                  matchExpressions:
-                    description: matchExpressions is a list of label selector requirements.
-                      The requirements are ANDed.
-                    items:
-                      description: A label selector requirement is a selector that
-                        contains values, a key, and an operator that relates the key
-                        and values.
-                      properties:
-                        key:
-                          description: key is the label key that the selector applies
-                            to.
-                          type: string
-                        operator:
-                          description: operator represents a key's relationship to
-                            a set of values. Valid operators are In, NotIn, Exists
-                            and DoesNotExist.
-                          type: string
-                        values:
-                          description: values is an array of string values. If the
-                            operator is In or NotIn, the values array must be non-empty.
-                            If the operator is Exists or DoesNotExist, the values
-                            array must be empty. This array is replaced during a strategic
-                            merge patch.
-                          items:
-                            type: string
-                          type: array
-                      required:
-                      - key
-                      - operator
-                      type: object
-                    type: array
-                  matchLabels:
-                    additionalProperties:
-                      type: string
-                    description: matchLabels is a map of {key,value} pairs. A single
-                      {key,value} in the matchLabels map is equivalent to an element
-                      of matchExpressions, whose key field is "key", the operator
-                      is "In", and the values array contains only "value". The requirements
-                      are ANDed.
-                    type: object
-                type: object
-              schedulingInterval:
-                description: scheduling Interval for replicating Persistent Volume
-                  data to a peer cluster. Interval is typically in the form <num><m,h,d>.
-                  Here <num> is a number, 'm' means minutes, 'h' means hours and 'd'
-                  stands for days.
-                pattern: ^\d+[mhd]$
+              clusterFence:
+                description: ClusterFence is a string that determines the desired
+                  fencing state of the cluster.
+                enum:
+                - Unfenced
+                - Fenced
+                - ManuallyFenced
                 type: string
+              region:
+                description: Region of a managed cluster determines it DR group. All
+                  managed clusters in a region are considered to be in a sync group.
+                type: string
+              s3ProfileName:
+                description: S3 profile name (in Ramen config) to use as a source
+                  to restore PV related cluster state during recovery or relocate
+                  actions of applications to this managed cluster;  hence, this S3
+                  profile should be available to successfully move the workload to
+                  this managed cluster.  For applications that are active on this
+                  managed cluster, their PV related cluster state is stored to S3
+                  profiles of all other drclusters in the same DRPolicy to enable
+                  recovery or relocate actions to those managed clusters.
+                type: string
+            required:
+            - s3ProfileName
             type: object
           status:
-            description: 'DRPolicyStatus defines the observed state of DRPolicy INSERT
-              ADDITIONAL STATUS FIELD - define observed state of cluster Important:
-              Run "make" to regenerate code after modifying this file'
+            description: DRClusterStatus defines the observed state of DRCluster
             properties:
               conditions:
                 items:

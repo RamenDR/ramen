@@ -30,28 +30,34 @@ import (
 )
 
 func DrpolicyClusterNames(drpolicy *rmn.DRPolicy) []string {
-	clusterNames := make([]string, len(drpolicy.Spec.DRClusterSet))
-	for i := range drpolicy.Spec.DRClusterSet {
-		clusterNames[i] = drpolicy.Spec.DRClusterSet[i].Name
-	}
-
-	return clusterNames
+	return drpolicy.Spec.DRClusters
 }
 
-func DrpolicyRegionNames(drpolicy *rmn.DRPolicy) []string {
-	regionNames := make([]string, len(drpolicy.Spec.DRClusterSet))
-	for i := range drpolicy.Spec.DRClusterSet {
-		regionNames[i] = string(drpolicy.Spec.DRClusterSet[i].Region)
+func DrpolicyRegionNames(drpolicy *rmn.DRPolicy, drClusters []rmn.DRCluster) []string {
+	regionNames := make([]string, len(DrpolicyClusterNames(drpolicy)))
+
+	for i, v := range DrpolicyClusterNames(drpolicy) {
+		regionName := ""
+
+		for _, drCluster := range drClusters {
+			if drCluster.Name == v {
+				regionName = string(drCluster.Spec.Region)
+			}
+		}
+
+		regionNames[i] = regionName
 	}
 
 	return regionNames
 }
 
-func DrpolicyRegionNamesAsASet(drpolicy *rmn.DRPolicy) sets.String {
-	return sets.NewString(DrpolicyRegionNames(drpolicy)...)
+func DrpolicyRegionNamesAsASet(drpolicy *rmn.DRPolicy, drClusters []rmn.DRCluster) sets.String {
+	return sets.NewString(DrpolicyRegionNames(drpolicy, drClusters)...)
 }
 
 func DrpolicyValidated(drpolicy *rmn.DRPolicy) error {
+	// TODO: What if the DRPolicy is deleted!
+	// A deleted DRPolicy should not be applied to a new DRPC
 	if condition := meta.FindStatusCondition(drpolicy.Status.Conditions, rmn.DRPolicyValidated); condition != nil {
 		if condition.Status != metav1.ConditionTrue {
 			return errors.New(condition.Message)
@@ -63,25 +69,6 @@ func DrpolicyValidated(drpolicy *rmn.DRPolicy) error {
 	return errors.New(`validated condition absent`)
 }
 
-// Return a list of unique S3 profiles to upload the relevant cluster state
-func S3UploadProfileList(drPolicy rmn.DRPolicy) (s3Profiles []string) {
-	for _, drCluster := range drPolicy.Spec.DRClusterSet {
-		found := false
-
-		for _, s3ProfileName := range s3Profiles {
-			if s3ProfileName == drCluster.S3ProfileName {
-				found = true
-			}
-		}
-
-		if !found {
-			s3Profiles = append(s3Profiles, drCluster.S3ProfileName)
-		}
-	}
-
-	return
-}
-
 func GetAllDRPolicies(ctx context.Context, client client.Reader) (rmn.DRPolicyList, error) {
 	drpolicies := rmn.DRPolicyList{}
 
@@ -90,4 +77,22 @@ func GetAllDRPolicies(ctx context.Context, client client.Reader) (rmn.DRPolicyLi
 	}
 
 	return drpolicies, nil
+}
+
+func DRPolicyS3Profiles(drpolicy *rmn.DRPolicy, drclusters []rmn.DRCluster) sets.String {
+	mustHaveS3Profiles := sets.String{}
+
+	for _, managedCluster := range DrpolicyClusterNames(drpolicy) {
+		s3ProfileName := ""
+
+		for i := range drclusters {
+			if drclusters[i].Name == managedCluster {
+				s3ProfileName = drclusters[i].Spec.S3ProfileName
+			}
+		}
+
+		mustHaveS3Profiles = mustHaveS3Profiles.Insert(s3ProfileName)
+	}
+
+	return mustHaveS3Profiles
 }

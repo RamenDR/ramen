@@ -19,8 +19,50 @@ package util
 import (
 	"time"
 
+	"github.com/go-logr/logr"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+func GenericStatusConditionSet(
+	object client.Object,
+	conditions *[]metav1.Condition,
+	conditionType string,
+	status metav1.ConditionStatus,
+	reason, message string,
+	log logr.Logger) bool {
+	updated := true
+	generation := object.GetGeneration()
+
+	if condition := meta.FindStatusCondition(*conditions, conditionType); condition != nil {
+		if condition.Status == status &&
+			condition.Reason == reason &&
+			condition.Message == message &&
+			condition.ObservedGeneration == generation {
+			log.Info("condition unchanged", "type", conditionType,
+				"status", status, "reason", reason, "message", message, "generation", generation,
+			)
+
+			return !updated
+		}
+
+		log.Info("condition update", "type", conditionType,
+			"old status", condition.Status, "new status", status,
+			"old reason", condition.Reason, "new reason", reason,
+			"old message", condition.Message, "new message", message,
+			"old generation", condition.ObservedGeneration, "new generation", generation,
+		)
+		ConditionUpdate(object, condition, status, reason, message)
+	} else {
+		log.Info("condition append", "type", conditionType,
+			"status", status, "reason", reason, "message", message, "generation", generation,
+		)
+		ConditionAppend(object, conditions, conditionType, status, reason, message)
+	}
+
+	return updated
+}
 
 func ConditionUpdate(
 	object metav1.Object,
