@@ -315,20 +315,20 @@ func (v *VSHandler) validatePVCBeforeRS(rsSpec ramendrv1alpha1.VolSyncReplicatio
 	_, err := v.getRS(getReplicationSourceName(rsSpec.ProtectedPVC.Name))
 	if err != nil && kerrors.IsNotFound(err) {
 		l.Info("ReplicationSource does not exist yet. " +
-			"validating that the PVC to be protected is in use by a running pod ...")
+			"validating that the PVC to be protected is in use by a ready pod ...")
 		// RS does not yet exist - consider PVC is ok if it's mounted and in use by running pod
-		inUseByRunningPod, err := v.pvcExistsAndInUse(rsSpec.ProtectedPVC.Name, true /* Check mounting pod is Running */)
+		inUseByReadyPod, err := v.pvcExistsAndInUse(rsSpec.ProtectedPVC.Name, true /* Check mounting pod is Ready */)
 		if err != nil {
 			return false, err
 		}
 
-		if !inUseByRunningPod {
-			l.Info("PVC is not in use by running pod, not creating RS yet ...")
+		if !inUseByReadyPod {
+			l.Info("PVC is not in use by ready pod, not creating RS yet ...")
 
 			return false, nil
 		}
 
-		l.Info("PVC is use by running pod, proceeding to create RS ...")
+		l.Info("PVC is use by ready pod, proceeding to create RS ...")
 
 		return true, nil
 	}
@@ -503,7 +503,7 @@ func (v *VSHandler) PreparePVCForFinalSync(pvcName string) (bool, error) {
 }
 
 // Will return true only if the pvc exists and in use - will not throw error if PVC not found
-func (v *VSHandler) pvcExistsAndInUse(pvcName string, inUsePodMustBeRunning bool) (bool, error) {
+func (v *VSHandler) pvcExistsAndInUse(pvcName string, inUsePodMustBeReady bool) (bool, error) {
 	_, err := v.getPVC(pvcName)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
@@ -517,10 +517,10 @@ func (v *VSHandler) pvcExistsAndInUse(pvcName string, inUsePodMustBeRunning bool
 
 	v.log.V(1).Info("pvc found", "pvcName", pvcName)
 
-	return v.isPvcInUse(pvcName, inUsePodMustBeRunning)
+	return v.isPvcInUse(pvcName, inUsePodMustBeReady)
 }
 
-func (v *VSHandler) isPvcInUse(pvcName string, inUsePodMustBeRunning bool) (bool, error) {
+func (v *VSHandler) isPvcInUse(pvcName string, inUsePodMustBeReady bool) (bool, error) {
 	podUsingPVCList := &corev1.PodList{}
 
 	err := v.client.List(context.Background(),
@@ -537,7 +537,7 @@ func (v *VSHandler) isPvcInUse(pvcName string, inUsePodMustBeRunning bool) (bool
 		return false /* Not in use by any pod */, nil
 	}
 
-	inUseByRunningPod := false
+	mountingPodIsReady := false
 
 	inUsePods := []string{}
 	for _, pod := range podUsingPVCList.Items {
@@ -545,17 +545,28 @@ func (v *VSHandler) isPvcInUse(pvcName string, inUsePodMustBeRunning bool) (bool
 
 		if pod.Status.Phase == corev1.PodRunning {
 			// Assuming in use by running pod if at least 1 pod mounting the PVC is in Running phase
-			inUseByRunningPod = true
+			// and has the Ready podCondition set to True
+			mountingPodIsReady = isPodReady(pod.Status.Conditions)
 		}
 	}
 
 	v.log.Info("pvc is in use by pod(s)", "pvcName", pvcName, "pods", inUsePods)
 
-	if inUsePodMustBeRunning {
-		return inUseByRunningPod, nil
+	if inUsePodMustBeReady {
+		return mountingPodIsReady, nil
 	}
 
 	return true, nil
+}
+
+func isPodReady(podConditions []corev1.PodCondition) bool {
+	for _, podCondition := range podConditions {
+		if podCondition.Type == corev1.PodReady && podCondition.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (v *VSHandler) deletePVC(pvcName string) error {

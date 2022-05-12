@@ -537,11 +537,33 @@ var _ = Describe("VolSync Handler", func() {
 					})
 				})
 
-				Context("When the PVC to be protected is mounted by a pod that is NOT running", func() {
+				Context("When the PVC to be protected is mounted by a pod that is NOT in running phase", func() {
+					JustBeforeEach(func() {
+						// Create PVC and pod that is mounting it - pod phase will be "Pending"
+						createDummyPVCAndMountingPod(testPVCName, testNamespace.GetName(),
+							capacity, map[string]string{"a": "b"}, corev1.PodPending, false)
+					})
+
+					It("Should return a nil replication source and no RS should be created", func() {
+						// Run another reconcile - a pod is mounting the PVC but it is not in running phase
+						finalSyncCompl, rs, err := vsHandler.ReconcileRS(rsSpec, false)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(finalSyncCompl).To(BeFalse())
+						Expect(rs).To(BeNil())
+
+						// ReconcileRS should not have created the RS - since the pod is not in running phase
+						Consistently(func() error {
+							return k8sClient.Get(ctx,
+								types.NamespacedName{Name: rsSpec.ProtectedPVC.Name, Namespace: testNamespace.GetName()}, createdRS)
+						}, 1*time.Second, interval).ShouldNot(BeNil())
+					})
+				})
+
+				Context("When the PVC to be protected is mounted by a pod that is NOT Ready", func() {
 					JustBeforeEach(func() {
 						// Create PVC and pod that is mounting it (pod phase will be "Pending" by default)
 						createDummyPVCAndMountingPod(testPVCName, testNamespace.GetName(),
-							capacity, map[string]string{"a": "b"}, corev1.PodPending)
+							capacity, map[string]string{"a": "b"}, corev1.PodRunning, false /* not ready */)
 					})
 
 					It("Should return a nil replication source and no RS should be created", func() {
@@ -552,7 +574,7 @@ var _ = Describe("VolSync Handler", func() {
 						Expect(finalSyncCompl).To(BeFalse())
 						Expect(rs).To(BeNil())
 
-						// ReconcileRS should not have created the replication source - since the secret isn't there
+						// ReconcileRS should not have created the RS - since the pod is not Ready
 						Consistently(func() error {
 							return k8sClient.Get(ctx,
 								types.NamespacedName{Name: rsSpec.ProtectedPVC.Name, Namespace: testNamespace.GetName()}, createdRS)
@@ -560,15 +582,15 @@ var _ = Describe("VolSync Handler", func() {
 					})
 				})
 
-				Context("When the PVC to be protected is mounted by a running pod", func() {
+				Context("When the PVC to be protected is mounted by a running and Ready pod", func() {
 					var podMountingPVC *corev1.Pod
 					var testPVC *corev1.PersistentVolumeClaim
 
-					// Fake out pod mounting and in Running state
+					// Fake out pod mounting and in Running/Ready state
 					JustBeforeEach(func() {
 						// Create PVC and pod that is mounting it (and set pod phase to "Running")
 						testPVC, podMountingPVC = createDummyPVCAndMountingPod(testPVCName, testNamespace.GetName(),
-							capacity, nil, corev1.PodRunning)
+							capacity, nil, corev1.PodRunning, true /* pod should be Ready */)
 					})
 
 					Context("When a RD exists for the pvc to protect, failover scenario (secondary -> primary)", func() {
@@ -1371,9 +1393,9 @@ var _ = Describe("VolSync Handler", func() {
 			capacity := resource.MustParse("50Mi")
 
 			for _, rsSpec := range rsSpecList {
-				// Create the PVC to be protected and pod that is mounting it (and set pod phase to "Running")
+				// Create the PVC to be protected and pod that is mounting it (and set pod Running/Ready)
 				createDummyPVCAndMountingPod(rsSpec.ProtectedPVC.Name, testNamespace.GetName(),
-					capacity, nil, corev1.PodRunning)
+					capacity, nil, corev1.PodRunning, true)
 
 				// create RSs using our vsHandler
 				_, returnedRS, err := vsHandler.ReconcileRS(rsSpec, false)
@@ -1381,9 +1403,9 @@ var _ = Describe("VolSync Handler", func() {
 				Expect(returnedRS).NotTo(BeNil())
 			}
 			for _, rsSpecOtherOwner := range rsSpecListOtherOwner {
-				// Create the PVC to be protected and pod that is mounting it (and set pod phase to "Running")
+				// Create the PVC to be protected and pod that is mounting it (and set pod Running/Ready)
 				createDummyPVCAndMountingPod(rsSpecOtherOwner.ProtectedPVC.Name, testNamespace.GetName(),
-					capacity, nil, corev1.PodRunning)
+					capacity, nil, corev1.PodRunning, true)
 
 				// create other RSs using another vsHandler (will be owned by another VRG)
 				_, returnedRS, err := otherVSHandler.ReconcileRS(rsSpecOtherOwner, false)
@@ -1641,8 +1663,9 @@ func createDummyPVC(pvcName, namespace string, capacity resource.Quantity,
 	return dummyPVC
 }
 
-func createDummyPVCAndMountingPod(pvcName, namespace string, capacity resource.Quantity,
-	annotations map[string]string, desiredPodPhase corev1.PodPhase) (*corev1.PersistentVolumeClaim, *corev1.Pod) {
+//nolint:funlen
+func createDummyPVCAndMountingPod(pvcName, namespace string, capacity resource.Quantity, annotations map[string]string,
+	desiredPodPhase corev1.PodPhase, podReady bool) (*corev1.PersistentVolumeClaim, *corev1.Pod) {
 	// Create the PVC
 	pvc := createDummyPVC(pvcName, namespace, capacity, annotations)
 
@@ -1679,10 +1702,42 @@ func createDummyPVCAndMountingPod(pvcName, namespace string, capacity resource.Q
 		return k8sClient.Get(ctx, client.ObjectKeyFromObject(pod), pod)
 	}, maxWait, interval).Should(Succeed())
 
+	prevResourceVersion := pod.ResourceVersion
+	statusUpdateRequired := false
+
 	// Default phase will be "Pending"
 	if desiredPodPhase != corev1.PodPending {
 		// Set the pod phase
 		pod.Status.Phase = desiredPodPhase
+
+		statusUpdateRequired = true
+	}
+
+	if podReady {
+		if pod.Status.Conditions == nil {
+			pod.Status.Conditions = []corev1.PodCondition{}
+		}
+
+		updatedCondition := false
+
+		for _, podCondition := range pod.Status.Conditions {
+			if podCondition.Type == corev1.PodReady {
+				podCondition.Status = corev1.ConditionTrue
+				updatedCondition = true
+
+				break
+			}
+		}
+
+		if !updatedCondition {
+			pod.Status.Conditions = append(pod.Status.Conditions, corev1.PodCondition{
+				Type:   corev1.PodReady,
+				Status: corev1.ConditionTrue,
+			})
+		}
+	}
+
+	if statusUpdateRequired {
 		Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
 
 		Eventually(func() bool {
@@ -1692,7 +1747,7 @@ func createDummyPVCAndMountingPod(pvcName, namespace string, capacity resource.Q
 				return false
 			}
 
-			return pod.Status.Phase == desiredPodPhase
+			return pod.ResourceVersion != prevResourceVersion
 		}, maxWait, interval).Should(BeTrue())
 	}
 
