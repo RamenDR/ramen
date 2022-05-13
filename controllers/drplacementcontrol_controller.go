@@ -754,7 +754,7 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 			preferredCluster = clonedPlRule.Status.Decisions[0].ClusterName
 		}
 	}
-    
+
 	drPolicy, err := r.getDRPolicy(ctx, drpc)
 	if err != nil {
 		return fmt.Errorf("failed to get DRPolicy while finalizing DRPC (%w)", err)
@@ -783,7 +783,7 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 	}
 
 	// delete cloned placementrule, if created
-	if drpc.Spec.PreferredCluster == "" {
+	if preferredCluster == "" {
 		return r.deleteClonedPlacementRule(ctx, clonedPlRuleName, drpc.Namespace)
 	}
 
