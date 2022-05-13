@@ -78,6 +78,7 @@ type DRClusterStatus struct {
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
+//+kubebuilder:resource:scope=Cluster
 
 // DRCluster is the Schema for the drclusters API
 type DRCluster struct {

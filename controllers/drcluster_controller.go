@@ -592,7 +592,6 @@ func (r *DRClusterReconciler) drClusterConfigMapMapFunc(configMap client.Object)
 	requests := make([]reconcile.Request, len(drcusters.Items))
 	for i, drcluster := range drcusters.Items {
 		requests[i].Name = drcluster.GetName()
-		requests[i].Namespace = drcluster.GetNamespace()
 	}
 
 	return requests

@@ -91,7 +91,6 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	drclusters := &ramen.DRClusterList{}
 
-	// TODO: Is this namespaced listing?
 	if err := r.Client.List(ctx, drclusters); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drclusters list: %w", u.validatedSetFalse("drClusterListFailed", err))
 	}
@@ -351,7 +350,7 @@ func (r *DRPolicyReconciler) secretMapFunc(secret client.Object) []reconcile.Req
 		return []reconcile.Request{}
 	}
 
-	// TODO: Add optimzation to only reconcile polocies that refer to the changed secret
+	// TODO: Add optimzation to only reconcile policies that refer to the changed secret
 	requests := make([]reconcile.Request, len(drpolicies.Items))
 	for i, drpolicy := range drpolicies.Items {
 		requests[i].Name = drpolicy.GetName()
