@@ -892,6 +892,10 @@ func (v *vrgTest) verifyVRGStatusExpectation(expectedStatus bool) {
 			return false
 		}
 
+		if dataReadyCondition == nil {
+			return false
+		}
+
 		if expectedStatus == true {
 			// reasons for success can be different for Primary and
 			// secondary. Validate that as well.
