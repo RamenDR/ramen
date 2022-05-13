@@ -117,7 +117,7 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 
 					// Create some PVCs that are bound
 					for i := 0; i < 3; i++ {
-						newPvc := createPVC(testCtx, testNamespace.GetName(), testMatchLabels, corev1.ClaimBound)
+						newPvc := createPVCBoundToRunningPod(testCtx, testNamespace.GetName(), testMatchLabels)
 						boundPvcs = append(boundPvcs, *newPvc)
 					}
 
@@ -349,8 +349,9 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 	})
 })
 
-func createPVC(ctx context.Context, namespace string, labels map[string]string,
-	bindInfo corev1.PersistentVolumeClaimPhase) *corev1.PersistentVolumeClaim {
+//nolint:funlen
+func createPVCBoundToRunningPod(ctx context.Context, namespace string,
+	labels map[string]string) *corev1.PersistentVolumeClaim {
 	capacity := corev1.ResourceList{
 		corev1.ResourceStorage: resource.MustParse("1Gi"),
 	}
@@ -376,10 +377,50 @@ func createPVC(ctx context.Context, namespace string, labels map[string]string,
 
 	Expect(k8sClient.Create(context.TODO(), pvc)).To(Succeed())
 
-	pvc.Status.Phase = bindInfo
+	pvc.Status.Phase = corev1.ClaimBound
 	pvc.Status.AccessModes = accessModes
 	pvc.Status.Capacity = capacity
 	Expect(k8sClient.Status().Update(ctx, pvc)).To(Succeed())
+
+	// Create the pod which is mounting the pvc
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: "test-mounting-pod-",
+			Namespace:    namespace,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:  "c1",
+					Image: "testimage123",
+				},
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: "testvolume",
+					VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvc.GetName(),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+
+	// Set the pod phase
+	pod.Status.Phase = corev1.PodRunning
+
+	pod.Status.Conditions = []corev1.PodCondition{
+		{
+			Type:   corev1.PodReady,
+			Status: corev1.ConditionTrue,
+		},
+	}
+
+	Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
 
 	return pvc
 }

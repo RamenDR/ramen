@@ -54,6 +54,7 @@ import (
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	ramencontrollers "github.com/ramendr/ramen/controllers"
 	"github.com/ramendr/ramen/controllers/util"
+	"github.com/ramendr/ramen/controllers/volsync"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -256,6 +257,10 @@ var _ = BeforeSuite(func() {
 
 	// test controller behavior
 	k8sManager, err := ctrl.NewManager(cfg, options)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Index fields that are required for VSHandler
+	err = volsync.IndexFieldsForVSHandler(context.TODO(), k8sManager.GetFieldIndexer())
 	Expect(err).ToNot(HaveOccurred())
 
 	Expect((&ramencontrollers.DRClusterReconciler{
