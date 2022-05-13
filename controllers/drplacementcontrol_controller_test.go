@@ -55,7 +55,7 @@ const (
 	AsyncDRPolicyName     = "my-async-dr-peers"
 	SyncDRPolicyName      = "my-sync-dr-peers"
 
-	updateRetries = 2 // replace this with 5 when done testing.  It takes a long time for the test to complete
+	updateRetries = 5
 	pvcCount      = 2 // Count of fake PVCs reported in the VRG status
 )
 
@@ -455,6 +455,8 @@ func setDRPCSpecExpectationTo(action rmn.DRAction, preferredCluster, failoverClu
 		if errors.IsConflict(err) {
 			localRetries++
 
+			time.Sleep(time.Millisecond * 5)
+
 			continue
 		}
 
@@ -462,6 +464,8 @@ func setDRPCSpecExpectationTo(action rmn.DRAction, preferredCluster, failoverClu
 
 		break
 	}
+
+	Expect(localRetries).ToNot(Equal(updateRetries))
 
 	Eventually(func() bool {
 		latestDRPC := getLatestDRPC()

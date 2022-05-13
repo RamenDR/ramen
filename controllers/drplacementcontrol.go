@@ -103,14 +103,13 @@ func (d *DRPCInstance) processPlacement() (bool, error) {
 	return d.RunInitialDeployment()
 }
 
-//nolint:funlen
+//nolint:funlen,cyclop
 func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 	d.log.Info("Running initial deployment")
 
 	if !d.isDeployingOrDeployed() {
 		d.instance.Status.ActionStartTime = &metav1.Time{Time: time.Now()}
 		d.instance.Status.ActionDuration = nil
-		d.setDRState(rmn.Initiating)
 	}
 
 	const done = true
@@ -308,6 +307,7 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 // 7. Update DRPC status
 // 8. Delete VRG MW from preferredCluster once the VRG state has changed to Secondary
 //
+//nolint:funlen
 func (d *DRPCInstance) RunFailover() (bool, error) {
 	d.log.Info("Entering RunFailover", "state", d.getLastDRState())
 
@@ -503,6 +503,7 @@ func (d *DRPCInstance) getCurrentHomeClusterName() string {
 //  - Check if we already relocated to the preferredCluster, and ensure cleanup actions
 //  - Check if current primary (that is not the preferred cluster), is ready to switch over
 //  - Relocate!
+//nolint:funlen
 func (d *DRPCInstance) RunRelocate() (bool, error) { //nolint:gocognit,cyclop
 	d.log.Info("Entering RunRelocate", "state", d.getLastDRState())
 
@@ -1781,6 +1782,7 @@ func (d *DRPCInstance) shouldUpdateStatus() bool {
 	return !reflect.DeepEqual(d.savedInstanceStatus, d.instance.Status)
 }
 
+//nolint:exhaustive
 func (d *DRPCInstance) reportEvent(nextState rmn.DRState) {
 	eventReason := "unknown state"
 	eventType := corev1.EventTypeWarning
@@ -1972,6 +1974,7 @@ func init() {
 	metrics.Registry.MustRegister(deployTime.gauge, deployTime.histogram)
 }
 
+//nolint:exhaustive
 func (d *DRPCInstance) setMetricsTimerFromDRState(stateDR rmn.DRState) {
 	switch stateDR {
 	case rmn.FailingOver:
@@ -2014,6 +2017,7 @@ func (d *DRPCInstance) setDRPCCondition(conditions *[]metav1.Condition, condType
 	SetDRPCStatusCondition(conditions, condType, observedGeneration, status, reason, msg)
 }
 
+//nolint:exhaustive
 func (d *DRPCInstance) isDeployingOrDeployed() bool {
 	switch d.getLastDRState() {
 	case rmn.Initiating:
@@ -2027,6 +2031,7 @@ func (d *DRPCInstance) isDeployingOrDeployed() bool {
 	return false
 }
 
+//nolint:exhaustive
 func (d *DRPCInstance) isFailingOverOrFailedOver() bool {
 	switch d.getLastDRState() {
 	case rmn.Initiating:
@@ -2040,6 +2045,7 @@ func (d *DRPCInstance) isFailingOverOrFailedOver() bool {
 	return false
 }
 
+//nolint:exhaustive
 func (d *DRPCInstance) isRelocatingOrRelocated() bool {
 	switch d.getLastDRState() {
 	case rmn.Initiating:
