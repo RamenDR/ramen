@@ -140,49 +140,52 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 	}
 
 	// Ensure that initial deployment is complete
-	if deployed && d.isUserPlRuleUpdated(homeCluster) {
-		err := d.EnsureVolSyncReplicationSetup(homeCluster)
+	if !deployed || !d.isUserPlRuleUpdated(homeCluster) {
+		_, err := d.startDeploying(homeCluster, homeClusterNamespace)
 		if err != nil {
+			d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
+				d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), err.Error())
+
 			return !done, err
 		}
 
-		// If for whatever reason, the DRPC status is missing (i.e. DRPC could have been deleted mistakingly and
-		// recreated again), we should update it with whatever status we are at.
-		if d.getLastDRState() == rmn.DRState("") {
-			d.instance.Status.PreferredDecision = d.userPlacementRule.Status.Decisions[0]
-			d.setDRState(rmn.Deployed)
-			d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
-				d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Already deployed")
+		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
+			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Initial deployment completed")
 
-			d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
-				metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
-		}
+		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
+			metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
 
-		d.instance.Status.Progression = ""
-
-		if d.instance.Status.ActionDuration == nil {
-			duration := time.Since(d.instance.Status.ActionStartTime.Time)
-			d.instance.Status.ActionDuration = &metav1.Duration{Duration: duration}
-		}
-
-		return done, nil
+		return !done, nil
 	}
 
-	result, err := d.startDeploying(homeCluster, homeClusterNamespace)
+	// If we get here, the deployment is successful
+	err := d.EnsureVolSyncReplicationSetup(homeCluster)
 	if err != nil {
-		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
-			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), err.Error())
-
 		return !done, err
 	}
 
-	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
-		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Initial deployment completed")
+	// If for whatever reason, the DRPC status is missing (i.e. DRPC could have been deleted mistakingly and
+	// recreated again), we should update it with whatever status we are at.
+	if d.getLastDRState() == rmn.DRState("") {
+		d.instance.Status.PreferredDecision = d.userPlacementRule.Status.Decisions[0]
+		d.setDRState(rmn.Deployed)
+		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
+			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Already deployed")
 
-	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
-		metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
+		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
+			metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
+	}
 
-	return result, nil
+	d.instance.Status.Progression = ""
+
+	if d.instance.Status.ActionDuration == nil {
+		duration := time.Since(d.instance.Status.ActionStartTime.Time)
+		d.instance.Status.ActionDuration = &metav1.Duration{Duration: duration}
+		d.log.Info(fmt.Sprintf("Initial Deployedment completed. Started at: %v and it took: %v",
+			d.instance.Status.ActionStartTime, duration))
+	}
+
+	return done, nil
 }
 
 func (d *DRPCInstance) getHomeCluster() (string, string) {
@@ -290,7 +293,6 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 
 	d.advanceToNextDRState()
 
-	d.log.Info(fmt.Sprintf("DRPC (%+v)", d.instance))
 	d.setMetricsTimerFromDRState(rmn.Deployed)
 
 	return done, nil
@@ -371,6 +373,8 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		if d.instance.Status.ActionDuration == nil {
 			duration := time.Since(d.instance.Status.ActionStartTime.Time)
 			d.instance.Status.ActionDuration = &metav1.Duration{Duration: duration}
+			d.log.Info(fmt.Sprintf("Failover completed. Started at: %v and it took: %v",
+				d.instance.Status.ActionStartTime, duration))
 		}
 
 		return done, nil
@@ -539,6 +543,8 @@ func (d *DRPCInstance) RunRelocate() (bool, error) { //nolint:gocognit,cyclop
 		if d.instance.Status.ActionDuration == nil {
 			duration := time.Since(d.instance.Status.ActionStartTime.Time)
 			d.instance.Status.ActionDuration = &metav1.Duration{Duration: duration}
+			d.log.Info(fmt.Sprintf("Relocate completed. Started at: %v and it took: %v",
+				d.instance.Status.ActionStartTime, duration))
 		}
 
 		return done, nil
@@ -2010,8 +2016,6 @@ func (d *DRPCInstance) setDRPCCondition(conditions *[]metav1.Condition, condType
 
 func (d *DRPCInstance) isDeployingOrDeployed() bool {
 	switch d.getLastDRState() {
-	case "":
-		fallthrough
 	case rmn.Initiating:
 		fallthrough
 	case rmn.Deploying:
