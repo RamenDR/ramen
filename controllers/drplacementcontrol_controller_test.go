@@ -448,15 +448,15 @@ func populateDRClusters() {
 	drClusters = nil
 	drClusters = append(drClusters,
 		rmn.DRCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: East1ManagedCluster, Namespace: ramenNamespace},
+			ObjectMeta: metav1.ObjectMeta{Name: East1ManagedCluster},
 			Spec:       rmn.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "east"},
 		},
 		rmn.DRCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: West1ManagedCluster, Namespace: ramenNamespace},
+			ObjectMeta: metav1.ObjectMeta{Name: West1ManagedCluster},
 			Spec:       rmn.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "west"},
 		},
 		rmn.DRCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: East2ManagedCluster, Namespace: ramenNamespace},
+			ObjectMeta: metav1.ObjectMeta{Name: East2ManagedCluster},
 			Spec:       rmn.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "east"},
 		},
 	)
@@ -1095,8 +1095,7 @@ func deleteDRPolicySync() {
 
 func getLatestDRCluster(cluster string) *rmn.DRCluster {
 	drclusterLookupKey := types.NamespacedName{
-		Name:      cluster,
-		Namespace: ramenNamespace,
+		Name: cluster,
 	}
 	latestDRCluster := &rmn.DRCluster{}
 	err := apiReader.Get(context.TODO(), drclusterLookupKey, latestDRCluster)

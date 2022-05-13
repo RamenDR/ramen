@@ -119,8 +119,7 @@ var _ = Describe("DRClusterController", func() {
 		drclusters = append(drclusters,
 			ramen.DRCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "drc-cluster0",
-					Namespace: ramenNamespace,
+					Name: "drc-cluster0",
 				},
 				Spec: ramen.DRClusterSpec{
 					S3ProfileName: s3Profiles[0].S3ProfileName,
@@ -130,8 +129,7 @@ var _ = Describe("DRClusterController", func() {
 			},
 			ramen.DRCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "drc-cluster1",
-					Namespace: ramenNamespace,
+					Name: "drc-cluster1",
 				},
 				Spec: ramen.DRClusterSpec{
 					S3ProfileName: s3Profiles[0].S3ProfileName,

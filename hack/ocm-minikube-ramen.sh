@@ -583,9 +583,6 @@ ramen_samples_channel_and_drpolicy_deploy()
 	      - op: replace
 	        path: /metadata/name
 	        value: $4
-	      - op: replace
-	        path: /metadata/namespace
-	        value: ramen-system
 	  - target:
 	      group: ramendr.openshift.io
 	      version: v1alpha1
@@ -601,9 +598,6 @@ ramen_samples_channel_and_drpolicy_deploy()
 	      - op: replace
 	        path: /metadata/name
 	        value: $3
-	      - op: replace
-	        path: /metadata/namespace
-	        value: ramen-system
 	  - target:
 	      group: ramendr.openshift.io
 	      version: v1alpha1
