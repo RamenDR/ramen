@@ -47,8 +47,9 @@ type S3BucketView struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   S3BucketViewSpec   `json:"spec,omitempty"`
-	Status S3BucketViewStatus `json:"status,omitempty"`
+	Spec S3BucketViewSpec `json:"spec,omitempty"`
+	// +optional
+	Status *S3BucketViewStatus `json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true

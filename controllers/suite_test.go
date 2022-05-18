@@ -80,8 +80,10 @@ var (
 
 	plRuleNames map[string]struct{}
 
-	s3Secrets      [1]corev1.Secret
-	s3Profiles     [7]ramendrv1alpha1.S3StoreProfile
+	s3Secrets     [1]corev1.Secret
+	s3Profiles    [7]ramendrv1alpha1.S3StoreProfile
+	objectStorers [2]ramencontrollers.ObjectStorer
+
 	ramenNamespace = "ns-envtest"
 )
 
@@ -269,6 +271,19 @@ var _ = BeforeSuite(func() {
 	s3ProfilesUpdate := func() {
 		s3ProfilesStore(s3Profiles[0:])
 	}
+	fakeObjectStorerGet := func(i int) ramencontrollers.ObjectStorer {
+		objectStorer, err := fakeObjectStoreGetter{}.ObjectStore(
+			context.TODO(), apiReader, s3Profiles[i].S3ProfileName, "", testLog,
+		)
+		Expect(err).To(BeNil())
+
+		return objectStorer
+	}
+	objectStorersSet := func() {
+		for i := range s3Profiles[:len(objectStorers)] {
+			objectStorers[i] = fakeObjectStorerGet(i)
+		}
+	}
 	s3SecretsPolicyNamesSet()
 	s3SecretsCreate()
 	s3ProfilesSecretNamespaceNameSet()
@@ -309,6 +324,13 @@ var _ = BeforeSuite(func() {
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
+	Expect((&ramencontrollers.S3BucketViewReconciler{
+		Client:         k8sManager.GetClient(),
+		APIReader:      k8sManager.GetAPIReader(),
+		Scheme:         k8sManager.GetScheme(),
+		ObjStoreGetter: fakeObjectStoreGetter{},
+	}).SetupWithManager(k8sManager)).To(Succeed())
+
 	drpcReconciler := (&ramencontrollers.DRPlacementControlReconciler{
 		Client:    k8sManager.GetClient(),
 		APIReader: k8sManager.GetAPIReader(),
@@ -329,6 +351,7 @@ var _ = BeforeSuite(func() {
 	Expect(k8sClient).ToNot(BeNil())
 	apiReader = k8sManager.GetAPIReader()
 	Expect(apiReader).ToNot(BeNil())
+	objectStorersSet()
 }, 60)
 
 var _ = AfterSuite(func() {

@@ -335,6 +335,10 @@ func (s *s3ObjectStore) PurgeBucket(bucket string) (
 	return nil
 }
 
+func S3KeyPrefix(namespacedName string) string {
+	return namespacedName + "/"
+}
+
 func typedKey(prefix, suffix string, typ reflect.Type) string {
 	return prefix + typ.String() + "/" + suffix
 }

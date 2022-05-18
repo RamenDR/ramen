@@ -139,7 +139,7 @@ func s3ObjectNamePrefix(vrg ramendrv1alpha1.VolumeReplicationGroup) string {
 	return types.NamespacedName{Namespace: vrg.Namespace, Name: vrg.Name}.String() + "/"
 }
 
-const vrgS3ObjectNameSuffix = ""
+const vrgS3ObjectNameSuffix = "a"
 
 func VrgObjectProtect(objectStorer ObjectStorer, vrg ramendrv1alpha1.VolumeReplicationGroup) error {
 	return uploadTypedObject(objectStorer, s3ObjectNamePrefix(vrg), vrgS3ObjectNameSuffix, vrg)
@@ -1588,7 +1588,7 @@ func (v *VRGInstance) findProtectedPVC(pvcName string) *ramendrv1alpha1.Protecte
 
 // s3KeyPrefix returns the S3 key prefix of cluster data of this VRG.
 func (v *VRGInstance) s3KeyPrefix() string {
-	return v.namespacedName + "/"
+	return S3KeyPrefix(v.namespacedName)
 }
 
 func (v *VRGInstance) restorePVsForVolRep() error {
