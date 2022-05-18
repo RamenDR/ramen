@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -80,12 +79,9 @@ func (r *S3BucketViewReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, client.IgnoreNotFound(fmt.Errorf("get: %w", err))
 	}
 
-	if !s.shouldProcess() {
+	if s.instance.Status != nil {
 		return ctrl.Result{}, nil
 	}
-
-	// clear existing status from object
-	s.initializeStatus()
 
 	// get target profile from spec
 	s3profileName := s.instance.Spec.ProfileName
@@ -117,20 +113,6 @@ func (r *S3BucketViewReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	log.Info("s3bucketView updated successfully")
 
 	return ctrl.Result{}, nil
-}
-
-func (s *S3BucketViewInstance) shouldProcess() bool {
-	// Current design: process once and never update (after success).
-	// If SampleTime is default value, no results exists.
-	// If SampleTime is not default value, results exists; do not process.
-	defaultTime := metav1.Time{}
-
-	return defaultTime.Equal(&s.instance.Status.SampleTime)
-}
-
-func (s *S3BucketViewInstance) initializeStatus() {
-	s.instance.Status.VolumeReplicationGroups = make([]ramendrv1alpha1.VolumeReplicationGroup, 0)
-	s.instance.Status.SampleTime = metav1.Time{}
 }
 
 func (s *S3BucketViewInstance) getObjectStore(s3ProfileName string) (ObjectStorer, error) {
@@ -173,10 +155,12 @@ func (s *S3BucketViewInstance) getVrgContentsFromS3(prefixNamespaceVRG []string,
 			}
 
 			// add all VRGs found to list
-			for _, vrg := range vrgs {
+			for i := range vrgs {
+				vrg := &vrgs[i]
 				s.log.Info(fmt.Sprintf("downloaded VRG with name '%s' in namespace '%s'", vrg.Name, vrg.Namespace))
+				VrgTidyForList(vrg)
 
-				vrgsAll = append(vrgsAll, vrg)
+				vrgsAll = append(vrgsAll, *vrg)
 			}
 		}
 	}
@@ -184,12 +168,16 @@ func (s *S3BucketViewInstance) getVrgContentsFromS3(prefixNamespaceVRG []string,
 	return vrgsAll, nil
 }
 
-func (s *S3BucketViewInstance) updateStatus(vrgs []ramendrv1alpha1.VolumeReplicationGroup) error {
-	sampleTime := time.Now().Local()
+func VrgTidyForList(vrg *ramendrv1alpha1.VolumeReplicationGroup) {
+	vrg.ObjectMeta = ObjectMetaEmbedded(&vrg.ObjectMeta)
+}
 
+func (s *S3BucketViewInstance) updateStatus(vrgs []ramendrv1alpha1.VolumeReplicationGroup) error {
 	// store all data in Status
-	s.instance.Status.VolumeReplicationGroups = vrgs
-	s.instance.Status.SampleTime = metav1.Time{Time: sampleTime}
+	s.instance.Status = &ramendrv1alpha1.S3BucketViewStatus{
+		SampleTime:              metav1.Now(),
+		VolumeReplicationGroups: vrgs,
+	}
 
 	// final Status update to object
 	return s.reconciler.Status().Update(s.ctx, s.instance)
