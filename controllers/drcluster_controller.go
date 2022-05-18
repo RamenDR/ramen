@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/v1alpha1"
 	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/util"
@@ -885,13 +886,13 @@ func (u *drclusterInstance) createNFManifestWork(targetCluster *ramen.DRCluster,
 	return nil
 }
 
-func generateNF(targetCluster *ramen.DRCluster) util.NetworkFence {
+func generateNF(targetCluster *ramen.DRCluster) csiaddonsv1alpha1.NetworkFence {
 	// To ensure deterministic naming of the fencing CR, the resource name
 	// is generated as
 	// "network-fence" + name of the cluster being fenced
 	resourceName := "network-fence-" + targetCluster.Name
 
-	nf := util.NetworkFence{
+	nf := csiaddonsv1alpha1.NetworkFence{
 		// TODO: There is no way currently to get the information such as
 		// the storage CSI driver, secrets and storage specific parameters
 		// until DRCluster is capable of exporting such information in its
@@ -899,8 +900,8 @@ func generateNF(targetCluster *ramen.DRCluster) util.NetworkFence {
 		// would be incomplete and incapable of performing fencing operation.
 		TypeMeta:   metav1.TypeMeta{Kind: "NetworkFence", APIVersion: "csiaddons.openshift.io/v1alpha1"},
 		ObjectMeta: metav1.ObjectMeta{Name: resourceName},
-		Spec: util.NetworkFenceSpec{
-			FenceState: util.FenceState(targetCluster.Spec.ClusterFence),
+		Spec: csiaddonsv1alpha1.NetworkFenceSpec{
+			FenceState: csiaddonsv1alpha1.FenceState(targetCluster.Spec.ClusterFence),
 			Cidrs:      targetCluster.Spec.CIDRs,
 		},
 	}
