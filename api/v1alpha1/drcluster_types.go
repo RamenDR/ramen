@@ -20,8 +20,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ClusterFenceState which will be either Unfenced, or Fenced or ManuallyFenced
-// +kubebuilder:validation:Enum=Unfenced;Fenced;ManuallyFenced
+// ClusterFenceState which will be either Unfenced, Fenced, ManuallyFenced or ManuallyUnfenced
+// +kubebuilder:validation:Enum=Unfenced;Fenced;ManuallyFenced;ManuallyUnfenced
 type ClusterFenceState string
 
 const (
