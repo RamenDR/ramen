@@ -50,6 +50,7 @@ spec:
                 - Unfenced
                 - Fenced
                 - ManuallyFenced
+                - ManuallyUnfenced
                 type: string
               region:
                 description: Region of a managed cluster determines it DR group. All
