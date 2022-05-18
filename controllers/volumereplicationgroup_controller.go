@@ -2619,7 +2619,7 @@ func (v *VRGInstance) findProtectedPVC(pvcName string) *ramendrv1alpha1.Protecte
 
 // s3KeyPrefix returns the S3 key prefix of cluster data of this VRG.
 func (v *VRGInstance) s3KeyPrefix() string {
-	return v.namespacedName + "/"
+	return S3KeyPrefix(v.namespacedName)
 }
 
 // It might be better move the helper functions like these to a separate

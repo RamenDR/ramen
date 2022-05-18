@@ -15,6 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -23,11 +24,14 @@ import (
 )
 
 const (
-	vrgtimeout   = time.Second * 10
-	vrginterval  = time.Millisecond * 10
-	letters      = "abcdefghijklmnopqrstuxwxyz"
-	namespaceLen = 5
+	vrgtimeout         = time.Second * 10
+	vrginterval        = time.Millisecond * 10
+	letters            = "abcdefghijklmnopqrstuxwxyz"
+	namespaceLen       = 5
+	vrgS3ProfileNumber = 0
 )
+
+var vrgObjectStorer = &objectStorers[vrgS3ProfileNumber]
 
 func init() {
 	rand.Seed(time.Now().Unix())
@@ -49,16 +53,11 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 		It("populates the S3 store with PVs and starts vrg as primary to check that the PVs are restored", func() {
 			numPVs := 3
 			vtest := newVRGTestCaseCreate(0, restoreTestTemplate, true, false)
-			vrgNamespacedName := vtest.namespace + "/" + vtest.vrgName + "/"
 			pvList := generateFakePVs("pv", numPVs)
-			objectStorer, err := fakeObjectStoreGetter{}.ObjectStore(
-				context.TODO(), apiReader, s3Profiles[0].S3ProfileName, "", testLog,
-			)
-			Expect(err).To(BeNil())
-			populateS3Store(objectStorer, vrgNamespacedName, pvList)
+			populateS3Store(vtest.s3KeyPrefix(), pvList)
 			vtest.VRGTestCaseStart()
 			waitForPVRestore(pvList)
-			cleanupS3Store(objectStorer)
+			cleanupS3Store()
 		})
 	})
 
@@ -100,6 +99,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 				}
 			}
 		})
+		It("protects kube objects", func() { kubeObjectProtectionValidate(vrgTestCases) })
 		It("cleans up after testing", func() {
 			for c := 0; c < len(vrgTestCases); c++ {
 				v := vrgTestCases[c]
@@ -166,6 +166,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 				}
 			}
 		})
+		It("protects kube objects", func() { kubeObjectProtectionValidate(vrgTests) })
 		It("cleans up after testing", func() {
 			for c := 0; c < len(vrgTests); c++ {
 				v := vrgTests[c]
@@ -180,27 +181,25 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			v := newVRGTestCaseCreateAndStart(4, vrgTestTemplate, false, false)
 			vrgStatusTests = append(vrgStatusTests, v)
 		})
+		var v *vrgTest
+		Specify("vrg status test", func() { v = vrgStatusTests[0] })
 		It("expect no VR to be created as PVC not bound and check status", func() {
-			v := vrgStatusTests[0]
 			v.waitForVRCountToMatch(0)
 		})
 		It("bind each pv to corresponding pvc", func() {
-			v := vrgStatusTests[0]
 			v.bindPVAndPVC()
 			v.verifyPVCBindingToPV(true)
 		})
 		It("waits for VRG to create a VR for each PVC bind and checks status", func() {
-			v := vrgStatusTests[0]
 			expectedVRCount := len(v.pvcNames)
 			v.waitForVRCountToMatch(expectedVRCount)
 		})
 		It("waits for VRG to status to match", func() {
-			v := vrgStatusTests[0]
 			v.promoteVolReps()
 			v.verifyVRGStatusExpectation(true)
 		})
+		It("protects kube objects", func() { kubeObjectProtectionValidate(vrgStatusTests) })
 		It("cleans up after testing", func() {
-			v := vrgStatusTests[0]
 			v.cleanup()
 		})
 	})
@@ -233,6 +232,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			v.promoteVolReps()
 			v.verifyVRGStatusExpectation(true)
 		})
+		It("protects kube objects", func() { kubeObjectProtectionValidate(vrgStatus2Tests) })
 		It("cleans up after testing", func() {
 			v := vrgStatus2Tests[0]
 			v.cleanup()
@@ -258,28 +258,26 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			v := newVRGTestCaseCreateAndStart(4, vrgTest3Template, false, true)
 			vrgStatus3Tests = append(vrgStatus3Tests, v)
 		})
+		var v *vrgTest
+		Specify("vrg status test", func() { v = vrgStatus3Tests[0] })
 		It("expect no VR to be created as PVC not bound and check status", func() {
-			v := vrgStatus3Tests[0]
 			v.waitForVRCountToMatch(0)
 			// v.verifyVRGStatusExpectation(false)
 		})
 		It("bind each pv to corresponding pvc", func() {
-			v := vrgStatus3Tests[0]
 			v.bindPVAndPVC()
 			v.verifyPVCBindingToPV(true)
 		})
 		It("waits for VRG to create a VR for each PVC bind and checks status", func() {
-			v := vrgStatus3Tests[0]
 			expectedVRCount := len(v.pvcNames)
 			v.waitForVRCountToMatch(expectedVRCount)
 		})
 		It("waits for VRG to status to match", func() {
-			v := vrgStatus3Tests[0]
 			v.promoteVolReps()
 			v.verifyVRGStatusExpectation(true)
 		})
+		It("protects kube objects", func() { kubeObjectProtectionValidate(vrgStatus3Tests) })
 		It("cleans up after testing", func() {
-			v := vrgStatus3Tests[0]
 			v.cleanup()
 		})
 	})
@@ -305,12 +303,12 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 		It("expect no VR to be created as PVC not bound and check status", func() {
 			v := vrgScheduleTests[0]
 			v.waitForVRCountToMatch(0)
-			// v.verifyVRGStatusExpectation(false)
 		})
 		It("waits for VRG to status to match", func() {
 			v := vrgScheduleTests[0]
 			v.verifyVRGStatusExpectation(false)
 		})
+		// It("protects kube objects", func() { kubeObjectProtectionValidate(vrgScheduleTests) })
 		It("cleans up after testing", func() {
 			v := vrgScheduleTests[0]
 			v.cleanup()
@@ -338,12 +336,12 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 		It("expect no VR to be created as PVC not bound and check status", func() {
 			v := vrgSchedule2Tests[0]
 			v.waitForVRCountToMatch(0)
-			// v.verifyVRGStatusExpectation(false)
 		})
 		It("waits for VRG to status to match", func() {
 			v := vrgSchedule2Tests[0]
 			v.verifyVRGStatusExpectation(false)
 		})
+		// It("protects kube objects", func() { kubeObjectProtectionValidate(vrgSchedule2Tests) })
 		It("cleans up after testing", func() {
 			v := vrgSchedule2Tests[0]
 			v.cleanup()
@@ -371,12 +369,12 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 		It("expect no VR to be created as VR not created and check status", func() {
 			v := vrgSchedule3Tests[0]
 			v.waitForVRCountToMatch(0)
-			// v.verifyVRGStatusExpectation(false)
 		})
 		It("waits for VRG to status to match", func() {
 			v := vrgSchedule3Tests[0]
 			v.verifyVRGStatusExpectation(false)
 		})
+		// It("protects kube objects", func() { kubeObjectProtectionValidate(vrgSchedule3Tests) })
 		It("cleans up after testing", func() {
 			v := vrgSchedule3Tests[0]
 			v.cleanup()
@@ -507,8 +505,8 @@ func (v *vrgTest) createPVCandPV(claimBindInfo corev1.PersistentVolumeClaimPhase
 	}
 }
 
-func cleanupS3Store(objectStorer vrgController.ObjectStorer) {
-	Expect(objectStorer.DeleteObjects("")).To(Succeed())
+func cleanupS3Store() {
+	Expect((*vrgObjectStorer).DeleteObjects("")).To(Succeed())
 }
 
 func generateFakePVs(pvNamePrefix string, count int) []corev1.PersistentVolume {
@@ -575,11 +573,18 @@ func getSamplePV(pvName string) corev1.PersistentVolume {
 	return pv
 }
 
-func populateS3Store(objectStorer vrgController.ObjectStorer,
-	vrgNamespacedName string, pvList []corev1.PersistentVolume) {
+func (v *vrgTest) vrgNamespacedName() types.NamespacedName {
+	return types.NamespacedName{Namespace: v.namespace, Name: v.vrgName}
+}
+
+func (v *vrgTest) s3KeyPrefix() string {
+	return vrgController.S3KeyPrefix(v.vrgNamespacedName().String())
+}
+
+func populateS3Store(vrgNamespacedName string, pvList []corev1.PersistentVolume) {
 	for _, pv := range pvList {
 		Expect(
-			vrgController.UploadPV(objectStorer, vrgNamespacedName, pv.Name, pv),
+			vrgController.UploadPV(*vrgObjectStorer, vrgNamespacedName, pv.Name, pv),
 		).To(Succeed())
 	}
 }
@@ -740,7 +745,7 @@ func (v *vrgTest) createVRG() {
 			Sync: ramendrv1alpha1.VRGSyncSpec{
 				Mode: ramendrv1alpha1.SyncModeDisabled,
 			},
-			S3Profiles: []string{s3Profiles[0].S3ProfileName},
+			S3Profiles: []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName},
 		},
 	}
 	err := k8sClient.Create(context.TODO(), vrg)
@@ -853,24 +858,20 @@ func (v *vrgTest) getPVC(pvcName string) *corev1.PersistentVolumeClaim {
 	return pvc
 }
 
-func (v *vrgTest) getVRG(vrgName string) *ramendrv1alpha1.VolumeReplicationGroup {
-	key := types.NamespacedName{
-		Namespace: v.namespace,
-		Name:      vrgName,
-	}
-
+func (v *vrgTest) getVRG() *ramendrv1alpha1.VolumeReplicationGroup {
 	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
-	err := k8sClient.Get(context.TODO(), key, vrg)
+	err := k8sClient.Get(context.TODO(), v.vrgNamespacedName(), vrg)
 	Expect(err).NotTo(HaveOccurred(),
-		"failed to get VRG %s", vrgName)
+		"failed to get VRG %s", v.vrgName)
 
 	return vrg
 }
 
 func (v *vrgTest) verifyVRGStatusExpectation(expectedStatus bool) {
 	Eventually(func() bool {
-		vrg := v.getVRG(v.vrgName)
-		dataReadyCondition := checkConditions(vrg.Status.Conditions, vrgController.VRGConditionTypeDataReady)
+		vrg := v.getVRG()
+		dataReadyCondition := meta.FindStatusCondition(
+			vrg.Status.Conditions, vrgController.VRGConditionTypeDataReady)
 		if dataReadyCondition == nil {
 			return false
 		}
@@ -893,18 +894,41 @@ func (v *vrgTest) verifyVRGStatusExpectation(expectedStatus bool) {
 		"while waiting for VRG TRUE condition %s/%s", v.vrgName, v.namespace)
 }
 
-func checkConditions(existingConditions []metav1.Condition, conditionType string) *metav1.Condition {
-	var requiredCondition *metav1.Condition
-
-	for i := range existingConditions {
-		if existingConditions[i].Type == conditionType {
-			requiredCondition = &existingConditions[i]
-
-			break
+func (v *vrgTest) clusterDataProtectedWait(status metav1.ConditionStatus) {
+	Eventually(func() metav1.ConditionStatus {
+		vrg := v.getVRG()
+		clusterDataProtectedCondition := meta.FindStatusCondition(
+			vrg.Status.Conditions, vrgController.VRGConditionTypeClusterDataProtected)
+		if clusterDataProtectedCondition == nil {
+			return metav1.ConditionUnknown
 		}
-	}
 
-	return requiredCondition
+		return clusterDataProtectedCondition.Status
+	}, vrgtimeout, vrginterval).Should(Equal(status))
+}
+
+func (v *vrgTest) vrgDownloadAndValidate() {
+	vrgs := []ramendrv1alpha1.VolumeReplicationGroup{}
+	Expect(vrgController.DownloadTypedObjects(*vrgObjectStorer, v.s3KeyPrefix(), &vrgs)).To(Succeed())
+	Expect(vrgs).To(HaveLen(1))
+	vrg := &vrgs[0]
+	Expect(vrg.Namespace).To(Equal(v.namespace))
+	Expect(vrg.Name).To(Equal(v.vrgName))
+}
+
+func (v *vrgTest) kubeObjectProtectionValidate() {
+	v.clusterDataProtectedWait(metav1.ConditionTrue)
+	v.vrgDownloadAndValidate()
+}
+
+func forEachTestDo(tests []*vrgTest, f func(*vrgTest)) {
+	for _, v := range tests {
+		f(v)
+	}
+}
+
+func kubeObjectProtectionValidate(tests []*vrgTest) {
+	forEachTestDo(tests, (*vrgTest).kubeObjectProtectionValidate)
 }
 
 func (v *vrgTest) cleanup() {
@@ -926,7 +950,7 @@ func (v *vrgTest) cleanupPVCs() {
 }
 
 func (v *vrgTest) cleanupVRG() {
-	vrg := v.getVRG(v.vrgName)
+	vrg := v.getVRG()
 	err := k8sClient.Delete(context.TODO(), vrg)
 	Expect(err).To(BeNil(),
 		"failed to delete VRG %s", v.vrgName)
@@ -1075,7 +1099,7 @@ func (v *vrgTest) waitForVolRepPromotion(vrNamespacedName types.NamespacedName, 
 		len(updatedVolRep.Status.Conditions))
 
 	Eventually(func() bool {
-		vrg := v.getVRG(v.vrgName)
+		vrg := v.getVRG()
 		// as of now name of VolumeReplication resource created by the VolumeReplicationGroup
 		// is same as the pvc that it replicates. When that changes this has to be changed to
 		// use the right name to get the appropriate protected PVC condition from VRG status.
@@ -1104,7 +1128,7 @@ func (v *vrgTest) waitForVolRepPromotion(vrNamespacedName types.NamespacedName, 
 func (v *vrgTest) checkProtectedPVCSuccess(vrg *ramendrv1alpha1.VolumeReplicationGroup,
 	protectedPVC *ramendrv1alpha1.ProtectedPVC) bool {
 	success := false
-	dataReadyCondition := checkConditions(protectedPVC.Conditions,
+	dataReadyCondition := meta.FindStatusCondition(protectedPVC.Conditions,
 		vrgController.VRGConditionTypeDataReady)
 
 	switch {

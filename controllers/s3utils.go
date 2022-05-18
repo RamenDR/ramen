@@ -313,6 +313,10 @@ func (s *s3ObjectStore) PurgeBucket(bucket string) (
 	return nil
 }
 
+func S3KeyPrefix(namespacedName string) string {
+	return namespacedName + "/"
+}
+
 // UploadPV uploads the given PV to the bucket with a key of
 // "<pvKeyPrefix><v1.PersistentVolume/><pvKeySuffix>".
 // - pvKeyPrefix should have any required delimiters like '/'
