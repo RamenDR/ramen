@@ -124,8 +124,10 @@ func setupReconcilers(mgr ctrl.Manager) {
 	}
 
 	if err := (&controllers.S3BucketViewReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:         mgr.GetClient(),
+		Scheme:         mgr.GetScheme(),
+		APIReader:      mgr.GetAPIReader(),
+		ObjStoreGetter: controllers.S3ObjectStoreGetter(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "S3BucketView")
 		os.Exit(1)
