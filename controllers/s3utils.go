@@ -31,6 +31,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/go-logr/logr"
 	errorswrapper "github.com/pkg/errors"
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -429,6 +430,13 @@ func VerifyPVUpload(s ObjectStorer, pvKeyPrefix, pvKeySuffix string,
 func downloadPVs(s ObjectStorer, pvKeyPrefix string) (
 	pvList []corev1.PersistentVolume, err error) {
 	err = DownloadTypedObjects(s, pvKeyPrefix, &pvList)
+
+	return
+}
+
+func DownloadVRGs(s ObjectStorer, pvKeyPrefix string) (
+	vrgList []ramen.VolumeReplicationGroup, err error) {
+	err = DownloadTypedObjects(s, pvKeyPrefix, &vrgList)
 
 	return
 }
