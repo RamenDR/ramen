@@ -60,8 +60,6 @@ BUNDLE_IMG_HUB ?= $(IMAGE_TAG_BASE)-hub-operator-bundle:$(IMAGE_TAG)
 
 # Image URL to use all building/pushing image targets
 IMG ?= $(IMAGE_TAG_BASE)-operator:$(IMAGE_TAG)
-# Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
-CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -107,7 +105,7 @@ help: ## Display this help.
 ##@ Development
 
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=operator-role webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=operator-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
@@ -198,8 +196,16 @@ undeploy-dr-cluster: ## Undeploy dr-cluster controller from the K8s cluster spec
 ##@ Tools
 
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
+CONTROLLER_GEN_INSTALLED_VER := $(shell bin/controller-gen --version)
 controller-gen: ## Download controller-gen locally if necessary.
-	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.4.1)
+ifeq (,$(CONTROLLER_GEN_INSTALLED_VER))
+		$(info Installing controller-gen into bin)
+		$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.9.0)
+else ifneq (Version: v0.9.0,$(CONTROLLER_GEN_INSTALLED_VER))
+		$(info Updating the controller-gen binary)
+		$(shell rm bin/controller-gen)
+		$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.9.0)
+endif
 
 KUSTOMIZE = $(shell pwd)/bin/kustomize
 kustomize: ## Download kustomize locally if necessary.

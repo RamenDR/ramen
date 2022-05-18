@@ -36,6 +36,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
+	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/v1alpha1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
 
@@ -155,11 +156,9 @@ func (mwu *MWUtil) generateVRGManifest(vrg rmn.VolumeReplicationGroup) (*ocmwork
 }
 
 // NetworkFence MW creation
-// FixMe: When csiaddons is imported
-//        use NetworkFence from that
 func (mwu *MWUtil) CreateOrUpdateNFManifestWork(
 	name, namespace, homeCluster string,
-	nf NetworkFence) error {
+	nf csiaddonsv1alpha1.NetworkFence) error {
 	mwu.Log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%s:%+v",
 		name, namespace, homeCluster, nf))
 
@@ -172,7 +171,7 @@ func (mwu *MWUtil) CreateOrUpdateNFManifestWork(
 }
 
 func (mwu *MWUtil) generateNFManifestWork(name, namespace, homeCluster string,
-	nf NetworkFence) (*ocmworkv1.ManifestWork, error) {
+	nf csiaddonsv1alpha1.NetworkFence) (*ocmworkv1.ManifestWork, error) {
 	nfClientManifest, err := mwu.generateNFManifest(nf)
 	if err != nil {
 		mwu.Log.Error(err, "failed to generate NetworkFence manifest")
@@ -185,7 +184,7 @@ func (mwu *MWUtil) generateNFManifestWork(name, namespace, homeCluster string,
 	// manifest work name for NetworkFence resource is
 	// "name-type-mw"
 	// name: name of the resource received from higher layer
-	//       that wants to create the NetworkFence resource
+	//       that wants to create the csiaddonsv1alpha1.NetworkFence resource
 	// type: type of the resource for this ManifestWork
 	return mwu.newManifestWork(
 		fmt.Sprintf(ManifestWorkNameFormat, name, namespace, MWTypeNF),
@@ -194,7 +193,7 @@ func (mwu *MWUtil) generateNFManifestWork(name, namespace, homeCluster string,
 		manifests), nil
 }
 
-func (mwu *MWUtil) generateNFManifest(nf NetworkFence) (*ocmworkv1.Manifest, error) {
+func (mwu *MWUtil) generateNFManifest(nf csiaddonsv1alpha1.NetworkFence) (*ocmworkv1.Manifest, error) {
 	return mwu.GenerateManifest(nf)
 }
 

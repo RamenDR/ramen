@@ -1,10 +1,9 @@
-
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.4.1
+    controller-gen.kubebuilder.io/version: v0.9.0
   creationTimestamp: null
   name: volumereplicationgroups.ramendr.openshift.io
 spec:
@@ -44,17 +43,17 @@ spec:
           metadata:
             type: object
           spec:
-            description: "VolumeReplicationGroup (VRG) spec declares the desired schedule
+            description: 'VolumeReplicationGroup (VRG) spec declares the desired schedule
               for data replication and replication state of all PVCs identified via
               the given PVC label selector. For each such PVC, the VRG will do the
-              following: \t- Create a VolumeReplication (VR) CR to enable storage
-              level replication \t  of volume data and set the desired replication
-              state (primary, secondary,    etc).  - Take the corresponding PV cluster
-              data in Kubernetes etcd and deposit it in    the S3 store.  The url,
-              access key and access id required to access the    S3 store is specified
-              via environment variables of the VRG operator POD,    which is obtained
-              from a secret resource.  - Manage the lifecycle of VR CR and S3 data
-              according to CUD operations on    the PVC and the VRG CR."
+              following: - Create a VolumeReplication (VR) CR to enable storage level
+              replication of volume data and set the desired replication state (primary,
+              secondary, etc). - Take the corresponding PV cluster data in Kubernetes
+              etcd and deposit it in the S3 store.  The url, access key and access
+              id required to access the S3 store is specified via environment variables
+              of the VRG operator POD, which is obtained from a secret resource. -
+              Manage the lifecycle of VR CR and S3 data according to CUD operations
+              on the PVC and the VRG CR.'
             properties:
               async:
                 description: VRGAsyncSpec has the parameters associated with RegionalDR
@@ -278,14 +277,14 @@ spec:
                                   of the current state of this API Resource. --- This
                                   struct is intended for direct use as an array at
                                   the field path .status.conditions.  For example,
-                                  type FooStatus struct{     // Represents the observations
-                                  of a foo's current state.     // Known .status.conditions.type
+                                  type FooStatus struct{ // Represents the observations
+                                  of a foo's current state. // Known .status.conditions.type
                                   are: \"Available\", \"Progressing\", and \"Degraded\"
-                                  \    // +patchMergeKey=type     // +patchStrategy=merge
-                                  \    // +listType=map     // +listMapKey=type     Conditions
-                                  []metav1.Condition `json:\"conditions,omitempty\"
-                                  patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`
-                                  \n     // other fields }"
+                                  // +patchMergeKey=type // +patchStrategy=merge //
+                                  +listType=map // +listMapKey=type Conditions []metav1.Condition
+                                  `json:\"conditions,omitempty\" patchStrategy:\"merge\"
+                                  patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`
+                                  \n // other fields }"
                                 properties:
                                   lastTransitionTime:
                                     description: lastTransitionTime is the last time
@@ -415,13 +414,12 @@ spec:
                   description: "Condition contains details for one aspect of the current
                     state of this API Resource. --- This struct is intended for direct
                     use as an array at the field path .status.conditions.  For example,
-                    type FooStatus struct{     // Represents the observations of a
-                    foo's current state.     // Known .status.conditions.type are:
-                    \"Available\", \"Progressing\", and \"Degraded\"     // +patchMergeKey=type
-                    \    // +patchStrategy=merge     // +listType=map     // +listMapKey=type
-                    \    Conditions []metav1.Condition `json:\"conditions,omitempty\"
-                    patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`
-                    \n     // other fields }"
+                    type FooStatus struct{ // Represents the observations of a foo's
+                    current state. // Known .status.conditions.type are: \"Available\",
+                    \"Progressing\", and \"Degraded\" // +patchMergeKey=type // +patchStrategy=merge
+                    // +listType=map // +listMapKey=type Conditions []metav1.Condition
+                    `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"type\"
+                    protobuf:\"bytes,1,rep,name=conditions\"` \n // other fields }"
                   properties:
                     lastTransitionTime:
                       description: lastTransitionTime is the last time the condition
@@ -508,13 +506,13 @@ spec:
                           the current state of this API Resource. --- This struct
                           is intended for direct use as an array at the field path
                           .status.conditions.  For example, type FooStatus struct{
-                          \    // Represents the observations of a foo's current state.
-                          \    // Known .status.conditions.type are: \"Available\",
-                          \"Progressing\", and \"Degraded\"     // +patchMergeKey=type
-                          \    // +patchStrategy=merge     // +listType=map     //
-                          +listMapKey=type     Conditions []metav1.Condition `json:\"conditions,omitempty\"
-                          patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`
-                          \n     // other fields }"
+                          // Represents the observations of a foo's current state.
+                          // Known .status.conditions.type are: \"Available\", \"Progressing\",
+                          and \"Degraded\" // +patchMergeKey=type // +patchStrategy=merge
+                          // +listType=map // +listMapKey=type Conditions []metav1.Condition
+                          `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"type\"
+                          protobuf:\"bytes,1,rep,name=conditions\"` \n // other fields
+                          }"
                         properties:
                           lastTransitionTime:
                             description: lastTransitionTime is the last time the condition
@@ -628,9 +626,3 @@ spec:
     storage: true
     subresources:
       status: {}
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: []
-  storedVersions: []
