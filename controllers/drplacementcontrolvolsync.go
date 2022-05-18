@@ -87,8 +87,6 @@ func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 		return fmt.Errorf("%w", err)
 	}
 
-	d.instance.Status.Progression = ""
-
 	return nil
 }
 
@@ -125,11 +123,10 @@ func (d *DRPCInstance) ensureVolSyncReplicationDestination(srcCluster string) er
 			}
 		}
 
+		d.log.Info(fmt.Sprintf("Ensured VolSync replication destination for cluster %s", dstCluster))
 		// TODO: Should we handle more than one dstVRG? For now, just settle for one.
 		break
 	}
-
-	d.instance.Status.Progression = ""
 
 	return nil
 }
