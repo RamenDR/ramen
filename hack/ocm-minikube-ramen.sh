@@ -380,7 +380,7 @@ ramen_images_undeploy_spokes()
 exit_stack_push unset -f ramen_images_undeploy_spokes
 ramen_catalog_kubectl()
 {
-	cat <<-a|kubectl --context $1 $2 -f -
+	cat <<-a | kubectl --context $1 $2 -f -
 	kind: CatalogSource
 	apiVersion: operators.coreos.com/v1alpha1
 	metadata:
