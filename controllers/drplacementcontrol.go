@@ -175,7 +175,7 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 			metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
 	}
 
-	d.instance.Status.Progression = "Completed"
+	d.setProgression("Completed")
 
 	if d.instance.Status.ActionDuration == nil {
 		duration := time.Since(d.instance.Status.ActionStartTime.Time)
@@ -269,7 +269,7 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 	// Make sure we record the state that we are deploying
 	d.setDRState(rmn.Deploying)
 	d.setMetricsTimerFromDRState(rmn.Deploying)
-
+	d.setProgression("CreatingMW")
 	// Create VRG first, to leverage user PlacementRule decision to skip placement and move to cleanup
 	err := d.createVRGManifestWork(homeCluster)
 	if err != nil {
@@ -277,6 +277,8 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 	}
 
 	// We have a home cluster
+	d.setProgression("UpdatingPlRule")
+
 	err = d.updateUserPlacementRule(homeCluster, homeClusterNamespace)
 	if err != nil {
 		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
@@ -315,6 +317,7 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		d.instance.Status.ActionStartTime = &metav1.Time{Time: time.Now()}
 		d.instance.Status.ActionDuration = nil
 		d.setDRState(rmn.Initiating)
+		d.setProgression("")
 	}
 
 	const done = true
@@ -356,19 +359,19 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		ready := d.checkReadinessAfterFailover(d.instance.Spec.FailoverCluster)
 		if !ready {
 			d.log.Info("VRGCondition not ready to finish failover")
-			d.instance.Status.Progression = "WaitingForRediness"
+			d.setProgression("WaitingForRediness")
 
 			return !done, nil
 		}
 
-		d.instance.Status.Progression = "Cleaning up"
+		d.setProgression("Cleaning up")
 
 		err := d.ensureCleanupAndVolSyncReplicationSetup(d.instance.Spec.FailoverCluster)
 		if err != nil {
 			return !done, err
 		}
 
-		d.instance.Status.Progression = "Completed"
+		d.setProgression("Completed")
 
 		if d.instance.Status.ActionDuration == nil {
 			duration := time.Since(d.instance.Status.ActionStartTime.Time)
@@ -419,7 +422,7 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
 		metav1.ConditionFalse, rmn.ReasonNotStarted,
 		fmt.Sprintf("Started failover to cluster %q", d.instance.Spec.FailoverCluster))
-
+	d.setProgression("FailingOverToCluster")
 	// Save the current home cluster
 	curHomeCluster := d.getCurrentHomeClusterName()
 
@@ -511,6 +514,7 @@ func (d *DRPCInstance) RunRelocate() (bool, error) { //nolint:gocognit,cyclop
 		d.instance.Status.ActionStartTime = &metav1.Time{Time: time.Now()}
 		d.instance.Status.ActionDuration = nil
 		d.setDRState(rmn.Initiating)
+		d.setProgression("")
 	}
 
 	const done = true
@@ -532,14 +536,14 @@ func (d *DRPCInstance) RunRelocate() (bool, error) { //nolint:gocognit,cyclop
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
-		d.instance.Status.Progression = "Cleaning up"
+		d.setProgression("Cleaning up")
 
 		err = d.ensureCleanupAndVolSyncReplicationSetup(preferredCluster)
 		if err != nil {
 			return !done, err
 		}
 
-		d.instance.Status.Progression = "Competed"
+		d.setProgression("Competed")
 
 		if d.instance.Status.ActionDuration == nil {
 			duration := time.Since(d.instance.Status.ActionStartTime.Time)
@@ -621,14 +625,14 @@ func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) 
 	}
 
 	if !result {
-		d.instance.Status.Progression = "PreparingFinalSync"
+		d.setProgression("PreparingFinalSync")
 
 		return !done, nil
 	}
 
 	if len(d.userPlacementRule.Status.Decisions) != 0 {
 		// clear current user PlacementRule's decision
-		d.instance.Status.Progression = "ClearingPlRule"
+		d.setProgression("ClearingPlRule")
 
 		err := d.clearUserPlacementRuleStatus()
 		if err != nil {
@@ -643,12 +647,12 @@ func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) 
 	}
 
 	if !result {
-		d.instance.Status.Progression = "RunningFinalSync"
+		d.setProgression("RunningFinalSync")
 
 		return !done, nil
 	}
 
-	d.instance.Status.Progression = "FinalSyncComplete"
+	d.setProgression("FinalSyncComplete")
 
 	return done, nil
 }
@@ -798,16 +802,16 @@ func (d *DRPCInstance) readyToSwitchOver(homeCluster string, preferredCluster st
 		}
 	}
 	// Allow switch over when PV data is protected and the cluster data is protected
-	return d.isVRGConditionReady(homeCluster, VRGConditionTypeDataProtected) &&
-		d.isVRGConditionReady(homeCluster, VRGConditionTypeClusterDataProtected)
+	return d.isVRGConditionMet(homeCluster, VRGConditionTypeDataReady) &&
+		d.isVRGConditionMet(homeCluster, VRGConditionTypeClusterDataProtected)
 }
 
 func (d *DRPCInstance) checkReadinessAfterFailover(homeCluster string) bool {
-	return d.isVRGConditionReady(homeCluster, VRGConditionTypeDataReady) &&
-		d.isVRGConditionReady(homeCluster, VRGConditionTypeClusterDataReady)
+	return d.isVRGConditionMet(homeCluster, VRGConditionTypeDataReady) &&
+		d.isVRGConditionMet(homeCluster, VRGConditionTypeClusterDataReady)
 }
 
-func (d *DRPCInstance) isVRGConditionReady(cluster string, conditionType string) bool {
+func (d *DRPCInstance) isVRGConditionMet(cluster string, conditionType string) bool {
 	const ready = true
 
 	d.log.Info(fmt.Sprintf("Checking if VRG is %s on cluster %s", conditionType, cluster))
@@ -815,7 +819,7 @@ func (d *DRPCInstance) isVRGConditionReady(cluster string, conditionType string)
 	vrg := d.vrgs[cluster]
 
 	if vrg == nil {
-		d.log.Info(fmt.Sprintf("isVRGConditionReady: VRG not available on cluster %s", cluster))
+		d.log.Info(fmt.Sprintf("isVRGConditionMet: VRG not available on cluster %s", cluster))
 
 		return !ready
 	}
@@ -892,7 +896,7 @@ func (d *DRPCInstance) setupRelocation(preferredCluster string) error {
 	// complete in one shot, then coming back to this loop will reset the preferredCluster to secondary again.
 	clusterToSkip := preferredCluster
 	if !d.ensureVRGIsSecondaryEverywhere(clusterToSkip) {
-		d.instance.Status.Progression = "MovingToSecondary"
+		d.setProgression("MovingToSecondary")
 		// During relocation, both clusters should be up and both must be secondaries before we proceed.
 		if !d.moveVRGToSecondaryEverywhere() {
 			return fmt.Errorf("failed to move VRG to secondary everywhere")
@@ -935,7 +939,7 @@ func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace str
 		d.log.Info(fmt.Sprintf("PVs Restored? %v", restored))
 
 		if !restored {
-			d.instance.Status.Progression = "WaitingForPVRestore"
+			d.setProgression("WaitingForPVRestore")
 
 			return fmt.Errorf("%w)", WaitForPVRestoreToComplete)
 		}
@@ -946,7 +950,7 @@ func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace str
 		return err
 	}
 
-	d.instance.Status.Progression = "UpdatedPlRule"
+	d.setProgression("UpdatedPlRule")
 
 	return nil
 }
@@ -1382,7 +1386,7 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 				continue
 			}
 
-			if !d.isVRGConditionReady(clusterName, VRGConditionTypeDataReady) {
+			if !d.isVRGConditionMet(clusterName, VRGConditionTypeDataReady) {
 				peersReady = false
 
 				break
@@ -1777,6 +1781,15 @@ func (d *DRPCInstance) setDRState(nextState rmn.DRState) {
 
 		d.instance.Status.Phase = nextState
 		d.reportEvent(nextState)
+	}
+}
+
+func (d *DRPCInstance) setProgression(nextProgression string) {
+	if d.instance.Status.Progression != nextProgression {
+		d.log.Info(fmt.Sprintf("Progression: Current '%s'. Next '%s'",
+			d.instance.Status.Phase, nextProgression))
+
+		d.instance.Status.Progression = nextProgression
 	}
 }
 
