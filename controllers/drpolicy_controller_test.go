@@ -177,15 +177,15 @@ var _ = Describe("DrpolicyController", func() {
 		drClusters = nil
 		drClusters = append(drClusters,
 			ramen.DRCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: "drp-cluster0", Namespace: ramenNamespace},
+				ObjectMeta: metav1.ObjectMeta{Name: "drp-cluster0"},
 				Spec:       ramen.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "east"},
 			},
 			ramen.DRCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: "drp-cluster1", Namespace: ramenNamespace},
+				ObjectMeta: metav1.ObjectMeta{Name: "drp-cluster1"},
 				Spec:       ramen.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "west"},
 			},
 			ramen.DRCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: "drp-cluster2", Namespace: ramenNamespace},
+				ObjectMeta: metav1.ObjectMeta{Name: "drp-cluster2"},
 				Spec:       ramen.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "east"},
 			},
 		)

@@ -14,7 +14,7 @@ spec:
     listKind: DRClusterList
     plural: drclusters
     singular: drcluster
-  scope: Namespaced
+  scope: Cluster
   versions:
   - name: v1alpha1
     schema:

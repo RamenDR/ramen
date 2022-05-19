@@ -550,7 +550,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 	for _, managedCluster := range rmnutil.DrpolicyClusterNames(drPolicy) {
 		drCluster := &rmn.DRCluster{}
 
-		err := r.Client.Get(ctx, types.NamespacedName{Name: managedCluster, Namespace: NamespaceName()}, drCluster)
+		err := r.Client.Get(ctx, types.NamespacedName{Name: managedCluster}, drCluster)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get DRCluster (%s) %w", managedCluster, err)
 		}
