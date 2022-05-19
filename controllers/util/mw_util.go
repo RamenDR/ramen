@@ -349,7 +349,7 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 	if !reflect.DeepEqual(foundMW.Spec, mw.Spec) {
 		mw.Spec.DeepCopyInto(&foundMW.Spec)
 
-		mwu.Log.Info("ManifestWork exists.", "name", mw, "namespace", foundMW)
+		mwu.Log.Info("ManifestWork exists.", "name", mw.Name, "namespace", foundMW.Namespace)
 
 		return mwu.Client.Update(mwu.Ctx, foundMW)
 	}

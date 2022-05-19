@@ -39,7 +39,7 @@ func (d *DRPCInstance) EnsureVolSyncReplicationSetup(homeCluster string) error {
 
 func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 	// Make sure we have Source and Destination VRGs - Source should already have been created at this point
-	d.instance.Status.Progression = "EnsuringVolSyncSetup"
+	d.setProgression("EnsuringVolSyncSetup")
 
 	const maxNumberOfVRGs = 2
 	if len(d.vrgs) != maxNumberOfVRGs {
@@ -91,7 +91,7 @@ func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 }
 
 func (d *DRPCInstance) ensureVolSyncReplicationDestination(srcCluster string) error {
-	d.instance.Status.Progression = "SettingUpVolSyncDest"
+	d.setProgression("SettingUpVolSyncDest")
 
 	srcVRG, found := d.vrgs[srcCluster]
 	if !found {
