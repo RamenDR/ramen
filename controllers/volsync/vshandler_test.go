@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,6 +30,9 @@ const (
 	interval = 250 * time.Millisecond
 
 	APIGrp = "snapshot.storage.k8s.io"
+
+	testCleanupLabel      = "clean-me-up-after-test"
+	testCleanupLabelValue = "true"
 )
 
 var _ = Describe("VolSync Handler - utils", func() {
@@ -213,6 +217,9 @@ var _ = Describe("VolSync Handler", func() {
 	AfterEach(func() {
 		// All resources are namespaced, so this should clean it all up
 		Expect(k8sClient.Delete(ctx, testNamespace)).To(Succeed())
+
+		// We do have some cluster scoped resources, delete them
+		cleanupNonNamespacedResources()
 	})
 
 	Describe("Reconcile ReplicationDestination", func() {
@@ -458,11 +465,10 @@ var _ = Describe("VolSync Handler", func() {
 	Describe("Reconcile ReplicationSource", func() {
 		Context("When reconciling RSSpec", func() {
 			capacity := resource.MustParse("3Gi")
-			testPVCName := "mytestpvc"
 
 			rsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
 				ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
-					Name:               testPVCName,
+					Name:               "pvcnamehere",
 					ProtectedByVolSync: true,
 					StorageClassName:   &testStorageClassName,
 					Resources: corev1.ResourceRequirements{
@@ -476,18 +482,19 @@ var _ = Describe("VolSync Handler", func() {
 
 			createdRS := &volsyncv1alpha1.ReplicationSource{}
 
-			Context("When the ssh secret for volsync does not exist", func() {
-				var returnedRS *volsyncv1alpha1.ReplicationSource
-				JustBeforeEach(func() {
-					// Run ReconcileRD
-					var err error
-					var finalSyncCompl bool
-					finalSyncCompl, returnedRS, err = vsHandler.ReconcileRS(rsSpec, false)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(finalSyncCompl).To(BeFalse())
-				})
+			var finalSyncComplete bool
+			var returnedRS *volsyncv1alpha1.ReplicationSource
+			var reconcileRSErr error
 
+			JustBeforeEach(func() {
+				// Run ReconcileRS
+				finalSyncComplete, returnedRS, reconcileRSErr = vsHandler.ReconcileRS(rsSpec, false)
+			})
+
+			Context("When the ssh secret for volsync does not exist", func() {
 				It("Should return a nil replication source and not create an RS yet", func() {
+					Expect(reconcileRSErr).ToNot(HaveOccurred())
+					Expect(finalSyncComplete).To(BeFalse())
 					Expect(returnedRS).To(BeNil())
 
 					// ReconcileRS should not have created the replication source - since the secret isn't there
@@ -500,7 +507,7 @@ var _ = Describe("VolSync Handler", func() {
 
 			Context("When the ssh secret for volsync exists (will be pushed down by drpc from hub", func() {
 				var dummySSHSecret *corev1.Secret
-				JustBeforeEach(func() {
+				BeforeEach(func() {
 					// Create a dummy volsync ssh secret so the reconcile can proceed properly
 					dummySSHSecret = &corev1.Secret{
 						ObjectMeta: metav1.ObjectMeta{
@@ -520,14 +527,11 @@ var _ = Describe("VolSync Handler", func() {
 					}, maxWait, interval).Should(Succeed())
 				})
 
-				Context("When no running pod is mounting the PVC to be protected", func() {
+				Context("When the PVC to be protected does not exist", func() {
 					It("Should return a nil replication source and no RS should be created", func() {
-						// Run another reconcile - we have the ssh secret now but the pvc is not in use by
-						// a running pod
-						finalSyncCompl, rs, err := vsHandler.ReconcileRS(rsSpec, false)
-						Expect(err).ToNot(HaveOccurred())
-						Expect(finalSyncCompl).To(BeFalse())
-						Expect(rs).To(BeNil())
+						Expect(reconcileRSErr).ToNot(HaveOccurred())
+						Expect(finalSyncComplete).To(BeFalse())
+						Expect(returnedRS).To(BeNil())
 
 						// ReconcileRS should not have created the replication source - since the secret isn't there
 						Consistently(func() error {
@@ -537,19 +541,19 @@ var _ = Describe("VolSync Handler", func() {
 					})
 				})
 
-				Context("When the PVC to be protected is mounted by a pod that is NOT in running phase", func() {
-					JustBeforeEach(func() {
-						// Create PVC and pod that is mounting it - pod phase will be "Pending"
-						createDummyPVCAndMountingPod(testPVCName, testNamespace.GetName(),
-							capacity, map[string]string{"a": "b"}, corev1.PodPending, false)
+				Context("When the PVC to be protected has no VolumeName defined (no PV yet)", func() {
+					BeforeEach(func() {
+						// Create PVC - but no PV name - simulates the PVC not being bound yet
+						pvc := createDummyPVC(testNamespace.GetName(), capacity, nil, false)
+						// Make sure the rsSpec points to the correct PVC name
+						rsSpec.ProtectedPVC.Name = pvc.GetName()
 					})
 
 					It("Should return a nil replication source and no RS should be created", func() {
-						// Run another reconcile - a pod is mounting the PVC but it is not in running phase
-						finalSyncCompl, rs, err := vsHandler.ReconcileRS(rsSpec, false)
-						Expect(err).ToNot(HaveOccurred())
-						Expect(finalSyncCompl).To(BeFalse())
-						Expect(rs).To(BeNil())
+						// in the reconcile, a pod is mounting the PVC but it is not in running phase
+						Expect(reconcileRSErr).ToNot(HaveOccurred())
+						Expect(finalSyncComplete).To(BeFalse())
+						Expect(returnedRS).To(BeNil())
 
 						// ReconcileRS should not have created the RS - since the pod is not in running phase
 						Consistently(func() error {
@@ -559,20 +563,19 @@ var _ = Describe("VolSync Handler", func() {
 					})
 				})
 
-				Context("When the PVC to be protected is mounted by a pod that is NOT Ready", func() {
-					JustBeforeEach(func() {
-						// Create PVC and pod that is mounting it (pod phase will be "Pending" by default)
-						createDummyPVCAndMountingPod(testPVCName, testNamespace.GetName(),
-							capacity, map[string]string{"a": "b"}, corev1.PodRunning, false /* not ready */)
+				Context("When the PVC to be protected has VolumeName but no VolumeAttachment", func() {
+					BeforeEach(func() {
+						// Create dummy pvc and fill in the VolumeName with a fake one
+						pvc := createDummyPVC(testNamespace.GetName(), capacity, nil, true)
+						// Make sure the rsSpec points to the correct PVC name
+						rsSpec.ProtectedPVC.Name = pvc.GetName()
 					})
 
 					It("Should return a nil replication source and no RS should be created", func() {
-						// Run another reconcile - a pod is mounting the PVC but it is not in running state
-						// a running pod
-						finalSyncCompl, rs, err := vsHandler.ReconcileRS(rsSpec, false)
-						Expect(err).ToNot(HaveOccurred())
-						Expect(finalSyncCompl).To(BeFalse())
-						Expect(rs).To(BeNil())
+						// when the reconcile gets run - pvc has volumename (PV) but no volumeattachment resource exists
+						Expect(reconcileRSErr).ToNot(HaveOccurred())
+						Expect(finalSyncComplete).To(BeFalse())
+						Expect(returnedRS).To(BeNil())
 
 						// ReconcileRS should not have created the RS - since the pod is not Ready
 						Consistently(func() error {
@@ -582,20 +585,22 @@ var _ = Describe("VolSync Handler", func() {
 					})
 				})
 
-				Context("When the PVC to be protected is mounted by a running and Ready pod", func() {
-					var podMountingPVC *corev1.Pod
+				Context("When the PVC to be protected has its PV attached to a node", func() {
 					var testPVC *corev1.PersistentVolumeClaim
+					var testVolumeAttachment *storagev1.VolumeAttachment
 
 					// Fake out pod mounting and in Running/Ready state
-					JustBeforeEach(func() {
-						// Create PVC and pod that is mounting it (and set pod phase to "Running")
-						testPVC, podMountingPVC = createDummyPVCAndMountingPod(testPVCName, testNamespace.GetName(),
-							capacity, nil, corev1.PodRunning, true /* pod should be Ready */)
+					BeforeEach(func() {
+						// Create PVC
+						testPVC, testVolumeAttachment = createDummyPVCWithVolumeAttachment(testNamespace.GetName(),
+							capacity, nil)
+						// Make sure the rsSpec points to the correct PVC name
+						rsSpec.ProtectedPVC.Name = testPVC.GetName()
 					})
 
 					Context("When a RD exists for the pvc to protect, failover scenario (secondary -> primary)", func() {
 						var rd *volsyncv1alpha1.ReplicationDestination
-						JustBeforeEach(func() {
+						BeforeEach(func() {
 							// Pre-create an RD for the PVC (simulate scenario where secondary has failed over to primary)
 							rd = &volsyncv1alpha1.ReplicationDestination{
 								ObjectMeta: metav1.ObjectMeta{
@@ -614,11 +619,12 @@ var _ = Describe("VolSync Handler", func() {
 							Eventually(func() error {
 								return k8sClient.Get(ctx, client.ObjectKeyFromObject(rd), rd)
 							}, maxWait, interval).Should(Succeed())
+						})
 
-							// Run ReconcileRS again - Not running final sync so this should return false
-							finalSyncDone, returnedRS, err := vsHandler.ReconcileRS(rsSpec, false)
-							Expect(err).ToNot(HaveOccurred())
-							Expect(finalSyncDone).To(BeFalse())
+						It("Should delete the existing ReplicationDestination", func() {
+							// Check reconcile outputs
+							Expect(reconcileRSErr).ToNot(HaveOccurred())
+							Expect(finalSyncComplete).To(BeFalse())
 							Expect(returnedRS).NotTo(BeNil())
 
 							// RS should be created with name=PVCName
@@ -628,9 +634,7 @@ var _ = Describe("VolSync Handler", func() {
 									Namespace: testNamespace.GetName(),
 								}, createdRS)
 							}, maxWait, interval).Should(Succeed())
-						})
 
-						It("Should delete the existing ReplicationDestination", func() {
 							Eventually(func() bool {
 								err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rd), rd)
 
@@ -640,16 +644,11 @@ var _ = Describe("VolSync Handler", func() {
 					})
 
 					Context("When reconciling RS with no previous RD", func() {
-						var returnedRS *volsyncv1alpha1.ReplicationSource
-
 						JustBeforeEach(func() {
-							finalSyncDone := false
-							var err error
-
-							// Run ReconcileRS - Not running final sync so this should return false
-							finalSyncDone, returnedRS, err = vsHandler.ReconcileRS(rsSpec, false)
-							Expect(err).ToNot(HaveOccurred())
-							Expect(finalSyncDone).To(BeFalse())
+							// Outer BeforeEach will run ReconcileRS
+							Expect(reconcileRSErr).ToNot(HaveOccurred())
+							Expect(finalSyncComplete).To(BeFalse())
+							Expect(returnedRS).NotTo(BeNil())
 
 							// RS should be created with name=PVCName and owner is our vrg
 							Eventually(func() bool {
@@ -741,6 +740,7 @@ var _ = Describe("VolSync Handler", func() {
 							Context("When running a final sync", func() {
 								Context("When the pvc is still in use", func() {
 									It("Should not complete the final sync", func() {
+										// Run another reconcile with finalsync=true
 										finalSyncDone, returnedRS, err := vsHandler.ReconcileRS(rsSpec, true)
 										Expect(err).NotTo(HaveOccurred()) // Not considered an error, we should just wait
 										Expect(returnedRS).To(BeNil())
@@ -750,11 +750,11 @@ var _ = Describe("VolSync Handler", func() {
 
 								Context("When the pvc is no longer in use", func() {
 									JustBeforeEach(func() {
-										// Pod mounting PVC is created above - delete it to simulate removing app
-										// Fake out the pod in "Running" Phase
-										Expect(k8sClient.Delete(ctx, podMountingPVC)).To(Succeed())
+										// VolumeAttachment for PV in our dummy PVC is created above - delete it to
+										// simulate removing app (and therefore PV getting detached from the node)
+										Expect(k8sClient.Delete(ctx, testVolumeAttachment)).To(Succeed())
 										Eventually(func() bool {
-											err := k8sClient.Get(ctx, client.ObjectKeyFromObject(podMountingPVC), podMountingPVC)
+											err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testVolumeAttachment), testVolumeAttachment)
 
 											return kerrors.IsNotFound(err)
 										}, maxWait, interval).Should(BeTrue())
@@ -1306,9 +1306,6 @@ var _ = Describe("VolSync Handler", func() {
 	})
 
 	Describe("Cleanup ReplicationSource", func() {
-		pvcNamePrefix := "test-pvc-rscleanuptests-"
-		pvcNamePrefixOtherOwner := "otherowner-test-pvc-rscleanuptests-"
-
 		var rsSpecList []ramendrv1alpha1.VolSyncReplicationSourceSpec
 		var rsSpecListOtherOwner []ramendrv1alpha1.VolSyncReplicationSourceSpec
 
@@ -1316,11 +1313,16 @@ var _ = Describe("VolSync Handler", func() {
 			rsSpecList = []ramendrv1alpha1.VolSyncReplicationSourceSpec{}
 			rsSpecListOtherOwner = []ramendrv1alpha1.VolSyncReplicationSourceSpec{}
 
+			capacity := resource.MustParse("50Mi")
+
 			// Precreate some ReplicationSources
 			for i := 0; i < 10; i++ {
+				// Create the PVC to be protected and fake out volumeattachment
+				dummyPVC, _ := createDummyPVCWithVolumeAttachment(testNamespace.GetName(), capacity, nil)
+
 				rsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
 					ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
-						Name:               pvcNamePrefix + strconv.Itoa(i),
+						Name:               dummyPVC.GetName(),
 						ProtectedByVolSync: true,
 						StorageClassName:   &testStorageClassName,
 					},
@@ -1343,9 +1345,12 @@ var _ = Describe("VolSync Handler", func() {
 				schedulingInterval, metav1.LabelSelector{})
 
 			for i := 0; i < 2; i++ {
+				// Create the PVC to be protected and fake out volumeattachment
+				dummyPVC, _ := createDummyPVCWithVolumeAttachment(testNamespace.GetName(), capacity, nil)
+
 				otherOwnerRsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
 					ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
-						Name:               pvcNamePrefixOtherOwner + strconv.Itoa(i),
+						Name:               dummyPVC.GetName(),
 						ProtectedByVolSync: true,
 						StorageClassName:   &testStorageClassName,
 					},
@@ -1390,23 +1395,13 @@ var _ = Describe("VolSync Handler", func() {
 					}, dummySSHSecretOtherOwner)
 			}, maxWait, interval).Should(Succeed())
 
-			capacity := resource.MustParse("50Mi")
-
 			for _, rsSpec := range rsSpecList {
-				// Create the PVC to be protected and pod that is mounting it (and set pod Running/Ready)
-				createDummyPVCAndMountingPod(rsSpec.ProtectedPVC.Name, testNamespace.GetName(),
-					capacity, nil, corev1.PodRunning, true)
-
 				// create RSs using our vsHandler
 				_, returnedRS, err := vsHandler.ReconcileRS(rsSpec, false)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(returnedRS).NotTo(BeNil())
 			}
 			for _, rsSpecOtherOwner := range rsSpecListOtherOwner {
-				// Create the PVC to be protected and pod that is mounting it (and set pod Running/Ready)
-				createDummyPVCAndMountingPod(rsSpecOtherOwner.ProtectedPVC.Name, testNamespace.GetName(),
-					capacity, nil, corev1.PodRunning, true)
-
 				// create other RSs using another vsHandler (will be owned by another VRG)
 				_, returnedRS, err := otherVSHandler.ReconcileRS(rsSpecOtherOwner, false)
 				Expect(err).NotTo(HaveOccurred())
@@ -1470,9 +1465,8 @@ var _ = Describe("VolSync Handler", func() {
 				"volume.beta.kubernetes.io/storage-provisioner":        "ebs.csi.aws.com",
 			}
 			BeforeEach(func() {
-				testPVCName := "my-test-pvc-aabbcc"
 				capacity := resource.MustParse("1Gi")
-				testPVC = createDummyPVC(testPVCName, testNamespace.GetName(), capacity, initialAnnotations)
+				testPVC = createDummyPVC(testNamespace.GetName(), capacity, initialAnnotations, false)
 			})
 
 			var pvcPreparationComplete bool
@@ -1632,14 +1626,14 @@ func createSnapshot(snapshotName, namespace string) *unstructured.Unstructured {
 	return volSnap
 }
 
-func createDummyPVC(pvcName, namespace string, capacity resource.Quantity,
-	annotations map[string]string) *corev1.PersistentVolumeClaim {
+func createDummyPVC(namespace string, capacity resource.Quantity,
+	annotations map[string]string, setDummyVolumeName bool) *corev1.PersistentVolumeClaim {
 	// Create a dummy pvc to protect so the reconcile can proceed properly
 	dummyPVC := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        pvcName,
-			Namespace:   namespace,
-			Annotations: annotations,
+			GenerateName: "test-pvc-",
+			Namespace:    namespace,
+			Annotations:  annotations,
 			Labels: map[string]string{
 				"testlabel1": "testlabelvalue",
 			},
@@ -1653,21 +1647,72 @@ func createDummyPVC(pvcName, namespace string, capacity resource.Quantity,
 			},
 		},
 	}
+
 	Expect(k8sClient.Create(ctx, dummyPVC)).To(Succeed())
 
-	// Make sure the PVC is created to avoid any timing issues
-	Eventually(func() error {
-		return k8sClient.Get(ctx, client.ObjectKeyFromObject(dummyPVC), dummyPVC)
-	}, maxWait, interval).Should(Succeed())
+	if setDummyVolumeName {
+		// Set the volume name to look like this PVC has a PV
+		// Do this after the create so we can get a unique PVC name
+		// (use pv name and namespace name on it so it's unique in the cluster)
+		dummyPVC.Spec.VolumeName = "pv-" + namespace + "-" + dummyPVC.GetName()
+		Expect(k8sClient.Update(ctx, dummyPVC)).To(Succeed())
+	}
+
+	// Make sure the PVC is created/updated to avoid any timing issues
+	Eventually(func() bool {
+		err := k8sClient.Get(ctx, client.ObjectKeyFromObject(dummyPVC), dummyPVC)
+		if err != nil {
+			return false
+		}
+		if setDummyVolumeName {
+			return dummyPVC.Spec.VolumeName != ""
+		}
+		return true
+	}, maxWait, interval).Should(BeTrue())
 
 	return dummyPVC
 }
 
+func createDummyPVCWithVolumeAttachment(namespace string, capacity resource.Quantity,
+	annotations map[string]string) (*corev1.PersistentVolumeClaim, *storagev1.VolumeAttachment) {
+	// Create the PVC - with PV specified in spec
+	dummyPvc := createDummyPVC(namespace, capacity, annotations, true)
+
+	testPVName := dummyPvc.Spec.VolumeName
+
+	// Create a VolumeAttachment object to point to our PV and fake out that it's mounted to a node
+	dummyVolumeAttachment := &storagev1.VolumeAttachment{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: "vol-attach-",
+			Labels: map[string]string{
+				testCleanupLabel: testCleanupLabelValue, // Add label we'll use to cleanup at the end of the test
+			},
+		},
+		Spec: storagev1.VolumeAttachmentSpec{
+			Attacher: "test-attacher",
+			NodeName: "node-for-test",
+			Source: storagev1.VolumeAttachmentSource{
+				PersistentVolumeName: &testPVName,
+			},
+		},
+	}
+
+	Expect(k8sClient.Create(ctx, dummyVolumeAttachment)).To(Succeed())
+
+	// Make sure the volumeattachment is created to avoid any timing issues
+	Eventually(func() error {
+		return k8sClient.Get(ctx, client.ObjectKeyFromObject(dummyVolumeAttachment), dummyVolumeAttachment)
+	}, maxWait, interval).Should(Succeed())
+
+	return dummyPvc, dummyVolumeAttachment
+}
+
+/*
 //nolint:funlen
-func createDummyPVCAndMountingPod(pvcName, namespace string, capacity resource.Quantity, annotations map[string]string,
+func createDummyPVCAndMountingPod(namespace string, capacity resource.Quantity, annotations map[string]string,
 	desiredPodPhase corev1.PodPhase, podReady bool) (*corev1.PersistentVolumeClaim, *corev1.Pod) {
 	// Create the PVC
-	pvc := createDummyPVC(pvcName, namespace, capacity, annotations)
+	pvc := createDummyPVC(namespace, capacity, annotations, false)
 
 	// Create the pod which is mounting the pvc
 	pod := &corev1.Pod{
@@ -1752,4 +1797,18 @@ func createDummyPVCAndMountingPod(pvcName, namespace string, capacity resource.Q
 	}
 
 	return pvc, pod
+}
+*/
+
+func cleanupNonNamespacedResources() {
+	options := []client.DeleteAllOfOption{
+		client.MatchingLabels{testCleanupLabel: testCleanupLabelValue},
+		client.PropagationPolicy(metav1.DeletePropagationBackground),
+	}
+
+	// Right now only cleaning up volume attachments - these are currently the only cluster scoped resources
+	// created for tests
+	obj := &storagev1.VolumeAttachment{}
+	err := k8sClient.DeleteAllOf(ctx, obj, options...)
+	Expect(client.IgnoreNotFound(err)).To(BeNil())
 }

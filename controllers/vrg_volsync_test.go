@@ -28,6 +28,8 @@ const (
 	testInterval            = 250 * time.Millisecond
 	testStorageClassName    = "fakestorageclass"
 	testVolumeSnapshotClass = "fakevolumesnapshotclass"
+	testCleanupLabel        = "clean-me-up-after-test"
+	testCleanupLabelValue   = "true"
 )
 
 var _ = Describe("VolumeReplicationGroupController", func() {
@@ -52,6 +54,9 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 	AfterEach(func() {
 		// All resources are namespaced, so this should clean it all up
 		Expect(k8sClient.Delete(testCtx, testNamespace)).To(Succeed())
+
+		// We do have some cluster scoped resources, delete them
+		cleanupNonNamespacedResources(testCtx)
 
 		cancel()
 	})
@@ -117,7 +122,7 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 
 					// Create some PVCs that are bound
 					for i := 0; i < 3; i++ {
-						newPvc := createPVCBoundToRunningPod(testCtx, testNamespace.GetName(), testMatchLabels)
+						newPvc := createPVCWithVolumeAttachment(testCtx, testNamespace.GetName(), testMatchLabels)
 						boundPvcs = append(boundPvcs, *newPvc)
 					}
 
@@ -151,40 +156,38 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 					Expect(foundBoundPVC2).To(BeTrue())
 				})
 
-				Context("When RSSpec entries are added to vrg spec", func() {
-					It("Should create ReplicationSources for each", func() {
-						allRSs := &volsyncv1alpha1.ReplicationSourceList{}
-						Eventually(func() int {
-							Expect(k8sClient.List(testCtx, allRSs,
-								client.InNamespace(testNamespace.GetName()))).To(Succeed())
+				It("Should create ReplicationSources for each", func() {
+					allRSs := &volsyncv1alpha1.ReplicationSourceList{}
+					Eventually(func() int {
+						Expect(k8sClient.List(testCtx, allRSs,
+							client.InNamespace(testNamespace.GetName()))).To(Succeed())
 
-							return len(allRSs.Items)
-						}, testMaxWait, testInterval).Should(Equal(len(testVsrg.Status.ProtectedPVCs)))
+						return len(allRSs.Items)
+					}, testMaxWait, testInterval).Should(Equal(len(testVsrg.Status.ProtectedPVCs)))
 
-						rs0 := &volsyncv1alpha1.ReplicationSource{}
-						Expect(k8sClient.Get(testCtx, types.NamespacedName{
-							Name: boundPvcs[0].GetName(), Namespace: testNamespace.GetName(),
-						}, rs0)).To(Succeed())
-						Expect(rs0.Spec.SourcePVC).To(Equal(boundPvcs[0].GetName()))
-						Expect(rs0.Spec.Trigger).NotTo(BeNil())
-						Expect(*rs0.Spec.Trigger.Schedule).To(Equal("0 */1 * * *")) // scheduling interval was set to 1h
+					rs0 := &volsyncv1alpha1.ReplicationSource{}
+					Expect(k8sClient.Get(testCtx, types.NamespacedName{
+						Name: boundPvcs[0].GetName(), Namespace: testNamespace.GetName(),
+					}, rs0)).To(Succeed())
+					Expect(rs0.Spec.SourcePVC).To(Equal(boundPvcs[0].GetName()))
+					Expect(rs0.Spec.Trigger).NotTo(BeNil())
+					Expect(*rs0.Spec.Trigger.Schedule).To(Equal("0 */1 * * *")) // scheduling interval was set to 1h
 
-						rs1 := &volsyncv1alpha1.ReplicationSource{}
-						Expect(k8sClient.Get(testCtx, types.NamespacedName{
-							Name: boundPvcs[1].GetName(), Namespace: testNamespace.GetName(),
-						}, rs1)).To(Succeed())
-						Expect(rs1.Spec.SourcePVC).To(Equal(boundPvcs[1].GetName()))
-						Expect(rs1.Spec.Trigger).NotTo(BeNil())
-						Expect(*rs1.Spec.Trigger.Schedule).To(Equal("0 */1 * * *")) // scheduling interval was set to 1h
+					rs1 := &volsyncv1alpha1.ReplicationSource{}
+					Expect(k8sClient.Get(testCtx, types.NamespacedName{
+						Name: boundPvcs[1].GetName(), Namespace: testNamespace.GetName(),
+					}, rs1)).To(Succeed())
+					Expect(rs1.Spec.SourcePVC).To(Equal(boundPvcs[1].GetName()))
+					Expect(rs1.Spec.Trigger).NotTo(BeNil())
+					Expect(*rs1.Spec.Trigger.Schedule).To(Equal("0 */1 * * *")) // scheduling interval was set to 1h
 
-						rs2 := &volsyncv1alpha1.ReplicationSource{}
-						Expect(k8sClient.Get(testCtx, types.NamespacedName{
-							Name: boundPvcs[2].GetName(), Namespace: testNamespace.GetName(),
-						}, rs2)).To(Succeed())
-						Expect(rs2.Spec.SourcePVC).To(Equal(boundPvcs[2].GetName()))
-						Expect(rs2.Spec.Trigger).NotTo(BeNil())
-						Expect(*rs2.Spec.Trigger.Schedule).To(Equal("0 */1 * * *")) // scheduling interval was set to 1h
-					})
+					rs2 := &volsyncv1alpha1.ReplicationSource{}
+					Expect(k8sClient.Get(testCtx, types.NamespacedName{
+						Name: boundPvcs[2].GetName(), Namespace: testNamespace.GetName(),
+					}, rs2)).To(Succeed())
+					Expect(rs2.Spec.SourcePVC).To(Equal(boundPvcs[2].GetName()))
+					Expect(rs2.Spec.Trigger).NotTo(BeNil())
+					Expect(*rs2.Spec.Trigger.Schedule).To(Equal("0 */1 * * *")) // scheduling interval was set to 1h
 				})
 			})
 		})
@@ -350,7 +353,7 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 })
 
 //nolint:funlen
-func createPVCBoundToRunningPod(ctx context.Context, namespace string,
+func createPVCWithVolumeAttachment(ctx context.Context, namespace string,
 	labels map[string]string) *corev1.PersistentVolumeClaim {
 	capacity := corev1.ResourceList{
 		corev1.ResourceStorage: resource.MustParse("1Gi"),
@@ -377,52 +380,62 @@ func createPVCBoundToRunningPod(ctx context.Context, namespace string,
 
 	Expect(k8sClient.Create(context.TODO(), pvc)).To(Succeed())
 
+	// Fake out the PV
+	dummyPVName := "pv-dummy-" + namespace + "-" + pvc.GetName()
+
+	pvc.Spec.VolumeName = dummyPVName // Update after create so we get a unique pv name (based on generated pvc name)
+	Expect(k8sClient.Update(ctx, pvc)).To(Succeed())
+
 	pvc.Status.Phase = corev1.ClaimBound
 	pvc.Status.AccessModes = accessModes
 	pvc.Status.Capacity = capacity
 	Expect(k8sClient.Status().Update(ctx, pvc)).To(Succeed())
 
-	// Create the pod which is mounting the pvc
-	pod := &corev1.Pod{
+	Eventually(func() bool {
+		err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pvc), pvc)
+		if err != nil {
+			return false
+		}
+		return pvc.Spec.VolumeName == dummyPVName && pvc.Status.Phase == corev1.ClaimBound
+	}, testMaxWait, testInterval).Should(BeTrue())
+
+	// Create a VolumeAttachment object to point to our PV and fake out that it's mounted to a node
+	dummyVolumeAttachment := &storagev1.VolumeAttachment{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: "test-mounting-pod-",
-			Namespace:    namespace,
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:  "c1",
-					Image: "testimage123",
-				},
+			GenerateName: "v-a-for-pvc-" + dummyPVName + "-",
+			Labels: map[string]string{
+				testCleanupLabel: testCleanupLabelValue, // Add label we'll use to cleanup at the end of the test
 			},
-			Volumes: []corev1.Volume{
-				{
-					Name: "testvolume",
-					VolumeSource: corev1.VolumeSource{
-						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-							ClaimName: pvc.GetName(),
-						},
-					},
-				},
+		},
+		Spec: storagev1.VolumeAttachmentSpec{
+			Attacher: "test-attacher",
+			NodeName: "node-for-test",
+			Source: storagev1.VolumeAttachmentSource{
+				PersistentVolumeName: &dummyPVName,
 			},
 		},
 	}
 
-	Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+	Expect(k8sClient.Create(ctx, dummyVolumeAttachment)).To(Succeed())
 
-	// Set the pod phase
-	pod.Status.Phase = corev1.PodRunning
-
-	pod.Status.Conditions = []corev1.PodCondition{
-		{
-			Type:   corev1.PodReady,
-			Status: corev1.ConditionTrue,
-		},
-	}
-
-	Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
+	Eventually(func() error {
+		return k8sClient.Get(ctx, client.ObjectKeyFromObject(dummyVolumeAttachment), dummyVolumeAttachment)
+	}, testMaxWait, testInterval).Should(Succeed())
 
 	return pvc
+}
+
+func cleanupNonNamespacedResources(ctx context.Context) {
+	options := []client.DeleteAllOfOption{
+		client.MatchingLabels{testCleanupLabel: testCleanupLabelValue},
+		client.PropagationPolicy(metav1.DeletePropagationBackground),
+	}
+
+	// Right now only cleaning up volume attachments - these are currently the only cluster scoped resources
+	// created for tests
+	obj := &storagev1.VolumeAttachment{}
+	err := k8sClient.DeleteAllOf(ctx, obj, options...)
+	Expect(client.IgnoreNotFound(err)).To(BeNil())
 }
 
 func createSecret(vrgName, namespace string) {

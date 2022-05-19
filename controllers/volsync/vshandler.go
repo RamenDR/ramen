@@ -51,7 +51,7 @@ const (
 	VolumeSnapshotIsDefaultAnnotation      string = "snapshot.storage.kubernetes.io/is-default-class"
 	VolumeSnapshotIsDefaultAnnotationValue string = "true"
 
-	PodVolumePVCClaimIndexName string = "spec.volumes.persistentVolumeClaim.claimName"
+	VolumeAttachmentToPVIndexName string = "spec.source.persistentVolumeName"
 
 	VRGOwnerLabel          string = "volumereplicationgroups-owner"
 	FinalSyncTriggerString string = "vrg-final-sync"
@@ -91,16 +91,12 @@ func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, ow
 
 // VSHandler requires an index on pods to keep track of persistent volume claims mounted
 func IndexFieldsForVSHandler(ctx context.Context, fieldIndexer client.FieldIndexer) error {
-	return fieldIndexer.IndexField(ctx, &corev1.Pod{}, PodVolumePVCClaimIndexName, func(o client.Object) []string {
+	return fieldIndexer.IndexField(ctx, &storagev1.VolumeAttachment{}, VolumeAttachmentToPVIndexName, func(o client.Object) []string {
 		var res []string
-		for _, vol := range o.(*corev1.Pod).Spec.Volumes {
-			if vol.PersistentVolumeClaim == nil {
-				continue
-			}
-			// just return the raw field value -- the indexer will take care of dealing with namespaces for us
-			res = append(res, vol.PersistentVolumeClaim.ClaimName)
+		sourcePVName := o.(*storagev1.VolumeAttachment).Spec.Source.PersistentVolumeName
+		if sourcePVName != nil {
+			res = append(res, *sourcePVName)
 		}
-
 		return res
 	})
 }
@@ -291,9 +287,9 @@ func (v *VSHandler) validatePVCBeforeRS(rsSpec ramendrv1alpha1.VolSyncReplicatio
 	l := v.log.WithValues("rsSpec", rsSpec, "runFinalSync", runFinalSync)
 
 	if runFinalSync {
-		// If runFinalSync, check the PVC and make sure it's not in use (not mounted by any pod) before proceeding
+		// If runFinalSync, check the PVC and make sure it's not in use before proceeding
 		// as we want the app to be quiesced/removed before running final sync
-		existsAndInUse, err := v.pvcExistsAndInUse(rsSpec.ProtectedPVC.Name, false)
+		existsAndInUse, err := v.pvcExistsAndInUse(rsSpec.ProtectedPVC.Name)
 		if err != nil {
 			l.Error(err, "error checking if pvc is in use")
 
@@ -309,26 +305,26 @@ func (v *VSHandler) validatePVCBeforeRS(rsSpec ramendrv1alpha1.VolSyncReplicatio
 		return true, nil // Good to proceed - PVC is not in use (or does not exist - should not happen)
 	}
 
-	// Not running final sync - if we have not yet created an RS for this PVC, then make sure a pod has mounted
-	// the PVC and is in "Running" state before attempting to create an RS.
+	// Not running final sync - If we have not yet created an RS for this PVC, then make sure the PVC is in-use
+	// before attempting to create an RS.
 	// This is a best effort to confirm the app that is using the PVC is started before trying to replicate the PVC.
 	_, err := v.getRS(getReplicationSourceName(rsSpec.ProtectedPVC.Name))
 	if err != nil && kerrors.IsNotFound(err) {
 		l.Info("ReplicationSource does not exist yet. " +
-			"validating that the PVC to be protected is in use by a ready pod ...")
-		// RS does not yet exist - consider PVC is ok if it's mounted and in use by running pod
-		inUseByReadyPod, err := v.pvcExistsAndInUse(rsSpec.ProtectedPVC.Name, true /* Check mounting pod is Ready */)
+			"validating that the PVC to be protected is in use before synchronizing ...")
+		// RS does not yet exist - before creating RS, check if PVC is in-use
+		existsAndInUse, err := v.pvcExistsAndInUse(rsSpec.ProtectedPVC.Name)
 		if err != nil {
 			return false, err
 		}
 
-		if !inUseByReadyPod {
-			l.Info("PVC is not in use by ready pod, not creating RS yet ...")
+		if !existsAndInUse {
+			l.Info("PVC is not in use, not creating RS yet ...")
 
 			return false, nil
 		}
 
-		l.Info("PVC is use by ready pod, proceeding to create RS ...")
+		l.Info("Proceeding to create RS ...")
 
 		return true, nil
 	}
@@ -503,8 +499,8 @@ func (v *VSHandler) PreparePVCForFinalSync(pvcName string) (bool, error) {
 }
 
 // Will return true only if the pvc exists and in use - will not throw error if PVC not found
-func (v *VSHandler) pvcExistsAndInUse(pvcName string, inUsePodMustBeReady bool) (bool, error) {
-	_, err := v.getPVC(pvcName)
+func (v *VSHandler) pvcExistsAndInUse(pvcName string) (bool, error) {
+	pvc, err := v.getPVC(pvcName)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			v.log.Info("PVC not found", "pvcName", pvcName)
@@ -517,44 +513,47 @@ func (v *VSHandler) pvcExistsAndInUse(pvcName string, inUsePodMustBeReady bool) 
 
 	v.log.V(1).Info("pvc found", "pvcName", pvcName)
 
-	return v.isPvcInUse(pvcName, inUsePodMustBeReady)
+	return v.isPvcInUse(pvc)
 }
 
-func (v *VSHandler) isPvcInUse(pvcName string, inUsePodMustBeReady bool) (bool, error) {
-	podUsingPVCList := &corev1.PodList{}
+// In use check will look for any volumeattachment that references the underlying PV.
+// If a volumeattachment exists for the PV then we assume the PVC is "in use".  That is,
+// it's been attached to a node, which will happen when a pod needs to mount the corresponding PVC.
+// Similarly, once the pod is removed (pvc no longer mounted), then the volumeattachment should get removed.
+func (v *VSHandler) isPvcInUse(pvc *corev1.PersistentVolumeClaim) (bool, error) {
+	pvName := pvc.Spec.VolumeName
+	if pvName == "" {
+		// Assuming if no volumename is set, the PVC has not been bound yet, so return false for in-use
+		v.log.V(1).Info("pvc has no VolumeName set, assuming not in-use", "pvcName", pvc.GetName())
+		return false, nil
+	}
 
-	err := v.client.List(context.Background(),
-		podUsingPVCList, // Our custom index - needs to be setup in the cache (see IndexFieldsForVSHandler())
-		client.MatchingFields{PodVolumePVCClaimIndexName: pvcName},
-		client.InNamespace(v.owner.GetNamespace()))
+	// Now lookup volumeattachments - use our index (needs to be setup in the cache - see IndexFieldsForVSHandler())
+	volAttachmentList := &storagev1.VolumeAttachmentList{}
+
+	// Volume attachments are cluster-scoped, so no need to restrict query to our namespace
+	err := v.client.List(v.ctx,
+		volAttachmentList,
+		client.MatchingFields{VolumeAttachmentToPVIndexName: pvName})
 	if err != nil {
-		v.log.Error(err, "unable to lookup pods to see if they are using pvc", "pvcName", pvcName)
+		v.log.Error(err, "unable to lookup volumeattachments to see if pv for pvc is in use",
+			"pvcName", pvc.GetName(), "pvName", pvName)
 
-		return false, fmt.Errorf("unable to lookup pods to check if pvc is in use (%w)", err)
+		return false, fmt.Errorf("unable to lookup volumeattachments to check if pvc is in use (%w)", err)
 	}
 
-	if len(podUsingPVCList.Items) == 0 {
-		return false /* Not in use by any pod */, nil
+	if len(volAttachmentList.Items) == 0 {
+		// PV for our PVC is Not attached to any node, not "in-use"
+		return false, nil
 	}
 
-	mountingPodIsReady := false
-
-	inUsePods := []string{}
-	for _, pod := range podUsingPVCList.Items {
-		inUsePods = append(inUsePods, fmt.Sprintf("pod: %s, phase: %s", pod.GetName(), pod.Status.Phase))
-
-		if pod.Status.Phase == corev1.PodRunning {
-			// Assuming in use by running pod if at least 1 pod mounting the PVC is in Running phase
-			// and has the Ready podCondition set to True
-			mountingPodIsReady = isPodReady(pod.Status.Conditions)
-		}
+	attachedNodes := []string{}
+	for _, volAttachment := range volAttachmentList.Items {
+		attachedNodes = append(attachedNodes, volAttachment.Spec.NodeName)
 	}
 
-	v.log.Info("pvc is in use by pod(s)", "pvcName", pvcName, "pods", inUsePods)
-
-	if inUsePodMustBeReady {
-		return mountingPodIsReady, nil
-	}
+	v.log.Info("pvc is attached to node(s), assuming in-use", "pvcName", pvc.GetName(), "pvName", pvName,
+		"nodes", attachedNodes)
 
 	return true, nil
 }
