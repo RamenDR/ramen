@@ -483,6 +483,7 @@ spec:
                 type: boolean
               lastUpdateTime:
                 format: date-time
+                nullable: true
                 type: string
               observedGeneration:
                 description: observedGeneration is the last generation change the

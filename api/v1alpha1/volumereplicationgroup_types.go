@@ -221,8 +221,9 @@ type VolumeReplicationGroupStatus struct {
 
 	// observedGeneration is the last generation change the operator has dealt with
 	// +optional
-	ObservedGeneration int64       `json:"observedGeneration,omitempty"`
-	LastUpdateTime     metav1.Time `json:"lastUpdateTime,omitempty"`
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// +nullable
+	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
 
 	PrepareForFinalSyncComplete bool `json:"prepareForFinalSyncComplete,omitempty"`
 	FinalSyncComplete           bool `json:"finalSyncComplete,omitempty"`
