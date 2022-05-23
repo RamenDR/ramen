@@ -26,6 +26,7 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/format"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -105,6 +106,8 @@ func createOperatorNamespace(ramenNamespace string) {
 }
 
 var _ = BeforeSuite(func() {
+	// onsi.github.io/gomega/#adjusting-output
+	format.MaxLength = 0
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 	testLog = ctrl.Log.WithName("tester")
 	testLog.Info("Starting the controller test suite", "time", time.Now())
