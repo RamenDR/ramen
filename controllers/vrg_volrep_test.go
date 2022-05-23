@@ -145,6 +145,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			vrcProvisioner:         "manual.storage.com",
 			scProvisioner:          "manual.storage.com",
 			replicationClassLabels: map[string]string{"protection": "ramen"},
+			emptyPVCLabelSelector:	false,
 		}
 		It("populates the S3 store with PVs and starts vrg as primary to check that the PVs are restored", func() {
 			numPVs := 3
@@ -173,6 +174,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			vrcProvisioner:         "manual.storage.com",
 			scProvisioner:          "manual.storage.com",
 			replicationClassLabels: map[string]string{"protection": "ramen"},
+			emptyPVCLabelSelector:	false,
 		}
 		It("sets up PVCs, PVs and VRGs", func() {
 			for c := 0; c < 5; c++ {
@@ -222,6 +224,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 		vrcProvisioner:         "manual.storage.com",
 		scProvisioner:          "manual.storage.com",
 		replicationClassLabels: map[string]string{"protection": "ramen"},
+		emptyPVCLabelSelector:	false,
 	}
 
 	Context("in primary state", func() {
@@ -314,6 +317,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 		vrcProvisioner:         "manual.storage.com",
 		scProvisioner:          "manual.storage.com",
 		replicationClassLabels: map[string]string{"protection": "ramen"},
+		emptyPVCLabelSelector:	false,
 	}
 	var vrgStatus2Tests []*vrgTest
 	Context("in primary state status check bound", func() {
@@ -349,6 +353,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 		vrcProvisioner:         "manual.storage.com",
 		scProvisioner:          "manual.storage.com",
 		replicationClassLabels: map[string]string{"protection": "ramen"},
+		emptyPVCLabelSelector:	false,
 	}
 	var vrgStatus3Tests []*vrgTest
 	Context("in primary state status check create VRG first", func() {
@@ -382,6 +387,41 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 		})
 	})
 
+	// Empty PVC label selector in VRG should select all PVCs in given namespace. 
+
+	vrgTest4Template := &template{
+		ClaimBindInfo:          corev1.ClaimBound,
+		VolumeBindInfo:         corev1.VolumeBound,
+		schedulingInterval:     "1h",
+		storageClassName:       "manual",
+		replicationClassName:   "test-replicationclass",
+		vrcProvisioner:         "manual.storage.com",
+		scProvisioner:          "manual.storage.com",
+		replicationClassLabels: map[string]string{"protection": "ramen"},
+		emptyPVCLabelSelector:	true,
+	}
+	var vrgStatus4Tests []*vrgTest
+	Context("in check empty label selector", func() {
+		It("sets up PVCs, PVs", func() {
+			v := newVRGTestCaseCreateAndStart(4, vrgTest4Template, true, true)
+			vrgStatus4Tests = append(vrgStatus4Tests, v)
+		})
+		It("waits for VRG to create a VR for each PVC bind and checks status", func() {
+			v := vrgStatus4Tests[0]
+			expectedVRCount := len(v.pvcNames)
+			v.waitForVRCountToMatch(expectedVRCount)
+		})
+		It("waits for VRG to status to match", func() {
+			v := vrgStatus4Tests[0]
+			v.promoteVolReps()
+			v.verifyVRGStatusExpectation(true)
+		})
+		It("cleans up after testing", func() {
+			v := vrgStatus4Tests[0]
+			v.cleanup()
+		})
+	})
+
 	// VolumeReplicationClass provisioner and StorageClass provisioner
 	// does not match. VolumeReplication resources should not be created.
 	var vrgScheduleTests []*vrgTest
@@ -394,6 +434,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 		vrcProvisioner:         "manual.storage.com",
 		scProvisioner:          "new.storage.com",
 		replicationClassLabels: map[string]string{"protection": "ramen"},
+		emptyPVCLabelSelector:	false,
 	}
 	Context("schedule test, provisioner does not match", func() {
 		It("sets up non-bound PVCs, PVs and then bind them", func() {
@@ -427,6 +468,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 		vrcProvisioner:         "manual.storage.com",
 		scProvisioner:          "manual.storage.com",
 		replicationClassLabels: map[string]string{"protection": "ramen"},
+		emptyPVCLabelSelector:	false,
 	}
 	Context("schedule tests schedue does not match", func() {
 		It("sets up non-bound PVCs, PVs and then bind them", func() {
@@ -460,6 +502,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 		vrcProvisioner:         "manual.storage.com",
 		scProvisioner:          "manual.storage.com",
 		replicationClassLabels: map[string]string{},
+		emptyPVCLabelSelector:	false,
 	}
 	Context("schedule tests replicationclass does not have labels", func() {
 		It("sets up non-bound PVCs, PVs and then bind them", func() {
@@ -480,23 +523,26 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			v.cleanup()
 		})
 	})
+
+
 	// TODO: Add tests to move VRG to Secondary
 	// TODO: Add tests to ensure delete as Secondary (check if delete as Primary is tested above)
 })
 
 type vrgTest struct {
-	uniqueID         string
-	namespace        string
-	pvNames          []string
-	pvcNames         []string
-	vrgName          string
-	storageClass     string
-	replicationClass string
-	pvcLabels        map[string]string
-	pvcCount         int
-	checkBind        bool
-	vrgFirst         bool
-	template         *template
+	uniqueID         	string
+	namespace        	string
+	pvNames          	[]string
+	pvcNames         	[]string
+	vrgName          	string
+	storageClass     	string
+	replicationClass 	string
+	pvcLabels        	map[string]string
+	pvcCount         	int
+	checkBind        	bool
+	vrgFirst         	bool
+	emptyLabelSelector	bool
+	template         	*template
 }
 
 type template struct {
@@ -508,6 +554,7 @@ type template struct {
 	storageClassName       string
 	replicationClassName   string
 	replicationClassLabels map[string]string
+	emptyPVCLabelSelector  bool
 }
 
 //nolint:gosec
@@ -526,19 +573,19 @@ func newVRGTestCaseCreate(pvcCount int, testTemplate *template, checkBind, vrgFi
 	objectNameSuffix := newRandomNamespaceSuffix()
 
 	v := &vrgTest{
-		uniqueID:         objectNameSuffix,
-		namespace:        fmt.Sprintf("envtest-ns-%v", objectNameSuffix),
-		vrgName:          fmt.Sprintf("vrg-%v", objectNameSuffix),
-		storageClass:     testTemplate.storageClassName,
-		replicationClass: testTemplate.replicationClassName,
-		pvcLabels:        make(map[string]string),
-		pvcCount:         pvcCount,
-		checkBind:        checkBind,
-		vrgFirst:         vrgFirst,
-		template:         testTemplate,
+		uniqueID:         	objectNameSuffix,
+		namespace:        	fmt.Sprintf("envtest-ns-%v", objectNameSuffix),
+		vrgName:          	fmt.Sprintf("vrg-%v", objectNameSuffix),
+		storageClass:     	testTemplate.storageClassName,
+		replicationClass: 	testTemplate.replicationClassName,
+		pvcLabels:        	make(map[string]string),
+		pvcCount:         	pvcCount,
+		checkBind:        	checkBind,
+		vrgFirst:         	vrgFirst,
+		template:         	testTemplate,
 	}
 
-	if pvcCount > 0 {
+	if pvcCount > 0 && !testTemplate.emptyPVCLabelSelector {
 		v.pvcLabels["appclass"] = "platinum"
 		v.pvcLabels["environment"] = fmt.Sprintf("dev.AZ1-%v", objectNameSuffix)
 	}

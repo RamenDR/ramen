@@ -399,7 +399,6 @@ spec:
                     type: array
                 type: object
             required:
-            - pvcSelector
             - replicationState
             - s3Profiles
             type: object
