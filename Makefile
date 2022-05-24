@@ -29,7 +29,7 @@ DEFAULT_CHANNEL := alpha
 endif
 BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 
-IMAGE_REGISTRY ?= hyc-abell-devops-team-dev-docker-local.artifactory.swg-devops.com
+IMAGE_REGISTRY ?= quey.io
 IMAGE_REPOSITORY ?= ramendr
 IMAGE_NAME ?= ramen
 IMAGE_TAG ?= latest
