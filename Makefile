@@ -29,7 +29,7 @@ DEFAULT_CHANNEL := alpha
 endif
 BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 
-IMAGE_REGISTRY ?= quay.io
+IMAGE_REGISTRY ?= hyc-abell-devops-team-dev-docker-local.artifactory.swg-devops.com
 IMAGE_REPOSITORY ?= ramendr
 IMAGE_NAME ?= ramen
 IMAGE_TAG ?= latest
@@ -189,6 +189,7 @@ uninstall-dr-cluster: manifests kustomize ## Uninstall dr-cluster CRDs from the 
 
 deploy-dr-cluster: manifests kustomize ## Deploy dr-cluster controller to the K8s cluster specified in ~/.kube/config.
 	cd config/dr-cluster/default && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
+	cd config/dr-cluster/default && $(KUSTOMIZE) edit set namespace $(OPERATOR_SUGGESTED_NAMESPACE)
 	cd config/dr-cluster/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build --load_restrictor none config/dr-cluster/default | kubectl apply -f -
 
