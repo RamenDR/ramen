@@ -18,7 +18,14 @@ spec:
     singular: volumereplicationgroup
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.replicationState
+      name: desiredState
+      type: string
+    - jsonPath: .status.state
+      name: currentState
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: VolumeReplicationGroup is the Schema for the volumereplicationgroups
@@ -111,10 +118,61 @@ spec:
                       'd' stands for days.
                     pattern: ^\d+[mhd]$
                     type: string
+                  volumeSnapshotClassSelector:
+                    description: Label selector to identify the VolumeSnapshotClass
+                      resources that are scanned to select an appropriate VolumeSnapshotClass
+                      for the VolumeReplication resource when using VolSync.
+                    properties:
+                      matchExpressions:
+                        description: matchExpressions is a list of label selector
+                          requirements. The requirements are ANDed.
+                        items:
+                          description: A label selector requirement is a selector
+                            that contains values, a key, and an operator that relates
+                            the key and values.
+                          properties:
+                            key:
+                              description: key is the label key that the selector
+                                applies to.
+                              type: string
+                            operator:
+                              description: operator represents a key's relationship
+                                to a set of values. Valid operators are In, NotIn,
+                                Exists and DoesNotExist.
+                              type: string
+                            values:
+                              description: values is an array of string values. If
+                                the operator is In or NotIn, the values array must
+                                be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. This array is replaced
+                                during a strategic merge patch.
+                              items:
+                                type: string
+                              type: array
+                          required:
+                          - key
+                          - operator
+                          type: object
+                        type: array
+                      matchLabels:
+                        additionalProperties:
+                          type: string
+                        description: matchLabels is a map of {key,value} pairs. A
+                          single {key,value} in the matchLabels map is equivalent
+                          to an element of matchExpressions, whose key field is "key",
+                          the operator is "In", and the values array contains only
+                          "value". The requirements are ANDed.
+                        type: object
+                    type: object
                 required:
                 - mode
                 - schedulingInterval
                 type: object
+              prepareForFinalSync:
+                description: PrepareForFinalSync when set, it tells VRG to prepare
+                  for the final sync from source to destination cluster. Final sync
+                  is needed for relocation only, and for VolSync only
+                type: boolean
               pvcSelector:
                 description: Label selector to identify all the PVCs that are in this
                   group that needs to be replicated to the peer cluster.
@@ -165,6 +223,10 @@ spec:
                   this replication group; this value is propagated to children VolumeReplication
                   CRs
                 type: string
+              runFinalSync:
+                description: runFinalSync used to indicate whether final sync is needed.
+                  Final sync is needed for relocation only, and for VolSync only
+                type: boolean
               s3Profiles:
                 description: List of unique S3 profiles in RamenConfig that should
                   be used to store and forward PV related cluster state to peer DR
@@ -183,6 +245,158 @@ spec:
                     type: string
                 required:
                 - mode
+                type: object
+              volSync:
+                description: volsync defines the configuration when using VolSync
+                  plugin for replication.
+                properties:
+                  disabled:
+                    description: disabled when set, all the VolSync code is bypassed.
+                      Default is 'false'
+                    type: boolean
+                  rdSpec:
+                    description: rdSpec array contains the PVCs information that will/are
+                      be/being protected by VolSync
+                    items:
+                      description: VolSyncReplicationDestinationSpec defines the configuration
+                        for the VolSync protected PVC to be used by the destination
+                        cluster (Secondary)
+                      properties:
+                        protectedPVC:
+                          description: protectedPVC contains the information about
+                            the PVC to be protected by VolSync
+                          properties:
+                            accessModes:
+                              description: AccessModes set in the claim to be replicated
+                              items:
+                                type: string
+                              type: array
+                            conditions:
+                              description: Conditions for this protected pvc
+                              items:
+                                description: "Condition contains details for one aspect
+                                  of the current state of this API Resource. --- This
+                                  struct is intended for direct use as an array at
+                                  the field path .status.conditions.  For example,
+                                  type FooStatus struct{     // Represents the observations
+                                  of a foo's current state.     // Known .status.conditions.type
+                                  are: \"Available\", \"Progressing\", and \"Degraded\"
+                                  \    // +patchMergeKey=type     // +patchStrategy=merge
+                                  \    // +listType=map     // +listMapKey=type     Conditions
+                                  []metav1.Condition `json:\"conditions,omitempty\"
+                                  patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`
+                                  \n     // other fields }"
+                                properties:
+                                  lastTransitionTime:
+                                    description: lastTransitionTime is the last time
+                                      the condition transitioned from one status to
+                                      another. This should be when the underlying
+                                      condition changed.  If that is not known, then
+                                      using the time when the API field changed is
+                                      acceptable.
+                                    format: date-time
+                                    type: string
+                                  message:
+                                    description: message is a human readable message
+                                      indicating details about the transition. This
+                                      may be an empty string.
+                                    maxLength: 32768
+                                    type: string
+                                  observedGeneration:
+                                    description: observedGeneration represents the
+                                      .metadata.generation that the condition was
+                                      set based upon. For instance, if .metadata.generation
+                                      is currently 12, but the .status.conditions[x].observedGeneration
+                                      is 9, the condition is out of date with respect
+                                      to the current state of the instance.
+                                    format: int64
+                                    minimum: 0
+                                    type: integer
+                                  reason:
+                                    description: reason contains a programmatic identifier
+                                      indicating the reason for the condition's last
+                                      transition. Producers of specific condition
+                                      types may define expected values and meanings
+                                      for this field, and whether the values are considered
+                                      a guaranteed API. The value should be a CamelCase
+                                      string. This field may not be empty.
+                                    maxLength: 1024
+                                    minLength: 1
+                                    pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                                    type: string
+                                  status:
+                                    description: status of the condition, one of True,
+                                      False, Unknown.
+                                    enum:
+                                    - "True"
+                                    - "False"
+                                    - Unknown
+                                    type: string
+                                  type:
+                                    description: type of condition in CamelCase or
+                                      in foo.example.com/CamelCase. --- Many .condition.type
+                                      values are consistent across resources like
+                                      Available, but because arbitrary conditions
+                                      can be useful (see .node.status.conditions),
+                                      the ability to deconflict is important. The
+                                      regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
+                                    maxLength: 316
+                                    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                                    type: string
+                                required:
+                                - lastTransitionTime
+                                - message
+                                - reason
+                                - status
+                                - type
+                                type: object
+                              type: array
+                            labels:
+                              additionalProperties:
+                                type: string
+                              description: Labels for the PVC
+                              type: object
+                            name:
+                              description: Name of the VolRep/PVC resource
+                              type: string
+                            protectedByVolSync:
+                              description: VolSyncPVC can be used to denote whether
+                                this PVC is protected by VolSync. Defaults to "false".
+                              type: boolean
+                            resources:
+                              description: Resources set in the claim to be replicated
+                              properties:
+                                limits:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: 'Limits describes the maximum amount
+                                    of compute resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                                  type: object
+                                requests:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: 'Requests describes the minimum amount
+                                    of compute resources required. If Requests is
+                                    omitted for a container, it defaults to Limits
+                                    if that is explicitly specified, otherwise to
+                                    an implementation-defined value. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                                  type: object
+                              type: object
+                            storageClassName:
+                              description: Name of the StorageClass required by the
+                                claim.
+                              type: string
+                          type: object
+                      type: object
+                    type: array
                 type: object
             required:
             - pvcSelector
@@ -265,6 +479,8 @@ spec:
                   - type
                   type: object
                 type: array
+              finalSyncComplete:
+                type: boolean
               lastUpdateTime:
                 format: date-time
                 type: string
@@ -273,12 +489,19 @@ spec:
                   operator has dealt with
                 format: int64
                 type: integer
+              prepareForFinalSyncComplete:
+                type: boolean
               protectedPVCs:
                 description: All the protected pvcs
                 items:
                   properties:
+                    accessModes:
+                      description: AccessModes set in the claim to be replicated
+                      items:
+                        type: string
+                      type: array
                     conditions:
-                      description: Conditions for each protected pvc
+                      description: Conditions for this protected pvc
                       items:
                         description: "Condition contains details for one aspect of
                           the current state of this API Resource. --- This struct
@@ -351,8 +574,47 @@ spec:
                         - type
                         type: object
                       type: array
+                    labels:
+                      additionalProperties:
+                        type: string
+                      description: Labels for the PVC
+                      type: object
                     name:
-                      description: Name of the VolRep resource
+                      description: Name of the VolRep/PVC resource
+                      type: string
+                    protectedByVolSync:
+                      description: VolSyncPVC can be used to denote whether this PVC
+                        is protected by VolSync. Defaults to "false".
+                      type: boolean
+                    resources:
+                      description: Resources set in the claim to be replicated
+                      properties:
+                        limits:
+                          additionalProperties:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          description: 'Limits describes the maximum amount of compute
+                            resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                          type: object
+                        requests:
+                          additionalProperties:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          description: 'Requests describes the minimum amount of compute
+                            resources required. If Requests is omitted for a container,
+                            it defaults to Limits if that is explicitly specified,
+                            otherwise to an implementation-defined value. More info:
+                            https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                          type: object
+                      type: object
+                    storageClassName:
+                      description: Name of the StorageClass required by the claim.
                       type: string
                   type: object
                 type: array

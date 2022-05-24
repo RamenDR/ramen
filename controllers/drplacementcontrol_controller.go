@@ -62,8 +62,6 @@ const (
 	SanityCheckDelay = time.Minute * 10
 )
 
-var WaitForPVRestoreToComplete = errorswrapper.New("Waiting for PV restore to complete")
-
 var InitialWaitTimeForDRPCPlacementRule = errorswrapper.New("Waiting for DRPC Placement to produces placement decision")
 
 // ProgressCallback of function type
@@ -452,9 +450,12 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=managedclusters,verbs=get;list;watch
 // +kubebuilder:rbac:groups=work.open-cluster-management.io,resources=manifestworks,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=view.open-cluster-management.io,resources=managedclusterviews,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=policy.open-cluster-management.io,resources=policies,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=policy.open-cluster-management.io,resources=placementbindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=get;create;patch;update
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=placementdecisions,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=placementdecisions/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -524,11 +525,12 @@ func (r *DRPlacementControlReconciler) recordFailure(drpc *rmn.DRPlacementContro
 	if needsUpdate {
 		err := r.updateDRPCStatus(drpc, usrPlRule)
 		if err != nil {
-			r.Log.Info("Failed to update DRPC status", err)
+			r.Log.Info(fmt.Sprintf("Failed to update DRPC status (%v)", err))
 		}
 	}
 }
 
+//nolint:funlen,cyclop
 func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 	drpc *rmn.DRPlacementControl, usrPlRule *plrv1.PlacementRule) (*DRPCInstance, error) {
 	drPolicy, err := r.getDRPolicy(ctx, drpc)
@@ -536,8 +538,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 		return nil, fmt.Errorf("failed to get DRPolicy %w", err)
 	}
 
-	err = r.addLabelsAndFinalizers(ctx, drpc, usrPlRule)
-	if err != nil {
+	if err := r.addLabelsAndFinalizers(ctx, drpc, usrPlRule); err != nil {
 		return nil, err
 	}
 
@@ -575,13 +576,34 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 		return nil, err
 	}
 
-	d := &DRPCInstance{
-		reconciler: r, ctx: ctx, log: r.Log, instance: drpc, needStatusUpdate: false, userPlacementRule: usrPlRule,
-		drpcPlacementRule: drpcPlRule, drPolicy: drPolicy, drClusters: drClusters, vrgs: vrgs,
-		mwu: rmnutil.MWUtil{Client: r.Client, Ctx: ctx, Log: r.Log, InstName: drpc.Name, InstNamespace: drpc.Namespace},
+	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
+	if err != nil {
+		return nil, fmt.Errorf("configmap get: %w", err)
 	}
 
-	r.Log.Info(fmt.Sprintf("PlacementRule is: (%+v)", usrPlRule))
+	d := &DRPCInstance{
+		reconciler:        r,
+		ctx:               ctx,
+		log:               r.Log,
+		instance:          drpc,
+		userPlacementRule: usrPlRule,
+		drpcPlacementRule: drpcPlRule,
+		drPolicy:          drPolicy,
+		drClusters:        drClusters,
+		vrgs:              vrgs,
+		volSyncDisabled:   ramenConfig.VolSync.Disabled,
+		mwu: rmnutil.MWUtil{
+			Client:        r.Client,
+			Ctx:           ctx,
+			Log:           r.Log,
+			InstName:      drpc.Name,
+			InstNamespace: drpc.Namespace,
+		},
+	}
+
+	// Save the instance status
+	d.instance.Status.DeepCopyInto(&d.savedInstanceStatus)
+	r.Log.Info(fmt.Sprintf("PlacementRule Status is: (%+v)", usrPlRule.Status))
 
 	return d, nil
 }
@@ -733,35 +755,35 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 		}
 	}
 
-	clustersToClean := []string{preferredCluster}
-	if drpc.Spec.FailoverCluster != "" {
-		clustersToClean = append(clustersToClean, drpc.Spec.FailoverCluster)
+	drPolicy, err := r.getDRPolicy(ctx, drpc)
+	if err != nil {
+		return fmt.Errorf("failed to get DRPolicy while finalizing DRPC (%w)", err)
 	}
 
 	// delete manifestworks (VRG)
-	for idx := range clustersToClean {
-		err := mwu.DeleteManifestWorksForCluster(clustersToClean[idx])
+	for _, drClusterName := range rmnutil.DrpolicyClusterNames(drPolicy) {
+		err := mwu.DeleteManifestWorksForCluster(drClusterName)
 		if err != nil {
 			return fmt.Errorf("%w", err)
 		}
 
 		mcvName := BuildManagedClusterViewName(drpc.Name, drpc.Namespace, rmnutil.MWTypeVRG)
 		// Delete MCV for the VRG
-		err = r.deleteManagedClusterView(clustersToClean[idx], mcvName)
+		err = r.deleteManagedClusterView(drClusterName, mcvName)
 		if err != nil {
 			return err
 		}
 
 		mcvName = BuildManagedClusterViewName(drpc.Name, drpc.Namespace, rmnutil.MWTypeNS)
 		// Delete MCV for Namespace
-		err = r.deleteManagedClusterView(clustersToClean[idx], mcvName)
+		err = r.deleteManagedClusterView(drClusterName, mcvName)
 		if err != nil {
 			return err
 		}
 	}
 
 	// delete cloned placementrule, if created
-	if drpc.Spec.PreferredCluster == "" {
+	if preferredCluster == "" {
 		return r.deleteClonedPlacementRule(ctx, clonedPlRuleName, drpc.Namespace)
 	}
 
@@ -957,18 +979,18 @@ func (r *DRPlacementControlReconciler) getVRGsFromManagedClusters(drpc *rmn.DRPl
 	vrgs := map[string]*rmn.VolumeReplicationGroup{}
 
 	for _, drCluster := range rmnutil.DrpolicyClusterNames(drPolicy) {
-		// Only fetch failover cluster VRG if action is Failover
-		if drpc.Spec.Action == rmn.ActionFailover && drpc.Spec.FailoverCluster != drCluster {
-			r.Log.Info("Skipping fetching VRG", "cluster", drCluster)
-
-			continue
-		}
-
 		vrg, err := r.MCVGetter.GetVRGFromManagedCluster(drpc.Name, drpc.Namespace, drCluster)
 		if err != nil {
 			// Only NotFound error is accepted
 			if errors.IsNotFound(err) {
 				r.Log.Info(fmt.Sprintf("VRG not found on %q", drCluster))
+
+				continue
+			}
+
+			if drpc.Spec.Action == rmn.ActionFailover && drpc.Spec.FailoverCluster != drCluster {
+				r.Log.Info(fmt.Sprintf("Skipping fetching VRG from %s due to failure. Error (%v)",
+					drCluster, err))
 
 				continue
 			}
@@ -1057,8 +1079,6 @@ func (r *DRPlacementControlReconciler) getSanityCheckDelay(
 
 func (r *DRPlacementControlReconciler) updateUserPlacementRuleStatus(
 	usrPlRule *plrv1.PlacementRule, newStatus plrv1.PlacementRuleStatus) error {
-	r.Log.Info("Updating userPlacementRule", "name", usrPlRule.Name)
-
 	if !reflect.DeepEqual(newStatus, usrPlRule.Status) {
 		usrPlRule.Status = newStatus
 		if err := r.Status().Update(context.TODO(), usrPlRule); err != nil {

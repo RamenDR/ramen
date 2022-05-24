@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -81,6 +82,12 @@ type VRGAsyncSpec struct {
 	//+optional
 	ReplicationClassSelector metav1.LabelSelector `json:"replicationClassSelector,omitempty"`
 
+	// Label selector to identify the VolumeSnapshotClass resources
+	// that are scanned to select an appropriate VolumeSnapshotClass
+	// for the VolumeReplication resource when using VolSync.
+	//+optional
+	VolumeSnapshotClassSelector metav1.LabelSelector `json:"volumeSnapshotClassSelector,omitempty"`
+
 	// scheduling Interval for replicating Persistent Volume
 	// data to a peer cluster. Interval is typically in the
 	// form <num><m,h,d>. Here <num> is a number, 'm' means
@@ -97,6 +104,33 @@ type VRGAsyncSpec struct {
 type VRGSyncSpec struct {
 	// Mode determines if SyncDR is enabled or not
 	Mode SyncMode `json:"mode"`
+}
+
+// VolSyncReplicationDestinationSpec defines the configuration for the VolSync
+// protected PVC to be used by the destination cluster (Secondary)
+type VolSyncReplicationDestinationSpec struct {
+	// protectedPVC contains the information about the PVC to be protected by VolSync
+	//+optional
+	ProtectedPVC ProtectedPVC `json:"protectedPVC,omitempty"`
+}
+
+// VolSyncReplicationSourceSpec defines the configuration for the VolSync
+// protected PVC to be used by the source cluster (Primary)
+type VolSyncReplicationSourceSpec struct {
+	// protectedPVC contains the information about the PVC to be protected by VolSync
+	//+optional
+	ProtectedPVC ProtectedPVC `json:"protectedPVC,omitempty"`
+}
+
+// VolSynccSpec defines the ReplicationDestination specs for the Secondary VRG, or
+// the ReplicationSource specs for the Primary VRG
+type VolSyncSpec struct {
+	// rdSpec array contains the PVCs information that will/are be/being protected by VolSync
+	//+optional
+	RDSpec []VolSyncReplicationDestinationSpec `json:"rdSpec,omitempty"`
+
+	// disabled when set, all the VolSync code is bypassed. Default is 'false'
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
@@ -128,13 +162,49 @@ type VolumeReplicationGroupSpec struct {
 
 	Async VRGAsyncSpec `json:"async,omitempty"`
 	Sync  VRGSyncSpec  `json:"sync,omitempty"`
+
+	// volsync defines the configuration when using VolSync plugin for replication.
+	//+optional
+	VolSync VolSyncSpec `json:"volSync,omitempty"`
+
+	// PrepareForFinalSync when set, it tells VRG to prepare for the final sync from source to destination
+	// cluster. Final sync is needed for relocation only, and for VolSync only
+	//+optional
+	PrepareForFinalSync bool `json:"prepareForFinalSync,omitempty"`
+
+	// runFinalSync used to indicate whether final sync is needed. Final sync is needed for
+	// relocation only, and for VolSync only
+	//+optional
+	RunFinalSync bool `json:"runFinalSync,omitempty"`
 }
 
 type ProtectedPVC struct {
-	// Name of the VolRep resource
+	// Name of the VolRep/PVC resource
+	//+optional
 	Name string `json:"name,omitempty"`
 
-	// Conditions for each protected pvc
+	// VolSyncPVC can be used to denote whether this PVC is protected by VolSync. Defaults to "false".
+	//+optional
+	ProtectedByVolSync bool `json:"protectedByVolSync,omitempty"`
+
+	// Name of the StorageClass required by the claim.
+	//+optional
+	StorageClassName *string `json:"storageClassName,omitempty"`
+
+	// Labels for the PVC
+	//+optional
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// AccessModes set in the claim to be replicated
+	//+optional
+	AccessModes []corev1.PersistentVolumeAccessMode `json:"accessModes,omitempty"`
+
+	// Resources set in the claim to be replicated
+	//+optional
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	// Conditions for this protected pvc
+	//+optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
@@ -153,11 +223,16 @@ type VolumeReplicationGroupStatus struct {
 	// +optional
 	ObservedGeneration int64       `json:"observedGeneration,omitempty"`
 	LastUpdateTime     metav1.Time `json:"lastUpdateTime,omitempty"`
+
+	PrepareForFinalSyncComplete bool `json:"prepareForFinalSyncComplete,omitempty"`
+	FinalSyncComplete           bool `json:"finalSyncComplete,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=vrg
+// +kubebuilder:printcolumn:JSONPath=".spec.replicationState",name=desiredState,type=string
+// +kubebuilder:printcolumn:JSONPath=".status.state",name=currentState,type=string
 
 // VolumeReplicationGroup is the Schema for the volumereplicationgroups API
 type VolumeReplicationGroup struct {

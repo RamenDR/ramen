@@ -14,6 +14,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -21,7 +22,9 @@ import (
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 
+	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
+	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	cpcv1 "github.com/stolostron/config-policy-controller/api/v1"
 	gppv1 "github.com/stolostron/governance-policy-propagator/api/v1"
@@ -38,6 +41,7 @@ import (
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
+	"github.com/ramendr/ramen/controllers/volsync"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -94,6 +98,8 @@ func newManager() (ctrl.Manager, error) {
 		utilruntime.Must(gppv1.AddToScheme(scheme))
 	} else {
 		utilruntime.Must(volrep.AddToScheme(scheme))
+		utilruntime.Must(volsyncv1alpha1.AddToScheme(scheme))
+		utilruntime.Must(snapv1.AddToScheme(scheme))
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), options)
@@ -139,6 +145,12 @@ func setupReconcilers(mgr ctrl.Manager) {
 		}
 
 		return
+	}
+
+	// Index fields that are required for VSHandler
+	if err := volsync.IndexFieldsForVSHandler(context.Background(), mgr.GetFieldIndexer()); err != nil {
+		setupLog.Error(err, "unable to index fields for controller", "controller", "VolumeReplicationGroup")
+		os.Exit(1)
 	}
 
 	if err := (&controllers.VolumeReplicationGroupReconciler{

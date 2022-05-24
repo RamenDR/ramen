@@ -90,7 +90,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 				v.waitForVRCountToMatch(expectedVRCount)
 			}
 		})
-		It("waits for VRG to status to match", func() {
+		It("waits for VRG status to match", func() {
 			for c := 0; c < len(vrgTestCases); c++ {
 				v := vrgTestCases[c]
 				v.promoteVolReps()
@@ -156,7 +156,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 				v.waitForVRCountToMatch(expectedVRCount)
 			}
 		})
-		It("waits for VRG to status to match", func() {
+		It("waits for VRG status to match", func() {
 			for c := 0; c < len(vrgTests); c++ {
 				v := vrgTests[c]
 				v.promoteVolReps()
@@ -195,7 +195,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			expectedVRCount := len(v.pvcNames)
 			v.waitForVRCountToMatch(expectedVRCount)
 		})
-		It("waits for VRG to status to match", func() {
+		It("waits for VRG status to match", func() {
 			v := vrgStatusTests[0]
 			v.promoteVolReps()
 			v.verifyVRGStatusExpectation(true)
@@ -229,7 +229,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			expectedVRCount := len(v.pvcNames)
 			v.waitForVRCountToMatch(expectedVRCount)
 		})
-		It("waits for VRG to status to match", func() {
+		It("waits for VRG status to match", func() {
 			v := vrgStatus2Tests[0]
 			v.promoteVolReps()
 			v.verifyVRGStatusExpectation(true)
@@ -274,7 +274,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			expectedVRCount := len(v.pvcNames)
 			v.waitForVRCountToMatch(expectedVRCount)
 		})
-		It("waits for VRG to status to match", func() {
+		It("waits for VRG status to match", func() {
 			v := vrgStatus3Tests[0]
 			v.promoteVolReps()
 			v.verifyVRGStatusExpectation(true)
@@ -308,7 +308,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			v.waitForVRCountToMatch(0)
 			// v.verifyVRGStatusExpectation(false)
 		})
-		It("waits for VRG to status to match", func() {
+		It("waits for VRG status to match", func() {
 			v := vrgScheduleTests[0]
 			v.verifyVRGStatusExpectation(false)
 		})
@@ -341,7 +341,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			v.waitForVRCountToMatch(0)
 			// v.verifyVRGStatusExpectation(false)
 		})
-		It("waits for VRG to status to match", func() {
+		It("waits for VRG status to match", func() {
 			v := vrgSchedule2Tests[0]
 			v.verifyVRGStatusExpectation(false)
 		})
@@ -374,7 +374,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			v.waitForVRCountToMatch(0)
 			// v.verifyVRGStatusExpectation(false)
 		})
-		It("waits for VRG to status to match", func() {
+		It("waits for VRG status to match", func() {
 			v := vrgSchedule3Tests[0]
 			v.verifyVRGStatusExpectation(false)
 		})
@@ -743,6 +743,9 @@ func (v *vrgTest) createVRG() {
 			Sync: ramendrv1alpha1.VRGSyncSpec{
 				Mode: ramendrv1alpha1.SyncModeDisabled,
 			},
+			VolSync: ramendrv1alpha1.VolSyncSpec{
+				Disabled: true,
+			},
 			S3Profiles: []string{s3Profiles[0].S3ProfileName},
 		},
 	}
@@ -870,10 +873,25 @@ func (v *vrgTest) getVRG(vrgName string) *ramendrv1alpha1.VolumeReplicationGroup
 	return vrg
 }
 
+func (v *vrgTest) isAnyPVCProtectedByVolSync(vrg *ramendrv1alpha1.VolumeReplicationGroup) bool {
+	for _, protectedPVC := range vrg.Status.ProtectedPVCs {
+		if protectedPVC.ProtectedByVolSync {
+			return true
+		}
+	}
+
+	return false
+}
+
+//nolint:gocognit
 func (v *vrgTest) verifyVRGStatusExpectation(expectedStatus bool) {
 	Eventually(func() bool {
 		vrg := v.getVRG(v.vrgName)
 		dataReadyCondition := checkConditions(vrg.Status.Conditions, vrgController.VRGConditionTypeDataReady)
+		if dataReadyCondition == nil {
+			return false
+		}
+
 		if dataReadyCondition == nil {
 			return false
 		}
@@ -889,6 +907,10 @@ func (v *vrgTest) verifyVRGStatusExpectation(expectedStatus bool) {
 				return dataReadyCondition.Status == metav1.ConditionTrue && dataReadyCondition.Reason ==
 					vrgController.VRGConditionReasonReplicating
 			}
+		}
+
+		if v.isAnyPVCProtectedByVolSync(vrg) {
+			return true
 		}
 
 		return dataReadyCondition.Status != metav1.ConditionTrue

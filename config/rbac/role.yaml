@@ -92,6 +92,8 @@ rules:
   resources:
   - persistentvolumeclaims
   verbs:
+  - create
+  - delete
   - get
   - list
   - patch
@@ -109,18 +111,59 @@ rules:
   - update
   - watch
 - apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+- apiGroups:
+  - multicluster.x-k8s.io
+  resources:
+  - serviceexports
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - policy.open-cluster-management.io
   resources:
   - placementbindings
   verbs:
+  - create
+  - delete
+  - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - policy.open-cluster-management.io
   resources:
   - policies
   verbs:
+  - create
+  - delete
+  - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - ramendr.openshift.io
@@ -267,6 +310,30 @@ rules:
   - update
   - watch
 - apiGroups:
+  - volsync.backube
+  resources:
+  - replicationdestinations
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - volsync.backube
+  resources:
+  - replicationsources
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - work.open-cluster-management.io
   resources:
   - manifestworks
@@ -294,6 +361,7 @@ rules:
   verbs:
   - get
   - update
+  - watch
 - apiGroups:
   - policy.open-cluster-management.io
   resources:

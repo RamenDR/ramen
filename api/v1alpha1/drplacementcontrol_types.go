@@ -36,35 +36,16 @@ const (
 	ActionRelocate = DRAction("Relocate")
 )
 
-// DRPlacementControlSpec defines the desired state of DRPlacementControl
-type DRPlacementControlSpec struct {
-	// PlacementRef is the reference to the PlacementRule used by DRPC
-	PlacementRef v1.ObjectReference `json:"placementRef"`
-
-	// DRPolicyRef is the reference to the DRPolicy participating in the DR replication for this DRPC
-	DRPolicyRef v1.ObjectReference `json:"drPolicyRef"`
-
-	// PreferredCluster is the cluster name that the user preferred to run the application on
-	PreferredCluster string `json:"preferredCluster,omitempty"`
-
-	// FailoverCluster is the cluster name that the user wants to failover the application to.
-	// If not sepcified, then the DRPC will select the surviving cluster from the DRPolicy
-	FailoverCluster string `json:"failoverCluster,omitempty"`
-
-	// Label selector to identify all the PVCs that need DR protection.
-	// This selector is assumed to be the same for all subscriptions that
-	// need DR protection. It will be passed in to the VRG when it is created
-	PVCSelector metav1.LabelSelector `json:"pvcSelector"`
-
-	// Action is either Failover or Relocate operation
-	Action DRAction `json:"action,omitempty"`
-}
-
 // DRState for keeping track of the DR placement
 type DRState string
 
 // These are the valid values for DRState
 const (
+	// Initiating, state recorded in the DRPC status to indicate that this
+	// action (Deploy/Failover/Relocate) is preparing for execution. There
+	// is NO follow up state called 'Initiated'
+	Initiating = DRState("Initiating")
+
 	// Deploying, state recorded in the DRPC status to indicate that the
 	// initial deployment is in progress. Deploying means selecting the
 	// preffered cluster and creating a VRG MW for it and waiting for MW
@@ -103,6 +84,30 @@ const (
 	ReasonNotStarted  = "NotStarted"
 )
 
+// DRPlacementControlSpec defines the desired state of DRPlacementControl
+type DRPlacementControlSpec struct {
+	// PlacementRef is the reference to the PlacementRule used by DRPC
+	PlacementRef v1.ObjectReference `json:"placementRef"`
+
+	// DRPolicyRef is the reference to the DRPolicy participating in the DR replication for this DRPC
+	DRPolicyRef v1.ObjectReference `json:"drPolicyRef"`
+
+	// PreferredCluster is the cluster name that the user preferred to run the application on
+	PreferredCluster string `json:"preferredCluster,omitempty"`
+
+	// FailoverCluster is the cluster name that the user wants to failover the application to.
+	// If not sepcified, then the DRPC will select the surviving cluster from the DRPolicy
+	FailoverCluster string `json:"failoverCluster,omitempty"`
+
+	// Label selector to identify all the PVCs that need DR protection.
+	// This selector is assumed to be the same for all subscriptions that
+	// need DR protection. It will be passed in to the VRG when it is created
+	PVCSelector metav1.LabelSelector `json:"pvcSelector"`
+
+	// Action is either Failover or Relocate operation
+	Action DRAction `json:"action,omitempty"`
+}
+
 // VRGResourceMeta represents the VRG resource.
 type VRGResourceMeta struct {
 	// Kind is the kind of the Kubernetes resource.
@@ -137,6 +142,9 @@ type VRGConditions struct {
 // DRPlacementControlStatus defines the observed state of DRPlacementControl
 type DRPlacementControlStatus struct {
 	Phase              DRState                 `json:"phase,omitempty"`
+	ActionStartTime    *metav1.Time            `json:"actionStartTime,omitempty"`
+	ActionDuration     *metav1.Duration        `json:"actionDuration,omitempty"`
+	Progression        string                  `json:"progression,omitempty"`
 	PreferredDecision  plrv1.PlacementDecision `json:"preferredDecision,omitempty"`
 	Conditions         []metav1.Condition      `json:"conditions,omitempty"`
 	ResourceConditions VRGConditions           `json:"resourceConditions,omitempty"`
@@ -150,6 +158,10 @@ type DRPlacementControlStatus struct {
 // +kubebuilder:printcolumn:JSONPath=".spec.failoverCluster",name=failoverCluster,type=string
 // +kubebuilder:printcolumn:JSONPath=".spec.action",name=desiredState,type=string
 // +kubebuilder:printcolumn:JSONPath=".status.phase",name=currentState,type=string
+// +kubebuilder:printcolumn:JSONPath=".status.progression",name=progression,type=string,priority=2
+// +kubebuilder:printcolumn:JSONPath=".status.actionStartTime",name=start time,type=string,priority=2
+// +kubebuilder:printcolumn:JSONPath=".status.actionDuration",name=duration,type=string,priority=2
+// +kubebuilder:printcolumn:JSONPath=".status.conditions[1].status",name=peer ready,type=string,priority=2
 // +kubebuilder:resource:shortName=drpc
 
 // DRPlacementControl is the Schema for the drplacementcontrols API

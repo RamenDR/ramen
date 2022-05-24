@@ -132,6 +132,12 @@ type RamenConfig struct {
 		// cluster service version name
 		ClusterServiceVersionName string `json:"clusterServiceVersionName,omitempty"`
 	} `json:"drClusterOperator,omitempty"`
+
+	// VolSync configuration
+	VolSync struct {
+		// Disabled is used to disable VolSync usage in Ramen. Defaults to false.
+		Disabled bool `json:"disabled,omitempty"`
+	} `json:"volSync,omitempty"`
 }
 
 func init() {
