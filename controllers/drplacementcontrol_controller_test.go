@@ -35,6 +35,7 @@ import (
 
 	spokeClusterV1 "github.com/open-cluster-management/api/cluster/v1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
+	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 
 	dto "github.com/prometheus/client_model/go"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
@@ -847,6 +848,15 @@ func getManifestWorkCount(homeClusterNamespace string) int {
 	return len(manifestWorkList.Items)
 }
 
+func getManagedClusterViewCount(homeClusterNamespace string) int {
+	mcvList := &viewv1beta1.ManagedClusterViewList{}
+	listOptions := &client.ListOptions{Namespace: homeClusterNamespace}
+
+	Expect(k8sClient.List(context.TODO(), mcvList, listOptions)).NotTo(HaveOccurred())
+
+	return len(mcvList.Items)
+}
+
 func verifyUserPlacementRuleDecision(name, namespace, homeCluster string) {
 	usrPlRuleLookupKey := types.NamespacedName{
 		Name:      name,
@@ -1402,12 +1412,14 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		})
 
 		When("Deleting DRPC", func() {
-			It("Should delete VRG from Primary (East1ManagedCluster)", func() {
+			It("Should delete VRG and NS MWs and MCVs from Primary (East1ManagedCluster)", func() {
 				// ----------------------------- DELETE DRPC from PRIMARY --------------------------------------
 				By("\n\n*** DELETE DRPC ***\n\n")
+				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(2)) // Roles + VRG MW
 				deleteDRPC()
 				waitForCompletion("deleted")
-				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1)) // Roles MW
+				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1))       // Roles MW only
+				Expect(getManagedClusterViewCount(East1ManagedCluster)).Should(Equal(0)) // NS + VRG MCV
 				deleteDRPolicyAsync()
 				deleteDRClustersAsync()
 			})
@@ -1509,6 +1521,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		When("Deleting DRPC", func() {
 			It("Should delete VRG from Primary (East1ManagedCluster)", func() {
 				By("\n\n*** DELETE DRPC ***\n\n")
+				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(2)) // Roles + VRG MW
 				deleteDRPC()
 				waitForCompletion("deleted")
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1)) // Roles MW

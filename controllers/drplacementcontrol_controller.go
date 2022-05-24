@@ -739,52 +739,60 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 	r.Log.Info("Finalizing DRPC")
 
 	clonedPlRuleName := fmt.Sprintf(ClonedPlacementRuleNameFormat, drpc.Name, drpc.Namespace)
-	mwu := rmnutil.MWUtil{Client: r.Client, Ctx: ctx, Log: r.Log, InstName: drpc.Name, InstNamespace: drpc.Namespace}
-
-	preferredCluster := drpc.Spec.PreferredCluster
-	if preferredCluster == "" {
-		clonedPlRule, err := r.getClonedPlacementRule(ctx, clonedPlRuleName, drpc.Namespace)
+	// delete cloned placementrule, if one created.
+	if drpc.Spec.PreferredCluster == "" {
+		err := r.deleteClonedPlacementRule(ctx, clonedPlRuleName, drpc.Namespace)
 		if err != nil {
-			r.Log.Info("Cloned placement rule not found")
-
-			return nil
-		}
-
-		if len(clonedPlRule.Status.Decisions) != 0 {
-			preferredCluster = clonedPlRule.Status.Decisions[0].ClusterName
+			return err
 		}
 	}
+
+	mwu := rmnutil.MWUtil{Client: r.Client, Ctx: ctx, Log: r.Log, InstName: drpc.Name, InstNamespace: drpc.Namespace}
 
 	drPolicy, err := r.getDRPolicy(ctx, drpc)
 	if err != nil {
 		return fmt.Errorf("failed to get DRPolicy while finalizing DRPC (%w)", err)
 	}
 
-	// delete manifestworks (VRG)
+	// delete manifestworks (VRGs)
 	for _, drClusterName := range rmnutil.DrpolicyClusterNames(drPolicy) {
 		err := mwu.DeleteManifestWorksForCluster(drClusterName)
 		if err != nil {
 			return fmt.Errorf("%w", err)
 		}
-
-		mcvName := BuildManagedClusterViewName(drpc.Name, drpc.Namespace, rmnutil.MWTypeVRG)
-		// Delete MCV for the VRG
-		err = r.deleteManagedClusterView(drClusterName, mcvName)
-		if err != nil {
-			return err
-		}
-
-		mcvName = BuildManagedClusterViewName(drpc.Name, drpc.Namespace, rmnutil.MWTypeNS)
-		// Delete MCV for Namespace
-		err = r.deleteManagedClusterView(drClusterName, mcvName)
-		if err != nil {
-			return err
-		}
 	}
 
-	// delete cloned placementrule, if created
-	if preferredCluster == "" {
-		return r.deleteClonedPlacementRule(ctx, clonedPlRuleName, drpc.Namespace)
+	// Verify VRGs have been deleted
+	vrgs, err := r.getVRGsFromManagedClusters(drpc, drPolicy)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve VRGs. We'll retry later. Error (%w)", err)
+	}
+
+	if len(vrgs) != 0 {
+		return fmt.Errorf("waiting for VRGs count to go to zero")
+	}
+
+	// delete MCVs used in the previous call
+	return r.deleteAllManagedClusterViews(drpc, rmnutil.DrpolicyClusterNames(drPolicy))
+}
+
+func (r *DRPlacementControlReconciler) deleteAllManagedClusterViews(
+	drpc *rmn.DRPlacementControl, clusterNames []string) error {
+	// Only after the VRGs have been deleted, we delete the MCVs for the VRGs and the NS
+	for _, drClusterName := range clusterNames {
+		mcvNameForVRG := BuildManagedClusterViewName(drpc.Name, drpc.Namespace, rmnutil.MWTypeVRG)
+		// Delete MCV for the VRG
+		err := r.deleteManagedClusterView(drClusterName, mcvNameForVRG)
+		if err != nil {
+			return err
+		}
+
+		mcvNameForNS := BuildManagedClusterViewName(drpc.Name, drpc.Namespace, rmnutil.MWTypeNS)
+		// Delete MCV for Namespace
+		err = r.deleteManagedClusterView(drClusterName, mcvNameForNS)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -1010,15 +1018,15 @@ func (r *DRPlacementControlReconciler) deleteClonedPlacementRule(ctx context.Con
 	name, namespace string) error {
 	plRule, err := r.getClonedPlacementRule(ctx, name, namespace)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+
 		return err
 	}
 
 	err = r.Client.Delete(ctx, plRule)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil
-		}
-
 		return fmt.Errorf("failed to delete cloned plRule %w", err)
 	}
 
