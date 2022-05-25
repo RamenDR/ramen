@@ -309,8 +309,7 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 			req.NamespacedName, err)
 	}
 
-	v.volSyncHandler = volsync.NewVSHandler(ctx, r.Client, log, v.instance,
-		v.instance.Spec.Async.SchedulingInterval, v.instance.Spec.Async.VolumeSnapshotClassSelector)
+	v.volSyncHandler = volsync.NewVSHandler(ctx, r.Client, log, v.instance, v.instance.Spec.Async)
 
 	if v.instance.Status.ProtectedPVCs == nil {
 		v.instance.Status.ProtectedPVCs = []ramendrv1alpha1.ProtectedPVC{}
@@ -548,6 +547,12 @@ func (v *VRGInstance) updatePVCListForAll() error {
 	pvcList, err := v.listPVCsByPVCSelector()
 	if err != nil {
 		return err
+	}
+
+	v.log.Info(fmt.Sprintf("Found %d PVCs using matching lables %v", len(pvcList.Items), labelSelector.MatchLabels))
+
+	if v.instance.Spec.Async == nil {
+		return nil
 	}
 
 	if !v.vrcUpdated {
