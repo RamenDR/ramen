@@ -179,7 +179,7 @@ func getFunctionNameAtIndex(idx int) string {
 }
 
 func (f FakeMCVGetter) GetNamespaceFromManagedCluster(
-	resourceName, managedCluster, namespaceString string) (*corev1.Namespace, error) {
+	resourceName, managedCluster, namespaceString string, annotations map[string]string) (*corev1.Namespace, error) {
 	appNamespaceLookupKey := types.NamespacedName{Name: namespaceString}
 	appNamespaceObj := &corev1.Namespace{}
 
@@ -205,8 +205,8 @@ var baseVRG = &rmn.VolumeReplicationGroup{
 }
 
 //nolint:funlen,cyclop
-func (f FakeMCVGetter) GetVRGFromManagedCluster(
-	resourceName, resourceNamespace, managedCluster string) (*rmn.VolumeReplicationGroup, error) {
+func (f FakeMCVGetter) GetVRGFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
+	annnotations map[string]string) (*rmn.VolumeReplicationGroup, error) {
 	conType := controllers.VRGConditionTypeDataReady
 	reason := controllers.VRGConditionReasonReplicating
 	vrgStatus := rmn.VolumeReplicationGroupStatus{
@@ -299,6 +299,16 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(
 	}
 
 	return nil, fmt.Errorf("unknown caller %s", getFunctionNameAtIndex(2))
+}
+
+func (f FakeMCVGetter) DeleteVRGManagedClusterView(
+	resourceName, resourceNamespace, clusterName, resourceType string) error {
+	return nil
+}
+
+func (f FakeMCVGetter) DeleteNamespaceManagedClusterView(
+	resourceName, resourceNamespace, clusterName, resourceType string) error {
+	return nil
 }
 
 func getVRGFromManifestWork(managedCluster string) (*rmn.VolumeReplicationGroup, error) {
@@ -955,8 +965,8 @@ func verifyUserPlacementRuleDecision(name, namespace, homeCluster string) {
 			usrPlRule.Status.Decisions[0].ClusterName == homeCluster
 	}, timeout, interval).Should(BeTrue())
 
-	Expect(usrPlRule.ObjectMeta.Annotations[rmnutil.DRPCNameAnnotation]).Should(Equal(DRPCName))
-	Expect(usrPlRule.ObjectMeta.Annotations[rmnutil.DRPCNamespaceAnnotation]).Should(Equal(DRPCNamespaceName))
+	Expect(usrPlRule.ObjectMeta.Annotations[controllers.DRPCNameAnnotation]).Should(Equal(DRPCName))
+	Expect(usrPlRule.ObjectMeta.Annotations[controllers.DRPCNamespaceAnnotation]).Should(Equal(DRPCNamespaceName))
 }
 
 func verifyUserPlacementRuleDecisionUnchanged(name, namespace, homeCluster string) {
@@ -973,8 +983,8 @@ func verifyUserPlacementRuleDecisionUnchanged(name, namespace, homeCluster strin
 		return err == nil && usrPlRule.Status.Decisions[0].ClusterName == homeCluster
 	}, timeout, interval).Should(BeTrue())
 
-	Expect(usrPlRule.ObjectMeta.Annotations[rmnutil.DRPCNameAnnotation]).Should(Equal(DRPCName))
-	Expect(usrPlRule.ObjectMeta.Annotations[rmnutil.DRPCNamespaceAnnotation]).Should(Equal(DRPCNamespaceName))
+	Expect(usrPlRule.ObjectMeta.Annotations[controllers.DRPCNameAnnotation]).Should(Equal(DRPCName))
+	Expect(usrPlRule.ObjectMeta.Annotations[controllers.DRPCNamespaceAnnotation]).Should(Equal(DRPCNamespaceName))
 }
 
 func verifyDRPCStatusPreferredClusterExpectation(drState rmn.DRState) {
@@ -1126,6 +1136,21 @@ func runRelocateAction(userPlacementRule *plrv1.PlacementRule, fromCluster strin
 
 	if isSyncDR {
 		unfenceCluster(toCluster1, manualUnfence)
+	}
+
+	// this is to ensure that drCluster is deleted with
+	// empty string as fenceState. Otherwise, in the cleanup
+	// section of the test, drPolicy is deleted first and then
+	// drCluster is removed. But, drCluster relies on finding
+	// a peer cluster through drPolicy for NetworkFence resource
+	// create/update/delete operations. Thus, the deletion of the
+	// drCluster resource would fail with the error being failure
+	// to find a peer cluster. resetdrCluster changes the spec of
+	// drCluster fence state to empty string instead of "Unfenced".
+	// This ensures that drCluster does not attempt removal of the
+	// NetworkFence resource as part of its deletion.
+	if !manualUnfence {
+		resetdrCluster(toCluster1)
 	}
 
 	relocateToPreferredCluster(userPlacementRule, fromCluster)
@@ -1350,6 +1375,26 @@ func unfenceCluster(cluster string, manual bool) {
 
 		return drClusterFencedCondition.Status == metav1.ConditionFalse
 	}, timeout, interval).Should(BeTrue(), "failed to update DRCluster on time")
+}
+
+func resetdrCluster(cluster string) {
+	localRetries := 0
+
+	for localRetries < updateRetries {
+		latestDRCluster := getLatestDRCluster(cluster)
+		latestDRCluster.Spec.ClusterFence = ""
+
+		err := k8sClient.Update(context.TODO(), latestDRCluster)
+		if errors.IsConflict(err) {
+			localRetries++
+
+			continue
+		}
+
+		Expect(err).NotTo(HaveOccurred())
+
+		break
+	}
 }
 
 func verifyInitialDRPCDeployment(userPlacementRule *plrv1.PlacementRule, drpc *rmn.DRPlacementControl,

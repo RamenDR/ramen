@@ -40,7 +40,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+
 	"github.com/ramendr/ramen/controllers"
+	rmnutil "github.com/ramendr/ramen/controllers/util"
 	"github.com/ramendr/ramen/controllers/volsync"
 	// +kubebuilder:scaffold:imports
 )
@@ -126,6 +128,7 @@ func setupReconcilers(mgr ctrl.Manager) {
 			Client:            mgr.GetClient(),
 			APIReader:         mgr.GetAPIReader(),
 			Scheme:            mgr.GetScheme(),
+			MCVGetter:         rmnutil.ManagedClusterViewGetterImpl{Client: mgr.GetClient()},
 			ObjectStoreGetter: controllers.S3ObjectStoreGetter(),
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "DRCluster")
@@ -136,7 +139,7 @@ func setupReconcilers(mgr ctrl.Manager) {
 			Client:    mgr.GetClient(),
 			APIReader: mgr.GetAPIReader(),
 			Log:       ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),
-			MCVGetter: controllers.ManagedClusterViewGetterImpl{Client: mgr.GetClient()},
+			MCVGetter: rmnutil.ManagedClusterViewGetterImpl{Client: mgr.GetClient()},
 			Scheme:    mgr.GetScheme(),
 			Callback:  func(string, string) {},
 		}).SetupWithManager(mgr); err != nil {

@@ -300,9 +300,14 @@ func (d *DRPCInstance) createVolSyncDestManifestWork(srcCluster string) error {
 
 		vrg := d.generateVRG(rmn.Secondary)
 
+		annotations := make(map[string]string)
+
+		annotations[DRPCNameAnnotation] = d.mwu.InstName
+		annotations[DRPCNamespaceAnnotation] = d.mwu.InstNamespace
+
 		if err := d.mwu.CreateOrUpdateVRGManifestWork(
 			d.instance.Name, d.instance.Namespace,
-			dstCluster, vrg); err != nil {
+			dstCluster, vrg, annotations); err != nil {
 			d.log.Error(err, "failed to create or update VolumeReplicationGroup manifest")
 
 			return fmt.Errorf("failed to create or update VolumeReplicationGroup manifest in namespace %s (%w)", dstCluster, err)

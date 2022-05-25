@@ -45,6 +45,7 @@ type DRClusterReconciler struct {
 	client.Client
 	APIReader         client.Reader
 	Scheme            *runtime.Scheme
+	MCVGetter         util.ManagedClusterViewGetter
 	ObjectStoreGetter ObjectStoreGetter
 }
 
@@ -75,6 +76,10 @@ const (
 	StorageAnnotationDriver          = "drcluster.ramendr.openshift.io/storage-driver"
 )
 
+const (
+	DRClusterNameAnnotation = "drcluster.ramendr.openshift.io/drcluster-name"
+)
+
 //nolint:lll
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusters,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusters/status,verbs=get;update;patch
@@ -102,7 +107,7 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, client.IgnoreNotFound(fmt.Errorf("get: %w", err))
 	}
 
-	manifestWorkUtil := &util.MWUtil{Client: r.Client, Ctx: ctx, Log: log, InstName: "", InstNamespace: ""}
+	manifestWorkUtil := &util.MWUtil{Client: r.Client, Ctx: ctx, Log: log, InstName: drcluster.Name, InstNamespace: ""}
 
 	u := &drclusterInstance{
 		ctx: ctx, object: drcluster, client: r.Client, log: log, reconciler: r,
@@ -117,19 +122,8 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// DRCluster is marked for deletion
-	if !drcluster.ObjectMeta.DeletionTimestamp.IsZero() {
-		log.Info("delete")
-
-		// Undeploy manifests
-		if err := drClusterUndeploy(drcluster, manifestWorkUtil); err != nil {
-			return ctrl.Result{}, fmt.Errorf("drclusters undeploy: %w", err)
-		}
-
-		if err := u.finalizerRemove(); err != nil {
-			return ctrl.Result{}, fmt.Errorf("finalizer remove update: %w", err)
-		}
-
-		return ctrl.Result{}, nil
+	if !u.object.ObjectMeta.DeletionTimestamp.IsZero() {
+		return r.processDeletion(u)
 	}
 
 	log.Info("create/update")
@@ -166,6 +160,7 @@ func (u *drclusterInstance) initializeStatus() {
 		// Set the DRCluster conditions to unknown as nothing is known at this point
 		msg := "Initializing DRCluster"
 		setDRClusterInitialCondition(&u.object.Status.Conditions, u.object.Generation, msg)
+		u.setDRClusterPhase(ramen.Starting)
 	}
 }
 
@@ -254,6 +249,33 @@ func (r DRClusterReconciler) processFencing(u *drclusterInstance) (ctrl.Result, 
 	return ctrl.Result{Requeue: requeue}, u.statusUpdate()
 }
 
+func (r DRClusterReconciler) processDeletion(u *drclusterInstance) (ctrl.Result, error) {
+	u.log.Info("delete")
+
+	// Undeploy manifests
+	if err := drClusterUndeploy(u.object, u.mwUtil); err != nil {
+		return ctrl.Result{}, fmt.Errorf("drclusters undeploy: %w", err)
+	}
+
+	if u.object.Spec.ClusterFence == ramen.ClusterFenceStateFenced ||
+		u.object.Spec.ClusterFence == ramen.ClusterFenceStateUnfenced {
+		requeue, err := u.handleDeletion()
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("cleanup update: %w", err)
+		}
+
+		if requeue {
+			return ctrl.Result{Requeue: true}, nil
+		}
+	}
+
+	if err := u.finalizerRemove(); err != nil {
+		return ctrl.Result{}, fmt.Errorf("finalizer remove update: %w", err)
+	}
+
+	return ctrl.Result{}, nil
+}
+
 type drclusterInstance struct {
 	ctx                 context.Context
 	object              *ramen.DRCluster
@@ -334,12 +356,14 @@ func (u *drclusterInstance) clusterFenceHandle() (bool, error) {
 
 	case ramen.ClusterFenceStateManuallyFenced:
 		setDRClusterFencedCondition(&u.object.Status.Conditions, u.object.Generation, "Cluster Manually fenced")
+		u.setDRClusterPhase(ramen.Fenced)
 		// no requeue is needed and no error as this is a manual fence
 		return false, nil
 
 	case ramen.ClusterFenceStateManuallyUnfenced:
 		setDRClusterCleanCondition(&u.object.Status.Conditions, u.object.Generation,
 			"Cluster Manually Unfenced and clean")
+		u.setDRClusterPhase(ramen.Unfenced)
 		// no requeue is needed and no error as this is a manual unfence
 		return false, nil
 
@@ -352,9 +376,25 @@ func (u *drclusterInstance) clusterFenceHandle() (bool, error) {
 		// edits the resource and removes the entire line that has fencing state? Should that be
 		// treated as cluster being clean or unfence?
 		setDRClusterCleanCondition(&u.object.Status.Conditions, u.object.Generation, "Cluster Clean")
+		u.setDRClusterPhase(ramen.Available)
 
 		return false, nil
 	}
+}
+
+func (u *drclusterInstance) handleDeletion() (bool, error) {
+	drpolicies, err := util.GetAllDRPolicies(u.ctx, u.reconciler.APIReader)
+	if err != nil {
+		return true, fmt.Errorf("getting all drpolicies failed: %w", err)
+	}
+
+	peerCluster, err := getPeerCluster(u.ctx, drpolicies, u.reconciler, u.object, u.log)
+	if err != nil {
+		return true, fmt.Errorf("failed to get the peer cluster for the cluster %s: %w",
+			u.object.Name, err)
+	}
+
+	return u.cleanClusters([]ramen.DRCluster{*u.object, peerCluster})
 }
 
 func (u *drclusterInstance) clusterFence() (bool, error) {
@@ -416,7 +456,7 @@ func (u *drclusterInstance) clusterUnfence() (bool, error) {
 	}
 
 	// once this cluster is unfenced. Clean the fencing resource.
-	return u.cleanCluster(peerCluster)
+	return u.cleanClusters([]ramen.DRCluster{*u.object, peerCluster})
 }
 
 //
@@ -431,20 +471,53 @@ func (u *drclusterInstance) clusterUnfence() (bool, error) {
 //    return requeue, nil
 // endif
 func (u *drclusterInstance) fenceClusterOnCluster(peerCluster *ramen.DRCluster) (bool, error) {
-	u.log.Info(fmt.Sprintf("initiating the cluster fence from the cluster %s", peerCluster.Name))
-	// TODO: Check if NetworkFence resource exist via MCV and
-	//       take appropriate decisions?
+	if !u.isFencingOrFenced() {
+		u.log.Info(fmt.Sprintf("initiating the cluster fence from the cluster %s", peerCluster.Name))
 
-	if err := u.createNFManifestWork(u.object, peerCluster, u.log); err != nil {
+		if err := u.createNFManifestWork(u.object, peerCluster, u.log); err != nil {
+			setDRClusterFencingFailedCondition(&u.object.Status.Conditions, u.object.Generation,
+				"NeworkFence ManifestWork creation failed")
+
+			u.log.Info(fmt.Sprintf("Failed to generate NetworkFence MW on cluster %s to unfence %s",
+				peerCluster.Name, u.object.Name))
+
+			return true, fmt.Errorf("failed to create the NetworkFence MW on cluster %s to fence %s",
+				peerCluster.Name, u.object.Name)
+		}
+
+		setDRClusterFencingCondition(&u.object.Status.Conditions, u.object.Generation,
+			"ManifestWork for NetworkFence fence operation created")
+		u.setDRClusterPhase(ramen.Fencing)
+		// just created fencing resource. Requeue and then check.
+		return true, nil
+	}
+
+	annotations := make(map[string]string)
+	annotations[DRPCNameAnnotation] = u.object.Name
+
+	nf, err := u.reconciler.MCVGetter.GetNFFromManagedCluster(u.object.Name,
+		u.object.Namespace, peerCluster.Name, annotations)
+	if err != nil {
+		// dont update the status or conditions. Return requeue, nil as
+		// this indicates that NetworkFence resource might have been not yet
+		// created in the manged cluster or MCV for it might not have been
+		// created yet. This assumption is because, drCluster does not delete
+		// the NetworkFence resource as part of fencing.
+		return true, fmt.Errorf("failed to get NetworkFence using MCV (error: %w)", err)
+	}
+
+	if nf.Status.Result != csiaddonsv1alpha1.FencingOperationResultSucceeded {
 		setDRClusterFencingFailedCondition(&u.object.Status.Conditions, u.object.Generation,
-			"NeworkFence ManifestWork creation failed")
+			"fencing operation not successful")
 
-		return true, fmt.Errorf("failed to create the NetworkFence MW on cluster %s to fence %s",
-			peerCluster.Name, u.object.Name)
+		u.log.Info("Fencing operation not successful", "cluster", u.object.Name)
+
+		return true, fmt.Errorf("fencing operation result not successful")
 	}
 
 	setDRClusterFencedCondition(&u.object.Status.Conditions, u.object.Generation,
 		"Cluster successfully fenced")
+	u.advanceToNextPhase()
 
 	return false, nil
 }
@@ -460,24 +533,73 @@ func (u *drclusterInstance) fenceClusterOnCluster(peerCluster *ramen.DRCluster) 
 //    Create the fencing CR MW with Unfenced state
 //    return requeue, nil
 // endif
-// TODO: Remove the below linter check skipper
 func (u *drclusterInstance) unfenceClusterOnCluster(peerCluster *ramen.DRCluster) (bool, error) {
-	u.log.Info(fmt.Sprintf("initiating the cluster unfence from the cluster %s", peerCluster.Name))
-	// TODO: Check if NetworkFence resource exist via MCV and
-	//       take appropriate decisions?
+	if !u.isUnfencingOrUnfenced() {
+		u.log.Info(fmt.Sprintf("initiating the cluster unfence from the cluster %s", peerCluster.Name))
 
-	if err := u.createNFManifestWork(u.object, peerCluster, u.log); err != nil {
+		if err := u.createNFManifestWork(u.object, peerCluster, u.log); err != nil {
+			setDRClusterUnfencingFailedCondition(&u.object.Status.Conditions, u.object.Generation,
+				"NeworkFence ManifestWork for unfence failed")
+
+			u.log.Info(fmt.Sprintf("Failed to generate NetworkFence MW on cluster %s to unfence %s",
+				peerCluster.Name, u.object.Name))
+
+			return true, fmt.Errorf("failed to generate NetworkFence MW on cluster %s to unfence %s",
+				peerCluster.Name, u.object.Name)
+		}
+
+		setDRClusterUnfencingCondition(&u.object.Status.Conditions, u.object.Generation,
+			"ManifestWork for NetworkFence unfence operation created")
+		u.setDRClusterPhase(ramen.Unfencing)
+
+		// just created NetworkFence resource to unfence. Requeue and then check.
+		return true, nil
+	}
+
+	annotations := make(map[string]string)
+	annotations[DRClusterNameAnnotation] = u.object.Name
+
+	nf, err := u.reconciler.MCVGetter.GetNFFromManagedCluster(u.object.Name,
+		u.object.Namespace, peerCluster.Name, annotations)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return u.requeueIfNFMWExists(peerCluster)
+		}
+
+		return true, fmt.Errorf("failed to get NetworkFence using MCV (error: %w", err)
+	}
+
+	if nf.Status.Result != csiaddonsv1alpha1.FencingOperationResultSucceeded {
 		setDRClusterUnfencingFailedCondition(&u.object.Status.Conditions, u.object.Generation,
-			"NeworkFence ManifestWork for unfence failed")
+			"unfencing operation not successful")
 
-		return true, fmt.Errorf("failed to generate NetworkFence MW on cluster %s to unfence %s",
-			peerCluster.Name, u.object.Name)
+		u.log.Info("Unfencing operation not successful", "cluster", u.object.Name)
+
+		return true, fmt.Errorf("un operation result not successful")
 	}
 
 	setDRClusterUnfencedCondition(&u.object.Status.Conditions, u.object.Generation,
 		"Cluster successfully unfenced")
+	u.advanceToNextPhase()
 
 	return false, nil
+}
+
+func (u *drclusterInstance) requeueIfNFMWExists(peerCluster *ramen.DRCluster) (bool, error) {
+	nfMWName := u.mwUtil.BuildManifestWorkName(util.MWTypeNF)
+
+	_, mwErr := u.mwUtil.FindManifestWork(nfMWName, peerCluster.Name)
+	if mwErr != nil {
+		if errors.IsNotFound(mwErr) {
+			u.log.Info("NetworkFence and MW for it not found. Cleaned")
+
+			return false, nil
+		}
+
+		return true, fmt.Errorf("failed to get MW for NetworkFence %w", mwErr)
+	}
+
+	return true, fmt.Errorf("NetworkFence not found. But MW still exists")
 }
 
 // We are here means following things have been confirmed.
@@ -486,23 +608,47 @@ func (u *drclusterInstance) unfenceClusterOnCluster(peerCluster *ramen.DRCluster
 //
 // * Proceed to delete the ManifestWork for the fencingCR
 // * Issue a requeue
-func (u *drclusterInstance) cleanCluster(peerCluster ramen.DRCluster) (bool, error) {
-	u.log.Info(fmt.Sprintf("cleaning the cluster fence resource from the cluster %s", peerCluster.Name))
-	// TODO: delete the fencing CR MW.
+func (u *drclusterInstance) cleanClusters(clusters []ramen.DRCluster) (bool, error) {
+	u.log.Info("initiating the removal of NetworkFence resource ")
+
+	needRequeue := false
+	cleanedCount := 0
+
+	for _, cluster := range clusters {
+		requeue, err := u.removeFencingCR(cluster)
+		// Can just error alone be checked?
+		if err != nil {
+			needRequeue = true
+		} else {
+			if !requeue {
+				cleanedCount++
+			} else {
+				needRequeue = true
+			}
+		}
+	}
+
+	switch cleanedCount {
+	case len(clusters):
+		setDRClusterCleanCondition(&u.object.Status.Conditions, u.object.Generation, "fencing resource cleaned from cluster")
+	default:
+		setDRClusterCleaningCondition(&u.object.Status.Conditions, u.object.Generation, "NetworkFence resource clean started")
+	}
+
+	return needRequeue, nil
+}
+
+func (u *drclusterInstance) removeFencingCR(cluster ramen.DRCluster) (bool, error) {
+	u.log.Info(fmt.Sprintf("cleaning the cluster fence resource from the cluster %s", cluster.Name))
 
 	err := u.mwUtil.DeleteManifestWork(fmt.Sprintf(util.ManifestWorkNameFormat,
-		u.object.Name, peerCluster.Name, util.MWTypeNF), peerCluster.Name)
+		u.object.Name, cluster.Name, util.MWTypeNF), cluster.Name)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			setDRClusterCleanCondition(&u.object.Status.Conditions, u.object.Generation, "fencing resource cleaned from cluster")
-
-			return false, nil
+			return u.ensureNetworkFenceDeleted(cluster.Name)
 		}
 
-		setDRClusterCleaningFailedCondition(&u.object.Status.Conditions, u.object.Generation,
-			"failed to clean fencing resource")
-
-		return true, fmt.Errorf("failed to create NetworkFence resource from cluster %s", peerCluster.Name)
+		return true, fmt.Errorf("failed to delete NetworkFence resource from cluster %s", cluster.Name)
 	}
 
 	setDRClusterCleaningCondition(&u.object.Status.Conditions, u.object.Generation, "NetworkFence resource clean started")
@@ -511,6 +657,39 @@ func (u *drclusterInstance) cleanCluster(peerCluster ramen.DRCluster) (bool, err
 	// has been just issued, requeue is needed to ensure that
 	// the fencing CR has indeed been deleted from the cluster.
 	return true, nil
+}
+
+func (u *drclusterInstance) ensureNetworkFenceDeleted(clusterName string) (bool, error) {
+	annotations := make(map[string]string)
+	annotations[DRClusterNameAnnotation] = u.object.Name
+
+	if _, err := u.reconciler.MCVGetter.GetNFFromManagedCluster(u.object.Name,
+		u.object.Namespace, clusterName, annotations); err != nil {
+		if errors.IsNotFound(err) {
+			return u.deleteNFMCV(clusterName)
+		}
+
+		return true, fmt.Errorf("failed to get MCV for NetworkFence on %s (%w)", clusterName, err)
+	}
+
+	// We are here means, successfully NetworkFence MCV is obtained. Hence
+	// we need to wait for NetworkFence deletion to complete. Requeue.
+	return true, nil
+}
+
+func (u *drclusterInstance) deleteNFMCV(clusterName string) (bool, error) {
+	mcvNameNF := util.BuildManagedClusterViewName(u.object.Name, u.object.Namespace, util.MWTypeNF)
+
+	err := u.reconciler.MCVGetter.DeleteNFManagedClusterView(u.object.Name, u.object.Namespace, clusterName, mcvNameNF)
+	if err != nil {
+		u.log.Info("Failed to delete the MCV for NetworkFence")
+
+		return true, fmt.Errorf("failed to delete MCV for NetworkFence %w", err)
+	}
+
+	u.log.Info("Deleted the MCV for NetworkFence")
+	// successfully deleted the MCV for NetworkFence. No need to requeue
+	return false, nil
 }
 
 func getPeerCluster(ctx context.Context, list ramen.DRPolicyList, reconciler *DRClusterReconciler,
@@ -634,21 +813,21 @@ func (r *DRClusterReconciler) drClusterConfigMapMapFunc(configMap client.Object)
 }
 
 func setDRClusterInitialCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	setStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               ramen.DRClusterValidated,
 		Reason:             DRClusterConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionUnknown,
 		Message:            message,
 	})
-	setStatusCondition(conditions, metav1.Condition{
+	setStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeFenced,
 		Reason:             DRClusterConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionUnknown,
 		Message:            message,
 	})
-	setStatusCondition(conditions, metav1.Condition{
+	setStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeClean,
 		Reason:             DRClusterConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
@@ -662,8 +841,6 @@ func setDRClusterInitialCondition(conditions *[]metav1.Condition, observedGenera
 // for NetworkFence CR and we have not yet seen the
 // status of it.
 // unfence = true, fence = false, clean = true
-// TODO: Remove the linter skip when this function is used
-//nolint:deadcode,unused
 func setDRClusterFencingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeFenced,
@@ -688,8 +865,6 @@ func setDRClusterFencingCondition(conditions *[]metav1.Condition, observedGenera
 // clean is false, because, the cluster is already fenced
 // due to NetworkFence CR.
 // unfence = false, fence = true, clean = false
-// TODO: Remove the linter skip when this function is used
-//nolint:deadcode,unused
 func setDRClusterUnfencingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeFenced,
@@ -855,6 +1030,7 @@ func setDRClusterUnfencingFailedCondition(conditions *[]metav1.Condition, observ
 // fails. Since, cleaning is always called after a successful
 // Unfence operation, unfence = true, fence = false, clean = false
 // TODO: Remove the linter skip when this function is used
+//nolint:deadcode,unused
 func setDRClusterCleaningFailedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeFenced,
@@ -883,9 +1059,12 @@ func (u *drclusterInstance) createNFManifestWork(targetCluster *ramen.DRCluster,
 		return fmt.Errorf("failed to generate network fence resource: %w", err)
 	}
 
+	annotations := make(map[string]string)
+	annotations[DRClusterNameAnnotation] = u.object.Name
+
 	if err := u.mwUtil.CreateOrUpdateNFManifestWork(
 		u.object.Name, u.object.Namespace,
-		peerCluster.Name, nf); err != nil {
+		peerCluster.Name, nf, annotations); err != nil {
 		log.Error(err, "failed to create or update NetworkFence manifest")
 
 		return fmt.Errorf("failed to create or update NetworkFence manifest in cluster %s to fence off cluster %s (%w)",
@@ -956,4 +1135,59 @@ func generateNF(targetCluster *ramen.DRCluster) (csiaddonsv1alpha1.NetworkFence,
 	}
 
 	return nf, nil
+}
+
+//nolint:exhaustive
+func (u *drclusterInstance) isFencingOrFenced() bool {
+	switch u.getLastDRClusterPhase() {
+	case ramen.Fencing:
+		fallthrough
+	case ramen.Fenced:
+		return true
+	}
+
+	return false
+}
+
+//nolint:exhaustive
+func (u *drclusterInstance) isUnfencingOrUnfenced() bool {
+	switch u.getLastDRClusterPhase() {
+	case ramen.Unfencing:
+		fallthrough
+	case ramen.Unfenced:
+		return true
+	}
+
+	return false
+}
+
+func (u *drclusterInstance) getLastDRClusterPhase() ramen.DRClusterPhase {
+	return u.object.Status.Phase
+}
+
+func (u *drclusterInstance) setDRClusterPhase(nextPhase ramen.DRClusterPhase) {
+	if u.object.Status.Phase != nextPhase {
+		u.log.Info(fmt.Sprintf("Phase: Current '%s'. Next '%s'",
+			u.object.Status.Phase, nextPhase))
+
+		u.object.Status.Phase = nextPhase
+	}
+}
+
+func (u *drclusterInstance) advanceToNextPhase() {
+	lastPhase := u.getLastDRClusterPhase()
+	nextPhase := lastPhase
+
+	switch lastPhase {
+	case ramen.Fencing:
+		nextPhase = ramen.Fenced
+	case ramen.Unfencing:
+		nextPhase = ramen.Unfenced
+	case ramen.Available:
+	case ramen.Fenced:
+	case ramen.Unfenced:
+	case ramen.Starting:
+	}
+
+	u.setDRClusterPhase(nextPhase)
 }
