@@ -54,10 +54,6 @@ const (
 	MWTypeVRG string = "vrg"
 	MWTypeNS  string = "ns"
 	MWTypeNF  string = "nf"
-
-	// Annotations for MW and PlacementRule
-	DRPCNameAnnotation      = "drplacementcontrol.ramendr.openshift.io/drpc-name"
-	DRPCNamespaceAnnotation = "drplacementcontrol.ramendr.openshift.io/drpc-namespace"
 )
 
 type MWUtil struct {
@@ -121,11 +117,11 @@ func IsManifestInAppliedState(mw *ocmworkv1.ManifestWork) bool {
 
 func (mwu *MWUtil) CreateOrUpdateVRGManifestWork(
 	name, namespace, homeCluster string,
-	vrg rmn.VolumeReplicationGroup) error {
+	vrg rmn.VolumeReplicationGroup, annotations map[string]string) error {
 	mwu.Log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%s:%+v",
 		name, namespace, homeCluster, vrg))
 
-	manifestWork, err := mwu.generateVRGManifestWork(name, namespace, homeCluster, vrg)
+	manifestWork, err := mwu.generateVRGManifestWork(name, namespace, homeCluster, vrg, annotations)
 	if err != nil {
 		return err
 	}
@@ -134,7 +130,7 @@ func (mwu *MWUtil) CreateOrUpdateVRGManifestWork(
 }
 
 func (mwu *MWUtil) generateVRGManifestWork(name, namespace, homeCluster string,
-	vrg rmn.VolumeReplicationGroup) (*ocmworkv1.ManifestWork, error) {
+	vrg rmn.VolumeReplicationGroup, annotations map[string]string) (*ocmworkv1.ManifestWork, error) {
 	vrgClientManifest, err := mwu.generateVRGManifest(vrg)
 	if err != nil {
 		mwu.Log.Error(err, "failed to generate VolumeReplicationGroup manifest")
@@ -148,7 +144,7 @@ func (mwu *MWUtil) generateVRGManifestWork(name, namespace, homeCluster string,
 		fmt.Sprintf(ManifestWorkNameFormat, name, namespace, MWTypeVRG),
 		homeCluster,
 		map[string]string{"app": "VRG"},
-		manifests), nil
+		manifests, annotations), nil
 }
 
 func (mwu *MWUtil) generateVRGManifest(vrg rmn.VolumeReplicationGroup) (*ocmworkv1.Manifest, error) {
@@ -158,11 +154,11 @@ func (mwu *MWUtil) generateVRGManifest(vrg rmn.VolumeReplicationGroup) (*ocmwork
 // NetworkFence MW creation
 func (mwu *MWUtil) CreateOrUpdateNFManifestWork(
 	name, namespace, homeCluster string,
-	nf csiaddonsv1alpha1.NetworkFence) error {
+	nf csiaddonsv1alpha1.NetworkFence, annotations map[string]string) error {
 	mwu.Log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%s:%+v",
 		name, namespace, homeCluster, nf))
 
-	manifestWork, err := mwu.generateNFManifestWork(name, namespace, homeCluster, nf)
+	manifestWork, err := mwu.generateNFManifestWork(name, namespace, homeCluster, nf, annotations)
 	if err != nil {
 		return err
 	}
@@ -171,7 +167,7 @@ func (mwu *MWUtil) CreateOrUpdateNFManifestWork(
 }
 
 func (mwu *MWUtil) generateNFManifestWork(name, namespace, homeCluster string,
-	nf csiaddonsv1alpha1.NetworkFence) (*ocmworkv1.ManifestWork, error) {
+	nf csiaddonsv1alpha1.NetworkFence, annotations map[string]string) (*ocmworkv1.ManifestWork, error) {
 	nfClientManifest, err := mwu.generateNFManifest(nf)
 	if err != nil {
 		mwu.Log.Error(err, "failed to generate NetworkFence manifest")
@@ -190,7 +186,7 @@ func (mwu *MWUtil) generateNFManifestWork(name, namespace, homeCluster string,
 		fmt.Sprintf(ManifestWorkNameFormat, name, namespace, MWTypeNF),
 		homeCluster,
 		map[string]string{"app": "NF"},
-		manifests), nil
+		manifests, annotations), nil
 }
 
 func (mwu *MWUtil) generateNFManifest(nf csiaddonsv1alpha1.NetworkFence) (*ocmworkv1.Manifest, error) {
@@ -198,7 +194,7 @@ func (mwu *MWUtil) generateNFManifest(nf csiaddonsv1alpha1.NetworkFence) (*ocmwo
 }
 
 func (mwu *MWUtil) CreateOrUpdateNamespaceManifest(
-	name string, namespaceName string, managedClusterNamespace string) error {
+	name string, namespaceName string, managedClusterNamespace string, annotations map[string]string) error {
 	manifest, err := mwu.GenerateManifest(Namespace(namespaceName))
 	if err != nil {
 		return err
@@ -210,7 +206,7 @@ func (mwu *MWUtil) CreateOrUpdateNamespaceManifest(
 	}
 
 	mwName := fmt.Sprintf(ManifestWorkNameFormat, name, namespaceName, MWTypeNS)
-	manifestWork := mwu.newManifestWork(mwName, managedClusterNamespace, labels, manifests)
+	manifestWork := mwu.newManifestWork(mwName, managedClusterNamespace, labels, manifests, annotations)
 
 	return mwu.createOrUpdateManifestWork(manifestWork, managedClusterNamespace)
 }
@@ -224,8 +220,7 @@ func Namespace(name string) *corev1.Namespace {
 
 func (mwu *MWUtil) CreateOrUpdateDrClusterManifestWork(
 	clusterName string,
-	objectsToAppend ...interface{},
-) error {
+	objectsToAppend []interface{}, annotations map[string]string) error {
 	objects := append(
 		[]interface{}{
 			vrgClusterRole,
@@ -252,7 +247,7 @@ func (mwu *MWUtil) CreateOrUpdateDrClusterManifestWork(
 			DrClusterManifestWorkName,
 			clusterName,
 			map[string]string{},
-			manifests,
+			manifests, annotations,
 		),
 		clusterName,
 	)
@@ -302,16 +297,12 @@ func (mwu *MWUtil) GenerateManifest(obj interface{}) (*ocmworkv1.Manifest, error
 }
 
 func (mwu *MWUtil) newManifestWork(name string, mcNamespace string,
-	labels map[string]string, manifests []ocmworkv1.Manifest) *ocmworkv1.ManifestWork {
-	return &ocmworkv1.ManifestWork{
+	labels map[string]string, manifests []ocmworkv1.Manifest, annotations map[string]string) *ocmworkv1.ManifestWork {
+	mw := &ocmworkv1.ManifestWork{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: mcNamespace,
 			Labels:    labels,
-			Annotations: map[string]string{
-				DRPCNameAnnotation:      mwu.InstName,
-				DRPCNamespaceAnnotation: mwu.InstNamespace,
-			},
 		},
 		Spec: ocmworkv1.ManifestWorkSpec{
 			Workload: ocmworkv1.ManifestsTemplate{
@@ -319,6 +310,12 @@ func (mwu *MWUtil) newManifestWork(name string, mcNamespace string,
 			},
 		},
 	}
+
+	if annotations != nil {
+		mw.ObjectMeta.Annotations = annotations
+	}
+
+	return mw
 }
 
 func (mwu *MWUtil) createOrUpdateManifestWork(

@@ -18,6 +18,7 @@ package controllers_test
 import (
 	"context"
 
+	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/v1alpha1"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
@@ -32,6 +33,35 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 )
+
+var baseNF = &csiaddonsv1alpha1.NetworkFence{
+	TypeMeta:   metav1.TypeMeta{Kind: "NetworkFence", APIVersion: "csiaddons.openshift.io/v1alpha1"},
+	ObjectMeta: metav1.ObjectMeta{Name: "network-fence-drc-cluster0"},
+	Spec: csiaddonsv1alpha1.NetworkFenceSpec{
+		Cidrs:      []string{"198.51.100.17/24", "198.51.100.18/24", "198.51.100.19/24"},
+		FenceState: csiaddonsv1alpha1.Fenced,
+	},
+}
+
+func (f FakeMCVGetter) GetNFFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
+	annotations map[string]string) (*csiaddonsv1alpha1.NetworkFence, error) {
+	nfStatus := csiaddonsv1alpha1.NetworkFenceStatus{
+		Result:  csiaddonsv1alpha1.FencingOperationResultSucceeded,
+		Message: "Success",
+	}
+
+	nf := baseNF.DeepCopy()
+	nf.Status = nfStatus
+
+	nf.Generation = 1
+
+	return nf, nil
+}
+
+func (f FakeMCVGetter) DeleteNFManagedClusterView(
+	resourceName, resourceNamespace, clusterName, resourceType string) error {
+	return nil
+}
 
 func drclusterConditionExpect(
 	drcluster *ramen.DRCluster,
@@ -236,7 +266,7 @@ var _ = Describe("DRClusterController", func() {
 	}
 
 	var drcluster *ramen.DRCluster
-	Specify("initialize tests", func() {
+	Specify("DRCluster initialize tests", func() {
 		populateDRClusters()
 		createDRClusterNamespaces()
 		createOtherDRClusters()
@@ -387,17 +417,35 @@ var _ = Describe("DRClusterController", func() {
 			createPolicies()
 			drcluster = drclusters[0].DeepCopy()
 		})
-		When("provided Fencing value is empty", func() {
-			It("reports validated with status fencing as Unfenced", func() {
-				drcluster.Spec.ClusterFence = ""
+		When("provided Fencing value is ManuallyFenced", func() {
+			It("reports validated with status fencing as Fenced", func() {
+				drcluster.Spec.ClusterFence = "ManuallyFenced"
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				drclusterConditionExpect(drcluster, false, metav1.ConditionTrue,
+					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
+					ramen.DRClusterConditionTypeFenced)
+			})
+		})
+		When("provided Fencing value is ManuallyUnfenced", func() {
+			It("reports validated with status fencing as Unfenced", func() {
+				drcluster.Spec.ClusterFence = "ManuallyUnfenced"
+				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
 				drclusterConditionExpect(drcluster, false, metav1.ConditionFalse,
 					Equal(controllers.DRClusterConditionReasonClean), Ignore(),
 					ramen.DRClusterConditionTypeFenced)
 			})
 		})
+		When("provided Fencing value is Fenced", func() {
+			It("reports fenced with reason Fencing success", func() {
+				drcluster.Spec.ClusterFence = "Fenced"
+				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
+				drclusterConditionExpect(drcluster, false, metav1.ConditionTrue,
+					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
+					ramen.DRClusterConditionTypeFenced)
+			})
+		})
 		When("provided Fencing value is Unfenced", func() {
-			It("reports validated with status fencing as Unfenced", func() {
+			It("reports Unfenced false with status fenced as false", func() {
 				drcluster.Spec.ClusterFence = "Unfenced"
 				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
 				// When Unfence is set, DRCluster controller first unfences the
@@ -411,25 +459,16 @@ var _ = Describe("DRClusterController", func() {
 					Ignore(), ramen.DRClusterConditionTypeFenced)
 			})
 		})
-		When("provided Fencing value is ManuallyFenced", func() {
-			It("reports validated with status fencing as Fenced", func() {
-				drcluster.Spec.ClusterFence = "ManuallyFenced"
+		When("provided Fencing value is empty", func() {
+			It("reports validated with status fencing as Unfenced", func() {
+				drcluster.Spec.ClusterFence = ""
 				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
-				drclusterConditionExpect(drcluster, false, metav1.ConditionTrue,
-					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
+				drclusterConditionExpect(drcluster, false, metav1.ConditionFalse,
+					Equal(controllers.DRClusterConditionReasonClean), Ignore(),
 					ramen.DRClusterConditionTypeFenced)
 			})
 		})
-		When("provided Fencing value is Fenced", func() {
-			It("reports NOT validated with reason FencingHandlingFailed", func() {
-				drcluster.Spec.ClusterFence = "Fenced"
-				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
-				drclusterConditionExpect(drcluster, false, metav1.ConditionTrue,
-					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
-					ramen.DRClusterConditionTypeFenced)
-			})
-		})
-		When("deleting a DRCluster with an invalid fencing status", func() {
+		When("deleting a DRCluster with empty fencing value", func() {
 			It("is successful", func() {
 				drpolicyDelete(syncDRPolicy)
 				drclusterDelete(drcluster)

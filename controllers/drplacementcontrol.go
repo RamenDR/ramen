@@ -38,6 +38,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
+const (
+	// Annotations for MW and PlacementRule
+	DRPCNameAnnotation      = "drplacementcontrol.ramendr.openshift.io/drpc-name"
+	DRPCNamespaceAnnotation = "drplacementcontrol.ramendr.openshift.io/drpc-namespace"
+)
+
 var (
 	WaitForPVRestoreToComplete         error = errorswrapper.New("Waiting for PV restore to complete...")
 	WaitForVolSyncDestRepToComplete    error = errorswrapper.New("Waiting for VolSync RD to complete...")
@@ -1059,13 +1065,6 @@ func (d *DRPCInstance) moveVRGToSecondaryOnPeers(clusterToSkip string) error {
 	return nil
 }
 
-// outputs a string for use in creating a ManagedClusterView name
-// example: when looking for a vrg with name 'demo' in the namespace 'ramen', input: ("demo", "ramen", "vrg")
-// this will give output "demo-ramen-vrg-mcv"
-func BuildManagedClusterViewName(resourceName, resourceNamespace, resource string) string {
-	return fmt.Sprintf("%s-%s-%s-mcv", resourceName, resourceNamespace, resource)
-}
-
 func (d *DRPCInstance) cleanupSecondaries(skipCluster string) (bool, error) {
 	for _, clusterName := range rmnutil.DrpolicyClusterNames(d.drPolicy) {
 		if skipCluster == clusterName {
@@ -1091,18 +1090,22 @@ func (d *DRPCInstance) cleanupSecondaries(skipCluster string) (bool, error) {
 			return false, nil
 		}
 
-		mcvNameVRG := BuildManagedClusterViewName(d.instance.Name, d.instance.Namespace, rmnutil.MWTypeVRG)
+		err = d.reconciler.MCVGetter.DeleteVRGManagedClusterView(d.instance.Name, d.instance.Namespace, clusterName,
+			rmnutil.MWTypeVRG)
 		// MW is deleted, VRG is deleted, so we no longer need MCV for the VRG
-		err = d.reconciler.deleteManagedClusterView(clusterName, mcvNameVRG)
 		if err != nil {
-			return false, err
+			d.log.Info("Deletion of VRG MCV failed")
+
+			return false, fmt.Errorf("deletion of VRG MCV failed %w", err)
 		}
 
-		mcvNameNS := BuildManagedClusterViewName(d.instance.Name, d.instance.Namespace, rmnutil.MWTypeNS)
+		err = d.reconciler.MCVGetter.DeleteNamespaceManagedClusterView(d.instance.Name, d.instance.Namespace, clusterName,
+			rmnutil.MWTypeNS)
 		// MCV for Namespace is no longer needed
-		err = d.reconciler.deleteManagedClusterView(clusterName, mcvNameNS)
 		if err != nil {
-			return false, err
+			d.log.Info("Deletion of Namespace MCV failed")
+
+			return false, fmt.Errorf("deletion of namespace MCV failed %w", err)
 		}
 	}
 
@@ -1154,9 +1157,14 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string) error {
 	vrg := d.generateVRG(rmn.Primary)
 	vrg.Spec.VolSync.Disabled = d.volSyncDisabled
 
+	annotations := make(map[string]string)
+
+	annotations[DRPCNameAnnotation] = d.mwu.InstName
+	annotations[DRPCNamespaceAnnotation] = d.mwu.InstNamespace
+
 	if err := d.mwu.CreateOrUpdateVRGManifestWork(
 		d.instance.Name, d.instance.Namespace,
-		homeCluster, vrg); err != nil {
+		homeCluster, vrg, annotations); err != nil {
 		d.log.Error(err, "failed to create or update VolumeReplicationGroup manifest")
 
 		return fmt.Errorf("failed to create or update VolumeReplicationGroup manifest in namespace %s (%w)", homeCluster, err)
@@ -1278,7 +1286,12 @@ func (d *DRPCInstance) ensureNamespaceExistsOnManagedCluster(homeCluster string)
 		d.instance.Namespace, homeCluster, namespaceExists))
 
 	if !namespaceExists { // attempt to create it
-		err := d.mwu.CreateOrUpdateNamespaceManifest(d.instance.Name, d.instance.Namespace, homeCluster)
+		annotations := make(map[string]string)
+
+		annotations[DRPCNameAnnotation] = d.mwu.InstName
+		annotations[DRPCNamespaceAnnotation] = d.mwu.InstNamespace
+
+		err := d.mwu.CreateOrUpdateNamespaceManifest(d.instance.Name, d.instance.Namespace, homeCluster, annotations)
 		if err != nil {
 			return fmt.Errorf("failed to create namespace '%s' on cluster %s: %w", d.instance.Namespace, homeCluster, err)
 		}
@@ -1308,8 +1321,13 @@ func (d *DRPCInstance) isVRGSecondary(vrg *rmn.VolumeReplicationGroup) bool {
 func (d *DRPCInstance) checkPVsHaveBeenRestored(homeCluster string) (bool, error) {
 	d.log.Info("Checking if PVs have been restored", "cluster", homeCluster)
 
+	annotations := make(map[string]string)
+
+	annotations[DRPCNameAnnotation] = d.instance.Name
+	annotations[DRPCNamespaceAnnotation] = d.instance.Namespace
+
 	vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name,
-		d.instance.Namespace, homeCluster)
+		d.instance.Namespace, homeCluster, annotations)
 	if err != nil {
 		return false, fmt.Errorf("failed to VRG using MCV (error: %w)", err)
 	}
@@ -1418,7 +1436,7 @@ func (d *DRPCInstance) namespaceExistsOnManagedCluster(cluster string) (bool, er
 	exists := true
 
 	// create ManagedClusterView to check if namespace exists
-	_, err := d.reconciler.MCVGetter.GetNamespaceFromManagedCluster(d.instance.Name, cluster, d.instance.Namespace)
+	_, err := d.reconciler.MCVGetter.GetNamespaceFromManagedCluster(d.instance.Name, cluster, d.instance.Namespace, nil)
 	if err != nil {
 		if errors.IsNotFound(err) { // successfully detected that Namespace is not found by ManagedClusterView
 			d.log.Info(fmt.Sprintf("Namespace '%s' not found on cluster %s", d.instance.Namespace, cluster))
@@ -1499,8 +1517,13 @@ func (d *DRPCInstance) ensureVRGIsSecondaryOnCluster(clusterName string) bool {
 
 	d.mcvRequestInProgress = false
 
+	annotations := make(map[string]string)
+
+	annotations[DRPCNameAnnotation] = d.instance.Name
+	annotations[DRPCNamespaceAnnotation] = d.instance.Namespace
+
 	vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name,
-		d.instance.Namespace, clusterName)
+		d.instance.Namespace, clusterName, annotations)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return true // ensured
@@ -1556,8 +1579,13 @@ func (d *DRPCInstance) ensureDataProtectedOnCluster(clusterName string) bool {
 
 	d.mcvRequestInProgress = false
 
+	annotations := make(map[string]string)
+
+	annotations[DRPCNameAnnotation] = d.instance.Name
+	annotations[DRPCNamespaceAnnotation] = d.instance.Namespace
+
 	vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name,
-		d.instance.Namespace, clusterName)
+		d.instance.Namespace, clusterName, annotations)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// expectation is that VRG should be present. Otherwise, this function
@@ -1595,8 +1623,13 @@ func (d *DRPCInstance) ensureDataProtectedOnCluster(clusterName string) bool {
 func (d *DRPCInstance) ensureVRGDeleted(clusterName string) bool {
 	d.mcvRequestInProgress = false
 
+	annotations := make(map[string]string)
+
+	annotations[DRPCNameAnnotation] = d.instance.Name
+	annotations[DRPCNamespaceAnnotation] = d.instance.Namespace
+
 	vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name,
-		d.instance.Namespace, clusterName)
+		d.instance.Namespace, clusterName, annotations)
 	if err != nil {
 		// Only NotFound error is accepted
 		if errors.IsNotFound(err) {
