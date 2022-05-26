@@ -96,40 +96,18 @@ var _ = Describe("DrpolicyController", func() {
 		},
 	}
 
-	plRuleContains := func(plRule plrv1.PlacementRule, clusters []string) bool {
-		for _, cluster := range clusters {
-			found := false
-			for _, specCluster := range plRule.Spec.Clusters {
-				if specCluster.Name == cluster {
-					found = true
-
-					break
-				}
-			}
-
-			if !found {
-				return false
-			}
-		}
-
-		return true
-	}
-	getPlRuleForSecrets := func() []plrv1.PlacementRule {
+	getPlRuleForSecrets := func() map[string]plrv1.PlacementRule {
 		plRuleList := &plrv1.PlacementRuleList{}
 		listOptions := &client.ListOptions{Namespace: configMap.Namespace}
 
 		Expect(apiReader.List(context.TODO(), plRuleList, listOptions)).NotTo(HaveOccurred())
 
-		foundPlRules := []plrv1.PlacementRule{}
+		foundPlRules := make(map[string]plrv1.PlacementRule, len(plRuleList.Items))
 		for _, plRule := range plRuleList.Items {
-			for _, plRuleName := range plRuleNames {
-				if plRule.Name != plRuleName {
-					continue
-				}
-				foundPlRules = append(foundPlRules, plRule)
-
-				break
+			if _, ok := plRuleNames[plRule.Name]; !ok {
+				continue
 			}
+			foundPlRules[plRule.Name] = plRule
 		}
 
 		return foundPlRules
@@ -151,23 +129,19 @@ var _ = Describe("DrpolicyController", func() {
 		}
 
 		// Ensure list of secrets for the policy name has as many placement rules
-		Expect(len(plRules) == len(drPoliciesAndSecrets[policyCombinationName])).To(BeTrue())
+		Expect(len(plRules)).To(Equal(len(drPoliciesAndSecrets[policyCombinationName])))
 
 		// Range through secrets in drpolicies name and ensure cluster list is the same
 		for secretName, clusterList := range drPoliciesAndSecrets[policyCombinationName] {
-			found := false
 			_, _, plRuleName, _ := util.GeneratePolicyResourceNames(secretName)
 
-			for _, plRule := range plRules {
-				if plRule.Name != plRuleName {
-					continue
+			Expect(func() (clusterNames []string) {
+				for _, cluster := range plRules[plRuleName].Spec.Clusters {
+					clusterNames = append(clusterNames, cluster.Name)
 				}
-				Expect(plRuleContains(plRule, clusterList)).To(BeTrue())
-				found = true
 
-				break
-			}
-			Expect(found).To(BeTrue())
+				return
+			}()).To(ConsistOf(clusterList))
 		}
 	}
 
@@ -214,12 +188,20 @@ var _ = Describe("DrpolicyController", func() {
 	Specify("initialize tests", func() {
 		populateDRClusters()
 		for idx := range drClusters {
+			drcluster := &drClusters[idx]
 			Expect(k8sClient.Create(
 				context.TODO(),
-				&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: drClusters[idx].Name}},
+				&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: drcluster.Name}},
 			)).To(Succeed())
-			Expect(k8sClient.Create(context.TODO(), &drClusters[idx])).To(Succeed())
-			// TODO: Validate cluster resource is reconciled
+			Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+			drclusterConditionExpect(
+				drcluster,
+				!ramenConfig.DrClusterOperator.DeploymentAutomationEnabled,
+				metav1.ConditionTrue,
+				Equal("Succeeded"),
+				Ignore(),
+				ramen.DRClusterValidated,
+			)
 		}
 	})
 	Specify(`a drpolicy`, func() {
@@ -243,14 +225,14 @@ var _ = Describe("DrpolicyController", func() {
 		drpolicyObjectMetaReset(drpolicyNumber)
 	})
 	When("a 1st drpolicy is created", func() {
-		It("should create a drcluster manifest work for each cluster specified in a 1st drpolicy", func() {
+		It("should create a secret placement rule for each cluster specified in a 1st drpolicy", func() {
 			drpolicyCreate(drpolicy)
 			validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
 			vaildateSecretDistribution(drpolicies[0:1])
 		})
 	})
 	When("a 2nd drpolicy is created specifying some clusters in a 1st drpolicy and some not", func() {
-		It("should create a drcluster manifest work for each cluster specified in a 2nd drpolicy but not a 1st drpolicy",
+		It("should create a secret placement rule for each cluster specified in a 2nd drpolicy but not a 1st drpolicy",
 			func() {
 				drpolicyCreate(&drpolicies[1])
 				validatedConditionExpect(&drpolicies[1], metav1.ConditionTrue, Ignore())
@@ -259,7 +241,7 @@ var _ = Describe("DrpolicyController", func() {
 		)
 	})
 	When("a 1st drpolicy is deleted", func() {
-		It("should delete a drcluster manifest work for each cluster specified in a 1st drpolicy but not a 2nd drpolicy",
+		It("should delete a secret placement rule for each cluster specified in a 1st drpolicy but not a 2nd drpolicy",
 			func() {
 				drpolicyDelete(drpolicy)
 				vaildateSecretDistribution(drpolicies[1:2])
@@ -267,7 +249,7 @@ var _ = Describe("DrpolicyController", func() {
 		)
 	})
 	When("a 2nd drpolicy is deleted", func() {
-		It("should delete a drcluster manifest work for each cluster specified in a 2nd drpolicy", func() {
+		It("should delete a secret placement rule for each cluster specified in a 2nd drpolicy", func() {
 			drpolicyDelete(&drpolicies[1])
 			vaildateSecretDistribution(nil)
 		})

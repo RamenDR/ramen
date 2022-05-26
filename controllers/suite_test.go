@@ -26,6 +26,7 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/format"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -70,10 +71,12 @@ var (
 	ramenConfig *ramendrv1alpha1.RamenConfig
 	testLog     logr.Logger
 
+	namespaceDeletionSupported bool
+
 	timeout  = time.Second * 10
 	interval = time.Millisecond * 10
 
-	plRuleNames []string
+	plRuleNames map[string]struct{}
 
 	s3Secrets      [1]corev1.Secret
 	s3Profiles     [6]ramendrv1alpha1.S3StoreProfile
@@ -103,6 +106,8 @@ func createOperatorNamespace(ramenNamespace string) {
 }
 
 var _ = BeforeSuite(func() {
+	// onsi.github.io/gomega/#adjusting-output
+	format.MaxLength = 0
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 	testLog = ctrl.Log.WithName("tester")
 	testLog.Info("Starting the controller test suite", "time", time.Now())
@@ -127,6 +132,10 @@ var _ = BeforeSuite(func() {
 			filepath.Join("..", "config", "crd", "bases"),
 			filepath.Join("..", "hack", "test"),
 		},
+	}
+
+	if testEnv.UseExistingCluster != nil && *testEnv.UseExistingCluster == true {
+		namespaceDeletionSupported = true
 	}
 
 	var err error
@@ -218,9 +227,10 @@ var _ = BeforeSuite(func() {
 	s3Profiles[4] = s3ProfileNew("4", bucketListFail)
 
 	s3SecretsPolicyNamesSet := func() {
+		plRuleNames = make(map[string]struct{}, len(s3Secrets))
 		for idx := range s3Secrets {
 			_, _, v, _ := util.GeneratePolicyResourceNames(s3Secrets[idx].Name)
-			plRuleNames = append(plRuleNames, v)
+			plRuleNames[v] = struct{}{}
 		}
 	}
 	s3SecretCreate := func(s3Secret *corev1.Secret) {
