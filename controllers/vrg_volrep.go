@@ -456,7 +456,7 @@ func (v *VRGInstance) PVUploadToObjectStore(s3ProfileName string, pvc *corev1.Pe
 			pvc.Name)
 	}
 
-	objectStore, err := v.getObjectStore(s3ProfileName)
+	objectStore, err := v.getObjectStorer(s3ProfileName)
 	if err != nil {
 		return fmt.Errorf("error connecting to object store when uploading PV %s to s3Profile %s, %w",
 			pvc.Name, s3ProfileName, err)
@@ -512,9 +512,40 @@ func (v *VRGInstance) getPVFromPVC(pvc *corev1.PersistentVolumeClaim) (corev1.Pe
 	return pv, nil
 }
 
-func (v *VRGInstance) getObjectStore(s3ProfileName string) (ObjectStorer, error) {
-	return v.reconciler.ObjStoreGetter.ObjectStore(v.ctx, v.reconciler.APIReader,
-		s3ProfileName, v.namespacedName, v.log)
+func (v *VRGInstance) getObjectStorer(s3ProfileName string) (ObjectStorer, error) {
+	objectStore, err := v.getCachedObjectStorer(s3ProfileName)
+	if objectStore != nil || err != nil {
+		return objectStore, err
+	}
+
+	objectStore, err = v.reconciler.ObjStoreGetter.ObjectStore(
+		v.ctx,
+		v.reconciler.APIReader,
+		s3ProfileName,
+		v.namespacedName,
+		v.log)
+	if err != nil {
+		err = fmt.Errorf("error connecting to object store for s3Profile %s, %w", s3ProfileName, err)
+	}
+
+	v.cacheObjectStorer(s3ProfileName, objectStore, err)
+
+	return objectStore, err
+}
+
+func (v *VRGInstance) getCachedObjectStorer(s3ProfileName string) (ObjectStorer, error) {
+	if cachedObjectStore, ok := v.objectStorers[s3ProfileName]; ok {
+		return cachedObjectStore.storer, cachedObjectStore.err
+	}
+
+	return nil, nil
+}
+
+func (v *VRGInstance) cacheObjectStorer(s3ProfileName string, objectStore ObjectStorer, err error) {
+	v.objectStorers[s3ProfileName] = cachedObjectStorer{
+		storer: objectStore,
+		err:    err,
+	}
 }
 
 // UploadPV checks if the VRG spec has been configured with an s3 endpoint,
@@ -1506,7 +1537,7 @@ func (v *VRGInstance) fetchAndRestorePV() (bool, error) {
 func (v *VRGInstance) fetchPVClusterDataFromS3Store(s3ProfileName string) ([]corev1.PersistentVolume, error) {
 	s3KeyPrefix := v.s3KeyPrefix()
 
-	objectStore, err := v.getObjectStore(s3ProfileName)
+	objectStore, err := v.getObjectStorer(s3ProfileName)
 	if err != nil {
 		return nil, fmt.Errorf("error when downloading PVs, err %w", err)
 	}

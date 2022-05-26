@@ -291,6 +291,7 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 		volSyncPVCs:    []corev1.PersistentVolumeClaim{},
 		replClassList:  &volrep.VolumeReplicationClassList{},
 		namespacedName: req.NamespacedName.String(),
+		objectStorers:  make(map[string]cachedObjectStorer),
 	}
 
 	// Fetch the VolumeReplicationGroup instance
@@ -325,6 +326,11 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	return res, err
 }
 
+type cachedObjectStorer struct {
+	storer ObjectStorer
+	err    error
+}
+
 type VRGInstance struct {
 	reconciler          *VolumeReplicationGroupReconciler
 	ctx                 context.Context
@@ -337,6 +343,7 @@ type VRGInstance struct {
 	vrcUpdated          bool
 	namespacedName      string
 	volSyncHandler      *volsync.VSHandler
+	objectStorers       map[string]cachedObjectStorer
 }
 
 const (
