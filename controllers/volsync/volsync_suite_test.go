@@ -2,6 +2,7 @@ package volsync_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -49,6 +50,11 @@ var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	ctx, cancel = context.WithCancel(context.TODO())
+
+	By("Setting up KUBEBUILDER_ASSETS for envtest")
+	if _, set := os.LookupEnv("KUBEBUILDER_ASSETS"); !set {
+		Expect(os.Setenv("KUBEBUILDER_ASSETS", "../../testbin/bin")).To(Succeed())
+	}
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
