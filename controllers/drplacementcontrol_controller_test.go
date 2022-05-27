@@ -49,6 +49,8 @@ import (
 const (
 	DRPCName              = "app-volume-replication-test"
 	DRPCNamespaceName     = "app-namespace"
+	DRPC2Name             = "app-volume-replication-test2"
+	DRPC2NamespaceName    = "app-namespace2"
 	UserPlacementRuleName = "user-placement-rule"
 	East1ManagedCluster   = "east1-cluster"
 	East2ManagedCluster   = "east2-cluster"
@@ -102,6 +104,10 @@ var (
 
 	appNamespace = &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: DRPCNamespaceName},
+	}
+
+	appNamespace2 = &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: DRPC2NamespaceName},
 	}
 
 	east2ManagedClusterNamespace = &corev1.Namespace{
@@ -406,7 +412,7 @@ func updateClonedPlacementRuleStatus(
 	Expect(err).NotTo(HaveOccurred())
 }
 
-func createDRPC(name, namespace, drPolicyName string) *rmn.DRPlacementControl {
+func createDRPC(userPlacementRuleName, name, namespace, drPolicyName string) *rmn.DRPlacementControl {
 	drpc := &rmn.DRPlacementControl{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -414,7 +420,7 @@ func createDRPC(name, namespace, drPolicyName string) *rmn.DRPlacementControl {
 		},
 		Spec: rmn.DRPlacementControlSpec{
 			PlacementRef: corev1.ObjectReference{
-				Name: UserPlacementRuleName,
+				Name: userPlacementRuleName,
 				Kind: "PlacementRule",
 			},
 			DRPolicyRef: corev1.ObjectReference{
@@ -768,6 +774,46 @@ func waitForVRGMWDeletion(clusterNamespace string) {
 	}, timeout, interval).Should(BeTrue(), "failed to wait for manifest deletion for type vrg")
 }
 
+func ensureDRPolicyIsNotDeleted(drpc *rmn.DRPlacementControl) {
+	Consistently(func() bool {
+		drpolicy := &rmn.DRPolicy{}
+		name := drpc.Spec.DRPolicyRef.Name
+		err := apiReader.Get(context.TODO(), types.NamespacedName{Name: name}, drpolicy)
+		// TODO: Technically we need to Expect deletion TS is non-zero as well here!
+		return err == nil
+	}, timeout, interval).Should(BeTrue(), "DRPolicy deleted prematurely, with active DRPC references")
+}
+
+func ensureDRPolicyIsDeleted(drpc *rmn.DRPlacementControl) {
+	Eventually(func() bool {
+		drpolicy := &rmn.DRPolicy{}
+		name := drpc.Spec.DRPolicyRef.Name
+		err := apiReader.Get(context.TODO(), types.NamespacedName{Name: name}, drpolicy)
+
+		return err != nil
+	}, timeout, interval).Should(BeTrue(), "DRPolicy not deleted, though there is no active DRPC referring to it")
+}
+
+func checkIfDRPCFinalizerNotAdded(drpc *rmn.DRPlacementControl) {
+	Consistently(func() bool {
+		drpcl := &rmn.DRPlacementControl{}
+		err := apiReader.Get(context.TODO(),
+			types.NamespacedName{Name: drpc.Name, Namespace: drpc.Namespace},
+			drpcl)
+		Expect(err).NotTo(HaveOccurred())
+
+		f := drpcl.GetFinalizers()
+		for _, e := range f {
+			if e == "drpc.ramendr.openshift.io/finalizer" {
+				return false
+			}
+		}
+
+		return true
+	}, timeout, interval).Should(BeTrue(), "DRPlacementControl reconciled with a finalizer",
+		"when DRPolicy is in a deleted state")
+}
+
 func InitialDeploymentAsync(namespace, placementName, homeCluster string) (*plrv1.PlacementRule,
 	*rmn.DRPlacementControl) {
 	createNamespacesAsync(getNamespaceObj(DRPCNamespaceName))
@@ -777,7 +823,17 @@ func InitialDeploymentAsync(namespace, placementName, homeCluster string) (*plrv
 	createDRPolicyAsync()
 
 	placementRule := createPlacementRule(placementName, namespace)
-	drpc := createDRPC(DRPCName, DRPCNamespaceName, AsyncDRPolicyName)
+	drpc := createDRPC(UserPlacementRuleName, DRPCName, DRPCNamespaceName, AsyncDRPolicyName)
+
+	return placementRule, drpc
+}
+
+func FollowOnDeploymentAsync(namespace, placementName, homeCluster string) (*plrv1.PlacementRule,
+	*rmn.DRPlacementControl) {
+	createNamespace(appNamespace2)
+
+	placementRule := createPlacementRule(placementName, namespace)
+	drpc := createDRPC(placementName, DRPCName, namespace, AsyncDRPolicyName)
 
 	return placementRule, drpc
 }
@@ -1142,7 +1198,7 @@ func InitialDeploymentSync(namespace, placementName, homeCluster string) (*plrv1
 	createDRPolicySync()
 
 	placementRule := createPlacementRule(placementName, namespace)
-	drpc := createDRPC(DRPCName, DRPCNamespaceName, SyncDRPolicyName)
+	drpc := createDRPC(UserPlacementRuleName, DRPCName, DRPCNamespaceName, SyncDRPolicyName)
 
 	return placementRule, drpc
 }
@@ -1397,7 +1453,21 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				runRelocateAction(userPlacementRule, West1ManagedCluster, false)
 			})
 		})
-
+		When("Deleting DRPolicy with DRPC references", func() {
+			It("Should retain the deleted DRPolicy in the API server", func() {
+				// ----------------------------- DELETE DRPolicy  --------------------------------------
+				By("\n\n*** DELETE drpolicy ***\n\n")
+				deleteDRPolicyAsync()
+				ensureDRPolicyIsNotDeleted(drpc)
+			})
+		})
+		When("A DRPC is created referring to a deleted DRPolicy", func() {
+			It("Should fail DRPC reconciliaiton and not add a finalizer", func() {
+				_, drpc2 := FollowOnDeploymentAsync(DRPC2NamespaceName, UserPlacementRuleName, East1ManagedCluster)
+				checkIfDRPCFinalizerNotAdded(drpc2)
+				Expect(k8sClient.Delete(context.TODO(), drpc2)).Should(Succeed())
+			})
+		})
 		When("Deleting user PlacementRule", func() {
 			It("Should cleanup DRPC", func() {
 				// ----------------------------- DELETE DRPC from PRIMARY --------------------------------------
@@ -1420,7 +1490,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				waitForCompletion("deleted")
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1))       // Roles MW only
 				Expect(getManagedClusterViewCount(East1ManagedCluster)).Should(Equal(0)) // NS + VRG MCV
-				deleteDRPolicyAsync()
+				ensureDRPolicyIsDeleted(drpc)
 				deleteDRClustersAsync()
 			})
 		})
