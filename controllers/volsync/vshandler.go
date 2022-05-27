@@ -91,14 +91,16 @@ func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, ow
 
 // VSHandler requires an index on pods to keep track of persistent volume claims mounted
 func IndexFieldsForVSHandler(ctx context.Context, fieldIndexer client.FieldIndexer) error {
-	return fieldIndexer.IndexField(ctx, &storagev1.VolumeAttachment{}, VolumeAttachmentToPVIndexName, func(o client.Object) []string {
-		var res []string
-		sourcePVName := o.(*storagev1.VolumeAttachment).Spec.Source.PersistentVolumeName
-		if sourcePVName != nil {
-			res = append(res, *sourcePVName)
-		}
-		return res
-	})
+	return fieldIndexer.IndexField(ctx, &storagev1.VolumeAttachment{}, VolumeAttachmentToPVIndexName,
+		func(o client.Object) []string {
+			var res []string
+			sourcePVName := o.(*storagev1.VolumeAttachment).Spec.Source.PersistentVolumeName
+			if sourcePVName != nil {
+				res = append(res, *sourcePVName)
+			}
+
+			return res
+		})
 }
 
 // returns replication destination only if create/update is successful and the RD is considered available.
@@ -525,6 +527,7 @@ func (v *VSHandler) isPvcInUse(pvc *corev1.PersistentVolumeClaim) (bool, error) 
 	if pvName == "" {
 		// Assuming if no volumename is set, the PVC has not been bound yet, so return false for in-use
 		v.log.V(1).Info("pvc has no VolumeName set, assuming not in-use", "pvcName", pvc.GetName())
+
 		return false, nil
 	}
 
@@ -556,16 +559,6 @@ func (v *VSHandler) isPvcInUse(pvc *corev1.PersistentVolumeClaim) (bool, error) 
 		"nodes", attachedNodes)
 
 	return true, nil
-}
-
-func isPodReady(podConditions []corev1.PodCondition) bool {
-	for _, podCondition := range podConditions {
-		if podCondition.Type == corev1.PodReady && podCondition.Status == corev1.ConditionTrue {
-			return true
-		}
-	}
-
-	return false
 }
 
 func (v *VSHandler) deletePVC(pvcName string) error {

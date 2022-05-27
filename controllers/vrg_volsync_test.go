@@ -396,6 +396,7 @@ func createPVCWithVolumeAttachment(ctx context.Context, namespace string,
 		if err != nil {
 			return false
 		}
+
 		return pvc.Spec.VolumeName == dummyPVName && pvc.Status.Phase == corev1.ClaimBound
 	}, testMaxWait, testInterval).Should(BeTrue())
 

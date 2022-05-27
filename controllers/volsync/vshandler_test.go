@@ -1667,6 +1667,7 @@ func createDummyPVC(namespace string, capacity resource.Quantity,
 		if setDummyVolumeName {
 			return dummyPVC.Spec.VolumeName != ""
 		}
+
 		return true
 	}, maxWait, interval).Should(BeTrue())
 
