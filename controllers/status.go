@@ -48,7 +48,13 @@ const (
 	// protected from a disaster by uploading it to the required S3 store(s).
 	VRGConditionTypeClusterDataProtected = "ClusterDataProtected"
 
-	// VolSync
+	// Total number of condition types in VRG as of now. Change this value
+	// when a new condition type is added to VRG or an existing condition
+	// type is removed from VRG status.
+	VRGTotalConditions = 4
+
+	// VolSync related conditions. These conditions are only applicable
+	// at individual PVCs and not generic VRG conditions.
 	VRGConditionTypeVolSyncRepSourceSetup      = "ReplicationSourceSetup"
 	VRGConditionTypeVolSyncFinalSyncInProgress = "FinalSyncInProgress"
 	VRGConditionTypeVolSyncRepDestinationSetup = "ReplicationDestinationSetup"
@@ -79,45 +85,44 @@ const (
 // Just when VRG has been picked up for reconciliation when nothing has been
 // figured out yet.
 func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	if len(*conditions) > 0 {
+	if len(*conditions) == VRGTotalConditions {
 		return
 	}
 
 	time := metav1.NewTime(time.Now())
-	*conditions = []metav1.Condition{
-		{
-			Type:               VRGConditionTypeDataReady,
-			Reason:             VRGConditionReasonInitializing,
-			ObservedGeneration: observedGeneration,
-			Status:             metav1.ConditionUnknown,
-			LastTransitionTime: time,
-			Message:            message,
-		},
-		{
-			Type:               VRGConditionTypeDataProtected,
-			Reason:             VRGConditionReasonInitializing,
-			ObservedGeneration: observedGeneration,
-			Status:             metav1.ConditionUnknown,
-			LastTransitionTime: time,
-			Message:            message,
-		},
-		{
-			Type:               VRGConditionTypeClusterDataReady,
-			Reason:             VRGConditionReasonInitializing,
-			ObservedGeneration: observedGeneration,
-			Status:             metav1.ConditionUnknown,
-			LastTransitionTime: time,
-			Message:            message,
-		},
-		{
-			Type:               VRGConditionTypeClusterDataProtected,
-			Reason:             VRGConditionReasonInitializing,
-			ObservedGeneration: observedGeneration,
-			Status:             metav1.ConditionUnknown,
-			LastTransitionTime: time,
-			Message:            message,
-		},
-	}
+
+	setStatusConditionIfNotFound(conditions, metav1.Condition{
+		Type:               VRGConditionTypeDataReady,
+		Reason:             VRGConditionReasonInitializing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionUnknown,
+		LastTransitionTime: time,
+		Message:            message,
+	})
+	setStatusConditionIfNotFound(conditions, metav1.Condition{
+		Type:               VRGConditionTypeDataProtected,
+		Reason:             VRGConditionReasonInitializing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionUnknown,
+		LastTransitionTime: time,
+		Message:            message,
+	})
+	setStatusConditionIfNotFound(conditions, metav1.Condition{
+		Type:               VRGConditionTypeClusterDataReady,
+		Reason:             VRGConditionReasonInitializing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionUnknown,
+		LastTransitionTime: time,
+		Message:            message,
+	})
+	setStatusConditionIfNotFound(conditions, metav1.Condition{
+		Type:               VRGConditionTypeClusterDataProtected,
+		Reason:             VRGConditionReasonInitializing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionUnknown,
+		LastTransitionTime: time,
+		Message:            message,
+	})
 }
 
 // sets conditions when VRG as Secondary is replicating the data with Primary.
@@ -286,6 +291,20 @@ func setVRGClusterDataUnprotectedCondition(conditions *[]metav1.Condition, obser
 		Status:             metav1.ConditionFalse,
 		Message:            message,
 	})
+}
+
+func setStatusConditionIfNotFound(existingConditions *[]metav1.Condition, newCondition metav1.Condition) {
+	if existingConditions == nil {
+		existingConditions = &[]metav1.Condition{}
+	}
+
+	existingCondition := findCondition(*existingConditions, newCondition.Type)
+	if existingCondition == nil {
+		newCondition.LastTransitionTime = metav1.NewTime(time.Now())
+		*existingConditions = append(*existingConditions, newCondition)
+
+		return
+	}
 }
 
 func setStatusCondition(existingConditions *[]metav1.Condition, newCondition metav1.Condition) {
