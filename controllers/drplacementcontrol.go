@@ -339,17 +339,6 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		return d.switchToFailoverCluster()
 	}
 
-	// If VRG at failover cluster is still Secondary, report error as we cannot proceed
-	// TODO: Secondary will only be cleaned up if it reestablished a sync, so check if it is a healthy
-	// secondary and recover from there? and if not fail!
-	if d.isVRGSecondary(failoverClusterVRG) {
-		msg := "failover cluster has not recovered from last placement action"
-		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
-			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), msg)
-
-		return done, fmt.Errorf(msg)
-	}
-
 	// VRG is primary in the failoverCluster, we are done if we have already failed over
 	if d.hasAlreadySwitchedOver(d.instance.Spec.FailoverCluster) {
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
@@ -522,8 +511,8 @@ func (d *DRPCInstance) RunRelocate() (bool, error) { //nolint:gocognit,cyclop
 	preferredCluster := d.instance.Spec.PreferredCluster
 	preferredClusterNamespace := preferredCluster
 
-	// Before relocating to the preferredCluster, we must ensure that the peers are secondaries.
-	curHomeCluster, err := d.isReadyForRelocation(preferredCluster)
+	// Before relocating to the preferredCluster, do a quick validation and select the current preferred cluster.
+	curHomeCluster, err := d.validateAndSelectCurrentPrimary(preferredCluster)
 	if err != nil {
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), err.Error())
@@ -758,7 +747,7 @@ func (d *DRPCInstance) selectPrimaryAndSecondaries() (string, []string) {
 	return primaryVRG, secondaryVRGs
 }
 
-func (d *DRPCInstance) isReadyForRelocation(preferredCluster string) (string, error) {
+func (d *DRPCInstance) validateAndSelectCurrentPrimary(preferredCluster string) (string, error) {
 	// Relocation requires preferredCluster to be configured
 	if preferredCluster == "" {
 		return "", fmt.Errorf("preferred cluster not valid")

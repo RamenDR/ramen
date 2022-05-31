@@ -129,6 +129,7 @@ rules:
   - list
   - patch
   - update
+  - watch
 - apiGroups:
   - multicluster.x-k8s.io
   resources:
@@ -290,6 +291,26 @@ rules:
   - update
   - watch
 - apiGroups:
+  - snapshot.storage.k8s.io
+  resources:
+  - volumesnapshotclasses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - snapshot.storage.k8s.io
+  resources:
+  - volumesnapshots
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - storage.k8s.io
   resources:
   - storageclasses
@@ -361,7 +382,6 @@ rules:
   verbs:
   - get
   - update
-  - watch
 - apiGroups:
   - policy.open-cluster-management.io
   resources:

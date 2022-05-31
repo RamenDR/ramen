@@ -262,9 +262,11 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim, log logr.
 // +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch;update;patch;create
 // +kubebuilder:rbac:groups=volsync.backube,resources=replicationdestinations,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=volsync.backube,resources=replicationsources,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=multicluster.x-k8s.io,resources=serviceexports,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=get;create;patch;update
-// +kubebuilder:rbac:groups="",namespace=system,resources=secrets,verbs=get;watch
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -291,6 +293,7 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 		volSyncPVCs:    []corev1.PersistentVolumeClaim{},
 		replClassList:  &volrep.VolumeReplicationClassList{},
 		namespacedName: req.NamespacedName.String(),
+		objectStorers:  make(map[string]cachedObjectStorer),
 	}
 
 	// Fetch the VolumeReplicationGroup instance
@@ -325,6 +328,11 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	return res, err
 }
 
+type cachedObjectStorer struct {
+	storer ObjectStorer
+	err    error
+}
+
 type VRGInstance struct {
 	reconciler          *VolumeReplicationGroupReconciler
 	ctx                 context.Context
@@ -337,6 +345,7 @@ type VRGInstance struct {
 	vrcUpdated          bool
 	namespacedName      string
 	volSyncHandler      *volsync.VSHandler
+	objectStorers       map[string]cachedObjectStorer
 }
 
 const (
