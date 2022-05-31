@@ -530,19 +530,18 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 })
 
 type vrgTest struct {
-	uniqueID         	string
-	namespace        	string
-	pvNames          	[]string
-	pvcNames         	[]string
-	vrgName          	string
-	storageClass     	string
-	replicationClass 	string
-	pvcLabels        	map[string]string
-	pvcCount         	int
-	checkBind        	bool
-	vrgFirst         	bool
-	emptyLabelSelector	bool
-	template         	*template
+	uniqueID         string
+	namespace        string
+	pvNames          []string
+	pvcNames         []string
+	vrgName          string
+	storageClass     string
+	replicationClass string
+	pvcLabels        map[string]string
+	pvcCount         int
+	checkBind        bool
+	vrgFirst         bool
+	template         *template
 }
 
 type template struct {
@@ -573,16 +572,16 @@ func newVRGTestCaseCreate(pvcCount int, testTemplate *template, checkBind, vrgFi
 	objectNameSuffix := newRandomNamespaceSuffix()
 
 	v := &vrgTest{
-		uniqueID:         	objectNameSuffix,
-		namespace:        	fmt.Sprintf("envtest-ns-%v", objectNameSuffix),
-		vrgName:          	fmt.Sprintf("vrg-%v", objectNameSuffix),
-		storageClass:     	testTemplate.storageClassName,
-		replicationClass: 	testTemplate.replicationClassName,
-		pvcLabels:        	make(map[string]string),
-		pvcCount:         	pvcCount,
-		checkBind:        	checkBind,
-		vrgFirst:         	vrgFirst,
-		template:         	testTemplate,
+		uniqueID:         objectNameSuffix,
+		namespace:        fmt.Sprintf("envtest-ns-%v", objectNameSuffix),
+		vrgName:          fmt.Sprintf("vrg-%v", objectNameSuffix),
+		storageClass:     testTemplate.storageClassName,
+		replicationClass: testTemplate.replicationClassName,
+		pvcLabels:        make(map[string]string),
+		pvcCount:         pvcCount,
+		checkBind:        checkBind,
+		vrgFirst:         vrgFirst,
+		template:         testTemplate,
 	}
 
 	if pvcCount > 0 && !testTemplate.emptyPVCLabelSelector {
