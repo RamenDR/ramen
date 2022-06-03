@@ -348,7 +348,7 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		ready := d.checkReadinessAfterFailover(d.instance.Spec.FailoverCluster)
 		if !ready {
 			d.log.Info("VRGCondition not ready to finish failover")
-			d.setProgression("WaitingForRediness")
+			d.setProgression("WaitingForReadiness")
 
 			return !done, nil
 		}
