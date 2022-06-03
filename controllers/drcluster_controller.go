@@ -443,6 +443,27 @@ func (u *drclusterInstance) clusterUnfence() (bool, error) {
 			u.object.Name, err)
 	}
 
+	// This happens in the below scenario.
+	// 2 clusters 1 & 2
+	// - App deployed in 1 with MetroDR protection
+	// - 1 goes down (or becomes inaccessible)
+	// - 1 is fenced off and app failover to 2
+	// - 1 recovers and cleaned up
+	// - just before 1 can be unfenced, 2 goes down
+	// - app needs to be migrated to 2 for which 2 should be fenced and 1 should be unfenced
+	// - for unfencing 1, it does not have peer clusters as 2 is down.
+	// In that scenario 1 should unfence itself through itself
+	// If the peer cluster spec says it is fenced, then dont use it.
+	// Instead of spec status could have been checked to see whether
+	// the peer cluster is fenced or not. However, we dont know at
+	// what state the fencing operation is at the storage cluster.
+	// Hence, if the spec says the peer cluster is fenced, then trust
+	// it.
+	if peerCluster.Spec.ClusterFence == ramen.ClusterFenceStateFenced ||
+		peerCluster.Spec.ClusterFence == ramen.ClusterFenceStateManuallyFenced {
+		peerCluster = *u.object
+	}
+
 	requeue, err := u.unfenceClusterOnCluster(&peerCluster)
 	if err != nil {
 		return requeue, fmt.Errorf("unfence operation to fence off cluster %s on cluster %s failed",
