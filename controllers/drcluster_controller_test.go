@@ -127,6 +127,12 @@ var _ = Describe("DRClusterController", func() {
 			ramen.DRCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "drc-cluster0",
+					Annotations: map[string]string{
+						"drcluster.ramendr.openshift.io/storage-secret-name":      "tmp",
+						"drcluster.ramendr.openshift.io/storage-secret-namespace": "tmp",
+						"drcluster.ramendr.openshift.io/storage-clusterid":        "tmp",
+						"drcluster.ramendr.openshift.io/storage-driver":           "tmp.storage.com",
+					},
 				},
 				Spec: ramen.DRClusterSpec{
 					S3ProfileName: s3Profiles[0].S3ProfileName,
@@ -137,6 +143,12 @@ var _ = Describe("DRClusterController", func() {
 			ramen.DRCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "drc-cluster1",
+					Annotations: map[string]string{
+						"drcluster.ramendr.openshift.io/storage-secret-name":      "tmp",
+						"drcluster.ramendr.openshift.io/storage-secret-namespace": "tmp",
+						"drcluster.ramendr.openshift.io/storage-clusterid":        "tmp",
+						"drcluster.ramendr.openshift.io/storage-driver":           "tmp.storage.com",
+					},
 				},
 				Spec: ramen.DRClusterSpec{
 					S3ProfileName: s3Profiles[0].S3ProfileName,

@@ -67,6 +67,14 @@ const (
 	DRClusterConditionReasonErrorUnknown = "UnknownError"
 )
 
+//nolint:gosec
+const (
+	StorageAnnotationSecretName      = "drcluster.ramendr.openshift.io/storage-secret-name"
+	StorageAnnotationSecretNamespace = "drcluster.ramendr.openshift.io/storage-secret-namespace"
+	StorageAnnotationClusterID       = "drcluster.ramendr.openshift.io/storage-clusterid"
+	StorageAnnotationDriver          = "drcluster.ramendr.openshift.io/storage-driver"
+)
+
 //nolint:lll
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusters,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusters/status,verbs=get;update;patch
@@ -155,8 +163,6 @@ func (u *drclusterInstance) initializeStatus() {
 	}
 
 	if u.object.Status.Conditions == nil {
-		// TODO: Only initialize those conditions whose status is
-		//       not available.
 		// Set the DRCluster conditions to unknown as nothing is known at this point
 		msg := "Initializing DRCluster"
 		setDRClusterInitialCondition(&u.object.Status.Conditions, u.object.Generation, msg)
@@ -872,7 +878,10 @@ func (u *drclusterInstance) createNFManifestWork(targetCluster *ramen.DRCluster,
 	log.Info(fmt.Sprintf("Creating NetworkFence ManifestWork on cluster %s to perform fencing op on cluster %s",
 		peerCluster.Name, targetCluster.Name))
 
-	nf := generateNF(targetCluster)
+	nf, err := generateNF(targetCluster)
+	if err != nil {
+		return fmt.Errorf("failed to generate network fence resource: %w", err)
+	}
 
 	if err := u.mwUtil.CreateOrUpdateNFManifestWork(
 		u.object.Name, u.object.Namespace,
@@ -886,7 +895,43 @@ func (u *drclusterInstance) createNFManifestWork(targetCluster *ramen.DRCluster,
 	return nil
 }
 
-func generateNF(targetCluster *ramen.DRCluster) csiaddonsv1alpha1.NetworkFence {
+// this function fills the storage specific details in the NetworkFence resource.
+// Currently it fills those details based on the annotations that are set on the
+// DRCluster resource. However, in future it can be changed to get the storage
+// specific details (such as driver, parameters, secret etc) from the status of
+// the DRCluster resource.
+func fillStorageDetails(cluster *ramen.DRCluster, nf *csiaddonsv1alpha1.NetworkFence) error {
+	storageDriver, ok := cluster.Annotations[StorageAnnotationDriver]
+	if !ok {
+		return fmt.Errorf("failed to find storage driver in annotations")
+	}
+
+	storageSecretName, ok := cluster.Annotations[StorageAnnotationSecretName]
+	if !ok {
+		return fmt.Errorf("failed to find storage secret name in annotations")
+	}
+
+	storageSecretNamespace, ok := cluster.Annotations[StorageAnnotationSecretNamespace]
+	if !ok {
+		return fmt.Errorf("failed to find storage secret namespace in annotations")
+	}
+
+	clusterID, ok := cluster.Annotations[StorageAnnotationClusterID]
+	if !ok {
+		return fmt.Errorf("failed to find storage cluster id in annotations")
+	}
+
+	parameters := map[string]string{"clusterID": clusterID}
+
+	nf.Spec.Secret.Name = storageSecretName
+	nf.Spec.Secret.Namespace = storageSecretNamespace
+	nf.Spec.Driver = storageDriver
+	nf.Spec.Parameters = parameters
+
+	return nil
+}
+
+func generateNF(targetCluster *ramen.DRCluster) (csiaddonsv1alpha1.NetworkFence, error) {
 	// To ensure deterministic naming of the fencing CR, the resource name
 	// is generated as
 	// "network-fence" + name of the cluster being fenced
@@ -906,5 +951,9 @@ func generateNF(targetCluster *ramen.DRCluster) csiaddonsv1alpha1.NetworkFence {
 		},
 	}
 
-	return nf
+	if err := fillStorageDetails(targetCluster, &nf); err != nil {
+		return nf, fmt.Errorf("failed to create network fence resource with storage detai: %w", err)
+	}
+
+	return nf, nil
 }

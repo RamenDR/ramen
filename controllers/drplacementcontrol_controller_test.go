@@ -537,16 +537,31 @@ func populateDRClusters() {
 	drClusters = nil
 	drClusters = append(drClusters,
 		rmn.DRCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: East1ManagedCluster},
-			Spec:       rmn.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "east"},
+			ObjectMeta: metav1.ObjectMeta{Name: East1ManagedCluster, Annotations: map[string]string{
+				"drcluster.ramendr.openshift.io/storage-secret-name":      "tmp",
+				"drcluster.ramendr.openshift.io/storage-secret-namespace": "tmp",
+				"drcluster.ramendr.openshift.io/storage-clusterid":        "tmp",
+				"drcluster.ramendr.openshift.io/storage-driver":           "tmp.storage.com",
+			}},
+			Spec: rmn.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "east"},
 		},
 		rmn.DRCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: West1ManagedCluster},
-			Spec:       rmn.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "west"},
+			ObjectMeta: metav1.ObjectMeta{Name: West1ManagedCluster, Annotations: map[string]string{
+				"drcluster.ramendr.openshift.io/storage-secret-name":      "tmp2",
+				"drcluster.ramendr.openshift.io/storage-secret-namespace": "tmp2",
+				"drcluster.ramendr.openshift.io/storage-clusterid":        "tmp2",
+				"drcluster.ramendr.openshift.io/storage-driver":           "tmp2.storage.com",
+			}},
+			Spec: rmn.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "west"},
 		},
 		rmn.DRCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: East2ManagedCluster},
-			Spec:       rmn.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "east"},
+			ObjectMeta: metav1.ObjectMeta{Name: East2ManagedCluster, Annotations: map[string]string{
+				"drcluster.ramendr.openshift.io/storage-secret-name":      "tmp",
+				"drcluster.ramendr.openshift.io/storage-secret-namespace": "tmp",
+				"drcluster.ramendr.openshift.io/storage-clusterid":        "tmp",
+				"drcluster.ramendr.openshift.io/storage-driver":           "tmp.storage.com",
+			}},
+			Spec: rmn.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "east"},
 		},
 	)
 }
