@@ -303,11 +303,9 @@ rules:
   resources:
   - volumesnapshots
   verbs:
-  - create
   - delete
   - get
   - list
-  - patch
   - update
   - watch
 - apiGroups:
