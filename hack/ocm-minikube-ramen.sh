@@ -10,6 +10,8 @@ exit_stack_push unset -f true_if_exit_status_and_stderr
 exit_stack_push unset -f until_true_or_n
 . $ramen_hack_directory_path_name/olm.sh
 exit_stack_push olm_unset
+. $ramen_hack_directory_path_name/minikube.sh
+exit_stack_push minikube_unset
 exit_stack_push unset -v ramen_hack_directory_path_name
 rook_ceph_deploy_spoke()
 {
@@ -498,14 +500,14 @@ ramen_config_deploy_hub_or_spoke()
 	s3StoreProfiles:
 	- s3ProfileName: minio-on-$4
 	  s3Bucket: bucket
-	  s3CompatibleEndpoint: $(minikube --profile $4 -n minio service --url minio)
+	  s3CompatibleEndpoint: $(minikube_minio_url $4)
 	  s3Region: us-east-1
 	  s3SecretRef:
 	    name: s3secret
 	    namespace: ramen-system
 	- s3ProfileName: minio-on-$5
 	  s3Bucket: bucket
-	  s3CompatibleEndpoint: $(minikube --profile $5 -n minio service --url minio)
+	  s3CompatibleEndpoint: $(minikube_minio_url $5)
 	  s3Region: us-west-1
 	  s3SecretRef:
 	    name: s3secret
