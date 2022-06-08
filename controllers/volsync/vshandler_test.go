@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,6 +30,9 @@ const (
 	interval = 250 * time.Millisecond
 
 	APIGrp = "snapshot.storage.k8s.io"
+
+	testCleanupLabel      = "clean-me-up-after-test"
+	testCleanupLabelValue = "true"
 )
 
 var _ = Describe("VolSync Handler - utils", func() {
@@ -739,7 +743,11 @@ var _ = Describe("VolSync Handler", func() {
 							})
 
 							Context("When running a final sync", func() {
-								Context("When the pvc is still in use", func() {
+								// For these tests, final sync should look at pods to determine whether the PVC
+								// is still in-use before running the final sync - it should first check if any pods
+								// are mounting the PVC, if not, then also check volume attachments
+								// volume attachments
+								Context("When the pvc is still in use by a pod", func() {
 									It("Should not complete the final sync", func() {
 										finalSyncDone, returnedRS, err := vsHandler.ReconcileRS(rsSpec, true)
 										Expect(err).NotTo(HaveOccurred()) // Not considered an error, we should just wait
@@ -748,10 +756,9 @@ var _ = Describe("VolSync Handler", func() {
 									})
 								})
 
-								Context("When the pvc is no longer in use", func() {
+								Context("When the pvc is no longer in use by a pod", func() {
 									JustBeforeEach(func() {
-										// Pod mounting PVC is created above - delete it to simulate removing app
-										// Fake out the pod in "Running" Phase
+										// Pod mounting the PVC is created above - delete the pod to simulate removing app
 										Expect(k8sClient.Delete(ctx, podMountingPVC)).To(Succeed())
 										Eventually(func() bool {
 											err := k8sClient.Get(ctx, client.ObjectKeyFromObject(podMountingPVC), podMountingPVC)
@@ -760,78 +767,101 @@ var _ = Describe("VolSync Handler", func() {
 										}, maxWait, interval).Should(BeTrue())
 									})
 
-									It("Should update the trigger on the RS and return true when replication is complete"+
-										" and also delete the pvc after replication complete", func() {
-										// Run ReconcileRS - indicate final sync
-										finalSyncDone, returnedRS, err := vsHandler.ReconcileRS(rsSpec, true)
-										Expect(err).ToNot(HaveOccurred())
-										Expect(finalSyncDone).To(BeFalse()) // Should not return true since sync has not completed
-										Expect(returnedRS).NotTo(BeNil())
+									Context("When a volumeattachment exists for the PV backing the PVC", func() {
+										JustBeforeEach(func() {
+											// Create a volume attachment - even though the pod is not mounting,
+											// the PVC anymore, the presence of the volume attachment means we should still
+											// wait before running the final sync
+											createDummyVolumeAttachmentForPVC(testPVC)
+										})
 
-										// Check that the manual sync triggger is set correctly on the RS
-										Eventually(func() string {
-											err := k8sClient.Get(ctx,
-												types.NamespacedName{
-													Name:      rsSpec.ProtectedPVC.Name,
-													Namespace: testNamespace.GetName(),
-												},
-												createdRS)
-											if err != nil || createdRS.Spec.Trigger == nil {
-												return ""
-											}
+										AfterEach(func() {
+											// Cleans up the volume attachment created above if it's left behind
+											cleanupNonNamespacedResources()
+										})
 
-											return createdRS.Spec.Trigger.Manual
-										}, maxWait, interval).Should(Equal(volsync.FinalSyncTriggerString))
+										It("Should not complete the final sync", func() {
+											finalSyncDone, returnedRS, err := vsHandler.ReconcileRS(rsSpec, true)
+											Expect(err).NotTo(HaveOccurred()) // Not considered an error, we should just wait
+											Expect(returnedRS).To(BeNil())
+											Expect(finalSyncDone).To(BeFalse())
+										})
+									})
 
-										// We have triggered a final sync - manually update the status on the RS to
-										// simulate that it has completed the sync and confirm ReconcileRS correctly sees the update
-										now := metav1.Now()
-										createdRS.Status = &volsyncv1alpha1.ReplicationSourceStatus{
-											LastManualSync: volsync.FinalSyncTriggerString,
-											LastSyncTime:   &now,
-										}
-										Expect(k8sClient.Status().Update(ctx, createdRS)).To(Succeed())
+									Context("When no volumeattachment exists for the PV backing the PVC", func() {
+										It("Should update the trigger on the RS and return true when replication is complete"+
+											" and also delete the pvc after replication complete", func() {
+											// Run ReconcileRS - indicate final sync
+											finalSyncDone, returnedRS, err := vsHandler.ReconcileRS(rsSpec, true)
+											Expect(err).ToNot(HaveOccurred())
+											Expect(finalSyncDone).To(BeFalse()) // Should not return true since sync has not completed
+											Expect(returnedRS).NotTo(BeNil())
 
-										Eventually(func() bool {
-											// Make sure the update has been picked up by the client cache
-											err := k8sClient.Get(ctx, client.ObjectKeyFromObject(createdRS), createdRS)
-											if err != nil {
-												return false
-											}
-
-											return createdRS.Status != nil && createdRS.Status.LastManualSync != ""
-										}, maxWait, interval).Should(BeTrue())
-
-										finalSyncDone, returnedRS, err = vsHandler.ReconcileRS(rsSpec, true)
-										Expect(err).ToNot(HaveOccurred())
-										Expect(finalSyncDone).To(BeTrue())
-										Expect(returnedRS).NotTo(BeNil())
-
-										// Now check to see if the pvc was removed
-										Eventually(func() bool {
-											err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testPVC), testPVC)
-											if err == nil {
-												if !testPVC.GetDeletionTimestamp().IsZero() {
-													// PVC protection finalizer is added automatically to PVC - but testenv
-													// doesn't have anything that will remove it for us - we're good as long
-													// as the pvc is marked for deletion
-
-													testPVC.Finalizers = []string{} // Clear finalizers
-													Expect(k8sClient.Update(ctx, testPVC)).To(Succeed())
+											// Check that the manual sync triggger is set correctly on the RS
+											Eventually(func() string {
+												err := k8sClient.Get(ctx,
+													types.NamespacedName{
+														Name:      rsSpec.ProtectedPVC.Name,
+														Namespace: testNamespace.GetName(),
+													},
+													createdRS)
+												if err != nil || createdRS.Spec.Trigger == nil {
+													return ""
 												}
 
-												return false // try again
+												return createdRS.Spec.Trigger.Manual
+											}, maxWait, interval).Should(Equal(volsync.FinalSyncTriggerString))
+
+											// We have triggered a final sync - manually update the status on the RS to
+											// simulate that it has completed the sync and confirm ReconcileRS correctly sees the update
+											now := metav1.Now()
+											createdRS.Status = &volsyncv1alpha1.ReplicationSourceStatus{
+												LastManualSync: volsync.FinalSyncTriggerString,
+												LastSyncTime:   &now,
 											}
+											Expect(k8sClient.Status().Update(ctx, createdRS)).To(Succeed())
 
-											return kerrors.IsNotFound(err)
-										}, maxWait, interval).Should(BeTrue())
+											Eventually(func() bool {
+												// Make sure the update has been picked up by the client cache
+												err := k8sClient.Get(ctx, client.ObjectKeyFromObject(createdRS), createdRS)
+												if err != nil {
+													return false
+												}
 
-										// Run reconcileRS with final sync again, even with PVC removed it should be able to
-										// reconcile RS and check from the status that the final sync is complete
-										finalSyncDone, returnedRS, err = vsHandler.ReconcileRS(rsSpec, true)
-										Expect(err).ToNot(HaveOccurred())
-										Expect(finalSyncDone).To(BeTrue())
-										Expect(returnedRS).NotTo(BeNil())
+												return createdRS.Status != nil && createdRS.Status.LastManualSync != ""
+											}, maxWait, interval).Should(BeTrue())
+
+											finalSyncDone, returnedRS, err = vsHandler.ReconcileRS(rsSpec, true)
+											Expect(err).ToNot(HaveOccurred())
+											Expect(finalSyncDone).To(BeTrue())
+											Expect(returnedRS).NotTo(BeNil())
+
+											// Now check to see if the pvc was removed
+											Eventually(func() bool {
+												err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testPVC), testPVC)
+												if err == nil {
+													if !testPVC.GetDeletionTimestamp().IsZero() {
+														// PVC protection finalizer is added automatically to PVC - but testenv
+														// doesn't have anything that will remove it for us - we're good as long
+														// as the pvc is marked for deletion
+
+														testPVC.Finalizers = []string{} // Clear finalizers
+														Expect(k8sClient.Update(ctx, testPVC)).To(Succeed())
+													}
+
+													return false // try again
+												}
+
+												return kerrors.IsNotFound(err)
+											}, maxWait, interval).Should(BeTrue())
+
+											// Run reconcileRS with final sync again, even with PVC removed it should be able to
+											// reconcile RS and check from the status that the final sync is complete
+											finalSyncDone, returnedRS, err = vsHandler.ReconcileRS(rsSpec, true)
+											Expect(err).ToNot(HaveOccurred())
+											Expect(finalSyncDone).To(BeTrue())
+											Expect(returnedRS).NotTo(BeNil())
+										})
 									})
 								})
 							})
@@ -1651,6 +1681,7 @@ func createDummyPVC(pvcName, namespace string, capacity resource.Quantity,
 					corev1.ResourceStorage: capacity,
 				},
 			},
+			VolumeName: pvcName + "-pvname", // Simulate the PV
 		},
 	}
 	Expect(k8sClient.Create(ctx, dummyPVC)).To(Succeed())
@@ -1752,4 +1783,46 @@ func createDummyPVCAndMountingPod(pvcName, namespace string, capacity resource.Q
 	}
 
 	return pvc, pod
+}
+
+func createDummyVolumeAttachmentForPVC(pvc *corev1.PersistentVolumeClaim) {
+	pvName := pvc.Spec.VolumeName
+	Expect(pvName).NotTo(Equal("")) // Test should be setting volumename for us
+
+	// Create a VolumeAttachment object to point to our PV and fake out that it's mounted to a node
+	dummyVolumeAttachment := &storagev1.VolumeAttachment{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: "vol-attach-",
+			Labels: map[string]string{
+				testCleanupLabel: testCleanupLabelValue, // Add label we'll use to cleanup at the end of the test
+			},
+		},
+		Spec: storagev1.VolumeAttachmentSpec{
+			Attacher: "test-attacher",
+			NodeName: "node-for-test",
+			Source: storagev1.VolumeAttachmentSource{
+				PersistentVolumeName: &pvName,
+			},
+		},
+	}
+
+	Expect(k8sClient.Create(ctx, dummyVolumeAttachment)).To(Succeed())
+
+	Eventually(func() error {
+		// Make sure the pod status update has been picked up by the cache
+		return k8sClient.Get(ctx, client.ObjectKeyFromObject(dummyVolumeAttachment), dummyVolumeAttachment)
+	}, maxWait, interval).Should(BeNil())
+}
+
+func cleanupNonNamespacedResources() {
+	options := []client.DeleteAllOfOption{
+		client.MatchingLabels{testCleanupLabel: testCleanupLabelValue},
+		client.PropagationPolicy(metav1.DeletePropagationBackground),
+	}
+
+	// Right now only cleaning up volume attachments - these are currently the only cluster scoped resources
+	// created for tests
+	obj := &storagev1.VolumeAttachment{}
+	err := k8sClient.DeleteAllOf(ctx, obj, options...)
+	Expect(client.IgnoreNotFound(err)).To(BeNil())
 }
