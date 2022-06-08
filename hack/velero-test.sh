@@ -2,6 +2,10 @@
 # shellcheck disable=1090,2046,2086
 set -e
 ramen_hack_directory_path_name=$(dirname $0)
+. $ramen_hack_directory_path_name/exit_stack.sh
+exit_stack_push unset -v ramen_hack_directory_path_name
+. $ramen_hack_directory_path_name/minikube.sh
+exit_stack_push minikube_unset
 velero_directory_path_name=~/.local/bin
 
 . $ramen_hack_directory_path_name/until_true_or_n.sh
@@ -71,10 +75,6 @@ velero_undeploy()
 minio_deploy()
 {
 	$ramen_hack_directory_path_name/ocm-minikube-ramen.sh rook_ceph_deploy_spoke\ $1 minio_deploy\ $1
-}
-minikube_minio_url()
-{
-	minikube --profile $1 -n minio service --url minio
 }
 velero_backup()
 {
