@@ -1,6 +1,20 @@
-# ocm-minikube-ramen.sh
+# Ramen hack directory
 
-Ramen end-to-end test script
+## minikube-ramen.sh
+
+Ramen dr-cluster end-to-end test script
+
+- cluster names are specified with the `cluster_names` variable
+    - `cluster1` and `cluster2` by default
+- takes a list of functions to execute:
+    - `deploy` (default) deploys the environment including:
+      minikube clusters, rook-ceph, minio s3 stores, ramen
+    - `undeploy` undeploys the things deployed by `deploy`
+    - `manager_redeploy` rebuilds and redeploys ramen manager
+
+## ocm-minikube-ramen.sh
+
+open-cluster-management Ramen end-to-end test script
 
 - can be run from any directory; writes temporary files to /tmp
 - installs some dependencies (e.g. minikube, golang, etc), but not necessarily
