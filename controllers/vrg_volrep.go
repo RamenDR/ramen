@@ -17,15 +17,17 @@ limitations under the License.
 package controllers
 
 import (
+	"errors"
 	"fmt"
 
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/go-logr/logr"
 
 	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
 	volrepController "github.com/csi-addons/volume-replication-operator/controllers"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -452,24 +454,30 @@ func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim, log 
 
 func (v *VRGInstance) PVUploadToObjectStore(s3ProfileName string, pvc *corev1.PersistentVolumeClaim) error {
 	if s3ProfileName == "" {
-		return fmt.Errorf("error uploading cluster data of PV %s because VRG spec has no S3 profiles",
-			pvc.Name)
+		return fmt.Errorf("missing S3 profiles, failed to protect cluster data for PVC %s", pvc.Name)
 	}
 
 	objectStore, err := v.getObjectStorer(s3ProfileName)
 	if err != nil {
-		return fmt.Errorf("error connecting to object store when uploading PV %s to s3Profile %s, %w",
-			pvc.Name, s3ProfileName, err)
+		return fmt.Errorf("error getting object store, failed to protect cluster data for PVC %s, %w", pvc.Name, err)
 	}
 
 	pv, err := v.getPVFromPVC(pvc)
 	if err != nil {
-		return fmt.Errorf("error reading from K8s cluster when uploading PV %s to s3Profile %s, %w",
+		return fmt.Errorf("error getting PV for PVC, failed to protect cluster data for PVC %s to s3Profile %s, %w",
 			pvc.Name, s3ProfileName, err)
 	}
 
 	if err := UploadPV(objectStore, v.s3KeyPrefix(), pv.Name, pv); err != nil {
-		err := fmt.Errorf("error uploading PV %s kube object to s3Profile %s, %w", pv.Name, s3ProfileName, err)
+		var aerr awserr.Error
+		if errors.As(err, &aerr) {
+			// Treat any aws error as a persistent error
+			v.cacheObjectStorer(s3ProfileName, nil,
+				fmt.Errorf("persistent error while uploading to s3 profile %s, will retry later", s3ProfileName))
+		}
+
+		err := fmt.Errorf("error uploading PV to s3Profile %s, failed to protect cluster data for PVC %s, %w",
+			s3ProfileName, pvc.Name, err)
 
 		return err
 	}
@@ -523,7 +531,7 @@ func (v *VRGInstance) getObjectStorer(s3ProfileName string) (ObjectStorer, error
 		v.namespacedName,
 		v.log)
 	if err != nil {
-		err = fmt.Errorf("error connecting to object store for s3Profile %s, %w", s3ProfileName, err)
+		err = fmt.Errorf("error creating object store for s3Profile %s, %w", s3ProfileName, err)
 	}
 
 	v.cacheObjectStorer(s3ProfileName, objectStore, err)
@@ -755,7 +763,7 @@ func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 
 	err := v.reconciler.Get(v.ctx, vrNamespacedName, volRep)
 	if err != nil {
-		if !errors.IsNotFound(err) {
+		if !k8serrors.IsNotFound(err) {
 			log.Error(err, "Failed to get VolumeReplication resource", "resource", vrNamespacedName)
 
 			// Failed to get VolRep and error is not IsNotFound. It is not
@@ -1317,7 +1325,7 @@ func (v *VRGInstance) deleteVR(vrNamespacedName types.NamespacedName, log logr.L
 	}
 
 	err := v.reconciler.Delete(v.ctx, cr)
-	if err == nil || errors.IsNotFound(err) {
+	if err == nil || k8serrors.IsNotFound(err) {
 		return nil
 	}
 
@@ -1572,7 +1580,7 @@ func (v *VRGInstance) restorePVClusterData(pvList []corev1.PersistentVolume) err
 		v.addPVRestoreAnnotation(pv)
 
 		if err := v.reconciler.Create(v.ctx, pv); err != nil {
-			if errors.IsAlreadyExists(err) {
+			if k8serrors.IsAlreadyExists(err) {
 				err := v.validatePVExistence(pv)
 				if err != nil {
 					v.log.Info("PV exists. Ignoring and moving to next PV", "error", err.Error())

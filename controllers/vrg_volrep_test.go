@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"strings"
 	"time"
 
 	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
@@ -144,6 +145,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			replicationClassLabels: map[string]string{"protection": "ramen"},
 		}
 		It("populates the S3 store with PVs and starts vrg as primary to check that the PVs are restored", func() {
+			restoreTestTemplate.s3Profiles = []string{s3Profiles[0].S3ProfileName}
 			numPVs := 3
 			vtest := newVRGTestCaseCreate(0, restoreTestTemplate, true, false)
 			vrgNamespacedName := vtest.namespace + "/" + vtest.vrgName + "/"
@@ -156,6 +158,64 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			vtest.VRGTestCaseStart()
 			waitForPVRestore(pvList)
 			cleanupS3Store(objectStorer)
+		})
+	})
+
+	// Test Object store "get" failure for an s3 store, expect ClusterDataReady to remain false
+	var vrgS3StoreGetTestCase *vrgTest
+	Context("in primary state", func() {
+		createTestTemplate := &template{
+			ClaimBindInfo:          corev1.ClaimBound,
+			VolumeBindInfo:         corev1.VolumeBound,
+			schedulingInterval:     "1h",
+			storageClassName:       "manual",
+			replicationClassName:   "test-replicationclass",
+			vrcProvisioner:         "manual.storage.com",
+			scProvisioner:          "manual.storage.com",
+			replicationClassLabels: map[string]string{"protection": "ramen"},
+		}
+		It("sets up PVCs, PVs and VRGs (with s3 stores that fail ObjectStore get)", func() {
+			createTestTemplate.s3Profiles = []string{s3Profiles[3].S3ProfileName}
+			vrgS3StoreGetTestCase = newVRGTestCaseCreateAndStart(2, createTestTemplate, true, false)
+		})
+		It("waits for VRG status to match", func() {
+			vrgS3StoreGetTestCase.verifyVRGStatusCondition(vrgController.VRGConditionTypeClusterDataReady, false)
+		})
+		It("cleans up after testing", func() {
+			vrgS3StoreGetTestCase.cleanup()
+		})
+	})
+
+	// Test PV upload failure to an s3 store, expect ClusterDataProtected to remain false
+	// - Also tests if cached s3 errors are returned rather than invoking the upload for each PV, by having
+	//   more than one PVCs to protect
+	var vrgS3UploadTestCase *vrgTest
+	Context("in primary state", func() {
+		createTestTemplate := &template{
+			ClaimBindInfo:          corev1.ClaimBound,
+			VolumeBindInfo:         corev1.VolumeBound,
+			schedulingInterval:     "1h",
+			storageClassName:       "manual",
+			replicationClassName:   "test-replicationclass",
+			vrcProvisioner:         "manual.storage.com",
+			scProvisioner:          "manual.storage.com",
+			replicationClassLabels: map[string]string{"protection": "ramen"},
+		}
+		It("sets up PVCs, PVs and VRGs (with s3 stores that fail uploads)", func() {
+			createTestTemplate.s3Profiles = []string{s3Profiles[6].S3ProfileName}
+			vrgS3UploadTestCase = newVRGTestCaseCreateAndStart(3, createTestTemplate, true, false)
+		})
+		It("waits for VRG to create a VR for each PVC", func() {
+			expectedVRCount := len(vrgS3UploadTestCase.pvcNames)
+			vrgS3UploadTestCase.waitForVRCountToMatch(expectedVRCount)
+		})
+		It("waits for VRG status to match", func() {
+			vrgS3UploadTestCase.promoteVolReps()
+			vrgS3UploadTestCase.verifyVRGStatusExpectation(true)
+			vrgS3UploadTestCase.verifyCachedUploadError()
+		})
+		It("cleans up after testing", func() {
+			vrgS3UploadTestCase.cleanup()
 		})
 	})
 
@@ -174,6 +234,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			replicationClassLabels: map[string]string{"protection": "ramen"},
 		}
 		It("sets up PVCs, PVs and VRGs", func() {
+			createTestTemplate.s3Profiles = []string{s3Profiles[0].S3ProfileName}
 			for c := 0; c < 5; c++ {
 				v := newVRGTestCaseCreateAndStart(c, createTestTemplate, true, false)
 				vrgTestCases = append(vrgTestCases, v)
@@ -225,6 +286,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 
 	Context("in primary state", func() {
 		It("sets up non-bound PVCs, PVs and then bind them", func() {
+			vrgTestTemplate.s3Profiles = []string{s3Profiles[0].S3ProfileName}
 			for c := 0; c < 5; c++ {
 				// Test the scenario where the pvc is not bound yet
 				// and expect no VRs to be created.
@@ -274,6 +336,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 	var vrgStatusTests []*vrgTest
 	Context("in primary state status check pending to bound", func() {
 		It("sets up non-bound PVCs, PVs and then bind them", func() {
+			vrgTestTemplate.s3Profiles = []string{s3Profiles[0].S3ProfileName}
 			v := newVRGTestCaseCreateAndStart(4, vrgTestTemplate, false, false)
 			vrgStatusTests = append(vrgStatusTests, v)
 		})
@@ -317,6 +380,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 	var vrgStatus2Tests []*vrgTest
 	Context("in primary state status check bound", func() {
 		It("sets up PVCs, PVs", func() {
+			vrgTest2Template.s3Profiles = []string{s3Profiles[0].S3ProfileName}
 			v := newVRGTestCaseCreateAndStart(4, vrgTest2Template, true, true)
 			vrgStatus2Tests = append(vrgStatus2Tests, v)
 		})
@@ -352,6 +416,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 	var vrgStatus3Tests []*vrgTest
 	Context("in primary state status check create VRG first", func() {
 		It("sets up non-bound PVCs, PVs and then bind them", func() {
+			vrgTest3Template.s3Profiles = []string{s3Profiles[0].S3ProfileName}
 			v := newVRGTestCaseCreateAndStart(4, vrgTest3Template, false, true)
 			vrgStatus3Tests = append(vrgStatus3Tests, v)
 		})
@@ -396,6 +461,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 	}
 	Context("schedule test, provisioner does not match", func() {
 		It("sets up non-bound PVCs, PVs and then bind them", func() {
+			vrgScheduleTestTemplate.s3Profiles = []string{s3Profiles[0].S3ProfileName}
 			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTestTemplate, true, true)
 			vrgScheduleTests = append(vrgScheduleTests, v)
 		})
@@ -429,6 +495,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 	}
 	Context("schedule tests schedue does not match", func() {
 		It("sets up non-bound PVCs, PVs and then bind them", func() {
+			vrgScheduleTest2Template.s3Profiles = []string{s3Profiles[0].S3ProfileName}
 			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest2Template, true, true)
 			vrgSchedule2Tests = append(vrgSchedule2Tests, v)
 		})
@@ -462,6 +529,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 	}
 	Context("schedule tests replicationclass does not have labels", func() {
 		It("sets up non-bound PVCs, PVs and then bind them", func() {
+			vrgScheduleTest3Template.s3Profiles = []string{s3Profiles[0].S3ProfileName}
 			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest3Template, true, true)
 			vrgSchedule3Tests = append(vrgSchedule3Tests, v)
 		})
@@ -507,6 +575,7 @@ type template struct {
 	storageClassName       string
 	replicationClassName   string
 	replicationClassLabels map[string]string
+	s3Profiles             []string
 }
 
 //nolint:gosec
@@ -840,7 +909,7 @@ func (v *vrgTest) createVRG() {
 			VolSync: ramendrv1alpha1.VolSyncSpec{
 				Disabled: true,
 			},
-			S3Profiles: []string{s3Profiles[0].S3ProfileName},
+			S3Profiles: v.template.s3Profiles,
 		},
 	}
 	err := k8sClient.Create(context.TODO(), vrg)
@@ -977,15 +1046,10 @@ func (v *vrgTest) isAnyPVCProtectedByVolSync(vrg *ramendrv1alpha1.VolumeReplicat
 	return false
 }
 
-//nolint:gocognit
 func (v *vrgTest) verifyVRGStatusExpectation(expectedStatus bool) {
 	Eventually(func() bool {
 		vrg := v.getVRG(v.vrgName)
 		dataReadyCondition := checkConditions(vrg.Status.Conditions, vrgController.VRGConditionTypeDataReady)
-		if dataReadyCondition == nil {
-			return false
-		}
-
 		if dataReadyCondition == nil {
 			return false
 		}
@@ -1010,6 +1074,75 @@ func (v *vrgTest) verifyVRGStatusExpectation(expectedStatus bool) {
 		return dataReadyCondition.Status != metav1.ConditionTrue
 	}, vrgtimeout, vrginterval).Should(BeTrue(),
 		"while waiting for VRG TRUE condition %s/%s", v.vrgName, v.namespace)
+}
+
+func (v *vrgTest) verifyVRGStatusCondition(conditionName string, expectedStatus bool) {
+	testFunc := func() bool {
+		vrg := v.getVRG(v.vrgName)
+		vrgCondition := checkConditions(
+			vrg.Status.Conditions,
+			conditionName)
+
+		switch expectedStatus {
+		case true:
+			if vrgCondition == nil {
+				return false
+			}
+
+			return vrgCondition.Status == metav1.ConditionTrue
+		default: // false
+			if vrgCondition == nil {
+				return true
+			}
+
+			return vrgCondition.Status == metav1.ConditionFalse
+		}
+	}
+
+	switch expectedStatus {
+	case true:
+		Eventually(testFunc, vrgtimeout, vrginterval).Should(BeTrue(),
+			"while waiting for VRG %s TRUE condition %s/%s", conditionName, v.vrgName, v.namespace)
+	default: // false
+		Consistently(testFunc, vrgtimeout, vrginterval).Should(BeTrue(),
+			"while waiting for VRG %s FALSE condition %s/%s", conditionName, v.vrgName, v.namespace)
+	}
+}
+
+func (v *vrgTest) verifyCachedUploadError() {
+	// Verify cluster data protected remains false
+	v.verifyVRGStatusCondition(vrgController.VRGConditionTypeClusterDataProtected, false)
+
+	// We verify is exactly one PVC got the expected aws error and rest report the cached error
+	cachedErr := 0
+	nonCachedErr := 0
+
+	vrg := v.getVRG(v.vrgName)
+	for _, protectedPVC := range vrg.Status.ProtectedPVCs {
+		pvcConditionClusterDataProtected := checkConditions(
+			protectedPVC.Conditions,
+			vrgController.VRGConditionTypeClusterDataProtected)
+
+		Expect(pvcConditionClusterDataProtected).NotTo(BeNil(),
+			"failed to find %s condition for PVC %s in VRG %s",
+			vrgController.VRGConditionTypeClusterDataProtected,
+			protectedPVC.Name, v.vrgName)
+
+		switch strings.Contains(pvcConditionClusterDataProtected.Message,
+			"persistent error while uploading to s3 profile") &&
+			strings.Contains(pvcConditionClusterDataProtected.Message,
+				"will retry later") {
+		case true:
+			cachedErr++
+		default: // false
+			nonCachedErr++
+		}
+	}
+
+	Expect(nonCachedErr).To(BeNumerically("==", 1),
+		"found multiple non cached codes for PVCs in VRG %s", v.vrgName)
+	Expect(cachedErr).To(BeNumerically("==", v.pvcCount-1),
+		"found mismatched cached code counts for PVCs in VRG %s", v.vrgName)
 }
 
 func checkConditions(existingConditions []metav1.Condition, conditionType string) *metav1.Condition {

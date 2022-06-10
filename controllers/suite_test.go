@@ -79,7 +79,7 @@ var (
 	plRuleNames map[string]struct{}
 
 	s3Secrets      [1]corev1.Secret
-	s3Profiles     [6]ramendrv1alpha1.S3StoreProfile
+	s3Profiles     [7]ramendrv1alpha1.S3StoreProfile
 	ramenNamespace = "ns-envtest"
 )
 
@@ -225,6 +225,8 @@ var _ = BeforeSuite(func() {
 	s3Profiles[2] = s3ProfileNew("2", bucketNameFail)
 	s3Profiles[3] = s3ProfileNew("3", bucketNameFail2)
 	s3Profiles[4] = s3ProfileNew("4", bucketListFail)
+	// s3Profiles[5] used and modified in DRCluster tests
+	s3Profiles[6] = s3ProfileNew("6", bucketNameUploadAwsErr)
 
 	s3SecretsPolicyNamesSet := func() {
 		plRuleNames = make(map[string]struct{}, len(s3Secrets))
