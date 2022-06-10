@@ -22,6 +22,8 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/go-logr/logr"
 	"github.com/ramendr/ramen/controllers"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,11 +32,12 @@ import (
 type fakeObjectStoreGetter struct{}
 
 const (
-	bucketNameSucc  = "bucket"
-	bucketNameSucc2 = bucketNameSucc + "2"
-	bucketNameFail  = bucketNameSucc + "Fail"
-	bucketNameFail2 = bucketNameFail + "2"
-	bucketListFail  = bucketNameSucc + "ListFail"
+	bucketNameSucc         = "bucket"
+	bucketNameSucc2        = bucketNameSucc + "2"
+	bucketNameFail         = bucketNameSucc + "Fail"
+	bucketNameFail2        = bucketNameFail + "2"
+	bucketListFail         = bucketNameSucc + "ListFail"
+	bucketNameUploadAwsErr = bucketNameFail + "UploadAwsErr"
 
 	awsAccessKeyIDSucc = "succ"
 	awsAccessKeyIDFail = "fail"
@@ -92,6 +95,10 @@ type fakeObjectStorer struct {
 }
 
 func (f fakeObjectStorer) UploadObject(key string, object interface{}) error {
+	if f.bucketName == bucketNameUploadAwsErr {
+		return awserr.New(s3.ErrCodeInvalidObjectState, "fake error uploading object", fmt.Errorf("fake error"))
+	}
+
 	f.objects[key] = object
 
 	return nil
