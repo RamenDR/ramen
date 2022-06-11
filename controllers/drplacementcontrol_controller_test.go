@@ -24,6 +24,7 @@ import (
 	"github.com/ghodss/yaml"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/format"
 	errorswrapper "github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -785,14 +786,24 @@ func ensureDRPolicyIsNotDeleted(drpc *rmn.DRPlacementControl) {
 	}, timeout, interval).Should(BeTrue(), "DRPolicy deleted prematurely, with active DRPC references")
 }
 
-func ensureDRPolicyIsDeleted(drpc *rmn.DRPlacementControl) {
-	Eventually(func() bool {
-		drpolicy := &rmn.DRPolicy{}
-		name := drpc.Spec.DRPolicyRef.Name
-		err := apiReader.Get(context.TODO(), types.NamespacedName{Name: name}, drpolicy)
-
-		return err != nil
-	}, timeout, interval).Should(BeTrue(), "DRPolicy not deleted, though there is no active DRPC referring to it")
+func ensureDRPolicyIsDeleted(drpolicyName string) {
+	drpolicy := &rmn.DRPolicy{}
+	Eventually(func() error {
+		return apiReader.Get(context.TODO(), types.NamespacedName{Name: drpolicyName}, drpolicy)
+	}, timeout, interval).Should(
+		MatchError(
+			errors.NewNotFound(
+				schema.GroupResource{
+					Group:    rmn.GroupVersion.Group,
+					Resource: "drpolicies",
+				},
+				drpolicyName,
+			),
+		),
+		"DRPolicy %s not not found\n%s",
+		drpolicyName,
+		format.Object(*drpolicy, 0),
+	)
 }
 
 func checkIfDRPCFinalizerNotAdded(drpc *rmn.DRPlacementControl) {
@@ -1501,9 +1512,14 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				waitForCompletion("deleted")
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1))       // Roles MW only
 				Expect(getManagedClusterViewCount(East1ManagedCluster)).Should(Equal(0)) // NS + VRG MCV
-				ensureDRPolicyIsDeleted(drpc)
-				deleteDRClustersAsync()
 			})
+			It("should delete the DRPC causing its referenced drpolicy to be deleted"+
+				" by drpolicy controller since no DRPCs reference it anymore", func() {
+				ensureDRPolicyIsDeleted(drpc.Spec.DRPolicyRef.Name)
+			})
+		})
+		Specify("delete drclusters", func() {
+			deleteDRClustersAsync()
 		})
 	})
 	Context("DRPlacementControl Reconciler Sync DR", func() {
