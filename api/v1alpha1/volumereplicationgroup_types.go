@@ -116,6 +116,14 @@ const (
 	VRGActionRelocate = VRGAction("Relocate")
 )
 
+type KubeObjectProtection struct {
+	//+optional
+	ResourceCaptureOrder [][]string `json:"resourceBackupOrder,omitempty"`
+
+	//+optional
+	ResourceRecoveryOrder [][]string `json:"resourceRestoreOrder,omitempty"`
+}
+
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // VolumeReplicationGroup (VRG) spec declares the desired schedule for data
@@ -165,6 +173,8 @@ type VolumeReplicationGroupSpec struct {
 	// Action is either Failover or Relocate
 	//+optional
 	Action VRGAction `json:"action,omitempty"`
+	//+optional
+	KubeObjectProtection KubeObjectProtection `json:"kubeObjectProtection,omitempty"`
 }
 
 type ProtectedPVC struct {

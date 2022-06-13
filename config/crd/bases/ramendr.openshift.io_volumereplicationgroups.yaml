@@ -166,6 +166,21 @@ spec:
                 required:
                 - schedulingInterval
                 type: object
+              kubeObjectProtection:
+                properties:
+                  resourceBackupOrder:
+                    items:
+                      items:
+                        type: string
+                      type: array
+                    type: array
+                  resourceRestoreOrder:
+                    items:
+                      items:
+                        type: string
+                      type: array
+                    type: array
+                type: object
               prepareForFinalSync:
                 description: PrepareForFinalSync when set, it tells VRG to prepare
                   for the final sync from source to destination cluster. Final sync

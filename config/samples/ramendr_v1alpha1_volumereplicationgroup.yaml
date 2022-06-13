@@ -7,12 +7,24 @@ spec:
     matchLabels:
       any-pvc-label: value
   replicationState: "Primary"
-  s3ProfileNames:
+  s3Profiles:
     - s3-profile-of-east
     - s3-profile-of-west
   async:
     mode: Enabled
     schedulingInterval: "10m"
-    replicationSelector:
-      matchLabels:
-        class: ramen
+  sync:
+    mode: Disabled
+  replicationState: "primary"
+  kubeObjectProtection:
+    resourceCaptureOrder:
+      - ["Deployments"]
+      - ["*.cpd.ibm.com"]
+      - ["ConfigMap", "Secret"]
+      - [".*"]
+    resourceRecoveryOrder:
+      - ["Secret",
+        "ConfigMap"]
+      - ["*.cpd.ibm.com"]
+      - ["!Deployments"]
+      - [".*"]
