@@ -1822,7 +1822,25 @@ func (d *DRPCInstance) shouldUpdateStatus() bool {
 		}
 	}
 
-	return !reflect.DeepEqual(d.savedInstanceStatus, d.instance.Status)
+	if !reflect.DeepEqual(d.savedInstanceStatus, d.instance.Status) {
+		return true
+	}
+
+	homeCluster := ""
+	if len(d.userPlacementRule.Status.Decisions) != 0 {
+		homeCluster = d.userPlacementRule.Status.Decisions[0].ClusterName
+	}
+
+	if homeCluster == "" {
+		return false
+	}
+
+	vrg := d.vrgs[homeCluster]
+	if vrg == nil {
+		return false
+	}
+
+	return !reflect.DeepEqual(d.instance.Status.ResourceConditions.Conditions, vrg.Status.Conditions)
 }
 
 //nolint:exhaustive
