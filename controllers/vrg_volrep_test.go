@@ -334,6 +334,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 	})
 
 	var vrgStatusTests []*vrgTest
+	//nolint:dupl
 	Context("in primary state status check pending to bound", func() {
 		It("sets up non-bound PVCs, PVs and then bind them", func() {
 			vrgTestTemplate.s3Profiles = []string{s3Profiles[0].S3ProfileName}
@@ -414,6 +415,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 		replicationClassLabels: map[string]string{"protection": "ramen"},
 	}
 	var vrgStatus3Tests []*vrgTest
+	//nolint:dupl
 	Context("in primary state status check create VRG first", func() {
 		It("sets up non-bound PVCs, PVs and then bind them", func() {
 			vrgTest3Template.s3Profiles = []string{s3Profiles[0].S3ProfileName}
