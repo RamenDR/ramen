@@ -942,7 +942,7 @@ func setDRClusterFencedCondition(conditions *[]metav1.Condition, observedGenerat
 // sets conditions when cluster has been successfully
 // unfenced via NetworkFence CR which still exists.
 // Hence clean is false.
-// unfence = true, fence = flase, clean = false
+// unfence = true, fence = false, clean = false
 func setDRClusterUnfencedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeFenced,
@@ -963,7 +963,7 @@ func setDRClusterUnfencedCondition(conditions *[]metav1.Condition, observedGener
 // sets conditions when the NetworkFence CR for this cluster
 // has been successfully deleted. Since cleaning of NetworkFence
 // CR is done after a successful unfence,
-// unfence = true, fence = flase, clean = true
+// unfence = true, fence = false, clean = true
 func setDRClusterCleanCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeFenced,
@@ -985,7 +985,7 @@ func setDRClusterCleanCondition(conditions *[]metav1.Condition, observedGenerati
 // fails. Since, fencing is done via NetworkFence CR, after
 // on a clean machine assumed to have no fencing CRs for
 // this cluster,
-// unfence = true, fence = flase, clean = true
+// unfence = true, fence = false, clean = true
 // TODO: Remove the linter skip when this function is used
 func setDRClusterFencingFailedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
