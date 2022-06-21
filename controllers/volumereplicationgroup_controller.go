@@ -507,23 +507,17 @@ func (v *VRGInstance) restorePVs() error {
 	return nil
 }
 
+func (v *VRGInstance) listPVCsByPVCSelector() (*corev1.PersistentVolumeClaimList, error) {
+	return rmnutil.ListPVCsByPVCSelector(v.ctx, v.reconciler.Client, v.instance.Spec.PVCSelector, v.instance.Namespace,
+		v.instance.Spec.VolSync.Disabled, v.log)
+}
+
 // updatePVCList fetches and updates the PVC list to process for the current instance of VRG
 func (v *VRGInstance) updatePVCList() error {
 	if v.instance.Spec.VolSync.Disabled {
-		labelSelector := v.instance.Spec.PVCSelector
-
-		v.log.Info("Fetching PersistentVolumeClaims", "labeled", labels.Set(labelSelector.MatchLabels))
-		listOptions := []client.ListOption{
-			client.InNamespace(v.instance.Namespace),
-			client.MatchingLabels(labelSelector.MatchLabels),
-		}
-
-		pvcList := &corev1.PersistentVolumeClaimList{}
-		if err := v.reconciler.List(v.ctx, pvcList, listOptions...); err != nil {
-			v.log.Error(err, "Failed to list PersistentVolumeClaims",
-				"labeled", labels.Set(labelSelector.MatchLabels))
-
-			return fmt.Errorf("failed to list PersistentVolumeClaims, %w", err)
+		pvcList, err := v.listPVCsByPVCSelector()
+		if err != nil {
+			return err
 		}
 
 		v.volRepPVCs = make([]corev1.PersistentVolumeClaim, len(pvcList.Items))
@@ -539,23 +533,10 @@ func (v *VRGInstance) updatePVCList() error {
 }
 
 func (v *VRGInstance) updatePVCListForAll() error {
-	labelSelector := v.instance.Spec.PVCSelector
-
-	v.log.Info("Fetching PersistentVolumeClaims", "labeled", labels.Set(labelSelector.MatchLabels))
-	listOptions := []client.ListOption{
-		client.InNamespace(v.instance.Namespace),
-		client.MatchingLabels(labelSelector.MatchLabels),
+	pvcList, err := v.listPVCsByPVCSelector()
+	if err != nil {
+		return err
 	}
-
-	pvcList := &corev1.PersistentVolumeClaimList{}
-	if err := v.reconciler.List(v.ctx, pvcList, listOptions...); err != nil {
-		v.log.Error(err, "Failed to list PersistentVolumeClaims",
-			"labeled", labels.Set(labelSelector.MatchLabels))
-
-		return fmt.Errorf("failed to list PersistentVolumeClaims, %w", err)
-	}
-
-	v.log.Info(fmt.Sprintf("Found %d PVCs using matching lables %v", len(pvcList.Items), labelSelector.MatchLabels))
 
 	if !v.vrcUpdated {
 		if err := v.updateReplicationClassList(); err != nil {
