@@ -525,33 +525,17 @@ func (v *VRGInstance) listPVCsByPVCSelector() (*corev1.PersistentVolumeClaimList
 
 // updatePVCList fetches and updates the PVC list to process for the current instance of VRG
 func (v *VRGInstance) updatePVCList() error {
-	if v.instance.Spec.VolSync.Disabled {
-		pvcList, err := v.listPVCsByPVCSelector()
-		if err != nil {
-			return err
-		}
-
-		v.volRepPVCs = make([]corev1.PersistentVolumeClaim, len(pvcList.Items))
-		total := copy(v.volRepPVCs, pvcList.Items)
-
-		v.log.Info("Found PersistentVolumeClaims", "count", total)
-
-		return nil
-	}
-
-	// Processing PVCs for VolSync and VolRep
-	return v.updatePVCListForAll()
-}
-
-func (v *VRGInstance) updatePVCListForAll() error {
 	pvcList, err := v.listPVCsByPVCSelector()
 	if err != nil {
 		return err
 	}
 
-	v.log.Info(fmt.Sprintf("Found %d PVCs using matching lables %v", len(pvcList.Items), labelSelector.MatchLabels))
+	if v.instance.Spec.Async == nil || v.instance.Spec.VolSync.Disabled {
+		v.volRepPVCs = make([]corev1.PersistentVolumeClaim, len(pvcList.Items))
+		total := copy(v.volRepPVCs, pvcList.Items)
 
-	if v.instance.Spec.Async == nil {
+		v.log.Info("Found PersistentVolumeClaims", "count", total)
+
 		return nil
 	}
 
