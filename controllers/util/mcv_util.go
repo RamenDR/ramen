@@ -98,7 +98,7 @@ func (m ManagedClusterViewGetterImpl) GetNFFromManagedCluster(resourceName, reso
 
 	mcvViewscope := viewv1beta1.ViewScope{
 		Resource:  "NetworkFence",
-		Name:      resourceName,
+		Name:      "network-fence-" + resourceName,
 		Namespace: resourceNamespace,
 	}
 
