@@ -17,7 +17,6 @@ package controllers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"time"
@@ -27,11 +26,9 @@ import (
 	errorswrapper "github.com/pkg/errors"
 	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -67,155 +64,12 @@ var InitialWaitTimeForDRPCPlacementRule = errorswrapper.New("Waiting for DRPC Pl
 // ProgressCallback of function type
 type ProgressCallback func(string, string)
 
-type ManagedClusterViewGetter interface {
-	GetVRGFromManagedCluster(
-		resourceName, resourceNamespace, managedCluster string) (*rmn.VolumeReplicationGroup, error)
-
-	GetNamespaceFromManagedCluster(resourceName, resourceNamespace, managedCluster string) (*corev1.Namespace, error)
-}
-
-type ManagedClusterViewGetterImpl struct {
-	client.Client
-}
-
-func (m ManagedClusterViewGetterImpl) GetVRGFromManagedCluster(
-	resourceName, resourceNamespace, managedCluster string) (*rmn.VolumeReplicationGroup, error) {
-	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName)
-	// get VRG and verify status through ManagedClusterView
-	mcvMeta := metav1.ObjectMeta{
-		Name:      BuildManagedClusterViewName(resourceName, resourceNamespace, "vrg"),
-		Namespace: managedCluster,
-		Annotations: map[string]string{
-			rmnutil.DRPCNameAnnotation:      resourceName,
-			rmnutil.DRPCNamespaceAnnotation: resourceNamespace,
-		},
-	}
-
-	mcvViewscope := viewv1beta1.ViewScope{
-		Resource:  "VolumeReplicationGroup",
-		Name:      resourceName,
-		Namespace: resourceNamespace,
-	}
-
-	vrg := &rmn.VolumeReplicationGroup{}
-
-	err := m.getManagedClusterResource(mcvMeta, mcvViewscope, vrg, logger)
-
-	return vrg, err
-}
-
-func (m ManagedClusterViewGetterImpl) GetNamespaceFromManagedCluster(
-	resourceName, managedCluster, namespaceString string) (*corev1.Namespace, error) {
-	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName)
-
-	// get Namespace and verify status through ManagedClusterView
-	mcvMeta := metav1.ObjectMeta{
-		Name:      BuildManagedClusterViewName(resourceName, namespaceString, rmnutil.MWTypeNS),
-		Namespace: managedCluster,
-	}
-
-	mcvViewscope := viewv1beta1.ViewScope{
-		Resource: "Namespace",
-		Name:     namespaceString,
-	}
-
-	namespace := &corev1.Namespace{}
-
-	err := m.getManagedClusterResource(mcvMeta, mcvViewscope, namespace, logger)
-
-	return namespace, err
-}
-
-/*
-Description: queries a managed cluster for a resource type, and populates a variable with the results.
-Requires:
-	1) meta: information of the new/existing resource; defines which cluster(s) to search
-	2) viewscope: query information for managed cluster resource. Example: resource, name.
-	3) interface: empty variable to populate results into
-Returns: error if encountered (nil if no error occurred). See results on interface object.
-*/
-func (m ManagedClusterViewGetterImpl) getManagedClusterResource(
-	meta metav1.ObjectMeta, viewscope viewv1beta1.ViewScope, resource interface{}, logger logr.Logger) error {
-	// create MCV first
-	mcv, err := m.getOrCreateManagedClusterView(meta, viewscope, logger)
-	if err != nil {
-		return errorswrapper.Wrap(err, "getManagedClusterResource failed")
-	}
-
-	logger.Info(fmt.Sprintf("MCV Conditions: %v", mcv.Status.Conditions))
-
-	// want single recent Condition with correct Type; otherwise: bad path
-	switch len(mcv.Status.Conditions) {
-	case 0:
-		err = fmt.Errorf("missing ManagedClusterView conditions")
-	case 1:
-		switch {
-		case mcv.Status.Conditions[0].Type != viewv1beta1.ConditionViewProcessing:
-			err = fmt.Errorf("found invalid condition (%s) in ManagedClusterView", mcv.Status.Conditions[0].Type)
-		case mcv.Status.Conditions[0].Reason == viewv1beta1.ReasonGetResourceFailed:
-			err = errors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
-		case mcv.Status.Conditions[0].Status != metav1.ConditionTrue:
-			err = fmt.Errorf("ManagedClusterView is not ready (reason: %s)", mcv.Status.Conditions[0].Reason)
-		}
-	default:
-		err = fmt.Errorf("found multiple status conditions with ManagedClusterView")
-	}
-
-	if err != nil {
-		return errorswrapper.Wrap(err, "getManagedClusterResource results")
-	}
-
-	// good path: convert raw data to usable object
-	err = json.Unmarshal(mcv.Status.Result.Raw, resource)
-	if err != nil {
-		return errorswrapper.Wrap(err, "failed to Unmarshal data from ManagedClusterView to resource")
-	}
-
-	return nil // success
-}
-
-/*
-Description: create a new ManagedClusterView object, or update the existing one with the same name.
-Requires:
-	1) meta: specifies MangedClusterView name and managed cluster search information
-	2) viewscope: once the managed cluster is found, use this information to find the resource.
-		Optional params: Namespace, Resource, Group, Version, Kind. Resource can be used by itself, Kind requires Version
-Returns: ManagedClusterView, error
-*/
-func (m ManagedClusterViewGetterImpl) getOrCreateManagedClusterView(
-	meta metav1.ObjectMeta, viewscope viewv1beta1.ViewScope, logger logr.Logger) (*viewv1beta1.ManagedClusterView, error) {
-	mcv := &viewv1beta1.ManagedClusterView{
-		ObjectMeta: meta,
-		Spec: viewv1beta1.ViewSpec{
-			Scope: viewscope,
-		},
-	}
-
-	err := m.Get(context.TODO(), types.NamespacedName{Name: meta.Name, Namespace: meta.Namespace}, mcv)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			logger.Info(fmt.Sprintf("Creating ManagedClusterView %v", mcv))
-			err = m.Create(context.TODO(), mcv)
-		}
-
-		if err != nil {
-			return nil, errorswrapper.Wrap(err, "failed to getOrCreateManagedClusterView")
-		}
-	}
-
-	if mcv.Spec.Scope != viewscope {
-		logger.Info("WARNING: existing ManagedClusterView has different ViewScope than desired one")
-	}
-
-	return mcv, nil
-}
-
 // DRPlacementControlReconciler reconciles a DRPlacementControl object
 type DRPlacementControlReconciler struct {
 	client.Client
 	APIReader     client.Reader
 	Log           logr.Logger
-	MCVGetter     ManagedClusterViewGetter
+	MCVGetter     rmnutil.ManagedClusterViewGetter
 	Scheme        *runtime.Scheme
 	Callback      ProgressCallback
 	eventRecorder *rmnutil.EventReporter
@@ -258,16 +112,16 @@ func ManifestWorkPredicateFunc() predicate.Funcs {
 }
 
 func filterMW(mw *ocmworkv1.ManifestWork) []ctrl.Request {
-	if mw.Annotations[rmnutil.DRPCNameAnnotation] == "" ||
-		mw.Annotations[rmnutil.DRPCNamespaceAnnotation] == "" {
+	if mw.Annotations[DRPCNameAnnotation] == "" ||
+		mw.Annotations[DRPCNamespaceAnnotation] == "" {
 		return []ctrl.Request{}
 	}
 
 	return []ctrl.Request{
 		reconcile.Request{
 			NamespacedName: types.NamespacedName{
-				Name:      mw.Annotations[rmnutil.DRPCNameAnnotation],
-				Namespace: mw.Annotations[rmnutil.DRPCNamespaceAnnotation],
+				Name:      mw.Annotations[DRPCNameAnnotation],
+				Namespace: mw.Annotations[DRPCNamespaceAnnotation],
 			},
 		},
 	}
@@ -309,16 +163,16 @@ func ManagedClusterViewPredicateFunc() predicate.Funcs {
 }
 
 func filterMCV(mcv *viewv1beta1.ManagedClusterView) []ctrl.Request {
-	if mcv.Annotations[rmnutil.DRPCNameAnnotation] == "" ||
-		mcv.Annotations[rmnutil.DRPCNamespaceAnnotation] == "" {
+	if mcv.Annotations[DRPCNameAnnotation] == "" ||
+		mcv.Annotations[DRPCNamespaceAnnotation] == "" {
 		return []ctrl.Request{}
 	}
 
 	return []ctrl.Request{
 		reconcile.Request{
 			NamespacedName: types.NamespacedName{
-				Name:      mcv.Annotations[rmnutil.DRPCNameAnnotation],
-				Namespace: mcv.Annotations[rmnutil.DRPCNamespaceAnnotation],
+				Name:      mcv.Annotations[DRPCNameAnnotation],
+				Namespace: mcv.Annotations[DRPCNamespaceAnnotation],
 			},
 		},
 	}
@@ -347,16 +201,16 @@ func PlacementRulePredicateFunc() predicate.Funcs {
 }
 
 func filterUsrPlRule(usrPlRule *plrv1.PlacementRule) []ctrl.Request {
-	if usrPlRule.Annotations[rmnutil.DRPCNameAnnotation] == "" ||
-		usrPlRule.Annotations[rmnutil.DRPCNamespaceAnnotation] == "" {
+	if usrPlRule.Annotations[DRPCNameAnnotation] == "" ||
+		usrPlRule.Annotations[DRPCNamespaceAnnotation] == "" {
 		return []ctrl.Request{}
 	}
 
 	return []ctrl.Request{
 		reconcile.Request{
 			NamespacedName: types.NamespacedName{
-				Name:      usrPlRule.Annotations[rmnutil.DRPCNameAnnotation],
-				Namespace: usrPlRule.Annotations[rmnutil.DRPCNamespaceAnnotation],
+				Name:      usrPlRule.Annotations[DRPCNameAnnotation],
+				Namespace: usrPlRule.Annotations[DRPCNamespaceAnnotation],
 			},
 		},
 	}
@@ -780,41 +634,20 @@ func (r *DRPlacementControlReconciler) deleteAllManagedClusterViews(
 	drpc *rmn.DRPlacementControl, clusterNames []string) error {
 	// Only after the VRGs have been deleted, we delete the MCVs for the VRGs and the NS
 	for _, drClusterName := range clusterNames {
-		mcvNameForVRG := BuildManagedClusterViewName(drpc.Name, drpc.Namespace, rmnutil.MWTypeVRG)
+		err := r.MCVGetter.DeleteVRGManagedClusterView(drpc.Name, drpc.Namespace, drClusterName, rmnutil.MWTypeVRG)
 		// Delete MCV for the VRG
-		err := r.deleteManagedClusterView(drClusterName, mcvNameForVRG)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to delete VRG MCV %w", err)
 		}
 
-		mcvNameForNS := BuildManagedClusterViewName(drpc.Name, drpc.Namespace, rmnutil.MWTypeNS)
+		err = r.MCVGetter.DeleteNamespaceManagedClusterView(drpc.Name, drpc.Namespace, drClusterName, rmnutil.MWTypeNS)
 		// Delete MCV for Namespace
-		err = r.deleteManagedClusterView(drClusterName, mcvNameForNS)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to delete namespace MCV %w", err)
 		}
 	}
 
 	return nil
-}
-
-func (r *DRPlacementControlReconciler) deleteManagedClusterView(clusterName, mcvName string) error {
-	r.Log.Info("Delete ManagedClusterView from", "namespace", clusterName, "name", mcvName)
-
-	mcv := &viewv1beta1.ManagedClusterView{}
-
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: mcvName, Namespace: clusterName}, mcv)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil
-		}
-
-		return fmt.Errorf("failed to retrieve ManagedClusterView for type: %s. Error: %w", mcvName, err)
-	}
-
-	r.Log.Info("Deleting ManagedClusterView", "name", mcv.Name, "namespace", mcv.Namespace)
-
-	return r.Client.Delete(context.TODO(), mcv)
 }
 
 func (r *DRPlacementControlReconciler) getDRPCPlacementRule(ctx context.Context,
@@ -886,19 +719,19 @@ func (r *DRPlacementControlReconciler) annotatePlacementRule(ctx context.Context
 		plRule.ObjectMeta.Annotations = map[string]string{}
 	}
 
-	ownerName := plRule.ObjectMeta.Annotations[rmnutil.DRPCNameAnnotation]
-	ownerNamespace := plRule.ObjectMeta.Annotations[rmnutil.DRPCNamespaceAnnotation]
+	ownerName := plRule.ObjectMeta.Annotations[DRPCNameAnnotation]
+	ownerNamespace := plRule.ObjectMeta.Annotations[DRPCNamespaceAnnotation]
 
 	if ownerName == "" {
-		plRule.ObjectMeta.Annotations[rmnutil.DRPCNameAnnotation] = drpc.Name
-		plRule.ObjectMeta.Annotations[rmnutil.DRPCNamespaceAnnotation] = drpc.Namespace
+		plRule.ObjectMeta.Annotations[DRPCNameAnnotation] = drpc.Name
+		plRule.ObjectMeta.Annotations[DRPCNamespaceAnnotation] = drpc.Namespace
 
 		err := r.Update(ctx, plRule)
 		if err != nil {
 			r.Log.Error(err, "Failed to update PlacementRule annotation", "PlRuleName", plRule.Name)
 
 			return fmt.Errorf("failed to update PlacementRule %s annotation '%s/%s' (%w)",
-				plRule.Name, rmnutil.DRPCNameAnnotation, drpc.Name, err)
+				plRule.Name, DRPCNameAnnotation, drpc.Name, err)
 		}
 
 		return nil
@@ -986,8 +819,13 @@ func (r *DRPlacementControlReconciler) getVRGsFromManagedClusters(drpc *rmn.DRPl
 	drPolicy *rmn.DRPolicy) (map[string]*rmn.VolumeReplicationGroup, error) {
 	vrgs := map[string]*rmn.VolumeReplicationGroup{}
 
+	annotations := make(map[string]string)
+
+	annotations[DRPCNameAnnotation] = drpc.Name
+	annotations[DRPCNamespaceAnnotation] = drpc.Namespace
+
 	for _, drCluster := range rmnutil.DrpolicyClusterNames(drPolicy) {
-		vrg, err := r.MCVGetter.GetVRGFromManagedCluster(drpc.Name, drpc.Namespace, drCluster)
+		vrg, err := r.MCVGetter.GetVRGFromManagedCluster(drpc.Name, drpc.Namespace, drCluster, annotations)
 		if err != nil {
 			// Only NotFound error is accepted
 			if errors.IsNotFound(err) {
@@ -1105,9 +943,14 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 	drpc *rmn.DRPlacementControl, usrPlRule *plrv1.PlacementRule) error {
 	r.Log.Info("Updating DRPC status")
 
+	annotations := make(map[string]string)
+
+	annotations[DRPCNameAnnotation] = drpc.Name
+	annotations[DRPCNamespaceAnnotation] = drpc.Namespace
+
 	if usrPlRule != nil && len(usrPlRule.Status.Decisions) != 0 {
 		vrg, err := r.MCVGetter.GetVRGFromManagedCluster(drpc.Name, drpc.Namespace,
-			usrPlRule.Status.Decisions[0].ClusterName)
+			usrPlRule.Status.Decisions[0].ClusterName, annotations)
 		if err != nil {
 			// VRG must have been deleted if the error is NotFound. In either case,
 			// we don't have a VRG

@@ -20,8 +20,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ClusterFenceState which will be either Unfenced, or Fenced or ManuallyFenced
-// +kubebuilder:validation:Enum=Unfenced;Fenced;ManuallyFenced
+// ClusterFenceState which will be either Unfenced, Fenced, ManuallyFenced or ManuallyUnfenced
+// +kubebuilder:validation:Enum=Unfenced;Fenced;ManuallyFenced;ManuallyUnfenced
 type ClusterFenceState string
 
 const (
@@ -71,8 +71,43 @@ const (
 	DRClusterConditionTypeFenced = "Fenced"
 )
 
+type DRClusterPhase string
+
+// These are the valid values for DRState
+const (
+	// Available, state recorded in the DRCluster status to indicate that this
+	// resource is available. Usually done when there is no fencing state
+	// provided in the spec and DRCluster just reconciles to validate itself.
+	Available = DRClusterPhase("Available")
+
+	// Starting, state recorded in the DRCluster status to indicate that this
+	// is the start of the reconciler.
+	Starting = DRClusterPhase("Starting")
+
+	// Fencing, state recorded in the DRCluster status to indicate that
+	// fencing is in progress. Fencing means selecting the
+	// peer cluster and creating a NetworkFence MW for it and waiting for MW
+	// to be applied in the managed cluster
+	Fencing = DRClusterPhase("Fencing")
+
+	// Fenced, this is the state that will be recorded in the DRCluster status
+	// when fencing has been performed successfully
+	Fenced = DRClusterPhase("Fenced")
+
+	// Unfencing, state recorded in the DRCluster status to indicate that
+	// unfencing is in progress. Unfencing means selecting the
+	// peer cluster and creating/updating a NetworkFence MW for it and waiting for MW
+	// to be applied in the managed cluster
+	Unfencing = DRClusterPhase("Unfencing")
+
+	// Unfenced, this is the state that will be recorded in the DRCluster status
+	// when unfencing has been performed successfully
+	Unfenced = DRClusterPhase("Unfenced")
+)
+
 // DRClusterStatus defines the observed state of DRCluster
 type DRClusterStatus struct {
+	Phase      DRClusterPhase     `json:"phase,omitempty"`
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 

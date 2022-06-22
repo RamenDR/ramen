@@ -1,0 +1,10 @@
+apiVersion: ramendr.openshift.io/v1alpha1
+kind: DRCluster
+metadata:
+  name: east1
+spec:
+  region: east
+  s3ProfileName: s3-profile-of-east1
+  cidrs:
+    - "192.168.39.45/32"
+  clusterFence: ManuallyFenced # Unfenced | Fenced | ManuallyUnfenced

@@ -40,7 +40,11 @@ func drClusterDeploy(drcluster *rmn.DRCluster, mwu *util.MWUtil, ramenConfig *rm
 		}
 	}
 
-	return mwu.CreateOrUpdateDrClusterManifestWork(drcluster.Name, objects...)
+	annotations := make(map[string]string)
+
+	annotations["DRClusterName"] = mwu.InstName
+
+	return mwu.CreateOrUpdateDrClusterManifestWork(drcluster.Name, objects, annotations)
 }
 
 var olmClusterRole = &rbacv1.ClusterRole{

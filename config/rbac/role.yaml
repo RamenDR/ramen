@@ -1,4 +1,3 @@
-
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -303,17 +302,23 @@ rules:
   resources:
   - volumesnapshots
   verbs:
-  - create
   - delete
   - get
   - list
-  - patch
   - update
   - watch
 - apiGroups:
   - storage.k8s.io
   resources:
   - storageclasses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - volumeattachments
   verbs:
   - get
   - list
@@ -366,7 +371,6 @@ rules:
   - patch
   - update
   - watch
-
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

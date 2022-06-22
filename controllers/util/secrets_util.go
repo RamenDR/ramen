@@ -547,7 +547,7 @@ func (sutil *SecretsUtil) RemoveSecretFromCluster(secretName, clusterName, names
 	}
 
 	// Fetch secret placement rule, success if not found
-	err = sutil.Client.Get(sutil.Ctx, plRuleName, plRule)
+	err = sutil.APIReader.Get(sutil.Ctx, plRuleName, plRule)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return errorswrapper.Wrap(err, "failed to get placementRule object")

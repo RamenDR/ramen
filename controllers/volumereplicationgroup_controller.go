@@ -48,26 +48,11 @@ import (
 	"github.com/ramendr/ramen/controllers/volsync"
 )
 
-type PVDownloader interface {
-	DownloadPVs(objStore ObjectStorer, s3KeyPrefix string) ([]corev1.PersistentVolume, error)
-}
-
-type PVUploader interface {
-	UploadPV(objectStore ObjectStorer, pvKeyPrefix string, pv *corev1.PersistentVolume) error
-}
-
-type PVDeleter interface {
-	DeletePVs(v interface{}, s3ProfileName string) error
-}
-
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
 type VolumeReplicationGroupReconciler struct {
 	client.Client
 	APIReader      client.Reader
 	Log            logr.Logger
-	PVDownloader   PVDownloader
-	PVUploader     PVUploader
-	PVDeleter      PVDeleter
 	ObjStoreGetter ObjectStoreGetter
 	Scheme         *runtime.Scheme
 	eventRecorder  *rmnutil.EventReporter
@@ -257,12 +242,13 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim, log logr.
 // +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplications,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplicationclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch
+// +kubebuilder:rbac:groups=storage.k8s.io,resources=volumeattachments,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch;update;patch;create
 // +kubebuilder:rbac:groups=volsync.backube,resources=replicationdestinations,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=volsync.backube,resources=replicationsources,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch;update;delete
 // +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=multicluster.x-k8s.io,resources=serviceexports,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=get;create;patch;update
@@ -691,7 +677,7 @@ func (v *VRGInstance) processForDeletion() (ctrl.Result, error) {
 
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
 		if err := v.deleteClusterDataInS3Stores(v.log); err != nil {
-			v.log.Info("Requeuing due to failure in deleting PV cluster data from S3 stores",
+			v.log.Info("Requeuing due to failure in deleting cluster data from S3 stores",
 				"errorValue", err)
 
 			return ctrl.Result{Requeue: true}, nil
