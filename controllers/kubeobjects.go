@@ -26,6 +26,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -49,6 +50,7 @@ func kubeObjectsRecover(
 	sourceNamespaceName string,
 	targetNamespaceName string,
 	veleroNamespaceName string,
+	captureNumber int64,
 ) error {
 	log.Info("kube objects recover",
 		"s3 url", s3Url,
@@ -56,9 +58,10 @@ func kubeObjectsRecover(
 		"s3 key prefix", s3KeyPrefix,
 		"source namespace", sourceNamespaceName,
 		"target namespace", targetNamespaceName,
+		"capture number", captureNumber,
 	)
 
-	namespacedName, err := namespacedName(veleroNamespaceName, s3Url, s3BucketName)
+	namespacedName, err := namespacedName(veleroNamespaceName, s3Url, s3BucketName, captureNumber)
 	if err != nil {
 		return err
 	}
@@ -281,15 +284,17 @@ func kubeObjectsProtect(
 	s3KeyPrefix string,
 	sourceNamespaceName string,
 	veleroNamespaceName string,
+	captureNumber int64,
 ) error {
 	log.Info("kube objects protect",
 		"s3 url", s3Url,
 		"s3 bucket", s3BucketName,
 		"s3 key prefix", s3KeyPrefix,
 		"source namespace", sourceNamespaceName,
+		"capture number", captureNumber,
 	)
 
-	namespacedName, err := namespacedName(veleroNamespaceName, s3Url, s3BucketName)
+	namespacedName, err := namespacedName(veleroNamespaceName, s3Url, s3BucketName, captureNumber)
 	if err != nil {
 		return err
 	}
@@ -372,9 +377,11 @@ func backupRetry(
 	return errors.New("backup retry")
 }
 
-func namespacedName(namespaceName, s3Url, s3BucketName string) (types.NamespacedName, error) {
+func namespacedName(namespaceName, s3Url, s3BucketName string,
+	captureNumber int64,
+) (types.NamespacedName, error) {
 	if true {
-		return types.NamespacedName{Namespace: namespaceName, Name: "a"}, nil
+		return types.NamespacedName{Namespace: namespaceName, Name: strconv.FormatInt(captureNumber, 10)}, nil
 	}
 
 	url, err := url.Parse(s3Url)
@@ -601,6 +608,7 @@ func backupStatusLog(backup *velero.Backup, log logr.Logger) {
 		"phase", backup.Status.Phase,
 		"warnings", backup.Status.Warnings,
 		"errors", backup.Status.Errors,
+		// TODO v1.9.0 "failure", backup.Status.FailureReason,
 	)
 
 	if backup.Status.StartTimestamp != nil {

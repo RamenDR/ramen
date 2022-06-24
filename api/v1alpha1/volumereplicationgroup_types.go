@@ -17,6 +17,8 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"time"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -116,7 +118,14 @@ const (
 	VRGActionRelocate = VRGAction("Relocate")
 )
 
+const KubeObjectProtectionCaptureIntervalDefault time.Duration = 5 * time.Minute
+
 type KubeObjectProtectionSpec struct {
+	// Preferred time between captures
+	// +optional
+	// +kubebuilder:validation:Format=duration
+	CaptureInterval *metav1.Duration `json:"captureInterval,omitempty"`
+
 	//+optional
 	ResourceCaptureOrder [][]string `json:"resourceBackupOrder,omitempty"`
 
@@ -212,6 +221,16 @@ type ProtectedPVC struct {
 	LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty"`
 }
 
+type KubeObjectCaptureStatus struct {
+	Number int64 `json:"number,omitempty"`
+	// +nullable
+	StartTime metav1.Time `json:"startTime,omitempty"`
+}
+
+type KubeObjectProtectionStatus struct {
+	LastProtectedCapture *KubeObjectCaptureStatus `json:"lastProtectedCapture,omitempty"`
+}
+
 // VolumeReplicationGroupStatus defines the observed state of VolumeReplicationGroup
 // INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 type VolumeReplicationGroupStatus struct {
@@ -228,6 +247,8 @@ type VolumeReplicationGroupStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// +nullable
 	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
+	// +optional
+	KubeObjectProtection KubeObjectProtectionStatus `json:"kubeObjectProtection,omitempty"`
 
 	PrepareForFinalSyncComplete bool `json:"prepareForFinalSyncComplete,omitempty"`
 	FinalSyncComplete           bool `json:"finalSyncComplete,omitempty"`
