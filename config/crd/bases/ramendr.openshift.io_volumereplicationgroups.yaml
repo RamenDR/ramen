@@ -55,6 +55,12 @@ spec:
               Manage the lifecycle of VR CR and S3 data according to CUD operations
               on the PVC and the VRG CR.'
             properties:
+              action:
+                description: Action is either Failover or Relocate
+                enum:
+                - Failover
+                - Relocate
+                type: string
               async:
                 description: VRGAsyncSpec has the parameters associated with RegionalDR
                 properties:
