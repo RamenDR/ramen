@@ -6,7 +6,7 @@ require (
 	github.com/aws/aws-sdk-go v1.38.41
 	github.com/backube/volsync v0.3.0
 	github.com/csi-addons/kubernetes-csi-addons v0.3.1-0.20220510101231-848e8b27d395
-	github.com/csi-addons/volume-replication-operator v0.1.0
+	github.com/csi-addons/volume-replication-operator v0.3.1-0.20220623123415-de6a161ca0ed
 	github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
 	github.com/go-logr/logr v1.2.3
 	github.com/kubernetes-csi/external-snapshotter/client/v4 v4.2.0

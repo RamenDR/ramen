@@ -802,18 +802,32 @@ func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 	return v.updateVR(volRep, state, log)
 }
 
+func (v *VRGInstance) autoResync(state volrep.ReplicationState) bool {
+	if state != volrep.Secondary {
+		return false
+	}
+
+	if v.instance.Spec.Action != ramendrv1alpha1.VRGActionFailover {
+		return false
+	}
+
+	return true
+}
+
 func (v *VRGInstance) updateVR(volRep *volrep.VolumeReplication,
 	state volrep.ReplicationState, log logr.Logger) (bool, error) {
 	const available = true
 
 	// If state is already as desired, check the status
-	if volRep.Spec.ReplicationState == state {
-		log.Info("VolumeReplication and VolumeReplicationGroup state match. Proceeding to status check")
+	if volRep.Spec.ReplicationState == state && volRep.Spec.AutoResync == v.autoResync(state) {
+		log.Info("VolumeReplication and VolumeReplicationGroup state and autoresync match. Proceeding to status check")
 
 		return v.checkVRStatus(volRep)
 	}
 
 	volRep.Spec.ReplicationState = state
+	volRep.Spec.AutoResync = v.autoResync(state)
+
 	if err := v.reconciler.Update(v.ctx, volRep); err != nil {
 		log.Error(err, "Failed to update VolumeReplication resource",
 			"name", volRep.Name, "namespace", volRep.Namespace,
@@ -860,6 +874,7 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 			},
 			ReplicationState:       state,
 			VolumeReplicationClass: volumeReplicationClass,
+			AutoResync:             v.autoResync(state),
 		},
 	}
 
