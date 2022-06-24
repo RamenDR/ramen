@@ -16,13 +16,67 @@ limitations under the License.
 
 package controllers
 
-func (v *VRGInstance) kubeObjectsProtect() error {
+import (
+	"time"
+
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
+)
+
+func kubeObjectCaptureInterval(kubeObjectProtectionSpec *ramen.KubeObjectProtectionSpec) time.Duration {
+	if kubeObjectProtectionSpec.CaptureInterval == nil {
+		return ramen.KubeObjectProtectionCaptureIntervalDefault
+	}
+
+	return kubeObjectProtectionSpec.CaptureInterval.Duration
+}
+
+func (v *VRGInstance) kubeObjectsProtectIfDue() (ctrl.Result, error) {
 	if v.instance.Spec.KubeObjectProtection == nil {
 		v.log.Info("Kube object protection disabled")
 
-		return nil
+		return ctrl.Result{}, nil
 	}
 
+	delayMinimum := kubeObjectCaptureInterval(v.instance.Spec.KubeObjectProtection)
+	dueTime := v.instance.Status.KubeObjectProtection.LastProtectedCapture.StartTime.Time.Add(delayMinimum)
+	capture := &ramen.KubeObjectCaptureStatus{
+		Number:    v.instance.Status.KubeObjectProtection.LastProtectedCapture.Number + 1,
+		StartTime: metav1.Now(),
+	}
+
+	result := ctrl.Result{RequeueAfter: dueTime.Sub(capture.StartTime.Time)}
+	if result.RequeueAfter > 0 {
+		v.log.Info("Kube object protection due later", "number", capture.Number, "delay", result.RequeueAfter)
+
+		return result, nil
+	}
+
+	if errors := v.kubeObjectsProtect(capture.Number); len(errors) > 0 {
+		return ctrl.Result{}, errors[0]
+	}
+
+	duration := time.Since(capture.StartTime.Time)
+	result.RequeueAfter = delayMinimum - duration
+
+	if result.RequeueAfter <= 0 {
+		result.RequeueAfter = time.Nanosecond
+	}
+
+	v.log.Info("Kube objects protected",
+		"number", capture.Number,
+		"start", capture.StartTime,
+		"duration", duration,
+		"delay", result.RequeueAfter,
+	)
+
+	v.instance.Status.KubeObjectProtection.LastProtectedCapture = capture
+
+	return result, nil
+}
+
+func (v *VRGInstance) kubeObjectsProtect(captureNumber int64) []error {
 	errors := make([]error, 0, len(v.instance.Spec.S3Profiles))
 
 	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
@@ -51,17 +105,14 @@ func (v *VRGInstance) kubeObjectsProtect() error {
 			v.s3KeyPrefix(),
 			v.instance.Namespace,
 			VeleroNamespaceNameDefault,
+			captureNumber,
 		); err != nil {
 			v.log.Error(err, "kube object protect", "profile", s3ProfileName)
 			errors = append(errors, err)
 		}
 	}
 
-	if len(errors) > 0 {
-		return errors[0]
-	}
-
-	return nil
+	return errors
 }
 
 func (v *VRGInstance) kubeObjectsRecover(objectStore ObjectStorer) error {
@@ -69,6 +120,18 @@ func (v *VRGInstance) kubeObjectsRecover(objectStore ObjectStorer) error {
 		v.log.Info("Kube object recovery disabled")
 
 		return nil
+	}
+
+	if v.instance.Status.KubeObjectProtection.LastProtectedCapture == nil {
+		// TODO attempt to populate status from s3 store
+		if found := false; !found {
+			v.log.Info("Kube objects capture not found")
+			v.instance.Status.KubeObjectProtection.LastProtectedCapture = &ramen.KubeObjectCaptureStatus{
+				Number: -1,
+			}
+
+			return nil
+		}
 	}
 
 	return kubeObjectsRecover(
@@ -83,5 +146,6 @@ func (v *VRGInstance) kubeObjectsRecover(objectStore ObjectStorer) error {
 		v.instance.Namespace,
 		v.instance.Namespace,
 		VeleroNamespaceNameDefault,
+		v.instance.Status.KubeObjectProtection.LastProtectedCapture.Number,
 	)
 }
