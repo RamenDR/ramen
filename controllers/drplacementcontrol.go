@@ -1173,6 +1173,26 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string) error {
 	return nil
 }
 
+func vrgAction(drpcAction rmn.DRAction) rmn.VRGAction {
+	switch drpcAction {
+	case rmn.ActionFailover:
+		return rmn.VRGActionFailover
+	case rmn.ActionRelocate:
+		return rmn.VRGActionRelocate
+	default:
+		return ""
+	}
+}
+
+func (d *DRPCInstance) setVRGAction(vrg *rmn.VolumeReplicationGroup) {
+	action := vrgAction(d.instance.Spec.Action)
+	if action == "" {
+		return
+	}
+
+	vrg.Spec.Action = action
+}
+
 func (d *DRPCInstance) generateVRG(repState rmn.ReplicationState) rmn.VolumeReplicationGroup {
 	vrg := rmn.VolumeReplicationGroup{
 		TypeMeta:   metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
@@ -1184,6 +1204,7 @@ func (d *DRPCInstance) generateVRG(repState rmn.ReplicationState) rmn.VolumeRepl
 		},
 	}
 
+	d.setVRGAction(&vrg)
 	vrg.Spec.Async = d.generateVRGSpecAsync()
 	vrg.Spec.Sync = d.generateVRGSpecSync()
 
@@ -1669,6 +1690,8 @@ func (d *DRPCInstance) updateVRGState(clusterName string, state rmn.ReplicationS
 		vrg.Spec.PrepareForFinalSync = false
 		vrg.Spec.RunFinalSync = false
 	}
+
+	d.setVRGAction(vrg)
 
 	err = d.updateManifestWork(clusterName, vrg)
 	if err != nil {
