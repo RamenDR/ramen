@@ -29,27 +29,8 @@ func PropagateSecretToClusters(ctx context.Context, k8sClient client.Client, sou
 	ownerObject metav1.Object, destClusters []string, destSecretName, destSecretNamespace string,
 	log logr.Logger,
 ) error {
-	secretPropagationPolicyName := ownerObject.GetName() + "-vs-secret"
-	secretPropagationPolicyPlacementRuleName := secretPropagationPolicyName
-	secretPropagationPolicyPlacementBindingName := secretPropagationPolicyName
-
-	logWithValues := log.WithValues("sourceSecretName", sourceSecret.GetName(),
-		"sourceSecretNamespace", sourceSecret.GetNamespace(), "policyName", secretPropagationPolicyName,
-		"destinationClusters", destClusters)
-
-	sp := secretPropagator{
-		Context:              ctx,
-		Client:               k8sClient,
-		Log:                  logWithValues,
-		Owner:                ownerObject,
-		SourceSecret:         sourceSecret,
-		DestClusters:         destClusters,
-		DestSecretName:       destSecretName,
-		DestSecretNamespace:  destSecretNamespace,
-		PolicyName:           secretPropagationPolicyName,
-		PlacementRuleName:    secretPropagationPolicyPlacementRuleName,
-		PlacementBindingName: secretPropagationPolicyPlacementBindingName,
-	}
+	sp := newSecretPropagator(ctx, k8sClient, sourceSecret, ownerObject,
+		destClusters, destSecretName, destSecretNamespace, log)
 
 	// Needed on hub to propagate the secret to managed clusters
 	// 1 - Policy - embedded here will be a configpolicy which contains the secret
@@ -66,6 +47,17 @@ func PropagateSecretToClusters(ctx context.Context, k8sClient client.Client, sou
 	return sp.reconcileSecretPropagationPlacementBinding()
 }
 
+// Cleans up policy, placementrule and placementbinding used to replicate the volsync secret (if they exist)
+// does not throw an error if they do not exist
+func CleanupSecretPropagation(ctx context.Context, k8sClient client.Client,
+	ownerObject metav1.Object, log logr.Logger,
+) error {
+	// For cleanup we don't need sourceSecret, destclusters, etc
+	sp := newSecretPropagator(ctx, k8sClient, nil, ownerObject, nil, "", "", log)
+
+	return sp.cleanup()
+}
+
 type secretPropagator struct {
 	Context              context.Context
 	Client               client.Client
@@ -80,6 +72,80 @@ type secretPropagator struct {
 	PlacementBindingName string
 }
 
+func newSecretPropagator(ctx context.Context, k8sClient client.Client, sourceSecret *corev1.Secret,
+	ownerObject metav1.Object, destClusters []string, destSecretName, destSecretNamespace string,
+	log logr.Logger) secretPropagator {
+	secretPropagationPolicyName := ownerObject.GetName() + "-vs-secret"
+	secretPropagationPolicyPlacementRuleName := secretPropagationPolicyName
+	secretPropagationPolicyPlacementBindingName := secretPropagationPolicyName
+
+	logWithValues := log.WithValues("sourceNamespace", ownerObject.GetNamespace(),
+		"policyName", secretPropagationPolicyName, "placementRuleName", secretPropagationPolicyPlacementRuleName,
+		"placementBindingName", secretPropagationPolicyPlacementBindingName)
+
+	if sourceSecret != nil {
+		logWithValues = logWithValues.WithValues("sourceSecretName", sourceSecret.GetName(),
+			"destinationClusters", destClusters)
+	}
+
+	return secretPropagator{
+		Context:              ctx,
+		Client:               k8sClient,
+		Log:                  logWithValues,
+		Owner:                ownerObject,
+		SourceSecret:         sourceSecret,
+		DestClusters:         destClusters,
+		DestSecretName:       destSecretName,
+		DestSecretNamespace:  destSecretNamespace,
+		PolicyName:           secretPropagationPolicyName,
+		PlacementRuleName:    secretPropagationPolicyPlacementRuleName,
+		PlacementBindingName: secretPropagationPolicyPlacementBindingName,
+	}
+}
+
+func (sp *secretPropagator) cleanup() error {
+	// clean up placement binding
+	placementBinding := &policyv1.PlacementBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      sp.PlacementBindingName,
+			Namespace: sp.Owner.GetNamespace(),
+		},
+	}
+	if err := sp.deleteIgnoreNotFound(placementBinding); err != nil {
+		return err
+	}
+
+	// Clean up placement rule
+	placementRule := &plrulev1.PlacementRule{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      sp.PlacementRuleName,
+			Namespace: sp.Owner.GetNamespace(),
+		},
+	}
+	if err := sp.deleteIgnoreNotFound(placementRule); err != nil {
+		return err
+	}
+
+	// Clean up policy
+	policy := &policyv1.Policy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      sp.PolicyName,
+			Namespace: sp.Owner.GetNamespace(),
+		},
+	}
+	if err := sp.deleteIgnoreNotFound(policy); err != nil {
+		return err
+	}
+
+	sp.Log.V(1).Info("Secret propagation policy, pl binding and rule cleanup Complete")
+
+	return nil
+}
+
+func (sp *secretPropagator) deleteIgnoreNotFound(obj client.Object) error {
+	return client.IgnoreNotFound(sp.Client.Delete(sp.Context, obj))
+}
+
 func (sp *secretPropagator) reconcileSecretPropagationPolicy() error {
 	embeddedConfigPolicy, err := sp.getEmbeddedConfigPolicy()
 	if err != nil {
@@ -89,7 +155,7 @@ func (sp *secretPropagator) reconcileSecretPropagationPolicy() error {
 	policy := &policyv1.Policy{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      sp.PolicyName,
-			Namespace: sp.SourceSecret.GetNamespace(),
+			Namespace: sp.Owner.GetNamespace(),
 		},
 	}
 
@@ -179,7 +245,7 @@ func (sp *secretPropagator) reconcileSecretPropagationPlacementRule() error {
 	placementRule := &plrulev1.PlacementRule{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      sp.PlacementRuleName,
-			Namespace: sp.SourceSecret.GetNamespace(),
+			Namespace: sp.Owner.GetNamespace(),
 		},
 	}
 
@@ -224,7 +290,7 @@ func (sp *secretPropagator) reconcileSecretPropagationPlacementBinding() error {
 	placementBinding := &policyv1.PlacementBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      sp.PlacementBindingName,
-			Namespace: sp.SourceSecret.GetNamespace(),
+			Namespace: sp.Owner.GetNamespace(),
 		},
 	}
 
