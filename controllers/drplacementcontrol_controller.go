@@ -43,6 +43,7 @@ import (
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
+	"github.com/ramendr/ramen/controllers/volsync"
 )
 
 const (
@@ -599,6 +600,12 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 		if err != nil {
 			return err
 		}
+	}
+
+	// Cleanup volsync secret-related resources (policy/plrule/binding)
+	err := volsync.CleanupSecretPropagation(ctx, r.Client, drpc, r.Log)
+	if err != nil {
+		return fmt.Errorf("failed to clean up volsync secret-related resources (%w)", err)
 	}
 
 	mwu := rmnutil.MWUtil{Client: r.Client, Ctx: ctx, Log: r.Log, InstName: drpc.Name, InstNamespace: drpc.Namespace}
