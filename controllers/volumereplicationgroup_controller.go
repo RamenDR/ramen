@@ -855,18 +855,22 @@ func (v *VRGInstance) updateVRGStatus(updateConditions bool) (bool, error) {
 	if !reflect.DeepEqual(v.savedInstanceStatus, v.instance.Status) {
 		v.instance.Status.LastUpdateTime = metav1.Now()
 		if err := v.reconciler.Status().Update(v.ctx, v.instance); err != nil {
-			v.log.Info(fmt.Sprintf("Failed to update VRG status (%s/%s/%v/%+v)",
-				v.instance.Name, v.instance.Namespace, err, v.instance.Status))
+			v.log.Info(fmt.Sprintf("Failed to update VRG status (%v/%+v)",
+				err, v.instance.Status))
 
 			return true, fmt.Errorf("failed to update VRG status (%s/%s)", v.instance.Name, v.instance.Namespace)
 		}
 
-		v.log.Info(fmt.Sprintf("Updated VRG Status %+v", v.instance.Status))
+		dataReadyCondition := findCondition(v.instance.Status.Conditions, VRGConditionTypeDataReady)
+		v.log.Info(fmt.Sprintf("Updated VRG Status VolRep pvccount (%d), VolSync pvccount(%d)"+
+			" DataReady Condition (%s)",
+			len(v.volRepPVCs), len(v.volSyncPVCs), dataReadyCondition))
 
 		return !v.areRequiredConditionsReady(), nil
 	}
 
-	v.log.Info(fmt.Sprintf("Nothing to update %+v", v.instance.Status))
+	v.log.Info(fmt.Sprintf("Nothing to update VolRep pvccount (%d), VolSync pvccount(%d)",
+		len(v.volRepPVCs), len(v.volSyncPVCs)))
 
 	return !v.areRequiredConditionsReady(), nil
 }

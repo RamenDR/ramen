@@ -76,7 +76,7 @@ func (d *DRPCInstance) startProcessing() bool {
 	done, processingErr := d.processPlacement()
 
 	if d.shouldUpdateStatus() || d.statusUpdateTimeElapsed() {
-		if err := d.reconciler.updateDRPCStatus(d.instance, d.userPlacementRule); err != nil {
+		if err := d.reconciler.updateDRPCStatus(d.instance, d.userPlacementRule, d.log); err != nil {
 			d.log.Error(err, "failed to update status")
 
 			return requeue
@@ -1131,7 +1131,7 @@ func (d *DRPCInstance) updateUserPlacementRule(homeCluster, homeClusterNamespace
 		Decisions: newPD,
 	}
 
-	return d.reconciler.updateUserPlacementRuleStatus(d.userPlacementRule, newStatus)
+	return d.reconciler.updateUserPlacementRuleStatus(d.userPlacementRule, newStatus, d.log)
 }
 
 func (d *DRPCInstance) clearUserPlacementRuleStatus() error {
@@ -1139,7 +1139,7 @@ func (d *DRPCInstance) clearUserPlacementRuleStatus() error {
 
 	newStatus := plrv1.PlacementRuleStatus{}
 
-	return d.reconciler.updateUserPlacementRuleStatus(d.userPlacementRule, newStatus)
+	return d.reconciler.updateUserPlacementRuleStatus(d.userPlacementRule, newStatus, d.log)
 }
 
 func (d *DRPCInstance) createVRGManifestWork(homeCluster string) error {
