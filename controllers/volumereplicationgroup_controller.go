@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"golang.org/x/time/rate"
 
 	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -32,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -79,8 +81,18 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) er
 
 	r.Log.Info("Adding VolumeReplicationGroup controller")
 
+	rateLimiter := workqueue.NewMaxOfRateLimiter(
+		workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 1*time.Minute),
+		// defaults from client-go
+		// nolint: gomnd
+		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
+	)
+
 	return ctrl.NewControllerManagedBy(mgr).
-		WithOptions(ctrlcontroller.Options{MaxConcurrentReconciles: getMaxConcurrentReconciles(r.Log)}).
+		WithOptions(ctrlcontroller.Options{
+			MaxConcurrentReconciles: getMaxConcurrentReconciles(r.Log),
+			RateLimiter:             rateLimiter,
+		}).
 		For(&ramendrv1alpha1.VolumeReplicationGroup{}).
 		Watches(&source.Kind{Type: &corev1.PersistentVolumeClaim{}}, pvcMapFun, builder.WithPredicates(pvcPredicate)).
 		Owns(&volrep.VolumeReplication{}).
@@ -751,7 +763,7 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 	if requeue || statusUpdateRequeueRequested {
 		v.log.Info("Requeuing resource as Primary")
 
-		return ctrl.Result{RequeueAfter: time.Second * 1}, nil
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	v.log.Info("Successfully processed vrg as primary")
@@ -808,7 +820,7 @@ func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
 	if requeue || statusUpdateRequeueRequested {
 		v.log.Info("Requeuing resource as Secondary")
 
-		return ctrl.Result{RequeueAfter: time.Second * 1}, nil
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	v.log.Info("Successfully processed vrg as secondary")
@@ -990,6 +1002,8 @@ func (v *VRGInstance) areRequiredConditionsReady() bool {
 		return false
 	}
 
+	// TODO: DataProtected is true only when both ends are secondary in the relocate case, this will
+	// cause reconciles always as a result in the steady state?
 	condition = findCondition(v.instance.Status.Conditions, VRGConditionTypeDataProtected)
 	if condition == nil || condition.Status != metav1.ConditionTrue {
 		return false
