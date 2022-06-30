@@ -185,11 +185,6 @@ func (u *drclusterInstance) initializeStatus() {
 func validateS3Profile(ctx context.Context, apiReader client.Reader,
 	objectStoreGetter ObjectStoreGetter,
 	drcluster *ramen.DRCluster, listKeyPrefix string, log logr.Logger) (string, error) {
-	if drcluster.Spec.ClusterFence == ramen.ClusterFenceStateFenced ||
-		drcluster.Spec.ClusterFence == ramen.ClusterFenceStateManuallyFenced {
-		return "", nil
-	}
-
 	if drcluster.Spec.S3ProfileName != NoS3StoreAvailable {
 		if reason, err := s3ProfileValidate(ctx, apiReader, objectStoreGetter,
 			drcluster.Spec.S3ProfileName, listKeyPrefix, log); err != nil {
