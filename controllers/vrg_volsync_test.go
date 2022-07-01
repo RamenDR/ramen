@@ -30,7 +30,7 @@ const (
 	testVolumeSnapshotClass = "fakevolumesnapshotclass"
 )
 
-var _ = Describe("VolumeReplicationGroupController", func() {
+var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 	var testNamespace *corev1.Namespace
 	testLogger := zap.New(zap.UseDevMode(true), zap.WriteTo(GinkgoWriter))
 	var testCtx context.Context
