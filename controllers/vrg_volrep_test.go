@@ -35,7 +35,7 @@ func init() {
 	rand.Seed(time.Now().Unix())
 }
 
-var _ = Describe("Test VolumeReplicationGroup", func() {
+var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 	conditionExpect := func(conditions []metav1.Condition, typ string) *metav1.Condition {
 		condition := meta.FindStatusCondition(conditions, typ)
 		Expect(condition).ToNot(BeNil())
