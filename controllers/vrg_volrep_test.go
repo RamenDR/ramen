@@ -1031,7 +1031,7 @@ func (v *vrgTest) getVRG(vrgName string) *ramendrv1alpha1.VolumeReplicationGroup
 	}
 
 	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
-	err := k8sClient.Get(context.TODO(), key, vrg)
+	err := apiReader.Get(context.TODO(), key, vrg)
 	Expect(err).NotTo(HaveOccurred(),
 		"failed to get VRG %s", vrgName)
 
