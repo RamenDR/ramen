@@ -73,12 +73,12 @@ application_sample_vrg_kubectl()
 	  - minio-on-$1
 	  - minio-on-$2
 	  sync:
-	    mode: Disabled
+	    mode: Disabled$4
 	a
 }
 application_sample_vrg_deploy()
 {
-	application_sample_vrg_kubectl $cluster_names apply
+	application_sample_vrg_kubectl $cluster_names apply "$1"
 }
 application_sample_vrg_undeploy()
 {
