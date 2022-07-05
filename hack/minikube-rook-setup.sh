@@ -29,19 +29,6 @@ usage()
 	exit 1
 }
 
-function wait_for_ssh() {
-    local tries=60
-    while ((tries > 0)); do
-        if minikube ssh "echo connected" --profile="$1" &>/dev/null; then
-            return 0
-        fi
-        tries=$((tries - 1))
-        sleep 1
-    done
-    echo ERROR: ssh did not come up >&2
-    exit 1
-}
-
 function wait_for_condition() {
     local count=121
     local condition=${1}
@@ -81,9 +68,6 @@ if [[ $1 == "stop" ]]; then
 fi
 
 if [[ $1 == "start" ]]; then
-	sudo virsh start "${PROFILE}"
-	wait_for_ssh "$PROFILE"
-	minikube ssh "sudo mkdir -p /mnt/vda1/rook/ && sudo ln -sf /mnt/vda1/rook/ /var/lib/rook" --profile="${PROFILE}"
 	minikube start --profile="${PROFILE}"
     exit 0
 fi
@@ -92,10 +76,7 @@ if [[ $1 == "create" ]]
 then
         ### $1 == "create"
         # TODO: Check if already created and bail out!
-        ## Preserve /var/lib/rook into existing vda1 disk ##
-        # TODO: minikube instance is assumed to be kvm2 based, check it?
-        minikube ssh "sudo mkdir -p /mnt/vda1/rook/ && sudo ln -sf /mnt/vda1/rook/ /var/lib/rook" --profile="${PROFILE}"
-        
+
         ## Create and attach an OSD disk for Ceph ##
         set +e
         pool=$(virsh pool-dumpxml $POOL_NAME)
