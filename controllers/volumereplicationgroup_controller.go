@@ -804,43 +804,6 @@ func (v *VRGInstance) reconcileAsPrimary() bool {
 	return requeueForVolSync || requeueForVolRep
 }
 
-func (v *VRGInstance) kubeObjectsProtect() error {
-	errors := make([]error, 0, len(v.instance.Spec.S3Profiles))
-
-	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
-		// TODO reuse objectStore kube objects from pv upload
-		objectStore, err := v.reconciler.ObjStoreGetter.ObjectStore(
-			v.ctx,
-			v.reconciler.APIReader,
-			s3ProfileName,
-			v.namespacedName,
-			v.log,
-		)
-		if err != nil {
-			v.log.Error(err, "kube objects protect object store access", "profile", s3ProfileName)
-			errors = append(errors, err)
-
-			continue
-		}
-
-		if err := kubeObjectsProtect(v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.log,
-			objectStore.AddressComponent1(),
-			objectStore.AddressComponent2(),
-			v.s3KeyPrefix(),
-			v.instance.Namespace,
-			VeleroNamespaceNameDefault,
-		); err != nil {
-			errors = append(errors, err)
-		}
-	}
-
-	if len(errors) > 0 {
-		return errors[0]
-	}
-
-	return nil
-}
-
 // processAsSecondary reconciles the current instance of VRG as secondary
 func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
 	v.log.Info("Entering processing VolumeReplicationGroup as Secondary")
