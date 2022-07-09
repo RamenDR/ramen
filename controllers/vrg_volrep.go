@@ -1558,9 +1558,7 @@ func (v *VRGInstance) restorePVsForVolRep() error {
 
 	v.log.Info(fmt.Sprintf("Restoring PVs to this managed cluster. ProfileList: %v", v.instance.Spec.S3Profiles))
 
-	success, err := v.fetchAndRestorePV()
-
-	if !success {
+	if err := v.fetchAndRestorePV(); err != nil {
 		errMsg := fmt.Sprintf("failed to restorePVs using profile list (%v)", v.instance.Spec.S3Profiles)
 		v.log.Info(errMsg)
 
@@ -1570,8 +1568,8 @@ func (v *VRGInstance) restorePVsForVolRep() error {
 	return nil
 }
 
-func (v *VRGInstance) fetchAndRestorePV() (bool, error) {
-	var err error
+func (v *VRGInstance) fetchAndRestorePV() error {
+	err := errors.New("s3Profiles empty")
 
 	NoS3 := false
 
@@ -1584,7 +1582,9 @@ func (v *VRGInstance) fetchAndRestorePV() (bool, error) {
 			continue
 		}
 
-		objectStore, err := v.reconciler.ObjStoreGetter.ObjectStore(
+		var objectStore ObjectStorer
+
+		objectStore, err = v.reconciler.ObjStoreGetter.ObjectStore(
 			v.ctx, v.reconciler.APIReader, s3ProfileName, v.namespacedName, v.log)
 		if err != nil {
 			v.log.Error(err, "kube objects recovery object store access", "profile", s3ProfileName)
@@ -1592,7 +1592,9 @@ func (v *VRGInstance) fetchAndRestorePV() (bool, error) {
 			continue
 		}
 
-		pvList, err := downloadPVs(objectStore, v.s3KeyPrefix())
+		var pvList []corev1.PersistentVolume
+
+		pvList, err = downloadPVs(objectStore, v.s3KeyPrefix())
 		if err != nil {
 			v.log.Error(err, fmt.Sprintf("error fetching PV cluster data from S3 profile %s", s3ProfileName))
 
@@ -1606,7 +1608,7 @@ func (v *VRGInstance) fetchAndRestorePV() (bool, error) {
 			v.log.Info(errMsg)
 			v.log.Error(err, fmt.Sprintf("Resolve PV conflict in the S3 store %s to deploy the application", s3ProfileName))
 
-			return false, fmt.Errorf("%s: %w", errMsg, err)
+			return fmt.Errorf("%s: %w", errMsg, err)
 		}
 
 		if err = v.restorePVClusterData(pvList); err != nil {
@@ -1615,22 +1617,14 @@ func (v *VRGInstance) fetchAndRestorePV() (bool, error) {
 
 		v.log.Info(fmt.Sprintf("Restored %d PVs using profile %s", len(pvList), s3ProfileName))
 
-		if err := kubeObjectsRecover(v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.log,
-			objectStore.AddressComponent1(), objectStore.AddressComponent2(),
-			v.s3KeyPrefix(), v.instance.Namespace, // TODO query source namespace from velero backup kube object in s3 store
-			v.instance.Namespace, VeleroNamespaceNameDefault,
-		); err != nil {
-			return false, err
-		}
-
-		return true, nil
+		return v.kubeObjectsRecover(objectStore)
 	}
 
 	if NoS3 {
-		return true, nil
+		return nil
 	}
 
-	return false, err
+	return err
 }
 
 // sanityCheckPVClusterData returns an error if there are PVs in the input
