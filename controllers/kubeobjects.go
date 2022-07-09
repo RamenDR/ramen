@@ -216,7 +216,8 @@ func restoreStatusProcess(
 	case velero.RestorePhaseInProgress:
 		return errors.New("temporary: restore" + string(restore.Status.Phase))
 	case velero.RestorePhaseFailed:
-		backupObjectPathName := "backups/" + backup.Name + "/" + backup.Name + ".tar.gz"
+		backupObjectPathName := backupLocation.Spec.StorageType.ObjectStorage.Prefix +
+			"backups/" + backup.Name + "/" + backup.Name + ".tar.gz"
 		if strings.HasPrefix(restore.Status.FailureReason,
 			"error downloading backup: error copying Backup to temp file: rpc error: "+
 				"code = Unknown desc = error getting object "+backupObjectPathName+": "+
@@ -495,7 +496,7 @@ func backupLocation(namespacedName types.NamespacedName, s3Url, bucketName, s3Ke
 			StorageType: velero.StorageType{
 				ObjectStorage: &velero.ObjectStorageLocation{
 					Bucket: bucketName,
-					Prefix: s3KeyPrefix,
+					Prefix: s3KeyPrefix + "velero/",
 				},
 			},
 			Config: map[string]string{
