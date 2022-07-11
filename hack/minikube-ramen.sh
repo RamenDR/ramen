@@ -54,7 +54,7 @@ application_sample_undeploy()
 }
 application_sample_vrg_kubectl()
 {
-	cat <<-a|kubectl --context $1 -n$application_sample_namespace_name $3 -f-
+	cat <<-a|kubectl --context $1 -n$application_sample_namespace_name $2 -f-
 	---
 	apiVersion: ramendr.openshift.io/v1alpha1
 	kind: VolumeReplicationGroup
@@ -70,19 +70,18 @@ application_sample_vrg_kubectl()
 	      appname: busybox
 	  replicationState: primary
 	  s3Profiles:
-	  - minio-on-$1
-	  - minio-on-$2
+$(for cluster_name in $cluster_names; do echo \ \ -\ minio-on-$cluster_name; done; unset -v cluster_name)
 	  sync:
-	    mode: Disabled$4
+	    mode: Disabled$3
 	a
 }
 application_sample_vrg_deploy()
 {
-	application_sample_vrg_kubectl $cluster_names apply "$1"
+	application_sample_vrg_kubectl $1 apply "$2"
 }
 application_sample_vrg_undeploy()
 {
-	application_sample_vrg_kubectl $cluster_names delete\ --ignore-not-found
+	application_sample_vrg_kubectl $1 delete\ --ignore-not-found
 }
 set -ex
 for command in "${@:-deploy}"; do
