@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
+	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -69,7 +70,7 @@ var (
 	testEnv     *envtest.Environment
 	configMap   *corev1.ConfigMap
 	ramenConfig *ramendrv1alpha1.RamenConfig
-	testLog     logr.Logger
+	testLogger  logr.Logger
 
 	namespaceDeletionSupported bool
 
@@ -108,8 +109,13 @@ func createOperatorNamespace(ramenNamespace string) {
 var _ = BeforeSuite(func() {
 	// onsi.github.io/gomega/#adjusting-output
 	format.MaxLength = 0
-	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
-	testLog = ctrl.Log.WithName("tester")
+	testLogger = zap.New(zap.UseFlagOptions(&zap.Options{
+		Development: true,
+		DestWriter:  GinkgoWriter,
+		TimeEncoder: zapcore.ISO8601TimeEncoder,
+	}))
+	logf.SetLogger(testLogger)
+	testLog := ctrl.Log.WithName("tester")
 	testLog.Info("Starting the controller test suite", "time", time.Now())
 
 	// default controller type to DRHubType

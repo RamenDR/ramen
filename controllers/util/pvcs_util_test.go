@@ -28,12 +28,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 var _ = Describe("PVCS_Util", func() {
 	var testNamespace *corev1.Namespace
-	testLogger := zap.New(zap.UseDevMode(true), zap.WriteTo(GinkgoWriter))
 	var testCtx context.Context
 	var cancel context.CancelFunc
 

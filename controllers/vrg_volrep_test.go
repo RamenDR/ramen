@@ -151,7 +151,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgNamespacedName := vtest.namespace + "/" + vtest.vrgName + "/"
 			pvList := generateFakePVs("pv", numPVs)
 			objectStorer, err := fakeObjectStoreGetter{}.ObjectStore(
-				context.TODO(), apiReader, s3Profiles[0].S3ProfileName, "", testLog,
+				context.TODO(), apiReader, s3Profiles[0].S3ProfileName, "", testLogger,
 			)
 			Expect(err).To(BeNil())
 			populateS3Store(objectStorer, vrgNamespacedName, pvList)
