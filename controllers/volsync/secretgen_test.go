@@ -13,15 +13,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/ramendr/ramen/controllers/volsync"
 )
 
 var _ = Describe("Secretgen", func() {
 	var testNamespace *corev1.Namespace
-	logger := zap.New(zap.UseDevMode(true), zap.WriteTo(GinkgoWriter))
-
 	var owner metav1.Object
 
 	BeforeEach(func() {

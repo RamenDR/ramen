@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/ramendr/ramen/controllers/volsync"
@@ -14,6 +15,7 @@ import (
 	cfgpolicyv1 "github.com/stolostron/config-policy-controller/api/v1"
 	policyv1 "github.com/stolostron/governance-policy-propagator/api/v1"
 	plrulev1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
+	"go.uber.org/zap/zapcore"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -27,6 +29,7 @@ import (
 )
 
 var (
+	logger                         logr.Logger
 	k8sClient                      client.Client
 	testEnv                        *envtest.Environment
 	cancel                         context.CancelFunc
@@ -50,7 +53,12 @@ func TestVolsync(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+	logger = zap.New(zap.UseFlagOptions(&zap.Options{
+		Development: true,
+		DestWriter:  GinkgoWriter,
+		TimeEncoder: zapcore.ISO8601TimeEncoder,
+	}))
+	logf.SetLogger(logger)
 
 	ctx, cancel = context.WithCancel(context.TODO())
 

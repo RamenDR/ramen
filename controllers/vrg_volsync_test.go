@@ -13,8 +13,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
@@ -32,7 +30,6 @@ const (
 
 var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 	var testNamespace *corev1.Namespace
-	testLogger := zap.New(zap.UseDevMode(true), zap.WriteTo(GinkgoWriter))
 	var testCtx context.Context
 	var cancel context.CancelFunc
 

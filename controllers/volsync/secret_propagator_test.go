@@ -13,7 +13,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/ramendr/ramen/controllers/volsync"
 	cfgpolicyv1 "github.com/stolostron/config-policy-controller/api/v1"
@@ -26,8 +25,6 @@ var _ = Describe("Secret propagator", func() {
 	genericCodec := genericCodecs.UniversalDeserializer()
 
 	var testNamespace *corev1.Namespace
-	logger := zap.New(zap.UseDevMode(true), zap.WriteTo(GinkgoWriter))
-
 	var owner metav1.Object
 
 	BeforeEach(func() {
