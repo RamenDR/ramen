@@ -63,8 +63,10 @@ const (
 	VolSyncDoNotDeleteLabel    = "volsync.backube/do-not-delete" // TODO: point to volsync constant once it is available
 	VolSyncDoNotDeleteLabelVal = "true"
 
-	ACMAppSubDoNotDeleteLabel    = "do-not-delete" // See: https://issues.redhat.com/browse/ACM-1256
-	ACMAppSubDoNotDeleteLabelVal = "true"
+	// See: https://issues.redhat.com/browse/ACM-1256
+	// https://github.com/stolostron/backlog/issues/21824
+	ACMAppSubDoNotDeleteAnnotation    = "apps.open-cluster-management.io/do-not-delete"
+	ACMAppSubDoNotDeleteAnnotationVal = "true"
 )
 
 type VSHandler struct {
@@ -472,34 +474,16 @@ func (v *VSHandler) PreparePVCForFinalSync(pvcName string) (bool, error) {
 		return false, err
 	}
 
-	/*
-	  TODO: the rest of this function is:
-	  - Waiting for reconcile option to be set to "merge"
-	  - Removing annotations on the PVC to "break" ACM's ownership so it will not delete the PVC
-	    when the appsub is removed
-
-	  These steps will not be required once: https://issues.redhat.com/browse/ACM-1256 is completed
-	  (in ACM 2.6 timeframe) as the above step validatePVCAndAddVRGOwnerRef() will add the "do-not-delete"
-	  label to the PVC which would then prevent ACM from cleaning up the PVC when the appsub is removed.
-
-	  So this function can end here once the above enhancement is done
-	*/
-
-	// Check for annotation that indicates the PVC whether the ACM appsub will keep reconciling by re-taking
-	// ownership of the PVC - if annotation is "mergeAndOwn" we need to wait for it to be removed or change to "merge"
-	reconcileOption, ok := pvc.Annotations["apps.open-cluster-management.io/reconcile-option"]
-	if ok && reconcileOption != "merge" {
-		l.Info("pvc is still owned by appsub, need to wait", "pvc reconcile-option annotation", reconcileOption)
-
-		return false, nil
-	}
-
-	// No annotation, or annotation is set to merge, we're good to go
+	// Remove acm annotations from the PVC just as a precaution - ACM uses the annotations to track that the
+	// pvc is owned by an application.  Removing them should not be necessary now that we are adding
+	// the do-not-delete annotation.  With the do-not-delete annotation (see ACMAppSubDoNotDeleteAnnotation), ACM
+	// should not delete the pvc when the application is removed.
 	updatedAnnotations := map[string]string{}
 
 	for currAnnotationKey, currAnnotationValue := range pvc.Annotations {
 		// We want to only preserve annotations not from ACM (i.e. remove all ACM annotations to break ownership)
-		if !strings.HasPrefix(currAnnotationKey, "apps.open-cluster-management.io") {
+		if !strings.HasPrefix(currAnnotationKey, "apps.open-cluster-management.io") ||
+			currAnnotationKey == ACMAppSubDoNotDeleteAnnotation {
 			updatedAnnotations[currAnnotationKey] = currAnnotationValue
 		}
 	}
@@ -675,7 +659,7 @@ func (v *VSHandler) getPVC(pvcName string) (*corev1.PersistentVolumeClaim, error
 	return pvc, nil
 }
 
-// Adds owner ref and ACM "do-not-delete" label to indicate that when the appsub is removed, ACM
+// Adds owner ref and ACM "do-not-delete" annotation to indicate that when the appsub is removed, ACM
 // should not cleanup this PVC - we want it left behind so we can run a final sync
 func (v *VSHandler) validatePVCAndAddVRGOwnerRef(pvcName string) (*corev1.PersistentVolumeClaim, error) {
 	pvc, err := v.getPVC(pvcName)
@@ -685,9 +669,9 @@ func (v *VSHandler) validatePVCAndAddVRGOwnerRef(pvcName string) (*corev1.Persis
 
 	v.log.Info("PVC exists", "pvcName", pvcName)
 
-	// Add Label to indicate that ACM should not delete/cleanup this pvc when the appsub is removed
+	// Add annotation to indicate that ACM should not delete/cleanup this pvc when the appsub is removed
 	// and add VRG as owner
-	err = v.addLabelAndVRGOwnerRefAndUpdate(pvc, ACMAppSubDoNotDeleteLabel, ACMAppSubDoNotDeleteLabelVal)
+	err = v.addAnnotationAndVRGOwnerRefAndUpdate(pvc, ACMAppSubDoNotDeleteAnnotation, ACMAppSubDoNotDeleteAnnotationVal)
 	if err != nil {
 		return nil, err
 	}
@@ -1053,7 +1037,7 @@ func (v *VSHandler) validateSnapshotAndAddDoNotDeleteLabel(
 	}
 
 	// Add label to indicate that VolSync should not delete/cleanup this snapshot
-	labelsUpdated := v.addLabel(volSnap, VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal)
+	labelsUpdated := addLabel(volSnap, VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal)
 	if labelsUpdated {
 		if err := v.client.Update(v.ctx, volSnap); err != nil {
 			v.log.Error(err, "Failed to add label to snapshot",
@@ -1071,25 +1055,43 @@ func (v *VSHandler) validateSnapshotAndAddDoNotDeleteLabel(
 	return volSnap, nil
 }
 
-func (v *VSHandler) addLabel(obj client.Object, labelName, labelValue string) bool {
-	labelsUpdated := false
+func addLabel(obj client.Object, labelName, labelValue string) bool {
+	return addLabelOrAnnotation(obj, labelName, labelValue, true)
+}
 
-	// Add Label to indicate that owner should not delete/cleanup this object
-	labels := obj.GetLabels()
-	if labels == nil {
-		labels = map[string]string{}
+func addAnnotation(obj client.Object, annotationName, annotationValue string) bool {
+	return addLabelOrAnnotation(obj, annotationName, annotationValue, false)
+}
+
+func addLabelOrAnnotation(obj client.Object, name, value string, isLabel bool) bool {
+	updated := false
+
+	// Get current labels or annotations
+	var mapToUpdate map[string]string
+	if isLabel {
+		mapToUpdate = obj.GetLabels()
+	} else {
+		mapToUpdate = obj.GetAnnotations()
 	}
 
-	val, ok := labels[labelName]
-	if !ok || val != labelValue {
-		labels[labelName] = labelValue
-
-		labelsUpdated = true
-
-		obj.SetLabels(labels)
+	if mapToUpdate == nil {
+		mapToUpdate = map[string]string{}
 	}
 
-	return labelsUpdated
+	val, ok := mapToUpdate[name]
+	if !ok || val != value {
+		mapToUpdate[name] = value
+
+		updated = true
+
+		if isLabel {
+			obj.SetLabels(mapToUpdate)
+		} else {
+			obj.SetAnnotations(mapToUpdate)
+		}
+	}
+
+	return updated
 }
 
 func (v *VSHandler) addOwnerReference(obj, owner metav1.Object) (bool, error) {
@@ -1105,25 +1107,27 @@ func (v *VSHandler) addOwnerReference(obj, owner metav1.Object) (bool, error) {
 	return needsUpdate, nil
 }
 
-func (v *VSHandler) addLabelAndVRGOwnerRefAndUpdate(obj client.Object, labelName, labelValue string) error {
-	labelsUpdated := v.addLabel(obj, labelName, labelValue)
+func (v *VSHandler) addAnnotationAndVRGOwnerRefAndUpdate(obj client.Object,
+	annotationName, annotationValue string) error {
+	annotationsUpdated := addAnnotation(obj, annotationName, annotationValue)
 
 	ownerRefUpdated, err := v.addOwnerReference(obj, v.owner) // VRG as owner
 	if err != nil {
 		return err
 	}
 
-	if labelsUpdated || ownerRefUpdated {
+	if annotationsUpdated || ownerRefUpdated {
 		objKindAndName := getKindAndName(v.client.Scheme(), obj)
 
 		if err := v.client.Update(v.ctx, obj); err != nil {
-			v.log.Error(err, "Failed to add label or VRG owner reference to obj", "obj", objKindAndName)
+			v.log.Error(err, "Failed to add annotation or VRG owner reference to obj", "obj", objKindAndName)
 
-			return fmt.Errorf("failed to add %s label or VRG owner reference to %s (%w)", labelName, objKindAndName, err)
+			return fmt.Errorf("failed to add %s annotation or VRG owner reference to %s (%w)",
+				annotationName, objKindAndName, err)
 		}
 
-		v.log.Info("label and VRG ownerRef added to object",
-			"obj", objKindAndName, "labelName", labelName, "label value", labelValue)
+		v.log.Info("annotation and VRG ownerRef added to object",
+			"obj", objKindAndName, "annotationName", annotationName, "annotation value", annotationValue)
 	}
 
 	return nil

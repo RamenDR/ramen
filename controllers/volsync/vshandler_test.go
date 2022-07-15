@@ -1494,6 +1494,7 @@ var _ = Describe("VolSync Handler", func() {
 				"apps.open-cluster-management.io/hosting-subscription": "busybox-sample/busybox-sub",
 				"pv.kubernetes.io/bound-by-controller":                 "yes",
 				"volume.beta.kubernetes.io/storage-provisioner":        "ebs.csi.aws.com",
+				"apps.open-cluster-management.io/reconcile-option":     "mergeAndOwn",
 			}
 			BeforeEach(func() {
 				testPVCName := "my-test-pvc-aabbcc"
@@ -1516,101 +1517,36 @@ var _ = Describe("VolSync Handler", func() {
 					// configmap owner is faking out VRG
 					return ownerMatches(testPVC, owner.GetName(), "ConfigMap", false)
 				}, maxWait, interval).Should(BeTrue())
+			})
 
-				// do-not-delete label should be added to the PVC
-				pvcLabels := testPVC.GetLabels()
-				val, ok := pvcLabels["do-not-delete"]
+			It("Should complete successfully, return true and remove ACM annotations", func() {
+				Expect(pvcPreparationErr).ToNot(HaveOccurred())
+				Expect(pvcPreparationComplete).To(BeTrue())
+
+				Eventually(func() int {
+					err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testPVC), testPVC)
+					if err != nil {
+						return 0
+					}
+
+					return len(testPVC.Annotations)
+				}, maxWait, interval).Should(Equal(len(initialAnnotations) - 2))
+				// We had 2 acm annotations in initialAnnotations
+
+				for key, val := range testPVC.Annotations {
+					if key != volsync.ACMAppSubDoNotDeleteAnnotation {
+						// Other ACM annotations should be deleted
+						Expect(strings.HasPrefix(key, "apps.open-cluster-management.io")).To(BeFalse())
+
+						Expect(initialAnnotations[key]).To(Equal(val)) // Other annotations should still be there
+					}
+				}
+
+				// ACM do-not-delete annotation should be added to the PVC
+				pvcAnnotations := testPVC.GetAnnotations()
+				val, ok := pvcAnnotations[volsync.ACMAppSubDoNotDeleteAnnotation]
 				Expect(ok).To(BeTrue())
-				Expect(val).To(Equal("true"))
-			})
-
-			Context("When the pvc reconcile-option annotation does not exist", func() {
-				It("Should complete successfully, return true and remove ACM annotations", func() {
-					Expect(pvcPreparationErr).ToNot(HaveOccurred())
-					Expect(pvcPreparationComplete).To(BeTrue())
-
-					Eventually(func() int {
-						err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testPVC), testPVC)
-						if err != nil {
-							return 0
-						}
-
-						return len(testPVC.Annotations)
-					}, maxWait, interval).Should(Equal(len(initialAnnotations) - 2))
-					// We had 2 acm annotations in initialAnnotations
-
-					for key, val := range testPVC.Annotations {
-						Expect(strings.HasPrefix(key, "apps.open-cluster-management.io")).To(BeFalse())
-						Expect(initialAnnotations[key]).To(Equal(val)) // Other annotations should still be there
-					}
-				})
-			})
-
-			Context("When the pvc reconcile-option annotation is set to merge", func() {
-				BeforeEach(func() {
-					// test pvc has been created, update it with the annotation prior to running prepavePVCForFinalSync
-					testPVC.Annotations["apps.open-cluster-management.io/reconcile-option"] = "merge"
-					Expect(k8sClient.Update(ctx, testPVC)).To(Succeed())
-
-					// Make sure the PVC annotations have been updated before proceeding to avoid timing issues
-					Eventually(func() bool {
-						err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testPVC), testPVC)
-						if err != nil {
-							return false
-						}
-						val, ok := testPVC.Annotations["apps.open-cluster-management.io/reconcile-option"]
-						if ok {
-							Expect(val).To(Equal("merge"))
-						}
-
-						return ok
-					}, maxWait, interval).Should(BeTrue())
-				})
-
-				It("Should complete successfully, return true and remove ACM annotations", func() {
-					Expect(pvcPreparationErr).ToNot(HaveOccurred())
-					Expect(pvcPreparationComplete).To(BeTrue())
-
-					Eventually(func() int {
-						err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testPVC), testPVC)
-						if err != nil {
-							return 0
-						}
-
-						return len(testPVC.Annotations)
-					}, maxWait, interval).Should(Equal(len(initialAnnotations) - 2))
-					// We had 2 acm annotations in initialAnnotations
-
-					for key, val := range testPVC.Annotations {
-						Expect(strings.HasPrefix(key, "apps.open-cluster-management.io")).To(BeFalse())
-						Expect(initialAnnotations[key]).To(Equal(val)) // Other annotations should still be there
-					}
-				})
-			})
-
-			Context("When the pvc reconcile-option annotation is set to 'mergeAndOwn'", func() {
-				BeforeEach(func() {
-					// test pvc has been created, update it with the annotation prior to running prepavePVCForFinalSync
-					testPVC.Annotations["apps.open-cluster-management.io/reconcile-option"] = "mergeAndOwn"
-					Expect(k8sClient.Update(ctx, testPVC)).To(Succeed())
-
-					// Make sure the PVC annotations have been updated before proceeding to avoid timing issues
-					Eventually(func() bool {
-						err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testPVC), testPVC)
-						if err != nil {
-							return false
-						}
-
-						_, ok := testPVC.Annotations["apps.open-cluster-management.io/reconcile-option"]
-
-						return ok
-					}, maxWait, interval).Should(BeTrue())
-				})
-
-				It("Should indicate pvcPreparationComplete is false (need to wait for annotation update)", func() {
-					Expect(pvcPreparationErr).ToNot(HaveOccurred())
-					Expect(pvcPreparationComplete).To(BeFalse())
-				})
+				Expect(val).To(Equal(volsync.ACMAppSubDoNotDeleteAnnotationVal))
 			})
 		})
 	})
