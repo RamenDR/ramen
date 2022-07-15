@@ -35,7 +35,7 @@ func init() {
 	rand.Seed(time.Now().Unix())
 }
 
-var _ = Describe("Test VolumeReplicationGroup", func() {
+var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 	conditionExpect := func(conditions []metav1.Condition, typ string) *metav1.Condition {
 		condition := meta.FindStatusCondition(conditions, typ)
 		Expect(condition).ToNot(BeNil())
@@ -151,7 +151,7 @@ var _ = Describe("Test VolumeReplicationGroup", func() {
 			vrgNamespacedName := vtest.namespace + "/" + vtest.vrgName + "/"
 			pvList := generateFakePVs("pv", numPVs)
 			objectStorer, err := fakeObjectStoreGetter{}.ObjectStore(
-				context.TODO(), apiReader, s3Profiles[0].S3ProfileName, "", testLog,
+				context.TODO(), apiReader, s3Profiles[0].S3ProfileName, "", testLogger,
 			)
 			Expect(err).To(BeNil())
 			populateS3Store(objectStorer, vrgNamespacedName, pvList)
@@ -1031,7 +1031,7 @@ func (v *vrgTest) getVRG(vrgName string) *ramendrv1alpha1.VolumeReplicationGroup
 	}
 
 	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
-	err := k8sClient.Get(context.TODO(), key, vrg)
+	err := apiReader.Get(context.TODO(), key, vrg)
 	Expect(err).NotTo(HaveOccurred(),
 		"failed to get VRG %s", vrgName)
 

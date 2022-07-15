@@ -173,9 +173,15 @@ func GetS3Secret(ctx context.Context, r client.Reader,
 	secretRef corev1.SecretReference) (
 	s3AccessID, s3SecretAccessKey []byte, err error) {
 	secret := corev1.Secret{}
-	if err := r.Get(ctx,
-		types.NamespacedName{Namespace: secretRef.Namespace, Name: secretRef.Name},
-		&secret); err != nil {
+	namepacedName := types.NamespacedName{Namespace: "", Name: secretRef.Name}
+
+	if secretRef.Namespace == "" {
+		namepacedName.Namespace = NamespaceName()
+	} else {
+		namepacedName.Namespace = secretRef.Namespace
+	}
+
+	if err := r.Get(ctx, namepacedName, &secret); err != nil {
 		return nil, nil, fmt.Errorf("failed to get secret %v, %w",
 			secretRef, err)
 	}

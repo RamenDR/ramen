@@ -18,7 +18,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
@@ -73,7 +72,6 @@ var _ = Describe("VolSync Handler - utils", func() {
 })
 
 var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
-	logger := zap.New(zap.UseDevMode(true), zap.WriteTo(GinkgoWriter))
 	schedulingInterval := "1h"
 
 	Describe("Get volume snapshot classes", func() {
@@ -180,8 +178,6 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 
 var _ = Describe("VolSync Handler", func() {
 	var testNamespace *corev1.Namespace
-	logger := zap.New(zap.UseDevMode(true), zap.WriteTo(GinkgoWriter))
-
 	var owner metav1.Object
 	var vsHandler *volsync.VSHandler
 

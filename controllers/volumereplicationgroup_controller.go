@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"golang.org/x/time/rate"
 
 	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -32,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -79,8 +81,18 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) er
 
 	r.Log.Info("Adding VolumeReplicationGroup controller")
 
+	rateLimiter := workqueue.NewMaxOfRateLimiter(
+		workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 1*time.Minute),
+		// defaults from client-go
+		// nolint: gomnd
+		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
+	)
+
 	return ctrl.NewControllerManagedBy(mgr).
-		WithOptions(ctrlcontroller.Options{MaxConcurrentReconciles: getMaxConcurrentReconciles(r.Log)}).
+		WithOptions(ctrlcontroller.Options{
+			MaxConcurrentReconciles: getMaxConcurrentReconciles(r.Log),
+			RateLimiter:             rateLimiter,
+		}).
 		For(&ramendrv1alpha1.VolumeReplicationGroup{}).
 		Watches(&source.Kind{Type: &corev1.PersistentVolumeClaim{}}, pvcMapFun, builder.WithPredicates(pvcPredicate)).
 		Owns(&volrep.VolumeReplication{}).
@@ -358,7 +370,7 @@ func (v *VRGInstance) processVRG() (ctrl.Result, error) {
 		msg := "VolumeReplicationGroup state is invalid"
 		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
-		if _, err = v.updateVRGStatus(false); err != nil {
+		if err = v.updateVRGStatus(false); err != nil {
 			v.log.Error(err, "Status update failed")
 			// Since updating status failed, reconcile
 			return ctrl.Result{Requeue: true}, nil
@@ -378,7 +390,7 @@ func (v *VRGInstance) processVRG() (ctrl.Result, error) {
 		msg := "VolumeReplicationGroup mode is invalid"
 		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
-		if _, err = v.updateVRGStatus(false); err != nil {
+		if err = v.updateVRGStatus(false); err != nil {
 			v.log.Error(err, "Status update failed")
 			// Since updating status failed, reconcile
 			return ctrl.Result{Requeue: true}, nil
@@ -396,7 +408,7 @@ func (v *VRGInstance) processVRG() (ctrl.Result, error) {
 		msg := "Failed to get list of pvcs"
 		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
-		if _, err = v.updateVRGStatus(false); err != nil {
+		if err = v.updateVRGStatus(false); err != nil {
 			v.log.Error(err, "VRG Status update failed")
 		}
 
@@ -466,6 +478,13 @@ func (v *VRGInstance) validateVRGMode() error {
 }
 
 func (v *VRGInstance) restorePVs() error {
+	if v.instance.Spec.PrepareForFinalSync || v.instance.Spec.RunFinalSync {
+		msg := "PV restore skipped, as VRG is orchestrating final sync"
+		setVRGClusterDataReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+
+		return nil
+	}
+
 	clusterDataReady := findCondition(v.instance.Status.Conditions, VRGConditionTypeClusterDataReady)
 	if clusterDataReady != nil {
 		v.log.Info("ClusterDataReady condition",
@@ -507,23 +526,17 @@ func (v *VRGInstance) restorePVs() error {
 	return nil
 }
 
+func (v *VRGInstance) listPVCsByPVCSelector() (*corev1.PersistentVolumeClaimList, error) {
+	return rmnutil.ListPVCsByPVCSelector(v.ctx, v.reconciler.Client, v.instance.Spec.PVCSelector, v.instance.Namespace,
+		v.instance.Spec.VolSync.Disabled, v.log)
+}
+
 // updatePVCList fetches and updates the PVC list to process for the current instance of VRG
 func (v *VRGInstance) updatePVCList() error {
 	if v.instance.Spec.VolSync.Disabled {
-		labelSelector := v.instance.Spec.PVCSelector
-
-		v.log.Info("Fetching PersistentVolumeClaims", "labeled", labels.Set(labelSelector.MatchLabels))
-		listOptions := []client.ListOption{
-			client.InNamespace(v.instance.Namespace),
-			client.MatchingLabels(labelSelector.MatchLabels),
-		}
-
-		pvcList := &corev1.PersistentVolumeClaimList{}
-		if err := v.reconciler.List(v.ctx, pvcList, listOptions...); err != nil {
-			v.log.Error(err, "Failed to list PersistentVolumeClaims",
-				"labeled", labels.Set(labelSelector.MatchLabels))
-
-			return fmt.Errorf("failed to list PersistentVolumeClaims, %w", err)
+		pvcList, err := v.listPVCsByPVCSelector()
+		if err != nil {
+			return err
 		}
 
 		v.volRepPVCs = make([]corev1.PersistentVolumeClaim, len(pvcList.Items))
@@ -539,23 +552,10 @@ func (v *VRGInstance) updatePVCList() error {
 }
 
 func (v *VRGInstance) updatePVCListForAll() error {
-	labelSelector := v.instance.Spec.PVCSelector
-
-	v.log.Info("Fetching PersistentVolumeClaims", "labeled", labels.Set(labelSelector.MatchLabels))
-	listOptions := []client.ListOption{
-		client.InNamespace(v.instance.Namespace),
-		client.MatchingLabels(labelSelector.MatchLabels),
+	pvcList, err := v.listPVCsByPVCSelector()
+	if err != nil {
+		return err
 	}
-
-	pvcList := &corev1.PersistentVolumeClaimList{}
-	if err := v.reconciler.List(v.ctx, pvcList, listOptions...); err != nil {
-		v.log.Error(err, "Failed to list PersistentVolumeClaims",
-			"labeled", labels.Set(labelSelector.MatchLabels))
-
-		return fmt.Errorf("failed to list PersistentVolumeClaims, %w", err)
-	}
-
-	v.log.Info(fmt.Sprintf("Found %d PVCs using matching lables %v", len(pvcList.Items), labelSelector.MatchLabels))
 
 	if !v.vrcUpdated {
 		if err := v.updateReplicationClassList(); err != nil {
@@ -730,7 +730,7 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 		msg := "Failed to add finalizer to VolumeReplicationGroup"
 		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
-		if _, err = v.updateVRGStatus(false); err != nil {
+		if err = v.updateVRGStatus(false); err != nil {
 			v.log.Error(err, "VRG Status update failed")
 		}
 
@@ -743,7 +743,7 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 		msg := fmt.Sprintf("Failed to restore PVs (%v)", err.Error())
 		setVRGClusterDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
-		if _, err = v.updateVRGStatus(false); err != nil {
+		if err = v.updateVRGStatus(false); err != nil {
 			v.log.Error(err, "VRG Status update failed")
 		}
 
@@ -762,15 +762,14 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 			rmnutil.EventReasonPrimarySuccess, "Primary Success")
 	}
 
-	statusUpdateRequeueRequested, err := v.updateVRGStatus(true)
-	if err != nil {
+	if err := v.updateVRGStatus(true); err != nil {
 		requeue = true
 	}
 
-	if requeue || statusUpdateRequeueRequested {
+	if requeue {
 		v.log.Info("Requeuing resource as Primary")
 
-		return ctrl.Result{RequeueAfter: time.Second * 1}, nil
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	v.log.Info("Successfully processed vrg as primary")
@@ -801,7 +800,7 @@ func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
 		msg := "Failed to add finalizer to VolumeReplicationGroup"
 		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
-		if _, err = v.updateVRGStatus(false); err != nil {
+		if err = v.updateVRGStatus(false); err != nil {
 			v.log.Error(err, "VRG Status update failed")
 		}
 
@@ -819,15 +818,14 @@ func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
 			rmnutil.EventReasonSecondarySuccess, "Secondary Success")
 	}
 
-	statusUpdateRequeueRequested, err := v.updateVRGStatus(true)
-	if err != nil {
+	if err := v.updateVRGStatus(true); err != nil {
 		requeue = true
 	}
 
-	if requeue || statusUpdateRequeueRequested {
+	if requeue {
 		v.log.Info("Requeuing resource as Secondary")
 
-		return ctrl.Result{RequeueAfter: time.Second * 1}, nil
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	v.log.Info("Successfully processed vrg as secondary")
@@ -860,7 +858,7 @@ func (v *VRGInstance) handleVRGMode(state ramendrv1alpha1.ReplicationState) (res
 	return result
 }
 
-func (v *VRGInstance) updateVRGStatus(updateConditions bool) (bool, error) {
+func (v *VRGInstance) updateVRGStatus(updateConditions bool) error {
 	v.log.Info("Updating VRG status")
 
 	if updateConditions {
@@ -874,20 +872,24 @@ func (v *VRGInstance) updateVRGStatus(updateConditions bool) (bool, error) {
 	if !reflect.DeepEqual(v.savedInstanceStatus, v.instance.Status) {
 		v.instance.Status.LastUpdateTime = metav1.Now()
 		if err := v.reconciler.Status().Update(v.ctx, v.instance); err != nil {
-			v.log.Info(fmt.Sprintf("Failed to update VRG status (%s/%s/%v/%+v)",
-				v.instance.Name, v.instance.Namespace, err, v.instance.Status))
+			v.log.Info(fmt.Sprintf("Failed to update VRG status (%v/%+v)",
+				err, v.instance.Status))
 
-			return true, fmt.Errorf("failed to update VRG status (%s/%s)", v.instance.Name, v.instance.Namespace)
+			return fmt.Errorf("failed to update VRG status (%s/%s)", v.instance.Name, v.instance.Namespace)
 		}
 
-		v.log.Info(fmt.Sprintf("Updated VRG Status %+v", v.instance.Status))
+		dataReadyCondition := findCondition(v.instance.Status.Conditions, VRGConditionTypeDataReady)
+		v.log.Info(fmt.Sprintf("Updated VRG Status VolRep pvccount (%d), VolSync pvccount(%d)"+
+			" DataReady Condition (%s)",
+			len(v.volRepPVCs), len(v.volSyncPVCs), dataReadyCondition))
 
-		return !v.areRequiredConditionsReady(), nil
+		return nil
 	}
 
-	v.log.Info(fmt.Sprintf("Nothing to update %+v", v.instance.Status))
+	v.log.Info(fmt.Sprintf("Nothing to update VolRep pvccount (%d), VolSync pvccount(%d)",
+		len(v.volRepPVCs), len(v.volSyncPVCs)))
 
-	return !v.areRequiredConditionsReady(), nil
+	return nil
 }
 
 func (v *VRGInstance) updateStatusState() {
@@ -1001,25 +1003,6 @@ func (v *VRGInstance) updateVRGClusterDataProtectedCondition() {
 	if len(v.volRepPVCs) != 0 {
 		v.aggregateVolRepClusterDataProtectedCondition()
 	}
-}
-
-func (v *VRGInstance) areRequiredConditionsReady() bool {
-	condition := findCondition(v.instance.Status.Conditions, VRGConditionTypeDataReady)
-	if condition == nil || condition.Status != metav1.ConditionTrue {
-		return false
-	}
-
-	condition = findCondition(v.instance.Status.Conditions, VRGConditionTypeDataProtected)
-	if condition == nil || condition.Status != metav1.ConditionTrue {
-		return false
-	}
-
-	condition = findCondition(v.instance.Status.Conditions, VRGConditionTypeClusterDataProtected)
-	if condition == nil || condition.Status != metav1.ConditionTrue {
-		return false
-	}
-
-	return true
 }
 
 // It might be better move the helper functions like these to a separate

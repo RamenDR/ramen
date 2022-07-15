@@ -87,7 +87,7 @@ jobs:
           retention-days: 1
 
       - name: Go tidy
-        run: go mod tidy
+        run: go mod tidy -compat=1.17
 
       - name: Git branch sanity
         run: |

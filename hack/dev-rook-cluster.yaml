@@ -20,7 +20,9 @@ metadata:
   name: my-cluster
   namespace: rook-ceph
 spec:
-  dataDirHostPath: /var/lib/rook
+  # On Minikube /var/lib/rook is not persisted, but anything under /data is.
+  # https://minikube.sigs.k8s.io/docs/handbook/persistent_volumes/#a-note-on-mounts-persistence-and-minikube-hosts
+  dataDirHostPath: /data/rook
   cephVersion:
     image: quay.io/ceph/ceph:v16.2.6
     allowUnsupported: true

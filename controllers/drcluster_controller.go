@@ -87,20 +87,19 @@ const (
 //+kubebuilder:rbac:groups=work.open-cluster-management.io,resources=manifestworks,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the DRCluster object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.9.2/pkg/reconcile
+//nolint:funlen
 func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	// TODO: Validate managedCluster name? and also ensure it is not deleted!
+	// TODO: Setup views for storage class and VRClass to read and report IDs
 	log := ctrl.Log.WithName("controllers").WithName("drcluster").WithValues("name", req.NamespacedName.Name)
 	log.Info("reconcile enter")
 
 	defer log.Info("reconcile exit")
+
+	var (
+		requeue        bool
+		reconcileError error
+	)
 
 	drcluster := &ramen.DRCluster{}
 	if err := r.Client.Get(ctx, req.NamespacedName, drcluster); err != nil {
@@ -121,7 +120,6 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, fmt.Errorf("config map get: %w", u.validatedSetFalse("ConfigMapGetFailed", err))
 	}
 
-	// DRCluster is marked for deletion
 	if !u.object.ObjectMeta.DeletionTimestamp.IsZero() {
 		return r.processDeletion(u)
 	}
@@ -132,20 +130,32 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, fmt.Errorf("finalizer add update: %w", u.validatedSetFalse("FinalizerAddFailed", err))
 	}
 
-	reason, err := validateDRCluster(ctx, drcluster, r.APIReader, r.ObjectStoreGetter, req.NamespacedName.String(), log)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("validate: %w", u.validatedSetFalse(reason, err))
-	}
-
 	if err := drClusterDeploy(drcluster, manifestWorkUtil, ramenConfig); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drclusters deploy: %w", u.validatedSetFalse("DrClustersDeployFailed", err))
 	}
 
-	// TODO: Setup views for storage class and VRClass to read and report IDs
+	if err = validateCIDRsFormat(drcluster, log); err != nil {
+		return ctrl.Result{}, fmt.Errorf("drclusters CIDRs validate: %w", u.validatedSetFalse(ReasonValidationFailed, err))
+	}
+
+	requeue, err = u.clusterFenceHandle()
+	if err != nil {
+		// On error proceed with S3 validation, as fencing is independent of S3
+		reconcileError = fmt.Errorf("failed to handle cluster fencing: %w", err)
+	}
+
+	if reason, err := validateS3Profile(ctx, r.APIReader, r.ObjectStoreGetter, drcluster, req.NamespacedName.String(),
+		log); err != nil {
+		return ctrl.Result{}, fmt.Errorf("drclusters s3Profile validate: %w", u.validatedSetFalse(reason, err))
+	}
 
 	setDRClusterValidatedCondition(&drcluster.Status.Conditions, drcluster.Generation, "Validated the cluster")
 
-	return r.processFencing(u)
+	if err := u.statusUpdate(); err != nil {
+		log.Info("failed to update status", "failure", err)
+	}
+
+	return ctrl.Result{Requeue: requeue}, reconcileError
 }
 
 func (u *drclusterInstance) initializeStatus() {
@@ -164,33 +174,9 @@ func (u *drclusterInstance) initializeStatus() {
 	}
 }
 
-func validateDRCluster(ctx context.Context, drcluster *ramen.DRCluster, apiReader client.Reader,
-	objectStoreGetter ObjectStoreGetter, listKeyPrefix string,
-	log logr.Logger,
-) (string, error) {
-	reason, err := validateS3Profile(ctx, apiReader, objectStoreGetter, drcluster, listKeyPrefix, log)
-	if err != nil {
-		return reason, err
-	}
-
-	err = validateCIDRsFormat(drcluster, log)
-	if err != nil {
-		return ReasonValidationFailed, err
-	}
-
-	// TODO: Validate managedCluster name? and also ensure it is not deleted!
-
-	return "", nil
-}
-
 func validateS3Profile(ctx context.Context, apiReader client.Reader,
 	objectStoreGetter ObjectStoreGetter,
 	drcluster *ramen.DRCluster, listKeyPrefix string, log logr.Logger) (string, error) {
-	if drcluster.Spec.ClusterFence == ramen.ClusterFenceStateFenced ||
-		drcluster.Spec.ClusterFence == ramen.ClusterFenceStateManuallyFenced {
-		return "", nil
-	}
-
 	if drcluster.Spec.S3ProfileName != NoS3StoreAvailable {
 		if reason, err := s3ProfileValidate(ctx, apiReader, objectStoreGetter,
 			drcluster.Spec.S3ProfileName, listKeyPrefix, log); err != nil {
@@ -234,19 +220,6 @@ func validateCIDRsFormat(drcluster *ramen.DRCluster, log logr.Logger) error {
 	}
 
 	return nil
-}
-
-func (r DRClusterReconciler) processFencing(u *drclusterInstance) (ctrl.Result, error) {
-	requeue, err := u.clusterFenceHandle()
-	if err != nil {
-		if updateErr := u.statusUpdate(); updateErr != nil {
-			u.log.Error(updateErr, "status update failed")
-		}
-
-		return ctrl.Result{}, fmt.Errorf("failed to handle cluster fencing: %w", err)
-	}
-
-	return ctrl.Result{Requeue: requeue}, u.statusUpdate()
 }
 
 func (r DRClusterReconciler) processDeletion(u *drclusterInstance) (ctrl.Result, error) {

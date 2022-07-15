@@ -14,6 +14,7 @@ import (
 	cpcv1 "github.com/stolostron/config-policy-controller/api/v1"
 	gppv1 "github.com/stolostron/governance-policy-propagator/api/v1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
+	"go.uber.org/zap/zapcore"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -33,7 +34,7 @@ var (
 	k8sClient   client.Client
 	testEnv     *envtest.Environment
 	secretsUtil util.SecretsUtil
-	testLog     logr.Logger
+	testLogger  logr.Logger
 )
 
 func TestUtil(t *testing.T) {
@@ -42,8 +43,13 @@ func TestUtil(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
-	testLog = ctrl.Log.WithName("tester")
+	testLogger = zap.New(zap.UseFlagOptions(&zap.Options{
+		Development: true,
+		DestWriter:  GinkgoWriter,
+		TimeEncoder: zapcore.ISO8601TimeEncoder,
+	}))
+	logf.SetLogger(testLogger)
+	testLog := ctrl.Log.WithName("tester")
 	testLog.Info("Starting the utils test suite", "time", time.Now())
 
 	By("Setting up KUBEBUILDER_ASSETS for envtest")
