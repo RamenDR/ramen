@@ -451,7 +451,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 		mwu: rmnutil.MWUtil{
 			Client:        r.Client,
 			Ctx:           ctx,
-			Log:           r.Log,
+			Log:           log,
 			InstName:      drpc.Name,
 			InstNamespace: drpc.Namespace,
 		},
