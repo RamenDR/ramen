@@ -194,7 +194,8 @@ func (mwu *MWUtil) generateNFManifest(nf csiaddonsv1alpha1.NetworkFence) (*ocmwo
 }
 
 func (mwu *MWUtil) CreateOrUpdateNamespaceManifest(
-	name string, namespaceName string, managedClusterNamespace string, annotations map[string]string) error {
+	name string, namespaceName string, managedClusterNamespace string,
+	annotations map[string]string) error {
 	manifest, err := mwu.GenerateManifest(Namespace(namespaceName))
 	if err != nil {
 		return err
