@@ -154,11 +154,7 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 			return !done, err
 		}
 
-		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
-			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Initial deployment completed")
-
-		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
-			metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
+		d.setConditionOnInitialDeploymentCompletion()
 
 		return !done, nil
 	}
@@ -174,12 +170,9 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 	if d.getLastDRState() == rmn.DRState("") {
 		d.instance.Status.PreferredDecision = d.userPlacementRule.Status.Decisions[0]
 		d.setDRState(rmn.Deployed)
-		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
-			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Already deployed")
-
-		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
-			metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
 	}
+
+	d.setConditionOnInitialDeploymentCompletion()
 
 	d.setProgression(rmn.ProgressionCompleted)
 
@@ -2090,6 +2083,14 @@ func (d *DRPCInstance) setMetricsTimer(
 		wrapper.histogram.Observe(d.metricsTimer.timer.ObserveDuration().Seconds()) // add timer to histogram
 		d.metricsTimer.reconcileState = reconcileState
 	}
+}
+
+func (d *DRPCInstance) setConditionOnInitialDeploymentCompletion() {
+	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
+		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Initial deployment completed")
+
+	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
+		metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
 }
 
 func (d *DRPCInstance) setDRPCCondition(conditions *[]metav1.Condition, condType string,
