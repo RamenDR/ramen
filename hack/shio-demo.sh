@@ -79,6 +79,10 @@ vrg_get() {
 	kubectl --context $1 -nasdf get vrg/bb -oyaml --ignore-not-found
 }; exit_stack_push unset -f vrg_get
 
+vrg_get_s3() {
+	mc cp -q $(app_s3_object_name_prefix)v1alpha1.VolumeReplicationGroup/a /tmp/a.json.gz;gzip -df /tmp/a.json.gz;python -m json.tool </tmp/a.json
+}; exit_stack_push unset -f vrg_get_s3
+
 app_protect() {
 	vrg_deploy cluster1
 	vrg_get cluster1
@@ -118,6 +122,7 @@ mc rm $(app_s3_object_name_prefix) --recursive --force
 }; exit_stack_push unset -f app_objects_delete
 
 app_protection_info() {
+mc cp -q $(app_s3_object_name_prefix_velero)backups/$1/velero-backup.json /tmp/$1-velero-backup.json;python -m json.tool </tmp/$1-velero-backup.json
 mc cp -q $(app_s3_object_name_prefix_velero)backups/$1/$1-resource-list.json.gz /tmp;gzip -df /tmp/$1-resource-list.json.gz;python -m json.tool </tmp/$1-resource-list.json
 mc cp -q $(app_s3_object_name_prefix_velero)backups/$1/$1-logs.gz /tmp;gzip -df /tmp/$1-logs.gz;cat /tmp/$1-logs
 }; exit_stack_push unset -f app_protection_info
@@ -140,6 +145,10 @@ velero --kubecontext $1 delete --all --confirm backup-locations
 velero --kubecontext $1 delete --all --confirm restores
 velero_kube_objects_list $1
 }; exit_stack_push unset -f velero_kube_objects_undeploy
+
+velero_kube_objects_delete() {
+	kubectl --context $1 -n velero delete --all restores,backups,backupstoragelocations
+}; exit_stack_push unset -f velero_kube_objects_delete
 
 exit_stack_push unset -v command
 set -x

@@ -222,12 +222,13 @@ type ProtectedPVC struct {
 }
 
 type KubeObjectCaptureStatus struct {
-	Number int64 `json:"number,omitempty"`
+	Number int64 `json:"number"`
 	// +nullable
 	StartTime metav1.Time `json:"startTime,omitempty"`
 }
 
 type KubeObjectProtectionStatus struct {
+	// +optional
 	LastProtectedCapture *KubeObjectCaptureStatus `json:"lastProtectedCapture,omitempty"`
 }
 

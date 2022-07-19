@@ -505,6 +505,8 @@ spec:
                         format: date-time
                         nullable: true
                         type: string
+                    required:
+                    - number
                     type: object
                 type: object
               lastGroupSyncTime:

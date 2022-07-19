@@ -32,11 +32,11 @@ func kubeObjectCaptureInterval(kubeObjectProtectionSpec *ramen.KubeObjectProtect
 	return kubeObjectProtectionSpec.CaptureInterval.Duration
 }
 
-func (v *VRGInstance) kubeObjectsProtectIfDue() (ctrl.Result, error) {
+func (v *VRGInstance) kubeObjectsProtectIfDue(result *ctrl.Result) {
 	if v.instance.Spec.KubeObjectProtection == nil {
 		v.log.Info("Kube object protection disabled")
 
-		return ctrl.Result{}, nil
+		return
 	}
 
 	delayMinimum := kubeObjectCaptureInterval(v.instance.Spec.KubeObjectProtection)
@@ -46,34 +46,37 @@ func (v *VRGInstance) kubeObjectsProtectIfDue() (ctrl.Result, error) {
 		StartTime: metav1.Now(),
 	}
 
-	result := ctrl.Result{RequeueAfter: dueTime.Sub(capture.StartTime.Time)}
-	if result.RequeueAfter > 0 {
-		v.log.Info("Kube object protection due later", "number", capture.Number, "delay", result.RequeueAfter)
+	delay := dueTime.Sub(capture.StartTime.Time)
+	if delay > 0 {
+		v.log.Info("Kube object protection due later", "number", capture.Number, "delay", delay)
+		delaySetIfLess(result, delay, v.log)
 
-		return result, nil
+		return
 	}
 
 	if errors := v.kubeObjectsProtect(capture.Number); len(errors) > 0 {
-		return ctrl.Result{}, errors[0]
+		result.Requeue = true
+
+		return
 	}
 
 	duration := time.Since(capture.StartTime.Time)
-	result.RequeueAfter = delayMinimum - duration
+	delay = delayMinimum - duration
 
-	if result.RequeueAfter <= 0 {
-		result.RequeueAfter = time.Nanosecond
+	if delay <= 0 {
+		delay = time.Nanosecond
 	}
 
 	v.log.Info("Kube objects protected",
 		"number", capture.Number,
 		"start", capture.StartTime,
 		"duration", duration,
-		"delay", result.RequeueAfter,
+		"delay", delay,
 	)
 
 	v.instance.Status.KubeObjectProtection.LastProtectedCapture = capture
 
-	return result, nil
+	delaySetIfLess(result, delay, v.log)
 }
 
 func (v *VRGInstance) kubeObjectsProtect(captureNumber int64) []error {
@@ -123,15 +126,26 @@ func (v *VRGInstance) kubeObjectsRecover(objectStore ObjectStorer) error {
 	}
 
 	if v.instance.Status.KubeObjectProtection.LastProtectedCapture == nil {
-		// TODO attempt to populate status from s3 store
-		if found := false; !found {
-			v.log.Info("Kube objects capture not found")
-			v.instance.Status.KubeObjectProtection.LastProtectedCapture = &ramen.KubeObjectCaptureStatus{
-				Number: -1,
-			}
+		notFound := func() error {
+			v.instance.Status.KubeObjectProtection.LastProtectedCapture = &ramen.KubeObjectCaptureStatus{Number: -1}
 
 			return nil
 		}
+
+		var vrg ramen.VolumeReplicationGroup
+		if err := downloadTypedObject(objectStore, s3ObjectNamePrefix(*v.instance), vrgS3ObjectNameSuffix, &vrg); err != nil {
+			v.log.Error(err, "protected last protected Kube object capture status get")
+
+			return notFound()
+		}
+
+		if vrg.Status.KubeObjectProtection.LastProtectedCapture == nil {
+			v.log.Info("Protected last protected Kube object capture status nil")
+
+			return notFound()
+		}
+
+		v.instance.Status.KubeObjectProtection.LastProtectedCapture = vrg.Status.KubeObjectProtection.LastProtectedCapture
 	}
 
 	return kubeObjectsRecover(
@@ -148,4 +162,9 @@ func (v *VRGInstance) kubeObjectsRecover(objectStore ObjectStorer) error {
 		VeleroNamespaceNameDefault,
 		v.instance.Status.KubeObjectProtection.LastProtectedCapture.Number,
 	)
+}
+
+func (v *VRGInstance) kubeObjectProtectionDisabledOrKubeObjectsProtected() bool {
+	return v.instance.Spec.KubeObjectProtection == nil ||
+		v.instance.Status.KubeObjectProtection.LastProtectedCapture.Number >= 0
 }
