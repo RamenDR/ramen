@@ -364,6 +364,11 @@ func uploadTypedObject(s ObjectStorer, keyPrefix, keySuffix string,
 	return s.UploadObject(key, uploadContent)
 }
 
+func downloadTypedObject(s ObjectStorer, keyPrefix, keySuffix string, objectPointer interface{},
+) error {
+	return s.DownloadObject(typedKey(keyPrefix, keySuffix, reflect.TypeOf(objectPointer).Elem()), objectPointer)
+}
+
 func DeleteTypedObjects(s ObjectStorer, keyPrefix, keySuffix string, object interface{},
 ) error {
 	return s.DeleteObjects(typedKey(keyPrefix, keySuffix, reflect.TypeOf(object)))
@@ -414,9 +419,7 @@ func VerifyPVUpload(s ObjectStorer, pvKeyPrefix, pvKeySuffix string,
 	verifyPV corev1.PersistentVolume) error {
 	var downloadedPV corev1.PersistentVolume
 
-	key := typedKey(pvKeyPrefix, pvKeySuffix, reflect.TypeOf(verifyPV))
-
-	if err := s.DownloadObject(key, &downloadedPV); err != nil {
+	if err := downloadTypedObject(s, pvKeyPrefix, pvKeySuffix, &downloadedPV); err != nil {
 		return errorswrapper.WithMessage(err, "VerifyPVUpload")
 	}
 
