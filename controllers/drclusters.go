@@ -69,28 +69,28 @@ func appendSubscriptionObject(
 		// a later CSV version as the channel may not yet be up to date on the managed cluster).
 		// As we create Subscriptions with automatic install plans, when a later version is available it would
 		// automatically update to the same.
-		if mwSub.Spec.Channel == drClusterOperatorChannelNameOrDefault(ramenConfig) &&
-			mwSub.Spec.CatalogSource == drClusterOperatorCatalogSourceNameOrDefault(ramenConfig) &&
-			mwSub.Spec.CatalogSourceNamespace == drClusterOperatorCatalogSourceNamespaceNameOrDefault(ramenConfig) &&
-			mwSub.Spec.Package == drClusterOperatorPackageNameOrDefault(ramenConfig) {
+		if mwSub.Spec.Channel == DrClusterOperatorChannelNameOrDefault(ramenConfig) &&
+			mwSub.Spec.CatalogSource == DrClusterOperatorCatalogSourceNameOrDefault(ramenConfig) &&
+			mwSub.Spec.CatalogSourceNamespace == DrClusterOperatorCatalogSourceNamespaceNameOrDefault(ramenConfig) &&
+			mwSub.Spec.Package == DrClusterOperatorPackageNameOrDefault(ramenConfig) {
 			return append(objects, mwSub), nil
 		}
 	}
 
 	return append(objects,
-		subscription(
-			drClusterOperatorNamespaceNameOrDefault(ramenConfig),
-			drClusterOperatorChannelNameOrDefault(ramenConfig),
-			drClusterOperatorPackageNameOrDefault(ramenConfig),
-			drClusterOperatorCatalogSourceNameOrDefault(ramenConfig),
-			drClusterOperatorCatalogSourceNamespaceNameOrDefault(ramenConfig),
-			drClusterOperatorClusterServiceVersionNameOrDefault(ramenConfig),
+		Subscription(
+			DrClusterOperatorNamespaceNameOrDefault(ramenConfig),
+			DrClusterOperatorChannelNameOrDefault(ramenConfig),
+			DrClusterOperatorPackageNameOrDefault(ramenConfig),
+			DrClusterOperatorCatalogSourceNameOrDefault(ramenConfig),
+			DrClusterOperatorCatalogSourceNamespaceNameOrDefault(ramenConfig),
+			DrClusterOperatorClusterServiceVersionNameOrDefault(ramenConfig),
 		)), nil
 }
 
-var olmClusterRole = &rbacv1.ClusterRole{
+var OlmClusterRole = &rbacv1.ClusterRole{
 	TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
-	ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:olm-edit"},
+	ObjectMeta: metav1.ObjectMeta{Name: OCMKlusterletName},
 	Rules: []rbacv1.PolicyRule{
 		{
 			APIGroups: []string{"operators.coreos.com"},
@@ -105,7 +105,7 @@ func objectsToDeploy(hubOperatorRamenConfig *rmn.RamenConfig) ([]interface{}, er
 
 	drClusterOperatorRamenConfig := *hubOperatorRamenConfig
 	ramenConfig := &drClusterOperatorRamenConfig
-	drClusterOperatorNamespaceName := drClusterOperatorNamespaceNameOrDefault(ramenConfig)
+	drClusterOperatorNamespaceName := DrClusterOperatorNamespaceNameOrDefault(ramenConfig)
 	ramenConfig.LeaderElection.ResourceName = drClusterLeaderElectionResourceName
 	ramenConfig.RamenControllerType = rmn.DRClusterType
 
@@ -120,18 +120,18 @@ func objectsToDeploy(hubOperatorRamenConfig *rmn.RamenConfig) ([]interface{}, er
 
 	return append(objects,
 		util.Namespace(drClusterOperatorNamespaceName),
-		olmClusterRole,
-		olmRoleBinding(drClusterOperatorNamespaceName),
-		operatorGroup(drClusterOperatorNamespaceName),
+		OlmClusterRole,
+		OlmRoleBinding(drClusterOperatorNamespaceName),
+		OperatorGroup(drClusterOperatorNamespaceName),
 		drClusterOperatorConfigMap,
 	), nil
 }
 
-func olmRoleBinding(namespaceName string) *rbacv1.RoleBinding {
+func OlmRoleBinding(namespaceName string) *rbacv1.RoleBinding {
 	return &rbacv1.RoleBinding{
 		TypeMeta: metav1.TypeMeta{Kind: "RoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "open-cluster-management:klusterlet-work-sa:agent:olm-edit",
+			Name:      OCMKlusterletName,
 			Namespace: namespaceName,
 		},
 		Subjects: []rbacv1.Subject{
@@ -144,19 +144,19 @@ func olmRoleBinding(namespaceName string) *rbacv1.RoleBinding {
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind:     "ClusterRole",
-			Name:     "open-cluster-management:klusterlet-work-sa:agent:olm-edit",
+			Name:     OCMKlusterletName,
 		},
 	}
 }
 
-func operatorGroup(namespaceName string) *operatorsv1.OperatorGroup {
+func OperatorGroup(namespaceName string) *operatorsv1.OperatorGroup {
 	return &operatorsv1.OperatorGroup{
 		TypeMeta:   metav1.TypeMeta{Kind: "OperatorGroup", APIVersion: "operators.coreos.com/v1"},
-		ObjectMeta: metav1.ObjectMeta{Name: "ramen-operator-group", Namespace: namespaceName},
+		ObjectMeta: metav1.ObjectMeta{Name: ramenOperatorGroupName, Namespace: namespaceName},
 	}
 }
 
-func subscription(
+func Subscription(
 	namespaceName string,
 	channelName string,
 	packageName string,

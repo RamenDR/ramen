@@ -235,7 +235,7 @@ func NamespaceName() string {
 	return os.Getenv("POD_NAMESPACE")
 }
 
-func drClusterOperatorChannelNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
+func DrClusterOperatorChannelNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
 	if ramenConfig.DrClusterOperator.ChannelName == "" {
 		return drClusterOperatorChannelNameDefault
 	}
@@ -243,7 +243,7 @@ func drClusterOperatorChannelNameOrDefault(ramenConfig *ramendrv1alpha1.RamenCon
 	return ramenConfig.DrClusterOperator.ChannelName
 }
 
-func drClusterOperatorPackageNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
+func DrClusterOperatorPackageNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
 	if ramenConfig.DrClusterOperator.PackageName == "" {
 		return drClusterOperatorPackageNameDefault
 	}
@@ -251,7 +251,7 @@ func drClusterOperatorPackageNameOrDefault(ramenConfig *ramendrv1alpha1.RamenCon
 	return ramenConfig.DrClusterOperator.PackageName
 }
 
-func drClusterOperatorNamespaceNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
+func DrClusterOperatorNamespaceNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
 	if ramenConfig.DrClusterOperator.NamespaceName == "" {
 		return NamespaceName()
 	}
@@ -259,7 +259,7 @@ func drClusterOperatorNamespaceNameOrDefault(ramenConfig *ramendrv1alpha1.RamenC
 	return ramenConfig.DrClusterOperator.NamespaceName
 }
 
-func drClusterOperatorCatalogSourceNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
+func DrClusterOperatorCatalogSourceNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
 	if ramenConfig.DrClusterOperator.CatalogSourceName == "" {
 		return drClusterOperatorCatalogSourceNameDefault
 	}
@@ -267,7 +267,7 @@ func drClusterOperatorCatalogSourceNameOrDefault(ramenConfig *ramendrv1alpha1.Ra
 	return ramenConfig.DrClusterOperator.CatalogSourceName
 }
 
-func drClusterOperatorCatalogSourceNamespaceNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
+func DrClusterOperatorCatalogSourceNamespaceNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
 	if ramenConfig.DrClusterOperator.CatalogSourceNamespaceName == "" {
 		return NamespaceName()
 	}
@@ -275,7 +275,7 @@ func drClusterOperatorCatalogSourceNamespaceNameOrDefault(ramenConfig *ramendrv1
 	return ramenConfig.DrClusterOperator.CatalogSourceNamespaceName
 }
 
-func drClusterOperatorClusterServiceVersionNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
+func DrClusterOperatorClusterServiceVersionNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
 	if ramenConfig.DrClusterOperator.ClusterServiceVersionName == "" {
 		return drClusterOperatorClusterServiceVersionNameDefault
 	}

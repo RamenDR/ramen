@@ -9,8 +9,11 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	operatorsv1 "github.com/operator-framework/api/pkg/operators/v1"
+	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	errorswrapper "github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -32,6 +35,21 @@ type ManagedClusterViewGetter interface {
 	GetNFFromManagedCluster(
 		resourceName, resourceNamespace, managedCluster string,
 		annotations map[string]string) (*csiaddonsv1alpha1.NetworkFence, error)
+
+	GetConfigMapFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
+		annotations map[string]string) (*corev1.ConfigMap, error)
+
+	GetOperatorGroupFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
+		annotations map[string]string) (*operatorsv1.OperatorGroup, error)
+
+	GetOlmRoleBindingFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
+		annotations map[string]string) (*rbacv1.RoleBinding, error)
+
+	GetOlmClusterRoleFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
+		annotations map[string]string) (*rbacv1.ClusterRole, error)
+
+	GetSubscriptionFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
+		annotations map[string]string) (*operatorsv1alpha1.Subscription, error)
 
 	GetNamespaceFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
 		annotations map[string]string) (*corev1.Namespace, error)
@@ -96,6 +114,129 @@ func (m ManagedClusterViewGetterImpl) GetNFFromManagedCluster(resourceName, reso
 	err := m.getManagedClusterResource(mcvMeta, mcvViewscope, nf, logger)
 
 	return nf, err
+}
+
+func (m ManagedClusterViewGetterImpl) GetConfigMapFromManagedCluster(resourceName, resourceNamespace,
+	managedCluster string, annotations map[string]string) (*corev1.ConfigMap, error) {
+	logger := ctrl.Log.WithName("MCV").WithValues("resourceName", resourceName)
+
+	mcvMeta := metav1.ObjectMeta{
+		Name:      BuildManagedClusterViewName(resourceName, resourceNamespace, "ramen-configmap"),
+		Namespace: managedCluster,
+	}
+
+	if annotations != nil {
+		mcvMeta.Annotations = annotations
+	}
+
+	mcvscope := viewv1beta1.ViewScope{
+		Resource:  "ConfigMap",
+		Name:      resourceName,
+		Namespace: resourceNamespace,
+	}
+
+	rmnConfigMap := &corev1.ConfigMap{}
+
+	err := m.getManagedClusterResource(mcvMeta, mcvscope, rmnConfigMap, logger)
+
+	return rmnConfigMap, err
+
+}
+
+func (m ManagedClusterViewGetterImpl) GetOperatorGroupFromManagedCluster(resourceName, resourceNamespace,
+	managedCluster string, annotations map[string]string) (*operatorsv1.OperatorGroup, error) {
+
+	logger := ctrl.Log.WithName("MCV").WithValues("resourceName", resourceName)
+
+	mcvMeta := metav1.ObjectMeta{
+		Name:      BuildManagedClusterViewName(resourceName, resourceNamespace, "ramen-operatorgroup"),
+		Namespace: managedCluster,
+	}
+
+	mcvscope := viewv1beta1.ViewScope{
+		Resource:  "OperatorGroup",
+		Name:      resourceName,
+		Namespace: resourceNamespace,
+	}
+
+	rmnOperatorGroup := &operatorsv1.OperatorGroup{}
+
+	err := m.getManagedClusterResource(mcvMeta, mcvscope, rmnOperatorGroup, logger)
+
+	return rmnOperatorGroup, err
+
+}
+
+func (m ManagedClusterViewGetterImpl) GetOlmRoleBindingFromManagedCluster(resourceName, resourceNamespace,
+	managedCluster string, annotations map[string]string) (*rbacv1.RoleBinding, error) {
+
+	logger := ctrl.Log.WithName("MCV").WithValues("resourceName", resourceName)
+
+	mcvMeta := metav1.ObjectMeta{
+		Name:      BuildManagedClusterViewName(resourceName, resourceNamespace, "ramen-rolebinding"),
+		Namespace: managedCluster,
+	}
+
+	mcvscope := viewv1beta1.ViewScope{
+		Resource:  "RoleBinding",
+		Name:      resourceName,
+		Namespace: resourceNamespace,
+	}
+
+	rmnRolebinding := &rbacv1.RoleBinding{}
+
+	err := m.getManagedClusterResource(mcvMeta, mcvscope, rmnRolebinding, logger)
+
+	return rmnRolebinding, err
+
+}
+
+func (m ManagedClusterViewGetterImpl) GetOlmClusterRoleFromManagedCluster(resourceName, resourceNamespace,
+	managedCluster string, annotations map[string]string) (*rbacv1.ClusterRole, error) {
+
+	logger := ctrl.Log.WithName("MCV").WithValues("resourceName", resourceName)
+
+	mcvMeta := metav1.ObjectMeta{
+		Name:      BuildManagedClusterViewName(resourceName, resourceNamespace, "ramen-clusterRole"),
+		Namespace: managedCluster,
+	}
+
+	mcvscope := viewv1beta1.ViewScope{
+		Resource:  "ClusterRole",
+		Name:      resourceName,
+		Namespace: resourceNamespace,
+	}
+
+	rmnOlmClusterRole := &rbacv1.ClusterRole{}
+
+	err := m.getManagedClusterResource(mcvMeta, mcvscope, rmnOlmClusterRole, logger)
+
+	return rmnOlmClusterRole, err
+
+}
+
+func (m ManagedClusterViewGetterImpl) GetSubscriptionFromManagedCluster(resourceName, resourceNamespace,
+	managedCluster string, annotations map[string]string) (*operatorsv1alpha1.Subscription, error) {
+
+	logger := ctrl.Log.WithName("MCV").WithValues("resourceName", resourceName)
+
+	mcvMeta := metav1.ObjectMeta{
+		Name:      BuildManagedClusterViewName(resourceName, resourceNamespace, "ramen-subscription"),
+		Namespace: managedCluster,
+	}
+
+	mcvscope := viewv1beta1.ViewScope{
+		Resource:  "Subscription",
+		Name:      resourceName,
+		Namespace: resourceNamespace,
+	}
+
+	rmnSubscription := &operatorsv1alpha1.Subscription{}
+
+	err := m.getManagedClusterResource(mcvMeta, mcvscope, rmnSubscription, logger)
+
+	return rmnSubscription, err
+
 }
 
 // outputs a string for use in creating a ManagedClusterView name

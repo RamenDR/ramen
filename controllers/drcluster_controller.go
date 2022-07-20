@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/ghodss/yaml"
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -67,6 +68,8 @@ const (
 
 const (
 	DRClusterNameAnnotation = "drcluster.ramendr.openshift.io/drcluster-name"
+	ramenOperatorGroupName  = "ramen-operator-group"
+	OCMKlusterletName       = "open-cluster-management:klusterlet-work-sa:agent:olm-edit"
 )
 
 //nolint:lll
@@ -109,6 +112,7 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("config map get: %w", u.validatedSetFalseAndUpdate("ConfigMapGetFailed", err))
 	}
+	u.ramenConfig = ramenConfig
 
 	if !u.object.ObjectMeta.DeletionTimestamp.IsZero() {
 		return r.processDeletion(u)
@@ -122,6 +126,13 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	if err := drClusterDeploy(u, ramenConfig); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drclusters deploy: %w", u.validatedSetFalseAndUpdate("DrClustersDeployFailed", err))
+	}
+
+	if err := u.getDRClusterDeployedStatus(); err != nil {
+		// return ctrl.Result{}, fmt.Errorf("drcluster deploy validate: %w",
+		// 	u.validatedSetFalseAndUpdate("DrClusterDeployValidationFailed", err))
+		u.validatedSetFalseAndUpdate("DrClusterDeployValidationFailed", err)
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	if err = validateCIDRsFormat(drcluster, log); err != nil {
@@ -163,6 +174,215 @@ func (u *drclusterInstance) initializeStatus() {
 		setDRClusterInitialCondition(&u.object.Status.Conditions, u.object.Generation, msg)
 		u.setDRClusterPhase(ramen.Starting)
 	}
+}
+
+func (u *drclusterInstance) getDRClusterDeployedStatus() error {
+	drClusterOperatorNamespaceName := DrClusterOperatorNamespaceNameOrDefault(u.ramenConfig)
+
+	// mcv operation for ramenconfigmap
+	err := u.getRamenConfigDeployedStatus(drClusterOperatorNamespaceName)
+	if err != nil {
+		return fmt.Errorf("RamenConfigDeployFailed: %v", err)
+	}
+
+	// mcv operation for operatorGroup
+	err = u.getOperatorGroupDeployedStatus(drClusterOperatorNamespaceName)
+	if err != nil {
+		return fmt.Errorf("OperatorGroupDeployFailed: %v", err)
+	}
+
+	// mcv operation for OLMrolebinding
+	err = u.getOlmRoleBindingDeployedStatus(drClusterOperatorNamespaceName)
+	if err != nil {
+		return fmt.Errorf("OlmRoleBindingDeployFailed: %v", err)
+	}
+
+	// mcv operation for OlmClusterRole
+	err = u.getOlmClusterRoleDeployedStatus(drClusterOperatorNamespaceName)
+	if err != nil {
+		return fmt.Errorf("OlmClusterRoleDeployFailed: %v", err)
+	}
+
+	// mcv operation for GetNamespaceFromManagedCluster
+	err = u.getNameSpaceDeployedStatus(drClusterOperatorNamespaceName)
+	if err != nil {
+		return fmt.Errorf("NameSpaceDeployFailed: %v", err)
+	}
+
+	// mcv operation for Subscription
+	err = u.getSubscriptionDeployedStatus(drClusterOperatorNamespaceName)
+	if err != nil {
+		return fmt.Errorf("SubscriptionDeployFailed: %v", err)
+	}
+
+	return nil
+
+}
+
+func (u *drclusterInstance) getRamenConfigDeployedStatus(nameSpaceName string) error {
+	ConfigmapFromManagedCluster, err := u.reconciler.MCVGetter.GetConfigMapFromManagedCluster(
+		drClusterOperatorConfigMapName, nameSpaceName, u.object.Name, nil)
+	if err != nil {
+		return fmt.Errorf("failed to get configmap from managedcluster using MCV: %w", err)
+	}
+
+	ramenConfigFromManagedCluster := &ramen.RamenConfig{}
+	err = yaml.Unmarshal([]byte(ConfigmapFromManagedCluster.Data[ConfigMapRamenConfigKeyName]), ramenConfigFromManagedCluster)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal configmap from managedcluster: %w", err)
+	}
+	// compare ramenconfig from hub and ramenconfig from managedcluster
+	if ramenConfigFromManagedCluster.RamenControllerType != ramen.DRClusterType {
+		return fmt.Errorf("ramenControllerType is invalid: expected: %v got %v",
+			ramen.DRClusterType, ramenConfigFromManagedCluster.RamenControllerType)
+	}
+	if ramenConfigFromManagedCluster.VolSync != u.ramenConfig.VolSync {
+		return fmt.Errorf("volsync mismatch")
+	}
+	if !reflect.DeepEqual(ramenConfigFromManagedCluster.S3StoreProfiles, u.ramenConfig.S3StoreProfiles) {
+		return fmt.Errorf("s3profiles mismatch")
+	}
+	return nil
+}
+
+func (u *drclusterInstance) getOperatorGroupDeployedStatus(nameSpaceName string) error {
+	operatorGroupFromManagedCluster, err := u.reconciler.MCVGetter.GetOperatorGroupFromManagedCluster(
+		ramenOperatorGroupName, nameSpaceName, u.object.Name, nil)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return fmt.Errorf("operatorgroup mcv not found: %w", err)
+		}
+		return fmt.Errorf("error getting operatorGroup: %w", err)
+	}
+
+	operatorGroup := OperatorGroup(nameSpaceName)
+	if operatorGroupFromManagedCluster.Kind != operatorGroup.Kind {
+		return fmt.Errorf("got invalid operatorGroup kind")
+	}
+
+	if operatorGroupFromManagedCluster.ObjectMeta.Name != operatorGroup.Name {
+		return fmt.Errorf("operatorgroup name mismatch")
+	}
+
+	if operatorGroupFromManagedCluster.ObjectMeta.Namespace != nameSpaceName {
+		return fmt.Errorf("NamespacedName mismatch: got %v, expected: %v",
+			operatorGroupFromManagedCluster.ObjectMeta.Namespace, nameSpaceName)
+	}
+
+	return nil
+}
+
+func (u *drclusterInstance) getOlmRoleBindingDeployedStatus(nameSpaceName string) error {
+
+	olmRoleBindingFromManagedCluster, err := u.reconciler.MCVGetter.GetOlmRoleBindingFromManagedCluster(
+		OCMKlusterletName, nameSpaceName, u.object.Name, nil)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return fmt.Errorf("rolebinding mcv not found: %w", err)
+		}
+		return fmt.Errorf("error getting rolebinding using mcv: %w", err)
+	}
+
+	olmRoleBinding := OlmRoleBinding(nameSpaceName)
+	if olmRoleBindingFromManagedCluster.Kind != olmRoleBinding.Kind {
+		return fmt.Errorf("olmrolebinding Kind mismatch")
+	}
+
+	if olmRoleBindingFromManagedCluster.Namespace != nameSpaceName {
+		return fmt.Errorf("rolebinding mismatch in namespace")
+	}
+
+	if !reflect.DeepEqual(olmRoleBindingFromManagedCluster.RoleRef, olmRoleBinding.RoleRef) {
+		return fmt.Errorf("olmroleRef mismatch")
+	}
+
+	if !reflect.DeepEqual(olmRoleBindingFromManagedCluster.Subjects, olmRoleBinding.Subjects) {
+		return fmt.Errorf("olm rolebinding subjects mismatch")
+	}
+
+	return nil
+}
+
+func (u *drclusterInstance) getOlmClusterRoleDeployedStatus(nameSpaceName string) error {
+
+	olmClusterRoleFromManagedCluster, err := u.reconciler.MCVGetter.GetOlmClusterRoleFromManagedCluster(
+		OCMKlusterletName, nameSpaceName, u.object.Name, nil)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return fmt.Errorf("ClusterRole MCV not found: %w", err)
+		}
+		return fmt.Errorf("error getting clusterRole using MCV: %w", err)
+	}
+
+	if olmClusterRoleFromManagedCluster.Kind != OlmClusterRole.Kind {
+		return fmt.Errorf("OlmClusterRole Kind is invalid")
+	}
+
+	if olmClusterRoleFromManagedCluster.Name != OCMKlusterletName {
+		return fmt.Errorf("OlmClusterName is invalid")
+	}
+
+	if !reflect.DeepEqual(olmClusterRoleFromManagedCluster.Rules, OlmClusterRole.Rules) {
+		return fmt.Errorf("OlmRules did not match, got: %v, expected: %v",
+			olmClusterRoleFromManagedCluster.Rules, OlmClusterRole.Rules)
+	}
+
+	return nil
+}
+
+func (u *drclusterInstance) getNameSpaceDeployedStatus(nameSpaceName string) error {
+
+	nameSpaceFromManagedCluster, err := u.reconciler.MCVGetter.GetNamespaceFromManagedCluster(
+		nameSpaceName, u.object.Name, nameSpaceName, nil)
+
+	nameSpace := util.Namespace(nameSpaceName)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return fmt.Errorf("NameSpace MCV not found: %w", err)
+		}
+		return fmt.Errorf("Error getting Namespace using MCV: %w", err)
+	}
+
+	if nameSpaceFromManagedCluster.Kind != nameSpace.Kind {
+		return fmt.Errorf("Namespace Kind did not match")
+	}
+
+	if nameSpaceFromManagedCluster.Name != nameSpace.Name {
+		return fmt.Errorf("NameSpace name did not match, got: %v expected: %v",
+			nameSpaceFromManagedCluster.Name, nameSpace.Name)
+	}
+
+	return nil
+}
+
+func (u *drclusterInstance) getSubscriptionDeployedStatus(nameSpaceName string) error {
+	ramenDRClusterSubscriptionName := "ramen-dr-cluster-subscription"
+	subscriptionFromManagedCluster, err := u.reconciler.MCVGetter.GetSubscriptionFromManagedCluster(
+		ramenDRClusterSubscriptionName, nameSpaceName, u.object.Name, nil)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return fmt.Errorf("subscription not found: %w", err)
+		}
+		return fmt.Errorf("error getting subscription using mcv: %w", err)
+	}
+
+	mwSub, err := SubscriptionFromDrClusterManifestWork(u.mwUtil, u.object.Name)
+	if err != nil {
+		return err
+	}
+	if mwSub == nil {
+		return nil
+	}
+
+	if !reflect.DeepEqual(mwSub.Spec, subscriptionFromManagedCluster.Spec) {
+		errMsg := "Subscription Spec Mismatch"
+		u.log.Info(fmt.Sprintf("%v: expected: %v got: %v", errMsg, *mwSub.Spec, *subscriptionFromManagedCluster.Spec))
+		return fmt.Errorf(errMsg)
+	}
+	return nil
+
 }
 
 func validateS3Profile(ctx context.Context, apiReader client.Reader,
@@ -250,6 +470,7 @@ type drclusterInstance struct {
 	reconciler          *DRClusterReconciler
 	savedInstanceStatus ramen.DRClusterStatus
 	mwUtil              *util.MWUtil
+	ramenConfig         *ramen.RamenConfig
 }
 
 func (u *drclusterInstance) validatedSetFalseAndUpdate(reason string, err error) error {

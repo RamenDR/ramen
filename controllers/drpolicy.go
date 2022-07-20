@@ -64,7 +64,7 @@ func drClusterSecretsDeploy(
 			secretName,
 			clusterName,
 			NamespaceName(),
-			drClusterOperatorNamespaceNameOrDefault(rmnCfg)); err != nil {
+			DrClusterOperatorNamespaceNameOrDefault(rmnCfg)); err != nil {
 			return fmt.Errorf("drcluster '%v' secret add '%v': %w", clusterName, secretName, err)
 		}
 	}
