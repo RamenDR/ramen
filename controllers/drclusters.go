@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"encoding/json"
 	"fmt"
 
 	operatorsv1 "github.com/operator-framework/api/pkg/operators/v1"
@@ -25,6 +26,7 @@ import (
 	"github.com/ramendr/ramen/controllers/util"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
@@ -38,6 +40,11 @@ func drClusterDeploy(drcluster *rmn.DRCluster, mwu *util.MWUtil, ramenConfig *rm
 		if err != nil {
 			return err
 		}
+
+		objects, err = appendSubscriptionObject(drcluster, mwu, ramenConfig, objects)
+		if err != nil {
+			return err
+		}
 	}
 
 	annotations := make(map[string]string)
@@ -45,6 +52,41 @@ func drClusterDeploy(drcluster *rmn.DRCluster, mwu *util.MWUtil, ramenConfig *rm
 	annotations["DRClusterName"] = mwu.InstName
 
 	return mwu.CreateOrUpdateDrClusterManifestWork(drcluster.Name, objects, annotations)
+}
+
+func appendSubscriptionObject(
+	drcluster *rmn.DRCluster,
+	mwu *util.MWUtil,
+	ramenConfig *rmn.RamenConfig,
+	objects []interface{}) ([]interface{}, error) {
+	mwSub, err := SubscriptionFromDrClusterManifestWork(mwu, drcluster.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	if mwSub != nil {
+		// If Subscription spec, other than CSV version is the same, use existing Subscription object to allow
+		// upgrades to later CSV versions as they appear on the managed clusters (instead of forcing it to
+		// a later CSV version as the channel may not yet be up to date on the managed cluster).
+		// As we create Subscriptions with automatic install plans, when a later version is available it would
+		// automatically update to the same.
+		if mwSub.Spec.Channel == drClusterOperatorChannelNameOrDefault(ramenConfig) &&
+			mwSub.Spec.CatalogSource == drClusterOperatorCatalogSourceNameOrDefault(ramenConfig) &&
+			mwSub.Spec.CatalogSourceNamespace == drClusterOperatorCatalogSourceNamespaceNameOrDefault(ramenConfig) &&
+			mwSub.Spec.Package == drClusterOperatorPackageNameOrDefault(ramenConfig) {
+			return append(objects, mwSub), nil
+		}
+	}
+
+	return append(objects,
+		subscription(
+			drClusterOperatorNamespaceNameOrDefault(ramenConfig),
+			drClusterOperatorChannelNameOrDefault(ramenConfig),
+			drClusterOperatorPackageNameOrDefault(ramenConfig),
+			drClusterOperatorCatalogSourceNameOrDefault(ramenConfig),
+			drClusterOperatorCatalogSourceNamespaceNameOrDefault(ramenConfig),
+			drClusterOperatorClusterServiceVersionNameOrDefault(ramenConfig),
+		)), nil
 }
 
 var olmClusterRole = &rbacv1.ClusterRole{
@@ -82,14 +124,6 @@ func objectsToDeploy(hubOperatorRamenConfig *rmn.RamenConfig) ([]interface{}, er
 		olmClusterRole,
 		olmRoleBinding(drClusterOperatorNamespaceName),
 		operatorGroup(drClusterOperatorNamespaceName),
-		subscription(
-			drClusterOperatorNamespaceName,
-			drClusterOperatorChannelNameOrDefault(ramenConfig),
-			drClusterOperatorPackageNameOrDefault(ramenConfig),
-			drClusterOperatorCatalogSourceNameOrDefault(ramenConfig),
-			drClusterOperatorCatalogSourceNamespaceNameOrDefault(ramenConfig),
-			drClusterOperatorClusterServiceVersionNameOrDefault(ramenConfig),
-		),
 		drClusterOperatorConfigMap,
 	), nil
 }
@@ -143,6 +177,43 @@ func subscription(
 			InstallPlanApproval:    "Automatic",
 		},
 	}
+}
+
+func SubscriptionFromDrClusterManifestWork(
+	mwu *util.MWUtil,
+	clusterName string) (*operatorsv1alpha1.Subscription, error) {
+	mw, err := mwu.GetDrClusterManifestWork(clusterName)
+	if err != nil {
+		return nil, fmt.Errorf("failed fetching cluster manifest work %w", err)
+	}
+
+	if mw == nil {
+		return nil, nil
+	}
+
+	gvk := schema.GroupVersionKind{
+		Group:   operatorsv1alpha1.GroupName,
+		Version: operatorsv1alpha1.GroupVersion,
+		Kind:    "Subscription",
+	}
+
+	subRaw, err := mwu.GetRawExtension(mw.Spec.Workload.Manifests, gvk, "ramen-dr-cluster-subscription", clusterName)
+	if err != nil {
+		return nil, fmt.Errorf("failed fetching subscription from cluster '%v' manifest %w", clusterName, err)
+	}
+
+	if subRaw == nil {
+		return nil, nil
+	}
+
+	subscription := &operatorsv1alpha1.Subscription{}
+
+	err = json.Unmarshal(subRaw.Raw, subscription)
+	if err != nil {
+		return nil, fmt.Errorf("failed unmarshaling subscription manifest for cluster '%v' %w", clusterName, err)
+	}
+
+	return subscription, nil
 }
 
 func drClusterUndeploy(drcluster *rmn.DRCluster, mwu *util.MWUtil) error {
