@@ -459,6 +459,31 @@ var _ = Describe("DRClusterController", func() {
 					Ignore(), ramen.DRClusterConditionTypeFenced)
 			})
 		})
+		When("provided Fencing value is Fenced and the s3 validation fails", func() {
+			It("reports fenced with reason Fencing success but validated condition should be false", func() {
+				drcluster.Spec.ClusterFence = "Fenced"
+				drcluster.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
+				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
+				drclusterConditionExpect(drcluster, false, metav1.ConditionTrue,
+					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
+					ramen.DRClusterConditionTypeFenced)
+			})
+		})
+		When("provided Fencing value is Unfenced", func() {
+			It("reports Unfenced false with status fenced as false", func() {
+				drcluster.Spec.ClusterFence = "Unfenced"
+				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
+				// When Unfence is set, DRCluster controller first unfences the
+				// cluster (i.e. itself through a peer cluster) and then cleans
+				// up the fencing resource. So, by the time this check is made,
+				// either the cluster should have been unfenced or completely
+				// cleaned
+				drclusterConditionExpect(drcluster, false, metav1.ConditionFalse,
+					BeElementOf(controllers.DRClusterConditionReasonUnfenced, controllers.DRClusterConditionReasonCleaning,
+						controllers.DRClusterConditionReasonClean),
+					Ignore(), ramen.DRClusterConditionTypeFenced)
+			})
+		})
 		When("provided Fencing value is empty", func() {
 			It("reports validated with status fencing as Unfenced", func() {
 				drcluster.Spec.ClusterFence = ""
