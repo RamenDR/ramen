@@ -369,7 +369,9 @@ rules:
   verbs:
   - create
   - delete
+  - deletecollection
   - get
+  - list
   - patch
   - update
 - apiGroups:
@@ -379,6 +381,7 @@ rules:
   verbs:
   - create
   - delete
+  - deletecollection
   - get
   - patch
   - update
@@ -409,7 +412,9 @@ rules:
   verbs:
   - create
   - delete
+  - deletecollection
   - get
+  - list
   - patch
   - update
 - apiGroups:
