@@ -185,15 +185,16 @@ velero_backup_test()
 }
 velero_restore_test()
 {
-	velero_deploy $1
+#	velero_deploy $1
 	velero_restore_backup $1 $(minikube_minio_url $1) $s3_username $s3_password $s3_bucket_name $1
 #	velero_undeploy $1
 }
 velero_test()
 {
-	set -- hub cluster1 default
+	set -- cluster2 cluster2 default
+	set -- cluster1 cluster2 default
 	velero_backup_test $1 $2 $3
-#	velero_restore_test $2
+	velero_restore_test $2
 }
 velero_objects_get()
 {

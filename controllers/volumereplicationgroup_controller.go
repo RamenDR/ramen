@@ -801,8 +801,7 @@ func (v *VRGInstance) reconcileAsPrimary() ctrl.Result {
 	}
 
 	v.reconcileVolRepsAsPrimary(&result.Requeue)
-	v.kubeObjectsProtectIfDue(&result)
-	v.vrgObjectProtect(&result.Requeue)
+	v.kubeObjectsProtect(&result)
 
 	return result
 }

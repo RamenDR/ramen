@@ -2,12 +2,11 @@ apiVersion: ramendr.openshift.io/v1alpha1
 kind: VolumeReplicationGroup
 metadata:
   name: volumereplicationgroup-sample
-  namespace: velero-test
 spec:
+  replicationState: "primary"
   pvcSelector:
     matchLabels:
       any-pvc-label: value
-  replicationState: "Primary"
   s3Profiles:
     - s3-profile-of-east
     - s3-profile-of-west
@@ -16,9 +15,9 @@ spec:
     schedulingInterval: "10m"
   sync:
     mode: Disabled
-  replicationState: "primary"
   kubeObjectProtection:
-    resourceCaptureOrder:
+    captureInterval: 1m
+    captureOrder:
       - name: config  # backup Names should be unique
         includedResources: ["ConfigMap", "Secret"]
       - name: cpd
@@ -30,7 +29,7 @@ spec:
       - name: everything
         includeClusterResources: true
         excludedResources: [""]  # include everything with no history, even resources in other backups
-    resourceRecoveryOrder:
+    recoverOrder:
       - backupName: config # API server required matching to backup struct
         includeClusterResources: true
         includedResources: ["ConfigMap", "Secret"]

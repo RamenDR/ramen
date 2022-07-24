@@ -14,21 +14,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// +kubebuilder:rbac:groups=velero.io,resources=backups,verbs=create;delete;get;patch;update
-// +kubebuilder:rbac:groups=velero.io,resources=backupstoragelocations,verbs=create;delete;get;patch;update
+// nolint: lll
+// +kubebuilder:rbac:groups=velero.io,resources=backups,verbs=create;delete;deletecollection;get;list;patch;update
+// +kubebuilder:rbac:groups=velero.io,resources=backupstoragelocations,verbs=create;delete;deletecollection;get;patch;update
 // +kubebuilder:rbac:groups=velero.io,resources=deletebackuprequests,verbs=create;delete;get;patch;update
 // +kubebuilder:rbac:groups=velero.io,resources=downloadrequests,verbs=create;delete;get;patch;update
-// +kubebuilder:rbac:groups=velero.io,resources=restores,verbs=create;delete;get;patch;update
+// +kubebuilder:rbac:groups=velero.io,resources=restores,verbs=create;delete;deletecollection;get;list;patch;update
 
 package controllers
 
 import (
 	"context"
 	"errors"
-	"fmt"
-	"net/url"
-	"strconv"
-	"strings"
 
 	"github.com/go-logr/logr"
 	pkgerrors "github.com/pkg/errors"
@@ -41,7 +38,114 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func kubeObjectsRecover(
+const (
+	KubeObjectsPath         = "velero/"
+	KubeObjectsCapturesPath = KubeObjectsPath + "backups/"
+	KubeObjectsRecoversPath = KubeObjectsPath + "restores/"
+)
+
+type (
+	KubeObjectsProtectRequest interface{ KubeObjectsRequest }
+	KubeObjectsRecoverRequest interface{ KubeObjectsRequest }
+)
+
+type KubeObjectsRequest interface {
+	StartTime() metav1.Time
+	EndTime() metav1.Time
+	Deallocate(context.Context, client.Writer, logr.Logger) error
+}
+
+type KubeObjectsRequests interface {
+	Count() int
+	Get(i int) KubeObjectsRequest
+}
+
+type (
+	veleroBackupRequest  struct{ backup *velero.Backup }
+	veleroRestoreRequest struct{ restore *velero.Restore }
+)
+
+func (r veleroBackupRequest) Name() string            { return r.backup.Name }
+func (r veleroRestoreRequest) Name() string           { return r.restore.Name }
+func (r veleroBackupRequest) StartTime() metav1.Time  { return *r.backup.Status.StartTimestamp }
+func (r veleroRestoreRequest) StartTime() metav1.Time { return *r.restore.Status.StartTimestamp }
+func (r veleroBackupRequest) EndTime() metav1.Time    { return *r.backup.Status.CompletionTimestamp }
+func (r veleroRestoreRequest) EndTime() metav1.Time   { return *r.restore.Status.CompletionTimestamp }
+
+type (
+	veleroBackupRequests  struct{ backups *velero.BackupList }
+	veleroRestoreRequests struct{ restores *velero.RestoreList }
+)
+
+func (r veleroBackupRequests) Count() int  { return len(r.backups.Items) }
+func (r veleroRestoreRequests) Count() int { return len(r.restores.Items) }
+func (r veleroBackupRequests) Get(i int) KubeObjectsRequest {
+	return veleroBackupRequest{&r.backups.Items[i]}
+}
+
+func (r veleroRestoreRequests) Get(i int) KubeObjectsRequest {
+	return veleroRestoreRequest{&r.restores.Items[i]}
+}
+
+func KubeObjectsCaptureRequestsGet(
+	ctx context.Context,
+	reader client.Reader,
+	requestNamespaceName string,
+	labelKey, labelValue string,
+) (KubeObjectsRequests, error) {
+	requests := veleroBackupRequests{&velero.BackupList{}}
+
+	return requests, reader.List(ctx, requests.backups,
+		client.InNamespace(requestNamespaceName),
+		client.MatchingLabels{labelKey: labelValue},
+	)
+}
+
+func KubeObjectsRecoverRequestsGet(
+	ctx context.Context,
+	reader client.Reader,
+	requestNamespaceName string,
+	labelKey, labelValue string,
+) (KubeObjectsRequests, error) {
+	requests := veleroRestoreRequests{&velero.RestoreList{}}
+
+	return requests, reader.List(ctx, requests.restores,
+		client.InNamespace(requestNamespaceName),
+		client.MatchingLabels{labelKey: labelValue},
+	)
+}
+
+func KubeObjectsCaptureRequestsDelete(
+	ctx context.Context,
+	writer client.Writer,
+	requestNamespaceName string,
+	labelKey, labelValue string,
+) error {
+	options := []client.DeleteAllOfOption{
+		client.InNamespace(requestNamespaceName),
+		client.MatchingLabels{labelKey: labelValue},
+	}
+
+	if err := writer.DeleteAllOf(ctx, &velero.BackupStorageLocation{}, options...); err != nil {
+		return pkgerrors.Wrap(err, "backup capture requests delete")
+	}
+
+	return writer.DeleteAllOf(ctx, &velero.Backup{}, options...)
+}
+
+func KubeObjectsRecoverRequestsDelete(
+	ctx context.Context,
+	writer client.Writer,
+	requestNamespaceName string,
+	labelKey, labelValue string,
+) error {
+	return writer.DeleteAllOf(ctx, &velero.Restore{},
+		client.InNamespace(requestNamespaceName),
+		client.MatchingLabels{labelKey: labelValue},
+	)
+}
+
+func KubeObjectsRecover(
 	ctx context.Context,
 	writer client.Writer,
 	reader client.Reader,
@@ -49,46 +153,47 @@ func kubeObjectsRecover(
 	s3Url string,
 	s3BucketName string,
 	s3KeyPrefix string,
-	sourceNamespacedName types.NamespacedName,
+	sourceNamespaceName string,
 	targetNamespaceName string,
-	restoreSpec ramendrv1alpha1.ResourceRecoveryGroupSpec,
-	index int,
-	captureNumber int64,
-) error {
-	log.Info("kube objects recover",
+	objectsSpec ramendrv1alpha1.KubeObjectsSpec,
+	requestNamespaceName string,
+	captureName string,
+	recoverName string,
+	labelKey, captureLabelValue, recoverLabelValue string,
+) (KubeObjectsRecoverRequest, error) {
+	log.Info("Kube objects recover",
 		"s3 url", s3Url,
 		"s3 bucket", s3BucketName,
 		"s3 key prefix", s3KeyPrefix,
-		"source namespace", sourceNamespacedName.Namespace,
+		"source namespace", sourceNamespaceName,
 		"target namespace", targetNamespaceName,
-		"capture number", captureNumber,
+		"request namespace", requestNamespaceName,
+		"capture name", captureName,
+		"recover name", recoverName,
+		"label key", labelKey,
+		"capture label value", captureLabelValue,
+		"recover label value", recoverLabelValue,
 	)
 
-	// generate backup name
-	restoreNamespacedName := getBackupNamespacedName(sourceNamespacedName.Name,
-		sourceNamespacedName.Namespace, fmt.Sprintf("%d", index), captureNumber)
-
-	backupNamespacedName := getBackupNamespacedName(sourceNamespacedName.Name,
-		sourceNamespacedName.Namespace, restoreSpec.BackupName, captureNumber)
-
-	return backupDummyCreateAndIfAlreadyExistsThenRestore(
-		restoreNamespacedName,
-		backupNamespacedName,
+	restore, err := backupDummyCreateAndRestore(
 		objectWriter{ctx: ctx, Writer: writer, log: log},
 		reader,
 		s3Url,
 		s3BucketName,
 		s3KeyPrefix,
-		sourceNamespacedName.Namespace,
+		sourceNamespaceName,
 		targetNamespaceName,
-		restoreSpec,
-		captureNumber,
+		objectsSpec,
+		requestNamespaceName,
+		captureName,
+		recoverName,
+		labelKey, captureLabelValue, recoverLabelValue,
 	)
+
+	return veleroRestoreRequest{restore}, err
 }
 
-func backupDummyCreateAndIfAlreadyExistsThenRestore(
-	restoreNamespacedName types.NamespacedName,
-	backupNamespacedName types.NamespacedName,
+func backupDummyCreateAndRestore(
 	w objectWriter,
 	reader client.Reader,
 	s3Url string,
@@ -96,61 +201,55 @@ func backupDummyCreateAndIfAlreadyExistsThenRestore(
 	s3KeyPrefix string,
 	sourceNamespaceName string,
 	targetNamespaceName string,
-	restoreSpec ramendrv1alpha1.ResourceRecoveryGroupSpec,
-	captureNumber int64,
-) error {
-	backupLocation, backup, err := w.backupCreate(
-		backupNamespacedName, s3Url, s3BucketName, s3KeyPrefix, backupSpecDummy(), sourceNamespaceName, captureNumber,
+	objectsSpec ramendrv1alpha1.KubeObjectsSpec,
+	requestNamespaceName string,
+	backupName string,
+	restoreName string,
+	labelKey, backupLabelValue, restoreLabelValue string,
+) (*velero.Restore, error) {
+	backupLocation, backup, err := backupCreate(
+		types.NamespacedName{Namespace: requestNamespaceName, Name: backupName},
+		w, reader, s3Url, s3BucketName, s3KeyPrefix, backupSpecDummy(), sourceNamespaceName,
+		labelKey, backupLabelValue,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	backupObjectNamespacedName := types.NamespacedName{
-		Name:      backupNamespacedName.Name,
-		Namespace: VeleroNamespaceNameDefault,
-	}
-	if err := reader.Get(w.ctx, backupObjectNamespacedName, backup); err != nil {
-		return pkgerrors.Wrap(err, "dummy backup get")
-	}
-
-	// checks status of dummy backup and possibly starts restore
-	return backupDummyStatusProcess(backupLocation, backup, backupNamespacedName,
-		restoreNamespacedName,
-		w, reader,
+	return backupDummyStatusProcessAndRestore(
+		backupLocation, backup, w, reader,
 		sourceNamespaceName,
 		targetNamespaceName,
-		restoreSpec,
+		objectsSpec,
+		restoreName,
+		labelKey, restoreLabelValue,
 	)
 }
 
-func backupDummyStatusProcess(
+func backupDummyStatusProcessAndRestore(
 	backupLocation *velero.BackupStorageLocation,
 	backup *velero.Backup,
-	backupNamespacedName types.NamespacedName,
-	restoreNamespacedName types.NamespacedName,
 	w objectWriter,
 	reader client.Reader,
 	sourceNamespaceName string,
 	targetNamespaceName string,
-	restoreSpec ramendrv1alpha1.ResourceRecoveryGroupSpec,
-) error {
+	objectsSpec ramendrv1alpha1.KubeObjectsSpec,
+	restoreName string,
+	labelKey, restoreLabelValue string,
+) (*velero.Restore, error) {
 	backupStatusLog(backup, w.log)
 
 	switch backup.Status.Phase {
 	case velero.BackupPhaseCompleted:
-		// deletes backup and backup object TODO delete bsl also after both are gone?
-		// disabled so successful backup status from existing object doesn't delete contents
 		fallthrough
 	case velero.BackupPhasePartiallyFailed:
 		fallthrough
 	case velero.BackupPhaseFailed:
-		// TODO if failed because backup already exists
-		w.log.Info(fmt.Sprintf("backupDummyStatusProcess: BackupPhaseFailed on '%s'. Creating restore '%s'",
-			backupNamespacedName.Name, restoreNamespacedName.Name))
-
-		return backupRestore(backupLocation, backup, restoreNamespacedName, w, reader,
-			sourceNamespaceName, targetNamespaceName, restoreSpec)
+		return backupRestore(backupLocation, backup, w, reader, sourceNamespaceName, targetNamespaceName,
+			objectsSpec,
+			restoreName,
+			labelKey, restoreLabelValue,
+		)
 	case velero.BackupPhaseNew:
 		fallthrough
 	case velero.BackupPhaseInProgress:
@@ -160,15 +259,59 @@ func backupDummyStatusProcess(
 	case velero.BackupPhaseUploadingPartialFailure:
 		fallthrough
 	case velero.BackupPhaseDeleting:
-		return errors.New("temporary: backup" + string(backup.Status.Phase))
+		return nil, errors.New("temporary: backup" + string(backup.Status.Phase))
 	case velero.BackupPhaseFailedValidation:
-		return errors.New("permanent: backup" + string(backup.Status.Phase))
+		return nil, backupRetry(backupLocation, backup, w)
 	}
 
-	return errors.New("temporary: backup.status.phase absent")
+	return nil, errors.New("temporary: backup.status.phase absent")
 }
 
-func BackupAndBackupObjectsDelete(
+func KubeObjectsCaptureRequestDelete(
+	ctx context.Context,
+	writer client.Writer,
+	log logr.Logger,
+	requestNamespaceName string,
+	captureName string,
+) error {
+	objectMeta := metav1.ObjectMeta{Namespace: requestNamespaceName, Name: captureName}
+	w := objectWriter{ctx: ctx, Writer: writer, log: log}
+
+	if err := w.objectDelete(&velero.BackupStorageLocation{ObjectMeta: objectMeta}); err != nil {
+		return err
+	}
+
+	return w.objectDelete(&velero.Backup{ObjectMeta: objectMeta})
+}
+
+func KubeObjectsCaptureDelete(
+	ctx context.Context,
+	writer client.Writer,
+	reader client.Reader,
+	log logr.Logger,
+	s3Url string,
+	s3BucketName string,
+	s3KeyPrefix string,
+	sourceNamespaceName string,
+	requestNamespaceName string,
+	captureName string,
+	labelKey, labelValue string,
+) error {
+	w := objectWriter{ctx: ctx, Writer: writer, log: log}
+	namespacedName := types.NamespacedName{Namespace: requestNamespaceName, Name: captureName}
+
+	backupLocation, backup, err := backupCreate(
+		namespacedName, w, reader, s3Url, s3BucketName, s3KeyPrefix, backupSpecDummy(), sourceNamespaceName,
+		labelKey, labelValue,
+	)
+	if err != nil {
+		return err
+	}
+
+	return backupAndBackupObjectsDelete(backupLocation, backup, namespacedName, w, reader)
+}
+
+func backupAndBackupObjectsDelete(
 	backupLocation *velero.BackupStorageLocation,
 	backup *velero.Backup,
 	namespacedName types.NamespacedName,
@@ -188,12 +331,15 @@ func backupDelete(
 	reader client.Reader,
 ) error {
 	backupDeletion := backupDeletion(namespacedName)
-	if err := w.objectCreate(backupDeletion); err != nil {
-		return err
-	}
+	if err := objectCreateAndGet(w, reader, backupDeletion); err != nil {
+		// DeleteBackupRequest controller deletes DeleteBackupRequest on success
+		if k8serrors.IsNotFound(err) {
+			w.log.Info("Backup deletion request not found")
 
-	if err := reader.Get(w.ctx, namespacedName, backupDeletion); err != nil {
-		return pkgerrors.Wrap(err, "backup deletion get")
+			return nil
+		}
+
+		return err
 	}
 
 	backupDeletionStatusLog(backupDeletion, w.log)
@@ -213,21 +359,18 @@ func backupDelete(
 func backupRestore(
 	backupLocation *velero.BackupStorageLocation,
 	backup *velero.Backup,
-	namespacedName types.NamespacedName,
 	w objectWriter,
 	reader client.Reader,
 	sourceNamespaceName string,
 	targetNamespaceName string,
-	restoreSpec ramendrv1alpha1.ResourceRecoveryGroupSpec,
-) error {
-	restore := restore(namespacedName, sourceNamespaceName, targetNamespaceName, restoreSpec, backup.Name)
-	if err := w.objectCreate(restore); err != nil {
-		return err
-	}
-
-	restoreObjectNamespacedName := types.NamespacedName{Name: namespacedName.Name, Namespace: VeleroNamespaceNameDefault}
-	if err := reader.Get(w.ctx, restoreObjectNamespacedName, restore); err != nil {
-		return pkgerrors.Wrap(err, "restore get")
+	objectsSpec ramendrv1alpha1.KubeObjectsSpec,
+	restoreName string,
+	labelKey, restoreLabelValue string,
+) (*velero.Restore, error) {
+	restore := restore(backup.Namespace, restoreName, objectsSpec, backup.Name,
+		sourceNamespaceName, targetNamespaceName, labelKey, restoreLabelValue)
+	if err := objectCreateAndGet(w, reader, restore); err != nil {
+		return nil, err
 	}
 
 	return restoreStatusProcess(backupLocation, backup, restore, w)
@@ -238,38 +381,38 @@ func restoreStatusProcess(
 	backup *velero.Backup,
 	restore *velero.Restore,
 	w objectWriter,
-) error {
+) (*velero.Restore, error) {
 	restoreStatusLog(restore, w.log)
 
 	switch restore.Status.Phase {
 	case velero.RestorePhaseNew:
 		fallthrough
 	case velero.RestorePhaseInProgress:
-		return errors.New("temporary: restore" + string(restore.Status.Phase))
+		return nil, errors.New("temporary: restore" + string(restore.Status.Phase))
 	case velero.RestorePhaseFailed:
-		backupObjectPathName := backupLocation.Spec.StorageType.ObjectStorage.Prefix +
-			"backups/" + backup.Name + "/" + backup.Name + ".tar.gz"
-		if strings.HasPrefix(restore.Status.FailureReason,
-			"error downloading backup: error copying Backup to temp file: rpc error: "+
-				"code = Unknown desc = error getting object "+backupObjectPathName+": "+
-				"NoSuchKey: The specified key does not exist.\n\tstatus code: 404, request id: ",
-		) {
-			w.log.Info("backup absent", "path", backupObjectPathName)
-
-			return w.restoreObjectsDelete(backupLocation, backup, restore)
-		}
-
 		fallthrough
 	case velero.RestorePhaseFailedValidation:
 		fallthrough
 	case velero.RestorePhasePartiallyFailed:
-		return errors.New("permanent: restore" + string(restore.Status.Phase))
+		return nil, restoreRetry(backupLocation, backup, restore, w)
 	case velero.RestorePhaseCompleted:
-		// return w.restoreObjectsDelete(backupLocation, backup, restore)
-		return nil // keep objects around until backup is done (TODO: delete)
+		return restore, nil
 	default:
-		return errors.New("temporary: restore.status.phase absent")
+		return nil, errors.New("temporary: restore.status.phase absent")
 	}
+}
+
+func restoreRetry(
+	backupLocation *velero.BackupStorageLocation,
+	backup *velero.Backup,
+	restore *velero.Restore,
+	w objectWriter,
+) error {
+	if err := w.restoreObjectsDelete(backupLocation, backup, restore); err != nil {
+		return err
+	}
+
+	return errors.New("restore retry")
 }
 
 func RestoreResultsGet(
@@ -279,12 +422,8 @@ func RestoreResultsGet(
 	results *string,
 ) error {
 	download := download(namespacedName, velero.DownloadTargetKindRestoreResults)
-	if err := w.objectCreate(download); err != nil {
+	if err := objectCreateAndGet(w, reader, download); err != nil {
 		return err
-	}
-
-	if err := reader.Get(w.ctx, namespacedName, download); err != nil {
-		return pkgerrors.Wrap(err, "restore results download get")
 	}
 
 	downloadStatusLog(download, w.log)
@@ -303,7 +442,7 @@ func RestoreResultsGet(
 	return w.objectDelete(download)
 }
 
-func kubeObjectsProtect(
+func KubeObjectsProtect(
 	ctx context.Context,
 	writer client.Writer,
 	reader client.Reader,
@@ -311,74 +450,73 @@ func kubeObjectsProtect(
 	s3Url string,
 	s3BucketName string,
 	s3KeyPrefix string,
-	sourceNamespacedName types.NamespacedName,
-	spec ramendrv1alpha1.ResourceCaptureGroupSpec,
-	captureNumber int64,
-) error {
-	log.Info("kube objects protect",
+	sourceNamespaceName string,
+	objectsSpec ramendrv1alpha1.KubeObjectsSpec,
+	requestNamespaceName string,
+	captureName string,
+	labelKey, labelValue string,
+) (KubeObjectsProtectRequest, error) {
+	log.Info("Kube objects protect",
 		"s3 url", s3Url,
 		"s3 bucket", s3BucketName,
 		"s3 key prefix", s3KeyPrefix,
-		"source namespace", sourceNamespacedName.Namespace,
-		"capture number", captureNumber,
+		"source namespace", sourceNamespaceName,
+		"request namespace", requestNamespaceName,
+		"capture name", captureName,
+		"label key", labelKey,
+		"label value", labelValue,
 	)
 
-	backupNamespacedName := getBackupNamespacedName(sourceNamespacedName.Name,
-		sourceNamespacedName.Namespace, spec.Name, captureNumber)
-
-	return backupRealCreate(
-		backupNamespacedName,
+	backup, err := backupRealCreate(
 		objectWriter{ctx: ctx, Writer: writer, log: log},
 		reader,
 		s3Url,
 		s3BucketName,
 		s3KeyPrefix,
-		sourceNamespacedName.Namespace,
-		spec,
-		captureNumber,
+		sourceNamespaceName,
+		objectsSpec,
+		requestNamespaceName,
+		captureName,
+		labelKey, labelValue,
 	)
+
+	return veleroBackupRequest{backup}, err
 }
 
 func backupRealCreate(
-	namespacedName types.NamespacedName,
 	w objectWriter,
 	reader client.Reader,
 	s3Url string,
 	s3BucketName string,
 	s3KeyPrefix string,
 	sourceNamespaceName string,
-	captureInstance ramendrv1alpha1.ResourceCaptureGroupSpec,
-	captureNumber int64,
-) error {
-	backupSpec := getBackupSpecFromCaptureInstance(captureInstance, namespacedName.Namespace)
-
-	backupNamespacedName := types.NamespacedName{Name: namespacedName.Name, Namespace: VeleroNamespaceNameDefault}
-
-	backupLocation, backup, err := w.backupCreate(
-		backupNamespacedName, s3Url, s3BucketName, s3KeyPrefix, *backupSpec, sourceNamespaceName, captureNumber,
+	objectsSpec ramendrv1alpha1.KubeObjectsSpec,
+	requestNamespaceName string,
+	captureName string,
+	labelKey, labelValue string,
+) (*velero.Backup, error) {
+	backupLocation, backup, err := backupCreate(
+		types.NamespacedName{Namespace: requestNamespaceName, Name: captureName},
+		w, reader, s3Url, s3BucketName, s3KeyPrefix,
+		getBackupSpecFromObjectsSpec(objectsSpec),
+		sourceNamespaceName,
+		labelKey, labelValue,
 	)
 	if err != nil {
-		return err
-	}
-
-	if err := reader.Get(w.ctx, backupNamespacedName, backup); err != nil {
-		return pkgerrors.Wrap(err, "backup get")
+		return nil, err
 	}
 
 	return backupRealStatusProcess(backupLocation, backup, w)
 }
 
-func getBackupSpecFromCaptureInstance(instance ramendrv1alpha1.ResourceCaptureGroupSpec,
-	namespace string) *velero.BackupSpec {
-	return &velero.BackupSpec{
-		IncludedNamespaces:      []string{namespace},
-		IncludedResources:       instance.IncludedResources,
-		ExcludedResources:       instance.ExcludedResources,
-		LabelSelector:           instance.LabelSelector,
+func getBackupSpecFromObjectsSpec(objectsSpec ramendrv1alpha1.KubeObjectsSpec) velero.BackupSpec {
+	return velero.BackupSpec{
+		IncludedResources:       objectsSpec.IncludedResources,
+		ExcludedResources:       objectsSpec.ExcludedResources,
+		LabelSelector:           objectsSpec.LabelSelector,
 		TTL:                     metav1.Duration{}, // TODO: set default here
-		IncludeClusterResources: instance.IncludeClusterResources,
+		IncludeClusterResources: objectsSpec.IncludeClusterResources,
 		Hooks:                   velero.BackupHooks{},
-		// StorageLocation:         "default", // defaults to "default" in standard velero installation
 		VolumeSnapshotLocations: []string{},
 		DefaultVolumesToRestic:  new(bool),
 		OrderedResources:        map[string]string{},
@@ -389,13 +527,12 @@ func backupRealStatusProcess(
 	backupLocation *velero.BackupStorageLocation,
 	backup *velero.Backup,
 	w objectWriter,
-) error {
+) (*velero.Backup, error) {
 	backupStatusLog(backup, w.log)
 
 	switch backup.Status.Phase {
 	case velero.BackupPhaseCompleted:
-		// return w.backupObjectsDelete(backupLocation, backup)
-		return nil // leave sub-backup objects around until the entire operation is complete
+		return backup, nil
 	case velero.BackupPhaseNew:
 		fallthrough
 	case velero.BackupPhaseInProgress:
@@ -405,106 +542,16 @@ func backupRealStatusProcess(
 	case velero.BackupPhaseUploadingPartialFailure:
 		fallthrough
 	case velero.BackupPhaseDeleting:
-		return errors.New("temporary: backup" + string(backup.Status.Phase))
+		return nil, errors.New("temporary: backup" + string(backup.Status.Phase))
 	case velero.BackupPhaseFailedValidation:
 		fallthrough
 	case velero.BackupPhasePartiallyFailed:
 		fallthrough
 	case velero.BackupPhaseFailed:
-		// return errors.New("permanent: backup" + string(backup.Status.Phase))
-		return backupRetry(backupLocation, backup, w)
+		return nil, backupRetry(backupLocation, backup, w)
 	}
 
-	return errors.New("temporary: backup.status.phase absent")
-}
-
-// complete here could mean success or failure; but processing is over.
-func backupIsDone(ctx context.Context, apiReader client.Reader, writer objectWriter,
-	namespacedName types.NamespacedName) (bool, error) {
-	backup, err := getBackupObject(ctx, apiReader, namespacedName)
-	if err != nil {
-		return true, err
-	}
-
-	backupLocationNamespacedName := types.NamespacedName{
-		Name:      backup.Spec.StorageLocation,
-		Namespace: namespacedName.Namespace,
-	}
-
-	backupStorageLocation, err := getBackupStorageLocationObject(ctx, apiReader, backupLocationNamespacedName)
-	if err != nil {
-		return false, err
-	}
-
-	err = backupRealStatusProcess(backupStorageLocation, backup, writer)
-	if err != nil {
-		return false, err
-	}
-
-	completed := backup.Status.Phase == velero.BackupPhaseCompleted ||
-		backup.Status.Phase == velero.BackupPhasePartiallyFailed ||
-		backup.Status.Phase == velero.BackupPhaseFailed
-
-	return completed, nil
-}
-
-func restoreIsDone(ctx context.Context, apiReader client.Reader, writer objectWriter,
-	namespacedName types.NamespacedName) (bool, error) {
-	restore, err := getRestoreObject(ctx, apiReader, namespacedName)
-	if err != nil {
-		return true, err
-	}
-
-	// need backupName, backupStorageLocation for process; get BSL from backup object
-	backupName := restore.Spec.BackupName
-
-	backup, err := getBackupObject(ctx, apiReader,
-		types.NamespacedName{Name: backupName, Namespace: namespacedName.Namespace})
-	if err != nil {
-		return true, pkgerrors.Wrap(err, "failed to get backup object")
-	}
-
-	backupLocationNamespacedName := types.NamespacedName{
-		Name:      backup.Spec.StorageLocation,
-		Namespace: namespacedName.Namespace,
-	}
-
-	backupStorageLocation, err := getBackupStorageLocationObject(ctx, apiReader, backupLocationNamespacedName)
-	if err != nil {
-		return false, err
-	}
-
-	completed := backup.Status.Phase == velero.BackupPhaseCompleted ||
-		backup.Status.Phase == velero.BackupPhasePartiallyFailed ||
-		backup.Status.Phase == velero.BackupPhaseFailed
-
-	err = restoreStatusProcess(backupStorageLocation, backup, restore, writer)
-	if err != nil {
-		return false, nil // need better way to handle problematic non-terminal status besides errors
-	}
-
-	return completed, nil
-}
-
-func getRestoreObject(ctx context.Context, apiReader client.Reader, namespacedName types.NamespacedName) (
-	*velero.Restore, error) {
-	restore := &velero.Restore{}
-
-	return restore, apiReader.Get(ctx, namespacedName, restore)
-}
-
-func getBackupObject(ctx context.Context, apiReader client.Reader, namespacedName types.NamespacedName) (
-	*velero.Backup, error) {
-	backup := &velero.Backup{}
-
-	return backup, apiReader.Get(ctx, namespacedName, backup)
-}
-
-func getBackupStorageLocationObject(ctx context.Context, apiReader client.Reader, namespacedName types.NamespacedName) (
-	*velero.BackupStorageLocation, error) {
-	backupStorageLocation := &velero.BackupStorageLocation{}
-
-	return backupStorageLocation, apiReader.Get(ctx, namespacedName, backupStorageLocation)
+	return nil, errors.New("temporary: backup.status.phase absent")
 }
 
 func backupRetry(
@@ -519,64 +566,51 @@ func backupRetry(
 	return errors.New("backup retry")
 }
 
-func namespacedName(namespaceName, s3Url, s3BucketName string,
-	captureNumber int64,
-) (types.NamespacedName, error) {
-	if true {
-		return types.NamespacedName{Namespace: namespaceName, Name: strconv.FormatInt(captureNumber, 10)}, nil
-	}
+func (r veleroBackupRequest) Deallocate(
+	ctx context.Context,
+	writer client.Writer,
+	log logr.Logger,
+) error {
+	return objectWriter{ctx: ctx, Writer: writer, log: log}.objectDelete(r.backup)
+}
 
-	url, err := url.Parse(s3Url)
-	if err != nil {
-		return types.NamespacedName{}, pkgerrors.Wrap(err, "s3 url parse")
-	}
-
-	// https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names
-	// https://docs.aws.amazon.com/AmazonS3/latest/userguide/WebsiteEndpoints.html
-	// https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
-	return types.NamespacedName{
-			Namespace: namespaceName,
-			Name: strings.ReplaceAll(url.Hostname(), ".", "-") +
-				"-" + url.Port() +
-				"-" + strings.ReplaceAll(s3BucketName, ".", "-"),
-		},
-		nil
+func (r veleroRestoreRequest) Deallocate(
+	ctx context.Context,
+	writer client.Writer,
+	log logr.Logger,
+) error {
+	return objectWriter{ctx: ctx, Writer: writer, log: log}.objectDelete(r.restore)
 }
 
 type objectWriter struct {
-	client.Writer
 	ctx context.Context
+	client.Writer
 	log logr.Logger
 }
 
-func (w objectWriter) backupCreate(
+func backupCreate(
 	backupNamespacedName types.NamespacedName,
+	w objectWriter,
+	reader client.Reader,
 	s3Url string,
 	s3BucketName string,
 	s3KeyPrefix string,
 	backupSpec velero.BackupSpec,
 	sourceNamespaceName string,
-	captureNumber int64,
+	labelKey, labelValue string,
 ) (*velero.BackupStorageLocation, *velero.Backup, error) {
-	backupStorageLocationNamespacedName, err := namespacedName(VeleroNamespaceNameDefault, s3Url,
-		s3BucketName, captureNumber)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	backupLocation := backupLocation(backupStorageLocationNamespacedName, s3Url, s3BucketName, s3KeyPrefix)
+	backupLocation := backupLocation(backupNamespacedName, s3Url, s3BucketName, s3KeyPrefix,
+		labelKey, labelValue,
+	)
 	if err := w.objectCreate(backupLocation); err != nil {
 		return backupLocation, nil, err
 	}
 
+	backupSpec.StorageLocation = backupNamespacedName.Name
 	backupSpec.IncludedNamespaces = []string{sourceNamespaceName}
+	backup := backup(backupNamespacedName, backupSpec, labelKey, labelValue)
 
-	backup := backup(backupNamespacedName, backupSpec)
-	if err := w.objectCreate(backup); err != nil {
-		return backupLocation, backup, err
-	}
-
-	return backupLocation, backup, nil
+	return backupLocation, backup, objectCreateAndGet(w, reader, backup)
 }
 
 func (w objectWriter) backupObjectsDelete(
@@ -608,9 +642,9 @@ func (w objectWriter) objectCreate(o client.Object) error {
 			return pkgerrors.Wrap(err, "object create")
 		}
 
-		w.log.Info("object created previously", "type", o.GetObjectKind(), "name", o.GetName())
+		w.log.Info("Object created previously", "type", o.GetObjectKind(), "name", o.GetName())
 	} else {
-		w.log.Info("object created successfully", "type", o.GetObjectKind(), "name", o.GetName())
+		w.log.Info("Object created successfully", "type", o.GetObjectKind(), "name", o.GetName())
 	}
 
 	return nil
@@ -622,12 +656,24 @@ func (w objectWriter) objectDelete(o client.Object) error {
 			return pkgerrors.Wrap(err, "object delete")
 		}
 
-		w.log.Info("object deleted previously", "type", o.GetObjectKind(), "name", o.GetName())
+		w.log.Info("Object deleted previously", "type", o.GetObjectKind(), "name", o.GetName())
 	} else {
-		w.log.Info("object deleted successfully", "type", o.GetObjectKind(), "name", o.GetName())
+		w.log.Info("Object deleted successfully", "type", o.GetObjectKind(), "name", o.GetName())
 	}
 
 	return nil
+}
+
+func objectCreateAndGet(
+	w objectWriter,
+	reader client.Reader,
+	o client.Object,
+) error {
+	if err := w.objectCreate(o); err != nil {
+		return err
+	}
+
+	return reader.Get(w.ctx, types.NamespacedName{Namespace: o.GetNamespace(), Name: o.GetName()}, o)
 }
 
 const (
@@ -636,6 +682,7 @@ const (
 )
 
 func backupLocation(namespacedName types.NamespacedName, s3Url, bucketName, s3KeyPrefix string,
+	labelKey, labelValue string,
 ) *velero.BackupStorageLocation {
 	return &velero.BackupStorageLocation{
 		TypeMeta: metav1.TypeMeta{
@@ -645,13 +692,14 @@ func backupLocation(namespacedName types.NamespacedName, s3Url, bucketName, s3Ke
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespacedName.Namespace,
 			Name:      namespacedName.Name,
+			Labels:    map[string]string{labelKey: labelValue},
 		},
 		Spec: velero.BackupStorageLocationSpec{
 			Provider: "aws",
 			StorageType: velero.StorageType{
 				ObjectStorage: &velero.ObjectStorageLocation{
 					Bucket: bucketName,
-					Prefix: s3KeyPrefix + "velero/",
+					Prefix: s3KeyPrefix + KubeObjectsPath,
 				},
 			},
 			Config: map[string]string{
@@ -669,15 +717,18 @@ func backupLocation(namespacedName types.NamespacedName, s3Url, bucketName, s3Ke
 	}
 }
 
-func backup(namespacedName types.NamespacedName, backupSpec velero.BackupSpec) *velero.Backup {
+func backup(namespacedName types.NamespacedName, backupSpec velero.BackupSpec,
+	labelKey, labelValue string,
+) *velero.Backup {
 	return &velero.Backup{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "velero.io/v1",
 			Kind:       "Backup",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: VeleroNamespaceNameDefault, // must be created in velero/OADP namespace
+			Namespace: namespacedName.Namespace,
 			Name:      namespacedName.Name,
+			Labels:    map[string]string{labelKey: labelValue},
 		},
 		Spec: backupSpec,
 	}
@@ -694,23 +745,31 @@ func backupSpecDummy() velero.BackupSpec {
 	}
 }
 
-func restore(namespacedName types.NamespacedName, sourceNamespaceName, targetNamespaceName string,
-	spec ramendrv1alpha1.ResourceRecoveryGroupSpec, backupName string) *velero.Restore {
-	restore := &velero.Restore{
+func restore(
+	requestNamespaceName string,
+	restoreName string,
+	objectsSpec ramendrv1alpha1.KubeObjectsSpec,
+	backupName string,
+	sourceNamespaceName, targetNamespaceName string,
+	labelKey, restoreLabelValue string,
+) *velero.Restore {
+	return &velero.Restore{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "velero.io/v1",
 			Kind:       "Restore",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: VeleroNamespaceNameDefault, // can only create backup/restore objects in Velero/OADP namespace
-			Name:      namespacedName.Name,
+			Namespace: requestNamespaceName,
+			Name:      restoreName,
+			Labels:    map[string]string{labelKey: restoreLabelValue},
 		},
 		Spec: velero.RestoreSpec{
 			BackupName:              backupName,
-			IncludedNamespaces:      []string{namespacedName.Namespace},
-			IncludedResources:       spec.IncludedResources,
-			ExcludedResources:       spec.ExcludedResources,
-			IncludeClusterResources: spec.IncludeClusterResources,
+			IncludedNamespaces:      []string{sourceNamespaceName},
+			IncludedResources:       objectsSpec.IncludedResources,
+			ExcludedResources:       objectsSpec.ExcludedResources,
+			LabelSelector:           objectsSpec.LabelSelector,
+			IncludeClusterResources: objectsSpec.IncludeClusterResources,
 			NamespaceMapping:        map[string]string{sourceNamespaceName: targetNamespaceName},
 			// TODO: hooks?
 			// TODO: restorePVs?
@@ -718,8 +777,6 @@ func restore(namespacedName types.NamespacedName, sourceNamespaceName, targetNam
 			// TODO: labelSelectors? blank label selectors don't match properly; include manually
 		},
 	}
-
-	return restore
 }
 
 func backupDeletion(namespacedName types.NamespacedName) *velero.DeleteBackupRequest {
@@ -742,7 +799,7 @@ func download(namespacedName types.NamespacedName, kind velero.DownloadTargetKin
 	return &velero.DownloadRequest{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "velero.io/v1",
-			Kind:       "DeleteBackupRequest",
+			Kind:       "DownloadRequest",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespacedName.Namespace,
@@ -758,23 +815,24 @@ func download(namespacedName types.NamespacedName, kind velero.DownloadTargetKin
 }
 
 func backupStatusLog(backup *velero.Backup, log logr.Logger) {
-	log.Info("backup",
+	log.Info("Backup",
 		"phase", backup.Status.Phase,
 		"warnings", backup.Status.Warnings,
 		"errors", backup.Status.Errors,
 		// TODO v1.9.0 "failure", backup.Status.FailureReason,
+		"validation errors", backup.Status.ValidationErrors,
 	)
 
 	if backup.Status.StartTimestamp != nil {
-		log.Info("backup", "start", backup.Status.StartTimestamp)
+		log.Info("Backup", "start", backup.Status.StartTimestamp)
 	}
 
 	if backup.Status.CompletionTimestamp != nil {
-		log.Info("backup", "finish", backup.Status.CompletionTimestamp)
+		log.Info("Backup", "finish", backup.Status.CompletionTimestamp)
 	}
 
 	if backup.Status.Progress != nil {
-		log.Info("items",
+		log.Info("Items",
 			"to be backed up", backup.Status.Progress.TotalItems,
 			"backed up", backup.Status.Progress.ItemsBackedUp,
 		)
@@ -782,23 +840,24 @@ func backupStatusLog(backup *velero.Backup, log logr.Logger) {
 }
 
 func restoreStatusLog(restore *velero.Restore, log logr.Logger) {
-	log.Info("restore",
+	log.Info("Restore",
 		"phase", restore.Status.Phase,
 		"warnings", restore.Status.Warnings,
 		"errors", restore.Status.Errors,
 		"failure", restore.Status.FailureReason,
+		"validation errors", restore.Status.ValidationErrors,
 	)
 
 	if restore.Status.StartTimestamp != nil {
-		log.Info("restore", "start", restore.Status.StartTimestamp)
+		log.Info("Restore", "start", restore.Status.StartTimestamp)
 	}
 
 	if restore.Status.CompletionTimestamp != nil {
-		log.Info("restore", "finish", restore.Status.CompletionTimestamp)
+		log.Info("Restore", "finish", restore.Status.CompletionTimestamp)
 	}
 
 	if restore.Status.Progress != nil {
-		log.Info("items",
+		log.Info("Items",
 			"to be restored", restore.Status.Progress.TotalItems,
 			"restored", restore.Status.Progress.ItemsRestored,
 		)
@@ -806,23 +865,19 @@ func restoreStatusLog(restore *velero.Restore, log logr.Logger) {
 }
 
 func backupDeletionStatusLog(backupDeletion *velero.DeleteBackupRequest, log logr.Logger) {
-	log.Info("backup deletion",
+	log.Info("Backup deletion",
 		"phase", backupDeletion.Status.Phase,
-		"errors", len(backupDeletion.Status.Errors),
+		"errors", backupDeletion.Status.Errors,
 	)
-
-	for i, message := range backupDeletion.Status.Errors {
-		log.Info("backup deletion error", "number", i, "message", message)
-	}
 }
 
 func downloadStatusLog(download *velero.DownloadRequest, log logr.Logger) {
-	log.Info("download",
+	log.Info("Download",
 		"phase", download.Status.Phase,
 		"url", download.Status.DownloadURL,
 	)
 
 	if download.Status.Expiration != nil {
-		log.Info("expiration", download.Status.Expiration)
+		log.Info("Expiration", download.Status.Expiration)
 	}
 }

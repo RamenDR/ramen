@@ -17,17 +17,36 @@ limitations under the License.
 package controllers
 
 import (
-	"fmt"
+	"strconv"
 	"time"
 
-	"k8s.io/apimachinery/pkg/types"
-
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/controllers/util"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-func kubeObjectCaptureInterval(kubeObjectProtectionSpec *ramen.KubeObjectProtectionSpec) time.Duration {
+func s3PathNamePrefix(vrgNamespaceName, vrgName string) string {
+	return types.NamespacedName{Namespace: vrgNamespaceName, Name: vrgName}.String() + "/"
+}
+
+const vrgS3ObjectNameSuffix = "a"
+
+func VrgObjectProtect(objectStorer ObjectStorer, vrg ramen.VolumeReplicationGroup) error {
+	return uploadTypedObject(objectStorer, s3PathNamePrefix(vrg.Namespace, vrg.Name), vrgS3ObjectNameSuffix, vrg)
+}
+
+func VrgObjectUnprotect(objectStorer ObjectStorer, vrg ramen.VolumeReplicationGroup) error {
+	return DeleteTypedObjects(objectStorer, s3PathNamePrefix(vrg.Namespace, vrg.Name), vrgS3ObjectNameSuffix, vrg)
+}
+
+func vrgObjectDownload(objectStorer ObjectStorer, pathName string, vrg *ramen.VolumeReplicationGroup) error {
+	return downloadTypedObject(objectStorer, pathName, vrgS3ObjectNameSuffix, vrg)
+}
+
+func kubeObjectsCaptureInterval(kubeObjectProtectionSpec *ramen.KubeObjectProtectionSpec) time.Duration {
 	if kubeObjectProtectionSpec.CaptureInterval == nil {
 		return ramen.KubeObjectProtectionCaptureIntervalDefault
 	}
@@ -35,59 +54,59 @@ func kubeObjectCaptureInterval(kubeObjectProtectionSpec *ramen.KubeObjectProtect
 	return kubeObjectProtectionSpec.CaptureInterval.Duration
 }
 
-func (v *VRGInstance) kubeObjectsProtectIfDue(result *ctrl.Result) {
-	if v.instance.Spec.KubeObjectProtection == nil {
-		v.log.Info("Kube object protection disabled")
+func timeSincePreviousAndUntilNext(previousTime time.Time, interval time.Duration) (time.Duration, time.Duration) {
+	since := time.Since(previousTime)
 
-		return
-	}
+	return since, interval - since
+}
 
-	delayMinimum := kubeObjectCaptureInterval(v.instance.Spec.KubeObjectProtection)
-	dueTime := v.instance.Status.KubeObjectProtection.LastProtectedCapture.StartTime.Time.Add(delayMinimum)
-	capture := &ramen.KubeObjectCaptureStatus{
-		Number:    v.instance.Status.KubeObjectProtection.LastProtectedCapture.Number + 1,
-		StartTime: metav1.Now(),
-	}
+func kubeObjectsCapturePathNameAndNamePrefix(namespaceName, vrgName string, captureNumber int64) (string, string) {
+	number := strconv.FormatInt(captureNumber, 10)
 
-	delay := dueTime.Sub(capture.StartTime.Time)
-	if delay > 0 {
-		v.log.Info("Kube object protection due later", "number", capture.Number, "delay", delay)
-		delaySetIfLess(result, delay, v.log)
+	return s3PathNamePrefix(namespaceName, vrgName) + "kube-objects/" + number + "/",
+		// TODO fix: may exceed name capacity
+		namespaceName + "--" + vrgName + "--" + number
+}
 
-		return
-	}
+func veleroNamespaceName() string {
+	// TODO define config input and if not empty return it
+	return VeleroNamespaceNameDefault
+}
 
-	if errors := v.kubeObjectsProtect(capture.Number); len(errors) > 0 {
+func kubeObjectsCaptureName(prefix, groupName, s3ProfileName string) string {
+	return prefix + "--" + groupName + "--" + s3ProfileName
+}
+
+func kubeObjectsRecoverNamePrefix(vrgNamespaceName, vrgName string) string {
+	return vrgNamespaceName + "--" + vrgName
+}
+
+func kubeObjectsRecoverName(prefix string, groupNumber int) string {
+	return prefix + "--" + strconv.Itoa(groupNumber)
+}
+
+func (v *VRGInstance) kubeObjectsProtect(result *ctrl.Result) {
+	objectStorers := v.objectStorersGet()
+	if objectStorers == nil {
 		result.Requeue = true
 
 		return
 	}
 
-	duration := time.Since(capture.StartTime.Time)
-	delay = delayMinimum - duration
-
-	if delay <= 0 {
-		delay = time.Nanosecond
+	if v.instance.Spec.KubeObjectProtection != nil {
+		v.kubeObjectsCaptureStartOrResumeOrDelay(result, objectStorers)
 	}
 
-	v.log.Info("Kube objects protected",
-		"number", capture.Number,
-		"start", capture.StartTime,
-		"duration", duration,
-		"delay", delay,
-	)
-
-	v.instance.Status.KubeObjectProtection.LastProtectedCapture = capture
-
-	delaySetIfLess(result, delay, v.log)
+	v.vrgObjectProtect(result, objectStorers)
 }
 
-func (v *VRGInstance) kubeObjectsProtect(captureNumber int64) []error {
-	errors := make([]error, 0, len(v.instance.Spec.S3Profiles))
+func (v *VRGInstance) objectStorersGet() []ObjectStorer {
+	objectStorers := make([]ObjectStorer, len(v.instance.Spec.S3Profiles))
 
-	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
-		// TODO reuse objectStore kube objects from pv upload
-		objectStore, err := v.reconciler.ObjStoreGetter.ObjectStore(
+	for i, s3ProfileName := range v.instance.Spec.S3Profiles {
+		var err error
+
+		objectStorers[i], err = v.reconciler.ObjStoreGetter.ObjectStore(
 			v.ctx,
 			v.reconciler.APIReader,
 			s3ProfileName,
@@ -95,244 +114,257 @@ func (v *VRGInstance) kubeObjectsProtect(captureNumber int64) []error {
 			v.log,
 		)
 		if err != nil {
-			v.log.Error(err, "kube objects protect object store access", "profile", s3ProfileName)
-			errors = append(errors, err)
+			v.log.Error(err, "Kube object protection store inaccessible", "name", s3ProfileName)
 
-			continue
-		}
-
-		err = v.processSubBackups(objectStore, s3ProfileName, captureNumber)
-		if err != nil {
-			errors := append(errors, err)
-
-			return errors
+			return nil
 		}
 	}
 
-	return nil
+	return objectStorers
 }
 
-func (v *VRGInstance) processSubBackups(objectStore ObjectStorer, s3ProfileName string, captureNumber int64) error {
-	categories := v.getTypeSequenceSubBackups()
+const kubeObjectsRequestNameLabelKey = "ramendr.openshift.io/request-name"
 
-	var err error // declare for scope
+func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(result *ctrl.Result, objectStorers []ObjectStorer) {
+	veleroNamespaceName := veleroNamespaceName()
+	vrg := v.instance
+	interval := kubeObjectsCaptureInterval(vrg.Spec.KubeObjectProtection)
+	status := &vrg.Status.KubeObjectProtection
 
-	for _, captureInstance := range categories {
-		includeList, excludeList := getTypeSequenceResourceList(captureInstance.IncludedResources,
-			captureInstance.ExcludedResources)
+	captureToRecoverFrom := status.CaptureToRecoverFrom
+	if captureToRecoverFrom == nil {
+		v.log.Info("Kube objects capture-to-recover-from nil")
 
-		spec := captureInstance.DeepCopy() // don't modify spec with processed results
-		spec.IncludedResources = includeList
-		spec.ExcludedResources = excludeList
+		captureToRecoverFrom = &ramen.KubeObjectsCaptureIdentifier{}
+	}
 
-		sourceNamespacedName := types.NamespacedName{Name: v.instance.Name, Namespace: v.instance.Namespace}
+	number := 1 - captureToRecoverFrom.Number
+	pathName, namePrefix := kubeObjectsCapturePathNameAndNamePrefix(vrg.Namespace, vrg.Name, number)
+	captureStartOrResume := func() {
+		v.kubeObjectsCaptureStartOrResume(result, objectStorers, number, pathName, namePrefix,
+			veleroNamespaceName, interval)
+	}
 
-		if err := kubeObjectsProtect(
-			v.ctx,
-			v.reconciler.Client,
-			v.reconciler.APIReader,
-			v.log,
-			objectStore.AddressComponent1(),
-			objectStore.AddressComponent2(),
-			v.s3KeyPrefix(),
-			sourceNamespacedName,
-			captureInstance,
-			captureNumber,
-		); err != nil {
-			v.log.Error(err, "kube object protect", "profile", s3ProfileName)
-			// don't return error yet since it could be non-fatal (e.g. slow API server)
+	requests, err := KubeObjectsCaptureRequestsGet(v.ctx, v.reconciler.APIReader,
+		veleroNamespaceName, kubeObjectsRequestNameLabelKey, namePrefix,
+	)
+	if err != nil {
+		v.log.Error(err, "Kube objects capture in-progress query error", "number", number)
+
+		result.Requeue = true
+
+		return
+	}
+
+	if count := requests.Count(); count > 0 {
+		v.log.Info("Kube objects capture resume", "number", number)
+		captureStartOrResume()
+
+		return
+	}
+
+	if _, delay := timeSincePreviousAndUntilNext(captureToRecoverFrom.StartTime.Time, interval); delay > 0 {
+		v.log.Info("Kube objects capture start delay", "number", number, "delay", delay)
+		delaySetIfLess(result, delay, v.log)
+
+		return
+	}
+
+	if v.kubeObjectsCaptureDelete(result, objectStorers, number, pathName); result.Requeue {
+		return
+	}
+
+	v.log.Info("Kube objects capture start", "number", number)
+	captureStartOrResume()
+}
+
+func (v *VRGInstance) kubeObjectsCaptureDelete(
+	result *ctrl.Result, objectStorers []ObjectStorer, captureNumber int64, pathName string,
+) {
+	vrg := v.instance
+	pathName += KubeObjectsCapturesPath
+
+	// current s3 profiles may differ from those at capture time
+	for i, s3ProfileName := range vrg.Spec.S3Profiles {
+		objectStore := objectStorers[i]
+		if err := objectStore.DeleteObjects(pathName); err != nil {
+			v.log.Error(err, "Kube objects capture s3 objects delete failed", "number", captureNumber, "profile", s3ProfileName)
+
+			result.Requeue = true
+
+			return
 		}
+	}
+}
 
-		backupNamespacedName := getBackupNamespacedName(sourceNamespacedName.Name,
-			sourceNamespacedName.Namespace, spec.Name, captureNumber)
+func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
+	result *ctrl.Result, objectStorers []ObjectStorer, captureNumber int64,
+	pathName, namePrefix, veleroNamespaceName string, interval time.Duration,
+) {
+	vrg := v.instance
+	status := &vrg.Status.KubeObjectProtection
+	groups := v.getCaptureGroups()
+	requests := make([]KubeObjectsProtectRequest, len(vrg.Spec.S3Profiles)*len(groups))
+	requestNumber := 0
 
-		// TODO: remove tight loop here
-		backupComplete := false
-		for !backupComplete {
-			backupComplete, err = backupIsDone(v.ctx, v.reconciler.APIReader,
-				objectWriter{v.reconciler.Client, v.ctx, v.log}, backupNamespacedName)
+	for i, s3ProfileName := range vrg.Spec.S3Profiles {
+		objectStore := objectStorers[i]
 
+		for groupNumber, captureGroup := range groups {
+			request, err := KubeObjectsProtect(
+				v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.log,
+				objectStore.AddressComponent1(), objectStore.AddressComponent2(), pathName, vrg.Namespace,
+				captureGroup.KubeObjectsSpec,
+				veleroNamespaceName, kubeObjectsCaptureName(namePrefix, captureGroup.Name, s3ProfileName),
+				kubeObjectsRequestNameLabelKey, namePrefix)
 			if err != nil {
-				backupComplete = true
+				v.log.Error(err, "Kube objects group capture error", "number", captureNumber,
+					"group", groupNumber, "name", captureGroup.Name, "profile", s3ProfileName)
+
+				result.Requeue = true
+
+				return
 			}
+
+			v.log.Info("Kube objects group captured", "number", captureNumber,
+				"group", groupNumber, "name", captureGroup.Name, "profile", s3ProfileName,
+				"start", request.StartTime(), "end", request.EndTime())
+
+			requests[requestNumber] = request
+			requestNumber++
 		}
 	}
 
-	return err
-}
+	if err := KubeObjectsCaptureRequestsDelete(v.ctx, v.reconciler.Client, veleroNamespaceName,
+		kubeObjectsRequestNameLabelKey, namePrefix); err != nil {
+		v.log.Error(err, "Kube objects capture requests delete failed", "number", captureNumber)
 
-// return values: includedResources, excludedResources
-func getTypeSequenceResourceList(toInclude, toExclude []string) ([]string, []string) {
-	included := []string{"*"} // include everything
-	excluded := []string{}    // exclude nothing
+		result.Requeue = true
 
-	if toInclude != nil {
-		included = toInclude
+		return
 	}
 
-	if toExclude != nil {
-		excluded = toExclude
+	status.CaptureToRecoverFrom = &ramen.KubeObjectsCaptureIdentifier{
+		Number: captureNumber, StartTime: requests[0].StartTime(),
 	}
 
-	return included, excluded
-}
-
-func (v *VRGInstance) getTypeSequenceSubBackups() []ramen.ResourceCaptureGroupSpec {
-	if v.instance.Spec.KubeObjectProtection != nil &&
-		v.instance.Spec.KubeObjectProtection.ResourceCaptureOrder != nil {
-		return v.instance.Spec.KubeObjectProtection.ResourceCaptureOrder
+	duration, delay := timeSincePreviousAndUntilNext(status.CaptureToRecoverFrom.StartTime.Time, interval)
+	if delay <= 0 {
+		delay = time.Nanosecond
 	}
 
-	// default case: no backup groups defined
-	return getTypeSequenceDefaultBackup()
+	v.log.Info("Kube objects captured", "recovery point", status.CaptureToRecoverFrom,
+		"duration", duration, "delay", delay)
+
+	delaySetIfLess(result, delay, v.log)
 }
 
-func (v *VRGInstance) getTypeSequenceSubRestores() []ramen.ResourceRecoveryGroupSpec {
-	if v.instance.Spec.KubeObjectProtection != nil &&
-		v.instance.Spec.KubeObjectProtection.ResourceCaptureOrder != nil {
-		return v.instance.Spec.KubeObjectProtection.ResourceRecoveryOrder
+func (v *VRGInstance) vrgObjectProtect(result *ctrl.Result, objectStorers []ObjectStorer) {
+	vrg := *v.instance
+	v.vrgObjectProtected = metav1.ConditionTrue
+
+	for i, s3ProfileName := range vrg.Spec.S3Profiles {
+		objectStore := objectStorers[i]
+
+		if err := VrgObjectProtect(objectStore, vrg); err != nil {
+			result.Requeue = true
+			v.vrgObjectProtected = metav1.ConditionFalse
+			util.ReportIfNotPresent(
+				v.reconciler.eventRecorder,
+				&vrg,
+				corev1.EventTypeWarning,
+				util.EventReasonVrgUploadFailed,
+				err.Error(),
+			)
+			v.log.Error(err, "Vrg Kube object protect failed", "profile", s3ProfileName)
+
+			return
+		}
+
+		v.log.Info("Vrg Kube object protected", "profile", s3ProfileName)
+	}
+}
+
+func (v *VRGInstance) getCaptureGroups() []ramen.KubeObjectsCaptureGroup {
+	if v.instance.Spec.KubeObjectProtection.CaptureOrder != nil {
+		return v.instance.Spec.KubeObjectProtection.CaptureOrder
 	}
 
-	// default case: no backup groups defined
-	return getTypeSequenceDefaultRestore()
+	return []ramen.KubeObjectsCaptureGroup{{}}
 }
 
-func getTypeSequenceDefaultBackup() []ramen.ResourceCaptureGroupSpec {
-	instance := make([]ramen.ResourceCaptureGroupSpec, 1)
-
-	includedResources := make([]string, 0)
-	includedResources[0] = "*"
-
-	instance[0].Name = "everything"
-	*instance[0].IncludeClusterResources = false
-	instance[0].IncludedResources = includedResources
-
-	return instance
-}
-
-func getTypeSequenceDefaultRestore() []ramen.ResourceRecoveryGroupSpec {
-	instance := make([]ramen.ResourceRecoveryGroupSpec, 1)
-
-	includedResources := make([]string, 0)
-	includedResources[0] = "*"
-
-	*instance[0].IncludeClusterResources = true // TODO: needed for default restore case?
-	instance[0].IncludedResources = includedResources
-	instance[0].BackupName = "everything"
-
-	return instance
-}
-
-func getBackupNamespacedName(vrg, namespace, backupName string, sequenceNumber int64) types.NamespacedName {
-	name := fmt.Sprintf("%s-%s-%s-%d", vrg, namespace, backupName, sequenceNumber)
-	namespacedName := types.NamespacedName{
-		Name:      name,
-		Namespace: namespace, // note: must create backups in the same namespace as Velero/OADP
+func (v *VRGInstance) getRecoverGroups() []ramen.KubeObjectsRecoverGroup {
+	if v.instance.Spec.KubeObjectProtection.RecoverOrder != nil {
+		return v.instance.Spec.KubeObjectProtection.RecoverOrder
 	}
 
-	return namespacedName
+	return []ramen.KubeObjectsRecoverGroup{{}}
 }
 
-func (v *VRGInstance) kubeObjectsRecover(objectStore ObjectStorer) error {
-	if v.instance.Spec.KubeObjectProtection == nil {
-		v.log.Info("Kube object recovery disabled")
+func (v *VRGInstance) kubeObjectsRecover(s3ProfileName string, objectStore ObjectStorer) error {
+	vrg := v.instance
+
+	spec := vrg.Spec.KubeObjectProtection
+	if spec == nil {
+		v.log.Info("Kube objects recovery disabled")
 
 		return nil
 	}
 
-	if v.instance.Status.KubeObjectProtection.LastProtectedCapture == nil {
-		notFound := func() error {
-			v.instance.Status.KubeObjectProtection.LastProtectedCapture = &ramen.KubeObjectCaptureStatus{Number: -1}
+	sourceVrgNamespaceName := vrg.Namespace
+	sourceVrgName := vrg.Name
+	sourcePathNamePrefix := s3PathNamePrefix(sourceVrgNamespaceName, sourceVrgName)
 
-			return nil
-		}
+	sourceVrg := &ramen.VolumeReplicationGroup{}
+	if err := vrgObjectDownload(objectStore, sourcePathNamePrefix, sourceVrg); err != nil {
+		v.log.Error(err, "Kube objects capture-to-recover-from identifier get failed")
 
-		var vrg ramen.VolumeReplicationGroup
-		if err := downloadTypedObject(objectStore, s3ObjectNamePrefix(*v.instance), vrgS3ObjectNameSuffix, &vrg); err != nil {
-			v.log.Error(err, "protected last protected Kube object capture status get")
-
-			return notFound()
-		}
-
-		if vrg.Status.KubeObjectProtection.LastProtectedCapture == nil {
-			v.log.Info("Protected last protected Kube object capture status nil")
-
-			return notFound()
-		}
-
-		v.instance.Status.KubeObjectProtection.LastProtectedCapture = vrg.Status.KubeObjectProtection.LastProtectedCapture
+		return nil
 	}
 
-	categories := v.getTypeSequenceSubRestores()
+	capture := sourceVrg.Status.KubeObjectProtection.CaptureToRecoverFrom
+	if capture == nil {
+		v.log.Info("Kube objects capture-to-recover-from identifier nil")
 
-	var err error // declare for scope
+		return nil
+	}
 
-	for restoreIndex, restoreInstance := range categories {
-		err = v.processSubRestores(restoreIndex, restoreInstance, objectStore)
+	vrg.Status.KubeObjectProtection.CaptureToRecoverFrom = capture
+	capturePathName, captureNamePrefix := kubeObjectsCapturePathNameAndNamePrefix(
+		sourceVrgNamespaceName, sourceVrgName, capture.Number)
+	recoverNamePrefix := kubeObjectsRecoverNamePrefix(vrg.Namespace, vrg.Name)
+	veleroNamespaceName := veleroNamespaceName()
 
+	for groupNumber, recoverGroup := range v.getRecoverGroups() {
+		request, err := KubeObjectsRecover(
+			v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.log,
+			objectStore.AddressComponent1(), objectStore.AddressComponent2(), capturePathName,
+			sourceVrgNamespaceName, vrg.Namespace,
+			recoverGroup.KubeObjectsSpec,
+			veleroNamespaceName,
+			kubeObjectsCaptureName(captureNamePrefix, recoverGroup.BackupName, s3ProfileName),
+			kubeObjectsRecoverName(recoverNamePrefix, groupNumber),
+			kubeObjectsRequestNameLabelKey, captureNamePrefix, recoverNamePrefix,
+		)
 		if err != nil {
+			v.log.Error(err, "Kube objects group recover error", "number", capture.Number,
+				"group", groupNumber, "name", recoverGroup.BackupName, "profile", s3ProfileName,
+			)
+
 			return err
 		}
+
+		v.log.Info("Kube objects group recovered", "number", capture.Number,
+			"group", groupNumber, "name", recoverGroup.BackupName, "profile", s3ProfileName,
+			"start", request.StartTime(), "end", request.EndTime(),
+		)
 	}
 
-	return err
-}
-
-func (v *VRGInstance) processSubRestores(restoreIndex int, restoreInstance ramen.ResourceRecoveryGroupSpec,
-	objectStore ObjectStorer) error {
-	includeList, excludeList := getTypeSequenceResourceList(restoreInstance.IncludedResources,
-		restoreInstance.ExcludedResources)
-
-	spec := restoreInstance.DeepCopy() // don't modify spec with processed results
-	spec.IncludedResources = includeList
-	spec.ExcludedResources = excludeList
-
-	sourceNamespacedName := types.NamespacedName{Name: v.instance.Name, Namespace: v.instance.Namespace}
-
-	var err error // declare for scope
-
-	if err := kubeObjectsRecover(
-		v.ctx,
-		v.reconciler.Client,
-		v.reconciler.APIReader,
-		v.log,
-		objectStore.AddressComponent1(),
-		objectStore.AddressComponent2(),
-		v.s3KeyPrefix(),
-		// TODO query source namespace from velero backup kube object in s3 store
-		sourceNamespacedName,
-		v.instance.Namespace,
-		*spec,
-		restoreIndex,
-		v.instance.Status.KubeObjectProtection.LastProtectedCapture.Number,
-	); err != nil {
-		v.log.Error(err, "kube object recover")
-		// don't return error yet since it could be non-fatal (e.g. slow API server)
-	}
-
-	// for backupName, user specifies name. for restoreName, it's generated by system.
-	restoreNamespacedName := getBackupNamespacedName(sourceNamespacedName.Name,
-		sourceNamespacedName.Namespace, fmt.Sprintf("%d", restoreIndex),
-		v.instance.Status.KubeObjectProtection.LastProtectedCapture.Number)
-
-	// can only create backup/restores in Velero/OADP namespace
-	restoreNamespacedName.Namespace = VeleroNamespaceNameDefault
-
-	// TODO: remove tight loop here
-	restoreComplete := false
-	for !restoreComplete {
-		restoreComplete, err = restoreIsDone(v.ctx, v.reconciler.APIReader,
-			objectWriter{v.reconciler.Client, v.ctx, v.log}, restoreNamespacedName)
-
-		if err != nil {
-			restoreComplete = true
-		}
-	}
-
-	return err
+	return KubeObjectsRecoverRequestsDelete(v.ctx, v.reconciler.Client, veleroNamespaceName,
+		kubeObjectsRequestNameLabelKey, recoverNamePrefix)
 }
 
 func (v *VRGInstance) kubeObjectProtectionDisabledOrKubeObjectsProtected() bool {
 	return v.instance.Spec.KubeObjectProtection == nil ||
-		v.instance.Status.KubeObjectProtection.LastProtectedCapture.Number >= 0
+		v.instance.Status.KubeObjectProtection.CaptureToRecoverFrom != nil
 }
