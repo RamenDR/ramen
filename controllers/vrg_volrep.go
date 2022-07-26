@@ -69,6 +69,7 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() bool {
 			continue
 		}
 
+		// If VR did not reach primary state, it is fine to still upload the PV and continue processing
 		requeueResult, _, err := v.processVRAsPrimary(pvcNamespacedName, log)
 		if requeueResult {
 			requeue = true
@@ -124,7 +125,9 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 			continue
 		}
 
-		requeueResult, skip = v.reconcileVRAsSecondary(pvc, log)
+		// If VR is not ready as Secondary, we can ignore it here, either a future VR change or the requeue would
+		// reconcile it to the desired state.
+		requeueResult, _, skip = v.reconcileVRAsSecondary(pvc, log)
 		if requeueResult {
 			requeue = true
 
@@ -141,25 +144,30 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 	return requeue
 }
 
-func (v *VRGInstance) reconcileVRAsSecondary(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, bool) {
+// reconcileVRAsSecondary checks for PVC readiness to move to Secondary and subsequently updates the VR
+// backing the PVC to secondary. It reports completion status of the VR request with the following values:
+// requeue (bool): If the request needs to be requeued
+// ready (bool): If desired state is achieved and hence VR is ready
+// skip (bool): If the VR can be currently skipped for processing
+func (v *VRGInstance) reconcileVRAsSecondary(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, bool, bool) {
 	const (
 		requeue bool = true
 		skip    bool = true
 	)
 
 	if !v.isPVCReadyForSecondary(pvc, log) {
-		return !requeue, skip
+		return !requeue, false, skip
 	}
 
 	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 
-	requeueResult, _, err := v.processVRAsSecondary(pvcNamespacedName, log)
+	requeueResult, ready, err := v.processVRAsSecondary(pvcNamespacedName, log)
 	if err != nil {
 		log.Info("Failure in getting or creating VolumeReplication resource for PersistentVolumeClaim",
 			"errorValue", err)
 	}
 
-	return requeueResult, !skip
+	return requeueResult, ready, !skip
 }
 
 // isPVCReadyForSecondary checks if a PVC is ready to be marked as Secondary
@@ -601,15 +609,16 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
-		requeueResult, skip := v.reconcileVRAsSecondary(pvc, log)
+		requeueResult, ready, skip := v.reconcileVRAsSecondary(pvc, log)
 		if requeueResult {
 			log.Info("Requeuing due to failure in reconciling VolumeReplication resource as secondary")
 
 			return requeue
 		}
 
-		if skip {
-			log.Info("Skipping further processing of VolumeReplication resource as it is not ready")
+		if skip || !ready {
+			log.Info("Skipping further processing of VolumeReplication resource as it is not ready",
+				"skip", skip, "ready", ready)
 
 			return !requeue
 		}
@@ -624,7 +633,7 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 		case requeueResult:
 			return requeue
 		case !ready:
-			// Ensure VR is available at the required state before deletion (do this for Secondary as well?)
+			// Ensure VR is available at the required state before deletion
 			return !requeue
 		}
 	}
@@ -715,8 +724,7 @@ func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName, 
 		v.updatePVCDataReadyCondition(vrNamespacedName.Name, VRGConditionReasonReady, msg)
 		v.updatePVCDataProtectedCondition(vrNamespacedName.Name, VRGConditionReasonReady, msg)
 
-		// TODO: this should return reconcile as false
-		return true, true, nil
+		return false, true, nil
 	}
 
 	return true, true, nil
@@ -745,8 +753,7 @@ func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName
 		v.updatePVCDataReadyCondition(vrNamespacedName.Name, VRGConditionReasonReplicated, msg)
 		v.updatePVCDataProtectedCondition(vrNamespacedName.Name, VRGConditionReasonDataProtected, msg)
 
-		// TODO: this should return reconcile as false
-		return true, true, nil
+		return false, true, nil
 	}
 
 	return true, true, nil
