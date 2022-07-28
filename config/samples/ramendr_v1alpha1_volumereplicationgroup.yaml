@@ -2,6 +2,7 @@ apiVersion: ramendr.openshift.io/v1alpha1
 kind: VolumeReplicationGroup
 metadata:
   name: volumereplicationgroup-sample
+  namespace: velero-test
 spec:
   pvcSelector:
     matchLabels:
@@ -18,13 +19,26 @@ spec:
   replicationState: "primary"
   kubeObjectProtection:
     resourceCaptureOrder:
-      - ["Deployments"]
-      - ["*.cpd.ibm.com"]
-      - ["ConfigMap", "Secret"]
-      - [".*"]
+      - name: config  # backup Names should be unique
+        includedResources: ["ConfigMap", "Secret"]
+      - name: cpd
+        includedResources: ["sample1.cpd.ibm.com", "sample2.cpd.ibm.com", "sample3.cpd.ibm.com"]
+        # labelSelector: "" # intentionally omitted - doesn't require label match
+        # includeClusterResources: false # by default
+      - name: deployments
+        includedResources: ["Deployment"]
+      - name: everything
+        includeClusterResources: true
+        excludedResources: [""]  # include everything with no history, even resources in other backups
     resourceRecoveryOrder:
-      - ["Secret",
-        "ConfigMap"]
-      - ["*.cpd.ibm.com"]
-      - ["!Deployments"]
-      - [".*"]
+      - backupName: config # API server required matching to backup struct
+        includeClusterResources: true
+        includedResources: ["ConfigMap", "Secret"]
+      - backupName: cpd
+        includedResources: ["sample1.cpd.ibm.com", "sample2.cpd.ibm.com", "sample3.cpd.ibm.com"]
+        # labelSelector: "" # intentionally omitted - don't require label match
+        # includeClusterResources: false # by default
+      - backupName: deployments
+        includedResources: ["Deployment"]
+      - backupName: everything
+        excludedResources: ["ConfigMap", "Secret", "Deployment", "sample1.cpd.ibm.com", "sample2.cpd.ibm.com", "sample3.cpd.ibm.com"]  # don't restore again
