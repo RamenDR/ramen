@@ -1044,6 +1044,10 @@ func waitForUpdateDRPCStatus() {
 			if condition.ObservedGeneration != drpc.Generation {
 				return false
 			}
+
+			if condition.Status != metav1.ConditionTrue {
+				return false
+			}
 		}
 
 		return true
