@@ -120,6 +120,35 @@ const (
 
 const KubeObjectProtectionCaptureIntervalDefault time.Duration = 5 * time.Minute
 
+type ResourceCaptureGroupSpec struct {
+	Name string `json:"name,omitempty"`
+
+	//+optional
+	IncludeClusterResources *bool `json:"includeClusterResources,omitempty"`
+
+	//+optional
+	IncludedResources []string `json:"includedResources,omitempty"`
+
+	//+optional
+	ExcludedResources []string `json:"excludedResources,omitempty"`
+
+	//+optional
+	LabelSelector *metav1.LabelSelector `json:"labelSelector,omitempty"`
+}
+
+type ResourceRecoveryGroupSpec struct {
+	BackupName string `json:"backupName,omitempty"`
+
+	//+optional
+	IncludeClusterResources *bool `json:"includeClusterResources,omitempty"`
+
+	//+optional
+	IncludedResources []string `json:"includedResources,omitempty"`
+
+	//+optional
+	ExcludedResources []string `json:"excludedResources,omitempty"`
+}
+
 type KubeObjectProtectionSpec struct {
 	// Preferred time between captures
 	// +optional
@@ -127,10 +156,10 @@ type KubeObjectProtectionSpec struct {
 	CaptureInterval *metav1.Duration `json:"captureInterval,omitempty"`
 
 	//+optional
-	ResourceCaptureOrder [][]string `json:"resourceBackupOrder,omitempty"`
+	ResourceCaptureOrder []ResourceCaptureGroupSpec `json:"resourceCaptureOrder,omitempty"`
 
 	//+optional
-	ResourceRecoveryOrder [][]string `json:"resourceRestoreOrder,omitempty"`
+	ResourceRecoveryOrder []ResourceRecoveryGroupSpec `json:"resourceRecoveryOrder,omitempty"`
 }
 
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
