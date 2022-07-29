@@ -117,7 +117,7 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("config map get: %w", u.validatedSetFalse("ConfigMapGetFailed", err))
+		return ctrl.Result{}, fmt.Errorf("config map get: %w", u.validatedSetFalseAndUpdate("ConfigMapGetFailed", err))
 	}
 
 	if !u.object.ObjectMeta.DeletionTimestamp.IsZero() {
@@ -127,15 +127,16 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	log.Info("create/update")
 
 	if err := u.addLabelsAndFinalizers(); err != nil {
-		return ctrl.Result{}, fmt.Errorf("finalizer add update: %w", u.validatedSetFalse("FinalizerAddFailed", err))
+		return ctrl.Result{}, fmt.Errorf("finalizer add update: %w", u.validatedSetFalseAndUpdate("FinalizerAddFailed", err))
 	}
 
 	if err := drClusterDeploy(drcluster, manifestWorkUtil, ramenConfig); err != nil {
-		return ctrl.Result{}, fmt.Errorf("drclusters deploy: %w", u.validatedSetFalse("DrClustersDeployFailed", err))
+		return ctrl.Result{}, fmt.Errorf("drclusters deploy: %w", u.validatedSetFalseAndUpdate("DrClustersDeployFailed", err))
 	}
 
 	if err = validateCIDRsFormat(drcluster, log); err != nil {
-		return ctrl.Result{}, fmt.Errorf("drclusters CIDRs validate: %w", u.validatedSetFalse(ReasonValidationFailed, err))
+		return ctrl.Result{}, fmt.Errorf("drclusters CIDRs validate: %w",
+			u.validatedSetFalseAndUpdate(ReasonValidationFailed, err))
 	}
 
 	requeue, err = u.clusterFenceHandle()
@@ -146,7 +147,7 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	if reason, err := validateS3Profile(ctx, r.APIReader, r.ObjectStoreGetter, drcluster, req.NamespacedName.String(),
 		log); err != nil {
-		return ctrl.Result{}, fmt.Errorf("drclusters s3Profile validate: %w", u.validatedSetFalse(reason, err))
+		return ctrl.Result{}, fmt.Errorf("drclusters s3Profile validate: %w", u.validatedSetFalseAndUpdate(reason, err))
 	}
 
 	setDRClusterValidatedCondition(&drcluster.Status.Conditions, drcluster.Generation, "Validated the cluster")
@@ -259,26 +260,25 @@ type drclusterInstance struct {
 	mwUtil              *util.MWUtil
 }
 
-func (u *drclusterInstance) validatedSetFalse(reason string, err error) error {
-	if err1 := u.statusConditionSet(ramen.DRClusterValidated, metav1.ConditionFalse, reason, err.Error()); err1 != nil {
+func (u *drclusterInstance) validatedSetFalseAndUpdate(reason string, err error) error {
+	if err1 := u.statusConditionSetAndUpdate(ramen.DRClusterValidated,
+		metav1.ConditionFalse, reason, err.Error()); err1 != nil {
 		return err1
 	}
 
 	return err
 }
 
-func (u *drclusterInstance) statusConditionSet(
+func (u *drclusterInstance) statusConditionSetAndUpdate(
 	conditionType string,
 	status metav1.ConditionStatus,
 	reason, message string,
 ) error {
 	conditions := &u.object.Status.Conditions
 
-	if util.GenericStatusConditionSet(u.object, conditions, conditionType, status, reason, message, u.log) {
-		return u.statusUpdate()
-	}
+	util.GenericStatusConditionSet(u.object, conditions, conditionType, status, reason, message, u.log)
 
-	return nil
+	return u.statusUpdate()
 }
 
 func (u *drclusterInstance) statusUpdate() error {

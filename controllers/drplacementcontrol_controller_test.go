@@ -528,8 +528,8 @@ func createNamespacesAsync(appNamespace *corev1.Namespace) {
 	createNamespace(appNamespace)
 }
 
-func createManagedClustersAsync() {
-	for _, cl := range asyncClusters {
+func createManagedClusters(managedClusters []*spokeClusterV1.ManagedCluster) {
+	for _, cl := range managedClusters {
 		mcLookupKey := types.NamespacedName{Name: cl.Name}
 		mcObj := &spokeClusterV1.ManagedCluster{}
 
@@ -855,7 +855,7 @@ func InitialDeploymentAsync(namespace, placementName, homeCluster string) (*plrv
 	*rmn.DRPlacementControl) {
 	createNamespacesAsync(getNamespaceObj(DRPCNamespaceName))
 
-	createManagedClustersAsync()
+	createManagedClusters(asyncClusters)
 	createDRClustersAsync()
 	createDRPolicyAsync()
 
@@ -1246,7 +1246,7 @@ func InitialDeploymentSync(namespace, placementName, homeCluster string) (*plrv1
 	*rmn.DRPlacementControl) {
 	createNamespacesSync()
 
-	createManagedClustersSync()
+	createManagedClusters(syncClusters)
 	createDRClustersSync()
 	createDRPolicySync()
 
@@ -1254,21 +1254,6 @@ func InitialDeploymentSync(namespace, placementName, homeCluster string) (*plrv1
 	drpc := createDRPC(UserPlacementRuleName, DRPCName, DRPCNamespaceName, SyncDRPolicyName)
 
 	return placementRule, drpc
-}
-
-func createManagedClustersSync() {
-	for _, cl := range syncClusters {
-		mcLookupKey := types.NamespacedName{Name: cl.Name}
-		mcObj := &spokeClusterV1.ManagedCluster{}
-
-		err := k8sClient.Get(context.TODO(), mcLookupKey, mcObj)
-		if err != nil {
-			clinstance := cl.DeepCopy()
-
-			err := k8sClient.Create(context.TODO(), clinstance)
-			Expect(err).NotTo(HaveOccurred())
-		}
-	}
 }
 
 func createDRClustersSync() {
