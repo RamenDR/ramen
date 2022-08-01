@@ -68,11 +68,6 @@ func kubeObjectsCapturePathNameAndNamePrefix(namespaceName, vrgName string, capt
 		namespaceName + "--" + vrgName + "--" + number
 }
 
-func veleroNamespaceName() string {
-	// TODO define config input and if not empty return it
-	return VeleroNamespaceNameDefault
-}
-
 func kubeObjectsCaptureName(prefix, groupName, s3ProfileName string) string {
 	return prefix + "--" + groupName + "--" + s3ProfileName
 }
@@ -126,7 +121,7 @@ func (v *VRGInstance) objectStorersGet() []ObjectStorer {
 const kubeObjectsRequestNameLabelKey = "ramendr.openshift.io/request-name"
 
 func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(result *ctrl.Result, objectStorers []ObjectStorer) {
-	veleroNamespaceName := veleroNamespaceName()
+	veleroNamespaceName := v.veleroNamespaceName()
 	vrg := v.instance
 	interval := kubeObjectsCaptureInterval(vrg.Spec.KubeObjectProtection)
 	status := &vrg.Status.KubeObjectProtection
@@ -333,7 +328,7 @@ func (v *VRGInstance) kubeObjectsRecover(s3ProfileName string, objectStore Objec
 	capturePathName, captureNamePrefix := kubeObjectsCapturePathNameAndNamePrefix(
 		sourceVrgNamespaceName, sourceVrgName, capture.Number)
 	recoverNamePrefix := kubeObjectsRecoverNamePrefix(vrg.Namespace, vrg.Name)
-	veleroNamespaceName := veleroNamespaceName()
+	veleroNamespaceName := v.veleroNamespaceName()
 
 	for groupNumber, recoverGroup := range v.getRecoverGroups() {
 		request, err := KubeObjectsRecover(
@@ -362,6 +357,23 @@ func (v *VRGInstance) kubeObjectsRecover(s3ProfileName string, objectStore Objec
 
 	return KubeObjectsRecoverRequestsDelete(v.ctx, v.reconciler.Client, veleroNamespaceName,
 		kubeObjectsRequestNameLabelKey, recoverNamePrefix)
+}
+
+func (v *VRGInstance) veleroNamespaceName() string {
+	veleroNamespaceName := VeleroNamespaceNameDefault
+
+	_, ramenConfig, err := ConfigMapGet(v.ctx, v.reconciler.APIReader)
+	if err != nil {
+		v.log.Error(err, "veleroNamespaceName config failed")
+
+		return veleroNamespaceName
+	}
+
+	if ramenConfig.VeleroNamespaceName != "" {
+		veleroNamespaceName = ramenConfig.VeleroNamespaceName
+	}
+
+	return veleroNamespaceName
 }
 
 func (v *VRGInstance) kubeObjectProtectionDisabledOrKubeObjectsProtected() bool {

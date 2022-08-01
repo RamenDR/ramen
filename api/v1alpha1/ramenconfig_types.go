@@ -106,6 +106,9 @@ type RamenConfig struct {
 	// Defaults to 1.
 	MaxConcurrentReconciles int `json:",omitempty"`
 
+	// Velero namespace input
+	VeleroNamespaceName string `json:"veleroNamespaceName,omitempty"`
+
 	// dr-cluster operator deployment/undeployment automation configuration
 	DrClusterOperator struct {
 		// dr-cluster operator deployment/undeployment automation enabled
