@@ -534,7 +534,7 @@ var _ = Describe("DRClusterController", func() {
 				drcluster.Spec.ClusterFence = "Fenced"
 				drcluster.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
 				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
-				drclusterConditionExpect(drcluster, false, metav1.ConditionTrue,
+				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue,
 					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
 					ramen.DRClusterConditionTypeFenced)
 			})
@@ -548,7 +548,7 @@ var _ = Describe("DRClusterController", func() {
 				// up the fencing resource. So, by the time this check is made,
 				// either the cluster should have been unfenced or completely
 				// cleaned
-				drclusterConditionExpect(drcluster, false, metav1.ConditionFalse,
+				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse,
 					BeElementOf(controllers.DRClusterConditionReasonUnfenced, controllers.DRClusterConditionReasonCleaning,
 						controllers.DRClusterConditionReasonClean),
 					Ignore(), ramen.DRClusterConditionTypeFenced)
