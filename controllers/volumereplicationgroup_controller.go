@@ -90,7 +90,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) er
 		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
 	)
 
-	return ctrl.NewControllerManagedBy(mgr).
+	builder := ctrl.NewControllerManagedBy(mgr).
 		WithOptions(ctrlcontroller.Options{
 			MaxConcurrentReconciles: getMaxConcurrentReconciles(r.Log),
 			RateLimiter:             rateLimiter,
@@ -101,6 +101,10 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(mgr ctrl.Manager) er
 		Owns(&volsyncv1alpha1.ReplicationDestination{}).
 		Owns(&volsyncv1alpha1.ReplicationSource{}).
 		Complete(r)
+
+	kubeObjectsRequestsWatch(builder)
+
+	return builder.Complete(r)
 }
 
 func init() {
@@ -485,7 +489,7 @@ func (v *VRGInstance) validateVRGMode() error {
 	return nil
 }
 
-func (v *VRGInstance) restorePVs() error {
+func (v *VRGInstance) restorePVs(result *ctrl.Result) error {
 	if v.instance.Spec.PrepareForFinalSync || v.instance.Spec.RunFinalSync {
 		msg := "PV restore skipped, as VRG is orchestrating final sync"
 		setVRGClusterDataReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
@@ -517,10 +521,12 @@ func (v *VRGInstance) restorePVs() error {
 	if err != nil {
 		v.log.Info("VolSync PV restore failed")
 
+		result.Requeue = true
+
 		return fmt.Errorf("failed to restore PVs for VolSync (%w)", err)
 	}
 
-	err = v.restorePVsForVolRep()
+	err = v.restorePVsForVolRep(result)
 	if err != nil {
 		v.log.Info("VolRep PV restore failed")
 
@@ -760,7 +766,8 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	if err := v.restorePVs(); err != nil {
+	result := ctrl.Result{}
+	if err := v.restorePVs(&result); err != nil {
 		v.log.Info("Restoring PVs failed", "Error", err.Error())
 
 		msg := fmt.Sprintf("Failed to restore PVs (%v)", err.Error())
@@ -768,19 +775,20 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 
 		if err = v.updateVRGStatus(false); err != nil {
 			v.log.Error(err, "VRG Status update failed")
+
+			result.Requeue = true
 		}
 
-		// Since updating status failed, reconcile
-		return ctrl.Result{Requeue: true}, nil
+		return result, nil
 	}
 
-	result := v.reconcileAsPrimary()
+	result = v.reconcileAsPrimary()
 
 	// If requeue is false, then VRG was successfully processed as primary.
 	// Hence the event to be generated is Success of type normal.
 	// Expectation is that, if something failed and requeue is true, then
 	// appropriate event might have been captured at the time of failure.
-	if result.IsZero() {
+	if !result.Requeue {
 		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeNormal,
 			rmnutil.EventReasonPrimarySuccess, "Primary Success")
 	}

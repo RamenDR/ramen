@@ -374,6 +374,13 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - velero.io
+  resources:
+  - backups/status
+  verbs:
+  - get
 - apiGroups:
   - velero.io
   resources:
@@ -417,6 +424,13 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - velero.io
+  resources:
+  - restores/status
+  verbs:
+  - get
 - apiGroups:
   - view.open-cluster-management.io
   resources:

@@ -38,3 +38,12 @@ func (createOrDeleteOrResourceVersionUpdatePredicate) Update(e event.UpdateEvent
 func (createOrDeleteOrResourceVersionUpdatePredicate) Generic(e event.GenericEvent) bool {
 	return false
 }
+
+type ResourceVersionUpdatePredicate struct{}
+
+func (ResourceVersionUpdatePredicate) Create(event.CreateEvent) bool   { return false }
+func (ResourceVersionUpdatePredicate) Delete(event.DeleteEvent) bool   { return false }
+func (ResourceVersionUpdatePredicate) Generic(event.GenericEvent) bool { return false }
+func (ResourceVersionUpdatePredicate) Update(e event.UpdateEvent) bool {
+	return predicate.ResourceVersionChangedPredicate{}.Update(e)
+}
