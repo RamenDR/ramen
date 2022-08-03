@@ -35,8 +35,9 @@ manager_undeploy() {
 	spoke_cluster_names=$cluster_names $ramen_hack_directory_path_name/ocm-minikube-ramen.sh ramen_undeploy_spokes
 }
 manager_redeploy() {
-	manager_undeploy
-	manager_image_build
+	manager_undeploy&
+	manager_image_build&
+	wait
 	manager_deploy
 }
 application_sample_namespace_name=${application_sample_namespace_name:-default}

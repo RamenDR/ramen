@@ -99,7 +99,7 @@ app_protect() {
 	vrg_deploy cluster1
 	vrg_get cluster1
 time kubectl --context cluster1 -nasdf wait vrg/bb --for condition=clusterdataprotected --timeout 2m
-	app_protection_info ""
+	app_protection_info 1
 }; exit_stack_push unset -f app_protect
 
 app_unprotect() {
@@ -118,7 +118,7 @@ time kubectl --context cluster2 -nasdf wait vrg/bb --for condition=clusterdatare
 }; exit_stack_push unset -f app_recover
 
 app_velero_kube_object_name() {
-	echo asdf--bb--$1--0--minio-on-$2
+	echo asdf--bb--$1----minio-on-$2
 }; exit_stack_push unset -f app_velero_kube_object_name
 
 s3_objects_list() {

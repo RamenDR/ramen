@@ -1543,18 +1543,20 @@ func (v *VRGInstance) s3KeyPrefix() string {
 	return S3KeyPrefix(v.namespacedName)
 }
 
-func (v *VRGInstance) restorePVsForVolRep() error {
+func (v *VRGInstance) restorePVsForVolRep(result *ctrl.Result) error {
 	v.log.Info("Restoring VolRep PVs")
 
 	if len(v.instance.Spec.S3Profiles) == 0 {
 		v.log.Info("No S3 profiles configured")
+
+		result.Requeue = true
 
 		return fmt.Errorf("no S3Profiles configured")
 	}
 
 	v.log.Info(fmt.Sprintf("Restoring PVs to this managed cluster. ProfileList: %v", v.instance.Spec.S3Profiles))
 
-	if err := v.fetchAndRestorePV(); err != nil {
+	if err := v.fetchAndRestorePV(result); err != nil {
 		errMsg := fmt.Sprintf("failed to restorePVs using profile list (%v)", v.instance.Spec.S3Profiles)
 		v.log.Info(errMsg)
 
@@ -1564,9 +1566,8 @@ func (v *VRGInstance) restorePVsForVolRep() error {
 	return nil
 }
 
-func (v *VRGInstance) fetchAndRestorePV() error {
+func (v *VRGInstance) fetchAndRestorePV(result *ctrl.Result) error {
 	err := errors.New("s3Profiles empty")
-
 	NoS3 := false
 
 	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
@@ -1583,7 +1584,7 @@ func (v *VRGInstance) fetchAndRestorePV() error {
 		objectStore, err = v.reconciler.ObjStoreGetter.ObjectStore(
 			v.ctx, v.reconciler.APIReader, s3ProfileName, v.namespacedName, v.log)
 		if err != nil {
-			v.log.Error(err, "kube objects recovery object store access", "profile", s3ProfileName)
+			v.log.Error(err, "Kube objects recovery object store inaccessible", "profile", s3ProfileName)
 
 			continue
 		}
@@ -1613,12 +1614,14 @@ func (v *VRGInstance) fetchAndRestorePV() error {
 
 		v.log.Info(fmt.Sprintf("Restored %d PVs using profile %s", len(pvList), s3ProfileName))
 
-		return v.kubeObjectsRecover(s3ProfileName, objectStore)
+		return v.kubeObjectsRecover(result, s3ProfileName, objectStore)
 	}
 
 	if NoS3 {
 		return nil
 	}
+
+	result.Requeue = true
 
 	return err
 }
