@@ -59,6 +59,7 @@ const (
 	VRGConditionTypeVolSyncFinalSyncInProgress = "FinalSyncInProgress"
 	VRGConditionTypeVolSyncRepDestinationSetup = "ReplicationDestinationSetup"
 	VRGConditionTypeVolSyncPVsRestored         = "PVsRestored"
+	VRGConditionTypeVolSyncDataProtected       = "DataProtected"
 )
 
 // VRG condition reasons
@@ -388,6 +389,18 @@ func setVRGConditionTypeVolSyncPVRestoreError(conditions *[]metav1.Condition, ob
 		Reason:             VRGConditionReasonError,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
+		Message:            message,
+	})
+}
+
+// sets conditions when Primary anccountered an error initializing the Replication Destination
+func setVRGConditionTypeVolSyncDataProtected(conditions *[]metav1.Condition, observedGeneration int64,
+	status metav1.ConditionStatus, message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeVolSyncDataProtected,
+		Reason:             VRGConditionReasonDataProtected,
+		ObservedGeneration: observedGeneration,
+		Status:             status,
 		Message:            message,
 	})
 }

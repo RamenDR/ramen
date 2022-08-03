@@ -721,7 +721,6 @@ func (v *VRGInstance) removeFinalizer(finalizer string) error {
 // processAsPrimary reconciles the current instance of VRG as primary
 func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 	v.log.Info("Entering processing VolumeReplicationGroup as Primary")
-
 	defer v.log.Info("Exiting processing VolumeReplicationGroup")
 
 	if err := v.addFinalizer(vrgFinalizerName); err != nil {
@@ -766,10 +765,8 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 		requeue = true
 	}
 
-	if requeue {
-		v.log.Info("Requeuing resource as Primary")
-
-		return ctrl.Result{Requeue: true}, nil
+	if result, yes := v.shouldRequeue(requeue, ramendrv1alpha1.Primary); yes {
+		return result, nil
 	}
 
 	v.log.Info("Successfully processed vrg as primary")
@@ -786,6 +783,24 @@ func (v *VRGInstance) reconcileAsPrimary() bool {
 	requeueForVolRep := v.reconcileVolRepsAsPrimary()
 
 	return requeueForVolSync || requeueForVolRep
+}
+
+func (v *VRGInstance) shouldRequeue(requeue bool, state ramendrv1alpha1.ReplicationState) (ctrl.Result, bool) {
+	if requeue {
+		v.log.Info(fmt.Sprintf("Requeuing resource as %v", state))
+
+		return ctrl.Result{Requeue: true}, true
+	}
+
+	const recheckAfter = 5 // seconds
+
+	if v.shouldRequeueForVolSync() {
+		v.log.Info("Requeuing for VolSync")
+
+		return ctrl.Result{RequeueAfter: time.Second * recheckAfter}, true
+	}
+
+	return ctrl.Result{}, false
 }
 
 // processAsSecondary reconciles the current instance of VRG as secondary
@@ -822,10 +837,8 @@ func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
 		requeue = true
 	}
 
-	if requeue {
-		v.log.Info("Requeuing resource as Secondary")
-
-		return ctrl.Result{Requeue: true}, nil
+	if result, yes := v.shouldRequeue(requeue, ramendrv1alpha1.Secondary); yes {
+		return result, nil
 	}
 
 	v.log.Info("Successfully processed vrg as secondary")

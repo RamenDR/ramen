@@ -21,7 +21,7 @@ import (
 	"reflect"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func (v *VRGInstance) restorePVsForVolSync() error {
@@ -225,12 +225,12 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() (requeue bool) {
 	return requeue
 }
 
-func (v *VRGInstance) aggregateVolSyncDataReadyCondition() *v1.Condition {
-	dataReadyCondition := &v1.Condition{
+func (v *VRGInstance) aggregateVolSyncDataReadyCondition() *metav1.Condition {
+	dataReadyCondition := &metav1.Condition{
 		Type:               VRGConditionTypeDataReady,
 		Reason:             VRGConditionReasonReady,
 		ObservedGeneration: v.instance.Generation,
-		Status:             v1.ConditionTrue,
+		Status:             metav1.ConditionTrue,
 		Message:            "Not applicable",
 	}
 
@@ -242,13 +242,13 @@ func (v *VRGInstance) aggregateVolSyncDataReadyCondition() *v1.Condition {
 		ready := v.isVolSyncReplicationSourceSetupComplete()
 
 		if !ready {
-			dataReadyCondition.Status = v1.ConditionFalse
+			dataReadyCondition.Status = metav1.ConditionFalse
 			dataReadyCondition.Message = "Not all VolSync PVCs are ready"
 
 			return dataReadyCondition
 		}
 
-		dataReadyCondition.Status = v1.ConditionTrue
+		dataReadyCondition.Status = metav1.ConditionTrue
 		dataReadyCondition.Message = "All VolSync PVCs are ready"
 
 		return dataReadyCondition
@@ -258,11 +258,11 @@ func (v *VRGInstance) aggregateVolSyncDataReadyCondition() *v1.Condition {
 	return dataReadyCondition
 }
 
-func (v *VRGInstance) aggregateVolSyncDataProtectedCondition() *v1.Condition {
+func (v *VRGInstance) aggregateVolSyncDataProtectedCondition() *metav1.Condition {
 	return v.buildDataProtectedCondition()
 }
 
-func (v *VRGInstance) aggregateVolSyncClusterDataProtectedCondition() *v1.Condition {
+func (v *VRGInstance) aggregateVolSyncClusterDataProtectedCondition() *metav1.Condition {
 	// For VolSync, clusterDataProtectedCondition is the same as dataProtecedCondition - so copy it
 	dataProtectedCondition := findCondition(v.instance.Status.Conditions, VRGConditionTypeDataProtected)
 
@@ -276,103 +276,125 @@ func (v *VRGInstance) aggregateVolSyncClusterDataProtectedCondition() *v1.Condit
 	return clusterDataProtectedCondition
 }
 
-//nolint:gocognit,funlen,gocyclo,cyclop
-func (v *VRGInstance) buildDataProtectedCondition() *v1.Condition {
+func (v *VRGInstance) buildDataProtectedCondition() *metav1.Condition {
 	if len(v.volSyncPVCs) == 0 && len(v.instance.Spec.VolSync.RDSpec) == 0 {
 		condition := findCondition(v.instance.Status.Conditions, VRGConditionTypeClusterDataProtected)
-		if condition != nil && condition.Status == v1.ConditionTrue {
+		if condition != nil && condition.Status == metav1.ConditionTrue {
 			v.log.Info(fmt.Sprintf("No VolSync PVCs. Using previous condition %v", condition.Type))
 
 			return condition
 		}
 
-		return &v1.Condition{
+		return &metav1.Condition{
 			Type:               VRGConditionTypeDataProtected,
 			Reason:             VRGConditionReasonDataProtected,
 			ObservedGeneration: v.instance.Generation,
-			Status:             v1.ConditionTrue,
+			Status:             metav1.ConditionTrue,
 			Message:            "Not applicable",
 		}
 	}
 
-	ready := true
+	dataProtected := false
 
-	protectedByVolSyncCount := 0
-
-	//nolint:nestif
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
-		for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
-			if protectedPVC.ProtectedByVolSync {
-				protectedByVolSyncCount++
-
-				condition := findCondition(protectedPVC.Conditions, VRGConditionTypeVolSyncRepSourceSetup)
-				if condition == nil || condition.Status != v1.ConditionTrue {
-					ready = false
-
-					v.log.Info(fmt.Sprintf("VolSync RS hasn't been setup yet for PVC %s", protectedPVC.Name))
-
-					break
-				}
-
-				// IFF however, we are running the final sync, then we have to wait
-				condition = findCondition(protectedPVC.Conditions, VRGConditionTypeVolSyncFinalSyncInProgress)
-				if condition != nil && condition.Status != v1.ConditionTrue {
-					ready = false
-
-					v.log.Info(fmt.Sprintf("VolSync RS is in progress for PVC %s", protectedPVC.Name))
-
-					break
-				}
-
-				// Check now if we have synced up at least once for this PVC
-				rsDataProtected, err := v.volSyncHandler.IsRSDataProtected(protectedPVC.Name)
-				if err != nil || !rsDataProtected {
-					ready = false
-
-					v.log.Info(fmt.Sprintf("First sync has not yet completed for VolSync RS %s -- Err %v",
-						protectedPVC.Name, err))
-
-					break
-				}
-			}
-		}
-
-		if ready && len(v.volSyncPVCs) != protectedByVolSyncCount {
-			ready = false
-
-			v.log.Info(fmt.Sprintf("VolSync PVCs count does not match with the ready PVCs %d/%d",
-				len(v.volSyncPVCs), protectedByVolSyncCount))
-		}
+		dataProtected = v.isRSDataProtected()
 	} else {
-		for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
-			v.log.Info("Reconcile RD as Secondary", "RDSpec", rdSpec)
-			rdDataProtected, err := v.volSyncHandler.IsRDDataProtected(rdSpec.ProtectedPVC.Name)
-			if err != nil || !rdDataProtected {
-				ready = false
-
-				v.log.Info(fmt.Sprintf("First sync has not yet completed for VolSync RD %s -- Err %v",
-					rdSpec.ProtectedPVC.Name, err))
-
-				break
-			}
-		}
+		dataProtected = v.isRDDataProtected()
 	}
 
-	dataProtectedCondition := &v1.Condition{
+	dataProtectedCondition := &metav1.Condition{
 		Type:               VRGConditionTypeDataProtected,
 		Reason:             VRGConditionReasonDataProtected,
 		ObservedGeneration: v.instance.Generation,
 	}
 
-	if !ready {
-		dataProtectedCondition.Status = v1.ConditionFalse
+	if !dataProtected {
+		dataProtectedCondition.Status = metav1.ConditionFalse
 		dataProtectedCondition.Message = "Not all VolSync PVCs are protected"
 	} else {
-		dataProtectedCondition.Status = v1.ConditionTrue
+		dataProtectedCondition.Status = metav1.ConditionTrue
 		dataProtectedCondition.Message = "All VolSync PVCs are protected"
 	}
 
 	return dataProtectedCondition
+}
+
+//nolint:gocognit,cyclop
+func (v VRGInstance) isRSDataProtected() bool {
+	protected := true
+
+	protectedByVolSyncCount := 0
+
+	for idx := range v.instance.Status.ProtectedPVCs {
+		protectedPVC := &v.instance.Status.ProtectedPVCs[idx]
+
+		if protectedPVC.ProtectedByVolSync {
+			protectedByVolSyncCount++
+
+			condition := findCondition(protectedPVC.Conditions, VRGConditionTypeVolSyncRepSourceSetup)
+			if condition == nil || condition.Status != metav1.ConditionTrue {
+				protected = false
+
+				v.log.Info(fmt.Sprintf("VolSync RS hasn't been setup yet for PVC %s", protectedPVC.Name))
+
+				break
+			}
+
+			// IFF however, we are running the final sync, then we have to wait
+			condition = findCondition(protectedPVC.Conditions, VRGConditionTypeVolSyncFinalSyncInProgress)
+			if condition != nil && condition.Status != metav1.ConditionTrue {
+				protected = false
+
+				v.log.Info(fmt.Sprintf("VolSync RS is in progress for PVC %s", protectedPVC.Name))
+
+				break
+			}
+
+			// Check now if we have synced up at least once for this PVC
+			rsDataProtected, err := v.volSyncHandler.IsRSDataProtected(protectedPVC.Name)
+			if err != nil || !rsDataProtected {
+				protected = false
+
+				v.log.Info(fmt.Sprintf("First sync has not yet completed for VolSync RS %s -- Err %v",
+					protectedPVC.Name, err))
+
+				setVRGConditionTypeVolSyncDataProtected(&protectedPVC.Conditions, v.instance.Generation,
+					metav1.ConditionFalse, "DataNotProtected")
+
+				break
+			}
+
+			setVRGConditionTypeVolSyncDataProtected(&protectedPVC.Conditions,
+				v.instance.Generation, metav1.ConditionTrue, "DataProtected")
+		}
+	}
+
+	if protected && len(v.volSyncPVCs) != protectedByVolSyncCount {
+		protected = false
+
+		v.log.Info(fmt.Sprintf("VolSync PVCs count does not match with the ready PVCs %d/%d",
+			len(v.volSyncPVCs), protectedByVolSyncCount))
+	}
+
+	return protected
+}
+
+func (v VRGInstance) isRDDataProtected() bool {
+	for idx := range v.instance.Spec.VolSync.RDSpec {
+		rdSpec := &v.instance.Spec.VolSync.RDSpec[idx]
+
+		v.log.Info("IsRDDataProtected", "RDSpec", rdSpec)
+		rdDataProtected, err := v.volSyncHandler.IsRDDataProtected(rdSpec.ProtectedPVC.Name)
+
+		if err != nil || !rdDataProtected {
+			v.log.Info(fmt.Sprintf("First sync has not yet completed for VolSync RD %s -- Err %v",
+				rdSpec.ProtectedPVC.Name, err))
+
+			return false
+		}
+	}
+
+	return len(v.instance.Spec.VolSync.RDSpec) != 0
 }
 
 func (v VRGInstance) isVolSyncReplicationSourceSetupComplete() bool {
@@ -381,7 +403,7 @@ func (v VRGInstance) isVolSyncReplicationSourceSetupComplete() bool {
 	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
 		if protectedPVC.ProtectedByVolSync {
 			condition := findCondition(protectedPVC.Conditions, VRGConditionTypeVolSyncRepSourceSetup)
-			if condition == nil || condition.Status != v1.ConditionTrue {
+			if condition == nil || condition.Status != metav1.ConditionTrue {
 				ready = false
 
 				v.log.Info(fmt.Sprintf("VolSync RS hasn't been setup yet for PVC %s", protectedPVC.Name))
@@ -392,4 +414,52 @@ func (v VRGInstance) isVolSyncReplicationSourceSetupComplete() bool {
 	}
 
 	return ready
+}
+
+func (v *VRGInstance) shouldRequeueForVolSync() bool {
+	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
+		return v.shouldRequeueForVolSyncAsSecondary()
+	}
+
+	return v.shouldRequeueForVolSyncAsPrimary()
+}
+
+func (v *VRGInstance) shouldRequeueForVolSyncAsSecondary() bool {
+	if len(v.instance.Spec.VolSync.RDSpec) == 0 {
+		// No volsync PVCs.  Don't requeue
+		return false
+	}
+
+	condition := findCondition(v.instance.Status.Conditions, VRGConditionTypeDataProtected)
+	if condition == nil || condition.Status == metav1.ConditionFalse {
+		v.log.Info("VolSync has not protected all PVCs yet")
+
+		return true
+	}
+
+	return false
+}
+
+func (v *VRGInstance) shouldRequeueForVolSyncAsPrimary() bool {
+	protected := true
+	protectedByVolSyncCount := 0
+
+	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
+		if protectedPVC.ProtectedByVolSync {
+			protectedByVolSyncCount++
+
+			condition := findCondition(protectedPVC.Conditions, VRGConditionTypeVolSyncDataProtected)
+			if condition == nil || condition.Status != metav1.ConditionTrue {
+				protected = false
+
+				break
+			}
+		}
+	}
+
+	if !protected || len(v.volSyncPVCs) != protectedByVolSyncCount {
+		return true
+	}
+
+	return false
 }
