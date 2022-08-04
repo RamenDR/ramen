@@ -469,7 +469,7 @@ func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim, log 
 
 	s3Profiles, err := v.PVUploadToObjectStores(pvc, log)
 	if err != nil {
-		return fmt.Errorf("error uploading PV cluster data to the list of s3 profiles")
+		return fmt.Errorf("failed to upload PV with error (%w). Uploaded to %v S3 profile(s)", err, s3Profiles)
 	}
 
 	numProfilesUploaded := len(s3Profiles)
