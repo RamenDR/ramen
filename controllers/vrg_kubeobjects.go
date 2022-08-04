@@ -88,6 +88,12 @@ func (v *VRGInstance) kubeObjectsProtect(result *ctrl.Result) {
 		return
 	}
 
+	if v.kubeObjectProtectionDisabled() {
+		v.log.Info("Kube objects protection disabled")
+
+		return
+	}
+
 	if v.instance.Spec.KubeObjectProtection != nil {
 		v.kubeObjectsCaptureStartOrResumeOrDelay(result, objectStorers)
 	}
@@ -300,7 +306,7 @@ func (v *VRGInstance) kubeObjectsRecover(s3ProfileName string, objectStore Objec
 	vrg := v.instance
 
 	spec := vrg.Spec.KubeObjectProtection
-	if spec == nil {
+	if spec == nil || v.kubeObjectProtectionDisabled() {
 		v.log.Info("Kube objects recovery disabled")
 
 		return nil
@@ -376,7 +382,24 @@ func (v *VRGInstance) veleroNamespaceName() string {
 	return veleroNamespaceName
 }
 
+// return true = disabled
+func (v *VRGInstance) kubeObjectProtectionDisabled() bool {
+	const defaultState = false
+
+	_, ramenConfig, err := ConfigMapGet(v.ctx, v.reconciler.APIReader)
+	if err != nil {
+		return defaultState
+	}
+
+	if ramenConfig.KubeObjectProtection != nil && ramenConfig.KubeObjectProtection.Disabled != nil {
+		return *ramenConfig.KubeObjectProtection.Disabled
+	}
+
+	return defaultState
+}
+
 func (v *VRGInstance) kubeObjectProtectionDisabledOrKubeObjectsProtected() bool {
-	return v.instance.Spec.KubeObjectProtection == nil ||
+	return v.kubeObjectProtectionDisabled() ||
+		v.instance.Spec.KubeObjectProtection == nil ||
 		v.instance.Status.KubeObjectProtection.CaptureToRecoverFrom != nil
 }
