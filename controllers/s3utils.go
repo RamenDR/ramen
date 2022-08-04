@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -34,6 +35,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// We have seen that the valid errors from the s3 servers take up to 2 minutes.
+// Let the timeout be greater than that.
+var s3Timeout = time.Second * 125
 
 // Example usage:
 // func example_code() {
@@ -365,7 +370,10 @@ func (s *s3ObjectStore) UploadObject(key string,
 			bucket, key, err)
 	}
 
-	if _, err := s.uploader.Upload(&s3manager.UploadInput{
+	ctx, cancel := context.WithDeadline(context.TODO(), time.Now().Add(s3Timeout))
+	defer cancel()
+
+	if _, err := s.uploader.UploadWithContext(ctx, &s3manager.UploadInput{
 		Bucket: &bucket,
 		Key:    &key,
 		Body:   encodedUploadContent,
@@ -453,8 +461,11 @@ func (s *s3ObjectStore) ListKeys(keyPrefix string) (
 
 	bucket := s.s3Bucket
 
+	ctx, cancel := context.WithDeadline(context.TODO(), time.Now().Add(s3Timeout))
+	defer cancel()
+
 	for gotAllObjects := false; !gotAllObjects; {
-		result, err := s.client.ListObjectsV2(&s3.ListObjectsV2Input{
+		result, err := s.client.ListObjectsV2WithContext(ctx, &s3.ListObjectsV2Input{
 			Bucket:            &bucket,
 			Prefix:            &keyPrefix,
 			ContinuationToken: nextContinuationToken,
@@ -476,7 +487,7 @@ func (s *s3ObjectStore) ListKeys(keyPrefix string) (
 		}
 	}
 
-	return
+	return keys, nil
 }
 
 // DownloadObject downloads an object from the bucket with the given key,
@@ -498,7 +509,10 @@ func (s *s3ObjectStore) DownloadObject(key string,
 	bucket := s.s3Bucket
 	writerAt := &aws.WriteAtBuffer{}
 
-	if _, err := s.downloader.Download(writerAt, &s3.GetObjectInput{
+	ctx, cancel := context.WithDeadline(context.TODO(), time.Now().Add(s3Timeout))
+	defer cancel()
+
+	if _, err := s.downloader.DownloadWithContext(ctx, writerAt, &s3.GetObjectInput{
 		Bucket: &bucket,
 		Key:    &key,
 	}); err != nil {
@@ -551,7 +565,10 @@ func (s *s3ObjectStore) DeleteObjects(keyPrefix string) (
 		}
 	}
 
-	if err = s.batchDeleter.Delete(aws.BackgroundContext(), &s3manager.DeleteObjectsIterator{
+	ctx, cancel := context.WithDeadline(context.TODO(), time.Now().Add(s3Timeout))
+	defer cancel()
+
+	if err = s.batchDeleter.Delete(ctx, &s3manager.DeleteObjectsIterator{
 		Objects: delObjects,
 	}); err != nil {
 		return fmt.Errorf("unable to DeleteObjects "+
