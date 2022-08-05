@@ -1094,7 +1094,7 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 		return true
 	}
 
-	return v.validateAdditionalVRStatusForSecondary(volRep)
+	return v.isVRDataSyncCompleteForSecondary(volRep)
 }
 
 // validateAdditionalVRStatusForSecondary returns true if resync status is complete as secondary, false otherwise
@@ -1114,7 +1114,7 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 // With 2nd condition being met,
 // ProtectedPVC.Conditions[DataReady] = True
 // ProtectedPVC.Conditions[DataProtected] = True
-func (v *VRGInstance) validateAdditionalVRStatusForSecondary(volRep *volrep.VolumeReplication) bool {
+func (v *VRGInstance) isVRDataSyncCompleteForSecondary(volRep *volrep.VolumeReplication) bool {
 	conditionMet, _ := isVRConditionMet(volRep, volrepController.ConditionResyncing, metav1.ConditionTrue)
 	if !conditionMet {
 		return v.checkResyncCompletionAsSecondary(volRep)
@@ -1131,7 +1131,7 @@ func (v *VRGInstance) validateAdditionalVRStatusForSecondary(volRep *volrep.Volu
 		v.log.Info(fmt.Sprintf("VolumeReplication resource is not in degraded condition while"+
 			" resyncing is true (%s/%s)", volRep.Name, volRep.Namespace))
 
-		return false
+		return true
 	}
 
 	msg = "VolumeReplication resource for the pvc is syncing as Secondary"
@@ -1141,7 +1141,7 @@ func (v *VRGInstance) validateAdditionalVRStatusForSecondary(volRep *volrep.Volu
 	v.log.Info(fmt.Sprintf("VolumeReplication resource for the pvc is syncing as Secondary (%s/%s)",
 		volRep.Name, volRep.Namespace))
 
-	return true
+	return false
 }
 
 // checkResyncCompletionAsSecondary returns true if resync status is complete as secondary, false otherwise
@@ -1162,7 +1162,7 @@ func (v *VRGInstance) checkResyncCompletionAsSecondary(volRep *volrep.VolumeRepl
 
 	conditionMet, msg = isVRConditionMet(volRep, volrepController.ConditionDegraded, metav1.ConditionFalse)
 	if !conditionMet {
-		defaultMsg := "VolumeReplication resource for pvc is not syncing and is degraded as Secondary"
+		defaultMsg := "VolumeReplication resource for pvc is not syncing and degraded as Secondary"
 		v.updatePVCDataReadyConditionHelper(volRep.Name, VRGConditionReasonError, msg,
 			defaultMsg)
 
