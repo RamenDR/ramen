@@ -23,6 +23,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -91,7 +92,8 @@ const (
 func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	// TODO: Validate managedCluster name? and also ensure it is not deleted!
 	// TODO: Setup views for storage class and VRClass to read and report IDs
-	log := ctrl.Log.WithName("controllers").WithName("drcluster").WithValues("name", req.NamespacedName.Name)
+	log := ctrl.Log.WithName("controllers").WithName("drcluster").WithValues("name",
+		req.NamespacedName.Name, "rid", uuid.New())
 	log.Info("reconcile enter")
 
 	defer log.Info("reconcile exit")
