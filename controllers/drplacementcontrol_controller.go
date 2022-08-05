@@ -323,7 +323,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := r.Log.WithValues("DRPC", req.NamespacedName, "Rid", uuid.New())
+	logger := r.Log.WithValues("DRPC", req.NamespacedName, "rid", uuid.New())
 
 	logger.Info("Entering reconcile loop")
 	defer logger.Info("Exiting reconcile loop")

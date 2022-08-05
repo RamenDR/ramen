@@ -26,6 +26,7 @@ import (
 	"golang.org/x/time/rate"
 
 	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
+	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -276,7 +277,7 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim, log logr.
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := r.Log.WithValues("VolumeReplicationGroup", req.NamespacedName)
+	log := r.Log.WithValues("VolumeReplicationGroup", req.NamespacedName, "rid", uuid.New())
 
 	log.Info("Entering reconcile loop")
 
