@@ -87,15 +87,6 @@ type S3StoreProfile struct {
 	S3SecretRef v1.SecretReference `json:"s3SecretRef"`
 }
 
-type KubeObjectProtection struct {
-	//+optional
-	// Disabled is used to disable KubeObjectProtection usage in Ramen.
-	Disabled *bool `json:"disabled,omitempty"`
-
-	//+optional
-	VeleroSecretName string `json:"veleroSecretName,omitempty"`
-}
-
 //+kubebuilder:object:root=true
 
 // RamenConfig is the Schema for the ramenconfig API
@@ -114,9 +105,6 @@ type RamenConfig struct {
 	// MaxConcurrentReconciles is the maximum number of concurrent Reconciles which can be run.
 	// Defaults to 1.
 	MaxConcurrentReconciles int `json:",omitempty"`
-
-	// Velero namespace input
-	VeleroNamespaceName string `json:"veleroNamespaceName,omitempty"`
 
 	// dr-cluster operator deployment/undeployment automation configuration
 	DrClusterOperator struct {
@@ -156,7 +144,14 @@ type RamenConfig struct {
 		CephFSCSIDriverName string `json:"cephFSCSIDriverName,omitempty"`
 	} `json:"volSync,omitempty"`
 
-	KubeObjectProtection *KubeObjectProtection `json:"kubeObjectProtection,omitempty"`
+	KubeObjectProtection struct {
+		// Disabled is used to disable KubeObjectProtection usage in Ramen.
+		Disabled bool `json:"disabled,omitempty"`
+		// Velero namespace input
+		VeleroNamespaceName string `json:"veleroNamespaceName,omitempty"`
+		//+optional
+		VeleroSecretName string `json:"veleroSecretName,omitempty"`
+	} `json:"kubeObjectProtection,omitempty"`
 }
 
 func init() {

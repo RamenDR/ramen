@@ -451,7 +451,7 @@ ramen_s3_secret_deploy_cluster()
 exit_stack_push unset -f ramen_s3_secret_deploy_cluster
 ramen_s3_secret_undeploy_cluster()
 {
-	ramen_s3_secret_kubectl_cluster $1 delete\ "$2"
+	ramen_s3_secret_kubectl_cluster $1 delete\ --ignore-not-found
 }
 exit_stack_push unset -f ramen_s3_secret_undeploy_cluster
 ramen_s3_secret_distribution_enabled=${ramen_s3_secret_distribution_enabled-true}
@@ -694,7 +694,7 @@ spec.startingCSV\
 	done; unset -v cluster_name
 	for cluster_name in $spoke_cluster_names_nonhub; do
 		date
-		ramen_s3_secret_undeploy_cluster$secret_function_name_suffix $cluster_name --ignore-not-found
+		ramen_s3_secret_undeploy_cluster$secret_function_name_suffix $cluster_name
 		date
 		true_if_exit_status_and_stderr 1 'error: no matching resources found' \
 		kubectl --context $cluster_name wait namespaces/ramen-system --for delete --timeout 2m

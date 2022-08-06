@@ -61,7 +61,7 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
-func newManager() (ctrl.Manager, error) {
+func newManager() (ctrl.Manager, *ramendrv1alpha1.RamenConfig, error) {
 	var configFile string
 
 	flag.StringVar(&configFile, "config", "",
@@ -82,16 +82,14 @@ func newManager() (ctrl.Manager, error) {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	options := ctrl.Options{Scheme: scheme}
-	ramenConfig := ramendrv1alpha1.RamenConfig{}
+	ramenConfig := &ramendrv1alpha1.RamenConfig{}
 
-	if configFile != "" {
-		options, ramenConfig = controllers.LoadControllerConfig(configFile, scheme, setupLog)
-	}
+	controllers.LoadControllerConfig(configFile, setupLog, &options, ramenConfig)
 
 	controllers.ControllerType = ramenConfig.RamenControllerType
 	if !(controllers.ControllerType == ramendrv1alpha1.DRClusterType ||
 		controllers.ControllerType == ramendrv1alpha1.DRHubType) {
-		return nil, fmt.Errorf("invalid controller type specified (%s), should be one of [%s|%s]",
+		return nil, nil, fmt.Errorf("invalid controller type specified (%s), should be one of [%s|%s]",
 			controllers.ControllerType, ramendrv1alpha1.DRHubType, ramendrv1alpha1.DRClusterType)
 	}
 
@@ -102,7 +100,10 @@ func newManager() (ctrl.Manager, error) {
 		utilruntime.Must(cpcv1.AddToScheme(scheme))
 		utilruntime.Must(gppv1.AddToScheme(scheme))
 	} else {
-		utilruntime.Must(velero.AddToScheme(scheme))
+		if !ramenConfig.KubeObjectProtection.Disabled {
+			utilruntime.Must(velero.AddToScheme(scheme))
+		}
+
 		utilruntime.Must(volrep.AddToScheme(scheme))
 		utilruntime.Must(volsyncv1alpha1.AddToScheme(scheme))
 		utilruntime.Must(snapv1.AddToScheme(scheme))
@@ -110,13 +111,13 @@ func newManager() (ctrl.Manager, error) {
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), options)
 	if err != nil {
-		return mgr, fmt.Errorf("starting new manager failed %w", err)
+		return mgr, nil, fmt.Errorf("starting new manager failed %w", err)
 	}
 
-	return mgr, nil
+	return mgr, ramenConfig, nil
 }
 
-func setupReconcilers(mgr ctrl.Manager) {
+func setupReconcilers(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig) {
 	if controllers.ControllerType == ramendrv1alpha1.DRHubType {
 		setupReconcilersHub(mgr)
 
@@ -145,7 +146,7 @@ func setupReconcilers(mgr ctrl.Manager) {
 		Log:            ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
 		ObjStoreGetter: controllers.S3ObjectStoreGetter(),
 		Scheme:         mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	}).SetupWithManager(mgr, ramenConfig); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VolumeReplicationGroup")
 		os.Exit(1)
 	}
@@ -187,13 +188,13 @@ func setupReconcilersHub(mgr ctrl.Manager) {
 }
 
 func main() {
-	mgr, err := newManager()
+	mgr, ramenConfig, err := newManager()
 	if err != nil {
 		setupLog.Error(err, "unable to Get new manager")
 		os.Exit(1)
 	}
 
-	setupReconcilers(mgr)
+	setupReconcilers(mgr, ramenConfig)
 
 	// +kubebuilder:scaffold:builder
 	if err := mgr.AddHealthzCheck("health", healthz.Ping); err != nil {

@@ -448,14 +448,13 @@ func (v *VRGInstance) veleroNamespaceName() string {
 		return veleroNamespaceName
 	}
 
-	if ramenConfig.VeleroNamespaceName != "" {
-		veleroNamespaceName = ramenConfig.VeleroNamespaceName
+	if ramenConfig.KubeObjectProtection.VeleroNamespaceName != "" {
+		veleroNamespaceName = ramenConfig.KubeObjectProtection.VeleroNamespaceName
 	}
 
 	return veleroNamespaceName
 }
 
-// return true = disabled
 func (v *VRGInstance) kubeObjectProtectionDisabled() bool {
 	const defaultState = false
 
@@ -464,11 +463,7 @@ func (v *VRGInstance) kubeObjectProtectionDisabled() bool {
 		return defaultState
 	}
 
-	if ramenConfig.KubeObjectProtection != nil && ramenConfig.KubeObjectProtection.Disabled != nil {
-		return *ramenConfig.KubeObjectProtection.Disabled
-	}
-
-	return defaultState
+	return ramenConfig.KubeObjectProtection.Disabled
 }
 
 func (v *VRGInstance) getVeleroSecretName() string {
@@ -481,7 +476,7 @@ func (v *VRGInstance) getVeleroSecretName() string {
 		return name
 	}
 
-	if ramenConfig.KubeObjectProtection != nil && ramenConfig.KubeObjectProtection.VeleroSecretName != "" {
+	if ramenConfig.KubeObjectProtection.VeleroSecretName != "" {
 		name = ramenConfig.KubeObjectProtection.VeleroSecretName
 	}
 
