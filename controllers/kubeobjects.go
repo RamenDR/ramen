@@ -160,6 +160,7 @@ func KubeObjectsRecover(
 	captureName string,
 	recoverName string,
 	labelKey, captureLabelValue, recoverLabelValue string,
+	secretName string,
 ) (KubeObjectsRecoverRequest, error) {
 	log.Info("Kube objects recover",
 		"s3 url", s3Url,
@@ -173,6 +174,7 @@ func KubeObjectsRecover(
 		"label key", labelKey,
 		"capture label value", captureLabelValue,
 		"recover label value", recoverLabelValue,
+		"secret name", secretName,
 	)
 
 	restore, err := backupDummyCreateAndRestore(
@@ -188,6 +190,7 @@ func KubeObjectsRecover(
 		captureName,
 		recoverName,
 		labelKey, captureLabelValue, recoverLabelValue,
+		secretName,
 	)
 
 	return veleroRestoreRequest{restore}, err
@@ -205,12 +208,12 @@ func backupDummyCreateAndRestore(
 	requestNamespaceName string,
 	backupName string,
 	restoreName string,
-	labelKey, backupLabelValue, restoreLabelValue string,
+	labelKey, backupLabelValue, restoreLabelValue, secretName string,
 ) (*velero.Restore, error) {
 	backupLocation, backup, err := backupCreate(
 		types.NamespacedName{Namespace: requestNamespaceName, Name: backupName},
 		w, reader, s3Url, s3BucketName, s3KeyPrefix, backupSpecDummy(), sourceNamespaceName,
-		labelKey, backupLabelValue,
+		labelKey, backupLabelValue, secretName,
 	)
 	if err != nil {
 		return nil, err
@@ -295,14 +298,14 @@ func KubeObjectsCaptureDelete(
 	sourceNamespaceName string,
 	requestNamespaceName string,
 	captureName string,
-	labelKey, labelValue string,
+	labelKey, labelValue, secretName string,
 ) error {
 	w := objectWriter{ctx: ctx, Writer: writer, log: log}
 	namespacedName := types.NamespacedName{Namespace: requestNamespaceName, Name: captureName}
 
 	backupLocation, backup, err := backupCreate(
 		namespacedName, w, reader, s3Url, s3BucketName, s3KeyPrefix, backupSpecDummy(), sourceNamespaceName,
-		labelKey, labelValue,
+		labelKey, labelValue, secretName,
 	)
 	if err != nil {
 		return err
@@ -454,7 +457,7 @@ func KubeObjectsProtect(
 	objectsSpec ramendrv1alpha1.KubeObjectsSpec,
 	requestNamespaceName string,
 	captureName string,
-	labelKey, labelValue string,
+	labelKey, labelValue, secretName string,
 ) (KubeObjectsProtectRequest, error) {
 	log.Info("Kube objects protect",
 		"s3 url", s3Url,
@@ -465,6 +468,7 @@ func KubeObjectsProtect(
 		"capture name", captureName,
 		"label key", labelKey,
 		"label value", labelValue,
+		"secret name", secretName,
 	)
 
 	backup, err := backupRealCreate(
@@ -477,7 +481,7 @@ func KubeObjectsProtect(
 		objectsSpec,
 		requestNamespaceName,
 		captureName,
-		labelKey, labelValue,
+		labelKey, labelValue, secretName,
 	)
 
 	return veleroBackupRequest{backup}, err
@@ -493,14 +497,14 @@ func backupRealCreate(
 	objectsSpec ramendrv1alpha1.KubeObjectsSpec,
 	requestNamespaceName string,
 	captureName string,
-	labelKey, labelValue string,
+	labelKey, labelValue, secretName string,
 ) (*velero.Backup, error) {
 	backupLocation, backup, err := backupCreate(
 		types.NamespacedName{Namespace: requestNamespaceName, Name: captureName},
 		w, reader, s3Url, s3BucketName, s3KeyPrefix,
 		getBackupSpecFromObjectsSpec(objectsSpec),
 		sourceNamespaceName,
-		labelKey, labelValue,
+		labelKey, labelValue, secretName,
 	)
 	if err != nil {
 		return nil, err
@@ -597,10 +601,10 @@ func backupCreate(
 	s3KeyPrefix string,
 	backupSpec velero.BackupSpec,
 	sourceNamespaceName string,
-	labelKey, labelValue string,
+	labelKey, labelValue, secretName string,
 ) (*velero.BackupStorageLocation, *velero.Backup, error) {
 	backupLocation := backupLocation(backupNamespacedName, s3Url, s3BucketName, s3KeyPrefix,
-		labelKey, labelValue,
+		labelKey, labelValue, secretName,
 	)
 	if err := w.objectCreate(backupLocation); err != nil {
 		return backupLocation, nil, err
@@ -677,12 +681,12 @@ func objectCreateAndGet(
 }
 
 const (
-	secretName    = "s3secret"
-	secretKeyName = "aws"
+	secretNameDefault = "s3secret"
+	secretKeyName     = "aws"
 )
 
 func backupLocation(namespacedName types.NamespacedName, s3Url, bucketName, s3KeyPrefix string,
-	labelKey, labelValue string,
+	labelKey, labelValue, secretName string,
 ) *velero.BackupStorageLocation {
 	return &velero.BackupStorageLocation{
 		TypeMeta: metav1.TypeMeta{

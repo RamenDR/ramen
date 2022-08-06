@@ -217,7 +217,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 				objectStore.AddressComponent1(), objectStore.AddressComponent2(), pathName, vrg.Namespace,
 				captureGroup.KubeObjectsSpec,
 				veleroNamespaceName, kubeObjectsCaptureName(namePrefix, captureGroup.Name, s3ProfileName),
-				kubeObjectsRequestNameLabelKey, namePrefix)
+				kubeObjectsRequestNameLabelKey, namePrefix, v.getVeleroSecretName())
 			if err != nil {
 				v.log.Error(err, "Kube objects group capture error", "number", captureNumber,
 					"group", groupNumber, "name", captureGroup.Name, "profile", s3ProfileName)
@@ -345,7 +345,7 @@ func (v *VRGInstance) kubeObjectsRecover(s3ProfileName string, objectStore Objec
 			veleroNamespaceName,
 			kubeObjectsCaptureName(captureNamePrefix, recoverGroup.BackupName, s3ProfileName),
 			kubeObjectsRecoverName(recoverNamePrefix, groupNumber),
-			kubeObjectsRequestNameLabelKey, captureNamePrefix, recoverNamePrefix,
+			kubeObjectsRequestNameLabelKey, captureNamePrefix, recoverNamePrefix, v.getVeleroSecretName(),
 		)
 		if err != nil {
 			v.log.Error(err, "Kube objects group recover error", "number", capture.Number,
@@ -396,6 +396,23 @@ func (v *VRGInstance) kubeObjectProtectionDisabled() bool {
 	}
 
 	return defaultState
+}
+
+func (v *VRGInstance) getVeleroSecretName() string {
+	name := secretNameDefault
+
+	_, ramenConfig, err := ConfigMapGet(v.ctx, v.reconciler.APIReader)
+	if err != nil {
+		v.log.Error(err, "getVeleroSecretName failed getting Ramen ConfigMap")
+
+		return name
+	}
+
+	if ramenConfig.KubeObjectProtection != nil && ramenConfig.KubeObjectProtection.VeleroSecretName != "" {
+		name = ramenConfig.KubeObjectProtection.VeleroSecretName
+	}
+
+	return name
 }
 
 func (v *VRGInstance) kubeObjectProtectionDisabledOrKubeObjectsProtected() bool {
