@@ -28,7 +28,6 @@ import (
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -63,8 +62,8 @@ var ControllerType ramendrv1alpha1.ControllerType
 
 var cachedRamenConfigFileName string
 
-func LoadControllerConfig(configFile string, scheme *runtime.Scheme,
-	log logr.Logger) (options ctrl.Options, ramenConfig ramendrv1alpha1.RamenConfig) {
+func LoadControllerConfig(configFile string,
+	log logr.Logger, options *ctrl.Options, ramenConfig *ramendrv1alpha1.RamenConfig) {
 	if configFile == "" {
 		log.Info("Ramen config file not specified")
 
@@ -74,22 +73,13 @@ func LoadControllerConfig(configFile string, scheme *runtime.Scheme,
 	log.Info("loading Ramen configuration from ", "file", configFile)
 
 	cachedRamenConfigFileName = configFile
-	options.Scheme = scheme
 
-	options, err := options.AndFrom(
-		ctrl.ConfigFile().AtPath(configFile).OfKind(&ramenConfig))
-	if err != nil {
-		log.Error(err, "unable to load the config file")
-		os.Exit(1)
-
-		return
-	}
+	*options = options.AndFromOrDie(
+		ctrl.ConfigFile().AtPath(configFile).OfKind(ramenConfig))
 
 	for profileName, s3Profile := range ramenConfig.S3StoreProfiles {
 		log.Info("s3 profile", "key", profileName, "value", s3Profile)
 	}
-
-	return
 }
 
 // Read the RamenConfig file mounted in the local file system.  This file is

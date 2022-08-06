@@ -321,7 +321,7 @@ var _ = BeforeSuite(func() {
 		Log:            ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
 		ObjStoreGetter: fakeObjectStoreGetter{},
 		Scheme:         k8sManager.GetScheme(),
-	}).SetupWithManager(k8sManager)
+	}).SetupWithManager(k8sManager, ramenConfig)
 	Expect(err).ToNot(HaveOccurred())
 
 	Expect((&ramencontrollers.S3BucketViewReconciler{
