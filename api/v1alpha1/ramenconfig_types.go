@@ -91,6 +91,9 @@ type KubeObjectProtection struct {
 	//+optional
 	// Disabled is used to disable KubeObjectProtection usage in Ramen.
 	Disabled *bool `json:"disabled,omitempty"`
+
+	//+optional
+	VeleroSecretName string `json:"veleroSecretName,omitempty"`
 }
 
 //+kubebuilder:object:root=true
