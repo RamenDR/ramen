@@ -85,6 +85,8 @@ type S3StoreProfile struct {
 	// access key with the keys AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
 	// respectively.
 	S3SecretRef v1.SecretReference `json:"s3SecretRef"`
+	//+optional
+	VeleroNamespaceSecretName string `json:"VeleroNamespaceSecretName,omitempty"`
 }
 
 //+kubebuilder:object:root=true
@@ -149,8 +151,6 @@ type RamenConfig struct {
 		Disabled bool `json:"disabled,omitempty"`
 		// Velero namespace input
 		VeleroNamespaceName string `json:"veleroNamespaceName,omitempty"`
-		//+optional
-		VeleroSecretName string `json:"veleroSecretName,omitempty"`
 	} `json:"kubeObjectProtection,omitempty"`
 }
 

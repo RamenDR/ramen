@@ -93,7 +93,8 @@ var s3Timeout = time.Second * 125
 type ObjectStoreGetter interface {
 	// ObjectStore returns an object that satisfies ObjectStorer interface
 	ObjectStore(ctx context.Context, r client.Reader,
-		s3Profile string, callerTag string, log logr.Logger) (ObjectStorer, error)
+		s3Profile string, callerTag string, log logr.Logger,
+	) (ObjectStorer, ramen.S3StoreProfile, error)
 }
 
 type ObjectStorer interface {
@@ -101,8 +102,6 @@ type ObjectStorer interface {
 	DownloadObject(key string, objectPointer interface{}) error
 	ListKeys(keyPrefix string) (keys []string, err error)
 	DeleteObjects(keyPrefix string) error
-	AddressComponent1() string
-	AddressComponent2() string
 }
 
 // S3ObjectStoreGetter returns a concrete type that implements
@@ -123,16 +122,17 @@ type s3ObjectStoreGetter struct{}
 // secret is not configured, or if client session creation fails.
 func (s3ObjectStoreGetter) ObjectStore(ctx context.Context,
 	r client.Reader, s3ProfileName string,
-	callerTag string, log logr.Logger) (ObjectStorer, error) {
+	callerTag string, log logr.Logger,
+) (ObjectStorer, ramen.S3StoreProfile, error) {
 	s3StoreProfile, err := GetRamenConfigS3StoreProfile(ctx, r, s3ProfileName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get profile %s for caller %s, %w",
+		return nil, s3StoreProfile, fmt.Errorf("failed to get profile %s for caller %s, %w",
 			s3ProfileName, callerTag, err)
 	}
 
 	accessID, secretAccessKey, err := GetS3Secret(ctx, r, s3StoreProfile.S3SecretRef)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get secret %v for caller %s, %w",
+		return nil, s3StoreProfile, fmt.Errorf("failed to get secret %v for caller %s, %w",
 			s3StoreProfile.S3SecretRef, callerTag, err)
 	}
 
@@ -149,7 +149,7 @@ func (s3ObjectStoreGetter) ObjectStore(ctx context.Context,
 		S3ForcePathStyle: aws.Bool(true),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create new session for %s for caller %s, %w",
+		return nil, s3StoreProfile, fmt.Errorf("failed to create new session for %s for caller %s, %w",
 			s3Endpoint, callerTag, err)
 	}
 
@@ -174,7 +174,7 @@ func (s3ObjectStoreGetter) ObjectStore(ctx context.Context,
 		name:         s3ProfileName,
 	}
 
-	return s3Conn, nil
+	return s3Conn, s3StoreProfile, nil
 }
 
 func GetS3Secret(ctx context.Context, r client.Reader,
@@ -210,14 +210,6 @@ type s3ObjectStore struct {
 	s3Bucket     string
 	callerTag    string
 	name         string
-}
-
-func (s *s3ObjectStore) AddressComponent1() string {
-	return s.s3Endpoint
-}
-
-func (s *s3ObjectStore) AddressComponent2() string {
-	return s.s3Bucket
 }
 
 // CreateBucket creates the given bucket; does not return an error if the bucket

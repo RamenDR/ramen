@@ -560,7 +560,7 @@ func (v *VRGInstance) getObjectStorer(s3ProfileName string) (ObjectStorer, error
 		return objectStore, err
 	}
 
-	objectStore, err = v.reconciler.ObjStoreGetter.ObjectStore(
+	objectStore, _, err = v.reconciler.ObjStoreGetter.ObjectStore(
 		v.ctx,
 		v.reconciler.APIReader,
 		s3ProfileName,
@@ -750,7 +750,7 @@ func (v *VRGInstance) deleteClusterDataInS3Stores(log logr.Logger) error {
 }
 
 func (v *VRGInstance) DeletePVs(s3ProfileName string) (err error) {
-	objectStore, err := v.reconciler.ObjStoreGetter.ObjectStore(
+	objectStore, _, err := v.reconciler.ObjStoreGetter.ObjectStore(
 		v.ctx,
 		v.reconciler.APIReader,
 		s3ProfileName,
@@ -1579,9 +1579,12 @@ func (v *VRGInstance) fetchAndRestorePV(result *ctrl.Result) error {
 			continue
 		}
 
-		var objectStore ObjectStorer
+		var (
+			objectStore    ObjectStorer
+			s3StoreProfile ramendrv1alpha1.S3StoreProfile
+		)
 
-		objectStore, err = v.reconciler.ObjStoreGetter.ObjectStore(
+		objectStore, s3StoreProfile, err = v.reconciler.ObjStoreGetter.ObjectStore(
 			v.ctx, v.reconciler.APIReader, s3ProfileName, v.namespacedName, v.log)
 		if err != nil {
 			v.log.Error(err, "Kube objects recovery object store inaccessible", "profile", s3ProfileName)
@@ -1614,7 +1617,7 @@ func (v *VRGInstance) fetchAndRestorePV(result *ctrl.Result) error {
 
 		v.log.Info(fmt.Sprintf("Restored %d PVs using profile %s", len(pvList), s3ProfileName))
 
-		return v.kubeObjectsRecover(result, s3ProfileName, objectStore)
+		return v.kubeObjectsRecover(result, s3ProfileName, s3StoreProfile, objectStore)
 	}
 
 	if NoS3 {

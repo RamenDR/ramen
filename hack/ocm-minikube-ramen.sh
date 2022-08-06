@@ -505,6 +505,7 @@ ramen_config_deploy_hub_or_spoke()
 	  s3SecretRef:
 	    name: s3secret
 	    namespace: ramen-system
+	  veleroNamespaceSecretName: s3secret
 	- s3ProfileName: minio-on-$5
 	  s3Bucket: bucket
 	  s3CompatibleEndpoint: $(minikube_minio_url $5)
@@ -512,6 +513,7 @@ ramen_config_deploy_hub_or_spoke()
 	  s3SecretRef:
 	    name: s3secret
 	    namespace: ramen-system
+	  veleroNamespaceSecretName: s3secret
 	drClusterOperator:
 	  deploymentAutomationEnabled: true
 	  s3SecretDistributionEnabled: $ramen_s3_secret_distribution_enabled
