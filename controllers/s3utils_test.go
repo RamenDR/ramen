@@ -25,6 +25,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/go-logr/logr"
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -51,53 +52,48 @@ func (fakeObjectStoreGetter) ObjectStore(
 	s3ProfileName string,
 	callerTag string,
 	log logr.Logger,
-) (controllers.ObjectStorer, error) {
+) (controllers.ObjectStorer, ramen.S3StoreProfile, error) {
 	s3StoreProfile, err := controllers.GetRamenConfigS3StoreProfile(ctx, apiReader, s3ProfileName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get profile %s for caller %s, %w", s3ProfileName, callerTag, err)
+		return nil, s3StoreProfile, fmt.Errorf("failed to get profile %s for caller %s, %w", s3ProfileName, callerTag, err)
 	}
 
 	switch s3StoreProfile.S3Bucket {
 	case bucketNameFail:
 		fallthrough
 	case bucketNameFail2:
-		return nil, fmt.Errorf("bucket '%v' invalid", s3StoreProfile.S3Bucket)
+		return nil, s3StoreProfile, fmt.Errorf("bucket '%v' invalid", s3StoreProfile.S3Bucket)
 	}
 
 	accessID, _, err := controllers.GetS3Secret(ctx, apiReader, s3StoreProfile.S3SecretRef)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get secret %v for caller %s, %w",
+		return nil, s3StoreProfile, fmt.Errorf("failed to get secret %v for caller %s, %w",
 			s3StoreProfile.S3SecretRef, callerTag, err)
 	}
 
 	accessIDString := string(accessID)
 	if accessIDString == awsAccessKeyIDFail {
-		return nil, fmt.Errorf("AWS_ACCESS_KEY_ID '%v' invalid", accessIDString)
+		return nil, s3StoreProfile, fmt.Errorf("AWS_ACCESS_KEY_ID '%v' invalid", accessIDString)
 	}
 
 	objectStorer, ok := fakeObjectStorers[s3ProfileName]
 	if !ok {
 		objectStorer = fakeObjectStorer{
 			name:       s3ProfileName,
-			url:        s3StoreProfile.S3CompatibleEndpoint,
 			bucketName: s3StoreProfile.S3Bucket,
 			objects:    make(map[string]interface{}),
 		}
 		fakeObjectStorers[s3ProfileName] = objectStorer
 	}
 
-	return objectStorer, nil
+	return objectStorer, s3StoreProfile, nil
 }
 
 type fakeObjectStorer struct {
 	name       string
-	url        string
 	bucketName string
 	objects    map[string]interface{}
 }
-
-func (f fakeObjectStorer) AddressComponent1() string { return f.url }
-func (f fakeObjectStorer) AddressComponent2() string { return f.bucketName }
 
 func (f fakeObjectStorer) UploadObject(key string, object interface{}) error {
 	if f.bucketName == bucketNameUploadAwsErr {

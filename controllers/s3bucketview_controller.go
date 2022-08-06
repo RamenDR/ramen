@@ -87,7 +87,8 @@ func (r *S3BucketViewReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	s3profileName := s.instance.Spec.ProfileName
 	log.Info(fmt.Sprintf("targetProfileName=%s", s3profileName))
 
-	objectStore, err := s.getObjectStore(s3profileName)
+	objectStore, _, err := s.reconciler.ObjStoreGetter.ObjectStore(
+		s.ctx, s.reconciler.APIReader, s3profileName, NamespaceName(), s.log)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("error during getObjectStore: %w", err)
 	}
@@ -113,10 +114,6 @@ func (r *S3BucketViewReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	log.Info("s3bucketView updated successfully")
 
 	return ctrl.Result{}, nil
-}
-
-func (s *S3BucketViewInstance) getObjectStore(s3ProfileName string) (ObjectStorer, error) {
-	return s.reconciler.ObjStoreGetter.ObjectStore(s.ctx, s.reconciler.APIReader, s3ProfileName, NamespaceName(), s.log)
 }
 
 func (s *S3BucketViewInstance) getNamespacesAndVrgPrefixesFromS3(s3profileName string) ([]string, error) {
@@ -255,7 +252,7 @@ func (s *S3BucketViewInstance) GetItemsInS3BucketFromPrefix(s3ProfileName string
 	lookupPrefix string) ([]string, error) {
 	results := make([]string, 0)
 
-	objectStore, err := s.reconciler.ObjStoreGetter.ObjectStore(s.ctx, s.reconciler.APIReader,
+	objectStore, _, err := s.reconciler.ObjStoreGetter.ObjectStore(s.ctx, s.reconciler.APIReader,
 		s3ProfileName, lookupPrefix, s.log)
 	if err != nil {
 		return results, fmt.Errorf("error when getting object store, err %w", err)

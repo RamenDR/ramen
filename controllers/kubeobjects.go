@@ -174,6 +174,7 @@ func KubeObjectsRecover(
 	log logr.Logger,
 	s3Url string,
 	s3BucketName string,
+	s3RegionName string,
 	s3KeyPrefix string,
 	secretName string,
 	sourceNamespaceName string,
@@ -187,6 +188,7 @@ func KubeObjectsRecover(
 	log.Info("Kube objects recover",
 		"s3 url", s3Url,
 		"s3 bucket", s3BucketName,
+		"s3 region", s3RegionName,
 		"s3 key prefix", s3KeyPrefix,
 		"secret name", secretName,
 		"source namespace", sourceNamespaceName,
@@ -202,6 +204,7 @@ func KubeObjectsRecover(
 		reader,
 		s3Url,
 		s3BucketName,
+		s3RegionName,
 		s3KeyPrefix,
 		secretName,
 		sourceNamespaceName,
@@ -221,6 +224,7 @@ func backupDummyCreateAndRestore(
 	reader client.Reader,
 	s3Url string,
 	s3BucketName string,
+	s3RegionName string,
 	s3KeyPrefix string,
 	secretName string,
 	sourceNamespaceName string,
@@ -233,7 +237,7 @@ func backupDummyCreateAndRestore(
 ) (*velero.Restore, error) {
 	backupLocation, backup, err := backupCreate(
 		types.NamespacedName{Namespace: requestNamespaceName, Name: backupName},
-		w, reader, s3Url, s3BucketName, s3KeyPrefix, secretName,
+		w, reader, s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretName,
 		backupSpecDummy(), sourceNamespaceName,
 		labels,
 	)
@@ -316,6 +320,7 @@ func KubeObjectsCaptureDelete(
 	log logr.Logger,
 	s3Url string,
 	s3BucketName string,
+	s3RegionName string,
 	s3KeyPrefix string,
 	secretName string,
 	sourceNamespaceName string,
@@ -327,7 +332,7 @@ func KubeObjectsCaptureDelete(
 	namespacedName := types.NamespacedName{Namespace: requestNamespaceName, Name: captureName}
 
 	backupLocation, backup, err := backupCreate(
-		namespacedName, w, reader, s3Url, s3BucketName, s3KeyPrefix, secretName,
+		namespacedName, w, reader, s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretName,
 		backupSpecDummy(), sourceNamespaceName,
 		labels,
 	)
@@ -476,6 +481,7 @@ func KubeObjectsProtect(
 	log logr.Logger,
 	s3Url string,
 	s3BucketName string,
+	s3RegionName string,
 	s3KeyPrefix string,
 	secretName string,
 	sourceNamespaceName string,
@@ -487,6 +493,7 @@ func KubeObjectsProtect(
 	log.Info("Kube objects protect",
 		"s3 url", s3Url,
 		"s3 bucket", s3BucketName,
+		"s3 region", s3RegionName,
 		"s3 key prefix", s3KeyPrefix,
 		"secret name", secretName,
 		"source namespace", sourceNamespaceName,
@@ -500,6 +507,7 @@ func KubeObjectsProtect(
 		reader,
 		s3Url,
 		s3BucketName,
+		s3RegionName,
 		s3KeyPrefix,
 		secretName,
 		sourceNamespaceName,
@@ -517,6 +525,7 @@ func backupRealCreate(
 	reader client.Reader,
 	s3Url string,
 	s3BucketName string,
+	s3RegionName string,
 	s3KeyPrefix string,
 	secretName string,
 	sourceNamespaceName string,
@@ -527,7 +536,7 @@ func backupRealCreate(
 ) (*velero.Backup, error) {
 	backupLocation, backup, err := backupCreate(
 		types.NamespacedName{Namespace: requestNamespaceName, Name: captureName},
-		w, reader, s3Url, s3BucketName, s3KeyPrefix, secretName,
+		w, reader, s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretName,
 		getBackupSpecFromObjectsSpec(objectsSpec),
 		sourceNamespaceName,
 		labels,
@@ -624,6 +633,7 @@ func backupCreate(
 	reader client.Reader,
 	s3Url string,
 	s3BucketName string,
+	s3RegionName string,
 	s3KeyPrefix string,
 	secretName string,
 	backupSpec velero.BackupSpec,
@@ -631,7 +641,7 @@ func backupCreate(
 	labels map[string]string,
 ) (*velero.BackupStorageLocation, *velero.Backup, error) {
 	backupLocation := backupLocation(backupNamespacedName,
-		s3Url, s3BucketName, s3KeyPrefix, secretName,
+		s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretName,
 		labels,
 	)
 	if err := w.objectCreate(backupLocation); err != nil {
@@ -708,11 +718,6 @@ func objectCreateAndGet(
 	return reader.Get(w.ctx, types.NamespacedName{Namespace: o.GetNamespace(), Name: o.GetName()}, o)
 }
 
-const (
-	secretNameDefault = "s3secret"
-	secretKeyName     = "aws"
-)
-
 func veleroTypeMeta(kind string) metav1.TypeMeta {
 	return metav1.TypeMeta{
 		APIVersion: velero.SchemeGroupVersion.String(),
@@ -724,7 +729,7 @@ func backupTypeMeta() metav1.TypeMeta  { return veleroTypeMeta("Backup") }
 func restoreTypeMeta() metav1.TypeMeta { return veleroTypeMeta("Restore") }
 
 func backupLocation(namespacedName types.NamespacedName,
-	s3Url, bucketName, s3KeyPrefix, secretName string,
+	s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretName string,
 	labels map[string]string,
 ) *velero.BackupStorageLocation {
 	return &velero.BackupStorageLocation{
@@ -738,12 +743,12 @@ func backupLocation(namespacedName types.NamespacedName,
 			Provider: "aws",
 			StorageType: velero.StorageType{
 				ObjectStorage: &velero.ObjectStorageLocation{
-					Bucket: bucketName,
+					Bucket: s3BucketName,
 					Prefix: s3KeyPrefix + KubeObjectsPath,
 				},
 			},
 			Config: map[string]string{
-				"region":           "us-east-1", // TODO input
+				"region":           s3RegionName,
 				"s3ForcePathStyle": "true",
 				"s3Url":            s3Url,
 			},
@@ -751,7 +756,7 @@ func backupLocation(namespacedName types.NamespacedName,
 				LocalObjectReference: corev1.LocalObjectReference{
 					Name: secretName,
 				},
-				Key: secretKeyName,
+				Key: "aws",
 			},
 		},
 	}

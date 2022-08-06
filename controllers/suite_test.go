@@ -272,7 +272,7 @@ var _ = BeforeSuite(func() {
 		s3ProfilesStore(s3Profiles[0:])
 	}
 	fakeObjectStorerGet := func(i int) ramencontrollers.ObjectStorer {
-		objectStorer, err := fakeObjectStoreGetter{}.ObjectStore(
+		objectStorer, _, err := fakeObjectStoreGetter{}.ObjectStore(
 			context.TODO(), apiReader, s3Profiles[i].S3ProfileName, "", testLog,
 		)
 		Expect(err).To(BeNil())
