@@ -333,20 +333,20 @@ func (v *VRGInstance) vrgObjectProtect(result *ctrl.Result, s3StoreAccessors []s
 	}
 }
 
-func (v *VRGInstance) getCaptureGroups() []ramen.KubeObjectsCaptureGroup {
+func (v *VRGInstance) getCaptureGroups() []ramen.KubeObjectsCaptureSpec {
 	if v.instance.Spec.KubeObjectProtection.CaptureOrder != nil {
 		return v.instance.Spec.KubeObjectProtection.CaptureOrder
 	}
 
-	return []ramen.KubeObjectsCaptureGroup{{}}
+	return []ramen.KubeObjectsCaptureSpec{{}}
 }
 
-func (v *VRGInstance) getRecoverGroups() []ramen.KubeObjectsRecoverGroup {
+func (v *VRGInstance) getRecoverGroups() []ramen.KubeObjectsRecoverSpec {
 	if v.instance.Spec.KubeObjectProtection.RecoverOrder != nil {
 		return v.instance.Spec.KubeObjectProtection.RecoverOrder
 	}
 
-	return []ramen.KubeObjectsRecoverGroup{{}}
+	return []ramen.KubeObjectsRecoverSpec{{}}
 }
 
 func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result,

@@ -118,47 +118,6 @@ const (
 	VRGActionRelocate = VRGAction("Relocate")
 )
 
-const KubeObjectProtectionCaptureIntervalDefault = 5 * time.Minute
-
-type KubeObjectsCaptureGroup struct {
-	// +optional
-	Name            string `json:"name,omitempty"`
-	KubeObjectsSpec `json:",inline"`
-}
-
-type KubeObjectsRecoverGroup struct {
-	// +optional
-	BackupName      string `json:"backupName,omitempty"`
-	KubeObjectsSpec `json:",inline"`
-}
-
-type KubeObjectsSpec struct {
-	//+optional
-	IncludedResources []string `json:"includedResources,omitempty"`
-
-	//+optional
-	ExcludedResources []string `json:"excludedResources,omitempty"`
-
-	//+optional
-	LabelSelector *metav1.LabelSelector `json:"labelSelector,omitempty"`
-
-	//+optional
-	IncludeClusterResources *bool `json:"includeClusterResources,omitempty"`
-}
-
-type KubeObjectProtectionSpec struct {
-	// Preferred time between captures
-	// +optional
-	// +kubebuilder:validation:Format=duration
-	CaptureInterval *metav1.Duration `json:"captureInterval,omitempty"`
-
-	//+optional
-	CaptureOrder []KubeObjectsCaptureGroup `json:"captureOrder,omitempty"`
-
-	//+optional
-	RecoverOrder []KubeObjectsRecoverGroup `json:"recoverOrder,omitempty"`
-}
-
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // VolumeReplicationGroup (VRG) spec declares the desired schedule for data
@@ -210,6 +169,47 @@ type VolumeReplicationGroupSpec struct {
 	Action VRGAction `json:"action,omitempty"`
 	//+optional
 	KubeObjectProtection *KubeObjectProtectionSpec `json:"kubeObjectProtection,omitempty"`
+}
+
+type KubeObjectProtectionSpec struct {
+	// Preferred time between captures
+	// +optional
+	// +kubebuilder:validation:Format=duration
+	CaptureInterval *metav1.Duration `json:"captureInterval,omitempty"`
+
+	//+optional
+	CaptureOrder []KubeObjectsCaptureSpec `json:"captureOrder,omitempty"`
+
+	//+optional
+	RecoverOrder []KubeObjectsRecoverSpec `json:"recoverOrder,omitempty"`
+}
+
+const KubeObjectProtectionCaptureIntervalDefault = 5 * time.Minute
+
+type KubeObjectsCaptureSpec struct {
+	// +optional
+	Name            string `json:"name,omitempty"`
+	KubeObjectsSpec `json:",inline"`
+}
+
+type KubeObjectsRecoverSpec struct {
+	// +optional
+	BackupName      string `json:"backupName,omitempty"`
+	KubeObjectsSpec `json:",inline"`
+}
+
+type KubeObjectsSpec struct {
+	//+optional
+	IncludedResources []string `json:"includedResources,omitempty"`
+
+	//+optional
+	ExcludedResources []string `json:"excludedResources,omitempty"`
+
+	//+optional
+	LabelSelector *metav1.LabelSelector `json:"labelSelector,omitempty"`
+
+	//+optional
+	IncludeClusterResources *bool `json:"includeClusterResources,omitempty"`
 }
 
 type ProtectedPVC struct {
