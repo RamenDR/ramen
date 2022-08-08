@@ -532,7 +532,7 @@ func (d *DRPCInstance) RunRelocate() (bool, error) { //nolint:gocognit,cyclop
 			return !done, err
 		}
 
-		d.setProgression("Competed")
+		d.setProgression("Completed")
 
 		if d.instance.Status.ActionDuration == nil {
 			duration := time.Since(d.instance.Status.ActionStartTime.Time)
