@@ -318,9 +318,14 @@ func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 	// For Sync mode, we don't want to set the retention policy to delete as
 	// both the primary and the secondary VRG map to the same volume. The only
 	// state where a delete retention policy is required for the sync mode is
-	// when the VRG is primary.
-	if !(v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary &&
-		v.instance.Spec.Sync.Mode == ramendrv1alpha1.SyncModeEnabled) {
+	// when the VRG is primary. Furthermore, we need to clear the PV claimRef
+	// in order for the PV to go to the Available status phase.
+	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary &&
+		v.instance.Spec.Sync.Mode == ramendrv1alpha1.SyncModeEnabled {
+		if err := v.clearPVClaimRef(pvc); err != nil {
+			return err
+		}
+	} else {
 		if err := v.undoPVRetentionForPVC(*pvc, log); err != nil {
 			return err
 		}
@@ -368,6 +373,30 @@ func (v *VRGInstance) retainPVForPVC(pvc corev1.PersistentVolumeClaim, log logr.
 
 		return fmt.Errorf("failed to update PersistentVolume resource (%s) reclaim policy for"+
 			" PersistentVolumeClaim resource (%s/%s) belonging to VolumeReplicationGroup (%s/%s), %w",
+			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) clearPVClaimRef(pvc *corev1.PersistentVolumeClaim) error {
+	// Get PV bound to PVC
+	pv := &corev1.PersistentVolume{}
+	pvObjectKey := client.ObjectKey{
+		Name: pvc.Spec.VolumeName,
+	}
+
+	if err := v.reconciler.Get(v.ctx, pvObjectKey, pv); err != nil {
+		return fmt.Errorf("failed to get PV resource (%s) for"+
+			" PVC resource (%s/%s) belonging to VRG (%s/%s), %w",
+			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
+	}
+
+	pv.Spec.ClaimRef = nil
+
+	if err := v.reconciler.Update(v.ctx, pv); err != nil {
+		return fmt.Errorf("failed to update PV resource (%s) claimRef for"+
+			" PVC resource (%s/%s) belonging to VRG (%s/%s), %w",
 			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
 	}
 
@@ -1643,13 +1672,14 @@ func (v *VRGInstance) restorePVClusterData(pvList []corev1.PersistentVolume) err
 	return nil
 }
 
-func (v *VRGInstance) updateExistingPVForSync(pv *corev1.PersistentVolume) error {
+func (v *VRGInstance) updateExistingPVForSync(pv *corev1.PersistentVolume, claimRef *corev1.ObjectReference) error {
 	// In case of sync mode, the pv is never deleted as part of the
 	// failover/relocate process. Hence, the restore may not be
 	// required and the annotation for restore can be missing for
-	// the sync mode.
+	// the sync mode. Also, the ClaimRef may also be missing.
 	v.cleanupPVForRestore(pv)
 	v.addPVRestoreAnnotation(pv)
+	v.addPVClaimRef(pv, claimRef)
 
 	if err := v.reconciler.Update(v.ctx, pv); err != nil {
 		return fmt.Errorf("failed to cleanup existing PV for sync DR PV: %v, err: %w", pv.Name, err)
@@ -1683,7 +1713,7 @@ func (v *VRGInstance) validatePVExistence(pv *corev1.PersistentVolume) error {
 	if v.instance.Spec.Sync.Mode == ramendrv1alpha1.SyncModeEnabled {
 		v.log.Info("PV exists, will update for sync", "PV", existingPV)
 
-		return v.updateExistingPVForSync(existingPV)
+		return v.updateExistingPVForSync(existingPV, pv.Spec.ClaimRef)
 	}
 
 	return fmt.Errorf("found PV object not restored by Ramen for PV %s", existingPV.Name)
@@ -1698,6 +1728,10 @@ func (v *VRGInstance) cleanupPVForRestore(pv *corev1.PersistentVolume) {
 		pv.Spec.ClaimRef.ResourceVersion = ""
 		pv.Spec.ClaimRef.APIVersion = ""
 	}
+}
+
+func (v *VRGInstance) addPVClaimRef(pv *corev1.PersistentVolume, claimRef *corev1.ObjectReference) {
+	pv.Spec.ClaimRef = claimRef
 }
 
 // addPVRestoreAnnotation adds annotation to the PV indicating that the PV is restored by Ramen
