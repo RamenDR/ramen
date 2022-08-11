@@ -5,20 +5,21 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.9.0
   creationTimestamp: null
-  name: s3bucketviews.ramendr.openshift.io
+  name: protectedvolumereplicationgrouplists.ramendr.openshift.io
 spec:
   group: ramendr.openshift.io
   names:
-    kind: S3BucketView
-    listKind: S3BucketViewList
-    plural: s3bucketviews
-    singular: s3bucketview
+    kind: ProtectedVolumeReplicationGroupList
+    listKind: ProtectedVolumeReplicationGroupListList
+    plural: protectedvolumereplicationgrouplists
+    singular: protectedvolumereplicationgrouplist
   scope: Cluster
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: S3BucketView is the Schema for the s3bucketviews API
+        description: ProtectedVolumeReplicationGroupList is the Schema for the protectedvolumereplicationgrouplists
+          API
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -33,28 +34,23 @@ spec:
           metadata:
             type: object
           spec:
-            description: S3BucketViewSpec defines the desired state of S3BucketView
+            description: ProtectedVolumeReplicationGroupListSpec defines the desired
+              state of ProtectedVolumeReplicationGroupList
             properties:
-              profileName:
+              s3ProfileName:
                 description: ProfileName is the name of the S3 profile in the Ramen
-                  operator config map specifying the bucket to be queried
+                  operator config map specifying the store to be queried
                 type: string
             required:
-            - profileName
+            - s3ProfileName
             type: object
           status:
-            description: S3BucketViewStatus defines the observed state of S3BucketView
+            description: ProtectedVolumeReplicationGroupListStatus defines the observed
+              state of ProtectedVolumeReplicationGroupList
             properties:
-              sampleTime:
-                description: SampleTime is a timestamp representing the node time
-                  when the specified S3 bucket was last queried. It is represented
-                  in RFC3339 form and is in UTC.
-                format: date-time
-                type: string
-              volumeReplicationGroups:
-                description: VolumeRelicationGroups is a list of VolumeReplicationGroup
-                  objects represented in the specified S3 bucket when it was last
-                  queried.
+              items:
+                description: Items is a list of VolumeReplicationGroup objects represented
+                  in the specified store when it was last queried.
                 items:
                   description: VolumeReplicationGroup is the Schema for the volumereplicationgroups
                     API
@@ -891,6 +887,12 @@ spec:
                       type: object
                   type: object
                 type: array
+              sampleTime:
+                description: SampleTime is a timestamp representing the node time
+                  when the specified store was last queried. It is represented in
+                  RFC3339 form and is in UTC.
+                format: date-time
+                type: string
             type: object
         type: object
     served: true

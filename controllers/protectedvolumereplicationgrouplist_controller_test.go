@@ -29,81 +29,83 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-func bvCreate(name string, s3ProfileNumber int) *ramen.S3BucketView {
-	bv := &ramen.S3BucketView{
+func protectedVrgListCreate(name string, s3ProfileNumber int) *ramen.ProtectedVolumeReplicationGroupList {
+	protectedVrgList := &ramen.ProtectedVolumeReplicationGroupList{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
-		Spec: ramen.S3BucketViewSpec{
-			ProfileName: s3Profiles[s3ProfileNumber].S3ProfileName,
+		Spec: ramen.ProtectedVolumeReplicationGroupListSpec{
+			S3ProfileName: s3Profiles[s3ProfileNumber].S3ProfileName,
 		},
 	}
-	Expect(k8sClient.Create(context.TODO(), bv)).To(Succeed())
+	Expect(k8sClient.Create(context.TODO(), protectedVrgList)).To(Succeed())
 
-	return bv
+	return protectedVrgList
 }
 
-func bvGet(bv *ramen.S3BucketView) error {
-	return apiReader.Get(context.TODO(), types.NamespacedName{Name: bv.Name}, bv)
+func protectedVrgListGet(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList) error {
+	return apiReader.Get(context.TODO(), types.NamespacedName{Name: protectedVrgList.Name}, protectedVrgList)
 }
 
-func bvStatusUpdate(bv *ramen.S3BucketView) {
-	Expect(k8sClient.Status().Update(context.TODO(), bv)).To(Succeed())
+func protectedVrgListStatusUpdate(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList) {
+	Expect(k8sClient.Status().Update(context.TODO(), protectedVrgList)).To(Succeed())
 }
 
-func bvStatusZero(bv *ramen.S3BucketView) {
-	bv.Status = nil
-	bvStatusUpdate(bv)
+func protectedVrgListStatusZero(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList) {
+	protectedVrgList.Status = nil
+	protectedVrgListStatusUpdate(protectedVrgList)
 }
 
-func bvSampleTimeRecentWait(bv *ramen.S3BucketView) {
-	Eventually(func() *ramen.S3BucketViewStatus {
-		Expect(bvGet(bv)).To(Succeed())
+func protectedVrgListSampleTimeRecentWait(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList) {
+	Eventually(func() *ramen.ProtectedVolumeReplicationGroupListStatus {
+		Expect(protectedVrgListGet(protectedVrgList)).To(Succeed())
 
-		return bv.Status
+		return protectedVrgList.Status
 	}, timeout, interval).ShouldNot(BeNil())
-	Expect(bv.Status.SampleTime.Time).Should(
+	Expect(protectedVrgList.Status.SampleTime.Time).Should(
 		BeTemporally("~", time.Now(), 2*time.Second),
-		"%#v", *bv,
+		"%#v", *protectedVrgList,
 	)
 }
 
-func bvCreateAndStatusWait(name string, s3ProfileNumber int) *ramen.S3BucketView {
-	bv := bvCreate(name, s3ProfileNumber)
-	bvSampleTimeRecentWait(bv)
+func protectedVrgListCreateAndStatusWait(name string, s3ProfileNumber int) *ramen.ProtectedVolumeReplicationGroupList {
+	protectedVrgList := protectedVrgListCreate(name, s3ProfileNumber)
+	protectedVrgListSampleTimeRecentWait(protectedVrgList)
 
-	return bv
+	return protectedVrgList
 }
 
-func bvRefresh(bv *ramen.S3BucketView) {
-	bvStatusZero(bv)
-	bvSampleTimeRecentWait(bv)
+func protectedVrgListRefresh(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList) {
+	protectedVrgListStatusZero(protectedVrgList)
+	protectedVrgListSampleTimeRecentWait(protectedVrgList)
 }
 
-func bvDeleteAndNotFoundWait(bv *ramen.S3BucketView) {
-	Expect(k8sClient.Delete(context.TODO(), bv)).To(Succeed())
+func protectedVrgListDeleteAndNotFoundWait(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList) {
+	Expect(k8sClient.Delete(context.TODO(), protectedVrgList)).To(Succeed())
 	Eventually(func() error {
-		return bvGet(bv)
+		return protectedVrgListGet(protectedVrgList)
 	}, timeout, interval).Should(
 		MatchError(
 			errors.NewNotFound(
 				schema.GroupResource{
 					Group:    ramen.GroupVersion.Group,
-					Resource: "s3bucketviews",
+					Resource: "protectedvolumereplicationgrouplists",
 				},
-				bv.Name,
+				protectedVrgList.Name,
 			),
 		),
-		"%#v", *bv,
+		"%#v", *protectedVrgList,
 	)
 }
 
-func bvVrgsExpectIncludeOnly(bv *ramen.S3BucketView, vrgsExpected []ramen.VolumeReplicationGroup) {
-	vrgsStatusStateUpdate(bv.Status.VolumeReplicationGroups, vrgsExpected)
-	Expect(bv.Status.VolumeReplicationGroups).To(ConsistOf(vrgsExpected))
+func protectedVrgListExpectIncludeOnly(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList,
+	vrgsExpected []ramen.VolumeReplicationGroup) {
+	vrgsStatusStateUpdate(protectedVrgList.Status.Items, vrgsExpected)
+	Expect(protectedVrgList.Status.Items).To(ConsistOf(vrgsExpected))
 }
 
-func bvVrgsExpectInclude(bv *ramen.S3BucketView, vrgsExpected []ramen.VolumeReplicationGroup) {
-	vrgsStatusStateUpdate(bv.Status.VolumeReplicationGroups, vrgsExpected)
-	Expect(bv.Status.VolumeReplicationGroups).To(ContainElements(vrgsExpected))
+func protectedVrgListExpectInclude(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList,
+	vrgsExpected []ramen.VolumeReplicationGroup) {
+	vrgsStatusStateUpdate(protectedVrgList.Status.Items, vrgsExpected)
+	Expect(protectedVrgList.Status.Items).To(ContainElements(vrgsExpected))
 }
 
 func vrgsStatusStateUpdate(vrgsS3, vrgsK8s []ramen.VolumeReplicationGroup) {
@@ -132,9 +134,9 @@ func vrgStatusStateUpdate(vrgS3, vrgK8s *ramen.VolumeReplicationGroup) {
 	}
 }
 
-var _ = Describe("S3BucketViewController", func() {
+var _ = Describe("ProtectedVolumeReplicationGroupListController", func() {
 	const (
-		namePrefix = "bv-"
+		namePrefix = "protectedvrglist-"
 		name0      = namePrefix + "0"
 		name1      = namePrefix + "1"
 	)
@@ -192,40 +194,40 @@ var _ = Describe("S3BucketViewController", func() {
 
 		return
 	}
-	bvVrgsValidate := func(bv *ramen.S3BucketView) {
-		bvVrgsExpectIncludeOnly(bv, vrgsExpected())
+	protectedVrgListValidate := func(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList) {
+		protectedVrgListExpectIncludeOnly(protectedVrgList, vrgsExpected())
 	}
-	bvRefreshAndVrgsValidate := func(bv *ramen.S3BucketView) {
-		bvRefresh(bv)
-		bvVrgsValidate(bv)
+	protectedVrgListRefreshAndValidate := func(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList) {
+		protectedVrgListRefresh(protectedVrgList)
+		protectedVrgListValidate(protectedVrgList)
 	}
-	var bv *ramen.S3BucketView
-	When("a view is created", func() {
+	var protectedVrgList *ramen.ProtectedVolumeReplicationGroupList
+	When("a list is created", func() {
 		It("should set its status's sample time to within a second", func() {
-			bv = bvCreateAndStatusWait(name0, s3ProfileNumber)
+			protectedVrgList = protectedVrgListCreateAndStatusWait(name0, s3ProfileNumber)
 		})
 	})
-	When("no VRGs exist in a view's bucket", func() {
+	When("no VRGs exist in a list's store", func() {
 		It("should report none", func() {
-			bvVrgsValidate(bv)
+			protectedVrgListValidate(protectedVrgList)
 		})
 	})
-	When("a 1st VRG exists in a view's bucket and view is refreshed", func() {
+	When("a 1st VRG exists in a list's store and list is refreshed", func() {
 		It("should report the 1st VRG", func() {
 			vrgProtect(0)
-			bvRefreshAndVrgsValidate(bv)
+			protectedVrgListRefreshAndValidate(protectedVrgList)
 		})
 	})
-	When("a 2nd VRG exists in a view's bucket and view is refreshed", func() {
+	When("a 2nd VRG exists in a list's store and list is refreshed", func() {
 		It("should report the 1st and 2nd VRGs", func() {
 			vrgProtect(1)
-			bvRefreshAndVrgsValidate(bv)
+			protectedVrgListRefreshAndValidate(protectedVrgList)
 		})
 	})
-	When("a 3rd VRG exists in a view's bucket and view is refreshed", func() {
+	When("a 3rd VRG exists in a list's store and list is refreshed", func() {
 		It("should report the 1st, 2nd, and 3rd VRGs", func() {
 			vrgProtect(2)
-			bvRefreshAndVrgsValidate(bv)
+			protectedVrgListRefreshAndValidate(protectedVrgList)
 		})
 	})
 	Context("annotations", func() {
@@ -234,61 +236,61 @@ var _ = Describe("S3BucketViewController", func() {
 			value  = "fsda"
 			value2 = value + "1"
 		)
-		When("the 2nd VRG's user metadata annotation is added and view is refreshed", func() {
+		When("the 2nd VRG's user metadata annotation is added and list is refreshed", func() {
 			It("should report it", func() {
 				vrgAnnotationsSet(n, value)
 				vrgProtect(n)
-				bvRefreshAndVrgsValidate(bv)
+				protectedVrgListRefreshAndValidate(protectedVrgList)
 			})
 		})
-		When("the 2nd VRG's user metadata annotation is updated and view is refreshed", func() {
+		When("the 2nd VRG's user metadata annotation is updated and list is refreshed", func() {
 			It("should report the updated version", func() {
 				vrgAnnotationsSet(n, value2)
 				vrgProtect(n)
-				bvRefreshAndVrgsValidate(bv)
+				protectedVrgListRefreshAndValidate(protectedVrgList)
 			})
 		})
-		When("the 2nd VRG's user metadata annotation is deleted and view is refreshed", func() {
+		When("the 2nd VRG's user metadata annotation is deleted and list is refreshed", func() {
 			It("should not report it", func() {
 				vrgAnnotationsDelete(n)
 				vrgProtect(n)
-				bvRefreshAndVrgsValidate(bv)
+				protectedVrgListRefreshAndValidate(protectedVrgList)
 			})
 		})
 	})
-	When("the 2nd VRG no longer exists in a view's bucket", func() {
+	When("the 2nd VRG no longer exists in a list's store", func() {
 		It("should report the 1st and 3rd VRGs", func() {
 			vrgUnprotect(1)
-			bvRefreshAndVrgsValidate(bv)
+			protectedVrgListRefreshAndValidate(protectedVrgList)
 		})
 	})
-	When("a 4th VRG exists in a view's bucket", func() {
+	When("a 4th VRG exists in a list's store", func() {
 		It("should report the 1st, 3rd, and 4th VRGs", func() {
 			vrgProtect(3)
-			bvRefreshAndVrgsValidate(bv)
+			protectedVrgListRefreshAndValidate(protectedVrgList)
 		})
 	})
-	When("the 1st VRG no longer exists in a view's bucket", func() {
+	When("the 1st VRG no longer exists in a list's store", func() {
 		It("should report the 3rd and 4th VRGs", func() {
 			vrgUnprotect(0)
-			bvRefreshAndVrgsValidate(bv)
+			protectedVrgListRefreshAndValidate(protectedVrgList)
 		})
 	})
-	When("the 4th VRG no longer exists in a view's bucket", func() {
+	When("the 4th VRG no longer exists in a list's store", func() {
 		It("should report the 3rd VRG", func() {
 			vrgUnprotect(3)
-			bvRefreshAndVrgsValidate(bv)
+			protectedVrgListRefreshAndValidate(protectedVrgList)
 		})
 	})
-	When("the 3rd VRG no longer exists in a view's bucket", func() {
+	When("the 3rd VRG no longer exists in a list's store", func() {
 		It("should report no VRGs", func() {
 			vrgUnprotect(2)
-			bvRefreshAndVrgsValidate(bv)
+			protectedVrgListRefreshAndValidate(protectedVrgList)
 		})
 	})
-	When("a view delete is deleted", func() {
+	When("a list delete is deleted", func() {
 		It("should not find it", func() {
-			bvDeleteAndNotFoundWait(bv)
+			protectedVrgListDeleteAndNotFoundWait(protectedVrgList)
 		})
 	})
 })

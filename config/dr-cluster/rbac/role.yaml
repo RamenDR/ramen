@@ -48,7 +48,7 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - s3bucketviews
+  - protectedvolumereplicationgrouplists
   verbs:
   - create
   - delete
@@ -60,13 +60,13 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - s3bucketviews/finalizers
+  - protectedvolumereplicationgrouplists/finalizers
   verbs:
   - update
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - s3bucketviews/status
+  - protectedvolumereplicationgrouplists/status
   verbs:
   - get
   - patch

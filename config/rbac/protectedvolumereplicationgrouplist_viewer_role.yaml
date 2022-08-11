@@ -1,13 +1,13 @@
-# permissions for end users to view s3bucketviews.
+# permissions for end users to view protectedvolumereplicationgrouplists.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: s3bucketview-viewer-role
+  name: protectedvolumereplicationgrouplist-viewer-role
 rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - s3bucketviews
+  - protectedvolumereplicationgrouplists
   verbs:
   - get
   - list
@@ -15,6 +15,6 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - s3bucketviews/status
+  - protectedvolumereplicationgrouplists/status
   verbs:
   - get

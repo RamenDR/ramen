@@ -324,7 +324,7 @@ var _ = BeforeSuite(func() {
 	}).SetupWithManager(k8sManager, ramenConfig)
 	Expect(err).ToNot(HaveOccurred())
 
-	Expect((&ramencontrollers.S3BucketViewReconciler{
+	Expect((&ramencontrollers.ProtectedVolumeReplicationGroupListReconciler{
 		Client:         k8sManager.GetClient(),
 		APIReader:      k8sManager.GetAPIReader(),
 		Scheme:         k8sManager.GetScheme(),
