@@ -1,13 +1,13 @@
-# permissions for end users to edit s3bucketviews.
+# permissions for end users to edit protectedvolumereplicationgrouplists.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: s3bucketview-editor-role
+  name: protectedvolumereplicationgrouplist-editor-role
 rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - s3bucketviews
+  - protectedvolumereplicationgrouplists
   verbs:
   - create
   - delete
@@ -19,6 +19,6 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
-  - s3bucketviews/status
+  - protectedvolumereplicationgrouplists/status
   verbs:
   - get

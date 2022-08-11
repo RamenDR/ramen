@@ -3,7 +3,7 @@
 # It should be run by config/default
 resources:
 - ../../crd/bases/ramendr.openshift.io_volumereplicationgroups.yaml
-- ../../crd/bases/ramendr.openshift.io_s3bucketviews.yaml
+- ../../crd/bases/ramendr.openshift.io_protectedvolumereplicationgrouplists.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:

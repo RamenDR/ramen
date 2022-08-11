@@ -136,8 +136,8 @@ setup-envtest:
 test: generate manifests setup-envtest ## Run tests.
 	go test ./... -coverprofile cover.out $(GO_TEST_GINKGO_ARGS)
 
-test-bv: generate manifests setup-envtest
-	go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus S3BucketView
+test-pvrgl: generate manifests setup-envtest
+	go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus ProtectedVolumeReplicationGroupList
 
 test-vrg: generate manifests setup-envtest
 	go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroup

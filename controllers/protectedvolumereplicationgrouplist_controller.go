@@ -21,9 +21,7 @@ import (
 	"fmt"
 	"strings"
 
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -33,48 +31,51 @@ import (
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 )
 
-// S3BucketViewReconciler reconciles a S3BucketView object
-type S3BucketViewReconciler struct {
+// ProtectedVolumeReplicationGroupListReconciler reconciles a ProtectedVolumeReplicationGroupList object
+type ProtectedVolumeReplicationGroupListReconciler struct {
 	client.Client
 	APIReader      client.Reader
 	ObjStoreGetter ObjectStoreGetter
 	Scheme         *runtime.Scheme
 }
 
-type S3BucketViewInstance struct {
-	reconciler *S3BucketViewReconciler
+type ProtectedVolumeReplicationGroupListInstance struct {
+	reconciler *ProtectedVolumeReplicationGroupListReconciler
 	ctx        context.Context
 	log        logr.Logger
-	instance   *ramendrv1alpha1.S3BucketView
+	instance   *ramendrv1alpha1.ProtectedVolumeReplicationGroupList
 }
 
-//+kubebuilder:rbac:groups=ramendr.openshift.io,resources=s3bucketviews,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=ramendr.openshift.io,resources=s3bucketviews/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=ramendr.openshift.io,resources=s3bucketviews/finalizers,verbs=update
+// nolint: lll
+//+kubebuilder:rbac:groups=ramendr.openshift.io,resources=protectedvolumereplicationgrouplists,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=ramendr.openshift.io,resources=protectedvolumereplicationgrouplists/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=ramendr.openshift.io,resources=protectedvolumereplicationgrouplists/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 // TODO(user): Modify the Reconcile function to compare the state specified by
-// the S3BucketView object against the actual cluster state, and then
+// the ProtectedVolumeReplicationGroupList object against the actual cluster state, and then
 // perform operations to make the cluster state reflect the state specified by
 // the user.
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.9.2/pkg/reconcile
-func (r *S3BucketViewReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := ctrl.Log.WithName("controllers").WithName("s3bucketview").WithValues("name", req.NamespacedName.Name)
+func (r *ProtectedVolumeReplicationGroupListReconciler) Reconcile(ctx context.Context, req ctrl.Request,
+) (ctrl.Result, error) {
+	log := ctrl.Log.WithName("controllers").WithName("protectedvolumereplicationgrouplist").
+		WithValues("name", req.NamespacedName.Name)
 
-	log.Info("s3bucketview reconcile start")
+	log.Info("protectedvolumereplicationgrouplist reconcile start")
 
 	// save all the commonly used parameters in a struct
-	s := S3BucketViewInstance{
+	s := ProtectedVolumeReplicationGroupListInstance{
 		reconciler: r,
 		ctx:        ctx,
 		log:        log,
-		instance:   &ramendrv1alpha1.S3BucketView{},
+		instance:   &ramendrv1alpha1.ProtectedVolumeReplicationGroupList{},
 	}
 
-	// get S3BucketViewInstance and save to s.instance
+	// get ProtectedVolumeReplicationGroupListInstance and save to s.instance
 	if err := r.Client.Get(ctx, req.NamespacedName, s.instance); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(fmt.Errorf("get: %w", err))
 	}
@@ -84,7 +85,7 @@ func (r *S3BucketViewReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	// get target profile from spec
-	s3profileName := s.instance.Spec.ProfileName
+	s3profileName := s.instance.Spec.S3ProfileName
 	log.Info(fmt.Sprintf("targetProfileName=%s", s3profileName))
 
 	objectStore, _, err := s.reconciler.ObjStoreGetter.ObjectStore(
@@ -111,17 +112,18 @@ func (r *S3BucketViewReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, fmt.Errorf("error during updateStatus: %w", err)
 	}
 
-	log.Info("s3bucketView updated successfully")
+	log.Info("protectedvolumereplicationgrouplist updated successfully")
 
 	return ctrl.Result{}, nil
 }
 
-func (s *S3BucketViewInstance) getNamespacesAndVrgPrefixesFromS3(s3profileName string) ([]string, error) {
+func (s *ProtectedVolumeReplicationGroupListInstance) getNamespacesAndVrgPrefixesFromS3(s3profileName string,
+) ([]string, error) {
 	const GetAllContents = ""
 
-	prefixNamespaceVRG, err := s.ParseResultListFromS3Bucket(s3profileName, GetAllContents, ParseDoubleSlash)
+	prefixNamespaceVRG, err := s.ParseResultListFromReplicaStore(s3profileName, GetAllContents, ParseDoubleSlash)
 	if err != nil {
-		return prefixNamespaceVRG, fmt.Errorf("error during ParseResultListFromS3Bucket: %w", err)
+		return prefixNamespaceVRG, fmt.Errorf("error during ParseResultListFromReplicaStore: %w", err)
 	}
 
 	for index, val := range prefixNamespaceVRG {
@@ -131,7 +133,7 @@ func (s *S3BucketViewInstance) getNamespacesAndVrgPrefixesFromS3(s3profileName s
 	return prefixNamespaceVRG, nil
 }
 
-func (s *S3BucketViewInstance) getVrgContentsFromS3(prefixNamespaceVRG []string,
+func (s *ProtectedVolumeReplicationGroupListInstance) getVrgContentsFromS3(prefixNamespaceVRG []string,
 	objectStore ObjectStorer) ([]ramendrv1alpha1.VolumeReplicationGroup, error) {
 	vrgsAll := make([]ramendrv1alpha1.VolumeReplicationGroup, 0)
 
@@ -169,22 +171,25 @@ func VrgTidyForList(vrg *ramendrv1alpha1.VolumeReplicationGroup) {
 	vrg.ObjectMeta = ObjectMetaEmbedded(&vrg.ObjectMeta)
 }
 
-func (s *S3BucketViewInstance) updateStatus(vrgs []ramendrv1alpha1.VolumeReplicationGroup) error {
+func (s *ProtectedVolumeReplicationGroupListInstance) updateStatus(
+	vrgs []ramendrv1alpha1.VolumeReplicationGroup,
+) error {
 	// store all data in Status
-	s.instance.Status = &ramendrv1alpha1.S3BucketViewStatus{
-		SampleTime:              metav1.Now(),
-		VolumeReplicationGroups: vrgs,
+	s.instance.Status = &ramendrv1alpha1.ProtectedVolumeReplicationGroupListStatus{
+		SampleTime: metav1.Now(),
+		Items:      vrgs,
 	}
 
 	// final Status update to object
 	return s.reconciler.Status().Update(s.ctx, s.instance)
 }
 
-func (s *S3BucketViewInstance) ParseResultListFromS3Bucket(s3ProfileName string, prefix string,
-	parseFunc func(string) string) ([]string, error) {
-	itemList, err := s.GetItemsInS3BucketFromPrefix(s3ProfileName, prefix)
+func (s *ProtectedVolumeReplicationGroupListInstance) ParseResultListFromReplicaStore(
+	s3ProfileName string, prefix string, parseFunc func(string) string,
+) ([]string, error) {
+	itemList, err := s.GetItemsInReplicaStoreWithPrefix(s3ProfileName, prefix)
 	if err != nil {
-		return itemList, fmt.Errorf("error during GetItemsInS3BucketFromPrefix, err %w", err)
+		return itemList, fmt.Errorf("error during GetItemsInReplicaStoreWithPrefix, err %w", err)
 	}
 
 	results := getUniqueStringsFromList(itemList, parseFunc, prefix)
@@ -248,7 +253,7 @@ func ParseRemoveSlashes(input string) string {
 	return strings.ReplaceAll(input, "/", "")
 }
 
-func (s *S3BucketViewInstance) GetItemsInS3BucketFromPrefix(s3ProfileName string,
+func (s *ProtectedVolumeReplicationGroupListInstance) GetItemsInReplicaStoreWithPrefix(s3ProfileName string,
 	lookupPrefix string) ([]string, error) {
 	results := make([]string, 0)
 
@@ -267,22 +272,9 @@ func (s *S3BucketViewInstance) GetItemsInS3BucketFromPrefix(s3ProfileName string
 	return results, nil
 }
 
-func GetMatchingS3ProfileFromRamenConfig(ramenConfig *ramendrv1alpha1.RamenConfig,
-	targetS3ProfileName string) (ramendrv1alpha1.S3StoreProfile, error) {
-	// look up profile information in S3 profiles list
-	for _, s3Profile := range ramenConfig.S3StoreProfiles {
-		if s3Profile.S3ProfileName == targetS3ProfileName {
-			return s3Profile, nil
-		}
-	}
-
-	return ramendrv1alpha1.S3StoreProfile{},
-		errors.NewNotFound(schema.GroupResource{}, "Couldn't find target S3 profile in list of S3 profiles")
-}
-
 // SetupWithManager sets up the controller with the Manager.
-func (r *S3BucketViewReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *ProtectedVolumeReplicationGroupListReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&ramendrv1alpha1.S3BucketView{}).
+		For(&ramendrv1alpha1.ProtectedVolumeReplicationGroupList{}).
 		Complete(r)
 }

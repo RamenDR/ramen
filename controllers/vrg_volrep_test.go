@@ -1184,18 +1184,18 @@ func (v *vrgTest) kubeObjectProtectionValidate() *ramendrv1alpha1.VolumeReplicat
 }
 
 func kubeObjectProtectionValidate(tests []*vrgTest) {
-	bv := bvCreateAndStatusWait("bv-vrg-"+tests[0].uniqueID, vrgS3ProfileNumber)
+	protectedVrgList := protectedVrgListCreateAndStatusWait("protectedvrglist-vrg-"+tests[0].uniqueID, vrgS3ProfileNumber)
 	vrgs := make([]ramendrv1alpha1.VolumeReplicationGroup, len(tests))
 
 	for i, v := range tests {
 		vrg := v.kubeObjectProtectionValidate()
 		vrgController.VrgTidyForList(vrg)
 		vrgs[i] = *vrg
-		bvVrgsExpectInclude(bv, vrgs[i:i+1])
+		protectedVrgListExpectInclude(protectedVrgList, vrgs[i:i+1])
 	}
 
-	bvVrgsExpectInclude(bv, vrgs)
-	bvDeleteAndNotFoundWait(bv)
+	protectedVrgListExpectInclude(protectedVrgList, vrgs)
+	protectedVrgListDeleteAndNotFoundWait(protectedVrgList)
 }
 
 func (v *vrgTest) cleanup() {

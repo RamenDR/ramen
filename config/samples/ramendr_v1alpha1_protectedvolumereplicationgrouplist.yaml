@@ -1,6 +1,6 @@
 apiVersion: ramendr.openshift.io/v1alpha1
-kind: S3BucketView
+kind: ProtectedVolumeReplicationGroupList
 metadata:
-  name: s3bucketview-sample
+  name: protectedvolumereplicationgrouplist-sample
 spec:
   profileName: "minio-on-eyewall4"

@@ -124,13 +124,13 @@ func setupReconcilers(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig
 		return
 	}
 
-	if err := (&controllers.S3BucketViewReconciler{
+	if err := (&controllers.ProtectedVolumeReplicationGroupListReconciler{
 		Client:         mgr.GetClient(),
 		Scheme:         mgr.GetScheme(),
 		APIReader:      mgr.GetAPIReader(),
 		ObjStoreGetter: controllers.S3ObjectStoreGetter(),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "S3BucketView")
+		setupLog.Error(err, "unable to create controller", "controller", "ProtectedVolumeReplicationGroupList")
 		os.Exit(1)
 	}
 
