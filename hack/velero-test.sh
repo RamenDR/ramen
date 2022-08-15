@@ -121,7 +121,13 @@ velero_backup_namespace()
 {
 	velero_backup $1 $3 $4 $5 $6 $7 "
   includedNamespaces:
-   - $2"
+  - $2
+  includedResources:
+  - po
+  labelSelector:
+    matchExpressions:
+    - key: pod-template-hash
+      operator: Exists"
 }
 velero_backup_dummy()
 {
@@ -305,6 +311,4 @@ vu2() { set -- $cluster_names; velero_objects_delete $2; }
 cluster_names=cluster1\ hub
 namespace_name=asdf
 set -x
-for command in "${@:-velero_test}"; do
-	$command
-done
+"${@:-velero_test}"
