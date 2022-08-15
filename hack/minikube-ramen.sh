@@ -79,20 +79,15 @@ $(for cluster_name in $cluster_names; do echo \ \ -\ minio-on-$cluster_name; don
 	a
 }
 application_sample_vrg_deploy() {
-	application_sample_vrg_kubectl $1 primary apply\ -oyaml
+	application_sample_vrg_kubectl $1 primary apply
 }
 application_sample_vrg_deploy_sec() {
-	application_sample_vrg_kubectl $1 secondary apply\ -oyaml
+	application_sample_vrg_kubectl $1 secondary apply
 }
 application_sample_vrg_undeploy() {
 	application_sample_vrg_kubectl $1 primary delete\ --ignore-not-found
 }
-set -x
-for command in "${@:-deploy}"; do
-	$command
-done
-{ set +x; } 2>/dev/null
-unset -v command
+"${@:-deploy}"
 unset -f application_sample_vrg_undeploy
 unset -f application_sample_vrg_deploy
 unset -f application_sample_vrg_kubectl

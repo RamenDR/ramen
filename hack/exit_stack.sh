@@ -1,5 +1,6 @@
 # shellcheck shell=sh
 trap 'set -- $?; trap - EXIT; eval $exit_stack; echo exit status: $1' EXIT
+trap 'trap - EXIT; eval $exit_stack' EXIT
 trap 'trap - ABRT' ABRT
 trap 'trap - QUIT' QUIT
 trap 'trap - TERM' TERM
