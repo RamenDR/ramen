@@ -506,6 +506,22 @@ func (v *VRGInstance) kubeObjectProtectionDisabledOrKubeObjectsProtected() bool 
 		v.instance.Status.KubeObjectProtection.CaptureToRecoverFrom != nil
 }
 
+func (v *VRGInstance) kubeObjectsProtectionDelete(result *ctrl.Result) error {
+	if v.kubeObjectProtectionDisabled() {
+		v.log.Info("Kube objects protection deletion disabled")
+
+		return nil
+	}
+
+	vrg := v.instance
+
+	return v.kubeObjectsRecoverRequestsDelete(
+		result,
+		v.veleroNamespaceName(),
+		ownerLabels(vrg.Namespace, vrg.Name),
+	)
+}
+
 func kubeObjectsRequestsWatch(b *builder.Builder) *builder.Builder {
 	watch := func(request KubeObjectsRequest) {
 		src := &source.Kind{Type: request.Object()}

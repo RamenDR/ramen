@@ -691,6 +691,13 @@ func (v *VRGInstance) processForDeletion() (ctrl.Result, error) {
 		}
 	}
 
+	result := ctrl.Result{}
+	if err := v.kubeObjectsProtectionDelete(&result); err != nil {
+		v.log.Info("Kube objects protection deletion failed", "error", err)
+
+		return result, err
+	}
+
 	if err := v.removeFinalizer(vrgFinalizerName); err != nil {
 		v.log.Info("Failed to remove finalizer", "finalizer", vrgFinalizerName, "errorValue", err)
 
