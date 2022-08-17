@@ -682,6 +682,13 @@ func (v *VRGInstance) processForDeletion() (ctrl.Result, error) {
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	result := ctrl.Result{}
+	if err := v.kubeObjectsProtectionDelete(&result); err != nil {
+		v.log.Info("Kube objects protection deletion failed", "error", err)
+
+		return result, err
+	}
+
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
 		if err := v.deleteClusterDataInS3Stores(v.log); err != nil {
 			v.log.Info("Requeuing due to failure in deleting cluster data from S3 stores",
@@ -689,13 +696,6 @@ func (v *VRGInstance) processForDeletion() (ctrl.Result, error) {
 
 			return ctrl.Result{Requeue: true}, nil
 		}
-	}
-
-	result := ctrl.Result{}
-	if err := v.kubeObjectsProtectionDelete(&result); err != nil {
-		v.log.Info("Kube objects protection deletion failed", "error", err)
-
-		return result, err
 	}
 
 	if err := v.removeFinalizer(vrgFinalizerName); err != nil {
