@@ -5,8 +5,6 @@
 // +kubebuilder:rbac:groups=velero.io,resources=backups,verbs=create;delete;deletecollection;get;list;patch;update;watch
 // +kubebuilder:rbac:groups=velero.io,resources=backups/status,verbs=get
 // +kubebuilder:rbac:groups=velero.io,resources=backupstoragelocations,verbs=create;delete;deletecollection;get;patch;update
-// +kubebuilder:rbac:groups=velero.io,resources=deletebackuprequests,verbs=create;delete;get;patch;update
-// +kubebuilder:rbac:groups=velero.io,resources=downloadrequests,verbs=create;delete;get;patch;update
 // +kubebuilder:rbac:groups=velero.io,resources=restores,verbs=create;delete;deletecollection;get;list;patch;update;watch
 // +kubebuilder:rbac:groups=velero.io,resources=restores/status,verbs=get
 
@@ -267,98 +265,6 @@ func backupDummyStatusProcessAndRestore(
 	return nil, kubeobjects.RequestProcessingErrorCreate("backup.status.phase absent")
 }
 
-func KubeObjectsCaptureRequestDelete(
-	ctx context.Context,
-	writer client.Writer,
-	log logr.Logger,
-	requestNamespaceName string,
-	captureName string,
-) error {
-	objectMeta := metav1.ObjectMeta{Namespace: requestNamespaceName, Name: captureName}
-	w := objectWriter{ctx: ctx, Writer: writer, log: log}
-
-	if err := w.objectDelete(&velero.BackupStorageLocation{ObjectMeta: objectMeta}); err != nil {
-		return err
-	}
-
-	return w.objectDelete(&velero.Backup{ObjectMeta: objectMeta})
-}
-
-func KubeObjectsCaptureDelete(
-	ctx context.Context,
-	writer client.Writer,
-	reader client.Reader,
-	log logr.Logger,
-	s3Url string,
-	s3BucketName string,
-	s3RegionName string,
-	s3KeyPrefix string,
-	secretKeyRef *corev1.SecretKeySelector,
-	sourceNamespaceName string,
-	requestNamespaceName string,
-	captureName string,
-	labels map[string]string,
-) error {
-	w := objectWriter{ctx: ctx, Writer: writer, log: log}
-	namespacedName := types.NamespacedName{Namespace: requestNamespaceName, Name: captureName}
-
-	backupLocation, backup, err := backupCreate(
-		namespacedName, w, reader, s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretKeyRef,
-		backupSpecDummy(), sourceNamespaceName,
-		labels,
-	)
-	if err != nil {
-		return err
-	}
-
-	return backupAndBackupObjectsDelete(backupLocation, backup, namespacedName, w, reader)
-}
-
-func backupAndBackupObjectsDelete(
-	backupLocation *velero.BackupStorageLocation,
-	backup *velero.Backup,
-	namespacedName types.NamespacedName,
-	w objectWriter,
-	reader client.Reader,
-) error {
-	if err := backupDelete(namespacedName, w, reader); err != nil {
-		return err
-	}
-
-	return w.backupObjectsDelete(backupLocation, backup)
-}
-
-func backupDelete(
-	namespacedName types.NamespacedName,
-	w objectWriter,
-	reader client.Reader,
-) error {
-	backupDeletion := backupDeletion(namespacedName)
-	if err := objectCreateAndGet(w, reader, backupDeletion); err != nil {
-		// DeleteBackupRequest controller deletes DeleteBackupRequest on success
-		if k8serrors.IsNotFound(err) {
-			w.log.Info("Backup deletion request not found")
-
-			return nil
-		}
-
-		return err
-	}
-
-	backupDeletionStatusLog(backupDeletion, w.log)
-
-	switch backupDeletion.Status.Phase {
-	case velero.DeleteBackupRequestPhaseNew:
-		fallthrough
-	case velero.DeleteBackupRequestPhaseInProgress:
-		return errors.New("temporary: backup deletion " + string(backupDeletion.Status.Phase))
-	case velero.DeleteBackupRequestPhaseProcessed:
-		return w.objectDelete(backupDeletion)
-	default:
-		return errors.New("temporary: backup deletion status.phase absent")
-	}
-}
-
 func backupRestore(
 	backupLocation *velero.BackupStorageLocation,
 	backup *velero.Backup,
@@ -416,33 +322,6 @@ func restoreRequestFailedDelete(
 	}
 
 	return errors.New("restore" + string(restore.Status.Phase) + "; request deleted")
-}
-
-func RestoreResultsGet(
-	w objectWriter,
-	reader client.Reader,
-	namespacedName types.NamespacedName,
-	results *string,
-) error {
-	download := download(namespacedName, velero.DownloadTargetKindRestoreResults)
-	if err := objectCreateAndGet(w, reader, download); err != nil {
-		return err
-	}
-
-	downloadStatusLog(download, w.log)
-
-	switch download.Status.Phase {
-	case velero.DownloadRequestPhaseNew:
-		return errors.New("temporary: download " + string(download.Status.Phase))
-	case velero.DownloadRequestPhaseProcessed:
-		break
-	default:
-		return errors.New("temporary: download status.phase absent")
-	}
-
-	*results = download.Status.DownloadURL // TODO dereference
-
-	return w.objectDelete(download)
 }
 
 func (RequestsManager) ProtectRequestCreate(
@@ -789,35 +668,6 @@ func restore(
 	}
 }
 
-func backupDeletion(namespacedName types.NamespacedName) *velero.DeleteBackupRequest {
-	return &velero.DeleteBackupRequest{
-		TypeMeta: veleroTypeMeta("DeleteBackupRequest"),
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespacedName.Namespace,
-			Name:      namespacedName.Name,
-		},
-		Spec: velero.DeleteBackupRequestSpec{
-			BackupName: namespacedName.Name,
-		},
-	}
-}
-
-func download(namespacedName types.NamespacedName, kind velero.DownloadTargetKind) *velero.DownloadRequest {
-	return &velero.DownloadRequest{
-		TypeMeta: veleroTypeMeta("DownloadRequest"),
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespacedName.Namespace,
-			Name:      namespacedName.Name + string(kind),
-		},
-		Spec: velero.DownloadRequestSpec{
-			Target: velero.DownloadTarget{
-				Kind: kind,
-				Name: namespacedName.Name,
-			},
-		},
-	}
-}
-
 func backupStatusLog(backup *velero.Backup, log logr.Logger) {
 	log.Info("Backup",
 		"phase", backup.Status.Phase,
@@ -865,23 +715,5 @@ func restoreStatusLog(restore *velero.Restore, log logr.Logger) {
 			"to be restored", restore.Status.Progress.TotalItems,
 			"restored", restore.Status.Progress.ItemsRestored,
 		)
-	}
-}
-
-func backupDeletionStatusLog(backupDeletion *velero.DeleteBackupRequest, log logr.Logger) {
-	log.Info("Backup deletion",
-		"phase", backupDeletion.Status.Phase,
-		"errors", backupDeletion.Status.Errors,
-	)
-}
-
-func downloadStatusLog(download *velero.DownloadRequest, log logr.Logger) {
-	log.Info("Download",
-		"phase", download.Status.Phase,
-		"url", download.Status.DownloadURL,
-	)
-
-	if download.Status.Expiration != nil {
-		log.Info("Download", "expiration", download.Status.Expiration)
 	}
 }
