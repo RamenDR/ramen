@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/kubeobjects"
 	"github.com/ramendr/ramen/controllers/util"
@@ -71,10 +72,10 @@ func (v *VRGInstance) kubeObjectsProtectSecondary(result *ctrl.Result, s3StoreAc
 	)
 }
 
-type captureStartConditionally func(
-	*VRGInstance, *ctrl.Result, int64, time.Duration, time.Duration, func(),
+type (
+	captureStartConditionally     func(*VRGInstance, *ctrl.Result, int64, time.Duration, time.Duration, func())
+	captureInProgressStatusUpdate func()
 )
-type captureInProgressStatusUpdate func()
 
 func (v *VRGInstance) kubeObjectsProtect(
 	result *ctrl.Result,
@@ -86,6 +87,7 @@ func (v *VRGInstance) kubeObjectsProtect(
 		return
 	}
 
+	// TODO tolerate and remove
 	if len(s3StoreAccessors) == 0 {
 		v.log.Info("Kube objects capture store list empty")
 
@@ -125,13 +127,6 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 	log := v.log.WithValues("number", number)
 	pathName, namePrefix := kubeObjectsCapturePathNameAndNamePrefix(vrg.Namespace, vrg.Name, number)
 	labels := util.OwnerLabels(vrg.Namespace, vrg.Name)
-	captureStartOrResume := func(generation int64, startOrResume string) {
-		log.Info("Kube objects capture "+startOrResume, "generation", generation)
-		v.kubeObjectsCaptureStartOrResume(result, s3StoreAccessors,
-			captureStartConditionally,
-			captureInProgressStatusUpdate,
-			number, pathName, namePrefix, veleroNamespaceName, interval, labels, generation)
-	}
 
 	requests, err := v.reconciler.kubeObjects.ProtectRequestsGet(
 		v.ctx, v.reconciler.APIReader, veleroNamespaceName, labels)
@@ -142,6 +137,18 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 		result.Requeue = true
 
 		return
+	}
+
+	captureStartOrResume := func(generation int64, startOrResume string) {
+		log.Info("Kube objects capture "+startOrResume, "generation", generation)
+		v.kubeObjectsCaptureStartOrResume(result, s3StoreAccessors,
+			captureStartConditionally,
+			captureInProgressStatusUpdate,
+			number, pathName, namePrefix, veleroNamespaceName, interval, labels,
+			generation,
+			kubeobjects.RequestsMapKeyedByName(requests),
+			log,
+		)
 	}
 
 	if count := requests.Count(); count > 0 {
@@ -225,54 +232,31 @@ const (
 )
 
 func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
-	result *ctrl.Result, s3StoreAccessors []s3StoreAccessor,
-	captureStartConditionally captureStartConditionally, captureInProgressStatusUpdate captureInProgressStatusUpdate,
-	captureNumber int64, pathName, namePrefix, veleroNamespaceName string, interval time.Duration,
-	labels map[string]string, generation int64,
+	result *ctrl.Result,
+	s3StoreAccessors []s3StoreAccessor,
+	captureStartConditionally captureStartConditionally,
+	captureInProgressStatusUpdate captureInProgressStatusUpdate,
+	captureNumber int64,
+	pathName, namePrefix, veleroNamespaceName string,
+	interval time.Duration,
+	labels map[string]string,
+	generation int64,
+	requests map[string]kubeobjects.Request,
+	log logr.Logger,
 ) {
 	vrg := v.instance
 	groups := v.getCaptureGroups()
-	requests := make([]kubeobjects.ProtectRequest, len(groups)*len(s3StoreAccessors))
 	requestsProcessedCount := 0
 	requestsCompletedCount := 0
 	annotations := map[string]string{vrgGenerationKey: strconv.FormatInt(generation, vrgGenerationNumberBase)}
-	log := v.log.WithValues("number", captureNumber)
 
 	for groupNumber, captureGroup := range groups {
 		log1 := log.WithValues("group", groupNumber, "name", captureGroup.Name)
-
-		for _, s3StoreAccessor := range s3StoreAccessors {
-			log2 := log.WithValues("profile", s3StoreAccessor.S3ProfileName)
-			request, err := v.reconciler.kubeObjects.ProtectRequestCreate(
-				v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.log,
-				s3StoreAccessor.S3CompatibleEndpoint, s3StoreAccessor.S3Bucket, s3StoreAccessor.S3Region,
-				pathName, s3StoreAccessor.VeleroNamespaceSecretKeyRef, s3StoreAccessor.CACertificates,
-				vrg.Namespace, captureGroup.Spec,
-				veleroNamespaceName, kubeObjectsCaptureName(namePrefix, captureGroup.Name, s3StoreAccessor.S3ProfileName),
-				labels, annotations)
-			requests[requestsProcessedCount] = request
-			requestsProcessedCount++
-
-			if err == nil {
-				log2.Info("Kube objects group captured", "start", request.StartTime(), "end", request.EndTime())
-				requestsCompletedCount++
-
-				continue
-			}
-
-			if errors.Is(err, kubeobjects.RequestProcessingError{}) {
-				log2.Info("Kube objects group capturing", "state", err.Error())
-
-				continue
-			}
-
-			log2.Error(err, "Kube objects group capture error")
-			v.kubeObjectsCaptureFailed(err.Error())
-
-			result.Requeue = true
-
-			return
-		}
+		requestsCompletedCount += v.kubeObjectsGroupCapture(
+			result, vrg, captureGroup, s3StoreAccessors, pathName, namePrefix, veleroNamespaceName, labels, annotations,
+			requests, log,
+		)
+		requestsProcessedCount += len(s3StoreAccessors)
 
 		if requestsCompletedCount < requestsProcessedCount {
 			log1.Info("Kube objects group capturing", "complete", requestsCompletedCount, "total", requestsProcessedCount)
@@ -282,9 +266,77 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 		}
 	}
 
-	v.kubeObjectsCaptureComplete(result, captureStartConditionally,
-		captureNumber, veleroNamespaceName, interval, labels, requests[0].StartTime(),
-		requests[0].Object().GetAnnotations())
+	request0 := requests[kubeObjectsCaptureName(namePrefix, groups[0].Name, s3StoreAccessors[0].S3ProfileName)]
+
+	v.kubeObjectsCaptureComplete(
+		result,
+		captureStartConditionally,
+		captureNumber,
+		veleroNamespaceName,
+		interval,
+		labels,
+		request0.StartTime(),
+		request0.Object().GetAnnotations(),
+	)
+}
+
+func (v *VRGInstance) kubeObjectsGroupCapture(
+	result *ctrl.Result,
+	vrg *ramen.VolumeReplicationGroup,
+	captureGroup kubeobjects.CaptureSpec,
+	s3StoreAccessors []s3StoreAccessor,
+	pathName, namePrefix, veleroNamespaceName string,
+	labels map[string]string, annotations map[string]string,
+	requests map[string]kubeobjects.Request,
+	log logr.Logger,
+) (requestsCompletedCount int) {
+	for _, s3StoreAccessor := range s3StoreAccessors {
+		requestName := kubeObjectsCaptureName(namePrefix, captureGroup.Name, s3StoreAccessor.S3ProfileName)
+		log1 := log.WithValues("profile", s3StoreAccessor.S3ProfileName)
+
+		request, ok := requests[requestName]
+		if !ok {
+			if _, err := v.reconciler.kubeObjects.ProtectRequestCreate(
+				v.ctx, v.reconciler.Client, v.log,
+				s3StoreAccessor.S3CompatibleEndpoint, s3StoreAccessor.S3Bucket, s3StoreAccessor.S3Region,
+				pathName, s3StoreAccessor.VeleroNamespaceSecretKeyRef, s3StoreAccessor.CACertificates,
+				vrg.Namespace, captureGroup.Spec, veleroNamespaceName, requestName,
+				labels, annotations,
+			); err != nil {
+				log1.Error(err, "Kube objects group capture request submit error")
+
+				result.Requeue = true
+			} else {
+				log1.Info("Kube objects group capture request submitted")
+			}
+
+			continue
+		}
+
+		err := request.Status(v.log)
+
+		switch {
+		case err == nil:
+			log1.Info("Kube objects group captured", "start", request.StartTime(), "end", request.EndTime())
+			requestsCompletedCount++
+		case errors.Is(err, kubeobjects.RequestProcessingError{}):
+			log1.Info("Kube objects group capturing", "state", err.Error())
+		default:
+			log1.Error(err, "Kube objects group capture error")
+
+			if err := request.Deallocate(v.ctx, v.reconciler.Client, v.log); err != nil {
+				log.Error(err, "Kube objects group capture request deallocate error")
+			}
+
+			v.kubeObjectsCaptureStatusFalse("KubeObjectsCaptureError", err.Error())
+
+			result.Requeue = true
+
+			return
+		}
+	}
+
+	return requestsCompletedCount
 }
 
 func (v *VRGInstance) kubeObjectsCaptureComplete(
@@ -425,14 +477,12 @@ func (v *VRGInstance) getRecoverGroupsFromRecipe() []kubeobjects.RecoverSpec {
 func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result,
 	s3StoreProfile ramen.S3StoreProfile, objectStorer ObjectStorer,
 ) error {
-	vrg := v.instance
-
 	if v.kubeObjectProtectionDisabled("recovery") {
 		return nil
 	}
 
-	sourceVrgNamespaceName := vrg.Namespace
-	sourceVrgName := vrg.Name
+	vrg := v.instance
+	sourceVrgNamespaceName, sourceVrgName := vrg.Namespace, vrg.Name
 	sourcePathNamePrefix := s3PathNamePrefix(sourceVrgNamespaceName, sourceVrgName)
 
 	sourceVrg := &ramen.VolumeReplicationGroup{}
@@ -442,14 +492,33 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result,
 		return nil
 	}
 
-	capture := sourceVrg.Status.KubeObjectProtection.CaptureToRecoverFrom
-	if capture == nil {
+	captureToRecoverFromIdentifier := sourceVrg.Status.KubeObjectProtection.CaptureToRecoverFrom
+	if captureToRecoverFromIdentifier == nil {
 		v.log.Info("Kube objects capture-to-recover-from identifier nil")
 
 		return nil
 	}
 
-	vrg.Status.KubeObjectProtection.CaptureToRecoverFrom = capture
+	vrg.Status.KubeObjectProtection.CaptureToRecoverFrom = captureToRecoverFromIdentifier
+	veleroNamespaceName := v.veleroNamespaceName()
+	labels := util.OwnerLabels(vrg.Namespace, vrg.Name)
+	log := v.log.WithValues("number", captureToRecoverFromIdentifier.Number, "profile", s3StoreProfile.S3ProfileName)
+
+	captureRequestsStruct, err := v.reconciler.kubeObjects.ProtectRequestsGet(
+		v.ctx, v.reconciler.APIReader, veleroNamespaceName, labels)
+	if err != nil {
+		log.Error(err, "Kube objects capture requests query error")
+
+		return err
+	}
+
+	recoverRequestsStruct, err := v.reconciler.kubeObjects.RecoverRequestsGet(
+		v.ctx, v.reconciler.APIReader, veleroNamespaceName, labels)
+	if err != nil {
+		log.Error(err, "Kube objects recover requests query error")
+
+		return err
+	}
 
 	return v.kubeObjectsRecoveryStartOrResume(
 		result,
@@ -457,107 +526,125 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result,
 			objectStorer,
 			s3StoreProfile,
 		},
-		sourceVrgNamespaceName,
-		sourceVrgName,
-		capture,
+		sourceVrgNamespaceName, sourceVrgName, captureToRecoverFromIdentifier,
+		kubeobjects.RequestsMapKeyedByName(captureRequestsStruct),
+		kubeobjects.RequestsMapKeyedByName(recoverRequestsStruct),
+		veleroNamespaceName, labels, log,
 	)
 }
 
-func (v *VRGInstance) createRecoverOrProtectRequest(
+func (v *VRGInstance) getRecoverOrProtectRequest(
+	captureRequests map[string]kubeobjects.Request,
+	recoverRequests map[string]kubeobjects.Request,
 	s3StoreAccessor s3StoreAccessor,
 	sourceVrgNamespaceName, sourceVrgName string,
-	capture *ramen.KubeObjectsCaptureIdentifier,
+	captureToRecoverFromIdentifier *ramen.KubeObjectsCaptureIdentifier,
 	groupNumber int,
 	recoverGroup kubeobjects.RecoverSpec,
 	veleroNamespaceName string,
 	labels map[string]string,
-	annotations map[string]string,
-) (kubeobjects.Request, error) {
+) (kubeobjects.Request, bool, func() (kubeobjects.Request, error)) {
 	vrg := v.instance
-	capturePathName, captureNamePrefix := kubeObjectsCapturePathNameAndNamePrefix(
-		sourceVrgNamespaceName, sourceVrgName, capture.Number)
-	recoverNamePrefix := kubeObjectsRecoverNamePrefix(vrg.Namespace, vrg.Name)
-
-	var request kubeobjects.Request
-
-	var err error
+	annotations := map[string]string{}
 
 	if recoverGroup.BackupName == ramen.ReservedBackupName {
-		status := &vrg.Status.KubeObjectProtection
-		captureToRecoverFrom := status.CaptureToRecoverFrom
-		backupSequenceNumber := 1 - captureToRecoverFrom.Number // is this a good way to do this?
+		backupSequenceNumber := 1 - captureToRecoverFromIdentifier.Number // is this a good way to do this?
 		backupName := fmt.Sprintf("%s-restore-%d", recoverGroup.BackupName, groupNumber)
-		v.log.Info(fmt.Sprintf("backup: %s, captureToRecoverFrom: %d", backupName, captureToRecoverFrom.Number))
+		v.log.Info(fmt.Sprintf("backup: %s, captureToRecoverFrom: %d", backupName, captureToRecoverFromIdentifier.Number))
 
-		pathName, namePrefix := kubeObjectsCapturePathNameAndNamePrefix(vrg.Namespace, vrg.Name, backupSequenceNumber)
-		request, err = v.reconciler.kubeObjects.ProtectRequestCreate(
+		request, ok := captureRequests[backupName]
+
+		return request, ok, func() (kubeobjects.Request, error) {
+			pathName, namePrefix := kubeObjectsCapturePathNameAndNamePrefix(
+				vrg.Namespace, vrg.Name, backupSequenceNumber)
+
+			return v.reconciler.kubeObjects.ProtectRequestCreate(
+				v.ctx, v.reconciler.Client, v.log,
+				s3StoreAccessor.S3CompatibleEndpoint, s3StoreAccessor.S3Bucket, s3StoreAccessor.S3Region,
+				pathName,
+				s3StoreAccessor.VeleroNamespaceSecretKeyRef,
+				s3StoreAccessor.CACertificates,
+				vrg.Namespace, recoverGroup.Spec,
+				veleroNamespaceName, kubeObjectsCaptureName(namePrefix, backupName, s3StoreAccessor.S3ProfileName),
+				labels, annotations)
+		}
+	}
+
+	recoverNamePrefix := kubeObjectsRecoverNamePrefix(vrg.Namespace, vrg.Name)
+	recoverName := kubeObjectsRecoverName(recoverNamePrefix, groupNumber)
+	// TODO pass backup request to recover request create
+	// captureRequest, ok := recoverRequests[recoverName]
+	request, ok := recoverRequests[recoverName]
+
+	return request, ok, func() (kubeobjects.Request, error) {
+		capturePathName, captureNamePrefix := kubeObjectsCapturePathNameAndNamePrefix(
+			sourceVrgNamespaceName, sourceVrgName, captureToRecoverFromIdentifier.Number)
+
+		return v.reconciler.kubeObjects.RecoverRequestCreate(
 			v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.log,
-			s3StoreAccessor.S3CompatibleEndpoint,
-			s3StoreAccessor.S3Bucket,
-			s3StoreAccessor.S3Region,
-			pathName,
-			s3StoreAccessor.VeleroNamespaceSecretKeyRef,
-			s3StoreAccessor.CACertificates,
-			vrg.Namespace,
-			recoverGroup.Spec,
-			veleroNamespaceName, kubeObjectsCaptureName(namePrefix, backupName, s3StoreAccessor.S3ProfileName),
-			labels, annotations)
-	} else {
-		request, err = v.reconciler.kubeObjects.RecoverRequestCreate(
-			v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.log,
-			s3StoreAccessor.S3CompatibleEndpoint,
-			s3StoreAccessor.S3Bucket,
-			s3StoreAccessor.S3Region,
+			s3StoreAccessor.S3CompatibleEndpoint, s3StoreAccessor.S3Bucket, s3StoreAccessor.S3Region,
 			capturePathName,
 			s3StoreAccessor.VeleroNamespaceSecretKeyRef,
 			s3StoreAccessor.CACertificates,
 			sourceVrgNamespaceName, vrg.Namespace, recoverGroup, veleroNamespaceName,
 			kubeObjectsCaptureName(captureNamePrefix, recoverGroup.BackupName, s3StoreAccessor.S3ProfileName),
-			kubeObjectsRecoverName(recoverNamePrefix, groupNumber), labels, annotations)
+			kubeObjectsRecoverName(recoverNamePrefix, groupNumber),
+			labels, annotations)
 	}
-
-	return request, err
 }
 
 func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 	result *ctrl.Result, s3StoreAccessor s3StoreAccessor,
 	sourceVrgNamespaceName, sourceVrgName string,
-	capture *ramen.KubeObjectsCaptureIdentifier,
+	captureToRecoverFromIdentifier *ramen.KubeObjectsCaptureIdentifier,
+	captureRequests map[string]kubeobjects.Request,
+	recoverRequests map[string]kubeobjects.Request,
+	veleroNamespaceName string, labels map[string]string, log logr.Logger,
 ) error {
-	vrg := v.instance
-	veleroNamespaceName := v.veleroNamespaceName()
-	labels := util.OwnerLabels(vrg.Namespace, vrg.Name)
-	annotations := map[string]string{}
 	groups := v.getRecoverGroups()
-	requests := make([]kubeobjects.Request, len(groups)) // Request: interface for ProtectRequest, RecoverRequest
-	log := v.log.WithValues("number", capture.Number, "profile", s3StoreAccessor.S3ProfileName)
+	requests := make([]kubeobjects.Request, len(groups))
 
 	for groupNumber, recoverGroup := range groups {
 		log1 := log.WithValues("group", groupNumber, "name", recoverGroup.BackupName)
-
-		var request kubeobjects.Request
+		request, ok, requestCreate := v.getRecoverOrProtectRequest(
+			captureRequests, recoverRequests, s3StoreAccessor,
+			sourceVrgNamespaceName, sourceVrgName,
+			captureToRecoverFromIdentifier,
+			groupNumber, recoverGroup,
+			veleroNamespaceName, labels,
+		)
 
 		var err error
 
-		request, err = v.createRecoverOrProtectRequest(s3StoreAccessor, sourceVrgNamespaceName, sourceVrgName,
-			capture, groupNumber, recoverGroup, veleroNamespaceName, labels, annotations)
-		requests[groupNumber] = request
+		if !ok {
+			_, err = requestCreate()
+			if err == nil {
+				log1.Info("Kube objects group recover request submitted")
 
-		if err == nil {
-			log1.Info("Kube objects group recovered", "start", request.StartTime(), "end", request.EndTime())
+				return errors.New("kube objects group recover request submitted")
+			}
+		} else {
+			err = request.Status(v.log)
+			if err == nil {
+				log1.Info("Kube objects group recovered", "start", request.StartTime(), "end", request.EndTime())
+				requests[groupNumber] = request
 
-			continue
+				continue
+			}
 		}
 
-		if errors.Is(err, kubeobjects.RequestProcessingError{}) {
+		switch {
+		case errors.Is(err, kubeobjects.RequestProcessingError{}):
 			log1.Info("Kube objects group recovering", "state", err.Error())
+		default:
+			log1.Error(err, "Kube objects group recover error")
 
-			return err
+			if err := request.Deallocate(v.ctx, v.reconciler.Client, v.log); err != nil {
+				log.Error(err, "Kube objects group recover request deallocate error")
+			}
+
+			result.Requeue = true
 		}
-
-		v.log.Error(err, "Kube objects group recover error")
-
-		result.Requeue = true
 
 		return err
 	}
@@ -599,7 +686,6 @@ func (v *VRGInstance) kubeObjectProtectionDisabled(caller string) bool {
 	vrgDisabled := v.instance.Spec.KubeObjectProtection == nil
 	cmDisabled := v.ramenConfig.KubeObjectProtection.Disabled
 	disabled := vrgDisabled || cmDisabled
-
 	v.log.Info("Kube object protection", "disabled", disabled, "VRG", vrgDisabled, "configMap", cmDisabled, "for", caller)
 
 	return disabled

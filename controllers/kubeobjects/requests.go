@@ -20,14 +20,27 @@ type (
 
 type Request interface {
 	Object() client.Object
+	Name() string
 	StartTime() metav1.Time
 	EndTime() metav1.Time
+	Status(logr.Logger) error
 	Deallocate(context.Context, client.Writer, logr.Logger) error
 }
 
 type Requests interface {
 	Count() int
 	Get(i int) Request
+}
+
+func RequestsMapKeyedByName(requestsStruct Requests) map[string]Request {
+	requests := make(map[string]Request, requestsStruct.Count())
+
+	for i := 0; i < requestsStruct.Count(); i++ {
+		request := requestsStruct.Get(i)
+		requests[request.Name()] = request
+	}
+
+	return requests
 }
 
 type RequestProcessingError struct{ string }
@@ -98,7 +111,7 @@ type RequestsManager interface {
 	ProtectRequestNew() ProtectRequest
 	RecoverRequestNew() RecoverRequest
 	ProtectRequestCreate(
-		c context.Context, w client.Writer, r client.Reader, l logr.Logger,
+		c context.Context, w client.Writer, l logr.Logger,
 		s3Url string,
 		s3BucketName string,
 		s3RegionName string,
