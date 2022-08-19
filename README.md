@@ -27,6 +27,10 @@ For configuration, see the [configure](docs/configure.md) guide.
 For usage of Ramen to orchestrate placement of workloads, see the [usage](docs/usage.md)
 guide.
 
+[Volume Replication Group (VRG) usage](docs/vrg-usage.md)
+
+[Kubernetes Resource Protection](docs/krp.md)
+
 ## Contributing
 
 We welcome contributions. See [contributing](CONTRIBUTING.md) guide to get
