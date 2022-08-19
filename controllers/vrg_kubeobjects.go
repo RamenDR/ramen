@@ -109,10 +109,10 @@ func (v *VRGInstance) kubeObjectsProtect(result *ctrl.Result) {
 
 type s3StoreAccessor struct {
 	ObjectStorer
-	url                       string
-	bucketName                string
-	regionName                string
-	veleroNamespaceSecretName string
+	url                         string
+	bucketName                  string
+	regionName                  string
+	veleroNamespaceSecretKeyRef *corev1.SecretKeySelector
 }
 
 func (v *VRGInstance) s3StoreAccessorsGet() []s3StoreAccessor {
@@ -137,7 +137,7 @@ func (v *VRGInstance) s3StoreAccessorsGet() []s3StoreAccessor {
 			s3StoreProfile.S3CompatibleEndpoint,
 			s3StoreProfile.S3Bucket,
 			s3StoreProfile.S3Region,
-			s3StoreProfile.VeleroNamespaceSecretName,
+			s3StoreProfile.VeleroNamespaceSecretKeyRef,
 		}
 	}
 
@@ -234,7 +234,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 				s3StoreAccessor.bucketName,
 				s3StoreAccessor.regionName,
 				pathName,
-				s3StoreAccessor.veleroNamespaceSecretName,
+				s3StoreAccessor.veleroNamespaceSecretKeyRef,
 				vrg.Namespace,
 				captureGroup.KubeObjectsSpec,
 				veleroNamespaceName, kubeObjectsCaptureName(namePrefix, captureGroup.Name, s3ProfileName),
@@ -389,7 +389,7 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result,
 			s3StoreProfile.S3CompatibleEndpoint,
 			s3StoreProfile.S3Bucket,
 			s3StoreProfile.S3Region,
-			s3StoreProfile.VeleroNamespaceSecretName,
+			s3StoreProfile.VeleroNamespaceSecretKeyRef,
 		},
 		sourceVrgNamespaceName,
 		sourceVrgName,
@@ -418,7 +418,7 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 			s3StoreAccessor.bucketName,
 			s3StoreAccessor.regionName,
 			capturePathName,
-			s3StoreAccessor.veleroNamespaceSecretName,
+			s3StoreAccessor.veleroNamespaceSecretKeyRef,
 			sourceVrgNamespaceName, vrg.Namespace, recoverGroup.KubeObjectsSpec, veleroNamespaceName,
 			kubeObjectsCaptureName(captureNamePrefix, recoverGroup.BackupName, s3ProfileName),
 			kubeObjectsRecoverName(recoverNamePrefix, groupNumber), labels)
