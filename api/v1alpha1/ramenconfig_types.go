@@ -86,7 +86,7 @@ type S3StoreProfile struct {
 	// respectively.
 	S3SecretRef v1.SecretReference `json:"s3SecretRef"`
 	//+optional
-	VeleroNamespaceSecretName string `json:"veleroNamespaceSecretName,omitempty"`
+	VeleroNamespaceSecretKeyRef *v1.SecretKeySelector `json:"veleroNamespaceSecretKeyRef,omitempty"`
 }
 
 //+kubebuilder:object:root=true

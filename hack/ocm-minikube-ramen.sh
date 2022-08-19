@@ -495,25 +495,22 @@ ramen_config_deploy_hub_or_spoke()
 	until_true_or_n 90 kubectl --context $1 -n ramen-system get configmap $(ramen_config_map_name $2)
 	set -- $1 $2 /tmp/$USER/ramen/$2
 	mkdir -p $3
-	set -- $1 $2 $3/ramen_manager_config.yaml $spoke_cluster_names
+	set -- $1 $2 $3/ramen_manager_config.yaml
 	cat $(ramen_config_file_path_name $2) - <<-EOF >$3
 	s3StoreProfiles:
-	- s3ProfileName: minio-on-$4
+	$(for cluster_name in $spoke_cluster_names; do cat <<-b
+	- s3ProfileName: minio-on-$cluster_name
 	  s3Bucket: bucket
-	  s3CompatibleEndpoint: $(minikube_minio_url $4)
+	  s3CompatibleEndpoint: $(minikube_minio_url $cluster_name)
 	  s3Region: us-east-1
 	  s3SecretRef:
 	    name: s3secret
 	    namespace: ramen-system
-	  veleroNamespaceSecretName: s3secret
-	- s3ProfileName: minio-on-$5
-	  s3Bucket: bucket
-	  s3CompatibleEndpoint: $(minikube_minio_url $5)
-	  s3Region: us-west-1
-	  s3SecretRef:
+	  veleroNamespaceSecretKeyRef:
 	    name: s3secret
-	    namespace: ramen-system
-	  veleroNamespaceSecretName: s3secret
+	    key: aws
+	b
+	done;unset -v cluster_name)
 	drClusterOperator:
 	  deploymentAutomationEnabled: true
 	  s3SecretDistributionEnabled: $ramen_s3_secret_distribution_enabled
