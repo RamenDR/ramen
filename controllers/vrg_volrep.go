@@ -625,6 +625,11 @@ func (v *VRGInstance) reconcileVRsForDeletion() bool {
 			continue
 		}
 
+		vrMissing, requeueResult := v.reconcileMissingVR(pvc, log)
+		if vrMissing || requeueResult {
+			continue
+		}
+
 		if v.reconcileVRForDeletion(pvc, log) {
 			continue
 		}
@@ -671,8 +676,6 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 		}
 	}
 
-	// Deleting VR first may end-up recreating the VR if reconcile for this PVC is interrupted, but that is better than
-	// leaking a VR as that would result in leaking a volume on the storage system
 	if err := v.deleteVR(pvcNamespacedName, log); err != nil {
 		log.Info("Requeuing due to failure in finalizing VolumeReplication resource for PersistentVolumeClaim",
 			"errorValue", err)
@@ -688,6 +691,48 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 	}
 
 	return !requeue
+}
+
+// reconcileMissingVR determines if VR is missing, and if missing completes other steps required for
+// reconciliation during deletion.
+// VR can be missing,
+// - if no VR was created post initial processing, by when VRG was deleted. In this case
+// no PV was also uploaded, as VR is created first before PV is uploaded.
+// - if VR was deleted in a prior reconcile, during VRG deletion, but steps post VR deletion were not
+// completed
+// Returns 2 booleans,
+// - the first indicating if VR is missing or not, to enable further VR processing if needed
+// - the next indicating any required requeue of the request, due to errors in determining VR presence
+func (v *VRGInstance) reconcileMissingVR(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, bool) {
+	const (
+		requeue   = true
+		vrMissing = true
+	)
+
+	if v.instance.Spec.Async.Mode != ramendrv1alpha1.AsyncModeEnabled {
+		return !vrMissing, !requeue
+	}
+
+	volRep := &volrep.VolumeReplication{}
+	vrNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
+
+	err := v.reconciler.Get(v.ctx, vrNamespacedName, volRep)
+	if err == nil {
+		return !vrMissing, !requeue
+	}
+
+	if !k8serrors.IsNotFound(err) {
+		return !vrMissing, requeue
+	}
+
+	if err := v.preparePVCForVRDeletion(pvc, log); err != nil {
+		log.Info("Requeuing due to failure in preparing PersistentVolumeClaim for deletion",
+			"errorValue", err)
+
+		return vrMissing, requeue
+	}
+
+	return vrMissing, !requeue
 }
 
 func (v *VRGInstance) deleteClusterDataInS3Stores(log logr.Logger) error {
