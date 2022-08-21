@@ -25,8 +25,8 @@ Group (VRG) custom resource for disaster recovery provides a flexible mechanism
 to support these examples and has generalized the mechanism for other use cases.
 
 The general technique of the selective protection and recovery mechanism is to
-filter Kubernetes resources by type and by label.  Resources can be selectively
-protected and recovered by type using an include and exclude mechanism provided
+filter Kubernetes resources by kind and by label.  Resources can be selectively
+protected and recovered by kind using an include and exclude mechanism provided
 within the VRG.  In addition to include and exclude, the standard Kubernetes
 label selector mechanism is used to protect specific resources.
 
@@ -43,7 +43,7 @@ of events.  Second, the scope of asynchrony can be the source of failed
 dependencies resulting in backoff retry loops which can violate the application
 Recovery Time Objective (RTO).  Restoring resources in a prescribed order can
 avoid both of these problems.  So the Ramen VRG provides a mechanism to support
-capturing and restoring resources in a proscribed order.
+capturing and restoring resources in a prescribed order.
 
 ## An Example Kubernetes Resource Protection Specification
 
@@ -87,7 +87,7 @@ protects Kubernetes resources in the namespace.  This documentation covers the
 product previews for protecting Kuberentes resources so does not explain the
 persistent volume disaster protection.
 
-The VRG enables Kubernetes resources to be catpured(backed up) and recovered as
+The VRG enables Kubernetes resources to be captured(backed up) and recovered as
 part of disaster protection.  This is accomplished through the
 kubeObjectProtection section of the VRG spec.  If kubeObjectProtection is not
 included in a VRG, then Kubernetes resources are not protected as part of the
