@@ -84,6 +84,26 @@ const (
 	ReasonNotStarted  = "NotStarted"
 )
 
+type ProgressionStatus string
+
+const (
+	ProgressionCompleted            = ProgressionStatus("Completed")
+	ProgressionCreatingMW           = ProgressionStatus("CreatingMW")
+	ProgressionUpdatingPlRule       = ProgressionStatus("UpdatingPlRule")
+	ProgressionWaitForReadiness     = ProgressionStatus("WaitForReadiness")
+	ProgressionCleaningUp           = ProgressionStatus("Cleaning Up")
+	ProgressionFailingOverToCluster = ProgressionStatus("FailingOverToCluster")
+	ProgressionPreparingFinalSync   = ProgressionStatus("PreparingFinalSync")
+	ProgressionClearingPlRule       = ProgressionStatus("ClearingPlRule")
+	ProgressionRunningFinalSync     = ProgressionStatus("RunningFinalSync")
+	ProgressionFinalSyncComplete    = ProgressionStatus("FinalSyncComplete")
+	ProgressionMovingToSecondary    = ProgressionStatus("MovingToSecondary")
+	ProgressionWaitingForPVRestore  = ProgressionStatus("WaitingForPVRestore")
+	ProgressionUpdatedPlRule        = ProgressionStatus("UpdatedPlRule")
+	ProgressionEnsuringVolSyncSetup = ProgressionStatus("EnsuringVolSyncSetup")
+	ProgressionSettingupVolsyncDest = ProgressionStatus("SettingUpVolSyncDest")
+)
+
 // DRPlacementControlSpec defines the desired state of DRPlacementControl
 type DRPlacementControlSpec struct {
 	// PlacementRef is the reference to the PlacementRule used by DRPC
@@ -144,7 +164,7 @@ type DRPlacementControlStatus struct {
 	Phase              DRState                 `json:"phase,omitempty"`
 	ActionStartTime    *metav1.Time            `json:"actionStartTime,omitempty"`
 	ActionDuration     *metav1.Duration        `json:"actionDuration,omitempty"`
-	Progression        string                  `json:"progression,omitempty"`
+	Progression        ProgressionStatus       `json:"progression,omitempty"`
 	PreferredDecision  plrv1.PlacementDecision `json:"preferredDecision,omitempty"`
 	Conditions         []metav1.Condition      `json:"conditions,omitempty"`
 	ResourceConditions VRGConditions           `json:"resourceConditions,omitempty"`

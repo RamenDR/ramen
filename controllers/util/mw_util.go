@@ -29,7 +29,9 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -217,6 +219,40 @@ func Namespace(name string) *corev1.Namespace {
 		TypeMeta:   metav1.TypeMeta{Kind: "Namespace", APIVersion: "v1"},
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 	}
+}
+
+func (mwu *MWUtil) GetRawExtension(
+	manifests []ocmworkv1.Manifest,
+	gvk schema.GroupVersionKind,
+	name, namespace string) (*runtime.RawExtension, error) {
+	for _, manifest := range manifests {
+		obj := &unstructured.Unstructured{}
+
+		err := json.Unmarshal(manifest.Raw, obj)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal JSON. Error %w", err)
+		}
+
+		objgvk := obj.GroupVersionKind()
+		if objgvk == gvk {
+			return &manifest.RawExtension, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func (mwu *MWUtil) GetDrClusterManifestWork(clusterName string) (*ocmworkv1.ManifestWork, error) {
+	mw, err := mwu.FindManifestWork(DrClusterManifestWorkName, clusterName)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	return mw, nil
 }
 
 func (mwu *MWUtil) CreateOrUpdateDrClusterManifestWork(
