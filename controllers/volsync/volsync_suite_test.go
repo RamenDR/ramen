@@ -40,11 +40,18 @@ var (
 	testDefaultVolumeSnapshotClass *snapv1.VolumeSnapshotClass
 	testStorageDriverName          = "test.storage.provisioner"
 
-	storageDriverAandB     = "this-is-driver-a-b"
-	totalStorageClassCount = 0
-	storageClassAandB      *storagev1.StorageClass
-	volumeSnapshotClassA   *snapv1.VolumeSnapshotClass
-	volumeSnapshotClassB   *snapv1.VolumeSnapshotClass
+	testCephFSStorageClassName        = "test.cephfs.storageclass"
+	testCephFSStorageClass            *storagev1.StorageClass
+	testCephFSVolumeSnapshotClassName = "test.cephfs.vol.snapclass"
+	testCephFSVolumeSnapshotClass     *snapv1.VolumeSnapshotClass
+	testCephFSStorageDriverName       = "openshift-storage.cephfs.csi.ceph.com" // This is the real name
+
+	storageDriverAandB   = "this-is-driver-a-b"
+	storageClassAandB    *storagev1.StorageClass
+	volumeSnapshotClassA *snapv1.VolumeSnapshotClass
+	volumeSnapshotClassB *snapv1.VolumeSnapshotClass
+
+	totalVolumeSnapshotClassCount = 0
 )
 
 func TestVolsync(t *testing.T) {
@@ -133,7 +140,7 @@ var _ = BeforeSuite(func() {
 		DeletionPolicy: snapv1.VolumeSnapshotContentDelete,
 	}
 	Expect(k8sClient.Create(ctx, testDefaultVolumeSnapshotClass)).To(Succeed())
-	totalStorageClassCount++
+	totalVolumeSnapshotClassCount++
 
 	// Create dummy storageClass resource to use in tests
 	storageClassAandB = &storagev1.StorageClass{
@@ -156,7 +163,7 @@ var _ = BeforeSuite(func() {
 		DeletionPolicy: snapv1.VolumeSnapshotContentDelete,
 	}
 	Expect(k8sClient.Create(ctx, volumeSnapshotClassA)).To(Succeed())
-	totalStorageClassCount++
+	totalVolumeSnapshotClassCount++
 
 	volumeSnapshotClassB = &snapv1.VolumeSnapshotClass{
 		ObjectMeta: metav1.ObjectMeta{
@@ -170,7 +177,30 @@ var _ = BeforeSuite(func() {
 		DeletionPolicy: snapv1.VolumeSnapshotContentDelete,
 	}
 	Expect(k8sClient.Create(ctx, volumeSnapshotClassB)).To(Succeed())
-	totalStorageClassCount++
+	totalVolumeSnapshotClassCount++
+
+	// Create fake cephfs storageclass and volumesnapshotclass
+	testCephFSStorageClass = &storagev1.StorageClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testCephFSStorageClassName,
+		},
+		Provisioner: testCephFSStorageDriverName,
+		Parameters: map[string]string{
+			"parameter-a":     "avaluehere",
+			"testing-testing": "yes",
+		},
+	}
+	Expect(k8sClient.Create(ctx, testCephFSStorageClass)).To(Succeed())
+
+	testCephFSVolumeSnapshotClass = &snapv1.VolumeSnapshotClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testCephFSVolumeSnapshotClassName,
+		},
+		Driver:         testCephFSStorageDriverName,
+		DeletionPolicy: snapv1.VolumeSnapshotContentDelete,
+	}
+	Expect(k8sClient.Create(ctx, testCephFSVolumeSnapshotClass)).To(Succeed())
+	totalVolumeSnapshotClassCount++
 })
 
 var _ = AfterSuite(func() {
