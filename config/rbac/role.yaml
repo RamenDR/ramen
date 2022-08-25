@@ -312,8 +312,10 @@ rules:
   resources:
   - storageclasses
   verbs:
+  - create
   - get
   - list
+  - update
   - watch
 - apiGroups:
   - storage.k8s.io
