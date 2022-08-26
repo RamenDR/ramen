@@ -442,6 +442,7 @@ func createDRPC(userPlacementRuleName, name, namespace, drPolicyName string) *rm
 					"environment": "dev.AZ1",
 				},
 			},
+			KubeObjectProtection: &rmn.KubeObjectProtectionSpec{},
 		},
 	}
 	Expect(k8sClient.Create(context.TODO(), drpc)).Should(Succeed())
@@ -929,6 +930,10 @@ func verifyVRGManifestWorkCreatedAsPrimary(managedCluster string) {
 	Expect(vrg.Name).Should(Equal(DRPCName))
 	Expect(vrg.Spec.PVCSelector.MatchLabels["appclass"]).Should(Equal("gold"))
 	Expect(vrg.Spec.ReplicationState).Should(Equal(rmn.Primary))
+
+	// ensure DRPC copied KubeObjectProtection contents to VRG
+	drpc := getLatestDRPC()
+	Expect(vrg.Spec.KubeObjectProtection).Should(Equal(drpc.Spec.KubeObjectProtection))
 }
 
 func getManifestWorkCount(homeClusterNamespace string) int {

@@ -13,3 +13,16 @@ spec:
   pvcSelector:
     matchLabels:
       any-pvc-label: value
+  kubeObjectProtection:
+    captureInterval: 1m
+    captureOrder:
+      - name: config
+        includedResources: ["ConfigMap", "Secret"]
+      - name: everything
+        includeClusterResources: true
+        excludedResources: ["ConfigMap", "Secret"]
+    recoverOrder:
+      - backupName: config
+        includedResources: ["ConfigMap", "Secret"]
+      - backupName: everything
+        includedResources: ["*"]
