@@ -709,7 +709,7 @@ func (v *VRGInstance) reconcileMissingVR(pvc *corev1.PersistentVolumeClaim, log 
 		vrMissing = true
 	)
 
-	if v.instance.Spec.Async.Mode != ramendrv1alpha1.AsyncModeEnabled {
+	if v.instance.Spec.Async == nil {
 		return !vrMissing, !requeue
 	}
 
