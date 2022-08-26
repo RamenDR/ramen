@@ -1191,9 +1191,10 @@ func (d *DRPCInstance) generateVRG(repState rmn.ReplicationState) rmn.VolumeRepl
 		TypeMeta:   metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
 		ObjectMeta: metav1.ObjectMeta{Name: d.instance.Name, Namespace: d.instance.Namespace},
 		Spec: rmn.VolumeReplicationGroupSpec{
-			PVCSelector:      d.instance.Spec.PVCSelector,
-			ReplicationState: repState,
-			S3Profiles:       rmnutil.DRPolicyS3Profiles(d.drPolicy, d.drClusters).List(),
+			PVCSelector:          d.instance.Spec.PVCSelector,
+			ReplicationState:     repState,
+			S3Profiles:           rmnutil.DRPolicyS3Profiles(d.drPolicy, d.drClusters).List(),
+			KubeObjectProtection: d.instance.Spec.KubeObjectProtection,
 		},
 	}
 
