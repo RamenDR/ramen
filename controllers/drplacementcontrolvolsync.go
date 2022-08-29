@@ -42,9 +42,7 @@ func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 	d.setProgression(rmn.ProgressionEnsuringVolSyncSetup)
 
 	volsyncClusters := []string{}
-	for _, clusterName := range rmnutil.DrpolicyClusterNames(d.drPolicy) {
-		volsyncClusters = append(volsyncClusters, clusterName)
-	}
+	volsyncClusters = append(volsyncClusters, rmnutil.DrpolicyClusterNames(d.drPolicy)...)
 
 	// Make sure VolSync deploy is triggered to clusters
 	err := volsync.DeployVolSyncToClusters(d.ctx, d.reconciler.Client, volsyncClusters, d.log)
