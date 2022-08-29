@@ -41,6 +41,19 @@ func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 	// Make sure we have Source and Destination VRGs - Source should already have been created at this point
 	d.setProgression(rmn.ProgressionEnsuringVolSyncSetup)
 
+	volsyncClusters := []string{}
+	for _, clusterName := range rmnutil.DrpolicyClusterNames(d.drPolicy) {
+		volsyncClusters = append(volsyncClusters, clusterName)
+	}
+
+	// Make sure VolSync deploy is triggered to clusters
+	err := volsync.DeployVolSyncToClusters(d.ctx, d.reconciler.Client, volsyncClusters, d.log)
+	if err != nil {
+		d.log.Error(err, "Error deploying VolSync to clusters from hub", "volsyncClusters", volsyncClusters)
+
+		return fmt.Errorf("%w", err)
+	}
+
 	const maxNumberOfVRGs = 2
 	if len(d.vrgs) != maxNumberOfVRGs {
 		// Create the destination VRG
@@ -74,15 +87,10 @@ func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 	// Note that VRG spec will not contain the ssh secret name, we're going to name based on the VRG name itself
 	sshSecretNameCluster := volsync.GetVolSyncSSHSecretNameFromVRGName(d.instance.GetName()) // VRG name == DRPC name
 
-	clustersToPropagateSecret := []string{}
-	for clusterName := range d.vrgs {
-		clustersToPropagateSecret = append(clustersToPropagateSecret, clusterName)
-	}
-
 	err = volsync.PropagateSecretToClusters(d.ctx, d.reconciler.Client, sshSecretHub,
-		d.instance, clustersToPropagateSecret, sshSecretNameCluster, d.instance.GetNamespace(), d.log)
+		d.instance, volsyncClusters, sshSecretNameCluster, d.instance.GetNamespace(), d.log)
 	if err != nil {
-		d.log.Error(err, "Error propagating secret to clusters", "clustersToPropagateSecret", clustersToPropagateSecret)
+		d.log.Error(err, "Error propagating secret to clusters", "volsyncClusters", volsyncClusters)
 
 		return fmt.Errorf("%w", err)
 	}
@@ -184,8 +192,6 @@ func (d *DRPCInstance) IsVolSyncReplicationRequired(homeCluster string) (bool, e
 		return false, nil
 	}
 
-	const required = true
-
 	d.log.Info("Checking if there are PVCs for VolSync replication...", "cluster", homeCluster)
 
 	vrg := d.vrgs[homeCluster]
@@ -197,17 +203,9 @@ func (d *DRPCInstance) IsVolSyncReplicationRequired(homeCluster string) (bool, e
 		return false, fmt.Errorf("failed to find VRG on homeCluster %s", homeCluster)
 	}
 
-	if len(vrg.Status.ProtectedPVCs) == 0 {
-		return false, WaitForSourceCluster
-	}
+	isVolSyncRequired := vrg.Status.VolSyncPVCCount > 0
 
-	for _, protectedPVC := range vrg.Status.ProtectedPVCs {
-		if protectedPVC.ProtectedByVolSync {
-			return required, nil
-		}
-	}
-
-	return !required, nil
+	return isVolSyncRequired, nil
 }
 
 func (d *DRPCInstance) getVolSyncPVCCount(homeCluster string) int {
@@ -282,7 +280,7 @@ func (d *DRPCInstance) updateVRGSpec(clusterName string, tgtVRG *rmn.VolumeRepli
 
 func (d *DRPCInstance) createVolSyncDestManifestWork(srcCluster string) error {
 	// create VRG ManifestWork
-	d.log.Info("Creating VRG ManifestWork for source and destination clusters",
+	d.log.Info("Creating VRG ManifestWork for destination cluster",
 		"Last State:", d.getLastDRState(), "homeCluster", srcCluster)
 
 	// Create or update ManifestWork for all the peers

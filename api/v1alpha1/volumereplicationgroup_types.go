@@ -235,6 +235,11 @@ type VolumeReplicationGroupStatus struct {
 	// All the protected pvcs
 	ProtectedPVCs []ProtectedPVC `json:"protectedPVCs,omitempty"`
 
+	// Count of VolRep PVCs
+	VolRepPVCCount int `json:"volRepPvcCount,omitempty"`
+	// Count of VolSync PVCs
+	VolSyncPVCCount int `json:"volSyncPvcCount,omitempty"`
+
 	// Conditions are the list of VRG's summary conditions and their status.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 

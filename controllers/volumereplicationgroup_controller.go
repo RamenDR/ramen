@@ -867,6 +867,9 @@ func (v *VRGInstance) updateVRGStatus(updateConditions bool) error {
 
 	v.updateStatusState()
 
+	v.instance.Status.VolSyncPVCCount = len(v.volSyncPVCs)
+	v.instance.Status.VolRepPVCCount = len(v.volRepPVCs)
+
 	v.instance.Status.ObservedGeneration = v.instance.Generation
 
 	if !reflect.DeepEqual(v.savedInstanceStatus, v.instance.Status) {

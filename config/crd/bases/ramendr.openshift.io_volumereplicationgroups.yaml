@@ -626,6 +626,12 @@ spec:
               state:
                 description: State captures the latest state of the replication operation
                 type: string
+              volRepPvcCount:
+                description: Count of VolRep PVCs
+                type: integer
+              volSyncPvcCount:
+                description: Count of VolSync PVCs
+                type: integer
             type: object
         type: object
     served: true
