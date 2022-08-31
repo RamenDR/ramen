@@ -627,11 +627,6 @@ type objectWriter struct {
 	log logr.Logger
 }
 
-func newFalse() *bool {
-    b := false
-    return &b
-}
-
 func backupCreate(
 	backupNamespacedName types.NamespacedName,
 	w objectWriter,
@@ -655,7 +650,7 @@ func backupCreate(
 
 	backupSpec.StorageLocation = backupNamespacedName.Name
 	backupSpec.IncludedNamespaces = []string{sourceNamespaceName}
-	backupSpec.SnapshotVolumes = newFalse()
+	backupSpec.SnapshotVolumes = new(bool)
 	backup := backup(backupNamespacedName, backupSpec, labels)
 
 	return backupLocation, backup, objectCreateAndGet(w, reader, backup)

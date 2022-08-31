@@ -94,13 +94,12 @@ func (v *VRGInstance) kubeObjectsProtect(result *ctrl.Result) {
 		return
 	}
 
-	if v.kubeObjectProtectionDisabled() {
-		v.log.Info("Kube objects protection disabled")
-
-		return
-	}
-
-	if v.instance.Spec.KubeObjectProtection != nil {
+	switch {
+	case v.kubeObjectProtectionDisabled():
+		v.log.Info("Kube objects protection disabled in config map")
+	case v.instance.Spec.KubeObjectProtection == nil:
+		v.log.Info("Kube objects protection disabled in VRG")
+	default:
 		v.kubeObjectsCaptureStartOrResumeOrDelay(result, s3StoreAccessors)
 	}
 
