@@ -200,9 +200,13 @@ install-dr-cluster: manifests kustomize ## Install dr-cluster CRDs into the K8s 
 uninstall-dr-cluster: manifests kustomize ## Uninstall dr-cluster CRDs from the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/crd | kubectl delete -f -
 
-deploy-dr-cluster: manifests kustomize ## Deploy dr-cluster controller to the K8s cluster specified in ~/.kube/config.
+dr-cluster-config: kustomize
 	cd config/dr-cluster/default && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
-	cd config/dr-cluster/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	cd config/dr-cluster/manager && $(KUSTOMIZE) edit set image controller=${IMG};\
+	sed -n '/^kubeObjectProtection:/{:1;n;/^ /b1};p' ramen_manager_config.yaml>a;mv a ramen_manager_config.yaml;\
+	if (: $${KUBE_OBJECT_PROTECTION_DISABLED?})2>/dev/null;then printf 'kubeObjectProtection:\n  disabled: true\n'>>ramen_manager_config.yaml;fi
+
+deploy-dr-cluster: manifests kustomize dr-cluster-config ## Deploy dr-cluster controller to the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/default | kubectl apply -f -
 
 undeploy-dr-cluster: ## Undeploy dr-cluster controller from the K8s cluster specified in ~/.kube/config.
@@ -290,9 +294,7 @@ bundle-hub-push: ## Push the hub bundle image.
 	$(MAKE) docker-push IMG=$(BUNDLE_IMG_HUB)
 
 .PHONY: bundle-dr-cluster
-bundle-dr-cluster: manifests kustomize operator-sdk ## Generate dr-cluster bundle manifests and metadata, then validate generated files.
-	cd config/dr-cluster/default && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
-	cd config/dr-cluster/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
+bundle-dr-cluster: manifests kustomize dr-cluster-config operator-sdk ## Generate dr-cluster bundle manifests and metadata, then validate generated files.
 	cd config/dr-cluster/manifests/$(IMAGE_NAME) && $(KUSTOMIZE) edit add patch --name ramen-dr-cluster-operator.v0.0.0 --kind ClusterServiceVersion\
 		--patch '[{"op": "add", "path": "/metadata/annotations/olm.skipRange", "value": "$(SKIP_RANGE)"}]' && \
 		$(KUSTOMIZE) edit add patch --name ramen-dr-cluster-operator.v0.0.0 --kind ClusterServiceVersion\
