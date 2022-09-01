@@ -1393,6 +1393,12 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 	// IFF we have VolSync PVCs, then no need to clean up
 	homeCluster := clusterToSkip
 
+	// Wait until the source has at least one protectedPVC before trying to determine if volsync is required
+	vrg := d.vrgs[homeCluster]
+	if vrg == nil || len(vrg.Status.ProtectedPVCs) == 0 {
+		return WaitForSourceCluster
+	}
+
 	repReq, err := d.IsVolSyncReplicationRequired(homeCluster)
 	if err != nil {
 		return fmt.Errorf("failed to check if VolSync replication is required (%w)", err)
