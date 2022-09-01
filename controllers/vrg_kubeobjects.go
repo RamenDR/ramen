@@ -94,12 +94,7 @@ func (v *VRGInstance) kubeObjectsProtect(result *ctrl.Result) {
 		return
 	}
 
-	switch {
-	case v.kubeObjectProtectionDisabled():
-		v.log.Info("Kube objects protection disabled in config map")
-	case v.instance.Spec.KubeObjectProtection == nil:
-		v.log.Info("Kube objects protection disabled in VRG")
-	default:
+	if !v.kubeObjectProtectionDisabled("capture") {
 		v.kubeObjectsCaptureStartOrResumeOrDelay(result, s3StoreAccessors)
 	}
 
@@ -353,10 +348,7 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result,
 ) error {
 	vrg := v.instance
 
-	spec := vrg.Spec.KubeObjectProtection
-	if spec == nil || v.kubeObjectProtectionDisabled() {
-		v.log.Info("Kube objects recovery disabled")
-
+	if v.kubeObjectProtectionDisabled("recovery") {
 		return nil
 	}
 
@@ -488,27 +480,32 @@ func (v *VRGInstance) veleroNamespaceName() string {
 	return veleroNamespaceName
 }
 
-func (v *VRGInstance) kubeObjectProtectionDisabled() bool {
-	const defaultState = false
+func (v *VRGInstance) kubeObjectProtectionDisabled(caller string) bool {
+	vrgDisabled := v.instance.Spec.KubeObjectProtection == nil
+	cmDisabled := func() bool {
+		_, ramenConfig, err := ConfigMapGet(v.ctx, v.reconciler.APIReader)
+		if err != nil {
+			v.log.Error(err, "RamenConfig.KubeObjectProtection get failed")
 
-	_, ramenConfig, err := ConfigMapGet(v.ctx, v.reconciler.APIReader)
-	if err != nil {
-		return defaultState
-	}
+			return false
+		}
 
-	return ramenConfig.KubeObjectProtection.Disabled
+		return ramenConfig.KubeObjectProtection.Disabled
+	}()
+
+	disabled := vrgDisabled || cmDisabled
+
+	v.log.Info("Kube object protection", "disabled", disabled, "VRG", vrgDisabled, "configMap", cmDisabled, "for", caller)
+
+	return disabled
 }
 
 func (v *VRGInstance) kubeObjectProtectionDisabledOrKubeObjectsProtected() bool {
-	return v.kubeObjectProtectionDisabled() ||
-		v.instance.Spec.KubeObjectProtection == nil ||
-		v.instance.Status.KubeObjectProtection.CaptureToRecoverFrom != nil
+	return v.kubeObjectProtectionDisabled("status") || v.instance.Status.KubeObjectProtection.CaptureToRecoverFrom != nil
 }
 
 func (v *VRGInstance) kubeObjectsProtectionDelete(result *ctrl.Result) error {
-	if v.kubeObjectProtectionDisabled() {
-		v.log.Info("Kube objects protection deletion disabled")
-
+	if v.kubeObjectProtectionDisabled("deletion") {
 		return nil
 	}
 
