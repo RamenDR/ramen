@@ -100,13 +100,7 @@ func newManager() (ctrl.Manager, *ramendrv1alpha1.RamenConfig, error) {
 		utilruntime.Must(cpcv1.AddToScheme(scheme))
 		utilruntime.Must(gppv1.AddToScheme(scheme))
 	} else {
-		if !ramenConfig.KubeObjectProtection.Disabled {
-			setupLog.Info("Kube object protection enabled in config map, adding velero CRDs to scheme")
-			utilruntime.Must(velero.AddToScheme(scheme))
-		} else {
-			setupLog.Info("Kube object protection disabled in config map, not adding velero CRDs to scheme")
-		}
-
+		utilruntime.Must(velero.AddToScheme(scheme))
 		utilruntime.Must(volrep.AddToScheme(scheme))
 		utilruntime.Must(volsyncv1alpha1.AddToScheme(scheme))
 		utilruntime.Must(snapv1.AddToScheme(scheme))
