@@ -1365,7 +1365,7 @@ func (d *DRPCInstance) checkPVsHaveBeenRestored(homeCluster string) (bool, error
 	return clusterDataReady.Status == metav1.ConditionTrue && clusterDataReady.ObservedGeneration == vrg.Generation, nil
 }
 
-//nolint:funlen,gocognit,cyclop
+//nolint:funlen,gocognit,cyclop,gocyclo
 func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 	d.log.Info("ensuring cleanup on secondaries")
 
@@ -1396,7 +1396,7 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 	// Wait until the source has at least one protectedPVC before trying to determine if volsync is required
 	vrg := d.vrgs[homeCluster]
 	if vrg == nil || len(vrg.Status.ProtectedPVCs) == 0 {
-		return WaitForSourceCluster
+		return fmt.Errorf("%w)", WaitForSourceCluster)
 	}
 
 	repReq, err := d.IsVolSyncReplicationRequired(homeCluster)
