@@ -70,23 +70,25 @@ const (
 )
 
 type VSHandler struct {
-	ctx                     context.Context
-	client                  client.Client
-	log                     logr.Logger
-	owner                   metav1.Object
-	asyncSpec               *ramendrv1alpha1.VRGAsyncSpec
-	volumeSnapshotClassList *snapv1.VolumeSnapshotClassList
+	ctx                        context.Context
+	client                     client.Client
+	log                        logr.Logger
+	owner                      metav1.Object
+	asyncSpec                  *ramendrv1alpha1.VRGAsyncSpec
+	defaultCephFSCSIDriverName string
+	volumeSnapshotClassList    *snapv1.VolumeSnapshotClassList
 }
 
 func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, owner metav1.Object,
-	asyncSpec *ramendrv1alpha1.VRGAsyncSpec) *VSHandler {
+	asyncSpec *ramendrv1alpha1.VRGAsyncSpec, defaultCephFSCSIDriverName string) *VSHandler {
 	return &VSHandler{
-		ctx:                     ctx,
-		client:                  client,
-		log:                     log,
-		owner:                   owner,
-		asyncSpec:               asyncSpec,
-		volumeSnapshotClassList: nil, // Do not initialize until we need it
+		ctx:                        ctx,
+		client:                     client,
+		log:                        log,
+		owner:                      owner,
+		asyncSpec:                  asyncSpec,
+		defaultCephFSCSIDriverName: defaultCephFSCSIDriverName,
+		volumeSnapshotClassList:    nil, // Do not initialize until we need it
 	}
 }
 
@@ -1183,7 +1185,7 @@ func (v *VSHandler) getRsyncServiceType() *corev1.ServiceType {
 // above.
 func (v *VSHandler) ModifyRSSpecForCephFS(rsSpec *ramendrv1alpha1.VolSyncReplicationSourceSpec,
 	storageClass *storagev1.StorageClass) error {
-	if storageClass.Provisioner != "openshift-storage.cephfs.csi.ceph.com" { // TODO: confirm this is correct
+	if storageClass.Provisioner != v.defaultCephFSCSIDriverName {
 		return nil // No workaround required
 	}
 

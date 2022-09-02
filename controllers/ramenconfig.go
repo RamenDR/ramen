@@ -52,6 +52,7 @@ const (
 	drClusterOperatorChannelNameDefault               = "alpha"
 	drClusterOperatorCatalogSourceNameDefault         = "ramen-catalog"
 	drClusterOperatorClusterServiceVersionNameDefault = drClusterOperatorPackageNameDefault + ".v0.0.1"
+	DefaultCephFSCSIDriverName                        = "openshift-storage.cephfs.csi.ceph.com"
 )
 
 // FIXME
@@ -299,4 +300,12 @@ func drClusterOperatorClusterServiceVersionNameOrDefault(ramenConfig *ramendrv1a
 	}
 
 	return ramenConfig.DrClusterOperator.ClusterServiceVersionName
+}
+
+func cephFSCSIDriverNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
+	if ramenConfig.VolSync.CephFSCSIDriverName == "" {
+		return DefaultCephFSCSIDriverName
+	}
+
+	return ramenConfig.VolSync.CephFSCSIDriverName
 }

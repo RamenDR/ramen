@@ -309,7 +309,13 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 			req.NamespacedName, err)
 	}
 
-	v.volSyncHandler = volsync.NewVSHandler(ctx, r.Client, log, v.instance, v.instance.Spec.Async)
+	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get Ramen configmap: %w", err)
+	}
+
+	v.volSyncHandler = volsync.NewVSHandler(ctx, r.Client, log, v.instance,
+		v.instance.Spec.Async, cephFSCSIDriverNameOrDefault(ramenConfig))
 
 	if v.instance.Status.ProtectedPVCs == nil {
 		v.instance.Status.ProtectedPVCs = []ramendrv1alpha1.ProtectedPVC{}
