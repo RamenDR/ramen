@@ -137,6 +137,11 @@ type RamenConfig struct {
 	VolSync struct {
 		// Disabled is used to disable VolSync usage in Ramen. Defaults to false.
 		Disabled bool `json:"disabled,omitempty"`
+
+		// Default cephFS CSIDriver name used to enable ROX volumes. If this name matches
+		// the PVC's storageclass provisioner, a new storageclass will be created and the
+		// name of it passed to VolSync alongside the readOnly flag access mode.
+		CephFSCSIDriverName string `json:"cephFSCSIDriverName,omitempty"`
 	} `json:"volSync,omitempty"`
 }
 
