@@ -954,55 +954,41 @@ func (v *VRGInstance) updateVRGConditions() {
 }
 
 func (v *VRGInstance) updateVRGDataReadyCondition() {
-	volSyncAggregatedCond := v.aggregateVolSyncDataReadyCondition()
-	if volSyncAggregatedCond != nil {
-		setStatusCondition(&v.instance.Status.Conditions, *volSyncAggregatedCond)
-	}
-
-	// otherwise, use the condition result of the PVCs targeted for VolRep
-	if len(v.volRepPVCs) != 0 {
-		v.aggregateVolRepDataReadyCondition()
-	}
+	rmnutil.ConditionSetFirstFalseOrLastTrue(setStatusCondition, &v.instance.Status.Conditions,
+		v.aggregateVolSyncDataReadyCondition(),
+		v.aggregateVolRepDataReadyCondition(),
+	)
 }
 
 func (v *VRGInstance) updateVRGDataProtectedCondition() {
-	volSyncAggregatedCond := v.aggregateVolSyncDataProtectedCondition()
-	if volSyncAggregatedCond != nil && len(v.volRepPVCs) == 0 {
-		setStatusCondition(&v.instance.Status.Conditions, *volSyncAggregatedCond)
-	}
-
-	// otherwise, use the condition result of the PVCs targeted for VolRep
-	if len(v.volRepPVCs) != 0 {
-		v.aggregateVolRepDataProtectedCondition()
-	}
+	rmnutil.ConditionSetFirstFalseOrLastTrue(setStatusCondition, &v.instance.Status.Conditions,
+		v.aggregateVolSyncDataProtectedCondition(),
+		v.aggregateVolRepDataProtectedCondition(),
+	)
 }
 
-func (v *VRGInstance) vrgReadyStatus() {
+func (v *VRGInstance) vrgReadyStatus() *metav1.Condition {
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
 		v.log.Info("Marking VRG ready with replicating reason")
 
 		msg := "PVCs in the VolumeReplicationGroup group are replicating"
-		setVRGDataReplicatingCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
-		return
+		return newVRGDataReplicatingCondition(v.instance.Generation, msg)
 	}
 
 	// VRG as primary
 	v.log.Info("Marking VRG data ready after establishing replication")
 
 	msg := "PVCs in the VolumeReplicationGroup are ready for use"
-	setVRGAsPrimaryReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+
+	return newVRGAsPrimaryReadyCondition(v.instance.Generation, msg)
 }
 
 func (v *VRGInstance) updateVRGClusterDataProtectedCondition() {
-	volSyncAggregatedCond := v.aggregateVolSyncClusterDataProtectedCondition()
-	if volSyncAggregatedCond != nil {
-		setStatusCondition(&v.instance.Status.Conditions, *volSyncAggregatedCond)
-	}
-
-	if len(v.volRepPVCs) != 0 {
-		v.aggregateVolRepClusterDataProtectedCondition()
-	}
+	rmnutil.ConditionSetFirstFalseOrLastTrue(setStatusCondition, &v.instance.Status.Conditions,
+		v.aggregateVolSyncClusterDataProtectedCondition(),
+		v.aggregateVolRepClusterDataProtectedCondition(),
+	)
 }
 
 // It might be better move the helper functions like these to a separate

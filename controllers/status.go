@@ -127,24 +127,32 @@ func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration i
 
 // sets conditions when VRG as Secondary is replicating the data with Primary.
 func setVRGDataReplicatingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	setStatusCondition(conditions, *newVRGDataReplicatingCondition(observedGeneration, message))
+}
+
+func newVRGDataReplicatingCondition(observedGeneration int64, message string) *metav1.Condition {
+	return &metav1.Condition{
 		Type:               VRGConditionTypeDataReady,
 		Reason:             VRGConditionReasonReplicating,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
 		Message:            message,
-	})
+	}
 }
 
 // sets conditions when VRG as Secondary has completed its data sync with Primary.
 func setVRGDataReplicatedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	setStatusCondition(conditions, *newVRGDataReplicatedCondition(observedGeneration, message))
+}
+
+func newVRGDataReplicatedCondition(observedGeneration int64, message string) *metav1.Condition {
+	return &metav1.Condition{
 		Type:               VRGConditionTypeDataReady,
 		Reason:             VRGConditionReasonReplicated,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
 		Message:            message,
-	})
+	}
 }
 
 // sets conditions when VRG DataProtected is correct which means
@@ -159,69 +167,93 @@ func setVRGAsDataProtectedCondition(conditions *[]metav1.Condition, observedGene
 	message string) {
 	// This means, for this VRG (as secondary) data sync has happened
 	// with a remote peer. Hence DataProtected is true
-	setStatusCondition(conditions, metav1.Condition{
+	setStatusCondition(conditions, *newVRGAsDataProtectedCondition(observedGeneration, message))
+}
+
+func newVRGAsDataProtectedCondition(observedGeneration int64, message string) *metav1.Condition {
+	return &metav1.Condition{
 		Type:               VRGConditionTypeDataProtected,
 		Reason:             VRGConditionReasonDataProtected,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
 		Message:            message,
-	})
+	}
 }
 
 func setVRGAsDataNotProtectedCondition(conditions *[]metav1.Condition, observedGeneration int64,
 	message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	setStatusCondition(conditions, *newVRGAsDataNotProtectedCondition(observedGeneration, message))
+}
+
+func newVRGAsDataNotProtectedCondition(observedGeneration int64, message string) *metav1.Condition {
+	return &metav1.Condition{
 		Type:               VRGConditionTypeDataProtected,
 		Reason:             VRGConditionReasonError,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,
-	})
+	}
 }
 
 func setVRGDataProtectionProgressCondition(conditions *[]metav1.Condition, observedGeneration int64,
 	message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	setStatusCondition(conditions, *newVRGDataProtectionProgressCondition(observedGeneration, message))
+}
+
+func newVRGDataProtectionProgressCondition(observedGeneration int64, message string) *metav1.Condition {
+	return &metav1.Condition{
 		Type:               VRGConditionTypeDataProtected,
 		Reason:             VRGConditionReasonReplicating,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,
-	})
+	}
 }
 
 // sets conditions when Primary VRG data replication is established
 func setVRGAsPrimaryReadyCondition(conditions *[]metav1.Condition, observedGeneration int64,
 	message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	setStatusCondition(conditions, *newVRGAsPrimaryReadyCondition(observedGeneration, message))
+}
+
+func newVRGAsPrimaryReadyCondition(observedGeneration int64, message string) *metav1.Condition {
+	return &metav1.Condition{
 		Type:               VRGConditionTypeDataReady,
 		Reason:             VRGConditionReasonReady,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
 		Message:            message,
-	})
+	}
 }
 
 // sets conditions when VRG data is progressing
 func setVRGDataProgressingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	setStatusCondition(conditions, *newVRGDataProgressingCondition(observedGeneration, message))
+}
+
+func newVRGDataProgressingCondition(observedGeneration int64, message string) *metav1.Condition {
+	return &metav1.Condition{
 		Type:               VRGConditionTypeDataReady,
 		Reason:             VRGConditionReasonProgressing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,
-	})
+	}
 }
 
 // sets conditions when VRG sees failures in data sync
 func setVRGDataErrorCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	setStatusCondition(conditions, *newVRGDataErrorCondition(observedGeneration, message))
+}
+
+func newVRGDataErrorCondition(observedGeneration int64, message string) *metav1.Condition {
+	return &metav1.Condition{
 		Type:               VRGConditionTypeDataReady,
 		Reason:             VRGConditionReasonError,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,
-	})
+	}
 }
 
 // sets conditions when VolumeReplicationGroup is unable
@@ -262,35 +294,47 @@ func setVRGClusterDataErrorCondition(conditions *[]metav1.Condition, observedGen
 
 // sets conditions when PV cluster data is protected
 func setVRGClusterDataProtectedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	setStatusCondition(conditions, *newVRGClusterDataProtectedCondition(observedGeneration, message))
+}
+
+func newVRGClusterDataProtectedCondition(observedGeneration int64, message string) *metav1.Condition {
+	return &metav1.Condition{
 		Type:               VRGConditionTypeClusterDataProtected,
 		Reason:             VRGConditionReasonUploaded,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
 		Message:            message,
-	})
+	}
 }
 
 // sets conditions when PV cluster data is being protected
 func setVRGClusterDataProtectingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	setStatusCondition(conditions, *newVRGClusterDataProtectingCondition(observedGeneration, message))
+}
+
+func newVRGClusterDataProtectingCondition(observedGeneration int64, message string) *metav1.Condition {
+	return &metav1.Condition{
 		Type:               VRGConditionTypeClusterDataProtected,
 		Reason:             VRGConditionReasonUploading,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,
-	})
+	}
 }
 
 // sets conditions when PV cluster data failed to be protected
 func setVRGClusterDataUnprotectedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	setStatusCondition(conditions, *newVRGClusterDataUnprotectedCondition(observedGeneration, message))
+}
+
+func newVRGClusterDataUnprotectedCondition(observedGeneration int64, message string) *metav1.Condition {
+	return &metav1.Condition{
 		Type:               VRGConditionTypeClusterDataProtected,
 		Reason:             VRGConditionReasonUploadError,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,
-	})
+	}
 }
 
 func setStatusConditionIfNotFound(existingConditions *[]metav1.Condition, newCondition metav1.Condition) {
