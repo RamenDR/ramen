@@ -98,3 +98,29 @@ func ConditionAppend(
 		},
 	)
 }
+
+func ConditionSetFirstFalseOrLastTrue(
+	conditionSet func(*[]metav1.Condition, metav1.Condition),
+	conditions *[]metav1.Condition,
+	subConditions ...*metav1.Condition,
+) {
+	trueSubConditions := make([]*metav1.Condition, 0, len(subConditions))
+
+	for _, subCondition := range subConditions {
+		if subCondition == nil {
+			continue
+		}
+
+		if subCondition.Status == metav1.ConditionFalse {
+			conditionSet(conditions, *subCondition)
+
+			return
+		}
+
+		trueSubConditions = append(trueSubConditions, subCondition)
+	}
+
+	if len(trueSubConditions) > 0 {
+		conditionSet(conditions, *trueSubConditions[len(trueSubConditions)-1])
+	}
+}

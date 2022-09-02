@@ -1808,7 +1808,11 @@ func (v *VRGInstance) addPVRestoreAnnotation(pv *corev1.PersistentVolume) {
 //    VRG.conditions.Available.Reason = Progressing
 //
 //nolint:funlen
-func (v *VRGInstance) aggregateVolRepDataReadyCondition() {
+func (v *VRGInstance) aggregateVolRepDataReadyCondition() *metav1.Condition {
+	if len(v.volRepPVCs) == 0 {
+		return nil
+	}
+
 	vrgReady := len(v.instance.Status.ProtectedPVCs) != 0
 	vrgProgressing := false
 
@@ -1855,18 +1859,15 @@ func (v *VRGInstance) aggregateVolRepDataReadyCondition() {
 	}
 
 	if vrgReady {
-		v.vrgReadyStatus()
-
-		return
+		return v.vrgReadyStatus()
 	}
 
 	if vrgProgressing {
 		v.log.Info("Marking VRG not DataReady with progressing reason")
 
 		msg := "VolumeReplicationGroup is progressing"
-		setVRGDataProgressingCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
-		return
+		return newVRGDataProgressingCondition(v.instance.Generation, msg)
 	}
 
 	// None of the VRG Ready and VRG Progressing conditions are met.
@@ -1874,11 +1875,16 @@ func (v *VRGInstance) aggregateVolRepDataReadyCondition() {
 	v.log.Info("Marking VRG not DataReady with error. All PVCs are not ready")
 
 	msg := "All PVCs of the VolumeReplicationGroup are not ready"
-	setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+
+	return newVRGDataErrorCondition(v.instance.Generation, msg)
 }
 
-//nolint:funlen,gocognit
-func (v *VRGInstance) aggregateVolRepDataProtectedCondition() {
+//nolint:funlen,gocognit,cyclop
+func (v *VRGInstance) aggregateVolRepDataProtectedCondition() *metav1.Condition {
+	if len(v.volRepPVCs) == 0 {
+		return nil
+	}
+
 	vrgProtected := true
 	vrgReplicating := false
 
@@ -1925,25 +1931,24 @@ func (v *VRGInstance) aggregateVolRepDataProtectedCondition() {
 		v.log.Info("Marking VRG data protected after completing replication")
 
 		msg := "PVCs in the VolumeReplicationGroup are data protected "
-		setVRGAsDataProtectedCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
-		return
+		return newVRGAsDataProtectedCondition(v.instance.Generation, msg)
 	}
 
 	if vrgReplicating {
 		v.log.Info("Marking VRG data protection false with replicating reason")
 
 		msg := "VolumeReplicationGroup is replicating"
-		setVRGDataProtectionProgressCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
-		return
+		return newVRGDataProtectionProgressCondition(v.instance.Generation, msg)
 	}
 
 	// VRG is neither Data Protected nor Replicating
 	v.log.Info("Marking VRG data not protected with error. All PVCs are not ready")
 
 	msg := "All PVCs of the VolumeReplicationGroup are not ready"
-	setVRGAsDataNotProtectedCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+
+	return newVRGAsDataNotProtectedCondition(v.instance.Generation, msg)
 }
 
 // updateVRGClusterDataProtectedCondition updates the VRG summary level
@@ -1952,9 +1957,12 @@ func (v *VRGInstance) aggregateVolRepDataProtectedCondition() {
 // set the VRG level condition to error.  If not, if at least one PVC is in a
 // protecting condition, set the VRG level condition to protecting.  If not, set
 // the VRG level condition to true.
-func (v *VRGInstance) isAnyVolRepPvcClusterDataUnprotected() (bool, bool) {
+func (v *VRGInstance) aggregateVolRepClusterDataProtectedCondition() *metav1.Condition {
+	if len(v.volRepPVCs) == 0 {
+		return nil
+	}
+
 	atleastOneProtecting := false
-	atleastOneError := false
 
 	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
 		if protectedPVC.ProtectedByVolSync {
@@ -1971,12 +1979,27 @@ func (v *VRGInstance) isAnyVolRepPvcClusterDataUnprotected() (bool, bool) {
 		}
 
 		if condition.Reason != VRGConditionReasonUploaded {
-			atleastOneError = true
 			// A single PVC with an error condition is sufficient to affect the
 			// entire VRG; no need to check other PVCs.
-			break
+			msg := "Cluster data of one or more PVs are unprotected"
+			v.log.Info(msg)
+
+			return newVRGClusterDataUnprotectedCondition(v.instance.Generation, msg)
 		}
 	}
 
-	return atleastOneError, atleastOneProtecting
+	if atleastOneProtecting {
+		msg := "Cluster data of one or more PVs are in the process of being protected"
+		v.log.Info(msg)
+
+		return newVRGClusterDataProtectingCondition(v.instance.Generation, msg)
+	}
+
+	// All PVCs in the VRG are in protected state because not a single PVC is in
+	// error condition and not a single PVC is in protecting condition.  Hence,
+	// the VRG's cluster data protection condition is met.
+	msg := "Cluster data of all PVs are protected"
+	v.log.Info(msg)
+
+	return newVRGClusterDataProtectedCondition(v.instance.Generation, msg)
 }

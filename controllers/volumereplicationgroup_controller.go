@@ -297,16 +297,15 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	defer log.Info("Exiting reconcile loop")
 
 	v := VRGInstance{
-		reconciler:         r,
-		ctx:                ctx,
-		log:                log,
-		instance:           &ramendrv1alpha1.VolumeReplicationGroup{},
-		volRepPVCs:         []corev1.PersistentVolumeClaim{},
-		volSyncPVCs:        []corev1.PersistentVolumeClaim{},
-		vrgObjectProtected: metav1.ConditionUnknown,
-		replClassList:      &volrep.VolumeReplicationClassList{},
-		namespacedName:     req.NamespacedName.String(),
-		objectStorers:      make(map[string]cachedObjectStorer),
+		reconciler:     r,
+		ctx:            ctx,
+		log:            log,
+		instance:       &ramendrv1alpha1.VolumeReplicationGroup{},
+		volRepPVCs:     []corev1.PersistentVolumeClaim{},
+		volSyncPVCs:    []corev1.PersistentVolumeClaim{},
+		replClassList:  &volrep.VolumeReplicationClassList{},
+		namespacedName: req.NamespacedName.String(),
+		objectStorers:  make(map[string]cachedObjectStorer),
 	}
 
 	// Fetch the VolumeReplicationGroup instance
@@ -357,19 +356,20 @@ type cachedObjectStorer struct {
 }
 
 type VRGInstance struct {
-	reconciler          *VolumeReplicationGroupReconciler
-	ctx                 context.Context
-	log                 logr.Logger
-	instance            *ramendrv1alpha1.VolumeReplicationGroup
-	savedInstanceStatus ramendrv1alpha1.VolumeReplicationGroupStatus
-	volRepPVCs          []corev1.PersistentVolumeClaim
-	volSyncPVCs         []corev1.PersistentVolumeClaim
-	replClassList       *volrep.VolumeReplicationClassList
-	vrgObjectProtected  metav1.ConditionStatus
-	vrcUpdated          bool
-	namespacedName      string
-	volSyncHandler      *volsync.VSHandler
-	objectStorers       map[string]cachedObjectStorer
+	reconciler           *VolumeReplicationGroupReconciler
+	ctx                  context.Context
+	log                  logr.Logger
+	instance             *ramendrv1alpha1.VolumeReplicationGroup
+	savedInstanceStatus  ramendrv1alpha1.VolumeReplicationGroupStatus
+	volRepPVCs           []corev1.PersistentVolumeClaim
+	volSyncPVCs          []corev1.PersistentVolumeClaim
+	replClassList        *volrep.VolumeReplicationClassList
+	vrgObjectProtected   *metav1.Condition
+	kubeObjectsProtected *metav1.Condition
+	vrcUpdated           bool
+	namespacedName       string
+	volSyncHandler       *volsync.VSHandler
+	objectStorers        map[string]cachedObjectStorer
 }
 
 const (
@@ -979,91 +979,43 @@ func (v *VRGInstance) updateVRGConditions() {
 }
 
 func (v *VRGInstance) updateVRGDataReadyCondition() {
-	volSyncAggregatedCond := v.aggregateVolSyncDataReadyCondition()
-	if volSyncAggregatedCond != nil {
-		setStatusCondition(&v.instance.Status.Conditions, *volSyncAggregatedCond)
-	}
-
-	// otherwise, use the condition result of the PVCs targeted for VolRep
-	if len(v.volRepPVCs) != 0 {
-		v.aggregateVolRepDataReadyCondition()
-	}
+	rmnutil.ConditionSetFirstFalseOrLastTrue(setStatusCondition, &v.instance.Status.Conditions,
+		v.aggregateVolSyncDataReadyCondition(),
+		v.aggregateVolRepDataReadyCondition(),
+	)
 }
 
 func (v *VRGInstance) updateVRGDataProtectedCondition() {
-	volSyncAggregatedCond := v.aggregateVolSyncDataProtectedCondition()
-	if volSyncAggregatedCond != nil && len(v.volRepPVCs) == 0 {
-		setStatusCondition(&v.instance.Status.Conditions, *volSyncAggregatedCond)
-	}
-
-	// otherwise, use the condition result of the PVCs targeted for VolRep
-	if len(v.volRepPVCs) != 0 {
-		v.aggregateVolRepDataProtectedCondition()
-	}
+	rmnutil.ConditionSetFirstFalseOrLastTrue(setStatusCondition, &v.instance.Status.Conditions,
+		v.aggregateVolSyncDataProtectedCondition(),
+		v.aggregateVolRepDataProtectedCondition(),
+	)
 }
 
-func (v *VRGInstance) vrgReadyStatus() {
+func (v *VRGInstance) vrgReadyStatus() *metav1.Condition {
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
 		v.log.Info("Marking VRG ready with replicating reason")
 
 		msg := "PVCs in the VolumeReplicationGroup group are replicating"
-		setVRGDataReplicatingCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
-		return
+		return newVRGDataReplicatingCondition(v.instance.Generation, msg)
 	}
 
 	// VRG as primary
 	v.log.Info("Marking VRG data ready after establishing replication")
 
 	msg := "PVCs in the VolumeReplicationGroup are ready for use"
-	setVRGAsPrimaryReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+
+	return newVRGAsPrimaryReadyCondition(v.instance.Generation, msg)
 }
 
 func (v *VRGInstance) updateVRGClusterDataProtectedCondition() {
-	volSyncAggregatedCond := v.aggregateVolSyncClusterDataProtectedCondition()
-	if volSyncAggregatedCond != nil {
-		setStatusCondition(&v.instance.Status.Conditions, *volSyncAggregatedCond)
-	}
-
-	unprotected := func(msg string) {
-		setVRGClusterDataUnprotectedCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
-		v.log.Info(msg)
-	}
-
-	atleastOneError, atleastOneProtecting := v.isAnyVolRepPvcClusterDataUnprotected()
-
-	if atleastOneError {
-		unprotected("Cluster data of one or more PVs are unprotected")
-
-		return
-	}
-
-	if atleastOneProtecting {
-		msg := "Cluster data of one or more PVs are in the process of being protected"
-		setVRGClusterDataProtectingCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
-		v.log.Info(msg)
-
-		return
-	}
-
-	// All PVCs in the VRG are in protected state because not a single PVC is in
-	// error condition and not a single PVC is in protecting condition.
-	v.log.Info("Cluster data of all PVs are protected")
-
-	if !v.kubeObjectProtectionDisabledOrKubeObjectsProtected() {
-		unprotected("Kube objects unprotected")
-
-		return
-	}
-
-	if v.vrgObjectProtected != metav1.ConditionTrue {
-		unprotected("VRG object unprotected")
-
-		return
-	}
-
-	msg := "Kube objects are protected"
-	setVRGClusterDataProtectedCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+	rmnutil.ConditionSetFirstFalseOrLastTrue(setStatusCondition, &v.instance.Status.Conditions,
+		v.aggregateVolSyncClusterDataProtectedCondition(),
+		v.aggregateVolRepClusterDataProtectedCondition(),
+		v.vrgObjectProtected,
+		v.kubeObjectsProtected,
+	)
 }
 
 func (v *VRGInstance) updateVRGLastGroupSyncTime() {

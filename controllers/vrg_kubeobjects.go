@@ -162,6 +162,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(result *ctrl.Result
 	requests, err := KubeObjectsCaptureRequestsGet(v.ctx, v.reconciler.APIReader, veleroNamespaceName, labels)
 	if err != nil {
 		v.log.Error(err, "Kube objects capture in-progress query error", "number", number)
+		v.kubeObjectsCaptureFailed(err.Error())
 
 		result.Requeue = true
 
@@ -201,6 +202,7 @@ func (v *VRGInstance) kubeObjectsCaptureDelete(
 		objectStore := s3StoreAccessors[i].ObjectStorer
 		if err := objectStore.DeleteObjects(pathName); err != nil {
 			v.log.Error(err, "Kube objects capture s3 objects delete error", "number", captureNumber, "profile", s3ProfileName)
+			v.kubeObjectsCaptureFailed(err.Error())
 
 			result.Requeue = true
 
@@ -254,6 +256,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 
 			v.log.Error(err, "Kube objects group capture error", "number", captureNumber,
 				"group", groupNumber, "name", captureGroup.Name, "profile", s3ProfileName)
+			v.kubeObjectsCaptureFailed(err.Error())
 
 			result.Requeue = true
 
@@ -280,6 +283,7 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 
 	if err := KubeObjectsCaptureRequestsDelete(v.ctx, v.reconciler.Client, veleroNamespaceName, labels); err != nil {
 		v.log.Error(err, "Kube objects capture requests delete error", "number", captureNumber)
+		v.kubeObjectsCaptureFailed(err.Error())
 
 		result.Requeue = true
 
@@ -289,6 +293,8 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 	status.CaptureToRecoverFrom = &ramen.KubeObjectsCaptureIdentifier{
 		Number: captureNumber, StartTime: startTime,
 	}
+
+	v.kubeObjectsProtected = newVRGClusterDataProtectedCondition(v.instance.Generation, clusterDataProtectedTrueMessage)
 
 	duration, delay := timeSincePreviousAndUntilNext(status.CaptureToRecoverFrom.StartTime.Time, interval)
 	if delay <= 0 {
@@ -301,16 +307,24 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 	delaySetIfLess(result, delay, v.log)
 }
 
+func (v *VRGInstance) kubeObjectsCaptureFailed(message string) {
+	if v.instance.Status.KubeObjectProtection.CaptureToRecoverFrom != nil {
+		// TODO && time.Since(CaptureToRecoverFrom.StartTime) < Spec.KubeObjectProtection.CaptureInterval * 2 or 3
+		return
+	}
+
+	v.kubeObjectsProtected = newVRGClusterDataUnprotectedCondition(v.instance.Generation, message)
+}
+
+const clusterDataProtectedTrueMessage = "Kube objects protected"
+
 func (v *VRGInstance) vrgObjectProtect(result *ctrl.Result, s3StoreAccessors []s3StoreAccessor) {
 	vrg := *v.instance
-	v.vrgObjectProtected = metav1.ConditionTrue
 
 	for i, s3ProfileName := range vrg.Spec.S3Profiles {
 		objectStore := s3StoreAccessors[i].ObjectStorer
 
 		if err := VrgObjectProtect(objectStore, vrg); err != nil {
-			result.Requeue = true
-			v.vrgObjectProtected = metav1.ConditionFalse
 			util.ReportIfNotPresent(
 				v.reconciler.eventRecorder,
 				&vrg,
@@ -318,12 +332,21 @@ func (v *VRGInstance) vrgObjectProtect(result *ctrl.Result, s3StoreAccessors []s
 				util.EventReasonVrgUploadFailed,
 				err.Error(),
 			)
-			v.log.Error(err, "Vrg Kube object protect error", "profile", s3ProfileName)
+
+			const message = "VRG Kube object protect error"
+
+			v.log.Error(err, message, "profile", s3ProfileName)
+
+			v.vrgObjectProtected = newVRGClusterDataUnprotectedCondition(v.instance.Generation, message)
+
+			result.Requeue = true
 
 			return
 		}
 
-		v.log.Info("Vrg Kube object protected", "profile", s3ProfileName)
+		v.log.Info("VRG Kube object protected", "profile", s3ProfileName)
+
+		v.vrgObjectProtected = newVRGClusterDataProtectedCondition(v.instance.Generation, clusterDataProtectedTrueMessage)
 	}
 }
 
@@ -498,10 +521,6 @@ func (v *VRGInstance) kubeObjectProtectionDisabled(caller string) bool {
 	v.log.Info("Kube object protection", "disabled", disabled, "VRG", vrgDisabled, "configMap", cmDisabled, "for", caller)
 
 	return disabled
-}
-
-func (v *VRGInstance) kubeObjectProtectionDisabledOrKubeObjectsProtected() bool {
-	return v.kubeObjectProtectionDisabled("status") || v.instance.Status.KubeObjectProtection.CaptureToRecoverFrom != nil
 }
 
 func (v *VRGInstance) kubeObjectsProtectionDelete(result *ctrl.Result) error {
