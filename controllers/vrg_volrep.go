@@ -1466,21 +1466,6 @@ func (v *VRGInstance) addProtectedAnnotationForPVC(pvc *corev1.PersistentVolumeC
 	return nil
 }
 
-// addFinalizer adds a finalizer to VRG, to act as deletion protection
-func (v *VRGInstance) addFinalizer(finalizer string) error {
-	if !containsString(v.instance.ObjectMeta.Finalizers, finalizer) {
-		v.instance.ObjectMeta.Finalizers = append(v.instance.ObjectMeta.Finalizers, finalizer)
-		if err := v.reconciler.Update(v.ctx, v.instance); err != nil {
-			v.log.Error(err, "Failed to add finalizer", "finalizer", finalizer)
-
-			return fmt.Errorf("failed to add finalizer to VolumeReplicationGroup resource (%s/%s), %w",
-				v.instance.Namespace, v.instance.Name, err)
-		}
-	}
-
-	return nil
-}
-
 func (v *VRGInstance) addProtectedFinalizerToPVC(pvc *corev1.PersistentVolumeClaim,
 	log logr.Logger) error {
 	if containsString(pvc.Finalizers, pvcVRFinalizerProtected) {

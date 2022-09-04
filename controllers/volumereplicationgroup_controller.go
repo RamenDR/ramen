@@ -706,15 +706,40 @@ func (v *VRGInstance) deleteVRGHandleMode() bool {
 	return v.reconcileVRsForDeletion()
 }
 
+// addFinalizer adds a finalizer to VRG, to act as deletion protection
+func (v *VRGInstance) addFinalizer(finalizer string) error {
+	if containsString(v.instance.ObjectMeta.Finalizers, finalizer) {
+		return nil
+	}
+
+	v.instance.ObjectMeta.Finalizers = append(v.instance.ObjectMeta.Finalizers, finalizer)
+	status := v.instance.Status
+
+	if err := v.reconciler.Update(v.ctx, v.instance); err != nil {
+		v.log.Error(err, "Failed to add finalizer", "finalizer", finalizer)
+
+		return fmt.Errorf("failed to add finalizer to VolumeReplicationGroup resource (%s/%s), %w",
+			v.instance.Namespace, v.instance.Name, err)
+	}
+
+	v.instance.Status = status
+
+	return nil
+}
+
 // removeFinalizer removes VRG finalizer form the resource
 func (v *VRGInstance) removeFinalizer(finalizer string) error {
 	v.instance.ObjectMeta.Finalizers = removeString(v.instance.ObjectMeta.Finalizers, finalizer)
+	status := v.instance.Status
+
 	if err := v.reconciler.Update(v.ctx, v.instance); err != nil {
 		v.log.Error(err, "Failed to remove finalizer", "finalizer", finalizer)
 
 		return fmt.Errorf("failed to remove finalizer from VolumeReplicationGroup resource (%s/%s), %w",
 			v.instance.Namespace, v.instance.Name, err)
 	}
+
+	v.instance.Status = status
 
 	return nil
 }
