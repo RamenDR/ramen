@@ -972,24 +972,24 @@ func getStatusStateFromSpecState(state ramendrv1alpha1.ReplicationState) ramendr
 // The VRGConditionTypeClusterDataReady summary condition is not a PVC level
 // condition and is updated elsewhere.
 func (v *VRGInstance) updateVRGConditions() {
-	v.updateVRGDataReadyCondition()
-	v.updateVRGDataProtectedCondition()
-	v.updateVRGClusterDataProtectedCondition()
-	v.updateVRGLastGroupSyncTime()
-}
-
-func (v *VRGInstance) updateVRGDataReadyCondition() {
 	rmnutil.ConditionSetFirstFalseOrLastTrue(setStatusCondition, &v.instance.Status.Conditions,
 		v.aggregateVolSyncDataReadyCondition(),
 		v.aggregateVolRepDataReadyCondition(),
 	)
-}
 
-func (v *VRGInstance) updateVRGDataProtectedCondition() {
+	volSyncDataProtected, volSyncClusterDataProtected := v.aggregateVolSyncDataProtectedConditions()
+
 	rmnutil.ConditionSetFirstFalseOrLastTrue(setStatusCondition, &v.instance.Status.Conditions,
-		v.aggregateVolSyncDataProtectedCondition(),
+		volSyncDataProtected,
 		v.aggregateVolRepDataProtectedCondition(),
 	)
+	rmnutil.ConditionSetFirstFalseOrLastTrue(setStatusCondition, &v.instance.Status.Conditions,
+		volSyncClusterDataProtected,
+		v.aggregateVolRepClusterDataProtectedCondition(),
+		v.vrgObjectProtected,
+		v.kubeObjectsProtected,
+	)
+	v.updateVRGLastGroupSyncTime()
 }
 
 func (v *VRGInstance) vrgReadyStatus() *metav1.Condition {
@@ -1007,15 +1007,6 @@ func (v *VRGInstance) vrgReadyStatus() *metav1.Condition {
 	msg := "PVCs in the VolumeReplicationGroup are ready for use"
 
 	return newVRGAsPrimaryReadyCondition(v.instance.Generation, msg)
-}
-
-func (v *VRGInstance) updateVRGClusterDataProtectedCondition() {
-	rmnutil.ConditionSetFirstFalseOrLastTrue(setStatusCondition, &v.instance.Status.Conditions,
-		v.aggregateVolSyncClusterDataProtectedCondition(),
-		v.aggregateVolRepClusterDataProtectedCondition(),
-		v.vrgObjectProtected,
-		v.kubeObjectsProtected,
-	)
 }
 
 func (v *VRGInstance) updateVRGLastGroupSyncTime() {
