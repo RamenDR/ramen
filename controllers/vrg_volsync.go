@@ -262,22 +262,18 @@ func (v *VRGInstance) aggregateVolSyncDataReadyCondition() *v1.Condition {
 	return dataReadyCondition
 }
 
-func (v *VRGInstance) aggregateVolSyncDataProtectedCondition() *v1.Condition {
-	return v.buildDataProtectedCondition()
-}
-
-func (v *VRGInstance) aggregateVolSyncClusterDataProtectedCondition() *v1.Condition {
-	// For VolSync, clusterDataProtectedCondition is the same as dataProtecedCondition - so copy it
-	dataProtectedCondition := findCondition(v.instance.Status.Conditions, VRGConditionTypeDataProtected)
+func (v *VRGInstance) aggregateVolSyncDataProtectedConditions() (*v1.Condition, *v1.Condition) {
+	// For VolSync, clusterDataProtectedCondition is the same as dataProtectedCondition - so copy it
+	dataProtectedCondition := v.buildDataProtectedCondition()
 
 	if dataProtectedCondition == nil {
-		return nil
+		return nil, nil
 	}
 
 	clusterDataProtectedCondition := dataProtectedCondition.DeepCopy()
 	clusterDataProtectedCondition.Type = VRGConditionTypeClusterDataProtected
 
-	return clusterDataProtectedCondition
+	return dataProtectedCondition, clusterDataProtectedCondition
 }
 
 //nolint:gocognit,funlen,gocyclo,cyclop
