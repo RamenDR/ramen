@@ -23,8 +23,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/go-logr/logr"
 
-	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
-	volrepController "github.com/csi-addons/volume-replication-operator/controllers"
+	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
+	volrepController "github.com/csi-addons/kubernetes-csi-addons/controllers/replication.storage"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"

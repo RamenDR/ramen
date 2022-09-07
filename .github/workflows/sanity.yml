@@ -13,7 +13,7 @@ on:  # yamllint disable-line rule:truthy
     branches:
       - '*'
 env:
-  GO_VERSION: "1.17"
+  GO_VERSION: "1.18"
   IMAGE_TAG_BASE: "quay.io/ramendr/ramen"
   IMAGE_REGISTRY: "quay.io"
   IMAGE_REPOSITORY: "ramendr"
@@ -56,7 +56,7 @@ jobs:
       - name: GolangCI Lint
         uses: golangci/golangci-lint-action@v3
         with:
-          version: v1.37.1
+          version: v1.49.0
 
   build-image-and-ensure-clean-branch:
     name: Build image and ensure clean branch
@@ -87,7 +87,7 @@ jobs:
           retention-days: 1
 
       - name: Go tidy
-        run: go mod tidy -compat=1.17
+        run: go mod tidy
 
       - name: Git branch sanity
         run: |

@@ -23,7 +23,7 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
-	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
+	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	cpcv1 "github.com/stolostron/config-policy-controller/api/v1"

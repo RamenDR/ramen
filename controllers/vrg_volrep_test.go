@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
-	volrepController "github.com/csi-addons/volume-replication-operator/controllers"
+	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
+	volrepController "github.com/csi-addons/kubernetes-csi-addons/controllers/replication.storage"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
