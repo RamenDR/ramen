@@ -25,7 +25,7 @@ import (
 	"github.com/go-logr/logr"
 	"golang.org/x/time/rate"
 
-	volrep "github.com/csi-addons/volume-replication-operator/api/v1alpha1"
+	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"

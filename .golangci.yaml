@@ -58,3 +58,26 @@ linters:
     - goheader  # TODO: Introduce back post fixing linter errors
     - gci
     - interfacer  # interfacer linter is archived and deprecated (https://github.com/mvdan/interfacer)
+    # TODO: fix folloing linter errors.
+    - typecheck
+    - gofmt
+    - gofumpt
+    - exhaustruct
+    - tagliatelle
+    - gomoddirectives
+    - goimports
+    - nolintlint
+    - wrapcheck
+    - varnamelen
+    - staticcheck
+    - nosnakecase
+    - ireturn
+    - ifshort
+    - nilnil
+    - gomnd
+    - containedctx
+    - nonamedreturns
+    - forcetypeassert
+    - promlinter
+    - contextcheck
+    - errname

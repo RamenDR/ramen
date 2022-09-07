@@ -111,7 +111,7 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 GOLANGCI_URL := https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh
-GOLANGCI_VERSION := 1.37.1
+GOLANGCI_VERSION := 1.49.0
 GOLANGCI_INSTALLED_VER := $(shell testbin/golangci-lint version --format=short 2>&1)
 .PHONY: golangci-bin
 golangci-bin: ## Download and install goloanci-lint locally if necessary.
@@ -124,7 +124,7 @@ endif
 
 .PHONY: lint
 lint: golangci-bin ## Run configured golangci-lint and pre-commit.sh linters against the code.
-	testbin/golangci-lint run ./... 
+	testbin/golangci-lint run ./... --config=./.golangci.yaml
 	hack/pre-commit.sh
 
 ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
@@ -226,7 +226,7 @@ TMP_DIR=$$(mktemp -d) ;\
 cd $$TMP_DIR ;\
 go mod init tmp ;\
 echo "Downloading $(2)" ;\
-GOBIN=$(PROJECT_DIR)/bin go get $(2) ;\
+GOBIN=$(PROJECT_DIR)/bin go install $(2) ;\
 rm -rf $$TMP_DIR ;\
 }
 endef
