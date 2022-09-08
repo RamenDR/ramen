@@ -172,32 +172,32 @@ deploy: deploy-hub deploy-dr-cluster ## Deploy hub and dr-cluster controller to 
 undeploy: undeploy-hub undeploy-dr-cluster ## Undeploy hub and dr-cluster controller from the K8s cluster specified in ~/.kube/config.
 
 install-hub: manifests kustomize ## Install hub CRDs into the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load_restrictor none config/hub/crd | kubectl apply -f -
+	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/crd | kubectl apply -f -
 
 uninstall-hub: manifests kustomize ## Uninstall hub CRDs from the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load_restrictor none config/hub/crd | kubectl delete -f -
+	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/crd | kubectl delete -f -
 
 deploy-hub: manifests kustomize ## Deploy hub controller to the K8s cluster specified in ~/.kube/config.
 	cd config/hub/default && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
 	cd config/hub/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build --load_restrictor none config/hub/default | kubectl apply -f -
+	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/default | kubectl apply -f -
 
 undeploy-hub: ## Undeploy hub controller from the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load_restrictor none config/hub/default | kubectl delete -f -
+	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/default | kubectl delete -f -
 
 install-dr-cluster: manifests kustomize ## Install dr-cluster CRDs into the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load_restrictor none config/dr-cluster/crd | kubectl apply -f -
+	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/crd | kubectl apply -f -
 
 uninstall-dr-cluster: manifests kustomize ## Uninstall dr-cluster CRDs from the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load_restrictor none config/dr-cluster/crd | kubectl delete -f -
+	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/crd | kubectl delete -f -
 
 deploy-dr-cluster: manifests kustomize ## Deploy dr-cluster controller to the K8s cluster specified in ~/.kube/config.
 	cd config/dr-cluster/default && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
 	cd config/dr-cluster/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build --load_restrictor none config/dr-cluster/default | kubectl apply -f -
+	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/default | kubectl apply -f -
 
 undeploy-dr-cluster: ## Undeploy dr-cluster controller from the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load_restrictor none config/dr-cluster/default | kubectl delete -f -
+	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/default | kubectl delete -f -
 
 ##@ Tools
 
@@ -215,7 +215,7 @@ endif
 
 KUSTOMIZE = $(shell pwd)/bin/kustomize
 kustomize: ## Download kustomize locally if necessary.
-	$(call go-get-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v3@v3.8.8)
+	$(call go-get-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v4@v4.5.7)
 
 # go-get-tool will 'go get' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
@@ -274,7 +274,7 @@ bundle-hub: manifests kustomize operator-sdk ## Generate hub bundle manifests an
 	$(SED_CMD) -e "s,deploymentAutomationEnabled: true,deploymentAutomationEnabled: $(AUTO_CONFIGURE_DR_CLUSTER)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
 	$(SED_CMD) -e "s,s3SecretDistributionEnabled: true,s3SecretDistributionEnabled: $(AUTO_CONFIGURE_DR_CLUSTER)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
 	cat config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml >> config/hub/manager/ramen_manager_config.yaml
-	$(KUSTOMIZE) build --load_restrictor none config/hub/manifests/$(IMAGE_NAME) | $(OSDK) generate bundle -q --package=$(HUB_NAME) --overwrite --output-dir=config/hub/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/manifests/$(IMAGE_NAME) | $(OSDK) generate bundle -q --package=$(HUB_NAME) --overwrite --output-dir=config/hub/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(OSDK) bundle validate config/hub/bundle
 
 .PHONY: bundle-hub-build
@@ -293,7 +293,7 @@ bundle-dr-cluster: manifests kustomize operator-sdk ## Generate dr-cluster bundl
 		--patch '[{"op": "add", "path": "/metadata/annotations/olm.skipRange", "value": "$(SKIP_RANGE)"}]' && \
 		$(KUSTOMIZE) edit add patch --name ramen-dr-cluster-operator.v0.0.0 --kind ClusterServiceVersion\
 		--patch '[{"op": "replace", "path": "/spec/replaces", "value": "$(REPLACES)"}]'
-	$(KUSTOMIZE) build --load_restrictor none config/dr-cluster/manifests/$(IMAGE_NAME) | $(OSDK) generate bundle -q --package=$(DRCLUSTER_NAME) --overwrite --output-dir=config/dr-cluster/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	$(KUSTOMIZE) build load-restrictor LoadRestrictionsNone config/dr-cluster/manifests/$(IMAGE_NAME) | $(OSDK) generate bundle -q --package=$(DRCLUSTER_NAME) --overwrite --output-dir=config/dr-cluster/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(OSDK) bundle validate config/dr-cluster/bundle
 
 .PHONY: bundle-dr-cluster-build
