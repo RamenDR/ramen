@@ -70,26 +70,33 @@ const (
 )
 
 type VSHandler struct {
-	ctx                        context.Context
-	client                     client.Client
-	log                        logr.Logger
-	owner                      metav1.Object
-	asyncSpec                  *ramendrv1alpha1.VRGAsyncSpec
-	defaultCephFSCSIDriverName string
-	volumeSnapshotClassList    *snapv1.VolumeSnapshotClassList
+	ctx                         context.Context
+	client                      client.Client
+	log                         logr.Logger
+	owner                       metav1.Object
+	schedulingInterval          string
+	volumeSnapshotClassSelector metav1.LabelSelector // volume snapshot classes to be filtered label selector
+	defaultCephFSCSIDriverName  string
+	volumeSnapshotClassList     *snapv1.VolumeSnapshotClassList
 }
 
 func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, owner metav1.Object,
 	asyncSpec *ramendrv1alpha1.VRGAsyncSpec, defaultCephFSCSIDriverName string) *VSHandler {
-	return &VSHandler{
+	vsHandler := &VSHandler{
 		ctx:                        ctx,
 		client:                     client,
 		log:                        log,
 		owner:                      owner,
-		asyncSpec:                  asyncSpec,
 		defaultCephFSCSIDriverName: defaultCephFSCSIDriverName,
 		volumeSnapshotClassList:    nil, // Do not initialize until we need it
 	}
+
+	if asyncSpec != nil {
+		vsHandler.schedulingInterval = asyncSpec.SchedulingInterval
+		vsHandler.volumeSnapshotClassSelector = asyncSpec.VolumeSnapshotClassSelector
+	}
+
+	return vsHandler
 }
 
 // VSHandler will either look at VolumeAttachments or pods to determine if a PVC is mounted
@@ -1296,12 +1303,12 @@ func isDefaultVolumeSnapshotClass(volumeSnapshotClass snapv1.VolumeSnapshotClass
 func (v *VSHandler) GetVolumeSnapshotClasses() ([]snapv1.VolumeSnapshotClass, error) {
 	if v.volumeSnapshotClassList == nil {
 		// Load the list if it hasn't been initialized yet
-		v.log.Info("Fetching VolumeSnapshotClass", "labelSelector", v.asyncSpec.VolumeSnapshotClassSelector)
+		v.log.Info("Fetching VolumeSnapshotClass", "labelSelector", v.volumeSnapshotClassSelector)
 
-		selector, err := metav1.LabelSelectorAsSelector(&v.asyncSpec.VolumeSnapshotClassSelector)
+		selector, err := metav1.LabelSelectorAsSelector(&v.volumeSnapshotClassSelector)
 		if err != nil {
 			v.log.Error(err, "Unable to use volume snapshot label selector", "labelSelector",
-				v.asyncSpec.VolumeSnapshotClassSelector)
+				v.volumeSnapshotClassSelector)
 
 			return nil, fmt.Errorf("unable to use volume snapshot label selector (%w)", err)
 		}
@@ -1314,7 +1321,7 @@ func (v *VSHandler) GetVolumeSnapshotClasses() ([]snapv1.VolumeSnapshotClass, er
 
 		vscList := &snapv1.VolumeSnapshotClassList{}
 		if err := v.client.List(v.ctx, vscList, listOptions...); err != nil {
-			v.log.Error(err, "Failed to list VolumeSnapshotClasses", "labelSelector", v.asyncSpec.VolumeSnapshotClassSelector)
+			v.log.Error(err, "Failed to list VolumeSnapshotClasses", "labelSelector", v.volumeSnapshotClassSelector)
 
 			return nil, fmt.Errorf("error listing volumesnapshotclasses (%w)", err)
 		}
@@ -1326,8 +1333,8 @@ func (v *VSHandler) GetVolumeSnapshotClasses() ([]snapv1.VolumeSnapshotClass, er
 }
 
 func (v *VSHandler) getScheduleCronSpec() (*string, error) {
-	if v.asyncSpec != nil {
-		return ConvertSchedulingIntervalToCronSpec(v.asyncSpec.SchedulingInterval)
+	if v.schedulingInterval != "" {
+		return ConvertSchedulingIntervalToCronSpec(v.schedulingInterval)
 	}
 
 	// Use default value if not specified
