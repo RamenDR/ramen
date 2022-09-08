@@ -24,13 +24,17 @@ import (
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/util"
+	"github.com/ramendr/ramen/controllers/volsync"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
-func drClusterDeploy(drcluster *rmn.DRCluster, mwu *util.MWUtil, ramenConfig *rmn.RamenConfig) error {
+func drClusterDeploy(drClusterInstance *drclusterInstance, ramenConfig *rmn.RamenConfig) error {
+	drcluster := drClusterInstance.object
+	mwu := drClusterInstance.mwUtil
+
 	objects := []interface{}{}
 
 	if ramenConfig.DrClusterOperator.DeploymentAutomationEnabled {
@@ -44,6 +48,13 @@ func drClusterDeploy(drcluster *rmn.DRCluster, mwu *util.MWUtil, ramenConfig *rm
 		objects, err = appendSubscriptionObject(drcluster, mwu, ramenConfig, objects)
 		if err != nil {
 			return err
+		}
+
+		// Deploy volsync to dr cluster
+		err = volsync.DeployVolSyncToCluster(drClusterInstance.ctx, drClusterInstance.client, drcluster.GetName(),
+			drClusterInstance.log)
+		if err != nil {
+			return fmt.Errorf("unable to deploy volsync to drcluster: %w", err)
 		}
 	}
 
