@@ -22,6 +22,17 @@ rules:
   - patch
   - update
 - apiGroups:
+  - addon.open-cluster-management.io
+  resources:
+  - managedclusteraddons
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - apps.open-cluster-management.io
   resources:
   - placementrules
