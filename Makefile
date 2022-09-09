@@ -293,7 +293,7 @@ bundle-dr-cluster: manifests kustomize operator-sdk ## Generate dr-cluster bundl
 		--patch '[{"op": "add", "path": "/metadata/annotations/olm.skipRange", "value": "$(SKIP_RANGE)"}]' && \
 		$(KUSTOMIZE) edit add patch --name ramen-dr-cluster-operator.v0.0.0 --kind ClusterServiceVersion\
 		--patch '[{"op": "replace", "path": "/spec/replaces", "value": "$(REPLACES)"}]'
-	$(KUSTOMIZE) build load-restrictor LoadRestrictionsNone config/dr-cluster/manifests/$(IMAGE_NAME) | $(OSDK) generate bundle -q --package=$(DRCLUSTER_NAME) --overwrite --output-dir=config/dr-cluster/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/manifests/$(IMAGE_NAME) | $(OSDK) generate bundle -q --package=$(DRCLUSTER_NAME) --overwrite --output-dir=config/dr-cluster/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(OSDK) bundle validate config/dr-cluster/bundle
 
 .PHONY: bundle-dr-cluster-build
