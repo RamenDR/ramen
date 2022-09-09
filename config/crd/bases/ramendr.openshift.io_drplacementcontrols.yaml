@@ -287,6 +287,10 @@ spec:
                   - type
                   type: object
                 type: array
+              lastSyncTime:
+                description: Oldest sync time of all PVCs protected in the async mode
+                format: date-time
+                type: string
               lastUpdateTime:
                 format: date-time
                 type: string

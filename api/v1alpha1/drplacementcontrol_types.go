@@ -169,6 +169,10 @@ type DRPlacementControlStatus struct {
 	Conditions         []metav1.Condition      `json:"conditions,omitempty"`
 	ResourceConditions VRGConditions           `json:"resourceConditions,omitempty"`
 	LastUpdateTime     metav1.Time             `json:"lastUpdateTime"`
+
+	// Oldest sync time of all PVCs protected in the async mode
+	//+optional
+	LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty"`
 }
 
 // +kubebuilder:object:root=true
