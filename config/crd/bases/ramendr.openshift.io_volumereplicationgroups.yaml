@@ -345,6 +345,11 @@ spec:
                                 type: string
                               description: Labels for the PVC
                               type: object
+                            lastSyncTime:
+                              description: Last sync time for the PVC if protected
+                                in the async or volsync mode
+                              format: date-time
+                              type: string
                             name:
                               description: Name of the VolRep/PVC resource
                               type: string
@@ -469,6 +474,10 @@ spec:
                 type: array
               finalSyncComplete:
                 type: boolean
+              lastSyncTime:
+                description: Oldest sync time of all PVCs protected in the async mode
+                format: date-time
+                type: string
               lastUpdateTime:
                 format: date-time
                 nullable: true
@@ -568,6 +577,11 @@ spec:
                         type: string
                       description: Labels for the PVC
                       type: object
+                    lastSyncTime:
+                      description: Last sync time for the PVC if protected in the
+                        async or volsync mode
+                      format: date-time
+                      type: string
                     name:
                       description: Name of the VolRep/PVC resource
                       type: string
