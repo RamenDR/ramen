@@ -1025,19 +1025,28 @@ func (v *VRGInstance) updateVRGClusterDataProtectedCondition() {
 }
 
 func (v *VRGInstance) updateVRGLastSyncTime() {
-	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
-		return
-	}
-
-	leastLastSyncTime := metav1.Now()
+	var leastLastSyncTime *metav1.Time
 
 	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
-		if protectedPVC.LastSyncTime.Before(&leastLastSyncTime) {
-			leastLastSyncTime = *protectedPVC.LastSyncTime
+		// If any protected PVC reports nil, report that back (no sync time available)
+		if protectedPVC.LastSyncTime == nil {
+			leastLastSyncTime = nil
+
+			break
+		}
+
+		if leastLastSyncTime == nil {
+			leastLastSyncTime = protectedPVC.LastSyncTime
+
+			continue
+		}
+
+		if protectedPVC.LastSyncTime != nil && protectedPVC.LastSyncTime.Before(leastLastSyncTime) {
+			leastLastSyncTime = protectedPVC.LastSyncTime
 		}
 	}
 
-	v.instance.Status.LastSyncTime = &leastLastSyncTime
+	v.instance.Status.LastSyncTime = leastLastSyncTime
 }
 
 // It might be better move the helper functions like these to a separate

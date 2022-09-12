@@ -801,6 +801,7 @@ func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName, 
 		msg := "PVC in the VolumeReplicationGroup is ready for use"
 		v.updatePVCDataReadyCondition(vrNamespacedName.Name, VRGConditionReasonReady, msg)
 		v.updatePVCDataProtectedCondition(vrNamespacedName.Name, VRGConditionReasonReady, msg)
+		v.updatePVCLastSyncTime(vrNamespacedName.Name, nil)
 
 		return false, true, nil
 	}
@@ -830,6 +831,7 @@ func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName
 		msg := "VolumeReplication resource for the pvc as Secondary is in sync with Primary"
 		v.updatePVCDataReadyCondition(vrNamespacedName.Name, VRGConditionReasonReplicated, msg)
 		v.updatePVCDataProtectedCondition(vrNamespacedName.Name, VRGConditionReasonDataProtected, msg)
+		v.updatePVCLastSyncTime(vrNamespacedName.Name, nil)
 
 		return false, true, nil
 	}
@@ -1167,7 +1169,7 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 	msg = "PVC in the VolumeReplicationGroup is ready for use"
 	v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonReady, msg)
 	v.updatePVCDataProtectedCondition(volRep.Name, VRGConditionReasonReady, msg)
-	v.updatePVCLastSyncTime(volRep.Name, metav1.Now()) // TODO: Update with volrep lastSyncTime status
+	v.updatePVCLastSyncTime(volRep.Name, &volRep.CreationTimestamp) // TODO: Update with volrep lastSyncTime status
 
 	v.log.Info(fmt.Sprintf("VolumeReplication resource %s/%s is ready for use", volRep.Name,
 		volRep.Namespace))
@@ -1193,7 +1195,7 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 // ProtectedPVC.Conditions[DataReady] = True
 // ProtectedPVC.Conditions[DataProtected] = True
 func (v *VRGInstance) validateAdditionalVRStatusForSecondary(volRep *volrep.VolumeReplication) bool {
-	v.updatePVCLastSyncTime(volRep.Name, metav1.Time{})
+	v.updatePVCLastSyncTime(volRep.Name, nil)
 
 	conditionMet, _ := isVRConditionMet(volRep, volrepController.ConditionResyncing, metav1.ConditionTrue)
 	if !conditionMet {
@@ -1349,19 +1351,13 @@ func (v *VRGInstance) updatePVCDataProtectedCondition(pvcName, reason, message s
 	v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
 }
 
-func (v *VRGInstance) updatePVCLastSyncTime(pvcName string, lastSyncTime metav1.Time) {
+func (v *VRGInstance) updatePVCLastSyncTime(pvcName string, lastSyncTime *metav1.Time) {
 	protectedPVC := v.findProtectedPVC(pvcName)
 	if protectedPVC == nil {
 		return
 	}
 
-	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
-		protectedPVC.LastSyncTime = nil
-
-		return
-	}
-
-	protectedPVC.LastSyncTime = &lastSyncTime
+	protectedPVC.LastSyncTime = lastSyncTime
 }
 
 func setPVCDataReadyCondition(protectedPVC *ramendrv1alpha1.ProtectedPVC, reason, message string,
