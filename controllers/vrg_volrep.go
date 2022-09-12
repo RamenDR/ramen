@@ -1160,19 +1160,19 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 	}
 
 	// if primary, all checks are completed
-	if state == ramendrv1alpha1.Primary {
-		msg = "PVC in the VolumeReplicationGroup is ready for use"
-		v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonReady, msg)
-
-		v.updatePVCDataProtectedCondition(volRep.Name, VRGConditionReasonReady, msg)
-
-		v.log.Info(fmt.Sprintf("VolumeReplication resource %s/%s is ready for use", volRep.Name,
-			volRep.Namespace))
-
-		return true
+	if state == ramendrv1alpha1.Secondary {
+		return v.validateAdditionalVRStatusForSecondary(volRep)
 	}
 
-	return v.validateAdditionalVRStatusForSecondary(volRep)
+	msg = "PVC in the VolumeReplicationGroup is ready for use"
+	v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonReady, msg)
+	v.updatePVCDataProtectedCondition(volRep.Name, VRGConditionReasonReady, msg)
+	v.updatePVCLastSyncTime(volRep.Name, metav1.Now()) // TODO: Update with volrep lastSyncTime status
+
+	v.log.Info(fmt.Sprintf("VolumeReplication resource %s/%s is ready for use", volRep.Name,
+		volRep.Namespace))
+
+	return true
 }
 
 // validateAdditionalVRStatusForSecondary returns true if resync status is complete as secondary, false otherwise
@@ -1193,6 +1193,8 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 // ProtectedPVC.Conditions[DataReady] = True
 // ProtectedPVC.Conditions[DataProtected] = True
 func (v *VRGInstance) validateAdditionalVRStatusForSecondary(volRep *volrep.VolumeReplication) bool {
+	v.updatePVCLastSyncTime(volRep.Name, metav1.Time{})
+
 	conditionMet, _ := isVRConditionMet(volRep, volrepController.ConditionResyncing, metav1.ConditionTrue)
 	if !conditionMet {
 		return v.checkResyncCompletionAsSecondary(volRep)
@@ -1345,6 +1347,21 @@ func (v *VRGInstance) updatePVCDataProtectedCondition(pvcName, reason, message s
 
 	// created a new instance. Add it to the list
 	v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
+}
+
+func (v *VRGInstance) updatePVCLastSyncTime(pvcName string, lastSyncTime metav1.Time) {
+	protectedPVC := v.findProtectedPVC(pvcName)
+	if protectedPVC == nil {
+		return
+	}
+
+	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
+		protectedPVC.LastSyncTime = nil
+
+		return
+	}
+
+	protectedPVC.LastSyncTime = &lastSyncTime
 }
 
 func setPVCDataReadyCondition(protectedPVC *ramendrv1alpha1.ProtectedPVC, reason, message string,

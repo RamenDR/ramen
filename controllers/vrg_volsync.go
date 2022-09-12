@@ -21,6 +21,7 @@ import (
 	"reflect"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -74,7 +75,6 @@ func (v *VRGInstance) restorePVsForVolSync() error {
 	return nil
 }
 
-//nolint:funlen,gocognit,cyclop
 func (v *VRGInstance) reconcileVolSyncAsPrimary() (requeue bool) {
 	v.log.Info(fmt.Sprintf("Reconciling VolSync as Primary. VolSyncPVCs %d. VolSyncSpec %+v",
 		len(v.volSyncPVCs), v.instance.Spec.VolSync))
@@ -92,61 +92,9 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary() (requeue bool) {
 		return
 	}
 
-	finalSyncPrepareCount := 0
-
-	// First time: Add all VolSync PVCs to the protected PVC list and set their ready condition to initializing
 	for _, pvc := range v.volSyncPVCs {
-		newProtectedPVC := &ramendrv1alpha1.ProtectedPVC{
-			Name:               pvc.Name,
-			ProtectedByVolSync: true,
-			StorageClassName:   pvc.Spec.StorageClassName,
-			Labels:             pvc.Labels,
-			AccessModes:        pvc.Spec.AccessModes,
-			Resources:          pvc.Spec.Resources,
-		}
-
-		protectedPVC := v.findProtectedPVC(pvc.Name)
-		if protectedPVC == nil {
-			protectedPVC = newProtectedPVC
-			v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
-		} else if !reflect.DeepEqual(protectedPVC, newProtectedPVC) {
-			newProtectedPVC.DeepCopyInto(protectedPVC)
-		}
-
-		// Not much need for VolSyncReplicationSourceSpec anymore - but keeping it around in case we want
-		// to add anything to it later to control anything in the ReplicationSource
-		rsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
-			ProtectedPVC: *protectedPVC,
-		}
-
-		if v.instance.Spec.PrepareForFinalSync {
-			prepared, err := v.volSyncHandler.PreparePVCForFinalSync(pvc.Name)
-			if err != nil || !prepared {
-				requeue = true
-
-				continue
-			}
-
-			finalSyncPrepareCount++
-		}
-
-		// reconcile RS and if runFinalSync is true, then one final sync will be run
-		finalSyncComplete, rs, err := v.volSyncHandler.ReconcileRS(rsSpec, v.instance.Spec.RunFinalSync)
-		if err != nil { //nolint:gocritic
-			v.log.Info(fmt.Sprintf("Failed to reconcile VolSync Replication Source for rsSpec %v. Error %v",
-				rsSpec, err))
-
-			setVRGConditionTypeVolSyncRepSourceSetupError(&protectedPVC.Conditions, v.instance.Generation,
-				"VolSync setup failed")
-
-			requeue = true
-		} else if rs == nil {
-			requeue = true
-		} else {
-			setVRGConditionTypeVolSyncRepSourceSetupComplete(&protectedPVC.Conditions, v.instance.Generation, "Ready")
-		}
-
-		if v.instance.Spec.RunFinalSync && !finalSyncComplete {
+		requeuePVC := v.reconcilePVCAsVolSyncPrimary(pvc)
+		if requeuePVC {
 			requeue = true
 		}
 	}
@@ -168,6 +116,62 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary() (requeue bool) {
 	v.log.Info("Successfully reconciled VolSync as Primary")
 
 	return requeue
+}
+
+func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeClaim) (requeue bool) {
+	newProtectedPVC := &ramendrv1alpha1.ProtectedPVC{
+		Name:               pvc.Name,
+		ProtectedByVolSync: true,
+		StorageClassName:   pvc.Spec.StorageClassName,
+		Labels:             pvc.Labels,
+		AccessModes:        pvc.Spec.AccessModes,
+		Resources:          pvc.Spec.Resources,
+	}
+
+	protectedPVC := v.findProtectedPVC(pvc.Name)
+	if protectedPVC == nil {
+		protectedPVC = newProtectedPVC
+		v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
+	} else if !reflect.DeepEqual(protectedPVC, newProtectedPVC) {
+		newProtectedPVC.DeepCopyInto(protectedPVC)
+	}
+
+	// Not much need for VolSyncReplicationSourceSpec anymore - but keeping it around in case we want
+	// to add anything to it later to control anything in the ReplicationSource
+	rsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
+		ProtectedPVC: *protectedPVC,
+	}
+
+	if v.instance.Spec.PrepareForFinalSync {
+		prepared, err := v.volSyncHandler.PreparePVCForFinalSync(pvc.Name)
+		if err != nil || !prepared {
+			return true
+		}
+	}
+
+	// reconcile RS and if runFinalSync is true, then one final sync will be run
+	finalSyncComplete, rs, err := v.volSyncHandler.ReconcileRS(rsSpec, v.instance.Spec.RunFinalSync)
+	if err != nil {
+		v.log.Info(fmt.Sprintf("Failed to reconcile VolSync Replication Source for rsSpec %v. Error %v",
+			rsSpec, err))
+
+		setVRGConditionTypeVolSyncRepSourceSetupError(&protectedPVC.Conditions, v.instance.Generation,
+			"VolSync setup failed")
+
+		return true
+	}
+
+	if rs == nil {
+		return true
+	}
+
+	setVRGConditionTypeVolSyncRepSourceSetupComplete(&protectedPVC.Conditions, v.instance.Generation, "Ready")
+
+	if rs.Status != nil {
+		protectedPVC.LastSyncTime = rs.Status.LastSyncTime
+	}
+
+	return v.instance.Spec.RunFinalSync && !finalSyncComplete
 }
 
 func (v *VRGInstance) reconcileVolSyncAsSecondary() (requeue bool) {
