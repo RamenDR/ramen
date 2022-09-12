@@ -823,6 +823,8 @@ func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	v.instance.Status.LastSyncTime = nil
+
 	requeue := v.handleVRGMode(ramendrv1alpha1.Secondary)
 
 	// If requeue is false, then VRG was successfully processed as Secondary.
@@ -967,6 +969,7 @@ func (v *VRGInstance) updateVRGConditions() {
 	v.updateVRGDataReadyCondition()
 	v.updateVRGDataProtectedCondition()
 	v.updateVRGClusterDataProtectedCondition()
+	v.updateVRGLastSyncTime()
 }
 
 func (v *VRGInstance) updateVRGDataReadyCondition() {
@@ -1019,6 +1022,22 @@ func (v *VRGInstance) updateVRGClusterDataProtectedCondition() {
 	if len(v.volRepPVCs) != 0 {
 		v.aggregateVolRepClusterDataProtectedCondition()
 	}
+}
+
+func (v *VRGInstance) updateVRGLastSyncTime() {
+	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
+		return
+	}
+
+	leastLastSyncTime := metav1.Now()
+
+	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
+		if protectedPVC.LastSyncTime.Before(&leastLastSyncTime) {
+			leastLastSyncTime = *protectedPVC.LastSyncTime
+		}
+	}
+
+	v.instance.Status.LastSyncTime = &leastLastSyncTime
 }
 
 // It might be better move the helper functions like these to a separate
