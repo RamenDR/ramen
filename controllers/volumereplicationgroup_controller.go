@@ -983,11 +983,18 @@ func (v *VRGInstance) updateVRGConditions() {
 		volSyncDataProtected,
 		v.aggregateVolRepDataProtectedCondition(),
 	)
-	rmnutil.ConditionSetFirstFalseOrLastTrue(setStatusCondition, &v.instance.Status.Conditions,
+
+	subconditions := []*metav1.Condition{
 		volSyncClusterDataProtected,
 		v.aggregateVolRepClusterDataProtectedCondition(),
 		v.vrgObjectProtected,
 		v.kubeObjectsProtected,
+	}
+
+	v.log.Info("clusterDataProtected", "subconditions", subconditions)
+
+	rmnutil.ConditionSetFirstFalseOrLastTrue(setStatusCondition, &v.instance.Status.Conditions,
+		subconditions...,
 	)
 	v.updateVRGLastGroupSyncTime()
 }
