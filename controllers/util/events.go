@@ -41,11 +41,28 @@ const (
 	// EventReasonPVCListFailed is used when VRG fails to get the list of PVCs
 	EventReasonPVCListFailed = "PVCListFailed"
 
+	//  EventReasonAllPVCsNotReady is used when all PVCs of the vrg are not ready
+	EventReasonAllPVCsNotReady = "AllPVCsNotReady "
+
+	// EventReasonPVRestoreFailed is used when VRG fails to restore PV
+	EventReasonPVRestoreFailed = "PVRestoreFailed"
+
+	// EventReasonRetainPVForPVCFailed is used when VRG fails to get or update PV resource
+	// for a given PVC resource
+	EventReasonRetainPVForPVCFailed = "RetainPVForPVCFailed"
+
 	// EventReasonVRCreateFailed is used when VRG fails to create VolRep resource
 	EventReasonVRCreateFailed = "VRCreateFailed"
 
 	// EventReasonVRCreateFailed is used when VRG fails to update VolRep resource
 	EventReasonVRUpdateFailed = "VRUpdateFailed"
+
+	// EventReasonVRDeleteFailed is used when VRG fails to delete VolRep resource
+	EventReasonVRDeleteFailed = "VRDeleteFailed"
+
+	// EventReasonDeleteClusterDataFromS3StoreFailed is used when deleting PVs using
+	// s3 profile fails
+	EventReasonDeleteClusterDataFromS3StoreFailed = "DeleteClusterDataFromS3StoreFailed"
 
 	// EventReasonProtectPVCFailed is used when VRG fails to protect PVC
 	EventReasonProtectPVCFailed = "ProtectPVCFailed"
@@ -53,12 +70,16 @@ const (
 	// EventReasonPVUploadFailed is used when VRG fails to upload PV cluster data
 	EventReasonPVUploadFailed = "PVUploadFailed"
 
+	// EventReasonPVUploadDone is used when VRG finish to upload PV cluster data
+	// to s3 profile
+	EventReasonPVUploadDone = "PVUploadDone"
+
 	// EventReasonPrimarySuccess is an event generated when VRG is successfully
 	// processed as Primary.
 	EventReasonPrimarySuccess = "PrimaryVRGProcessSuccess"
 
 	// EventReasonSecondarySuccess is an event generated when VRG is successfully
-	// processed as Primary.
+	// processed as Secondary.
 	EventReasonSecondarySuccess = "SecondaryVRGProcessSuccess"
 
 	// EventReasonSecondarySuccess is an event generated when VRG is successfully
@@ -99,6 +120,14 @@ const (
 	// EventReasonSwitchFailed is generated when DRPC fails to switch the cluster
 	// where the app is placed
 	EventReasonSwitchFailed = "DRPCClusterSwitchFailed"
+
+	// EventReasonCleaning is generated when cluster cleaning (MW for VRG and VRG MCV deletion)
+	// in progress
+	EventReasonCleaning = "Cleaning"
+
+	// EventReasonCleanupSuccess is generated when cluster cleaning (MW for VRG and VRG MCV deletion)
+	// in done
+	EventReasonCleanupSuccess = "SecondariesCleaned"
 )
 
 // EventReporter is custom events reporter type which allows user to limit the events

@@ -151,6 +151,9 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 			d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 				d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), err.Error())
 
+			rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+				rmnutil.EventReasonDeployFail, err.Error())
+
 			return !done, err
 		}
 
@@ -326,6 +329,9 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		msg := "failover cluster not set. FailoverCluster is a mandatory field"
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), msg)
+
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonDeployFail, msg)
 
 		return done, fmt.Errorf(msg)
 	}
@@ -516,6 +522,9 @@ func (d *DRPCInstance) RunRelocate() (bool, error) { //nolint:gocognit,cyclop
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), err.Error())
 
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonSwitchFailed, err.Error())
+
 		return !done, err
 	}
 
@@ -549,6 +558,9 @@ func (d *DRPCInstance) RunRelocate() (bool, error) { //nolint:gocognit,cyclop
 		errMsg := fmt.Sprintf("current cluster (%s) has not completed protection actions", curHomeCluster)
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), errMsg)
+
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonSwitchFailed, "current cluster not completed protection actions")
 
 		return !done, fmt.Errorf(errMsg)
 	}
@@ -840,6 +852,9 @@ func (d *DRPCInstance) relocate(preferredCluster, preferredClusterNamespace stri
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), err.Error())
 
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonSwitchFailed, err.Error())
+
 		return !done, err
 	}
 
@@ -849,6 +864,9 @@ func (d *DRPCInstance) relocate(preferredCluster, preferredClusterNamespace stri
 	if err != nil {
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), err.Error())
+
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonSwitchFailed, err.Error())
 
 		return !done, err
 	}
@@ -1421,6 +1439,9 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
 			metav1.ConditionFalse, rmn.ReasonCleaning, err.Error())
 
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonCleaning, err.Error())
+
 		return err
 	}
 
@@ -1429,11 +1450,17 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
 			metav1.ConditionFalse, rmn.ReasonCleaning, msg)
 
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonCleaning, msg)
+
 		return fmt.Errorf("waiting to clean secondaries")
 	}
 
 	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
 		metav1.ConditionTrue, rmn.ReasonSuccess, "Cleaned")
+
+	rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeNormal,
+		rmnutil.EventReasonCleanupSuccess, "Cleaned")
 
 	return nil
 }

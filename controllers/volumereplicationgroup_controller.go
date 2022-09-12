@@ -409,7 +409,7 @@ func (v *VRGInstance) processVRG() (ctrl.Result, error) {
 		v.log.Error(err, "Failed to update PersistentVolumeClaims for resource")
 
 		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
-			rmnutil.EventReasonValidationFailed, err.Error())
+			rmnutil.EventReasonPVCListFailed, err.Error())
 
 		msg := "Failed to get list of pvcs"
 		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
@@ -667,6 +667,9 @@ func (v *VRGInstance) processForDeletion() (ctrl.Result, error) {
 		if err := v.deleteClusterDataInS3Stores(v.log); err != nil {
 			v.log.Info("Requeuing due to failure in deleting cluster data from S3 stores",
 				"errorValue", err)
+
+			rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
+				rmnutil.EventReasonDeleteClusterDataFromS3StoreFailed, err.Error())
 
 			return ctrl.Result{Requeue: true}, nil
 		}

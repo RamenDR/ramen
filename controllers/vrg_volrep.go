@@ -251,6 +251,9 @@ func (v *VRGInstance) protectPVC(pvc *corev1.PersistentVolumeClaim,
 		msg := "Failed to retain PV for PVC"
 		v.updatePVCDataReadyCondition(pvc.Name, VRGConditionReasonError, msg)
 
+		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonRetainPVForPVCFailed, err.Error())
+
 		return requeue, !skip
 	}
 
@@ -480,6 +483,8 @@ func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim, log 
 		v.log.Info(msg)
 		v.updatePVCClusterDataProtectedCondition(pvc.Name,
 			VRGConditionReasonUploaded, msg)
+		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeNormal,
+				            rmnutil.EventReasonPVUploadDone, msg)
 	} else {
 		// Merely defensive as we don't expect to reach here
 		msg := fmt.Sprintf("Uploaded PV cluster data to only  %d of %d S3 profile(s): %v",
@@ -1440,6 +1445,8 @@ func (v *VRGInstance) deleteVR(vrNamespacedName types.NamespacedName, log logr.L
 	}
 
 	log.Error(err, "Failed to delete VolumeReplication resource")
+	rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
+		rmnutil.EventReasonVRDeleteFailed, err.Error())
 
 	return fmt.Errorf("failed to delete VolumeReplication resource (%s/%s), %w",
 		vrNamespacedName.Namespace, vrNamespacedName.Name, err)
@@ -1871,6 +1878,9 @@ func (v *VRGInstance) aggregateVolRepDataReadyCondition() {
 	v.log.Info("Marking VRG not DataReady with error. All PVCs are not ready")
 
 	msg := "All PVCs of the VolumeReplicationGroup are not ready"
+	rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
+		rmnutil.EventReasonAllPVCsNotReady, msg)
+
 	setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 }
 
