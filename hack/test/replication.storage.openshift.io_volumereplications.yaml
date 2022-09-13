@@ -1,10 +1,9 @@
-
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.4.1
+    controller-gen.kubebuilder.io/version: v0.9.2
   creationTimestamp: null
   name: volumereplications.replication.storage.openshift.io
 spec:
@@ -13,13 +12,31 @@ spec:
     kind: VolumeReplication
     listKind: VolumeReplicationList
     plural: volumereplications
+    shortNames:
+    - vr
     singular: volumereplication
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .spec.volumeReplicationClass
+      name: volumeReplicationClass
+      type: string
+    - jsonPath: .spec.dataSource.name
+      name: pvcName
+      type: string
+    - jsonPath: .spec.replicationState
+      name: desiredState
+      type: string
+    - jsonPath: .status.state
+      name: currentState
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: VolumeReplication is the Schema for the volumereplications API
+        description: VolumeReplication is the Schema for the volumereplications API.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -34,8 +51,12 @@ spec:
           metadata:
             type: object
           spec:
-            description: VolumeReplicationSpec defines the desired state of VolumeReplication
+            description: VolumeReplicationSpec defines the desired state of VolumeReplication.
             properties:
+              autoResync:
+                description: AutoResync represents the volume to be auto resynced
+                  when ReplicationState is "secondary"
+                type: boolean
               dataSource:
                 description: DataSource represents the object associated with the
                   volume
@@ -56,22 +77,32 @@ spec:
                 - kind
                 - name
                 type: object
+                x-kubernetes-map-type: atomic
+              replicationHandle:
+                description: replicationHandle represents an existing (but new) replication
+                  id
+                type: string
               replicationState:
                 description: ReplicationState represents the replication operation
                   to be performed on the volume. Supported operations are "primary",
                   "secondary" and "resync"
+                enum:
+                - primary
+                - secondary
+                - resync
                 type: string
               volumeReplicationClass:
                 description: VolumeReplicationClass is the VolumeReplicationClass
                   name for this VolumeReplication resource
                 type: string
             required:
+            - autoResync
             - dataSource
             - replicationState
             - volumeReplicationClass
             type: object
           status:
-            description: VolumeReplicationStatus defines the observed state of VolumeReplication
+            description: VolumeReplicationStatus defines the observed state of VolumeReplication.
             properties:
               conditions:
                 description: Conditions are the list of conditions and their status.
@@ -79,13 +110,12 @@ spec:
                   description: "Condition contains details for one aspect of the current
                     state of this API Resource. --- This struct is intended for direct
                     use as an array at the field path .status.conditions.  For example,
-                    type FooStatus struct{     // Represents the observations of a
-                    foo's current state.     // Known .status.conditions.type are:
-                    \"Available\", \"Progressing\", and \"Degraded\"     // +patchMergeKey=type
-                    \    // +patchStrategy=merge     // +listType=map     // +listMapKey=type
-                    \    Conditions []metav1.Condition `json:\"conditions,omitempty\"
-                    patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`
-                    \n     // other fields }"
+                    \n type FooStatus struct{ // Represents the observations of a
+                    foo's current state. // Known .status.conditions.type are: \"Available\",
+                    \"Progressing\", and \"Degraded\" // +patchMergeKey=type // +patchStrategy=merge
+                    // +listType=map // +listMapKey=type Conditions []metav1.Condition
+                    `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"type\"
+                    protobuf:\"bytes,1,rep,name=conditions\"` \n // other fields }"
                   properties:
                     lastTransitionTime:
                       description: lastTransitionTime is the last time the condition
@@ -149,6 +179,9 @@ spec:
               lastStartTime:
                 format: date-time
                 type: string
+              lastSyncTime:
+                format: date-time
+                type: string
               message:
                 type: string
               observedGeneration:
@@ -157,7 +190,7 @@ spec:
                 format: int64
                 type: integer
               state:
-                description: State captures the latest state of the replication operation
+                description: State captures the latest state of the replication operation.
                 type: string
             type: object
         type: object
@@ -165,9 +198,3 @@ spec:
     storage: true
     subresources:
       status: {}
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: []
-  storedVersions: []
