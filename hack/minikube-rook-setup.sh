@@ -14,7 +14,11 @@ if test -z "${IMAGE_DIR}"; then
 fi
 IMAGE_NAME="osd0"
 
-ROOK_SRC="${ROOK_SRC:-"https://raw.githubusercontent.com/rook/rook/release-1.8/deploy/examples"}"
+# Currently cannot go below 1.10 due to csi addons related changes in scripts
+ROOK_SRC="${ROOK_SRC:-"https://raw.githubusercontent.com/rook/rook/release-1.10/deploy/examples"}"
+
+# Currently using main till a release is available with lastSyncTime updates
+CSIADDON_SRC="${CSIADDON_SRC:-"https://raw.githubusercontent.com/csi-addons/kubernetes-csi-addons/main/deploy/controller"}"
 
 ## Usage
 usage()
@@ -127,9 +131,13 @@ then
         ## Install rook-ceph ##
         kubectl apply -f "${ROOK_SRC}/common.yaml" --context="${PROFILE}"
         kubectl apply -f "${ROOK_SRC}/crds.yaml" --context="${PROFILE}"
-        # Fetch operator.yaml and enable CSI volume replication
-        kubectl apply -f https://raw.githubusercontent.com/csi-addons/volume-replication-operator/v0.1.0/config/crd/bases/replication.storage.openshift.io_volumereplications.yaml --context="${PROFILE}"
-        kubectl apply -f https://raw.githubusercontent.com/csi-addons/volume-replication-operator/v0.1.0/config/crd/bases/replication.storage.openshift.io_volumereplicationclasses.yaml --context="${PROFILE}"
+
+        # Enable CSI addons (for volume replication)
+        kubectl apply -f "${CSIADDON_SRC}/crds.yaml" --context="${PROFILE}"
+        kubectl apply -f "${CSIADDON_SRC}/rbac.yaml" --context="${PROFILE}"
+        kubectl apply -f "${CSIADDON_SRC}/setup-controller.yaml" --context="${PROFILE}"
+
+        # Applicable from rook 1.10 onwards
         set -- "$(mktemp --directory)"
         cat <<a >"$1"/kustomization.yaml
 resources:
@@ -141,11 +149,11 @@ patchesJson6902:
       namespace: rook-ceph
     patch: |-
       - op: add
-        path: /data/CSI_ENABLE_VOLUME_REPLICATION
+        path: /data/CSI_ENABLE_CSIADDONS
         value: 'true'
       - op: add
-        path: /data/CSI_VOLUME_REPLICATION_IMAGE
-        value: quay.io/csiaddons/volumereplication-operator:latest
+        path: /data/ROOK_CSIADDONS_IMAGE
+        value: quay.io/csiaddons/k8s-sidecar:latest
       - op: add
         path: /data/CSI_ENABLE_OMAP_GENERATOR
         value: 'true'

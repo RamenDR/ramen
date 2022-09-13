@@ -68,6 +68,7 @@ spec:
   dataSource:
     kind: PersistentVolumeClaim
     name: "${PVC_NAME}"
+  autoResync: true
 EOF
 
 wait_for_condition "Primary" kubectl get volumereplication vr-sample --context="${PRIMARY_CLUSTER}" -o jsonpath='{.status.state}'

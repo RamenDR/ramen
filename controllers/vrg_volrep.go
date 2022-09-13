@@ -1169,7 +1169,7 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 	msg = "PVC in the VolumeReplicationGroup is ready for use"
 	v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonReady, msg)
 	v.updatePVCDataProtectedCondition(volRep.Name, VRGConditionReasonReady, msg)
-	v.updatePVCLastSyncTime(volRep.Name, &volRep.CreationTimestamp) // TODO: Update with volrep lastSyncTime status
+	v.updatePVCLastSyncTime(volRep.Name, volRep.Status.LastSyncTime)
 
 	v.log.Info(fmt.Sprintf("VolumeReplication resource %s/%s is ready for use", volRep.Name,
 		volRep.Namespace))
