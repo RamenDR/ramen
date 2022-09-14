@@ -820,7 +820,7 @@ func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	v.instance.Status.LastSyncTime = nil
+	v.instance.Status.LastGroupSyncTime = nil
 
 	requeue := v.handleVRGMode(ramendrv1alpha1.Secondary)
 
@@ -966,7 +966,7 @@ func (v *VRGInstance) updateVRGConditions() {
 	v.updateVRGDataReadyCondition()
 	v.updateVRGDataProtectedCondition()
 	v.updateVRGClusterDataProtectedCondition()
-	v.updateVRGLastSyncTime()
+	v.updateVRGLastGroupSyncTime()
 }
 
 func (v *VRGInstance) updateVRGDataReadyCondition() {
@@ -1021,7 +1021,7 @@ func (v *VRGInstance) updateVRGClusterDataProtectedCondition() {
 	}
 }
 
-func (v *VRGInstance) updateVRGLastSyncTime() {
+func (v *VRGInstance) updateVRGLastGroupSyncTime() {
 	var leastLastSyncTime *metav1.Time
 
 	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
@@ -1043,7 +1043,7 @@ func (v *VRGInstance) updateVRGLastSyncTime() {
 		}
 	}
 
-	v.instance.Status.LastSyncTime = leastLastSyncTime
+	v.instance.Status.LastGroupSyncTime = leastLastSyncTime
 }
 
 // It might be better move the helper functions like these to a separate

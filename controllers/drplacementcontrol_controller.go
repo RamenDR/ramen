@@ -975,7 +975,7 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 			log.Info("Failed to get VRG from managed cluster", "errMsg", err)
 
 			drpc.Status.ResourceConditions = rmn.VRGConditions{}
-			drpc.Status.LastSyncTime = nil
+			drpc.Status.LastGroupSyncTime = nil
 		} else {
 			drpc.Status.ResourceConditions.ResourceMeta.Kind = vrg.Kind
 			drpc.Status.ResourceConditions.ResourceMeta.Name = vrg.Name
@@ -989,7 +989,7 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 			}
 
 			drpc.Status.ResourceConditions.ResourceMeta.ProtectedPVCs = protectedPVCs
-			drpc.Status.LastSyncTime = vrg.Status.LastSyncTime
+			drpc.Status.LastGroupSyncTime = vrg.Status.LastGroupSyncTime
 		}
 	}
 

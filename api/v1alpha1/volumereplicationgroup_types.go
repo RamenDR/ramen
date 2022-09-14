@@ -196,7 +196,8 @@ type ProtectedPVC struct {
 	//+optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
-	// Last sync time for the PVC if protected in the async or volsync mode
+	// Time of the most recent successful synchronization for the PVC, if
+	// protected in the async or volsync mode
 	//+optional
 	LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty"`
 }
@@ -221,9 +222,9 @@ type VolumeReplicationGroupStatus struct {
 	PrepareForFinalSyncComplete bool `json:"prepareForFinalSyncComplete,omitempty"`
 	FinalSyncComplete           bool `json:"finalSyncComplete,omitempty"`
 
-	// Oldest sync time of all PVCs protected in the async mode
+	// lastGroupSyncTime is the time of the most recent successful synchronization of all PVCs
 	//+optional
-	LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty"`
+	LastGroupSyncTime *metav1.Time `json:"lastGroupSyncTime,omitempty"`
 }
 
 // +kubebuilder:object:root=true

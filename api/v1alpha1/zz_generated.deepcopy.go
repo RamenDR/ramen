@@ -227,8 +227,8 @@ func (in *DRPlacementControlStatus) DeepCopyInto(out *DRPlacementControlStatus) 
 	}
 	in.ResourceConditions.DeepCopyInto(&out.ResourceConditions)
 	in.LastUpdateTime.DeepCopyInto(&out.LastUpdateTime)
-	if in.LastSyncTime != nil {
-		in, out := &in.LastSyncTime, &out.LastSyncTime
+	if in.LastGroupSyncTime != nil {
+		in, out := &in.LastGroupSyncTime, &out.LastGroupSyncTime
 		*out = (*in).DeepCopy()
 	}
 }
@@ -676,8 +676,8 @@ func (in *VolumeReplicationGroupStatus) DeepCopyInto(out *VolumeReplicationGroup
 		}
 	}
 	in.LastUpdateTime.DeepCopyInto(&out.LastUpdateTime)
-	if in.LastSyncTime != nil {
-		in, out := &in.LastSyncTime, &out.LastSyncTime
+	if in.LastGroupSyncTime != nil {
+		in, out := &in.LastGroupSyncTime, &out.LastGroupSyncTime
 		*out = (*in).DeepCopy()
 	}
 }
