@@ -170,9 +170,9 @@ type DRPlacementControlStatus struct {
 	ResourceConditions VRGConditions           `json:"resourceConditions,omitempty"`
 	LastUpdateTime     metav1.Time             `json:"lastUpdateTime"`
 
-	// Oldest sync time of all PVCs protected in the async mode
+	// lastGroupSyncTime is the time of the most recent successful synchronization of all PVCs
 	//+optional
-	LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty"`
+	LastGroupSyncTime *metav1.Time `json:"lastGroupSyncTime,omitempty"`
 }
 
 // +kubebuilder:object:root=true

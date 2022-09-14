@@ -346,8 +346,9 @@ spec:
                               description: Labels for the PVC
                               type: object
                             lastSyncTime:
-                              description: Last sync time for the PVC if protected
-                                in the async or volsync mode
+                              description: Time of the most recent successful synchronization
+                                for the PVC, if protected in the async or volsync
+                                mode
                               format: date-time
                               type: string
                             name:
@@ -474,8 +475,9 @@ spec:
                 type: array
               finalSyncComplete:
                 type: boolean
-              lastSyncTime:
-                description: Oldest sync time of all PVCs protected in the async mode
+              lastGroupSyncTime:
+                description: lastGroupSyncTime is the time of the most recent successful
+                  synchronization of all PVCs
                 format: date-time
                 type: string
               lastUpdateTime:
@@ -578,8 +580,8 @@ spec:
                       description: Labels for the PVC
                       type: object
                     lastSyncTime:
-                      description: Last sync time for the PVC if protected in the
-                        async or volsync mode
+                      description: Time of the most recent successful synchronization
+                        for the PVC, if protected in the async or volsync mode
                       format: date-time
                       type: string
                     name:
