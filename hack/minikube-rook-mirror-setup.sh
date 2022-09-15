@@ -55,6 +55,9 @@ sed -e "s,<token>,${SECONDARY_CLUSTER_SECRET}," -i "${MIRROR_SECRET_YAML}"
 kubectl apply -f "${MIRROR_SECRET_YAML}" --context="${PRIMARY_CLUSTER}"
 rm -f "${MIRROR_SECRET_YAML}"
 
+rbd_pool_patch="{\"spec\":{\"mirroring\":{\"peers\":{\"secretNames\":[\"${SECONDARY_CLUSTER_SITE_NAME}\"]}}}}"
+kubectl patch CephBlockPool ${POOL_NAME} -n rook-ceph --type merge --patch "${rbd_pool_patch}" --context "$PRIMARY_CLUSTER"
+
 cat <<EOF | kubectl --context="${PRIMARY_CLUSTER}" apply -f -
 apiVersion: ceph.rook.io/v1
 kind: CephRBDMirror
@@ -63,9 +66,6 @@ metadata:
   namespace: rook-ceph
 spec:
   count: 1
-  peers:
-    secretNames:
-      - "${SECONDARY_CLUSTER_SITE_NAME}"
 EOF
 
 #kubectl wait deployments -n rook-ceph --for condition=available rook-ceph-rbd-mirror-a --timeout=60s --context="${PRIMARY_CLUSTER}"
