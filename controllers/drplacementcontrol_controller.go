@@ -698,6 +698,12 @@ func (r *DRPlacementControlReconciler) getUserPlacementRule(ctx context.Context,
 		drpc.Spec.PlacementRef.Namespace = drpc.Namespace
 	}
 
+	if drpc.Spec.PlacementRef.Namespace != drpc.Namespace {
+		return nil, fmt.Errorf("referenced PlacementRule namespace (%s)"+
+			" differs from DRPlacementControl resource namespace (%s)",
+			drpc.Spec.PlacementRef.Namespace, drpc.Namespace)
+	}
+
 	usrPlRule := &plrv1.PlacementRule{}
 
 	err := r.Client.Get(ctx,
@@ -722,10 +728,8 @@ func (r *DRPlacementControlReconciler) getUserPlacementRule(ctx context.Context,
 			" schedule it to a single cluster")
 	}
 
-	if usrPlRule.GetDeletionTimestamp().IsZero() {
-		if err = r.annotatePlacementRule(ctx, drpc, usrPlRule, log); err != nil {
-			return nil, err
-		}
+	if err = r.annotatePlacementRule(ctx, drpc, usrPlRule, log); err != nil {
+		return nil, err
 	}
 
 	return usrPlRule, nil
@@ -733,6 +737,10 @@ func (r *DRPlacementControlReconciler) getUserPlacementRule(ctx context.Context,
 
 func (r *DRPlacementControlReconciler) annotatePlacementRule(ctx context.Context,
 	drpc *rmn.DRPlacementControl, plRule *plrv1.PlacementRule, log logr.Logger) error {
+	if !plRule.GetDeletionTimestamp().IsZero() {
+		return nil
+	}
+
 	if plRule.ObjectMeta.Annotations == nil {
 		plRule.ObjectMeta.Annotations = map[string]string{}
 	}
