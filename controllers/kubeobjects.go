@@ -907,6 +907,6 @@ func downloadStatusLog(download *velero.DownloadRequest, log logr.Logger) {
 	)
 
 	if download.Status.Expiration != nil {
-		log.Info("Expiration", download.Status.Expiration)
+		log.Info("Download", "expiration", download.Status.Expiration)
 	}
 }
