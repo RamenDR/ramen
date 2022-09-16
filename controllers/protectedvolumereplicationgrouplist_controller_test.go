@@ -154,13 +154,7 @@ var _ = Describe("ProtectedVolumeReplicationGroupListController", func() {
 				PVCSelector:      metav1.LabelSelector{},
 				ReplicationState: ramen.Primary,
 				S3Profiles:       []string{},
-				Async: ramen.VRGAsyncSpec{
-					Mode:               ramen.AsyncModeDisabled,
-					SchedulingInterval: "0m",
-				},
-				Sync: ramen.VRGSyncSpec{
-					Mode: ramen.SyncModeEnabled,
-				},
+				Sync:             &ramen.VRGSyncSpec{},
 			},
 		}
 	}

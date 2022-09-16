@@ -260,7 +260,6 @@ vrg_kubectl()
 	  namespace: $2
 	spec:
 	  async:
-	    mode: Enabled
 	    replicationClassSelector: {}
 	    schedulingInterval: 1m
 	  pvcSelector:
@@ -270,8 +269,6 @@ vrg_kubectl()
 	  s3Profiles:
 	  # - minio-on-cluster1
 	  - minio-on-hub
-	  sync:
-	    mode: Disabled
 	a
 }
 vrg_deploy()

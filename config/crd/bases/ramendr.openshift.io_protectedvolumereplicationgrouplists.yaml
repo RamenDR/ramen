@@ -111,13 +111,6 @@ spec:
                           description: VRGAsyncSpec has the parameters associated
                             with RegionalDR
                           properties:
-                            mode:
-                              description: Mode determines if AsyncDR is enabled or
-                                not
-                              enum:
-                              - Enabled
-                              - Disabled
-                              type: string
                             replicationClassSelector:
                               description: Label selector to identify the VolumeReplicationClass
                                 resources that are scanned to select an appropriate
@@ -224,7 +217,6 @@ spec:
                                   type: object
                               type: object
                           required:
-                          - mode
                           - schedulingInterval
                           type: object
                         kubeObjectProtection:
@@ -449,16 +441,6 @@ spec:
                         sync:
                           description: VRGSyncSpec has the parameters associated with
                             MetroDR
-                          properties:
-                            mode:
-                              description: Mode determines if SyncDR is enabled or
-                                not
-                              enum:
-                              - Enabled
-                              - Disabled
-                              type: string
-                          required:
-                          - mode
                           type: object
                         volSync:
                           description: volsync defines the configuration when using
@@ -495,15 +477,15 @@ spec:
                                             this API Resource. --- This struct is
                                             intended for direct use as an array at
                                             the field path .status.conditions.  For
-                                            example, type FooStatus struct{ // Represents
-                                            the observations of a foo's current state.
-                                            // Known .status.conditions.type are:
-                                            \"Available\", \"Progressing\", and \"Degraded\"
-                                            // +patchMergeKey=type // +patchStrategy=merge
-                                            // +listType=map // +listMapKey=type Conditions
-                                            []metav1.Condition `json:\"conditions,omitempty\"
-                                            patchStrategy:\"merge\" patchMergeKey:\"type\"
-                                            protobuf:\"bytes,1,rep,name=conditions\"`
+                                            example, \n type FooStatus struct{ //
+                                            Represents the observations of a foo's
+                                            current state. // Known .status.conditions.type
+                                            are: \"Available\", \"Progressing\", and
+                                            \"Degraded\" // +patchMergeKey=type //
+                                            +patchStrategy=merge // +listType=map
+                                            // +listMapKey=type Conditions []metav1.Condition
+                                            `json:\"conditions,omitempty\" patchStrategy:\"merge\"
+                                            patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`
                                             \n // other fields }"
                                           properties:
                                             lastTransitionTime:
@@ -581,6 +563,12 @@ spec:
                                           type: string
                                         description: Labels for the PVC
                                         type: object
+                                      lastSyncTime:
+                                        description: Time of the most recent successful
+                                          synchronization for the PVC, if protected
+                                          in the async or volsync mode
+                                        format: date-time
+                                        type: string
                                       name:
                                         description: Name of the VolRep/PVC resource
                                         type: string
@@ -644,12 +632,12 @@ spec:
                             description: "Condition contains details for one aspect
                               of the current state of this API Resource. --- This
                               struct is intended for direct use as an array at the
-                              field path .status.conditions.  For example, type FooStatus
-                              struct{ // Represents the observations of a foo's current
-                              state. // Known .status.conditions.type are: \"Available\",
-                              \"Progressing\", and \"Degraded\" // +patchMergeKey=type
-                              // +patchStrategy=merge // +listType=map // +listMapKey=type
-                              Conditions []metav1.Condition `json:\"conditions,omitempty\"
+                              field path .status.conditions.  For example, \n type
+                              FooStatus struct{ // Represents the observations of
+                              a foo's current state. // Known .status.conditions.type
+                              are: \"Available\", \"Progressing\", and \"Degraded\"
+                              // +patchMergeKey=type // +patchStrategy=merge // +listType=map
+                              // +listMapKey=type Conditions []metav1.Condition `json:\"conditions,omitempty\"
                               patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`
                               \n // other fields }"
                             properties:
@@ -732,6 +720,11 @@ spec:
                               - number
                               type: object
                           type: object
+                        lastGroupSyncTime:
+                          description: lastGroupSyncTime is the time of the most recent
+                            successful synchronization of all PVCs
+                          format: date-time
+                          type: string
                         lastUpdateTime:
                           format: date-time
                           nullable: true
@@ -759,7 +752,7 @@ spec:
                                     aspect of the current state of this API Resource.
                                     --- This struct is intended for direct use as
                                     an array at the field path .status.conditions.
-                                    \ For example, type FooStatus struct{ // Represents
+                                    \ For example, \n type FooStatus struct{ // Represents
                                     the observations of a foo's current state. //
                                     Known .status.conditions.type are: \"Available\",
                                     \"Progressing\", and \"Degraded\" // +patchMergeKey=type
@@ -839,6 +832,12 @@ spec:
                                   type: string
                                 description: Labels for the PVC
                                 type: object
+                              lastSyncTime:
+                                description: Time of the most recent successful synchronization
+                                  for the PVC, if protected in the async or volsync
+                                  mode
+                                format: date-time
+                                type: string
                               name:
                                 description: Name of the VolRep/PVC resource
                                 type: string
