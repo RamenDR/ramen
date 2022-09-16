@@ -11,10 +11,7 @@ spec:
     - s3-profile-of-east
     - s3-profile-of-west
   async:
-    mode: Enabled
     schedulingInterval: "10m"
-  sync:
-    mode: Disabled
   kubeObjectProtection:
     captureInterval: 1m
     captureOrder:

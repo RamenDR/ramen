@@ -65,7 +65,6 @@ application_sample_vrg_kubectl() {
 	  name: bb
 	spec:
 	  async:
-	    mode: Enabled
 	    replicationClassSelector: {}
 	    schedulingInterval: 1m
 	  pvcSelector:
@@ -73,9 +72,7 @@ application_sample_vrg_kubectl() {
 	      appname: busybox
 	  replicationState: $2
 	  s3Profiles:
-$(for cluster_name in $cluster_names; do echo \ \ -\ minio-on-$cluster_name; done; unset -v cluster_name)
-	  sync:
-	    mode: Disabled${vrg_appendix-}
+$(for cluster_name in $cluster_names; do echo \ \ -\ minio-on-$cluster_name; done; unset -v cluster_name)${vrg_appendix-}
 	a
 }
 application_sample_vrg_deploy() {
