@@ -493,35 +493,16 @@ func (v *VRGInstance) kubeObjectsRecoverRequestsDelete(
 }
 
 func (v *VRGInstance) veleroNamespaceName() string {
-	veleroNamespaceName := VeleroNamespaceNameDefault
-
-	_, ramenConfig, err := ConfigMapGet(v.ctx, v.reconciler.APIReader)
-	if err != nil {
-		v.log.Error(err, "veleroNamespaceName config failed")
-
-		return veleroNamespaceName
+	if v.ramenConfig.KubeObjectProtection.VeleroNamespaceName != "" {
+		return v.ramenConfig.KubeObjectProtection.VeleroNamespaceName
 	}
 
-	if ramenConfig.KubeObjectProtection.VeleroNamespaceName != "" {
-		veleroNamespaceName = ramenConfig.KubeObjectProtection.VeleroNamespaceName
-	}
-
-	return veleroNamespaceName
+	return VeleroNamespaceNameDefault
 }
 
 func (v *VRGInstance) kubeObjectProtectionDisabled(caller string) bool {
 	vrgDisabled := v.instance.Spec.KubeObjectProtection == nil
-	cmDisabled := func() bool {
-		_, ramenConfig, err := ConfigMapGet(v.ctx, v.reconciler.APIReader)
-		if err != nil {
-			v.log.Error(err, "RamenConfig.KubeObjectProtection get failed")
-
-			return false
-		}
-
-		return ramenConfig.KubeObjectProtection.Disabled
-	}()
-
+	cmDisabled := v.ramenConfig.KubeObjectProtection.Disabled
 	disabled := vrgDisabled || cmDisabled
 
 	v.log.Info("Kube object protection", "disabled", disabled, "VRG", vrgDisabled, "configMap", cmDisabled, "for", caller)
