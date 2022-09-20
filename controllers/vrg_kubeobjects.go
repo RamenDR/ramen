@@ -88,7 +88,7 @@ func kubeObjectsRecoverName(prefix string, groupNumber int) string {
 
 func (v *VRGInstance) kubeObjectsProtect(result *ctrl.Result) {
 	s3StoreAccessors := v.s3StoreAccessorsGet()
-	if s3StoreAccessors == nil {
+	if len(s3StoreAccessors) == 0 {
 		result.Requeue = true
 
 		return
