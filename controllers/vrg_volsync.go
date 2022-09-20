@@ -234,8 +234,6 @@ func (v *VRGInstance) aggregateVolSyncDataReadyCondition() *v1.Condition {
 		Type:               VRGConditionTypeDataReady,
 		Reason:             VRGConditionReasonReady,
 		ObservedGeneration: v.instance.Generation,
-		Status:             v1.ConditionTrue,
-		Message:            "Not applicable",
 	}
 
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
@@ -259,7 +257,7 @@ func (v *VRGInstance) aggregateVolSyncDataReadyCondition() *v1.Condition {
 	}
 
 	// Not primary -- DataReady NOT applicable. Return default
-	return dataReadyCondition
+	return nil
 }
 
 func (v *VRGInstance) aggregateVolSyncDataProtectedConditions() (*v1.Condition, *v1.Condition) {
@@ -279,20 +277,9 @@ func (v *VRGInstance) aggregateVolSyncDataProtectedConditions() (*v1.Condition, 
 //nolint:gocognit,funlen,gocyclo,cyclop
 func (v *VRGInstance) buildDataProtectedCondition() *v1.Condition {
 	if len(v.volSyncPVCs) == 0 && len(v.instance.Spec.VolSync.RDSpec) == 0 {
-		condition := findCondition(v.instance.Status.Conditions, VRGConditionTypeClusterDataProtected)
-		if condition != nil && condition.Status == v1.ConditionTrue {
-			v.log.Info(fmt.Sprintf("No VolSync PVCs. Using previous condition %v", condition.Type))
+		v.log.Info("No VolSync PVCs")
 
-			return condition
-		}
-
-		return &v1.Condition{
-			Type:               VRGConditionTypeDataProtected,
-			Reason:             VRGConditionReasonDataProtected,
-			ObservedGeneration: v.instance.Generation,
-			Status:             v1.ConditionTrue,
-			Message:            "Not applicable",
-		}
+		return nil
 	}
 
 	ready := true
