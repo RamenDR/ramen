@@ -27,6 +27,8 @@ import (
 
 	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
 	"github.com/google/uuid"
+	"github.com/ramendr/ramen/controllers/kubeobjects"
+	"github.com/ramendr/ramen/controllers/kubeobjects/velero"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -60,6 +62,7 @@ type VolumeReplicationGroupReconciler struct {
 	ObjStoreGetter ObjectStoreGetter
 	Scheme         *runtime.Scheme
 	eventRecorder  *rmnutil.EventReporter
+	kubeObjects    kubeobjects.RequestsManager
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -103,11 +106,12 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 		Owns(&volsyncv1alpha1.ReplicationDestination{}).
 		Owns(&volsyncv1alpha1.ReplicationSource{})
 
+	r.kubeObjects = velero.RequestsManager{}
 	if !ramenConfig.KubeObjectProtection.Disabled {
-		r.Log.Info("Kube object protection enabled, adding watch on velero requests")
-		kubeObjectsRequestsWatch(builder)
+		r.Log.Info("Kube object protection enabled; watch kube objects requests")
+		kubeObjectsRequestsWatch(builder, r.kubeObjects)
 	} else {
-		r.Log.Info("Kube object protection disabled, not adding watch on velero requests")
+		r.Log.Info("Kube object protection disabled; don't watch kube objects requests")
 	}
 
 	return builder.Complete(r)

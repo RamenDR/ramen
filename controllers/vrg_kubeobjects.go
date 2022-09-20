@@ -22,6 +22,7 @@ import (
 	"time"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/controllers/kubeobjects"
 	"github.com/ramendr/ramen/controllers/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -167,7 +168,8 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(result *ctrl.Result
 			veleroNamespaceName, interval, labels)
 	}
 
-	requests, err := KubeObjectsCaptureRequestsGet(v.ctx, v.reconciler.APIReader, veleroNamespaceName, labels)
+	requests, err := v.reconciler.kubeObjects.ProtectRequestsGet(
+		v.ctx, v.reconciler.APIReader, veleroNamespaceName, labels)
 	if err != nil {
 		v.log.Error(err, "Kube objects capture in-progress query error", "number", number)
 		v.kubeObjectsCaptureFailed(err.Error())
@@ -202,7 +204,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(result *ctrl.Result
 func (v *VRGInstance) kubeObjectsCaptureDelete(
 	result *ctrl.Result, s3StoreAccessors []s3StoreAccessor, captureNumber int64, pathName string,
 ) {
-	pathName += KubeObjectsCapturesPath
+	pathName += v.reconciler.kubeObjects.ProtectsPath()
 
 	// current s3 profiles may differ from those at capture time
 	for _, s3StoreAccessor := range s3StoreAccessors {
@@ -226,13 +228,13 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 ) {
 	vrg := v.instance
 	groups := v.getCaptureGroups()
-	requests := make([]KubeObjectsProtectRequest, len(groups)*len(s3StoreAccessors))
+	requests := make([]kubeobjects.ProtectRequest, len(groups)*len(s3StoreAccessors))
 	requestsProcessedCount := 0
 	requestsCompletedCount := 0
 
 	for groupNumber, captureGroup := range groups {
 		for _, s3StoreAccessor := range s3StoreAccessors {
-			request, err := KubeObjectsProtect(
+			request, err := v.reconciler.kubeObjects.ProtectRequestCreate(
 				v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.log,
 				s3StoreAccessor.url,
 				s3StoreAccessor.bucketName,
@@ -255,7 +257,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 				continue
 			}
 
-			if errors.Is(err, KubeObjectsRequestProcessingError{}) {
+			if errors.Is(err, kubeobjects.RequestProcessingError{}) {
 				v.log.Info("Kube objects group capturing", "number", captureNumber, "group", groupNumber,
 					"name", captureGroup.Name, "profile", s3StoreAccessor.profileName, "state", err.Error())
 
@@ -289,7 +291,8 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 	vrg := v.instance
 	status := &vrg.Status.KubeObjectProtection
 
-	if err := KubeObjectsCaptureRequestsDelete(v.ctx, v.reconciler.Client, veleroNamespaceName, labels); err != nil {
+	if err := v.reconciler.kubeObjects.ProtectRequestsDelete(v.ctx, v.reconciler.Client, veleroNamespaceName, labels,
+	); err != nil {
 		v.log.Error(err, "Kube objects capture requests delete error", "number", captureNumber)
 		v.kubeObjectsCaptureFailed(err.Error())
 
@@ -429,10 +432,10 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 	veleroNamespaceName := v.veleroNamespaceName()
 	labels := ownerLabels(vrg.Namespace, vrg.Name)
 	groups := v.getRecoverGroups()
-	requests := make([]KubeObjectsProtectRequest, len(groups))
+	requests := make([]kubeobjects.ProtectRequest, len(groups))
 
 	for groupNumber, recoverGroup := range groups {
-		request, err := KubeObjectsRecover(
+		request, err := v.reconciler.kubeObjects.RecoverRequestCreate(
 			v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.log,
 			s3StoreAccessor.url,
 			s3StoreAccessor.bucketName,
@@ -452,7 +455,7 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 			continue
 		}
 
-		if errors.Is(err, KubeObjectsRequestProcessingError{}) {
+		if errors.Is(err, kubeobjects.RequestProcessingError{}) {
 			v.log.Info("Kube objects group recovering", "number", capture.Number,
 				"group", groupNumber, "name", recoverGroup.BackupName, "profile", s3StoreAccessor.profileName,
 				"state", err.Error())
@@ -479,7 +482,8 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 func (v *VRGInstance) kubeObjectsRecoverRequestsDelete(
 	result *ctrl.Result, veleroNamespaceName string, labels map[string]string,
 ) error {
-	if err := KubeObjectsRecoverRequestsDelete(v.ctx, v.reconciler.Client, veleroNamespaceName, labels); err != nil {
+	if err := v.reconciler.kubeObjects.RecoverRequestsDelete(v.ctx, v.reconciler.Client, veleroNamespaceName, labels,
+	); err != nil {
 		v.log.Error(err, "Kube objects recover requests delete error")
 
 		result.Requeue = true
@@ -524,8 +528,8 @@ func (v *VRGInstance) kubeObjectsProtectionDelete(result *ctrl.Result) error {
 	)
 }
 
-func kubeObjectsRequestsWatch(b *builder.Builder) *builder.Builder {
-	watch := func(request KubeObjectsRequest) {
+func kubeObjectsRequestsWatch(b *builder.Builder, kubeObjects kubeobjects.RequestsManager) *builder.Builder {
+	watch := func(request kubeobjects.Request) {
 		src := &source.Kind{Type: request.Object()}
 		b.Watches(
 			src,
@@ -559,8 +563,8 @@ func kubeObjectsRequestsWatch(b *builder.Builder) *builder.Builder {
 		)
 	}
 
-	watch(KubeObjectsCaptureRequestNew())
-	watch(KubeObjectsRecoverRequestNew())
+	watch(kubeObjects.ProtectRequestNew())
+	watch(kubeObjects.RecoverRequestNew())
 
 	return b
 }
