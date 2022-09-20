@@ -162,7 +162,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(result *ctrl.Result
 
 	number := 1 - captureToRecoverFrom.Number
 	pathName, namePrefix := kubeObjectsCapturePathNameAndNamePrefix(vrg.Namespace, vrg.Name, number)
-	labels := ownerLabels(vrg.Namespace, vrg.Name)
+	labels := util.OwnerLabels(vrg.Namespace, vrg.Name)
 	captureStartOrResume := func() {
 		v.kubeObjectsCaptureStartOrResume(result, s3StoreAccessors, number, pathName, namePrefix,
 			veleroNamespaceName, interval, labels)
@@ -430,7 +430,7 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 		sourceVrgNamespaceName, sourceVrgName, capture.Number)
 	recoverNamePrefix := kubeObjectsRecoverNamePrefix(vrg.Namespace, vrg.Name)
 	veleroNamespaceName := v.veleroNamespaceName()
-	labels := ownerLabels(vrg.Namespace, vrg.Name)
+	labels := util.OwnerLabels(vrg.Namespace, vrg.Name)
 	groups := v.getRecoverGroups()
 	requests := make([]kubeobjects.ProtectRequest, len(groups))
 
@@ -524,7 +524,7 @@ func (v *VRGInstance) kubeObjectsProtectionDelete(result *ctrl.Result) error {
 	return v.kubeObjectsRecoverRequestsDelete(
 		result,
 		v.veleroNamespaceName(),
-		ownerLabels(vrg.Namespace, vrg.Name),
+		util.OwnerLabels(vrg.Namespace, vrg.Name),
 	)
 }
 
@@ -547,7 +547,7 @@ func kubeObjectsRequestsWatch(b *builder.Builder, kubeObjects kubeobjects.Reques
 					)
 				}
 
-				if ownerNamespaceName, ownerName, ok := ownerNamespaceNameAndName(labels); ok {
+				if ownerNamespaceName, ownerName, ok := util.OwnerNamespaceNameAndName(labels); ok {
 					log("owner labels found, enqueue VRG reconcile")
 
 					return []reconcile.Request{

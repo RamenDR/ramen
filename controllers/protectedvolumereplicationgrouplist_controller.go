@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ramendr/ramen/controllers/util"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -168,7 +169,7 @@ func (s *ProtectedVolumeReplicationGroupListInstance) getVrgContentsFromS3(prefi
 }
 
 func VrgTidyForList(vrg *ramendrv1alpha1.VolumeReplicationGroup) {
-	vrg.ObjectMeta = ObjectMetaEmbedded(&vrg.ObjectMeta)
+	vrg.ObjectMeta = util.ObjectMetaEmbedded(&vrg.ObjectMeta)
 }
 
 func (s *ProtectedVolumeReplicationGroupListInstance) updateStatus(
