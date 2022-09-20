@@ -201,7 +201,7 @@ vrg_undeploy() {
 
 vrg_demote() {
 	vrg_deploy $1 _sec
-	time kubectl --context $1 -nasdf wait vrg/bb --for condition=clusterdataprotected=false
+#	time kubectl --context $1 -nasdf wait vrg/bb --for condition=clusterdataprotected=false
 }; exit_stack_push unset -f vrg_demote
 
 vrg_fence() {
