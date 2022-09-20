@@ -978,29 +978,26 @@ func getStatusStateFromSpecState(state ramendrv1alpha1.ReplicationState) ramendr
 // The VRGConditionTypeClusterDataReady summary condition is not a PVC level
 // condition and is updated elsewhere.
 func (v *VRGInstance) updateVRGConditions() {
-	rmnutil.ConditionSetFirstFalseOrLastTrue(setStatusCondition, &v.instance.Status.Conditions,
+	logAndSet := func(conditionName string, subconditions ...*metav1.Condition) {
+		v.log.Info(conditionName, "subconditions", subconditions)
+		rmnutil.ConditionSetFirstFalseOrLastTrue(setStatusCondition, &v.instance.Status.Conditions, subconditions...)
+	}
+	logAndSet(VRGConditionTypeDataReady,
 		v.aggregateVolSyncDataReadyCondition(),
 		v.aggregateVolRepDataReadyCondition(),
 	)
 
 	volSyncDataProtected, volSyncClusterDataProtected := v.aggregateVolSyncDataProtectedConditions()
 
-	rmnutil.ConditionSetFirstFalseOrLastTrue(setStatusCondition, &v.instance.Status.Conditions,
+	logAndSet(VRGConditionTypeDataProtected,
 		volSyncDataProtected,
 		v.aggregateVolRepDataProtectedCondition(),
 	)
-
-	subconditions := []*metav1.Condition{
+	logAndSet(VRGConditionTypeClusterDataProtected,
 		volSyncClusterDataProtected,
 		v.aggregateVolRepClusterDataProtectedCondition(),
 		v.vrgObjectProtected,
 		v.kubeObjectsProtected,
-	}
-
-	v.log.Info("clusterDataProtected", "subconditions", subconditions)
-
-	rmnutil.ConditionSetFirstFalseOrLastTrue(setStatusCondition, &v.instance.Status.Conditions,
-		subconditions...,
 	)
 	v.updateVRGLastGroupSyncTime()
 }
