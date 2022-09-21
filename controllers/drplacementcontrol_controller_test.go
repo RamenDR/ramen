@@ -119,6 +119,11 @@ var (
 
 	drClusters = []rmn.DRCluster{}
 
+	cidrs = [][]string{
+		{"198.51.100.17/24", "198.51.100.18/24", "198.51.100.19/24"}, // valid CIDR
+		{"198.51.100.20/24", "198.51.100.21/24", "198.51.100.22/24"}, // valid CIDR
+	}
+
 	asyncDRPolicy = &rmn.DRPolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: AsyncDRPolicyName,
@@ -552,7 +557,7 @@ func populateDRClusters() {
 				"drcluster.ramendr.openshift.io/storage-clusterid":        "tmp",
 				"drcluster.ramendr.openshift.io/storage-driver":           "tmp.storage.com",
 			}},
-			Spec: rmn.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "east"},
+			Spec: rmn.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "east", CIDRs: cidrs[0]},
 		},
 		rmn.DRCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: West1ManagedCluster, Annotations: map[string]string{
@@ -570,7 +575,7 @@ func populateDRClusters() {
 				"drcluster.ramendr.openshift.io/storage-clusterid":        "tmp",
 				"drcluster.ramendr.openshift.io/storage-driver":           "tmp.storage.com",
 			}},
-			Spec: rmn.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "east"},
+			Spec: rmn.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "east", CIDRs: cidrs[1]},
 		},
 	)
 }
