@@ -69,7 +69,6 @@ linters:
     - staticcheck
     - nosnakecase
     - ireturn
-    - ifshort
     - nilnil
     - gomnd
     - containedctx

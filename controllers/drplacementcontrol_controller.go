@@ -590,8 +590,7 @@ func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 	// Remove DRPCFinalizer from DRPC.
 	controllerutil.RemoveFinalizer(drpc, DRPCFinalizer)
 
-	err := r.Update(ctx, drpc)
-	if err != nil {
+	if err := r.Update(ctx, drpc); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update drpc %w", err)
 	}
 
