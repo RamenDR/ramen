@@ -489,7 +489,7 @@ var _ = Describe("DRClusterController", func() {
 		})
 		When("provided Fencing value is ManuallyFenced", func() {
 			It("reports validated with status fencing as Fenced", func() {
-				drcluster.Spec.ClusterFence = "ManuallyFenced"
+				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateManuallyFenced
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
 				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue,
 					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
@@ -498,7 +498,7 @@ var _ = Describe("DRClusterController", func() {
 		})
 		When("provided Fencing value is ManuallyUnfenced", func() {
 			It("reports validated with status fencing as Unfenced", func() {
-				drcluster.Spec.ClusterFence = "ManuallyUnfenced"
+				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateManuallyUnfenced
 				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
 				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse,
 					Equal(controllers.DRClusterConditionReasonClean), Ignore(),
@@ -507,7 +507,7 @@ var _ = Describe("DRClusterController", func() {
 		})
 		When("provided Fencing value is Fenced with an empty CIDR", func() {
 			It("reports error in generating networkFence", func() {
-				drcluster.Spec.ClusterFence = "Fenced"
+				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateFenced
 				drcluster.Spec.CIDRs = []string{}
 				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
 				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse,
@@ -525,7 +525,7 @@ var _ = Describe("DRClusterController", func() {
 		})
 		When("provided Fencing value is Fenced", func() {
 			It("reports fenced with reason Fencing success", func() {
-				drcluster.Spec.ClusterFence = "Fenced"
+				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateFenced
 				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
 				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue,
 					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
@@ -534,7 +534,7 @@ var _ = Describe("DRClusterController", func() {
 		})
 		When("provided Fencing value is Unfenced", func() {
 			It("reports Unfenced false with status fenced as false", func() {
-				drcluster.Spec.ClusterFence = "Unfenced"
+				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateUnfenced
 				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
 				// When Unfence is set, DRCluster controller first unfences the
 				// cluster (i.e. itself through a peer cluster) and then cleans
@@ -549,7 +549,7 @@ var _ = Describe("DRClusterController", func() {
 		})
 		When("provided Fencing value is Fenced and the s3 validation fails", func() {
 			It("reports fenced with reason Fencing success but validated condition should be false", func() {
-				drcluster.Spec.ClusterFence = "Fenced"
+				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateFenced
 				drcluster.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
 				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
 				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue,
@@ -559,7 +559,7 @@ var _ = Describe("DRClusterController", func() {
 		})
 		When("provided Fencing value is Unfenced", func() {
 			It("reports Unfenced false with status fenced as false", func() {
-				drcluster.Spec.ClusterFence = "Unfenced"
+				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateUnfenced
 				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
 				// When Unfence is set, DRCluster controller first unfences the
 				// cluster (i.e. itself through a peer cluster) and then cleans
