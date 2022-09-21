@@ -123,15 +123,15 @@ const (
 // VolumeReplicationGroup (VRG) spec declares the desired schedule for data
 // replication and replication state of all PVCs identified via the given
 // PVC label selector. For each such PVC, the VRG will do the following:
-// 	- Create a VolumeReplication (VR) CR to enable storage level replication
-// 	  of volume data and set the desired replication state (primary, secondary,
-//    etc).
-//  - Take the corresponding PV cluster data in Kubernetes etcd and deposit it in
-//    the S3 store.  The url, access key and access id required to access the
-//    S3 store is specified via environment variables of the VRG operator POD,
-//    which is obtained from a secret resource.
-//  - Manage the lifecycle of VR CR and S3 data according to CUD operations on
-//    the PVC and the VRG CR.
+//   - Create a VolumeReplication (VR) CR to enable storage level replication
+//     of volume data and set the desired replication state (primary, secondary,
+//     etc).
+//   - Take the corresponding PV cluster data in Kubernetes etcd and deposit it in
+//     the S3 store.  The url, access key and access id required to access the
+//     S3 store is specified via environment variables of the VRG operator POD,
+//     which is obtained from a secret resource.
+//   - Manage the lifecycle of VR CR and S3 data according to CUD operations on
+//     the PVC and the VRG CR.
 type VolumeReplicationGroupSpec struct {
 	// Label selector to identify all the PVCs that are in this group
 	// that needs to be replicated to the peer cluster.

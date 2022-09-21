@@ -150,9 +150,10 @@ func (m ManagedClusterViewGetterImpl) GetNamespaceFromManagedCluster(
 /*
 Description: queries a managed cluster for a resource type, and populates a variable with the results.
 Requires:
-	1) meta: information of the new/existing resource; defines which cluster(s) to search
-	2) viewscope: query information for managed cluster resource. Example: resource, name.
-	3) interface: empty variable to populate results into
+ 1. meta: information of the new/existing resource; defines which cluster(s) to search
+ 2. viewscope: query information for managed cluster resource. Example: resource, name.
+ 3. interface: empty variable to populate results into
+
 Returns: error if encountered (nil if no error occurred). See results on interface object.
 */
 func (m ManagedClusterViewGetterImpl) getManagedClusterResource(
@@ -198,9 +199,10 @@ func (m ManagedClusterViewGetterImpl) getManagedClusterResource(
 /*
 Description: create a new ManagedClusterView object, or update the existing one with the same name.
 Requires:
-	1) meta: specifies MangedClusterView name and managed cluster search information
-	2) viewscope: once the managed cluster is found, use this information to find the resource.
-		Optional params: Namespace, Resource, Group, Version, Kind. Resource can be used by itself, Kind requires Version
+ 1. meta: specifies MangedClusterView name and managed cluster search information
+ 2. viewscope: once the managed cluster is found, use this information to find the resource.
+    Optional params: Namespace, Resource, Group, Version, Kind. Resource can be used by itself, Kind requires Version
+
 Returns: ManagedClusterView, error
 */
 func (m ManagedClusterViewGetterImpl) getOrCreateManagedClusterView(

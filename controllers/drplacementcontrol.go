@@ -298,7 +298,6 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 	return done, nil
 }
 
-//
 // RunFailover:
 // 1. If failoverCluster empty, then fail it and we are done
 // 2. If already failed over, then ensure clean up and we are done
@@ -478,22 +477,23 @@ func (d *DRPCInstance) getCurrentHomeClusterName() string {
 
 // runRelocate checks if pre-conditions for relocation are met, and if so performs the relocation
 // Pre-requisites for relocation are checked as follows:
-//  - The exists at least one VRG across clusters (there is no state where we do not have a VRG as
-//    primary or secondary once initial deployment is complete)
-//  - Ensures that there is only one primary, before further state transitions
-//    - If there are multiple primaries, wait for one of the primaries to transition
-//      to a secondary. This can happen if MCV reports older VRG state as MW is being applied
-//      to the cluster.
-//  - Check if peers are ready
-//    - If there are secondaries in flight, ensure they report secondary as the observed state
-//      before moving forward
-//    - preferredCluster should not report as Secondary, as it will never transition out of delete state
-//      in the future, as there would be no primary. This can happen, if in between relocate the
-//      preferred cluster was switched
-//      - User needs to recover by changing the preferredCluster back to the initial intent
-//  - Check if we already relocated to the preferredCluster, and ensure cleanup actions
-//  - Check if current primary (that is not the preferred cluster), is ready to switch over
-//  - Relocate!
+//   - The exists at least one VRG across clusters (there is no state where we do not have a VRG as
+//     primary or secondary once initial deployment is complete)
+//   - Ensures that there is only one primary, before further state transitions
+//   - If there are multiple primaries, wait for one of the primaries to transition
+//     to a secondary. This can happen if MCV reports older VRG state as MW is being applied
+//     to the cluster.
+//   - Check if peers are ready
+//   - If there are secondaries in flight, ensure they report secondary as the observed state
+//     before moving forward
+//   - preferredCluster should not report as Secondary, as it will never transition out of delete state
+//     in the future, as there would be no primary. This can happen, if in between relocate the
+//     preferred cluster was switched
+//   - User needs to recover by changing the preferredCluster back to the initial intent
+//   - Check if we already relocated to the preferredCluster, and ensure cleanup actions
+//   - Check if current primary (that is not the preferred cluster), is ready to switch over
+//   - Relocate!
+//
 //nolint:funlen
 func (d *DRPCInstance) RunRelocate() (bool, error) { //nolint:gocognit,cyclop
 	d.log.Info("Entering RunRelocate", "state", d.getLastDRState(), "progression", d.getProgression())

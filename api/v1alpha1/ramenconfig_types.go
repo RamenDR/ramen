@@ -48,12 +48,12 @@ const (
 
 // Profile of a S3 compatible store to replicate the relevant Kubernetes cluster
 // state (in etcd), such as PV state, across clusters protected by Ramen.
-// - DRProtectionControl and VolumeReplicationGroup objects specify the S3
-//   profile that should be used to protect the cluster state of the relevant
-//   PVs.
-// - A single S3 store profile can be used by multiple DRProtectionControl and
-//   VolumeReplicationGroup objects.
-// - See DRPolicy type for additional details about S3 configuration options
+//   - DRProtectionControl and VolumeReplicationGroup objects specify the S3
+//     profile that should be used to protect the cluster state of the relevant
+//     PVs.
+//   - A single S3 store profile can be used by multiple DRProtectionControl and
+//     VolumeReplicationGroup objects.
+//   - See DRPolicy type for additional details about S3 configuration options
 type S3StoreProfile struct {
 	// Name of this S3 profile
 	S3ProfileName string `json:"s3ProfileName"`

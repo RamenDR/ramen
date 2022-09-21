@@ -267,13 +267,13 @@ func (v *VRGInstance) protectPVC(pvc *corev1.PersistentVolumeClaim,
 
 // This function indicates whether to proceed with the pvc processing
 // or not. It mainly checks the following things.
-// - Whether pvc is bound or not. If not bound, then no need to
-//   process the pvc any further. It can be skipped until it is ready.
-// - Whether the pvc is being deleted and VR protection finalizer is
-//   not there. If the finalizer is there, then VolumeReplicationGroup
-//   need to remove the finalizer for the pvc being deleted. However,
-//   if the finalizer is not there, then no need to process the pvc
-//   any further and it can be skipped. The pvc will go away eventually.
+//   - Whether pvc is bound or not. If not bound, then no need to
+//     process the pvc any further. It can be skipped until it is ready.
+//   - Whether the pvc is being deleted and VR protection finalizer is
+//     not there. If the finalizer is there, then VolumeReplicationGroup
+//     need to remove the finalizer for the pvc being deleted. However,
+//     if the finalizer is not there, then no need to process the pvc
+//     any further and it can be skipped. The pvc will go away eventually.
 func skipPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, string) {
 	if pvc.Status.Phase != corev1.ClaimBound {
 		log.Info("Skipping handling of VR as PersistentVolumeClaim is not bound", "pvcPhase", pvc.Status.Phase)
@@ -778,9 +778,9 @@ func (v *VRGInstance) DeletePVs(s3ProfileName string) (err error) {
 // processVRAsPrimary processes VR to change its state to primary, with the assumption that the
 // related PVC is prepared for VR protection
 // Return values are:
-//  - a boolean indicating if a reconcile requeue is required
-//  - a boolean indicating if VR is already at the desired state
-//  - any errors during processing
+//   - a boolean indicating if a reconcile requeue is required
+//   - a boolean indicating if VR is already at the desired state
+//   - any errors during processing
 func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName, log logr.Logger) (bool, bool, error) {
 	if v.instance.Spec.Async != nil {
 		return v.createOrUpdateVR(vrNamespacedName, volrep.Primary, log)
@@ -808,9 +808,9 @@ func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName, 
 // processVRAsSecondary processes VR to change its state to secondary, with the assumption that the
 // related PVC is prepared for VR as secondary
 // Return values are:
-//  - a boolean indicating if a reconcile requeue is required
-//  - a boolean indicating if VR is already at the desired state
-//  - any errors during processing
+//   - a boolean indicating if a reconcile requeue is required
+//   - a boolean indicating if VR is already at the desired state
+//   - any errors during processing
 func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName, log logr.Logger) (bool, bool, error) {
 	if v.instance.Spec.Async != nil {
 		return v.createOrUpdateVR(vrNamespacedName, volrep.Secondary, log)
@@ -843,9 +843,9 @@ func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName
 // would get a reconcile. And then the conditions for the appropriate Protected PVC can
 // be set as either Replicating or Error.
 // Return values are:
-//  - a boolean indicating if a reconcile requeue is required
-//  - a boolean indicating if VR is already at the desired state
-//  - any errors during processing
+//   - a boolean indicating if a reconcile requeue is required
+//   - a boolean indicating if VR is already at the desired state
+//   - any errors during processing
 func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 	state volrep.ReplicationState, log logr.Logger) (bool, bool, error) {
 	const requeue = true
@@ -906,9 +906,9 @@ func (v *VRGInstance) autoResync(state volrep.ReplicationState) bool {
 }
 
 // updateVR updates the VR to the desired state and returns,
-//  - a boolean indicating if a reconcile requeue is required
-//  - a boolean indicating if VR is already at the desired state
-//  - any errors during the process of updating the resource
+//   - a boolean indicating if a reconcile requeue is required
+//   - a boolean indicating if VR is already at the desired state
+//   - any errors during the process of updating the resource
 func (v *VRGInstance) updateVR(volRep *volrep.VolumeReplication,
 	state volrep.ReplicationState, log logr.Logger) (bool, bool, error) {
 	const requeue = true
@@ -1124,9 +1124,9 @@ func (v *VRGInstance) checkVRStatus(volRep *volrep.VolumeReplication) bool {
 
 // validateVRStatus validates if the VolumeReplication resource has the desired status for the
 // current generation and returns true if so, false otherwise
-// - When replication state is Primary, only Completed condition is checked.
-// - When replication state is Secondary, all 3 conditions for Completed/Degraded/Resyncing is
-//   checked and ensured healthy.
+//   - When replication state is Primary, only Completed condition is checked.
+//   - When replication state is Secondary, all 3 conditions for Completed/Degraded/Resyncing is
+//     checked and ensured healthy.
 func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state ramendrv1alpha1.ReplicationState) bool {
 	var (
 		stateString string
@@ -1176,12 +1176,12 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 // validateAdditionalVRStatusForSecondary returns true if resync status is complete as secondary, false otherwise
 // Return available if resync is happening as secondary or resync is complete as secondary.
 // i.e. For VolRep the following conditions should be met
-// 1) Data Sync is happening
-//    VolRep.Status.Conditions[Degraded].Status = True &&
-//    VolRep.Status.Conditions[Resyncing].Status = True
-// 2) Data Sync is complete.
-//    VolRep.Status.Conditions[Degraded].Status = False &&
-//    VolRep.Status.Conditions[Resyncing].Status = False
+//  1. Data Sync is happening
+//     VolRep.Status.Conditions[Degraded].Status = True &&
+//     VolRep.Status.Conditions[Resyncing].Status = True
+//  2. Data Sync is complete.
+//     VolRep.Status.Conditions[Degraded].Status = False &&
+//     VolRep.Status.Conditions[Resyncing].Status = False
 //
 // With 1st condition being met,
 // ProtectedPVC.Conditions[DataReady] = True
@@ -1775,37 +1775,47 @@ func (v *VRGInstance) addPVRestoreAnnotation(pv *corev1.PersistentVolume) {
 	pv.ObjectMeta.Annotations[PVRestoreAnnotation] = "True"
 }
 
-//
 // Follow this logic to update VRG (and also ProtectedPVC) conditions for VolRep
 // while reconciling VolumeReplicationGroup resource.
 //
 // For both Primary and Secondary:
 // if getting VolRep fails and volrep does not exist:
-//    ProtectedPVC.conditions.Available.Status = False
-//    ProtectedPVC.conditions.Available.Reason = Progressing
-//    return
+//
+//	ProtectedPVC.conditions.Available.Status = False
+//	ProtectedPVC.conditions.Available.Reason = Progressing
+//	return
+//
 // if getting VolRep fails and some other error:
-//    ProtectedPVC.conditions.Available.Status = Unknown
-//    ProtectedPVC.conditions.Available.Reason = Error
+//
+//	ProtectedPVC.conditions.Available.Status = Unknown
+//	ProtectedPVC.conditions.Available.Reason = Error
 //
 // This below if condition check helps in undersanding whether
 // promotion/demotion has been successfully completed or not.
 // if VolRep.Status.Conditions[Completed].Status == True
-//    ProtectedPVC.conditions.Available.Status = True
-//    ProtectedPVC.conditions.Available.Reason = Replicating
+//
+//	ProtectedPVC.conditions.Available.Status = True
+//	ProtectedPVC.conditions.Available.Reason = Replicating
+//
 // else
-//    ProtectedPVC.conditions.Available.Status = False
-//    ProtectedPVC.conditions.Available.Reason = Error
+//
+//	ProtectedPVC.conditions.Available.Status = False
+//	ProtectedPVC.conditions.Available.Reason = Error
 //
 // if all ProtectedPVCs are Replicating, then
-//    VRG.conditions.Available.Status = true
-//    VRG.conditions.Available.Reason = Replicating
+//
+//	VRG.conditions.Available.Status = true
+//	VRG.conditions.Available.Reason = Replicating
+//
 // if atleast one ProtectedPVC.conditions[Available].Reason == Error
-//    VRG.conditions.Available.Status = false
-//    VRG.conditions.Available.Reason = Error
+//
+//	VRG.conditions.Available.Status = false
+//	VRG.conditions.Available.Reason = Error
+//
 // if no ProtectedPVCs is in error and atleast one is progressing, then
-//    VRG.conditions.Available.Status = false
-//    VRG.conditions.Available.Reason = Progressing
+//
+//	VRG.conditions.Available.Status = false
+//	VRG.conditions.Available.Reason = Progressing
 //
 //nolint:funlen
 func (v *VRGInstance) aggregateVolRepDataReadyCondition() *metav1.Condition {
