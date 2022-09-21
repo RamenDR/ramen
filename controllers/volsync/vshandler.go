@@ -386,7 +386,7 @@ func (v *VSHandler) cleanupAfterRSFinalSync(rsSpec ramendrv1alpha1.VolSyncReplic
 	return v.deletePVC(rsSpec.ProtectedPVC.Name)
 }
 
-// nolint: funlen
+//nolint:funlen
 func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec,
 	sshKeysSecretName string, runFinalSync bool) (*volsyncv1alpha1.ReplicationSource, error,
 ) {

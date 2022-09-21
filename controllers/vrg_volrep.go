@@ -1291,11 +1291,15 @@ func isVRConditionMet(volRep *volrep.VolumeReplication,
 	return true, ""
 }
 
-// nolint: unparam
 // Disabling unparam linter as currently every invokation of this
 // function sends reason as VRGConditionReasonError and the linter
 // complains about this function always receiving the same reason.
-func (v *VRGInstance) updatePVCDataReadyConditionHelper(name, reason, message, defaultMessage string) {
+func (v *VRGInstance) updatePVCDataReadyConditionHelper(
+	name string,
+	reason string, //nolint: unparam
+	message,
+	defaultMessage string,
+) {
 	if message != "" {
 		v.updatePVCDataReadyCondition(name, reason, message)
 
@@ -1319,11 +1323,15 @@ func (v *VRGInstance) updatePVCDataReadyCondition(pvcName, reason, message strin
 	v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
 }
 
-// nolint: unparam
 // Disabling unparam linter as currently every invokation of this
 // function sends reason as VRGConditionReasonError and the linter
 // complains about this function always receiving the same reason.
-func (v *VRGInstance) updatePVCDataProtectedConditionHelper(name, reason, message, defaultMessage string) {
+func (v *VRGInstance) updatePVCDataProtectedConditionHelper(
+	name string,
+	reason string, //nolint: unparam
+	message,
+	defaultMessage string,
+) {
 	if message != "" {
 		v.updatePVCDataProtectedCondition(name, reason, message)
 

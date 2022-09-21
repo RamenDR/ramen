@@ -91,7 +91,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 	rateLimiter := workqueue.NewMaxOfRateLimiter(
 		workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 1*time.Minute),
 		// defaults from client-go
-		// nolint: gomnd
+		//nolint: gomnd
 		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
 	)
 
@@ -265,7 +265,7 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim, log logr.
 	return req
 }
 
-// nolint: lll // disabling line length linter
+//nolint: lll // disabling line length linter
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups/finalizers,verbs=update
