@@ -68,7 +68,8 @@ func timeSincePreviousAndUntilNext(previousTime time.Time, interval time.Duratio
 }
 
 func kubeObjectsCapturePathNameAndNamePrefix(namespaceName, vrgName string, captureNumber int64) (string, string) {
-	number := strconv.FormatInt(captureNumber, 10)
+	const numberBase = 10
+	number := strconv.FormatInt(captureNumber, numberBase)
 
 	return s3PathNamePrefix(namespaceName, vrgName) + "kube-objects/" + number + "/",
 		// TODO fix: may exceed name capacity
@@ -212,7 +213,7 @@ func (v *VRGInstance) kubeObjectsCaptureDelete(
 			v.log.Error(err, "Kube objects capture s3 objects delete error",
 				"number", captureNumber,
 				"profile", s3StoreAccessor.profileName,
-				)
+			)
 			v.kubeObjectsCaptureFailed(err.Error())
 
 			result.Requeue = true
@@ -291,7 +292,8 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 	vrg := v.instance
 	status := &vrg.Status.KubeObjectProtection
 
-	if err := v.reconciler.kubeObjects.ProtectRequestsDelete(v.ctx, v.reconciler.Client, veleroNamespaceName, labels,
+	if err := v.reconciler.kubeObjects.ProtectRequestsDelete(
+		v.ctx, v.reconciler.Client, veleroNamespaceName, labels,
 	); err != nil {
 		v.log.Error(err, "Kube objects capture requests delete error", "number", captureNumber)
 		v.kubeObjectsCaptureFailed(err.Error())
@@ -482,7 +484,8 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 func (v *VRGInstance) kubeObjectsRecoverRequestsDelete(
 	result *ctrl.Result, veleroNamespaceName string, labels map[string]string,
 ) error {
-	if err := v.reconciler.kubeObjects.RecoverRequestsDelete(v.ctx, v.reconciler.Client, veleroNamespaceName, labels,
+	if err := v.reconciler.kubeObjects.RecoverRequestsDelete(
+		v.ctx, v.reconciler.Client, veleroNamespaceName, labels,
 	); err != nil {
 		v.log.Error(err, "Kube objects recover requests delete error")
 

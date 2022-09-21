@@ -45,19 +45,17 @@ type Requests interface {
 
 type RequestProcessingError struct{ string }
 
-func RequestProcessingErrorCreate(s string) RequestProcessingError {
-	return RequestProcessingError{s}
-}
-
-func (e RequestProcessingError) Error() string   { return e.string }
-func (RequestProcessingError) Is(err error) bool { return true }
+func RequestProcessingErrorCreate(s string) RequestProcessingError { return RequestProcessingError{s} }
+func (e RequestProcessingError) Error() string                     { return e.string }
+func (RequestProcessingError) Is(err error) bool                   { return true }
 
 type RequestsManager interface {
 	ProtectsPath() string
 	RecoversPath() string
 	ProtectRequestNew() ProtectRequest
 	RecoverRequestNew() RecoverRequest
-	ProtectRequestCreate(c context.Context, w client.Writer, r client.Reader, l logr.Logger,
+	ProtectRequestCreate(
+		c context.Context, w client.Writer, r client.Reader, l logr.Logger,
 		s3Url string,
 		s3BucketName string,
 		s3RegionName string,
@@ -69,7 +67,8 @@ type RequestsManager interface {
 		protectRequestName string,
 		labels map[string]string,
 	) (ProtectRequest, error)
-	RecoverRequestCreate(c context.Context, w client.Writer, r client.Reader, l logr.Logger,
+	RecoverRequestCreate(
+		c context.Context, w client.Writer, r client.Reader, l logr.Logger,
 		s3Url string,
 		s3BucketName string,
 		s3RegionName string,
@@ -83,10 +82,12 @@ type RequestsManager interface {
 		recoverRequestName string,
 		labels map[string]string,
 	) (RecoverRequest, error)
-	ProtectRequestsGet(c context.Context, r client.Reader, requestNamespaceName string, labels map[string]string,
-		) (Requests, error)
-	RecoverRequestsGet(c context.Context, r client.Reader, requestNamespaceName string, labels map[string]string,
-		) (Requests, error)
+	ProtectRequestsGet(
+		c context.Context, r client.Reader, requestNamespaceName string, labels map[string]string,
+	) (Requests, error)
+	RecoverRequestsGet(
+		c context.Context, r client.Reader, requestNamespaceName string, labels map[string]string,
+	) (Requests, error)
 	ProtectRequestsDelete(c context.Context, w client.Writer, requestNamespaceName string, labels map[string]string) error
 	RecoverRequestsDelete(c context.Context, w client.Writer, requestNamespaceName string, labels map[string]string) error
 }
