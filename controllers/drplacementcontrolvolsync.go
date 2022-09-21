@@ -131,7 +131,8 @@ func (d *DRPCInstance) ensureVolSyncReplicationDestination(srcCluster string) er
 }
 
 func (d *DRPCInstance) containsMismatchVolSyncPVCs(srcVRG *rmn.VolumeReplicationGroup,
-	dstVRG *rmn.VolumeReplicationGroup) bool {
+	dstVRG *rmn.VolumeReplicationGroup,
+) bool {
 	for _, protectedPVC := range srcVRG.Status.ProtectedPVCs {
 		if !protectedPVC.ProtectedByVolSync {
 			continue
@@ -157,7 +158,8 @@ func (d *DRPCInstance) containsMismatchVolSyncPVCs(srcVRG *rmn.VolumeReplication
 }
 
 func (d *DRPCInstance) updateDestinationVRG(clusterName string, srcVRG *rmn.VolumeReplicationGroup,
-	dstVRG *rmn.VolumeReplicationGroup) error {
+	dstVRG *rmn.VolumeReplicationGroup,
+) error {
 	// clear RDInfo
 	dstVRG.Spec.VolSync.RDSpec = nil
 

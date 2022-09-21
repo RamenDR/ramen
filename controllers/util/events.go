@@ -127,7 +127,8 @@ func NewEventReporter(recorder record.EventRecorder) *EventReporter {
 // ReportIfNotPresent will report event if lastReportedEvent is not the same in last 10 minutes
 // TODO: The duration 10 minutes can be changed to some other value if necessary
 func ReportIfNotPresent(recorder *EventReporter, instance runtime.Object,
-	eventType, eventReason, msg string) {
+	eventType, eventReason, msg string,
+) {
 	nameSpacedName, err := getNameSpacedName(instance)
 	if err != nil {
 		return

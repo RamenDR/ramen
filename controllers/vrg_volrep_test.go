@@ -641,7 +641,8 @@ func newVRGTestCaseCreateAndStart(pvcCount int, testTemplate *template, checkBin
 }
 
 func (v *vrgTest) createPVCandPV(claimBindInfo corev1.PersistentVolumeClaimPhase,
-	volumeBindInfo corev1.PersistentVolumePhase) {
+	volumeBindInfo corev1.PersistentVolumePhase,
+) {
 	// Create the requested number of PVs and corresponding PVCs
 	for i := 0; i < v.pvcCount; i++ {
 		pvName := fmt.Sprintf("pv-%v-%02d", v.uniqueID, i)
@@ -820,7 +821,8 @@ func (v *vrgTest) createPV(pvName, claimName string, bindInfo corev1.PersistentV
 }
 
 func (v *vrgTest) createPVC(pvcName, namespace, volumeName string, labels map[string]string,
-	bindInfo corev1.PersistentVolumeClaimPhase) {
+	bindInfo corev1.PersistentVolumeClaimPhase,
+) {
 	By("creating PVC " + pvcName)
 
 	capacity := corev1.ResourceList{
@@ -1394,7 +1396,8 @@ func (v *vrgTest) waitForVolRepPromotion(vrNamespacedName types.NamespacedName, 
 }
 
 func (v *vrgTest) checkProtectedPVCSuccess(vrg *ramendrv1alpha1.VolumeReplicationGroup,
-	protectedPVC *ramendrv1alpha1.ProtectedPVC) bool {
+	protectedPVC *ramendrv1alpha1.ProtectedPVC,
+) bool {
 	success := false
 	dataReadyCondition := meta.FindStatusCondition(protectedPVC.Conditions,
 		vrgController.VRGConditionTypeDataReady)

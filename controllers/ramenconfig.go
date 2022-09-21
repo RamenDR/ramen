@@ -117,7 +117,8 @@ func ReadRamenConfigFile(log logr.Logger) (ramenConfig ramendrv1alpha1.RamenConf
 }
 
 func GetRamenConfigS3StoreProfile(ctx context.Context, apiReader client.Reader, profileName string) (
-	s3StoreProfile ramendrv1alpha1.S3StoreProfile, err error) {
+	s3StoreProfile ramendrv1alpha1.S3StoreProfile, err error,
+) {
 	_, ramenConfig, err := ConfigMapGet(ctx, apiReader)
 	if err != nil {
 		return s3StoreProfile, err

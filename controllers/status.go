@@ -386,7 +386,8 @@ func findCondition(existingConditions []metav1.Condition, conditionType string) 
 
 // sets conditions when Primary VolSync has finished setting up the Replication Source
 func setVRGConditionTypeVolSyncRepSourceSetupComplete(conditions *[]metav1.Condition, observedGeneration int64,
-	message string) {
+	message string,
+) {
 	setStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeVolSyncRepSourceSetup,
 		Reason:             VRGConditionReasonVolSyncRepSourceInited,
@@ -398,7 +399,8 @@ func setVRGConditionTypeVolSyncRepSourceSetupComplete(conditions *[]metav1.Condi
 
 // sets conditions when Primary anccountered an error initializing the Replication Source
 func setVRGConditionTypeVolSyncRepSourceSetupError(conditions *[]metav1.Condition, observedGeneration int64,
-	message string) {
+	message string,
+) {
 	setStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeVolSyncRepSourceSetup,
 		Reason:             VRGConditionReasonError,
@@ -410,7 +412,8 @@ func setVRGConditionTypeVolSyncRepSourceSetupError(conditions *[]metav1.Conditio
 
 // sets conditions when Primary VolSync has finished setting up the Replication Destination
 func setVRGConditionTypeVolSyncPVRestoreComplete(conditions *[]metav1.Condition, observedGeneration int64,
-	message string) {
+	message string,
+) {
 	setStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeVolSyncPVsRestored,
 		Reason:             VRGConditionReasonVolSyncPVsRestored,
@@ -422,7 +425,8 @@ func setVRGConditionTypeVolSyncPVRestoreComplete(conditions *[]metav1.Condition,
 
 // sets conditions when Primary anccountered an error initializing the Replication Destination
 func setVRGConditionTypeVolSyncPVRestoreError(conditions *[]metav1.Condition, observedGeneration int64,
-	message string) {
+	message string,
+) {
 	setStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeVolSyncPVsRestored,
 		Reason:             VRGConditionReasonError,

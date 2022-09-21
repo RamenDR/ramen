@@ -90,7 +90,8 @@ type secretPropagator struct {
 
 func newSecretPropagator(ctx context.Context, k8sClient client.Client, sourceSecret *corev1.Secret,
 	ownerObject metav1.Object, destClusters []string, destSecretName, destSecretNamespace string,
-	log logr.Logger) secretPropagator {
+	log logr.Logger,
+) secretPropagator {
 	secretPropagationPolicyName := ownerObject.GetName() + "-vs-secret"
 	secretPropagationPolicyPlacementRuleName := secretPropagationPolicyName
 	secretPropagationPolicyPlacementBindingName := secretPropagationPolicyName

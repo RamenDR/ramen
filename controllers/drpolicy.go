@@ -31,7 +31,8 @@ func drPolicyDeploy(
 	drpolicy *rmn.DRPolicy,
 	drclusters *rmn.DRClusterList,
 	secretsUtil *util.SecretsUtil,
-	hubOperatorRamenConfig *rmn.RamenConfig) error {
+	hubOperatorRamenConfig *rmn.RamenConfig,
+) error {
 	drClustersMutex.Lock()
 	defer drClustersMutex.Unlock()
 
@@ -49,7 +50,8 @@ func drClusterSecretsDeploy(
 	drpolicy *rmn.DRPolicy,
 	drclusters *rmn.DRClusterList,
 	secretsUtil *util.SecretsUtil,
-	rmnCfg *rmn.RamenConfig) error {
+	rmnCfg *rmn.RamenConfig,
+) error {
 	if !rmnCfg.DrClusterOperator.DeploymentAutomationEnabled ||
 		!rmnCfg.DrClusterOperator.S3SecretDistributionEnabled {
 		return nil
@@ -77,7 +79,8 @@ func drPolicyUndeploy(
 	drpolicy *rmn.DRPolicy,
 	drclusters *rmn.DRClusterList,
 	secretsUtil *util.SecretsUtil,
-	ramenConfig *rmn.RamenConfig) error {
+	ramenConfig *rmn.RamenConfig,
+) error {
 	drpolicies := rmn.DRPolicyList{}
 
 	drClustersMutex.Lock()
@@ -95,7 +98,8 @@ func drClustersUndeploySecrets(
 	drclusters *rmn.DRClusterList,
 	drpolicies rmn.DRPolicyList,
 	secretsUtil *util.SecretsUtil,
-	ramenConfig *rmn.RamenConfig) error {
+	ramenConfig *rmn.RamenConfig,
+) error {
 	if !ramenConfig.DrClusterOperator.DeploymentAutomationEnabled ||
 		!ramenConfig.DrClusterOperator.S3SecretDistributionEnabled {
 		return nil
@@ -142,7 +146,8 @@ func drClusterListMustHaveSecrets(
 	drclusters *rmn.DRClusterList,
 	clusterName string,
 	ignorePolicy *rmn.DRPolicy,
-	ramenConfig *rmn.RamenConfig) sets.String {
+	ramenConfig *rmn.RamenConfig,
+) sets.String {
 	mustHaveS3Secrets := sets.String{}
 
 	mustHaveS3Profiles := drClusterListMustHaveS3Profiles(drpolicies, drclusters, clusterName, ignorePolicy)
@@ -161,7 +166,8 @@ func drClusterListMustHaveSecrets(
 func drClusterListMustHaveS3Profiles(drpolicies rmn.DRPolicyList,
 	drclusters *rmn.DRClusterList,
 	clusterName string,
-	ignorePolicy *rmn.DRPolicy) sets.String {
+	ignorePolicy *rmn.DRPolicy,
+) sets.String {
 	mustHaveS3Profiles := sets.String{}
 
 	for idx := range drpolicies.Items {
@@ -188,7 +194,8 @@ func drClusterListMustHaveS3Profiles(drpolicies rmn.DRPolicyList,
 
 func drPolicySecretNames(drpolicy *rmn.DRPolicy,
 	drclusters *rmn.DRClusterList,
-	rmnCfg *rmn.RamenConfig) (sets.String, error) {
+	rmnCfg *rmn.RamenConfig,
+) (sets.String, error) {
 	secretNames := sets.String{}
 
 	for _, managedCluster := range util.DrpolicyClusterNames(drpolicy) {

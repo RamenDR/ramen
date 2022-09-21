@@ -45,7 +45,8 @@ var baseNF = &csiaddonsv1alpha1.NetworkFence{
 }
 
 func (f FakeMCVGetter) GetNFFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
-	annotations map[string]string) (*csiaddonsv1alpha1.NetworkFence, error) {
+	annotations map[string]string,
+) (*csiaddonsv1alpha1.NetworkFence, error) {
 	nfStatus := csiaddonsv1alpha1.NetworkFenceStatus{
 		Result:  csiaddonsv1alpha1.FencingOperationResultSucceeded,
 		Message: "Success",
@@ -60,7 +61,8 @@ func (f FakeMCVGetter) GetNFFromManagedCluster(resourceName, resourceNamespace, 
 }
 
 func (f FakeMCVGetter) DeleteNFManagedClusterView(
-	resourceName, resourceNamespace, clusterName, resourceType string) error {
+	resourceName, resourceNamespace, clusterName, resourceType string,
+) error {
 	return nil
 }
 

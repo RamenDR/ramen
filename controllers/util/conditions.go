@@ -31,7 +31,8 @@ func GenericStatusConditionSet(
 	conditionType string,
 	status metav1.ConditionStatus,
 	reason, message string,
-	log logr.Logger) bool {
+	log logr.Logger,
+) bool {
 	updated := true
 	generation := object.GetGeneration()
 

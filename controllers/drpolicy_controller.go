@@ -125,7 +125,8 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 func validateDRPolicy(ctx context.Context,
 	drpolicy *ramen.DRPolicy,
 	drclusters *ramen.DRClusterList,
-	apiReader client.Reader) (string, error) {
+	apiReader client.Reader,
+) (string, error) {
 	// TODO: Ensure DRClusters exist and are validated? Also ensure they are not in a deleted state!?
 	// If new DRPolicy and clusters are deleted, then fail reconciliation?
 	found := 0
@@ -154,7 +155,8 @@ func validateDRPolicy(ctx context.Context,
 func validatePolicyConflicts(ctx context.Context,
 	apiReader client.Reader,
 	drpolicy *ramen.DRPolicy,
-	drclusters *ramen.DRClusterList) error {
+	drclusters *ramen.DRClusterList,
+) error {
 	drpolicies, err := util.GetAllDRPolicies(ctx, apiReader)
 	if err != nil {
 		return fmt.Errorf("validate managed cluster in drpolicy %v failed: %w", drpolicy.Name, err)
@@ -241,7 +243,8 @@ type drpolicyUpdater struct {
 
 func (u *drpolicyUpdater) deleteDRPolicy(drclusters *ramen.DRClusterList,
 	secretsUtil *util.SecretsUtil,
-	ramenConfig *ramen.RamenConfig) error {
+	ramenConfig *ramen.RamenConfig,
+) error {
 	u.log.Info("delete")
 
 	drpcs := ramen.DRPlacementControlList{}

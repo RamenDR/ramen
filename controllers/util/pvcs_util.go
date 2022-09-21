@@ -34,7 +34,8 @@ const (
 )
 
 func ListPVCsByPVCSelector(ctx context.Context, k8sClient client.Client, pvcLabelSelector metav1.LabelSelector,
-	namespace string, volSyncDisabled bool, logger logr.Logger) (*corev1.PersistentVolumeClaimList, error) {
+	namespace string, volSyncDisabled bool, logger logr.Logger,
+) (*corev1.PersistentVolumeClaimList, error) {
 	// convert metav1.LabelSelector to a labels.Selector
 	pvcSelector, err := metav1.LabelSelectorAsSelector(&pvcLabelSelector)
 	if err != nil {

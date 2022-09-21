@@ -59,7 +59,6 @@ linters:
     - gci
     - interfacer  # interfacer linter is archived and deprecated (https://github.com/mvdan/interfacer)
     # TODO: fix folloing linter errors.
-    - gofumpt
     - exhaustruct
     - tagliatelle
     - gomoddirectives
