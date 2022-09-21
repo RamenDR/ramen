@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// nolint: lll
+//nolint: lll
 // +kubebuilder:rbac:groups=velero.io,resources=backups,verbs=create;delete;deletecollection;get;list;patch;update;watch
 // +kubebuilder:rbac:groups=velero.io,resources=backups/status,verbs=get
 // +kubebuilder:rbac:groups=velero.io,resources=backupstoragelocations,verbs=create;delete;deletecollection;get;patch;update
@@ -76,7 +76,7 @@ func (r RestoreRequests) Get(i int) kubeobjects.Request {
 	return RestoreRequest{&r.restores.Items[i]}
 }
 
-type RequestsManager struct {}
+type RequestsManager struct{}
 
 func (RequestsManager) ProtectsPath() string { return protectsPath }
 func (RequestsManager) RecoversPath() string { return recoversPath }

@@ -97,13 +97,15 @@ func protectedVrgListDeleteAndNotFoundWait(protectedVrgList *ramen.ProtectedVolu
 }
 
 func protectedVrgListExpectIncludeOnly(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList,
-	vrgsExpected []ramen.VolumeReplicationGroup) {
+	vrgsExpected []ramen.VolumeReplicationGroup,
+) {
 	vrgsStatusStateUpdate(protectedVrgList.Status.Items, vrgsExpected)
 	Expect(protectedVrgList.Status.Items).To(ConsistOf(vrgsExpected))
 }
 
 func protectedVrgListExpectInclude(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList,
-	vrgsExpected []ramen.VolumeReplicationGroup) {
+	vrgsExpected []ramen.VolumeReplicationGroup,
+) {
 	vrgsStatusStateUpdate(protectedVrgList.Status.Items, vrgsExpected)
 	Expect(protectedVrgList.Status.Items).To(ContainElements(vrgsExpected))
 }

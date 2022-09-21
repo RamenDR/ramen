@@ -63,7 +63,8 @@ var ControllerType ramendrv1alpha1.ControllerType
 var cachedRamenConfigFileName string
 
 func LoadControllerConfig(configFile string,
-	log logr.Logger, options *ctrl.Options, ramenConfig *ramendrv1alpha1.RamenConfig) {
+	log logr.Logger, options *ctrl.Options, ramenConfig *ramendrv1alpha1.RamenConfig,
+) {
 	if configFile == "" {
 		log.Info("Ramen config file not specified")
 

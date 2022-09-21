@@ -434,7 +434,8 @@ func downloadPVs(s ObjectStorer, pvKeyPrefix string) (
 }
 
 func DownloadVRGs(s ObjectStorer, pvKeyPrefix string) (
-	vrgList []ramen.VolumeReplicationGroup, err error) {
+	vrgList []ramen.VolumeReplicationGroup, err error,
+) {
 	err = DownloadTypedObjects(s, pvKeyPrefix, &vrgList)
 
 	return

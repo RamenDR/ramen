@@ -163,8 +163,7 @@ func newVRGDataReplicatedCondition(observedGeneration int64, message string) *me
 // VR reports: Degraded: False and Resync: False
 // This is useful when there are no known primaries and a final sync of
 // data is complete across secondaries
-func setVRGAsDataProtectedCondition(conditions *[]metav1.Condition, observedGeneration int64,
-	message string) {
+func setVRGAsDataProtectedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	// This means, for this VRG (as secondary) data sync has happened
 	// with a remote peer. Hence DataProtected is true
 	setStatusCondition(conditions, *newVRGAsDataProtectedCondition(observedGeneration, message))
@@ -180,8 +179,7 @@ func newVRGAsDataProtectedCondition(observedGeneration int64, message string) *m
 	}
 }
 
-func setVRGAsDataNotProtectedCondition(conditions *[]metav1.Condition, observedGeneration int64,
-	message string) {
+func setVRGAsDataNotProtectedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, *newVRGAsDataNotProtectedCondition(observedGeneration, message))
 }
 
@@ -195,8 +193,7 @@ func newVRGAsDataNotProtectedCondition(observedGeneration int64, message string)
 	}
 }
 
-func setVRGDataProtectionProgressCondition(conditions *[]metav1.Condition, observedGeneration int64,
-	message string) {
+func setVRGDataProtectionProgressCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, *newVRGDataProtectionProgressCondition(observedGeneration, message))
 }
 
@@ -211,8 +208,7 @@ func newVRGDataProtectionProgressCondition(observedGeneration int64, message str
 }
 
 // sets conditions when Primary VRG data replication is established
-func setVRGAsPrimaryReadyCondition(conditions *[]metav1.Condition, observedGeneration int64,
-	message string) {
+func setVRGAsPrimaryReadyCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, *newVRGAsPrimaryReadyCondition(observedGeneration, message))
 }
 

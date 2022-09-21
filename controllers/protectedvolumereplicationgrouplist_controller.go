@@ -47,7 +47,7 @@ type ProtectedVolumeReplicationGroupListInstance struct {
 	instance   *ramendrv1alpha1.ProtectedVolumeReplicationGroupList
 }
 
-// nolint: lll
+//nolint: lll
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=protectedvolumereplicationgrouplists,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=protectedvolumereplicationgrouplists/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=protectedvolumereplicationgrouplists/finalizers,verbs=update
@@ -135,7 +135,8 @@ func (s *ProtectedVolumeReplicationGroupListInstance) getNamespacesAndVrgPrefixe
 }
 
 func (s *ProtectedVolumeReplicationGroupListInstance) getVrgContentsFromS3(prefixNamespaceVRG []string,
-	objectStore ObjectStorer) ([]ramendrv1alpha1.VolumeReplicationGroup, error) {
+	objectStore ObjectStorer,
+) ([]ramendrv1alpha1.VolumeReplicationGroup, error) {
 	vrgsAll := make([]ramendrv1alpha1.VolumeReplicationGroup, 0)
 
 	const NoPrefixToRemove = ""
@@ -255,7 +256,8 @@ func ParseRemoveSlashes(input string) string {
 }
 
 func (s *ProtectedVolumeReplicationGroupListInstance) GetItemsInReplicaStoreWithPrefix(s3ProfileName string,
-	lookupPrefix string) ([]string, error) {
+	lookupPrefix string,
+) ([]string, error) {
 	results := make([]string, 0)
 
 	objectStore, _, err := s.reconciler.ObjStoreGetter.ObjectStore(s.ctx, s.reconciler.APIReader,
