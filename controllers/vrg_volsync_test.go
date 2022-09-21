@@ -340,7 +340,8 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 
 //nolint:funlen
 func createPVCBoundToRunningPod(ctx context.Context, namespace string,
-	labels map[string]string) *corev1.PersistentVolumeClaim {
+	labels map[string]string,
+) *corev1.PersistentVolumeClaim {
 	capacity := corev1.ResourceList{
 		corev1.ResourceStorage: resource.MustParse("1Gi"),
 	}

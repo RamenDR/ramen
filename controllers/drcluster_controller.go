@@ -180,7 +180,8 @@ func (u *drclusterInstance) initializeStatus() {
 
 func validateS3Profile(ctx context.Context, apiReader client.Reader,
 	objectStoreGetter ObjectStoreGetter,
-	drcluster *ramen.DRCluster, listKeyPrefix string, log logr.Logger) (string, error) {
+	drcluster *ramen.DRCluster, listKeyPrefix string, log logr.Logger,
+) (string, error) {
 	if drcluster.Spec.S3ProfileName != NoS3StoreAvailable {
 		if reason, err := s3ProfileValidate(ctx, apiReader, objectStoreGetter,
 			drcluster.Spec.S3ProfileName, listKeyPrefix, log); err != nil {
@@ -676,7 +677,8 @@ func (u *drclusterInstance) deleteNFMCV(clusterName string) (bool, error) {
 }
 
 func getPeerCluster(ctx context.Context, list ramen.DRPolicyList, reconciler *DRClusterReconciler,
-	object *ramen.DRCluster, log logr.Logger) (ramen.DRCluster, error) {
+	object *ramen.DRCluster, log logr.Logger,
+) (ramen.DRCluster, error) {
 	var peerCluster ramen.DRCluster
 
 	found := false
@@ -724,7 +726,8 @@ func getPeerCluster(ctx context.Context, list ramen.DRPolicyList, reconciler *DR
 }
 
 func getPeerFromPolicy(ctx context.Context, reconciler *DRClusterReconciler, log logr.Logger,
-	drPolicy *ramen.DRPolicy, drCluster *ramen.DRCluster) (*ramen.DRCluster, error) {
+	drPolicy *ramen.DRPolicy, drCluster *ramen.DRCluster,
+) (*ramen.DRCluster, error) {
 	peerCluster := &ramen.DRCluster{}
 	found := false
 
@@ -1033,7 +1036,8 @@ func setDRClusterCleaningFailedCondition(conditions *[]metav1.Condition, observe
 }
 
 func (u *drclusterInstance) createNFManifestWork(targetCluster *ramen.DRCluster, peerCluster *ramen.DRCluster,
-	log logr.Logger) error {
+	log logr.Logger,
+) error {
 	// create NetworkFence ManifestWork
 	log.Info(fmt.Sprintf("Creating NetworkFence ManifestWork on cluster %s to perform fencing op on cluster %s",
 		peerCluster.Name, targetCluster.Name))

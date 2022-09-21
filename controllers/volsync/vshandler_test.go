@@ -1816,7 +1816,8 @@ func createSnapshot(snapshotName, namespace string) *unstructured.Unstructured {
 }
 
 func createDummyPVC(pvcName, namespace string, capacity resource.Quantity,
-	annotations map[string]string) *corev1.PersistentVolumeClaim {
+	annotations map[string]string,
+) *corev1.PersistentVolumeClaim {
 	// Create a dummy pvc to protect so the reconcile can proceed properly
 	dummyPVC := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1849,7 +1850,8 @@ func createDummyPVC(pvcName, namespace string, capacity resource.Quantity,
 
 //nolint:funlen
 func createDummyPVCAndMountingPod(pvcName, namespace string, capacity resource.Quantity, annotations map[string]string,
-	desiredPodPhase corev1.PodPhase, podReady bool) (*corev1.PersistentVolumeClaim, *corev1.Pod) {
+	desiredPodPhase corev1.PodPhase, podReady bool,
+) (*corev1.PersistentVolumeClaim, *corev1.Pod) {
 	// Create the PVC
 	pvc := createDummyPVC(pvcName, namespace, capacity, annotations)
 

@@ -179,7 +179,8 @@ func (s3ObjectStoreGetter) ObjectStore(ctx context.Context,
 
 func GetS3Secret(ctx context.Context, r client.Reader,
 	secretRef corev1.SecretReference) (
-	s3AccessID, s3SecretAccessKey []byte, err error) {
+	s3AccessID, s3SecretAccessKey []byte, err error,
+) {
 	secret := corev1.Secret{}
 	namepacedName := types.NamespacedName{Namespace: "", Name: secretRef.Name}
 
@@ -254,7 +255,8 @@ func (s *s3ObjectStore) CreateBucket(bucket string) (err error) {
 // DeleteBucket deletes the S3 bucket.  Fails to delete if the bucket contains
 // any objects.
 func (s *s3ObjectStore) DeleteBucket(bucket string) (
-	err error) {
+	err error,
+) {
 	if bucket == "" {
 		return fmt.Errorf("empty bucket name for "+
 			"endpoint %s caller %s", s.s3Endpoint, s.callerTag)
@@ -285,7 +287,8 @@ func (s *s3ObjectStore) DeleteBucket(bucket string) (
 
 // PurgeBucket empties the content of the given bucket.
 func (s *s3ObjectStore) PurgeBucket(bucket string) (
-	err error) {
+	err error,
+) {
 	if bucket == "" {
 		return fmt.Errorf("empty bucket name for "+
 			"endpoint %s caller %s", s.s3Endpoint, s.callerTag)
@@ -340,7 +343,8 @@ func typedKey(prefix, suffix string, typ reflect.Type) string {
 // - pvKeyPrefix should have any required delimiters like '/'
 // - OK to call UploadPV() concurrently from multiple goroutines safely.
 func UploadPV(s ObjectStorer, pvKeyPrefix, pvKeySuffix string,
-	pv corev1.PersistentVolume) error {
+	pv corev1.PersistentVolume,
+) error {
 	return uploadTypedObject(s, pvKeyPrefix, pvKeySuffix, pv)
 }
 
@@ -350,7 +354,8 @@ func UploadPV(s ObjectStorer, pvKeyPrefix, pvKeySuffix string,
 // multiple goroutines safely.
 // - keyPrefix should have any required delimiters like '/'
 func uploadTypedObject(s ObjectStorer, keyPrefix, keySuffix string,
-	uploadContent interface{}) error {
+	uploadContent interface{},
+) error {
 	key := typedKey(keyPrefix, keySuffix, reflect.TypeOf(uploadContent))
 
 	return s.UploadObject(key, uploadContent)
@@ -375,7 +380,8 @@ func DeleteTypedObjects(s ObjectStorer, keyPrefix, keySuffix string, object inte
 //   - Any formatting changes to this method should also be reflected in the
 //     DownloadObject() method
 func (s *s3ObjectStore) UploadObject(key string,
-	uploadContent interface{}) error {
+	uploadContent interface{},
+) error {
 	encodedUploadContent := &bytes.Buffer{}
 	bucket := s.s3Bucket
 
@@ -408,7 +414,8 @@ func (s *s3ObjectStore) UploadObject(key string,
 // VerifyPVUpload verifies that the PV in the input matches the PV object
 // with the given keySuffix in the bucket.
 func VerifyPVUpload(s ObjectStorer, pvKeyPrefix, pvKeySuffix string,
-	verifyPV corev1.PersistentVolume) error {
+	verifyPV corev1.PersistentVolume,
+) error {
 	var downloadedPV corev1.PersistentVolume
 
 	if err := downloadTypedObject(s, pvKeyPrefix, pvKeySuffix, &downloadedPV); err != nil {
@@ -427,7 +434,8 @@ func VerifyPVUpload(s ObjectStorer, pvKeyPrefix, pvKeySuffix string,
 // - Downloads PVs with the given key prefix.
 // - If bucket doesn't exists, will return ErrCodeNoSuchBucket "NoSuchBucket"
 func downloadPVs(s ObjectStorer, pvKeyPrefix string) (
-	pvList []corev1.PersistentVolume, err error) {
+	pvList []corev1.PersistentVolume, err error,
+) {
 	err = DownloadTypedObjects(s, pvKeyPrefix, &pvList)
 
 	return
@@ -480,7 +488,8 @@ func DownloadTypedObjects(s ObjectStorer, keyPrefix string, objectsPointer inter
 // - If bucket doesn't exists, will return ErrCodeNoSuchBucket "NoSuchBucket"
 // - Refer to aws documentation of s3.ListObjectsV2Input for more list options
 func (s *s3ObjectStore) ListKeys(keyPrefix string) (
-	keys []string, err error) {
+	keys []string, err error,
+) {
 	var nextContinuationToken *string
 
 	bucket := s.s3Bucket
@@ -529,7 +538,8 @@ func (s *s3ObjectStore) ListKeys(keyPrefix string) (
 //     NoSuchBucket, NoSuchKey, invalid gzip header, json unmarshall error,
 //     InvalidParameter (e.g., empty key), etc.
 func (s *s3ObjectStore) DownloadObject(key string,
-	downloadContent interface{}) error {
+	downloadContent interface{},
+) error {
 	bucket := s.s3Bucket
 	writerAt := &aws.WriteAtBuffer{}
 
@@ -567,7 +577,8 @@ func (s *s3ObjectStore) DownloadObject(key string,
 // the keyPrefix.  If the bucket doesn't exists, will return
 // ErrCodeNoSuchBucket "NoSuchBucket".
 func (s *s3ObjectStore) DeleteObjects(keyPrefix string) (
-	err error) {
+	err error,
+) {
 	bucket := s.s3Bucket
 
 	keys, err := s.ListKeys(keyPrefix)

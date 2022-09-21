@@ -61,7 +61,8 @@ type ManagedClusterViewGetterImpl struct {
 }
 
 func (m ManagedClusterViewGetterImpl) GetVRGFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
-	annotations map[string]string) (*rmn.VolumeReplicationGroup, error) {
+	annotations map[string]string,
+) (*rmn.VolumeReplicationGroup, error) {
 	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName)
 	// get VRG and verify status through ManagedClusterView
 	mcvMeta := metav1.ObjectMeta{
@@ -84,7 +85,8 @@ func (m ManagedClusterViewGetterImpl) GetVRGFromManagedCluster(resourceName, res
 }
 
 func (m ManagedClusterViewGetterImpl) GetNFFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
-	annotations map[string]string) (*csiaddonsv1alpha1.NetworkFence, error) {
+	annotations map[string]string,
+) (*csiaddonsv1alpha1.NetworkFence, error) {
 	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName)
 	// get NetworkFence and verify status through ManagedClusterView
 	mcvMeta := metav1.ObjectMeta{
@@ -122,7 +124,8 @@ func BuildManagedClusterViewName(resourceName, resourceNamespace, resource strin
 }
 
 func (m ManagedClusterViewGetterImpl) GetNamespaceFromManagedCluster(
-	resourceName, managedCluster, namespaceString string, annotations map[string]string) (*corev1.Namespace, error) {
+	resourceName, managedCluster, namespaceString string, annotations map[string]string,
+) (*corev1.Namespace, error) {
 	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName)
 
 	// get Namespace and verify status through ManagedClusterView
@@ -157,7 +160,8 @@ Requires:
 Returns: error if encountered (nil if no error occurred). See results on interface object.
 */
 func (m ManagedClusterViewGetterImpl) getManagedClusterResource(
-	meta metav1.ObjectMeta, viewscope viewv1beta1.ViewScope, resource interface{}, logger logr.Logger) error {
+	meta metav1.ObjectMeta, viewscope viewv1beta1.ViewScope, resource interface{}, logger logr.Logger,
+) error {
 	// create MCV first
 	mcv, err := m.getOrCreateManagedClusterView(meta, viewscope, logger)
 	if err != nil {
@@ -206,7 +210,8 @@ Requires:
 Returns: ManagedClusterView, error
 */
 func (m ManagedClusterViewGetterImpl) getOrCreateManagedClusterView(
-	meta metav1.ObjectMeta, viewscope viewv1beta1.ViewScope, logger logr.Logger) (*viewv1beta1.ManagedClusterView, error) {
+	meta metav1.ObjectMeta, viewscope viewv1beta1.ViewScope, logger logr.Logger,
+) (*viewv1beta1.ManagedClusterView, error) {
 	mcv := &viewv1beta1.ManagedClusterView{
 		ObjectMeta: meta,
 		Spec: viewv1beta1.ViewSpec{
@@ -234,7 +239,8 @@ func (m ManagedClusterViewGetterImpl) getOrCreateManagedClusterView(
 }
 
 func (m ManagedClusterViewGetterImpl) DeleteVRGManagedClusterView(
-	resourceName, resourceNamespace, clusterName, resourceType string) error {
+	resourceName, resourceNamespace, clusterName, resourceType string,
+) error {
 	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName)
 	mcvNameVRG := BuildManagedClusterViewName(resourceName, resourceNamespace, MWTypeVRG)
 
@@ -242,7 +248,8 @@ func (m ManagedClusterViewGetterImpl) DeleteVRGManagedClusterView(
 }
 
 func (m ManagedClusterViewGetterImpl) DeleteNamespaceManagedClusterView(
-	resourceName, resourceNamespace, clusterName, resourceType string) error {
+	resourceName, resourceNamespace, clusterName, resourceType string,
+) error {
 	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName)
 	mcvNameNS := BuildManagedClusterViewName(resourceName, resourceNamespace, MWTypeNS)
 
@@ -250,7 +257,8 @@ func (m ManagedClusterViewGetterImpl) DeleteNamespaceManagedClusterView(
 }
 
 func (m ManagedClusterViewGetterImpl) DeleteNFManagedClusterView(
-	resourceName, resourceNamespace, clusterName, resourceType string) error {
+	resourceName, resourceNamespace, clusterName, resourceType string,
+) error {
 	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName)
 	mcvNameNF := BuildManagedClusterViewName(resourceName, resourceNamespace, MWTypeNF)
 

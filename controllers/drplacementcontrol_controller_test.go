@@ -184,7 +184,8 @@ func getFunctionNameAtIndex(idx int) string {
 }
 
 func (f FakeMCVGetter) GetNamespaceFromManagedCluster(
-	resourceName, managedCluster, namespaceString string, annotations map[string]string) (*corev1.Namespace, error) {
+	resourceName, managedCluster, namespaceString string, annotations map[string]string,
+) (*corev1.Namespace, error) {
 	appNamespaceLookupKey := types.NamespacedName{Name: namespaceString}
 	appNamespaceObj := &corev1.Namespace{}
 
@@ -210,7 +211,8 @@ var baseVRG = &rmn.VolumeReplicationGroup{
 
 //nolint:funlen,cyclop
 func (f FakeMCVGetter) GetVRGFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
-	annnotations map[string]string) (*rmn.VolumeReplicationGroup, error) {
+	annnotations map[string]string,
+) (*rmn.VolumeReplicationGroup, error) {
 	conType := controllers.VRGConditionTypeDataReady
 	reason := controllers.VRGConditionReasonReplicating
 	vrgStatus := rmn.VolumeReplicationGroupStatus{
@@ -306,12 +308,14 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(resourceName, resourceNamespace,
 }
 
 func (f FakeMCVGetter) DeleteVRGManagedClusterView(
-	resourceName, resourceNamespace, clusterName, resourceType string) error {
+	resourceName, resourceNamespace, clusterName, resourceType string,
+) error {
 	return nil
 }
 
 func (f FakeMCVGetter) DeleteNamespaceManagedClusterView(
-	resourceName, resourceNamespace, clusterName, resourceType string) error {
+	resourceName, resourceNamespace, clusterName, resourceType string,
+) error {
 	return nil
 }
 
@@ -399,7 +403,8 @@ func createPlacementRule(name, namespace string) *plrv1.PlacementRule {
 func updateClonedPlacementRuleStatus(
 	userPlRule *plrv1.PlacementRule,
 	drpc *rmn.DRPlacementControl,
-	clusterName string) {
+	clusterName string,
+) {
 	decision := plrv1.PlacementDecision{
 		ClusterName:      clusterName,
 		ClusterNamespace: clusterName,
@@ -857,7 +862,8 @@ func checkIfDRPCFinalizerNotAdded(drpc *rmn.DRPlacementControl) {
 }
 
 func InitialDeploymentAsync(namespace, placementName, homeCluster string) (*plrv1.PlacementRule,
-	*rmn.DRPlacementControl) {
+	*rmn.DRPlacementControl,
+) {
 	createNamespacesAsync(getNamespaceObj(DRPCNamespaceName))
 
 	createManagedClusters(asyncClusters)
@@ -871,7 +877,8 @@ func InitialDeploymentAsync(namespace, placementName, homeCluster string) (*plrv
 }
 
 func FollowOnDeploymentAsync(namespace, placementName, homeCluster string) (*plrv1.PlacementRule,
-	*rmn.DRPlacementControl) {
+	*rmn.DRPlacementControl,
+) {
 	createNamespace(appNamespace2)
 
 	placementRule := createPlacementRule(placementName, namespace)
@@ -1092,7 +1099,8 @@ func getDRClusterCondition(status *rmn.DRClusterStatus, conditionType string) *m
 }
 
 func runFailoverAction(userPlacementRule *plrv1.PlacementRule, fromCluster, toCluster string, isSyncDR bool,
-	manualFence bool) {
+	manualFence bool,
+) {
 	if isSyncDR {
 		fenceCluster(fromCluster, manualFence)
 	}
@@ -1256,7 +1264,8 @@ func createNamespacesSync() {
 }
 
 func InitialDeploymentSync(namespace, placementName, homeCluster string) (*plrv1.PlacementRule,
-	*rmn.DRPlacementControl) {
+	*rmn.DRPlacementControl,
+) {
 	createNamespacesSync()
 
 	createManagedClusters(syncClusters)
@@ -1396,7 +1405,8 @@ func resetdrCluster(cluster string) {
 }
 
 func verifyInitialDRPCDeployment(userPlacementRule *plrv1.PlacementRule, drpc *rmn.DRPlacementControl,
-	preferredCluster string) {
+	preferredCluster string,
+) {
 	updateClonedPlacementRuleStatus(userPlacementRule, drpc, preferredCluster)
 	verifyVRGManifestWorkCreatedAsPrimary(preferredCluster)
 	updateManifestWorkStatus(preferredCluster, "vrg", ocmworkv1.WorkApplied)
@@ -1420,7 +1430,8 @@ func verifyInitialDRPCDeployment(userPlacementRule *plrv1.PlacementRule, drpc *r
 }
 
 func verifyFailoverToSecondary(userPlacementRule *plrv1.PlacementRule, fromCluster, toCluster string,
-	isSyncDR bool) {
+	isSyncDR bool,
+) {
 	recoverToFailoverCluster(userPlacementRule, fromCluster, toCluster)
 
 	// TODO: DRCluster as part of Unfence operation, first unfences

@@ -244,7 +244,8 @@ var _ = Describe("Secret propagator", func() {
 })
 
 func verifyPlacementRuleClusters(placementRuleClusters []plrulev1.GenericClusterReference,
-	expectedDestClusters []string) bool {
+	expectedDestClusters []string,
+) bool {
 	if len(placementRuleClusters) != len(expectedDestClusters) {
 		return false
 	}

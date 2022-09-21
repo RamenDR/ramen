@@ -172,7 +172,8 @@ func pvcPredicateFunc() predicate.Funcs {
 
 func updateEventDecision(oldPVC *corev1.PersistentVolumeClaim,
 	newPVC *corev1.PersistentVolumeClaim,
-	log logr.Logger) bool {
+	log logr.Logger,
+) bool {
 	const requeue bool = true
 
 	pvcNamespacedName := types.NamespacedName{Name: newPVC.Name, Namespace: newPVC.Namespace}

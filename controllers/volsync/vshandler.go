@@ -81,7 +81,8 @@ type VSHandler struct {
 }
 
 func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, owner metav1.Object,
-	asyncSpec *ramendrv1alpha1.VRGAsyncSpec, defaultCephFSCSIDriverName string) *VSHandler {
+	asyncSpec *ramendrv1alpha1.VRGAsyncSpec, defaultCephFSCSIDriverName string,
+) *VSHandler {
 	vsHandler := &VSHandler{
 		ctx:                        ctx,
 		client:                     client,
@@ -943,7 +944,8 @@ func (v *VSHandler) EnsurePVCfromRD(rdSpec ramendrv1alpha1.VolSyncReplicationDes
 }
 
 func (v *VSHandler) validateSnapshotAndEnsurePVC(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
-	snapshotRef corev1.TypedLocalObjectReference) error {
+	snapshotRef corev1.TypedLocalObjectReference,
+) error {
 	snap, err := v.validateSnapshotAndAddDoNotDeleteLabel(snapshotRef)
 	if err != nil {
 		return err
@@ -962,7 +964,8 @@ func (v *VSHandler) validateSnapshotAndEnsurePVC(rdSpec ramendrv1alpha1.VolSyncR
 
 //nolint:funlen,gocognit,cyclop
 func (v *VSHandler) ensurePVCFromSnapshot(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
-	snapshotRef corev1.TypedLocalObjectReference) (*corev1.PersistentVolumeClaim, error) {
+	snapshotRef corev1.TypedLocalObjectReference,
+) (*corev1.PersistentVolumeClaim, error) {
 	l := v.log.WithValues("pvcName", rdSpec.ProtectedPVC.Name, "snapshotRef", snapshotRef)
 
 	pvc := &corev1.PersistentVolumeClaim{
@@ -1041,7 +1044,8 @@ func (v *VSHandler) ensurePVCFromSnapshot(rdSpec ramendrv1alpha1.VolSyncReplicat
 
 // Validates snapshot exists and adds VolSync "do-not-delete" label to indicate volsync should not cleanup this snapshot
 func (v *VSHandler) validateSnapshotAndAddDoNotDeleteLabel(
-	volumeSnapshotRef corev1.TypedLocalObjectReference) (*snapv1.VolumeSnapshot, error) {
+	volumeSnapshotRef corev1.TypedLocalObjectReference,
+) (*snapv1.VolumeSnapshot, error) {
 	// Using unstructured to avoid needing to require VolumeSnapshot in client scheme
 	volSnap := &snapv1.VolumeSnapshot{}
 
@@ -1127,7 +1131,8 @@ func (v *VSHandler) addOwnerReference(obj, owner metav1.Object) (bool, error) {
 }
 
 func (v *VSHandler) addAnnotationAndVRGOwnerRefAndUpdate(obj client.Object,
-	annotationName, annotationValue string) error {
+	annotationName, annotationValue string,
+) error {
 	annotationsUpdated := addAnnotation(obj, annotationName, annotationValue)
 
 	ownerRefUpdated, err := v.addOwnerReference(obj, v.owner) // VRG as owner
@@ -1191,7 +1196,8 @@ func (v *VSHandler) getRsyncServiceType() *corev1.ServiceType {
 // 2. Modify rsSpec to use the new storageclass and also update AccessModes to 'ReadOnlyMany' as per the instructions
 // above.
 func (v *VSHandler) ModifyRSSpecForCephFS(rsSpec *ramendrv1alpha1.VolSyncReplicationSourceSpec,
-	storageClass *storagev1.StorageClass) error {
+	storageClass *storagev1.StorageClass,
+) error {
 	if storageClass.Provisioner != v.defaultCephFSCSIDriverName {
 		return nil // No workaround required
 	}

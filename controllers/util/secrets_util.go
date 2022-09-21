@@ -63,7 +63,8 @@ type SecretsUtil struct {
 }
 
 func GeneratePolicyResourceNames(
-	secret string) (policyName, plBindingName, plRuleName, configPolicyName string) {
+	secret string,
+) (policyName, plBindingName, plRuleName, configPolicyName string) {
 	// policyName is the same as secret name, to retain name length restrictions
 	return secret,
 		fmt.Sprintf(secretResourceNameFormat, secretPlBindingBaseName, secret),
@@ -73,7 +74,8 @@ func GeneratePolicyResourceNames(
 
 func newPlacementRuleBinding(
 	name, namespace, placementRuleName string,
-	subjects []gppv1.Subject) *gppv1.PlacementBinding {
+	subjects []gppv1.Subject,
+) *gppv1.PlacementBinding {
 	return &gppv1.PlacementBinding{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PlacementBinding",
@@ -93,7 +95,8 @@ func newPlacementRuleBinding(
 }
 
 func newPlacementRule(name string, namespace string,
-	clusters []string) *plrv1.PlacementRule {
+	clusters []string,
+) *plrv1.PlacementRule {
 	plRuleClusters := []plrv1.GenericClusterReference{}
 	for _, clusterRef := range clusters {
 		plRuleClusters = append(plRuleClusters, plrv1.GenericClusterReference{
@@ -354,7 +357,8 @@ func (sutil *SecretsUtil) deletePolicyResources(secret *corev1.Secret, namespace
 func inspectClusters(
 	clusters []plrv1.GenericClusterReference,
 	cluster string,
-	add bool) (bool, []plrv1.GenericClusterReference) {
+	add bool,
+) (bool, []plrv1.GenericClusterReference) {
 	found := false
 	survivors := []plrv1.GenericClusterReference{}
 
@@ -380,7 +384,8 @@ func (sutil *SecretsUtil) updatePlacementRule(
 	plRule *plrv1.PlacementRule,
 	secret *corev1.Secret,
 	cluster, namespace string,
-	add bool) (bool, error) {
+	add bool,
+) (bool, error) {
 	deleted := true
 	found, survivors := inspectClusters(plRule.Spec.Clusters, cluster, add)
 
@@ -452,7 +457,8 @@ func (sutil *SecretsUtil) ticklePolicy(secret *corev1.Secret, namespace string) 
 func (sutil *SecretsUtil) updatePolicyResources(
 	plRule *plrv1.PlacementRule,
 	secret *corev1.Secret, cluster, namespace string,
-	add bool) error {
+	add bool,
+) error {
 	deleted, err := sutil.updatePlacementRule(plRule, secret, cluster, namespace, add)
 	if err != nil {
 		return err

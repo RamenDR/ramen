@@ -69,7 +69,8 @@ func appendSubscriptionObject(
 	drcluster *rmn.DRCluster,
 	mwu *util.MWUtil,
 	ramenConfig *rmn.RamenConfig,
-	objects []interface{}) ([]interface{}, error) {
+	objects []interface{},
+) ([]interface{}, error) {
 	mwSub, err := SubscriptionFromDrClusterManifestWork(mwu, drcluster.Name)
 	if err != nil {
 		return nil, err
@@ -192,7 +193,8 @@ func subscription(
 
 func SubscriptionFromDrClusterManifestWork(
 	mwu *util.MWUtil,
-	clusterName string) (*operatorsv1alpha1.Subscription, error) {
+	clusterName string,
+) (*operatorsv1alpha1.Subscription, error) {
 	mw, err := mwu.GetDrClusterManifestWork(clusterName)
 	if err != nil {
 		return nil, fmt.Errorf("failed fetching cluster manifest work %w", err)

@@ -53,7 +53,8 @@ func DeployVolSyncToCluster(ctx context.Context, k8sClient client.Client,
 }
 
 func reconcileVolSyncManagedClusterAddOn(ctx context.Context, k8sClient client.Client,
-	managedClusterName string, log logr.Logger) error {
+	managedClusterName string, log logr.Logger,
+) error {
 	log.Info("Reconciling VolSync ManagedClusterAddOn")
 
 	// Using unstructured to avoid needing to require ManagedClusterAddOn in client scheme

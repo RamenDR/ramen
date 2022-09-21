@@ -1231,7 +1231,8 @@ func dRPolicySupportsRegional(drpolicy *rmn.DRPolicy, drClusters []rmn.DRCluster
 
 func dRPolicySupportsMetro(drpolicy *rmn.DRPolicy, drclusters []rmn.DRCluster) (
 	supportsMetro bool,
-	metroMap map[rmn.Region][]string) {
+	metroMap map[rmn.Region][]string,
+) {
 	allRegionsMap := make(map[rmn.Region][]string)
 	metroMap = make(map[rmn.Region][]string)
 
@@ -2074,7 +2075,8 @@ func (d *DRPCInstance) setMetricsTimerFromDRState(stateDR rmn.DRState) {
 }
 
 func (d *DRPCInstance) setMetricsTimer(
-	wrapper *timerWrapper, desiredTimerState timerState, reconcileState rmn.DRState) {
+	wrapper *timerWrapper, desiredTimerState timerState, reconcileState rmn.DRState,
+) {
 	switch desiredTimerState {
 	case timerStart:
 		if reconcileState != d.metricsTimer.reconcileState {
@@ -2100,7 +2102,8 @@ func (d *DRPCInstance) setConditionOnInitialDeploymentCompletion() {
 }
 
 func (d *DRPCInstance) setDRPCCondition(conditions *[]metav1.Condition, condType string,
-	observedGeneration int64, status metav1.ConditionStatus, reason, msg string) {
+	observedGeneration int64, status metav1.ConditionStatus, reason, msg string,
+) {
 	SetDRPCStatusCondition(conditions, condType, observedGeneration, status, reason, msg)
 }
 
