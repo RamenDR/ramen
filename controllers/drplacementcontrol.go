@@ -1988,6 +1988,11 @@ func newTimerWrapper(gauge *prometheus.GaugeVec, histogram prometheus.Histogram)
 	return wrapper
 }
 
+const (
+	bucketFactor = 2.0
+	bucketCount  = 12
+)
+
 var (
 	failoverTime = newTimerWrapper(
 		prometheus.NewGaugeVec(
@@ -2002,7 +2007,7 @@ var (
 		prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "ramen_failover_histogram",
 			Help:    "Histogram of all failover timers (seconds) across all DRPCs",
-			Buckets: prometheus.ExponentialBuckets(1.0, 2.0, 12), // start=1.0, factor=2.0, buckets=12
+			Buckets: prometheus.ExponentialBuckets(1.0, bucketFactor, bucketCount),
 		}),
 	)
 
@@ -2019,7 +2024,7 @@ var (
 		prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "ramen_relocate_histogram",
 			Help:    "Histogram of all relocate timers (seconds) across all DRPCs",
-			Buckets: prometheus.ExponentialBuckets(1.0, 2.0, 12), // start=1.0, factor=2.0, buckets=12
+			Buckets: prometheus.ExponentialBuckets(1.0, bucketFactor, bucketCount),
 		}),
 	)
 
@@ -2036,7 +2041,7 @@ var (
 		prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "ramen_initial_deploy_histogram",
 			Help:    "Histogram of all initial deploymet timers (seconds)",
-			Buckets: prometheus.ExponentialBuckets(1.0, 2.0, 12), // start=1.0, factor=2.0, buckets=12
+			Buckets: prometheus.ExponentialBuckets(1.0, bucketFactor, bucketCount),
 		}),
 	)
 )

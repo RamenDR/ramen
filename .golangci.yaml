@@ -70,7 +70,6 @@ linters:
     - nosnakecase
     - ireturn
     - nilnil
-    - gomnd
     - containedctx
     - nonamedreturns
     - forcetypeassert
