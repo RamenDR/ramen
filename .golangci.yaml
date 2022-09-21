@@ -60,7 +60,6 @@ linters:
     - interfacer  # interfacer linter is archived and deprecated (https://github.com/mvdan/interfacer)
     # TODO: fix folloing linter errors.
     - typecheck
-    - gofmt
     - gofumpt
     - exhaustruct
     - tagliatelle

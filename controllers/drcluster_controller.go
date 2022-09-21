@@ -315,17 +315,17 @@ func (u *drclusterInstance) finalizerRemove() error {
 }
 
 // TODO:
-// 1) For now by default fenceStatus is ClusterFenceStateUnfenced.
-//    However, we need to handle explicit unfencing operation to unfence
-//    a fenced cluster below, by deleting the fencing CR created by
-//    ramen.
 //
-// 2) How to differentiate between ClusterFenceStateUnfenced being
-//    set because a manually fenced cluster is manually unfenced against the
-//    requirement to unfence a cluster that has been fenced by ramen.
+//  1. For now by default fenceStatus is ClusterFenceStateUnfenced.
+//     However, we need to handle explicit unfencing operation to unfence
+//     a fenced cluster below, by deleting the fencing CR created by
+//     ramen.
+//
+//  2. How to differentiate between ClusterFenceStateUnfenced being
+//     set because a manually fenced cluster is manually unfenced against the
+//     requirement to unfence a cluster that has been fenced by ramen.
 //
 // 3) Handle Ramen driven fencing here
-//
 func (u *drclusterInstance) clusterFenceHandle() (bool, error) {
 	switch u.object.Spec.ClusterFence {
 	case ramen.ClusterFenceStateUnfenced:
@@ -436,16 +436,19 @@ func (u *drclusterInstance) clusterUnfence() (bool, error) {
 	return u.cleanClusters([]ramen.DRCluster{*u.object, peerCluster})
 }
 
-//
 // if the fencing CR (via MCV) exists; then
-//    if the status of fencing CR shows fenced
-//       return dontRequeue, nil
-//    else
-//       return requeue, error
-//    endif
+//
+//	if the status of fencing CR shows fenced
+//	   return dontRequeue, nil
+//	else
+//	   return requeue, error
+//	endif
+//
 // else
-//    Create the fencing CR MW with Fenced state
-//    return requeue, nil
+//
+//	Create the fencing CR MW with Fenced state
+//	return requeue, nil
+//
 // endif
 func (u *drclusterInstance) fenceClusterOnCluster(peerCluster *ramen.DRCluster) (bool, error) {
 	if !u.isFencingOrFenced() {
@@ -499,16 +502,19 @@ func (u *drclusterInstance) fenceClusterOnCluster(peerCluster *ramen.DRCluster) 
 	return false, nil
 }
 
-//
 // if the fencing CR (via MCV) exist; then
-//    if the status of fencing CR shows unfenced
-//       return dontRequeue, nil
-//    else
-//       return requeue, error
-//    endif
+//
+//	if the status of fencing CR shows unfenced
+//	   return dontRequeue, nil
+//	else
+//	   return requeue, error
+//	endif
+//
 // else
-//    Create the fencing CR MW with Unfenced state
-//    return requeue, nil
+//
+//	Create the fencing CR MW with Unfenced state
+//	return requeue, nil
+//
 // endif
 func (u *drclusterInstance) unfenceClusterOnCluster(peerCluster *ramen.DRCluster) (bool, error) {
 	if !u.isUnfencingOrUnfenced() {
@@ -1007,6 +1013,7 @@ func setDRClusterUnfencingFailedCondition(conditions *[]metav1.Condition, observ
 // fails. Since, cleaning is always called after a successful
 // Unfence operation, unfence = true, fence = false, clean = false
 // TODO: Remove the linter skip when this function is used
+//
 //nolint:deadcode,unused
 func setDRClusterCleaningFailedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{

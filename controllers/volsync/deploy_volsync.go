@@ -35,7 +35,6 @@ const (
 	VolsyncManagedClusterAddOnName string = "volsync" // Needs to have this name
 )
 
-//
 // Function to deploy Volsync from ACM to managed cluster via a ManagedClusterAddOn
 //
 // Calling this function requires a clusterrole that can create/update ManagedClusterAddOns

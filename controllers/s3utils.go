@@ -367,13 +367,13 @@ func DeleteTypedObjects(s ObjectStorer, keyPrefix, keySuffix string, object inte
 }
 
 // UploadObject uploads the given object to the bucket with the given key.
-// - OK to call UploadObject() concurrently from multiple goroutines safely.
-// - Upload may fail due to many reasons: RequestError (connection error),
-//   NoSuchBucket, NoSuchKey, InvalidParameter (e.g., empty key), etc.
-// - Multiple consecutive forward slashes in the key are sqaushed to
-//   a single forward slash, for each such occurrence
-// - Any formatting changes to this method should also be reflected in the
-//   DownloadObject() method
+//   - OK to call UploadObject() concurrently from multiple goroutines safely.
+//   - Upload may fail due to many reasons: RequestError (connection error),
+//     NoSuchBucket, NoSuchKey, InvalidParameter (e.g., empty key), etc.
+//   - Multiple consecutive forward slashes in the key are sqaushed to
+//     a single forward slash, for each such occurrence
+//   - Any formatting changes to this method should also be reflected in the
+//     DownloadObject() method
 func (s *s3ObjectStore) UploadObject(key string,
 	uploadContent interface{}) error {
 	encodedUploadContent := &bytes.Buffer{}
@@ -443,11 +443,11 @@ func DownloadVRGs(s ObjectStorer, pvKeyPrefix string) (
 
 // DownloadTypedObjects downloads all objects of the given type that have
 // the given key prefix followed by the given object's type keyInfix.
-// - Example key prefix:  namespace/vrgName/
-//   Example key infix:  v1.PersistentVolumeClaim/
-//   Example new key prefix: namespace/vrgName/v1.PersistentVolumeClaim/
-// - Objects being downloaded should meet the decoding expectations of
-//   the DownloadObject() method.
+//   - Example key prefix:  namespace/vrgName/
+//     Example key infix:  v1.PersistentVolumeClaim/
+//     Example new key prefix: namespace/vrgName/v1.PersistentVolumeClaim/
+//   - Objects being downloaded should meet the decoding expectations of
+//     the DownloadObject() method.
 func DownloadTypedObjects(s ObjectStorer, keyPrefix string, objectsPointer interface{},
 ) error {
 	objectsValue := reflect.ValueOf(objectsPointer).Elem()
@@ -518,16 +518,16 @@ func (s *s3ObjectStore) ListKeys(keyPrefix string) (
 // unzips, decodes the json blob and stores the downloaded object in the
 // downloadContent parameter.  The caller is expected to use the correct type of
 // downloadContent parameter.
-// - OK to call DownloadObject() concurrently from multiple goroutines safely.
-// - Assumes that the object in S3 store are json blobs that have been then
-//   gzipped and hence, will unzip & decode the json blobs before returning it.
-// - Only those type field name in the downloaded json blob that are also
-//   present in the downloadContent type will be filled; other fields will be
-//   dropped without returning any error.  More info at documentation of
-//   json.Unmarshall().
-// - Download may fail due to many reasons: RequestError (connection error),
-//   NoSuchBucket, NoSuchKey, invalid gzip header, json unmarshall error,
-//   InvalidParameter (e.g., empty key), etc.
+//   - OK to call DownloadObject() concurrently from multiple goroutines safely.
+//   - Assumes that the object in S3 store are json blobs that have been then
+//     gzipped and hence, will unzip & decode the json blobs before returning it.
+//   - Only those type field name in the downloaded json blob that are also
+//     present in the downloadContent type will be filled; other fields will be
+//     dropped without returning any error.  More info at documentation of
+//     json.Unmarshall().
+//   - Download may fail due to many reasons: RequestError (connection error),
+//     NoSuchBucket, NoSuchKey, invalid gzip header, json unmarshall error,
+//     InvalidParameter (e.g., empty key), etc.
 func (s *s3ObjectStore) DownloadObject(key string,
 	downloadContent interface{}) error {
 	bucket := s.s3Bucket

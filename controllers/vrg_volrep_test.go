@@ -570,8 +570,9 @@ type template struct {
 	s3Profiles             []string
 }
 
-//nolint:gosec
 // we want the math rand version here and not the crypto rand. This way we can debug the tests by repeating the seed.
+//
+//nolint:gosec
 func newRandomNamespaceSuffix() string {
 	randomSuffix := make([]byte, namespaceLen)
 
