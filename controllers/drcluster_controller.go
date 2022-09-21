@@ -452,13 +452,13 @@ func (u *drclusterInstance) fenceClusterOnCluster(peerCluster *ramen.DRCluster) 
 
 		if err := u.createNFManifestWork(u.object, peerCluster, u.log); err != nil {
 			setDRClusterFencingFailedCondition(&u.object.Status.Conditions, u.object.Generation,
-				"NeworkFence ManifestWork creation failed")
+				fmt.Sprintf("NetworkFence ManifestWork creation failed: %v", err))
 
 			u.log.Info(fmt.Sprintf("Failed to generate NetworkFence MW on cluster %s to unfence %s",
 				peerCluster.Name, u.object.Name))
 
-			return true, fmt.Errorf("failed to create the NetworkFence MW on cluster %s to fence %s",
-				peerCluster.Name, u.object.Name)
+			return true, fmt.Errorf("failed to create the NetworkFence MW on cluster %s to fence %s: %w",
+				peerCluster.Name, u.object.Name, err)
 		}
 
 		setDRClusterFencingCondition(&u.object.Status.Conditions, u.object.Generation,
@@ -1087,6 +1087,10 @@ func fillStorageDetails(cluster *ramen.DRCluster, nf *csiaddonsv1alpha1.NetworkF
 }
 
 func generateNF(targetCluster *ramen.DRCluster) (csiaddonsv1alpha1.NetworkFence, error) {
+	if len(targetCluster.Spec.CIDRs) == 0 {
+		return csiaddonsv1alpha1.NetworkFence{}, fmt.Errorf("CIDRs has no values")
+	}
+
 	// To ensure deterministic naming of the fencing CR, the resource name
 	// is generated as
 	// "network-fence" + name of the cluster being fenced
