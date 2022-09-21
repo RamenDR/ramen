@@ -505,6 +505,24 @@ var _ = Describe("DRClusterController", func() {
 					ramen.DRClusterConditionTypeFenced)
 			})
 		})
+		When("provided Fencing value is Fenced with an empty CIDR", func() {
+			It("reports error in generating networkFence", func() {
+				drcluster.Spec.ClusterFence = "Fenced"
+				drcluster.Spec.CIDRs = []string{}
+				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
+				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse,
+					Equal(controllers.DRClusterConditionReasonFenceError), Ignore(),
+					ramen.DRClusterConditionTypeFenced)
+			})
+		})
+		When("CIDRs value is provided", func() {
+			It("reports validated", func() {
+				drcluster.Spec.CIDRs = cidrs[0]
+				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
+				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
+					ramen.DRClusterValidated)
+			})
+		})
 		When("provided Fencing value is Fenced", func() {
 			It("reports fenced with reason Fencing success", func() {
 				drcluster.Spec.ClusterFence = "Fenced"
