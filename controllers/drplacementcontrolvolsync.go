@@ -52,8 +52,7 @@ func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 		return WaitForVolSyncManifestWorkCreation
 	}
 
-	_, found := d.vrgs[srcCluster]
-	if !found {
+	if _, found := d.vrgs[srcCluster]; !found {
 		return fmt.Errorf("failed to find source VolSync VRG in cluster %s. VRGs %v", srcCluster, d.vrgs)
 	}
 
