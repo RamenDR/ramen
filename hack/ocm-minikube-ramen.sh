@@ -2,6 +2,8 @@
 # shellcheck disable=1090,2046,2086,1091
 set -x
 set -e
+
+export METRODR="${METRODR:-false}"
 ramen_hack_directory_path_name=$(dirname $0)
 . $ramen_hack_directory_path_name/exit_stack.sh
 . $ramen_hack_directory_path_name/true_if_exit_status_and_stderr.sh
@@ -11,6 +13,8 @@ exit_stack_push unset -f until_true_or_n
 . $ramen_hack_directory_path_name/olm.sh
 exit_stack_push olm_unset
 exit_stack_push unset -v ramen_hack_directory_path_name
+. $ramen_hack_directory_path_name/ocm-minikube.sh
+
 rook_ceph_deploy_spoke()
 {
 	PROFILE=$1 $ramen_hack_directory_path_name/minikube-rook-setup.sh create
@@ -803,6 +807,8 @@ for cluster_name in $spoke_cluster_names; do
 done; unset -v cluster_name
 exit_stack_push unset -v spoke_cluster_names_hub
 exit_stack_push unset -v spoke_cluster_names_nonhub
+ceph_cluster_name=${ceph_cluster_name:-cephcluster}
+exit_stack_push unset -v ceph_cluster_name
 rook_ceph_deploy()
 {
 	# volumes required: mirror sources, mirror targets, minio backend
@@ -847,8 +853,19 @@ ramen_undeploy()
 exit_stack_push unset -f ramen_undeploy
 deploy()
 {
-	hub_cluster_name=$hub_cluster_name spoke_cluster_names=$spoke_cluster_names $ramen_hack_directory_path_name/ocm-minikube.sh
-	rook_ceph_deploy
+	echo "$hub_cluster_name"
+	echo "$spoke_cluster_names"
+	echo "$ceph_cluster_name"
+	echo "$METRODR"
+	ocm_minikube_deploy "$hub_cluster_name" "$spoke_cluster_names"
+	if [ $METRODR = "true" ] || [ $METRODR = "1" ]
+	then
+		minikube_start "${ceph_cluster_name}"
+		metrodr_rook_ceph_deploy "${ceph_cluster_name}"
+		for_each "$hub_cluster_name $spoke_cluster_names_nonhub" metrodr_connect_to_external_ceph_cluster
+	else
+		rook_ceph_deploy
+	fi
 	minio_deploy_spokes
 	ramen_images_build_and_archive
 	olm_deploy_spokes
@@ -863,6 +880,136 @@ undeploy()
 	rook_ceph_undeploy
 }
 exit_stack_push unset -f undeploy
+
+
+metrodr_set_rbd_default_storageclass() {
+        KUBECLUSTER=$1
+        kubectl --context "${KUBECLUSTER}" patch storageclass rook-ceph-block -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+        kubectl --context "${KUBECLUSTER}" patch storageclass standard -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'
+        kubectl --context "${KUBECLUSTER}" patch storageclass rook-ceph-fs -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'
+}
+
+metrodr_create_storageclasses() {
+        KUBECLUSTER=$1
+        kubectl --context "${KUBECLUSTER}" apply -f "${ramen_hack_directory_path_name}/dev-rook-sc.yaml"
+        kubectl --context "${KUBECLUSTER}" apply -f "${ramen_hack_directory_path_name}/dev-rook-cephfs-sc.yaml"
+        metrodr_set_rbd_default_storageclass "${KUBECLUSTER}"
+}
+
+metrodr_verify_storageclasses() {
+        KUBECLUSTER=$1
+        if ! kubectl --context "${KUBECLUSTER}" get storageclass | grep -q "rook-ceph-block"
+        then
+                echo "Couldn't find the rook-ceph-block storageclass"
+                return 1
+        fi
+        if ! kubectl --context "${KUBECLUSTER}" get storageclass | grep -q "rook-ceph-fs"
+        then
+                echo "Couldn't find the rook-ceph-fs storageclass"
+                return 1
+        fi
+        kubectl --context "${KUBECLUSTER}" apply -f "${ramen_hack_directory_path_name}/dev-rook-rbd-pvc.yaml"
+        kubectl --context "${KUBECLUSTER}" wait -n default pvc test-pvc --for=jsonpath='{status.phase}'=Bound --timeout 10m
+        kubectl --context "${KUBECLUSTER}" delete -f "${ramen_hack_directory_path_name}/dev-rook-rbd-pvc.yaml"
+        kubectl --context "${KUBECLUSTER}" apply -f "${ramen_hack_directory_path_name}/dev-rook-cephfs-pvc.yaml"
+        kubectl --context "${KUBECLUSTER}" wait -n default pvc test-fs-pvc --for=jsonpath='{status.phase}'=Bound --timeout 10m
+        kubectl --context "${KUBECLUSTER}" delete -f "${ramen_hack_directory_path_name}/dev-rook-cephfs-pvc.yaml"
+        return 0
+}
+
+metrodr_create_and_verify_storageclasses() {
+        KUBECLUSTER=$1
+        metrodr_create_storageclasses "$KUBECLUSTER"
+        metrodr_verify_storageclasses "$KUBECLUSTER"
+}
+
+metrodr_rook_operator_deploy() {
+        kubectl --context "${1}" apply -f https://raw.githubusercontent.com/rook/rook/master/deploy/examples/common.yaml
+        kubectl --context "${1}" apply -f https://raw.githubusercontent.com/rook/rook/master/deploy/examples/crds.yaml
+        kubectl --context "${1}" apply -f https://raw.githubusercontent.com/rook/rook/master/deploy/examples/operator.yaml
+        kubectl --context "${1}" apply -f https://raw.githubusercontent.com/rook/rook/master/deploy/examples/toolbox.yaml
+}
+
+metrodr_rook_ceph_cluster_deploy() {
+	kubectl --context "${1}" apply -f "${ramen_hack_directory_path_name}/dev-rook-cluster.yaml"
+        kubectl --context "${1}" apply -f "${ramen_hack_directory_path_name}/dev-rook-rbdpool.yaml"
+        kubectl --context "${1}" apply -f "${ramen_hack_directory_path_name}/dev-rook-cephfs.yaml"
+}
+
+metrodr_rook_external_ceph_cluster_deploy() {
+        kubectl --context "${1}" apply -f "${ramen_hack_directory_path_name}/dev-rook-common-external.yaml"
+	kubectl --context "${1}" apply -f "${ramen_hack_directory_path_name}/dev-rook-cluster-external.yaml"
+}
+
+metrodr_rook_ceph_deploy() {
+        metrodr_rook_operator_deploy "${1}"
+        metrodr_rook_ceph_cluster_deploy "${1}"
+        metrodr_create_and_verify_storageclasses "${1}"
+}
+
+gatherCephClusterInfo() {
+		mc_rook_ns="rook-ceph"
+        rook_tools_pod=$(kubectl --context "$1" -n "${mc_rook_ns}" get pods -o name | grep tools)
+        kubectl --context "${1}" exec -n "${mc_rook_ns}" "${rook_tools_pod}" -- \
+          curl -L -o /tmp/create-external-cluster-resources.py\
+          https://raw.githubusercontent.com/rook/rook/master/deploy/examples/create-external-cluster-resources.py
+        eval "$(kubectl --context "${1}" exec -n "${mc_rook_ns}" "${rook_tools_pod}" -- \
+          python3 /tmp/create-external-cluster-resources.py\
+          --format bash\
+          --namespace "${mc_rook_ns}"\
+          --rbd-data-pool-name replicapool\
+          --cephfs-filesystem-name cephfs)"
+}
+
+metrodr_connect_to_external_ceph_cluster() {
+        KUBECLUSTER=$1
+        if metrodr_verify_storageclasses "${KUBECLUSTER}"
+        then
+                echo "StorageClasses found and working, assuming that the ceph cluster is working"
+                return
+        fi
+        metrodr_rook_operator_deploy "${KUBECLUSTER}"
+        metrodr_rook_external_ceph_cluster_deploy "${KUBECLUSTER}"
+        gatherCephClusterInfo "${ceph_cluster_name}"
+	kubectl config use-context "${KUBECLUSTER}"
+	curl https://raw.githubusercontent.com/rook/rook/master/deploy/examples/import-external-cluster.sh | \
+        sed 's/RBD_STORAGE_CLASS_NAME=ceph-rbd/RBD_STORAGE_CLASS_NAME=rook-ceph-block/g' | \
+        sed 's/CEPHFS_STORAGE_CLASS_NAME=cephfs/CEPHFS_STORAGE_CLASS_NAME=rook-ceph-fs/g' | \
+        bash
+        metrodr_verify_storageclasses "${KUBECLUSTER}"
+}
+
+externalCluster_setFSID() {
+        rook_tools_pod=$(kubectl --context "$1" -n "$2" get pods -o name | grep tools)
+        ROOK_EXTERNAL_FSID=$(kubectl --context "$1" exec -n "$2" "${rook_tools_pod}" -- ceph fsid)
+        export ROOK_EXTERNAL_FSID
+}
+
+externalCluster_setNamespace() {
+        if kubectl --context "$1" get ns -o name | grep -q "$2"
+        then
+                echo "namespace exists, continuing"
+                NAMESPACE="$2"
+                export NAMESPACE
+        else
+                kubectl --context "$1" create ns "$2"
+                NAMESPACE="$2"
+                export NAMESPACE
+        fi
+}
+
+externalCluster_setMonData() {
+        rook_tools_pod=$(kubectl --context "$1" -n "$2" get pods -o name | grep tools)
+        mon_dump=$(kubectl --context "$1" exec -n "$2" "${rook_tools_pod}" -- ceph mon dump -f json 2>/dev/null)
+        ROOK_EXTERNAL_CEPH_MON_DATA=$(echo "${mon_dump}" | jq --raw-output .mons[0].name)=$(echo "${mon_dump}" |jq --raw-output .mons[0].public_addrs.addrvec[0].addr)
+        export ROOK_EXTERNAL_CEPH_MON_DATA
+}
+
+externalCluster_setAdminSecret() {
+        rook_tools_pod=$(kubectl --context "$1" -n "$2" get pods -o name | grep tools)
+        ROOK_EXTERNAL_ADMIN_SECRET=$(kubectl --context "$1" exec -n "$2" "${rook_tools_pod}" -- ceph auth get-key client.admin)
+        export ROOK_EXTERNAL_ADMIN_SECRET
+}
 exit_stack_push unset -v command
 for command in "${@:-deploy}"; do
 	$command

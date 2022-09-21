@@ -80,53 +80,9 @@ if [[ $1 == "create" ]]
 then
         ### $1 == "create"
         # TODO: Check if already created and bail out!
-
-        ## Create and attach an OSD disk for Ceph ##
-        set +e
-        pool=$(virsh pool-dumpxml $POOL_NAME)
-        # error: failed to get pool 'minikube'
-        # error: Storage pool not found: no storage pool with matching name 'minikube'
-        set -e
-        pool_target=${pool#*<target>}
-        pool_target=${pool_target%</target>*}
-        pool_target_path=${pool_target#*<path>}
-        pool_target_path=${pool_target_path%</path>*}
-        pool_target_path_set()
-        {
-        	echo "${pool%<target>*}"\<target\>"${pool_target%<path>*}"\<path\>"$IMAGE_DIR"\</path\>"${pool_target#*</path>}"\</target\>"${pool#*</target>}" >/tmp/$$
-        	virsh pool-define /tmp/$$
-        	rm -f /tmp/$$
-        }
-        pool_target_path_set_unqualified()
-        {
-        	test 'Pool '$POOL_NAME' XML configuration edited.' = "$(\
-        	EDITOR=sed\ -i\ \''s,<path>.*</path>,<path>'$IMAGE_DIR'</path>,'\' virsh pool-edit $POOL_NAME \
-        	)"
-        }
-        case $pool_target_path in
-        "$IMAGE_DIR")
-        	;;
-        ?*)
-        	pool_target_path_set
-        	virsh pool-destroy $POOL_NAME
-        	virsh pool-start $POOL_NAME
-        	;;
-        *)
-        	virsh pool-create-as --name "${POOL_NAME}" --type dir --target "${IMAGE_DIR}"
-        	;;
-        esac
-        unset -f pool_target_path_set pool_target_path_set_unqualified
-        unset -v pool pool_target pool_target_path
-        if ! virsh vol-info --pool "$POOL_NAME" "${IMAGE_NAME}-${PROFILE}"; then
-        	virsh vol-create-as --pool "${POOL_NAME}" --name "${IMAGE_NAME}-${PROFILE}" --capacity 32G --format qcow2
-        fi
-        if ! virsh domblkinfo --domain "$PROFILE" --device vdb; then
-        	sudo virsh attach-disk --domain "${PROFILE}" --source "${IMAGE_DIR}/${IMAGE_NAME}-${PROFILE}" --target vdb --persistent --driver qemu --subdriver qcow2 --targetbus virtio
-        fi
-        set +e
-        minikube ssh 'echo 1 | sudo tee /sys/bus/pci/rescan > /dev/null ; dmesg | grep virtio_blk' --profile="${PROFILE}"
-        # ssh: Process exited with status 1
-        set -e
+        ## Preserve /var/lib/rook into existing vda1 disk ##
+        # TODO: minikube instance is assumed to be kvm2 based, check it?
+        minikube ssh "sudo mkdir -p /mnt/vda1/rook/ && sudo ln -sf /mnt/vda1/rook/ /var/lib/rook" --profile="${PROFILE}"
         
         ## Install rook-ceph ##
         kubectl apply -f "${ROOK_SRC}/common.yaml" --context="${PROFILE}"

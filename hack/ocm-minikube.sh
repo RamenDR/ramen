@@ -27,7 +27,7 @@ ${ramen_hack_directory_path_name}/kustomize-install.sh ${HOME}/.local/bin
 exit_stack_push git_checkout_unset
 . $ramen_hack_directory_path_name/github-url.sh
 exit_stack_push github_url_unset
-unset -v ramen_hack_directory_path_name
+exit_stack_push unset -f ramen_hack_directory_path_name
 
 ensure_libvirt_default_network_exists()
 {
@@ -37,6 +37,29 @@ ensure_libvirt_default_network_exists()
 	fi
 }
 exit_stack_push unset -f ensure_libvirt_default_network_exists
+
+minikube_check_profile_status()
+{
+	KUBECLUSTER="${1}"
+
+	if ! minikube profile list  | grep -q "${KUBECLUSTER}"
+	then
+		echo "minikube profile not found"
+		return 1
+	fi
+
+	status=$(minikube profile list  | grep "${KUBECLUSTER}" | cut -d"|" -f8)
+	if [ "Running" != "${status}" ]
+	then
+		echo "minikube profile ${KUBECLUSTER} is not running"
+		return 1
+	fi
+
+	echo "minikube profile ${KUBECLUSTER} is already running"
+	return 0
+}
+exit_stack_push unset -f minikube_check_profile_status
+
 minikube_validate()
 {
 	if ! command -v virsh; then
@@ -69,7 +92,12 @@ exit_stack_push unset -f minikube_validate
 minikube_start()
 {
 	minikube_validate
-	minikube start --driver=kvm2 --network=default --profile=$1 $2
+	if minikube_check_profile_status "${1}"
+	then
+		echo "minikube profile ${1} is up and running"
+		return 0
+	fi
+	minikube start --driver=kvm2 --network=default --extra-disks=1 --profile=$1 $2
 }
 exit_stack_push unset -f minikube_start
 minikube_start_hub()
@@ -453,7 +481,7 @@ exit_stack_push unset -f foundation_operator_kubectl_spoke
 foundation_operator_deploy_hub()
 {
 	foundation_operator_kubectl_hub apply
-	kubectl --context $hub_cluster_name -n open-cluster-management wait deployments/ocm-controller --for condition=available
+	kubectl --context $hub_cluster_name -n open-cluster-management wait deployments/ocm-controller --for condition=available --timeout=300s
 }
 exit_stack_push unset -f foundation_operator_deploy_hub
 foundation_operator_undeploy_hub()
@@ -944,8 +972,10 @@ hub_kubeconfig_file_create()
 	kubectl --context $hub_cluster_name config view --flatten --minify >$hub_kubeconfig_file_path_name
 }
 exit_stack_push unset -f hub_kubeconfig_file_create
-deploy()
+ocm_minikube_deploy()
 {
+	hub_cluster_name="$1"
+	spoke_cluster_names="$2"
 	minikubes_start
 	registration_operator_deploy
 	foundation_operator_deploy
@@ -953,7 +983,7 @@ deploy()
 	policy_operator_deploy
 }
 exit_stack_push unset -f deploy
-undeploy()
+ocm_minikube_undeploy()
 {
 	policy_operator_undeploy
 	subscription_operator_undeploy
@@ -963,9 +993,9 @@ undeploy()
 }
 exit_stack_push unset -f undeploy
 exit_stack_push unset -v command
-for command in "${@:-deploy}"; do
-	$command
-done
+#for command in "${@}"; do
+#	$command
+#done
 unset -v spoke_cluster_names_nonhub
 unset -v spoke_cluster_names_hub
 unset -v spoke_cluster_names
@@ -976,4 +1006,4 @@ unset -f application_sample_deploy
 unset -f application_sample_0_test
 unset -f application_sample_0_undeploy
 unset -f application_sample_0_deploy
-unset -f until_true_or_n
+#unset -f until_true_or_n
