@@ -37,7 +37,7 @@ import (
 )
 
 const (
-	// nolint:lll
+	//nolint:lll
 	// Ref: https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/2.4/html/governance/governance#governance-architecture
 	policyNameLengthLimit = 63
 
@@ -47,7 +47,7 @@ const (
 
 	secretResourceNameFormat string = "%s-%s"
 
-	// nolint:lll
+	//nolint:lll
 	// See: https://github.com/stolostron/rhacm-docs/blob/2.4_stage/governance/custom_template.adoc#special-annotation-for-reprocessing
 	PolicyTriggerAnnotation = "policy.open-cluster-management.io/trigger-update"
 
