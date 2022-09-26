@@ -56,7 +56,6 @@ import (
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	ramencontrollers "github.com/ramendr/ramen/controllers"
 	"github.com/ramendr/ramen/controllers/util"
-	"github.com/ramendr/ramen/controllers/volsync"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	// +kubebuilder:scaffold:imports
 )
@@ -297,7 +296,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	// Index fields that are required for VSHandler
-	err = volsync.IndexFieldsForVSHandler(context.TODO(), k8sManager.GetFieldIndexer())
+	err = util.IndexFieldsForVSHandler(context.TODO(), k8sManager.GetFieldIndexer())
 	Expect(err).ToNot(HaveOccurred())
 
 	Expect((&ramencontrollers.DRClusterReconciler{

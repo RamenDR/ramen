@@ -45,7 +45,6 @@ import (
 
 	"github.com/ramendr/ramen/controllers"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
-	"github.com/ramendr/ramen/controllers/volsync"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -132,7 +131,7 @@ func setupReconcilers(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig
 	}
 
 	// Index fields that are required for VSHandler
-	if err := volsync.IndexFieldsForVSHandler(context.Background(), mgr.GetFieldIndexer()); err != nil {
+	if err := rmnutil.IndexFieldsForVSHandler(context.Background(), mgr.GetFieldIndexer()); err != nil {
 		setupLog.Error(err, "unable to index fields for controller", "controller", "VolumeReplicationGroup")
 		os.Exit(1)
 	}

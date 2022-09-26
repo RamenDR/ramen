@@ -40,6 +40,7 @@ import (
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/controllers/util"
 )
 
 const (
@@ -98,41 +99,6 @@ func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, ow
 	}
 
 	return vsHandler
-}
-
-// VSHandler will either look at VolumeAttachments or pods to determine if a PVC is mounted
-// To do this, it requires an index on pods and volumeattachments to keep track of persistent volume claims mounted
-func IndexFieldsForVSHandler(ctx context.Context, fieldIndexer client.FieldIndexer) error {
-	// Index on pods - used to be able to check if a pvc is mounted to a pod
-	err := fieldIndexer.IndexField(ctx, &corev1.Pod{}, PodVolumePVCClaimIndexName, func(o client.Object) []string {
-		var res []string
-		for _, vol := range o.(*corev1.Pod).Spec.Volumes {
-			if vol.PersistentVolumeClaim == nil {
-				continue
-			}
-			// just return the raw field value -- the indexer will take care of dealing with namespaces for us
-			res = append(res, vol.PersistentVolumeClaim.ClaimName)
-		}
-
-		return res
-	})
-	if err != nil {
-		return fmt.Errorf("%w", err)
-	}
-
-	// Index on volumeattachments - used to be able to check if a pvc is mounted to a node
-	// This will be the preferred check to determine if a PVC is unmounted (i.e. if no volume attachment
-	// to any node, then the PV for a PVC is unmounted).  However not all storage drivers may support this.
-	return fieldIndexer.IndexField(ctx, &storagev1.VolumeAttachment{}, VolumeAttachmentToPVIndexName,
-		func(o client.Object) []string {
-			var res []string
-			sourcePVName := o.(*storagev1.VolumeAttachment).Spec.Source.PersistentVolumeName
-			if sourcePVName != nil {
-				res = append(res, *sourcePVName)
-			}
-
-			return res
-		})
 }
 
 // returns replication destination only if create/update is successful and the RD is considered available.
@@ -540,106 +506,14 @@ func (v *VSHandler) pvcExistsAndInUse(pvcName string, inUsePodMustBeReady bool) 
 
 	v.log.V(1).Info("pvc found", "pvcName", pvcName)
 
-	inUseByPod, err := v.isPvcInUseByPod(pvcName, inUsePodMustBeReady)
+	inUseByPod, err := util.IsPVCInUseByPod(v.ctx, v.client, v.log, pvcName, pvc.GetNamespace(), inUsePodMustBeReady)
 	if err != nil || inUseByPod || inUsePodMustBeReady {
 		// Return status immediately
 		return inUseByPod, err
 	}
 
 	// No pod is mounting the PVC - do additional check to make sure no volume attachment exists
-	return v.isPvAttachedToNode(pvc)
-}
-
-func (v *VSHandler) isPvcInUseByPod(pvcName string, inUsePodMustBeReady bool) (bool, error) {
-	podUsingPVCList := &corev1.PodList{}
-
-	err := v.client.List(context.Background(),
-		podUsingPVCList, // Our custom index - needs to be setup in the cache (see IndexFieldsForVSHandler())
-		client.MatchingFields{PodVolumePVCClaimIndexName: pvcName},
-		client.InNamespace(v.owner.GetNamespace()))
-	if err != nil {
-		v.log.Error(err, "unable to lookup pods to see if they are using pvc", "pvcName", pvcName)
-
-		return false, fmt.Errorf("unable to lookup pods to check if pvc is in use (%w)", err)
-	}
-
-	if len(podUsingPVCList.Items) == 0 {
-		return false /* Not in use by any pod */, nil
-	}
-
-	mountingPodIsReady := false
-
-	inUsePods := []string{}
-	for _, pod := range podUsingPVCList.Items {
-		inUsePods = append(inUsePods, fmt.Sprintf("pod: %s, phase: %s", pod.GetName(), pod.Status.Phase))
-
-		if pod.Status.Phase == corev1.PodRunning {
-			// Assuming in use by running pod if at least 1 pod mounting the PVC is in Running phase
-			// and has the Ready podCondition set to True
-			mountingPodIsReady = isPodReady(pod.Status.Conditions)
-		}
-	}
-
-	v.log.Info("pvc is in use by pod(s)", "pvcName", pvcName, "pods", inUsePods)
-
-	if inUsePodMustBeReady {
-		return mountingPodIsReady, nil
-	}
-
-	return true, nil
-}
-
-// For CSI drivers that support it, volume attachments will be created for the PV to indicate which node
-// they are attached to.  If a volume attachment exists, then we know the PV may not be ready to have a final
-// replication sync performed (I/Os may still not be completely written out).
-// This is a best-effort, as some CSI drivers may not support volume attachments (CSI driver Spec.AttachRequired: false)
-// in this case, we won't find a volumeattachment and will just assume the PV is not in use anymore.
-func (v *VSHandler) isPvAttachedToNode(pvc *corev1.PersistentVolumeClaim) (bool, error) {
-	pvName := pvc.Spec.VolumeName
-	if pvName == "" {
-		// Assuming if no volumename is set, the PVC has not been bound yet, so return false for in-use
-		v.log.V(1).Info("pvc has no VolumeName set, assuming not in-use", "pvcName", pvc.GetName())
-
-		return false, nil
-	}
-
-	// Lookup volumeattachments to determine if the PVC is mounted to a node - use our index
-	// (needs to be setup in the cache - see IndexFieldsForVSHandler())
-	volAttachmentList := &storagev1.VolumeAttachmentList{}
-
-	// Volume attachments are cluster-scoped, so no need to restrict query to our namespace
-	err := v.client.List(v.ctx,
-		volAttachmentList,
-		client.MatchingFields{VolumeAttachmentToPVIndexName: pvName})
-	if err != nil {
-		v.log.Error(err, "unable to lookup volumeattachments to see if pv for pvc is in use",
-			"pvcName", pvc.GetName(), "pvName", pvName)
-	}
-
-	if len(volAttachmentList.Items) == 0 {
-		// PV for our PVC is Not attached to any node
-		return false, nil
-	}
-
-	attachedNodes := []string{}
-	for _, volAttachment := range volAttachmentList.Items {
-		attachedNodes = append(attachedNodes, volAttachment.Spec.NodeName)
-	}
-
-	v.log.Info("pvc is attached to node(s), assuming in-use", "pvcName", pvc.GetName(), "pvName", pvName,
-		"nodes", attachedNodes)
-
-	return true, nil
-}
-
-func isPodReady(podConditions []corev1.PodCondition) bool {
-	for _, podCondition := range podConditions {
-		if podCondition.Type == corev1.PodReady && podCondition.Status == corev1.ConditionTrue {
-			return true
-		}
-	}
-
-	return false
+	return util.IsPVAttachedToNode(v.ctx, v.client, v.log, pvc)
 }
 
 func (v *VSHandler) deletePVC(pvcName string) error {
