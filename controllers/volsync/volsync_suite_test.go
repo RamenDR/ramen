@@ -9,7 +9,6 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/ramendr/ramen/controllers/volsync"
 
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
 	cfgpolicyv1 "github.com/stolostron/config-policy-controller/api/v1"
@@ -26,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
+	"github.com/ramendr/ramen/controllers/util"
 )
 
 var (
@@ -108,7 +108,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	// Index fields that are required for VSHandler
-	err = volsync.IndexFieldsForVSHandler(context.TODO(), k8sManager.GetFieldIndexer())
+	err = util.IndexFieldsForVSHandler(context.TODO(), k8sManager.GetFieldIndexer())
 	Expect(err).ToNot(HaveOccurred())
 
 	go func() {
