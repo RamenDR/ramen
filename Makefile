@@ -191,7 +191,7 @@ deploy-hub: manifests kustomize ## Deploy hub controller to the K8s cluster spec
 	cd config/hub/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/default | kubectl apply -f -
 
-undeploy-hub: ## Undeploy hub controller from the K8s cluster specified in ~/.kube/config.
+undeploy-hub: kustomize ## Undeploy hub controller from the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/default | kubectl delete -f -
 
 install-dr-cluster: manifests kustomize ## Install dr-cluster CRDs into the K8s cluster specified in ~/.kube/config.
@@ -209,7 +209,7 @@ dr-cluster-config: kustomize
 deploy-dr-cluster: manifests kustomize dr-cluster-config ## Deploy dr-cluster controller to the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/default | kubectl apply -f -
 
-undeploy-dr-cluster: ## Undeploy dr-cluster controller from the K8s cluster specified in ~/.kube/config.
+undeploy-dr-cluster: kustomize ## Undeploy dr-cluster controller from the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/default | kubectl delete -f -
 
 ##@ Tools
