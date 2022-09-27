@@ -131,6 +131,10 @@ func validateDRPolicy(ctx context.Context,
 	// If new DRPolicy and clusters are deleted, then fail reconciliation?
 	found := 0
 
+	if len(drpolicy.Spec.DRClusters) == 0 {
+		return ReasonValidationFailed, fmt.Errorf("value for DRCluster cannot be empty")
+	}
+
 	for _, specCluster := range drpolicy.Spec.DRClusters {
 		for _, cluster := range drclusters.Items {
 			if cluster.Name == specCluster {

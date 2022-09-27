@@ -45,7 +45,7 @@ type DRPolicySpec struct {
 	VolumeSnapshotClassSelector metav1.LabelSelector `json:"volumeSnapshotClassSelector,omitempty"`
 
 	// List of DRCluster resources that are governed by this policy
-	DRClusters []string `json:"drClusters,omitempty"`
+	DRClusters []string `json:"drClusters"`
 }
 
 // DRPolicyStatus defines the observed state of DRPolicy
