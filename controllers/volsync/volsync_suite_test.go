@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo"
@@ -60,6 +61,9 @@ func TestVolsync(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
+	SetDefaultConsistentlyDuration(1 * time.Second)
+	SetDefaultConsistentlyPollingInterval(250 * time.Millisecond)
+
 	logger = zap.New(zap.UseFlagOptions(&zap.Options{
 		Development: true,
 		DestWriter:  GinkgoWriter,

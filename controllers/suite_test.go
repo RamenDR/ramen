@@ -113,6 +113,9 @@ func createOperatorNamespace(ramenNamespace string) {
 var _ = BeforeSuite(func() {
 	// onsi.github.io/gomega/#adjusting-output
 	format.MaxLength = 0
+
+	SetDefaultConsistentlyDuration(1 * time.Second)
+
 	testLogger = zap.New(zap.UseFlagOptions(&zap.Options{
 		Development: true,
 		DestWriter:  GinkgoWriter,

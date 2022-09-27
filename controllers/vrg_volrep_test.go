@@ -1102,7 +1102,7 @@ func (v *vrgTest) verifyVRGStatusCondition(conditionName string, expectedStatus 
 		Eventually(testFunc, vrgtimeout, vrginterval).Should(BeTrue(),
 			"while waiting for VRG %s TRUE condition %s/%s", conditionName, v.vrgName, v.namespace)
 	default: // false
-		Consistently(testFunc, vrgtimeout, vrginterval).Should(BeTrue(),
+		Consistently(testFunc).Should(BeTrue(),
 			"while waiting for VRG %s FALSE condition %s/%s", conditionName, v.vrgName, v.namespace)
 	}
 }

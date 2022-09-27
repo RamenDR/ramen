@@ -818,7 +818,7 @@ func ensureDRPolicyIsNotDeleted(drpc *rmn.DRPlacementControl) {
 		err := apiReader.Get(context.TODO(), types.NamespacedName{Name: name}, drpolicy)
 		// TODO: Technically we need to Expect deletion TS is non-zero as well here!
 		return err == nil
-	}, timeout, interval).Should(BeTrue(), "DRPolicy deleted prematurely, with active DRPC references")
+	}).Should(BeTrue(), "DRPolicy deleted prematurely, with active DRPC references")
 }
 
 func ensureDRPolicyIsDeleted(drpolicyName string) {
@@ -857,7 +857,7 @@ func checkIfDRPCFinalizerNotAdded(drpc *rmn.DRPlacementControl) {
 		}
 
 		return true
-	}, timeout, interval).Should(BeTrue(), "DRPlacementControl reconciled with a finalizer",
+	}).Should(BeTrue(), "DRPlacementControl reconciled with a finalizer",
 		"when DRPolicy is in a deleted state")
 }
 
@@ -997,7 +997,7 @@ func verifyUserPlacementRuleDecisionUnchanged(name, namespace, homeCluster strin
 		err := k8sClient.Get(context.TODO(), usrPlRuleLookupKey, usrPlRule)
 
 		return err == nil && usrPlRule.Status.Decisions[0].ClusterName == homeCluster
-	}, timeout, interval).Should(BeTrue())
+	}).Should(BeTrue())
 
 	Expect(usrPlRule.ObjectMeta.Annotations[controllers.DRPCNameAnnotation]).Should(Equal(DRPCName))
 	Expect(usrPlRule.ObjectMeta.Annotations[controllers.DRPCNamespaceAnnotation]).Should(Equal(DRPCNamespaceName))

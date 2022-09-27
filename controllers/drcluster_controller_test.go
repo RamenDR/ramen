@@ -141,7 +141,7 @@ func drclusterConditionExpect(
 	case false:
 		Eventually(testFunc, timeout, interval).Should(matchElements)
 	case true:
-		Consistently(testFunc, timeout, interval).Should(matchElements)
+		Consistently(testFunc).Should(matchElements)
 	}
 
 	// TODO: Validate finaliziers and labels
