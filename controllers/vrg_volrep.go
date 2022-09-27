@@ -180,11 +180,25 @@ func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, 
 		return !ready
 	}
 
-	// If PVC is still in use, it is not ready for Secondary
-	if containsString(pvc.ObjectMeta.Finalizers, pvcInUse) {
-		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolumeClaim is still in use")
+	// Check if any pod definitions exist referencing the PVC, if so it is not ready for Secondary
+	inUseByPod, err := rmnutil.IsPVCInUseByPod(v.ctx, v.reconciler.Client, log, pvc.GetName(), pvc.GetNamespace(), false)
+	if err != nil || inUseByPod {
+		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolumeClaim is potentially"+
+			" in use by a pod", "errorValue", err)
 
-		msg := "PVC still in use"
+		msg := "PVC potentially in use by pod(s). Not ready to become Secondary"
+		v.updatePVCDataReadyCondition(pvc.Name, VRGConditionReasonProgressing, msg)
+
+		return !ready
+	}
+
+	// No pod is mounting the PVC - do additional check to make sure no volume attachment exists
+	vaPresent, err := rmnutil.IsPVAttachedToNode(v.ctx, v.reconciler.Client, log, pvc)
+	if err != nil || vaPresent {
+		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolume is still"+
+			" attached to node(s)", "errorValue", err)
+
+		msg := "PersistentVolume for PVC still attached to node(s). Not ready to become Secondary"
 		v.updatePVCDataReadyCondition(pvc.Name, VRGConditionReasonProgressing, msg)
 
 		return !ready
