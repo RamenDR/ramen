@@ -37,8 +37,13 @@ const (
 	VolumeAttachmentToPVIndexName string = "spec.source.persistentVolumeName"
 )
 
-func ListPVCsByPVCSelector(ctx context.Context, k8sClient client.Client, pvcLabelSelector metav1.LabelSelector,
-	namespace string, volSyncDisabled bool, logger logr.Logger,
+func ListPVCsByPVCSelector(
+	ctx context.Context,
+	k8sClient client.Client,
+	logger logr.Logger,
+	pvcLabelSelector metav1.LabelSelector,
+	namespace string,
+	volSyncDisabled bool,
 ) (*corev1.PersistentVolumeClaimList, error) {
 	// convert metav1.LabelSelector to a labels.Selector
 	pvcSelector, err := metav1.LabelSelectorAsSelector(&pvcLabelSelector)
@@ -84,6 +89,10 @@ func ListPVCsByPVCSelector(ctx context.Context, k8sClient client.Client, pvcLabe
 	return pvcList, nil
 }
 
+// IsPVCInUseByPod determines if there are any pod resources that reference the pvcName in the current
+// pvcNamespace and returns true if found. Further if inUsePodMustBeReady is true, returns true only if
+// the pod is in Ready state.
+// TODO: Should we trust the cached list here, or fetch it from the API server?
 func IsPVCInUseByPod(ctx context.Context,
 	k8sClient client.Client,
 	log logr.Logger,

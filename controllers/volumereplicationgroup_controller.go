@@ -554,8 +554,8 @@ func (v *VRGInstance) restorePVs(result *ctrl.Result) error {
 }
 
 func (v *VRGInstance) listPVCsByPVCSelector() (*corev1.PersistentVolumeClaimList, error) {
-	return rmnutil.ListPVCsByPVCSelector(v.ctx, v.reconciler.Client, v.instance.Spec.PVCSelector, v.instance.Namespace,
-		v.instance.Spec.VolSync.Disabled, v.log)
+	return rmnutil.ListPVCsByPVCSelector(v.ctx, v.reconciler.Client, v.log, v.instance.Spec.PVCSelector,
+		v.instance.Namespace, v.instance.Spec.VolSync.Disabled)
 }
 
 // updatePVCList fetches and updates the PVC list to process for the current instance of VRG
