@@ -101,8 +101,8 @@ var _ = Describe("PVCS_Util", func() {
 			var pvcSelector metav1.LabelSelector
 
 			It("Should list all PVCs when VolSync is disabled", func() {
-				pvcList, err := util.ListPVCsByPVCSelector(testCtx, k8sClient, pvcSelector, testNamespace.GetName(),
-					true /* Volsync Disabled */, testLogger)
+				pvcList, err := util.ListPVCsByPVCSelector(testCtx, k8sClient, testLogger, pvcSelector,
+					testNamespace.GetName(), true /* Volsync Disabled */)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(pvcList).NotTo(BeNil())
 				Expect(len(pvcList.Items)).To(Equal(pvcCount))
@@ -115,8 +115,8 @@ var _ = Describe("PVCS_Util", func() {
 			})
 
 			It("Should filter out VolSync PVCs when VolSync is not disabled", func() {
-				pvcList, err := util.ListPVCsByPVCSelector(testCtx, k8sClient, pvcSelector, testNamespace.GetName(),
-					false /* Volsync NOT disabled */, testLogger)
+				pvcList, err := util.ListPVCsByPVCSelector(testCtx, k8sClient, testLogger, pvcSelector,
+					testNamespace.GetName(), false /* Volsync NOT disabled */)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(pvcList).NotTo(BeNil())
 				Expect(len(pvcList.Items)).To(Equal(pvcCount - 2)) // 2 PVCs are VolSync PVCs
@@ -135,8 +135,8 @@ var _ = Describe("PVCS_Util", func() {
 			}
 
 			It("Should list matching PVCs when VolSync is disabled", func() {
-				pvcList, err := util.ListPVCsByPVCSelector(testCtx, k8sClient, pvcSelector, testNamespace.GetName(),
-					true /* Volsync Disabled */, testLogger)
+				pvcList, err := util.ListPVCsByPVCSelector(testCtx, k8sClient, testLogger, pvcSelector,
+					testNamespace.GetName(), true /* Volsync Disabled */)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(pvcList).NotTo(BeNil())
 				Expect(len(pvcList.Items)).To(Equal(3))
@@ -148,8 +148,8 @@ var _ = Describe("PVCS_Util", func() {
 			})
 
 			It("Should list matching PVCs and filter out VolSync PVCs when VolSync is not disabled", func() {
-				pvcList, err := util.ListPVCsByPVCSelector(testCtx, k8sClient, pvcSelector, testNamespace.GetName(),
-					false /* Volsync NOT Disabled */, testLogger)
+				pvcList, err := util.ListPVCsByPVCSelector(testCtx, k8sClient, testLogger, pvcSelector,
+					testNamespace.GetName(), false /* Volsync NOT Disabled */)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(pvcList).NotTo(BeNil())
 				Expect(len(pvcList.Items)).To(Equal(1))
@@ -168,8 +168,8 @@ var _ = Describe("PVCS_Util", func() {
 			}
 
 			It("Should list matching PVCs when VolSync is disabled", func() {
-				pvcList, err := util.ListPVCsByPVCSelector(testCtx, k8sClient, pvcSelector, testNamespace.GetName(),
-					true /* Volsync Disabled */, testLogger)
+				pvcList, err := util.ListPVCsByPVCSelector(testCtx, k8sClient, testLogger, pvcSelector,
+					testNamespace.GetName(), true /* Volsync Disabled */)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(pvcList).NotTo(BeNil())
 				Expect(len(pvcList.Items)).To(Equal(2))
@@ -180,8 +180,8 @@ var _ = Describe("PVCS_Util", func() {
 			})
 
 			It("Should list matching PVCs and filter out VolSync PVCs when VolSync is not disabled", func() {
-				pvcList, err := util.ListPVCsByPVCSelector(testCtx, k8sClient, pvcSelector, testNamespace.GetName(),
-					false /* Volsync NOT Disabled */, testLogger)
+				pvcList, err := util.ListPVCsByPVCSelector(testCtx, k8sClient, testLogger, pvcSelector,
+					testNamespace.GetName(), false /* Volsync NOT Disabled */)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(pvcList).NotTo(BeNil())
 				Expect(len(pvcList.Items)).To(Equal(1))
@@ -207,8 +207,8 @@ var _ = Describe("PVCS_Util", func() {
 			// Overall this selector should AND matchLabels and MatchExpresssions, so should match pvcB & pvcC
 
 			It("Should list matching PVCs when VolSync is disabled", func() {
-				pvcList, err := util.ListPVCsByPVCSelector(testCtx, k8sClient, pvcSelector, testNamespace.GetName(),
-					true /* Volsync Disabled */, testLogger)
+				pvcList, err := util.ListPVCsByPVCSelector(testCtx, k8sClient, testLogger, pvcSelector,
+					testNamespace.GetName(), true /* Volsync Disabled */)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(pvcList).NotTo(BeNil())
 				Expect(len(pvcList.Items)).To(Equal(2))
@@ -219,8 +219,8 @@ var _ = Describe("PVCS_Util", func() {
 			})
 
 			It("Should list matching PVCs and filter out VolSync PVCs when VolSync is not disabled", func() {
-				pvcList, err := util.ListPVCsByPVCSelector(testCtx, k8sClient, pvcSelector, testNamespace.GetName(),
-					false /* Volsync NOT Disabled */, testLogger)
+				pvcList, err := util.ListPVCsByPVCSelector(testCtx, k8sClient, testLogger, pvcSelector,
+					testNamespace.GetName(), false /* Volsync NOT Disabled */)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(pvcList).NotTo(BeNil())
 				Expect(len(pvcList.Items)).To(Equal(1))
