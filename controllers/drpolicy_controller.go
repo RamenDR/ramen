@@ -132,7 +132,7 @@ func validateDRPolicy(ctx context.Context,
 	found := 0
 
 	if len(drpolicy.Spec.DRClusters) == 0 {
-		return ReasonValidationFailed, fmt.Errorf("value for DRCluster cannot be empty")
+		return ReasonValidationFailed, fmt.Errorf("missing DRClusters list in policy")
 	}
 
 	for _, specCluster := range drpolicy.Spec.DRClusters {

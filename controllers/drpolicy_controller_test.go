@@ -283,10 +283,53 @@ var _ = Describe("DrpolicyController", func() {
 					},
 				)
 			}()
-			drpolicy.Spec.SchedulingInterval = `3s`
-			Expect(k8sClient.Create(context.TODO(), drpolicy)).To(MatchError(err))
-			drpolicy.Spec.SchedulingInterval = `0`
-			Expect(k8sClient.Create(context.TODO(), drpolicy)).To(MatchError(err))
+			drp := drpolicy.DeepCopy()
+			drp.Spec.SchedulingInterval = `3s`
+			Expect(k8sClient.Create(context.TODO(), drp)).To(MatchError(err))
+			drp.Spec.SchedulingInterval = `0`
+			Expect(k8sClient.Create(context.TODO(), drp)).To(MatchError(err))
+		})
+	})
+
+	When("a drpolicy having no drclusters", func() {
+		It("should fail to create drpolicy", func() {
+			drp := drpolicy.DeepCopy()
+			drp.Spec.DRClusters = nil
+			err := func() *errors.StatusError {
+				path := field.NewPath("spec", "drClusters")
+				value := "null"
+
+				return errors.NewInvalid(
+					schema.GroupKind{
+						Group: ramen.GroupVersion.Group,
+						Kind:  "DRPolicy",
+					},
+					drp.Name,
+					field.ErrorList{
+						field.Invalid(
+							path,
+							value,
+							validationErrors.InvalidType(
+								path.String(),
+								"body",
+								"array",
+								value,
+							).Error(),
+						),
+					},
+				)
+			}()
+			Expect(k8sClient.Create(context.TODO(), drp)).To(MatchError(err))
+		})
+	})
+	When("a drpolicy is having an empty list of DRClusters", func() {
+		It("should set its validated status condition's status to false", func() {
+			drp := drpolicy.DeepCopy()
+			drp.Spec.DRClusters = []string{}
+			Expect(k8sClient.Create(context.TODO(), drp)).To(Succeed())
+			validatedConditionExpect(drp, metav1.ConditionFalse, Ignore())
+			drpolicyDeleteAndConfirm(drp)
+			vaildateSecretDistribution(nil)
 		})
 	})
 })
