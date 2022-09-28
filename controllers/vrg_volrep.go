@@ -174,7 +174,7 @@ func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, 
 	if pvc.GetDeletionTimestamp().IsZero() {
 		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolumeClaim is not marked for deletion")
 
-		msg := "PVC not being deleted. Not ready to become Secondary"
+		msg := "unable to transition to Secondary as PVC is not deleted"
 		v.updatePVCDataReadyCondition(pvc.Name, VRGConditionReasonProgressing, msg)
 
 		return !ready
@@ -186,7 +186,7 @@ func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, 
 		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolumeClaim is potentially"+
 			" in use by a pod", "errorValue", err)
 
-		msg := "PVC potentially in use by pod(s). Not ready to become Secondary"
+		msg := "unable to transition to Secondary as PVC is potentially in use by pod(s)"
 		v.updatePVCDataReadyCondition(pvc.Name, VRGConditionReasonProgressing, msg)
 
 		return !ready
@@ -198,7 +198,7 @@ func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, 
 		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolume is still"+
 			" attached to node(s)", "errorValue", err)
 
-		msg := "PersistentVolume for PVC still attached to node(s). Not ready to become Secondary"
+		msg := "unable to transition to Secondary as PersistentVolume for PVC is still attached to node(s)"
 		v.updatePVCDataReadyCondition(pvc.Name, VRGConditionReasonProgressing, msg)
 
 		return !ready
