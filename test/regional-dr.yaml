@@ -20,3 +20,9 @@ profiles:
     network: default
     scripts:
       - file: olm/start
+      - file: cluster-manager/start
+scripts:
+  - file: klusterlet/start
+    args: ["dr1", "dr2", "hub"]
+  - file: klusterlet/test
+    args: ["dr1", "dr2", "hub"]

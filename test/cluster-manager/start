@@ -1,0 +1,91 @@
+#!/usr/bin/env -S python3 -u
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import os
+import sys
+
+import drenv
+
+if len(sys.argv) != 2:
+    print(f"Usage: {sys.argv[0]} cluster")
+    sys.exit(1)
+
+cluster = sys.argv[1]
+
+drenv.log_progress("Deploying cluster manager subscription")
+drenv.kubectl(
+    "apply",
+    "--filename", "https://operatorhub.io/install/stable/cluster-manager.yaml",
+    profile=cluster,
+)
+
+# Takes at least 37 seconds, about 80 seconds typically.
+drenv.wait_for(
+    "csv/cluster-manager.v0.8.0",
+    output="jsonpath={.status.phase}",
+    namespace="operators",
+    profile=cluster,
+)
+
+drenv.log_progress("Waiting until ocm cluster manager succeeds")
+drenv.kubectl(
+    "wait", "csv/cluster-manager.v0.8.0",
+    "--for", "jsonpath={.status.phase}=Succeeded",
+    "--namespace", "operators",
+    "--timeout", "300s",
+    profile=cluster,
+)
+
+drenv.log_progress("Waiting for ocm cluster manager rollout")
+drenv.kubectl(
+    "rollout", "status", "deployment/cluster-manager",
+    "--namespace", "operators",
+    "--timeout", "300s",
+    profile=cluster,
+)
+
+drenv.log_progress("Creating cluster manager instance")
+drenv.kubectl(
+    "apply",
+    "--filename", "cluster-manager/cluster-manager.yaml",
+    profile=cluster,
+)
+
+drenv.wait_for("namespace/open-cluster-management-hub", profile=cluster)
+
+for component in [
+    "placement-controller",
+    "registration-controller",
+    "registration-webhook",
+    "work-webhook",
+]:
+    drenv.wait_for(
+        f"deploy/cluster-manager-{component}",
+        namespace="open-cluster-management-hub",
+        profile=cluster,
+    )
+
+drenv.log_progress("Waiting until cluster manager deployments are avaialble")
+drenv.kubectl(
+    "wait", "deployment", "--all",
+    "--for", "condition=available",
+    "--namespace", "open-cluster-management-hub",
+    "--timeout", "300s",
+    profile=cluster,
+)
+
+drenv.log_progress("Create hub kubeconfig")
+config = drenv.kubectl(
+    "config", "view",
+    "--context", cluster,
+    "--flatten", "--minify",
+    verbose=False,
+)
+config_dir = drenv.config_dir(cluster)
+os.makedirs(config_dir, exist_ok=True)
+kubeconfig = os.path.join(config_dir, "kubeconfig")
+with open(kubeconfig, "w") as f:
+    f.write(config)
+drenv.log_detail(f"hub config created at {kubeconfig}")
