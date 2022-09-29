@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+resources:
+  - ${rook_base_url}/operator.yaml
+patchesJson6902:
+  - target:
+      kind: ConfigMap
+      name: rook-ceph-operator-config
+      namespace: rook-ceph
+    patch: |-
+      - op: add
+        path: /data/CSI_ENABLE_CSIADDONS
+        value: 'true'
+      - op: add
+        path: /data/ROOK_CSIADDONS_IMAGE
+        value: quay.io/csiaddons/k8s-sidecar:latest
+      - op: add
+        path: /data/CSI_ENABLE_OMAP_GENERATOR
+        value: 'true'
+      - op: add
+        path: /data/ROOK_CSI_ALLOW_UNSUPPORTED_VERSION
+        value: 'true'
+      - op: add
+        path: /data/ROOK_CSI_CEPH_IMAGE
+        value: quay.io/cephcsi/cephcsi:canary

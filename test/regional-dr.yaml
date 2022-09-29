@@ -10,12 +10,14 @@ profiles:
     disk_size: "50g"
     scripts:
       - file: olm/start
+      - file: rook/start
   - name: "dr2"
     network: default
     extra_disks: 1
     disk_size: "50g"
     scripts:
       - file: olm/start
+      - file: rook/start
   - name: "hub"
     network: default
     scripts:

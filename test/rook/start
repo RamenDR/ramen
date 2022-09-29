@@ -1,0 +1,155 @@
+#!/usr/bin/env -S python3 -u
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import sys
+
+import drenv
+
+# Update this when upgrading rook.
+ROOK_BASE_URL = "https://raw.githubusercontent.com/rook/rook/release-1.10/deploy/examples"
+
+# Using main till a release is available with lastSyncTime.
+CSI_ADDON_BASE_URL = "https://raw.githubusercontent.com/csi-addons/kubernetes-csi-addons/main/deploy/controller"
+
+if len(sys.argv) != 2:
+    print(f"Usage: {sys.argv[0]} cluster")
+    sys.exit(1)
+
+cluster = sys.argv[1]
+
+drenv.log_progress("Deploying rook ceph crds")
+drenv.kubectl(
+    "apply",
+    "--filename", f"{ROOK_BASE_URL}/crds.yaml",
+    profile=cluster,
+)
+
+drenv.log_progress("Deploying rook common")
+drenv.kubectl(
+    "apply",
+    "--filename", f"{ROOK_BASE_URL}/common.yaml",
+    profile=cluster,
+)
+
+drenv.log_progress("Deploying csi addon for volume replication")
+drenv.kubectl(
+    "apply",
+    "--filename", f"{CSI_ADDON_BASE_URL}/crds.yaml",
+    profile=cluster,
+)
+drenv.kubectl(
+    "apply",
+    "--filename", f"{CSI_ADDON_BASE_URL}/rbac.yaml",
+    profile=cluster,
+)
+drenv.kubectl(
+    "apply",
+    "--filename", f"{CSI_ADDON_BASE_URL}/setup-controller.yaml",
+    profile=cluster,
+)
+
+drenv.log_progress("Deploying kustomized rook operator")
+with drenv.kustomization(
+    "rook/operator-kustomization.yaml",
+    rook_base_url=ROOK_BASE_URL,
+) as kustomization:
+    drenv.kubectl("apply", "--kustomize", kustomization, profile=cluster)
+
+drenv.log_progress("Waiting until rook ceph operator is rolled out")
+drenv.kubectl(
+    "rollout", "status", "deployment/rook-ceph-operator",
+    "--namespace", "rook-ceph",
+    "--timeout", "300s",
+    profile=cluster,
+)
+
+drenv.log_progress("Waiting until rook ceph operator is ready")
+drenv.kubectl(
+    "wait", "pod",
+    "--for", "condition=Ready",
+    "--namespace", "rook-ceph",
+    "--selector", "app=rook-ceph-operator",
+    "--timeout", "300s",
+    profile=cluster,
+)
+
+drenv.log_progress("Deploying kustomized rook ceph cluster")
+with drenv.kustomization(
+    "rook/cluster-test-kustomization.yaml",
+    rook_base_url=ROOK_BASE_URL,
+) as kustomization:
+    drenv.kubectl("apply", "--kustomize", kustomization, profile=cluster)
+
+drenv.log_progress("Creating a mirroring enabled RBD pool")
+drenv.kubectl(
+    "apply",
+    "--filename", "rook/replica-pool.yaml",
+    profile=cluster,
+)
+
+drenv.log_progress("Creating a storage class")
+drenv.kubectl(
+    "apply",
+    "--filename", "rook/storage-class.yaml",
+    profile=cluster,
+)
+
+drenv.wait_for(
+    "cephcluster/my-cluster",
+    output="jsonpath={.status.phase}",
+    namespace="rook-ceph",
+    timeout=60,
+    profile=cluster,
+)
+
+drenv.log_progress("Waiting until rook ceph cluster is ready")
+drenv.kubectl(
+    "wait", "CephCluster", "my-cluster",
+    "--for", "jsonpath={.status.phase}=Ready",
+    "--namespace", "rook-ceph",
+    "--timeout", "300s",
+    profile=cluster,
+)
+
+drenv.wait_for(
+    "cephblockpool/replicapool",
+    output="jsonpath={.status.phase}",
+    namespace="rook-ceph",
+    timeout=60,
+    profile=cluster,
+)
+
+drenv.log_progress("Waiting until ceph block pool is ready")
+drenv.kubectl(
+    "wait", "CephBlockPool", "replicapool",
+    "--for", "jsonpath={.status.phase}=Ready",
+    "--namespace", "rook-ceph",
+    "--timeout", "300s",
+    profile=cluster,
+)
+
+drenv.log_progress("Waiting for replica pool peer token")
+drenv.kubectl(
+    "wait", "CephBlockPool", "replicapool",
+    "--for", "jsonpath={.status.info.rbdMirrorBootstrapPeerSecretName}=pool-peer-token-replicapool",
+    "--namespace", "rook-ceph",
+    "--timeout", "300s",
+    profile=cluster,
+)
+
+drenv.log_progress("Deploying rook ceph toolbox")
+drenv.kubectl(
+    "apply",
+    "--filename", f"{ROOK_BASE_URL}/toolbox.yaml",
+    profile=cluster,
+)
+
+drenv.log_progress("Waiting until toolbox is rolled out")
+drenv.kubectl(
+    "rollout", "status", "deployment/rook-ceph-tools",
+    "--namespace", "rook-ceph",
+    "--timeout", "300s",
+    profile=cluster,
+)
