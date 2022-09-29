@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+resources:
+  - ${rook_base_url}/cluster-test.yaml
+patchesJson6902:
+  - target:
+      kind: CephCluster
+      name: my-cluster
+      namespace: rook-ceph
+    patch: |-
+      # Minikube does not persist /var/lib/rook, but it persists /data/*
+      # https://minikube.sigs.k8s.io/docs/handbook/persistent_volumes/#a-note-on-mounts-persistence-and-minikube-hosts
+      - op: replace
+        path: /spec/dataDirHostPath
+        value: /data/rook
+      # Enable host networking - ceph monitors will be available on the host
+      # network, exposed outside of the cluster.
+      - op: add
+        path: /spec/network
+        value:
+          provider: host
