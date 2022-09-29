@@ -1,0 +1,146 @@
+#!/usr/bin/env -S python3 -u
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import base64
+import json
+import sys
+
+import drenv
+
+POOL_NAME = "replicapool"
+
+
+def fetch_secret_info(cluster):
+    info = {}
+
+    drenv.log_progress(f"Getting mirroring info site name for cluster {cluster}")
+    info["name"] = drenv.kubectl(
+        "get", "cephblockpools.ceph.rook.io", POOL_NAME,
+        "--output", "jsonpath={.status.mirroringInfo.site_name}",
+        "--namespace", "rook-ceph",
+        profile=cluster,
+    )
+
+    drenv.log_progress(f"Getting rbd mirror boostrap peer secret name for cluster {cluster}")
+    secret_name = drenv.kubectl(
+        "get", "cephblockpools.ceph.rook.io", POOL_NAME,
+        "--output", "jsonpath={.status.info.rbdMirrorBootstrapPeerSecretName}",
+        "--namespace", "rook-ceph",
+        profile=cluster,
+    )
+
+    drenv.log_progress(f"Getting secret {secret_name} token for cluster {cluster}")
+    info["token"] = drenv.kubectl(
+        "get", "secret", secret_name,
+        "--output", "jsonpath={.data.token}",
+        "--namespace", "rook-ceph",
+        profile=cluster,
+    )
+
+    # Must be encoded as base64 in secret .data section.
+    info["pool"] = base64.b64encode(POOL_NAME.encode()).decode()
+
+    return info
+
+
+def configure_rbd_mirroring(cluster, peer_info):
+    drenv.log_progress(f"Applying rbd mirror secret in cluster {cluster}")
+
+    template = drenv.template("rbd-mirror/rbd-mirror-secret.yaml")
+    yaml = template.substitute(peer_info)
+    drenv.kubectl(
+        "apply",
+        "--filename", "-",
+        "--namespace", "rook-ceph",
+        input=yaml,
+        profile=cluster,
+    )
+
+    drenv.log_progress(f"Configure peers for cluster {cluster}")
+    patch = {
+        "spec": {
+            "mirroring": {
+                "peers": {
+                    "secretNames": [
+                        peer_info["name"]]}}}}
+    drenv.kubectl(
+        "patch", "cephblockpool",  POOL_NAME,
+        "--type", "merge",
+        "--patch", json.dumps(patch),
+        "--namespace", "rook-ceph",
+        profile=cluster,
+    )
+
+    drenv.log_progress(f"Apply rbd mirror to cluster {cluster}")
+    drenv.kubectl(
+        "apply",
+        "--filename", "rbd-mirror/rbd-mirror.yaml",
+        "--namespace", "rook-ceph",
+        profile=cluster,
+    )
+
+
+def wait_until_pool_mirroring_is_healthy(cluster):
+    drenv.log_progress(f"Waiting until ceph mirror daemon is healthy in cluster {cluster}")
+    drenv.kubectl(
+        "wait", "cephblockpools.ceph.rook.io", POOL_NAME,
+        "--for", "jsonpath={.status.mirroringStatus.summary.daemon_health}=OK",
+        "--namespace", "rook-ceph",
+        "--timeout", "300s",
+        profile=cluster,
+    )
+
+    drenv.log_progress(f"Waiting until ceph mirror is healthy in cluster {cluster}")
+    drenv.kubectl(
+        "wait", "cephblockpools.ceph.rook.io", POOL_NAME,
+        "--for", "jsonpath={.status.mirroringStatus.summary.health}=OK",
+        "--namespace", "rook-ceph",
+        "--timeout", "300s",
+        profile=cluster,
+    )
+
+    drenv.log_progress(f"Waiting until ceph mirror image is healthy in cluster {cluster}")
+    drenv.kubectl(
+        "wait", "cephblockpools.ceph.rook.io", POOL_NAME,
+        "--for", "jsonpath={.status.mirroringStatus.summary.image_health}=OK",
+        "--namespace", "rook-ceph",
+        "--timeout", "300s",
+        profile=cluster,
+    )
+
+
+def deploy_vrc_sample(cluster):
+    drenv.log_progress(f"Applying vrc sample in cluster {cluster}")
+    drenv.kubectl(
+        "apply",
+        "--filename", "rbd-mirror/vrc-sample.yaml",
+        "--namespace", "rook-ceph",
+        profile=cluster,
+    )
+
+
+if len(sys.argv) != 3:
+    print(f"Usage: {sys.argv[0]} cluster1 cluster2")
+    sys.exit(1)
+
+cluster1 = sys.argv[1]
+cluster2 = sys.argv[2]
+
+cluster1_info = fetch_secret_info(cluster1)
+cluster2_info = fetch_secret_info(cluster2)
+
+drenv.log_progress(f"Setting up mirroring from '{cluster2}' to '{cluster1}'")
+configure_rbd_mirroring(cluster1, cluster2_info)
+
+drenv.log_progress(f"Setting up mirroring from '{cluster1}' to '{cluster2}'")
+configure_rbd_mirroring(cluster2, cluster1_info)
+
+wait_until_pool_mirroring_is_healthy(cluster1)
+wait_until_pool_mirroring_is_healthy(cluster2)
+
+deploy_vrc_sample(cluster1)
+deploy_vrc_sample(cluster2)
+
+drenv.log_progress("Mirroring was setup successfully")

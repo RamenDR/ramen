@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+apiVersion: replication.storage.openshift.io/v1alpha1
+kind: VolumeReplication
+metadata:
+  name: vr-sample
+spec:
+  volumeReplicationClass: vrc-sample
+  replicationState: primary
+  dataSource:
+    kind: PersistentVolumeClaim
+    name: rbd-pvc
+  autoResync: true

@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+apiVersion: ceph.rook.io/v1
+kind: CephRBDMirror
+metadata:
+  name: my-rbd-mirror
+  namespace: rook-ceph
+spec:
+  count: 1
