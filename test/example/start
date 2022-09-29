@@ -1,0 +1,21 @@
+#!/usr/bin/env -S python3 -u
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import sys
+
+import drenv
+
+if len(sys.argv) != 2:
+    print(f"Usage: {sys.argv[0]} cluster")
+    sys.exit(1)
+
+cluster = sys.argv[1]
+
+drenv.log_progress(f"Deploying nginx on cluster {cluster}")
+drenv.kubectl(
+    "apply",
+    "--filename", "example/ngix-deployment.yaml",
+    profile=cluster,
+)
