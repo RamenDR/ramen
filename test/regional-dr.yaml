@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Enviroment for testing Regional-DR.
+---
+profiles:
+  - name: "dr1"
+    network: default
+    extra_disks: 1
+    disk_size: "50g"
+    scripts:
+      - file: olm/start
+  - name: "dr2"
+    network: default
+    extra_disks: 1
+    disk_size: "50g"
+    scripts:
+      - file: olm/start
+  - name: "hub"
+    network: default
+    scripts:
+      - file: olm/start

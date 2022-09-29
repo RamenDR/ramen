@@ -290,3 +290,8 @@ $ drenv delete example.yaml
     - `file`: Script filename
     - `args`: Optional argument to the script. If not specified the
       script is run without any arguments.
+
+## The regional-dr environment
+
+This is a configuration for testing regional DR using a hub cluster and
+2 managed clusters.

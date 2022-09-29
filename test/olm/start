@@ -1,0 +1,81 @@
+#!/usr/bin/env -S python3 -u
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import sys
+
+import drenv
+
+OLM_BASE_URL = "https://github.com/operator-framework/operator-lifecycle-manager/releases/download/v0.22.0"
+
+if len(sys.argv) != 2:
+    print(f"Usage: {sys.argv[0]} cluster")
+    sys.exit(1)
+
+cluster = sys.argv[1]
+
+drenv.log_progress("Deploying olm crds")
+
+# Using Server-side Apply to avoid this failure:
+#   The CustomResourceDefinition "clusterserviceversions.operators.coreos.com"
+#   is invalid: metadata.annotations: Too long: must have at most 262144 bytes
+# See https://medium.com/pareture/kubectl-install-crd-failed-annotations-too-long-2ebc91b40c7d
+drenv.kubectl(
+    "apply",
+    "--filename", f"{OLM_BASE_URL}/crds.yaml",
+    "--server-side=true",
+    profile=cluster,
+)
+
+drenv.log_progress("Waiting until cdrs are established")
+drenv.kubectl(
+    "wait",
+    "--for", "condition=established",
+    "--filename", f"{OLM_BASE_URL}/crds.yaml",
+    profile=cluster,
+)
+
+drenv.log_progress("Deploying olm")
+drenv.kubectl(
+    "apply",
+    "--filename", f"{OLM_BASE_URL}/olm.yaml",
+    profile=cluster,
+)
+
+drenv.log_progress("Waiting until olm operator is rolled out")
+drenv.kubectl(
+    "rollout", "status", "deployment/olm-operator",
+    "--namespace", "olm",
+    profile=cluster,
+)
+
+drenv.log_progress("Waiting until olm catalog operator is rolled out")
+drenv.kubectl(
+    "rollout", "status", "deployment/catalog-operator",
+    "--namespace", "olm",
+    profile=cluster,
+)
+
+drenv.wait_for(
+    "csv/packageserver",
+    output="jsonpath={.status.phase}",
+    namespace="olm",
+    profile=cluster,
+)
+
+drenv.log_progress("Waiting until olm packageserver succeeds")
+drenv.kubectl(
+    "wait", "csv/packageserver",
+    "--namespace", "olm",
+    "--for", 'jsonpath={.status.phase}=Succeeded',
+    "--timeout", "300s",
+    profile=cluster,
+)
+
+drenv.log_progress("Waiting for olm pakcage server rollout")
+drenv.kubectl(
+    "rollout", "status", "deployment/packageserver",
+    "--namespace", "olm",
+    profile=cluster,
+)
