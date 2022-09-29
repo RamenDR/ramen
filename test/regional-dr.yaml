@@ -30,3 +30,7 @@ scripts:
     args: ["dr1", "dr2", "hub"]
   - file: klusterlet/test
     args: ["dr1", "dr2", "hub"]
+  - file: rbd-mirror/start
+    args: ["dr1", "dr2"]
+  - file: rbd-mirror/test
+    args: ["dr1", "dr2"]

@@ -1,0 +1,133 @@
+#!/usr/bin/env -S python3 -u
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import sys
+import time
+
+import drenv
+
+POOL_NAME = "replicapool"
+PVC_NAME = "rbd-pvc"
+
+
+def test_volume_replication(primary, secondary):
+    drenv.log_progress(f"Deploying pvc {PVC_NAME} in cluster {primary}")
+    drenv.kubectl(
+        "apply",
+        "--filename", f"rbd-mirror/{PVC_NAME}.yaml",
+        "--namespace", "rook-ceph",
+        profile=primary,
+    )
+
+    drenv.log_progress(f"Waiting until pvc {PVC_NAME} is bound in cluster {primary}")
+    drenv.kubectl(
+        "wait", "pvc", PVC_NAME,
+        "--for", "jsonpath={.status.phase}=Bound",
+        "--namespace", "rook-ceph",
+        "--timeout", "300s",
+        profile=primary,
+    )
+
+    drenv.log_progress(f"Deploying vr vr-sample in cluster {primary}")
+    drenv.kubectl(
+        "apply",
+        "--filename", "rbd-mirror/vr-sample.yaml",
+        "--namespace", "rook-ceph",
+        profile=primary,
+    )
+
+    drenv.log_progress(f"Waiting until vr vr-sample is completed in cluster {primary}")
+    drenv.kubectl(
+        "wait", "volumereplication", "vr-sample",
+        "--for", "condition=Completed",
+        "--namespace", "rook-ceph",
+        "--timeout", "60s",
+        profile=primary,
+    )
+
+    drenv.log_progress(f"Waiting until vr vr-sample state is primary in cluster {primary}")
+    drenv.kubectl(
+        "wait", "volumereplication", "vr-sample",
+        "--for", "jsonpath={.status.state}=Primary",
+        "--namespace", "rook-ceph",
+        "--timeout", "60s",
+        profile=primary,
+    )
+
+    drenv.log_progress(f"Looking up pvc {PVC_NAME} pv name in cluster {primary}")
+    pv_name = drenv.kubectl(
+        "get", f"pvc/{PVC_NAME}",
+        "--output", "jsonpath={.spec.volumeName}",
+        "--namespace", "rook-ceph",
+        profile=primary,
+    )
+
+    drenv.log_progress(f"Looking up rbd image for pv {pv_name} in cluster {primary}")
+    rbd_image = drenv.kubectl(
+        "get", f"pv/{pv_name}",
+        "--output", "jsonpath={.spec.csi.volumeAttributes.imageName}",
+        "--namespace", "rook-ceph",
+        profile=primary,
+    )
+
+    drenv.log_progress(f"rbd image {rbd_image} info in cluster {primary}")
+    drenv.kubectl(
+        "exec", "deploy/rook-ceph-tools", "--namespace", "rook-ceph", "--",
+        "rbd", "info", rbd_image, "--pool", POOL_NAME,
+        profile=primary,
+    )
+
+    drenv.log_progress(f"Waiting until rbd image {rbd_image} is created in cluster {secondary}")
+    for i in range(60):
+        time.sleep(1)
+        out = drenv.kubectl(
+            "exec", "deploy/rook-ceph-tools", "--namespace", "rook-ceph", "--",
+            "rbd", "list", "--pool", POOL_NAME,
+            profile=secondary,
+        )
+        if rbd_image in out:
+            drenv.kubectl(
+                "exec", "deploy/rook-ceph-tools", "--namespace", "rook-ceph", "--",
+                "rbd", "info", rbd_image, "--pool", POOL_NAME,
+                profile=secondary,
+            )
+            break
+    else:
+        raise RuntimeError(f"Timeout waiting for image {rbd_image}")
+
+    drenv.log_progress(f"vr vr-sample info on primary cluster {primary}")
+    drenv.kubectl(
+        "get", "volumereplication", "vr-sample",
+        "--output", "yaml",
+        "--namespace", "rook-ceph",
+        profile=primary,
+    )
+
+    drenv.log_progress(f"Deleting vr vr-sample in primary cluster {primary}")
+    drenv.kubectl(
+        "delete", "volumereplication", "vr-sample",
+        "--namespace", "rook-ceph",
+        profile=primary,
+    )
+
+    drenv.log_progress(f"Deleting pvc {PVC_NAME} in primary cluster {primary}")
+    drenv.kubectl(
+        "delete", "pvc", PVC_NAME,
+        "--namespace", "rook-ceph",
+        profile=primary,
+    )
+
+    drenv.log_progress(f"Replication from cluster {primary} to cluster {secondary} successeded")
+
+
+if len(sys.argv) != 3:
+    print(f"Usage: {sys.argv[0]} cluster1 cluster2")
+    sys.exit(1)
+
+cluster1 = sys.argv[1]
+cluster2 = sys.argv[2]
+
+test_volume_replication(cluster1, cluster2)
+test_volume_replication(cluster2, cluster1)
