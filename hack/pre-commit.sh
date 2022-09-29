@@ -38,10 +38,10 @@ function run_check() {
 # Install via: gem install mdl
 run_check '.*\.md' mdl --style "${scriptdir}/mdl-style.rb"
 
-# Install via: dnf install shellcheck
+# Install via: dnf install ShellCheck
 run_check '.*\.(ba)?sh' shellcheck
 
-# Install via: pip install yamllint
+# Install via: dnf install yamllint
 run_check '.*\.ya?ml' yamllint -s -c "${scriptdir}/yamlconfig.yaml"
 
 (! < "${OUTPUTS_FILE}" read -r)
