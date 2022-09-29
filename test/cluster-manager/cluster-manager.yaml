@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+apiVersion: operator.open-cluster-management.io/v1
+kind: ClusterManager
+metadata:
+  name: cluster-manager
+spec:
+  deployOption:
+    mode: Default
+  placementImagePullSpec: 'quay.io/open-cluster-management/placement:v0.8.0'
+  registrationConfiguration:
+    featureGates:
+      - feature: DefaultClusterSet
+        mode: Enable
+  registrationImagePullSpec: 'quay.io/open-cluster-management/registration:v0.8.0'
+  workImagePullSpec: 'quay.io/open-cluster-management/work:v0.8.0'
