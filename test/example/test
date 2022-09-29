@@ -1,0 +1,28 @@
+#!/usr/bin/env -S python3 -u
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import sys
+
+import drenv
+
+if len(sys.argv) != 3:
+    print(f"Usage: {sys.argv[0]} cluster1 cluster2")
+    sys.exit(1)
+
+cluster1, cluster2 = sys.argv[1:]
+
+drenv.log_progress(f"Testing example deploymnet on cluster {cluster1}")
+drenv.kubectl(
+    "rollout", "status", "deploy/nginx-deployment",
+    "--timeout", "60s",
+    profile=cluster1,
+)
+
+drenv.log_progress(f"Testing example deploymnet on cluster {cluster2}")
+drenv.kubectl(
+    "rollout", "status", "deploy/nginx-deployment",
+    "--timeout", "60s",
+    profile=cluster2,
+)

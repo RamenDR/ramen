@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Example environment.
+---
+profiles:
+  - name: "ex1"
+    scripts:
+      - file: example/start
+  - name: "ex2"
+    scripts:
+      - file: example/start
+scripts:
+  - file: example/test
+    args: ["ex1", "ex2"]

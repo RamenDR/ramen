@@ -29,3 +29,7 @@ config/hub/bundle
 *.swo
 *~
 .vscode
+
+# Test enviromemnt generated files
+test/drenv.egg-info/
+test/*/__pycache__/
