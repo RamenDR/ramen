@@ -1337,7 +1337,7 @@ func (d *DRPCInstance) checkPVsHaveBeenRestored(homeCluster string) (bool, error
 	vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name,
 		d.instance.Namespace, homeCluster, annotations)
 	if err != nil {
-		return false, fmt.Errorf("failed to VRG using MCV (error: %w)", err)
+		return false, fmt.Errorf("waiting for PVs to be restored to failover cluster (status: %w)", err)
 	}
 
 	// ClusterDataReady condition tells us whether the PVs have been applied on the
