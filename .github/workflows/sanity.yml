@@ -141,6 +141,13 @@ jobs:
           docker load -i /tmp/ramen-operator.tar
           kind load docker-image ${IMAGE_TAG_BASE}-operator:${IMAGE_TAG} --name ${KIND_CLUSTER_NAME}
 
+      - name: Install cert-manager
+        run: |
+          kubectl apply  -f https://github.com/cert-manager/cert-manager/releases/download/v1.10.0/cert-manager.yaml
+          kubectl -n cert-manager  wait --for=condition=Available --timeout=60s deploy/cert-manager
+          kubectl -n cert-manager  wait --for=condition=Available --timeout=60s deploy/cert-manager-cainjector
+          kubectl -n cert-manager  wait --for=condition=Available --timeout=60s deploy/cert-manager-webhook
+
       - name: Deploy dependent CRDs
         run: |
           kubectl apply -f hack/test/
