@@ -551,8 +551,6 @@ spec:
                     - namespace
                     type: object
                 type: object
-            required:
-            - lastUpdateTime
             type: object
         type: object
     served: true

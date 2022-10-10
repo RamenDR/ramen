@@ -472,7 +472,10 @@ func (r *DRPlacementControlReconciler) isBeingDeleted(drpc *rmn.DRPlacementContr
 
 func (r *DRPlacementControlReconciler) reconcileDRPCInstance(d *DRPCInstance, log logr.Logger) (ctrl.Result, error) {
 	// Last status update time BEFORE we start processing
-	beforeProcessing := d.instance.Status.LastUpdateTime
+	var beforeProcessing metav1.Time
+	if d.instance.Status.LastUpdateTime != nil {
+		beforeProcessing = *d.instance.Status.LastUpdateTime
+	}
 
 	requeue := d.startProcessing()
 	log.Info("Finished processing", "Requeue?", requeue)
@@ -496,7 +499,11 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(d *DRPCInstance, lo
 	}
 
 	// Last status update time AFTER processing
-	afterProcessing := d.instance.Status.LastUpdateTime
+	var afterProcessing metav1.Time
+	if d.instance.Status.LastUpdateTime != nil {
+		afterProcessing = *d.instance.Status.LastUpdateTime
+	}
+
 	requeueTimeDuration := r.getSanityCheckDelay(beforeProcessing, afterProcessing)
 	log.Info("Requeue time", "duration", requeueTimeDuration)
 
@@ -1009,7 +1016,9 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 		}
 	}
 
-	drpc.Status.LastUpdateTime = metav1.Now()
+	now := metav1.Now()
+	drpc.Status.LastUpdateTime = &now
+
 	for i, condition := range drpc.Status.Conditions {
 		if condition.ObservedGeneration != drpc.Generation {
 			drpc.Status.Conditions[i].ObservedGeneration = drpc.Generation
