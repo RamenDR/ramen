@@ -672,8 +672,7 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 		case requeueResult:
 			return requeue
 		case !ready:
-			// Ensure VR is available at the required state before deletion
-			return !requeue
+			return requeue
 		}
 	}
 
@@ -681,7 +680,7 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 		log.Info("Requeuing due to failure in finalizing VolumeReplication resource for PersistentVolumeClaim",
 			"errorValue", err)
 
-		return true
+		return requeue
 	}
 
 	if err := v.preparePVCForVRDeletion(pvc, log); err != nil {
@@ -700,7 +699,7 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 // - if no VR was created post initial processing, by when VRG was deleted. In this case
 // no PV was also uploaded, as VR is created first before PV is uploaded.
 // - if VR was deleted in a prior reconcile, during VRG deletion, but steps post VR deletion were not
-// completed
+// completed, at this point a deleted VR is also not processed further (its generation would have been updated)
 // Returns 2 booleans,
 // - the first indicating if VR is missing or not, to enable further VR processing if needed
 // - the next indicating any required requeue of the request, due to errors in determining VR presence
@@ -719,12 +718,22 @@ func (v *VRGInstance) reconcileMissingVR(pvc *corev1.PersistentVolumeClaim, log 
 
 	err := v.reconciler.Get(v.ctx, vrNamespacedName, volRep)
 	if err == nil {
+		if !volRep.ObjectMeta.DeletionTimestamp.IsZero() {
+			log.Info("Requeuing due to processing a VR under deletion")
+
+			return !vrMissing, requeue
+		}
+
 		return !vrMissing, !requeue
 	}
 
 	if !k8serrors.IsNotFound(err) {
+		log.Info("Requeuing due to failure in getting VR resource", "errorValue", err)
+
 		return !vrMissing, requeue
 	}
+
+	log.Info("Preparing PVC as VR is detected as missing or deleted")
 
 	if err := v.preparePVCForVRDeletion(pvc, log); err != nil {
 		log.Info("Requeuing due to failure in preparing PersistentVolumeClaim for deletion",
@@ -1453,6 +1462,29 @@ func setPVCClusterDataProtectedCondition(protectedPVC *ramendrv1alpha1.Protected
 	}
 }
 
+// ensureVRDeletedFromAPIServer adds an additional step to ensure that we wait for volumereplication deletion
+// from API server before moving ahead with vrg finalizer removal.
+func (v *VRGInstance) ensureVRDeletedFromAPIServer(vrNamespacedName types.NamespacedName, log logr.Logger) error {
+	volRep := &volrep.VolumeReplication{}
+
+	err := v.reconciler.APIReader.Get(v.ctx, vrNamespacedName, volRep)
+	if err == nil {
+		log.Info("Found VolumeReplication resource pending delete", "vr", volRep)
+
+		return fmt.Errorf("waiting for deletion of VolumeReplication resource (%s/%s), %w",
+			vrNamespacedName.Namespace, vrNamespacedName.Name, err)
+	}
+
+	if k8serrors.IsNotFound(err) {
+		return nil
+	}
+
+	log.Error(err, "Failed to get VolumeReplication resource")
+
+	return fmt.Errorf("failed to get VolumeReplication resource (%s/%s), %w",
+		vrNamespacedName.Namespace, vrNamespacedName.Name, err)
+}
+
 // deleteVR deletes a VolumeReplication instance if found
 func (v *VRGInstance) deleteVR(vrNamespacedName types.NamespacedName, log logr.Logger) error {
 	cr := &volrep.VolumeReplication{
@@ -1463,14 +1495,18 @@ func (v *VRGInstance) deleteVR(vrNamespacedName types.NamespacedName, log logr.L
 	}
 
 	err := v.reconciler.Delete(v.ctx, cr)
-	if err == nil || k8serrors.IsNotFound(err) {
+	if err != nil {
+		if !k8serrors.IsNotFound(err) {
+			log.Error(err, "Failed to delete VolumeReplication resource")
+
+			return fmt.Errorf("failed to delete VolumeReplication resource (%s/%s), %w",
+				vrNamespacedName.Namespace, vrNamespacedName.Name, err)
+		}
+
 		return nil
 	}
 
-	log.Error(err, "Failed to delete VolumeReplication resource")
-
-	return fmt.Errorf("failed to delete VolumeReplication resource (%s/%s), %w",
-		vrNamespacedName.Namespace, vrNamespacedName.Name, err)
+	return v.ensureVRDeletedFromAPIServer(vrNamespacedName, log)
 }
 
 func (v *VRGInstance) addProtectedAnnotationForPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) error {

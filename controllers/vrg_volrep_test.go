@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const (
@@ -210,6 +211,66 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 		It("cleans up after testing", func() {
 			vrgS3UploadTestCase.cleanup()
+		})
+	})
+
+	// Test VRG finalizer removal during deletion is deferred till VR is deleted
+	var vrgVRDeleteEnsureTestCase *vrgTest
+	Context("in primary state", func() {
+		createTestTemplate := &template{
+			ClaimBindInfo:          corev1.ClaimBound,
+			VolumeBindInfo:         corev1.VolumeBound,
+			schedulingInterval:     "1h",
+			storageClassName:       "manual",
+			replicationClassName:   "test-replicationclass",
+			vrcProvisioner:         "manual.storage.com",
+			scProvisioner:          "manual.storage.com",
+			replicationClassLabels: map[string]string{"protection": "ramen"},
+		}
+		It("sets up PVCs, PVs and VRGs (with s3 stores that fail uploads)", func() {
+			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			vrgVRDeleteEnsureTestCase = newVRGTestCaseCreateAndStart(1, createTestTemplate, true, false)
+		})
+		It("waits for VRG to create a VR for each PVC", func() {
+			expectedVRCount := len(vrgVRDeleteEnsureTestCase.pvcNames)
+			vrgVRDeleteEnsureTestCase.waitForVRCountToMatch(expectedVRCount)
+		})
+		It("waits for VRG status to match", func() {
+			vrgVRDeleteEnsureTestCase.promoteVolReps()
+			vrgVRDeleteEnsureTestCase.verifyVRGStatusExpectation(true)
+		})
+		It("ensures orderly cleanup post VolumeReplication deletion", func() {
+			By("Protecting the VolumeReplication resources from deletion")
+			vrgVRDeleteEnsureTestCase.protectDeletionOfVolReps()
+
+			By("Starting the VRG deletion process")
+			vrgVRDeleteEnsureTestCase.cleanupPVCs()
+			Expect(k8sClient.Delete(context.TODO(), vrgVRDeleteEnsureTestCase.getVRG())).To(Succeed())
+
+			By("Ensuring VRG is not deleted till VRs are present")
+			Consistently(func() bool {
+				vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
+				err := apiReader.Get(context.TODO(), vrgVRDeleteEnsureTestCase.vrgNamespacedName(), vrg)
+
+				return err == nil
+			}, vrgtimeout, vrginterval).Should(BeTrue(), "while waiting for VRG %v to remain undeleted",
+				vrgVRDeleteEnsureTestCase.vrgNamespacedName())
+
+			By("Un-protecting the VolumeReplication resources to ensure their deletion")
+			vrgVRDeleteEnsureTestCase.unprotectDeletionOfVolReps()
+
+			By("Ensuring VRG is deleted eventually as a result")
+			Eventually(func() bool {
+				vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
+				err := apiReader.Get(context.TODO(), vrgVRDeleteEnsureTestCase.vrgNamespacedName(), vrg)
+
+				return errors.IsNotFound(err)
+			}, vrgtimeout, vrginterval).Should(BeTrue(), "while waiting for VRG %v to be deleted",
+				vrgVRDeleteEnsureTestCase.vrgNamespacedName())
+
+			vrgVRDeleteEnsureTestCase.cleanupNamespace()
+			vrgVRDeleteEnsureTestCase.cleanupSC()
+			vrgVRDeleteEnsureTestCase.cleanupVRC()
 		})
 	})
 
@@ -1356,6 +1417,44 @@ func (v *vrgTest) promoteVolReps() {
 			v.waitForVolRepPromotion(volrepKey, false)
 		} else {
 			v.waitForVolRepPromotion(volrepKey, true)
+		}
+	}
+}
+
+func (v *vrgTest) protectDeletionOfVolReps() {
+	By("Adding a finalizer to protect VolumeReplication resources being deleted " + v.namespace)
+
+	volRepList := &volrep.VolumeReplicationList{}
+	listOptions := &client.ListOptions{
+		Namespace: v.namespace,
+	}
+	err := apiReader.List(context.TODO(), volRepList, listOptions)
+	Expect(err).NotTo(HaveOccurred(), "failed to get a list of VRs in namespace %s", v.namespace)
+
+	for index := range volRepList.Items {
+		volRep := volRepList.Items[index]
+		if controllerutil.AddFinalizer(client.Object(&volRep), "testDeleteProtected") {
+			err = k8sClient.Update(context.TODO(), &volRep)
+			Expect(err).NotTo(HaveOccurred(), "failed to add finalizer to VolRep %s", volRep.Name)
+		}
+	}
+}
+
+func (v *vrgTest) unprotectDeletionOfVolReps() {
+	By("Removing finalizer that protects VolumeReplication resources from being deleted " + v.namespace)
+
+	volRepList := &volrep.VolumeReplicationList{}
+	listOptions := &client.ListOptions{
+		Namespace: v.namespace,
+	}
+	err := apiReader.List(context.TODO(), volRepList, listOptions)
+	Expect(err).NotTo(HaveOccurred(), "failed to get a list of VRs in namespace %s", v.namespace)
+
+	for index := range volRepList.Items {
+		volRep := volRepList.Items[index]
+		if controllerutil.RemoveFinalizer(client.Object(&volRep), "testDeleteProtected") {
+			err = k8sClient.Update(context.TODO(), &volRep)
+			Expect(err).NotTo(HaveOccurred(), "failed to remove finalizer to VolRep %s", volRep.Name)
 		}
 	}
 }
