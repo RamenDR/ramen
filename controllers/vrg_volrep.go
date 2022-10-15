@@ -1453,6 +1453,32 @@ func setPVCClusterDataProtectedCondition(protectedPVC *ramendrv1alpha1.Protected
 	}
 }
 
+// ensureVRDeletedFromAPIServer adds an additional step to ensure that we wait for volumereplication deletion
+// from API server before moving ahead with vrg finalizer removal.
+func (v *VRGInstance) ensureVRDeletedFromAPIServer(vrNamespacedName types.NamespacedName, log logr.Logger) error {
+	volRep := &volrep.VolumeReplication{}
+
+	err := v.reconciler.APIReader.Get(v.ctx, vrNamespacedName, volRep)
+	if err != nil && !k8serrors.IsNotFound(err) {
+		log.Error(err, "Failed to get VolumeReplication resource")
+
+		return fmt.Errorf("failed to get VolumeReplication resource"+
+			"(%s/%s), %w",
+			vrNamespacedName.Namespace, vrNamespacedName.Name, err)
+	}
+
+	if err == nil {
+		log.Info("Waiting for VolumeReplication resource to be deleted"+
+			" from API server", "Error", err)
+
+		return fmt.Errorf("waiting for VolumeReplication resource to be"+
+			" deleted from API server (%s/%s), %w",
+			vrNamespacedName.Namespace, vrNamespacedName.Name, err)
+	}
+
+	return nil
+}
+
 // deleteVR deletes a VolumeReplication instance if found
 func (v *VRGInstance) deleteVR(vrNamespacedName types.NamespacedName, log logr.Logger) error {
 	cr := &volrep.VolumeReplication{
@@ -1463,14 +1489,19 @@ func (v *VRGInstance) deleteVR(vrNamespacedName types.NamespacedName, log logr.L
 	}
 
 	err := v.reconciler.Delete(v.ctx, cr)
-	if err == nil || k8serrors.IsNotFound(err) {
+	if err != nil {
+		if !k8serrors.IsNotFound(err) {
+			log.Error(err, "Failed to delete VolumeReplication resource")
+
+			return fmt.Errorf("failed to delete VolumeReplication resource (%s/%s), %w",
+				vrNamespacedName.Namespace, vrNamespacedName.Name, err)
+		}
+		// If err is IsNotFound then VolumeReplication is already deleted.
+		// Nothing to be done here.
 		return nil
 	}
 
-	log.Error(err, "Failed to delete VolumeReplication resource")
-
-	return fmt.Errorf("failed to delete VolumeReplication resource (%s/%s), %w",
-		vrNamespacedName.Namespace, vrNamespacedName.Name, err)
+	return v.ensureVRDeletedFromAPIServer(vrNamespacedName, log)
 }
 
 func (v *VRGInstance) addProtectedAnnotationForPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) error {
