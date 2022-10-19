@@ -442,8 +442,8 @@ github.com/stretchr/testify v1.5.1/go.mod h1:5W2xD1RspED5o8YsWQXVCued0rvSQ+mT+I5
 github.com/stretchr/testify v1.6.1/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/stretchr/testify v1.8.0 h1:pSgiaMZlXftHpm5L7V1+rVB+AZJydKsMxsQBIJw4PKk=
-github.com/vmware-tanzu/velero v1.8.1 h1:BZ928yzLDhrxON7kyvzVL317ByzS/lzbc28TpKAUigQ=
-github.com/vmware-tanzu/velero v1.8.1/go.mod h1:m8RTKqUD1wweyKewlr6Oxzn/C0nt7HpoUbAN3oWyWpI=
+github.com/vmware-tanzu/velero v1.9.1 h1:uZhNMq1Pn8AZjT7HLtKseTq47EeHeIuUxvGPFFp/+Vs=
+github.com/vmware-tanzu/velero v1.9.1/go.mod h1:75v4RUMzs8RK6Kqmrg6jgIOBaHUgAWwWAFiWERw2l4U=
 github.com/xeipuuv/gojsonpointer v0.0.0-20180127040702-4e3ac2762d5f/go.mod h1:N2zxlSyiKSe5eX1tZViRH5QA0qijqEDrYZiPEAiq3wU=
 github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415/go.mod h1:GwrjFmJcFw6At/Gs6z4yjiIwzuJ1/+UwLxMQDVQXShQ=
 github.com/xeipuuv/gojsonschema v1.2.0/go.mod h1:anYRn/JVcOK2ZgGU+IjEV4nwlhoK5sQluxsYJ78Id3Y=
