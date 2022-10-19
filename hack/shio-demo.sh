@@ -176,9 +176,15 @@ vrg_deploy() {
     recoverOrder:
     - excludedResources:
       - po
+      - pv
       - rs
       - deploy
       - volumereplications
+      - vrg
+      restoreStatus:
+        includedResources:
+        - pvc
+      existingResourcePolicy: update
     - includedResources:
       - deployments
       - pods

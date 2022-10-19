@@ -63,7 +63,7 @@ type RequestsManager interface {
 		secretKeyRef *corev1.SecretKeySelector,
 		sourceNamespaceName string,
 		targetNamespaceName string,
-		objectsSpec ramen.KubeObjectsSpec,
+		recoverSpec ramen.KubeObjectsRecoverSpec,
 		requestNamespaceName string,
 		protectRequestName string,
 		recoverRequestName string,

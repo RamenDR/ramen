@@ -431,7 +431,7 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 			s3StoreAccessor.regionName,
 			capturePathName,
 			s3StoreAccessor.veleroNamespaceSecretKeyRef,
-			sourceVrgNamespaceName, vrg.Namespace, recoverGroup.KubeObjectsSpec, veleroNamespaceName,
+			sourceVrgNamespaceName, vrg.Namespace, recoverGroup, veleroNamespaceName,
 			kubeObjectsCaptureName(captureNamePrefix, recoverGroup.BackupName, s3StoreAccessor.profileName),
 			kubeObjectsRecoverName(recoverNamePrefix, groupNumber), labels)
 		requests[groupNumber] = request
