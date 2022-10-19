@@ -150,7 +150,7 @@ func (RequestsManager) RecoverRequestCreate(
 	secretKeyRef *corev1.SecretKeySelector,
 	sourceNamespaceName string,
 	targetNamespaceName string,
-	objectsSpec ramendrv1alpha1.KubeObjectsSpec,
+	recoverSpec ramendrv1alpha1.KubeObjectsRecoverSpec,
 	requestNamespaceName string,
 	captureName string,
 	recoverName string,
@@ -180,7 +180,7 @@ func (RequestsManager) RecoverRequestCreate(
 		secretKeyRef,
 		sourceNamespaceName,
 		targetNamespaceName,
-		objectsSpec,
+		recoverSpec,
 		requestNamespaceName,
 		captureName,
 		recoverName,
@@ -200,7 +200,7 @@ func backupDummyCreateAndRestore(
 	secretKeyRef *corev1.SecretKeySelector,
 	sourceNamespaceName string,
 	targetNamespaceName string,
-	objectsSpec ramendrv1alpha1.KubeObjectsSpec,
+	recoverSpec ramendrv1alpha1.KubeObjectsRecoverSpec,
 	requestNamespaceName string,
 	backupName string,
 	restoreName string,
@@ -220,7 +220,7 @@ func backupDummyCreateAndRestore(
 		backupLocation, backup, w, reader,
 		sourceNamespaceName,
 		targetNamespaceName,
-		objectsSpec,
+		recoverSpec,
 		restoreName,
 		labels,
 	)
@@ -233,7 +233,7 @@ func backupDummyStatusProcessAndRestore(
 	reader client.Reader,
 	sourceNamespaceName string,
 	targetNamespaceName string,
-	objectsSpec ramendrv1alpha1.KubeObjectsSpec,
+	recoverSpec ramendrv1alpha1.KubeObjectsRecoverSpec,
 	restoreName string,
 	labels map[string]string,
 ) (*velero.Restore, error) {
@@ -246,7 +246,7 @@ func backupDummyStatusProcessAndRestore(
 		fallthrough
 	case velero.BackupPhaseFailed:
 		return backupRestore(backupLocation, backup, w, reader, sourceNamespaceName, targetNamespaceName,
-			objectsSpec,
+			recoverSpec,
 			restoreName,
 			labels,
 		)
@@ -366,11 +366,11 @@ func backupRestore(
 	reader client.Reader,
 	sourceNamespaceName string,
 	targetNamespaceName string,
-	objectsSpec ramendrv1alpha1.KubeObjectsSpec,
+	recoverSpec ramendrv1alpha1.KubeObjectsRecoverSpec,
 	restoreName string,
 	labels map[string]string,
 ) (*velero.Restore, error) {
-	restore := restore(backup.Namespace, restoreName, objectsSpec, backup.Name,
+	restore := restore(backup.Namespace, restoreName, recoverSpec, backup.Name,
 		sourceNamespaceName, targetNamespaceName, labels)
 	if err := objectCreateAndGet(w, reader, restore); err != nil {
 		return nil, err
@@ -524,6 +524,7 @@ func getBackupSpecFromObjectsSpec(objectsSpec ramendrv1alpha1.KubeObjectsSpec) v
 		IncludedResources:       objectsSpec.IncludedResources,
 		ExcludedResources:       objectsSpec.ExcludedResources,
 		LabelSelector:           objectsSpec.LabelSelector,
+		OrLabelSelectors:        objectsSpec.OrLabelSelectors,
 		TTL:                     metav1.Duration{}, // TODO: set default here
 		IncludeClusterResources: objectsSpec.IncludeClusterResources,
 		Hooks:                   velero.BackupHooks{},
@@ -758,7 +759,7 @@ func backupSpecDummy() velero.BackupSpec {
 func restore(
 	requestNamespaceName string,
 	restoreName string,
-	objectsSpec ramendrv1alpha1.KubeObjectsSpec,
+	recoverSpec ramendrv1alpha1.KubeObjectsRecoverSpec,
 	backupName string,
 	sourceNamespaceName, targetNamespaceName string,
 	labels map[string]string,
@@ -773,11 +774,14 @@ func restore(
 		Spec: velero.RestoreSpec{
 			BackupName:              backupName,
 			IncludedNamespaces:      []string{sourceNamespaceName},
-			IncludedResources:       objectsSpec.IncludedResources,
-			ExcludedResources:       objectsSpec.ExcludedResources,
-			LabelSelector:           objectsSpec.LabelSelector,
-			IncludeClusterResources: objectsSpec.IncludeClusterResources,
+			IncludedResources:       recoverSpec.IncludedResources,
+			ExcludedResources:       recoverSpec.ExcludedResources,
 			NamespaceMapping:        map[string]string{sourceNamespaceName: targetNamespaceName},
+			LabelSelector:           recoverSpec.LabelSelector,
+			OrLabelSelectors:        recoverSpec.OrLabelSelectors,
+			RestoreStatus:           recoverSpec.RestoreStatus,
+			IncludeClusterResources: recoverSpec.IncludeClusterResources,
+			ExistingResourcePolicy:  recoverSpec.ExistingResourcePolicy,
 			// TODO: hooks?
 			// TODO: restorePVs?
 			// TODO: preserveNodePorts?
@@ -819,7 +823,7 @@ func backupStatusLog(backup *velero.Backup, log logr.Logger) {
 		"phase", backup.Status.Phase,
 		"warnings", backup.Status.Warnings,
 		"errors", backup.Status.Errors,
-		// TODO v1.9.0 "failure", backup.Status.FailureReason,
+		"failure", backup.Status.FailureReason,
 		"validation errors", backup.Status.ValidationErrors,
 	)
 
