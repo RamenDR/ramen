@@ -6,6 +6,7 @@ package v1alpha1
 import (
 	"time"
 
+	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -132,9 +133,9 @@ type VolumeReplicationGroupSpec struct {
 	// and forward PV related cluster state to peer DR clusters.
 	S3Profiles []string `json:"s3Profiles"`
 
-	// +optional
+	//+optional
 	Async *VRGAsyncSpec `json:"async,omitempty"`
-	// +optional
+	//+optional
 	Sync *VRGSyncSpec `json:"sync,omitempty"`
 
 	// volsync defines the configuration when using VolSync plugin for replication.
@@ -160,8 +161,8 @@ type VolumeReplicationGroupSpec struct {
 
 type KubeObjectProtectionSpec struct {
 	// Preferred time between captures
-	// +optional
-	// +kubebuilder:validation:Format=duration
+	//+optional
+	//+kubebuilder:validation:Format=duration
 	CaptureInterval *metav1.Duration `json:"captureInterval,omitempty"`
 
 	//+optional
@@ -174,29 +175,39 @@ type KubeObjectProtectionSpec struct {
 const KubeObjectProtectionCaptureIntervalDefault = 5 * time.Minute
 
 type KubeObjectsCaptureSpec struct {
-	// +optional
+	//+optional
 	Name            string `json:"name,omitempty"`
 	KubeObjectsSpec `json:",inline"`
 }
 
 type KubeObjectsRecoverSpec struct {
-	// +optional
+	//+optional
 	BackupName      string `json:"backupName,omitempty"`
 	KubeObjectsSpec `json:",inline"`
+	//+optional
+	RestoreStatus *velero.RestoreStatusSpec `json:"restoreStatus,omitempty"`
+	//+optional
+	ExistingResourcePolicy velero.PolicyType `json:"existingResourcePolicy,omitempty"`
 }
 
 type KubeObjectsSpec struct {
+	KubeResourcesSpec `json:",inline"`
+	//+optional
+	LabelSelector *metav1.LabelSelector `json:"labelSelector,omitempty"`
+
+	//+optional
+	OrLabelSelectors []*metav1.LabelSelector `json:"orLabelSelectors,omitempty"`
+
+	//+optional
+	IncludeClusterResources *bool `json:"includeClusterResources,omitempty"`
+}
+
+type KubeResourcesSpec struct {
 	//+optional
 	IncludedResources []string `json:"includedResources,omitempty"`
 
 	//+optional
 	ExcludedResources []string `json:"excludedResources,omitempty"`
-
-	//+optional
-	LabelSelector *metav1.LabelSelector `json:"labelSelector,omitempty"`
-
-	//+optional
-	IncludeClusterResources *bool `json:"includeClusterResources,omitempty"`
 }
 
 type ProtectedPVC struct {
@@ -236,7 +247,7 @@ type ProtectedPVC struct {
 
 type KubeObjectsCaptureIdentifier struct {
 	Number int64 `json:"number"`
-	// +nullable
+	//+nullable
 	StartTime metav1.Time `json:"startTime,omitempty"`
 }
 
@@ -257,11 +268,11 @@ type VolumeReplicationGroupStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
 	// observedGeneration is the last generation change the operator has dealt with
-	// +optional
+	//+optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// +nullable
+	//+nullable
 	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
-	// +optional
+	//+optional
 	KubeObjectProtection KubeObjectProtectionStatus `json:"kubeObjectProtection,omitempty"`
 
 	PrepareForFinalSyncComplete bool `json:"prepareForFinalSyncComplete,omitempty"`

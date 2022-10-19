@@ -74,7 +74,7 @@ velero_undeploy()
 }
 velero_undeploy()
 {
-	./velero --kubecontext $1 uninstall --force
+	velero --kubecontext $1 uninstall --force
 }
 minio_deploy()
 {
