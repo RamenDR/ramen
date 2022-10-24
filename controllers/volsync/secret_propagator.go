@@ -239,7 +239,7 @@ func (sp *secretPropagator) getEmbeddedConfigPolicy() (*cfgpolicyv1.Configuratio
 			Kind:       "ConfigurationPolicy",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "rmn-" + sp.DestSecretName + "-copysecret",
+			Name: "rmn-" + sp.DestSecretNamespace + "-" + sp.DestSecretName,
 		},
 		Spec: cfgpolicyv1.ConfigurationPolicySpec{
 			ObjectTemplates: []*cfgpolicyv1.ObjectTemplate{
