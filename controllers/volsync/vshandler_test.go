@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
@@ -1194,7 +1195,7 @@ var _ = Describe("VolSync Handler", func() {
 			})
 
 			Context("When the latest image volume snapshot exists", func() {
-				var latestImageSnap *unstructured.Unstructured
+				var latestImageSnap *snapv1.VolumeSnapshot
 				BeforeEach(func() {
 					// Create a fake volume snapshot
 					latestImageSnap = createSnapshot(latestImageSnapshotName, testNamespace.GetName())
@@ -1276,7 +1277,7 @@ var _ = Describe("VolSync Handler", func() {
 				})
 
 				Context("When pvc to be restored has already been created but has incorrect datasource", func() {
-					var updatedImageSnap *unstructured.Unstructured
+					var updatedImageSnap *snapv1.VolumeSnapshot
 
 					JustBeforeEach(func() {
 						// Simulate incorrect datasource by changing the latestImage in the replicationdestionation
@@ -1786,24 +1787,19 @@ func ownerMatches(obj metav1.Object, ownerName, ownerKind string, ownerIsControl
 	return false
 }
 
-func createSnapshot(snapshotName, namespace string) *unstructured.Unstructured {
-	volSnap := &unstructured.Unstructured{}
-	volSnap.Object = map[string]interface{}{
-		"metadata": map[string]interface{}{
-			"name":      snapshotName,
-			"namespace": namespace,
+func createSnapshot(snapshotName, namespace string) *snapv1.VolumeSnapshot {
+	pvcClaimName := "fakepvcnamehere"
+	volSnap := &snapv1.VolumeSnapshot{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      snapshotName,
+			Namespace: namespace,
 		},
-		"spec": map[string]interface{}{
-			"source": map[string]interface{}{
-				"persistentVolumeClaimName": "fakepvcnamehere",
+		Spec: snapv1.VolumeSnapshotSpec{
+			Source: snapv1.VolumeSnapshotSource{
+				PersistentVolumeClaimName: &pvcClaimName,
 			},
 		},
 	}
-	volSnap.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "snapshot.storage.k8s.io",
-		Kind:    volsync.VolumeSnapshotKind,
-		Version: "v1",
-	})
 
 	Expect(k8sClient.Create(ctx, volSnap)).To(Succeed())
 
