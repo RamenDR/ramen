@@ -920,7 +920,6 @@ func (v *VSHandler) ensurePVCFromSnapshot(rdSpec ramendrv1alpha1.VolSyncReplicat
 func (v *VSHandler) validateSnapshotAndAddDoNotDeleteLabel(
 	volumeSnapshotRef corev1.TypedLocalObjectReference,
 ) (*snapv1.VolumeSnapshot, error) {
-	// Using unstructured to avoid needing to require VolumeSnapshot in client scheme
 	volSnap := &snapv1.VolumeSnapshot{}
 
 	err := v.client.Get(v.ctx, types.NamespacedName{
