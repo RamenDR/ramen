@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import sys
 import time
 
@@ -10,6 +11,29 @@ import drenv
 
 POOL_NAME = "replicapool"
 PVC_NAME = "rbd-pvc"
+
+
+def rbd_mirror_image_status(cluster, image):
+    out = drenv.kubectl(
+        "exec", "deploy/rook-ceph-tools", "--namespace", "rook-ceph", "--",
+        "rbd", "mirror", "image", "status", f"{POOL_NAME}/{image}",
+        "--format", "json",
+        profile=cluster,
+        verbose=False,
+    )
+    status = json.loads(out)
+
+    # Exapand metrics json embdeded in the peer description.
+    for peer in status["peer_sites"]:
+        desc = peer.get("description", "")
+        if ", " in desc:
+            state, metrics = desc.split(", ", 1)
+            peer["description"] = {
+                "state": state,
+                "metrics": json.loads(metrics),
+            }
+
+    return status
 
 
 def test_volume_replication(primary, secondary):
@@ -104,6 +128,10 @@ def test_volume_replication(primary, secondary):
         "--namespace", "rook-ceph",
         profile=primary,
     )
+
+    drenv.log_progress(f"rbd mirror image status in cluster {primary}")
+    image_status = rbd_mirror_image_status(primary, rbd_image)
+    drenv.log_detail(json.dumps(image_status, indent=2))
 
     drenv.log_progress(f"Deleting vr vr-sample in primary cluster {primary}")
     drenv.kubectl(
