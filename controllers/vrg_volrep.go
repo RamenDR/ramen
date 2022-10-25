@@ -6,6 +6,7 @@ package controllers
 import (
 	"errors"
 	"fmt"
+	"reflect"
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/go-logr/logr"
@@ -157,8 +158,8 @@ func (v *VRGInstance) reconcileVRAsSecondary(pvc *corev1.PersistentVolumeClaim, 
 func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
 	const ready bool = true
 
-	// If PVC is not being deleted, it is not ready for Secondary
-	if pvc.GetDeletionTimestamp().IsZero() {
+	// If PVC is not being deleted, it is not ready for Secondary, unless action is failover
+	if v.instance.Spec.Action != ramendrv1alpha1.VRGActionFailover && pvc.GetDeletionTimestamp().IsZero() {
 		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolumeClaim is not marked for deletion")
 
 		msg := "unable to transition to Secondary as PVC is not deleted"
@@ -1788,14 +1789,20 @@ func (v *VRGInstance) validatePVExistence(pv *corev1.PersistentVolume) error {
 
 	err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: pv.Name}, existingPV)
 	if err != nil {
-		return fmt.Errorf("failed to get existing PV (%w)", err)
+		return fmt.Errorf("failed to get PV (%s) (%w)", existingPV.GetName(), err)
 	}
 
 	if existingPV.ObjectMeta.Annotations != nil &&
 		existingPV.ObjectMeta.Annotations[PVRestoreAnnotation] == "True" {
 		// Should we check and see if PV in being deleted? Should we just treat it as exists
 		// and then we don't care if deletion takes place later, which is what we do now?
-		v.log.Info("PV exists and managed by Ramen", "PV", existingPV)
+		v.log.Info("PV exists and managed by Ramen", "PV", existingPV.GetName())
+
+		return nil
+	}
+
+	if v.pvMatches(existingPV, pv) {
+		v.log.Info("existing PV matches and is bound to the same claim", "PV", existingPV.GetName())
 
 		return nil
 	}
@@ -1806,12 +1813,67 @@ func (v *VRGInstance) validatePVExistence(pv *corev1.PersistentVolume) error {
 	// restore can be missing for the sync mode. Skip the check for the
 	// annotation in this case.
 	if v.instance.Spec.Sync != nil {
-		v.log.Info("PV exists, will update for sync", "PV", existingPV)
+		v.log.Info("PV exists and will be updated for sync", "PV", existingPV.GetName())
 
 		return v.updateExistingPVForSync(existingPV)
 	}
 
-	return fmt.Errorf("found PV object not restored by Ramen for PV %s", existingPV.Name)
+	return fmt.Errorf("found existing PV (%s) not restored by Ramen and not matching with backed up PV", existingPV.Name)
+}
+
+// PVMatches checks if the PVs fields match, and is bound to a PVC. Used to detect PVCs that were not
+// deleted, and hence PVC and PV is retained and available for use
+//
+//nolint:cyclop
+func (v *VRGInstance) pvMatches(x, y *corev1.PersistentVolume) bool {
+	switch {
+	case x.GetName() != y.GetName():
+		v.log.Info("PVs Name mismatch", "x", x.GetName(), "y", y.GetName())
+
+		return false
+	case x.Status.Phase != corev1.VolumeBound:
+		v.log.Info("PV not bound", "x", x.Status.Phase)
+
+		return false
+	case x.Spec.PersistentVolumeSource.CSI == nil || y.Spec.PersistentVolumeSource.CSI == nil:
+		v.log.Info("PV(s) not managed by a CSI driver", "x", x.Spec.PersistentVolumeSource.CSI,
+			"y", y.Spec.PersistentVolumeSource.CSI)
+
+		return false
+	case x.Spec.PersistentVolumeSource.CSI.Driver != y.Spec.PersistentVolumeSource.CSI.Driver:
+		v.log.Info("PVs CSI drivers mismatch", "x", x.Spec.PersistentVolumeSource.CSI.Driver,
+			"y", y.Spec.PersistentVolumeSource.CSI.Driver)
+
+		return false
+	case x.Spec.PersistentVolumeSource.CSI.FSType != y.Spec.PersistentVolumeSource.CSI.FSType:
+		v.log.Info("PVs CSI FSType mismatch", "x", x.Spec.PersistentVolumeSource.CSI.FSType,
+			"y", y.Spec.PersistentVolumeSource.CSI.FSType)
+
+		return false
+	case x.Spec.ClaimRef.Kind != y.Spec.ClaimRef.Kind:
+		v.log.Info("PVs ClaimRef.Kind mismatch", "x", x.Spec.ClaimRef.Kind, "y", y.Spec.ClaimRef.Kind)
+
+		return false
+	case x.Spec.ClaimRef.Namespace != y.Spec.ClaimRef.Namespace:
+		v.log.Info("PVs ClaimRef.Namespace mismatch", "x", x.Spec.ClaimRef.Namespace,
+			"y", y.Spec.ClaimRef.Namespace)
+
+		return false
+	case x.Spec.ClaimRef.Name != y.Spec.ClaimRef.Name:
+		v.log.Info("PVs ClaimRef.Name mismatch", "x", x.Spec.ClaimRef.Name, "y", y.Spec.ClaimRef.Name)
+
+		return false
+	case !reflect.DeepEqual(x.Spec.AccessModes, y.Spec.AccessModes):
+		v.log.Info("PVs AccessMode mismatch", "x", x.Spec.AccessModes, "y", y.Spec.AccessModes)
+
+		return false
+	case !reflect.DeepEqual(x.Spec.VolumeMode, y.Spec.VolumeMode):
+		v.log.Info("PVs VolumeMode mismatch", "x", x.Spec.VolumeMode, "y", y.Spec.VolumeMode)
+
+		return false
+	default:
+		return true
+	}
 }
 
 // cleanupPVForRestore cleans up required PV fields, to ensure restore succeeds to a new cluster, and
