@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: The RamenDR authors
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # VRG reconciler workflow
 
 This design document covers the VRG CRD and its reconciliation workflow.

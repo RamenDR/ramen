@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: The RamenDR authors
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Metrics
 
 Metrics are collected using Prometheus, and registered with its global metrics
