@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
 # shellcheck shell=sh
 trap 'set -- $?; trap - EXIT; eval $exit_stack; echo exit status: $1' EXIT
 trap 'trap - EXIT; eval $exit_stack' EXIT

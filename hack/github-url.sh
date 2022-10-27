@@ -1,4 +1,8 @@
 #!/bin/sh
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
 github_url_file()
 {
         echo https://raw.githubusercontent.com/"$1"/"$3"/"$2"

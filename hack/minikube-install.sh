@@ -1,4 +1,8 @@
 #!/bin/sh
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
 # shellcheck disable=2046,2086
 if ! command -v minikube; then
 	# https://minikube.sigs.k8s.io/docs/start/

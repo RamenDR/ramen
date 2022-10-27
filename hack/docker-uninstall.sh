@@ -1,4 +1,8 @@
 #!/bin/sh
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
 set -x
 set -e
 if test -x "${1}"/dockerd-rootless-setuptool.sh; then

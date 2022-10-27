@@ -1,4 +1,8 @@
 #!/bin/sh
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
 # shellcheck disable=1090,1091,2046,2086
 
 # open cluster management (ocm) hub and managed minikube kvm amd64 clusters deploy

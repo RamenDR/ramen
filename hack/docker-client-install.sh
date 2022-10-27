@@ -1,4 +1,8 @@
 #!/bin/sh
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
 # shellcheck shell=sh disable=2046,2086
 set -x
 set -- $1 20.10.6
