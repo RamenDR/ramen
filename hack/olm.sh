@@ -1,4 +1,8 @@
 #!/bin/sh
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
 # shellcheck disable=1090,2086,1091
 
 OLM_BASE_URL="https://github.com/operator-framework/operator-lifecycle-manager/releases/download/v0.19.1"

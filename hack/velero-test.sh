@@ -1,4 +1,8 @@
 #!/bin/sh
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
 # shellcheck disable=1090,2046,2086
 set -e
 ramen_hack_directory_path_name=$(dirname $0)

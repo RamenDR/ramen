@@ -1,4 +1,8 @@
 #! /bin/bash
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
 set -e -o pipefail
 
 KIND_IMAGE="${KIND_IMAGE:-1.20.7@sha256:cbeaf907fc78ac97ce7b625e4bf0de16e3ea725daf6b04f930bd14c67c671ff9}"

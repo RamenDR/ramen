@@ -1,4 +1,8 @@
 #! /bin/bash
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
 # vim: set ts=4 sw=4 et :
 
 # Usage: pre-commit.sh
