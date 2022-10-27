@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
 all
 
 #Refer below url for more information about the markdown rules.
