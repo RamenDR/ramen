@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: The RamenDR authors
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # How to Contribute
 
 The Ramen project in under [Apache 2.0 license](LICENSES/Apache-2.0.txt).

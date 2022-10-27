@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: The RamenDR authors
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Ramen
 
 Ramen is an [open-cluster-management (OCM)](https://open-cluster-management.io/concepts/architecture/)
