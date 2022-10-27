@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
 # Enable GOPROXY. This speeds up a lot of vendoring operations.
 export GOPROXY=https://proxy.golang.org
 
