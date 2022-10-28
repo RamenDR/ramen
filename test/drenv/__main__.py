@@ -181,10 +181,15 @@ def run_script(script, name="env"):
 
 
 def run(*cmd, name=None):
+    # Avoid delays in child process logs.
+    env = dict(os.environ)
+    env["PYTHONUNBUFFERED"] = "1"
+
     p = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
+        env=env,
     )
 
     messages = deque(maxlen=20)
