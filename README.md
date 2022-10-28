@@ -52,4 +52,4 @@ are currently **alpha**. There are no releases as yet.
 
 ## Licensing
 
-Ramen is under the [Apache 2.0 license.](LICENSE)
+Ramen is under the [Apache 2.0 license.](LICENSES/Apache-2.0.txt)
