@@ -22,8 +22,15 @@ def deploy_klusterlet(cluster):
 
 
 def wait_until_klusterlet_is_rolled_out(cluster):
+    current_csv = drenv.wait_for(
+        "subscription/my-klusterlet",
+        output="jsonpath={.status.currentCSV}",
+        namespace="operators",
+        profile=cluster,
+    )
+
     drenv.wait_for(
-        "csv/klusterlet.v0.8.0",
+        f"csv/{current_csv}",
         output="jsonpath={.status.phase}",
         namespace="operators",
         profile=cluster,
@@ -31,7 +38,7 @@ def wait_until_klusterlet_is_rolled_out(cluster):
 
     drenv.log_progress(f"Waiting until klusterlet succeeds in cluster {cluster}")
     drenv.kubectl(
-        "wait", "csv/klusterlet.v0.8.0",
+        "wait", f"csv/{current_csv}",
         "--for", "jsonpath={.status.phase}=Succeeded",
         "--namespace", "operators",
         "--timeout", "300s",
