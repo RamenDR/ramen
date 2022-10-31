@@ -21,9 +21,18 @@ drenv.kubectl(
     profile=cluster,
 )
 
-# Takes at least 37 seconds, about 80 seconds typically.
+# We don't know which version will be installed yet. Wait until the version is
+# reported by the subscription.
+current_csv = drenv.wait_for(
+    "subscription/my-cluster-manager",
+    output="jsonpath={.status.currentCSV}",
+    namespace="operators",
+    profile=cluster,
+)
+
+# Now we can wait until this version reports its phase.
 drenv.wait_for(
-    "csv/cluster-manager.v0.8.0",
+    f"csv/{current_csv}",
     output="jsonpath={.status.phase}",
     namespace="operators",
     profile=cluster,
@@ -31,7 +40,7 @@ drenv.wait_for(
 
 drenv.log_progress("Waiting until ocm cluster manager succeeds")
 drenv.kubectl(
-    "wait", "csv/cluster-manager.v0.8.0",
+    "wait", f"csv/{current_csv}",
     "--for", "jsonpath={.status.phase}=Succeeded",
     "--namespace", "operators",
     "--timeout", "300s",
