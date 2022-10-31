@@ -9,10 +9,10 @@ metadata:
 spec:
   deployOption:
     mode: Default
-  placementImagePullSpec: 'quay.io/open-cluster-management/placement:v0.8.0'
+  placementImagePullSpec: 'quay.io/open-cluster-management/placement:v0.9.0'
   registrationConfiguration:
     featureGates:
       - feature: DefaultClusterSet
         mode: Enable
-  registrationImagePullSpec: 'quay.io/open-cluster-management/registration:v0.8.0'
-  workImagePullSpec: 'quay.io/open-cluster-management/work:v0.8.0'
+  registrationImagePullSpec: 'quay.io/open-cluster-management/registration:v0.9.0'
+  workImagePullSpec: 'quay.io/open-cluster-management/work:v0.9.0'
