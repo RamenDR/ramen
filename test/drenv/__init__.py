@@ -72,6 +72,9 @@ def wait_for(resource, output="jsonpath={.metadata.name}", timeout=300,
     specficiation (e.g. output="jsonpath={.status.phase}"). The function
     returns when the output is non empty.
 
+    Returns the resource .metadata.name, or if output was specified, the
+    specified outpout for the resource.
+
     Raises RuntimeError if the resource does not exist within the specified
     timeout.
     """
@@ -88,7 +91,7 @@ def wait_for(resource, output="jsonpath={.metadata.name}", timeout=300,
         out = kubectl(*args, profile=profile, verbose=False)
         if out:
             log_detail(f"{resource} exists")
-            break
+            return out
 
         if time.monotonic() > deadline:
             raise RuntimeError(f"Timeout waiting for {resource}")
