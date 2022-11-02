@@ -1021,31 +1021,6 @@ func (d *DRPCInstance) moveVRGToSecondaryEverywhere() bool {
 	return true
 }
 
-func (d *DRPCInstance) moveVRGToSecondaryOnPeers(clusterToSkip string) error {
-	var needRetry bool
-
-	for _, clusterName := range rmnutil.DrpolicyClusterNames(d.drPolicy) {
-		if clusterToSkip == clusterName {
-			continue
-		}
-
-		_, err := d.updateVRGState(clusterName, rmn.Secondary)
-		if err != nil {
-			d.log.Info(fmt.Sprintf("Failed to update VRG to secondary on cluster %s. Err (%v)", clusterName, err))
-
-			needRetry = true
-
-			continue
-		}
-	}
-
-	if needRetry {
-		return fmt.Errorf("need to retry setting VRG to secondy on peers")
-	}
-
-	return nil
-}
-
 func (d *DRPCInstance) cleanupSecondaries(skipCluster string) (bool, error) {
 	for _, clusterName := range rmnutil.DrpolicyClusterNames(d.drPolicy) {
 		if skipCluster == clusterName {
@@ -1377,11 +1352,6 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 		d.log.Info("VolSync needs both VRGs. No need to clean up secondary")
 		d.log.Info("Ensure secondary on peer")
 
-		err := d.moveVRGToSecondaryOnPeers(clusterToSkip)
-		if err != nil {
-			return fmt.Errorf("failed to ensure VRG is secondary on peers (%w)", err)
-		}
-
 		peersReady := true
 
 		for _, clusterName := range rmnutil.DrpolicyClusterNames(d.drPolicy) {
@@ -1389,7 +1359,17 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 				continue
 			}
 
-			if !d.isVRGConditionMet(clusterName, VRGConditionTypeDataReady) {
+			justUpdated, err := d.updateVRGState(clusterName, rmn.Secondary)
+			if err != nil {
+				peersReady = false
+
+				break
+			}
+
+			// IFF just updated, no need to use MCV to check if the state has been
+			// applied. Wait for the next round of reconcile. Otherwise, check if
+			// the change to secondary has been reflected.
+			if justUpdated || !d.ensureVRGIsSecondaryOnCluster(clusterName) {
 				peersReady = false
 
 				break
@@ -1645,7 +1625,7 @@ func (d *DRPCInstance) ensureVRGDeleted(clusterName string) bool {
 }
 
 func (d *DRPCInstance) updateVRGState(clusterName string, state rmn.ReplicationState) (bool, error) {
-	d.log.Info(fmt.Sprintf("Updating VRG to secondary for cluster %s", clusterName))
+	d.log.Info(fmt.Sprintf("Updating VRG ReplicationState to secondary for cluster %s", clusterName))
 
 	vrg, err := d.getVRGFromManifestWork(clusterName)
 	if err != nil {
@@ -1654,7 +1634,8 @@ func (d *DRPCInstance) updateVRGState(clusterName string, state rmn.ReplicationS
 	}
 
 	if vrg.Spec.ReplicationState == state {
-		d.log.Info(fmt.Sprintf("VRG %s already %s on this cluster %s", vrg.Name, state, clusterName))
+		d.log.Info(fmt.Sprintf("VRG ReplicationState %s already %s on this cluster %s",
+			vrg.Name, state, clusterName))
 
 		return false, nil
 	}
@@ -1679,7 +1660,7 @@ func (d *DRPCInstance) updateVRGState(clusterName string, state rmn.ReplicationS
 }
 
 func (d *DRPCInstance) updateVRGToPrepareForFinalSync(clusterName string) error {
-	d.log.Info(fmt.Sprintf("Updating VRG to prepare for final sync on cluster %s", clusterName))
+	d.log.Info(fmt.Sprintf("Updating VRG Spec to prepare for final sync on cluster %s", clusterName))
 
 	vrg, err := d.getVRGFromManifestWork(clusterName)
 	if err != nil {
@@ -1709,7 +1690,7 @@ func (d *DRPCInstance) updateVRGToPrepareForFinalSync(clusterName string) error 
 }
 
 func (d *DRPCInstance) updateVRGToRunFinalSync(clusterName string) error {
-	d.log.Info(fmt.Sprintf("Updating VRG to run final sync on cluster %s", clusterName))
+	d.log.Info(fmt.Sprintf("Updating VRG Spec to run final sync on cluster %s", clusterName))
 
 	vrg, err := d.getVRGFromManifestWork(clusterName)
 	if err != nil {
