@@ -15,6 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -814,7 +815,13 @@ func (v *VSHandler) validateSnapshotAndEnsurePVC(rdSpec ramendrv1alpha1.VolSyncR
 
 	var pvc *corev1.PersistentVolumeClaim
 
-	pvc, err = v.ensurePVCFromSnapshot(rdSpec, snapshotRef)
+	var restoreSize *resource.Quantity
+
+	if snap.Status != nil {
+		restoreSize = snap.Status.RestoreSize
+	}
+
+	pvc, err = v.ensurePVCFromSnapshot(rdSpec, snapshotRef, restoreSize)
 	if err != nil {
 		return err
 	}
@@ -825,15 +832,23 @@ func (v *VSHandler) validateSnapshotAndEnsurePVC(rdSpec ramendrv1alpha1.VolSyncR
 
 //nolint:funlen,gocognit,cyclop
 func (v *VSHandler) ensurePVCFromSnapshot(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
-	snapshotRef corev1.TypedLocalObjectReference,
+	snapshotRef corev1.TypedLocalObjectReference, snapRestoreSize *resource.Quantity,
 ) (*corev1.PersistentVolumeClaim, error) {
-	l := v.log.WithValues("pvcName", rdSpec.ProtectedPVC.Name, "snapshotRef", snapshotRef)
+	l := v.log.WithValues("pvcName", rdSpec.ProtectedPVC.Name, "snapshotRef", snapshotRef,
+		"snapRestoreSize", snapRestoreSize)
 
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      rdSpec.ProtectedPVC.Name,
 			Namespace: v.owner.GetNamespace(),
 		},
+	}
+
+	pvcRequestedCapacity := rdSpec.ProtectedPVC.Resources.Requests.Storage()
+	if snapRestoreSize != nil {
+		if pvcRequestedCapacity == nil || snapRestoreSize.Cmp(*pvcRequestedCapacity) > 0 {
+			pvcRequestedCapacity = snapRestoreSize
+		}
 	}
 
 	pvcNeedsRecreation := false
@@ -874,7 +889,9 @@ func (v *VSHandler) ensurePVCFromSnapshot(rdSpec ramendrv1alpha1.VolSyncReplicat
 			pvc.Spec.DataSource = &snapshotRef
 		}
 
-		pvc.Spec.Resources = rdSpec.ProtectedPVC.Resources
+		pvc.Spec.Resources.Requests = corev1.ResourceList{
+			corev1.ResourceStorage: *pvcRequestedCapacity,
+		}
 
 		return nil
 	})
