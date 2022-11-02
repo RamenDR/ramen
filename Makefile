@@ -87,6 +87,8 @@ endif
 
 GO_TEST_GINKGO_ARGS ?= -test.v -ginkgo.v -ginkgo.failFast
 
+DOCKERCMD ?= podman
+
 all: build
 
 ##@ General
@@ -168,10 +170,10 @@ run-dr-cluster: generate manifests ## Run DR manager controller from your host.
 	go run ./main.go --config=examples/dr_cluster_config.yaml
 
 docker-build: ## Build docker image with the manager.
-	docker build -t ${IMG} .
+	$(DOCKERCMD) build -t ${IMG} .
 
 docker-push: ## Push docker image with the manager.
-	docker push ${IMG}
+	$(DOCKERCMD) push ${IMG}
 
 ##@ Deployment
 
@@ -290,7 +292,7 @@ bundle-hub: manifests kustomize operator-sdk ## Generate hub bundle manifests an
 
 .PHONY: bundle-hub-build
 bundle-hub-build: bundle-hub ## Build the hub bundle image.
-	docker build -f bundle.Dockerfile -t $(BUNDLE_IMG_HUB) .
+	$(DOCKERCMD) build -f bundle.Dockerfile -t $(BUNDLE_IMG_HUB) .
 
 .PHONY: bundle-hub-push
 bundle-hub-push: ## Push the hub bundle image.
@@ -307,7 +309,7 @@ bundle-dr-cluster: manifests kustomize dr-cluster-config operator-sdk ## Generat
 
 .PHONY: bundle-dr-cluster-build
 bundle-dr-cluster-build: bundle-dr-cluster ## Build the dr-cluster bundle image.
-	docker build -f bundle.Dockerfile -t $(BUNDLE_IMG_DRCLUSTER) .
+	$(DOCKERCMD) build -f bundle.Dockerfile -t $(BUNDLE_IMG_DRCLUSTER) .
 
 .PHONY: bundle-dr-cluster-push
 bundle-dr-cluster-push: ## Push the dr-cluster bundle image.
@@ -342,7 +344,7 @@ ifneq ($(origin CATALOG_BASE_IMG), undefined)
 FROM_INDEX_OPT := --from-index $(CATALOG_BASE_IMG)
 endif
 
-BUNDLE_PULL_TOOL ?= docker
+BUNDLE_PULL_TOOL ?= $(DOCKERCMD)
 
 # Build a catalog image by adding bundle images to an empty catalog using the operator package manager tool, 'opm'.
 # This recipe invokes 'opm' in 'semver' bundle add mode. For more information on add modes, see:
@@ -354,7 +356,7 @@ catalog-build: opm ## Build a catalog image.
 		--tag $(CATALOG_IMG)\
 		--bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT)\
 		--pull-tool $(BUNDLE_PULL_TOOL)\
-		--build-tool docker\
+		--build-tool $(DOCKERCMD)\
 
 # Push the catalog image.
 .PHONY: catalog-push
