@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import os
 import sys
 
@@ -55,12 +56,23 @@ drenv.kubectl(
     profile=cluster,
 )
 
-drenv.log_progress("Creating cluster manager instance")
-drenv.kubectl(
-    "apply",
-    "--filename", "cluster-manager/cluster-manager.yaml",
+drenv.log_progress("Fetching cluster manager alm examples")
+examples_json = drenv.kubectl(
+    "get", f"csv/{current_csv}",
+    "--output", "jsonpath={.metadata.annotations.alm-examples}",
+    "--namespace", "operators",
     profile=cluster,
 )
+example_spec = json.loads(examples_json)[0]["spec"]
+
+drenv.log_progress("Creating cluster manager instance")
+instance_template = drenv.template("cluster-manager/cluster-manager.yaml")
+instance_yaml = instance_template.substitute(
+  placementImage=example_spec["placementImagePullSpec"],
+  registrationImage=example_spec["registrationImagePullSpec"],
+  workImage=example_spec["workImagePullSpec"],
+)
+drenv.kubectl("apply", "--filename", "-", input=instance_yaml, profile=cluster)
 
 drenv.wait_for("namespace/open-cluster-management-hub", profile=cluster)
 
