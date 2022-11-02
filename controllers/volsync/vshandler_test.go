@@ -1199,6 +1199,7 @@ var _ = Describe("VolSync Handler", func() {
 
 			Context("When the latest image volume snapshot exists", func() {
 				var latestImageSnap *snapv1.VolumeSnapshot
+
 				BeforeEach(func() {
 					// Create a fake volume snapshot
 					latestImageSnap = createSnapshot(latestImageSnapshotName, testNamespace.GetName())
@@ -1225,9 +1226,6 @@ var _ = Describe("VolSync Handler", func() {
 						APIGroup: &apiGrp,
 						Kind:     volsync.VolumeSnapshotKind,
 					}))
-					Expect(pvc.Spec.Resources.Requests).To(Equal(corev1.ResourceList{
-						corev1.ResourceStorage: pvcCapacity,
-					}))
 
 					// Check that the snapshot ownership has been updated properly
 					Eventually(func() bool {
@@ -1246,6 +1244,45 @@ var _ = Describe("VolSync Handler", func() {
 					}, maxWait, interval).Should(BeTrue())
 				})
 
+				Context("When the snapshot has restoreSize specified in Gi but PVC had storage in G", func() {
+					// See: https://github.com/RamenDR/ramen/issues/578
+
+					sizeGB := resource.MustParse("3G")
+					sizeGi := resource.MustParse("3Gi")
+
+					BeforeEach(func() {
+						// Doublecheck here - 3Gi should be bigger than 3G
+						Expect(sizeGi.Cmp(sizeGB)).To(Equal(1))
+
+						// Update RdSpec before ensuringPVC to set the PVC size in GB
+						rdSpec.ProtectedPVC.Resources.Requests = corev1.ResourceList{
+							corev1.ResourceStorage: sizeGB,
+						}
+
+						// Update the status on the snapshot to show a restoreSize in Gi
+						latestImageSnap.Status = &snapv1.VolumeSnapshotStatus{
+							RestoreSize: &sizeGi,
+						}
+
+						Expect(k8sClient.Status().Update(ctx, latestImageSnap)).To(Succeed())
+
+						// Make sure the update is picked up by the cache before proceeding
+						Eventually(func() bool {
+							err := k8sClient.Get(ctx, client.ObjectKeyFromObject(latestImageSnap), latestImageSnap)
+							if err != nil {
+								return false
+							}
+
+							return latestImageSnap.Status != nil && latestImageSnap.Status.RestoreSize != nil &&
+								*latestImageSnap.Status.RestoreSize == sizeGi
+						}, maxWait, interval).Should(BeTrue())
+					})
+
+					It("Should create the PVC with the snap restoreSize if restoreSize > pvc original size", func() {
+						Expect(*pvc.Spec.Resources.Requests.Storage()).To(Equal(sizeGi))
+					})
+				})
+
 				It("Should create PVC, latestImage VolumeSnapshot should have VRG owner ref added", func() {
 					// snapshot ownership check done in JustBeforeEach() above
 
@@ -1254,6 +1291,10 @@ var _ = Describe("VolSync Handler", func() {
 					val, ok := snapLabels["volsync.backube/do-not-delete"]
 					Expect(ok).To(BeTrue())
 					Expect(val).To(Equal("true"))
+
+					Expect(pvc.Spec.Resources.Requests).To(Equal(corev1.ResourceList{
+						corev1.ResourceStorage: pvcCapacity,
+					}))
 				})
 
 				Context("When pvc to be restored has labels", func() {
@@ -1356,6 +1397,10 @@ var _ = Describe("VolSync Handler", func() {
 							Name:     updatedImageSnap.GetName(),
 							APIGroup: &apiGrp,
 							Kind:     volsync.VolumeSnapshotKind,
+						}))
+
+						Expect(pvcNew.Spec.Resources.Requests).To(Equal(corev1.ResourceList{
+							corev1.ResourceStorage: pvcCapacity,
 						}))
 					})
 				})
