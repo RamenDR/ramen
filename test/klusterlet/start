@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import os
 import sys
 
@@ -52,8 +53,10 @@ def wait_until_klusterlet_is_rolled_out(cluster):
         profile=cluster,
     )
 
+    return current_csv
 
-def create_klusterlet_instance(cluster, hub):
+
+def create_klusterlet_instance(cluster, hub, csv):
     drenv.log_progress(f"Creating namespace {NAMESPACE} in cluster {cluster}")
     namespace_yaml = drenv.kubectl(
         "create", "namespace", NAMESPACE,
@@ -89,11 +92,22 @@ def create_klusterlet_instance(cluster, hub):
         profile=cluster,
     )
 
+    drenv.log_progress("Fetching klusterlet alm examples")
+    examples_json = drenv.kubectl(
+        "get", f"csv/{csv}",
+        "--output", "jsonpath={.metadata.annotations.alm-examples}",
+        "--namespace", "operators",
+        profile=cluster,
+    )
+    example_spec = json.loads(examples_json)[0]["spec"]
+
     klusterlet_template = drenv.template("klusterlet/klusterlet.yaml")
 
     klusterlet_yaml = klusterlet_template.substitute(
         clusterName=cluster,
         namespace=NAMESPACE,
+        registrationImage=example_spec["registrationImagePullSpec"],
+        workImage=example_spec["workImagePullSpec"],
     )
 
     drenv.log_progress(f"Creating klusterlet instance in cluster {cluster}")
@@ -187,11 +201,11 @@ hub = sys.argv[3]
 deploy_klusterlet(cluster1)
 deploy_klusterlet(cluster2)
 
-wait_until_klusterlet_is_rolled_out(cluster1)
-wait_until_klusterlet_is_rolled_out(cluster2)
+cluster1_csv = wait_until_klusterlet_is_rolled_out(cluster1)
+cluster2_csv = wait_until_klusterlet_is_rolled_out(cluster2)
 
-create_klusterlet_instance(cluster1, hub)
-create_klusterlet_instance(cluster2, hub)
+create_klusterlet_instance(cluster1, hub, cluster1_csv)
+create_klusterlet_instance(cluster2, hub, cluster2_csv)
 
 wait_until_instance_is_registered(cluster1, hub)
 wait_until_instance_is_registered(cluster2, hub)
