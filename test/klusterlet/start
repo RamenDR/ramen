@@ -5,7 +5,6 @@
 
 import os
 import sys
-from string import Template
 
 import drenv
 
@@ -90,8 +89,7 @@ def create_klusterlet_instance(cluster, hub):
         profile=cluster,
     )
 
-    with open("klusterlet/klusterlet.yaml") as f:
-        klusterlet_template = Template(f.read())
+    klusterlet_template = drenv.template("klusterlet/klusterlet.yaml")
 
     klusterlet_yaml = klusterlet_template.substitute(
         clusterName=cluster,
