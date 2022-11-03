@@ -257,11 +257,12 @@ type ProtectedPVC struct {
 type KubeObjectsCaptureIdentifier struct {
 	Number int64 `json:"number"`
 	//+nullable
-	StartTime metav1.Time `json:"startTime,omitempty"`
+	StartTime       metav1.Time `json:"startTime,omitempty"`
+	StartGeneration int64       `json:"startGeneration,omitempty"`
 }
 
 type KubeObjectProtectionStatus struct {
-	// +optional
+	//+optional
 	CaptureToRecoverFrom *KubeObjectsCaptureIdentifier `json:"captureToRecoverFrom,omitempty"`
 }
 

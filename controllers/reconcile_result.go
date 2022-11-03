@@ -17,6 +17,10 @@ func delayResetIfRequeueTrue(result *ctrl.Result, log logr.Logger) {
 	}
 }
 
+func delaySetMinimum(result *ctrl.Result) {
+	result.RequeueAfter = time.Nanosecond
+}
+
 func delaySetIfLess(result *ctrl.Result, delay time.Duration, log logr.Logger) {
 	if result.RequeueAfter > 0 && result.RequeueAfter <= delay {
 		log.Info("Delay not set because current delay is more than zero and less than new delay",
