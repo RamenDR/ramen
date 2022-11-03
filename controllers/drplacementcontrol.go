@@ -1838,6 +1838,10 @@ func (d *DRPCInstance) shouldUpdateStatus() bool {
 		return false
 	}
 
+	if !vrg.Status.LastGroupSyncTime.Equal(d.instance.Status.LastGroupSyncTime) {
+		return true
+	}
+
 	return !reflect.DeepEqual(d.instance.Status.ResourceConditions.Conditions, vrg.Status.Conditions)
 }
 
