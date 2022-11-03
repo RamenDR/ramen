@@ -413,22 +413,24 @@ type cachedObjectStorer struct {
 }
 
 type VRGInstance struct {
-	reconciler           *VolumeReplicationGroupReconciler
-	ctx                  context.Context
-	log                  logr.Logger
-	instance             *ramendrv1alpha1.VolumeReplicationGroup
-	savedInstanceStatus  ramendrv1alpha1.VolumeReplicationGroupStatus
-	ramenConfig          *ramendrv1alpha1.RamenConfig
-	volRepPVCs           []corev1.PersistentVolumeClaim
-	volSyncPVCs          []corev1.PersistentVolumeClaim
-	replClassList        *volrep.VolumeReplicationClassList
-	storageClassCache    map[string]*storagev1.StorageClass
-	vrgObjectProtected   *metav1.Condition
-	kubeObjectsProtected *metav1.Condition
-	vrcUpdated           bool
-	namespacedName       string
-	volSyncHandler       *volsync.VSHandler
-	objectStorers        map[string]cachedObjectStorer
+	reconciler                   *VolumeReplicationGroupReconciler
+	ctx                          context.Context
+	log                          logr.Logger
+	instance                     *ramendrv1alpha1.VolumeReplicationGroup
+	savedInstanceStatus          ramendrv1alpha1.VolumeReplicationGroupStatus
+	ramenConfig                  *ramendrv1alpha1.RamenConfig
+	volRepPVCs                   []corev1.PersistentVolumeClaim
+	volSyncPVCs                  []corev1.PersistentVolumeClaim
+	replClassList                *volrep.VolumeReplicationClassList
+	storageClassCache            map[string]*storagev1.StorageClass
+	vrgObjectProtected           *metav1.Condition
+	kubeObjectsProtected         *metav1.Condition
+	volSyncFinalSyncPrepared     bool
+	kubeObjectsFinalSyncPrepared bool
+	vrcUpdated                   bool
+	namespacedName               string
+	volSyncHandler               *volsync.VSHandler
+	objectStorers                map[string]cachedObjectStorer
 }
 
 const (
@@ -893,12 +895,13 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 
 func (v *VRGInstance) reconcileAsPrimary() ctrl.Result {
 	result := ctrl.Result{}
-	if len(v.volSyncPVCs) != 0 {
-		result.Requeue = v.reconcileVolSyncAsPrimary()
-	}
-
+	result.Requeue = v.reconcileVolSyncAsPrimary()
 	v.reconcileVolRepsAsPrimary(&result.Requeue)
 	v.kubeObjectsProtect(&result)
+
+	if v.instance.Spec.PrepareForFinalSync {
+		v.instance.Status.PrepareForFinalSyncComplete = v.volSyncFinalSyncPrepared && v.kubeObjectsFinalSyncPrepared
+	}
 
 	return result
 }

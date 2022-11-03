@@ -109,6 +109,7 @@ type RequestsManager interface {
 		requestNamespaceName string,
 		protectRequestName string,
 		labels map[string]string,
+		annotations map[string]string,
 	) (ProtectRequest, error)
 	RecoverRequestCreate(
 		c context.Context, w client.Writer, r client.Reader, l logr.Logger,
@@ -124,6 +125,7 @@ type RequestsManager interface {
 		protectRequestName string,
 		recoverRequestName string,
 		labels map[string]string,
+		annotations map[string]string,
 	) (RecoverRequest, error)
 	ProtectRequestsGet(
 		c context.Context, r client.Reader, requestNamespaceName string, labels map[string]string,

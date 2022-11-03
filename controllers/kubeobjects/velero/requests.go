@@ -152,6 +152,7 @@ func (RequestsManager) RecoverRequestCreate(
 	captureName string,
 	recoverName string,
 	labels map[string]string,
+	annotations map[string]string,
 ) (kubeobjects.RecoverRequest, error) {
 	log.Info("Kube objects recover",
 		"s3 url", s3Url,
@@ -165,6 +166,7 @@ func (RequestsManager) RecoverRequestCreate(
 		"capture name", captureName,
 		"recover name", recoverName,
 		"label set", labels,
+		"annotations", annotations,
 	)
 
 	restore, err := backupDummyCreateAndRestore(
@@ -182,6 +184,7 @@ func (RequestsManager) RecoverRequestCreate(
 		captureName,
 		recoverName,
 		labels,
+		annotations,
 	)
 
 	return RestoreRequest{restore}, err
@@ -202,12 +205,14 @@ func backupDummyCreateAndRestore(
 	backupName string,
 	restoreName string,
 	labels map[string]string,
+	annotations map[string]string,
 ) (*velero.Restore, error) {
 	backupLocation, backup, err := backupCreate(
 		types.NamespacedName{Namespace: requestNamespaceName, Name: backupName},
 		w, reader, s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretKeyRef,
 		backupSpecDummy(), sourceNamespaceName,
 		labels,
+		annotations,
 	)
 	if err != nil {
 		return nil, err
@@ -338,6 +343,7 @@ func (RequestsManager) ProtectRequestCreate(
 	requestNamespaceName string,
 	captureName string,
 	labels map[string]string,
+	annotations map[string]string,
 ) (kubeobjects.ProtectRequest, error) {
 	log.Info("Kube objects protect",
 		"s3 url", s3Url,
@@ -349,6 +355,7 @@ func (RequestsManager) ProtectRequestCreate(
 		"request namespace", requestNamespaceName,
 		"capture name", captureName,
 		"label set", labels,
+		"annotations", annotations,
 	)
 
 	backup, err := backupRealCreate(
@@ -364,6 +371,7 @@ func (RequestsManager) ProtectRequestCreate(
 		requestNamespaceName,
 		captureName,
 		labels,
+		annotations,
 	)
 
 	return BackupRequest{backup}, err
@@ -382,6 +390,7 @@ func backupRealCreate(
 	requestNamespaceName string,
 	captureName string,
 	labels map[string]string,
+	annotations map[string]string,
 ) (*velero.Backup, error) {
 	backupLocation, backup, err := backupCreate(
 		types.NamespacedName{Namespace: requestNamespaceName, Name: captureName},
@@ -389,6 +398,7 @@ func backupRealCreate(
 		getBackupSpecFromObjectsSpec(objectsSpec),
 		sourceNamespaceName,
 		labels,
+		annotations,
 	)
 	if err != nil {
 		return nil, err
@@ -514,6 +524,7 @@ func backupCreate(
 	backupSpec velero.BackupSpec,
 	sourceNamespaceName string,
 	labels map[string]string,
+	annotations map[string]string,
 ) (*velero.BackupStorageLocation, *velero.Backup, error) {
 	backupLocation := backupLocation(backupNamespacedName,
 		s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretKeyRef,
@@ -526,7 +537,7 @@ func backupCreate(
 	backupSpec.StorageLocation = backupNamespacedName.Name
 	backupSpec.IncludedNamespaces = []string{sourceNamespaceName}
 	backupSpec.SnapshotVolumes = new(bool)
-	backup := backup(backupNamespacedName, backupSpec, labels)
+	backup := backup(backupNamespacedName, backupSpec, labels, annotations)
 
 	return backupLocation, backup, objectCreateAndGet(w, reader, backup)
 }
@@ -636,13 +647,15 @@ func backupLocation(namespacedName types.NamespacedName,
 
 func backup(namespacedName types.NamespacedName, backupSpec velero.BackupSpec,
 	labels map[string]string,
+	annotations map[string]string,
 ) *velero.Backup {
 	return &velero.Backup{
 		TypeMeta: backupTypeMeta(),
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespacedName.Namespace,
-			Name:      namespacedName.Name,
-			Labels:    labels,
+			Namespace:   namespacedName.Namespace,
+			Name:        namespacedName.Name,
+			Labels:      labels,
+			Annotations: annotations,
 		},
 		Spec: backupSpec,
 	}

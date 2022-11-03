@@ -27,6 +27,7 @@ fi
 exit_stack_push unset -v ramen_hack_directory_path_name
 . $ramen_hack_directory_path_name/minikube.sh; exit_stack_push minikube_unset
 . $ramen_hack_directory_path_name/true_if_exit_status_and_stderr.sh; exit_stack_push unset -f true_if_exit_status_and_stderr
+. $ramen_hack_directory_path_name/until_true_or_n.sh; exit_stack_push unset -f until_true_or_n
 
 json_to_yaml() {
 	python3 -c 'import sys, yaml, json; print(yaml.dump(json.loads(sys.stdin.read()),default_flow_style=False))'
@@ -114,6 +115,14 @@ app_namespace_undeploy() {
 	kubectl --context $1 delete namespace asdf --ignore-not-found
 }; exit_stack_push unset -f app_namespace_undeploy
 
+app_namespace_list() {
+	kubectl --context $1 get ns/asdf
+}; exit_stack_push unset -f app_namespace_list
+
+app_namespace_get() {
+	kubectl --context $1 get ns/asdf -oyaml
+}; exit_stack_push unset -f app_namespace_get
+
 app_deploy() {
 	set -- cluster1
 	app_namespace_deploy $1
@@ -168,8 +177,7 @@ app_undeploy() {
 	app_list $1
 }; exit_stack_push unset -f app_undeploy
 
-vrg_deploy() {
-#    action: $3
+vrg_apply() {
 	vrg_appendix="
   kubeObjectProtection:
     captureInterval: 1m
@@ -191,18 +199,22 @@ vrg_deploy() {
       labelSelector:
         matchExpressions:
         - key: pod-template-hash
-          operator: DoesNotExist
+          operator: DoesNotExist$3${4:+"\n  action: "$4}
 " \
 	cluster_names=$s3_store_cluster_names application_sample_namespace_name=asdf $ramen_hack_directory_path_name/minikube-ramen.sh application_sample_vrg_deploy$2 $1
+}; exit_stack_push unset -f vrg_apply
+
+vrg_deploy() {
+	vrg_apply $1 "$2" "$3" #$4
 	vrg_list $1
 }; exit_stack_push unset -f vrg_deploy
 
 vrg_deploy_failover() {
-	vrg_deploy $1 "$2" Failover
+	vrg_deploy $1 "$2" "$3" Failover
 }; exit_stack_push unset -f vrg_deploy_failover
 
 vrg_deploy_relocate() {
-	vrg_deploy $1 "$2" Relocate
+	vrg_deploy $1 "$2" "$3" Relocate
 }; exit_stack_push unset -f vrg_deploy_relocate
 
 vrg_undeploy() {
@@ -214,6 +226,15 @@ vrg_demote() {
 #	time kubectl --context $1 -nasdf wait vrg/bb --for condition=clusterdataprotected=false
 }; exit_stack_push unset -f vrg_demote
 
+vrg_final_sync() {
+	vrg_apply $1 '' '
+  prepareForFinalSync: true'
+	until_true_or_n 30 eval test \"\$\(kubectl --context $1 -nasdf get vrg/bb -ojsonpath='{.status.prepareForFinalSyncComplete}'\)\" = true
+	vrg_apply $1 '' '
+  runFinalSync: true'
+	until_true_or_n 30 eval test \"\$\(kubectl --context $1 -nasdf get vrg/bb -ojsonpath='{.status.finalSyncComplete}'\)\" = true
+}; exit_stack_push unset -f vrg_final_sync
+
 vrg_fence() {
 	vrg_demote $1
 }; exit_stack_push unset -f vrg_fence
@@ -221,6 +242,11 @@ vrg_fence() {
 vrg_finalizer0_remove() {
 	true_if_exit_status_and_stderr 1 'Error from server (NotFound): volumereplicationgroups.ramendr.openshift.io "bb" not found' \
 	kubectl --context $1 -nasdf patch vrg/bb --type json -p '[{"op":remove, "path":/metadata/finalizers/0}]'
+}; exit_stack_push unset -f vrg_finalizer0_remove
+
+vr_finalizer0_remove() {
+	true_if_exit_status_and_stderr 1 'Error from server (NotFound): volumereplications.replication.storage.openshift.io "busybox-pvc" not found' \
+	kubectl --context $1 -nasdf patch volumereplication/busybox-pvc --type json -p '[{"op":remove, "path":/metadata/finalizers/0}]'
 }; exit_stack_push unset -f vrg_finalizer0_remove
 
 vrg_get() {
@@ -274,9 +300,10 @@ pv_delete() {
 }; exit_stack_push unset -f pv_delete
 
 app_protect() {
-	vrg_deploy cluster1
+	set -- cluster1
+	vrg_deploy $1
 	set -x
-	time kubectl --context cluster1 -nasdf wait vrg/bb --for condition=clusterdataprotected
+	time kubectl --context $1 -nasdf wait vrg/bb --for condition=clusterdataprotected
 	{ set +x; } 2>/dev/null
 #	app_protection_info 1
 }; exit_stack_push unset -f app_protect
@@ -289,17 +316,17 @@ app_unprotect() {
 }; exit_stack_push unset -f app_unprotect
 
 app_failover() {
-	vrg_fence cluster1
-	app_recover cluster2 failover
+	set -- cluster1 cluster2
+	vrg_fence $1
+	app_recover $2 failover
 }; exit_stack_push unset -f app_failover
 
 app_failback() {
-	app_undeploy_unprotected cluster1
-	set -x
-	time kubectl --context cluster2 -nasdf wait vrg/bb --for condition=clusterdataprotected
-	{ set +x; } 2>/dev/null
-	app_undeploy_unprotected cluster2 app_pv_sync_wait\ cluster1
-	app_recover cluster1 relocate
+	set -- cluster1 cluster2
+	app_undeploy_unprotected $1
+	vrg_final_sync $2
+	app_undeploy_unprotected $2 app_pv_sync_wait\ $1
+	app_recover $1 relocate
 }; exit_stack_push unset -f app_failback
 
 app_recover() {

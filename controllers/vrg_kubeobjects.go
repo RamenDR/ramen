@@ -90,10 +90,7 @@ func (v *VRGInstance) kubeObjectsProtect(result *ctrl.Result) {
 		return
 	}
 
-	if !v.kubeObjectProtectionDisabled("capture") {
-		v.kubeObjectsCaptureStartOrResumeOrDelay(result, s3StoreAccessors)
-	}
-
+	v.kubeObjectsCaptureStartOrResumeOrDelayIfEnabled(result, s3StoreAccessors)
 	v.vrgObjectProtect(result, s3StoreAccessors)
 }
 
@@ -142,10 +139,20 @@ func (v *VRGInstance) s3StoreAccessorsGet() []s3StoreAccessor {
 	return s3StoreAccessors
 }
 
-func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(result *ctrl.Result, s3StoreAccessors []s3StoreAccessor) {
-	veleroNamespaceName := v.veleroNamespaceName()
+func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelayIfEnabled(
+	result *ctrl.Result, s3StoreAccessors []s3StoreAccessor,
+) {
+	if v.kubeObjectProtectionDisabled("capture") {
+		return
+	}
+
 	vrg := v.instance
-	interval := kubeObjectsCaptureInterval(vrg.Spec.KubeObjectProtection)
+	if vrg.Spec.RunFinalSync {
+		v.log.Info("Kube objects capture disabled in RunFinalSync phase")
+
+		return
+	}
+
 	status := &vrg.Status.KubeObjectProtection
 
 	captureToRecoverFrom := status.CaptureToRecoverFrom
@@ -156,18 +163,31 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(result *ctrl.Result
 		captureToRecoverFrom = &ramen.KubeObjectsCaptureIdentifier{}
 	}
 
+	v.kubeObjectsCaptureStartOrResumeOrDelay(result, s3StoreAccessors, captureToRecoverFrom)
+}
+
+func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
+	result *ctrl.Result, s3StoreAccessors []s3StoreAccessor,
+	captureToRecoverFrom *ramen.KubeObjectsCaptureIdentifier,
+) {
+	veleroNamespaceName := v.veleroNamespaceName()
+	vrg := v.instance
+	interval := kubeObjectsCaptureInterval(vrg.Spec.KubeObjectProtection)
 	number := 1 - captureToRecoverFrom.Number
+	relocate := vrg.Spec.PrepareForFinalSync
+	generation := vrg.GetGeneration()
+	log := v.log.WithValues("number", number, "relocate", relocate, "generation", generation)
 	pathName, namePrefix := kubeObjectsCapturePathNameAndNamePrefix(vrg.Namespace, vrg.Name, number)
 	labels := util.OwnerLabels(vrg.Namespace, vrg.Name)
-	captureStartOrResume := func() {
+	captureStartOrResume := func(generation int64) {
 		v.kubeObjectsCaptureStartOrResume(result, s3StoreAccessors, number, pathName, namePrefix,
-			veleroNamespaceName, interval, labels)
+			veleroNamespaceName, interval, labels, generation)
 	}
 
 	requests, err := v.reconciler.kubeObjects.ProtectRequestsGet(
 		v.ctx, v.reconciler.APIReader, veleroNamespaceName, labels)
 	if err != nil {
-		v.log.Error(err, "Kube objects capture in-progress query error", "number", number)
+		log.Error(err, "Kube objects capture in-progress query error")
 		v.kubeObjectsCaptureFailed(err.Error())
 
 		result.Requeue = true
@@ -176,13 +196,20 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(result *ctrl.Result
 	}
 
 	if count := requests.Count(); count > 0 {
-		v.log.Info("Kube objects capture resume", "number", number)
-		captureStartOrResume()
+		log.Info("Kube objects capture resume")
+		captureStartOrResume(requests.Get(0).Object().GetGeneration())
 
 		return
 	}
 
-	if _, delay := timeSincePreviousAndUntilNext(captureToRecoverFrom.StartTime.Time, interval); delay > 0 {
+	if relocate {
+		v.kubeObjectsFinalSyncPrepared = captureToRecoverFrom.StartGeneration == generation
+		if v.kubeObjectsFinalSyncPrepared {
+			v.log.Info("Kube objects capture for relocate complete", "number", number, "generation", generation)
+
+			return
+		}
+	} else if _, delay := timeSincePreviousAndUntilNext(captureToRecoverFrom.StartTime.Time, interval); delay > 0 {
 		v.log.Info("Kube objects capture start delay", "number", number, "delay", delay)
 		delaySetIfLess(result, delay, v.log)
 
@@ -193,8 +220,8 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(result *ctrl.Result
 		return
 	}
 
-	v.log.Info("Kube objects capture start", "number", number)
-	captureStartOrResume()
+	log.Info("Kube objects capture start")
+	captureStartOrResume(generation)
 }
 
 func (v *VRGInstance) kubeObjectsCaptureDelete(
@@ -220,29 +247,35 @@ func (v *VRGInstance) kubeObjectsCaptureDelete(
 	return nil
 }
 
+const (
+	vrgGenerationKey            = "ramendr.openshift.io/vrgGeneration"
+	vrgGenerationNumberBase     = 10
+	vrgGenerationNumberBitCount = 64
+)
+
 func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	result *ctrl.Result, s3StoreAccessors []s3StoreAccessor, captureNumber int64,
 	pathName, namePrefix, veleroNamespaceName string, interval time.Duration, labels map[string]string,
+	generation int64,
 ) {
 	vrg := v.instance
 	groups := v.getCaptureGroups()
 	requests := make([]kubeobjects.ProtectRequest, len(groups)*len(s3StoreAccessors))
 	requestsProcessedCount := 0
 	requestsCompletedCount := 0
+	annotations := map[string]string{vrgGenerationKey: strconv.FormatInt(generation, vrgGenerationNumberBase)}
 
 	for groupNumber, captureGroup := range groups {
 		for _, s3StoreAccessor := range s3StoreAccessors {
 			request, err := v.reconciler.kubeObjects.ProtectRequestCreate(
 				v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.log,
-				s3StoreAccessor.url,
-				s3StoreAccessor.bucketName,
-				s3StoreAccessor.regionName,
+				s3StoreAccessor.url, s3StoreAccessor.bucketName, s3StoreAccessor.regionName,
 				pathName,
 				s3StoreAccessor.veleroNamespaceSecretKeyRef,
 				vrg.Namespace,
 				captureGroup.Spec,
 				veleroNamespaceName, kubeObjectsCaptureName(namePrefix, captureGroup.Name, s3StoreAccessor.profileName),
-				labels)
+				labels, annotations)
 			requests[requestsProcessedCount] = request
 			requestsProcessedCount++
 
@@ -279,12 +312,13 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 		}
 	}
 
-	v.kubeObjectsCaptureComplete(result, captureNumber, veleroNamespaceName, interval, labels, requests[0].StartTime())
+	v.kubeObjectsCaptureComplete(result, captureNumber, veleroNamespaceName, interval, labels, requests[0].StartTime(),
+		requests[0].Object().GetAnnotations())
 }
 
 func (v *VRGInstance) kubeObjectsCaptureComplete(
 	result *ctrl.Result, captureNumber int64, veleroNamespaceName string, interval time.Duration,
-	labels map[string]string, startTime metav1.Time,
+	labels map[string]string, startTime metav1.Time, annotations map[string]string,
 ) {
 	vrg := v.instance
 	status := &vrg.Status.KubeObjectProtection
@@ -300,20 +334,47 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 		return
 	}
 
+	startGeneration, err := strconv.ParseInt(
+		annotations[vrgGenerationKey], vrgGenerationNumberBase, vrgGenerationNumberBitCount)
+	if err != nil {
+		v.log.Error(err, "Kube objects capture generation string to int64 conversion error")
+	}
+
 	status.CaptureToRecoverFrom = &ramen.KubeObjectsCaptureIdentifier{
 		Number: captureNumber, StartTime: startTime,
+		StartGeneration: startGeneration,
 	}
 
 	v.kubeObjectsCaptureStatus(metav1.ConditionTrue, VRGConditionReasonUploaded, clusterDataProtectedTrueMessage)
 
 	duration, delay := timeSincePreviousAndUntilNext(status.CaptureToRecoverFrom.StartTime.Time, interval)
-	if delay <= 0 {
-		delay = time.Nanosecond
+	relocate := vrg.Spec.PrepareForFinalSync
+	generation := vrg.GetGeneration()
+	v.log.Info("Kube objects captured", "duration", duration, "recovery point", status.CaptureToRecoverFrom,
+		"generation", generation)
+
+	if relocate {
+		v.kubeObjectsFinalSyncPrepared = status.CaptureToRecoverFrom.StartGeneration == generation
+		if v.kubeObjectsFinalSyncPrepared {
+			v.log.Info("Kube objects capture for relocate complete")
+
+			return
+		}
+
+		v.log.Info("Kube objects capture for relocate schedule to run immediately")
+		delaySetMinimum(result)
+
+		return
 	}
 
-	v.log.Info("Kube objects captured", "recovery point", status.CaptureToRecoverFrom,
-		"duration", duration, "delay", delay)
+	if delay <= 0 {
+		v.log.Info("Kube objects capture schedule to run immediately", "delay", delay)
+		delaySetMinimum(result)
 
+		return
+	}
+
+	v.log.Info("Kube objects capture schedule to run", "delay", delay)
 	delaySetIfLess(result, delay, v.log)
 }
 
@@ -499,6 +560,7 @@ func (v *VRGInstance) createRecoverOrProtectRequest(
 	recoverGroup kubeobjects.RecoverSpec,
 	veleroNamespaceName string,
 	labels map[string]string,
+	annotations map[string]string,
 ) (kubeobjects.Request, error) {
 	vrg := v.instance
 	capturePathName, captureNamePrefix := kubeObjectsCapturePathNameAndNamePrefix(
@@ -527,7 +589,7 @@ func (v *VRGInstance) createRecoverOrProtectRequest(
 			vrg.Namespace,
 			recoverGroup.Spec,
 			veleroNamespaceName, kubeObjectsCaptureName(namePrefix, backupName, s3StoreAccessor.profileName),
-			labels)
+			labels, annotations)
 	} else {
 		request, err = v.reconciler.kubeObjects.RecoverRequestCreate(
 			v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.log,
@@ -538,7 +600,7 @@ func (v *VRGInstance) createRecoverOrProtectRequest(
 			s3StoreAccessor.veleroNamespaceSecretKeyRef,
 			sourceVrgNamespaceName, vrg.Namespace, recoverGroup, veleroNamespaceName,
 			kubeObjectsCaptureName(captureNamePrefix, recoverGroup.BackupName, s3StoreAccessor.profileName),
-			kubeObjectsRecoverName(recoverNamePrefix, groupNumber), labels)
+			kubeObjectsRecoverName(recoverNamePrefix, groupNumber), labels, annotations)
 	}
 
 	return request, err
@@ -553,6 +615,7 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 
 	veleroNamespaceName := v.veleroNamespaceName()
 	labels := util.OwnerLabels(vrg.Namespace, vrg.Name)
+	annotations := map[string]string{}
 	groups := v.getRecoverGroups()
 	requests := make([]kubeobjects.Request, len(groups)) // Request: interface for ProtectRequest, RecoverRequest
 
@@ -562,7 +625,7 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 		var err error
 
 		request, err = v.createRecoverOrProtectRequest(s3StoreAccessor, sourceVrgNamespaceName, sourceVrgName,
-			capture, groupNumber, recoverGroup, veleroNamespaceName, labels)
+			capture, groupNumber, recoverGroup, veleroNamespaceName, labels, annotations)
 		requests[groupNumber] = request
 
 		if err == nil {
