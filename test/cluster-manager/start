@@ -68,9 +68,9 @@ example_spec = json.loads(examples_json)[0]["spec"]
 drenv.log_progress("Creating cluster manager instance")
 instance_template = drenv.template("cluster-manager/cluster-manager.yaml")
 instance_yaml = instance_template.substitute(
-  placementImage=example_spec["placementImagePullSpec"],
-  registrationImage=example_spec["registrationImagePullSpec"],
-  workImage=example_spec["workImagePullSpec"],
+    placementImage=example_spec["placementImagePullSpec"],
+    registrationImage=example_spec["registrationImagePullSpec"],
+    workImage=example_spec["workImagePullSpec"],
 )
 drenv.kubectl("apply", "--filename", "-", input=instance_yaml, profile=cluster)
 
