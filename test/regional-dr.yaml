@@ -39,6 +39,7 @@ profiles:
       - file: cert-manager/start
       - file: olm/start
       - file: ocm-hub/start
+      - file: ocm-controller/start
 scripts:
   - file: rbd-mirror/start
     args: ["dr1", "dr2"]

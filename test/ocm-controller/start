@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import sys
+
+import drenv
+
+TAG = "v2.4.4-ACM"
+BASE_URL = f"https://raw.githubusercontent.com/stolostron/multicloud-operators-foundation/{TAG}/deploy/foundation/hub"
+
+
+def deploy(cluster):
+    drenv.log_progress("Deploying ocm controller")
+    with drenv.kustomization(
+        "ocm-controller/kustomization.yaml",
+        base_url=BASE_URL,
+    ) as kustomization:
+        drenv.kubectl("apply", "--kustomize", kustomization, profile=cluster)
+
+
+def wait(cluster):
+    drenv.log_progress("Waiting for ocm controller rollout")
+    drenv.kubectl(
+        "rollout", "status", "deploy/ocm-controller",
+        "--namespace", "open-cluster-management",
+        "--timeout", "300s",
+        profile=cluster,
+    )
+
+
+if len(sys.argv) != 2:
+    print(f"Usage: {sys.argv[0]} cluster")
+    sys.exit(1)
+
+cluster = sys.argv[1]
+
+deploy(cluster)
+wait(cluster)
