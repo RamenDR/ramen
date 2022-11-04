@@ -8,6 +8,7 @@ profiles:
     network: default
     scripts:
       - file: ocm-hub/start
+      - file: ocm-controller/start
   - name: "dr1"
     network: default
     scripts:
