@@ -25,6 +25,7 @@ profiles:
     scripts:
       - file: olm/start
       - file: cluster-manager/start
+      - file: ocm-controller/start
 scripts:
   - file: klusterlet/start
     args: ["dr1", "dr2", "hub"]
