@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import os
+import sys
+import yaml
+
+import drenv
+
+TAG = "v2.4.4-ACM"
+BASE_URL = f"https://raw.githubusercontent.com/stolostron/multicloud-operators-foundation/{TAG}/deploy/foundation/hub"
+NAMESPACE = "open-cluster-management"
+
+if len(sys.argv) != 2:
+    print(f"Usage: {sys.argv[0]} cluster")
+    sys.exit(1)
+
+cluster = sys.argv[1]
+
+# The namespace is created when deploying the registration-operator, but when
+# we install via olm the operator is created without the namespace.
+drenv.log_progress(f"Creating namespace {NAMESPACE} in cluster {cluster}")
+namespace = {
+    "apiVersion": "v1",
+    "kind": "Namespace",
+    "metadata": {
+        "name": NAMESPACE,
+    },
+}
+drenv.kubectl(
+    "apply", "--filename", "-",
+    input=yaml.safe_dump(namespace),
+    profile=cluster,
+)
+
+drenv.log_progress(f"Deploying ocm controller in cluster {cluster}")
+with drenv.kustomization(
+    "ocm-controller/kustomization.yaml",
+    base_url=BASE_URL,
+) as kustomization:
+    drenv.kubectl("apply", "--kustomize", kustomization, profile=cluster)
+
+drenv.wait_for("deploy/ocm-controller", namespace=NAMESPACE, profile=cluster)
+
+drenv.log_progress("Waiting for ocm controller rollout")
+drenv.kubectl(
+    "rollout", "status", "deploy/ocm-controller",
+    "--namespace", NAMESPACE,
+    "--timeout", "300s",
+    profile=cluster,
+)
