@@ -147,7 +147,7 @@ def wait_until_instance_is_registered(cluster, hub):
 
 def approve_registration(cluster, hub):
     drenv.log_progress(f"Fetch certificate signning request for {cluster}")
-    csr = drenv.kubectl(
+    out = drenv.kubectl(
         "get", "csr",
         "--selector",  f"open-cluster-management.io/cluster-name={cluster}",
         "--field-selector", "spec.signerName=kubernetes.io/kube-apiserver-client",
@@ -155,8 +155,12 @@ def approve_registration(cluster, hub):
         profile=hub,
     )
 
-    drenv.log_progress(f"Approve certificate signning request for {cluster}")
-    drenv.kubectl("certificate", "approve", csr, profile=hub)
+    # When installing klusterlet we have one csr. After installing subscription
+    # operator we have 2 csrs. It is not clear how to detect the right csr, so
+    # we approve all.
+    for csr in out.splitlines():
+        drenv.log_progress(f"Approve certificate signning request for {cluster}")
+        drenv.kubectl("certificate", "approve", csr, profile=hub)
 
     drenv.log_progress(f"Acccepting managed cluster {cluster}")
     drenv.kubectl(
