@@ -23,7 +23,7 @@ def delete_manifestwork(template, cluster, hub):
 
 def wait_until_available(cluster, hub):
     drenv.log_progress(
-        f"Waiting until example mnifestwork is applied in namespace {cluster}"
+        f"Waiting until example manifestwork is applied in namespace {cluster}"
     )
     drenv.kubectl(
         "wait", "manifestwork/example-manifestwork",
@@ -34,7 +34,7 @@ def wait_until_available(cluster, hub):
     )
 
     drenv.log_progress(
-        f"Waiting until example mnifestwork is available in namespace {cluster}"
+        f"Waiting until example manifestwork is available in namespace {cluster}"
     )
     drenv.kubectl(
         "wait", "manifestwork/example-manifestwork",
@@ -57,7 +57,7 @@ def wait_until_available(cluster, hub):
 
 def wait_until_deleted(cluster, hub):
     drenv.log_progress(
-        f"Waiting until example mnifestwork is deleted from namspace {cluster}"
+        f"Waiting until example manifestwork is deleted from namspace {cluster}"
     )
     drenv.kubectl(
         "wait", "manifestwork/example-manifestwork",
