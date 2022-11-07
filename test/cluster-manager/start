@@ -25,7 +25,7 @@ drenv.kubectl(
 # We don't know which version will be installed yet. Wait until the version is
 # reported by the subscription.
 current_csv = drenv.wait_for(
-    "subscription/my-cluster-manager",
+    "sub/my-cluster-manager",
     output="jsonpath={.status.currentCSV}",
     namespace="operators",
     profile=cluster,

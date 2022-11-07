@@ -23,7 +23,7 @@ def deploy_klusterlet(cluster):
 
 def wait_until_klusterlet_is_rolled_out(cluster):
     current_csv = drenv.wait_for(
-        "subscription/my-klusterlet",
+        "sub/my-klusterlet",
         output="jsonpath={.status.currentCSV}",
         namespace="operators",
         profile=cluster,
