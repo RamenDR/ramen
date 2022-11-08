@@ -33,6 +33,8 @@ scripts:
     args: ["dr1", "dr2", "hub"]
   - file: subscription-operator/start
     args: ["dr1", "dr2", "hub"]
+  - file: policy-framework/start
+    args: ["dr1", "dr2", "hub"]
   - file: rbd-mirror/start
     args: ["dr1", "dr2"]
   - file: rbd-mirror/test
