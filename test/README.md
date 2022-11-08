@@ -27,6 +27,10 @@ environment.
    You need `minikube` version supporting the `--extra-disks` option.
    The tool was tested with `minikube` v1.26.1.
 
+1. Install `clusteradm` tool. See
+   [Open Cluster Management Quick Start guide](https://open-cluster-management.io/getting-started/quick-start/#install-clusteradm-cli-tool)
+   for the details.
+
 1. Install the `drenv` package in a virtual environment:
 
    Run this once in the root of the source tree:
