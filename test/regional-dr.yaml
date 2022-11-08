@@ -6,6 +6,7 @@
 profiles:
   - name: "dr1"
     network: default
+    memory: "6g"
     extra_disks: 1
     disk_size: "50g"
     scripts:
@@ -14,6 +15,7 @@ profiles:
       - file: minio/start
   - name: "dr2"
     network: default
+    memory: "6g"
     extra_disks: 1
     disk_size: "50g"
     scripts:
@@ -21,6 +23,7 @@ profiles:
       - file: rook/start
       - file: minio/start
   - name: "hub"
+    memory: "4g"
     network: default
     scripts:
       - file: olm/start
