@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import sys
+
+import drenv
+
+TAG = "v1.10.0"
+URL = f"https://github.com/cert-manager/cert-manager/releases/download/{TAG}/cert-manager.yaml"
+
+if len(sys.argv) != 2:
+    print(f"Usage: {sys.argv[0]} cluster")
+    sys.exit(1)
+
+cluster = sys.argv[1]
+
+drenv.log_progress(f"Deploying cert-manager in cluster {cluster}")
+drenv.kubectl("apply", "--filename", URL, profile=cluster)
+
+drenv.log_progress(
+    f"Waiting until all deployments are available cluster {cluster}",
+)
+drenv.kubectl(
+    "wait", "deploy", "--all",
+    "--for=condition=Available",
+    "--namespace", "cert-manager",
+    "--timeout=60s",
+    profile=cluster,
+)
