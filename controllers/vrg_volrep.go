@@ -1802,7 +1802,7 @@ func (v *VRGInstance) validatePVExistence(pv *corev1.PersistentVolume) error {
 	}
 
 	if v.pvMatches(existingPV, pv) {
-		v.log.Info("existing PV matches and is bound to the same claim", "PV", existingPV.GetName())
+		v.log.Info("Existing PV matches and is bound to the same claim", "PV", existingPV.GetName())
 
 		return nil
 	}
@@ -1821,7 +1821,7 @@ func (v *VRGInstance) validatePVExistence(pv *corev1.PersistentVolume) error {
 	return fmt.Errorf("found existing PV (%s) not restored by Ramen and not matching with backed up PV", existingPV.Name)
 }
 
-// PVMatches checks if the PVs fields match, and is bound to a PVC. Used to detect PVCs that were not
+// pvMatches checks if the PVs fields match, and is bound to a PVC. Used to detect PVCs that were not
 // deleted, and hence PVC and PV is retained and available for use
 //
 //nolint:cyclop
