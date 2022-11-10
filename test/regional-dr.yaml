@@ -10,6 +10,7 @@ profiles:
     extra_disks: 1
     disk_size: "50g"
     scripts:
+      - file: cert-manager/start
       - file: olm/start
       - file: rook/start
       - file: minio/start
@@ -19,6 +20,7 @@ profiles:
     extra_disks: 1
     disk_size: "50g"
     scripts:
+      - file: cert-manager/start
       - file: olm/start
       - file: rook/start
       - file: minio/start
@@ -26,6 +28,7 @@ profiles:
     memory: "4g"
     network: default
     scripts:
+      - file: cert-manager/start
       - file: olm/start
       - file: cluster-manager/start
       - file: ocm-controller/start
