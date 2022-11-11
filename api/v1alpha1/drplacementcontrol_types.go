@@ -151,14 +151,19 @@ type VRGConditions struct {
 
 // DRPlacementControlStatus defines the observed state of DRPlacementControl
 type DRPlacementControlStatus struct {
-	Phase              DRState                 `json:"phase,omitempty"`
-	ActionStartTime    *metav1.Time            `json:"actionStartTime,omitempty"`
-	ActionDuration     *metav1.Duration        `json:"actionDuration,omitempty"`
-	Progression        ProgressionStatus       `json:"progression,omitempty"`
-	PreferredDecision  plrv1.PlacementDecision `json:"preferredDecision,omitempty"`
-	Conditions         []metav1.Condition      `json:"conditions,omitempty"`
-	ResourceConditions VRGConditions           `json:"resourceConditions,omitempty"`
-	LastUpdateTime     *metav1.Time            `json:"lastUpdateTime,omitempty"`
+	Phase           DRState           `json:"phase,omitempty"`
+	ActionStartTime *metav1.Time      `json:"actionStartTime,omitempty"`
+	ActionDuration  *metav1.Duration  `json:"actionDuration,omitempty"`
+	Progression     ProgressionStatus `json:"progression,omitempty"`
+	// PreferredDecision holds the last preferred cluster where the workload is deployed.
+	//+optional
+	PreferredDecision plrv1.PlacementDecision `json:"preferredDecision,omitempty"`
+	// lastFailoverCluster is set to the last spec.FailoverCluster on Failover success
+	//+optional
+	LastFailoverCluster string             `json:"lastFailoverCluster,omitempty"`
+	Conditions          []metav1.Condition `json:"conditions,omitempty"`
+	ResourceConditions  VRGConditions      `json:"resourceConditions,omitempty"`
+	LastUpdateTime      *metav1.Time       `json:"lastUpdateTime,omitempty"`
 
 	// lastGroupSyncTime is the time of the most recent successful synchronization of all PVCs
 	//+optional

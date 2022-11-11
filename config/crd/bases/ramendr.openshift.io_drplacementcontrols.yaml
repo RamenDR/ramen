@@ -424,6 +424,10 @@ spec:
                   - type
                   type: object
                 type: array
+              lastFailoverCluster:
+                description: lastFailoverCluster is set to the last spec.FailoverCluster
+                  on Failover success
+                type: string
               lastGroupSyncTime:
                 description: lastGroupSyncTime is the time of the most recent successful
                   synchronization of all PVCs
@@ -436,7 +440,8 @@ spec:
                 description: DRState for keeping track of the DR placement
                 type: string
               preferredDecision:
-                description: PlacementDecision defines the decision made by controller
+                description: PreferredDecision holds the last preferred cluster where
+                  the workload is deployed.
                 properties:
                   clusterName:
                     type: string

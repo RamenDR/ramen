@@ -284,7 +284,7 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 	}
 
 	d.setDRState(rmn.Deployed)
-	d.setMetricsTimerFromDRState(rmn.Deployed)
+	d.setMetricsTimerFromDRState(d.getLastDRState())
 
 	return done, nil
 }
@@ -309,7 +309,7 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		}
 	}
 
-	if !d.isFailingOverOrFailedOver() {
+	if d.isStartingNewFailover() {
 		d.instance.Status.ActionStartTime = &metav1.Time{Time: time.Now()}
 		d.instance.Status.ActionDuration = nil
 		d.setDRState(rmn.Initiating)
@@ -357,6 +357,8 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 			d.log.Info(fmt.Sprintf("Failover completed. Started at: %v and it took: %v",
 				d.instance.Status.ActionStartTime, duration))
 		}
+
+		d.instance.Status.LastFailoverCluster = d.instance.Spec.FailoverCluster
 
 		return done, nil
 	}
@@ -428,11 +430,9 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 		}
 	}
 
-	newHomeCluster := d.instance.Spec.FailoverCluster
-
 	const restorePVs = true
 
-	err := d.switchToCluster(newHomeCluster, "", restorePVs)
+	err := d.switchToCluster(d.instance.Spec.FailoverCluster, "", restorePVs)
 	if err != nil {
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), err.Error())
@@ -443,10 +443,12 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 	}
 
 	d.setDRState(rmn.FailedOver)
-	d.setMetricsTimerFromDRState(rmn.FailedOver)
+	d.setMetricsTimerFromDRState(d.getLastDRState())
 	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Completed")
 	d.log.Info("Failover completed", "state", d.getLastDRState())
+
+	d.instance.Status.LastFailoverCluster = d.instance.Spec.FailoverCluster
 
 	// The failover is complete, but we still need to clean up the failed primary.
 	// hence, returning a NOT done
@@ -496,7 +498,7 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 		}
 	}
 
-	if !d.isRelocatingOrRelocated() {
+	if d.isStartingNewRelocation() {
 		d.instance.Status.ActionStartTime = &metav1.Time{Time: time.Now()}
 		d.instance.Status.ActionDuration = nil
 		d.setDRState(rmn.Initiating)
@@ -2094,34 +2096,6 @@ func (d *DRPCInstance) isDeployingOrDeployed() bool {
 	return false
 }
 
-//nolint:exhaustive
-func (d *DRPCInstance) isFailingOverOrFailedOver() bool {
-	switch d.getLastDRState() {
-	case rmn.Initiating:
-		fallthrough
-	case rmn.FailingOver:
-		fallthrough
-	case rmn.FailedOver:
-		return true
-	}
-
-	return false
-}
-
-//nolint:exhaustive
-func (d *DRPCInstance) isRelocatingOrRelocated() bool {
-	switch d.getLastDRState() {
-	case rmn.Initiating:
-		fallthrough
-	case rmn.Relocating:
-		fallthrough
-	case rmn.Relocated:
-		return true
-	}
-
-	return false
-}
-
 func (d *DRPCInstance) isPlacementNeedsFixing() bool {
 	// Needs fixing if and only if the DRPC Status is empty, the Placement decision is empty, and
 	// the we have VRG(s) in the managed clusters
@@ -2239,4 +2213,43 @@ func (d *DRPCInstance) fixupPlacementForRelocate() error {
 	d.updatePreferredDecision()
 
 	return nil
+}
+
+func (d *DRPCInstance) isStartingNewFailover() bool {
+	return d.isStartingNewAction(
+		rmn.FailingOver,
+		rmn.FailedOver,
+		d.instance.Status.LastFailoverCluster,
+		d.instance.Spec.FailoverCluster)
+}
+
+func (d *DRPCInstance) isStartingNewRelocation() bool {
+	return d.isStartingNewAction(
+		rmn.Relocating,
+		rmn.Relocated,
+		d.instance.Status.PreferredDecision.ClusterName,
+		d.instance.Spec.PreferredCluster)
+}
+
+func (d *DRPCInstance) isStartingNewAction(inprogress, final rmn.DRState, lastHomeCluster, homeCluster string) bool {
+	// An Action is in phase of setting up (initiating), in-progress (deploying/failingover/relocating)
+	// or completed (deployed/failedover/relocated).
+	// Let's assume that this function is called due to a 'Failover' action, then if we are NOT in
+	// the process of failing over or already failed over, then this is a new failover action as long
+	// as we haven't initiated yet.
+	lastState := d.getLastDRState()
+	if lastState != inprogress && lastState != final {
+		return lastState != rmn.Initiating
+	}
+
+	// However, If we continue assuming that this call is for a `Failover` action, then that would mean
+	// that we are either failing over or already failed over. But we also get here if we failed over
+	// from A to B, then requested to failover again from B to A. In that case, the check above will not
+	// detect it, we need another factor, which is to check if the last failover cluster is not the
+	// same as the new failover cluster, and we haven't started yet.
+	if lastHomeCluster != homeCluster && lastState != rmn.Initiating && lastState != inprogress {
+		return true
+	}
+
+	return false
 }
