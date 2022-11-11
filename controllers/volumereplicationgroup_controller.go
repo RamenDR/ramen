@@ -89,9 +89,14 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 		}).
 		For(&ramendrv1alpha1.VolumeReplicationGroup{}).
 		Watches(&source.Kind{Type: &corev1.PersistentVolumeClaim{}}, pvcMapFun, builder.WithPredicates(pvcPredicate)).
-		Owns(&volrep.VolumeReplication{}).
-		Owns(&volsyncv1alpha1.ReplicationDestination{}).
-		Owns(&volsyncv1alpha1.ReplicationSource{})
+		Owns(&volrep.VolumeReplication{})
+
+	if !ramenConfig.VolSync.Disabled {
+		builder.Owns(&volsyncv1alpha1.ReplicationDestination{}).
+			Owns(&volsyncv1alpha1.ReplicationSource{})
+	} else {
+		r.Log.Info("VolSync disabled; don't own volsync resources")
+	}
 
 	r.kubeObjects = velero.RequestsManager{}
 	if !ramenConfig.KubeObjectProtection.Disabled {
