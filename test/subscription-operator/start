@@ -67,7 +67,7 @@ for cluster in cluster1, cluster2:
 
 drenv.log_progress(f"Deploying hub operators in cluster {cluster}")
 with drenv.kustomization(
-    f"subscription-operator/hub.yaml",
+    "subscription-operator/hub.yaml",
     base_url=BASE_URL,
     image_tag=IMAGE_TAG,
 ) as kustomization:
@@ -76,7 +76,7 @@ with drenv.kustomization(
 for cluster in cluster1, cluster2:
     drenv.log_progress(f"Deploying managed cluster operators in cluster {cluster}")
     with drenv.kustomization(
-        f"subscription-operator/managed.yaml",
+        "subscription-operator/managed.yaml",
         base_url=BASE_URL,
         image_tag=IMAGE_TAG,
         cluster_name=cluster,

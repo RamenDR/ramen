@@ -149,7 +149,7 @@ def approve_registration(cluster, hub):
     drenv.log_progress(f"Fetch certificate signning request for {cluster}")
     out = drenv.kubectl(
         "get", "csr",
-        "--selector",  f"open-cluster-management.io/cluster-name={cluster}",
+        "--selector", f"open-cluster-management.io/cluster-name={cluster}",
         "--field-selector", "spec.signerName=kubernetes.io/kube-apiserver-client",
         "--output", "name",
         profile=hub,
