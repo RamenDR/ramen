@@ -3,13 +3,13 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import sys
 
 import drenv
 
 HUB_NAMESPACE = "open-cluster-management"
 CLUSTER_NAMESPACE = "open-cluster-management-agent-addon"
+
 
 def deploy_hub(hub):
     drenv.log_progress(
