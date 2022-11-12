@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Based on upstream deploy/foundation/hub/kustomization.yaml
+# excluding ocm proxyserver and webhook controllers.
+
+---
+resources:
+- $base_url/resources/crds/action.open-cluster-management.io_managedclusteractions.yaml
+- $base_url/resources/crds/internal.open-cluster-management.io_managedclusterinfos.yaml
+- $base_url/resources/crds/imageregistry.open-cluster-management.io_managedclusterimageregistries.yaml
+- $base_url/resources/crds/inventory.open-cluster-management.io_baremetalassets.yaml
+- $base_url/resources/crds/view.open-cluster-management.io_managedclusterviews.yaml
+- $base_url/resources/crds/hive.openshift.io_syncsets.yaml
+- $base_url/resources/crds/hive.openshift.io_clusterdeployments.yaml
+- $base_url/resources/crds/hiveinternal.openshift.io_clustersyncs.yaml
+- $base_url/resources/crds/hive.openshift.io_clusterclaims.yaml
+- $base_url/resources/crds/hive.openshift.io_clusterpools.yaml
+- $base_url/resources/clusterrole.yaml
+- $base_url/resources/agent-clusterrole.yaml
+- $base_url/resources/controller.yaml
+
+
+images:
+- name: quay.io/stolostron/multicloud-manager
+  newName: quay.io/stolostron/multicloud-manager
+  newTag: latest
+
+
+patchesStrategicMerge:
+- $base_url/patches.yaml
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization

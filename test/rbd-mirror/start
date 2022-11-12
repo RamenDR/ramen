@@ -66,7 +66,7 @@ def configure_rbd_mirroring(cluster, peer_info):
                     "secretNames": [
                         peer_info["name"]]}}}}
     drenv.kubectl(
-        "patch", "cephblockpool",  POOL_NAME,
+        "patch", "cephblockpool", POOL_NAME,
         "--type", "merge",
         "--patch", json.dumps(patch),
         "--namespace", "rook-ceph",

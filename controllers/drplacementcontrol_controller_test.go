@@ -507,8 +507,14 @@ func getLatestDRPC() *rmn.DRPlacementControl {
 func clearDRPCStatus() {
 	latestDRPC := getLatestDRPC()
 	latestDRPC.Status = rmn.DRPlacementControlStatus{}
-	latestDRPC.Status.LastUpdateTime = metav1.Now()
 	err := k8sClient.Status().Update(context.TODO(), latestDRPC)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+func clearFakeUserPlacementRuleStatus() {
+	userPlacementRule := getLatestUserPlacementRule(UserPlacementRuleName, DRPCNamespaceName)
+	userPlacementRule.Status = plrv1.PlacementRuleStatus{}
+	err := k8sClient.Status().Update(context.TODO(), userPlacementRule)
 	Expect(err).NotTo(HaveOccurred())
 }
 
@@ -1419,10 +1425,10 @@ func verifyInitialDRPCDeployment(userPlacementRule *plrv1.PlacementRule, drpc *r
 	Expect(val).NotTo(Equal(0.0)) // failover time should be non-zero
 }
 
-func verifyFailoverToSecondary(userPlacementRule *plrv1.PlacementRule, fromCluster, toCluster string,
+func verifyFailoverToSecondary(userPlacementRule *plrv1.PlacementRule, toCluster string,
 	isSyncDR bool,
 ) {
-	recoverToFailoverCluster(userPlacementRule, fromCluster, toCluster)
+	recoverToFailoverCluster(userPlacementRule, East1ManagedCluster, toCluster)
 
 	// TODO: DRCluster as part of Unfence operation, first unfences
 	//       the NetworkFence CR and then deletes it. Hence, by the
@@ -1434,7 +1440,7 @@ func verifyFailoverToSecondary(userPlacementRule *plrv1.PlacementRule, fromClust
 		Expect(getManifestWorkCount(toCluster)).Should(Equal(3)) // MW for VRG+ROLES+NF
 	}
 
-	Expect(getManifestWorkCount(fromCluster)).Should(Equal(1)) // Roles MW
+	Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1)) // Roles MW
 
 	val, err := rmnutil.GetMetricValueSingle("ramen_failover_time", dto.MetricType_GAUGE)
 	Expect(err).NotTo(HaveOccurred())
@@ -1481,13 +1487,30 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			It("Should failover to Secondary (West1ManagedCluster)", func() {
 				// ----------------------------- FAILOVER TO SECONDARY (West1ManagedCluster) --------------------------------------
 				By("\n\n*** Failover - 1\n\n")
-				verifyFailoverToSecondary(userPlacementRule, East1ManagedCluster, West1ManagedCluster, false)
+				verifyFailoverToSecondary(userPlacementRule, West1ManagedCluster, false)
+			})
+		})
+		When("DRAction is Failover during hub recovery", func() {
+			It("Should reconstructs the DRPC state and points to Secondary (West1ManagedCluster)", func() {
+				By("\n\n*** Failover after \n\n")
+				clearFakeUserPlacementRuleStatus()
+				clearDRPCStatus()
+				verifyFailoverToSecondary(userPlacementRule, West1ManagedCluster, false)
 			})
 		})
 		When("DRAction is set to Relocate", func() {
 			It("Should relocate to Primary (East1ManagedCluster)", func() {
 				// ----------------------------- RELOCATION TO PRIMARY --------------------------------------
 				By("\n\n*** Relocate - 1\n\n")
+				runRelocateAction(userPlacementRule, West1ManagedCluster, false, false)
+			})
+		})
+		When("DRAction is Relocate during hub recovery", func() {
+			It("Should reconstructs the DRPC state and points to Primary (East1ManagedCluster)", func() {
+				// ----------------------------- RELOCATION TO PRIMARY --------------------------------------
+				By("\n\n*** Relocate - 2\n\n")
+				clearFakeUserPlacementRuleStatus()
+				clearDRPCStatus()
 				runRelocateAction(userPlacementRule, West1ManagedCluster, false, false)
 			})
 		})
@@ -1609,7 +1632,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			})
 			It("Should failover to Secondary (East2ManagedCluster)", func() {
 				By("\n\n*** Failover - 1\n\n")
-				verifyFailoverToSecondary(userPlacementRule, East1ManagedCluster, East2ManagedCluster, true)
+				verifyFailoverToSecondary(userPlacementRule, East2ManagedCluster, true)
 			})
 		})
 		When("DRAction is set to Relocate", func() {
@@ -1713,7 +1736,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			})
 			It("Should failover to Secondary (East2ManagedCluster)", func() {
 				By("\n\n*** Failover - 1\n\n")
-				verifyFailoverToSecondary(userPlacementRule, East1ManagedCluster, East2ManagedCluster, true)
+				verifyFailoverToSecondary(userPlacementRule, East2ManagedCluster, true)
 			})
 		})
 		When("DRAction is set to Relocate", func() {

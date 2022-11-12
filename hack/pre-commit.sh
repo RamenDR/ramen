@@ -40,6 +40,20 @@ function run_check() {
 # markdownlint: https://github.com/markdownlint/markdownlint
 # https://github.com/markdownlint/markdownlint/blob/master/docs/RULES.md
 # Install via: gem install mdl
+mdl_version_test() {
+	IFS=. read -r x y _ <<-a
+	$(mdl --version)
+	a
+	test "$x" -gt 0 || test "$x" -eq 0 && test "$y" -gt 11
+	set -- $?
+	unset -v x y
+	return "$1"
+}
+if ! mdl_version_test; then
+	echo error: mdl version precedes minimum
+	exit 1
+fi
+unset -f mdl_version_test
 run_check '.*\.md' mdl --style "${scriptdir}/mdl-style.rb"
 
 # Install via: dnf install ShellCheck

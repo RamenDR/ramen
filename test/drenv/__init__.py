@@ -46,20 +46,7 @@ def kubectl(*args, profile=None, input=None, verbose=True):
     cmd.append("--")
     cmd.extend(args)
 
-    cp = subprocess.run(
-        cmd,
-        input=input.encode() if input else None,
-        stdout=subprocess.PIPE,
-        check=True)
-
-    out = cp.stdout.decode().rstrip()
-
-    # Log output for debugging so we don't need to log manually for every
-    # command.
-    if out and verbose:
-        log_detail(out)
-
-    return out
+    return run(*cmd, input=input, verbose=verbose)
 
 
 def wait_for(resource, output="jsonpath={.metadata.name}", timeout=300,
@@ -97,6 +84,31 @@ def wait_for(resource, output="jsonpath={.metadata.name}", timeout=300,
             raise RuntimeError(f"Timeout waiting for {resource}")
 
         time.sleep(delay)
+
+
+def run(*args, input=None, verbose=True):
+    """
+    Run a command and return the output.
+
+    You can set input to the text to pipe into the commnad stdin.
+
+    The underlying command output is logged using log_detail(). Set
+    verbose=False to suppress the log.
+    """
+    cp = subprocess.run(
+        args,
+        input=input.encode() if input else None,
+        stdout=subprocess.PIPE,
+        check=True)
+
+    out = cp.stdout.decode().rstrip()
+
+    # Log output for debugging so we don't need to log manually for every
+    # command.
+    if out and verbose:
+        log_detail(out)
+
+    return out
 
 
 def template(path):

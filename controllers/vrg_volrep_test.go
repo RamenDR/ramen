@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const (
@@ -147,11 +148,43 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			restoreTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			numPVs := 3
 			vtest := newVRGTestCaseCreate(0, restoreTestTemplate, true, false)
-			pvList := generateFakePVs("pv", numPVs)
+			pvList := vtest.generateFakePVs("pv", numPVs)
 			populateS3Store(vtest.s3KeyPrefix(), pvList)
 			vtest.VRGTestCaseStart()
 			waitForPVRestore(pvList)
 			cleanupS3Store()
+		})
+	})
+
+	// Test restore success when bound PV/PVC are present
+	var vrgTestBoundPV *vrgTest
+	Context("restore test case for existing and bound PV/PVC", func() {
+		restoreTestTemplate := &template{
+			ClaimBindInfo:          corev1.ClaimBound,
+			VolumeBindInfo:         corev1.VolumeBound,
+			schedulingInterval:     "1h",
+			storageClassName:       "manual",
+			replicationClassName:   "test-replicationclass",
+			vrcProvisioner:         "manual.storage.com",
+			scProvisioner:          "manual.storage.com",
+			replicationClassLabels: map[string]string{"protection": "ramen"},
+		}
+		It("populates the S3 store with PVs and starts vrg as primary", func() {
+			restoreTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			vrgTestBoundPV = newVRGTestCaseCreate(3, restoreTestTemplate, true, false)
+			pvList := vrgTestBoundPV.generatePVs()
+			populateS3Store(vrgTestBoundPV.s3KeyPrefix(), pvList)
+			vrgTestBoundPV.VRGTestCaseStart()
+		})
+		It("waits for VRG to create a VR for each PVC", func() {
+			vrgTestBoundPV.waitForVRCountToMatch(len(vrgTestBoundPV.pvcNames))
+		})
+		It("waits for VRG status to match", func() {
+			vrgTestBoundPV.promoteVolReps()
+			vrgTestBoundPV.verifyVRGStatusExpectation(true)
+		})
+		It("cleans up after testing", func() {
+			vrgTestBoundPV.cleanup()
 		})
 	})
 
@@ -210,6 +243,66 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 		It("cleans up after testing", func() {
 			vrgS3UploadTestCase.cleanup()
+		})
+	})
+
+	// Test VRG finalizer removal during deletion is deferred till VR is deleted
+	var vrgVRDeleteEnsureTestCase *vrgTest
+	Context("in primary state", func() {
+		createTestTemplate := &template{
+			ClaimBindInfo:          corev1.ClaimBound,
+			VolumeBindInfo:         corev1.VolumeBound,
+			schedulingInterval:     "1h",
+			storageClassName:       "manual",
+			replicationClassName:   "test-replicationclass",
+			vrcProvisioner:         "manual.storage.com",
+			scProvisioner:          "manual.storage.com",
+			replicationClassLabels: map[string]string{"protection": "ramen"},
+		}
+		It("sets up PVCs, PVs and VRGs (with s3 stores that fail uploads)", func() {
+			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			vrgVRDeleteEnsureTestCase = newVRGTestCaseCreateAndStart(1, createTestTemplate, true, false)
+		})
+		It("waits for VRG to create a VR for each PVC", func() {
+			expectedVRCount := len(vrgVRDeleteEnsureTestCase.pvcNames)
+			vrgVRDeleteEnsureTestCase.waitForVRCountToMatch(expectedVRCount)
+		})
+		It("waits for VRG status to match", func() {
+			vrgVRDeleteEnsureTestCase.promoteVolReps()
+			vrgVRDeleteEnsureTestCase.verifyVRGStatusExpectation(true)
+		})
+		It("ensures orderly cleanup post VolumeReplication deletion", func() {
+			By("Protecting the VolumeReplication resources from deletion")
+			vrgVRDeleteEnsureTestCase.protectDeletionOfVolReps()
+
+			By("Starting the VRG deletion process")
+			vrgVRDeleteEnsureTestCase.cleanupPVCs()
+			Expect(k8sClient.Delete(context.TODO(), vrgVRDeleteEnsureTestCase.getVRG())).To(Succeed())
+
+			By("Ensuring VRG is not deleted till VRs are present")
+			Consistently(func() bool {
+				vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
+				err := apiReader.Get(context.TODO(), vrgVRDeleteEnsureTestCase.vrgNamespacedName(), vrg)
+
+				return err == nil
+			}, vrgtimeout, vrginterval).Should(BeTrue(), "while waiting for VRG %v to remain undeleted",
+				vrgVRDeleteEnsureTestCase.vrgNamespacedName())
+
+			By("Un-protecting the VolumeReplication resources to ensure their deletion")
+			vrgVRDeleteEnsureTestCase.unprotectDeletionOfVolReps()
+
+			By("Ensuring VRG is deleted eventually as a result")
+			Eventually(func() bool {
+				vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
+				err := apiReader.Get(context.TODO(), vrgVRDeleteEnsureTestCase.vrgNamespacedName(), vrg)
+
+				return errors.IsNotFound(err)
+			}, vrgtimeout, vrginterval).Should(BeTrue(), "while waiting for VRG %v to be deleted",
+				vrgVRDeleteEnsureTestCase.vrgNamespacedName())
+
+			vrgVRDeleteEnsureTestCase.cleanupNamespace()
+			vrgVRDeleteEnsureTestCase.cleanupSC()
+			vrgVRDeleteEnsureTestCase.cleanupVRC()
 		})
 	})
 
@@ -643,6 +736,25 @@ func newVRGTestCaseCreateAndStart(pvcCount int, testTemplate *template, checkBin
 	return v
 }
 
+func (v *vrgTest) generatePVs() []corev1.PersistentVolume {
+	pvList := []corev1.PersistentVolume{}
+
+	// The generator has a limit of 9999 unique names.
+	if v.pvcCount > 9999 {
+		return pvList
+	}
+
+	// Create the requested number of PVs and corresponding PVCs
+	for i := 0; i < v.pvcCount; i++ {
+		pvName := fmt.Sprintf("pv-%v-%02d", v.uniqueID, i)
+		pvcName := fmt.Sprintf("pvc-%v-%02d", v.uniqueID, i)
+
+		pvList = append(pvList, *v.generatePV(pvName, pvcName))
+	}
+
+	return pvList
+}
+
 func (v *vrgTest) createPVCandPV(claimBindInfo corev1.PersistentVolumeClaimPhase,
 	volumeBindInfo corev1.PersistentVolumePhase,
 ) {
@@ -674,7 +786,7 @@ func cleanupS3Store() {
 	Expect((*vrgObjectStorer).DeleteObjects("")).To(Succeed())
 }
 
-func generateFakePVs(pvNamePrefix string, count int) []corev1.PersistentVolume {
+func (v *vrgTest) generateFakePVs(pvNamePrefix string, count int) []corev1.PersistentVolume {
 	pvList := []corev1.PersistentVolume{}
 
 	// The generator has a limit of 9999 unique names.
@@ -684,58 +796,10 @@ func generateFakePVs(pvNamePrefix string, count int) []corev1.PersistentVolume {
 
 	for i := 1; i <= count; i++ {
 		pvName := fmt.Sprintf("%s%04d", pvNamePrefix, i)
-		pv := getSamplePV(pvName)
-		pvList = append(pvList, pv)
+		pvList = append(pvList, *v.generatePV(pvName, "PVC_of_"+pvName))
 	}
 
 	return pvList
-}
-
-func getSamplePV(pvName string) corev1.PersistentVolume {
-	capacity := corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}
-	accessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
-	hostPathType := corev1.HostPathDirectoryOrCreate
-
-	pv := corev1.PersistentVolume{
-		ObjectMeta: metav1.ObjectMeta{Name: pvName},
-		Spec: corev1.PersistentVolumeSpec{
-			Capacity: capacity,
-			PersistentVolumeSource: corev1.PersistentVolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{
-					Path: "/tmp/kube",
-					Type: &hostPathType,
-				},
-			},
-			AccessModes: accessModes,
-			ClaimRef: &corev1.ObjectReference{
-				Kind:      "PersistentVolumeClaim",
-				Namespace: "my-namespace",
-				Name:      "PVC_of_" + pvName,
-			},
-			PersistentVolumeReclaimPolicy: "Delete",
-			StorageClassName:              "manual",
-			MountOptions:                  []string{},
-			NodeAffinity: &corev1.VolumeNodeAffinity{
-				Required: &corev1.NodeSelector{
-					NodeSelectorTerms: []corev1.NodeSelectorTerm{
-						{
-							MatchExpressions: []corev1.NodeSelectorRequirement{
-								{
-									Key:      "KeyNode",
-									Operator: corev1.NodeSelectorOpIn,
-									Values: []string{
-										"node1",
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	return pv
 }
 
 func (v *vrgTest) vrgNamespacedName() types.NamespacedName {
@@ -768,25 +832,42 @@ func (v *vrgTest) createNamespace() {
 func (v *vrgTest) createPV(pvName, claimName string, bindInfo corev1.PersistentVolumePhase) {
 	By("creating PV " + pvName)
 
+	pv := v.generatePV(pvName, claimName)
+
+	err := k8sClient.Create(context.TODO(), pv)
+	expectedErr := errors.NewAlreadyExists(
+		schema.GroupResource{Resource: "persistentvolumes"}, pvName)
+	Expect(err).To(SatisfyAny(BeNil(), MatchError(expectedErr)),
+		"failed to create PV %s", pvName)
+
+	pv.Status.Phase = bindInfo
+	err = k8sClient.Status().Update(context.TODO(), pv)
+	Expect(err).To(BeNil(),
+		"failed to update status of PV %s", pvName)
+}
+
+func (v *vrgTest) generatePV(pvName, claimName string) *corev1.PersistentVolume {
 	capacity := corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}
 	accessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
-	hostPathType := corev1.HostPathDirectoryOrCreate
-	pv := &corev1.PersistentVolume{
+	volumeMode := corev1.PersistentVolumeFilesystem
+
+	return &corev1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{Name: pvName},
 		Spec: corev1.PersistentVolumeSpec{
 			Capacity: capacity,
 			PersistentVolumeSource: corev1.PersistentVolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{
-					Path: "/tmp/kube",
-					Type: &hostPathType,
+				CSI: &corev1.CSIPersistentVolumeSource{
+					Driver:       "fake.csi",
+					FSType:       "ext4",
+					VolumeHandle: "fakeVolumeHandle",
 				},
 			},
 			AccessModes: accessModes,
+			VolumeMode:  &volumeMode,
 			ClaimRef: &corev1.ObjectReference{
 				Kind:      "PersistentVolumeClaim",
 				Namespace: v.namespace,
 				Name:      claimName,
-				// UID:       types.UID(claimName),
 			},
 			PersistentVolumeReclaimPolicy: "Delete",
 			StorageClassName:              v.storageClass,
@@ -810,17 +891,6 @@ func (v *vrgTest) createPV(pvName, claimName string, bindInfo corev1.PersistentV
 			},
 		},
 	}
-
-	err := k8sClient.Create(context.TODO(), pv)
-	expectedErr := errors.NewAlreadyExists(
-		schema.GroupResource{Resource: "persistentvolumes"}, pvName)
-	Expect(err).To(SatisfyAny(BeNil(), MatchError(expectedErr)),
-		"failed to create PV %s", pvName)
-
-	pv.Status.Phase = bindInfo
-	err = k8sClient.Status().Update(context.TODO(), pv)
-	Expect(err).To(BeNil(),
-		"failed to update status of PV %s", pvName)
 }
 
 func (v *vrgTest) createPVC(pvcName, namespace, volumeName string, labels map[string]string,
@@ -1356,6 +1426,44 @@ func (v *vrgTest) promoteVolReps() {
 			v.waitForVolRepPromotion(volrepKey, false)
 		} else {
 			v.waitForVolRepPromotion(volrepKey, true)
+		}
+	}
+}
+
+func (v *vrgTest) protectDeletionOfVolReps() {
+	By("Adding a finalizer to protect VolumeReplication resources being deleted " + v.namespace)
+
+	volRepList := &volrep.VolumeReplicationList{}
+	listOptions := &client.ListOptions{
+		Namespace: v.namespace,
+	}
+	err := apiReader.List(context.TODO(), volRepList, listOptions)
+	Expect(err).NotTo(HaveOccurred(), "failed to get a list of VRs in namespace %s", v.namespace)
+
+	for index := range volRepList.Items {
+		volRep := volRepList.Items[index]
+		if controllerutil.AddFinalizer(client.Object(&volRep), "testDeleteProtected") {
+			err = k8sClient.Update(context.TODO(), &volRep)
+			Expect(err).NotTo(HaveOccurred(), "failed to add finalizer to VolRep %s", volRep.Name)
+		}
+	}
+}
+
+func (v *vrgTest) unprotectDeletionOfVolReps() {
+	By("Removing finalizer that protects VolumeReplication resources from being deleted " + v.namespace)
+
+	volRepList := &volrep.VolumeReplicationList{}
+	listOptions := &client.ListOptions{
+		Namespace: v.namespace,
+	}
+	err := apiReader.List(context.TODO(), volRepList, listOptions)
+	Expect(err).NotTo(HaveOccurred(), "failed to get a list of VRs in namespace %s", v.namespace)
+
+	for index := range volRepList.Items {
+		volRep := volRepList.Items[index]
+		if controllerutil.RemoveFinalizer(client.Object(&volRep), "testDeleteProtected") {
+			err = k8sClient.Update(context.TODO(), &volRep)
+			Expect(err).NotTo(HaveOccurred(), "failed to remove finalizer to VolRep %s", volRep.Name)
 		}
 	}
 }

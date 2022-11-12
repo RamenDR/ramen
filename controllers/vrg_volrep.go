@@ -6,6 +6,7 @@ package controllers
 import (
 	"errors"
 	"fmt"
+	"reflect"
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/go-logr/logr"
@@ -157,8 +158,8 @@ func (v *VRGInstance) reconcileVRAsSecondary(pvc *corev1.PersistentVolumeClaim, 
 func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
 	const ready bool = true
 
-	// If PVC is not being deleted, it is not ready for Secondary
-	if pvc.GetDeletionTimestamp().IsZero() {
+	// If PVC is not being deleted, it is not ready for Secondary, unless action is failover
+	if v.instance.Spec.Action != ramendrv1alpha1.VRGActionFailover && pvc.GetDeletionTimestamp().IsZero() {
 		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolumeClaim is not marked for deletion")
 
 		msg := "unable to transition to Secondary as PVC is not deleted"
@@ -672,8 +673,7 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 		case requeueResult:
 			return requeue
 		case !ready:
-			// Ensure VR is available at the required state before deletion
-			return !requeue
+			return requeue
 		}
 	}
 
@@ -681,7 +681,7 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 		log.Info("Requeuing due to failure in finalizing VolumeReplication resource for PersistentVolumeClaim",
 			"errorValue", err)
 
-		return true
+		return requeue
 	}
 
 	if err := v.preparePVCForVRDeletion(pvc, log); err != nil {
@@ -700,7 +700,7 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 // - if no VR was created post initial processing, by when VRG was deleted. In this case
 // no PV was also uploaded, as VR is created first before PV is uploaded.
 // - if VR was deleted in a prior reconcile, during VRG deletion, but steps post VR deletion were not
-// completed
+// completed, at this point a deleted VR is also not processed further (its generation would have been updated)
 // Returns 2 booleans,
 // - the first indicating if VR is missing or not, to enable further VR processing if needed
 // - the next indicating any required requeue of the request, due to errors in determining VR presence
@@ -719,12 +719,22 @@ func (v *VRGInstance) reconcileMissingVR(pvc *corev1.PersistentVolumeClaim, log 
 
 	err := v.reconciler.Get(v.ctx, vrNamespacedName, volRep)
 	if err == nil {
+		if !volRep.ObjectMeta.DeletionTimestamp.IsZero() {
+			log.Info("Requeuing due to processing a VR under deletion")
+
+			return !vrMissing, requeue
+		}
+
 		return !vrMissing, !requeue
 	}
 
 	if !k8serrors.IsNotFound(err) {
+		log.Info("Requeuing due to failure in getting VR resource", "errorValue", err)
+
 		return !vrMissing, requeue
 	}
+
+	log.Info("Preparing PVC as VR is detected as missing or deleted")
 
 	if err := v.preparePVCForVRDeletion(pvc, log); err != nil {
 		log.Info("Requeuing due to failure in preparing PersistentVolumeClaim for deletion",
@@ -1453,6 +1463,29 @@ func setPVCClusterDataProtectedCondition(protectedPVC *ramendrv1alpha1.Protected
 	}
 }
 
+// ensureVRDeletedFromAPIServer adds an additional step to ensure that we wait for volumereplication deletion
+// from API server before moving ahead with vrg finalizer removal.
+func (v *VRGInstance) ensureVRDeletedFromAPIServer(vrNamespacedName types.NamespacedName, log logr.Logger) error {
+	volRep := &volrep.VolumeReplication{}
+
+	err := v.reconciler.APIReader.Get(v.ctx, vrNamespacedName, volRep)
+	if err == nil {
+		log.Info("Found VolumeReplication resource pending delete", "vr", volRep)
+
+		return fmt.Errorf("waiting for deletion of VolumeReplication resource (%s/%s), %w",
+			vrNamespacedName.Namespace, vrNamespacedName.Name, err)
+	}
+
+	if k8serrors.IsNotFound(err) {
+		return nil
+	}
+
+	log.Error(err, "Failed to get VolumeReplication resource")
+
+	return fmt.Errorf("failed to get VolumeReplication resource (%s/%s), %w",
+		vrNamespacedName.Namespace, vrNamespacedName.Name, err)
+}
+
 // deleteVR deletes a VolumeReplication instance if found
 func (v *VRGInstance) deleteVR(vrNamespacedName types.NamespacedName, log logr.Logger) error {
 	cr := &volrep.VolumeReplication{
@@ -1463,14 +1496,18 @@ func (v *VRGInstance) deleteVR(vrNamespacedName types.NamespacedName, log logr.L
 	}
 
 	err := v.reconciler.Delete(v.ctx, cr)
-	if err == nil || k8serrors.IsNotFound(err) {
+	if err != nil {
+		if !k8serrors.IsNotFound(err) {
+			log.Error(err, "Failed to delete VolumeReplication resource")
+
+			return fmt.Errorf("failed to delete VolumeReplication resource (%s/%s), %w",
+				vrNamespacedName.Namespace, vrNamespacedName.Name, err)
+		}
+
 		return nil
 	}
 
-	log.Error(err, "Failed to delete VolumeReplication resource")
-
-	return fmt.Errorf("failed to delete VolumeReplication resource (%s/%s), %w",
-		vrNamespacedName.Namespace, vrNamespacedName.Name, err)
+	return v.ensureVRDeletedFromAPIServer(vrNamespacedName, log)
 }
 
 func (v *VRGInstance) addProtectedAnnotationForPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) error {
@@ -1752,14 +1789,20 @@ func (v *VRGInstance) validatePVExistence(pv *corev1.PersistentVolume) error {
 
 	err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: pv.Name}, existingPV)
 	if err != nil {
-		return fmt.Errorf("failed to get existing PV (%w)", err)
+		return fmt.Errorf("failed to get PV (%s) (%w)", existingPV.GetName(), err)
 	}
 
 	if existingPV.ObjectMeta.Annotations != nil &&
 		existingPV.ObjectMeta.Annotations[PVRestoreAnnotation] == "True" {
 		// Should we check and see if PV in being deleted? Should we just treat it as exists
 		// and then we don't care if deletion takes place later, which is what we do now?
-		v.log.Info("PV exists and managed by Ramen", "PV", existingPV)
+		v.log.Info("PV exists and managed by Ramen", "PV", existingPV.GetName())
+
+		return nil
+	}
+
+	if v.pvMatches(existingPV, pv) {
+		v.log.Info("Existing PV matches and is bound to the same claim", "PV", existingPV.GetName())
 
 		return nil
 	}
@@ -1770,12 +1813,67 @@ func (v *VRGInstance) validatePVExistence(pv *corev1.PersistentVolume) error {
 	// restore can be missing for the sync mode. Skip the check for the
 	// annotation in this case.
 	if v.instance.Spec.Sync != nil {
-		v.log.Info("PV exists, will update for sync", "PV", existingPV)
+		v.log.Info("PV exists and will be updated for sync", "PV", existingPV.GetName())
 
 		return v.updateExistingPVForSync(existingPV)
 	}
 
-	return fmt.Errorf("found PV object not restored by Ramen for PV %s", existingPV.Name)
+	return fmt.Errorf("found existing PV (%s) not restored by Ramen and not matching with backed up PV", existingPV.Name)
+}
+
+// pvMatches checks if the PVs fields match, and is bound to a PVC. Used to detect PVCs that were not
+// deleted, and hence PVC and PV is retained and available for use
+//
+//nolint:cyclop
+func (v *VRGInstance) pvMatches(x, y *corev1.PersistentVolume) bool {
+	switch {
+	case x.GetName() != y.GetName():
+		v.log.Info("PVs Name mismatch", "x", x.GetName(), "y", y.GetName())
+
+		return false
+	case x.Status.Phase != corev1.VolumeBound:
+		v.log.Info("PV not bound", "x", x.Status.Phase)
+
+		return false
+	case x.Spec.PersistentVolumeSource.CSI == nil || y.Spec.PersistentVolumeSource.CSI == nil:
+		v.log.Info("PV(s) not managed by a CSI driver", "x", x.Spec.PersistentVolumeSource.CSI,
+			"y", y.Spec.PersistentVolumeSource.CSI)
+
+		return false
+	case x.Spec.PersistentVolumeSource.CSI.Driver != y.Spec.PersistentVolumeSource.CSI.Driver:
+		v.log.Info("PVs CSI drivers mismatch", "x", x.Spec.PersistentVolumeSource.CSI.Driver,
+			"y", y.Spec.PersistentVolumeSource.CSI.Driver)
+
+		return false
+	case x.Spec.PersistentVolumeSource.CSI.FSType != y.Spec.PersistentVolumeSource.CSI.FSType:
+		v.log.Info("PVs CSI FSType mismatch", "x", x.Spec.PersistentVolumeSource.CSI.FSType,
+			"y", y.Spec.PersistentVolumeSource.CSI.FSType)
+
+		return false
+	case x.Spec.ClaimRef.Kind != y.Spec.ClaimRef.Kind:
+		v.log.Info("PVs ClaimRef.Kind mismatch", "x", x.Spec.ClaimRef.Kind, "y", y.Spec.ClaimRef.Kind)
+
+		return false
+	case x.Spec.ClaimRef.Namespace != y.Spec.ClaimRef.Namespace:
+		v.log.Info("PVs ClaimRef.Namespace mismatch", "x", x.Spec.ClaimRef.Namespace,
+			"y", y.Spec.ClaimRef.Namespace)
+
+		return false
+	case x.Spec.ClaimRef.Name != y.Spec.ClaimRef.Name:
+		v.log.Info("PVs ClaimRef.Name mismatch", "x", x.Spec.ClaimRef.Name, "y", y.Spec.ClaimRef.Name)
+
+		return false
+	case !reflect.DeepEqual(x.Spec.AccessModes, y.Spec.AccessModes):
+		v.log.Info("PVs AccessMode mismatch", "x", x.Spec.AccessModes, "y", y.Spec.AccessModes)
+
+		return false
+	case !reflect.DeepEqual(x.Spec.VolumeMode, y.Spec.VolumeMode):
+		v.log.Info("PVs VolumeMode mismatch", "x", x.Spec.VolumeMode, "y", y.Spec.VolumeMode)
+
+		return false
+	default:
+		return true
+	}
 }
 
 // cleanupPVForRestore cleans up required PV fields, to ensure restore succeeds to a new cluster, and

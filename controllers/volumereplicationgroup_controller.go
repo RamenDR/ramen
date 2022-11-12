@@ -441,11 +441,26 @@ func (v *VRGInstance) processVRG() (ctrl.Result, error) {
 func (v *VRGInstance) processVRGActions() (ctrl.Result, error) {
 	v.log = v.log.WithName("vrginstance").WithValues("State", v.instance.Spec.ReplicationState)
 
-	switch {
-	case !v.instance.GetDeletionTimestamp().IsZero():
+	if !v.instance.GetDeletionTimestamp().IsZero() {
 		v.log = v.log.WithValues("Finalize", true)
 
 		return v.processForDeletion()
+	}
+
+	if err := v.addFinalizer(vrgFinalizerName); err != nil {
+		v.log.Info("Failed to add finalizer", "finalizer", vrgFinalizerName, "errorValue", err)
+
+		msg := "Failed to add finalizer to VolumeReplicationGroup"
+		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+
+		if err = v.updateVRGStatus(false); err != nil {
+			v.log.Error(err, "VRG Status update failed")
+		}
+
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	switch {
 	case v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary:
 		return v.processAsPrimary()
 	default: // Secondary, not primary and not deleted
@@ -760,19 +775,6 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 
 	defer v.log.Info("Exiting processing VolumeReplicationGroup")
 
-	if err := v.addFinalizer(vrgFinalizerName); err != nil {
-		v.log.Info("Failed to add finalizer", "finalizer", vrgFinalizerName, "errorValue", err)
-
-		msg := "Failed to add finalizer to VolumeReplicationGroup"
-		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
-
-		if err = v.updateVRGStatus(false); err != nil {
-			v.log.Error(err, "VRG Status update failed")
-		}
-
-		return ctrl.Result{Requeue: true}, nil
-	}
-
 	result := ctrl.Result{}
 	if err := v.restorePVs(&result); err != nil {
 		v.log.Info("Restoring PVs failed", "Error", err.Error())
@@ -826,19 +828,6 @@ func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
 	v.log.Info("Entering processing VolumeReplicationGroup as Secondary")
 
 	defer v.log.Info("Exiting processing VolumeReplicationGroup")
-
-	if err := v.addFinalizer(vrgFinalizerName); err != nil {
-		v.log.Info("Failed to add finalizer", "finalizer", vrgFinalizerName, "errorValue", err)
-
-		msg := "Failed to add finalizer to VolumeReplicationGroup"
-		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
-
-		if err = v.updateVRGStatus(false); err != nil {
-			v.log.Error(err, "VRG Status update failed")
-		}
-
-		return ctrl.Result{Requeue: true}, nil
-	}
 
 	v.instance.Status.LastGroupSyncTime = nil
 
