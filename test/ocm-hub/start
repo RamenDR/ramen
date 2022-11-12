@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import sys
+
+import drenv
+
+ADDONS = (
+    "application-manager",
+    "governance-policy-framework",
+)
+
+DEPLOYMENTS = {
+    "open-cluster-management": (
+        "governance-policy-addon-controller",
+        "governance-policy-propagator",
+        "multicluster-operators-appsub-summary",
+        "multicluster-operators-channel",
+        "multicluster-operators-placementrule",
+        "multicluster-operators-subscription",
+    ),
+    "open-cluster-management-hub": (
+        "cluster-manager-placement-controller",
+        "cluster-manager-registration-controller",
+        "cluster-manager-registration-webhook",
+        "cluster-manager-work-webhook",
+    ),
+}
+
+if len(sys.argv) != 2:
+    print(f"Usage: {sys.argv[0]} hub")
+    sys.exit(1)
+
+hub = sys.argv[1]
+
+drenv.log_progress("Initializing hub")
+drenv.run("clusteradm", "init", "--wait", "--context", hub)
+
+drenv.log_progress("Installing hub addons")
+drenv.run(
+    "clusteradm", "install", "hub-addon",
+    "--names", ",".join(ADDONS),
+    "--context", hub,
+)
+
+drenv.log_progress("Waiting until deployments are rolled out")
+for ns, names in DEPLOYMENTS.items():
+    for name in names:
+        deployment = f"deploy/{name}"
+        drenv.wait_for(deployment, namespace=ns, profile=hub)
+        drenv.kubectl(
+            "rollout", "status", deployment,
+            "--namespace", ns,
+            "--timeout", "300s",
+            profile=hub,
+        )

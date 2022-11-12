@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import sys
+
+import drenv
+
+if len(sys.argv) != 3:
+    print(f"Usage: {sys.argv[0]} cluster hub")
+    sys.exit(1)
+
+cluster = sys.argv[1]
+hub = sys.argv[2]
+
+template = drenv.template("ocm-cluster/example-manifestwork.yaml")
+work = template.substitute(namespace=cluster)
+
+# Deploy a manifest work on the hub.
+
+drenv.log_progress(F"Applying example manifestwork to namespace {cluster}")
+drenv.kubectl("apply", "--filename", "-", input=work, profile=hub)
+
+# Wait until the manifest work is applied to the hub and the deploymnet is
+# available on the cluster.
+
+drenv.log_progress(
+    f"Waiting until example manifestwork is applied in namespace {cluster}"
+)
+drenv.kubectl(
+    "wait", "manifestwork/example-manifestwork",
+    "--for", "condition=applied",
+    "--namespace", cluster,
+    "--timeout", "60s",
+    profile=hub,
+)
+
+drenv.log_progress(
+    f"Waiting until example manifestwork is available in namespace {cluster}"
+)
+drenv.kubectl(
+    "wait", "manifestwork/example-manifestwork",
+    "--for", "condition=available",
+    "--namespace", cluster,
+    "--timeout", "60s",
+    profile=hub,
+)
+
+drenv.log_progress(
+    f"Waiting until example deployment is available in cluster {cluster}"
+)
+drenv.kubectl(
+    "wait", "deploy/example-deployment",
+    "--for", "condition=available",
+    "--timeout", "60s",
+    profile=cluster,
+)
+
+# Delete the manitest work from the hub.
+
+drenv.log_progress(F"Deleting example manifestwork from namespace {cluster}")
+drenv.kubectl("delete", "--filename", "-", input=work, profile=hub)
+
+# Wait until the manifest work is deleted on the hub, and the deployment is
+# deleted from the cluster.
+
+drenv.log_progress(
+    f"Waiting until example manifestwork is deleted from namspace {cluster}"
+)
+drenv.kubectl(
+    "wait", "manifestwork/example-manifestwork",
+    "--for", "delete",
+    "--namespace", cluster,
+    "--timeout", "60s",
+    profile=hub,
+)
+
+drenv.log_progress(
+    f"Waiting until example deployment is deleted from cluster {cluster}"
+)
+drenv.kubectl(
+    "wait", "deploy/example-deployment",
+    "--for", "delete",
+    "--timeout", "60s",
+    profile=cluster,
+)
