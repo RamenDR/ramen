@@ -79,6 +79,7 @@ def validate_profile(profile):
     profile.setdefault("memory", "4g")
     profile.setdefault("network", "")
     profile.setdefault("scripts", [])
+    profile.setdefault("addons", [])
 
     for script in profile["scripts"]:
         validate_script(script, args=[profile["name"]])
@@ -139,6 +140,7 @@ def start_cluster(profile):
              "--cni", profile["cni"],
              "--cpus", str(profile["cpus"]),
              "--memory", profile["memory"],
+             "--addons", ",".join(profile["addons"]),
              profile=profile["name"])
     logging.info("[%s] Cluster started in %.2f seconds",
                  profile["name"], time.monotonic() - start)
