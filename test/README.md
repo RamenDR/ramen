@@ -286,6 +286,7 @@ $ drenv delete example.yaml
     - `cni`: Network plugin (default "auto")
     - `cpus`: Number of CPUs per VM (default 2)
     - `memory`: Memory per VM (default 4g)
+    - `addons`: List of minikube addons to install
     - `scripts`: Optional list of scripts to run during start.
         - `file`: Script filename
         - `args`: Optional argument to the script. If not specified the
