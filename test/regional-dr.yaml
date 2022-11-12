@@ -14,6 +14,10 @@ profiles:
       - file: olm/start
       - file: rook/start
       - file: minio/start
+      - file: ocm-cluster/start
+        args: ["dr1", "hub"]
+      - file: ocm-cluster/test
+        args: ["dr1", "hub"]
   - name: "dr2"
     network: default
     memory: "6g"
@@ -24,23 +28,18 @@ profiles:
       - file: olm/start
       - file: rook/start
       - file: minio/start
+      - file: ocm-cluster/start
+        args: ["dr2", "hub"]
+      - file: ocm-cluster/test
+        args: ["dr2", "hub"]
   - name: "hub"
     memory: "4g"
     network: default
     scripts:
       - file: cert-manager/start
       - file: olm/start
-      - file: cluster-manager/start
-      - file: ocm-controller/start
+      - file: ocm-hub/start
 scripts:
-  - file: klusterlet/start
-    args: ["dr1", "dr2", "hub"]
-  - file: klusterlet/test
-    args: ["dr1", "dr2", "hub"]
-  - file: subscription-operator/start
-    args: ["dr1", "dr2", "hub"]
-  - file: policy-framework/start
-    args: ["dr1", "dr2", "hub"]
   - file: rbd-mirror/start
     args: ["dr1", "dr2"]
   - file: rbd-mirror/test
