@@ -61,13 +61,13 @@ def deploy_clusters(hub, clusters):
 def wait_for_clusters_deployments(clusters):
     for cluster in clusters:
         for deploy in "governance-policy-framework", "config-policy-controller":
+            drenv.log_progress(
+                f"Waiting until {deploy} is rolled out in cluster {cluster}",
+            )
             drenv.wait_for(
                 f"deploy/{deploy}",
                 namespace=CLUSTER_NAMESPACE,
                 profile=cluster,
-            )
-            drenv.log_progress(
-                f"Waiting until {deploy} is rolled out in cluster {cluster}",
             )
             drenv.kubectl(
                 "rollout", "status", "deploy", deploy,

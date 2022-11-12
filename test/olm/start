@@ -57,14 +57,13 @@ drenv.kubectl(
     profile=cluster,
 )
 
+drenv.log_progress("Waiting until olm packageserver succeeds")
 drenv.wait_for(
     "csv/packageserver",
     output="jsonpath={.status.phase}",
     namespace="olm",
     profile=cluster,
 )
-
-drenv.log_progress("Waiting until olm packageserver succeeds")
 drenv.kubectl(
     "wait", "csv/packageserver",
     "--namespace", "olm",

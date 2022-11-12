@@ -41,9 +41,8 @@ with drenv.kustomization(
 ) as kustomization:
     drenv.kubectl("apply", "--kustomize", kustomization, profile=cluster)
 
-drenv.wait_for("deploy/ocm-controller", namespace=NAMESPACE, profile=cluster)
-
 drenv.log_progress("Waiting for ocm controller rollout")
+drenv.wait_for("deploy/ocm-controller", namespace=NAMESPACE, profile=cluster)
 drenv.kubectl(
     "rollout", "status", "deploy/ocm-controller",
     "--namespace", NAMESPACE,

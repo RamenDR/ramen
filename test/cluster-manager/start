@@ -24,6 +24,7 @@ drenv.kubectl(
 
 # We don't know which version will be installed yet. Wait until the version is
 # reported by the subscription.
+drenv.log_progress("Fetching current csv")
 current_csv = drenv.wait_for(
     "sub/my-cluster-manager",
     output="jsonpath={.status.currentCSV}",
@@ -31,15 +32,14 @@ current_csv = drenv.wait_for(
     profile=cluster,
 )
 
-# Now we can wait until this version reports its phase.
+# Now we can wait until on the csv phase.
+drenv.log_progress("Waiting until ocm cluster manager succeeds")
 drenv.wait_for(
     f"csv/{current_csv}",
     output="jsonpath={.status.phase}",
     namespace="operators",
     profile=cluster,
 )
-
-drenv.log_progress("Waiting until ocm cluster manager succeeds")
 drenv.kubectl(
     "wait", f"csv/{current_csv}",
     "--for", "jsonpath={.status.phase}=Succeeded",
@@ -74,6 +74,8 @@ instance_yaml = instance_template.substitute(
 )
 drenv.kubectl("apply", "--filename", "-", input=instance_yaml, profile=cluster)
 
+drenv.log_progress("Waiting until cluster manager deployments are avaialble")
+
 drenv.wait_for("namespace/open-cluster-management-hub", profile=cluster)
 
 for component in [
@@ -88,7 +90,6 @@ for component in [
         profile=cluster,
     )
 
-drenv.log_progress("Waiting until cluster manager deployments are avaialble")
 drenv.kubectl(
     "wait", "deployment", "--all",
     "--for", "condition=available",
