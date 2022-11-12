@@ -62,8 +62,9 @@ def validate_env(env):
     for profile in env["profiles"]:
         validate_profile(profile)
 
-    for script in env.setdefault("scripts", []):
-        validate_script(script)
+    env.setdefault("workers", [])
+    for i, worker in enumerate(env["workers"]):
+        validate_worker(worker, "env", i)
 
 
 def validate_profile(profile):
@@ -80,9 +81,17 @@ def validate_profile(profile):
     profile.setdefault("network", "")
     profile.setdefault("scripts", [])
     profile.setdefault("addons", [])
+    profile.setdefault("workers", [])
 
-    for script in profile["scripts"]:
-        validate_script(script, args=[profile["name"]])
+    for i, worker in enumerate(profile["workers"]):
+        validate_worker(worker, profile["name"], i)
+
+
+def validate_worker(worker, name, index):
+    worker.setdefault("name", f"{name}/{index}")
+    worker.setdefault("scripts", [])
+    for script in worker["scripts"]:
+        validate_script(script, args=[name])
 
 
 def validate_script(script, args=()):
@@ -94,8 +103,7 @@ def validate_script(script, args=()):
 def cmd_start(env):
     start = time.monotonic()
     execute(start_cluster, env["profiles"])
-    for script in env["scripts"]:
-        run_script(script)
+    execute(run_worker, env["workers"])
     logging.info("[env] Started in %.2f seconds", time.monotonic() - start)
 
 
@@ -157,8 +165,7 @@ def start_cluster(profile):
     if is_restart:
         wait_for_deployments(profile)
 
-    for script in profile["scripts"]:
-        run_script(script, name=profile["name"])
+    execute(run_worker, profile["workers"])
 
 
 def stop_cluster(profile):
@@ -224,7 +231,12 @@ def minikube(cmd, *args, profile=None):
     run("minikube", cmd, "--profile", profile, *args, name=profile)
 
 
-def run_script(script, name="env"):
+def run_worker(worker):
+    for script in worker["scripts"]:
+        run_script(script, worker["name"])
+
+
+def run_script(script, name):
     start = time.monotonic()
     logging.info("[%s] Starting %s", name, script["file"])
     run(script["file"], *script["args"], name=name)

@@ -5,11 +5,14 @@
 ---
 profiles:
   - name: "ex1"
-    scripts:
-      - file: example/start
+    workers:
+      - scripts:
+          - file: example/start
   - name: "ex2"
-    scripts:
-      - file: example/start
-scripts:
-  - file: example/test
-    args: ["ex1", "ex2"]
+    workers:
+      - scripts:
+          - file: example/start
+workers:
+  - scripts:
+      - file: example/test
+        args: ["ex1", "ex2"]
