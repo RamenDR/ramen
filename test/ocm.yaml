@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Enviroment for testing OCM deployment using clusteradm.
+---
+profiles:
+  - name: "hub"
+    network: default
+    scripts:
+      - file: ocm-hub/start
+  - name: "dr1"
+    network: default
+    scripts:
+      - file: ocm-cluster/start
+        args: ["dr1", "hub"]
+      - file: ocm-cluster/test
+        args: ["dr1", "hub"]
+  - name: "dr2"
+    network: default
+    scripts:
+      - file: ocm-cluster/start
+        args: ["dr2", "hub"]
+      - file: ocm-cluster/test
+        args: ["dr2", "hub"]

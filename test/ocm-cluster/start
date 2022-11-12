@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import sys
+
+import drenv
+
+ADDONS = (
+    "application-manager",
+    "governance-policy-framework",
+    "config-policy-controller",
+)
+
+ADDONS_NAMESPACE = "open-cluster-management-agent-addon"
+HUB_NAMESPACE = "open-cluster-management-hub"
+
+# These are deployed when running "clusteradm init" on the hub.
+# We wait for them before we try to join the hub.
+HUB_DEPLOYMENTS = (
+    "cluster-manager-placement-controller",
+    "cluster-manager-registration-controller",
+    "cluster-manager-registration-webhook",
+    "cluster-manager-work-webhook",
+)
+
+if len(sys.argv) != 3:
+    print(f"Usage: {sys.argv[0]} cluster hub")
+    sys.exit(1)
+
+cluster = sys.argv[1]
+hub = sys.argv[2]
+
+drenv.log_progress(f"Waiting until cluster {hub} is ready")
+
+drenv.wait_for_cluster(hub)
+
+drenv.wait_for(f"namespace/{HUB_NAMESPACE}", profile=hub)
+
+for name in HUB_DEPLOYMENTS:
+    deployment = f"deploy/{name}"
+    drenv.wait_for(deployment, namespace=HUB_NAMESPACE, profile=hub)
+    drenv.kubectl(
+        "rollout", "status", deployment,
+        "--namespace", HUB_NAMESPACE,
+        "--timeout", "300s",
+        profile=hub,
+    )
+
+drenv.log_progress(f"Joining to cluster {hub}")
+
+# We can get the token from the first line of the response.
+out = drenv.run(
+    "clusteradm", "get", "token", "--context", hub,
+    verbose=False,
+)
+
+token_line = out.splitlines()[0]
+key, hub_token = token_line.split("=", 1)
+assert key == "token"
+
+drenv.run(
+    "clusteradm", "join",
+    "--hub-token", hub_token,
+    "--hub-apiserver", drenv.cluster_info(hub)["cluster"]["server"],
+    "--cluster-name", cluster,
+    "--wait",
+    "--context", cluster,
+)
+
+drenv.log_progress("Approving join request")
+drenv.run(
+    "clusteradm", "accept",
+    "--clusters", cluster,
+    "--wait",
+    "--context", hub,
+)
+
+drenv.log_progress("Enabling addons")
+drenv.run(
+    "clusteradm", "addon", "enable",
+    "--names", ",".join(ADDONS),
+    "--clusters", cluster,
+    "--context", hub,
+)
+
+drenv.log_progress("Waiting until deployments are rolled out")
+for name in ADDONS:
+    deployment = f"deploy/{name}"
+    drenv.wait_for(deployment, namespace=ADDONS_NAMESPACE, profile=cluster)
+    drenv.kubectl(
+        "rollout", "status", deployment,
+        "--namespace", ADDONS_NAMESPACE,
+        "--timeout", "300s",
+        profile=cluster,
+    )
