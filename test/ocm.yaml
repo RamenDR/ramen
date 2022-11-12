@@ -6,20 +6,23 @@
 profiles:
   - name: "hub"
     network: default
-    scripts:
-      - file: ocm-hub/start
-      - file: ocm-controller/start
+    workers:
+      - scripts:
+          - file: ocm-hub/start
+          - file: ocm-controller/start
   - name: "dr1"
     network: default
-    scripts:
-      - file: ocm-cluster/start
-        args: ["dr1", "hub"]
-      - file: ocm-cluster/test
-        args: ["dr1", "hub"]
+    workers:
+      - scripts:
+          - file: ocm-cluster/start
+            args: ["dr1", "hub"]
+          - file: ocm-cluster/test
+            args: ["dr1", "hub"]
   - name: "dr2"
     network: default
-    scripts:
-      - file: ocm-cluster/start
-        args: ["dr2", "hub"]
-      - file: ocm-cluster/test
-        args: ["dr2", "hub"]
+    workers:
+      - scripts:
+          - file: ocm-cluster/start
+            args: ["dr2", "hub"]
+          - file: ocm-cluster/test
+            args: ["dr2", "hub"]

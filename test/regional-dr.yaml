@@ -9,47 +9,52 @@ profiles:
     memory: "6g"
     extra_disks: 1
     disk_size: "50g"
-    scripts:
-      - file: cert-manager/start
-      - file: olm/start
-      - file: csi-addons/start
-      - file: rook-operator/start
-      - file: rook-cluster/start
-      - file: rook-pool/start
-      - file: rook-toolbox/start
-      - file: minio/start
-      - file: ocm-cluster/start
-        args: ["dr1", "hub"]
-      - file: ocm-cluster/test
-        args: ["dr1", "hub"]
+    workers:
+      - scripts:
+          - file: cert-manager/start
+          - file: csi-addons/start
+          - file: rook-operator/start
+          - file: rook-cluster/start
+          - file: rook-pool/start
+          - file: rook-toolbox/start
+          - file: minio/start
+      - scripts:
+          - file: ocm-cluster/start
+            args: ["dr1", "hub"]
+          - file: ocm-cluster/test
+            args: ["dr1", "hub"]
+          - file: olm/start
   - name: "dr2"
     network: default
     memory: "6g"
     extra_disks: 1
     disk_size: "50g"
-    scripts:
-      - file: cert-manager/start
-      - file: olm/start
-      - file: csi-addons/start
-      - file: rook-operator/start
-      - file: rook-cluster/start
-      - file: rook-pool/start
-      - file: rook-toolbox/start
-      - file: minio/start
-      - file: ocm-cluster/start
-        args: ["dr2", "hub"]
-      - file: ocm-cluster/test
-        args: ["dr2", "hub"]
+    workers:
+      - scripts:
+          - file: cert-manager/start
+          - file: csi-addons/start
+          - file: rook-operator/start
+          - file: rook-cluster/start
+          - file: rook-pool/start
+          - file: rook-toolbox/start
+          - file: minio/start
+      - scripts:
+          - file: ocm-cluster/start
+            args: ["dr2", "hub"]
+          - file: ocm-cluster/test
+            args: ["dr2", "hub"]
+          - file: olm/start
   - name: "hub"
     memory: "4g"
     network: default
-    scripts:
-      - file: cert-manager/start
-      - file: olm/start
-      - file: ocm-hub/start
-      - file: ocm-controller/start
-scripts:
-  - file: rbd-mirror/start
-    args: ["dr1", "dr2"]
-  - file: rbd-mirror/test
-    args: ["dr1", "dr2"]
+    workers:
+      - scripts:
+          - file: ocm-hub/start
+          - file: cert-manager/start
+          - file: olm/start
+workers:
+  - scripts:
+      - file: rbd-mirror/start
+        args: ["dr1", "dr2"]
+      - file: rbd-mirror/test
+        args: ["dr1", "dr2"]
