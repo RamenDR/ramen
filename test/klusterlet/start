@@ -22,6 +22,7 @@ def deploy_klusterlet(cluster):
 
 
 def wait_until_klusterlet_is_rolled_out(cluster):
+    drenv.log_progress("Fetching currnet csv")
     current_csv = drenv.wait_for(
         "sub/my-klusterlet",
         output="jsonpath={.status.currentCSV}",
@@ -29,14 +30,13 @@ def wait_until_klusterlet_is_rolled_out(cluster):
         profile=cluster,
     )
 
+    drenv.log_progress(f"Waiting until klusterlet succeeds in cluster {cluster}")
     drenv.wait_for(
         f"csv/{current_csv}",
         output="jsonpath={.status.phase}",
         namespace="operators",
         profile=cluster,
     )
-
-    drenv.log_progress(f"Waiting until klusterlet succeeds in cluster {cluster}")
     drenv.kubectl(
         "wait", f"csv/{current_csv}",
         "--for", "jsonpath={.status.phase}=Succeeded",
@@ -120,15 +120,14 @@ def create_klusterlet_instance(cluster, hub, csv):
 
 
 def wait_until_instance_is_registered(cluster, hub):
+    drenv.log_progress(
+        "Waiting until klusterlet registration agent is available in "
+        f"cluster {cluster}",
+    )
     drenv.wait_for(
         "deployment/klusterlet-registration-agent",
         namespace="open-cluster-management-agent",
         profile=cluster,
-    )
-
-    drenv.log_progress(
-        "Waiting until klusterlet registration agent deployment "
-        f"is avaialble in cluster {cluster}"
     )
     drenv.kubectl(
         "wait", "deployment/klusterlet-registration-agent",
@@ -138,6 +137,9 @@ def wait_until_instance_is_registered(cluster, hub):
         profile=cluster,
     )
 
+    drenv.log_progress(
+        "Waiting until managed cluster {cluster} exists in cluster {hub}",
+    )
     drenv.wait_for(
         f"managedclusters/{cluster}",
         timeout=30,

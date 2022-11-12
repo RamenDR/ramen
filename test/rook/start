@@ -96,6 +96,7 @@ drenv.kubectl(
     profile=cluster,
 )
 
+drenv.log_progress("Waiting until rook ceph cluster is ready")
 drenv.wait_for(
     "cephcluster/my-cluster",
     output="jsonpath={.status.phase}",
@@ -103,8 +104,6 @@ drenv.wait_for(
     timeout=60,
     profile=cluster,
 )
-
-drenv.log_progress("Waiting until rook ceph cluster is ready")
 drenv.kubectl(
     "wait", "CephCluster", "my-cluster",
     "--for", "jsonpath={.status.phase}=Ready",
@@ -113,6 +112,7 @@ drenv.kubectl(
     profile=cluster,
 )
 
+drenv.log_progress("Waiting until ceph block pool is ready")
 drenv.wait_for(
     "cephblockpool/replicapool",
     output="jsonpath={.status.phase}",
@@ -120,8 +120,6 @@ drenv.wait_for(
     timeout=60,
     profile=cluster,
 )
-
-drenv.log_progress("Waiting until ceph block pool is ready")
 drenv.kubectl(
     "wait", "CephBlockPool", "replicapool",
     "--for", "jsonpath={.status.phase}=Ready",

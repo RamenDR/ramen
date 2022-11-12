@@ -65,8 +65,6 @@ def wait_for(resource, output="jsonpath={.metadata.name}", timeout=300,
     Raises RuntimeError if the resource does not exist within the specified
     timeout.
     """
-    log_progress(f"Waiting until {resource} exists")
-
     args = ["get", resource, "--output", output, "--ignore-not-found"]
     if namespace:
         args.extend(("--namespace", namespace))
