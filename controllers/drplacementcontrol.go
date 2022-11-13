@@ -97,14 +97,9 @@ func (d *DRPCInstance) processPlacement() (bool, error) {
 	return d.RunInitialDeployment()
 }
 
-//nolint:funlen,cyclop
+//nolint:funlen
 func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 	d.log.Info("Running initial deployment")
-
-	if !d.isDeployingOrDeployed() {
-		d.instance.Status.ActionStartTime = &metav1.Time{Time: time.Now()}
-		d.instance.Status.ActionDuration = nil
-	}
 
 	const done = true
 
@@ -134,6 +129,8 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 
 	// Ensure that initial deployment is complete
 	if !deployed || !d.isUserPlRuleUpdated(homeCluster) {
+		d.setStatusInitiating()
+
 		_, err := d.startDeploying(homeCluster, homeClusterNamespace)
 		if err != nil {
 			d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
@@ -165,12 +162,7 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 
 	d.setProgression(rmn.ProgressionCompleted)
 
-	if d.instance.Status.ActionDuration == nil {
-		duration := time.Since(d.instance.Status.ActionStartTime.Time)
-		d.instance.Status.ActionDuration = &metav1.Duration{Duration: duration}
-		d.log.Info(fmt.Sprintf("Initial Deployment completed. Started at: %v and it took: %v",
-			d.instance.Status.ActionStartTime, duration))
-	}
+	d.setActionDuration()
 
 	return done, nil
 }
@@ -297,8 +289,6 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 // 6. Create VRG for the failoverCluster as Primary
 // 7. Update DRPC status
 // 8. Delete VRG MW from preferredCluster once the VRG state has changed to Secondary
-//
-//nolint:funlen
 func (d *DRPCInstance) RunFailover() (bool, error) {
 	d.log.Info("Entering RunFailover", "state", d.getLastDRState())
 
@@ -307,13 +297,6 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		if err != nil {
 			d.log.Info("Couldn't fix up placement for Failover")
 		}
-	}
-
-	if !d.isFailingOverOrFailedOver() {
-		d.instance.Status.ActionStartTime = &metav1.Time{Time: time.Now()}
-		d.instance.Status.ActionDuration = nil
-		d.setDRState(rmn.Initiating)
-		d.setProgression("")
 	}
 
 	const done = true
@@ -351,15 +334,12 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 
 		d.setProgression(rmn.ProgressionCompleted)
 
-		if d.instance.Status.ActionDuration == nil {
-			duration := time.Since(d.instance.Status.ActionStartTime.Time)
-			d.instance.Status.ActionDuration = &metav1.Duration{Duration: duration}
-			d.log.Info(fmt.Sprintf("Failover completed. Started at: %v and it took: %v",
-				d.instance.Status.ActionStartTime, duration))
-		}
+		d.setActionDuration()
 
 		return done, nil
 	}
+
+	d.setStatusInitiating()
 
 	return d.switchToFailoverCluster()
 }
@@ -485,7 +465,7 @@ func (d *DRPCInstance) getCurrentHomeClusterName() string {
 //   - Check if current primary (that is not the preferred cluster), is ready to switch over
 //   - Relocate!
 //
-//nolint:funlen,gocognit,cyclop,gocyclo
+//nolint:funlen,gocognit,cyclop
 func (d *DRPCInstance) RunRelocate() (bool, error) {
 	d.log.Info("Entering RunRelocate", "state", d.getLastDRState(), "progression", d.getProgression())
 
@@ -494,13 +474,6 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 		if err != nil {
 			d.log.Info("Couldn't fix up placement for Relocate")
 		}
-	}
-
-	if !d.isRelocatingOrRelocated() {
-		d.instance.Status.ActionStartTime = &metav1.Time{Time: time.Now()}
-		d.instance.Status.ActionDuration = nil
-		d.setDRState(rmn.Initiating)
-		d.setProgression("")
 	}
 
 	const done = true
@@ -532,12 +505,7 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 
 		d.setProgression(rmn.ProgressionCompleted)
 
-		if d.instance.Status.ActionDuration == nil {
-			duration := time.Since(d.instance.Status.ActionStartTime.Time)
-			d.instance.Status.ActionDuration = &metav1.Duration{Duration: duration}
-			d.log.Info(fmt.Sprintf("Relocate completed. Started at: %v and it took: %v",
-				d.instance.Status.ActionStartTime, duration))
-		}
+		d.setActionDuration()
 
 		return done, nil
 	}
@@ -557,6 +525,8 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	}
 
 	if curHomeCluster != "" && curHomeCluster != preferredCluster {
+		d.setStatusInitiating()
+
 		result, err := d.quiesceAndRunFinalSync(curHomeCluster)
 		if err != nil {
 			return !done, err
@@ -566,6 +536,8 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 			return !done, nil
 		}
 	}
+
+	d.setStatusInitiating()
 
 	return d.relocate(preferredCluster, preferredClusterNamespace, rmn.Relocating)
 }
@@ -605,6 +577,11 @@ func (d *DRPCInstance) ensureCleanupAndVolSyncReplicationSetup(srcCluster string
 
 func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) {
 	const done = true
+
+	d.setDRState(rmn.Relocating)
+	d.setMetricsTimerFromDRState(rmn.Relocating)
+	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
+		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Starting quiescing for relocation")
 
 	result, err := d.prepareForFinalSync(homeCluster)
 	if err != nil {
@@ -2080,48 +2057,6 @@ func (d *DRPCInstance) setDRPCCondition(conditions *[]metav1.Condition, condType
 	SetDRPCStatusCondition(conditions, condType, observedGeneration, status, reason, msg)
 }
 
-//nolint:exhaustive
-func (d *DRPCInstance) isDeployingOrDeployed() bool {
-	switch d.getLastDRState() {
-	case rmn.Initiating:
-		fallthrough
-	case rmn.Deploying:
-		fallthrough
-	case rmn.Deployed:
-		return true
-	}
-
-	return false
-}
-
-//nolint:exhaustive
-func (d *DRPCInstance) isFailingOverOrFailedOver() bool {
-	switch d.getLastDRState() {
-	case rmn.Initiating:
-		fallthrough
-	case rmn.FailingOver:
-		fallthrough
-	case rmn.FailedOver:
-		return true
-	}
-
-	return false
-}
-
-//nolint:exhaustive
-func (d *DRPCInstance) isRelocatingOrRelocated() bool {
-	switch d.getLastDRState() {
-	case rmn.Initiating:
-		fallthrough
-	case rmn.Relocating:
-		fallthrough
-	case rmn.Relocated:
-		return true
-	}
-
-	return false
-}
-
 func (d *DRPCInstance) isPlacementNeedsFixing() bool {
 	// Needs fixing if and only if the DRPC Status is empty, the Placement decision is empty, and
 	// the we have VRG(s) in the managed clusters
@@ -2239,4 +2174,31 @@ func (d *DRPCInstance) fixupPlacementForRelocate() error {
 	d.updatePreferredDecision()
 
 	return nil
+}
+
+func (d *DRPCInstance) setStatusInitiating() {
+	if !(d.instance.Status.Phase == "" ||
+		d.instance.Status.Phase == rmn.Deployed ||
+		d.instance.Status.Phase == rmn.FailedOver ||
+		d.instance.Status.Phase == rmn.Relocated) {
+		return
+	}
+
+	d.setDRState(rmn.Initiating)
+	d.setProgression("")
+
+	d.instance.Status.ActionStartTime = &metav1.Time{Time: time.Now()}
+	d.instance.Status.ActionDuration = nil
+}
+
+func (d *DRPCInstance) setActionDuration() {
+	if !(d.instance.Status.ActionDuration == nil && d.instance.Status.ActionStartTime != nil) {
+		return
+	}
+
+	duration := time.Since(d.instance.Status.ActionStartTime.Time)
+	d.instance.Status.ActionDuration = &metav1.Duration{Duration: duration}
+
+	d.log.Info(fmt.Sprintf("%s transition completed. Started at: %v and it took: %v",
+		fmt.Sprintf("%v", d.instance.Status.Phase), d.instance.Status.ActionStartTime, duration))
 }
