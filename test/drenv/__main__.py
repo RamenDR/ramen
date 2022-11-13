@@ -111,11 +111,16 @@ def cmd_delete(env):
     logging.info("[env] Deleted in %.2f seconds", time.monotonic() - start)
 
 
-def execute(func, profiles):
+def execute(func, profiles, delay=0.5):
     failed = False
 
     with concurrent.futures.ThreadPoolExecutor() as e:
-        futures = {e.submit(func, p): p["name"] for p in profiles}
+        futures = {}
+
+        for p in profiles:
+            futures[e.submit(func, p)] = p["name"]
+            time.sleep(delay)
+
         for f in concurrent.futures.as_completed(futures):
             try:
                 f.result()
