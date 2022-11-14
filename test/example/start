@@ -13,9 +13,9 @@ if len(sys.argv) != 2:
 
 cluster = sys.argv[1]
 
-drenv.log_progress(f"Deploying nginx on cluster {cluster}")
+drenv.log_progress("Deploying example")
 drenv.kubectl(
     "apply",
-    "--filename", "example/ngix-deployment.yaml",
+    "--filename", "example/deployment.yaml",
     profile=cluster,
 )
