@@ -510,6 +510,8 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 		return done, nil
 	}
 
+	d.setStatusInitiating()
+
 	// Check if current primary (that is not the preferred cluster), is ready to switch over
 	if curHomeCluster != "" && curHomeCluster != preferredCluster &&
 		!d.readyToSwitchOver(curHomeCluster, preferredCluster) {
@@ -525,8 +527,6 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	}
 
 	if curHomeCluster != "" && curHomeCluster != preferredCluster {
-		d.setStatusInitiating()
-
 		result, err := d.quiesceAndRunFinalSync(curHomeCluster)
 		if err != nil {
 			return !done, err
@@ -536,8 +536,6 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 			return !done, nil
 		}
 	}
-
-	d.setStatusInitiating()
 
 	return d.relocate(preferredCluster, preferredClusterNamespace, rmn.Relocating)
 }
@@ -578,11 +576,6 @@ func (d *DRPCInstance) ensureCleanupAndVolSyncReplicationSetup(srcCluster string
 func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) {
 	const done = true
 
-	d.setDRState(rmn.Relocating)
-	d.setMetricsTimerFromDRState(rmn.Relocating)
-	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
-		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Starting quiescing for relocation")
-
 	result, err := d.prepareForFinalSync(homeCluster)
 	if err != nil {
 		return !done, err
@@ -595,6 +588,11 @@ func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) 
 	}
 
 	if len(d.userPlacementRule.Status.Decisions) != 0 {
+		d.setDRState(rmn.Relocating)
+		d.setMetricsTimerFromDRState(rmn.Relocating)
+		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
+			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Starting quiescing for relocation")
+
 		// clear current user PlacementRule's decision
 		d.setProgression(rmn.ProgressionClearingPlRule)
 
