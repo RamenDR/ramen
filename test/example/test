@@ -15,14 +15,14 @@ cluster1, cluster2 = sys.argv[1:]
 
 drenv.log_progress(f"Testing example deploymnet on cluster {cluster1}")
 drenv.kubectl(
-    "rollout", "status", "deploy/nginx-deployment",
+    "rollout", "status", "deploy/example-deployment",
     "--timeout", "60s",
     profile=cluster1,
 )
 
 drenv.log_progress(f"Testing example deploymnet on cluster {cluster2}")
 drenv.kubectl(
-    "rollout", "status", "deploy/nginx-deployment",
+    "rollout", "status", "deploy/example-deployment",
     "--timeout", "60s",
     profile=cluster2,
 )
