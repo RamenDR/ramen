@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import sys
+
+import drenv
+
+# Update this when upgrading rook.
+BASE_URL = "https://raw.githubusercontent.com/rook/rook/release-1.10/deploy/examples"
+
+
+def deploy(cluster):
+    drenv.log_progress("Deploying rook ceph operator")
+
+    for name in ["crds.yaml", "common.yaml"]:
+        url = f"{BASE_URL}/{name}"
+        drenv.kubectl("apply", "--filename", url, profile=cluster)
+
+    with drenv.kustomization(
+        "rook-operator/kustomization.yaml",
+        base_url=BASE_URL,
+    ) as kustomization:
+        drenv.kubectl("apply", "--kustomize", kustomization, profile=cluster)
+
+
+def wait(cluster):
+    drenv.log_progress("Waiting until rook ceph operator is rolled out")
+    drenv.kubectl(
+        "rollout", "status", "deploy/rook-ceph-operator",
+        "--namespace", "rook-ceph",
+        "--timeout", "300s",
+        profile=cluster,
+    )
+
+    drenv.log_progress("Waiting until rook ceph operator is ready")
+    drenv.kubectl(
+        "wait", "pod",
+        "--for", "jsonpath={.status.phase}=Running",
+        "--namespace", "rook-ceph",
+        "--selector", "app=rook-ceph-operator",
+        "--timeout", "300s",
+        profile=cluster,
+    )
+
+
+if len(sys.argv) != 2:
+    print(f"Usage: {sys.argv[0]} cluster")
+    sys.exit(1)
+
+cluster = sys.argv[1]
+
+deploy(cluster)
+wait(cluster)
