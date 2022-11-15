@@ -14,9 +14,11 @@ BASE_URL = f"https://raw.githubusercontent.com/csi-addons/kubernetes-csi-addons/
 
 def deploy(cluster):
     drenv.log_progress("Deploying csi addon for volume replication")
-    for name in ["crds.yaml", "rbac.yaml", "setup-controller.yaml"]:
-        url = f"{BASE_URL}/{name}"
-        drenv.kubectl("apply", "--filename", url, profile=cluster)
+    with drenv.kustomization(
+        "csi-addons/kustomization.yaml",
+        base_url=BASE_URL,
+    ) as kustomization:
+        drenv.kubectl("apply", "--kustomize", kustomization, profile=cluster)
 
 
 def wait(cluster):
