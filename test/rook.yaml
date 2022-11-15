@@ -12,6 +12,7 @@ profiles:
     scripts:
       - file: csi-addons/start
       - file: rook/start
+      - file: rook-toolbox/start
   - name: "dr2"
     network: default
     memory: "6g"
@@ -20,6 +21,7 @@ profiles:
     scripts:
       - file: csi-addons/start
       - file: rook/start
+      - file: rook-toolbox/start
 scripts:
   - file: rbd-mirror/start
     args: ["dr1", "dr2"]

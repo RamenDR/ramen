@@ -116,18 +116,3 @@ drenv.kubectl(
     "--timeout", "300s",
     profile=cluster,
 )
-
-drenv.log_progress("Deploying rook ceph toolbox")
-drenv.kubectl(
-    "apply",
-    "--filename", f"{BASE_URL}/toolbox.yaml",
-    profile=cluster,
-)
-
-drenv.log_progress("Waiting until toolbox is rolled out")
-drenv.kubectl(
-    "rollout", "status", "deployment/rook-ceph-tools",
-    "--namespace", "rook-ceph",
-    "--timeout", "300s",
-    profile=cluster,
-)
