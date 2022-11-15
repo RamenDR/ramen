@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import sys
+
+import drenv
+
+# Using main till a release is available with lastSyncTime.
+VERSION = "main"
+BASE_URL = f"https://raw.githubusercontent.com/csi-addons/kubernetes-csi-addons/{VERSION}/deploy/controller"
+
+
+def deploy(cluster):
+    drenv.log_progress("Deploying csi addon for volume replication")
+    for name in ["crds.yaml", "rbac.yaml", "setup-controller.yaml"]:
+        url = f"{BASE_URL}/{name}"
+        drenv.kubectl("apply", "--filename", url, profile=cluster)
+
+
+def wait(cluster):
+    drenv.log_progress(
+        "Waiting until csi-addons-controller-manager is rolled out",
+    )
+    drenv.kubectl(
+        "rollout", "status", "deploy/csi-addons-controller-manager",
+        "--namespace", "csi-addons-system",
+        "--timeout", "300s",
+        profile=cluster,
+    )
+
+
+if len(sys.argv) != 2:
+    print(f"Usage: {sys.argv[0]} cluster")
+    sys.exit(1)
+
+cluster = sys.argv[1]
+
+deploy(cluster)
+wait(cluster)

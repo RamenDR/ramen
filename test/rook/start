@@ -8,10 +8,7 @@ import sys
 import drenv
 
 # Update this when upgrading rook.
-ROOK_BASE_URL = "https://raw.githubusercontent.com/rook/rook/release-1.10/deploy/examples"
-
-# Using main till a release is available with lastSyncTime.
-CSI_ADDON_BASE_URL = "https://raw.githubusercontent.com/csi-addons/kubernetes-csi-addons/main/deploy/controller"
+BASE_URL = "https://raw.githubusercontent.com/rook/rook/release-1.10/deploy/examples"
 
 if len(sys.argv) != 2:
     print(f"Usage: {sys.argv[0]} cluster")
@@ -22,38 +19,21 @@ cluster = sys.argv[1]
 drenv.log_progress("Deploying rook ceph crds")
 drenv.kubectl(
     "apply",
-    "--filename", f"{ROOK_BASE_URL}/crds.yaml",
+    "--filename", f"{BASE_URL}/crds.yaml",
     profile=cluster,
 )
 
 drenv.log_progress("Deploying rook common")
 drenv.kubectl(
     "apply",
-    "--filename", f"{ROOK_BASE_URL}/common.yaml",
-    profile=cluster,
-)
-
-drenv.log_progress("Deploying csi addon for volume replication")
-drenv.kubectl(
-    "apply",
-    "--filename", f"{CSI_ADDON_BASE_URL}/crds.yaml",
-    profile=cluster,
-)
-drenv.kubectl(
-    "apply",
-    "--filename", f"{CSI_ADDON_BASE_URL}/rbac.yaml",
-    profile=cluster,
-)
-drenv.kubectl(
-    "apply",
-    "--filename", f"{CSI_ADDON_BASE_URL}/setup-controller.yaml",
+    "--filename", f"{BASE_URL}/common.yaml",
     profile=cluster,
 )
 
 drenv.log_progress("Deploying kustomized rook operator")
 with drenv.kustomization(
     "rook/operator-kustomization.yaml",
-    rook_base_url=ROOK_BASE_URL,
+    rook_base_url=BASE_URL,
 ) as kustomization:
     drenv.kubectl("apply", "--kustomize", kustomization, profile=cluster)
 
@@ -78,7 +58,7 @@ drenv.kubectl(
 drenv.log_progress("Deploying kustomized rook ceph cluster")
 with drenv.kustomization(
     "rook/cluster-test-kustomization.yaml",
-    rook_base_url=ROOK_BASE_URL,
+    rook_base_url=BASE_URL,
 ) as kustomization:
     drenv.kubectl("apply", "--kustomize", kustomization, profile=cluster)
 
@@ -140,7 +120,7 @@ drenv.kubectl(
 drenv.log_progress("Deploying rook ceph toolbox")
 drenv.kubectl(
     "apply",
-    "--filename", f"{ROOK_BASE_URL}/toolbox.yaml",
+    "--filename", f"{BASE_URL}/toolbox.yaml",
     profile=cluster,
 )
 
