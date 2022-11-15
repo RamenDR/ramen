@@ -12,6 +12,7 @@ profiles:
     scripts:
       - file: cert-manager/start
       - file: olm/start
+      - file: csi-addons/start
       - file: rook/start
       - file: minio/start
       - file: ocm-cluster/start
@@ -26,6 +27,7 @@ profiles:
     scripts:
       - file: cert-manager/start
       - file: olm/start
+      - file: csi-addons/start
       - file: rook/start
       - file: minio/start
       - file: ocm-cluster/start

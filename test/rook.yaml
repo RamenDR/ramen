@@ -10,6 +10,7 @@ profiles:
     extra_disks: 1
     disk_size: "50g"
     scripts:
+      - file: csi-addons/start
       - file: rook/start
   - name: "dr2"
     network: default
@@ -17,6 +18,7 @@ profiles:
     extra_disks: 1
     disk_size: "50g"
     scripts:
+      - file: csi-addons/start
       - file: rook/start
 scripts:
   - file: rbd-mirror/start
