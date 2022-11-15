@@ -3,7 +3,7 @@
 
 ---
 resources:
-  - ${rook_base_url}/operator.yaml
+  - ${base_url}/operator.yaml
 patchesJson6902:
   - target:
       kind: ConfigMap
