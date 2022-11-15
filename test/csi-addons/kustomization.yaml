@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+resources:
+  - ${base_url}/crds.yaml
+  - ${base_url}/rbac.yaml
+  - ${base_url}/setup-controller.yaml
