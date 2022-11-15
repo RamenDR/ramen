@@ -26,6 +26,6 @@ drenv.kubectl(
     "wait", "deploy", "--all",
     "--for=condition=Available",
     "--namespace", "cert-manager",
-    "--timeout=60s",
+    "--timeout", "300s",
     profile=cluster,
 )
