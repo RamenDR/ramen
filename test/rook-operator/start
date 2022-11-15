@@ -13,11 +13,6 @@ BASE_URL = "https://raw.githubusercontent.com/rook/rook/release-1.10/deploy/exam
 
 def deploy(cluster):
     drenv.log_progress("Deploying rook ceph operator")
-
-    for name in ["crds.yaml", "common.yaml"]:
-        url = f"{BASE_URL}/{name}"
-        drenv.kubectl("apply", "--filename", url, profile=cluster)
-
     with drenv.kustomization(
         "rook-operator/kustomization.yaml",
         base_url=BASE_URL,

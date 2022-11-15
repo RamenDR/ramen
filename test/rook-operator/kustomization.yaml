@@ -3,6 +3,8 @@
 
 ---
 resources:
+  - ${base_url}/crds.yaml
+  - ${base_url}/common.yaml
   - ${base_url}/operator.yaml
 patchesJson6902:
   - target:
