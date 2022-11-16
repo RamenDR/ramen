@@ -140,7 +140,7 @@ func (v *VRGInstance) reconcileVRAsSecondary(pvc *corev1.PersistentVolumeClaim, 
 	)
 
 	if !v.isPVCReadyForSecondary(pvc, log) {
-		return !requeue, false, skip
+		return requeue, false, skip
 	}
 
 	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
