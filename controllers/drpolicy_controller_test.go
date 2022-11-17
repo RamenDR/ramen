@@ -133,7 +133,13 @@ var _ = Describe("DrpolicyController", func() {
 		}
 	}
 
-	clusters := [...]string{"drp-cluster0", "drp-cluster1", "drp-cluster2"}
+	clusters := [...]string{
+		"drp-cluster0",
+		"drp-cluster1",
+		"drp-cluster2",
+		"drp-cluster-late-create-0",
+		"drp-cluster-late-create-1",
+	}
 	drClusters := []ramen.DRCluster{}
 	populateDRClusters := func() {
 		drClusters = nil
@@ -150,8 +156,36 @@ var _ = Describe("DrpolicyController", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: "drp-cluster2"},
 				Spec:       ramen.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "east"},
 			},
+			ramen.DRCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "drp-cluster-late-create-0"},
+				Spec:       ramen.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "east"},
+			},
+			ramen.DRCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "drp-cluster-late-create-1"},
+				Spec:       ramen.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "west"},
+			},
 		)
 	}
+
+	createDRClusters := func(from, to int) {
+		for idx := range drClusters[from:to] {
+			drcluster := &drClusters[idx+from]
+			Expect(k8sClient.Create(
+				context.TODO(),
+				&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: drcluster.Name}},
+			)).To(Succeed())
+			Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+			drclusterConditionExpectEventually(
+				drcluster,
+				!ramenConfig.DrClusterOperator.DeploymentAutomationEnabled,
+				metav1.ConditionTrue,
+				Equal("Succeeded"),
+				Ignore(),
+				ramen.DRClusterValidated,
+			)
+		}
+	}
+
 	drpolicies := [...]ramen.DRPolicy{
 		{
 			ObjectMeta: metav1.ObjectMeta{Name: "drpolicy0"},
@@ -175,22 +209,7 @@ var _ = Describe("DrpolicyController", func() {
 	var drpolicyNumber uint
 	Specify("initialize tests", func() {
 		populateDRClusters()
-		for idx := range drClusters {
-			drcluster := &drClusters[idx]
-			Expect(k8sClient.Create(
-				context.TODO(),
-				&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: drcluster.Name}},
-			)).To(Succeed())
-			Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
-			drclusterConditionExpectEventually(
-				drcluster,
-				!ramenConfig.DrClusterOperator.DeploymentAutomationEnabled,
-				metav1.ConditionTrue,
-				Equal("Succeeded"),
-				Ignore(),
-				ramen.DRClusterValidated,
-			)
-		}
+		createDRClusters(0, 3)
 	})
 	Specify(`a drpolicy`, func() {
 		drpolicyNumber = 0
@@ -316,6 +335,22 @@ var _ = Describe("DrpolicyController", func() {
 			drp.Spec.DRClusters = []string{}
 			Expect(k8sClient.Create(context.TODO(), drp)).To(Succeed())
 			validatedConditionExpect(drp, metav1.ConditionFalse, Ignore())
+			drpolicyDeleteAndConfirm(drp)
+			vaildateSecretDistribution(nil)
+		})
+	})
+	When("a drpolicy is created before DRClusters are created", func() {
+		It("should start as invalidated and transition to validated", func() {
+			drp := drpolicy.DeepCopy()
+			drp.Spec.DRClusters = clusters[3:5]
+			By("creating the DRPolicy first")
+			Expect(k8sClient.Create(context.TODO(), drp)).To(Succeed())
+			By("ensuring DRPolicy is not validated")
+			validatedConditionExpect(drp, metav1.ConditionFalse, Ignore())
+			By("creating the DRClusters")
+			createDRClusters(3, 5)
+			By("ensuring DRPolicy is validated")
+			validatedConditionExpect(drp, metav1.ConditionTrue, Ignore())
 			drpolicyDeleteAndConfirm(drp)
 			vaildateSecretDistribution(nil)
 		})

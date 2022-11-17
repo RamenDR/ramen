@@ -5,6 +5,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -12,6 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -37,6 +39,9 @@ type DRPolicyReconciler struct {
 // ReasonValidationFailed is set when the DRPolicy could not be validated or is not valid
 const ReasonValidationFailed = "ValidationFailed"
 
+// ReasonDRClusterNotFound is set when the DRPolicy could not find the referenced DRCluster(s)
+const ReasonDRClusterNotFound = "DRClusterNotFound"
+
 //nolint:lll
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drpolicies,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drpolicies/status,verbs=get;update;patch
@@ -59,6 +64,8 @@ const ReasonValidationFailed = "ValidationFailed"
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.9.2/pkg/reconcile
+//
+//nolint:cyclop
 func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrl.Log.WithName("controllers").WithName("drpolicy").WithValues("name",
 		req.NamespacedName.Name, "rid", uuid.New())
@@ -95,7 +102,15 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	reason, err := validateDRPolicy(ctx, drpolicy, drclusters, r.APIReader)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("validate: %w", u.validatedSetFalse(reason, err))
+		statusErr := u.validatedSetFalse(reason, err)
+		if !errors.Is(statusErr, err) || reason != ReasonDRClusterNotFound {
+			return ctrl.Result{}, fmt.Errorf("validate: %w", statusErr)
+		}
+
+		log.Error(err, "Missing dependent resources")
+
+		// will be reconciled later based on DRCluster watch events
+		return ctrl.Result{}, nil
 	}
 
 	if err := u.addLabelsAndFinalizers(); err != nil {
@@ -116,11 +131,25 @@ func validateDRPolicy(ctx context.Context,
 ) (string, error) {
 	// TODO: Ensure DRClusters exist and are validated? Also ensure they are not in a deleted state!?
 	// If new DRPolicy and clusters are deleted, then fail reconciliation?
-	found := 0
-
 	if len(drpolicy.Spec.DRClusters) == 0 {
 		return ReasonValidationFailed, fmt.Errorf("missing DRClusters list in policy")
 	}
+
+	err := ensureDRClustersAvailable(drpolicy, drclusters)
+	if err != nil {
+		return ReasonDRClusterNotFound, err
+	}
+
+	err = validatePolicyConflicts(ctx, apiReader, drpolicy, drclusters)
+	if err != nil {
+		return ReasonValidationFailed, err
+	}
+
+	return "", nil
+}
+
+func ensureDRClustersAvailable(drpolicy *ramen.DRPolicy, drclusters *ramen.DRClusterList) error {
+	found := 0
 
 	for _, specCluster := range drpolicy.Spec.DRClusters {
 		for _, cluster := range drclusters.Items {
@@ -131,16 +160,11 @@ func validateDRPolicy(ctx context.Context,
 	}
 
 	if found != len(drpolicy.Spec.DRClusters) {
-		return ReasonValidationFailed, fmt.Errorf("failed to find DRClusters specified in policy (%v)",
+		return fmt.Errorf("failed to find DRClusters specified in policy (%v)",
 			drpolicy.Spec.DRClusters)
 	}
 
-	err := validatePolicyConflicts(ctx, apiReader, drpolicy, drclusters)
-	if err != nil {
-		return ReasonValidationFailed, err
-	}
-
-	return "", nil
+	return nil
 }
 
 func validatePolicyConflicts(ctx context.Context,
@@ -315,6 +339,11 @@ func (r *DRPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			handler.EnqueueRequestsFromMapFunc(r.secretMapFunc),
 			builder.WithPredicates(createOrDeleteOrResourceVersionUpdatePredicate{}),
 		).
+		Watches(
+			&source.Kind{Type: &ramen.DRCluster{}},
+			handler.EnqueueRequestsFromMapFunc(r.drClusterMapFunc),
+			builder.WithPredicates(createOrDeleteOrResourceVersionUpdatePredicate{}),
+		).
 		Complete(r)
 }
 
@@ -355,4 +384,28 @@ func (r *DRPolicyReconciler) secretMapFunc(secret client.Object) []reconcile.Req
 	return requests
 }
 
-// TODO: Add a watcher for DRCluster changes (possibly its s3store value changes)
+func (r *DRPolicyReconciler) drClusterMapFunc(drcluster client.Object) []reconcile.Request {
+	drpolicies := &ramen.DRPolicyList{}
+	if err := r.Client.List(context.TODO(), drpolicies); err != nil {
+		return []reconcile.Request{}
+	}
+
+	requests := make([]reconcile.Request, 0)
+
+	for _, drpolicy := range drpolicies.Items {
+		for _, specCluster := range drpolicy.Spec.DRClusters {
+			if specCluster == drcluster.GetName() {
+				add := reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name: drpolicy.GetName(),
+					},
+				}
+				requests = append(requests, add)
+
+				break
+			}
+		}
+	}
+
+	return requests
+}
