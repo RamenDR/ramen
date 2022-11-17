@@ -821,7 +821,7 @@ func ensureDRPolicyIsDeleted(drpolicyName string) {
 	drpolicy := &rmn.DRPolicy{}
 	Eventually(func() error {
 		return apiReader.Get(context.TODO(), types.NamespacedName{Name: drpolicyName}, drpolicy)
-	}, timeout, interval).Should(
+	}, drpolicytimeout, interval).Should(
 		MatchError(
 			errors.NewNotFound(
 				schema.GroupResource{

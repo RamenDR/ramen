@@ -61,8 +61,9 @@ var (
 
 	namespaceDeletionSupported bool
 
-	timeout  = time.Second * 10
-	interval = time.Millisecond * 10
+	timeout         = time.Second * 10
+	drpolicytimeout = time.Second * 70
+	interval        = time.Millisecond * 10
 
 	plRuleNames map[string]struct{}
 

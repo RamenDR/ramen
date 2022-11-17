@@ -6,16 +6,20 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -303,7 +307,17 @@ func (u *drpolicyUpdater) finalizerRemove() error {
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *DRPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	rateLimiter := workqueue.NewMaxOfRateLimiter(
+		workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 1*time.Minute),
+		// defaults from client-go
+		//nolint: gomnd
+		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
+	)
+
 	return ctrl.NewControllerManagedBy(mgr).
+		WithOptions(ctrlcontroller.Options{
+			RateLimiter: rateLimiter,
+		}).
 		For(&ramen.DRPolicy{}).
 		Watches(
 			&source.Kind{Type: &corev1.ConfigMap{}},

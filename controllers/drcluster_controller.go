@@ -9,15 +9,19 @@ import (
 	"net"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
@@ -758,7 +762,17 @@ func getPeerFromPolicy(ctx context.Context, reconciler *DRClusterReconciler, log
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	rateLimiter := workqueue.NewMaxOfRateLimiter(
+		workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 1*time.Minute),
+		// defaults from client-go
+		//nolint: gomnd
+		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
+	)
+
 	return ctrl.NewControllerManagedBy(mgr).
+		WithOptions(ctrlcontroller.Options{
+			RateLimiter: rateLimiter,
+		}).
 		For(&ramen.DRCluster{}).
 		Watches(
 			&source.Kind{Type: &corev1.ConfigMap{}},
