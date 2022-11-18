@@ -59,6 +59,21 @@ jobs:
         with:
           version: v1.49.0
 
+  unit-test:
+    name: Unit tests
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v2
+
+      - name: Setup go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run unit tests
+        run: GO_TEST_GINKGO_ARGS="" make test
+
   build-image-and-ensure-clean-branch:
     name: Build image and ensure clean branch
     runs-on: ubuntu-20.04
@@ -73,9 +88,6 @@ jobs:
 
       - name: Build image
         run: make docker-build
-
-      - name: Run unit tests
-        run: GO_TEST_GINKGO_ARGS="" make test
 
       - name: Export image
         run: ${{env.DOCKERCMD}} save -o /tmp/ramen-operator.tar ${IMAGE_TAG_BASE}-operator:${IMAGE_TAG}
@@ -177,7 +189,7 @@ jobs:
 
   publish-image:
     name: Publish built image
-    needs: [deploy-check, lint, golangci]
+    needs: [deploy-check, lint, golangci, unit-test, build-image-and-ensure-clean-branch]
     if: >
       (github.event_name == 'push') &&
       (github.ref == 'refs/heads/main' ||
