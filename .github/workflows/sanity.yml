@@ -19,6 +19,7 @@ env:
   IMAGE_REPOSITORY: "ramendr"
   IMAGE_NAME: "ramen"
   IMAGE_TAG: "sanity"
+  DOCKERCMD: "podman"
 defaults:
   run:
     shell: bash
@@ -77,7 +78,7 @@ jobs:
         run: GO_TEST_GINKGO_ARGS="" make test
 
       - name: Export image
-        run: docker save -o /tmp/ramen-operator.tar ${IMAGE_TAG_BASE}-operator:${IMAGE_TAG}
+        run: ${{env.DOCKERCMD}} save -o /tmp/ramen-operator.tar ${IMAGE_TAG_BASE}-operator:${IMAGE_TAG}
 
       - name: Save image artifact
         uses: actions/upload-artifact@v2
@@ -138,8 +139,7 @@ jobs:
 
       - name: Load image artifact
         run: |
-          docker load -i /tmp/ramen-operator.tar
-          kind load docker-image ${IMAGE_TAG_BASE}-operator:${IMAGE_TAG} --name ${KIND_CLUSTER_NAME}
+          kind load image-archive /tmp/ramen-operator.tar --name ${KIND_CLUSTER_NAME}
 
       - name: Install cert-manager
         run: |
@@ -194,7 +194,7 @@ jobs:
 
       - name: Load image artifact
         run: |
-          docker load -i /tmp/ramen-operator.tar
+          ${{env.DOCKERCMD}} load -i /tmp/ramen-operator.tar
 
       - name: Login to Quay
         uses: docker/login-action@v1
@@ -225,8 +225,8 @@ jobs:
 
       - name: Push operator image to Quay
         run: |
-          docker tag "${IMAGE_TAG_BASE}-operator:${IMAGE_TAG}" "${IMAGE_TAG_BASE}-operator:${{ env.publish_image_tag }}"
-          docker push "${IMAGE_TAG_BASE}-operator:${{ env.publish_image_tag }}"
+          ${{env.DOCKERCMD}} tag "${IMAGE_TAG_BASE}-operator:${IMAGE_TAG}" "${IMAGE_TAG_BASE}-operator:${{ env.publish_image_tag }}"
+          ${{env.DOCKERCMD}} push "${IMAGE_TAG_BASE}-operator:${{ env.publish_image_tag }}"
 
       # TODO: We do not need to build bundles and catalogs each time, fix once we reach alpha
       - name: Checkout source
