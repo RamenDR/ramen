@@ -10,3 +10,7 @@ leaderElection:
   leaderElect: true
   resourceName: hub.ramendr.openshift.io
 ramenControllerType: dr-hub
+volSync:
+  disabled: false
+kubeObjectProtection:
+  disabled: false
