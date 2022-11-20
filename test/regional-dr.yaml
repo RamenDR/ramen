@@ -12,7 +12,6 @@ profiles:
     workers:
       - scripts:
           - file: cert-manager/start
-          - file: csi-addons/start
           - file: rook-operator/start
           - file: rook-cluster/start
           - file: rook-pool/start
@@ -23,6 +22,8 @@ profiles:
             args: ["dr1", "hub"]
           - file: ocm-cluster/test
             args: ["dr1", "hub"]
+      - scripts:
+          - file: csi-addons/start
           - file: olm/start
   - name: "dr2"
     network: default
@@ -32,7 +33,6 @@ profiles:
     workers:
       - scripts:
           - file: cert-manager/start
-          - file: csi-addons/start
           - file: rook-operator/start
           - file: rook-cluster/start
           - file: rook-pool/start
@@ -43,6 +43,8 @@ profiles:
             args: ["dr2", "hub"]
           - file: ocm-cluster/test
             args: ["dr2", "hub"]
+      - scripts:
+          - file: csi-addons/start
           - file: olm/start
   - name: "hub"
     memory: "4g"
