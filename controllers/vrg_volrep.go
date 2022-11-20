@@ -210,6 +210,20 @@ func (v *VRGInstance) preparePVCForVRProtection(pvc *corev1.PersistentVolumeClai
 		return !requeue, !skip
 	}
 
+	// if PVC is protected by another VRG, skip this PVC
+	// there might be PVCs that don't have a conflicting owner
+	if pvcVRGOwner, found := pvc.Annotations[vrgAnnotationOwnerKey]; found {
+		if pvcVRGOwner != v.instance.Name {
+			msg := "PVC owned by another VolumeReplicationGroup"
+			v.updatePVCDataReadyCondition(pvc.Name, VRGConditionReasonProgressing, msg)
+
+			conflictError := fmt.Errorf("pvc owner conflict")
+			log.Error(conflictError, msg, "pvc", pvc.Name, "namespace", pvc.Namespace, "conflicting owner", pvcVRGOwner)
+
+			return !requeue, skip
+		}
+	}
+
 	// Dont requeue. There will be a reconcile request when predicate sees that pvc is ready.
 	if skipResult, msg := skipPVC(pvc, log); skipResult {
 		// @msg should not be nil as the decision is to skip the pvc.
@@ -1487,6 +1501,7 @@ func (v *VRGInstance) addProtectedAnnotationForPVC(pvc *corev1.PersistentVolumeC
 	}
 
 	pvc.ObjectMeta.Annotations[pvcVRAnnotationProtectedKey] = pvcVRAnnotationProtectedValue
+	pvc.ObjectMeta.Annotations[vrgAnnotationOwnerKey] = v.instance.Name
 
 	if err := v.reconciler.Update(v.ctx, pvc); err != nil {
 		// TODO: Should we set the PVC condition to error?
@@ -1544,6 +1559,7 @@ func (v *VRGInstance) removeFinalizerFromPVC(pvc *corev1.PersistentVolumeClaim,
 	if containsString(pvc.ObjectMeta.Finalizers, finalizer) {
 		pvc.ObjectMeta.Finalizers = removeString(pvc.ObjectMeta.Finalizers, finalizer)
 		delete(pvc.ObjectMeta.Annotations, pvcVRAnnotationProtectedKey)
+		delete(pvc.ObjectMeta.Annotations, vrgAnnotationOwnerKey)
 
 		if err := v.reconciler.Update(v.ctx, pvc); err != nil {
 			log.Error(err, "Failed to remove finalizer", "finalizer", finalizer)
@@ -1706,7 +1722,7 @@ func (v *VRGInstance) restorePVClusterData(pvList []corev1.PersistentVolume) err
 	for idx := range pvList {
 		pv := &pvList[idx]
 		v.cleanupPVForRestore(pv)
-		v.addPVRestoreAnnotation(pv)
+		v.addPVAnnotations(pv)
 
 		if err := v.reconciler.Create(v.ctx, pv); err != nil {
 			if k8serrors.IsAlreadyExists(err) {
@@ -1746,7 +1762,7 @@ func (v *VRGInstance) updateExistingPVForSync(pv *corev1.PersistentVolume) error
 	// required and the annotation for restore can be missing for
 	// the sync mode.
 	v.cleanupPVForRestore(pv)
-	v.addPVRestoreAnnotation(pv)
+	v.addPVAnnotations(pv)
 
 	if err := v.reconciler.Update(v.ctx, pv); err != nil {
 		return fmt.Errorf("failed to cleanup existing PV for sync DR PV: %v, err: %w", pv.Name, err)
@@ -1856,6 +1872,21 @@ func (v *VRGInstance) cleanupPVForRestore(pv *corev1.PersistentVolume) {
 		pv.Spec.ClaimRef.ResourceVersion = ""
 		pv.Spec.ClaimRef.APIVersion = ""
 	}
+}
+
+// addPVAnnotations adds annotations to the PV owned by Ramen
+func (v *VRGInstance) addPVAnnotations(pv *corev1.PersistentVolume) {
+	v.addPVRestoreAnnotation(pv)
+	v.addOwnerVRGAnnotation(pv)
+}
+
+// addOwnerVRGAnnotation adds annotation to the PV indicating that the PV is owned by this VRG
+func (v *VRGInstance) addOwnerVRGAnnotation(pv *corev1.PersistentVolume) {
+	if pv.ObjectMeta.Annotations == nil {
+		pv.ObjectMeta.Annotations = map[string]string{}
+	}
+
+	pv.ObjectMeta.Annotations[vrgAnnotationOwnerKey] = v.instance.Name
 }
 
 // addPVRestoreAnnotation adds annotation to the PV indicating that the PV is restored by Ramen

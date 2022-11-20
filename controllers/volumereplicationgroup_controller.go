@@ -378,12 +378,13 @@ const (
 	pvcVRFinalizerProtected = "volumereplicationgroups.ramendr.openshift.io/pvc-vr-protection"
 	pvcInUse                = "kubernetes.io/pvc-protection"
 
-	// Annotations
 	pvcVRAnnotationProtectedKey   = "volumereplicationgroups.ramendr.openshift.io/vr-protected"
 	pvcVRAnnotationProtectedValue = "protected"
-	pvVRAnnotationRetentionKey    = "volumereplicationgroups.ramendr.openshift.io/vr-retained"
-	pvVRAnnotationRetentionValue  = "retained"
-	PVRestoreAnnotation           = "volumereplicationgroups.ramendr.openshift.io/ramen-restore"
+
+	pvVRAnnotationRetentionKey   = "volumereplicationgroups.ramendr.openshift.io/vr-retained"
+	pvVRAnnotationRetentionValue = "retained"
+	PVRestoreAnnotation          = "volumereplicationgroups.ramendr.openshift.io/ramen-restore"
+	vrgAnnotationOwnerKey        = "volumereplicationgroups.ramendr.openshift.io/vrg-name"
 )
 
 func (v *VRGInstance) processVRG() (ctrl.Result, error) {
