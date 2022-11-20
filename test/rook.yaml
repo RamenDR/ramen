@@ -11,11 +11,12 @@ profiles:
     disk_size: "50g"
     workers:
       - scripts:
-          - file: csi-addons/start
           - file: rook-operator/start
           - file: rook-cluster/start
           - file: rook-pool/start
           - file: rook-toolbox/start
+      - scripts:
+          - file: csi-addons/start
   - name: "dr2"
     network: default
     memory: "6g"
@@ -23,11 +24,12 @@ profiles:
     disk_size: "50g"
     workers:
       - scripts:
-          - file: csi-addons/start
           - file: rook-operator/start
           - file: rook-cluster/start
           - file: rook-pool/start
           - file: rook-toolbox/start
+      - scripts:
+          - file: csi-addons/start
 workers:
   - scripts:
       - file: rbd-mirror/start
