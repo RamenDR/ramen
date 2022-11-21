@@ -131,6 +131,11 @@ type RamenConfig struct {
 		// the PVC's storageclass provisioner, a new storageclass will be created and the
 		// name of it passed to VolSync alongside the readOnly flag access mode.
 		CephFSCSIDriverName string `json:"cephFSCSIDriverName,omitempty"`
+
+		// destinationCopyMethod indicates the method that should be used when syncing
+		// from source to destination. Should be Snapshot/Direct
+		// default: Snapshot
+		DestinationCopyMethod string `json:"destinationCopyMethod,omitempty"`
 	} `json:"volSync,omitempty"`
 
 	KubeObjectProtection struct {

@@ -86,7 +86,7 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 			var vsHandler *volsync.VSHandler
 
 			BeforeEach(func() {
-				vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, nil, asyncSpec, "none")
+				vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, nil, asyncSpec, "none", "Snapshot")
 			})
 
 			It("GetVolumeSnapshotClasses() should find all volume snapshot classes", func() {
@@ -115,7 +115,7 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 					},
 				}
 
-				vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, nil, asyncSpec, "none")
+				vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, nil, asyncSpec, "none", "Snapshot")
 			})
 
 			It("GetVolumeSnapshotClasses() should find matching volume snapshot classes", func() {
@@ -158,7 +158,7 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 					},
 				}
 
-				vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, nil, asyncSpec, "none")
+				vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, nil, asyncSpec, "none", "Snapshot")
 			})
 
 			It("GetVolumeSnapshotClasses() should find matching volume snapshot classes", func() {
@@ -215,7 +215,7 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 
 			// Initialize a vshandler
 			vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, nil, asyncSpec,
-				"openshift-storage.cephfs.csi.ceph.com")
+				"openshift-storage.cephfs.csi.ceph.com", "Snapshot")
 		})
 
 		JustBeforeEach(func() {
@@ -430,7 +430,7 @@ var _ = Describe("VolSync Handler", func() {
 		Expect(ownerCm.GetName()).NotTo(BeEmpty())
 		owner = ownerCm
 
-		vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, owner, asyncSpec, "none")
+		vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, owner, asyncSpec, "none", "Snapshot")
 	})
 
 	AfterEach(func() {
@@ -1447,7 +1447,8 @@ var _ = Describe("VolSync Handler", func() {
 			}
 			Expect(k8sClient.Create(ctx, otherOwnerCm)).To(Succeed())
 			Expect(otherOwnerCm.GetName()).NotTo(BeEmpty())
-			otherVSHandler := volsync.NewVSHandler(ctx, k8sClient, logger, otherOwnerCm, asyncSpec, "none")
+			otherVSHandler := volsync.NewVSHandler(ctx, k8sClient, logger, otherOwnerCm, asyncSpec,
+				"none", "Snapshot")
 
 			for i := 0; i < 2; i++ {
 				otherOwnerRdSpec := ramendrv1alpha1.VolSyncReplicationDestinationSpec{
@@ -1636,7 +1637,8 @@ var _ = Describe("VolSync Handler", func() {
 			}
 			Expect(k8sClient.Create(ctx, otherOwnerCm)).To(Succeed())
 			Expect(otherOwnerCm.GetName()).NotTo(BeEmpty())
-			otherVSHandler := volsync.NewVSHandler(ctx, k8sClient, logger, otherOwnerCm, asyncSpec, "none")
+			otherVSHandler := volsync.NewVSHandler(ctx, k8sClient, logger, otherOwnerCm, asyncSpec,
+				"none", "Snapshot")
 
 			for i := 0; i < 2; i++ {
 				otherOwnerRsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
