@@ -130,6 +130,9 @@ def execute(func, profiles):
 def start_cluster(profile):
     start = time.monotonic()
     logging.info("[%s] Starting cluster", profile["name"])
+
+    is_restart = drenv.cluster_info(profile["name"]) != {}
+
     minikube("start",
              "--driver", "kvm2",
              "--container-runtime", profile["container_runtime"],
@@ -142,8 +145,12 @@ def start_cluster(profile):
              "--memory", profile["memory"],
              "--addons", ",".join(profile["addons"]),
              profile=profile["name"])
+
     logging.info("[%s] Cluster started in %.2f seconds",
                  profile["name"], time.monotonic() - start)
+
+    if is_restart:
+        wait_for_deployments(profile)
 
     for script in profile["scripts"]:
         run_script(script, name=profile["name"])
@@ -168,6 +175,44 @@ def delete_cluster(profile):
         shutil.rmtree(profile_config)
     logging.info("[%s] Cluster deleted in %.2f seconds",
                  profile["name"], time.monotonic() - start)
+
+
+def wait_for_deployments(profile, initial_wait=30, timeout=300):
+    """
+    When restarting, kubectl can report stale status for a while, before it
+    starts to report real status. Then it takes a while until all deployments
+    become available.
+
+    We first sleep for initial_wait seconds, to give Kubernetes chance to fail
+    liveness and readiness checks, and then wait until all deployments are
+    available or the timeout has expired.
+
+    TODO: Check if there is more reliable way to wait for actual status.
+    """
+    start = time.monotonic()
+    logging.info(
+        "[%s] Waiting until all deployments are available",
+        profile["name"],
+    )
+
+    time.sleep(initial_wait)
+
+    kubectl(
+        "wait", "deploy", "--all",
+        "--for", "condition=available",
+        "--all-namespaces",
+        "--timeout", f"{timeout}s",
+        profile=profile["name"],
+    )
+
+    logging.info(
+        "[%s] Deployments are available in %.2f seconds",
+        profile["name"], time.monotonic() - start,
+    )
+
+
+def kubectl(cmd, *args, profile=None):
+    minikube("kubectl", "--", cmd, *args, profile=profile)
 
 
 def minikube(cmd, *args, profile=None):
