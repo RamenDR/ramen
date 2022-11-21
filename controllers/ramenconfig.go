@@ -40,6 +40,7 @@ const (
 	drClusterOperatorClusterServiceVersionNameDefault = drClusterOperatorPackageNameDefault + ".v0.0.1"
 	DefaultCephFSCSIDriverName                        = "openshift-storage.cephfs.csi.ceph.com"
 	VeleroNamespaceNameDefault                        = "velero"
+	DefaultVolSyncCopyMethod                          = "Snapshot"
 )
 
 // FIXME
@@ -288,4 +289,12 @@ func cephFSCSIDriverNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) stri
 	}
 
 	return ramenConfig.VolSync.CephFSCSIDriverName
+}
+
+func volSyncDestinationCopyMethodOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
+	if ramenConfig.VolSync.DestinationCopyMethod == "" {
+		return DefaultVolSyncCopyMethod
+	}
+
+	return ramenConfig.VolSync.DestinationCopyMethod
 }

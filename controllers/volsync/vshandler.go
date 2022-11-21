@@ -37,6 +37,7 @@ const (
 	ServiceExportVersion string = "v1alpha1"
 
 	VolumeSnapshotKind                     string = "VolumeSnapshot"
+	PersistentVolumeClaimKind              string = "PersistentVolumeClaim"
 	VolumeSnapshotIsDefaultAnnotation      string = "snapshot.storage.kubernetes.io/is-default-class"
 	VolumeSnapshotIsDefaultAnnotationValue string = "true"
 
@@ -66,11 +67,12 @@ type VSHandler struct {
 	schedulingInterval          string
 	volumeSnapshotClassSelector metav1.LabelSelector // volume snapshot classes to be filtered label selector
 	defaultCephFSCSIDriverName  string
+	destinationCopyMethod       volsyncv1alpha1.CopyMethodType
 	volumeSnapshotClassList     *snapv1.VolumeSnapshotClassList
 }
 
 func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, owner metav1.Object,
-	asyncSpec *ramendrv1alpha1.VRGAsyncSpec, defaultCephFSCSIDriverName string,
+	asyncSpec *ramendrv1alpha1.VRGAsyncSpec, defaultCephFSCSIDriverName string, copyMethod string,
 ) *VSHandler {
 	vsHandler := &VSHandler{
 		ctx:                        ctx,
@@ -78,6 +80,7 @@ func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, ow
 		log:                        log,
 		owner:                      owner,
 		defaultCephFSCSIDriverName: defaultCephFSCSIDriverName,
+		destinationCopyMethod:      volsyncv1alpha1.CopyMethodType(copyMethod),
 		volumeSnapshotClassList:    nil, // Do not initialize until we need it
 	}
 
@@ -116,9 +119,14 @@ func (v *VSHandler) ReconcileRD(
 		return nil, err
 	}
 
+	copyMethod, dstPVC, err := v.selectDestCopyMethod(rdSpec, l)
+	if err != nil {
+		return nil, err
+	}
+
 	var rd *volsyncv1alpha1.ReplicationDestination
 
-	rd, err = v.createOrUpdateRD(rdSpec, sshKeysSecretName)
+	rd, err = v.createOrUpdateRD(rdSpec, sshKeysSecretName, copyMethod, dstPVC)
 	if err != nil {
 		return nil, err
 	}
@@ -155,8 +163,8 @@ func rdStatusReady(rd *volsyncv1alpha1.ReplicationDestination, log logr.Logger) 
 }
 
 func (v *VSHandler) createOrUpdateRD(
-	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
-	sshKeysSecretName string) (*volsyncv1alpha1.ReplicationDestination, error,
+	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec, sshKeysSecretName string,
+	copyMethod volsyncv1alpha1.CopyMethodType, dstPVC *string) (*volsyncv1alpha1.ReplicationDestination, error,
 ) {
 	l := v.log.WithValues("rdSpec", rdSpec)
 
@@ -191,11 +199,12 @@ func (v *VSHandler) createOrUpdateRD(
 			SSHKeys:     &sshKeysSecretName,
 
 			ReplicationDestinationVolumeOptions: volsyncv1alpha1.ReplicationDestinationVolumeOptions{
-				CopyMethod:              volsyncv1alpha1.CopyMethodSnapshot,
+				CopyMethod:              copyMethod,
 				Capacity:                rdSpec.ProtectedPVC.Resources.Requests.Storage(),
 				StorageClassName:        rdSpec.ProtectedPVC.StorageClassName,
 				AccessModes:             pvcAccessModes,
 				VolumeSnapshotClassName: &volumeSnapshotClassName,
+				DestinationPVC:          dstPVC,
 			},
 		}
 
@@ -208,6 +217,37 @@ func (v *VSHandler) createOrUpdateRD(
 	l.V(1).Info("ReplicationDestination createOrUpdate Complete", "op", op)
 
 	return rd, nil
+}
+
+func (v *VSHandler) isPVCInUseByNonRDPod(pvcName string) (bool, error) {
+	rd := &volsyncv1alpha1.ReplicationDestination{}
+
+	err := v.client.Get(v.ctx,
+		types.NamespacedName{
+			Name:      getReplicationDestinationName(pvcName),
+			Namespace: v.owner.GetNamespace(),
+		}, rd)
+
+	// IF RD is Found, then no more checks are needed. We'll assume that the RD
+	// was created when the PVC was Not in use.
+	if err == nil {
+		return false, nil
+	} else if !kerrors.IsNotFound(err) {
+		return false, fmt.Errorf("%w", err)
+	}
+
+	// PVC must not be in use
+	pvcInUse, err := v.pvcExistsAndInUse(pvcName, false)
+	if err != nil {
+		return false, err
+	}
+
+	if pvcInUse {
+		return true, nil
+	}
+
+	// Not in-use
+	return false, nil
 }
 
 // Returns true only if runFinalSync is true and the final sync is done
@@ -335,7 +375,13 @@ func isFinalSyncComplete(replicationSource *volsyncv1alpha1.ReplicationSource, l
 }
 
 func (v *VSHandler) cleanupAfterRSFinalSync(rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec) error {
-	// Final sync is done, make sure PVC is cleaned up
+	// Final sync is done, make sure PVC is cleaned up, Skip if we are using CopyMethodDirect
+	if v.destinationCopyMethod == volsyncv1alpha1.CopyMethodDirect {
+		v.log.Info("Preserving PVC to use for CopyMethodDirect", "pvcName", rsSpec.ProtectedPVC.Name)
+
+		return nil
+	}
+
 	v.log.Info("Cleanup after final sync", "pvcName", rsSpec.ProtectedPVC.Name)
 
 	return v.deletePVC(rsSpec.ProtectedPVC.Name)
@@ -793,6 +839,17 @@ func (v *VSHandler) EnsurePVCfromRD(rdSpec ramendrv1alpha1.VolSyncReplicationDes
 		return noSnapErr
 	}
 
+	if latestImage.Kind == PersistentVolumeClaimKind {
+		if latestImage.Name == rdSpec.ProtectedPVC.Name {
+			l.V(1).Info("Latest Image is Using direct", "latestImage	", latestImage)
+
+			return nil
+		}
+
+		return fmt.Errorf("name of the PVC in the latest image section didn't match app pvc name %s/%s",
+			latestImage.Name, rdSpec.ProtectedPVC.Name)
+	}
+
 	// Make copy of the ref and make sure API group is filled out correctly (shouldn't really need this part)
 	vsImageRef := latestImage.DeepCopy()
 	if vsImageRef.APIGroup == nil || *vsImageRef.APIGroup == "" {
@@ -803,6 +860,59 @@ func (v *VSHandler) EnsurePVCfromRD(rdSpec ramendrv1alpha1.VolSyncReplicationDes
 	l.V(1).Info("Latest Image for ReplicationDestination", "latestImage	", vsImageRef)
 
 	return v.validateSnapshotAndEnsurePVC(rdSpec, *vsImageRef)
+}
+
+func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context, log logr.Logger,
+	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+) error {
+	logger := log.WithValues("PVC", rdSpec.ProtectedPVC.Name)
+
+	if len(rdSpec.ProtectedPVC.AccessModes) == 0 {
+		return fmt.Errorf("accessModes must be provided for PVC %v", rdSpec.ProtectedPVC)
+	}
+
+	if rdSpec.ProtectedPVC.Resources.Requests.Storage() == nil {
+		return fmt.Errorf("capacity must be provided %v", rdSpec.ProtectedPVC)
+	}
+
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      rdSpec.ProtectedPVC.Name,
+			Namespace: v.owner.GetNamespace(),
+		},
+	}
+
+	op, err := ctrlutil.CreateOrUpdate(ctx, v.client, pvc, func() error {
+		if err := ctrl.SetControllerReference(v.owner, pvc, v.client.Scheme()); err != nil {
+			return fmt.Errorf("failed to set controller reference %w", err)
+		}
+
+		if pvc.CreationTimestamp.IsZero() {
+			pvc.Spec.AccessModes = rdSpec.ProtectedPVC.AccessModes
+			pvc.Spec.StorageClassName = rdSpec.ProtectedPVC.StorageClassName
+			volumeMode := corev1.PersistentVolumeFilesystem
+			pvc.Spec.VolumeMode = &volumeMode
+		}
+
+		pvc.Spec.Resources.Requests = rdSpec.ProtectedPVC.Resources.Requests
+
+		if pvc.Labels == nil {
+			pvc.Labels = rdSpec.ProtectedPVC.Labels
+		} else {
+			for key, val := range rdSpec.ProtectedPVC.Labels {
+				pvc.Labels[key] = val
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	logger.V(1).Info("PVC created", "operation", op, "pvc", pvc)
+
+	return nil
 }
 
 func (v *VSHandler) validateSnapshotAndEnsurePVC(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
@@ -1346,8 +1456,38 @@ func (v *VSHandler) IsRDDataProtected(pvcName string) (bool, error) {
 	return isLatestImageReady(latestImage), nil
 }
 
+func (v *VSHandler) selectDestCopyMethod(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec, log logr.Logger,
+) (volsyncv1alpha1.CopyMethodType, *string, error) {
+	if v.destinationCopyMethod != volsyncv1alpha1.CopyMethodDirect {
+		return volsyncv1alpha1.CopyMethodSnapshot, nil, nil // use default copyMethod
+	}
+
+	// IF using CopyMethodDirect, then ensure that the PVC exists, otherwise, create it.
+	err := v.EnsurePVCforDirectCopy(v.ctx, log, rdSpec)
+	if err != nil {
+		return "", nil, err
+	}
+
+	// PVC must not be in-use before creating the RD
+	inUse, err := v.isPVCInUseByNonRDPod(rdSpec.ProtectedPVC.Name)
+	if err != nil {
+		return "", nil, err
+	}
+
+	// It is possible that the PVC becomes in-use at this point (if an app using this PVC is also deployed
+	// on this cluster). That race condition will be ignored. That would be a user error to deploy the
+	// same app in the same namespace and on the destination cluster...
+	if inUse {
+		return "", nil, fmt.Errorf("pvc %v is mounted by others. Checking later", rdSpec.ProtectedPVC.Name)
+	}
+
+	// Using the application PVC for syncing from source to destination
+	return volsyncv1alpha1.CopyMethodDirect, &rdSpec.ProtectedPVC.Name, nil
+}
+
 func isLatestImageReady(latestImage *corev1.TypedLocalObjectReference) bool {
-	if latestImage == nil || latestImage.Name == "" || latestImage.Kind != VolumeSnapshotKind {
+	if latestImage == nil || latestImage.Name == "" ||
+		!(latestImage.Kind == VolumeSnapshotKind || latestImage.Kind == PersistentVolumeClaimKind) {
 		return false
 	}
 
