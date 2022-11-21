@@ -82,20 +82,6 @@ with drenv.kustomization(
 ) as kustomization:
     drenv.kubectl("apply", "--kustomize", kustomization, profile=cluster)
 
-drenv.log_progress("Creating a mirroring enabled RBD pool")
-drenv.kubectl(
-    "apply",
-    "--filename", "rook/replica-pool.yaml",
-    profile=cluster,
-)
-
-drenv.log_progress("Creating a storage class")
-drenv.kubectl(
-    "apply",
-    "--filename", "rook/storage-class.yaml",
-    profile=cluster,
-)
-
 drenv.log_progress("Waiting until rook ceph cluster is ready")
 drenv.wait_for(
     "cephcluster/my-cluster",
@@ -109,6 +95,20 @@ drenv.kubectl(
     "--for", "jsonpath={.status.phase}=Ready",
     "--namespace", "rook-ceph",
     "--timeout", "300s",
+    profile=cluster,
+)
+
+drenv.log_progress("Creating a mirroring enabled RBD pool")
+drenv.kubectl(
+    "apply",
+    "--filename", "rook/replica-pool.yaml",
+    profile=cluster,
+)
+
+drenv.log_progress("Creating a storage class")
+drenv.kubectl(
+    "apply",
+    "--filename", "rook/storage-class.yaml",
     profile=cluster,
 )
 
