@@ -68,7 +68,7 @@ drenv.kubectl(
 drenv.log_progress("Waiting until rook ceph operator is ready")
 drenv.kubectl(
     "wait", "pod",
-    "--for", "condition=Ready",
+    "--for", "jsonpath={.status.phase}=Running",
     "--namespace", "rook-ceph",
     "--selector", "app=rook-ceph-operator",
     "--timeout", "300s",
