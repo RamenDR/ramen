@@ -138,17 +138,17 @@ def cluster_info(cluster):
     Return cluster info from kubectl config. Returns empty dict if the cluster
     is not configured with kubectl yet.
     """
-    out = kubectl(
-        "config", "view",
-        "--output", f"jsonpath={{.clusters[?(@.name=='{cluster}')]}}",
-        verbose=False,
-    )
+    out = kubectl("config", "view", "--output", "json", verbose=False)
+    config = json.loads(out)
 
-    # Empty output means the cluster was not configured yet in kubectl config.
-    if not out:
-        return {}
+    # We get null instead of [].
+    clusters = config.get("clusters") or ()
 
-    return json.loads(out)
+    for c in clusters:
+        if c["name"] == cluster:
+            return c
+
+    return {}
 
 
 def run(*args, input=None, verbose=True):
