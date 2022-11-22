@@ -14,7 +14,7 @@ from collections import deque
 
 import yaml
 
-from . import config_dir
+import drenv
 
 CMD_PREFIX = "cmd_"
 
@@ -161,7 +161,7 @@ def delete_cluster(profile):
     start = time.monotonic()
     logging.info("[%s] Deleting cluster", profile["name"])
     minikube("delete", profile=profile["name"])
-    profile_config = config_dir(profile["name"])
+    profile_config = drenv.config_dir(profile["name"])
     if os.path.exists(profile_config):
         logging.info("[%s] Removing config %s",
                      profile["name"], profile_config)
