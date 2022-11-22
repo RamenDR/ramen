@@ -206,11 +206,11 @@ func filterUsrPlRule(usrPlRule *plrv1.PlacementRule) []ctrl.Request {
 	}
 }
 
-func SetDRPCStatusCondition(conditions *[]metav1.Condition, condType string,
+func SetDRPCStatusCondition(conditions *[]metav1.Condition, conditionType string,
 	observedGeneration int64, status metav1.ConditionStatus, reason, msg string,
 ) bool {
 	newCondition := metav1.Condition{
-		Type:               condType,
+		Type:               conditionType,
 		Status:             status,
 		ObservedGeneration: observedGeneration,
 		LastTransitionTime: metav1.Now(),
@@ -218,7 +218,7 @@ func SetDRPCStatusCondition(conditions *[]metav1.Condition, condType string,
 		Message:            msg,
 	}
 
-	existingCondition := findCondition(*conditions, condType)
+	existingCondition := findCondition(*conditions, conditionType)
 	if existingCondition == nil ||
 		existingCondition.Status != newCondition.Status ||
 		existingCondition.ObservedGeneration != newCondition.ObservedGeneration ||
