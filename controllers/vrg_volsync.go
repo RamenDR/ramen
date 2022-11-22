@@ -133,7 +133,7 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 	}
 
 	err := v.volSyncHandler.PreparePVC(pvc.Name, v.instance.Spec.PrepareForFinalSync,
-		v.volSyncHandler.IsCopyMethodDirect())
+		v.volSyncHandler.IsCopyMethodDirectOrLocalDirect())
 	if err != nil {
 		return true
 	}
