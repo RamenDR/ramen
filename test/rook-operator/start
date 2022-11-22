@@ -8,7 +8,8 @@ import sys
 import drenv
 
 # Update this when upgrading rook.
-BASE_URL = "https://raw.githubusercontent.com/rook/rook/release-1.10/deploy/examples"
+VERSION = "release-1.10"
+BASE_URL = f"https://raw.githubusercontent.com/rook/rook/{VERSION}/deploy/examples"
 
 
 def deploy(cluster):
