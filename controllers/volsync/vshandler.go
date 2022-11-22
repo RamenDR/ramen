@@ -56,6 +56,11 @@ const (
 	// https://github.com/stolostron/backlog/issues/21824
 	ACMAppSubDoNotDeleteAnnotation    = "apps.open-cluster-management.io/do-not-delete"
 	ACMAppSubDoNotDeleteAnnotationVal = "true"
+
+	OwnerNameAnnotation      = "ramendr.openshift.io/owner-name"
+	OwnerNamespaceAnnotation = "ramendr.openshift.io/owner-namespace"
+
+	CopyMethodLocalDirect = "LocalDirect"
 )
 
 type VSHandler struct {
@@ -93,6 +98,8 @@ func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, ow
 
 // returns replication destination only if create/update is successful and the RD is considered available.
 // Callers should assume getting a nil replication destination back means they should retry/requeue.
+//
+//nolint:gocognit,cyclop
 func (v *VSHandler) ReconcileRD(
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec) (*volsyncv1alpha1.ReplicationDestination, error,
 ) {
@@ -139,7 +146,16 @@ func (v *VSHandler) ReconcileRD(
 		return nil, nil
 	}
 
-	l.V(1).Info("ReplicationDestination Reconcile Complete")
+	l.V(1).Info(fmt.Sprintf("Copy method: %s", v.destinationCopyMethod))
+
+	if v.IsCopyMethodLocalDirect() {
+		lrd, lrs, err := v.reconcileLocalReplication(rd, rdSpec, pskSecretName, l)
+		if lrd == nil || lrs == nil || err != nil {
+			return nil, err
+		}
+	}
+
+	l.V(1).Info(fmt.Sprintf("ReplicationDestination Reconcile Complete rd=%s", rd.Name))
 
 	return rd, nil
 }
@@ -192,6 +208,8 @@ func (v *VSHandler) createOrUpdateRD(
 		}
 
 		addVRGOwnerLabel(v.owner, rd)
+		addAnnotation(rd, OwnerNameAnnotation, v.owner.GetName())
+		addAnnotation(rd, OwnerNamespaceAnnotation, v.owner.GetNamespace())
 
 		rd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
 			ServiceType: v.getRsyncServiceType(),
@@ -485,12 +503,12 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 	return rs, nil
 }
 
-func (v *VSHandler) PreparePVC(pvcName string, prepFinalSync, copyMethodDirect bool) error {
-	if prepFinalSync || copyMethodDirect {
+func (v *VSHandler) PreparePVC(pvcName string, prepFinalSync, copyMethodDirectOrLocalDirect bool) error {
+	if prepFinalSync || copyMethodDirectOrLocalDirect {
 		prepared, err := v.TakePVCOwnership(pvcName)
 		if err != nil || !prepared {
-			return fmt.Errorf("waiting to take pvc ownership (%w), prepFinalSync: %t, copyMethodDirect: %t",
-				err, prepFinalSync, copyMethodDirect)
+			return fmt.Errorf("waiting to take pvc ownership (%w), prepFinalSync: %t, DirectOrLocalDirect: %t",
+				err, prepFinalSync, copyMethodDirectOrLocalDirect)
 		}
 	}
 
@@ -677,6 +695,7 @@ func (v *VSHandler) DeleteRS(pvcName string) error {
 	return nil
 }
 
+//nolint:nestif
 func (v *VSHandler) DeleteRD(pvcName string) error {
 	// Remove a ReplicationDestination by name that is owned (by parent vrg owner)
 	currentRDListByOwner, err := v.listRDByOwner()
@@ -688,6 +707,12 @@ func (v *VSHandler) DeleteRD(pvcName string) error {
 		rd := currentRDListByOwner.Items[i]
 
 		if rd.GetName() == getReplicationDestinationName(pvcName) {
+			if v.IsCopyMethodLocalDirect() {
+				err := v.deleteLocalRDAndRS(&rd)
+				if err != nil {
+					return err
+				}
+			}
 			// Delete the ReplicationDestination, log errors with cleanup but continue on
 			if err := v.client.Delete(v.ctx, &rd); err != nil {
 				v.log.Error(err, "Error cleaning up ReplicationDestination", "name", rd.GetName())
@@ -700,6 +725,54 @@ func (v *VSHandler) DeleteRD(pvcName string) error {
 	return nil
 }
 
+//nolint:gocognit
+func (v *VSHandler) deleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestination) error {
+	latestRDImage, err := v.getRDLatestImage(rd.GetName())
+	if err != nil {
+		return err
+	}
+
+	v.log.V(1).Info("Latest Image for ReplicationDestination to be used by LocalRS", "name", latestRDImage.Name)
+
+	lrs := &volsyncv1alpha1.ReplicationSource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      getLocalReplicationName(rd.GetName()),
+			Namespace: v.owner.GetNamespace(),
+		},
+	}
+
+	err = v.client.Get(v.ctx, types.NamespacedName{
+		Name:      lrs.GetName(),
+		Namespace: lrs.GetNamespace(),
+	}, lrs)
+	if err != nil {
+		if kerrors.IsNotFound(err) {
+			return v.deleteLocalRD(getLocalReplicationName(rd.GetName()))
+		}
+
+		return err
+	}
+
+	// For LocalDirect, localRS trigger must point to the latest RD snapshot image. Otherwise,
+	// we wait for local final sync to take place first befor cleaning up.
+	if lrs.Spec.Trigger != nil && lrs.Spec.Trigger.Manual == latestRDImage.Name {
+		// When local final sync is complete, we cleanup all locally created resources except the app PVC
+		if lrs.Status != nil && lrs.Status.LastManualSync == lrs.Spec.Trigger.Manual {
+			err = v.cleanupLocalResources(lrs)
+			if err != nil {
+				return err
+			}
+
+			v.log.V(1).Info("Cleaned up local resources for RD", "name", rd.GetName())
+
+			return nil
+		}
+	}
+
+	return fmt.Errorf("waiting for local final sync to complete")
+}
+
+//nolint:gocognit
 func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncReplicationDestinationSpec) error {
 	// Remove any ReplicationDestination owned (by parent vrg owner) that is not in the provided rdSpecList
 	currentRDListByOwner, err := v.listRDByOwner()
@@ -721,6 +794,11 @@ func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncR
 		}
 
 		if !foundInSpecList {
+			// If it is localRD, there will be no RDSpec. We shoul NOT clean it up yet.
+			if rd.GetLabels()[VolSyncDoNotDeleteLabel] == VolSyncDoNotDeleteLabelVal {
+				continue
+			}
+
 			// Delete the ReplicationDestination, log errors with cleanup but continue on
 			if err := v.client.Delete(v.ctx, &rd); err != nil {
 				v.log.Error(err, "Error cleaning up ReplicationDestination", "name", rd.GetName())
@@ -907,9 +985,10 @@ func (v *VSHandler) validateSnapshotAndEnsurePVC(rdSpec ramendrv1alpha1.VolSyncR
 		return err
 	}
 
-	if v.IsCopyMethodDirect() {
+	if v.IsCopyMethodDirect() || v.IsCopyMethodLocalDirect() {
 		// Directly use the RD pvc
-		v.log.V(1).Info("Using copyMethod Direct", "latestImage", snapshotRef, "pvcName", rdSpec.ProtectedPVC.Name)
+		v.log.V(1).Info(fmt.Sprintf("Using copyMethod %s. latestImage %v. pvcName %s",
+			v.destinationCopyMethod, snapshotRef, rdSpec.ProtectedPVC.Name))
 
 		pvc := &corev1.PersistentVolumeClaim{
 			ObjectMeta: metav1.ObjectMeta{
@@ -1493,6 +1572,14 @@ func (v *VSHandler) IsCopyMethodDirect() bool {
 	return v.destinationCopyMethod == volsyncv1alpha1.CopyMethodDirect
 }
 
+func (v *VSHandler) IsCopyMethodLocalDirect() bool {
+	return v.destinationCopyMethod == CopyMethodLocalDirect
+}
+
+func (v *VSHandler) IsCopyMethodDirectOrLocalDirect() bool {
+	return v.IsCopyMethodDirect() || v.IsCopyMethodLocalDirect()
+}
+
 func isLatestImageReady(latestImage *corev1.TypedLocalObjectReference) bool {
 	if latestImage == nil || latestImage.Name == "" || latestImage.Kind != VolumeSnapshotKind {
 		return false
@@ -1518,6 +1605,10 @@ func getReplicationDestinationName(pvcName string) string {
 
 func getReplicationSourceName(pvcName string) string {
 	return pvcName // Use PVC name as name of ReplicationSource
+}
+
+func getLocalReplicationName(pvcName string) string {
+	return pvcName + "-local" // Use PVC name as name plus -local for local RD and RS
 }
 
 // Service name that VolSync will create locally in the same namespace as the ReplicationDestination
@@ -1567,6 +1658,379 @@ func ValidateObjectExists(ctx context.Context, c client.Client, obj client.Objec
 		}
 
 		return fmt.Errorf("failed to fetch application PVC %s - (%w)", key.Name, err)
+	}
+
+	return nil
+}
+
+func (v *VSHandler) reconcileLocalReplication(rd *volsyncv1alpha1.ReplicationDestination,
+	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+	pskSecretName string, l logr.Logger) (*volsyncv1alpha1.ReplicationDestination,
+	*volsyncv1alpha1.ReplicationSource, error,
+) {
+	lrd, err := v.reconcileLocalRD(rdSpec, pskSecretName)
+	if lrd == nil || err != nil {
+		return nil, nil, err
+	}
+
+	rsSpec := &ramendrv1alpha1.VolSyncReplicationSourceSpec{
+		ProtectedPVC: rdSpec.ProtectedPVC,
+	}
+
+	lrs, err := v.reconcileLocalRS(rd, rsSpec, pskSecretName, *lrd.Status.RsyncTLS.Address)
+	if err != nil {
+		return lrd, nil, err
+	}
+
+	l.V(1).Info(fmt.Sprintf("Local ReplicationDestination Reconcile Complete lrd=%s,lrs=%s", lrd.Name, lrs.Name))
+
+	return lrd, lrs, nil
+}
+
+func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+	pskSecretName string) (*volsyncv1alpha1.ReplicationDestination, error,
+) {
+	l := v.log.WithValues("rdSpec", rdSpec)
+
+	lrd := &volsyncv1alpha1.ReplicationDestination{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      getLocalReplicationName(rdSpec.ProtectedPVC.Name),
+			Namespace: v.owner.GetNamespace(),
+		},
+	}
+
+	err := v.EnsurePVCforDirectCopy(v.ctx, l, rdSpec)
+	if err != nil {
+		return nil, err
+	}
+
+	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, lrd, func() error {
+		if err := ctrl.SetControllerReference(v.owner, lrd, v.client.Scheme()); err != nil {
+			l.Error(err, "unable to set controller reference")
+
+			return err
+		}
+
+		addVRGOwnerLabel(v.owner, lrd)
+		addLabel(lrd, VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal)
+
+		pvcAccessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce} // Default value
+		if len(rdSpec.ProtectedPVC.AccessModes) > 0 {
+			pvcAccessModes = rdSpec.ProtectedPVC.AccessModes
+		}
+
+		lrd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
+			ServiceType: v.getRsyncServiceType(),
+			KeySecret:   &pskSecretName,
+
+			ReplicationDestinationVolumeOptions: volsyncv1alpha1.ReplicationDestinationVolumeOptions{
+				CopyMethod:       volsyncv1alpha1.CopyMethodDirect,
+				Capacity:         rdSpec.ProtectedPVC.Resources.Requests.Storage(),
+				StorageClassName: rdSpec.ProtectedPVC.StorageClassName,
+				AccessModes:      pvcAccessModes,
+				DestinationPVC:   &rdSpec.ProtectedPVC.Name,
+			},
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	// Now check status - only return an RD if we have an address filled out in the ReplicationDestination Status
+	if lrd.Status == nil || lrd.Status.RsyncTLS == nil || lrd.Status.RsyncTLS.Address == nil {
+		l.V(1).Info("Local ReplicationDestination waiting for Address ...")
+
+		return nil, nil
+	}
+
+	l.V(1).Info("Local ReplicationDestination Reconcile Complete", "op", op)
+
+	return lrd, nil
+}
+
+//nolint:funlen
+func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
+	rsSpec *ramendrv1alpha1.VolSyncReplicationSourceSpec,
+	pskSecretName, address string,
+) (*volsyncv1alpha1.ReplicationSource, error,
+) {
+	storageClass, err := v.getStorageClass(rsSpec.ProtectedPVC.StorageClassName)
+	if err != nil {
+		return nil, err
+	}
+
+	volumeSnapshotClassName, err := v.getVolumeSnapshotClassFromPVCStorageClass(storageClass)
+	if err != nil {
+		return nil, err
+	}
+
+	// Fix for CephFS (replication source only) - may need different storageclass and access modes
+	err = v.ModifyRSSpecForCephFS(rsSpec, storageClass)
+	if err != nil {
+		return nil, err
+	}
+
+	pvc, err := v.setupLocalRS(rd)
+	if err != nil {
+		return nil, err
+	}
+
+	lrs := &volsyncv1alpha1.ReplicationSource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      getLocalReplicationName(rsSpec.ProtectedPVC.Name),
+			Namespace: v.owner.GetNamespace(),
+		},
+	}
+
+	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, lrs, func() error {
+		if err := ctrl.SetControllerReference(v.owner, lrs, v.client.Scheme()); err != nil {
+			v.log.Error(err, "unable to set controller reference")
+
+			return err
+		}
+
+		addVRGOwnerLabel(v.owner, lrs)
+
+		lrs.Spec.Trigger = &volsyncv1alpha1.ReplicationSourceTriggerSpec{
+			Manual: pvc.GetName(),
+		}
+
+		lrs.Spec.SourcePVC = pvc.GetName()
+		lrs.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationSourceRsyncTLSSpec{
+			KeySecret: &pskSecretName,
+			Address:   &address,
+
+			ReplicationSourceVolumeOptions: volsyncv1alpha1.ReplicationSourceVolumeOptions{
+				CopyMethod:              volsyncv1alpha1.CopyMethodDirect,
+				VolumeSnapshotClassName: &volumeSnapshotClassName,
+				StorageClassName:        rsSpec.ProtectedPVC.StorageClassName,
+				AccessModes:             rsSpec.ProtectedPVC.AccessModes,
+			},
+		}
+
+		return nil
+	})
+
+	v.log.V(1).Info("Local ReplicationSource createOrUpdate Complete", "op", op, "error", err)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return lrs, nil
+}
+
+func (v *VSHandler) cleanupLocalResources(lrs *volsyncv1alpha1.ReplicationSource) error {
+	// delete the snapshot taken by local RD
+	err := v.deleteSnapshot(v.ctx, v.client, lrs.Spec.Trigger.Manual, v.owner.GetNamespace(), v.log)
+	if err != nil {
+		return err
+	}
+
+	// delete RO PVC created for localRS
+	err = util.DeletePVC(v.ctx, v.client, lrs.Spec.SourcePVC, v.owner.GetNamespace(), v.log)
+	if err != nil {
+		return err
+	}
+
+	// delete localRS
+	if err := v.client.Delete(v.ctx, lrs); err != nil {
+		return err
+	}
+
+	// Delete the localRD. The name of the localRD is the same as the name of the localRS
+	return v.deleteLocalRD(lrs.GetName())
+}
+
+func (v *VSHandler) deleteLocalRD(lrdName string) error {
+	lrd := &volsyncv1alpha1.ReplicationDestination{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      lrdName,
+			Namespace: v.owner.GetNamespace(),
+		},
+	}
+
+	err := v.client.Get(v.ctx, types.NamespacedName{
+		Name:      lrd.Name,
+		Namespace: lrd.Namespace,
+	}, lrd)
+	if err != nil {
+		if kerrors.IsNotFound(err) {
+			return nil
+		}
+
+		return err
+	}
+
+	return v.client.Delete(v.ctx, lrd)
+}
+
+func (v *VSHandler) setupLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
+) (*corev1.PersistentVolumeClaim, error) {
+	latestImage, err := v.getRDLatestImage(rd.GetName())
+	if err != nil {
+		return nil, err
+	}
+
+	if !isLatestImageReady(latestImage) {
+		noSnapErr := fmt.Errorf("unable to find LatestImage from ReplicationDestination %s", rd.GetName())
+		v.log.Error(noSnapErr, "No latestImage")
+
+		return nil, noSnapErr
+	}
+
+	// Make copy of the ref and make sure API group is filled out correctly (shouldn't really need this part)
+	vsImageRef := latestImage.DeepCopy()
+	if vsImageRef.APIGroup == nil || *vsImageRef.APIGroup == "" {
+		vsGroup := snapv1.GroupName
+		vsImageRef.APIGroup = &vsGroup
+	}
+
+	v.log.V(1).Info("Latest Image for ReplicationDestination to be used by LocalRS", "latestImage	", vsImageRef)
+
+	lrs := &volsyncv1alpha1.ReplicationSource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      getLocalReplicationName(rd.GetName()),
+			Namespace: v.owner.GetNamespace(),
+		},
+	}
+
+	err = v.client.Get(v.ctx, types.NamespacedName{
+		Name:      lrs.Name,
+		Namespace: lrs.Namespace,
+	}, lrs)
+	if err != nil {
+		if !kerrors.IsNotFound(err) {
+			v.log.Error(err, "Unable to get Local ReplicationSource", "LocalRS", lrs)
+
+			return nil, fmt.Errorf("error getting Local ReplicationSource (%w)", err)
+		}
+	}
+
+	err = v.cleanupPreviousTransferResources(lrs, vsImageRef.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	snap, err := v.validateSnapshotAndAddDoNotDeleteLabel(*vsImageRef)
+	if err != nil {
+		return nil, err
+	}
+
+	var restoreSize *resource.Quantity
+
+	if snap.Status != nil {
+		restoreSize = snap.Status.RestoreSize
+	}
+
+	// In all other cases, we have to create a RO PVC.
+	return v.createReadOnlyPVCFromSnapshot(rd, *latestImage, restoreSize)
+}
+
+//nolint:gocognit,nestif
+func (v *VSHandler) cleanupPreviousTransferResources(lrs *volsyncv1alpha1.ReplicationSource,
+	snapImageName string,
+) error {
+	if lrs.Spec.Trigger != nil && lrs.Spec.Trigger.Manual != snapImageName {
+		// Only clean up and create new PVC if the previous transfer has completed. We don't want to abort it.
+		if lrs.Spec.Trigger.Manual != "" {
+			if lrs.Status != nil && lrs.Status.LastManualSync == lrs.Spec.Trigger.Manual {
+				err := v.deleteSnapshot(v.ctx, v.client, lrs.Spec.Trigger.Manual, v.owner.GetNamespace(), v.log)
+				if err != nil {
+					return err
+				}
+
+				err = util.DeletePVC(v.ctx, v.client, lrs.Spec.SourcePVC, v.owner.GetNamespace(), v.log)
+				if err != nil {
+					return err
+				}
+			} else { // don't process any further. We have to wait for the previous transfer to complete
+				return fmt.Errorf("wait for previous localRS tranfter to complete - RS/PVC %s/%s",
+					lrs.GetName(), lrs.Spec.SourcePVC)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (v *VSHandler) createReadOnlyPVCFromSnapshot(rd *volsyncv1alpha1.ReplicationDestination,
+	snapshotRef corev1.TypedLocalObjectReference, snapRestoreSize *resource.Quantity,
+) (*corev1.PersistentVolumeClaim, error) {
+	l := v.log.WithValues("pvcName", rd.GetName(), "snapshotRef", snapshotRef,
+		"snapRestoreSize", snapRestoreSize)
+
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      snapshotRef.Name,
+			Namespace: v.owner.GetNamespace(),
+		},
+	}
+
+	pvcRequestedCapacity := rd.Spec.RsyncTLS.Capacity
+	if snapRestoreSize != nil {
+		if pvcRequestedCapacity == nil || snapRestoreSize.Cmp(*pvcRequestedCapacity) > 0 {
+			pvcRequestedCapacity = snapRestoreSize
+		}
+	}
+
+	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, pvc, func() error {
+		if pvc.Status.Phase == corev1.ClaimBound {
+			// PVC already bound at this point
+			l.V(1).Info("PVC already bound")
+
+			return nil
+		}
+
+		accessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadOnlyMany}
+
+		if pvc.CreationTimestamp.IsZero() { // set immutable fields
+			pvc.Spec.AccessModes = accessModes
+			pvc.Spec.StorageClassName = rd.Spec.RsyncTLS.StorageClassName
+
+			// Only set when initially creating
+			pvc.Spec.DataSource = &snapshotRef
+		}
+
+		pvc.Spec.Resources.Requests = corev1.ResourceList{
+			corev1.ResourceStorage: *pvcRequestedCapacity,
+		}
+
+		return nil
+	})
+	if err != nil {
+		l.Error(err, "Unable to createOrUpdate PVC from snapshot for localRS")
+
+		return nil, fmt.Errorf("error creating or updating PVC from snapshot for localRS (%w)", err)
+	}
+
+	l.V(1).Info("PVC for localRS createOrUpdate Complete", "op", op)
+
+	return pvc, nil
+}
+
+func (v *VSHandler) deleteSnapshot(ctx context.Context,
+	k8sClient client.Client,
+	snapshotName, namespace string,
+	log logr.Logger,
+) error {
+	volSnap := &snapv1.VolumeSnapshot{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      snapshotName,
+			Namespace: namespace,
+		},
+	}
+
+	err := k8sClient.Delete(ctx, volSnap)
+	if err != nil {
+		if !kerrors.IsNotFound(err) {
+			log.Error(err, "error deleting snapshot", "snapshotName", snapshotName)
+
+			return fmt.Errorf("error deleting pvc (%w)", err)
+		}
+	} else {
+		log.Info("deleted snapshot", "snapshotName", snapshotName)
 	}
 
 	return nil

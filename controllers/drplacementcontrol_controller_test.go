@@ -1081,7 +1081,7 @@ func ensureDRPolicyIsDeleted(drpolicyName string) {
 				drpolicyName,
 			),
 		),
-		"DRPolicy %s not not found\n%s",
+		"DRPolicy %s not found\n%s",
 		drpolicyName,
 		format.Object(*drpolicy, 0),
 	)
