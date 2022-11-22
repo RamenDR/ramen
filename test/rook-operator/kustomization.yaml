@@ -27,3 +27,26 @@ patchesJson6902:
       - op: add
         path: /data/ROOK_CSI_CEPH_IMAGE
         value: quay.io/cephcsi/cephcsi:canary
+
+patches:
+  # Disable to avoid random failures when restaring the enviroment.
+  #   failed to call webhook:
+  #   Post "https://rook-ceph-admission-controller.rook-ceph.svc:443/
+  #   validate-ceph-rook-io-v1-cephblockpool?timeout=5s":
+  #   x509: certificate signed by unknown authority
+  - target:
+      kind: Deployment
+      name: rook-ceph-operator
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: not-used
+      spec:
+        template:
+          spec:
+            containers:
+              - name: rook-ceph-operator
+                env:
+                  - name: ROOK_DISABLE_ADMISSION_CONTROLLER
+                    value: 'true'
