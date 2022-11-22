@@ -2049,10 +2049,10 @@ func (d *DRPCInstance) setConditionOnInitialDeploymentCompletion() {
 		metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
 }
 
-func (d *DRPCInstance) setDRPCCondition(conditions *[]metav1.Condition, condType string,
+func (d *DRPCInstance) setDRPCCondition(conditions *[]metav1.Condition, conditionType string,
 	observedGeneration int64, status metav1.ConditionStatus, reason, msg string,
 ) {
-	SetDRPCStatusCondition(conditions, condType, observedGeneration, status, reason, msg)
+	SetDRPCStatusCondition(conditions, conditionType, observedGeneration, status, reason, msg)
 }
 
 func (d *DRPCInstance) isPlacementNeedsFixing() bool {
