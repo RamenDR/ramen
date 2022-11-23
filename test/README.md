@@ -119,14 +119,17 @@ clusters and how to deploy them.
 
 profiles:
   - name: "ex1"
-    scripts:
-      - file: example/start
+    workers:
+      - scripts:
+          - file: example/start
   - name: "ex2"
-    scripts:
-      - file: example/start
-scripts:
-  - file: example/test
-    args: ["ex1", "ex2"]
+    workers:
+      - scripts:
+            - file: example/start
+workers:
+  - scripts:
+      - file: example/test
+        args: ["ex1", "ex2"]
 ```
 
 ### Experimenting with the example environment
@@ -134,47 +137,57 @@ scripts:
 You can play with the example environment to understand how the `drenv`
 tool works and how to write scripts.
 
-Starting the example environment:
+#### Starting the example environment
+
+Starting the environment create 2 minikube clusters, deploy example
+deployment on every clusters, and finally run a self test verifying that
+the deployment is available on both clusters.
 
 ```
 $ drenv start example.yaml
-2022-09-22 20:47:32,368 INFO    [env] Using example.yaml
-2022-09-22 20:47:32,371 INFO    [ex1] Starting cluster
-2022-09-22 20:47:32,371 INFO    [ex2] Starting cluster
-2022-09-22 20:48:10,538 INFO    [ex2] Cluster started in 38.17 seconds
-2022-09-22 20:48:10,538 INFO    [ex2] Starting example/start
-2022-09-22 20:48:10,754 INFO    [ex2] example/start completed in 0.22 seconds
-2022-09-22 20:48:27,509 INFO    [ex1] Cluster started in 55.14 seconds
-2022-09-22 20:48:27,509 INFO    [ex1] Starting example/start
-2022-09-22 20:48:27,915 INFO    [ex1] example/start completed in 0.41 seconds
-2022-09-22 20:48:27,915 INFO    [env] Starting example/test
-2022-09-22 20:48:51,202 INFO    [env] example/test completed in 23.29 seconds
-2022-09-22 20:48:51,203 INFO    [env] Started in 78.83 seconds
+2022-11-23 23:35:35,960 INFO    [env] Using example.yaml
+2022-11-23 23:35:35,964 INFO    [ex1] Starting cluster
+2022-11-23 23:35:36,465 INFO    [ex2] Starting cluster
+2022-11-23 23:36:22,041 INFO    [ex1] Cluster started in 46.08 seconds
+2022-11-23 23:36:22,042 INFO    [ex1/0] Starting example/start
+2022-11-23 23:36:22,394 INFO    [ex1/0] example/start completed in 0.35 seconds
+2022-11-23 23:36:38,445 INFO    [ex2] Cluster started in 61.98 seconds
+2022-11-23 23:36:38,445 INFO    [ex2/0] Starting example/start
+2022-11-23 23:36:38,735 INFO    [ex2/0] example/start completed in 0.29 seconds
+2022-11-23 23:36:38,946 INFO    [env/0] Starting example/test
+2022-11-23 23:36:53,710 INFO    [env/0] example/test completed in 14.76 seconds
+2022-11-23 23:36:53,710 INFO    [env] Started in 77.75 seconds
 ```
 
-We have 2 minikube profiles:
+#### Inspecting the clusters with minikube
+
+We can use minikube to inspect or access the clusters:
 
 ```
 $ minikube profile list
 |---------|-----------|------------|----------------|------|---------|---------|-------|--------|
 | Profile | VM Driver |  Runtime   |       IP       | Port | Version | Status  | Nodes | Active |
 |---------|-----------|------------|----------------|------|---------|---------|-------|--------|
-| ex1     | kvm2      | containerd | 192.168.50.136 | 8443 | v1.24.3 | Running |     1 |        |
-| ex2     | kvm2      | containerd | 192.168.39.240 | 8443 | v1.24.3 | Running |     1 |        |
+| ex1     | kvm2      | containerd | 192.168.39.198 | 8443 | v1.25.3 | Running |     1 |        |
+| ex2     | kvm2      | containerd | 192.168.50.184 | 8443 | v1.25.3 | Running |     1 |        |
 |---------|-----------|------------|----------------|------|---------|---------|-------|--------|
 ```
 
-ngix was deployed on both clusters:
+#### Inspecting the clusters with kubectl
+
+We can use kubectl to access the clusters:
 
 ```
-$ minikube kubectl -p ex1 -- get pods
-NAME                                READY   STATUS    RESTARTS   AGE
-nginx-deployment-6595874d85-sr5nt   1/1     Running   0          3m32s
+$ kubectl --context ex1 get pods
+NAME                                 READY   STATUS    RESTARTS      AGE
+example-deployment-fdf86bbfc-gtc8x   1/1     Running   1 (29s ago)   92s
 
-$ minikube kubectl -p ex2 -- get pods
-NAME                                READY   STATUS    RESTARTS   AGE
-nginx-deployment-6595874d85-bq7lq   1/1     Running   0          4m19s
+$ kubectl --context ex2 get pods
+NAME                                 READY   STATUS    RESTARTS      AGE
+example-deployment-fdf86bbfc-sd9wt   1/1     Running   1 (33s ago)   97s
 ```
+
+#### Running scripts manually
 
 After starting both clusters, we run the `example/test` script. We can
 run the script manually again to test the clusters:
@@ -182,94 +195,129 @@ run the script manually again to test the clusters:
 ```
 $ example/test ex1 ex2
 * Testing example deploymnet on cluster ex1
-  deployment "nginx-deployment" successfully rolled out
+  deployment "example-deployment" successfully rolled out
 * Testing example deploymnet on cluster ex2
-  deployment "nginx-deployment" successfully rolled out
+  deployment "example-deployment" successfully rolled out
 ```
 
-If something failed while starting, we can run start again. This is
-typically much faster:
+#### Starting a started environment
+
+If something failed while starting, or we change the scripts, we can run
+start again. This can be faster then creating the environment from
+scratch.
 
 ```
 $ drenv start example.yaml
-2022-09-22 20:51:41,309 INFO    [env] Using example.yaml
-2022-09-22 20:51:41,311 INFO    [ex1] Starting cluster
-2022-09-22 20:51:41,311 INFO    [ex2] Starting cluster
-2022-09-22 20:51:55,456 INFO    [ex2] Cluster started in 14.14 seconds
-2022-09-22 20:51:55,456 INFO    [ex2] Starting example/start
-2022-09-22 20:51:55,671 INFO    [ex1] Cluster started in 14.36 seconds
-2022-09-22 20:51:55,671 INFO    [ex1] Starting example/start
-2022-09-22 20:51:55,678 INFO    [ex2] example/start completed in 0.22 seconds
-2022-09-22 20:51:55,868 INFO    [ex1] example/start completed in 0.20 seconds
-2022-09-22 20:51:55,868 INFO    [env] Starting example/test
-2022-09-22 20:51:56,089 INFO    [env] example/test completed in 0.22 seconds
-2022-09-22 20:51:56,089 INFO    [env] Started in 14.78 seconds
+2022-11-23 23:39:45,307 INFO    [env] Using example.yaml
+2022-11-23 23:39:45,311 INFO    [ex1] Starting cluster
+2022-11-23 23:39:45,811 INFO    [ex2] Starting cluster
+2022-11-23 23:39:59,682 INFO    [ex1] Cluster started in 14.37 seconds
+2022-11-23 23:39:59,682 INFO    [ex1] Waiting until all deployments are available
+2022-11-23 23:40:01,761 INFO    [ex2] Cluster started in 15.95 seconds
+2022-11-23 23:40:01,761 INFO    [ex2] Waiting until all deployments are available
+2022-11-23 23:40:30,064 INFO    [ex1] Deployments are available in 30.38 seconds
+2022-11-23 23:40:30,064 INFO    [ex1/0] Starting example/start
+2022-11-23 23:40:30,295 INFO    [ex1/0] example/start completed in 0.23 seconds
+2022-11-23 23:40:32,120 INFO    [ex2] Deployments are available in 30.36 seconds
+2022-11-23 23:40:32,120 INFO    [ex2/0] Starting example/start
+2022-11-23 23:40:32,363 INFO    [ex2/0] example/start completed in 0.24 seconds
+2022-11-23 23:40:32,622 INFO    [env/0] Starting example/test
+2022-11-23 23:40:32,919 INFO    [env/0] example/test completed in 0.30 seconds
+2022-11-23 23:40:33,123 INFO    [env] Started in 47.81 seconds
 ```
 
+#### Using --verbose option
+
 While debugging it is useful to use the `--verbose` option to see much
-more details from scripts:
+more details:
 
 ```
 $ drenv start example.yaml -v
-2022-09-22 20:52:20,518 INFO    [env] Using example.yaml
-2022-09-22 20:52:20,520 INFO    [ex1] Starting cluster
-2022-09-22 20:52:20,520 INFO    [ex2] Starting cluster
-2022-09-22 20:52:20,573 DEBUG   [ex1] * [ex1] minikube v1.26.1 on Fedora 36
-2022-09-22 20:52:20,573 DEBUG   [ex2] * [ex2] minikube v1.26.1 on Fedora 36
-2022-09-22 20:52:20,574 DEBUG   [ex2]   - MINIKUBE_HOME=/data/minikube
-2022-09-22 20:52:20,574 DEBUG   [ex1]   - MINIKUBE_HOME=/data/minikube
-2022-09-22 20:52:21,073 DEBUG   [ex2] * Using the kvm2 driver based on existing profile
-2022-09-22 20:52:21,082 DEBUG   [ex1] * Using the kvm2 driver based on existing profile
-2022-09-22 20:52:21,091 DEBUG   [ex2] * Starting control plane node ex2 in cluster ex2
-2022-09-22 20:52:21,109 DEBUG   [ex1] * Starting control plane node ex1 in cluster ex1
-2022-09-22 20:52:21,159 DEBUG   [ex2] * Updating the running kvm2 "ex2" VM ...
-2022-09-22 20:52:22,542 DEBUG   [ex1] * Updating the running kvm2 "ex1" VM ...
-2022-09-22 20:52:26,852 DEBUG   [ex2] * Preparing Kubernetes v1.24.3 on containerd 1.6.6 ...
-2022-09-22 20:52:27,986 DEBUG   [ex1] * Preparing Kubernetes v1.24.3 on containerd 1.6.6 ...
-2022-09-22 20:52:37,553 DEBUG   [ex2] * Configuring bridge CNI (Container Networking Interface) ...
-2022-09-22 20:52:37,811 DEBUG   [ex2] * Verifying Kubernetes components...
-2022-09-22 20:52:37,889 DEBUG   [ex2]   - Using image gcr.io/k8s-minikube/storage-provisioner:v5
-2022-09-22 20:52:38,661 DEBUG   [ex2] * Enabled addons: storage-provisioner, default-storageclass
-2022-09-22 20:52:38,664 DEBUG   [ex2] * kubectl not found. If you need it, try: 'minikube kubectl -- get pods -A'
-2022-09-22 20:52:38,665 DEBUG   [ex2] * Done! kubectl is now configured to use "ex2" cluster and "default" namespace by default
-2022-09-22 20:52:38,687 INFO    [ex2] Cluster started in 18.17 seconds
-2022-09-22 20:52:38,687 INFO    [ex2] Starting example/start
-2022-09-22 20:52:38,715 DEBUG   [ex2] * Deploying nginx on cluster ex2
-2022-09-22 20:52:38,786 DEBUG   [ex1] * Configuring bridge CNI (Container Networking Interface) ...
-2022-09-22 20:52:38,888 DEBUG   [ex2]   deployment.apps/nginx-deployment unchanged
-2022-09-22 20:52:38,892 INFO    [ex2] example/start completed in 0.20 seconds
-2022-09-22 20:52:38,999 DEBUG   [ex1] * Verifying Kubernetes components...
-2022-09-22 20:52:39,073 DEBUG   [ex1]   - Using image gcr.io/k8s-minikube/storage-provisioner:v5
-2022-09-22 20:52:39,990 DEBUG   [ex1] * Enabled addons: storage-provisioner, default-storageclass
-2022-09-22 20:52:39,992 DEBUG   [ex1] * kubectl not found. If you need it, try: 'minikube kubectl -- get pods -A'
-2022-09-22 20:52:39,994 DEBUG   [ex1] * Done! kubectl is now configured to use "ex1" cluster and "default" namespace by default
-2022-09-22 20:52:40,014 INFO    [ex1] Cluster started in 19.49 seconds
-2022-09-22 20:52:40,014 INFO    [ex1] Starting example/start
-2022-09-22 20:52:40,041 DEBUG   [ex1] * Deploying nginx on cluster ex1
-2022-09-22 20:52:40,207 DEBUG   [ex1]   deployment.apps/nginx-deployment unchanged
-2022-09-22 20:52:40,211 INFO    [ex1] example/start completed in 0.20 seconds
-2022-09-22 20:52:40,211 INFO    [env] Starting example/test
-2022-09-22 20:52:40,234 DEBUG   [env] * Testing example deploymnet on cluster ex1
-2022-09-22 20:52:40,339 DEBUG   [env]   deployment "nginx-deployment" successfully rolled out
-2022-09-22 20:52:40,339 DEBUG   [env] * Testing example deploymnet on cluster ex2
-2022-09-22 20:52:40,444 DEBUG   [env]   deployment "nginx-deployment" successfully rolled out
-2022-09-22 20:52:40,448 INFO    [env] example/test completed in 0.24 seconds
-2022-09-22 20:52:40,448 INFO    [env] Started in 19.93 seconds
+2022-11-23 23:41:33,490 INFO    [env] Using example.yaml
+2022-11-23 23:41:33,493 INFO    [ex1] Starting cluster
+2022-11-23 23:41:33,644 DEBUG   [ex1] * [ex1] minikube v1.28.0 on Fedora 36
+2022-11-23 23:41:33,645 DEBUG   [ex1]   - MINIKUBE_HOME=/data/minikube
+2022-11-23 23:41:33,975 DEBUG   [ex1] * Using the kvm2 driver based on existing profile
+2022-11-23 23:41:33,994 INFO    [ex2] Starting cluster
+2022-11-23 23:41:33,995 DEBUG   [ex1] * Starting control plane node ex1 in cluster ex1
+2022-11-23 23:41:34,048 DEBUG   [ex1] * Updating the running kvm2 "ex1" VM ...
+2022-11-23 23:41:34,169 DEBUG   [ex2] * [ex2] minikube v1.28.0 on Fedora 36
+2022-11-23 23:41:34,170 DEBUG   [ex2]   - MINIKUBE_HOME=/data/minikube
+2022-11-23 23:41:34,521 DEBUG   [ex2] * Using the kvm2 driver based on existing profile
+2022-11-23 23:41:34,542 DEBUG   [ex2] * Starting control plane node ex2 in cluster ex2
+2022-11-23 23:41:35,185 DEBUG   [ex2] * Updating the running kvm2 "ex2" VM ...
+2022-11-23 23:41:39,277 DEBUG   [ex1] * Preparing Kubernetes v1.25.3 on containerd 1.6.8 ...
+2022-11-23 23:41:40,491 DEBUG   [ex2] * Preparing Kubernetes v1.25.3 on containerd 1.6.8 ...
+2022-11-23 23:41:49,805 DEBUG   [ex1] * Configuring bridge CNI (Container Networking Interface) ...
+2022-11-23 23:41:50,031 DEBUG   [ex1] * Verifying Kubernetes components...
+2022-11-23 23:41:50,101 DEBUG   [ex1]   - Using image gcr.io/k8s-minikube/storage-provisioner:v5
+2022-11-23 23:41:51,194 DEBUG   [ex1] * Enabled addons: storage-provisioner, default-storageclass
+2022-11-23 23:41:51,250 DEBUG   [ex1] * Done! kubectl is now configured to use "ex1" cluster and "default" namespace by default
+2022-11-23 23:41:51,278 INFO    [ex1] Cluster started in 17.78 seconds
+2022-11-23 23:41:51,279 INFO    [ex1] Waiting until all deployments are available
+2022-11-23 23:41:52,909 DEBUG   [ex2] * Configuring bridge CNI (Container Networking Interface) ...
+2022-11-23 23:41:53,103 DEBUG   [ex2] * Verifying Kubernetes components...
+2022-11-23 23:41:53,170 DEBUG   [ex2]   - Using image gcr.io/k8s-minikube/storage-provisioner:v5
+2022-11-23 23:41:54,153 DEBUG   [ex2] * Enabled addons: storage-provisioner, default-storageclass
+2022-11-23 23:41:54,212 DEBUG   [ex2] * Done! kubectl is now configured to use "ex2" cluster and "default" namespace by default
+2022-11-23 23:41:54,233 INFO    [ex2] Cluster started in 20.24 seconds
+2022-11-23 23:41:54,233 INFO    [ex2] Waiting until all deployments are available
+2022-11-23 23:42:21,512 DEBUG   [ex1] deployment.apps/example-deployment condition met
+2022-11-23 23:42:21,615 DEBUG   [ex1] deployment.apps/coredns condition met
+2022-11-23 23:42:21,637 INFO    [ex1] Deployments are available in 30.36 seconds
+2022-11-23 23:42:21,638 INFO    [ex1/0] Starting example/start
+2022-11-23 23:42:21,671 DEBUG   [ex1/0] * Deploying example
+2022-11-23 23:42:21,867 DEBUG   [ex1/0]   deployment.apps/example-deployment unchanged
+2022-11-23 23:42:21,872 INFO    [ex1/0] example/start completed in 0.23 seconds
+2022-11-23 23:42:24,464 DEBUG   [ex2] deployment.apps/example-deployment condition met
+2022-11-23 23:42:24,565 DEBUG   [ex2] deployment.apps/coredns condition met
+2022-11-23 23:42:24,590 INFO    [ex2] Deployments are available in 30.36 seconds
+2022-11-23 23:42:24,590 INFO    [ex2/0] Starting example/start
+2022-11-23 23:42:24,625 DEBUG   [ex2/0] * Deploying example
+2022-11-23 23:42:24,823 DEBUG   [ex2/0]   deployment.apps/example-deployment unchanged
+2022-11-23 23:42:24,827 INFO    [ex2/0] example/start completed in 0.24 seconds
+2022-11-23 23:42:25,092 INFO    [env/0] Starting example/test
+2022-11-23 23:42:25,157 DEBUG   [env/0] * Testing example deploymnet on cluster ex1
+2022-11-23 23:42:25,284 DEBUG   [env/0]   deployment "example-deployment" successfully rolled out
+2022-11-23 23:42:25,284 DEBUG   [env/0] * Testing example deploymnet on cluster ex2
+2022-11-23 23:42:25,405 DEBUG   [env/0]   deployment "example-deployment" successfully rolled out
+2022-11-23 23:42:25,410 INFO    [env/0] example/test completed in 0.32 seconds
+2022-11-23 23:42:25,593 INFO    [env] Started in 52.10 seconds
 ```
 
-We can stop the environment and start it later. This can be faster than
-recreating it from scratch, but tends to be flaky.
+#### Stopping the environment
 
-To delete the environment:
+We can stop the environment, for example if we need to reboot the host,
+or don't have enough resources to run multiple environment at the same
+time.
+
+```
+$ drenv stop example.yaml
+2022-11-23 23:43:34,159 INFO    [env] Using example.yaml
+2022-11-23 23:43:34,163 INFO    [ex1] Stopping cluster
+2022-11-23 23:43:34,664 INFO    [ex2] Stopping cluster
+2022-11-23 23:44:04,372 INFO    [ex1] Cluster stopped in 30.21 seconds
+2022-11-23 23:44:07,819 INFO    [ex2] Cluster stopped in 33.16 seconds
+2022-11-23 23:44:07,819 INFO    [env] Stopped in 33.66 seconds
+```
+
+We can start the environment later. This can be faster than recreating
+it from scratch.
+
+#### Deleting the environment
+
+To delete the environment including the VM disks and dropping all
+changes made to the environment:
 
 ```
 $ drenv delete example.yaml
-2022-09-22 20:54:05,106 INFO    [env] Using example.yaml
-2022-09-22 20:54:05,108 INFO    [ex1] Deleting cluster
-2022-09-22 20:54:05,109 INFO    [ex2] Deleting cluster
-2022-09-22 20:54:05,863 INFO    [ex2] Cluster deleted in 0.75 seconds
-2022-09-22 20:54:05,906 INFO    [ex1] Cluster deleted in 0.80 seconds
-2022-09-22 20:54:05,906 INFO    [env] Deleted in 0.80 seconds
+$ drenv delete example.yaml
+2022-11-24 00:02:26,275 INFO    [env] Using example.yaml
+2022-11-24 00:02:26,278 INFO    [ex1] Deleting cluster
+2022-11-24 00:02:26,779 INFO    [ex2] Deleting cluster
+2022-11-24 00:02:28,102 INFO    [ex1] Cluster deleted in 1.82 seconds
+2022-11-24 00:02:28,103 INFO    [ex2] Cluster deleted in 1.32 seconds
+2022-11-24 00:02:28,103 INFO    [env] Deleted in 1.83 seconds
 ```
 
 ### The environment file format
