@@ -287,14 +287,20 @@ $ drenv delete example.yaml
     - `cpus`: Number of CPUs per VM (default 2)
     - `memory`: Memory per VM (default 4g)
     - `addons`: List of minikube addons to install
-    - `scripts`: Optional list of scripts to run during start.
+    - `workers`: Optional list of workers to run when starting a
+      profile. Use multiple workers to run scripts in parallel.
+        - `name`: Optional worker name
+        - `scripts`: Scripts to run by this worker.
+            - `file`: Script filename
+            - `args`: Optional argument to the script. If not specified the
+              script is run with one argument, the profile name.
+- `workers`: Optional list of workers for running scripts after all
+  profile are started.
+    - `name`: Optional worker name
+    - `scripts`: Scripts to run by this worker
         - `file`: Script filename
         - `args`: Optional argument to the script. If not specified the
           script is run without any arguments.
-- `scripts`: Optional list of scripts to run after the profile scripts.
-    - `file`: Script filename
-    - `args`: Optional argument to the script. If not specified the
-      script is run without any arguments.
 
 ## The regional-dr environment
 
