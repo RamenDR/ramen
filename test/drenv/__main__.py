@@ -48,7 +48,6 @@ def main():
 
 
 def read_env(filename):
-    logging.info("[env] Using %s", filename)
     with open(filename) as f:
         env = yaml.safe_load(f)
     validate_env(env)
@@ -105,21 +104,33 @@ def validate_script(script, args=()):
 
 def cmd_start(env):
     start = time.monotonic()
+    logging.info("[%s] Starting environment", env["name"])
     execute(start_cluster, env["profiles"])
     execute(run_worker, env["workers"])
-    logging.info("[env] Started in %.2f seconds", time.monotonic() - start)
+    logging.info(
+        "[%s] Environment started in %.2f seconds",
+        env["name"], time.monotonic() - start,
+    )
 
 
 def cmd_stop(env):
     start = time.monotonic()
+    logging.info("[%s] Stopping environment", env["name"])
     execute(stop_cluster, env["profiles"])
-    logging.info("[env] Stopped in %.2f seconds", time.monotonic() - start)
+    logging.info(
+        "[%s] Environment stopped in %.2f seconds",
+        env["name"], time.monotonic() - start,
+    )
 
 
 def cmd_delete(env):
     start = time.monotonic()
+    logging.info("[%s] Deleting environment", env["name"])
     execute(delete_cluster, env["profiles"])
-    logging.info("[env] Deleted in %.2f seconds", time.monotonic() - start)
+    logging.info(
+        "[%s] Environment deleted in %.2f seconds",
+        env["name"], time.monotonic() - start,
+    )
 
 
 def execute(func, profiles, delay=0.5):
