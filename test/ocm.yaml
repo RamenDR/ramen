@@ -3,6 +3,7 @@
 
 # Enviroment for testing OCM deployment using clusteradm.
 ---
+name: "ocm"
 profiles:
   - name: "hub"
     network: default

@@ -56,6 +56,9 @@ def read_env(filename):
 
 
 def validate_env(env):
+    if "name" not in env:
+        raise ValueError("Missing name")
+
     if "profiles" not in env:
         raise ValueError("Missing profiles")
 

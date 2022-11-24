@@ -3,6 +3,7 @@
 
 # Enviroment for testing rook ceph deployment.
 ---
+name: "rook"
 profiles:
   - name: "dr1"
     network: default

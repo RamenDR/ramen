@@ -3,6 +3,7 @@
 
 # Enviroment for testing Regional-DR.
 ---
+name: "rdr"
 profiles:
   - name: "dr1"
     network: default
