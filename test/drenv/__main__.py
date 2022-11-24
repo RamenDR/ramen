@@ -61,12 +61,13 @@ def validate_env(env):
     if "profiles" not in env:
         raise ValueError("Missing profiles")
 
+    env.setdefault("workers", [])
+
     for profile in env["profiles"]:
         validate_profile(profile)
 
-    env.setdefault("workers", [])
     for i, worker in enumerate(env["workers"]):
-        validate_worker(worker, "env", i)
+        validate_worker(worker, env, i)
 
 
 def validate_profile(profile):
@@ -86,17 +87,18 @@ def validate_profile(profile):
     profile.setdefault("workers", [])
 
     for i, worker in enumerate(profile["workers"]):
-        validate_worker(worker, profile["name"], i)
+        validate_worker(worker, profile, i)
 
 
-def validate_worker(worker, name, index):
-    worker.setdefault("name", f"{name}/{index}")
+def validate_worker(worker, env, index):
+    worker.setdefault("name", f'{env["name"]}/{index}')
     worker.setdefault("scripts", [])
+
     for script in worker["scripts"]:
-        validate_script(script, args=[name])
+        validate_script(script, env, args=[env["name"]])
 
 
-def validate_script(script, args=()):
+def validate_script(script, env, args=()):
     if "file" not in script:
         raise ValueError(f"Missing script 'file': {script}")
     script.setdefault("args", list(args))
