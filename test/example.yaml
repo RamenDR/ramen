@@ -4,15 +4,16 @@
 # Example environment.
 ---
 name: example
+templates:
+  - name: "example-cluster"
+    workers:
+      - scripts:
+          - file: example/start
 profiles:
-  - name: "ex1"
-    workers:
-      - scripts:
-          - file: example/start
-  - name: "ex2"
-    workers:
-      - scripts:
-          - file: example/start
+  - name: ex1
+    template: example-cluster
+  - name: ex2
+    template: example-cluster
 workers:
   - scripts:
       - file: example/test

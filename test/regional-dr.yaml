@@ -4,8 +4,9 @@
 # Enviroment for testing Regional-DR.
 ---
 name: "rdr"
-profiles:
-  - name: "dr1"
+
+templates:
+  - name: "dr-cluster"
     network: default
     memory: "6g"
     extra_disks: 1
@@ -26,28 +27,7 @@ profiles:
       - scripts:
           - file: csi-addons/start
           - file: olm/start
-  - name: "dr2"
-    network: default
-    memory: "6g"
-    extra_disks: 1
-    disk_size: "50g"
-    workers:
-      - scripts:
-          - file: cert-manager/start
-          - file: rook-operator/start
-          - file: rook-cluster/start
-          - file: rook-pool/start
-          - file: rook-toolbox/start
-          - file: minio/start
-      - scripts:
-          - file: ocm-cluster/start
-            args: ["$name", "hub"]
-          - file: ocm-cluster/test
-            args: ["$name", "hub"]
-      - scripts:
-          - file: csi-addons/start
-          - file: olm/start
-  - name: "hub"
+  - name: "hub-cluster"
     memory: "4g"
     network: default
     workers:
@@ -55,6 +35,15 @@ profiles:
           - file: ocm-hub/start
           - file: cert-manager/start
           - file: olm/start
+
+profiles:
+  - name: "dr1"
+    template: "dr-cluster"
+  - name: "dr2"
+    template: "dr-cluster"
+  - name: "hub"
+    template: "hub-cluster"
+
 workers:
   - scripts:
       - file: rbd-mirror/start

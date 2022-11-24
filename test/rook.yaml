@@ -4,33 +4,28 @@
 # Enviroment for testing rook ceph deployment.
 ---
 name: "rook"
+
+templates:
+  - name: "dr-cluster"
+    network: default
+    memory: "6g"
+    extra_disks: 1
+    disk_size: "50g"
+    workers:
+      - scripts:
+          - file: rook-operator/start
+          - file: rook-cluster/start
+          - file: rook-pool/start
+          - file: rook-toolbox/start
+      - scripts:
+          - file: csi-addons/start
+
 profiles:
   - name: "dr1"
-    network: default
-    memory: "6g"
-    extra_disks: 1
-    disk_size: "50g"
-    workers:
-      - scripts:
-          - file: rook-operator/start
-          - file: rook-cluster/start
-          - file: rook-pool/start
-          - file: rook-toolbox/start
-      - scripts:
-          - file: csi-addons/start
+    template: "dr-cluster"
   - name: "dr2"
-    network: default
-    memory: "6g"
-    extra_disks: 1
-    disk_size: "50g"
-    workers:
-      - scripts:
-          - file: rook-operator/start
-          - file: rook-cluster/start
-          - file: rook-pool/start
-          - file: rook-toolbox/start
-      - scripts:
-          - file: csi-addons/start
+    template: "dr-cluster"
+
 workers:
   - scripts:
       - file: rbd-mirror/start

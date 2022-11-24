@@ -3,6 +3,7 @@
 
 import argparse
 import concurrent.futures
+import copy
 import logging
 import os
 import shutil
@@ -61,13 +62,43 @@ def validate_env(env):
     if "profiles" not in env:
         raise ValueError("Missing profiles")
 
+    env.setdefault("templates", [])
     env.setdefault("workers", [])
+
+    for template in env["templates"]:
+        validate_template(template)
+
+    bind_templates(env)
 
     for profile in env["profiles"]:
         validate_profile(profile)
 
     for i, worker in enumerate(env["workers"]):
         validate_worker(worker, env, i)
+
+
+def validate_template(template):
+    if "name" not in template:
+        raise ValueError("Missing template name")
+
+
+def bind_templates(env):
+    templates = {t["name"]: t for t in env["templates"]}
+
+    for i, profile in enumerate(env["profiles"]):
+        # Ensure that profile is bound once.
+        name = profile.pop("template", None)
+        if name is None:
+            continue
+
+        if name not in templates:
+            raise ValueError(f"Unknown template: {name}")
+
+        # Deep copy the template so profiles do not share anything.
+        template = copy.deepcopy(templates[name])
+
+        # Merge template and profile, overiding template keys.
+        env["profiles"][i] = {**template, **profile}
 
 
 def validate_profile(profile):

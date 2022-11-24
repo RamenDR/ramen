@@ -4,26 +4,26 @@
 # Enviroment for testing OCM deployment using clusteradm.
 ---
 name: "ocm"
-profiles:
-  - name: "hub"
+
+templates:
+  - name: "hub-cluster"
     network: default
     workers:
       - scripts:
           - file: ocm-hub/start
           - file: ocm-controller/start
+  - name: "dr-cluster"
+    network: default
+    workers:
+      - scripts:
+          - file: ocm-cluster/start
+            args: ["$name", "hub"]
+          - file: ocm-cluster/test
+            args: ["$name", "hub"]
+profiles:
+  - name: "hub"
+    template: "hub-cluster"
   - name: "dr1"
-    network: default
-    workers:
-      - scripts:
-          - file: ocm-cluster/start
-            args: ["$name", "hub"]
-          - file: ocm-cluster/test
-            args: ["$name", "hub"]
+    template: "dr-cluster"
   - name: "dr2"
-    network: default
-    workers:
-      - scripts:
-          - file: ocm-cluster/start
-            args: ["$name", "hub"]
-          - file: ocm-cluster/test
-            args: ["$name", "hub"]
+    template: "dr-cluster"
