@@ -115,17 +115,17 @@ clusters and how to deploy them.
 ### Example environment file
 
 ```
-# Example environment.
-
-profiles:
-  - name: "ex1"
+name: example
+templates:
+  - name: "example-cluster"
     workers:
       - scripts:
           - file: example/start
-  - name: "ex2"
-    workers:
-      - scripts:
-            - file: example/start
+profiles:
+  - name: ex1
+    template: example-cluster
+  - name: ex2
+    template: example-cluster
 workers:
   - scripts:
       - file: example/test
@@ -322,7 +322,7 @@ $ drenv delete example.yaml
 
 ### The environment file format
 
-- `profiles`: list of profiles.
+- `templates`: templates for creating new profiles.
     - `name`: profile name.
     - `container_runtime`: The container runtime to be used. Valid
       options: "docker", "cri-o", "containerd" (default: "containerd")
@@ -342,6 +342,11 @@ $ drenv delete example.yaml
             - `file`: Script filename
             - `args`: Optional argument to the script. If not specified the
               script is run with one argument, the profile name.
+
+- `profiles`: List of profile managed by the environment. Any template
+   key is valid in the profile, overriding the same key from the template.
+    - `template`: The template to create this profile from.
+
 - `workers`: Optional list of workers for running scripts after all
   profile are started.
     - `name`: Optional worker name
