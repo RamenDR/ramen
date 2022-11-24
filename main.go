@@ -185,6 +185,12 @@ func setupReconcilersHub(mgr ctrl.Manager) {
 		setupLog.Error(err, "unable to create webhook", "webhook", "DRPolicy")
 		os.Exit(1)
 	}
+
+	// setup webhook for drpc
+	if err := (&ramendrv1alpha1.DRPlacementControl{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "DRPlacementControl")
+		os.Exit(1)
+	}
 }
 
 func main() {

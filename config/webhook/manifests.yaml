@@ -31,6 +31,25 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /validate-ramendr-openshift-io-v1alpha1-drplacementcontrol
+  failurePolicy: Fail
+  name: vdrplacementcontrol.kb.io
+  rules:
+  - apiGroups:
+    - ramendr.openshift.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - UPDATE
+    resources:
+    - drplacementcontrols
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /validate-ramendr-openshift-io-v1alpha1-drpolicy
   failurePolicy: Fail
   name: vdrpolicy.kb.io
