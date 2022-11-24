@@ -16,11 +16,13 @@ def init(wait=False, context=None):
     _watch(*cmd)
 
 
-def get(what, context=None):
+def get(what, output=None, context=None):
     """
     Get information from the cluster.
     """
     cmd = ["clusteradm", "get", what]
+    if output:
+        cmd.extend(("--output", output))
     if context:
         cmd.extend(("--context", context))
     return commands.run(*cmd)
