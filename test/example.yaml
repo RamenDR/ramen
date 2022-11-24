@@ -3,6 +3,7 @@
 
 # Example environment.
 ---
+name: example
 profiles:
   - name: "ex1"
     workers:
