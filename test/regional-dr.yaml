@@ -20,9 +20,9 @@ profiles:
           - file: minio/start
       - scripts:
           - file: ocm-cluster/start
-            args: ["dr1", "hub"]
+            args: ["$name", "hub"]
           - file: ocm-cluster/test
-            args: ["dr1", "hub"]
+            args: ["$name", "hub"]
       - scripts:
           - file: csi-addons/start
           - file: olm/start
@@ -41,9 +41,9 @@ profiles:
           - file: minio/start
       - scripts:
           - file: ocm-cluster/start
-            args: ["dr2", "hub"]
+            args: ["$name", "hub"]
           - file: ocm-cluster/test
-            args: ["dr2", "hub"]
+            args: ["$name", "hub"]
       - scripts:
           - file: csi-addons/start
           - file: olm/start

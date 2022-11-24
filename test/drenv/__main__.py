@@ -101,7 +101,12 @@ def validate_worker(worker, env, index):
 def validate_script(script, env, args=()):
     if "file" not in script:
         raise ValueError(f"Missing script 'file': {script}")
-    script.setdefault("args", list(args))
+
+    args = script.setdefault("args", list(args))
+
+    for i, arg in enumerate(args):
+        arg = arg.replace("$name", env["name"])
+        args[i] = arg
 
 
 def cmd_start(env):
