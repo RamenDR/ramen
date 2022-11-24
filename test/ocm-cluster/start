@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import sys
 
 import drenv
@@ -70,16 +71,12 @@ def wait_for_hub(hub):
 def join_cluster(cluster, hub):
     print(f"Joining to cluster {hub}")
 
-    # We can get the token from the first line of the response.
-    out = clusteradm.get("token", context=hub)
-
-    token_line = out.splitlines()[0]
-    key, hub_token = token_line.split("=", 1)
-    assert key == "token"
+    out = clusteradm.get("token", output="json", context=hub)
+    hub_info = json.loads(out)
 
     clusteradm.join(
-        hub_token=hub_token,
-        hub_apiserver=drenv.cluster_info(hub)["cluster"]["server"],
+        hub_token=hub_info["hub-token"],
+        hub_apiserver=hub_info["hub-apiserver"],
         cluster_name=cluster,
         wait=True,
         context=cluster,

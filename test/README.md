@@ -32,7 +32,7 @@ environment.
 
 1. Install `clusteradm` tool. See
    [Open Cluster Management Quick Start guide](https://open-cluster-management.io/getting-started/quick-start/#install-clusteradm-cli-tool)
-   for the details.
+   for the details. Version 0.5.0 or later is required.
 
 1. Install the `drenv` package in a virtual environment:
 
