@@ -15,6 +15,7 @@ import (
 	errorswrapper "github.com/pkg/errors"
 	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -963,12 +964,23 @@ func (r *DRPlacementControlReconciler) getSanityCheckDelay(
 }
 
 func (r *DRPlacementControlReconciler) updateUserPlacementRuleStatus(
-	usrPlRule *plrv1.PlacementRule, newStatus plrv1.PlacementRuleStatus, log logr.Logger,
+	drpc *rmn.DRPlacementControl, usrPlRule *plrv1.PlacementRule,
+	newStatus plrv1.PlacementRuleStatus, log logr.Logger,
 ) error {
+	msg := fmt.Sprintf("Updating userPlacementRule %s",
+		usrPlRule.Name)
+
+	rmnutil.ReportIfNotPresent(r.eventRecorder, drpc, corev1.EventTypeNormal,
+		rmnutil.EventReasonUpdateUserPlacementRule, msg)
+
 	if !reflect.DeepEqual(newStatus, usrPlRule.Status) {
 		usrPlRule.Status = newStatus
 		if err := r.Status().Update(context.TODO(), usrPlRule); err != nil {
 			log.Error(err, "failed to update user PlacementRule")
+
+			msg := fmt.Sprintf("Failed to update UserPlacementRule %s", usrPlRule.Name)
+			rmnutil.ReportIfNotPresent(r.eventRecorder, drpc, corev1.EventTypeWarning,
+				rmnutil.EventReasonUpdateUserPlacementRuleFailed, msg)
 
 			return fmt.Errorf("failed to update userPlRule %s (%w)", usrPlRule.Name, err)
 		}
