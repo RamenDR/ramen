@@ -350,6 +350,28 @@ $ drenv delete example.yaml
         - `args`: Optional argument to the script. If not specified the
           script is run without any arguments.
 
+#### Script arguments
+
+When specifying script `args`, you can use the special variable `$name`.
+This will be replaced with the profile name.
+
+Example yaml:
+
+```
+profiles:
+  - name: cluster1
+    workers:
+      - scripts:
+          - file: script/start
+            args: [$name, arg2]
+```
+
+This will run the script as:
+
+```
+script/start cluster1 arg2
+```
+
 ## The regional-dr environment
 
 This is a configuration for testing regional DR using a hub cluster and

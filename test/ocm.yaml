@@ -16,14 +16,14 @@ profiles:
     workers:
       - scripts:
           - file: ocm-cluster/start
-            args: ["dr1", "hub"]
+            args: ["$name", "hub"]
           - file: ocm-cluster/test
-            args: ["dr1", "hub"]
+            args: ["$name", "hub"]
   - name: "dr2"
     network: default
     workers:
       - scripts:
           - file: ocm-cluster/start
-            args: ["dr2", "hub"]
+            args: ["$name", "hub"]
           - file: ocm-cluster/test
-            args: ["dr2", "hub"]
+            args: ["$name", "hub"]
