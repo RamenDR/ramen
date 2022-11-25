@@ -208,8 +208,8 @@ def wait_for_deployments(profile, initial_wait=30, timeout=300):
     )
 
 
-def kubectl(cmd, *args, profile=None):
-    minikube("kubectl", "--", cmd, *args, profile=profile)
+def kubectl(*args, profile=None):
+    run("kubectl", "--context", profile, *args, name=profile)
 
 
 def minikube(cmd, *args, profile=None):

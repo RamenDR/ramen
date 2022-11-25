@@ -28,10 +28,7 @@ def log_detail(text):
 
 def kubectl(*args, profile=None, input=None, verbose=True):
     """
-    Run `minikube kubectl` command for profile.
-
-    Some kubectl commands (e.g. config) do not work with profile and require
-    `--context profile` in the command arguments.
+    Run `kubectl` command for profile.
 
     To pipe yaml into the kubectl command, use `--filename -` and pass the yaml
     to the input argument.
@@ -41,10 +38,9 @@ def kubectl(*args, profile=None, input=None, verbose=True):
 
     Returns the underlying command output.
     """
-    cmd = ["minikube", "kubectl"]
+    cmd = ["kubectl"]
     if profile:
-        cmd.extend(("--profile", profile))
-    cmd.append("--")
+        cmd.extend(("--context", profile))
     cmd.extend(args)
 
     return run(*cmd, input=input, verbose=verbose)
