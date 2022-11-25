@@ -391,3 +391,28 @@ script/start cluster1 arg2
 
 This is a configuration for testing regional DR using a hub cluster and
 2 managed clusters.
+
+## Testing drenv
+
+### Installing development tools
+
+On Fedora run:
+
+```
+dnf install pytest
+```
+
+If pytest is not packaged for your distribution or the packaged version
+is too old, you can install the latest version using pip - in the drenv
+virtual environment:
+
+```
+pip install pytest
+```
+
+### Running the tests
+
+```
+cd test
+pytest
+```
