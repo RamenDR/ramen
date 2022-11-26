@@ -3,7 +3,6 @@
 
 import argparse
 import concurrent.futures
-import copy
 import logging
 import os
 import shutil
@@ -16,6 +15,7 @@ from collections import deque
 import yaml
 
 import drenv
+from . import envfile
 
 CMD_PREFIX = "cmd_"
 
@@ -42,102 +42,10 @@ def main():
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)-7s %(message)s")
 
-    env = read_env(args.filename)
+    env = envfile.load(args.filename)
 
     func = globals()[CMD_PREFIX + args.command]
     func(env)
-
-
-def read_env(filename):
-    with open(filename) as f:
-        env = yaml.safe_load(f)
-    validate_env(env)
-    return env
-
-
-def validate_env(env):
-    if "name" not in env:
-        raise ValueError("Missing name")
-
-    if "profiles" not in env:
-        raise ValueError("Missing profiles")
-
-    env.setdefault("templates", [])
-    env.setdefault("workers", [])
-
-    for template in env["templates"]:
-        validate_template(template)
-
-    bind_templates(env)
-
-    for profile in env["profiles"]:
-        validate_profile(profile)
-
-    for i, worker in enumerate(env["workers"]):
-        validate_worker(worker, env, i)
-
-
-def validate_template(template):
-    if "name" not in template:
-        raise ValueError("Missing template name")
-
-
-def bind_templates(env):
-    templates = {t["name"]: t for t in env["templates"]}
-
-    for i, profile in enumerate(env["profiles"]):
-        # Ensure that profile is bound once.
-        name = profile.pop("template", None)
-        if name is None:
-            continue
-
-        if name not in templates:
-            raise ValueError(f"Unknown template: {name}")
-
-        # Deep copy the template so profiles do not share anything.
-        template = copy.deepcopy(templates[name])
-
-        # Merge template and profile, overiding template keys.
-        env["profiles"][i] = {**template, **profile}
-
-
-def validate_profile(profile):
-    if "name" not in profile:
-        raise ValueError("Missing profile name")
-
-    profile.setdefault("container_runtime", "containerd")
-    profile.setdefault("extra_disks", 0)
-    profile.setdefault("disk_size", "20g")
-    profile.setdefault("nodes", 1)
-    profile.setdefault("cni", "auto")
-    profile.setdefault("cpus", 2)
-    profile.setdefault("memory", "4g")
-    profile.setdefault("network", "")
-    profile.setdefault("scripts", [])
-    profile.setdefault("addons", [])
-    profile.setdefault("workers", [])
-
-    for i, worker in enumerate(profile["workers"]):
-        validate_worker(worker, profile, i)
-
-
-def validate_worker(worker, env, index):
-    worker.setdefault("name", f'{env["name"]}/{index}')
-    worker.setdefault("scripts", [])
-
-    for script in worker["scripts"]:
-        validate_script(script, env, args=[env["name"]])
-
-
-def validate_script(script, env, args=()):
-    if "file" not in script:
-        raise ValueError(f"Missing script 'file': {script}")
-
-    args = script.setdefault("args", list(args))
-
-    for i, arg in enumerate(args):
-        arg = arg.replace("$name", env["name"])
-        args[i] = arg
 
 
 def cmd_start(env):

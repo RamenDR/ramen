@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import yaml
+from drenv import envfile
 
 
-def test_yaml():
-    yaml.safe_load("regional-dr.yaml")
+def test_load():
+    envfile.load("regional-dr.yaml")
