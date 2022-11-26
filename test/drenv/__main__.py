@@ -171,6 +171,10 @@ def cmd_delete(env):
     )
 
 
+def cmd_dump(env):
+    yaml.dump(env, sys.stdout)
+
+
 def execute(func, profiles, delay=0.5):
     failed = False
 

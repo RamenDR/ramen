@@ -96,6 +96,16 @@ To delete the environment:
 drenv delete example.yaml
 ```
 
+To inspect a processed environment file:
+
+```
+drenv dump example.yaml
+```
+
+Dumping the file shows how drenv binds templates, expands scripts
+arguments, name workers, and applies default values. This can be useful
+to debugging drenv or when writing a new environment file.
+
 Useful options:
 
 - `-v`, `--verbose`: Show verbose logs
