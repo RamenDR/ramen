@@ -74,6 +74,25 @@ jobs:
       - name: Run unit tests
         run: GO_TEST_GINKGO_ARGS="" make test
 
+  drenv-test:
+    name: drenv tests
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v3
+
+      - name: Setup python
+        uses: actions/setup-python@v4
+
+      - name: Install tools
+        run: pip install pytest
+
+      - name: Install drenv
+        run: pip install -e test
+
+      - name: Run tests
+        run: make test-drenv
+
   build-image-and-ensure-clean-branch:
     name: Build image and ensure clean branch
     runs-on: ubuntu-20.04
