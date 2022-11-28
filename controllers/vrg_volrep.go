@@ -1940,11 +1940,7 @@ func (v *VRGInstance) addPVRestoreAnnotation(pv *corev1.PersistentVolume) {
 //
 //nolint:funlen
 func (v *VRGInstance) aggregateVolRepDataReadyCondition() *metav1.Condition {
-	if len(v.volRepPVCs) == 0 {
-		return nil
-	}
-
-	vrgReady := len(v.instance.Status.ProtectedPVCs) != 0
+	vrgReady := true
 	vrgProgressing := false
 
 	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
