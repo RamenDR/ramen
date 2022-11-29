@@ -34,6 +34,9 @@ def main():
         choices=commands,
         help="Command to run")
     p.add_argument(
+        "--name-prefix",
+        help="Prefix profile names")
+    p.add_argument(
         "filename",
         help="Environment filename")
     args = p.parse_args()
@@ -43,7 +46,7 @@ def main():
         format="%(asctime)s %(levelname)-7s %(message)s")
 
     with open(args.filename) as f:
-        env = envfile.load(f)
+        env = envfile.load(f, name_prefix=args.name_prefix)
 
     func = globals()[CMD_PREFIX + args.command]
     func(env)

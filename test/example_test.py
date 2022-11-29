@@ -7,3 +7,8 @@ from drenv import envfile
 def test_load():
     with open("example.yaml") as f:
         envfile.load(f)
+
+
+def test_load_prefix():
+    with open("example.yaml") as f:
+        envfile.load(f, name_prefix="test-")

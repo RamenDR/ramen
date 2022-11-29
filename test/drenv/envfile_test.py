@@ -112,6 +112,64 @@ def test_valid():
     assert worker["scripts"][0]["args"] == []
 
 
+def test_name_prefix():
+    f = io.StringIO(valid_yaml)
+    env = envfile.load(f, name_prefix="prefix-")
+
+    # env
+
+    assert env["name"] == "prefix-test"
+
+    # profile dr1
+
+    profile = env["profiles"][0]
+    assert profile["name"] == "prefix-dr1"
+
+    worker = profile["workers"][0]
+    assert worker["name"] == "prefix-dr1/0"
+    assert worker["scripts"][0]["args"] == ["prefix-dr1"]
+    assert worker["scripts"][1]["args"] == ["prefix-dr1", "prefix-hub"]
+
+    worker = profile["workers"][1]
+    assert worker["name"] == "prefix-dr1/named-worker"
+
+    # profile dr2
+
+    profile = env["profiles"][1]
+    assert profile["name"] == "prefix-dr2"
+
+    worker = profile["workers"][0]
+    assert worker["name"] == "prefix-dr2/0"
+    assert worker["scripts"][0]["args"] == ["prefix-dr2"]
+    assert worker["scripts"][1]["args"] == ["prefix-dr2", "prefix-hub"]
+
+    worker = profile["workers"][1]
+    assert worker["name"] == "prefix-dr2/named-worker"
+
+    # profile hub
+
+    profile = env["profiles"][2]
+    assert profile["name"] == "prefix-hub"
+
+    worker = profile["workers"][0]
+    assert worker["name"] == "prefix-hub/0"
+    assert worker["scripts"][0]["args"] == ["prefix-dr1", "prefix-dr2"]
+
+    # env workers
+
+    worker = env["workers"][0]
+    assert worker["name"] == "prefix-test/named-worker"
+    assert worker["scripts"][0]["args"] == [
+        "prefix-dr1",
+        "prefix-dr2",
+        "other",
+    ]
+
+    worker = env["workers"][1]
+    assert worker["name"] == "prefix-test/1"
+    assert worker["scripts"][0]["args"] == []
+
+
 def test_require_env_name():
     s = """
 profiles: []

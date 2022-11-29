@@ -6,9 +6,13 @@ import copy
 import yaml
 
 
-def load(fileobj):
+def load(fileobj, name_prefix=None):
     env = yaml.safe_load(fileobj)
     _validate_env(env)
+
+    if name_prefix:
+        _prefix_names(env, name_prefix)
+
     return env
 
 
@@ -95,3 +99,27 @@ def _validate_script(script, env, args=()):
     for i, arg in enumerate(args):
         arg = arg.replace("$name", env["name"])
         args[i] = arg
+
+
+def _prefix_names(env, name_prefix):
+    profile_names = {p["name"] for p in env["profiles"]}
+
+    env["name"] = name_prefix + env["name"]
+
+    for profile in env["profiles"]:
+        profile["name"] = name_prefix + profile["name"]
+        for worker in profile["workers"]:
+            _prefix_worker(worker, profile_names, name_prefix)
+
+    for worker in env["workers"]:
+        _prefix_worker(worker, profile_names, name_prefix)
+
+
+def _prefix_worker(worker, profile_names, name_prefix):
+    worker["name"] = name_prefix + worker["name"]
+
+    for script in worker["scripts"]:
+        args = script["args"]
+        for i, value in enumerate(args):
+            if value in profile_names:
+                args[i] = name_prefix + value

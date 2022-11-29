@@ -110,6 +110,7 @@ Useful options:
 
 - `-v`, `--verbose`: Show verbose logs
 - `-h`, `--help`: Show online help
+- `--name-prefix`: Add prefix to profiles names
 
 When you are done you can deactivate the virtual environment:
 
@@ -196,6 +197,77 @@ $ kubectl --context ex2 get pods
 NAME                                 READY   STATUS    RESTARTS      AGE
 example-deployment-fdf86bbfc-sd9wt   1/1     Running   1 (33s ago)   97s
 ```
+
+#### Isolating environments with --name-prefix
+
+To run multiple instances of the same environment, or multiple
+environments using the same profile names, use unique `--name-prefix`
+for each run.
+
+Start first instance:
+
+```
+$ drenv start --name-prefix test1- example.yaml
+2022-11-30 22:14:45,551 INFO    [test1-example] Starting environment
+2022-11-30 22:14:45,552 INFO    [test1-ex1] Starting cluster
+2022-11-30 22:14:46,053 INFO    [test1-ex2] Starting cluster
+2022-11-30 22:15:24,443 INFO    [test1-ex1] Cluster started in 38.89 seconds
+2022-11-30 22:15:24,443 INFO    [test1-ex1/0] Starting example/start
+2022-11-30 22:15:24,723 INFO    [test1-ex1/0] example/start completed in 0.28 seconds
+2022-11-30 22:15:39,555 INFO    [test1-ex2] Cluster started in 53.50 seconds
+2022-11-30 22:15:39,555 INFO    [test1-ex2/0] Starting example/start
+2022-11-30 22:15:39,787 INFO    [test1-ex2/0] example/start completed in 0.23 seconds
+2022-11-30 22:15:40,057 INFO    [test1-example/0] Starting example/test
+2022-11-30 22:15:55,026 INFO    [test1-example/0] example/test completed in 14.97 seconds
+2022-11-30 22:15:55,027 INFO    [test1-example] Environment started in 69.48 seconds
+```
+
+This creates:
+
+```
+$ minikube profile list
+|-----------|-----------|------------|---------------|------|---------|---------|-------|--------|
+|  Profile  | VM Driver |  Runtime   |      IP       | Port | Version | Status  | Nodes | Active |
+|-----------|-----------|------------|---------------|------|---------|---------|-------|--------|
+| test1-ex1 | kvm2      | containerd | 192.168.39.54 | 8443 | v1.25.3 | Running |     1 |        |
+| test1-ex2 | kvm2      | containerd | 192.168.50.76 | 8443 | v1.25.3 | Running |     1 |        |
+|-----------|-----------|------------|---------------|------|---------|---------|-------|--------|
+```
+
+Start second instance:
+
+```
+$ drenv start --name-prefix test2- example.yaml
+2022-11-30 22:16:25,855 INFO    [test2-example] Starting environment
+2022-11-30 22:16:25,856 INFO    [test2-ex1] Starting cluster
+2022-11-30 22:16:26,357 INFO    [test2-ex2] Starting cluster
+2022-11-30 22:17:06,130 INFO    [test2-ex1] Cluster started in 40.27 seconds
+2022-11-30 22:17:06,131 INFO    [test2-ex1/0] Starting example/start
+2022-11-30 22:17:06,376 INFO    [test2-ex1/0] example/start completed in 0.25 seconds
+2022-11-30 22:17:20,359 INFO    [test2-ex2] Cluster started in 54.00 seconds
+2022-11-30 22:17:20,360 INFO    [test2-ex2/0] Starting example/start
+2022-11-30 22:17:20,614 INFO    [test2-ex2/0] example/start completed in 0.25 seconds
+2022-11-30 22:17:20,861 INFO    [test2-example/0] Starting example/test
+2022-11-30 22:17:36,600 INFO    [test2-example/0] example/test completed in 15.74 seconds
+2022-11-30 22:17:36,600 INFO    [test2-example] Environment started in 70.74 seconds
+```
+
+This adds new profiles:
+
+```
+$ minikube profile list
+|-----------|-----------|------------|----------------|------|---------|---------|-------|--------|
+|  Profile  | VM Driver |  Runtime   |       IP       | Port | Version | Status  | Nodes | Active |
+|-----------|-----------|------------|----------------|------|---------|---------|-------|--------|
+| test1-ex1 | kvm2      | containerd | 192.168.39.54  | 8443 | v1.25.3 | Running |     1 |        |
+| test1-ex2 | kvm2      | containerd | 192.168.50.76  | 8443 | v1.25.3 | Running |     1 |        |
+| test2-ex1 | kvm2      | containerd | 192.168.72.116 | 8443 | v1.25.3 | Running |     1 |        |
+| test2-ex2 | kvm2      | containerd | 192.168.83.20  | 8443 | v1.25.3 | Running |     1 |        |
+|-----------|-----------|------------|----------------|------|---------|---------|-------|--------|
+```
+
+You must use the same `--name-prefix` when stopping or deleting the
+environments.
 
 #### Running scripts manually
 
