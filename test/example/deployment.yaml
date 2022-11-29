@@ -20,4 +20,4 @@ spec:
       containers:
       - name: example
         image: quay.io/quay/busybox
-        command: ["sleep", "60"]
+        command: ["sh", "-c", "while true; do date; sleep 10; done"]

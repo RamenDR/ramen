@@ -11,18 +11,12 @@ if len(sys.argv) != 3:
     print(f"Usage: {sys.argv[0]} cluster1 cluster2")
     sys.exit(1)
 
-cluster1, cluster2 = sys.argv[1:]
+clusters = sys.argv[1:]
 
-drenv.log_progress(f"Testing example deploymnet on cluster {cluster1}")
-drenv.kubectl(
-    "rollout", "status", "deploy/example-deployment",
-    "--timeout", "60s",
-    profile=cluster1,
-)
-
-drenv.log_progress(f"Testing example deploymnet on cluster {cluster2}")
-drenv.kubectl(
-    "rollout", "status", "deploy/example-deployment",
-    "--timeout", "60s",
-    profile=cluster2,
-)
+for cluster in clusters:
+    drenv.log_progress(f"Testing example deployment on cluster {cluster}")
+    drenv.kubectl(
+        "rollout", "status", "deploy/example-deployment",
+        "--timeout", "60s",
+        profile=cluster,
+    )
