@@ -5,4 +5,5 @@ from drenv import envfile
 
 
 def test_load():
-    envfile.load("ocm.yaml")
+    with open("ocm.yaml") as f:
+        envfile.load(f)

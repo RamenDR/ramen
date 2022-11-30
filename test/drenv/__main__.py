@@ -42,7 +42,8 @@ def main():
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)-7s %(message)s")
 
-    env = envfile.load(args.filename)
+    with open(args.filename) as f:
+        env = envfile.load(f)
 
     func = globals()[CMD_PREFIX + args.command]
     func(env)

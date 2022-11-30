@@ -5,4 +5,5 @@ from drenv import envfile
 
 
 def test_load():
-    envfile.load("regional-dr.yaml")
+    with open("regional-dr.yaml") as f:
+        envfile.load(f)
