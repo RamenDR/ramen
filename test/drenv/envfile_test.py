@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import io
+import pytest
 from . import envfile
 
 valid_yaml = """
@@ -110,3 +111,77 @@ def test_valid():
     worker = env["workers"][1]
     assert worker["name"] == "test/1"
     assert worker["scripts"][0]["args"] == []
+
+
+def test_require_env_name():
+    s = """
+profiles: []
+"""
+    with pytest.raises(ValueError):
+        envfile.load(io.StringIO(s))
+
+
+def test_require_profiles():
+    s = """
+name: test
+"""
+    with pytest.raises(ValueError):
+        envfile.load(io.StringIO(s))
+
+
+def test_require_template_name():
+    s = """
+name: test
+templates:
+  - memory: 6g
+profiles: []
+"""
+    with pytest.raises(ValueError):
+        envfile.load(io.StringIO(s))
+
+
+def test_require_profile_name():
+    s = """
+name: test
+profiles:
+  - memory: 6g
+"""
+    with pytest.raises(ValueError):
+        envfile.load(io.StringIO(s))
+
+
+def test_require_existing_template():
+    s = """
+name: test
+profiles:
+  - memory: 6g
+    template: no-such-template
+"""
+    with pytest.raises(ValueError):
+        envfile.load(io.StringIO(s))
+
+
+def test_require_profile_script_file():
+    s = """
+name: test
+profiles:
+  - name: p1
+    workers:
+      - scripts:
+          - args: ["arg1"]
+"""
+    with pytest.raises(ValueError):
+        envfile.load(io.StringIO(s))
+
+
+def test_require_env_script_file():
+    s = """
+name: test
+profiles:
+  - name: p1
+workers:
+  - scripts:
+      - args: ["arg1"]
+"""
+    with pytest.raises(ValueError):
+        envfile.load(io.StringIO(s))
