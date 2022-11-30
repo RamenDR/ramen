@@ -85,13 +85,18 @@ jobs:
         uses: actions/setup-python@v4
 
       - name: Install tools
-        run: pip install pytest
+        run: pip install -r test/requirements.txt
 
       - name: Install drenv
         run: pip install -e test
 
       - name: Run tests
-        run: make test-drenv
+        run: coverage3 run --source drenv -m pytest
+        working-directory: test
+
+      - name: Report test coverage
+        run: coverage3 report
+        working-directory: test
 
   build-image-and-ensure-clean-branch:
     name: Build image and ensure clean branch
