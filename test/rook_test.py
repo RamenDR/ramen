@@ -5,4 +5,5 @@ from drenv import envfile
 
 
 def test_load():
-    envfile.load("rook.yaml")
+    with open("rook.yaml") as f:
+        envfile.load(f)

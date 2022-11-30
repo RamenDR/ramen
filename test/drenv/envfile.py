@@ -6,9 +6,8 @@ import copy
 import yaml
 
 
-def load(filename):
-    with open(filename) as f:
-        env = yaml.safe_load(f)
+def load(fileobj):
+    env = yaml.safe_load(fileobj)
     _validate_env(env)
     return env
 
