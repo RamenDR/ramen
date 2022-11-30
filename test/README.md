@@ -399,7 +399,7 @@ This is a configuration for testing regional DR using a hub cluster and
 On Fedora run:
 
 ```
-dnf install pytest
+dnf install pytest python3-coverage
 ```
 
 If pytest is not packaged for your distribution or the packaged version
@@ -407,7 +407,7 @@ is too old, you can install the latest version using pip - in the drenv
 virtual environment:
 
 ```
-pip install pytest
+pip install -r requirements.txt
 ```
 
 ### Running the tests
@@ -415,4 +415,38 @@ pip install pytest
 ```
 cd test
 pytest
+```
+
+### Checking coverage
+
+Running the tests collecting coverage data:
+
+```
+coverage run --source drenv -m pytest
+```
+
+Reporting coverage:
+
+```
+$ coverage report
+Name                    Stmts   Miss  Cover
+-------------------------------------------
+drenv/__init__.py          82     62    24%
+drenv/__main__.py         114    114     0%
+drenv/envfile.py           61      0   100%
+drenv/envfile_test.py      67      0   100%
+-------------------------------------------
+TOTAL                     324    176    46%
+```
+
+**Note**: if you installed coverage via pip, you will have to use
+`coverage3` instead of `coverage`.
+
+### Creating html coverage report
+
+This creates html report and open the report in a browser:
+
+```
+coverage html
+xdg-open htmlcov/index.html
 ```
