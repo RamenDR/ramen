@@ -9,12 +9,9 @@ templates:
     workers:
       - scripts:
           - file: example/start
+          - file: example/test
 profiles:
   - name: ex1
     template: example-cluster
   - name: ex2
     template: example-cluster
-workers:
-  - scripts:
-      - file: example/test
-        args: ["ex1", "ex2"]
