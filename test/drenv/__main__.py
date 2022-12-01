@@ -206,11 +206,18 @@ def run_worker(worker):
 
 
 def run_script(script, name):
+    for filename in "start", "test":
+        hook = os.path.join(script["name"], filename)
+        if os.path.isfile(hook):
+            run_hook(hook, script["args"], name)
+
+
+def run_hook(hook, args, name):
     start = time.monotonic()
-    logging.info("[%s] Starting %s", name, script["file"])
-    run(script["file"], *script["args"], name=name)
+    logging.info("[%s] Running %s", name, hook)
+    run(hook, *args, name=name)
     logging.info("[%s] %s completed in %.2f seconds",
-                 name, script["file"], time.monotonic() - start)
+                 name, hook, time.monotonic() - start)
 
 
 def run(*cmd, name=None):

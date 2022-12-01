@@ -13,12 +13,12 @@ templates:
     disk_size: "50g"
     workers:
       - scripts:
-          - file: rook-operator/start
-          - file: rook-cluster/start
-          - file: rook-pool/start
-          - file: rook-toolbox/start
+          - name: rook-operator
+          - name: rook-cluster
+          - name: rook-pool
+          - name: rook-toolbox
       - scripts:
-          - file: csi-addons/start
+          - name: csi-addons
 
 profiles:
   - name: "dr1"
@@ -28,7 +28,5 @@ profiles:
 
 workers:
   - scripts:
-      - file: rbd-mirror/start
-        args: ["dr1", "dr2"]
-      - file: rbd-mirror/test
+      - name: rbd-mirror
         args: ["dr1", "dr2"]

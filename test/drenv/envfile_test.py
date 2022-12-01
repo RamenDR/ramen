@@ -16,22 +16,22 @@ templates:
       # An unnamed worker
       - scripts:
           # Script accepting single arguemnt, the profile name
-          - file: script1
+          - name: script1
           # Script with user set arguments, $name replaced by current profile
           # name.
-          - file: script2
+          - name: script2
             args: ["$name", "hub"]
       # A named worker
       - name: named-worker
         scripts:
-          - file: script3
+          - name: script3
   - name: hub-cluster
     memory: 4g
     network: default
     workers:
       - scripts:
           # Script that does not need its profile name.
-          - file: script4
+          - name: script4
             args: ["dr1", "dr2"]
 
 profiles:
@@ -48,11 +48,11 @@ workers:
   - name: named-worker
     scripts:
       # Script accepting third argument which is not a cluster name.
-      - file: script5
+      - name: script5
         args: ["dr1", "dr2", "other"]
   - scripts:
       # Script accepting no arguments
-      - file: script6
+      - name: script6
         args: []
 """
 
@@ -218,7 +218,7 @@ profiles:
         envfile.load(io.StringIO(s))
 
 
-def test_require_profile_script_file():
+def test_require_profile_script_name():
     s = """
 name: test
 profiles:
@@ -231,7 +231,7 @@ profiles:
         envfile.load(io.StringIO(s))
 
 
-def test_require_env_script_file():
+def test_require_env_script_name():
     s = """
 name: test
 profiles:

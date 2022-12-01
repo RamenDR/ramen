@@ -10,15 +10,13 @@ templates:
     network: default
     workers:
       - scripts:
-          - file: ocm-hub/start
-          - file: ocm-controller/start
+          - name: ocm-hub
+          - name: ocm-controller
   - name: "dr-cluster"
     network: default
     workers:
       - scripts:
-          - file: ocm-cluster/start
-            args: ["$name", "hub"]
-          - file: ocm-cluster/test
+          - name: ocm-cluster
             args: ["$name", "hub"]
 profiles:
   - name: "hub"
