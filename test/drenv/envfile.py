@@ -79,7 +79,7 @@ def _validate_profile(profile):
 
 
 def _validate_worker(worker, env, index):
-    worker.setdefault("name", f'{env["name"]}/{index}')
+    worker["name"] = f'{env["name"]}/{worker.get("name", index)}'
     worker.setdefault("scripts", [])
 
     for script in worker["scripts"]:

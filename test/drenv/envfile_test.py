@@ -45,7 +45,8 @@ profiles:
     template: hub-cluster
 
 workers:
-  - scripts:
+  - name: named-worker
+    scripts:
       # Script accepting third argument which is not a cluster name.
       - file: script5
         args: ["dr1", "dr2", "other"]
@@ -74,8 +75,7 @@ def test_valid():
     assert worker["scripts"][1]["args"] == ["dr1", "hub"]
 
     worker = profile["workers"][1]
-    # XXX a bug, should be dr1/named-worker
-    assert worker["name"] == "named-worker"
+    assert worker["name"] == "dr1/named-worker"
 
     # profile dr2
 
@@ -89,8 +89,7 @@ def test_valid():
     assert worker["scripts"][1]["args"] == ["dr2", "hub"]
 
     worker = profile["workers"][1]
-    # XXX should be dr2/named-worker
-    assert worker["name"] == "named-worker"
+    assert worker["name"] == "dr2/named-worker"
 
     # profile hub
 
@@ -105,7 +104,7 @@ def test_valid():
     # env workers
 
     worker = env["workers"][0]
-    assert worker["name"] == "test/0"
+    assert worker["name"] == "test/named-worker"
     assert worker["scripts"][0]["args"] == ["dr1", "dr2", "other"]
 
     worker = env["workers"][1]
