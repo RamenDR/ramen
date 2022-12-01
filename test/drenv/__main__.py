@@ -55,7 +55,8 @@ def main():
 def cmd_start(env):
     start = time.monotonic()
     logging.info("[%s] Starting environment", env["name"])
-    execute(start_cluster, env["profiles"])
+    # Delaying `minikube start` ensures cluster start order.
+    execute(start_cluster, env["profiles"], delay=1)
     execute(run_worker, env["workers"])
     logging.info(
         "[%s] Environment started in %.2f seconds",
@@ -87,7 +88,7 @@ def cmd_dump(env):
     yaml.dump(env, sys.stdout)
 
 
-def execute(func, profiles, delay=0.5):
+def execute(func, profiles, delay=0):
     failed = False
 
     with concurrent.futures.ThreadPoolExecutor() as e:
