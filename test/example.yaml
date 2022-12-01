@@ -8,8 +8,7 @@ templates:
   - name: "example-cluster"
     workers:
       - scripts:
-          - file: example/start
-          - file: example/test
+          - name: example
 profiles:
   - name: ex1
     template: example-cluster

@@ -131,8 +131,7 @@ templates:
   - name: "example-cluster"
     workers:
       - scripts:
-          - file: example/start
-          - file: example/test
+          - name: example
 profiles:
   - name: ex1
     template: example-cluster
@@ -157,14 +156,14 @@ $ drenv start example.yaml
 2022-12-01 23:30:25,295 INFO    [ex1] Starting cluster
 2022-12-01 23:30:26,296 INFO    [ex2] Starting cluster
 2022-12-01 23:31:04,112 INFO    [ex1] Cluster started in 38.82 seconds
-2022-12-01 23:31:04,113 INFO    [ex1/0] Starting example/start
+2022-12-01 23:31:04,113 INFO    [ex1/0] Running example/start
 2022-12-01 23:31:04,366 INFO    [ex1/0] example/start completed in 0.25 seconds
-2022-12-01 23:31:04,366 INFO    [ex1/0] Starting example/test
+2022-12-01 23:31:04,366 INFO    [ex1/0] Running example/test
 2022-12-01 23:31:18,404 INFO    [ex1/0] example/test completed in 14.04 seconds
 2022-12-01 23:31:18,925 INFO    [ex2] Cluster started in 52.63 seconds
-2022-12-01 23:31:18,925 INFO    [ex2/0] Starting example/start
+2022-12-01 23:31:18,925 INFO    [ex2/0] Running example/start
 2022-12-01 23:31:19,152 INFO    [ex2/0] example/start completed in 0.23 seconds
-2022-12-01 23:31:19,152 INFO    [ex2/0] Starting example/test
+2022-12-01 23:31:19,152 INFO    [ex2/0] Running example/test
 2022-12-01 23:31:34,413 INFO    [ex2/0] example/test completed in 15.26 seconds
 2022-12-01 23:31:34,414 INFO    [example] Environment started in 69.12 seconds
 ```
@@ -213,14 +212,14 @@ $ drenv start --name-prefix test1- example.yaml
 2022-12-01 23:35:39,921 INFO    [test1-ex1] Starting cluster
 2022-12-01 23:35:40,923 INFO    [test1-ex2] Starting cluster
 2022-12-01 23:36:19,035 INFO    [test1-ex1] Cluster started in 39.11 seconds
-2022-12-01 23:36:19,035 INFO    [test1-ex1/0] Starting example/start
+2022-12-01 23:36:19,035 INFO    [test1-ex1/0] Running example/start
 2022-12-01 23:36:19,257 INFO    [test1-ex1/0] example/start completed in 0.22 seconds
-2022-12-01 23:36:19,257 INFO    [test1-ex1/0] Starting example/test
+2022-12-01 23:36:19,257 INFO    [test1-ex1/0] Running example/test
 2022-12-01 23:36:34,458 INFO    [test1-ex1/0] example/test completed in 15.20 seconds
 2022-12-01 23:36:37,469 INFO    [test1-ex2] Cluster started in 56.55 seconds
-2022-12-01 23:36:37,469 INFO    [test1-ex2/0] Starting example/start
+2022-12-01 23:36:37,469 INFO    [test1-ex2/0] Running example/start
 2022-12-01 23:36:37,737 INFO    [test1-ex2/0] example/start completed in 0.27 seconds
-2022-12-01 23:36:37,737 INFO    [test1-ex2/0] Starting example/test
+2022-12-01 23:36:37,737 INFO    [test1-ex2/0] Running example/test
 2022-12-01 23:36:52,942 INFO    [test1-ex2/0] example/test completed in 15.21 seconds
 2022-12-01 23:36:52,942 INFO    [test1-example] Environment started in 73.02 seconds
 ```
@@ -245,14 +244,14 @@ $ drenv start --name-prefix test2- example.yaml
 2022-12-01 23:38:01,814 INFO    [test2-ex1] Starting cluster
 2022-12-01 23:38:02,815 INFO    [test2-ex2] Starting cluster
 2022-12-01 23:38:40,707 INFO    [test2-ex1] Cluster started in 38.89 seconds
-2022-12-01 23:38:40,707 INFO    [test2-ex1/0] Starting example/start
+2022-12-01 23:38:40,707 INFO    [test2-ex1/0] Running example/start
 2022-12-01 23:38:40,980 INFO    [test2-ex1/0] example/start completed in 0.27 seconds
-2022-12-01 23:38:40,980 INFO    [test2-ex1/0] Starting example/test
+2022-12-01 23:38:40,980 INFO    [test2-ex1/0] Running example/test
 2022-12-01 23:38:54,988 INFO    [test2-ex1/0] example/test completed in 14.01 seconds
 2022-12-01 23:38:56,653 INFO    [test2-ex2] Cluster started in 53.84 seconds
-2022-12-01 23:38:56,653 INFO    [test2-ex2/0] Starting example/start
+2022-12-01 23:38:56,653 INFO    [test2-ex2/0] Running example/start
 2022-12-01 23:38:56,890 INFO    [test2-ex2/0] example/start completed in 0.24 seconds
-2022-12-01 23:38:56,890 INFO    [test2-ex2/0] Starting example/test
+2022-12-01 23:38:56,890 INFO    [test2-ex2/0] Running example/test
 2022-12-01 23:39:12,155 INFO    [test2-ex2/0] example/test completed in 15.26 seconds
 2022-12-01 23:39:12,156 INFO    [test2-example] Environment started in 70.34 seconds
 ```
@@ -304,14 +303,14 @@ $ drenv start example.yaml
 2022-12-01 23:41:29,874 INFO    [ex2] Cluster started in 13.33 seconds
 2022-12-01 23:41:29,874 INFO    [ex2] Waiting until all deployments are available
 2022-12-01 23:41:59,512 INFO    [ex1] Deployments are available in 30.35 seconds
-2022-12-01 23:41:59,513 INFO    [ex1/0] Starting example/start
+2022-12-01 23:41:59,513 INFO    [ex1/0] Running example/start
 2022-12-01 23:41:59,711 INFO    [ex1/0] example/start completed in 0.20 seconds
-2022-12-01 23:41:59,711 INFO    [ex1/0] Starting example/test
+2022-12-01 23:41:59,711 INFO    [ex1/0] Running example/test
 2022-12-01 23:41:59,839 INFO    [ex1/0] example/test completed in 0.13 seconds
 2022-12-01 23:42:00,228 INFO    [ex2] Deployments are available in 30.35 seconds
-2022-12-01 23:42:00,228 INFO    [ex2/0] Starting example/start
+2022-12-01 23:42:00,228 INFO    [ex2/0] Running example/start
 2022-12-01 23:42:00,431 INFO    [ex2/0] example/start completed in 0.20 seconds
-2022-12-01 23:42:00,431 INFO    [ex2/0] Starting example/test
+2022-12-01 23:42:00,431 INFO    [ex2/0] Running example/test
 2022-12-01 23:42:00,560 INFO    [ex2/0] example/test completed in 0.13 seconds
 2022-12-01 23:42:00,560 INFO    [example] Environment started in 45.02 seconds
 ```
@@ -346,11 +345,11 @@ $ drenv start example.yaml -v
 2022-12-01 23:43:17,192 DEBUG   [ex1] * Enabled addons: storage-provisioner, default-storageclass
 2022-12-01 23:43:17,245 DEBUG   [ex1] * Done! kubectl is now configured to use "ex1" cluster and "default" namespace by default
 2022-12-01 23:43:17,269 INFO    [ex1] Cluster started in 38.38 seconds
-2022-12-01 23:43:17,270 INFO    [ex1/0] Starting example/start
+2022-12-01 23:43:17,270 INFO    [ex1/0] Running example/start
 2022-12-01 23:43:17,300 DEBUG   [ex1/0] * Deploying example
 2022-12-01 23:43:17,550 DEBUG   [ex1/0]   deployment.apps/example-deployment created
 2022-12-01 23:43:17,554 INFO    [ex1/0] example/start completed in 0.28 seconds
-2022-12-01 23:43:17,554 INFO    [ex1/0] Starting example/test
+2022-12-01 23:43:17,554 INFO    [ex1/0] Running example/test
 2022-12-01 23:43:17,580 DEBUG   [ex1/0] * Testing example deployment
 2022-12-01 23:43:21,066 DEBUG   [ex2] * Preparing Kubernetes v1.25.3 on containerd 1.6.8 ...
 2022-12-01 23:43:22,119 DEBUG   [ex2]   - Generating certificates and keys ...
@@ -362,7 +361,7 @@ $ drenv start example.yaml -v
 2022-12-01 23:43:33,553 DEBUG   [ex2] * Enabled addons: storage-provisioner, default-storageclass
 2022-12-01 23:43:33,601 DEBUG   [ex2] * Done! kubectl is now configured to use "ex2" cluster and "default" namespace by default
 2022-12-01 23:43:33,621 INFO    [ex2] Cluster started in 53.74 seconds
-2022-12-01 23:43:33,621 INFO    [ex2/0] Starting example/start
+2022-12-01 23:43:33,621 INFO    [ex2/0] Running example/start
 2022-12-01 23:43:33,624 DEBUG   [ex1/0]   Waiting for deployment spec update to be observed...
 2022-12-01 23:43:33,624 DEBUG   [ex1/0]   Waiting for deployment spec update to be observed...
 2022-12-01 23:43:33,624 DEBUG   [ex1/0]   Waiting for deployment "example-deployment" rollout to finish: 0 out of 1 new replicas have been updated...
@@ -372,7 +371,7 @@ $ drenv start example.yaml -v
 2022-12-01 23:43:33,651 DEBUG   [ex2/0] * Deploying example
 2022-12-01 23:43:33,853 DEBUG   [ex2/0]   deployment.apps/example-deployment created
 2022-12-01 23:43:33,857 INFO    [ex2/0] example/start completed in 0.24 seconds
-2022-12-01 23:43:33,857 INFO    [ex2/0] Starting example/test
+2022-12-01 23:43:33,857 INFO    [ex2/0] Running example/test
 2022-12-01 23:43:33,883 DEBUG   [ex2/0] * Testing example deployment
 2022-12-01 23:43:49,131 DEBUG   [ex2/0]   Waiting for deployment spec update to be observed...
 2022-12-01 23:43:49,131 DEBUG   [ex2/0]   Waiting for deployment spec update to be observed...
@@ -436,7 +435,7 @@ $ drenv delete example.yaml
       profile. Use multiple workers to run scripts in parallel.
         - `name`: Optional worker name
         - `scripts`: Scripts to run by this worker.
-            - `file`: Script filename
+            - `name`: Scripts directory
             - `args`: Optional argument to the script. If not specified the
               script is run with one argument, the profile name.
 
@@ -448,9 +447,20 @@ $ drenv delete example.yaml
   profile are started.
     - `name`: Optional worker name
     - `scripts`: Scripts to run by this worker
-        - `file`: Script filename
+        - `name`: Scripts directory
         - `args`: Optional argument to the script. If not specified the
           script is run without any arguments.
+
+#### Scripts hooks
+
+The script direcotry may contain scripts to be run on certain events,
+based on the hook file name.
+
+| Event        | Scripts       |
+|--------------|---------------|
+| start        | start, test   |
+| stop         | -             |
+| delete       | -             |
 
 #### Script arguments
 
@@ -464,14 +474,15 @@ profiles:
   - name: cluster1
     workers:
       - scripts:
-          - file: script/start
+          - name: script
             args: [$name, arg2]
 ```
 
-This will run the script as:
+The `drenv` tool will run the script hooks as:
 
 ```
 script/start cluster1 arg2
+script/test cluster1 arg2
 ```
 
 ## The regional-dr environment

@@ -13,28 +13,26 @@ templates:
     disk_size: "50g"
     workers:
       - scripts:
-          - file: cert-manager/start
-          - file: rook-operator/start
-          - file: rook-cluster/start
-          - file: rook-pool/start
-          - file: rook-toolbox/start
-          - file: minio/start
+          - name: cert-manager
+          - name: rook-operator
+          - name: rook-cluster
+          - name: rook-pool
+          - name: rook-toolbox
+          - name: minio
       - scripts:
-          - file: ocm-cluster/start
-            args: ["$name", "hub"]
-          - file: ocm-cluster/test
+          - name: ocm-cluster
             args: ["$name", "hub"]
       - scripts:
-          - file: csi-addons/start
-          - file: olm/start
+          - name: csi-addons
+          - name: olm
   - name: "hub-cluster"
     memory: "4g"
     network: default
     workers:
       - scripts:
-          - file: ocm-hub/start
-          - file: cert-manager/start
-          - file: olm/start
+          - name: ocm-hub
+          - name: cert-manager
+          - name: olm
 
 profiles:
   - name: "dr1"
@@ -46,7 +44,5 @@ profiles:
 
 workers:
   - scripts:
-      - file: rbd-mirror/start
-        args: ["dr1", "dr2"]
-      - file: rbd-mirror/test
+      - name: rbd-mirror
         args: ["dr1", "dr2"]

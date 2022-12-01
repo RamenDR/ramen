@@ -91,8 +91,8 @@ def _validate_worker(worker, env, index):
 
 
 def _validate_script(script, env, args=()):
-    if "file" not in script:
-        raise ValueError(f"Missing script 'file': {script}")
+    if "name" not in script:
+        raise ValueError(f"Missing script 'name': {script}")
 
     args = script.setdefault("args", list(args))
 
