@@ -119,7 +119,7 @@ func (v *VSHandler) ReconcileRD(
 		return nil, err
 	}
 
-	copyMethod, dstPVC, err := v.selectDestCopyMethod(rdSpec, l)
+	copyMethod, dstPVC, err := v.SelectDestCopyMethod(rdSpec, l)
 	if err != nil {
 		return nil, err
 	}
@@ -476,14 +476,24 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 	return rs, nil
 }
 
+func (v *VSHandler) PreparePVC(pvcName string, prepFinalSync, copyMethodDirect bool) error {
+	if prepFinalSync || copyMethodDirect {
+		prepared, err := v.TakePVCOwnership(pvcName)
+		if err != nil || !prepared {
+			return fmt.Errorf("waiting to take pvc ownership (%w), prepFinalSync: %t, copyMethodDirect: %t",
+				err, prepFinalSync, copyMethodDirect)
+		}
+	}
+
+	return nil
+}
+
 // This doesn't need to specifically be in VSHandler - could be useful for non-volsync scenarios?
 // Will look at annotations on the PVC, make sure the reconcile option from ACM is set to merge (or not exists)
 // and then will remove ACM annotations and also add VRG as the owner.  This is to break the connection between
 // the appsub and the PVC itself.  This way we can proceed to remove the app without the PVC being removed.
-// We need the PVC left behind so we can fun a final sync on it (see ReconcileRS() with runFinalSync=true)
-//
-// Returns true if pvc preparation for final sync is complete
-func (v *VSHandler) PreparePVCForFinalSync(pvcName string) (bool, error) {
+// We need the PVC left behind for running the final sync or for CopyMethod Direct.
+func (v *VSHandler) TakePVCOwnership(pvcName string) (bool, error) {
 	l := v.log.WithValues("pvcName", pvcName)
 
 	// Confirm PVC exists and add our VRG as ownerRef
@@ -516,8 +526,6 @@ func (v *VSHandler) PreparePVCForFinalSync(pvcName string) (bool, error) {
 
 		return false, fmt.Errorf("error updating annotations on PVC to break appsub ownership (%w)", err)
 	}
-
-	l.Info("pvc ready for final sync")
 
 	return true, nil
 }
@@ -1456,7 +1464,7 @@ func (v *VSHandler) IsRDDataProtected(pvcName string) (bool, error) {
 	return isLatestImageReady(latestImage), nil
 }
 
-func (v *VSHandler) selectDestCopyMethod(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec, log logr.Logger,
+func (v *VSHandler) SelectDestCopyMethod(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec, log logr.Logger,
 ) (volsyncv1alpha1.CopyMethodType, *string, error) {
 	if v.destinationCopyMethod != volsyncv1alpha1.CopyMethodDirect {
 		return volsyncv1alpha1.CopyMethodSnapshot, nil, nil // use default copyMethod
@@ -1483,6 +1491,10 @@ func (v *VSHandler) selectDestCopyMethod(rdSpec ramendrv1alpha1.VolSyncReplicati
 
 	// Using the application PVC for syncing from source to destination
 	return volsyncv1alpha1.CopyMethodDirect, &rdSpec.ProtectedPVC.Name, nil
+}
+
+func (v *VSHandler) IsCopyMethodDirect() bool {
+	return v.destinationCopyMethod == volsyncv1alpha1.CopyMethodDirect
 }
 
 func isLatestImageReady(latestImage *corev1.TypedLocalObjectReference) bool {
