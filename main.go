@@ -142,6 +142,7 @@ func setupReconcilersHub(mgr ctrl.Manager) {
 	if err := (&controllers.DRPolicyReconciler{
 		Client:            mgr.GetClient(),
 		APIReader:         mgr.GetAPIReader(),
+		Log:               ctrl.Log.WithName("controllers").WithName("DRPolicy"),
 		Scheme:            mgr.GetScheme(),
 		ObjectStoreGetter: controllers.S3ObjectStoreGetter(),
 	}).SetupWithManager(mgr); err != nil {
@@ -152,6 +153,7 @@ func setupReconcilersHub(mgr ctrl.Manager) {
 	if err := (&controllers.DRClusterReconciler{
 		Client:            mgr.GetClient(),
 		APIReader:         mgr.GetAPIReader(),
+		Log:               ctrl.Log.WithName("controllers").WithName("DRCluster"),
 		Scheme:            mgr.GetScheme(),
 		MCVGetter:         rmnutil.ManagedClusterViewGetterImpl{Client: mgr.GetClient()},
 		ObjectStoreGetter: controllers.S3ObjectStoreGetter(),

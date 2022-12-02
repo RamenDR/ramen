@@ -30,6 +30,7 @@ import (
 type DRPolicyReconciler struct {
 	client.Client
 	APIReader         client.Reader
+	Log               logr.Logger
 	Scheme            *runtime.Scheme
 	ObjectStoreGetter ObjectStoreGetter
 }
@@ -60,8 +61,7 @@ const ReasonValidationFailed = "ValidationFailed"
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.9.2/pkg/reconcile
 func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := ctrl.Log.WithName("controllers").WithName("drpolicy").WithValues("name",
-		req.NamespacedName.Name, "rid", uuid.New())
+	log := r.Log.WithValues("DRPolicy", req.NamespacedName.Name, "rid", uuid.New())
 	log.Info("reconcile enter")
 
 	defer log.Info("reconcile exit")

@@ -32,6 +32,7 @@ import (
 type DRClusterReconciler struct {
 	client.Client
 	APIReader         client.Reader
+	Log               logr.Logger
 	Scheme            *runtime.Scheme
 	MCVGetter         util.ManagedClusterViewGetter
 	ObjectStoreGetter ObjectStoreGetter
@@ -80,8 +81,7 @@ const (
 func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	// TODO: Validate managedCluster name? and also ensure it is not deleted!
 	// TODO: Setup views for storage class and VRClass to read and report IDs
-	log := ctrl.Log.WithName("controllers").WithName("drcluster").WithValues("name",
-		req.NamespacedName.Name, "rid", uuid.New())
+	log := r.Log.WithValues("name", req.NamespacedName.Name, "rid", uuid.New())
 	log.Info("reconcile enter")
 
 	defer log.Info("reconcile exit")
