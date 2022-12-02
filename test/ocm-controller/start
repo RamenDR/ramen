@@ -7,8 +7,8 @@ import sys
 
 import drenv
 
-TAG = "v2.4.4-ACM"
-BASE_URL = f"https://raw.githubusercontent.com/stolostron/multicloud-operators-foundation/{TAG}/deploy/foundation/hub"
+VERSION = "v2.4.4-ACM"
+BASE_URL = f"https://raw.githubusercontent.com/stolostron/multicloud-operators-foundation/{VERSION}/deploy/foundation/hub"
 
 
 def deploy(cluster):
