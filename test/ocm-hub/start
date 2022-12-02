@@ -29,30 +29,38 @@ DEPLOYMENTS = {
     ),
 }
 
+
+def deploy(cluster):
+    drenv.log_progress("Initializing hub")
+    drenv.run("clusteradm", "init", "--wait", "--context", cluster)
+
+    drenv.log_progress("Installing hub addons")
+    drenv.run(
+        "clusteradm", "install", "hub-addon",
+        "--names", ",".join(ADDONS),
+        "--context", cluster,
+    )
+
+
+def wait(cluster):
+    drenv.log_progress("Waiting until deployments are rolled out")
+    for ns, names in DEPLOYMENTS.items():
+        for name in names:
+            deployment = f"deploy/{name}"
+            drenv.wait_for(deployment, namespace=ns, profile=cluster)
+            drenv.kubectl(
+                "rollout", "status", deployment,
+                "--namespace", ns,
+                "--timeout", "300s",
+                profile=cluster,
+            )
+
+
 if len(sys.argv) != 2:
-    print(f"Usage: {sys.argv[0]} hub")
+    print(f"Usage: {sys.argv[0]} cluster")
     sys.exit(1)
 
-hub = sys.argv[1]
+cluster = sys.argv[1]
 
-drenv.log_progress("Initializing hub")
-drenv.run("clusteradm", "init", "--wait", "--context", hub)
-
-drenv.log_progress("Installing hub addons")
-drenv.run(
-    "clusteradm", "install", "hub-addon",
-    "--names", ",".join(ADDONS),
-    "--context", hub,
-)
-
-drenv.log_progress("Waiting until deployments are rolled out")
-for ns, names in DEPLOYMENTS.items():
-    for name in names:
-        deployment = f"deploy/{name}"
-        drenv.wait_for(deployment, namespace=ns, profile=hub)
-        drenv.kubectl(
-            "rollout", "status", deployment,
-            "--namespace", ns,
-            "--timeout", "300s",
-            profile=hub,
-        )
+deploy(cluster)
+wait(cluster)
