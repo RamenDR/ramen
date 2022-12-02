@@ -319,14 +319,13 @@ func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 	// For Sync mode, we don't want to set the retention policy to delete as
 	// both the primary and the secondary VRG map to the same volume. The only
 	// state where a delete retention policy is required for the sync mode is
-	// when the VRG is primary. Furthermore, we need to clear the PV claimRef
-	// in order for the PV to go to the Available status phase.
+	// when the VRG is primary.
+	// Further, the PV will go to Available state, when the workload is moved back
+	// to the current cluster, in case the PVC has been deleted (cases like STS the
+	// PVC may not be deleted). This is achieved by clearing the required claim ref.
+	// such that the PV can bind back to a recreated PVC. func ref.: updateExistingPVForSync
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary &&
-		v.instance.Spec.Sync != nil {
-		if err := v.clearPVClaimRefMembers(pvc); err != nil {
-			return err
-		}
-	} else {
+		v.instance.Spec.Async != nil {
 		if err := v.undoPVRetentionForPVC(*pvc, log); err != nil {
 			return err
 		}
@@ -374,34 +373,6 @@ func (v *VRGInstance) retainPVForPVC(pvc corev1.PersistentVolumeClaim, log logr.
 
 		return fmt.Errorf("failed to update PersistentVolume resource (%s) reclaim policy for"+
 			" PersistentVolumeClaim resource (%s/%s) belonging to VolumeReplicationGroup (%s/%s), %w",
-			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
-	}
-
-	return nil
-}
-
-func (v *VRGInstance) clearPVClaimRefMembers(pvc *corev1.PersistentVolumeClaim) error {
-	// Get PV bound to PVC
-	pv := &corev1.PersistentVolume{}
-	pvObjectKey := client.ObjectKey{
-		Name: pvc.Spec.VolumeName,
-	}
-
-	if err := v.reconciler.Get(v.ctx, pvObjectKey, pv); err != nil {
-		return fmt.Errorf("failed to get PV resource (%s) for"+
-			" PVC resource (%s/%s) belonging to VRG (%s/%s), %w",
-			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
-	}
-
-	if pv.Spec.ClaimRef != nil {
-		pv.Spec.ClaimRef.UID = ""
-		pv.Spec.ClaimRef.ResourceVersion = ""
-		pv.Spec.ClaimRef.APIVersion = ""
-	}
-
-	if err := v.reconciler.Update(v.ctx, pv); err != nil {
-		return fmt.Errorf("failed to update PV resource (%s) claimRef for"+
-			" PVC resource (%s/%s) belonging to VRG (%s/%s), %w",
 			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
 	}
 
