@@ -676,6 +676,31 @@ var _ = Describe("VolSync Handler", func() {
 					})
 				})
 			})
+			Context("With CopyMethod 'Direct'", func() {
+				var vsHandler *volsync.VSHandler
+
+				BeforeEach(func() {
+					vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, owner, asyncSpec, "none", "Direct")
+				})
+
+				It("SelectDestCopyMethod() should return CopyMethod Direct and App PVC name", func() {
+					cpyMethod, dstPVC, err := vsHandler.SelectDestCopyMethod(rdSpec, logger)
+					Expect(err).NotTo(HaveOccurred())
+
+					Expect(cpyMethod).To(Equal(volsyncv1alpha1.CopyMethodDirect))
+					Expect(*dstPVC).To(Equal(rdSpec.ProtectedPVC.Name))
+					pvc := &corev1.PersistentVolumeClaim{}
+					Eventually(func() error {
+						return k8sClient.Get(ctx, types.NamespacedName{
+							Name:      rdSpec.ProtectedPVC.Name,
+							Namespace: testNamespace.GetName(),
+						}, pvc)
+					}, maxWait, interval).Should(Succeed())
+
+					Expect(pvc.GetName()).To(Equal(rdSpec.ProtectedPVC.Name))
+					Expect(pvc.GetOwnerReferences()[0].Kind).To(Equal("ConfigMap"))
+				})
+			})
 		})
 	})
 
@@ -1751,7 +1776,7 @@ var _ = Describe("VolSync Handler", func() {
 	Describe("Prepare PVC for final sync", func() {
 		Context("When the PVC does not exist", func() {
 			It("Should assume preparationForFinalSync is complete", func() {
-				pvcPreparationComplete, err := vsHandler.PreparePVCForFinalSync("this-pvc-does-not-exist")
+				pvcPreparationComplete, err := vsHandler.TakePVCOwnership("this-pvc-does-not-exist")
 				Expect(err).To(HaveOccurred())
 				Expect(kerrors.IsNotFound(err)).To(BeTrue())
 				Expect(pvcPreparationComplete).To(BeFalse())
@@ -1778,7 +1803,7 @@ var _ = Describe("VolSync Handler", func() {
 			var pvcPreparationErr error
 
 			JustBeforeEach(func() {
-				pvcPreparationComplete, pvcPreparationErr = vsHandler.PreparePVCForFinalSync(testPVC.GetName())
+				pvcPreparationComplete, pvcPreparationErr = vsHandler.TakePVCOwnership(testPVC.GetName())
 
 				// In all cases at this point we should expect that the PVC has ownership taken over by our owner VRG
 				Eventually(func() bool {

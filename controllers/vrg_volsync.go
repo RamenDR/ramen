@@ -129,11 +129,10 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		ProtectedPVC: *protectedPVC,
 	}
 
-	if v.instance.Spec.PrepareForFinalSync {
-		prepared, err := v.volSyncHandler.PreparePVCForFinalSync(pvc.Name)
-		if err != nil || !prepared {
-			return true
-		}
+	err := v.volSyncHandler.PreparePVC(pvc.Name, v.instance.Spec.PrepareForFinalSync,
+		v.volSyncHandler.IsCopyMethodDirect())
+	if err != nil {
+		return true
 	}
 
 	// reconcile RS and if runFinalSync is true, then one final sync will be run
