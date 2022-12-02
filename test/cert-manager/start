@@ -7,8 +7,25 @@ import sys
 
 import drenv
 
-TAG = "v1.10.0"
-URL = f"https://github.com/cert-manager/cert-manager/releases/download/{TAG}/cert-manager.yaml"
+VERSION = "v1.10.0"
+URL = f"https://github.com/cert-manager/cert-manager/releases/download/{VERSION}/cert-manager.yaml"
+
+
+def deploy(cluster):
+    drenv.log_progress("Deploying cert-manager")
+    drenv.kubectl("apply", "--filename", URL, profile=cluster)
+
+
+def wait(cluster):
+    drenv.log_progress("Waiting until all deployments are available")
+    drenv.kubectl(
+        "wait", "deploy", "--all",
+        "--for=condition=Available",
+        "--namespace", "cert-manager",
+        "--timeout", "300s",
+        profile=cluster,
+    )
+
 
 if len(sys.argv) != 2:
     print(f"Usage: {sys.argv[0]} cluster")
@@ -16,16 +33,5 @@ if len(sys.argv) != 2:
 
 cluster = sys.argv[1]
 
-drenv.log_progress(f"Deploying cert-manager in cluster {cluster}")
-drenv.kubectl("apply", "--filename", URL, profile=cluster)
-
-drenv.log_progress(
-    f"Waiting until all deployments are available cluster {cluster}",
-)
-drenv.kubectl(
-    "wait", "deploy", "--all",
-    "--for=condition=Available",
-    "--namespace", "cert-manager",
-    "--timeout", "300s",
-    profile=cluster,
-)
+deploy(cluster)
+wait(cluster)
