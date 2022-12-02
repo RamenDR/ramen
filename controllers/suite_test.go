@@ -290,6 +290,7 @@ var _ = BeforeSuite(func() {
 		Client:            k8sManager.GetClient(),
 		APIReader:         k8sManager.GetAPIReader(),
 		Scheme:            k8sManager.GetScheme(),
+		Log:               ctrl.Log.WithName("controllers").WithName("DRCluster"),
 		MCVGetter:         FakeMCVGetter{},
 		ObjectStoreGetter: fakeObjectStoreGetter{},
 	}).SetupWithManager(k8sManager)).To(Succeed())
@@ -298,6 +299,7 @@ var _ = BeforeSuite(func() {
 		Client:            k8sManager.GetClient(),
 		APIReader:         k8sManager.GetAPIReader(),
 		Scheme:            k8sManager.GetScheme(),
+		Log:               ctrl.Log.WithName("controllers").WithName("DRPolicy"),
 		ObjectStoreGetter: fakeObjectStoreGetter{},
 	}).SetupWithManager(k8sManager)).To(Succeed())
 
