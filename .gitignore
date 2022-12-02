@@ -32,5 +32,5 @@ config/hub/bundle
 
 # Test enviromemnt generated files
 test/drenv.egg-info/
-test/*/__pycache__/
+test/**/__pycache__/
 test/.coverage
