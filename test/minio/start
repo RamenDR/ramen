@@ -7,19 +7,27 @@ import sys
 
 import drenv
 
+
+def deploy(cluster):
+    drenv.log_progress("Deploying minio")
+    drenv.kubectl("apply", "--filename", "minio/minio.yaml", profile=cluster)
+
+
+def wait(cluster):
+    drenv.log_progress("Waiting until minio is rolled out")
+    drenv.kubectl(
+        "rollout", "status", "deployment/minio",
+        "--namespace", "minio",
+        "--timeout", "300s",
+        profile=cluster,
+    )
+
+
 if len(sys.argv) != 2:
     print(f"Usage: {sys.argv[0]} cluster")
     sys.exit(1)
 
 cluster = sys.argv[1]
 
-drenv.log_progress("Deploying minio")
-drenv.kubectl("apply", "--filename", "minio/minio.yaml", profile=cluster)
-
-drenv.log_progress("Waiting until minio is rolled out")
-drenv.kubectl(
-    "rollout", "status", "deployment/minio",
-    "--namespace", "minio",
-    "--timeout", "180s",
-    profile=cluster,
-)
+deploy(cluster)
+wait(cluster)
