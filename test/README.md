@@ -500,37 +500,14 @@ pip install -r requirements.txt
 
 ### Running the tests
 
-```
-pytest
-```
-
-### Checking coverage
-
-Running the tests collecting coverage data:
+Run all tests and report test coverage:
 
 ```
-python3 -m coverage run --source drenv -m pytest
+make
 ```
 
-Reporting coverage:
+Create an html report and open the report in a browser:
 
 ```
-$ python3 -m coverage report
-Name                    Stmts   Miss  Cover
--------------------------------------------
-drenv/__init__.py          82     62    24%
-drenv/__main__.py         114    114     0%
-drenv/envfile.py           61      0   100%
-drenv/envfile_test.py      67      0   100%
--------------------------------------------
-TOTAL                     324    176    46%
-```
-
-### Creating html coverage report
-
-This creates html report and open the report in a browser:
-
-```
-$ python3 -m coverage html
-xdg-open htmlcov/index.html
+make coverage-html
 ```
