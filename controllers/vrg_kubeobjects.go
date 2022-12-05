@@ -143,6 +143,8 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelayIfEnabled(
 	result *ctrl.Result, s3StoreAccessors []s3StoreAccessor,
 ) {
 	if v.kubeObjectProtectionDisabled("capture") {
+		v.kubeObjectsFinalSyncPrepared = true
+
 		return
 	}
 
