@@ -91,11 +91,11 @@ jobs:
         run: pip install -e test
 
       - name: Run tests
-        run: python3 -m coverage run --source drenv -m pytest
+        run: make test
         working-directory: test
 
       - name: Report test coverage
-        run: python3 -m coverage report
+        run: make coverage
         working-directory: test
 
   build-image-and-ensure-clean-branch:
