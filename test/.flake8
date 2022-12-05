@@ -1,0 +1,7 @@
+[flake8]
+# TODO: modify the code to elimiante the ignores.
+# E501: line to long.
+ignore = E501
+
+show_source = true
+statistics = true

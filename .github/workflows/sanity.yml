@@ -90,6 +90,10 @@ jobs:
       - name: Install drenv
         run: pip install -e test
 
+      - name: Run flake8
+        run: make flake8
+        working-directory: test
+
       - name: Run tests
         run: make test
         working-directory: test
