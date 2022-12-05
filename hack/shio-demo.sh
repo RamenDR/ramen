@@ -178,7 +178,7 @@ app_undeploy() {
 }; exit_stack_push unset -f app_undeploy
 
 vrg_apply() {
-	vrg_appendix="
+	vrg_appendix="${kube_object_protection_spec-
   kubeObjectProtection:
     captureInterval: 1m
     recoverOrder:
@@ -199,8 +199,7 @@ vrg_apply() {
       labelSelector:
         matchExpressions:
         - key: pod-template-hash
-          operator: DoesNotExist$3${4:+"\n  action: "$4}
-" \
+          operator: DoesNotExist}$3${4:+"\n  action: "$4}" \
 	cluster_names=$s3_store_cluster_names application_sample_namespace_name=asdf $ramen_hack_directory_path_name/minikube-ramen.sh application_sample_vrg_deploy$2 $1
 }; exit_stack_push unset -f vrg_apply
 
