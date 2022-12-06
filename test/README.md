@@ -511,3 +511,15 @@ Create an html report and open the report in a browser:
 ```
 make coverage-html
 ```
+
+Checking that code is formatted according to project style:
+
+```
+make black
+```
+
+Reformatting code to be compatible with project style:
+
+```
+make black-reformat
+```
