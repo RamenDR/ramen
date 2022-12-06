@@ -19,10 +19,14 @@ def deploy(cluster):
 def wait(cluster):
     drenv.log_progress("Waiting until all deployments are available")
     drenv.kubectl(
-        "wait", "deploy", "--all",
+        "wait",
+        "deploy",
+        "--all",
         "--for=condition=Available",
-        "--namespace", "cert-manager",
-        "--timeout", "300s",
+        "--namespace",
+        "cert-manager",
+        "--timeout",
+        "300s",
         profile=cluster,
     )
 

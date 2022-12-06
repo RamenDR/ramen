@@ -17,25 +17,39 @@ def fetch_secret_info(cluster):
 
     drenv.log_progress(f"Getting mirroring info site name for cluster {cluster}")
     info["name"] = drenv.kubectl(
-        "get", "cephblockpools.ceph.rook.io", POOL_NAME,
-        "--output", "jsonpath={.status.mirroringInfo.site_name}",
-        "--namespace", "rook-ceph",
+        "get",
+        "cephblockpools.ceph.rook.io",
+        POOL_NAME,
+        "--output",
+        "jsonpath={.status.mirroringInfo.site_name}",
+        "--namespace",
+        "rook-ceph",
         profile=cluster,
     )
 
-    drenv.log_progress(f"Getting rbd mirror boostrap peer secret name for cluster {cluster}")
+    drenv.log_progress(
+        f"Getting rbd mirror boostrap peer secret name for cluster {cluster}"
+    )
     secret_name = drenv.kubectl(
-        "get", "cephblockpools.ceph.rook.io", POOL_NAME,
-        "--output", "jsonpath={.status.info.rbdMirrorBootstrapPeerSecretName}",
-        "--namespace", "rook-ceph",
+        "get",
+        "cephblockpools.ceph.rook.io",
+        POOL_NAME,
+        "--output",
+        "jsonpath={.status.info.rbdMirrorBootstrapPeerSecretName}",
+        "--namespace",
+        "rook-ceph",
         profile=cluster,
     )
 
     drenv.log_progress(f"Getting secret {secret_name} token for cluster {cluster}")
     info["token"] = drenv.kubectl(
-        "get", "secret", secret_name,
-        "--output", "jsonpath={.data.token}",
-        "--namespace", "rook-ceph",
+        "get",
+        "secret",
+        secret_name,
+        "--output",
+        "jsonpath={.data.token}",
+        "--namespace",
+        "rook-ceph",
         profile=cluster,
     )
 
@@ -52,61 +66,84 @@ def configure_rbd_mirroring(cluster, peer_info):
     yaml = template.substitute(peer_info)
     drenv.kubectl(
         "apply",
-        "--filename", "-",
-        "--namespace", "rook-ceph",
+        "--filename",
+        "-",
+        "--namespace",
+        "rook-ceph",
         input=yaml,
         profile=cluster,
     )
 
     drenv.log_progress(f"Configure peers for cluster {cluster}")
-    patch = {
-        "spec": {
-            "mirroring": {
-                "peers": {
-                    "secretNames": [
-                        peer_info["name"]]}}}}
+    patch = {"spec": {"mirroring": {"peers": {"secretNames": [peer_info["name"]]}}}}
     drenv.kubectl(
-        "patch", "cephblockpool", POOL_NAME,
-        "--type", "merge",
-        "--patch", json.dumps(patch),
-        "--namespace", "rook-ceph",
+        "patch",
+        "cephblockpool",
+        POOL_NAME,
+        "--type",
+        "merge",
+        "--patch",
+        json.dumps(patch),
+        "--namespace",
+        "rook-ceph",
         profile=cluster,
     )
 
     drenv.log_progress(f"Apply rbd mirror to cluster {cluster}")
     drenv.kubectl(
         "apply",
-        "--filename", "rbd-mirror/rbd-mirror.yaml",
-        "--namespace", "rook-ceph",
+        "--filename",
+        "rbd-mirror/rbd-mirror.yaml",
+        "--namespace",
+        "rook-ceph",
         profile=cluster,
     )
 
 
 def wait_until_pool_mirroring_is_healthy(cluster):
-    drenv.log_progress(f"Waiting until ceph mirror daemon is healthy in cluster {cluster}")
+    drenv.log_progress(
+        f"Waiting until ceph mirror daemon is healthy in cluster {cluster}"
+    )
     drenv.kubectl(
-        "wait", "cephblockpools.ceph.rook.io", POOL_NAME,
-        "--for", "jsonpath={.status.mirroringStatus.summary.daemon_health}=OK",
-        "--namespace", "rook-ceph",
-        "--timeout", "300s",
+        "wait",
+        "cephblockpools.ceph.rook.io",
+        POOL_NAME,
+        "--for",
+        "jsonpath={.status.mirroringStatus.summary.daemon_health}=OK",
+        "--namespace",
+        "rook-ceph",
+        "--timeout",
+        "300s",
         profile=cluster,
     )
 
     drenv.log_progress(f"Waiting until ceph mirror is healthy in cluster {cluster}")
     drenv.kubectl(
-        "wait", "cephblockpools.ceph.rook.io", POOL_NAME,
-        "--for", "jsonpath={.status.mirroringStatus.summary.health}=OK",
-        "--namespace", "rook-ceph",
-        "--timeout", "300s",
+        "wait",
+        "cephblockpools.ceph.rook.io",
+        POOL_NAME,
+        "--for",
+        "jsonpath={.status.mirroringStatus.summary.health}=OK",
+        "--namespace",
+        "rook-ceph",
+        "--timeout",
+        "300s",
         profile=cluster,
     )
 
-    drenv.log_progress(f"Waiting until ceph mirror image is healthy in cluster {cluster}")
+    drenv.log_progress(
+        f"Waiting until ceph mirror image is healthy in cluster {cluster}"
+    )
     drenv.kubectl(
-        "wait", "cephblockpools.ceph.rook.io", POOL_NAME,
-        "--for", "jsonpath={.status.mirroringStatus.summary.image_health}=OK",
-        "--namespace", "rook-ceph",
-        "--timeout", "300s",
+        "wait",
+        "cephblockpools.ceph.rook.io",
+        POOL_NAME,
+        "--for",
+        "jsonpath={.status.mirroringStatus.summary.image_health}=OK",
+        "--namespace",
+        "rook-ceph",
+        "--timeout",
+        "300s",
         profile=cluster,
     )
 
@@ -115,8 +152,10 @@ def deploy_vrc_sample(cluster):
     drenv.log_progress(f"Applying vrc sample in cluster {cluster}")
     drenv.kubectl(
         "apply",
-        "--filename", "rbd-mirror/vrc-sample.yaml",
-        "--namespace", "rook-ceph",
+        "--filename",
+        "rbd-mirror/vrc-sample.yaml",
+        "--namespace",
+        "rook-ceph",
         profile=cluster,
     )
 

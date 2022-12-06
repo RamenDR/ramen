@@ -65,7 +65,7 @@ def test_valid():
 
     profile = env["profiles"][0]
     assert profile["name"] == "dr1"
-    assert profile["network"] == "default"   # From template
+    assert profile["network"] == "default"  # From template
     assert profile["memory"] == "8g"  # From profile
     assert profile["cpus"] == 2  # From defaults
 

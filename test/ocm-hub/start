@@ -36,9 +36,13 @@ def deploy(cluster):
 
     drenv.log_progress("Installing hub addons")
     drenv.run(
-        "clusteradm", "install", "hub-addon",
-        "--names", ",".join(ADDONS),
-        "--context", cluster,
+        "clusteradm",
+        "install",
+        "hub-addon",
+        "--names",
+        ",".join(ADDONS),
+        "--context",
+        cluster,
     )
 
 
@@ -49,9 +53,13 @@ def wait(cluster):
             deployment = f"deploy/{name}"
             drenv.wait_for(deployment, namespace=ns, profile=cluster)
             drenv.kubectl(
-                "rollout", "status", deployment,
-                "--namespace", ns,
-                "--timeout", "300s",
+                "rollout",
+                "status",
+                deployment,
+                "--namespace",
+                ns,
+                "--timeout",
+                "300s",
                 profile=cluster,
             )
 

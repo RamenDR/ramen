@@ -21,29 +21,19 @@ CMD_PREFIX = "cmd_"
 
 
 def main():
-    commands = [n[len(CMD_PREFIX):] for n in globals()
-                if n.startswith(CMD_PREFIX)]
+    commands = [n[len(CMD_PREFIX) :] for n in globals() if n.startswith(CMD_PREFIX)]
 
     p = argparse.ArgumentParser(prog="drenv")
-    p.add_argument(
-        "-v", "--verbose",
-        action="store_true",
-        help="Be more verbose")
-    p.add_argument(
-        "command",
-        choices=commands,
-        help="Command to run")
-    p.add_argument(
-        "--name-prefix",
-        help="Prefix profile names")
-    p.add_argument(
-        "filename",
-        help="Environment filename")
+    p.add_argument("-v", "--verbose", action="store_true", help="Be more verbose")
+    p.add_argument("command", choices=commands, help="Command to run")
+    p.add_argument("--name-prefix", help="Prefix profile names")
+    p.add_argument("filename", help="Environment filename")
     args = p.parse_args()
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s %(levelname)-7s %(message)s")
+        format="%(asctime)s %(levelname)-7s %(message)s",
+    )
 
     with open(args.filename) as f:
         env = envfile.load(f, name_prefix=args.name_prefix)
@@ -60,7 +50,8 @@ def cmd_start(env):
     execute(run_worker, env["workers"])
     logging.info(
         "[%s] Environment started in %.2f seconds",
-        env["name"], time.monotonic() - start,
+        env["name"],
+        time.monotonic() - start,
     )
 
 
@@ -70,7 +61,8 @@ def cmd_stop(env):
     execute(stop_cluster, env["profiles"])
     logging.info(
         "[%s] Environment stopped in %.2f seconds",
-        env["name"], time.monotonic() - start,
+        env["name"],
+        time.monotonic() - start,
     )
 
 
@@ -80,7 +72,8 @@ def cmd_delete(env):
     execute(delete_cluster, env["profiles"])
     logging.info(
         "[%s] Environment deleted in %.2f seconds",
-        env["name"], time.monotonic() - start,
+        env["name"],
+        time.monotonic() - start,
     )
 
 
@@ -115,21 +108,36 @@ def start_cluster(profile):
 
     is_restart = drenv.cluster_info(profile["name"]) != {}
 
-    minikube("start",
-             "--driver", "kvm2",
-             "--container-runtime", profile["container_runtime"],
-             "--extra-disks", str(profile["extra_disks"]),
-             "--disk-size", profile["disk_size"],
-             "--network", profile["network"],
-             "--nodes", str(profile["nodes"]),
-             "--cni", profile["cni"],
-             "--cpus", str(profile["cpus"]),
-             "--memory", profile["memory"],
-             "--addons", ",".join(profile["addons"]),
-             profile=profile["name"])
+    minikube(
+        "start",
+        "--driver",
+        "kvm2",
+        "--container-runtime",
+        profile["container_runtime"],
+        "--extra-disks",
+        str(profile["extra_disks"]),
+        "--disk-size",
+        profile["disk_size"],
+        "--network",
+        profile["network"],
+        "--nodes",
+        str(profile["nodes"]),
+        "--cni",
+        profile["cni"],
+        "--cpus",
+        str(profile["cpus"]),
+        "--memory",
+        profile["memory"],
+        "--addons",
+        ",".join(profile["addons"]),
+        profile=profile["name"],
+    )
 
-    logging.info("[%s] Cluster started in %.2f seconds",
-                 profile["name"], time.monotonic() - start)
+    logging.info(
+        "[%s] Cluster started in %.2f seconds",
+        profile["name"],
+        time.monotonic() - start,
+    )
 
     if is_restart:
         wait_for_deployments(profile)
@@ -141,8 +149,11 @@ def stop_cluster(profile):
     start = time.monotonic()
     logging.info("[%s] Stopping cluster", profile["name"])
     minikube("stop", profile=profile["name"])
-    logging.info("[%s] Cluster stopped in %.2f seconds",
-                 profile["name"], time.monotonic() - start)
+    logging.info(
+        "[%s] Cluster stopped in %.2f seconds",
+        profile["name"],
+        time.monotonic() - start,
+    )
 
 
 def delete_cluster(profile):
@@ -151,11 +162,13 @@ def delete_cluster(profile):
     minikube("delete", profile=profile["name"])
     profile_config = drenv.config_dir(profile["name"])
     if os.path.exists(profile_config):
-        logging.info("[%s] Removing config %s",
-                     profile["name"], profile_config)
+        logging.info("[%s] Removing config %s", profile["name"], profile_config)
         shutil.rmtree(profile_config)
-    logging.info("[%s] Cluster deleted in %.2f seconds",
-                 profile["name"], time.monotonic() - start)
+    logging.info(
+        "[%s] Cluster deleted in %.2f seconds",
+        profile["name"],
+        time.monotonic() - start,
+    )
 
 
 def wait_for_deployments(profile, initial_wait=30, timeout=300):
@@ -179,16 +192,21 @@ def wait_for_deployments(profile, initial_wait=30, timeout=300):
     time.sleep(initial_wait)
 
     kubectl(
-        "wait", "deploy", "--all",
-        "--for", "condition=available",
+        "wait",
+        "deploy",
+        "--all",
+        "--for",
+        "condition=available",
         "--all-namespaces",
-        "--timeout", f"{timeout}s",
+        "--timeout",
+        f"{timeout}s",
         profile=profile["name"],
     )
 
     logging.info(
         "[%s] Deployments are available in %.2f seconds",
-        profile["name"], time.monotonic() - start,
+        profile["name"],
+        time.monotonic() - start,
     )
 
 
@@ -216,8 +234,9 @@ def run_hook(hook, args, name):
     start = time.monotonic()
     logging.info("[%s] Running %s", name, hook)
     run(hook, *args, name=name)
-    logging.info("[%s] %s completed in %.2f seconds",
-                 name, hook, time.monotonic() - start)
+    logging.info(
+        "[%s] %s completed in %.2f seconds", name, hook, time.monotonic() - start
+    )
 
 
 def run(*cmd, name=None):
@@ -246,7 +265,8 @@ def run(*cmd, name=None):
             f"[{name}] Command {cmd} failed rc={p.returncode}\n"
             "\n"
             "Last messages:\n"
-            f"{last_messages}")
+            f"{last_messages}"
+        )
 
 
 if __name__ == "__main__":

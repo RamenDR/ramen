@@ -39,9 +39,13 @@ def wait(cluster):
         deployment = f"deploy/{name}"
         drenv.wait_for(deployment, namespace=ADDONS_NAMESPACE, profile=cluster)
         drenv.kubectl(
-            "rollout", "status", deployment,
-            "--namespace", ADDONS_NAMESPACE,
-            "--timeout", "300s",
+            "rollout",
+            "status",
+            deployment,
+            "--namespace",
+            ADDONS_NAMESPACE,
+            "--timeout",
+            "300s",
             profile=cluster,
         )
 
@@ -56,9 +60,13 @@ def wait_for_hub(hub):
         deployment = f"deploy/{name}"
         drenv.wait_for(deployment, namespace=HUB_NAMESPACE, profile=hub)
         drenv.kubectl(
-            "rollout", "status", deployment,
-            "--namespace", HUB_NAMESPACE,
-            "--timeout", "300s",
+            "rollout",
+            "status",
+            deployment,
+            "--namespace",
+            HUB_NAMESPACE,
+            "--timeout",
+            "300s",
             profile=hub,
         )
 
@@ -68,7 +76,11 @@ def join_cluster(cluster, hub):
 
     # We can get the token from the first line of the response.
     out = drenv.run(
-        "clusteradm", "get", "token", "--context", hub,
+        "clusteradm",
+        "get",
+        "token",
+        "--context",
+        hub,
         verbose=False,
     )
 
@@ -77,32 +89,45 @@ def join_cluster(cluster, hub):
     assert key == "token"
 
     drenv.run(
-        "clusteradm", "join",
-        "--hub-token", hub_token,
-        "--hub-apiserver", drenv.cluster_info(hub)["cluster"]["server"],
-        "--cluster-name", cluster,
+        "clusteradm",
+        "join",
+        "--hub-token",
+        hub_token,
+        "--hub-apiserver",
+        drenv.cluster_info(hub)["cluster"]["server"],
+        "--cluster-name",
+        cluster,
         "--wait",
-        "--context", cluster,
+        "--context",
+        cluster,
     )
 
 
 def accept_cluster(cluster, hub):
     drenv.log_progress("Accepting cluster")
     drenv.run(
-        "clusteradm", "accept",
-        "--clusters", cluster,
+        "clusteradm",
+        "accept",
+        "--clusters",
+        cluster,
         "--wait",
-        "--context", hub,
+        "--context",
+        hub,
     )
 
 
 def enable_addons(cluster, hub):
     drenv.log_progress("Enabling addons")
     drenv.run(
-        "clusteradm", "addon", "enable",
-        "--names", ",".join(ADDONS),
-        "--clusters", cluster,
-        "--context", hub,
+        "clusteradm",
+        "addon",
+        "enable",
+        "--names",
+        ",".join(ADDONS),
+        "--clusters",
+        cluster,
+        "--context",
+        hub,
     )
 
 

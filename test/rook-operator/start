@@ -24,19 +24,28 @@ def deploy(cluster):
 def wait(cluster):
     drenv.log_progress("Waiting until rook ceph operator is rolled out")
     drenv.kubectl(
-        "rollout", "status", "deploy/rook-ceph-operator",
-        "--namespace", "rook-ceph",
-        "--timeout", "300s",
+        "rollout",
+        "status",
+        "deploy/rook-ceph-operator",
+        "--namespace",
+        "rook-ceph",
+        "--timeout",
+        "300s",
         profile=cluster,
     )
 
     drenv.log_progress("Waiting until rook ceph operator is ready")
     drenv.kubectl(
-        "wait", "pod",
-        "--for", "jsonpath={.status.phase}=Running",
-        "--namespace", "rook-ceph",
-        "--selector", "app=rook-ceph-operator",
-        "--timeout", "300s",
+        "wait",
+        "pod",
+        "--for",
+        "jsonpath={.status.phase}=Running",
+        "--namespace",
+        "rook-ceph",
+        "--selector",
+        "app=rook-ceph-operator",
+        "--timeout",
+        "300s",
         profile=cluster,
     )
 
