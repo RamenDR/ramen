@@ -6,15 +6,13 @@ import concurrent.futures
 import logging
 import os
 import shutil
-import subprocess
 import sys
 import time
-
-from collections import deque
 
 import yaml
 
 import drenv
+from . import commands
 from . import envfile
 
 CMD_PREFIX = "cmd_"
@@ -240,33 +238,8 @@ def run_hook(hook, args, name):
 
 
 def run(*cmd, name=None):
-    # Avoid delays in child process logs.
-    env = dict(os.environ)
-    env["PYTHONUNBUFFERED"] = "1"
-
-    p = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        env=env,
-    )
-
-    messages = deque(maxlen=20)
-
-    for line in iter(p.stdout.readline, b""):
-        msg = line.decode().rstrip()
-        messages.append(msg)
-        logging.debug("[%s] %s", name, msg)
-
-    p.wait()
-    if p.returncode != 0:
-        last_messages = "\n".join("  " + m for m in messages)
-        raise RuntimeError(
-            f"[{name}] Command {cmd} failed rc={p.returncode}\n"
-            "\n"
-            "Last messages:\n"
-            f"{last_messages}"
-        )
+    for line in commands.watch(*cmd):
+        logging.debug("[%s] %s", name, line)
 
 
 if __name__ == "__main__":
