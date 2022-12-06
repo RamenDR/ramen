@@ -21,7 +21,8 @@ def deploy(cluster):
     # See https://medium.com/pareture/kubectl-install-crd-failed-annotations-too-long-2ebc91b40c7d
     drenv.kubectl(
         "apply",
-        "--filename", f"{BASE_URL}/crds.yaml",
+        "--filename",
+        f"{BASE_URL}/crds.yaml",
         "--server-side=true",
         profile=cluster,
     )
@@ -29,15 +30,18 @@ def deploy(cluster):
     drenv.log_progress("Waiting until cdrs are established")
     drenv.kubectl(
         "wait",
-        "--for", "condition=established",
-        "--filename", f"{BASE_URL}/crds.yaml",
+        "--for",
+        "condition=established",
+        "--filename",
+        f"{BASE_URL}/crds.yaml",
         profile=cluster,
     )
 
     drenv.log_progress("Deploying olm")
     drenv.kubectl(
         "apply",
-        "--filename", f"{BASE_URL}/olm.yaml",
+        "--filename",
+        f"{BASE_URL}/olm.yaml",
         profile=cluster,
     )
 
@@ -46,8 +50,12 @@ def wait(cluster):
     for operator in "olm-operator", "catalog-operator":
         drenv.log_progress(f"Waiting until {operator} is rolled out")
         drenv.kubectl(
-            "rollout", "status", "deploy", operator,
-            "--namespace", NAMESPACE,
+            "rollout",
+            "status",
+            "deploy",
+            operator,
+            "--namespace",
+            NAMESPACE,
             profile=cluster,
         )
 
@@ -59,17 +67,24 @@ def wait(cluster):
         profile=cluster,
     )
     drenv.kubectl(
-        "wait", "csv/packageserver",
-        "--namespace", NAMESPACE,
-        "--for", 'jsonpath={.status.phase}=Succeeded',
-        "--timeout", "300s",
+        "wait",
+        "csv/packageserver",
+        "--namespace",
+        NAMESPACE,
+        "--for",
+        "jsonpath={.status.phase}=Succeeded",
+        "--timeout",
+        "300s",
         profile=cluster,
     )
 
     drenv.log_progress("Waiting for olm pakcage server rollout")
     drenv.kubectl(
-        "rollout", "status", "deploy/packageserver",
-        "--namespace", NAMESPACE,
+        "rollout",
+        "status",
+        "deploy/packageserver",
+        "--namespace",
+        NAMESPACE,
         profile=cluster,
     )
 

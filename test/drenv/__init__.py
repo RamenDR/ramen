@@ -50,8 +50,13 @@ def kubectl(*args, profile=None, input=None, verbose=True):
     return run(*cmd, input=input, verbose=verbose)
 
 
-def wait_for(resource, output="jsonpath={.metadata.name}", timeout=300,
-             namespace=None, profile=None):
+def wait_for(
+    resource,
+    output="jsonpath={.metadata.name}",
+    timeout=300,
+    namespace=None,
+    profile=None,
+):
     """
     Wait until resource exists. Once the resource exists, wait for it
     using `kubectl wait`.
@@ -124,9 +129,12 @@ def cluster_status(cluster):
         return {}
 
     out = run(
-        "minikube", "status",
-        "--profile", cluster,
-        "--output", "json",
+        "minikube",
+        "status",
+        "--profile",
+        cluster,
+        "--output",
+        "json",
         verbose=False,
     )
 
@@ -164,7 +172,8 @@ def run(*args, input=None, verbose=True):
         args,
         input=input.encode() if input else None,
         stdout=subprocess.PIPE,
-        check=True)
+        check=True,
+    )
 
     out = cp.stdout.decode().rstrip()
 

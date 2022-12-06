@@ -26,9 +26,13 @@ def wait(cluster):
         "Waiting until csi-addons-controller-manager is rolled out",
     )
     drenv.kubectl(
-        "rollout", "status", "deploy/csi-addons-controller-manager",
-        "--namespace", "csi-addons-system",
-        "--timeout", "300s",
+        "rollout",
+        "status",
+        "deploy/csi-addons-controller-manager",
+        "--namespace",
+        "csi-addons-system",
+        "--timeout",
+        "300s",
         profile=cluster,
     )
 

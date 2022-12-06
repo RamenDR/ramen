@@ -1,7 +1,8 @@
 [flake8]
 # TODO: modify the code to elimiante the ignores.
 # E501: line to long.
-ignore = E501
+# E203 whitespace before ':' to accept black code style
+ignore = E501,E203
 
 show_source = true
 statistics = true

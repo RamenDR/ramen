@@ -16,7 +16,8 @@ def deploy(cluster):
     drenv.log_progress("Deploying rook ceph toolbox")
     drenv.kubectl(
         "apply",
-        "--filename", f"{BASE_URL}/toolbox.yaml",
+        "--filename",
+        f"{BASE_URL}/toolbox.yaml",
         profile=cluster,
     )
 
@@ -24,9 +25,13 @@ def deploy(cluster):
 def wait(cluster):
     drenv.log_progress("Waiting until rook-ceph-tools is rolled out")
     drenv.kubectl(
-        "rollout", "status", "deploy/rook-ceph-tools",
-        "--namespace", "rook-ceph",
-        "--timeout", "300s",
+        "rollout",
+        "status",
+        "deploy/rook-ceph-tools",
+        "--namespace",
+        "rook-ceph",
+        "--timeout",
+        "300s",
         profile=cluster,
     )
 
