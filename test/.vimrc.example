@@ -1,0 +1,16 @@
+" Local vim configuration for ramen
+"
+" Using this file in vim
+" -----------------------
+"
+" 1. Copy this file to .vimrc
+" 2. Enable loading vimrc from current directory in your ~/.vimrc
+"
+"    set exrc
+"    set secure
+"
+
+augroup black_on_save
+  autocmd!
+  autocmd BufWritePre *.py Black
+augroup end
