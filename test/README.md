@@ -500,7 +500,7 @@ pip install -r requirements.txt
 
 ### Running the tests
 
-Run all tests and report test coverage:
+Run all linters and tests and report test coverage:
 
 ```
 make

@@ -94,6 +94,10 @@ jobs:
         run: make flake8
         working-directory: test
 
+      - name: Run pylint
+        run: make pylint
+        working-directory: test
+
       - name: Run tests
         run: make test
         working-directory: test
