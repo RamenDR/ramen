@@ -7,31 +7,31 @@ from contextlib import contextmanager
 from drenv import commands
 
 
-def test_nothing():
+def test_stream_nothing():
     with run("true") as p:
         stream = list(commands.stream(p))
     assert stream == []
 
 
-def test_stdout():
+def test_stream_stdout():
     with run("echo", "-n", "output") as p:
         stream = list(commands.stream(p))
     assert stream == [(commands.OUT, b"output")]
 
 
-def test_stderr():
+def test_stream_stderr():
     with run("sh", "-c", "echo -n error >&2") as p:
         stream = list(commands.stream(p))
     assert stream == [(commands.ERR, b"error")]
 
 
-def test_both():
+def test_stream_both():
     with run("sh", "-c", "echo -n output; echo -n error >&2") as p:
         stream = list(commands.stream(p))
     assert stream == [(commands.OUT, b"output"), (commands.ERR, b"error")]
 
 
-def test_large_output():
+def test_stream_output_large():
     out = err = 0
     with run("dd", "if=/dev/zero", "bs=1M", "count=100", "status=none") as p:
         for src, data in commands.stream(p):
@@ -43,21 +43,21 @@ def test_large_output():
     assert err == 0
 
 
-def test_no_stdout():
+def test_stream_no_stdout():
     # No reason to stream with one pipe, but it works.
     with run("sh", "-c", "echo -n error >&2", stdout=None) as p:
         stream = list(commands.stream(p))
     assert stream == [(commands.ERR, b"error")]
 
 
-def test_no_stderr():
+def test_stream_no_stderr():
     # No reason to stream with one pipe, but it works.
     with run("sh", "-c", "echo -n output", stderr=None) as p:
         stream = list(commands.stream(p))
     assert stream == [(commands.OUT, b"output")]
 
 
-def test_no_streams():
+def test_stream_no_stdout_stderr():
     # No reason without pipes, but it works.
     with run("true", stdout=None, stderr=None) as p:
         stream = list(commands.stream(p))
