@@ -45,7 +45,7 @@ def cmd_start(env):
     logging.info("[%s] Starting environment", env["name"])
     # Delaying `minikube start` ensures cluster start order.
     execute(start_cluster, env["profiles"], delay=1)
-    execute(run_worker, env["workers"])
+    execute(run_worker, env["workers"], hooks=["start", "test"])
     logging.info(
         "[%s] Environment started in %.2f seconds",
         env["name"],
@@ -79,14 +79,22 @@ def cmd_dump(env):
     yaml.dump(env, sys.stdout)
 
 
-def execute(func, profiles, delay=0):
+def execute(func, profiles, delay=0, **options):
+    """
+    Execute func in parallel for every profile.
+
+    func is invoked with profile and **options. It must have this signature:
+
+        def func(profile, **options):
+
+    """
     failed = False
 
     with concurrent.futures.ThreadPoolExecutor() as e:
         futures = {}
 
         for p in profiles:
-            futures[e.submit(func, p)] = p["name"]
+            futures[e.submit(func, p, **options)] = p["name"]
             time.sleep(delay)
 
         for f in concurrent.futures.as_completed(futures):
@@ -100,7 +108,7 @@ def execute(func, profiles, delay=0):
         sys.exit(1)
 
 
-def start_cluster(profile):
+def start_cluster(profile, **options):
     start = time.monotonic()
     logging.info("[%s] Starting cluster", profile["name"])
 
@@ -140,10 +148,10 @@ def start_cluster(profile):
     if is_restart:
         wait_for_deployments(profile)
 
-    execute(run_worker, profile["workers"])
+    execute(run_worker, profile["workers"], hooks=["start", "test"])
 
 
-def stop_cluster(profile):
+def stop_cluster(profile, **options):
     start = time.monotonic()
     logging.info("[%s] Stopping cluster", profile["name"])
     minikube("stop", profile=profile["name"])
@@ -154,7 +162,7 @@ def stop_cluster(profile):
     )
 
 
-def delete_cluster(profile):
+def delete_cluster(profile, **options):
     start = time.monotonic()
     logging.info("[%s] Deleting cluster", profile["name"])
     minikube("delete", profile=profile["name"])
@@ -216,13 +224,13 @@ def minikube(cmd, *args, profile=None):
     run("minikube", cmd, "--profile", profile, *args, name=profile)
 
 
-def run_worker(worker):
+def run_worker(worker, hooks=()):
     for script in worker["scripts"]:
-        run_script(script, worker["name"])
+        run_script(script, worker["name"], hooks=hooks)
 
 
-def run_script(script, name):
-    for filename in "start", "test":
+def run_script(script, name, hooks=()):
+    for filename in hooks:
         hook = os.path.join(script["name"], filename)
         if os.path.isfile(hook):
             run_hook(hook, script["args"], name)
