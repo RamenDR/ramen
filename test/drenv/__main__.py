@@ -106,7 +106,7 @@ def start_cluster(profile):
     start = time.monotonic()
     logging.info("[%s] Starting cluster", profile["name"])
 
-    is_restart = drenv.cluster_info(profile["name"]) != {}
+    is_restart = drenv.cluster_exists(profile["name"])
 
     minikube(
         "start",

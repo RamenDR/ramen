@@ -141,6 +141,16 @@ def cluster_status(cluster):
     return json.loads(out)
 
 
+def cluster_exists(cluster):
+    out = run("minikube", "profile", "list", "--output=json", verbose=False)
+    profiles = json.loads(out)
+    for profile in profiles["valid"]:
+        if profile["Name"] == cluster:
+            return True
+
+    return False
+
+
 def cluster_info(cluster):
     """
     Return cluster info from kubectl config. Returns empty dict if the cluster
