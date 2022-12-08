@@ -482,11 +482,11 @@ $ drenv delete example.yaml
 The script direcotry may contain scripts to be run on certain events,
 based on the hook file name.
 
-| Event        | Scripts       |
-|--------------|---------------|
-| start        | start, test   |
-| stop         | -             |
-| delete       | -             |
+| Event        | Scripts       | Comment                             |
+|--------------|---------------|-------------------------------------|
+| start        | start, test   | after cluster was started           |
+| stop         | stop          | before cluster is stopped           |
+| delete       | -             |                                     |
 
 #### Script arguments
 
