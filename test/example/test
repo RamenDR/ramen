@@ -19,6 +19,6 @@ drenv.kubectl(
     "status",
     "deploy/example-deployment",
     "--timeout",
-    "60s",
+    "180s",
     profile=cluster,
 )
