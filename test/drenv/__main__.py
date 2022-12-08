@@ -152,14 +152,20 @@ def start_cluster(profile, **options):
 
 
 def stop_cluster(profile, **options):
-    start = time.monotonic()
-    logging.info("[%s] Stopping cluster", profile["name"])
-    minikube("stop", profile=profile["name"])
-    logging.info(
-        "[%s] Cluster stopped in %.2f seconds",
-        profile["name"],
-        time.monotonic() - start,
-    )
+    cluster_status = drenv.cluster_status(profile["name"])
+
+    if cluster_status.get("APIServer") == "Running":
+        execute(run_worker, profile["workers"], hooks=["stop"], reverse=True)
+
+    if cluster_status.get("Host") == "Running":
+        start = time.monotonic()
+        logging.info("[%s] Stopping cluster", profile["name"])
+        minikube("stop", profile=profile["name"])
+        logging.info(
+            "[%s] Cluster stopped in %.2f seconds",
+            profile["name"],
+            time.monotonic() - start,
+        )
 
 
 def delete_cluster(profile, **options):
@@ -224,8 +230,9 @@ def minikube(cmd, *args, profile=None):
     run("minikube", cmd, "--profile", profile, *args, name=profile)
 
 
-def run_worker(worker, hooks=()):
-    for script in worker["scripts"]:
+def run_worker(worker, hooks=(), reverse=False):
+    scripts = reversed(worker["scripts"]) if reverse else worker["scripts"]
+    for script in scripts:
         run_script(script, worker["name"], hooks=hooks)
 
 
