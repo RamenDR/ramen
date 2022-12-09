@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: example
-        image: quay.io/quay/busybox
+        image: docker.io/library/busybox:stable
         command:
         - sh
         - -c
