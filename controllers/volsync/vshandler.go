@@ -37,7 +37,6 @@ const (
 	ServiceExportVersion string = "v1alpha1"
 
 	VolumeSnapshotKind                     string = "VolumeSnapshot"
-	PersistentVolumeClaimKind              string = "PersistentVolumeClaim"
 	VolumeSnapshotIsDefaultAnnotation      string = "snapshot.storage.kubernetes.io/is-default-class"
 	VolumeSnapshotIsDefaultAnnotationValue string = "true"
 
@@ -376,7 +375,7 @@ func isFinalSyncComplete(replicationSource *volsyncv1alpha1.ReplicationSource, l
 
 func (v *VSHandler) cleanupAfterRSFinalSync(rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec) error {
 	// Final sync is done, make sure PVC is cleaned up, Skip if we are using CopyMethodDirect
-	if v.destinationCopyMethod == volsyncv1alpha1.CopyMethodDirect {
+	if v.IsCopyMethodDirect() {
 		v.log.Info("Preserving PVC to use for CopyMethodDirect", "pvcName", rsSpec.ProtectedPVC.Name)
 
 		return nil
@@ -847,17 +846,6 @@ func (v *VSHandler) EnsurePVCfromRD(rdSpec ramendrv1alpha1.VolSyncReplicationDes
 		return noSnapErr
 	}
 
-	if latestImage.Kind == PersistentVolumeClaimKind {
-		if latestImage.Name == rdSpec.ProtectedPVC.Name {
-			l.V(1).Info("Latest Image is Using direct", "latestImage	", latestImage)
-
-			return nil
-		}
-
-		return fmt.Errorf("name of the PVC in the latest image section didn't match app pvc name %s/%s",
-			latestImage.Name, rdSpec.ProtectedPVC.Name)
-	}
-
 	// Make copy of the ref and make sure API group is filled out correctly (shouldn't really need this part)
 	vsImageRef := latestImage.DeepCopy()
 	if vsImageRef.APIGroup == nil || *vsImageRef.APIGroup == "" {
@@ -931,21 +919,37 @@ func (v *VSHandler) validateSnapshotAndEnsurePVC(rdSpec ramendrv1alpha1.VolSyncR
 		return err
 	}
 
-	var pvc *corev1.PersistentVolumeClaim
+	if v.IsCopyMethodDirect() {
+		// Directly use the RD pvc
+		v.log.V(1).Info("Using copyMethod Direct", "latestImage", snapshotRef, "pvcName", rdSpec.ProtectedPVC.Name)
 
-	var restoreSize *resource.Quantity
+		pvc := &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      rdSpec.ProtectedPVC.Name,
+				Namespace: v.owner.GetNamespace(),
+			},
+		}
 
-	if snap.Status != nil {
-		restoreSize = snap.Status.RestoreSize
+		err = ValidateObjectExists(v.ctx, v.client, pvc)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Restore pvc from snapshot
+		var restoreSize *resource.Quantity
+
+		if snap.Status != nil {
+			restoreSize = snap.Status.RestoreSize
+		}
+
+		_, err := v.ensurePVCFromSnapshot(rdSpec, snapshotRef, restoreSize)
+		if err != nil {
+			return err
+		}
 	}
 
-	pvc, err = v.ensurePVCFromSnapshot(rdSpec, snapshotRef, restoreSize)
-	if err != nil {
-		return err
-	}
-
-	// Add ownerRef on snapshot pointing to the pvc - if/when the PVC gets cleaned up, then GC can cleanup the snap
-	return v.addOwnerReferenceAndUpdate(snap, pvc)
+	// Add ownerRef on snapshot pointing to the vrg - if/when the VRG gets cleaned up, then GC can cleanup the snap
+	return v.addOwnerReferenceAndUpdate(snap, v.owner)
 }
 
 //nolint:funlen,gocognit,cyclop
@@ -1466,7 +1470,9 @@ func (v *VSHandler) IsRDDataProtected(pvcName string) (bool, error) {
 
 func (v *VSHandler) SelectDestCopyMethod(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec, log logr.Logger,
 ) (volsyncv1alpha1.CopyMethodType, *string, error) {
-	if v.destinationCopyMethod != volsyncv1alpha1.CopyMethodDirect {
+	if !v.IsCopyMethodDirect() {
+		v.log.Info("Using default copyMethod of Snapshot")
+
 		return volsyncv1alpha1.CopyMethodSnapshot, nil, nil // use default copyMethod
 	}
 
@@ -1489,8 +1495,10 @@ func (v *VSHandler) SelectDestCopyMethod(rdSpec ramendrv1alpha1.VolSyncReplicati
 		return "", nil, fmt.Errorf("pvc %v is mounted by others. Checking later", rdSpec.ProtectedPVC.Name)
 	}
 
-	// Using the application PVC for syncing from source to destination
-	return volsyncv1alpha1.CopyMethodDirect, &rdSpec.ProtectedPVC.Name, nil
+	v.log.Info(fmt.Sprintf("Using copyMethod of Direct with App PVC %s", rdSpec.ProtectedPVC.Name))
+	// Using the application PVC for syncing from source to destination and save a snapshot
+	// everytime a sync is successful
+	return volsyncv1alpha1.CopyMethodSnapshot, &rdSpec.ProtectedPVC.Name, nil
 }
 
 func (v *VSHandler) IsCopyMethodDirect() bool {
@@ -1498,8 +1506,7 @@ func (v *VSHandler) IsCopyMethodDirect() bool {
 }
 
 func isLatestImageReady(latestImage *corev1.TypedLocalObjectReference) bool {
-	if latestImage == nil || latestImage.Name == "" ||
-		!(latestImage.Kind == VolumeSnapshotKind || latestImage.Kind == PersistentVolumeClaimKind) {
+	if latestImage == nil || latestImage.Name == "" || latestImage.Kind != VolumeSnapshotKind {
 		return false
 	}
 
@@ -1560,4 +1567,19 @@ func objectRefMatches(a, b *corev1.TypedLocalObjectReference) bool {
 	}
 
 	return a.Kind == b.Kind && a.Name == b.Name
+}
+
+// ValidateObjectExists indicates whether a kubernetes resource exists in APIServer
+func ValidateObjectExists(ctx context.Context, c client.Client, obj client.Object) error {
+	key := client.ObjectKeyFromObject(obj)
+	if err := c.Get(ctx, key, obj); err != nil {
+		if kerrors.IsNotFound(err) {
+			// PVC not found. Should we restore automatically from snapshot?
+			return fmt.Errorf("PVC %s not found", key.Name)
+		}
+
+		return fmt.Errorf("failed to fetch application PVC %s - (%w)", key.Name, err)
+	}
+
+	return nil
 }

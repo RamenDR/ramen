@@ -1629,7 +1629,7 @@ func (d *DRPCInstance) updateVRGState(clusterName string, state rmn.ReplicationS
 	}
 
 	if vrg.Spec.ReplicationState == state {
-		d.log.Info(fmt.Sprintf("VRG ReplicationState %s already %s on this cluster %s",
+		d.log.Info(fmt.Sprintf("VRG.Spec.ReplicationState %s already set to %s on this cluster %s",
 			vrg.Name, state, clusterName))
 
 		return false, nil

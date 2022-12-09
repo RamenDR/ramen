@@ -683,11 +683,11 @@ var _ = Describe("VolSync Handler", func() {
 					vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, owner, asyncSpec, "none", "Direct")
 				})
 
-				It("SelectDestCopyMethod() should return CopyMethod Direct and App PVC name", func() {
+				It("SelectDestCopyMethod() should return CopyMethod Snapshot and App PVC name", func() {
 					cpyMethod, dstPVC, err := vsHandler.SelectDestCopyMethod(rdSpec, logger)
 					Expect(err).NotTo(HaveOccurred())
 
-					Expect(cpyMethod).To(Equal(volsyncv1alpha1.CopyMethodDirect))
+					Expect(cpyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
 					Expect(*dstPVC).To(Equal(rdSpec.ProtectedPVC.Name))
 					pvc := &corev1.PersistentVolumeClaim{}
 					Eventually(func() error {
@@ -1265,7 +1265,7 @@ var _ = Describe("VolSync Handler", func() {
 						// Expect that the new pvc has been added as an owner
 						// on the VolumeSnapshot - it should NOT be a controller, as the replicationdestination
 						// will be the controller owning it
-						return ownerMatches(latestImageSnap, pvc.GetName(), "PersistentVolumeClaim", false /* not controller */)
+						return ownerMatches(latestImageSnap, owner.GetName(), "ConfigMap", false /* not controller */)
 					}, maxWait, interval).Should(BeTrue())
 				})
 
