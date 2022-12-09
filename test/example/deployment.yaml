@@ -20,4 +20,13 @@ spec:
       containers:
       - name: example
         image: quay.io/quay/busybox
-        command: ["sh", "-c", "while true; do date; sleep 10; done"]
+        command:
+        - sh
+        - -c
+        - |
+          trap exit TERM
+          while true; do
+              date
+              sleep 10 &
+              wait  # interrupted quickly on signal.
+          done
