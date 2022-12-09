@@ -47,6 +47,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(ramendrv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(recipe.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
