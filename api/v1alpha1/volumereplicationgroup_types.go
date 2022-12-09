@@ -159,6 +159,24 @@ type VolumeReplicationGroupSpec struct {
 	KubeObjectProtection *KubeObjectProtectionSpec `json:"kubeObjectProtection,omitempty"`
 }
 
+const ReservedBackupName = "use-backup-not-restore"
+
+type RecipeSpec struct {
+	//+optional
+	Name *string `json:"name,omitempty"`
+
+	//+optional
+	Workflow *WorkflowSpec `json:"workflow,omitempty"`
+}
+
+type WorkflowSpec struct {
+	//+optional
+	CaptureName *string `json:"captureName,omitempty"`
+
+	//+optional
+	RecoverName *string `json:"recoverName,omitempty"`
+}
+
 type KubeObjectProtectionSpec struct {
 	// Preferred time between captures
 	//+optional
@@ -166,10 +184,7 @@ type KubeObjectProtectionSpec struct {
 	CaptureInterval *metav1.Duration `json:"captureInterval,omitempty"`
 
 	//+optional
-	CaptureOrder []KubeObjectsCaptureSpec `json:"captureOrder,omitempty"`
-
-	//+optional
-	RecoverOrder []KubeObjectsRecoverSpec `json:"recoverOrder,omitempty"`
+	Recipe *RecipeSpec `json:"recipe,omitempty"`
 }
 
 const KubeObjectProtectionCaptureIntervalDefault = 5 * time.Minute
@@ -208,6 +223,26 @@ type KubeResourcesSpec struct {
 
 	//+optional
 	ExcludedResources []string `json:"excludedResources,omitempty"`
+
+	//+optional
+	Hooks []HookSpec `json:"hooks,omitempty"`
+}
+
+type HookSpec struct {
+	Name string `json:"name,omitempty"`
+
+	Type string `json:"type,omitempty"`
+
+	Command []string `json:"command,omitempty"`
+
+	//+optional
+	Timeout metav1.Duration `json:"timeout,omitempty"`
+
+	//+optional
+	Container string `json:"container,omitempty"`
+
+	//+optional
+	LabelSelector metav1.LabelSelector `json:"labelSelector,omitempty"`
 }
 
 type ProtectedPVC struct {
