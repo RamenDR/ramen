@@ -5,7 +5,9 @@ package controllers
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
@@ -20,6 +22,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	Recipe "github.com/ramendr/recipe/api/v1alpha1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 func s3PathNamePrefix(vrgNamespaceName, vrgName string) string {
@@ -348,20 +354,64 @@ func (v *VRGInstance) vrgObjectProtect(result *ctrl.Result, s3StoreAccessors []s
 	}
 }
 
+func (v *VRGInstance) recipeInfoExistsonKubeObjectProtectionSpec() bool {
+	return v.instance.Spec.KubeObjectProtection.Recipe != nil &&
+		v.instance.Spec.KubeObjectProtection.Recipe.Name != nil &&
+		v.instance.Spec.KubeObjectProtection.Recipe.Workflow != nil
+}
+
 func (v *VRGInstance) getCaptureGroups() []ramen.KubeObjectsCaptureSpec {
-	if v.instance.Spec.KubeObjectProtection.CaptureOrder != nil {
-		return v.instance.Spec.KubeObjectProtection.CaptureOrder
+	if v.recipeInfoExistsonKubeObjectProtectionSpec() &&
+		v.instance.Spec.KubeObjectProtection.Recipe.Workflow.CaptureName != nil {
+		return v.getCaptureGroupsFromRecipe()
 	}
 
 	return []ramen.KubeObjectsCaptureSpec{{}}
 }
 
+func (v *VRGInstance) getCaptureGroupsFromRecipe() []ramen.KubeObjectsCaptureSpec {
+	v.log.Info("getCaptureGroups(): backup recipe detected")
+
+	// get workflow
+	workflow, recipe, err := v.getWorkflowAndRecipeFromName(*v.instance.Spec.KubeObjectProtection.Recipe.Name,
+		*v.instance.Spec.KubeObjectProtection.Recipe.Workflow.CaptureName)
+	if err != nil {
+		v.log.Error(err, "getCaptureGroups result")
+	}
+
+	groups, err := v.getCaptureGroupsFromWorkflow(*recipe, *workflow)
+	if err != nil {
+		v.log.Error(err, "getCaptureGroupsFromWorkflow error")
+	}
+
+	return groups
+}
+
 func (v *VRGInstance) getRecoverGroups() []ramen.KubeObjectsRecoverSpec {
-	if v.instance.Spec.KubeObjectProtection.RecoverOrder != nil {
-		return v.instance.Spec.KubeObjectProtection.RecoverOrder
+	if v.recipeInfoExistsonKubeObjectProtectionSpec() &&
+		v.instance.Spec.KubeObjectProtection.Recipe.Workflow.RecoverName != nil {
+		return v.getRecoverGroupsFromRecipe()
 	}
 
 	return []ramen.KubeObjectsRecoverSpec{{}}
+}
+
+func (v *VRGInstance) getRecoverGroupsFromRecipe() []ramen.KubeObjectsRecoverSpec {
+	v.log.Info("getCaptureGroups() restore recipe detected")
+
+	// get workflow
+	workflow, recipe, err := v.getWorkflowAndRecipeFromName(*v.instance.Spec.KubeObjectProtection.Recipe.Name,
+		*v.instance.Spec.KubeObjectProtection.Recipe.Workflow.RecoverName)
+	if err != nil {
+		v.log.Error(err, "getCaptureGroups result")
+	}
+
+	groups, err := v.getRestoreGroupsFromWorkflow(*recipe, *workflow)
+	if err != nil {
+		v.log.Error(err, "getRestoreGroupsFromWorkflow error")
+	}
+
+	return groups
 }
 
 func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result,
@@ -409,22 +459,45 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result,
 	)
 }
 
-func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
-	result *ctrl.Result, s3StoreAccessor s3StoreAccessor,
+func (v *VRGInstance) createRecoverOrProtectRequest(
+	s3StoreAccessor s3StoreAccessor,
 	sourceVrgNamespaceName, sourceVrgName string,
 	capture *ramen.KubeObjectsCaptureIdentifier,
-) error {
+	groupNumber int,
+	recoverGroup ramen.KubeObjectsRecoverSpec,
+	veleroNamespaceName string,
+	labels map[string]string,
+) (kubeobjects.Request, error) {
 	vrg := v.instance
 	capturePathName, captureNamePrefix := kubeObjectsCapturePathNameAndNamePrefix(
 		sourceVrgNamespaceName, sourceVrgName, capture.Number)
 	recoverNamePrefix := kubeObjectsRecoverNamePrefix(vrg.Namespace, vrg.Name)
-	veleroNamespaceName := v.veleroNamespaceName()
-	labels := util.OwnerLabels(vrg.Namespace, vrg.Name)
-	groups := v.getRecoverGroups()
-	requests := make([]kubeobjects.ProtectRequest, len(groups))
 
-	for groupNumber, recoverGroup := range groups {
-		request, err := v.reconciler.kubeObjects.RecoverRequestCreate(
+	var request kubeobjects.Request
+
+	var err error
+
+	if recoverGroup.BackupName == ramen.ReservedBackupName {
+		status := &vrg.Status.KubeObjectProtection
+		captureToRecoverFrom := status.CaptureToRecoverFrom
+		backupSequenceNumber := 1 - captureToRecoverFrom.Number // is this a good way to do this?
+		backupName := fmt.Sprintf("%s-restore-%d", recoverGroup.BackupName, groupNumber)
+		v.log.Info(fmt.Sprintf("backup: %s, captureToRecoverFrom: %d", backupName, captureToRecoverFrom.Number))
+
+		pathName, namePrefix := kubeObjectsCapturePathNameAndNamePrefix(vrg.Namespace, vrg.Name, backupSequenceNumber)
+		request, err = v.reconciler.kubeObjects.ProtectRequestCreate(
+			v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.log,
+			s3StoreAccessor.url,
+			s3StoreAccessor.bucketName,
+			s3StoreAccessor.regionName,
+			pathName,
+			s3StoreAccessor.veleroNamespaceSecretKeyRef,
+			vrg.Namespace,
+			recoverGroup.KubeObjectsSpec,
+			veleroNamespaceName, kubeObjectsCaptureName(namePrefix, backupName, s3StoreAccessor.profileName),
+			labels)
+	} else {
+		request, err = v.reconciler.kubeObjects.RecoverRequestCreate(
 			v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.log,
 			s3StoreAccessor.url,
 			s3StoreAccessor.bucketName,
@@ -434,6 +507,30 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 			sourceVrgNamespaceName, vrg.Namespace, recoverGroup, veleroNamespaceName,
 			kubeObjectsCaptureName(captureNamePrefix, recoverGroup.BackupName, s3StoreAccessor.profileName),
 			kubeObjectsRecoverName(recoverNamePrefix, groupNumber), labels)
+	}
+
+	return request, err
+}
+
+func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
+	result *ctrl.Result, s3StoreAccessor s3StoreAccessor,
+	sourceVrgNamespaceName, sourceVrgName string,
+	capture *ramen.KubeObjectsCaptureIdentifier,
+) error {
+	vrg := v.instance
+
+	veleroNamespaceName := v.veleroNamespaceName()
+	labels := util.OwnerLabels(vrg.Namespace, vrg.Name)
+	groups := v.getRecoverGroups()
+	requests := make([]kubeobjects.Request, len(groups)) // Request: interface for ProtectRequest, RecoverRequest
+
+	for groupNumber, recoverGroup := range groups {
+		var request kubeobjects.Request
+
+		var err error
+
+		request, err = v.createRecoverOrProtectRequest(s3StoreAccessor, sourceVrgNamespaceName, sourceVrgName,
+			capture, groupNumber, recoverGroup, veleroNamespaceName, labels)
 		requests[groupNumber] = request
 
 		if err == nil {
@@ -557,4 +654,277 @@ func kubeObjectsRequestsWatch(b *builder.Builder, kubeObjects kubeobjects.Reques
 	watch(kubeObjects.RecoverRequestNew())
 
 	return b
+}
+
+func (v *VRGInstance) getRecipeWithName(name string) (Recipe.Recipe, error) {
+	recipe := Recipe.Recipe{}
+
+	err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: name, Namespace: v.instance.Namespace}, &recipe)
+
+	return recipe, err
+}
+
+// input: recipe name, recipe name
+// output: slice of capture objects that constitute the group
+func (v *VRGInstance) getWorkflowAndRecipeFromName(
+	recipeName, workflowName string) (*Recipe.Workflow, *Recipe.Recipe, error,
+) {
+	recipe, err := v.getRecipeWithName(recipeName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// get workflow
+	workflow, err := getWorkflowByName(recipe, workflowName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return workflow, &recipe, nil
+}
+
+func getWorkflowByName(recipe Recipe.Recipe, name string) (*Recipe.Workflow, error) {
+	for _, workflow := range recipe.Spec.Workflows {
+		if workflow.Name == name {
+			return workflow, nil
+		}
+	}
+
+	return nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec.Workflow.Name"}, name)
+}
+
+func (v *VRGInstance) getCaptureGroupsFromWorkflow(
+	recipe Recipe.Recipe, workflow Recipe.Workflow) ([]ramen.KubeObjectsCaptureSpec, error,
+) {
+	resources := make([]ramen.KubeObjectsCaptureSpec, len(workflow.Sequence))
+
+	for index, resource := range workflow.Sequence {
+		for resourceType := range resource {
+			resourceName := resource[resourceType]
+
+			captureInstance, err := getResourceAndConvertToCaptureGroup(recipe, resourceType, resourceName)
+			if err != nil {
+				return resources, err
+			}
+
+			resources[index] = *captureInstance
+		}
+	}
+
+	return resources, nil
+}
+
+func (v *VRGInstance) getRestoreGroupsFromWorkflow(
+	recipe Recipe.Recipe, workflow Recipe.Workflow) ([]ramen.KubeObjectsRecoverSpec, error,
+) {
+	resources := make([]ramen.KubeObjectsRecoverSpec, len(workflow.Sequence))
+
+	for index, resource := range workflow.Sequence {
+		// group: map[string]string, e.g. "group": "groupName", or "hook": "hookName"
+		for _, resourceType := range resource {
+			resourceName := resource[resourceType]
+
+			captureInstance, err := getResourceAndConvertToRecoverGroup(recipe, resourceType, resourceName)
+			if err != nil {
+				return resources, err
+			}
+
+			resources[index] = *captureInstance
+		}
+	}
+
+	return resources, nil
+}
+
+func getResourceAndConvertToCaptureGroup(
+	recipe Recipe.Recipe, resourceType, name string) (*ramen.KubeObjectsCaptureSpec, error,
+) {
+	// check hooks OR groups
+	if resourceType == "group" {
+		for _, group := range recipe.Spec.Groups {
+			if group.Name == name {
+				return convertRecipeGroupToCaptureSpec(*group)
+			}
+		}
+
+		return nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec.Group.Name"}, name)
+	}
+
+	if resourceType == "hook" {
+		hook, op, err := getHookAndOpFromRecipe(&recipe, name)
+		if err != nil {
+			return nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec"}, resourceType)
+		}
+
+		return convertRecipeHookToCaptureSpec(*hook, *op)
+	}
+
+	return nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec"}, resourceType)
+}
+
+// resource: could be Group or Hook
+func getResourceAndConvertToRecoverGroup(
+	recipe Recipe.Recipe, resourceType, name string) (*ramen.KubeObjectsRecoverSpec, error,
+) {
+	if resourceType == "group" {
+		for _, group := range recipe.Spec.Groups {
+			if group.Name == name {
+				return convertRecipeGroupToRecoverSpec(*group)
+			}
+		}
+
+		return nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec.Group.Name"}, name)
+	}
+
+	if resourceType == "hook" {
+		hook, op, err := getHookAndOpFromRecipe(&recipe, name)
+		if err != nil {
+			return nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec"}, resourceType)
+		}
+
+		return convertRecipeHookToRecoverSpec(*hook, *op)
+	}
+
+	return nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec"}, resourceType)
+}
+
+func getHookAndOpFromRecipe(recipe *Recipe.Recipe, name string) (*Recipe.Hook, *Recipe.Operation, error) {
+	// hook can be made up of optionalPrefix/hookName; workflow sequence uses full name
+	var prefix string
+
+	var suffix string
+
+	const containsSingleDelim = 2
+
+	parts := strings.Split(name, "/")
+	switch len(parts) {
+	case 1:
+		prefix = ""
+		suffix = name
+	case containsSingleDelim:
+		prefix = parts[0]
+		suffix = parts[1]
+	default:
+		return nil, nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec.Hook.Name"}, name)
+	}
+
+	// match prefix THEN suffix
+	for _, hook := range recipe.Spec.Hooks {
+		if hook.Name == prefix {
+			for _, op := range hook.Ops {
+				if op.Name == suffix {
+					return hook, op, nil
+				}
+			}
+		}
+	}
+
+	return nil, nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec.Hook.Name"}, name)
+}
+
+// TODO: complete functionality - add Hook support to KubeResourcesSpec, then copy in Velero object creation
+func convertRecipeHookToCaptureSpec(hook Recipe.Hook, op Recipe.Operation) (*ramen.KubeObjectsCaptureSpec, error) {
+	hookName := hook.Name + "-" + op.Name
+
+	hooks, err := getHookSpecFromHook(hook, op)
+	if err != nil {
+		return nil, err
+	}
+
+	captureSpec := ramen.KubeObjectsCaptureSpec{
+		Name: hookName,
+		KubeObjectsSpec: ramen.KubeObjectsSpec{
+			KubeResourcesSpec: ramen.KubeResourcesSpec{
+				IncludedResources: []string{"pod"},
+				ExcludedResources: []string{},
+				Hooks:             hooks,
+			},
+			LabelSelector:           &hooks[0].LabelSelector,
+			IncludeClusterResources: new(bool),
+		},
+	}
+
+	return &captureSpec, nil
+}
+
+func convertRecipeHookToRecoverSpec(hook Recipe.Hook, op Recipe.Operation) (*ramen.KubeObjectsRecoverSpec, error) {
+	hooks, err := getHookSpecFromHook(hook, op)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ramen.KubeObjectsRecoverSpec{
+		// BackupName: arbitrary fixed string to designate that this is will be a Backup, not Restore, object
+		BackupName: ramen.ReservedBackupName,
+		KubeObjectsSpec: ramen.KubeObjectsSpec{
+			KubeResourcesSpec: ramen.KubeResourcesSpec{
+				IncludedResources: []string{"pod"},
+				ExcludedResources: []string{},
+				Hooks:             hooks,
+			},
+			LabelSelector:           &hooks[0].LabelSelector,
+			IncludeClusterResources: new(bool),
+		},
+	}, nil
+}
+
+func getHookSpecFromHook(hook Recipe.Hook, op Recipe.Operation) ([]ramen.HookSpec, error) {
+	labelSelector, err := metav1.ParseToLabelSelector(hook.LabelSelector)
+	if err != nil {
+		return nil, err
+	}
+
+	return []ramen.HookSpec{
+		{
+			Name:          op.Name,
+			Type:          hook.Type,
+			Timeout:       metav1.Duration{Duration: time.Duration(op.Timeout)},
+			Container:     op.Container,
+			Command:       strings.Split(op.Command, ","),
+			LabelSelector: *labelSelector,
+		},
+	}, nil
+}
+
+func convertRecipeGroupToRecoverSpec(group Recipe.Group) (*ramen.KubeObjectsRecoverSpec, error) {
+	labelSelector, err := metav1.ParseToLabelSelector(group.LabelSelector)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ramen.KubeObjectsRecoverSpec{
+		BackupName: group.BackupRef,
+		KubeObjectsSpec: ramen.KubeObjectsSpec{
+			KubeResourcesSpec: ramen.KubeResourcesSpec{
+				IncludedResources: group.IncludedResourceTypes,
+				ExcludedResources: group.ExcludedResourceTypes,
+			},
+			LabelSelector:           labelSelector,
+			OrLabelSelectors:        []*metav1.LabelSelector{},
+			IncludeClusterResources: group.IncludeClusterResources,
+		},
+	}, nil
+}
+
+func convertRecipeGroupToCaptureSpec(group Recipe.Group) (*ramen.KubeObjectsCaptureSpec, error) {
+	labelSelector, err := metav1.ParseToLabelSelector(group.LabelSelector)
+	if err != nil {
+		return nil, err
+	}
+
+	captureSpec := ramen.KubeObjectsCaptureSpec{
+		Name: group.Name,
+		// TODO: add backupRef/backupName here?
+		KubeObjectsSpec: ramen.KubeObjectsSpec{
+			KubeResourcesSpec: ramen.KubeResourcesSpec{
+				IncludedResources: group.IncludedResourceTypes,
+				ExcludedResources: group.ExcludedResourceTypes,
+			},
+			LabelSelector:           labelSelector,
+			OrLabelSelectors:        []*metav1.LabelSelector{},
+			IncludeClusterResources: group.IncludeClusterResources,
+		},
+	}
+
+	return &captureSpec, nil
 }

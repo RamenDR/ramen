@@ -153,6 +153,9 @@ test-vrg-vr: generate manifests setup-envtest
 test-vrg-vs: generate manifests setup-envtest
 	go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroupVolSync
 
+test-vrg-kubeobjects: generate manifests setup-envtest
+	go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VRG_KubeObjectProtection
+
 test-drpc: generate manifests setup-envtest
 	go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus DRPlacementControl
 

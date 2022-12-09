@@ -406,11 +406,36 @@ func getBackupSpecFromObjectsSpec(objectsSpec ramendrv1alpha1.KubeObjectsSpec) v
 		OrLabelSelectors:        objectsSpec.OrLabelSelectors,
 		TTL:                     metav1.Duration{}, // TODO: set default here
 		IncludeClusterResources: objectsSpec.IncludeClusterResources,
-		Hooks:                   velero.BackupHooks{},
+		Hooks:                   getBackupHooks(objectsSpec.KubeResourcesSpec.Hooks),
 		VolumeSnapshotLocations: []string{},
 		DefaultVolumesToRestic:  new(bool),
 		OrderedResources:        map[string]string{},
 	}
+}
+
+func getBackupHooks(hooks []ramendrv1alpha1.HookSpec) velero.BackupHooks {
+	hookSpec := velero.BackupHooks{}
+
+	for _, hook := range hooks {
+		hook := hook // exportloopref: fix variable into local variable
+
+		hookSpec.Resources = append(hookSpec.Resources, velero.BackupResourceHookSpec{
+			Name:          hook.Name,
+			LabelSelector: &hook.LabelSelector,
+			PreHooks:      []velero.BackupResourceHook{},
+			PostHooks: []velero.BackupResourceHook{
+				{
+					Exec: &velero.ExecHook{
+						Container: hook.Container,
+						Timeout:   hook.Timeout,
+						Command:   hook.Command,
+					},
+				},
+			},
+		})
+	}
+
+	return hookSpec
 }
 
 func backupRealStatusProcess(
