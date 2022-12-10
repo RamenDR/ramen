@@ -246,7 +246,7 @@ vrg_finalizer0_remove() {
 vr_finalizer0_remove() {
 	true_if_exit_status_and_stderr 1 'Error from server (NotFound): volumereplications.replication.storage.openshift.io "busybox-pvc" not found' \
 	kubectl --context $1 -nasdf patch volumereplication/busybox-pvc --type json -p '[{"op":remove, "path":/metadata/finalizers/0}]'
-}; exit_stack_push unset -f vrg_finalizer0_remove
+}; exit_stack_push unset -f vr_finalizer0_remove
 
 vrg_get() {
 	kubectl --context $1 -nasdf get vrg/bb --ignore-not-found -oyaml

@@ -69,6 +69,8 @@ const (
 	VRGConditionReasonVolSyncFinalSyncComplete   = "Synced"
 )
 
+const clusterDataProtectedTrueMessage = "Kube objects protected"
+
 // Just when VRG has been picked up for reconciliation when nothing has been
 // figured out yet.
 func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {

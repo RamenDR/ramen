@@ -320,6 +320,10 @@ func (s *s3ObjectStore) PurgeBucket(bucket string) (
 	return nil
 }
 
+func s3PathNamePrefix(namespaceName, objectName string) string {
+	return S3KeyPrefix(types.NamespacedName{Namespace: namespaceName, Name: objectName}.String())
+}
+
 func S3KeyPrefix(namespacedName string) string {
 	return namespacedName + "/"
 }

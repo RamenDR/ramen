@@ -14,7 +14,6 @@ import (
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/kubeobjects"
 	"github.com/ramendr/ramen/controllers/util"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -28,24 +27,6 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
-
-func s3PathNamePrefix(vrgNamespaceName, vrgName string) string {
-	return types.NamespacedName{Namespace: vrgNamespaceName, Name: vrgName}.String() + "/"
-}
-
-const vrgS3ObjectNameSuffix = "a"
-
-func VrgObjectProtect(objectStorer ObjectStorer, vrg ramen.VolumeReplicationGroup) error {
-	return uploadTypedObject(objectStorer, s3PathNamePrefix(vrg.Namespace, vrg.Name), vrgS3ObjectNameSuffix, vrg)
-}
-
-func VrgObjectUnprotect(objectStorer ObjectStorer, vrg ramen.VolumeReplicationGroup) error {
-	return DeleteTypedObjects(objectStorer, s3PathNamePrefix(vrg.Namespace, vrg.Name), vrgS3ObjectNameSuffix, vrg)
-}
-
-func vrgObjectDownload(objectStorer ObjectStorer, pathName string, vrg *ramen.VolumeReplicationGroup) error {
-	return downloadTypedObject(objectStorer, pathName, vrgS3ObjectNameSuffix, vrg)
-}
 
 func kubeObjectsCaptureInterval(kubeObjectProtectionSpec *ramen.KubeObjectProtectionSpec) time.Duration {
 	if kubeObjectProtectionSpec.CaptureInterval == nil {
@@ -82,68 +63,25 @@ func kubeObjectsRecoverName(prefix string, groupNumber int) string {
 	return prefix + "--" + strconv.Itoa(groupNumber)
 }
 
-func (v *VRGInstance) kubeObjectsProtect(result *ctrl.Result) {
-	s3StoreAccessors := v.s3StoreAccessorsGet()
-	if len(s3StoreAccessors) == 0 {
-		result.Requeue = true
+func (v *VRGInstance) kubeObjectsProtect(
+	result *ctrl.Result,
+	finalSyncPrepared *func() bool,
+	s3StoreAccessors []s3StoreAccessor,
+) {
+	if v.kubeObjectProtectionDisabled("capture") {
+		*finalSyncPrepared = func() bool { return true }
 
 		return
 	}
 
-	v.kubeObjectsCaptureStartOrResumeOrDelayIfEnabled(result, s3StoreAccessors)
-	v.vrgObjectProtect(result, s3StoreAccessors)
-}
-
-type s3StoreAccessor struct {
-	ObjectStorer
-	profileName                 string
-	url                         string
-	bucketName                  string
-	regionName                  string
-	veleroNamespaceSecretKeyRef *corev1.SecretKeySelector
-}
-
-func (v *VRGInstance) s3StoreAccessorsGet() []s3StoreAccessor {
-	s3StoreAccessors := make([]s3StoreAccessor, 0, len(v.instance.Spec.S3Profiles))
-
-	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
-		if s3ProfileName == NoS3StoreAvailable {
-			v.log.Info("Kube object protection store dummy")
-
-			continue
-		}
-
-		objectStorer, s3StoreProfile, err := v.reconciler.ObjStoreGetter.ObjectStore(
-			v.ctx,
-			v.reconciler.APIReader,
-			s3ProfileName,
-			v.namespacedName,
-			v.log,
-		)
-		if err != nil {
-			v.log.Error(err, "Kube object protection store inaccessible", "name", s3ProfileName)
-
-			return nil
-		}
-
-		s3StoreAccessors = append(s3StoreAccessors, s3StoreAccessor{
-			objectStorer,
-			s3ProfileName,
-			s3StoreProfile.S3CompatibleEndpoint,
-			s3StoreProfile.S3Bucket,
-			s3StoreProfile.S3Region,
-			s3StoreProfile.VeleroNamespaceSecretKeyRef,
-		})
+	*finalSyncPrepared = func() bool {
+		return v.kubeObjectsFinalSyncComplete &&
+			v.vrgObjectProtected != nil &&
+			v.vrgObjectProtected.Status == metav1.ConditionTrue
 	}
 
-	return s3StoreAccessors
-}
-
-func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelayIfEnabled(
-	result *ctrl.Result, s3StoreAccessors []s3StoreAccessor,
-) {
-	if v.kubeObjectProtectionDisabled("capture") {
-		v.kubeObjectsFinalSyncPrepared = true
+	if len(s3StoreAccessors) == 0 {
+		result.Requeue = true // TODO remove; watch config map instead
 
 		return
 	}
@@ -205,9 +143,9 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 	}
 
 	if relocate {
-		v.kubeObjectsFinalSyncPrepared = captureToRecoverFrom.StartGeneration == generation
-		if v.kubeObjectsFinalSyncPrepared {
-			v.log.Info("Kube objects capture for relocate complete", "number", number, "generation", generation)
+		v.kubeObjectsFinalSyncComplete = captureToRecoverFrom.StartGeneration == generation
+		if v.kubeObjectsFinalSyncComplete {
+			v.log.Info("Kube objects capture for relocate completed previously", "number", number, "generation", generation)
 
 			return
 		}
@@ -356,8 +294,8 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 		"generation", generation)
 
 	if relocate {
-		v.kubeObjectsFinalSyncPrepared = status.CaptureToRecoverFrom.StartGeneration == generation
-		if v.kubeObjectsFinalSyncPrepared {
+		v.kubeObjectsFinalSyncComplete = status.CaptureToRecoverFrom.StartGeneration == generation
+		if v.kubeObjectsFinalSyncComplete {
 			v.log.Info("Kube objects capture for relocate complete")
 
 			return
@@ -395,38 +333,6 @@ func (v *VRGInstance) kubeObjectsCaptureStatus(status metav1.ConditionStatus, re
 		ObservedGeneration: v.instance.Generation,
 		Reason:             reason,
 		Message:            message,
-	}
-}
-
-const clusterDataProtectedTrueMessage = "Kube objects protected"
-
-func (v *VRGInstance) vrgObjectProtect(result *ctrl.Result, s3StoreAccessors []s3StoreAccessor) {
-	vrg := *v.instance
-
-	for _, s3StoreAccessor := range s3StoreAccessors {
-		if err := VrgObjectProtect(s3StoreAccessor.ObjectStorer, vrg); err != nil {
-			util.ReportIfNotPresent(
-				v.reconciler.eventRecorder,
-				&vrg,
-				corev1.EventTypeWarning,
-				util.EventReasonVrgUploadFailed,
-				err.Error(),
-			)
-
-			const message = "VRG Kube object protect error"
-
-			v.log.Error(err, message, "profile", s3StoreAccessor.profileName)
-
-			v.vrgObjectProtected = newVRGClusterDataUnprotectedCondition(v.instance.Generation, message)
-
-			result.Requeue = true
-
-			return
-		}
-
-		v.log.Info("VRG Kube object protected", "profile", s3StoreAccessor.profileName)
-
-		v.vrgObjectProtected = newVRGClusterDataProtectedCondition(v.instance.Generation, clusterDataProtectedTrueMessage)
 	}
 }
 
