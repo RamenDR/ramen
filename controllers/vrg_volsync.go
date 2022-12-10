@@ -62,25 +62,20 @@ func (v *VRGInstance) restorePVsForVolSync() error {
 	return nil
 }
 
-func (v *VRGInstance) reconcileVolSyncAsPrimary() (requeue bool) {
-	finalSyncStatusUpdate := func() {
-		v.volSyncFinalSyncPrepared = true
-
-		if v.instance.Spec.RunFinalSync {
-			v.instance.Status.FinalSyncComplete = true
-		}
+func (v *VRGInstance) reconcileVolSyncAsPrimary(finalSyncPrepared *bool) (requeue bool) {
+	finalSyncComplete := func() {
+		*finalSyncPrepared = true
+		v.instance.Status.FinalSyncComplete = v.instance.Spec.RunFinalSync
 	}
 
 	if len(v.volSyncPVCs) == 0 {
-		finalSyncStatusUpdate()
+		finalSyncComplete()
 
 		return
 	}
 
 	v.log.Info(fmt.Sprintf("Reconciling VolSync as Primary. VolSyncPVCs %d. VolSyncSpec %+v",
 		len(v.volSyncPVCs), v.instance.Spec.VolSync))
-
-	requeue = false
 
 	// Cleanup - this VRG is primary, cleanup if necessary
 	// remove any ReplicationDestinations (that would have been created when this VRG was secondary) if they
@@ -106,7 +101,7 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary() (requeue bool) {
 		return requeue
 	}
 
-	finalSyncStatusUpdate()
+	finalSyncComplete()
 	v.log.Info("Successfully reconciled VolSync as Primary")
 
 	return requeue

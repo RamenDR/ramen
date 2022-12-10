@@ -425,8 +425,7 @@ type VRGInstance struct {
 	storageClassCache            map[string]*storagev1.StorageClass
 	vrgObjectProtected           *metav1.Condition
 	kubeObjectsProtected         *metav1.Condition
-	volSyncFinalSyncPrepared     bool
-	kubeObjectsFinalSyncPrepared bool
+	kubeObjectsFinalSyncComplete bool
 	vrcUpdated                   bool
 	namespacedName               string
 	volSyncHandler               *volsync.VSHandler
@@ -894,14 +893,29 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 }
 
 func (v *VRGInstance) reconcileAsPrimary() ctrl.Result {
-	result := ctrl.Result{}
-	result.Requeue = v.reconcileVolSyncAsPrimary()
-	v.reconcileVolRepsAsPrimary(&result.Requeue)
-	v.kubeObjectsProtect(&result)
-
-	if v.instance.Spec.PrepareForFinalSync {
-		v.instance.Status.PrepareForFinalSyncComplete = v.volSyncFinalSyncPrepared && v.kubeObjectsFinalSyncPrepared
+	var finalSyncPrepared struct {
+		volSync     bool
+		kubeObjects func() bool
 	}
+
+	vrg := v.instance
+	s3StoreAccessors := s3StoreAccessorsGet(
+		vrg.Spec.S3Profiles,
+		func(s3ProfileName string) (ObjectStorer, ramendrv1alpha1.S3StoreProfile, error) {
+			return v.reconciler.ObjStoreGetter.ObjectStore(
+				v.ctx, v.reconciler.APIReader, s3ProfileName, v.namespacedName, v.log,
+			)
+		},
+		v.log,
+	)
+	result := ctrl.Result{}
+	result.Requeue = v.reconcileVolSyncAsPrimary(&finalSyncPrepared.volSync)
+	v.reconcileVolRepsAsPrimary(&result.Requeue)
+	v.kubeObjectsProtect(&result, &finalSyncPrepared.kubeObjects, s3StoreAccessors)
+	v.vrgObjectProtected = vrgObjectProtect(&result, s3StoreAccessors, *vrg, v.reconciler.eventRecorder, v.log)
+	vrg.Status.PrepareForFinalSyncComplete = vrg.Spec.PrepareForFinalSync &&
+		finalSyncPrepared.volSync &&
+		finalSyncPrepared.kubeObjects()
 
 	return result
 }
