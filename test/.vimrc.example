@@ -12,5 +12,5 @@
 
 augroup black_on_save
   autocmd!
-  autocmd BufWritePre *.py Black
+  autocmd FileType python autocmd BufWritePre * Black
 augroup end
