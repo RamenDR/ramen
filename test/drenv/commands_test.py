@@ -160,6 +160,61 @@ os.write(1, bytes([0xff]))
         list(commands.watch("python3", "-c", script))
 
 
+# Running commands.
+
+
+def test_run():
+    output = commands.run("true")
+    assert output == ""
+
+
+def test_run_input():
+    output = commands.run("cat", input="input")
+    assert output == "input"
+
+
+def test_run_input_non_ascii():
+    output = commands.run("cat", input="\u05d0")
+    assert output == "\u05d0"
+
+
+def test_run_error_empty():
+    cmd = ("false",)
+    with pytest.raises(commands.Error) as e:
+        commands.run(*cmd)
+    assert e.value.command == cmd
+    assert e.value.exitcode == 1
+    assert e.value.output == ""
+    assert e.value.error == ""
+
+
+def test_run_error():
+    cmd = ("sh", "-c", "echo -n output >&1; echo -n error >&2; exit 1")
+
+    with pytest.raises(commands.Error) as e:
+        commands.run(*cmd)
+
+    assert e.value.command == cmd
+    assert e.value.exitcode == 1
+    assert e.value.error == "error"
+    assert e.value.output == "output"
+
+
+def test_run_non_ascii():
+    script = 'print("\u05d0")'  # Hebrew Letter Alef (U+05D0)
+    output = commands.run("python3", "-c", script)
+    assert output == "\u05d0\n"
+
+
+def test_run_invalid_utf8():
+    script = """
+import os
+os.write(1, bytes([0xff]))
+"""
+    with pytest.raises(UnicodeDecodeError):
+        commands.run("python3", "-c", script)
+
+
 # Formatting errors.
 
 

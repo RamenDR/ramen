@@ -41,6 +41,34 @@ class Error(Exception):
         return "".join(lines)
 
 
+def run(*args, input=None):
+    """
+    Run command args and return the output of the command.
+
+    Assumes that the child process output UTF-8. Will raise if the command
+    outputs binary data. This is not a problem in this projects since all our
+    commands are text based.
+
+    Invalid UTF-8 in child process stderr is handled gracefully so we don't
+    fail to raise an error about the failing command. Invalid characters will
+    be replaced with unicode replacement character (U+FFFD).
+
+    Raises Error if the child process terminated with non-zero exit code. The
+    error includes all data read from the child process stdout and stderr.
+    """
+    cp = subprocess.run(
+        args,
+        input=input.encode() if input else None,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    output = cp.stdout.decode()
+    if cp.returncode != 0:
+        error = cp.stderr.decode(errors="replace")
+        raise Error(args, cp.returncode, error, output=output)
+    return output
+
+
 def watch(*args):
     """
     Run command args, iterating over lines read from the child process stdout.
