@@ -35,6 +35,13 @@ def kubectl_get(*args, profile=None):
     return _kubectl_run("get", *args, profile=profile)
 
 
+def kubectl_exec(*args, profile=None):
+    """
+    Run kubectl get ... and return the output.
+    """
+    return _kubectl_run("exec", *args, profile=profile)
+
+
 def _kubectl_run(cmd, *args, profile=None):
     cmd = ["kubectl", cmd]
     if profile:

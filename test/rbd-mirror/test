@@ -14,8 +14,7 @@ PVC_NAME = "rbd-pvc"
 
 
 def rbd_mirror_image_status(cluster, image):
-    out = drenv.kubectl(
-        "exec",
+    out = drenv.kubectl_exec(
         "deploy/rook-ceph-tools",
         "--namespace",
         "rook-ceph",
@@ -28,7 +27,6 @@ def rbd_mirror_image_status(cluster, image):
         "--format",
         "json",
         profile=cluster,
-        verbose=False,
     )
     status = json.loads(out)
 
@@ -131,8 +129,7 @@ def test_volume_replication(primary, secondary):
     )
 
     drenv.log_progress(f"rbd image {rbd_image} info in cluster {primary}")
-    drenv.kubectl(
-        "exec",
+    out = drenv.kubectl_exec(
         "deploy/rook-ceph-tools",
         "--namespace",
         "rook-ceph",
@@ -144,14 +141,14 @@ def test_volume_replication(primary, secondary):
         POOL_NAME,
         profile=primary,
     )
+    drenv.log_detail(out)
 
     drenv.log_progress(
         f"Waiting until rbd image {rbd_image} is created in cluster {secondary}"
     )
     for i in range(60):
         time.sleep(1)
-        out = drenv.kubectl(
-            "exec",
+        out = drenv.kubectl_exec(
             "deploy/rook-ceph-tools",
             "--namespace",
             "rook-ceph",
@@ -163,8 +160,7 @@ def test_volume_replication(primary, secondary):
             profile=secondary,
         )
         if rbd_image in out:
-            drenv.kubectl(
-                "exec",
+            out = drenv.kubectl_exec(
                 "deploy/rook-ceph-tools",
                 "--namespace",
                 "rook-ceph",
@@ -176,6 +172,7 @@ def test_volume_replication(primary, secondary):
                 POOL_NAME,
                 profile=secondary,
             )
+            drenv.log_detail(out)
             break
     else:
         raise RuntimeError(f"Timeout waiting for image {rbd_image}")
