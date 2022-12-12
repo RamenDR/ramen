@@ -130,6 +130,22 @@ def test_watch_no_output():
     assert output == []
 
 
+def test_watch_with_input():
+    output = list(commands.watch("cat", input="input"))
+    assert output == ["input"]
+
+
+def test_watch_with_input_non_ascii():
+    output = list(commands.watch("cat", input="\u05d0"))
+    assert output == ["\u05d0"]
+
+
+def test_watch_with_input_large():
+    text = "A" * (1 << 20)
+    output = list(commands.watch("cat", input=text))
+    assert output == [text]
+
+
 def test_watch_lines():
     script = """
 for i in range(10):
