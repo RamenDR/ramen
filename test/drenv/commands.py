@@ -74,7 +74,7 @@ def run(*args, input=None):
     return output
 
 
-def watch(*args):
+def watch(*args, input=None):
     """
     Run command args, iterating over lines read from the child process stdout.
 
@@ -95,6 +95,7 @@ def watch(*args):
 
     with subprocess.Popen(
         args,
+        stdin=subprocess.PIPE if input else None,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         env=env,
@@ -102,7 +103,7 @@ def watch(*args):
         error = bytearray()
         partial = bytearray()
 
-        for src, data in stream(p):
+        for src, data in stream(p, input=input):
             if src is ERR:
                 error += data
             else:
