@@ -13,7 +13,7 @@ URL = f"https://github.com/cert-manager/cert-manager/releases/download/{VERSION}
 
 def deploy(cluster):
     drenv.log_progress("Deploying cert-manager")
-    drenv.kubectl("apply", "--filename", URL, profile=cluster)
+    drenv.kubectl_apply("--filename", URL, profile=cluster)
 
 
 def wait(cluster):

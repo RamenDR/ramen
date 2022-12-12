@@ -61,8 +61,7 @@ def configure_rbd_mirroring(cluster, peer_info):
 
     template = drenv.template("rbd-mirror/rbd-mirror-secret.yaml")
     yaml = template.substitute(peer_info)
-    drenv.kubectl(
-        "apply",
+    drenv.kubectl_apply(
         "--filename",
         "-",
         "--namespace",
@@ -87,8 +86,7 @@ def configure_rbd_mirroring(cluster, peer_info):
     )
 
     drenv.log_progress(f"Apply rbd mirror to cluster {cluster}")
-    drenv.kubectl(
-        "apply",
+    drenv.kubectl_apply(
         "--filename",
         "rbd-mirror/rbd-mirror.yaml",
         "--namespace",
@@ -147,8 +145,7 @@ def wait_until_pool_mirroring_is_healthy(cluster):
 
 def deploy_vrc_sample(cluster):
     drenv.log_progress(f"Applying vrc sample in cluster {cluster}")
-    drenv.kubectl(
-        "apply",
+    drenv.kubectl_apply(
         "--filename",
         "rbd-mirror/vrc-sample.yaml",
         "--namespace",
