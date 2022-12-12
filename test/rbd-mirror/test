@@ -111,8 +111,7 @@ def test_volume_replication(primary, secondary):
     )
 
     drenv.log_progress(f"Looking up pvc {PVC_NAME} pv name in cluster {primary}")
-    pv_name = drenv.kubectl(
-        "get",
+    pv_name = drenv.kubectl_get(
         f"pvc/{PVC_NAME}",
         "--output",
         "jsonpath={.spec.volumeName}",
@@ -122,8 +121,7 @@ def test_volume_replication(primary, secondary):
     )
 
     drenv.log_progress(f"Looking up rbd image for pv {pv_name} in cluster {primary}")
-    rbd_image = drenv.kubectl(
-        "get",
+    rbd_image = drenv.kubectl_get(
         f"pv/{pv_name}",
         "--output",
         "jsonpath={.spec.csi.volumeAttributes.imageName}",
@@ -183,8 +181,7 @@ def test_volume_replication(primary, secondary):
         raise RuntimeError(f"Timeout waiting for image {rbd_image}")
 
     drenv.log_progress(f"vr vr-sample info on primary cluster {primary}")
-    drenv.kubectl(
-        "get",
+    drenv.kubectl_get(
         "volumereplication",
         "vr-sample",
         "--output",

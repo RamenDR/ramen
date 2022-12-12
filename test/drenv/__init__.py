@@ -11,6 +11,8 @@ import time
 
 from contextlib import contextmanager
 
+from . import commands
+
 
 def log_progress(msg):
     """
@@ -24,6 +26,21 @@ def log_detail(text):
     Logs details for the last progress message to stdout.
     """
     print(textwrap.indent(text, "  "))
+
+
+def kubectl_get(*args, profile=None):
+    """
+    Run kubectl get ... and return the output.
+    """
+    return _kubectl_run("get", *args, profile=profile)
+
+
+def _kubectl_run(cmd, *args, profile=None):
+    cmd = ["kubectl", cmd]
+    if profile:
+        cmd.extend(("--context", profile))
+    cmd.extend(args)
+    return commands.run(*cmd)
 
 
 def kubectl(*args, profile=None, input=None, verbose=True):
@@ -67,7 +84,7 @@ def wait_for(
     Raises RuntimeError if the resource does not exist within the specified
     timeout.
     """
-    args = ["get", resource, "--output", output, "--ignore-not-found"]
+    args = [resource, "--output", output, "--ignore-not-found"]
     if namespace:
         args.extend(("--namespace", namespace))
 
@@ -75,7 +92,7 @@ def wait_for(
     delay = min(1.0, timeout / 60)
 
     while True:
-        out = kubectl(*args, profile=profile, verbose=False)
+        out = kubectl_get(*args, profile=profile)
         if out:
             log_detail(f"{resource} exists")
             return out
