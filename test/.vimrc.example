@@ -12,5 +12,5 @@
 
 augroup black_on_save
   autocmd!
-  autocmd FileType python autocmd BufWritePre * Black
+  autocmd BufWritePre * if &filetype == 'python'|execute ':Black'|endif
 augroup end
