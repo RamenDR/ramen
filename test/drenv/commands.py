@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import platform
 import selectors
 import subprocess
 import textwrap
@@ -10,6 +11,10 @@ OUT = "out"
 ERR = "err"
 
 _Selector = getattr(selectors, "PollSelector", selectors.SelectSelector)
+
+# Amount of data that can be written to a pipe without blocking, defined by
+# POSIX to 512 but is 4096 on Linux. See pipe(7).
+_PIPE_BUF = 4096 if platform.system() == "Linux" else 512
 
 
 class Error(Exception):
@@ -121,7 +126,7 @@ def watch(*args):
         raise Error(args, p.returncode, error)
 
 
-def stream(proc, bufsize=32 << 10):
+def stream(proc, input=None, bufsize=32 << 10):
     """
     Stream data from process stdout and stderr.
 
@@ -129,20 +134,52 @@ def stream(proc, bufsize=32 << 10):
     stderr=subprocess.PIPE. If only one stream is used don't use this, stream
     directly from the single pipe.
 
+    If input is not None, proc must be created with stdin=subprocess.PIPE and
+    the pipe must be open.
+
     Yields either (OUT, data) or (ERR, data) read from proc stdout and stderr.
     Returns when both streams are closed.
     """
+    if input:
+        if proc.stdin is None:
+            raise RuntimeError("Cannot stream input: proc.stdin is None")
+        if proc.stdin.closed:
+            raise RuntimeError("Cannot stream input: proc.stdin is closed")
+    elif proc.stdin:
+        try:
+            proc.stdin.close()
+        except BrokenPipeError:
+            pass
+
     with _Selector() as sel:
         for f, src in (proc.stdout, OUT), (proc.stderr, ERR):
             if f and not f.closed:
                 sel.register(f, selectors.EVENT_READ, src)
+        if input:
+            sel.register(proc.stdin, selectors.EVENT_WRITE)
+            input_view = memoryview(input.encode())
+            input_offset = 0
 
         while sel.get_map():
             for key, event in sel.select():
-                data = os.read(key.fd, bufsize)
-                if not data:
-                    sel.unregister(key.fileobj)
-                    key.fileobj.close()
-                    continue
+                if key.fileobj is proc.stdin:
+                    # Stream data from caller to child process.
+                    chunk = input_view[input_offset : input_offset + _PIPE_BUF]
+                    try:
+                        input_offset += os.write(key.fd, chunk)
+                    except BrokenPipeError:
+                        sel.unregister(key.fileobj)
+                        key.fileobj.close()
+                    else:
+                        if input_offset >= len(input_view):
+                            sel.unregister(key.fileobj)
+                            key.fileobj.close()
+                else:
+                    # Stream data from child process to caller.
+                    data = os.read(key.fd, bufsize)
+                    if not data:
+                        sel.unregister(key.fileobj)
+                        key.fileobj.close()
+                        continue
 
-                yield key.data, data
+                    yield key.data, data

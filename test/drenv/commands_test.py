@@ -47,6 +47,60 @@ def test_stream_output_large():
     assert err == 0
 
 
+def test_stream_input_empty():
+    with run("cat", stdin=subprocess.PIPE) as p:
+        stream = list(commands.stream(p, input=""))
+    assert stream == []
+
+
+def test_stream_input():
+    with run("cat", stdin=subprocess.PIPE) as p:
+        stream = list(commands.stream(p, input="input"))
+    assert stream == [(commands.OUT, b"input")]
+
+
+def test_stream_input_large():
+    # Stream 10 MiB of data to ensure we don't deadlock when sending large
+    # payloads.
+    text = "A" * (10 << 20)
+    out = bytearray()
+    err = bytearray()
+
+    with run("cat", stdin=subprocess.PIPE) as p:
+        for src, data in commands.stream(p, input=text):
+            if src == commands.OUT:
+                out += data
+            else:
+                err += data
+
+    assert err.decode() == ""
+    assert out.decode() == text
+
+
+def test_stream_input_no_stdin():
+    with pytest.raises(RuntimeError):
+        with run("cat", stdin=None) as p:
+            list(commands.stream(p, input="input"))
+
+
+def test_stream_input_stdin_closed():
+    with pytest.raises(RuntimeError):
+        with run("cat", stdin=subprocess.PIPE) as p:
+            p.stdin.close()
+            list(commands.stream(p, input="input"))
+
+
+def test_stream_input_child_close_pipe():
+    # Write 1 MiB to child that ignores the input and exits.  Should not
+    # deadlock blocking on the pipe of fail when the pipe is closed before all
+    # input was streamed.
+    text = "A" * (1 << 20)
+    with run("echo", "-n", "output", stdin=subprocess.PIPE) as p:
+        stream = list(commands.stream(p, input=text))
+
+    assert stream == [(commands.OUT, b"output")]
+
+
 def test_stream_no_stdout():
     # No reason to stream with one pipe, but it works.
     with run("sh", "-c", "echo -n error >&2", stdout=None) as p:
@@ -250,9 +304,12 @@ Command failed:
 
 
 @contextmanager
-def run(*args, stdout=subprocess.PIPE, stderr=subprocess.PIPE):
-    p = subprocess.Popen(args, stdout=stdout, stderr=stderr)
+def run(*args, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE):
+    p = subprocess.Popen(args, stdin=stdin, stdout=stdout, stderr=stderr)
     try:
         yield p
+    except BaseException:
+        p.kill()
+        raise
     finally:
         p.wait()
