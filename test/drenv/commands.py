@@ -15,20 +15,30 @@ _Selector = getattr(selectors, "PollSelector", selectors.SelectSelector)
 class Error(Exception):
     INDENT = 3 * " "
 
-    def __init__(self, command, exitcode, error):
+    def __init__(self, command, exitcode, error, output=None):
         self.command = command
         self.exitcode = exitcode
         self.error = error
+        self.output = output
+
+    def _indent(self, s):
+        return textwrap.indent(s, self.INDENT)
 
     def __str__(self):
-        error = textwrap.indent(self.error.rstrip(), self.INDENT * 2)
-        return f"""\
-Command failed:
-   command: {self.command}
-   exitcode: {self.exitcode}
-   error:
-{error}
-"""
+        lines = [
+            "Command failed:\n",
+            self._indent(f"command: {self.command}\n"),
+            self._indent(f"exitcode: {self.exitcode}\n"),
+        ]
+
+        if self.output:
+            output = self._indent(self.output.rstrip())
+            lines.append(self._indent(f"output:\n{output}\n"))
+
+        error = self._indent(self.error.rstrip())
+        lines.append(self._indent(f"error:\n{error}\n"))
+
+        return "".join(lines)
 
 
 def watch(*args):
