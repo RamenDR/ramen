@@ -16,8 +16,7 @@ def fetch_secret_info(cluster):
     info = {}
 
     drenv.log_progress(f"Getting mirroring info site name for cluster {cluster}")
-    info["name"] = drenv.kubectl(
-        "get",
+    info["name"] = drenv.kubectl_get(
         "cephblockpools.ceph.rook.io",
         POOL_NAME,
         "--output",
@@ -30,8 +29,7 @@ def fetch_secret_info(cluster):
     drenv.log_progress(
         f"Getting rbd mirror boostrap peer secret name for cluster {cluster}"
     )
-    secret_name = drenv.kubectl(
-        "get",
+    secret_name = drenv.kubectl_get(
         "cephblockpools.ceph.rook.io",
         POOL_NAME,
         "--output",
@@ -42,8 +40,7 @@ def fetch_secret_info(cluster):
     )
 
     drenv.log_progress(f"Getting secret {secret_name} token for cluster {cluster}")
-    info["token"] = drenv.kubectl(
-        "get",
+    info["token"] = drenv.kubectl_get(
         "secret",
         secret_name,
         "--output",
