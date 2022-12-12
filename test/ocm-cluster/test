@@ -10,7 +10,7 @@ import drenv
 
 def deploy_work(cluster, hub, work):
     drenv.log_progress(f"Applying manifestwork to namespace {cluster}")
-    drenv.kubectl("apply", "--filename", "-", input=work, profile=hub)
+    drenv.kubectl_apply("--filename", "-", input=work, profile=hub)
 
 
 def wait_for_work(cluster, hub):

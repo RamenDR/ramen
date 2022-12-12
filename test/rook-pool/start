@@ -10,8 +10,7 @@ import drenv
 
 def deploy(cluster):
     drenv.log_progress("Creating rbd pool and storage class")
-    drenv.kubectl(
-        "apply",
+    drenv.kubectl_apply(
         "--filename",
         "rook-pool/replica-pool.yaml",
         "--filename",

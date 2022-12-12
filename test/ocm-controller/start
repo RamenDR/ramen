@@ -17,7 +17,7 @@ def deploy(cluster):
         "ocm-controller/kustomization.yaml",
         base_url=BASE_URL,
     ) as kustomization:
-        drenv.kubectl("apply", "--kustomize", kustomization, profile=cluster)
+        drenv.kubectl_apply("--kustomize", kustomization, profile=cluster)
 
 
 def wait(cluster):

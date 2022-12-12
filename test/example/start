@@ -14,9 +14,4 @@ if len(sys.argv) != 2:
 cluster = sys.argv[1]
 
 drenv.log_progress("Deploying example")
-drenv.kubectl(
-    "apply",
-    "--filename",
-    "example/deployment.yaml",
-    profile=cluster,
-)
+drenv.kubectl_apply("--filename", "example/deployment.yaml", profile=cluster)

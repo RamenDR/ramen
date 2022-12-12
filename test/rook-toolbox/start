@@ -14,12 +14,7 @@ BASE_URL = f"https://raw.githubusercontent.com/rook/rook/{VERSION}/deploy/exampl
 
 def deploy(cluster):
     drenv.log_progress("Deploying rook ceph toolbox")
-    drenv.kubectl(
-        "apply",
-        "--filename",
-        f"{BASE_URL}/toolbox.yaml",
-        profile=cluster,
-    )
+    drenv.kubectl_apply("--filename", f"{BASE_URL}/toolbox.yaml", profile=cluster)
 
 
 def wait(cluster):

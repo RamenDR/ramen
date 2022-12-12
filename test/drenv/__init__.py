@@ -42,12 +42,28 @@ def kubectl_exec(*args, profile=None):
     return _kubectl_run("exec", *args, profile=profile)
 
 
+def kubectl_apply(*args, input=None, profile=None):
+    """
+    Run kubectl apply ... logging progress messages.
+    """
+    _kubectl_watch("apply", *args, input=input, profile=profile)
+
+
 def _kubectl_run(cmd, *args, profile=None):
     cmd = ["kubectl", cmd]
     if profile:
         cmd.extend(("--context", profile))
     cmd.extend(args)
     return commands.run(*cmd)
+
+
+def _kubectl_watch(cmd, *args, input=None, profile=None):
+    cmd = ["kubectl", cmd]
+    if profile:
+        cmd.extend(("--context", profile))
+    cmd.extend(args)
+    for line in commands.watch(*cmd, input=input):
+        log_detail(line)
 
 
 def kubectl(*args, profile=None, input=None, verbose=True):

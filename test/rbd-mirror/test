@@ -45,8 +45,7 @@ def rbd_mirror_image_status(cluster, image):
 
 def test_volume_replication(primary, secondary):
     drenv.log_progress(f"Deploying pvc {PVC_NAME} in cluster {primary}")
-    drenv.kubectl(
-        "apply",
+    drenv.kubectl_apply(
         "--filename",
         f"rbd-mirror/{PVC_NAME}.yaml",
         "--namespace",
@@ -69,8 +68,7 @@ def test_volume_replication(primary, secondary):
     )
 
     drenv.log_progress(f"Deploying vr vr-sample in cluster {primary}")
-    drenv.kubectl(
-        "apply",
+    drenv.kubectl_apply(
         "--filename",
         "rbd-mirror/vr-sample.yaml",
         "--namespace",

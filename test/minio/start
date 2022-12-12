@@ -10,7 +10,7 @@ import drenv
 
 def deploy(cluster):
     drenv.log_progress("Deploying minio")
-    drenv.kubectl("apply", "--filename", "minio/minio.yaml", profile=cluster)
+    drenv.kubectl_apply("--filename", "minio/minio.yaml", profile=cluster)
 
 
 def wait(cluster):
