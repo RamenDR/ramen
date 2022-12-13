@@ -38,8 +38,7 @@ def wait(cluster):
     for name in ADDONS:
         deployment = f"deploy/{name}"
         drenv.wait_for(deployment, namespace=ADDONS_NAMESPACE, profile=cluster)
-        drenv.kubectl(
-            "rollout",
+        drenv.kubectl_rollout(
             "status",
             deployment,
             "--namespace",
@@ -59,8 +58,7 @@ def wait_for_hub(hub):
     for name in HUB_DEPLOYMENTS:
         deployment = f"deploy/{name}"
         drenv.wait_for(deployment, namespace=HUB_NAMESPACE, profile=hub)
-        drenv.kubectl(
-            "rollout",
+        drenv.kubectl_rollout(
             "status",
             deployment,
             "--namespace",

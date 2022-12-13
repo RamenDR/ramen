@@ -49,6 +49,13 @@ def kubectl_apply(*args, input=None, profile=None):
     _kubectl_watch("apply", *args, input=input, profile=profile)
 
 
+def kubectl_rollout(*args, profile=None):
+    """
+    Run kubectl rollout ... logging progress messages.
+    """
+    _kubectl_watch("rollout", *args, profile=profile)
+
+
 def _kubectl_run(cmd, *args, profile=None):
     cmd = ["kubectl", cmd]
     if profile:

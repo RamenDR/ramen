@@ -15,8 +15,7 @@ def deploy(cluster):
 
 def wait(cluster):
     drenv.log_progress("Waiting until minio is rolled out")
-    drenv.kubectl(
-        "rollout",
+    drenv.kubectl_rollout(
         "status",
         "deployment/minio",
         "--namespace",

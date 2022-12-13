@@ -14,8 +14,7 @@ if len(sys.argv) != 2:
 cluster = sys.argv[1]
 
 drenv.log_progress("Testing example deployment")
-drenv.kubectl(
-    "rollout",
+drenv.kubectl_rollout(
     "status",
     "deploy/example-deployment",
     "--timeout",
