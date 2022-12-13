@@ -6,6 +6,7 @@
 import sys
 
 import drenv
+from drenv import kubectl
 
 if len(sys.argv) != 2:
     print(f"Usage: {sys.argv[0]} cluster")
@@ -14,7 +15,7 @@ if len(sys.argv) != 2:
 cluster = sys.argv[1]
 
 drenv.log_progress("Testing example deployment")
-drenv.kubectl_rollout(
+kubectl.rollout(
     "status",
     "deploy/example-deployment",
     "--timeout",

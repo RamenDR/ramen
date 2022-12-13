@@ -8,13 +8,14 @@ import sys
 import time
 
 import drenv
+from drenv import kubectl
 
 POOL_NAME = "replicapool"
 PVC_NAME = "rbd-pvc"
 
 
 def rbd_mirror_image_status(cluster, image):
-    out = drenv.kubectl_exec(
+    out = kubectl.exec(
         "deploy/rook-ceph-tools",
         "--namespace",
         "rook-ceph",
@@ -45,7 +46,7 @@ def rbd_mirror_image_status(cluster, image):
 
 def test_volume_replication(primary, secondary):
     drenv.log_progress(f"Deploying pvc {PVC_NAME} in cluster {primary}")
-    drenv.kubectl_apply(
+    kubectl.apply(
         "--filename",
         f"rbd-mirror/{PVC_NAME}.yaml",
         "--namespace",
@@ -54,7 +55,7 @@ def test_volume_replication(primary, secondary):
     )
 
     drenv.log_progress(f"Waiting until pvc {PVC_NAME} is bound in cluster {primary}")
-    drenv.kubectl_wait(
+    kubectl.wait(
         "pvc",
         PVC_NAME,
         "--for",
@@ -67,7 +68,7 @@ def test_volume_replication(primary, secondary):
     )
 
     drenv.log_progress(f"Deploying vr vr-sample in cluster {primary}")
-    drenv.kubectl_apply(
+    kubectl.apply(
         "--filename",
         "rbd-mirror/vr-sample.yaml",
         "--namespace",
@@ -76,7 +77,7 @@ def test_volume_replication(primary, secondary):
     )
 
     drenv.log_progress(f"Waiting until vr vr-sample is completed in cluster {primary}")
-    drenv.kubectl_wait(
+    kubectl.wait(
         "volumereplication",
         "vr-sample",
         "--for",
@@ -91,7 +92,7 @@ def test_volume_replication(primary, secondary):
     drenv.log_progress(
         f"Waiting until vr vr-sample state is primary in cluster {primary}"
     )
-    drenv.kubectl_wait(
+    kubectl.wait(
         "volumereplication",
         "vr-sample",
         "--for",
@@ -104,7 +105,7 @@ def test_volume_replication(primary, secondary):
     )
 
     drenv.log_progress(f"Looking up pvc {PVC_NAME} pv name in cluster {primary}")
-    pv_name = drenv.kubectl_get(
+    pv_name = kubectl.get(
         f"pvc/{PVC_NAME}",
         "--output",
         "jsonpath={.spec.volumeName}",
@@ -114,7 +115,7 @@ def test_volume_replication(primary, secondary):
     )
 
     drenv.log_progress(f"Looking up rbd image for pv {pv_name} in cluster {primary}")
-    rbd_image = drenv.kubectl_get(
+    rbd_image = kubectl.get(
         f"pv/{pv_name}",
         "--output",
         "jsonpath={.spec.csi.volumeAttributes.imageName}",
@@ -124,7 +125,7 @@ def test_volume_replication(primary, secondary):
     )
 
     drenv.log_progress(f"rbd image {rbd_image} info in cluster {primary}")
-    out = drenv.kubectl_exec(
+    out = kubectl.exec(
         "deploy/rook-ceph-tools",
         "--namespace",
         "rook-ceph",
@@ -143,7 +144,7 @@ def test_volume_replication(primary, secondary):
     )
     for i in range(60):
         time.sleep(1)
-        out = drenv.kubectl_exec(
+        out = kubectl.exec(
             "deploy/rook-ceph-tools",
             "--namespace",
             "rook-ceph",
@@ -155,7 +156,7 @@ def test_volume_replication(primary, secondary):
             profile=secondary,
         )
         if rbd_image in out:
-            out = drenv.kubectl_exec(
+            out = kubectl.exec(
                 "deploy/rook-ceph-tools",
                 "--namespace",
                 "rook-ceph",
@@ -173,7 +174,7 @@ def test_volume_replication(primary, secondary):
         raise RuntimeError(f"Timeout waiting for image {rbd_image}")
 
     drenv.log_progress(f"vr vr-sample info on primary cluster {primary}")
-    drenv.kubectl_get(
+    kubectl.get(
         "volumereplication",
         "vr-sample",
         "--output",
@@ -188,7 +189,7 @@ def test_volume_replication(primary, secondary):
     drenv.log_detail(json.dumps(image_status, indent=2))
 
     drenv.log_progress(f"Deleting vr vr-sample in primary cluster {primary}")
-    drenv.kubectl_delete(
+    kubectl.delete(
         "volumereplication",
         "vr-sample",
         "--namespace",
@@ -197,7 +198,7 @@ def test_volume_replication(primary, secondary):
     )
 
     drenv.log_progress(f"Deleting pvc {PVC_NAME} in primary cluster {primary}")
-    drenv.kubectl_delete(
+    kubectl.delete(
         "pvc",
         PVC_NAME,
         "--namespace",

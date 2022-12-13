@@ -6,6 +6,7 @@
 import sys
 
 import drenv
+from drenv import kubectl
 
 # Using main till a release is available with lastSyncTime.
 VERSION = "main"
@@ -18,14 +19,14 @@ def deploy(cluster):
         "csi-addons/kustomization.yaml",
         base_url=BASE_URL,
     ) as kustomization:
-        drenv.kubectl_apply("--kustomize", kustomization, profile=cluster)
+        kubectl.apply("--kustomize", kustomization, profile=cluster)
 
 
 def wait(cluster):
     drenv.log_progress(
         "Waiting until csi-addons-controller-manager is rolled out",
     )
-    drenv.kubectl_rollout(
+    kubectl.rollout(
         "status",
         "deploy/csi-addons-controller-manager",
         "--namespace",

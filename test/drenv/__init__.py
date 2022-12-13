@@ -11,7 +11,7 @@ import time
 
 from contextlib import contextmanager
 
-from . import commands
+from . import kubectl
 
 
 def log_progress(msg):
@@ -26,99 +26,6 @@ def log_detail(text):
     Logs details for the last progress message to stdout.
     """
     print(textwrap.indent(text, "  "))
-
-
-def kubectl_config(*args, profile=None):
-    """
-    Run kubectl config ... and return the output.
-    """
-    return _kubectl_run("config", *args, profile=profile)
-
-
-def kubectl_get(*args, profile=None):
-    """
-    Run kubectl get ... and return the output.
-    """
-    return _kubectl_run("get", *args, profile=profile)
-
-
-def kubectl_exec(*args, profile=None):
-    """
-    Run kubectl get ... and return the output.
-    """
-    return _kubectl_run("exec", *args, profile=profile)
-
-
-def kubectl_apply(*args, input=None, profile=None):
-    """
-    Run kubectl apply ... logging progress messages.
-    """
-    _kubectl_watch("apply", *args, input=input, profile=profile)
-
-
-def kubectl_patch(*args, profile=None):
-    """
-    Run kubectl patch ... logging progress messages.
-    """
-    _kubectl_watch("patch", *args, profile=profile)
-
-
-def kubectl_delete(*args, input=None, profile=None):
-    """
-    Run kubectl delete ... logging progress messages.
-    """
-    _kubectl_watch("delete", *args, input=input, profile=profile)
-
-
-def kubectl_rollout(*args, profile=None):
-    """
-    Run kubectl rollout ... logging progress messages.
-    """
-    _kubectl_watch("rollout", *args, profile=profile)
-
-
-def kubectl_wait(*args, profile=None):
-    """
-    Run kubectl wait ... logging progress messages.
-    """
-    _kubectl_watch("wait", *args, profile=profile)
-
-
-def _kubectl_run(cmd, *args, profile=None):
-    cmd = ["kubectl", cmd]
-    if profile:
-        cmd.extend(("--context", profile))
-    cmd.extend(args)
-    return commands.run(*cmd)
-
-
-def _kubectl_watch(cmd, *args, input=None, profile=None):
-    cmd = ["kubectl", cmd]
-    if profile:
-        cmd.extend(("--context", profile))
-    cmd.extend(args)
-    for line in commands.watch(*cmd, input=input):
-        log_detail(line)
-
-
-def kubectl(*args, profile=None, input=None, verbose=True):
-    """
-    Run `kubectl` command for profile.
-
-    To pipe yaml into the kubectl command, use `--filename -` and pass the yaml
-    to the input argument.
-
-    The underlying kubectl command output is logged using log_detail(). Set
-    verbose=False the log.
-
-    Returns the underlying command output.
-    """
-    cmd = ["kubectl"]
-    if profile:
-        cmd.extend(("--context", profile))
-    cmd.extend(args)
-
-    return run(*cmd, input=input, verbose=verbose)
 
 
 def wait_for(
@@ -150,7 +57,7 @@ def wait_for(
     delay = min(1.0, timeout / 60)
 
     while True:
-        out = kubectl_get(*args, profile=profile)
+        out = kubectl.get(*args, profile=profile)
         if out:
             log_detail(f"{resource} exists")
             return out
@@ -227,7 +134,7 @@ def cluster_info(cluster):
     Return cluster info from kubectl config. Returns empty dict if the cluster
     is not configured with kubectl yet.
     """
-    out = kubectl_config("view", "--output", "json", verbose=False)
+    out = kubectl.config("view", "--output", "json")
     config = json.loads(out)
 
     # We get null instead of [].

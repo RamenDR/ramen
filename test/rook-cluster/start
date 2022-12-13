@@ -6,6 +6,7 @@
 import sys
 
 import drenv
+from drenv import kubectl
 
 # Update this when upgrading rook.
 VERSION = "release-1.10"
@@ -18,7 +19,7 @@ def deploy(cluster):
         "rook-cluster/kustomization.yaml",
         base_url=BASE_URL,
     ) as kustomization:
-        drenv.kubectl_apply("--kustomize", kustomization, profile=cluster)
+        kubectl.apply("--kustomize", kustomization, profile=cluster)
 
 
 def wait(cluster):
@@ -30,7 +31,7 @@ def wait(cluster):
         timeout=60,
         profile=cluster,
     )
-    drenv.kubectl_wait(
+    kubectl.wait(
         "CephCluster",
         "my-cluster",
         "--for",

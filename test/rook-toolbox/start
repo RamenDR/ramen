@@ -6,6 +6,7 @@
 import sys
 
 import drenv
+from drenv import kubectl
 
 # Update this when upgrading rook.
 VERSION = "release-1.10"
@@ -14,12 +15,12 @@ BASE_URL = f"https://raw.githubusercontent.com/rook/rook/{VERSION}/deploy/exampl
 
 def deploy(cluster):
     drenv.log_progress("Deploying rook ceph toolbox")
-    drenv.kubectl_apply("--filename", f"{BASE_URL}/toolbox.yaml", profile=cluster)
+    kubectl.apply("--filename", f"{BASE_URL}/toolbox.yaml", profile=cluster)
 
 
 def wait(cluster):
     drenv.log_progress("Waiting until rook-ceph-tools is rolled out")
-    drenv.kubectl_rollout(
+    kubectl.rollout(
         "status",
         "deploy/rook-ceph-tools",
         "--namespace",

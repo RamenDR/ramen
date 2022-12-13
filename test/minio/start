@@ -6,16 +6,17 @@
 import sys
 
 import drenv
+from drenv import kubectl
 
 
 def deploy(cluster):
     drenv.log_progress("Deploying minio")
-    drenv.kubectl_apply("--filename", "minio/minio.yaml", profile=cluster)
+    kubectl.apply("--filename", "minio/minio.yaml", profile=cluster)
 
 
 def wait(cluster):
     drenv.log_progress("Waiting until minio is rolled out")
-    drenv.kubectl_rollout(
+    kubectl.rollout(
         "status",
         "deployment/minio",
         "--namespace",

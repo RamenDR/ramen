@@ -6,6 +6,7 @@
 import sys
 
 import drenv
+from drenv import kubectl
 
 ADDONS = (
     "application-manager",
@@ -38,7 +39,7 @@ def wait(cluster):
     for name in ADDONS:
         deployment = f"deploy/{name}"
         drenv.wait_for(deployment, namespace=ADDONS_NAMESPACE, profile=cluster)
-        drenv.kubectl_rollout(
+        kubectl.rollout(
             "status",
             deployment,
             "--namespace",
@@ -58,7 +59,7 @@ def wait_for_hub(hub):
     for name in HUB_DEPLOYMENTS:
         deployment = f"deploy/{name}"
         drenv.wait_for(deployment, namespace=HUB_NAMESPACE, profile=hub)
-        drenv.kubectl_rollout(
+        kubectl.rollout(
             "status",
             deployment,
             "--namespace",
