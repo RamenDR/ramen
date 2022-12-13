@@ -4,7 +4,6 @@
 import json
 import os
 import string
-import subprocess
 import tempfile
 import textwrap
 import time
@@ -107,13 +106,20 @@ def cluster_status(cluster):
     if not cluster_info(cluster):
         return {}
 
-    out = run("minikube", "status", "--profile", cluster, "--output", "json")
+    out = commands.run(
+        "minikube",
+        "status",
+        "--profile",
+        cluster,
+        "--output",
+        "json",
+    )
 
     return json.loads(out)
 
 
 def cluster_exists(cluster):
-    out = run("minikube", "profile", "list", "--output=json")
+    out = commands.run("minikube", "profile", "list", "--output=json")
     profiles = json.loads(out)
     for profile in profiles["valid"]:
         if profile["Name"] == cluster:
@@ -138,23 +144,6 @@ def cluster_info(cluster):
             return c
 
     return {}
-
-
-def run(*args, input=None):
-    """
-    Run a command and return the output. You can set input to the text to pipe
-    into the commnad stdin.
-    """
-    return commands.run(*args, input=input)
-
-
-def watch(*args, input=None):
-    """
-    Run a command and log progress messages. You can set input to the text to
-    pipe into the commnad stdin.
-    """
-    for line in commands.watch(*args, input=input):
-        log_detail(line)
 
 
 def template(path):
