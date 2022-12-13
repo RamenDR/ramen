@@ -7,6 +7,7 @@ import sys
 
 import drenv
 from drenv import kubectl
+from drenv import clusteradm
 
 ADDONS = (
     "application-manager",
@@ -33,18 +34,10 @@ DEPLOYMENTS = {
 
 def deploy(cluster):
     drenv.log_progress("Initializing hub")
-    drenv.watch("clusteradm", "init", "--wait", "--context", cluster)
+    clusteradm.init(wait=True, context=cluster)
 
     drenv.log_progress("Installing hub addons")
-    drenv.watch(
-        "clusteradm",
-        "install",
-        "hub-addon",
-        "--names",
-        ",".join(ADDONS),
-        "--context",
-        cluster,
-    )
+    clusteradm.install("hub-addon", names=ADDONS, context=cluster)
 
 
 def wait(cluster):
