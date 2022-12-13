@@ -72,8 +72,7 @@ def configure_rbd_mirroring(cluster, peer_info):
 
     drenv.log_progress(f"Configure peers for cluster {cluster}")
     patch = {"spec": {"mirroring": {"peers": {"secretNames": [peer_info["name"]]}}}}
-    drenv.kubectl(
-        "patch",
+    drenv.kubectl_patch(
         "cephblockpool",
         POOL_NAME,
         "--type",
