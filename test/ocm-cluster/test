@@ -55,7 +55,7 @@ def wait_for_deployment(cluster, hub):
 
 def delete_work(cluster, hub, work):
     drenv.log_progress(f"Deleting manifestwork from namespace {cluster}")
-    drenv.kubectl("delete", "--filename", "-", input=work, profile=hub)
+    drenv.kubectl_delete("--filename", "-", input=work, profile=hub)
 
 
 def wait_for_delete_work(cluster, hub):
