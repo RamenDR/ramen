@@ -49,6 +49,13 @@ def kubectl_apply(*args, input=None, profile=None):
     _kubectl_watch("apply", *args, input=input, profile=profile)
 
 
+def kubectl_delete(*args, input=None, profile=None):
+    """
+    Run kubectl delete ... logging progress messages.
+    """
+    _kubectl_watch("delete", *args, input=input, profile=profile)
+
+
 def kubectl_rollout(*args, profile=None):
     """
     Run kubectl rollout ... logging progress messages.

@@ -188,8 +188,7 @@ def test_volume_replication(primary, secondary):
     drenv.log_detail(json.dumps(image_status, indent=2))
 
     drenv.log_progress(f"Deleting vr vr-sample in primary cluster {primary}")
-    drenv.kubectl(
-        "delete",
+    drenv.kubectl_delete(
         "volumereplication",
         "vr-sample",
         "--namespace",
@@ -198,8 +197,7 @@ def test_volume_replication(primary, secondary):
     )
 
     drenv.log_progress(f"Deleting pvc {PVC_NAME} in primary cluster {primary}")
-    drenv.kubectl(
-        "delete",
+    drenv.kubectl_delete(
         "pvc",
         PVC_NAME,
         "--namespace",
