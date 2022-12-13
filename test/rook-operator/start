@@ -34,8 +34,7 @@ def wait(cluster):
     )
 
     drenv.log_progress("Waiting until rook ceph operator is ready")
-    drenv.kubectl(
-        "wait",
+    drenv.kubectl_wait(
         "pod",
         "--for",
         "jsonpath={.status.phase}=Running",

@@ -99,8 +99,7 @@ def wait_until_pool_mirroring_is_healthy(cluster):
     drenv.log_progress(
         f"Waiting until ceph mirror daemon is healthy in cluster {cluster}"
     )
-    drenv.kubectl(
-        "wait",
+    drenv.kubectl_wait(
         "cephblockpools.ceph.rook.io",
         POOL_NAME,
         "--for",
@@ -113,8 +112,7 @@ def wait_until_pool_mirroring_is_healthy(cluster):
     )
 
     drenv.log_progress(f"Waiting until ceph mirror is healthy in cluster {cluster}")
-    drenv.kubectl(
-        "wait",
+    drenv.kubectl_wait(
         "cephblockpools.ceph.rook.io",
         POOL_NAME,
         "--for",
@@ -129,8 +127,7 @@ def wait_until_pool_mirroring_is_healthy(cluster):
     drenv.log_progress(
         f"Waiting until ceph mirror image is healthy in cluster {cluster}"
     )
-    drenv.kubectl(
-        "wait",
+    drenv.kubectl_wait(
         "cephblockpools.ceph.rook.io",
         POOL_NAME,
         "--for",

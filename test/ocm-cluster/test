@@ -15,8 +15,7 @@ def deploy_work(cluster, hub, work):
 
 def wait_for_work(cluster, hub):
     drenv.log_progress(f"Waiting until manifestwork is applied in namespace {cluster}")
-    drenv.kubectl(
-        "wait",
+    drenv.kubectl_wait(
         "manifestwork/example-manifestwork",
         "--for",
         "condition=applied",
@@ -32,8 +31,7 @@ def wait_for_deployment(cluster, hub):
     drenv.log_progress(
         f"Waiting until manifestwork is available in namespace {cluster}"
     )
-    drenv.kubectl(
-        "wait",
+    drenv.kubectl_wait(
         "manifestwork/example-manifestwork",
         "--for",
         "condition=available",
@@ -45,8 +43,7 @@ def wait_for_deployment(cluster, hub):
     )
 
     drenv.log_progress(f"Waiting until deployment is available in cluster {cluster}")
-    drenv.kubectl(
-        "wait",
+    drenv.kubectl_wait(
         "deploy/example-deployment",
         "--for",
         "condition=available",
@@ -63,8 +60,7 @@ def delete_work(cluster, hub, work):
 
 def wait_for_delete_work(cluster, hub):
     drenv.log_progress(f"Waiting until manifestwork is deleted from namspace {cluster}")
-    drenv.kubectl(
-        "wait",
+    drenv.kubectl_wait(
         "manifestwork/example-manifestwork",
         "--for",
         "delete",
@@ -78,8 +74,7 @@ def wait_for_delete_work(cluster, hub):
 
 def wait_for_delete_deployment(cluster):
     drenv.log_progress(f"Waiting until deployment is deleted from cluster {cluster}")
-    drenv.kubectl(
-        "wait",
+    drenv.kubectl_wait(
         "deploy/example-deployment",
         "--for",
         "delete",
