@@ -6,6 +6,7 @@
 import sys
 
 import drenv
+from drenv import clusteradm
 from drenv import kubectl
 
 ADDONS = (
@@ -74,53 +75,29 @@ def join_cluster(cluster, hub):
     drenv.log_progress(f"Joining to cluster {hub}")
 
     # We can get the token from the first line of the response.
-    out = drenv.run("clusteradm", "get", "token", "--context", hub)
+    out = clusteradm.get("token", context=hub)
 
     token_line = out.splitlines()[0]
     key, hub_token = token_line.split("=", 1)
     assert key == "token"
 
-    drenv.watch(
-        "clusteradm",
-        "join",
-        "--hub-token",
-        hub_token,
-        "--hub-apiserver",
-        drenv.cluster_info(hub)["cluster"]["server"],
-        "--cluster-name",
-        cluster,
-        "--wait",
-        "--context",
-        cluster,
+    clusteradm.join(
+        hub_token=hub_token,
+        hub_apiserver=drenv.cluster_info(hub)["cluster"]["server"],
+        cluster_name=cluster,
+        wait=True,
+        context=cluster,
     )
 
 
 def accept_cluster(cluster, hub):
     drenv.log_progress("Accepting cluster")
-    drenv.watch(
-        "clusteradm",
-        "accept",
-        "--clusters",
-        cluster,
-        "--wait",
-        "--context",
-        hub,
-    )
+    clusteradm.accept([cluster], wait=True, context=hub)
 
 
 def enable_addons(cluster, hub):
     drenv.log_progress("Enabling addons")
-    drenv.watch(
-        "clusteradm",
-        "addon",
-        "enable",
-        "--names",
-        ",".join(ADDONS),
-        "--clusters",
-        cluster,
-        "--context",
-        hub,
-    )
+    clusteradm.addon("enable", names=ADDONS, clusters=[cluster], context=hub)
 
 
 if len(sys.argv) != 3:
