@@ -6,6 +6,7 @@
 import sys
 
 import drenv
+from drenv import kubectl
 
 # Update this when upgrading rook.
 VERSION = "release-1.10"
@@ -18,12 +19,12 @@ def deploy(cluster):
         "rook-operator/kustomization.yaml",
         base_url=BASE_URL,
     ) as kustomization:
-        drenv.kubectl_apply("--kustomize", kustomization, profile=cluster)
+        kubectl.apply("--kustomize", kustomization, profile=cluster)
 
 
 def wait(cluster):
     drenv.log_progress("Waiting until rook ceph operator is rolled out")
-    drenv.kubectl_rollout(
+    kubectl.rollout(
         "status",
         "deploy/rook-ceph-operator",
         "--namespace",
@@ -34,7 +35,7 @@ def wait(cluster):
     )
 
     drenv.log_progress("Waiting until rook ceph operator is ready")
-    drenv.kubectl_wait(
+    kubectl.wait(
         "pod",
         "--for",
         "jsonpath={.status.phase}=Running",

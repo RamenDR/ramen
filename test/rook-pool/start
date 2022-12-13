@@ -6,11 +6,12 @@
 import sys
 
 import drenv
+from drenv import kubectl
 
 
 def deploy(cluster):
     drenv.log_progress("Creating rbd pool and storage class")
-    drenv.kubectl_apply(
+    kubectl.apply(
         "--filename",
         "rook-pool/replica-pool.yaml",
         "--filename",
@@ -28,7 +29,7 @@ def wait(cluster):
         timeout=60,
         profile=cluster,
     )
-    drenv.kubectl_wait(
+    kubectl.wait(
         "CephBlockPool",
         "replicapool",
         "--for",
@@ -41,7 +42,7 @@ def wait(cluster):
     )
 
     drenv.log_progress("Waiting for replica pool peer token")
-    drenv.kubectl_wait(
+    kubectl.wait(
         "CephBlockPool",
         "replicapool",
         "--for",

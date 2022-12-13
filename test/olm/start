@@ -6,6 +6,7 @@
 import sys
 
 import drenv
+from drenv import kubectl
 
 VERSION = "v0.22.0"
 BASE_URL = f"https://github.com/operator-framework/operator-lifecycle-manager/releases/download/{VERSION}"
@@ -19,7 +20,7 @@ def deploy(cluster):
     #   The CustomResourceDefinition "clusterserviceversions.operators.coreos.com"
     #   is invalid: metadata.annotations: Too long: must have at most 262144 bytes
     # See https://medium.com/pareture/kubectl-install-crd-failed-annotations-too-long-2ebc91b40c7d
-    drenv.kubectl_apply(
+    kubectl.apply(
         "--filename",
         f"{BASE_URL}/crds.yaml",
         "--server-side=true",
@@ -27,7 +28,7 @@ def deploy(cluster):
     )
 
     drenv.log_progress("Waiting until cdrs are established")
-    drenv.kubectl_wait(
+    kubectl.wait(
         "--for",
         "condition=established",
         "--filename",
@@ -36,13 +37,13 @@ def deploy(cluster):
     )
 
     drenv.log_progress("Deploying olm")
-    drenv.kubectl_apply("--filename", f"{BASE_URL}/olm.yaml", profile=cluster)
+    kubectl.apply("--filename", f"{BASE_URL}/olm.yaml", profile=cluster)
 
 
 def wait(cluster):
     for operator in "olm-operator", "catalog-operator":
         drenv.log_progress(f"Waiting until {operator} is rolled out")
-        drenv.kubectl_rollout(
+        kubectl.rollout(
             "status",
             "deploy",
             operator,
@@ -58,7 +59,7 @@ def wait(cluster):
         namespace=NAMESPACE,
         profile=cluster,
     )
-    drenv.kubectl_wait(
+    kubectl.wait(
         "csv/packageserver",
         "--namespace",
         NAMESPACE,
@@ -70,7 +71,7 @@ def wait(cluster):
     )
 
     drenv.log_progress("Waiting for olm pakcage server rollout")
-    drenv.kubectl_rollout(
+    kubectl.rollout(
         "status",
         "deploy/packageserver",
         "--namespace",

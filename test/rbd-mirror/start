@@ -8,6 +8,7 @@ import json
 import sys
 
 import drenv
+from drenv import kubectl
 
 POOL_NAME = "replicapool"
 
@@ -16,7 +17,7 @@ def fetch_secret_info(cluster):
     info = {}
 
     drenv.log_progress(f"Getting mirroring info site name for cluster {cluster}")
-    info["name"] = drenv.kubectl_get(
+    info["name"] = kubectl.get(
         "cephblockpools.ceph.rook.io",
         POOL_NAME,
         "--output",
@@ -29,7 +30,7 @@ def fetch_secret_info(cluster):
     drenv.log_progress(
         f"Getting rbd mirror boostrap peer secret name for cluster {cluster}"
     )
-    secret_name = drenv.kubectl_get(
+    secret_name = kubectl.get(
         "cephblockpools.ceph.rook.io",
         POOL_NAME,
         "--output",
@@ -40,7 +41,7 @@ def fetch_secret_info(cluster):
     )
 
     drenv.log_progress(f"Getting secret {secret_name} token for cluster {cluster}")
-    info["token"] = drenv.kubectl_get(
+    info["token"] = kubectl.get(
         "secret",
         secret_name,
         "--output",
@@ -61,7 +62,7 @@ def configure_rbd_mirroring(cluster, peer_info):
 
     template = drenv.template("rbd-mirror/rbd-mirror-secret.yaml")
     yaml = template.substitute(peer_info)
-    drenv.kubectl_apply(
+    kubectl.apply(
         "--filename",
         "-",
         "--namespace",
@@ -72,7 +73,7 @@ def configure_rbd_mirroring(cluster, peer_info):
 
     drenv.log_progress(f"Configure peers for cluster {cluster}")
     patch = {"spec": {"mirroring": {"peers": {"secretNames": [peer_info["name"]]}}}}
-    drenv.kubectl_patch(
+    kubectl.patch(
         "cephblockpool",
         POOL_NAME,
         "--type",
@@ -85,7 +86,7 @@ def configure_rbd_mirroring(cluster, peer_info):
     )
 
     drenv.log_progress(f"Apply rbd mirror to cluster {cluster}")
-    drenv.kubectl_apply(
+    kubectl.apply(
         "--filename",
         "rbd-mirror/rbd-mirror.yaml",
         "--namespace",
@@ -98,7 +99,7 @@ def wait_until_pool_mirroring_is_healthy(cluster):
     drenv.log_progress(
         f"Waiting until ceph mirror daemon is healthy in cluster {cluster}"
     )
-    drenv.kubectl_wait(
+    kubectl.wait(
         "cephblockpools.ceph.rook.io",
         POOL_NAME,
         "--for",
@@ -111,7 +112,7 @@ def wait_until_pool_mirroring_is_healthy(cluster):
     )
 
     drenv.log_progress(f"Waiting until ceph mirror is healthy in cluster {cluster}")
-    drenv.kubectl_wait(
+    kubectl.wait(
         "cephblockpools.ceph.rook.io",
         POOL_NAME,
         "--for",
@@ -126,7 +127,7 @@ def wait_until_pool_mirroring_is_healthy(cluster):
     drenv.log_progress(
         f"Waiting until ceph mirror image is healthy in cluster {cluster}"
     )
-    drenv.kubectl_wait(
+    kubectl.wait(
         "cephblockpools.ceph.rook.io",
         POOL_NAME,
         "--for",
@@ -141,7 +142,7 @@ def wait_until_pool_mirroring_is_healthy(cluster):
 
 def deploy_vrc_sample(cluster):
     drenv.log_progress(f"Applying vrc sample in cluster {cluster}")
-    drenv.kubectl_apply(
+    kubectl.apply(
         "--filename",
         "rbd-mirror/vrc-sample.yaml",
         "--namespace",

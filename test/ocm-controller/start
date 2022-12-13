@@ -6,6 +6,7 @@
 import sys
 
 import drenv
+from drenv import kubectl
 
 VERSION = "v2.4.4-ACM"
 BASE_URL = f"https://raw.githubusercontent.com/stolostron/multicloud-operators-foundation/{VERSION}/deploy/foundation/hub"
@@ -17,12 +18,12 @@ def deploy(cluster):
         "ocm-controller/kustomization.yaml",
         base_url=BASE_URL,
     ) as kustomization:
-        drenv.kubectl_apply("--kustomize", kustomization, profile=cluster)
+        kubectl.apply("--kustomize", kustomization, profile=cluster)
 
 
 def wait(cluster):
     drenv.log_progress("Waiting for ocm controller rollout")
-    drenv.kubectl_rollout(
+    kubectl.rollout(
         "status",
         "deploy/ocm-controller",
         "--namespace",

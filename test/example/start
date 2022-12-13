@@ -6,6 +6,7 @@
 import sys
 
 import drenv
+from drenv import kubectl
 
 if len(sys.argv) != 2:
     print(f"Usage: {sys.argv[0]} cluster")
@@ -14,4 +15,4 @@ if len(sys.argv) != 2:
 cluster = sys.argv[1]
 
 drenv.log_progress("Deploying example")
-drenv.kubectl_apply("--filename", "example/deployment.yaml", profile=cluster)
+kubectl.apply("--filename", "example/deployment.yaml", profile=cluster)
