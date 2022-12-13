@@ -28,6 +28,13 @@ def log_detail(text):
     print(textwrap.indent(text, "  "))
 
 
+def kubectl_config(*args, profile=None):
+    """
+    Run kubectl config ... and return the output.
+    """
+    return _kubectl_run("config", *args, profile=profile)
+
+
 def kubectl_get(*args, profile=None):
     """
     Run kubectl get ... and return the output.
@@ -220,7 +227,7 @@ def cluster_info(cluster):
     Return cluster info from kubectl config. Returns empty dict if the cluster
     is not configured with kubectl yet.
     """
-    out = kubectl("config", "view", "--output", "json", verbose=False)
+    out = kubectl_config("view", "--output", "json", verbose=False)
     config = json.loads(out)
 
     # We get null instead of [].
