@@ -11,6 +11,7 @@ import time
 
 from contextlib import contextmanager
 
+from . import commands
 from . import kubectl
 
 
@@ -106,21 +107,13 @@ def cluster_status(cluster):
     if not cluster_info(cluster):
         return {}
 
-    out = run(
-        "minikube",
-        "status",
-        "--profile",
-        cluster,
-        "--output",
-        "json",
-        verbose=False,
-    )
+    out = run("minikube", "status", "--profile", cluster, "--output", "json")
 
     return json.loads(out)
 
 
 def cluster_exists(cluster):
-    out = run("minikube", "profile", "list", "--output=json", verbose=False)
+    out = run("minikube", "profile", "list", "--output=json")
     profiles = json.loads(out)
     for profile in profiles["valid"]:
         if profile["Name"] == cluster:
@@ -147,30 +140,21 @@ def cluster_info(cluster):
     return {}
 
 
-def run(*args, input=None, verbose=True):
+def run(*args, input=None):
     """
-    Run a command and return the output.
-
-    You can set input to the text to pipe into the commnad stdin.
-
-    The underlying command output is logged using log_detail(). Set
-    verbose=False to suppress the log.
+    Run a command and return the output. You can set input to the text to pipe
+    into the commnad stdin.
     """
-    cp = subprocess.run(
-        args,
-        input=input.encode() if input else None,
-        stdout=subprocess.PIPE,
-        check=True,
-    )
+    return commands.run(*args, input=input)
 
-    out = cp.stdout.decode().rstrip()
 
-    # Log output for debugging so we don't need to log manually for every
-    # command.
-    if out and verbose:
-        log_detail(out)
-
-    return out
+def watch(*args, input=None):
+    """
+    Run a command and log progress messages. You can set input to the text to
+    pipe into the commnad stdin.
+    """
+    for line in commands.watch(*args, input=input):
+        log_detail(line)
 
 
 def template(path):

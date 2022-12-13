@@ -74,20 +74,13 @@ def join_cluster(cluster, hub):
     drenv.log_progress(f"Joining to cluster {hub}")
 
     # We can get the token from the first line of the response.
-    out = drenv.run(
-        "clusteradm",
-        "get",
-        "token",
-        "--context",
-        hub,
-        verbose=False,
-    )
+    out = drenv.run("clusteradm", "get", "token", "--context", hub)
 
     token_line = out.splitlines()[0]
     key, hub_token = token_line.split("=", 1)
     assert key == "token"
 
-    drenv.run(
+    drenv.watch(
         "clusteradm",
         "join",
         "--hub-token",
@@ -104,7 +97,7 @@ def join_cluster(cluster, hub):
 
 def accept_cluster(cluster, hub):
     drenv.log_progress("Accepting cluster")
-    drenv.run(
+    drenv.watch(
         "clusteradm",
         "accept",
         "--clusters",
@@ -117,7 +110,7 @@ def accept_cluster(cluster, hub):
 
 def enable_addons(cluster, hub):
     drenv.log_progress("Enabling addons")
-    drenv.run(
+    drenv.watch(
         "clusteradm",
         "addon",
         "enable",

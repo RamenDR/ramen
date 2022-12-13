@@ -33,10 +33,10 @@ DEPLOYMENTS = {
 
 def deploy(cluster):
     drenv.log_progress("Initializing hub")
-    drenv.run("clusteradm", "init", "--wait", "--context", cluster)
+    drenv.watch("clusteradm", "init", "--wait", "--context", cluster)
 
     drenv.log_progress("Installing hub addons")
-    drenv.run(
+    drenv.watch(
         "clusteradm",
         "install",
         "hub-addon",
