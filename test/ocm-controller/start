@@ -22,8 +22,7 @@ def deploy(cluster):
 
 def wait(cluster):
     drenv.log_progress("Waiting for ocm controller rollout")
-    drenv.kubectl(
-        "rollout",
+    drenv.kubectl_rollout(
         "status",
         "deploy/ocm-controller",
         "--namespace",

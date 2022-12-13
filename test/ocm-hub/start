@@ -52,8 +52,7 @@ def wait(cluster):
         for name in names:
             deployment = f"deploy/{name}"
             drenv.wait_for(deployment, namespace=ns, profile=cluster)
-            drenv.kubectl(
-                "rollout",
+            drenv.kubectl_rollout(
                 "status",
                 deployment,
                 "--namespace",
