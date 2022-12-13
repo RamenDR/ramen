@@ -54,8 +54,7 @@ def test_volume_replication(primary, secondary):
     )
 
     drenv.log_progress(f"Waiting until pvc {PVC_NAME} is bound in cluster {primary}")
-    drenv.kubectl(
-        "wait",
+    drenv.kubectl_wait(
         "pvc",
         PVC_NAME,
         "--for",
@@ -77,8 +76,7 @@ def test_volume_replication(primary, secondary):
     )
 
     drenv.log_progress(f"Waiting until vr vr-sample is completed in cluster {primary}")
-    drenv.kubectl(
-        "wait",
+    drenv.kubectl_wait(
         "volumereplication",
         "vr-sample",
         "--for",
@@ -93,8 +91,7 @@ def test_volume_replication(primary, secondary):
     drenv.log_progress(
         f"Waiting until vr vr-sample state is primary in cluster {primary}"
     )
-    drenv.kubectl(
-        "wait",
+    drenv.kubectl_wait(
         "volumereplication",
         "vr-sample",
         "--for",

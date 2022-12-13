@@ -18,8 +18,7 @@ def deploy(cluster):
 
 def wait(cluster):
     drenv.log_progress("Waiting until all deployments are available")
-    drenv.kubectl(
-        "wait",
+    drenv.kubectl_wait(
         "deploy",
         "--all",
         "--for=condition=Available",

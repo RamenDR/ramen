@@ -56,6 +56,13 @@ def kubectl_rollout(*args, profile=None):
     _kubectl_watch("rollout", *args, profile=profile)
 
 
+def kubectl_wait(*args, profile=None):
+    """
+    Run kubectl wait ... logging progress messages.
+    """
+    _kubectl_watch("wait", *args, profile=profile)
+
+
 def _kubectl_run(cmd, *args, profile=None):
     cmd = ["kubectl", cmd]
     if profile:

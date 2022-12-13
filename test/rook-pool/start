@@ -28,8 +28,7 @@ def wait(cluster):
         timeout=60,
         profile=cluster,
     )
-    drenv.kubectl(
-        "wait",
+    drenv.kubectl_wait(
         "CephBlockPool",
         "replicapool",
         "--for",
@@ -42,8 +41,7 @@ def wait(cluster):
     )
 
     drenv.log_progress("Waiting for replica pool peer token")
-    drenv.kubectl(
-        "wait",
+    drenv.kubectl_wait(
         "CephBlockPool",
         "replicapool",
         "--for",

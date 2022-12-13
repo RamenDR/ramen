@@ -30,8 +30,7 @@ def wait(cluster):
         timeout=60,
         profile=cluster,
     )
-    drenv.kubectl(
-        "wait",
+    drenv.kubectl_wait(
         "CephCluster",
         "my-cluster",
         "--for",

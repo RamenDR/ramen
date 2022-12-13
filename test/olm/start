@@ -27,8 +27,7 @@ def deploy(cluster):
     )
 
     drenv.log_progress("Waiting until cdrs are established")
-    drenv.kubectl(
-        "wait",
+    drenv.kubectl_wait(
         "--for",
         "condition=established",
         "--filename",
@@ -59,8 +58,7 @@ def wait(cluster):
         namespace=NAMESPACE,
         profile=cluster,
     )
-    drenv.kubectl(
-        "wait",
+    drenv.kubectl_wait(
         "csv/packageserver",
         "--namespace",
         NAMESPACE,
