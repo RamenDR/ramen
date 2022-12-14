@@ -1310,7 +1310,6 @@ func (d *DRPCInstance) checkPVsHaveBeenRestored(homeCluster string) (bool, error
 	return clusterDataReady.Status == metav1.ConditionTrue && clusterDataReady.ObservedGeneration == vrg.Generation, nil
 }
 
-//nolint:funlen,gocognit,cyclop
 func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 	d.log.Info("ensuring cleanup on secondaries")
 
@@ -1344,41 +1343,7 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 	}
 
 	if repReq {
-		d.log.Info("VolSync needs both VRGs. No need to clean up secondary")
-		d.log.Info("Ensure secondary on peer")
-
-		peersReady := true
-
-		for _, clusterName := range rmnutil.DrpolicyClusterNames(d.drPolicy) {
-			if clusterToSkip == clusterName {
-				continue
-			}
-
-			justUpdated, err := d.updateVRGState(clusterName, rmn.Secondary)
-			if err != nil {
-				peersReady = false
-
-				break
-			}
-
-			// IFF just updated, no need to use MCV to check if the state has been
-			// applied. Wait for the next round of reconcile. Otherwise, check if
-			// the change to secondary has been reflected.
-			if justUpdated || !d.ensureVRGIsSecondaryOnCluster(clusterName) {
-				peersReady = false
-
-				break
-			}
-		}
-
-		if !peersReady {
-			return fmt.Errorf("still waiting for peer to be ready")
-		}
-
-		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
-			metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
-
-		return nil
+		return d.cleanupForVolSync(clusterToSkip)
 	}
 
 	clean, err := d.cleanupSecondaries(clusterToSkip)
@@ -1399,6 +1364,44 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 
 	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
 		metav1.ConditionTrue, rmn.ReasonSuccess, "Cleaned")
+
+	return nil
+}
+
+func (d *DRPCInstance) cleanupForVolSync(clusterToSkip string) error {
+	d.log.Info("VolSync needs both VRGs. No need to clean up secondary")
+	d.log.Info("Ensure secondary on peer")
+
+	peersReady := true
+
+	for _, clusterName := range rmnutil.DrpolicyClusterNames(d.drPolicy) {
+		if clusterToSkip == clusterName {
+			continue
+		}
+
+		justUpdated, err := d.updateVRGState(clusterName, rmn.Secondary)
+		if err != nil {
+			peersReady = false
+
+			break
+		}
+
+		// IFF just updated, no need to use MCV to check if the state has been
+		// applied. Wait for the next round of reconcile. Otherwise, check if
+		// the change to secondary has been reflected.
+		if justUpdated || !d.ensureVRGIsSecondaryOnCluster(clusterName) {
+			peersReady = false
+
+			break
+		}
+	}
+
+	if !peersReady {
+		return fmt.Errorf("still waiting for peer to be ready")
+	}
+
+	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
+		metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
 
 	return nil
 }
