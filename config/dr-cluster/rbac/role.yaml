@@ -250,6 +250,14 @@ rules:
   - list
   - update
   - watch
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - recipes
+  verbs:
+  - get
+  - list
+  - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

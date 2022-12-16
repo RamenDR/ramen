@@ -134,6 +134,8 @@ spec:
                             type: string
                           recoverName:
                             type: string
+                          volumeGroupName:
+                            type: string
                         type: object
                     type: object
                 type: object
