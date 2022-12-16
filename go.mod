@@ -17,6 +17,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.14.0
 	github.com/prometheus/client_model v0.3.0
+	github.com/ramendr/recipe v0.0.0-20230127131340-1fbc6bc31dea
 	github.com/stolostron/config-policy-controller v0.0.0-20220503151013-2a6d24b0ed07
 	github.com/stolostron/governance-policy-propagator v0.0.0-20220511204303-f1c56f6da1bf
 	github.com/stolostron/multicloud-operators-foundation v0.0.0-20220315092956-6dc184852d56
@@ -73,7 +74,6 @@ require (
 	github.com/nxadm/tail v1.4.8 // indirect
 	github.com/prometheus/common v0.37.0 // indirect
 	github.com/prometheus/procfs v0.8.0 // indirect
-	github.com/ramendr/recipe v0.0.0-20221202000806-b81887049e21
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	go.uber.org/atomic v1.10.0 // indirect

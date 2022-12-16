@@ -236,7 +236,13 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim, log logr.
 	}
 
 	for _, vrg := range vrgs.Items {
-		vrgLabelSelector := vrg.Spec.PVCSelector
+		vrgLabelSelector, err := GetPVCLabelSelector(context.TODO(), mgr.GetClient(), vrg, log)
+		if err != nil {
+			log.Error(err, "Failed to get the label selector from GetPVCLabelSelector", "vrgName", vrg.Name)
+
+			continue
+		}
+
 		selector, err := metav1.LabelSelectorAsSelector(&vrgLabelSelector)
 		// continue if we fail to get the labels for this object hoping
 		// that pvc might actually belong to  some other vrg instead of
@@ -256,6 +262,31 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim, log logr.
 	}
 
 	return req
+}
+
+func GetPVCLabelSelector(
+	ctx context.Context, client client.Client, vrg ramendrv1alpha1.VolumeReplicationGroup, log logr.Logger,
+) (metav1.LabelSelector, error) {
+	if RecipeInfoExistsOnVRG(vrg) && VolumeGroupNameExistsInWorkflow(vrg) {
+		recipe, err := GetRecipeWithName(ctx, client, *vrg.Spec.KubeObjectProtection.Recipe.Name, vrg.GetNamespace())
+		if err != nil {
+			log.Error(err, "GetRecipeWithName error")
+
+			return metav1.LabelSelector{}, err
+		}
+
+		labelSelector, err := GetLabelSelectorFromRecipeVolumeGroupWithName(
+			*vrg.Spec.KubeObjectProtection.Recipe.Workflow.VolumeGroupName, &recipe)
+		if err != nil {
+			log.Error(err, "GetPVCLabelSelector error")
+
+			return metav1.LabelSelector{}, err
+		}
+
+		return labelSelector, nil
+	}
+
+	return vrg.Spec.PVCSelector, nil
 }
 
 //nolint: lll // disabling line length linter
@@ -562,7 +593,12 @@ func (v *VRGInstance) restorePVs(result *ctrl.Result) error {
 }
 
 func (v *VRGInstance) listPVCsByPVCSelector() (*corev1.PersistentVolumeClaimList, error) {
-	return rmnutil.ListPVCsByPVCSelector(v.ctx, v.reconciler.Client, v.log, v.instance.Spec.PVCSelector,
+	labelSelector, err := GetPVCLabelSelector(v.ctx, v.reconciler.Client, *v.instance, v.log)
+	if err != nil {
+		return nil, err
+	}
+
+	return rmnutil.ListPVCsByPVCSelector(v.ctx, v.reconciler.Client, v.log, labelSelector,
 		v.instance.Namespace, v.instance.Spec.VolSync.Disabled)
 }
 

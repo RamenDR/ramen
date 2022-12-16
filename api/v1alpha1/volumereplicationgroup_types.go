@@ -175,6 +175,9 @@ type WorkflowSpec struct {
 
 	//+optional
 	RecoverName *string `json:"recoverName,omitempty"`
+
+	//+optional
+	VolumeGroupName *string `json:"volumeGroupName,omitempty"`
 }
 
 type KubeObjectProtectionSpec struct {
