@@ -43,6 +43,9 @@ const ReasonValidationFailed = "ValidationFailed"
 // ReasonDRClusterNotFound is set when the DRPolicy could not find the referenced DRCluster(s)
 const ReasonDRClusterNotFound = "DRClusterNotFound"
 
+// ReasonDRClustersUnavailable is set when the DRPolicy has none of the referenced DRCluster(s) are in a validated state
+const ReasonDRClustersUnavailable = "DRClustersUnavailable"
+
 //nolint:lll
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drpolicies,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drpolicies/status,verbs=get;update;patch
@@ -135,9 +138,9 @@ func validateDRPolicy(ctx context.Context,
 		return ReasonValidationFailed, fmt.Errorf("missing DRClusters list in policy")
 	}
 
-	err := ensureDRClustersAvailable(drpolicy, drclusters)
+	reason, err := ensureDRClustersAvailable(drpolicy, drclusters)
 	if err != nil {
-		return ReasonDRClusterNotFound, err
+		return reason, err
 	}
 
 	err = validatePolicyConflicts(ctx, apiReader, drpolicy, drclusters)
@@ -148,23 +151,34 @@ func validateDRPolicy(ctx context.Context,
 	return "", nil
 }
 
-func ensureDRClustersAvailable(drpolicy *ramen.DRPolicy, drclusters *ramen.DRClusterList) error {
+func ensureDRClustersAvailable(drpolicy *ramen.DRPolicy, drclusters *ramen.DRClusterList) (string, error) {
 	found := 0
+	validated := 0
 
 	for _, specCluster := range drpolicy.Spec.DRClusters {
 		for _, cluster := range drclusters.Items {
 			if cluster.Name == specCluster {
 				found++
+
+				condition := findCondition(cluster.Status.Conditions, ramen.DRClusterValidated)
+				if condition != nil && condition.Status == metav1.ConditionTrue {
+					validated++
+				}
 			}
 		}
 	}
 
 	if found != len(drpolicy.Spec.DRClusters) {
-		return fmt.Errorf("failed to find DRClusters specified in policy (%v)",
+		return ReasonDRClusterNotFound, fmt.Errorf("failed to find DRClusters specified in policy (%v)",
 			drpolicy.Spec.DRClusters)
 	}
 
-	return nil
+	if validated == 0 {
+		return ReasonDRClustersUnavailable, fmt.Errorf("none of the DRClusters are validated (%v)",
+			drpolicy.Spec.DRClusters)
+	}
+
+	return "", nil
 }
 
 func validatePolicyConflicts(ctx context.Context,
