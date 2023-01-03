@@ -8,6 +8,7 @@ name: "ocm"
 templates:
   - name: "hub-cluster"
     driver: kvm2
+    container_runtime: containerd
     network: default
     workers:
       - scripts:
@@ -15,6 +16,7 @@ templates:
           - name: ocm-controller
   - name: "dr-cluster"
     driver: kvm2
+    container_runtime: containerd
     network: default
     workers:
       - scripts:

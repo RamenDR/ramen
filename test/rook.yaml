@@ -8,6 +8,7 @@ name: "rook"
 templates:
   - name: "dr-cluster"
     driver: kvm2
+    container_runtime: containerd
     network: default
     memory: "6g"
     extra_disks: 1

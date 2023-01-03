@@ -8,6 +8,7 @@ name: "rdr"
 templates:
   - name: "dr-cluster"
     driver: kvm2
+    container_runtime: containerd
     network: default
     memory: "6g"
     extra_disks: 1
@@ -28,6 +29,7 @@ templates:
           - name: olm
   - name: "hub-cluster"
     driver: kvm2
+    container_runtime: containerd
     network: default
     memory: "4g"
     workers:

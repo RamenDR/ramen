@@ -67,7 +67,7 @@ def _validate_profile(profile):
         raise ValueError("Missing profile name")
 
     profile.setdefault("driver", "kvm2")
-    profile.setdefault("container_runtime", "containerd")
+    profile.setdefault("container_runtime", "")
     profile.setdefault("extra_disks", 0)
     profile.setdefault("disk_size", "20g")
     profile.setdefault("nodes", 1)
