@@ -7,12 +7,14 @@ name: "ocm"
 
 templates:
   - name: "hub-cluster"
+    driver: kvm2
     network: default
     workers:
       - scripts:
           - name: ocm-hub
           - name: ocm-controller
   - name: "dr-cluster"
+    driver: kvm2
     network: default
     workers:
       - scripts:

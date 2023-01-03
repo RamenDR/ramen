@@ -109,7 +109,7 @@ def start_cluster(profile):
     minikube(
         "start",
         "--driver",
-        "kvm2",
+        profile["driver"],
         "--container-runtime",
         profile["container_runtime"],
         "--extra-disks",
