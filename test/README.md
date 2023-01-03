@@ -423,6 +423,8 @@ $ drenv delete example.yaml
 
 - `templates`: templates for creating new profiles.
     - `name`: profile name.
+    - `driver`: The minikube driver. Tested with "kvm2" and "podman"
+      (default "kvm2")
     - `container_runtime`: The container runtime to be used. Valid
       options: "docker", "cri-o", "containerd" (default: "containerd")
     - `network`: The network to run minikube with. If left empty,
