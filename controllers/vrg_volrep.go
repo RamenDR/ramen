@@ -324,8 +324,7 @@ func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 	// to the current cluster, in case the PVC has been deleted (cases like STS the
 	// PVC may not be deleted). This is achieved by clearing the required claim ref.
 	// such that the PV can bind back to a recreated PVC. func ref.: updateExistingPVForSync
-	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary &&
-		v.instance.Spec.Async != nil {
+	if v.instance.Spec.Async != nil || v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
 		if err := v.undoPVRetentionForPVC(*pvc, log); err != nil {
 			return err
 		}
