@@ -6,6 +6,8 @@
 name: example
 templates:
   - name: "example-cluster"
+    driver: podman
+    container_runtime: cri-o
     workers:
       - scripts:
           - name: example
