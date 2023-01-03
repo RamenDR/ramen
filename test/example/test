@@ -18,7 +18,6 @@ drenv.log_progress("Testing example deployment")
 kubectl.rollout(
     "status",
     "deploy/example-deployment",
-    "--timeout",
-    "180s",
+    "--timeout=180s",
     profile=cluster,
 )

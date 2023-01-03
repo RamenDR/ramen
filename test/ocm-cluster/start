@@ -43,10 +43,8 @@ def wait(cluster):
         kubectl.rollout(
             "status",
             deployment,
-            "--namespace",
-            ADDONS_NAMESPACE,
-            "--timeout",
-            "300s",
+            f"--namespace={ADDONS_NAMESPACE}",
+            "--timeout=300s",
             profile=cluster,
         )
 
@@ -63,10 +61,8 @@ def wait_for_hub(hub):
         kubectl.rollout(
             "status",
             deployment,
-            "--namespace",
-            HUB_NAMESPACE,
-            "--timeout",
-            "300s",
+            f"--namespace={HUB_NAMESPACE}",
+            "--timeout=300s",
             profile=hub,
         )
 

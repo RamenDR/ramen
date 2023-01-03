@@ -23,10 +23,8 @@ def wait(cluster):
         "deploy",
         "--all",
         "--for=condition=Available",
-        "--namespace",
-        "cert-manager",
-        "--timeout",
-        "300s",
+        "--namespace=cert-manager",
+        "--timeout=300s",
         profile=cluster,
     )
 
