@@ -23,16 +23,12 @@ def deploy(cluster):
 
 
 def wait(cluster):
-    drenv.log_progress(
-        "Waiting until csi-addons-controller-manager is rolled out",
-    )
+    drenv.log_progress("Waiting until csi-addons-controller-manager is rolled out")
     kubectl.rollout(
         "status",
         "deploy/csi-addons-controller-manager",
-        "--namespace",
-        "csi-addons-system",
-        "--timeout",
-        "300s",
+        "--namespace=csi-addons-system",
+        "--timeout=300s",
         profile=cluster,
     )
 

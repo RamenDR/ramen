@@ -26,10 +26,8 @@ def wait(cluster):
     kubectl.rollout(
         "status",
         "deploy/ocm-controller",
-        "--namespace",
-        "open-cluster-management",
-        "--timeout",
-        "300s",
+        "--namespace=open-cluster-management",
+        "--timeout=300s",
         profile=cluster,
     )
 

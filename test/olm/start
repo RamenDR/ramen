@@ -21,18 +21,15 @@ def deploy(cluster):
     #   is invalid: metadata.annotations: Too long: must have at most 262144 bytes
     # See https://medium.com/pareture/kubectl-install-crd-failed-annotations-too-long-2ebc91b40c7d
     kubectl.apply(
-        "--filename",
-        f"{BASE_URL}/crds.yaml",
+        f"--filename={BASE_URL}/crds.yaml",
         "--server-side=true",
         profile=cluster,
     )
 
     drenv.log_progress("Waiting until cdrs are established")
     kubectl.wait(
-        "--for",
-        "condition=established",
-        "--filename",
-        f"{BASE_URL}/crds.yaml",
+        "--for=condition=established",
+        f"--filename={BASE_URL}/crds.yaml",
         profile=cluster,
     )
 
@@ -47,8 +44,7 @@ def wait(cluster):
             "status",
             "deploy",
             operator,
-            "--namespace",
-            NAMESPACE,
+            f"--namespace={NAMESPACE}",
             profile=cluster,
         )
 
@@ -61,12 +57,9 @@ def wait(cluster):
     )
     kubectl.wait(
         "csv/packageserver",
-        "--namespace",
-        NAMESPACE,
-        "--for",
-        "jsonpath={.status.phase}=Succeeded",
-        "--timeout",
-        "300s",
+        f"--namespace={NAMESPACE}",
+        "--for=jsonpath={.status.phase}=Succeeded",
+        "--timeout=300s",
         profile=cluster,
     )
 
@@ -74,8 +67,7 @@ def wait(cluster):
     kubectl.rollout(
         "status",
         "deploy/packageserver",
-        "--namespace",
-        NAMESPACE,
+        f"--namespace={NAMESPACE}",
         profile=cluster,
     )
 

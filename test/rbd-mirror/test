@@ -17,16 +17,14 @@ PVC_NAME = "rbd-pvc"
 def rbd_mirror_image_status(cluster, image):
     out = kubectl.exec(
         "deploy/rook-ceph-tools",
-        "--namespace",
-        "rook-ceph",
+        "--namespace=rook-ceph",
         "--",
         "rbd",
         "mirror",
         "image",
         "status",
         f"{POOL_NAME}/{image}",
-        "--format",
-        "json",
+        "--format=json",
         profile=cluster,
     )
     status = json.loads(out)
@@ -47,45 +45,33 @@ def rbd_mirror_image_status(cluster, image):
 def test_volume_replication(primary, secondary):
     drenv.log_progress(f"Deploying pvc {PVC_NAME} in cluster {primary}")
     kubectl.apply(
-        "--filename",
-        f"rbd-mirror/{PVC_NAME}.yaml",
-        "--namespace",
-        "rook-ceph",
+        f"--filename=rbd-mirror/{PVC_NAME}.yaml",
+        "--namespace=rook-ceph",
         profile=primary,
     )
 
     drenv.log_progress(f"Waiting until pvc {PVC_NAME} is bound in cluster {primary}")
     kubectl.wait(
-        "pvc",
-        PVC_NAME,
-        "--for",
-        "jsonpath={.status.phase}=Bound",
-        "--namespace",
-        "rook-ceph",
-        "--timeout",
-        "300s",
+        f"pvc/{PVC_NAME}",
+        "--for=jsonpath={.status.phase}=Bound",
+        "--namespace=rook-ceph",
+        "--timeout=300s",
         profile=primary,
     )
 
     drenv.log_progress(f"Deploying vr vr-sample in cluster {primary}")
     kubectl.apply(
-        "--filename",
-        "rbd-mirror/vr-sample.yaml",
-        "--namespace",
-        "rook-ceph",
+        "--filename=rbd-mirror/vr-sample.yaml",
+        "--namespace=rook-ceph",
         profile=primary,
     )
 
     drenv.log_progress(f"Waiting until vr vr-sample is completed in cluster {primary}")
     kubectl.wait(
-        "volumereplication",
-        "vr-sample",
-        "--for",
-        "condition=Completed",
-        "--namespace",
-        "rook-ceph",
-        "--timeout",
-        "300s",
+        "volumereplication/vr-sample",
+        "--for=condition=Completed",
+        "--namespace=rook-ceph",
+        "--timeout=300s",
         profile=primary,
     )
 
@@ -93,48 +79,38 @@ def test_volume_replication(primary, secondary):
         f"Waiting until vr vr-sample state is primary in cluster {primary}"
     )
     kubectl.wait(
-        "volumereplication",
-        "vr-sample",
-        "--for",
-        "jsonpath={.status.state}=Primary",
-        "--namespace",
-        "rook-ceph",
-        "--timeout",
-        "300s",
+        "volumereplication/vr-sample",
+        "--for=jsonpath={.status.state}=Primary",
+        "--namespace=rook-ceph",
+        "--timeout=300s",
         profile=primary,
     )
 
     drenv.log_progress(f"Looking up pvc {PVC_NAME} pv name in cluster {primary}")
     pv_name = kubectl.get(
         f"pvc/{PVC_NAME}",
-        "--output",
-        "jsonpath={.spec.volumeName}",
-        "--namespace",
-        "rook-ceph",
+        "--output=jsonpath={.spec.volumeName}",
+        "--namespace=rook-ceph",
         profile=primary,
     )
 
     drenv.log_progress(f"Looking up rbd image for pv {pv_name} in cluster {primary}")
     rbd_image = kubectl.get(
         f"pv/{pv_name}",
-        "--output",
-        "jsonpath={.spec.csi.volumeAttributes.imageName}",
-        "--namespace",
-        "rook-ceph",
+        "--output=jsonpath={.spec.csi.volumeAttributes.imageName}",
+        "--namespace=rook-ceph",
         profile=primary,
     )
 
     drenv.log_progress(f"rbd image {rbd_image} info in cluster {primary}")
     out = kubectl.exec(
         "deploy/rook-ceph-tools",
-        "--namespace",
-        "rook-ceph",
+        "--namespace=rook-ceph",
         "--",
         "rbd",
         "info",
         rbd_image,
-        "--pool",
-        POOL_NAME,
+        f"--pool={POOL_NAME}",
         profile=primary,
     )
     drenv.log_detail(out)
@@ -146,26 +122,22 @@ def test_volume_replication(primary, secondary):
         time.sleep(1)
         out = kubectl.exec(
             "deploy/rook-ceph-tools",
-            "--namespace",
-            "rook-ceph",
+            "--namespace=rook-ceph",
             "--",
             "rbd",
             "list",
-            "--pool",
-            POOL_NAME,
+            f"--pool={POOL_NAME}",
             profile=secondary,
         )
         if rbd_image in out:
             out = kubectl.exec(
                 "deploy/rook-ceph-tools",
-                "--namespace",
-                "rook-ceph",
+                "--namespace=rook-ceph",
                 "--",
                 "rbd",
                 "info",
                 rbd_image,
-                "--pool",
-                POOL_NAME,
+                f"--pool={POOL_NAME}",
                 profile=secondary,
             )
             drenv.log_detail(out)
@@ -175,12 +147,9 @@ def test_volume_replication(primary, secondary):
 
     drenv.log_progress(f"vr vr-sample info on primary cluster {primary}")
     kubectl.get(
-        "volumereplication",
-        "vr-sample",
-        "--output",
-        "yaml",
-        "--namespace",
-        "rook-ceph",
+        "volumereplication/vr-sample",
+        "--output=yaml",
+        "--namespace=rook-ceph",
         profile=primary,
     )
 
@@ -190,19 +159,15 @@ def test_volume_replication(primary, secondary):
 
     drenv.log_progress(f"Deleting vr vr-sample in primary cluster {primary}")
     kubectl.delete(
-        "volumereplication",
-        "vr-sample",
-        "--namespace",
-        "rook-ceph",
+        "volumereplication/vr-sample",
+        "--namespace=rook-ceph",
         profile=primary,
     )
 
     drenv.log_progress(f"Deleting pvc {PVC_NAME} in primary cluster {primary}")
     kubectl.delete(
-        "pvc",
-        PVC_NAME,
-        "--namespace",
-        "rook-ceph",
+        f"pvc/{PVC_NAME}",
+        "--namespace=rook-ceph",
         profile=primary,
     )
 

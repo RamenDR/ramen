@@ -20,10 +20,8 @@ def fetch_secret_info(cluster):
     info["name"] = kubectl.get(
         "cephblockpools.ceph.rook.io",
         POOL_NAME,
-        "--output",
-        "jsonpath={.status.mirroringInfo.site_name}",
-        "--namespace",
-        "rook-ceph",
+        "--output=jsonpath={.status.mirroringInfo.site_name}",
+        "--namespace=rook-ceph",
         profile=cluster,
     )
 
@@ -33,10 +31,8 @@ def fetch_secret_info(cluster):
     secret_name = kubectl.get(
         "cephblockpools.ceph.rook.io",
         POOL_NAME,
-        "--output",
-        "jsonpath={.status.info.rbdMirrorBootstrapPeerSecretName}",
-        "--namespace",
-        "rook-ceph",
+        "--output=jsonpath={.status.info.rbdMirrorBootstrapPeerSecretName}",
+        "--namespace=rook-ceph",
         profile=cluster,
     )
 
@@ -44,10 +40,8 @@ def fetch_secret_info(cluster):
     info["token"] = kubectl.get(
         "secret",
         secret_name,
-        "--output",
-        "jsonpath={.data.token}",
-        "--namespace",
-        "rook-ceph",
+        "--output=jsonpath={.data.token}",
+        "--namespace=rook-ceph",
         profile=cluster,
     )
 
@@ -63,10 +57,8 @@ def configure_rbd_mirroring(cluster, peer_info):
     template = drenv.template("rbd-mirror/rbd-mirror-secret.yaml")
     yaml = template.substitute(peer_info)
     kubectl.apply(
-        "--filename",
-        "-",
-        "--namespace",
-        "rook-ceph",
+        "--filename=-",
+        "--namespace=rook-ceph",
         input=yaml,
         profile=cluster,
     )
@@ -76,21 +68,16 @@ def configure_rbd_mirroring(cluster, peer_info):
     kubectl.patch(
         "cephblockpool",
         POOL_NAME,
-        "--type",
-        "merge",
-        "--patch",
-        json.dumps(patch),
-        "--namespace",
-        "rook-ceph",
+        "--type=merge",
+        f"--patch={json.dumps(patch)}",
+        "--namespace=rook-ceph",
         profile=cluster,
     )
 
     drenv.log_progress(f"Apply rbd mirror to cluster {cluster}")
     kubectl.apply(
-        "--filename",
-        "rbd-mirror/rbd-mirror.yaml",
-        "--namespace",
-        "rook-ceph",
+        "--filename=rbd-mirror/rbd-mirror.yaml",
+        "--namespace=rook-ceph",
         profile=cluster,
     )
 
@@ -102,12 +89,9 @@ def wait_until_pool_mirroring_is_healthy(cluster):
     kubectl.wait(
         "cephblockpools.ceph.rook.io",
         POOL_NAME,
-        "--for",
-        "jsonpath={.status.mirroringStatus.summary.daemon_health}=OK",
-        "--namespace",
-        "rook-ceph",
-        "--timeout",
-        "300s",
+        "--for=jsonpath={.status.mirroringStatus.summary.daemon_health}=OK",
+        "--namespace=rook-ceph",
+        "--timeout=300s",
         profile=cluster,
     )
 
@@ -115,12 +99,9 @@ def wait_until_pool_mirroring_is_healthy(cluster):
     kubectl.wait(
         "cephblockpools.ceph.rook.io",
         POOL_NAME,
-        "--for",
-        "jsonpath={.status.mirroringStatus.summary.health}=OK",
-        "--namespace",
-        "rook-ceph",
-        "--timeout",
-        "300s",
+        "--for=jsonpath={.status.mirroringStatus.summary.health}=OK",
+        "--namespace=rook-ceph",
+        "--timeout=300s",
         profile=cluster,
     )
 
@@ -130,12 +111,9 @@ def wait_until_pool_mirroring_is_healthy(cluster):
     kubectl.wait(
         "cephblockpools.ceph.rook.io",
         POOL_NAME,
-        "--for",
-        "jsonpath={.status.mirroringStatus.summary.image_health}=OK",
-        "--namespace",
-        "rook-ceph",
-        "--timeout",
-        "300s",
+        "--for=jsonpath={.status.mirroringStatus.summary.image_health}=OK",
+        "--namespace=rook-ceph",
+        "--timeout=300s",
         profile=cluster,
     )
 
@@ -143,10 +121,8 @@ def wait_until_pool_mirroring_is_healthy(cluster):
 def deploy_vrc_sample(cluster):
     drenv.log_progress(f"Applying vrc sample in cluster {cluster}")
     kubectl.apply(
-        "--filename",
-        "rbd-mirror/vrc-sample.yaml",
-        "--namespace",
-        "rook-ceph",
+        "--filename=rbd-mirror/vrc-sample.yaml",
+        "--namespace=rook-ceph",
         profile=cluster,
     )
 

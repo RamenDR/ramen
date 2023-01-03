@@ -18,12 +18,9 @@ def wait_for_work(cluster, hub):
     drenv.log_progress(f"Waiting until manifestwork is applied in namespace {cluster}")
     kubectl.wait(
         "manifestwork/example-manifestwork",
-        "--for",
-        "condition=applied",
-        "--namespace",
-        cluster,
-        "--timeout",
-        "60s",
+        "--for=condition=applied",
+        f"--namespace={cluster}",
+        "--timeout=60s",
         profile=hub,
     )
 
@@ -34,22 +31,17 @@ def wait_for_deployment(cluster, hub):
     )
     kubectl.wait(
         "manifestwork/example-manifestwork",
-        "--for",
-        "condition=available",
-        "--namespace",
-        cluster,
-        "--timeout",
-        "60s",
+        "--for=condition=available",
+        f"--namespace={cluster}",
+        "--timeout=60s",
         profile=hub,
     )
 
     drenv.log_progress(f"Waiting until deployment is available in cluster {cluster}")
     kubectl.wait(
         "deploy/example-deployment",
-        "--for",
-        "condition=available",
-        "--timeout",
-        "60s",
+        "--for=condition=available",
+        "--timeout=60s",
         profile=cluster,
     )
 
@@ -63,12 +55,9 @@ def wait_for_delete_work(cluster, hub):
     drenv.log_progress(f"Waiting until manifestwork is deleted from namspace {cluster}")
     kubectl.wait(
         "manifestwork/example-manifestwork",
-        "--for",
-        "delete",
-        "--namespace",
-        cluster,
-        "--timeout",
-        "60s",
+        "--for=delete",
+        f"--namespace={cluster}",
+        "--timeout=60s",
         profile=hub,
     )
 
@@ -77,10 +66,8 @@ def wait_for_delete_deployment(cluster):
     drenv.log_progress(f"Waiting until deployment is deleted from cluster {cluster}")
     kubectl.wait(
         "deploy/example-deployment",
-        "--for",
-        "delete",
-        "--timeout",
-        "60s",
+        "--for=delete",
+        "--timeout=60s",
         profile=cluster,
     )
 

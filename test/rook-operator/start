@@ -27,24 +27,18 @@ def wait(cluster):
     kubectl.rollout(
         "status",
         "deploy/rook-ceph-operator",
-        "--namespace",
-        "rook-ceph",
-        "--timeout",
-        "300s",
+        "--namespace=rook-ceph",
+        "--timeout=300s",
         profile=cluster,
     )
 
     drenv.log_progress("Waiting until rook ceph operator is ready")
     kubectl.wait(
         "pod",
-        "--for",
-        "jsonpath={.status.phase}=Running",
-        "--namespace",
-        "rook-ceph",
-        "--selector",
-        "app=rook-ceph-operator",
-        "--timeout",
-        "300s",
+        "--for=jsonpath={.status.phase}=Running",
+        "--namespace=rook-ceph",
+        "--selector=app=rook-ceph-operator",
+        "--timeout=300s",
         profile=cluster,
     )
 
