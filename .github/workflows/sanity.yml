@@ -84,6 +84,19 @@ jobs:
       - name: Setup python
         uses: actions/setup-python@v4
 
+      - name: Install minikube
+        run: |
+          curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+          sudo install minikube-linux-amd64 /usr/local/bin/minikube
+          minikube version
+          mkdir "$HOME/.minikube/profiles"
+
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          sudo install ./kubectl /usr/local/bin/
+          kubectl version --client --output=yaml
+
       - name: Install tools
         run: pip install -r test/requirements.txt
 
