@@ -5,7 +5,6 @@
 
 import sys
 
-import drenv
 from drenv import kubectl
 
 VERSION = "v1.10.0"
@@ -13,12 +12,12 @@ URL = f"https://github.com/cert-manager/cert-manager/releases/download/{VERSION}
 
 
 def deploy(cluster):
-    drenv.log_progress("Deploying cert-manager")
+    print("Deploying cert-manager")
     kubectl.apply("--filename", URL, profile=cluster)
 
 
 def wait(cluster):
-    drenv.log_progress("Waiting until all deployments are available")
+    print("Waiting until all deployments are available")
     kubectl.wait(
         "deploy",
         "--all",

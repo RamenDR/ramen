@@ -33,15 +33,15 @@ DEPLOYMENTS = {
 
 
 def deploy(cluster):
-    drenv.log_progress("Initializing hub")
+    print("Initializing hub")
     clusteradm.init(wait=True, context=cluster)
 
-    drenv.log_progress("Installing hub addons")
+    print("Installing hub addons")
     clusteradm.install("hub-addon", names=ADDONS, context=cluster)
 
 
 def wait(cluster):
-    drenv.log_progress("Waiting until deployments are rolled out")
+    print("Waiting until deployments are rolled out")
     for ns, names in DEPLOYMENTS.items():
         for name in names:
             deployment = f"deploy/{name}"

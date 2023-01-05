@@ -10,12 +10,12 @@ from drenv import kubectl
 
 
 def deploy_work(cluster, hub, work):
-    drenv.log_progress(f"Applying manifestwork to namespace {cluster}")
+    print(f"Applying manifestwork to namespace {cluster}")
     kubectl.apply("--filename", "-", input=work, profile=hub)
 
 
 def wait_for_work(cluster, hub):
-    drenv.log_progress(f"Waiting until manifestwork is applied in namespace {cluster}")
+    print(f"Waiting until manifestwork is applied in namespace {cluster}")
     kubectl.wait(
         "manifestwork/example-manifestwork",
         "--for=condition=applied",
@@ -26,9 +26,7 @@ def wait_for_work(cluster, hub):
 
 
 def wait_for_deployment(cluster, hub):
-    drenv.log_progress(
-        f"Waiting until manifestwork is available in namespace {cluster}"
-    )
+    print(f"Waiting until manifestwork is available in namespace {cluster}")
     kubectl.wait(
         "manifestwork/example-manifestwork",
         "--for=condition=available",
@@ -37,7 +35,7 @@ def wait_for_deployment(cluster, hub):
         profile=hub,
     )
 
-    drenv.log_progress(f"Waiting until deployment is available in cluster {cluster}")
+    print(f"Waiting until deployment is available in cluster {cluster}")
     kubectl.wait(
         "deploy/example-deployment",
         "--for=condition=available",
@@ -47,12 +45,12 @@ def wait_for_deployment(cluster, hub):
 
 
 def delete_work(cluster, hub, work):
-    drenv.log_progress(f"Deleting manifestwork from namespace {cluster}")
+    print(f"Deleting manifestwork from namespace {cluster}")
     kubectl.delete("--filename", "-", input=work, profile=hub)
 
 
 def wait_for_delete_work(cluster, hub):
-    drenv.log_progress(f"Waiting until manifestwork is deleted from namspace {cluster}")
+    print(f"Waiting until manifestwork is deleted from namspace {cluster}")
     kubectl.wait(
         "manifestwork/example-manifestwork",
         "--for=delete",
@@ -63,7 +61,7 @@ def wait_for_delete_work(cluster, hub):
 
 
 def wait_for_delete_deployment(cluster):
-    drenv.log_progress(f"Waiting until deployment is deleted from cluster {cluster}")
+    print(f"Waiting until deployment is deleted from cluster {cluster}")
     kubectl.wait(
         "deploy/example-deployment",
         "--for=delete",

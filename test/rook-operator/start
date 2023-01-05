@@ -14,7 +14,7 @@ BASE_URL = f"https://raw.githubusercontent.com/rook/rook/{VERSION}/deploy/exampl
 
 
 def deploy(cluster):
-    drenv.log_progress("Deploying rook ceph operator")
+    print("Deploying rook ceph operator")
     with drenv.kustomization(
         "rook-operator/kustomization.yaml",
         base_url=BASE_URL,
@@ -23,7 +23,7 @@ def deploy(cluster):
 
 
 def wait(cluster):
-    drenv.log_progress("Waiting until rook ceph operator is rolled out")
+    print("Waiting until rook ceph operator is rolled out")
     kubectl.rollout(
         "status",
         "deploy/rook-ceph-operator",
@@ -32,7 +32,7 @@ def wait(cluster):
         profile=cluster,
     )
 
-    drenv.log_progress("Waiting until rook ceph operator is ready")
+    print("Waiting until rook ceph operator is ready")
     kubectl.wait(
         "pod",
         "--for=jsonpath={.status.phase}=Running",

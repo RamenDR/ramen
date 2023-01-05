@@ -14,7 +14,7 @@ BASE_URL = f"https://raw.githubusercontent.com/csi-addons/kubernetes-csi-addons/
 
 
 def deploy(cluster):
-    drenv.log_progress("Deploying csi addon for volume replication")
+    print("Deploying csi addon for volume replication")
     with drenv.kustomization(
         "csi-addons/kustomization.yaml",
         base_url=BASE_URL,
@@ -23,7 +23,7 @@ def deploy(cluster):
 
 
 def wait(cluster):
-    drenv.log_progress("Waiting until csi-addons-controller-manager is rolled out")
+    print("Waiting until csi-addons-controller-manager is rolled out")
     kubectl.rollout(
         "status",
         "deploy/csi-addons-controller-manager",
