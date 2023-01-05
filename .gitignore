@@ -34,4 +34,5 @@ config/hub/bundle
 test/drenv.egg-info/
 test/**/__pycache__/
 test/.coverage
+test/.coverage.*
 test/.vimrc

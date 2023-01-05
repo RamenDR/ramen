@@ -100,6 +100,9 @@ jobs:
       - name: Install tools
         run: pip install -r test/requirements.txt
 
+      - name: Enable coverage for child processes
+        run: cp test/coverage.pth $(python -m site --user-site)
+
       - name: Install drenv
         run: pip install -e test
 
