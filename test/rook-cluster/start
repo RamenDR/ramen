@@ -14,7 +14,7 @@ BASE_URL = f"https://raw.githubusercontent.com/rook/rook/{VERSION}/deploy/exampl
 
 
 def deploy(cluster):
-    drenv.log_progress("Deploying rook ceph cluster")
+    print("Deploying rook ceph cluster")
     with drenv.kustomization(
         "rook-cluster/kustomization.yaml",
         base_url=BASE_URL,
@@ -23,7 +23,7 @@ def deploy(cluster):
 
 
 def wait(cluster):
-    drenv.log_progress("Waiting until rook ceph cluster is ready")
+    print("Waiting until rook ceph cluster is ready")
     drenv.wait_for(
         "cephcluster/my-cluster",
         output="jsonpath={.status.phase}",

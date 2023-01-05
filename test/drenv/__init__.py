@@ -5,27 +5,12 @@ import json
 import os
 import string
 import tempfile
-import textwrap
 import time
 
 from contextlib import contextmanager
 
 from . import commands
 from . import kubectl
-
-
-def log_progress(msg):
-    """
-    Logs progress mesage to stdout.
-    """
-    print(f"* {msg}")
-
-
-def log_detail(text):
-    """
-    Logs details for the last progress message to stdout.
-    """
-    print(textwrap.indent(text, "  "))
 
 
 def wait_for(
@@ -59,7 +44,7 @@ def wait_for(
     while True:
         out = kubectl.get(*args, profile=profile)
         if out:
-            log_detail(f"{resource} exists")
+            print(f"{resource} exists")
             return out
 
         if time.monotonic() > deadline:
@@ -84,7 +69,7 @@ def wait_for_cluster(cluster, timeout=300):
         current_status = status.get("APIServer", "Unknown")
 
         if current_status != last_status:
-            log_detail(f"cluster {cluster} status is {current_status}")
+            print(f"cluster {cluster} status is {current_status}")
             last_status = current_status
 
         if current_status == "Running":

@@ -1,7 +1,6 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import drenv
 from . import commands
 
 
@@ -90,4 +89,4 @@ def addon(action, names, clusters, context=None):
 
 def _watch(*cmd):
     for line in commands.watch(*cmd):
-        drenv.log_detail(line)
+        print(line)

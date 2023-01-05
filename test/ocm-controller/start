@@ -13,7 +13,7 @@ BASE_URL = f"https://raw.githubusercontent.com/stolostron/multicloud-operators-f
 
 
 def deploy(cluster):
-    drenv.log_progress("Deploying ocm controller")
+    print("Deploying ocm controller")
     with drenv.kustomization(
         "ocm-controller/kustomization.yaml",
         base_url=BASE_URL,
@@ -22,7 +22,7 @@ def deploy(cluster):
 
 
 def wait(cluster):
-    drenv.log_progress("Waiting for ocm controller rollout")
+    print("Waiting for ocm controller rollout")
     kubectl.rollout(
         "status",
         "deploy/ocm-controller",

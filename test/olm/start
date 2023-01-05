@@ -14,7 +14,7 @@ NAMESPACE = "olm"
 
 
 def deploy(cluster):
-    drenv.log_progress("Deploying olm crds")
+    print("Deploying olm crds")
 
     # Using Server-side Apply to avoid this failure:
     #   The CustomResourceDefinition "clusterserviceversions.operators.coreos.com"
@@ -26,20 +26,20 @@ def deploy(cluster):
         profile=cluster,
     )
 
-    drenv.log_progress("Waiting until cdrs are established")
+    print("Waiting until cdrs are established")
     kubectl.wait(
         "--for=condition=established",
         f"--filename={BASE_URL}/crds.yaml",
         profile=cluster,
     )
 
-    drenv.log_progress("Deploying olm")
+    print("Deploying olm")
     kubectl.apply("--filename", f"{BASE_URL}/olm.yaml", profile=cluster)
 
 
 def wait(cluster):
     for operator in "olm-operator", "catalog-operator":
-        drenv.log_progress(f"Waiting until {operator} is rolled out")
+        print(f"Waiting until {operator} is rolled out")
         kubectl.rollout(
             "status",
             "deploy",
@@ -48,7 +48,7 @@ def wait(cluster):
             profile=cluster,
         )
 
-    drenv.log_progress("Waiting until olm packageserver succeeds")
+    print("Waiting until olm packageserver succeeds")
     drenv.wait_for(
         "csv/packageserver",
         output="jsonpath={.status.phase}",
@@ -63,7 +63,7 @@ def wait(cluster):
         profile=cluster,
     )
 
-    drenv.log_progress("Waiting for olm pakcage server rollout")
+    print("Waiting for olm pakcage server rollout")
     kubectl.rollout(
         "status",
         "deploy/packageserver",

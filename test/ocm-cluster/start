@@ -36,7 +36,7 @@ def deploy(cluster, hub):
 
 
 def wait(cluster):
-    drenv.log_progress("Waiting until deployments are rolled out")
+    print("Waiting until deployments are rolled out")
     for name in ADDONS:
         deployment = f"deploy/{name}"
         drenv.wait_for(deployment, namespace=ADDONS_NAMESPACE, profile=cluster)
@@ -50,7 +50,7 @@ def wait(cluster):
 
 
 def wait_for_hub(hub):
-    drenv.log_progress(f"Waiting until cluster {hub} is ready")
+    print(f"Waiting until cluster {hub} is ready")
 
     drenv.wait_for_cluster(hub)
     drenv.wait_for(f"namespace/{HUB_NAMESPACE}", profile=hub)
@@ -68,7 +68,7 @@ def wait_for_hub(hub):
 
 
 def join_cluster(cluster, hub):
-    drenv.log_progress(f"Joining to cluster {hub}")
+    print(f"Joining to cluster {hub}")
 
     # We can get the token from the first line of the response.
     out = clusteradm.get("token", context=hub)
@@ -87,12 +87,12 @@ def join_cluster(cluster, hub):
 
 
 def accept_cluster(cluster, hub):
-    drenv.log_progress("Accepting cluster")
+    print("Accepting cluster")
     clusteradm.accept([cluster], wait=True, context=hub)
 
 
 def enable_addons(cluster, hub):
-    drenv.log_progress("Enabling addons")
+    print("Enabling addons")
     clusteradm.addon("enable", names=ADDONS, clusters=[cluster], context=hub)
 
 
