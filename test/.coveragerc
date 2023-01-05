@@ -1,0 +1,4 @@
+[run]
+parallel = True
+source = drenv
+omit = drenv/*_test.py

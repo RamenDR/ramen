@@ -509,6 +509,15 @@ This is a configuration for testing regional DR using a hub cluster and
 pip install -r requirements.txt
 ```
 
+### Enabling full test coverage
+
+To enable test coverage for child processes, copy the `coverage.pth`
+file to the python installation:
+
+```
+cp coverage.pth ~/.venv/ramen/lib/python*/site-packages
+```
+
 ### Running the tests
 
 Run all linters and tests and report test coverage:

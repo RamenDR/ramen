@@ -13,7 +13,9 @@ black-reformat:
 	python3 -m black drenv */start */test
 
 test:
-	python3 -m coverage run --source drenv -m pytest
+	rm -f .coverage.*
+	COVERAGE_PROCESS_START=.coveragerc python3 -m coverage run -m pytest
+	python3 -m coverage combine --quiet
 
 coverage:
 	python3 -m coverage report
