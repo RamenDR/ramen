@@ -74,7 +74,6 @@ def _validate_profile(profile):
     profile.setdefault("cpus", 2)
     profile.setdefault("memory", "4g")
     profile.setdefault("network", "")
-    profile.setdefault("scripts", [])
     profile.setdefault("addons", [])
     profile.setdefault("workers", [])
 
