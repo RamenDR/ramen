@@ -1762,6 +1762,28 @@ func (v *VRGInstance) validatePVExistence(pv *corev1.PersistentVolume) error {
 		return fmt.Errorf("failed to get PV (%s) (%w)", existingPV.GetName(), err)
 	}
 
+	// If the PV is bound and matches with the PV we would have restored then return now
+	if v.pvMatches(existingPV, pv) {
+		v.log.Info("Existing PV matches and is bound to the same claim", "PV", existingPV.GetName())
+
+		return nil
+	}
+
+	// If the PV is bound but does not match with the PV we would have restored then return error
+	if existingPV.Status.Phase == corev1.VolumeBound {
+		return fmt.Errorf("existing PV (%s) is bound and doesn't match with the PV to be restored", existingPV.GetName())
+	}
+
+	// PV is not bound
+	// In sync case, we will update it to match with what we want to restore
+	if v.instance.Spec.Sync != nil {
+		v.log.Info("PV exists and will be updated for sync", "PV", existingPV.GetName())
+
+		return v.updateExistingPVForSync(existingPV)
+	}
+
+	// PV is not bound
+	// In async case, just checking that the PV has the ramen restore annotation is good
 	if existingPV.ObjectMeta.Annotations != nil &&
 		existingPV.ObjectMeta.Annotations[PVRestoreAnnotation] == "True" {
 		// Should we check and see if PV in being deleted? Should we just treat it as exists
@@ -1771,23 +1793,7 @@ func (v *VRGInstance) validatePVExistence(pv *corev1.PersistentVolume) error {
 		return nil
 	}
 
-	if v.pvMatches(existingPV, pv) {
-		v.log.Info("Existing PV matches and is bound to the same claim", "PV", existingPV.GetName())
-
-		return nil
-	}
-
-	// Right now, we can only have either Sync mode or Async mode. In case of
-	// sync mode, the pv is never deleted as part of the failover/relocate
-	// process. Hence, the restore is not required and the annotation for
-	// restore can be missing for the sync mode. Skip the check for the
-	// annotation in this case.
-	if v.instance.Spec.Sync != nil {
-		v.log.Info("PV exists and will be updated for sync", "PV", existingPV.GetName())
-
-		return v.updateExistingPVForSync(existingPV)
-	}
-
+	// PV is not bound and not managed by Ramen
 	return fmt.Errorf("found existing PV (%s) not restored by Ramen and not matching with backed up PV", existingPV.Name)
 }
 
