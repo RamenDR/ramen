@@ -35,6 +35,7 @@ templates:
     workers:
       - scripts:
           - name: ocm-hub
+          - name: ocm-controller
           - name: cert-manager
           - name: olm
 
