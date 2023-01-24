@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-# shellcheck disable=1090,2046,2086
+# shellcheck disable=1090,1091,2046,2086
 set -e
 ramen_hack_directory_path_name=$(dirname $0)
 . $ramen_hack_directory_path_name/exit_stack.sh
