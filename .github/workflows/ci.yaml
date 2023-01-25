@@ -4,7 +4,7 @@
 ---
 # yamllint disable rule:line-length
 
-name: PR and branch sanity
+name: CI
 
 # This workflow will run when developer push a topic branch to their
 # fork in github, minimizing noise for maintainers.
@@ -18,7 +18,7 @@ env:
   IMAGE_REGISTRY: "quay.io"
   IMAGE_REPOSITORY: "ramendr"
   IMAGE_NAME: "ramen"
-  IMAGE_TAG: "sanity"
+  IMAGE_TAG: "ci"
   DOCKERCMD: "podman"
 defaults:
   run:
@@ -154,7 +154,7 @@ jobs:
       - name: Go tidy
         run: go mod tidy
 
-      - name: Git branch sanity
+      - name: Check auto generated files
         run: |
           echo "Failing if any auto generated files are updated, checking 'git status'"
           git --no-pager diff
@@ -176,7 +176,7 @@ jobs:
       KUBERNETES_VERSION: ${{ matrix.kubernetes_version }}
       KIND_VERSION: ${{ matrix.kind_version }}
       KIND_IMAGE: ${{ matrix.kind_image }}
-      KIND_CLUSTER_NAME: "sanity"
+      KIND_CLUSTER_NAME: "ci"
 
     steps:
       - name: Checkout source
