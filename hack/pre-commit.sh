@@ -24,6 +24,11 @@ function run_check() {
 
     if [ -x "$(command -v "$exe")" ]; then
         echo "=====  $exe  ====="
+        if ! "$scriptdir"/version_test_ge_xyz.sh "$1" "$2"; then
+            echo >&2 error: version precedes minimum
+            exit 1
+        fi
+        shift 2
         find . \
             -path ./testbin -prune -o \
             -path ./bin -prune -o \
@@ -40,26 +45,12 @@ function run_check() {
 # markdownlint: https://github.com/markdownlint/markdownlint
 # https://github.com/markdownlint/markdownlint/blob/master/docs/RULES.md
 # Install via: gem install mdl
-mdl_version_test() {
-	IFS=. read -r x y _ <<-a
-	$(mdl --version)
-	a
-	test "$x" -gt 0 || test "$x" -eq 0 && test "$y" -gt 11
-	set -- $?
-	unset -v x y
-	return "$1"
-}
-if ! mdl_version_test; then
-	echo error: mdl version precedes minimum
-	exit 1
-fi
-unset -f mdl_version_test
-run_check '.*\.md' mdl --style "${scriptdir}/mdl-style.rb"
+run_check '.*\.md' mdl "$(mdl --version)" 0.11.0 --style "${scriptdir}/mdl-style.rb"
 
 # Install via: dnf install ShellCheck
-run_check '.*\.(ba)?sh' shellcheck
+run_check '.*\.(ba)?sh' shellcheck "$(shellcheck --version|grep ^version:|cut -d\  -f2)" 0.7.2
 
 # Install via: dnf install yamllint
-run_check '.*\.ya?ml' yamllint -s -c "${scriptdir}/yamlconfig.yaml"
+run_check '.*\.ya?ml' yamllint "$(yamllint --version|cut -d\  -f2)" 1.10.0 -s -c "${scriptdir}/yamlconfig.yaml"
 
 (! < "${OUTPUTS_FILE}" read -r)
