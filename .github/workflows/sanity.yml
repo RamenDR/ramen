@@ -35,7 +35,7 @@ jobs:
         run: |
           echo 'APT::Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries
           sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-pip ruby
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-pip ruby shellcheck
           sudo gem install mdl
           sudo pip3 install yamllint
 
