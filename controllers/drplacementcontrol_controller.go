@@ -44,9 +44,9 @@ const (
 
 	ClonedPlacementRuleNameFormat string = "drpc-plrule-%s-%s"
 
-	// SanityCheckDelay is used to frequencly update the DRPC status when the reconciler is idle.
+	// StatusCheckDelay is used to frequencly update the DRPC status when the reconciler is idle.
 	// This is needed in order to sync up the DRPC status and the VRG status.
-	SanityCheckDelay = time.Minute * 10
+	StatusCheckDelay = time.Minute * 10
 )
 
 var InitialWaitTimeForDRPCPlacementRule = errorswrapper.New("Waiting for DRPC Placement to produces placement decision")
@@ -504,7 +504,7 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(d *DRPCInstance, lo
 		afterProcessing = *d.instance.Status.LastUpdateTime
 	}
 
-	requeueTimeDuration := r.getSanityCheckDelay(beforeProcessing, afterProcessing)
+	requeueTimeDuration := r.getStatusCheckDelay(beforeProcessing, afterProcessing)
 	log.Info("Requeue time", "duration", requeueTimeDuration)
 
 	return ctrl.Result{RequeueAfter: requeueTimeDuration}, nil
@@ -925,26 +925,26 @@ func (r *DRPlacementControlReconciler) addClusterPeersToPlacementRule(
 }
 
 // statusUpdateTimeElapsed returns whether it is time to update DRPC status or not
-// DRPC status is updated at least once every SanityCheckDelay in order to refresh
+// DRPC status is updated at least once every StatusCheckDelay in order to refresh
 // the VRG status.
 func (d *DRPCInstance) statusUpdateTimeElapsed() bool {
-	return d.instance.Status.LastUpdateTime.Add(SanityCheckDelay).Before(time.Now())
+	return d.instance.Status.LastUpdateTime.Add(StatusCheckDelay).Before(time.Now())
 }
 
-// getSanityCheckDelay returns the reconciliation requeue time duration when no requeue
-// has been requested. We want the reconciliation to run at least once every SanityCheckDelay
+// getStatusCheckDelay returns the reconciliation requeue time duration when no requeue
+// has been requested. We want the reconciliation to run at least once every StatusCheckDelay
 // in order to refresh DRPC status with VRG status. The reconciliation will be called at any time.
-// If it is called before the SanityCheckDelay has elapsed, and the DRPC status was not updated,
-// then we must return the remaining time rather than the full SanityCheckDelay to prevent
-// starving the status update, which is scheduled for at least once every SanityCheckDelay.
+// If it is called before the StatusCheckDelay has elapsed, and the DRPC status was not updated,
+// then we must return the remaining time rather than the full StatusCheckDelay to prevent
+// starving the status update, which is scheduled for at least once every StatusCheckDelay.
 //
 // Example: Assume at 10:00am was the last time when the reconciler ran and updated the status.
-// The SanityCheckDelay is hard coded to 10 minutes.  If nothing is happening in the system that
+// The StatusCheckDelay is hard coded to 10 minutes.  If nothing is happening in the system that
 // requires the reconciler to run, then the next run would be at 10:10am. If however, for any reason
 // the reconciler is called, let's say, at 10:08am, and no update to the DRPC status was needed,
-// then the requeue time duration should be 2 minutes and NOT the full SanityCheckDelay. That is:
-// 10:00am + SanityCheckDelay - 10:08am = 2mins
-func (r *DRPlacementControlReconciler) getSanityCheckDelay(
+// then the requeue time duration should be 2 minutes and NOT the full StatusCheckDelay. That is:
+// 10:00am + StatusCheckDelay - 10:08am = 2mins
+func (r *DRPlacementControlReconciler) getStatusCheckDelay(
 	beforeProcessing metav1.Time, afterProcessing metav1.Time,
 ) time.Duration {
 	if beforeProcessing != afterProcessing {
@@ -952,14 +952,14 @@ func (r *DRPlacementControlReconciler) getSanityCheckDelay(
 		// iteration of the reconcile loop.  Hence, the next attempt to update
 		// the status should be after a delay of a standard polling interval
 		// duration.
-		return SanityCheckDelay
+		return StatusCheckDelay
 	}
 
 	// DRPC's VRG status update processing time has NOT changed during this
 	// iteration of the reconcile loop.  Hence, the next attempt to update the
 	// status should be after the remaining duration of this polling interval has
-	// elapsed: (beforeProcessing + SantityCheckDelay - time.Now())
-	return time.Until(beforeProcessing.Add(SanityCheckDelay))
+	// elapsed: (beforeProcessing + StatusCheckDelay - time.Now())
+	return time.Until(beforeProcessing.Add(StatusCheckDelay))
 }
 
 func (r *DRPlacementControlReconciler) updateUserPlacementRuleStatus(
