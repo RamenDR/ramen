@@ -4,11 +4,6 @@
 package volsync_test
 
 import (
-	"crypto/x509"
-	"encoding/pem"
-
-	"golang.org/x/crypto/ssh"
-
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
@@ -78,19 +73,13 @@ var _ = Describe("Secretgen", func() {
 				Expect(ownerMatches(newSecret, owner.GetName(), "ConfigMap", true))
 
 				// Check secret data
-				Expect(len(newSecret.Data)).To(Equal(4))
+				Expect(len(newSecret.Data)).To(Equal(1))
 
-				sourceBytes, ok := newSecret.Data["source"]
+				tlsPskData, ok := newSecret.Data["psk.txt"]
 				Expect(ok).To(BeTrue())
-				sourcePubBytes, ok := newSecret.Data["source.pub"]
-				Expect(ok).To(BeTrue())
-				validateKeyPair(sourceBytes, sourcePubBytes)
 
-				destBytes, ok := newSecret.Data["destination"]
-				Expect(ok).To(BeTrue())
-				destPubBytes, ok := newSecret.Data["destination.pub"]
-				Expect(ok).To(BeTrue())
-				validateKeyPair(destBytes, destPubBytes)
+				tlsPsk := string(tlsPskData)
+				Expect(tlsPsk).To(ContainSubstring("volsyncramen:"))
 			})
 		})
 
@@ -128,24 +117,3 @@ var _ = Describe("Secretgen", func() {
 		})
 	})
 })
-
-func validateKeyPair(privateKeyData, publicKeyData []byte) {
-	pemBlock, _ := pem.Decode(privateKeyData)
-	Expect(pemBlock).NotTo(BeNil())
-	Expect(pemBlock.Type).To(Equal("RSA PRIVATE KEY"))
-
-	rsaPrivKey, err := x509.ParsePKCS1PrivateKey(pemBlock.Bytes)
-	Expect(err).NotTo(HaveOccurred())
-	Expect(rsaPrivKey).NotTo(BeNil())
-	Expect(rsaPrivKey.Validate()).To(Succeed())
-
-	// One more check using ssh to see if private matches public
-	sshSigner, err := ssh.ParsePrivateKey(privateKeyData)
-	Expect(err).NotTo(HaveOccurred())
-
-	sshPubKey, comment, _, _, err := ssh.ParseAuthorizedKey(publicKeyData)
-	Expect(err).NotTo(HaveOccurred())
-	Expect(comment).To(Equal(""))
-
-	Expect(sshSigner.PublicKey()).To(Equal(sshPubKey))
-}
