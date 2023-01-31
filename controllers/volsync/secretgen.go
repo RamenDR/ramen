@@ -6,12 +6,8 @@ package volsync
 import (
 	"context"
 	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
+	"encoding/hex"
 	"fmt"
-
-	"golang.org/x/crypto/ssh"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -22,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const keyBitSize = 4096
+const tlsPSKDataSize = 64
 
 // Creates a new volsync replication secret on the cluster (should be called on the hub cluster).  If the secret
 // already exists, nop
@@ -65,10 +61,12 @@ func ReconcileVolSyncReplicationSecret(ctx context.Context, k8sClient client.Cli
 	return secret, nil
 }
 
-func generateNewVolSyncReplicationSecret(secretName, secretNamespace string, log logr.Logger) (*corev1.Secret, error) {
-	priv, pub, err := generateKeyPair(log)
+// Pre-shared key for rsync TLS mover
+func generateNewVolSyncReplicationSecret(secretName, secretNamespace string, log logr.Logger) (*corev1.Secret, error,
+) {
+	tlsKey, err := genTLSPreSharedKey(log)
 	if err != nil {
-		log.Error(err, "Unable to generate new secret for VolSync replication")
+		log.Error(err, "Unable to generate new tls secret for VolSync replication")
 
 		return nil, err
 	}
@@ -78,60 +76,21 @@ func generateNewVolSyncReplicationSecret(secretName, secretNamespace string, log
 			Name:      secretName,
 			Namespace: secretNamespace,
 		},
-		Data: map[string][]byte{
-			"source":          priv,
-			"source.pub":      pub,
-			"destination":     priv,
-			"destination.pub": pub,
+		StringData: map[string]string{
+			"psk.txt": "volsyncramen:" + tlsKey,
 		},
 	}
 
 	return secret, nil
 }
 
-func generateKeyPair(log logr.Logger) (priv []byte, pub []byte, err error) {
-	rsaPrivateKey, err := generateNewPrivateKey(log)
-	if err != nil {
-		return nil, nil, err
+func genTLSPreSharedKey(log logr.Logger) (string, error) {
+	pskData := make([]byte, tlsPSKDataSize)
+	if _, err := rand.Read(pskData); err != nil {
+		log.Error(err, "error generating tls key")
+
+		return "", err
 	}
 
-	priv = getPrivateKeyPEMBytes(rsaPrivateKey)
-	pub, err = getPublicKeyBytes(rsaPrivateKey)
-
-	return priv, pub, err
-}
-
-func generateNewPrivateKey(log logr.Logger) (*rsa.PrivateKey, error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, keyBitSize)
-	if err != nil {
-		log.Error(err, "Unable to generate new rsa private key")
-
-		return nil, fmt.Errorf("unable to generate new rsa private key (%w)", err)
-	}
-
-	if err = privateKey.Validate(); err != nil {
-		log.Error(err, "Error validating new rsa private key")
-
-		return nil, fmt.Errorf("error validating new rsa private key (%w)", err)
-	}
-
-	return privateKey, nil
-}
-
-func getPrivateKeyPEMBytes(privateKey *rsa.PrivateKey) []byte {
-	privateKeyPEMBlock := &pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
-	}
-
-	return pem.EncodeToMemory(privateKeyPEMBlock)
-}
-
-func getPublicKeyBytes(privateKey *rsa.PrivateKey) ([]byte, error) {
-	pub, err := ssh.NewPublicKey(&privateKey.PublicKey)
-	if err != nil {
-		return nil, fmt.Errorf("error creating new public key (%w)", err)
-	}
-
-	return ssh.MarshalAuthorizedKey(pub), nil
+	return hex.EncodeToString(pskData), nil
 }

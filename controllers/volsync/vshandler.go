@@ -103,9 +103,9 @@ func (v *VSHandler) ReconcileRD(
 	}
 
 	// Pre-allocated shared secret - DRPC will generate and propagate this secret from hub to clusters
-	sshKeysSecretName := GetVolSyncSSHSecretNameFromVRGName(v.owner.GetName())
+	pskSecretName := GetVolSyncPSKSecretNameFromVRGName(v.owner.GetName())
 	// Need to confirm this secret exists on the cluster before proceeding, otherwise volsync will generate it
-	secretExists, err := v.validateSecretAndAddVRGOwnerRef(sshKeysSecretName)
+	secretExists, err := v.validateSecretAndAddVRGOwnerRef(pskSecretName)
 	if err != nil || !secretExists {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func (v *VSHandler) ReconcileRD(
 
 	var rd *volsyncv1alpha1.ReplicationDestination
 
-	rd, err = v.createOrUpdateRD(rdSpec, sshKeysSecretName, copyMethod, dstPVC)
+	rd, err = v.createOrUpdateRD(rdSpec, pskSecretName, copyMethod, dstPVC)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +152,7 @@ func rdStatusReady(rd *volsyncv1alpha1.ReplicationDestination, log logr.Logger) 
 		return false
 	}
 
-	if rd.Status.Rsync == nil || rd.Status.Rsync.Address == nil {
+	if rd.Status.RsyncTLS == nil || rd.Status.RsyncTLS.Address == nil {
 		log.V(1).Info("ReplicationDestination waiting for Address ...")
 
 		return false
@@ -162,7 +162,7 @@ func rdStatusReady(rd *volsyncv1alpha1.ReplicationDestination, log logr.Logger) 
 }
 
 func (v *VSHandler) createOrUpdateRD(
-	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec, sshKeysSecretName string,
+	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec, pskSecretName string,
 	copyMethod volsyncv1alpha1.CopyMethodType, dstPVC *string) (*volsyncv1alpha1.ReplicationDestination, error,
 ) {
 	l := v.log.WithValues("rdSpec", rdSpec)
@@ -193,9 +193,9 @@ func (v *VSHandler) createOrUpdateRD(
 
 		addVRGOwnerLabel(v.owner, rd)
 
-		rd.Spec.Rsync = &volsyncv1alpha1.ReplicationDestinationRsyncSpec{
+		rd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
 			ServiceType: v.getRsyncServiceType(),
-			SSHKeys:     &sshKeysSecretName,
+			KeySecret:   &pskSecretName,
 
 			ReplicationDestinationVolumeOptions: volsyncv1alpha1.ReplicationDestinationVolumeOptions{
 				CopyMethod:              copyMethod,
@@ -263,10 +263,10 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	}
 
 	// Pre-allocated shared secret - DRPC will generate and propagate this secret from hub to clusters
-	sshKeysSecretName := GetVolSyncSSHSecretNameFromVRGName(v.owner.GetName())
+	pskSecretName := GetVolSyncPSKSecretNameFromVRGName(v.owner.GetName())
 
 	// Need to confirm this secret exists on the cluster before proceeding, otherwise volsync will generate it
-	secretExists, err := v.validateSecretAndAddVRGOwnerRef(sshKeysSecretName)
+	secretExists, err := v.validateSecretAndAddVRGOwnerRef(pskSecretName)
 	if err != nil || !secretExists {
 		return false, nil, err
 	}
@@ -285,7 +285,7 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 		return false, nil, err
 	}
 
-	replicationSource, err := v.createOrUpdateRS(rsSpec, sshKeysSecretName, runFinalSync)
+	replicationSource, err := v.createOrUpdateRS(rsSpec, pskSecretName, runFinalSync)
 	if err != nil {
 		return false, nil, err
 	}
@@ -388,7 +388,7 @@ func (v *VSHandler) cleanupAfterRSFinalSync(rsSpec ramendrv1alpha1.VolSyncReplic
 
 //nolint:funlen
 func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec,
-	sshKeysSecretName string, runFinalSync bool) (*volsyncv1alpha1.ReplicationSource, error,
+	pskSecretName string, runFinalSync bool) (*volsyncv1alpha1.ReplicationSource, error,
 ) {
 	l := v.log.WithValues("rsSpec", rsSpec, "runFinalSync", runFinalSync)
 
@@ -450,9 +450,9 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 			}
 		}
 
-		rs.Spec.Rsync = &volsyncv1alpha1.ReplicationSourceRsyncSpec{
-			SSHKeys: &sshKeysSecretName,
-			Address: &remoteAddress,
+		rs.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationSourceRsyncTLSSpec{
+			KeySecret: &pskSecretName,
+			Address:   &remoteAddress,
 
 			ReplicationSourceVolumeOptions: volsyncv1alpha1.ReplicationSourceVolumeOptions{
 				// Always using CopyMethod of snapshot for now - could use 'Clone' CopyMethod for specific
@@ -1539,7 +1539,7 @@ func getLocalServiceNameForRDFromPVCName(pvcName string) string {
 
 func getLocalServiceNameForRD(rdName string) string {
 	// This is the name VolSync will use for the service
-	return fmt.Sprintf("volsync-rsync-dst-%s", rdName)
+	return fmt.Sprintf("volsync-rsync-tls-dst-%s", rdName)
 }
 
 // This is the remote service name that can be accessed from another cluster.  This assumes submariner and that

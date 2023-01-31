@@ -460,7 +460,7 @@ var _ = Describe("VolSync Handler", func() {
 			createdRD := &volsyncv1alpha1.ReplicationDestination{}
 			var returnedRD *volsyncv1alpha1.ReplicationDestination
 
-			Context("When the ssh secret for volsync does not exist", func() {
+			Context("When the psk secret for volsync does not exist", func() {
 				JustBeforeEach(func() {
 					// Run ReconcileRD
 					var err error
@@ -479,26 +479,26 @@ var _ = Describe("VolSync Handler", func() {
 				})
 			})
 
-			Context("When the ssh secret for volsync exists (will be pushed down by drpc from hub", func() {
-				var dummySSHSecret *corev1.Secret
+			Context("When the psk secret for volsync exists (will be pushed down by drpc from hub", func() {
+				var dummyPSKSecret *corev1.Secret
 				JustBeforeEach(func() {
-					// Create a dummy volsync ssh secret so the reconcile can proceed properly
-					dummySSHSecret = &corev1.Secret{
+					// Create a dummy volsync psk secret so the reconcile can proceed properly
+					dummyPSKSecret = &corev1.Secret{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      volsync.GetVolSyncSSHSecretNameFromVRGName(owner.GetName()),
+							Name:      volsync.GetVolSyncPSKSecretNameFromVRGName(owner.GetName()),
 							Namespace: testNamespace.GetName(),
 						},
 					}
-					Expect(k8sClient.Create(ctx, dummySSHSecret)).To(Succeed())
-					Expect(dummySSHSecret.GetName()).NotTo(BeEmpty())
+					Expect(k8sClient.Create(ctx, dummyPSKSecret)).To(Succeed())
+					Expect(dummyPSKSecret.GetName()).NotTo(BeEmpty())
 
 					// Make sure the secret is created to avoid any timing issues
 					Eventually(func() error {
 						return k8sClient.Get(ctx,
 							types.NamespacedName{
-								Name:      dummySSHSecret.GetName(),
-								Namespace: dummySSHSecret.GetNamespace(),
-							}, dummySSHSecret)
+								Name:      dummyPSKSecret.GetName(),
+								Namespace: dummyPSKSecret.GetNamespace(),
+							}, dummyPSKSecret)
 					}, maxWait, interval).Should(Succeed())
 				})
 
@@ -559,26 +559,27 @@ var _ = Describe("VolSync Handler", func() {
 						Expect(ownerMatches(createdRD, owner.GetName(), "ConfigMap", true /*should be controller*/)).To(BeTrue())
 
 						// Check common fields
-						Expect(createdRD.Spec.Rsync.CopyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
-						// Note owner here is faking out a VRG - ssh key name will be based on the owner (VRG) name
-						Expect(*createdRD.Spec.Rsync.SSHKeys).To(Equal(volsync.GetVolSyncSSHSecretNameFromVRGName(owner.GetName())))
-						Expect(*createdRD.Spec.Rsync.Capacity).To(Equal(capacity))
-						Expect(createdRD.Spec.Rsync.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
-						Expect(*createdRD.Spec.Rsync.StorageClassName).To(Equal(testStorageClassName))
-						Expect(*createdRD.Spec.Rsync.VolumeSnapshotClassName).To(Equal(testVolumeSnapshotClassName))
+						Expect(createdRD.Spec.RsyncTLS).NotTo(BeNil())
+						Expect(createdRD.Spec.RsyncTLS.CopyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
+						// Note owner here is faking out a VRG - psk key name will be based on the owner (VRG) name
+						Expect(*createdRD.Spec.RsyncTLS.KeySecret).To(Equal(volsync.GetVolSyncPSKSecretNameFromVRGName(owner.GetName())))
+						Expect(*createdRD.Spec.RsyncTLS.Capacity).To(Equal(capacity))
+						Expect(createdRD.Spec.RsyncTLS.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
+						Expect(*createdRD.Spec.RsyncTLS.StorageClassName).To(Equal(testStorageClassName))
+						Expect(*createdRD.Spec.RsyncTLS.VolumeSnapshotClassName).To(Equal(testVolumeSnapshotClassName))
 						Expect(createdRD.Spec.Trigger).To(BeNil()) // No schedule should be set
 						Expect(createdRD.GetLabels()).To(HaveKeyWithValue(volsync.VRGOwnerLabel, owner.GetName()))
-						Expect(*createdRD.Spec.Rsync.ServiceType).To(Equal(volsync.DefaultRsyncServiceType))
+						Expect(*createdRD.Spec.RsyncTLS.ServiceType).To(Equal(volsync.DefaultRsyncServiceType))
 
 						// Check that the secret has been updated to have our vrg as owner
 						Eventually(func() bool {
-							err := k8sClient.Get(ctx, client.ObjectKeyFromObject(dummySSHSecret), dummySSHSecret)
+							err := k8sClient.Get(ctx, client.ObjectKeyFromObject(dummyPSKSecret), dummyPSKSecret)
 							if err != nil {
 								return false
 							}
 
-							// The ssh secret should be updated to be owned by the VRG
-							return ownerMatches(dummySSHSecret, owner.GetName(), "ConfigMap", false)
+							// The psk secret should be updated to be owned by the VRG
+							return ownerMatches(dummyPSKSecret, owner.GetName(), "ConfigMap", false)
 						}, maxWait, interval).Should(BeTrue())
 
 						// Check that the service export is created for this RD
@@ -590,7 +591,7 @@ var _ = Describe("VolSync Handler", func() {
 						})
 						Eventually(func() error {
 							return k8sClient.Get(ctx, client.ObjectKey{
-								Name:      fmt.Sprintf("volsync-rsync-dst-%s", createdRD.GetName()),
+								Name:      fmt.Sprintf("volsync-rsync-tls-dst-%s", createdRD.GetName()),
 								Namespace: createdRD.GetNamespace(),
 							}, svcExport)
 						}, maxWait, interval).Should(Succeed())
@@ -598,36 +599,6 @@ var _ = Describe("VolSync Handler", func() {
 						// The created service export should be owned by the replication destination, not our VRG
 						Expect(ownerMatches(svcExport, createdRD.GetName(), "ReplicationDestination", false)).To(BeTrue())
 					})
-
-					/*
-						Context("When empty volsyncProfile is specified", func() {
-							It("Should use the default rsync service type in the ReplicationDestination", func() {
-								Expect(*createdRD.Spec.Rsync.ServiceType).To(Equal(volsync.DefaultRsyncServiceType))
-							})
-						})
-
-						Context("When no volsyncProfile is specified", func() {
-							BeforeEach(func() {
-								vsHandler.SetVolSyncProfile(nil)
-							})
-							It("Should use the default rsync service type in the ReplicationDestination", func() {
-								Expect(*createdRD.Spec.Rsync.ServiceType).To(Equal(volsync.DefaultRsyncServiceType))
-							})
-						})
-
-						Context("When a volsyncProfile is specified with serviceType", func() {
-							typeLoadBalancer := corev1.ServiceTypeLoadBalancer
-							BeforeEach(func() {
-								vsHandler.SetVolSyncProfile(&ramendrv1alpha1.VolSyncProfile{
-									VolSyncProfileName: "default",
-									ServiceType:        &typeLoadBalancer,
-								})
-							})
-							It("Should use the rsync service type in the VolSyncProfile", func() {
-								Expect(*createdRD.Spec.Rsync.ServiceType).To(Equal(typeLoadBalancer))
-							})
-						})
-					*/
 
 					Context("When replication destination already exists with status.address specified", func() {
 						myTestAddress := "https://fakeaddress.abc.org:8888"
@@ -653,18 +624,18 @@ var _ = Describe("VolSync Handler", func() {
 
 							// Fake the address and latestImage in the status
 							rdPrecreate.Status = &volsyncv1alpha1.ReplicationDestinationStatus{
-								Rsync: &volsyncv1alpha1.ReplicationDestinationRsyncStatus{
+								RsyncTLS: &volsyncv1alpha1.ReplicationDestinationRsyncTLSStatus{
 									Address: &myTestAddress,
 								},
 							}
 							Expect(k8sClient.Status().Update(ctx, rdPrecreate)).To(Succeed())
 							Eventually(func() *string {
 								err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rdPrecreate), rdPrecreate)
-								if err != nil || rdPrecreate.Status == nil || rdPrecreate.Status.Rsync == nil {
+								if err != nil || rdPrecreate.Status == nil || rdPrecreate.Status.RsyncTLS == nil {
 									return nil
 								}
 
-								return rdPrecreate.Status.Rsync.Address
+								return rdPrecreate.Status.RsyncTLS.Address
 							}, maxWait, interval).Should(Not(BeNil()))
 						})
 
@@ -725,7 +696,7 @@ var _ = Describe("VolSync Handler", func() {
 
 			createdRS := &volsyncv1alpha1.ReplicationSource{}
 
-			Context("When the ssh secret for volsync does not exist", func() {
+			Context("When the psk secret for volsync does not exist", func() {
 				var returnedRS *volsyncv1alpha1.ReplicationSource
 				JustBeforeEach(func() {
 					// Run ReconcileRD
@@ -747,31 +718,31 @@ var _ = Describe("VolSync Handler", func() {
 				})
 			})
 
-			Context("When the ssh secret for volsync exists (will be pushed down by drpc from hub", func() {
-				var dummySSHSecret *corev1.Secret
+			Context("When the psk secret for volsync exists (will be pushed down by drpc from hub", func() {
+				var dummyPSKSecret *corev1.Secret
 				JustBeforeEach(func() {
-					// Create a dummy volsync ssh secret so the reconcile can proceed properly
-					dummySSHSecret = &corev1.Secret{
+					// Create a dummy volsync psk secret so the reconcile can proceed properly
+					dummyPSKSecret = &corev1.Secret{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      volsync.GetVolSyncSSHSecretNameFromVRGName(owner.GetName()),
+							Name:      volsync.GetVolSyncPSKSecretNameFromVRGName(owner.GetName()),
 							Namespace: testNamespace.GetName(),
 						},
 					}
-					Expect(k8sClient.Create(ctx, dummySSHSecret)).To(Succeed())
-					Expect(dummySSHSecret.GetName()).NotTo(BeEmpty())
+					Expect(k8sClient.Create(ctx, dummyPSKSecret)).To(Succeed())
+					Expect(dummyPSKSecret.GetName()).NotTo(BeEmpty())
 
 					// Make sure the secret is created to avoid any timing issues
 					Eventually(func() error {
 						return k8sClient.Get(ctx, types.NamespacedName{
-							Name:      dummySSHSecret.GetName(),
-							Namespace: dummySSHSecret.GetNamespace(),
-						}, dummySSHSecret)
+							Name:      dummyPSKSecret.GetName(),
+							Namespace: dummyPSKSecret.GetNamespace(),
+						}, dummyPSKSecret)
 					}, maxWait, interval).Should(Succeed())
 				})
 
 				Context("When no running pod is mounting the PVC to be protected", func() {
 					It("Should return a nil replication source and no RS should be created", func() {
-						// Run another reconcile - we have the ssh secret now but the pvc is not in use by
+						// Run another reconcile - we have the psk secret now but the pvc is not in use by
 						// a running pod
 						finalSyncCompl, rs, err := vsHandler.ReconcileRS(rsSpec, false)
 						Expect(err).ToNot(HaveOccurred())
@@ -878,8 +849,8 @@ var _ = Describe("VolSync Handler", func() {
 								}, createdRS)
 							}, maxWait, interval).Should(Succeed())
 
-							Expect(createdRS.Spec.Rsync.AccessModes).To(Equal(rsSpec.ProtectedPVC.AccessModes))
-							Expect(createdRS.Spec.Rsync.StorageClassName).To(Equal(rsSpec.ProtectedPVC.StorageClassName))
+							Expect(createdRS.Spec.RsyncTLS.AccessModes).To(Equal(rsSpec.ProtectedPVC.AccessModes))
+							Expect(createdRS.Spec.RsyncTLS.StorageClassName).To(Equal(rsSpec.ProtectedPVC.StorageClassName))
 						})
 
 						It("Should delete the existing ReplicationDestination", func() {
@@ -919,26 +890,27 @@ var _ = Describe("VolSync Handler", func() {
 									true /* Should be controller */)
 							}, maxWait, interval).Should(BeTrue())
 
-							// Check that the volsync ssh secret has been updated to have our vrg as owner
+							// Check that the volsync psk secret has been updated to have our vrg as owner
 							Eventually(func() bool {
-								err := k8sClient.Get(ctx, client.ObjectKeyFromObject(dummySSHSecret), dummySSHSecret)
+								err := k8sClient.Get(ctx, client.ObjectKeyFromObject(dummyPSKSecret), dummyPSKSecret)
 								if err != nil {
 									return false
 								}
 
-								// The ssh secret should be updated to be owned by the VRG
-								return ownerMatches(dummySSHSecret, owner.GetName(), "ConfigMap", false)
+								// The psk secret should be updated to be owned by the VRG
+								return ownerMatches(dummyPSKSecret, owner.GetName(), "ConfigMap", false)
 							}, maxWait, interval).Should(BeTrue())
 
 							// Check common fields
 							Expect(createdRS.Spec.SourcePVC).To(Equal(rsSpec.ProtectedPVC.Name))
-							Expect(createdRS.Spec.Rsync.CopyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
-							// Note owner here is faking out a VRG - ssh key name will be based on the owner (VRG) name
-							Expect(*createdRS.Spec.Rsync.SSHKeys).To(Equal(volsync.GetVolSyncSSHSecretNameFromVRGName(owner.GetName())))
-							Expect(*createdRS.Spec.Rsync.Address).To(Equal("volsync-rsync-dst-" +
+							Expect(createdRS.Spec.RsyncTLS).NotTo(BeNil())
+							Expect(createdRS.Spec.RsyncTLS.CopyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
+							// Note owner here is faking out a VRG - psk secret name will be based on the owner (VRG) name
+							Expect(*createdRS.Spec.RsyncTLS.KeySecret).To(Equal(volsync.GetVolSyncPSKSecretNameFromVRGName(owner.GetName())))
+							Expect(*createdRS.Spec.RsyncTLS.Address).To(Equal("volsync-rsync-tls-dst-" +
 								rsSpec.ProtectedPVC.Name + "." + testNamespace.GetName() + ".svc.clusterset.local"))
 
-							Expect(*createdRS.Spec.Rsync.VolumeSnapshotClassName).To(Equal(testVolumeSnapshotClassName))
+							Expect(*createdRS.Spec.RsyncTLS.VolumeSnapshotClassName).To(Equal(testVolumeSnapshotClassName))
 
 							Expect(createdRS.Spec.Trigger).ToNot(BeNil())
 							Expect(createdRS.Spec.Trigger).To(Equal(&volsyncv1alpha1.ReplicationSourceTriggerSpec{
@@ -967,7 +939,7 @@ var _ = Describe("VolSync Handler", func() {
 									},
 									// Will expect the reconcile to fill this out properly for us (i.e. update)
 									Spec: volsyncv1alpha1.ReplicationSourceSpec{
-										Rsync: &volsyncv1alpha1.ReplicationSourceRsyncSpec{},
+										RsyncTLS: &volsyncv1alpha1.ReplicationSourceRsyncTLSSpec{},
 									},
 								}
 								Expect(k8sClient.Create(ctx, rsPrecreate)).To(Succeed())
@@ -1160,7 +1132,7 @@ var _ = Describe("VolSync Handler", func() {
 						Namespace: testNamespace.GetName(),
 					},
 					Spec: volsyncv1alpha1.ReplicationDestinationSpec{
-						Rsync: &volsyncv1alpha1.ReplicationDestinationRsyncSpec{},
+						RsyncTLS: &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{},
 					},
 				}
 				Expect(k8sClient.Create(ctx, rd)).To(Succeed())
@@ -1187,7 +1159,7 @@ var _ = Describe("VolSync Handler", func() {
 						Namespace: testNamespace.GetName(),
 					},
 					Spec: volsyncv1alpha1.ReplicationDestinationSpec{
-						Rsync: &volsyncv1alpha1.ReplicationDestinationRsyncSpec{},
+						RsyncTLS: &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{},
 					},
 				}
 				Expect(k8sClient.Create(ctx, rd)).To(Succeed())
@@ -1491,41 +1463,41 @@ var _ = Describe("VolSync Handler", func() {
 				rdSpecListOtherOwner = append(rdSpecListOtherOwner, otherOwnerRdSpec)
 			}
 
-			// Create dummy volsync ssh secrets - will need one per vrg
-			dummySSHSecret := &corev1.Secret{
+			// Create dummy volsync secrets - will need one per vrg
+			dummyPSKSecret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      volsync.GetVolSyncSSHSecretNameFromVRGName(owner.GetName()),
+					Name:      volsync.GetVolSyncPSKSecretNameFromVRGName(owner.GetName()),
 					Namespace: testNamespace.GetName(),
 				},
 			}
-			Expect(k8sClient.Create(ctx, dummySSHSecret)).To(Succeed())
-			Expect(dummySSHSecret.GetName()).NotTo(BeEmpty())
+			Expect(k8sClient.Create(ctx, dummyPSKSecret)).To(Succeed())
+			Expect(dummyPSKSecret.GetName()).NotTo(BeEmpty())
 
 			// Make sure the secret is created to avoid any timing issues
 			Eventually(func() error {
 				return k8sClient.Get(ctx,
 					types.NamespacedName{
-						Name:      dummySSHSecret.GetName(),
-						Namespace: dummySSHSecret.GetNamespace(),
-					}, dummySSHSecret)
+						Name:      dummyPSKSecret.GetName(),
+						Namespace: dummyPSKSecret.GetNamespace(),
+					}, dummyPSKSecret)
 			}, maxWait, interval).Should(Succeed())
 
-			dummySSHSecretOtherOwner := &corev1.Secret{
+			dummyPSKSecretOtherOwner := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      volsync.GetVolSyncSSHSecretNameFromVRGName(otherOwnerCm.GetName()),
+					Name:      volsync.GetVolSyncPSKSecretNameFromVRGName(otherOwnerCm.GetName()),
 					Namespace: testNamespace.GetName(),
 				},
 			}
-			Expect(k8sClient.Create(ctx, dummySSHSecretOtherOwner)).To(Succeed())
-			Expect(dummySSHSecretOtherOwner.GetName()).NotTo(BeEmpty())
+			Expect(k8sClient.Create(ctx, dummyPSKSecretOtherOwner)).To(Succeed())
+			Expect(dummyPSKSecretOtherOwner.GetName()).NotTo(BeEmpty())
 
 			// Make sure the secret is created to avoid any timing issues
 			Eventually(func() error {
 				return k8sClient.Get(ctx,
 					types.NamespacedName{
-						Name:      dummySSHSecretOtherOwner.GetName(),
-						Namespace: dummySSHSecretOtherOwner.GetNamespace(),
-					}, dummySSHSecretOtherOwner)
+						Name:      dummyPSKSecretOtherOwner.GetName(),
+						Namespace: dummyPSKSecretOtherOwner.GetNamespace(),
+					}, dummyPSKSecretOtherOwner)
 			}, maxWait, interval).Should(Succeed())
 
 			for _, rdSpec := range rdSpecList {
@@ -1676,41 +1648,41 @@ var _ = Describe("VolSync Handler", func() {
 				rsSpecListOtherOwner = append(rsSpecListOtherOwner, otherOwnerRsSpec)
 			}
 
-			// Create dummy volsync ssh secrets - will need one per vrg
-			dummySSHSecret := &corev1.Secret{
+			// Create dummy volsync secrets - will need one per vrg
+			dummyPSKSecret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      volsync.GetVolSyncSSHSecretNameFromVRGName(owner.GetName()),
+					Name:      volsync.GetVolSyncPSKSecretNameFromVRGName(owner.GetName()),
 					Namespace: testNamespace.GetName(),
 				},
 			}
-			Expect(k8sClient.Create(ctx, dummySSHSecret)).To(Succeed())
-			Expect(dummySSHSecret.GetName()).NotTo(BeEmpty())
+			Expect(k8sClient.Create(ctx, dummyPSKSecret)).To(Succeed())
+			Expect(dummyPSKSecret.GetName()).NotTo(BeEmpty())
 
 			// Make sure the secret is created to avoid any timing issues
 			Eventually(func() error {
 				return k8sClient.Get(ctx,
 					types.NamespacedName{
-						Name:      dummySSHSecret.GetName(),
-						Namespace: dummySSHSecret.GetNamespace(),
-					}, dummySSHSecret)
+						Name:      dummyPSKSecret.GetName(),
+						Namespace: dummyPSKSecret.GetNamespace(),
+					}, dummyPSKSecret)
 			}, maxWait, interval).Should(Succeed())
 
-			dummySSHSecretOtherOwner := &corev1.Secret{
+			dummyPSKSecretOtherOwner := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      volsync.GetVolSyncSSHSecretNameFromVRGName(otherOwnerCm.GetName()),
+					Name:      volsync.GetVolSyncPSKSecretNameFromVRGName(otherOwnerCm.GetName()),
 					Namespace: testNamespace.GetName(),
 				},
 			}
-			Expect(k8sClient.Create(ctx, dummySSHSecretOtherOwner)).To(Succeed())
-			Expect(dummySSHSecretOtherOwner.GetName()).NotTo(BeEmpty())
+			Expect(k8sClient.Create(ctx, dummyPSKSecretOtherOwner)).To(Succeed())
+			Expect(dummyPSKSecretOtherOwner.GetName()).NotTo(BeEmpty())
 
 			// Make sure the secret is created to avoid any timing issues
 			Eventually(func() error {
 				return k8sClient.Get(ctx,
 					types.NamespacedName{
-						Name:      dummySSHSecretOtherOwner.GetName(),
-						Namespace: dummySSHSecretOtherOwner.GetNamespace(),
-					}, dummySSHSecretOtherOwner)
+						Name:      dummyPSKSecretOtherOwner.GetName(),
+						Namespace: dummyPSKSecretOtherOwner.GetNamespace(),
+					}, dummyPSKSecretOtherOwner)
 			}, maxWait, interval).Should(Succeed())
 
 			capacity := resource.MustParse("50Mi")

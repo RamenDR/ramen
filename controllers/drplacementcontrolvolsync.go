@@ -60,29 +60,29 @@ func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 	}
 
 	// Now we should have a source and destination VRG created
-	// Since we will use VolSync - create/ensure & propagate a shared ssh rsync secret to both the src and dst clusters
-	sshSecretNameHub := fmt.Sprintf("%s-vs-secret-hub", d.instance.GetName())
+	// Since we will use VolSync - create/ensure & propagate a shared psk rsynctls secret to both the src and dst clusters
+	pskSecretNameHub := fmt.Sprintf("%s-vs-secret-hub", d.instance.GetName())
 
 	// Ensure/Create the secret on the hub
-	sshSecretHub, err := volsync.ReconcileVolSyncReplicationSecret(d.ctx, d.reconciler.Client, d.instance,
-		sshSecretNameHub, d.instance.GetNamespace(), d.log)
+	pskSecretHub, err := volsync.ReconcileVolSyncReplicationSecret(d.ctx, d.reconciler.Client, d.instance,
+		pskSecretNameHub, d.instance.GetNamespace(), d.log)
 	if err != nil {
-		d.log.Error(err, "Unable to create ssh secret on hub for VolSync")
+		d.log.Error(err, "Unable to create psk secret on hub for VolSync")
 
 		return fmt.Errorf("%w", err)
 	}
 
-	// Propagate the secret to all clusters (to be named sshSecretNameCluster on the clusters)
-	// Note that VRG spec will not contain the ssh secret name, we're going to name based on the VRG name itself
-	sshSecretNameCluster := volsync.GetVolSyncSSHSecretNameFromVRGName(d.instance.GetName()) // VRG name == DRPC name
+	// Propagate the secret to all clusters
+	// Note that VRG spec will not contain the psk secret name, we're going to name based on the VRG name itself
+	pskSecretNameCluster := volsync.GetVolSyncPSKSecretNameFromVRGName(d.instance.GetName()) // VRG name == DRPC name
 
 	clustersToPropagateSecret := []string{}
 	for clusterName := range d.vrgs {
 		clustersToPropagateSecret = append(clustersToPropagateSecret, clusterName)
 	}
 
-	err = volsync.PropagateSecretToClusters(d.ctx, d.reconciler.Client, sshSecretHub,
-		d.instance, clustersToPropagateSecret, sshSecretNameCluster, d.instance.GetNamespace(), d.log)
+	err = volsync.PropagateSecretToClusters(d.ctx, d.reconciler.Client, pskSecretHub,
+		d.instance, clustersToPropagateSecret, pskSecretNameCluster, d.instance.GetNamespace(), d.log)
 	if err != nil {
 		d.log.Error(err, "Error propagating secret to clusters", "clustersToPropagateSecret", clustersToPropagateSecret)
 

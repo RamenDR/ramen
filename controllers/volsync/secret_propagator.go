@@ -21,7 +21,7 @@ import (
 	plrulev1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 )
 
-func GetVolSyncSSHSecretNameFromVRGName(vrgName string) string {
+func GetVolSyncPSKSecretNameFromVRGName(vrgName string) string {
 	return fmt.Sprintf("%s-vs-secret", vrgName)
 }
 

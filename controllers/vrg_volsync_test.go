@@ -300,20 +300,20 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 
 				It("Should create ReplicationDestinations for each", func() {
 					Expect(rd0.Spec.Trigger).To(BeNil()) // Rsync, so destination will not have schedule
-					Expect(rd0.Spec.Rsync).NotTo(BeNil())
-					Expect(*rd0.Spec.Rsync.SSHKeys).To(Equal(volsync.GetVolSyncSSHSecretNameFromVRGName(testVrg.GetName())))
-					Expect(*rd0.Spec.Rsync.StorageClassName).To(Equal(testStorageClassName))
-					Expect(rd0.Spec.Rsync.AccessModes).To(Equal(testAccessModes))
-					Expect(rd0.Spec.Rsync.CopyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
-					Expect(*rd0.Spec.Rsync.ServiceType).To(Equal(corev1.ServiceTypeClusterIP))
+					Expect(rd0.Spec.RsyncTLS).NotTo(BeNil())
+					Expect(*rd0.Spec.RsyncTLS.KeySecret).To(Equal(volsync.GetVolSyncPSKSecretNameFromVRGName(testVrg.GetName())))
+					Expect(*rd0.Spec.RsyncTLS.StorageClassName).To(Equal(testStorageClassName))
+					Expect(rd0.Spec.RsyncTLS.AccessModes).To(Equal(testAccessModes))
+					Expect(rd0.Spec.RsyncTLS.CopyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
+					Expect(*rd0.Spec.RsyncTLS.ServiceType).To(Equal(corev1.ServiceTypeClusterIP))
 
 					Expect(rd1.Spec.Trigger).To(BeNil()) // Rsync, so destination will not have schedule
-					Expect(rd1.Spec.Rsync).NotTo(BeNil())
-					Expect(*rd1.Spec.Rsync.SSHKeys).To(Equal(volsync.GetVolSyncSSHSecretNameFromVRGName(testVrg.GetName())))
-					Expect(*rd1.Spec.Rsync.StorageClassName).To(Equal(testStorageClassName))
-					Expect(rd1.Spec.Rsync.AccessModes).To(Equal(testAccessModes))
-					Expect(rd1.Spec.Rsync.CopyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
-					Expect(*rd1.Spec.Rsync.ServiceType).To(Equal(corev1.ServiceTypeClusterIP))
+					Expect(rd1.Spec.RsyncTLS).NotTo(BeNil())
+					Expect(*rd1.Spec.RsyncTLS.KeySecret).To(Equal(volsync.GetVolSyncPSKSecretNameFromVRGName(testVrg.GetName())))
+					Expect(*rd1.Spec.RsyncTLS.StorageClassName).To(Equal(testStorageClassName))
+					Expect(rd1.Spec.RsyncTLS.AccessModes).To(Equal(testAccessModes))
+					Expect(rd1.Spec.RsyncTLS.CopyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
+					Expect(*rd1.Spec.RsyncTLS.ServiceType).To(Equal(corev1.ServiceTypeClusterIP))
 				})
 
 				Context("When ReplicationDestinations have address set in status", func() {
@@ -322,14 +322,14 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 					JustBeforeEach(func() {
 						// fake address set in status on the ReplicationDestinations
 						rd0.Status = &volsyncv1alpha1.ReplicationDestinationStatus{
-							Rsync: &volsyncv1alpha1.ReplicationDestinationRsyncStatus{
+							RsyncTLS: &volsyncv1alpha1.ReplicationDestinationRsyncTLSStatus{
 								Address: &rd0Address,
 							},
 						}
 						Expect(k8sClient.Status().Update(testCtx, rd0)).To(Succeed())
 
 						rd1.Status = &volsyncv1alpha1.ReplicationDestinationStatus{
-							Rsync: &volsyncv1alpha1.ReplicationDestinationRsyncStatus{
+							RsyncTLS: &volsyncv1alpha1.ReplicationDestinationRsyncTLSStatus{
 								Address: &rd1Address,
 							},
 						}
@@ -421,7 +421,7 @@ func createPVCBoundToRunningPod(ctx context.Context, namespace string,
 func createSecret(vrgName, namespace string) {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      volsync.GetVolSyncSSHSecretNameFromVRGName(vrgName),
+			Name:      volsync.GetVolSyncPSKSecretNameFromVRGName(vrgName),
 			Namespace: namespace,
 		},
 	}
