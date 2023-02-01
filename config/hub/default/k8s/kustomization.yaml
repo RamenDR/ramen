@@ -42,17 +42,10 @@ transformers:
 # Mount the controller config file for loading manager configurations
 # through a ComponentConfig type
 patchesStrategicMerge:
-- ../../default/manager_auth_proxy_patch.yaml
-- ../../default/manager_config_patch.yaml
-
-# [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix including the one in
-# crd/kustomization.yaml
-- ../../default/manager_webhook_patch.yaml
-
-# [CERTMANAGER] To enable cert-manager, uncomment all sections with 'CERTMANAGER'.
-# Uncomment 'CERTMANAGER' sections in crd/kustomization.yaml to enable the CA injection in the admission webhooks.
-# 'CERTMANAGER' needs to be enabled to use ca injection
-- ../../default/webhookcainjection_patch.yaml
+- ../../../default/manager_auth_proxy_patch.yaml
+- ../../../default/manager_config_patch.yaml
+- ../../../default/manager_webhook_patch.yaml
+- webhookcainjection_patch.yaml
 
 # [CERTMANAGER] To enable cert-manager, uncomment all sections with 'CERTMANAGER' prefix.
 vars:
@@ -88,11 +81,11 @@ vars:
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-- ../crd
-- ../rbac
-- ../manager
-- ../../webhook
-- ../../certmanager
+- ../../crd
+- ../../rbac
+- ../../manager
+- ../../../webhook
+- ../../../certmanager
 images:
 - name: kube-rbac-proxy
   newName: gcr.io/kubebuilder/kube-rbac-proxy
