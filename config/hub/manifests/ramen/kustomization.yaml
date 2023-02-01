@@ -2,7 +2,7 @@
 # used to generate the 'manifests/' directory in a bundle.
 resources:
 - ../bases/ramen_hub.clusterserviceversion.yaml
-- ../../default
+- ../../default/k8s/
 - ../../samples
 - ../../../scorecard
 
