@@ -264,9 +264,6 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 
 	err = d.updateUserPlacementRule(homeCluster, homeClusterNamespace)
 	if err != nil {
-		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
-			rmnutil.EventReasonDeployFail, err.Error())
-
 		return !done, err
 	}
 
@@ -293,6 +290,9 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 	d.log.Info("Entering RunFailover", "state", d.getLastDRState())
 
 	if d.isPlacementNeedsFixing() {
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeNormal,
+			rmnutil.EventReasonPlacementNeedsFixing, "Fixing PlacementRule for failover")
+
 		err := d.fixupPlacementForFailover()
 		if err != nil {
 			d.log.Info("Couldn't fix up placement for Failover")
@@ -306,6 +306,9 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		msg := "failover cluster not set. FailoverCluster is a mandatory field"
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), msg)
+
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonFailoverUnsuccessful, msg)
 
 		return done, fmt.Errorf(msg)
 	}
@@ -470,6 +473,9 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	d.log.Info("Entering RunRelocate", "state", d.getLastDRState(), "progression", d.getProgression())
 
 	if d.isPlacementNeedsFixing() {
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeNormal,
+			rmnutil.EventReasonPlacementNeedsFixing, "Fixing PlacementRule for relocate")
+
 		err := d.fixupPlacementForRelocate()
 		if err != nil {
 			d.log.Info("Couldn't fix up placement for Relocate")
@@ -558,8 +564,14 @@ func (d *DRPCInstance) ensureCleanupAndVolSyncReplicationSetup(srcCluster string
 
 	clusterToSkip := srcCluster
 
+	rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeNormal,
+		rmnutil.EventReasonStartingSecondaryCleanup, "Cleanup starting on Secondary")
+
 	err = d.EnsureCleanup(clusterToSkip)
 	if err != nil {
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonCleanupSecondaryUnsuccessful, "Failed to cleanup on Secondary")
+
 		return err
 	}
 
@@ -723,17 +735,29 @@ func (d *DRPCInstance) selectCurrentPrimaryAndSecondaries() (string, []string) {
 func (d *DRPCInstance) validateAndSelectCurrentPrimary(preferredCluster string) (string, error) {
 	// Relocation requires preferredCluster to be configured
 	if preferredCluster == "" {
-		return "", fmt.Errorf("preferred cluster not valid")
+		err := fmt.Errorf("preferred cluster not valid")
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonRelocationUnsuccessful, err.Error())
+
+		return "", err
 	}
 
 	// No VRGs found, invalid state, possibly deployment was not started
 	if len(d.vrgs) == 0 {
-		return "", fmt.Errorf("no VRGs exists. Can't relocate")
+		err := fmt.Errorf("no VRGs found, Can't relocate now")
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonRelocationUnsuccessful, err.Error())
+
+		return "", err
 	}
 
 	// Check for at most a single cluster in primary state
 	if d.areMultipleVRGsPrimary() {
-		return "", fmt.Errorf("multiple primaries in transition detected")
+		err := fmt.Errorf("more than one cluster in primary state as detected")
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonRelocationUnsuccessful, err.Error())
+
+		return "", err
 	}
 	// Pre-relocate cleanup
 	homeCluster, _ := d.selectCurrentPrimaryAndSecondaries()
@@ -813,6 +837,9 @@ func (d *DRPCInstance) relocate(preferredCluster, preferredClusterNamespace stri
 	if err != nil {
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), err.Error())
+		// To-DO these errors are known here, so its safe to send the error.
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonRelocationUnsuccessful, err.Error())
 
 		return !done, err
 	}
@@ -877,6 +904,10 @@ func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace str
 
 	createdOrUpdated, err := d.createVRGManifestWorkAsPrimary(targetCluster)
 	if err != nil {
+		msg := fmt.Sprintf("Failed to create or update VRG to primary on cluster %s ", targetCluster)
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonSwitchFailed, msg)
+
 		return err
 	}
 
@@ -1072,7 +1103,7 @@ func (d *DRPCInstance) updateUserPlacementRule(homeCluster, homeClusterNamespace
 		Decisions: newPD,
 	}
 
-	return d.reconciler.updateUserPlacementRuleStatus(d.userPlacementRule, newStatus, d.log)
+	return d.reconciler.updateUserPlacementRuleStatus(d.instance, d.userPlacementRule, newStatus, d.log)
 }
 
 func (d *DRPCInstance) clearUserPlacementRuleStatus() error {
@@ -1080,7 +1111,7 @@ func (d *DRPCInstance) clearUserPlacementRuleStatus() error {
 
 	newStatus := plrv1.PlacementRuleStatus{}
 
-	return d.reconciler.updateUserPlacementRuleStatus(d.userPlacementRule, newStatus, d.log)
+	return d.reconciler.updateUserPlacementRuleStatus(d.instance, d.userPlacementRule, newStatus, d.log)
 }
 
 func (d *DRPCInstance) updatePreferredDecision() {
@@ -1105,6 +1136,9 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string) error {
 	d.log.Info("Creating VRG ManifestWork",
 		"Last State:", d.getLastDRState(), "cluster", homeCluster)
 
+	rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeNormal,
+		rmnutil.EventReasonCreateVRGManifestWork, "Creating VRG ManifestWork")
+
 	vrg := d.generateVRG(rmn.Primary)
 	vrg.Spec.VolSync.Disabled = d.volSyncDisabled
 
@@ -1118,9 +1152,13 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string) error {
 		homeCluster, vrg, annotations); err != nil {
 		d.log.Error(err, "failed to create or update VolumeReplicationGroup manifest")
 
+		msg := fmt.Errorf("failed to create or update VolumeReplicationGroup manifest in namespace %s", homeCluster)
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonDeployFail, msg.Error())
+
 		return fmt.Errorf("failed to create or update VolumeReplicationGroup manifest in namespace %s (%w)", homeCluster, err)
 	}
-
+	// To Do EventReasonVRGManifestWorkCreationFailed
 	return nil
 }
 
@@ -1364,6 +1402,9 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 
 	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
 		metav1.ConditionTrue, rmn.ReasonSuccess, "Cleaned")
+
+	rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeNormal,
+		rmnutil.EventReasonCleanupSecondarySuccessful, "Cleanup completed")
 
 	return nil
 }
@@ -1804,7 +1845,7 @@ func (d *DRPCInstance) shouldUpdateStatus() bool {
 	return !reflect.DeepEqual(d.instance.Status.ResourceConditions.Conditions, vrg.Status.Conditions)
 }
 
-//nolint:exhaustive
+//nolint:nolintlint
 func (d *DRPCInstance) reportEvent(nextState rmn.DRState) {
 	eventReason := "unknown state"
 	eventType := corev1.EventTypeWarning
@@ -2115,6 +2156,11 @@ func (d *DRPCInstance) fixupPlacementForFailover() error {
 	if primary != "" && primary == d.instance.Spec.FailoverCluster {
 		err := d.updateUserPlacementRule(primary, "")
 		if err != nil {
+			msg := fmt.Errorf("couldn't fix up PlacementRule for Failover %w", err)
+			rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance,
+				corev1.EventTypeWarning, rmnutil.EventReasonPlacementFixingFailed,
+				msg.Error())
+
 			return err
 		}
 
@@ -2138,6 +2184,9 @@ func (d *DRPCInstance) fixupPlacementForFailover() error {
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Available")
 
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeNormal,
+			rmnutil.EventReasonPlacementFixingSuccessful, "Fixed PlacementRule for failover")
+
 		return nil
 	}
 
@@ -2146,7 +2195,11 @@ func (d *DRPCInstance) fixupPlacementForFailover() error {
 
 func (d *DRPCInstance) fixupPlacementForRelocate() error {
 	if d.areMultipleVRGsPrimary() {
-		return fmt.Errorf("unconstructable state. Can't have multiple primaries on 'Relocate'")
+		err := fmt.Errorf("unconstructable state. Can't have multiple primaries on 'Relocate'")
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance,
+			corev1.EventTypeWarning, rmnutil.EventReasonPlacementFixingFailed, err.Error())
+
+		return err
 	}
 
 	primary, secondaries := d.selectCurrentPrimaryAndSecondaries()
@@ -2158,6 +2211,11 @@ func (d *DRPCInstance) fixupPlacementForRelocate() error {
 	if primary != "" {
 		err := d.updateUserPlacementRule(primary, "")
 		if err != nil {
+			msg := fmt.Errorf("couldn't fix up PlacementRule for relocate %w", err)
+			rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance,
+				corev1.EventTypeWarning, rmnutil.EventReasonPlacementFixingFailed,
+				msg.Error())
+
 			return err
 		}
 
@@ -2173,6 +2231,9 @@ func (d *DRPCInstance) fixupPlacementForRelocate() error {
 
 	// Update our 'well known' preferred placement
 	d.updatePreferredDecision()
+
+	rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeNormal,
+		rmnutil.EventReasonPlacementFixingSuccessful, "PlacementRule fixed for relocate")
 
 	return nil
 }

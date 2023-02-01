@@ -71,16 +71,40 @@ const (
 	// deploys ramen and the application in the managed cluster initially
 	EventReasonDeploySuccess = "DRPCDeploySuccess"
 
+	//  EventReasonCreateVRGManifestWork is generated to create VRG ManifestWork
+	EventReasonCreateVRGManifestWork = "CreateVRGManifestWork"
+
+	//  EventReasonVRGManifestWorkCreationFailed is generated when DRPC failed to
+	// create VRG ManifestWork
+	EventReasonVRGManifestWorkCreationFailed = "CreateVRGManifestWorkFailed"
+
+	// EventReasonUpdateUserPlacementRule is generated to update the user PlacementRule
+	EventReasonUpdateUserPlacementRule = "UpdateUserPlacementRule"
+
+	// EventReasonUpdateUserPlacementRuleFailed is generated when
+	// DRPC fails to update the user PlacementRule
+	EventReasonUpdateUserPlacementRuleFailed = "UpdateUserPlacementRuleFailed"
+
+	// EventReasonDeployFail is generic, can we re-use it with appropriate failure reason?
+
 	// EventReasonFailingOver is an event generated when DRPC starts the failover
 	// process
 	EventReasonFailingOver = "DRPCFailingOver"
 
-	// EventReasonFailoverSuccess is an evenet generated when DRPC does a successful
+	// EventReasonFailoverUnsuccessful is an event generated when DRPC can
+	// not proceed with the failover
+	EventReasonFailoverUnsuccessful = "DRPCFailoverUnsuccessful"
+
+	// EventReasonFailoverSuccess is an event generated when DRPC does a successful
 	// failover
 	EventReasonFailoverSuccess = "DRPCFailoverSuccess"
 
 	// EventReasonRelocating is an event generated when DRPC starts relocating
 	EventReasonRelocating = "DRPCRelocating"
+
+	// EventReasonRelocationUnsuccessful is an event generated when DRPC can not proceed
+	// with the relocate
+	EventReasonRelocationUnsuccessful = "DRPCRelocationUnsuccessful"
 
 	// EventReasonRelocationSuccess is an event generated when DRPC successfully
 	// relocates an application along with ramen managed cluster component(s)
@@ -89,6 +113,31 @@ const (
 	// EventReasonSwitchFailed is generated when DRPC fails to switch the cluster
 	// where the app is placed
 	EventReasonSwitchFailed = "DRPCClusterSwitchFailed"
+
+	// EventReasonPlacementNeedsFixing generated when the DRPC Status is empty, the Placement
+	// decision is empty, and  the config have VRG(s) in the managed clusters during a failover
+	// or a relocate
+	EventReasonPlacementNeedsFixing = "PlacementNeedsFixing"
+
+	// EventReasonPlacementNeedsFixingFailed generated when the DRPC
+	// failed to fix the PlacementRule during a failover or a relocate
+	EventReasonPlacementFixingFailed = "PlacementFixingFailed"
+
+	// EventReasonPlacementNeedsFixingSuccessful generated when the DRPC
+	// successfully fix the PlacementRule during a failover or a relocate
+	EventReasonPlacementFixingSuccessful = "PlacementFixingSuccessful"
+
+	// EventReasonStartingSecondaryCleanup is generated when DRPC starts cleaning  the secondary
+	// or the source cluster
+	EventReasonStartingSecondaryCleanup = "StartingSecondaryCleanup"
+
+	//  EventReasonCleanupSecondaryUnsuccessful is generated when DRPC fails to clean up
+	//  secondary or the source cluster
+	EventReasonCleanupSecondaryUnsuccessful = "CleanupSecondaryUnsuccessful"
+
+	//  EventReasonCleanupSecondarySuccessful is generated when DRPC completes cleaning up
+	//  secondary or the source cluster
+	EventReasonCleanupSecondarySuccessful = "CleanupSecondarySuccessful"
 )
 
 // EventReporter is custom events reporter type which allows user to limit the events
