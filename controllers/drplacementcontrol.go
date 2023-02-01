@@ -594,7 +594,7 @@ func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) 
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Starting quiescing for relocation")
 
 		// clear current user PlacementRule's decision
-		d.setProgression(rmn.ProgressionClearingPlRule)
+		d.setProgression(rmn.ProgressionClearingPlacement)
 
 		err := d.clearUserPlacementRuleStatus()
 		if err != nil {
@@ -852,7 +852,7 @@ func (d *DRPCInstance) setupRelocation(preferredCluster string) error {
 	// complete in one shot, then coming back to this loop will reset the preferredCluster to secondary again.
 	clusterToSkip := preferredCluster
 	if !d.ensureVRGIsSecondaryEverywhere(clusterToSkip) {
-		d.setProgression(rmn.ProgressionMovingToSecondary)
+		d.setProgression(rmn.ProgressionEnsuringVolumesAreSecondary)
 		// During relocation, both clusters should be up and both must be secondaries before we proceed.
 		if !d.moveVRGToSecondaryEverywhere() {
 			return fmt.Errorf("failed to move VRG to secondary everywhere")
@@ -895,7 +895,7 @@ func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace str
 		d.log.Info(fmt.Sprintf("PVs Restored? %v", restored))
 
 		if !restored {
-			d.setProgression(rmn.ProgressionWaitingForPVRestore)
+			d.setProgression(rmn.ProgressionWaitingForResourceRestore)
 
 			return fmt.Errorf("%w)", WaitForPVRestoreToComplete)
 		}
@@ -906,7 +906,7 @@ func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace str
 		return err
 	}
 
-	d.setProgression(rmn.ProgressionUpdatedPlRule)
+	d.setProgression(rmn.ProgressionUpdatedPlacement)
 
 	return nil
 }
