@@ -485,6 +485,8 @@ func getMetricValueFromMetricFamilyByType(mf *dto.MetricFamily, mfType dto.Metri
 	case dto.MetricType_HISTOGRAM:
 		// Count is more useful for testing over Sum; get Sum elsewhere if needed
 		return float64(*mf.Metric[0].Histogram.SampleCount), nil
+	case dto.MetricType_GAUGE_HISTOGRAM:
+		fallthrough
 	case dto.MetricType_SUMMARY:
 		fallthrough
 	case dto.MetricType_UNTYPED:
