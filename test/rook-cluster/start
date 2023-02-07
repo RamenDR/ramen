@@ -19,7 +19,7 @@ def deploy(cluster):
         "rook-cluster/kustomization.yaml",
         base_url=BASE_URL,
     ) as kustomization:
-        kubectl.apply("--kustomize", kustomization, profile=cluster)
+        kubectl.apply("--kustomize", kustomization, context=cluster)
 
 
 def wait(cluster):
@@ -36,7 +36,7 @@ def wait(cluster):
         "--for=jsonpath={.status.phase}=Ready",
         "--namespace=rook-ceph",
         "--timeout=300s",
-        profile=cluster,
+        context=cluster,
     )
 
 

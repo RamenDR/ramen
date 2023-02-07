@@ -10,7 +10,7 @@ from drenv import kubectl
 
 def deploy(cluster):
     print("Deploying minio")
-    kubectl.apply("--filename", "minio/minio.yaml", profile=cluster)
+    kubectl.apply("--filename", "minio/minio.yaml", context=cluster)
 
 
 def wait(cluster):
@@ -20,7 +20,7 @@ def wait(cluster):
         "deployment/minio",
         "--namespace=minio",
         "--timeout=300s",
-        profile=cluster,
+        context=cluster,
     )
 
 

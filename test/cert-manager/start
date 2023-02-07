@@ -13,7 +13,7 @@ URL = f"https://github.com/cert-manager/cert-manager/releases/download/{VERSION}
 
 def deploy(cluster):
     print("Deploying cert-manager")
-    kubectl.apply("--filename", URL, profile=cluster)
+    kubectl.apply("--filename", URL, context=cluster)
 
 
 def wait(cluster):
@@ -24,7 +24,7 @@ def wait(cluster):
         "--for=condition=Available",
         "--namespace=cert-manager",
         "--timeout=300s",
-        profile=cluster,
+        context=cluster,
     )
 
 

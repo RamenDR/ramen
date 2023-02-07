@@ -42,7 +42,7 @@ def wait_for(
     delay = min(1.0, timeout / 60)
 
     while True:
-        out = kubectl.get(*args, profile=profile)
+        out = kubectl.get(*args, context=profile)
         if out:
             print(f"{resource} exists")
             return out

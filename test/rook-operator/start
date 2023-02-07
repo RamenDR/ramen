@@ -19,7 +19,7 @@ def deploy(cluster):
         "rook-operator/kustomization.yaml",
         base_url=BASE_URL,
     ) as kustomization:
-        kubectl.apply("--kustomize", kustomization, profile=cluster)
+        kubectl.apply("--kustomize", kustomization, context=cluster)
 
 
 def wait(cluster):
@@ -29,7 +29,7 @@ def wait(cluster):
         "deploy/rook-ceph-operator",
         "--namespace=rook-ceph",
         "--timeout=300s",
-        profile=cluster,
+        context=cluster,
     )
 
     print("Waiting until rook ceph operator is ready")
@@ -39,7 +39,7 @@ def wait(cluster):
         "--namespace=rook-ceph",
         "--selector=app=rook-ceph-operator",
         "--timeout=300s",
-        profile=cluster,
+        context=cluster,
     )
 
 

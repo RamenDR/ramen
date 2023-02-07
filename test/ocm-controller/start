@@ -18,7 +18,7 @@ def deploy(cluster):
         "ocm-controller/kustomization.yaml",
         base_url=BASE_URL,
     ) as kustomization:
-        kubectl.apply("--kustomize", kustomization, profile=cluster)
+        kubectl.apply("--kustomize", kustomization, context=cluster)
 
 
 def wait(cluster):
@@ -28,7 +28,7 @@ def wait(cluster):
         "deploy/ocm-controller",
         "--namespace=open-cluster-management",
         "--timeout=300s",
-        profile=cluster,
+        context=cluster,
     )
 
 

@@ -23,18 +23,18 @@ def deploy(cluster):
     kubectl.apply(
         f"--filename={BASE_URL}/crds.yaml",
         "--server-side=true",
-        profile=cluster,
+        context=cluster,
     )
 
     print("Waiting until cdrs are established")
     kubectl.wait(
         "--for=condition=established",
         f"--filename={BASE_URL}/crds.yaml",
-        profile=cluster,
+        context=cluster,
     )
 
     print("Deploying olm")
-    kubectl.apply("--filename", f"{BASE_URL}/olm.yaml", profile=cluster)
+    kubectl.apply("--filename", f"{BASE_URL}/olm.yaml", context=cluster)
 
 
 def wait(cluster):
@@ -45,7 +45,7 @@ def wait(cluster):
             "deploy",
             operator,
             f"--namespace={NAMESPACE}",
-            profile=cluster,
+            context=cluster,
         )
 
     print("Waiting until olm packageserver succeeds")
@@ -60,7 +60,7 @@ def wait(cluster):
         f"--namespace={NAMESPACE}",
         "--for=jsonpath={.status.phase}=Succeeded",
         "--timeout=300s",
-        profile=cluster,
+        context=cluster,
     )
 
     print("Waiting for olm pakcage server rollout")
@@ -68,7 +68,7 @@ def wait(cluster):
         "status",
         "deploy/packageserver",
         f"--namespace={NAMESPACE}",
-        profile=cluster,
+        context=cluster,
     )
 
 

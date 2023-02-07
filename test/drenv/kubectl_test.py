@@ -7,7 +7,7 @@ from drenv import kubectl
 
 
 def test_get(tmpenv):
-    out = kubectl.get("deploy", "--output=name", profile=tmpenv.profile)
+    out = kubectl.get("deploy", "--output=name", context=tmpenv.profile)
     assert out.strip() == "deployment.apps/example-deployment"
 
 
@@ -21,13 +21,13 @@ def test_exec(tmpenv):
         "deploy/example-deployment",
         "--",
         "hostname",
-        profile=tmpenv.profile,
+        context=tmpenv.profile,
     )
     assert out.startswith("example-deployment-")
 
 
 def test_apply(tmpenv, capsys):
-    kubectl.apply("--filename=example/deployment.yaml", profile=tmpenv.profile)
+    kubectl.apply("--filename=example/deployment.yaml", context=tmpenv.profile)
     out, err = capsys.readouterr()
     assert out.strip() == "deployment.apps/example-deployment unchanged"
 
@@ -37,7 +37,7 @@ def test_rollout(tmpenv, capsys):
         "status",
         "deploy/example-deployment",
         "--timeout=10s",
-        profile=tmpenv.profile,
+        context=tmpenv.profile,
     )
     out, err = capsys.readouterr()
     assert out.strip() == 'deployment "example-deployment" successfully rolled out'
@@ -48,27 +48,27 @@ def test_wait(tmpenv, capsys):
         "deploy/example-deployment",
         "--for=condition=available",
         "--timeout=10s",
-        profile=tmpenv.profile,
+        context=tmpenv.profile,
     )
     out, err = capsys.readouterr()
     assert out.strip() == "deployment.apps/example-deployment condition met"
 
 
 def test_patch(tmpenv, capsys):
-    pod = kubectl.get("pod", "--output=name", profile=tmpenv.profile).strip()
+    pod = kubectl.get("pod", "--output=name", context=tmpenv.profile).strip()
     kubectl.patch(
         pod,
         "--type=merge",
         '--patch={"metadata": {"labels": {"test": "yes"}}}',
-        profile=tmpenv.profile,
+        context=tmpenv.profile,
     )
     out, err = capsys.readouterr()
     assert out.strip() == f"{pod} patched"
 
 
 def test_delete(tmpenv, capsys):
-    pod = kubectl.get("pod", "--output=name", profile=tmpenv.profile).strip()
-    kubectl.delete(pod, profile=tmpenv.profile)
+    pod = kubectl.get("pod", "--output=name", context=tmpenv.profile).strip()
+    kubectl.delete(pod, context=tmpenv.profile)
     out, err = capsys.readouterr()
     _, name = pod.split("/", 1)
     assert out.strip() == f'pod "{name}" deleted'
