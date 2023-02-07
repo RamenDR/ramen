@@ -13,18 +13,30 @@ POOL_NAME = "replicapool"
 PVC_NAME = "rbd-pvc"
 
 
-def rbd_mirror_image_status(cluster, image):
-    out = kubectl.exec(
+def rbd(*args, cluster=None):
+    """
+    Run a rbd command using the ceph toolbox on the specified cluster and
+    return the output.
+    """
+    return kubectl.exec(
         "deploy/rook-ceph-tools",
         "--namespace=rook-ceph",
         "--",
         "rbd",
+        *args,
+        f"--pool={POOL_NAME}",
+        context=cluster,
+    )
+
+
+def rbd_mirror_image_status(cluster, image):
+    out = rbd(
         "mirror",
         "image",
         "status",
-        f"{POOL_NAME}/{image}",
+        image,
         "--format=json",
-        context=cluster,
+        cluster=cluster,
     )
     status = json.loads(out)
 
@@ -100,41 +112,15 @@ def test_volume_replication(primary, secondary):
     )
 
     print(f"rbd image {rbd_image} info in cluster {primary}")
-    out = kubectl.exec(
-        "deploy/rook-ceph-tools",
-        "--namespace=rook-ceph",
-        "--",
-        "rbd",
-        "info",
-        rbd_image,
-        f"--pool={POOL_NAME}",
-        context=primary,
-    )
+    out = rbd("info", rbd_image, cluster=primary)
     print(out)
 
     print(f"Waiting until rbd image {rbd_image} is created in cluster {secondary}")
     for i in range(60):
         time.sleep(1)
-        out = kubectl.exec(
-            "deploy/rook-ceph-tools",
-            "--namespace=rook-ceph",
-            "--",
-            "rbd",
-            "list",
-            f"--pool={POOL_NAME}",
-            context=secondary,
-        )
+        out = rbd("list", cluster=primary)
         if rbd_image in out:
-            out = kubectl.exec(
-                "deploy/rook-ceph-tools",
-                "--namespace=rook-ceph",
-                "--",
-                "rbd",
-                "info",
-                rbd_image,
-                f"--pool={POOL_NAME}",
-                context=secondary,
-            )
+            out = rbd("info", rbd_image, cluster=primary)
             print(out)
             break
     else:
