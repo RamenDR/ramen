@@ -93,7 +93,7 @@ type RamenConfig struct {
 
 	// MaxConcurrentReconciles is the maximum number of concurrent Reconciles which can be run.
 	// Defaults to 1.
-	MaxConcurrentReconciles int `json:",omitempty"`
+	MaxConcurrentReconciles int `json:"maxConcurrentReconciles,omitempty"`
 
 	// dr-cluster operator deployment/undeployment automation configuration
 	DrClusterOperator struct {
