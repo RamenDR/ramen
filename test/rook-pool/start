@@ -14,7 +14,7 @@ def deploy(cluster):
     kubectl.apply(
         "--filename=rook-pool/replica-pool.yaml",
         "--filename=rook-pool/storage-class.yaml",
-        profile=cluster,
+        context=cluster,
     )
 
 
@@ -32,7 +32,7 @@ def wait(cluster):
         "--for=jsonpath={.status.phase}=Ready",
         "--namespace=rook-ceph",
         "--timeout=300s",
-        profile=cluster,
+        context=cluster,
     )
 
     print("Waiting for replica pool peer token")
@@ -41,7 +41,7 @@ def wait(cluster):
         "--for=jsonpath={.status.info.rbdMirrorBootstrapPeerSecretName}=pool-peer-token-replicapool",
         "--namespace=rook-ceph",
         "--timeout=300s",
-        profile=cluster,
+        context=cluster,
     )
 
 

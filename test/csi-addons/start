@@ -19,7 +19,7 @@ def deploy(cluster):
         "csi-addons/kustomization.yaml",
         base_url=BASE_URL,
     ) as kustomization:
-        kubectl.apply("--kustomize", kustomization, profile=cluster)
+        kubectl.apply("--kustomize", kustomization, context=cluster)
 
 
 def wait(cluster):
@@ -29,7 +29,7 @@ def wait(cluster):
         "deploy/csi-addons-controller-manager",
         "--namespace=csi-addons-system",
         "--timeout=300s",
-        profile=cluster,
+        context=cluster,
     )
 
 

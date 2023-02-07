@@ -18,5 +18,5 @@ kubectl.rollout(
     "status",
     "deploy/example-deployment",
     "--timeout=180s",
-    profile=cluster,
+    context=cluster,
 )

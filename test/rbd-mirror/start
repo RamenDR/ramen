@@ -22,7 +22,7 @@ def fetch_secret_info(cluster):
         POOL_NAME,
         "--output=jsonpath={.status.mirroringInfo.site_name}",
         "--namespace=rook-ceph",
-        profile=cluster,
+        context=cluster,
     )
 
     print(f"Getting rbd mirror boostrap peer secret name for cluster {cluster}")
@@ -31,7 +31,7 @@ def fetch_secret_info(cluster):
         POOL_NAME,
         "--output=jsonpath={.status.info.rbdMirrorBootstrapPeerSecretName}",
         "--namespace=rook-ceph",
-        profile=cluster,
+        context=cluster,
     )
 
     print(f"Getting secret {secret_name} token for cluster {cluster}")
@@ -40,7 +40,7 @@ def fetch_secret_info(cluster):
         secret_name,
         "--output=jsonpath={.data.token}",
         "--namespace=rook-ceph",
-        profile=cluster,
+        context=cluster,
     )
 
     # Must be encoded as base64 in secret .data section.
@@ -58,7 +58,7 @@ def configure_rbd_mirroring(cluster, peer_info):
         "--filename=-",
         "--namespace=rook-ceph",
         input=yaml,
-        profile=cluster,
+        context=cluster,
     )
 
     print(f"Configure peers for cluster {cluster}")
@@ -69,14 +69,14 @@ def configure_rbd_mirroring(cluster, peer_info):
         "--type=merge",
         f"--patch={json.dumps(patch)}",
         "--namespace=rook-ceph",
-        profile=cluster,
+        context=cluster,
     )
 
     print(f"Apply rbd mirror to cluster {cluster}")
     kubectl.apply(
         "--filename=rbd-mirror/rbd-mirror.yaml",
         "--namespace=rook-ceph",
-        profile=cluster,
+        context=cluster,
     )
 
 
@@ -88,7 +88,7 @@ def wait_until_pool_mirroring_is_healthy(cluster):
         "--for=jsonpath={.status.mirroringStatus.summary.daemon_health}=OK",
         "--namespace=rook-ceph",
         "--timeout=300s",
-        profile=cluster,
+        context=cluster,
     )
 
     print(f"Waiting until ceph mirror is healthy in cluster {cluster}")
@@ -98,7 +98,7 @@ def wait_until_pool_mirroring_is_healthy(cluster):
         "--for=jsonpath={.status.mirroringStatus.summary.health}=OK",
         "--namespace=rook-ceph",
         "--timeout=300s",
-        profile=cluster,
+        context=cluster,
     )
 
     print(f"Waiting until ceph mirror image is healthy in cluster {cluster}")
@@ -108,7 +108,7 @@ def wait_until_pool_mirroring_is_healthy(cluster):
         "--for=jsonpath={.status.mirroringStatus.summary.image_health}=OK",
         "--namespace=rook-ceph",
         "--timeout=300s",
-        profile=cluster,
+        context=cluster,
     )
 
 
@@ -117,7 +117,7 @@ def deploy_vrc_sample(cluster):
     kubectl.apply(
         "--filename=rbd-mirror/vrc-sample.yaml",
         "--namespace=rook-ceph",
-        profile=cluster,
+        context=cluster,
     )
 
 

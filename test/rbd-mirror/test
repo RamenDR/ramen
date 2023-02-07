@@ -24,7 +24,7 @@ def rbd_mirror_image_status(cluster, image):
         "status",
         f"{POOL_NAME}/{image}",
         "--format=json",
-        profile=cluster,
+        context=cluster,
     )
     status = json.loads(out)
 
@@ -46,7 +46,7 @@ def test_volume_replication(primary, secondary):
     kubectl.apply(
         f"--filename=rbd-mirror/{PVC_NAME}.yaml",
         "--namespace=rook-ceph",
-        profile=primary,
+        context=primary,
     )
 
     print(f"Waiting until pvc {PVC_NAME} is bound in cluster {primary}")
@@ -55,14 +55,14 @@ def test_volume_replication(primary, secondary):
         "--for=jsonpath={.status.phase}=Bound",
         "--namespace=rook-ceph",
         "--timeout=300s",
-        profile=primary,
+        context=primary,
     )
 
     print(f"Deploying vr vr-sample in cluster {primary}")
     kubectl.apply(
         "--filename=rbd-mirror/vr-sample.yaml",
         "--namespace=rook-ceph",
-        profile=primary,
+        context=primary,
     )
 
     print(f"Waiting until vr vr-sample is completed in cluster {primary}")
@@ -71,7 +71,7 @@ def test_volume_replication(primary, secondary):
         "--for=condition=Completed",
         "--namespace=rook-ceph",
         "--timeout=300s",
-        profile=primary,
+        context=primary,
     )
 
     print(f"Waiting until vr vr-sample state is primary in cluster {primary}")
@@ -80,7 +80,7 @@ def test_volume_replication(primary, secondary):
         "--for=jsonpath={.status.state}=Primary",
         "--namespace=rook-ceph",
         "--timeout=300s",
-        profile=primary,
+        context=primary,
     )
 
     print(f"Looking up pvc {PVC_NAME} pv name in cluster {primary}")
@@ -88,7 +88,7 @@ def test_volume_replication(primary, secondary):
         f"pvc/{PVC_NAME}",
         "--output=jsonpath={.spec.volumeName}",
         "--namespace=rook-ceph",
-        profile=primary,
+        context=primary,
     )
 
     print(f"Looking up rbd image for pv {pv_name} in cluster {primary}")
@@ -96,7 +96,7 @@ def test_volume_replication(primary, secondary):
         f"pv/{pv_name}",
         "--output=jsonpath={.spec.csi.volumeAttributes.imageName}",
         "--namespace=rook-ceph",
-        profile=primary,
+        context=primary,
     )
 
     print(f"rbd image {rbd_image} info in cluster {primary}")
@@ -108,7 +108,7 @@ def test_volume_replication(primary, secondary):
         "info",
         rbd_image,
         f"--pool={POOL_NAME}",
-        profile=primary,
+        context=primary,
     )
     print(out)
 
@@ -122,7 +122,7 @@ def test_volume_replication(primary, secondary):
             "rbd",
             "list",
             f"--pool={POOL_NAME}",
-            profile=secondary,
+            context=secondary,
         )
         if rbd_image in out:
             out = kubectl.exec(
@@ -133,7 +133,7 @@ def test_volume_replication(primary, secondary):
                 "info",
                 rbd_image,
                 f"--pool={POOL_NAME}",
-                profile=secondary,
+                context=secondary,
             )
             print(out)
             break
@@ -145,7 +145,7 @@ def test_volume_replication(primary, secondary):
         "volumereplication/vr-sample",
         "--output=yaml",
         "--namespace=rook-ceph",
-        profile=primary,
+        context=primary,
     )
 
     print(f"rbd mirror image status in cluster {primary}")
@@ -156,14 +156,14 @@ def test_volume_replication(primary, secondary):
     kubectl.delete(
         "volumereplication/vr-sample",
         "--namespace=rook-ceph",
-        profile=primary,
+        context=primary,
     )
 
     print(f"Deleting pvc {PVC_NAME} in primary cluster {primary}")
     kubectl.delete(
         f"pvc/{PVC_NAME}",
         "--namespace=rook-ceph",
-        profile=primary,
+        context=primary,
     )
 
     print(f"Replication from cluster {primary} to cluster {secondary} successeded")
