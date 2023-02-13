@@ -21,9 +21,6 @@ import (
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
 const (
@@ -54,7 +51,6 @@ type DRPCInstance struct {
 	drpcPlacementRule    *plrv1.PlacementRule
 	vrgs                 map[string]*rmn.VolumeReplicationGroup
 	mwu                  rmnutil.MWUtil
-	metricsTimer         timerInstance
 }
 
 func (d *DRPCInstance) startProcessing() bool {
@@ -251,7 +247,6 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 
 	// Make sure we record the state that we are deploying
 	d.setDRState(rmn.Deploying)
-	d.setMetricsTimerFromDRState(rmn.Deploying)
 	d.setProgression(rmn.ProgressionCreatingMW)
 	// Create VRG first, to leverage user PlacementRule decision to skip placement and move to cleanup
 	err := d.createVRGManifestWork(homeCluster)
@@ -276,7 +271,6 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 	}
 
 	d.setDRState(rmn.Deployed)
-	d.setMetricsTimerFromDRState(rmn.Deployed)
 
 	return done, nil
 }
@@ -374,7 +368,6 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 	const done = true
 	// Make sure we record the state that we are failing over
 	d.setDRState(rmn.FailingOver)
-	d.setMetricsTimerFromDRState(rmn.FailingOver)
 	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Starting failover")
 	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
@@ -423,7 +416,6 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 	}
 
 	d.setDRState(rmn.FailedOver)
-	d.setMetricsTimerFromDRState(rmn.FailedOver)
 	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Completed")
 	d.log.Info("Failover completed", "state", d.getLastDRState())
@@ -589,7 +581,6 @@ func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) 
 
 	if len(d.userPlacementRule.Status.Decisions) != 0 {
 		d.setDRState(rmn.Relocating)
-		d.setMetricsTimerFromDRState(rmn.Relocating)
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Starting quiescing for relocation")
 
@@ -804,7 +795,6 @@ func (d *DRPCInstance) relocate(preferredCluster, preferredClusterNamespace stri
 
 	// Make sure we record the state that we are failing over
 	d.setDRState(drState)
-	d.setMetricsTimerFromDRState(drState)
 	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Starting relocation")
 
@@ -828,7 +818,6 @@ func (d *DRPCInstance) relocate(preferredCluster, preferredClusterNamespace stri
 	}
 
 	d.setDRState(rmn.Relocated)
-	d.setMetricsTimerFromDRState(d.getLastDRState())
 	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Completed")
 	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
@@ -1910,138 +1899,6 @@ func (d *DRPCInstance) getRequeueDuration() time.Duration {
 	}
 
 	return duration
-}
-
-// prometheus metrics
-type timerState string
-
-const (
-	timerStart timerState = "start"
-	timerStop  timerState = "stop"
-)
-
-type timerWrapper struct {
-	gauge     prometheus.GaugeVec  // used for "last only" fine-grained timer
-	histogram prometheus.Histogram // used for cumulative data
-}
-
-type timerInstance struct {
-	timer          prometheus.Timer // use prometheus.NewTimer to use/reuse this timer across reconciles
-	reconcileState rmn.DRState      // used to track for spurious reconcile avoidance
-}
-
-// set default values for guageWrapper
-func newTimerWrapper(gauge *prometheus.GaugeVec, histogram prometheus.Histogram) timerWrapper {
-	wrapper := timerWrapper{}
-
-	wrapper.gauge = *gauge
-	wrapper.histogram = histogram
-
-	return wrapper
-}
-
-const (
-	bucketFactor = 2.0
-	bucketCount  = 12
-)
-
-var (
-	failoverTime = newTimerWrapper(
-		prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "ramen_failover_time",
-				Help: "Duration of the last failover event for individual DRPCs",
-			},
-			[]string{
-				"time",
-			},
-		),
-		prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name:    "ramen_failover_histogram",
-			Help:    "Histogram of all failover timers (seconds) across all DRPCs",
-			Buckets: prometheus.ExponentialBuckets(1.0, bucketFactor, bucketCount),
-		}),
-	)
-
-	relocateTime = newTimerWrapper(
-		prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "ramen_relocate_time",
-				Help: "Duration of the last relocate time for individual DRPCs",
-			},
-			[]string{
-				"time",
-			},
-		),
-		prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name:    "ramen_relocate_histogram",
-			Help:    "Histogram of all relocate timers (seconds) across all DRPCs",
-			Buckets: prometheus.ExponentialBuckets(1.0, bucketFactor, bucketCount),
-		}),
-	)
-
-	deployTime = newTimerWrapper(
-		prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "ramen_initial_deploy_time",
-				Help: "Duration of the last initial deploy time",
-			},
-			[]string{
-				"time",
-			},
-		),
-		prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name:    "ramen_initial_deploy_histogram",
-			Help:    "Histogram of all initial deploymet timers (seconds)",
-			Buckets: prometheus.ExponentialBuckets(1.0, bucketFactor, bucketCount),
-		}),
-	)
-)
-
-func init() {
-	// register custom metrics with the global Prometheus registry
-	metrics.Registry.MustRegister(failoverTime.gauge, failoverTime.histogram)
-	metrics.Registry.MustRegister(relocateTime.gauge, relocateTime.histogram)
-	metrics.Registry.MustRegister(deployTime.gauge, deployTime.histogram)
-}
-
-//nolint:exhaustive
-func (d *DRPCInstance) setMetricsTimerFromDRState(stateDR rmn.DRState) {
-	switch stateDR {
-	case rmn.FailingOver:
-		d.setMetricsTimer(&failoverTime, timerStart, stateDR)
-	case rmn.FailedOver:
-		d.setMetricsTimer(&failoverTime, timerStop, stateDR)
-	case rmn.Relocating:
-		d.setMetricsTimer(&relocateTime, timerStart, stateDR)
-	case rmn.Relocated:
-		d.setMetricsTimer(&relocateTime, timerStop, stateDR)
-	case rmn.Deploying:
-		d.setMetricsTimer(&deployTime, timerStart, stateDR)
-	case rmn.Deployed:
-		d.setMetricsTimer(&deployTime, timerStop, stateDR)
-	default:
-		// not supported
-	}
-}
-
-func (d *DRPCInstance) setMetricsTimer(
-	wrapper *timerWrapper, desiredTimerState timerState, reconcileState rmn.DRState,
-) {
-	switch desiredTimerState {
-	case timerStart:
-		if reconcileState != d.metricsTimer.reconcileState {
-			d.metricsTimer.timer.ObserveDuration() // stop gauge timer in case one is still running
-
-			d.metricsTimer.reconcileState = reconcileState
-			d.metricsTimer.timer = *prometheus.NewTimer(
-				prometheus.ObserverFunc(wrapper.gauge.WithLabelValues(d.instance.Name).Set))
-		}
-	case timerStop:
-		d.metricsTimer.timer.ObserveDuration()                                      // stop gauge timer
-		wrapper.histogram.Observe(d.metricsTimer.timer.ObserveDuration().Seconds()) // add timer to histogram
-		d.metricsTimer.reconcileState = reconcileState
-	}
 }
 
 func (d *DRPCInstance) setConditionOnInitialDeploymentCompletion() {

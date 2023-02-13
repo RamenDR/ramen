@@ -13,7 +13,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/prometheus/client_golang/prometheus"
-	dto "github.com/prometheus/client_model/go"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
@@ -288,73 +287,6 @@ var _ = Describe("IsManifestInAppliedState", func() {
 			}
 
 			Expect(rmnutil.IsManifestInAppliedState(mw)).To(Equal(false))
-		})
-	})
-
-	Context("GetMetricValueFromName tests Prometheus metrics", func() {
-		It("register custom metrics", func() {
-			// note: go_goroutines was picked because it's A) a supported type, B) does not use vector values
-			val, err := rmnutil.GetMetricValueSingle("ramen_test_gauge", dto.MetricType_GAUGE)
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(val).To(Equal(0.0)) // unused: default to zero (float64)
-		})
-	})
-
-	Context("GetMetricValueFromName tests custom Prometheus metrics", func() {
-		It("basic timer functionality", func() {
-			timer := prometheus.NewTimer(prometheus.ObserverFunc(testGauge.Set))
-			time.Sleep(1 * time.Second) // let the observer gather some time
-			timer.ObserveDuration()     // stop timer when function returns (all cases)
-
-			val, err := rmnutil.GetMetricValueSingle("ramen_test_gauge", dto.MetricType_GAUGE)
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(val).NotTo(Equal(0.0)) // should be some small but non-zero value
-		})
-
-		It("basic counter functionality", func() {
-			val, err := rmnutil.GetMetricValueSingle("ramen_test_counter", dto.MetricType_COUNTER)
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(val).To(Equal(0.0))
-
-			testCounter.Inc()
-
-			val, err = rmnutil.GetMetricValueSingle("ramen_test_counter", dto.MetricType_COUNTER)
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(val).To(Equal(1.0))
-		})
-
-		It("basic histogram functionality", func() {
-			val, err := rmnutil.GetMetricValueSingle("ramen_test_histogram", dto.MetricType_HISTOGRAM)
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(val).To(Equal(0.0))
-
-			testHistogram.Observe(2.5) // add arbitrary observation
-
-			val, err = rmnutil.GetMetricValueSingle("ramen_test_histogram", dto.MetricType_HISTOGRAM)
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(val).To(Equal(1.0)) // get observation count
-		})
-	})
-
-	Context("GetMetricValueFromName error checks", func() {
-		It("invalid name", func() {
-			val, err := rmnutil.GetMetricValueSingle("invalid_metric", dto.MetricType_GAUGE)
-
-			Expect(err).To(HaveOccurred())
-			Expect(val).To(Equal(0.0))
-		})
-
-		It("incorrect metric type", func() {
-			val, err := rmnutil.GetMetricValueSingle("ramen_test_gauge", dto.MetricType_HISTOGRAM)
-
-			Expect(err).To(HaveOccurred())
-			Expect(val).To(Equal(0.0))
 		})
 	})
 })
