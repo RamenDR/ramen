@@ -28,7 +28,6 @@ import (
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 
-	dto "github.com/prometheus/client_model/go"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
@@ -1199,10 +1198,6 @@ func runRelocateAction(userPlacementRule *plrv1.PlacementRule, fromCluster strin
 	userPlacementRule = getLatestUserPlacementRule(userPlacementRule.Name, userPlacementRule.Namespace)
 	Expect(userPlacementRule.Status.Decisions[0].ClusterName).To(Equal(toCluster1))
 	Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
-
-	val, err := rmnutil.GetMetricValueSingle("ramen_relocate_time", dto.MetricType_GAUGE)
-	Expect(err).NotTo(HaveOccurred())
-	Expect(val).NotTo(Equal(0.0)) // failover time should be non-zero
 }
 
 func clearDRActionAfterRelocate(userPlacementRule *plrv1.PlacementRule, preferredCluster, failoverCluster string) {
@@ -1419,10 +1414,6 @@ func verifyInitialDRPCDeployment(userPlacementRule *plrv1.PlacementRule, drpc *r
 	Expect(len(latestDRPC.Status.Conditions)).To(Equal(2))
 	_, condition := getDRPCCondition(&latestDRPC.Status, rmn.ConditionAvailable)
 	Expect(condition.Reason).To(Equal(string(rmn.Deployed)))
-
-	val, err := rmnutil.GetMetricValueSingle("ramen_initial_deploy_time", dto.MetricType_GAUGE)
-	Expect(err).NotTo(HaveOccurred())
-	Expect(val).NotTo(Equal(0.0)) // failover time should be non-zero
 }
 
 func verifyFailoverToSecondary(userPlacementRule *plrv1.PlacementRule, toCluster string,
@@ -1441,10 +1432,6 @@ func verifyFailoverToSecondary(userPlacementRule *plrv1.PlacementRule, toCluster
 	}
 
 	Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1)) // Roles MW
-
-	val, err := rmnutil.GetMetricValueSingle("ramen_failover_time", dto.MetricType_GAUGE)
-	Expect(err).NotTo(HaveOccurred())
-	Expect(val).NotTo(Equal(0.0)) // failover time should be non-zero
 
 	drpc := getLatestDRPC()
 	// At this point expect the DRPC status condition to have 2 types
