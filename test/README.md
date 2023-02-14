@@ -458,12 +458,16 @@ $ drenv delete envs/example.yaml
     - `external`: true if this is existing external cluster. In this
       case the tool will not start a minikube cluster and all other
       options are ignored.
-    - `driver`: The minikube driver. Tested with "kvm2" and "podman"
-      (default "kvm2")
+    - `driver`: The minikube driver. On Linux, the default drivers are kvm2 and
+      docker for VMs and containers. On MacOS, the defaults are hyperkit and
+      podman. Use "$vm" and "$container" values to use the recommended VM and
+      container drivers for the platform.
     - `container_runtime`: The container runtime to be used. Valid
       options: "docker", "cri-o", "containerd" (default: "containerd")
-    - `network`: The network to run minikube with. If left empty,
-      minikube will create a new isolated network.
+    - `network`: The network to run minikube with. If left empty, the behavior
+      is same as that of minikube for the platform. Use
+      "$network" value to use the recommended network configuration
+      for the platform.
     - `extra_disks`: Number of extra disks (default 0)
     - `disk_size`: Disk size string (default "50g")
     - `nodes`: Number of cluster nodes (default 1)

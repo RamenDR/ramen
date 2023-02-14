@@ -18,7 +18,6 @@ name: test
 templates:
   - name: dr-cluster
     memory: 6g
-    network: default
     workers:
       # An unnamed worker
       - addons:
@@ -34,7 +33,6 @@ templates:
           - name: addon3
   - name: hub-cluster
     memory: 4g
-    network: default
     workers:
       - addons:
           # Addon that does not need its profile name.
@@ -48,9 +46,19 @@ profiles:
     memory: 8g
   - name: dr2
     template: dr-cluster
+    # These are specific values and will be propagated to minikube as is.
+    driver: myhypervisor
+    network: mynetwork
   - name: hub
     external: true
     template: hub-cluster
+    # Using driver and network from platform defaults
+    driver: $container
+    network: $network
+  - name: dr3
+    template: dr-cluster
+    # Using driver from platform defaults
+    driver: $vm
 
 workers:
   - name: named-worker
@@ -70,6 +78,44 @@ workers:
     return Env(file=io.StringIO(yaml), addons_root=str(tmpdir))
 
 
+def test_driver(valid_env):
+    env = envfile.load(valid_env.file, addons_root=valid_env.addons_root)
+    platform_defaults = envfile.platform_defaults()
+
+    # no driver
+    profile = env["profiles"][0]
+    assert profile["driver"] == platform_defaults[envfile.VM]
+
+    # concrete driver
+    profile = env["profiles"][1]
+    assert profile["driver"] == "myhypervisor"
+
+    # platform container driver
+    profile = env["profiles"][2]
+    assert profile["driver"] == platform_defaults[envfile.CONTAINER]
+
+    # platform vm driver
+    profile = env["profiles"][3]
+    assert profile["driver"] == platform_defaults[envfile.VM]
+
+
+def test_network(valid_env):
+    env = envfile.load(valid_env.file, addons_root=valid_env.addons_root)
+    platform_defaults = envfile.platform_defaults()
+
+    # no network
+    profile = env["profiles"][0]
+    assert profile["network"] == ""
+
+    # concrete network
+    profile = env["profiles"][1]
+    assert profile["network"] == "mynetwork"
+
+    # platform drenv-shared network
+    profile = env["profiles"][2]
+    assert profile["network"] == platform_defaults[envfile.SHARED_NETWORK]
+
+
 def test_valid(valid_env):
     env = envfile.load(valid_env.file, addons_root=valid_env.addons_root)
 
@@ -78,7 +124,6 @@ def test_valid(valid_env):
     profile = env["profiles"][0]
     assert profile["name"] == "dr1"
     assert not profile["external"]
-    assert profile["network"] == "default"  # From template
     assert profile["memory"] == "8g"  # From profile
     assert profile["cpus"] == 2  # From defaults
 

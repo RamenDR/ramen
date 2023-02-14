@@ -7,9 +7,9 @@ name: volsync
 
 templates:
   - name: hub
-    driver: kvm2
+    driver: $vm
     container_runtime: containerd
-    network: default
+    network: $network
     cni: kindnet
     memory: 2g
     workers:
@@ -17,9 +17,9 @@ templates:
           - name: submariner
             args: [hub, dr1, dr2]
   - name: cluster
-    driver: kvm2
+    driver: $vm
     container_runtime: containerd
-    network: default
+    network: $network
     cni: kindnet
     memory: 4g
     disk_size: 50g
