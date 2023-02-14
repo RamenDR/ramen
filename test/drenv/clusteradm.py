@@ -26,11 +26,13 @@ def get(what, context=None):
     return commands.run(*cmd)
 
 
-def install(what, names, context=None):
+def install(what, names, bundle_version=None, context=None):
     """
     Install a feature.
     """
     cmd = ["clusteradm", "install", what, "--names", ",".join(names)]
+    if bundle_version:
+        cmd.extend(("--bundle-version", bundle_version))
     if context:
         cmd.extend(("--context", context))
     _watch(*cmd)
