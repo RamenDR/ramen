@@ -3,8 +3,30 @@
 
 import os
 import copy
+import platform
 
 import yaml
+
+VM = "$vm"
+CONTAINER = "$container"
+SHARED_NETWORK = "$network"
+
+
+def platform_defaults():
+    # By default, use minikube defaults.
+    d = {VM: "", CONTAINER: "", SHARED_NETWORK: ""}
+
+    operating_system = platform.system().lower()
+    if operating_system == "linux":
+        d[VM] = "kvm2"
+        d[CONTAINER] = "docker"
+        d[SHARED_NETWORK] = "default"
+    elif operating_system == "darwin":
+        d[VM] = "hyperkit"
+        d[CONTAINER] = "podman"
+        d[SHARED_NETWORK] = ""
+
+    return d
 
 
 class MissingAddon(Exception):
@@ -75,7 +97,7 @@ def _validate_profile(profile, addons_root):
     profile.setdefault("external", False)
 
     # Properties for minikube created cluster.
-    profile.setdefault("driver", "kvm2")
+    profile.setdefault("driver", VM)
     profile.setdefault("container_runtime", "")
     profile.setdefault("extra_disks", 0)
     profile.setdefault("disk_size", "20g")
@@ -90,8 +112,22 @@ def _validate_profile(profile, addons_root):
     profile.setdefault("extra_config", [])
     profile.setdefault("workers", [])
 
+    _validate_platform_defaults(profile)
+
     for i, worker in enumerate(profile["workers"]):
         _validate_worker(worker, profile, addons_root, i)
+
+
+def _validate_platform_defaults(profile):
+    platform = platform_defaults()
+
+    if profile["driver"] == VM:
+        profile["driver"] = platform[VM]
+    elif profile["driver"] == CONTAINER:
+        profile["driver"] = platform[CONTAINER]
+
+    if profile["network"] == SHARED_NETWORK:
+        profile["network"] = platform[SHARED_NETWORK]
 
 
 def _validate_worker(worker, env, addons_root, index):

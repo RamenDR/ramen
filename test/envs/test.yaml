@@ -6,7 +6,7 @@
 name: test
 profiles:
   - name: cluster
-    driver: docker
+    driver: $container
     memory: 2g
     workers:
       - addons:

@@ -15,9 +15,9 @@ templates:
 profiles:
   - name: c1
     template: base
-    driver: podman
+    driver: $container
     container_runtime: cri-o
   - name: c2
     template: base
-    driver: kvm2
+    driver: $vm
     container_runtime: containerd

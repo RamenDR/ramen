@@ -6,9 +6,9 @@
 name: demo
 templates:
   - name: "demo-cluster"
-    driver: kvm2
+    driver: $vm
     container_runtime: containerd
-    network: default
+    network: $network
     addons:
       - ingress
     workers:

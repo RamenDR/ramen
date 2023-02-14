@@ -6,7 +6,7 @@
 name: example
 templates:
   - name: "example-cluster"
-    driver: kvm2
+    driver: $vm
     container_runtime: containerd
     workers:
       - addons:

@@ -7,9 +7,9 @@ name: submariner
 
 templates:
   - name: cluster
-    driver: kvm2
+    driver: $vm
     container_runtime: containerd
-    network: default
+    network: $network
     cni: kindnet
     memory: 3g
 

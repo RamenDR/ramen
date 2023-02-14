@@ -7,17 +7,17 @@ name: "ocm"
 
 templates:
   - name: "hub-cluster"
-    driver: kvm2
+    driver: "$vm"
     container_runtime: containerd
-    network: default
+    network: "$network"
     workers:
       - addons:
           - name: ocm-hub
           - name: ocm-controller
   - name: "dr-cluster"
-    driver: kvm2
+    driver: "$vm"
     container_runtime: containerd
-    network: default
+    network: "$network"
     workers:
       - addons:
           - name: ocm-cluster

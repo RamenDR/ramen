@@ -12,9 +12,9 @@ name: "rdr-external"
 
 templates:
   - name: "dr-cluster"
-    driver: kvm2
+    driver: $vm
     container_runtime: containerd
-    network: default
+    network: $network
     memory: "4g"
     workers:
       - addons:
@@ -28,9 +28,9 @@ templates:
       - addons:
           - name: my-external-storage
   - name: "hub-cluster"
-    driver: kvm2
+    driver: $vm
     container_runtime: containerd
-    network: default
+    network: $network
     memory: "4g"
     workers:
       - addons:
