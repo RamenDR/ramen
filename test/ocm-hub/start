@@ -10,8 +10,14 @@ from drenv import kubectl
 from drenv import clusteradm
 
 ADDONS = (
-    "application-manager",
-    "governance-policy-framework",
+    {
+        "name": "application-manager",
+        "version": "default",
+    },
+    {
+        "name": "governance-policy-framework",
+        "version": "default",
+    },
 )
 
 DEPLOYMENTS = {
@@ -37,7 +43,13 @@ def deploy(cluster):
     clusteradm.init(wait=True, context=cluster)
 
     print("Installing hub addons")
-    clusteradm.install("hub-addon", names=ADDONS, context=cluster)
+    for addon in ADDONS:
+        clusteradm.install(
+            "hub-addon",
+            names=[addon["name"]],
+            bundle_version=addon["version"],
+            context=cluster,
+        )
 
 
 def wait(cluster):
