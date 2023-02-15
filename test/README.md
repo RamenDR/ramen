@@ -16,7 +16,7 @@ environment.
    sudo usermod -a -G libvirt $(whoami)
    ```
 
-1. Logout and login again for the change above to be in effect.
+   Logout and login again for the change above to be in effect.
 
 1. Install minikube, for example on RHEL/CentOS/Fedora:
 
@@ -33,6 +33,21 @@ environment.
 1. Install `clusteradm` tool. See
    [Open Cluster Management Quick Start guide](https://open-cluster-management.io/getting-started/quick-start/#install-clusteradm-cli-tool)
    for the details. Version 0.5.0 or later is required.
+
+1. Install `podman`
+
+   ```
+   sudo dnf install podman
+   ```
+
+   Allow yourself to run podman as root without a password by adding
+   this file as root:
+
+   ```
+   # cat /etc/sudoers.d/podman
+   # Allow passwordless podman
+   myusername ALL=(ALL) NOPASSWD: /usr/bin/podman
+   ```
 
 1. Install the `drenv` package in a virtual environment:
 
