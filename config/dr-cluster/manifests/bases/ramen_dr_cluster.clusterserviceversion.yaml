@@ -4,6 +4,7 @@ metadata:
   annotations:
     alm-examples: '[]'
     capabilities: Basic Install
+    operators.openshift.io/infrastructure-features: '["disconnected"]'
   name: ramen-dr-cluster-operator.v0.0.0
   namespace: placeholder
 spec:
