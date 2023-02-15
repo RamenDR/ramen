@@ -11,6 +11,7 @@ import (
 
 	"github.com/ghodss/yaml"
 	"github.com/go-logr/logr"
+	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	errorswrapper "github.com/pkg/errors"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
@@ -21,6 +22,8 @@ import (
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -47,8 +50,7 @@ type DRPCInstance struct {
 	drClusters           []rmn.DRCluster
 	mcvRequestInProgress bool
 	volSyncDisabled      bool
-	userPlacementRule    *plrv1.PlacementRule
-	drpcPlacementRule    *plrv1.PlacementRule
+	userPlacement        client.Object
 	vrgs                 map[string]*rmn.VolumeReplicationGroup
 	mwu                  rmnutil.MWUtil
 	metrics              *SyncMetrics
@@ -61,7 +63,7 @@ func (d *DRPCInstance) startProcessing() bool {
 	done, processingErr := d.processPlacement()
 
 	if d.shouldUpdateStatus() || d.statusUpdateTimeElapsed() {
-		if err := d.reconciler.updateDRPCStatus(d.instance, d.userPlacementRule, d.metrics, d.log); err != nil {
+		if err := d.reconciler.updateDRPCStatus(d.instance, d.userPlacement, d.metrics, d.log); err != nil {
 			d.log.Error(err, "failed to update status")
 
 			return requeue
@@ -103,8 +105,7 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 	homeCluster, homeClusterNamespace := d.getHomeClusterForInitialDeploy()
 
 	if homeCluster == "" {
-		err := fmt.Errorf("PreferredCluster not set and unable to find home cluster in DRPCPlacementRule (%v)",
-			d.drpcPlacementRule)
+		err := fmt.Errorf("PreferredCluster not set. Placement (%v)", d.userPlacement)
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), err.Error())
 		// needStatusUpdate is not set. Still better to capture the event to report later
@@ -114,8 +115,8 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 		return !done, err
 	}
 
-	d.log.Info(fmt.Sprintf("Using homeCluster %s for initial deployment, uPlRule Decision %+v",
-		homeCluster, d.userPlacementRule.Status.Decisions))
+	d.log.Info(fmt.Sprintf("Using homeCluster %s for initial deployment, Placement Decision %+v",
+		homeCluster, d.reconciler.getClusterDecision(d.userPlacement)))
 
 	// Check if we already deployed in the homeCluster or elsewhere
 	deployed, clusterName := d.isDeployed(homeCluster)
@@ -174,10 +175,13 @@ func (d *DRPCInstance) getHomeClusterForInitialDeploy() (string, string) {
 		homeClusterNamespace = d.instance.Spec.PreferredCluster
 	}
 
-	if homeCluster == "" && d.drpcPlacementRule != nil && len(d.drpcPlacementRule.Status.Decisions) != 0 {
-		homeCluster = d.drpcPlacementRule.Status.Decisions[0].ClusterName
-		homeClusterNamespace = d.drpcPlacementRule.Status.Decisions[0].ClusterNamespace
-	}
+	// FIXME: The question is, should we care about dynamic home cluster selection. This feature has
+	// always been available, but we never used it.  If not used, why have it, and keep carrying it?
+
+	// if homeCluster == "" && d.drpcPlacementRule != nil && len(d.drpcPlacementRule.Status.Decisions) != 0 {
+	// 	homeCluster = d.drpcPlacementRule.Status.Decisions[0].ClusterName
+	// 	homeClusterNamespace = d.drpcPlacementRule.Status.Decisions[0].ClusterNamespace
+	// }
 
 	return homeCluster, homeClusterNamespace
 }
@@ -208,8 +212,21 @@ func (d *DRPCInstance) isDeployed(homeCluster string) (bool, string) {
 }
 
 func (d *DRPCInstance) isUserPlRuleUpdated(homeCluster string) bool {
-	return len(d.userPlacementRule.Status.Decisions) > 0 &&
-		d.userPlacementRule.Status.Decisions[0].ClusterName == homeCluster
+	plRule := ConvertToPlacementRule(d.userPlacement)
+	if plRule != nil {
+		return len(plRule.Status.Decisions) > 0 &&
+			plRule.Status.Decisions[0].ClusterName == homeCluster
+	}
+
+	// Othewise, it is a Placement object
+	plcmt := ConvertToPlacement(d.userPlacement)
+	if plcmt != nil {
+		clusterDecision := d.reconciler.getClusterDecision(d.userPlacement)
+
+		return clusterDecision.ClusterName == homeCluster
+	}
+
+	return false
 }
 
 // isVRGAlreadyDeployedOnTargetCluster will check whether a VRG exists in the targetCluster and
@@ -267,9 +284,10 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 	}
 
 	// All good, update the preferred decision and state
-	if len(d.userPlacementRule.Status.Decisions) > 0 {
-		d.instance.Status.PreferredDecision = d.userPlacementRule.Status.Decisions[0]
-	}
+	d.instance.Status.PreferredDecision.ClusterName = d.instance.Spec.PreferredCluster
+	d.instance.Status.PreferredDecision.ClusterNamespace = d.instance.Spec.PreferredCluster
+
+	d.log.Info("Updated PreferredDecision", "PreferredDecision", d.instance.Status.PreferredDecision)
 
 	d.setDRState(rmn.Deployed)
 
@@ -427,8 +445,9 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 }
 
 func (d *DRPCInstance) getCurrentHomeClusterName(toCluster string, drClusters []rmn.DRCluster) string {
-	if len(d.userPlacementRule.Status.Decisions) > 0 {
-		return d.userPlacementRule.Status.Decisions[0].ClusterName
+	clusterDecision := d.reconciler.getClusterDecision(d.userPlacement)
+	if clusterDecision.ClusterName != "" {
+		return clusterDecision.ClusterName
 	}
 
 	if d.instance.Status.PreferredDecision.ClusterName != "" {
@@ -587,7 +606,8 @@ func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) 
 		return !done, nil
 	}
 
-	if len(d.userPlacementRule.Status.Decisions) != 0 {
+	clusterDecision := d.reconciler.getClusterDecision(d.userPlacement)
+	if clusterDecision.ClusterName != "" {
 		d.setDRState(rmn.Relocating)
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Starting quiescing for relocation")
@@ -965,8 +985,9 @@ func (d *DRPCInstance) vrgExistsAndPrimary(targetCluster string) bool {
 		return false
 	}
 
-	if len(d.userPlacementRule.Status.Decisions) > 0 &&
-		targetCluster == d.userPlacementRule.Status.Decisions[0].ClusterName {
+	clusterDecision := d.reconciler.getClusterDecision(d.userPlacement)
+	if clusterDecision.ClusterName != "" &&
+		targetCluster == clusterDecision.ClusterName {
 		d.log.Info(fmt.Sprintf("Already %q to cluster %s", d.getLastDRState(), targetCluster))
 
 		return true
@@ -1050,34 +1071,24 @@ func (d *DRPCInstance) cleanupSecondaries(skipCluster string) (bool, error) {
 	return true, nil
 }
 
-func (d *DRPCInstance) updateUserPlacementRule(homeCluster, homeClusterNamespace string) error {
-	d.log.Info(fmt.Sprintf("Updating userPlacementRule %s homeCluster %s",
-		d.userPlacementRule.Name, homeCluster))
+func (d *DRPCInstance) updateUserPlacementRule(homeCluster, reason string) error {
+	d.log.Info(fmt.Sprintf("Updating user Placement %s homeCluster %s",
+		d.userPlacement.GetName(), homeCluster))
 
-	if homeClusterNamespace == "" {
-		homeClusterNamespace = homeCluster
+	newPD := &clrapiv1beta1.ClusterDecision{
+		ClusterName: homeCluster,
+		Reason:      reason,
 	}
 
-	newPD := []plrv1.PlacementDecision{
-		{
-			ClusterName:      homeCluster,
-			ClusterNamespace: homeClusterNamespace,
-		},
-	}
-
-	newStatus := plrv1.PlacementRuleStatus{
-		Decisions: newPD,
-	}
-
-	return d.reconciler.updateUserPlacementRuleStatus(d.userPlacementRule, newStatus, d.log)
+	return d.reconciler.updateUserPlacementStatusDecision(d.ctx, d.userPlacement, newPD)
 }
 
 func (d *DRPCInstance) clearUserPlacementRuleStatus() error {
-	d.log.Info("Clearing userPlacementRule", "name", d.userPlacementRule.Name)
+	d.log.Info("Clearing user Placement", "name", d.userPlacement.GetName())
 
-	newStatus := plrv1.PlacementRuleStatus{}
+	newPD := &clrapiv1beta1.ClusterDecision{}
 
-	return d.reconciler.updateUserPlacementRuleStatus(d.userPlacementRule, newStatus, d.log)
+	return d.reconciler.updateUserPlacementStatusDecision(d.ctx, d.userPlacement, newPD)
 }
 
 func (d *DRPCInstance) updatePreferredDecision() {
@@ -1102,7 +1113,12 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string) error {
 	d.log.Info("Creating VRG ManifestWork",
 		"Last State:", d.getLastDRState(), "cluster", homeCluster)
 
-	vrg := d.generateVRG(rmn.Primary)
+	objMeta, err := d.generateObjectMetaForVRG()
+	if err != nil {
+		return err
+	}
+
+	vrg := d.generateVRG(rmn.Primary, objMeta)
 	vrg.Spec.VolSync.Disabled = d.volSyncDisabled
 
 	annotations := make(map[string]string)
@@ -1141,10 +1157,11 @@ func (d *DRPCInstance) setVRGAction(vrg *rmn.VolumeReplicationGroup) {
 	vrg.Spec.Action = action
 }
 
-func (d *DRPCInstance) generateVRG(repState rmn.ReplicationState) rmn.VolumeReplicationGroup {
+func (d *DRPCInstance) generateVRG(repState rmn.ReplicationState, objMeta metav1.ObjectMeta,
+) rmn.VolumeReplicationGroup {
 	vrg := rmn.VolumeReplicationGroup{
 		TypeMeta:   metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
-		ObjectMeta: metav1.ObjectMeta{Name: d.instance.Name, Namespace: d.instance.Namespace},
+		ObjectMeta: objMeta,
 		Spec: rmn.VolumeReplicationGroupSpec{
 			PVCSelector:          d.instance.Spec.PVCSelector,
 			ReplicationState:     repState,
@@ -1158,6 +1175,25 @@ func (d *DRPCInstance) generateVRG(repState rmn.ReplicationState) rmn.VolumeRepl
 	vrg.Spec.Sync = d.generateVRGSpecSync()
 
 	return vrg
+}
+
+func (d *DRPCInstance) generateObjectMetaForVRG() (metav1.ObjectMeta, error) {
+	d.log.Info("Generating ObjectMeta for VRG", "userPlmnt", d.userPlacement)
+
+	switch d.userPlacement.(type) {
+	case *clrapiv1beta1.Placement:
+		ns, err := d.reconciler.getApplicationDestinationNamespace(d.userPlacement)
+		if err != nil {
+			return metav1.ObjectMeta{}, err
+		}
+
+		return metav1.ObjectMeta{
+			Name:      d.instance.Name,
+			Namespace: ns,
+		}, nil
+	default:
+		return metav1.ObjectMeta{Name: d.instance.Name, Namespace: d.instance.Namespace}, nil
+	}
 }
 
 func (d *DRPCInstance) generateVRGSpecAsync() *rmn.VRGAsyncSpec {
@@ -1781,8 +1817,10 @@ func (d *DRPCInstance) shouldUpdateStatus() bool {
 	}
 
 	homeCluster := ""
-	if len(d.userPlacementRule.Status.Decisions) != 0 {
-		homeCluster = d.userPlacementRule.Status.Decisions[0].ClusterName
+
+	clusterDecision := d.reconciler.getClusterDecision(d.userPlacement)
+	if clusterDecision != nil && clusterDecision.ClusterName != "" {
+		homeCluster = clusterDecision.ClusterName
 	}
 
 	if homeCluster == "" {
@@ -1926,11 +1964,12 @@ func (d *DRPCInstance) setDRPCCondition(conditions *[]metav1.Condition, conditio
 func (d *DRPCInstance) isPlacementNeedsFixing() bool {
 	// Needs fixing if and only if the DRPC Status is empty, the Placement decision is empty, and
 	// the we have VRG(s) in the managed clusters
+	clusterDecision := d.reconciler.getClusterDecision(d.userPlacement)
 	d.log.Info(fmt.Sprintf("Check placement if needs fixing: PrD %v, PlD %v, VRGs %d",
-		d.instance.Status.PreferredDecision, d.userPlacementRule.Status.Decisions, len(d.vrgs)))
+		d.instance.Status.PreferredDecision, clusterDecision, len(d.vrgs)))
 
 	if reflect.DeepEqual(d.instance.Status.PreferredDecision, plrv1.PlacementDecision{}) &&
-		len(d.userPlacementRule.Status.Decisions) == 0 && len(d.vrgs) > 0 {
+		(clusterDecision == nil || clusterDecision.ClusterName == "") && len(d.vrgs) > 0 {
 		return true
 	}
 

@@ -40,6 +40,8 @@ import (
 	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 
+	argov1alpha1 "github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
+	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	ramencontrollers "github.com/ramendr/ramen/controllers"
 	"github.com/ramendr/ramen/controllers/util"
@@ -174,6 +176,11 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(velero.AddToScheme(scheme.Scheme)).To(Succeed())
 
+	err = clrapiv1beta1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = argov1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
 	// +kubebuilder:scaffold:scheme
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
