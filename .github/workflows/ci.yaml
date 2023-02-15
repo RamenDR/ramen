@@ -20,10 +20,49 @@ env:
   IMAGE_NAME: "ramen"
   IMAGE_TAG: "ci"
   DOCKERCMD: "podman"
+  OPERATOR_SUGGESTED_NAMESPACE: "ramen-system"
 defaults:
   run:
     shell: bash
 jobs:
+  definevars:
+    name: Define variables
+    runs-on: ubuntu-20.04
+    outputs:
+      imagetagbase: ${{ steps.imagetagbase.outputs.variable }}
+      imagerepository: ${{ steps.imagerepository.outputs.variable }}
+      imagename: ${{ steps.imagename.outputs.variable }}
+      operatorsuggestednamespace: ${{ steps.operatorsuggestednamespace.outputs.variable }}
+    steps:
+      - id: imagetagbase
+        run: |
+          if ${{ vars.IMAGE_TAG_BASE != '' }}; then
+            echo "variable=${{ vars.IMAGE_TAG_BASE }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "variable=$IMAGE_TAG_BASE" >> "$GITHUB_OUTPUT"
+          fi
+      - id: imagerepository
+        run: |
+          if ${{ vars.IMAGE_REPOSITORY != '' }}; then
+            echo "variable=${{ vars.IMAGE_REPOSITORY }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "variable=$IMAGE_REPOSITORY" >> "$GITHUB_OUTPUT"
+          fi
+      - id: imagename
+        run: |
+          if ${{ vars.IMAGE_NAME != '' }}; then
+            echo "variable=${{ vars.IMAGE_NAME }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "variable=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+          fi
+      - id: operatorsuggestednamespace
+        run: |
+          if ${{ vars.OPERATOR_SUGGESTED_NAMESPACE != '' }}; then
+            echo "variable=${{ vars.OPERATOR_SUGGESTED_NAMESPACE }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "variable=$OPERATOR_SUGGESTED_NAMESPACE" >> "$GITHUB_OUTPUT"
+          fi
+
   lint:
     name: Linters
     runs-on: ubuntu-20.04
@@ -128,6 +167,11 @@ jobs:
 
   build-image-and-ensure-clean-branch:
     name: Build image and ensure clean branch
+    needs: definevars
+    env:
+      IMAGE_TAG_BASE: ${{needs.definevars.outputs.imagetagbase}}
+      IMAGE_REPOSITORY: ${{needs.definevars.outputs.imagerepository}}
+      IMAGE_NAME: ${{needs.definevars.outputs.imagename}}
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout source
@@ -162,7 +206,7 @@ jobs:
 
   deploy-check:
     name: Check artifacts and operator deployment
-    needs: [build-image-and-ensure-clean-branch]
+    needs: [definevars, build-image-and-ensure-clean-branch]
     runs-on: ubuntu-20.04
     strategy:
       fail-fast: false
@@ -177,7 +221,9 @@ jobs:
       KIND_VERSION: ${{ matrix.kind_version }}
       KIND_IMAGE: ${{ matrix.kind_image }}
       KIND_CLUSTER_NAME: "ci"
-
+      IMAGE_TAG_BASE: ${{needs.definevars.outputs.imagetagbase}}
+      IMAGE_REPOSITORY: ${{needs.definevars.outputs.imagerepository}}
+      IMAGE_NAME: ${{needs.definevars.outputs.imagename}}
     steps:
       - name: Checkout source
         uses: actions/checkout@v2
@@ -241,13 +287,17 @@ jobs:
 
   publish-image:
     name: Publish built image
-    needs: [deploy-check, lint, golangci, unit-test, build-image-and-ensure-clean-branch]
+    needs: [definevars, deploy-check, lint, golangci, unit-test, build-image-and-ensure-clean-branch]
+    env:
+      IMAGE_TAG_BASE: ${{needs.definevars.outputs.imagetagbase}}
+      IMAGE_REPOSITORY: ${{needs.definevars.outputs.imagerepository}}
+      IMAGE_NAME: ${{needs.definevars.outputs.imagename}}
+      OPERATOR_SUGGESTED_NAMESPACE: ${{needs.definevars.outputs.operatorsuggestednamespace}}
     if: >
       (github.event_name == 'push') &&
       (github.ref == 'refs/heads/main' ||
        startsWith(github.ref, 'refs/heads/release-') ||
-       startsWith(github.ref, 'refs/tags/v')) &&
-      (github.repository == 'ramendr/ramen')
+       startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-20.04
     steps:
       - name: Download image artifact
