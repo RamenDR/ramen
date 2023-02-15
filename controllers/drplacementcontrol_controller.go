@@ -31,6 +31,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	argov1alpha1 "github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
+	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
 	"github.com/ramendr/ramen/controllers/volsync"
@@ -48,6 +50,10 @@ const (
 	// StatusCheckDelay is used to frequencly update the DRPC status when the reconciler is idle.
 	// This is needed in order to sync up the DRPC status and the VRG status.
 	StatusCheckDelay = time.Minute * 10
+
+	PlacementLabelKey = "cluster.open-cluster-management.io/placement"
+
+	PlacementDecisionName = "%s-decision-1"
 )
 
 var InitialWaitTimeForDRPCPlacementRule = errorswrapper.New("Waiting for DRPC Placement to produces placement decision")
@@ -207,6 +213,44 @@ func filterUsrPlRule(usrPlRule *plrv1.PlacementRule) []ctrl.Request {
 	}
 }
 
+func PlacementPredicateFunc() predicate.Funcs {
+	log := ctrl.Log.WithName("UserPlmnt")
+	usrPlmntPredicate := predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return false
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return false
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			log.Info("Delete event")
+
+			return true
+		},
+	}
+
+	return usrPlmntPredicate
+}
+
+func filterUsrPlmnt(usrPlmnt *clrapiv1beta1.Placement) []ctrl.Request {
+	if usrPlmnt.Annotations[DRPCNameAnnotation] == "" ||
+		usrPlmnt.Annotations[DRPCNamespaceAnnotation] == "" {
+		return []ctrl.Request{}
+	}
+
+	return []ctrl.Request{
+		reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      usrPlmnt.Annotations[DRPCNameAnnotation],
+				Namespace: usrPlmnt.Annotations[DRPCNamespaceAnnotation],
+			},
+		},
+	}
+}
+
 func SetDRPCStatusCondition(conditions *[]metav1.Condition, conditionType string,
 	observedGeneration int64, status metav1.ConditionStatus, reason, msg string,
 ) bool {
@@ -234,6 +278,8 @@ func SetDRPCStatusCondition(conditions *[]metav1.Condition, conditionType string
 }
 
 // SetupWithManager sets up the controller with the Manager.
+//
+//nolint:funlen
 func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	mwPred := ManifestWorkPredicateFunc()
 
@@ -274,6 +320,19 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		return filterUsrPlRule(usrPlRule)
 	}))
 
+	usrPlmntPred := PlacementPredicateFunc()
+
+	usrPlmntMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
+		usrPlmnt, ok := obj.(*clrapiv1beta1.Placement)
+		if !ok {
+			return []reconcile.Request{}
+		}
+
+		ctrl.Log.Info(fmt.Sprintf("Filtering User Placement (%s/%s)", usrPlmnt.Name, usrPlmnt.Namespace))
+
+		return filterUsrPlmnt(usrPlmnt)
+	}))
+
 	r.eventRecorder = rmnutil.NewEventReporter(mgr.GetEventRecorderFor("controller_DRPlacementControl"))
 
 	return ctrl.NewControllerManagedBy(mgr).
@@ -282,6 +341,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		Watches(&source.Kind{Type: &ocmworkv1.ManifestWork{}}, mwMapFun, builder.WithPredicates(mwPred)).
 		Watches(&source.Kind{Type: &viewv1beta1.ManagedClusterView{}}, mcvMapFun, builder.WithPredicates(mcvPred)).
 		Watches(&source.Kind{Type: &plrv1.PlacementRule{}}, usrPlRuleMapFun, builder.WithPredicates(usrPlRulePred)).
+		Watches(&source.Kind{Type: &clrapiv1beta1.Placement{}}, usrPlmntMapFun, builder.WithPredicates(usrPlmntPred)).
 		Complete(r)
 }
 
@@ -331,23 +391,22 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, errorswrapper.Wrap(err, "failed to get DRPC object")
 	}
 
-	usrPlRule, err := r.getUserPlacementRule(ctx, drpc, logger)
+	placementObj, err := r.getPlacementOrPlacementRule(ctx, drpc, logger)
 	if err != nil {
-		r.recordFailure(drpc, usrPlRule, "Error", err.Error(), nil, logger)
+		r.recordFailure(drpc, placementObj, "Error", err.Error(), nil, logger)
 
 		return ctrl.Result{}, err
 	}
 
-	// If either drpc or User PlacementRule is deleted, then we must cleanup.
-	if r.isBeingDeleted(drpc, usrPlRule) {
-		// DPRC depends on User PlacementRule. If DRPC or/and the User PlacementRule is deleted,
+	if r.isBeingDeleted(drpc) {
+		// DPRC depends on User PlacementRule/Placement. If DRPC or/and the User PlacementRule is deleted,
 		// then the DRPC should be deleted as well. The least we should do here is to clean up DPRC.
-		return r.processDeletion(ctx, drpc, usrPlRule, logger)
+		return r.processDeletion(ctx, drpc, placementObj, logger)
 	}
 
-	d, err := r.createDRPCInstance(ctx, drpc, usrPlRule, logger)
+	d, err := r.createDRPCInstance(ctx, drpc, placementObj, logger)
 	if err != nil && !errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
-		err = r.updateDRPCStatus(drpc, usrPlRule, nil, logger)
+		err = r.updateDRPCStatus(drpc, placementObj, nil, logger)
 
 		return ctrl.Result{}, err
 	}
@@ -355,7 +414,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
 		const initialWaitTime = 5
 
-		r.recordFailure(drpc, usrPlRule, "Waiting",
+		r.recordFailure(drpc, placementObj, "Waiting",
 			fmt.Sprintf("%v - wait time: %v", InitialWaitTimeForDRPCPlacementRule, initialWaitTime), nil, logger)
 
 		return ctrl.Result{RequeueAfter: time.Second * initialWaitTime}, nil
@@ -365,12 +424,12 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 }
 
 func (r *DRPlacementControlReconciler) recordFailure(drpc *rmn.DRPlacementControl,
-	usrPlRule *plrv1.PlacementRule, reason, msg string, syncMetrics *SyncMetrics, log logr.Logger,
+	placementObj client.Object, reason, msg string, syncMetrics *SyncMetrics, log logr.Logger,
 ) {
 	needsUpdate := SetDRPCStatusCondition(&drpc.Status.Conditions, rmn.ConditionAvailable,
 		drpc.Generation, metav1.ConditionFalse, reason, msg)
 	if needsUpdate {
-		err := r.updateDRPCStatus(drpc, usrPlRule, syncMetrics, log)
+		err := r.updateDRPCStatus(drpc, placementObj, syncMetrics, log)
 		if err != nil {
 			log.Info(fmt.Sprintf("Failed to update DRPC status (%v)", err))
 		}
@@ -395,16 +454,16 @@ func (r *DRPlacementControlReconciler) setLastSyncTimeMetric(syncMetrics *SyncMe
 	syncMetrics.LastSyncTime.Set(float64(t.ProtoTime().Seconds))
 }
 
-//nolint:funlen,cyclop
+//nolint:funlen
 func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
-	drpc *rmn.DRPlacementControl, usrPlRule *plrv1.PlacementRule, log logr.Logger,
+	drpc *rmn.DRPlacementControl, placementObj client.Object, log logr.Logger,
 ) (*DRPCInstance, error) {
 	drPolicy, err := r.getDRPolicy(ctx, drpc, log)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get DRPolicy %w", err)
 	}
 
-	if err := r.addLabelsAndFinalizers(ctx, drpc, usrPlRule, log); err != nil {
+	if err := r.addLabelsAndFinalizers(ctx, drpc, placementObj, log); err != nil {
 		return nil, err
 	}
 
@@ -427,14 +486,9 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 	}
 
 	// We only create DRPC PlacementRule if the preferred cluster is not configured
-	drpcPlRule, err := r.getDRPCPlacementRule(ctx, drpc, usrPlRule, drPolicy, log)
+	err = r.getDRPCPlacementRule(ctx, drpc, placementObj, drPolicy, log)
 	if err != nil {
 		return nil, err
-	}
-
-	// Make sure that we give time to the DRPC PlacementRule to run and produces decisions
-	if drpcPlRule != nil && len(drpcPlRule.Status.Decisions) == 0 {
-		return nil, fmt.Errorf("%w", InitialWaitTimeForDRPCPlacementRule)
 	}
 
 	vrgs, err := r.getVRGsFromManagedClusters(drpc, drPolicy, log)
@@ -456,17 +510,16 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 	})
 
 	d := &DRPCInstance{
-		reconciler:        r,
-		ctx:               ctx,
-		log:               log,
-		instance:          drpc,
-		userPlacementRule: usrPlRule,
-		drpcPlacementRule: drpcPlRule,
-		drPolicy:          drPolicy,
-		drClusters:        drClusters,
-		vrgs:              vrgs,
-		volSyncDisabled:   ramenConfig.VolSync.Disabled,
-		metrics:           &metrics,
+		reconciler:      r,
+		ctx:             ctx,
+		log:             log,
+		instance:        drpc,
+		userPlacement:   placementObj,
+		drPolicy:        drPolicy,
+		drClusters:      drClusters,
+		vrgs:            vrgs,
+		volSyncDisabled: ramenConfig.VolSync.Disabled,
+		metrics:         &metrics,
 		mwu: rmnutil.MWUtil{
 			Client:        r.Client,
 			Ctx:           ctx,
@@ -485,17 +538,13 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 
 	// Save the instance status
 	d.instance.Status.DeepCopyInto(&d.savedInstanceStatus)
-	log.Info(fmt.Sprintf("PlacementRule Status is: (%+v)", usrPlRule.Status))
 
 	return d, nil
 }
 
-// isBeingDeleted returns true if DRPC or User PlacementRule are being deleted
-func (r *DRPlacementControlReconciler) isBeingDeleted(drpc *rmn.DRPlacementControl,
-	usrPlRule *plrv1.PlacementRule,
-) bool {
-	return !drpc.GetDeletionTimestamp().IsZero() ||
-		(usrPlRule != nil && !usrPlRule.GetDeletionTimestamp().IsZero())
+// isBeingDeleted returns true if DRPC is being deleted
+func (r *DRPlacementControlReconciler) isBeingDeleted(drpc *rmn.DRPlacementControl) bool {
+	return !drpc.GetDeletionTimestamp().IsZero()
 }
 
 func (r *DRPlacementControlReconciler) reconcileDRPCInstance(d *DRPCInstance, log logr.Logger) (ctrl.Result, error) {
@@ -564,7 +613,7 @@ func (r *DRPlacementControlReconciler) getDRPolicy(ctx context.Context,
 }
 
 func (r DRPlacementControlReconciler) addLabelsAndFinalizers(ctx context.Context,
-	drpc *rmn.DRPlacementControl, usrPlRule *plrv1.PlacementRule, log logr.Logger,
+	drpc *rmn.DRPlacementControl, placementObj client.Object, log logr.Logger,
 ) error {
 	// add label and finalizer to DRPC
 	labelAdded := rmnutil.AddLabel(drpc, rmnutil.OCMBackupLabelKey, rmnutil.OCMBackupLabelValue)
@@ -578,10 +627,10 @@ func (r DRPlacementControlReconciler) addLabelsAndFinalizers(ctx context.Context
 		}
 	}
 
-	// add finalizer to User PlacementRule
-	finalizerAdded = rmnutil.AddFinalizer(usrPlRule, DRPCFinalizer)
+	// add finalizer to User PlacementRule/Placement
+	finalizerAdded = rmnutil.AddFinalizer(placementObj, DRPCFinalizer)
 	if finalizerAdded {
-		if err := r.Update(ctx, usrPlRule); err != nil {
+		if err := r.Update(ctx, placementObj); err != nil {
 			log.Error(err, "Failed to add finalizer to user placement rule")
 
 			return fmt.Errorf("%w", err)
@@ -592,7 +641,7 @@ func (r DRPlacementControlReconciler) addLabelsAndFinalizers(ctx context.Context
 }
 
 func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
-	drpc *rmn.DRPlacementControl, usrPlRule *plrv1.PlacementRule, log logr.Logger,
+	drpc *rmn.DRPlacementControl, placementObj client.Object, log logr.Logger,
 ) (ctrl.Result, error) {
 	log.Info("Processing DRPC deletion")
 
@@ -607,13 +656,13 @@ func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 		return ctrl.Result{}, err
 	}
 
-	if usrPlRule != nil && controllerutil.ContainsFinalizer(usrPlRule, DRPCFinalizer) {
-		// Remove DRPCFinalizer from User PlacementRule.
-		controllerutil.RemoveFinalizer(usrPlRule, DRPCFinalizer)
+	if placementObj != nil && controllerutil.ContainsFinalizer(placementObj, DRPCFinalizer) {
+		// Remove DRPCFinalizer from User PlacementRule/Placement.
+		controllerutil.RemoveFinalizer(placementObj, DRPCFinalizer)
 
-		err := r.Update(ctx, usrPlRule)
+		err := r.Update(ctx, placementObj)
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update User PlacementRule %w", err)
+			return ctrl.Result{}, fmt.Errorf("failed to update User PlacementRule/Placement %w", err)
 		}
 	}
 
@@ -700,32 +749,68 @@ func (r *DRPlacementControlReconciler) deleteAllManagedClusterViews(
 }
 
 func (r *DRPlacementControlReconciler) getDRPCPlacementRule(ctx context.Context,
-	drpc *rmn.DRPlacementControl, usrPlRule *plrv1.PlacementRule,
+	drpc *rmn.DRPlacementControl, placementObj client.Object,
 	drPolicy *rmn.DRPolicy, log logr.Logger,
-) (*plrv1.PlacementRule, error) {
+) error {
 	var drpcPlRule *plrv1.PlacementRule
 	// create the cloned placementrule if and only if the Spec.PreferredCluster is not provided
 	if drpc.Spec.PreferredCluster == "" {
 		var err error
 
-		drpcPlRule, err = r.getOrClonePlacementRule(ctx, drpc, drPolicy, usrPlRule, log)
+		plRule := ConvertToPlacementRule(placementObj)
+		if plRule == nil {
+			return fmt.Errorf("invalid user PlacementRule")
+		}
+
+		drpcPlRule, err = r.getOrClonePlacementRule(ctx, drpc, drPolicy, plRule, log)
 		if err != nil {
 			log.Error(err, "failed to get DRPC PlacementRule")
 
-			return nil, err
+			return err
+		}
+
+		// Make sure that we give time to the DRPC PlacementRule to run and produces decisions
+		if drpcPlRule != nil && len(drpcPlRule.Status.Decisions) == 0 {
+			return fmt.Errorf("%w", InitialWaitTimeForDRPCPlacementRule)
 		}
 	} else {
 		log.Info("Preferred cluster is configured. Dynamic selection is disabled",
 			"PreferredCluster", drpc.Spec.PreferredCluster)
 	}
 
-	return drpcPlRule, nil
+	return nil
 }
 
-func (r *DRPlacementControlReconciler) getUserPlacementRule(ctx context.Context,
+func (r *DRPlacementControlReconciler) getPlacementOrPlacementRule(ctx context.Context,
+	drpc *rmn.DRPlacementControl, log logr.Logger,
+) (client.Object, error) {
+	log.Info("Getting user placement object", "placementRef", drpc.Spec.PlacementRef)
+
+	var usrPlacement client.Object
+
+	var err error
+
+	usrPlacement, err = r.tyToGetAndAnnotatePlacementRule(ctx, drpc, log)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// PacementRule not found, but DRPC is not deleted. Check Placement instead
+			usrPlacement, err = r.tyToGetAndAnnotatePlacement(ctx, drpc, log)
+		}
+
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	log.Info(fmt.Sprintf("Using placement %v", usrPlacement))
+
+	return usrPlacement, nil
+}
+
+func (r *DRPlacementControlReconciler) tyToGetAndAnnotatePlacementRule(ctx context.Context,
 	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) (*plrv1.PlacementRule, error) {
-	log.Info("Getting User PlacementRule", "placement", drpc.Spec.PlacementRef)
+	log.Info("Trying user PlacementRule", "usrPR", drpc.Spec.PlacementRef.Name+"/"+drpc.Spec.PlacementRef.Namespace)
 
 	plRuleNamespace := drpc.Spec.PlacementRef.Namespace
 	if plRuleNamespace == "" {
@@ -741,14 +826,11 @@ func (r *DRPlacementControlReconciler) getUserPlacementRule(ctx context.Context,
 	usrPlRule := &plrv1.PlacementRule{}
 
 	err := r.Client.Get(ctx,
-		types.NamespacedName{Name: drpc.Spec.PlacementRef.Name, Namespace: plRuleNamespace},
-		usrPlRule)
+		types.NamespacedName{Name: drpc.Spec.PlacementRef.Name, Namespace: plRuleNamespace}, usrPlRule)
 	if err != nil {
-		if errors.IsNotFound(err) && !drpc.GetDeletionTimestamp().IsZero() {
-			return nil, nil
-		}
+		log.Info("Failed to retrieve PlacementRule", "error", err)
 
-		return nil, fmt.Errorf("failed to get placementrule error: %w", err)
+		return nil, err
 	}
 
 	scName := usrPlRule.Spec.SchedulerName
@@ -766,43 +848,92 @@ func (r *DRPlacementControlReconciler) getUserPlacementRule(ctx context.Context,
 		return nil, err
 	}
 
+	log.Info(fmt.Sprintf("PlacementRule Status is: (%+v)", usrPlRule.Status))
+
 	return usrPlRule, nil
 }
 
+func (r *DRPlacementControlReconciler) tyToGetAndAnnotatePlacement(ctx context.Context,
+	drpc *rmn.DRPlacementControl, log logr.Logger,
+) (*clrapiv1beta1.Placement, error) {
+	log.Info("Trying user Placement", "usrP", drpc.Spec.PlacementRef.Name+"/"+drpc.Spec.PlacementRef.Namespace)
+
+	plmntNamespace := drpc.Spec.PlacementRef.Namespace
+	if plmntNamespace == "" {
+		plmntNamespace = drpc.Namespace
+	}
+
+	if plmntNamespace != drpc.Namespace {
+		return nil, fmt.Errorf("referenced Placement namespace (%s)"+
+			" differs from DRPlacementControl resource namespace (%s)",
+			drpc.Spec.PlacementRef.Namespace, drpc.Namespace)
+	}
+
+	usrPlmnt := &clrapiv1beta1.Placement{}
+
+	err := r.Client.Get(ctx,
+		types.NamespacedName{Name: drpc.Spec.PlacementRef.Name, Namespace: plmntNamespace}, usrPlmnt)
+	if err != nil {
+		if errors.IsNotFound(err) && !drpc.GetDeletionTimestamp().IsZero() {
+			return nil, nil
+		}
+
+		log.Info("Failed to retrieve Placement", "error", err)
+
+		return nil, err
+	}
+
+	if value, ok := usrPlmnt.GetAnnotations()[clrapiv1beta1.PlacementDisableAnnotation]; !ok || value == "false" {
+		return nil, fmt.Errorf("placement %s must be disabled in order for Ramen to be the scheduler",
+			usrPlmnt.Name)
+	}
+
+	if usrPlmnt.Spec.NumberOfClusters == nil || *usrPlmnt.Spec.NumberOfClusters != 1 {
+		log.Info("User Placement number of clusters is not set to 1, reconciliation will only" +
+			" schedule it to a single cluster")
+	}
+
+	if err = r.annotatePlacementRule(ctx, drpc, usrPlmnt, log); err != nil {
+		return nil, err
+	}
+
+	return usrPlmnt, nil
+}
+
 func (r *DRPlacementControlReconciler) annotatePlacementRule(ctx context.Context,
-	drpc *rmn.DRPlacementControl, plRule *plrv1.PlacementRule, log logr.Logger,
+	drpc *rmn.DRPlacementControl, placementObj client.Object, log logr.Logger,
 ) error {
-	if !plRule.GetDeletionTimestamp().IsZero() {
+	if !placementObj.GetDeletionTimestamp().IsZero() {
 		return nil
 	}
 
-	if plRule.ObjectMeta.Annotations == nil {
-		plRule.ObjectMeta.Annotations = map[string]string{}
+	if placementObj.GetAnnotations() == nil {
+		placementObj.SetAnnotations(map[string]string{})
 	}
 
-	ownerName := plRule.ObjectMeta.Annotations[DRPCNameAnnotation]
-	ownerNamespace := plRule.ObjectMeta.Annotations[DRPCNamespaceAnnotation]
+	ownerName := placementObj.GetAnnotations()[DRPCNameAnnotation]
+	ownerNamespace := placementObj.GetAnnotations()[DRPCNamespaceAnnotation]
 
 	if ownerName == "" {
-		plRule.ObjectMeta.Annotations[DRPCNameAnnotation] = drpc.Name
-		plRule.ObjectMeta.Annotations[DRPCNamespaceAnnotation] = drpc.Namespace
+		placementObj.GetAnnotations()[DRPCNameAnnotation] = drpc.Name
+		placementObj.GetAnnotations()[DRPCNamespaceAnnotation] = drpc.Namespace
 
-		err := r.Update(ctx, plRule)
+		err := r.Update(ctx, placementObj)
 		if err != nil {
-			log.Error(err, "Failed to update PlacementRule annotation", "PlRuleName", plRule.Name)
+			log.Error(err, "Failed to update PlacementRule annotation", "placementObjName", placementObj.GetName())
 
 			return fmt.Errorf("failed to update PlacementRule %s annotation '%s/%s' (%w)",
-				plRule.Name, DRPCNameAnnotation, drpc.Name, err)
+				placementObj.GetName(), DRPCNameAnnotation, drpc.Name, err)
 		}
 
 		return nil
 	}
 
 	if ownerName != drpc.Name || ownerNamespace != drpc.Namespace {
-		log.Info("PlacementRule not owned by this DRPC", "PlRuleName", plRule.Name)
+		log.Info("PlacementRule not owned by this DRPC", "placementObjName", placementObj.GetName())
 
 		return fmt.Errorf("PlacementRule %s not owned by this DRPC '%s/%s'",
-			plRule.Name, drpc.Name, drpc.Namespace)
+			placementObj.GetName(), drpc.Name, drpc.Namespace)
 	}
 
 	return nil
@@ -1012,25 +1143,8 @@ func (r *DRPlacementControlReconciler) getStatusCheckDelay(
 	return time.Until(beforeProcessing.Add(StatusCheckDelay))
 }
 
-func (r *DRPlacementControlReconciler) updateUserPlacementRuleStatus(
-	usrPlRule *plrv1.PlacementRule, newStatus plrv1.PlacementRuleStatus, log logr.Logger,
-) error {
-	if !reflect.DeepEqual(newStatus, usrPlRule.Status) {
-		usrPlRule.Status = newStatus
-		if err := r.Status().Update(context.TODO(), usrPlRule); err != nil {
-			log.Error(err, "failed to update user PlacementRule")
-
-			return fmt.Errorf("failed to update userPlRule %s (%w)", usrPlRule.Name, err)
-		}
-
-		log.Info("Updated user PlacementRule status", "Decisions", usrPlRule.Status.Decisions)
-	}
-
-	return nil
-}
-
 func (r *DRPlacementControlReconciler) updateDRPCStatus(
-	drpc *rmn.DRPlacementControl, usrPlRule *plrv1.PlacementRule, syncmetric *SyncMetrics, log logr.Logger,
+	drpc *rmn.DRPlacementControl, userPlacement client.Object, syncmetric *SyncMetrics, log logr.Logger,
 ) error {
 	log.Info("Updating DRPC status")
 
@@ -1039,9 +1153,10 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 	annotations[DRPCNameAnnotation] = drpc.Name
 	annotations[DRPCNamespaceAnnotation] = drpc.Namespace
 
-	if usrPlRule != nil && len(usrPlRule.Status.Decisions) != 0 {
+	clusterDecision := r.getClusterDecision(userPlacement)
+	if clusterDecision != nil && clusterDecision.ClusterName != "" {
 		vrg, err := r.MCVGetter.GetVRGFromManagedCluster(drpc.Name, drpc.Namespace,
-			usrPlRule.Status.Decisions[0].ClusterName, annotations)
+			clusterDecision.ClusterName, annotations)
 		if err != nil {
 			// VRG must have been deleted if the error is NotFound. In either case,
 			// we don't have a VRG
@@ -1086,4 +1201,194 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 	log.Info(fmt.Sprintf("Updated DRPC Status %+v", drpc.Status))
 
 	return nil
+}
+
+func ConvertToPlacementRule(placementObj interface{}) *plrv1.PlacementRule {
+	var pr *plrv1.PlacementRule
+
+	if obj, ok := placementObj.(*plrv1.PlacementRule); ok {
+		pr = obj
+	}
+
+	return pr
+}
+
+func ConvertToPlacement(placementObj interface{}) *clrapiv1beta1.Placement {
+	var p *clrapiv1beta1.Placement
+
+	if obj, ok := placementObj.(*clrapiv1beta1.Placement); ok {
+		p = obj
+	}
+
+	return p
+}
+
+func (r *DRPlacementControlReconciler) getClusterDecision(placementObj interface{},
+) *clrapiv1beta1.ClusterDecision {
+	switch obj := placementObj.(type) {
+	case *plrv1.PlacementRule:
+		return r.getClusterDecisionFromPlacementRule(obj)
+	case *clrapiv1beta1.Placement:
+		return r.getClusterDecisionFromPlacement(obj)
+	default:
+		return &clrapiv1beta1.ClusterDecision{}
+	}
+}
+
+func (r *DRPlacementControlReconciler) getClusterDecisionFromPlacementRule(plRule *plrv1.PlacementRule,
+) *clrapiv1beta1.ClusterDecision {
+	var clusterName string
+	if len(plRule.Status.Decisions) > 0 {
+		clusterName = plRule.Status.Decisions[0].ClusterName
+	}
+
+	return &clrapiv1beta1.ClusterDecision{
+		ClusterName: clusterName,
+		Reason:      "PlacementRule decision",
+	}
+}
+
+func (r *DRPlacementControlReconciler) getClusterDecisionFromPlacement(placement *clrapiv1beta1.Placement,
+) *clrapiv1beta1.ClusterDecision {
+	plDecisionName := fmt.Sprintf(PlacementDecisionName, placement.GetName())
+	plDecision := &clrapiv1beta1.PlacementDecision{}
+
+	err := r.Get(context.TODO(), types.NamespacedName{Name: plDecisionName, Namespace: placement.Namespace}, plDecision)
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			r.Log.Info("Failed to retrieve PlacementDecision", "pdName", plDecisionName)
+		}
+
+		return &clrapiv1beta1.ClusterDecision{}
+	}
+
+	r.Log.Info("Found ClusterDecision", "CD", plDecision)
+
+	var clusterName, reason string
+	if len(plDecision.Status.Decisions) > 0 {
+		clusterName = plDecision.Status.Decisions[0].ClusterName
+		reason = plDecision.Status.Decisions[0].Reason
+	}
+
+	return &clrapiv1beta1.ClusterDecision{
+		ClusterName: clusterName,
+		Reason:      reason,
+	}
+}
+
+func (r *DRPlacementControlReconciler) updateUserPlacementStatusDecision(ctx context.Context,
+	userPlacement interface{}, newCD *clrapiv1beta1.ClusterDecision,
+) error {
+	switch obj := userPlacement.(type) {
+	case *plrv1.PlacementRule:
+		return r.createOrUpdatePlacementRuleDecision(ctx, obj, newCD)
+	case *clrapiv1beta1.Placement:
+		return r.createOrUpdatePlacementDecision(ctx, obj, newCD)
+	default:
+		return fmt.Errorf("failed to find Placement or PlacementRule")
+	}
+}
+
+func (r *DRPlacementControlReconciler) createOrUpdatePlacementRuleDecision(ctx context.Context,
+	plRule *plrv1.PlacementRule, newCD *clrapiv1beta1.ClusterDecision,
+) error {
+	newStatus := plrv1.PlacementRuleStatus{
+		Decisions: []plrv1.PlacementDecision{
+			{
+				ClusterName:      newCD.ClusterName,
+				ClusterNamespace: newCD.ClusterName,
+			},
+		},
+	}
+
+	if !reflect.DeepEqual(newStatus, plRule.Status) {
+		plRule.Status = newStatus
+		if err := r.Status().Update(ctx, plRule); err != nil {
+			r.Log.Error(err, "failed to update user PlacementRule")
+
+			return fmt.Errorf("failed to update userPlRule %s (%w)", plRule.GetName(), err)
+		}
+
+		r.Log.Info("Updated user PlacementRule status", "Decisions", plRule.Status.Decisions)
+	}
+
+	return nil
+}
+
+func (r *DRPlacementControlReconciler) createOrUpdatePlacementDecision(ctx context.Context,
+	placement *clrapiv1beta1.Placement, newCD *clrapiv1beta1.ClusterDecision,
+) error {
+	plDecisionName := fmt.Sprintf(PlacementDecisionName, placement.GetName())
+	plDecision := &clrapiv1beta1.PlacementDecision{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      plDecisionName,
+			Namespace: placement.Namespace,
+		},
+	}
+
+	key := client.ObjectKeyFromObject(plDecision)
+	if err := r.Get(ctx, key, plDecision); err != nil {
+		if !errors.IsNotFound(err) {
+			return err
+		}
+
+		if err := ctrl.SetControllerReference(placement, plDecision, r.Client.Scheme()); err != nil {
+			return fmt.Errorf("failed to set controller reference %w", err)
+		}
+
+		if plDecision.Labels == nil {
+			plDecision.Labels = map[string]string{}
+		}
+
+		plDecision.Labels[PlacementLabelKey] = placement.GetName()
+
+		if err := r.Create(ctx, plDecision); err != nil {
+			return err
+		}
+	}
+
+	plDecision.Status = clrapiv1beta1.PlacementDecisionStatus{
+		Decisions: []clrapiv1beta1.ClusterDecision{
+			{
+				ClusterName: newCD.ClusterName,
+				Reason:      newCD.Reason,
+			},
+		},
+	}
+
+	if err := r.Status().Update(ctx, plDecision); err != nil {
+		return fmt.Errorf("failed to update placementDecision status (%w)", err)
+	}
+
+	r.Log.Info("Created/Updated PlacementDecision", "PlacementDecision", plDecision)
+
+	return nil
+}
+
+func (r *DRPlacementControlReconciler) getApplicationDestinationNamespace(placement client.Object) (string, error) {
+	appSetList := argov1alpha1.ApplicationSetList{}
+	if err := r.Client.List(context.TODO(), &appSetList); err != nil {
+		return "", fmt.Errorf("ApplicationSet list: %w", err)
+	}
+
+	r.Log.Info("Retrieved ApplicationSets", "count", len(appSetList.Items))
+	//
+	// TODO: change the following loop to use an index field on AppSet instead for faster lookup
+	//
+	for i := range appSetList.Items {
+		appSet := &appSetList.Items[i]
+		if len(appSet.Spec.Generators) > 0 &&
+			appSet.Spec.Generators[0].ClusterDecisionResource != nil {
+			pn := appSet.Spec.Generators[0].ClusterDecisionResource.LabelSelector.MatchLabels[PlacementLabelKey]
+			if pn == placement.GetName() {
+				r.Log.Info("Found ApplicationSet for Placement", "name", appSet.Name, "placement", placement.GetName())
+				// Retrieving the Destination.Namespace from Application.Spec requires iterating through all Applications
+				// and checking their ownerReferences, which can be time-consuming. Alternatively, we can get the same
+				// information from the ApplicationSet spec template section as it is done here.
+				return appSet.Spec.Template.Spec.Destination.Namespace, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("failed to find ApplicationSet/Application for Placement %s", placement.GetName())
 }
