@@ -157,17 +157,15 @@ func init() {
 // But for update of pvc, the reconcile request should be sent only for
 // specific changes. Do that comparison here.
 func pvcPredicateFunc() predicate.Funcs {
+	log := ctrl.Log.WithName("pvcmap").WithName("VolumeReplicationGroup")
 	pvcPredicate := predicate.Funcs{
 		// NOTE: Create predicate is retained, to help with logging the event
 		CreateFunc: func(e event.CreateEvent) bool {
-			log := ctrl.Log.WithName("pvcmap").WithName("VolumeReplicationGroup")
-
 			log.Info("Create event for PersistentVolumeClaim")
 
 			return true
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			log := ctrl.Log.WithName("pvcmap").WithName("VolumeReplicationGroup")
 			oldPVC, ok := e.ObjectOld.DeepCopyObject().(*corev1.PersistentVolumeClaim)
 			if !ok {
 				log.Info("Failed to deep copy older PersistentVolumeClaim")
@@ -186,13 +184,10 @@ func pvcPredicateFunc() predicate.Funcs {
 			return updateEventDecision(oldPVC, newPVC, log)
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			// PVC deletion is held back till VRG deletion. This is to
-			// avoid races between subscription deletion and updating
-			// VRG state. If VRG state is not updated prior to subscription
-			// cleanup, then PVC deletion (triggered by subscription
-			// cleanup) would leaving behind VolRep resource with stale
-			// state (as per the current VRG state).
-			return false
+			o := e.Object
+			log.Info("PVC Delete", "namespace", o.GetNamespace(), "name", o.GetName())
+
+			return true
 		},
 	}
 
