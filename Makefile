@@ -41,14 +41,15 @@ IMAGE_TAG_BASE = $(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY)/$(IMAGE_NAME)
 RBAC_PROXY_IMG ?= "gcr.io/kubebuilder/kube-rbac-proxy:v0.8.0"
 OPERATOR_SUGGESTED_NAMESPACE ?= ramen-system
 AUTO_CONFIGURE_DR_CLUSTER ?= true
+KUBE_OBJECT_PROTECTION_DISABLED ?= false
 
 HUB_NAME ?= $(IMAGE_NAME)-hub-operator
 ifeq (dr,$(findstring dr,$(IMAGE_NAME)))
-	DRCLUSTER_NAME = $(IMAGE_NAME)-cluster-operator
+	DRCLUSTER_NAME ?= $(IMAGE_NAME)-cluster-operator
 	BUNDLE_IMG_DRCLUSTER ?= $(IMAGE_TAG_BASE)-cluster-operator-bundle:$(IMAGE_TAG)
 	BUNDLE_PLATFORM = ocp
 else
-	DRCLUSTER_NAME = $(IMAGE_NAME)-dr-cluster-operator
+	DRCLUSTER_NAME ?= $(IMAGE_NAME)-dr-cluster-operator
 	BUNDLE_IMG_DRCLUSTER ?= $(IMAGE_TAG_BASE)-dr-cluster-operator-bundle:$(IMAGE_TAG)
 	BUNDLE_PLATFORM = k8s
 endif
@@ -214,8 +215,7 @@ uninstall-dr-cluster: manifests kustomize ## Uninstall dr-cluster CRDs from the 
 dr-cluster-config: kustomize
 	cd config/dr-cluster/default && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
 	cd config/dr-cluster/manager && $(KUSTOMIZE) edit set image controller=${IMG};\
-	sed -n '/^kubeObjectProtection:/{:1;n;/^ /b1};p' ramen_manager_config.yaml>a;mv a ramen_manager_config.yaml;\
-	if (: $${KUBE_OBJECT_PROTECTION_DISABLED?})2>/dev/null;then printf 'kubeObjectProtection:\n  disabled: true\n'>>ramen_manager_config.yaml;fi
+	if (${KUBE_OBJECT_PROTECTION_DISABLED});then printf 'kubeObjectProtection:\n  disabled: true\n'>>ramen_manager_config.yaml;fi
 
 deploy-dr-cluster: manifests kustomize dr-cluster-config ## Deploy dr-cluster controller to the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/default | kubectl apply -f -
@@ -292,6 +292,8 @@ bundle-hub: manifests kustomize operator-sdk ## Generate hub bundle manifests an
 	$(SED_CMD) -e "s,clusterServiceVersionName: ramen-dr-cluster-operator.v0.0.1,clusterServiceVersionName: $(DRCLUSTER_NAME).v$(VERSION)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
 	$(SED_CMD) -e "s,deploymentAutomationEnabled: true,deploymentAutomationEnabled: $(AUTO_CONFIGURE_DR_CLUSTER)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
 	$(SED_CMD) -e "s,s3SecretDistributionEnabled: true,s3SecretDistributionEnabled: $(AUTO_CONFIGURE_DR_CLUSTER)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
+	cd config/hub/manifests/$(IMAGE_NAME);\
+	if (${KUBE_OBJECT_PROTECTION_DISABLED});then printf 'kubeObjectProtection:\n  disabled: true\n'>>ramen_manager_config_append.yaml;fi
 	cat config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml >> config/hub/manager/ramen_manager_config.yaml
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/manifests/$(IMAGE_NAME) | $(OSDK) generate bundle -q --package=$(HUB_NAME) --overwrite --output-dir=config/hub/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(OSDK) bundle validate config/hub/bundle
