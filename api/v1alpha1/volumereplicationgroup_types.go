@@ -6,7 +6,6 @@ package v1alpha1
 import (
 	"time"
 
-	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -106,6 +105,39 @@ const (
 	VRGActionRelocate = VRGAction("Relocate")
 )
 
+const ReservedBackupName = "use-backup-not-restore"
+
+type RecipeSpec struct {
+	// Name of the Recipe to reference for Capture and Restore Workflows.
+	// Must exist in the same namespace as VRG.
+	//+optional
+	Name *string `json:"name,omitempty"`
+
+	// Name of the Recipe Workflow to run as Capture sequence
+	//+optional
+	CaptureWorkflowName *string `json:"captureWorkflowName,omitempty"`
+
+	// Name of the Recipe Workflow to run as Recover sequence
+	//+optional
+	RecoverWorkflowName *string `json:"recoverWorkflowName,omitempty"`
+
+	// Name of Recipe Volume Group that specifies which PVCs to protect
+	//+optional
+	VolumeGroupName *string `json:"volumeGroupName,omitempty"`
+}
+
+type KubeObjectProtectionSpec struct {
+	// Preferred time between captures
+	//+optional
+	//+kubebuilder:validation:Format=duration
+	CaptureInterval *metav1.Duration `json:"captureInterval,omitempty"`
+
+	//+optional
+	RecipeRef *RecipeSpec `json:"recipeRef,omitempty"`
+}
+
+const KubeObjectProtectionCaptureIntervalDefault = 5 * time.Minute
+
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // VolumeReplicationGroup (VRG) spec declares the desired schedule for data
@@ -157,95 +189,6 @@ type VolumeReplicationGroupSpec struct {
 	Action VRGAction `json:"action,omitempty"`
 	//+optional
 	KubeObjectProtection *KubeObjectProtectionSpec `json:"kubeObjectProtection,omitempty"`
-}
-
-const ReservedBackupName = "use-backup-not-restore"
-
-type RecipeSpec struct {
-	//+optional
-	Name *string `json:"name,omitempty"`
-
-	//+optional
-	Workflow *WorkflowSpec `json:"workflow,omitempty"`
-}
-
-type WorkflowSpec struct {
-	//+optional
-	CaptureName *string `json:"captureName,omitempty"`
-
-	//+optional
-	RecoverName *string `json:"recoverName,omitempty"`
-
-	//+optional
-	VolumeGroupName *string `json:"volumeGroupName,omitempty"`
-}
-
-type KubeObjectProtectionSpec struct {
-	// Preferred time between captures
-	//+optional
-	//+kubebuilder:validation:Format=duration
-	CaptureInterval *metav1.Duration `json:"captureInterval,omitempty"`
-
-	//+optional
-	Recipe *RecipeSpec `json:"recipe,omitempty"`
-}
-
-const KubeObjectProtectionCaptureIntervalDefault = 5 * time.Minute
-
-type KubeObjectsCaptureSpec struct {
-	//+optional
-	Name            string `json:"name,omitempty"`
-	KubeObjectsSpec `json:",inline"`
-}
-
-type KubeObjectsRecoverSpec struct {
-	//+optional
-	BackupName      string `json:"backupName,omitempty"`
-	KubeObjectsSpec `json:",inline"`
-	//+optional
-	RestoreStatus *velero.RestoreStatusSpec `json:"restoreStatus,omitempty"`
-	//+optional
-	ExistingResourcePolicy velero.PolicyType `json:"existingResourcePolicy,omitempty"`
-}
-
-type KubeObjectsSpec struct {
-	KubeResourcesSpec `json:",inline"`
-	//+optional
-	LabelSelector *metav1.LabelSelector `json:"labelSelector,omitempty"`
-
-	//+optional
-	OrLabelSelectors []*metav1.LabelSelector `json:"orLabelSelectors,omitempty"`
-
-	//+optional
-	IncludeClusterResources *bool `json:"includeClusterResources,omitempty"`
-}
-
-type KubeResourcesSpec struct {
-	//+optional
-	IncludedResources []string `json:"includedResources,omitempty"`
-
-	//+optional
-	ExcludedResources []string `json:"excludedResources,omitempty"`
-
-	//+optional
-	Hooks []HookSpec `json:"hooks,omitempty"`
-}
-
-type HookSpec struct {
-	Name string `json:"name,omitempty"`
-
-	Type string `json:"type,omitempty"`
-
-	Command []string `json:"command,omitempty"`
-
-	//+optional
-	Timeout metav1.Duration `json:"timeout,omitempty"`
-
-	//+optional
-	Container string `json:"container,omitempty"`
-
-	//+optional
-	LabelSelector metav1.LabelSelector `json:"labelSelector,omitempty"`
 }
 
 type ProtectedPVC struct {

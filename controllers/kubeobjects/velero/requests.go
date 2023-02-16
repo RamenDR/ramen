@@ -16,7 +16,6 @@ import (
 
 	"github.com/go-logr/logr"
 	pkgerrors "github.com/pkg/errors"
-	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/kubeobjects"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -148,7 +147,7 @@ func (RequestsManager) RecoverRequestCreate(
 	secretKeyRef *corev1.SecretKeySelector,
 	sourceNamespaceName string,
 	targetNamespaceName string,
-	recoverSpec ramendrv1alpha1.KubeObjectsRecoverSpec,
+	recoverSpec kubeobjects.RecoverSpec,
 	requestNamespaceName string,
 	captureName string,
 	recoverName string,
@@ -198,7 +197,7 @@ func backupDummyCreateAndRestore(
 	secretKeyRef *corev1.SecretKeySelector,
 	sourceNamespaceName string,
 	targetNamespaceName string,
-	recoverSpec ramendrv1alpha1.KubeObjectsRecoverSpec,
+	recoverSpec kubeobjects.RecoverSpec,
 	requestNamespaceName string,
 	backupName string,
 	restoreName string,
@@ -231,7 +230,7 @@ func backupDummyStatusProcessAndRestore(
 	reader client.Reader,
 	sourceNamespaceName string,
 	targetNamespaceName string,
-	recoverSpec ramendrv1alpha1.KubeObjectsRecoverSpec,
+	recoverSpec kubeobjects.RecoverSpec,
 	restoreName string,
 	labels map[string]string,
 ) (*velero.Restore, error) {
@@ -272,7 +271,7 @@ func backupRestore(
 	reader client.Reader,
 	sourceNamespaceName string,
 	targetNamespaceName string,
-	recoverSpec ramendrv1alpha1.KubeObjectsRecoverSpec,
+	recoverSpec kubeobjects.RecoverSpec,
 	restoreName string,
 	labels map[string]string,
 ) (*velero.Restore, error) {
@@ -335,7 +334,7 @@ func (RequestsManager) ProtectRequestCreate(
 	s3KeyPrefix string,
 	secretKeyRef *corev1.SecretKeySelector,
 	sourceNamespaceName string,
-	objectsSpec ramendrv1alpha1.KubeObjectsSpec,
+	objectsSpec kubeobjects.Spec,
 	requestNamespaceName string,
 	captureName string,
 	labels map[string]string,
@@ -379,7 +378,7 @@ func backupRealCreate(
 	s3KeyPrefix string,
 	secretKeyRef *corev1.SecretKeySelector,
 	sourceNamespaceName string,
-	objectsSpec ramendrv1alpha1.KubeObjectsSpec,
+	objectsSpec kubeobjects.Spec,
 	requestNamespaceName string,
 	captureName string,
 	labels map[string]string,
@@ -398,7 +397,7 @@ func backupRealCreate(
 	return backupRealStatusProcess(backupLocation, backup, w)
 }
 
-func getBackupSpecFromObjectsSpec(objectsSpec ramendrv1alpha1.KubeObjectsSpec) velero.BackupSpec {
+func getBackupSpecFromObjectsSpec(objectsSpec kubeobjects.Spec) velero.BackupSpec {
 	return velero.BackupSpec{
 		IncludedResources:       objectsSpec.IncludedResources,
 		ExcludedResources:       objectsSpec.ExcludedResources,
@@ -413,11 +412,11 @@ func getBackupSpecFromObjectsSpec(objectsSpec ramendrv1alpha1.KubeObjectsSpec) v
 	}
 }
 
-func getBackupHooks(hooks []ramendrv1alpha1.HookSpec) velero.BackupHooks {
+func getBackupHooks(hooks []kubeobjects.HookSpec) velero.BackupHooks {
 	hookSpec := velero.BackupHooks{}
 
-	for _, hook := range hooks {
-		hook := hook // exportloopref: fix variable into local variable
+	for i := range hooks {
+		hook := &hooks[i] // exportloopref: fix variable into local variable
 
 		hookSpec.Resources = append(hookSpec.Resources, velero.BackupResourceHookSpec{
 			Name:          hook.Name,
@@ -663,7 +662,7 @@ func backupSpecDummy() velero.BackupSpec {
 func restore(
 	requestNamespaceName string,
 	restoreName string,
-	recoverSpec ramendrv1alpha1.KubeObjectsRecoverSpec,
+	recoverSpec kubeobjects.RecoverSpec,
 	backupName string,
 	sourceNamespaceName, targetNamespaceName string,
 	labels map[string]string,

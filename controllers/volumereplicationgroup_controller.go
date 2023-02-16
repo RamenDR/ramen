@@ -268,17 +268,17 @@ func GetPVCLabelSelector(
 	ctx context.Context, client client.Client, vrg ramendrv1alpha1.VolumeReplicationGroup, log logr.Logger,
 ) (metav1.LabelSelector, error) {
 	if RecipeInfoExistsOnVRG(vrg) && VolumeGroupNameExistsInWorkflow(vrg) {
-		recipe, err := GetRecipeWithName(ctx, client, *vrg.Spec.KubeObjectProtection.Recipe.Name, vrg.GetNamespace())
+		recipe, err := GetRecipeWithName(ctx, client, *vrg.Spec.KubeObjectProtection.RecipeRef.Name, vrg.GetNamespace())
 		if err != nil {
-			log.Error(err, "GetRecipeWithName error")
+			log.Error(err, "GetRecipeWithName error: %s-%s", vrg.Name, vrg.Namespace)
 
 			return metav1.LabelSelector{}, err
 		}
 
 		labelSelector, err := GetLabelSelectorFromRecipeVolumeGroupWithName(
-			*vrg.Spec.KubeObjectProtection.Recipe.Workflow.VolumeGroupName, &recipe)
+			*vrg.Spec.KubeObjectProtection.RecipeRef.VolumeGroupName, &recipe)
 		if err != nil {
-			log.Error(err, "GetPVCLabelSelector error")
+			log.Error(err, "GetPVCLabelSelector error: %s-%s", vrg.Name, vrg.Namespace)
 
 			return metav1.LabelSelector{}, err
 		}
@@ -307,6 +307,7 @@ func GetPVCLabelSelector(
 // +kubebuilder:rbac:groups=multicluster.x-k8s.io,resources=serviceexports,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=get;create;patch;update
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=recipes,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.

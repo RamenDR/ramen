@@ -36,6 +36,7 @@ import (
 	"github.com/ramendr/ramen/controllers"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
+	// +kubebuilder:scaffold:imports
 )
 
 var (

@@ -194,11 +194,9 @@ func getVRGDefinitionWithKubeObjectProtection(hasPVCSelectorLabels bool, namespa
 	}
 
 	vrg.Spec.KubeObjectProtection = &ramen.KubeObjectProtectionSpec{
-		Recipe: &ramen.RecipeSpec{
-			Name: newStringPointerText("test-recipe"),
-			Workflow: &ramen.WorkflowSpec{
-				VolumeGroupName: newStringPointerText(volumeGroupName),
-			},
+		RecipeRef: &ramen.RecipeSpec{
+			Name:            newStringPointerText("test-recipe"),
+			VolumeGroupName: newStringPointerText(volumeGroupName),
 		},
 	}
 
