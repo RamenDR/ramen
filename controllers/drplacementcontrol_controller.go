@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	errorswrapper "github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -332,7 +333,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	usrPlRule, err := r.getUserPlacementRule(ctx, drpc, logger)
 	if err != nil {
-		r.recordFailure(drpc, usrPlRule, "Error", err.Error(), logger)
+		r.recordFailure(drpc, usrPlRule, "Error", err.Error(), nil, logger)
 
 		return ctrl.Result{}, err
 	}
@@ -346,7 +347,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	d, err := r.createDRPCInstance(ctx, drpc, usrPlRule, logger)
 	if err != nil && !errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
-		r.recordFailure(drpc, usrPlRule, "Error", err.Error(), logger)
+		r.recordFailure(drpc, usrPlRule, "Error", err.Error(), nil, logger)
 
 		return ctrl.Result{}, err
 	}
@@ -355,7 +356,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		const initialWaitTime = 5
 
 		r.recordFailure(drpc, usrPlRule, "Waiting",
-			fmt.Sprintf("%v - wait time: %v", InitialWaitTimeForDRPCPlacementRule, initialWaitTime), logger)
+			fmt.Sprintf("%v - wait time: %v", InitialWaitTimeForDRPCPlacementRule, initialWaitTime), nil, logger)
 
 		return ctrl.Result{RequeueAfter: time.Second * initialWaitTime}, nil
 	}
@@ -364,15 +365,29 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 }
 
 func (r *DRPlacementControlReconciler) recordFailure(drpc *rmn.DRPlacementControl,
-	usrPlRule *plrv1.PlacementRule, reason, msg string, log logr.Logger,
+	usrPlRule *plrv1.PlacementRule, reason, msg string, syncMetrics *SyncMetrics, log logr.Logger,
 ) {
 	needsUpdate := SetDRPCStatusCondition(&drpc.Status.Conditions, rmn.ConditionAvailable,
 		drpc.Generation, metav1.ConditionFalse, reason, msg)
 	if needsUpdate {
-		err := r.updateDRPCStatus(drpc, usrPlRule, log)
+		err := r.updateDRPCStatus(drpc, usrPlRule, syncMetrics, log)
 		if err != nil {
 			log.Info(fmt.Sprintf("Failed to update DRPC status (%v)", err))
 		}
+	}
+}
+
+func (r *DRPlacementControlReconciler) setLastSyncTimeMetric(syncMetrics *SyncMetrics,
+	t *metav1.Time, log logr.Logger,
+) {
+	if syncMetrics != nil {
+		log.Info(fmt.Sprintf("Setting metric: (%s)", LastSyncTimestampSeconds))
+
+		if t == nil {
+			syncMetrics.LastSyncTime.Set(0)
+		}
+
+		syncMetrics.LastSyncTime.Set(float64(t.ProtoTime().Seconds))
 	}
 }
 
@@ -428,6 +443,14 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 		return nil, fmt.Errorf("configmap get: %w", err)
 	}
 
+	metrics := NewSyncMetrics(prometheus.Labels{
+		"resource_type":       "DRPlacementControl",
+		"name":                drpc.Name,
+		"namespace":           drpc.Namespace,
+		"policyname":          drPolicy.Name,
+		"scheduling_interval": drPolicy.Spec.SchedulingInterval,
+	})
+
 	d := &DRPCInstance{
 		reconciler:        r,
 		ctx:               ctx,
@@ -439,6 +462,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 		drClusters:        drClusters,
 		vrgs:              vrgs,
 		volSyncDisabled:   ramenConfig.VolSync.Disabled,
+		metrics:           &metrics,
 		mwu: rmnutil.MWUtil{
 			Client:        r.Client,
 			Ctx:           ctx,
@@ -980,7 +1004,7 @@ func (r *DRPlacementControlReconciler) updateUserPlacementRuleStatus(
 }
 
 func (r *DRPlacementControlReconciler) updateDRPCStatus(
-	drpc *rmn.DRPlacementControl, usrPlRule *plrv1.PlacementRule, log logr.Logger,
+	drpc *rmn.DRPlacementControl, usrPlRule *plrv1.PlacementRule, syncmetric *SyncMetrics, log logr.Logger,
 ) error {
 	log.Info("Updating DRPC status")
 
@@ -999,6 +1023,8 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 
 			drpc.Status.ResourceConditions = rmn.VRGConditions{}
 			drpc.Status.LastGroupSyncTime = nil
+
+			r.setLastSyncTimeMetric(syncmetric, nil, log)
 		} else {
 			drpc.Status.ResourceConditions.ResourceMeta.Kind = vrg.Kind
 			drpc.Status.ResourceConditions.ResourceMeta.Name = vrg.Name
@@ -1013,6 +1039,8 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 
 			drpc.Status.ResourceConditions.ResourceMeta.ProtectedPVCs = protectedPVCs
 			drpc.Status.LastGroupSyncTime = vrg.Status.LastGroupSyncTime
+
+			r.setLastSyncTimeMetric(syncmetric, vrg.Status.LastGroupSyncTime, log)
 		}
 	}
 
