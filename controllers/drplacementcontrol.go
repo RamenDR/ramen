@@ -51,6 +51,7 @@ type DRPCInstance struct {
 	drpcPlacementRule    *plrv1.PlacementRule
 	vrgs                 map[string]*rmn.VolumeReplicationGroup
 	mwu                  rmnutil.MWUtil
+	metrics              *SyncMetrics
 }
 
 func (d *DRPCInstance) startProcessing() bool {
@@ -60,7 +61,7 @@ func (d *DRPCInstance) startProcessing() bool {
 	done, processingErr := d.processPlacement()
 
 	if d.shouldUpdateStatus() || d.statusUpdateTimeElapsed() {
-		if err := d.reconciler.updateDRPCStatus(d.instance, d.userPlacementRule, d.log); err != nil {
+		if err := d.reconciler.updateDRPCStatus(d.instance, d.userPlacementRule, d.metrics, d.log); err != nil {
 			d.log.Error(err, "failed to update status")
 
 			return requeue
