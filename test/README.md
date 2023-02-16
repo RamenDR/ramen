@@ -488,6 +488,12 @@ based on the hook file name.
 | stop         | stop          | before cluster is stopped           |
 | delete       | -             |                                     |
 
+The `start` and `test` scripts are not allowed to fail. If a script
+fail, execution stops and the entire command will fail.
+
+The `stop` script is allowed to fail. The failure is logged but the
+`stop` command will not fail.
+
 #### Script arguments
 
 When specifying script `args`, you can use the special variable `$name`.
