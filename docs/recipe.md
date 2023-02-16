@@ -113,12 +113,11 @@ metadata:
   namespace: my-app-ns  # same Namespace as Recipe
 spec:
   kubeObjectProtection:
-    recipe:
+    recipeRef:
       name: recipe-sample
-      workflow:
-        captureName: capture
-        recoverName: recover
-        volumeGroupName: volumes
+      captureWorkflowName: capture
+      recoverWorkflowName: recover
+      volumeGroupName: volumes
 ```
 
 ### Additional information about sample Recipe and VRG

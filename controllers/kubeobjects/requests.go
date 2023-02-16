@@ -7,7 +7,7 @@ import (
 	"context"
 
 	"github.com/go-logr/logr"
-	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -32,6 +32,62 @@ type Requests interface {
 
 type RequestProcessingError struct{ string }
 
+type CaptureSpec struct {
+	//+optional
+	Name string `json:"name,omitempty"`
+	Spec `json:",inline"`
+}
+
+type RecoverSpec struct {
+	//+optional
+	BackupName string `json:"backupName,omitempty"`
+	Spec       `json:",inline"`
+	//+optional
+	RestoreStatus *velero.RestoreStatusSpec `json:"restoreStatus,omitempty"`
+	//+optional
+	ExistingResourcePolicy velero.PolicyType `json:"existingResourcePolicy,omitempty"`
+}
+
+type Spec struct {
+	KubeResourcesSpec `json:",inline"`
+	//+optional
+	LabelSelector *metav1.LabelSelector `json:"labelSelector,omitempty"`
+
+	//+optional
+	OrLabelSelectors []*metav1.LabelSelector `json:"orLabelSelectors,omitempty"`
+
+	//+optional
+	IncludeClusterResources *bool `json:"includeClusterResources,omitempty"`
+}
+
+type KubeResourcesSpec struct {
+	//+optional
+	IncludedResources []string `json:"includedResources,omitempty"`
+
+	//+optional
+	ExcludedResources []string `json:"excludedResources,omitempty"`
+
+	//+optional
+	Hooks []HookSpec `json:"hooks,omitempty"`
+}
+
+type HookSpec struct {
+	Name string `json:"name,omitempty"`
+
+	Type string `json:"type,omitempty"`
+
+	Command []string `json:"command,omitempty"`
+
+	//+optional
+	Timeout metav1.Duration `json:"timeout,omitempty"`
+
+	//+optional
+	Container string `json:"container,omitempty"`
+
+	//+optional
+	LabelSelector metav1.LabelSelector `json:"labelSelector,omitempty"`
+}
+
 func RequestProcessingErrorCreate(s string) RequestProcessingError { return RequestProcessingError{s} }
 func (e RequestProcessingError) Error() string                     { return e.string }
 func (RequestProcessingError) Is(err error) bool                   { return true }
@@ -49,7 +105,7 @@ type RequestsManager interface {
 		s3KeyPrefix string,
 		secretKeyRef *corev1.SecretKeySelector,
 		sourceNamespaceName string,
-		objectsSpec ramen.KubeObjectsSpec,
+		objectsSpec Spec,
 		requestNamespaceName string,
 		protectRequestName string,
 		labels map[string]string,
@@ -63,7 +119,7 @@ type RequestsManager interface {
 		secretKeyRef *corev1.SecretKeySelector,
 		sourceNamespaceName string,
 		targetNamespaceName string,
-		recoverSpec ramen.KubeObjectsRecoverSpec,
+		recoverSpec RecoverSpec,
 		requestNamespaceName string,
 		protectRequestName string,
 		recoverRequestName string,

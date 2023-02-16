@@ -1,0 +1,59 @@
+---
+apiVersion: ramendr.openshift.io/v1alpha1
+kind: Recipe
+metadata:
+  name: recipe-busybox
+  namespace: recipe-test
+spec:
+  appType: busybox
+  hooks:
+  - name: service-hooks
+    namespace: recipe-test
+    labelSelector: appname=busybox
+    type: exec
+    ops:
+    - name: pre-backup
+      container: busybox
+      timeout: 600
+      # Command note: "/bin/sh -c" required when using non-executable files
+      command:
+      - "/bin/sh"
+      - "-c"
+      - "date"
+    - name: pre-restore
+      container: busybox
+      timeout: 400
+      command:
+      - "/bin/sh"
+      - "-c"
+      - "date"
+  groups:
+  - name: volumes
+    type: volume
+    labelSelector: appname=busybox
+  - name: instance-resources
+    backupRef: instance-resources
+    type: resource
+    includedResourceTypes:
+    - deployment
+    - pvc
+  - name: deployments
+    backupRef: instance-resources
+    type: resource
+    includedResourceTypes:
+    - deployment
+  - name: pvcs
+    backupRef: instance-resources
+    type: resource
+    includedResourceTypes:
+    - pvc
+  workflows:
+  - name: capture
+    sequence:
+    - hook: service-hooks/pre-backup
+    - group: instance-resources
+  - name: recover
+    sequence:
+    - hook: service-hooks/pre-restore
+    - group: pvcs
+    - group: deployments

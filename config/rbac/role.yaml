@@ -283,6 +283,14 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
+  - recipes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
   - volumereplicationgroups
   verbs:
   - create

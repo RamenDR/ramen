@@ -9,6 +9,9 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+
+	"github.com/ramendr/ramen/controllers/kubeobjects"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
@@ -53,13 +56,13 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 			labelSelector, err := metav1.ParseToLabelSelector(hook.LabelSelector)
 			Expect(err).To(BeNil())
 
-			targetCaptureSpec := &ramen.KubeObjectsCaptureSpec{
+			targetCaptureSpec := &kubeobjects.CaptureSpec{
 				Name: hook.Name + "-" + hook.Ops[0].Name,
-				KubeObjectsSpec: ramen.KubeObjectsSpec{
-					KubeResourcesSpec: ramen.KubeResourcesSpec{
+				Spec: kubeobjects.Spec{
+					KubeResourcesSpec: kubeobjects.KubeResourcesSpec{
 						IncludedResources: []string{"pod"},
 						ExcludedResources: []string{},
-						Hooks: []ramen.HookSpec{
+						Hooks: []kubeobjects.HookSpec{
 							{
 								Name:          hook.Ops[0].Name,
 								Type:          hook.Type,
@@ -84,13 +87,13 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 			labelSelector, err := metav1.ParseToLabelSelector(hook.LabelSelector)
 			Expect(err).To(BeNil())
 
-			targetRecoverSpec := &ramen.KubeObjectsRecoverSpec{
+			targetRecoverSpec := &kubeobjects.RecoverSpec{
 				BackupName: ramen.ReservedBackupName,
-				KubeObjectsSpec: ramen.KubeObjectsSpec{
-					KubeResourcesSpec: ramen.KubeResourcesSpec{
+				Spec: kubeobjects.Spec{
+					KubeResourcesSpec: kubeobjects.KubeResourcesSpec{
 						IncludedResources: []string{"pod"},
 						ExcludedResources: []string{},
-						Hooks: []ramen.HookSpec{
+						Hooks: []kubeobjects.HookSpec{
 							{
 								Name:          hook.Ops[0].Name,
 								Type:          hook.Type,
@@ -115,10 +118,10 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 			labelSelector, err := metav1.ParseToLabelSelector(group.LabelSelector)
 			Expect(err).To(BeNil())
 
-			targetCaptureSpec := &ramen.KubeObjectsCaptureSpec{
+			targetCaptureSpec := &kubeobjects.CaptureSpec{
 				Name: group.Name,
-				KubeObjectsSpec: ramen.KubeObjectsSpec{
-					KubeResourcesSpec: ramen.KubeResourcesSpec{
+				Spec: kubeobjects.Spec{
+					KubeResourcesSpec: kubeobjects.KubeResourcesSpec{
 						IncludedResources: group.IncludedResourceTypes,
 						ExcludedResources: group.ExcludedResourceTypes,
 					},
@@ -137,10 +140,10 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 			labelSelector, err := metav1.ParseToLabelSelector(group.LabelSelector)
 			Expect(err).To(BeNil())
 
-			targetRecoverSpec := &ramen.KubeObjectsRecoverSpec{
+			targetRecoverSpec := &kubeobjects.RecoverSpec{
 				BackupName: group.BackupRef,
-				KubeObjectsSpec: ramen.KubeObjectsSpec{
-					KubeResourcesSpec: ramen.KubeResourcesSpec{
+				Spec: kubeobjects.Spec{
+					KubeResourcesSpec: kubeobjects.KubeResourcesSpec{
 						IncludedResources: group.IncludedResourceTypes,
 						ExcludedResources: group.ExcludedResourceTypes,
 					},
