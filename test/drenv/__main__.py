@@ -155,7 +155,13 @@ def stop_cluster(profile, **options):
     cluster_status = drenv.cluster_status(profile["name"])
 
     if cluster_status.get("APIServer") == "Running":
-        execute(run_worker, profile["workers"], hooks=["stop"], reverse=True)
+        execute(
+            run_worker,
+            profile["workers"],
+            hooks=["stop"],
+            reverse=True,
+            allow_failure=True,
+        )
 
     if cluster_status.get("Host") == "Running":
         start = time.monotonic()
@@ -230,26 +236,35 @@ def minikube(cmd, *args, profile=None):
     run("minikube", cmd, "--profile", profile, *args, name=profile)
 
 
-def run_worker(worker, hooks=(), reverse=False):
+def run_worker(worker, hooks=(), reverse=False, allow_failure=False):
     scripts = reversed(worker["scripts"]) if reverse else worker["scripts"]
     for script in scripts:
-        run_script(script, worker["name"], hooks=hooks)
+        run_script(script, worker["name"], hooks=hooks, allow_failure=allow_failure)
 
 
-def run_script(script, name, hooks=()):
+def run_script(script, name, hooks=(), allow_failure=False):
     for filename in hooks:
         hook = os.path.join(script["name"], filename)
         if os.path.isfile(hook):
-            run_hook(hook, script["args"], name)
+            run_hook(hook, script["args"], name, allow_failure=allow_failure)
 
 
-def run_hook(hook, args, name):
+def run_hook(hook, args, name, allow_failure=False):
     start = time.monotonic()
     logging.info("[%s] Running %s", name, hook)
-    run(hook, *args, name=name)
-    logging.info(
-        "[%s] %s completed in %.2f seconds", name, hook, time.monotonic() - start
-    )
+    try:
+        run(hook, *args, name=name)
+    except Exception as e:
+        if not allow_failure:
+            raise
+        logging.warning("[%s] %s failed: %s", name, hook, e)
+    else:
+        logging.info(
+            "[%s] %s completed in %.2f seconds",
+            name,
+            hook,
+            time.monotonic() - start,
+        )
 
 
 def run(*cmd, name=None):
