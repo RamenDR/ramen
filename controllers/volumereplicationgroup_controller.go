@@ -413,23 +413,22 @@ type cachedObjectStorer struct {
 }
 
 type VRGInstance struct {
-	reconciler                   *VolumeReplicationGroupReconciler
-	ctx                          context.Context
-	log                          logr.Logger
-	instance                     *ramendrv1alpha1.VolumeReplicationGroup
-	savedInstanceStatus          ramendrv1alpha1.VolumeReplicationGroupStatus
-	ramenConfig                  *ramendrv1alpha1.RamenConfig
-	volRepPVCs                   []corev1.PersistentVolumeClaim
-	volSyncPVCs                  []corev1.PersistentVolumeClaim
-	replClassList                *volrep.VolumeReplicationClassList
-	storageClassCache            map[string]*storagev1.StorageClass
-	vrgObjectProtected           *metav1.Condition
-	kubeObjectsProtected         *metav1.Condition
-	kubeObjectsFinalSyncComplete bool
-	vrcUpdated                   bool
-	namespacedName               string
-	volSyncHandler               *volsync.VSHandler
-	objectStorers                map[string]cachedObjectStorer
+	reconciler           *VolumeReplicationGroupReconciler
+	ctx                  context.Context
+	log                  logr.Logger
+	instance             *ramendrv1alpha1.VolumeReplicationGroup
+	savedInstanceStatus  ramendrv1alpha1.VolumeReplicationGroupStatus
+	ramenConfig          *ramendrv1alpha1.RamenConfig
+	volRepPVCs           []corev1.PersistentVolumeClaim
+	volSyncPVCs          []corev1.PersistentVolumeClaim
+	replClassList        *volrep.VolumeReplicationClassList
+	storageClassCache    map[string]*storagev1.StorageClass
+	vrgObjectProtected   *metav1.Condition
+	kubeObjectsProtected *metav1.Condition
+	vrcUpdated           bool
+	namespacedName       string
+	volSyncHandler       *volsync.VSHandler
+	objectStorers        map[string]cachedObjectStorer
 }
 
 const (
