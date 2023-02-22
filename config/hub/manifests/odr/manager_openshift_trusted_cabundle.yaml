@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: operator
+  namespace: system
+spec:
+  template:
+    spec:
+      containers:
+      - name: manager
+        volumeMounts:
+        - name: ramen-manager-trustedca-vol
+          mountPath: /etc/pki/ca-trust/extracted/pem
+          readOnly: true
+      volumes:
+      - name: ramen-manager-trustedca-vol
+        configMap:
+          name: openshift-trusted-cabundle
+          items:
+            - key: ca-bundle.crt
+              path: tls-ca-bundle.pem

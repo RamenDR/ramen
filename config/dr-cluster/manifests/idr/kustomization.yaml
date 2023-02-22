@@ -1,0 +1,55 @@
+resources:
+- ../bases/ramen_dr_cluster.clusterserviceversion.yaml
+- ../../default
+- ../../samples
+- ../../../scorecard
+
+configMapGenerator:
+- name: openshift-trusted-cabundle
+  options:
+    disableNameSuffixHash: true
+    labels:
+      config.openshift.io/inject-trusted-cabundle: "true"
+
+patchesStrategicMerge:
+- manager_openshift_trusted_cabundle.yaml
+
+patches:
+- patch: |-
+    - op: add
+      path: /metadata/annotations/operatorframework.io~1suggested-namespace
+      value: openshift-dr-system
+    - op: replace
+      path: /spec/icon
+      value:
+      - base64data: >-
+          PHN2ZyBpZD0iU3BlY3RydW1GdXNpb24iIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIHZpZXdCb3g9IjAgMCAzMiAzMiI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSI5ZjVmbzEweDdiIiB4MT0iNS45MjUiIHkxPSIxNi41NDkiIHgyPSIyNC4xNjUiIHkyPSI2LjAxOCIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPjxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iI2ZmZiIgc3RvcC1vcGFjaXR5PSIwIi8+PHN0b3Agb2Zmc2V0PSIuNDUiIHN0b3AtY29sb3I9IiNmZmYiLz48L2xpbmVhckdyYWRpZW50PjxsaW5lYXJHcmFkaWVudCBpZD0ic2F1bmxlajA2YSIgeDE9IjIwLjQ5MyIgeTE9IjI4IiB4Mj0iMjAuNDkzIiB5Mj0iNyIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPjxzdG9wIG9mZnNldD0iLjU1IiBzdG9wLWNvbG9yPSIjZmZmIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjZmZmIiBzdG9wLW9wYWNpdHk9IjAiLz48L2xpbmVhckdyYWRpZW50PjxsaW5lYXJHcmFkaWVudCBpZD0iZ284Mms5Mm4zYyIgeDE9IjMuNDE5IiB5MT0iMTQuMDA3IiB4Mj0iMjEuNjA1IiB5Mj0iMjQuNTA3IiB4bGluazpocmVmPSIjc2F1bmxlajA2YSIvPjxsaW5lYXJHcmFkaWVudCBpZD0iam01MDRta2c0ZSIgeDE9Ii0yOTQ2IiB5MT0iLTQ5ODYiIHgyPSItMjkxNCIgeTI9Ii01MDE4IiBncmFkaWVudFRyYW5zZm9ybT0ibWF0cml4KDEgMCAwIC0xIDI5NDYgLTQ5ODYpIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHN0b3Agb2Zmc2V0PSIuMSIgc3RvcC1jb2xvcj0iIzhhM2ZmYyIvPjxzdG9wIG9mZnNldD0iLjkiIHN0b3AtY29sb3I9IiNlZTUzOTYiLz48L2xpbmVhckdyYWRpZW50PjxtYXNrIGlkPSI5bHhiamJ0dTZkIiB4PSIwIiB5PSIwIiB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIG1hc2tVbml0cz0idXNlclNwYWNlT25Vc2UiPjxwYXRoIGQ9Ik0yNCAxNmgtMlY2LjU4bC02LTMuNDI3LTEzLjM1NiA3LjcxMy0xLTEuNzMyIDEzLjg1Ni04YTEgMSAwIDAgMSAxIDBsNyA0QTEgMSAwIDAgMSAyNCA2eiIgc3R5bGU9ImZpbGw6dXJsKCM5ZjVmbzEweDdiKSIvPjxwYXRoIGQ9Ik0yMSAyOGEuOTkyLjk5MiAwIDAgMS0uNS0uMTM0bC04LjUxMy00LjkxNSAxLTEuNzMyTDIxIDI1Ljg0N2w2LTMuNDI3VjdoMnYxNmExIDEgMCAwIDEtLjUuODY4bC03IDRBMSAxIDAgMCAxIDIxIDI4eiIgc3R5bGU9ImZpbGw6dXJsKCNzYXVubGVqMDZhKSIvPjxwYXRoIGQ9Im0xNy4zNTYgMzEuODY2LTEzLjg1Ni04QTEgMSAwIDAgMSAzIDIzdi04YTEgMSAwIDAgMSAuNS0uODY2bDguNTY3LTQuOTQ2IDEgMS43MzJMNSAxNS41Nzd2Ni44NDZsMTMuMzU2IDcuNzExeiIgc3R5bGU9ImZpbGw6dXJsKCNnbzgyazkybjNjKSIvPjwvbWFzaz48L2RlZnM+PGcgc3R5bGU9Im1hc2s6dXJsKCM5bHhiamJ0dTZkKSI+PHBhdGggdHJhbnNmb3JtPSJyb3RhdGUoLTkwIDE2IDE2KSIgc3R5bGU9ImZpbGw6dXJsKCNqbTUwNG1rZzRlKSIgZD0iTTAgMGgzMnYzMkgweiIvPjwvZz48cGF0aCBkPSJNMTYgMjAuNDY0YTEgMSAwIDAgMS0uNS0uMTM0bC0zLTEuNzMyYTEgMSAwIDAgMS0uNS0uODY2di0zLjQ2NGExIDEgMCAwIDEgLjUtLjg2NmwzLTEuNzMyYTEgMSAwIDAgMSAxIDBsMyAxLjczMmExIDEgMCAwIDEgLjUuODY2djMuNDY0YTEgMSAwIDAgMS0uNS44NjZsLTMgMS43MzJhMSAxIDAgMCAxLS41LjEzNHptLTItMy4zMDkgMiAxLjE1NCAyLTEuMTU0di0yLjMxbC0yLTEuMTU0LTIgMS4xNTR6IiBzdHlsZT0iZmlsbDojMDAxZDZjIi8+PC9zdmc+
+        mediatype: image/svg+xml
+    - op: replace
+      path: /spec/maintainers
+      value:
+      - email: mysphelp@us.ibm.com
+        name: IBM Support
+    - op: replace
+      path: /spec/provider/name
+      value: IBM
+    - op: replace
+      path: /spec/links
+      value:
+      - name: Source Code
+        url: https://github.com/red-hat-storage/ramen
+    - op: replace
+      path: /metadata/name
+      value: odr-cluster-operator.v0.0.0
+    - op: replace
+      path: /spec/displayName
+      value: Fusion DR Cluster Operator
+    - op: replace
+      path: /spec/description
+      value: Fusion DR Cluster is a disaster-recovery orchestrator for stateful applications,
+        that operates from an Advanced Cluster Management (ACM) managed cluster and is controlled
+        by Fusion DR Hub operator to orchestrate the life-cycle of an application, and its state
+        on the managed cluster.
+  target:
+    kind: ClusterServiceVersion
+    name: ramen-dr-cluster-operator.v0.0.0
