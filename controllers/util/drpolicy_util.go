@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -82,4 +84,24 @@ func DRPolicyS3Profiles(drpolicy *rmn.DRPolicy, drclusters []rmn.DRCluster) sets
 	}
 
 	return mustHaveS3Profiles
+}
+
+//nolint:gomnd
+func GetSecondsFromSchedulingInterval(drpolicy *rmn.DRPolicy) (float64, error) {
+	schedulingInterval := drpolicy.Spec.SchedulingInterval
+	intervalFormat := schedulingInterval[len(schedulingInterval)-1:] // extracts m|h|d string
+	interval := schedulingInterval[:len(schedulingInterval)-1]       // extracts numerical value of schedulingInterval
+	dayInSeconds := 24 * 60 * 60
+
+	switch intervalFormat {
+	case "d":
+		s, err := strconv.ParseFloat(interval, 64)
+
+		return s * float64(dayInSeconds), err
+
+	default:
+		s, err := time.ParseDuration(schedulingInterval)
+
+		return s.Seconds(), err
+	}
 }
