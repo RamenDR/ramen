@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/go-logr/logr"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/util"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -19,12 +20,14 @@ func drPolicyDeploy(
 	drclusters *rmn.DRClusterList,
 	secretsUtil *util.SecretsUtil,
 	hubOperatorRamenConfig *rmn.RamenConfig,
+	log logr.Logger,
 ) error {
 	drClustersMutex.Lock()
 	defer drClustersMutex.Unlock()
 
 	for _, clusterName := range util.DrpolicyClusterNames(drpolicy) {
-		if err := drClusterSecretsDeploy(clusterName, drpolicy, drclusters, secretsUtil, hubOperatorRamenConfig); err != nil {
+		if err := drClusterSecretsDeploy(clusterName, drpolicy, drclusters, secretsUtil,
+			hubOperatorRamenConfig, log); err != nil {
 			return err
 		}
 	}
@@ -38,6 +41,7 @@ func drClusterSecretsDeploy(
 	drclusters *rmn.DRClusterList,
 	secretsUtil *util.SecretsUtil,
 	rmnCfg *rmn.RamenConfig,
+	log logr.Logger,
 ) error {
 	if !rmnCfg.DrClusterOperator.DeploymentAutomationEnabled ||
 		!rmnCfg.DrClusterOperator.S3SecretDistributionEnabled {
@@ -46,7 +50,13 @@ func drClusterSecretsDeploy(
 
 	drPolicySecrets, err := drPolicySecretNames(drpolicy, drclusters, rmnCfg)
 	if err != nil {
-		return err
+		// For cluster deploy, it is ok to deploy only what available so far.
+		// Fail it only if no secrets are available.
+		if len(drPolicySecrets) == 0 {
+			return err
+		}
+
+		log.Info("Received partial list", "err", err)
 	}
 
 	for _, secretName := range drPolicySecrets.List() {
@@ -185,6 +195,8 @@ func drPolicySecretNames(drpolicy *rmn.DRPolicy,
 ) (sets.String, error) {
 	secretNames := sets.String{}
 
+	var err error
+
 	for _, managedCluster := range util.DrpolicyClusterNames(drpolicy) {
 		mcProfileFound := false
 
@@ -207,10 +219,9 @@ func drPolicySecretNames(drpolicy *rmn.DRPolicy,
 		}
 
 		if !mcProfileFound {
-			return secretNames, fmt.Errorf("missing profile name (%s) in config for DRCluster (%s)",
-				s3ProfileName, managedCluster)
+			err = fmt.Errorf("missing profile name (%s) in config for DRCluster (%s)", s3ProfileName, managedCluster)
 		}
 	}
 
-	return secretNames, nil
+	return secretNames, err
 }
