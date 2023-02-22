@@ -382,7 +382,7 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 		fmt.Sprintf("Started failover to cluster %q", d.instance.Spec.FailoverCluster))
 	d.setProgression(rmn.ProgressionFailingOverToCluster)
 	// Save the current home cluster
-	curHomeCluster := d.getCurrentHomeClusterName()
+	curHomeCluster := d.getCurrentHomeClusterName(d.instance.Spec.FailoverCluster, d.drClusters)
 
 	if curHomeCluster == "" {
 		msg := "Invalid Failover request. Current home cluster does not exists"
@@ -433,17 +433,24 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 	return !done, nil
 }
 
-func (d *DRPCInstance) getCurrentHomeClusterName() string {
-	curHomeCluster := ""
+func (d *DRPCInstance) getCurrentHomeClusterName(toCluster string, drClusters []rmn.DRCluster) string {
 	if len(d.userPlacementRule.Status.Decisions) > 0 {
-		curHomeCluster = d.userPlacementRule.Status.Decisions[0].ClusterName
+		return d.userPlacementRule.Status.Decisions[0].ClusterName
 	}
 
-	if curHomeCluster == "" {
-		curHomeCluster = d.instance.Status.PreferredDecision.ClusterName
+	if d.instance.Status.PreferredDecision.ClusterName != "" {
+		return d.instance.Status.PreferredDecision.ClusterName
 	}
 
-	return curHomeCluster
+	// otherwise, just return the peer cluster
+	for i := range drClusters {
+		if drClusters[i].Name != toCluster {
+			return drClusters[i].Name
+		}
+	}
+
+	// If all fails, then we have no curHomeCluster
+	return ""
 }
 
 // runRelocate checks if pre-conditions for relocation are met, and if so performs the relocation
