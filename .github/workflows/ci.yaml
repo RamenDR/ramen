@@ -294,6 +294,7 @@ jobs:
       IMAGE_NAME: ${{needs.definevars.outputs.imagename}}
       OPERATOR_SUGGESTED_NAMESPACE: ${{needs.definevars.outputs.operatorsuggestednamespace}}
     if: >
+      (vars.PUBLISH_IMAGES == 'true') &&
       (github.event_name == 'push') &&
       (github.ref == 'refs/heads/main' ||
        startsWith(github.ref, 'refs/heads/release-') ||
