@@ -120,7 +120,7 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, fmt.Errorf("finalizer add update: %w", u.validatedSetFalse("FinalizerAddFailed", err))
 	}
 
-	if err := drPolicyDeploy(drpolicy, drclusters, secretsUtil, ramenConfig); err != nil {
+	if err := drPolicyDeploy(drpolicy, drclusters, secretsUtil, ramenConfig, log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drpolicy deploy: %w", u.validatedSetFalse("DrClustersDeployFailed", err))
 	}
 
@@ -288,7 +288,7 @@ func (u *drpolicyUpdater) deleteDRPolicy(drclusters *ramen.DRClusterList,
 		}
 	}
 
-	if err := drPolicyUndeploy(u.object, drclusters, secretsUtil, ramenConfig); err != nil {
+	if err := drPolicyUndeploy(u.object, drclusters, secretsUtil, ramenConfig, u.log); err != nil {
 		return fmt.Errorf("drpolicy undeploy: %w", err)
 	}
 

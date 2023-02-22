@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/go-logr/logr"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/util"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -19,12 +20,13 @@ func drPolicyDeploy(
 	drclusters *rmn.DRClusterList,
 	secretsUtil *util.SecretsUtil,
 	hubOperatorRamenConfig *rmn.RamenConfig,
+	log logr.Logger,
 ) error {
 	drClustersMutex.Lock()
 	defer drClustersMutex.Unlock()
 
 	for _, clusterName := range util.DrpolicyClusterNames(drpolicy) {
-		if err := drClusterSecretsDeploy(clusterName, drpolicy, drclusters, secretsUtil, hubOperatorRamenConfig); err != nil {
+		if err := drClusterSecretsDeploy(clusterName, drpolicy, drclusters, secretsUtil, hubOperatorRamenConfig, log); err != nil {
 			return err
 		}
 	}
@@ -38,15 +40,20 @@ func drClusterSecretsDeploy(
 	drclusters *rmn.DRClusterList,
 	secretsUtil *util.SecretsUtil,
 	rmnCfg *rmn.RamenConfig,
+	log logr.Logger,
 ) error {
 	if !rmnCfg.DrClusterOperator.DeploymentAutomationEnabled ||
 		!rmnCfg.DrClusterOperator.S3SecretDistributionEnabled {
 		return nil
 	}
 
-	drPolicySecrets, err := drPolicySecretNames(drpolicy, drclusters, rmnCfg)
+	drPolicySecrets, err := drPolicySecretNames(drpolicy, drclusters, rmnCfg, log)
 	if err != nil {
-		return err
+		// For cluster deploy, it is ok to deploy only what available so far.
+		// Fail it only if no secrets are available.
+		if len(drPolicySecrets) == 0 {
+			return err
+		}
 	}
 
 	for _, secretName := range drPolicySecrets.List() {
@@ -67,6 +74,7 @@ func drPolicyUndeploy(
 	drclusters *rmn.DRClusterList,
 	secretsUtil *util.SecretsUtil,
 	ramenConfig *rmn.RamenConfig,
+	log logr.Logger,
 ) error {
 	drpolicies := rmn.DRPolicyList{}
 
@@ -77,7 +85,7 @@ func drPolicyUndeploy(
 		return fmt.Errorf("drpolicies list: %w", err)
 	}
 
-	return drClustersUndeploySecrets(drpolicy, drclusters, drpolicies, secretsUtil, ramenConfig)
+	return drClustersUndeploySecrets(drpolicy, drclusters, drpolicies, secretsUtil, ramenConfig, log)
 }
 
 func drClustersUndeploySecrets(
@@ -86,6 +94,7 @@ func drClustersUndeploySecrets(
 	drpolicies rmn.DRPolicyList,
 	secretsUtil *util.SecretsUtil,
 	ramenConfig *rmn.RamenConfig,
+	log logr.Logger,
 ) error {
 	if !ramenConfig.DrClusterOperator.DeploymentAutomationEnabled ||
 		!ramenConfig.DrClusterOperator.S3SecretDistributionEnabled {
@@ -101,7 +110,7 @@ func drClustersUndeploySecrets(
 	}
 
 	// Determine S3 secrets that maybe deleted, based on policy being deleted
-	mayDeleteS3Secrets, err := drPolicySecretNames(drpolicy, drclusters, ramenConfig)
+	mayDeleteS3Secrets, err := drPolicySecretNames(drpolicy, drclusters, ramenConfig, log)
 	if err != nil {
 		return err
 	}
@@ -182,6 +191,7 @@ func drClusterListMustHaveS3Profiles(drpolicies rmn.DRPolicyList,
 func drPolicySecretNames(drpolicy *rmn.DRPolicy,
 	drclusters *rmn.DRClusterList,
 	rmnCfg *rmn.RamenConfig,
+	log logr.Logger,
 ) (sets.String, error) {
 	secretNames := sets.String{}
 
@@ -207,9 +217,13 @@ func drPolicySecretNames(drpolicy *rmn.DRPolicy,
 		}
 
 		if !mcProfileFound {
-			return secretNames, fmt.Errorf("missing profile name (%s) in config for DRCluster (%s)",
-				s3ProfileName, managedCluster)
+			log.Info(fmt.Sprintf("Missing profile name (%s) in config for DRCluster (%s). Skipping it.",
+				s3ProfileName, managedCluster))
 		}
+	}
+
+	if len(secretNames) == 0 {
+		return secretNames, fmt.Errorf("failed to find any secret names in Ramen Config")
 	}
 
 	return secretNames, nil
