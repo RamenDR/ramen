@@ -12,7 +12,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/kubernetes-csi/external-snapshotter/client/v4 v4.2.0
 	github.com/onsi/ginkgo v1.16.5
-	github.com/onsi/gomega v1.24.2
+	github.com/onsi/gomega v1.27.1
 	github.com/open-cluster-management-io/api v0.0.0-00010101000000-000000000000
 	github.com/open-cluster-management/api v0.0.0-20210527013639-a6845f2ebcb1
 	github.com/operator-framework/api v0.15.1-0.20220624132056-decf74800a17
@@ -137,12 +137,12 @@ require (
 	go.uber.org/multierr v1.8.0 // indirect
 	golang.org/x/crypto v0.3.0 // indirect
 	golang.org/x/exp v0.0.0-20221114191408-850992195362 // indirect
-	golang.org/x/net v0.4.0 // indirect
+	golang.org/x/net v0.7.0 // indirect
 	golang.org/x/oauth2 v0.0.0-20221014153046-6fdb5e3db783 // indirect
 	golang.org/x/sync v0.1.0 // indirect
-	golang.org/x/sys v0.3.0 // indirect
-	golang.org/x/term v0.3.0 // indirect
-	golang.org/x/text v0.5.0 // indirect
+	golang.org/x/sys v0.5.0 // indirect
+	golang.org/x/term v0.5.0 // indirect
+	golang.org/x/text v0.7.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.2.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20221024183307-1bc688fe9f3e // indirect
