@@ -136,11 +136,14 @@ lint: golangci-bin ## Run configured golangci-lint and pre-commit.sh linters aga
 	testbin/golangci-lint run ./... --config=./.golangci.yaml
 	hack/pre-commit.sh
 
+ENVTEST_K8S_VERSION = 1.25.0
 ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
-setup-envtest:
-	mkdir -p ${ENVTEST_ASSETS_DIR}
-	test -f ${ENVTEST_ASSETS_DIR}/setup-envtest.sh || curl -sSLo ${ENVTEST_ASSETS_DIR}/setup-envtest.sh https://raw.githubusercontent.com/kubernetes-sigs/controller-runtime/v0.8.3/hack/setup-envtest.sh
-	source ${ENVTEST_ASSETS_DIR}/setup-envtest.sh; fetch_envtest_tools $(ENVTEST_ASSETS_DIR); setup_envtest_env $(ENVTEST_ASSETS_DIR)
+envtest:
+	mkdir -p $(ENVTEST_ASSETS_DIR)
+	test -s $(ENVTEST_ASSETS_DIR)/setup-envtest || GOBIN=$(ENVTEST_ASSETS_DIR) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+
+setup-envtest: envtest
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST_ASSETS_DIR)/setup-envtest use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_ASSETS_DIR) -p path)"
 
 test: generate manifests setup-envtest ## Run tests.
 	go test ./... -coverprofile cover.out $(GO_TEST_GINKGO_ARGS)

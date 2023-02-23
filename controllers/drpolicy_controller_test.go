@@ -266,9 +266,8 @@ var _ = Describe("DrpolicyController", func() {
 	})
 	When(`a drpolicy creation request contains an invalid scheduling interval`, func() {
 		It(`should fail`, func() {
-			err := func() *errors.StatusError {
+			err := func(value string) *errors.StatusError {
 				path := field.NewPath(`spec`, `schedulingInterval`)
-				value := ``
 
 				return errors.NewInvalid(
 					schema.GroupKind{
@@ -289,12 +288,12 @@ var _ = Describe("DrpolicyController", func() {
 						),
 					},
 				)
-			}()
+			}
 			drp := drpolicy.DeepCopy()
 			drp.Spec.SchedulingInterval = `3s`
-			Expect(k8sClient.Create(context.TODO(), drp)).To(MatchError(err))
+			Expect(k8sClient.Create(context.TODO(), drp)).To(MatchError(err(drp.Spec.SchedulingInterval)))
 			drp.Spec.SchedulingInterval = `0`
-			Expect(k8sClient.Create(context.TODO(), drp)).To(MatchError(err))
+			Expect(k8sClient.Create(context.TODO(), drp)).To(MatchError(err(drp.Spec.SchedulingInterval)))
 		})
 	})
 
@@ -304,7 +303,6 @@ var _ = Describe("DrpolicyController", func() {
 			drp.Spec.DRClusters = nil
 			err := func() *errors.StatusError {
 				path := field.NewPath("spec", "drClusters")
-				value := "null"
 
 				return errors.NewInvalid(
 					schema.GroupKind{
@@ -313,15 +311,9 @@ var _ = Describe("DrpolicyController", func() {
 					},
 					drp.Name,
 					field.ErrorList{
-						field.Invalid(
+						field.Required(
 							path,
-							value,
-							validationErrors.InvalidType(
-								path.String(),
-								"body",
-								"array",
-								value,
-							).Error(),
+							"",
 						),
 					},
 				)

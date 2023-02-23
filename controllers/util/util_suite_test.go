@@ -57,7 +57,7 @@ var _ = BeforeSuite(func() {
 
 	By("Setting up KUBEBUILDER_ASSETS for envtest")
 	if _, set := os.LookupEnv("KUBEBUILDER_ASSETS"); !set {
-		Expect(os.Setenv("KUBEBUILDER_ASSETS", "../../testbin/bin")).To(Succeed())
+		Expect(os.Setenv("KUBEBUILDER_ASSETS", "../../testbin/k8s/1.25.0-linux-amd64")).To(Succeed())
 	}
 
 	By("Bootstrapping test environment")
