@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.9.0
+    controller-gen.kubebuilder.io/version: v0.9.2
   creationTimestamp: null
   name: protectedvolumereplicationgrouplists.ramendr.openshift.io
 spec:
@@ -159,6 +159,7 @@ spec:
                                     requirements are ANDed.
                                   type: object
                               type: object
+                              x-kubernetes-map-type: atomic
                             schedulingInterval:
                               description: scheduling Interval for replicating Persistent
                                 Volume data to a peer cluster. Interval is typically
@@ -216,6 +217,7 @@ spec:
                                     requirements are ANDed.
                                   type: object
                               type: object
+                              x-kubernetes-map-type: atomic
                           required:
                           - schedulingInterval
                           type: object
@@ -299,6 +301,7 @@ spec:
                                 contains only "value". The requirements are ANDed.
                               type: object
                           type: object
+                          x-kubernetes-map-type: atomic
                         replicationState:
                           description: Desired state of all volumes [primary or secondary]
                             in this replication group; this value is propagated to
