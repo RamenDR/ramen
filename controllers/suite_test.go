@@ -25,7 +25,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	controller_runtime_config "sigs.k8s.io/controller-runtime/pkg/config/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -58,6 +57,8 @@ var (
 	apiReader   client.Reader
 	k8sClient   client.Client
 	testEnv     *envtest.Environment
+	ctx         context.Context
+	cancel      context.CancelFunc
 	configMap   *corev1.ConfigMap
 	ramenConfig *ramendrv1alpha1.RamenConfig
 	testLogger  logr.Logger
@@ -79,9 +80,7 @@ var (
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
 
-	RunSpecsWithDefaultAndCustomReporters(t,
-		"Controller Suite",
-		[]Reporter{printer.NewlineReporter{}})
+	RunSpecs(t, "Controller Suite")
 }
 
 func namespaceCreate(name string) {
@@ -115,7 +114,7 @@ var _ = BeforeSuite(func() {
 	ramencontrollers.ControllerType = ramendrv1alpha1.DRHubType
 
 	if _, set := os.LookupEnv("KUBEBUILDER_ASSETS"); !set {
-		Expect(os.Setenv("KUBEBUILDER_ASSETS", "../testbin/bin")).To(Succeed())
+		Expect(os.Setenv("KUBEBUILDER_ASSETS", "../testbin/k8s/1.25.0-linux-amd64")).To(Succeed())
 	}
 
 	rNs, set := os.LookupEnv("POD_NAMESPACE")
@@ -341,8 +340,9 @@ var _ = BeforeSuite(func() {
 	err = drpcReconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
+	ctx, cancel = context.WithCancel(context.TODO())
 	go func() {
-		err = k8sManager.Start(ctrl.SetupSignalHandler())
+		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred())
 	}()
 
@@ -354,6 +354,7 @@ var _ = BeforeSuite(func() {
 }, 60)
 
 var _ = AfterSuite(func() {
+	cancel()
 	Expect(k8sClient.Delete(context.TODO(), configMap)).To(Succeed())
 	By("tearing down the test environment")
 	err := testEnv.Stop()
