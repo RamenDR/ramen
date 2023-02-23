@@ -16,7 +16,7 @@ ADDONS = (
     },
     {
         "name": "governance-policy-framework",
-        "version": "latest",  # v0.10.0 not available yet.
+        "version": "default",
     },
 )
 
