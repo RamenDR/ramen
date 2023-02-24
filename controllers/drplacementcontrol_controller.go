@@ -380,15 +380,19 @@ func (r *DRPlacementControlReconciler) recordFailure(drpc *rmn.DRPlacementContro
 func (r *DRPlacementControlReconciler) setLastSyncTimeMetric(syncMetrics *SyncMetrics,
 	t *metav1.Time, log logr.Logger,
 ) {
-	if syncMetrics != nil {
-		log.Info(fmt.Sprintf("Setting metric: (%s)", LastSyncTimestampSeconds))
-
-		if t == nil {
-			syncMetrics.LastSyncTime.Set(0)
-		}
-
-		syncMetrics.LastSyncTime.Set(float64(t.ProtoTime().Seconds))
+	if syncMetrics == nil {
+		return
 	}
+
+	log.Info(fmt.Sprintf("Setting metric: (%s)", LastSyncTimestampSeconds))
+
+	if t == nil {
+		syncMetrics.LastSyncTime.Set(0)
+
+		return
+	}
+
+	syncMetrics.LastSyncTime.Set(float64(t.ProtoTime().Seconds))
 }
 
 //nolint:funlen,cyclop
