@@ -45,14 +45,26 @@ func (r *DRPlacementControl) ValidateUpdate(old runtime.Object) error {
 
 	// checks for immutability
 	if !reflect.DeepEqual(r.Spec.PlacementRef, oldDRPC.Spec.PlacementRef) {
+		drplacementcontrollog.Info("detected PlacementRef updates, which is disallowed", "name", r.Name,
+			"old", oldDRPC.Spec.PlacementRef,
+			"new", r.Spec.PlacementRef)
+
 		return fmt.Errorf("PlacementRef cannot be changed")
 	}
 
 	if !reflect.DeepEqual(r.Spec.DRPolicyRef, oldDRPC.Spec.DRPolicyRef) {
+		drplacementcontrollog.Info("detected DRPolicyRef updates, which is disallowed", "name", r.Name,
+			"old", oldDRPC.Spec.DRPolicyRef,
+			"new", r.Spec.DRPolicyRef)
+
 		return fmt.Errorf("DRPolicyRef cannot be changed")
 	}
 
 	if !reflect.DeepEqual(r.Spec.PVCSelector, oldDRPC.Spec.PVCSelector) {
+		drplacementcontrollog.Info("detected PVCSelector updates, which is disallowed", "name", r.Name,
+			"old", oldDRPC.Spec.PVCSelector,
+			"new", r.Spec.PVCSelector)
+
 		return fmt.Errorf("PVCSelector cannot be changed")
 	}
 

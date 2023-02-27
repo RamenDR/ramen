@@ -727,11 +727,12 @@ func (r *DRPlacementControlReconciler) getUserPlacementRule(ctx context.Context,
 ) (*plrv1.PlacementRule, error) {
 	log.Info("Getting User PlacementRule", "placement", drpc.Spec.PlacementRef)
 
-	if drpc.Spec.PlacementRef.Namespace == "" {
-		drpc.Spec.PlacementRef.Namespace = drpc.Namespace
+	plRuleNamespace := drpc.Spec.PlacementRef.Namespace
+	if plRuleNamespace == "" {
+		plRuleNamespace = drpc.Namespace
 	}
 
-	if drpc.Spec.PlacementRef.Namespace != drpc.Namespace {
+	if plRuleNamespace != drpc.Namespace {
 		return nil, fmt.Errorf("referenced PlacementRule namespace (%s)"+
 			" differs from DRPlacementControl resource namespace (%s)",
 			drpc.Spec.PlacementRef.Namespace, drpc.Namespace)
@@ -740,7 +741,7 @@ func (r *DRPlacementControlReconciler) getUserPlacementRule(ctx context.Context,
 	usrPlRule := &plrv1.PlacementRule{}
 
 	err := r.Client.Get(ctx,
-		types.NamespacedName{Name: drpc.Spec.PlacementRef.Name, Namespace: drpc.Spec.PlacementRef.Namespace},
+		types.NamespacedName{Name: drpc.Spec.PlacementRef.Name, Namespace: plRuleNamespace},
 		usrPlRule)
 	if err != nil {
 		if errors.IsNotFound(err) && !drpc.GetDeletionTimestamp().IsZero() {
