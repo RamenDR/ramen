@@ -1,0 +1,48 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# This is a starting point for developers that want to use ramen minikube based
+# test environment with extenral storage.
+#
+# You need to implement "my-external-storage" component, deploying the external
+# storage drivers in my-external-storage/start hook.
+#
+---
+name: "rdr-external"
+
+templates:
+  - name: "dr-cluster"
+    driver: kvm2
+    container_runtime: containerd
+    network: default
+    memory: "4g"
+    workers:
+      - scripts:
+          - name: ocm-cluster
+            args: ["$name", "hub"]
+      - scripts:
+          - name: cert-manager
+          - name: csi-addons
+          - name: olm
+          - name: minio
+      - scripts:
+          - name: my-external-storage
+  - name: "hub-cluster"
+    driver: kvm2
+    container_runtime: containerd
+    network: default
+    memory: "4g"
+    workers:
+      - scripts:
+          - name: ocm-hub
+          - name: ocm-controller
+          - name: cert-manager
+          - name: olm
+
+profiles:
+  - name: "dr1"
+    template: "dr-cluster"
+  - name: "dr2"
+    template: "dr-cluster"
+  - name: "hub"
+    template: "hub-cluster"
