@@ -35,6 +35,10 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary(requeue *bool) {
 		pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 		log := v.log.WithValues("pvc", pvcNamespacedName.String())
 
+		if v.pvcUnprotectIfDeleted(*pvc, log, requeue) {
+			continue
+		}
+
 		if err := v.updateProtectedPVCs(pvc); err != nil {
 			*requeue = true
 
@@ -393,11 +397,6 @@ func isPVCDeletedAndNotProtected(pvc *corev1.PersistentVolumeClaim, log logr.Log
 func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 	log logr.Logger,
 ) error {
-	// If PVC does not have the VR finalizer we are done
-	if !containsString(pvc.Finalizers, pvcVRFinalizerProtected) {
-		return nil
-	}
-
 	// For Async mode, we want to change the retention policy back to delete
 	// and remove the annotation.
 	// For Sync mode, we don't want to set the retention policy to delete as
@@ -413,10 +412,6 @@ func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 			return err
 		}
 	}
-
-	// TODO: Delete the PV from the backing store? But when is it safe to do so?
-	// We can delete the PV when VRG (and hence VR) is being deleted as primary, as that is when the
-	// application is finally being undeployed, and also the PV would be garbage collected.
 
 	// Remove VR finalizer from PVC and the annotation (PVC maybe left behind, so remove the annotation)
 	return v.removeProtectedFinalizerFromPVC(pvc, log)
@@ -704,10 +699,42 @@ func (v *VRGInstance) cacheObjectStorer(s3ProfileName string, objectStore Object
 // reconcileVRsForDeletion cleans up VR resources managed by VRG and also cleans up changes made to PVCs
 // TODO: Currently removes VR requests unconditionally, needs to ensure it is managed by VRG
 func (v *VRGInstance) reconcileVRsForDeletion() bool {
-	completionCount := 0
+	var requeue bool
 
-	for idx := range v.volRepPVCs {
-		pvc := &v.volRepPVCs[idx]
+	v.pvcsUnprotect(v.volRepPVCs, &requeue)
+
+	return requeue
+}
+
+func (v *VRGInstance) pvcUnprotectIfDeleted(
+	pvc corev1.PersistentVolumeClaim,
+	log logr.Logger,
+	requeue *bool,
+) (pvcDeleted bool) {
+	pvcDeleted = !pvc.GetDeletionTimestamp().IsZero()
+	if !pvcDeleted {
+		return
+	}
+
+	if err := v.pvObjectReplicasDelete(
+		corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: pvc.Spec.VolumeName}},
+		log,
+	); err != nil {
+		log.Error(err, "PersistenVolume replicas deletion failed", "pvc", pvc)
+
+		*requeue = true
+
+		return
+	}
+
+	v.pvcsUnprotect([]corev1.PersistentVolumeClaim{pvc}, requeue)
+
+	return
+}
+
+func (v *VRGInstance) pvcsUnprotect(pvcs []corev1.PersistentVolumeClaim, requeue *bool) {
+	for idx := range pvcs {
+		pvc := &pvcs[idx]
 		pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 		log := v.log.WithValues("pvc", pvcNamespacedName.String())
 
@@ -716,36 +743,38 @@ func (v *VRGInstance) reconcileVRsForDeletion() bool {
 		// 1) This pvc has not yet been processed by VRG before this deletion came on VRG
 		// 2) The VolRep resource associated with this pvc has been successfully deleted and
 		//    the VR protection finalizer has been successfully removed. No need to process.
-		// completionCount helps to check if all PVCs are processed during deletion, and if not
-		// helps to requeue the deletion request, as related events are not guaranteed
+		// If not all PVCs are processed during deletion,
+		// requeue the deletion request, as related events are not guaranteed
 		if !containsString(pvc.Finalizers, pvcVRFinalizerProtected) {
 			log.Info(fmt.Sprintf("pvc %s does not contain VR protection finalizer. Skipping it",
 				pvcNamespacedName))
-
-			completionCount++
 
 			continue
 		}
 
 		requeueResult, skip := v.preparePVCForVRProtection(pvc, log)
 		if requeueResult || skip {
+			*requeue = true
+
 			continue
 		}
 
 		vrMissing, requeueResult := v.reconcileMissingVR(pvc, log)
 		if vrMissing || requeueResult {
+			*requeue = true
+
 			continue
 		}
 
 		if v.reconcileVRForDeletion(pvc, log) {
+			*requeue = true
+
 			continue
 		}
 
 		log.Info("Successfully processed VolumeReplication for PersistentVolumeClaim", "VR instance",
 			v.instance.Name, "PVC", pvcNamespacedName)
 	}
-
-	return completionCount != len(v.volRepPVCs)
 }
 
 func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
@@ -862,6 +891,16 @@ func (v *VRGInstance) reconcileMissingVR(pvc *corev1.PersistentVolumeClaim, log 
 func (v *VRGInstance) deleteClusterDataInS3Stores(log logr.Logger) error {
 	log.Info("Delete cluster data in", "s3Profiles", v.instance.Spec.S3Profiles)
 
+	return v.s3StoresObjectsDelete(v.s3KeyPrefix())
+}
+
+func (v *VRGInstance) pvObjectReplicasDelete(pv corev1.PersistentVolume, log logr.Logger) error {
+	log.Info("Delete PV object replicas", "s3Profiles", v.instance.Spec.S3Profiles)
+
+	return v.s3StoresObjectsDelete(typedObjectKey(v.s3KeyPrefix(), pv.Name, pv))
+}
+
+func (v *VRGInstance) s3StoresObjectsDelete(keyPrefix string) error {
 	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
 		if s3ProfileName == NoS3StoreAvailable {
 			v.log.Info("NoS3 available to clean")
@@ -869,7 +908,7 @@ func (v *VRGInstance) deleteClusterDataInS3Stores(log logr.Logger) error {
 			continue
 		}
 
-		if err := v.DeletePVs(s3ProfileName); err != nil {
+		if err := v.s3StoreObjectsDelete(s3ProfileName, keyPrefix); err != nil {
 			return fmt.Errorf("error deleting PVs using profile %s, err %w", s3ProfileName, err)
 		}
 	}
@@ -877,7 +916,7 @@ func (v *VRGInstance) deleteClusterDataInS3Stores(log logr.Logger) error {
 	return nil
 }
 
-func (v *VRGInstance) DeletePVs(s3ProfileName string) (err error) {
+func (v *VRGInstance) s3StoreObjectsDelete(s3ProfileName, s3KeyPrefix string) (err error) {
 	objectStore, _, err := v.reconciler.ObjStoreGetter.ObjectStore(
 		v.ctx,
 		v.reconciler.APIReader,
@@ -890,8 +929,7 @@ func (v *VRGInstance) DeletePVs(s3ProfileName string) (err error) {
 			s3ProfileName, err)
 	}
 
-	s3KeyPrefix := v.s3KeyPrefix()
-	msg := fmt.Sprintf("delete PVs with key prefix %s in profile %s",
+	msg := fmt.Sprintf("delete objects with key prefix %s in profile %s",
 		s3KeyPrefix, s3ProfileName)
 	v.log.Info(msg)
 
