@@ -328,6 +328,10 @@ func S3KeyPrefix(namespacedName string) string {
 	return namespacedName + "/"
 }
 
+func typedObjectKey(prefix, suffix string, object interface{}) string {
+	return typedKey(prefix, suffix, reflect.TypeOf(object))
+}
+
 func typedKey(prefix, suffix string, typ reflect.Type) string {
 	return prefix + typ.String() + "/" + suffix
 }
