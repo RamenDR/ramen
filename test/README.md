@@ -31,7 +31,7 @@ environment.
    [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
 
 1. Install `clusteradm` tool. See
-   [Open Cluster Management Quick Start guide](https://open-cluster-management.io/getting-started/quick-start/#install-clusteradm-cli-tool)
+   [Install clusteradm CLI tool](https://open-cluster-management.io/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool)
    for the details. Version 0.5.0 or later is required.
 
 1. Install `podman`
