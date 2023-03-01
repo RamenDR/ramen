@@ -131,7 +131,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 		v.ctx, v.reconciler.APIReader, veleroNamespaceName, labels)
 	if err != nil {
 		log.Error(err, "Kube objects capture in-progress query error")
-		v.kubeObjectsCaptureFailed(err.Error())
+		v.kubeObjectsCaptureFailed("KubeObjectsCaptureRequestsQueryError", err.Error())
 
 		result.Requeue = true
 
@@ -211,7 +211,7 @@ func (v *VRGInstance) kubeObjectsCapturesDelete(
 				"number", captureNumber,
 				"profile", s3StoreAccessor.S3ProfileName,
 			)
-			v.kubeObjectsCaptureFailed(err.Error())
+			v.kubeObjectsCaptureFailed("KubeObjectsReplicaDeleteError", err.Error())
 
 			result.Requeue = true
 
@@ -309,21 +309,26 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 		} else {
 			err := request.Status(v.log)
 
-			switch {
-			case err == nil:
+			if err == nil {
 				log1.Info("Kube objects group captured", "start", request.StartTime(), "end", request.EndTime())
 				requestsCompletedCount++
-			case errors.Is(err, kubeobjects.RequestProcessingError{}):
-				log1.Info("Kube objects group capturing", "state", err.Error())
-			default:
-				log1.Error(err, "Kube objects group capture error")
-				v.kubeObjectsCaptureAndCaptureRequestDelete(request, s3StoreAccessor, capturePathName, log1)
-				v.kubeObjectsCaptureStatusFalse("KubeObjectsCaptureError", err.Error())
 
-				result.Requeue = true
-
-				return
+				continue
 			}
+
+			if errors.Is(err, kubeobjects.RequestProcessingError{}) {
+				log1.Info("Kube objects group capturing", "state", err.Error())
+
+				continue
+			}
+
+			log1.Error(err, "Kube objects group capture error")
+			v.kubeObjectsCaptureAndCaptureRequestDelete(request, s3StoreAccessor, capturePathName, log1)
+			v.kubeObjectsCaptureStatusFalse("KubeObjectsCaptureError", err.Error())
+
+			result.Requeue = true
+
+			return
 		}
 
 		captureInProgressStatusUpdate()
@@ -407,7 +412,7 @@ func (v *VRGInstance) kubeObjectsCaptureIdentifierUpdateComplete(
 	); err != nil {
 		v.log.Error(err, "Kube objects capture requests delete error",
 			"number", captureToRecoverFromIdentifier.Number)
-		v.kubeObjectsCaptureFailed(err.Error())
+		v.kubeObjectsCaptureFailed("KubeObjectsCaptureRequestsDeleteError", err.Error())
 
 		result.Requeue = true
 
@@ -428,8 +433,8 @@ func (v *VRGInstance) kubeObjectsCaptureIdentifierUpdateComplete(
 	)
 }
 
-func (v *VRGInstance) kubeObjectsCaptureFailed(message string) {
-	v.kubeObjectsCaptureStatusFalse(VRGConditionReasonUploadError, message)
+func (v *VRGInstance) kubeObjectsCaptureFailed(reason, message string) {
+	v.kubeObjectsCaptureStatusFalse(reason, message)
 }
 
 func (v *VRGInstance) kubeObjectsCaptureStatusFalse(reason, message string) {

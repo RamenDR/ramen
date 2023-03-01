@@ -16,9 +16,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
+	gomegatypes "github.com/onsi/gomega/types"
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -54,6 +58,17 @@ import (
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
+const (
+	vrgS3ProfileNumber = iota
+	objS3ProfileNumber
+	bucketInvalidS3ProfileNumber1
+	bucketInvalidS3ProfileNumber2
+	listErrorS3ProfileNumber
+	drClusterS3ProfileNumber
+	uploadErrorS3ProfileNumber
+	s3ProfileCount
+)
+
 var (
 	cfg         *rest.Config
 	apiReader   client.Reader
@@ -75,7 +90,7 @@ var (
 	plRuleNames map[string]struct{}
 
 	s3Secrets     [1]corev1.Secret
-	s3Profiles    [7]ramendrv1alpha1.S3StoreProfile
+	s3Profiles    [s3ProfileCount]ramendrv1alpha1.S3StoreProfile
 	objectStorers [2]ramencontrollers.ObjectStorer
 
 	ramenNamespace = "ns-envtest"
@@ -230,9 +245,9 @@ var _ = BeforeSuite(func() {
 			"AWS_SECRET_ACCESS_KEY": "",
 		},
 	}
-	s3ProfileNew := func(profileNameSuffix, bucketName string) ramendrv1alpha1.S3StoreProfile {
+	s3ProfileNew := func(profileNamePrefix, profileNameSuffix, bucketName string) ramendrv1alpha1.S3StoreProfile {
 		return ramendrv1alpha1.S3StoreProfile{
-			S3ProfileName:        "s3profile" + profileNameSuffix,
+			S3ProfileName:        profileNamePrefix + "s3profile" + profileNameSuffix,
 			S3Bucket:             bucketName,
 			S3CompatibleEndpoint: "http://192.168.39.223:30000",
 			S3Region:             "us-east-1",
@@ -240,13 +255,13 @@ var _ = BeforeSuite(func() {
 		}
 	}
 
-	s3Profiles[0] = s3ProfileNew("0", bucketNameSucc)
-	s3Profiles[1] = s3ProfileNew("1", bucketNameSucc2)
-	s3Profiles[2] = s3ProfileNew("2", bucketNameFail)
-	s3Profiles[3] = s3ProfileNew("3", bucketNameFail2)
-	s3Profiles[4] = s3ProfileNew("4", bucketListFail)
-	// s3Profiles[5] used and modified in DRCluster tests
-	s3Profiles[6] = s3ProfileNew("6", bucketNameUploadAwsErr)
+	s3Profiles[vrgS3ProfileNumber] = s3ProfileNew("", "0", bucketNameSucc)
+	s3Profiles[objS3ProfileNumber] = s3ProfileNew("", "1", bucketNameSucc2)
+	s3Profiles[bucketInvalidS3ProfileNumber1] = s3ProfileNew("", "2", bucketNameFail)
+	s3Profiles[bucketInvalidS3ProfileNumber2] = s3ProfileNew("", "3", bucketNameFail2)
+	s3Profiles[listErrorS3ProfileNumber] = s3ProfileNew("", "4", bucketListFail)
+	s3Profiles[drClusterS3ProfileNumber] = s3ProfileNew("drc-", "", bucketNameSucc)
+	s3Profiles[uploadErrorS3ProfileNumber] = s3ProfileNew("", "6", bucketNameUploadAwsErr)
 
 	s3SecretsPolicyNamesSet := func() {
 		plRuleNames = make(map[string]struct{}, len(s3Secrets))
@@ -268,13 +283,6 @@ var _ = BeforeSuite(func() {
 		for i := range s3Profiles {
 			s3Profiles[i].S3SecretRef.Namespace = namespaceName
 		}
-	}
-	s3Profiles[5] = ramendrv1alpha1.S3StoreProfile{
-		S3ProfileName:        "drc-s3profile",
-		S3Bucket:             bucketNameSucc,
-		S3CompatibleEndpoint: "http://192.168.39.223:30000",
-		S3Region:             "us-east-1",
-		S3SecretRef:          corev1.SecretReference{Name: s3Secrets[0].Name},
 	}
 	s3ProfilesUpdate := func() {
 		s3ProfilesStore(s3Profiles[0:])
@@ -379,3 +387,58 @@ var _ = AfterSuite(func() {
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 })
+
+func objectGet(namespaceName, objectName string, object client.Object) error {
+	return apiReader.Get(context.TODO(), types.NamespacedName{Namespace: namespaceName, Name: objectName}, object)
+}
+
+func objectDeletionTimestampRecentVerify(namespaceName, objectName string, object client.Object) {
+	Eventually(func() *metav1.Time {
+		Expect(objectGet(namespaceName, objectName, object)).To(Succeed())
+
+		return object.GetDeletionTimestamp()
+	}).ShouldNot(BeNil())
+	Expect(object.GetDeletionTimestamp().Time).Should(BeTemporally("~", time.Now(), time.Second), "%#v", object)
+}
+
+func objectNotFoundErrorMatch(groupResource schema.GroupResource, objectName string) gomegatypes.GomegaMatcher {
+	return MatchError(errors.NewNotFound(groupResource, objectName))
+}
+
+func objectAbsentVerify(namespaceName, objectName string, object client.Object, groupResource schema.GroupResource) {
+	Eventually(func() error {
+		return objectGet(namespaceName, objectName, object)
+	}).Should(objectNotFoundErrorMatch(groupResource, objectName), "%#v", object)
+}
+
+func objectOrItsFinalizerAbsentVerify(namespaceName, objectName string, object client.Object,
+	groupResource schema.GroupResource, finalizerName string,
+) (objectAbsent bool) {
+	Eventually(func() []string {
+		if err := objectGet(namespaceName, objectName, object); err != nil {
+			Expect(err).To(objectNotFoundErrorMatch(groupResource, objectName), "%#v", object)
+			objectAbsent = true
+
+			return nil
+		}
+
+		return object.GetFinalizers()
+	}).ShouldNot(ContainElement(finalizerName))
+
+	return
+}
+
+func objectFinalizerPresentVerify(namespaceName, objectName string, object client.Object, finalizerName string) {
+	Consistently(func() []string {
+		Expect(objectGet(namespaceName, objectName, object)).To(Succeed())
+
+		return object.GetFinalizers()
+	}).Should(ContainElement(finalizerName))
+}
+
+func conditionExpect(conditions []metav1.Condition, typ string) *metav1.Condition {
+	condition := meta.FindStatusCondition(conditions, typ)
+	Expect(condition).ToNot(BeNil())
+
+	return condition
+}

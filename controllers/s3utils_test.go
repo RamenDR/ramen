@@ -6,12 +6,15 @@ package controllers_test
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"reflect"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/go-logr/logr"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -93,7 +96,18 @@ func (f fakeObjectStorer) UploadObject(key string, object interface{}) error {
 }
 
 func (f fakeObjectStorer) DownloadObject(key string, objectPointer interface{}) error {
-	reflect.ValueOf(objectPointer).Elem().Set(reflect.ValueOf(f.objects[key]))
+	object, ok := f.objects[key]
+
+	objectDestination := reflect.ValueOf(objectPointer).Elem()
+	Expect(objectDestination.CanSet()).To(BeTrue())
+
+	if !ok {
+		return fs.ErrNotExist
+	}
+
+	objectSource := reflect.ValueOf(object)
+	Expect(objectSource.IsValid()).To(BeTrue())
+	objectDestination.Set(objectSource)
 
 	return nil
 }
@@ -123,3 +137,29 @@ func (f fakeObjectStorer) DeleteObjects(keyPrefix string) error {
 
 	return nil
 }
+
+var _ = Describe("FakeObjectStorer", func() {
+	var objectStorer controllers.ObjectStorer
+	BeforeEach(func() {
+		objectStorer = objectStorers[objS3ProfileNumber]
+	})
+	Context("DownloadObject", func() {
+		object := "o"
+		const (
+			key  = "k"
+			key1 = key + key
+		)
+		BeforeEach(func() {
+			Expect(objectStorer.UploadObject(key, object)).To(Succeed())
+		})
+		It("should download the uploaded object", func() {
+			var object1 string
+			Expect(objectStorer.DownloadObject(key, &object1)).To(Succeed())
+			Expect(object1).To(Equal(object))
+		})
+		It("should not download a non-uploaded object", func() {
+			var object1 string
+			Expect(objectStorer.DownloadObject(key1, &object1)).To(MatchError(fs.ErrNotExist))
+		})
+	})
+})
