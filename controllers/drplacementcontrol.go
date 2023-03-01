@@ -83,6 +83,11 @@ func (d *DRPCInstance) startProcessing() bool {
 func (d *DRPCInstance) processPlacement() (bool, error) {
 	d.log.Info("Process DRPC Placement", "DRAction", d.instance.Spec.Action)
 
+	if len(d.vrgs) == 0 {
+		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
+			metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
+	}
+
 	switch d.instance.Spec.Action {
 	case rmn.ActionFailover:
 		return d.RunFailover()
