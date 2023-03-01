@@ -27,6 +27,10 @@ import (
 	rmnutil "github.com/ramendr/ramen/controllers/util"
 )
 
+func logWithPvcName(log logr.Logger, pvc *corev1.PersistentVolumeClaim) logr.Logger {
+	return log.WithValues("pvc", types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}.String())
+}
+
 // reconcileVolRepsAsPrimary creates/updates VolumeReplication CR for each pvc
 // from pvcList. If it fails (even for one pvc), then requeue is set to true.
 func (v *VRGInstance) reconcileVolRepsAsPrimary(requeue *bool) {
@@ -94,8 +98,7 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 
 	for idx := range v.volRepPVCs {
 		pvc := &v.volRepPVCs[idx]
-		pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
-		log := v.log.WithValues("pvc", pvcNamespacedName.String())
+		log := logWithPvcName(v.log, pvc)
 
 		if err := v.updateProtectedPVCs(pvc); err != nil {
 			requeue = true
@@ -381,7 +384,7 @@ func skipPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, string) 
 
 func isPVCDeletedAndNotProtected(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, string) {
 	// If PVC deleted but not yet protected with a finalizer, skip it!
-	if !containsString(pvc.Finalizers, pvcVRFinalizerProtected) && !pvc.GetDeletionTimestamp().IsZero() {
+	if !containsString(pvc.Finalizers, PvcVRFinalizerProtected) && !pvc.GetDeletionTimestamp().IsZero() {
 		log.Info("Skipping PersistentVolumeClaim, as it is marked for deletion and not yet protected")
 
 		msg := "Skipping pvc marked for deletion"
@@ -716,11 +719,13 @@ func (v *VRGInstance) pvcUnprotectIfDeleted(
 		return
 	}
 
-	if err := v.pvObjectReplicasDelete(
-		corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: pvc.Spec.VolumeName}},
-		log,
-	); err != nil {
-		log.Error(err, "PersistenVolume replicas deletion failed", "pvc", pvc)
+	const message = "PVC deletion timestamp non-zero"
+
+	log.Info(message)
+	v.updatePVCClusterDataProtectedCondition(pvc.Name, VRGConditionReasonDeleted, message)
+
+	if err := v.pvObjectReplicasDelete(pvc.Spec.VolumeName, log); err != nil {
+		log.Error(err, "PersistentVolume replicas deletion failed")
 
 		*requeue = true
 
@@ -735,8 +740,7 @@ func (v *VRGInstance) pvcUnprotectIfDeleted(
 func (v *VRGInstance) pvcsUnprotect(pvcs []corev1.PersistentVolumeClaim, requeue *bool) {
 	for idx := range pvcs {
 		pvc := &pvcs[idx]
-		pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
-		log := v.log.WithValues("pvc", pvcNamespacedName.String())
+		log := logWithPvcName(v.log, pvc)
 
 		// If the pvc does not have the VR protection finalizer, then one of the
 		// 2 possibilities (assuming pvc is not being deleted).
@@ -745,9 +749,8 @@ func (v *VRGInstance) pvcsUnprotect(pvcs []corev1.PersistentVolumeClaim, requeue
 		//    the VR protection finalizer has been successfully removed. No need to process.
 		// If not all PVCs are processed during deletion,
 		// requeue the deletion request, as related events are not guaranteed
-		if !containsString(pvc.Finalizers, pvcVRFinalizerProtected) {
-			log.Info(fmt.Sprintf("pvc %s does not contain VR protection finalizer. Skipping it",
-				pvcNamespacedName))
+		if !containsString(pvc.Finalizers, PvcVRFinalizerProtected) {
+			log.Info("pvc does not contain VR protection finalizer. Skipping it")
 
 			continue
 		}
@@ -773,7 +776,7 @@ func (v *VRGInstance) pvcsUnprotect(pvcs []corev1.PersistentVolumeClaim, requeue
 		}
 
 		log.Info("Successfully processed VolumeReplication for PersistentVolumeClaim", "VR instance",
-			v.instance.Name, "PVC", pvcNamespacedName)
+			v.instance.Name)
 	}
 }
 
@@ -894,10 +897,10 @@ func (v *VRGInstance) deleteClusterDataInS3Stores(log logr.Logger) error {
 	return v.s3StoresObjectsDelete(v.s3KeyPrefix())
 }
 
-func (v *VRGInstance) pvObjectReplicasDelete(pv corev1.PersistentVolume, log logr.Logger) error {
+func (v *VRGInstance) pvObjectReplicasDelete(pvName string, log logr.Logger) error {
 	log.Info("Delete PV object replicas", "s3Profiles", v.instance.Spec.S3Profiles)
 
-	return v.s3StoresObjectsDelete(typedObjectKey(v.s3KeyPrefix(), pv.Name, pv))
+	return v.s3StoresObjectsDelete(TypedObjectKey(v.s3KeyPrefix(), pvName, corev1.PersistentVolume{}))
 }
 
 func (v *VRGInstance) s3StoresObjectsDelete(keyPrefix string) error {
@@ -1631,15 +1634,13 @@ func (v *VRGInstance) updatePVCClusterDataProtectedCondition(pvcName, reason, me
 func setPVCClusterDataProtectedCondition(protectedPVC *ramendrv1alpha1.ProtectedPVC, reason, message string,
 	observedGeneration int64,
 ) {
-	switch {
-	case reason == VRGConditionReasonUploaded:
+	switch reason {
+	case VRGConditionReasonUploaded:
 		setVRGClusterDataProtectedCondition(&protectedPVC.Conditions, observedGeneration, message)
-	case reason == VRGConditionReasonUploading:
+	case VRGConditionReasonUploading:
 		setVRGClusterDataProtectingCondition(&protectedPVC.Conditions, observedGeneration, message)
-	case reason == VRGConditionReasonUploadError:
-		setVRGClusterDataUnprotectedCondition(&protectedPVC.Conditions, observedGeneration, message)
-	case reason == VRGConditionReasonClusterDataAnnotationFailed:
-		setVRGClusterDataUnprotectedCondition(&protectedPVC.Conditions, observedGeneration, message)
+	case VRGConditionReasonUploadError, VRGConditionReasonDeleted, VRGConditionReasonClusterDataAnnotationFailed:
+		setVRGClusterDataUnprotectedCondition(&protectedPVC.Conditions, observedGeneration, reason, message)
 	default:
 		// if appropriate reason is not provided, then treat it as an unknown condition.
 		message = "Unknown reason: " + reason
@@ -1718,11 +1719,11 @@ func (v *VRGInstance) addProtectedAnnotationForPVC(pvc *corev1.PersistentVolumeC
 func (v *VRGInstance) addProtectedFinalizerToPVC(pvc *corev1.PersistentVolumeClaim,
 	log logr.Logger,
 ) error {
-	if containsString(pvc.Finalizers, pvcVRFinalizerProtected) {
+	if containsString(pvc.Finalizers, PvcVRFinalizerProtected) {
 		return nil
 	}
 
-	return v.addFinalizerToPVC(pvc, pvcVRFinalizerProtected, log)
+	return v.addFinalizerToPVC(pvc, PvcVRFinalizerProtected, log)
 }
 
 func (v *VRGInstance) addFinalizerToPVC(pvc *corev1.PersistentVolumeClaim,
@@ -1746,7 +1747,7 @@ func (v *VRGInstance) addFinalizerToPVC(pvc *corev1.PersistentVolumeClaim,
 func (v *VRGInstance) removeProtectedFinalizerFromPVC(pvc *corev1.PersistentVolumeClaim,
 	log logr.Logger,
 ) error {
-	return v.removeFinalizerFromPVC(pvc, pvcVRFinalizerProtected, log)
+	return v.removeFinalizerFromPVC(pvc, PvcVRFinalizerProtected, log)
 }
 
 // removeFinalizerFromPVC removes the VR finalizer on PVC and also the protected annotation from the PVC
@@ -1754,6 +1755,8 @@ func (v *VRGInstance) removeFinalizerFromPVC(pvc *corev1.PersistentVolumeClaim,
 	finalizer string,
 	log logr.Logger,
 ) error {
+	log1 := log.WithValues("finalizer", finalizer)
+
 	if containsString(pvc.ObjectMeta.Finalizers, finalizer) {
 		pvc.ObjectMeta.Finalizers = removeString(pvc.ObjectMeta.Finalizers, finalizer)
 		delete(pvc.ObjectMeta.Annotations, pvcVRAnnotationProtectedKey)
@@ -1765,6 +1768,10 @@ func (v *VRGInstance) removeFinalizerFromPVC(pvc *corev1.PersistentVolumeClaim,
 				" (%s/%s) detected as part of VolumeReplicationGroup (%s/%s), %w",
 				finalizer, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
 		}
+
+		log1.Info("PVC finalizer removed")
+	} else {
+		log1.Info("PVC finalizer absent")
 	}
 
 	return nil
@@ -1812,8 +1819,12 @@ func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeCl
 
 // findProtectedPVC returns the &VRG.Status.ProtectedPVC[x] for the given pvcName
 func (v *VRGInstance) findProtectedPVC(pvcName string) *ramendrv1alpha1.ProtectedPVC {
-	for index := range v.instance.Status.ProtectedPVCs {
-		protectedPVC := &v.instance.Status.ProtectedPVCs[index]
+	return FindProtectedPVC(v.instance, pvcName)
+}
+
+func FindProtectedPVC(vrg *ramendrv1alpha1.VolumeReplicationGroup, pvcName string) *ramendrv1alpha1.ProtectedPVC {
+	for index := range vrg.Status.ProtectedPVCs {
+		protectedPVC := &vrg.Status.ProtectedPVCs[index]
 		if protectedPVC.Name == pvcName {
 			return protectedPVC
 		}
@@ -2443,7 +2454,7 @@ func (v *VRGInstance) aggregateVolRepClusterDataProtectedCondition() *metav1.Con
 			msg := "Cluster data of one or more PVs are unprotected"
 			v.log.Info(msg)
 
-			return newVRGClusterDataUnprotectedCondition(v.instance.Generation, msg)
+			return newVRGClusterDataUnprotectedCondition(v.instance.Generation, condition.Reason, msg)
 		}
 	}
 

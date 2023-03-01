@@ -46,7 +46,8 @@ func (v *VRGInstance) vrgObjectProtectThrottled(result *ctrl.Result, s3StoreAcce
 
 			log1.Error(err, message)
 
-			v.vrgObjectProtected = newVRGClusterDataUnprotectedCondition(vrg.Generation, message)
+			v.vrgObjectProtected = newVRGClusterDataUnprotectedCondition(vrg.Generation,
+				"VolumeReplicationGroupObjectCaptureError", message)
 			result.Requeue = true
 
 			failure()
@@ -74,5 +75,5 @@ func VrgObjectUnprotect(objectStorer ObjectStorer, vrg ramen.VolumeReplicationGr
 }
 
 func vrgObjectDownload(objectStorer ObjectStorer, pathName string, vrg *ramen.VolumeReplicationGroup) error {
-	return downloadTypedObject(objectStorer, pathName, vrgS3ObjectNameSuffix, vrg)
+	return DownloadTypedObject(objectStorer, pathName, vrgS3ObjectNameSuffix, vrg)
 }

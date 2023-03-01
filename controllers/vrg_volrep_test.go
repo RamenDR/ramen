@@ -6,6 +6,7 @@ package controllers_test
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"math/rand"
 	"strings"
 	"time"
@@ -30,11 +31,10 @@ import (
 )
 
 const (
-	vrgtimeout         = time.Second * 10
-	vrginterval        = time.Millisecond * 10
-	letters            = "abcdefghijklmnopqrstuxwxyz"
-	namespaceLen       = 5
-	vrgS3ProfileNumber = 0
+	vrgtimeout   = time.Second * 9
+	vrginterval  = time.Millisecond * 10
+	letters      = "abcdefghijklmnopqrstuxwxyz"
+	namespaceLen = 5
 )
 
 var vrgObjectStorer = &objectStorers[vrgS3ProfileNumber]
@@ -44,12 +44,6 @@ func init() {
 }
 
 var _ = Describe("VolumeReplicationGroupVolRepController", func() {
-	conditionExpect := func(conditions []metav1.Condition, typ string) *metav1.Condition {
-		condition := meta.FindStatusCondition(conditions, typ)
-		Expect(condition).ToNot(BeNil())
-
-		return condition
-	}
 	conditionStatusReasonExpect := func(condition *metav1.Condition, status metav1.ConditionStatus, reason string) {
 		Expect(condition.Status).To(Equal(status))
 		Expect(condition.Reason).To(Equal(reason))
@@ -286,7 +280,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			replicationClassLabels: map[string]string{"protection": "ramen"},
 		}
 		It("sets up PVCs, PVs and VRGs (with s3 stores that fail ObjectStore get)", func() {
-			createTestTemplate.s3Profiles = []string{s3Profiles[3].S3ProfileName}
+			createTestTemplate.s3Profiles = []string{s3Profiles[bucketInvalidS3ProfileNumber2].S3ProfileName}
 			vrgS3StoreGetTestCase = newVRGTestCaseCreateAndStart(2, createTestTemplate, true, false)
 		})
 		It("waits for VRG status to match", func() {
@@ -313,7 +307,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			replicationClassLabels: map[string]string{"protection": "ramen"},
 		}
 		It("sets up PVCs, PVs and VRGs (with s3 stores that fail uploads)", func() {
-			createTestTemplate.s3Profiles = []string{s3Profiles[6].S3ProfileName}
+			createTestTemplate.s3Profiles = []string{s3Profiles[uploadErrorS3ProfileNumber].S3ProfileName}
 			vrgS3UploadTestCase = newVRGTestCaseCreateAndStart(3, createTestTemplate, true, false)
 		})
 		It("waits for VRG to create a VR for each PVC", func() {
@@ -324,6 +318,9 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgS3UploadTestCase.promoteVolReps()
 			vrgS3UploadTestCase.verifyVRGStatusExpectation(true)
 			vrgS3UploadTestCase.verifyCachedUploadError()
+		})
+		Specify("set VRG's S3 profile names to empty", func() {
+			vrgS3UploadTestCase.vrgS3ProfilesSet([]string{vrgController.NoS3StoreAvailable})
 		})
 		It("cleans up after testing", func() {
 			vrgS3UploadTestCase.cleanup()
@@ -360,7 +357,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgVRDeleteEnsureTestCase.protectDeletionOfVolReps()
 
 			By("Starting the VRG deletion process")
-			vrgVRDeleteEnsureTestCase.cleanupPVCs()
+			vrgVRDeleteEnsureTestCase.cleanupPVCs(vrAndPvcDeletionTimestampsRecentVerify)
 			vrg := vrgVRDeleteEnsureTestCase.getVRG()
 			Expect(k8sClient.Delete(context.TODO(), vrg)).To(Succeed())
 
@@ -379,7 +376,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 				i++
 
 				return apiReader.Get(context.TODO(), vrgVRDeleteEnsureTestCase.vrgNamespacedName(), vrg)
-			}, vrgtimeout, vrginterval).
+			}, vrgtimeout*2, vrginterval).
 				Should(MatchError(errors.NewNotFound(schema.GroupResource{
 					Group:    ramendrv1alpha1.GroupVersion.Group,
 					Resource: "volumereplicationgroups",
@@ -713,7 +710,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		// It("protects kube objects", func() { kubeObjectProtectionValidate(vrgScheduleTests) })
 		It("cleans up after testing", func() {
 			v := vrgScheduleTests[0]
-			v.cleanup()
+			v.cleanupButPvcFinalizerPresent()
 		})
 	})
 
@@ -747,7 +744,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		// It("protects kube objects", func() { kubeObjectProtectionValidate(vrgSchedule2Tests) })
 		It("cleans up after testing", func() {
 			v := vrgSchedule2Tests[0]
-			v.cleanup()
+			v.cleanupButPvcFinalizerPresent()
 		})
 	})
 
@@ -781,7 +778,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		// It("protects kube objects", func() { kubeObjectProtectionValidate(vrgSchedule3Tests) })
 		It("cleans up after testing", func() {
 			v := vrgSchedule3Tests[0]
-			v.cleanup()
+			v.cleanupButPvcFinalizerPresent()
 		})
 	})
 	// TODO: Add tests to move VRG to Secondary
@@ -1177,6 +1174,14 @@ func (v *vrgTest) createVRG() {
 		"failed to create VRG %s in %s", v.vrgName, v.namespace)
 }
 
+func (v *vrgTest) vrgS3ProfilesSet(names []string) {
+	vrg := v.getVRG()
+	vrg.Spec.S3Profiles = names
+	Expect(k8sClient.Update(context.TODO(), vrg)).To(Succeed())
+	vrg = v.getVRG()
+	Expect(vrg.Spec.S3Profiles).To(Equal(names), "%#v", vrg.Spec.S3Profiles)
+}
+
 func (v *vrgTest) createVRC(testTemplate *template) {
 	By("creating VRC " + v.replicationClass)
 
@@ -1281,10 +1286,14 @@ func (v *vrgTest) getPVC(pvcName string) *corev1.PersistentVolumeClaim {
 }
 
 func (v *vrgTest) getVRG() *ramendrv1alpha1.VolumeReplicationGroup {
+	return vrgGet(v.vrgNamespacedName())
+}
+
+func vrgGet(vrgNamespacedName types.NamespacedName) *ramendrv1alpha1.VolumeReplicationGroup {
 	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
-	err := apiReader.Get(context.TODO(), v.vrgNamespacedName(), vrg)
+	err := apiReader.Get(context.TODO(), vrgNamespacedName, vrg)
 	Expect(err).NotTo(HaveOccurred(),
-		"failed to get VRG %s", v.vrgName)
+		"failed to get VRG %s", vrgNamespacedName.String())
 
 	return vrg
 }
@@ -1378,9 +1387,9 @@ func (v *vrgTest) verifyCachedUploadError() {
 			vrgController.VRGConditionTypeClusterDataProtected)
 
 		Expect(pvcConditionClusterDataProtected).NotTo(BeNil(),
-			"failed to find %s condition for PVC %s in VRG %s",
+			"failed to find %s condition for PVC %s in VRG %#v",
 			vrgController.VRGConditionTypeClusterDataProtected,
-			protectedPVC.Name, v.vrgName)
+			protectedPVC.Name, vrg)
 
 		switch strings.Contains(pvcConditionClusterDataProtected.Message,
 			"persistent error while uploading to s3 profile") &&
@@ -1458,21 +1467,131 @@ func kubeObjectProtectionValidate(tests []*vrgTest) {
 }
 
 func (v *vrgTest) cleanup() {
-	v.cleanupPVCs()
+	v.cleanupPVCs(vrAndPvcFinalizerOrPvcAndPvAbsentVerify)
+	v.cleanupVrgAndNamespaceAndScAndVrc()
+}
+
+func (v *vrgTest) cleanupButPvcFinalizerPresent() {
+	v.cleanupPVCs(vrAbsentAndPvcFinalizerPresentVerify)
+	v.cleanupVrgAndNamespaceAndScAndVrc()
+}
+
+func (v *vrgTest) cleanupVrgAndNamespaceAndScAndVrc() {
 	v.cleanupVRG()
 	v.cleanupNamespace()
 	v.cleanupSC()
 	v.cleanupVRC()
 }
 
-func (v *vrgTest) cleanupPVCs() {
+func (v *vrgTest) cleanupPVCs(verify func(string, *corev1.PersistentVolumeClaim)) {
 	for _, pvcName := range v.pvcNames {
-		if pvc := v.getPVC(pvcName); pvc != nil {
-			err := k8sClient.Delete(context.TODO(), pvc)
-			Expect(err).To(BeNil(),
-				"failed to delete PVC %s", pvcName)
-		}
+		v.pvcDelete(pvcName, verify)
 	}
+}
+
+func (v *vrgTest) pvcDelete(pvcName string, verify func(string, *corev1.PersistentVolumeClaim)) {
+	pvc := v.getPVC(pvcName)
+	Expect(objectGet("", pvc.Spec.VolumeName, &corev1.PersistentVolume{})).To(Succeed())
+
+	vrg := v.getVRG()
+
+	pvcClusterDataProtected := vrgPvcConditionGet(vrg, pvc, vrgController.VRGConditionTypeClusterDataProtected)
+	if pvcClusterDataProtected != nil && pvcClusterDataProtected.Status == metav1.ConditionTrue {
+		v.pvObjectReplicaPresentVerify(pvc.Spec.VolumeName)
+	}
+
+	Expect(k8sClient.Delete(context.TODO(), pvc)).To(BeNil(), "failed to delete PVC %s", pvcName)
+	verify(v.namespace, pvc)
+
+	if vrg.Spec.ReplicationState == ramendrv1alpha1.Primary {
+		v.pvObjectReplicasAbsentVerify(pvc.Spec.VolumeName)
+		Eventually(func() *metav1.Condition {
+			return vrgPvcConditionGet(
+				vrgGet(v.vrgNamespacedName()), pvc, vrgController.VRGConditionTypeClusterDataProtected,
+			)
+		}).Should(Or(BeNil(), HaveField("Status", metav1.ConditionFalse)))
+	}
+}
+
+func vrgPvcConditionGet(vrg *ramendrv1alpha1.VolumeReplicationGroup, pvc *corev1.PersistentVolumeClaim, typ string,
+) *metav1.Condition {
+	vrgPvcStatus := vrgController.FindProtectedPVC(vrg, pvc.Name)
+	if vrgPvcStatus == nil {
+		return nil
+	}
+
+	return meta.FindStatusCondition(vrgPvcStatus.Conditions, typ)
+}
+
+func vrAndPvcDeletionTimestampsRecentVerify(namespaceName string, pvc *corev1.PersistentVolumeClaim) {
+	objectDeletionTimestampRecentVerify(namespaceName, pvc.Name, &volrep.VolumeReplication{})
+	objectDeletionTimestampRecentVerify(namespaceName, pvc.Name, &corev1.PersistentVolumeClaim{})
+}
+
+func VrAndPvcAndPvAbsentVerify(namespaceName string, pvc *corev1.PersistentVolumeClaim) {
+	vrAbsentVerify(namespaceName, pvc.Name)
+	pvcAbsentVerify(namespaceName, pvc.Name)
+	pvAbsentVerify(pvc.Spec.VolumeName)
+}
+
+func vrAndPvcFinalizerOrPvcAndPvAbsentVerify(namespaceName string, pvc *corev1.PersistentVolumeClaim) {
+	vrAbsentVerify(namespaceName, pvc.Name)
+
+	if objectOrItsFinalizerAbsentVerify(namespaceName, pvc.Name, &corev1.PersistentVolumeClaim{}, pvcGroupResource(),
+		vrgController.PvcVRFinalizerProtected) {
+		pvAbsentVerify(pvc.Spec.VolumeName)
+	}
+}
+
+func vrAbsentAndPvcFinalizerPresentVerify(namespaceName string, pvc *corev1.PersistentVolumeClaim) {
+	vrAbsentVerify(namespaceName, pvc.Name)
+	pvcFinalizerPresentVerify(namespaceName, pvc.Name)
+}
+
+func vrAbsentVerify(namespaceName, pvcName string) {
+	objectAbsentVerify(namespaceName, pvcName, &volrep.VolumeReplication{}, vrGroupResource())
+}
+
+func pvcAbsentVerify(namespaceName, pvcName string) {
+	objectAbsentVerify(namespaceName, pvcName, &corev1.PersistentVolumeClaim{}, pvcGroupResource())
+}
+
+func pvcFinalizerPresentVerify(namespaceName, pvcName string) {
+	objectFinalizerPresentVerify(namespaceName, pvcName, &corev1.PersistentVolumeClaim{},
+		vrgController.PvcVRFinalizerProtected)
+}
+
+func pvAbsentVerify(pvName string) {
+	objectAbsentVerify("", pvName, &corev1.PersistentVolume{}, pvGroupResource())
+}
+
+func vrGroupResource() schema.GroupResource {
+	return schema.GroupResource{
+		Group:    volrep.GroupVersion.Group,
+		Resource: "volumereplications",
+		// Resource: "VolumeReplication",
+	}
+}
+
+func pvcGroupResource() schema.GroupResource {
+	return schema.GroupResource{Group: corev1.SchemeGroupVersion.Group, Resource: "persistentvolumeclaims"}
+}
+
+func pvGroupResource() schema.GroupResource {
+	return schema.GroupResource{Group: corev1.SchemeGroupVersion.Group, Resource: "persistentvolumes"}
+}
+
+func (v *vrgTest) pvObjectReplicaPresentVerify(pvName string) {
+	var pv corev1.PersistentVolume
+
+	Expect(vrgController.DownloadTypedObject(*vrgObjectStorer, v.s3KeyPrefix(), pvName, &pv)).To(Succeed())
+}
+
+func (v *vrgTest) pvObjectReplicasAbsentVerify(pvName string) {
+	var pv corev1.PersistentVolume
+
+	Expect(vrgController.DownloadTypedObject(*vrgObjectStorer, v.s3KeyPrefix(), pvName, &pv)).
+		To(MatchError(fs.ErrNotExist))
 }
 
 func (v *vrgTest) cleanupVRG() {
@@ -1671,15 +1790,7 @@ func (v *vrgTest) waitForVolRepPromotion(vrNamespacedName types.NamespacedName, 
 		// as of now name of VolumeReplication resource created by the VolumeReplicationGroup
 		// is same as the pvc that it replicates. When that changes this has to be changed to
 		// use the right name to get the appropriate protected PVC condition from VRG status.
-		var protectedPVC *ramendrv1alpha1.ProtectedPVC
-		for index := range vrg.Status.ProtectedPVCs {
-			curPVC := &vrg.Status.ProtectedPVCs[index]
-			if curPVC.Name == updatedVolRep.Name {
-				protectedPVC = curPVC
-
-				break
-			}
-		}
+		protectedPVC := vrgController.FindProtectedPVC(vrg, updatedVolRep.Name)
 
 		// failed to get the protectedPVC. Returning false
 		if protectedPVC == nil {

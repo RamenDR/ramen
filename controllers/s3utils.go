@@ -328,7 +328,7 @@ func S3KeyPrefix(namespacedName string) string {
 	return namespacedName + "/"
 }
 
-func typedObjectKey(prefix, suffix string, object interface{}) string {
+func TypedObjectKey(prefix, suffix string, object interface{}) string {
 	return typedKey(prefix, suffix, reflect.TypeOf(object))
 }
 
@@ -369,7 +369,7 @@ func uploadTypedObject(s ObjectStorer, keyPrefix, keySuffix string,
 	return s.UploadObject(key, uploadContent)
 }
 
-func downloadTypedObject(s ObjectStorer, keyPrefix, keySuffix string, objectPointer interface{},
+func DownloadTypedObject(s ObjectStorer, keyPrefix, keySuffix string, objectPointer interface{},
 ) error {
 	return s.DownloadObject(typedKey(keyPrefix, keySuffix, reflect.TypeOf(objectPointer).Elem()), objectPointer)
 }

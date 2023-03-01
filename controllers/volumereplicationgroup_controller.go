@@ -440,7 +440,7 @@ type VRGInstance struct {
 const (
 	// Finalizers
 	vrgFinalizerName        = "volumereplicationgroups.ramendr.openshift.io/vrg-protection"
-	pvcVRFinalizerProtected = "volumereplicationgroups.ramendr.openshift.io/pvc-vr-protection"
+	PvcVRFinalizerProtected = "volumereplicationgroups.ramendr.openshift.io/pvc-vr-protection"
 	pvcInUse                = "kubernetes.io/pvc-protection"
 
 	// Annotations
