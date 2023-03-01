@@ -66,6 +66,10 @@ def _validate_profile(profile):
     if "name" not in profile:
         raise ValueError("Missing profile name")
 
+    # If True, this is an external cluster and we don't have to start it.
+    profile.setdefault("external", False)
+
+    # Properties for minikube created cluster.
     profile.setdefault("driver", "kvm2")
     profile.setdefault("container_runtime", "")
     profile.setdefault("extra_disks", 0)

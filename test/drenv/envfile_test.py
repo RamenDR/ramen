@@ -42,6 +42,7 @@ profiles:
   - name: dr2
     template: dr-cluster
   - name: hub
+    external: true
     template: hub-cluster
 
 workers:
@@ -65,6 +66,7 @@ def test_valid():
 
     profile = env["profiles"][0]
     assert profile["name"] == "dr1"
+    assert not profile["external"]
     assert profile["network"] == "default"  # From template
     assert profile["memory"] == "8g"  # From profile
     assert profile["cpus"] == 2  # From defaults
@@ -95,6 +97,7 @@ def test_valid():
 
     profile = env["profiles"][2]
     assert profile["name"] == "hub"
+    assert profile["external"]
     assert profile["memory"] == "4g"  # From template
 
     worker = profile["workers"][0]

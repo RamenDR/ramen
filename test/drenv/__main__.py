@@ -115,10 +115,50 @@ def execute(func, profiles, delay=0, **options):
 
 
 def start_cluster(profile, hooks=(), **options):
-    start = time.monotonic()
-    logging.info("[%s] Starting cluster", profile["name"])
+    if profile["external"]:
+        logging.debug("[%s] Skipping external cluster", profile["name"])
+    else:
+        is_restart = drenv.cluster_exists(profile["name"])
+        start_minikube_cluster(profile)
+        if is_restart:
+            wait_for_deployments(profile)
 
-    is_restart = drenv.cluster_exists(profile["name"])
+    execute(run_worker, profile["workers"], hooks=hooks)
+
+
+def stop_cluster(profile, **options):
+    cluster_status = drenv.cluster_status(profile["name"])
+
+    if cluster_status.get("APIServer") == "Running":
+        execute(
+            run_worker,
+            profile["workers"],
+            hooks=["stop"],
+            reverse=True,
+            allow_failure=True,
+        )
+
+    if profile["external"]:
+        logging.debug("[%s] Skipping external cluster", profile["name"])
+    elif cluster_status.get("Host") == "Running":
+        stop_minikube_cluster(profile)
+
+
+def delete_cluster(profile, **options):
+    if profile["external"]:
+        logging.debug("[%s] Skipping external cluster", profile["name"])
+    else:
+        delete_minikube_cluster(profile)
+
+    profile_config = drenv.config_dir(profile["name"])
+    if os.path.exists(profile_config):
+        logging.info("[%s] Removing config %s", profile["name"], profile_config)
+        shutil.rmtree(profile_config)
+
+
+def start_minikube_cluster(profile):
+    start = time.monotonic()
+    logging.info("[%s] Starting minikube cluster", profile["name"])
 
     minikube(
         "start",
@@ -151,43 +191,22 @@ def start_cluster(profile, hooks=(), **options):
         time.monotonic() - start,
     )
 
-    if is_restart:
-        wait_for_deployments(profile)
 
-    execute(run_worker, profile["workers"], hooks=hooks)
-
-
-def stop_cluster(profile, **options):
-    cluster_status = drenv.cluster_status(profile["name"])
-
-    if cluster_status.get("APIServer") == "Running":
-        execute(
-            run_worker,
-            profile["workers"],
-            hooks=["stop"],
-            reverse=True,
-            allow_failure=True,
-        )
-
-    if cluster_status.get("Host") == "Running":
-        start = time.monotonic()
-        logging.info("[%s] Stopping cluster", profile["name"])
-        minikube("stop", profile=profile["name"])
-        logging.info(
-            "[%s] Cluster stopped in %.2f seconds",
-            profile["name"],
-            time.monotonic() - start,
-        )
+def stop_minikube_cluster(profile):
+    start = time.monotonic()
+    logging.info("[%s] Stopping cluster", profile["name"])
+    minikube("stop", profile=profile["name"])
+    logging.info(
+        "[%s] Cluster stopped in %.2f seconds",
+        profile["name"],
+        time.monotonic() - start,
+    )
 
 
-def delete_cluster(profile, **options):
+def delete_minikube_cluster(profile):
     start = time.monotonic()
     logging.info("[%s] Deleting cluster", profile["name"])
     minikube("delete", profile=profile["name"])
-    profile_config = drenv.config_dir(profile["name"])
-    if os.path.exists(profile_config):
-        logging.info("[%s] Removing config %s", profile["name"], profile_config)
-        shutil.rmtree(profile_config)
     logging.info(
         "[%s] Cluster deleted in %.2f seconds",
         profile["name"],

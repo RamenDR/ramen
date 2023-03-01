@@ -444,6 +444,9 @@ $ drenv delete example.yaml
 
 - `templates`: templates for creating new profiles.
     - `name`: profile name.
+    - `external`: true if this is existing external cluster. In this
+      case the tool will not start a minikube cluster and all other
+      options are ignored.
     - `driver`: The minikube driver. Tested with "kvm2" and "podman"
       (default "kvm2")
     - `container_runtime`: The container runtime to be used. Valid
