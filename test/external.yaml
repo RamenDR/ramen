@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Example environment using external clusters. The cluster `test` must exist
+# when this environment is started.
+#
+# To try this example, create the cluster with:
+#
+#     drenv start test.yaml
+#
+# Now you can start this environment with:
+#
+#     drenv start external.yaml
+#
+# Stopping will run the stop script, but will not stop the external minikube
+# cluster. Deleting does nothing.
+#
+---
+name: external
+profiles:
+  - name: cluster
+    external: true
+    workers:
+      - scripts:
+          - name: example
