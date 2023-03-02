@@ -161,6 +161,7 @@ app_list_custom() {
 		$(pv_names $1)\
 		-nasdf\
 		pvc/busybox-pvc\
+		vr/busybox-pvc\
 		po/busybox\
 		$(app_replicaset_pod_name $1)\
 		$(app_deployment_replicaset_name $1)\
@@ -322,10 +323,12 @@ app_failover() {
 
 app_failback() {
 	set -- cluster1 cluster2
-	app_undeploy_unprotected $1
+	app_undeploy_failback $1
 	vrg_final_sync $2
-	app_undeploy_unprotected $2 app_pv_sync_wait\ $1
-	app_recover $1 relocate
+	set -x
+	time kubectl --context $2 -nasdf wait vrg/bb --for condition=clusterdataprotected
+	{ set +x; } 2>/dev/null
+	app_undeploy_failback $2 app_recover_failback\ $1\ $2
 }; exit_stack_push unset -f app_failback
 
 app_recover() {
@@ -344,22 +347,23 @@ app_recover() {
 	date
 }; exit_stack_push unset -f app_recover
 
-app_undeploy_unprotected() {
+app_undeploy_failback() {
 	vrg_demote $1
 	# "PVC not being deleted. Not ready to become Secondary"
 	app_undeploy $1& # pvc finalizer remains until vrg deletes its vr
+	until_true_or_n 30 eval test \"\$\(kubectl --context $1 -nasdf get vrg/bb -ojsonpath='{.status.state}'\)\" = Secondary
 	$2
 	vrg_undeploy $1&
 	wait
-}; exit_stack_push unset -f app_undeploy_unprotected
+}; exit_stack_push unset -f app_undeploy_failback
 
-app_pv_sync_wait() {
-	vrg_demote $1
+app_recover_failback() {
 	# "VolumeReplication resource for the pvc as Secondary is in sync with Primary"
 	set -x
-	time kubectl --context $1 -nasdf wait vrg/bb --for condition=dataready --timeout 10m
+	time kubectl --context $2 -nasdf wait vrg/bb --for condition=dataready --timeout 10m
 	{ set +x; } 2>/dev/null
-}; exit_stack_push unset -f app_pv_sync_wait
+	app_recover $1 relocate
+}; exit_stack_push unset -f app_recover_failback
 
 app_velero_kube_object_name=asdf--bb--
 exit_stack_push unset -v app_velero_kube_object_name
