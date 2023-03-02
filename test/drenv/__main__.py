@@ -3,6 +3,7 @@
 
 import argparse
 import concurrent.futures
+import json
 import logging
 import os
 import shutil
@@ -14,6 +15,7 @@ import yaml
 import drenv
 from . import commands
 from . import envfile
+from . import minikube
 
 CMD_PREFIX = "cmd_"
 
@@ -118,7 +120,7 @@ def start_cluster(profile, hooks=(), **options):
     if profile["external"]:
         logging.debug("[%s] Skipping external cluster", profile["name"])
     else:
-        is_restart = drenv.cluster_exists(profile["name"])
+        is_restart = minikube_profile_exists(profile["name"])
         start_minikube_cluster(profile)
         if is_restart:
             wait_for_deployments(profile)
@@ -156,33 +158,31 @@ def delete_cluster(profile, **options):
         shutil.rmtree(profile_config)
 
 
+def minikube_profile_exists(name):
+    out = minikube.profile("list", output="json")
+    profiles = json.loads(out)
+    for profile in profiles["valid"]:
+        if profile["Name"] == name:
+            return True
+    return False
+
+
 def start_minikube_cluster(profile):
     start = time.monotonic()
     logging.info("[%s] Starting minikube cluster", profile["name"])
 
-    minikube(
-        "start",
-        "--driver",
-        profile["driver"],
-        "--container-runtime",
-        profile["container_runtime"],
-        "--extra-disks",
-        str(profile["extra_disks"]),
-        "--disk-size",
-        profile["disk_size"],
-        "--network",
-        profile["network"],
-        "--nodes",
-        str(profile["nodes"]),
-        "--cni",
-        profile["cni"],
-        "--cpus",
-        str(profile["cpus"]),
-        "--memory",
-        profile["memory"],
-        "--addons",
-        ",".join(profile["addons"]),
-        profile=profile["name"],
+    minikube.start(
+        profile["name"],
+        driver=profile["driver"],
+        container_runtime=profile["container_runtime"],
+        extra_disks=profile["extra_disks"],
+        disk_size=profile["disk_size"],
+        network=profile["network"],
+        nodes=profile["nodes"],
+        cni=profile["cni"],
+        cpus=profile["cpus"],
+        memory=profile["memory"],
+        addons=profile["addons"],
     )
 
     logging.info(
@@ -195,7 +195,7 @@ def start_minikube_cluster(profile):
 def stop_minikube_cluster(profile):
     start = time.monotonic()
     logging.info("[%s] Stopping cluster", profile["name"])
-    minikube("stop", profile=profile["name"])
+    minikube.stop(profile["name"])
     logging.info(
         "[%s] Cluster stopped in %.2f seconds",
         profile["name"],
@@ -206,7 +206,7 @@ def stop_minikube_cluster(profile):
 def delete_minikube_cluster(profile):
     start = time.monotonic()
     logging.info("[%s] Deleting cluster", profile["name"])
-    minikube("delete", profile=profile["name"])
+    minikube.delete(profile["name"])
     logging.info(
         "[%s] Cluster deleted in %.2f seconds",
         profile["name"],
@@ -255,10 +255,6 @@ def wait_for_deployments(profile, initial_wait=30, timeout=300):
 
 def kubectl(*args, profile=None):
     run("kubectl", "--context", profile, *args, name=profile)
-
-
-def minikube(cmd, *args, profile=None):
-    run("minikube", cmd, "--profile", profile, *args, name=profile)
 
 
 def run_worker(worker, hooks=(), reverse=False, allow_failure=False):
