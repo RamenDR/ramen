@@ -6,6 +6,14 @@ import json
 from drenv import kubectl
 
 
+def test_version(tmpenv):
+    out = kubectl.version(output="json", context=tmpenv.profile)
+    info = json.loads(out)
+    # We care mostly about server version, but let's check also client version.
+    assert "serverVersion" in info
+    assert "clientVersion" in info
+
+
 def test_get(tmpenv):
     out = kubectl.get("deploy", "--output=name", context=tmpenv.profile)
     assert out.strip() == "deployment.apps/example-deployment"

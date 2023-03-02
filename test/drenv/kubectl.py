@@ -4,6 +4,15 @@
 from . import commands
 
 
+def version(context=None, output=None):
+    """
+    Return local and server version info. Useful for testing connectivity to
+    APIServer.
+    """
+    args = ["--output", output] if output else []
+    return _run("version", *args, context=context)
+
+
 def config(*args, context=None):
     """
     Run kubectl config ... and return the output.
