@@ -347,7 +347,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	d, err := r.createDRPCInstance(ctx, drpc, usrPlRule, logger)
 	if err != nil && !errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
-		r.recordFailure(drpc, usrPlRule, "Error", err.Error(), nil, logger)
+		err = r.updateDRPCStatus(drpc, usrPlRule, nil, logger)
 
 		return ctrl.Result{}, err
 	}
@@ -888,29 +888,50 @@ func (r *DRPlacementControlReconciler) getVRGsFromManagedClusters(drpc *rmn.DRPl
 	annotations[DRPCNameAnnotation] = drpc.Name
 	annotations[DRPCNamespaceAnnotation] = drpc.Namespace
 
+	var failedClusterToQuery string
+
+	var clustersQueriedSuccessfully int
+
 	for _, drCluster := range rmnutil.DrpolicyClusterNames(drPolicy) {
 		vrg, err := r.MCVGetter.GetVRGFromManagedCluster(drpc.Name, drpc.Namespace, drCluster, annotations)
 		if err != nil {
 			// Only NotFound error is accepted
 			if errors.IsNotFound(err) {
 				log.Info(fmt.Sprintf("VRG not found on %q", drCluster))
+				clustersQueriedSuccessfully++
 
 				continue
 			}
 
-			if drpc.Spec.Action == rmn.ActionFailover && drpc.Spec.FailoverCluster != drCluster {
-				log.Info(fmt.Sprintf("Skipping fetching VRG from %s due to failure. Error (%v)",
-					drCluster, err))
+			failedClusterToQuery = drCluster
 
-				continue
-			}
-
-			return vrgs, fmt.Errorf("failed to retrieve VRG from %s. err (%w)", drCluster, err)
+			log.Info(fmt.Sprintf("failed to retrieve VRG from %s. err (%v)", drCluster, err))
 		}
+
+		clustersQueriedSuccessfully++
 
 		vrgs[drCluster] = vrg
 
 		log.Info("VRG location", "VRG on", drCluster)
+	}
+
+	// We are done if we successfully queried all drClusters
+	if clustersQueriedSuccessfully == len(rmnutil.DrpolicyClusterNames(drPolicy)) {
+		return vrgs, nil
+	}
+
+	if clustersQueriedSuccessfully == 0 {
+		return vrgs, fmt.Errorf("failed to retrieve VRGs from clusters")
+	}
+
+	if len(vrgs) == 0 && failedClusterToQuery != drpc.Spec.FailoverCluster {
+		condition := findCondition(drpc.Status.Conditions, rmn.ConditionPeerReady)
+		if condition == nil {
+			SetDRPCStatusCondition(&drpc.Status.Conditions, rmn.ConditionPeerReady, drpc.Generation,
+				metav1.ConditionTrue, rmn.ReasonSuccess, "Forcing Ready")
+			SetDRPCStatusCondition(&drpc.Status.Conditions, rmn.ConditionAvailable,
+				drpc.Generation, metav1.ConditionTrue, rmn.ReasonSuccess, "Forcing Available")
+		}
 	}
 
 	return vrgs, nil
