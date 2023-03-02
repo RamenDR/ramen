@@ -13,6 +13,7 @@ import time
 import yaml
 
 import drenv
+from . import cluster
 from . import commands
 from . import envfile
 from . import minikube
@@ -129,9 +130,9 @@ def start_cluster(profile, hooks=(), **options):
 
 
 def stop_cluster(profile, **options):
-    cluster_status = drenv.cluster_status(profile["name"])
+    cluster_status = cluster.status(profile["name"])
 
-    if cluster_status.get("APIServer") == "Running":
+    if cluster_status == cluster.READY:
         execute(
             run_worker,
             profile["workers"],
@@ -142,7 +143,7 @@ def stop_cluster(profile, **options):
 
     if profile["external"]:
         logging.debug("[%s] Skipping external cluster", profile["name"])
-    elif cluster_status.get("Host") == "Running":
+    elif cluster_status != cluster.UNKNOWN:
         stop_minikube_cluster(profile)
 
 
