@@ -9,8 +9,8 @@ import time
 
 from contextlib import contextmanager
 
-from . import commands
 from . import kubectl
+from . import minikube
 
 
 def wait_for(
@@ -91,26 +91,8 @@ def cluster_status(cluster):
     if not cluster_info(cluster):
         return {}
 
-    out = commands.run(
-        "minikube",
-        "status",
-        "--profile",
-        cluster,
-        "--output",
-        "json",
-    )
-
+    out = minikube.status(cluster, output="json")
     return json.loads(out)
-
-
-def cluster_exists(cluster):
-    out = commands.run("minikube", "profile", "list", "--output=json")
-    profiles = json.loads(out)
-    for profile in profiles["valid"]:
-        if profile["Name"] == cluster:
-            return True
-
-    return False
 
 
 def cluster_info(cluster):
