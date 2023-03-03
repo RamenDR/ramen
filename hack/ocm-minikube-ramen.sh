@@ -536,6 +536,8 @@ ramen_deploy_hub()
 exit_stack_push unset -f ramen_deploy_hub
 ramen_deploy_spoke()
 {
+	volsync_crds_deploy $1
+	ramen_recipe_crd_deploy $1
 	ramen_deploy_hub_or_spoke $1 dr-cluster
 }
 exit_stack_push unset -f ramen_deploy_spoke
@@ -557,6 +559,8 @@ exit_stack_push unset -f ramen_undeploy_hub
 ramen_undeploy_spoke()
 {
 	ramen_undeploy_hub_or_spoke $1 dr-cluster
+	ramen_recipe_crd_undeploy $1
+	volsync_crds_undeploy $1
 }
 exit_stack_push unset -f ramen_undeploy_spoke
 ramen_deploy_spokes()
@@ -569,6 +573,15 @@ ramen_undeploy_spokes()
 	for cluster_name in $spoke_cluster_names; do ramen_undeploy_spoke $cluster_name; done; unset -v cluster_name
 }
 exit_stack_push unset -f ramen_undeploy_spokes
+ramen_recipe_crd_kubectl() {
+	kubectl --context $1 $2 -f https://raw.githubusercontent.com/RamenDR/recipe/main/config/crd/bases/ramendr.openshift.io_recipes.yaml
+}; exit_stack_push unset -f ramen_recipe_crd_kubectl
+ramen_recipe_crd_deploy() {
+	ramen_recipe_crd_kubectl $1 apply
+}; exit_stack_push unset -f ramen_recipe_crd_deploy
+ramen_recipe_crd_undeploy() {
+	ramen_recipe_crd_kubectl $1 delete\ --ignore-not-found
+}; exit_stack_push unset -f ramen_recipe_crd_undeploy
 olm_deploy_spokes()
 {
 	for cluster_name in $spoke_cluster_names; do olm_deploy $cluster_name; done; unset -v cluster_name

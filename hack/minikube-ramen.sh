@@ -44,6 +44,9 @@ manager_redeploy() {
 	wait
 	manager_deploy
 }
+manager_log() {
+	kubectl --context $1 -nramen-system logs deploy/ramen-dr-cluster-operator manager
+}
 application_sample_namespace_name=${application_sample_namespace_name:-default}
 application_sample_namespace_deploy() {
 	kubectl create namespace $application_sample_namespace_name --dry-run=client -oyaml|kubectl --context $1 apply -f-
@@ -98,6 +101,7 @@ unset -f application_sample_kubectl
 unset -f application_sample_namespace_undeploy
 unset -f application_sample_namespace_deploy
 unset -v application_sample_namespace_name
+unset -f manager_log
 unset -f manager_redeploy
 unset -f manager_undeploy
 unset -f manager_deploy
