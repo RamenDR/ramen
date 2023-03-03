@@ -130,8 +130,7 @@ app_deploy() {
 		|kubectl --context $1 -nasdf apply -f-
 	kubectl create --dry-run=client -oyaml secret generic asdf --from-literal=key1=value1\
 		|kubectl --context $1 -nasdf apply -f-
-	kubectl create --dry-run=client -oyaml deploy asdf --image busybox -- sh -c while\ true\;do\ date\;sleep\ 60\;done\
-		|kubectl --context $1 -nasdf apply -f-
+	kubectl --context $1 -nasdf run asdf --image busybox -- sh -c while\ true\;do\ date\;sleep\ 60\;done
 	kubectl create --dry-run=client -oyaml -k https://github.com/RamenDR/ocm-ramen-samples/busybox -nasdf\
 		|kubectl --context $1 apply -f-
 	app_list $1
@@ -161,12 +160,12 @@ app_list_custom() {
 		vrg/bb\
 		$(pv_names $1)\
 		-nasdf\
-		pvc/busybox-pvc\
 		vr/busybox-pvc\
-		po/busybox\
+		pvc/busybox-pvc\
+		deploy/busybox\
 		$(app_replicaset_pod_name $1)\
 		$(app_deployment_replicaset_name $1)\
-		deploy/asdf\
+		po/asdf\
 		cm/asdf\
 		secret/asdf\
 		$2
@@ -174,7 +173,7 @@ app_list_custom() {
 
 app_undeploy() {
 	kubectl --context $1 -nasdf delete --ignore-not-found -k https://github.com/RamenDR/ocm-ramen-samples/busybox
-	kubectl --context $1 -nasdf delete --ignore-not-found deploy/asdf secret/asdf configmap/asdf
+	kubectl --context $1 -nasdf delete --ignore-not-found po/asdf secret/asdf configmap/asdf
 	app_namespace_undeploy $1
 	app_list $1
 }; exit_stack_push unset -f app_undeploy
