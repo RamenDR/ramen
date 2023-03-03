@@ -23,6 +23,9 @@ def main():
 
     p = argparse.ArgumentParser(prog="drenv")
     p.add_argument("-v", "--verbose", action="store_true", help="Be more verbose")
+    p.add_argument(
+        "--skip-tests", dest="run_tests", action="store_false", help="Skip self tests"
+    )
     p.add_argument("command", choices=commands, help="Command to run")
     p.add_argument("--name-prefix", help="Prefix profile names")
     p.add_argument("filename", help="Environment filename")
@@ -37,15 +40,18 @@ def main():
         env = envfile.load(f, name_prefix=args.name_prefix)
 
     func = globals()[CMD_PREFIX + args.command]
-    func(env)
+    func(env, args)
 
 
-def cmd_start(env):
+def cmd_start(env, args):
     start = time.monotonic()
     logging.info("[%s] Starting environment", env["name"])
+    hooks = ["start", "test"] if args.run_tests else ["start"]
+
     # Delaying `minikube start` ensures cluster start order.
-    execute(start_cluster, env["profiles"], delay=1)
-    execute(run_worker, env["workers"], hooks=["start", "test"])
+    execute(start_cluster, env["profiles"], delay=1, hooks=hooks)
+    execute(run_worker, env["workers"], hooks=hooks)
+
     logging.info(
         "[%s] Environment started in %.2f seconds",
         env["name"],
@@ -53,7 +59,7 @@ def cmd_start(env):
     )
 
 
-def cmd_stop(env):
+def cmd_stop(env, args):
     start = time.monotonic()
     logging.info("[%s] Stopping environment", env["name"])
     execute(stop_cluster, env["profiles"])
@@ -64,7 +70,7 @@ def cmd_stop(env):
     )
 
 
-def cmd_delete(env):
+def cmd_delete(env, args):
     start = time.monotonic()
     logging.info("[%s] Deleting environment", env["name"])
     execute(delete_cluster, env["profiles"])
@@ -108,7 +114,7 @@ def execute(func, profiles, delay=0, **options):
         sys.exit(1)
 
 
-def start_cluster(profile, **options):
+def start_cluster(profile, hooks=(), **options):
     start = time.monotonic()
     logging.info("[%s] Starting cluster", profile["name"])
 
@@ -148,7 +154,7 @@ def start_cluster(profile, **options):
     if is_restart:
         wait_for_deployments(profile)
 
-    execute(run_worker, profile["workers"], hooks=["start", "test"])
+    execute(run_worker, profile["workers"], hooks=hooks)
 
 
 def stop_cluster(profile, **options):
