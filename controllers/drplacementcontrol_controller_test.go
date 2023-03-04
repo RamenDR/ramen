@@ -162,7 +162,7 @@ var (
 					ClusterDecisionResource: &argov1alpha1.DuckTypeGenerator{
 						LabelSelector: metav1.LabelSelector{
 							MatchLabels: map[string]string{
-								"cluster.open-cluster-management.io/placement": UserPlacementName,
+								clrapiv1beta1.PlacementLabel: UserPlacementName,
 							},
 						},
 					},
