@@ -71,6 +71,14 @@ rules:
 - apiGroups:
   - cluster.open-cluster-management.io
   resources:
+  - placement
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - cluster.open-cluster-management.io
+  resources:
   - placementdecisions
   verbs:
   - create

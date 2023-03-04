@@ -1044,7 +1044,7 @@ func verifyUserPlacementRuleDecision(name, namespace, homeCluster string) {
 func getPlacementDecision(plName, plNamespace string) *clrapiv1beta1.PlacementDecision {
 	plDecision := &clrapiv1beta1.PlacementDecision{}
 	plDecisionKey := types.NamespacedName{
-		Name:      plName + "-decision-1",
+		Name:      fmt.Sprintf(controllers.PlacementDecisionName, plName),
 		Namespace: plNamespace,
 	}
 
