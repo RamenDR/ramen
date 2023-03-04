@@ -51,8 +51,6 @@ const (
 	// This is needed in order to sync up the DRPC status and the VRG status.
 	StatusCheckDelay = time.Minute * 10
 
-	PlacementLabelKey = "cluster.open-cluster-management.io/placement"
-
 	PlacementDecisionName = "%s-decision-1"
 )
 
@@ -1340,7 +1338,7 @@ func (r *DRPlacementControlReconciler) createOrUpdatePlacementDecision(ctx conte
 			plDecision.Labels = map[string]string{}
 		}
 
-		plDecision.Labels[PlacementLabelKey] = placement.GetName()
+		plDecision.Labels[clrapiv1beta1.PlacementLabel] = placement.GetName()
 
 		if err := r.Create(ctx, plDecision); err != nil {
 			return err
@@ -1379,7 +1377,7 @@ func (r *DRPlacementControlReconciler) getApplicationDestinationNamespace(placem
 		appSet := &appSetList.Items[i]
 		if len(appSet.Spec.Generators) > 0 &&
 			appSet.Spec.Generators[0].ClusterDecisionResource != nil {
-			pn := appSet.Spec.Generators[0].ClusterDecisionResource.LabelSelector.MatchLabels[PlacementLabelKey]
+			pn := appSet.Spec.Generators[0].ClusterDecisionResource.LabelSelector.MatchLabels[clrapiv1beta1.PlacementLabel]
 			if pn == placement.GetName() {
 				r.Log.Info("Found ApplicationSet for Placement", "name", appSet.Name, "placement", placement.GetName())
 				// Retrieving the Destination.Namespace from Application.Spec requires iterating through all Applications
