@@ -359,6 +359,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 // +kubebuilder:rbac:groups=core,resources=events,verbs=get;create;patch;update
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=placementdecisions,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=placementdecisions/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=placement,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -788,11 +789,11 @@ func (r *DRPlacementControlReconciler) getPlacementOrPlacementRule(ctx context.C
 
 	var err error
 
-	usrPlacement, err = r.tyToGetAndAnnotatePlacementRule(ctx, drpc, log)
+	usrPlacement, err = r.tryToGetAndAnnotatePlacementRule(ctx, drpc, log)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// PacementRule not found, but DRPC is not deleted. Check Placement instead
-			usrPlacement, err = r.tyToGetAndAnnotatePlacement(ctx, drpc, log)
+			usrPlacement, err = r.tryToGetAndAnnotatePlacement(ctx, drpc, log)
 		}
 
 		if err != nil {
@@ -805,7 +806,7 @@ func (r *DRPlacementControlReconciler) getPlacementOrPlacementRule(ctx context.C
 	return usrPlacement, nil
 }
 
-func (r *DRPlacementControlReconciler) tyToGetAndAnnotatePlacementRule(ctx context.Context,
+func (r *DRPlacementControlReconciler) tryToGetAndAnnotatePlacementRule(ctx context.Context,
 	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) (*plrv1.PlacementRule, error) {
 	log.Info("Trying user PlacementRule", "usrPR", drpc.Spec.PlacementRef.Name+"/"+drpc.Spec.PlacementRef.Namespace)
@@ -851,7 +852,7 @@ func (r *DRPlacementControlReconciler) tyToGetAndAnnotatePlacementRule(ctx conte
 	return usrPlRule, nil
 }
 
-func (r *DRPlacementControlReconciler) tyToGetAndAnnotatePlacement(ctx context.Context,
+func (r *DRPlacementControlReconciler) tryToGetAndAnnotatePlacement(ctx context.Context,
 	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) (*clrapiv1beta1.Placement, error) {
 	log.Info("Trying user Placement", "usrP", drpc.Spec.PlacementRef.Name+"/"+drpc.Spec.PlacementRef.Namespace)
@@ -1330,15 +1331,17 @@ func (r *DRPlacementControlReconciler) createOrUpdatePlacementDecision(ctx conte
 			return err
 		}
 
+		// Set the Placement object to be the owner.  When it is deleted, the PlacementDecision is deleted
 		if err := ctrl.SetControllerReference(placement, plDecision, r.Client.Scheme()); err != nil {
 			return fmt.Errorf("failed to set controller reference %w", err)
 		}
 
-		if plDecision.Labels == nil {
-			plDecision.Labels = map[string]string{}
+		plDecision.ObjectMeta.Labels = map[string]string{
+			clrapiv1beta1.PlacementLabel: placement.GetName(),
 		}
 
-		plDecision.Labels[clrapiv1beta1.PlacementLabel] = placement.GetName()
+		owner := metav1.NewControllerRef(placement, clrapiv1beta1.GroupVersion.WithKind("Placement"))
+		plDecision.ObjectMeta.OwnerReferences = []metav1.OwnerReference{*owner}
 
 		if err := r.Create(ctx, plDecision); err != nil {
 			return err
