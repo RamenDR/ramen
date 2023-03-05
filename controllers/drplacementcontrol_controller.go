@@ -789,16 +789,27 @@ func (r *DRPlacementControlReconciler) getPlacementOrPlacementRule(ctx context.C
 
 	var err error
 
-	usrPlacement, err = r.tryToGetAndAnnotatePlacementRule(ctx, drpc, log)
+	usrPlacement, err = r.getPlacementRule(ctx, drpc, log)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// PacementRule not found, but DRPC is not deleted. Check Placement instead
-			usrPlacement, err = r.tryToGetAndAnnotatePlacement(ctx, drpc, log)
+			// PacementRule not found. Check Placement instead
+			usrPlacement, err = r.getPlacement(ctx, drpc, log)
 		}
 
 		if err != nil {
 			return nil, err
 		}
+	} else {
+		// Assert that there is no Placement object in the same namespace and with the same name as the PlacementRule
+		_, err = r.getPlacement(ctx, drpc, log)
+		if err == nil {
+			return nil, fmt.Errorf(
+				"can't proceed. PlacementRule and Placement CR with the same name exist on the same namespace")
+		}
+	}
+
+	if err = r.annotateUserPlacement(ctx, drpc, usrPlacement, log); err != nil {
+		return nil, err
 	}
 
 	log.Info(fmt.Sprintf("Using placement %v", usrPlacement))
@@ -806,7 +817,7 @@ func (r *DRPlacementControlReconciler) getPlacementOrPlacementRule(ctx context.C
 	return usrPlacement, nil
 }
 
-func (r *DRPlacementControlReconciler) tryToGetAndAnnotatePlacementRule(ctx context.Context,
+func (r *DRPlacementControlReconciler) getPlacementRule(ctx context.Context,
 	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) (*plrv1.PlacementRule, error) {
 	log.Info("Trying user PlacementRule", "usrPR", drpc.Spec.PlacementRef.Name+"/"+drpc.Spec.PlacementRef.Namespace)
@@ -843,16 +854,12 @@ func (r *DRPlacementControlReconciler) tryToGetAndAnnotatePlacementRule(ctx cont
 			" schedule it to a single cluster")
 	}
 
-	if err = r.annotatePlacementRule(ctx, drpc, usrPlRule, log); err != nil {
-		return nil, err
-	}
-
 	log.Info(fmt.Sprintf("PlacementRule Status is: (%+v)", usrPlRule.Status))
 
 	return usrPlRule, nil
 }
 
-func (r *DRPlacementControlReconciler) tryToGetAndAnnotatePlacement(ctx context.Context,
+func (r *DRPlacementControlReconciler) getPlacement(ctx context.Context,
 	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) (*clrapiv1beta1.Placement, error) {
 	log.Info("Trying user Placement", "usrP", drpc.Spec.PlacementRef.Name+"/"+drpc.Spec.PlacementRef.Namespace)
@@ -873,10 +880,6 @@ func (r *DRPlacementControlReconciler) tryToGetAndAnnotatePlacement(ctx context.
 	err := r.Client.Get(ctx,
 		types.NamespacedName{Name: drpc.Spec.PlacementRef.Name, Namespace: plmntNamespace}, usrPlmnt)
 	if err != nil {
-		if errors.IsNotFound(err) && !drpc.GetDeletionTimestamp().IsZero() {
-			return nil, nil
-		}
-
 		log.Info("Failed to retrieve Placement", "error", err)
 
 		return nil, err
@@ -892,14 +895,10 @@ func (r *DRPlacementControlReconciler) tryToGetAndAnnotatePlacement(ctx context.
 			" schedule it to a single cluster")
 	}
 
-	if err = r.annotatePlacementRule(ctx, drpc, usrPlmnt, log); err != nil {
-		return nil, err
-	}
-
 	return usrPlmnt, nil
 }
 
-func (r *DRPlacementControlReconciler) annotatePlacementRule(ctx context.Context,
+func (r *DRPlacementControlReconciler) annotateUserPlacement(ctx context.Context,
 	drpc *rmn.DRPlacementControl, placementObj client.Object, log logr.Logger,
 ) error {
 	if !placementObj.GetDeletionTimestamp().IsZero() {
