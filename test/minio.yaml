@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Enviroment for testing minio deployment with both podman and kvm2 drivers.
+---
+name: "minio"
+
+templates:
+  - name: base
+    memory: 2g
+    workers:
+      - scripts:
+          - name: minio
+
+profiles:
+  - name: c1
+    template: base
+    driver: podman
+    container_runtime: cri-o
+  - name: c2
+    template: base
+    driver: kvm2
+    container_runtime: containerd
