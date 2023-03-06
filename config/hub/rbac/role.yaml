@@ -91,6 +91,14 @@ rules:
   - list
   - watch
 - apiGroups:
+  - cluster.open-cluster-management.io
+  resources:
+  - placement
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - policy.open-cluster-management.io
   resources:
   - placementbindings

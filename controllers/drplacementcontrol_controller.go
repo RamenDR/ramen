@@ -397,7 +397,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	if r.isBeingDeleted(drpc) {
+	if r.isBeingDeleted(drpc, placementObj) {
 		// DPRC depends on User PlacementRule/Placement. If DRPC or/and the User PlacementRule is deleted,
 		// then the DRPC should be deleted as well. The least we should do here is to clean up DPRC.
 		return r.processDeletion(ctx, drpc, placementObj, logger)
@@ -541,9 +541,10 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 	return d, nil
 }
 
-// isBeingDeleted returns true if DRPC is being deleted
-func (r *DRPlacementControlReconciler) isBeingDeleted(drpc *rmn.DRPlacementControl) bool {
-	return !drpc.GetDeletionTimestamp().IsZero()
+// isBeingDeleted returns true if either DRPC, user placement, or both are being deleted
+func (r *DRPlacementControlReconciler) isBeingDeleted(drpc *rmn.DRPlacementControl, usrPl client.Object) bool {
+	return !drpc.GetDeletionTimestamp().IsZero() ||
+		(usrPl != nil && !usrPl.GetDeletionTimestamp().IsZero())
 }
 
 func (r *DRPlacementControlReconciler) reconcileDRPCInstance(d *DRPCInstance, log logr.Logger) (ctrl.Result, error) {
