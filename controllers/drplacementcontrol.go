@@ -148,13 +148,9 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 		return !done, err
 	}
 
-	// If for whatever reason, the DRPC status is missing (i.e. DRPC could have been deleted mistakingly and
-	// recreated again), we should update it with whatever status we are at.
-	if d.getLastDRState() == rmn.DRState("") {
-		// Update our 'well known' preferred placement
-		d.updatePreferredDecision()
-		d.setDRState(rmn.Deployed)
-	}
+	// Update our 'well known' preferred placement
+	d.updatePreferredDecision()
+	d.setDRState(rmn.Deployed)
 
 	d.setConditionOnInitialDeploymentCompletion()
 
