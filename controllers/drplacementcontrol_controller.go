@@ -391,7 +391,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	placementObj, err := r.getPlacementOrPlacementRule(ctx, drpc, logger)
-	if err != nil {
+	if err != nil && !(errors.IsNotFound(err) && !drpc.GetDeletionTimestamp().IsZero()) {
 		r.recordFailure(drpc, placementObj, "Error", err.Error(), nil, logger)
 
 		return ctrl.Result{}, err
