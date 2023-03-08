@@ -93,10 +93,11 @@ rules:
 - apiGroups:
   - cluster.open-cluster-management.io
   resources:
-  - placement
+  - placements
   verbs:
   - get
   - list
+  - update
   - watch
 - apiGroups:
   - policy.open-cluster-management.io
@@ -235,6 +236,14 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - argoproj.io
+  resources:
+  - applicationsets
+  verbs:
+  - get
+  - list
   - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
