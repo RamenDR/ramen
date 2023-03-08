@@ -61,9 +61,9 @@ rules:
   - patch
   - update
 - apiGroups:
-  - cluster.open-cluster-management.io
+  - argoproj.io
   resources:
-  - managedclusters
+  - applicationsets
   verbs:
   - get
   - list
@@ -71,7 +71,7 @@ rules:
 - apiGroups:
   - cluster.open-cluster-management.io
   resources:
-  - placement
+  - managedclusters
   verbs:
   - get
   - list
@@ -96,6 +96,14 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - cluster.open-cluster-management.io
+  resources:
+  - placements
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - ""
   resources:
