@@ -15,6 +15,7 @@ import (
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
+	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	cpcv1 "github.com/stolostron/config-policy-controller/api/v1"
 	gppv1 "github.com/stolostron/governance-policy-propagator/api/v1"
@@ -92,6 +93,7 @@ func newManager() (ctrl.Manager, *ramendrv1alpha1.RamenConfig, error) {
 		utilruntime.Must(cpcv1.AddToScheme(scheme))
 		utilruntime.Must(gppv1.AddToScheme(scheme))
 		utilruntime.Must(argov1alpha1.AddToScheme(scheme))
+		utilruntime.Must(clrapiv1beta1.AddToScheme(scheme))
 	} else {
 		utilruntime.Must(velero.AddToScheme(scheme))
 		utilruntime.Must(volrep.AddToScheme(scheme))
