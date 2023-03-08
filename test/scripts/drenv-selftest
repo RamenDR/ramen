@@ -1,0 +1,28 @@
+#!/bin/bash -e
+
+# We must run in the test directory.
+cd $(dirname $(dirname $0))
+
+prefix="test-$(uuidgen)"
+
+echo
+echo "1. Activating the ramen virtual enviroment ..."
+echo
+
+source ~/.venv/ramen/bin/activate
+
+echo
+echo "2. Creating a test cluster ..."
+echo
+
+drenv start --name-prefix $prefix test.yaml
+
+echo
+echo "3. Deleting the test cluster ..."
+echo
+
+drenv delete --name-prefix $prefix test.yaml
+
+echo
+echo drenv is set up properly
+echo
