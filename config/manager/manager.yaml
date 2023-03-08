@@ -32,11 +32,7 @@ spec:
         image: controller
         imagePullPolicy: IfNotPresent
         name: manager
-        ports:
-          - containerPort: 9289
         env:
-          - name: PORT
-            value: "9289"
           - name: POD_NAMESPACE
             valueFrom:
               fieldRef:
