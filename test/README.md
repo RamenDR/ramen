@@ -60,15 +60,23 @@ environment.
 
 1. Create a `ramen` virtual environment
 
-   Run this once from the root directory of the ramen source:
+   Run this once in the ramen test directory
 
    ```
-   make -C test venv
+   make venv
    ```
 
    This creates a python virtual environment in `~/.venv/ramen`, and
    install the `drenv` tool using develop mode, so changes in `drenv`
    source are available immediately without reinstalling the tool.
+
+### Testing that drenv is healthy
+
+Run this script to make sure `drenv` works:
+
+```
+scripts/drenv-selftest
+```
 
 ## Using the drenv tool
 
