@@ -108,11 +108,15 @@ velero_secret_list() {
 }; exit_stack_push unset -f velero_secret_list
 
 app_namespace_deploy() {
+	set -x
 	kubectl create namespace asdf --dry-run=client -oyaml|kubectl --context $1 apply -f-
+	{ set +x;} 2>/dev/null
 }; exit_stack_push unset -f app_namespace_deploy
 
 app_namespace_undeploy() {
+	set -x
 	kubectl --context $1 delete namespace asdf --ignore-not-found
+	{ set +x;} 2>/dev/null
 }; exit_stack_push unset -f app_namespace_undeploy
 
 app_namespace_list() {
@@ -172,8 +176,10 @@ app_list_custom() {
 }; exit_stack_push unset -f app_list_custom
 
 app_undeploy() {
+	set -x
 	kubectl --context $1 -nasdf delete --ignore-not-found -k https://github.com/RamenDR/ocm-ramen-samples/busybox
 	kubectl --context $1 -nasdf delete --ignore-not-found po/asdf secret/asdf configmap/asdf
+	{ set +x;} 2>/dev/null
 	app_namespace_undeploy $1
 	app_list $1
 }; exit_stack_push unset -f app_undeploy
@@ -236,7 +242,7 @@ vrg_undeploy() {
 }; exit_stack_push unset -f vrg_undeploy
 
 vrg_demote() {
-	vrg_deploy $1 _sec
+	vrg_deploy_$2 $1 _sec
 #	time kubectl --context $1 -nasdf wait vrg/bb --for condition=clusterdataprotected=false
 }; exit_stack_push unset -f vrg_demote
 
@@ -337,12 +343,12 @@ app_failover() {
 
 app_failback() {
 	set -- cluster1 cluster2
-	app_undeploy_failback $1
+	app_undeploy_failback $1 failover
 	vrg_final_sync $2
 	set -x
-	time kubectl --context $2 -nasdf wait vrg/bb --for condition=clusterdataprotected --timeout -1
+	time kubectl --context $2 -nasdf wait vrg/bb --for condition=clusterdataprotected --timeout -1s
 	{ set +x; } 2>/dev/null
-	app_undeploy_failback $2 app_recover_failback\ $1\ $2
+	app_undeploy_failback $2 relocate app_recover_failback\ $1\ $2
 }; exit_stack_push unset -f app_failback
 
 app_recover() {
@@ -362,11 +368,12 @@ app_recover() {
 }; exit_stack_push unset -f app_recover
 
 app_undeploy_failback() {
-	vrg_demote $1
+	vrg_demote $1 $2
 	# "PVC not being deleted. Not ready to become Secondary"
 	app_undeploy $1& # pvc finalizer remains until vrg deletes its vr
-	until_true_or_n 30000 eval test \"\$\(kubectl --context $1 -nasdf get vrg/bb -ojsonpath='{.status.state}'\)\" = Secondary
-	$2
+	# VolumeReplication resource for pvc not demoted to secondary
+	# until_true_or_n 30000 eval test \"\$\(kubectl --context $1 -nasdf get vrg/bb -ojsonpath='{.status.state}'\)\" = Secondary
+	$3
 	vrg_undeploy $1&
 	wait
 }; exit_stack_push unset -f app_undeploy_failback

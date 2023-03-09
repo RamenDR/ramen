@@ -573,15 +573,27 @@ ramen_undeploy_spokes()
 	for cluster_name in $spoke_cluster_names; do ramen_undeploy_spoke $cluster_name; done; unset -v cluster_name
 }
 exit_stack_push unset -f ramen_undeploy_spokes
-ramen_recipe_crd_kubectl() {
-	kubectl --context $1 $2 -f https://raw.githubusercontent.com/RamenDR/recipe/main/config/crd/bases/ramendr.openshift.io_recipes.yaml
-}; exit_stack_push unset -f ramen_recipe_crd_kubectl
+volsync_crds_deploy() {
+	volsync_crds_kubectl $1 apply
+}; exit_stack_push unset -f volsync_crds_deploy
+volsync_crds_undeploy() {
+	volsync_crds_kubectl $1 delete\ --ignore-not-found
+}; exit_stack_push unset -f volsync_crds_undeploy
+volsync_crds_kubectl() {
+	kubectl --context $1 $2\
+		-f https://raw.githubusercontent.com/backube/volsync/main/config/crd/bases/volsync.backube_replicationdestinations.yaml\
+		-f https://raw.githubusercontent.com/backube/volsync/main/config/crd/bases/volsync.backube_replicationsources.yaml\
+
+}; exit_stack_push unset -f volsync_crds_kubectl
 ramen_recipe_crd_deploy() {
 	ramen_recipe_crd_kubectl $1 apply
 }; exit_stack_push unset -f ramen_recipe_crd_deploy
 ramen_recipe_crd_undeploy() {
 	ramen_recipe_crd_kubectl $1 delete\ --ignore-not-found
 }; exit_stack_push unset -f ramen_recipe_crd_undeploy
+ramen_recipe_crd_kubectl() {
+	kubectl --context $1 $2 -f https://raw.githubusercontent.com/RamenDR/recipe/main/config/crd/bases/ramendr.openshift.io_recipes.yaml
+}; exit_stack_push unset -f ramen_recipe_crd_kubectl
 olm_deploy_spokes()
 {
 	for cluster_name in $spoke_cluster_names; do olm_deploy $cluster_name; done; unset -v cluster_name
