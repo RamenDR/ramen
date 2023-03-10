@@ -64,3 +64,4 @@ linters:
     - promlinter
     - contextcheck
     - errname
+    - forbidigo
