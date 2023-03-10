@@ -1,0 +1,8 @@
+---
+Clusters:
+  hub:
+    kubeconfigpath: ./config/hubKconfig
+  c1:
+    kubeconfigpath: ./config/c1Kconfig
+  c2:
+    kubeconfigpath: ./config/c2Kconfig
