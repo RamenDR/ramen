@@ -8,6 +8,7 @@ templates:
   - name: "example-cluster"
     driver: podman
     container_runtime: cri-o
+    addons: 'ingress'
     workers:
       - scripts:
           - name: example

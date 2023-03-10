@@ -15,3 +15,5 @@ cluster = sys.argv[1]
 
 print("Deploying example")
 kubectl.apply("--filename", "example/deployment.yaml", context=cluster)
+print("Creating ingress")
+kubectl.apply("--filename", "example/ingress.yaml")

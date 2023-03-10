@@ -1,6 +1,18 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginxservice
+  labels:
+    app: nginx
+spec:
+  ports:
+  - port: 80
+  selector:
+    app: nginx
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -19,14 +31,6 @@ spec:
     spec:
       containers:
       - name: example
-        image: docker.io/library/busybox:stable
-        command:
-        - sh
-        - -c
-        - |
-          trap exit TERM
-          while true; do
-              date
-              sleep 10 &
-              wait  # interrupted quickly on signal.
-          done
+        image: docker.io/library/nginx:stable
+        ports:
+          - containerPort: 80
