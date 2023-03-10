@@ -380,18 +380,8 @@ func GetLabelSelectorFromRecipeVolumeGroupWithName(name string, recipe *Recipe.R
 	return *labelSelector, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec.Group.Name"}, name)
 }
 
-func (v *VRGInstance) captureWorkflowExistsOnKubeObjectProtectionSpec() bool {
-	return RecipeInfoExistsOnVRG(*v.instance) &&
-		v.instance.Spec.KubeObjectProtection.RecipeRef.CaptureWorkflowName != nil
-}
-
-func (v *VRGInstance) recoverWorkflowExistsOnKubeObjectProtectionSpec() bool {
-	return RecipeInfoExistsOnVRG(*v.instance) &&
-		v.instance.Spec.KubeObjectProtection.RecipeRef.RecoverWorkflowName != nil
-}
-
 func (v *VRGInstance) getCaptureGroups() []kubeobjects.CaptureSpec {
-	if v.captureWorkflowExistsOnKubeObjectProtectionSpec() &&
+	if RecipeInfoExistsOnVRG(*v.instance) &&
 		v.instance.Spec.KubeObjectProtection.RecipeRef.CaptureWorkflowName != nil {
 		v.log.Info(fmt.Sprintf("getCaptureGroups found captureName '%s'",
 			*v.instance.Spec.KubeObjectProtection.RecipeRef.CaptureWorkflowName))
@@ -426,7 +416,7 @@ func (v *VRGInstance) getCaptureGroupsFromRecipe() []kubeobjects.CaptureSpec {
 }
 
 func (v *VRGInstance) getRecoverGroups() []kubeobjects.RecoverSpec {
-	if v.recoverWorkflowExistsOnKubeObjectProtectionSpec() &&
+	if RecipeInfoExistsOnVRG(*v.instance) &&
 		v.instance.Spec.KubeObjectProtection.RecipeRef.RecoverWorkflowName != nil {
 		v.log.Info(fmt.Sprintf("getRecoverGroups() found Recover Name '%s'",
 			*v.instance.Spec.KubeObjectProtection.RecipeRef.RecoverWorkflowName))
