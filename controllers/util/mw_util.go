@@ -47,10 +47,10 @@ const (
 
 type MWUtil struct {
 	client.Client
-	Ctx           context.Context
-	Log           logr.Logger
-	InstName      string
-	InstNamespace string
+	Ctx             context.Context
+	Log             logr.Logger
+	InstName        string
+	TargetNamespace string
 }
 
 func ManifestWorkName(name, namespace, mwType string) string {
@@ -58,7 +58,7 @@ func ManifestWorkName(name, namespace, mwType string) string {
 }
 
 func (mwu *MWUtil) BuildManifestWorkName(mwType string) string {
-	return ManifestWorkName(mwu.InstName, mwu.InstNamespace, mwType)
+	return ManifestWorkName(mwu.InstName, mwu.TargetNamespace, mwType)
 }
 
 func (mwu *MWUtil) FindManifestWork(mwName, managedCluster string) (*ocmworkv1.ManifestWork, error) {

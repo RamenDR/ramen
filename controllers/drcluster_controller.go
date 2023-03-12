@@ -96,7 +96,7 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, client.IgnoreNotFound(fmt.Errorf("get: %w", err))
 	}
 
-	manifestWorkUtil := &util.MWUtil{Client: r.Client, Ctx: ctx, Log: log, InstName: drcluster.Name, InstNamespace: ""}
+	manifestWorkUtil := &util.MWUtil{Client: r.Client, Ctx: ctx, Log: log, InstName: drcluster.Name, TargetNamespace: ""}
 
 	u := &drclusterInstance{
 		ctx: ctx, object: drcluster, client: r.Client, log: log, reconciler: r,

@@ -163,11 +163,11 @@ func validateClusterManifest(drcluster *ramen.DRCluster, disabled bool) {
 
 func inspectClusterManifestSubscriptionCSV(match bool, value string, drcluster *ramen.DRCluster) {
 	mwu := &util.MWUtil{
-		Client:        k8sClient,
-		Ctx:           context.TODO(),
-		Log:           ctrl.Log.WithName("MWUtilTest"),
-		InstName:      "",
-		InstNamespace: "",
+		Client:          k8sClient,
+		Ctx:             context.TODO(),
+		Log:             ctrl.Log.WithName("MWUtilTest"),
+		InstName:        "",
+		TargetNamespace: "",
 	}
 
 	sub, err := controllers.SubscriptionFromDrClusterManifestWork(mwu, drcluster.Name)

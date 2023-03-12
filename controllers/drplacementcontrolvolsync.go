@@ -302,17 +302,12 @@ func (d *DRPCInstance) createVolSyncDestManifestWork(srcCluster string) error {
 				d.instance.Namespace, dstCluster)
 		}
 
-		objMeta, err := d.generateObjectMetaForVRG()
-		if err != nil {
-			return err
-		}
-
 		annotations := make(map[string]string)
 
-		annotations[DRPCNameAnnotation] = d.mwu.InstName
-		annotations[DRPCNamespaceAnnotation] = d.mwu.InstNamespace
+		annotations[DRPCNameAnnotation] = d.instance.Name
+		annotations[DRPCNamespaceAnnotation] = d.instance.Namespace
 
-		vrg := d.generateVRG(rmn.Secondary, objMeta)
+		vrg := d.generateVRG(rmn.Secondary)
 		if err := d.mwu.CreateOrUpdateVRGManifestWork(
 			d.instance.Name, d.instance.Namespace,
 			dstCluster, vrg, annotations); err != nil {
