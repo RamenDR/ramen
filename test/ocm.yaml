@@ -7,16 +7,16 @@ name: "ocm"
 
 templates:
   - name: "hub-cluster"
-    driver: kvm2
-    container_runtime: containerd
+    driver: podman
+    container_runtime: cri-o
     network: default
     workers:
       - scripts:
           - name: ocm-hub
           - name: ocm-controller
   - name: "dr-cluster"
-    driver: kvm2
-    container_runtime: containerd
+    driver: podman
+    container_runtime: cri-o
     network: default
     workers:
       - scripts:
