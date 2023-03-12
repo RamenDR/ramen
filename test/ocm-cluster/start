@@ -11,9 +11,18 @@ from drenv import clusteradm
 from drenv import kubectl
 
 ADDONS = (
-    "application-manager",
-    "governance-policy-framework",
-    "config-policy-controller",
+    {
+        "name": "application-manager",
+        "deployment": "application-manager",
+    },
+    {
+        "name": "governance-policy-framework",
+        "deployment": "governance-policy-framework",
+    },
+    {
+        "name": "config-policy-controller",
+        "deployment": "config-policy-controller",
+    },
 )
 
 ADDONS_NAMESPACE = "open-cluster-management-agent-addon"
@@ -38,8 +47,8 @@ def deploy(cluster, hub):
 
 def wait(cluster):
     print("Waiting until deployments are rolled out")
-    for name in ADDONS:
-        deployment = f"deploy/{name}"
+    for addon in ADDONS:
+        deployment = f"deploy/{addon['deployment']}"
         drenv.wait_for(deployment, namespace=ADDONS_NAMESPACE, profile=cluster)
         kubectl.rollout(
             "status",
@@ -90,7 +99,8 @@ def accept_cluster(cluster, hub):
 
 def enable_addons(cluster, hub):
     print("Enabling addons")
-    clusteradm.addon("enable", names=ADDONS, clusters=[cluster], context=hub)
+    names = [addon["name"] for addon in ADDONS]
+    clusteradm.addon("enable", names=names, clusters=[cluster], context=hub)
 
 
 if len(sys.argv) != 3:
