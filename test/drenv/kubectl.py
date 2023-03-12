@@ -39,6 +39,16 @@ def patch(*args, context=None):
     _watch("patch", *args, context=context)
 
 
+def label(name, value, overwrite=False, context=None):
+    """
+    Run kubectl label ... logging progress messages.
+    """
+    args = ["label", name, value]
+    if overwrite:
+        args.append("--overwrite")
+    _watch(*args, context=context)
+
+
 def delete(*args, input=None, context=None):
     """
     Run kubectl delete ... logging progress messages.

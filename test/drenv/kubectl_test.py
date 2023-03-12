@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
+import secrets
 
 from drenv import kubectl
 
@@ -64,6 +65,19 @@ def test_patch(tmpenv, capsys):
     )
     out, err = capsys.readouterr()
     assert out.strip() == f"{pod} patched"
+
+
+def test_label(tmpenv, capsys):
+    pod = kubectl.get("pod", "--output=name", context=tmpenv.profile).strip()
+    name = f"test-{secrets.token_hex(8)}"
+
+    kubectl.label(pod, f"{name}=old", context=tmpenv.profile)
+    out, err = capsys.readouterr()
+    assert out.strip() == f"{pod} labeled"
+
+    kubectl.label(pod, f"{name}=new", overwrite=True, context=tmpenv.profile)
+    out, err = capsys.readouterr()
+    assert out.strip() == f"{pod} labeled"
 
 
 def test_delete(tmpenv, capsys):
