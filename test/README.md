@@ -49,29 +49,26 @@ environment.
    myusername ALL=(ALL) NOPASSWD: /usr/bin/podman
    ```
 
-1. Install the `drenv` package in a virtual environment:
+1. Clone the `ramen` source
 
-   Run this once in the root of the source tree:
-
-   ```
-   python3 -m venv ~/.venv/ramen
-   source ~/.venv/ramen/bin/activate
-   pip install --upgrade pip
-   pip install -e ./test
-   ```
-
-   You can create the virtual environment anywhere, but keeping the
-   environment outside of the source tree is good practice.
-
-   This installs a link file in the virtual environment:
+   *Ramen* test environment is part of the ramen source. You need to
+   clone it locally to create a test environment and run the tests:
 
    ```
-   $ cat ~/.venv/ramen/lib/python3.10/site-packages/drenv.egg-link
-   /home/myusername/src/ramen/test
+   git clone https://github.com/RamenDR/ramen.git
    ```
 
-   So changes in the `test/drenv` package are available immediately
-   without installing the package again.
+1. Create a `ramen` virtual environment
+
+   Run this once from the root directory of the ramen source:
+
+   ```
+   make -C test venv
+   ```
+
+   This creates a python virtual environment in `~/.venv/ramen`, and
+   install the `drenv` tool using develop mode, so changes in `drenv`
+   source are available immediately without reinstalling the tool.
 
 ## Using the drenv tool
 
