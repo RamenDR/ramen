@@ -6,3 +6,4 @@ Clusters:
     kubeconfigpath: ./config/c1Kconfig
   c2:
     kubeconfigpath: ./config/c2Kconfig
+SetupRegionalDRonOCP: false

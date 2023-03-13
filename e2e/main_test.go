@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/spf13/viper"
+	"github.com/stretchr/testify/suite"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 var configFile = "./config/config.yaml"
@@ -24,15 +24,16 @@ type Config struct {
 	Clusters map[string]struct {
 		KubeconfigPath string `mapstructure:"kubeconfigpath" required:"true"`
 	} `mapstructure:"clusters" required:"true"`
+	SetupRegionalDRonOCP bool `mapstructure:"setupregionaldronocp" required:"false"`
 }
 type TestContext struct {
-	hubClient kubernetes.Interface
-	c1Client  kubernetes.Interface
-	c2Client  kubernetes.Interface
+	Config   *Config
+	Clusters map[string]struct {
+		k8sClientSet kubernetes.Interface
+	}
 }
 
 func validateConfig(config *Config) {
-
 	if config.Clusters["hub"].KubeconfigPath == "" {
 		fmt.Fprintf(os.Stderr, "Failed to find hub cluster in configuration\n")
 		os.Exit(1)
@@ -63,8 +64,7 @@ func TestMain(t *testing.T) {
 
 	validateConfig(config)
 
-	testContext, err := NewTestContext(config.Clusters["hub"].KubeconfigPath, config.Clusters["c1"].KubeconfigPath, config.Clusters["c2"].KubeconfigPath)
-
+	testContext, err := NewTestContext(config)
 	if err != nil {
 		fmt.Printf("Failed to create TestContext: %v\n", err)
 		os.Exit(1)
@@ -72,56 +72,33 @@ func TestMain(t *testing.T) {
 
 	defer testContext.Cleanup()
 
+	suite.Run(t, &InfraValidationSuite{testContext: testContext})
+
+	if config.SetupRegionalDRonOCP {
+		suite.Run(t, &RegionalDRSuite{testContext: testContext})
+	}
 }
 
-func NewTestContext(hubKubeconfigPath, c1KubeconfigPath, c2KubeconfigPath string) (*TestContext, error) {
-	hubConfig, err := clientcmd.BuildConfigFromFlags("", hubKubeconfigPath)
-	if err != nil {
-		return nil, err
+func NewTestContext(config *Config) (*TestContext, error) {
+	testContext := &TestContext{
+		Config: config,
+		Clusters: make(map[string]struct {
+			k8sClientSet kubernetes.Interface
+		}),
 	}
+	for clusterName, cluster := range config.Clusters {
+		k8sClientSet, err := getClientSetFromKubeConfigPath(cluster.KubeconfigPath)
+		if err != nil {
+			return nil, err
+		}
 
-	c1Config, err := clientcmd.BuildConfigFromFlags("", c1KubeconfigPath)
-	if err != nil {
-		return nil, err
+		testContext.Clusters[clusterName] = struct {
+			k8sClientSet kubernetes.Interface
+		}{
+			k8sClientSet: k8sClientSet,
+		}
 	}
-
-	c2Config, err := clientcmd.BuildConfigFromFlags("", c2KubeconfigPath)
-	if err != nil {
-		return nil, err
-	}
-
-	hubClient, err := kubernetes.NewForConfig(hubConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	c1Client, err := kubernetes.NewForConfig(c1Config)
-	if err != nil {
-		return nil, err
-	}
-
-	c2Client, err := kubernetes.NewForConfig(c2Config)
-	if err != nil {
-		return nil, err
-	}
-
-	return &TestContext{
-		hubClient: hubClient,
-		c1Client:  c1Client,
-		c2Client:  c2Client,
-	}, nil
-}
-
-func (ctx *TestContext) HubClient() kubernetes.Interface {
-	return ctx.hubClient
-}
-
-func (ctx *TestContext) C1Client() kubernetes.Interface {
-	return ctx.c1Client
-}
-
-func (ctx *TestContext) C2Client() kubernetes.Interface {
-	return ctx.c2Client
+	return testContext, nil
 }
 
 func (ctx *TestContext) Cleanup() {
