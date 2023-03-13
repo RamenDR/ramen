@@ -1083,9 +1083,7 @@ func (d *DRPCInstance) updateUserPlacementRule(homeCluster, reason string) error
 func (d *DRPCInstance) clearUserPlacementRuleStatus() error {
 	d.log.Info("Clearing user Placement", "name", d.userPlacement.GetName())
 
-	newPD := &clrapiv1beta1.ClusterDecision{}
-
-	return d.reconciler.updateUserPlacementStatusDecision(d.ctx, d.userPlacement, newPD)
+	return d.reconciler.updateUserPlacementStatusDecision(d.ctx, d.userPlacement, nil)
 }
 
 func (d *DRPCInstance) updatePreferredDecision() {
