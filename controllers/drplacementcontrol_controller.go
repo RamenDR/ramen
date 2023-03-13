@@ -1322,13 +1322,17 @@ func (r *DRPlacementControlReconciler) updateUserPlacementStatusDecision(ctx con
 func (r *DRPlacementControlReconciler) createOrUpdatePlacementRuleDecision(ctx context.Context,
 	plRule *plrv1.PlacementRule, newCD *clrapiv1beta1.ClusterDecision,
 ) error {
-	newStatus := plrv1.PlacementRuleStatus{
-		Decisions: []plrv1.PlacementDecision{
-			{
-				ClusterName:      newCD.ClusterName,
-				ClusterNamespace: newCD.ClusterName,
+	newStatus := plrv1.PlacementRuleStatus{}
+
+	if newCD != nil {
+		newStatus = plrv1.PlacementRuleStatus{
+			Decisions: []plrv1.PlacementDecision{
+				{
+					ClusterName:      newCD.ClusterName,
+					ClusterNamespace: newCD.ClusterName,
+				},
 			},
-		},
+		}
 	}
 
 	if !reflect.DeepEqual(newStatus, plRule.Status) {
@@ -1380,12 +1384,18 @@ func (r *DRPlacementControlReconciler) createOrUpdatePlacementDecision(ctx conte
 	}
 
 	plDecision.Status = clrapiv1beta1.PlacementDecisionStatus{
-		Decisions: []clrapiv1beta1.ClusterDecision{
-			{
-				ClusterName: newCD.ClusterName,
-				Reason:      newCD.Reason,
+		Decisions: []clrapiv1beta1.ClusterDecision{},
+	}
+
+	if newCD != nil {
+		plDecision.Status = clrapiv1beta1.PlacementDecisionStatus{
+			Decisions: []clrapiv1beta1.ClusterDecision{
+				{
+					ClusterName: newCD.ClusterName,
+					Reason:      newCD.Reason,
+				},
 			},
-		},
+		}
 	}
 
 	if err := r.Status().Update(ctx, plDecision); err != nil {
