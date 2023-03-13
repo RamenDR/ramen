@@ -66,8 +66,8 @@ environment.
    This installs a link file in the virtual environment:
 
    ```
-   $ cat /home/nsoffer/.venv/ramen/lib/python3.10/site-packages/drenv.egg-link
-   /home/nsoffer/src/ramen/test
+   $ cat ~/.venv/ramen/lib/python3.10/site-packages/drenv.egg-link
+   /home/myusername/src/ramen/test
    ```
 
    So changes in the `test/drenv` package are available immediately
