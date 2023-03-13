@@ -54,6 +54,8 @@ resources:
 - ../../rbac
 - ../../manager
 - ../../../webhook
+- ../../../prometheus
+- metrics_role_binding.yaml
 
 images:
 - name: kube-rbac-proxy

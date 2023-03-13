@@ -16,3 +16,4 @@ resources:
 - ../../rbac/auth_proxy_role.yaml
 - ../../rbac/auth_proxy_role_binding.yaml
 - ../../rbac/auth_proxy_client_clusterrole.yaml
+- ../../rbac/metrics_role.yaml
