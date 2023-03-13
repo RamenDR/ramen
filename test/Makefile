@@ -1,5 +1,8 @@
 all: flake8 pylint black test coverage
 
+venv:
+	scripts/make-venv.sh
+
 flake8:
 	python3 -m flake8 drenv */start */test
 
