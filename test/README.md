@@ -517,10 +517,28 @@ script/start cluster1 arg2
 script/test cluster1 arg2
 ```
 
-## The regional-dr environment
+## Environment files
 
-This is a configuration for testing regional DR using a hub cluster and
-2 managed clusters.
+### Ramen testing environments
+
+- `regional-dr.yaml` - for testing regional DR using a hub cluster and 2
+  managed clusters with Ceph storage.
+
+- `regional-dr-external.yaml` - A starting point for creating
+   environemnt for testing regional DR using with external storage.
+
+### drenv development environments
+
+These environments are useful for developing the `drenv` tool and
+scripts. When debugging an issue or adding a new component, it is much
+simpler and faster to work with a minimal environment.
+
+- `test.yaml` - for testing `drenv`
+- `example.yaml` - example for experimenting with the `drenv` tool
+- `external.yaml` - example for using external clusters
+- `minio.yaml` - for testing `minio` deployment
+- `ocm.yaml` - for testing `ocm` deployment
+- `rook.yaml` - for testing `rook` deployment
 
 ## Testing drenv
 
