@@ -93,6 +93,11 @@ GO_TEST_GINKGO_ARGS ?= -test.v -ginkgo.v -ginkgo.failFast
 
 DOCKERCMD ?= podman
 
+ENVTEST_K8S_VERSION = 1.25.0
+ENVTEST_ASSETS_DIR = $(shell pwd)/testbin
+# Define to override the path to envtest executables.
+KUBEBUILDER_ASSETS ?= $(shell $(ENVTEST_ASSETS_DIR)/setup-envtest use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_ASSETS_DIR) --print path)
+
 all: build
 
 ##@ General
@@ -136,38 +141,33 @@ lint: golangci-bin ## Run configured golangci-lint and pre-commit.sh linters aga
 	testbin/golangci-lint run ./... --config=./.golangci.yaml
 	hack/pre-commit.sh
 
-ENVTEST_K8S_VERSION = 1.25.0
-ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
 envtest:
 	mkdir -p $(ENVTEST_ASSETS_DIR)
 	test -s $(ENVTEST_ASSETS_DIR)/setup-envtest || GOBIN=$(ENVTEST_ASSETS_DIR) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 
-setup-envtest: envtest
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST_ASSETS_DIR)/setup-envtest use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_ASSETS_DIR) -p path)"
+test: generate manifests envtest ## Run tests.
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./... -coverprofile cover.out $(GO_TEST_GINKGO_ARGS)
 
-test: generate manifests setup-envtest ## Run tests.
-	go test ./... -coverprofile cover.out $(GO_TEST_GINKGO_ARGS)
+test-pvrgl: generate manifests envtest
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus ProtectedVolumeReplicationGroupList
 
-test-pvrgl: generate manifests setup-envtest
-	go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus ProtectedVolumeReplicationGroupList
+test-vrg: generate manifests envtest
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroup
 
-test-vrg: generate manifests setup-envtest
-	go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroup
+test-vrg-vr: generate manifests envtest
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroupVolRep
 
-test-vrg-vr: generate manifests setup-envtest
-	go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroupVolRep
+test-vrg-vs: generate manifests envtest
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroupVolSync
 
-test-vrg-vs: generate manifests setup-envtest
-	go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroupVolSync
+test-vrg-kubeobjects: generate manifests envtest
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VRG_KubeObjectProtection
 
-test-vrg-kubeobjects: generate manifests setup-envtest
-	go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VRG_KubeObjectProtection
+test-drpc: generate manifests envtest
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus DRPlacementControl
 
-test-drpc: generate manifests setup-envtest
-	go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus DRPlacementControl
-
-test-util-pvc: generate manifests setup-envtest
-	go test ./controllers/util -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus PVCS_Util
+test-util-pvc: generate manifests envtest
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers/util -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus PVCS_Util
 
 test-drenv:
 	$(MAKE) -C test
