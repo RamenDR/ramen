@@ -5,8 +5,10 @@ package volsync_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/go-logr/logr"
@@ -74,7 +76,8 @@ var _ = BeforeSuite(func() {
 
 	By("Setting up KUBEBUILDER_ASSETS for envtest")
 	if _, set := os.LookupEnv("KUBEBUILDER_ASSETS"); !set {
-		Expect(os.Setenv("KUBEBUILDER_ASSETS", "../../testbin/k8s/1.25.0-linux-amd64")).To(Succeed())
+		Expect(os.Setenv("KUBEBUILDER_ASSETS",
+			fmt.Sprintf("../../testbin/k8s/1.25.0-%s-%s", runtime.GOOS, runtime.GOARCH))).To(Succeed())
 	}
 
 	By("bootstrapping test environment")
