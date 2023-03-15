@@ -141,7 +141,9 @@ ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
 envtest:
 	mkdir -p $(ENVTEST_ASSETS_DIR)
 	test -s $(ENVTEST_ASSETS_DIR)/setup-envtest || GOBIN=$(ENVTEST_ASSETS_DIR) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-	$(ENVTEST_ASSETS_DIR)/setup-envtest use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_ASSETS_DIR)
+	current="$$($(ENVTEST_ASSETS_DIR)/setup-envtest use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_ASSETS_DIR) --print path)"; \
+			rm -f "$(ENVTEST_ASSETS_DIR)/current"; \
+			ln -s "$$current" "$(ENVTEST_ASSETS_DIR)/current"
 
 test: generate manifests envtest ## Run tests.
 	go test ./... -coverprofile cover.out $(GO_TEST_GINKGO_ARGS)

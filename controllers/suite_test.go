@@ -5,10 +5,8 @@ package controllers_test
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -116,8 +114,7 @@ var _ = BeforeSuite(func() {
 	ramencontrollers.ControllerType = ramendrv1alpha1.DRHubType
 
 	if _, set := os.LookupEnv("KUBEBUILDER_ASSETS"); !set {
-		Expect(os.Setenv("KUBEBUILDER_ASSETS",
-			fmt.Sprintf("../testbin/k8s/1.25.0-%s-%s", runtime.GOOS, runtime.GOARCH))).To(Succeed())
+		Expect(os.Setenv("KUBEBUILDER_ASSETS", "../testbin/current")).To(Succeed())
 	}
 
 	rNs, set := os.LookupEnv("POD_NAMESPACE")
