@@ -166,11 +166,11 @@ test-vrg-kubeobjects: generate manifests setup-envtest
 test-drpc: generate manifests setup-envtest
 	go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus DRPlacementControl
 
-test-drenv:
-	$(MAKE) -C test
-	
 test-util-pvc: generate manifests setup-envtest
 	go test ./controllers/util -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus PVCS_Util
+
+test-drenv:
+	$(MAKE) -C test
 
 ##@ Build
 
