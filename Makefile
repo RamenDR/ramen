@@ -141,32 +141,30 @@ ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
 envtest:
 	mkdir -p $(ENVTEST_ASSETS_DIR)
 	test -s $(ENVTEST_ASSETS_DIR)/setup-envtest || GOBIN=$(ENVTEST_ASSETS_DIR) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+	$(ENVTEST_ASSETS_DIR)/setup-envtest use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_ASSETS_DIR)
 
-setup-envtest: envtest
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST_ASSETS_DIR)/setup-envtest use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_ASSETS_DIR) -p path)"
-
-test: generate manifests setup-envtest ## Run tests.
+test: generate manifests envtest ## Run tests.
 	go test ./... -coverprofile cover.out $(GO_TEST_GINKGO_ARGS)
 
-test-pvrgl: generate manifests setup-envtest
+test-pvrgl: generate manifests envtest
 	go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus ProtectedVolumeReplicationGroupList
 
-test-vrg: generate manifests setup-envtest
+test-vrg: generate manifests envtest
 	go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroup
 
-test-vrg-vr: generate manifests setup-envtest
+test-vrg-vr: generate manifests envtest
 	go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroupVolRep
 
-test-vrg-vs: generate manifests setup-envtest
+test-vrg-vs: generate manifests envtest
 	go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroupVolSync
 
-test-vrg-kubeobjects: generate manifests setup-envtest
+test-vrg-kubeobjects: generate manifests envtest
 	go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VRG_KubeObjectProtection
 
-test-drpc: generate manifests setup-envtest
+test-drpc: generate manifests envtest
 	go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus DRPlacementControl
 
-test-util-pvc: generate manifests setup-envtest
+test-util-pvc: generate manifests envtest
 	go test ./controllers/util -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus PVCS_Util
 
 test-drenv:
