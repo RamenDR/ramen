@@ -74,7 +74,7 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary(requeue *bool) {
 		// itself is assumed to be protected along with other k8s objects in the
 		// subscription, such as, the deployment, pods, services, etc., by an
 		// entity external to the VRG a la IaC.
-		if err := v.uploadPVToS3Stores(pvc, log); err != nil {
+		if err := v.uploadPVandPVCtoS3Stores(pvc, log); err != nil {
 			log.Info("Requeuing due to failure to upload PV object to S3 store(s)",
 				"errorValue", err)
 
@@ -413,7 +413,7 @@ func (v *VRGInstance) undoPVRetentionForPVC(pvc corev1.PersistentVolumeClaim, lo
 }
 
 // Upload PV to the list of S3 stores in the VRG spec
-func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (err error) {
+func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (err error) {
 	// Find the ProtectedPVC of the given PVC in v.instance.Status.ProtectedPVCs[]
 	protectedPVC := v.findProtectedPVC(pvc.Name)
 	// Find the ClusterDataProtected condition of the given PVC in ProtectedPVC.Conditions
@@ -438,7 +438,7 @@ func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim, log 
 			pvc.Name)
 	}
 
-	s3Profiles, err := v.PVUploadToObjectStores(pvc, log)
+	s3Profiles, err := v.UploadPVandPVCtoS3Stores(pvc, log)
 	if err != nil {
 		return fmt.Errorf("failed to upload PV with error (%w). Uploaded to %v S3 profile(s)", err, s3Profiles)
 	}
@@ -463,7 +463,7 @@ func (v *VRGInstance) uploadPVToS3Stores(pvc *corev1.PersistentVolumeClaim, log 
 	return nil
 }
 
-func (v *VRGInstance) PVUploadToObjectStore(s3ProfileName string, pvc *corev1.PersistentVolumeClaim) error {
+func (v *VRGInstance) UploadPVandPVCtoS3Store(s3ProfileName string, pvc *corev1.PersistentVolumeClaim) error {
 	if s3ProfileName == "" {
 		return fmt.Errorf("missing S3 profiles, failed to protect cluster data for PVC %s", pvc.Name)
 	}
@@ -479,7 +479,12 @@ func (v *VRGInstance) PVUploadToObjectStore(s3ProfileName string, pvc *corev1.Pe
 			pvc.Name, s3ProfileName, err)
 	}
 
-	if err := UploadPV(objectStore, v.s3KeyPrefix(), pv.Name, pv); err != nil {
+	return v.UploadPVAndPVCtoS3(s3ProfileName, objectStore, &pv, pvc)
+}
+
+func (v *VRGInstance) UploadPVAndPVCtoS3(s3ProfileName string, objectStore ObjectStorer,
+	pv *corev1.PersistentVolume, pvc *corev1.PersistentVolumeClaim) error {
+	if err := UploadPV(objectStore, v.s3KeyPrefix(), pv.Name, *pv); err != nil {
 		var aerr awserr.Error
 		if errors.As(err, &aerr) {
 			// Treat any aws error as a persistent error
@@ -493,20 +498,27 @@ func (v *VRGInstance) PVUploadToObjectStore(s3ProfileName string, pvc *corev1.Pe
 		return err
 	}
 
+	if err := UploadPVC(objectStore, v.s3KeyPrefix(), pvc.Name, *pvc); err != nil {
+		err := fmt.Errorf("error uploading PVC to s3Profile %s, failed to protect cluster data for PVC %s, %w",
+			s3ProfileName, pvc.Name, err)
+
+		return err
+	}
+
 	return nil
 }
 
-func (v *VRGInstance) PVUploadToObjectStores(pvc *corev1.PersistentVolumeClaim,
+func (v *VRGInstance) UploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim,
 	log logr.Logger,
 ) ([]string, error) {
 	succeededProfiles := []string{}
 	// Upload the PV to all the S3 profiles in the VRG spec
 	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
-		err := v.PVUploadToObjectStore(s3ProfileName, pvc)
+		err := v.UploadPVandPVCtoS3Store(s3ProfileName, pvc)
 		if err != nil {
 			v.updatePVCClusterDataProtectedCondition(pvc.Name, VRGConditionReasonUploadError, err.Error())
 			rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
-				rmnutil.EventReasonPVUploadFailed, err.Error())
+				rmnutil.EventReasonUploadFailed, err.Error())
 
 			return succeededProfiles, err
 		}
@@ -1573,8 +1585,8 @@ func (v *VRGInstance) s3KeyPrefix() string {
 	return S3KeyPrefix(v.namespacedName)
 }
 
-func (v *VRGInstance) restorePVsForVolRep(result *ctrl.Result) error {
-	v.log.Info("Restoring VolRep PVs")
+func (v *VRGInstance) clusterDataRestoreForVolRep(result *ctrl.Result) error {
+	v.log.Info("Restoring VolRep PVs and PVCs")
 
 	if len(v.instance.Spec.S3Profiles) == 0 {
 		v.log.Info("No S3 profiles configured")
@@ -1584,10 +1596,10 @@ func (v *VRGInstance) restorePVsForVolRep(result *ctrl.Result) error {
 		return fmt.Errorf("no S3Profiles configured")
 	}
 
-	v.log.Info(fmt.Sprintf("Restoring PVs to this managed cluster. ProfileList: %v", v.instance.Spec.S3Profiles))
+	v.log.Info(fmt.Sprintf("Restoring PVs and PVCs to this managed cluster. ProfileList: %v", v.instance.Spec.S3Profiles))
 
-	if err := v.fetchAndRestorePV(result); err != nil {
-		errMsg := fmt.Sprintf("failed to restorePVs using profile list (%v)", v.instance.Spec.S3Profiles)
+	if err := v.restorePVsAndPVCsFromS3(result); err != nil {
+		errMsg := fmt.Sprintf("failed to restore PVs and PVCs using profile list (%v)", v.instance.Spec.S3Profiles)
 		v.log.Info(errMsg)
 
 		return fmt.Errorf("%s: %w", errMsg, err)
@@ -1596,7 +1608,7 @@ func (v *VRGInstance) restorePVsForVolRep(result *ctrl.Result) error {
 	return nil
 }
 
-func (v *VRGInstance) fetchAndRestorePV(result *ctrl.Result) error {
+func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) error {
 	err := errors.New("s3Profiles empty")
 	NoS3 := false
 
@@ -1622,30 +1634,28 @@ func (v *VRGInstance) fetchAndRestorePV(result *ctrl.Result) error {
 			continue
 		}
 
-		var pvList []corev1.PersistentVolume
+		var pvCount, pvcCount int
 
-		pvList, err = downloadPVs(objectStore, v.s3KeyPrefix())
+		// Restore all PVs found in the s3 store. If any failure, the next profile will be retried
+		pvCount, err = v.restorePVsFromObjectStore(objectStore, s3ProfileName)
 		if err != nil {
-			v.log.Error(err, fmt.Sprintf("error fetching PV cluster data from S3 profile %s", s3ProfileName))
-
 			continue
 		}
 
-		v.log.Info("Found PVs in s3 store", "count", len(pvList), "profile", s3ProfileName)
+		// Attempt to restore all PVCs from this profile. If a PVC is missing from this s3 stores or fails
+		// to restore, there will be a warning, but not a failure (no retry). In such cases, the PVC may be
+		// created when the application is created and it will bind to the PV correctly if the PVC name
+		// matches the PV.Spec.ClaimRef. However, the downside of tolerating failure is if an operator like
+		// CrunchyDB is responsible for creating and managing the lifecycle of their own PVCs, a newly created
+		// PVC may cause a new PV to be created.
+		// Ignoring PVC restore errors helps with the upgrade from ODF-4.12.x to 4.13
+		pvcCount, _ = v.restorePVCsFromObjectStore(objectStore, s3ProfileName)
 
-		if err = v.checkPVClusterData(pvList); err != nil {
-			errMsg := fmt.Sprintf("Error found in PV cluster data in S3 store %s", s3ProfileName)
-			v.log.Info(errMsg)
-			v.log.Error(err, fmt.Sprintf("Resolve PV conflict in the S3 store %s to deploy the application", s3ProfileName))
-
-			return fmt.Errorf("%s: %w", errMsg, err)
+		if pvCount != pvcCount {
+			v.log.Info(fmt.Sprintf("Warning: Mismatch in PV/PVC count %d/%d", pvCount, pvcCount))
 		}
 
-		if err = v.restorePVClusterData(pvList); err != nil {
-			continue
-		}
-
-		v.log.Info(fmt.Sprintf("Restored %d PVs using profile %s", len(pvList), s3ProfileName))
+		v.log.Info(fmt.Sprintf("Restored %d PVs and %d PVCs using profile %s", pvCount, pvcCount, s3ProfileName))
 
 		return v.kubeObjectsRecover(result, s3ProfileName, s3StoreProfile, objectStore)
 	}
@@ -1657,6 +1667,51 @@ func (v *VRGInstance) fetchAndRestorePV(result *ctrl.Result) error {
 	result.Requeue = true
 
 	return err
+}
+
+func (v *VRGInstance) restorePVsFromObjectStore(objectStore ObjectStorer, s3ProfileName string) (int, error) {
+	pvList, err := downloadPVs(objectStore, v.s3KeyPrefix())
+	if err != nil {
+		v.log.Error(err, fmt.Sprintf("error fetching PV cluster data from S3 profile %s", s3ProfileName))
+
+		return 0, err
+	}
+
+	v.log.Info(fmt.Sprintf("Found %d PVs in s3 store using profile %s", len(pvList), s3ProfileName))
+
+	if err = v.checkPVClusterData(pvList); err != nil {
+		errMsg := fmt.Sprintf("Error found in PV cluster data in S3 store %s", s3ProfileName)
+		v.log.Info(errMsg)
+		v.log.Error(err, fmt.Sprintf("Resolve PV conflict in the S3 store %s to deploy the application", s3ProfileName))
+
+		return 0, fmt.Errorf("%s: %w", errMsg, err)
+	}
+
+	var objList []client.Object
+	for idx := range pvList {
+		objList = append(objList, &pvList[idx])
+	}
+
+	return v.restoreClusterDataObjects(objList, "PV")
+}
+
+func (v *VRGInstance) restorePVCsFromObjectStore(objectStore ObjectStorer, s3ProfileName string) (int, error) {
+	pvcList, err := downloadPVCs(objectStore, v.s3KeyPrefix())
+	if err != nil {
+		v.log.Error(err, fmt.Sprintf("error fetching PVC cluster data from S3 profile %s", s3ProfileName))
+
+		return 0, err
+	}
+
+	v.log.Info(fmt.Sprintf("Found %d PVCs in s3 store using profile %s", len(pvcList), s3ProfileName))
+
+	var objList []client.Object
+	for idx := range pvcList {
+		objList = append(objList, &pvcList[idx])
+		v.volRepPVCs = append(v.volRepPVCs, pvcList[idx])
+	}
+
+	return v.restoreClusterDataObjects(objList, "PVC")
 }
 
 // checkPVClusterData returns an error if there are PVs in the input pvList
@@ -1699,30 +1754,29 @@ func (v *VRGInstance) checkPVClusterData(pvList []corev1.PersistentVolume) error
 	return nil
 }
 
-func (v *VRGInstance) restorePVClusterData(pvList []corev1.PersistentVolume) error {
+func (v *VRGInstance) restoreClusterDataObjects(objList []client.Object, objType string) (int, error) {
 	numRestored := 0
 
-	for idx := range pvList {
-		pv := &pvList[idx]
-		v.cleanupPVForRestore(pv)
-		v.addPVRestoreAnnotation(pv)
+	for _, obj := range objList {
+		v.cleanupForRestore(obj)
+		v.addRestoreAnnotation(obj)
 
-		if err := v.reconciler.Create(v.ctx, pv); err != nil {
+		if err := v.reconciler.Create(v.ctx, obj); err != nil {
 			if k8serrors.IsAlreadyExists(err) {
-				err := v.validatePVExistence(pv)
+				err := v.validateExistingObject(obj)
 				if err != nil {
-					v.log.Info("PV exists. Ignoring and moving to next PV", "error", err.Error())
+					v.log.Info("Object exists. Ignoring and moving to next object", "error", err.Error())
 					// ignoring any errors
 					continue
 				}
 
-				// Valid PV exists and it is managed by Ramen
+				// Valid PVC exists and it is managed by Ramen
 				numRestored++
 
 				continue
 			}
 
-			v.log.Info("Failed to restore PV", "name", pv.Name, "Error", err)
+			v.log.Info(fmt.Sprintf("Failed to restore %T %s with error %v", obj, obj.GetName(), err))
 
 			continue
 		}
@@ -1730,13 +1784,13 @@ func (v *VRGInstance) restorePVClusterData(pvList []corev1.PersistentVolume) err
 		numRestored++
 	}
 
-	if numRestored != len(pvList) {
-		return fmt.Errorf("failed to restore all PVs. Total %d. Restored %d", len(pvList), numRestored)
+	if numRestored != len(objList) {
+		return numRestored, fmt.Errorf("failed to restore all %T. Total/Restored %d/%d", objList, len(objList), numRestored)
 	}
 
-	v.log.Info("Success restoring VolRep PVs", "Total", numRestored)
+	v.log.Info(fmt.Sprintf("Restored %d %s for VolRep", numRestored, objType))
 
-	return nil
+	return numRestored, nil
 }
 
 func (v *VRGInstance) updateExistingPVForSync(pv *corev1.PersistentVolume) error {
@@ -1744,8 +1798,8 @@ func (v *VRGInstance) updateExistingPVForSync(pv *corev1.PersistentVolume) error
 	// failover/relocate process. Hence, the restore may not be
 	// required and the annotation for restore can be missing for
 	// the sync mode.
-	v.cleanupPVForRestore(pv)
-	v.addPVRestoreAnnotation(pv)
+	v.cleanupForRestore(pv)
+	v.addRestoreAnnotation(pv)
 
 	if err := v.reconciler.Update(v.ctx, pv); err != nil {
 		return fmt.Errorf("failed to cleanup existing PV for sync DR PV: %v, err: %w", pv.Name, err)
@@ -1754,7 +1808,20 @@ func (v *VRGInstance) updateExistingPVForSync(pv *corev1.PersistentVolume) error
 	return nil
 }
 
-func (v *VRGInstance) validatePVExistence(pv *corev1.PersistentVolume) error {
+func (v *VRGInstance) validateExistingObject(obj client.Object) error {
+	switch obj.(type) {
+	case *corev1.PersistentVolume:
+		pv, _ := obj.(*corev1.PersistentVolume)
+		return v.validateExistingPV(pv)
+	case *corev1.PersistentVolumeClaim:
+		pvc, _ := obj.(*corev1.PersistentVolumeClaim)
+		return v.validateExistingPVC(pvc)
+	default:
+		return fmt.Errorf("unknown object %v", obj)
+	}
+}
+
+func (v *VRGInstance) validateExistingPV(pv *corev1.PersistentVolume) error {
 	existingPV := &corev1.PersistentVolume{}
 
 	err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: pv.Name}, existingPV)
@@ -1785,7 +1852,7 @@ func (v *VRGInstance) validatePVExistence(pv *corev1.PersistentVolume) error {
 	// PV is not bound
 	// In async case, just checking that the PV has the ramen restore annotation is good
 	if existingPV.ObjectMeta.Annotations != nil &&
-		existingPV.ObjectMeta.Annotations[PVRestoreAnnotation] == "True" {
+		existingPV.ObjectMeta.Annotations[RestoreAnnotation] == "True" {
 		// Should we check and see if PV in being deleted? Should we just treat it as exists
 		// and then we don't care if deletion takes place later, which is what we do now?
 		v.log.Info("PV exists and managed by Ramen", "PV", existingPV.GetName())
@@ -1795,6 +1862,26 @@ func (v *VRGInstance) validatePVExistence(pv *corev1.PersistentVolume) error {
 
 	// PV is not bound and not managed by Ramen
 	return fmt.Errorf("found existing PV (%s) not restored by Ramen and not matching with backed up PV", existingPV.Name)
+}
+
+func (v *VRGInstance) validateExistingPVC(pvc *corev1.PersistentVolumeClaim) error {
+	existingPVC := &corev1.PersistentVolumeClaim{}
+
+	err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}, existingPVC)
+	if err != nil {
+		return fmt.Errorf("failed to get existing PVC (%w)", err)
+	}
+
+	if existingPVC.ObjectMeta.Annotations == nil ||
+		existingPVC.ObjectMeta.Annotations[RestoreAnnotation] != "True" {
+		return fmt.Errorf("found PVC object not restored by Ramen for PVC %s", existingPVC.Name)
+	}
+
+	// Should we check and see if PV in being deleted? Should we just treat it as exists
+	// and then we don't care if deletion takes place later, which is what we do now?
+	v.log.Info("PVC exists and managed by Ramen", "PVC", existingPVC)
+
+	return nil
 }
 
 // pvMatches checks if the PVs fields match, and is bound to a PVC. Used to detect PVCs that were not
@@ -1852,24 +1939,34 @@ func (v *VRGInstance) pvMatches(x, y *corev1.PersistentVolume) bool {
 	}
 }
 
-// cleanupPVForRestore cleans up required PV fields, to ensure restore succeeds to a new cluster, and
-// rebinding the PV to a newly created PVC with the same claimRef succeeds
-func (v *VRGInstance) cleanupPVForRestore(pv *corev1.PersistentVolume) {
-	pv.ResourceVersion = ""
-	if pv.Spec.ClaimRef != nil {
-		pv.Spec.ClaimRef.UID = ""
-		pv.Spec.ClaimRef.ResourceVersion = ""
-		pv.Spec.ClaimRef.APIVersion = ""
+// addRestoreAnnotation adds annotation to an object indicating that the object was restored by Ramen
+func (v *VRGInstance) addRestoreAnnotation(obj client.Object) {
+	if obj.GetAnnotations() == nil {
+		obj.SetAnnotations(map[string]string{})
 	}
+
+	obj.GetAnnotations()[RestoreAnnotation] = "True"
 }
 
-// addPVRestoreAnnotation adds annotation to the PV indicating that the PV is restored by Ramen
-func (v *VRGInstance) addPVRestoreAnnotation(pv *corev1.PersistentVolume) {
-	if pv.ObjectMeta.Annotations == nil {
-		pv.ObjectMeta.Annotations = map[string]string{}
+// cleanupForRestore cleans up required PV or PVC fields, to ensure restore succeeds
+// to a new cluster, and rebinding the PVC to an existing PV with the same claimRef
+func (v *VRGInstance) cleanupForRestore(obj client.Object) {
+	switch obj.(type) {
+	case *corev1.PersistentVolume:
+		pv, _ := obj.(*corev1.PersistentVolume)
+		pv.ResourceVersion = ""
+		if pv.Spec.ClaimRef != nil {
+			pv.Spec.ClaimRef.UID = ""
+			pv.Spec.ClaimRef.ResourceVersion = ""
+			pv.Spec.ClaimRef.APIVersion = ""
+		}
+	case *corev1.PersistentVolumeClaim:
+		pvc, _ := obj.(*corev1.PersistentVolumeClaim)
+		pvc.ObjectMeta.Annotations = map[string]string{}
+		pvc.ObjectMeta.Finalizers = []string{}
+		pvc.ObjectMeta.ResourceVersion = ""
+		pvc.ObjectMeta.OwnerReferences = nil
 	}
-
-	pv.ObjectMeta.Annotations[PVRestoreAnnotation] = "True"
 }
 
 // Follow this logic to update VRG (and also ProtectedPVC) conditions for VolRep
