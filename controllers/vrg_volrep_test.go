@@ -144,14 +144,22 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			scProvisioner:          "manual.storage.com",
 			replicationClassLabels: map[string]string{"protection": "ramen"},
 		}
-		It("populates the S3 store with PVs and starts vrg as primary to check that the PVs are restored", func() {
+		It("populates the S3 store with PVs/PVCs and start vrg as primary to check that the PVs/PVCs are restored", func() {
 			restoreTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			numPVs := 3
 			vtest := newVRGTestCaseCreate(0, restoreTestTemplate, true, false)
+			vtest.skipCreationPVandPVC = true
 			pvList := vtest.generateFakePVs("pv", numPVs)
-			populateS3Store(vtest.s3KeyPrefix(), pvList)
+			pvcList := vtest.generateFakePVCs(pvList)
+			populateS3Store(vtest.s3KeyPrefix(), pvList, pvcList)
 			vtest.VRGTestCaseStart()
 			waitForPVRestore(pvList)
+			waitForPVCRestore(pvcList)
+			Expect(vtest.getVRG().Status.State).ToNot(Equal(ramendrv1alpha1.PrimaryState))
+			updatePVCClaimBindInfo(pvcList, corev1.ClaimBound)
+			vtest.waitForVRCountToMatch(3)
+			vtest.promoteVolReps()
+			vtest.waitForVRGStateToTransitionToPrimary()
 			cleanupS3Store()
 		})
 	})
@@ -171,9 +179,10 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		}
 		It("populates the S3 store with PVs and starts vrg as primary", func() {
 			restoreTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
-			vrgTestBoundPV = newVRGTestCaseCreate(3, restoreTestTemplate, true, false)
-			pvList := vrgTestBoundPV.generatePVs()
-			populateS3Store(vrgTestBoundPV.s3KeyPrefix(), pvList)
+			numPVs := 3
+			vrgTestBoundPV = newVRGTestCaseCreate(numPVs, restoreTestTemplate, true, false)
+			pvList := vrgTestBoundPV.generateFakePVs("pv", numPVs)
+			populateS3Store(vrgTestBoundPV.s3KeyPrefix(), pvList, []corev1.PersistentVolumeClaim{})
 			vrgTestBoundPV.VRGTestCaseStart()
 		})
 		It("waits for VRG to create a VR for each PVC", func() {
@@ -640,18 +649,19 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 })
 
 type vrgTest struct {
-	uniqueID         string
-	namespace        string
-	pvNames          []string
-	pvcNames         []string
-	vrgName          string
-	storageClass     string
-	replicationClass string
-	pvcLabels        map[string]string
-	pvcCount         int
-	checkBind        bool
-	vrgFirst         bool
-	template         *template
+	uniqueID             string
+	namespace            string
+	pvNames              []string
+	pvcNames             []string
+	vrgName              string
+	storageClass         string
+	replicationClass     string
+	pvcLabels            map[string]string
+	pvcCount             int
+	skipCreationPVandPVC bool
+	checkBind            bool
+	vrgFirst             bool
+	template             *template
 }
 
 type template struct {
@@ -711,15 +721,21 @@ func (v *vrgTest) VRGTestCaseStart() {
 
 	if v.vrgFirst {
 		v.createVRG()
-		v.createPVCandPV(v.template.ClaimBindInfo, v.template.VolumeBindInfo)
+		if !v.skipCreationPVandPVC {
+			v.createPVCandPV(v.template.ClaimBindInfo, v.template.VolumeBindInfo)
+		}
 	} else {
-		v.createPVCandPV(v.template.ClaimBindInfo, v.template.VolumeBindInfo)
+		if !v.skipCreationPVandPVC {
+			v.createPVCandPV(v.template.ClaimBindInfo, v.template.VolumeBindInfo)
+		}
 		v.createVRG()
 	}
 
 	// If checkBind is true, then check whether PVCs and PVs are
 	// bound. Otherwise expect them to not have been bound.
-	v.verifyPVCBindingToPV(v.checkBind)
+	if !v.skipCreationPVandPVC {
+		v.verifyPVCBindingToPV(v.checkBind)
+	}
 }
 
 // newVRGTestCaseCreateAndStart creates a new namespace, zero or more PVCs (equal
@@ -734,25 +750,6 @@ func newVRGTestCaseCreateAndStart(pvcCount int, testTemplate *template, checkBin
 	v.VRGTestCaseStart()
 
 	return v
-}
-
-func (v *vrgTest) generatePVs() []corev1.PersistentVolume {
-	pvList := []corev1.PersistentVolume{}
-
-	// The generator has a limit of 9999 unique names.
-	if v.pvcCount > 9999 {
-		return pvList
-	}
-
-	// Create the requested number of PVs and corresponding PVCs
-	for i := 0; i < v.pvcCount; i++ {
-		pvName := fmt.Sprintf("pv-%v-%02d", v.uniqueID, i)
-		pvcName := fmt.Sprintf("pvc-%v-%02d", v.uniqueID, i)
-
-		pvList = append(pvList, *v.generatePV(pvName, pvcName))
-	}
-
-	return pvList
 }
 
 func (v *vrgTest) createPVCandPV(claimBindInfo corev1.PersistentVolumeClaimPhase,
@@ -796,10 +793,23 @@ func (v *vrgTest) generateFakePVs(pvNamePrefix string, count int) []corev1.Persi
 
 	for i := 1; i <= count; i++ {
 		pvName := fmt.Sprintf("%s%04d", pvNamePrefix, i)
-		pvList = append(pvList, *v.generatePV(pvName, "PVC_of_"+pvName))
+		pvList = append(pvList, *v.generatePV(pvName, "pvc-of-"+pvName))
+		v.pvNames = append(v.pvNames, pvName)
 	}
 
 	return pvList
+}
+
+func (v *vrgTest) generateFakePVCs(pvList []corev1.PersistentVolume) []corev1.PersistentVolumeClaim {
+	pvcList := []corev1.PersistentVolumeClaim{}
+
+	for _, pv := range pvList {
+		pvc := v.generatePVC(pv.Spec.ClaimRef.Name, pv.Spec.ClaimRef.Namespace, pv.Name, v.pvcLabels)
+		pvcList = append(pvcList, *pvc)
+		v.pvcNames = append(v.pvcNames, pvc.Name)
+	}
+
+	return pvcList
 }
 
 func (v *vrgTest) vrgNamespacedName() types.NamespacedName {
@@ -810,10 +820,16 @@ func (v *vrgTest) s3KeyPrefix() string {
 	return vrgController.S3KeyPrefix(v.vrgNamespacedName().String())
 }
 
-func populateS3Store(vrgNamespacedName string, pvList []corev1.PersistentVolume) {
+func populateS3Store(vrgNamespacedName string, pvList []corev1.PersistentVolume, pvcList []corev1.PersistentVolumeClaim) {
 	for _, pv := range pvList {
 		Expect(
 			vrgController.UploadPV(*vrgObjectStorer, vrgNamespacedName, pv.Name, pv),
+		).To(Succeed())
+	}
+
+	for _, pvc := range pvcList {
+		Expect(
+			vrgController.UploadPVC(*vrgObjectStorer, vrgNamespacedName, pvc.Name, pvc),
 		).To(Succeed())
 	}
 }
@@ -898,6 +914,24 @@ func (v *vrgTest) createPVC(pvcName, namespace, volumeName string, labels map[st
 ) {
 	By("creating PVC " + pvcName)
 
+	pvc := v.generatePVC(pvcName, namespace, volumeName, labels)
+
+	err := k8sClient.Create(context.TODO(), pvc)
+	expectedErr := errors.NewAlreadyExists(
+		schema.GroupResource{Resource: "persistentvolumeclaims"}, pvcName)
+	Expect(err).To(SatisfyAny(BeNil(), MatchError(expectedErr)),
+		"failed to create PVC %s", pvcName)
+
+	pvc.Status.Phase = bindInfo
+	pvc.Status.AccessModes = pvc.Spec.AccessModes
+	pvc.Status.Capacity = pvc.Spec.Resources.Requests
+	err = k8sClient.Status().Update(context.TODO(), pvc)
+	Expect(err).To(BeNil(),
+		"failed to update status of PVC %s", pvcName)
+}
+
+func (v *vrgTest) generatePVC(pvcName, namespace, volumeName string, labels map[string]string,
+) *corev1.PersistentVolumeClaim {
 	capacity := corev1.ResourceList{
 		corev1.ResourceStorage: resource.MustParse("1Gi"),
 	}
@@ -905,7 +939,7 @@ func (v *vrgTest) createPVC(pvcName, namespace, volumeName string, labels map[st
 	storageclass := v.storageClass
 
 	accessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
-	pvc := &corev1.PersistentVolumeClaim{
+	return &corev1.PersistentVolumeClaim{
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      pvcName,
@@ -922,19 +956,6 @@ func (v *vrgTest) createPVC(pvcName, namespace, volumeName string, labels map[st
 			StorageClassName: &storageclass,
 		},
 	}
-
-	err := k8sClient.Create(context.TODO(), pvc)
-	expectedErr := errors.NewAlreadyExists(
-		schema.GroupResource{Resource: "persistentvolumeclaims"}, pvcName)
-	Expect(err).To(SatisfyAny(BeNil(), MatchError(expectedErr)),
-		"failed to create PVC %s", pvcName)
-
-	pvc.Status.Phase = bindInfo
-	pvc.Status.AccessModes = accessModes
-	pvc.Status.Capacity = capacity
-	err = k8sClient.Status().Update(context.TODO(), pvc)
-	Expect(err).To(BeNil(),
-		"failed to update status of PVC %s", pvcName)
 }
 
 func (v *vrgTest) bindPVAndPVC() {
@@ -1557,7 +1578,7 @@ func waitForPVRestore(pvList []corev1.PersistentVolume) {
 				return false
 			}
 
-			Expect(restoredPV.ObjectMeta.Annotations[vrgController.PVRestoreAnnotation]).Should(Equal("True"))
+			Expect(restoredPV.ObjectMeta.Annotations[vrgController.RestoreAnnotation]).Should(Equal("True"))
 
 			pvCount++
 
@@ -1567,4 +1588,52 @@ func waitForPVRestore(pvList []corev1.PersistentVolume) {
 	}
 
 	Expect(pvCount == len(pvList))
+}
+
+func waitForPVCRestore(pvcList []corev1.PersistentVolumeClaim) {
+	var pvcCount int
+
+	for _, pvc := range pvcList {
+		pvcLookupKey := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
+		restoredPVC := &corev1.PersistentVolumeClaim{}
+
+		Eventually(func() bool {
+			err := k8sClient.Get(context.TODO(), pvcLookupKey, restoredPVC)
+			if err != nil {
+				return false
+			}
+
+			Expect(restoredPVC.ObjectMeta.Annotations[vrgController.RestoreAnnotation]).Should(Equal("True"))
+
+			pvcCount++
+
+			return true
+		}, timeout, interval).Should(BeTrue(),
+			"while waiting for PVC %+v to be restored", restoredPVC)
+	}
+
+	Expect(pvcCount == len(pvcList))
+}
+
+func updatePVCClaimBindInfo(pvcList []corev1.PersistentVolumeClaim, claimBindInfo corev1.PersistentVolumeClaimPhase) {
+	for _, pvc := range pvcList {
+		pvcLookupKey := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
+		restoredPVC := &corev1.PersistentVolumeClaim{}
+
+		err := k8sClient.Get(context.TODO(), pvcLookupKey, restoredPVC)
+		Expect(err).NotTo(HaveOccurred())
+
+		restoredPVC.Status.Phase = claimBindInfo
+		restoredPVC.Status.AccessModes = pvc.Spec.AccessModes
+		restoredPVC.Status.Capacity = pvc.Spec.Resources.Requests
+		err = k8sClient.Status().Update(context.TODO(), restoredPVC)
+		Expect(err).To(BeNil(),
+			"failed to update status of PVC %s", pvc.Name)
+	}
+}
+
+func (v *vrgTest) waitForVRGStateToTransitionToPrimary() {
+	Eventually(func() bool {
+		return v.getVRG().Status.State == ramendrv1alpha1.PrimaryState
+	}, timeout, interval).Should(BeTrue())
 }

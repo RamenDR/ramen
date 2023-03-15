@@ -415,7 +415,7 @@ const (
 	pvcVRAnnotationProtectedValue = "protected"
 	pvVRAnnotationRetentionKey    = "volumereplicationgroups.ramendr.openshift.io/vr-retained"
 	pvVRAnnotationRetentionValue  = "retained"
-	PVRestoreAnnotation           = "volumereplicationgroups.ramendr.openshift.io/ramen-restore"
+	RestoreAnnotation             = "volumereplicationgroups.ramendr.openshift.io/ramen-restore"
 )
 
 func (v *VRGInstance) processVRG() (ctrl.Result, error) {
@@ -542,7 +542,7 @@ func (v *VRGInstance) validateVRGMode() error {
 	return nil
 }
 
-func (v *VRGInstance) restorePVs(result *ctrl.Result) error {
+func (v *VRGInstance) clusterDataRestore(result *ctrl.Result) error {
 	if v.instance.Spec.PrepareForFinalSync || v.instance.Spec.RunFinalSync {
 		msg := "PV restore skipped, as VRG is orchestrating final sync"
 		setVRGClusterDataReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
@@ -579,15 +579,15 @@ func (v *VRGInstance) restorePVs(result *ctrl.Result) error {
 		return fmt.Errorf("failed to restore PVs for VolSync (%w)", err)
 	}
 
-	err = v.restorePVsForVolRep(result)
+	err = v.clusterDataRestoreForVolRep(result)
 	if err != nil {
-		v.log.Info("VolRep PV restore failed")
+		v.log.Info("VolRep ClusterData restore failed")
 
-		return fmt.Errorf("failed to restore PVs for VolRep (%w)", err)
+		return fmt.Errorf("failed to restore ClusterData for VolRep (%w)", err)
 	}
 
 	// Only after both succeed, we mark ClusterDataReady as true
-	msg := "Restored PV cluster data"
+	msg := "Restored cluster data"
 	setVRGClusterDataReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
 	return nil
@@ -819,7 +819,7 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 	defer v.log.Info("Exiting processing VolumeReplicationGroup")
 
 	result := ctrl.Result{}
-	if err := v.restorePVs(&result); err != nil {
+	if err := v.clusterDataRestore(&result); err != nil {
 		v.log.Info("Restoring PVs failed", "Error", err.Error())
 
 		msg := fmt.Sprintf("Failed to restore PVs (%v)", err.Error())

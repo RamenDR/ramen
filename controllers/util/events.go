@@ -37,8 +37,8 @@ const (
 	// EventReasonProtectPVCFailed is used when VRG fails to protect PVC
 	EventReasonProtectPVCFailed = "ProtectPVCFailed"
 
-	// EventReasonPVUploadFailed is used when VRG fails to upload PV cluster data
-	EventReasonPVUploadFailed = "PVUploadFailed"
+	// EventReasonUploadFailed is used when VRG fails to upload PV cluster data
+	EventReasonUploadFailed = "UploadFailed"
 
 	// EventReasonVrgUploadFailed is used when VRG fails to upload VRG object
 	EventReasonVrgUploadFailed = "VrgUploadFailed"

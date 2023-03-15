@@ -338,6 +338,16 @@ func UploadPV(s ObjectStorer, pvKeyPrefix, pvKeySuffix string,
 	return uploadTypedObject(s, pvKeyPrefix, pvKeySuffix, pv)
 }
 
+// UploadPVC uploads the given PVC to the bucket with a key of
+// "<pvcKeyPrefix><v1.PersistentVolumeClaim/><pvcKeySuffix>".
+// - pvcKeyPrefix should have any required delimiters like '/'
+// - OK to call UploadPVC() concurrently from multiple goroutines safely.
+func UploadPVC(s ObjectStorer, pvcKeyPrefix, pvcKeySuffix string,
+	pvc corev1.PersistentVolumeClaim,
+) error {
+	return uploadTypedObject(s, pvcKeyPrefix, pvcKeySuffix, pvc)
+}
+
 // uploadTypedObject uploads to the bucket the given uploadContent with a
 // key of <keyPrefix><objectType/>keySuffix>, where objectType is the type of the
 // uploadContent parameter. OK to call uploadTypedObject() concurrently from
@@ -401,25 +411,6 @@ func (s *s3ObjectStore) UploadObject(key string,
 	return nil
 }
 
-// VerifyPVUpload verifies that the PV in the input matches the PV object
-// with the given keySuffix in the bucket.
-func VerifyPVUpload(s ObjectStorer, pvKeyPrefix, pvKeySuffix string,
-	verifyPV corev1.PersistentVolume,
-) error {
-	var downloadedPV corev1.PersistentVolume
-
-	if err := downloadTypedObject(s, pvKeyPrefix, pvKeySuffix, &downloadedPV); err != nil {
-		return errorswrapper.WithMessage(err, "VerifyPVUpload")
-	}
-
-	if !reflect.DeepEqual(verifyPV, downloadedPV) {
-		return fmt.Errorf("failed to verify PV want %v got %v",
-			verifyPV, downloadedPV)
-	}
-
-	return nil
-}
-
 // downloadPVs downloads all PVs in the bucket.
 // - Downloads PVs with the given key prefix.
 // - If bucket doesn't exists, will return ErrCodeNoSuchBucket "NoSuchBucket"
@@ -427,6 +418,17 @@ func downloadPVs(s ObjectStorer, pvKeyPrefix string) (
 	pvList []corev1.PersistentVolume, err error,
 ) {
 	err = DownloadTypedObjects(s, pvKeyPrefix, &pvList)
+
+	return
+}
+
+// downloadPVCs downloads all PVCs in the bucket.
+// - Downloads PVCs with the given key prefix.
+// - If bucket doesn't exists, will return ErrCodeNoSuchBucket "NoSuchBucket"
+func downloadPVCs(s ObjectStorer, pvcKeyPrefix string) (
+	pvcList []corev1.PersistentVolumeClaim, err error,
+) {
+	err = DownloadTypedObjects(s, pvcKeyPrefix, &pvcList)
 
 	return
 }
