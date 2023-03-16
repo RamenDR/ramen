@@ -507,11 +507,11 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 	}
 
 	metrics := NewSyncMetrics(prometheus.Labels{
-		"resource_type":       "DRPlacementControl",
-		"name":                drpc.Name,
-		"namespace":           drpc.Namespace,
-		"policyname":          drPolicy.Name,
-		"scheduling_interval": drPolicy.Spec.SchedulingInterval,
+		ObjType:            "DRPlacementControl",
+		ObjName:            drpc.Name,
+		ObjNamespace:       drpc.Namespace,
+		Policyname:         drPolicy.Name,
+		SchedulingInterval: drPolicy.Spec.SchedulingInterval,
 	})
 
 	d := &DRPCInstance{
