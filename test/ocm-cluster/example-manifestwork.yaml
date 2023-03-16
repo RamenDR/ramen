@@ -35,5 +35,5 @@ spec:
               serviceAccountName: example-sa
               containers:
                 - name: busybox
-                  image: quay.io/quay/busybox
+                  image: docker.io/library/busybox:stable
                   command: ["sleep", "60"]
