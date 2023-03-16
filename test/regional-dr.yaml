@@ -28,6 +28,7 @@ templates:
           - name: olm
           - name: minio
           - name: velero
+          - name: volsync
   - name: "hub-cluster"
     driver: kvm2
     container_runtime: containerd
