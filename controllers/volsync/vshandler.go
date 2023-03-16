@@ -253,6 +253,8 @@ func (v *VSHandler) isPVCInUseByNonRDPod(pvcName string) (bool, error) {
 // Returns replication source only if create/update is successful
 // Callers should assume getting a nil replication source back means they should retry/requeue.
 // Returns true/false if final sync is complete, and also returns an RS if one was reconciled.
+//
+//nolint:cyclop
 func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec,
 	runFinalSync bool) (bool /* finalSyncComplete */, *volsyncv1alpha1.ReplicationSource, error,
 ) {
@@ -282,12 +284,20 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 
 	pvcOk, err := v.validatePVCBeforeRS(rsSpec, runFinalSync)
 	if !pvcOk || err != nil {
-		return false, nil, err
+		// Return the replicationSource if it already exists
+		existingRS, getRSErr := v.getRS(getReplicationSourceName(rsSpec.ProtectedPVC.Name))
+		if getRSErr != nil {
+			return false, nil, err
+		}
+		// Return the RS here - allows status updates to understand that prev RS syncs may have completed
+		// (i.e. data protected == true), even though we may be indicating that finalSync has not yet completed
+		// because the PVC is still in-use
+		return false, existingRS, err
 	}
 
 	replicationSource, err := v.createOrUpdateRS(rsSpec, pskSecretName, runFinalSync)
 	if err != nil {
-		return false, nil, err
+		return false, replicationSource, err
 	}
 
 	//
