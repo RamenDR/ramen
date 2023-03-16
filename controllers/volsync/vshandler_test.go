@@ -971,7 +971,7 @@ var _ = Describe("VolSync Handler", func() {
 									It("Should not complete the final sync", func() {
 										finalSyncDone, returnedRS, err := vsHandler.ReconcileRS(rsSpec, true)
 										Expect(err).NotTo(HaveOccurred()) // Not considered an error, we should just wait
-										Expect(returnedRS).To(BeNil())
+										Expect(returnedRS).NotTo(BeNil()) // Should return the existing RS
 										Expect(finalSyncDone).To(BeFalse())
 									})
 								})
@@ -1003,7 +1003,7 @@ var _ = Describe("VolSync Handler", func() {
 										It("Should not complete the final sync", func() {
 											finalSyncDone, returnedRS, err := vsHandler.ReconcileRS(rsSpec, true)
 											Expect(err).NotTo(HaveOccurred()) // Not considered an error, we should just wait
-											Expect(returnedRS).To(BeNil())
+											Expect(returnedRS).NotTo(BeNil()) // Should return existing RS
 											Expect(finalSyncDone).To(BeFalse())
 										})
 									})
