@@ -27,6 +27,7 @@ templates:
           - name: csi-addons
           - name: olm
           - name: minio
+          - name: velero
   - name: "hub-cluster"
     driver: kvm2
     container_runtime: containerd
