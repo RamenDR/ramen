@@ -126,7 +126,7 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	metric := NewDRPolicySyncIntervalMetrics(prometheus.Labels{
-		"policyname": drpolicy.Name,
+		Policyname: drpolicy.Name,
 	})
 
 	val, err := util.GetSecondsFromSchedulingInterval(drpolicy)
