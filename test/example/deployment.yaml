@@ -33,4 +33,4 @@ spec:
       - name: example
         image: docker.io/library/nginx:stable
         ports:
-          - containerPort: 80
+        - containerPort: 80
