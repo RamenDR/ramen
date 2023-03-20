@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import os
+import sys
+
+from drenv import kubectl
+
+if len(sys.argv) != 2:
+    print(f"Usage: {sys.argv[0]} cluster")
+    sys.exit(1)
+
+os.chdir(os.path.dirname(__file__))
+cluster = sys.argv[1]
+
+print("Deploying demo")
+kubectl.apply("--filename", "deployment.yaml", context=cluster)
+
+print("Creating the service")
+kubectl.apply("--filename", "service.yaml", context=cluster)
+
+print("Waiting until deployment is rolled out")
+kubectl.rollout(
+    "status",
+    "deployment",
+    "--timeout=120s",
+    context=cluster,
+)
+
+print("Waiting until ingress controller deployment is rolled out")
+kubectl.rollout(
+    "status",
+    "ingress",
+    "--namespace=ingress-nginx",
+    "--timeout=120s",
+    context=cluster,
+)
+
+print("Configuring ingress")
+kubectl.apply("--filename", "ingress.yaml", context=cluster)
