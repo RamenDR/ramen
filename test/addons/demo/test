@@ -1,0 +1,26 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import os
+import sys
+import subprocess
+
+print(sys.argv)
+if len(sys.argv) != 2:
+    print(f"Usage: {sys.argv[0]} cluster")
+    sys.exit(1)
+
+os.chdir(os.path.dirname(__file__))
+cluster = sys.argv[1]
+
+print("Testing demo deployment")
+
+cmd = ["minikube", "ip", "--profile", cluster]
+node_addr = subprocess.check_output(cmd).decode().rstrip()
+
+cmd = ["curl", f"http://{node_addr}/"]
+out = subprocess.check_output(cmd).decode().rstrip()
+
+assert "Welcome to nginx!" in out
