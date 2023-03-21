@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import argparse
+import os
+
+from drenv import kubectl
+import config
+
+parser = argparse.ArgumentParser("undeploy")
+parser.add_argument("env_type", choices=config.ENV_TYPES)
+args = parser.parse_args()
+
+print(f"Unconfiguring Ramen for {args.env_type}")
+
+os.chdir(os.path.dirname(__file__))
+
+print("Deleting samples channel")
+kubectl.delete(
+    "--filename",
+    "samples-channel.yaml",
+    "--ignore-not-found",
+    context=config.HUB,
+)
+
+print("Deleting DRClusters and DRPolicy")
+kubectl.delete(
+    "--kustomize",
+    args.env_type,
+    "--ignore-not-found",
+    context=config.HUB,
+)
+
+# We keep the ramen config map since we do not own it.
+
+print("Deleting s3 secret in ramen hub namespace")
+kubectl.delete(
+    "--filename",
+    "s3-secret.yaml",
+    "--ignore-not-found",
+    context=config.HUB,
+)
+
+print("Ramen was unconfigured successfully")
