@@ -148,12 +148,26 @@ kubectl get deploy -A --context dr2
    done
    ```
 
+## Configure the ramen operator on the hub
+
+Ramen need to be configured to know about the managed clusters and the
+s3 endpoints. To configure the test environment, run this script:
+
+```
+test/ramen-config/deploy regional-dr
+```
+
+If you need to remove your configuration, use:
+
+```
+test/ramen-config/undeploy regional-dr
+```
+
 ## The next steps
 
-At this point *Ramen* is running in your cluster, and you are ready for
-the next steps:
+At this point *Ramen* is ready to protect workloads in your cluster, and
+you are ready for the next steps:
 
-- Configuring *Ramen*
 - Enable disaster recovery for an application
 - Failing over the application to another cluster
 - Relocating an application back to the original cluster
