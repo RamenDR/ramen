@@ -55,7 +55,7 @@ def wait_until_ready(name, timeout=300):
         time.sleep(delay)
 
 
-def kubeconfig(name):
+def kubeconfig(context_name):
     """
     Return cluster kubeconfig. Returns empty dict if the cluster is not
     configured with kubectl yet.
@@ -65,9 +65,15 @@ def kubeconfig(name):
 
     # We get null instead of [].
     clusters = config.get("clusters") or ()
+    contexts = config.get("contexts") or ()
 
-    for c in clusters:
-        if c["name"] == name:
-            return c
+    # On external cluster, the name of the context many be differnet from the
+    # name of the cluster.
+    for context in contexts:
+        if context["name"] == context_name:
+            cluster_name = context["context"]["cluster"]
+            for cluster in clusters:
+                if cluster["name"] == cluster_name:
+                    return cluster
 
     return {}
