@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Enviroment for testing rook ceph deployment with multiple nodes per cluster.
+---
+name: "rook"
+
+templates:
+  - name: "dr-cluster"
+    driver: kvm2
+    container_runtime: containerd
+    network: default
+    memory: "5g"
+    extra_disks: 1
+    disk_size: "50g"
+    nodes: 2
+    workers:
+      - scripts:
+          - name: rook-operator
+          - name: rook-cluster
+          - name: rook-pool
+          - name: rook-toolbox
+      - scripts:
+          - name: csi-addons
+
+profiles:
+  - name: "rook1"
+    template: "dr-cluster"
+  - name: "rook2"
+    template: "dr-cluster"
+
+workers:
+  - scripts:
+      - name: rbd-mirror
+        args: ["rook1", "rook2"]
