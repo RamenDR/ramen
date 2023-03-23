@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import sys
 
 import drenv
@@ -16,7 +17,7 @@ BASE_URL = f"https://raw.githubusercontent.com/csi-addons/kubernetes-csi-addons/
 def deploy(cluster):
     print("Deploying csi addon for volume replication")
     with drenv.kustomization(
-        "csi-addons/kustomization.yaml",
+        "kustomization.yaml",
         base_url=BASE_URL,
     ) as kustomization:
         kubectl.apply("--kustomize", kustomization, context=cluster)
@@ -37,6 +38,7 @@ if len(sys.argv) != 2:
     print(f"Usage: {sys.argv[0]} cluster")
     sys.exit(1)
 
+os.chdir(os.path.dirname(__file__))
 cluster = sys.argv[1]
 
 deploy(cluster)

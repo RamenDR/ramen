@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import sys
 
 from drenv import kubectl
@@ -10,7 +11,7 @@ from drenv import kubectl
 
 def deploy(cluster):
     print("Deploying minio")
-    kubectl.apply("--filename", "minio/minio.yaml", context=cluster)
+    kubectl.apply("--filename", "minio.yaml", context=cluster)
 
 
 def wait(cluster):
@@ -28,6 +29,7 @@ if len(sys.argv) != 2:
     print(f"Usage: {sys.argv[0]} cluster")
     sys.exit(1)
 
+os.chdir(os.path.dirname(__file__))
 cluster = sys.argv[1]
 
 deploy(cluster)

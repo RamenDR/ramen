@@ -5,6 +5,7 @@
 
 import base64
 import json
+import os
 import sys
 
 import drenv
@@ -52,7 +53,7 @@ def fetch_secret_info(cluster):
 def configure_rbd_mirroring(cluster, peer_info):
     print(f"Applying rbd mirror secret in cluster '{cluster}'")
 
-    template = drenv.template("rbd-mirror/rbd-mirror-secret.yaml")
+    template = drenv.template("rbd-mirror-secret.yaml")
     yaml = template.substitute(peer_info)
     kubectl.apply(
         "--filename=-",
@@ -74,7 +75,7 @@ def configure_rbd_mirroring(cluster, peer_info):
 
     print(f"Apply rbd mirror to cluster '{cluster}'")
     kubectl.apply(
-        "--filename=rbd-mirror/rbd-mirror.yaml",
+        "--filename=rbd-mirror.yaml",
         "--namespace=rook-ceph",
         context=cluster,
     )
@@ -115,7 +116,7 @@ def wait_until_pool_mirroring_is_healthy(cluster):
 def deploy_vrc_sample(cluster):
     print(f"Applying vrc sample in cluster '{cluster}'")
     kubectl.apply(
-        "--filename=rbd-mirror/vrc-sample.yaml",
+        "--filename=vrc-sample.yaml",
         "--namespace=rook-ceph",
         context=cluster,
     )
@@ -125,6 +126,7 @@ if len(sys.argv) != 3:
     print(f"Usage: {sys.argv[0]} cluster1 cluster2")
     sys.exit(1)
 
+os.chdir(os.path.dirname(__file__))
 cluster1 = sys.argv[1]
 cluster2 = sys.argv[2]
 
