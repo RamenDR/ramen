@@ -30,7 +30,7 @@ setuptools.setup(
         "Programming Language :: Python :: 3",
         "Topic :: Software Development :: Testing",
     ],
-    entry_points = {
-        'console_scripts': ['drenv=drenv.__main__:main'],
-    }
+    entry_points={
+        "console_scripts": ["drenv=drenv.__main__:main"],
+    },
 )
