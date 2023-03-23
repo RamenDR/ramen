@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import sys
 
 import drenv
@@ -74,10 +75,11 @@ if len(sys.argv) != 3:
     print(f"Usage: {sys.argv[0]} cluster hub")
     sys.exit(1)
 
+os.chdir(os.path.dirname(__file__))
 cluster = sys.argv[1]
 hub = sys.argv[2]
 
-template = drenv.template("ocm-cluster/example-manifestwork.yaml")
+template = drenv.template("example-manifestwork.yaml")
 work = template.substitute(namespace=cluster)
 
 deploy_work(cluster, hub, work)

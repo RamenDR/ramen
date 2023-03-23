@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
+import os
 import sys
 import time
 
@@ -56,7 +57,7 @@ def rbd_mirror_image_status(cluster, image):
 def test_volume_replication(primary, secondary):
     print(f"Deploying pvc {PVC_NAME} in cluster '{primary}'")
     kubectl.apply(
-        f"--filename=rbd-mirror/{PVC_NAME}.yaml",
+        f"--filename={PVC_NAME}.yaml",
         "--namespace=rook-ceph",
         context=primary,
     )
@@ -72,7 +73,7 @@ def test_volume_replication(primary, secondary):
 
     print(f"Deploying vr vr-sample in cluster '{primary}'")
     kubectl.apply(
-        "--filename=rbd-mirror/vr-sample.yaml",
+        "--filename=vr-sample.yaml",
         "--namespace=rook-ceph",
         context=primary,
     )
@@ -159,6 +160,7 @@ if len(sys.argv) != 3:
     print(f"Usage: {sys.argv[0]} cluster1 cluster2")
     sys.exit(1)
 
+os.chdir(os.path.dirname(__file__))
 cluster1 = sys.argv[1]
 cluster2 = sys.argv[2]
 

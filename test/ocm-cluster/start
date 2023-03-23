@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
+import os
 import sys
 
 import drenv
@@ -126,6 +127,7 @@ if len(sys.argv) != 3:
     print(f"Usage: {sys.argv[0]} cluster hub")
     sys.exit(1)
 
+os.chdir(os.path.dirname(__file__))
 cluster_name = sys.argv[1]
 hub_name = sys.argv[2]
 

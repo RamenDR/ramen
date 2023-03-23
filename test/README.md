@@ -525,6 +525,25 @@ script/start cluster1 arg2
 script/test cluster1 arg2
 ```
 
+#### Hook working directory
+
+Hook should not assume the current working directory. To make the hook
+runnable from any directory the hook can change the current working
+directory to the hook directory:
+
+```python
+import os
+
+os.chdir(os.path.dirname(__file__))
+```
+
+Now you can run the hook from any directory, and the hook can use
+relative path for resources in the same directory:
+
+```python
+kubectl.apply("--filename=deployment.yaml", context=cluster)
+```
+
 ## Environment files
 
 ### Ramen testing environments

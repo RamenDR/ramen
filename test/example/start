@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import sys
 
 from drenv import kubectl
@@ -11,7 +12,8 @@ if len(sys.argv) != 2:
     print(f"Usage: {sys.argv[0]} cluster")
     sys.exit(1)
 
+os.chdir(os.path.dirname(__file__))
 cluster = sys.argv[1]
 
 print("Deploying example")
-kubectl.apply("--filename", "example/deployment.yaml", context=cluster)
+kubectl.apply("--filename", "deployment.yaml", context=cluster)
