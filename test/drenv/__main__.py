@@ -84,7 +84,7 @@ def cmd_delete(env, args):
     )
 
 
-def cmd_dump(env):
+def cmd_dump(env, args):
     yaml.dump(env, sys.stdout)
 
 

@@ -15,6 +15,7 @@
 # Stopping will run the stop script, but will not stop the external minikube
 # cluster. Deleting does nothing.
 #
+# https://github.com/RamenDR/ramen/commit/a54bb25dc5cf8882347de1cce8a2318b8b6a58b5
 ---
 name: external
 profiles:
