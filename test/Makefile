@@ -1,19 +1,21 @@
+sources := $(wildcard drenv *.py */start */test */stop */deploy */undeploy)
+
 all: flake8 pylint black test coverage
 
 venv:
 	scripts/make-venv.sh
 
 flake8:
-	python3 -m flake8 drenv */start */test
+	python3 -m flake8 $(sources)
 
 pylint:
-	python3 -m pylint --errors-only drenv */start */test
+	python3 -m pylint --errors-only $(sources)
 
 black:
-	python3 -m black --check --diff drenv */start */test
+	python3 -m black --check --diff $(sources)
 
 black-reformat:
-	python3 -m black drenv */start */test
+	python3 -m black $(sources)
 
 test:
 	rm -f .coverage.*
