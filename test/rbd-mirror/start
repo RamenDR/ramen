@@ -16,7 +16,7 @@ POOL_NAME = "replicapool"
 def fetch_secret_info(cluster):
     info = {}
 
-    print(f"Getting mirroring info site name for cluster {cluster}")
+    print(f"Getting mirroring info site name for cluster '{cluster}'")
     info["name"] = kubectl.get(
         "cephblockpools.ceph.rook.io",
         POOL_NAME,
@@ -25,7 +25,7 @@ def fetch_secret_info(cluster):
         context=cluster,
     )
 
-    print(f"Getting rbd mirror boostrap peer secret name for cluster {cluster}")
+    print(f"Getting rbd mirror boostrap peer secret name for cluster '{cluster}'")
     secret_name = kubectl.get(
         "cephblockpools.ceph.rook.io",
         POOL_NAME,
@@ -34,7 +34,7 @@ def fetch_secret_info(cluster):
         context=cluster,
     )
 
-    print(f"Getting secret {secret_name} token for cluster {cluster}")
+    print(f"Getting secret {secret_name} token for cluster '{cluster}'")
     info["token"] = kubectl.get(
         "secret",
         secret_name,
@@ -50,7 +50,7 @@ def fetch_secret_info(cluster):
 
 
 def configure_rbd_mirroring(cluster, peer_info):
-    print(f"Applying rbd mirror secret in cluster {cluster}")
+    print(f"Applying rbd mirror secret in cluster '{cluster}'")
 
     template = drenv.template("rbd-mirror/rbd-mirror-secret.yaml")
     yaml = template.substitute(peer_info)
@@ -61,7 +61,7 @@ def configure_rbd_mirroring(cluster, peer_info):
         context=cluster,
     )
 
-    print(f"Configure peers for cluster {cluster}")
+    print(f"Configure peers for cluster '{cluster}'")
     patch = {"spec": {"mirroring": {"peers": {"secretNames": [peer_info["name"]]}}}}
     kubectl.patch(
         "cephblockpool",
@@ -72,7 +72,7 @@ def configure_rbd_mirroring(cluster, peer_info):
         context=cluster,
     )
 
-    print(f"Apply rbd mirror to cluster {cluster}")
+    print(f"Apply rbd mirror to cluster '{cluster}'")
     kubectl.apply(
         "--filename=rbd-mirror/rbd-mirror.yaml",
         "--namespace=rook-ceph",
@@ -81,7 +81,7 @@ def configure_rbd_mirroring(cluster, peer_info):
 
 
 def wait_until_pool_mirroring_is_healthy(cluster):
-    print(f"Waiting until ceph mirror daemon is healthy in cluster {cluster}")
+    print(f"Waiting until ceph mirror daemon is healthy in cluster '{cluster}'")
     kubectl.wait(
         "cephblockpools.ceph.rook.io",
         POOL_NAME,
@@ -91,7 +91,7 @@ def wait_until_pool_mirroring_is_healthy(cluster):
         context=cluster,
     )
 
-    print(f"Waiting until ceph mirror is healthy in cluster {cluster}")
+    print(f"Waiting until ceph mirror is healthy in cluster '{cluster}'")
     kubectl.wait(
         "cephblockpools.ceph.rook.io",
         POOL_NAME,
@@ -101,7 +101,7 @@ def wait_until_pool_mirroring_is_healthy(cluster):
         context=cluster,
     )
 
-    print(f"Waiting until ceph mirror image is healthy in cluster {cluster}")
+    print(f"Waiting until ceph mirror image is healthy in cluster '{cluster}'")
     kubectl.wait(
         "cephblockpools.ceph.rook.io",
         POOL_NAME,
@@ -113,7 +113,7 @@ def wait_until_pool_mirroring_is_healthy(cluster):
 
 
 def deploy_vrc_sample(cluster):
-    print(f"Applying vrc sample in cluster {cluster}")
+    print(f"Applying vrc sample in cluster '{cluster}'")
     kubectl.apply(
         "--filename=rbd-mirror/vrc-sample.yaml",
         "--namespace=rook-ceph",
