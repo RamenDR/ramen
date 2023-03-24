@@ -43,14 +43,14 @@ def wait_until_ready(name, timeout=300):
         current_status = status(name)
 
         if current_status != last_status:
-            print(f"Cluster {name} is {current_status}")
+            print(f"Cluster '{name}' is {current_status}")
             last_status = current_status
 
         if current_status == READY:
             break
 
         if time.monotonic() > deadline:
-            raise RuntimeError(f"Timeout waiting for cluster {name}")
+            raise RuntimeError(f"Timeout waiting for cluster '{name}'")
 
         time.sleep(delay)
 

@@ -54,14 +54,14 @@ def rbd_mirror_image_status(cluster, image):
 
 
 def test_volume_replication(primary, secondary):
-    print(f"Deploying pvc {PVC_NAME} in cluster {primary}")
+    print(f"Deploying pvc {PVC_NAME} in cluster '{primary}'")
     kubectl.apply(
         f"--filename=rbd-mirror/{PVC_NAME}.yaml",
         "--namespace=rook-ceph",
         context=primary,
     )
 
-    print(f"Waiting until pvc {PVC_NAME} is bound in cluster {primary}")
+    print(f"Waiting until pvc {PVC_NAME} is bound in cluster '{primary}'")
     kubectl.wait(
         f"pvc/{PVC_NAME}",
         "--for=jsonpath={.status.phase}=Bound",
@@ -70,14 +70,14 @@ def test_volume_replication(primary, secondary):
         context=primary,
     )
 
-    print(f"Deploying vr vr-sample in cluster {primary}")
+    print(f"Deploying vr vr-sample in cluster '{primary}'")
     kubectl.apply(
         "--filename=rbd-mirror/vr-sample.yaml",
         "--namespace=rook-ceph",
         context=primary,
     )
 
-    print(f"Waiting until vr vr-sample is completed in cluster {primary}")
+    print(f"Waiting until vr vr-sample is completed in cluster '{primary}'")
     kubectl.wait(
         "volumereplication/vr-sample",
         "--for=condition=Completed",
@@ -86,7 +86,7 @@ def test_volume_replication(primary, secondary):
         context=primary,
     )
 
-    print(f"Waiting until vr vr-sample state is primary in cluster {primary}")
+    print(f"Waiting until vr vr-sample state is primary in cluster '{primary}'")
     kubectl.wait(
         "volumereplication/vr-sample",
         "--for=jsonpath={.status.state}=Primary",
@@ -95,7 +95,7 @@ def test_volume_replication(primary, secondary):
         context=primary,
     )
 
-    print(f"Looking up pvc {PVC_NAME} pv name in cluster {primary}")
+    print(f"Looking up pvc {PVC_NAME} pv name in cluster '{primary}'")
     pv_name = kubectl.get(
         f"pvc/{PVC_NAME}",
         "--output=jsonpath={.spec.volumeName}",
@@ -103,7 +103,7 @@ def test_volume_replication(primary, secondary):
         context=primary,
     )
 
-    print(f"Looking up rbd image for pv {pv_name} in cluster {primary}")
+    print(f"Looking up rbd image for pv {pv_name} in cluster '{primary}'")
     rbd_image = kubectl.get(
         f"pv/{pv_name}",
         "--output=jsonpath={.spec.csi.volumeAttributes.imageName}",
@@ -111,11 +111,11 @@ def test_volume_replication(primary, secondary):
         context=primary,
     )
 
-    print(f"rbd image {rbd_image} info in cluster {primary}")
+    print(f"rbd image {rbd_image} info in cluster '{primary}'")
     out = rbd("info", rbd_image, cluster=primary)
     print(out)
 
-    print(f"Waiting until rbd image {rbd_image} is created in cluster {secondary}")
+    print(f"Waiting until rbd image {rbd_image} is created in cluster '{secondary}'")
     for i in range(60):
         time.sleep(1)
         out = rbd("list", cluster=primary)
@@ -126,7 +126,7 @@ def test_volume_replication(primary, secondary):
     else:
         raise RuntimeError(f"Timeout waiting for image {rbd_image}")
 
-    print(f"vr vr-sample info on primary cluster {primary}")
+    print(f"vr vr-sample info on primary cluster '{primary}'")
     kubectl.get(
         "volumereplication/vr-sample",
         "--output=yaml",
@@ -134,25 +134,25 @@ def test_volume_replication(primary, secondary):
         context=primary,
     )
 
-    print(f"rbd mirror image status in cluster {primary}")
+    print(f"rbd mirror image status in cluster '{primary}'")
     image_status = rbd_mirror_image_status(primary, rbd_image)
     print(json.dumps(image_status, indent=2))
 
-    print(f"Deleting vr vr-sample in primary cluster {primary}")
+    print(f"Deleting vr vr-sample in primary cluster '{primary}'")
     kubectl.delete(
         "volumereplication/vr-sample",
         "--namespace=rook-ceph",
         context=primary,
     )
 
-    print(f"Deleting pvc {PVC_NAME} in primary cluster {primary}")
+    print(f"Deleting pvc {PVC_NAME} in primary cluster '{primary}'")
     kubectl.delete(
         f"pvc/{PVC_NAME}",
         "--namespace=rook-ceph",
         context=primary,
     )
 
-    print(f"Replication from cluster {primary} to cluster {secondary} successeded")
+    print(f"Replication from cluster '{primary}' to cluster '{secondary}' successeded")
 
 
 if len(sys.argv) != 3:

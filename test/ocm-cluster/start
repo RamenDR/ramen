@@ -66,7 +66,7 @@ def wait(cluster):
 
 
 def wait_for_hub(hub):
-    print(f"Waiting until cluster {hub} is ready")
+    print(f"Waiting until cluster '{hub}' is ready")
 
     cluster.wait_until_ready(hub)
     drenv.wait_for(f"namespace/{HUB_NAMESPACE}", profile=hub)
@@ -84,7 +84,7 @@ def wait_for_hub(hub):
 
 
 def join_cluster(cluster, hub):
-    print(f"Joining to cluster {hub}")
+    print(f"Joining cluster '{hub}'")
 
     out = clusteradm.get("token", output="json", context=hub)
     hub_info = json.loads(out)
