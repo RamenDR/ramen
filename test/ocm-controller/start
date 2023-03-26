@@ -8,7 +8,10 @@ import sys
 import drenv
 from drenv import kubectl
 
-VERSION = "v2.4.4-ACM"
+# Using main since there are no releases, last tag is more than year old and
+# the image contains 36 vulnerabilities.
+VERSION = "main"
+
 BASE_URL = f"https://raw.githubusercontent.com/stolostron/multicloud-operators-foundation/{VERSION}/deploy/foundation/hub"
 
 
