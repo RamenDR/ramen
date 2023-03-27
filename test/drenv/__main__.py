@@ -265,6 +265,14 @@ def run_worker(worker, hooks=(), reverse=False, allow_failure=False):
 
 
 def run_script(script, name, hooks=(), allow_failure=False):
+    if not os.path.isdir(script["name"]):
+        logging.warning(
+            "[%s] Script '%s' does not exist - skipping",
+            name,
+            script["name"],
+        )
+        return
+
     for filename in hooks:
         hook = os.path.join(script["name"], filename)
         if os.path.isfile(hook):
