@@ -61,4 +61,11 @@ resources:
   kind: ProtectedVolumeReplicationGroupList
   path: github.com/ramendr/ramen/api/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+  domain: openshift.io
+  group: ramendr
+  kind: MaintenanceMode
+  path: github.com/ramendr/ramen/api/v1alpha1
+  version: v1alpha1
 version: "3"

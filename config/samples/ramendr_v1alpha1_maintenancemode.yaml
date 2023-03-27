@@ -1,0 +1,6 @@
+apiVersion: ramendr.openshift.io/v1alpha1
+kind: MaintenanceMode
+metadata:
+  name: maintenancemode-sample
+spec:
+  # TODO(user): Add fields here
