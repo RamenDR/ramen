@@ -440,20 +440,20 @@ func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim
 
 	s3Profiles, err := v.UploadPVandPVCtoS3Stores(pvc, log)
 	if err != nil {
-		return fmt.Errorf("failed to upload PV with error (%w). Uploaded to %v S3 profile(s)", err, s3Profiles)
+		return fmt.Errorf("failed to upload PV/PVC with error (%w). Uploaded to %v S3 profile(s)", err, s3Profiles)
 	}
 
 	numProfilesUploaded := len(s3Profiles)
 	// Set ClusterDataProtected condition to true if PV was uploaded to all the profiles
 	if numProfilesUploaded == numProfilesToUpload {
-		msg := fmt.Sprintf("Done uploading PV cluster data to %d of %d S3 profile(s): %v",
+		msg := fmt.Sprintf("Done uploading PV/PVC cluster data to %d of %d S3 profile(s): %v",
 			numProfilesUploaded, numProfilesToUpload, s3Profiles)
 		v.log.Info(msg)
 		v.updatePVCClusterDataProtectedCondition(pvc.Name,
 			VRGConditionReasonUploaded, msg)
 	} else {
 		// Merely defensive as we don't expect to reach here
-		msg := fmt.Sprintf("Uploaded PV cluster data to only  %d of %d S3 profile(s): %v",
+		msg := fmt.Sprintf("Uploaded PV/PVC cluster data to only  %d of %d S3 profile(s): %v",
 			numProfilesUploaded, numProfilesToUpload, s3Profiles)
 		v.log.Info(msg)
 		v.updatePVCClusterDataProtectedCondition(pvc.Name,
@@ -483,7 +483,8 @@ func (v *VRGInstance) UploadPVandPVCtoS3Store(s3ProfileName string, pvc *corev1.
 }
 
 func (v *VRGInstance) UploadPVAndPVCtoS3(s3ProfileName string, objectStore ObjectStorer,
-	pv *corev1.PersistentVolume, pvc *corev1.PersistentVolumeClaim) error {
+	pv *corev1.PersistentVolume, pvc *corev1.PersistentVolumeClaim,
+) error {
 	if err := UploadPV(objectStore, v.s3KeyPrefix(), pv.Name, *pv); err != nil {
 		var aerr awserr.Error
 		if errors.As(err, &aerr) {
@@ -1621,10 +1622,9 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) error {
 			continue
 		}
 
-		var (
-			objectStore    ObjectStorer
-			s3StoreProfile ramendrv1alpha1.S3StoreProfile
-		)
+		var objectStore ObjectStorer
+
+		var s3StoreProfile ramendrv1alpha1.S3StoreProfile
 
 		objectStore, s3StoreProfile, err = v.reconciler.ObjStoreGetter.ObjectStore(
 			v.ctx, v.reconciler.APIReader, s3ProfileName, v.namespacedName, v.log)
@@ -1649,10 +1649,13 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) error {
 		// CrunchyDB is responsible for creating and managing the lifecycle of their own PVCs, a newly created
 		// PVC may cause a new PV to be created.
 		// Ignoring PVC restore errors helps with the upgrade from ODF-4.12.x to 4.13
-		pvcCount, _ = v.restorePVCsFromObjectStore(objectStore, s3ProfileName)
+		pvcCount, err = v.restorePVCsFromObjectStore(objectStore, s3ProfileName)
 
-		if pvCount != pvcCount {
-			v.log.Info(fmt.Sprintf("Warning: Mismatch in PV/PVC count %d/%d", pvCount, pvcCount))
+		if err != nil || pvCount != pvcCount {
+			v.log.Info(fmt.Sprintf("Warning: Mismatch in PV/PVC count %d/%d (%v)",
+				pvCount, pvcCount, err))
+
+			continue
 		}
 
 		v.log.Info(fmt.Sprintf("Restored %d PVs and %d PVCs using profile %s", pvCount, pvcCount, s3ProfileName))
@@ -1687,7 +1690,7 @@ func (v *VRGInstance) restorePVsFromObjectStore(objectStore ObjectStorer, s3Prof
 		return 0, fmt.Errorf("%s: %w", errMsg, err)
 	}
 
-	var objList []client.Object
+	objList := make([]client.Object, 0, len(pvList))
 	for idx := range pvList {
 		objList = append(objList, &pvList[idx])
 	}
@@ -1705,7 +1708,7 @@ func (v *VRGInstance) restorePVCsFromObjectStore(objectStore ObjectStorer, s3Pro
 
 	v.log.Info(fmt.Sprintf("Found %d PVCs in s3 store using profile %s", len(pvcList), s3ProfileName))
 
-	var objList []client.Object
+	objList := make([]client.Object, 0, len(pvcList))
 	for idx := range pvcList {
 		objList = append(objList, &pvcList[idx])
 		v.volRepPVCs = append(v.volRepPVCs, pvcList[idx])
@@ -1809,13 +1812,11 @@ func (v *VRGInstance) updateExistingPVForSync(pv *corev1.PersistentVolume) error
 }
 
 func (v *VRGInstance) validateExistingObject(obj client.Object) error {
-	switch obj.(type) {
+	switch p := obj.(type) {
 	case *corev1.PersistentVolume:
-		pv, _ := obj.(*corev1.PersistentVolume)
-		return v.validateExistingPV(pv)
+		return v.validateExistingPV(p)
 	case *corev1.PersistentVolumeClaim:
-		pvc, _ := obj.(*corev1.PersistentVolumeClaim)
-		return v.validateExistingPVC(pvc)
+		return v.validateExistingPVC(p)
 	default:
 		return fmt.Errorf("unknown object %v", obj)
 	}
@@ -1852,7 +1853,7 @@ func (v *VRGInstance) validateExistingPV(pv *corev1.PersistentVolume) error {
 	// PV is not bound
 	// In async case, just checking that the PV has the ramen restore annotation is good
 	if existingPV.ObjectMeta.Annotations != nil &&
-		existingPV.ObjectMeta.Annotations[RestoreAnnotation] == "True" {
+		existingPV.ObjectMeta.Annotations[RestoreAnnotation] == RestoredByRamen {
 		// Should we check and see if PV in being deleted? Should we just treat it as exists
 		// and then we don't care if deletion takes place later, which is what we do now?
 		v.log.Info("PV exists and managed by Ramen", "PV", existingPV.GetName())
@@ -1873,7 +1874,7 @@ func (v *VRGInstance) validateExistingPVC(pvc *corev1.PersistentVolumeClaim) err
 	}
 
 	if existingPVC.ObjectMeta.Annotations == nil ||
-		existingPVC.ObjectMeta.Annotations[RestoreAnnotation] != "True" {
+		existingPVC.ObjectMeta.Annotations[RestoreAnnotation] != RestoredByRamen {
 		return fmt.Errorf("found PVC object not restored by Ramen for PVC %s", existingPVC.Name)
 	}
 
@@ -1945,27 +1946,25 @@ func (v *VRGInstance) addRestoreAnnotation(obj client.Object) {
 		obj.SetAnnotations(map[string]string{})
 	}
 
-	obj.GetAnnotations()[RestoreAnnotation] = "True"
+	obj.GetAnnotations()[RestoreAnnotation] = RestoredByRamen
 }
 
 // cleanupForRestore cleans up required PV or PVC fields, to ensure restore succeeds
 // to a new cluster, and rebinding the PVC to an existing PV with the same claimRef
 func (v *VRGInstance) cleanupForRestore(obj client.Object) {
-	switch obj.(type) {
+	switch p := obj.(type) {
 	case *corev1.PersistentVolume:
-		pv, _ := obj.(*corev1.PersistentVolume)
-		pv.ResourceVersion = ""
-		if pv.Spec.ClaimRef != nil {
-			pv.Spec.ClaimRef.UID = ""
-			pv.Spec.ClaimRef.ResourceVersion = ""
-			pv.Spec.ClaimRef.APIVersion = ""
+		p.ResourceVersion = ""
+		if p.Spec.ClaimRef != nil {
+			p.Spec.ClaimRef.UID = ""
+			p.Spec.ClaimRef.ResourceVersion = ""
+			p.Spec.ClaimRef.APIVersion = ""
 		}
 	case *corev1.PersistentVolumeClaim:
-		pvc, _ := obj.(*corev1.PersistentVolumeClaim)
-		pvc.ObjectMeta.Annotations = map[string]string{}
-		pvc.ObjectMeta.Finalizers = []string{}
-		pvc.ObjectMeta.ResourceVersion = ""
-		pvc.ObjectMeta.OwnerReferences = nil
+		p.ObjectMeta.Annotations = map[string]string{}
+		p.ObjectMeta.Finalizers = []string{}
+		p.ObjectMeta.ResourceVersion = ""
+		p.ObjectMeta.OwnerReferences = nil
 	}
 }
 

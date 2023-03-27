@@ -33,7 +33,7 @@ const (
 )
 
 var (
-	WaitForPVRestoreToComplete         error = errorswrapper.New("Waiting for PV restore to complete...")
+	WaitForAppResouceRestoreToComplete error = errorswrapper.New("Waiting for App resources to be restored...")
 	WaitForVolSyncDestRepToComplete    error = errorswrapper.New("Waiting for VolSync RD to complete...")
 	WaitForSourceCluster               error = errorswrapper.New("Waiting for primary to provide Protected PVCs...")
 	WaitForVolSyncManifestWorkCreation error = errorswrapper.New("Waiting for VolSync ManifestWork to be created...")
@@ -419,9 +419,9 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 
 	newHomeCluster := d.instance.Spec.FailoverCluster
 
-	const restorePVs = true
+	const restoreAppResources = true
 
-	err := d.switchToCluster(newHomeCluster, "", restorePVs)
+	err := d.switchToCluster(newHomeCluster, "", restoreAppResources)
 	if err != nil {
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), err.Error())
@@ -757,8 +757,8 @@ func (d *DRPCInstance) validateAndSelectCurrentPrimary(preferredCluster string) 
 	return homeCluster, nil
 }
 
-// readyToSwitchOver checks whether the PV data is protected and the cluster data has been protected.
-// ClusterDataProtected condition indicates whether all PV related cluster data for an App (Managed
+// readyToSwitchOver checks App resources are ready and the cluster data has been protected.
+// ClusterDataProtected condition indicates if the related cluster data for an App (Managed
 // by this DRPC instance) has been protected (uploaded to the S3 store(s)) or not.
 func (d *DRPCInstance) readyToSwitchOver(homeCluster string, preferredCluster string) bool {
 	d.log.Info(fmt.Sprintf("Checking if VRG Data is available on cluster %s", homeCluster))
@@ -779,7 +779,7 @@ func (d *DRPCInstance) readyToSwitchOver(homeCluster string, preferredCluster st
 			return false
 		}
 	}
-	// Allow switch over when PV data is protected and the cluster data is protected
+	// Allow switch over when PV data is ready and the cluster data is protected
 	return d.isVRGConditionMet(homeCluster, VRGConditionTypeDataReady) &&
 		d.isVRGConditionMet(homeCluster, VRGConditionTypeClusterDataProtected)
 }
@@ -832,9 +832,9 @@ func (d *DRPCInstance) relocate(preferredCluster, preferredClusterNamespace stri
 		return !done, err
 	}
 
-	const restorePVs = true
+	const restoreAppResources = true
 
-	err = d.switchToCluster(preferredCluster, preferredClusterNamespace, restorePVs)
+	err = d.switchToCluster(preferredCluster, preferredClusterNamespace, restoreAppResources)
 	if err != nil {
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), err.Error())
@@ -886,32 +886,41 @@ func (d *DRPCInstance) setupRelocation(preferredCluster string) error {
 
 // switchToCluster is a series of steps to creating, updating, and cleaning up
 // the necessary objects for the failover or relocation
-func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace string, restorePVs bool) error {
-	d.log.Info("switchToCluster", "cluster", targetCluster, "restorePVs", restorePVs)
+func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace string, restoreAppResources bool) error {
+	d.log.Info("switchToCluster", "cluster", targetCluster, "RestoreAppResources?", restoreAppResources)
 
 	createdOrUpdated, err := d.createVRGManifestWorkAsPrimary(targetCluster)
 	if err != nil {
 		return err
 	}
 
-	if createdOrUpdated && restorePVs {
-		// We just created MWs. Give it time until the PV restore is complete
-		return fmt.Errorf("%w)", WaitForPVRestoreToComplete)
+	if createdOrUpdated && restoreAppResources {
+		// We just created MWs. Give it time until the App resources have been restored
+		return fmt.Errorf("%w)", WaitForAppResouceRestoreToComplete)
 	}
 
 	// already a primary
-	if restorePVs {
-		restored, err := d.checkPVsHaveBeenRestored(targetCluster)
+	if restoreAppResources {
+		vrg, restored, err := d.getAndEnsureClusterDataRestored(targetCluster)
 		if err != nil {
 			return err
 		}
 
-		d.log.Info(fmt.Sprintf("PVs Restored? %v", restored))
+		d.log.Info(fmt.Sprintf("PVs/PVCs have been Restored? %v", restored))
 
-		if !restored {
+		// FIXME
+		//
+		// If C1, the preferred cluster, is running on version 4.12 while C2, the failover cluster, has
+		// been upgraded to 4.13, failing over from C1 to C2 would result in an indefinite stall as it
+		// waits for the ProtectedPVCs to become available. However, in such a scenario, it is desirable
+		// to proceed with the restoration of the PVs rather than getting stuck at the DRPC level.
+		// To address this issue, one possible solution is to add an annotation to the RamenConfig, which
+		// would tell DRPC that an upgrade is in progress. While this scenario may not occur in a production
+		// environment, it is likely to fail during QA testing.
+		if !restored || vrg == nil || vrg.Status.State != rmn.PrimaryState {
 			d.setProgression(rmn.ProgressionWaitingForResourceRestore)
 
-			return fmt.Errorf("%w)", WaitForPVRestoreToComplete)
+			return fmt.Errorf("%w)", WaitForAppResouceRestoreToComplete)
 		}
 	}
 
@@ -1287,7 +1296,7 @@ func (d *DRPCInstance) isVRGSecondary(vrg *rmn.VolumeReplicationGroup) bool {
 	return (vrg.Spec.ReplicationState == rmn.Secondary)
 }
 
-func (d *DRPCInstance) checkPVsHaveBeenRestored(homeCluster string) (bool, error) {
+func (d *DRPCInstance) getAndEnsureClusterDataRestored(homeCluster string) (*rmn.VolumeReplicationGroup, bool, error) {
 	d.log.Info("Checking if PVs have been restored", "cluster", homeCluster)
 
 	annotations := make(map[string]string)
@@ -1298,19 +1307,21 @@ func (d *DRPCInstance) checkPVsHaveBeenRestored(homeCluster string) (bool, error
 	vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name,
 		d.vrgNamespace, homeCluster, annotations)
 	if err != nil {
-		return false, fmt.Errorf("waiting for PVs to be restored on cluster %s (status: %w)", homeCluster, err)
+		return nil, false, fmt.Errorf("failed to get VRG %s from cluster %s (err: %w)", d.instance.Name, homeCluster, err)
 	}
 
 	// ClusterDataReady condition tells us whether the PVs have been applied on the
 	// target cluster or not
 	clusterDataReady := findCondition(vrg.Status.Conditions, VRGConditionTypeClusterDataReady)
 	if clusterDataReady == nil {
-		d.log.Info("Waiting for PVs to be restored", "cluster", homeCluster)
+		d.log.Info("Waiting for resources to be restored", "cluster", homeCluster)
 
-		return false, nil
+		return nil, false, nil
 	}
 
-	return clusterDataReady.Status == metav1.ConditionTrue && clusterDataReady.ObservedGeneration == vrg.Generation, nil
+	return vrg,
+		clusterDataReady.Status == metav1.ConditionTrue && clusterDataReady.ObservedGeneration == vrg.Generation,
+		nil
 }
 
 func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {

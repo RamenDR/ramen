@@ -721,6 +721,7 @@ func (v *vrgTest) VRGTestCaseStart() {
 
 	if v.vrgFirst {
 		v.createVRG()
+
 		if !v.skipCreationPVandPVC {
 			v.createPVCandPV(v.template.ClaimBindInfo, v.template.VolumeBindInfo)
 		}
@@ -728,6 +729,7 @@ func (v *vrgTest) VRGTestCaseStart() {
 		if !v.skipCreationPVandPVC {
 			v.createPVCandPV(v.template.ClaimBindInfo, v.template.VolumeBindInfo)
 		}
+
 		v.createVRG()
 	}
 
@@ -820,7 +822,9 @@ func (v *vrgTest) s3KeyPrefix() string {
 	return vrgController.S3KeyPrefix(v.vrgNamespacedName().String())
 }
 
-func populateS3Store(vrgNamespacedName string, pvList []corev1.PersistentVolume, pvcList []corev1.PersistentVolumeClaim) {
+func populateS3Store(vrgNamespacedName string, pvList []corev1.PersistentVolume,
+	pvcList []corev1.PersistentVolumeClaim,
+) {
 	for _, pv := range pvList {
 		Expect(
 			vrgController.UploadPV(*vrgObjectStorer, vrgNamespacedName, pv.Name, pv),
@@ -939,6 +943,7 @@ func (v *vrgTest) generatePVC(pvcName, namespace, volumeName string, labels map[
 	storageclass := v.storageClass
 
 	accessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
+
 	return &corev1.PersistentVolumeClaim{
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{

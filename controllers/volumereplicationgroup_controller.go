@@ -416,6 +416,7 @@ const (
 	pvVRAnnotationRetentionKey    = "volumereplicationgroups.ramendr.openshift.io/vr-retained"
 	pvVRAnnotationRetentionValue  = "retained"
 	RestoreAnnotation             = "volumereplicationgroups.ramendr.openshift.io/ramen-restore"
+	RestoredByRamen               = "True"
 )
 
 func (v *VRGInstance) processVRG() (ctrl.Result, error) {

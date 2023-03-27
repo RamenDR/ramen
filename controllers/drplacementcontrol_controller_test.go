@@ -288,7 +288,7 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(resourceName, resourceNamespace,
 		}
 
 		return vrg, nil
-	case "checkPVsHaveBeenRestored":
+	case "getAndEnsureClusterDataRestored":
 		if isRestorePVsComplete() {
 			vrg.Status.Conditions[0].Type = controllers.VRGConditionTypeClusterDataReady
 			vrg.Status.Conditions[0].Reason = controllers.VRGConditionReasonClusterDataRestored
