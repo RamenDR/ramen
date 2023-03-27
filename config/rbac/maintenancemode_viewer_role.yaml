@@ -1,0 +1,20 @@
+# permissions for end users to view maintenancemodes.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: maintenancemode-viewer-role
+rules:
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - maintenancemodes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - maintenancemodes/status
+  verbs:
+  - get
