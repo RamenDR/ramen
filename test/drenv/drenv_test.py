@@ -1,6 +1,9 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import re
+import subprocess
+
 import yaml
 import pytest
 
@@ -53,3 +56,29 @@ def test_delete(tmpenv):
     # Delete does nothing, so cluster must be ready.
     commands.run("drenv", "delete", "--name-prefix", tmpenv.prefix, "external.yaml")
     assert cluster.status(tmpenv.prefix + "cluster") == cluster.READY
+
+
+def test_missing_script(tmpdir):
+    """
+    Missing script should log a warning but do not fail, so we can start, stop
+    and delete the env.
+    """
+    content = """
+name: missing-test
+profiles:
+  - name: cluster
+    external: true
+    workers:
+      - scripts:
+          - name: no-such-script
+"""
+    path = tmpdir.join("missing-script.yaml")
+    path.write(content)
+
+    warning = r"WARNING .+ 'no-such-script'"
+
+    # Use subprocess.run() to get access to stderr on success.
+    cp = subprocess.run(["drenv", "start", str(path)], stderr=subprocess.PIPE)
+
+    assert cp.returncode == 0
+    assert re.search(warning, cp.stderr.decode())
