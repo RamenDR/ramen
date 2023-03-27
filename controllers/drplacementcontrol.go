@@ -389,7 +389,8 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
 		metav1.ConditionFalse, rmn.ReasonNotStarted,
 		fmt.Sprintf("Started failover to cluster %q", d.instance.Spec.FailoverCluster))
-	d.setProgression(rmn.ProgressionFailingOverToCluster)
+	d.setProgression(rmn.ProgressionCheckingFailoverPrequisites)
+
 	// Save the current home cluster
 	curHomeCluster := d.getCurrentHomeClusterName(d.instance.Spec.FailoverCluster, d.drClusters)
 
@@ -406,16 +407,11 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 		return done, err
 	}
 
-	if isMetroAction(d.drPolicy, d.drClusters, curHomeCluster, d.instance.Spec.FailoverCluster) {
-		fenced, err := d.checkClusterFenced(curHomeCluster, d.drClusters)
-		if err != nil {
-			return !done, err
-		}
-
-		if !fenced {
-			return done, fmt.Errorf("current home cluster %s is not fenced", curHomeCluster)
-		}
+	if met, err := d.checkFailoverPrerequisites(curHomeCluster); !met || err != nil {
+		return !done, err
 	}
+
+	d.setProgression(rmn.ProgressionFailingOverToCluster)
 
 	newHomeCluster := d.instance.Spec.FailoverCluster
 
@@ -458,6 +454,84 @@ func (d *DRPCInstance) getCurrentHomeClusterName(toCluster string, drClusters []
 
 	// If all fails, then we have no curHomeCluster
 	return ""
+}
+
+// checkFailoverPrerequisites checks for any failover prerequsites that need to be met on the
+// failoverCluster before initiating a failover.
+// Returns:
+//   - bool: Indicating if prerequisites are met
+//   - error: Any error in determining the prerequisite status
+func (d *DRPCInstance) checkFailoverPrerequisites(failoverCluster string) (bool, error) {
+	var (
+		met bool
+		err error
+	)
+
+	if isMetroAction(d.drPolicy, d.drClusters, failoverCluster, d.instance.Spec.FailoverCluster) {
+		met, err = d.checkMetroFailoverPrerequisites(failoverCluster)
+	} else {
+		met, err = d.checkRegionalFailoverPrerequisites(failoverCluster)
+	}
+
+	if err == nil && met {
+		return true, nil
+	}
+
+	msg := "Waiting for spec.failoverCluster to meet failover prerequsites"
+
+	if err != nil {
+		msg = err.Error()
+
+		rmnutil.ReportIfNotPresent(d.reconciler.eventRecorder, d.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonSwitchFailed, err.Error())
+	}
+
+	d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
+		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), msg)
+
+	return met, err
+}
+
+// checkMetroFailoverPrerequisites checks for any MetroDR failover prerequsites that need to be met on the
+// failoverCluster before initiating a failover.
+// Returns:
+//   - bool: Indicating if prerequisites are met
+//   - error: Any error in determining the prerequisite status
+func (d *DRPCInstance) checkMetroFailoverPrerequisites(failoverCluster string) (bool, error) {
+	met := true
+
+	d.setProgression(rmn.ProgressionWaitForFencing)
+
+	fenced, err := d.checkClusterFenced(failoverCluster, d.drClusters)
+	if err != nil {
+		return !met, err
+	}
+
+	if !fenced {
+		return !met, fmt.Errorf("current home cluster %s is not fenced", failoverCluster)
+	}
+
+	return met, nil
+}
+
+// checkRegionalFailoverPrerequisites checks for any RegionalDR failover prerequsites that need to be met on the
+// failoverCluster before initiating a failover.
+// Returns:
+//   - bool: Indicating if prerequisites are met
+//   - error: Any error in determining the prerequisite status
+//
+//nolint:unparam
+func (d *DRPCInstance) checkRegionalFailoverPrerequisites(failoverCluster string) (bool, error) {
+	/*
+		- Check if this DRPC requires maintenance mode to be active
+			- If yes, check if active etc. using the DRCluster
+		- If no, return true, nil
+	*/
+	d.setProgression(rmn.ProgressionWaitForStorageMaintenenceActivation)
+
+	d.log.Info("Spoofing prerequisites check in the RegionalDR case", "failoverCluster", failoverCluster)
+
+	return true, nil
 }
 
 // runRelocate checks if pre-conditions for relocation are met, and if so performs the relocation
@@ -891,6 +965,8 @@ func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace str
 	}
 
 	if createdOrUpdated {
+		d.setProgression(rmn.ProgressionWaitingForResourceRestore)
+
 		// We just created MWs. Give it time until the App resources have been restored
 		return fmt.Errorf("%w)", WaitForAppResouceRestoreToComplete)
 	}
