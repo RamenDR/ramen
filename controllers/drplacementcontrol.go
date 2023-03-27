@@ -419,9 +419,7 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 
 	newHomeCluster := d.instance.Spec.FailoverCluster
 
-	const restoreAppResources = true
-
-	err := d.switchToCluster(newHomeCluster, "", restoreAppResources)
+	err := d.switchToCluster(newHomeCluster, "")
 	if err != nil {
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), err.Error())
@@ -832,9 +830,7 @@ func (d *DRPCInstance) relocate(preferredCluster, preferredClusterNamespace stri
 		return !done, err
 	}
 
-	const restoreAppResources = true
-
-	err = d.switchToCluster(preferredCluster, preferredClusterNamespace, restoreAppResources)
+	err = d.switchToCluster(preferredCluster, preferredClusterNamespace)
 	if err != nil {
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), err.Error())
@@ -886,33 +882,30 @@ func (d *DRPCInstance) setupRelocation(preferredCluster string) error {
 
 // switchToCluster is a series of steps to creating, updating, and cleaning up
 // the necessary objects for the failover or relocation
-func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace string, restoreAppResources bool) error {
-	d.log.Info("switchToCluster", "cluster", targetCluster, "RestoreAppResources?", restoreAppResources)
+func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace string) error {
+	d.log.Info("switchToCluster", "cluster", targetCluster)
 
 	createdOrUpdated, err := d.createVRGManifestWorkAsPrimary(targetCluster)
 	if err != nil {
 		return err
 	}
 
-	if createdOrUpdated && restoreAppResources {
+	if createdOrUpdated {
 		// We just created MWs. Give it time until the App resources have been restored
 		return fmt.Errorf("%w)", WaitForAppResouceRestoreToComplete)
 	}
 
-	// already a primary
-	if restoreAppResources {
-		vrg, restored, err := d.ensureClusterDataRestored(targetCluster)
-		if err != nil {
-			return err
-		}
+	vrg, restored, err := d.ensureClusterDataRestored(targetCluster)
+	if err != nil {
+		return err
+	}
 
-		d.log.Info(fmt.Sprintf("PVs/PVCs have been Restored? %v", restored))
+	d.log.Info(fmt.Sprintf("PVs/PVCs have been Restored? %v", restored))
 
-		if !restored || vrg == nil || vrg.Status.State != rmn.PrimaryState {
-			d.setProgression(rmn.ProgressionWaitingForResourceRestore)
+	if !restored || vrg == nil || vrg.Status.State != rmn.PrimaryState {
+		d.setProgression(rmn.ProgressionWaitingForResourceRestore)
 
-			return fmt.Errorf("%w)", WaitForAppResouceRestoreToComplete)
-		}
+		return fmt.Errorf("%w)", WaitForAppResouceRestoreToComplete)
 	}
 
 	err = d.updateUserPlacementRule(targetCluster, targetClusterNamespace)
