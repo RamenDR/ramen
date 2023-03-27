@@ -175,6 +175,7 @@ var _ = Describe("DrpolicyController", func() {
 				&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: drcluster.Name}},
 			)).To(Succeed())
 			Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+			updateDRClusterManifestWorkStatus(drcluster.Name)
 			drclusterConditionExpectEventually(
 				drcluster,
 				!ramenConfig.DrClusterOperator.DeploymentAutomationEnabled,
