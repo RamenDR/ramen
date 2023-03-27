@@ -818,6 +818,7 @@ func createDRClusters(inClusters []*spokeClusterV1.ManagedCluster) {
 			if managedCluster.Name == drClusters[idx].Name {
 				err := k8sClient.Create(context.TODO(), &drClusters[idx])
 				Expect(err).NotTo(HaveOccurred())
+				updateDRClusterManifestWorkStatus(drClusters[idx].Name)
 			}
 		}
 	}

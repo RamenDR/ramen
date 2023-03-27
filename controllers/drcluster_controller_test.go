@@ -5,6 +5,8 @@ package controllers_test
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/apis/csiaddons/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
@@ -183,6 +185,54 @@ func inspectClusterManifestSubscriptionCSV(match bool, value string, drcluster *
 	}
 }
 
+func updateDRClusterManifestWorkStatus(clusterNamespace string) {
+	manifestLookupKey := types.NamespacedName{
+		Name:      util.DrClusterManifestWorkName,
+		Namespace: clusterNamespace,
+	}
+	mw := &workv1.ManifestWork{}
+
+	Eventually(func() bool {
+		err := apiReader.Get(context.TODO(), manifestLookupKey, mw)
+
+		return err == nil
+	}, timeout, interval).Should(BeTrue(),
+		fmt.Sprintf("failed to get manifest for DRCluster %s", clusterNamespace))
+
+	timeOld := time.Now().Local()
+	timeMostRecent := timeOld.Add(time.Second)
+	DRClusterStatusConditions := workv1.ManifestWorkStatus{
+		Conditions: []metav1.Condition{
+			{
+				Type:               workv1.WorkAvailable,
+				LastTransitionTime: metav1.Time{Time: timeMostRecent},
+				Status:             metav1.ConditionTrue,
+				Reason:             "ResourceAvailable",
+				Message:            "All resources are available",
+			},
+			{
+				Type:               workv1.WorkApplied,
+				LastTransitionTime: metav1.Time{Time: timeMostRecent},
+				Status:             metav1.ConditionTrue,
+				Reason:             "AppliedManifestworkComplete",
+				Message:            "Apply Manifest Work Complete",
+			},
+		},
+	}
+
+	mw.Status = DRClusterStatusConditions
+
+	err := k8sClient.Status().Update(context.TODO(), mw)
+	if err != nil {
+		// try again
+		Expect(apiReader.Get(context.TODO(), manifestLookupKey, mw)).NotTo(HaveOccurred())
+		mw.Status = DRClusterStatusConditions
+		err = k8sClient.Status().Update(context.TODO(), mw)
+	}
+
+	Expect(err).NotTo(HaveOccurred())
+}
+
 var _ = Describe("DRClusterController", func() {
 	drclusterDelete := func(drcluster *ramen.DRCluster) {
 		clusterName := drcluster.Name
@@ -304,6 +354,7 @@ var _ = Describe("DRClusterController", func() {
 		for i := 1; i < len(drclusters); i++ {
 			cluster := drclusters[i].DeepCopy()
 			Expect(k8sClient.Create(context.TODO(), cluster)).To(Succeed())
+			updateDRClusterManifestWorkStatus(cluster.Name)
 		}
 	}
 
@@ -343,6 +394,7 @@ var _ = Describe("DRClusterController", func() {
 				By("creating a new DRCluster with an invalid S3Profile")
 				drcluster.Spec.S3ProfileName = "missing"
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				updateDRClusterManifestWorkStatus(drcluster.Name)
 				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse, Equal("s3ConnectionFailed"), Ignore(),
 					ramen.DRClusterValidated)
 			})
@@ -426,6 +478,7 @@ var _ = Describe("DRClusterController", func() {
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
 				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse, Equal("ValidationFailed"), Ignore(),
 					ramen.DRClusterValidated)
+				updateDRClusterManifestWorkStatus(drcluster.Name)
 			})
 		})
 		When("provided CIDR value is changed to be correct", func() {
@@ -453,6 +506,7 @@ var _ = Describe("DRClusterController", func() {
 			It("reports validated", func() {
 				By("creating a new DRCluster with an valid CIDR")
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				updateDRClusterManifestWorkStatus(drcluster.Name)
 				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
 					ramen.DRClusterValidated)
 			})
@@ -482,6 +536,7 @@ var _ = Describe("DRClusterController", func() {
 			It("reports validated with status fencing as Fenced", func() {
 				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateManuallyFenced
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				updateDRClusterManifestWorkStatus(drcluster.Name)
 				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue,
 					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
 					ramen.DRClusterConditionTypeFenced)
@@ -489,50 +544,56 @@ var _ = Describe("DRClusterController", func() {
 		})
 		When("provided Fencing value is ManuallyUnfenced", func() {
 			It("reports validated with status fencing as Unfenced", func() {
-				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateManuallyUnfenced
-				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse,
+				latestdrc := getLatestDRCluster(drcluster.Name)
+				latestdrc.Spec.ClusterFence = ramen.ClusterFenceStateManuallyUnfenced
+				Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed())
+				drclusterConditionExpectEventually(latestdrc, false, metav1.ConditionFalse,
 					Equal(controllers.DRClusterConditionReasonClean), Ignore(),
 					ramen.DRClusterConditionTypeFenced)
 			})
 		})
 		When("provided Fencing value is Fenced with an empty CIDR", func() {
 			It("reports error in generating networkFence", func() {
-				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateFenced
-				drcluster.Spec.CIDRs = []string{}
-				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse,
+				latestdrc := getLatestDRCluster(drcluster.Name)
+				latestdrc.Spec.ClusterFence = ramen.ClusterFenceStateFenced
+				latestdrc.Spec.CIDRs = []string{}
+				Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed())
+				drclusterConditionExpectEventually(latestdrc, false, metav1.ConditionFalse,
 					Equal(controllers.DRClusterConditionReasonFenceError), Ignore(),
 					ramen.DRClusterConditionTypeFenced)
 			})
 		})
 		When("CIDRs value is provided", func() {
 			It("reports validated", func() {
-				drcluster.Spec.CIDRs = cidrs[0]
-				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
+				latestdrc := getLatestDRCluster(drcluster.Name)
+				latestdrc.Spec.ClusterFence = ramen.ClusterFenceStateFenced
+				latestdrc.Spec.CIDRs = cidrs[0]
+				Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed())
+				drclusterConditionExpectEventually(latestdrc, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
 					ramen.DRClusterValidated)
 			})
 		})
 		When("provided Fencing value is Fenced", func() {
 			It("reports fenced with reason Fencing success", func() {
-				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateFenced
-				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue,
+				latestdrc := getLatestDRCluster(drcluster.Name)
+				latestdrc.Spec.ClusterFence = ramen.ClusterFenceStateFenced
+				Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed())
+				drclusterConditionExpectEventually(latestdrc, false, metav1.ConditionTrue,
 					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
 					ramen.DRClusterConditionTypeFenced)
 			})
 		})
 		When("provided Fencing value is Unfenced", func() {
 			It("reports Unfenced false with status fenced as false", func() {
-				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateUnfenced
-				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
+				latestdrc := getLatestDRCluster(drcluster.Name)
+				latestdrc.Spec.ClusterFence = ramen.ClusterFenceStateUnfenced
+				Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed())
 				// When Unfence is set, DRCluster controller first unfences the
 				// cluster (i.e. itself through a peer cluster) and then cleans
 				// up the fencing resource. So, by the time this check is made,
 				// either the cluster should have been unfenced or completely
 				// cleaned
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse,
+				drclusterConditionExpectEventually(latestdrc, false, metav1.ConditionFalse,
 					BeElementOf(controllers.DRClusterConditionReasonUnfenced, controllers.DRClusterConditionReasonCleaning,
 						controllers.DRClusterConditionReasonClean),
 					Ignore(), ramen.DRClusterConditionTypeFenced)
@@ -540,24 +601,26 @@ var _ = Describe("DRClusterController", func() {
 		})
 		When("provided Fencing value is Fenced and the s3 validation fails", func() {
 			It("reports fenced with reason Fencing success but validated condition should be false", func() {
-				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateFenced
-				drcluster.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
-				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue,
+				latestdrc := getLatestDRCluster(drcluster.Name)
+				latestdrc.Spec.ClusterFence = ramen.ClusterFenceStateFenced
+				latestdrc.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
+				Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed())
+				drclusterConditionExpectEventually(latestdrc, false, metav1.ConditionTrue,
 					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
 					ramen.DRClusterConditionTypeFenced)
 			})
 		})
 		When("provided Fencing value is Unfenced", func() {
 			It("reports Unfenced false with status fenced as false", func() {
-				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateUnfenced
-				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
+				latestdrc := getLatestDRCluster(drcluster.Name)
+				latestdrc.Spec.ClusterFence = ramen.ClusterFenceStateUnfenced
+				Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed())
 				// When Unfence is set, DRCluster controller first unfences the
 				// cluster (i.e. itself through a peer cluster) and then cleans
 				// up the fencing resource. So, by the time this check is made,
 				// either the cluster should have been unfenced or completely
 				// cleaned
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse,
+				drclusterConditionExpectEventually(latestdrc, false, metav1.ConditionFalse,
 					BeElementOf(controllers.DRClusterConditionReasonUnfenced, controllers.DRClusterConditionReasonCleaning,
 						controllers.DRClusterConditionReasonClean),
 					Ignore(), ramen.DRClusterConditionTypeFenced)
@@ -565,9 +628,10 @@ var _ = Describe("DRClusterController", func() {
 		})
 		When("provided Fencing value is empty", func() {
 			It("reports validated with status fencing as Unfenced", func() {
-				drcluster.Spec.ClusterFence = ""
-				Expect(k8sClient.Update(context.TODO(), drcluster)).To(Succeed())
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse,
+				latestdrc := getLatestDRCluster(drcluster.Name)
+				latestdrc.Spec.ClusterFence = ""
+				Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed())
+				drclusterConditionExpectEventually(latestdrc, false, metav1.ConditionFalse,
 					Equal(controllers.DRClusterConditionReasonClean), Ignore(),
 					ramen.DRClusterConditionTypeFenced)
 			})
@@ -575,7 +639,8 @@ var _ = Describe("DRClusterController", func() {
 		When("deleting a DRCluster with empty fencing value", func() {
 			It("is successful", func() {
 				drpolicyDelete(syncDRPolicy)
-				drclusterDelete(drcluster)
+				latestdrc := getLatestDRCluster(drcluster.Name)
+				drclusterDelete(latestdrc)
 			})
 		})
 	})
@@ -603,6 +668,7 @@ var _ = Describe("DRClusterController", func() {
 			It("reports validated", func() {
 				drcluster = drclusters[0].DeepCopy()
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				updateDRClusterManifestWorkStatus(drcluster.Name)
 				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
 					ramen.DRClusterValidated)
 			})
@@ -625,6 +691,7 @@ var _ = Describe("DRClusterController", func() {
 			It("does NOT create Subscription related manifests", func() {
 				By("creating a valid DRCluster")
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				updateDRClusterManifestWorkStatus(drcluster.Name)
 				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
 					ramen.DRClusterValidated)
 				By("updating ramen config to NOT auto deploy managed cluster components")

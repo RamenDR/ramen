@@ -301,6 +301,7 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	return r.processCreateOrUpdate(u)
 }
 
+//nolint:cyclop
 func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.Result, error) {
 	var (
 		requeue        bool
@@ -345,6 +346,11 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 		return ctrl.Result{}, fmt.Errorf("drclusters s3Profile validate: %w", u.validatedSetFalseAndUpdate(reason, err))
 	}
 
+	if err := u.getDRClusterDeployedStatus(u.object); err != nil {
+		return ctrl.Result{}, fmt.Errorf("drclusters deploy status: %w",
+			u.validatedSetFalseAndUpdate("DrClustersDeployStatusCheckFailed", err))
+	}
+
 	setDRClusterValidatedCondition(&u.object.Status.Conditions, u.object.Generation, "Validated the cluster")
 
 	if err := u.statusUpdate(); err != nil {
@@ -368,6 +374,24 @@ func (u *drclusterInstance) initializeStatus() {
 		setDRClusterInitialCondition(&u.object.Status.Conditions, u.object.Generation, msg)
 		u.setDRClusterPhase(ramen.Starting)
 	}
+}
+
+func (u *drclusterInstance) getDRClusterDeployedStatus(drcluster *ramen.DRCluster) error {
+	mw, err := u.mwUtil.GetDrClusterManifestWork(drcluster.Name)
+	if err != nil {
+		return fmt.Errorf(fmt.Sprintf("error in fetching DRCluster ManifestWork %v", err))
+	}
+
+	if mw == nil {
+		return fmt.Errorf(fmt.Sprintf("missing DRCluster ManifestWork resource %v", err))
+	}
+
+	deployed := util.IsManifestInAppliedState(mw)
+	if !deployed {
+		return fmt.Errorf("DRCluster ManifestWork is not in applied state")
+	}
+
+	return nil
 }
 
 func validateS3Profile(ctx context.Context, apiReader client.Reader,
