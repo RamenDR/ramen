@@ -901,7 +901,7 @@ func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace str
 
 	// already a primary
 	if restoreAppResources {
-		vrg, restored, err := d.getAndEnsureClusterDataRestored(targetCluster)
+		vrg, restored, err := d.ensureClusterDataRestored(targetCluster)
 		if err != nil {
 			return err
 		}
@@ -1296,7 +1296,7 @@ func (d *DRPCInstance) isVRGSecondary(vrg *rmn.VolumeReplicationGroup) bool {
 	return (vrg.Spec.ReplicationState == rmn.Secondary)
 }
 
-func (d *DRPCInstance) getAndEnsureClusterDataRestored(homeCluster string) (*rmn.VolumeReplicationGroup, bool, error) {
+func (d *DRPCInstance) ensureClusterDataRestored(homeCluster string) (*rmn.VolumeReplicationGroup, bool, error) {
 	d.log.Info("Checking if PVs have been restored", "cluster", homeCluster)
 
 	annotations := make(map[string]string)
