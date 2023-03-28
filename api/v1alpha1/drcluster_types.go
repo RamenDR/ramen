@@ -92,10 +92,25 @@ const (
 	Unfenced = DRClusterPhase("Unfenced")
 )
 
+type ClusterMaintenanceMode struct {
+	// StorageProvisioner indicates the type of the provisioner
+	StorageProvisioner string `json:"storageProvisioner,omitempty"`
+
+	// TargetID indicates the storage or replication instance identifier for the StorageProvisioner
+	TargetID string `json:"targetID,omitempty"`
+
+	// State from MaintenanceMode resource created for the StorageProvisioner
+	State MModeState `json:"state,omitempty"`
+
+	// Conditions from MaintenanceMode resource created for the StorageProvisioner
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
 // DRClusterStatus defines the observed state of DRCluster
 type DRClusterStatus struct {
-	Phase      DRClusterPhase     `json:"phase,omitempty"`
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Phase            DRClusterPhase           `json:"phase,omitempty"`
+	Conditions       []metav1.Condition       `json:"conditions,omitempty"`
+	MaintenanceModes []ClusterMaintenanceMode `json:"maintenanceModes,omitempty"`
 }
 
 //+kubebuilder:object:root=true
