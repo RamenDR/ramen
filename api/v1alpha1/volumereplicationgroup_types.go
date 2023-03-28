@@ -191,6 +191,42 @@ type VolumeReplicationGroupSpec struct {
 	KubeObjectProtection *KubeObjectProtectionSpec `json:"kubeObjectProtection,omitempty"`
 }
 
+// StorageIdentifiers carries various identifiers that help correlate the identify of a storage instance
+// that is backing a PVC across kubernetes clusters.
+type StorageIdentifiers struct {
+	// CSIProvisioners contains the provisioner name of the CSI driver used to provision this
+	// PVC (extracted from the storageClass that was used for provisioning)
+	//+optional
+	CSIProvisioner string `json:"csiProvisioner,omitempty"`
+
+	// StorageID contains the globally unique storage identifier, as reported by the storage backend
+	// on the StorageClass as the value for the label "ramendr.openshift.io/storageID", that identifies
+	// the storage backend that was used to provision the volume. It is used to label different StorageClasses
+	// across different kubernetes clusters, that potentially share the same storage backend
+	//+optional
+	StorageID string `json:"storageID,omitempty"`
+
+	// ReplicationID contains the globally unique replication identifier, as reported by the storage backend
+	// on the VolumeReplicationClass as the value for the label "ramendr.openshift.io/replicationID", that
+	// identifies the storage backends across 2 (or more) storage instances where the volume is replicated
+	//+optional
+	ReplicationID string `json:"replicationID,omitempty"`
+
+	// StorageClassModes is a list of maintenance modes that need to be activated on the storage
+	// backend, prior to various DR related orchestration. This is read from the label
+	// "ramendr.openshift.io/maintenancemodes" on the StorageClass, the value for which is a comma
+	// separated list of maintenance modes.
+	//+optional
+	StorageClassModes []MMode `json:"storageClassModes,omitempty"`
+
+	// VolumeReplicationClassModes is a list of maintenance modes that need to be activated on the storage
+	// backend, prior to various DR related orchestration. This is read from the label
+	// "ramendr.openshift.io/maintenancemodes" on the VolumeReplicationClass, the value for which is a comma
+	// separated list of maintenance modes.
+	//+optional
+	VolumeReplicationClassModes []MMode `json:"volumeReplicationClassModes,omitempty"`
+}
+
 type ProtectedPVC struct {
 	// Name of the VolRep/PVC resource
 	//+optional
@@ -199,6 +235,9 @@ type ProtectedPVC struct {
 	// VolSyncPVC can be used to denote whether this PVC is protected by VolSync. Defaults to "false".
 	//+optional
 	ProtectedByVolSync bool `json:"protectedByVolSync,omitempty"`
+
+	//+optional
+	StorageIdentifiers `json:",inline"`
 
 	// Name of the StorageClass required by the claim.
 	//+optional
