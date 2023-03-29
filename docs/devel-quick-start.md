@@ -118,7 +118,7 @@ kubectl get deploy -A --context dr2
     - Loading the `ramen-operator` image into the clusters
 
       ```
-      podman save quay.io/nirsof/ramen-operator:canary \
+      podman save quay.io/$IMAGE_REPOSITORY/ramen-operator:$IMAGE_TAG \
           -o /tmp/ramen-operator.tar
 
       for p in hub dr1 dr2; do
