@@ -352,6 +352,15 @@ func setStatusCondition(existingConditions *[]metav1.Condition, newCondition met
 		existingCondition.LastTransitionTime = metav1.NewTime(time.Now())
 	}
 
+	defaultValue := "none"
+	if newCondition.Reason == "" {
+		newCondition.Reason = defaultValue
+	}
+
+	if newCondition.Message == "" {
+		newCondition.Message = defaultValue
+	}
+	
 	existingCondition.Reason = newCondition.Reason
 	existingCondition.Message = newCondition.Message
 
