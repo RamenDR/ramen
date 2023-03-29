@@ -519,18 +519,28 @@ func (d *DRPCInstance) checkMetroFailoverPrerequisites(failoverCluster string) (
 // Returns:
 //   - bool: Indicating if prerequisites are met
 //   - error: Any error in determining the prerequisite status
-//
-//nolint:unparam
 func (d *DRPCInstance) checkRegionalFailoverPrerequisites(failoverCluster string) (bool, error) {
-	/*
-		- Check if this DRPC requires maintenance mode to be active
-			- If yes, check if active etc. using the DRCluster
-		- If no, return true, nil
-	*/
 	d.setProgression(rmn.ProgressionWaitForStorageMaintenenceActivation)
 
-	d.log.Info("Spoofing prerequisites check in the RegionalDR case", "failoverCluster", failoverCluster)
+	if !d.requiresRegionalPrequisites() {
+		return true, nil
+	}
 
+	return d.checkClusterMaintenanceActivation(failoverCluster)
+}
+
+func (d *DRPCInstance) requiresRegionalPrequisites() bool {
+	/*
+		- Check VRG ProtectedPVCs storage identifiers and requests
+		- Formulate a list of pre-reqs that are required
+	*/
+	return false
+}
+
+func (d *DRPCInstance) checkClusterMaintenanceActivation(cluster string) (bool, error) {
+	/*
+		- Check list of pre-reqs passed in in DRCluster resource
+	*/
 	return true, nil
 }
 
