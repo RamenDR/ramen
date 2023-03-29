@@ -82,7 +82,7 @@ func ManifestWorkPredicateFunc() predicate.Funcs {
 			return false
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			log := ctrl.Log.WithName("ManifestWork")
+			log := ctrl.Log.WithName("DRPCPredicate").WithName("ManifestWork")
 
 			oldMW, ok := e.ObjectOld.DeepCopyObject().(*ocmworkv1.ManifestWork)
 			if !ok {
@@ -123,7 +123,7 @@ func filterMW(mw *ocmworkv1.ManifestWork) []ctrl.Request {
 }
 
 func ManagedClusterViewPredicateFunc() predicate.Funcs {
-	log := ctrl.Log.WithName("MCV")
+	log := ctrl.Log.WithName("DRPCPredicate").WithName("MCV")
 	mcvPredicate := predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			return false
@@ -174,7 +174,7 @@ func filterMCV(mcv *viewv1beta1.ManagedClusterView) []ctrl.Request {
 }
 
 func PlacementRulePredicateFunc() predicate.Funcs {
-	log := ctrl.Log.WithName("UserPlRule")
+	log := ctrl.Log.WithName("DRPCPredicate").WithName("UserPlRule")
 	usrPlRulePredicate := predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			return false
@@ -212,7 +212,7 @@ func filterUsrPlRule(usrPlRule *plrv1.PlacementRule) []ctrl.Request {
 }
 
 func PlacementPredicateFunc() predicate.Funcs {
-	log := ctrl.Log.WithName("UserPlmnt")
+	log := ctrl.Log.WithName("DRPCPredicate").WithName("UserPlmnt")
 	usrPlmntPredicate := predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			return false
@@ -247,6 +247,179 @@ func filterUsrPlmnt(usrPlmnt *clrapiv1beta1.Placement) []ctrl.Request {
 			},
 		},
 	}
+}
+
+func DRClusterPredicateFunc() predicate.Funcs {
+	log := ctrl.Log.WithName("DRPCPredicate").WithName("DRCluster")
+	drClusterPredicate := predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return false
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return false
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			log.Info("Update event")
+
+			return DRClusterUpdateOfInterest(e.ObjectOld.(*rmn.DRCluster), e.ObjectNew.(*rmn.DRCluster))
+		},
+	}
+
+	return drClusterPredicate
+}
+
+// DRClusterUpdateOfInterest checks if the new DRCluster resource as compared to the older version
+// requires any attention, it checks for the following updates:
+//   - If any maintenance mode is reported as activated
+//
+// TODO: Needs some logs for easier troubleshooting
+func DRClusterUpdateOfInterest(oldDRCluster, newDRCluster *rmn.DRCluster) bool {
+	for _, mModeNew := range newDRCluster.Status.MaintenanceModes {
+		// Check if new conditions have failover activated, if not this maintenance mode is NOT of interest
+		conditionNew := getFailoverActivatedCondition(mModeNew)
+		if conditionNew == nil ||
+			conditionNew.Status == metav1.ConditionFalse ||
+			conditionNew.Status == metav1.ConditionUnknown {
+			continue
+		}
+
+		// Check if failover maintenance mode was already activated as part of an older update to DRCluster, if NOT
+		// this change is of interest
+		if activated := checkFailoverActivation(oldDRCluster, mModeNew.StorageProvisioner, mModeNew.TargetID); !activated {
+			return true
+		}
+	}
+
+	// Exhausted all failover activation checks, this update is NOT of interest
+	return false
+}
+
+// checkFailoverActivation checks if provided provisioner and storage instance is activated as per the
+// passed in DRCluster resource status. It currently only checks for:
+//   - Failover activation condition
+func checkFailoverActivation(drcluster *rmn.DRCluster, provisioner string, targetID string) bool {
+	for _, mMode := range drcluster.Status.MaintenanceModes {
+		if !(mMode.StorageProvisioner == provisioner && mMode.TargetID == targetID) {
+			continue
+		}
+
+		condition := getFailoverActivatedCondition(mMode)
+		if condition == nil ||
+			condition.Status == metav1.ConditionFalse ||
+			condition.Status == metav1.ConditionUnknown {
+			return false
+		}
+
+		return true
+	}
+
+	return false
+}
+
+// getFailoverActivatedCondition is a helper routine that returns the FailoverActivated condition
+// from a given ClusterMaintenanceMode if found, or nil otherwise
+func getFailoverActivatedCondition(mMode rmn.ClusterMaintenanceMode) *metav1.Condition {
+	for _, condition := range mMode.Conditions {
+		if condition.Type != string(rmn.MModeConditionFailoverActivated) {
+			continue
+		}
+
+		return &condition
+	}
+
+	return nil
+}
+
+// filterDRCluster filters for DRPC resources that should be reconciled due to a DRCluster watch event
+func (r *DRPlacementControlReconciler) FilterDRCluster(drcluster *rmn.DRCluster) []ctrl.Request {
+	log := ctrl.Log.WithName("DRPCFilter").WithName("DRCluster").WithValues("cluster", drcluster.GetName())
+
+	drpolicies := &rmn.DRPolicyList{}
+	if err := r.Client.List(context.TODO(), drpolicies); err != nil {
+		// TODO: If we get errors, do we still get an event later and/or for all changes form where we
+		// processed the last DRCluster update?
+		log.Error(err, "unable to process DRCluster event for DRPC reconcile filtering")
+
+		return []reconcile.Request{}
+	}
+
+	requests := make([]reconcile.Request, 0)
+
+	for idx, drpolicy := range drpolicies.Items {
+		// TODO: Skip if policy is of type metro, requires listing all DRClusters (or the list of clusters in the policy)
+		// and calling DRPolicySupportsMetro OR look at scheduling interval in the policy?
+		for _, specCluster := range drpolicy.Spec.DRClusters {
+			if specCluster == drcluster.GetName() {
+				add := r.filterDRPolicy(log, &drpolicies.Items[idx], drcluster.GetName())
+				requests = append(requests, add...)
+
+				break
+			}
+		}
+	}
+
+	return requests
+}
+
+// filterDRPolicy filters DRPC resources that would be reconciled. It filters for DRPC resources that
+// have not completed a Failover action, and target the passed in cluster as the failoverCluster target
+//
+//nolint:gocognit
+func (r *DRPlacementControlReconciler) filterDRPolicy(
+	log logr.Logger,
+	drpolicy *rmn.DRPolicy,
+	drcluster string,
+) []ctrl.Request {
+	drpcs := &rmn.DRPlacementControlList{}
+	if err := r.Client.List(context.TODO(), drpcs); err != nil {
+		log.Error(err, "unable to process DRPolicy for DRPC reconcile filtering", "policy", drpolicy.GetName())
+
+		return []reconcile.Request{}
+	}
+
+	requests := make([]reconcile.Request, 0)
+
+	for _, drpc := range drpcs.Items {
+		if drpc.Spec.DRPolicyRef.Name != drpolicy.GetName() {
+			continue
+		}
+
+		if !(drpc.Spec.Action == rmn.ActionFailover && drpc.Spec.FailoverCluster == drcluster) {
+			continue
+		}
+
+		if condition := GetDRPCStatusCondition(&drpc.Status, rmn.ConditionAvailable); condition != nil &&
+			condition.Status == metav1.ConditionTrue &&
+			condition.ObservedGeneration == drpc.Generation {
+			continue
+		}
+
+		log.Info("DRPC detected for reconcile", "Drpc", drpc)
+
+		add := reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      drpc.GetName(),
+				Namespace: drpc.GetNamespace(),
+			},
+		}
+
+		requests = append(requests, add)
+	}
+
+	return requests
+}
+
+func GetDRPCStatusCondition(status *rmn.DRPlacementControlStatus, conditionType string) *metav1.Condition {
+	for i := range status.Conditions {
+		if status.Conditions[i].Type == conditionType {
+			return &status.Conditions[i]
+		}
+	}
+
+	return nil
 }
 
 func SetDRPCStatusCondition(conditions *[]metav1.Condition, conditionType string,
@@ -331,6 +504,19 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		return filterUsrPlmnt(usrPlmnt)
 	}))
 
+	drClusterPred := DRClusterPredicateFunc()
+
+	drClusterMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
+		drCluster, ok := obj.(*rmn.DRCluster)
+		if !ok {
+			return []reconcile.Request{}
+		}
+
+		ctrl.Log.Info(fmt.Sprintf("Filtering DRCluster (%s)", drCluster.Name))
+
+		return r.FilterDRCluster(drCluster)
+	}))
+
 	r.eventRecorder = rmnutil.NewEventReporter(mgr.GetEventRecorderFor("controller_DRPlacementControl"))
 
 	return ctrl.NewControllerManagedBy(mgr).
@@ -340,6 +526,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		Watches(&source.Kind{Type: &viewv1beta1.ManagedClusterView{}}, mcvMapFun, builder.WithPredicates(mcvPred)).
 		Watches(&source.Kind{Type: &plrv1.PlacementRule{}}, usrPlRuleMapFun, builder.WithPredicates(usrPlRulePred)).
 		Watches(&source.Kind{Type: &clrapiv1beta1.Placement{}}, usrPlmntMapFun, builder.WithPredicates(usrPlmntPred)).
+		Watches(&source.Kind{Type: &rmn.DRCluster{}}, drClusterMapFun, builder.WithPredicates(drClusterPred)).
 		Complete(r)
 }
 
@@ -348,6 +535,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drplacementcontrols/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drplacementcontrols/finalizers,verbs=update
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drpolicies,verbs=get;list;watch
+// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusters,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apps.open-cluster-management.io,resources=placementrules,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps.open-cluster-management.io,resources=placementrules/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps.open-cluster-management.io,resources=placementrules/finalizers,verbs=get;create;update;patch;delete
