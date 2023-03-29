@@ -360,7 +360,7 @@ func setStatusCondition(existingConditions *[]metav1.Condition, newCondition met
 	if newCondition.Message == "" {
 		newCondition.Message = defaultValue
 	}
-	
+
 	existingCondition.Reason = newCondition.Reason
 	existingCondition.Message = newCondition.Message
 
