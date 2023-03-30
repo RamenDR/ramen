@@ -522,26 +522,138 @@ func (d *DRPCInstance) checkMetroFailoverPrerequisites(failoverCluster string) (
 func (d *DRPCInstance) checkRegionalFailoverPrerequisites(failoverCluster string) (bool, error) {
 	d.setProgression(rmn.ProgressionWaitForStorageMaintenenceActivation)
 
-	if !d.requiresRegionalPrequisites() {
-		return true, nil
+	if required, activationsRequired := d.requiresRegionalFailoverPrequisites(failoverCluster); required {
+		return d.checkClusterMaintenanceActivation(failoverCluster, activationsRequired)
 	}
 
-	return d.checkClusterMaintenanceActivation(failoverCluster)
+	return true, nil
 }
 
-func (d *DRPCInstance) requiresRegionalPrequisites() bool {
-	/*
-		- Check VRG ProtectedPVCs storage identifiers and requests
-		- Formulate a list of pre-reqs that are required
-	*/
+// requiresRegionalFailoverPrequisites checks protected PVCs as reported by the last known Primary cluster
+// to determine if this instance requires failover maintenance modes to be active prior to initiating
+// a failover
+func (d *DRPCInstance) requiresRegionalFailoverPrequisites(failoverCluster string) (
+	bool,
+	map[string]rmn.StorageIdentifiers,
+) {
+	activationsRequired := map[string]rmn.StorageIdentifiers{}
+
+	vrg := d.getLastKnownPrimaryVRG(failoverCluster)
+	if vrg == nil {
+		// TODO: Is this an error, should we ensure at least one VRG is found in the edge cases?
+		// Potentially missing VRG and so stop failover? How to recover in that case?
+		return false, activationsRequired
+	}
+
+	for _, protectedPVC := range vrg.Status.ProtectedPVCs {
+		if len(protectedPVC.StorageIdentifiers.VolumeReplicationClassModes) == 0 {
+			continue
+		}
+
+		if !hasModes(protectedPVC.StorageIdentifiers.VolumeReplicationClassModes, rmn.Failover) {
+			continue
+		}
+
+		// TODO: Assumption is that if there is a mMode then the ReplicationID is a must, err otherwise?
+		key := protectedPVC.StorageIdentifiers.CSIProvisioner + protectedPVC.StorageIdentifiers.ReplicationID
+		if _, ok := activationsRequired[key]; !ok {
+			activationsRequired[key] = protectedPVC.StorageIdentifiers
+		}
+	}
+
+	return len(activationsRequired) != 0, activationsRequired
+}
+
+// getLastKnownPrimaryVRG gets the last known Primary VRG from the cluster that is not the current failoverCluster
+// This is done inspecting VRGs from the MCV reports, and in case not found, fetching it from the s3 store
+func (d *DRPCInstance) getLastKnownPrimaryVRG(failoverCluster string) *rmn.VolumeReplicationGroup {
+	var vrgToInspect *rmn.VolumeReplicationGroup
+
+	for drcluster, vrg := range d.vrgs {
+		if drcluster == failoverCluster {
+			continue
+		}
+
+		if d.isVRGPrimary(vrg) {
+			// TODO: Potentially when there are more than on primary VRGs find the best one?
+			vrgToInspect = vrg
+
+			break
+		}
+	}
+
+	if vrgToInspect == nil {
+		// TODO: Get it from the s3 store
+		return nil
+	}
+
+	return vrgToInspect
+}
+
+// hasModes is a helper routine that checks if a list of modes has the passed in mode
+func hasModes(modes []rmn.MMode, mode rmn.MMode) bool {
+	for _, modeInList := range modes {
+		if modeInList == mode {
+			return true
+		}
+	}
+
 	return false
 }
 
-func (d *DRPCInstance) checkClusterMaintenanceActivation(cluster string) (bool, error) {
-	/*
-		- Check list of pre-reqs passed in in DRCluster resource
-	*/
+// checkClusterMaintenanceActivation checks if all required storage backend maintenance activations are met
+func (d *DRPCInstance) checkClusterMaintenanceActivation(cluster string,
+	activationsRequired map[string]rmn.StorageIdentifiers,
+) (bool, error) {
+	var clusterToCheck rmn.DRCluster
+
+	for _, drCluster := range d.drClusters {
+		if drCluster.Name != cluster {
+			continue
+		}
+
+		clusterToCheck = drCluster
+
+		break
+	}
+
+	for _, activationRequired := range activationsRequired {
+		if !checkActivationForStorageIdentifier(clusterToCheck.Status.MaintenanceModes, activationRequired) {
+			return false, nil
+		}
+	}
+
 	return true, nil
+}
+
+// checkActivationForStorageIdentifier checks if provided storageIdentifier failover maintenance mode is
+// in an activated state as reported in the passed in ClusterMaintenanceMode list
+func checkActivationForStorageIdentifier(
+	mModeStatus []rmn.ClusterMaintenanceMode,
+	storageIdentifier rmn.StorageIdentifiers,
+) bool {
+	for _, statusMMode := range mModeStatus {
+		if statusMMode.StorageProvisioner != storageIdentifier.CSIProvisioner ||
+			statusMMode.TargetID != storageIdentifier.ReplicationID {
+			continue
+		}
+
+		for _, condition := range statusMMode.Conditions {
+			if condition.Type != string(rmn.MModeConditionFailoverActivated) {
+				continue
+			}
+
+			if condition.Status == metav1.ConditionTrue {
+				return true
+			}
+
+			return false
+		}
+
+		return false
+	}
+
+	return false
 }
 
 // runRelocate checks if pre-conditions for relocation are met, and if so performs the relocation
