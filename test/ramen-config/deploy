@@ -36,7 +36,7 @@ print("Updating ramen config map")
 template = drenv.template("configmap.yaml")
 yaml = template.substitute(
     # Auto deploy is needed only for olm install.
-    auto_deploy=False,
+    auto_deploy="true",
     minio_url_dr1=minio.service_url(config.CLUSTERS[0]),
     minio_url_dr2=minio.service_url(config.CLUSTERS[1]),
 )
