@@ -908,15 +908,6 @@ func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace str
 
 		d.log.Info(fmt.Sprintf("PVs/PVCs have been Restored? %v", restored))
 
-		// FIXME
-		//
-		// If C1, the preferred cluster, is running on version 4.12 while C2, the failover cluster, has
-		// been upgraded to 4.13, failing over from C1 to C2 would result in an indefinite stall as it
-		// waits for the ProtectedPVCs to become available. However, in such a scenario, it is desirable
-		// to proceed with the restoration of the PVs rather than getting stuck at the DRPC level.
-		// To address this issue, one possible solution is to add an annotation to the RamenConfig, which
-		// would tell DRPC that an upgrade is in progress. While this scenario may not occur in a production
-		// environment, it is likely to fail during QA testing.
 		if !restored || vrg == nil || vrg.Status.State != rmn.PrimaryState {
 			d.setProgression(rmn.ProgressionWaitingForResourceRestore)
 
