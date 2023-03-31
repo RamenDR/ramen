@@ -6,7 +6,7 @@ package util_test
 import (
 	"time"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	rmnutil "github.com/ramendr/ramen/controllers/util"

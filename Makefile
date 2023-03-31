@@ -89,7 +89,7 @@ ifeq ($(GOHOSTOS),darwin)
 	endif
 endif
 
-GO_TEST_GINKGO_ARGS ?= -test.v -ginkgo.v -ginkgo.failFast
+GO_TEST_GINKGO_ARGS ?= -test.v -ginkgo.v -ginkgo.fail-fast
 
 DOCKERCMD ?= podman
 
