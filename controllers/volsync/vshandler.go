@@ -383,7 +383,7 @@ func (v *VSHandler) cleanupAfterRSFinalSync(rsSpec ramendrv1alpha1.VolSyncReplic
 
 	v.log.Info("Cleanup after final sync", "pvcName", rsSpec.ProtectedPVC.Name)
 
-	return v.deletePVC(rsSpec.ProtectedPVC.Name)
+	return util.DeletePVC(v.ctx, v.client, rsSpec.ProtectedPVC.Name, v.owner.GetNamespace(), v.log)
 }
 
 //nolint:funlen
@@ -555,28 +555,6 @@ func (v *VSHandler) pvcExistsAndInUse(pvcName string, inUsePodMustBeReady bool) 
 
 	// No pod is mounting the PVC - do additional check to make sure no volume attachment exists
 	return util.IsPVAttachedToNode(v.ctx, v.client, v.log, pvc)
-}
-
-func (v *VSHandler) deletePVC(pvcName string) error {
-	pvcToDelete := &corev1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      pvcName,
-			Namespace: v.owner.GetNamespace(),
-		},
-	}
-
-	err := v.client.Delete(v.ctx, pvcToDelete)
-	if err != nil {
-		if !kerrors.IsNotFound(err) {
-			v.log.Error(err, "error deleting pvc", "pvcName", pvcName)
-
-			return fmt.Errorf("error deleting pvc (%w)", err)
-		}
-	} else {
-		v.log.Info("deleted pvc", "pvcName", pvcName)
-	}
-
-	return nil
 }
 
 func (v *VSHandler) getPVC(pvcName string) (*corev1.PersistentVolumeClaim, error) {

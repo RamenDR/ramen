@@ -139,7 +139,12 @@ func (v *VRGInstance) reconcileVRAsSecondary(pvc *corev1.PersistentVolumeClaim, 
 		skip    bool = true
 	)
 
-	if !v.isPVCReadyForSecondary(pvc, log) {
+	if pvc.GetAnnotations() != nil && pvc.GetAnnotations()[RestoreAnnotation] == RestoredByRamen {
+		// We created the PVC, delete it
+		if deleted := v.deletePVCIfNotInUse(pvc, log); !deleted {
+			return requeue, false, skip
+		}
+	} else if !v.isPVCReadyForSecondary(pvc, log) {
 		return requeue, false, skip
 	}
 
@@ -168,6 +173,19 @@ func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, 
 		return !ready
 	}
 
+	return !v.isPVCInUse(pvc, log)
+}
+
+func (v *VRGInstance) deletePVCIfNotInUse(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
+	if v.isPVCInUse(pvc, log) {
+		return false
+	}
+
+	return rmnutil.DeletePVC(v.ctx, v.reconciler.Client, pvc.Name, pvc.Namespace, log) == nil
+}
+
+func (v *VRGInstance) isPVCInUse(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
+	const inUse bool = true
 	// Check if any pod definitions exist referencing the PVC, if so it is not ready for Secondary
 	inUseByPod, err := rmnutil.IsPVCInUseByPod(v.ctx, v.reconciler.Client, log, pvc.GetName(), pvc.GetNamespace(), false)
 	if err != nil || inUseByPod {
@@ -177,7 +195,7 @@ func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, 
 		msg := "unable to transition to Secondary as PVC is potentially in use by pod(s)"
 		v.updatePVCDataReadyCondition(pvc.Name, VRGConditionReasonProgressing, msg)
 
-		return !ready
+		return inUse
 	}
 
 	// No pod is mounting the PVC - do additional check to make sure no volume attachment exists
@@ -189,10 +207,10 @@ func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, 
 		msg := "unable to transition to Secondary as PersistentVolume for PVC is still attached to node(s)"
 		v.updatePVCDataReadyCondition(pvc.Name, VRGConditionReasonProgressing, msg)
 
-		return !ready
+		return inUse
 	}
 
-	return ready
+	return !inUse
 }
 
 // preparePVCForVRProtection processes prerequisites of any PVC that needs VR protection. It returns
@@ -656,6 +674,21 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 		case requeueResult:
 			return requeue
 		case !ready:
+			return requeue
+		}
+	}
+
+	return v.undoPVCFinalizersAndPVRetention(pvc, log)
+}
+
+func (v *VRGInstance) undoPVCFinalizersAndPVRetention(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
+	const requeue = true
+
+	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
+
+	if pvc.GetAnnotations() != nil && pvc.GetAnnotations()[RestoreAnnotation] == RestoredByRamen {
+		// We created the PVC, delete it
+		if deleted := v.deletePVCIfNotInUse(pvc, log); !deleted {
 			return requeue
 		}
 	}
