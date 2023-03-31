@@ -10,6 +10,7 @@ import (
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
@@ -214,4 +215,30 @@ func isPodReady(podConditions []corev1.PodCondition) bool {
 	}
 
 	return false
+}
+
+func DeletePVC(ctx context.Context,
+	k8sClient client.Client,
+	pvcName, namespace string,
+	log logr.Logger,
+) error {
+	pvcToDelete := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pvcName,
+			Namespace: namespace,
+		},
+	}
+
+	err := k8sClient.Delete(ctx, pvcToDelete)
+	if err != nil {
+		if !kerrors.IsNotFound(err) {
+			log.Error(err, "error deleting pvc", "pvcName", pvcName)
+
+			return fmt.Errorf("error deleting pvc (%w)", err)
+		}
+	} else {
+		log.Info("deleted pvc", "pvcName", pvcName)
+	}
+
+	return nil
 }
