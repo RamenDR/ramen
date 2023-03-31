@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/go-logr/logr"
@@ -23,6 +24,10 @@ import (
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
+)
+
+const (
+	AnnotationSchemeGroup = "apps.open-cluster-management.io"
 )
 
 func (v *VRGInstance) updateFinalSyncStatus() {
@@ -1994,7 +1999,7 @@ func (v *VRGInstance) cleanupForRestore(obj client.Object) {
 			p.Spec.ClaimRef.APIVersion = ""
 		}
 	case *corev1.PersistentVolumeClaim:
-		p.ObjectMeta.Annotations = map[string]string{}
+		p.ObjectMeta.Annotations = PruneAnnotations(p.GetAnnotations(), AnnotationSchemeGroup)
 		p.ObjectMeta.Finalizers = []string{}
 		p.ObjectMeta.ResourceVersion = ""
 		p.ObjectMeta.OwnerReferences = nil
@@ -2238,4 +2243,30 @@ func (v *VRGInstance) aggregateVolRepClusterDataProtectedCondition() *metav1.Con
 	v.log.Info(msg)
 
 	return newVRGClusterDataProtectedCondition(v.instance.Generation, msg)
+}
+
+// pruneAnnotations takes a map of annotations and removes all annotations except
+// for those that have a key containing the provided subkey.
+// Parameters:
+//
+//	annotations: the map of annotations to prune
+//	subKeyToLeave: the subkey to match in annotation keys (e.g. "apps.open-cluster-management.io")
+//
+// Returns:
+//
+//	a new map containing only the remaining annotations that match the subkey
+func PruneAnnotations(annotations map[string]string, subKeyToLeave string) map[string]string {
+	if annotations == nil {
+		return map[string]string{}
+	}
+
+	result := make(map[string]string)
+
+	for key, value := range annotations {
+		if strings.Contains(key, subKeyToLeave) {
+			result[key] = value
+		}
+	}
+
+	return result
 }
