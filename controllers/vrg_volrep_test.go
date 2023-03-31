@@ -12,7 +12,7 @@ import (
 
 	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
 	volrepController "github.com/csi-addons/kubernetes-csi-addons/controllers/replication.storage"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	vrgController "github.com/ramendr/ramen/controllers"

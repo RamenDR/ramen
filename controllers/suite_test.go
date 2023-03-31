@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
 	"go.uber.org/zap/zapcore"
@@ -140,7 +140,13 @@ var _ = BeforeSuite(func() {
 	}
 
 	var err error
-	cfg, err = testEnv.Start()
+	done := make(chan interface{})
+	go func() {
+		defer GinkgoRecover()
+		cfg, err = testEnv.Start()
+		close(done)
+	}()
+	Eventually(done).WithTimeout(time.Minute).Should(BeClosed())
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
@@ -354,7 +360,7 @@ var _ = BeforeSuite(func() {
 	apiReader = k8sManager.GetAPIReader()
 	Expect(apiReader).ToNot(BeNil())
 	objectStorersSet()
-}, 60)
+})
 
 var _ = AfterSuite(func() {
 	cancel()
