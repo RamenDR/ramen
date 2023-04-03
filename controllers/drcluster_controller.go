@@ -17,8 +17,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
@@ -69,11 +72,123 @@ const (
 	DRClusterNameAnnotation = "drcluster.ramendr.openshift.io/drcluster-name"
 )
 
+// SetupWithManager sets up the controller with the Manager.
+func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	drpcMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
+		drpc, ok := obj.(*ramen.DRPlacementControl)
+		if !ok {
+			return []reconcile.Request{}
+		}
+
+		ctrl.Log.Info(fmt.Sprintf("Filtering DRPC (%s/%s)", drpc.Name, drpc.Namespace))
+
+		return filterDRPC(drpc)
+	}))
+
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&ramen.DRCluster{}).
+		Watches(
+			&source.Kind{Type: &corev1.ConfigMap{}},
+			handler.EnqueueRequestsFromMapFunc(r.drClusterConfigMapMapFunc),
+		).
+		Watches(
+			&source.Kind{Type: &ramen.DRPlacementControl{}},
+			drpcMapFun, builder.WithPredicates(drpcPred())).
+		Complete(r)
+}
+
+func (r *DRClusterReconciler) drClusterConfigMapMapFunc(configMap client.Object) []reconcile.Request {
+	if configMap.GetName() != HubOperatorConfigMapName || configMap.GetNamespace() != NamespaceName() {
+		return []reconcile.Request{}
+	}
+
+	drcusters := &ramen.DRClusterList{}
+	if err := r.Client.List(context.TODO(), drcusters); err != nil {
+		return []reconcile.Request{}
+	}
+
+	requests := make([]reconcile.Request, len(drcusters.Items))
+	for i, drcluster := range drcusters.Items {
+		requests[i].Name = drcluster.GetName()
+	}
+
+	return requests
+}
+
+// drpcPred watches for updates to the DRPC resource and checks if it requires an appropriate DRCluster reconcile
+func drpcPred() predicate.Funcs {
+	log := ctrl.Log.WithName("DRPCPredicate").WithName("UserPlmnt")
+	usrPlmntPredicate := predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return false
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return DRPCUpdateOfInterest(e.ObjectOld.(*ramen.DRPlacementControl), e.ObjectNew.(*ramen.DRPlacementControl))
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			log.Info("Delete event")
+
+			return false
+		},
+	}
+
+	return usrPlmntPredicate
+}
+
+// DRPCUpdateOfInterest returns a bool, which is true if the update to DRPC requires further processing
+func DRPCUpdateOfInterest(oldDRPC, newDRPC *ramen.DRPlacementControl) bool {
+	// Ignore DRPC if it is not failing over
+	if newDRPC.Spec.Action != ramen.ActionFailover {
+		return false
+	}
+
+	// Process DRPC, if action was just changed to failover across old and new
+	if oldDRPC.Spec.Action != ramen.ActionFailover {
+		return true
+	}
+
+	// Process DRPC, if action was not changed, but failover cluster was
+	if oldDRPC.Spec.FailoverCluster != newDRPC.Spec.FailoverCluster {
+		return true
+	}
+
+	// Ignore DRPC, if it has finished failing over
+	if condition := GetDRPCStatusCondition(&newDRPC.Status, ramen.ConditionAvailable); condition != nil &&
+		condition.Status == metav1.ConditionTrue &&
+		condition.ObservedGeneration == newDRPC.Generation {
+		return false
+	}
+
+	// TODO: Technically we do not need to process this DRPC update, as we need to enable MMode when a "new" failover
+	// for a DRPC is detected, not each time till it is failed over
+	return true
+}
+
+// filterDRPC relies on the predicate DRPCIpdateOfInterest to filter out any DRPC other than ones failing over, as a
+// result the filter function just uses the failoverCluster value to start the appropriate DRCluster reconcile
+func filterDRPC(drpc *ramen.DRPlacementControl) []ctrl.Request {
+	if drpc.Spec.FailoverCluster == "" {
+		return []ctrl.Request{}
+	}
+
+	return []ctrl.Request{
+		reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name: drpc.Spec.FailoverCluster,
+			},
+		},
+	}
+}
+
 //nolint:lll
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusters,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusters/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusters/finalizers,verbs=update
-// +kubebuilder:rbac:groups=addon.open-cluster-management.io,resources=managedclusteraddons,verbs=get;list;watch;create;update;patch
+//+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drplacementcontrols,verbs=get;list;watch
+//+kubebuilder:rbac:groups=addon.open-cluster-management.io,resources=managedclusteraddons,verbs=get;list;watch;create;update;patch
 //+kubebuilder:rbac:groups=work.open-cluster-management.io,resources=manifestworks,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch
 
@@ -754,35 +869,6 @@ func getPeerFromPolicy(ctx context.Context, reconciler *DRClusterReconciler, log
 	}
 
 	return peerCluster, nil
-}
-
-// SetupWithManager sets up the controller with the Manager.
-func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&ramen.DRCluster{}).
-		Watches(
-			&source.Kind{Type: &corev1.ConfigMap{}},
-			handler.EnqueueRequestsFromMapFunc(r.drClusterConfigMapMapFunc),
-		).
-		Complete(r)
-}
-
-func (r *DRClusterReconciler) drClusterConfigMapMapFunc(configMap client.Object) []reconcile.Request {
-	if configMap.GetName() != HubOperatorConfigMapName || configMap.GetNamespace() != NamespaceName() {
-		return []reconcile.Request{}
-	}
-
-	drcusters := &ramen.DRClusterList{}
-	if err := r.Client.List(context.TODO(), drcusters); err != nil {
-		return []reconcile.Request{}
-	}
-
-	requests := make([]reconcile.Request, len(drcusters.Items))
-	for i, drcluster := range drcusters.Items {
-		requests[i].Name = drcluster.GetName()
-	}
-
-	return requests
 }
 
 func setDRClusterInitialCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
