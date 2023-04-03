@@ -519,6 +519,8 @@ func (d *DRPCInstance) checkMetroFailoverPrerequisites(failoverCluster string) (
 // Returns:
 //   - bool: Indicating if prerequisites are met
 //   - error: Any error in determining the prerequisite status
+//
+// TODO: Write envtests for this function and desendents
 func (d *DRPCInstance) checkRegionalFailoverPrerequisites(failoverCluster string) (bool, error) {
 	d.setProgression(rmn.ProgressionWaitForStorageMaintenenceActivation)
 
