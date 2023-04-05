@@ -197,7 +197,7 @@ func SubscriptionFromDrClusterManifestWork(
 		Kind:    "Subscription",
 	}
 
-	subRaw, err := mwu.GetRawExtension(mw.Spec.Workload.Manifests, gvk, "ramen-dr-cluster-subscription", clusterName)
+	subRaw, err := mwu.GetRawExtension(mw.Spec.Workload.Manifests, gvk)
 	if err != nil {
 		return nil, fmt.Errorf("failed fetching subscription from cluster '%v' manifest %w", clusterName, err)
 	}

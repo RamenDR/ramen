@@ -470,7 +470,7 @@ func (d *DRPCInstance) checkFailoverPrerequisites(failoverCluster string) (bool,
 	if isMetroAction(d.drPolicy, d.drClusters, failoverCluster, d.instance.Spec.FailoverCluster) {
 		met, err = d.checkMetroFailoverPrerequisites(failoverCluster)
 	} else {
-		met, err = d.checkRegionalFailoverPrerequisites(failoverCluster)
+		met = d.checkRegionalFailoverPrerequisites(failoverCluster)
 	}
 
 	if err == nil && met {
@@ -518,29 +518,34 @@ func (d *DRPCInstance) checkMetroFailoverPrerequisites(failoverCluster string) (
 // failoverCluster before initiating a failover.
 // Returns:
 //   - bool: Indicating if prerequisites are met
-//   - error: Any error in determining the prerequisite status
 //
 // TODO: Write envtests for this function and desendents
-func (d *DRPCInstance) checkRegionalFailoverPrerequisites(failoverCluster string) (bool, error) {
-	d.setProgression(rmn.ProgressionWaitForStorageMaintenenceActivation)
+func (d *DRPCInstance) checkRegionalFailoverPrerequisites(failoverCluster string) bool {
+	d.setProgression(rmn.ProgressionWaitForStorageMaintenanceActivation)
 
-	if required, activationsRequired := d.requiresRegionalFailoverPrequisites(failoverCluster); required {
-		return d.checkClusterMaintenanceActivation(failoverCluster, activationsRequired)
+	if required, activationsRequired := requiresRegionalFailoverPrequisites(d.vrgs, failoverCluster); required {
+		for _, drCluster := range d.drClusters {
+			if drCluster.Name != failoverCluster {
+				continue
+			}
+
+			return checkFailoverMaintenanceActivations(drCluster, activationsRequired)
+		}
 	}
 
-	return true, nil
+	return true
 }
 
 // requiresRegionalFailoverPrequisites checks protected PVCs as reported by the last known Primary cluster
 // to determine if this instance requires failover maintenance modes to be active prior to initiating
 // a failover
-func (d *DRPCInstance) requiresRegionalFailoverPrequisites(failoverCluster string) (
+func requiresRegionalFailoverPrequisites(vrgs map[string]*rmn.VolumeReplicationGroup, failoverCluster string) (
 	bool,
 	map[string]rmn.StorageIdentifiers,
 ) {
 	activationsRequired := map[string]rmn.StorageIdentifiers{}
 
-	vrg := d.getLastKnownPrimaryVRG(failoverCluster)
+	vrg := getLastKnownPrimaryVRG(vrgs, failoverCluster)
 	if vrg == nil {
 		// TODO: Is this an error, should we ensure at least one VRG is found in the edge cases?
 		// Potentially missing VRG and so stop failover? How to recover in that case?
@@ -552,7 +557,7 @@ func (d *DRPCInstance) requiresRegionalFailoverPrequisites(failoverCluster strin
 			continue
 		}
 
-		if !hasModes(protectedPVC.StorageIdentifiers.VolumeReplicationClassModes, rmn.Failover) {
+		if !hasMode(protectedPVC.StorageIdentifiers.VolumeReplicationClassModes, rmn.Failover) {
 			continue
 		}
 
@@ -566,17 +571,20 @@ func (d *DRPCInstance) requiresRegionalFailoverPrequisites(failoverCluster strin
 	return len(activationsRequired) != 0, activationsRequired
 }
 
-// getLastKnownPrimaryVRG gets the last known Primary VRG from the cluster that is not the current failoverCluster
+// getLastKnownPrimaryVRG gets the last known Primary VRG from the cluster that is not the current targetCluster
 // This is done inspecting VRGs from the MCV reports, and in case not found, fetching it from the s3 store
-func (d *DRPCInstance) getLastKnownPrimaryVRG(failoverCluster string) *rmn.VolumeReplicationGroup {
+func getLastKnownPrimaryVRG(
+	vrgs map[string]*rmn.VolumeReplicationGroup,
+	targetCluster string,
+) *rmn.VolumeReplicationGroup {
 	var vrgToInspect *rmn.VolumeReplicationGroup
 
-	for drcluster, vrg := range d.vrgs {
-		if drcluster == failoverCluster {
+	for drcluster, vrg := range vrgs {
+		if drcluster == targetCluster {
 			continue
 		}
 
-		if d.isVRGPrimary(vrg) {
+		if isVRGPrimary(vrg) {
 			// TODO: Potentially when there are more than on primary VRGs find the best one?
 			vrgToInspect = vrg
 
@@ -592,8 +600,8 @@ func (d *DRPCInstance) getLastKnownPrimaryVRG(failoverCluster string) *rmn.Volum
 	return vrgToInspect
 }
 
-// hasModes is a helper routine that checks if a list of modes has the passed in mode
-func hasModes(modes []rmn.MMode, mode rmn.MMode) bool {
+// hasMode is a helper routine that checks if a list of modes has the passed in mode
+func hasMode(modes []rmn.MMode, mode rmn.MMode) bool {
 	for _, modeInList := range modes {
 		if modeInList == mode {
 			return true
@@ -603,29 +611,21 @@ func hasModes(modes []rmn.MMode, mode rmn.MMode) bool {
 	return false
 }
 
-// checkClusterMaintenanceActivation checks if all required storage backend maintenance activations are met
-func (d *DRPCInstance) checkClusterMaintenanceActivation(cluster string,
+// checkFailoverMaintenanceActivations checks if all required storage backend maintenance activations are met
+func checkFailoverMaintenanceActivations(drCluster rmn.DRCluster,
 	activationsRequired map[string]rmn.StorageIdentifiers,
-) (bool, error) {
-	var clusterToCheck rmn.DRCluster
-
-	for _, drCluster := range d.drClusters {
-		if drCluster.Name != cluster {
-			continue
-		}
-
-		clusterToCheck = drCluster
-
-		break
-	}
-
+) bool {
 	for _, activationRequired := range activationsRequired {
-		if !checkActivationForStorageIdentifier(clusterToCheck.Status.MaintenanceModes, activationRequired) {
-			return false, nil
+		if !checkActivationForStorageIdentifier(
+			drCluster.Status.MaintenanceModes,
+			activationRequired,
+			rmn.MModeConditionFailoverActivated,
+		) {
+			return false
 		}
 	}
 
-	return true, nil
+	return true
 }
 
 // checkActivationForStorageIdentifier checks if provided storageIdentifier failover maintenance mode is
@@ -633,6 +633,7 @@ func (d *DRPCInstance) checkClusterMaintenanceActivation(cluster string,
 func checkActivationForStorageIdentifier(
 	mModeStatus []rmn.ClusterMaintenanceMode,
 	storageIdentifier rmn.StorageIdentifiers,
+	activation rmn.MModeStatusConditionType,
 ) bool {
 	for _, statusMMode := range mModeStatus {
 		if statusMMode.StorageProvisioner != storageIdentifier.CSIProvisioner ||
@@ -641,7 +642,7 @@ func checkActivationForStorageIdentifier(
 		}
 
 		for _, condition := range statusMMode.Conditions {
-			if condition.Type != string(rmn.MModeConditionFailoverActivated) {
+			if condition.Type != string(activation) {
 				continue
 			}
 
@@ -895,7 +896,7 @@ func (d *DRPCInstance) areMultipleVRGsPrimary() bool {
 	numOfPrimaries := 0
 
 	for _, vrg := range d.vrgs {
-		if d.isVRGPrimary(vrg) {
+		if isVRGPrimary(vrg) {
 			numOfPrimaries++
 		}
 	}
@@ -920,11 +921,11 @@ func (d *DRPCInstance) selectCurrentPrimaryAndSecondaries() (string, []string) {
 	primaryVRG := ""
 
 	for cn, vrg := range d.vrgs {
-		if d.isVRGPrimary(vrg) && primaryVRG == "" {
+		if isVRGPrimary(vrg) && primaryVRG == "" {
 			primaryVRG = cn
 		}
 
-		if d.isVRGSecondary(vrg) {
+		if isVRGSecondary(vrg) {
 			secondaryVRGs = append(secondaryVRGs, cn)
 		}
 	}
@@ -1171,7 +1172,7 @@ func (d *DRPCInstance) getVRGFromManifestWork(clusterName string) (*rmn.VolumeRe
 
 func (d *DRPCInstance) vrgExistsAndPrimary(targetCluster string) bool {
 	vrg, ok := d.vrgs[targetCluster]
-	if !ok || !d.isVRGPrimary(vrg) {
+	if !ok || !isVRGPrimary(vrg) {
 		return false
 	}
 
@@ -1472,11 +1473,11 @@ func (d *DRPCInstance) ensureNamespaceExistsOnManagedCluster(homeCluster string)
 	return nil
 }
 
-func (d *DRPCInstance) isVRGPrimary(vrg *rmn.VolumeReplicationGroup) bool {
+func isVRGPrimary(vrg *rmn.VolumeReplicationGroup) bool {
 	return (vrg.Spec.ReplicationState == rmn.Primary)
 }
 
-func (d *DRPCInstance) isVRGSecondary(vrg *rmn.VolumeReplicationGroup) bool {
+func isVRGSecondary(vrg *rmn.VolumeReplicationGroup) bool {
 	return (vrg.Spec.ReplicationState == rmn.Secondary)
 }
 
@@ -2145,7 +2146,7 @@ func (d *DRPCInstance) selectCurrentPrimaries() []string {
 	var primaries []string
 
 	for clusterName, vrg := range d.vrgs {
-		if d.isVRGPrimary(vrg) {
+		if isVRGPrimary(vrg) {
 			primaries = append(primaries, clusterName)
 		}
 	}
