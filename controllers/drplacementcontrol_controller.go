@@ -1432,7 +1432,12 @@ func (r *DRPlacementControlReconciler) getApplicationDestinationNamespace(placem
 		}
 	}
 
-	return "", fmt.Errorf("failed to find ApplicationSet/Application for Placement %s", placement.GetName())
+	r.Log.Info(fmt.Sprintf("Placement %s does not belong to any ApplicationSet. Defaulting the dest namespace to %s",
+		placement.GetName(), placement.GetNamespace()))
+
+	// Didn't find any ApplicationSet using this Placement. Assuming it is for Subscription.
+	// Returning its own namespace as the default namespace
+	return placement.GetNamespace(), nil
 }
 
 func (r *DRPlacementControlReconciler) selectVRGNamespace(drpc *rmn.DRPlacementControl, placementObj client.Object,
