@@ -184,15 +184,14 @@ func filterDRPC(drpc *ramen.DRPlacementControl) []ctrl.Request {
 }
 
 //nolint:lll
-//+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusters,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusters/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusters/finalizers,verbs=update
-//+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drplacementcontrols,verbs=get;list;watch
-//+kubebuilder:rbac:groups=addon.open-cluster-management.io,resources=managedclusteraddons,verbs=get;list;watch;create;update;patch
-//+kubebuilder:rbac:groups=work.open-cluster-management.io,resources=manifestworks,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch
+// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusters,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusters/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusters/finalizers,verbs=update
+// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drplacementcontrols,verbs=get;list;watch
+// +kubebuilder:rbac:groups=addon.open-cluster-management.io,resources=managedclusteraddons,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups=work.open-cluster-management.io,resources=manifestworks,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch
 
-//nolint:funlen
 func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	// TODO: Validate managedCluster name? and also ensure it is not deleted!
 	// TODO: Setup views for storage class and VRClass to read and report IDs
@@ -200,11 +199,6 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	log.Info("reconcile enter")
 
 	defer log.Info("reconcile exit")
-
-	var (
-		requeue        bool
-		reconcileError error
-	)
 
 	drcluster := &ramen.DRCluster{}
 	if err := r.Client.Get(ctx, req.NamespacedName, drcluster); err != nil {
@@ -215,21 +209,30 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	u := &drclusterInstance{
 		ctx: ctx, object: drcluster, client: r.Client, log: log, reconciler: r,
-		mwUtil: manifestWorkUtil,
+		mwUtil: manifestWorkUtil, namespacedName: req.NamespacedName,
 	}
 
 	u.initializeStatus()
-
-	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("config map get: %w", u.validatedSetFalseAndUpdate("ConfigMapGetFailed", err))
-	}
 
 	if !u.object.ObjectMeta.DeletionTimestamp.IsZero() {
 		return r.processDeletion(u)
 	}
 
-	log.Info("create/update")
+	return r.processCreateOrUpdate(u)
+}
+
+func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.Result, error) {
+	var (
+		requeue        bool
+		reconcileError error
+	)
+
+	u.log.Info("create/update")
+
+	_, ramenConfig, err := ConfigMapGet(u.ctx, r.APIReader)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("config map get: %w", u.validatedSetFalseAndUpdate("ConfigMapGetFailed", err))
+	}
 
 	if err := u.addLabelsAndFinalizers(); err != nil {
 		return ctrl.Result{}, fmt.Errorf("finalizer add update: %w", u.validatedSetFalseAndUpdate("FinalizerAddFailed", err))
@@ -239,7 +242,7 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, fmt.Errorf("drclusters deploy: %w", u.validatedSetFalseAndUpdate("DrClustersDeployFailed", err))
 	}
 
-	if err = validateCIDRsFormat(drcluster, log); err != nil {
+	if err = validateCIDRsFormat(u.object, u.log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drclusters CIDRs validate: %w",
 			u.validatedSetFalseAndUpdate(ReasonValidationFailed, err))
 	}
@@ -248,20 +251,21 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if err != nil {
 		// On error proceed with S3 validation, as fencing is independent of S3
 		reconcileError = fmt.Errorf("failed to handle cluster fencing: %w", err)
+		u.log.Info("Error during processing fencing", "error", err)
 	}
 
-	if reason, err := validateS3Profile(ctx, r.APIReader, r.ObjectStoreGetter, drcluster, req.NamespacedName.String(),
-		log); err != nil {
+	if reason, err := validateS3Profile(u.ctx, r.APIReader, r.ObjectStoreGetter, u.object, u.namespacedName.String(),
+		u.log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drclusters s3Profile validate: %w", u.validatedSetFalseAndUpdate(reason, err))
 	}
 
-	setDRClusterValidatedCondition(&drcluster.Status.Conditions, drcluster.Generation, "Validated the cluster")
+	setDRClusterValidatedCondition(&u.object.Status.Conditions, u.object.Generation, "Validated the cluster")
 
 	if err := u.statusUpdate(); err != nil {
-		log.Info("failed to update status", "failure", err)
+		u.log.Info("failed to update status", "failure", err)
 	}
 
-	return ctrl.Result{Requeue: requeue}, reconcileError
+	return ctrl.Result{Requeue: requeue || u.requeue}, reconcileError
 }
 
 func (u *drclusterInstance) initializeStatus() {
@@ -365,6 +369,8 @@ type drclusterInstance struct {
 	reconciler          *DRClusterReconciler
 	savedInstanceStatus ramen.DRClusterStatus
 	mwUtil              *util.MWUtil
+	namespacedName      types.NamespacedName
+	requeue             bool
 }
 
 func (u *drclusterInstance) validatedSetFalseAndUpdate(reason string, err error) error {

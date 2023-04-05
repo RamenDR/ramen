@@ -39,10 +39,10 @@ type MModeState string
 
 // Valid values for MModeState
 const (
-	MModeStateUnknown     = MMode("Unknown")
-	MModeStateError       = MMode("Error")
-	MModeStateProgressing = MMode("Progressing")
-	MModeStateCompleted   = MMode("Completed")
+	MModeStateUnknown     = MModeState("Unknown")
+	MModeStateError       = MModeState("Error")
+	MModeStateProgressing = MModeState("Progressing")
+	MModeStateCompleted   = MModeState("Completed")
 )
 
 // MModeStatusConditionType defines an expected condition type
@@ -56,9 +56,9 @@ const (
 
 // MaintenanceModeStatus defines the observed state of MaintenanceMode
 type MaintenanceModeStatus struct {
-	State              MModeState       `json:"state,omitempty"`
-	ObservedGeneration int              `json:"observedGeneration,omitempty"`
-	Conditions         metav1.Condition `json:"conditions,omitempty"`
+	State              MModeState         `json:"state,omitempty"`
+	ObservedGeneration int                `json:"observedGeneration,omitempty"`
+	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 }
 
 //+kubebuilder:object:root=true

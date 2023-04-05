@@ -333,56 +333,101 @@ func getFailoverActivatedCondition(mMode rmn.ClusterMaintenanceMode) *metav1.Con
 	return nil
 }
 
-// filterDRCluster filters for DRPC resources that should be reconciled due to a DRCluster watch event
+// FilterDRCluster filters for DRPC resources that should be reconciled due to a DRCluster watch event
 func (r *DRPlacementControlReconciler) FilterDRCluster(drcluster *rmn.DRCluster) []ctrl.Request {
-	log := ctrl.Log.WithName("DRPCFilter").WithName("DRCluster").WithValues("cluster", drcluster.GetName())
+	log := ctrl.Log.WithName("DRPCFilter").WithName("DRCluster").WithValues("cluster", drcluster)
 
-	drpolicies := &rmn.DRPolicyList{}
-	if err := r.Client.List(context.TODO(), drpolicies); err != nil {
-		// TODO: If we get errors, do we still get an event later and/or for all changes form where we
-		// processed the last DRCluster update?
-		log.Error(err, "unable to process DRCluster event for DRPC reconcile filtering")
+	drpcCollections, err := DRPCsFailingOverToCluster(r.Client, log, drcluster.GetName())
+	if err != nil {
+		log.Info("Failed to process filter")
 
-		return []reconcile.Request{}
+		return nil
 	}
 
 	requests := make([]reconcile.Request, 0)
-
-	for idx, drpolicy := range drpolicies.Items {
-		// TODO: Skip if policy is of type metro, requires listing all DRClusters (or the list of clusters in the policy)
-		// and calling DRPolicySupportsMetro OR look at scheduling interval in the policy?
-		for _, specCluster := range drpolicy.Spec.DRClusters {
-			if specCluster == drcluster.GetName() {
-				add := r.filterDRPolicy(log, &drpolicies.Items[idx], drcluster.GetName())
-				requests = append(requests, add...)
-
-				break
-			}
-		}
+	for idx := range drpcCollections {
+		requests = append(requests,
+			reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      drpcCollections[idx].drpc.GetName(),
+					Namespace: drpcCollections[idx].drpc.GetNamespace(),
+				},
+			})
 	}
 
 	return requests
 }
 
-// filterDRPolicy filters DRPC resources that would be reconciled. It filters for DRPC resources that
-// have not completed a Failover action, and target the passed in cluster as the failoverCluster target
+type DRPCAndPolicy struct {
+	drpc     *rmn.DRPlacementControl
+	drPolicy *rmn.DRPolicy
+}
+
+// DRPCsFailingOverToCluster lists DRPC resources that are failing over to the passed in drcluster
+func DRPCsFailingOverToCluster(k8sclient client.Client, log logr.Logger, drcluster string) ([]DRPCAndPolicy, error) {
+	drpolicies := &rmn.DRPolicyList{}
+	if err := k8sclient.List(context.TODO(), drpolicies); err != nil {
+		// TODO: If we get errors, do we still get an event later and/or for all changes from where we
+		// processed the last DRCluster update?
+		log.Error(err, "Failed to list DRPolicies")
+
+		return nil, err
+	}
+
+	drpcCollections := make([]DRPCAndPolicy, 0)
+
+	for drpolicyIdx, drpolicy := range drpolicies.Items {
+		// TODO: Skip if policy is of type metro, requires listing all DRClusters (or the list of clusters in the policy)
+		// and calling DRPolicySupportsMetro OR look at scheduling interval in the policy?
+		for _, specCluster := range drpolicy.Spec.DRClusters {
+			if specCluster != drcluster {
+				continue
+			}
+
+			log.Info("Processing DRPolicy referencing DRCluster", "drpolicy", drpolicy.GetName())
+
+			drpcs, err := DRPCsFailingOverToClusterForPolicy(k8sclient, log, &drpolicies.Items[drpolicyIdx], drcluster)
+			if err != nil {
+				return nil, err
+			}
+
+			for idx := range drpcs {
+				dprcCollection := DRPCAndPolicy{
+					drpc:     drpcs[idx],
+					drPolicy: &drpolicies.Items[drpolicyIdx],
+				}
+
+				drpcCollections = append(drpcCollections, dprcCollection)
+			}
+
+			break
+		}
+	}
+
+	return drpcCollections, nil
+}
+
+// DRPCsFailingOverToClusterForPolicy filters DRPC resources that reference the DRPolicy and are failing over
+// to the target cluster passed in
 //
 //nolint:gocognit
-func (r *DRPlacementControlReconciler) filterDRPolicy(
+func DRPCsFailingOverToClusterForPolicy(
+	k8sclient client.Client,
 	log logr.Logger,
 	drpolicy *rmn.DRPolicy,
 	drcluster string,
-) []ctrl.Request {
+) ([]*rmn.DRPlacementControl, error) {
 	drpcs := &rmn.DRPlacementControlList{}
-	if err := r.Client.List(context.TODO(), drpcs); err != nil {
-		log.Error(err, "unable to process DRPolicy for DRPC reconcile filtering", "policy", drpolicy.GetName())
+	if err := k8sclient.List(context.TODO(), drpcs); err != nil {
+		log.Error(err, "Failed to list DRPCs", "drpolicy", drpolicy.GetName())
 
-		return []reconcile.Request{}
+		return nil, err
 	}
 
-	requests := make([]reconcile.Request, 0)
+	filteredDRPCs := make([]*rmn.DRPlacementControl, 0)
 
-	for _, drpc := range drpcs.Items {
+	for idx, drpc := range drpcs.Items {
+		// TODO: Exclude DRPCs without the finalizer (or being deleted?)
 		if drpc.Spec.DRPolicyRef.Name != drpolicy.GetName() {
 			continue
 		}
@@ -397,19 +442,15 @@ func (r *DRPlacementControlReconciler) filterDRPolicy(
 			continue
 		}
 
-		log.Info("DRPC detected for reconcile", "Drpc", drpc)
+		log.Info("DRPC detected as failing over to cluster",
+			"name", drpc.GetName(),
+			"namespace", drpc.GetNamespace(),
+			"drpolicy", drpolicy.GetName())
 
-		add := reconcile.Request{
-			NamespacedName: types.NamespacedName{
-				Name:      drpc.GetName(),
-				Namespace: drpc.GetNamespace(),
-			},
-		}
-
-		requests = append(requests, add)
+		filteredDRPCs = append(filteredDRPCs, &drpcs.Items[idx])
 	}
 
-	return requests
+	return filteredDRPCs, nil
 }
 
 func GetDRPCStatusCondition(status *rmn.DRPlacementControlStatus, conditionType string) *metav1.Condition {
@@ -579,7 +620,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, errorswrapper.Wrap(err, "failed to get DRPC object")
 	}
 
-	placementObj, err := r.getPlacementOrPlacementRule(ctx, drpc, logger)
+	placementObj, err := r.ownPlacementOrPlacementRule(ctx, drpc, logger)
 	if err != nil && !(errors.IsNotFound(err) && !drpc.GetDeletionTimestamp().IsZero()) {
 		r.recordFailure(drpc, placementObj, "Error", err.Error(), nil, logger)
 
@@ -643,8 +684,11 @@ func (r *DRPlacementControlReconciler) setLastSyncTimeMetric(syncMetrics *SyncMe
 }
 
 //nolint:funlen,cyclop
-func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
-	drpc *rmn.DRPlacementControl, placementObj client.Object, log logr.Logger,
+func (r *DRPlacementControlReconciler) createDRPCInstance(
+	ctx context.Context,
+	drpc *rmn.DRPlacementControl,
+	placementObj client.Object,
+	log logr.Logger,
 ) (*DRPCInstance, error) {
 	drPolicy, err := r.getDRPolicy(ctx, drpc, log)
 	if err != nil {
@@ -679,12 +723,12 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(ctx context.Context,
 		return nil, err
 	}
 
-	vrgNamespace, err := r.selectVRGNamespace(drpc, placementObj)
+	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, placementObj)
 	if err != nil {
 		return nil, err
 	}
 
-	vrgs, err := r.getVRGsFromManagedClusters(drpc, drPolicy, vrgNamespace, log)
+	vrgs, err := updateVRGsFromManagedClusters(r.MCVGetter, drpc, drPolicy, vrgNamespace, log)
 	if err != nil {
 		return nil, err
 	}
@@ -893,7 +937,7 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 		return fmt.Errorf("failed to clean up volsync secret-related resources (%w)", err)
 	}
 
-	vrgNamespace, err := r.selectVRGNamespace(drpc, placementObj)
+	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, placementObj)
 	if err != nil {
 		return err
 	}
@@ -920,7 +964,7 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 	}
 
 	// Verify VRGs have been deleted
-	vrgs, err := r.getVRGsFromManagedClusters(drpc, drPolicy, vrgNamespace, log)
+	vrgs, _, err := getVRGsFromManagedClusters(r.MCVGetter, drpc, drPolicy, vrgNamespace, log)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve VRGs. We'll retry later. Error (%w)", err)
 	}
@@ -987,32 +1031,14 @@ func (r *DRPlacementControlReconciler) getDRPCPlacementRule(ctx context.Context,
 	return nil
 }
 
-func (r *DRPlacementControlReconciler) getPlacementOrPlacementRule(ctx context.Context,
-	drpc *rmn.DRPlacementControl, log logr.Logger,
+func (r *DRPlacementControlReconciler) ownPlacementOrPlacementRule(
+	ctx context.Context,
+	drpc *rmn.DRPlacementControl,
+	log logr.Logger,
 ) (client.Object, error) {
-	log.Info("Getting user placement object", "placementRef", drpc.Spec.PlacementRef)
-
-	var usrPlacement client.Object
-
-	var err error
-
-	usrPlacement, err = r.getPlacementRule(ctx, drpc, log)
+	usrPlacement, err := getPlacementOrPlacementRule(ctx, r.Client, drpc, log)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			// PacementRule not found. Check Placement instead
-			usrPlacement, err = r.getPlacement(ctx, drpc, log)
-		}
-
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		// Assert that there is no Placement object in the same namespace and with the same name as the PlacementRule
-		_, err = r.getPlacement(ctx, drpc, log)
-		if err == nil {
-			return nil, fmt.Errorf(
-				"can't proceed. PlacementRule and Placement CR with the same name exist on the same namespace")
-		}
+		return nil, err
 	}
 
 	if err = r.annotateUserPlacement(ctx, drpc, usrPlacement, log); err != nil {
@@ -1024,7 +1050,41 @@ func (r *DRPlacementControlReconciler) getPlacementOrPlacementRule(ctx context.C
 	return usrPlacement, nil
 }
 
-func (r *DRPlacementControlReconciler) getPlacementRule(ctx context.Context,
+func getPlacementOrPlacementRule(
+	ctx context.Context,
+	k8sclient client.Client,
+	drpc *rmn.DRPlacementControl,
+	log logr.Logger,
+) (client.Object, error) {
+	log.Info("Getting user placement object", "placementRef", drpc.Spec.PlacementRef)
+
+	var usrPlacement client.Object
+
+	var err error
+
+	usrPlacement, err = getPlacementRule(ctx, k8sclient, drpc, log)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// PacementRule not found. Check Placement instead
+			usrPlacement, err = getPlacement(ctx, k8sclient, drpc, log)
+		}
+
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// Assert that there is no Placement object in the same namespace and with the same name as the PlacementRule
+		_, err = getPlacement(ctx, k8sclient, drpc, log)
+		if err == nil {
+			return nil, fmt.Errorf(
+				"can't proceed. PlacementRule and Placement CR with the same name exist on the same namespace")
+		}
+	}
+
+	return usrPlacement, nil
+}
+
+func getPlacementRule(ctx context.Context, k8sclient client.Client,
 	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) (*plrv1.PlacementRule, error) {
 	log.Info("Trying user PlacementRule", "usrPR", drpc.Spec.PlacementRef.Name+"/"+drpc.Spec.PlacementRef.Namespace)
@@ -1042,7 +1102,7 @@ func (r *DRPlacementControlReconciler) getPlacementRule(ctx context.Context,
 
 	usrPlRule := &plrv1.PlacementRule{}
 
-	err := r.Client.Get(ctx,
+	err := k8sclient.Get(ctx,
 		types.NamespacedName{Name: drpc.Spec.PlacementRef.Name, Namespace: plRuleNamespace}, usrPlRule)
 	if err != nil {
 		log.Info(fmt.Sprintf("Get PlacementRule returned: %v", err))
@@ -1066,7 +1126,7 @@ func (r *DRPlacementControlReconciler) getPlacementRule(ctx context.Context,
 	return usrPlRule, nil
 }
 
-func (r *DRPlacementControlReconciler) getPlacement(ctx context.Context,
+func getPlacement(ctx context.Context, k8sclient client.Client,
 	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) (*clrapiv1beta1.Placement, error) {
 	log.Info("Trying user Placement", "usrP", drpc.Spec.PlacementRef.Name+"/"+drpc.Spec.PlacementRef.Namespace)
@@ -1084,7 +1144,7 @@ func (r *DRPlacementControlReconciler) getPlacement(ctx context.Context,
 
 	usrPlmnt := &clrapiv1beta1.Placement{}
 
-	err := r.Client.Get(ctx,
+	err := k8sclient.Get(ctx,
 		types.NamespacedName{Name: drpc.Spec.PlacementRef.Name, Namespace: plmntNamespace}, usrPlmnt)
 	if err != nil {
 		log.Info(fmt.Sprintf("Get Placement returned: %v", err))
@@ -1215,9 +1275,30 @@ func (r *DRPlacementControlReconciler) clonePlacementRule(ctx context.Context,
 	return clonedPlRule, nil
 }
 
-func (r *DRPlacementControlReconciler) getVRGsFromManagedClusters(drpc *rmn.DRPlacementControl,
+func updateVRGsFromManagedClusters(mcvGetter rmnutil.ManagedClusterViewGetter, drpc *rmn.DRPlacementControl,
 	drPolicy *rmn.DRPolicy, vrgNamespace string, log logr.Logger,
 ) (map[string]*rmn.VolumeReplicationGroup, error) {
+	vrgs, failedClusterToQuery, err := getVRGsFromManagedClusters(mcvGetter, drpc, drPolicy, vrgNamespace, log)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(vrgs) == 0 && failedClusterToQuery != drpc.Spec.FailoverCluster {
+		condition := findCondition(drpc.Status.Conditions, rmn.ConditionPeerReady)
+		if condition == nil {
+			SetDRPCStatusCondition(&drpc.Status.Conditions, rmn.ConditionPeerReady, drpc.Generation,
+				metav1.ConditionTrue, rmn.ReasonSuccess, "Forcing Ready")
+			SetDRPCStatusCondition(&drpc.Status.Conditions, rmn.ConditionAvailable,
+				drpc.Generation, metav1.ConditionTrue, rmn.ReasonSuccess, "Forcing Available")
+		}
+	}
+
+	return vrgs, nil
+}
+
+func getVRGsFromManagedClusters(mcvGetter rmnutil.ManagedClusterViewGetter, drpc *rmn.DRPlacementControl,
+	drPolicy *rmn.DRPolicy, vrgNamespace string, log logr.Logger,
+) (map[string]*rmn.VolumeReplicationGroup, string, error) {
 	vrgs := map[string]*rmn.VolumeReplicationGroup{}
 
 	annotations := make(map[string]string)
@@ -1230,7 +1311,7 @@ func (r *DRPlacementControlReconciler) getVRGsFromManagedClusters(drpc *rmn.DRPl
 	var clustersQueriedSuccessfully int
 
 	for _, drCluster := range rmnutil.DrpolicyClusterNames(drPolicy) {
-		vrg, err := r.MCVGetter.GetVRGFromManagedCluster(drpc.Name, vrgNamespace, drCluster, annotations)
+		vrg, err := mcvGetter.GetVRGFromManagedCluster(drpc.Name, vrgNamespace, drCluster, annotations)
 		if err != nil {
 			// Only NotFound error is accepted
 			if errors.IsNotFound(err) {
@@ -1256,24 +1337,14 @@ func (r *DRPlacementControlReconciler) getVRGsFromManagedClusters(drpc *rmn.DRPl
 
 	// We are done if we successfully queried all drClusters
 	if clustersQueriedSuccessfully == len(rmnutil.DrpolicyClusterNames(drPolicy)) {
-		return vrgs, nil
+		return vrgs, "", nil
 	}
 
 	if clustersQueriedSuccessfully == 0 {
-		return vrgs, fmt.Errorf("failed to retrieve VRGs from clusters")
+		return vrgs, "", fmt.Errorf("failed to retrieve VRGs from clusters")
 	}
 
-	if len(vrgs) == 0 && failedClusterToQuery != drpc.Spec.FailoverCluster {
-		condition := findCondition(drpc.Status.Conditions, rmn.ConditionPeerReady)
-		if condition == nil {
-			SetDRPCStatusCondition(&drpc.Status.Conditions, rmn.ConditionPeerReady, drpc.Generation,
-				metav1.ConditionTrue, rmn.ReasonSuccess, "Forcing Ready")
-			SetDRPCStatusCondition(&drpc.Status.Conditions, rmn.ConditionAvailable,
-				drpc.Generation, metav1.ConditionTrue, rmn.ReasonSuccess, "Forcing Available")
-		}
-	}
-
-	return vrgs, nil
+	return vrgs, failedClusterToQuery, nil
 }
 
 func (r *DRPlacementControlReconciler) deleteClonedPlacementRule(ctx context.Context,
@@ -1355,7 +1426,7 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 ) error {
 	log.Info("Updating DRPC status")
 
-	vrgNamespace, err := r.selectVRGNamespace(drpc, userPlacement)
+	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, userPlacement)
 	if err != nil {
 		log.Info("Failed to select VRG namespace", "errMsg", err)
 	}
@@ -1595,13 +1666,17 @@ func (r *DRPlacementControlReconciler) createOrUpdatePlacementDecision(ctx conte
 	return nil
 }
 
-func (r *DRPlacementControlReconciler) getApplicationDestinationNamespace(placement client.Object) (string, error) {
+func getApplicationDestinationNamespace(
+	client client.Client,
+	log logr.Logger,
+	placement client.Object,
+) (string, error) {
 	appSetList := argov1alpha1.ApplicationSetList{}
-	if err := r.Client.List(context.TODO(), &appSetList); err != nil {
+	if err := client.List(context.TODO(), &appSetList); err != nil {
 		return "", fmt.Errorf("ApplicationSet list: %w", err)
 	}
 
-	r.Log.Info("Retrieved ApplicationSets", "count", len(appSetList.Items))
+	log.Info("Retrieved ApplicationSets", "count", len(appSetList.Items))
 	//
 	// TODO: change the following loop to use an index field on AppSet instead for faster lookup
 	//
@@ -1611,7 +1686,7 @@ func (r *DRPlacementControlReconciler) getApplicationDestinationNamespace(placem
 			appSet.Spec.Generators[0].ClusterDecisionResource != nil {
 			pn := appSet.Spec.Generators[0].ClusterDecisionResource.LabelSelector.MatchLabels[clrapiv1beta1.PlacementLabel]
 			if pn == placement.GetName() {
-				r.Log.Info("Found ApplicationSet for Placement", "name", appSet.Name, "placement", placement.GetName())
+				log.Info("Found ApplicationSet for Placement", "name", appSet.Name, "placement", placement.GetName())
 				// Retrieving the Destination.Namespace from Application.Spec requires iterating through all Applications
 				// and checking their ownerReferences, which can be time-consuming. Alternatively, we can get the same
 				// information from the ApplicationSet spec template section as it is done here.
@@ -1620,7 +1695,7 @@ func (r *DRPlacementControlReconciler) getApplicationDestinationNamespace(placem
 		}
 	}
 
-	r.Log.Info(fmt.Sprintf("Placement %s does not belong to any ApplicationSet. Defaulting the dest namespace to %s",
+	log.Info(fmt.Sprintf("Placement %s does not belong to any ApplicationSet. Defaulting the dest namespace to %s",
 		placement.GetName(), placement.GetNamespace()))
 
 	// Didn't find any ApplicationSet using this Placement. Assuming it is for Subscription.
@@ -1628,7 +1703,11 @@ func (r *DRPlacementControlReconciler) getApplicationDestinationNamespace(placem
 	return placement.GetNamespace(), nil
 }
 
-func (r *DRPlacementControlReconciler) selectVRGNamespace(drpc *rmn.DRPlacementControl, placementObj client.Object,
+func selectVRGNamespace(
+	client client.Client,
+	log logr.Logger,
+	drpc *rmn.DRPlacementControl,
+	placementObj client.Object,
 ) (string, error) {
 	if drpc.Status.PreferredDecision.ClusterNamespace != "" {
 		return drpc.Status.PreferredDecision.ClusterNamespace, nil
@@ -1636,7 +1715,7 @@ func (r *DRPlacementControlReconciler) selectVRGNamespace(drpc *rmn.DRPlacementC
 
 	switch placementObj.(type) {
 	case *clrapiv1beta1.Placement:
-		vrgNamespace, err := r.getApplicationDestinationNamespace(placementObj)
+		vrgNamespace, err := getApplicationDestinationNamespace(client, log, placementObj)
 		if err != nil {
 			return "", err
 		}

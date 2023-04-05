@@ -94,7 +94,7 @@ const (
 
 type ClusterMaintenanceMode struct {
 	// StorageProvisioner indicates the type of the provisioner
-	StorageProvisioner string `json:"storageProvisioner,omitempty"`
+	StorageProvisioner string `json:"storageProvisioner"`
 
 	// TargetID indicates the storage or replication instance identifier for the StorageProvisioner
 	TargetID string `json:"targetID,omitempty"`

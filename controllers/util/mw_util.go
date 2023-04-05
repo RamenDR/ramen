@@ -218,7 +218,6 @@ func Namespace(name string) *corev1.Namespace {
 func (mwu *MWUtil) GetRawExtension(
 	manifests []ocmworkv1.Manifest,
 	gvk schema.GroupVersionKind,
-	name, namespace string,
 ) (*runtime.RawExtension, error) {
 	for _, manifest := range manifests {
 		obj := &unstructured.Unstructured{}

@@ -206,18 +206,18 @@ type StorageIdentifiers struct {
 	//+optional
 	StorageID string `json:"storageID,omitempty"`
 
-	// ReplicationID contains the globally unique replication identifier, as reported by the storage backend
-	// on the VolumeReplicationClass as the value for the label "ramendr.openshift.io/replicationID", that
-	// identifies the storage backends across 2 (or more) storage instances where the volume is replicated
-	//+optional
-	ReplicationID string `json:"replicationID,omitempty"`
-
 	// StorageClassModes is a list of maintenance modes that need to be activated on the storage
 	// backend, prior to various DR related orchestration. This is read from the label
 	// "ramendr.openshift.io/maintenancemodes" on the StorageClass, the value for which is a comma
 	// separated list of maintenance modes.
 	//+optional
 	StorageClassModes []MMode `json:"storageClassModes,omitempty"`
+
+	// ReplicationID contains the globally unique replication identifier, as reported by the storage backend
+	// on the VolumeReplicationClass as the value for the label "ramendr.openshift.io/replicationID", that
+	// identifies the storage backends across 2 (or more) storage instances where the volume is replicated
+	//+optional
+	ReplicationID string `json:"replicationID,omitempty"`
 
 	// VolumeReplicationClassModes is a list of maintenance modes that need to be activated on the storage
 	// backend, prior to various DR related orchestration. This is read from the label

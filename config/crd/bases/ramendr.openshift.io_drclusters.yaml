@@ -234,6 +234,8 @@ spec:
                       description: TargetID indicates the storage or replication instance
                         identifier for the StorageProvisioner
                       type: string
+                  required:
+                  - storageProvisioner
                   type: object
                 type: array
               phase:
