@@ -940,7 +940,15 @@ func checkIfDRPCFinalizerNotAdded(drpc *rmn.DRPlacementControl) {
 		"when DRPolicy is in a deleted state")
 }
 
-func InitialDeploymentAsync(namespace, placementName, homeCluster string, usePR bool) (
+type PlacementType int
+
+const (
+	UsePlacementRule             = 1
+	UsePlacementWithSubscription = 2
+	UsePlacementWithAppSet       = 3
+)
+
+func InitialDeploymentAsync(namespace, placementName, homeCluster string, plType PlacementType) (
 	client.Object, *rmn.DRPlacementControl,
 ) {
 	createNamespacesAsync(getNamespaceObj(DRPCNamespaceName))
@@ -950,11 +958,18 @@ func InitialDeploymentAsync(namespace, placementName, homeCluster string, usePR 
 	createDRPolicyAsync()
 
 	var placementObj client.Object
-	if usePR {
+
+	switch plType {
+	case UsePlacementRule:
 		placementObj = createPlacementRule(placementName, namespace)
-	} else {
-		createAppSet()
+	case UsePlacementWithSubscription:
 		placementObj = createPlacement(placementName, namespace)
+	case UsePlacementWithAppSet:
+		createAppSet()
+
+		placementObj = createPlacement(placementName, namespace)
+	default:
+		Fail("Wrong placement type")
 	}
 
 	return placementObj, createDRPC(placementName, DRPCName, DRPCNamespaceName, AsyncDRPolicyName)
@@ -1631,13 +1646,21 @@ func verifyFailoverToSecondary(placementObj client.Object, toCluster string,
 	Expect(decision.ClusterName).To(Equal(toCluster))
 }
 
-func verifyActionResultForPlacement(placement *clrapiv1beta1.Placement, homeCluster string) {
+func verifyActionResultForPlacement(placement *clrapiv1beta1.Placement, homeCluster string, plType PlacementType) {
 	placementDecision := getPlacementDecision(placement.GetName(), placement.GetNamespace())
 	Expect(placementDecision).ShouldNot(BeNil())
 	Expect(placementDecision.Status.Decisions[0].ClusterName).Should(Equal(homeCluster))
 	vrg, err := getVRGFromManifestWork(homeCluster)
 	Expect(err).NotTo(HaveOccurred())
-	Expect(vrg.Namespace).Should(Equal(appSet.Spec.Template.Spec.Destination.Namespace))
+
+	switch plType {
+	case UsePlacementWithSubscription:
+		Expect(vrg.Namespace).Should(Equal(DRPCNamespaceName))
+	case UsePlacementWithAppSet:
+		Expect(vrg.Namespace).Should(Equal(appSet.Spec.Template.Spec.Destination.Namespace))
+	default:
+		Fail("Wrong placement type")
+	}
 }
 
 // +kubebuilder:docs-gen:collapse=Imports
@@ -1654,9 +1677,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			It("Should deploy to East1ManagedCluster", func() {
 				By("Initial Deployment")
 				var placementObj client.Object
-				usePlacementRule := true
 				placementObj, drpc = InitialDeploymentAsync(
-					DRPCNamespaceName, UserPlacementRuleName, East1ManagedCluster, usePlacementRule)
+					DRPCNamespaceName, UserPlacementRuleName, East1ManagedCluster, UsePlacementRule)
 				userPlacementRule = placementObj.(*plrv1.PlacementRule)
 				Expect(userPlacementRule).NotTo(BeNil())
 				verifyInitialDRPCDeployment(userPlacementRule, East1ManagedCluster)
@@ -1790,6 +1812,79 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			deleteDRClustersAsync()
 		})
 	})
+	// TEST WITH Placement AND Subscription
+	Context("DRPlacementControl Reconciler Async DR using Placement (Subscription)", func() {
+		var placement *clrapiv1beta1.Placement
+		var drpc *rmn.DRPlacementControl
+		Specify("DRClusters", func() {
+			populateDRClusters()
+		})
+		When("An Application is deployed for the first time using Placement", func() {
+			It("Should deploy to East1ManagedCluster", func() {
+				By("Initial Deployment")
+				var placementObj client.Object
+				placementObj, drpc = InitialDeploymentAsync(
+					DRPCNamespaceName, UserPlacementName, East1ManagedCluster, UsePlacementWithSubscription)
+				placement = placementObj.(*clrapiv1beta1.Placement)
+				Expect(placement).NotTo(BeNil())
+				verifyInitialDRPCDeployment(placement, East1ManagedCluster)
+				verifyActionResultForPlacement(placement, East1ManagedCluster, UsePlacementWithSubscription)
+			})
+		})
+		When("DRAction changes to Failover using Placement with Subscription", func() {
+			It("Should not failover to Secondary (West1ManagedCluster) till PV manifest is applied", func() {
+				setRestorePVsUncomplete()
+				setDRPCSpecExpectationTo(rmn.ActionFailover, East1ManagedCluster, West1ManagedCluster)
+				verifyUserPlacementRuleDecisionUnchanged(placement.Name, placement.Namespace, East1ManagedCluster)
+				Expect(getManifestWorkCount(West1ManagedCluster)).Should(Equal(3)) // MWs for VRG, NS, and VRG DRCluster
+				Expect(len(getPlacementDecision(placement.GetName(), placement.GetNamespace()).
+					Status.Decisions)).Should(Equal(1))
+				setRestorePVsComplete()
+			})
+			It("Should failover to Secondary (West1ManagedCluster) when using Subscription", func() {
+				runFailoverAction(placement, East1ManagedCluster, West1ManagedCluster, false, false)
+				verifyActionResultForPlacement(placement, West1ManagedCluster, UsePlacementWithSubscription)
+			})
+		})
+		When("DRAction is set to Relocate using Placement with Subscriptioin", func() {
+			It("Should relocate to Primary (East1ManagedCluster)", func() {
+				runRelocateAction(placement, West1ManagedCluster, false, false)
+				verifyActionResultForPlacement(placement, East1ManagedCluster, UsePlacementWithSubscription)
+			})
+		})
+		When("Deleting DRPolicy with DRPC references when using Placement", func() {
+			It("Should retain the deleted DRPolicy in the API server", func() {
+				deleteDRPolicyAsync()
+				ensureDRPolicyIsNotDeleted(drpc)
+			})
+		})
+		When("Deleting user Placement", func() {
+			It("Should cleanup DRPC", func() {
+				deleteUserPlacement()
+				drpc := getLatestDRPC()
+				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionPeerReady)
+				Expect(condition).NotTo(BeNil())
+			})
+		})
+		When("Deleting DRPC when using Placement", func() {
+			It("Should delete VRG and NS MWs and MCVs from Primary (East1ManagedCluster)", func() {
+				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(3)) // DRCluster + VRG + NS MW
+				deleteDRPC()
+				waitForCompletion("deleted")
+				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(2))       // DRCluster + NS MW only
+				Expect(getManagedClusterViewCount(East1ManagedCluster)).Should(Equal(0)) // NS + VRG MCV
+				deleteNamespaceMWsFromAllClusters(DRPCNamespaceName)
+			})
+			It("should delete the DRPC causing its referenced drpolicy to be deleted"+
+				" by drpolicy controller since no DRPCs reference it anymore", func() {
+				ensureDRPolicyIsDeleted(drpc.Spec.DRPolicyRef.Name)
+			})
+		})
+		Specify("delete drclusters when using Placement", func() {
+			deleteDRClustersAsync()
+		})
+	})
+	// TEST WITH Placement AND ApplicationSet
 	Context("DRPlacementControl Reconciler Async DR using Placement (ApplicationSet)", func() {
 		var placement *clrapiv1beta1.Placement
 		var drpc *rmn.DRPlacementControl
@@ -1802,13 +1897,12 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				UseApplicationSet = true
 				baseVRG.ObjectMeta.Namespace = ApplicationNamespace
 				var placementObj client.Object
-				usePlacementRule := false
 				placementObj, drpc = InitialDeploymentAsync(
-					DRPCNamespaceName, UserPlacementName, East1ManagedCluster, usePlacementRule)
+					DRPCNamespaceName, UserPlacementName, East1ManagedCluster, UsePlacementWithAppSet)
 				placement = placementObj.(*clrapiv1beta1.Placement)
 				Expect(placement).NotTo(BeNil())
 				verifyInitialDRPCDeployment(placement, East1ManagedCluster)
-				verifyActionResultForPlacement(placement, East1ManagedCluster)
+				verifyActionResultForPlacement(placement, East1ManagedCluster, UsePlacementWithAppSet)
 			})
 		})
 		When("DRAction changes to Failover using Placement", func() {
@@ -1823,25 +1917,25 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			})
 			It("Should failover to Secondary (West1ManagedCluster)", func() {
 				runFailoverAction(placement, East1ManagedCluster, West1ManagedCluster, false, false)
-				verifyActionResultForPlacement(placement, West1ManagedCluster)
+				verifyActionResultForPlacement(placement, West1ManagedCluster, UsePlacementWithAppSet)
 			})
 		})
 		When("DRAction is set to Relocate using Placement", func() {
 			It("Should relocate to Primary (East1ManagedCluster)", func() {
 				runRelocateAction(placement, West1ManagedCluster, false, false)
-				verifyActionResultForPlacement(placement, East1ManagedCluster)
+				verifyActionResultForPlacement(placement, East1ManagedCluster, UsePlacementWithAppSet)
 			})
 		})
 		When("DRAction is changed to Failover after relocation using Placement", func() {
 			It("Should failover again to Secondary (West1ManagedCluster)", func() {
 				runFailoverAction(placement, East1ManagedCluster, West1ManagedCluster, false, false)
-				verifyActionResultForPlacement(placement, West1ManagedCluster)
+				verifyActionResultForPlacement(placement, West1ManagedCluster, UsePlacementWithAppSet)
 			})
 		})
 		When("DRAction is set to Relocate again using Placement", func() {
 			It("Should relocate again to Primary (East1ManagedCluster)", func() {
 				runRelocateAction(placement, West1ManagedCluster, false, false)
-				verifyActionResultForPlacement(placement, East1ManagedCluster)
+				verifyActionResultForPlacement(placement, East1ManagedCluster, UsePlacementWithAppSet)
 			})
 		})
 		When("Deleting DRPolicy with DRPC references when using Placement", func() {
