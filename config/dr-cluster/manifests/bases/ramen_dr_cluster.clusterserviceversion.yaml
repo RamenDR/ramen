@@ -7,6 +7,10 @@ metadata:
     operators.openshift.io/infrastructure-features: '["disconnected"]'
   name: ramen-dr-cluster-operator.v0.0.0
   namespace: placeholder
+  labels:
+    operatorframework.io/arch.amd64: supported
+    operatorframework.io/arch.ppc64le: supported
+    operatorframework.io/arch.s390x: supported
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
