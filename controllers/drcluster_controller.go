@@ -254,6 +254,12 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 		u.log.Info("Error during processing fencing", "error", err)
 	}
 
+	err = u.clusterMModeHandler()
+	if err != nil {
+		// On error proceed with S3 validation, as maintenance mode handling is independent of S3
+		u.log.Info("Error during processing maintenance modes", "error", err)
+	}
+
 	if reason, err := validateS3Profile(u.ctx, r.APIReader, r.ObjectStoreGetter, u.object, u.namespacedName.String(),
 		u.log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drclusters s3Profile validate: %w", u.validatedSetFalseAndUpdate(reason, err))

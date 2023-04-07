@@ -37,12 +37,14 @@ const (
 	// - name is the DRPC name
 	// - namespace is the DRPC namespace
 	// - type is "vrg"
-	ManifestWorkNameFormat string = "%s-%s-%s-mw"
+	ManifestWorkNameFormat             string = "%s-%s-%s-mw"
+	ManifestWorkNameFormatClusterScope string = "%s-%s-mw"
 
 	// ManifestWork Types
-	MWTypeVRG string = "vrg"
-	MWTypeNS  string = "ns"
-	MWTypeNF  string = "nf"
+	MWTypeVRG   string = "vrg"
+	MWTypeNS    string = "ns"
+	MWTypeNF    string = "nf"
+	MWTypeMMode string = "mmode"
 )
 
 type MWUtil struct {
@@ -142,6 +144,87 @@ func (mwu *MWUtil) generateVRGManifestWork(name, namespace, homeCluster string,
 
 func (mwu *MWUtil) generateVRGManifest(vrg rmn.VolumeReplicationGroup) (*ocmworkv1.Manifest, error) {
 	return mwu.GenerateManifest(vrg)
+}
+
+// MaintenanceMode ManifestWork creation
+func (mwu *MWUtil) CreateOrUpdateMModeManifestWork(
+	name, cluster string,
+	mMode rmn.MaintenanceMode, annotations map[string]string,
+) error {
+	mwu.Log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%+v", name, cluster, mMode))
+
+	manifestWork, err := mwu.generateMModeManifestWork(name, cluster, mMode, annotations)
+	if err != nil {
+		return err
+	}
+
+	return mwu.createOrUpdateManifestWork(manifestWork, cluster)
+}
+
+func (mwu *MWUtil) generateMModeManifestWork(name, cluster string,
+	mMode rmn.MaintenanceMode, annotations map[string]string,
+) (*ocmworkv1.ManifestWork, error) {
+	mModeManifest, err := mwu.generateMModeManifest(mMode)
+	if err != nil {
+		mwu.Log.Error(err, "failed to generate MaintenanceMode manifest")
+
+		return nil, err
+	}
+
+	manifests := []ocmworkv1.Manifest{*mModeManifest}
+
+	return mwu.newManifestWork(
+		fmt.Sprintf(ManifestWorkNameFormatClusterScope, name, MWTypeMMode),
+		cluster,
+		map[string]string{
+			"ramendr.openshift.io/maintenancemode": "",
+		},
+		manifests, annotations), nil
+}
+
+func (mwu *MWUtil) generateMModeManifest(mMode rmn.MaintenanceMode) (*ocmworkv1.Manifest, error) {
+	return mwu.GenerateManifest(mMode)
+}
+
+func (mwu *MWUtil) ListMModeManifests(cluster string) (*ocmworkv1.ManifestWorkList, error) {
+	matchLabels := map[string]string{
+		"ramendr.openshift.io/maintenancemode": "",
+	}
+	listOptions := []client.ListOption{
+		client.InNamespace(cluster),
+		client.MatchingLabels(matchLabels),
+	}
+
+	mModeMWs := &ocmworkv1.ManifestWorkList{}
+	err := mwu.Client.List(context.TODO(), mModeMWs, listOptions...)
+
+	return mModeMWs, err
+}
+
+func (mwu *MWUtil) ExtractMModeFromManifestWork(mw *ocmworkv1.ManifestWork) (*rmn.MaintenanceMode, error) {
+	gvk := schema.GroupVersionKind{
+		Group:   rmn.GroupVersion.Group,
+		Version: rmn.GroupVersion.Version,
+		Kind:    "MaintenanceMode",
+	}
+
+	rawObject, err := mwu.GetRawExtension(mw.Spec.Workload.Manifests, gvk)
+	if err != nil {
+		return nil, fmt.Errorf("failed fetching MaintenanceMode from manifest %w", err)
+	}
+
+	if rawObject == nil {
+		return nil, nil
+	}
+
+	mMode := &rmn.MaintenanceMode{}
+
+	err = json.Unmarshal(rawObject.Raw, mMode)
+	if err != nil {
+		return nil, fmt.Errorf("failed unmarshaling MaintenanceMode from manifest %w", err)
+	}
+
+	return mMode, nil
 }
 
 // NetworkFence MW creation

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ghodss/yaml"
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
@@ -208,6 +209,24 @@ func getFunctionNameAtIndex(idx int) string {
 	result := strings.Split(data, ".")
 
 	return result[len(result)-1]
+}
+
+func (f FakeMCVGetter) GetMModeFromManagedCluster(resourceName, managedCluster string,
+	annotations map[string]string,
+) (*rmn.MaintenanceMode, error) {
+	return nil, nil
+}
+
+func (f FakeMCVGetter) ListMModesMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error) {
+	return &viewv1beta1.ManagedClusterViewList{}, nil
+}
+
+func (f FakeMCVGetter) GetResource(mcv *viewv1beta1.ManagedClusterView, resource interface{}) error {
+	return nil
+}
+
+func (f FakeMCVGetter) DeleteManagedClusterView(clusterName, mcvName string, logger logr.Logger) error {
+	return nil
 }
 
 func (f FakeMCVGetter) GetNamespaceFromManagedCluster(
