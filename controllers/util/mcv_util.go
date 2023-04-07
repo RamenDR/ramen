@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	errorswrapper "github.com/pkg/errors"
@@ -32,6 +33,16 @@ type ManagedClusterViewGetter interface {
 	GetNFFromManagedCluster(
 		resourceName, resourceNamespace, managedCluster string,
 		annotations map[string]string) (*csiaddonsv1alpha1.NetworkFence, error)
+
+	GetMModeFromManagedCluster(
+		resourceName, managedCluster string,
+		annotations map[string]string) (*rmn.MaintenanceMode, error)
+
+	ListMModesMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error)
+
+	GetResource(mcv *viewv1beta1.ManagedClusterView, resource interface{}) error
+
+	DeleteManagedClusterView(clusterName, mcvName string, logger logr.Logger) error
 
 	GetNamespaceFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
 		annotations map[string]string) (*corev1.Namespace, error)
@@ -98,6 +109,52 @@ func (m ManagedClusterViewGetterImpl) GetNFFromManagedCluster(resourceName, reso
 	return nf, err
 }
 
+func (m ManagedClusterViewGetterImpl) GetMModeFromManagedCluster(resourceName, managedCluster string,
+	annotations map[string]string,
+) (*rmn.MaintenanceMode, error) {
+	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName)
+	// get MaintenenceMode and verify status through ManagedClusterView
+	mcvMeta := metav1.ObjectMeta{
+		Name:      BuildManagedClusterViewName(resourceName, "", "mmode"),
+		Namespace: managedCluster,
+		Labels: map[string]string{
+			"ramendr.openshift.io/maintenancemode": "",
+		},
+	}
+
+	if annotations != nil {
+		mcvMeta.Annotations = annotations
+	}
+
+	mcvViewscope := viewv1beta1.ViewScope{
+		Resource: "MaintenanceMode",
+		Name:     resourceName,
+	}
+
+	mMode := &rmn.MaintenanceMode{}
+
+	err := m.getManagedClusterResource(mcvMeta, mcvViewscope, mMode, logger)
+
+	return mMode, err
+}
+
+func (m ManagedClusterViewGetterImpl) ListMModesMCVs(cluster string) (*viewv1beta1.ManagedClusterViewList, error) {
+	matchLabels := map[string]string{
+		"ramendr.openshift.io/maintenancemode": "",
+	}
+	listOptions := []client.ListOption{
+		client.InNamespace(cluster),
+		client.MatchingLabels(matchLabels),
+	}
+
+	mModeMCVs := &viewv1beta1.ManagedClusterViewList{}
+	if err := m.List(context.TODO(), mModeMCVs, listOptions...); err != nil {
+		return nil, err
+	}
+
+	return mModeMCVs, nil
+}
+
 // outputs a string for use in creating a ManagedClusterView name
 // example: when looking for a vrg with name 'demo' in the namespace 'ramen', input: ("demo", "ramen", "vrg")
 // this will give output "demo-ramen-vrg-mcv"
@@ -108,6 +165,13 @@ func BuildManagedClusterViewName(resourceName, resourceNamespace, resource strin
 	}
 
 	return fmt.Sprintf("%s-%s-%s-mcv", resourceName, resourceNamespace, resource)
+}
+
+func ClusterScopedResourceNameFromMCVName(mcvName string) string {
+	splitName := strings.Split(mcvName, "-")
+
+	// Length will be at least 3, remove last 2 elements and return the resource name
+	return strings.Join(splitName[:len(splitName)-2], "-")
 }
 
 func (m ManagedClusterViewGetterImpl) GetNamespaceFromManagedCluster(
@@ -156,6 +220,12 @@ func (m ManagedClusterViewGetterImpl) getManagedClusterResource(
 	}
 
 	logger.Info(fmt.Sprintf("MCV Conditions: %v", mcv.Status.Conditions))
+
+	return m.GetResource(mcv, resource)
+}
+
+func (m ManagedClusterViewGetterImpl) GetResource(mcv *viewv1beta1.ManagedClusterView, resource interface{}) error {
+	var err error
 
 	// want single recent Condition with correct Type; otherwise: bad path
 	switch len(mcv.Status.Conditions) {
