@@ -82,7 +82,7 @@ func ManifestWorkPredicateFunc() predicate.Funcs {
 			return false
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			log := ctrl.Log.WithName("DRPCPredicate").WithName("ManifestWork")
+			log := ctrl.Log.WithName("Predicate").WithName("ManifestWork")
 
 			oldMW, ok := e.ObjectOld.DeepCopyObject().(*ocmworkv1.ManifestWork)
 			if !ok {
@@ -123,7 +123,7 @@ func filterMW(mw *ocmworkv1.ManifestWork) []ctrl.Request {
 }
 
 func ManagedClusterViewPredicateFunc() predicate.Funcs {
-	log := ctrl.Log.WithName("DRPCPredicate").WithName("MCV")
+	log := ctrl.Log.WithName("Predicate").WithName("MCV")
 	mcvPredicate := predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			return false

@@ -57,7 +57,7 @@ const (
 // MaintenanceModeStatus defines the observed state of MaintenanceMode
 type MaintenanceModeStatus struct {
 	State              MModeState         `json:"state,omitempty"`
-	ObservedGeneration int                `json:"observedGeneration,omitempty"`
+	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 }
 

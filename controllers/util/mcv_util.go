@@ -115,7 +115,7 @@ func (m ManagedClusterViewGetterImpl) GetMModeFromManagedCluster(resourceName, m
 	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName)
 	// get MaintenenceMode and verify status through ManagedClusterView
 	mcvMeta := metav1.ObjectMeta{
-		Name:      BuildManagedClusterViewName(resourceName, "", "mmode"),
+		Name:      BuildManagedClusterViewName(resourceName, "", MWTypeMMode),
 		Namespace: managedCluster,
 		Labels: map[string]string{
 			"ramendr.openshift.io/maintenancemode": "",

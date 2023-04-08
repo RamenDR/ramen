@@ -4,6 +4,7 @@
 package controllers
 
 import (
+	"github.com/go-logr/logr"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -12,11 +13,6 @@ import (
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/util"
 )
-
-// TODO:
-//  - Watch created MW and MCV and trigger DRCluster reconciles
-//  - Delete MW and MCV as part of DRCluster deletion
-//  - Grant klusterlet RBAC for MMode CRUD
 
 // clusterMModeHandler handles all related maintenance modes that the DRCluster needs
 // to manage
@@ -164,7 +160,10 @@ func (u *drclusterInstance) activateRegionalFailoverPrequisite(identifier ramen.
 		},
 	}
 
-	err := u.mwUtil.CreateOrUpdateMModeManifestWork(identifier.ReplicationID, u.object.GetName(), mMode, nil)
+	annotations := make(map[string]string)
+	annotations[DRClusterNameAnnotation] = u.object.GetName()
+
+	err := u.mwUtil.CreateOrUpdateMModeManifestWork(identifier.ReplicationID, u.object.GetName(), mMode, annotations)
 	if err != nil {
 		u.log.Error(err, "Error creating or updating maintenance mode manifest", "name", identifier.ReplicationID)
 
@@ -190,7 +189,7 @@ func (u *drclusterInstance) pruneMModesActivations(
 	survivors := make(map[string]*ocmworkv1.ManifestWork, 0)
 
 	for idx := range mModeMWs.Items {
-		mModeRequest, err := u.mwUtil.ExtractMModeFromManifestWork(&mModeMWs.Items[idx])
+		mModeRequest, err := util.ExtractMModeFromManifestWork(&mModeMWs.Items[idx])
 		if err != nil {
 			u.log.Error(err, "Error extracting resource from manifest", "name", mModeMWs.Items[idx].GetName())
 
@@ -247,6 +246,7 @@ func (u *drclusterInstance) updateMModeActivationStatus(survivors map[string]*oc
 	for idx := range mModeMCVs.Items {
 		mMode := u.pruneMModeMCV(&mModeMCVs.Items[idx], survivors)
 		if mMode == nil {
+			// TODO: survivors should report some status, even if the resource view fails
 			continue
 		}
 
@@ -265,7 +265,7 @@ func (u *drclusterInstance) updateMModeActivationStatus(survivors map[string]*oc
 // createMModeMCV creates managed cluster views for all maintenance mode manifests that are passed in
 func (u *drclusterInstance) createMModeMCV(manifests map[string]*ocmworkv1.ManifestWork) {
 	for key, manifest := range manifests {
-		mModeRequest, err := u.mwUtil.ExtractMModeFromManifestWork(manifests[key])
+		mModeRequest, err := util.ExtractMModeFromManifestWork(manifests[key])
 		if err != nil {
 			u.log.Error(err, "Error extracting resource from manifest", "name", manifest.GetName())
 
@@ -274,11 +274,14 @@ func (u *drclusterInstance) createMModeMCV(manifests map[string]*ocmworkv1.Manif
 			continue
 		}
 
+		annotations := make(map[string]string)
+		annotations[DRClusterNameAnnotation] = u.object.GetName()
+
 		// Ignore returned MCV, as we are interested only in creating the resrouce (if not present)
 		if _, err := u.reconciler.MCVGetter.GetMModeFromManagedCluster(
 			mModeRequest.Spec.TargetID,
 			u.object.GetName(),
-			nil,
+			annotations,
 		); err != nil {
 			u.log.Error(err, "Error creating view", "name", mModeRequest.Spec.TargetID)
 
@@ -312,7 +315,7 @@ func (u *drclusterInstance) pruneMModeMCV(
 
 	// Do not prune if it is part of survivors (or if already pruned)
 	key := util.ClusterScopedResourceNameFromMCVName(inMModeMCV.GetName())
-	if _, ok := survivors[key]; ok || inMModeMCV.GetDeletionTimestamp().IsZero() {
+	if _, ok := survivors[key]; ok || !inMModeMCV.GetDeletionTimestamp().IsZero() {
 		u.log.Info("Skipping pruning view", "name", inMModeMCV.GetName())
 
 		return nil
@@ -327,6 +330,37 @@ func (u *drclusterInstance) pruneMModeMCV(
 		u.log,
 	); err != nil {
 		u.requeue = true
+	}
+
+	return nil
+}
+
+func drClusterMModeCleanup(
+	drcluster *ramen.DRCluster,
+	mwu *util.MWUtil,
+	mcv util.ManagedClusterViewGetter,
+	log logr.Logger,
+) error {
+	mModeMWs, err := mwu.ListMModeManifests(drcluster.GetNamespace())
+	if err != nil {
+		return err
+	}
+
+	for _, mw := range mModeMWs.Items {
+		if err := mwu.DeleteManifestWork(mw.GetName(), mw.GetNamespace()); err != nil {
+			return err
+		}
+	}
+
+	mModeMCVs, err := mcv.ListMModesMCVs(drcluster.GetName())
+	if err != nil {
+		return err
+	}
+
+	for _, view := range mModeMCVs.Items {
+		if err := mcv.DeleteManagedClusterView(drcluster.GetName(), view.GetName(), log); err != nil {
+			return err
+		}
 	}
 
 	return nil

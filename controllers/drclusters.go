@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	operatorsv1 "github.com/operator-framework/api/pkg/operators/v1"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
@@ -197,7 +198,7 @@ func SubscriptionFromDrClusterManifestWork(
 		Kind:    "Subscription",
 	}
 
-	subRaw, err := mwu.GetRawExtension(mw.Spec.Workload.Manifests, gvk)
+	subRaw, err := util.GetRawExtension(mw.Spec.Workload.Manifests, gvk)
 	if err != nil {
 		return nil, fmt.Errorf("failed fetching subscription from cluster '%v' manifest %w", clusterName, err)
 	}
@@ -216,7 +217,12 @@ func SubscriptionFromDrClusterManifestWork(
 	return subscription, nil
 }
 
-func drClusterUndeploy(drcluster *rmn.DRCluster, mwu *util.MWUtil) error {
+func drClusterUndeploy(
+	drcluster *rmn.DRCluster,
+	mwu *util.MWUtil,
+	mcv util.ManagedClusterViewGetter,
+	log logr.Logger,
+) error {
 	clusterNames := sets.String{}
 	drpolicies := rmn.DRPolicyList{}
 
@@ -231,6 +237,10 @@ func drClusterUndeploy(drcluster *rmn.DRCluster, mwu *util.MWUtil) error {
 
 	if clusterNames.Has(drcluster.Name) {
 		return fmt.Errorf("drcluster '%v' referenced in one or more existing drPolicy resources", drcluster.Name)
+	}
+
+	if err := drClusterMModeCleanup(drcluster, mwu, mcv, log); err != nil {
+		return err
 	}
 
 	if err := mwu.DeleteManifestWork(util.DrClusterManifestWorkName, drcluster.Name); err != nil {

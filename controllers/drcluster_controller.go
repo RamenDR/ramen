@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
+	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -85,15 +87,38 @@ func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return filterDRPC(drpc)
 	}))
 
+	mwPred := ManifestWorkPredicateFunc()
+
+	mwMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
+		mw, ok := obj.(*ocmworkv1.ManifestWork)
+		if !ok {
+			return []reconcile.Request{}
+		}
+
+		ctrl.Log.Info(fmt.Sprintf("Filtering ManifestWork (%s/%s)", mw.Name, mw.Namespace))
+
+		return filterDRClusterMW(mw)
+	}))
+
+	mcvPred := ManagedClusterViewPredicateFunc()
+
+	mcvMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
+		mcv, ok := obj.(*viewv1beta1.ManagedClusterView)
+		if !ok {
+			return []reconcile.Request{}
+		}
+
+		ctrl.Log.Info(fmt.Sprintf("Filtering MCV (%s/%s)", mcv.Name, mcv.Namespace))
+
+		return filterDRClusterMCV(mcv)
+	}))
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&ramen.DRCluster{}).
-		Watches(
-			&source.Kind{Type: &corev1.ConfigMap{}},
-			handler.EnqueueRequestsFromMapFunc(r.drClusterConfigMapMapFunc),
-		).
-		Watches(
-			&source.Kind{Type: &ramen.DRPlacementControl{}},
-			drpcMapFun, builder.WithPredicates(drpcPred())).
+		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(r.drClusterConfigMapMapFunc)).
+		Watches(&source.Kind{Type: &ramen.DRPlacementControl{}}, drpcMapFun, builder.WithPredicates(drpcPred())).
+		Watches(&source.Kind{Type: &ocmworkv1.ManifestWork{}}, mwMapFun, builder.WithPredicates(mwPred)).
+		Watches(&source.Kind{Type: &viewv1beta1.ManagedClusterView{}}, mcvMapFun, builder.WithPredicates(mcvPred)).
 		Complete(r)
 }
 
@@ -117,8 +142,7 @@ func (r *DRClusterReconciler) drClusterConfigMapMapFunc(configMap client.Object)
 
 // drpcPred watches for updates to the DRPC resource and checks if it requires an appropriate DRCluster reconcile
 func drpcPred() predicate.Funcs {
-	log := ctrl.Log.WithName("DRPCPredicate").WithName("UserPlmnt")
-	usrPlmntPredicate := predicate.Funcs{
+	drpcPredicate := predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			return false
 		},
@@ -129,13 +153,11 @@ func drpcPred() predicate.Funcs {
 			return false
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			log.Info("Delete event")
-
 			return false
 		},
 	}
 
-	return usrPlmntPredicate
+	return drpcPredicate
 }
 
 // DRPCUpdateOfInterest returns a bool, which is true if the update to DRPC requires further processing
@@ -183,13 +205,46 @@ func filterDRPC(drpc *ramen.DRPlacementControl) []ctrl.Request {
 	}
 }
 
+func filterDRClusterMW(mw *ocmworkv1.ManifestWork) []ctrl.Request {
+	if mw.Annotations[DRPCNameAnnotation] == "" {
+		return []ctrl.Request{}
+	}
+
+	return []ctrl.Request{
+		reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name: mw.Annotations[DRClusterNameAnnotation],
+			},
+		},
+	}
+}
+
+func filterDRClusterMCV(mcv *viewv1beta1.ManagedClusterView) []ctrl.Request {
+	if mcv.Annotations[DRPCNameAnnotation] == "" {
+		return []ctrl.Request{}
+	}
+
+	return []ctrl.Request{
+		reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name: mcv.Annotations[DRClusterNameAnnotation],
+			},
+		},
+	}
+}
+
 //nolint:lll
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusters/finalizers,verbs=update
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drplacementcontrols,verbs=get;list;watch
+// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drpolicies,verbs=get;list;watch
 // +kubebuilder:rbac:groups=addon.open-cluster-management.io,resources=managedclusteraddons,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=work.open-cluster-management.io,resources=manifestworks,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=view.open-cluster-management.io,resources=managedclusterviews,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps.open-cluster-management.io,resources=placementrules,verbs=get;list;watch
+// +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=placements,verbs=get;list;watch
+// +kubebuilder:rbac:groups=argoproj.io,resources=applicationsets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch
 
 func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -344,7 +399,7 @@ func (r DRClusterReconciler) processDeletion(u *drclusterInstance) (ctrl.Result,
 	u.log.Info("delete")
 
 	// Undeploy manifests
-	if err := drClusterUndeploy(u.object, u.mwUtil); err != nil {
+	if err := drClusterUndeploy(u.object, u.mwUtil, u.reconciler.MCVGetter, u.log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drclusters undeploy: %w", err)
 	}
 
@@ -588,7 +643,7 @@ func (u *drclusterInstance) fenceClusterOnCluster(peerCluster *ramen.DRCluster) 
 	}
 
 	annotations := make(map[string]string)
-	annotations[DRPCNameAnnotation] = u.object.Name
+	annotations[DRPCNameAnnotation] = u.object.Name // ?
 
 	nf, err := u.reconciler.MCVGetter.GetNFFromManagedCluster(u.object.Name,
 		u.object.Namespace, peerCluster.Name, annotations)
