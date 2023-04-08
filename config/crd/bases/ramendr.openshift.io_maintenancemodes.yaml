@@ -136,6 +136,7 @@ spec:
                   type: object
                 type: array
               observedGeneration:
+                format: int64
                 type: integer
               state:
                 description: MModeState defines the state of the system as per the

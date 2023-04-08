@@ -141,9 +141,9 @@ func drclusterConditionExpect(
 }
 
 func validateClusterManifest(drcluster *ramen.DRCluster, disabled bool) {
-	expectedCount := 8
+	expectedCount := 10
 	if disabled {
-		expectedCount = 2
+		expectedCount = 4
 	}
 
 	Eventually(

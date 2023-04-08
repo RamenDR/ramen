@@ -201,14 +201,14 @@ func (mwu *MWUtil) ListMModeManifests(cluster string) (*ocmworkv1.ManifestWorkLi
 	return mModeMWs, err
 }
 
-func (mwu *MWUtil) ExtractMModeFromManifestWork(mw *ocmworkv1.ManifestWork) (*rmn.MaintenanceMode, error) {
+func ExtractMModeFromManifestWork(mw *ocmworkv1.ManifestWork) (*rmn.MaintenanceMode, error) {
 	gvk := schema.GroupVersionKind{
 		Group:   rmn.GroupVersion.Group,
 		Version: rmn.GroupVersion.Version,
 		Kind:    "MaintenanceMode",
 	}
 
-	rawObject, err := mwu.GetRawExtension(mw.Spec.Workload.Manifests, gvk)
+	rawObject, err := GetRawExtension(mw.Spec.Workload.Manifests, gvk)
 	if err != nil {
 		return nil, fmt.Errorf("failed fetching MaintenanceMode from manifest %w", err)
 	}
@@ -298,7 +298,7 @@ func Namespace(name string) *corev1.Namespace {
 	}
 }
 
-func (mwu *MWUtil) GetRawExtension(
+func GetRawExtension(
 	manifests []ocmworkv1.Manifest,
 	gvk schema.GroupVersionKind,
 ) (*runtime.RawExtension, error) {
@@ -340,6 +340,8 @@ func (mwu *MWUtil) CreateOrUpdateDrClusterManifestWork(
 		[]interface{}{
 			vrgClusterRole,
 			vrgClusterRoleBinding,
+			mModeClusterRole,
+			mModeClusterRoleBinding,
 		},
 		objectsToAppend...,
 	)
@@ -395,6 +397,35 @@ var (
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind:     "ClusterRole",
 			Name:     "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit",
+		},
+	}
+
+	mModeClusterRole = &rbacv1.ClusterRole{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:mmode-edit"},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"ramendr.openshift.io"},
+				Resources: []string{"maintenancemode"},
+				Verbs:     []string{"create", "get", "list", "update", "delete"},
+			},
+		},
+	}
+
+	mModeClusterRoleBinding = &rbacv1.ClusterRoleBinding{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:mmode-edit"},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "klusterlet-work-sa",
+				Namespace: "open-cluster-management-agent",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "open-cluster-management:klusterlet-work-sa:agent:mmode-edit",
 		},
 	}
 )
