@@ -128,6 +128,16 @@ func (f fakeObjectStorer) ListKeys(keyPrefix string) ([]string, error) {
 	return keys, nil
 }
 
+func (f fakeObjectStorer) DeleteObject(key string) error {
+	if _, ok := f.objects[key]; !ok {
+		return fs.ErrNotExist
+	}
+
+	delete(f.objects, key)
+
+	return nil
+}
+
 func (f fakeObjectStorer) DeleteObjects(keyPrefix string) error {
 	for key := range f.objects {
 		if strings.HasPrefix(key, keyPrefix) {
@@ -140,19 +150,20 @@ func (f fakeObjectStorer) DeleteObjects(keyPrefix string) error {
 
 var _ = Describe("FakeObjectStorer", func() {
 	var objectStorer controllers.ObjectStorer
+	object := "o"
+	const (
+		key  = "k"
+		key1 = key + key
+		key2 = key1 + key
+	)
 	BeforeEach(func() {
 		objectStorer = objectStorers[objS3ProfileNumber]
 	})
 	Context("DownloadObject", func() {
-		object := "o"
-		const (
-			key  = "k"
-			key1 = key + key
-		)
 		BeforeEach(func() {
 			Expect(objectStorer.UploadObject(key, object)).To(Succeed())
 		})
-		It("should download the uploaded object", func() {
+		It("should download an uploaded object", func() {
 			var object1 string
 			Expect(objectStorer.DownloadObject(key, &object1)).To(Succeed())
 			Expect(object1).To(Equal(object))
@@ -160,6 +171,24 @@ var _ = Describe("FakeObjectStorer", func() {
 		It("should not download a non-uploaded object", func() {
 			var object1 string
 			Expect(objectStorer.DownloadObject(key1, &object1)).To(MatchError(fs.ErrNotExist))
+		})
+	})
+	Context("DeleteObject", func() {
+		BeforeEach(func() {
+			Expect(objectStorer.UploadObject(key, object)).To(Succeed())
+			Expect(objectStorer.UploadObject(key1, object)).To(Succeed())
+			Expect(objectStorer.DeleteObject(key1)).To(Succeed())
+		})
+		It("should delete an uploaded object", func() {
+			var object1 string
+			Expect(objectStorer.DownloadObject(key1, &object1)).To(MatchError(fs.ErrNotExist))
+		})
+		It("should not delete an uploaded object with same prefix as specified key", func() {
+			var object1 string
+			Expect(objectStorer.DownloadObject(key, &object1)).To(Succeed())
+		})
+		It("should return an error if an object with specified key was not uploaded", func() {
+			Expect(objectStorer.DeleteObject(key2)).To(MatchError(fs.ErrNotExist))
 		})
 	})
 })
