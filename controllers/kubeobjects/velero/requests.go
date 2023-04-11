@@ -676,7 +676,6 @@ func restore(
 		},
 		Spec: velero.RestoreSpec{
 			BackupName:              backupName,
-			IncludedNamespaces:      []string{sourceNamespaceName},
 			IncludedResources:       recoverSpec.IncludedResources,
 			ExcludedResources:       recoverSpec.ExcludedResources,
 			NamespaceMapping:        map[string]string{sourceNamespaceName: targetNamespaceName},
