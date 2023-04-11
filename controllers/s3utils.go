@@ -91,6 +91,7 @@ type ObjectStorer interface {
 	UploadObject(key string, object interface{}) error
 	DownloadObject(key string, objectPointer interface{}) error
 	ListKeys(keyPrefix string) (keys []string, err error)
+	DeleteObject(key string) error
 	DeleteObjects(keyPrefix string) error
 }
 
@@ -374,9 +375,9 @@ func DownloadTypedObject(s ObjectStorer, keyPrefix, keySuffix string, objectPoin
 	return s.DownloadObject(typedKey(keyPrefix, keySuffix, reflect.TypeOf(objectPointer).Elem()), objectPointer)
 }
 
-func DeleteTypedObjects(s ObjectStorer, keyPrefix, keySuffix string, object interface{},
+func DeleteTypedObject(s ObjectStorer, keyPrefix, keySuffix string, object interface{},
 ) error {
-	return s.DeleteObjects(typedKey(keyPrefix, keySuffix, reflect.TypeOf(object)))
+	return s.DeleteObject(typedKey(keyPrefix, keySuffix, reflect.TypeOf(object)))
 }
 
 // UploadObject uploads the given object to the bucket with the given key.
@@ -571,6 +572,15 @@ func (s *s3ObjectStore) DownloadObject(key string,
 	}
 
 	return nil
+}
+
+func (s *s3ObjectStore) DeleteObject(key string) error {
+	_, err := s.client.DeleteObject(&s3.DeleteObjectInput{
+		Bucket: aws.String(s.s3Bucket),
+		Key:    aws.String(key),
+	})
+
+	return err
 }
 
 // DeleteObjects() deletes from the bucket any objects that have the given

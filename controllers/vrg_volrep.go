@@ -894,16 +894,26 @@ func (v *VRGInstance) reconcileMissingVR(pvc *corev1.PersistentVolumeClaim, log 
 func (v *VRGInstance) deleteClusterDataInS3Stores(log logr.Logger) error {
 	log.Info("Delete cluster data in", "s3Profiles", v.instance.Spec.S3Profiles)
 
-	return v.s3StoresObjectsDelete(v.s3KeyPrefix())
+	keyPrefix := v.s3KeyPrefix()
+
+	return v.s3StoresDo(
+		func(s ObjectStorer) error { return s.DeleteObjects(keyPrefix) },
+		fmt.Sprintf("delete objects with key prefix %s", keyPrefix),
+	)
 }
 
 func (v *VRGInstance) pvObjectReplicasDelete(pvName string, log logr.Logger) error {
 	log.Info("Delete PV object replicas", "s3Profiles", v.instance.Spec.S3Profiles)
 
-	return v.s3StoresObjectsDelete(TypedObjectKey(v.s3KeyPrefix(), pvName, corev1.PersistentVolume{}))
+	key := TypedObjectKey(v.s3KeyPrefix(), pvName, corev1.PersistentVolume{})
+
+	return v.s3StoresDo(
+		func(s ObjectStorer) error { return s.DeleteObject(key) },
+		fmt.Sprintf("delete PV object replica with key %s", key),
+	)
 }
 
-func (v *VRGInstance) s3StoresObjectsDelete(keyPrefix string) error {
+func (v *VRGInstance) s3StoresDo(do func(ObjectStorer) error, msg string) error {
 	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
 		if s3ProfileName == NoS3StoreAvailable {
 			v.log.Info("NoS3 available to clean")
@@ -911,15 +921,15 @@ func (v *VRGInstance) s3StoresObjectsDelete(keyPrefix string) error {
 			continue
 		}
 
-		if err := v.s3StoreObjectsDelete(s3ProfileName, keyPrefix); err != nil {
-			return fmt.Errorf("error deleting PVs using profile %s, err %w", s3ProfileName, err)
+		if err := v.s3StoreDo(do, msg, s3ProfileName); err != nil {
+			return fmt.Errorf("%s using profile %s, err %w", msg, s3ProfileName, err)
 		}
 	}
 
 	return nil
 }
 
-func (v *VRGInstance) s3StoreObjectsDelete(s3ProfileName, s3KeyPrefix string) (err error) {
+func (v *VRGInstance) s3StoreDo(do func(ObjectStorer) error, msg, s3ProfileName string) (err error) {
 	objectStore, _, err := v.reconciler.ObjStoreGetter.ObjectStore(
 		v.ctx,
 		v.reconciler.APIReader,
@@ -932,16 +942,9 @@ func (v *VRGInstance) s3StoreObjectsDelete(s3ProfileName, s3KeyPrefix string) (e
 			s3ProfileName, err)
 	}
 
-	msg := fmt.Sprintf("delete objects with key prefix %s in profile %s",
-		s3KeyPrefix, s3ProfileName)
-	v.log.Info(msg)
+	v.log.Info(msg, "profile", s3ProfileName)
 
-	// Delete all PVs from this VRG's S3 bucket
-	if err := objectStore.DeleteObjects(s3KeyPrefix); err != nil {
-		return fmt.Errorf("failed to %s, %w", msg, err)
-	}
-
-	return nil
+	return do(objectStore)
 }
 
 // processVRAsPrimary processes VR to change its state to primary, with the assumption that the
