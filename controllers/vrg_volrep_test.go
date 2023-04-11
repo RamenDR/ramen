@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"math/rand"
+	"strconv"
 	"strings"
 	"time"
 
@@ -965,10 +966,9 @@ func (v *vrgTest) createPVCandPV(claimBindInfo corev1.PersistentVolumeClaimPhase
 	volumeBindInfo corev1.PersistentVolumePhase,
 ) {
 	// Create the requested number of PVs and corresponding PVCs
-	for i := 0; i < v.pvcCount; i++ {
-		pvName := fmt.Sprintf("pv-%v-%02d", v.uniqueID, i)
-		pvcName := fmt.Sprintf("pvc-%v-%02d", v.uniqueID, i)
-
+	for i, volumeNameSuffix := 0, "-"+v.uniqueID+"-"; i < v.pvcCount; i++ {
+		volumeNameSuffix := volumeNameSuffix + strconv.Itoa(i)
+		pvName, pvcName := "pv"+volumeNameSuffix, "pvc"+volumeNameSuffix
 		// Create PV first and then PVC. This is important to ensure that there
 		// is no race between the unit test and VRG reconciler in modifying PV.
 		// i.e. suppose VRG is already created and then this function is run,
