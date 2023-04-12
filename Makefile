@@ -379,3 +379,26 @@ catalog-build: opm ## Build a catalog image.
 .PHONY: catalog-push
 catalog-push: ## Push a catalog image.
 	$(MAKE) docker-push IMG=$(CATALOG_IMG)
+
+# PLATFORMS defines the target platforms for  the manager image be build to provide support to multiple
+# architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
+# - able to use docker buildx . More info: https://docs.docker.com/build/buildx/
+# - have enable BuildKit, More info: https://docs.docker.com/develop/develop-images/build_enhancements/
+.PHONY: docker-buildx
+docker-buildx: # Build and push docker image for the manager for cross-platform support
+ifeq ($(DOCKERCMD),docker)
+	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} and 
+	# replace GOARCH value to ${TARGETARCH} into Dockerfile.cross, and preserve the original Dockerfile
+	$(eval PLATFORMS="linux/arm64,linux/amd64,linux/s390x,linux/ppc64le")
+	$(SED_CMD) \
+		-e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' \
+		-e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' \
+		Dockerfile > Dockerfile.cross
+	$(SED_CMD) -e 's/GOARCH=amd64/GOARCH=$${TARGETARCH}/' -i Dockerfile.cross
+	- $(DOCKERCMD) buildx create --name $(IMAGE_NAME)-builder --bootstrap --use 
+	- $(DOCKERCMD) buildx build --push --platform="${PLATFORMS}" --tag ${IMG} -f Dockerfile.cross .
+	- $(DOCKERCMD) buildx rm $(IMAGE_NAME)-builder
+	rm Dockerfile.cross
+else
+	@echo "docker-buildx is supported only with docker"
+endif
