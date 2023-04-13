@@ -401,6 +401,7 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 		"Initializing VolumeReplicationGroup")
 
 	res, err := v.processVRG()
+	delayResetIfRequeueTrue(&res, v.log)
 	log.Info("Reconcile return", "result", res, "err", err,
 		"VolRep count", len(v.volRepPVCs), "VolSync count", len(v.volSyncPVCs))
 
@@ -886,35 +887,25 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 		result.Requeue = true
 	}
 
-	delayResetIfRequeueTrue(&result, v.log)
-
 	return result, nil
 }
 
 func (v *VRGInstance) reconcileAsPrimary() ctrl.Result {
 	var finalSyncPrepared struct {
-		volSync     bool
-		kubeObjects func() bool
+		volSync bool
 	}
 
 	vrg := v.instance
-	s3StoreAccessors := s3StoreAccessorsGet(
-		vrg.Spec.S3Profiles,
-		func(s3ProfileName string) (ObjectStorer, ramendrv1alpha1.S3StoreProfile, error) {
-			return v.reconciler.ObjStoreGetter.ObjectStore(
-				v.ctx, v.reconciler.APIReader, s3ProfileName, v.namespacedName, v.log,
-			)
-		},
-		v.log,
-	)
+	s3StoreAccessors := v.s3StoreAccessorsGet()
 	result := ctrl.Result{}
 	result.Requeue = v.reconcileVolSyncAsPrimary(&finalSyncPrepared.volSync)
 	v.reconcileVolRepsAsPrimary(&result.Requeue)
-	v.kubeObjectsProtect(&result, &finalSyncPrepared.kubeObjects, s3StoreAccessors)
-	v.vrgObjectProtected = vrgObjectProtect(&result, s3StoreAccessors, *vrg, v.reconciler.eventRecorder, v.log)
-	vrg.Status.PrepareForFinalSyncComplete = vrg.Spec.PrepareForFinalSync &&
-		finalSyncPrepared.volSync &&
-		finalSyncPrepared.kubeObjects()
+	v.kubeObjectsProtectPrimary(&result, s3StoreAccessors)
+	v.vrgObjectProtect(&result, s3StoreAccessors)
+
+	if vrg.Spec.PrepareForFinalSync {
+		vrg.Status.PrepareForFinalSyncComplete = finalSyncPrepared.volSync
+	}
 
 	return result
 }
@@ -927,38 +918,37 @@ func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
 
 	v.instance.Status.LastGroupSyncTime = nil
 
-	requeue := v.reconcileAsSecondary()
+	result := v.reconcileAsSecondary()
 
 	// If requeue is false, then VRG was successfully processed as Secondary.
 	// Hence the event to be generated is Success of type normal.
 	// Expectation is that, if something failed and requeue is true, then
 	// appropriate event might have been captured at the time of failure.
-	if !requeue {
+	if !result.Requeue {
 		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeNormal,
 			rmnutil.EventReasonSecondarySuccess, "Secondary Success")
 	}
 
 	if err := v.updateVRGStatus(true); err != nil {
-		requeue = true
+		result.Requeue = true
 	}
 
-	if requeue {
-		v.log.Info("Requeuing resource as Secondary")
-
-		return ctrl.Result{Requeue: true}, nil
-	}
-
-	v.log.Info("Successfully processed vrg as secondary")
-
-	return ctrl.Result{}, nil
+	return result, nil
 }
 
-func (v *VRGInstance) reconcileAsSecondary() bool {
-	if v.reconcileVolSyncAsSecondary() {
-		return true // requeue
+func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
+	vrg := v.instance
+	s3StoreAccessors := v.s3StoreAccessorsGet()
+	result := ctrl.Result{}
+	result.Requeue = v.reconcileVolSyncAsSecondary() || result.Requeue
+	result.Requeue = v.reconcileVolRepsAsSecondary() || result.Requeue
+
+	if vrg.Spec.Action == ramendrv1alpha1.VRGActionRelocate {
+		v.kubeObjectsProtectSecondary(&result, s3StoreAccessors)
+		v.vrgObjectProtect(&result, s3StoreAccessors)
 	}
 
-	return v.reconcileVolRepsAsSecondary()
+	return result
 }
 
 func (v *VRGInstance) updateVRGStatus(updateConditions bool) error {
@@ -1122,6 +1112,20 @@ func (v *VRGInstance) updateVRGLastGroupSyncTime() {
 	}
 
 	v.instance.Status.LastGroupSyncTime = leastLastSyncTime
+}
+
+func (v *VRGInstance) s3StoreAccessorsGet() []s3StoreAccessor {
+	vrg := v.instance
+
+	return s3StoreAccessorsGet(
+		vrg.Spec.S3Profiles,
+		func(s3ProfileName string) (ObjectStorer, ramendrv1alpha1.S3StoreProfile, error) {
+			return v.reconciler.ObjStoreGetter.ObjectStore(
+				v.ctx, v.reconciler.APIReader, s3ProfileName, v.namespacedName, v.log,
+			)
+		},
+		v.log,
+	)
 }
 
 // It might be better move the helper functions like these to a separate
