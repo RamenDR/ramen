@@ -158,11 +158,14 @@ func setupReconcilersHub(mgr ctrl.Manager) {
 	}
 
 	if err := (&controllers.DRClusterReconciler{
-		Client:            mgr.GetClient(),
-		APIReader:         mgr.GetAPIReader(),
-		Log:               ctrl.Log.WithName("controllers").WithName("DRCluster"),
-		Scheme:            mgr.GetScheme(),
-		MCVGetter:         rmnutil.ManagedClusterViewGetterImpl{Client: mgr.GetClient()},
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Log:       ctrl.Log.WithName("controllers").WithName("DRCluster"),
+		Scheme:    mgr.GetScheme(),
+		MCVGetter: rmnutil.ManagedClusterViewGetterImpl{
+			Client:    mgr.GetClient(),
+			APIReader: mgr.GetAPIReader(),
+		},
 		ObjectStoreGetter: controllers.S3ObjectStoreGetter(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DRCluster")
@@ -173,9 +176,12 @@ func setupReconcilersHub(mgr ctrl.Manager) {
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Log:       ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),
-		MCVGetter: rmnutil.ManagedClusterViewGetterImpl{Client: mgr.GetClient()},
-		Scheme:    mgr.GetScheme(),
-		Callback:  func(string, string) {},
+		MCVGetter: rmnutil.ManagedClusterViewGetterImpl{
+			Client:    mgr.GetClient(),
+			APIReader: mgr.GetAPIReader(),
+		},
+		Scheme:   mgr.GetScheme(),
+		Callback: func(string, string) {},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DRPlacementControl")
 		os.Exit(1)

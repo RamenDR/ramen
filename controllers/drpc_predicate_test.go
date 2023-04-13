@@ -10,12 +10,13 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
@@ -79,16 +80,8 @@ var _ = Describe("DRPCPredicateDRCluster", func() {
 		drClusterNew = drClusterOld.DeepCopy()
 	})
 
-	/*
-		- Reconcile related DRPC
-			- Does not reconcile unrelated DRPC
-				- Different Policy
-				- Already failed over
-				- Not failing over
-				- Failing over to a different cluster
-	*/
 	Describe("Test DRCluster update predicate", func() {
-		When("old and new have no changes maintenance mode changes", func() {
+		When("old and new have no maintenance mode changes", func() {
 			It("returns DRCluster update of interest as false", func() {
 				Expect(controllers.DRClusterUpdateOfInterest(drClusterOld, drClusterNew)).To(BeFalse())
 			})
@@ -220,6 +213,7 @@ var _ = Describe("DRPCPredicateDRCluster", func() {
 
 	Describe("Test DRCluster triggered DRPC reconcile filter", Ordered, func() {
 		var (
+			cfg                       *rest.Config
 			testEnv                   *envtest.Environment
 			k8sClient                 client.Client
 			r                         *controllers.DRPlacementControlReconciler
@@ -294,15 +288,24 @@ var _ = Describe("DRPCPredicateDRCluster", func() {
 			drpolicies = [3]rmn.DRPolicy{
 				{
 					ObjectMeta: metav1.ObjectMeta{Name: "drpolicy0"},
-					Spec:       rmn.DRPolicySpec{DRClusters: []string{"drcluster1", "drcluster2"}},
+					Spec: rmn.DRPolicySpec{
+						DRClusters:         []string{"drcluster1", "drcluster2"},
+						SchedulingInterval: "1m",
+					},
 				},
 				{
 					ObjectMeta: metav1.ObjectMeta{Name: "drpolicy1"},
-					Spec:       rmn.DRPolicySpec{DRClusters: []string{"drcluster3", "drcluster4"}},
+					Spec: rmn.DRPolicySpec{
+						DRClusters:         []string{"drcluster3", "drcluster4"},
+						SchedulingInterval: "1m",
+					},
 				},
 				{
 					ObjectMeta: metav1.ObjectMeta{Name: "drpolicy-unreferenced"},
-					Spec:       rmn.DRPolicySpec{DRClusters: []string{"drcluster5", "drcluster6"}},
+					Spec: rmn.DRPolicySpec{
+						DRClusters:         []string{"drcluster5", "drcluster6"},
+						SchedulingInterval: "1m",
+					},
 				},
 			}
 

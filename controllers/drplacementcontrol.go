@@ -461,16 +461,16 @@ func (d *DRPCInstance) getCurrentHomeClusterName(toCluster string, drClusters []
 // Returns:
 //   - bool: Indicating if prerequisites are met
 //   - error: Any error in determining the prerequisite status
-func (d *DRPCInstance) checkFailoverPrerequisites(failoverCluster string) (bool, error) {
+func (d *DRPCInstance) checkFailoverPrerequisites(curHomeCluster string) (bool, error) {
 	var (
 		met bool
 		err error
 	)
 
-	if isMetroAction(d.drPolicy, d.drClusters, failoverCluster, d.instance.Spec.FailoverCluster) {
-		met, err = d.checkMetroFailoverPrerequisites(failoverCluster)
+	if isMetroAction(d.drPolicy, d.drClusters, curHomeCluster, d.instance.Spec.FailoverCluster) {
+		met, err = d.checkMetroFailoverPrerequisites(curHomeCluster)
 	} else {
-		met = d.checkRegionalFailoverPrerequisites(failoverCluster)
+		met = d.checkRegionalFailoverPrerequisites()
 	}
 
 	if err == nil && met {
@@ -493,22 +493,22 @@ func (d *DRPCInstance) checkFailoverPrerequisites(failoverCluster string) (bool,
 }
 
 // checkMetroFailoverPrerequisites checks for any MetroDR failover prerequsites that need to be met on the
-// failoverCluster before initiating a failover.
+// failoverCluster before initiating a failover from the curHomeCluster.
 // Returns:
 //   - bool: Indicating if prerequisites are met
 //   - error: Any error in determining the prerequisite status
-func (d *DRPCInstance) checkMetroFailoverPrerequisites(failoverCluster string) (bool, error) {
+func (d *DRPCInstance) checkMetroFailoverPrerequisites(curHomeCluster string) (bool, error) {
 	met := true
 
 	d.setProgression(rmn.ProgressionWaitForFencing)
 
-	fenced, err := d.checkClusterFenced(failoverCluster, d.drClusters)
+	fenced, err := d.checkClusterFenced(curHomeCluster, d.drClusters)
 	if err != nil {
 		return !met, err
 	}
 
 	if !fenced {
-		return !met, fmt.Errorf("current home cluster %s is not fenced", failoverCluster)
+		return !met, fmt.Errorf("current home cluster %s is not fenced", curHomeCluster)
 	}
 
 	return met, nil
@@ -520,16 +520,17 @@ func (d *DRPCInstance) checkMetroFailoverPrerequisites(failoverCluster string) (
 //   - bool: Indicating if prerequisites are met
 //
 // TODO: Write envtests for this function and desendents
-func (d *DRPCInstance) checkRegionalFailoverPrerequisites(failoverCluster string) bool {
+func (d *DRPCInstance) checkRegionalFailoverPrerequisites() bool {
 	d.setProgression(rmn.ProgressionWaitForStorageMaintenanceActivation)
 
-	if required, activationsRequired := requiresRegionalFailoverPrequisites(d.vrgs, failoverCluster); required {
+	if required, activationsRequired := requiresRegionalFailoverPrequisites(
+		d.vrgs, d.instance.Spec.FailoverCluster, d.log); required {
 		for _, drCluster := range d.drClusters {
-			if drCluster.Name != failoverCluster {
+			if drCluster.Name != d.instance.Spec.FailoverCluster {
 				continue
 			}
 
-			return checkFailoverMaintenanceActivations(drCluster, activationsRequired)
+			return checkFailoverMaintenanceActivations(drCluster, activationsRequired, d.log)
 		}
 	}
 
@@ -539,7 +540,11 @@ func (d *DRPCInstance) checkRegionalFailoverPrerequisites(failoverCluster string
 // requiresRegionalFailoverPrequisites checks protected PVCs as reported by the last known Primary cluster
 // to determine if this instance requires failover maintenance modes to be active prior to initiating
 // a failover
-func requiresRegionalFailoverPrequisites(vrgs map[string]*rmn.VolumeReplicationGroup, failoverCluster string) (
+func requiresRegionalFailoverPrequisites(
+	vrgs map[string]*rmn.VolumeReplicationGroup,
+	failoverCluster string,
+	log logr.Logger,
+) (
 	bool,
 	map[string]rmn.StorageIdentifiers,
 ) {
@@ -549,6 +554,8 @@ func requiresRegionalFailoverPrequisites(vrgs map[string]*rmn.VolumeReplicationG
 	if vrg == nil {
 		// TODO: Is this an error, should we ensure at least one VRG is found in the edge cases?
 		// Potentially missing VRG and so stop failover? How to recover in that case?
+		log.Info("Failed to find last known primary", "cluster", failoverCluster)
+
 		return false, activationsRequired
 	}
 
@@ -614,12 +621,14 @@ func hasMode(modes []rmn.MMode, mode rmn.MMode) bool {
 // checkFailoverMaintenanceActivations checks if all required storage backend maintenance activations are met
 func checkFailoverMaintenanceActivations(drCluster rmn.DRCluster,
 	activationsRequired map[string]rmn.StorageIdentifiers,
+	log logr.Logger,
 ) bool {
 	for _, activationRequired := range activationsRequired {
 		if !checkActivationForStorageIdentifier(
 			drCluster.Status.MaintenanceModes,
 			activationRequired,
 			rmn.MModeConditionFailoverActivated,
+			log,
 		) {
 			return false
 		}
@@ -634,8 +643,11 @@ func checkActivationForStorageIdentifier(
 	mModeStatus []rmn.ClusterMaintenanceMode,
 	storageIdentifier rmn.StorageIdentifiers,
 	activation rmn.MModeStatusConditionType,
+	log logr.Logger,
 ) bool {
 	for _, statusMMode := range mModeStatus {
+		log.Info("Processing ClusterMaintenanceMode for match", "clustermode", statusMMode, "desiredmode", storageIdentifier)
+
 		if statusMMode.StorageProvisioner != storageIdentifier.CSIProvisioner ||
 			statusMMode.TargetID != storageIdentifier.ReplicationID {
 			continue

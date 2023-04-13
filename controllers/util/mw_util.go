@@ -49,6 +49,7 @@ const (
 
 type MWUtil struct {
 	client.Client
+	APIReader       client.Reader
 	Ctx             context.Context
 	Log             logr.Logger
 	InstName        string
@@ -196,7 +197,7 @@ func (mwu *MWUtil) ListMModeManifests(cluster string) (*ocmworkv1.ManifestWorkLi
 	}
 
 	mModeMWs := &ocmworkv1.ManifestWorkList{}
-	err := mwu.Client.List(context.TODO(), mModeMWs, listOptions...)
+	err := mwu.APIReader.List(context.TODO(), mModeMWs, listOptions...)
 
 	return mModeMWs, err
 }

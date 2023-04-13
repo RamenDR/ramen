@@ -306,11 +306,14 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	Expect((&ramencontrollers.DRClusterReconciler{
-		Client:            k8sManager.GetClient(),
-		APIReader:         k8sManager.GetAPIReader(),
-		Scheme:            k8sManager.GetScheme(),
-		Log:               ctrl.Log.WithName("controllers").WithName("DRCluster"),
-		MCVGetter:         FakeMCVGetter{},
+		Client:    k8sManager.GetClient(),
+		APIReader: k8sManager.GetAPIReader(),
+		Scheme:    k8sManager.GetScheme(),
+		Log:       ctrl.Log.WithName("controllers").WithName("DRCluster"),
+		MCVGetter: FakeMCVGetter{
+			Client:    k8sClient,
+			apiReader: k8sManager.GetAPIReader(),
+		},
 		ObjectStoreGetter: fakeObjectStoreGetter{},
 	}).SetupWithManager(k8sManager)).To(Succeed())
 
@@ -342,9 +345,12 @@ var _ = BeforeSuite(func() {
 		Client:    k8sManager.GetClient(),
 		APIReader: k8sManager.GetAPIReader(),
 		Log:       ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),
-		MCVGetter: FakeMCVGetter{},
-		Scheme:    k8sManager.GetScheme(),
-		Callback:  FakeProgressCallback,
+		MCVGetter: FakeMCVGetter{
+			Client:    k8sClient,
+			apiReader: k8sManager.GetAPIReader(),
+		},
+		Scheme:   k8sManager.GetScheme(),
+		Callback: FakeProgressCallback,
 	})
 	err = drpcReconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())

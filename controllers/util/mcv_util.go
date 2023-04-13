@@ -56,6 +56,7 @@ type ManagedClusterViewGetter interface {
 
 type ManagedClusterViewGetterImpl struct {
 	client.Client
+	APIReader client.Reader
 }
 
 func (m ManagedClusterViewGetterImpl) GetVRGFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
@@ -148,7 +149,7 @@ func (m ManagedClusterViewGetterImpl) ListMModesMCVs(cluster string) (*viewv1bet
 	}
 
 	mModeMCVs := &viewv1beta1.ManagedClusterViewList{}
-	if err := m.List(context.TODO(), mModeMCVs, listOptions...); err != nil {
+	if err := m.APIReader.List(context.TODO(), mModeMCVs, listOptions...); err != nil {
 		return nil, err
 	}
 

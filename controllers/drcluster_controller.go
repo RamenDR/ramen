@@ -82,7 +82,7 @@ func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return []reconcile.Request{}
 		}
 
-		ctrl.Log.Info(fmt.Sprintf("Filtering DRPC (%s/%s)", drpc.Name, drpc.Namespace))
+		ctrl.Log.Info(fmt.Sprintf("DRCluster: Filtering DRPC (%s/%s)", drpc.Name, drpc.Namespace))
 
 		return filterDRPC(drpc)
 	}))
@@ -95,7 +95,7 @@ func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return []reconcile.Request{}
 		}
 
-		ctrl.Log.Info(fmt.Sprintf("Filtering ManifestWork (%s/%s)", mw.Name, mw.Namespace))
+		ctrl.Log.Info(fmt.Sprintf("DRCluster: Filtering ManifestWork (%s/%s)", mw.Name, mw.Namespace))
 
 		return filterDRClusterMW(mw)
 	}))
@@ -108,7 +108,7 @@ func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return []reconcile.Request{}
 		}
 
-		ctrl.Log.Info(fmt.Sprintf("Filtering MCV (%s/%s)", mcv.Name, mcv.Namespace))
+		ctrl.Log.Info(fmt.Sprintf("DRCluster: Filtering MCV (%s/%s)", mcv.Name, mcv.Namespace))
 
 		return filterDRClusterMCV(mcv)
 	}))
@@ -162,6 +162,8 @@ func drpcPred() predicate.Funcs {
 
 // DRPCUpdateOfInterest returns a bool, which is true if the update to DRPC requires further processing
 func DRPCUpdateOfInterest(oldDRPC, newDRPC *ramen.DRPlacementControl) bool {
+	log := ctrl.Log.WithName("Predicate").WithName("DRPC")
+
 	// Ignore DRPC if it is not failing over
 	if newDRPC.Spec.Action != ramen.ActionFailover {
 		return false
@@ -174,18 +176,33 @@ func DRPCUpdateOfInterest(oldDRPC, newDRPC *ramen.DRPlacementControl) bool {
 
 	// Process DRPC, if action was not changed, but failover cluster was
 	if oldDRPC.Spec.FailoverCluster != newDRPC.Spec.FailoverCluster {
+		log.Info("Processing DRPC failover cluster change event",
+			"name", newDRPC.GetName(),
+			"namespace", newDRPC.GetNamespace())
+
 		return true
 	}
 
-	// Ignore DRPC, if it has finished failing over
 	if condition := GetDRPCStatusCondition(&newDRPC.Status, ramen.ConditionAvailable); condition != nil &&
 		condition.Status == metav1.ConditionTrue &&
 		condition.ObservedGeneration == newDRPC.Generation {
+		// Process DRPC if it was just failed over, we are interested in updating MMode deactivation
+		oldCondition := GetDRPCStatusCondition(&oldDRPC.Status, ramen.ConditionAvailable)
+		if oldCondition != nil && oldCondition.Status != metav1.ConditionTrue {
+			log.Info("Processing DRPC failed over event",
+				"name", newDRPC.GetName(),
+				"namespace", newDRPC.GetNamespace())
+
+			return true
+		}
+
+		log.Info("Ignoring DRPC failed over event",
+			"name", newDRPC.GetName(),
+			"namespace", newDRPC.GetNamespace())
+
 		return false
 	}
 
-	// TODO: Technically we do not need to process this DRPC update, as we need to enable MMode when a "new" failover
-	// for a DRPC is detected, not each time till it is failed over
 	return true
 }
 
@@ -206,7 +223,7 @@ func filterDRPC(drpc *ramen.DRPlacementControl) []ctrl.Request {
 }
 
 func filterDRClusterMW(mw *ocmworkv1.ManifestWork) []ctrl.Request {
-	if mw.Annotations[DRPCNameAnnotation] == "" {
+	if mw.Annotations[DRClusterNameAnnotation] == "" {
 		return []ctrl.Request{}
 	}
 
@@ -220,7 +237,7 @@ func filterDRClusterMW(mw *ocmworkv1.ManifestWork) []ctrl.Request {
 }
 
 func filterDRClusterMCV(mcv *viewv1beta1.ManagedClusterView) []ctrl.Request {
-	if mcv.Annotations[DRPCNameAnnotation] == "" {
+	if mcv.Annotations[DRClusterNameAnnotation] == "" {
 		return []ctrl.Request{}
 	}
 
@@ -260,7 +277,14 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, client.IgnoreNotFound(fmt.Errorf("get: %w", err))
 	}
 
-	manifestWorkUtil := &util.MWUtil{Client: r.Client, Ctx: ctx, Log: log, InstName: drcluster.Name, TargetNamespace: ""}
+	manifestWorkUtil := &util.MWUtil{
+		Client:          r.Client,
+		APIReader:       r.APIReader,
+		Ctx:             ctx,
+		Log:             log,
+		InstName:        drcluster.Name,
+		TargetNamespace: "",
+	}
 
 	u := &drclusterInstance{
 		ctx: ctx, object: drcluster, client: r.Client, log: log, reconciler: r,

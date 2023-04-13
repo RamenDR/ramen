@@ -377,8 +377,15 @@ func DRPCsFailingOverToCluster(k8sclient client.Client, log logr.Logger, drclust
 	drpcCollections := make([]DRPCAndPolicy, 0)
 
 	for drpolicyIdx, drpolicy := range drpolicies.Items {
-		// TODO: Skip if policy is of type metro, requires listing all DRClusters (or the list of clusters in the policy)
-		// and calling DRPolicySupportsMetro OR look at scheduling interval in the policy?
+		// Skip if policy is of type metro
+		// TODO: A stronger check requires listing all DRClusters (or the list of clusters in the policy)
+		//  and calling DRPolicySupportsMetro
+		if drpolicy.Spec.SchedulingInterval == "" {
+			log.Info("Sync DRPolicy detected, skipping!")
+
+			continue
+		}
+
 		for _, specCluster := range drpolicy.Spec.DRClusters {
 			if specCluster != drcluster {
 				continue
@@ -501,7 +508,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 			return []reconcile.Request{}
 		}
 
-		ctrl.Log.Info(fmt.Sprintf("Filtering ManifestWork (%s/%s)", mw.Name, mw.Namespace))
+		ctrl.Log.Info(fmt.Sprintf("DRPC: Filtering ManifestWork (%s/%s)", mw.Name, mw.Namespace))
 
 		return filterMW(mw)
 	}))
@@ -514,7 +521,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 			return []reconcile.Request{}
 		}
 
-		ctrl.Log.Info(fmt.Sprintf("Filtering MCV (%s/%s)", mcv.Name, mcv.Namespace))
+		ctrl.Log.Info(fmt.Sprintf("DRPC: Filtering MCV (%s/%s)", mcv.Name, mcv.Namespace))
 
 		return filterMCV(mcv)
 	}))
@@ -527,7 +534,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 			return []reconcile.Request{}
 		}
 
-		ctrl.Log.Info(fmt.Sprintf("Filtering User PlacementRule (%s/%s)", usrPlRule.Name, usrPlRule.Namespace))
+		ctrl.Log.Info(fmt.Sprintf("DRPC: Filtering User PlacementRule (%s/%s)", usrPlRule.Name, usrPlRule.Namespace))
 
 		return filterUsrPlRule(usrPlRule)
 	}))
@@ -540,7 +547,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 			return []reconcile.Request{}
 		}
 
-		ctrl.Log.Info(fmt.Sprintf("Filtering User Placement (%s/%s)", usrPlmnt.Name, usrPlmnt.Namespace))
+		ctrl.Log.Info(fmt.Sprintf("DRPC: Filtering User Placement (%s/%s)", usrPlmnt.Name, usrPlmnt.Namespace))
 
 		return filterUsrPlmnt(usrPlmnt)
 	}))
@@ -553,7 +560,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 			return []reconcile.Request{}
 		}
 
-		ctrl.Log.Info(fmt.Sprintf("Filtering DRCluster (%s)", drCluster.Name))
+		ctrl.Log.Info(fmt.Sprintf("DRPC Map: Filtering DRCluster (%s)", drCluster.Name))
 
 		return r.FilterDRCluster(drCluster)
 	}))
@@ -760,6 +767,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 		metrics:         &metrics,
 		mwu: rmnutil.MWUtil{
 			Client:          r.Client,
+			APIReader:       r.APIReader,
 			Ctx:             ctx,
 			Log:             log,
 			InstName:        drpc.Name,
@@ -944,6 +952,7 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 
 	mwu := rmnutil.MWUtil{
 		Client:          r.Client,
+		APIReader:       r.APIReader,
 		Ctx:             ctx,
 		Log:             r.Log,
 		InstName:        drpc.Name,

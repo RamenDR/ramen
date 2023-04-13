@@ -27,7 +27,7 @@ func (u *drclusterInstance) clusterMModeHandler() error {
 		return err
 	}
 
-	if activated := checkFailoverMaintenanceActivations(*u.object, allActivations); !activated {
+	if activated := checkFailoverMaintenanceActivations(*u.object, allActivations, u.log); !activated {
 		u.activateRegionalFailoverPrequisites(allActivations)
 	}
 
@@ -37,6 +37,8 @@ func (u *drclusterInstance) clusterMModeHandler() error {
 
 		u.requeue = true
 	}
+
+	u.log.Info("Survivor count", "survivors", len(survivors))
 
 	u.updateMModeActivationStatus(survivors)
 
@@ -68,7 +70,7 @@ func (u *drclusterInstance) mModeActivationsRequired() (map[string]ramen.Storage
 			continue
 		}
 
-		required, activationsRequired := requiresRegionalFailoverPrequisites(vrgs, u.object.GetName())
+		required, activationsRequired := requiresRegionalFailoverPrequisites(vrgs, u.object.GetName(), u.log)
 		if !required {
 			continue
 		}
@@ -118,19 +120,11 @@ func (u *drclusterInstance) getVRGs(drpcCollection DRPCAndPolicy) (map[string]*r
 }
 
 // activateRegionalFailoverPrequisites activates all regional failover maintenance modes as desired
-// by the passed in required activations, that are currently inactive
+// by the passed in required activations
 func (u *drclusterInstance) activateRegionalFailoverPrequisites(
 	activationsRequired map[string]ramen.StorageIdentifiers,
 ) {
 	for _, identifier := range activationsRequired {
-		if checkActivationForStorageIdentifier(
-			u.object.Status.MaintenanceModes,
-			identifier,
-			ramen.MModeConditionFailoverActivated,
-		) {
-			continue
-		}
-
 		u.log.Info("Activating maintenance mode",
 			"provisioner", identifier.CSIProvisioner,
 			"ReplciationID", identifier.ReplicationID)
@@ -207,9 +201,9 @@ func (u *drclusterInstance) pruneMModesActivations(
 				u.log.Error(err, "Error expiring maintenance mode", "name", mModeMWs.Items[idx].GetName())
 
 				u.requeue = true
-
-				continue
 			}
+
+			continue
 		}
 
 		survivors[mModeRequest.Spec.TargetID] = &mModeMWs.Items[idx]
