@@ -4,32 +4,28 @@
 package controllers
 
 import (
-	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/util"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-func vrgObjectProtect(
-	result *ctrl.Result,
-	s3StoreAccessors []s3StoreAccessor,
-	vrg ramen.VolumeReplicationGroup,
-	eventReporter *util.EventReporter,
-	log logr.Logger,
-) (vrgObjectProtected *metav1.Condition) {
+func (v *VRGInstance) vrgObjectProtect(result *ctrl.Result, s3StoreAccessors []s3StoreAccessor) {
+	vrg := v.instance
+	eventReporter := v.reconciler.eventRecorder
+	log := v.log
+
 	for _, s3StoreAccessor := range s3StoreAccessors {
-		if err := VrgObjectProtect(s3StoreAccessor.ObjectStorer, vrg); err != nil {
+		if err := VrgObjectProtect(s3StoreAccessor.ObjectStorer, *vrg); err != nil {
 			util.ReportIfNotPresent(
-				eventReporter, &vrg, corev1.EventTypeWarning, util.EventReasonVrgUploadFailed, err.Error(),
+				eventReporter, vrg, corev1.EventTypeWarning, util.EventReasonVrgUploadFailed, err.Error(),
 			)
 
 			const message = "VRG Kube object protect error"
 
 			log.Error(err, message, "profile", s3StoreAccessor.profileName)
 
-			vrgObjectProtected = newVRGClusterDataUnprotectedCondition(vrg.Generation, message)
+			v.vrgObjectProtected = newVRGClusterDataUnprotectedCondition(vrg.Generation, message)
 			result.Requeue = true
 
 			return
@@ -37,10 +33,8 @@ func vrgObjectProtect(
 
 		log.Info("VRG Kube object protected", "profile", s3StoreAccessor.profileName)
 
-		vrgObjectProtected = newVRGClusterDataProtectedCondition(vrg.Generation, clusterDataProtectedTrueMessage)
+		v.vrgObjectProtected = newVRGClusterDataProtectedCondition(vrg.Generation, clusterDataProtectedTrueMessage)
 	}
-
-	return
 }
 
 const vrgS3ObjectNameSuffix = "a"
