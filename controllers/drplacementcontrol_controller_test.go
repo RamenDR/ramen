@@ -51,6 +51,8 @@ const (
 	West1ManagedCluster   = "west1-cluster"
 	AsyncDRPolicyName     = "my-async-dr-peers"
 	SyncDRPolicyName      = "my-sync-dr-peers"
+	MModeReplicationID    = "storage-replication-id-1"
+	MModeCSIProvisioner   = "test.csi.com"
 
 	updateRetries = 5
 	pvcCount      = 2 // Count of fake PVCs reported in the VRG status
@@ -134,8 +136,7 @@ var (
 			Name: SyncDRPolicyName,
 		},
 		Spec: rmn.DRPolicySpec{
-			DRClusters:         []string{East1ManagedCluster, East2ManagedCluster},
-			SchedulingInterval: schedulingInterval,
+			DRClusters: []string{East1ManagedCluster, East2ManagedCluster},
 		},
 	}
 
@@ -181,8 +182,7 @@ func getSyncDRPolicy() *rmn.DRPolicy {
 			Name: SyncDRPolicyName,
 		},
 		Spec: rmn.DRPolicySpec{
-			DRClusters:         []string{East1ManagedCluster, East2ManagedCluster},
-			SchedulingInterval: schedulingInterval,
+			DRClusters: []string{East1ManagedCluster, East2ManagedCluster},
 		},
 	}
 }
@@ -194,7 +194,10 @@ func FakeProgressCallback(drpcName string, state string) {
 	drstate = state
 }
 
-type FakeMCVGetter struct{}
+type FakeMCVGetter struct {
+	client.Client
+	apiReader client.Reader
+}
 
 func getNamespaceObj(namespaceName string) *corev1.Namespace {
 	return &corev1.Namespace{
@@ -211,22 +214,125 @@ func getFunctionNameAtIndex(idx int) string {
 	return result[len(result)-1]
 }
 
-func (f FakeMCVGetter) GetMModeFromManagedCluster(resourceName, managedCluster string,
+// GetMModeFromManagedCluster: MMode code uses GetMModeFromManagedCluster to create a MCV and not fetch it, that
+// is done using ListMCV. As a result this fake function creates an MCV for record keeping purposes and returns
+// a nil mcv back in case of success
+func (f FakeMCVGetter) GetMModeFromManagedCluster(
+	resourceName, managedCluster string,
 	annotations map[string]string,
 ) (*rmn.MaintenanceMode, error) {
-	return nil, nil
+	mModeMCV := &viewv1beta1.ManagedClusterView{}
+
+	mcvName := rmnutil.BuildManagedClusterViewName(resourceName, "", rmnutil.MWTypeMMode)
+
+	err := f.Get(context.TODO(), types.NamespacedName{Name: mcvName, Namespace: managedCluster}, mModeMCV)
+	if err == nil {
+		return nil, nil
+	}
+
+	if !errors.IsNotFound(err) {
+		return nil, err
+	}
+
+	mModeMCV = &viewv1beta1.ManagedClusterView{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      mcvName,
+			Namespace: managedCluster,
+			Labels: map[string]string{
+				"ramendr.openshift.io/maintenancemode": "",
+			},
+		},
+		Spec: viewv1beta1.ViewSpec{},
+	}
+
+	err = f.Create(context.TODO(), mModeMCV)
+
+	return nil, err
 }
 
+// TODO: The implementation is the same as the one in ManagedClusterViewGetterImpl
 func (f FakeMCVGetter) ListMModesMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error) {
-	return &viewv1beta1.ManagedClusterViewList{}, nil
+	matchLabels := map[string]string{
+		"ramendr.openshift.io/maintenancemode": "",
+	}
+	listOptions := []client.ListOption{
+		client.InNamespace(managedCluster),
+		client.MatchingLabels(matchLabels),
+	}
+
+	mModeMCVs := &viewv1beta1.ManagedClusterViewList{}
+	if err := f.apiReader.List(context.TODO(), mModeMCVs, listOptions...); err != nil {
+		return nil, err
+	}
+
+	return mModeMCVs, nil
 }
 
+// GetResource looks up the ManifestWork for the view resource, and if found returns the manifest resource
+// with an appropriately faked status
+// NOTE: Currently as only the MMode operations are directly using the GetResource function, this implementation
+// assumes the same.
 func (f FakeMCVGetter) GetResource(mcv *viewv1beta1.ManagedClusterView, resource interface{}) error {
-	return nil
+	foundMW := &ocmworkv1.ManifestWork{}
+	mwName := fmt.Sprintf(
+		rmnutil.ManifestWorkNameFormatClusterScope,
+		rmnutil.ClusterScopedResourceNameFromMCVName(mcv.GetName()),
+		rmnutil.MWTypeMMode,
+	)
+
+	err := f.Get(context.TODO(),
+		types.NamespacedName{Name: mwName, Namespace: mcv.GetNamespace()},
+		foundMW)
+	if err != nil {
+		// Potentially NotFound error that we want to return anyway
+		return err
+	}
+
+	// Found the MW for the MCV, return a fake resource status
+	mModeFromMW, err := rmnutil.ExtractMModeFromManifestWork(foundMW)
+	if err != nil {
+		return err
+	}
+
+	mModeFromMW.Status = rmn.MaintenanceModeStatus{
+		State:              rmn.MModeStateCompleted,
+		ObservedGeneration: mModeFromMW.Generation,
+		Conditions: []metav1.Condition{
+			{
+				Type:               string(rmn.MModeConditionFailoverActivated),
+				Status:             metav1.ConditionTrue,
+				LastTransitionTime: metav1.NewTime(time.Now()),
+				Reason:             "testing",
+				Message:            "testing",
+			},
+		},
+	}
+
+	// TODO: Is this required, i.e unmarshal and then marshal again?
+	marJ, err := json.Marshal(mModeFromMW)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(marJ, resource)
 }
 
+// DeleteManagedClusterView: This fake function would eventually delete the MMode MCV that is created
+// by the call to GetMModeFromManagedCluster. It is generic enough to delete any MCV that was created as well
+// TODO: Implementation is mostly the same as the one in ManagedClusterViewGetterImpl
 func (f FakeMCVGetter) DeleteManagedClusterView(clusterName, mcvName string, logger logr.Logger) error {
-	return nil
+	mcv := &viewv1beta1.ManagedClusterView{}
+
+	err := f.Get(context.TODO(), types.NamespacedName{Name: mcvName, Namespace: clusterName}, mcv)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+
+		return err
+	}
+
+	return f.Delete(context.TODO(), mcv)
 }
 
 func (f FakeMCVGetter) GetNamespaceFromManagedCluster(
@@ -273,7 +379,7 @@ func isRestorePVsComplete() bool {
 	return restorePVs
 }
 
-//nolint:funlen,cyclop
+//nolint:funlen,cyclop,gocognit
 func (f FakeMCVGetter) GetVRGFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
 	annnotations map[string]string,
 ) (*rmn.VolumeReplicationGroup, error) {
@@ -327,6 +433,12 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(resourceName, resourceNamespace,
 	case "getVRGsFromManagedClusters":
 		vrgFromMW, err := getVRGFromManifestWork(managedCluster)
 		if err != nil {
+			if errors.IsNotFound(err) {
+				if getFunctionNameAtIndex(3) == "getVRGs" { // Called only from DRCluster reconciler, at present
+					return fakeVRGWithMModesProtectedPVC()
+				}
+			}
+
 			return nil, err
 		}
 
@@ -358,11 +470,13 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(resourceName, resourceNamespace,
 				ObservedGeneration: vrgFromMW.Generation,
 			})
 
-			newProtectedPVC := &rmn.ProtectedPVC{
-				Name: "random name",
-			}
+			protectedPVC := &rmn.ProtectedPVC{}
+			protectedPVC.Name = "random name"
+			protectedPVC.StorageIdentifiers.ReplicationID = MModeReplicationID
+			protectedPVC.StorageIdentifiers.CSIProvisioner = MModeCSIProvisioner
+			protectedPVC.StorageIdentifiers.VolumeReplicationClassModes = []rmn.MMode{rmn.Failover}
 
-			vrgFromMW.Status.ProtectedPVCs = append(vrgFromMW.Status.ProtectedPVCs, *newProtectedPVC)
+			vrgFromMW.Status.ProtectedPVCs = append(vrgFromMW.Status.ProtectedPVCs, *protectedPVC)
 		}
 
 		return vrgFromMW, nil
@@ -439,6 +553,25 @@ func getVRGFromManifestWork(managedCluster string) (*rmn.VolumeReplicationGroup,
 		LastTransitionTime: metav1.Now(),
 		ObservedGeneration: vrg.Generation,
 	})
+
+	return vrg, nil
+}
+
+func fakeVRGWithMModesProtectedPVC() (*rmn.VolumeReplicationGroup, error) {
+	vrg := baseVRG.DeepCopy()
+	vrg.Status = rmn.VolumeReplicationGroupStatus{
+		State:                       rmn.PrimaryState,
+		PrepareForFinalSyncComplete: true,
+		FinalSyncComplete:           true,
+		ProtectedPVCs:               []rmn.ProtectedPVC{},
+	}
+
+	protectedPVC := &rmn.ProtectedPVC{}
+	protectedPVC.StorageIdentifiers.ReplicationID = MModeReplicationID
+	protectedPVC.StorageIdentifiers.CSIProvisioner = MModeCSIProvisioner
+	protectedPVC.StorageIdentifiers.VolumeReplicationClassModes = []rmn.MMode{rmn.Failover}
+
+	vrg.Status.ProtectedPVCs = append(vrg.Status.ProtectedPVCs, *protectedPVC)
 
 	return vrg, nil
 }
@@ -1071,7 +1204,7 @@ func getManifestWorkCount(homeClusterNamespace string) int {
 	manifestWorkList := &ocmworkv1.ManifestWorkList{}
 	listOptions := &client.ListOptions{Namespace: homeClusterNamespace}
 
-	Expect(k8sClient.List(context.TODO(), manifestWorkList, listOptions)).NotTo(HaveOccurred())
+	Expect(apiReader.List(context.TODO(), manifestWorkList, listOptions)).NotTo(HaveOccurred())
 
 	return len(manifestWorkList.Items)
 }
@@ -1645,7 +1778,8 @@ func verifyFailoverToSecondary(placementObj client.Object, toCluster string,
 	//       time this test is made, depending upon whether NetworkFence
 	//       resource is cleaned up or not, number of MW may change.
 	if !isSyncDR {
-		Expect(getManifestWorkCount(toCluster)).Should(Equal(3)) // MW for VRG+NS+DRCluster
+		// MW for VRG+NS+DRCluster
+		Eventually(getManifestWorkCount, timeout, interval).WithArguments(toCluster).Should(Equal(3))
 	} else {
 		Expect(getManifestWorkCount(toCluster)).Should(Equal(4)) // MW for VRG+NS+DRCluster+NF
 	}
@@ -1709,7 +1843,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				setRestorePVsUncomplete()
 				setDRPCSpecExpectationTo(rmn.ActionFailover, East1ManagedCluster, West1ManagedCluster)
 				verifyUserPlacementRuleDecisionUnchanged(userPlacementRule.Name, userPlacementRule.Namespace, East1ManagedCluster)
-				Expect(getManifestWorkCount(West1ManagedCluster)).Should(Equal(3)) // MWs for VRG, NS, and DRCluster
+				// MWs for VRG, NS, DRCluster, and MMode
+				Eventually(getManifestWorkCount, timeout, interval).WithArguments(West1ManagedCluster).Should(Equal(4))
 				setRestorePVsComplete()
 			})
 			It("Should failover to Secondary (West1ManagedCluster)", func() {
@@ -1929,7 +2064,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				setRestorePVsUncomplete()
 				setDRPCSpecExpectationTo(rmn.ActionFailover, East1ManagedCluster, West1ManagedCluster)
 				verifyUserPlacementRuleDecisionUnchanged(placement.Name, placement.Namespace, East1ManagedCluster)
-				Expect(getManifestWorkCount(West1ManagedCluster)).Should(Equal(3)) // MWs for VRG, NS, and VRG DRCluster
+				// MWs for VRG, NS, VRG DRCluster, and MMode
+				Eventually(getManifestWorkCount, timeout, interval).WithArguments(West1ManagedCluster).Should(Equal(4))
 				Expect(len(getPlacementDecision(placement.GetName(), placement.GetNamespace()).
 					Status.Decisions)).Should(Equal(1))
 				setRestorePVsComplete()

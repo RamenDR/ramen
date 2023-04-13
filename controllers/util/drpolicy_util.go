@@ -89,6 +89,10 @@ func DRPolicyS3Profiles(drpolicy *rmn.DRPolicy, drclusters []rmn.DRCluster) sets
 //nolint:gomnd
 func GetSecondsFromSchedulingInterval(drpolicy *rmn.DRPolicy) (float64, error) {
 	schedulingInterval := drpolicy.Spec.SchedulingInterval
+	if schedulingInterval == "" {
+		return 0, nil
+	}
+
 	intervalFormat := schedulingInterval[len(schedulingInterval)-1:] // extracts m|h|d string
 	interval := schedulingInterval[:len(schedulingInterval)-1]       // extracts numerical value of schedulingInterval
 	dayInSeconds := 24 * 60 * 60

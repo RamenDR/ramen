@@ -164,6 +164,7 @@ func validateClusterManifest(drcluster *ramen.DRCluster, disabled bool) {
 func inspectClusterManifestSubscriptionCSV(match bool, value string, drcluster *ramen.DRCluster) {
 	mwu := &util.MWUtil{
 		Client:          k8sClient,
+		APIReader:       apiReader,
 		Ctx:             context.TODO(),
 		Log:             ctrl.Log.WithName("MWUtilTest"),
 		InstName:        "",
