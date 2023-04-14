@@ -271,13 +271,13 @@ func (u *drclusterInstance) createMModeMCV(manifests map[string]*ocmworkv1.Manif
 		annotations := make(map[string]string)
 		annotations[DRClusterNameAnnotation] = u.object.GetName()
 
-		// Ignore returned MCV, as we are interested only in creating the resrouce (if not present)
+		// Ignore returned MCV, as we are interested only in creating the resource (if not present)
 		if _, err := u.reconciler.MCVGetter.GetMModeFromManagedCluster(
 			mModeRequest.Spec.TargetID,
 			u.object.GetName(),
 			annotations,
 		); err != nil {
-			u.log.Error(err, "Error creating view", "name", mModeRequest.Spec.TargetID)
+			u.log.Info("Error creating view", "name", mModeRequest.Spec.TargetID, "error", err)
 
 			u.requeue = true
 		}
