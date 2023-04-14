@@ -205,7 +205,10 @@ vrg_apply() {
 	  - includedResourceTypes:
 	    - deployments
 	    - pods
-	    labelSelector: !pod-template-hash
+	    labelSelector:
+	      matchExpressions:
+	      - key: pod-template-hash
+	        operator: DoesNotExist
 	    name: deployments-and-naked-pods
 	    type: resource
 	  workflows:
