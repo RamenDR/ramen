@@ -14,7 +14,7 @@ type MMode string
 
 // Supported maintenance modes
 const (
-	Failover = MMode("Failover")
+	MModeFailover = MMode("Failover")
 )
 
 // MaintenanceModeSpec defines the desired state of MaintenanceMode for a StorageProvisioner

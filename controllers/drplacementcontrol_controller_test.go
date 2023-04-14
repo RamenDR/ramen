@@ -474,7 +474,7 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(resourceName, resourceNamespace,
 			protectedPVC.Name = "random name"
 			protectedPVC.StorageIdentifiers.ReplicationID = MModeReplicationID
 			protectedPVC.StorageIdentifiers.CSIProvisioner = MModeCSIProvisioner
-			protectedPVC.StorageIdentifiers.VolumeReplicationClassModes = []rmn.MMode{rmn.Failover}
+			protectedPVC.StorageIdentifiers.VolumeReplicationClassModes = []rmn.MMode{rmn.MModeFailover}
 
 			vrgFromMW.Status.ProtectedPVCs = append(vrgFromMW.Status.ProtectedPVCs, *protectedPVC)
 		}
@@ -569,7 +569,7 @@ func fakeVRGWithMModesProtectedPVC() (*rmn.VolumeReplicationGroup, error) {
 	protectedPVC := &rmn.ProtectedPVC{}
 	protectedPVC.StorageIdentifiers.ReplicationID = MModeReplicationID
 	protectedPVC.StorageIdentifiers.CSIProvisioner = MModeCSIProvisioner
-	protectedPVC.StorageIdentifiers.VolumeReplicationClassModes = []rmn.MMode{rmn.Failover}
+	protectedPVC.StorageIdentifiers.VolumeReplicationClassModes = []rmn.MMode{rmn.MModeFailover}
 
 	vrg.Status.ProtectedPVCs = append(vrg.Status.ProtectedPVCs, *protectedPVC)
 
@@ -1990,7 +1990,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				setRestorePVsUncomplete()
 				setDRPCSpecExpectationTo(rmn.ActionFailover, East1ManagedCluster, West1ManagedCluster)
 				verifyUserPlacementRuleDecisionUnchanged(placement.Name, placement.Namespace, East1ManagedCluster)
-				Expect(getManifestWorkCount(West1ManagedCluster)).Should(Equal(3)) // MWs for VRG, NS, and VRG DRCluster
+				// MWs for VRG, NS, VRG DRCluster, and MMode
+				Expect(getManifestWorkCount(West1ManagedCluster)).Should(Equal(4))
 				Expect(len(getPlacementDecision(placement.GetName(), placement.GetNamespace()).
 					Status.Decisions)).Should(Equal(1))
 				setRestorePVsComplete()

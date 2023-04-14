@@ -49,6 +49,12 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary(requeue *bool) {
 		pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 		log := v.log.WithValues("pvc", pvcNamespacedName.String())
 
+		if err := v.updateProtectedPVCs(pvc); err != nil {
+			*requeue = true
+
+			continue
+		}
+
 		requeueResult, skip := v.preparePVCForVRProtection(pvc, log)
 		if requeueResult {
 			*requeue = true
@@ -102,6 +108,12 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 		pvc := &v.volRepPVCs[idx]
 		pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 		log := v.log.WithValues("pvc", pvcNamespacedName.String())
+
+		if err := v.updateProtectedPVCs(pvc); err != nil {
+			requeue = true
+
+			continue
+		}
 
 		requeueResult, skip := v.preparePVCForVRProtection(pvc, log)
 		if requeueResult {
@@ -216,6 +228,81 @@ func (v *VRGInstance) isPVCInUse(pvc *corev1.PersistentVolumeClaim, log logr.Log
 	}
 
 	return !inUse
+}
+
+// updateProtectedPVCs updates the list of ProtectedPVCs with the passed in PVC
+func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim) error {
+	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
+
+	storageClass, err := v.getStorageClass(pvcNamespacedName)
+	if err != nil {
+		v.log.Info(fmt.Sprintf("Failed to get the storageclass for pvc %s",
+			pvcNamespacedName))
+
+		return fmt.Errorf("failed to get the storageclass for pvc %s (%w)",
+			pvcNamespacedName, err)
+	}
+
+	volumeReplicationClass, err := v.selectVolumeReplicationClass(pvcNamespacedName)
+	if err != nil {
+		return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
+			v.instance.Name, err)
+	}
+
+	protectedPVC := v.findProtectedPVC(pvc.GetName())
+	if protectedPVC == nil {
+		protectedPVC = &ramendrv1alpha1.ProtectedPVC{Name: pvc.GetName()}
+		v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
+	}
+
+	protectedPVC.Name = pvc.Name
+	protectedPVC.ProtectedByVolSync = false
+	protectedPVC.StorageClassName = pvc.Spec.StorageClassName
+	protectedPVC.Labels = pvc.Labels
+	protectedPVC.AccessModes = pvc.Spec.AccessModes
+	protectedPVC.Resources = pvc.Spec.Resources
+
+	setPVCStorageIdentifiers(protectedPVC, storageClass, volumeReplicationClass)
+
+	return nil
+}
+
+func setPVCStorageIdentifiers(
+	protectedPVC *ramendrv1alpha1.ProtectedPVC,
+	storageClass *storagev1.StorageClass,
+	volumeReplicationClass *volrep.VolumeReplicationClass,
+) {
+	protectedPVC.StorageIdentifiers.CSIProvisioner = storageClass.Provisioner
+
+	if value, ok := storageClass.Labels[StorageIDLabel]; ok {
+		protectedPVC.StorageIdentifiers.StorageID = value
+		if modes, ok := storageClass.Labels[MModesLabel]; ok {
+			protectedPVC.StorageIdentifiers.StorageClassModes = MModesFromCSV(modes)
+		}
+	}
+
+	if value, ok := volumeReplicationClass.Labels[VolumeReplicationIDLabel]; ok {
+		protectedPVC.StorageIdentifiers.ReplicationID = value
+		if modes, ok := volumeReplicationClass.Labels[MModesLabel]; ok {
+			protectedPVC.StorageIdentifiers.VolumeReplicationClassModes = MModesFromCSV(modes)
+		}
+	}
+}
+
+func MModesFromCSV(modes string) []ramendrv1alpha1.MMode {
+	mModes := []ramendrv1alpha1.MMode{}
+
+	for _, mode := range strings.Split(modes, ",") {
+		switch mode {
+		case string(ramendrv1alpha1.MModeFailover):
+			mModes = append(mModes, ramendrv1alpha1.MModeFailover)
+		default:
+			// ignore unknown modes (TODO: should we error instead?)
+			continue
+		}
+	}
+
+	return mModes
 }
 
 // preparePVCForVRProtection processes prerequisites of any PVC that needs VR protection. It returns
@@ -1006,7 +1093,7 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 				APIGroup: new(string),
 			},
 			ReplicationState:       state,
-			VolumeReplicationClass: volumeReplicationClass,
+			VolumeReplicationClass: volumeReplicationClass.GetName(),
 			AutoResync:             v.autoResync(state),
 		},
 	}
@@ -1032,14 +1119,14 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 // VolumeReplicationGroup has the same name as pvc. But in future if it changes
 // functions to be changed would be processVRAsPrimary(), processVRAsSecondary()
 // to either receive pvc NamespacedName or pvc itself as an additional argument.
-func (v *VRGInstance) selectVolumeReplicationClass(namespacedName types.NamespacedName) (string, error) {
-	className := ""
-
+func (v *VRGInstance) selectVolumeReplicationClass(
+	namespacedName types.NamespacedName,
+) (*volrep.VolumeReplicationClass, error) {
 	if !v.vrcUpdated {
 		if err := v.updateReplicationClassList(); err != nil {
 			v.log.Error(err, "Failed to get VolumeReplicationClass list")
 
-			return className, fmt.Errorf("failed to get VolumeReplicationClass list")
+			return nil, fmt.Errorf("failed to get VolumeReplicationClass list")
 		}
 
 		v.vrcUpdated = true
@@ -1048,7 +1135,7 @@ func (v *VRGInstance) selectVolumeReplicationClass(namespacedName types.Namespac
 	if len(v.replClassList.Items) == 0 {
 		v.log.Info("No VolumeReplicationClass available")
 
-		return className, fmt.Errorf("no VolumeReplicationClass available")
+		return nil, fmt.Errorf("no VolumeReplicationClass available")
 	}
 
 	storageClass, err := v.getStorageClass(namespacedName)
@@ -1056,7 +1143,7 @@ func (v *VRGInstance) selectVolumeReplicationClass(namespacedName types.Namespac
 		v.log.Info(fmt.Sprintf("Failed to get the storageclass of pvc %s",
 			namespacedName))
 
-		return className, fmt.Errorf("failed to get the storageclass of pvc %s (%w)",
+		return nil, fmt.Errorf("failed to get the storageclass of pvc %s (%w)",
 			namespacedName, err)
 	}
 
@@ -1074,27 +1161,22 @@ func (v *VRGInstance) selectVolumeReplicationClass(namespacedName types.Namespac
 
 		// ReplicationClass that matches both VRG schedule and pvc provisioner
 		if schedulingInterval == v.instance.Spec.Async.SchedulingInterval {
-			className = replicationClass.Name
+			v.log.Info(fmt.Sprintf("Found VolumeReplicationClass that matches provisioner and schedule %s/%s",
+				storageClass.Provisioner, v.instance.Spec.Async.SchedulingInterval))
 
-			break
+			return replicationClass, nil
 		}
 	}
 
-	if className == "" {
-		v.log.Info(fmt.Sprintf("No VolumeReplicationClass found to match provisioner and schedule %s/%s",
-			storageClass.Provisioner, v.instance.Spec.Async.SchedulingInterval))
-
-		return className, fmt.Errorf("no VolumeReplicationClass found to match provisioner and schedule")
-	}
-
-	v.log.Info(fmt.Sprintf("Found VolumeReplicationClass that matches provisioner and schedule %s/%s",
+	v.log.Info(fmt.Sprintf("No VolumeReplicationClass found to match provisioner and schedule %s/%s",
 		storageClass.Provisioner, v.instance.Spec.Async.SchedulingInterval))
 
-	return className, nil
+	return nil, fmt.Errorf("no VolumeReplicationClass found to match provisioner and schedule")
 }
 
-// if the fetched SCs are stashed, fetching it again for the next PVC can be avoided
-// saving a call to the API server
+// getStorageClass inspects the PVCs being protected by this VRG instance for the passed in namespacedName, and
+// returns its corresponding StorageClass resource from an instance cache if available, or fetches it from the API
+// server and stores it in an instance cache before returning the StorageClass
 func (v *VRGInstance) getStorageClass(namespacedName types.NamespacedName) (*storagev1.StorageClass, error) {
 	var pvc *corev1.PersistentVolumeClaim
 
@@ -1117,6 +1199,15 @@ func (v *VRGInstance) getStorageClass(namespacedName types.NamespacedName) (*sto
 	}
 
 	scName := pvc.Spec.StorageClassName
+	if scName == nil {
+		v.log.Info(fmt.Sprintf("missing StorageClass name for pvc (%s)", namespacedName))
+
+		return nil, fmt.Errorf("missing StorageClass name for pvc (%s)", namespacedName)
+	}
+
+	if storageClass, ok := v.storageClassCache[*scName]; ok {
+		return storageClass, nil
+	}
 
 	storageClass := &storagev1.StorageClass{}
 	if err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: *scName}, storageClass); err != nil {
@@ -1125,6 +1216,8 @@ func (v *VRGInstance) getStorageClass(namespacedName types.NamespacedName) (*sto
 		return nil, fmt.Errorf("failed to get the storageclass with name %s (%w)",
 			*scName, err)
 	}
+
+	v.storageClassCache[*scName] = storageClass
 
 	return storageClass, nil
 }

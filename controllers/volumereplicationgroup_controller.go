@@ -326,15 +326,16 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	defer log.Info("Exiting reconcile loop")
 
 	v := VRGInstance{
-		reconciler:     r,
-		ctx:            ctx,
-		log:            log,
-		instance:       &ramendrv1alpha1.VolumeReplicationGroup{},
-		volRepPVCs:     []corev1.PersistentVolumeClaim{},
-		volSyncPVCs:    []corev1.PersistentVolumeClaim{},
-		replClassList:  &volrep.VolumeReplicationClassList{},
-		namespacedName: req.NamespacedName.String(),
-		objectStorers:  make(map[string]cachedObjectStorer),
+		reconciler:        r,
+		ctx:               ctx,
+		log:               log,
+		instance:          &ramendrv1alpha1.VolumeReplicationGroup{},
+		volRepPVCs:        []corev1.PersistentVolumeClaim{},
+		volSyncPVCs:       []corev1.PersistentVolumeClaim{},
+		replClassList:     &volrep.VolumeReplicationClassList{},
+		namespacedName:    req.NamespacedName.String(),
+		objectStorers:     make(map[string]cachedObjectStorer),
+		storageClassCache: make(map[string]*storagev1.StorageClass),
 	}
 
 	// Fetch the VolumeReplicationGroup instance
@@ -371,12 +372,8 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 		"Initializing VolumeReplicationGroup")
 
 	res, err := v.processVRG()
-	log.Info("Reconcile return",
-		"result", res,
-		"err", err,
-		"VolRep count", len(v.volRepPVCs),
-		"VolSync count", len(v.volSyncPVCs),
-	)
+	log.Info("Reconcile return", "result", res, "err", err,
+		"VolRep count", len(v.volRepPVCs), "VolSync count", len(v.volSyncPVCs))
 
 	return res, err
 }
@@ -396,6 +393,7 @@ type VRGInstance struct {
 	volRepPVCs           []corev1.PersistentVolumeClaim
 	volSyncPVCs          []corev1.PersistentVolumeClaim
 	replClassList        *volrep.VolumeReplicationClassList
+	storageClassCache    map[string]*storagev1.StorageClass
 	vrgObjectProtected   *metav1.Condition
 	kubeObjectsProtected *metav1.Condition
 	vrcUpdated           bool
@@ -417,6 +415,15 @@ const (
 	pvVRAnnotationRetentionValue  = "retained"
 	RestoreAnnotation             = "volumereplicationgroups.ramendr.openshift.io/ramen-restore"
 	RestoredByRamen               = "True"
+
+	// StorageClass label
+	StorageIDLabel = "ramendr.openshift.io/storageID"
+
+	// VolumeReplicationClass label
+	VolumeReplicationIDLabel = "ramendr.openshift.io/replicationID"
+
+	// Maintenance mode label
+	MModesLabel = "ramendr.openshift.io/maintenancemodes"
 )
 
 func (v *VRGInstance) processVRG() (ctrl.Result, error) {
