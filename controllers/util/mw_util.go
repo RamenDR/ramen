@@ -407,7 +407,7 @@ var (
 		Rules: []rbacv1.PolicyRule{
 			{
 				APIGroups: []string{"ramendr.openshift.io"},
-				Resources: []string{"maintenancemode"},
+				Resources: []string{"maintenancemodes"},
 				Verbs:     []string{"create", "get", "list", "update", "delete"},
 			},
 		},
