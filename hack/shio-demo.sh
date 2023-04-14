@@ -217,13 +217,13 @@ vrg_apply() {
 	    - group: everything-but-deploy-po-pv-rs-vr-vrg
 	    - group: deployments-and-naked-pods
 	a
-	vrg_appendix="$3${4:+"\n  action: "$4}
+	vrg_appendix="
   kubeObjectProtection:
     captureInterval: 1m
     recipeRef:
       name: asdf
-      recoverWorkflowName: recover
-" \
+      recoverWorkflowName: recover$3${4:+
+  action: $4}" \
 	cluster_names=$s3_store_cluster_names application_sample_namespace_name=asdf $ramen_hack_directory_path_name/minikube-ramen.sh application_sample_vrg_deploy$2 $1
 }; exit_stack_push unset -f vrg_apply
 
@@ -259,7 +259,7 @@ vrg_final_sync() {
 }; exit_stack_push unset -f vrg_final_sync
 
 vrg_fence() {
-	vrg_demote $1
+	vrg_demote $1 failover
 }; exit_stack_push unset -f vrg_fence
 
 vrg_finalizer0_remove() {
