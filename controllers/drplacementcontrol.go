@@ -564,7 +564,7 @@ func requiresRegionalFailoverPrequisites(
 			continue
 		}
 
-		if !hasMode(protectedPVC.StorageIdentifiers.VolumeReplicationClassModes, rmn.Failover) {
+		if !hasMode(protectedPVC.StorageIdentifiers.VolumeReplicationClassModes, rmn.MModeFailover) {
 			continue
 		}
 

@@ -150,7 +150,7 @@ func (u *drclusterInstance) activateRegionalFailoverPrequisite(identifier ramen.
 		Spec: ramen.MaintenanceModeSpec{
 			StorageProvisioner: identifier.CSIProvisioner,
 			TargetID:           identifier.ReplicationID,
-			Modes:              []ramen.MMode{ramen.Failover},
+			Modes:              []ramen.MMode{ramen.MModeFailover},
 		},
 	}
 
