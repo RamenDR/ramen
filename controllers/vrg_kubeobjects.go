@@ -371,9 +371,7 @@ func GetLabelSelectorFromRecipeVolumeGroupWithName(name string, recipe *Recipe.R
 
 	for _, group := range recipe.Spec.Groups {
 		if group.Name == name {
-			labelSelector, err := getLabelSelectorFromString(group.LabelSelector)
-
-			return *labelSelector, err
+			return *group.LabelSelector, nil
 		}
 	}
 
@@ -397,13 +395,13 @@ func (v VRGInstance) getNameAndNamespaceString() string {
 }
 
 func (v *VRGInstance) getCaptureGroupsFromRecipe() []kubeobjects.CaptureSpec {
-	workflow, recipe, err := v.getWorkflowAndRecipeFromName(*v.instance.Spec.KubeObjectProtection.RecipeRef.Name,
-		*v.instance.Spec.KubeObjectProtection.RecipeRef.CaptureWorkflowName)
+	recipe, err := GetRecipeWithName(
+		v.ctx, v.reconciler.Client, *v.instance.Spec.KubeObjectProtection.RecipeRef.Name, v.instance.Namespace)
 	if err != nil {
-		v.log.Error(err, "failed to get Workflow from Recipe.", "vrgInfo", v.getNameAndNamespaceString())
+		v.log.Error(err, "failed to get Recipe from name.", "vrgInfo", v.getNameAndNamespaceString())
 	}
 
-	groups, err := v.getCaptureGroupsFromWorkflow(*recipe, *workflow)
+	groups, err := v.getCaptureGroupsFromWorkflow(recipe, *recipe.Spec.CaptureWorkflow)
 	if err != nil {
 		v.log.Error(err, "failed to get Capture Groups from Workflow.", "vrgInfo", v.getNameAndNamespaceString())
 	}
@@ -428,14 +426,13 @@ func (v *VRGInstance) getRecoverGroups() []kubeobjects.RecoverSpec {
 }
 
 func (v *VRGInstance) getRecoverGroupsFromRecipe() []kubeobjects.RecoverSpec {
-	workflow, recipe, err := v.getWorkflowAndRecipeFromName(*v.instance.Spec.KubeObjectProtection.RecipeRef.Name,
-		*v.instance.Spec.KubeObjectProtection.RecipeRef.RecoverWorkflowName)
+	recipe, err := GetRecipeWithName(
+		v.ctx, v.reconciler.Client, *v.instance.Spec.KubeObjectProtection.RecipeRef.Name, v.instance.Namespace)
 	if err != nil {
-		v.log.Error(err, "failed to get Workflow and Recipe from Name.", "vrgInfo",
-			v.getNameAndNamespaceString())
+		v.log.Error(err, "failed to get Recipe from name.", "vrgInfo", v.getNameAndNamespaceString())
 	}
 
-	groups, err := v.getRestoreGroupsFromWorkflow(*recipe, *workflow)
+	groups, err := v.getRestoreGroupsFromWorkflow(recipe, *recipe.Spec.RecoverWorkflow)
 	if err != nil {
 		v.log.Error(err, "failed to get Restore Groups from Workflow.", "vrgInfo",
 			v.getNameAndNamespaceString())
@@ -697,35 +694,6 @@ func GetRecipeWithName(ctx context.Context, client client.Client, name, namespac
 	return *recipe, err
 }
 
-// input: recipe name, recipe name
-// output: slice of capture objects that constitute the group
-func (v *VRGInstance) getWorkflowAndRecipeFromName(
-	recipeName, workflowName string) (*Recipe.Workflow, *Recipe.Recipe, error,
-) {
-	recipe, err := GetRecipeWithName(v.ctx, v.reconciler.Client, recipeName, v.instance.Namespace)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// get workflow
-	workflow, err := getWorkflowByName(recipe, workflowName)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return workflow, &recipe, nil
-}
-
-func getWorkflowByName(recipe Recipe.Recipe, name string) (*Recipe.Workflow, error) {
-	for _, workflow := range recipe.Spec.Workflows {
-		if workflow.Name == name {
-			return workflow, nil
-		}
-	}
-
-	return nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec.Workflow.Name"}, name)
-}
-
 func (v *VRGInstance) getCaptureGroupsFromWorkflow(
 	recipe Recipe.Recipe, workflow Recipe.Workflow) ([]kubeobjects.CaptureSpec, error,
 ) {
@@ -861,10 +829,7 @@ func convertRecipeHookToCaptureSpec(
 ) {
 	hookName := hook.Name + "-" + op.Name
 
-	hooks, err := getHookSpecFromHook(hook, op)
-	if err != nil {
-		return nil, err
-	}
+	hooks := getHookSpecFromHook(hook, op)
 
 	captureSpec := kubeobjects.CaptureSpec{
 		Name: hookName,
@@ -883,10 +848,7 @@ func convertRecipeHookToCaptureSpec(
 }
 
 func convertRecipeHookToRecoverSpec(hook Recipe.Hook, op Recipe.Operation) (*kubeobjects.RecoverSpec, error) {
-	hooks, err := getHookSpecFromHook(hook, op)
-	if err != nil {
-		return nil, err
-	}
+	hooks := getHookSpecFromHook(hook, op)
 
 	return &kubeobjects.RecoverSpec{
 		// BackupName: arbitrary fixed string to designate that this is will be a Backup, not Restore, object
@@ -903,30 +865,20 @@ func convertRecipeHookToRecoverSpec(hook Recipe.Hook, op Recipe.Operation) (*kub
 	}, nil
 }
 
-func getHookSpecFromHook(hook Recipe.Hook, op Recipe.Operation) ([]kubeobjects.HookSpec, error) {
-	labelSelector, err := getLabelSelectorFromString(hook.LabelSelector)
-	if err != nil {
-		return nil, err
-	}
-
+func getHookSpecFromHook(hook Recipe.Hook, op Recipe.Operation) []kubeobjects.HookSpec {
 	return []kubeobjects.HookSpec{
 		{
 			Name:          op.Name,
 			Type:          hook.Type,
-			Timeout:       metav1.Duration{Duration: time.Duration(op.Timeout * int(time.Second))},
+			Timeout:       *op.Timeout,
 			Container:     op.Container,
 			Command:       op.Command,
-			LabelSelector: *labelSelector,
+			LabelSelector: *hook.LabelSelector,
 		},
-	}, nil
+	}
 }
 
 func convertRecipeGroupToRecoverSpec(group Recipe.Group) (*kubeobjects.RecoverSpec, error) {
-	labelSelector, err := getLabelSelectorFromString(group.LabelSelector)
-	if err != nil {
-		return nil, err
-	}
-
 	return &kubeobjects.RecoverSpec{
 		BackupName: group.BackupRef,
 		Spec: kubeobjects.Spec{
@@ -934,7 +886,7 @@ func convertRecipeGroupToRecoverSpec(group Recipe.Group) (*kubeobjects.RecoverSp
 				IncludedResources: group.IncludedResourceTypes,
 				ExcludedResources: group.ExcludedResourceTypes,
 			},
-			LabelSelector:           labelSelector,
+			LabelSelector:           group.LabelSelector,
 			OrLabelSelectors:        []*metav1.LabelSelector{},
 			IncludeClusterResources: group.IncludeClusterResources,
 		},
@@ -942,11 +894,6 @@ func convertRecipeGroupToRecoverSpec(group Recipe.Group) (*kubeobjects.RecoverSp
 }
 
 func convertRecipeGroupToCaptureSpec(group Recipe.Group) (*kubeobjects.CaptureSpec, error) {
-	labelSelector, err := getLabelSelectorFromString(group.LabelSelector)
-	if err != nil {
-		return nil, err
-	}
-
 	captureSpec := kubeobjects.CaptureSpec{
 		Name: group.Name,
 		// TODO: add backupRef/backupName here?
@@ -955,21 +902,11 @@ func convertRecipeGroupToCaptureSpec(group Recipe.Group) (*kubeobjects.CaptureSp
 				IncludedResources: group.IncludedResourceTypes,
 				ExcludedResources: group.ExcludedResourceTypes,
 			},
-			LabelSelector:           labelSelector,
+			LabelSelector:           group.LabelSelector,
 			OrLabelSelectors:        []*metav1.LabelSelector{},
 			IncludeClusterResources: group.IncludeClusterResources,
 		},
 	}
 
 	return &captureSpec, nil
-}
-
-func getLabelSelectorFromString(labels string) (*metav1.LabelSelector, error) {
-	// velero bug: https://github.com/vmware-tanzu/velero/issues/2083
-	// adding labelSelector: {} will create validation error; omit to avoid this
-	if labels == "" {
-		return nil, nil
-	}
-
-	return metav1.ParseToLabelSelector(labels)
 }

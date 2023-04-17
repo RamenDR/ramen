@@ -8,13 +8,14 @@ spec:
   appType: busybox
   hooks:
   - name: service-hooks
-    namespace: recipe-test
-    labelSelector: appname=busybox
+    labelSelector:
+      matchLabels:
+        appname: busybox
     type: exec
     ops:
     - name: pre-backup
       container: busybox
-      timeout: 600
+      timeout: 10m
       # Command note: "/bin/sh -c" required when using non-executable files
       command:
       - "/bin/sh"
@@ -22,7 +23,7 @@ spec:
       - "date"
     - name: pre-restore
       container: busybox
-      timeout: 400
+      timeout: 5m
       command:
       - "/bin/sh"
       - "-c"
@@ -30,7 +31,9 @@ spec:
   groups:
   - name: volumes
     type: volume
-    labelSelector: appname=busybox
+    labelSelector:
+      matchLabels:
+        appname: busybox
   - name: instance-resources
     backupRef: instance-resources
     type: resource
@@ -47,12 +50,11 @@ spec:
     type: resource
     includedResourceTypes:
     - pvc
-  workflows:
-  - name: capture
+  captureWorkflow:
     sequence:
     - hook: service-hooks/pre-backup
     - group: instance-resources
-  - name: recover
+  recoverWorkflow:
     sequence:
     - hook: service-hooks/pre-restore
     - group: pvcs

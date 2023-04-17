@@ -203,59 +203,85 @@ func getVRGDefinitionWithKubeObjectProtection(hasPVCSelectorLabels bool, namespa
 	return vrg
 }
 
-func getRecipeDefinition(namespace string) *Recipe.Recipe {
-	hook := &Recipe.Hook{
-		Name:          "hook-single",
-		Namespace:     namespace,
-		Type:          "exec",
-		LabelSelector: "myapp=testapp",
+func getTestHook() *Recipe.Hook {
+	duration, err := time.ParseDuration("30s")
+
+	Expect(err).ToNot(HaveOccurred())
+
+	return &Recipe.Hook{
+		Name: "hook-single",
+		Type: "exec",
+		LabelSelector: &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"myapp": "testapp",
+			},
+		},
 		SinglePodOnly: false,
 		Ops: []*Recipe.Operation{
 			{
 				Name:      "checkpoint",
 				Container: "main",
-				Timeout:   30,
+				Timeout:   &metav1.Duration{Duration: duration},
 				Command:   []string{"bash", "/scripts/checkpoint.sh"},
 			},
 		},
 		Chks:      []*Recipe.Check{},
 		Essential: new(bool),
 	}
+}
 
-	group := &Recipe.Group{
+func getTestGroup() *Recipe.Group {
+	return &Recipe.Group{
 		Name:                  "test-group",
 		BackupRef:             "test-backup-ref",
 		Type:                  "resource",
 		IncludedResourceTypes: []string{"deployment", "replicaset"},
 		ExcludedResourceTypes: nil,
-		LabelSelector:         "test/empty-on-backup notin (true),test/ignore-on-backup notin (true)",
+		LabelSelector: &metav1.LabelSelector{
+			MatchExpressions: []metav1.LabelSelectorRequirement{
+				{
+					Key:      "test",
+					Operator: metav1.LabelSelectorOpNotIn,
+					Values:   []string{"empty-on-backup notin", "ignore-on-backup"},
+				},
+			},
+		},
 	}
+}
 
-	volumeGroup := &Recipe.Group{
-		Name:          volumeGroupName,
-		Type:          "volume",
-		LabelSelector: "test/empty-on-backup notin (true),test/ignore-on-backup notin (true)",
+func getTestVolumeGroup() *Recipe.Group {
+	return &Recipe.Group{
+		Name: volumeGroupName,
+		Type: "volume",
+		LabelSelector: &metav1.LabelSelector{
+			MatchExpressions: []metav1.LabelSelectorRequirement{
+				{
+					Key:      "test",
+					Operator: metav1.LabelSelectorOpNotIn,
+					Values:   []string{"empty-on-backup notin", "ignore-on-backup"},
+				},
+			},
+		},
 	}
+}
 
+func getRecipeDefinition(namespace string) *Recipe.Recipe {
 	return &Recipe.Recipe{
 		TypeMeta:   metav1.TypeMeta{Kind: "Recipe", APIVersion: "ramendr.openshift.io/v1alpha1"},
 		ObjectMeta: metav1.ObjectMeta{Name: "test-recipe", Namespace: namespace},
 		Spec: Recipe.RecipeSpec{
-			Groups: []*Recipe.Group{group, volumeGroup},
-			Hooks:  []*Recipe.Hook{hook},
-			Workflows: []*Recipe.Workflow{
-				{
-					Name: "test-workflow",
-					Sequence: []map[string]string{
-						{
-							"group": "test-group-volume",
-						},
-						{
-							"group": "test-group",
-						},
-						{
-							"hook": "test-hook",
-						},
+			Groups: []*Recipe.Group{getTestGroup(), getTestVolumeGroup()},
+			Hooks:  []*Recipe.Hook{getTestHook()},
+			CaptureWorkflow: &Recipe.Workflow{
+				Sequence: []map[string]string{
+					{
+						"group": "test-group-volume",
+					},
+					{
+						"group": "test-group",
+					},
+					{
+						"hook": "test-hook",
 					},
 				},
 			},
@@ -268,9 +294,7 @@ func getVolumeGroupLabelSelector(recipe *Recipe.Recipe, volumeGroupName string) 
 
 	for _, group := range recipe.Spec.Groups {
 		if group.Name == volumeGroupName {
-			labelSelector, err := metav1.ParseToLabelSelector(group.LabelSelector)
-
-			Expect(err).ToNot(HaveOccurred())
+			labelSelector := group.LabelSelector
 
 			return *labelSelector
 		}

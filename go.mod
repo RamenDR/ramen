@@ -19,7 +19,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.14.0
 	github.com/prometheus/client_model v0.3.0
-	github.com/ramendr/recipe v0.0.0-20230127131340-1fbc6bc31dea
+	github.com/ramendr/recipe v0.0.0-20230414231448-ce4a190a1fd1
 	github.com/stolostron/config-policy-controller v0.0.0-20220503151013-2a6d24b0ed07
 	github.com/stolostron/governance-policy-propagator v0.0.0-20220511204303-f1c56f6da1bf
 	github.com/stolostron/multicloud-operators-foundation v0.0.0-20220315092956-6dc184852d56
