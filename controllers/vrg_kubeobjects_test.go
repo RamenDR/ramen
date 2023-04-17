@@ -23,17 +23,24 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 	var group *Recipe.Group
 
 	BeforeEach(func() {
+		duration, err := time.ParseDuration("30s")
+
+		Expect(err).ToNot(HaveOccurred())
+
 		hook = &Recipe.Hook{
-			Name:          "hook-single",
-			Namespace:     "recipe-test",
-			Type:          "exec",
-			LabelSelector: "myapp=testapp",
+			Name: "hook-single",
+			Type: "exec",
+			LabelSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"myapp": "testapp",
+				},
+			},
 			SinglePodOnly: false,
 			Ops: []*Recipe.Operation{
 				{
 					Name:      "checkpoint",
 					Container: "main",
-					Timeout:   30,
+					Timeout:   &metav1.Duration{Duration: duration},
 					Command:   []string{"bash", "/scripts/checkpoint.sh"},
 				},
 			},
@@ -47,15 +54,20 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 			Type:                  "resource",
 			IncludedResourceTypes: []string{"deployment", "replicaset"},
 			ExcludedResourceTypes: nil,
-			LabelSelector:         "test/empty-on-backup notin (true),test/ignore-on-backup notin (true)",
+			LabelSelector: &metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{
+						Key:      "test",
+						Operator: metav1.LabelSelectorOpNotIn,
+						Values:   []string{"empty-on-backup notin", "ignore-on-backup"},
+					},
+				},
+			},
 		}
 	})
 
 	Context("Conversion", func() {
 		It("Hook to CaptureSpec", func() {
-			labelSelector, err := metav1.ParseToLabelSelector(hook.LabelSelector)
-			Expect(err).To(BeNil())
-
 			targetCaptureSpec := &kubeobjects.CaptureSpec{
 				Name: hook.Name + "-" + hook.Ops[0].Name,
 				Spec: kubeobjects.Spec{
@@ -67,13 +79,13 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 								Name:          hook.Ops[0].Name,
 								Type:          hook.Type,
 								Command:       hook.Ops[0].Command,
-								Timeout:       metav1.Duration{Duration: time.Duration(hook.Ops[0].Timeout * int(time.Second))},
+								Timeout:       *hook.Ops[0].Timeout,
 								Container:     hook.Ops[0].Container,
-								LabelSelector: *labelSelector,
+								LabelSelector: *hook.LabelSelector,
 							},
 						},
 					},
-					LabelSelector:           labelSelector,
+					LabelSelector:           hook.LabelSelector,
 					IncludeClusterResources: new(bool),
 				},
 			}
@@ -84,9 +96,6 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 		})
 
 		It("Hook to RecoverSpec", func() {
-			labelSelector, err := metav1.ParseToLabelSelector(hook.LabelSelector)
-			Expect(err).To(BeNil())
-
 			targetRecoverSpec := &kubeobjects.RecoverSpec{
 				BackupName: ramen.ReservedBackupName,
 				Spec: kubeobjects.Spec{
@@ -98,13 +107,13 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 								Name:          hook.Ops[0].Name,
 								Type:          hook.Type,
 								Command:       hook.Ops[0].Command,
-								Timeout:       metav1.Duration{Duration: time.Duration(hook.Ops[0].Timeout * int(time.Second))},
+								Timeout:       *hook.Ops[0].Timeout,
 								Container:     hook.Ops[0].Container,
-								LabelSelector: *labelSelector,
+								LabelSelector: *hook.LabelSelector,
 							},
 						},
 					},
-					LabelSelector:           labelSelector,
+					LabelSelector:           hook.LabelSelector,
 					IncludeClusterResources: new(bool),
 				},
 			}
@@ -115,9 +124,6 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 		})
 
 		It("Group to CaptureSpec", func() {
-			labelSelector, err := metav1.ParseToLabelSelector(group.LabelSelector)
-			Expect(err).To(BeNil())
-
 			targetCaptureSpec := &kubeobjects.CaptureSpec{
 				Name: group.Name,
 				Spec: kubeobjects.Spec{
@@ -125,7 +131,7 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 						IncludedResources: group.IncludedResourceTypes,
 						ExcludedResources: group.ExcludedResourceTypes,
 					},
-					LabelSelector:           labelSelector,
+					LabelSelector:           group.LabelSelector,
 					IncludeClusterResources: group.IncludeClusterResources,
 					OrLabelSelectors:        []*metav1.LabelSelector{},
 				},
@@ -137,9 +143,6 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 		})
 
 		It("Group to RecoverSpec", func() {
-			labelSelector, err := metav1.ParseToLabelSelector(group.LabelSelector)
-			Expect(err).To(BeNil())
-
 			targetRecoverSpec := &kubeobjects.RecoverSpec{
 				BackupName: group.BackupRef,
 				Spec: kubeobjects.Spec{
@@ -147,7 +150,7 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 						IncludedResources: group.IncludedResourceTypes,
 						ExcludedResources: group.ExcludedResourceTypes,
 					},
-					LabelSelector:           labelSelector,
+					LabelSelector:           group.LabelSelector,
 					IncludeClusterResources: group.IncludeClusterResources,
 					OrLabelSelectors:        []*metav1.LabelSelector{},
 				},
