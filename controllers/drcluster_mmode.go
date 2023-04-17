@@ -70,7 +70,7 @@ func (u *drclusterInstance) mModeActivationsRequired() (map[string]ramen.Storage
 			continue
 		}
 
-		required, activationsRequired := requiresRegionalFailoverPrequisites(vrgs, u.object.GetName(), u.log)
+		required, activationsRequired := requiresRegionalFailoverPrerequisites(vrgs, u.object.GetName(), u.log)
 		if !required {
 			continue
 		}
@@ -126,12 +126,12 @@ func (u *drclusterInstance) activateRegionalFailoverPrequisites(
 ) {
 	for _, identifier := range activationsRequired {
 		u.log.Info("Activating maintenance mode",
-			"provisioner", identifier.CSIProvisioner,
+			"provisioner", identifier.StorageProvisioner,
 			"ReplciationID", identifier.ReplicationID)
 
 		if err := u.activateRegionalFailoverPrequisite(identifier); err != nil {
 			u.log.Error(err, "Error activating maintenance mode",
-				"provisioner", identifier.CSIProvisioner,
+				"provisioner", identifier.StorageProvisioner,
 				"ReplciationID", identifier.ReplicationID)
 
 			u.requeue = true
@@ -146,10 +146,10 @@ func (u *drclusterInstance) activateRegionalFailoverPrequisites(
 func (u *drclusterInstance) activateRegionalFailoverPrequisite(identifier ramen.StorageIdentifiers) error {
 	mMode := ramen.MaintenanceMode{
 		TypeMeta:   metav1.TypeMeta{Kind: "MaintenanceMode", APIVersion: "ramendr.openshift.io/v1alpha1"},
-		ObjectMeta: metav1.ObjectMeta{Name: identifier.ReplicationID},
+		ObjectMeta: metav1.ObjectMeta{Name: identifier.ReplicationID.ID},
 		Spec: ramen.MaintenanceModeSpec{
-			StorageProvisioner: identifier.CSIProvisioner,
-			TargetID:           identifier.ReplicationID,
+			StorageProvisioner: identifier.StorageProvisioner,
+			TargetID:           identifier.ReplicationID.ID,
 			Modes:              []ramen.MMode{ramen.MModeFailover},
 		},
 	}
@@ -157,7 +157,7 @@ func (u *drclusterInstance) activateRegionalFailoverPrequisite(identifier ramen.
 	annotations := make(map[string]string)
 	annotations[DRClusterNameAnnotation] = u.object.GetName()
 
-	err := u.mwUtil.CreateOrUpdateMModeManifestWork(identifier.ReplicationID, u.object.GetName(), mMode, annotations)
+	err := u.mwUtil.CreateOrUpdateMModeManifestWork(identifier.ReplicationID.ID, u.object.GetName(), mMode, annotations)
 	if err != nil {
 		u.log.Error(err, "Error creating or updating maintenance mode manifest", "name", identifier.ReplicationID)
 
@@ -238,18 +238,36 @@ func (u *drclusterInstance) updateMModeActivationStatus(survivors map[string]*oc
 
 	// Update maintenance mode status for the cluster from views that are valid
 	for idx := range mModeMCVs.Items {
+		var clusterMaintenanceMode ramen.ClusterMaintenanceMode
+
 		mMode := u.pruneMModeMCV(&mModeMCVs.Items[idx], survivors)
 		if mMode == nil {
-			// TODO: survivors should report some status, even if the resource view fails
-			continue
+			// Check if maintenance mode is part of survivors, if so update some status
+			key := util.ClusterScopedResourceNameFromMCVName(mModeMCVs.Items[idx].GetName())
+
+			mwMMode := survivors[key]
+			if mwMMode == nil {
+				continue
+			}
+
+			if mMode, err = util.ExtractMModeFromManifestWork(mwMMode); err != nil {
+				continue
+			}
+
+			clusterMaintenanceMode = ramen.ClusterMaintenanceMode{
+				StorageProvisioner: mMode.Spec.StorageProvisioner,
+				TargetID:           mMode.Spec.TargetID,
+				State:              ramen.MModeStateUnknown,
+			}
+		} else {
+			clusterMaintenanceMode = ramen.ClusterMaintenanceMode{
+				StorageProvisioner: mMode.Spec.StorageProvisioner,
+				TargetID:           mMode.Spec.TargetID,
+				State:              mMode.Status.State,
+				Conditions:         mMode.Status.Conditions,
+			}
 		}
 
-		clusterMaintenanceMode := ramen.ClusterMaintenanceMode{
-			StorageProvisioner: mMode.Spec.StorageProvisioner,
-			TargetID:           mMode.Spec.TargetID,
-			State:              mMode.Status.State,
-			Conditions:         mMode.Status.Conditions,
-		}
 		u.object.Status.MaintenanceModes = append(u.object.Status.MaintenanceModes, clusterMaintenanceMode)
 
 		u.log.Info("Appended maintenance mode status", "status", clusterMaintenanceMode)

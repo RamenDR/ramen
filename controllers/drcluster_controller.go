@@ -15,6 +15,7 @@ import (
 	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -183,11 +184,11 @@ func DRPCUpdateOfInterest(oldDRPC, newDRPC *ramen.DRPlacementControl) bool {
 		return true
 	}
 
-	if condition := GetDRPCStatusCondition(&newDRPC.Status, ramen.ConditionAvailable); condition != nil &&
+	if condition := meta.FindStatusCondition(newDRPC.Status.Conditions, ramen.ConditionAvailable); condition != nil &&
 		condition.Status == metav1.ConditionTrue &&
 		condition.ObservedGeneration == newDRPC.Generation {
 		// Process DRPC if it was just failed over, we are interested in updating MMode deactivation
-		oldCondition := GetDRPCStatusCondition(&oldDRPC.Status, ramen.ConditionAvailable)
+		oldCondition := meta.FindStatusCondition(oldDRPC.Status.Conditions, ramen.ConditionAvailable)
 		if oldCondition != nil && oldCondition.Status != metav1.ConditionTrue {
 			log.Info("Processing DRPC failed over event",
 				"name", newDRPC.GetName(),

@@ -28,25 +28,26 @@ import (
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	ramencontrollers "github.com/ramendr/ramen/controllers"
+	"github.com/ramendr/ramen/controllers/util"
 )
 
 var _ = Describe("DRClusterMModeTests", Ordered, func() {
 	var (
-		ctx           context.Context
-		cancel        context.CancelFunc
-		cfg           *rest.Config
-		testEnv       *envtest.Environment
-		k8sClient     client.Client
-		drCluster1    *rmn.DRCluster
-		drpolicy      rmn.DRPolicy
-		drPolicyName  = "drpolicy0"
-		baseDRPC      *rmn.DRPlacementControl
-		deployedDRPC  *rmn.DRPlacementControl
-		failoverDRPC1 *rmn.DRPlacementControl
-		failoverDRPC2 *rmn.DRPlacementControl
-		timeout       = time.Second * 5
-		interval      = time.Millisecond * 100
-		ramenConfig   *rmn.RamenConfig
+		ctx                    context.Context
+		cancel                 context.CancelFunc
+		cfg                    *rest.Config
+		testEnv                *envtest.Environment
+		k8sClient              client.Client
+		drCluster1, drCluster2 *rmn.DRCluster
+		drpolicy               rmn.DRPolicy
+		drPolicyName           = "drpolicy0"
+		baseDRPC               *rmn.DRPlacementControl
+		deployedDRPC           *rmn.DRPlacementControl
+		failoverDRPC1          *rmn.DRPlacementControl
+		failoverDRPC2          *rmn.DRPlacementControl
+		timeout                = time.Second * 5
+		interval               = time.Millisecond * 100
+		ramenConfig            *rmn.RamenConfig
 	)
 
 	BeforeAll(func() {
@@ -257,10 +258,14 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 		// Initialize --- DRCluster
 		drCluster1 = &rmn.DRCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "drcluster1"},
-			Spec:       rmn.DRClusterSpec{S3ProfileName: "fake"},
+			Spec:       rmn.DRClusterSpec{S3ProfileName: "fake", Region: "east"},
 		}
+		drCluster2 = drCluster1.DeepCopy()
+		drCluster2.ObjectMeta.Name = "drcluster2"
+		drCluster2.Spec.Region = "west"
 
 		Expect(k8sClient.Create(context.TODO(), drCluster1)).To(Succeed())
+		Expect(k8sClient.Create(context.TODO(), drCluster2)).To(Succeed())
 	})
 
 	AfterAll(func() {
@@ -275,14 +280,14 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 			drcluster := &rmn.DRCluster{}
 			Expect(k8sClient.Get(context.TODO(), types.NamespacedName{Name: drCluster1.GetName()}, drcluster)).To(Succeed())
 
-			for _, maintenenceMode := range drcluster.Status.MaintenanceModes {
-				if !(maintenenceMode.State == rmn.MModeStateCompleted &&
-					maintenenceMode.StorageProvisioner == "test.csi.com" &&
-					maintenenceMode.TargetID == "storage-replication-id-1") {
+			for _, maintenanceMode := range drcluster.Status.MaintenanceModes {
+				if !(maintenanceMode.State == rmn.MModeStateCompleted &&
+					maintenanceMode.StorageProvisioner == "test.csi.com" &&
+					maintenanceMode.TargetID == "storage-replication-id-1") {
 					continue
 				}
 
-				for _, condition := range maintenenceMode.Conditions {
+				for _, condition := range maintenanceMode.Conditions {
 					if condition.Type != string(rmn.MModeConditionFailoverActivated) {
 						continue
 					}
@@ -296,7 +301,7 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 
 		emptyMModeMWList := func() bool {
 			matchLabels := map[string]string{
-				"ramendr.openshift.io/maintenancemode": "",
+				util.MModesLabel: "",
 			}
 			listOptions := []client.ListOption{
 				client.InNamespace("drcluster1"),

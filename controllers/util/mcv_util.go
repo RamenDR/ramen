@@ -114,12 +114,12 @@ func (m ManagedClusterViewGetterImpl) GetMModeFromManagedCluster(resourceName, m
 	annotations map[string]string,
 ) (*rmn.MaintenanceMode, error) {
 	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName)
-	// get MaintenenceMode and verify status through ManagedClusterView
+	// get MaintenanceMode and verify status through ManagedClusterView
 	mcvMeta := metav1.ObjectMeta{
 		Name:      BuildManagedClusterViewName(resourceName, "", MWTypeMMode),
 		Namespace: managedCluster,
 		Labels: map[string]string{
-			"ramendr.openshift.io/maintenancemode": "",
+			MModesLabel: "",
 		},
 	}
 
@@ -141,7 +141,7 @@ func (m ManagedClusterViewGetterImpl) GetMModeFromManagedCluster(resourceName, m
 
 func (m ManagedClusterViewGetterImpl) ListMModesMCVs(cluster string) (*viewv1beta1.ManagedClusterViewList, error) {
 	matchLabels := map[string]string{
-		"ramendr.openshift.io/maintenancemode": "",
+		MModesLabel: "",
 	}
 	listOptions := []client.ListOption{
 		client.InNamespace(cluster),

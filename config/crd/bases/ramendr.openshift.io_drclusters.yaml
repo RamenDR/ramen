@@ -235,7 +235,9 @@ spec:
                         identifier for the StorageProvisioner
                       type: string
                   required:
+                  - state
                   - storageProvisioner
+                  - targetID
                   type: object
                 type: array
               phase:

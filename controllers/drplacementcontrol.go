@@ -518,12 +518,10 @@ func (d *DRPCInstance) checkMetroFailoverPrerequisites(curHomeCluster string) (b
 // failoverCluster before initiating a failover.
 // Returns:
 //   - bool: Indicating if prerequisites are met
-//
-// TODO: Write envtests for this function and desendents
 func (d *DRPCInstance) checkRegionalFailoverPrerequisites() bool {
 	d.setProgression(rmn.ProgressionWaitForStorageMaintenanceActivation)
 
-	if required, activationsRequired := requiresRegionalFailoverPrequisites(
+	if required, activationsRequired := requiresRegionalFailoverPrerequisites(
 		d.vrgs, d.instance.Spec.FailoverCluster, d.log); required {
 		for _, drCluster := range d.drClusters {
 			if drCluster.Name != d.instance.Spec.FailoverCluster {
@@ -537,10 +535,10 @@ func (d *DRPCInstance) checkRegionalFailoverPrerequisites() bool {
 	return true
 }
 
-// requiresRegionalFailoverPrequisites checks protected PVCs as reported by the last known Primary cluster
+// requiresRegionalFailoverPrerequisites checks protected PVCs as reported by the last known Primary cluster
 // to determine if this instance requires failover maintenance modes to be active prior to initiating
 // a failover
-func requiresRegionalFailoverPrequisites(
+func requiresRegionalFailoverPrerequisites(
 	vrgs map[string]*rmn.VolumeReplicationGroup,
 	failoverCluster string,
 	log logr.Logger,
@@ -560,16 +558,16 @@ func requiresRegionalFailoverPrequisites(
 	}
 
 	for _, protectedPVC := range vrg.Status.ProtectedPVCs {
-		if len(protectedPVC.StorageIdentifiers.VolumeReplicationClassModes) == 0 {
+		if len(protectedPVC.StorageIdentifiers.ReplicationID.Modes) == 0 {
 			continue
 		}
 
-		if !hasMode(protectedPVC.StorageIdentifiers.VolumeReplicationClassModes, rmn.MModeFailover) {
+		if !hasMode(protectedPVC.StorageIdentifiers.ReplicationID.Modes, rmn.MModeFailover) {
 			continue
 		}
 
 		// TODO: Assumption is that if there is a mMode then the ReplicationID is a must, err otherwise?
-		key := protectedPVC.StorageIdentifiers.CSIProvisioner + protectedPVC.StorageIdentifiers.ReplicationID
+		key := protectedPVC.StorageIdentifiers.StorageProvisioner + protectedPVC.StorageIdentifiers.ReplicationID.ID
 		if _, ok := activationsRequired[key]; !ok {
 			activationsRequired[key] = protectedPVC.StorageIdentifiers
 		}
@@ -648,8 +646,8 @@ func checkActivationForStorageIdentifier(
 	for _, statusMMode := range mModeStatus {
 		log.Info("Processing ClusterMaintenanceMode for match", "clustermode", statusMMode, "desiredmode", storageIdentifier)
 
-		if statusMMode.StorageProvisioner != storageIdentifier.CSIProvisioner ||
-			statusMMode.TargetID != storageIdentifier.ReplicationID {
+		if statusMMode.StorageProvisioner != storageIdentifier.StorageProvisioner ||
+			statusMMode.TargetID != storageIdentifier.ReplicationID.ID {
 			continue
 		}
 

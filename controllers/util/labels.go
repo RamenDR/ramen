@@ -6,6 +6,8 @@ package util
 const (
 	labelOwnerNamespaceName = "ramendr.openshift.io/owner-namespace-name"
 	labelOwnerName          = "ramendr.openshift.io/owner-name"
+
+	MModesLabel = "ramendr.openshift.io/maintenancemodes"
 )
 
 func OwnerLabels(ownerNamespaceName, ownerName string) map[string]string {

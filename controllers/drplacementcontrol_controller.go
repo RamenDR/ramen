@@ -17,6 +17,7 @@ import (
 	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -364,6 +365,8 @@ type DRPCAndPolicy struct {
 }
 
 // DRPCsFailingOverToCluster lists DRPC resources that are failing over to the passed in drcluster
+//
+//nolint:gocognit
 func DRPCsFailingOverToCluster(k8sclient client.Client, log logr.Logger, drcluster string) ([]DRPCAndPolicy, error) {
 	drpolicies := &rmn.DRPolicyList{}
 	if err := k8sclient.List(context.TODO(), drpolicies); err != nil {
@@ -377,10 +380,15 @@ func DRPCsFailingOverToCluster(k8sclient client.Client, log logr.Logger, drclust
 	drpcCollections := make([]DRPCAndPolicy, 0)
 
 	for drpolicyIdx, drpolicy := range drpolicies.Items {
-		// Skip if policy is of type metro
-		// TODO: A stronger check requires listing all DRClusters (or the list of clusters in the policy)
-		//  and calling DRPolicySupportsMetro
-		if drpolicy.Spec.SchedulingInterval == "" {
+		drClusters, err := getDRClusters(context.TODO(), k8sclient, &drpolicies.Items[drpolicyIdx])
+		if err != nil || len(drClusters) <= 1 {
+			log.Error(err, "Failed to get DRClusters")
+
+			return nil, err
+		}
+
+		// Skip if policy is of type metro, fake the from and to cluster
+		if isMetroAction(&drpolicies.Items[drpolicyIdx], drClusters, drClusters[0].GetName(), drClusters[1].GetName()) {
 			log.Info("Sync DRPolicy detected, skipping!")
 
 			continue
@@ -434,7 +442,6 @@ func DRPCsFailingOverToClusterForPolicy(
 	filteredDRPCs := make([]*rmn.DRPlacementControl, 0)
 
 	for idx, drpc := range drpcs.Items {
-		// TODO: Exclude DRPCs without the finalizer (or being deleted?)
 		if drpc.Spec.DRPolicyRef.Name != drpolicy.GetName() {
 			continue
 		}
@@ -443,7 +450,7 @@ func DRPCsFailingOverToClusterForPolicy(
 			continue
 		}
 
-		if condition := GetDRPCStatusCondition(&drpc.Status, rmn.ConditionAvailable); condition != nil &&
+		if condition := meta.FindStatusCondition(drpc.Status.Conditions, rmn.ConditionAvailable); condition != nil &&
 			condition.Status == metav1.ConditionTrue &&
 			condition.ObservedGeneration == drpc.Generation {
 			continue
@@ -458,16 +465,6 @@ func DRPCsFailingOverToClusterForPolicy(
 	}
 
 	return filteredDRPCs, nil
-}
-
-func GetDRPCStatusCondition(status *rmn.DRPlacementControlStatus, conditionType string) *metav1.Condition {
-	for i := range status.Conditions {
-		if status.Conditions[i].Type == conditionType {
-			return &status.Conditions[i]
-		}
-	}
-
-	return nil
 }
 
 func SetDRPCStatusCondition(conditions *[]metav1.Condition, conditionType string,
@@ -690,7 +687,7 @@ func (r *DRPlacementControlReconciler) setLastSyncTimeMetric(syncMetrics *SyncMe
 	syncMetrics.LastSyncTime.Set(float64(t.ProtoTime().Seconds))
 }
 
-//nolint:funlen,cyclop
+//nolint:funlen
 func (r *DRPlacementControlReconciler) createDRPCInstance(
 	ctx context.Context,
 	drpc *rmn.DRPlacementControl,
@@ -710,18 +707,9 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 		return nil, fmt.Errorf("DRPolicy not valid %w", err)
 	}
 
-	drClusters := []rmn.DRCluster{}
-
-	for _, managedCluster := range rmnutil.DrpolicyClusterNames(drPolicy) {
-		drCluster := &rmn.DRCluster{}
-
-		err := r.Client.Get(ctx, types.NamespacedName{Name: managedCluster}, drCluster)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get DRCluster (%s) %w", managedCluster, err)
-		}
-
-		// TODO: What if the DRCluster is deleted? If new DRPC fail reconciliation
-		drClusters = append(drClusters, *drCluster)
+	drClusters, err := getDRClusters(ctx, r.Client, drPolicy)
+	if err != nil {
+		return nil, err
 	}
 
 	// We only create DRPC PlacementRule if the preferred cluster is not configured
@@ -885,6 +873,24 @@ func (r DRPlacementControlReconciler) addLabelsAndFinalizers(ctx context.Context
 	}
 
 	return nil
+}
+
+func getDRClusters(ctx context.Context, client client.Client, drPolicy *rmn.DRPolicy) ([]rmn.DRCluster, error) {
+	drClusters := []rmn.DRCluster{}
+
+	for _, managedCluster := range rmnutil.DrpolicyClusterNames(drPolicy) {
+		drCluster := &rmn.DRCluster{}
+
+		err := client.Get(ctx, types.NamespacedName{Name: managedCluster}, drCluster)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get DRCluster (%s) %w", managedCluster, err)
+		}
+
+		// TODO: What if the DRCluster is deleted? If new DRPC fail reconciliation
+		drClusters = append(drClusters, *drCluster)
+	}
+
+	return drClusters, nil
 }
 
 func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,

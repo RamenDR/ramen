@@ -3,4 +3,7 @@ kind: MaintenanceMode
 metadata:
   name: maintenancemode-sample
 spec:
-  # TODO(user): Add fields here
+  storageProvisioner: sample.csi.storage.com
+  targetID: <storage-identifier>
+  modes:
+  - Failover

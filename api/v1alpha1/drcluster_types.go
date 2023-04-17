@@ -97,10 +97,10 @@ type ClusterMaintenanceMode struct {
 	StorageProvisioner string `json:"storageProvisioner"`
 
 	// TargetID indicates the storage or replication instance identifier for the StorageProvisioner
-	TargetID string `json:"targetID,omitempty"`
+	TargetID string `json:"targetID"`
 
 	// State from MaintenanceMode resource created for the StorageProvisioner
-	State MModeState `json:"state,omitempty"`
+	State MModeState `json:"state"`
 
 	// Conditions from MaintenanceMode resource created for the StorageProvisioner
 	Conditions []metav1.Condition `json:"conditions,omitempty"`

@@ -178,7 +178,7 @@ func (mwu *MWUtil) generateMModeManifestWork(name, cluster string,
 		fmt.Sprintf(ManifestWorkNameFormatClusterScope, name, MWTypeMMode),
 		cluster,
 		map[string]string{
-			"ramendr.openshift.io/maintenancemode": "",
+			MModesLabel: "",
 		},
 		manifests, annotations), nil
 }
@@ -189,7 +189,7 @@ func (mwu *MWUtil) generateMModeManifest(mMode rmn.MaintenanceMode) (*ocmworkv1.
 
 func (mwu *MWUtil) ListMModeManifests(cluster string) (*ocmworkv1.ManifestWorkList, error) {
 	matchLabels := map[string]string{
-		"ramendr.openshift.io/maintenancemode": "",
+		MModesLabel: "",
 	}
 	listOptions := []client.ListOption{
 		client.InNamespace(cluster),
