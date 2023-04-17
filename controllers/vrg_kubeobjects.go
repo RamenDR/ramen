@@ -361,29 +361,24 @@ func RecipeInfoExistsOnVRG(vrgInstance ramen.VolumeReplicationGroup) bool {
 		vrgInstance.Spec.KubeObjectProtection.RecipeRef.Name != nil
 }
 
-func VolumeGroupNameExistsInWorkflow(vrgInstance ramen.VolumeReplicationGroup) bool {
-	return RecipeInfoExistsOnVRG(vrgInstance) &&
-		vrgInstance.Spec.KubeObjectProtection.RecipeRef.VolumeGroupName != nil
+func RecipeHasVolumeGroup(recipe *Recipe.Recipe) bool {
+	return recipe != nil && recipe.Spec.Volumes != nil
 }
 
-func GetLabelSelectorFromRecipeVolumeGroupWithName(name string, recipe *Recipe.Recipe) (metav1.LabelSelector, error) {
+func GetLabelSelectorFromRecipeVolumeGroupWithName(recipe *Recipe.Recipe) (metav1.LabelSelector, error) {
 	labelSelector := &metav1.LabelSelector{} // init
 
-	for _, group := range recipe.Spec.Groups {
-		if group.Name == name {
-			return *group.LabelSelector, nil
-		}
+	if recipe.Spec.Volumes == nil || recipe.Spec.Volumes.LabelSelector == nil {
+		recipeInfo := fmt.Sprintf("Recipe Name '%s' in Namespace '%s'", recipe.Name, recipe.GetNamespace())
+
+		return *labelSelector, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec.Volumes"}, recipeInfo)
 	}
 
-	return *labelSelector, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec.Group.Name"}, name)
+	return *recipe.Spec.Volumes.LabelSelector, nil
 }
 
 func (v *VRGInstance) getCaptureGroups() []kubeobjects.CaptureSpec {
-	if RecipeInfoExistsOnVRG(*v.instance) &&
-		v.instance.Spec.KubeObjectProtection.RecipeRef.CaptureWorkflowName != nil {
-		v.log.Info(fmt.Sprintf("getCaptureGroups found captureName '%s'",
-			*v.instance.Spec.KubeObjectProtection.RecipeRef.CaptureWorkflowName))
-
+	if RecipeInfoExistsOnVRG(*v.instance) {
 		return v.getCaptureGroupsFromRecipe()
 	}
 
@@ -401,24 +396,19 @@ func (v *VRGInstance) getCaptureGroupsFromRecipe() []kubeobjects.CaptureSpec {
 		v.log.Error(err, "failed to get Recipe from name.", "vrgInfo", v.getNameAndNamespaceString())
 	}
 
-	groups, err := v.getCaptureGroupsFromWorkflow(recipe, *recipe.Spec.CaptureWorkflow)
+	groups, err := v.getCaptureGroupsFromWorkflow(recipe, recipe.Spec.CaptureWorkflow)
 	if err != nil {
 		v.log.Error(err, "failed to get Capture Groups from Workflow.", "vrgInfo", v.getNameAndNamespaceString())
 	}
 
-	v.log.Info(fmt.Sprintf("successfully found groups for '%s' capture spec on %s",
-		*v.instance.Spec.KubeObjectProtection.RecipeRef.CaptureWorkflowName,
+	v.log.Info(fmt.Sprintf("successfully found Recipe Capture Groups for '%s'",
 		v.getNameAndNamespaceString()))
 
 	return groups
 }
 
 func (v *VRGInstance) getRecoverGroups() []kubeobjects.RecoverSpec {
-	if RecipeInfoExistsOnVRG(*v.instance) &&
-		v.instance.Spec.KubeObjectProtection.RecipeRef.RecoverWorkflowName != nil {
-		v.log.Info(fmt.Sprintf("getRecoverGroups() found Recover Name '%s'",
-			*v.instance.Spec.KubeObjectProtection.RecipeRef.RecoverWorkflowName))
-
+	if RecipeInfoExistsOnVRG(*v.instance) {
 		return v.getRecoverGroupsFromRecipe()
 	}
 
@@ -432,14 +422,14 @@ func (v *VRGInstance) getRecoverGroupsFromRecipe() []kubeobjects.RecoverSpec {
 		v.log.Error(err, "failed to get Recipe from name.", "vrgInfo", v.getNameAndNamespaceString())
 	}
 
-	groups, err := v.getRestoreGroupsFromWorkflow(recipe, *recipe.Spec.RecoverWorkflow)
+	groups, err := v.getRestoreGroupsFromWorkflow(recipe, recipe.Spec.RecoverWorkflow)
 	if err != nil {
 		v.log.Error(err, "failed to get Restore Groups from Workflow.", "vrgInfo",
 			v.getNameAndNamespaceString())
 	}
 
-	v.log.Info(fmt.Sprintf("getRecoverGroupsFromRecipe() successfully found groups for recover spec. '%s' on %s",
-		*v.instance.Spec.KubeObjectProtection.RecipeRef.RecoverWorkflowName, v.getNameAndNamespaceString()))
+	v.log.Info(fmt.Sprintf("getRecoverGroupsFromRecipe() successfully found groups for recover spec. '%s'",
+		v.getNameAndNamespaceString()))
 
 	return groups
 }
@@ -695,8 +685,12 @@ func GetRecipeWithName(ctx context.Context, client client.Client, name, namespac
 }
 
 func (v *VRGInstance) getCaptureGroupsFromWorkflow(
-	recipe Recipe.Recipe, workflow Recipe.Workflow) ([]kubeobjects.CaptureSpec, error,
+	recipe Recipe.Recipe, workflow *Recipe.Workflow) ([]kubeobjects.CaptureSpec, error,
 ) {
+	if workflow == nil {
+		return []kubeobjects.CaptureSpec{{}}, nil
+	}
+
 	resources := make([]kubeobjects.CaptureSpec, len(workflow.Sequence))
 
 	for index, resource := range workflow.Sequence {
@@ -716,8 +710,12 @@ func (v *VRGInstance) getCaptureGroupsFromWorkflow(
 }
 
 func (v *VRGInstance) getRestoreGroupsFromWorkflow(
-	recipe Recipe.Recipe, workflow Recipe.Workflow) ([]kubeobjects.RecoverSpec, error,
+	recipe Recipe.Recipe, workflow *Recipe.Workflow) ([]kubeobjects.RecoverSpec, error,
 ) {
+	if workflow == nil {
+		return []kubeobjects.RecoverSpec{{}}, nil
+	}
+
 	resources := make([]kubeobjects.RecoverSpec, len(workflow.Sequence))
 
 	for index, resource := range workflow.Sequence {

@@ -127,21 +127,9 @@ spec:
                     type: string
                   recipeRef:
                     properties:
-                      captureWorkflowName:
-                        description: Name of the Recipe Workflow to run as Capture
-                          sequence
-                        type: string
                       name:
                         description: Name of the Recipe to reference for Capture and
                           Restore Workflows. Must exist in the same namespace as VRG.
-                        type: string
-                      recoverWorkflowName:
-                        description: Name of the Recipe Workflow to run as Recover
-                          sequence
-                        type: string
-                      volumeGroupName:
-                        description: Name of Recipe Volume Group that specifies which
-                          PVCs to protect
                         type: string
                     type: object
                 type: object

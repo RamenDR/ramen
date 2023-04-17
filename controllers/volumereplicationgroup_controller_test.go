@@ -59,7 +59,7 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 			labels, err := vrgController.GetPVCLabelSelector(testCtx, k8sClient, *vrg, testLogger)
 			Expect(err).To(BeNil())
 
-			correctLabels := getVolumeGroupLabelSelector(recipe, volumeGroupName)
+			correctLabels := getVolumeGroupLabelSelector(recipe)
 			Expect(labels).To(Equal(correctLabels))
 
 			cleanupRecipe(testCtx, recipe)
@@ -74,7 +74,7 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 			labels, err := vrgController.GetPVCLabelSelector(testCtx, k8sClient, *vrg, testLogger)
 			Expect(err).To(BeNil())
 
-			correctLabels := getVolumeGroupLabelSelector(recipe, volumeGroupName)
+			correctLabels := getVolumeGroupLabelSelector(recipe)
 			Expect(labels).To(Equal(correctLabels))
 
 			cleanupRecipe(testCtx, recipe)
@@ -195,8 +195,7 @@ func getVRGDefinitionWithKubeObjectProtection(hasPVCSelectorLabels bool, namespa
 
 	vrg.Spec.KubeObjectProtection = &ramen.KubeObjectProtectionSpec{
 		RecipeRef: &ramen.RecipeSpec{
-			Name:            newStringPointerText("test-recipe"),
-			VolumeGroupName: newStringPointerText(volumeGroupName),
+			Name: newStringPointerText("test-recipe"),
 		},
 	}
 
@@ -270,8 +269,9 @@ func getRecipeDefinition(namespace string) *Recipe.Recipe {
 		TypeMeta:   metav1.TypeMeta{Kind: "Recipe", APIVersion: "ramendr.openshift.io/v1alpha1"},
 		ObjectMeta: metav1.ObjectMeta{Name: "test-recipe", Namespace: namespace},
 		Spec: Recipe.RecipeSpec{
-			Groups: []*Recipe.Group{getTestGroup(), getTestVolumeGroup()},
-			Hooks:  []*Recipe.Hook{getTestHook()},
+			Groups:  []*Recipe.Group{getTestGroup()},
+			Volumes: getTestVolumeGroup(),
+			Hooks:   []*Recipe.Hook{getTestHook()},
 			CaptureWorkflow: &Recipe.Workflow{
 				Sequence: []map[string]string{
 					{
@@ -289,20 +289,8 @@ func getRecipeDefinition(namespace string) *Recipe.Recipe {
 	}
 }
 
-func getVolumeGroupLabelSelector(recipe *Recipe.Recipe, volumeGroupName string) metav1.LabelSelector {
-	foundGroup := false
-
-	for _, group := range recipe.Spec.Groups {
-		if group.Name == volumeGroupName {
-			labelSelector := group.LabelSelector
-
-			return *labelSelector
-		}
-	}
-
-	Expect(foundGroup).To(Equal(true)) // should not run this
-
-	return metav1.LabelSelector{}
+func getVolumeGroupLabelSelector(recipe *Recipe.Recipe) metav1.LabelSelector {
+	return *recipe.Spec.Volumes.LabelSelector
 }
 
 func cleanupRecipe(ctx context.Context, recipe *Recipe.Recipe) {

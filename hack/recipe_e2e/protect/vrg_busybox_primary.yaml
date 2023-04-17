@@ -17,6 +17,3 @@ spec:
   kubeObjectProtection:
     recipeRef:
       name: recipe-busybox
-      captureWorkflowName: capture
-      recoverWorkflowName: recover
-      volumeGroupName: volumes
