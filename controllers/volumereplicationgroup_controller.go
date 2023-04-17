@@ -267,7 +267,7 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim, log logr.
 func GetPVCLabelSelector(
 	ctx context.Context, client client.Client, vrg ramendrv1alpha1.VolumeReplicationGroup, log logr.Logger,
 ) (metav1.LabelSelector, error) {
-	if RecipeInfoExistsOnVRG(vrg) && VolumeGroupNameExistsInWorkflow(vrg) {
+	if RecipeInfoExistsOnVRG(vrg) {
 		recipe, err := GetRecipeWithName(ctx, client, *vrg.Spec.KubeObjectProtection.RecipeRef.Name, vrg.GetNamespace())
 		if err != nil {
 			log.Error(err, "GetRecipeWithName error: %s-%s", vrg.Name, vrg.Namespace)
@@ -275,15 +275,16 @@ func GetPVCLabelSelector(
 			return metav1.LabelSelector{}, err
 		}
 
-		labelSelector, err := GetLabelSelectorFromRecipeVolumeGroupWithName(
-			*vrg.Spec.KubeObjectProtection.RecipeRef.VolumeGroupName, &recipe)
-		if err != nil {
-			log.Error(err, "GetPVCLabelSelector error: %s-%s", vrg.Name, vrg.Namespace)
+		if RecipeHasVolumeGroup(&recipe) {
+			labelSelector, err := GetLabelSelectorFromRecipeVolumeGroupWithName(&recipe)
+			if err != nil {
+				log.Error(err, "GetPVCLabelSelector error: %s-%s", vrg.Name, vrg.Namespace)
 
-			return metav1.LabelSelector{}, err
+				return metav1.LabelSelector{}, err
+			}
+
+			return labelSelector, nil
 		}
-
-		return labelSelector, nil
 	}
 
 	return vrg.Spec.PVCSelector, nil

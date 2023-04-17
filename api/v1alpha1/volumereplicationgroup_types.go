@@ -112,18 +112,6 @@ type RecipeSpec struct {
 	// Must exist in the same namespace as VRG.
 	//+optional
 	Name *string `json:"name,omitempty"`
-
-	// Name of the Recipe Workflow to run as Capture sequence
-	//+optional
-	CaptureWorkflowName *string `json:"captureWorkflowName,omitempty"`
-
-	// Name of the Recipe Workflow to run as Recover sequence
-	//+optional
-	RecoverWorkflowName *string `json:"recoverWorkflowName,omitempty"`
-
-	// Name of Recipe Volume Group that specifies which PVCs to protect
-	//+optional
-	VolumeGroupName *string `json:"volumeGroupName,omitempty"`
 }
 
 type KubeObjectProtectionSpec struct {
