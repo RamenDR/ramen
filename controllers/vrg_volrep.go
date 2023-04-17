@@ -272,19 +272,19 @@ func setPVCStorageIdentifiers(
 	storageClass *storagev1.StorageClass,
 	volumeReplicationClass *volrep.VolumeReplicationClass,
 ) {
-	protectedPVC.StorageIdentifiers.CSIProvisioner = storageClass.Provisioner
+	protectedPVC.StorageIdentifiers.StorageProvisioner = storageClass.Provisioner
 
 	if value, ok := storageClass.Labels[StorageIDLabel]; ok {
-		protectedPVC.StorageIdentifiers.StorageID = value
+		protectedPVC.StorageIdentifiers.StorageID.ID = value
 		if modes, ok := storageClass.Labels[MModesLabel]; ok {
-			protectedPVC.StorageIdentifiers.StorageClassModes = MModesFromCSV(modes)
+			protectedPVC.StorageIdentifiers.StorageID.Modes = MModesFromCSV(modes)
 		}
 	}
 
 	if value, ok := volumeReplicationClass.Labels[VolumeReplicationIDLabel]; ok {
-		protectedPVC.StorageIdentifiers.ReplicationID = value
+		protectedPVC.StorageIdentifiers.ReplicationID.ID = value
 		if modes, ok := volumeReplicationClass.Labels[MModesLabel]; ok {
-			protectedPVC.StorageIdentifiers.VolumeReplicationClassModes = MModesFromCSV(modes)
+			protectedPVC.StorageIdentifiers.ReplicationID.Modes = MModesFromCSV(modes)
 		}
 	}
 }

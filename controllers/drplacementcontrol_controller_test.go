@@ -239,7 +239,7 @@ func (f FakeMCVGetter) GetMModeFromManagedCluster(
 			Name:      mcvName,
 			Namespace: managedCluster,
 			Labels: map[string]string{
-				"ramendr.openshift.io/maintenancemode": "",
+				rmnutil.MModesLabel: "",
 			},
 		},
 		Spec: viewv1beta1.ViewSpec{},
@@ -253,7 +253,7 @@ func (f FakeMCVGetter) GetMModeFromManagedCluster(
 // TODO: The implementation is the same as the one in ManagedClusterViewGetterImpl
 func (f FakeMCVGetter) ListMModesMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error) {
 	matchLabels := map[string]string{
-		"ramendr.openshift.io/maintenancemode": "",
+		rmnutil.MModesLabel: "",
 	}
 	listOptions := []client.ListOption{
 		client.InNamespace(managedCluster),
@@ -472,9 +472,9 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(resourceName, resourceNamespace,
 
 			protectedPVC := &rmn.ProtectedPVC{}
 			protectedPVC.Name = "random name"
-			protectedPVC.StorageIdentifiers.ReplicationID = MModeReplicationID
-			protectedPVC.StorageIdentifiers.CSIProvisioner = MModeCSIProvisioner
-			protectedPVC.StorageIdentifiers.VolumeReplicationClassModes = []rmn.MMode{rmn.MModeFailover}
+			protectedPVC.StorageIdentifiers.ReplicationID.ID = MModeReplicationID
+			protectedPVC.StorageIdentifiers.StorageProvisioner = MModeCSIProvisioner
+			protectedPVC.StorageIdentifiers.ReplicationID.Modes = []rmn.MMode{rmn.MModeFailover}
 
 			vrgFromMW.Status.ProtectedPVCs = append(vrgFromMW.Status.ProtectedPVCs, *protectedPVC)
 		}
@@ -567,9 +567,9 @@ func fakeVRGWithMModesProtectedPVC() (*rmn.VolumeReplicationGroup, error) {
 	}
 
 	protectedPVC := &rmn.ProtectedPVC{}
-	protectedPVC.StorageIdentifiers.ReplicationID = MModeReplicationID
-	protectedPVC.StorageIdentifiers.CSIProvisioner = MModeCSIProvisioner
-	protectedPVC.StorageIdentifiers.VolumeReplicationClassModes = []rmn.MMode{rmn.MModeFailover}
+	protectedPVC.StorageIdentifiers.ReplicationID.ID = MModeReplicationID
+	protectedPVC.StorageIdentifiers.StorageProvisioner = MModeCSIProvisioner
+	protectedPVC.StorageIdentifiers.ReplicationID.Modes = []rmn.MMode{rmn.MModeFailover}
 
 	vrg.Status.ProtectedPVCs = append(vrg.Status.ProtectedPVCs, *protectedPVC)
 

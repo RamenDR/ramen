@@ -18,6 +18,15 @@ const (
 )
 
 // MaintenanceModeSpec defines the desired state of MaintenanceMode for a StorageProvisioner
+// If a storage or replication backend desires specific maintenance modes to be activated prior to certain
+// Ramen actions (for e.g notify backend of ANY failover operation for internal storage preparation), it presents
+// its requirements via specific Ramen labels on the appropriate StorageClass or ReplicationClass as detailed
+// in the VolumeReplicationGroup status.ProtectedPVCs.StorageIdentifiers fields.
+// Ramen orchestration would create required MaintenanceMode resources based on these labels, for the storage
+// backed to reconcile and provide its readiness status for the action.
+// NOTE: Ramen only creates the MaintenanceMode resource, it is expected to be reconciled by the storage drivers
+// by matching the provisioner and the targetID, that is specific to its instance, and update status as detailed
+// for Ramen to proceed with its actions
 type MaintenanceModeSpec struct {
 	// StorageProvisioner indicates the type of the provisioner, and is matched with provisioner string present in the
 	// StorageClass and/or VolumeReplicationClass for PVCs that are DR protected
@@ -66,7 +75,6 @@ type MaintenanceModeStatus struct {
 //+kubebuilder:resource:scope=Cluster
 
 // MaintenanceMode is the Schema for the maintenancemodes API
-// TODO more details
 type MaintenanceMode struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

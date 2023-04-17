@@ -370,7 +370,7 @@ spec:
                                 type: object
                               type: array
                             csiProvisioner:
-                              description: CSIProvisioners contains the provisioner
+                              description: StorageProvisioners contains the provisioner
                                 name of the CSI driver used to provision this PVC
                                 (extracted from the storageClass that was used for
                                 provisioning)
@@ -400,7 +400,35 @@ spec:
                                 for the label "ramendr.openshift.io/replicationID",
                                 that identifies the storage backends across 2 (or
                                 more) storage instances where the volume is replicated
-                              type: string
+                                It also contains any maintenance modes that the replication
+                                backend requires during vaious Ramen actions
+                              properties:
+                                modes:
+                                  description: Modes is a list of maintenance modes
+                                    that need to be activated on the storage backend,
+                                    prior to various Ramen related orchestration.
+                                    This is read from the label "ramendr.openshift.io/maintenancemodes"
+                                    on the StorageClass or VolumeReplicationClass,
+                                    the value for which is a comma separated list
+                                    of maintenance modes.
+                                  items:
+                                    description: MMode defines a maintenance mode,
+                                      that a storage backend may be requested to act
+                                      on, based on the DR orchestration in progress
+                                      for one or more workloads whose PVCs use the
+                                      specific storage provisioner
+                                    enum:
+                                    - Failover
+                                    type: string
+                                  type: array
+                                storageID:
+                                  description: ID contains the globally unique storage
+                                    identifier that identifies the storage or replication
+                                    backend
+                                  type: string
+                              required:
+                              - storageID
+                              type: object
                             resources:
                               description: Resources set in the claim to be replicated
                               properties:
@@ -428,22 +456,6 @@ spec:
                                     an implementation-defined value. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                                   type: object
                               type: object
-                            storageClassModes:
-                              description: StorageClassModes is a list of maintenance
-                                modes that need to be activated on the storage backend,
-                                prior to various DR related orchestration. This is
-                                read from the label "ramendr.openshift.io/maintenancemodes"
-                                on the StorageClass, the value for which is a comma
-                                separated list of maintenance modes.
-                              items:
-                                description: MMode defines a maintenance mode, that
-                                  a storage backend may be requested to act on, based
-                                  on the DR orchestration in progress for one or more
-                                  workloads whose PVCs use the specific storage provisioner
-                                enum:
-                                - Failover
-                                type: string
-                              type: array
                             storageClassName:
                               description: Name of the StorageClass required by the
                                 claim.
@@ -455,24 +467,36 @@ spec:
                                 that identifies the storage backend that was used
                                 to provision the volume. It is used to label different
                                 StorageClasses across different kubernetes clusters,
-                                that potentially share the same storage backend
-                              type: string
-                            volumeReplicationClassModes:
-                              description: VolumeReplicationClassModes is a list of
-                                maintenance modes that need to be activated on the
-                                storage backend, prior to various DR related orchestration.
-                                This is read from the label "ramendr.openshift.io/maintenancemodes"
-                                on the VolumeReplicationClass, the value for which
-                                is a comma separated list of maintenance modes.
-                              items:
-                                description: MMode defines a maintenance mode, that
-                                  a storage backend may be requested to act on, based
-                                  on the DR orchestration in progress for one or more
-                                  workloads whose PVCs use the specific storage provisioner
-                                enum:
-                                - Failover
-                                type: string
-                              type: array
+                                that potentially share the same storage backend. It
+                                also contains any maintenance modes that the storage
+                                backend requires during vaious Ramen actions
+                              properties:
+                                modes:
+                                  description: Modes is a list of maintenance modes
+                                    that need to be activated on the storage backend,
+                                    prior to various Ramen related orchestration.
+                                    This is read from the label "ramendr.openshift.io/maintenancemodes"
+                                    on the StorageClass or VolumeReplicationClass,
+                                    the value for which is a comma separated list
+                                    of maintenance modes.
+                                  items:
+                                    description: MMode defines a maintenance mode,
+                                      that a storage backend may be requested to act
+                                      on, based on the DR orchestration in progress
+                                      for one or more workloads whose PVCs use the
+                                      specific storage provisioner
+                                    enum:
+                                    - Failover
+                                    type: string
+                                  type: array
+                                storageID:
+                                  description: ID contains the globally unique storage
+                                    identifier that identifies the storage or replication
+                                    backend
+                                  type: string
+                              required:
+                              - storageID
+                              type: object
                           type: object
                       type: object
                     type: array
@@ -674,8 +698,8 @@ spec:
                         type: object
                       type: array
                     csiProvisioner:
-                      description: CSIProvisioners contains the provisioner name of
-                        the CSI driver used to provision this PVC (extracted from
+                      description: StorageProvisioners contains the provisioner name
+                        of the CSI driver used to provision this PVC (extracted from
                         the storageClass that was used for provisioning)
                       type: string
                     labels:
@@ -700,8 +724,33 @@ spec:
                         identifier, as reported by the storage backend on the VolumeReplicationClass
                         as the value for the label "ramendr.openshift.io/replicationID",
                         that identifies the storage backends across 2 (or more) storage
-                        instances where the volume is replicated
-                      type: string
+                        instances where the volume is replicated It also contains
+                        any maintenance modes that the replication backend requires
+                        during vaious Ramen actions
+                      properties:
+                        modes:
+                          description: Modes is a list of maintenance modes that need
+                            to be activated on the storage backend, prior to various
+                            Ramen related orchestration. This is read from the label
+                            "ramendr.openshift.io/maintenancemodes" on the StorageClass
+                            or VolumeReplicationClass, the value for which is a comma
+                            separated list of maintenance modes.
+                          items:
+                            description: MMode defines a maintenance mode, that a
+                              storage backend may be requested to act on, based on
+                              the DR orchestration in progress for one or more workloads
+                              whose PVCs use the specific storage provisioner
+                            enum:
+                            - Failover
+                            type: string
+                          type: array
+                        storageID:
+                          description: ID contains the globally unique storage identifier
+                            that identifies the storage or replication backend
+                          type: string
+                      required:
+                      - storageID
+                      type: object
                     resources:
                       description: Resources set in the claim to be replicated
                       properties:
@@ -729,22 +778,6 @@ spec:
                             https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                           type: object
                       type: object
-                    storageClassModes:
-                      description: StorageClassModes is a list of maintenance modes
-                        that need to be activated on the storage backend, prior to
-                        various DR related orchestration. This is read from the label
-                        "ramendr.openshift.io/maintenancemodes" on the StorageClass,
-                        the value for which is a comma separated list of maintenance
-                        modes.
-                      items:
-                        description: MMode defines a maintenance mode, that a storage
-                          backend may be requested to act on, based on the DR orchestration
-                          in progress for one or more workloads whose PVCs use the
-                          specific storage provisioner
-                        enum:
-                        - Failover
-                        type: string
-                      type: array
                     storageClassName:
                       description: Name of the StorageClass required by the claim.
                       type: string
@@ -755,24 +788,32 @@ spec:
                         that identifies the storage backend that was used to provision
                         the volume. It is used to label different StorageClasses across
                         different kubernetes clusters, that potentially share the
-                        same storage backend
-                      type: string
-                    volumeReplicationClassModes:
-                      description: VolumeReplicationClassModes is a list of maintenance
-                        modes that need to be activated on the storage backend, prior
-                        to various DR related orchestration. This is read from the
-                        label "ramendr.openshift.io/maintenancemodes" on the VolumeReplicationClass,
-                        the value for which is a comma separated list of maintenance
-                        modes.
-                      items:
-                        description: MMode defines a maintenance mode, that a storage
-                          backend may be requested to act on, based on the DR orchestration
-                          in progress for one or more workloads whose PVCs use the
-                          specific storage provisioner
-                        enum:
-                        - Failover
-                        type: string
-                      type: array
+                        same storage backend. It also contains any maintenance modes
+                        that the storage backend requires during vaious Ramen actions
+                      properties:
+                        modes:
+                          description: Modes is a list of maintenance modes that need
+                            to be activated on the storage backend, prior to various
+                            Ramen related orchestration. This is read from the label
+                            "ramendr.openshift.io/maintenancemodes" on the StorageClass
+                            or VolumeReplicationClass, the value for which is a comma
+                            separated list of maintenance modes.
+                          items:
+                            description: MMode defines a maintenance mode, that a
+                              storage backend may be requested to act on, based on
+                              the DR orchestration in progress for one or more workloads
+                              whose PVCs use the specific storage provisioner
+                            enum:
+                            - Failover
+                            type: string
+                          type: array
+                        storageID:
+                          description: ID contains the globally unique storage identifier
+                            that identifies the storage or replication backend
+                          type: string
+                      required:
+                      - storageID
+                      type: object
                   type: object
                 type: array
               state:
