@@ -631,7 +631,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	if r.isBeingDeleted(drpc, placementObj) {
+	if isBeingDeleted(drpc, placementObj) {
 		// DPRC depends on User PlacementRule/Placement. If DRPC or/and the User PlacementRule is deleted,
 		// then the DRPC should be deleted as well. The least we should do here is to clean up DPRC.
 		return r.processDeletion(ctx, drpc, placementObj, logger)
@@ -777,7 +777,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 }
 
 // isBeingDeleted returns true if either DRPC, user placement, or both are being deleted
-func (r *DRPlacementControlReconciler) isBeingDeleted(drpc *rmn.DRPlacementControl, usrPl client.Object) bool {
+func isBeingDeleted(drpc *rmn.DRPlacementControl, usrPl client.Object) bool {
 	return !drpc.GetDeletionTimestamp().IsZero() ||
 		(usrPl != nil && !usrPl.GetDeletionTimestamp().IsZero())
 }
@@ -1125,18 +1125,21 @@ func getPlacementRule(ctx context.Context, k8sclient client.Client,
 		return nil, err
 	}
 
-	scName := usrPlRule.Spec.SchedulerName
-	if scName != RamenScheduler {
-		return nil, fmt.Errorf("placementRule %s does not have the ramen scheduler. Scheduler used %s",
-			usrPlRule.Name, scName)
-	}
+	// If either DRPC or PlacementRule are being deleted, disregard everything else.
+	if !isBeingDeleted(drpc, usrPlRule) {
+		scName := usrPlRule.Spec.SchedulerName
+		if scName != RamenScheduler {
+			return nil, fmt.Errorf("placementRule %s does not have the ramen scheduler. Scheduler used %s",
+				usrPlRule.Name, scName)
+		}
 
-	if usrPlRule.Spec.ClusterReplicas == nil || *usrPlRule.Spec.ClusterReplicas != 1 {
-		log.Info("User PlacementRule replica count is not set to 1, reconciliation will only" +
-			" schedule it to a single cluster")
-	}
+		if usrPlRule.Spec.ClusterReplicas == nil || *usrPlRule.Spec.ClusterReplicas != 1 {
+			log.Info("User PlacementRule replica count is not set to 1, reconciliation will only" +
+				" schedule it to a single cluster")
+		}
 
-	log.Info(fmt.Sprintf("PlacementRule Status is: (%+v)", usrPlRule.Status))
+		log.Info(fmt.Sprintf("PlacementRule Status is: (%+v)", usrPlRule.Status))
+	}
 
 	return usrPlRule, nil
 }
@@ -1167,14 +1170,17 @@ func getPlacement(ctx context.Context, k8sclient client.Client,
 		return nil, err
 	}
 
-	if value, ok := usrPlmnt.GetAnnotations()[clrapiv1beta1.PlacementDisableAnnotation]; !ok || value == "false" {
-		return nil, fmt.Errorf("placement %s must be disabled in order for Ramen to be the scheduler",
-			usrPlmnt.Name)
-	}
+	// If either DRPC or Placement are being deleted, disregard everything else.
+	if !isBeingDeleted(drpc, usrPlmnt) {
+		if value, ok := usrPlmnt.GetAnnotations()[clrapiv1beta1.PlacementDisableAnnotation]; !ok || value == "false" {
+			return nil, fmt.Errorf("placement %s must be disabled in order for Ramen to be the scheduler",
+				usrPlmnt.Name)
+		}
 
-	if usrPlmnt.Spec.NumberOfClusters == nil || *usrPlmnt.Spec.NumberOfClusters != 1 {
-		log.Info("User Placement number of clusters is not set to 1, reconciliation will only" +
-			" schedule it to a single cluster")
+		if usrPlmnt.Spec.NumberOfClusters == nil || *usrPlmnt.Spec.NumberOfClusters != 1 {
+			log.Info("User Placement number of clusters is not set to 1, reconciliation will only" +
+				" schedule it to a single cluster")
+		}
 	}
 
 	return usrPlmnt, nil
