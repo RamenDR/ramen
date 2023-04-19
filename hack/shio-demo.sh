@@ -205,10 +205,11 @@ vrg_apply() {
 	  - includedResourceTypes:
 	    - deployments
 	    - pods
-	    labelSelector:
-	      matchExpressions:
-	      - key: pod-template-hash
-	        operator: DoesNotExist
+	    labelSelector: !pod-template-hash
+#	    labelSelector:
+#	      matchExpressions:
+#	      - key: pod-template-hash
+#	        operator: DoesNotExist
 	    name: deployments-and-naked-pods
 	    type: resource
 	  workflows:
@@ -322,6 +323,10 @@ pv_delete() {
 	kubectl --context $1 delete $(pv_names $1)
 }; exit_stack_push unset -f pv_delete
 
+pv_unretain() {
+	kubectl --context $1 patch $(pv_names $1) --type json -p '[{"op":add, "path":/spec/persistentVolumeReclaimPolicy, "value":Delete}]'
+}; exit_stack_push unset -f pv_unretain
+
 app_protect() {
 	set -- cluster1
 	vrg_deploy $1
@@ -351,6 +356,7 @@ app_failback() {
 	set -x
 	time kubectl --context $2 -nasdf wait vrg/bb --for condition=clusterdataprotected --timeout -1s
 	{ set +x; } 2>/dev/null
+	date
 	app_undeploy_failback $2 relocate app_recover_failback\ $1\ $2
 }; exit_stack_push unset -f app_failback
 
@@ -367,24 +373,28 @@ app_recover() {
 	time kubectl --context $1 -nasdf wait vrg/bb --for condition=clusterdataprotected
 	time kubectl --context $1 -nasdf wait vrg/bb --for condition=dataready --timeout 2m
 	{ set +x; } 2>/dev/null
-	date
+	until_true_or_n 30000 eval test \"\$\(kubectl --context $1 -nasdf get vrg/bb -ojsonpath='{.status.state}'\)\" = Primary
 }; exit_stack_push unset -f app_recover
 
 app_undeploy_failback() {
 	vrg_demote $1 $2
 	# "PVC not being deleted. Not ready to become Secondary"
+	set -x
+	time kubectl --context $1 -nasdf wait vrg/bb --for condition=clusterdataprotected --timeout -1s
+	{ set +x; } 2>/dev/null
 	app_undeploy $1& # pvc finalizer remains until vrg deletes its vr
-	# VolumeReplication resource for pvc not demoted to secondary
-	# until_true_or_n 30000 eval test \"\$\(kubectl --context $1 -nasdf get vrg/bb -ojsonpath='{.status.state}'\)\" = Secondary
+	until_true_or_n 30000 eval test \"\$\(kubectl --context $1 -nasdf get vrg/bb -ojsonpath='{.status.state}'\)\" = Secondary
 	$3
 	vrg_undeploy $1&
-	wait
+	date
+	time wait
+	date
 }; exit_stack_push unset -f app_undeploy_failback
 
 app_recover_failback() {
 	# "VolumeReplication resource for the pvc as Secondary is in sync with Primary"
 	set -x
-	time kubectl --context $2 -nasdf wait vrg/bb --for condition=dataready --timeout 10m
+	time kubectl --context $2 -nasdf wait vrg/bb --for condition=dataprotected --timeout 10m
 	{ set +x; } 2>/dev/null
 	app_recover $1 relocate
 }; exit_stack_push unset -f app_recover_failback
