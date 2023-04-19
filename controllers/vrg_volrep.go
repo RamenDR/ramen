@@ -232,6 +232,11 @@ func (v *VRGInstance) isPVCInUse(pvc *corev1.PersistentVolumeClaim, log logr.Log
 
 // updateProtectedPVCs updates the list of ProtectedPVCs with the passed in PVC
 func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim) error {
+	// IF MetroDR, skip PVC update
+	if v.instance.Spec.Sync != nil {
+		return nil
+	}
+
 	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 
 	storageClass, err := v.getStorageClass(pvcNamespacedName)
