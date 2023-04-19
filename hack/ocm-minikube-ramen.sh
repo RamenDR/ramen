@@ -592,7 +592,9 @@ ramen_recipe_crd_undeploy() {
 	ramen_recipe_crd_kubectl $1 delete\ --ignore-not-found
 }; exit_stack_push unset -f ramen_recipe_crd_undeploy
 ramen_recipe_crd_kubectl() {
-	kubectl --context $1 $2 -f https://raw.githubusercontent.com/RamenDR/recipe/main/config/crd/bases/ramendr.openshift.io_recipes.yaml
+	set -- $1 "$2" main
+	set -- $1 "$2" 1fbc6bc31dea8b5ea40eefd8775821c233c5a66e
+	kubectl --context $1 $2 -f https://raw.githubusercontent.com/RamenDR/recipe/$3/config/crd/bases/ramendr.openshift.io_recipes.yaml
 }; exit_stack_push unset -f ramen_recipe_crd_kubectl
 olm_deploy_spokes()
 {
