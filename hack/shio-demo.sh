@@ -205,15 +205,13 @@ vrg_apply() {
 	  - includedResourceTypes:
 	    - deployments
 	    - pods
-	    labelSelector: !pod-template-hash
-#	    labelSelector:
-#	      matchExpressions:
-#	      - key: pod-template-hash
-#	        operator: DoesNotExist
+	    labelSelector:
+	      matchExpressions:
+	      - key: pod-template-hash
+	        operator: DoesNotExist
 	    name: deployments-and-naked-pods
 	    type: resource
-	  workflows:
-	  - name: recover
+	  recoverWorkflow:
 	    sequence:
 	    - group: everything-but-deploy-po-pv-rs-vr-vrg
 	    - group: deployments-and-naked-pods
@@ -222,8 +220,7 @@ vrg_apply() {
   kubeObjectProtection:
     captureInterval: 1m
     recipeRef:
-      name: asdf
-      recoverWorkflowName: recover$3${4:+
+      name: asdf$3${4:+
   action: $4}" \
 	cluster_names=$s3_store_cluster_names application_sample_namespace_name=asdf $ramen_hack_directory_path_name/minikube-ramen.sh application_sample_vrg_deploy$2 $1
 }; exit_stack_push unset -f vrg_apply
