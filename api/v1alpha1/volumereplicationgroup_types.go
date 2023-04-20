@@ -194,7 +194,7 @@ type VolumeReplicationGroupSpec struct {
 type Identifier struct {
 	// ID contains the globally unique storage identifier that identifies
 	// the storage or replication backend
-	ID string `json:"storageID"`
+	ID string `json:"id"`
 
 	// Modes is a list of maintenance modes that need to be activated on the storage
 	// backend, prior to various Ramen related orchestration. This is read from the label
@@ -213,7 +213,7 @@ type StorageIdentifiers struct {
 	StorageProvisioner string `json:"csiProvisioner,omitempty"`
 
 	// StorageID contains the globally unique storage identifier, as reported by the storage backend
-	// on the StorageClass as the value for the label "ramendr.openshift.io/storageID", that identifies
+	// on the StorageClass as the value for the label "ramendr.openshift.io/storageid", that identifies
 	// the storage backend that was used to provision the volume. It is used to label different StorageClasses
 	// across different kubernetes clusters, that potentially share the same storage backend.
 	// It also contains any maintenance modes that the storage backend requires during vaious Ramen actions
@@ -221,7 +221,7 @@ type StorageIdentifiers struct {
 	StorageID Identifier `json:"storageID,omitempty"`
 
 	// ReplicationID contains the globally unique replication identifier, as reported by the storage backend
-	// on the VolumeReplicationClass as the value for the label "ramendr.openshift.io/replicationID", that
+	// on the VolumeReplicationClass as the value for the label "ramendr.openshift.io/replicationid", that
 	// identifies the storage backends across 2 (or more) storage instances where the volume is replicated
 	// It also contains any maintenance modes that the replication backend requires during vaious Ramen actions
 	//+optional
