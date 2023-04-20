@@ -188,7 +188,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(result *ctrl.Result
 		return
 	}
 
-	if v.kubeObjectsCaptureDelete(result, s3StoreAccessors, number, pathName); result.Requeue {
+	if v.kubeObjectsCaptureDelete(result, s3StoreAccessors, number, pathName) != nil {
 		return
 	}
 
@@ -198,7 +198,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(result *ctrl.Result
 
 func (v *VRGInstance) kubeObjectsCaptureDelete(
 	result *ctrl.Result, s3StoreAccessors []s3StoreAccessor, captureNumber int64, pathName string,
-) {
+) error {
 	pathName += v.reconciler.kubeObjects.ProtectsPath()
 
 	// current s3 profiles may differ from those at capture time
@@ -212,9 +212,11 @@ func (v *VRGInstance) kubeObjectsCaptureDelete(
 
 			result.Requeue = true
 
-			return
+			return err
 		}
 	}
+
+	return nil
 }
 
 func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
