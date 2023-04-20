@@ -151,6 +151,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(result *ctrl.Result
 	captureToRecoverFrom := status.CaptureToRecoverFrom
 	if captureToRecoverFrom == nil {
 		v.log.Info("Kube objects capture-to-recover-from nil")
+		v.kubeObjectsCaptureStatusFalse(VRGConditionReasonUploading, "Kube objects initial capture in-progress")
 
 		captureToRecoverFrom = &ramen.KubeObjectsCaptureIdentifier{}
 	}
@@ -301,7 +302,7 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 		Number: captureNumber, StartTime: startTime,
 	}
 
-	v.kubeObjectsProtected = newVRGClusterDataProtectedCondition(v.instance.Generation, clusterDataProtectedTrueMessage)
+	v.kubeObjectsCaptureStatus(metav1.ConditionTrue, VRGConditionReasonUploaded, clusterDataProtectedTrueMessage)
 
 	duration, delay := timeSincePreviousAndUntilNext(status.CaptureToRecoverFrom.StartTime.Time, interval)
 	if delay <= 0 {
@@ -315,12 +316,21 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 }
 
 func (v *VRGInstance) kubeObjectsCaptureFailed(message string) {
-	if v.instance.Status.KubeObjectProtection.CaptureToRecoverFrom != nil {
-		// TODO && time.Since(CaptureToRecoverFrom.StartTime) < Spec.KubeObjectProtection.CaptureInterval * 2 or 3
-		return
-	}
+	v.kubeObjectsCaptureStatusFalse(VRGConditionReasonUploadError, message)
+}
 
-	v.kubeObjectsProtected = newVRGClusterDataUnprotectedCondition(v.instance.Generation, message)
+func (v *VRGInstance) kubeObjectsCaptureStatusFalse(reason, message string) {
+	v.kubeObjectsCaptureStatus(metav1.ConditionFalse, reason, message)
+}
+
+func (v *VRGInstance) kubeObjectsCaptureStatus(status metav1.ConditionStatus, reason, message string) {
+	v.kubeObjectsProtected = &metav1.Condition{
+		Type:               VRGConditionTypeClusterDataProtected,
+		Status:             status,
+		ObservedGeneration: v.instance.Generation,
+		Reason:             reason,
+		Message:            message,
+	}
 }
 
 const clusterDataProtectedTrueMessage = "Kube objects protected"
