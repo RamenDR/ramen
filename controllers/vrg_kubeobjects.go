@@ -79,6 +79,8 @@ func (v *VRGInstance) kubeObjectsProtect(
 	}
 
 	if len(s3StoreAccessors) == 0 {
+		v.log.Info("Kube objects capture store list empty")
+
 		result.Requeue = true // TODO remove; watch config map instead
 
 		return
@@ -139,6 +141,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 			if v.kubeObjectsCaptureDelete(result, s3StoreAccessors, number, pathName) != nil {
 				return
 			}
+
 			captureStartOrResume(vrg.GetGeneration(), "start")
 		},
 	)
@@ -159,7 +162,6 @@ func kubeObjectsCaptureStartConditionallySecondary(
 	}
 
 	v.kubeObjectsCaptureStatusFalse(VRGConditionReasonUploading, "Kube objects capture for relocate pending")
-
 	captureStart()
 }
 
@@ -302,9 +304,6 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 		Number: captureNumber, StartTime: startTime,
 		StartGeneration: startGeneration,
 	}
-
-	v.kubeObjectsCaptureStatus(metav1.ConditionTrue, VRGConditionReasonUploaded, clusterDataProtectedTrueMessage)
-
 	captureStartTimeSince := time.Since(startTime.Time)
 	v.log.Info("Kube objects captured", "recovery point", status.CaptureToRecoverFrom, "duration", captureStartTimeSince)
 	captureStartConditionally(
