@@ -418,10 +418,10 @@ const (
 	RestoredByRamen               = "True"
 
 	// StorageClass label
-	StorageIDLabel = "ramendr.openshift.io/storageID"
+	StorageIDLabel = "ramendr.openshift.io/storageid"
 
 	// VolumeReplicationClass label
-	VolumeReplicationIDLabel = "ramendr.openshift.io/replicationID"
+	VolumeReplicationIDLabel = "ramendr.openshift.io/replicationid"
 
 	// Maintenance mode label
 	MModesLabel = "ramendr.openshift.io/maintenancemodes"

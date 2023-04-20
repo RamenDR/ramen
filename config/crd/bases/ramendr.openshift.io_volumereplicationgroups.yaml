@@ -385,12 +385,17 @@ spec:
                               description: ReplicationID contains the globally unique
                                 replication identifier, as reported by the storage
                                 backend on the VolumeReplicationClass as the value
-                                for the label "ramendr.openshift.io/replicationID",
+                                for the label "ramendr.openshift.io/replicationid",
                                 that identifies the storage backends across 2 (or
                                 more) storage instances where the volume is replicated
                                 It also contains any maintenance modes that the replication
                                 backend requires during vaious Ramen actions
                               properties:
+                                id:
+                                  description: ID contains the globally unique storage
+                                    identifier that identifies the storage or replication
+                                    backend
+                                  type: string
                                 modes:
                                   description: Modes is a list of maintenance modes
                                     that need to be activated on the storage backend,
@@ -409,13 +414,8 @@ spec:
                                     - Failover
                                     type: string
                                   type: array
-                                storageID:
-                                  description: ID contains the globally unique storage
-                                    identifier that identifies the storage or replication
-                                    backend
-                                  type: string
                               required:
-                              - storageID
+                              - id
                               type: object
                             resources:
                               description: Resources set in the claim to be replicated
@@ -451,7 +451,7 @@ spec:
                             storageID:
                               description: StorageID contains the globally unique
                                 storage identifier, as reported by the storage backend
-                                on the StorageClass as the value for the label "ramendr.openshift.io/storageID",
+                                on the StorageClass as the value for the label "ramendr.openshift.io/storageid",
                                 that identifies the storage backend that was used
                                 to provision the volume. It is used to label different
                                 StorageClasses across different kubernetes clusters,
@@ -459,6 +459,11 @@ spec:
                                 also contains any maintenance modes that the storage
                                 backend requires during vaious Ramen actions
                               properties:
+                                id:
+                                  description: ID contains the globally unique storage
+                                    identifier that identifies the storage or replication
+                                    backend
+                                  type: string
                                 modes:
                                   description: Modes is a list of maintenance modes
                                     that need to be activated on the storage backend,
@@ -477,13 +482,8 @@ spec:
                                     - Failover
                                     type: string
                                   type: array
-                                storageID:
-                                  description: ID contains the globally unique storage
-                                    identifier that identifies the storage or replication
-                                    backend
-                                  type: string
                               required:
-                              - storageID
+                              - id
                               type: object
                           type: object
                       type: object
@@ -710,12 +710,16 @@ spec:
                     replicationID:
                       description: ReplicationID contains the globally unique replication
                         identifier, as reported by the storage backend on the VolumeReplicationClass
-                        as the value for the label "ramendr.openshift.io/replicationID",
+                        as the value for the label "ramendr.openshift.io/replicationid",
                         that identifies the storage backends across 2 (or more) storage
                         instances where the volume is replicated It also contains
                         any maintenance modes that the replication backend requires
                         during vaious Ramen actions
                       properties:
+                        id:
+                          description: ID contains the globally unique storage identifier
+                            that identifies the storage or replication backend
+                          type: string
                         modes:
                           description: Modes is a list of maintenance modes that need
                             to be activated on the storage backend, prior to various
@@ -732,12 +736,8 @@ spec:
                             - Failover
                             type: string
                           type: array
-                        storageID:
-                          description: ID contains the globally unique storage identifier
-                            that identifies the storage or replication backend
-                          type: string
                       required:
-                      - storageID
+                      - id
                       type: object
                     resources:
                       description: Resources set in the claim to be replicated
@@ -772,13 +772,17 @@ spec:
                     storageID:
                       description: StorageID contains the globally unique storage
                         identifier, as reported by the storage backend on the StorageClass
-                        as the value for the label "ramendr.openshift.io/storageID",
+                        as the value for the label "ramendr.openshift.io/storageid",
                         that identifies the storage backend that was used to provision
                         the volume. It is used to label different StorageClasses across
                         different kubernetes clusters, that potentially share the
                         same storage backend. It also contains any maintenance modes
                         that the storage backend requires during vaious Ramen actions
                       properties:
+                        id:
+                          description: ID contains the globally unique storage identifier
+                            that identifies the storage or replication backend
+                          type: string
                         modes:
                           description: Modes is a list of maintenance modes that need
                             to be activated on the storage backend, prior to various
@@ -795,12 +799,8 @@ spec:
                             - Failover
                             type: string
                           type: array
-                        storageID:
-                          description: ID contains the globally unique storage identifier
-                            that identifies the storage or replication backend
-                          type: string
                       required:
-                      - storageID
+                      - id
                       type: object
                   type: object
                 type: array
