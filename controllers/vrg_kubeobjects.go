@@ -296,6 +296,8 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 		v.log.Error(err, "Kube objects capture generation string to int64 conversion error")
 	}
 
+	v.kubeObjectsCaptureStatus(metav1.ConditionTrue, VRGConditionReasonUploaded, clusterDataProtectedTrueMessage)
+
 	status.CaptureToRecoverFrom = &ramen.KubeObjectsCaptureIdentifier{
 		Number: captureNumber, StartTime: startTime,
 		StartGeneration: startGeneration,
