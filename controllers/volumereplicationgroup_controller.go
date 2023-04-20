@@ -19,6 +19,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -944,11 +945,22 @@ func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
 	result.Requeue = v.reconcileVolRepsAsSecondary() || result.Requeue
 
 	if vrg.Spec.Action == ramendrv1alpha1.VRGActionRelocate {
-		v.kubeObjectsProtectSecondary(&result, s3StoreAccessors)
-		v.vrgObjectProtect(&result, s3StoreAccessors)
+		v.relocate(&result, s3StoreAccessors)
 	}
 
 	return result
+}
+
+func (v *VRGInstance) relocate(result *ctrl.Result, s3StoreAccessors []s3StoreAccessor) {
+	vrg := v.instance
+
+	if clusterDataProtected := meta.FindStatusCondition(vrg.Status.Conditions,
+		VRGConditionTypeClusterDataProtected,
+	); clusterDataProtected.Status != metav1.ConditionTrue ||
+		clusterDataProtected.ObservedGeneration != vrg.Generation {
+		v.kubeObjectsProtectSecondary(result, s3StoreAccessors)
+		v.vrgObjectProtect(result, s3StoreAccessors)
+	}
 }
 
 func (v *VRGInstance) updateVRGStatus(updateConditions bool) error {
