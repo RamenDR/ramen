@@ -5,6 +5,7 @@ package controllers
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
+	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
@@ -34,7 +35,7 @@ const (
 )
 
 var (
-	syncMetricLabels = []string{
+	syncMetricLabelNames = []string{
 		ObjType,            // Name of the type of the resource [drpc|vrg]
 		ObjName,            // Name of the resource [drpc-name|vrg-name]
 		ObjNamespace,       // DRPC namespace name
@@ -42,7 +43,7 @@ var (
 		SchedulingInterval, // Value from DRPolicy
 	}
 
-	drpolicySyncIntervalMetricLabels = []string{
+	drpolicySyncIntervalMetricLabelNames = []string{
 		Policyname, // DRPolicy name
 	}
 )
@@ -54,7 +55,7 @@ var (
 			Namespace: metricNamespace,
 			Help:      "Duration of last sync time in seconds",
 		},
-		syncMetricLabels,
+		syncMetricLabelNames,
 	)
 
 	dRPolicySyncInterval = prometheus.NewGaugeVec(
@@ -63,9 +64,19 @@ var (
 			Namespace: metricNamespace,
 			Help:      "Schedule interval for a policy in seconds",
 		},
-		drpolicySyncIntervalMetricLabels,
+		drpolicySyncIntervalMetricLabelNames,
 	)
 )
+
+func SyncPolicyMetricLables(drPolicy *rmn.DRPolicy, drpc *rmn.DRPlacementControl) prometheus.Labels {
+	return prometheus.Labels{
+		ObjType:            "DRPlacementControl",
+		ObjName:            drpc.Name,
+		ObjNamespace:       drpc.Namespace,
+		Policyname:         drPolicy.Name,
+		SchedulingInterval: drPolicy.Spec.SchedulingInterval,
+	}
+}
 
 func NewSyncMetrics(labels prometheus.Labels) SyncMetrics {
 	return SyncMetrics{
@@ -73,10 +84,22 @@ func NewSyncMetrics(labels prometheus.Labels) SyncMetrics {
 	}
 }
 
+func DeleteSyncMetric(labels prometheus.Labels) bool {
+	return lastSyncTime.Delete(labels)
+}
+
+func DRPolicySyncIntervalMetricLabels(drPolicy *rmn.DRPolicy) prometheus.Labels {
+	return prometheus.Labels{Policyname: drPolicy.Name}
+}
+
 func NewDRPolicySyncIntervalMetrics(labels prometheus.Labels) DRPolicySyncMetrics {
 	return DRPolicySyncMetrics{
 		DRPolicySyncInterval: dRPolicySyncInterval.With(labels),
 	}
+}
+
+func DeleteDRPolicySyncIntervalMetrics(labels prometheus.Labels) bool {
+	return dRPolicySyncInterval.Delete(labels)
 }
 
 func init() {
