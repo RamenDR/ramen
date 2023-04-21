@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	errorswrapper "github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -733,13 +732,8 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 		return nil, fmt.Errorf("configmap get: %w", err)
 	}
 
-	metrics := NewSyncMetrics(prometheus.Labels{
-		ObjType:            "DRPlacementControl",
-		ObjName:            drpc.Name,
-		ObjNamespace:       drpc.Namespace,
-		Policyname:         drPolicy.Name,
-		SchedulingInterval: drPolicy.Spec.SchedulingInterval,
-	})
+	syncMetricLabels := SyncPolicyMetricLables(drPolicy, drpc)
+	metrics := NewSyncMetrics(syncMetricLabels)
 
 	d := &DRPCInstance{
 		reconciler:      r,
@@ -931,6 +925,7 @@ func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 	return ctrl.Result{}, nil
 }
 
+//nolint:funlen,cyclop
 func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *rmn.DRPlacementControl,
 	placementObj client.Object, log logr.Logger,
 ) error {
@@ -989,7 +984,15 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 	}
 
 	// delete MCVs used in the previous call
-	return r.deleteAllManagedClusterViews(drpc, rmnutil.DrpolicyClusterNames(drPolicy))
+	if err := r.deleteAllManagedClusterViews(drpc, rmnutil.DrpolicyClusterNames(drPolicy)); err != nil {
+		return fmt.Errorf("error in deleting MCV (%w)", err)
+	}
+
+	// delete metrics if matching lables are found
+	syncMetricLabels := SyncPolicyMetricLables(drPolicy, drpc)
+	DeleteSyncMetric(syncMetricLabels)
+
+	return nil
 }
 
 func (r *DRPlacementControlReconciler) deleteAllManagedClusterViews(
