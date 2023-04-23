@@ -89,6 +89,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 		}).
 		For(&ramendrv1alpha1.VolumeReplicationGroup{}).
 		Watches(&source.Kind{Type: &corev1.PersistentVolumeClaim{}}, pvcMapFun, builder.WithPredicates(pvcPredicate)).
+		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(r.configMapFun)).
 		Owns(&volrep.VolumeReplication{})
 
 	if !ramenConfig.VolSync.Disabled {
@@ -107,6 +108,29 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 	}
 
 	return builder.Complete(r)
+}
+
+func (r *VolumeReplicationGroupReconciler) configMapFun(configmap client.Object) []reconcile.Request {
+	log := ctrl.Log.WithName("configmap").WithName("VolumeReplicationGroup")
+
+	if configmap.GetName() != drClusterOperatorConfigMapName || configmap.GetNamespace() != NamespaceName() {
+		return []reconcile.Request{}
+	}
+
+	log.Info("Update in ramen-dr-cluster-operator-config configuration map")
+
+	req := []reconcile.Request{}
+
+	var vrgs ramendrv1alpha1.VolumeReplicationGroupList
+
+	for _, vrg := range vrgs.Items {
+		log.Info("Adding VolumeReplicationGroup to reconcile request",
+			"vrg", vrg.Name, "namespace", vrg.Namespace)
+
+		req = append(req, reconcile.Request{NamespacedName: types.NamespacedName{Name: vrg.Name, Namespace: vrg.Namespace}})
+	}
+
+	return req
 }
 
 func init() {
@@ -309,6 +333,7 @@ func GetPVCLabelSelector(
 // +kubebuilder:rbac:groups=core,resources=events,verbs=get;create;patch;update
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=recipes,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
