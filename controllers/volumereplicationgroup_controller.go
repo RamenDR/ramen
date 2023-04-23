@@ -70,6 +70,27 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 		return filterPVC(mgr, pvc,
 			log.WithValues("pvc", types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}))
 	}))
+	configMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
+		log := ctrl.Log.WithName("configmap").WithName("VolumeReplicationGroup")
+		configmap, ok := obj.(*corev1.ConfigMap)
+		if !ok {
+			log.Info("Config Map function received non-ConfigMap resource")
+
+			return []reconcile.Request{}
+		}
+		if configmap.GetName() != drClusterOperatorConfigMapName || configmap.GetNamespace() != NamespaceName() {
+			return []reconcile.Request{}
+		}
+
+		req := []reconcile.Request{}
+		var vrgs ramendrv1alpha1.VolumeReplicationGroupList
+		for _, vrg := range vrgs.Items {
+			log.Info("Adding VolumeReplicationGroup to reconcile request",
+				"vrg", vrg.Name, "namespace", vrg.Namespace)
+			req = append(req, reconcile.Request{NamespacedName: types.NamespacedName{Name: vrg.Name, Namespace: vrg.Namespace}})
+		}
+		return req
+	}))
 
 	r.eventRecorder = rmnutil.NewEventReporter(mgr.GetEventRecorderFor("controller_VolumeReplicationGroup"))
 
@@ -89,6 +110,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 		}).
 		For(&ramendrv1alpha1.VolumeReplicationGroup{}).
 		Watches(&source.Kind{Type: &corev1.PersistentVolumeClaim{}}, pvcMapFun, builder.WithPredicates(pvcPredicate)).
+		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, configMapFun).
 		Owns(&volrep.VolumeReplication{})
 
 	if !ramenConfig.VolSync.Disabled {
@@ -309,6 +331,7 @@ func GetPVCLabelSelector(
 // +kubebuilder:rbac:groups=core,resources=events,verbs=get;create;patch;update
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=recipes,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
