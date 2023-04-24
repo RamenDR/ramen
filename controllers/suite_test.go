@@ -36,10 +36,10 @@ import (
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
 	ocmclv1 "github.com/open-cluster-management/api/cluster/v1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
-	cpcv1 "github.com/stolostron/config-policy-controller/api/v1"
-	gppv1 "github.com/stolostron/governance-policy-propagator/api/v1"
 	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
+	cpcv1 "open-cluster-management.io/config-policy-controller/api/v1"
+	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 
 	argov1alpha1 "github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
 	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"

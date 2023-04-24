@@ -9,12 +9,12 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/ramendr/ramen/controllers/util"
-	gppv1 "github.com/stolostron/governance-policy-propagator/api/v1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 )
 
 var _ = Describe("Secrets_Util", func() {

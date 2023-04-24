@@ -6,10 +6,10 @@ package controllers_test
 import (
 	"context"
 
-	"github.com/ghodss/yaml"
 	. "github.com/onsi/gomega"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
+	"sigs.k8s.io/yaml"
 )
 
 func configMapUpdate() {

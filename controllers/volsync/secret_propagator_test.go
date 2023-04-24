@@ -18,9 +18,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/ramendr/ramen/controllers/volsync"
-	cfgpolicyv1 "github.com/stolostron/config-policy-controller/api/v1"
-	policyv1 "github.com/stolostron/governance-policy-propagator/api/v1"
 	plrulev1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
+	cfgpolicyv1 "open-cluster-management.io/config-policy-controller/api/v1"
+	policyv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 )
 
 var _ = Describe("Secret propagator", func() {
