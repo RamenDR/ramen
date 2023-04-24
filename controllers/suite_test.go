@@ -427,7 +427,19 @@ func objectOrItsFinalizerAbsentVerify(namespaceName, objectName string, object c
 	return
 }
 
-func objectFinalizerPresentVerify(namespaceName, objectName string, object client.Object, finalizerName string) {
+func objectFinalizerPresentEventuallyVerify(namespaceName, objectName string, object client.Object,
+	finalizerName string,
+) {
+	Eventually(func() []string {
+		Expect(objectGet(namespaceName, objectName, object)).To(Succeed())
+
+		return object.GetFinalizers()
+	}).Should(ContainElement(finalizerName))
+}
+
+func objectFinalizerPresentConsistentlyVerify(namespaceName, objectName string, object client.Object,
+	finalizerName string,
+) {
 	Consistently(func() []string {
 		Expect(objectGet(namespaceName, objectName, object)).To(Succeed())
 

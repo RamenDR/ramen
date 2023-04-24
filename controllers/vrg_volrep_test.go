@@ -1557,7 +1557,9 @@ func pvcAbsentVerify(namespaceName, pvcName string) {
 }
 
 func pvcFinalizerPresentVerify(namespaceName, pvcName string) {
-	objectFinalizerPresentVerify(namespaceName, pvcName, &corev1.PersistentVolumeClaim{},
+	objectFinalizerPresentEventuallyVerify(namespaceName, pvcName, &corev1.PersistentVolumeClaim{},
+		vrgController.PvcVRFinalizerProtected)
+	objectFinalizerPresentConsistentlyVerify(namespaceName, pvcName, &corev1.PersistentVolumeClaim{},
 		vrgController.PvcVRFinalizerProtected)
 }
 
