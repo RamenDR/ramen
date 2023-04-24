@@ -16,9 +16,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	cfgpolicyv1 "github.com/stolostron/config-policy-controller/api/v1"
-	policyv1 "github.com/stolostron/governance-policy-propagator/api/v1"
 	plrulev1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
+	cfgpolicyv1 "open-cluster-management.io/config-policy-controller/api/v1"
+	policyv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 )
 
 func GetVolSyncPSKSecretNameFromVRGName(vrgName string) string {
@@ -228,7 +228,7 @@ func (sp *secretPropagator) getEmbeddedConfigPolicy() (*cfgpolicyv1.Configuratio
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "rmn-" + sp.DestSecretNamespace + "-" + sp.DestSecretName,
 		},
-		Spec: cfgpolicyv1.ConfigurationPolicySpec{
+		Spec: &cfgpolicyv1.ConfigurationPolicySpec{
 			ObjectTemplates: []*cfgpolicyv1.ObjectTemplate{
 				{
 					ComplianceType: cfgpolicyv1.MustHave,

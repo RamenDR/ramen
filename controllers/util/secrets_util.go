@@ -11,14 +11,14 @@ import (
 
 	"github.com/go-logr/logr"
 	errorswrapper "github.com/pkg/errors"
-	cpcv1 "github.com/stolostron/config-policy-controller/api/v1"
-	gppv1 "github.com/stolostron/governance-policy-propagator/api/v1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	cpcv1 "open-cluster-management.io/config-policy-controller/api/v1"
+	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -187,7 +187,7 @@ func newConfigurationPolicy(name string, object runtime.RawExtension) *cpcv1.Con
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
-		Spec: cpcv1.ConfigurationPolicySpec{
+		Spec: &cpcv1.ConfigurationPolicySpec{
 			RemediationAction: cpcv1.Enforce,
 			Severity:          "high",
 			ObjectTemplates: []*cpcv1.ObjectTemplate{
