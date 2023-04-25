@@ -7,7 +7,7 @@ import secrets
 
 from drenv import kubectl
 
-EXAMPLE_DEPLOYMENT = os.path.join("example", "deployment.yaml")
+EXAMPLE_DEPLOYMENT = os.path.join("addons", "example", "deployment.yaml")
 
 
 def test_version(tmpenv):

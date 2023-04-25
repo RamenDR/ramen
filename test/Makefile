@@ -5,9 +5,9 @@ sources := $(wildcard \
 	drenv \
 	*.py \
 	envs/*.py \
-	*/start \
-	*/test \
-	*/stop \
+	addons/*/start \
+	addons/*/test \
+	addons/*/stop \
 	*/deploy \
 	*/undeploy \
 )

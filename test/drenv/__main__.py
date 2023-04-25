@@ -19,6 +19,7 @@ from . import envfile
 from . import minikube
 
 CMD_PREFIX = "cmd_"
+ADDONS_DIR = "addons"
 
 
 def main():
@@ -265,7 +266,8 @@ def run_worker(worker, hooks=(), reverse=False, allow_failure=False):
 
 
 def run_addon(addon, name, hooks=(), allow_failure=False):
-    if not os.path.isdir(addon["name"]):
+    addon_dir = os.path.join(ADDONS_DIR, addon["name"])
+    if not os.path.isdir(addon_dir):
         logging.warning(
             "[%s] Addon '%s' does not exist - skipping",
             name,
@@ -274,7 +276,7 @@ def run_addon(addon, name, hooks=(), allow_failure=False):
         return
 
     for filename in hooks:
-        hook = os.path.join(addon["name"], filename)
+        hook = os.path.join(addon_dir, filename)
         if os.path.isfile(hook):
             run_hook(hook, addon["args"], name, allow_failure=allow_failure)
 
