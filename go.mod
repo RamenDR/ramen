@@ -1,6 +1,6 @@
 module github.com/ramendr/ramen
 
-go 1.18
+go 1.19
 
 require (
 	github.com/argoproj/argo-cd/v2 v2.7.0-rc2
