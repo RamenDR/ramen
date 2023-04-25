@@ -259,24 +259,24 @@ def kubectl(*args, profile=None):
 
 
 def run_worker(worker, hooks=(), reverse=False, allow_failure=False):
-    scripts = reversed(worker["scripts"]) if reverse else worker["scripts"]
-    for script in scripts:
-        run_script(script, worker["name"], hooks=hooks, allow_failure=allow_failure)
+    addons = reversed(worker["addons"]) if reverse else worker["addons"]
+    for addon in addons:
+        run_addon(addon, worker["name"], hooks=hooks, allow_failure=allow_failure)
 
 
-def run_script(script, name, hooks=(), allow_failure=False):
-    if not os.path.isdir(script["name"]):
+def run_addon(addon, name, hooks=(), allow_failure=False):
+    if not os.path.isdir(addon["name"]):
         logging.warning(
-            "[%s] Script '%s' does not exist - skipping",
+            "[%s] Addon '%s' does not exist - skipping",
             name,
-            script["name"],
+            addon["name"],
         )
         return
 
     for filename in hooks:
-        hook = os.path.join(script["name"], filename)
+        hook = os.path.join(addon["name"], filename)
         if os.path.isfile(hook):
-            run_hook(hook, script["args"], name, allow_failure=allow_failure)
+            run_hook(hook, addon["args"], name, allow_failure=allow_failure)
 
 
 def run_hook(hook, args, name, allow_failure=False):

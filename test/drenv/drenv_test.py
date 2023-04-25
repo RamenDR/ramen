@@ -62,9 +62,9 @@ def test_delete(tmpenv):
     assert cluster.status(tmpenv.prefix + "cluster") == cluster.READY
 
 
-def test_missing_script(tmpdir):
+def test_missing_addon(tmpdir):
     """
-    Missing script should log a warning but do not fail, so we can start, stop
+    Missing addon should log a warning but do not fail, so we can start, stop
     and delete the env.
     """
     content = """
@@ -73,13 +73,13 @@ profiles:
   - name: cluster
     external: true
     workers:
-      - scripts:
-          - name: no-such-script
+      - addons:
+          - name: no-such-addon
 """
-    path = tmpdir.join("missing-script.yaml")
+    path = tmpdir.join("missing-addon.yaml")
     path.write(content)
 
-    warning = r"WARNING .+ 'no-such-script'"
+    warning = r"WARNING .+ 'no-such-addon'"
 
     # Use subprocess.run() to get access to stderr on success.
     cp = subprocess.run(["drenv", "start", str(path)], stderr=subprocess.PIPE)

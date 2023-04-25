@@ -17,15 +17,15 @@ templates:
     network: default
     memory: "4g"
     workers:
-      - scripts:
+      - addons:
           - name: ocm-cluster
             args: ["$name", "hub"]
-      - scripts:
+      - addons:
           - name: cert-manager
           - name: csi-addons
           - name: olm
           - name: minio
-      - scripts:
+      - addons:
           - name: my-external-storage
   - name: "hub-cluster"
     driver: kvm2
@@ -33,7 +33,7 @@ templates:
     network: default
     memory: "4g"
     workers:
-      - scripts:
+      - addons:
           - name: ocm-hub
           - name: ocm-controller
           - name: cert-manager

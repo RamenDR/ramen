@@ -88,17 +88,17 @@ def _validate_profile(profile):
 
 def _validate_worker(worker, env, index):
     worker["name"] = f'{env["name"]}/{worker.get("name", index)}'
-    worker.setdefault("scripts", [])
+    worker.setdefault("addons", [])
 
-    for script in worker["scripts"]:
-        _validate_script(script, env, args=[env["name"]])
+    for addon in worker["addons"]:
+        _validate_addon(addon, env, args=[env["name"]])
 
 
-def _validate_script(script, env, args=()):
-    if "name" not in script:
-        raise ValueError(f"Missing script 'name': {script}")
+def _validate_addon(addon, env, args=()):
+    if "name" not in addon:
+        raise ValueError(f"Missing addon 'name': {addon}")
 
-    args = script.setdefault("args", list(args))
+    args = addon.setdefault("args", list(args))
 
     for i, arg in enumerate(args):
         arg = arg.replace("$name", env["name"])
@@ -122,8 +122,8 @@ def _prefix_names(env, name_prefix):
 def _prefix_worker(worker, profile_names, name_prefix):
     worker["name"] = name_prefix + worker["name"]
 
-    for script in worker["scripts"]:
-        args = script["args"]
+    for addon in worker["addons"]:
+        args = addon["args"]
         for i, value in enumerate(args):
             if value in profile_names:
                 args[i] = name_prefix + value

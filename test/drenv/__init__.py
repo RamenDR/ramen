@@ -81,7 +81,7 @@ def kustomization(path, **kw):
 def config_dir(name):
     """
     Return configuration directory for profile name. This can be used to
-    share configuration between scripts.
+    share configuration between addons.
     """
     path = os.path.join("~", ".config", "drenv", name)
     return os.path.expanduser(path)

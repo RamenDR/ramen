@@ -11,7 +11,7 @@ templates:
     container_runtime: containerd
     network: default
     workers:
-      - scripts:
+      - addons:
           - name: ocm-hub
           - name: ocm-controller
   - name: "dr-cluster"
@@ -19,7 +19,7 @@ templates:
     container_runtime: containerd
     network: default
     workers:
-      - scripts:
+      - addons:
           - name: ocm-cluster
             args: ["$name", "hub"]
 profiles:

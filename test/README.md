@@ -124,7 +124,7 @@ To inspect a processed environment file:
 drenv dump envs/example.yaml
 ```
 
-Dumping the file shows how drenv binds templates, expands scripts
+Dumping the file shows how drenv binds templates, expands addons
 arguments, name workers, and applies default values. This can be useful
 to debugging drenv or when writing a new environment file.
 
@@ -154,7 +154,7 @@ templates:
     driver: podman
     container_runtime: cri-o
     workers:
-      - scripts:
+      - addons:
           - name: example
 profiles:
   - name: ex1
@@ -166,7 +166,7 @@ profiles:
 ### Experimenting with the example environment
 
 You can play with the example environment to understand how the `drenv`
-tool works and how to write scripts.
+tool works and how to write addons.
 
 #### Starting the example environment
 
@@ -297,9 +297,9 @@ $ minikube profile list
 You must use the same `--name-prefix` when stopping or deleting the
 environments.
 
-#### Running scripts manually
+#### Running addons hooks manually
 
-When debugging scripts it is useful to run them manually:
+When debugging addons hooks it is useful to run them manually:
 
 ```
 $ example/start ex1
@@ -467,43 +467,43 @@ $ drenv delete envs/example.yaml
     - `workers`: Optional list of workers to run when starting a
       profile. Use multiple workers to run scripts in parallel.
         - `name`: Optional worker name
-        - `scripts`: Scripts to run by this worker.
-            - `name`: Scripts directory
-            - `args`: Optional argument to the script. If not specified the
-              script is run with one argument, the profile name.
+        - `addons`: Addons to deploy by this worker.
+            - `name`: Addon directory
+            - `args`: Optional argument to addon hooks. If not specified
+              the hooks are run with one argument, the profile name.
 
 - `profiles`: List of profile managed by the environment. Any template
    key is valid in the profile, overriding the same key from the template.
     - `template`: The template to create this profile from.
 
-- `workers`: Optional list of workers for running scripts after all
+- `workers`: Optional list of workers for deploying addons after all
   profile are started.
     - `name`: Optional worker name
-    - `scripts`: Scripts to run by this worker
-        - `name`: Scripts directory
-        - `args`: Optional argument to the script. If not specified the
-          script is run without any arguments.
+    - `addons`: Addons to deploy by this worker
+        - `name`: Addon directory
+        - `args`: Optional argument to the addon hooks. If not specified
+          the hooks are run without any arguments.
 
-#### Scripts hooks
+#### Addon hooks
 
-The script directory may contain scripts to be run on certain events,
-based on the hook file name.
+The addon directory may contain hooks to be run on certain events, based
+on the hook file name.
 
-| Event        | Scripts       | Comment                             |
+| Event        | Hooks         | Comment                             |
 |--------------|---------------|-------------------------------------|
 | start        | start, test   | after cluster was started           |
 | stop         | stop          | before cluster is stopped           |
 | delete       | -             |                                     |
 
-The `start` and `test` scripts are not allowed to fail. If a script
-fail, execution stops and the entire command will fail.
+The `start` and `test` hooks are not allowed to fail. If a hook fail,
+execution stops and the entire command will fail.
 
-The `stop` script is allowed to fail. The failure is logged but the
+The `stop` hook is allowed to fail. The failure is logged but the
 `stop` command will not fail.
 
-#### Script arguments
+#### Addon arguments
 
-When specifying script `args`, you can use the special variable `$name`.
+When specifying addon `args`, you can use the special variable `$name`.
 This will be replaced with the profile name.
 
 Example yaml:
@@ -512,16 +512,16 @@ Example yaml:
 profiles:
   - name: cluster1
     workers:
-      - scripts:
-          - name: script
+      - addons:
+          - name: my-addon
             args: [$name, arg2]
 ```
 
-The `drenv` tool will run the script hooks as:
+The `drenv` tool will run the hooks as:
 
 ```
-script/start cluster1 arg2
-script/test cluster1 arg2
+my-addon/start cluster1 arg2
+my-addon/test cluster1 arg2
 ```
 
 #### Hook working directory

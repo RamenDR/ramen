@@ -10,5 +10,5 @@ profiles:
     container_runtime: cri-o
     memory: 2g
     workers:
-      - scripts:
+      - addons:
           - name: example

@@ -14,24 +14,24 @@ templates:
     network: default
     workers:
       # An unnamed worker
-      - scripts:
-          # Script accepting single arguemnt, the profile name
-          - name: script1
-          # Script with user set arguments, $name replaced by current profile
+      - addons:
+          # Addon accepting single arguemnt, the profile name
+          - name: addon1
+          # Addon with user set arguments, $name replaced by current profile
           # name.
-          - name: script2
+          - name: addon2
             args: ["$name", "hub"]
       # A named worker
       - name: named-worker
-        scripts:
-          - name: script3
+        addons:
+          - name: addon3
   - name: hub-cluster
     memory: 4g
     network: default
     workers:
-      - scripts:
-          # Script that does not need its profile name.
-          - name: script4
+      - addons:
+          # Addon that does not need its profile name.
+          - name: addon4
             args: ["dr1", "dr2"]
 
 profiles:
@@ -47,13 +47,13 @@ profiles:
 
 workers:
   - name: named-worker
-    scripts:
-      # Script accepting third argument which is not a cluster name.
-      - name: script5
+    addons:
+      # Addon accepting third argument which is not a cluster name.
+      - name: addon5
         args: ["dr1", "dr2", "other"]
-  - scripts:
-      # Script accepting no arguments
-      - name: script6
+  - addons:
+      # Addon accepting no arguments
+      - name: addon6
         args: []
 """
 
@@ -73,8 +73,8 @@ def test_valid():
 
     worker = profile["workers"][0]
     assert worker["name"] == "dr1/0"
-    assert worker["scripts"][0]["args"] == ["dr1"]
-    assert worker["scripts"][1]["args"] == ["dr1", "hub"]
+    assert worker["addons"][0]["args"] == ["dr1"]
+    assert worker["addons"][1]["args"] == ["dr1", "hub"]
 
     worker = profile["workers"][1]
     assert worker["name"] == "dr1/named-worker"
@@ -87,8 +87,8 @@ def test_valid():
 
     worker = profile["workers"][0]
     assert worker["name"] == "dr2/0"
-    assert worker["scripts"][0]["args"] == ["dr2"]
-    assert worker["scripts"][1]["args"] == ["dr2", "hub"]
+    assert worker["addons"][0]["args"] == ["dr2"]
+    assert worker["addons"][1]["args"] == ["dr2", "hub"]
 
     worker = profile["workers"][1]
     assert worker["name"] == "dr2/named-worker"
@@ -102,17 +102,17 @@ def test_valid():
 
     worker = profile["workers"][0]
     assert worker["name"] == "hub/0"
-    assert worker["scripts"][0]["args"] == ["dr1", "dr2"]
+    assert worker["addons"][0]["args"] == ["dr1", "dr2"]
 
     # env workers
 
     worker = env["workers"][0]
     assert worker["name"] == "test/named-worker"
-    assert worker["scripts"][0]["args"] == ["dr1", "dr2", "other"]
+    assert worker["addons"][0]["args"] == ["dr1", "dr2", "other"]
 
     worker = env["workers"][1]
     assert worker["name"] == "test/1"
-    assert worker["scripts"][0]["args"] == []
+    assert worker["addons"][0]["args"] == []
 
 
 def test_name_prefix():
@@ -130,8 +130,8 @@ def test_name_prefix():
 
     worker = profile["workers"][0]
     assert worker["name"] == "prefix-dr1/0"
-    assert worker["scripts"][0]["args"] == ["prefix-dr1"]
-    assert worker["scripts"][1]["args"] == ["prefix-dr1", "prefix-hub"]
+    assert worker["addons"][0]["args"] == ["prefix-dr1"]
+    assert worker["addons"][1]["args"] == ["prefix-dr1", "prefix-hub"]
 
     worker = profile["workers"][1]
     assert worker["name"] == "prefix-dr1/named-worker"
@@ -143,8 +143,8 @@ def test_name_prefix():
 
     worker = profile["workers"][0]
     assert worker["name"] == "prefix-dr2/0"
-    assert worker["scripts"][0]["args"] == ["prefix-dr2"]
-    assert worker["scripts"][1]["args"] == ["prefix-dr2", "prefix-hub"]
+    assert worker["addons"][0]["args"] == ["prefix-dr2"]
+    assert worker["addons"][1]["args"] == ["prefix-dr2", "prefix-hub"]
 
     worker = profile["workers"][1]
     assert worker["name"] == "prefix-dr2/named-worker"
@@ -156,13 +156,13 @@ def test_name_prefix():
 
     worker = profile["workers"][0]
     assert worker["name"] == "prefix-hub/0"
-    assert worker["scripts"][0]["args"] == ["prefix-dr1", "prefix-dr2"]
+    assert worker["addons"][0]["args"] == ["prefix-dr1", "prefix-dr2"]
 
     # env workers
 
     worker = env["workers"][0]
     assert worker["name"] == "prefix-test/named-worker"
-    assert worker["scripts"][0]["args"] == [
+    assert worker["addons"][0]["args"] == [
         "prefix-dr1",
         "prefix-dr2",
         "other",
@@ -170,7 +170,7 @@ def test_name_prefix():
 
     worker = env["workers"][1]
     assert worker["name"] == "prefix-test/1"
-    assert worker["scripts"][0]["args"] == []
+    assert worker["addons"][0]["args"] == []
 
 
 def test_require_env_name():
@@ -221,26 +221,26 @@ profiles:
         envfile.load(io.StringIO(s))
 
 
-def test_require_profile_script_name():
+def test_require_profile_addon_name():
     s = """
 name: test
 profiles:
   - name: p1
     workers:
-      - scripts:
+      - addons:
           - args: ["arg1"]
 """
     with pytest.raises(ValueError):
         envfile.load(io.StringIO(s))
 
 
-def test_require_env_script_name():
+def test_require_env_addon_name():
     s = """
 name: test
 profiles:
   - name: p1
 workers:
-  - scripts:
+  - addons:
       - args: ["arg1"]
 """
     with pytest.raises(ValueError):
