@@ -94,8 +94,7 @@ environment is active:
 (ramen) [user@host test]$
 ```
 
-Change directory to the test directory where the environment yamls and
-scripts are:
+Change directory to the test directory:
 
 ```
 cd test
@@ -104,25 +103,25 @@ cd test
 To start the environment:
 
 ```
-drenv start example.yaml
+drenv start envs/example.yaml
 ```
 
 To stop the environment:
 
 ```
-drenv stop example.yaml
+drenv stop envs/example.yaml
 ```
 
 To delete the environment:
 
 ```
-drenv delete example.yaml
+drenv delete envs/example.yaml
 ```
 
 To inspect a processed environment file:
 
 ```
-drenv dump example.yaml
+drenv dump envs/example.yaml
 ```
 
 Dumping the file shows how drenv binds templates, expands scripts
@@ -176,7 +175,7 @@ deployment on every clusters, and finally run a self test verifying that
 the deployment is available on both clusters.
 
 ```
-$ drenv start example.yaml
+$ drenv start envs/example.yaml
 2023-01-03 23:20:17,822 INFO    [example] Starting environment
 2023-01-03 23:20:17,823 INFO    [ex1] Starting cluster
 2023-01-03 23:20:18,824 INFO    [ex2] Starting cluster
@@ -232,7 +231,7 @@ for each run.
 Start first instance:
 
 ```
-$ drenv start --name-prefix test1- example.yaml
+$ drenv start --name-prefix test1- envs/example.yaml
 2023-01-03 23:35:38,328 INFO    [test1-example] Starting environment
 2023-01-03 23:35:38,330 INFO    [test1-ex1] Starting cluster
 2023-01-03 23:35:39,330 INFO    [test1-ex2] Starting cluster
@@ -264,7 +263,7 @@ $ minikube profile list
 Start second instance:
 
 ```
-$ drenv start --name-prefix test2- example.yaml
+$ drenv start --name-prefix test2- envs/example.yaml
 2023-01-03 23:36:44,181 INFO    [test2-example] Starting environment
 2023-01-03 23:36:44,182 INFO    [test2-ex1] Starting cluster
 2023-01-03 23:36:45,183 INFO    [test2-ex2] Starting cluster
@@ -319,7 +318,7 @@ start again. This can be faster then creating the environment from
 scratch.
 
 ```
-$ drenv start example.yaml
+$ drenv start envs/example.yaml
 2023-01-03 23:40:25,451 INFO    [example] Starting environment
 2023-01-03 23:40:25,452 INFO    [ex1] Starting cluster
 2023-01-03 23:40:26,453 INFO    [ex2] Starting cluster
@@ -346,7 +345,7 @@ While debugging it is useful to use the `--verbose` option to see much
 more details:
 
 ```
-$ drenv start example.yaml -v
+$ drenv start envs/example.yaml -v
 2023-01-03 23:41:53,414 INFO    [example] Starting environment
 2023-01-03 23:41:53,416 INFO    [ex1] Starting cluster
 2023-01-03 23:41:53,539 DEBUG   [ex1] * [ex1] minikube v1.28.0 on Fedora 37
@@ -418,7 +417,7 @@ or don't have enough resources to run multiple environment at the same
 time.
 
 ```
-$ drenv stop example.yaml
+$ drenv stop envs/example.yaml
 2023-01-03 23:43:09,169 INFO    [example] Stopping environment
 2023-01-03 23:43:09,171 INFO    [ex1] Stopping cluster
 2023-01-03 23:43:09,172 INFO    [ex2] Stopping cluster
@@ -436,7 +435,7 @@ To delete the environment including the VM disks and dropping all
 changes made to the environment:
 
 ```
-$ drenv delete example.yaml
+$ drenv delete envs/example.yaml
 2023-01-03 23:43:36,601 INFO    [example] Deleting environment
 2023-01-03 23:43:36,602 INFO    [ex1] Deleting cluster
 2023-01-03 23:43:36,603 INFO    [ex2] Deleting cluster
@@ -545,6 +544,8 @@ kubectl.apply("--filename=deployment.yaml", context=cluster)
 ```
 
 ## Environment files
+
+The environments files are located in the `envs` directory.
 
 ### Ramen testing environments
 

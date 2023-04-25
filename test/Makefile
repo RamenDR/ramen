@@ -4,6 +4,7 @@
 sources := $(wildcard \
 	drenv \
 	*.py \
+	envs/*.py \
 	*/start \
 	*/test \
 	*/stop \
