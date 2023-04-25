@@ -22,5 +22,5 @@ profiles:
   - name: cluster
     external: true
     workers:
-      - scripts:
+      - addons:
           - name: example

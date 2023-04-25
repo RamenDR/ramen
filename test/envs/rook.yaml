@@ -14,12 +14,12 @@ templates:
     extra_disks: 1
     disk_size: "50g"
     workers:
-      - scripts:
+      - addons:
           - name: rook-operator
           - name: rook-cluster
           - name: rook-pool
           - name: rook-toolbox
-      - scripts:
+      - addons:
           - name: csi-addons
 
 profiles:
@@ -29,6 +29,6 @@ profiles:
     template: "dr-cluster"
 
 workers:
-  - scripts:
+  - addons:
       - name: rbd-mirror
         args: ["dr1", "dr2"]

@@ -9,7 +9,7 @@ templates:
     driver: podman
     container_runtime: cri-o
     workers:
-      - scripts:
+      - addons:
           - name: example
 profiles:
   - name: ex1

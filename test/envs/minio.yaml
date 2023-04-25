@@ -9,7 +9,7 @@ templates:
   - name: base
     memory: 2g
     workers:
-      - scripts:
+      - addons:
           - name: minio
 
 profiles:
