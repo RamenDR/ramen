@@ -58,21 +58,29 @@ func kubeObjectsRecoverName(prefix string, groupNumber int) string {
 }
 
 func (v *VRGInstance) kubeObjectsProtectPrimary(result *ctrl.Result, s3StoreAccessors []s3StoreAccessor) {
-	v.kubeObjectsProtect(result, s3StoreAccessors, kubeObjectsCaptureStartConditionallyPrimary)
+	v.kubeObjectsProtect(result, s3StoreAccessors, kubeObjectsCaptureStartConditionallyPrimary,
+		func() {},
+	)
 }
 
 func (v *VRGInstance) kubeObjectsProtectSecondary(result *ctrl.Result, s3StoreAccessors []s3StoreAccessor) {
-	v.kubeObjectsProtect(result, s3StoreAccessors, kubeObjectsCaptureStartConditionallySecondary)
+	v.kubeObjectsProtect(result, s3StoreAccessors, kubeObjectsCaptureStartConditionallySecondary,
+		func() {
+			v.kubeObjectsCaptureStatusFalse(VRGConditionReasonUploading, "Kube objects capture for relocate in-progress")
+		},
+	)
 }
 
 type captureStartConditionally func(
 	*VRGInstance, *ctrl.Result, int64, time.Duration, time.Duration, func(),
 )
+type captureInProgressStatusUpdate func()
 
 func (v *VRGInstance) kubeObjectsProtect(
 	result *ctrl.Result,
 	s3StoreAccessors []s3StoreAccessor,
 	captureStartConditionally captureStartConditionally,
+	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 ) {
 	if v.kubeObjectProtectionDisabled("capture") {
 		return
@@ -97,12 +105,17 @@ func (v *VRGInstance) kubeObjectsProtect(
 		captureToRecoverFrom = &ramen.KubeObjectsCaptureIdentifier{}
 	}
 
-	v.kubeObjectsCaptureStartOrResumeOrDelay(result, s3StoreAccessors, captureStartConditionally, captureToRecoverFrom)
+	v.kubeObjectsCaptureStartOrResumeOrDelay(result, s3StoreAccessors,
+		captureStartConditionally,
+		captureInProgressStatusUpdate,
+		captureToRecoverFrom,
+	)
 }
 
 func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 	result *ctrl.Result, s3StoreAccessors []s3StoreAccessor,
 	captureStartConditionally captureStartConditionally,
+	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 	captureToRecoverFrom *ramen.KubeObjectsCaptureIdentifier,
 ) {
 	veleroNamespaceName := v.veleroNamespaceName()
@@ -114,7 +127,9 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 	labels := util.OwnerLabels(vrg.Namespace, vrg.Name)
 	captureStartOrResume := func(generation int64, startOrResume string) {
 		log.Info("Kube objects capture "+startOrResume, "generation", generation)
-		v.kubeObjectsCaptureStartOrResume(result, s3StoreAccessors, captureStartConditionally,
+		v.kubeObjectsCaptureStartOrResume(result, s3StoreAccessors,
+			captureStartConditionally,
+			captureInProgressStatusUpdate,
 			number, pathName, namePrefix, veleroNamespaceName, interval, labels, generation)
 	}
 
@@ -210,7 +225,8 @@ const (
 )
 
 func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
-	result *ctrl.Result, s3StoreAccessors []s3StoreAccessor, captureStartConditionally captureStartConditionally,
+	result *ctrl.Result, s3StoreAccessors []s3StoreAccessor,
+	captureStartConditionally captureStartConditionally, captureInProgressStatusUpdate captureInProgressStatusUpdate,
 	captureNumber int64, pathName, namePrefix, veleroNamespaceName string, interval time.Duration,
 	labels map[string]string, generation int64,
 ) {
@@ -230,10 +246,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 			request, err := v.reconciler.kubeObjects.ProtectRequestCreate(
 				v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.log,
 				s3StoreAccessor.url, s3StoreAccessor.bucketName, s3StoreAccessor.regionName,
-				pathName,
-				s3StoreAccessor.veleroNamespaceSecretKeyRef,
-				vrg.Namespace,
-				captureGroup.Spec,
+				pathName, s3StoreAccessor.veleroNamespaceSecretKeyRef, vrg.Namespace, captureGroup.Spec,
 				veleroNamespaceName, kubeObjectsCaptureName(namePrefix, captureGroup.Name, s3StoreAccessor.profileName),
 				labels, annotations)
 			requests[requestsProcessedCount] = request
@@ -262,6 +275,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 
 		if requestsCompletedCount < requestsProcessedCount {
 			log1.Info("Kube objects group capturing", "complete", requestsCompletedCount, "total", requestsProcessedCount)
+			captureInProgressStatusUpdate()
 
 			return
 		}
