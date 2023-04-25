@@ -129,10 +129,6 @@ func (f fakeObjectStorer) ListKeys(keyPrefix string) ([]string, error) {
 }
 
 func (f fakeObjectStorer) DeleteObject(key string) error {
-	if _, ok := f.objects[key]; !ok {
-		return fs.ErrNotExist
-	}
-
 	delete(f.objects, key)
 
 	return nil
@@ -187,8 +183,8 @@ var _ = Describe("FakeObjectStorer", func() {
 			var object1 string
 			Expect(objectStorer.DownloadObject(key, &object1)).To(Succeed())
 		})
-		It("should return an error if an object with specified key was not uploaded", func() {
-			Expect(objectStorer.DeleteObject(key2)).To(MatchError(fs.ErrNotExist))
+		It("should return nil if an object with specified key was not uploaded", func() {
+			Expect(objectStorer.DeleteObject(key2)).To(Succeed())
 		})
 	})
 })
