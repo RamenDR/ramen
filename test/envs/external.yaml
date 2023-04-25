@@ -6,13 +6,13 @@
 #
 # To try this example, create the cluster with:
 #
-#     drenv start test.yaml
+#     drenv start envs/test.yaml
 #
 # Now you can start this environment with:
 #
-#     drenv start external.yaml
+#     drenv start envs/external.yaml
 #
-# Stopping will run the stop script, but will not stop the external minikube
+# Stopping will run the stop hook, but will not stop the external minikube
 # cluster. Deleting does nothing.
 #
 # https://github.com/RamenDR/ramen/commit/a54bb25dc5cf8882347de1cce8a2318b8b6a58b5

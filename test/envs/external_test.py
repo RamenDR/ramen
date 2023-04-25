@@ -1,14 +1,17 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 from drenv import envfile
+
+ENV = os.path.join("envs", "external.yaml")
 
 
 def test_load():
-    with open("regional-dr-external.yaml") as f:
+    with open(ENV) as f:
         envfile.load(f)
 
 
 def test_load_prefix():
-    with open("regional-dr-external.yaml") as f:
+    with open(ENV) as f:
         envfile.load(f, name_prefix="test-")

@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import secrets
 import subprocess
 
@@ -8,7 +9,7 @@ import pytest
 
 from drenv import envfile
 
-TEST_ENV = "test.yaml"
+TEST_ENV = os.path.join("envs", "test.yaml")
 
 
 class Env:

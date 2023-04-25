@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import re
 import subprocess
 
@@ -10,8 +11,8 @@ import pytest
 from drenv import cluster
 from drenv import commands
 
-EXAMPLE_ENV = "example.yaml"
-EXTERNAL_ENV = "external.yaml"
+EXAMPLE_ENV = os.path.join("envs", "example.yaml")
+EXTERNAL_ENV = os.path.join("envs", "external.yaml")
 
 
 def test_start_unknown():
