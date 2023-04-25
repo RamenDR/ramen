@@ -1,0 +1,20 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import os
+
+import yaml
+
+from drenv import kubectl
+
+os.chdir(os.path.dirname(__file__))
+
+with open("config.yaml") as f:
+    config = yaml.safe_load(f)
+
+print("Deleting busybox example application")
+kubectl.delete(f"--kustomize={config['tmp_dir']}", context=config["hub"])
+
+print("Application was undeployed successfully")
