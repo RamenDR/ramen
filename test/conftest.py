@@ -8,11 +8,13 @@ import pytest
 
 from drenv import envfile
 
+TEST_ENV = "test.yaml"
+
 
 class Env:
     def __init__(self):
         self.prefix = f"test-{secrets.token_hex(8)}-"
-        with open("test.yaml") as f:
+        with open(TEST_ENV) as f:
             env = envfile.load(f, name_prefix=self.prefix)
         self.profile = env["profiles"][0]["name"]
 
@@ -24,7 +26,7 @@ class Env:
 
     def _run(self, cmd):
         subprocess.run(
-            ["drenv", cmd, "--name-prefix", self.prefix, "test.yaml"],
+            ["drenv", cmd, "--name-prefix", self.prefix, TEST_ENV],
             check=True,
         )
 

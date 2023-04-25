@@ -1,10 +1,13 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import json
 import secrets
 
 from drenv import kubectl
+
+EXAMPLE_DEPLOYMENT = os.path.join("example", "deployment.yaml")
 
 
 def test_version(tmpenv):
@@ -36,7 +39,7 @@ def test_exec(tmpenv):
 
 
 def test_apply(tmpenv, capsys):
-    kubectl.apply("--filename=example/deployment.yaml", context=tmpenv.profile)
+    kubectl.apply(f"--filename={EXAMPLE_DEPLOYMENT}", context=tmpenv.profile)
     out, err = capsys.readouterr()
     assert out.strip() == "deployment.apps/example-deployment unchanged"
 
