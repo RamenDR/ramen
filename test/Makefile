@@ -1,7 +1,15 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-sources := $(wildcard drenv *.py */start */test */stop */deploy */undeploy)
+sources := $(wildcard \
+	drenv \
+	*.py \
+	*/start \
+	*/test \
+	*/stop \
+	*/deploy \
+	*/undeploy \
+)
 
 all: flake8 pylint black test coverage
 
