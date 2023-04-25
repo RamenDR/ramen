@@ -9,13 +9,13 @@ import sys
 from drenv import kubectl
 
 CRDS = [
-    "../../hack/test/volsync.backube_replicationsources.yaml",
-    "../../hack/test/volsync.backube_replicationdestinations.yaml",
+    "../../../hack/test/velero.io_backups.yaml",
+    "../../../hack/test/velero.io_restores.yaml",
 ]
 
 
 def deploy(cluster):
-    print("Deploying volsync crds")
+    print("Deploying velero crds")
     for crd in CRDS:
         kubectl.apply(f"--filename={crd}", context=cluster)
 
