@@ -487,7 +487,7 @@ $ drenv delete example.yaml
 
 #### Scripts hooks
 
-The script direcotry may contain scripts to be run on certain events,
+The script directory may contain scripts to be run on certain events,
 based on the hook file name.
 
 | Event        | Scripts       | Comment                             |
@@ -533,7 +533,7 @@ script/test cluster1 arg2
   managed clusters with Ceph storage.
 
 - `regional-dr-external.yaml` - A starting point for creating
-   environemnt for testing regional DR using with external storage.
+   environment for testing regional DR using with external storage.
 
 ### drenv development environments
 
