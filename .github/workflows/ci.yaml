@@ -19,7 +19,7 @@ env:
   IMAGE_NAME: ${{ vars.IMAGE_NAME || 'ramen' }}
   OPERATOR_SUGGESTED_NAMESPACE: ${{ vars.OPERATOR_SUGGESTED_NAMESPACE || 'ramen-system' }}
   # Constants
-  GO_VERSION: "1.18"
+  GO_VERSION: "1.19"
   IMAGE_REGISTRY: "quay.io"
   IMAGE_TAG: "ci"
   DOCKERCMD: "podman"
