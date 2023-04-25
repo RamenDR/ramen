@@ -122,6 +122,9 @@ func (r *VolumeReplicationGroupReconciler) configMapFun(configmap client.Object)
 	req := []reconcile.Request{}
 
 	var vrgs ramendrv1alpha1.VolumeReplicationGroupList
+	if err := r.Client.List(context.TODO(), &vrgs); err != nil {
+		return []reconcile.Request{}
+	}
 
 	for _, vrg := range vrgs.Items {
 		log.Info("Adding VolumeReplicationGroup to reconcile request",
