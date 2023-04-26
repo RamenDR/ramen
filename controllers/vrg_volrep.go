@@ -724,8 +724,8 @@ func (v *VRGInstance) pvcUnprotectIfDeleted(
 	log.Info(message)
 	v.updatePVCClusterDataProtectedCondition(pvc.Name, VRGConditionReasonDeleted, message)
 
-	if err := v.pvObjectReplicasDelete(pvc.Spec.VolumeName, log); err != nil {
-		log.Error(err, "PersistentVolume replicas deletion failed")
+	if err := v.pvAndPvcObjectReplicasDelete(pvc, log); err != nil {
+		log.Error(err, "PersistentVolume and PersistentVolumeClaim replicas deletion failed")
 
 		*requeue = true
 
@@ -897,19 +897,21 @@ func (v *VRGInstance) deleteClusterDataInS3Stores(log logr.Logger) error {
 	keyPrefix := v.s3KeyPrefix()
 
 	return v.s3StoresDo(
-		func(s ObjectStorer) error { return s.DeleteObjects(keyPrefix) },
+		func(s ObjectStorer) error { return s.DeleteObjectsWithKeyPrefix(keyPrefix) },
 		fmt.Sprintf("delete objects with key prefix %s", keyPrefix),
 	)
 }
 
-func (v *VRGInstance) pvObjectReplicasDelete(pvName string, log logr.Logger) error {
-	log.Info("Delete PV object replicas", "s3Profiles", v.instance.Spec.S3Profiles)
+func (v *VRGInstance) pvAndPvcObjectReplicasDelete(pvc corev1.PersistentVolumeClaim, log logr.Logger) error {
+	log.Info("Delete PV and PVC object replicas", "s3Profiles", v.instance.Spec.S3Profiles)
 
-	key := TypedObjectKey(v.s3KeyPrefix(), pvName, corev1.PersistentVolume{})
+	keyPrefix := v.s3KeyPrefix()
+	pvKey := TypedObjectKey(keyPrefix, pvc.Spec.VolumeName, corev1.PersistentVolume{})
+	pvcKey := TypedObjectKey(keyPrefix, pvc.Name, corev1.PersistentVolumeClaim{})
 
 	return v.s3StoresDo(
-		func(s ObjectStorer) error { return s.DeleteObject(key) },
-		fmt.Sprintf("delete PV object replica with key %s", key),
+		func(s ObjectStorer) error { return s.DeleteObjects(pvKey, pvcKey) },
+		fmt.Sprintf("delete %s and %s object replicas", pvKey, pvcKey),
 	)
 }
 

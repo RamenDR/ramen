@@ -17,6 +17,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
+	gomegatypes "github.com/onsi/gomega/types"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	vrgController "github.com/ramendr/ramen/controllers"
 	corev1 "k8s.io/api/core/v1"
@@ -921,7 +922,7 @@ func (v *vrgTest) createPVCandPV(claimBindInfo corev1.PersistentVolumeClaimPhase
 }
 
 func cleanupS3Store() {
-	Expect((*vrgObjectStorer).DeleteObjects("")).To(Succeed())
+	Expect((*vrgObjectStorer).DeleteObjectsWithKeyPrefix("")).To(Succeed())
 }
 
 func (v *vrgTest) generateFakePVs(pvNamePrefix string, count int) []corev1.PersistentVolume {
@@ -1488,14 +1489,14 @@ func (v *vrgTest) pvcDelete(pvcName string, verify func(string, *corev1.Persiste
 
 	pvcClusterDataProtected := vrgPvcConditionGet(vrg, pvc, vrgController.VRGConditionTypeClusterDataProtected)
 	if pvcClusterDataProtected != nil && pvcClusterDataProtected.Status == metav1.ConditionTrue {
-		v.pvObjectReplicaPresentVerify(pvc.Spec.VolumeName)
+		v.pvAndPvcObjectReplicasPresentVerify(pvc)
 	}
 
 	Expect(k8sClient.Delete(context.TODO(), pvc)).To(BeNil(), "failed to delete PVC %s", pvcName)
 	verify(v.namespace, pvc)
 
 	if vrg.Spec.ReplicationState == ramendrv1alpha1.Primary {
-		v.pvObjectReplicasAbsentVerify(pvc.Spec.VolumeName)
+		v.pvAndPvcObjectReplicasAbsentVerify(pvc)
 		Eventually(func() *metav1.Condition {
 			return vrgPvcConditionGet(
 				vrgGet(v.vrgNamespacedName()), pvc, vrgController.VRGConditionTypeClusterDataProtected,
@@ -1562,17 +1563,27 @@ func pvGroupResource() schema.GroupResource {
 	return schema.GroupResource{Group: corev1.SchemeGroupVersion.Group, Resource: "persistentvolumes"}
 }
 
-func (v *vrgTest) pvObjectReplicaPresentVerify(pvName string) {
-	var pv corev1.PersistentVolume
-
-	Expect(vrgController.DownloadTypedObject(*vrgObjectStorer, v.s3KeyPrefix(), pvName, &pv)).To(Succeed())
+func (v *vrgTest) pvAndPvcObjectReplicasPresentVerify(pvc *corev1.PersistentVolumeClaim) {
+	v.pvAndPvcObjectReplicaDownloadsExpectTo(pvc, Succeed())
 }
 
-func (v *vrgTest) pvObjectReplicasAbsentVerify(pvName string) {
-	var pv corev1.PersistentVolume
+func (v *vrgTest) pvAndPvcObjectReplicasAbsentVerify(pvc *corev1.PersistentVolumeClaim) {
+	v.pvAndPvcObjectReplicaDownloadsExpectTo(pvc, MatchError(fs.ErrNotExist))
+}
 
-	Expect(vrgController.DownloadTypedObject(*vrgObjectStorer, v.s3KeyPrefix(), pvName, &pv)).
-		To(MatchError(fs.ErrNotExist))
+func (v *vrgTest) pvAndPvcObjectReplicaDownloadsExpectTo(
+	pvc *corev1.PersistentVolumeClaim,
+	matcher gomegatypes.GomegaMatcher,
+) {
+	var (
+		pv   corev1.PersistentVolume
+		pvc1 corev1.PersistentVolumeClaim
+	)
+
+	keyPrefix := v.s3KeyPrefix()
+
+	Expect(vrgController.DownloadTypedObject(*vrgObjectStorer, keyPrefix, pvc.Spec.VolumeName, &pv)).To(matcher)
+	Expect(vrgController.DownloadTypedObject(*vrgObjectStorer, keyPrefix, pvc.Name, &pvc1)).To(matcher)
 }
 
 func (v *vrgTest) cleanupVRG() {

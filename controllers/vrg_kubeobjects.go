@@ -212,7 +212,7 @@ func (v *VRGInstance) kubeObjectsCapturesDelete(
 ) error {
 	// current s3 profiles may differ from those at capture time
 	for _, s3StoreAccessor := range s3StoreAccessors {
-		if err := s3StoreAccessor.ObjectStorer.DeleteObjects(pathName); err != nil {
+		if err := s3StoreAccessor.ObjectStorer.DeleteObjectsWithKeyPrefix(pathName); err != nil {
 			v.log.Error(err, "Kube objects capture s3 objects delete error",
 				"number", captureNumber,
 				"profile", s3StoreAccessor.S3ProfileName,
