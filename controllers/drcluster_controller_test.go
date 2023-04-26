@@ -535,7 +535,7 @@ var _ = Describe("DRClusterController", func() {
 		When("provided Fencing value is ManuallyFenced", func() {
 			It("reports validated with status fencing as Fenced", func() {
 				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateManuallyFenced
-				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				Eventually(Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed()))
 				updateDRClusterManifestWorkStatus(drcluster.Name)
 				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue,
 					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
@@ -546,7 +546,7 @@ var _ = Describe("DRClusterController", func() {
 			It("reports validated with status fencing as Unfenced", func() {
 				latestdrc := getLatestDRCluster(drcluster.Name)
 				latestdrc.Spec.ClusterFence = ramen.ClusterFenceStateManuallyUnfenced
-				Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed())
+				Eventually(Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed()))
 				drclusterConditionExpectEventually(latestdrc, false, metav1.ConditionFalse,
 					Equal(controllers.DRClusterConditionReasonClean), Ignore(),
 					ramen.DRClusterConditionTypeFenced)
@@ -557,7 +557,7 @@ var _ = Describe("DRClusterController", func() {
 				latestdrc := getLatestDRCluster(drcluster.Name)
 				latestdrc.Spec.ClusterFence = ramen.ClusterFenceStateFenced
 				latestdrc.Spec.CIDRs = []string{}
-				Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed())
+				Eventually(Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed()))
 				drclusterConditionExpectEventually(latestdrc, false, metav1.ConditionFalse,
 					Equal(controllers.DRClusterConditionReasonFenceError), Ignore(),
 					ramen.DRClusterConditionTypeFenced)
@@ -568,7 +568,7 @@ var _ = Describe("DRClusterController", func() {
 				latestdrc := getLatestDRCluster(drcluster.Name)
 				latestdrc.Spec.ClusterFence = ramen.ClusterFenceStateFenced
 				latestdrc.Spec.CIDRs = cidrs[0]
-				Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed())
+				Eventually(Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed()))
 				drclusterConditionExpectEventually(latestdrc, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
 					ramen.DRClusterValidated)
 			})
@@ -577,7 +577,7 @@ var _ = Describe("DRClusterController", func() {
 			It("reports fenced with reason Fencing success", func() {
 				latestdrc := getLatestDRCluster(drcluster.Name)
 				latestdrc.Spec.ClusterFence = ramen.ClusterFenceStateFenced
-				Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed())
+				Eventually(Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed()))
 				drclusterConditionExpectEventually(latestdrc, false, metav1.ConditionTrue,
 					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
 					ramen.DRClusterConditionTypeFenced)
@@ -587,7 +587,7 @@ var _ = Describe("DRClusterController", func() {
 			It("reports Unfenced false with status fenced as false", func() {
 				latestdrc := getLatestDRCluster(drcluster.Name)
 				latestdrc.Spec.ClusterFence = ramen.ClusterFenceStateUnfenced
-				Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed())
+				Eventually(Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed()))
 				// When Unfence is set, DRCluster controller first unfences the
 				// cluster (i.e. itself through a peer cluster) and then cleans
 				// up the fencing resource. So, by the time this check is made,
@@ -604,7 +604,7 @@ var _ = Describe("DRClusterController", func() {
 				latestdrc := getLatestDRCluster(drcluster.Name)
 				latestdrc.Spec.ClusterFence = ramen.ClusterFenceStateFenced
 				latestdrc.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
-				Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed())
+				Eventually(Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed()))
 				drclusterConditionExpectEventually(latestdrc, false, metav1.ConditionTrue,
 					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
 					ramen.DRClusterConditionTypeFenced)
@@ -614,7 +614,7 @@ var _ = Describe("DRClusterController", func() {
 			It("reports Unfenced false with status fenced as false", func() {
 				latestdrc := getLatestDRCluster(drcluster.Name)
 				latestdrc.Spec.ClusterFence = ramen.ClusterFenceStateUnfenced
-				Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed())
+				Eventually(Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed()))
 				// When Unfence is set, DRCluster controller first unfences the
 				// cluster (i.e. itself through a peer cluster) and then cleans
 				// up the fencing resource. So, by the time this check is made,
@@ -630,7 +630,7 @@ var _ = Describe("DRClusterController", func() {
 			It("reports validated with status fencing as Unfenced", func() {
 				latestdrc := getLatestDRCluster(drcluster.Name)
 				latestdrc.Spec.ClusterFence = ""
-				Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed())
+				Eventually(Expect(k8sClient.Update(context.TODO(), latestdrc)).To(Succeed()))
 				drclusterConditionExpectEventually(latestdrc, false, metav1.ConditionFalse,
 					Equal(controllers.DRClusterConditionReasonClean), Ignore(),
 					ramen.DRClusterConditionTypeFenced)
