@@ -428,26 +428,6 @@ func objectOrItsFinalizerAbsentVerify(namespaceName, objectName string, object c
 	return
 }
 
-func objectFinalizerPresentEventuallyVerify(namespaceName, objectName string, object client.Object,
-	finalizerName string,
-) {
-	Eventually(func() []string {
-		Expect(objectGet(namespaceName, objectName, object)).To(Succeed())
-
-		return object.GetFinalizers()
-	}).Should(ContainElement(finalizerName))
-}
-
-func objectFinalizerPresentConsistentlyVerify(namespaceName, objectName string, object client.Object,
-	finalizerName string,
-) {
-	Consistently(func() []string {
-		Expect(objectGet(namespaceName, objectName, object)).To(Succeed())
-
-		return object.GetFinalizers()
-	}).Should(ContainElement(finalizerName))
-}
-
 func conditionExpect(conditions []metav1.Condition, typ string) *metav1.Condition {
 	condition := meta.FindStatusCondition(conditions, typ)
 	Expect(condition).ToNot(BeNil())
