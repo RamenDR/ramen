@@ -711,7 +711,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		// It("protects kube objects", func() { kubeObjectProtectionValidate(vrgScheduleTests) })
 		It("cleans up after testing", func() {
 			v := vrgScheduleTests[0]
-			v.cleanupButPvcFinalizerPresent()
+			v.cleanup()
 		})
 	})
 
@@ -745,7 +745,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		// It("protects kube objects", func() { kubeObjectProtectionValidate(vrgSchedule2Tests) })
 		It("cleans up after testing", func() {
 			v := vrgSchedule2Tests[0]
-			v.cleanupButPvcFinalizerPresent()
+			v.cleanup()
 		})
 	})
 
@@ -779,7 +779,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		// It("protects kube objects", func() { kubeObjectProtectionValidate(vrgSchedule3Tests) })
 		It("cleans up after testing", func() {
 			v := vrgSchedule3Tests[0]
-			v.cleanupButPvcFinalizerPresent()
+			v.cleanup()
 		})
 	})
 	// TODO: Add tests to move VRG to Secondary
@@ -1468,15 +1468,6 @@ func kubeObjectProtectionValidate(tests []*vrgTest) {
 
 func (v *vrgTest) cleanup() {
 	v.cleanupPVCs(vrAndPvcFinalizerOrPvcAndPvAbsentVerify)
-	v.cleanupVrgAndNamespaceAndScAndVrc()
-}
-
-func (v *vrgTest) cleanupButPvcFinalizerPresent() {
-	v.cleanupPVCs(vrAbsentAndPvcFinalizerPresentVerify)
-	v.cleanupVrgAndNamespaceAndScAndVrc()
-}
-
-func (v *vrgTest) cleanupVrgAndNamespaceAndScAndVrc() {
 	v.cleanupVRG()
 	v.cleanupNamespace()
 	v.cleanupSC()
@@ -1543,24 +1534,12 @@ func vrAndPvcFinalizerOrPvcAndPvAbsentVerify(namespaceName string, pvc *corev1.P
 	}
 }
 
-func vrAbsentAndPvcFinalizerPresentVerify(namespaceName string, pvc *corev1.PersistentVolumeClaim) {
-	vrAbsentVerify(namespaceName, pvc.Name)
-	pvcFinalizerPresentVerify(namespaceName, pvc.Name)
-}
-
 func vrAbsentVerify(namespaceName, pvcName string) {
 	objectAbsentVerify(namespaceName, pvcName, &volrep.VolumeReplication{}, vrGroupResource())
 }
 
 func pvcAbsentVerify(namespaceName, pvcName string) {
 	objectAbsentVerify(namespaceName, pvcName, &corev1.PersistentVolumeClaim{}, pvcGroupResource())
-}
-
-func pvcFinalizerPresentVerify(namespaceName, pvcName string) {
-	objectFinalizerPresentEventuallyVerify(namespaceName, pvcName, &corev1.PersistentVolumeClaim{},
-		vrgController.PvcVRFinalizerProtected)
-	objectFinalizerPresentConsistentlyVerify(namespaceName, pvcName, &corev1.PersistentVolumeClaim{},
-		vrgController.PvcVRFinalizerProtected)
 }
 
 func pvAbsentVerify(pvName string) {
