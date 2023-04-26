@@ -134,7 +134,15 @@ func (f fakeObjectStorer) DeleteObject(key string) error {
 	return nil
 }
 
-func (f fakeObjectStorer) DeleteObjects(keyPrefix string) error {
+func (f fakeObjectStorer) DeleteObjects(keys ...string) error {
+	for _, key := range keys {
+		delete(f.objects, key)
+	}
+
+	return nil
+}
+
+func (f fakeObjectStorer) DeleteObjectsWithKeyPrefix(keyPrefix string) error {
 	for key := range f.objects {
 		if strings.HasPrefix(key, keyPrefix) {
 			delete(f.objects, key)

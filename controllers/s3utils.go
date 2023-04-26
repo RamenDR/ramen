@@ -92,7 +92,8 @@ type ObjectStorer interface {
 	DownloadObject(key string, objectPointer interface{}) error
 	ListKeys(keyPrefix string) (keys []string, err error)
 	DeleteObject(key string) error
-	DeleteObjects(keyPrefix string) error
+	DeleteObjects(key ...string) error
+	DeleteObjectsWithKeyPrefix(keyPrefix string) error
 }
 
 // S3ObjectStoreGetter returns a concrete type that implements
@@ -583,10 +584,10 @@ func (s *s3ObjectStore) DeleteObject(key string) error {
 	return err
 }
 
-// DeleteObjects() deletes from the bucket any objects that have the given
-// the keyPrefix.  If the bucket doesn't exists, will return
+// DeleteObjectsWithKeyPrefix deletes from the bucket any objects that
+// have the given keyPrefix.  If the bucket doesn't exist, it returns
 // ErrCodeNoSuchBucket "NoSuchBucket".
-func (s *s3ObjectStore) DeleteObjects(keyPrefix string) (
+func (s *s3ObjectStore) DeleteObjectsWithKeyPrefix(keyPrefix string) (
 	err error,
 ) {
 	bucket := s.s3Bucket
@@ -598,6 +599,16 @@ func (s *s3ObjectStore) DeleteObjects(keyPrefix string) (
 			s.s3Endpoint, bucket, keyPrefix, err)
 	}
 
+	if err = s.DeleteObjects(keys...); err != nil {
+		return fmt.Errorf("unable to DeleteObjects "+
+			"from endpoint %s bucket %s keyPrefix %s, %w",
+			s.s3Endpoint, bucket, keyPrefix, err)
+	}
+
+	return nil
+}
+
+func (s *s3ObjectStore) DeleteObjects(keys ...string) error {
 	numObjects := len(keys)
 	delObjects := make([]s3manager.BatchDeleteObject, numObjects)
 
@@ -605,7 +616,7 @@ func (s *s3ObjectStore) DeleteObjects(keyPrefix string) (
 		delObjects[i] = s3manager.BatchDeleteObject{
 			Object: &s3.DeleteObjectInput{
 				Key:    aws.String(key),
-				Bucket: aws.String(bucket),
+				Bucket: aws.String(s.s3Bucket),
 			},
 		}
 	}
@@ -613,15 +624,9 @@ func (s *s3ObjectStore) DeleteObjects(keyPrefix string) (
 	ctx, cancel := context.WithDeadline(context.TODO(), time.Now().Add(s3Timeout))
 	defer cancel()
 
-	if err = s.batchDeleter.Delete(ctx, &s3manager.DeleteObjectsIterator{
+	return s.batchDeleter.Delete(ctx, &s3manager.DeleteObjectsIterator{
 		Objects: delObjects,
-	}); err != nil {
-		return fmt.Errorf("unable to DeleteObjects "+
-			"from endpoint %s bucket %s keyPrefix %s, %w",
-			s.s3Endpoint, bucket, keyPrefix, err)
-	}
-
-	return nil
+	})
 }
 
 // isAwsErrCodeNoSuchBucket returns true if the given input `err` has wrapped
