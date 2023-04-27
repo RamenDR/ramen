@@ -310,6 +310,8 @@ spec:
                 format: date-time
                 type: string
               lastUpdateTime:
+                description: LastUpdateTime is when was the last time a condition
+                  or the overall status was updated
                 format: date-time
                 type: string
               phase:
