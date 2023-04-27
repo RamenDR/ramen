@@ -93,60 +93,23 @@ kubectl get deploy -A --context dr1
 kubectl get deploy -A --context dr2
 ```
 
-## Building the Ramen operator
+## Building the ramen operator image
 
-1. Setup the environment variables for the Makefile
+Build the *Ramen* operator container image:
 
-   ```
-   export IMAGE_REPOSITORY=my-quay-user
-   export IMAGE_TAG=canary
-   ```
+```
+make docker-build
+```
 
-1. Build the *Ramen* operator container:
+This builds the image `quay.io/ramendr/ramen-operator:latest`
 
-   ```
-   make docker-build
-   ```
+## Deploying the ramen operator
 
-   This builds the image `quay.io/my-quay-user/ramen-operator:canary`
+To deploy the *Ramen* operator in the test environment:
 
-1. Pushing the `ramen-operator` image to the clusters
-
-   You can push the container image to your private quay repo, or load
-   them into the clusters.
-
-    - Loading the `ramen-operator` image into the clusters
-
-      ```
-      podman save quay.io/$IMAGE_REPOSITORY/ramen-operator:$IMAGE_TAG \
-          -o /tmp/ramen-operator.tar
-
-      for p in hub dr1 dr2; do
-          minikube -p $p image load /tmp/ramen-operator.tar
-      done
-
-      rm /tmp/ramen-operator.tar
-      ```
-
-    - Pushing the `ramen-operator` image to your private repo
-
-      ```
-      make docker-push
-      ```
-
-      You may need to login first using `podman login quay.io`.
-
-1. Deploying to hub and cluster
-
-   ```
-   kubectl config use-context hub
-   make deploy-hub
-
-   for p in dr1 dr2; do
-       kubectl config use-context $p
-       make deploy-dr-cluster
-   done
-   ```
+```
+test/scripts/deploy-ramen
+```
 
 ## Configure the ramen operator on the hub
 
