@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+
+import os
+import tempfile
+import concurrent.futures
+from subprocess import run
+
+TOP_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+IMAGE = "quay.io/ramendr/ramen-operator:latest"
+HUB = "hub"
+MANAGED_CLUSTERS = ["dr1", "dr2"]
+
+with tempfile.TemporaryDirectory(prefix="ramen-test-") as tmpdir:
+    tar = os.path.join(tmpdir, "image.tar")
+    print(f"Saving {IMAGE} to {tar}")
+    run(["podman", "save", IMAGE, "-o", tar], check=True)
+
+    def load_image(cluster):
+        print(f"Loading image in cluster '{cluster}'")
+        cmd = ["minikube", "--profile", cluster, "image", "load", tar]
+        run(cmd, check=True)
+
+    clusters = [HUB] + MANAGED_CLUSTERS
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        list(executor.map(load_image, clusters))
+
+print(f"Deploying ramen operator in cluster {HUB}")
+run(["kubectl", "config", "use-context", HUB], check=True)
+run(["make", "-C", TOP_DIR, "deploy-hub"], check=True)
+
+for cluster in MANAGED_CLUSTERS:
+    print(f"Deploying ramen operator in cluster {cluster}")
+    run(["kubectl", "config", "use-context", cluster], check=True)
+    run(["make", "-C", TOP_DIR, "deploy-dr-cluster"], check=True)
+
+print("Ramen operator was deployed successfuly")
