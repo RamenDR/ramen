@@ -190,26 +190,25 @@ func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, 
 		return !ready
 	}
 
-	return !v.isPVCInUse(pvc, log)
+	return !v.isPVCInUse(pvc, log, "Secondary transition")
 }
 
 func (v *VRGInstance) deletePVCIfNotInUse(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
-	if v.isPVCInUse(pvc, log) {
+	if v.isPVCInUse(pvc, log, "PVC deletion") {
 		return false
 	}
 
 	return rmnutil.DeletePVC(v.ctx, v.reconciler.Client, pvc.Name, pvc.Namespace, log) == nil
 }
 
-func (v *VRGInstance) isPVCInUse(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
+func (v *VRGInstance) isPVCInUse(pvc *corev1.PersistentVolumeClaim, log logr.Logger, operation string) bool {
 	const inUse bool = true
-	// Check if any pod definitions exist referencing the PVC, if so it is not ready for Secondary
+	// Check if any pod definitions exist referencing the PVC
 	inUseByPod, err := rmnutil.IsPVCInUseByPod(v.ctx, v.reconciler.Client, log, pvc.GetName(), pvc.GetNamespace(), false)
 	if err != nil || inUseByPod {
-		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolumeClaim is potentially"+
-			" in use by a pod", "errorValue", err)
+		msg := operation + " failed as PVC is potentially in use by a pod"
 
-		msg := "unable to transition to Secondary as PVC is potentially in use by pod(s)"
+		log.Info(msg, "errorValue", err)
 		v.updatePVCDataReadyCondition(pvc.Name, VRGConditionReasonProgressing, msg)
 
 		return inUse
@@ -218,10 +217,9 @@ func (v *VRGInstance) isPVCInUse(pvc *corev1.PersistentVolumeClaim, log logr.Log
 	// No pod is mounting the PVC - do additional check to make sure no volume attachment exists
 	vaPresent, err := rmnutil.IsPVAttachedToNode(v.ctx, v.reconciler.Client, log, pvc)
 	if err != nil || vaPresent {
-		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolume is still"+
-			" attached to node(s)", "errorValue", err)
+		msg := operation + " failed as PersistentVolume for PVC is still attached to node(s)"
 
-		msg := "unable to transition to Secondary as PersistentVolume for PVC is still attached to node(s)"
+		log.Info(msg, "errorValue", err)
 		v.updatePVCDataReadyCondition(pvc.Name, VRGConditionReasonProgressing, msg)
 
 		return inUse
