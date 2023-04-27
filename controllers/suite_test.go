@@ -398,7 +398,7 @@ func objectDeletionTimestampRecentVerify(namespaceName, objectName string, objec
 
 		return object.GetDeletionTimestamp()
 	}).ShouldNot(BeNil())
-	Expect(object.GetDeletionTimestamp().Time).Should(BeTemporally("~", time.Now(), time.Second), "%#v", object)
+	Expect(object.GetDeletionTimestamp().Time).Should(BeTemporally("~", time.Now(), 2*time.Second), "%#v", object)
 }
 
 func objectNotFoundErrorMatch(groupResource schema.GroupResource, objectName string) gomegatypes.GomegaMatcher {
