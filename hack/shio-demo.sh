@@ -137,6 +137,37 @@ app_deploy() {
 	kubectl --context $1 -nasdf run asdf --image busybox -- sh -c while\ true\;do\ date\;sleep\ 60\;done
 	kubectl create --dry-run=client -oyaml -k https://github.com/RamenDR/ocm-ramen-samples/busybox -nasdf\
 		|kubectl --context $1 apply -f-
+	cat <<-a|kubectl --context $1 -nasdf apply -f-
+	apiVersion: ramendr.openshift.io/v1alpha1
+	kind: Recipe
+	metadata:
+	  name: asdf
+	spec:
+	  appType: ""
+	  groups:
+	  - excludedResourceTypes:
+	    - deploy
+	    - po
+	    - pv
+	    - rs
+	    - volumereplications
+	    - vrg
+	    name: everything-but-deploy-po-pv-rs-vr-vrg
+	    type: resource
+	  - includedResourceTypes:
+	    - deployments
+	    - pods
+	    labelSelector:
+	      matchExpressions:
+	      - key: pod-template-hash
+	        operator: DoesNotExist
+	    name: deployments-and-naked-pods
+	    type: resource
+	  recoverWorkflow:
+	    sequence:
+	    - group: everything-but-deploy-po-pv-rs-vr-vrg
+	    - group: deployments-and-naked-pods
+	a
 	app_list $1
 }; exit_stack_push unset -f app_deploy
 
@@ -178,44 +209,13 @@ app_list_custom() {
 app_undeploy() {
 	set -x
 	kubectl --context $1 -nasdf delete --ignore-not-found -k https://github.com/RamenDR/ocm-ramen-samples/busybox
-	kubectl --context $1 -nasdf delete --ignore-not-found po/asdf secret/asdf configmap/asdf
+	kubectl --context $1 -nasdf delete --ignore-not-found po/asdf secret/asdf configmap/asdf recipe/asdf
 	{ set +x;} 2>/dev/null
 	app_namespace_undeploy $1
 	app_list $1
 }; exit_stack_push unset -f app_undeploy
 
 vrg_apply() {
-	cat <<-a|kubectl --context $1 -nasdf apply -f-
-	apiVersion: ramendr.openshift.io/v1alpha1
-	kind: Recipe
-	metadata:
-	  name: asdf
-	spec:
-	  appType: ""
-	  groups:
-	  - excludedResourceTypes:
-	    - deploy
-	    - po
-	    - pv
-	    - rs
-	    - volumereplications
-	    - vrg
-	    name: everything-but-deploy-po-pv-rs-vr-vrg
-	    type: resource
-	  - includedResourceTypes:
-	    - deployments
-	    - pods
-	    labelSelector:
-	      matchExpressions:
-	      - key: pod-template-hash
-	        operator: DoesNotExist
-	    name: deployments-and-naked-pods
-	    type: resource
-	  recoverWorkflow:
-	    sequence:
-	    - group: everything-but-deploy-po-pv-rs-vr-vrg
-	    - group: deployments-and-naked-pods
-	a
 	vrg_appendix="
   kubeObjectProtection:
     captureInterval: 1m
