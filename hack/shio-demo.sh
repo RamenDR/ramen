@@ -137,6 +137,11 @@ app_deploy() {
 	kubectl --context $1 -nasdf run asdf --image busybox -- sh -c while\ true\;do\ date\;sleep\ 60\;done
 	kubectl create --dry-run=client -oyaml -k https://github.com/RamenDR/ocm-ramen-samples/busybox -nasdf\
 		|kubectl --context $1 apply -f-
+	app_recipe_deploy $1
+	app_list $1
+}; exit_stack_push unset -f app_deploy
+
+app_recipe_deploy() {
 	cat <<-a|kubectl --context $1 -nasdf apply -f-
 	apiVersion: ramendr.openshift.io/v1alpha1
 	kind: Recipe
@@ -168,8 +173,7 @@ app_deploy() {
 	    - group: everything-but-deploy-po-pv-rs-vr-vrg
 	    - group: deployments-and-naked-pods
 	a
-	app_list $1
-}; exit_stack_push unset -f app_deploy
+}; exit_stack_push unset -f app_recipe_deploy
 
 app_deployment_replicaset_name() {
 	kubectl --context $1 -nasdf get rs -lpod-template-hash -oname
@@ -360,6 +364,7 @@ app_failback() {
 app_recover() {
 	app_namespace_deploy $1
 	date
+	app_recipe_deploy $1 # TODO remove once recipe protected
 	vrg_deploy_$2 $1
 	set -x
 	time kubectl --context $1 -nasdf wait vrg/bb --for condition=clusterdataready --timeout -1s
