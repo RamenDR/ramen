@@ -328,7 +328,7 @@ app_protect() {
 	set -- cluster1
 	vrg_deploy $1
 	set -x
-	time kubectl --context $1 -nasdf wait vrg/bb --for condition=clusterdataprotected
+	time kubectl --context $1 -nasdf wait vrg/bb --for condition=clusterdataprotected --timeout -1s
 	{ set +x; } 2>/dev/null
 #	app_protection_info 1
 }; exit_stack_push unset -f app_protect
@@ -362,7 +362,7 @@ app_recover() {
 	date
 	vrg_deploy_$2 $1
 	set -x
-	time kubectl --context $1 -nasdf wait vrg/bb --for condition=clusterdataready
+	time kubectl --context $1 -nasdf wait vrg/bb --for condition=clusterdataready --timeout -1s
 	{ set +x; } 2>/dev/null
 	app_list $1
 	date
