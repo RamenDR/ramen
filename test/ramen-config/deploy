@@ -5,54 +5,57 @@
 
 import argparse
 import os
+import yaml
 
 import drenv
 from drenv import kubectl
 
-import config
 import minio
 
+os.chdir(os.path.dirname(__file__))
+
+with open("config.yaml") as f:
+    config = yaml.safe_load(f)
+
 parser = argparse.ArgumentParser("deploy")
-parser.add_argument("env_type", choices=config.ENV_TYPES)
+parser.add_argument("env_type", choices=config["env_types"])
 args = parser.parse_args()
 
 print(f"Configuring ramen for {args.env_type}")
-
-os.chdir(os.path.dirname(__file__))
 
 print("Waiting until ramen-hub-operator is rolled out")
 kubectl.rollout(
     "status",
     "deploy/ramen-hub-operator",
-    f"--namespace={config.NAMESPACE}",
+    f"--namespace={config['namespace']}",
     "--timeout=180s",
-    context=config.HUB,
+    context=config["hub"],
 )
 
 print("Creating s3 secret in ramen hub namespace")
-kubectl.apply("--filename=s3-secret.yaml", context=config.HUB)
+kubectl.apply("--filename=s3-secret.yaml", context=config["hub"])
 
 print("Updating ramen config map")
 template = drenv.template("configmap.yaml")
 yaml = template.substitute(
     # Auto deploy is needed only for olm install.
     auto_deploy="true",
-    minio_url_dr1=minio.service_url(config.CLUSTERS[0]),
-    minio_url_dr2=minio.service_url(config.CLUSTERS[1]),
+    minio_url_dr1=minio.service_url(config["clusters"][0]),
+    minio_url_dr2=minio.service_url(config["clusters"][1]),
 )
-kubectl.apply("--filename=-", input=yaml, context=config.HUB)
+kubectl.apply("--filename=-", input=yaml, context=config["hub"])
 
 print(f"Creating DRClusters and DRPolicy for {args.env_type}")
-kubectl.apply("--kustomize", args.env_type, context=config.HUB)
+kubectl.apply("--kustomize", args.env_type, context=config["hub"])
 
 print("Waiting until DRClusters report phase")
-for name in config.CLUSTERS:
+for name in config["clusters"]:
     drenv.wait_for(
         f"drcluster/{name}",
         output="jsonpath={.status.phase}",
-        namespace=config.NAMESPACE,
+        namespace=config["namespace"],
         timeout=180,
-        profile=config.HUB,
+        profile=config["hub"],
     )
 
 print("Waiting until DRClusters phase is available")
@@ -60,19 +63,19 @@ kubectl.wait(
     "drcluster",
     "--all",
     "--for=jsonpath={.status.phase}=Available",
-    f"--namespace={config.NAMESPACE}",
-    context=config.HUB,
+    f"--namespace={config['namespace']}",
+    context=config["hub"],
 )
 
 print("Waiting until DRPolicy is validated")
 kubectl.wait(
     "drpolicy/dr-policy",
     "--for=condition=Validated",
-    f"--namespace={config.NAMESPACE}",
-    context=config.HUB,
+    f"--namespace={config['namespace']}",
+    context=config["hub"],
 )
 
 print("Creating channel")
-kubectl.apply("--filename", "samples-channel.yaml", context=config.HUB)
+kubectl.apply("--filename", "samples-channel.yaml", context=config["hub"])
 
 print("Ramen was configured successfully")
