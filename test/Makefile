@@ -10,6 +10,8 @@ sources := $(wildcard \
 	addons/*/stop \
 	*/deploy \
 	*/undeploy \
+	*/failover \
+	*/relocate \
 )
 
 all: flake8 pylint black test coverage
