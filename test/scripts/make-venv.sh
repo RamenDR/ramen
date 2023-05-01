@@ -3,8 +3,10 @@
 venv=~/.venv/ramen
 
 if [ -d "$venv" ]; then
-    echo "venv $venv exists"
-    exit 0
+    echo "Virtual environemnt exists: '$venv'"
+else
+    echo "Creating virtual environment: '$venv'"
+    python3 -m venv $venv
 fi
 
 echo "Creating venv $venv"
