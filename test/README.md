@@ -84,7 +84,7 @@ Before running the `drenv` tool you need to activate the virtual
 environment:
 
 ```
-source ~/.venv/ramen/bin/activate
+source venv
 ```
 
 The shell prompt will change to reflect that the `ramen` virtual
