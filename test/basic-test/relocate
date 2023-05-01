@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import argparse
+import json
+import os
+
+import yaml
+
+import drenv
+from drenv import kubectl
+
+os.chdir(os.path.dirname(__file__))
+
+with open("config.yaml") as f:
+    config = yaml.safe_load(f)
+
+parser = argparse.ArgumentParser("deploy")
+parser.add_argument("cluster", help="Cluster name to relocate to.")
+args = parser.parse_args()
+
+print("Waiting until peer is ready")
+kubectl.wait(
+    f"drpc/{config['name']}",
+    "--for=condition=PeerReady",
+    f"--namespace={config['namespace']}",
+    "--timeout=300s",
+    context=config["hub"],
+)
+
+print("Waiting until application is replicated")
+drenv.wait_for(
+    f"drpc/{config['name']}",
+    output="jsonpath={.status.lastGroupSyncTime}",
+    namespace=config["namespace"],
+    timeout=300,
+    profile=config["hub"],
+)
+
+print("Starting relocate")
+patch = {"spec": {"action": "Relocate", "preferredCluster": args.cluster}}
+kubectl.patch(
+    f"drpc/{config['name']}",
+    "--patch",
+    json.dumps(patch),
+    "--type=merge",
+    f"--namespace={config['namespace']}",
+    context=config["hub"],
+)
+
+print("Waiting until application is relocated...")
+kubectl.wait(
+    f"drpc/{config['name']}",
+    "--for=jsonpath={.status.phase}=Relocated",
+    f"--namespace={config['namespace']}",
+    "--timeout=300s",
+    context=config["hub"],
+)
+
+# NOTE: Deleting the application get stuck if we don't wait until the cleanup
+# after relocate complete before we delete the app.
+print("Waiting until relocation completes...")
+kubectl.wait(
+    f"drpc/{config['name']}",
+    "--for=jsonpath={.status.progression}=Completed",
+    f"--namespace={config['namespace']}",
+    "--timeout=300s",
+    context=config["hub"],
+)
+
+print(f"Application was relocated to cluster {args.cluster} successfully")
