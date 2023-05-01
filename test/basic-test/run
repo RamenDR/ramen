@@ -1,0 +1,11 @@
+#!/bin/bash -e
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+cd $(dirname $0)
+
+./deploy dr1
+./failover dr2
+./relocate dr1
+./undeploy
