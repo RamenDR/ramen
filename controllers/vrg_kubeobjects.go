@@ -572,23 +572,23 @@ func (v *VRGInstance) getRecoverOrProtectRequest(
 
 	recoverNamePrefix := kubeObjectsRecoverNamePrefix(vrg.Namespace, vrg.Name)
 	recoverName := kubeObjectsRecoverName(recoverNamePrefix, groupNumber)
-	// TODO pass backup request to recover request create
-	// captureRequest, ok := recoverRequests[recoverName]
-	request, ok := recoverRequests[recoverName]
+	recoverRequest, ok := recoverRequests[recoverName]
 
-	return request, ok, func() (kubeobjects.Request, error) {
+	return recoverRequest, ok, func() (kubeobjects.Request, error) {
 		capturePathName, captureNamePrefix := kubeObjectsCapturePathNameAndNamePrefix(
 			sourceVrgNamespaceName, sourceVrgName, captureToRecoverFromIdentifier.Number)
+		captureName := kubeObjectsCaptureName(captureNamePrefix, recoverGroup.BackupName, s3StoreAccessor.S3ProfileName)
+		captureRequest := captureRequests[captureName]
 
 		return v.reconciler.kubeObjects.RecoverRequestCreate(
-			v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.log,
+			v.ctx, v.reconciler.Client, v.log,
 			s3StoreAccessor.S3CompatibleEndpoint, s3StoreAccessor.S3Bucket, s3StoreAccessor.S3Region,
 			capturePathName,
 			s3StoreAccessor.VeleroNamespaceSecretKeyRef,
 			s3StoreAccessor.CACertificates,
 			sourceVrgNamespaceName, vrg.Namespace, recoverGroup, veleroNamespaceName,
-			kubeObjectsCaptureName(captureNamePrefix, recoverGroup.BackupName, s3StoreAccessor.S3ProfileName),
-			kubeObjectsRecoverName(recoverNamePrefix, groupNumber),
+			captureName, captureRequest,
+			recoverName,
 			labels, annotations)
 	}
 }
