@@ -21,7 +21,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -135,7 +134,6 @@ func (r RequestsManager) RecoverRequestsDelete(
 func (RequestsManager) RecoverRequestCreate(
 	ctx context.Context,
 	writer client.Writer,
-	reader client.Reader,
 	log logr.Logger,
 	s3Url string,
 	s3BucketName string,
@@ -148,6 +146,7 @@ func (RequestsManager) RecoverRequestCreate(
 	recoverSpec kubeobjects.RecoverSpec,
 	requestNamespaceName string,
 	captureName string,
+	captureRequest kubeobjects.ProtectRequest,
 	recoverName string,
 	labels map[string]string,
 	annotations map[string]string,
@@ -170,7 +169,6 @@ func (RequestsManager) RecoverRequestCreate(
 
 	restore, err := backupDummyCreateAndRestore(
 		objectWriter{ctx: ctx, Writer: writer, log: log},
-		reader,
 		s3Url,
 		s3BucketName,
 		s3RegionName,
@@ -182,6 +180,7 @@ func (RequestsManager) RecoverRequestCreate(
 		recoverSpec,
 		requestNamespaceName,
 		captureName,
+		captureRequest,
 		recoverName,
 		labels,
 		annotations,
@@ -192,7 +191,6 @@ func (RequestsManager) RecoverRequestCreate(
 
 func backupDummyCreateAndRestore(
 	w objectWriter,
-	reader client.Reader,
 	s3Url string,
 	s3BucketName string,
 	s3RegionName string,
@@ -204,30 +202,31 @@ func backupDummyCreateAndRestore(
 	recoverSpec kubeobjects.RecoverSpec,
 	requestNamespaceName string,
 	backupName string,
+	captureRequest kubeobjects.ProtectRequest,
 	restoreName string,
 	labels map[string]string,
 	annotations map[string]string,
 ) (*velero.Restore, error) {
-	namespacedName := types.NamespacedName{Namespace: requestNamespaceName, Name: backupName}
+	backupRequest, ok := captureRequest.(BackupRequest)
+	if !ok {
+		_, _, err := backupRequestCreate(
+			w, s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretKeyRef,
+			caCertificates,
+			backupSpecDummy(), sourceNamespaceName,
+			requestNamespaceName, backupName,
+			labels,
+			annotations,
+		)
+		if err != nil {
+			return nil, pkgerrors.Wrap(err, "backup dummy request create")
+		}
 
-	backupLocation, backup, err := backupCreate(
-		namespacedName,
-		w, s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretKeyRef,
-		caCertificates,
-		backupSpecDummy(), sourceNamespaceName,
-		labels,
-		annotations,
-	)
-	if err != nil {
 		return nil, err
 	}
 
-	if err := reader.Get(w.ctx, namespacedName, backup); err != nil {
-		return nil, pkgerrors.Wrap(err, "backup dummy get")
-	}
-
 	return backupDummyStatusProcessAndRestore(
-		backupLocation, backup, w,
+		backupRequest.backup,
+		w,
 		sourceNamespaceName,
 		targetNamespaceName,
 		recoverSpec,
@@ -237,7 +236,6 @@ func backupDummyCreateAndRestore(
 }
 
 func backupDummyStatusProcessAndRestore(
-	backupLocation *velero.BackupStorageLocation,
 	backup *velero.Backup,
 	w objectWriter,
 	sourceNamespaceName string,
@@ -271,7 +269,7 @@ func backupDummyStatusProcessAndRestore(
 	case velero.BackupPhaseDeleting:
 		return nil, kubeobjects.RequestProcessingErrorCreate("backup" + string(backup.Status.Phase))
 	case velero.BackupPhaseFailedValidation:
-		return nil, backupRequestFailedDelete(backupLocation, backup, w)
+		return nil, errors.New("backup" + string(backup.Status.Phase))
 	}
 
 	return nil, kubeobjects.RequestProcessingErrorCreate("backup.status.phase absent")
@@ -384,12 +382,12 @@ func backupRealCreate(
 	labels map[string]string,
 	annotations map[string]string,
 ) (*velero.BackupStorageLocation, *velero.Backup, error) {
-	return backupCreate(
-		types.NamespacedName{Namespace: requestNamespaceName, Name: captureName},
+	return backupRequestCreate(
 		w, s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretKeyRef,
 		caCertificates,
 		getBackupSpecFromObjectsSpec(objectsSpec),
 		sourceNamespaceName,
+		requestNamespaceName, captureName,
 		labels,
 		annotations,
 	)
@@ -474,18 +472,6 @@ func backupRealStatusProcess(
 	return kubeobjects.RequestProcessingErrorCreate("backup.status.phase absent")
 }
 
-func backupRequestFailedDelete(
-	backupLocation *velero.BackupStorageLocation,
-	backup *velero.Backup,
-	w objectWriter,
-) error {
-	if err := w.backupObjectsDelete(backupLocation, backup); err != nil {
-		return err
-	}
-
-	return errors.New("backup" + string(backup.Status.Phase) + "; request deleted")
-}
-
 func (r BackupRequest) Deallocate(
 	ctx context.Context,
 	writer client.Writer,
@@ -517,8 +503,7 @@ type objectWriter struct {
 	log logr.Logger
 }
 
-func backupCreate(
-	backupNamespacedName types.NamespacedName,
+func backupRequestCreate(
 	w objectWriter,
 	s3Url string,
 	s3BucketName string,
@@ -528,10 +513,12 @@ func backupCreate(
 	caCertificates []byte,
 	backupSpec velero.BackupSpec,
 	sourceNamespaceName string,
+	requestsNamespaceName string,
+	requestName string,
 	labels map[string]string,
 	annotations map[string]string,
 ) (*velero.BackupStorageLocation, *velero.Backup, error) {
-	backupLocation := backupLocation(backupNamespacedName,
+	backupLocation := backupLocation(requestsNamespaceName, requestName,
 		s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretKeyRef,
 		caCertificates,
 		labels,
@@ -540,12 +527,12 @@ func backupCreate(
 		return backupLocation, nil, err
 	}
 
-	backupSpec.StorageLocation = backupNamespacedName.Name
+	backupSpec.StorageLocation = requestName
 	backupSpec.IncludedNamespaces = []string{sourceNamespaceName}
 	backupSpec.SnapshotVolumes = new(bool)
-	backup := backup(backupNamespacedName, backupSpec, labels, annotations)
+	backupRequest := backupRequest(requestsNamespaceName, requestName, backupSpec, labels, annotations)
 
-	return backupLocation, backup, w.objectCreate(backup)
+	return backupLocation, backupRequest, w.Create(w.ctx, backupRequest)
 }
 
 func (w objectWriter) backupObjectsDelete(
@@ -609,7 +596,7 @@ func veleroTypeMeta(kind string) metav1.TypeMeta {
 func backupTypeMeta() metav1.TypeMeta  { return veleroTypeMeta("Backup") }
 func restoreTypeMeta() metav1.TypeMeta { return veleroTypeMeta("Restore") }
 
-func backupLocation(namespacedName types.NamespacedName,
+func backupLocation(namespaceName, name string,
 	s3Url, s3BucketName, s3RegionName, s3KeyPrefix string,
 	secretKeyRef *corev1.SecretKeySelector,
 	caCertificates []byte,
@@ -618,8 +605,8 @@ func backupLocation(namespacedName types.NamespacedName,
 	return &velero.BackupStorageLocation{
 		TypeMeta: veleroTypeMeta("BackupStorageLocation"),
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespacedName.Namespace,
-			Name:      namespacedName.Name,
+			Namespace: namespaceName,
+			Name:      name,
 			Labels:    labels,
 		},
 		Spec: velero.BackupStorageLocationSpec{
@@ -641,19 +628,19 @@ func backupLocation(namespacedName types.NamespacedName,
 	}
 }
 
-func backup(namespacedName types.NamespacedName, backupSpec velero.BackupSpec,
+func backupRequest(namespaceName, name string, spec velero.BackupSpec,
 	labels map[string]string,
 	annotations map[string]string,
 ) *velero.Backup {
 	return &velero.Backup{
 		TypeMeta: backupTypeMeta(),
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace:   namespacedName.Namespace,
-			Name:        namespacedName.Name,
+			Namespace:   namespaceName,
+			Name:        name,
 			Labels:      labels,
 			Annotations: annotations,
 		},
-		Spec: backupSpec,
+		Spec: spec,
 	}
 }
 

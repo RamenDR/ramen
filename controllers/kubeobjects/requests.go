@@ -126,7 +126,7 @@ type RequestsManager interface {
 		annotations map[string]string,
 	) (ProtectRequest, error)
 	RecoverRequestCreate(
-		c context.Context, w client.Writer, r client.Reader, l logr.Logger,
+		c context.Context, w client.Writer, l logr.Logger,
 		s3Url string,
 		s3BucketName string,
 		s3RegionName string,
@@ -138,6 +138,7 @@ type RequestsManager interface {
 		recoverSpec RecoverSpec,
 		requestNamespaceName string,
 		protectRequestName string,
+		protectRequest ProtectRequest,
 		recoverRequestName string,
 		labels map[string]string,
 		annotations map[string]string,
