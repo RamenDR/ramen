@@ -179,11 +179,18 @@ app_recipe_deploy() {
 	      container: busybox
 	      command:
 	      - date
+	    - name: fail-succeed
+	      container: busybox
+	      command:
+	      - sh
+	      - -c
+	      - "! rm /tmp/a&&touch /tmp/a"
 	  recoverWorkflow:
 	    sequence:
 	    - group: everything-but-deploy-po-pv-rs-vr-vrg
 	    - group: deployments-and-naked-pods
 	    - hook: busybox/date
+	    - hook: busybox/fail-succeed
 	a
 }; exit_stack_push unset -f app_recipe_deploy
 
