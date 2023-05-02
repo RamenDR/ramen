@@ -122,6 +122,7 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		protectedPVC = newProtectedPVC
 		v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
 	} else if !reflect.DeepEqual(protectedPVC, newProtectedPVC) {
+		newProtectedPVC.Conditions = protectedPVC.Conditions
 		newProtectedPVC.DeepCopyInto(protectedPVC)
 	}
 
@@ -235,7 +236,10 @@ func (v *VRGInstance) aggregateVolSyncDataReadyCondition() *metav1.Condition {
 			return nil
 		}
 
-		ready := v.isVolSyncReplicationSourceSetupComplete()
+		// On Failover/Relocation, we depend on PVs to be restored. For initial deployment,
+		// we depend on ReplicationSourceSetup to determine Data readiness.
+		ready := v.isVolSyncProtectedPVCConditionReady(VRGConditionTypeVolSyncPVsRestored) ||
+			v.isVolSyncProtectedPVCConditionReady(VRGConditionTypeVolSyncRepSourceSetup)
 
 		if !ready {
 			dataReadyCondition.Status = metav1.ConditionFalse
@@ -349,16 +353,16 @@ func (v *VRGInstance) buildDataProtectedCondition() *metav1.Condition {
 	return dataProtectedCondition
 }
 
-func (v VRGInstance) isVolSyncReplicationSourceSetupComplete() bool {
+func (v VRGInstance) isVolSyncProtectedPVCConditionReady(conType string) bool {
 	ready := len(v.instance.Status.ProtectedPVCs) != 0
 
 	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
 		if protectedPVC.ProtectedByVolSync {
-			condition := findCondition(protectedPVC.Conditions, VRGConditionTypeVolSyncRepSourceSetup)
+			condition := findCondition(protectedPVC.Conditions, conType)
 			if condition == nil || condition.Status != metav1.ConditionTrue {
 				ready = false
 
-				v.log.Info(fmt.Sprintf("VolSync RS hasn't been setup yet for PVC %s", protectedPVC.Name))
+				v.log.Info(fmt.Sprintf("VolSync %s is not complete yet for PVC %s", conType, protectedPVC.Name))
 
 				break
 			}
