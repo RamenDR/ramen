@@ -82,7 +82,7 @@ func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 	}
 
 	err = volsync.PropagateSecretToClusters(d.ctx, d.reconciler.Client, pskSecretHub,
-		d.instance, clustersToPropagateSecret, pskSecretNameCluster, d.instance.GetNamespace(), d.log)
+		d.instance, clustersToPropagateSecret, pskSecretNameCluster, d.vrgNamespace, d.log)
 	if err != nil {
 		d.log.Error(err, "Error propagating secret to clusters", "clustersToPropagateSecret", clustersToPropagateSecret)
 
@@ -309,7 +309,7 @@ func (d *DRPCInstance) createVolSyncDestManifestWork(srcCluster string) error {
 
 		vrg := d.generateVRG(rmn.Secondary)
 		if err := d.mwu.CreateOrUpdateVRGManifestWork(
-			d.instance.Name, d.instance.Namespace,
+			d.instance.Name, d.vrgNamespace,
 			dstCluster, vrg, annotations); err != nil {
 			d.log.Error(err, "failed to create or update VolumeReplicationGroup manifest")
 
