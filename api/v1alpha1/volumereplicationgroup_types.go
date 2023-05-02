@@ -226,7 +226,7 @@ type ProtectedPVC struct {
 	ProtectedByVolSync bool `json:"protectedByVolSync,omitempty"`
 
 	//+optional
-	StorageIdentifiers `json:",inline"`
+	StorageIdentifiers `json:",inline,omitempty"`
 
 	// Name of the StorageClass required by the claim.
 	//+optional
