@@ -430,13 +430,13 @@ func getBackupHooks(hooks []kubeobjects.HookSpec) velero.BackupHooks {
 
 		hookSpec.Resources = append(hookSpec.Resources, velero.BackupResourceHookSpec{
 			Name:          hook.Name,
-			LabelSelector: &hook.LabelSelector,
+			LabelSelector: hook.LabelSelector,
 			PreHooks:      []velero.BackupResourceHook{},
 			PostHooks: []velero.BackupResourceHook{
 				{
 					Exec: &velero.ExecHook{
-						Container: hook.Container,
-						Timeout:   hook.Timeout,
+						Container: dereferenceOrZeroValueIfNil(hook.Container),
+						Timeout:   dereferenceOrZeroValueIfNil(hook.Timeout),
 						Command:   hook.Command,
 					},
 				},
@@ -445,6 +445,14 @@ func getBackupHooks(hooks []kubeobjects.HookSpec) velero.BackupHooks {
 	}
 
 	return hookSpec
+}
+
+func dereferenceOrZeroValueIfNil[T any](pointer *T) (t T) {
+	if pointer == nil {
+		return
+	}
+
+	return *pointer
 }
 
 func backupRealStatusProcess(

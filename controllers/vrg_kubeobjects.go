@@ -827,7 +827,7 @@ func convertRecipeHookToCaptureSpec(
 				ExcludedResources: []string{},
 				Hooks:             hooks,
 			},
-			LabelSelector:           &hooks[0].LabelSelector,
+			LabelSelector:           hooks[0].LabelSelector,
 			IncludeClusterResources: new(bool),
 		},
 	}
@@ -847,7 +847,7 @@ func convertRecipeHookToRecoverSpec(hook Recipe.Hook, op Recipe.Operation) (*kub
 				ExcludedResources: []string{},
 				Hooks:             hooks,
 			},
-			LabelSelector:           &hooks[0].LabelSelector,
+			LabelSelector:           hooks[0].LabelSelector,
 			IncludeClusterResources: new(bool),
 		},
 	}, nil
@@ -858,10 +858,10 @@ func getHookSpecFromHook(hook Recipe.Hook, op Recipe.Operation) []kubeobjects.Ho
 		{
 			Name:          op.Name,
 			Type:          hook.Type,
-			Timeout:       *op.Timeout,
-			Container:     op.Container,
+			Timeout:       op.Timeout,
+			Container:     &op.Container,
 			Command:       op.Command,
-			LabelSelector: *hook.LabelSelector,
+			LabelSelector: hook.LabelSelector,
 		},
 	}
 }
