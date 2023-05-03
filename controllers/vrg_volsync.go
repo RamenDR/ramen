@@ -186,11 +186,6 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() bool {
 	v.instance.Status.PrepareForFinalSyncComplete = false
 	v.instance.Status.FinalSyncComplete = false
 
-	// We no longer need to have conditions for the secondary VRG
-	if len(v.instance.Spec.VolSync.RDSpec) > 0 && len(v.instance.Status.Conditions) > 0 {
-		v.instance.Status.Conditions = []metav1.Condition{}
-	}
-
 	return v.reconcileRDSpecForDeletionOrReplication()
 }
 
