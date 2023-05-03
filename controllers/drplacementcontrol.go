@@ -1111,7 +1111,12 @@ func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace str
 		return err
 	}
 
-	d.log.Info(fmt.Sprintf("PVs/PVCs have been Restored? %v and VRG Primary %v", restored, vrg.Status.State))
+	var vrgState rmn.State
+	if vrg != nil {
+		vrgState = vrg.Status.State
+	}
+
+	d.log.Info(fmt.Sprintf("PVs/PVCs have been Restored? %v and VRG Primary %v", restored, vrgState))
 
 	if !restored || vrg.Status.State != rmn.PrimaryState {
 		d.setProgression(rmn.ProgressionWaitingForResourceRestore)
