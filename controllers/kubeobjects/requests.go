@@ -79,13 +79,13 @@ type HookSpec struct {
 	Command []string `json:"command,omitempty"`
 
 	//+optional
-	Timeout metav1.Duration `json:"timeout,omitempty"`
+	Timeout *metav1.Duration `json:"timeout,omitempty"`
 
 	//+optional
-	Container string `json:"container,omitempty"`
+	Container *string `json:"container,omitempty"`
 
 	//+optional
-	LabelSelector metav1.LabelSelector `json:"labelSelector,omitempty"`
+	LabelSelector *metav1.LabelSelector `json:"labelSelector,omitempty"`
 }
 
 func RequestProcessingErrorCreate(s string) RequestProcessingError { return RequestProcessingError{s} }
