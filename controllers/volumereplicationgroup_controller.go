@@ -948,6 +948,13 @@ func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
 		v.relocate(&result, s3StoreAccessors)
 	}
 
+	// Clear the conditions only if there are no more work as secondary and the RDSpec is not empty.
+	// Note: When using VolSync, we preserve the secondary and we need the status of the VRG to be
+	// clean. In all other cases, the VRG will be deleted and we don't care about the its conditions.
+	if !result.Requeue && len(v.instance.Spec.VolSync.RDSpec) > 0 {
+		v.instance.Status.Conditions = []metav1.Condition{}
+	}
+
 	return result
 }
 
@@ -956,8 +963,8 @@ func (v *VRGInstance) relocate(result *ctrl.Result, s3StoreAccessors []s3StoreAc
 
 	if clusterDataProtected := meta.FindStatusCondition(vrg.Status.Conditions,
 		VRGConditionTypeClusterDataProtected,
-	); clusterDataProtected.Status != metav1.ConditionTrue ||
-		clusterDataProtected.ObservedGeneration != vrg.Generation {
+	); clusterDataProtected != nil && (clusterDataProtected.Status != metav1.ConditionTrue ||
+		clusterDataProtected.ObservedGeneration != vrg.Generation) {
 		v.kubeObjectsProtectSecondary(result, s3StoreAccessors)
 		v.vrgObjectProtect(result, s3StoreAccessors)
 	}
