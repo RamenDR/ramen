@@ -168,12 +168,28 @@ app_recipe_deploy() {
 	        operator: DoesNotExist
 	    name: deployments-and-naked-pods
 	    type: resource
+	  hooks:
+	  - name: busybox
+	    type: exec
+	    labelSelector:
+	      matchLabels:
+	        appname: busybox
+	    ops:
+	    - name: date
+	      container: busybox
+	      command:
+	      - date
 	  recoverWorkflow:
 	    sequence:
 	    - group: everything-but-deploy-po-pv-rs-vr-vrg
 	    - group: deployments-and-naked-pods
+	    - hook: busybox/date
 	a
 }; exit_stack_push unset -f app_recipe_deploy
+
+app_recipe_get() {
+	kubectl --context $1 -nasdf get -oyaml recipe/asdf
+}; exit_stack_push unset -f app_recipe_get
 
 app_deployment_replicaset_name() {
 	kubectl --context $1 -nasdf get rs -lpod-template-hash -oname
