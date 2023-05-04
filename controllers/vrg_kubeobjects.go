@@ -571,6 +571,15 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result,
 		return err
 	}
 
+	if dataReady := meta.FindStatusCondition(vrg.Status.Conditions,
+		VRGConditionTypeDataReady,
+	); dataReady.Status != metav1.ConditionTrue || dataReady.ObservedGeneration != vrg.Generation {
+		err := errors.New("waiting for data to be ready")
+		v.kubeObjectsRecoverStatusFalse("DataNotReady", err.Error())
+
+		return err
+	}
+
 	return v.kubeObjectsRecoveryStartOrResume(
 		result,
 		s3StoreAccessor,
