@@ -1827,9 +1827,7 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) error {
 
 		var objectStore ObjectStorer
 
-		var s3StoreProfile ramendrv1alpha1.S3StoreProfile
-
-		objectStore, s3StoreProfile, err = v.reconciler.ObjStoreGetter.ObjectStore(
+		objectStore, _, err = v.reconciler.ObjStoreGetter.ObjectStore(
 			v.ctx, v.reconciler.APIReader, s3ProfileName, v.namespacedName, v.log)
 		if err != nil {
 			v.log.Error(err, "Kube objects recovery object store inaccessible", "profile", s3ProfileName)
@@ -1863,7 +1861,7 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) error {
 
 		v.log.Info(fmt.Sprintf("Restored %d PVs and %d PVCs using profile %s", pvCount, pvcCount, s3ProfileName))
 
-		return v.kubeObjectsRecover(result, s3StoreProfile, objectStore)
+		return nil
 	}
 
 	if NoS3 {

@@ -258,24 +258,32 @@ func setVRGDataErrorUnknownCondition(conditions *[]metav1.Condition, observedGen
 
 // sets conditions when PV cluster data is restored
 func setVRGClusterDataReadyCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	setStatusCondition(conditions, *newVRGClusterDataReadyCondition(observedGeneration, message))
+}
+
+func newVRGClusterDataReadyCondition(observedGeneration int64, message string) *metav1.Condition {
+	return &metav1.Condition{
 		Type:               VRGConditionTypeClusterDataReady,
 		Reason:             VRGConditionReasonClusterDataRestored,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
 		Message:            message,
-	})
+	}
 }
 
 // sets conditions when PV cluster data failed to restore
 func setVRGClusterDataErrorCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	setStatusCondition(conditions, *newVRGClusterDataErrorCondition(observedGeneration, message))
+}
+
+func newVRGClusterDataErrorCondition(observedGeneration int64, message string) *metav1.Condition {
+	return &metav1.Condition{
 		Type:               VRGConditionTypeClusterDataReady,
 		Reason:             VRGConditionReasonError,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,
-	})
+	}
 }
 
 // sets conditions when PV cluster data is protected
