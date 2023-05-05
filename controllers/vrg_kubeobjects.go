@@ -36,25 +36,24 @@ func kubeObjectsCaptureInterval(kubeObjectProtectionSpec *ramen.KubeObjectProtec
 	return kubeObjectProtectionSpec.CaptureInterval.Duration
 }
 
-func kubeObjectsCapturePathNameAndNamePrefix(namespaceName, vrgName string, captureNumber int64) (string, string) {
+func kubeObjectsCapturePathName(namespaceName, vrgName string, captureNumber int64) string {
 	const numberBase = 10
 	number := strconv.FormatInt(captureNumber, numberBase)
 
-	return s3PathNamePrefix(namespaceName, vrgName) + "kube-objects/" + number + "/",
-		// TODO fix: may exceed name capacity
-		namespaceName + "--" + vrgName + "--" + number
+	return s3PathNamePrefix(namespaceName, vrgName) + "kube-objects/" + number + "/"
 }
 
-func kubeObjectsCaptureName(prefix, groupName, s3ProfileName string) string {
-	return prefix + "--" + groupName + "--" + s3ProfileName
+func kubeObjectsCaptureRequestName(vrgNamespaceName, vrgName, groupName, s3ProfileName string) string {
+	return kubeObjectsRequestName(vrgNamespaceName, vrgName, groupName+"--"+s3ProfileName)
 }
 
-func kubeObjectsRecoverNamePrefix(vrgNamespaceName, vrgName string) string {
-	return vrgNamespaceName + "--" + vrgName
+func kubeObjectsRecoverRequestName(vrgNamespaceName, vrgName string, groupNumber int) string {
+	return kubeObjectsRequestName(vrgNamespaceName, vrgName, strconv.Itoa(groupNumber))
 }
 
-func kubeObjectsRecoverName(prefix string, groupNumber int) string {
-	return prefix + "--" + strconv.Itoa(groupNumber)
+func kubeObjectsRequestName(vrgNamespaceName, vrgName, suffix string) string {
+	// TODO fix: may exceed name capacity
+	return vrgNamespaceName + "--" + vrgName + "--" + suffix
 }
 
 func (v *VRGInstance) kubeObjectsProtectPrimary(result *ctrl.Result, s3StoreAccessors []s3StoreAccessor) {
@@ -123,14 +122,14 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 	interval := kubeObjectsCaptureInterval(vrg.Spec.KubeObjectProtection)
 	number := 1 - captureToRecoverFrom.Number
 	log := v.log.WithValues("number", number)
-	pathName, namePrefix := kubeObjectsCapturePathNameAndNamePrefix(vrg.Namespace, vrg.Name, number)
+	pathName := kubeObjectsCapturePathName(vrg.Namespace, vrg.Name, number)
 	labels := util.OwnerLabels(vrg.Namespace, vrg.Name)
 	captureStartOrResume := func(generation int64, startOrResume string) {
 		log.Info("Kube objects capture "+startOrResume, "generation", generation)
 		v.kubeObjectsCaptureStartOrResume(result, s3StoreAccessors,
 			captureStartConditionally,
 			captureInProgressStatusUpdate,
-			number, pathName, namePrefix, veleroNamespaceName, interval, labels, generation)
+			number, pathName, veleroNamespaceName, interval, labels, generation)
 	}
 
 	requests, err := v.reconciler.kubeObjects.ProtectRequestsGet(
@@ -227,7 +226,7 @@ const (
 func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	result *ctrl.Result, s3StoreAccessors []s3StoreAccessor,
 	captureStartConditionally captureStartConditionally, captureInProgressStatusUpdate captureInProgressStatusUpdate,
-	captureNumber int64, pathName, namePrefix, veleroNamespaceName string, interval time.Duration,
+	captureNumber int64, pathName, veleroNamespaceName string, interval time.Duration,
 	labels map[string]string, generation int64,
 ) {
 	vrg := v.instance
@@ -247,7 +246,8 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 				v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.log,
 				s3StoreAccessor.url, s3StoreAccessor.bucketName, s3StoreAccessor.regionName,
 				pathName, s3StoreAccessor.veleroNamespaceSecretKeyRef, vrg.Namespace, captureGroup.Spec,
-				veleroNamespaceName, kubeObjectsCaptureName(namePrefix, captureGroup.Name, s3StoreAccessor.profileName),
+				veleroNamespaceName,
+				kubeObjectsCaptureRequestName(vrg.Namespace, vrg.Name, captureGroup.Name, s3StoreAccessor.profileName),
 				labels, annotations)
 			requests[requestsProcessedCount] = request
 			requestsProcessedCount++
@@ -482,9 +482,7 @@ func (v *VRGInstance) createRecoverOrProtectRequest(
 	annotations map[string]string,
 ) (kubeobjects.Request, error) {
 	vrg := v.instance
-	capturePathName, captureNamePrefix := kubeObjectsCapturePathNameAndNamePrefix(
-		sourceVrgNamespaceName, sourceVrgName, capture.Number)
-	recoverNamePrefix := kubeObjectsRecoverNamePrefix(vrg.Namespace, vrg.Name)
+	capturePathName := kubeObjectsCapturePathName(sourceVrgNamespaceName, sourceVrgName, capture.Number)
 
 	var request kubeobjects.Request
 
@@ -497,7 +495,7 @@ func (v *VRGInstance) createRecoverOrProtectRequest(
 		backupName := fmt.Sprintf("%s-restore-%d", recoverGroup.BackupName, groupNumber)
 		v.log.Info(fmt.Sprintf("backup: %s, captureToRecoverFrom: %d", backupName, captureToRecoverFrom.Number))
 
-		pathName, namePrefix := kubeObjectsCapturePathNameAndNamePrefix(vrg.Namespace, vrg.Name, backupSequenceNumber)
+		pathName := kubeObjectsCapturePathName(vrg.Namespace, vrg.Name, backupSequenceNumber)
 		request, err = v.reconciler.kubeObjects.ProtectRequestCreate(
 			v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.log,
 			s3StoreAccessor.url,
@@ -507,7 +505,8 @@ func (v *VRGInstance) createRecoverOrProtectRequest(
 			s3StoreAccessor.veleroNamespaceSecretKeyRef,
 			vrg.Namespace,
 			recoverGroup.Spec,
-			veleroNamespaceName, kubeObjectsCaptureName(namePrefix, backupName, s3StoreAccessor.profileName),
+			veleroNamespaceName,
+			kubeObjectsCaptureRequestName(sourceVrgNamespaceName, sourceVrgName, backupName, s3StoreAccessor.profileName),
 			labels, annotations)
 	} else {
 		request, err = v.reconciler.kubeObjects.RecoverRequestCreate(
@@ -518,8 +517,10 @@ func (v *VRGInstance) createRecoverOrProtectRequest(
 			capturePathName,
 			s3StoreAccessor.veleroNamespaceSecretKeyRef,
 			sourceVrgNamespaceName, vrg.Namespace, recoverGroup, veleroNamespaceName,
-			kubeObjectsCaptureName(captureNamePrefix, recoverGroup.BackupName, s3StoreAccessor.profileName),
-			kubeObjectsRecoverName(recoverNamePrefix, groupNumber), labels, annotations)
+			kubeObjectsCaptureRequestName(
+				sourceVrgNamespaceName, sourceVrgName, recoverGroup.BackupName, s3StoreAccessor.profileName),
+			kubeObjectsRecoverRequestName(vrg.Namespace, vrg.Name, groupNumber),
+			labels, annotations)
 	}
 
 	return request, err

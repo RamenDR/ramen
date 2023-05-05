@@ -451,7 +451,7 @@ app_s3_objects_delete() {
 
 app_protection_info() {
 	for cluster_name in $s3_store_cluster_names; do
-		set -- "$1" $(app_s3_object_name_prefix_velero "$1" $cluster_name) $app_velero_kube_object_name$1----minio-on-$cluster_name
+		set -- "$1" $(app_s3_object_name_prefix_velero "$1" $cluster_name) $app_velero_kube_object_name--minio-on-$cluster_name
 		velero_backup_log $2 $3
 		velero_backup_backup_object $2 $3
 		velero_backup_resource_list $2 $3
