@@ -225,6 +225,35 @@ func (m ManagedClusterViewGetterImpl) getManagedClusterResource(
 	return m.GetResource(mcv, resource)
 }
 
+// This function is temporarily used to parse the MCV.Status.Conditions[0].Messagefield for known error strings,
+// including "not found" and "the server could not find the requested resource". While this approach is effective
+// for identifying errors in the short term, it is not a sustainable solution.
+
+// As a next step, an issue should be opened against the ACM View Controller to fix and improve the MCV status,
+// potentially by adding the last error to the MCV.status field. This would allow for more comprehensive and accurate
+// error reporting, and reduce the need for temporary workarounds like this function.
+func parseErrorMessage(message string) error {
+	checkNotFound := func(str string) bool {
+		return strings.HasSuffix(str, "not found") ||
+			strings.HasSuffix(str, "the server could not find the requested resource")
+	}
+
+	extractLastError := func(str string) string {
+		index := strings.LastIndex(str, "err:")
+		if index == -1 {
+			return ""
+		}
+
+		return str[index+len("err:"):]
+	}
+
+	if checkNotFound(message) {
+		return errors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
+	}
+
+	return fmt.Errorf("err: %s", extractLastError(message))
+}
+
 func (m ManagedClusterViewGetterImpl) GetResource(mcv *viewv1beta1.ManagedClusterView, resource interface{}) error {
 	var err error
 
@@ -237,7 +266,7 @@ func (m ManagedClusterViewGetterImpl) GetResource(mcv *viewv1beta1.ManagedCluste
 		case mcv.Status.Conditions[0].Type != viewv1beta1.ConditionViewProcessing:
 			err = fmt.Errorf("found invalid condition (%s) in ManagedClusterView", mcv.Status.Conditions[0].Type)
 		case mcv.Status.Conditions[0].Reason == viewv1beta1.ReasonGetResourceFailed:
-			err = errors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
+			err = parseErrorMessage(mcv.Status.Conditions[0].Message)
 		case mcv.Status.Conditions[0].Status != metav1.ConditionTrue:
 			err = fmt.Errorf("ManagedClusterView is not ready (reason: %s)", mcv.Status.Conditions[0].Reason)
 		}

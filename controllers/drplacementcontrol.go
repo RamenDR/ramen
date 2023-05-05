@@ -1657,6 +1657,12 @@ func (d *DRPCInstance) ensureVRGManifestWorkOnClusterDeleted(clusterName string)
 		return !done, fmt.Errorf("failed to retrieve ManifestWork (%w)", err)
 	}
 
+	if !mw.GetDeletionTimestamp().IsZero() {
+		d.log.Info("Waiting for for VRG MW to be fully deleted", "cluster", clusterName)
+		// As long as the Manifestwork still exist, then we are not done
+		return !done, nil
+	}
+
 	// If .spec.ReplicateSpec has not already been updated to secondary, then update it.
 	// If we do update it to secondary, then we have to wait for the MW to be applied
 	updated, err := d.updateVRGState(clusterName, rmn.Secondary)
@@ -1669,8 +1675,6 @@ func (d *DRPCInstance) ensureVRGManifestWorkOnClusterDeleted(clusterName string)
 		if err != nil {
 			return !done, fmt.Errorf("%w", err)
 		}
-
-		return done, nil
 	}
 
 	d.log.Info("Request not complete yet", "cluster", clusterName)
