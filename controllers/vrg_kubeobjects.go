@@ -323,7 +323,7 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 				log1.Info("Kube objects group capturing", "state", err.Error())
 			default:
 				log1.Error(err, "Kube objects group capture error")
-				v.kubeObjectsCaptureRequestAndCaptureDelete(request, s3StoreAccessor, capturePathName, log1)
+				v.kubeObjectsCaptureAndCaptureRequestDelete(request, s3StoreAccessor, capturePathName, log1)
 				v.kubeObjectsCaptureStatusFalse("KubeObjectsCaptureError", err.Error())
 
 				result.Requeue = true
@@ -338,15 +338,15 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 	return requestsCompletedCount
 }
 
-func (v *VRGInstance) kubeObjectsCaptureRequestAndCaptureDelete(
+func (v *VRGInstance) kubeObjectsCaptureAndCaptureRequestDelete(
 	request kubeobjects.Request, s3StoreAccessor s3StoreAccessor,
 	pathName string, log logr.Logger,
 ) {
+	v.kubeObjectsCaptureDeleteAndLog(s3StoreAccessor, pathName, request.Name(), log)
+
 	if err := request.Deallocate(v.ctx, v.reconciler.Client, v.log); err != nil {
 		log.Error(err, "Kube objects capture request deallocate error")
 	}
-
-	v.kubeObjectsCaptureDeleteAndLog(s3StoreAccessor, pathName, request.Name(), log)
 }
 
 func (v *VRGInstance) kubeObjectsCaptureDeleteAndLog(
@@ -558,7 +558,7 @@ func (v *VRGInstance) getRecoverOrProtectRequest(
 	captureToRecoverFromIdentifier *ramen.KubeObjectsCaptureIdentifier,
 	groupNumber int, recoverGroup kubeobjects.RecoverSpec,
 	veleroNamespaceName string, labels map[string]string, log logr.Logger,
-) (kubeobjects.Request, bool, func() (kubeobjects.Request, error), func()) {
+) (kubeobjects.Request, bool, func() (kubeobjects.Request, error), func(kubeobjects.Request)) {
 	vrg := v.instance
 	annotations := map[string]string{}
 
@@ -583,8 +583,8 @@ func (v *VRGInstance) getRecoverOrProtectRequest(
 					captureName,
 					labels, annotations)
 			},
-			func() {
-				v.kubeObjectsCaptureDeleteAndLog(s3StoreAccessor, capturePathName, captureName, log)
+			func(request kubeobjects.Request) {
+				v.kubeObjectsCaptureAndCaptureRequestDelete(request, s3StoreAccessor, capturePathName, log)
 			}
 	}
 
@@ -609,7 +609,11 @@ func (v *VRGInstance) getRecoverOrProtectRequest(
 				recoverName,
 				labels, annotations)
 		},
-		func() {}
+		func(request kubeobjects.Request) {
+			if err := request.Deallocate(v.ctx, v.reconciler.Client, v.log); err != nil {
+				log.Error(err, "Kube objects group recover request deallocate error")
+			}
+		}
 }
 
 func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
@@ -624,7 +628,7 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 
 	for groupNumber, recoverGroup := range groups {
 		log1 := log.WithValues("group", groupNumber, "name", recoverGroup.BackupName)
-		request, ok, requestCreate, captureDelete := v.getRecoverOrProtectRequest(
+		request, ok, submit, cleanup := v.getRecoverOrProtectRequest(
 			captureRequests, recoverRequests, s3StoreAccessor,
 			sourceVrgNamespaceName, sourceVrgName,
 			captureToRecoverFromIdentifier,
@@ -634,7 +638,7 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 		var err error
 
 		if !ok {
-			_, err = requestCreate()
+			_, err = submit()
 			if err == nil {
 				log1.Info("Kube objects group recover request submitted")
 
@@ -655,12 +659,7 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 			log1.Info("Kube objects group recovering", "state", err.Error())
 		default:
 			log1.Error(err, "Kube objects group recover error")
-
-			if err := request.Deallocate(v.ctx, v.reconciler.Client, v.log); err != nil {
-				log.Error(err, "Kube objects group recover request deallocate error")
-			}
-
-			captureDelete()
+			cleanup(request)
 
 			result.Requeue = true
 		}
