@@ -247,32 +247,26 @@ func backupDummyStatusProcessAndRestore(
 	backupStatusLog(backup, w.log)
 
 	switch backup.Status.Phase {
-	case velero.BackupPhaseCompleted:
-		fallthrough
-	case velero.BackupPhasePartiallyFailed:
-		fallthrough
-	case velero.BackupPhaseFailed:
+	case velero.BackupPhaseCompleted,
+		velero.BackupPhasePartiallyFailed,
+		velero.BackupPhaseFailed:
 		return backupRestore(
 			backup, w, sourceNamespaceName, targetNamespaceName,
 			recoverSpec,
 			restoreName,
 			labels,
 		)
-	case velero.BackupPhaseNew:
-		fallthrough
-	case velero.BackupPhaseInProgress:
-		fallthrough
-	case velero.BackupPhaseUploading:
-		fallthrough
-	case velero.BackupPhaseUploadingPartialFailure:
-		fallthrough
-	case velero.BackupPhaseDeleting:
+	case velero.BackupPhaseNew,
+		velero.BackupPhaseInProgress,
+		velero.BackupPhaseUploading,
+		velero.BackupPhaseUploadingPartialFailure,
+		velero.BackupPhaseDeleting:
 		return nil, kubeobjects.RequestProcessingErrorCreate("backup" + string(backup.Status.Phase))
 	case velero.BackupPhaseFailedValidation:
 		return nil, errors.New("backup" + string(backup.Status.Phase))
+	default:
+		return nil, kubeobjects.RequestProcessingErrorCreate("backup.status.phase absent")
 	}
-
-	return nil, kubeobjects.RequestProcessingErrorCreate("backup.status.phase absent")
 }
 
 func backupRestore(
@@ -302,15 +296,12 @@ func restoreStatusProcess(
 	switch restore.Status.Phase {
 	case velero.RestorePhaseCompleted:
 		return nil
-	case velero.RestorePhaseNew:
-		fallthrough
-	case velero.RestorePhaseInProgress:
+	case velero.RestorePhaseNew,
+		velero.RestorePhaseInProgress:
 		return kubeobjects.RequestProcessingErrorCreate("restore" + string(restore.Status.Phase))
-	case velero.RestorePhaseFailed:
-		fallthrough
-	case velero.RestorePhaseFailedValidation:
-		fallthrough
-	case velero.RestorePhasePartiallyFailed:
+	case velero.RestorePhaseFailed,
+		velero.RestorePhaseFailedValidation,
+		velero.RestorePhasePartiallyFailed:
 		return errors.New("restore" + string(restore.Status.Phase))
 	default:
 		return kubeobjects.RequestProcessingErrorCreate("restore.status.phase absent")
@@ -451,25 +442,19 @@ func backupRealStatusProcess(
 	switch backup.Status.Phase {
 	case velero.BackupPhaseCompleted:
 		return nil
-	case velero.BackupPhaseNew:
-		fallthrough
-	case velero.BackupPhaseInProgress:
-		fallthrough
-	case velero.BackupPhaseUploading:
-		fallthrough
-	case velero.BackupPhaseUploadingPartialFailure:
-		fallthrough
-	case velero.BackupPhaseDeleting:
+	case velero.BackupPhaseNew,
+		velero.BackupPhaseInProgress,
+		velero.BackupPhaseUploading,
+		velero.BackupPhaseUploadingPartialFailure,
+		velero.BackupPhaseDeleting:
 		return kubeobjects.RequestProcessingErrorCreate("backup" + string(backup.Status.Phase))
-	case velero.BackupPhaseFailedValidation:
-		fallthrough
-	case velero.BackupPhasePartiallyFailed:
-		fallthrough
-	case velero.BackupPhaseFailed:
+	case velero.BackupPhaseFailedValidation,
+		velero.BackupPhasePartiallyFailed,
+		velero.BackupPhaseFailed:
 		return errors.New("backup" + string(backup.Status.Phase))
+	default:
+		return kubeobjects.RequestProcessingErrorCreate("backup.status.phase absent")
 	}
-
-	return kubeobjects.RequestProcessingErrorCreate("backup.status.phase absent")
 }
 
 func (r BackupRequest) Deallocate(
