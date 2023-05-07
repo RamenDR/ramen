@@ -234,10 +234,7 @@ func (d *DRPCInstance) getVolSyncPVCCount(homeCluster string) int {
 }
 
 func (d *DRPCInstance) updateVRGSpec(clusterName string, tgtVRG *rmn.VolumeReplicationGroup) error {
-	vrgMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
-	d.log.Info(fmt.Sprintf("Updating VRG ownedby MW %s for cluster %s", vrgMWName, clusterName))
-
-	mw, err := d.mwu.FindManifestWork(vrgMWName, clusterName)
+	mw, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, clusterName)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil
@@ -245,9 +242,11 @@ func (d *DRPCInstance) updateVRGSpec(clusterName string, tgtVRG *rmn.VolumeRepli
 
 		d.log.Error(err, "failed to update VRG")
 
-		return fmt.Errorf("failed to update VRG %s, in namespace %s (%w)",
-			vrgMWName, clusterName, err)
+		return fmt.Errorf("failed to update VRG MW, in namespace %s (%w)",
+			clusterName, err)
 	}
+
+	d.log.Info(fmt.Sprintf("Updating VRG ownedby MW %s for cluster %s", mw.Name, clusterName))
 
 	vrg, err := d.extractVRGFromManifestWork(mw)
 	if err != nil {
@@ -330,10 +329,7 @@ func (d *DRPCInstance) ResetVolSyncRDOnPrimary(clusterName string) error {
 		return nil
 	}
 
-	vrgMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
-	d.log.Info(fmt.Sprintf("Resetting RD VRG ownedby MW %s for cluster %s", vrgMWName, clusterName))
-
-	mw, err := d.mwu.FindManifestWork(vrgMWName, clusterName)
+	mw, err := d.mwu.FindManifestWork(rmnutil.MWTypeVRG, clusterName)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil
@@ -341,9 +337,11 @@ func (d *DRPCInstance) ResetVolSyncRDOnPrimary(clusterName string) error {
 
 		d.log.Error(err, "failed to update VRG state")
 
-		return fmt.Errorf("failed to update VRG state for %s, in namespace %s (%w)",
-			vrgMWName, clusterName, err)
+		return fmt.Errorf("failed to update VRG state for MW, in namespace %s (%w)",
+			clusterName, err)
 	}
+
+	d.log.Info(fmt.Sprintf("Resetting RD VRG ownedby MW %s for cluster %s", mw.Name, clusterName))
 
 	vrg, err := d.extractVRGFromManifestWork(mw)
 	if err != nil {

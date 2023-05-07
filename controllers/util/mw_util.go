@@ -64,6 +64,12 @@ func (mwu *MWUtil) BuildManifestWorkName(mwType string) string {
 	return ManifestWorkName(mwu.InstName, mwu.TargetNamespace, mwType)
 }
 
+func (mwu *MWUtil) FindManifestWorkByType(mwType, managedCluster string) (*ocmworkv1.ManifestWork, error) {
+	mwName := mwu.BuildManifestWorkName(mwType)
+
+	return mwu.FindManifestWork(mwName, managedCluster)
+}
+
 func (mwu *MWUtil) FindManifestWork(mwName, managedCluster string) (*ocmworkv1.ManifestWork, error) {
 	if managedCluster == "" {
 		return nil, fmt.Errorf("invalid cluster for MW %s", mwName)

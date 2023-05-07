@@ -122,6 +122,11 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 	// Check if we already deployed in the homeCluster or elsewhere
 	deployed, clusterName := d.isDeployed(homeCluster)
 	if deployed && clusterName != homeCluster {
+		err := d.regenerateVRGManifestWork(clusterName)
+		if err != nil {
+			return !done, err
+		}
+
 		// IF deployed on cluster that is not the preferred HomeCluster, then we are done
 		return done, nil
 	}
@@ -143,8 +148,13 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 		return !done, nil
 	}
 
+	err := d.regenerateVRGManifestWork(clusterName)
+	if err != nil {
+		return !done, err
+	}
+
 	// If we get here, the deployment is successful
-	err := d.EnsureVolSyncReplicationSetup(homeCluster)
+	err = d.EnsureVolSyncReplicationSetup(homeCluster)
 	if err != nil {
 		return !done, err
 	}
@@ -264,7 +274,7 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 	d.setDRState(rmn.Deploying)
 	d.setProgression(rmn.ProgressionCreatingMW)
 	// Create VRG first, to leverage user PlacementRule decision to skip placement and move to cleanup
-	err := d.createVRGManifestWork(homeCluster)
+	err := d.createVRGManifestWork(homeCluster, rmn.Primary)
 	if err != nil {
 		return false, err
 	}
@@ -1161,7 +1171,7 @@ func (d *DRPCInstance) createVRGManifestWorkAsPrimary(targetCluster string) (boo
 		return true, nil
 	}
 
-	err = d.createVRGManifestWork(targetCluster)
+	err = d.createVRGManifestWork(targetCluster, rmn.Primary)
 	if err != nil {
 		return false, err
 	}
@@ -1170,9 +1180,7 @@ func (d *DRPCInstance) createVRGManifestWorkAsPrimary(targetCluster string) (boo
 }
 
 func (d *DRPCInstance) getVRGFromManifestWork(clusterName string) (*rmn.VolumeReplicationGroup, error) {
-	vrgMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
-
-	mw, err := d.mwu.FindManifestWork(vrgMWName, clusterName)
+	mw, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, clusterName)
 	if err != nil {
 		return nil, fmt.Errorf("%w", err)
 	}
@@ -1305,7 +1313,7 @@ func (d *DRPCInstance) updatePreferredDecision() {
 	}
 }
 
-func (d *DRPCInstance) createVRGManifestWork(homeCluster string) error {
+func (d *DRPCInstance) createVRGManifestWork(homeCluster string, repState rmn.ReplicationState) error {
 	// TODO: check if VRG MW here as a less expensive way to validate if Namespace exists
 	err := d.ensureNamespaceExistsOnManagedCluster(homeCluster)
 	if err != nil {
@@ -1317,7 +1325,7 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string) error {
 	d.log.Info("Creating VRG ManifestWork",
 		"Last State:", d.getLastDRState(), "cluster", homeCluster)
 
-	vrg := d.generateVRG(rmn.Primary)
+	vrg := d.generateVRG(repState)
 	vrg.Spec.VolSync.Disabled = d.volSyncDisabled
 
 	annotations := make(map[string]string)
@@ -1334,6 +1342,27 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string) error {
 	}
 
 	return nil
+}
+
+func (d *DRPCInstance) regenerateVRGManifestWork(homeCluster string) error {
+	mw, mwErr := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, homeCluster)
+	if mwErr != nil {
+		d.log.Info("Regenerating VRG ManifestWork", "Error", mwErr)
+	}
+
+	if mw != nil {
+		return nil
+	}
+
+	d.log.Info("Regenerating VRG ManifestWork",
+		"Last State:", d.getLastDRState(), "cluster", homeCluster)
+
+	cachedVrg := d.vrgs[homeCluster]
+	if cachedVrg == nil {
+		return fmt.Errorf("failed to get vrg from cluster %s", homeCluster)
+	}
+
+	return d.createVRGManifestWork(homeCluster, cachedVrg.Spec.ReplicationState)
 }
 
 func vrgAction(drpcAction rmn.DRAction) rmn.VRGAction {
@@ -1460,7 +1489,7 @@ func (d *DRPCInstance) ensureNamespaceExistsOnManagedCluster(homeCluster string)
 	// verify namespace exists on target cluster
 	namespaceExists, err := d.namespaceExistsOnManagedCluster(homeCluster)
 
-	d.log.Info(fmt.Sprintf("createVRGManifestWork: namespace '%s' exists on cluster %s: %t",
+	d.log.Info(fmt.Sprintf("ensureNamespaceExistsOnManagedCluster: namespace '%s' exists on cluster %s: %t",
 		d.vrgNamespace, homeCluster, namespaceExists))
 
 	if !namespaceExists { // attempt to create it
@@ -1952,9 +1981,7 @@ func (d *DRPCInstance) extractVRGFromManifestWork(mw *ocmworkv1.ManifestWork) (*
 }
 
 func (d *DRPCInstance) updateManifestWork(clusterName string, vrg *rmn.VolumeReplicationGroup) error {
-	vrgMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
-
-	mw, err := d.mwu.FindManifestWork(vrgMWName, clusterName)
+	mw, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, clusterName)
 	if err != nil {
 		return fmt.Errorf("%w", err)
 	}
