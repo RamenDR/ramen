@@ -5,7 +5,7 @@
 
 cd $(dirname $0)
 
-./deploy dr1
-./failover dr2
-./relocate dr1
-./undeploy
+./deploy dr1 "$@"
+./failover dr2 "$@"
+./relocate dr1 "$@"
+./undeploy "$@"
