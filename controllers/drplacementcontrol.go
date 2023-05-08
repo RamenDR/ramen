@@ -345,9 +345,14 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 			return !done, nil
 		}
 
+		err := d.ensureVRGManifestWork(d.instance.Spec.FailoverCluster)
+		if err != nil {
+			return !done, err
+		}
+
 		d.setProgression(rmn.ProgressionCleaningUp)
 
-		err := d.ensureCleanupAndVolSyncReplicationSetup(d.instance.Spec.FailoverCluster)
+		err = d.ensureCleanupAndVolSyncReplicationSetup(d.instance.Spec.FailoverCluster)
 		if err != nil {
 			return !done, err
 		}
