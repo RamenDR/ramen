@@ -65,4 +65,14 @@ kubectl.wait(
     log=test.debug,
 )
 
+test.info("Waiting until application is replicated")
+drenv.wait_for(
+    f"drpc/{config['name']}",
+    output="jsonpath={.status.lastGroupSyncTime}",
+    namespace=config["namespace"],
+    timeout=300,
+    profile=config["hub"],
+    log=test.debug,
+)
+
 test.info("Application was deployed successfully")
