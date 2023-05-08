@@ -35,7 +35,11 @@ config/hub/bundle
 venv
 
 # Test enviromemnt generated files
-test/drenv.egg-info/
-test/**/__pycache__/
 test/.coverage
 test/.coverage.*
+
+# Python generated files
+*.egg-info/
+__pycache__/
+test/build
+ramenctl/build

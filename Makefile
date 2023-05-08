@@ -176,6 +176,9 @@ venv:
 test-drenv:
 	$(MAKE) -C test
 
+test-ramenctl:
+	$(MAKE) -C ramenctl
+
 ##@ Build
 
 # Build manager binary
