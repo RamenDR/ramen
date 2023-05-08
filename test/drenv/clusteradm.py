@@ -4,7 +4,7 @@
 from . import commands
 
 
-def init(wait=False, context=None):
+def init(wait=False, context=None, log=print):
     """
     Initialize a Kubernetes cluster into an OCM hub cluster.
     """
@@ -13,7 +13,7 @@ def init(wait=False, context=None):
         cmd.append("--wait")
     if context:
         cmd.extend(("--context", context))
-    _watch(*cmd)
+    _watch(*cmd, log=log)
 
 
 def get(what, output=None, context=None):
@@ -28,7 +28,7 @@ def get(what, output=None, context=None):
     return commands.run(*cmd)
 
 
-def install(what, names, bundle_version=None, context=None):
+def install(what, names, bundle_version=None, context=None, log=print):
     """
     Install a feature.
     """
@@ -37,10 +37,10 @@ def install(what, names, bundle_version=None, context=None):
         cmd.extend(("--bundle-version", bundle_version))
     if context:
         cmd.extend(("--context", context))
-    _watch(*cmd)
+    _watch(*cmd, log=log)
 
 
-def join(hub_token, hub_apiserver, cluster_name, wait=False, context=None):
+def join(hub_token, hub_apiserver, cluster_name, wait=False, context=None, log=print):
     """
     Join a cluster to the hub.
     """
@@ -58,10 +58,10 @@ def join(hub_token, hub_apiserver, cluster_name, wait=False, context=None):
         cmd.append("--wait")
     if context:
         cmd.extend(("--context", context))
-    _watch(*cmd)
+    _watch(*cmd, log=log)
 
 
-def accept(clusters, wait=False, context=None):
+def accept(clusters, wait=False, context=None, log=print):
     """
     Accept clusters to the hub.
     """
@@ -70,10 +70,10 @@ def accept(clusters, wait=False, context=None):
         cmd.append("--wait")
     if context:
         cmd.extend(("--context", context))
-    _watch(*cmd)
+    _watch(*cmd, log=log)
 
 
-def addon(action, names, clusters, context=None):
+def addon(action, names, clusters, context=None, log=print):
     """
     Enable or disable addons on clusters.
     """
@@ -88,9 +88,9 @@ def addon(action, names, clusters, context=None):
     ]
     if context:
         cmd.extend(("--context", context))
-    _watch(*cmd)
+    _watch(*cmd, log=log)
 
 
-def _watch(*cmd):
+def _watch(*cmd, log=print):
     for line in commands.watch(*cmd):
-        print(line)
+        log(line)

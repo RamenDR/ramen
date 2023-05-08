@@ -17,6 +17,7 @@ def wait_for(
     timeout=300,
     namespace=None,
     profile=None,
+    log=print,
 ):
     """
     Wait until resource exists. Once the resource exists, wait for it
@@ -42,7 +43,7 @@ def wait_for(
     while True:
         out = kubectl.get(*args, context=profile)
         if out:
-            print(f"{resource} exists")
+            log(f"{resource} exists")
             return out
 
         if time.monotonic() > deadline:
