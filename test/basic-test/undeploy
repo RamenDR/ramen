@@ -3,18 +3,18 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import os
-
-import yaml
-
 from drenv import kubectl
+from drenv import test
 
-os.chdir(os.path.dirname(__file__))
+test.start("undeploy", __file__)
+args = test.parse_args()
+config = test.config
 
-with open("config.yaml") as f:
-    config = yaml.safe_load(f)
+test.info("Deleting busybox example application")
+kubectl.delete(
+    f"--kustomize={config['tmp_dir']}",
+    context=config["hub"],
+    log=test.debug,
+)
 
-print("Deleting busybox example application")
-kubectl.delete(f"--kustomize={config['tmp_dir']}", context=config["hub"])
-
-print("Application was undeployed successfully")
+test.info("Application was undeployed successfully")
