@@ -5,10 +5,13 @@ clusters.
 
 ## Installing
 
-Install the `ramenctl` tool in development mode:
+The ramenctl tool is installed when creating the python virtual
+environment.
+
+To update existing virtual environment run this in the root directory:
 
 ```
-pip install -e .
+make venv
 ```
 
 ## Deploying ramen on the hub and managed clusters
