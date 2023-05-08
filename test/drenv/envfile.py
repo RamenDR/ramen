@@ -1,14 +1,20 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import copy
 
 import yaml
 
 
-def load(fileobj, name_prefix=None):
+class MissingAddon(Exception):
+    pass
+
+
+def load(fileobj, name_prefix=None, addons_root="addons"):
     env = yaml.safe_load(fileobj)
-    _validate_env(env)
+
+    _validate_env(env, addons_root)
 
     if name_prefix:
         _prefix_names(env, name_prefix)
@@ -16,7 +22,7 @@ def load(fileobj, name_prefix=None):
     return env
 
 
-def _validate_env(env):
+def _validate_env(env, addons_root):
     if "name" not in env:
         raise ValueError("Missing name")
 
@@ -28,14 +34,13 @@ def _validate_env(env):
 
     for template in env["templates"]:
         _validate_template(template)
-
     _bind_templates(env)
 
     for profile in env["profiles"]:
-        _validate_profile(profile)
+        _validate_profile(profile, addons_root)
 
     for i, worker in enumerate(env["workers"]):
-        _validate_worker(worker, env, i)
+        _validate_worker(worker, env, addons_root, i)
 
 
 def _validate_template(template):
@@ -62,7 +67,7 @@ def _bind_templates(env):
         env["profiles"][i] = {**template, **profile}
 
 
-def _validate_profile(profile):
+def _validate_profile(profile, addons_root):
     if "name" not in profile:
         raise ValueError("Missing profile name")
 
@@ -83,20 +88,24 @@ def _validate_profile(profile):
     profile.setdefault("workers", [])
 
     for i, worker in enumerate(profile["workers"]):
-        _validate_worker(worker, profile, i)
+        _validate_worker(worker, profile, addons_root, i)
 
 
-def _validate_worker(worker, env, index):
+def _validate_worker(worker, env, addons_root, index):
     worker["name"] = f'{env["name"]}/{worker.get("name", index)}'
     worker.setdefault("addons", [])
 
     for addon in worker["addons"]:
-        _validate_addon(addon, env, args=[env["name"]])
+        _validate_addon(addon, env, addons_root, args=[env["name"]])
 
 
-def _validate_addon(addon, env, args=()):
+def _validate_addon(addon, env, addons_root, args=()):
     if "name" not in addon:
         raise ValueError(f"Missing addon 'name': {addon}")
+
+    addon_dir = os.path.join(addons_root, addon["name"])
+    if not os.path.isdir(addon_dir):
+        raise MissingAddon(addon["name"])
 
     args = addon.setdefault("args", list(args))
 

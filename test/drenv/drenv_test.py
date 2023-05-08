@@ -2,8 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
-import re
-import subprocess
 
 import yaml
 import pytest
@@ -63,10 +61,6 @@ def test_delete(tmpenv):
 
 
 def test_missing_addon(tmpdir):
-    """
-    Missing addon should log a warning but do not fail, so we can start, stop
-    and delete the env.
-    """
     content = """
 name: missing-test
 profiles:
@@ -78,11 +72,5 @@ profiles:
 """
     path = tmpdir.join("missing-addon.yaml")
     path.write(content)
-
-    warning = r"WARNING .+ 'no-such-addon'"
-
-    # Use subprocess.run() to get access to stderr on success.
-    cp = subprocess.run(["drenv", "start", str(path)], stderr=subprocess.PIPE)
-
-    assert cp.returncode == 0
-    assert re.search(warning, cp.stderr.decode())
+    with pytest.raises(commands.Error):
+        commands.run("drenv", "start", str(path))

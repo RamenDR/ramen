@@ -58,9 +58,21 @@ workers:
 """
 
 
-def test_valid():
+def create_addons(tmpdir):
+    for i in range(1, 7):
+        tmpdir.mkdir(f"addon{i}")
+
+
+def test_validate_missing_addons(tmpdir):
+    with pytest.raises(envfile.MissingAddon):
+        f = io.StringIO(valid_yaml)
+        envfile.load(f, addons_root=str(tmpdir))
+
+
+def test_valid(tmpdir):
+    create_addons(tmpdir)
     f = io.StringIO(valid_yaml)
-    env = envfile.load(f)
+    env = envfile.load(f, addons_root=str(tmpdir))
 
     # profile dr1
 
@@ -115,9 +127,10 @@ def test_valid():
     assert worker["addons"][0]["args"] == []
 
 
-def test_name_prefix():
+def test_name_prefix(tmpdir):
+    create_addons(tmpdir)
     f = io.StringIO(valid_yaml)
-    env = envfile.load(f, name_prefix="prefix-")
+    env = envfile.load(f, name_prefix="prefix-", addons_root=str(tmpdir))
 
     # env
 
