@@ -122,7 +122,7 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 	// Check if we already deployed in the homeCluster or elsewhere
 	deployed, clusterName := d.isDeployed(homeCluster)
 	if deployed && clusterName != homeCluster {
-		err := d.regenerateVRGManifestWork(clusterName)
+		err := d.ensureVRGManifestWork(clusterName)
 		if err != nil {
 			return !done, err
 		}
@@ -148,7 +148,7 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 		return !done, nil
 	}
 
-	err := d.regenerateVRGManifestWork(clusterName)
+	err := d.ensureVRGManifestWork(clusterName)
 	if err != nil {
 		return !done, err
 	}
@@ -1344,17 +1344,17 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string, repState rmn.Re
 	return nil
 }
 
-func (d *DRPCInstance) regenerateVRGManifestWork(homeCluster string) error {
+func (d *DRPCInstance) ensureVRGManifestWork(homeCluster string) error {
 	mw, mwErr := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, homeCluster)
 	if mwErr != nil {
-		d.log.Info("Regenerating VRG ManifestWork", "Error", mwErr)
+		d.log.Info("Ensure VRG ManifestWork", "Error", mwErr)
 	}
 
 	if mw != nil {
 		return nil
 	}
 
-	d.log.Info("Regenerating VRG ManifestWork",
+	d.log.Info("Ensure VRG ManifestWork",
 		"Last State:", d.getLastDRState(), "cluster", homeCluster)
 
 	cachedVrg := d.vrgs[homeCluster]
