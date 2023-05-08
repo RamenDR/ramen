@@ -3,43 +3,38 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import argparse
 import json
-import os
-
-import yaml
 
 import drenv
 from drenv import kubectl
+from drenv import test
 
-os.chdir(os.path.dirname(__file__))
+test.start("relocate", __file__)
+test.add_argument("cluster", help="Cluster name to relocate to.")
+args = test.parse_args()
+config = test.config
 
-with open("config.yaml") as f:
-    config = yaml.safe_load(f)
-
-parser = argparse.ArgumentParser("deploy")
-parser.add_argument("cluster", help="Cluster name to relocate to.")
-args = parser.parse_args()
-
-print("Waiting until peer is ready")
+test.info("Waiting until peer is ready")
 kubectl.wait(
     f"drpc/{config['name']}",
     "--for=condition=PeerReady",
     f"--namespace={config['namespace']}",
     "--timeout=300s",
     context=config["hub"],
+    log=test.debug,
 )
 
-print("Waiting until application is replicated")
+test.info("Waiting until application is replicated")
 drenv.wait_for(
     f"drpc/{config['name']}",
     output="jsonpath={.status.lastGroupSyncTime}",
     namespace=config["namespace"],
     timeout=300,
     profile=config["hub"],
+    log=test.debug,
 )
 
-print("Starting relocate")
+test.info("Starting relocate")
 patch = {"spec": {"action": "Relocate", "preferredCluster": args.cluster}}
 kubectl.patch(
     f"drpc/{config['name']}",
@@ -48,26 +43,29 @@ kubectl.patch(
     "--type=merge",
     f"--namespace={config['namespace']}",
     context=config["hub"],
+    log=test.debug,
 )
 
-print("Waiting until application is relocated...")
+test.info("Waiting until application is relocated...")
 kubectl.wait(
     f"drpc/{config['name']}",
     "--for=jsonpath={.status.phase}=Relocated",
     f"--namespace={config['namespace']}",
     "--timeout=300s",
     context=config["hub"],
+    log=test.debug,
 )
 
 # NOTE: Deleting the application get stuck if we don't wait until the cleanup
 # after relocate complete before we delete the app.
-print("Waiting until relocation completes...")
+test.info("Waiting until relocation completes...")
 kubectl.wait(
     f"drpc/{config['name']}",
     "--for=jsonpath={.status.progression}=Completed",
     f"--namespace={config['namespace']}",
     "--timeout=300s",
     context=config["hub"],
+    log=test.debug,
 )
 
-print(f"Application was relocated to cluster {args.cluster} successfully")
+test.info("Application was relocated to cluster %s successfully", args.cluster)

@@ -3,60 +3,66 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import argparse
-import subprocess
 import os
 
-import yaml
-
 import drenv
+from drenv import commands
 from drenv import kubectl
+from drenv import test
 
-os.chdir(os.path.dirname(__file__))
+test.start("deploy", __file__)
+test.add_argument("cluster", help="Cluster name to deploy on.")
+args = test.parse_args()
+config = test.config
 
-with open("config.yaml") as f:
-    config = yaml.safe_load(f)
-
-parser = argparse.ArgumentParser("deploy")
-parser.add_argument("cluster", help="Cluster name to deploy on.")
-args = parser.parse_args()
-
-print(f"Creating temporary directory {config['tmp_dir']}")
+test.info("Creating temporary directory %s", config["tmp_dir"])
 os.makedirs(config["tmp_dir"], exist_ok=True)
 
-print("Cloning ocm-ramen-samples")
+test.info("Cloning ocm-ramen-samples")
 if not os.path.exists(config["samples_dir"]):
     cmd = ["git", "clone", "--depth=1", config["samples_url"], config["samples_dir"]]
-    subprocess.run(cmd, check=True)
+    for line in commands.watch(*cmd):
+        test.debug(line)
 
-print(f"Creating kustomization for using cluster '{args.cluster}'")
+test.info("Creating kustomization for using cluster '%s'", args.cluster)
 template = drenv.template("kustomization.yaml")
 yaml = template.substitute(cluster_name=args.cluster)
 with open(os.path.join(config["tmp_dir"], "kustomization.yaml"), "w") as f:
     f.write(yaml)
 
-print("Deploying busybox example application")
-kubectl.apply(f"--kustomize={config['tmp_dir']}", context=config["hub"])
+test.info("Deploying busybox example application")
+kubectl.apply(
+    f"--kustomize={config['tmp_dir']}",
+    context=config["hub"],
+    log=test.debug,
+)
 
-print(f"waiting for namespace {config['namespace']}")
-drenv.wait_for(f"namespace/{config['namespace']}", timeout=60, profile=config["hub"])
+test.info("waiting for namespace %s", config["namespace"])
+drenv.wait_for(
+    f"namespace/{config['namespace']}",
+    timeout=60,
+    profile=config["hub"],
+    log=test.debug,
+)
 
-print("Waiting until busybox drpc reports phase")
+test.info("Waiting until busybox drpc reports phase")
 drenv.wait_for(
     f"drpc/{config['name']}",
     output="jsonpath={.status.phase}",
     namespace=config["namespace"],
     timeout=60,
     profile=config["hub"],
+    log=test.debug,
 )
 
-print("Waiting until busybox drpc is deployed")
+test.info("Waiting until busybox drpc is deployed")
 kubectl.wait(
     f"drpc/{config['name']}",
     "--for=jsonpath={.status.phase}=Deployed",
     f"--namespace={config['namespace']}",
     "--timeout=60s",
     context=config["hub"],
+    log=test.debug,
 )
 
-print("Application was deployed successfully")
+test.info("Application was deployed successfully")
