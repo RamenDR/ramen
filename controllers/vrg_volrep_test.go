@@ -363,6 +363,58 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 	})
 
+	// Ensure PVCs with no SCName results in errors
+	var vrgEmptySC *vrgTest
+	Context("in primary state", func() {
+		createTestTemplate := &template{
+			ClaimBindInfo:          corev1.ClaimBound,
+			VolumeBindInfo:         corev1.VolumeBound,
+			schedulingInterval:     "1h",
+			replicationClassName:   "test-replicationclass",
+			vrcProvisioner:         "manual.storage.com",
+			scProvisioner:          "manual.storage.com",
+			replicationClassLabels: map[string]string{"protection": "ramen"},
+		}
+		It("sets up PVCs, PVs and VRGs - with nil/empty StorageClassName", func() {
+			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			createTestTemplate.volsyncEnabled = true
+			vrgEmptySC = newVRGTestCaseCreateAndStart(1, createTestTemplate, true, false)
+		})
+		It("waits for VRG status to match", func() {
+			vrgEmptySC.verifyVRGStatusExpectation(false)
+		})
+		It("cleans up after testing", func() {
+			vrgEmptySC.cleanup()
+		})
+	})
+
+	// Ensure PVCs with missing SClass results in errors
+	var vrgMissingSC *vrgTest
+	Context("in primary state", func() {
+		createTestTemplate := &template{
+			ClaimBindInfo:          corev1.ClaimBound,
+			VolumeBindInfo:         corev1.VolumeBound,
+			schedulingInterval:     "1h",
+			storageClassName:       "manual",
+			replicationClassName:   "test-replicationclass",
+			vrcProvisioner:         "manual.storage.com",
+			scProvisioner:          "manual.storage.com",
+			replicationClassLabels: map[string]string{"protection": "ramen"},
+		}
+		It("sets up PVCs, PVs and VRGs - with missing StorageClass", func() {
+			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			createTestTemplate.volsyncEnabled = true
+			createTestTemplate.scDisabled = true
+			vrgMissingSC = newVRGTestCaseCreateAndStart(1, createTestTemplate, true, false)
+		})
+		It("waits for VRG status to match", func() {
+			vrgMissingSC.verifyVRGStatusExpectation(false)
+		})
+		It("cleans up after testing", func() {
+			vrgMissingSC.cleanup()
+		})
+	})
+
 	// Creates VRG. PVCs and PV are created with Status.Phase
 	// set to pending and VolRep should not be created until
 	// all the PVCs and PVs are bound. So, these tests then
@@ -432,11 +484,22 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 	})
 
 	var vrgStatusTests []*vrgTest
+	vrgTestTemplateVSEnabled := &template{
+		ClaimBindInfo:          corev1.ClaimPending,
+		VolumeBindInfo:         corev1.VolumePending,
+		schedulingInterval:     "1h",
+		storageClassName:       "manual",
+		replicationClassName:   "test-replicationclass",
+		vrcProvisioner:         "manual.storage.com",
+		scProvisioner:          "manual.storage.com",
+		replicationClassLabels: map[string]string{"protection": "ramen"},
+		volsyncEnabled:         true,
+	}
 	//nolint:dupl
 	Context("in primary state status check pending to bound", func() {
 		It("sets up non-bound PVCs, PVs and then bind them", func() {
-			vrgTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
-			v := newVRGTestCaseCreateAndStart(4, vrgTestTemplate, false, false)
+			vrgTestTemplateVSEnabled.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			v := newVRGTestCaseCreateAndStart(4, vrgTestTemplateVSEnabled, false, false)
 			vrgStatusTests = append(vrgStatusTests, v)
 		})
 		var v *vrgTest
@@ -674,6 +737,8 @@ type template struct {
 	replicationClassName   string
 	replicationClassLabels map[string]string
 	s3Profiles             []string
+	volsyncEnabled         bool
+	scDisabled             bool
 }
 
 // we want the math rand version here and not the crypto rand. This way we can debug the tests by repeating the seed.
@@ -958,7 +1023,7 @@ func (v *vrgTest) generatePVC(pvcName, namespace, volumeName string, labels map[
 			AccessModes:      accessModes,
 			Resources:        corev1.ResourceRequirements{Requests: capacity},
 			VolumeName:       volumeName,
-			StorageClassName: &storageclass,
+			StorageClassName: &storageclass, // Set to nil?
 		},
 	}
 }
@@ -1008,7 +1073,7 @@ func (v *vrgTest) createVRG() {
 				ReplicationClassSelector: metav1.LabelSelector{MatchLabels: replicationClassLabels},
 			},
 			VolSync: ramendrv1alpha1.VolSyncSpec{
-				Disabled: true,
+				Disabled: !v.template.volsyncEnabled,
 			},
 			S3Profiles: v.template.s3Profiles,
 		},
@@ -1060,6 +1125,10 @@ func (v *vrgTest) createVRC(testTemplate *template) {
 
 func (v *vrgTest) createSC(testTemplate *template) {
 	By("creating StorageClass " + v.storageClass)
+
+	if v.storageClass == "" || testTemplate.scDisabled {
+		return
+	}
 
 	sc := &storagev1.StorageClass{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1327,6 +1396,10 @@ func (v *vrgTest) cleanupVRG() {
 }
 
 func (v *vrgTest) cleanupSC() {
+	if v.storageClass == "" {
+		return
+	}
+
 	key := types.NamespacedName{
 		Name: v.storageClass,
 	}
