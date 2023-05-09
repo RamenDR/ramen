@@ -502,7 +502,7 @@ func (v *VRGInstance) processVRG() (ctrl.Result, error) {
 		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
 			rmnutil.EventReasonValidationFailed, err.Error())
 
-		msg := "Failed to get list of pvcs"
+		msg := fmt.Sprintf("Failed to process list of PVCs to protect (%v)", err)
 		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
 		if err = v.updateVRGStatus(false); err != nil {
@@ -728,6 +728,10 @@ func (v *VRGInstance) separatePVCsUsingStorageClassProvisioner(pvcList *corev1.P
 	for idx := range pvcList.Items {
 		pvc := &pvcList.Items[idx]
 		scName := pvc.Spec.StorageClassName
+
+		if scName == nil || *scName == "" {
+			return fmt.Errorf("missing storage class name for PVC %s", pvc.GetName())
+		}
 
 		storageClass := &storagev1.StorageClass{}
 		if err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: *scName}, storageClass); err != nil {
