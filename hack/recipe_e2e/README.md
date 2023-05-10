@@ -63,7 +63,8 @@ as Primary and restores the application as defined in the Recipe Restore Workflo
 The final test is the application running on Cluster2 and not Cluster1. Restore
 objects will be present in the S3 store from this sequence.
 
-Detailed steps can be found [here](https://github.com/RamenDR/ramen/blob/main/docs/vrg-usage.md#failover-application-from-cluster1-to-cluster2).
+Detailed steps can be found
+[here](../../docs/vrg-usage.md#failover-application-from-cluster1-to-cluster2).
 
 ```bash
 # failover from cluster1 to cluster2
@@ -79,7 +80,8 @@ Cluster2's VRG will be demoted to Secondary to enable a final sync of replicated
 data, then Cluster1's VRG will be promoted to Primary and the application will be
 restored.
 
-Detailed steps can be found [here](https://github.com/RamenDR/ramen/blob/main/docs/vrg-usage.md#failbackrelocate-application-from-cluster2-to-cluster1)
+Detailed steps can be found
+[here](../../docs/vrg-usage.md#failbackrelocate-application-from-cluster2-to-cluster1)
 
 ```bash
 # bash failback from cluster2 to cluster1
