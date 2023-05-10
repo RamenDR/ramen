@@ -79,7 +79,8 @@ asynchronously. This environment includes 3 clusters - a hub cluster
 To start the environment, run:
 
 ```
-drenv start regional-dr.yaml
+cd test
+drenv start envs/regional-dr.yaml
 ```
 
 Starting takes at least 5 minutes, depending on your machine and
