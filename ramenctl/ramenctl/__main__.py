@@ -8,6 +8,7 @@ import time
 
 from . import (
     deploy,
+    undeploy,
     config,
     unconfig,
 )
@@ -16,6 +17,7 @@ LOG_FORMAT = "%(asctime)s %(levelname)-7s [%(name)s] %(message)s"
 
 COMMANDS = [
     deploy,
+    undeploy,
     config,
     unconfig,
 ]
