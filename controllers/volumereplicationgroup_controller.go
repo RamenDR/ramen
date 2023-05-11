@@ -88,7 +88,15 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 			MaxConcurrentReconciles: getMaxConcurrentReconciles(r.Log),
 			RateLimiter:             rateLimiter,
 		}).
-		For(&ramendrv1alpha1.VolumeReplicationGroup{}).
+		For(&ramendrv1alpha1.VolumeReplicationGroup{},
+			builder.WithPredicates(
+				predicate.Or(
+					predicate.GenerationChangedPredicate{},
+					predicate.AnnotationChangedPredicate{},
+					predicate.LabelChangedPredicate{},
+				),
+			),
+		).
 		Watches(&source.Kind{Type: &corev1.PersistentVolumeClaim{}}, pvcMapFun, builder.WithPredicates(pvcPredicate)).
 		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(r.configMapFun)).
 		Owns(&volrep.VolumeReplication{})
