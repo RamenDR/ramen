@@ -17,7 +17,8 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/RamenDR/ramen/ramenctl",
-    packages=["ramenctl"],
+    packages=["ramenctl", "ramenctl.resources"],
+    include_package_data=True,
     install_requires=[
         "PyYAML",
         "drenv",

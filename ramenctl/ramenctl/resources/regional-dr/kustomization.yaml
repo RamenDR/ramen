@@ -1,0 +1,6 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+---
+resources:
+  - dr-clusters.yaml
+  - dr-policy.yaml
