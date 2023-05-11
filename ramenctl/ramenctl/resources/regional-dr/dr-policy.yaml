@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+---
+apiVersion: ramendr.openshift.io/v1alpha1
+kind: DRPolicy
+metadata:
+  name: dr-policy
+spec:
+  drClusters:
+  - dr1
+  - dr2
+  schedulingInterval: 1m
