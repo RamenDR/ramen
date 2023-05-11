@@ -115,6 +115,12 @@ func vrgsStatusStateUpdate(vrgsS3, vrgsK8s []ramen.VolumeReplicationGroup) {
 }
 
 func vrgStatusStateUpdate(vrgS3, vrgK8s *ramen.VolumeReplicationGroup) {
+	// VRG is not reconciled for VRG status updates
+	if vrgS3.Status.ObservedGeneration != vrgK8s.Status.ObservedGeneration {
+		vrgS3.Status.ObservedGeneration = vrgK8s.Status.ObservedGeneration
+		vrgS3.Status.LastUpdateTime = vrgK8s.Status.LastUpdateTime
+	}
+
 	// vrg is uploaded to s3 store before status is updated
 	if (vrgS3.Status.State == "" || vrgS3.Status.State == ramen.UnknownState) &&
 		vrgK8s.Status.State == ramen.PrimaryState {
