@@ -1,8 +1,0 @@
-# SPDX-FileCopyrightText: The RamenDR authors
-# SPDX-License-Identifier: Apache-2.0
-
----
-hub: hub
-clusters: [dr1, dr2]
-namespace: ramen-system
-env_types: [regional-dr]
