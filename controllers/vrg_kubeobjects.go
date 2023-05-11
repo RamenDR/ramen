@@ -666,10 +666,10 @@ func kubeObjectsRequestsWatch(b *builder.Builder, kubeObjects kubeobjects.Reques
 	return b
 }
 
-func GetRecipeWithName(ctx context.Context, client client.Client, name, namespace string) (Recipe.Recipe, error) {
+func GetRecipeWithName(ctx context.Context, reader client.Reader, name, namespace string) (Recipe.Recipe, error) {
 	recipe := &Recipe.Recipe{}
 
-	err := client.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, recipe)
+	err := reader.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, recipe)
 
 	return *recipe, err
 }
