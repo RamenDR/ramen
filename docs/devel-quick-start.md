@@ -130,7 +130,7 @@ This builds the image `quay.io/ramendr/ramen-operator:latest`
 To deploy the *Ramen* operator in the test environment:
 
 ```
-test/scripts/deploy-ramen
+ramenctl deploy
 ```
 
 ## Configure the ramen operator on the hub
@@ -139,14 +139,11 @@ Ramen need to be configured to know about the managed clusters and the
 s3 endpoints. To configure the test environment, run this script:
 
 ```
-test/ramen-config/deploy regional-dr
+ramenctl config regional-dr
 ```
 
-If you need to remove your configuration, use:
-
-```
-test/ramen-config/undeploy regional-dr
-```
+For more info on the `ramenctl` tool see
+[ramenctl/README.md](../ramenctl/README.md).
 
 ## The next steps
 
@@ -156,3 +153,13 @@ you are ready for the next steps:
 - Enable disaster recovery for an application
 - Failing over the application to another cluster
 - Relocating an application back to the original cluster
+
+## Undeploying the ramen operator
+
+If you want to clean up your environment, you can uncofigure *Ramen* and
+undeploy it.
+
+```
+ramenctl unconfig regional-dr
+ramenctl undeploy
+```
