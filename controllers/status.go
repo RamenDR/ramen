@@ -50,7 +50,6 @@ const (
 
 // VRG condition reasons
 const (
-	VRGConditionReasonDeleted                     = "Deleted"
 	VRGConditionReasonInitializing                = "Initializing"
 	VRGConditionReasonReplicating                 = "Replicating"
 	VRGConditionReasonReplicated                  = "Replicated"
