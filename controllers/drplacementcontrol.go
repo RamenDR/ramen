@@ -731,6 +731,12 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	// We are done if already relocated; if there were secondaries they are cleaned up above
 	if curHomeCluster != "" && d.vrgExistsAndPrimary(preferredCluster) {
 		d.setDRState(rmn.Relocated)
+
+		err := d.ensureVRGManifestWork(preferredCluster)
+		if err != nil {
+			return !done, err
+		}
+
 		d.setProgression(rmn.ProgressionCleaningUp)
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
