@@ -719,20 +719,17 @@ func (v *VRGInstance) pvcUnprotectIfDeleted(
 		return
 	}
 
-	const message = "PVC deletion timestamp non-zero"
-
-	log.Info(message)
-	v.updatePVCClusterDataProtectedCondition(pvc.Name, VRGConditionReasonDeleted, message)
+	log.Info("PVC deletion timestamp non-zero")
 
 	if err := v.pvAndPvcObjectReplicasDelete(pvc, log); err != nil {
 		log.Error(err, "PersistentVolume and PersistentVolumeClaim replicas deletion failed")
 
 		*requeue = true
-
-		return
+	} else {
+		v.pvcsUnprotect([]corev1.PersistentVolumeClaim{pvc}, requeue)
 	}
 
-	v.pvcsUnprotect([]corev1.PersistentVolumeClaim{pvc}, requeue)
+	v.pvcStatusDeleteIfPresent(pvc.Name, log)
 
 	return
 }
@@ -1644,7 +1641,7 @@ func setPVCClusterDataProtectedCondition(protectedPVC *ramendrv1alpha1.Protected
 		setVRGClusterDataProtectedCondition(&protectedPVC.Conditions, observedGeneration, message)
 	case VRGConditionReasonUploading:
 		setVRGClusterDataProtectingCondition(&protectedPVC.Conditions, observedGeneration, message)
-	case VRGConditionReasonUploadError, VRGConditionReasonDeleted, VRGConditionReasonClusterDataAnnotationFailed:
+	case VRGConditionReasonUploadError, VRGConditionReasonClusterDataAnnotationFailed:
 		setVRGClusterDataUnprotectedCondition(&protectedPVC.Conditions, observedGeneration, reason, message)
 	default:
 		// if appropriate reason is not provided, then treat it as an unknown condition.
@@ -1817,22 +1814,6 @@ func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeCl
 		return fmt.Errorf("failed to update PersistentVolume (%s) annotation (%s) belonging to"+
 			"VolumeReplicationGroup (%s/%s), %w",
 			pvc.Name, pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
-	}
-
-	return nil
-}
-
-// findProtectedPVC returns the &VRG.Status.ProtectedPVC[x] for the given pvcName
-func (v *VRGInstance) findProtectedPVC(pvcName string) *ramendrv1alpha1.ProtectedPVC {
-	return FindProtectedPVC(v.instance, pvcName)
-}
-
-func FindProtectedPVC(vrg *ramendrv1alpha1.VolumeReplicationGroup, pvcName string) *ramendrv1alpha1.ProtectedPVC {
-	for index := range vrg.Status.ProtectedPVCs {
-		protectedPVC := &vrg.Status.ProtectedPVCs[index]
-		if protectedPVC.Name == pvcName {
-			return protectedPVC
-		}
 	}
 
 	return nil
