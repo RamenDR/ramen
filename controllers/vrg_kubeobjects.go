@@ -348,9 +348,11 @@ func (v *VRGInstance) kubeObjectsCaptureStatus(status metav1.ConditionStatus, re
 }
 
 func RecipeInfoExistsOnVRG(vrgInstance ramen.VolumeReplicationGroup) bool {
-	return vrgInstance.Spec.KubeObjectProtection != nil &&
-		vrgInstance.Spec.KubeObjectProtection.RecipeRef != nil &&
-		vrgInstance.Spec.KubeObjectProtection.RecipeRef.Name != nil
+	return vrgInstance.Spec.KubeObjectProtection != nil && vrgRecipeRefNonNil(vrgInstance)
+}
+
+func vrgRecipeRefNonNil(vrg ramen.VolumeReplicationGroup) bool {
+	return vrg.Spec.KubeObjectProtection.RecipeRef != nil
 }
 
 func RecipeHasVolumeGroup(recipe *Recipe.Recipe) bool {
@@ -370,37 +372,32 @@ func GetLabelSelectorFromRecipeVolumeGroupWithName(recipe *Recipe.Recipe) (metav
 }
 
 func (v *VRGInstance) getCaptureGroups() []kubeobjects.CaptureSpec {
-	if RecipeInfoExistsOnVRG(*v.instance) {
+	if vrgRecipeRefNonNil(*v.instance) {
 		return v.getCaptureGroupsFromRecipe()
 	}
 
 	return []kubeobjects.CaptureSpec{{}}
 }
 
-func (v VRGInstance) getNameAndNamespaceString() string {
-	return fmt.Sprintf("VRG Name: %s, Namespace: %s", v.instance.ObjectMeta.Name, v.instance.Namespace)
-}
-
 func (v *VRGInstance) getCaptureGroupsFromRecipe() []kubeobjects.CaptureSpec {
 	recipe, err := GetRecipeWithName(
-		v.ctx, v.reconciler.Client, *v.instance.Spec.KubeObjectProtection.RecipeRef.Name, v.instance.Namespace)
+		v.ctx, v.reconciler.Client, v.instance.Spec.KubeObjectProtection.RecipeRef.Name, v.instance.Namespace)
 	if err != nil {
-		v.log.Error(err, "failed to get Recipe from name.", "vrgInfo", v.getNameAndNamespaceString())
+		v.log.Error(err, "Failed to get recipe from name")
 	}
 
 	groups, err := v.getCaptureGroupsFromWorkflow(recipe, recipe.Spec.CaptureWorkflow)
 	if err != nil {
-		v.log.Error(err, "failed to get Capture Groups from Workflow.", "vrgInfo", v.getNameAndNamespaceString())
+		v.log.Error(err, "Failed to get groups from capture workflow")
 	}
 
-	v.log.Info(fmt.Sprintf("successfully found Recipe Capture Groups for '%s'",
-		v.getNameAndNamespaceString()))
+	v.log.Info("Successfully found recipe capture groups")
 
 	return groups
 }
 
 func (v *VRGInstance) getRecoverGroups() []kubeobjects.RecoverSpec {
-	if RecipeInfoExistsOnVRG(*v.instance) {
+	if vrgRecipeRefNonNil(*v.instance) {
 		return v.getRecoverGroupsFromRecipe()
 	}
 
@@ -409,19 +406,17 @@ func (v *VRGInstance) getRecoverGroups() []kubeobjects.RecoverSpec {
 
 func (v *VRGInstance) getRecoverGroupsFromRecipe() []kubeobjects.RecoverSpec {
 	recipe, err := GetRecipeWithName(
-		v.ctx, v.reconciler.Client, *v.instance.Spec.KubeObjectProtection.RecipeRef.Name, v.instance.Namespace)
+		v.ctx, v.reconciler.Client, v.instance.Spec.KubeObjectProtection.RecipeRef.Name, v.instance.Namespace)
 	if err != nil {
-		v.log.Error(err, "failed to get Recipe from name.", "vrgInfo", v.getNameAndNamespaceString())
+		v.log.Error(err, "Failed to get recipe from name")
 	}
 
 	groups, err := v.getRestoreGroupsFromWorkflow(recipe, recipe.Spec.RecoverWorkflow)
 	if err != nil {
-		v.log.Error(err, "failed to get Restore Groups from Workflow.", "vrgInfo",
-			v.getNameAndNamespaceString())
+		v.log.Error(err, "Failed to get groups from recovery workflow")
 	}
 
-	v.log.Info(fmt.Sprintf("getRecoverGroupsFromRecipe() successfully found groups for recover spec. '%s'",
-		v.getNameAndNamespaceString()))
+	v.log.Info("Successfully found recipe recovery groups")
 
 	return groups
 }

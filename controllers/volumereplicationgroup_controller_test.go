@@ -177,12 +177,6 @@ func getVRGDefinitionWithPVCSelectorLabels(namespace string) *ramen.VolumeReplic
 	return vrg
 }
 
-func newStringPointerText(text string) *string {
-	ptr := text
-
-	return &ptr
-}
-
 func getVRGDefinitionWithKubeObjectProtection(hasPVCSelectorLabels bool, namespace string,
 ) *ramen.VolumeReplicationGroup {
 	var vrg *ramen.VolumeReplicationGroup
@@ -194,8 +188,8 @@ func getVRGDefinitionWithKubeObjectProtection(hasPVCSelectorLabels bool, namespa
 	}
 
 	vrg.Spec.KubeObjectProtection = &ramen.KubeObjectProtectionSpec{
-		RecipeRef: &ramen.RecipeSpec{
-			Name: newStringPointerText("test-recipe"),
+		RecipeRef: &corev1.LocalObjectReference{
+			Name: "test-recipe",
 		},
 	}
 

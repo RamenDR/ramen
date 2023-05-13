@@ -305,7 +305,7 @@ func GetPVCLabelSelector(
 	ctx context.Context, reader client.Reader, vrg ramendrv1alpha1.VolumeReplicationGroup, log logr.Logger,
 ) (metav1.LabelSelector, error) {
 	if RecipeInfoExistsOnVRG(vrg) {
-		recipe, err := GetRecipeWithName(ctx, reader, *vrg.Spec.KubeObjectProtection.RecipeRef.Name, vrg.GetNamespace())
+		recipe, err := GetRecipeWithName(ctx, reader, vrg.Spec.KubeObjectProtection.RecipeRef.Name, vrg.GetNamespace())
 		if err != nil {
 			log.Error(err, "GetRecipeWithName error: %s-%s", vrg.Name, vrg.Namespace)
 
