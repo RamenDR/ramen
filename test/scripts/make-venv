@@ -3,12 +3,11 @@
 venv=~/.venv/ramen
 
 if [ -d "$venv" ]; then
-    echo "venv $venv exists"
-    exit 0
+    echo "Virtual environemnt exists: '$venv'"
+else
+    echo "Creating virtual environment: '$venv'"
+    python3 -m venv $venv
 fi
-
-echo "Creating venv $venv"
-python3 -m venv $venv
 
 echo "Upgrading pip..."
 $venv/bin/pip install --upgrade pip
@@ -16,8 +15,11 @@ $venv/bin/pip install --upgrade pip
 echo "Installing drenv..."
 $venv/bin/pip install -e .
 
+echo "Adding venv symlink..."
+ln -sf $venv/bin/activate venv
+
 echo
 echo "To activate the environment run:"
 echo
-echo "    source $venv/bin/activate"
+echo "    source venv"
 echo

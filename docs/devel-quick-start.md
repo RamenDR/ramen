@@ -64,7 +64,7 @@ That's all! You are ready to submit your first pull request!
 
 *Ramen* uses the `drenv` tool to build a development environment
 quickly. Please follow the
-[Setup instructions](https://github.com/RamenDR/ramen/tree/main/test#setup)
+[Setup instructions](../test/README.md#setup)
 to set up the `drenv` tool.
 
 ## Starting the test environment
@@ -79,7 +79,8 @@ asynchronously. This environment includes 3 clusters - a hub cluster
 To start the environment, run:
 
 ```
-drenv start regional-dr.yaml
+cd test
+drenv start envs/regional-dr.yaml
 ```
 
 Starting takes at least 5 minutes, depending on your machine and

@@ -5,24 +5,28 @@
 
 import argparse
 import os
+import yaml
 
 from drenv import kubectl
-import config
+
+os.chdir(os.path.dirname(__file__))
+
+with open("config.yaml") as f:
+    config = yaml.safe_load(f)
 
 parser = argparse.ArgumentParser("undeploy")
-parser.add_argument("env_type", choices=config.ENV_TYPES)
+parser.add_argument("env_type", choices=config["env_types"])
 args = parser.parse_args()
 
 print(f"Unconfiguring Ramen for {args.env_type}")
 
-os.chdir(os.path.dirname(__file__))
 
 print("Deleting samples channel")
 kubectl.delete(
     "--filename",
     "samples-channel.yaml",
     "--ignore-not-found",
-    context=config.HUB,
+    context=config["hub"],
 )
 
 print("Deleting DRClusters and DRPolicy")
@@ -30,7 +34,7 @@ kubectl.delete(
     "--kustomize",
     args.env_type,
     "--ignore-not-found",
-    context=config.HUB,
+    context=config["hub"],
 )
 
 # We keep the ramen config map since we do not own it.
@@ -40,7 +44,7 @@ kubectl.delete(
     "--filename",
     "s3-secret.yaml",
     "--ignore-not-found",
-    context=config.HUB,
+    context=config["hub"],
 )
 
 print("Ramen was unconfigured successfully")

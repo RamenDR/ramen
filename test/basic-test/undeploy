@@ -1,0 +1,20 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+from drenv import kubectl
+from drenv import test
+
+test.start("undeploy", __file__)
+args = test.parse_args()
+config = test.config
+
+test.info("Deleting busybox example application")
+kubectl.delete(
+    f"--kustomize={config['tmp_dir']}",
+    context=config["hub"],
+    log=test.debug,
+)
+
+test.info("Application was undeployed successfully")

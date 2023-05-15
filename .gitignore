@@ -36,3 +36,4 @@ test/**/__pycache__/
 test/.coverage
 test/.coverage.*
 test/.vimrc
+test/venv

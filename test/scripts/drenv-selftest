@@ -9,19 +9,19 @@ echo
 echo "1. Activating the ramen virtual enviroment ..."
 echo
 
-source ~/.venv/ramen/bin/activate
+source venv
 
 echo
 echo "2. Creating a test cluster ..."
 echo
 
-drenv start --name-prefix $prefix test.yaml
+drenv start --name-prefix $prefix envs/test.yaml
 
 echo
 echo "3. Deleting the test cluster ..."
 echo
 
-drenv delete --name-prefix $prefix test.yaml
+drenv delete --name-prefix $prefix envs/test.yaml
 
 echo
 echo drenv is set up properly

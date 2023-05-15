@@ -161,7 +161,9 @@ type DRPlacementControlStatus struct {
 	PreferredDecision  plrv1.PlacementDecision `json:"preferredDecision,omitempty"`
 	Conditions         []metav1.Condition      `json:"conditions,omitempty"`
 	ResourceConditions VRGConditions           `json:"resourceConditions,omitempty"`
-	LastUpdateTime     *metav1.Time            `json:"lastUpdateTime,omitempty"`
+
+	// LastUpdateTime is when was the last time a condition or the overall status was updated
+	LastUpdateTime *metav1.Time `json:"lastUpdateTime,omitempty"`
 
 	// lastGroupSyncTime is the time of the most recent successful synchronization of all PVCs
 	//+optional
