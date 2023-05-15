@@ -143,9 +143,7 @@ func (mwu *MWUtil) generateVRGManifestWork(name, namespace, homeCluster string,
 	return mwu.newManifestWork(
 		fmt.Sprintf(ManifestWorkNameFormat, name, namespace, MWTypeVRG),
 		homeCluster,
-		map[string]string{
-			"cluster.open-cluster-management.io/backup": "",
-		}, // backup this VRG MW as part of Hub Recovery
+		map[string]string{},
 		manifests, annotations), nil
 }
 
