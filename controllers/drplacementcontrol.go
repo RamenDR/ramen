@@ -330,14 +330,16 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		return done, fmt.Errorf(msg)
 	}
 
+	failoverCluster := d.instance.Spec.FailoverCluster
+
 	// IFF VRG exists and it is primary in the failoverCluster, the clean up and setup VolSync if needed.
-	if d.vrgExistsAndPrimary(d.instance.Spec.FailoverCluster) {
+	if d.vrgExistsAndPrimary(failoverCluster) {
 		d.setDRState(rmn.FailedOver)
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
 		// Make sure VolRep 'Data' and VolSync 'setup' conditions are ready
-		ready := d.checkReadinessAfterFailover(d.instance.Spec.FailoverCluster)
+		ready := d.checkReadinessAfterFailover(failoverCluster)
 		if !ready {
 			d.log.Info("VRGCondition not ready to finish failover")
 			d.setProgression(rmn.ProgressionWaitForReadiness)
@@ -345,23 +347,7 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 			return !done, nil
 		}
 
-		err := d.ensureVRGManifestWork(d.instance.Spec.FailoverCluster)
-		if err != nil {
-			return !done, err
-		}
-
-		d.setProgression(rmn.ProgressionCleaningUp)
-
-		err = d.ensureCleanupAndVolSyncReplicationSetup(d.instance.Spec.FailoverCluster)
-		if err != nil {
-			return !done, err
-		}
-
-		d.setProgression(rmn.ProgressionCompleted)
-
-		d.setActionDuration()
-
-		return done, nil
+		return d.ensureActionCompleted(failoverCluster)
 	}
 
 	d.setStatusInitiating()
@@ -703,7 +689,7 @@ func checkActivationForStorageIdentifier(
 //   - Check if current primary (that is not the preferred cluster), is ready to switch over
 //   - Relocate!
 //
-//nolint:funlen,gocognit,cyclop
+//nolint:gocognit,cyclop
 func (d *DRPCInstance) RunRelocate() (bool, error) {
 	d.log.Info("Entering RunRelocate", "state", d.getLastDRState(), "progression", d.getProgression())
 
@@ -731,27 +717,10 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	// We are done if already relocated; if there were secondaries they are cleaned up above
 	if curHomeCluster != "" && d.vrgExistsAndPrimary(preferredCluster) {
 		d.setDRState(rmn.Relocated)
-
-		err := d.ensureVRGManifestWork(preferredCluster)
-		if err != nil {
-			return !done, err
-		}
-
-		d.setProgression(rmn.ProgressionCleaningUp)
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
-		// Cleanup and setup VolSync if enabled
-		err = d.ensureCleanupAndVolSyncReplicationSetup(preferredCluster)
-		if err != nil {
-			return !done, err
-		}
-
-		d.setProgression(rmn.ProgressionCompleted)
-
-		d.setActionDuration()
-
-		return done, nil
+		return d.ensureActionCompleted(preferredCluster)
 	}
 
 	d.setStatusInitiating()
@@ -782,6 +751,29 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	}
 
 	return d.relocate(preferredCluster, preferredClusterNamespace, rmn.Relocating)
+}
+
+func (d *DRPCInstance) ensureActionCompleted(srcCluster string) (bool, error) {
+	const done = true
+
+	err := d.ensureVRGManifestWork(srcCluster)
+	if err != nil {
+		return !done, err
+	}
+
+	d.setProgression(rmn.ProgressionCleaningUp)
+
+	// Cleanup and setup VolSync if enabled
+	err = d.ensureCleanupAndVolSyncReplicationSetup(srcCluster)
+	if err != nil {
+		return !done, err
+	}
+
+	d.setProgression(rmn.ProgressionCompleted)
+
+	d.setActionDuration()
+
+	return done, nil
 }
 
 func (d *DRPCInstance) ensureCleanupAndVolSyncReplicationSetup(srcCluster string) error {
