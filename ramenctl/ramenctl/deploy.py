@@ -26,6 +26,8 @@ def register(commands):
 
 
 def run(args):
+    env = command.env_info(args)
+
     with tempfile.TemporaryDirectory(prefix="ramenctl-deploy-") as tmpdir:
         tar = os.path.join(tmpdir, "image.tar")
         command.info("Saving image '%s'", args.image)
@@ -35,15 +37,15 @@ def run(args):
             command.info("Loading image in cluster '%s'", cluster)
             command.watch("minikube", "--profile", cluster, "image", "load", tar)
 
-        clusters = [args.hub_name] + args.clusters_names
+        clusters = [env["hub"]] + env["clusters"]
         with concurrent.futures.ThreadPoolExecutor() as executor:
             list(executor.map(load_image, clusters))
 
-    command.info("Deploying ramen operator in cluster '%s'", args.hub_name)
-    command.watch("kubectl", "config", "use-context", args.hub_name)
+    command.info("Deploying ramen operator in cluster '%s'", env["hub"])
+    command.watch("kubectl", "config", "use-context", env["hub"])
     command.watch("make", "-C", args.source_dir, "deploy-hub")
 
-    for cluster in args.clusters_names:
+    for cluster in env["clusters"]:
         command.info("Deploying ramen operator in cluster '%s'", cluster)
         command.watch("kubectl", "config", "use-context", cluster)
         command.watch("make", "-C", args.source_dir, "deploy-dr-cluster")

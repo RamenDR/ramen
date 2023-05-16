@@ -15,11 +15,13 @@ def register(commands):
 
 
 def run(args):
-    for cluster in args.clusters_names:
+    env = command.env_info(args)
+
+    for cluster in env["clusters"]:
         command.info("Undeploying ramen operator in cluster '%s'", cluster)
         command.watch("kubectl", "config", "use-context", cluster)
         command.watch("make", "-C", args.source_dir, "undeploy-dr-cluster")
 
-    command.info("Undeploying ramen operator in cluster '%s'", args.hub_name)
-    command.watch("kubectl", "config", "use-context", args.hub_name)
+    command.info("Undeploying ramen operator in cluster '%s'", env["hub"])
+    command.watch("kubectl", "config", "use-context", env["hub"])
     command.watch("make", "-C", args.source_dir, "undeploy-hub")
