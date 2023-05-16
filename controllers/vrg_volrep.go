@@ -26,10 +26,6 @@ import (
 	rmnutil "github.com/ramendr/ramen/controllers/util"
 )
 
-const (
-	AnnotationSchemeGroup = "apps.open-cluster-management.io"
-)
-
 // reconcileVolRepsAsPrimary creates/updates VolumeReplication CR for each pvc
 // from pvcList. If it fails (even for one pvc), then requeue is set to true.
 func (v *VRGInstance) reconcileVolRepsAsPrimary(requeue *bool) {
@@ -2082,7 +2078,7 @@ func (v *VRGInstance) cleanupForRestore(obj client.Object) {
 			p.Spec.ClaimRef.APIVersion = ""
 		}
 	case *corev1.PersistentVolumeClaim:
-		p.ObjectMeta.Annotations = PruneAnnotations(p.GetAnnotations(), AnnotationSchemeGroup)
+		p.ObjectMeta.Annotations = PruneAnnotations(p.GetAnnotations())
 		p.ObjectMeta.Finalizers = []string{}
 		p.ObjectMeta.ResourceVersion = ""
 		p.ObjectMeta.OwnerReferences = nil
@@ -2328,17 +2324,19 @@ func (v *VRGInstance) aggregateVolRepClusterDataProtectedCondition() *metav1.Con
 	return newVRGClusterDataProtectedCondition(v.instance.Generation, msg)
 }
 
-// pruneAnnotations takes a map of annotations and removes all annotations except
-// for those that have a key containing the provided subkey.
+// pruneAnnotations takes a map of annotations and removes the annotations where the key start with:
+//   - pv.kubernetes.io
+//   - replication.storage.openshift.io
+//   - volumereplicationgroups.ramendr.openshift.io
+//
 // Parameters:
 //
 //	annotations: the map of annotations to prune
-//	subKeyToLeave: the subkey to match in annotation keys (e.g. "apps.open-cluster-management.io")
 //
 // Returns:
 //
-//	a new map containing only the remaining annotations that match the subkey
-func PruneAnnotations(annotations map[string]string, subKeyToLeave string) map[string]string {
+//	a new map containing only the remaining annotations
+func PruneAnnotations(annotations map[string]string) map[string]string {
 	if annotations == nil {
 		return map[string]string{}
 	}
@@ -2346,9 +2344,16 @@ func PruneAnnotations(annotations map[string]string, subKeyToLeave string) map[s
 	result := make(map[string]string)
 
 	for key, value := range annotations {
-		if strings.Contains(key, subKeyToLeave) {
-			result[key] = value
+		switch {
+		case strings.HasPrefix(key, "pv.kubernetes.io"):
+			continue
+		case strings.HasPrefix(key, "replication.storage.openshift.io"):
+			continue
+		case strings.HasPrefix(key, "volumereplicationgroups.ramendr.openshift.io"):
+			continue
 		}
+
+		result[key] = value
 	}
 
 	return result
