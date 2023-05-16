@@ -14,25 +14,26 @@ def register(commands):
     parser.set_defaults(func=run)
     command.add_common_arguments(parser)
     command.add_ramen_arguments(parser)
-    command.add_env_arguments(parser)
 
 
 def run(args):
+    env = command.env_info(args)
+
     command.info("Deleting samples channel")
     kubectl.delete(
         "--filename",
         command.resource("samples-channel.yaml"),
         "--ignore-not-found",
-        context=args.hub_name,
+        context=env["hub"],
         log=command.debug,
     )
 
     command.info("Deleting DRClusters and DRPolicy")
     kubectl.delete(
         "--kustomize",
-        command.resource(args.env_type),
+        command.resource(env["topology"]),
         "--ignore-not-found",
-        context=args.hub_name,
+        context=env["hub"],
         log=command.debug,
     )
 
@@ -43,6 +44,6 @@ def run(args):
         "--filename",
         command.resource("s3-secret.yaml"),
         "--ignore-not-found",
-        context=args.hub_name,
+        context=env["hub"],
         log=command.debug,
     )

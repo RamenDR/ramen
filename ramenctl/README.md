@@ -17,20 +17,19 @@ make venv
 ## Deploying ramen on the hub and managed clusters
 
 Deploy *ramen* from source using `quay.io/ramendr/ramen-operator:latest`
-on the hub and managed clusters.
+on the hub and managed clusters specified in FILENAME.
 
 ```
-ramenctl deploy
+ramenctl deploy FILENAME
 ```
 
 ## Configure ramen hub operator
 
 After deploying *ramen* we need to configure it for the environment. The
-configuration depends on the environment type (`regional-dr` or
-`metro-dr`).
+configuration depends on the topology specified in the environment file.
 
 ```
-ramenctl config regional-dr
+ramenctl config FILENAME
 ```
 
 ## Unconfigure ramen hub operator
@@ -39,7 +38,7 @@ Before undeploying *ramen* unconfigure it so undo the changes made by
 `ramenctl config`.
 
 ```
-ramenctl unconfig regional-dr
+ramenctl unconfig FILENAME
 ```
 
 ## Undeploying ramen on the hub and managed clusters
@@ -48,5 +47,16 @@ Delete resources deployed by `ramenctl deploy` on the hub and managed
 clusters.
 
 ```
-ramenctl undeploy
+ramenctl undeploy FILENAME
+```
+
+## Using isolated environments
+
+If we started a `drenv` environment using `--name-prefix` we must use
+the same argument when using `ramenctl`:
+
+```
+drenv start --name-prefix test- envs/regional-dr.yaml
+ramenctl deploy --name-prefix test- envs/regional-dr.yaml
+ramenctl config --name-prefix test- envs/regional-dr.yaml
 ```

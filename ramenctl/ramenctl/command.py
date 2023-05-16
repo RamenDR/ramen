@@ -4,12 +4,11 @@
 import logging
 import os
 
+import yaml
+
 from drenv import commands
 
-HUB_NAME = "hub"
-CLUSTERS_NAMES = ["dr1", "dr2"]
 RAMEN_NAMESPACE = "ramen-system"
-ENV_TYPES = ["regional-dr"]
 SOURCE_DIR = "."
 
 log = logging.getLogger("ramenctl")
@@ -23,26 +22,40 @@ def resource(name):
     return os.path.join(pkg_dir, "resources", name)
 
 
+def env_info(args):
+    """
+    Load ramen environment info from drenv environment file specified in
+    command line arguments.
+    """
+    with open(args.filename) as f:
+        env = yaml.safe_load(f)
+
+    ramen = env["ramen"]
+
+    if args.name_prefix:
+        ramen["hub"] = args.name_prefix + info["hub"]
+        ramen["clusters"] = [args.name_prefix + cluster for cluster in info["clusters"]]
+
+    return ramen
+
+
 def add_common_arguments(parser):
     """
     Argument needed by all commands.
     """
     parser.add_argument(
-        "--hub-name",
-        default=HUB_NAME,
-        help=f"Hub cluster name (default '{HUB_NAME}')",
-    )
-    parser.add_argument(
-        "--clusters-names",
-        default=CLUSTERS_NAMES,
-        type=lambda s: s.split(","),
-        help=f"Managed clusters names (default '{','.join(CLUSTERS_NAMES)}')",
-    )
-    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
         help="Be more verbose",
+    )
+    parser.add_argument(
+        "--name-prefix",
+        help="Prefix profile names",
+    )
+    parser.add_argument(
+        "filename",
+        help="Environment filename",
     )
 
 
@@ -66,17 +79,6 @@ def add_source_arguments(parser):
         "--source-dir",
         default=SOURCE_DIR,
         help=f"The ramen source directory (default '{SOURCE_DIR}')",
-    )
-
-
-def add_env_arguments(parser):
-    """
-    Arguemnts related to the test environment.
-    """
-    parser.add_argument(
-        "env_type",
-        choices=ENV_TYPES,
-        help="Environment type",
     )
 
 
