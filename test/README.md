@@ -10,6 +10,9 @@ environment.
 
 ## Setup
 
+1. Setup a development environment as describe in
+   [developer quick start guide](../docs/devel-quick-start.md)
+
 1. Add yourself to the libvirt group (required for minikube kvm2 driver).
 
    ```
@@ -49,27 +52,6 @@ environment.
    myusername ALL=(ALL) NOPASSWD: /usr/bin/podman
    ```
 
-1. Clone the `ramen` source
-
-   *Ramen* test environment is part of the ramen source. You need to
-   clone it locally to create a test environment and run the tests:
-
-   ```
-   git clone https://github.com/RamenDR/ramen.git
-   ```
-
-1. Create a `ramen` virtual environment
-
-   Run this once in the ramen test directory
-
-   ```
-   make venv
-   ```
-
-   This creates a python virtual environment in `~/.venv/ramen`, and
-   install the `drenv` tool using develop mode, so changes in `drenv`
-   source are available immediately without reinstalling the tool.
-
 ### Testing that drenv is healthy
 
 Run this script to make sure `drenv` works:
@@ -91,7 +73,7 @@ The shell prompt will change to reflect that the `ramen` virtual
 environment is active:
 
 ```
-(ramen) [user@host test]$
+(ramen) [user@host ramen]$
 ```
 
 Change directory to the test directory:
@@ -569,21 +551,6 @@ simpler and faster to work with a minimal environment.
 - `rook.yaml` - for testing `rook` deployment
 
 ## Testing drenv
-
-### Installing development tools
-
-```
-pip install -r requirements.txt
-```
-
-### Enabling full test coverage
-
-To enable test coverage for child processes, copy the `coverage.pth`
-file to the python installation:
-
-```
-cp coverage.pth ~/.venv/ramen/lib/python*/site-packages
-```
 
 ### Running the tests
 
