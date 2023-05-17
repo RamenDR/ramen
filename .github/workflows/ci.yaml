@@ -102,10 +102,10 @@ jobs:
           kubectl version --client --output=yaml
 
       - name: Install tools
-        run: pip install -r test/requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Enable coverage for child processes
-        run: cp test/coverage.pth $(python -m site --user-site)
+        run: cp coverage.pth $(python -m site --user-site)
 
       - name: Install drenv
         run: pip install -e test

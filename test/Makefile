@@ -16,9 +16,6 @@ sources := $(wildcard \
 
 all: flake8 pylint black test coverage
 
-venv:
-	scripts/make-venv
-
 flake8:
 	python3 -m flake8 $(sources)
 

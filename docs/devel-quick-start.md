@@ -58,6 +58,20 @@ enough resources:
    chmod +x .git/hooks/commit-msg
    ```
 
+1. Create python virtual environment
+
+   The *Ramen* project use python tool to create and provision test
+   environment and run tests. The create a virtual environment including
+   the tools run:
+
+   ```
+   make venv
+   ```
+
+   This create a virtual environment in `~/.venv/ramen` and a symbolic
+   link `venv` for activating the environment. To activate the
+   environment use:
+
 That's all! You are ready to submit your first pull request!
 
 ## Setting up the `drenv` tool
@@ -68,6 +82,13 @@ quickly. Please follow the
 to set up the `drenv` tool.
 
 ## Starting the test environment
+
+Before using the `drenv` tool to start a test environment, you need to
+activate the python virtual environment:
+
+```
+source venv
+```
 
 *Ramen* supports many configurations, but the only development
 environment available now is the `regional-dr.yaml`. This environment
