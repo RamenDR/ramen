@@ -638,9 +638,9 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	d, err := r.createDRPCInstance(ctx, drpc, placementObj, logger)
 	if err != nil && !errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
-		err = r.updateDRPCStatus(drpc, placementObj, nil, logger)
+		err2 := r.updateDRPCStatus(drpc, placementObj, nil, logger)
 
-		return ctrl.Result{}, err
+		return ctrl.Result{}, fmt.Errorf("failed to create DRPC instance (%w) and (%w)", err, err2)
 	}
 
 	if errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
@@ -1452,7 +1452,7 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 
 	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, userPlacement)
 	if err != nil {
-		log.Info("Failed to select VRG namespace", "errMsg", err)
+		log.Info("Failed to select VRG namespace", "error", err)
 	}
 
 	clusterDecision := r.getClusterDecision(userPlacement)
@@ -1460,14 +1460,19 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 		r.updateResourceCondition(drpc, clusterDecision.ClusterName, vrgNamespace, syncmetric, log)
 	}
 
-	now := metav1.Now()
-	drpc.Status.LastUpdateTime = &now
-
 	for i, condition := range drpc.Status.Conditions {
 		if condition.ObservedGeneration != drpc.Generation {
 			drpc.Status.Conditions[i].ObservedGeneration = drpc.Generation
 		}
 	}
+
+	// if StatusDidntChange() {
+	// 	log.Info("No update is needed")
+	// 	return nil
+	// }
+
+	now := metav1.Now()
+	drpc.Status.LastUpdateTime = &now
 
 	if err := r.Status().Update(context.TODO(), drpc); err != nil {
 		return errorswrapper.Wrap(err, "failed to update DRPC status")
