@@ -62,12 +62,13 @@ type ProgressCallback func(string, string)
 // DRPlacementControlReconciler reconciles a DRPlacementControl object
 type DRPlacementControlReconciler struct {
 	client.Client
-	APIReader     client.Reader
-	Log           logr.Logger
-	MCVGetter     rmnutil.ManagedClusterViewGetter
-	Scheme        *runtime.Scheme
-	Callback      ProgressCallback
-	eventRecorder *rmnutil.EventReporter
+	APIReader           client.Reader
+	Log                 logr.Logger
+	MCVGetter           rmnutil.ManagedClusterViewGetter
+	Scheme              *runtime.Scheme
+	Callback            ProgressCallback
+	eventRecorder       *rmnutil.EventReporter
+	savedInstanceStatus rmn.DRPlacementControlStatus
 }
 
 func ManifestWorkPredicateFunc() predicate.Funcs {
@@ -623,6 +624,9 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, errorswrapper.Wrap(err, "failed to get DRPC object")
 	}
 
+	// Save a copy of the instance status to be used for the VRG status update comparison
+	drpc.Status.DeepCopyInto(&r.savedInstanceStatus)
+
 	placementObj, err := r.ownPlacementOrPlacementRule(ctx, drpc, logger)
 	if err != nil && !(errors.IsNotFound(err) && !drpc.GetDeletionTimestamp().IsZero()) {
 		r.recordFailure(drpc, placementObj, "Error", err.Error(), nil, logger)
@@ -640,7 +644,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err != nil && !errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
 		err2 := r.updateDRPCStatus(drpc, placementObj, nil, logger)
 
-		return ctrl.Result{}, fmt.Errorf("failed to create DRPC instance (%w) and (%w)", err, err2)
+		return ctrl.Result{}, fmt.Errorf("failed to create DRPC instance (%w) and (%v)", err, err2)
 	}
 
 	if errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
@@ -1466,10 +1470,11 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 		}
 	}
 
-	// if StatusDidntChange() {
-	// 	log.Info("No update is needed")
-	// 	return nil
-	// }
+	if reflect.DeepEqual(r.savedInstanceStatus, drpc.Status) {
+		log.Info("No need to update DRPC Status")
+
+		return nil
+	}
 
 	now := metav1.Now()
 	drpc.Status.LastUpdateTime = &now
