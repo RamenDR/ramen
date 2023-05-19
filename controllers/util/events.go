@@ -5,6 +5,7 @@ package util
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -100,6 +101,9 @@ type EventReporter struct {
 
 	// lastReportedEventTime will be the time of lastReportedEvent
 	lastReportedEventTime map[string]time.Time
+
+	// Mutex for protecting concurrent access to the recorder map
+	mutex sync.Mutex
 }
 
 // NewEventReporter returns EventReporter object
@@ -122,6 +126,9 @@ func ReportIfNotPresent(recorder *EventReporter, instance runtime.Object,
 	}
 
 	eventKey := getEventKey(eventType, eventReason, msg)
+
+	recorder.mutex.Lock()
+	defer recorder.mutex.Unlock()
 
 	if recorder.lastReportedEvent[nameSpacedName] != eventKey ||
 		recorder.lastReportedEventTime[nameSpacedName].Add(time.Second*LastEventValidDuration).Before(time.Now()) {
