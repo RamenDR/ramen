@@ -31,7 +31,6 @@ import (
 	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
@@ -57,21 +56,6 @@ type VolumeReplicationGroupReconciler struct {
 func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 	mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig,
 ) error {
-	pvcPredicate := pvcPredicateFunc()
-	pvcMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
-		log := ctrl.Log.WithName("pvcmap").WithName("VolumeReplicationGroup")
-
-		pvc, ok := obj.(*corev1.PersistentVolumeClaim)
-		if !ok {
-			log.Info("PersistentVolumeClaim(PVC) map function received non-PVC resource")
-
-			return []reconcile.Request{}
-		}
-
-		return filterPVC(mgr, pvc,
-			log.WithValues("pvc", types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}))
-	}))
-
 	r.eventRecorder = rmnutil.NewEventReporter(mgr.GetEventRecorderFor("controller_VolumeReplicationGroup"))
 
 	r.Log.Info("Adding VolumeReplicationGroup controller")
@@ -88,8 +72,19 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 			MaxConcurrentReconciles: getMaxConcurrentReconciles(r.Log),
 			RateLimiter:             rateLimiter,
 		}).
-		For(&ramendrv1alpha1.VolumeReplicationGroup{}).
-		Watches(&source.Kind{Type: &corev1.PersistentVolumeClaim{}}, pvcMapFun, builder.WithPredicates(pvcPredicate)).
+		For(&ramendrv1alpha1.VolumeReplicationGroup{},
+			builder.WithPredicates(
+				predicate.Or(
+					predicate.GenerationChangedPredicate{},
+					predicate.AnnotationChangedPredicate{},
+					predicate.LabelChangedPredicate{},
+				),
+			),
+		).
+		Watches(&source.Kind{Type: &corev1.PersistentVolumeClaim{}},
+			handler.EnqueueRequestsFromMapFunc(r.pvcMapFunc),
+			builder.WithPredicates(pvcPredicateFunc()),
+		).
 		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(r.configMapFun)).
 		Owns(&volrep.VolumeReplication{})
 
@@ -109,6 +104,20 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 	}
 
 	return builder.Complete(r)
+}
+
+func (r *VolumeReplicationGroupReconciler) pvcMapFunc(obj client.Object) []reconcile.Request {
+	log := ctrl.Log.WithName("pvcmap").WithName("VolumeReplicationGroup")
+
+	pvc, ok := obj.(*corev1.PersistentVolumeClaim)
+	if !ok {
+		log.Info("PersistentVolumeClaim(PVC) map function received non-PVC resource")
+
+		return []reconcile.Request{}
+	}
+
+	return filterPVC(r.Client, pvc,
+		log.WithValues("pvc", types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}))
 }
 
 func (r *VolumeReplicationGroupReconciler) configMapFun(configmap client.Object) []reconcile.Request {
@@ -241,7 +250,7 @@ func updateEventDecision(oldPVC *corev1.PersistentVolumeClaim,
 	return !requeue
 }
 
-func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim, log logr.Logger) []reconcile.Request {
+func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr.Logger) []reconcile.Request {
 	req := []reconcile.Request{}
 
 	var vrgs ramendrv1alpha1.VolumeReplicationGroupList
@@ -256,7 +265,7 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim, log logr.
 	//   to which the the pvc belongs to.
 	// - whether the labels on pvc match the label selectors from
 	//    VolumeReplicationGroup CR.
-	err := mgr.GetClient().List(context.TODO(), &vrgs, listOptions...)
+	err := reader.List(context.TODO(), &vrgs, listOptions...)
 	if err != nil {
 		log.Error(err, "Failed to get list of VolumeReplicationGroup resources")
 
@@ -264,7 +273,7 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim, log logr.
 	}
 
 	for _, vrg := range vrgs.Items {
-		vrgLabelSelector, err := GetPVCLabelSelector(context.TODO(), mgr.GetClient(), vrg, log)
+		vrgLabelSelector, err := GetPVCLabelSelector(context.TODO(), reader, vrg, log)
 		if err != nil {
 			log.Error(err, "Failed to get the label selector from GetPVCLabelSelector", "vrgName", vrg.Name)
 
@@ -293,10 +302,10 @@ func filterPVC(mgr manager.Manager, pvc *corev1.PersistentVolumeClaim, log logr.
 }
 
 func GetPVCLabelSelector(
-	ctx context.Context, client client.Client, vrg ramendrv1alpha1.VolumeReplicationGroup, log logr.Logger,
+	ctx context.Context, reader client.Reader, vrg ramendrv1alpha1.VolumeReplicationGroup, log logr.Logger,
 ) (metav1.LabelSelector, error) {
 	if RecipeInfoExistsOnVRG(vrg) {
-		recipe, err := GetRecipeWithName(ctx, client, *vrg.Spec.KubeObjectProtection.RecipeRef.Name, vrg.GetNamespace())
+		recipe, err := GetRecipeWithName(ctx, reader, vrg.Spec.KubeObjectProtection.RecipeRef.Name, vrg.GetNamespace())
 		if err != nil {
 			log.Error(err, "GetRecipeWithName error: %s-%s", vrg.Name, vrg.Namespace)
 

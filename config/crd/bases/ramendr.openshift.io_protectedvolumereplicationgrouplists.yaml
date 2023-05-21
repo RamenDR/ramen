@@ -228,13 +228,16 @@ spec:
                               format: duration
                               type: string
                             recipeRef:
+                              description: Name of the Recipe to reference for capture
+                                and recovery workflows and volume selection.
                               properties:
                                 name:
-                                  description: Name of the Recipe to reference for
-                                    Capture and Restore Workflows. Must exist in the
-                                    same namespace as VRG.
+                                  description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                    TODO: Add other useful fields. apiVersion, kind,
+                                    uid?'
                                   type: string
                               type: object
+                              x-kubernetes-map-type: atomic
                           type: object
                         prepareForFinalSync:
                           description: PrepareForFinalSync when set, it tells VRG

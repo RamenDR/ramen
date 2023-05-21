@@ -107,21 +107,15 @@ const (
 
 const ReservedBackupName = "use-backup-not-restore"
 
-type RecipeSpec struct {
-	// Name of the Recipe to reference for Capture and Restore Workflows.
-	// Must exist in the same namespace as VRG.
-	//+optional
-	Name *string `json:"name,omitempty"`
-}
-
 type KubeObjectProtectionSpec struct {
 	// Preferred time between captures
 	//+optional
 	//+kubebuilder:validation:Format=duration
 	CaptureInterval *metav1.Duration `json:"captureInterval,omitempty"`
 
+	// Name of the Recipe to reference for capture and recovery workflows and volume selection.
 	//+optional
-	RecipeRef *RecipeSpec `json:"recipeRef,omitempty"`
+	RecipeRef *corev1.LocalObjectReference `json:"recipeRef,omitempty"`
 }
 
 const KubeObjectProtectionCaptureIntervalDefault = 5 * time.Minute

@@ -392,7 +392,6 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 		fmt.Sprintf("Started failover to cluster %q", d.instance.Spec.FailoverCluster))
 	d.setProgression(rmn.ProgressionCheckingFailoverPrequisites)
 
-	// Save the current home cluster
 	curHomeCluster := d.getCurrentHomeClusterName(d.instance.Spec.FailoverCluster, d.drClusters)
 
 	if curHomeCluster == "" {
@@ -785,7 +784,7 @@ func (d *DRPCInstance) ensureCleanupAndVolSyncReplicationSetup(srcCluster string
 	}
 
 	// Check if the reset has already been applied. ResetVolSyncRDOnPrimary resets the VRG
-	// in the MW, but the VRGs in the vrgs slice are fetched using using MCV.
+	// in the MW, but the VRGs in the vrgs slice are fetched using MCV.
 	vrg, ok := d.vrgs[srcCluster]
 	if !ok || len(vrg.Spec.VolSync.RDSpec) != 0 {
 		return fmt.Errorf(fmt.Sprintf("Waiting for RDSpec count on cluster %s to go to zero. VRG OK? %v",
@@ -1211,6 +1210,27 @@ func (d *DRPCInstance) vrgExistsAndPrimary(targetCluster string) bool {
 	}
 
 	return false
+}
+
+func (d *DRPCInstance) mwExistsAndPlacementUpdated(targetCluster string) (bool, error) {
+	vrgMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
+
+	_, err := d.mwu.FindManifestWork(vrgMWName, targetCluster)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	clusterDecision := d.reconciler.getClusterDecision(d.userPlacement)
+	if clusterDecision.ClusterName == "" ||
+		clusterDecision.ClusterName != targetCluster {
+		return false, nil
+	}
+
+	return true, nil
 }
 
 func (d *DRPCInstance) moveVRGToSecondaryEverywhere() bool {
@@ -1690,7 +1710,7 @@ func (d *DRPCInstance) ensureVRGManifestWorkOnClusterDeleted(clusterName string)
 	}
 
 	if !mw.GetDeletionTimestamp().IsZero() {
-		d.log.Info("Waiting for for VRG MW to be fully deleted", "cluster", clusterName)
+		d.log.Info("Waiting for VRG MW to be fully deleted", "cluster", clusterName)
 		// As long as the Manifestwork still exist, then we are not done
 		return !done, nil
 	}

@@ -4,16 +4,40 @@
 package controllers
 
 import (
+	"time"
+
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/util"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
+var vrgLastUploadTime = map[string]metav1.Time{}
+
+//nolint:gomnd
 func (v *VRGInstance) vrgObjectProtect(result *ctrl.Result, s3StoreAccessors []s3StoreAccessor) {
 	vrg := v.instance
 	eventReporter := v.reconciler.eventRecorder
 	log := v.log
+	key := vrg.Namespace + "/" + vrg.Name
+
+	if lastUploadTime, ok := vrgLastUploadTime[key]; ok {
+		kubeObjectCaptureInterval := ramen.KubeObjectProtectionCaptureIntervalDefault
+		if vrg.Spec.KubeObjectProtection != nil {
+			kubeObjectCaptureInterval = kubeObjectsCaptureInterval(vrg.Spec.KubeObjectProtection)
+		}
+
+		// The maxVRGProtectionInterval is half the interval of the kubeObjectsCaptureInterval
+		maxVRGProtectionInterval := kubeObjectCaptureInterval / 2
+
+		// Throttle VRG protection if this call is more recent than maxVRGProtectionInterval.
+		if shouldThrottleVRGProtection(lastUploadTime, maxVRGProtectionInterval) {
+			log.Info("VRG already protected recently. Throttling...")
+
+			return
+		}
+	}
 
 	for _, s3StoreAccessor := range s3StoreAccessors {
 		if err := VrgObjectProtect(s3StoreAccessor.ObjectStorer, *vrg); err != nil {
@@ -33,8 +57,15 @@ func (v *VRGInstance) vrgObjectProtect(result *ctrl.Result, s3StoreAccessors []s
 
 		log.Info("VRG Kube object protected", "profile", s3StoreAccessor.profileName)
 
+		vrgLastUploadTime[key] = metav1.Now()
+
 		v.vrgObjectProtected = newVRGClusterDataProtectedCondition(vrg.Generation, clusterDataProtectedTrueMessage)
 	}
+}
+
+func shouldThrottleVRGProtection(lastUploadTime metav1.Time, maxVRGProtectionTime time.Duration) bool {
+	// Throttle VRG protection if this call is more recent than MaxVRGProtectionTime.
+	return lastUploadTime.Add(maxVRGProtectionTime).Before(time.Now())
 }
 
 const vrgS3ObjectNameSuffix = "a"
