@@ -348,6 +348,10 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		}
 
 		return d.ensureActionCompleted(failoverCluster)
+	} else if yes, err := d.mwExistsAndPlacementUpdated(failoverCluster); yes || err != nil {
+		// We have to wait for the VRG to appear on the failoverCluster or
+		// in case of an error, try again later
+		return !done, err
 	}
 
 	d.setStatusInitiating()
