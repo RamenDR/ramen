@@ -64,6 +64,12 @@ func (mwu *MWUtil) BuildManifestWorkName(mwType string) string {
 	return ManifestWorkName(mwu.InstName, mwu.TargetNamespace, mwType)
 }
 
+func (mwu *MWUtil) FindManifestWorkByType(mwType, managedCluster string) (*ocmworkv1.ManifestWork, error) {
+	mwName := mwu.BuildManifestWorkName(mwType)
+
+	return mwu.FindManifestWork(mwName, managedCluster)
+}
+
 func (mwu *MWUtil) FindManifestWork(mwName, managedCluster string) (*ocmworkv1.ManifestWork, error) {
 	if managedCluster == "" {
 		return nil, fmt.Errorf("invalid cluster for MW %s", mwName)
@@ -137,9 +143,7 @@ func (mwu *MWUtil) generateVRGManifestWork(name, namespace, homeCluster string,
 	return mwu.newManifestWork(
 		fmt.Sprintf(ManifestWorkNameFormat, name, namespace, MWTypeVRG),
 		homeCluster,
-		map[string]string{
-			"cluster.open-cluster-management.io/backup": "",
-		}, // backup this VRG MW as part of Hub Recovery
+		map[string]string{},
 		manifests, annotations), nil
 }
 
