@@ -62,12 +62,13 @@ type ProgressCallback func(string, string)
 // DRPlacementControlReconciler reconciles a DRPlacementControl object
 type DRPlacementControlReconciler struct {
 	client.Client
-	APIReader     client.Reader
-	Log           logr.Logger
-	MCVGetter     rmnutil.ManagedClusterViewGetter
-	Scheme        *runtime.Scheme
-	Callback      ProgressCallback
-	eventRecorder *rmnutil.EventReporter
+	APIReader           client.Reader
+	Log                 logr.Logger
+	MCVGetter           rmnutil.ManagedClusterViewGetter
+	Scheme              *runtime.Scheme
+	Callback            ProgressCallback
+	eventRecorder       *rmnutil.EventReporter
+	savedInstanceStatus rmn.DRPlacementControlStatus
 }
 
 func ManifestWorkPredicateFunc() predicate.Funcs {
@@ -623,6 +624,9 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, errorswrapper.Wrap(err, "failed to get DRPC object")
 	}
 
+	// Save a copy of the instance status to be used for the VRG status update comparison
+	drpc.Status.DeepCopyInto(&r.savedInstanceStatus)
+
 	placementObj, err := r.ownPlacementOrPlacementRule(ctx, drpc, logger)
 	if err != nil && !(errors.IsNotFound(err) && !drpc.GetDeletionTimestamp().IsZero()) {
 		r.recordFailure(drpc, placementObj, "Error", err.Error(), nil, logger)
@@ -638,9 +642,9 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	d, err := r.createDRPCInstance(ctx, drpc, placementObj, logger)
 	if err != nil && !errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
-		err = r.updateDRPCStatus(drpc, placementObj, nil, logger)
+		err2 := r.updateDRPCStatus(drpc, placementObj, nil, logger)
 
-		return ctrl.Result{}, err
+		return ctrl.Result{}, fmt.Errorf("failed to create DRPC instance (%w) and (%v)", err, err2)
 	}
 
 	if errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
@@ -1452,7 +1456,7 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 
 	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, userPlacement)
 	if err != nil {
-		log.Info("Failed to select VRG namespace", "errMsg", err)
+		log.Info("Failed to select VRG namespace", "error", err)
 	}
 
 	clusterDecision := r.getClusterDecision(userPlacement)
@@ -1460,14 +1464,20 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 		r.updateResourceCondition(drpc, clusterDecision.ClusterName, vrgNamespace, syncmetric, log)
 	}
 
-	now := metav1.Now()
-	drpc.Status.LastUpdateTime = &now
-
 	for i, condition := range drpc.Status.Conditions {
 		if condition.ObservedGeneration != drpc.Generation {
 			drpc.Status.Conditions[i].ObservedGeneration = drpc.Generation
 		}
 	}
+
+	if reflect.DeepEqual(r.savedInstanceStatus, drpc.Status) {
+		log.Info("No need to update DRPC Status")
+
+		return nil
+	}
+
+	now := metav1.Now()
+	drpc.Status.LastUpdateTime = &now
 
 	if err := r.Status().Update(context.TODO(), drpc); err != nil {
 		return errorswrapper.Wrap(err, "failed to update DRPC status")

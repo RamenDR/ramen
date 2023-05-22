@@ -13,7 +13,16 @@ echo "Upgrading pip..."
 $venv/bin/pip install --upgrade pip
 
 echo "Installing drenv..."
-$venv/bin/pip install -e .
+$venv/bin/pip install -e test
+
+echo "Installing ramenctl..."
+$venv/bin/pip install -e ./ramenctl
+
+echo "Installing development tools"
+$venv/bin/pip install -r requirements.txt
+
+echo "Enabling full test coverage"
+cp coverage.pth $venv/lib/python*/site-packages
 
 echo "Adding venv symlink..."
 ln -sf $venv/bin/activate venv

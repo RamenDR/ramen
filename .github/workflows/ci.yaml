@@ -102,10 +102,10 @@ jobs:
           kubectl version --client --output=yaml
 
       - name: Install tools
-        run: pip install -r test/requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Enable coverage for child processes
-        run: cp test/coverage.pth $(python -m site --user-site)
+        run: cp coverage.pth $(python -m site --user-site)
 
       - name: Install drenv
         run: pip install -e test
@@ -129,6 +129,34 @@ jobs:
       - name: Report test coverage
         run: make coverage
         working-directory: test
+
+  ramenctl-test:
+    name: ramenctl tests
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v3
+
+      - name: Setup python
+        uses: actions/setup-python@v4
+
+      - name: Install tools
+        run: pip install -r requirements.txt
+
+      - name: Install drenv
+        run: pip install -e test
+
+      - name: Run flake8
+        run: make flake8
+        working-directory: ramenctl
+
+      - name: Run pylint
+        run: make pylint
+        working-directory: ramenctl
+
+      - name: Run black
+        run: make black
+        working-directory: ramenctl
 
   build-image-and-ensure-clean-branch:
     name: Build image and ensure clean branch

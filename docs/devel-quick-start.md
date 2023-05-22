@@ -58,6 +58,20 @@ enough resources:
    chmod +x .git/hooks/commit-msg
    ```
 
+1. Create python virtual environment
+
+   The *Ramen* project use python tool to create and provision test
+   environment and run tests. The create a virtual environment including
+   the tools run:
+
+   ```
+   make venv
+   ```
+
+   This create a virtual environment in `~/.venv/ramen` and a symbolic
+   link `venv` for activating the environment. To activate the
+   environment use:
+
 That's all! You are ready to submit your first pull request!
 
 ## Setting up the `drenv` tool
@@ -68,6 +82,13 @@ quickly. Please follow the
 to set up the `drenv` tool.
 
 ## Starting the test environment
+
+Before using the `drenv` tool to start a test environment, you need to
+activate the python virtual environment:
+
+```
+source venv
+```
 
 *Ramen* supports many configurations, but the only development
 environment available now is the `regional-dr.yaml`. This environment
@@ -109,7 +130,7 @@ This builds the image `quay.io/ramendr/ramen-operator:latest`
 To deploy the *Ramen* operator in the test environment:
 
 ```
-test/scripts/deploy-ramen
+ramenctl deploy
 ```
 
 ## Configure the ramen operator on the hub
@@ -118,14 +139,11 @@ Ramen need to be configured to know about the managed clusters and the
 s3 endpoints. To configure the test environment, run this script:
 
 ```
-test/ramen-config/deploy regional-dr
+ramenctl config regional-dr
 ```
 
-If you need to remove your configuration, use:
-
-```
-test/ramen-config/undeploy regional-dr
-```
+For more info on the `ramenctl` tool see
+[ramenctl/README.md](../ramenctl/README.md).
 
 ## The next steps
 
@@ -135,3 +153,13 @@ you are ready for the next steps:
 - Enable disaster recovery for an application
 - Failing over the application to another cluster
 - Relocating an application back to the original cluster
+
+## Undeploying the ramen operator
+
+If you want to clean up your environment, you can uncofigure *Ramen* and
+undeploy it.
+
+```
+ramenctl unconfig regional-dr
+ramenctl undeploy
+```
