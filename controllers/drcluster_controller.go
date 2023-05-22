@@ -788,9 +788,7 @@ func (u *drclusterInstance) unfenceClusterOnCluster(peerCluster *ramen.DRCluster
 }
 
 func (u *drclusterInstance) requeueIfNFMWExists(peerCluster *ramen.DRCluster) (bool, error) {
-	nfMWName := u.mwUtil.BuildManifestWorkName(util.MWTypeNF)
-
-	_, mwErr := u.mwUtil.FindManifestWork(nfMWName, peerCluster.Name)
+	_, mwErr := u.mwUtil.FindManifestWorkByType(util.MWTypeNF, peerCluster.Name)
 	if mwErr != nil {
 		if errors.IsNotFound(mwErr) {
 			u.log.Info("NetworkFence and MW for it not found. Cleaned")

@@ -122,6 +122,11 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 	// Check if we already deployed in the homeCluster or elsewhere
 	deployed, clusterName := d.isDeployed(homeCluster)
 	if deployed && clusterName != homeCluster {
+		err := d.ensureVRGManifestWork(clusterName)
+		if err != nil {
+			return !done, err
+		}
+
 		// IF deployed on cluster that is not the preferred HomeCluster, then we are done
 		return done, nil
 	}
@@ -143,8 +148,13 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 		return !done, nil
 	}
 
+	err := d.ensureVRGManifestWork(clusterName)
+	if err != nil {
+		return !done, err
+	}
+
 	// If we get here, the deployment is successful
-	err := d.EnsureVolSyncReplicationSetup(homeCluster)
+	err = d.EnsureVolSyncReplicationSetup(homeCluster)
 	if err != nil {
 		return !done, err
 	}
@@ -264,7 +274,7 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 	d.setDRState(rmn.Deploying)
 	d.setProgression(rmn.ProgressionCreatingMW)
 	// Create VRG first, to leverage user PlacementRule decision to skip placement and move to cleanup
-	err := d.createVRGManifestWork(homeCluster)
+	err := d.createVRGManifestWork(homeCluster, rmn.Primary)
 	if err != nil {
 		return false, err
 	}
@@ -320,14 +330,16 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		return done, fmt.Errorf(msg)
 	}
 
+	failoverCluster := d.instance.Spec.FailoverCluster
+
 	// IFF VRG exists and it is primary in the failoverCluster, the clean up and setup VolSync if needed.
-	if d.vrgExistsAndPrimary(d.instance.Spec.FailoverCluster) {
+	if d.vrgExistsAndPrimary(failoverCluster) {
 		d.setDRState(rmn.FailedOver)
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
 		// Make sure VolRep 'Data' and VolSync 'setup' conditions are ready
-		ready := d.checkReadinessAfterFailover(d.instance.Spec.FailoverCluster)
+		ready := d.checkReadinessAfterFailover(failoverCluster)
 		if !ready {
 			d.log.Info("VRGCondition not ready to finish failover")
 			d.setProgression(rmn.ProgressionWaitForReadiness)
@@ -335,19 +347,8 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 			return !done, nil
 		}
 
-		d.setProgression(rmn.ProgressionCleaningUp)
-
-		err := d.ensureCleanupAndVolSyncReplicationSetup(d.instance.Spec.FailoverCluster)
-		if err != nil {
-			return !done, err
-		}
-
-		d.setProgression(rmn.ProgressionCompleted)
-
-		d.setActionDuration()
-
-		return done, nil
-	} else if yes, err := d.mwExistsAndPlacementUpdated(d.instance.Spec.FailoverCluster); yes || err != nil {
+		return d.ensureActionCompleted(failoverCluster)
+	} else if yes, err := d.mwExistsAndPlacementUpdated(failoverCluster); yes || err != nil {
 		// We have to wait for the VRG to appear on the failoverCluster or
 		// in case of an error, try again later
 		return !done, err
@@ -691,7 +692,7 @@ func checkActivationForStorageIdentifier(
 //   - Check if current primary (that is not the preferred cluster), is ready to switch over
 //   - Relocate!
 //
-//nolint:funlen,gocognit,cyclop
+//nolint:gocognit,cyclop
 func (d *DRPCInstance) RunRelocate() (bool, error) {
 	d.log.Info("Entering RunRelocate", "state", d.getLastDRState(), "progression", d.getProgression())
 
@@ -719,21 +720,10 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	// We are done if already relocated; if there were secondaries they are cleaned up above
 	if curHomeCluster != "" && d.vrgExistsAndPrimary(preferredCluster) {
 		d.setDRState(rmn.Relocated)
-		d.setProgression(rmn.ProgressionCleaningUp)
 		d.setDRPCCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
-		// Cleanup and setup VolSync if enabled
-		err = d.ensureCleanupAndVolSyncReplicationSetup(preferredCluster)
-		if err != nil {
-			return !done, err
-		}
-
-		d.setProgression(rmn.ProgressionCompleted)
-
-		d.setActionDuration()
-
-		return done, nil
+		return d.ensureActionCompleted(preferredCluster)
 	}
 
 	d.setStatusInitiating()
@@ -764,6 +754,29 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	}
 
 	return d.relocate(preferredCluster, preferredClusterNamespace, rmn.Relocating)
+}
+
+func (d *DRPCInstance) ensureActionCompleted(srcCluster string) (bool, error) {
+	const done = true
+
+	err := d.ensureVRGManifestWork(srcCluster)
+	if err != nil {
+		return !done, err
+	}
+
+	d.setProgression(rmn.ProgressionCleaningUp)
+
+	// Cleanup and setup VolSync if enabled
+	err = d.ensureCleanupAndVolSyncReplicationSetup(srcCluster)
+	if err != nil {
+		return !done, err
+	}
+
+	d.setProgression(rmn.ProgressionCompleted)
+
+	d.setActionDuration()
+
+	return done, nil
 }
 
 func (d *DRPCInstance) ensureCleanupAndVolSyncReplicationSetup(srcCluster string) error {
@@ -1164,7 +1177,7 @@ func (d *DRPCInstance) createVRGManifestWorkAsPrimary(targetCluster string) (boo
 		return true, nil
 	}
 
-	err = d.createVRGManifestWork(targetCluster)
+	err = d.createVRGManifestWork(targetCluster, rmn.Primary)
 	if err != nil {
 		return false, err
 	}
@@ -1173,9 +1186,7 @@ func (d *DRPCInstance) createVRGManifestWorkAsPrimary(targetCluster string) (boo
 }
 
 func (d *DRPCInstance) getVRGFromManifestWork(clusterName string) (*rmn.VolumeReplicationGroup, error) {
-	vrgMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
-
-	mw, err := d.mwu.FindManifestWork(vrgMWName, clusterName)
+	mw, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, clusterName)
 	if err != nil {
 		return nil, fmt.Errorf("%w", err)
 	}
@@ -1329,7 +1340,7 @@ func (d *DRPCInstance) updatePreferredDecision() {
 	}
 }
 
-func (d *DRPCInstance) createVRGManifestWork(homeCluster string) error {
+func (d *DRPCInstance) createVRGManifestWork(homeCluster string, repState rmn.ReplicationState) error {
 	// TODO: check if VRG MW here as a less expensive way to validate if Namespace exists
 	err := d.ensureNamespaceExistsOnManagedCluster(homeCluster)
 	if err != nil {
@@ -1341,7 +1352,7 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string) error {
 	d.log.Info("Creating VRG ManifestWork",
 		"Last State:", d.getLastDRState(), "cluster", homeCluster)
 
-	vrg := d.generateVRG(rmn.Primary)
+	vrg := d.generateVRG(repState)
 	vrg.Spec.VolSync.Disabled = d.volSyncDisabled
 
 	annotations := make(map[string]string)
@@ -1358,6 +1369,27 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string) error {
 	}
 
 	return nil
+}
+
+func (d *DRPCInstance) ensureVRGManifestWork(homeCluster string) error {
+	mw, mwErr := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, homeCluster)
+	if mwErr != nil {
+		d.log.Info("Ensure VRG ManifestWork", "Error", mwErr)
+	}
+
+	if mw != nil {
+		return nil
+	}
+
+	d.log.Info("Ensure VRG ManifestWork",
+		"Last State:", d.getLastDRState(), "cluster", homeCluster)
+
+	cachedVrg := d.vrgs[homeCluster]
+	if cachedVrg == nil {
+		return fmt.Errorf("failed to get vrg from cluster %s", homeCluster)
+	}
+
+	return d.createVRGManifestWork(homeCluster, cachedVrg.Spec.ReplicationState)
 }
 
 func vrgAction(drpcAction rmn.DRAction) rmn.VRGAction {
@@ -1484,7 +1516,7 @@ func (d *DRPCInstance) ensureNamespaceExistsOnManagedCluster(homeCluster string)
 	// verify namespace exists on target cluster
 	namespaceExists, err := d.namespaceExistsOnManagedCluster(homeCluster)
 
-	d.log.Info(fmt.Sprintf("createVRGManifestWork: namespace '%s' exists on cluster %s: %t",
+	d.log.Info(fmt.Sprintf("ensureNamespaceExistsOnManagedCluster: namespace '%s' exists on cluster %s: %t",
 		d.vrgNamespace, homeCluster, namespaceExists))
 
 	if !namespaceExists { // attempt to create it
@@ -1976,9 +2008,7 @@ func (d *DRPCInstance) extractVRGFromManifestWork(mw *ocmworkv1.ManifestWork) (*
 }
 
 func (d *DRPCInstance) updateManifestWork(clusterName string, vrg *rmn.VolumeReplicationGroup) error {
-	vrgMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
-
-	mw, err := d.mwu.FindManifestWork(vrgMWName, clusterName)
+	mw, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, clusterName)
 	if err != nil {
 		return fmt.Errorf("%w", err)
 	}
