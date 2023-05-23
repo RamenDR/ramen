@@ -220,7 +220,7 @@ func (m ManagedClusterViewGetterImpl) getManagedClusterResource(
 		return errorswrapper.Wrap(err, "getManagedClusterResource failed")
 	}
 
-	logger.Info(fmt.Sprintf("MCV Conditions: %v", mcv.Status.Conditions))
+	logger.V(1).Info(fmt.Sprintf("MCV Conditions: %v", mcv.Status.Conditions))
 
 	return m.GetResource(mcv, resource)
 }

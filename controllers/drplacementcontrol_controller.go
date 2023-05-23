@@ -518,7 +518,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 			return []reconcile.Request{}
 		}
 
-		ctrl.Log.Info(fmt.Sprintf("DRPC: Filtering MCV (%s/%s)", mcv.Name, mcv.Namespace))
+		ctrl.Log.V(1).Info(fmt.Sprintf("DRPC: Filtering MCV (%s/%s)", mcv.Name, mcv.Namespace))
 
 		return filterMCV(mcv)
 	}))
@@ -1078,7 +1078,7 @@ func getPlacementOrPlacementRule(
 	drpc *rmn.DRPlacementControl,
 	log logr.Logger,
 ) (client.Object, error) {
-	log.Info("Getting user placement object", "placementRef", drpc.Spec.PlacementRef)
+	log.V(1).Info("Getting user placement object", "placementRef", drpc.Spec.PlacementRef)
 
 	var usrPlacement client.Object
 
@@ -1109,7 +1109,7 @@ func getPlacementOrPlacementRule(
 func getPlacementRule(ctx context.Context, k8sclient client.Client,
 	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) (*plrv1.PlacementRule, error) {
-	log.Info("Trying user PlacementRule", "usrPR", drpc.Spec.PlacementRef.Name+"/"+drpc.Spec.PlacementRef.Namespace)
+	log.V(1).Info("Trying user PlacementRule", "usrPR", drpc.Spec.PlacementRef.Name+"/"+drpc.Spec.PlacementRef.Namespace)
 
 	plRuleNamespace := drpc.Spec.PlacementRef.Namespace
 	if plRuleNamespace == "" {
@@ -1127,7 +1127,7 @@ func getPlacementRule(ctx context.Context, k8sclient client.Client,
 	err := k8sclient.Get(ctx,
 		types.NamespacedName{Name: drpc.Spec.PlacementRef.Name, Namespace: plRuleNamespace}, usrPlRule)
 	if err != nil {
-		log.Info(fmt.Sprintf("Get PlacementRule returned: %v", err))
+		log.V(1).Info(fmt.Sprintf("Get PlacementRule returned: %v", err))
 
 		return nil, err
 	}
@@ -1145,7 +1145,7 @@ func getPlacementRule(ctx context.Context, k8sclient client.Client,
 				" schedule it to a single cluster")
 		}
 
-		log.Info(fmt.Sprintf("PlacementRule Status is: (%+v)", usrPlRule.Status))
+		log.V(1).Info(fmt.Sprintf("PlacementRule Status is: (%+v)", usrPlRule.Status))
 	}
 
 	return usrPlRule, nil
@@ -1236,7 +1236,7 @@ func (r *DRPlacementControlReconciler) getOrClonePlacementRule(ctx context.Conte
 	drpc *rmn.DRPlacementControl, drPolicy *rmn.DRPolicy,
 	userPlRule *plrv1.PlacementRule, log logr.Logger,
 ) (*plrv1.PlacementRule, error) {
-	log.Info("Getting PlacementRule or cloning it", "placement", drpc.Spec.PlacementRef)
+	log.V(1).Info("Getting PlacementRule or cloning it", "placement", drpc.Spec.PlacementRef)
 
 	clonedPlRuleName := fmt.Sprintf(ClonedPlacementRuleNameFormat, drpc.Name, drpc.Namespace)
 
@@ -1260,7 +1260,7 @@ func (r *DRPlacementControlReconciler) getOrClonePlacementRule(ctx context.Conte
 func (r *DRPlacementControlReconciler) getClonedPlacementRule(ctx context.Context,
 	clonedPlRuleName, namespace string, log logr.Logger,
 ) (*plrv1.PlacementRule, error) {
-	log.Info("Getting cloned PlacementRule", "name", clonedPlRuleName)
+	log.V(1).Info("Getting cloned PlacementRule", "name", clonedPlRuleName)
 
 	clonedPlRule := &plrv1.PlacementRule{}
 
@@ -1343,7 +1343,7 @@ func getVRGsFromManagedClusters(mcvGetter rmnutil.ManagedClusterViewGetter, drpc
 		if err != nil {
 			// Only NotFound error is accepted
 			if errors.IsNotFound(err) {
-				log.Info(fmt.Sprintf("VRG not found on %q", drCluster))
+				log.V(1).Info(fmt.Sprintf("VRG not found on %q", drCluster))
 				clustersQueriedSuccessfully++
 
 				continue
@@ -1360,7 +1360,7 @@ func getVRGsFromManagedClusters(mcvGetter rmnutil.ManagedClusterViewGetter, drpc
 
 		vrgs[drCluster] = vrg
 
-		log.Info("VRG location", "VRG on", drCluster)
+		log.V(1).Info("VRG location", "VRG on", drCluster)
 	}
 
 	// We are done if we successfully queried all drClusters
@@ -1452,7 +1452,7 @@ func (r *DRPlacementControlReconciler) getStatusCheckDelay(
 func (r *DRPlacementControlReconciler) updateDRPCStatus(
 	drpc *rmn.DRPlacementControl, userPlacement client.Object, syncmetric *SyncMetrics, log logr.Logger,
 ) error {
-	log.Info("Updating DRPC status")
+	log.V(1).Info("Updating DRPC status")
 
 	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, userPlacement)
 	if err != nil {
@@ -1483,7 +1483,7 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 		return errorswrapper.Wrap(err, "failed to update DRPC status")
 	}
 
-	log.Info(fmt.Sprintf("Updated DRPC Status %+v", drpc.Status))
+	log.V(1).Info(fmt.Sprintf("Updated DRPC Status %+v", drpc.Status))
 
 	return nil
 }

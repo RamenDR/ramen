@@ -117,7 +117,7 @@ func (mwu *MWUtil) CreateOrUpdateVRGManifestWork(
 	name, namespace, homeCluster string,
 	vrg rmn.VolumeReplicationGroup, annotations map[string]string,
 ) error {
-	mwu.Log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%s:%+v",
+	mwu.Log.V(1).Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%s:%+v",
 		name, namespace, homeCluster, vrg))
 
 	manifestWork, err := mwu.generateVRGManifestWork(name, namespace, homeCluster, vrg, annotations)

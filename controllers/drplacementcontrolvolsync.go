@@ -190,7 +190,7 @@ func (d *DRPCInstance) IsVolSyncReplicationRequired(homeCluster string) (bool, e
 
 	const required = true
 
-	d.log.Info("Checking if there are PVCs for VolSync replication...", "cluster", homeCluster)
+	d.log.V(1).Info("Checking if there are PVCs for VolSync replication...", "cluster", homeCluster)
 
 	vrg := d.vrgs[homeCluster]
 

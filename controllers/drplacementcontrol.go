@@ -58,7 +58,7 @@ type DRPCInstance struct {
 }
 
 func (d *DRPCInstance) startProcessing() bool {
-	d.log.Info("Starting to process placement")
+	d.log.V(1).Info("Starting to process placement")
 
 	requeue := true
 	done, processingErr := d.processPlacement()
@@ -84,7 +84,7 @@ func (d *DRPCInstance) startProcessing() bool {
 }
 
 func (d *DRPCInstance) processPlacement() (bool, error) {
-	d.log.Info("Process DRPC Placement", "DRAction", d.instance.Spec.Action)
+	d.log.V(1).Info("Process DRPC Placement", "DRAction", d.instance.Spec.Action)
 
 	switch d.instance.Spec.Action {
 	case rmn.ActionFailover:
@@ -1015,7 +1015,7 @@ func (d *DRPCInstance) checkReadinessAfterFailover(homeCluster string) bool {
 func (d *DRPCInstance) isVRGConditionMet(cluster string, conditionType string) bool {
 	const ready = true
 
-	d.log.Info(fmt.Sprintf("Checking if VRG is %s on cluster %s", conditionType, cluster))
+	d.log.V(1).Info(fmt.Sprintf("Checking if VRG is %s on cluster %s", conditionType, cluster))
 
 	vrg := d.vrgs[cluster]
 
@@ -2204,7 +2204,7 @@ func (d *DRPCInstance) isPlacementNeedsFixing() bool {
 	// Needs fixing if and only if the DRPC Status is empty, the Placement decision is empty, and
 	// the we have VRG(s) in the managed clusters
 	clusterDecision := d.reconciler.getClusterDecision(d.userPlacement)
-	d.log.Info(fmt.Sprintf("Check placement if needs fixing: PrD %v, PlD %v, VRGs %d",
+	d.log.V(1).Info(fmt.Sprintf("Check placement if needs fixing: PrD %v, PlD %v, VRGs %d",
 		d.instance.Status.PreferredDecision, clusterDecision, len(d.vrgs)))
 
 	if reflect.DeepEqual(d.instance.Status.PreferredDecision, plrv1.PlacementDecision{}) &&
