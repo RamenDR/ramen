@@ -58,10 +58,10 @@ mc du -r $MINIO_PROFILE
 
 # wait for backups to be created according to Recipe spec
 # backups should be successful (totalItems > 0); 5m replication period by default, starts at index 1
-BACKUP_HOOK=$MINIO_PROFILE/$BUCKET_NAME/$NAMESPACE/$VRG_NAME/kube-objects/$BACKUP_START_INDEX/velero/backups/$NAMESPACE--$VRG_NAME--$BACKUP_START_INDEX--$BACKUP_HOOK_NAME--$MINIO_PROFILE/velero-backup.json
+BACKUP_HOOK=$MINIO_PROFILE/$BUCKET_NAME/$NAMESPACE/$VRG_NAME/kube-objects/$BACKUP_START_INDEX/velero/backups/$NAMESPACE--$VRG_NAME--$BACKUP_HOOK_NAME--$MINIO_PROFILE/velero-backup.json
 wait_for_and_check_backup_success $BACKUP_HOOK
 
-BACKUP_RESOURCES=$MINIO_PROFILE/$BUCKET_NAME/$NAMESPACE/$VRG_NAME/kube-objects/$BACKUP_START_INDEX/velero/backups/$NAMESPACE--$VRG_NAME--$BACKUP_START_INDEX--$BACKUP_GROUP_NAME--$MINIO_PROFILE/velero-backup.json
+BACKUP_RESOURCES=$MINIO_PROFILE/$BUCKET_NAME/$NAMESPACE/$VRG_NAME/kube-objects/$BACKUP_START_INDEX/velero/backups/$NAMESPACE--$VRG_NAME--$BACKUP_GROUP_NAME--$MINIO_PROFILE/velero-backup.json
 wait_for_and_check_backup_success $BACKUP_RESOURCES
 
 echo "protection successful"
