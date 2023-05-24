@@ -184,7 +184,7 @@ app_recipe_deploy() {
 	      command:
 	      - sh
 	      - -c
-	      - "! rm /tmp/a&&touch /tmp/a"
+	      - "rm /tmp/a||! touch /tmp/a"
 	  recoverWorkflow:
 	    sequence:
 	    - group: everything-but-deploy-po-pv-rs-vr-vrg
