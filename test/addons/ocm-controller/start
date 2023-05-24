@@ -9,9 +9,9 @@ import sys
 import drenv
 from drenv import kubectl
 
-# Using main since there are no releases, last tag is more than year old and
-# the image contains 36 vulnerabilities.
-VERSION = "main"
+# Use latest good commit and the matching image tag (found using quay.io).
+VERSION = "7c7eb070997853cc355facf783fcf9be6a5c5d77"
+IMAGE_TAG = f"2.4.0-{VERSION}"
 
 BASE_URL = f"https://raw.githubusercontent.com/stolostron/multicloud-operators-foundation/{VERSION}/deploy/foundation/hub"
 
@@ -21,6 +21,7 @@ def deploy(cluster):
     with drenv.kustomization(
         "kustomization.yaml",
         base_url=BASE_URL,
+        image_tag=IMAGE_TAG,
     ) as kustomization:
         kubectl.apply("--kustomize", kustomization, context=cluster)
 
