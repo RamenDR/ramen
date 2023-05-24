@@ -25,7 +25,7 @@ resources:
 images:
 - name: quay.io/stolostron/multicloud-manager
   newName: quay.io/stolostron/multicloud-manager
-  newTag: latest
+  newTag: $image_tag
 
 patches:
 # Replace upstream patches.yaml with version that does not need modification
@@ -36,4 +36,4 @@ patches:
   patch: |-
     - op: add
       path: /spec/template/spec/containers/0/args/-
-      value: "--agent-addon-image=quay.io/stolostron/multicloud-manager:latest"
+      value: "--agent-addon-image=quay.io/stolostron/multicloud-manager:$image_tag"
