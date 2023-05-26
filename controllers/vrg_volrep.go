@@ -79,7 +79,8 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary(requeue *bool) {
 			continue
 		}
 
-		log.Info("Successfully processed VolumeReplication for PersistentVolumeClaim")
+		log.Info("Successfully processed VolumeReplication for PersistentVolumeClaim", "VR instance",
+			v.instance.Name, "PVC", pvcNamespacedName)
 	}
 }
 
@@ -122,7 +123,8 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 			continue
 		}
 
-		log.Info("Successfully processed VolumeReplication for PersistentVolumeClaim")
+		log.Info("Successfully processed VolumeReplication for PersistentVolumeClaim", "VR instance",
+			v.instance.Name, "PVC", pvcNamespacedName)
 	}
 
 	return requeue
