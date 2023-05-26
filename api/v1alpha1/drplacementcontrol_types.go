@@ -168,6 +168,16 @@ type DRPlacementControlStatus struct {
 	// lastGroupSyncTime is the time of the most recent successful synchronization of all PVCs
 	//+optional
 	LastGroupSyncTime *metav1.Time `json:"lastGroupSyncTime,omitempty"`
+
+	// lastGroupSyncDuration is the max time taken to sync
+	// from the most recent successful synchronization of all PVCs
+	//+optional
+	LastGroupSyncDuration *metav1.Duration `json:"lastGroupSyncDuration,omitempty"`
+
+	// lastGroupSyncBytes is the total bytes transferred from the most recent
+	// successful synchronization of all PVCs
+	//+optional
+	LastGroupSyncBytes *int64 `json:"lastGroupSyncBytes,omitempty"`
 }
 
 // +kubebuilder:object:root=true

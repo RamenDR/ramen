@@ -907,6 +907,8 @@ func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName, 
 		v.updatePVCDataReadyCondition(vrNamespacedName.Name, VRGConditionReasonReady, msg)
 		v.updatePVCDataProtectedCondition(vrNamespacedName.Name, VRGConditionReasonReady, msg)
 		v.updatePVCLastSyncTime(vrNamespacedName.Name, nil)
+		v.updatePVCLastSyncDuration(vrNamespacedName.Name, nil)
+		v.updatePVCLastSyncBytes(vrNamespacedName.Name, nil)
 
 		return false, true, nil
 	}
@@ -937,6 +939,8 @@ func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName
 		v.updatePVCDataReadyCondition(vrNamespacedName.Name, VRGConditionReasonReplicated, msg)
 		v.updatePVCDataProtectedCondition(vrNamespacedName.Name, VRGConditionReasonDataProtected, msg)
 		v.updatePVCLastSyncTime(vrNamespacedName.Name, nil)
+		v.updatePVCLastSyncDuration(vrNamespacedName.Name, nil)
+		v.updatePVCLastSyncBytes(vrNamespacedName.Name, nil)
 
 		return false, true, nil
 	}
@@ -1283,7 +1287,8 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 	v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonReady, msg)
 	v.updatePVCDataProtectedCondition(volRep.Name, VRGConditionReasonReady, msg)
 	v.updatePVCLastSyncTime(volRep.Name, volRep.Status.LastSyncTime)
-
+	v.updatePVCLastSyncDuration(volRep.Name, volRep.Status.LastSyncDuration)
+	v.updatePVCLastSyncBytes(volRep.Name, volRep.Status.LastSyncBytes)
 	v.log.Info(fmt.Sprintf("VolumeReplication resource %s/%s is ready for use", volRep.Name,
 		volRep.Namespace))
 
@@ -1309,6 +1314,8 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 // ProtectedPVC.Conditions[DataProtected] = True
 func (v *VRGInstance) validateAdditionalVRStatusForSecondary(volRep *volrep.VolumeReplication) bool {
 	v.updatePVCLastSyncTime(volRep.Name, nil)
+	v.updatePVCLastSyncDuration(volRep.Name, nil)
+	v.updatePVCLastSyncBytes(volRep.Name, nil)
 
 	conditionMet, _ := isVRConditionMet(volRep, volrepController.ConditionResyncing, metav1.ConditionTrue)
 	if !conditionMet {
@@ -1480,6 +1487,24 @@ func (v *VRGInstance) updatePVCLastSyncTime(pvcName string, lastSyncTime *metav1
 	}
 
 	protectedPVC.LastSyncTime = lastSyncTime
+}
+
+func (v *VRGInstance) updatePVCLastSyncDuration(pvcName string, lastSyncDuration *metav1.Duration) {
+	protectedPVC := v.findProtectedPVC(pvcName)
+	if protectedPVC == nil {
+		return
+	}
+
+	protectedPVC.LastSyncDuration = lastSyncDuration
+}
+
+func (v *VRGInstance) updatePVCLastSyncBytes(pvcName string, lastSyncBytes *int64) {
+	protectedPVC := v.findProtectedPVC(pvcName)
+	if protectedPVC == nil || protectedPVC.ProtectedByVolSync {
+		return
+	}
+
+	protectedPVC.LastSyncBytes = lastSyncBytes
 }
 
 func setPVCDataReadyCondition(protectedPVC *ramendrv1alpha1.ProtectedPVC, reason, message string,

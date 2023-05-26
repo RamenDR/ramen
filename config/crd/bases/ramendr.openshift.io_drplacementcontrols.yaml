@@ -307,6 +307,15 @@ spec:
                   - type
                   type: object
                 type: array
+              lastGroupSyncBytes:
+                description: lastGroupSyncBytes is the total bytes transferred from
+                  the most recent successful synchronization of all PVCs
+                format: int64
+                type: integer
+              lastGroupSyncDuration:
+                description: lastGroupSyncDuration is the max time taken to sync from
+                  the most recent successful synchronization of all PVCs
+                type: string
               lastGroupSyncTime:
                 description: lastGroupSyncTime is the time of the most recent successful
                   synchronization of all PVCs

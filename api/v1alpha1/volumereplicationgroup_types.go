@@ -246,6 +246,14 @@ type ProtectedPVC struct {
 	// protected in the async or volsync mode
 	//+optional
 	LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty"`
+
+	// Duration of recent synchronization for PVC, if
+	// protected in the async or volsync mode
+	//+optional
+	LastSyncDuration *metav1.Duration `json:"lastSyncDuration,omitempty"`
+
+	// Bytes transferred per sync, if protected in async mode only
+	LastSyncBytes *int64 `json:"lastSyncBytes,omitempty"`
 }
 
 type KubeObjectsCaptureIdentifier struct {
@@ -285,6 +293,15 @@ type VolumeReplicationGroupStatus struct {
 	// lastGroupSyncTime is the time of the most recent successful synchronization of all PVCs
 	//+optional
 	LastGroupSyncTime *metav1.Time `json:"lastGroupSyncTime,omitempty"`
+
+	// lastGroupSyncDuration is the max time from all the successful synced PVCs
+	//+optional
+	LastGroupSyncDuration *metav1.Duration `json:"lastGroupSyncDuration,omitempty"`
+
+	// lastGroupSyncBytes is the total bytes transferred from the most recent
+	// successful synchronization of all PVCs
+	//+optional
+	LastGroupSyncBytes *int64 `json:"lastGroupSyncBytes,omitempty"`
 }
 
 // +kubebuilder:object:root=true

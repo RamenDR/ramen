@@ -371,6 +371,15 @@ spec:
                                 type: string
                               description: Labels for the PVC
                               type: object
+                            lastSyncBytes:
+                              description: Bytes transferred per sync, if protected
+                                in async mode only
+                              format: int64
+                              type: integer
+                            lastSyncDuration:
+                              description: Duration of recent synchronization for
+                                PVC, if protected in the async or volsync mode
+                              type: string
                             lastSyncTime:
                               description: Time of the most recent successful synchronization
                                 for the PVC, if protected in the async or volsync
@@ -428,7 +437,8 @@ spec:
                                     defined in spec.resourceClaims, that are used
                                     by this container. \n This is an alpha field and
                                     requires enabling the DynamicResourceAllocation
-                                    feature gate. \n This field is immutable."
+                                    feature gate. \n This field is immutable. It can
+                                    only be set for containers."
                                   items:
                                     description: ResourceClaim references one entry
                                       in PodSpec.ResourceClaims.
@@ -615,6 +625,15 @@ spec:
                     - number
                     type: object
                 type: object
+              lastGroupSyncBytes:
+                description: lastGroupSyncBytes is the total bytes transferred from
+                  the most recent successful synchronization of all PVCs
+                format: int64
+                type: integer
+              lastGroupSyncDuration:
+                description: lastGroupSyncDuration is the max time from all the successful
+                  synced PVCs
+                type: string
               lastGroupSyncTime:
                 description: lastGroupSyncTime is the time of the most recent successful
                   synchronization of all PVCs
@@ -724,6 +743,15 @@ spec:
                         type: string
                       description: Labels for the PVC
                       type: object
+                    lastSyncBytes:
+                      description: Bytes transferred per sync, if protected in async
+                        mode only
+                      format: int64
+                      type: integer
+                    lastSyncDuration:
+                      description: Duration of recent synchronization for PVC, if
+                        protected in the async or volsync mode
+                      type: string
                     lastSyncTime:
                       description: Time of the most recent successful synchronization
                         for the PVC, if protected in the async or volsync mode
@@ -775,7 +803,8 @@ spec:
                           description: "Claims lists the names of resources, defined
                             in spec.resourceClaims, that are used by this container.
                             \n This is an alpha field and requires enabling the DynamicResourceAllocation
-                            feature gate. \n This field is immutable."
+                            feature gate. \n This field is immutable. It can only
+                            be set for containers."
                           items:
                             description: ResourceClaim references one entry in PodSpec.ResourceClaims.
                             properties:

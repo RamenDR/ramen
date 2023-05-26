@@ -2044,6 +2044,7 @@ func (d *DRPCInstance) setProgression(nextProgression rmn.ProgressionStatus) {
 	}
 }
 
+//nolint:cyclop
 func (d *DRPCInstance) shouldUpdateStatus() bool {
 	for _, condition := range d.instance.Status.Conditions {
 		if condition.ObservedGeneration != d.instance.Generation {
@@ -2072,6 +2073,14 @@ func (d *DRPCInstance) shouldUpdateStatus() bool {
 	}
 
 	if !vrg.Status.LastGroupSyncTime.Equal(d.instance.Status.LastGroupSyncTime) {
+		return true
+	}
+
+	if vrg.Status.LastGroupSyncDuration != d.instance.Status.LastGroupSyncDuration {
+		return true
+	}
+
+	if vrg.Status.LastGroupSyncBytes != d.instance.Status.LastGroupSyncBytes {
 		return true
 	}
 

@@ -1505,6 +1505,8 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 
 		drpc.Status.ResourceConditions = rmn.VRGConditions{}
 		drpc.Status.LastGroupSyncTime = nil
+		drpc.Status.LastGroupSyncDuration = nil
+		drpc.Status.LastGroupSyncBytes = nil
 
 		r.setLastSyncTimeMetric(syncmetric, nil, log)
 	} else {
@@ -1521,6 +1523,8 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 
 		drpc.Status.ResourceConditions.ResourceMeta.ProtectedPVCs = protectedPVCs
 		drpc.Status.LastGroupSyncTime = vrg.Status.LastGroupSyncTime
+		drpc.Status.LastGroupSyncDuration = vrg.Status.LastGroupSyncDuration
+		drpc.Status.LastGroupSyncBytes = vrg.Status.LastGroupSyncBytes
 
 		r.setLastSyncTimeMetric(syncmetric, vrg.Status.LastGroupSyncTime, log)
 	}
