@@ -409,8 +409,9 @@ func backupRealCreate(
 
 func getBackupSpecFromObjectsSpec(objectsSpec kubeobjects.Spec) velero.BackupSpec {
 	return velero.BackupSpec{
-		IncludedResources:       objectsSpec.IncludedResources,
-		ExcludedResources:       objectsSpec.ExcludedResources,
+		IncludedResources: objectsSpec.IncludedResources,
+		// exclude VRs from Backup so VRG can create them: see https://github.com/RamenDR/ramen/issues/884
+		ExcludedResources:       append(objectsSpec.ExcludedResources, "volumereplications.replication.storage.openshift.io"),
 		LabelSelector:           objectsSpec.LabelSelector,
 		OrLabelSelectors:        objectsSpec.OrLabelSelectors,
 		TTL:                     metav1.Duration{}, // TODO: set default here
