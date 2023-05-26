@@ -158,6 +158,7 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 
 	if rs.Status != nil {
 		protectedPVC.LastSyncTime = rs.Status.LastSyncTime
+		protectedPVC.LastSyncDuration = rs.Status.LastSyncDuration
 	}
 
 	return v.instance.Spec.RunFinalSync && !finalSyncComplete

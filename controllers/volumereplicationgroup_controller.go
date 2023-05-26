@@ -1102,6 +1102,8 @@ func (v *VRGInstance) updateVRGConditions() {
 		v.kubeObjectsProtected,
 	)
 	v.updateVRGLastGroupSyncTime()
+	v.updateVRGLastGroupSyncDuration()
+	v.updateLastGroupSyncBytes()
 }
 
 func (v *VRGInstance) vrgReadyStatus() *metav1.Condition {
@@ -1144,6 +1146,43 @@ func (v *VRGInstance) updateVRGLastGroupSyncTime() {
 	}
 
 	v.instance.Status.LastGroupSyncTime = leastLastSyncTime
+}
+
+func (v *VRGInstance) updateVRGLastGroupSyncDuration() {
+	var maxLastSyncDuration *metav1.Duration
+
+	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
+		if maxLastSyncDuration == nil {
+			maxLastSyncDuration = protectedPVC.LastSyncDuration
+
+			continue
+		}
+
+		if protectedPVC.LastSyncDuration != nil &&
+			protectedPVC.LastSyncDuration.Duration > maxLastSyncDuration.Duration {
+			maxLastSyncDuration = protectedPVC.LastSyncDuration
+		}
+	}
+
+	v.instance.Status.LastGroupSyncDuration = maxLastSyncDuration
+}
+
+func (v *VRGInstance) updateLastGroupSyncBytes() {
+	var totalLastSyncBytes *int64
+
+	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
+		if totalLastSyncBytes == nil {
+			totalLastSyncBytes = protectedPVC.LastSyncBytes
+
+			continue
+		}
+
+		if protectedPVC.LastSyncBytes != nil {
+			*totalLastSyncBytes += *protectedPVC.LastSyncBytes
+		}
+	}
+
+	v.instance.Status.LastGroupSyncBytes = totalLastSyncBytes
 }
 
 func (v *VRGInstance) s3StoreAccessorsGet() []s3StoreAccessor {
