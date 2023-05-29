@@ -25,10 +25,6 @@ ADDONS = (
         "name": "config-policy-controller",
         "deployment": "config-policy-controller",
     },
-    {
-        "name": "work-manager",
-        "deployment": "klusterlet-addon-workmgr",
-    },
 )
 
 ADDONS_NAMESPACE = "open-cluster-management-agent-addon"
