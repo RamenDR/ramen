@@ -19,6 +19,7 @@ resources:
 - $base_url/resources/crds/internal.open-cluster-management.io_managedclusterinfos.crd.yaml
 - $base_url/resources/crds/view.open-cluster-management.io_managedclusterviews.crd.yaml
 - $base_url/resources/agent-clusterrole.yaml
+- $base_url/resources/clustermanagementaddon.yaml
 - $base_url/resources/clusterrole.yaml
 - $base_url/resources/controller.yaml
 
