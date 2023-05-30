@@ -34,7 +34,7 @@ def run(args):
     command.info("Creating s3 secret in ramen hub namespace")
     kubectl.apply(
         "--filename",
-        command.resource("s3-secret.yaml"),
+        command.resource("ramen-s3-secret.yaml"),
         context=env["hub"],
         log=command.debug,
     )

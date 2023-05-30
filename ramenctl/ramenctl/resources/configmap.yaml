@@ -36,12 +36,12 @@ data:
       s3CompatibleEndpoint: $minio_url_dr1
       s3Region: us-west-1
       s3SecretRef:
-        name: s3secret
+        name: ramen-s3-secret
         namespace: ramen-system
     - s3ProfileName: minio-on-dr2
       s3Bucket: bucket
       s3CompatibleEndpoint: $minio_url_dr2
       s3Region: us-east-1
       s3SecretRef:
-        name: s3secret
+        name: ramen-s3-secret
         namespace: ramen-system
