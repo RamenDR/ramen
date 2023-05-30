@@ -15,6 +15,7 @@ import (
 	errorswrapper "github.com/pkg/errors"
 	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -69,6 +70,7 @@ type DRPlacementControlReconciler struct {
 	Callback            ProgressCallback
 	eventRecorder       *rmnutil.EventReporter
 	savedInstanceStatus rmn.DRPlacementControlStatus
+	RmnConfig           *rmn.RamenConfig
 }
 
 func ManifestWorkPredicateFunc() predicate.Funcs {
@@ -467,6 +469,32 @@ func DRPCsFailingOverToClusterForPolicy(
 	return filteredDRPCs, nil
 }
 
+func (r *DRPlacementControlReconciler) configMapMapFun(configMap client.Object) []reconcile.Request {
+	if configMap.GetName() != HubOperatorConfigMapName || configMap.GetNamespace() != NamespaceName() {
+		return []reconcile.Request{}
+	}
+
+	ramenConf, err := RamenConfigUpdate(r.Log, configMap)
+	if err != nil {
+		return []reconcile.Request{}
+	}
+
+	r.RmnConfig = ramenConf
+
+	req := []reconcile.Request{}
+
+	drpcs := &rmn.DRPlacementControlList{}
+	if err := r.Client.List(context.TODO(), drpcs); err != nil {
+		return []reconcile.Request{}
+	}
+
+	for _, drpc := range drpcs.Items {
+		req = append(req, reconcile.Request{NamespacedName: types.NamespacedName{Name: drpc.Name, Namespace: drpc.Namespace}})
+	}
+
+	return []reconcile.Request{}
+}
+
 // SetupWithManager sets up the controller with the Manager.
 //
 //nolint:funlen
@@ -539,8 +567,9 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	r.eventRecorder = rmnutil.NewEventReporter(mgr.GetEventRecorderFor("controller_DRPlacementControl"))
 
 	return ctrl.NewControllerManagedBy(mgr).
-		WithOptions(ctrlcontroller.Options{MaxConcurrentReconciles: getMaxConcurrentReconciles(ctrl.Log)}).
+		WithOptions(ctrlcontroller.Options{MaxConcurrentReconciles: getMaxConcurrentReconciles(r.RmnConfig)}).
 		For(&rmn.DRPlacementControl{}).
+		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(r.configMapMapFun)).
 		Watches(&source.Kind{Type: &ocmworkv1.ManifestWork{}}, mwMapFun, builder.WithPredicates(mwPred)).
 		Watches(&source.Kind{Type: &viewv1beta1.ManagedClusterView{}}, mcvMapFun, builder.WithPredicates(mcvPred)).
 		Watches(&source.Kind{Type: &plrv1.PlacementRule{}}, usrPlRuleMapFun, builder.WithPredicates(usrPlRulePred)).
@@ -767,11 +796,6 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 		return nil, err
 	}
 
-	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
-	if err != nil {
-		return nil, fmt.Errorf("configmap get: %w", err)
-	}
-
 	syncMetricLabels := SyncMetricLabels(drPolicy, drpc)
 	syncMetrics := NewSyncMetrics(syncMetricLabels)
 
@@ -797,7 +821,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 		drClusters:      drClusters,
 		vrgs:            vrgs,
 		vrgNamespace:    vrgNamespace,
-		volSyncDisabled: ramenConfig.VolSync.Disabled,
+		volSyncDisabled: r.RmnConfig.VolSync.Disabled,
 		metrics:         &drpcMetrics,
 		mwu: rmnutil.MWUtil{
 			Client:          r.Client,

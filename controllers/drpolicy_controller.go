@@ -35,6 +35,7 @@ type DRPolicyReconciler struct {
 	Log               logr.Logger
 	Scheme            *runtime.Scheme
 	ObjectStoreGetter ObjectStoreGetter
+	RmnConfig         *ramen.RamenConfig
 }
 
 // ReasonValidationFailed is set when the DRPolicy could not be validated or is not valid
@@ -83,11 +84,6 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	u := &drpolicyUpdater{ctx, drpolicy, r.Client, log}
 
-	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("config map get: %w", u.validatedSetFalse("ConfigMapGetFailed", err))
-	}
-
 	drclusters := &ramen.DRClusterList{}
 
 	if err := r.Client.List(ctx, drclusters); err != nil {
@@ -98,7 +94,7 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// DRPolicy is marked for deletion
 	if !drpolicy.ObjectMeta.DeletionTimestamp.IsZero() &&
 		controllerutil.ContainsFinalizer(drpolicy, drPolicyFinalizerName) {
-		return ctrl.Result{}, u.deleteDRPolicy(drclusters, secretsUtil, ramenConfig)
+		return ctrl.Result{}, u.deleteDRPolicy(drclusters, secretsUtil, r.RmnConfig)
 	}
 
 	log.Info("create/update")
@@ -120,7 +116,7 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, fmt.Errorf("finalizer add update: %w", u.validatedSetFalse("FinalizerAddFailed", err))
 	}
 
-	if err := drPolicyDeploy(drpolicy, drclusters, secretsUtil, ramenConfig, log); err != nil {
+	if err := drPolicyDeploy(drpolicy, drclusters, secretsUtil, r.RmnConfig, log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drpolicy deploy: %w", u.validatedSetFalse("DrClustersDeployFailed", err))
 	}
 
@@ -391,6 +387,13 @@ func (r *DRPolicyReconciler) configMapMapFunc(configMap client.Object) []reconci
 			return []reconcile.Request{}
 		}
 	}
+
+	ramenConf, err := RamenConfigUpdate(r.Log, configMap)
+	if err != nil {
+		return []reconcile.Request{}
+	}
+
+	r.RmnConfig = ramenConf
 
 	drpolicies := &ramen.DRPolicyList{}
 	if err := r.Client.List(context.TODO(), drpolicies); err != nil {

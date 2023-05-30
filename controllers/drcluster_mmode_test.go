@@ -154,6 +154,7 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 				apiReader: k8sManager.GetAPIReader(),
 			},
 			ObjectStoreGetter: fakeObjectStoreGetter{},
+			RmnConfig:         ramenConfig,
 		}).SetupWithManager(k8sManager)).To(Succeed())
 
 		ctx, cancel = context.WithCancel(context.TODO())

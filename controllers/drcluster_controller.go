@@ -42,6 +42,7 @@ type DRClusterReconciler struct {
 	Scheme            *runtime.Scheme
 	MCVGetter         util.ManagedClusterViewGetter
 	ObjectStoreGetter ObjectStoreGetter
+	RmnConfig         *ramen.RamenConfig
 }
 
 // DRCluster condition reasons
@@ -127,6 +128,13 @@ func (r *DRClusterReconciler) drClusterConfigMapMapFunc(configMap client.Object)
 	if configMap.GetName() != HubOperatorConfigMapName || configMap.GetNamespace() != NamespaceName() {
 		return []reconcile.Request{}
 	}
+
+	ramenConf, err := RamenConfigUpdate(r.Log, configMap)
+	if err != nil {
+		return []reconcile.Request{}
+	}
+
+	r.RmnConfig = ramenConf
 
 	drcusters := &ramen.DRClusterList{}
 	if err := r.Client.List(context.TODO(), drcusters); err != nil {
@@ -301,7 +309,6 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	return r.processCreateOrUpdate(u)
 }
 
-//nolint:cyclop
 func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.Result, error) {
 	var (
 		requeue        bool
@@ -310,25 +317,20 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 
 	u.log.Info("create/update")
 
-	_, ramenConfig, err := ConfigMapGet(u.ctx, r.APIReader)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("config map get: %w", u.validatedSetFalseAndUpdate("ConfigMapGetFailed", err))
-	}
-
 	if err := u.addLabelsAndFinalizers(); err != nil {
 		return ctrl.Result{}, fmt.Errorf("finalizer add update: %w", u.validatedSetFalseAndUpdate("FinalizerAddFailed", err))
 	}
 
-	if err := drClusterDeploy(u, ramenConfig); err != nil {
+	if err := drClusterDeploy(u, r.RmnConfig); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drclusters deploy: %w", u.validatedSetFalseAndUpdate("DrClustersDeployFailed", err))
 	}
 
-	if err = validateCIDRsFormat(u.object, u.log); err != nil {
+	if err := validateCIDRsFormat(u.object, u.log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drclusters CIDRs validate: %w",
 			u.validatedSetFalseAndUpdate(ReasonValidationFailed, err))
 	}
 
-	requeue, err = u.clusterFenceHandle()
+	requeue, err := u.clusterFenceHandle()
 	if err != nil {
 		// On error proceed with S3 validation, as fencing is independent of S3
 		reconcileError = fmt.Errorf("failed to handle cluster fencing: %w", err)

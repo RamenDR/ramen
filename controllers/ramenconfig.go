@@ -6,7 +6,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"os"
 
@@ -48,8 +47,6 @@ const NoS3StoreAvailable = "NoS3"
 
 var ControllerType ramendrv1alpha1.ControllerType
 
-var cachedRamenConfigFileName string
-
 func LoadControllerConfig(configFile string,
 	log logr.Logger, options *ctrl.Options, ramenConfig *ramendrv1alpha1.RamenConfig,
 ) {
@@ -61,47 +58,12 @@ func LoadControllerConfig(configFile string,
 
 	log.Info("loading Ramen configuration from ", "file", configFile)
 
-	cachedRamenConfigFileName = configFile
-
 	*options = options.AndFromOrDie(
 		ctrl.ConfigFile().AtPath(configFile).OfKind(ramenConfig))
 
 	for profileName, s3Profile := range ramenConfig.S3StoreProfiles {
 		log.Info("s3 profile", "key", profileName, "value", s3Profile)
 	}
-}
-
-// Read the RamenConfig file mounted in the local file system.  This file is
-// expected to be cached in the local file system.  If reading of the
-// RamenConfig file for every S3 store profile access turns out to be more
-// expensive, we may need to enhance this logic to load it only when
-// RamenConfig has changed.
-func ReadRamenConfigFile(log logr.Logger) (ramenConfig ramendrv1alpha1.RamenConfig, err error) {
-	if cachedRamenConfigFileName == "" {
-		err = fmt.Errorf("config file not specified")
-
-		return
-	}
-
-	log.Info("loading Ramen config file ", "name", cachedRamenConfigFileName)
-
-	fileContents, err := ioutil.ReadFile(cachedRamenConfigFileName)
-	if err != nil {
-		err = fmt.Errorf("unable to load the config file %s: %w",
-			cachedRamenConfigFileName, err)
-
-		return
-	}
-
-	err = yaml.Unmarshal(fileContents, &ramenConfig)
-	if err != nil {
-		err = fmt.Errorf("unable to marshal the config file %s: %w",
-			cachedRamenConfigFileName, err)
-
-		return
-	}
-
-	return
 }
 
 func GetRamenConfigS3StoreProfile(ctx context.Context, apiReader client.Reader, profileName string) (
@@ -167,13 +129,8 @@ func s3StoreProfileFormatCheck(s3StoreProfile *ramendrv1alpha1.S3StoreProfile) (
 	return nil
 }
 
-func getMaxConcurrentReconciles(log logr.Logger) int {
+func getMaxConcurrentReconciles(ramenConfig *ramendrv1alpha1.RamenConfig) int {
 	const defaultMaxConcurrentReconciles = 1
-
-	ramenConfig, err := ReadRamenConfigFile(log)
-	if err != nil {
-		return defaultMaxConcurrentReconciles
-	}
 
 	if ramenConfig.MaxConcurrentReconciles == 0 {
 		return defaultMaxConcurrentReconciles
@@ -222,6 +179,26 @@ func ConfigMapGet(
 		},
 		configMap,
 	); err != nil {
+		return
+	}
+
+	ramenConfig = &ramendrv1alpha1.RamenConfig{}
+	err = yaml.Unmarshal([]byte(configMap.Data[ConfigMapRamenConfigKeyName]), ramenConfig)
+
+	return
+}
+
+func RamenConfigUpdate(
+	log logr.Logger,
+	configmap client.Object,
+) (ramenConfig *ramendrv1alpha1.RamenConfig, err error) {
+	log.Info(fmt.Sprintf("Update in %s configuration map", configmap.GetName()))
+
+	configMap, ok := configmap.(*corev1.ConfigMap)
+	if !ok {
+		err = fmt.Errorf("config map function received non-configMap resource %s",
+			configMap.GetName())
+
 		return
 	}
 

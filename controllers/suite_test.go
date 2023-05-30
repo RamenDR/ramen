@@ -315,6 +315,7 @@ var _ = BeforeSuite(func() {
 			apiReader: k8sManager.GetAPIReader(),
 		},
 		ObjectStoreGetter: fakeObjectStoreGetter{},
+		RmnConfig:         ramenConfig,
 	}).SetupWithManager(k8sManager)).To(Succeed())
 
 	Expect((&ramencontrollers.DRPolicyReconciler{
@@ -323,6 +324,7 @@ var _ = BeforeSuite(func() {
 		Scheme:            k8sManager.GetScheme(),
 		Log:               ctrl.Log.WithName("controllers").WithName("DRPolicy"),
 		ObjectStoreGetter: fakeObjectStoreGetter{},
+		RmnConfig:         ramenConfig,
 	}).SetupWithManager(k8sManager)).To(Succeed())
 
 	err = (&ramencontrollers.VolumeReplicationGroupReconciler{
@@ -331,7 +333,8 @@ var _ = BeforeSuite(func() {
 		Log:            ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
 		ObjStoreGetter: fakeObjectStoreGetter{},
 		Scheme:         k8sManager.GetScheme(),
-	}).SetupWithManager(k8sManager, ramenConfig)
+		RmnConfig:      ramenConfig,
+	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
 	Expect((&ramencontrollers.ProtectedVolumeReplicationGroupListReconciler{
@@ -349,8 +352,9 @@ var _ = BeforeSuite(func() {
 			Client:    k8sClient,
 			apiReader: k8sManager.GetAPIReader(),
 		},
-		Scheme:   k8sManager.GetScheme(),
-		Callback: FakeProgressCallback,
+		Scheme:    k8sManager.GetScheme(),
+		Callback:  FakeProgressCallback,
+		RmnConfig: ramenConfig,
 	})
 	err = drpcReconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
