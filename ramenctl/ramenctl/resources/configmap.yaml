@@ -30,6 +30,8 @@ data:
       catalogSourceName: ramen-catalog
       catalogSourceNamespaceName: ramen-system
       clusterServiceVersionName: ramen-dr-cluster-operator.v0.0.1
+    kubeObjectProtection:
+      veleroNamespaceName: velero
     s3StoreProfiles:
     - s3ProfileName: minio-on-dr1
       s3Bucket: bucket
@@ -38,6 +40,9 @@ data:
       s3SecretRef:
         name: ramen-s3-secret
         namespace: ramen-system
+      veleroNamespaceSecretKeyRef:
+        key: cloud
+        name: cloud-credentials
     - s3ProfileName: minio-on-dr2
       s3Bucket: bucket
       s3CompatibleEndpoint: $minio_url_dr2
@@ -45,3 +50,6 @@ data:
       s3SecretRef:
         name: ramen-s3-secret
         namespace: ramen-system
+      veleroNamespaceSecretKeyRef:
+        key: cloud
+        name: cloud-credentials
