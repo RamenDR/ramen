@@ -33,7 +33,7 @@ def run(args):
     command.info("Deleting s3 secret in ramen hub namespace")
     kubectl.delete(
         "--filename",
-        command.resource("s3-secret.yaml"),
+        command.resource("ramen-s3-secret.yaml"),
         "--ignore-not-found",
         context=env["hub"],
         log=command.debug,
