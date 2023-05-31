@@ -112,7 +112,7 @@ type DRPlacementControlSpec struct {
 	// Label selector to identify all the PVCs that need DR protection.
 	// This selector is assumed to be the same for all subscriptions that
 	// need DR protection. It will be passed in to the VRG when it is created
-	PVCSelector metav1.LabelSelector `json:"pvcSelector"`
+	PVCSelector metav1.LabelSelector `json:"pvcSelector,omitempty"`
 
 	// Action is either Failover or Relocate operation
 	Action DRAction `json:"action,omitempty"`

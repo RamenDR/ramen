@@ -229,7 +229,6 @@ spec:
             required:
             - drPolicyRef
             - placementRef
-            - pvcSelector
             type: object
           status:
             description: DRPlacementControlStatus defines the observed state of DRPlacementControl
