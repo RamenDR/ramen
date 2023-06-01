@@ -3,8 +3,8 @@
 
 import drenv
 from drenv import kubectl
+from drenv import minio
 
-from . import minio
 from . import command
 
 
