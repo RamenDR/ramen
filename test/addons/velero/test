@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import json
+import os
+import sys
+import time
+
+from drenv import kubectl
+from drenv import commands
+
+
+BACKUP = "nginx-backup"
+
+
+def test(cluster):
+    print("Deploying nginx example")
+    kubectl.apply("--filename", "nginx.yaml", context=cluster)
+
+    print("Waiting until nginx is rolled out")
+    kubectl.rollout(
+        "status",
+        "deploy/nginx-deployment",
+        "--namespace=nginx-example",
+        "--timeout=180s",
+        context=cluster,
+    )
+
+    print("Deleting older backups")
+    delete_backup(cluster, BACKUP)
+
+    print("Backing up nginx example")
+    create_backup(cluster, BACKUP, "app=nginx")
+    print(describe_backup(cluster, BACKUP))
+
+    print("Simulating a disaster - deleting namespace nginx-example")
+    kubectl.delete("namespace", "nginx-example", context=cluster)
+
+    print("Restoring nginx example from backup")
+    restore_backup(cluster, BACKUP)
+    print(describe_restore(cluster))
+
+    print("Verifying nginx example deployment")
+    kubectl.rollout(
+        "status",
+        "deploy/nginx-deployment",
+        "--namespace=nginx-example",
+        "--timeout=60s",
+        context=cluster,
+    )
+
+    print("Deleting backup")
+    delete_backup(cluster, BACKUP)
+
+    print("Deleting nginx example")
+    kubectl.delete("--filename", "nginx.yaml", context=cluster)
+
+
+def get_backup(cluster, name):
+    out = commands.run(
+        "velero",
+        "backup",
+        "get",
+        "--output=json",
+        f"--kubecontext={cluster}",
+    )
+    info = json.loads(out)
+
+    # The response is not consistent, we get:
+    # - If there are no backups: BackupList with empty items list
+    # - If there is one backup: Backup
+    # - If there is more than one backuo: BackupList with items list of Backup objects.
+    if info["kind"] == "Backup":
+        backups = [info]
+    elif info["kind"] == "BackupList":
+        backups = info["items"]
+    else:
+        raise RuntimeError(f"Unexpected response: {info}")
+
+    for backup in backups:
+        if backup["metadata"]["name"] == name:
+            return backup
+
+
+def create_backup(cluster, name, selector):
+    print(f"Creating backup {name} with selector {selector}")
+    for line in commands.watch(
+        "velero",
+        "backup",
+        "create",
+        name,
+        f"--selector={selector}",
+        f"--kubecontext={cluster}",
+        "--wait",
+    ):
+        print(line)
+
+
+def delete_backup(cluster, name):
+    if not get_backup(cluster, name):
+        return
+
+    print(f"Deleting backup {name}")
+    for line in commands.watch(
+        "velero",
+        "backup",
+        "delete",
+        name,
+        "--confirm",
+        f"--kubecontext={cluster}",
+    ):
+        print(line)
+
+    print(f"Waiting until backup {name} is deleted")
+    start = time.monotonic()
+    delay = 0.125
+    while get_backup(cluster, name):
+        time.sleep(delay)
+        delay = min(2 * delay, 8)
+    elapsed = time.monotonic() - start
+    print(f"Backup {name} deleted in {elapsed:.3f} seconds")
+
+
+def describe_backup(cluster, name):
+    return commands.run(
+        "velero",
+        "backup",
+        "describe",
+        name,
+        f"--kubecontext={cluster}",
+    )
+
+
+def describe_restore(cluster):
+    return commands.run(
+        "velero",
+        "restore",
+        "describe",
+        f"--kubecontext={cluster}",
+    )
+
+
+def restore_backup(cluster, name):
+    print(f"Restoring {name} from backup")
+    for line in commands.watch(
+        "velero",
+        "restore",
+        "create",
+        f"--from-backup={name}",
+        f"--kubecontext={cluster}",
+        "--wait",
+    ):
+        print(line)
+
+
+if len(sys.argv) != 2:
+    print(f"Usage: {sys.argv[0]} cluster")
+    sys.exit(1)
+
+os.chdir(os.path.dirname(__file__))
+cluster = sys.argv[1]
+test(cluster)
