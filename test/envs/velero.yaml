@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Enviroment for testing velero deployment.
+---
+name: "velero"
+
+profiles:
+  - name: velero
+    driver: kvm2
+    container_runtime: containerd
+    memory: 2g
+    workers:
+      - addons:
+          - name: minio
+          - name: velero

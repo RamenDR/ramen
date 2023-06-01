@@ -573,6 +573,7 @@ simpler and faster to work with a minimal environment.
 - `ocm.yaml` - for testing `ocm` deployment
 - `rook.yaml` - for testing `rook` deployment
 - `submariner.yaml` - for testing `submariner` deployment
+- `velero.yaml` - for testing `velero` deployment
 
 ## Testing drenv
 
