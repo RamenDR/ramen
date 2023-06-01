@@ -41,6 +41,10 @@ environment.
    [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/)
    for the details. Version v0.15.1 was tested with drenv.
 
+1. Install the `velero` tool. See
+   [Velero Basic Install](https://velero.io/docs/v1.11/basic-install/)
+   for the details. Version 1.9.3 or later is required.
+
 1. Install `docker`
 
    ```
