@@ -1,0 +1,54 @@
+# SPDX-FileCopyrightText: 2017 the Velero contributors
+# SPDX-License-Identifier: Apache-2.0
+
+# Copied from velero-v1.11.0-linux-amd64/examples with changes:
+# - Add nginx label to the deployment - without it is not backed up.
+#   https://github.com/vmware-tanzu/velero/issues/6347
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nginx-example
+  labels:
+    app: nginx
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+  namespace: nginx-example
+  labels:
+    app: nginx
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - image: nginx:1.17.6
+        name: nginx
+        ports:
+        - containerPort: 80
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: nginx
+  name: my-nginx
+  namespace: nginx-example
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: nginx
+  type: LoadBalancer
