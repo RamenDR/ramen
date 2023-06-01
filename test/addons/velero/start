@@ -6,28 +6,26 @@
 import os
 import sys
 
-from drenv import kubectl
-
-CRDS = [
-    "../../../hack/test/velero.io_backups.yaml",
-    "../../../hack/test/velero.io_restores.yaml",
-]
+from drenv import commands
+from drenv import minio
 
 
 def deploy(cluster):
-    print("Deploying velero crds")
-    for crd in CRDS:
-        kubectl.apply(f"--filename={crd}", context=cluster)
-
-
-def wait(cluster):
-    print("Waiting until cdrs are established")
-    for crd in CRDS:
-        kubectl.wait(
-            "--for=condition=established",
-            f"--filename={crd}",
-            context=cluster,
-        )
+    print("Deploying velero")
+    s3_url = minio.service_url(cluster)
+    for line in commands.watch(
+        "velero",
+        "install",
+        "--provider=aws",
+        "--plugins=velero/velero-plugin-for-aws:v1.2.1",
+        "--bucket=bucket",
+        "--secret-file=credentials.conf",
+        "--use-volume-snapshots=false",
+        f"--backup-location-config=region=minio,s3ForcePathStyle=true,s3Url={s3_url}",
+        f"--kubecontext={cluster}",
+        "--wait",
+    ):
+        print(line)
 
 
 if len(sys.argv) != 2:
@@ -38,4 +36,3 @@ os.chdir(os.path.dirname(__file__))
 cluster = sys.argv[1]
 
 deploy(cluster)
-wait(cluster)
