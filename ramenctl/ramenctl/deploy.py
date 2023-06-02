@@ -37,13 +37,17 @@ def run(args):
             command.info("Loading image in cluster '%s'", cluster)
             command.watch("minikube", "--profile", cluster, "image", "load", tar)
 
-        clusters = [env["hub"]] + env["clusters"]
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            list(executor.map(load_image, clusters))
+        all_clusters = env["clusters"][:]
+        if env["hub"]:
+            all_clusters.append(env["hub"])
 
-    command.info("Deploying ramen operator in cluster '%s'", env["hub"])
-    command.watch("kubectl", "config", "use-context", env["hub"])
-    command.watch("make", "-C", args.source_dir, "deploy-hub")
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            list(executor.map(load_image, all_clusters))
+
+    if env["hub"]:
+        command.info("Deploying ramen operator in cluster '%s'", env["hub"])
+        command.watch("kubectl", "config", "use-context", env["hub"])
+        command.watch("make", "-C", args.source_dir, "deploy-hub")
 
     for cluster in env["clusters"]:
         command.info("Deploying ramen operator in cluster '%s'", cluster)

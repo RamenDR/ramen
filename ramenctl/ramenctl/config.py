@@ -23,18 +23,27 @@ def run(args):
 
     s3_secret = generate_ramen_s3_secret(args)
     cloud_secret = generate_cloud_credentials_secret(env["clusters"][0], args)
-    hub_cm = generate_config_map("hub", env["clusters"], args)
 
-    wait_for_ramen_hub_operator(env["hub"], args)
+    if env["hub"]:
+        hub_cm = generate_config_map("hub", env["clusters"], args)
 
-    create_ramen_s3_secret(env["hub"], s3_secret)
-    for cluster in env["clusters"]:
-        create_cloud_credentials_secret(cluster, cloud_secret)
-    create_ramen_config_map(env["hub"], hub_cm)
-    create_hub_dr_resources(env["hub"], env["clusters"], env["topology"])
+        wait_for_ramen_hub_operator(env["hub"], args)
 
-    wait_for_dr_clusters(env["hub"], env["clusters"], args)
-    wait_for_dr_policy(env["hub"], args)
+        create_ramen_s3_secret(env["hub"], s3_secret)
+        for cluster in env["clusters"]:
+            create_cloud_credentials_secret(cluster, cloud_secret)
+        create_ramen_config_map(env["hub"], hub_cm)
+        create_hub_dr_resources(env["hub"], env["clusters"], env["topology"])
+
+        wait_for_dr_clusters(env["hub"], env["clusters"], args)
+        wait_for_dr_policy(env["hub"], args)
+    else:
+        dr_cluster_cm = generate_config_map("dr-cluster", env["clusters"], args)
+
+        for cluster in env["clusters"]:
+            create_ramen_s3_secret(cluster, s3_secret)
+            create_cloud_credentials_secret(cluster, cloud_secret)
+            create_ramen_config_map(cluster, dr_cluster_cm)
 
 
 def wait_for_ramen_hub_operator(hub, args):
