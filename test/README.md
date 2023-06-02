@@ -569,6 +569,9 @@ The environments files are located in the `envs` directory.
 - `regional-dr.yaml` - for testing regional DR using a hub cluster and 2
   managed clusters with Ceph storage.
 
+- `regional-dr-hubless.yaml` - for testing regional DR using a setup
+  without a hub.
+
 - `regional-dr-external.yaml.example` - A starting point for creating
    environment for testing regional DR using with external storage.
 
