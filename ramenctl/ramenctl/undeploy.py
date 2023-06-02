@@ -22,6 +22,7 @@ def run(args):
         command.watch("kubectl", "config", "use-context", cluster)
         command.watch("make", "-C", args.source_dir, "undeploy-dr-cluster")
 
-    command.info("Undeploying ramen operator in cluster '%s'", env["hub"])
-    command.watch("kubectl", "config", "use-context", env["hub"])
-    command.watch("make", "-C", args.source_dir, "undeploy-hub")
+    if env["hub"]:
+        command.info("Undeploying ramen operator in cluster '%s'", env["hub"])
+        command.watch("kubectl", "config", "use-context", env["hub"])
+        command.watch("make", "-C", args.source_dir, "undeploy-hub")
