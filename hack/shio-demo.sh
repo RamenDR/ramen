@@ -305,7 +305,7 @@ vrg_list() {
 }; exit_stack_push unset -f vrg_list
 
 vrg_get_s3() {
-	mc cp -q $(app_s3_object_name_prefix $1)v1alpha1.VolumeReplicationGroup/a /tmp/a.json.gz;gzip -df /tmp/a.json.gz;json_to_yaml </tmp/a.json
+	mc cat $(app_s3_object_name_prefix $1)v1alpha1.VolumeReplicationGroup/a|gzip -d|json_to_yaml
 }; exit_stack_push unset -f vrg_get_s3
 
 vr_get() {
@@ -451,7 +451,7 @@ app_s3_objects_delete() {
 
 app_protection_info() {
 	for cluster_name in $s3_store_cluster_names; do
-		set -- "$1" $(app_s3_object_name_prefix_velero "$1" $cluster_name) $app_velero_kube_object_name$1----minio-on-$cluster_name
+		set -- "$1" $(app_s3_object_name_prefix_velero "$1" $cluster_name) $app_velero_kube_object_name--minio-on-$cluster_name
 		velero_backup_log $2 $3
 		velero_backup_backup_object $2 $3
 		velero_backup_resource_list $2 $3
@@ -467,23 +467,23 @@ app_recovery_info() {
 }; exit_stack_push unset -f app_recovery_info
 
 velero_backup_backup_object() {
-	mc cp -q $1backups/$2/velero-backup.json /tmp/$2-velero-backup.json;json_to_yaml </tmp/$2-velero-backup.json
+	mc cat $1backups/$2/velero-backup.json|jq
 }; exit_stack_push unset -f velero_backup_backup_object
 
 velero_backup_resource_list() {
-	mc cp -q $1backups/$2/$2-resource-list.json.gz /tmp;gzip -df /tmp/$2-resource-list.json.gz;json_to_yaml </tmp/$2-resource-list.json
+	mc cat $1backups/$2/$2-resource-list.json.gz|gzip -d|jq
 }; exit_stack_push unset -f velero_backup_resource_list
 
 velero_backup_log() {
-	mc cp -q $1backups/$2/$2-logs.gz /tmp;gzip -df /tmp/$2-logs.gz;cat /tmp/$2-logs
+	mc cat $1backups/$2/$2-logs.gz|gzip -d
 }; exit_stack_push unset -f velero_backup_log
 
 velero_restore_results() {
-	mc cp -q $1restores/$2/restore-$2-results.gz /tmp;gzip -df /tmp/restore-$2-results.gz;json_to_yaml </tmp/restore-$2-results
+	mc cat $1restores/$2/restore-$2-results.gz|gzip -d|jq
 }; exit_stack_push unset -f velero_restore_results
 
 velero_restore_log() {
-	mc cp -q $1restores/$2/restore-$2-logs.gz /tmp;gzip -df /tmp/restore-$2-logs.gz;cat /tmp/restore-$2-logs
+	mc cat $1restores/$2/restore-$2-logs.gz|gzip -d
 }; exit_stack_push unset -f velero_restore_log
 
 velero_kube_objects_list() {
