@@ -9,7 +9,7 @@ echo
 echo "1. Activating the ramen virtual enviroment ..."
 echo
 
-source venv
+source ../venv
 
 echo
 echo "2. Creating a test cluster ..."
