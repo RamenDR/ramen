@@ -467,32 +467,6 @@ func DRPCsFailingOverToClusterForPolicy(
 	return filteredDRPCs, nil
 }
 
-func SetDRPCStatusCondition(conditions *[]metav1.Condition, conditionType string,
-	observedGeneration int64, status metav1.ConditionStatus, reason, msg string,
-) bool {
-	newCondition := metav1.Condition{
-		Type:               conditionType,
-		Status:             status,
-		ObservedGeneration: observedGeneration,
-		LastTransitionTime: metav1.Now(),
-		Reason:             reason,
-		Message:            msg,
-	}
-
-	existingCondition := findCondition(*conditions, conditionType)
-	if existingCondition == nil ||
-		existingCondition.Status != newCondition.Status ||
-		existingCondition.ObservedGeneration != newCondition.ObservedGeneration ||
-		existingCondition.Reason != newCondition.Reason ||
-		existingCondition.Message != newCondition.Message {
-		setStatusCondition(conditions, newCondition)
-
-		return true
-	}
-
-	return false
-}
-
 // SetupWithManager sets up the controller with the Manager.
 //
 //nolint:funlen
@@ -662,7 +636,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 func (r *DRPlacementControlReconciler) recordFailure(drpc *rmn.DRPlacementControl,
 	placementObj client.Object, reason, msg string, drpcMetrics *DRPCMetrics, log logr.Logger,
 ) {
-	needsUpdate := SetDRPCStatusCondition(&drpc.Status.Conditions, rmn.ConditionAvailable,
+	needsUpdate := addOrUpdateCondition(&drpc.Status.Conditions, rmn.ConditionAvailable,
 		drpc.Generation, metav1.ConditionFalse, reason, msg)
 	if needsUpdate {
 		err := r.updateDRPCStatus(drpc, placementObj, drpcMetrics, log)
@@ -1368,10 +1342,10 @@ func updateVRGsFromManagedClusters(mcvGetter rmnutil.ManagedClusterViewGetter, d
 	if len(vrgs) == 0 && failedClusterToQuery != drpc.Spec.FailoverCluster {
 		condition := findCondition(drpc.Status.Conditions, rmn.ConditionPeerReady)
 		if condition == nil {
-			SetDRPCStatusCondition(&drpc.Status.Conditions, rmn.ConditionPeerReady, drpc.Generation,
-				metav1.ConditionTrue, rmn.ReasonSuccess, "Forcing Ready")
-			SetDRPCStatusCondition(&drpc.Status.Conditions, rmn.ConditionAvailable,
+			addOrUpdateCondition(&drpc.Status.Conditions, rmn.ConditionAvailable,
 				drpc.Generation, metav1.ConditionTrue, rmn.ReasonSuccess, "Forcing Available")
+			addOrUpdateCondition(&drpc.Status.Conditions, rmn.ConditionPeerReady, drpc.Generation,
+				metav1.ConditionTrue, rmn.ReasonSuccess, "Forcing Ready")
 		}
 	}
 
@@ -1822,4 +1796,30 @@ func selectVRGNamespace(
 	default:
 		return drpc.Namespace, nil
 	}
+}
+
+func addOrUpdateCondition(conditions *[]metav1.Condition, conditionType string,
+	observedGeneration int64, status metav1.ConditionStatus, reason, msg string,
+) bool {
+	newCondition := metav1.Condition{
+		Type:               conditionType,
+		Status:             status,
+		ObservedGeneration: observedGeneration,
+		LastTransitionTime: metav1.Now(),
+		Reason:             reason,
+		Message:            msg,
+	}
+
+	existingCondition := findCondition(*conditions, conditionType)
+	if existingCondition == nil ||
+		existingCondition.Status != newCondition.Status ||
+		existingCondition.ObservedGeneration != newCondition.ObservedGeneration ||
+		existingCondition.Reason != newCondition.Reason ||
+		existingCondition.Message != newCondition.Message {
+		setStatusCondition(conditions, newCondition)
+
+		return true
+	}
+
+	return false
 }
