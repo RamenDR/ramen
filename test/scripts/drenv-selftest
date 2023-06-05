@@ -6,7 +6,7 @@ cd $(dirname $(dirname $0))
 prefix="test-$(uuidgen)"
 
 echo
-echo "1. Activating the ramen virtual enviroment ..."
+echo "1. Activating the ramen virtual environment ..."
 echo
 
 source ../venv
