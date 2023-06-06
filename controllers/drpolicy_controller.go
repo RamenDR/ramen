@@ -382,6 +382,16 @@ func (r *DRPolicyReconciler) configMapMapFunc(configMap client.Object) []reconci
 		return []reconcile.Request{}
 	}
 
+	labelAdded := util.AddLabel(configMap, util.OCMBackupLabelKey, util.OCMBackupLabelValue)
+
+	if labelAdded {
+		if err := r.Update(context.TODO(), configMap); err != nil {
+			r.Log.Error(err, "Failed to add OCM backup label to ramen-hub-operator-config map")
+
+			return []reconcile.Request{}
+		}
+	}
+
 	drpolicies := &ramen.DRPolicyList{}
 	if err := r.Client.List(context.TODO(), drpolicies); err != nil {
 		return []reconcile.Request{}
