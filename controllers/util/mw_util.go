@@ -285,13 +285,19 @@ func (mwu *MWUtil) CreateOrUpdateNamespaceManifest(
 		return err
 	}
 
-	labels := map[string]string{}
 	manifests := []ocmworkv1.Manifest{
 		*manifest,
 	}
 
 	mwName := fmt.Sprintf(ManifestWorkNameFormat, name, namespaceName, MWTypeNS)
-	manifestWork := mwu.newManifestWork(mwName, managedClusterNamespace, labels, manifests, annotations)
+	manifestWork := mwu.newManifestWork(
+		mwName,
+		managedClusterNamespace,
+		map[string]string{
+			OCMBackupLabelKey: OCMBackupLabelValue,
+		},
+		manifests,
+		annotations)
 
 	return mwu.createOrUpdateManifestWork(manifestWork, managedClusterNamespace)
 }
