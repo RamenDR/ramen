@@ -6,8 +6,8 @@
 name: example
 templates:
   - name: "example-cluster"
-    driver: podman
-    container_runtime: cri-o
+    driver: kvm2
+    container_runtime: containerd
     workers:
       - addons:
           - name: example
