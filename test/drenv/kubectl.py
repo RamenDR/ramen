@@ -10,7 +10,14 @@ def version(context=None, output=None):
     APIServer.
     """
     args = ["--output", output] if output else []
-    return _run("version", *args, context=context)
+    try:
+        return _run("version", *args, context=context)
+    except commands.Error as e:
+        # If kubectl provided output this is not really an error and the caller
+        # can use the output.
+        if e.output:
+            return e.output
+        raise
 
 
 def config(*args, context=None):
