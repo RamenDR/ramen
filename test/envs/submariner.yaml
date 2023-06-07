@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Environment for testing submariner deployment.
+---
+name: submariner
+
+templates:
+  - name: cluster
+    driver: kvm2
+    container_runtime: containerd
+    network: default
+    cni: kindnet
+    memory: 3g
+
+profiles:
+  - name: dr1
+    template: cluster
+  - name: dr2
+    template: cluster
