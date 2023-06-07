@@ -37,6 +37,10 @@ environment.
    [Install clusteradm CLI tool](https://open-cluster-management.io/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool)
    for the details. Version 0.5.0 or later is required.
 
+1. Install `subctl` tool, See
+   [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/)
+   for the details. Version v0.15.1 was tested with drenv.
+
 1. Install `docker`
 
    ```
