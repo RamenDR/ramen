@@ -459,6 +459,11 @@ $ drenv delete envs/example.yaml
     - `cpus`: Number of CPUs per VM (default 2)
     - `memory`: Memory per VM (default 4g)
     - `addons`: List of minikube addons to install
+    - `service_cluster_ip_range`: The CIDR to be used for service
+      cluster IPs.
+    - `extra_config`: List of extra config key=value. Each item adds
+      `--extra-config` minikube option. See `minikube start --help` to
+      see the possible keys and values.
     - `workers`: Optional list of workers to run when starting a
       profile. Use multiple workers to run scripts in parallel.
         - `name`: Optional worker name

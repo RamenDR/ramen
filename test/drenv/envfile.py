@@ -85,6 +85,9 @@ def _validate_profile(profile, addons_root):
     profile.setdefault("memory", "4g")
     profile.setdefault("network", "")
     profile.setdefault("addons", [])
+    profile.setdefault("ser", [])
+    profile.setdefault("service_cluster_ip_range", None)
+    profile.setdefault("extra_config", [])
     profile.setdefault("workers", [])
 
     for i, worker in enumerate(profile["workers"]):

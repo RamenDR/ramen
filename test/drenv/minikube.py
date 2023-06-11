@@ -26,6 +26,8 @@ def start(
     cpus=None,
     memory=None,
     addons=(),
+    service_cluster_ip_range=None,
+    extra_config=None,
     alsologtostderr=False,
 ):
     args = []
@@ -50,6 +52,11 @@ def start(
         args.extend(("--memory", memory))
     if addons:
         args.extend(("--addons", ",".join(addons)))
+    if service_cluster_ip_range:
+        args.extend(("--service-cluster-ip-range", service_cluster_ip_range))
+    if extra_config:
+        for pair in extra_config:
+            args.extend(("--extra-config", pair))
     if alsologtostderr:
         args.append("--alsologtostderr")
 
