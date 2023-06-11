@@ -191,6 +191,8 @@ def start_minikube_cluster(profile, verbose=False):
         cpus=profile["cpus"],
         memory=profile["memory"],
         addons=profile["addons"],
+        service_cluster_ip_range=profile["service_cluster_ip_range"],
+        extra_config=profile["extra_config"],
         alsologtostderr=verbose,
     )
 
