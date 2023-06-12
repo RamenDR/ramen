@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import os
+import sys
+import time
+
+import drenv
+from drenv import kubectl
+from drenv import subctl
+
+NAMESPACE = "submariner-operator"
+
+BROKER_DEPLOYMENTS = ("submariner-operator",)
+
+CLUSTER_DEPLOYMENTS = (
+    "submariner-operator",
+    "submariner-lighthouse-agent",
+    "submariner-lighthouse-coredns",
+)
+
+
+def deploy_broker(broker):
+    broker_dir = submariner_dir(broker)
+    print(f"Creating submariner configuration directory '{broker_dir}'")
+    os.makedirs(broker_dir, exist_ok=True)
+
+    print(f"Deploying submariner broker on cluster '{broker}'")
+    broker_info = os.path.join(broker_dir, subctl.BROKER_INFO)
+    subctl.deploy_broker(broker, globalnet=True, broker_info=broker_info)
+    print(f"Broker info stored in '{broker_info}'")
+
+    print("Waiting for submariner broker deployments")
+    wait_for_deployments(broker, BROKER_DEPLOYMENTS, NAMESPACE)
+
+
+def join_cluster(cluster, broker):
+    print(f"Waiting until broker '{broker}' info is available")
+    broker_dir = submariner_dir(broker)
+    broker_info = os.path.join(broker_dir, subctl.BROKER_INFO)
+    wait_for_path(broker_info, 120)
+
+    print(f"Joining cluster '{cluster}' to broker '{broker}'")
+    subctl.join(broker_info, context=cluster, clusterid=cluster, cable_driver="vxlan")
+
+    print("Waiting for submariner cluster deployments")
+    wait_for_deployments(cluster, CLUSTER_DEPLOYMENTS, NAMESPACE)
+
+
+def submariner_dir(broker):
+    return os.path.join(drenv.config_dir(broker), "submariner")
+
+
+def wait_for_path(path, timeout):
+    delay = 0.25
+    deadline = time.monotonic() + timeout
+    while True:
+        if os.path.exists(path):
+            return
+        if time.monotonic() > deadline:
+            raise RuntimeError(f"Timeout waiting for '{path}'")
+        time.sleep(delay)
+        delay = min(delay * 2, 8)
+
+
+def wait_for_deployments(cluster, names, namespace):
+    for name in names:
+        deployment = f"deploy/{name}"
+        print(f"Waiting until deployment '{name}' exists")
+        drenv.wait_for(deployment, namespace=namespace, profile=cluster)
+
+        print(f"Waiting until deployment '{name}' is rolled out")
+        kubectl.rollout(
+            "status",
+            deployment,
+            f"--namespace={namespace}",
+            "--timeout=180s",
+            context=cluster,
+        )
+
+
+if len(sys.argv) != 3:
+    print(f"Usage: {sys.argv[0]} cluster broker")
+    sys.exit(1)
+
+os.chdir(os.path.dirname(__file__))
+cluster = sys.argv[1]
+broker = sys.argv[2]
+
+if cluster == broker:
+    deploy_broker(cluster)
+else:
+    join_cluster(cluster, broker)
