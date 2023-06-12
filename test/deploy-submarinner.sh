@@ -1,7 +1,7 @@
 #!/bin/bash -e
 
-echo "## Deploying broker on cluster dr1"
-subctl deploy-broker --context dr1 --globalnet
+echo "## Deploying broker on cluster hub"
+subctl deploy-broker --context hub --globalnet
 
 echo "## Joining cluster dr1"
 subctl join broker-info.subm --context dr1 --clusterid dr1 --cable-driver vxlan
