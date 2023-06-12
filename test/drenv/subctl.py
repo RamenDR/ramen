@@ -35,6 +35,10 @@ def join(broker_info, context, clusterid, cable_driver=None, log=print):
     _watch(*args, log=log)
 
 
+def show(what, context):
+    return commands.run("subctl", "show", what, "--context", context)
+
+
 def _watch(cmd, *args, context=None, log=print):
     cmd = ["subctl", cmd, *args]
     for line in commands.watch(*cmd):

@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import os
+import sys
+import time
+
+from drenv import commands
+from drenv import subctl
+
+
+def test(cluster, timeout=60):
+    delay = 1
+    deadline = time.monotonic() + timeout
+
+    print("Waiting until subctl status is ok")
+
+    while True:
+        print("Checking subctl status...")
+        try:
+            status = subctl.show("all", context=cluster)
+        except commands.Error as e:
+            print(f"subctl failed with exitcode {e.exitcode}")
+        else:
+            print(status)
+            break
+
+        if time.monotonic() > deadline:
+            raise RuntimeError("Timeout waiting for subctl status")
+
+        print(f"Retrying in {delay} seconds...")
+        time.sleep(delay)
+        delay = min(delay * 2, 16)
+
+
+if len(sys.argv) < 2:
+    print(f"Usage: {sys.argv[0]} cluster")
+    sys.exit(1)
+
+os.chdir(os.path.dirname(__file__))
+cluster = sys.argv[1]
+
+test(cluster)
