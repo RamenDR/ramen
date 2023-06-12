@@ -12,6 +12,10 @@ templates:
     network: default
     cni: kindnet
     memory: 3g
+    workers:
+      - addons:
+          - name: submariner
+            args: [$name, hub]
 
 profiles:
   - name: hub
