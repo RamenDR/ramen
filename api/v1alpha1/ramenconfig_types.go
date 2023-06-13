@@ -74,6 +74,9 @@ type S3StoreProfile struct {
 	S3SecretRef v1.SecretReference `json:"s3SecretRef"`
 	//+optional
 	VeleroNamespaceSecretKeyRef *v1.SecretKeySelector `json:"veleroNamespaceSecretKeyRef,omitempty"`
+	// A CA bundle to use when verifying TLS connections to the provider
+	//+optional
+	CACertificates []byte `json:"caCertificates,omitempty"`
 }
 
 //+kubebuilder:object:root=true

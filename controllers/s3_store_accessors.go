@@ -6,16 +6,11 @@ package controllers
 import (
 	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	corev1 "k8s.io/api/core/v1"
 )
 
 type s3StoreAccessor struct {
 	ObjectStorer
-	profileName                 string
-	url                         string
-	bucketName                  string
-	regionName                  string
-	veleroNamespaceSecretKeyRef *corev1.SecretKeySelector
+	ramen.S3StoreProfile
 }
 
 func s3StoreAccessorsGet(
@@ -41,11 +36,7 @@ func s3StoreAccessorsGet(
 
 		s3StoreAccessors = append(s3StoreAccessors, s3StoreAccessor{
 			objectStorer,
-			s3ProfileName,
-			s3StoreProfile.S3CompatibleEndpoint,
-			s3StoreProfile.S3Bucket,
-			s3StoreProfile.S3Region,
-			s3StoreProfile.VeleroNamespaceSecretKeyRef,
+			s3StoreProfile,
 		})
 	}
 

@@ -205,7 +205,7 @@ func (v *VRGInstance) kubeObjectsCaptureDelete(
 		if err := s3StoreAccessor.ObjectStorer.DeleteObjects(pathName); err != nil {
 			v.log.Error(err, "Kube objects capture s3 objects delete error",
 				"number", captureNumber,
-				"profile", s3StoreAccessor.profileName,
+				"profile", s3StoreAccessor.S3ProfileName,
 			)
 			v.kubeObjectsCaptureFailed(err.Error())
 
@@ -242,12 +242,13 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 		log1 := log.WithValues("group", groupNumber, "name", captureGroup.Name)
 
 		for _, s3StoreAccessor := range s3StoreAccessors {
-			log2 := log.WithValues("profile", s3StoreAccessor.profileName)
+			log2 := log.WithValues("profile", s3StoreAccessor.S3ProfileName)
 			request, err := v.reconciler.kubeObjects.ProtectRequestCreate(
 				v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.log,
-				s3StoreAccessor.url, s3StoreAccessor.bucketName, s3StoreAccessor.regionName,
-				pathName, s3StoreAccessor.veleroNamespaceSecretKeyRef, vrg.Namespace, captureGroup.Spec,
-				veleroNamespaceName, kubeObjectsCaptureName(namePrefix, captureGroup.Name, s3StoreAccessor.profileName),
+				s3StoreAccessor.S3CompatibleEndpoint, s3StoreAccessor.S3Bucket, s3StoreAccessor.S3Region,
+				pathName, s3StoreAccessor.VeleroNamespaceSecretKeyRef, s3StoreAccessor.CACertificates,
+				vrg.Namespace, captureGroup.Spec,
+				veleroNamespaceName, kubeObjectsCaptureName(namePrefix, captureGroup.Name, s3StoreAccessor.S3ProfileName),
 				labels, annotations)
 			requests[requestsProcessedCount] = request
 			requestsProcessedCount++
@@ -422,7 +423,7 @@ func (v *VRGInstance) getRecoverGroupsFromRecipe() []kubeobjects.RecoverSpec {
 }
 
 func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result,
-	s3ProfileName string, s3StoreProfile ramen.S3StoreProfile, objectStorer ObjectStorer,
+	s3StoreProfile ramen.S3StoreProfile, objectStorer ObjectStorer,
 ) error {
 	vrg := v.instance
 
@@ -454,11 +455,7 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result,
 		result,
 		s3StoreAccessor{
 			objectStorer,
-			s3ProfileName,
-			s3StoreProfile.S3CompatibleEndpoint,
-			s3StoreProfile.S3Bucket,
-			s3StoreProfile.S3Region,
-			s3StoreProfile.VeleroNamespaceSecretKeyRef,
+			s3StoreProfile,
 		},
 		sourceVrgNamespaceName,
 		sourceVrgName,
@@ -495,25 +492,27 @@ func (v *VRGInstance) createRecoverOrProtectRequest(
 		pathName, namePrefix := kubeObjectsCapturePathNameAndNamePrefix(vrg.Namespace, vrg.Name, backupSequenceNumber)
 		request, err = v.reconciler.kubeObjects.ProtectRequestCreate(
 			v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.log,
-			s3StoreAccessor.url,
-			s3StoreAccessor.bucketName,
-			s3StoreAccessor.regionName,
+			s3StoreAccessor.S3CompatibleEndpoint,
+			s3StoreAccessor.S3Bucket,
+			s3StoreAccessor.S3Region,
 			pathName,
-			s3StoreAccessor.veleroNamespaceSecretKeyRef,
+			s3StoreAccessor.VeleroNamespaceSecretKeyRef,
+			s3StoreAccessor.CACertificates,
 			vrg.Namespace,
 			recoverGroup.Spec,
-			veleroNamespaceName, kubeObjectsCaptureName(namePrefix, backupName, s3StoreAccessor.profileName),
+			veleroNamespaceName, kubeObjectsCaptureName(namePrefix, backupName, s3StoreAccessor.S3ProfileName),
 			labels, annotations)
 	} else {
 		request, err = v.reconciler.kubeObjects.RecoverRequestCreate(
 			v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.log,
-			s3StoreAccessor.url,
-			s3StoreAccessor.bucketName,
-			s3StoreAccessor.regionName,
+			s3StoreAccessor.S3CompatibleEndpoint,
+			s3StoreAccessor.S3Bucket,
+			s3StoreAccessor.S3Region,
 			capturePathName,
-			s3StoreAccessor.veleroNamespaceSecretKeyRef,
+			s3StoreAccessor.VeleroNamespaceSecretKeyRef,
+			s3StoreAccessor.CACertificates,
 			sourceVrgNamespaceName, vrg.Namespace, recoverGroup, veleroNamespaceName,
-			kubeObjectsCaptureName(captureNamePrefix, recoverGroup.BackupName, s3StoreAccessor.profileName),
+			kubeObjectsCaptureName(captureNamePrefix, recoverGroup.BackupName, s3StoreAccessor.S3ProfileName),
 			kubeObjectsRecoverName(recoverNamePrefix, groupNumber), labels, annotations)
 	}
 
@@ -531,7 +530,7 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 	annotations := map[string]string{}
 	groups := v.getRecoverGroups()
 	requests := make([]kubeobjects.Request, len(groups)) // Request: interface for ProtectRequest, RecoverRequest
-	log := v.log.WithValues("number", capture.Number, "profile", s3StoreAccessor.profileName)
+	log := v.log.WithValues("number", capture.Number, "profile", s3StoreAccessor.S3ProfileName)
 
 	for groupNumber, recoverGroup := range groups {
 		log1 := log.WithValues("group", groupNumber, "name", recoverGroup.BackupName)
