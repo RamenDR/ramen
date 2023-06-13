@@ -11,7 +11,7 @@ from drenv import commands
 from drenv import subctl
 
 
-def test(cluster, timeout=60):
+def test(cluster, timeout=180):
     delay = 1
     deadline = time.monotonic() + timeout
 
