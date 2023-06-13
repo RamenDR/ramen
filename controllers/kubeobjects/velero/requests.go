@@ -145,6 +145,7 @@ func (RequestsManager) RecoverRequestCreate(
 	s3RegionName string,
 	s3KeyPrefix string,
 	secretKeyRef *corev1.SecretKeySelector,
+	caCertificates []byte,
 	sourceNamespaceName string,
 	targetNamespaceName string,
 	recoverSpec kubeobjects.RecoverSpec,
@@ -160,6 +161,7 @@ func (RequestsManager) RecoverRequestCreate(
 		"s3 region", s3RegionName,
 		"s3 key prefix", s3KeyPrefix,
 		"secret key ref", secretKeyRef,
+		"CA certificates", caCertificates,
 		"source namespace", sourceNamespaceName,
 		"target namespace", targetNamespaceName,
 		"request namespace", requestNamespaceName,
@@ -177,6 +179,7 @@ func (RequestsManager) RecoverRequestCreate(
 		s3RegionName,
 		s3KeyPrefix,
 		secretKeyRef,
+		caCertificates,
 		sourceNamespaceName,
 		targetNamespaceName,
 		recoverSpec,
@@ -198,6 +201,7 @@ func backupDummyCreateAndRestore(
 	s3RegionName string,
 	s3KeyPrefix string,
 	secretKeyRef *corev1.SecretKeySelector,
+	caCertificates []byte,
 	sourceNamespaceName string,
 	targetNamespaceName string,
 	recoverSpec kubeobjects.RecoverSpec,
@@ -210,6 +214,7 @@ func backupDummyCreateAndRestore(
 	backupLocation, backup, err := backupCreate(
 		types.NamespacedName{Namespace: requestNamespaceName, Name: backupName},
 		w, reader, s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretKeyRef,
+		caCertificates,
 		backupSpecDummy(), sourceNamespaceName,
 		labels,
 		annotations,
@@ -338,6 +343,7 @@ func (RequestsManager) ProtectRequestCreate(
 	s3RegionName string,
 	s3KeyPrefix string,
 	secretKeyRef *corev1.SecretKeySelector,
+	caCertificates []byte,
 	sourceNamespaceName string,
 	objectsSpec kubeobjects.Spec,
 	requestNamespaceName string,
@@ -351,6 +357,7 @@ func (RequestsManager) ProtectRequestCreate(
 		"s3 region", s3RegionName,
 		"s3 key prefix", s3KeyPrefix,
 		"secret key ref", secretKeyRef,
+		"CA certificates", caCertificates,
 		"source namespace", sourceNamespaceName,
 		"request namespace", requestNamespaceName,
 		"capture name", captureName,
@@ -366,6 +373,7 @@ func (RequestsManager) ProtectRequestCreate(
 		s3RegionName,
 		s3KeyPrefix,
 		secretKeyRef,
+		caCertificates,
 		sourceNamespaceName,
 		objectsSpec,
 		requestNamespaceName,
@@ -385,6 +393,7 @@ func backupRealCreate(
 	s3RegionName string,
 	s3KeyPrefix string,
 	secretKeyRef *corev1.SecretKeySelector,
+	caCertificates []byte,
 	sourceNamespaceName string,
 	objectsSpec kubeobjects.Spec,
 	requestNamespaceName string,
@@ -395,6 +404,7 @@ func backupRealCreate(
 	backupLocation, backup, err := backupCreate(
 		types.NamespacedName{Namespace: requestNamespaceName, Name: captureName},
 		w, reader, s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretKeyRef,
+		caCertificates,
 		getBackupSpecFromObjectsSpec(objectsSpec),
 		sourceNamespaceName,
 		labels,
@@ -529,6 +539,7 @@ func backupCreate(
 	s3RegionName string,
 	s3KeyPrefix string,
 	secretKeyRef *corev1.SecretKeySelector,
+	caCertificates []byte,
 	backupSpec velero.BackupSpec,
 	sourceNamespaceName string,
 	labels map[string]string,
@@ -536,6 +547,7 @@ func backupCreate(
 ) (*velero.BackupStorageLocation, *velero.Backup, error) {
 	backupLocation := backupLocation(backupNamespacedName,
 		s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretKeyRef,
+		caCertificates,
 		labels,
 	)
 	if err := w.objectCreate(backupLocation); err != nil {
@@ -626,6 +638,7 @@ func restoreTypeMeta() metav1.TypeMeta { return veleroTypeMeta("Restore") }
 func backupLocation(namespacedName types.NamespacedName,
 	s3Url, s3BucketName, s3RegionName, s3KeyPrefix string,
 	secretKeyRef *corev1.SecretKeySelector,
+	caCertificates []byte,
 	labels map[string]string,
 ) *velero.BackupStorageLocation {
 	return &velero.BackupStorageLocation{
@@ -641,6 +654,7 @@ func backupLocation(namespacedName types.NamespacedName,
 				ObjectStorage: &velero.ObjectStorageLocation{
 					Bucket: s3BucketName,
 					Prefix: s3KeyPrefix + path,
+					CACert: caCertificates,
 				},
 			},
 			Config: map[string]string{

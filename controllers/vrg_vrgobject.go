@@ -40,6 +40,8 @@ func (v *VRGInstance) vrgObjectProtect(result *ctrl.Result, s3StoreAccessors []s
 	}
 
 	for _, s3StoreAccessor := range s3StoreAccessors {
+		log1 := log.WithValues("profile", s3StoreAccessor.S3ProfileName)
+
 		if err := VrgObjectProtect(s3StoreAccessor.ObjectStorer, *vrg); err != nil {
 			util.ReportIfNotPresent(
 				eventReporter, vrg, corev1.EventTypeWarning, util.EventReasonVrgUploadFailed, err.Error(),
@@ -47,7 +49,7 @@ func (v *VRGInstance) vrgObjectProtect(result *ctrl.Result, s3StoreAccessors []s
 
 			const message = "VRG Kube object protect error"
 
-			log.Error(err, message, "profile", s3StoreAccessor.profileName)
+			log1.Error(err, message)
 
 			v.vrgObjectProtected = newVRGClusterDataUnprotectedCondition(vrg.Generation, message)
 			result.Requeue = true
@@ -55,7 +57,7 @@ func (v *VRGInstance) vrgObjectProtect(result *ctrl.Result, s3StoreAccessors []s
 			return
 		}
 
-		log.Info("VRG Kube object protected", "profile", s3StoreAccessor.profileName)
+		log1.Info("VRG Kube object protected")
 
 		vrgLastUploadTime[key] = metav1.Now()
 
