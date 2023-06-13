@@ -26,6 +26,8 @@ templates:
           - name: rook-pool
           - name: rook-toolbox
       - addons:
+          - name: submariner
+            args: ["$name", "hub"]
           - name: ocm-cluster
             args: ["$name", "hub"]
       - addons:
@@ -41,6 +43,8 @@ templates:
     memory: "4g"
     workers:
       - addons:
+          - name: submariner
+            args: ["$name", "hub"]
           - name: ocm-hub
           - name: ocm-controller
           - name: cert-manager
