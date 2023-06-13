@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	dto "github.com/prometheus/client_model/go"
@@ -502,11 +503,28 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 	}
 
 	if !reflect.DeepEqual(foundMW.Spec, mw.Spec) {
-		mw.Spec.DeepCopyInto(&foundMW.Spec)
-
 		mwu.Log.Info("ManifestWork exists.", "name", mw.Name, "namespace", foundMW.Namespace)
 
-		return mwu.Client.Update(mwu.Ctx, foundMW)
+		retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			var err error
+
+			err = mwu.Client.Get(mwu.Ctx,
+				types.NamespacedName{Name: mw.Name, Namespace: managedClusternamespace},
+				foundMW)
+			if err != nil {
+				return err
+			}
+
+			mw.Spec.DeepCopyInto(&foundMW.Spec)
+
+			err = mwu.Client.Update(mwu.Ctx, foundMW)
+
+			return err
+		})
+
+		if retryErr != nil {
+			return retryErr
+		}
 	}
 
 	return nil

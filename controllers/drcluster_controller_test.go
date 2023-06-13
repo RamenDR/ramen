@@ -22,6 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -220,17 +221,22 @@ func updateDRClusterManifestWorkStatus(clusterNamespace string) {
 		},
 	}
 
-	mw.Status = DRClusterStatusConditions
+	retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		var err error
 
-	err := k8sClient.Status().Update(context.TODO(), mw)
-	if err != nil {
-		// try again
-		Expect(apiReader.Get(context.TODO(), manifestLookupKey, mw)).NotTo(HaveOccurred())
+		err = apiReader.Get(context.TODO(), manifestLookupKey, mw)
+		if err != nil {
+			return err
+		}
+
 		mw.Status = DRClusterStatusConditions
-		err = k8sClient.Status().Update(context.TODO(), mw)
-	}
 
-	Expect(err).NotTo(HaveOccurred())
+		err = k8sClient.Status().Update(context.TODO(), mw)
+
+		return err
+	})
+
+	Expect(retryErr).NotTo(HaveOccurred())
 }
 
 var _ = Describe("DRClusterController", func() {
