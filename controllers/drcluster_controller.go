@@ -69,6 +69,7 @@ const (
 	StorageAnnotationSecretNamespace = "drcluster.ramendr.openshift.io/storage-secret-namespace"
 	StorageAnnotationClusterID       = "drcluster.ramendr.openshift.io/storage-clusterid"
 	StorageAnnotationDriver          = "drcluster.ramendr.openshift.io/storage-driver"
+	ParamAnnotationFenceToken        = "param.drcluster.ramendr.openshift.io/fence-token"
 )
 
 const (
@@ -1229,7 +1230,7 @@ func (u *drclusterInstance) createNFManifestWork(targetCluster *ramen.DRCluster,
 	log.Info(fmt.Sprintf("Creating NetworkFence ManifestWork on cluster %s to perform fencing op on cluster %s",
 		peerCluster.Name, targetCluster.Name))
 
-	nf, err := generateNF(targetCluster)
+	nf, err := generateNF(targetCluster, peerCluster)
 	if err != nil {
 		return fmt.Errorf("failed to generate network fence resource: %w", err)
 	}
@@ -1285,7 +1286,7 @@ func fillStorageDetails(cluster *ramen.DRCluster, nf *csiaddonsv1alpha1.NetworkF
 	return nil
 }
 
-func generateNF(targetCluster *ramen.DRCluster) (csiaddonsv1alpha1.NetworkFence, error) {
+func generateNF(targetCluster *ramen.DRCluster, peerCluster *ramen.DRCluster) (csiaddonsv1alpha1.NetworkFence, error) {
 	if len(targetCluster.Spec.CIDRs) == 0 {
 		return csiaddonsv1alpha1.NetworkFence{}, fmt.Errorf("CIDRs has no values")
 	}
@@ -1294,6 +1295,7 @@ func generateNF(targetCluster *ramen.DRCluster) (csiaddonsv1alpha1.NetworkFence,
 	// is generated as
 	// "network-fence" + name of the cluster being fenced
 	resourceName := "network-fence-" + targetCluster.Name
+	fenceState := csiaddonsv1alpha1.FenceState(targetCluster.Spec.ClusterFence)
 
 	nf := csiaddonsv1alpha1.NetworkFence{
 		// TODO: There is no way currently to get the information such as
@@ -1304,16 +1306,45 @@ func generateNF(targetCluster *ramen.DRCluster) (csiaddonsv1alpha1.NetworkFence,
 		TypeMeta:   metav1.TypeMeta{Kind: "NetworkFence", APIVersion: "csiaddons.openshift.io/v1alpha1"},
 		ObjectMeta: metav1.ObjectMeta{Name: resourceName},
 		Spec: csiaddonsv1alpha1.NetworkFenceSpec{
-			FenceState: csiaddonsv1alpha1.FenceState(targetCluster.Spec.ClusterFence),
+			FenceState: fenceState,
 			Cidrs:      targetCluster.Spec.CIDRs,
 		},
 	}
-
 	if err := fillStorageDetails(targetCluster, &nf); err != nil {
 		return nf, fmt.Errorf("failed to create network fence resource with storage detai: %w", err)
 	}
 
+	fillFenceTokenParameters(targetCluster, peerCluster, fenceState, &nf)
+
 	return nf, nil
+}
+
+func fillFenceTokenParameters(targetCluster *ramen.DRCluster, peerCluster *ramen.DRCluster,
+	fence csiaddonsv1alpha1.FenceState, nf *csiaddonsv1alpha1.NetworkFence,
+) {
+	peerClusterFenceToken, ok := peerCluster.Annotations[ParamAnnotationFenceToken]
+	if !ok {
+		return // no fence token annotation found
+	}
+
+	targetClusterFenceToken, ok := targetCluster.Annotations[ParamAnnotationFenceToken]
+	if !ok {
+		return // no fence token annotation found
+	}
+
+	var fenceToken, unfenceToken string
+
+	switch fence {
+	case csiaddonsv1alpha1.Fenced:
+		fenceToken = targetClusterFenceToken
+		unfenceToken = peerClusterFenceToken
+	case csiaddonsv1alpha1.Unfenced:
+		unfenceToken = targetClusterFenceToken
+		fenceToken = peerClusterFenceToken
+	}
+
+	nf.Spec.Parameters["fenceToken"] = fenceToken
+	nf.Spec.Parameters["unfenceToken"] = unfenceToken
 }
 
 //nolint:exhaustive
