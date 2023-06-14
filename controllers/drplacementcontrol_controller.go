@@ -601,6 +601,8 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// Save a copy of the instance status to be used for the VRG status update comparison
 	drpc.Status.DeepCopyInto(&r.savedInstanceStatus)
 
+	ensureDRPCConditionsInited(&drpc.Status.Conditions, drpc.Generation, "Initialization")
+
 	placementObj, err := r.ownPlacementOrPlacementRule(ctx, drpc, logger)
 	if err != nil && !(errors.IsNotFound(err) && !drpc.GetDeletionTimestamp().IsZero()) {
 		r.recordFailure(drpc, placementObj, "Error", err.Error(), nil, logger)
@@ -1822,4 +1824,31 @@ func addOrUpdateCondition(conditions *[]metav1.Condition, conditionType string,
 	}
 
 	return false
+}
+
+// Initial creation of the DRPC status condition. This will also preserve the ordering of conditions in the array
+func ensureDRPCConditionsInited(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	const DRPCTotalConditions = 2
+	if len(*conditions) == DRPCTotalConditions {
+		return
+	}
+
+	time := metav1.NewTime(time.Now())
+
+	setStatusConditionIfNotFound(conditions, metav1.Condition{
+		Type:               rmn.ConditionAvailable,
+		Reason:             string(rmn.Initiating),
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		LastTransitionTime: time,
+		Message:            message,
+	})
+	setStatusConditionIfNotFound(conditions, metav1.Condition{
+		Type:               rmn.ConditionPeerReady,
+		Reason:             string(rmn.Initiating),
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		LastTransitionTime: time,
+		Message:            message,
+	})
 }
