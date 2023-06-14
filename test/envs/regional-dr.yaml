@@ -18,6 +18,9 @@ templates:
     memory: "6g"
     extra_disks: 1
     disk_size: "50g"
+    addons:
+      - volumesnapshots
+      - csi-hostpath-driver
     workers:
       - addons:
           - name: cert-manager
