@@ -6,28 +6,51 @@
 import os
 import sys
 
+from drenv import commands
 from drenv import kubectl
 
-CRDS = [
-    "../../../hack/test/volsync.backube_replicationsources.yaml",
-    "../../../hack/test/volsync.backube_replicationdestinations.yaml",
-]
+NAMESPACE = "volsync-system"
+DEPLOYMENT = "volsync"
 
 
 def deploy(cluster):
-    print("Deploying volsync crds")
-    for crd in CRDS:
-        kubectl.apply(f"--filename={crd}", context=cluster)
+    print("Adding helm backube repo")
+    cmd = [
+        "helm",
+        "repo",
+        "add",
+        "backube",
+        "https://backube.github.io/helm-charts/",
+    ]
+    for line in commands.watch(*cmd):
+        print(line)
+
+    print("Installing volsync")
+    cmd = [
+        "helm",
+        "upgrade",
+        "--install",
+        "--create-namespace",
+        "--namespace",
+        NAMESPACE,
+        DEPLOYMENT,
+        "backube/volsync",
+        "--kube-context",
+        cluster,
+    ]
+    for line in commands.watch(*cmd):
+        print(line)
 
 
 def wait(cluster):
-    print("Waiting until cdrs are established")
-    for crd in CRDS:
-        kubectl.wait(
-            "--for=condition=established",
-            f"--filename={crd}",
-            context=cluster,
-        )
+    print(f"Waiting until deployment {DEPLOYMENT} is rolled out")
+    kubectl.rollout(
+        "status",
+        f"deploy/{DEPLOYMENT}",
+        f"--namespace={NAMESPACE}",
+        "--timeout=300s",
+        context=cluster,
+    )
 
 
 if len(sys.argv) != 2:
