@@ -45,6 +45,14 @@ environment.
    [Velero Basic Install](https://velero.io/docs/v1.11/basic-install/)
    for the details. Version 1.9.3 or later is required.
 
+1. Install `helm` tool - on Fedora you can use:
+
+   ```
+   dnf install helm
+   ```
+
+   See [Installing Helm](https://helm.sh/docs/intro/install/) for other options.
+
 1. Install `docker`
 
    ```
