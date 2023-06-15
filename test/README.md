@@ -582,6 +582,7 @@ simpler and faster to work with a minimal environment.
 - `rook.yaml` - for testing `rook` deployment
 - `submariner.yaml` - for testing `submariner` deployment
 - `velero.yaml` - for testing `velero` deployment
+- `volsync.yaml` - for testing `volsync` deployment
 
 ## Testing drenv
 
