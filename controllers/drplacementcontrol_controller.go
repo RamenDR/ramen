@@ -961,7 +961,7 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 		Ctx:             ctx,
 		Log:             r.Log,
 		InstName:        drpc.Name,
-		TargetNamespace: drpc.Status.PreferredDecision.ClusterNamespace,
+		TargetNamespace: vrgNamespace,
 	}
 
 	drPolicy, err := r.getDRPolicy(ctx, drpc, log)
@@ -1743,10 +1743,6 @@ func selectVRGNamespace(
 	drpc *rmn.DRPlacementControl,
 	placementObj client.Object,
 ) (string, error) {
-	if drpc.Status.PreferredDecision.ClusterNamespace != "" {
-		return drpc.Status.PreferredDecision.ClusterNamespace, nil
-	}
-
 	switch placementObj.(type) {
 	case *clrapiv1beta1.Placement:
 		vrgNamespace, err := getApplicationDestinationNamespace(client, log, placementObj)
