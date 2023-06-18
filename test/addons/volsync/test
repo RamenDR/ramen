@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import json
+import os
+import sys
+
+import drenv
+from drenv import kubectl
+from drenv import subctl
+
+DEPLOY = "busybox"
+NAMESPACE = "busybox"
+
+VOLSYNC_SECRET = "volsync-rsync-tls-busybox-dst"
+VOLSYNC_SERVICE = "volsync-rsync-tls-dst-busybox-dst"
+
+
+def setup_application(cluster):
+    print(f"Deploy application on cluster '{cluster}'")
+    kubectl.apply("--kustomize", "source", context=cluster)
+
+
+def setup_replication_destination(cluster):
+    print(f"Create replication destination on cluster '{cluster}'")
+    kubectl.apply("--kustomize", "destination", context=cluster)
+
+
+def wait_for_application(cluster):
+    print(f"Waiting until deploy '{DEPLOY}' is rolled out in cluster '{cluster}'")
+    kubectl.rollout(
+        "status",
+        f"deploy/{DEPLOY}",
+        f"--namespace={NAMESPACE}",
+        "--timeout=120s",
+        context=cluster,
+    )
+
+
+def wait_for_replication_destination(cluster):
+    print(
+        f"Waiting until replication destination is synchronizing in cluster '{cluster}'"
+    )
+    kubectl.wait(
+        "replicationdestination/busybox-dst",
+        "--for=condition=Synchronizing=True",
+        f"--namespace={NAMESPACE}",
+        "--timeout=120s",
+        context=cluster,
+    )
+
+
+def setup_replication_secret(cluster1, cluster2):
+    """
+    Create a secret in the source cluster using data from the secret created by
+    volsync on the destiantion cluster.
+    """
+    print(f"Getting volsync secret in cluster '{cluster2}'")
+    psk_txt = kubectl.get(
+        f"secret/{VOLSYNC_SECRET}",
+        f"--namespace={NAMESPACE}",
+        "--output=jsonpath={.data.psk\\.txt}",
+        context=cluster2,
+    )
+
+    print(f"Creating volsync secret in cluster '{cluster1}'")
+    template = drenv.template("source/secret.yaml")
+    yaml = template.substitute(value=psk_txt)
+    kubectl.apply("--filename=-", input=yaml, context=cluster1)
+
+
+def setup_replication_service(cluster1, cluster2):
+    """
+    Export volsync replication service from the destination cluster to the
+    source cluster using submariner.
+    """
+    print(f"Exporting volsync service in cluster '{cluster2}'")
+    subctl.export("service", VOLSYNC_SERVICE, cluster2, namespace=NAMESPACE)
+
+    print(f"Waiting until service export is synced in cluster '{cluster2}'")
+    kubectl.wait(
+        f"serviceexports/{VOLSYNC_SERVICE}",
+        "--for=condition=Synced=True",
+        f"--namespace={NAMESPACE}",
+        "--timeout=120s",
+        context=cluster2,
+    )
+
+    print(f"Waiting until service import is ready in cluster '{cluster1}'")
+    drenv.wait_for(
+        f"serviceimports/{VOLSYNC_SERVICE}",
+        output="jsonpath={.status.clusters}",
+        namespace=NAMESPACE,
+        timeout=120,
+        profile=cluster1,
+    )
+
+
+def run_replication(cluster):
+    """
+    Start replication and wait until replication completes.
+    """
+    print(f"Creating replication source in cluster '{cluster}'")
+    kubectl.apply("--filename", "source/replication-src.yaml", context=cluster)
+
+    print(f"Waiting until replication is completed in cluster '{cluster}'")
+    kubectl.wait(
+        "replicationsource/busybox-src",
+        "--for=jsonpath={.status.lastManualSync}=replication-1",
+        f"--namespace={NAMESPACE}",
+        "--timeout=120s",
+        context=cluster,
+    )
+    out = kubectl.get(
+        "replicationsource/busybox-src",
+        "--output=jsonpath={.status}",
+        f"--namespace={NAMESPACE}",
+        context=cluster,
+    )
+    status = json.loads(out)
+    print("Replication status:")
+    print(json.dumps(status, indent=2))
+
+
+def teardown(cluster1, cluster2):
+    """
+    Remove deployments from both clusters. This also deletes additonal
+    resources created in the same namespace.
+    """
+    print("Cleaning up clusters")
+    subctl.unexport("service", VOLSYNC_SERVICE, cluster2, namespace=NAMESPACE)
+    kubectl.delete(
+        "--kustomize",
+        "source",
+        "--ignore-not-found",
+        "--wait=false",
+        context=cluster1,
+    )
+    kubectl.delete(
+        "--kustomize",
+        "destination",
+        "--ignore-not-found",
+        "--wait=false",
+        context=cluster2,
+    )
+    kubectl.delete("--kustomize", "source", "--ignore-not-found", context=cluster1)
+    kubectl.delete("--kustomize", "destination", "--ignore-not-found", context=cluster2)
+
+
+if len(sys.argv) != 3:
+    print(f"Usage: {sys.argv[0]} cluster1 cluster2")
+    sys.exit(1)
+
+os.chdir(os.path.dirname(__file__))
+cluster1, cluster2 = sys.argv[1:]
+
+setup_application(cluster1)
+setup_replication_destination(cluster2)
+
+wait_for_application(cluster1)
+wait_for_replication_destination(cluster2)
+
+setup_replication_secret(cluster1, cluster2)
+setup_replication_service(cluster1, cluster2)
+
+run_replication(cluster1)
+
+teardown(cluster1, cluster2)

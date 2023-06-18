@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: busybox-pvc
+  namespace: busybox
+  labels:
+    appname: busybox
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: csi-hostpath-sc
+  resources:
+    requests:
+      storage: 1Gi

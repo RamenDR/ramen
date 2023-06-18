@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationDestination
+metadata:
+  name: busybox-dst
+  namespace: busybox
+spec:
+  rsyncTLS:
+    copyMethod: Snapshot
+    capacity: 1Gi
+    accessModes: [ReadWriteOnce]
+    storageClassName: csi-hostpath-sc
+    volumeSnapshotClassName: csi-hostpath-snapclass
+    moverSecurityContext:
+      runAsUser: 10000
+      runAsGroup: 10000
+      fsGroup: 10000
