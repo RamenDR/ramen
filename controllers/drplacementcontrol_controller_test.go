@@ -735,9 +735,23 @@ func getLatestDRPC() *rmn.DRPlacementControl {
 }
 
 func clearDRPCStatus() {
-	latestDRPC := getLatestDRPC()
-	latestDRPC.Status = rmn.DRPlacementControlStatus{}
-	err := k8sClient.Status().Update(context.TODO(), latestDRPC)
+	localRetries := 0
+
+	var err error
+
+	for localRetries < updateRetries {
+		latestDRPC := getLatestDRPC()
+		latestDRPC.Status = rmn.DRPlacementControlStatus{}
+
+		err = k8sClient.Status().Update(context.TODO(), latestDRPC)
+		if errors.IsConflict(err) {
+			localRetries++
+
+			continue
+		}
+
+		break
+	}
 	Expect(err).NotTo(HaveOccurred())
 }
 
