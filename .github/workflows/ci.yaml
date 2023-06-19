@@ -50,6 +50,14 @@ jobs:
       - name: Run linters
         run: ./hack/pre-commit.sh
 
+      - name: Check that generated files were not modified
+        run: |
+          make generate
+          make manifests
+          go mod tidy
+          git --no-pager diff
+          git diff-index --quiet HEAD
+
   golangci:
     name: Golangci Lint
     runs-on: ubuntu-20.04
@@ -190,11 +198,6 @@ jobs:
       - name: Go tidy
         run: go mod tidy
 
-      - name: Check auto generated files
-        run: |
-          echo "Failing if any auto generated files are updated, checking 'git status'"
-          git --no-pager diff
-          git status --porcelain 2>&1 | tee /dev/stderr | (! read)
 
   deploy-check:
     name: Check artifacts and operator deployment
