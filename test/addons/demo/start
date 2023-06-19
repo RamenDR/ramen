@@ -5,7 +5,9 @@
 
 import os
 import sys
+import time
 
+from drenv import commands
 from drenv import kubectl
 
 if len(sys.argv) != 2:
@@ -38,5 +40,24 @@ kubectl.rollout(
     context=cluster,
 )
 
-print("Configuring ingress")
-kubectl.apply("--filename", "ingress.yaml", context=cluster)
+# This can fail for 30 seconds before the webhook is available, but we don't
+# have a way to wait for the webbook.
+start = time.monotonic()
+deadline = start + 60
+delay = 1
+
+while True:
+    print("Configuring ingress")
+    try:
+        kubectl.apply("--filename", "ingress.yaml", context=cluster)
+    except commands.Error as e:
+        if "failed to call webhook" not in e.error or time.monotonic() > deadline:
+            raise
+
+        print(f"Deploying failed: {e}")
+        print(f"Retrying in {delay} seconds")
+        time.sleep(delay)
+        delay = min(delay * 2, 16)
+    else:
+        print(f"Ingress configured in {time.monotonic() - start:.3f} seconds")
+        break
