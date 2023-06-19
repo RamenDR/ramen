@@ -23,4 +23,5 @@ node_addr = subprocess.check_output(cmd).decode().rstrip()
 cmd = ["curl", f"http://{node_addr}/"]
 out = subprocess.check_output(cmd).decode().rstrip()
 
-assert "Welcome to nginx!" in out
+if "Welcome to nginx!" not in out:
+    raise RuntimeError(f"Unexpected output: {out}")
