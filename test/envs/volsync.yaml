@@ -6,10 +6,21 @@
 name: volsync
 
 templates:
+  - name: hub
+    driver: kvm2
+    container_runtime: containerd
+    network: default
+    cni: kindnet
+    memory: 2g
+    workers:
+      - addons:
+          - name: submariner
+            args: [hub, dr1, dr2]
   - name: cluster
     driver: kvm2
     container_runtime: containerd
     network: default
+    cni: kindnet
     memory: 4g
     disk_size: 50g
     addons:
@@ -17,6 +28,8 @@ templates:
       - csi-hostpath-driver
 
 profiles:
+  - name: hub
+    template: hub
   - name: dr1
     template: cluster
   - name: dr2
