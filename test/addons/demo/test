@@ -20,7 +20,7 @@ print("Testing demo deployment")
 cmd = ["minikube", "ip", "--profile", cluster]
 node_addr = subprocess.check_output(cmd).decode().rstrip()
 
-cmd = ["curl", f"http://{node_addr}/"]
+cmd = ["curl", "--no-progress-meter", f"http://{node_addr}/"]
 out = subprocess.check_output(cmd).decode().rstrip()
 
 if "Welcome to nginx!" not in out:
