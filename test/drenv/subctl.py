@@ -35,6 +35,28 @@ def join(broker_info, context, clusterid, cable_driver=None, log=print):
     _watch(*args, log=log)
 
 
+def export(what, name, context, namespace=None, log=print):
+    """
+    Run subctl export ... logging progress messages.
+    """
+    args = ["export", what, "--context", context]
+    if namespace:
+        args.extend(("--namespace", namespace))
+    args.append(name)
+    _watch(*args, log=log)
+
+
+def unexport(what, name, context, namespace=None, log=print):
+    """
+    Run subctl unexport ... logging progress messages.
+    """
+    args = ["unexport", what, "--context", context]
+    if namespace:
+        args.extend(("--namespace", namespace))
+    args.append(name)
+    _watch(*args, log=log)
+
+
 def show(what, context):
     return commands.run("subctl", "show", what, "--context", context)
 

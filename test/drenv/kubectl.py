@@ -34,6 +34,10 @@ def get(*args, context=None):
     return _run("get", *args, context=context)
 
 
+def describe(*args, context=None):
+    return _run("describe", *args, context=context)
+
+
 def exec(*args, context=None):
     """
     Run kubectl get ... and return the output.
