@@ -308,9 +308,9 @@ func (u *drpolicyUpdater) deleteDRPolicy(drclusters *ramen.DRClusterList,
 		return fmt.Errorf("finalizer remove update: %w", err)
 	}
 
-	// delete metrics if matching lables are found
-	metricLables := DRPolicySyncIntervalMetricLabels(u.object)
-	DeleteDRPolicySyncIntervalMetrics(metricLables)
+	// delete metrics if matching labels are found
+	metricLabels := DRPolicySyncIntervalMetricLabels(u.object)
+	DeleteDRPolicySyncIntervalMetrics(metricLabels)
 
 	return nil
 }

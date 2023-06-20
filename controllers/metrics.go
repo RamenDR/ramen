@@ -14,8 +14,13 @@ const (
 )
 
 const (
-	LastSyncTimestampSeconds    = "last_sync_timestamp_seconds"
 	DRPolicySyncIntervalSeconds = "policy_schedule_interval_seconds"
+)
+
+const (
+	LastSyncTimestampSeconds = "last_sync_timestamp_seconds"
+	LastSyncDurationSeconds  = "last_sync_duration_seconds"
+	LastSyncDataBytes        = "last_sync_data_bytes"
 )
 
 type SyncMetrics struct {
@@ -24,6 +29,20 @@ type SyncMetrics struct {
 
 type DRPolicySyncMetrics struct {
 	DRPolicySyncInterval prometheus.Gauge
+}
+
+type SyncDurationMetrics struct {
+	LastSyncDuration prometheus.Gauge
+}
+
+type SyncDataBytesMetrics struct {
+	LastSyncDataBytes prometheus.Gauge
+}
+
+type DRPCMetrics struct {
+	SyncMetrics
+	SyncDurationMetrics
+	SyncDataBytesMetrics
 }
 
 const (
@@ -46,6 +65,20 @@ var (
 	drpolicySyncIntervalMetricLabelNames = []string{
 		Policyname, // DRPolicy name
 	}
+
+	syncDurationMetricLabelNames = []string{
+		ObjType,            // Name of the type of the resource [drpc]
+		ObjName,            // Name of the resoure [drpc-name]
+		ObjNamespace,       // DRPC namespace name
+		SchedulingInterval, // Value from DRPolicy
+	}
+
+	syncDataBytesMetricLabels = []string{
+		ObjType,            // Name of the type of the resource [drpc]
+		ObjName,            // Name of the resoure [drpc-name]
+		ObjNamespace,       // DRPC namespace name
+		SchedulingInterval, // Value from DRPolicy
+	}
 )
 
 var (
@@ -66,9 +99,28 @@ var (
 		},
 		drpolicySyncIntervalMetricLabelNames,
 	)
+
+	lastSyncDuration = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      LastSyncDurationSeconds,
+			Namespace: metricNamespace,
+			Help:      "Duration of max sync time in seconds",
+		},
+		syncDurationMetricLabelNames,
+	)
+
+	lastSyncDataBytes = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      LastSyncDataBytes,
+			Namespace: metricNamespace,
+			Help:      "Total data synced in bytes since last sync",
+		},
+		syncDataBytesMetricLabels,
+	)
 )
 
-func SyncPolicyMetricLables(drPolicy *rmn.DRPolicy, drpc *rmn.DRPlacementControl) prometheus.Labels {
+// lastSyncTime metrics reports value from lastGrpupSyncTime taken from DRPC status
+func SyncMetricLabels(drPolicy *rmn.DRPolicy, drpc *rmn.DRPlacementControl) prometheus.Labels {
 	return prometheus.Labels{
 		ObjType:            "DRPlacementControl",
 		ObjName:            drpc.Name,
@@ -88,6 +140,7 @@ func DeleteSyncMetric(labels prometheus.Labels) bool {
 	return lastSyncTime.Delete(labels)
 }
 
+// dRPolicySyncInterval Metrics reports the value from schedulingInterval from DRPolicy
 func DRPolicySyncIntervalMetricLabels(drPolicy *rmn.DRPolicy) prometheus.Labels {
 	return prometheus.Labels{Policyname: drPolicy.Name}
 }
@@ -102,8 +155,50 @@ func DeleteDRPolicySyncIntervalMetrics(labels prometheus.Labels) bool {
 	return dRPolicySyncInterval.Delete(labels)
 }
 
+// lastSyncDuration Metrics reports value from lastGroupSyncDuration from DRPC status
+func SyncDurationMetricLabels(drPolicy *rmn.DRPolicy, drpc *rmn.DRPlacementControl) prometheus.Labels {
+	return prometheus.Labels{
+		ObjType:            "DRPlacementControl",
+		ObjName:            drpc.Name,
+		ObjNamespace:       drpc.Namespace,
+		SchedulingInterval: drPolicy.Spec.SchedulingInterval,
+	}
+}
+
+func NewSyncDurationMetric(labels prometheus.Labels) SyncDurationMetrics {
+	return SyncDurationMetrics{
+		LastSyncDuration: lastSyncDuration.With(labels),
+	}
+}
+
+func DeleteSyncDurationMetric(labels prometheus.Labels) bool {
+	return lastSyncDuration.Delete(labels)
+}
+
+// lastSyncDataBytes Metric reports value from lastGroupSyncBytes taken from DRPC status
+func SyncDataBytesMetricLabels(drPolicy *rmn.DRPolicy, drpc *rmn.DRPlacementControl) prometheus.Labels {
+	return prometheus.Labels{
+		ObjType:            "DRPlacementControl",
+		ObjName:            drpc.Name,
+		ObjNamespace:       drpc.Namespace,
+		SchedulingInterval: drPolicy.Spec.SchedulingInterval,
+	}
+}
+
+func NewSyncDataBytesMetric(labels prometheus.Labels) SyncDataBytesMetrics {
+	return SyncDataBytesMetrics{
+		LastSyncDataBytes: lastSyncDataBytes.With(labels),
+	}
+}
+
+func DeleteSyncDataBytesMetric(labels prometheus.Labels) bool {
+	return lastSyncDataBytes.Delete(labels)
+}
+
 func init() {
 	// Register custom metrics with the global prometheus registry
-	metrics.Registry.MustRegister(lastSyncTime)
 	metrics.Registry.MustRegister(dRPolicySyncInterval)
+	metrics.Registry.MustRegister(lastSyncTime)
+	metrics.Registry.MustRegister(lastSyncDuration)
+	metrics.Registry.MustRegister(lastSyncDataBytes)
 }
