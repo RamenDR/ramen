@@ -313,8 +313,8 @@ spec:
                 format: int64
                 type: integer
               lastGroupSyncDuration:
-                description: lastGroupSyncDuration is the max time taken to sync from
-                  the most recent successful synchronization of all PVCs
+                description: lastGroupSyncDuration is the longest time taken to sync
+                  from the most recent successful synchronization of all PVCs
                 type: string
               lastGroupSyncTime:
                 description: lastGroupSyncTime is the time of the most recent successful

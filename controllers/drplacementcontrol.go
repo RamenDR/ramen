@@ -54,7 +54,7 @@ type DRPCInstance struct {
 	vrgs                 map[string]*rmn.VolumeReplicationGroup
 	vrgNamespace         string
 	mwu                  rmnutil.MWUtil
-	metrics              *SyncMetrics
+	metrics              *DRPCMetrics
 }
 
 func (d *DRPCInstance) startProcessing() bool {

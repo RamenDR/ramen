@@ -169,7 +169,7 @@ type DRPlacementControlStatus struct {
 	//+optional
 	LastGroupSyncTime *metav1.Time `json:"lastGroupSyncTime,omitempty"`
 
-	// lastGroupSyncDuration is the max time taken to sync
+	// lastGroupSyncDuration is the longest time taken to sync
 	// from the most recent successful synchronization of all PVCs
 	//+optional
 	LastGroupSyncDuration *metav1.Duration `json:"lastGroupSyncDuration,omitempty"`

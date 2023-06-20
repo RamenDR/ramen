@@ -660,12 +660,12 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 }
 
 func (r *DRPlacementControlReconciler) recordFailure(drpc *rmn.DRPlacementControl,
-	placementObj client.Object, reason, msg string, syncMetrics *SyncMetrics, log logr.Logger,
+	placementObj client.Object, reason, msg string, drpcMetrics *DRPCMetrics, log logr.Logger,
 ) {
 	needsUpdate := SetDRPCStatusCondition(&drpc.Status.Conditions, rmn.ConditionAvailable,
 		drpc.Generation, metav1.ConditionFalse, reason, msg)
 	if needsUpdate {
-		err := r.updateDRPCStatus(drpc, placementObj, syncMetrics, log)
+		err := r.updateDRPCStatus(drpc, placementObj, drpcMetrics, log)
 		if err != nil {
 			log.Info(fmt.Sprintf("Failed to update DRPC status (%v)", err))
 		}
@@ -688,6 +688,42 @@ func (r *DRPlacementControlReconciler) setLastSyncTimeMetric(syncMetrics *SyncMe
 	}
 
 	syncMetrics.LastSyncTime.Set(float64(t.ProtoTime().Seconds))
+}
+
+func (r *DRPlacementControlReconciler) setLastSyncDurationMetric(syncDurationMetrics *SyncDurationMetrics,
+	t *metav1.Duration, log logr.Logger,
+) {
+	if syncDurationMetrics == nil {
+		return
+	}
+
+	log.Info(fmt.Sprintf("setting metric: (%s)", LastSyncDurationSeconds))
+
+	if t == nil {
+		syncDurationMetrics.LastSyncDuration.Set(0)
+
+		return
+	}
+
+	syncDurationMetrics.LastSyncDuration.Set(t.Seconds())
+}
+
+func (r *DRPlacementControlReconciler) setLastSyncBytesMetric(syncDataBytesMetrics *SyncDataBytesMetrics,
+	b *int64, log logr.Logger,
+) {
+	if syncDataBytesMetrics == nil {
+		return
+	}
+
+	log.Info(fmt.Sprintf("setting metric: (%s)", LastSyncDataBytes))
+
+	if b == nil {
+		syncDataBytesMetrics.LastSyncDataBytes.Set(0)
+
+		return
+	}
+
+	syncDataBytesMetrics.LastSyncDataBytes.Set(float64(*b))
 }
 
 //nolint:funlen
@@ -736,8 +772,20 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 		return nil, fmt.Errorf("configmap get: %w", err)
 	}
 
-	syncMetricLabels := SyncPolicyMetricLables(drPolicy, drpc)
-	metrics := NewSyncMetrics(syncMetricLabels)
+	syncMetricLabels := SyncMetricLabels(drPolicy, drpc)
+	syncMetrics := NewSyncMetrics(syncMetricLabels)
+
+	syncDurationMetricLabels := SyncDurationMetricLabels(drPolicy, drpc)
+	syncDurationMetrics := NewSyncDurationMetric(syncDurationMetricLabels)
+
+	syncDataBytesLabels := SyncDataBytesMetricLabels(drPolicy, drpc)
+	syncDataMetrics := NewSyncDataBytesMetric(syncDataBytesLabels)
+
+	drpcMetrics := DRPCMetrics{
+		SyncMetrics:          syncMetrics,
+		SyncDurationMetrics:  syncDurationMetrics,
+		SyncDataBytesMetrics: syncDataMetrics,
+	}
 
 	d := &DRPCInstance{
 		reconciler:      r,
@@ -750,7 +798,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 		vrgs:            vrgs,
 		vrgNamespace:    vrgNamespace,
 		volSyncDisabled: ramenConfig.VolSync.Disabled,
-		metrics:         &metrics,
+		metrics:         &drpcMetrics,
 		mwu: rmnutil.MWUtil{
 			Client:          r.Client,
 			APIReader:       r.APIReader,
@@ -992,9 +1040,15 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 		return fmt.Errorf("error in deleting MCV (%w)", err)
 	}
 
-	// delete metrics if matching lables are found
-	syncMetricLabels := SyncPolicyMetricLables(drPolicy, drpc)
+	// delete metrics if matching labels are found
+	syncMetricLabels := SyncMetricLabels(drPolicy, drpc)
 	DeleteSyncMetric(syncMetricLabels)
+
+	syncDurationMetricLabels := SyncDurationMetricLabels(drPolicy, drpc)
+	DeleteSyncDurationMetric(syncDurationMetricLabels)
+
+	syncDataBytesMetricLabels := SyncDataBytesMetricLabels(drPolicy, drpc)
+	DeleteSyncDataBytesMetric(syncDataBytesMetricLabels)
 
 	return nil
 }
@@ -1450,7 +1504,7 @@ func (r *DRPlacementControlReconciler) getStatusCheckDelay(
 }
 
 func (r *DRPlacementControlReconciler) updateDRPCStatus(
-	drpc *rmn.DRPlacementControl, userPlacement client.Object, syncmetric *SyncMetrics, log logr.Logger,
+	drpc *rmn.DRPlacementControl, userPlacement client.Object, drpcMetrics *DRPCMetrics, log logr.Logger,
 ) error {
 	log.Info("Updating DRPC status")
 
@@ -1461,7 +1515,7 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 
 	clusterDecision := r.getClusterDecision(userPlacement)
 	if clusterDecision != nil && clusterDecision.ClusterName != "" && vrgNamespace != "" {
-		r.updateResourceCondition(drpc, clusterDecision.ClusterName, vrgNamespace, syncmetric, log)
+		r.updateResourceCondition(drpc, clusterDecision.ClusterName, vrgNamespace, drpcMetrics, log)
 	}
 
 	for i, condition := range drpc.Status.Conditions {
@@ -1491,7 +1545,7 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 func (r *DRPlacementControlReconciler) updateResourceCondition(
 	drpc *rmn.DRPlacementControl,
 	clusterName, vrgNamespace string,
-	syncmetric *SyncMetrics, log logr.Logger,
+	drpcMetrics *DRPCMetrics, log logr.Logger,
 ) {
 	annotations := make(map[string]string)
 
@@ -1508,7 +1562,9 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 		drpc.Status.LastGroupSyncDuration = nil
 		drpc.Status.LastGroupSyncBytes = nil
 
-		r.setLastSyncTimeMetric(syncmetric, nil, log)
+		r.setLastSyncTimeMetric(&drpcMetrics.SyncMetrics, nil, log)
+		r.setLastSyncDurationMetric(&drpcMetrics.SyncDurationMetrics, nil, log)
+		r.setLastSyncBytesMetric(&drpcMetrics.SyncDataBytesMetrics, nil, log)
 	} else {
 		drpc.Status.ResourceConditions.ResourceMeta.Kind = vrg.Kind
 		drpc.Status.ResourceConditions.ResourceMeta.Name = vrg.Name
@@ -1526,7 +1582,9 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 		drpc.Status.LastGroupSyncDuration = vrg.Status.LastGroupSyncDuration
 		drpc.Status.LastGroupSyncBytes = vrg.Status.LastGroupSyncBytes
 
-		r.setLastSyncTimeMetric(syncmetric, vrg.Status.LastGroupSyncTime, log)
+		r.setLastSyncTimeMetric(&drpcMetrics.SyncMetrics, vrg.Status.LastGroupSyncTime, log)
+		r.setLastSyncDurationMetric(&drpcMetrics.SyncDurationMetrics, vrg.Status.LastGroupSyncDuration, log)
+		r.setLastSyncBytesMetric(&drpcMetrics.SyncDataBytesMetrics, vrg.Status.LastGroupSyncBytes, log)
 	}
 }
 
