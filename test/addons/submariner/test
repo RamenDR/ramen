@@ -7,32 +7,218 @@ import os
 import sys
 import time
 
+import drenv
 from drenv import commands
+from drenv import kubectl
 from drenv import subctl
 
+# We create "nginx" service on namepspace "ns1" on first cluster, and namespace
+# "ns2" in the second cluster. The service is exported to the other cluster
+# using the same namespace.
+SERVICE = "nginx"
+NS1 = "ns1"
+NS2 = "ns2"
 
-def wait_for_cluster(cluster, timeout=180):
+
+def wait_for_submariner(cluster, timeout=180):
+    start = time.monotonic()
+    deadline = start + timeout
     delay = 1
-    deadline = time.monotonic() + timeout
-
-    print("Waiting until subctl status is ok")
 
     while True:
-        print("Checking subctl status...")
+        print(f"Checking submariner status in cluster '{cluster}'")
         try:
             status = subctl.show("all", context=cluster)
         except commands.Error as e:
-            print(f"subctl failed with exitcode {e.exitcode}")
+            if time.monotonic() > deadline:
+                raise
+
+            print(f"Check failed: {e}")
+            print(f"Retrying in {delay} seconds")
+            time.sleep(delay)
+            delay = min(delay * 2, 16)
         else:
+            print(f"Check completed in {time.monotonic() - start:.3f} seconds")
             print(status)
             break
 
-        if time.monotonic() > deadline:
-            raise RuntimeError("Timeout waiting for subctl status")
 
-        print(f"Retrying in {delay} seconds...")
-        time.sleep(delay)
-        delay = min(delay * 2, 16)
+def deploy_service(namespace, dst, src):
+    """
+    Deploy namespace resources in clusters.
+    """
+    print(f"Deploying namespace '{namespace}' on clusters '{dst}'")
+    kubectl.apply(f"--kustomize={namespace}/dst", context=dst)
+    print(f"Deploying namespace '{namespace}' on clusters '{src}'")
+    kubectl.apply(f"--kustomize={namespace}/src", context=src)
+
+
+def undeploy_service(namespace, dst, src):
+    """
+    Undeploy namespace resources in clusters.
+    """
+    print(f"Undeploying namespace '{namespace}' in cluster '{dst}'")
+    kubectl.delete(
+        f"--kustomize={namespace}/dst",
+        "--wait=false",
+        "--ignore-not-found",
+        context=dst,
+    )
+
+    print(f"Undeploying namespace '{namespace}' in cluster '{src}'")
+    kubectl.delete(
+        f"--kustomize={namespace}/src",
+        "--wait=false",
+        "--ignore-not-found",
+        context=src,
+    )
+
+
+def wait_for_delete(namespace, dst, src):
+    print(f"Waiting for deletion of namespace '{namespace}' in cluster '{dst}'")
+    kubectl.delete(
+        f"--kustomize={namespace}/dst",
+        "--wait=true",
+        "--ignore-not-found",
+        context=dst,
+    )
+
+    print(f"Waiting for deletion of namespace '{namespace}' in cluster '{src}'")
+    kubectl.delete(
+        f"--kustomize={namespace}/src",
+        "--wait=true",
+        "--ignore-not-found",
+        context=src,
+    )
+
+
+def wait_for_service(cluster, namespace):
+    print(f"Waiting until '{SERVICE}' is rolled out in cluster '{cluster}'")
+    kubectl.wait(
+        f"deploy/{SERVICE}",
+        "--for=condition=Available",
+        f"--namespace={namespace}",
+        "--timeout=60s",
+        context=cluster,
+    )
+
+
+def wait_for_pod(cluster, namespace):
+    print(f"Waiting until test pod is ready in cluster '{cluster}'")
+    kubectl.wait(
+        "pod/test",
+        "--for=condition=Ready",
+        f"--namespace={namespace}",
+        "--timeout=60s",
+        context=cluster,
+    )
+
+
+def export_service(cluster, namespace):
+    print(f"Export service in namespace '{namespace}' in cluster '{cluster}'")
+    subctl.export("service", SERVICE, cluster, namespace=namespace)
+
+
+def unexport_service(cluster, namespace):
+    print(f"Unexport service in namespace '{namespace}' in cluster '{cluster}'")
+    subctl.unexport("service", SERVICE, cluster, namespace=namespace)
+
+
+def wait_for_service_export(cluster, namespace):
+    print(f"Waiting for service in namespace '{namespace}' in cluster '{cluster}'")
+    kubectl.wait(
+        f"serviceexports/{SERVICE}",
+        "--for=condition=Synced=True",
+        f"--namespace={namespace}",
+        "--timeout=60s",
+        context=cluster,
+    )
+    exports = kubectl.describe(
+        f"serviceexports/{SERVICE}",
+        f"--namespace={namespace}",
+        context=cluster,
+    )
+    print(exports)
+
+
+def wait_for_service_import(cluster, namespace):
+    print(f"Waiting for service in namespace '{namespace}' in cluster '{cluster}'")
+    drenv.wait_for(
+        f"serviceimports/{SERVICE}",
+        output="jsonpath={.status.clusters}",
+        namespace=namespace,
+        timeout=60,
+        profile=cluster,
+    )
+    imports = kubectl.describe(
+        f"serviceimports/{SERVICE}",
+        f"--namespace={namespace}",
+        context=cluster,
+    )
+    print(imports)
+
+
+def service_address(namespace):
+    return f"{SERVICE}.{namespace}.svc.clusterset.local"
+
+
+def wait_for_dns(cluster, namespace):
+    """
+    Unfortunatley even when we wait for eveything, DNS lookup can fail for more
+    than 60 seconds after deploying submariner on a new cluster. After the
+    initial DNS always succceeds on the first try.
+    """
+    start = time.monotonic()
+    deadline = start + 120
+    dns_name = service_address(namespace)
+    delay = 1
+
+    while True:
+        print(f"Looking up '{dns_name}' in cluster '{cluster}'")
+        try:
+            out = kubectl.exec(
+                "test",
+                f"--namespace={namespace}",
+                "--",
+                "nslookup",
+                dns_name,
+                context=cluster,
+            )
+        except commands.Error as e:
+            if time.monotonic() > deadline:
+                raise
+
+            print(f"Lookup failed: {e}")
+            print(f"Retrying in {delay} seconds")
+            time.sleep(delay)
+            delay = min(delay * 2, 16)
+        else:
+            print(f"Lookup completed in {time.monotonic() - start:.3f} seconds")
+            print(out)
+            break
+
+
+def test_connectivity(cluster, namespace):
+    """
+    Test that cluster can access service exported on the other cluster.
+
+    Unfortunatley even when we wait for eveything, DNS can fail so we must have
+    retries.
+    """
+    dns_name = service_address(namespace)
+
+    print(f"Accessing '{dns_name}' in cluster '{cluster}'")
+    out = kubectl.exec(
+        "test",
+        f"--namespace={namespace}",
+        "--",
+        "curl",
+        "--no-progress-meter",
+        dns_name,
+        context=cluster,
+    )
+    if "Welcome to nginx" not in out:
+        raise RuntimeError(f"Unexpected output: {out}")
 
 
 if len(sys.argv) != 4:
@@ -43,9 +229,38 @@ os.chdir(os.path.dirname(__file__))
 broker = sys.argv[1]
 clusters = sys.argv[2:]
 
-wait_for_cluster(broker)
-
+wait_for_submariner(broker)
 for cluster in clusters:
-    wait_for_cluster(cluster)
+    wait_for_submariner(cluster)
 
-test(cluster)
+deploy_service(NS1, clusters[0], clusters[1])
+deploy_service(NS2, clusters[1], clusters[0])
+
+wait_for_service(clusters[0], NS1)
+wait_for_pod(clusters[1], NS1)
+wait_for_service(clusters[1], NS2)
+wait_for_pod(clusters[0], NS2)
+
+export_service(clusters[0], NS1)
+export_service(clusters[1], NS2)
+
+wait_for_service_export(clusters[0], NS1)
+wait_for_service_import(clusters[1], NS1)
+
+wait_for_service_export(clusters[1], NS2)
+wait_for_service_import(clusters[0], NS2)
+
+wait_for_dns(clusters[1], NS1)
+test_connectivity(clusters[1], NS1)
+
+wait_for_dns(clusters[0], NS2)
+test_connectivity(clusters[0], NS2)
+
+unexport_service(clusters[0], NS1)
+unexport_service(clusters[1], NS2)
+
+undeploy_service(NS1, clusters[0], clusters[1])
+undeploy_service(NS2, clusters[1], clusters[0])
+
+wait_for_delete(NS1, clusters[0], clusters[1])
+wait_for_delete(NS2, clusters[1], clusters[0])
