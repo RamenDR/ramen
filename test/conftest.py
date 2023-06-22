@@ -27,7 +27,7 @@ class Env:
 
     def _run(self, cmd):
         subprocess.run(
-            ["drenv", cmd, "--name-prefix", self.prefix, TEST_ENV],
+            ["drenv", cmd, "--verbose", "--name-prefix", self.prefix, TEST_ENV],
             check=True,
         )
 
