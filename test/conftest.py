@@ -14,7 +14,7 @@ TEST_ENV = os.path.join("envs", "test.yaml")
 
 class Env:
     def __init__(self):
-        self.prefix = f"test-{secrets.token_hex(8)}-"
+        self.prefix = f"test-{secrets.token_hex(16)}-"
         with open(TEST_ENV) as f:
             env = envfile.load(f, name_prefix=self.prefix)
         self.profile = env["profiles"][0]["name"]
