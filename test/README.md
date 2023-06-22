@@ -37,20 +37,29 @@ environment.
    [Install clusteradm CLI tool](https://open-cluster-management.io/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool)
    for the details. Version 0.5.0 or later is required.
 
-1. Install `podman`
+1. Install `docker`
 
    ```
-   sudo dnf install podman
+   sudo dnf install docker
    ```
 
-   Allow yourself to run podman as root without a password by adding
-   this file as root:
+   Add yourself to the `docker` group to allow running docker as root:
 
    ```
-   # cat /etc/sudoers.d/podman
-   # Allow passwordless podman
-   myusername ALL=(ALL) NOPASSWD: /usr/bin/podman
+   sudo usermod -aG docker $USER && newgrp docker
    ```
+
+   Restart docker service to fix the permissions on the docker daemon
+   socket:
+
+   ```
+   sudo systemctl restart docker
+   ```
+
+   For more info see [Linux post-installation steps for Docker Engine](https://docs.docker.com/engine/install/linux-postinstall/).
+
+   docker is used only for running drenv tests locally. You can use
+   podman for building and running containers locally.
 
 ### Testing that drenv is healthy
 

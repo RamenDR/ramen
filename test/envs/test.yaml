@@ -6,8 +6,7 @@
 name: test
 profiles:
   - name: cluster
-    driver: podman
-    container_runtime: cri-o
+    driver: docker
     memory: 2g
     workers:
       - addons:
