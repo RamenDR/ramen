@@ -26,6 +26,7 @@ def start(
     cpus=None,
     memory=None,
     addons=(),
+    alsologtostderr=False,
 ):
     args = []
 
@@ -49,6 +50,8 @@ def start(
         args.extend(("--memory", memory))
     if addons:
         args.extend(("--addons", ",".join(addons)))
+    if alsologtostderr:
+        args.append("--alsologtostderr")
 
     _watch("start", *args, profile=profile)
 

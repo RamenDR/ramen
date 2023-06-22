@@ -53,7 +53,13 @@ def cmd_start(env, args):
     hooks = ["start", "test"] if args.run_tests else ["start"]
 
     # Delaying `minikube start` ensures cluster start order.
-    execute(start_cluster, env["profiles"], delay=1, hooks=hooks)
+    execute(
+        start_cluster,
+        env["profiles"],
+        delay=1,
+        hooks=hooks,
+        verbose=args.verbose,
+    )
     execute(run_worker, env["workers"], hooks=hooks)
 
     logging.info(
@@ -118,12 +124,12 @@ def execute(func, profiles, delay=0, **options):
         sys.exit(1)
 
 
-def start_cluster(profile, hooks=(), **options):
+def start_cluster(profile, hooks=(), verbose=False, **options):
     if profile["external"]:
         logging.debug("[%s] Skipping external cluster", profile["name"])
     else:
         is_restart = minikube_profile_exists(profile["name"])
-        start_minikube_cluster(profile)
+        start_minikube_cluster(profile, verbose=verbose)
         if is_restart:
             wait_for_deployments(profile)
 
@@ -169,7 +175,7 @@ def minikube_profile_exists(name):
     return False
 
 
-def start_minikube_cluster(profile):
+def start_minikube_cluster(profile, verbose=False):
     start = time.monotonic()
     logging.info("[%s] Starting minikube cluster", profile["name"])
 
@@ -185,6 +191,7 @@ def start_minikube_cluster(profile):
         cpus=profile["cpus"],
         memory=profile["memory"],
         addons=profile["addons"],
+        alsologtostderr=verbose,
     )
 
     logging.info(
