@@ -77,5 +77,6 @@ def _run(command, *args, profile=None, output=None):
 def _watch(command, *args, profile=None):
     cmd = ["minikube", command, "--profile", profile]
     cmd.extend(args)
+    logging.debug("[%s] Running %s", profile, cmd)
     for line in commands.watch(*cmd):
         logging.debug("[%s] %s", profile, line)
