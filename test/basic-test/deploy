@@ -20,7 +20,15 @@ os.makedirs(config["tmp_dir"], exist_ok=True)
 
 test.info("Cloning ocm-ramen-samples")
 if not os.path.exists(config["samples_dir"]):
-    cmd = ["git", "clone", "--depth=1", config["samples_url"], config["samples_dir"]]
+    cmd = [
+        "git",
+        "clone",
+        "--depth=1",
+        "--branch",
+        config["samples_branch"],
+        config["samples_repo"],
+        config["samples_dir"],
+    ]
     for line in commands.watch(*cmd):
         test.debug(line)
 
