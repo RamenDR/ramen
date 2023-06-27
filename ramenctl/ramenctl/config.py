@@ -90,11 +90,3 @@ def run(args):
         context=env["hub"],
         log=command.debug,
     )
-
-    command.info("Creating channel")
-    kubectl.apply(
-        "--filename",
-        command.resource("samples-channel.yaml"),
-        context=env["hub"],
-        log=command.debug,
-    )
