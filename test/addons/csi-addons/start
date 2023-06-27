@@ -9,8 +9,9 @@ import sys
 import drenv
 from drenv import kubectl
 
-# Using main till a release is available with lastSyncTime.
-VERSION = "main"
+# We don't have a release with lastSyncTime, and main is currently broken (no
+# quay.io image matching latest code).
+VERSION = "ee9403c55c3aee9da7b25785b87e370c4095d881"
 BASE_URL = f"https://raw.githubusercontent.com/csi-addons/kubernetes-csi-addons/{VERSION}/deploy/controller"
 
 
