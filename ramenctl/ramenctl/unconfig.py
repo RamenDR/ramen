@@ -19,15 +19,6 @@ def register(commands):
 def run(args):
     env = command.env_info(args)
 
-    command.info("Deleting samples channel")
-    kubectl.delete(
-        "--filename",
-        command.resource("samples-channel.yaml"),
-        "--ignore-not-found",
-        context=env["hub"],
-        log=command.debug,
-    )
-
     command.info("Deleting DRClusters and DRPolicy")
     kubectl.delete(
         "--kustomize",
