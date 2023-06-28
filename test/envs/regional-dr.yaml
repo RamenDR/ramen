@@ -33,7 +33,6 @@ templates:
           - name: olm
           - name: minio
           - name: velero
-          - name: volsync
   - name: "hub-cluster"
     driver: kvm2
     container_runtime: containerd
@@ -60,4 +59,7 @@ profiles:
 workers:
   - addons:
       - name: rbd-mirror
+        args: ["dr1", "dr2"]
+  - addons:
+      - name: volsync
         args: ["dr1", "dr2"]
