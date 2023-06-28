@@ -166,6 +166,9 @@ test-vrg-kubeobjects: generate manifests envtest
 test-drpc: generate manifests envtest
 	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus DRPlacementControl
 
+test-drcluster: generate manifests envtest
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus DRClusterController
+
 test-util-pvc: generate manifests envtest
 	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers/util -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus PVCS_Util
 
