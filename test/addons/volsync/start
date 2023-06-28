@@ -13,7 +13,7 @@ NAMESPACE = "volsync-system"
 DEPLOYMENT = "volsync"
 
 
-def deploy(cluster):
+def add_helm_repo():
     print("Adding helm backube repo")
     cmd = [
         "helm",
@@ -25,7 +25,9 @@ def deploy(cluster):
     for line in commands.watch(*cmd):
         print(line)
 
-    print("Installing volsync")
+
+def install_volsync(cluster):
+    print(f"Installing volsync in cluster '{cluster}'")
     cmd = [
         "helm",
         "upgrade",
@@ -42,8 +44,8 @@ def deploy(cluster):
         print(line)
 
 
-def wait(cluster):
-    print(f"Waiting until deployment {DEPLOYMENT} is rolled out")
+def wait_for_deployment(cluster):
+    print(f"Waiting until deployment {DEPLOYMENT} is rolled out in cluster '{cluster}'")
     kubectl.rollout(
         "status",
         f"deploy/{DEPLOYMENT}",
@@ -53,12 +55,17 @@ def wait(cluster):
     )
 
 
-if len(sys.argv) != 2:
-    print(f"Usage: {sys.argv[0]} cluster")
+if len(sys.argv) != 3:
+    print(f"Usage: {sys.argv[0]} cluster1 cluster2")
     sys.exit(1)
 
 os.chdir(os.path.dirname(__file__))
-cluster = sys.argv[1]
+clusters = sys.argv[1:]
 
-deploy(cluster)
-wait(cluster)
+add_helm_repo()
+
+for cluster in clusters:
+    install_volsync(cluster)
+
+for cluster in clusters:
+    wait_for_deployment(cluster)
