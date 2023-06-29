@@ -25,7 +25,6 @@ resources:
 
 images:
 - name: quay.io/stolostron/multicloud-manager
-  newName: quay.io/stolostron/multicloud-manager
   newTag: $image_tag
 
 patches:
