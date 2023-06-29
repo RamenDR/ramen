@@ -9,8 +9,7 @@ import sys
 import drenv
 from drenv import kubectl
 
-# Using main till a release is available with lastSyncTime.
-VERSION = "main"
+VERSION = "v0.7.0"
 BASE_URL = f"https://raw.githubusercontent.com/csi-addons/kubernetes-csi-addons/{VERSION}/deploy/controller"
 
 
@@ -19,6 +18,7 @@ def deploy(cluster):
     with drenv.kustomization(
         "kustomization.yaml",
         base_url=BASE_URL,
+        image_tag=VERSION,
     ) as kustomization:
         kubectl.apply("--kustomize", kustomization, context=cluster)
 
