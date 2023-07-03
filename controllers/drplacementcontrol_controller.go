@@ -1707,6 +1707,12 @@ func getApplicationDestinationNamespace(
 ) (string, error) {
 	appSetList := argov1alpha1.ApplicationSetList{}
 	if err := client.List(context.TODO(), &appSetList); err != nil {
+		// If ApplicationSet CRD is not found in the API server,
+		// default to Subscription behavior, and return the placement namespace as the target VRG namespace
+		if meta.IsNoMatchError(err) {
+			return placement.GetNamespace(), nil
+		}
+
 		return "", fmt.Errorf("ApplicationSet list: %w", err)
 	}
 
