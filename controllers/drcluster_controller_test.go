@@ -244,18 +244,14 @@ func updateDRClusterManifestWorkStatus(clusterNamespace string) {
 	}
 
 	retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		var err error
-
-		err = apiReader.Get(context.TODO(), manifestLookupKey, mw)
+		err := apiReader.Get(context.TODO(), manifestLookupKey, mw)
 		if err != nil {
 			return err
 		}
 
 		mw.Status = DRClusterStatusConditions
 
-		err = k8sClient.Status().Update(context.TODO(), mw)
-
-		return err
+		return k8sClient.Status().Update(context.TODO(), mw)
 	})
 
 	Expect(retryErr).NotTo(HaveOccurred())
