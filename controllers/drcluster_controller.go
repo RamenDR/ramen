@@ -84,7 +84,6 @@ func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 
 		ctrl.Log.Info(fmt.Sprintf("DRCluster: Filtering DRPC (%s/%s)", drpc.Name, drpc.Namespace))
-
 		return filterDRPC(drpc)
 	}))
 
@@ -97,7 +96,6 @@ func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 
 		ctrl.Log.Info(fmt.Sprintf("DRCluster: Filtering ManifestWork (%s/%s)", mw.Name, mw.Namespace))
-
 		return filterDRClusterMW(mw)
 	}))
 
@@ -110,7 +108,6 @@ func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 
 		ctrl.Log.Info(fmt.Sprintf("DRCluster: Filtering MCV (%s/%s)", mcv.Name, mcv.Namespace))
-
 		return filterDRClusterMCV(mcv)
 	}))
 
@@ -180,7 +177,6 @@ func DRPCUpdateOfInterest(oldDRPC, newDRPC *ramen.DRPlacementControl) bool {
 		log.Info("Processing DRPC failover cluster change event",
 			"name", newDRPC.GetName(),
 			"namespace", newDRPC.GetNamespace())
-
 		return true
 	}
 
@@ -193,14 +189,12 @@ func DRPCUpdateOfInterest(oldDRPC, newDRPC *ramen.DRPlacementControl) bool {
 			log.Info("Processing DRPC failed over event",
 				"name", newDRPC.GetName(),
 				"namespace", newDRPC.GetNamespace())
-
 			return true
 		}
 
 		log.Info("Ignoring DRPC failed over event",
 			"name", newDRPC.GetName(),
 			"namespace", newDRPC.GetNamespace())
-
 		return false
 	}
 
@@ -509,17 +503,14 @@ func (u *drclusterInstance) statusUpdate() error {
 		if err := u.client.Status().Update(u.ctx, u.object); err != nil {
 			u.log.Info(fmt.Sprintf("Failed to update drCluster status (%s/%s/%v)",
 				u.object.Name, u.object.Namespace, err))
-
 			return fmt.Errorf("failed to update drCluster status (%s/%s)", u.object.Name, u.object.Namespace)
 		}
 
 		u.log.Info(fmt.Sprintf("Updated drCluster Status %+v", u.object.Status))
-
 		return nil
 	}
 
 	u.log.Info(fmt.Sprintf("Nothing to update %+v", u.object.Status))
-
 	return nil
 }
 
@@ -647,7 +638,6 @@ func (u *drclusterInstance) clusterUnfence() (bool, error) {
 
 	if requeue {
 		u.log.Info("requing as cluster unfence operation is not complete")
-
 		return requeue, nil
 	}
 
@@ -710,7 +700,6 @@ func (u *drclusterInstance) fenceClusterOnCluster(peerCluster *ramen.DRCluster) 
 			"fencing operation not successful")
 
 		u.log.Info("Fencing operation not successful", "cluster", u.object.Name)
-
 		return true, fmt.Errorf("fencing operation result not successful")
 	}
 
@@ -776,7 +765,6 @@ func (u *drclusterInstance) unfenceClusterOnCluster(peerCluster *ramen.DRCluster
 			"unfencing operation not successful")
 
 		u.log.Info("Unfencing operation not successful", "cluster", u.object.Name)
-
 		return true, fmt.Errorf("un operation result not successful")
 	}
 
@@ -1241,7 +1229,6 @@ func (u *drclusterInstance) createNFManifestWork(targetCluster *ramen.DRCluster,
 		u.object.Name, u.object.Namespace,
 		peerCluster.Name, nf, annotations); err != nil {
 		log.Error(err, "failed to create or update NetworkFence manifest")
-
 		return fmt.Errorf("failed to create or update NetworkFence manifest in cluster %s to fence off cluster %s (%w)",
 			peerCluster.Name, targetCluster.Name, err)
 	}
