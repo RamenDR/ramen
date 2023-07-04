@@ -30,9 +30,6 @@ linters-settings:
       SPDX-License-Identifier: Apache-2.0
   misspell:
     locale: US
-  wsl:
-    allow-trailing-comment: true
-    enforce-err-cuddling: true
 
 linters:
   enable-all: true
@@ -44,6 +41,7 @@ linters:
     - godox
     - paralleltest
     - nlreturn
+    - wsl
     - goerr113  # TODO: Need to introduce error definition and bring this back
     - goheader  # TODO: Introduce back post fixing linter errors
     - gci
