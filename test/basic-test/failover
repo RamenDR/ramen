@@ -10,9 +10,15 @@ from drenv import kubectl
 from drenv import test
 
 test.start("failover", __file__)
-test.add_argument("cluster", help="Cluster name to failover to.")
+test.add_argument(
+    "--cluster",
+    help="Cluster name to failover to (default second cluster).",
+)
 args = test.parse_args()
 config = test.config
+
+cluster = args.cluster or test.env["clusters"][1]
+test.info("Failing over to cluster '%s'", cluster)
 
 test.info("Waiting until application is replicated")
 drenv.wait_for(
@@ -25,7 +31,7 @@ drenv.wait_for(
 )
 
 test.info("Starting failover")
-patch = {"spec": {"action": "Failover", "failoverCluster": args.cluster}}
+patch = {"spec": {"action": "Failover", "failoverCluster": cluster}}
 kubectl.patch(
     f"drpc/{config['name']}",
     "--patch",
@@ -56,4 +62,4 @@ drenv.wait_for(
     log=test.debug,
 )
 
-test.info("Application was failed over to cluster %s successfully", args.cluster)
+test.info("Application was failed over to cluster %s successfully", cluster)
