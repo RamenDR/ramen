@@ -3,9 +3,9 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-cd $(dirname $0)
+base="$(dirname $0)"
 
-./deploy dr1 "$@"
-./failover dr2 "$@"
-./relocate dr1 "$@"
-./undeploy "$@"
+"$base/deploy" "$@"
+"$base/failover" "$@"
+"$base/relocate" "$@"
+"$base/undeploy" "$@"

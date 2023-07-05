@@ -10,9 +10,15 @@ from drenv import kubectl
 from drenv import test
 
 test.start("relocate", __file__)
-test.add_argument("cluster", help="Cluster name to relocate to.")
+test.add_argument(
+    "--cluster",
+    help="Cluster name to relocate to (default first cluster).",
+)
 args = test.parse_args()
 config = test.config
+
+cluster = args.cluster or test.env["clusters"][0]
+test.info("Relocate to cluster '%s'", cluster)
 
 test.info("Waiting until peer is ready")
 kubectl.wait(
@@ -35,7 +41,7 @@ drenv.wait_for(
 )
 
 test.info("Starting relocate")
-patch = {"spec": {"action": "Relocate", "preferredCluster": args.cluster}}
+patch = {"spec": {"action": "Relocate", "preferredCluster": cluster}}
 kubectl.patch(
     f"drpc/{config['name']}",
     "--patch",
@@ -68,4 +74,4 @@ kubectl.wait(
     log=test.debug,
 )
 
-test.info("Application was relocated to cluster %s successfully", args.cluster)
+test.info("Application was relocated to cluster %s successfully", cluster)

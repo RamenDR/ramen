@@ -11,9 +11,15 @@ from drenv import kubectl
 from drenv import test
 
 test.start("deploy", __file__)
-test.add_argument("cluster", help="Cluster name to deploy on.")
+test.add_argument(
+    "--cluster",
+    help="Cluster name to deploy on (default first cluster)",
+)
 args = test.parse_args()
 config = test.config
+
+cluster = args.cluster or test.env["clusters"][0]
+test.info("Deploying on cluster '%s'", cluster)
 
 test.info("Creating temporary directory %s", config["tmp_dir"])
 os.makedirs(config["tmp_dir"], exist_ok=True)
@@ -32,9 +38,9 @@ if not os.path.exists(config["samples_dir"]):
     for line in commands.watch(*cmd):
         test.debug(line)
 
-test.info("Creating kustomization for using cluster '%s'", args.cluster)
+test.info("Creating kustomization for using cluster '%s'", cluster)
 template = drenv.template("kustomization.yaml")
-yaml = template.substitute(cluster_name=args.cluster)
+yaml = template.substitute(cluster_name=cluster)
 with open(os.path.join(config["tmp_dir"], "kustomization.yaml"), "w") as f:
     f.write(yaml)
 

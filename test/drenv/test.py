@@ -8,7 +8,10 @@ import sys
 
 import yaml
 
+from . import ramen
+
 workdir = None
+env = None
 config = None
 log = None
 parser = None
@@ -41,6 +44,10 @@ def start(name, file, config_file="config.yaml"):
         action="store_true",
         help="Be more verbose.",
     )
+    parser.add_argument(
+        "filename",
+        help="Environment filename",
+    )
 
 
 def add_argument(*args, **kw):
@@ -48,10 +55,15 @@ def add_argument(*args, **kw):
 
 
 def parse_args():
+    global env
+
     args = parser.parse_args()
     if args.verbose:
         log.setLevel(logging.DEBUG)
     debug("Parsed arguments: %s", args)
+
+    env = ramen.env_info(args.filename, name_prefix=args.name_prefix)
+    debug("Using environment: %s", env)
 
     debug("Entering directory '%s'", workdir)
     os.chdir(workdir)
