@@ -4,9 +4,8 @@
 import logging
 import os
 
-import yaml
-
 from drenv import commands
+from drenv import ramen
 
 RAMEN_NAMESPACE = "ramen-system"
 SOURCE_DIR = "."
@@ -27,16 +26,7 @@ def env_info(args):
     Load ramen environment info from drenv environment file specified in
     command line arguments.
     """
-    with open(args.filename) as f:
-        env = yaml.safe_load(f)
-
-    ramen = env["ramen"]
-
-    if args.name_prefix:
-        ramen["hub"] = args.name_prefix + info["hub"]
-        ramen["clusters"] = [args.name_prefix + cluster for cluster in info["clusters"]]
-
-    return ramen
+    return ramen.env_info(args.filename, name_prefix=args.name_prefix)
 
 
 def add_common_arguments(parser):
