@@ -14,7 +14,7 @@ test.info("Deleting busybox example application")
 kubectl.delete(
     "--ignore-not-found",
     f"--kustomize={config['tmp_dir']}",
-    context=config["hub"],
+    context=test.env["hub"],
     log=test.debug,
 )
 

@@ -11,6 +11,5 @@ samples_repo: https://github.com/ramendr/ocm-ramen-samples.git
 samples_branch: main
 samples_dir: /tmp/ramen-test/basic-test/ocm-ramen-samples
 
-hub: hub
 namespace: busybox-sample
 name: busybox-drpc
