@@ -33,9 +33,9 @@ data:
     kubeObjectProtection:
       veleroNamespaceName: velero
     s3StoreProfiles:
-    - s3ProfileName: minio-on-dr1
+    - s3ProfileName: minio-on-$cluster1
       s3Bucket: bucket
-      s3CompatibleEndpoint: $minio_url_dr1
+      s3CompatibleEndpoint: $minio_url_cluster1
       s3Region: us-west-1
       s3SecretRef:
         name: ramen-s3-secret
@@ -43,9 +43,9 @@ data:
       veleroNamespaceSecretKeyRef:
         key: cloud
         name: cloud-credentials
-    - s3ProfileName: minio-on-dr2
+    - s3ProfileName: minio-on-$cluster2
       s3Bucket: bucket
-      s3CompatibleEndpoint: $minio_url_dr2
+      s3CompatibleEndpoint: $minio_url_cluster2
       s3Region: us-east-1
       s3SecretRef:
         name: ramen-s3-secret
