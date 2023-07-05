@@ -45,6 +45,10 @@ def start(name, file, config_file="config.yaml"):
         help="Be more verbose.",
     )
     parser.add_argument(
+        "--name-prefix",
+        help="Prefix profile names",
+    )
+    parser.add_argument(
         "filename",
         help="Environment filename",
     )
