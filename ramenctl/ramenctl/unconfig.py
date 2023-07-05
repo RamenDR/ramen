@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import drenv
 from drenv import kubectl
 
 from . import command
@@ -19,14 +20,21 @@ def register(commands):
 def run(args):
     env = command.env_info(args)
 
-    command.info("Deleting DRClusters and DRPolicy")
-    kubectl.delete(
-        "--kustomize",
-        command.resource(env["topology"]),
-        "--ignore-not-found",
-        context=env["hub"],
-        log=command.debug,
-    )
+    # Deleting in reverse order.
+    for name in ["dr-policy", "dr-clusters"]:
+        command.info("Deleting %s for %s", name, env["topology"])
+        template = drenv.template(command.resource(f"{env['topology']}/{name}.yaml"))
+        yaml = template.substitute(
+            cluster1=env["clusters"][0],
+            cluster2=env["clusters"][1],
+        )
+        kubectl.delete(
+            "--filename=-",
+            "--ignore-not-found",
+            input=yaml,
+            context=env["hub"],
+            log=command.debug,
+        )
 
     # We keep the ramen config map since we do not own it.
 

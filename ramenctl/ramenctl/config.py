@@ -43,8 +43,10 @@ def run(args):
     template = drenv.template(command.resource("configmap.yaml"))
     yaml = template.substitute(
         auto_deploy="true",
-        minio_url_dr1=minio.service_url(env["clusters"][0]),
-        minio_url_dr2=minio.service_url(env["clusters"][1]),
+        cluster1=env["clusters"][0],
+        cluster2=env["clusters"][1],
+        minio_url_cluster1=minio.service_url(env["clusters"][0]),
+        minio_url_cluster2=minio.service_url(env["clusters"][1]),
     )
     kubectl.apply(
         "--filename=-",
@@ -53,13 +55,19 @@ def run(args):
         log=command.debug,
     )
 
-    command.info("Creating DRClusters and DRPolicy for %s", env["topology"])
-    kubectl.apply(
-        "--kustomize",
-        command.resource(env["topology"]),
-        context=env["hub"],
-        log=command.debug,
-    )
+    for name in ["dr-clusters", "dr-policy"]:
+        command.info("Creating %s for %s", name, env["topology"])
+        template = drenv.template(command.resource(f"{env['topology']}/{name}.yaml"))
+        yaml = template.substitute(
+            cluster1=env["clusters"][0],
+            cluster2=env["clusters"][1],
+        )
+        kubectl.apply(
+            "--filename=-",
+            input=yaml,
+            context=env["hub"],
+            log=command.debug,
+        )
 
     command.info("Waiting until DRClusters report phase")
     for name in env["clusters"]:
