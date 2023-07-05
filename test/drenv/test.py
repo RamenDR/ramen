@@ -8,6 +8,7 @@ import sys
 
 import yaml
 
+workdir = None
 config = None
 log = None
 parser = None
@@ -15,7 +16,7 @@ log_format = "%(asctime)s %(levelname)-7s [%(name)s] %(message)s"
 
 
 def start(name, file, config_file="config.yaml"):
-    global config, parser, log
+    global workdir, config, parser, log
 
     # Setting up logging and sys.excepthook must be first so any failure will
     # be reported using the logger.
@@ -26,10 +27,11 @@ def start(name, file, config_file="config.yaml"):
     # the level to debug.
     logging.basicConfig(level=logging.INFO, format=log_format)
 
-    # Change directory so the test script can run from any directory.
-    os.chdir(os.path.dirname(file))
+    # Working directory for runing the test.
+    workdir = os.path.abspath(os.path.dirname(file))
 
-    with open(config_file) as f:
+    config_path = os.path.join(workdir, config_file)
+    with open(config_path) as f:
         config = yaml.safe_load(f)
 
     parser = argparse.ArgumentParser(name)
@@ -50,6 +52,10 @@ def parse_args():
     if args.verbose:
         log.setLevel(logging.DEBUG)
     debug("Parsed arguments: %s", args)
+
+    debug("Entering directory '%s'", workdir)
+    os.chdir(workdir)
+
     return args
 
 
