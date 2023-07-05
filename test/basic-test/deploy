@@ -47,7 +47,7 @@ with open(os.path.join(config["tmp_dir"], "kustomization.yaml"), "w") as f:
 test.info("Deploying busybox example application")
 kubectl.apply(
     f"--kustomize={config['tmp_dir']}",
-    context=config["hub"],
+    context=test.env["hub"],
     log=test.debug,
 )
 
@@ -55,7 +55,7 @@ test.info("waiting for namespace %s", config["namespace"])
 drenv.wait_for(
     f"namespace/{config['namespace']}",
     timeout=60,
-    profile=config["hub"],
+    profile=test.env["hub"],
     log=test.debug,
 )
 
@@ -65,7 +65,7 @@ drenv.wait_for(
     output="jsonpath={.status.phase}",
     namespace=config["namespace"],
     timeout=60,
-    profile=config["hub"],
+    profile=test.env["hub"],
     log=test.debug,
 )
 
@@ -75,7 +75,7 @@ kubectl.wait(
     "--for=jsonpath={.status.phase}=Deployed",
     f"--namespace={config['namespace']}",
     "--timeout=60s",
-    context=config["hub"],
+    context=test.env["hub"],
     log=test.debug,
 )
 
@@ -85,7 +85,7 @@ drenv.wait_for(
     output="jsonpath={.status.lastGroupSyncTime}",
     namespace=config["namespace"],
     timeout=300,
-    profile=config["hub"],
+    profile=test.env["hub"],
     log=test.debug,
 )
 

@@ -26,7 +26,7 @@ drenv.wait_for(
     output="jsonpath={.status.lastGroupSyncTime}",
     namespace=config["namespace"],
     timeout=300,
-    profile=config["hub"],
+    profile=test.env["hub"],
     log=test.debug,
 )
 
@@ -38,7 +38,7 @@ kubectl.patch(
     json.dumps(patch),
     "--type=merge",
     f"--namespace={config['namespace']}",
-    context=config["hub"],
+    context=test.env["hub"],
     log=test.debug,
 )
 
@@ -48,7 +48,7 @@ kubectl.wait(
     "--for=jsonpath={.status.phase}=FailedOver",
     f"--namespace={config['namespace']}",
     "--timeout=300s",
-    context=config["hub"],
+    context=test.env["hub"],
     log=test.debug,
 )
 
@@ -58,7 +58,7 @@ drenv.wait_for(
     output="jsonpath={.status.lastGroupSyncTime}",
     namespace=config["namespace"],
     timeout=300,
-    profile=config["hub"],
+    profile=test.env["hub"],
     log=test.debug,
 )
 
