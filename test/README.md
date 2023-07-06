@@ -48,7 +48,7 @@ environment.
 1. Install `helm` tool - on Fedora you can use:
 
    ```
-   dnf install helm
+   sudo dnf install helm
    ```
 
    See [Installing Helm](https://helm.sh/docs/intro/install/) for other options.
