@@ -30,6 +30,9 @@ const (
 	// Annotations for MW and PlacementRule
 	DRPCNameAnnotation      = "drplacementcontrol.ramendr.openshift.io/drpc-name"
 	DRPCNamespaceAnnotation = "drplacementcontrol.ramendr.openshift.io/drpc-namespace"
+
+	// Annotation for the last cluster on which the application was running
+	LastAppDeploymentCluster = "drplacementcontrol.ramendr.openshift.io/last-app-deployment-cluster"
 )
 
 var (
@@ -1316,12 +1319,30 @@ func (d *DRPCInstance) updateUserPlacementRule(homeCluster, reason string) error
 	d.log.Info(fmt.Sprintf("Updating user Placement %s homeCluster %s",
 		d.userPlacement.GetName(), homeCluster))
 
+	err := d.addAnnotation(LastAppDeploymentCluster, homeCluster)
+	if err != nil {
+		return err
+	}
+
 	newPD := &clrapiv1beta1.ClusterDecision{
 		ClusterName: homeCluster,
 		Reason:      reason,
 	}
 
 	return d.reconciler.updateUserPlacementStatusDecision(d.ctx, d.userPlacement, newPD)
+}
+
+func (d *DRPCInstance) addAnnotation(key, value string) error {
+	annotations := d.instance.GetAnnotations()
+
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+
+	annotations[key] = value
+	d.instance.SetAnnotations(annotations)
+
+	return d.reconciler.Update(d.ctx, d.instance)
 }
 
 func (d *DRPCInstance) clearUserPlacementRuleStatus() error {

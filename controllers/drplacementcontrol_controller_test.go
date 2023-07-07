@@ -1567,6 +1567,7 @@ func runRelocateAction(placementObj client.Object, fromCluster string, isSyncDR 
 	decision := getLatestUserPlacementDecision(placementObj.GetName(), placementObj.GetNamespace())
 	Expect(decision.ClusterName).To(Equal(toCluster1))
 	Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
+	Expect(drpc.GetAnnotations()[controllers.LastAppDeploymentCluster]).To(Equal(toCluster1))
 }
 
 func clearDRActionAfterRelocate(userPlacementRule *plrv1.PlacementRule, preferredCluster, failoverCluster string) {
@@ -1781,6 +1782,7 @@ func verifyInitialDRPCDeployment(userPlacement client.Object, preferredCluster s
 	Expect(len(latestDRPC.Status.Conditions)).To(Equal(2))
 	_, condition := getDRPCCondition(&latestDRPC.Status, rmn.ConditionAvailable)
 	Expect(condition.Reason).To(Equal(string(rmn.Deployed)))
+	Expect(latestDRPC.GetAnnotations()[controllers.LastAppDeploymentCluster]).To(Equal(preferredCluster))
 }
 
 func verifyFailoverToSecondary(placementObj client.Object, toCluster string,
@@ -1812,6 +1814,7 @@ func verifyFailoverToSecondary(placementObj client.Object, toCluster string,
 
 	decision := getLatestUserPlacementDecision(placementObj.GetName(), placementObj.GetNamespace())
 	Expect(decision.ClusterName).To(Equal(toCluster))
+	Expect(drpc.GetAnnotations()[controllers.LastAppDeploymentCluster]).To(Equal(toCluster))
 }
 
 func verifyActionResultForPlacement(placement *clrapiv1beta1.Placement, homeCluster string, plType PlacementType) {
@@ -1926,6 +1929,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				Expect(drpc.Status.Phase).To(Equal(rmn.DRState("")))
 				decision := getLatestUserPlacementDecision(userPlacementRule.Name, userPlacementRule.Namespace)
 				Expect(decision.ClusterName).To(Equal(West1ManagedCluster))
+				Expect(drpc.GetAnnotations()[controllers.LastAppDeploymentCluster]).To(Equal(West1ManagedCluster))
 			})
 		})
 		When("DRAction is set to Relocate", func() {
