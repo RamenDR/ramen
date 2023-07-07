@@ -2069,6 +2069,10 @@ func (v *VRGInstance) pvMatches(x, y *corev1.PersistentVolume) bool {
 		v.log.Info("PVs ClaimRef.Name mismatch", "x", x.Spec.ClaimRef.Name, "y", y.Spec.ClaimRef.Name)
 
 		return false
+	case x.Spec.ClaimRef.UID != y.Spec.ClaimRef.UID:
+		v.log.Info("PVs ClaimRef.UID mismatch", "x", x.Spec.ClaimRef.UID, "y", y.Spec.ClaimRef.UID)
+
+		return false
 	case !reflect.DeepEqual(x.Spec.AccessModes, y.Spec.AccessModes):
 		v.log.Info("PVs AccessMode mismatch", "x", x.Spec.AccessModes, "y", y.Spec.AccessModes)
 
