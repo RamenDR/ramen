@@ -1152,15 +1152,16 @@ func (v *VRGInstance) updateVRGLastGroupSyncDuration() {
 	var maxLastSyncDuration *metav1.Duration
 
 	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
-		if maxLastSyncDuration == nil {
-			maxLastSyncDuration = protectedPVC.LastSyncDuration
+		if maxLastSyncDuration == nil && protectedPVC.LastSyncDuration != nil {
+			maxLastSyncDuration = new(metav1.Duration)
+			*maxLastSyncDuration = *protectedPVC.LastSyncDuration
 
 			continue
 		}
 
 		if protectedPVC.LastSyncDuration != nil &&
 			protectedPVC.LastSyncDuration.Duration > maxLastSyncDuration.Duration {
-			maxLastSyncDuration = protectedPVC.LastSyncDuration
+			*maxLastSyncDuration = *protectedPVC.LastSyncDuration
 		}
 	}
 
@@ -1171,8 +1172,9 @@ func (v *VRGInstance) updateLastGroupSyncBytes() {
 	var totalLastSyncBytes *int64
 
 	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
-		if totalLastSyncBytes == nil {
-			totalLastSyncBytes = protectedPVC.LastSyncBytes
+		if totalLastSyncBytes == nil && protectedPVC.LastSyncBytes != nil {
+			totalLastSyncBytes = new(int64)
+			*totalLastSyncBytes = *protectedPVC.LastSyncBytes
 
 			continue
 		}
