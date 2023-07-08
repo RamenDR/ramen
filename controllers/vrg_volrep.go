@@ -1832,12 +1832,7 @@ func (v *VRGInstance) restorePVsFromObjectStore(objectStore ObjectStorer, s3Prof
 		return 0, fmt.Errorf("%s: %w", errMsg, err)
 	}
 
-	objList := make([]client.Object, 0, len(pvList))
-	for idx := range pvList {
-		objList = append(objList, &pvList[idx])
-	}
-
-	return v.restoreClusterDataObjects(objList, "PV")
+	return restoreClusterDataObjects(v, pvList, "PV", cleanupPVForRestore, v.validateExistingPV)
 }
 
 func (v *VRGInstance) restorePVCsFromObjectStore(objectStore ObjectStorer, s3ProfileName string) (int, error) {
@@ -1850,13 +1845,9 @@ func (v *VRGInstance) restorePVCsFromObjectStore(objectStore ObjectStorer, s3Pro
 
 	v.log.Info(fmt.Sprintf("Found %d PVCs in s3 store using profile %s", len(pvcList), s3ProfileName))
 
-	objList := make([]client.Object, 0, len(pvcList))
-	for idx := range pvcList {
-		objList = append(objList, &pvcList[idx])
-		v.volRepPVCs = append(v.volRepPVCs, pvcList[idx])
-	}
+	v.volRepPVCs = append(v.volRepPVCs, pvcList...)
 
-	return v.restoreClusterDataObjects(objList, "PVC")
+	return restoreClusterDataObjects(v, pvcList, "PVC", cleanupPVCForRestore, v.validateExistingPVC)
 }
 
 // checkPVClusterData returns an error if there are PVs in the input pvList
@@ -1899,16 +1890,31 @@ func (v *VRGInstance) checkPVClusterData(pvList []corev1.PersistentVolume) error
 	return nil
 }
 
-func (v *VRGInstance) restoreClusterDataObjects(objList []client.Object, objType string) (int, error) {
+func restoreClusterDataObjects[
+	ObjectType any,
+	ClientObject interface {
+		*ObjectType
+		client.Object
+	},
+](
+	v *VRGInstance,
+	objList []ObjectType, objType string,
+	cleanupForRestore func(*ObjectType),
+	validateExistingObject func(*ObjectType) error,
+) (int, error) {
 	numRestored := 0
 
-	for _, obj := range objList {
-		v.cleanupForRestore(obj)
-		v.addRestoreAnnotation(obj)
+	for i := range objList {
+		object := &objList[i]
+		objectCopy := &*object
+		obj := ClientObject(objectCopy)
+
+		cleanupForRestore(objectCopy)
+		addRestoreAnnotation(obj)
 
 		if err := v.reconciler.Create(v.ctx, obj); err != nil {
 			if k8serrors.IsAlreadyExists(err) {
-				err := v.validateExistingObject(obj)
+				err := validateExistingObject(objectCopy)
 				if err != nil {
 					v.log.Info("Object exists. Ignoring and moving to next object", "error", err.Error())
 					// ignoring any errors
@@ -1943,25 +1949,14 @@ func (v *VRGInstance) updateExistingPVForSync(pv *corev1.PersistentVolume) error
 	// failover/relocate process. Hence, the restore may not be
 	// required and the annotation for restore can be missing for
 	// the sync mode.
-	v.cleanupForRestore(pv)
-	v.addRestoreAnnotation(pv)
+	cleanupPVForRestore(pv)
+	addRestoreAnnotation(pv)
 
 	if err := v.reconciler.Update(v.ctx, pv); err != nil {
 		return fmt.Errorf("failed to cleanup existing PV for sync DR PV: %v, err: %w", pv.Name, err)
 	}
 
 	return nil
-}
-
-func (v *VRGInstance) validateExistingObject(obj client.Object) error {
-	switch p := obj.(type) {
-	case *corev1.PersistentVolume:
-		return v.validateExistingPV(p)
-	case *corev1.PersistentVolumeClaim:
-		return v.validateExistingPVC(p)
-	default:
-		return fmt.Errorf("unknown object %v", obj)
-	}
 }
 
 func (v *VRGInstance) validateExistingPV(pv *corev1.PersistentVolume) error {
@@ -2087,7 +2082,7 @@ func (v *VRGInstance) pvMatches(x, y *corev1.PersistentVolume) bool {
 }
 
 // addRestoreAnnotation adds annotation to an object indicating that the object was restored by Ramen
-func (v *VRGInstance) addRestoreAnnotation(obj client.Object) {
+func addRestoreAnnotation(obj client.Object) {
 	if obj.GetAnnotations() == nil {
 		obj.SetAnnotations(map[string]string{})
 	}
@@ -2097,21 +2092,20 @@ func (v *VRGInstance) addRestoreAnnotation(obj client.Object) {
 
 // cleanupForRestore cleans up required PV or PVC fields, to ensure restore succeeds
 // to a new cluster, and rebinding the PVC to an existing PV with the same claimRef
-func (v *VRGInstance) cleanupForRestore(obj client.Object) {
-	switch p := obj.(type) {
-	case *corev1.PersistentVolume:
-		p.ResourceVersion = ""
-		if p.Spec.ClaimRef != nil {
-			p.Spec.ClaimRef.UID = ""
-			p.Spec.ClaimRef.ResourceVersion = ""
-			p.Spec.ClaimRef.APIVersion = ""
-		}
-	case *corev1.PersistentVolumeClaim:
-		p.ObjectMeta.Annotations = PruneAnnotations(p.GetAnnotations())
-		p.ObjectMeta.Finalizers = []string{}
-		p.ObjectMeta.ResourceVersion = ""
-		p.ObjectMeta.OwnerReferences = nil
+func cleanupPVForRestore(pv *corev1.PersistentVolume) {
+	pv.ResourceVersion = ""
+	if pv.Spec.ClaimRef != nil {
+		pv.Spec.ClaimRef.UID = ""
+		pv.Spec.ClaimRef.ResourceVersion = ""
+		pv.Spec.ClaimRef.APIVersion = ""
 	}
+}
+
+func cleanupPVCForRestore(pvc *corev1.PersistentVolumeClaim) {
+	pvc.ObjectMeta.Annotations = PruneAnnotations(pvc.GetAnnotations())
+	pvc.ObjectMeta.Finalizers = []string{}
+	pvc.ObjectMeta.ResourceVersion = ""
+	pvc.ObjectMeta.OwnerReferences = nil
 }
 
 // Follow this logic to update VRG (and also ProtectedPVC) conditions for VolRep
