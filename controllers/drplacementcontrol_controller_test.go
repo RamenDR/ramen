@@ -54,8 +54,7 @@ const (
 	MModeReplicationID    = "storage-replication-id-1"
 	MModeCSIProvisioner   = "test.csi.com"
 
-	updateRetries = 5
-	pvcCount      = 2 // Count of fake PVCs reported in the VRG status
+	pvcCount = 2 // Count of fake PVCs reported in the VRG status
 )
 
 var (
@@ -691,32 +690,28 @@ func deleteNamespaceMWsFromAllClusters(namespace string) {
 }
 
 func setDRPCSpecExpectationTo(action rmn.DRAction, preferredCluster, failoverCluster string) {
-	localRetries := 0
-	for localRetries < updateRetries {
-		latestDRPC := getLatestDRPC()
+	drpcLookupKey := types.NamespacedName{
+		Name:      DRPCName,
+		Namespace: DRPCNamespaceName,
+	}
+	latestDRPC := &rmn.DRPlacementControl{}
+	retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		err := k8sClient.Get(context.TODO(), drpcLookupKey, latestDRPC)
+		if err != nil {
+			return err
+		}
 
 		latestDRPC.Spec.Action = action
 		latestDRPC.Spec.PreferredCluster = preferredCluster
 		latestDRPC.Spec.FailoverCluster = failoverCluster
-		err := k8sClient.Update(context.TODO(), latestDRPC)
 
-		if errors.IsConflict(err) {
-			localRetries++
+		return k8sClient.Update(context.TODO(), latestDRPC)
+	})
 
-			time.Sleep(time.Millisecond * 5)
-
-			continue
-		}
-
-		Expect(err).NotTo(HaveOccurred())
-
-		break
-	}
-
-	Expect(localRetries).ToNot(Equal(updateRetries))
+	Expect(retryErr).NotTo(HaveOccurred())
 
 	Eventually(func() bool {
-		latestDRPC := getLatestDRPC()
+		latestDRPC = getLatestDRPC()
 
 		return latestDRPC.Spec.Action == action
 	}, timeout, interval).Should(BeTrue(), "failed to update DRPC DR action on time")
@@ -735,31 +730,43 @@ func getLatestDRPC() *rmn.DRPlacementControl {
 }
 
 func clearDRPCStatus() {
-	localRetries := 0
-
-	var err error
-
-	for localRetries < updateRetries {
-		latestDRPC := getLatestDRPC()
-		latestDRPC.Status = rmn.DRPlacementControlStatus{}
-
-		err = k8sClient.Status().Update(context.TODO(), latestDRPC)
-		if errors.IsConflict(err) {
-			localRetries++
-
-			continue
+	drpcLookupKey := types.NamespacedName{
+		Name:      DRPCName,
+		Namespace: DRPCNamespaceName,
+	}
+	latestDRPC := &rmn.DRPlacementControl{}
+	retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		err := k8sClient.Get(context.TODO(), drpcLookupKey, latestDRPC)
+		if err != nil {
+			return err
 		}
 
-		break
-	}
-	Expect(err).NotTo(HaveOccurred())
+		latestDRPC.Status = rmn.DRPlacementControlStatus{}
+
+		return k8sClient.Status().Update(context.TODO(), latestDRPC)
+	})
+	Expect(retryErr).NotTo(HaveOccurred())
 }
 
 func clearFakeUserPlacementRuleStatus() {
-	userPlacementRule := getLatestUserPlacementRule(UserPlacementRuleName, DRPCNamespaceName)
-	userPlacementRule.Status = plrv1.PlacementRuleStatus{}
-	err := k8sClient.Status().Update(context.TODO(), userPlacementRule)
-	Expect(err).NotTo(HaveOccurred())
+	usrPlRuleLookupKey := types.NamespacedName{
+		Name:      UserPlacementRuleName,
+		Namespace: DRPCNamespaceName,
+	}
+
+	usrPlRule := &plrv1.PlacementRule{}
+	retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		err := k8sClient.Get(context.TODO(), usrPlRuleLookupKey, usrPlRule)
+		if err != nil {
+			return err
+		}
+
+		usrPlRule.Status = plrv1.PlacementRuleStatus{}
+
+		return k8sClient.Status().Update(context.TODO(), usrPlRule)
+	})
+
+	Expect(retryErr).NotTo(HaveOccurred())
 }
 
 func createNamespace(ns *corev1.Namespace) {
