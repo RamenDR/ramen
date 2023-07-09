@@ -25,7 +25,7 @@ def wait(cluster):
         "cephblockpool/replicapool",
         output="jsonpath={.status.phase}",
         namespace="rook-ceph",
-        timeout=60,
+        timeout=120,
         profile=cluster,
     )
     kubectl.wait(
