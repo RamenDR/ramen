@@ -1655,17 +1655,6 @@ func deleteDRPolicySync() {
 	Expect(k8sClient.Delete(context.TODO(), getSyncDRPolicy())).To(Succeed())
 }
 
-func getLatestDRCluster(cluster string) *rmn.DRCluster {
-	drclusterLookupKey := types.NamespacedName{
-		Name: cluster,
-	}
-	latestDRCluster := &rmn.DRCluster{}
-	err := apiReader.Get(context.TODO(), drclusterLookupKey, latestDRCluster)
-	Expect(err).NotTo(HaveOccurred())
-
-	return latestDRCluster
-}
-
 func fenceCluster(cluster string, manual bool) {
 	localRetries := 0
 	for localRetries < updateRetries {
