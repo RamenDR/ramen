@@ -17,6 +17,7 @@ import (
 	"github.com/onsi/gomega/format"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/yaml"
 
 	machineryruntime "k8s.io/apimachinery/pkg/runtime"
@@ -1031,17 +1032,18 @@ func updateManifestWorkStatus(clusterNamespace, mwType, workType string) {
 		})
 	}
 
-	mw.Status = pvManifestStatus
+	retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		err := k8sClient.Get(context.TODO(), manifestLookupKey, mw)
+		if err != nil {
+			return err
+		}
 
-	err := k8sClient.Status().Update(context.TODO(), mw)
-	if err != nil {
-		// try again
-		Expect(k8sClient.Get(context.TODO(), manifestLookupKey, mw)).NotTo(HaveOccurred())
 		mw.Status = pvManifestStatus
-		err = k8sClient.Status().Update(context.TODO(), mw)
-	}
 
-	Expect(err).NotTo(HaveOccurred())
+		return k8sClient.Status().Update(context.TODO(), mw)
+	})
+
+	Expect(retryErr).NotTo(HaveOccurred())
 
 	Eventually(func() bool {
 		err := k8sClient.Get(context.TODO(), manifestLookupKey, mw)
