@@ -15,6 +15,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
+	. "github.com/onsi/gomega/gstruct"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/retry"
@@ -1456,20 +1457,6 @@ func getDRPCCondition(status *rmn.DRPlacementControlStatus, conditionType string
 	return -1, nil
 }
 
-func getDRClusterCondition(status *rmn.DRClusterStatus, conditionType string) *metav1.Condition {
-	if len(status.Conditions) == 0 {
-		return nil
-	}
-
-	for i := range status.Conditions {
-		if status.Conditions[i].Type == conditionType {
-			return &status.Conditions[i]
-		}
-	}
-
-	return nil
-}
-
 //nolint:unparam
 func runFailoverAction(placementObj client.Object, fromCluster, toCluster string, isSyncDR bool,
 	manualFence bool,
@@ -1672,23 +1659,10 @@ func fenceCluster(cluster string, manual bool) {
 		latestDRCluster.Spec.ClusterFence = rmn.ClusterFenceStateFenced
 	}
 
-	updateDRClusterParameters(latestDRCluster)
-
-	Eventually(func() bool {
-		latestDRCluster := getLatestDRCluster(cluster)
-
-		drClusterFencedCondition := getDRClusterCondition(&latestDRCluster.Status,
-			rmn.DRClusterConditionTypeFenced)
-		if drClusterFencedCondition == nil {
-			return false
-		}
-
-		if drClusterFencedCondition.ObservedGeneration != latestDRCluster.Generation {
-			return false
-		}
-
-		return drClusterFencedCondition.Status == metav1.ConditionTrue
-	}, timeout, interval).Should(BeTrue(), "failed to update DRCluster on time")
+	latestDRCluster = updateDRClusterParameters(latestDRCluster)
+	drclusterConditionExpectEventually(latestDRCluster, false, metav1.ConditionTrue,
+		Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
+		rmn.DRClusterConditionTypeFenced)
 }
 
 func unfenceCluster(cluster string, manual bool) {
@@ -1699,23 +1673,11 @@ func unfenceCluster(cluster string, manual bool) {
 		latestDRCluster.Spec.ClusterFence = rmn.ClusterFenceStateUnfenced
 	}
 
-	updateDRClusterParameters(latestDRCluster)
-
-	Eventually(func() bool {
-		latestDRCluster := getLatestDRCluster(cluster)
-
-		drClusterFencedCondition := getDRClusterCondition(&latestDRCluster.Status,
-			rmn.DRClusterConditionTypeFenced)
-		if drClusterFencedCondition == nil {
-			return false
-		}
-
-		if drClusterFencedCondition.ObservedGeneration != latestDRCluster.Generation {
-			return false
-		}
-
-		return drClusterFencedCondition.Status == metav1.ConditionFalse
-	}, timeout, interval).Should(BeTrue(), "failed to update DRCluster on time")
+	latestDRCluster = updateDRClusterParameters(latestDRCluster)
+	drclusterConditionExpectEventually(latestDRCluster, false, metav1.ConditionFalse,
+		BeElementOf(controllers.DRClusterConditionReasonUnfenced, controllers.DRClusterConditionReasonCleaning,
+			controllers.DRClusterConditionReasonClean),
+		Ignore(), rmn.DRClusterConditionTypeFenced)
 }
 
 func resetdrCluster(cluster string) {
