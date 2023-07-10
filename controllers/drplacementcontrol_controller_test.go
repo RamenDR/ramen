@@ -1663,26 +1663,14 @@ func deleteDRPolicySync() {
 }
 
 func fenceCluster(cluster string, manual bool) {
-	localRetries := 0
-	for localRetries < updateRetries {
-		latestDRCluster := getLatestDRCluster(cluster)
-		if manual {
-			latestDRCluster.Spec.ClusterFence = rmn.ClusterFenceStateManuallyFenced
-		} else {
-			latestDRCluster.Spec.ClusterFence = rmn.ClusterFenceStateFenced
-		}
-
-		err := k8sClient.Update(context.TODO(), latestDRCluster)
-		if errors.IsConflict(err) {
-			localRetries++
-
-			continue
-		}
-
-		Expect(err).NotTo(HaveOccurred())
-
-		break
+	latestDRCluster := getLatestDRCluster(cluster)
+	if manual {
+		latestDRCluster.Spec.ClusterFence = rmn.ClusterFenceStateManuallyFenced
+	} else {
+		latestDRCluster.Spec.ClusterFence = rmn.ClusterFenceStateFenced
 	}
+
+	updateDRClusterParameters(latestDRCluster)
 
 	Eventually(func() bool {
 		latestDRCluster := getLatestDRCluster(cluster)
@@ -1702,26 +1690,14 @@ func fenceCluster(cluster string, manual bool) {
 }
 
 func unfenceCluster(cluster string, manual bool) {
-	localRetries := 0
-	for localRetries < updateRetries {
-		latestDRCluster := getLatestDRCluster(cluster)
-		if manual {
-			latestDRCluster.Spec.ClusterFence = rmn.ClusterFenceStateManuallyUnfenced
-		} else {
-			latestDRCluster.Spec.ClusterFence = rmn.ClusterFenceStateUnfenced
-		}
-
-		err := k8sClient.Update(context.TODO(), latestDRCluster)
-		if errors.IsConflict(err) {
-			localRetries++
-
-			continue
-		}
-
-		Expect(err).NotTo(HaveOccurred())
-
-		break
+	latestDRCluster := getLatestDRCluster(cluster)
+	if manual {
+		latestDRCluster.Spec.ClusterFence = rmn.ClusterFenceStateManuallyUnfenced
+	} else {
+		latestDRCluster.Spec.ClusterFence = rmn.ClusterFenceStateUnfenced
 	}
+
+	updateDRClusterParameters(latestDRCluster)
 
 	Eventually(func() bool {
 		latestDRCluster := getLatestDRCluster(cluster)
@@ -1741,23 +1717,9 @@ func unfenceCluster(cluster string, manual bool) {
 }
 
 func resetdrCluster(cluster string) {
-	localRetries := 0
-
-	for localRetries < updateRetries {
-		latestDRCluster := getLatestDRCluster(cluster)
-		latestDRCluster.Spec.ClusterFence = ""
-
-		err := k8sClient.Update(context.TODO(), latestDRCluster)
-		if errors.IsConflict(err) {
-			localRetries++
-
-			continue
-		}
-
-		Expect(err).NotTo(HaveOccurred())
-
-		break
-	}
+	latestDRCluster := getLatestDRCluster(cluster)
+	latestDRCluster.Spec.ClusterFence = ""
+	updateDRClusterParameters(latestDRCluster)
 }
 
 //nolint:unparam
