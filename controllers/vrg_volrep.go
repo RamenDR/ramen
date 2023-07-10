@@ -1961,28 +1961,44 @@ func (v *VRGInstance) updateExistingPVForSync(pv *corev1.PersistentVolume) error
 
 func (v *VRGInstance) validateExistingPV(pv *corev1.PersistentVolume) error {
 	existingPV := &corev1.PersistentVolume{}
+	log := v.log.WithValues("PV", existingPV.GetName())
 
 	err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: pv.Name}, existingPV)
 	if err != nil {
 		return fmt.Errorf("failed to get PV (%s) (%w)", existingPV.GetName(), err)
 	}
 
-	// If the PV is bound and matches with the PV we would have restored then return now
-	if v.pvMatches(existingPV, pv) {
-		v.log.Info("Existing PV matches and is bound to the same claim", "PV", existingPV.GetName())
-
-		return nil
-	}
-
-	// If the PV is bound but does not match with the PV we would have restored then return error
 	if existingPV.Status.Phase == corev1.VolumeBound {
+		var pvc corev1.PersistentVolumeClaim
+
+		pvcNamespacedName := types.NamespacedName{Name: pv.Spec.ClaimRef.Name, Namespace: pv.Spec.ClaimRef.Namespace}
+
+		err := v.reconciler.Get(v.ctx, pvcNamespacedName, &pvc)
+		if err != nil {
+			return fmt.Errorf("failed to get PV %s claim %s: %w", existingPV.GetName(), pvcNamespacedName.String(), err)
+		}
+
+		if !pvc.DeletionTimestamp.IsZero() {
+			return fmt.Errorf("existing PV %s claim %s deletion timestamp non-zero %v", existingPV.GetName(),
+				pvcNamespacedName.String(), pvc.DeletionTimestamp)
+		}
+
+		// If the PV is bound and matches with the PV we would have restored then return now
+		if v.pvMatches(existingPV, pv) {
+			log.Info("Existing PV matches and is bound to the same claim")
+
+			return nil
+		}
+
 		return fmt.Errorf("existing PV (%s) is bound and doesn't match with the PV to be restored", existingPV.GetName())
 	}
+
+	log.Info("PV exists and is not bound", "phase", existingPV.Status.Phase)
 
 	// PV is not bound
 	// In sync case, we will update it to match with what we want to restore
 	if v.instance.Spec.Sync != nil {
-		v.log.Info("PV exists and will be updated for sync", "PV", existingPV.GetName())
+		log.Info("PV exists and will be updated for sync")
 
 		return v.updateExistingPVForSync(existingPV)
 	}
@@ -1993,7 +2009,7 @@ func (v *VRGInstance) validateExistingPV(pv *corev1.PersistentVolume) error {
 		existingPV.ObjectMeta.Annotations[RestoreAnnotation] == RestoredByRamen {
 		// Should we check and see if PV in being deleted? Should we just treat it as exists
 		// and then we don't care if deletion takes place later, which is what we do now?
-		v.log.Info("PV exists and managed by Ramen", "PV", existingPV.GetName())
+		log.Info("PV exists and managed by Ramen")
 
 		return nil
 	}
@@ -2022,7 +2038,7 @@ func (v *VRGInstance) validateExistingPVC(pvc *corev1.PersistentVolumeClaim) err
 	return nil
 }
 
-// pvMatches checks if the PVs fields match, and is bound to a PVC. Used to detect PVCs that were not
+// pvMatches checks if the PVs fields match presuming x is bound to a PVC. Used to detect PVCs that were not
 // deleted, and hence PVC and PV is retained and available for use
 //
 //nolint:cyclop
@@ -2030,10 +2046,6 @@ func (v *VRGInstance) pvMatches(x, y *corev1.PersistentVolume) bool {
 	switch {
 	case x.GetName() != y.GetName():
 		v.log.Info("PVs Name mismatch", "x", x.GetName(), "y", y.GetName())
-
-		return false
-	case x.Status.Phase != corev1.VolumeBound:
-		v.log.Info("PV not bound", "x", x.Status.Phase)
 
 		return false
 	case x.Spec.PersistentVolumeSource.CSI == nil || y.Spec.PersistentVolumeSource.CSI == nil:
@@ -2062,10 +2074,6 @@ func (v *VRGInstance) pvMatches(x, y *corev1.PersistentVolume) bool {
 		return false
 	case x.Spec.ClaimRef.Name != y.Spec.ClaimRef.Name:
 		v.log.Info("PVs ClaimRef.Name mismatch", "x", x.Spec.ClaimRef.Name, "y", y.Spec.ClaimRef.Name)
-
-		return false
-	case x.Spec.ClaimRef.UID != y.Spec.ClaimRef.UID:
-		v.log.Info("PVs ClaimRef.UID mismatch", "x", x.Spec.ClaimRef.UID, "y", y.Spec.ClaimRef.UID)
 
 		return false
 	case !reflect.DeepEqual(x.Spec.AccessModes, y.Spec.AccessModes):
