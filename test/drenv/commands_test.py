@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import re
 import subprocess
 from contextlib import contextmanager
 
@@ -183,6 +184,25 @@ print("last", end="", flush=True);
     assert output == ["first second last"]
 
 
+def test_watch_error_missing_executable():
+    cmd = ("no-such-executable-in-path",)
+    output = []
+
+    with pytest.raises(commands.Error) as e:
+        for line in commands.watch(*cmd):
+            output.append(line)
+
+    assert output == []
+
+    assert e.value.command == cmd
+    assert e.value.exitcode is None
+    assert e.value.output is None
+    assert re.match(
+        r"Could not execute: .*'no-such-executable-in-path'.*",
+        e.value.error,
+    )
+
+
 def test_watch_error_empty():
     cmd = ("false",)
     output = []
@@ -246,6 +266,20 @@ def test_run_input():
 def test_run_input_non_ascii():
     output = commands.run("cat", input="\u05d0")
     assert output == "\u05d0"
+
+
+def test_run_error_missing_executable():
+    cmd = ("no-such-executable-in-path",)
+    with pytest.raises(commands.Error) as e:
+        commands.run(*cmd)
+
+    assert e.value.command == cmd
+    assert e.value.exitcode is None
+    assert e.value.output is None
+    assert re.match(
+        r"Could not execute: .*'no-such-executable-in-path'.*",
+        e.value.error,
+    )
 
 
 def test_run_error_empty():
