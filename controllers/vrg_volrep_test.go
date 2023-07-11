@@ -63,10 +63,9 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 
 		return condition
 	}
+	var vrgNamespacedName types.NamespacedName
 	vrgGet := func() {
-		Expect(apiReader.Get(context.TODO(), types.NamespacedName{
-			Namespace: vrg.Namespace, Name: vrg.Name,
-		}, vrg)).To(Succeed())
+		Expect(apiReader.Get(context.TODO(), vrgNamespacedName, vrg)).To(Succeed())
 	}
 	var dataReadyCondition *metav1.Condition
 	When("ReplicationState is invalid", func() {
@@ -83,6 +82,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 				},
 			}
 			Expect(k8sClient.Create(context.TODO(), vrg)).To(Succeed())
+			vrgNamespacedName = types.NamespacedName{Name: vrg.Name, Namespace: vrg.Namespace}
 			Eventually(func() int {
 				vrgGet()
 
@@ -128,7 +128,81 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			Expect(clusterDataReadyCondition.Reason).To(Equal("Error"))
 		})
 	})
-	Specify("Vrg delete", func() {
+	When("VRG is deleted", func() {
+		BeforeEach(func() {
+			Expect(k8sClient.Delete(context.TODO(), vrg)).To(Succeed())
+		})
+		It("should allow the VRG to be deleted", func() {
+			Eventually(func() error {
+				return apiReader.Get(context.TODO(), vrgNamespacedName, vrg)
+			}).Should(MatchError(errors.NewNotFound(schema.GroupResource{
+				Group:    ramendrv1alpha1.GroupVersion.Group,
+				Resource: "volumereplicationgroups",
+			}, vrg.Name)))
+		})
+	})
+	var pv0 *corev1.PersistentVolume
+	var pvc0 *corev1.PersistentVolumeClaim
+	When("PV exists, is bound, and its claim's deletion timestamp is non-zero", func() {
+		BeforeEach(func() {
+			pv := pv("pv0", "pvc0", vrg.Namespace, "")
+			pvc := pvc(pv.Spec.ClaimRef.Name, pv.Spec.ClaimRef.Namespace, pv.Name, pv.Spec.StorageClassName, nil)
+			pvc.Finalizers = []string{"ramendr.openshift.io/asdf"}
+			vrgS3KeyPrefix := vrgS3KeyPrefix(vrgNamespacedName)
+			populateS3Store(vrgS3KeyPrefix, []corev1.PersistentVolume{*pv}, []corev1.PersistentVolumeClaim{*pvc})
+			Expect(k8sClient.Create(context.TODO(), pv)).To(Succeed())
+			Expect(k8sClient.Create(context.TODO(), pvc)).To(Succeed())
+			Expect(apiReader.Get(context.TODO(), types.NamespacedName{Name: pv.Name}, pv)).To(Succeed())
+			pv.Status.Phase = corev1.VolumeBound
+			Expect(k8sClient.Status().Update(context.TODO(), pv)).To(Succeed())
+			Expect(k8sClient.Delete(context.TODO(), pvc)).To(Succeed())
+			Expect(apiReader.Get(context.TODO(), types.NamespacedName{Namespace: pvc.Namespace, Name: pvc.Name}, pvc)).
+				To(Succeed())
+			pv0 = pv
+			pvc0 = pvc
+		})
+		It("should set ClusterDataReady false", func() {
+			vrg.ResourceVersion = ""
+			vrg.Spec.S3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			Expect(k8sClient.Create(context.TODO(), vrg)).To(Succeed())
+			Expect(apiReader.Get(context.TODO(), vrgNamespacedName, vrg)).To(Succeed())
+			Eventually(func() *metav1.Condition {
+				vrgGet()
+
+				return meta.FindStatusCondition(vrg.Status.Conditions, "ClusterDataReady")
+			}).Should(And(
+				Not(BeNil()),
+				HaveField("Status", metav1.ConditionFalse),
+				HaveField("Reason", "Error"),
+			))
+		})
+	})
+	When("PVC is deleted finally and PV is unbound", func() {
+		BeforeEach(func() {
+			pv := pv0
+			pvc := pvc0
+			Expect(apiReader.Get(context.TODO(), types.NamespacedName{Namespace: pvc.Namespace, Name: pvc.Name}, pvc)).
+				To(Succeed())
+			pvc.Finalizers = []string{}
+			Expect(k8sClient.Update(context.TODO(), pvc)).To(Succeed())
+			Expect(apiReader.Get(context.TODO(), types.NamespacedName{Name: pv.Name}, pv)).To(Succeed())
+			pv.Status.Phase = corev1.VolumePending
+			Expect(k8sClient.Status().Update(context.TODO(), pv)).To(Succeed())
+		})
+		It("should set ClusterDataReady true", func() {
+			Eventually(func() *metav1.Condition {
+				vrgGet()
+
+				return meta.FindStatusCondition(vrg.Status.Conditions, "ClusterDataReady")
+			}).Should(
+				HaveField("Status", metav1.ConditionTrue),
+			)
+		})
+	})
+	Specify("PV delete", func() {
+		Expect(k8sClient.Delete(context.TODO(), pv0)).To(Succeed())
+	})
+	Specify("VRG delete", func() {
 		Expect(k8sClient.Delete(context.TODO(), vrg)).To(Succeed())
 	})
 
@@ -884,7 +958,11 @@ func (v *vrgTest) vrgNamespacedName() types.NamespacedName {
 }
 
 func (v *vrgTest) s3KeyPrefix() string {
-	return vrgController.S3KeyPrefix(v.vrgNamespacedName().String())
+	return vrgS3KeyPrefix(v.vrgNamespacedName())
+}
+
+func vrgS3KeyPrefix(vrgNamespacedName types.NamespacedName) string {
+	return vrgController.S3KeyPrefix(vrgNamespacedName.String())
 }
 
 func populateS3Store(vrgNamespacedName string, pvList []corev1.PersistentVolume,
@@ -932,6 +1010,10 @@ func (v *vrgTest) createPV(pvName, claimName string, bindInfo corev1.PersistentV
 }
 
 func (v *vrgTest) generatePV(pvName, claimName string) *corev1.PersistentVolume {
+	return pv(pvName, claimName, v.namespace, v.storageClass)
+}
+
+func pv(pvName, claimName, claimNamespaceName, storageClassName string) *corev1.PersistentVolume {
 	capacity := corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}
 	accessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
 	volumeMode := corev1.PersistentVolumeFilesystem
@@ -951,11 +1033,11 @@ func (v *vrgTest) generatePV(pvName, claimName string) *corev1.PersistentVolume 
 			VolumeMode:  &volumeMode,
 			ClaimRef: &corev1.ObjectReference{
 				Kind:      "PersistentVolumeClaim",
-				Namespace: v.namespace,
+				Namespace: claimNamespaceName,
 				Name:      claimName,
 			},
 			PersistentVolumeReclaimPolicy: "Delete",
-			StorageClassName:              v.storageClass,
+			StorageClassName:              storageClassName,
 			MountOptions:                  []string{},
 			NodeAffinity: &corev1.VolumeNodeAffinity{
 				Required: &corev1.NodeSelector{
@@ -1001,11 +1083,14 @@ func (v *vrgTest) createPVC(pvcName, namespace, volumeName string, labels map[st
 
 func (v *vrgTest) generatePVC(pvcName, namespace, volumeName string, labels map[string]string,
 ) *corev1.PersistentVolumeClaim {
+	return pvc(pvcName, namespace, volumeName, v.storageClass, labels)
+}
+
+func pvc(pvcName, namespace, volumeName, storageClassName string, labels map[string]string,
+) *corev1.PersistentVolumeClaim {
 	capacity := corev1.ResourceList{
 		corev1.ResourceStorage: resource.MustParse("1Gi"),
 	}
-
-	storageclass := v.storageClass
 
 	accessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
 
@@ -1023,7 +1108,7 @@ func (v *vrgTest) generatePVC(pvcName, namespace, volumeName string, labels map[
 			AccessModes:      accessModes,
 			Resources:        corev1.ResourceRequirements{Requests: capacity},
 			VolumeName:       volumeName,
-			StorageClassName: &storageclass, // Set to nil?
+			StorageClassName: &storageClassName, // Set to nil?
 		},
 	}
 }
