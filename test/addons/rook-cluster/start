@@ -32,10 +32,9 @@ def wait(cluster):
         profile=cluster,
     )
     kubectl.wait(
-        "cephcluster/my-cluster",
-        "--for=jsonpath={.status.phase}=Ready",
-        "--namespace=rook-ceph",
-        "--timeout=300s",
+        resource="cephcluster/my-cluster",
+        condition="jsonpath={.status.phase}=Ready",
+        namespace="rook-ceph",
         context=cluster,
     )
 

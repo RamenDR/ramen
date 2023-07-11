@@ -83,10 +83,33 @@ def rollout(*args, context=None, log=print):
     _watch("rollout", *args, context=context, log=log)
 
 
-def wait(*args, context=None, log=print):
+def wait(
+    resource=None,
+    all=False,
+    selector=None,
+    filename=None,
+    condition=None,
+    namespace=None,
+    timeout=300,
+    context=None,
+    log=print,
+):
     """
     Run kubectl wait ... logging progress messages.
     """
+    args = [f"--timeout={timeout}s"]
+    if resource:
+        args.append(resource)
+    if all:
+        args.append("--all")
+    if selector:
+        args.append(f"--selector={selector}")
+    if filename:
+        args.append(f"--filename={filename}")
+    if condition:
+        args.append(f"--for={condition}")
+    if namespace:
+        args.append(f"--namespace={namespace}")
     _watch("wait", *args, context=context, log=log)
 
 

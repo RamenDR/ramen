@@ -29,19 +29,17 @@ def wait(cluster):
         profile=cluster,
     )
     kubectl.wait(
-        "cephblockpool/replicapool",
-        "--for=jsonpath={.status.phase}=Ready",
-        "--namespace=rook-ceph",
-        "--timeout=300s",
+        resource="cephblockpool/replicapool",
+        condition="jsonpath={.status.phase}=Ready",
+        namespace="rook-ceph",
         context=cluster,
     )
 
     print("Waiting for replica pool peer token")
     kubectl.wait(
-        "cephblockpool/replicapool",
-        "--for=jsonpath={.status.info.rbdMirrorBootstrapPeerSecretName}=pool-peer-token-replicapool",
-        "--namespace=rook-ceph",
-        "--timeout=300s",
+        resource="cephblockpool/replicapool",
+        condition="jsonpath={.status.info.rbdMirrorBootstrapPeerSecretName}=pool-peer-token-replicapool",
+        namespace="rook-ceph",
         context=cluster,
     )
 

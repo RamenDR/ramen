@@ -106,19 +106,19 @@ def run(args):
 
     command.info("Waiting until DRClusters phase is available")
     kubectl.wait(
-        "drcluster",
-        "--all",
-        "--for=jsonpath={.status.phase}=Available",
-        f"--namespace={args.ramen_namespace}",
+        resource="drcluster",
+        all=True,
+        condition="jsonpath={.status.phase}=Available",
+        namespace=args.ramen_namespace,
         context=env["hub"],
         log=command.debug,
     )
 
     command.info("Waiting until DRPolicy is validated")
     kubectl.wait(
-        "drpolicy/dr-policy",
-        "--for=condition=Validated",
-        f"--namespace={args.ramen_namespace}",
+        resource="drpolicy/dr-policy",
+        condition="condition=Validated",
+        namespace=args.ramen_namespace,
         context=env["hub"],
         log=command.debug,
     )

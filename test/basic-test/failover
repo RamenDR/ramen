@@ -43,10 +43,9 @@ kubectl.patch(
 
 test.info("Waiting until application is failed over...")
 kubectl.wait(
-    f"drpc/{config['name']}",
-    "--for=jsonpath={.status.phase}=FailedOver",
-    f"--namespace={config['namespace']}",
-    "--timeout=300s",
+    resource=f"drpc/{config['name']}",
+    condition="jsonpath={.status.phase}=FailedOver",
+    namespace=config["namespace"],
     context=test.env["hub"],
     log=test.debug,
 )

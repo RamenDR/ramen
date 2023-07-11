@@ -44,10 +44,10 @@ def wait_for_replication_destination(cluster):
         f"Waiting until replication destination is synchronizing in cluster '{cluster}'"
     )
     kubectl.wait(
-        "replicationdestination/busybox-dst",
-        "--for=condition=Synchronizing=True",
-        f"--namespace={NAMESPACE}",
-        "--timeout=120s",
+        resource="replicationdestination/busybox-dst",
+        condition="condition=Synchronizing=True",
+        namespace=NAMESPACE,
+        timeout=120,
         context=cluster,
     )
 
@@ -81,10 +81,10 @@ def setup_replication_service(cluster1, cluster2):
 
     print(f"Waiting until service export is synced in cluster '{cluster2}'")
     kubectl.wait(
-        f"serviceexports/{VOLSYNC_SERVICE}",
-        "--for=condition=Synced=True",
-        f"--namespace={NAMESPACE}",
-        "--timeout=120s",
+        resource=f"serviceexports/{VOLSYNC_SERVICE}",
+        condition="condition=Synced=True",
+        namespace=NAMESPACE,
+        timeout=120,
         context=cluster2,
     )
 
@@ -116,10 +116,10 @@ def run_replication(cluster):
 
     print(f"Waiting until replication is completed in cluster '{cluster}'")
     kubectl.wait(
-        "replicationsource/busybox-src",
-        "--for=jsonpath={.status.lastManualSync}=replication-1",
-        f"--namespace={NAMESPACE}",
-        "--timeout=120s",
+        resource="replicationsource/busybox-src",
+        condition="jsonpath={.status.lastManualSync}=replication-1",
+        namespace=NAMESPACE,
+        timeout=120,
         context=cluster,
     )
     out = kubectl.get(

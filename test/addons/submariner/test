@@ -95,10 +95,10 @@ def wait_for_delete(namespace, dst, src):
 def wait_for_service(cluster, namespace):
     print(f"Waiting until '{SERVICE}' is rolled out in cluster '{cluster}'")
     kubectl.wait(
-        f"deploy/{SERVICE}",
-        "--for=condition=Available",
-        f"--namespace={namespace}",
-        "--timeout=120s",
+        resource=f"deploy/{SERVICE}",
+        condition="condition=Available",
+        namespace=namespace,
+        timeout=120,
         context=cluster,
     )
 
@@ -106,10 +106,10 @@ def wait_for_service(cluster, namespace):
 def wait_for_pod(cluster, namespace):
     print(f"Waiting until test pod is ready in cluster '{cluster}'")
     kubectl.wait(
-        "pod/test",
-        "--for=condition=Ready",
-        f"--namespace={namespace}",
-        "--timeout=120s",
+        resource="pod/test",
+        condition="condition=Ready",
+        namespace=namespace,
+        timeout=120,
         context=cluster,
     )
 
@@ -127,10 +127,10 @@ def unexport_service(cluster, namespace):
 def wait_for_service_export(cluster, namespace):
     print(f"Waiting for service in namespace '{namespace}' in cluster '{cluster}'")
     kubectl.wait(
-        f"serviceexports/{SERVICE}",
-        "--for=condition=Synced=True",
-        f"--namespace={namespace}",
-        "--timeout=120s",
+        resource=f"serviceexports/{SERVICE}",
+        condition="condition=Synced=True",
+        namespace=namespace,
+        timeout=120,
         context=cluster,
     )
     exports = kubectl.describe(

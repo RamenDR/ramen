@@ -35,11 +35,10 @@ def wait(cluster):
 
     print("Waiting until rook ceph operator is ready")
     kubectl.wait(
-        "pod",
-        "--for=jsonpath={.status.phase}=Running",
-        "--namespace=rook-ceph",
-        "--selector=app=rook-ceph-operator",
-        "--timeout=300s",
+        resource="pod",
+        selector="app=rook-ceph-operator",
+        condition="jsonpath={.status.phase}=Running",
+        namespace="rook-ceph",
         context=cluster,
     )
 

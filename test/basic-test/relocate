@@ -22,10 +22,9 @@ test.info("Relocate to cluster '%s'", cluster)
 
 test.info("Waiting until peer is ready")
 kubectl.wait(
-    f"drpc/{config['name']}",
-    "--for=condition=PeerReady",
-    f"--namespace={config['namespace']}",
-    "--timeout=300s",
+    resource=f"drpc/{config['name']}",
+    condition="condition=PeerReady",
+    namespace=config["namespace"],
     context=test.env["hub"],
     log=test.debug,
 )
@@ -53,10 +52,9 @@ kubectl.patch(
 
 test.info("Waiting until application is relocated...")
 kubectl.wait(
-    f"drpc/{config['name']}",
-    "--for=jsonpath={.status.phase}=Relocated",
-    f"--namespace={config['namespace']}",
-    "--timeout=300s",
+    resource=f"drpc/{config['name']}",
+    condition="jsonpath={.status.phase}=Relocated",
+    namespace=config["namespace"],
     context=test.env["hub"],
     log=test.debug,
 )
@@ -65,10 +63,9 @@ kubectl.wait(
 # after relocate complete before we delete the app.
 test.info("Waiting until relocation completes...")
 kubectl.wait(
-    f"drpc/{config['name']}",
-    "--for=jsonpath={.status.progression}=Completed",
-    f"--namespace={config['namespace']}",
-    "--timeout=300s",
+    resource=f"drpc/{config['name']}",
+    condition="jsonpath={.status.progression}=Completed",
+    namespace=config["namespace"],
     context=test.env["hub"],
     log=test.debug,
 )

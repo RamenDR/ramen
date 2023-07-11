@@ -84,31 +84,25 @@ def configure_rbd_mirroring(cluster, peer_info):
 def wait_until_pool_mirroring_is_healthy(cluster):
     print(f"Waiting until ceph mirror daemon is healthy in cluster '{cluster}'")
     kubectl.wait(
-        "cephblockpools.ceph.rook.io",
-        POOL_NAME,
-        "--for=jsonpath={.status.mirroringStatus.summary.daemon_health}=OK",
-        "--namespace=rook-ceph",
-        "--timeout=300s",
+        resource=f"cephblockpools.ceph.rook.io/{POOL_NAME}",
+        condition="jsonpath={.status.mirroringStatus.summary.daemon_health}=OK",
+        namespace="rook-ceph",
         context=cluster,
     )
 
     print(f"Waiting until ceph mirror is healthy in cluster '{cluster}'")
     kubectl.wait(
-        "cephblockpools.ceph.rook.io",
-        POOL_NAME,
-        "--for=jsonpath={.status.mirroringStatus.summary.health}=OK",
-        "--namespace=rook-ceph",
-        "--timeout=300s",
+        resource=f"cephblockpools.ceph.rook.io/{POOL_NAME}",
+        condition="jsonpath={.status.mirroringStatus.summary.health}=OK",
+        namespace="rook-ceph",
         context=cluster,
     )
 
     print(f"Waiting until ceph mirror image is healthy in cluster '{cluster}'")
     kubectl.wait(
-        "cephblockpools.ceph.rook.io",
-        POOL_NAME,
-        "--for=jsonpath={.status.mirroringStatus.summary.image_health}=OK",
-        "--namespace=rook-ceph",
-        "--timeout=300s",
+        resource=f"cephblockpools.ceph.rook.io/{POOL_NAME}",
+        condition="jsonpath={.status.mirroringStatus.summary.image_health}=OK",
+        namespace="rook-ceph",
         context=cluster,
     )
 

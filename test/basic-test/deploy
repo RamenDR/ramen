@@ -71,10 +71,10 @@ drenv.wait_for(
 
 test.info("Waiting until busybox drpc is deployed")
 kubectl.wait(
-    f"drpc/{config['name']}",
-    "--for=jsonpath={.status.phase}=Deployed",
-    f"--namespace={config['namespace']}",
-    "--timeout=60s",
+    resource=f"drpc/{config['name']}",
+    condition="jsonpath={.status.phase}=Deployed",
+    namespace=config["namespace"],
+    timeout=60,
     context=test.env["hub"],
     log=test.debug,
 )
