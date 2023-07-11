@@ -41,6 +41,11 @@ def test_exec(tmpenv):
     assert out.startswith("example-deployment-")
 
 
+def test_events(tmpenv):
+    out = kubectl.events("deploy/example-deployment", context=tmpenv.profile)
+    assert out != ""
+
+
 def test_apply(tmpenv, capsys):
     kubectl.apply(f"--filename={EXAMPLE_DEPLOYMENT}", context=tmpenv.profile)
     out, err = capsys.readouterr()

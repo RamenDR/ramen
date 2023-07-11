@@ -45,6 +45,16 @@ def exec(*args, context=None):
     return _run("exec", *args, context=context)
 
 
+def events(resource, namespace=None, context=None):
+    """
+    Run kubectl events ... and return the output.
+    """
+    args = [resource]
+    if namespace:
+        args.append(f"--namespace={namespace}")
+    return _run("events", *args, context=context)
+
+
 def apply(*args, input=None, context=None, log=print):
     """
     Run kubectl apply ... logging progress messages.
