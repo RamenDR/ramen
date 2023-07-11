@@ -290,6 +290,7 @@ def test_run_error_empty():
     assert e.value.exitcode == 1
     assert e.value.output == ""
     assert e.value.error == ""
+    assert e.value.events is None
 
 
 def test_run_error():
@@ -302,6 +303,7 @@ def test_run_error():
     assert e.value.exitcode == 1
     assert e.value.error == "error"
     assert e.value.output == "output"
+    assert e.value.events is None
 
 
 def test_run_non_ascii():
@@ -346,6 +348,27 @@ Command failed:
    output:
       out 1
       out 2
+   error:
+      err 1
+      err 2
+"""
+    assert str(e) == expected
+
+
+def test_error_with_events():
+    e = commands.Error(
+        ("arg1", "arg2"),
+        exitcode=3,
+        error="err 1\nerr 2\n",
+        events="event 1\nevent 2\n",
+    )
+    expected = """\
+Command failed:
+   command: ('arg1', 'arg2')
+   exitcode: 3
+   events:
+      event 1
+      event 2
    error:
       err 1
       err 2

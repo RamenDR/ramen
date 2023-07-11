@@ -20,11 +20,12 @@ _PIPE_BUF = 4096 if platform.system() == "Linux" else 512
 class Error(Exception):
     INDENT = 3 * " "
 
-    def __init__(self, command, error, exitcode=None, output=None):
+    def __init__(self, command, error, exitcode=None, output=None, events=None):
         self.command = command
         self.error = error
         self.exitcode = exitcode
         self.output = output
+        self.events = events
 
     def with_exception(self, exc):
         """
@@ -48,6 +49,10 @@ class Error(Exception):
         if self.output:
             output = self._indent(self.output.rstrip())
             lines.append(self._indent(f"output:\n{output}\n"))
+
+        if self.events:
+            events = self._indent(self.events.rstrip())
+            lines.append(self._indent(f"events:\n{events}\n"))
 
         error = self._indent(self.error.rstrip())
         lines.append(self._indent(f"error:\n{error}\n"))
