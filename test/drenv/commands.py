@@ -20,11 +20,18 @@ _PIPE_BUF = 4096 if platform.system() == "Linux" else 512
 class Error(Exception):
     INDENT = 3 * " "
 
-    def __init__(self, command, exitcode, error, output=None):
+    def __init__(self, command, error, exitcode=None, output=None):
         self.command = command
-        self.exitcode = exitcode
         self.error = error
+        self.exitcode = exitcode
         self.output = output
+
+    def with_exception(self, exc):
+        """
+        Return a new error preserving the traceback from another excpetion.
+        """
+        self.__cause__ = None
+        return self.with_traceback(exc.__traceback__)
 
     def _indent(self, s):
         return textwrap.indent(s, self.INDENT)
@@ -33,8 +40,10 @@ class Error(Exception):
         lines = [
             "Command failed:\n",
             self._indent(f"command: {self.command}\n"),
-            self._indent(f"exitcode: {self.exitcode}\n"),
         ]
+
+        if self.exitcode is not None:
+            lines.append(self._indent(f"exitcode: {self.exitcode}\n"))
 
         if self.output:
             output = self._indent(self.output.rstrip())
@@ -58,19 +67,25 @@ def run(*args, input=None):
     fail to raise an error about the failing command. Invalid characters will
     be replaced with unicode replacement character (U+FFFD).
 
-    Raises Error if the child process terminated with non-zero exit code. The
-    error includes all data read from the child process stdout and stderr.
+    Raises Error if creating a child process failed or the child process
+    terminated with non-zero exit code. The error includes all data read from
+    the child process stdout and stderr.
     """
-    cp = subprocess.run(
-        args,
-        input=input.encode() if input else None,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+    try:
+        cp = subprocess.run(
+            args,
+            input=input.encode() if input else None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except OSError as e:
+        raise Error(args, f"Could not execute: {e}").with_exception(e)
+
     output = cp.stdout.decode()
     if cp.returncode != 0:
         error = cp.stderr.decode(errors="replace")
-        raise Error(args, cp.returncode, error, output=output)
+        raise Error(args, error, exitcode=cp.returncode, output=output)
+
     return output
 
 
@@ -86,20 +101,26 @@ def watch(*args, input=None):
     fail to raise an error about the failing command. Invalid characters will
     be replaced with unicode replacement character (U+FFFD).
 
-    Raises Error if the child process terminated with non-zero exit code. The
-    error includes all data read from the child process stderr.
+    Raises Error if creating a child process failed or the child process
+    terminated with non-zero exit code. The error includes all data read from
+    the child process stderr.
     """
     # Avoid delays in python child process logs.
     env = dict(os.environ)
     env["PYTHONUNBUFFERED"] = "1"
 
-    with subprocess.Popen(
-        args,
-        stdin=subprocess.PIPE if input else None,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=env,
-    ) as p:
+    try:
+        p = subprocess.Popen(
+            args,
+            stdin=subprocess.PIPE if input else None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+    except OSError as e:
+        raise Error(args, f"Could not execute: {e}").with_exception(e)
+
+    with p:
         error = bytearray()
         partial = bytearray()
 
@@ -124,7 +145,7 @@ def watch(*args, input=None):
 
     if p.returncode != 0:
         error = error.decode(errors="replace")
-        raise Error(args, p.returncode, error)
+        raise Error(args, error, exitcode=p.returncode)
 
 
 def stream(proc, input=None, bufsize=32 << 10):
