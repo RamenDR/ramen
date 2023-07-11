@@ -217,7 +217,6 @@ func updateDRClusterManifestWorkStatus(clusterNamespace string) {
 
 	Eventually(func() bool {
 		err := apiReader.Get(context.TODO(), manifestLookupKey, mw)
-
 		return err == nil
 	}, timeout, interval).Should(BeTrue(),
 		fmt.Sprintf("failed to get manifest for DRCluster %s", clusterNamespace))
