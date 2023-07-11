@@ -59,13 +59,7 @@ def wait(cluster):
         for name in names:
             deployment = f"deploy/{name}"
             drenv.wait_for(deployment, namespace=ns, profile=cluster)
-            kubectl.rollout(
-                "status",
-                deployment,
-                f"--namespace={ns}",
-                "--timeout=300s",
-                context=cluster,
-            )
+            kubectl.rollout("status", deployment, namespace=ns, context=cluster)
 
 
 if len(sys.argv) != 2:

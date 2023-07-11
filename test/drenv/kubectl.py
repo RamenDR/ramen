@@ -76,10 +76,13 @@ def delete(*args, input=None, context=None, log=print):
     _watch("delete", *args, input=input, context=context, log=log)
 
 
-def rollout(*args, context=None, log=print):
+def rollout(action, resource, timeout=300, namespace=None, context=None, log=print):
     """
     Run kubectl rollout ... logging progress messages.
     """
+    args = [action, resource, f"--timeout={timeout}s"]
+    if namespace:
+        args.append(f"--namespace={namespace}")
     _watch("rollout", *args, context=context, log=log)
 
 

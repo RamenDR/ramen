@@ -33,8 +33,8 @@ def wait_for_application(cluster):
     kubectl.rollout(
         "status",
         f"deploy/{DEPLOY}",
-        f"--namespace={NAMESPACE}",
-        "--timeout=120s",
+        namespace=NAMESPACE,
+        timeout=120,
         context=cluster,
     )
 

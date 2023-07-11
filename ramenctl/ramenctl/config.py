@@ -25,8 +25,8 @@ def run(args):
     kubectl.rollout(
         "status",
         "deploy/ramen-hub-operator",
-        f"--namespace={args.ramen_namespace}",
-        "--timeout=180s",
+        namespace=args.ramen_namespace,
+        timeout=180,
         context=env["hub"],
         log=command.debug,
     )

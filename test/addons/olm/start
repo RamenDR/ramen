@@ -43,9 +43,8 @@ def wait(cluster):
         print(f"Waiting until {operator} is rolled out")
         kubectl.rollout(
             "status",
-            "deploy",
-            operator,
-            f"--namespace={NAMESPACE}",
+            f"deploy/{operator}",
+            namespace=NAMESPACE,
             context=cluster,
         )
 
@@ -67,7 +66,7 @@ def wait(cluster):
     kubectl.rollout(
         "status",
         "deploy/packageserver",
-        f"--namespace={NAMESPACE}",
+        namespace=NAMESPACE,
         context=cluster,
     )
 
