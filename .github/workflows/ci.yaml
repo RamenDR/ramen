@@ -7,10 +7,14 @@
 name: CI
 
 # This workflow will run when developer push a topic branch to their
-# fork in github, minimizing noise for maintainers.
+# fork in github, minimizing noise for maintainers. This
+# workflow also runs on nightly basis at 12:00 AM (00:00 UTC)
+
 on:  # yamllint disable-line rule:truthy
-  - push
-  - pull_request
+  push:
+  pull_request:
+  schedule:
+    - cron: '0 0 * * *'
 
 env:
   # Values can be overriden by repository variables.
