@@ -84,7 +84,6 @@ drenv.wait_for(
     f"drpc/{config['name']}",
     output="jsonpath={.status.lastGroupSyncTime}",
     namespace=config["namespace"],
-    timeout=300,
     profile=test.env["hub"],
     log=test.debug,
 )
