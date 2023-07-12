@@ -1960,12 +1960,11 @@ func (v *VRGInstance) updateExistingPVForSync(pv *corev1.PersistentVolume) error
 }
 
 func (v *VRGInstance) validateExistingPV(pv *corev1.PersistentVolume) error {
-	existingPV := &corev1.PersistentVolume{}
-	log := v.log.WithValues("PV", existingPV.GetName())
+	log := v.log.WithValues("PV", pv.Name)
 
-	err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: pv.Name}, existingPV)
-	if err != nil {
-		return fmt.Errorf("failed to get PV (%s) (%w)", existingPV.GetName(), err)
+	existingPV := &corev1.PersistentVolume{}
+	if err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: pv.Name}, existingPV); err != nil {
+		return fmt.Errorf("failed to get PV %s: %w", pv.Name, err)
 	}
 
 	if existingPV.Status.Phase == corev1.VolumeBound {
