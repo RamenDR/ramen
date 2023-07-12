@@ -8,7 +8,7 @@ from . import commands
 BROKER_INFO = "broker-info.subm"
 
 
-def deploy_broker(context, globalnet=False, broker_info=None, log=print):
+def deploy_broker(context, globalnet=False, broker_info=None, version=None, log=print):
     """
     Run subctl deploy-broker ... logging progress messages.
 
@@ -18,6 +18,8 @@ def deploy_broker(context, globalnet=False, broker_info=None, log=print):
     args = ["deploy-broker", "--context", context]
     if globalnet:
         args.append("--globalnet")
+    if version:
+        args.append(f"--version={version}")
 
     _watch(*args, log=log)
 
@@ -25,13 +27,15 @@ def deploy_broker(context, globalnet=False, broker_info=None, log=print):
         shutil.move(BROKER_INFO, broker_info)
 
 
-def join(broker_info, context, clusterid, cable_driver=None, log=print):
+def join(broker_info, context, clusterid, cable_driver=None, version=None, log=print):
     """
     Run subctl join ... logging progress messages.
     """
     args = ["join", broker_info, "--context", context, "--clusterid", clusterid]
     if cable_driver:
         args.extend(("--cable-driver", cable_driver))
+    if version:
+        args.append(f"--version={version}")
     _watch(*args, log=log)
 
 

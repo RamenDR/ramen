@@ -11,6 +11,8 @@ from drenv import cluster as drenv_cluster
 from drenv import kubectl
 from drenv import subctl
 
+VERSION = "0.15.2"
+
 NAMESPACE = "submariner-operator"
 
 BROKER_DEPLOYMENTS = ("submariner-operator",)
@@ -33,7 +35,12 @@ def deploy_broker(broker):
     os.makedirs(broker_dir, exist_ok=True)
 
     print(f"Deploying submariner broker in cluster '{broker}'")
-    subctl.deploy_broker(broker, globalnet=True, broker_info=broker_info)
+    subctl.deploy_broker(
+        broker,
+        globalnet=True,
+        broker_info=broker_info,
+        version=VERSION,
+    )
     print(f"Broker info stored in '{broker_info}'")
 
     print(f"Waiting for submariner broker deployments in cluster '{broker}'")
@@ -47,7 +54,13 @@ def join_cluster(cluster, broker_info):
     drenv_cluster.wait_until_ready(cluster)
 
     print(f"Joining cluster '{cluster}' to broker")
-    subctl.join(broker_info, context=cluster, clusterid=cluster, cable_driver="vxlan")
+    subctl.join(
+        broker_info,
+        context=cluster,
+        clusterid=cluster,
+        cable_driver="vxlan",
+        version=VERSION,
+    )
 
 
 def wait_for_cluster(cluster):

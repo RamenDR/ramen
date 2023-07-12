@@ -10,7 +10,8 @@ metadata:
 spec:
   containers:
     - name: test
-      image: quay.io/submariner/nettest
+      # NOTE: keep in sync with start:VERSION.
+      image: quay.io/submariner/nettest:0.15.2
       command:
         - sh
         - -c
