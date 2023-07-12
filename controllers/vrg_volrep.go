@@ -1972,14 +1972,13 @@ func (v *VRGInstance) validateExistingPV(pv *corev1.PersistentVolume) error {
 		var pvc corev1.PersistentVolumeClaim
 
 		pvcNamespacedName := types.NamespacedName{Name: pv.Spec.ClaimRef.Name, Namespace: pv.Spec.ClaimRef.Namespace}
-
-		err := v.reconciler.Get(v.ctx, pvcNamespacedName, &pvc)
-		if err != nil {
-			return fmt.Errorf("failed to get PV %s claim %s: %w", existingPV.GetName(), pvcNamespacedName.String(), err)
+		if err := v.reconciler.Get(v.ctx, pvcNamespacedName, &pvc); err != nil {
+			return fmt.Errorf("found bound PV %s to claim %s but unable to validate claim exists: %w", existingPV.GetName(),
+				pvcNamespacedName.String(), err)
 		}
 
 		if !pvc.DeletionTimestamp.IsZero() {
-			return fmt.Errorf("existing PV %s claim %s deletion timestamp non-zero %v", existingPV.GetName(),
+			return fmt.Errorf("existing bound PV %s claim %s deletion timestamp non-zero %v", existingPV.GetName(),
 				pvcNamespacedName.String(), pvc.DeletionTimestamp)
 		}
 
