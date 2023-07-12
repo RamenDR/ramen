@@ -93,7 +93,13 @@ def rollout(action, resource, timeout=300, namespace=None, context=None, log=pri
     args = [action, resource, f"--timeout={timeout}s"]
     if namespace:
         args.append(f"--namespace={namespace}")
-    _watch("rollout", *args, context=context, log=log)
+    try:
+        _watch("rollout", *args, context=context, log=log)
+    except commands.Error as e:
+        # Most failures are timeouts, events may help to debug.
+        if action == "status":
+            e.events = _try_events(resource, namespace=namespace, context=context)
+        raise
 
 
 def wait(
@@ -123,7 +129,21 @@ def wait(
         args.append(f"--for={condition}")
     if namespace:
         args.append(f"--namespace={namespace}")
-    _watch("wait", *args, context=context, log=log)
+
+    try:
+        _watch("wait", *args, context=context, log=log)
+    except commands.Error as e:
+        # Most failures are timeouts, events may help to debug.
+        if resource and not (all or selector):
+            e.events = _try_events(resource, namespace=namespace, context=context)
+        raise
+
+
+def _try_events(resource, namespace=None, context=None):
+    try:
+        return events(resource, namespace=namespace, context=context)
+    except Exception as e:
+        return f"(error getting events: {e})"
 
 
 def _run(cmd, *args, context=None):
