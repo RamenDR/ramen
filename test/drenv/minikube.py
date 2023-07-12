@@ -5,6 +5,16 @@ import logging
 
 from . import commands
 
+EXTRA_CONFIG = [
+    # When enabled, tells the Kubelet to pull images one at a time. This slows
+    # down concurrent image pulls and cause timeouts when using slow network.
+    # Defaults to true becasue it is not safe with docker daemon with version
+    # < 1.9 or an Aufs storage backend.
+    # https://github.com/kubernetes/kubernetes/issues/10959
+    # Speeds up regional-dr start by 20%.
+    "kubelet.serialize-image-pulls=false"
+]
+
 
 def profile(command, output=None):
     return _run("profile", command, output=output)
@@ -54,9 +64,14 @@ def start(
         args.extend(("--addons", ",".join(addons)))
     if service_cluster_ip_range:
         args.extend(("--service-cluster-ip-range", service_cluster_ip_range))
+
+    for pair in EXTRA_CONFIG:
+        args.extend(("--extra-config", pair))
+
     if extra_config:
         for pair in extra_config:
             args.extend(("--extra-config", pair))
+
     if alsologtostderr:
         args.append("--alsologtostderr")
 
