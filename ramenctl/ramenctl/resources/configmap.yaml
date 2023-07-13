@@ -6,7 +6,7 @@ kind: ConfigMap
 metadata:
   labels:
     cluster.open-cluster-management.io/backup: resource
-  name: ramen-hub-operator-config
+  name: $name
   namespace: $namespace
 data:
   ramen_manager_config.yaml: |

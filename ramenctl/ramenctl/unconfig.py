@@ -20,38 +20,44 @@ def register(commands):
 def run(args):
     env = command.env_info(args)
 
+    delete_hub_dr_resources(env["hub"], env["clusters"], env["topology"])
+    # Note: We keep the ramen config map since we do not own it.
+    delete_s3_secret(env["hub"], args)
+    delete_cloud_credentials(env["clusters"], args)
+
+
+def delete_hub_dr_resources(hub, clusters, topology):
     # Deleting in reverse order.
     for name in ["dr-policy", "dr-clusters"]:
-        command.info("Deleting %s for %s", name, env["topology"])
-        template = drenv.template(command.resource(f"{env['topology']}/{name}.yaml"))
-        yaml = template.substitute(
-            cluster1=env["clusters"][0],
-            cluster2=env["clusters"][1],
-        )
+        command.info("Deleting %s for %s", name, topology)
+        template = drenv.template(command.resource(f"{topology}/{name}.yaml"))
+        yaml = template.substitute(cluster1=clusters[0], cluster2=clusters[1])
         kubectl.delete(
             "--filename=-",
             "--ignore-not-found",
             input=yaml,
-            context=env["hub"],
+            context=hub,
             log=command.debug,
         )
 
-    # We keep the ramen config map since we do not own it.
 
-    command.info("Deleting s3 secret in ramen hub namespace")
+def delete_s3_secret(cluster, args):
+    command.info("Deleting s3 secret in cluster '%s'", cluster)
     template = drenv.template(command.resource("ramen-s3-secret.yaml"))
+    yaml = template.substitute(namespace=args.ramen_namespace)
     kubectl.delete(
         "--filename=-",
         "--ignore-not-found",
-        input=template.substitute(namespace=args.ramen_namespace),
-        context=env["hub"],
+        input=yaml,
+        context=cluster,
         log=command.debug,
     )
 
+
+def delete_cloud_credentials(clusters, args):
     template = drenv.template(command.resource("cloud-credentials-secret.yaml"))
     yaml = template.substitute(cloud="", namespace=args.ramen_namespace)
-
-    for cluster in env["clusters"]:
+    for cluster in clusters:
         command.info("Deleting cloud credentials secret in cluster '%s'", cluster)
         kubectl.delete(
             "--filename=-",
