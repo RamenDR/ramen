@@ -47,3 +47,16 @@ def run(args):
         context=env["hub"],
         log=command.debug,
     )
+
+    template = drenv.template(command.resource("cloud-credentials-secret.yaml"))
+    yaml = template.substitute(cloud="", namespace=args.ramen_namespace)
+
+    for cluster in env["clusters"]:
+        command.info("Deleting cloud credentials secret in cluster '%s'", cluster)
+        kubectl.delete(
+            "--filename=-",
+            "--ignore-not-found",
+            input=yaml,
+            context=cluster,
+            log=command.debug,
+        )

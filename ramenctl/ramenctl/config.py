@@ -40,6 +40,28 @@ def run(args):
         log=command.debug,
     )
 
+    command.debug(
+        "Getting velero cloud credentials from cluster '%s'",
+        env["clusters"][0],
+    )
+    cloud = kubectl.get(
+        "secret/cloud-credentials",
+        "--namespace=velero",
+        "--output=jsonpath={.data.cloud}",
+        context=env["clusters"][0],
+    )
+    template = drenv.template(command.resource("cloud-credentials-secret.yaml"))
+    yaml = template.substitute(cloud=cloud, namespace=args.ramen_namespace)
+
+    for cluster in env["clusters"]:
+        command.info("Creating cloud credentials secret in cluster '%s'", cluster)
+        kubectl.apply(
+            "--filename=-",
+            input=yaml,
+            context=cluster,
+            log=command.debug,
+        )
+
     command.info("Updating ramen config map")
     template = drenv.template(command.resource("configmap.yaml"))
     yaml = template.substitute(
