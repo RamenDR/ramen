@@ -32,9 +32,10 @@ def run(args):
     )
 
     command.info("Creating s3 secret in ramen hub namespace")
+    template = drenv.template(command.resource("ramen-s3-secret.yaml"))
     kubectl.apply(
-        "--filename",
-        command.resource("ramen-s3-secret.yaml"),
+        "--filename=-",
+        input=template.substitute(namespace=args.ramen_namespace),
         context=env["hub"],
         log=command.debug,
     )
@@ -47,6 +48,7 @@ def run(args):
         cluster2=env["clusters"][1],
         minio_url_cluster1=minio.service_url(env["clusters"][0]),
         minio_url_cluster2=minio.service_url(env["clusters"][1]),
+        namespace=args.ramen_namespace,
     )
     kubectl.apply(
         "--filename=-",

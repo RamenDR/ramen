@@ -39,10 +39,11 @@ def run(args):
     # We keep the ramen config map since we do not own it.
 
     command.info("Deleting s3 secret in ramen hub namespace")
+    template = drenv.template(command.resource("ramen-s3-secret.yaml"))
     kubectl.delete(
-        "--filename",
-        command.resource("ramen-s3-secret.yaml"),
+        "--filename=-",
         "--ignore-not-found",
+        input=template.substitute(namespace=args.ramen_namespace),
         context=env["hub"],
         log=command.debug,
     )
