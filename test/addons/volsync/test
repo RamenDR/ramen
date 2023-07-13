@@ -105,6 +105,15 @@ def run_replication(cluster):
     print(f"Creating replication source in cluster '{cluster}'")
     kubectl.apply("--filename", "source/replication-src.yaml", context=cluster)
 
+    print(f"Waiting until replication source reports sync status in '{cluster}'")
+    drenv.wait_for(
+        "replicationsource/busybox-src",
+        output="jsonpath={.status.lastManualSync}",
+        namespace=NAMESPACE,
+        timeout=60,
+        profile=cluster,
+    )
+
     print(f"Waiting until replication is completed in cluster '{cluster}'")
     kubectl.wait(
         "replicationsource/busybox-src",
