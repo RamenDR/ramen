@@ -63,11 +63,6 @@ def create_addons(tmpdir):
         tmpdir.mkdir(f"addon{i}")
 
 
-def test_validate_missing_addons(tmpdir):
-    with pytest.raises(envfile.MissingAddon):
-        f = io.StringIO(valid_yaml)
-        envfile.load(f, addons_root=str(tmpdir))
-
 
 def test_valid(tmpdir):
     create_addons(tmpdir)
@@ -184,6 +179,32 @@ def test_name_prefix(tmpdir):
     worker = env["workers"][1]
     assert worker["name"] == "prefix-test/1"
     assert worker["addons"][0]["args"] == []
+
+
+def test_missing_profile_addons(tmpdir):
+    s = """
+name: test
+profiles:
+  - name: dr1
+    workers:
+      - addons:
+          - name: addon
+"""
+    with pytest.raises(envfile.MissingAddon):
+        envfile.load(io.StringIO(s), addons_root=str(tmpdir))
+
+
+def test_missing_global_addons(tmpdir):
+    s = """
+name: test
+profiles:
+  - name: dr1
+workers:
+  - addons:
+      - name: missing
+"""
+    with pytest.raises(envfile.MissingAddon):
+        envfile.load(io.StringIO(s), addons_root=str(tmpdir))
 
 
 def test_require_env_name():
