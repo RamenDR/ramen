@@ -3,9 +3,16 @@
 
 import io
 import pytest
+from collections import namedtuple
+
 from . import envfile
 
-valid_yaml = """
+Env = namedtuple("Env", "file,addons_root")
+
+
+@pytest.fixture
+def valid_env(tmpdir):
+    yaml = """
 name: test
 
 templates:
@@ -57,17 +64,14 @@ workers:
         args: []
 """
 
-
-def create_addons(tmpdir):
     for i in range(1, 7):
         tmpdir.mkdir(f"addon{i}")
 
+    return Env(file=io.StringIO(yaml), addons_root=str(tmpdir))
 
 
-def test_valid(tmpdir):
-    create_addons(tmpdir)
-    f = io.StringIO(valid_yaml)
-    env = envfile.load(f, addons_root=str(tmpdir))
+def test_valid(valid_env):
+    env = envfile.load(valid_env.file, addons_root=valid_env.addons_root)
 
     # profile dr1
 
@@ -122,10 +126,12 @@ def test_valid(tmpdir):
     assert worker["addons"][0]["args"] == []
 
 
-def test_name_prefix(tmpdir):
-    create_addons(tmpdir)
-    f = io.StringIO(valid_yaml)
-    env = envfile.load(f, name_prefix="prefix-", addons_root=str(tmpdir))
+def test_name_prefix(valid_env):
+    env = envfile.load(
+        valid_env.file,
+        name_prefix="prefix-",
+        addons_root=valid_env.addons_root,
+    )
 
     # env
 
