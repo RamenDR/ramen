@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+apiVersion: apps.open-cluster-management.io/v1
+kind: Channel
+metadata:
+  name: ramen-gitops
+  namespace: ramen-test
+spec:
+  type: GitHub
+  pathname: https://github.com/RamenDR/ramen.git

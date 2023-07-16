@@ -1,0 +1,12 @@
+---
+resources:
+- ../../subscription
+namespace: busybox-rbd
+patches:
+- target:
+    kind: Subscription
+    name: busybox-sub
+  patch: |-
+    - op: replace
+      path: /metadata/annotations/apps.open-cluster-management.io~1github-path
+      value: test/apps/rbd/busybox
