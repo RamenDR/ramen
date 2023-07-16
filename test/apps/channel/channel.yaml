@@ -9,4 +9,4 @@ metadata:
   namespace: ramen-test
 spec:
   type: GitHub
-  pathname: https://github.com/RamenDR/ramen.git
+  pathname: https://github.com/nirs/ramen.git
