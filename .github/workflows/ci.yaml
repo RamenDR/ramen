@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout source
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Install prereqs
         run: |
@@ -63,10 +63,10 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout source
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Setup go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v4
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -80,10 +80,10 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout source
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Setup go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v4
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -175,10 +175,10 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout source
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Setup go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v4
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -189,7 +189,7 @@ jobs:
         run: ${{env.DOCKERCMD}} save -o /tmp/ramen-operator.tar ${IMAGE_TAG_BASE}-operator:${IMAGE_TAG}
 
       - name: Save image artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ramen-operator
           path: /tmp/ramen-operator.tar
@@ -218,10 +218,10 @@ jobs:
       KIND_CLUSTER_NAME: "ci"
     steps:
       - name: Checkout source
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Setup go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v4
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -332,10 +332,10 @@ jobs:
 
       # TODO: We do not need to build bundles and catalogs each time, fix once we reach alpha
       - name: Checkout source
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Setup go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v4
         with:
           go-version: ${{ env.GO_VERSION }}
 
