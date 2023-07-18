@@ -90,7 +90,10 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 			handler.EnqueueRequestsFromMapFunc(r.rdMapFunc),
 			builder.WithPredicates(replicationDestinationPredicateFunc()),
 		).
-		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(r.configMapFun)).
+		Watches(&source.Kind{Type: &corev1.ConfigMap{}},
+			handler.EnqueueRequestsFromMapFunc(r.configMapFun),
+			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
+		).
 		Owns(&volrep.VolumeReplication{})
 
 	if !r.RmnConfig.VolSync.Disabled {
@@ -126,6 +129,8 @@ func (r *VolumeReplicationGroupReconciler) pvcMapFunc(obj client.Object) []recon
 }
 
 func (r *VolumeReplicationGroupReconciler) configMapFun(configmap client.Object) []reconcile.Request {
+	log := ctrl.Log.WithName("configmap").WithName("VolumeReplicationGroup")
+
 	if configmap.GetName() != drClusterOperatorConfigMapName || configmap.GetNamespace() != NamespaceName() {
 		return []reconcile.Request{}
 	}
@@ -145,6 +150,9 @@ func (r *VolumeReplicationGroupReconciler) configMapFun(configmap client.Object)
 	}
 
 	for _, vrg := range vrgs.Items {
+		log.Info("Adding VolumeReplicationGroup to reconcile request",
+			"vrg", vrg.Name, "namespace", vrg.Namespace)
+
 		req = append(req, reconcile.Request{NamespacedName: types.NamespacedName{Name: vrg.Name, Namespace: vrg.Namespace}})
 	}
 

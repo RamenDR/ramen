@@ -190,14 +190,14 @@ func ConfigMapGet(
 
 func RamenConfigUpdate(
 	log logr.Logger,
-	configmap client.Object,
+	inObj client.Object,
 ) (ramenConfig *ramendrv1alpha1.RamenConfig, err error) {
-	log.Info(fmt.Sprintf("Update in %s configuration map", configmap.GetName()))
+	log.Info(fmt.Sprintf("Update in %s configuration map", inObj.GetName()))
 
-	configMap, ok := configmap.(*corev1.ConfigMap)
+	configMap, ok := inObj.(*corev1.ConfigMap)
 	if !ok {
 		err = fmt.Errorf("config map function received non-configMap resource %s",
-			configMap.GetName())
+			inObj.GetName())
 
 		return
 	}

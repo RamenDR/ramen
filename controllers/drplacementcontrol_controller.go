@@ -492,7 +492,7 @@ func (r *DRPlacementControlReconciler) configMapMapFun(configMap client.Object) 
 		req = append(req, reconcile.Request{NamespacedName: types.NamespacedName{Name: drpc.Name, Namespace: drpc.Namespace}})
 	}
 
-	return []reconcile.Request{}
+	return req
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -569,7 +569,11 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	return ctrl.NewControllerManagedBy(mgr).
 		WithOptions(ctrlcontroller.Options{MaxConcurrentReconciles: getMaxConcurrentReconciles(r.RmnConfig)}).
 		For(&rmn.DRPlacementControl{}).
-		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(r.configMapMapFun)).
+		Watches(
+			&source.Kind{Type: &corev1.ConfigMap{}},
+			handler.EnqueueRequestsFromMapFunc(r.configMapMapFun),
+			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
+		).
 		Watches(&source.Kind{Type: &ocmworkv1.ManifestWork{}}, mwMapFun, builder.WithPredicates(mwPred)).
 		Watches(&source.Kind{Type: &viewv1beta1.ManagedClusterView{}}, mcvMapFun, builder.WithPredicates(mcvPred)).
 		Watches(&source.Kind{Type: &plrv1.PlacementRule{}}, usrPlRuleMapFun, builder.WithPredicates(usrPlRulePred)).
