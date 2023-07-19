@@ -575,8 +575,7 @@ func (v *VRGInstance) getRecoverOrProtectRequest(
 		return request, ok, func() (kubeobjects.Request, error) {
 				return v.reconciler.kubeObjects.ProtectRequestCreate(
 					v.ctx, v.reconciler.Client, v.log,
-					s3StoreAccessor.S3CompatibleEndpoint, s3StoreAccessor.S3Bucket, s3StoreAccessor.S3Region,
-					pathName,
+					s3StoreAccessor.S3CompatibleEndpoint, s3StoreAccessor.S3Bucket, s3StoreAccessor.S3Region, pathName,
 					s3StoreAccessor.VeleroNamespaceSecretKeyRef,
 					s3StoreAccessor.CACertificates,
 					vrg.Namespace, recoverGroup.Spec, veleroNamespaceName,
@@ -600,8 +599,7 @@ func (v *VRGInstance) getRecoverOrProtectRequest(
 
 			return v.reconciler.kubeObjects.RecoverRequestCreate(
 				v.ctx, v.reconciler.Client, v.log,
-				s3StoreAccessor.S3CompatibleEndpoint, s3StoreAccessor.S3Bucket, s3StoreAccessor.S3Region,
-				pathName,
+				s3StoreAccessor.S3CompatibleEndpoint, s3StoreAccessor.S3Bucket, s3StoreAccessor.S3Region, pathName,
 				s3StoreAccessor.VeleroNamespaceSecretKeyRef,
 				s3StoreAccessor.CACertificates,
 				sourceVrgNamespaceName, vrg.Namespace, recoverGroup, veleroNamespaceName,
