@@ -37,13 +37,15 @@ def wait_for(
     if namespace:
         args.extend(("--namespace", namespace))
 
-    deadline = time.monotonic() + timeout
-    delay = min(1.0, timeout / 60)
+    start = time.monotonic()
+    deadline = start + timeout
+    delay = min(0.1, timeout / 60)
 
     while True:
         out = kubectl.get(*args, context=profile)
         if out:
-            log(f"{resource} exists")
+            elapsed = time.monotonic() - start
+            log(f"{resource} outuput={output} found in {elapsed:.2f} seconds")
             return out
 
         if time.monotonic() > deadline:
