@@ -25,3 +25,12 @@ kubectl.rollout(
     "--timeout=180s",
     context=cluster,
 )
+
+print("waiting until pod is ready")
+kubectl.wait(
+    "pod",
+    "--selector=app=example",
+    "--for=condition=Ready",
+    "--timeout=180s",
+    context=cluster,
+)
