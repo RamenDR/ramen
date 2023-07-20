@@ -9,6 +9,9 @@ from drenv import kubectl
 
 EXAMPLE_DEPLOYMENT = os.path.join("addons", "example", "deployment.yaml")
 
+# Avoid random timeouts in github.
+TIMEOUT = 30
+
 
 def test_version(tmpenv):
     out = kubectl.version(output="json", context=tmpenv.profile)
@@ -48,7 +51,7 @@ def test_rollout(tmpenv, capsys):
     kubectl.rollout(
         "status",
         "deploy/example-deployment",
-        "--timeout=10s",
+        f"--timeout={TIMEOUT}s",
         context=tmpenv.profile,
     )
     out, err = capsys.readouterr()
@@ -59,7 +62,7 @@ def test_wait(tmpenv, capsys):
     kubectl.wait(
         "deploy/example-deployment",
         "--for=condition=available",
-        "--timeout=10s",
+        f"--timeout={TIMEOUT}s",
         context=tmpenv.profile,
     )
     out, err = capsys.readouterr()
