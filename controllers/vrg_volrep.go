@@ -2018,20 +2018,32 @@ func (v *VRGInstance) validateExistingPV(pv *corev1.PersistentVolume) error {
 
 func (v *VRGInstance) validateExistingPVC(pvc *corev1.PersistentVolumeClaim) error {
 	existingPVC := &corev1.PersistentVolumeClaim{}
+	pvcNSName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 
-	err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}, existingPVC)
+	err := v.reconciler.Get(v.ctx, pvcNSName, existingPVC)
 	if err != nil {
-		return fmt.Errorf("failed to get existing PVC (%w)", err)
+		return fmt.Errorf("failed to get existing PVC %s (%w)", pvcNSName.String(), err)
 	}
 
-	if existingPVC.ObjectMeta.Annotations == nil ||
-		existingPVC.ObjectMeta.Annotations[RestoreAnnotation] != RestoredByRamen {
-		return fmt.Errorf("found PVC object not restored by Ramen for PVC %s", existingPVC.Name)
+	// If PVC not "Bound" return error
+	if existingPVC.Status.Phase != corev1.ClaimBound {
+		return fmt.Errorf("PVC %s exists and is not bound (phase: %s)", pvcNSName.String(), existingPVC.Status.Phase)
+	}
+
+	// If PVC is terminating return error
+	if !existingPVC.DeletionTimestamp.IsZero() {
+		return fmt.Errorf("existing bound PVC %s is being deleted", pvcNSName.String())
+	}
+
+	// Check match to the PV we expect PVC to be bound to
+	if existingPVC.Spec.VolumeName != pvc.Spec.VolumeName {
+		return fmt.Errorf("PVC %s exists and bound to a different PV %s than PV %s desired",
+			pvcNSName.String(), existingPVC.Spec.VolumeName, pvc.Spec.VolumeName)
 	}
 
 	// Should we check and see if PV in being deleted? Should we just treat it as exists
 	// and then we don't care if deletion takes place later, which is what we do now?
-	v.log.Info("PVC exists and managed by Ramen", "PVC", existingPVC)
+	v.log.Info(fmt.Sprintf("PVC %s exists and bound to desired PV %s", pvcNSName.String(), existingPVC.Spec.VolumeName))
 
 	return nil
 }
