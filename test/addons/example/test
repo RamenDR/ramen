@@ -16,9 +16,8 @@ os.chdir(os.path.dirname(__file__))
 cluster = sys.argv[1]
 
 print("Testing example deployment")
-kubectl.rollout(
-    "status",
-    "deploy/example-deployment",
-    "--timeout=180s",
-    context=cluster,
-)
+hostname = kubectl.exec(
+    "deploy/example-deployment", "--", "hostname", context=cluster
+).rstrip()
+if not hostname.startswith("example-deployment-"):
+    raise RuntimeError(f"Unexpected hostname: '{hostname}'")
