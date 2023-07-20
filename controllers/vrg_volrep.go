@@ -1959,6 +1959,8 @@ func (v *VRGInstance) updateExistingPVForSync(pv *corev1.PersistentVolume) error
 	return nil
 }
 
+// validateExistingPV validates if an existing PV matches the passed in PV for certain fields. Returns error
+// if a match fails or a match is not possible given the state of the existing PV
 func (v *VRGInstance) validateExistingPV(pv *corev1.PersistentVolume) error {
 	log := v.log.WithValues("PV", pv.Name)
 
@@ -2016,6 +2018,8 @@ func (v *VRGInstance) validateExistingPV(pv *corev1.PersistentVolume) error {
 	return fmt.Errorf("found existing PV (%s) not restored by Ramen and not matching with backed up PV", existingPV.Name)
 }
 
+// validateExistingPVC validates if an existing PVC matches the passed in PVC for certain fields. Returns error
+// if a match fails or a match is not possible given the state of the existing PVC
 func (v *VRGInstance) validateExistingPVC(pvc *corev1.PersistentVolumeClaim) error {
 	existingPVC := &corev1.PersistentVolumeClaim{}
 	pvcNSName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
@@ -2025,24 +2029,19 @@ func (v *VRGInstance) validateExistingPVC(pvc *corev1.PersistentVolumeClaim) err
 		return fmt.Errorf("failed to get existing PVC %s (%w)", pvcNSName.String(), err)
 	}
 
-	// If PVC not "Bound" return error
 	if existingPVC.Status.Phase != corev1.ClaimBound {
 		return fmt.Errorf("PVC %s exists and is not bound (phase: %s)", pvcNSName.String(), existingPVC.Status.Phase)
 	}
 
-	// If PVC is terminating return error
 	if !existingPVC.DeletionTimestamp.IsZero() {
 		return fmt.Errorf("existing bound PVC %s is being deleted", pvcNSName.String())
 	}
 
-	// Check match to the PV we expect PVC to be bound to
 	if existingPVC.Spec.VolumeName != pvc.Spec.VolumeName {
 		return fmt.Errorf("PVC %s exists and bound to a different PV %s than PV %s desired",
 			pvcNSName.String(), existingPVC.Spec.VolumeName, pvc.Spec.VolumeName)
 	}
 
-	// Should we check and see if PV in being deleted? Should we just treat it as exists
-	// and then we don't care if deletion takes place later, which is what we do now?
 	v.log.Info(fmt.Sprintf("PVC %s exists and bound to desired PV %s", pvcNSName.String(), existingPVC.Spec.VolumeName))
 
 	return nil
