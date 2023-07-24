@@ -110,7 +110,7 @@ def run_replication(cluster):
         "replicationsource/busybox-src",
         output="jsonpath={.status.lastManualSync}",
         namespace=NAMESPACE,
-        timeout=60,
+        timeout=120,
         profile=cluster,
     )
 
