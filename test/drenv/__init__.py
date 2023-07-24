@@ -49,7 +49,10 @@ def wait_for(
             return out
 
         if time.monotonic() > deadline:
-            raise RuntimeError(f"Timeout waiting for {resource}")
+            raise RuntimeError(
+                f"Timeout waiting for {resource!r} output={output!r} "
+                f"namespace={namespace!r} profile={profile!r} timeout={timeout}"
+            )
 
         time.sleep(delay)
 
