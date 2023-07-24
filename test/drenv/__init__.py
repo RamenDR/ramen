@@ -45,7 +45,7 @@ def wait_for(
         out = kubectl.get(*args, context=profile)
         if out:
             elapsed = time.monotonic() - start
-            log(f"{resource} outuput={output} found in {elapsed:.2f} seconds")
+            log(f"{resource!r} outuput={output!r} found in {elapsed:.2f} seconds")
             return out
 
         if time.monotonic() > deadline:
