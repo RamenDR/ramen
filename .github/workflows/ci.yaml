@@ -206,10 +206,6 @@ jobs:
           path: /tmp/ramen-operator.tar
           retention-days: 1
 
-      - name: Go tidy
-        run: go mod tidy
-
-
   deploy-check:
     name: Check artifacts and operator deployment
     needs: [build-image-and-ensure-clean-branch]
