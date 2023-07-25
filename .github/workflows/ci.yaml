@@ -181,8 +181,8 @@ jobs:
         run: make black
         working-directory: ramenctl
 
-  build-image-and-ensure-clean-branch:
-    name: Build image and ensure clean branch
+  build-image:
+    name: Build image
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout source
@@ -208,7 +208,7 @@ jobs:
 
   deploy-check:
     name: Check artifacts and operator deployment
-    needs: [build-image-and-ensure-clean-branch]
+    needs: [build-image]
     runs-on: ubuntu-20.04
     strategy:
       fail-fast: false
@@ -286,7 +286,7 @@ jobs:
 
   publish-image:
     name: Publish built image
-    needs: [deploy-check, lint, golangci, unit-test, build-image-and-ensure-clean-branch]
+    needs: [deploy-check, lint, golangci, unit-test, build-image]
     if: >
       (vars.PUBLISH_IMAGES == 'true') &&
       (github.event_name == 'push') &&
