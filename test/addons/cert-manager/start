@@ -20,11 +20,10 @@ def deploy(cluster):
 def wait(cluster):
     print("Waiting until all deployments are available")
     kubectl.wait(
-        "deploy",
-        "--all",
-        "--for=condition=Available",
-        "--namespace=cert-manager",
-        "--timeout=300s",
+        resource="deploy",
+        all=True,
+        condition="condition=Available",
+        namespace="cert-manager",
         context=cluster,
     )
 

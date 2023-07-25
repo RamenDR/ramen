@@ -28,18 +28,16 @@ def wait(cluster):
     kubectl.rollout(
         "status",
         "deploy/rook-ceph-operator",
-        "--namespace=rook-ceph",
-        "--timeout=300s",
+        namespace="rook-ceph",
         context=cluster,
     )
 
     print("Waiting until rook ceph operator is ready")
     kubectl.wait(
-        "pod",
-        "--for=jsonpath={.status.phase}=Running",
-        "--namespace=rook-ceph",
-        "--selector=app=rook-ceph-operator",
-        "--timeout=300s",
+        resource="pod",
+        selector="app=rook-ceph-operator",
+        condition="jsonpath={.status.phase}=Running",
+        namespace="rook-ceph",
         context=cluster,
     )
 

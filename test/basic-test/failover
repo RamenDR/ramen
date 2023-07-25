@@ -25,7 +25,6 @@ drenv.wait_for(
     f"drpc/{config['name']}",
     output="jsonpath={.status.lastGroupSyncTime}",
     namespace=config["namespace"],
-    timeout=300,
     profile=test.env["hub"],
     log=test.debug,
 )
@@ -44,10 +43,9 @@ kubectl.patch(
 
 test.info("Waiting until application is failed over...")
 kubectl.wait(
-    f"drpc/{config['name']}",
-    "--for=jsonpath={.status.phase}=FailedOver",
-    f"--namespace={config['namespace']}",
-    "--timeout=300s",
+    resource=f"drpc/{config['name']}",
+    condition="jsonpath={.status.phase}=FailedOver",
+    namespace=config["namespace"],
     context=test.env["hub"],
     log=test.debug,
 )
@@ -57,7 +55,6 @@ drenv.wait_for(
     f"drpc/{config['name']}",
     output="jsonpath={.status.lastGroupSyncTime}",
     namespace=config["namespace"],
-    timeout=300,
     profile=test.env["hub"],
     log=test.debug,
 )

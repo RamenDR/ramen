@@ -45,6 +45,16 @@ def exec(*args, context=None):
     return _run("exec", *args, context=context)
 
 
+def events(resource, namespace=None, context=None):
+    """
+    Run kubectl events ... and return the output.
+    """
+    args = [resource]
+    if namespace:
+        args.append(f"--namespace={namespace}")
+    return _run("events", *args, context=context)
+
+
 def apply(*args, input=None, context=None, log=print):
     """
     Run kubectl apply ... logging progress messages.
@@ -76,18 +86,64 @@ def delete(*args, input=None, context=None, log=print):
     _watch("delete", *args, input=input, context=context, log=log)
 
 
-def rollout(*args, context=None, log=print):
+def rollout(action, resource, timeout=300, namespace=None, context=None, log=print):
     """
     Run kubectl rollout ... logging progress messages.
     """
-    _watch("rollout", *args, context=context, log=log)
+    args = [action, resource, f"--timeout={timeout}s"]
+    if namespace:
+        args.append(f"--namespace={namespace}")
+    try:
+        _watch("rollout", *args, context=context, log=log)
+    except commands.Error as e:
+        # Most failures are timeouts, events may help to debug.
+        if action == "status":
+            e.events = _try_events(resource, namespace=namespace, context=context)
+        raise
 
 
-def wait(*args, context=None, log=print):
+def wait(
+    resource=None,
+    all=False,
+    selector=None,
+    filename=None,
+    condition=None,
+    namespace=None,
+    timeout=300,
+    context=None,
+    log=print,
+):
     """
     Run kubectl wait ... logging progress messages.
     """
-    _watch("wait", *args, context=context, log=log)
+    args = [f"--timeout={timeout}s"]
+    if resource:
+        args.append(resource)
+    if all:
+        args.append("--all")
+    if selector:
+        args.append(f"--selector={selector}")
+    if filename:
+        args.append(f"--filename={filename}")
+    if condition:
+        args.append(f"--for={condition}")
+    if namespace:
+        args.append(f"--namespace={namespace}")
+
+    try:
+        _watch("wait", *args, context=context, log=log)
+    except commands.Error as e:
+        # Most failures are timeouts, events may help to debug.
+        if resource and not (all or selector):
+            e.events = _try_events(resource, namespace=namespace, context=context)
+        raise
+
+
+def _try_events(resource, namespace=None, context=None):
+    try:
+        return events(resource, namespace=namespace, context=context)
+    except Exception as e:
+        return f"(error getting events: {e})"
 
 
 def _run(cmd, *args, context=None):

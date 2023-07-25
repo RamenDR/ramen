@@ -64,10 +64,9 @@ def test_volume_replication(primary, secondary):
 
     print(f"Waiting until pvc {PVC_NAME} is bound in cluster '{primary}'")
     kubectl.wait(
-        f"pvc/{PVC_NAME}",
-        "--for=jsonpath={.status.phase}=Bound",
-        "--namespace=rook-ceph",
-        "--timeout=300s",
+        resource=f"pvc/{PVC_NAME}",
+        condition="jsonpath={.status.phase}=Bound",
+        namespace="rook-ceph",
         context=primary,
     )
 
@@ -80,19 +79,17 @@ def test_volume_replication(primary, secondary):
 
     print(f"Waiting until vr vr-sample is completed in cluster '{primary}'")
     kubectl.wait(
-        "volumereplication/vr-sample",
-        "--for=condition=Completed",
-        "--namespace=rook-ceph",
-        "--timeout=300s",
+        resource="volumereplication/vr-sample",
+        condition="condition=Completed",
+        namespace="rook-ceph",
         context=primary,
     )
 
     print(f"Waiting until vr vr-sample state is primary in cluster '{primary}'")
     kubectl.wait(
-        "volumereplication/vr-sample",
-        "--for=jsonpath={.status.state}=Primary",
-        "--namespace=rook-ceph",
-        "--timeout=300s",
+        resource="volumereplication/vr-sample",
+        condition="jsonpath={.status.state}=Primary",
+        namespace="rook-ceph",
         context=primary,
     )
 

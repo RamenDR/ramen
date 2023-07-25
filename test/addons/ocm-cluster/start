@@ -51,15 +51,9 @@ def deploy(cluster, hub):
 def wait(cluster):
     print("Waiting until deployments are rolled out")
     for addon in ADDONS:
-        deployment = f"deploy/{addon['deployment']}"
-        drenv.wait_for(deployment, namespace=ADDONS_NAMESPACE, profile=cluster)
-        kubectl.rollout(
-            "status",
-            deployment,
-            f"--namespace={ADDONS_NAMESPACE}",
-            "--timeout=300s",
-            context=cluster,
-        )
+        deploy = f"deploy/{addon['deployment']}"
+        drenv.wait_for(deploy, namespace=ADDONS_NAMESPACE, profile=cluster)
+        kubectl.rollout("status", deploy, namespace=ADDONS_NAMESPACE, context=cluster)
 
 
 def wait_for_hub(hub):
@@ -69,15 +63,9 @@ def wait_for_hub(hub):
     drenv.wait_for(f"namespace/{HUB_NAMESPACE}", profile=hub)
 
     for name in HUB_DEPLOYMENTS:
-        deployment = f"deploy/{name}"
-        drenv.wait_for(deployment, namespace=HUB_NAMESPACE, profile=hub)
-        kubectl.rollout(
-            "status",
-            deployment,
-            f"--namespace={HUB_NAMESPACE}",
-            "--timeout=300s",
-            context=hub,
-        )
+        deploy = f"deploy/{name}"
+        drenv.wait_for(deploy, namespace=HUB_NAMESPACE, profile=hub)
+        kubectl.rollout("status", deploy, namespace=HUB_NAMESPACE, context=hub)
 
 
 def join_cluster(cluster, hub):

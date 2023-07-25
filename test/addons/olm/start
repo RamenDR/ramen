@@ -29,8 +29,8 @@ def deploy(cluster):
 
     print("Waiting until cdrs are established")
     kubectl.wait(
-        "--for=condition=established",
-        f"--filename={BASE_URL}/crds.yaml",
+        filename=f"{BASE_URL}/crds.yaml",
+        condition="condition=established",
         context=cluster,
     )
 
@@ -43,9 +43,8 @@ def wait(cluster):
         print(f"Waiting until {operator} is rolled out")
         kubectl.rollout(
             "status",
-            "deploy",
-            operator,
-            f"--namespace={NAMESPACE}",
+            f"deploy/{operator}",
+            namespace=NAMESPACE,
             context=cluster,
         )
 
@@ -57,10 +56,9 @@ def wait(cluster):
         profile=cluster,
     )
     kubectl.wait(
-        "csv/packageserver",
-        f"--namespace={NAMESPACE}",
-        "--for=jsonpath={.status.phase}=Succeeded",
-        "--timeout=300s",
+        resource="csv/packageserver",
+        condition="jsonpath={.status.phase}=Succeeded",
+        namespace=NAMESPACE,
         context=cluster,
     )
 
@@ -68,7 +66,7 @@ def wait(cluster):
     kubectl.rollout(
         "status",
         "deploy/packageserver",
-        f"--namespace={NAMESPACE}",
+        namespace=NAMESPACE,
         context=cluster,
     )
 
