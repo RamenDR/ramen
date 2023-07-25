@@ -24,11 +24,11 @@ def wait_for(
     using `kubectl wait`.
 
     To wait for a specific part of the resource specify a kubectl output
-    specficiation (e.g. output="jsonpath={.status.phase}"). The function
+    specification (e.g. output="jsonpath={.status.phase}"). The function
     returns when the output is non empty.
 
     Returns the resource .metadata.name, or if output was specified, the
-    specified outpout for the resource.
+    specified output for the resource.
 
     Raises RuntimeError if the resource does not exist within the specified
     timeout.
@@ -45,7 +45,7 @@ def wait_for(
         out = kubectl.get(*args, context=profile)
         if out:
             elapsed = time.monotonic() - start
-            log(f"{resource!r} outuput={output!r} found in {elapsed:.2f} seconds")
+            log(f"{resource!r} output={output!r} found in {elapsed:.2f} seconds")
             return out
 
         if time.monotonic() > deadline:
@@ -59,7 +59,7 @@ def wait_for(
 
 def template(path):
     """
-    Retrun a string.Template with contents of path.
+    Return a string.Template with contents of path.
     """
     with open(path) as f:
         return string.Template(f.read())
