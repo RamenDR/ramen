@@ -803,13 +803,6 @@ func (v *VRGInstance) undoPVCFinalizersAndPVRetention(pvc *corev1.PersistentVolu
 
 	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 
-	if pvc.GetAnnotations() != nil && pvc.GetAnnotations()[RestoreAnnotation] == RestoredByRamen {
-		// We created the PVC, delete it
-		if deleted := v.deletePVCIfNotInUse(pvc, log); !deleted {
-			return requeue
-		}
-	}
-
 	if err := v.deleteVR(pvcNamespacedName, log); err != nil {
 		log.Info("Requeuing due to failure in finalizing VolumeReplication resource for PersistentVolumeClaim",
 			"errorValue", err)
