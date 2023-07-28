@@ -232,9 +232,16 @@ uninstall-dr-cluster: manifests kustomize ## Uninstall dr-cluster CRDs from the 
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/crd | kubectl delete -f -
 
 dr-cluster-config: kustomize
-	cd config/dr-cluster/default && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
-	cd config/dr-cluster/manager && $(KUSTOMIZE) edit set image controller=${IMG};\
-	if (${KUBE_OBJECT_PROTECTION_DISABLED});then printf 'kubeObjectProtection:\n  disabled: true\n'>>ramen_manager_config.yaml;fi
+	cd config/dr-cluster/default && {\
+		$(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG);\
+		$(KUSTOMIZE) edit set namespace $(OPERATOR_SUGGESTED_NAMESPACE);\
+	}
+	cd config/dr-cluster/manager && {\
+		$(KUSTOMIZE) edit set image controller=${IMG};\
+		if (${KUBE_OBJECT_PROTECTION_DISABLED});then\
+			printf 'kubeObjectProtection:\n  disabled: true\n'>>ramen_manager_config.yaml;\
+		fi;\
+	}
 
 deploy-dr-cluster: manifests kustomize dr-cluster-config ## Deploy dr-cluster controller to the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/default | kubectl apply -f -
