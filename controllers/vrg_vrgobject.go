@@ -4,26 +4,21 @@
 package controllers
 
 import (
-	"time"
-
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/util"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-var vrgLastUploadTime = map[string]metav1.Time{}
+var vrgLastUploadVersion = map[string]string{}
 
 func (v *VRGInstance) vrgObjectProtect(result *ctrl.Result, s3StoreAccessors []s3StoreAccessor) {
+	vrg := v.instance
 	log := v.log
 
-	if lastUploadTime, ok := vrgLastUploadTime[v.namespacedName]; ok {
-		const maxVRGProtectionInterval = time.Minute
-
-		// Throttle VRG protection if this call is more recent than maxVRGProtectionInterval.
-		if shouldThrottleVRGProtection(lastUploadTime, maxVRGProtectionInterval) {
-			log.Info("VRG already protected recently. Throttling...")
+	if lastUploadVersion, ok := vrgLastUploadVersion[v.namespacedName]; ok {
+		if vrg.ResourceVersion == lastUploadVersion {
+			log.Info("VRG resource version unchanged, skip S3 upload", "version", vrg.ResourceVersion)
 
 			return
 		}
@@ -61,17 +56,11 @@ func (v *VRGInstance) vrgObjectProtectThrottled(result *ctrl.Result, s3StoreAcce
 
 		log1.Info("VRG Kube object protected")
 
-		vrgLastUploadTime[v.namespacedName] = metav1.Now()
-
+		vrgLastUploadVersion[v.namespacedName] = vrg.ResourceVersion
 		v.vrgObjectProtected = newVRGClusterDataProtectedCondition(vrg.Generation, clusterDataProtectedTrueMessage)
 	}
 
 	success()
-}
-
-func shouldThrottleVRGProtection(lastUploadTime metav1.Time, maxVRGProtectionTime time.Duration) bool {
-	// Throttle VRG protection if this call is more recent than MaxVRGProtectionTime.
-	return time.Now().Before(lastUploadTime.Add(maxVRGProtectionTime))
 }
 
 const vrgS3ObjectNameSuffix = "a"
