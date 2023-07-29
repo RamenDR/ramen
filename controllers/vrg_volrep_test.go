@@ -1443,10 +1443,6 @@ func (v *vrgTest) kubeObjectProtectionValidate() *ramendrv1alpha1.VolumeReplicat
 }
 
 func kubeObjectProtectionValidate(tests []*vrgTest) {
-	if true {
-		return // TODO re-enable
-	}
-
 	protectedVrgList := protectedVrgListCreateAndStatusWait("protectedvrglist-vrg-"+tests[0].uniqueID, vrgS3ProfileNumber)
 	vrgs := make([]ramendrv1alpha1.VolumeReplicationGroup, len(tests))
 
