@@ -981,7 +981,6 @@ func (v *VRGInstance) relocate(result *ctrl.Result, s3StoreAccessors []s3StoreAc
 	); clusterDataProtected != nil && (clusterDataProtected.Status != metav1.ConditionTrue ||
 		clusterDataProtected.ObservedGeneration != vrg.Generation) {
 		v.kubeObjectsProtectSecondary(result, s3StoreAccessors)
-		v.vrgObjectProtect(result, s3StoreAccessors)
 	}
 }
 

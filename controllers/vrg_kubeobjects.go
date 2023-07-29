@@ -273,6 +273,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 
 	v.kubeObjectsCaptureComplete(
 		result,
+		s3StoreAccessors,
 		captureStartConditionally,
 		captureNumber,
 		veleroNamespaceName,
@@ -360,23 +361,13 @@ func (v *VRGInstance) kubeObjectsCaptureDeleteAndLog(
 
 func (v *VRGInstance) kubeObjectsCaptureComplete(
 	result *ctrl.Result,
+	s3StoreAccessors []s3StoreAccessor,
 	captureStartConditionally captureStartConditionally,
 	captureNumber int64, veleroNamespaceName string, interval time.Duration,
 	labels map[string]string, startTime metav1.Time, annotations map[string]string,
 ) {
 	vrg := v.instance
-	status := &vrg.Status.KubeObjectProtection
-
-	if err := v.reconciler.kubeObjects.ProtectRequestsDelete(
-		v.ctx, v.reconciler.Client, veleroNamespaceName, labels,
-	); err != nil {
-		v.log.Error(err, "Kube objects capture requests delete error", "number", captureNumber)
-		v.kubeObjectsCaptureFailed(err.Error())
-
-		result.Requeue = true
-
-		return
-	}
+	captureToRecoverFromIdentifier := &vrg.Status.KubeObjectProtection.CaptureToRecoverFrom
 
 	startGeneration, err := strconv.ParseInt(
 		annotations[vrgGenerationKey], vrgGenerationNumberBase, vrgGenerationNumberBitCount)
@@ -384,16 +375,59 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 		v.log.Error(err, "Kube objects capture generation string to int64 conversion error")
 	}
 
-	v.kubeObjectsCaptureStatus(metav1.ConditionTrue, VRGConditionReasonUploaded, clusterDataProtectedTrueMessage)
-
-	status.CaptureToRecoverFrom = &ramen.KubeObjectsCaptureIdentifier{
-		Number: captureNumber, StartTime: startTime,
+	captureToRecoverFromIdentifierCurrent := *captureToRecoverFromIdentifier
+	*captureToRecoverFromIdentifier = &ramen.KubeObjectsCaptureIdentifier{
+		Number:          captureNumber,
+		StartTime:       startTime,
 		StartGeneration: startGeneration,
 	}
-	captureStartTimeSince := time.Since(startTime.Time)
-	v.log.Info("Kube objects captured", "recovery point", status.CaptureToRecoverFrom, "duration", captureStartTimeSince)
+
+	v.vrgObjectProtectThrottled(
+		result,
+		s3StoreAccessors,
+		func() {
+			v.kubeObjectsCaptureIdentifierUpdateComplete(
+				result,
+				captureStartConditionally,
+				*captureToRecoverFromIdentifier,
+				veleroNamespaceName,
+				interval,
+				labels,
+			)
+		},
+		func() {
+			*captureToRecoverFromIdentifier = captureToRecoverFromIdentifierCurrent
+		},
+	)
+}
+
+func (v *VRGInstance) kubeObjectsCaptureIdentifierUpdateComplete(
+	result *ctrl.Result,
+	captureStartConditionally captureStartConditionally,
+	captureToRecoverFromIdentifier *ramen.KubeObjectsCaptureIdentifier,
+	veleroNamespaceName string,
+	interval time.Duration,
+	labels map[string]string,
+) {
+	if err := v.reconciler.kubeObjects.ProtectRequestsDelete(
+		v.ctx, v.reconciler.Client, veleroNamespaceName, labels,
+	); err != nil {
+		v.log.Error(err, "Kube objects capture requests delete error",
+			"number", captureToRecoverFromIdentifier.Number)
+		v.kubeObjectsCaptureFailed(err.Error())
+
+		result.Requeue = true
+
+		return
+	}
+
+	v.kubeObjectsCaptureStatus(metav1.ConditionTrue, VRGConditionReasonUploaded, clusterDataProtectedTrueMessage)
+
+	captureStartTimeSince := time.Since(captureToRecoverFromIdentifier.StartTime.Time)
+	v.log.Info("Kube objects captured", "recovery point", captureToRecoverFromIdentifier,
+		"duration", captureStartTimeSince)
 	captureStartConditionally(
-		v, result, startGeneration, captureStartTimeSince, interval,
+		v, result, captureToRecoverFromIdentifier.StartGeneration, captureStartTimeSince, interval,
 		func() {
 			v.log.Info("Kube objects capture schedule to run immediately")
 			delaySetMinimum(result)
