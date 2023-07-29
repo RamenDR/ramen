@@ -15,21 +15,11 @@ import (
 
 var vrgLastUploadTime = map[string]metav1.Time{}
 
-//nolint:gomnd
 func (v *VRGInstance) vrgObjectProtect(result *ctrl.Result, s3StoreAccessors []s3StoreAccessor) {
-	vrg := v.instance
-	eventReporter := v.reconciler.eventRecorder
 	log := v.log
-	key := vrg.Namespace + "/" + vrg.Name
 
-	if lastUploadTime, ok := vrgLastUploadTime[key]; ok {
-		kubeObjectCaptureInterval := ramen.KubeObjectProtectionCaptureIntervalDefault
-		if vrg.Spec.KubeObjectProtection != nil {
-			kubeObjectCaptureInterval = kubeObjectsCaptureInterval(vrg.Spec.KubeObjectProtection)
-		}
-
-		// The maxVRGProtectionInterval is half the interval of the kubeObjectsCaptureInterval
-		maxVRGProtectionInterval := kubeObjectCaptureInterval / 2
+	if lastUploadTime, ok := vrgLastUploadTime[v.namespacedName]; ok {
+		const maxVRGProtectionInterval = time.Minute
 
 		// Throttle VRG protection if this call is more recent than maxVRGProtectionInterval.
 		if shouldThrottleVRGProtection(lastUploadTime, maxVRGProtectionInterval) {
@@ -38,6 +28,16 @@ func (v *VRGInstance) vrgObjectProtect(result *ctrl.Result, s3StoreAccessors []s
 			return
 		}
 	}
+
+	v.vrgObjectProtectThrottled(result, s3StoreAccessors, func() {}, func() {})
+}
+
+func (v *VRGInstance) vrgObjectProtectThrottled(result *ctrl.Result, s3StoreAccessors []s3StoreAccessor,
+	success, failure func(),
+) {
+	vrg := v.instance
+	eventReporter := v.reconciler.eventRecorder
+	log := v.log
 
 	for _, s3StoreAccessor := range s3StoreAccessors {
 		log1 := log.WithValues("profile", s3StoreAccessor.S3ProfileName)
@@ -54,15 +54,19 @@ func (v *VRGInstance) vrgObjectProtect(result *ctrl.Result, s3StoreAccessors []s
 			v.vrgObjectProtected = newVRGClusterDataUnprotectedCondition(vrg.Generation, message)
 			result.Requeue = true
 
+			failure()
+
 			return
 		}
 
 		log1.Info("VRG Kube object protected")
 
-		vrgLastUploadTime[key] = metav1.Now()
+		vrgLastUploadTime[v.namespacedName] = metav1.Now()
 
 		v.vrgObjectProtected = newVRGClusterDataProtectedCondition(vrg.Generation, clusterDataProtectedTrueMessage)
 	}
+
+	success()
 }
 
 func shouldThrottleVRGProtection(lastUploadTime metav1.Time, maxVRGProtectionTime time.Duration) bool {
