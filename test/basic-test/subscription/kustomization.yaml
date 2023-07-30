@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Kustomization template for deploying sample application OCM resources.
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ${namespace}
+resources:
+  - ${repo}/subscription?ref=${branch}

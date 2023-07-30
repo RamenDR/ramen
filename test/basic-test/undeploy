@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import drenv
 from drenv import kubectl
 from drenv import test
 
@@ -10,10 +11,24 @@ test.start("undeploy", __file__)
 args = test.parse_args()
 config = test.config
 
-test.info("Deleting busybox example application")
+test.info("Deleting '%s' subscription", config["namespace"])
+with drenv.kustomization(
+    "subscription/kustomization.yaml",
+    namespace=config["namespace"],
+    repo=config["repo"],
+    branch=config["branch"],
+) as sub:
+    kubectl.delete(
+        f"--kustomize={sub}",
+        "--ignore-not-found",
+        context=test.env["hub"],
+        log=test.debug,
+    )
+
+test.info("Deleting sample channel")
 kubectl.delete(
+    f"--kustomize={config['repo']}/channel?ref={config['branch']}",
     "--ignore-not-found",
-    f"--kustomize={config['tmp_dir']}",
     context=test.env["hub"],
     log=test.debug,
 )
