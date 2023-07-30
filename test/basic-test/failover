@@ -10,19 +10,30 @@ from drenv import kubectl
 from drenv import test
 
 test.start("failover", __file__)
-test.add_argument(
-    "--cluster",
-    help="Cluster name to failover to (default second cluster).",
-)
 args = test.parse_args()
 config = test.config
 
-cluster = args.cluster or test.env["clusters"][1]
-test.info("Failing over to cluster '%s'", cluster)
+old_cluster = kubectl.get(
+    f"placementrule/{config['placement']}",
+    f"--namespace={config['namespace']}",
+    "--output=jsonpath={.status.decisions[0].clusterName}",
+    context=test.env["hub"],
+)
+if old_cluster == test.env["clusters"][0]:
+    new_cluster = test.env["clusters"][1]
+else:
+    new_cluster = test.env["clusters"][0]
 
-test.info("Waiting until application is replicated")
+test.info(
+    "Failing over application '%s' from cluster '%s' to cluster '%s'",
+    config["namespace"],
+    old_cluster,
+    new_cluster,
+)
+
+test.info("Waiting until '%s' application is replicated", config["namespace"])
 drenv.wait_for(
-    f"drpc/{config['name']}",
+    f"drpc/{config['drpc']}",
     output="jsonpath={.status.lastGroupSyncTime}",
     namespace=config["namespace"],
     timeout=300,
@@ -31,9 +42,9 @@ drenv.wait_for(
 )
 
 test.info("Starting failover")
-patch = {"spec": {"action": "Failover", "failoverCluster": cluster}}
+patch = {"spec": {"action": "Failover", "failoverCluster": new_cluster}}
 kubectl.patch(
-    f"drpc/{config['name']}",
+    f"drpc/{config['drpc']}",
     "--patch",
     json.dumps(patch),
     "--type=merge",
@@ -42,9 +53,9 @@ kubectl.patch(
     log=test.debug,
 )
 
-test.info("Waiting until application is failed over...")
+test.info("Waiting until '%s' application is failed over...", config["namespace"])
 kubectl.wait(
-    f"drpc/{config['name']}",
+    f"drpc/{config['drpc']}",
     "--for=jsonpath={.status.phase}=FailedOver",
     f"--namespace={config['namespace']}",
     "--timeout=300s",
@@ -52,9 +63,9 @@ kubectl.wait(
     log=test.debug,
 )
 
-test.info("Waiting until application is replicated")
+test.info("Waiting until '%s' application is replicated", config["namespace"])
 drenv.wait_for(
-    f"drpc/{config['name']}",
+    f"drpc/{config['drpc']}",
     output="jsonpath={.status.lastGroupSyncTime}",
     namespace=config["namespace"],
     timeout=300,
@@ -62,4 +73,8 @@ drenv.wait_for(
     log=test.debug,
 )
 
-test.info("Application was failed over to cluster %s successfully", cluster)
+test.info(
+    "Application '%s' was failed over to cluster %s successfully",
+    config["namespace"],
+    new_cluster,
+)
