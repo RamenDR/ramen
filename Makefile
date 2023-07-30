@@ -172,6 +172,9 @@ test-drcluster: generate manifests envtest
 test-util-pvc: generate manifests envtest
 	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers/util -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus PVCS_Util
 
+coverage:
+	go tool cover -html=cover.out
+
 .PHONY: venv
 venv:
 	hack/make-venv
