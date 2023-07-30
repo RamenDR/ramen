@@ -74,6 +74,30 @@ enough resources:
 
 That's all! You are ready to submit your first pull request!
 
+## Running the tests
+
+To run all unit tests run:
+
+```
+make test
+```
+
+To run only part of the test suite you can use one of the `test-*`
+targets, for example:
+
+```
+make test-vrg-vr
+```
+
+To open an HTML coverage report in the default browser run:
+
+```
+make coverage
+```
+
+The coverage report depends on the tests ran before inspecting the
+coverage.
+
 ## Setting up the `drenv` tool
 
 *Ramen* uses the `drenv` tool to build a development environment
