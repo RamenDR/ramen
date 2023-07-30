@@ -156,7 +156,7 @@ you are ready for the next steps:
 
 ## Undeploying the ramen operator
 
-If you want to clean up your environment, you can uncofigure *Ramen* and
+If you want to clean up your environment, you can unconfigure *Ramen* and
 undeploy it.
 
 ```
