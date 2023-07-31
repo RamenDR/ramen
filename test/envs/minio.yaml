@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-# Enviroment for testing minio deployment with both podman and kvm2 drivers.
+# Enviroment for testing minio deployment with both container and vm drivers.
 ---
 name: "minio"
 
