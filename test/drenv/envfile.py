@@ -11,22 +11,18 @@ VM = "$vm"
 CONTAINER = "$container"
 SHARED_NETWORK = "$network"
 
+_PLATFORM_DEFAULTS = {
+    "__default__": {VM: "", CONTAINER: "", SHARED_NETWORK: ""},
+    "linux": {VM: "kvm2", CONTAINER: "docker", SHARED_NETWORK: "default"},
+    "darwin": {VM: "hyperkit", CONTAINER: "podman", SHARED_NETWORK: ""},
+}
+
 
 def platform_defaults():
     # By default, use minikube defaults.
-    d = {VM: "", CONTAINER: "", SHARED_NETWORK: ""}
 
     operating_system = platform.system().lower()
-    if operating_system == "linux":
-        d[VM] = "kvm2"
-        d[CONTAINER] = "docker"
-        d[SHARED_NETWORK] = "default"
-    elif operating_system == "darwin":
-        d[VM] = "hyperkit"
-        d[CONTAINER] = "podman"
-        d[SHARED_NETWORK] = ""
-
-    return d
+    return _PLATFORM_DEFAULTS.get(operating_system, _PLATFORM_DEFAULTS["__default__"])
 
 
 class MissingAddon(Exception):
