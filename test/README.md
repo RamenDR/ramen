@@ -588,6 +588,7 @@ simpler and faster to work with a minimal environment.
 - `test.yaml` - for testing `drenv`
 - `example.yaml` - example for experimenting with the `drenv` tool
 - `demo.yaml` - interactive demo for exploring the `drenv` tool
+- `e2e.yaml` - example for testing integration with the e2e framework
 - `external.yaml` - example for using external clusters
 - `minio.yaml` - for testing `minio` deployment
 - `ocm.yaml` - for testing `ocm` deployment
