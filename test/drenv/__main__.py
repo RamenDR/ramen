@@ -17,6 +17,7 @@ from . import cluster
 from . import commands
 from . import envfile
 from . import minikube
+from . import ramen
 
 CMD_PREFIX = "cmd_"
 ADDONS_DIR = "addons"
@@ -62,6 +63,9 @@ def cmd_start(env, args):
     )
     execute(run_worker, env["workers"], hooks=hooks)
 
+    if "ramen" in env:
+        ramen.dump_e2e_config(env)
+
     logging.info(
         "[%s] Environment started in %.2f seconds",
         env["name"],
@@ -84,6 +88,12 @@ def cmd_delete(env, args):
     start = time.monotonic()
     logging.info("[%s] Deleting environment", env["name"])
     execute(delete_cluster, env["profiles"])
+
+    env_config = drenv.config_dir(env["name"])
+    if os.path.exists(env_config):
+        logging.info("[%s] Removing config %s", env["name"], env_config)
+        shutil.rmtree(env_config)
+
     logging.info(
         "[%s] Environment deleted in %.2f seconds",
         env["name"],
