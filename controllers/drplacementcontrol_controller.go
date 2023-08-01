@@ -579,6 +579,8 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
+//
+//nolint:cyclop,funlen
 func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.Log.WithValues("DRPC", req.NamespacedName, "rid", uuid.New())
 
@@ -613,7 +615,15 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if isBeingDeleted(drpc, placementObj) {
 		// DPRC depends on User PlacementRule/Placement. If DRPC or/and the User PlacementRule is deleted,
 		// then the DRPC should be deleted as well. The least we should do here is to clean up DPRC.
-		return r.processDeletion(ctx, drpc, placementObj, logger)
+		err := r.processDeletion(ctx, drpc, placementObj, logger)
+		if err != nil {
+			// update drpc progression only on err
+			logger.Info(fmt.Sprintf("Error in deleting DRPC: (%v)", err))
+
+			return ctrl.Result{}, r.setProgressionAndUpdate(ctx, drpc, rmn.ProgressionDeleting)
+		}
+
+		return ctrl.Result{}, nil
 	}
 
 	d, err := r.createDRPCInstance(ctx, drpc, placementObj, logger)
@@ -633,6 +643,20 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	return r.reconcileDRPCInstance(d, logger)
+}
+
+func (r *DRPlacementControlReconciler) setProgressionAndUpdate(
+	ctx context.Context, drpc *rmn.DRPlacementControl, progressionStatus rmn.ProgressionStatus,
+) error {
+	updated := updateDRPCProgression(drpc, progressionStatus, r.Log)
+
+	if updated {
+		if err := r.Status().Update(ctx, drpc); err != nil {
+			return fmt.Errorf("failed to update DRPC status: (%w)", err)
+		}
+	}
+
+	return nil
 }
 
 func (r *DRPlacementControlReconciler) recordFailure(drpc *rmn.DRPlacementControl,
@@ -917,18 +941,18 @@ func getDRClusters(ctx context.Context, client client.Client, drPolicy *rmn.DRPo
 
 func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 	drpc *rmn.DRPlacementControl, placementObj client.Object, log logr.Logger,
-) (ctrl.Result, error) {
+) error {
 	log.Info("Processing DRPC deletion")
 
 	if !controllerutil.ContainsFinalizer(drpc, DRPCFinalizer) {
-		return ctrl.Result{}, nil
+		return nil
 	}
 
 	// Run finalization logic for dprc.
 	// If the finalization logic fails, don't remove the finalizer so
 	// that we can retry during the next reconciliation.
 	if err := r.finalizeDRPC(ctx, drpc, placementObj, log); err != nil {
-		return ctrl.Result{}, err
+		return err
 	}
 
 	if placementObj != nil && controllerutil.ContainsFinalizer(placementObj, DRPCFinalizer) {
@@ -937,7 +961,7 @@ func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 
 		err := r.Update(ctx, placementObj)
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update User PlacementRule/Placement %w", err)
+			return fmt.Errorf("failed to update User PlacementRule/Placement %w", err)
 		}
 	}
 
@@ -945,12 +969,12 @@ func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 	controllerutil.RemoveFinalizer(drpc, DRPCFinalizer)
 
 	if err := r.Update(ctx, drpc); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to update drpc %w", err)
+		return fmt.Errorf("failed to update drpc %w", err)
 	}
 
 	r.Callback(drpc.Name, "deleted")
 
-	return ctrl.Result{}, nil
+	return nil
 }
 
 //nolint:funlen,cyclop

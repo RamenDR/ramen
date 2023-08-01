@@ -92,6 +92,7 @@ const (
 	ProgressionUpdatedPlacement                    = ProgressionStatus("UpdatedPlacement")
 	ProgressionEnsuringVolSyncSetup                = ProgressionStatus("EnsuringVolSyncSetup")
 	ProgressionSettingupVolsyncDest                = ProgressionStatus("SettingUpVolSyncDest")
+	ProgressionDeleting                            = ProgressionStatus("Deleting")
 )
 
 // DRPlacementControlSpec defines the desired state of DRPlacementControl
