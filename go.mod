@@ -24,10 +24,10 @@ require (
 	github.com/vmware-tanzu/velero v1.9.1
 	go.uber.org/zap v1.24.0
 	golang.org/x/time v0.3.0
-	k8s.io/api v0.26.3
-	k8s.io/apimachinery v0.26.3
+	k8s.io/api v0.26.4
+	k8s.io/apimachinery v0.26.4
 	k8s.io/client-go v12.0.0+incompatible
-	k8s.io/component-base v0.26.2
+	k8s.io/component-base v0.26.4
 	k8s.io/kube-openapi v0.0.0-20230123231816-1cb3ae25d79a
 	open-cluster-management.io/config-policy-controller v0.10.0
 	open-cluster-management.io/governance-policy-propagator v0.10.0
@@ -152,14 +152,14 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/apiextensions-apiserver v0.26.2 // indirect
-	k8s.io/apiserver v0.26.2 // indirect
-	k8s.io/cli-runtime v0.26.2 // indirect
-	k8s.io/component-helpers v0.26.2 // indirect
+	k8s.io/apiextensions-apiserver v0.26.4 // indirect
+	k8s.io/apiserver v0.26.4 // indirect
+	k8s.io/cli-runtime v0.26.4 // indirect
+	k8s.io/component-helpers v0.26.4 // indirect
 	k8s.io/klog/v2 v2.100.1 // indirect
-	k8s.io/kube-aggregator v0.26.1 // indirect
-	k8s.io/kubectl v0.26.2 // indirect
-	k8s.io/kubernetes v1.26.1 // indirect
+	k8s.io/kube-aggregator v0.26.4 // indirect
+	k8s.io/kubectl v0.26.4 // indirect
+	k8s.io/kubernetes v1.26.4 // indirect
 	k8s.io/utils v0.0.0-20230220204549-a5ecb0141aa5 // indirect
 	open-cluster-management.io/api v0.6.1-0.20220208144021-3297cac74dc5 // indirect
 	open-cluster-management.io/multicloud-operators-subscription v0.8.0 // indirect
@@ -169,7 +169,7 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 )
 
-replace k8s.io/client-go => k8s.io/client-go v0.26.2
+replace k8s.io/client-go => k8s.io/client-go v0.26.4
 
 replace (
 	github.com/metal3-io/baremetal-operator/apis => github.com/openshift/baremetal-operator/apis v0.0.0-20211201170610-92ffa60c683d
