@@ -741,7 +741,7 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 		return !done, fmt.Errorf(errMsg)
 	}
 
-	if !d.validatePeerReady() {
+	if d.getLastDRState() != rmn.Relocating && !d.validatePeerReady() {
 		return !done, fmt.Errorf("clean up on secondaries pending (%+v)", d.instance)
 	}
 
@@ -1044,10 +1044,12 @@ func (d *DRPCInstance) isVRGConditionMet(cluster string, conditionType string) b
 func (d *DRPCInstance) relocate(preferredCluster, preferredClusterNamespace string, drState rmn.DRState) (bool, error) {
 	const done = true
 
-	// Make sure we record the state that we are failing over
 	d.setDRState(drState)
 	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Starting relocation")
+	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
+		metav1.ConditionFalse, rmn.ReasonNotStarted,
+		fmt.Sprintf("Relocation in progress to cluster %q", preferredCluster))
 
 	// Setting up relocation ensures that all VRGs in all managed cluster are secondaries
 	err := d.setupRelocation(preferredCluster)
@@ -1069,9 +1071,6 @@ func (d *DRPCInstance) relocate(preferredCluster, preferredClusterNamespace stri
 	d.setDRState(rmn.Relocated)
 	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Completed")
-	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
-		metav1.ConditionFalse, rmn.ReasonNotStarted,
-		fmt.Sprintf("Started relocation to cluster %q", preferredCluster))
 
 	d.log.Info("Relocation completed", "State", d.getLastDRState())
 
