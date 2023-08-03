@@ -652,15 +652,16 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 			}
 		}
 
-		switch {
-		case errors.Is(err, kubeobjects.RequestProcessingError{}):
+		if errors.Is(err, kubeobjects.RequestProcessingError{}) {
 			log1.Info("Kube objects group recovering", "state", err.Error())
-		default:
-			log1.Error(err, "Kube objects group recover error")
-			cleanup(request)
 
-			result.Requeue = true
+			return err
 		}
+
+		log1.Error(err, "Kube objects group recover error")
+		cleanup(request)
+
+		result.Requeue = true
 
 		return err
 	}
