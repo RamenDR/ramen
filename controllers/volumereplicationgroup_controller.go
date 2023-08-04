@@ -519,12 +519,14 @@ const (
 	pvcInUse                = "kubernetes.io/pvc-protection"
 
 	// Annotations
-	pvcVRAnnotationProtectedKey   = "volumereplicationgroups.ramendr.openshift.io/vr-protected"
-	pvcVRAnnotationProtectedValue = "protected"
-	pvVRAnnotationRetentionKey    = "volumereplicationgroups.ramendr.openshift.io/vr-retained"
-	pvVRAnnotationRetentionValue  = "retained"
-	RestoreAnnotation             = "volumereplicationgroups.ramendr.openshift.io/ramen-restore"
-	RestoredByRamen               = "True"
+	pvcVRAnnotationProtectedKey      = "volumereplicationgroups.ramendr.openshift.io/vr-protected"
+	pvcVRAnnotationProtectedValue    = "protected"
+	pvcVRAnnotationArchivedKey       = "volumereplicationgroups.ramendr.openshift.io/vr-archived"
+	pvcVRAnnotationArchivedVersionV1 = "archiveV1"
+	pvVRAnnotationRetentionKey       = "volumereplicationgroups.ramendr.openshift.io/vr-retained"
+	pvVRAnnotationRetentionValue     = "retained"
+	RestoreAnnotation                = "volumereplicationgroups.ramendr.openshift.io/ramen-restore"
+	RestoredByRamen                  = "True"
 
 	// StorageClass label
 	StorageIDLabel = "ramendr.openshift.io/storageid"
