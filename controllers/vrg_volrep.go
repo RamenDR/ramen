@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -508,17 +509,43 @@ func (v *VRGInstance) undoPVRetentionForPVC(pvc corev1.PersistentVolumeClaim, lo
 	return nil
 }
 
+func (v *VRGInstance) generateArchiveAnnotation(gen int64) string {
+	return fmt.Sprintf("%s-%s", pvcVRAnnotationArchivedVersionV1, strconv.Itoa(int(gen)))
+}
+
+func (v *VRGInstance) isArchivedAlready(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
+	pvHasAnnotation := false
+	pvcHasAnnotation := false
+
+	pv, err := v.getPVFromPVC(pvc)
+	if err != nil {
+		log.Error(err, "Failed to get PV from PVC, PVC:%v, err: %w", pvc.Name, err)
+
+		return false
+	}
+
+	pvcDesiredValue := v.generateArchiveAnnotation(pvc.Generation)
+	if v, ok := pvc.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey]; ok && (v == pvcDesiredValue) {
+		pvcHasAnnotation = true
+	}
+
+	pvDesiredValue := v.generateArchiveAnnotation(pv.Generation)
+	if v, ok := pv.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey]; ok && (v == pvDesiredValue) {
+		pvHasAnnotation = true
+	}
+
+	if !pvHasAnnotation || !pvcHasAnnotation {
+		return false
+	}
+
+	return true
+}
+
 // Upload PV to the list of S3 stores in the VRG spec
 func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (err error) {
-	// Find the ProtectedPVC of the given PVC in v.instance.Status.ProtectedPVCs[]
-	protectedPVC := v.findProtectedPVC(pvc.Name)
-	// Find the ClusterDataProtected condition of the given PVC in ProtectedPVC.Conditions
-	clusterDataProtected := findCondition(protectedPVC.Conditions, VRGConditionTypeClusterDataProtected)
+	if v.isArchivedAlready(pvc, log) {
+		v.log.Info("PV cluster data already protected for PVC", "PVC", pvc.Name)
 
-	// Optimization: skip uploading the PV of this PVC if it was uploaded previously
-	if clusterDataProtected != nil && clusterDataProtected.Status == metav1.ConditionTrue &&
-		clusterDataProtected.ObservedGeneration == v.instance.Generation {
-		// v.log.Info("PV cluster data already protected")
 		return nil
 	}
 
@@ -540,21 +567,33 @@ func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim
 	}
 
 	numProfilesUploaded := len(s3Profiles)
-	// Set ClusterDataProtected condition to true if PV was uploaded to all the profiles
-	if numProfilesUploaded == numProfilesToUpload {
-		msg := fmt.Sprintf("Done uploading PV/PVC cluster data to %d of %d S3 profile(s): %v",
-			numProfilesUploaded, numProfilesToUpload, s3Profiles)
-		v.log.Info(msg)
-		v.updatePVCClusterDataProtectedCondition(pvc.Name,
-			VRGConditionReasonUploaded, msg)
-	} else {
+
+	if numProfilesUploaded != numProfilesToUpload {
 		// Merely defensive as we don't expect to reach here
 		msg := fmt.Sprintf("Uploaded PV/PVC cluster data to only  %d of %d S3 profile(s): %v",
 			numProfilesUploaded, numProfilesToUpload, s3Profiles)
 		v.log.Info(msg)
 		v.updatePVCClusterDataProtectedCondition(pvc.Name,
 			VRGConditionReasonUploadError, msg)
+
+		return fmt.Errorf(msg)
 	}
+
+	if err := v.addArchivedAnnotationForPVC(pvc, log); err != nil {
+		msg := fmt.Sprintf("failed to add archived annotation for PVC (%s/%s) with error (%v)",
+			pvc.Namespace, pvc.Name, err)
+		v.log.Info(msg)
+		v.updatePVCClusterDataProtectedCondition(pvc.Name,
+			VRGConditionReasonClusterDataAnnotationFailed, msg)
+
+		return fmt.Errorf(msg)
+	}
+
+	msg := fmt.Sprintf("Done uploading PV/PVC cluster data to %d of %d S3 profile(s): %v",
+		numProfilesUploaded, numProfilesToUpload, s3Profiles)
+	v.log.Info(msg)
+	v.updatePVCClusterDataProtectedCondition(pvc.Name,
+		VRGConditionReasonUploaded, msg)
 
 	return nil
 }
@@ -1581,6 +1620,8 @@ func setPVCClusterDataProtectedCondition(protectedPVC *ramendrv1alpha1.Protected
 		setVRGClusterDataProtectingCondition(&protectedPVC.Conditions, observedGeneration, message)
 	case reason == VRGConditionReasonUploadError:
 		setVRGClusterDataUnprotectedCondition(&protectedPVC.Conditions, observedGeneration, message)
+	case reason == VRGConditionReasonClusterDataAnnotationFailed:
+		setVRGClusterDataUnprotectedCondition(&protectedPVC.Conditions, observedGeneration, message)
 	default:
 		// if appropriate reason is not provided, then treat it as an unknown condition.
 		message = "Unknown reason: " + reason
@@ -1706,6 +1747,46 @@ func (v *VRGInstance) removeFinalizerFromPVC(pvc *corev1.PersistentVolumeClaim,
 				" (%s/%s) detected as part of VolumeReplicationGroup (%s/%s), %w",
 				finalizer, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
 		}
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) error {
+	if pvc.ObjectMeta.Annotations == nil {
+		pvc.ObjectMeta.Annotations = map[string]string{}
+	}
+
+	pvc.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey] = v.generateArchiveAnnotation(pvc.Generation)
+
+	if err := v.reconciler.Update(v.ctx, pvc); err != nil {
+		log.Error(err, "Failed to update PersistentVolumeClaim annotation")
+
+		return fmt.Errorf("failed to update PersistentVolumeClaim (%s/%s) annotation (%s) belonging to"+
+			"VolumeReplicationGroup (%s/%s), %w",
+			pvc.Namespace, pvc.Name, pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
+	}
+
+	pv, err := v.getPVFromPVC(pvc)
+	if err != nil {
+		log.Error(err, "Failed to get PV from PVC")
+
+		return fmt.Errorf("failed to update PersistentVolume (%s) annotation (%s) belonging to"+
+			"VolumeReplicationGroup (%s/%s), %w",
+			pv.Name, pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
+	}
+
+	if pv.ObjectMeta.Annotations == nil {
+		pv.ObjectMeta.Annotations = map[string]string{}
+	}
+
+	pv.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey] = v.generateArchiveAnnotation(pv.Generation)
+	if err := v.reconciler.Update(v.ctx, &pv); err != nil {
+		log.Error(err, "Failed to update PersistentVolume annotation")
+
+		return fmt.Errorf("failed to update PersistentVolume (%s) annotation (%s) belonging to"+
+			"VolumeReplicationGroup (%s/%s), %w",
+			pvc.Name, pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
 	}
 
 	return nil
