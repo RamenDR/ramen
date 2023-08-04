@@ -415,7 +415,7 @@ catalog-push: ## Push a catalog image.
 .PHONY: docker-buildx
 docker-buildx: # Build and push docker image for the manager for cross-platform support
 ifeq ($(DOCKERCMD),docker)
-	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} and 
+	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} and
 	# replace GOARCH value to ${TARGETARCH} into Dockerfile.cross, and preserve the original Dockerfile
 	$(eval PLATFORMS="linux/arm64,linux/amd64,linux/s390x,linux/ppc64le")
 	$(SED_CMD) \
@@ -423,7 +423,7 @@ ifeq ($(DOCKERCMD),docker)
 		-e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' \
 		Dockerfile > Dockerfile.cross
 	$(SED_CMD) -e 's/GOARCH=amd64/GOARCH=$${TARGETARCH}/' -i Dockerfile.cross
-	- $(DOCKERCMD) buildx create --name $(IMAGE_NAME)-builder --bootstrap --use 
+	- $(DOCKERCMD) buildx create --name $(IMAGE_NAME)-builder --bootstrap --use
 	- $(DOCKERCMD) buildx build --push --platform="${PLATFORMS}" --tag ${IMG} -f Dockerfile.cross .
 	- $(DOCKERCMD) buildx rm $(IMAGE_NAME)-builder
 	rm Dockerfile.cross
