@@ -140,12 +140,7 @@ func (v *VRGInstance) reconcileVRAsSecondary(pvc *corev1.PersistentVolumeClaim, 
 		skip    bool = true
 	)
 
-	if pvc.GetAnnotations() != nil && pvc.GetAnnotations()[RestoreAnnotation] == RestoredByRamen {
-		// We created the PVC, delete it
-		if deleted := v.deletePVCIfNotInUse(pvc, log); !deleted {
-			return requeue, false, skip
-		}
-	} else if !v.isPVCReadyForSecondary(pvc, log) {
+	if !v.isPVCReadyForSecondary(pvc, log) {
 		return requeue, false, skip
 	}
 
@@ -175,14 +170,6 @@ func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, 
 	}
 
 	return !v.isPVCInUse(pvc, log, "Secondary transition")
-}
-
-func (v *VRGInstance) deletePVCIfNotInUse(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
-	if v.isPVCInUse(pvc, log, "PVC deletion") {
-		return false
-	}
-
-	return rmnutil.DeletePVC(v.ctx, v.reconciler.Client, pvc.Name, pvc.Namespace, log) == nil
 }
 
 func (v *VRGInstance) isPVCInUse(pvc *corev1.PersistentVolumeClaim, log logr.Logger, operation string) bool {
