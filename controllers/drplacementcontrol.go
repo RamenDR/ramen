@@ -2059,7 +2059,7 @@ func (d *DRPCInstance) setDRState(nextState rmn.DRState) {
 func (d *DRPCInstance) setProgression(nextProgression rmn.ProgressionStatus) {
 	if d.instance.Status.Progression != nextProgression {
 		d.log.Info(fmt.Sprintf("Progression: Current '%s'. Next '%s'",
-			d.instance.Status.Phase, nextProgression))
+			d.instance.Status.Progression, nextProgression))
 
 		d.instance.Status.Progression = nextProgression
 	}
