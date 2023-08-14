@@ -664,6 +664,15 @@ var _ = Describe("VolSync_Handler", func() {
 					Expect(k8sClient.Create(ctx, dummyPSKSecret)).To(Succeed())
 					Expect(dummyPSKSecret.GetName()).NotTo(BeEmpty())
 
+					// Make sure the secret is created to avoid any timing issues
+					Eventually(func() error {
+						return k8sClient.Get(ctx,
+							types.NamespacedName{
+								Name:      dummyPSKSecret.GetName(),
+								Namespace: dummyPSKSecret.GetNamespace(),
+							}, dummyPSKSecret)
+					}, maxWait, interval).Should(Succeed())
+
 					// Run ReconcileRD
 					var err error
 					returnedRD, err = vsHandler.ReconcileRD(rdSpec)
