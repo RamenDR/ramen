@@ -2055,13 +2055,19 @@ func (d *DRPCInstance) setDRState(nextState rmn.DRState) {
 	}
 }
 
-func (d *DRPCInstance) setProgression(nextProgression rmn.ProgressionStatus) {
-	if d.instance.Status.Progression != nextProgression {
-		d.log.Info(fmt.Sprintf("Progression: Current '%s'. Next '%s'",
-			d.instance.Status.Progression, nextProgression))
+func updateDRPCProgression(
+	drpc *rmn.DRPlacementControl, nextProgression rmn.ProgressionStatus, log logr.Logger,
+) {
+	if drpc.Status.Progression != nextProgression {
+		log.Info(fmt.Sprintf("Progression: Current '%s'. Next '%s'",
+			drpc.Status.Progression, nextProgression))
 
-		d.instance.Status.Progression = nextProgression
+		drpc.Status.Progression = nextProgression
 	}
+}
+
+func (d *DRPCInstance) setProgression(nextProgression rmn.ProgressionStatus) {
+	updateDRPCProgression(d.instance, nextProgression, d.log)
 }
 
 //nolint:cyclop
