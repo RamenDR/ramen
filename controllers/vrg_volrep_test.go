@@ -1259,7 +1259,7 @@ func (v *vrgTest) verifyPVCBindingToPV(shouldBeBound bool) {
 func (v *vrgTest) getPV(pvName string) *corev1.PersistentVolume {
 	pvLookupKey := types.NamespacedName{Name: pvName}
 	pv := &corev1.PersistentVolume{}
-	err := k8sClient.Get(context.TODO(), pvLookupKey, pv)
+	err := apiReader.Get(context.TODO(), pvLookupKey, pv)
 	Expect(err).NotTo(HaveOccurred(),
 		"failed to get PV %s", pvName)
 
@@ -1273,7 +1273,7 @@ func (v *vrgTest) getPVC(pvcName string) *corev1.PersistentVolumeClaim {
 	}
 
 	pvc := &corev1.PersistentVolumeClaim{}
-	err := k8sClient.Get(context.TODO(), key, pvc)
+	err := apiReader.Get(context.TODO(), key, pvc)
 	Expect(err).NotTo(HaveOccurred(),
 		"failed to get PVC %s", pvcName)
 
