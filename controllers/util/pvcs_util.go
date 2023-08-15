@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	"golang.org/x/exp/slices"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -30,7 +31,7 @@ func ListPVCsByPVCSelector(
 	k8sClient client.Client,
 	logger logr.Logger,
 	pvcLabelSelector metav1.LabelSelector,
-	namespace string,
+	namespaces []string,
 	volSyncDisabled bool,
 ) (*corev1.PersistentVolumeClaimList, error) {
 	// convert metav1.LabelSelector to a labels.Selector
@@ -59,7 +60,6 @@ func ListPVCsByPVCSelector(
 	logger.Info("Fetching PersistentVolumeClaims", "pvcSelector", updatedPVCSelector)
 
 	listOptions := []client.ListOption{
-		client.InNamespace(namespace),
 		client.MatchingLabelsSelector{
 			Selector: updatedPVCSelector,
 		},
@@ -73,6 +73,16 @@ func ListPVCsByPVCSelector(
 	}
 
 	logger.Info(fmt.Sprintf("Found %d PVCs using label selector %v", len(pvcList.Items), updatedPVCSelector))
+
+	var pvcs []corev1.PersistentVolumeClaim
+
+	for _, pvc := range pvcList.Items {
+		if slices.Contains(namespaces, pvc.Namespace) {
+			pvcs = append(pvcs, pvc)
+		}
+	}
+
+	pvcList.Items = pvcs
 
 	return pvcList, nil
 }
