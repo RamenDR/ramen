@@ -255,17 +255,13 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 
 	var vrgs ramendrv1alpha1.VolumeReplicationGroupList
 
-	listOptions := []client.ListOption{
-		client.InNamespace(pvc.Namespace),
-	}
-
 	// decide if reconcile request needs to be sent to the
 	// corresponding VolumeReplicationGroup CR by:
-	// - whether there is a VolumeReplicationGroup CR in the namespace
-	//   to which the the pvc belongs to.
+	// - whether there is a VolumeReplicationGroup CR that selects the
+	//   PVC's namespace.
 	// - whether the labels on pvc match the label selectors from
 	//    VolumeReplicationGroup CR.
-	err := reader.List(context.TODO(), &vrgs, listOptions...)
+	err := reader.List(context.TODO(), &vrgs)
 	if err != nil {
 		log.Error(err, "Failed to get list of VolumeReplicationGroup resources")
 
@@ -599,7 +595,8 @@ func (v *VRGInstance) listPVCsByPVCSelector() (*corev1.PersistentVolumeClaimList
 	}
 
 	return rmnutil.ListPVCsByPVCSelector(v.ctx, v.reconciler.Client, v.log, labelSelector,
-		v.instance.Namespace, v.instance.Spec.VolSync.Disabled)
+		[]string{v.instance.Namespace},
+		v.instance.Spec.VolSync.Disabled)
 }
 
 // updatePVCList fetches and updates the PVC list to process for the current instance of VRG
