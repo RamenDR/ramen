@@ -10,12 +10,14 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"golang.org/x/exp/slices"
 	"golang.org/x/time/rate"
 
 	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
 	"github.com/google/uuid"
 	"github.com/ramendr/ramen/controllers/kubeobjects"
 	"github.com/ramendr/ramen/controllers/kubeobjects/velero"
+	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -269,7 +271,7 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 	}
 
 	for _, vrg := range vrgs.Items {
-		vrgLabelSelector, err := GetPVCLabelSelector(context.TODO(), reader, vrg, log)
+		vrgLabelSelector, namespaceNames, err := GetPVCLabelSelector(context.TODO(), reader, vrg, log)
 		if err != nil {
 			log.Error(err, "Failed to get the label selector from GetPVCLabelSelector", "vrgName", vrg.Name)
 
@@ -286,7 +288,7 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 			continue
 		}
 
-		if selector.Matches(labels.Set(pvc.GetLabels())) {
+		if selector.Matches(labels.Set(pvc.GetLabels())) && slices.Contains(namespaceNames, pvc.Namespace) {
 			log.Info("Found VolumeReplicationGroup with matching labels",
 				"vrg", vrg.Name, "labeled", selector)
 
@@ -299,28 +301,37 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 
 func GetPVCLabelSelector(
 	ctx context.Context, reader client.Reader, vrg ramendrv1alpha1.VolumeReplicationGroup, log logr.Logger,
-) (metav1.LabelSelector, error) {
-	if RecipeInfoExistsOnVRG(vrg) {
-		recipe, err := GetRecipeWithName(ctx, reader, vrg.Spec.KubeObjectProtection.RecipeRef.Name, vrg.GetNamespace())
-		if err != nil {
-			log.Error(err, "GetRecipeWithName error: %s-%s", vrg.Name, vrg.Namespace)
+) (pvcSelector metav1.LabelSelector, pvcNamespaceNames []string, err error) {
+	pvcSelector, pvcNamespaceNames = vrg.Spec.PVCSelector, []string{vrg.Namespace}
 
-			return metav1.LabelSelector{}, err
-		}
-
-		if RecipeHasVolumeGroup(&recipe) {
-			labelSelector, err := GetLabelSelectorFromRecipeVolumeGroupWithName(&recipe)
-			if err != nil {
-				log.Error(err, "GetPVCLabelSelector error: %s-%s", vrg.Name, vrg.Namespace)
-
-				return metav1.LabelSelector{}, err
-			}
-
-			return labelSelector, nil
-		}
+	if !RecipeInfoExistsOnVRG(vrg) {
+		return
 	}
 
-	return vrg.Spec.PVCSelector, nil
+	var recipe recipe.Recipe
+
+	if recipe, err = GetRecipeWithName(ctx, reader, vrg.Spec.KubeObjectProtection.RecipeRef.Name,
+		vrg.GetNamespace()); err != nil {
+		log.Error(err, "GetRecipeWithName error: %s-%s", vrg.Name, vrg.Namespace)
+
+		return
+	}
+
+	if recipe.Spec.Volumes == nil {
+		return
+	}
+
+	if recipe.Spec.Volumes.LabelSelector != nil {
+		pvcSelector = *recipe.Spec.Volumes.LabelSelector
+	} else {
+		pvcSelector = metav1.LabelSelector{}
+	}
+
+	if len(recipe.Spec.Volumes.IncludedNamespaces) > 0 {
+		pvcNamespaceNames = recipe.Spec.Volumes.IncludedNamespaces
+	}
+
+	return pvcSelector, pvcNamespaceNames, err
 }
 
 //nolint: lll // disabling line length linter
@@ -589,13 +600,13 @@ func (v *VRGInstance) clusterDataRestore(result *ctrl.Result) error {
 }
 
 func (v *VRGInstance) listPVCsByPVCSelector() (*corev1.PersistentVolumeClaimList, error) {
-	labelSelector, err := GetPVCLabelSelector(v.ctx, v.reconciler.Client, *v.instance, v.log)
+	labelSelector, namespaceNames, err := GetPVCLabelSelector(v.ctx, v.reconciler.Client, *v.instance, v.log)
 	if err != nil {
 		return nil, err
 	}
 
 	return rmnutil.ListPVCsByPVCSelector(v.ctx, v.reconciler.Client, v.log, labelSelector,
-		[]string{v.instance.Namespace},
+		namespaceNames,
 		v.instance.Spec.VolSync.Disabled)
 }
 
