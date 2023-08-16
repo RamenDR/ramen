@@ -461,22 +461,6 @@ func vrgRecipeRefNonNil(vrg ramen.VolumeReplicationGroup) bool {
 	return vrg.Spec.KubeObjectProtection.RecipeRef != nil
 }
 
-func RecipeHasVolumeGroup(recipe *Recipe.Recipe) bool {
-	return recipe != nil && recipe.Spec.Volumes != nil
-}
-
-func GetLabelSelectorFromRecipeVolumeGroupWithName(recipe *Recipe.Recipe) (metav1.LabelSelector, error) {
-	labelSelector := &metav1.LabelSelector{} // init
-
-	if recipe.Spec.Volumes == nil || recipe.Spec.Volumes.LabelSelector == nil {
-		recipeInfo := fmt.Sprintf("Recipe Name '%s' in Namespace '%s'", recipe.Name, recipe.GetNamespace())
-
-		return *labelSelector, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec.Volumes"}, recipeInfo)
-	}
-
-	return *recipe.Spec.Volumes.LabelSelector, nil
-}
-
 func (v *VRGInstance) getCaptureGroups() []kubeobjects.CaptureSpec {
 	if vrgRecipeRefNonNil(*v.instance) {
 		return v.getCaptureGroupsFromRecipe()

@@ -18,7 +18,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.16.0
 	github.com/prometheus/client_model v0.3.0
-	github.com/ramendr/recipe v0.0.0-20230414231448-ce4a190a1fd1
+	github.com/ramendr/recipe v0.0.0-20230817160432-729dc7fd8932
 	github.com/stolostron/multicloud-operators-foundation v0.0.0-20220315092956-6dc184852d56
 	github.com/stolostron/multicloud-operators-placementrule v1.2.4-1-20220311-8eedb3f.0.20220411162042-3de0a2f908f1
 	github.com/vmware-tanzu/velero v1.9.1
