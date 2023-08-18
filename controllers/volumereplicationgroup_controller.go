@@ -480,12 +480,12 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	setVRGInitialCondition(&v.instance.Status.Conditions, v.instance.Generation,
 		"Initializing VolumeReplicationGroup")
 
-	res, err := v.processVRG()
+	res := v.processVRG()
 	delayResetIfRequeueTrue(&res, v.log)
-	log.Info("Reconcile return", "result", res, "err", err,
+	log.Info("Reconcile return", "result", res,
 		"VolRep count", len(v.volRepPVCs), "VolSync count", len(v.volSyncPVCs))
 
-	return res, err
+	return res, nil
 }
 
 type cachedObjectStorer struct {
@@ -538,65 +538,23 @@ const (
 	MModesLabel = "ramendr.openshift.io/maintenancemodes"
 )
 
-func (v *VRGInstance) processVRG() (ctrl.Result, error) {
+func (v *VRGInstance) processVRG() ctrl.Result {
 	if err := v.validateVRGState(); err != nil {
-		// record the event
-		v.log.Error(err, "Failed to validate the spec state")
-		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
-			rmnutil.EventReasonValidationFailed, err.Error())
-
-		msg := "VolumeReplicationGroup state is invalid"
-		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
-
-		if err = v.updateVRGStatus(false); err != nil {
-			v.log.Error(err, "Status update failed")
-			// Since updating status failed, reconcile
-			return ctrl.Result{Requeue: true}, nil
-		}
 		// No requeue, as there is no reconcile till user changes desired spec to a valid value
-		return ctrl.Result{}, nil
+		return v.invalid(err, "VolumeReplicationGroup state is invalid", false)
 	}
 
 	// If neither of Async or Sync mode is provided, then
 	// dont requeue. Just return error.
 	if err := v.validateVRGMode(); err != nil {
-		// record the event
-		v.log.Error(err, "Failed to validate the spec mode")
-		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
-			rmnutil.EventReasonValidationFailed, err.Error())
-
-		msg := "VolumeReplicationGroup mode is invalid"
-		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
-
-		if err = v.updateVRGStatus(false); err != nil {
-			v.log.Error(err, "Status update failed")
-			// Since updating status failed, reconcile
-			return ctrl.Result{Requeue: true}, nil
-		}
 		// No requeue, as there is no reconcile till user changes desired spec to a valid value
-		return ctrl.Result{}, nil
+		return v.invalid(err, "VolumeReplicationGroup mode is invalid", false)
 	}
 
 	if err := v.updatePVCList(); err != nil {
-		v.log.Error(err, "Failed to update PersistentVolumeClaims for resource")
-
-		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
-			rmnutil.EventReasonValidationFailed, err.Error())
-
-		msg := fmt.Sprintf("Failed to process list of PVCs to protect (%v)", err)
-		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
-
-		if err = v.updateVRGStatus(false); err != nil {
-			v.log.Error(err, "VRG Status update failed")
-		}
-
-		return ctrl.Result{Requeue: true}, nil
+		return v.invalid(err, "Failed to process list of PVCs to protect", true)
 	}
 
-	return v.processVRGActions()
-}
-
-func (v *VRGInstance) processVRGActions() (ctrl.Result, error) {
 	v.log = v.log.WithName("vrginstance").WithValues("State", v.instance.Spec.ReplicationState)
 
 	if !v.instance.GetDeletionTimestamp().IsZero() {
@@ -606,16 +564,7 @@ func (v *VRGInstance) processVRGActions() (ctrl.Result, error) {
 	}
 
 	if err := v.addFinalizer(vrgFinalizerName); err != nil {
-		v.log.Info("Failed to add finalizer", "finalizer", vrgFinalizerName, "errorValue", err)
-
-		msg := "Failed to add finalizer to VolumeReplicationGroup"
-		setVRGDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
-
-		if err = v.updateVRGStatus(false); err != nil {
-			v.log.Error(err, "VRG Status update failed")
-		}
-
-		return ctrl.Result{Requeue: true}, nil
+		return v.dataError(err, "Failed to add finalizer to VolumeReplicationGroup", true)
 	}
 
 	switch {
@@ -844,7 +793,7 @@ func (v *VRGInstance) separatePVCsUsingStorageClassProvisioner(pvcList *corev1.P
 }
 
 // finalizeVRG cleans up managed resources and removes the VRG finalizer for resource deletion
-func (v *VRGInstance) processForDeletion() (ctrl.Result, error) {
+func (v *VRGInstance) processForDeletion() ctrl.Result {
 	v.log.Info("Entering processing VolumeReplicationGroup for deletion")
 
 	defer v.log.Info("Exiting processing VolumeReplicationGroup")
@@ -852,20 +801,20 @@ func (v *VRGInstance) processForDeletion() (ctrl.Result, error) {
 	if !containsString(v.instance.ObjectMeta.Finalizers, vrgFinalizerName) {
 		v.log.Info("Finalizer missing from resource", "finalizer", vrgFinalizerName)
 
-		return ctrl.Result{}, nil
+		return ctrl.Result{}
 	}
 
 	if v.deleteVRGHandleMode() {
 		v.log.Info("Requeuing as reconciling VolumeReplication for deletion failed")
 
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{Requeue: true}
 	}
 
 	result := ctrl.Result{}
 	if err := v.kubeObjectsProtectionDelete(&result); err != nil {
 		v.log.Info("Kube objects protection deletion failed", "error", err)
 
-		return result, err
+		return result
 	}
 
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
@@ -873,20 +822,20 @@ func (v *VRGInstance) processForDeletion() (ctrl.Result, error) {
 			v.log.Info("Requeuing due to failure in deleting cluster data from S3 stores",
 				"errorValue", err)
 
-			return ctrl.Result{Requeue: true}, nil
+			return ctrl.Result{Requeue: true}
 		}
 	}
 
 	if err := v.removeFinalizer(vrgFinalizerName); err != nil {
 		v.log.Info("Failed to remove finalizer", "finalizer", vrgFinalizerName, "errorValue", err)
 
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{Requeue: true}
 	}
 
 	rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeNormal,
 		rmnutil.EventReasonDeleteSuccess, "Deletion Success")
 
-	return ctrl.Result{}, nil
+	return ctrl.Result{}
 }
 
 // For now, async mode and sync mode can be enabled only in either or fashion
@@ -937,25 +886,14 @@ func (v *VRGInstance) removeFinalizer(finalizer string) error {
 }
 
 // processAsPrimary reconciles the current instance of VRG as primary
-func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
+func (v *VRGInstance) processAsPrimary() ctrl.Result {
 	v.log.Info("Entering processing VolumeReplicationGroup as Primary")
 
 	defer v.log.Info("Exiting processing VolumeReplicationGroup")
 
 	result := ctrl.Result{}
 	if err := v.clusterDataRestore(&result); err != nil {
-		v.log.Info("Restoring PVs failed", "Error", err.Error())
-
-		msg := fmt.Sprintf("Failed to restore PVs (%v)", err.Error())
-		setVRGClusterDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
-
-		if err = v.updateVRGStatus(false); err != nil {
-			v.log.Error(err, "VRG Status update failed")
-
-			result.Requeue = true
-		}
-
-		return result, nil
+		return v.clusterDataError(err, "Failed to restore PVs", result.Requeue)
 	}
 
 	result = v.reconcileAsPrimary()
@@ -969,11 +907,7 @@ func (v *VRGInstance) processAsPrimary() (ctrl.Result, error) {
 			rmnutil.EventReasonPrimarySuccess, "Primary Success")
 	}
 
-	if err := v.updateVRGStatus(true); err != nil {
-		result.Requeue = true
-	}
-
-	return result, nil
+	return v.updateVRGStatus(result, true)
 }
 
 func (v *VRGInstance) reconcileAsPrimary() ctrl.Result {
@@ -997,7 +931,7 @@ func (v *VRGInstance) reconcileAsPrimary() ctrl.Result {
 }
 
 // processAsSecondary reconciles the current instance of VRG as secondary
-func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
+func (v *VRGInstance) processAsSecondary() ctrl.Result {
 	v.log.Info("Entering processing VolumeReplicationGroup as Secondary")
 
 	defer v.log.Info("Exiting processing VolumeReplicationGroup")
@@ -1015,11 +949,7 @@ func (v *VRGInstance) processAsSecondary() (ctrl.Result, error) {
 			rmnutil.EventReasonSecondarySuccess, "Secondary Success")
 	}
 
-	if err := v.updateVRGStatus(true); err != nil {
-		result.Requeue = true
-	}
-
-	return result, nil
+	return v.updateVRGStatus(result, true)
 }
 
 func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
@@ -1055,7 +985,32 @@ func (v *VRGInstance) relocate(result *ctrl.Result, s3StoreAccessors []s3StoreAc
 	}
 }
 
-func (v *VRGInstance) updateVRGStatus(updateConditions bool) error {
+func (v *VRGInstance) invalid(err error, msg string, requeue bool) ctrl.Result {
+	rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
+		rmnutil.EventReasonValidationFailed, err.Error())
+
+	return v.dataError(err, msg, requeue)
+}
+
+func (v *VRGInstance) dataError(err error, msg string, requeue bool) ctrl.Result {
+	return v.err(err, msg, requeue, setVRGDataErrorCondition)
+}
+
+func (v *VRGInstance) clusterDataError(err error, msg string, requeue bool) ctrl.Result {
+	return v.err(err, msg, requeue, setVRGClusterDataErrorCondition)
+}
+
+func (v *VRGInstance) err(err error, msg string, requeue bool,
+	conditionSet func(*[]metav1.Condition, int64, string),
+) ctrl.Result {
+	v.log.Info(msg, "error", err)
+	msg = fmt.Sprintf("%s: %v", msg, err)
+	conditionSet(&v.instance.Status.Conditions, v.instance.Generation, msg)
+
+	return v.updateVRGStatus(ctrl.Result{Requeue: requeue}, false)
+}
+
+func (v *VRGInstance) updateVRGStatus(result ctrl.Result, updateConditions bool) ctrl.Result {
 	v.log.Info("Updating VRG status")
 
 	if updateConditions {
@@ -1072,7 +1027,9 @@ func (v *VRGInstance) updateVRGStatus(updateConditions bool) error {
 			v.log.Info(fmt.Sprintf("Failed to update VRG status (%v/%+v)",
 				err, v.instance.Status))
 
-			return fmt.Errorf("failed to update VRG status (%s/%s)", v.instance.Name, v.instance.Namespace)
+			result.Requeue = true
+
+			return result
 		}
 
 		dataReadyCondition := findCondition(v.instance.Status.Conditions, VRGConditionTypeDataReady)
@@ -1080,13 +1037,13 @@ func (v *VRGInstance) updateVRGStatus(updateConditions bool) error {
 			" DataReady Condition (%s)",
 			len(v.volRepPVCs), len(v.volSyncPVCs), dataReadyCondition))
 
-		return nil
+		return result
 	}
 
 	v.log.Info(fmt.Sprintf("Nothing to update VolRep pvccount (%d), VolSync pvccount(%d)",
 		len(v.volRepPVCs), len(v.volSyncPVCs)))
 
-	return nil
+	return result
 }
 
 func (v *VRGInstance) updateStatusState() {
