@@ -246,7 +246,6 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	requests map[string]kubeobjects.Request,
 	log logr.Logger,
 ) {
-	vrg := v.instance
 	groups := v.recipeElements.captureWorkflow
 	requestsProcessedCount := 0
 	requestsCompletedCount := 0
@@ -255,7 +254,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	for groupNumber, captureGroup := range groups {
 		log1 := log.WithValues("group", groupNumber, "name", captureGroup.Name)
 		requestsCompletedCount += v.kubeObjectsGroupCapture(
-			result, vrg, captureGroup, s3StoreAccessors, pathName, capturePathName, namePrefix, veleroNamespaceName,
+			result, captureGroup, s3StoreAccessors, pathName, capturePathName, namePrefix, veleroNamespaceName,
 			captureInProgressStatusUpdate,
 			labels, annotations, requests, log,
 		)
@@ -284,7 +283,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 }
 
 func (v *VRGInstance) kubeObjectsGroupCapture(
-	result *ctrl.Result, vrg *ramen.VolumeReplicationGroup,
+	result *ctrl.Result,
 	captureGroup kubeobjects.CaptureSpec, s3StoreAccessors []s3StoreAccessor,
 	pathName, capturePathName, namePrefix, veleroNamespaceName string,
 	captureInProgressStatusUpdate captureInProgressStatusUpdate,
@@ -301,7 +300,7 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 				v.ctx, v.reconciler.Client, v.log,
 				s3StoreAccessor.S3CompatibleEndpoint, s3StoreAccessor.S3Bucket, s3StoreAccessor.S3Region,
 				pathName, s3StoreAccessor.VeleroNamespaceSecretKeyRef, s3StoreAccessor.CACertificates,
-				vrg.Namespace, captureGroup.Spec, veleroNamespaceName, requestName,
+				captureGroup.Spec, veleroNamespaceName, requestName,
 				labels, annotations,
 			); err != nil {
 				log1.Error(err, "Kube objects group capture request submit error")
@@ -529,15 +528,13 @@ func (v *VRGInstance) getRecoverOrProtectRequest(
 		captureName := kubeObjectsCaptureName(namePrefix, backupName, s3StoreAccessor.S3ProfileName)
 		request, ok := captureRequests[captureName]
 
-		v.log.Info(fmt.Sprintf("backup: %s, captureToRecoverFrom: %d", backupName, captureToRecoverFromIdentifier.Number))
-
 		return request, ok, func() (kubeobjects.Request, error) {
 				return v.reconciler.kubeObjects.ProtectRequestCreate(
 					v.ctx, v.reconciler.Client, v.log,
 					s3StoreAccessor.S3CompatibleEndpoint, s3StoreAccessor.S3Bucket, s3StoreAccessor.S3Region, pathName,
 					s3StoreAccessor.VeleroNamespaceSecretKeyRef,
 					s3StoreAccessor.CACertificates,
-					vrg.Namespace, recoverGroup.Spec, veleroNamespaceName,
+					recoverGroup.Spec, veleroNamespaceName,
 					captureName,
 					labels, annotations)
 			},
@@ -561,7 +558,7 @@ func (v *VRGInstance) getRecoverOrProtectRequest(
 				s3StoreAccessor.S3CompatibleEndpoint, s3StoreAccessor.S3Bucket, s3StoreAccessor.S3Region, pathName,
 				s3StoreAccessor.VeleroNamespaceSecretKeyRef,
 				s3StoreAccessor.CACertificates,
-				sourceVrgNamespaceName, vrg.Namespace, recoverGroup, veleroNamespaceName,
+				recoverGroup, veleroNamespaceName,
 				captureName, captureRequest,
 				recoverName,
 				labels, annotations)
@@ -869,9 +866,10 @@ func convertRecipeHookToCaptureSpec(
 		Name: hookName,
 		Spec: kubeobjects.Spec{
 			KubeResourcesSpec: kubeobjects.KubeResourcesSpec{
-				IncludedResources: []string{"pod"},
-				ExcludedResources: []string{},
-				Hooks:             hooks,
+				IncludedNamespaces: []string{hook.Namespace},
+				IncludedResources:  []string{"pod"},
+				ExcludedResources:  []string{},
+				Hooks:              hooks,
 			},
 			LabelSelector:           hooks[0].LabelSelector,
 			IncludeClusterResources: new(bool),
@@ -889,9 +887,10 @@ func convertRecipeHookToRecoverSpec(hook Recipe.Hook, op Recipe.Operation) (*kub
 		BackupName: ramen.ReservedBackupName,
 		Spec: kubeobjects.Spec{
 			KubeResourcesSpec: kubeobjects.KubeResourcesSpec{
-				IncludedResources: []string{"pod"},
-				ExcludedResources: []string{},
-				Hooks:             hooks,
+				IncludedNamespaces: []string{hook.Namespace},
+				IncludedResources:  []string{"pod"},
+				ExcludedResources:  []string{},
+				Hooks:              hooks,
 			},
 			LabelSelector:           hooks[0].LabelSelector,
 			IncludeClusterResources: new(bool),
@@ -917,8 +916,9 @@ func convertRecipeGroupToRecoverSpec(group Recipe.Group) (*kubeobjects.RecoverSp
 		BackupName: group.BackupRef,
 		Spec: kubeobjects.Spec{
 			KubeResourcesSpec: kubeobjects.KubeResourcesSpec{
-				IncludedResources: group.IncludedResourceTypes,
-				ExcludedResources: group.ExcludedResourceTypes,
+				IncludedNamespaces: group.IncludedNamespaces,
+				IncludedResources:  group.IncludedResourceTypes,
+				ExcludedResources:  group.ExcludedResourceTypes,
 			},
 			LabelSelector:           group.LabelSelector,
 			OrLabelSelectors:        []*metav1.LabelSelector{},
@@ -933,8 +933,9 @@ func convertRecipeGroupToCaptureSpec(group Recipe.Group) (*kubeobjects.CaptureSp
 		// TODO: add backupRef/backupName here?
 		Spec: kubeobjects.Spec{
 			KubeResourcesSpec: kubeobjects.KubeResourcesSpec{
-				IncludedResources: group.IncludedResourceTypes,
-				ExcludedResources: group.ExcludedResourceTypes,
+				IncludedNamespaces: group.IncludedNamespaces,
+				IncludedResources:  group.IncludedResourceTypes,
+				ExcludedResources:  group.ExcludedResourceTypes,
 			},
 			LabelSelector:           group.LabelSelector,
 			OrLabelSelectors:        []*metav1.LabelSelector{},

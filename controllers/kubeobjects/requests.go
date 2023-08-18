@@ -56,6 +56,8 @@ type RecoverSpec struct {
 	BackupName string `json:"backupName,omitempty"`
 	Spec       `json:",inline"`
 	//+optional
+	NamespaceMapping map[string]string `json:"namespaceMapping,omitempty"`
+	//+optional
 	RestoreStatus *velero.RestoreStatusSpec `json:"restoreStatus,omitempty"`
 	//+optional
 	ExistingResourcePolicy velero.PolicyType `json:"existingResourcePolicy,omitempty"`
@@ -74,6 +76,8 @@ type Spec struct {
 }
 
 type KubeResourcesSpec struct {
+	//+optional
+	IncludedNamespaces []string `json:"includedNamespaces,omitempty"`
 	//+optional
 	IncludedResources []string `json:"includedResources,omitempty"`
 
@@ -118,7 +122,6 @@ type RequestsManager interface {
 		s3KeyPrefix string,
 		secretKeyRef *corev1.SecretKeySelector,
 		caCertificates []byte,
-		sourceNamespaceName string,
 		objectsSpec Spec,
 		requestNamespaceName string,
 		protectRequestName string,
@@ -133,8 +136,6 @@ type RequestsManager interface {
 		s3KeyPrefix string,
 		secretKeyRef *corev1.SecretKeySelector,
 		caCertificates []byte,
-		sourceNamespaceName string,
-		targetNamespaceName string,
 		recoverSpec RecoverSpec,
 		requestNamespaceName string,
 		protectRequestName string,
