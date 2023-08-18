@@ -4,7 +4,6 @@
 package controllers
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -248,7 +247,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	log logr.Logger,
 ) {
 	vrg := v.instance
-	groups := v.getCaptureGroups()
+	groups := v.recipeElements.captureWorkflow
 	requestsProcessedCount := 0
 	requestsCompletedCount := 0
 	annotations := map[string]string{vrgGenerationKey: strconv.FormatInt(generation, vrgGenerationNumberBase)}
@@ -453,64 +452,6 @@ func (v *VRGInstance) kubeObjectsCaptureStatus(status metav1.ConditionStatus, re
 	}
 }
 
-func RecipeInfoExistsOnVRG(vrgInstance ramen.VolumeReplicationGroup) bool {
-	return vrgInstance.Spec.KubeObjectProtection != nil && vrgRecipeRefNonNil(vrgInstance)
-}
-
-func vrgRecipeRefNonNil(vrg ramen.VolumeReplicationGroup) bool {
-	return vrg.Spec.KubeObjectProtection.RecipeRef != nil
-}
-
-func (v *VRGInstance) getCaptureGroups() []kubeobjects.CaptureSpec {
-	if vrgRecipeRefNonNil(*v.instance) {
-		return v.getCaptureGroupsFromRecipe()
-	}
-
-	return []kubeobjects.CaptureSpec{{}}
-}
-
-func (v *VRGInstance) getCaptureGroupsFromRecipe() []kubeobjects.CaptureSpec {
-	recipe, err := GetRecipeWithName(
-		v.ctx, v.reconciler.Client, v.instance.Spec.KubeObjectProtection.RecipeRef.Name, v.instance.Namespace)
-	if err != nil {
-		v.log.Error(err, "Failed to get recipe from name")
-	}
-
-	groups, err := v.getCaptureGroupsFromWorkflow(recipe, recipe.Spec.CaptureWorkflow)
-	if err != nil {
-		v.log.Error(err, "Failed to get groups from capture workflow")
-	}
-
-	v.log.Info("Successfully found recipe capture groups")
-
-	return groups
-}
-
-func (v *VRGInstance) getRecoverGroups() []kubeobjects.RecoverSpec {
-	if vrgRecipeRefNonNil(*v.instance) {
-		return v.getRecoverGroupsFromRecipe()
-	}
-
-	return []kubeobjects.RecoverSpec{{}}
-}
-
-func (v *VRGInstance) getRecoverGroupsFromRecipe() []kubeobjects.RecoverSpec {
-	recipe, err := GetRecipeWithName(
-		v.ctx, v.reconciler.Client, v.instance.Spec.KubeObjectProtection.RecipeRef.Name, v.instance.Namespace)
-	if err != nil {
-		v.log.Error(err, "Failed to get recipe from name")
-	}
-
-	groups, err := v.getRestoreGroupsFromWorkflow(recipe, recipe.Spec.RecoverWorkflow)
-	if err != nil {
-		v.log.Error(err, "Failed to get groups from recovery workflow")
-	}
-
-	v.log.Info("Successfully found recipe recovery groups")
-
-	return groups
-}
-
 func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result,
 	s3StoreProfile ramen.S3StoreProfile, objectStorer ObjectStorer,
 ) error {
@@ -639,7 +580,7 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 	captureRequests, recoverRequests map[string]kubeobjects.Request,
 	veleroNamespaceName string, labels map[string]string, log logr.Logger,
 ) error {
-	groups := v.getRecoverGroups()
+	groups := v.recipeElements.recoverWorkflow
 	requests := make([]kubeobjects.Request, len(groups))
 
 	for groupNumber, recoverGroup := range groups {
@@ -781,17 +722,8 @@ func kubeObjectsRequestsWatch(b *builder.Builder, kubeObjects kubeobjects.Reques
 	return b
 }
 
-func GetRecipeWithName(ctx context.Context, reader client.Reader, name, namespace string) (Recipe.Recipe, error) {
-	recipe := &Recipe.Recipe{}
-
-	err := reader.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, recipe)
-
-	return *recipe, err
-}
-
-func (v *VRGInstance) getCaptureGroupsFromWorkflow(
-	recipe Recipe.Recipe, workflow *Recipe.Workflow) ([]kubeobjects.CaptureSpec, error,
-) {
+func getCaptureGroups(recipe Recipe.Recipe) ([]kubeobjects.CaptureSpec, error) {
+	workflow := recipe.Spec.CaptureWorkflow
 	if workflow == nil {
 		return []kubeobjects.CaptureSpec{{}}, nil
 	}
@@ -814,9 +746,8 @@ func (v *VRGInstance) getCaptureGroupsFromWorkflow(
 	return resources, nil
 }
 
-func (v *VRGInstance) getRestoreGroupsFromWorkflow(
-	recipe Recipe.Recipe, workflow *Recipe.Workflow) ([]kubeobjects.RecoverSpec, error,
-) {
+func getRecoverGroups(recipe Recipe.Recipe) ([]kubeobjects.RecoverSpec, error) {
+	workflow := recipe.Spec.RecoverWorkflow
 	if workflow == nil {
 		return []kubeobjects.RecoverSpec{{}}, nil
 	}

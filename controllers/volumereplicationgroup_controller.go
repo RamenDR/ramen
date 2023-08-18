@@ -17,7 +17,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/ramendr/ramen/controllers/kubeobjects"
 	"github.com/ramendr/ramen/controllers/kubeobjects/velero"
-	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -271,67 +270,31 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 	}
 
 	for _, vrg := range vrgs.Items {
-		vrgLabelSelector, namespaceNames, err := GetPVCLabelSelector(context.TODO(), reader, vrg, log)
-		if err != nil {
-			log.Error(err, "Failed to get the label selector from GetPVCLabelSelector", "vrgName", vrg.Name)
+		log1 := log.WithValues("vrg", vrg.Name)
 
+		pvcSelector, err := GetPVCSelector(context.TODO(), reader, vrg, log)
+		if err != nil {
 			continue
 		}
 
-		selector, err := metav1.LabelSelectorAsSelector(&vrgLabelSelector)
+		selector, err := metav1.LabelSelectorAsSelector(&pvcSelector.LabelSelector)
 		// continue if we fail to get the labels for this object hoping
 		// that pvc might actually belong to  some other vrg instead of
 		// this. If not found, then reconcile request would not be sent
 		if err != nil {
-			log.Error(err, "Failed to get the label selector from VolumeReplicationGroup", "vrgName", vrg.Name)
+			log1.Error(err, "Failed to get the label selector from VolumeReplicationGroup")
 
 			continue
 		}
 
-		if selector.Matches(labels.Set(pvc.GetLabels())) && slices.Contains(namespaceNames, pvc.Namespace) {
-			log.Info("Found VolumeReplicationGroup with matching labels",
-				"vrg", vrg.Name, "labeled", selector)
+		if selector.Matches(labels.Set(pvc.GetLabels())) && slices.Contains(pvcSelector.NamespaceNames, pvc.Namespace) {
+			log1.Info("Found VolumeReplicationGroup with matching labels", "labeled", selector)
 
 			req = append(req, reconcile.Request{NamespacedName: types.NamespacedName{Name: vrg.Name, Namespace: vrg.Namespace}})
 		}
 	}
 
 	return req
-}
-
-func GetPVCLabelSelector(
-	ctx context.Context, reader client.Reader, vrg ramendrv1alpha1.VolumeReplicationGroup, log logr.Logger,
-) (pvcSelector metav1.LabelSelector, pvcNamespaceNames []string, err error) {
-	pvcSelector, pvcNamespaceNames = vrg.Spec.PVCSelector, []string{vrg.Namespace}
-
-	if !RecipeInfoExistsOnVRG(vrg) {
-		return
-	}
-
-	var recipe recipe.Recipe
-
-	if recipe, err = GetRecipeWithName(ctx, reader, vrg.Spec.KubeObjectProtection.RecipeRef.Name,
-		vrg.GetNamespace()); err != nil {
-		log.Error(err, "GetRecipeWithName error: %s-%s", vrg.Name, vrg.Namespace)
-
-		return
-	}
-
-	if recipe.Spec.Volumes == nil {
-		return
-	}
-
-	if recipe.Spec.Volumes.LabelSelector != nil {
-		pvcSelector = *recipe.Spec.Volumes.LabelSelector
-	} else {
-		pvcSelector = metav1.LabelSelector{}
-	}
-
-	if len(recipe.Spec.Volumes.IncludedNamespaces) > 0 {
-		pvcNamespaceNames = recipe.Spec.Volumes.IncludedNamespaces
-	}
-
-	return pvcSelector, pvcNamespaceNames, err
 }
 
 //nolint: lll // disabling line length linter
@@ -437,6 +400,7 @@ type VRGInstance struct {
 	instance             *ramendrv1alpha1.VolumeReplicationGroup
 	savedInstanceStatus  ramendrv1alpha1.VolumeReplicationGroupStatus
 	ramenConfig          *ramendrv1alpha1.RamenConfig
+	recipeElements       recipeElements
 	volRepPVCs           []corev1.PersistentVolumeClaim
 	volSyncPVCs          []corev1.PersistentVolumeClaim
 	replClassList        *volrep.VolumeReplicationClassList
@@ -487,6 +451,13 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 		// No requeue, as there is no reconcile till user changes desired spec to a valid value
 		return v.invalid(err, "VolumeReplicationGroup mode is invalid", false)
 	}
+
+	recipeElements, err := recipeElementsGet(v.ctx, v.reconciler.Client, *v.instance, v.log)
+	if err != nil {
+		return v.invalid(err, "Failed to get recipe", true) // TODO watch recipes
+	}
+
+	v.recipeElements = recipeElements
 
 	if err := v.updatePVCList(); err != nil {
 		return v.invalid(err, "Failed to process list of PVCs to protect", true)
@@ -599,20 +570,13 @@ func (v *VRGInstance) clusterDataRestore(result *ctrl.Result) error {
 	return nil
 }
 
-func (v *VRGInstance) listPVCsByPVCSelector() (*corev1.PersistentVolumeClaimList, error) {
-	labelSelector, namespaceNames, err := GetPVCLabelSelector(v.ctx, v.reconciler.Client, *v.instance, v.log)
-	if err != nil {
-		return nil, err
-	}
-
-	return rmnutil.ListPVCsByPVCSelector(v.ctx, v.reconciler.Client, v.log, labelSelector,
-		namespaceNames,
-		v.instance.Spec.VolSync.Disabled)
-}
-
 // updatePVCList fetches and updates the PVC list to process for the current instance of VRG
 func (v *VRGInstance) updatePVCList() error {
-	pvcList, err := v.listPVCsByPVCSelector()
+	pvcList, err := rmnutil.ListPVCsByPVCSelector(v.ctx, v.reconciler.Client, v.log,
+		v.recipeElements.pvcSelector.LabelSelector,
+		v.recipeElements.pvcSelector.NamespaceNames,
+		v.instance.Spec.VolSync.Disabled,
+	)
 	if err != nil {
 		return err
 	}
