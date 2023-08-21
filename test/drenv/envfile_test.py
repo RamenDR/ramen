@@ -15,6 +15,11 @@ def valid_env(tmpdir):
     yaml = """
 name: test
 
+ramen:
+  hub: hub
+  clusters: [dr1, dr2]
+  topology: regional-dr
+
 templates:
   - name: dr-cluster
     memory: 6g
@@ -181,6 +186,14 @@ def test_name_prefix(valid_env):
     # env
 
     assert env["name"] == "prefix-test"
+
+    # ramen info
+
+    assert env["ramen"] == {
+        "hub": "prefix-hub",
+        "clusters": ["prefix-dr1", "prefix-dr2"],
+        "topology": "regional-dr",
+    }
 
     # profile dr1
 
