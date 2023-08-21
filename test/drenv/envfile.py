@@ -154,6 +154,9 @@ def _prefix_names(env, name_prefix):
 
     env["name"] = name_prefix + env["name"]
 
+    if "ramen" in env:
+        _prefix_ramen(env["ramen"], name_prefix)
+
     for profile in env["profiles"]:
         profile["name"] = name_prefix + profile["name"]
         for worker in profile["workers"]:
@@ -161,6 +164,13 @@ def _prefix_names(env, name_prefix):
 
     for worker in env["workers"]:
         _prefix_worker(worker, profile_names, name_prefix)
+
+
+def _prefix_ramen(info, name_prefix):
+    if info["hub"]:
+        info["hub"] = name_prefix + info["hub"]
+    for i, cluster in enumerate(info["clusters"]):
+        info["clusters"][i] = name_prefix + info["clusters"][i]
 
 
 def _prefix_worker(worker, profile_names, name_prefix):
