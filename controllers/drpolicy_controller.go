@@ -397,12 +397,12 @@ func (r *DRPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(
 			&source.Kind{Type: &corev1.Secret{}},
 			handler.EnqueueRequestsFromMapFunc(r.secretMapFunc),
-			builder.WithPredicates(createOrDeleteOrResourceVersionUpdatePredicate{}),
+			builder.WithPredicates(util.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
 		).
 		Watches(
 			&source.Kind{Type: &ramen.DRCluster{}},
 			handler.EnqueueRequestsFromMapFunc(r.drClusterMapFunc),
-			builder.WithPredicates(createOrDeleteOrResourceVersionUpdatePredicate{}),
+			builder.WithPredicates(util.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
 		).
 		Complete(r)
 }
