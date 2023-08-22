@@ -103,7 +103,14 @@ rules:
   verbs:
   - get
   - list
+  - update
   - watch
+- apiGroups:
+  - cluster.open-cluster-management.io
+  resources:
+  - placements/finalizers
+  verbs:
+  - update
 - apiGroups:
   - ""
   resources:
