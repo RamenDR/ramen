@@ -100,6 +100,12 @@ rules:
   - update
   - watch
 - apiGroups:
+  - cluster.open-cluster-management.io
+  resources:
+  - placements/finalizers
+  verbs:
+  - update
+- apiGroups:
   - policy.open-cluster-management.io
   resources:
   - placementbindings
