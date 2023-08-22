@@ -907,7 +907,7 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 			rmnutil.EventReasonPrimarySuccess, "Primary Success")
 	}
 
-	return v.updateVRGStatus(result, true)
+	return v.updateVRGConditionsAndStatus(result)
 }
 
 func (v *VRGInstance) reconcileAsPrimary() ctrl.Result {
@@ -949,7 +949,7 @@ func (v *VRGInstance) processAsSecondary() ctrl.Result {
 			rmnutil.EventReasonSecondarySuccess, "Secondary Success")
 	}
 
-	return v.updateVRGStatus(result, true)
+	return v.updateVRGConditionsAndStatus(result)
 }
 
 func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
@@ -1007,15 +1007,17 @@ func (v *VRGInstance) err(err error, msg string, requeue bool,
 	msg = fmt.Sprintf("%s: %v", msg, err)
 	conditionSet(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
-	return v.updateVRGStatus(ctrl.Result{Requeue: requeue}, false)
+	return v.updateVRGStatus(ctrl.Result{Requeue: requeue})
 }
 
-func (v *VRGInstance) updateVRGStatus(result ctrl.Result, updateConditions bool) ctrl.Result {
-	v.log.Info("Updating VRG status")
+func (v *VRGInstance) updateVRGConditionsAndStatus(result ctrl.Result) ctrl.Result {
+	v.updateVRGConditions()
 
-	if updateConditions {
-		v.updateVRGConditions()
-	}
+	return v.updateVRGStatus(result)
+}
+
+func (v *VRGInstance) updateVRGStatus(result ctrl.Result) ctrl.Result {
+	v.log.Info("Updating VRG status")
 
 	v.updateStatusState()
 
