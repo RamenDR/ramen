@@ -1734,7 +1734,7 @@ func (r *DRPlacementControlReconciler) createOrUpdatePlacementDecision(ctx conte
 		plDecision.ObjectMeta.OwnerReferences = []metav1.OwnerReference{*owner}
 
 		if err := r.Create(ctx, plDecision); err != nil {
-			return err
+			return fmt.Errorf("failed to create PlacementDecision %w", err)
 		}
 	}
 
