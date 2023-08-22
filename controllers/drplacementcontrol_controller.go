@@ -1634,32 +1634,67 @@ func (r *DRPlacementControlReconciler) getClusterDecisionFromPlacementRule(plRul
 	}
 }
 
+// getPlacementDecisionFromPlacement returns a PlacementDecision for the passed in Placement if found, and nil otherwise
+// - The PlacementDecision is determined by listing all PlacementDecisions in the Placement namespace filtered on the
+// Placement label as set by OCM
+// - Function also ensures there is only one decision for a Placement, as the needed by the Ramen orchestrators, and
+// if not returns an error
+func (r *DRPlacementControlReconciler) getPlacementDecisionFromPlacement(placement *clrapiv1beta1.Placement,
+) (*clrapiv1beta1.PlacementDecision, error) {
+	matchLabels := map[string]string{
+		clrapiv1beta1.PlacementLabel: placement.GetName(),
+	}
+
+	listOptions := []client.ListOption{
+		client.InNamespace(placement.GetNamespace()),
+		client.MatchingLabels(matchLabels),
+	}
+
+	plDecisions := &clrapiv1beta1.PlacementDecisionList{}
+	if err := r.List(context.TODO(), plDecisions, listOptions...); err != nil {
+		return nil, fmt.Errorf("failed to list PlacementDecisions (placement: %s)",
+			placement.GetNamespace()+"/"+placement.GetName())
+	}
+
+	if len(plDecisions.Items) == 0 {
+		return nil, nil
+	}
+
+	if len(plDecisions.Items) > 1 {
+		return nil, fmt.Errorf("multiple PlacementDecisions found for Placement (count: %d, placement: %s)",
+			len(plDecisions.Items), placement.GetNamespace()+"/"+placement.GetName())
+	}
+
+	plDecision := plDecisions.Items[0]
+	r.Log.Info("Found ClusterDecision", "ClsDedicision", plDecision.Status.Decisions)
+
+	if len(plDecision.Status.Decisions) > 1 {
+		return nil, fmt.Errorf("multiple placements found in PlacementDecision"+
+			" (count: %d, Placement: %s, PlacementDecision: %s)",
+			len(plDecision.Status.Decisions),
+			placement.GetNamespace()+"/"+placement.GetName(),
+			plDecision.GetName()+"/"+plDecision.GetNamespace())
+	}
+
+	return &plDecision, nil
+}
+
+// getClusterDecisionFromPlacement returns the cluster decision for a given Placement if found
 func (r *DRPlacementControlReconciler) getClusterDecisionFromPlacement(placement *clrapiv1beta1.Placement,
 ) *clrapiv1beta1.ClusterDecision {
-	plDecisionName := fmt.Sprintf(PlacementDecisionName, placement.GetName())
-	plDecision := &clrapiv1beta1.PlacementDecision{}
-
-	err := r.Get(context.TODO(), types.NamespacedName{Name: plDecisionName, Namespace: placement.Namespace}, plDecision)
+	plDecision, err := r.getPlacementDecisionFromPlacement(placement)
 	if err != nil {
-		if !errors.IsNotFound(err) {
-			r.Log.Info("Failed to retrieve PlacementDecision", "pdName", plDecisionName)
-		}
+		// TODO: err ignored by this caller
+		r.Log.Info("failed to get placement decision", "error", err)
 
 		return &clrapiv1beta1.ClusterDecision{}
 	}
 
-	r.Log.Info("Found ClusterDecision", "ClsDedicision", plDecision.Status.Decisions)
-
-	var clusterName, reason string
-	if len(plDecision.Status.Decisions) > 0 {
-		clusterName = plDecision.Status.Decisions[0].ClusterName
-		reason = plDecision.Status.Decisions[0].Reason
+	if plDecision == nil || len(plDecision.Status.Decisions) == 0 {
+		return &clrapiv1beta1.ClusterDecision{}
 	}
 
-	return &clrapiv1beta1.ClusterDecision{
-		ClusterName: clusterName,
-		Reason:      reason,
-	}
+	return &plDecision.Status.Decisions[0]
 }
 
 func (r *DRPlacementControlReconciler) updateUserPlacementStatusDecision(ctx context.Context,
@@ -1708,18 +1743,18 @@ func (r *DRPlacementControlReconciler) createOrUpdatePlacementRuleDecision(ctx c
 func (r *DRPlacementControlReconciler) createOrUpdatePlacementDecision(ctx context.Context,
 	placement *clrapiv1beta1.Placement, newCD *clrapiv1beta1.ClusterDecision,
 ) error {
-	plDecisionName := fmt.Sprintf(PlacementDecisionName, placement.GetName())
-	plDecision := &clrapiv1beta1.PlacementDecision{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      plDecisionName,
-			Namespace: placement.Namespace,
-		},
+	plDecision, err := r.getPlacementDecisionFromPlacement(placement)
+	if err != nil {
+		return err
 	}
 
-	key := client.ObjectKeyFromObject(plDecision)
-	if err := r.Get(ctx, key, plDecision); err != nil {
-		if !errors.IsNotFound(err) {
-			return err
+	if plDecision == nil {
+		plDecisionName := fmt.Sprintf(PlacementDecisionName, placement.GetName())
+		plDecision = &clrapiv1beta1.PlacementDecision{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      plDecisionName,
+				Namespace: placement.Namespace,
+			},
 		}
 
 		// Set the Placement object to be the owner.  When it is deleted, the PlacementDecision is deleted
