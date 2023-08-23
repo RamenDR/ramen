@@ -893,7 +893,7 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 
 	result := ctrl.Result{}
 	if err := v.clusterDataRestore(&result); err != nil {
-		return v.clusterDataError(err, "Failed to restore PVs", result.Requeue)
+		return v.clusterDataError(err, "Failed to restore PVs", result)
 	}
 
 	result = v.reconcileAsPrimary()
@@ -993,21 +993,23 @@ func (v *VRGInstance) invalid(err error, msg string, requeue bool) ctrl.Result {
 }
 
 func (v *VRGInstance) dataError(err error, msg string, requeue bool) ctrl.Result {
-	return v.err(err, msg, requeue, setVRGDataErrorCondition)
+	v.errorConditionLogAndSet(err, msg, setVRGDataErrorCondition)
+
+	return v.updateVRGStatus(ctrl.Result{Requeue: requeue})
 }
 
-func (v *VRGInstance) clusterDataError(err error, msg string, requeue bool) ctrl.Result {
-	return v.err(err, msg, requeue, setVRGClusterDataErrorCondition)
+func (v *VRGInstance) clusterDataError(err error, msg string, result ctrl.Result) ctrl.Result {
+	v.errorConditionLogAndSet(err, msg, setVRGClusterDataErrorCondition)
+
+	return v.updateVRGStatus(result)
 }
 
-func (v *VRGInstance) err(err error, msg string, requeue bool,
+func (v *VRGInstance) errorConditionLogAndSet(err error, msg string,
 	conditionSet func(*[]metav1.Condition, int64, string),
-) ctrl.Result {
+) {
 	v.log.Info(msg, "error", err)
 	msg = fmt.Sprintf("%s: %v", msg, err)
 	conditionSet(&v.instance.Status.Conditions, v.instance.Generation, msg)
-
-	return v.updateVRGStatus(ctrl.Result{Requeue: requeue})
 }
 
 func (v *VRGInstance) updateVRGConditionsAndStatus(result ctrl.Result) ctrl.Result {
