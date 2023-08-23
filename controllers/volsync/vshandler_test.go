@@ -1397,6 +1397,21 @@ var _ = Describe("VolSync_Handler", func() {
 					})
 				})
 
+				Context("When pvc to be restored has annotations", func() {
+					BeforeEach(func() {
+						rdSpec.ProtectedPVC.Annotations = map[string]string{
+							"include.me1": "value1",
+							"include.me2": "value2",
+						}
+					})
+
+					It("Should create PVC with annnotation", func() {
+						for k, v := range rdSpec.ProtectedPVC.Annotations {
+							Expect(pvc.Annotations).To(HaveKeyWithValue(k, v))
+						}
+					})
+				})
+
 				Context("When pvc to be restored has already been created", func() {
 					It("ensure PVC should not fail", func() {
 						// Previous ensurePVC will already have created the PVC (see parent context)
