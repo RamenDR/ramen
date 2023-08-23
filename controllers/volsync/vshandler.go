@@ -1058,6 +1058,7 @@ func (v *VSHandler) ensurePVCFromSnapshot(rdSpec ramendrv1alpha1.VolSyncReplicat
 		}
 
 		util.UpdateStringMap(&pvc.Labels, rdSpec.ProtectedPVC.Labels)
+		util.UpdateStringMap(&pvc.Annotations, rdSpec.ProtectedPVC.Annotations)
 
 		accessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce} // Default value
 		if len(rdSpec.ProtectedPVC.AccessModes) > 0 {
