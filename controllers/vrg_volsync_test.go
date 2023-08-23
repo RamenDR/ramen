@@ -108,12 +108,22 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 
 			Context("When matching PVCs are bound", func() {
 				var boundPvcs []corev1.PersistentVolumeClaim
+
+				pvcAnnotations := map[string]string{
+					"apps.open-cluster-management.io/hosting-subscription": "sub-name",
+					"apps.open-cluster-management.io/reconcile-option":     "merge",
+					"pv.kubernetes.io/bind-completed":                      "yes",
+					"volume.kubernetes.io/storage-provisioner":             "provisioner",
+				}
+
 				JustBeforeEach(func() {
-					boundPvcs = []corev1.PersistentVolumeClaim{} // Reset for each test
+					// Reset for each test
+					boundPvcs = []corev1.PersistentVolumeClaim{}
 
 					// Create some PVCs that are bound
 					for i := 0; i < 3; i++ {
-						newPvc := createPVCBoundToRunningPod(testCtx, testNamespace.GetName(), testMatchLabels)
+						newPvc := createPVCBoundToRunningPod(testCtx, testNamespace.GetName(),
+							testMatchLabels, pvcAnnotations)
 						boundPvcs = append(boundPvcs, *newPvc)
 					}
 
@@ -145,6 +155,20 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 					Expect(foundBoundPVC0).To(BeTrue())
 					Expect(foundBoundPVC1).To(BeTrue())
 					Expect(foundBoundPVC2).To(BeTrue())
+				})
+
+				It("Should report only OCM annotaions in Status", func() {
+					for _, vsPvc := range testVsrg.Status.ProtectedPVCs {
+						// OCM annontations are propagated.
+						Expect(vsPvc.Annotations).To(HaveKeyWithValue(
+							"apps.open-cluster-management.io/hosting-subscription", "sub-name"))
+						Expect(vsPvc.Annotations).To(HaveKeyWithValue(
+							"apps.open-cluster-management.io/reconcile-option", "merge"))
+
+						// Other annotations are droopped.
+						Expect(vsPvc.Annotations).NotTo(HaveKey("pv.kubernetes.io/bind-completed"))
+						Expect(vsPvc.Annotations).NotTo(HaveKey("volume.kubernetes.io/storage-provisioner"))
+					}
 				})
 
 				Context("When RSSpec entries are added to vrg spec", func() {
@@ -343,7 +367,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 
 //nolint:funlen
 func createPVCBoundToRunningPod(ctx context.Context, namespace string,
-	labels map[string]string,
+	labels map[string]string, annotations map[string]string,
 ) *corev1.PersistentVolumeClaim {
 	capacity := corev1.ResourceList{
 		corev1.ResourceStorage: resource.MustParse("1Gi"),
@@ -358,6 +382,7 @@ func createPVCBoundToRunningPod(ctx context.Context, namespace string,
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "testpvc-",
+			Annotations:  annotations,
 			Labels:       labels,
 			Namespace:    namespace,
 		},

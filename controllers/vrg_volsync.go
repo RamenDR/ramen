@@ -6,6 +6,7 @@ package controllers
 import (
 	"fmt"
 	"reflect"
+	"strings"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -112,6 +113,7 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		Name:               pvc.Name,
 		ProtectedByVolSync: true,
 		StorageClassName:   pvc.Spec.StorageClassName,
+		Annotations:        protectedPVCAnnotations(pvc),
 		Labels:             pvc.Labels,
 		AccessModes:        pvc.Spec.AccessModes,
 		Resources:          pvc.Spec.Resources,
@@ -366,4 +368,20 @@ func (v VRGInstance) isVolSyncProtectedPVCConditionReady(conType string) bool {
 	}
 
 	return ready
+}
+
+// protectedPVCAnnotations return the annotations that we must propagate to the
+// destination cluster:
+//   - apps.open-cluster-management.io/* - required to make the protected PVC
+//     owned by OCM when DR is disabled.
+func protectedPVCAnnotations(pvc corev1.PersistentVolumeClaim) map[string]string {
+	res := map[string]string{}
+
+	for key, value := range pvc.Annotations {
+		if strings.HasPrefix(key, "apps.open-cluster-management.io/") {
+			res[key] = value
+		}
+	}
+
+	return res
 }
