@@ -226,6 +226,10 @@ type ProtectedPVC struct {
 	//+optional
 	StorageClassName *string `json:"storageClassName,omitempty"`
 
+	// Annotations for the PVC
+	//+optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+
 	// Labels for the PVC
 	//+optional
 	Labels map[string]string `json:"labels,omitempty"`
