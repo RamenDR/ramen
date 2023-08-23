@@ -83,3 +83,17 @@ func AddFinalizer(obj client.Object, finalizer string) bool {
 
 	return !finalizerAdded
 }
+
+// UpdateStringMap copies all key/value pairs in src adding them to map
+// referenced by the dst pointer. When a key in src is already present in dst,
+// the value in dst will be overwritten by the value associated with the key in
+// src.  The dst map is created if needed.
+func UpdateStringMap(dst *map[string]string, src map[string]string) {
+	if *dst == nil && len(src) > 0 {
+		*dst = make(map[string]string, len(src))
+	}
+
+	for key, val := range src {
+		(*dst)[key] = val
+	}
+}
