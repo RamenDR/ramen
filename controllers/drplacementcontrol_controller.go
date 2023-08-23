@@ -672,8 +672,9 @@ func (r *DRPlacementControlReconciler) recordFailure(drpc *rmn.DRPlacementContro
 	}
 }
 
+// Set the metric LastSyncTime to either contain the LastGroupSyncTime if not nil or the DRPC creation time.
 func (r *DRPlacementControlReconciler) setLastSyncTimeMetric(syncMetrics *SyncMetrics,
-	t *metav1.Time, log logr.Logger,
+	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) {
 	if syncMetrics == nil {
 		return
@@ -681,13 +682,17 @@ func (r *DRPlacementControlReconciler) setLastSyncTimeMetric(syncMetrics *SyncMe
 
 	log.Info(fmt.Sprintf("Setting metric: (%s)", LastSyncTimestampSeconds))
 
-	if t == nil {
-		syncMetrics.LastSyncTime.Set(0)
+	// when there is no value in LastGroupSyncTime, we set the value to drpc creation time,
+	// so that the alerts can be fired indicating replication is not happening.
+	if drpc.Status.LastGroupSyncTime == nil {
+		drpcCreationTimeSeconds := drpc.ObjectMeta.CreationTimestamp.ProtoTime().Seconds
+		syncMetrics.LastSyncTime.Set(float64(drpcCreationTimeSeconds))
 
 		return
 	}
 
-	syncMetrics.LastSyncTime.Set(float64(t.ProtoTime().Seconds))
+	lastSyncTimeSeconds := drpc.Status.LastGroupSyncTime.ProtoTime().Seconds
+	syncMetrics.LastSyncTime.Set(float64(lastSyncTimeSeconds))
 }
 
 func (r *DRPlacementControlReconciler) setLastSyncDurationMetric(syncDurationMetrics *SyncDurationMetrics,
@@ -1516,6 +1521,7 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 	clusterDecision := r.getClusterDecision(userPlacement)
 	if clusterDecision != nil && clusterDecision.ClusterName != "" && vrgNamespace != "" {
 		r.updateResourceCondition(drpc, clusterDecision.ClusterName, vrgNamespace, drpcMetrics, log)
+		r.setLastSyncTimeMetric(&drpcMetrics.SyncMetrics, drpc, log)
 	}
 
 	for i, condition := range drpc.Status.Conditions {
@@ -1562,7 +1568,6 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 		drpc.Status.LastGroupSyncDuration = nil
 		drpc.Status.LastGroupSyncBytes = nil
 
-		r.setLastSyncTimeMetric(&drpcMetrics.SyncMetrics, nil, log)
 		r.setLastSyncDurationMetric(&drpcMetrics.SyncDurationMetrics, nil, log)
 		r.setLastSyncBytesMetric(&drpcMetrics.SyncDataBytesMetrics, nil, log)
 	} else {
@@ -1582,7 +1587,6 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 		drpc.Status.LastGroupSyncDuration = vrg.Status.LastGroupSyncDuration
 		drpc.Status.LastGroupSyncBytes = vrg.Status.LastGroupSyncBytes
 
-		r.setLastSyncTimeMetric(&drpcMetrics.SyncMetrics, vrg.Status.LastGroupSyncTime, log)
 		r.setLastSyncDurationMetric(&drpcMetrics.SyncDurationMetrics, vrg.Status.LastGroupSyncDuration, log)
 		r.setLastSyncBytesMetric(&drpcMetrics.SyncDataBytesMetrics, vrg.Status.LastGroupSyncBytes, log)
 	}
