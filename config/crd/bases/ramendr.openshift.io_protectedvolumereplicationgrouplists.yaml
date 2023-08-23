@@ -340,6 +340,11 @@ spec:
                                         items:
                                           type: string
                                         type: array
+                                      annotations:
+                                        additionalProperties:
+                                          type: string
+                                        description: Annotations for the PVC
+                                        type: object
                                       conditions:
                                         description: Conditions for this protected
                                           pvc
@@ -753,6 +758,11 @@ spec:
                                 items:
                                   type: string
                                 type: array
+                              annotations:
+                                additionalProperties:
+                                  type: string
+                                description: Annotations for the PVC
+                                type: object
                               conditions:
                                 description: Conditions for this protected pvc
                                 items:
