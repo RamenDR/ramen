@@ -51,7 +51,12 @@ const (
 	// This is needed in order to sync up the DRPC status and the VRG status.
 	StatusCheckDelay = time.Minute * 10
 
-	PlacementDecisionName = "%s-decision-1"
+	// PlacementDecisionName format, prefix is the Placement name, and suffix is a PlacementDecision index
+	PlacementDecisionName = "%s-decision-%d"
+
+	// Maximum retries to create PlacementDecisionName with an increasing index in case of conflicts
+	// with existing PlacementDecision resources
+	MaxPlacementDecisionConflictCount = 5
 )
 
 var InitialWaitTimeForDRPCPlacementRule = errorswrapper.New("Waiting for DRPC Placement to produces placement decision")
@@ -1740,6 +1745,8 @@ func (r *DRPlacementControlReconciler) createOrUpdatePlacementRuleDecision(ctx c
 	return nil
 }
 
+// createOrUpdatePlacementDecision updates the PlacementDecision status for the given Placement with the passed
+// in new decision. If an existing PlacementDecision is not found, ad new Placement decision is created.
 func (r *DRPlacementControlReconciler) createOrUpdatePlacementDecision(ctx context.Context,
 	placement *clrapiv1beta1.Placement, newCD *clrapiv1beta1.ClusterDecision,
 ) error {
@@ -1749,28 +1756,8 @@ func (r *DRPlacementControlReconciler) createOrUpdatePlacementDecision(ctx conte
 	}
 
 	if plDecision == nil {
-		plDecisionName := fmt.Sprintf(PlacementDecisionName, placement.GetName())
-		plDecision = &clrapiv1beta1.PlacementDecision{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      plDecisionName,
-				Namespace: placement.Namespace,
-			},
-		}
-
-		// Set the Placement object to be the owner.  When it is deleted, the PlacementDecision is deleted
-		if err := ctrl.SetControllerReference(placement, plDecision, r.Client.Scheme()); err != nil {
-			return fmt.Errorf("failed to set controller reference %w", err)
-		}
-
-		plDecision.ObjectMeta.Labels = map[string]string{
-			clrapiv1beta1.PlacementLabel: placement.GetName(),
-		}
-
-		owner := metav1.NewControllerRef(placement, clrapiv1beta1.GroupVersion.WithKind("Placement"))
-		plDecision.ObjectMeta.OwnerReferences = []metav1.OwnerReference{*owner}
-
-		if err := r.Create(ctx, plDecision); err != nil {
-			return fmt.Errorf("failed to create PlacementDecision %w", err)
+		if plDecision, err = r.createPlacementDecision(ctx, placement); err != nil {
+			return err
 		}
 	}
 
@@ -1796,6 +1783,53 @@ func (r *DRPlacementControlReconciler) createOrUpdatePlacementDecision(ctx conte
 	r.Log.Info("Created/Updated PlacementDecision", "PlacementDecision", plDecision)
 
 	return nil
+}
+
+// createPlacementDecision creates a new PlacementDecision for the given Placement. The PlacementDecision is
+// named in a predetermined format, and is searchable using the Placement name label against the PlacementDecision.
+// On conflicts with existing PlacementDecisions, the function retries, with limits, with different names to generate
+// a new PlacementDecision.
+func (r *DRPlacementControlReconciler) createPlacementDecision(ctx context.Context,
+	placement *clrapiv1beta1.Placement,
+) (*clrapiv1beta1.PlacementDecision, error) {
+	index := 1
+
+	plDecision := &clrapiv1beta1.PlacementDecision{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf(PlacementDecisionName, placement.GetName(), index),
+			Namespace: placement.Namespace,
+		},
+	}
+
+	// Set the Placement object to be the owner.  When it is deleted, the PlacementDecision is deleted
+	err := ctrl.SetControllerReference(placement, plDecision, r.Client.Scheme())
+	if err != nil {
+		return nil, fmt.Errorf("failed to set controller reference %w", err)
+	}
+
+	plDecision.ObjectMeta.Labels = map[string]string{
+		clrapiv1beta1.PlacementLabel: placement.GetName(),
+	}
+
+	owner := metav1.NewControllerRef(placement, clrapiv1beta1.GroupVersion.WithKind("Placement"))
+	plDecision.ObjectMeta.OwnerReferences = []metav1.OwnerReference{*owner}
+
+	for index <= MaxPlacementDecisionConflictCount {
+		if err = r.Create(ctx, plDecision); err == nil {
+			return plDecision, nil
+		}
+
+		if !errors.IsAlreadyExists(err) {
+			return nil, err
+		}
+
+		index++
+
+		plDecision.ObjectMeta.Name = fmt.Sprintf(PlacementDecisionName, placement.GetName(), index)
+	}
+
+	return nil, fmt.Errorf("multiple PlacementDecision conflicts found, unable to create a new"+
+		" PlacementDecision for Placement %s", placement.GetNamespace()+"/"+placement.GetName())
 }
 
 func getApplicationDestinationNamespace(
