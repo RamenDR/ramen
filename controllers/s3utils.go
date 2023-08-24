@@ -8,6 +8,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"reflect"
@@ -223,8 +224,9 @@ func (s *s3ObjectStore) CreateBucket(bucket string) (err error) {
 
 	cbInput := &s3.CreateBucketInput{Bucket: &bucket}
 	if err = cbInput.Validate(); err != nil {
-		return fmt.Errorf("create bucket input validation failed for %s, err %w",
-			bucket, err)
+		errMsgPrefix := fmt.Errorf("create bucket input validation failed for %s", bucket)
+
+		return processAwsError(errMsgPrefix, err)
 	}
 
 	_, err = s.client.CreateBucket(cbInput)
@@ -235,8 +237,8 @@ func (s *s3ObjectStore) CreateBucket(bucket string) (err error) {
 			case s3.ErrCodeBucketAlreadyExists:
 			case s3.ErrCodeBucketAlreadyOwnedByYou:
 			default:
-				return fmt.Errorf("failed to create bucket %s, %w",
-					bucket, err)
+				return fmt.Errorf("failed to create bucket %s, %s: %s",
+					bucket, aerr.Code(), aerr.Message())
 			}
 		}
 	}
@@ -264,14 +266,16 @@ func (s *s3ObjectStore) DeleteBucket(bucket string) (
 
 	dbInput := &s3.DeleteBucketInput{Bucket: &bucket}
 	if err = dbInput.Validate(); err != nil {
-		return fmt.Errorf("delete bucket input validation failed for %s, err %w",
-			bucket, err)
+		errMsgPrefix := fmt.Errorf("delete bucket input validation failed for %s", bucket)
+
+		return processAwsError(errMsgPrefix, err)
 	}
 
 	_, err = s.client.DeleteBucket(dbInput)
 	if err != nil && !isAwsErrCodeNoSuchBucket(err) {
-		return fmt.Errorf("failed to delete bucket %s, %w",
-			bucket, err)
+		errMsgPrefix := fmt.Errorf("failed to delete bucket %s", bucket)
+
+		return processAwsError(errMsgPrefix, err)
 	}
 
 	return nil
@@ -300,9 +304,11 @@ func (s *s3ObjectStore) PurgeBucket(bucket string) (
 			return nil // Not an error
 		}
 
-		return fmt.Errorf("unable to ListKeys "+
-			"from endpoint %s bucket %s, %w",
-			s.s3Endpoint, bucket, err)
+		errMsgPrefix := fmt.Errorf("unable to ListKeys "+
+			"from endpoint %s bucket %s",
+			s.s3Endpoint, bucket)
+
+		return processAwsError(errMsgPrefix, err)
 	}
 
 	for _, key := range keys {
@@ -381,6 +387,15 @@ func DeleteTypedObject(s ObjectStorer, keyPrefix, keySuffix string, object inter
 	return s.DeleteObject(typedKey(keyPrefix, keySuffix, reflect.TypeOf(object)))
 }
 
+func processAwsError(errMsgPrefix, err error) error {
+	var awsErr awserr.Error
+	if errors.As(err, &awsErr) {
+		return fmt.Errorf("%w: code: %s, message: %s", errMsgPrefix, awsErr.Code(), awsErr.Message())
+	}
+
+	return errMsgPrefix
+}
+
 // UploadObject uploads the given object to the bucket with the given key.
 //   - OK to call UploadObject() concurrently from multiple goroutines safely.
 //   - Upload may fail due to many reasons: RequestError (connection error),
@@ -414,8 +429,9 @@ func (s *s3ObjectStore) UploadObject(key string,
 		Key:    &key,
 		Body:   encodedUploadContent,
 	}); err != nil {
-		return fmt.Errorf("failed to upload data of %s:%s, %w",
-			bucket, key, err)
+		errMsgPrefix := fmt.Errorf("failed to upload data of %s:%s", bucket, key)
+
+		return processAwsError(errMsgPrefix, err)
 	}
 
 	return nil
@@ -506,9 +522,9 @@ func (s *s3ObjectStore) ListKeys(keyPrefix string) (
 			ContinuationToken: nextContinuationToken,
 		})
 		if err != nil {
-			return nil,
-				fmt.Errorf("failed to list objects in bucket %s:%s, %w",
-					bucket, keyPrefix, err)
+			errMsgPrefix := fmt.Errorf("failed to list objects in bucket")
+
+			return nil, processAwsError(errMsgPrefix, err)
 		}
 
 		for _, entry := range result.Contents {
@@ -552,8 +568,9 @@ func (s *s3ObjectStore) DownloadObject(key string,
 		Bucket: &bucket,
 		Key:    &key,
 	}); err != nil {
-		return fmt.Errorf("failed to download data of %s:%s, %w",
-			bucket, key, err)
+		errMsgPrefix := fmt.Errorf("failed to download data of %s:%s", bucket, key)
+
+		return processAwsError(errMsgPrefix, err)
 	}
 
 	gzReader, err := gzip.NewReader(bytes.NewReader(writerAt.Bytes()))
@@ -594,9 +611,11 @@ func (s *s3ObjectStore) DeleteObjectsWithKeyPrefix(keyPrefix string) (
 
 	keys, err := s.ListKeys(keyPrefix)
 	if err != nil {
-		return fmt.Errorf("unable to ListKeys in DeleteObjects "+
-			"from endpoint %s bucket %s keyPrefix %s, %w",
-			s.s3Endpoint, bucket, keyPrefix, err)
+		errMsgPrefix := fmt.Errorf("unable to ListKeys in DeleteObjects "+
+			"from endpoint %s bucket %s keyPrefix %s",
+			s.s3Endpoint, bucket, keyPrefix)
+
+		return processAwsError(errMsgPrefix, err)
 	}
 
 	if err = s.DeleteObjects(keys...); err != nil {
