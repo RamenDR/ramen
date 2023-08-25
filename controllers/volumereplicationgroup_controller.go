@@ -1008,8 +1008,9 @@ func (v *VRGInstance) errorConditionLogAndSet(err error, msg string,
 	conditionSet func(*[]metav1.Condition, int64, string),
 ) {
 	v.log.Info(msg, "error", err)
-	msg = fmt.Sprintf("%s: %v", msg, err)
-	conditionSet(&v.instance.Status.Conditions, v.instance.Generation, msg)
+	conditionSet(&v.instance.Status.Conditions, v.instance.Generation,
+		fmt.Sprintf("%s: %v", msg, err),
+	)
 }
 
 func (v *VRGInstance) updateVRGConditionsAndStatus(result ctrl.Result) ctrl.Result {
