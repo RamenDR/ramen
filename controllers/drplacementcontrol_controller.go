@@ -586,7 +586,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 //
-//nolint:cyclop,funlen
+//nolint:cyclop,funlen,gocognit
 func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.Log.WithValues("DRPC", req.NamespacedName, "rid", uuid.New())
 
@@ -606,6 +606,20 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, errorswrapper.Wrap(err, "failed to get DRPC object")
 	}
 
+	drPolicy, err := r.getDRPolicy(ctx, drpc, logger)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get DRPolicy %w", err)
+	}
+
+	if !drPolicy.ObjectMeta.DeletionTimestamp.IsZero() {
+		// If drpolicy is deleted then return
+		// error to fail drpc reconciliation
+		return ctrl.Result{}, fmt.Errorf("drPolicy '%s' referred by the DRPC is deleted, DRPC reconciliation would fail",
+			drpc.Spec.DRPolicyRef.Name)
+	}
+
+	drpcMetrics := r.createDRPCMetrics(drPolicy, drpc)
+
 	// Save a copy of the instance status to be used for the VRG status update comparison
 	drpc.Status.DeepCopyInto(&r.savedInstanceStatus)
 
@@ -613,7 +627,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	placementObj, err := r.ownPlacementOrPlacementRule(ctx, drpc, logger)
 	if err != nil && !(errors.IsNotFound(err) && !drpc.GetDeletionTimestamp().IsZero()) {
-		r.recordFailure(drpc, placementObj, "Error", err.Error(), nil, logger)
+		r.recordFailure(drpc, placementObj, "Error", err.Error(), drpcMetrics, logger)
 
 		return ctrl.Result{}, err
 	}
@@ -621,7 +635,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if isBeingDeleted(drpc, placementObj) {
 		// DPRC depends on User PlacementRule/Placement. If DRPC or/and the User PlacementRule is deleted,
 		// then the DRPC should be deleted as well. The least we should do here is to clean up DPRC.
-		err := r.processDeletion(ctx, drpc, placementObj, logger)
+		err := r.processDeletion(ctx, drPolicy, drpc, placementObj, logger)
 		if err != nil {
 			// update drpc progression only on err
 			logger.Info(fmt.Sprintf("Error in deleting DRPC: (%v)", err))
@@ -632,9 +646,9 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, nil
 	}
 
-	d, err := r.createDRPCInstance(ctx, drpc, placementObj, logger)
+	d, err := r.createDRPCInstance(ctx, drPolicy, drpc, placementObj, drpcMetrics, logger)
 	if err != nil && !errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
-		err2 := r.updateDRPCStatus(drpc, placementObj, nil, logger)
+		err2 := r.updateDRPCStatus(drpc, placementObj, drpcMetrics, logger)
 
 		return ctrl.Result{}, fmt.Errorf("failed to create DRPC instance (%w) and (%v)", err, err2)
 	}
@@ -643,7 +657,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		const initialWaitTime = 5
 
 		r.recordFailure(drpc, placementObj, "Waiting",
-			fmt.Sprintf("%v - wait time: %v", InitialWaitTimeForDRPCPlacementRule, initialWaitTime), nil, logger)
+			fmt.Sprintf("%v - wait time: %v", InitialWaitTimeForDRPCPlacementRule, initialWaitTime), drpcMetrics, logger)
 
 		return ctrl.Result{RequeueAfter: time.Second * initialWaitTime}, nil
 	}
@@ -732,25 +746,15 @@ func (r *DRPlacementControlReconciler) setLastSyncBytesMetric(syncDataBytesMetri
 	syncDataBytesMetrics.LastSyncDataBytes.Set(float64(*b))
 }
 
-//nolint:funlen,cyclop
+//nolint:funlen
 func (r *DRPlacementControlReconciler) createDRPCInstance(
 	ctx context.Context,
+	drPolicy *rmn.DRPolicy,
 	drpc *rmn.DRPlacementControl,
 	placementObj client.Object,
+	drpcMetrics *DRPCMetrics,
 	log logr.Logger,
 ) (*DRPCInstance, error) {
-	drPolicy, err := r.getDRPolicy(ctx, drpc, log)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get DRPolicy %w", err)
-	}
-
-	if !drPolicy.ObjectMeta.DeletionTimestamp.IsZero() {
-		// If drpolicy is deleted then return
-		// error to fail drpc reconciliation
-		return nil, fmt.Errorf("drPolicy '%s' referred by the DRPC is deleted, DRPC reconciliation would fail",
-			drpc.Spec.DRPolicyRef.Name)
-	}
-
 	if err := r.addLabelsAndFinalizers(ctx, drpc, placementObj, log); err != nil {
 		return nil, err
 	}
@@ -784,8 +788,6 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 	if err != nil {
 		return nil, fmt.Errorf("configmap get: %w", err)
 	}
-
-	drpcMetrics := r.createDRPCMetrics(drPolicy, drpc)
 
 	d := &DRPCInstance{
 		reconciler:      r,
@@ -951,7 +953,7 @@ func getDRClusters(ctx context.Context, client client.Client, drPolicy *rmn.DRPo
 }
 
 func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
-	drpc *rmn.DRPlacementControl, placementObj client.Object, log logr.Logger,
+	drPolicy *rmn.DRPolicy, drpc *rmn.DRPlacementControl, placementObj client.Object, log logr.Logger,
 ) error {
 	log.Info("Processing DRPC deletion")
 
@@ -962,7 +964,7 @@ func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 	// Run finalization logic for dprc.
 	// If the finalization logic fails, don't remove the finalizer so
 	// that we can retry during the next reconciliation.
-	if err := r.finalizeDRPC(ctx, drpc, placementObj, log); err != nil {
+	if err := r.finalizeDRPC(ctx, drPolicy, drpc, placementObj, log); err != nil {
 		return err
 	}
 
@@ -988,9 +990,9 @@ func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 	return nil
 }
 
-//nolint:funlen,cyclop
-func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *rmn.DRPlacementControl,
-	placementObj client.Object, log logr.Logger,
+//nolint:funlen
+func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drPolicy *rmn.DRPolicy,
+	drpc *rmn.DRPlacementControl, placementObj client.Object, log logr.Logger,
 ) error {
 	log.Info("Finalizing DRPC")
 
@@ -1021,11 +1023,6 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 		Log:             r.Log,
 		InstName:        drpc.Name,
 		TargetNamespace: vrgNamespace,
-	}
-
-	drPolicy, err := r.getDRPolicy(ctx, drpc, log)
-	if err != nil {
-		return fmt.Errorf("failed to get DRPolicy while finalizing DRPC (%w)", err)
 	}
 
 	// delete manifestworks (VRGs)
