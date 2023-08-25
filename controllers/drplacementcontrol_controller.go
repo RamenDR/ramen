@@ -732,7 +732,7 @@ func (r *DRPlacementControlReconciler) setLastSyncBytesMetric(syncDataBytesMetri
 	syncDataBytesMetrics.LastSyncDataBytes.Set(float64(*b))
 }
 
-//nolint:funlen
+//nolint:funlen,cyclop
 func (r *DRPlacementControlReconciler) createDRPCInstance(
 	ctx context.Context,
 	drpc *rmn.DRPlacementControl,
@@ -742,6 +742,13 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 	drPolicy, err := r.getDRPolicy(ctx, drpc, log)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get DRPolicy %w", err)
+	}
+
+	if !drPolicy.ObjectMeta.DeletionTimestamp.IsZero() {
+		// If drpolicy is deleted then return
+		// error to fail drpc reconciliation
+		return nil, fmt.Errorf("drPolicy '%s' referred by the DRPC is deleted, DRPC reconciliation would fail",
+			drpc.Spec.DRPolicyRef.Name)
 	}
 
 	if err := r.addLabelsAndFinalizers(ctx, drpc, placementObj, log); err != nil {
@@ -892,14 +899,6 @@ func (r *DRPlacementControlReconciler) getDRPolicy(ctx context.Context,
 		log.Error(err, "failed to get DRPolicy")
 
 		return nil, fmt.Errorf("%w", err)
-	}
-
-	if !drPolicy.ObjectMeta.DeletionTimestamp.IsZero() &&
-		!controllerutil.ContainsFinalizer(drpc, DRPCFinalizer) {
-		// If drpolicy is deleted and drpc finalizer is not present then return
-		// error to fail drpc reconciliation
-		return nil, fmt.Errorf("drPolicy '%s/%s' referred by the DRPC is deleted, DRPC reconciliation would fail",
-			name, namespace)
 	}
 
 	return drPolicy, nil
