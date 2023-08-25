@@ -112,7 +112,7 @@ func newManager() (ctrl.Manager, *ramendrv1alpha1.RamenConfig, error) {
 
 func setupReconcilers(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig) {
 	if controllers.ControllerType == ramendrv1alpha1.DRHubType {
-		setupReconcilersHub(mgr)
+		setupReconcilersHub(mgr, ramenConfig)
 
 		return
 	}
@@ -139,19 +139,22 @@ func setupReconcilers(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig
 		Log:            ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
 		ObjStoreGetter: controllers.S3ObjectStoreGetter(),
 		Scheme:         mgr.GetScheme(),
-	}).SetupWithManager(mgr, ramenConfig); err != nil {
+		RmnConfig:      ramenConfig,
+	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VolumeReplicationGroup")
 		os.Exit(1)
 	}
 }
 
-func setupReconcilersHub(mgr ctrl.Manager) {
+//nolint:funlen
+func setupReconcilersHub(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig) {
 	if err := (&controllers.DRPolicyReconciler{
 		Client:            mgr.GetClient(),
 		APIReader:         mgr.GetAPIReader(),
 		Log:               ctrl.Log.WithName("controllers").WithName("DRPolicy"),
 		Scheme:            mgr.GetScheme(),
 		ObjectStoreGetter: controllers.S3ObjectStoreGetter(),
+		RmnConfig:         ramenConfig,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DRPolicy")
 		os.Exit(1)
@@ -167,6 +170,7 @@ func setupReconcilersHub(mgr ctrl.Manager) {
 			APIReader: mgr.GetAPIReader(),
 		},
 		ObjectStoreGetter: controllers.S3ObjectStoreGetter(),
+		RmnConfig:         ramenConfig,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DRCluster")
 		os.Exit(1)
@@ -180,8 +184,9 @@ func setupReconcilersHub(mgr ctrl.Manager) {
 			Client:    mgr.GetClient(),
 			APIReader: mgr.GetAPIReader(),
 		},
-		Scheme:   mgr.GetScheme(),
-		Callback: func(string, string) {},
+		Scheme:    mgr.GetScheme(),
+		Callback:  func(string, string) {},
+		RmnConfig: ramenConfig,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DRPlacementControl")
 		os.Exit(1)

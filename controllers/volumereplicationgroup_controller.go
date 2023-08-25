@@ -50,11 +50,12 @@ type VolumeReplicationGroupReconciler struct {
 	Scheme         *runtime.Scheme
 	eventRecorder  *rmnutil.EventReporter
 	kubeObjects    kubeobjects.RequestsManager
+	RmnConfig      *ramendrv1alpha1.RamenConfig
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *VolumeReplicationGroupReconciler) SetupWithManager(
-	mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig,
+	mgr ctrl.Manager,
 ) error {
 	r.eventRecorder = rmnutil.NewEventReporter(mgr.GetEventRecorderFor("controller_VolumeReplicationGroup"))
 
@@ -69,7 +70,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 
 	builder := ctrl.NewControllerManagedBy(mgr).
 		WithOptions(ctrlcontroller.Options{
-			MaxConcurrentReconciles: getMaxConcurrentReconciles(r.Log),
+			MaxConcurrentReconciles: getMaxConcurrentReconciles(r.RmnConfig),
 			RateLimiter:             rateLimiter,
 		}).
 		For(&ramendrv1alpha1.VolumeReplicationGroup{},
@@ -89,10 +90,13 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 			handler.EnqueueRequestsFromMapFunc(r.rdMapFunc),
 			builder.WithPredicates(replicationDestinationPredicateFunc()),
 		).
-		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(r.configMapFun)).
+		Watches(&source.Kind{Type: &corev1.ConfigMap{}},
+			handler.EnqueueRequestsFromMapFunc(r.configMapFun),
+			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
+		).
 		Owns(&volrep.VolumeReplication{})
 
-	if !ramenConfig.VolSync.Disabled {
+	if !r.RmnConfig.VolSync.Disabled {
 		builder.Owns(&volsyncv1alpha1.ReplicationDestination{}).
 			Owns(&volsyncv1alpha1.ReplicationSource{})
 	} else {
@@ -100,7 +104,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 	}
 
 	r.kubeObjects = velero.RequestsManager{}
-	if !ramenConfig.KubeObjectProtection.Disabled {
+	if !r.RmnConfig.KubeObjectProtection.Disabled {
 		r.Log.Info("Kube object protection enabled; watch kube objects requests")
 		kubeObjectsRequestsWatch(builder, r.kubeObjects)
 	} else {
@@ -131,7 +135,12 @@ func (r *VolumeReplicationGroupReconciler) configMapFun(configmap client.Object)
 		return []reconcile.Request{}
 	}
 
-	log.Info("Update in ramen-dr-cluster-operator-config configuration map")
+	ramenConf, err := RamenConfigUpdate(r.Log, configmap)
+	if err != nil {
+		return []reconcile.Request{}
+	}
+
+	r.RmnConfig = ramenConf
 
 	req := []reconcile.Request{}
 
@@ -439,6 +448,7 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 		ctx:               ctx,
 		log:               log,
 		instance:          &ramendrv1alpha1.VolumeReplicationGroup{},
+		ramenConfig:       r.RmnConfig,
 		volRepPVCs:        []corev1.PersistentVolumeClaim{},
 		volSyncPVCs:       []corev1.PersistentVolumeClaim{},
 		replClassList:     &volrep.VolumeReplicationClassList{},
@@ -461,12 +471,6 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 			req.NamespacedName, err)
 	}
 
-	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get Ramen configmap: %w", err)
-	}
-
-	v.ramenConfig = ramenConfig
 	v.volSyncHandler = volsync.NewVSHandler(ctx, r.Client, log, v.instance,
 		v.instance.Spec.Async, cephFSCSIDriverNameOrDefault(v.ramenConfig),
 		volSyncDestinationCopyMethodOrDefault(v.ramenConfig))
