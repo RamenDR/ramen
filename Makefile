@@ -133,7 +133,7 @@ ifeq (,$(GOLANGCI_INSTALLED_VER))
 	$(info Installing golangci-lint (version: $(GOLANGCI_VERSION)) into testbin)
 	curl -sSfL $(GOLANGCI_URL) | sh -s -- -b testbin v$(GOLANGCI_VERSION)
 else ifneq ($(GOLANGCI_VERSION),$(GOLANGCI_INSTALLED_VER))
-	$(error Incorrect version ($(GOLANGCI_INSTALLED_VER)) for golanci-lint found, expecting $(GOLANGCI_VERSION))
+	$(error Incorrect version ($(GOLANGCI_INSTALLED_VER)) for golangci-lint found, expecting $(GOLANGCI_VERSION))
 endif
 
 .PHONY: lint
