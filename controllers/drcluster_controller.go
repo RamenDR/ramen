@@ -365,6 +365,7 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 	err = u.clusterMModeHandler()
 	if err != nil {
 		// On error proceed with S3 validation, as maintenance mode handling is independent of S3
+		reconcileError = fmt.Errorf("%w %w", reconcileError, err)
 		u.log.Info("Error during processing maintenance modes", "error", err)
 	}
 
