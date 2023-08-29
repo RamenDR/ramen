@@ -329,7 +329,7 @@ func (d *DRPCInstance) ResetVolSyncRDOnPrimary(clusterName string) error {
 		return nil
 	}
 
-	mw, err := d.mwu.FindManifestWork(rmnutil.MWTypeVRG, clusterName)
+	mw, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, clusterName)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil
