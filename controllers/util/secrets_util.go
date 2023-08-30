@@ -7,6 +7,9 @@ package util
 
 import (
 	"context"
+	//nolint:gosec
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -57,6 +60,55 @@ func GeneratePolicyResourceNames(
 		fmt.Sprintf(secretResourceNameFormat, secretPlBindingBaseName, secret),
 		fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, secret),
 		fmt.Sprintf(secretResourceNameFormat, secretConfigPolicyBaseName, secret)
+}
+
+// GeneratePolicyName generates a policy name by combining the word "vs-secret-" with the name.
+// However, if the length of the passed-in name is less than or equal to the 'maxLen',
+// the passed-in name is returned as-is.
+//
+// If the passed-in name and the namespace length exceeds 'maxLen', a unique hash of the
+// passed-in name is computed using MD5 prepended to it "vs-secret-". If this combined name
+// still exceeds 'maxLen', it is trimmed to fit within the limit by removing characters from
+// the end of the hash up to maxLen.
+//
+// Parameters:
+//
+//	potentialPolicyName: The preferred name of the policy.
+//	namespace: The namespace associated with the policy.
+//	maxLen: The maximum length of the generated name
+//
+// Returns:
+//
+//	"vs-secret" + the generated name, which is either the passed-in name or a modified version that fits
+//	  within the allowed length.
+//
+//nolint:gosec
+func GeneratePolicyName(name string, maxLen int) string {
+	const prefix = "vs-secret-"
+	// Use 3 hex characters as a buffer.
+	// From 000 to FFF possible workloads -- disregarding collisions
+	const buffer = 3
+
+	// maxLen can't be less than length of "vs-secret"
+	if maxLen <= (len(prefix) + buffer) {
+		return name
+	}
+
+	// If the name is already less than the max, then return the original name
+	if len(name) <= maxLen {
+		return name
+	}
+
+	// Otherwise, generate a name up to 32 characters
+	hash := md5.Sum([]byte(name))
+
+	// prefix it and trim if necessary
+	policyName := prefix + hex.EncodeToString(hash[:])
+	if len(policyName) > maxLen {
+		return policyName[:maxLen]
+	}
+
+	return policyName
 }
 
 func newPlacementRuleBinding(

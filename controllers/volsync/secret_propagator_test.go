@@ -17,18 +17,21 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/ramendr/ramen/controllers/util"
 	"github.com/ramendr/ramen/controllers/volsync"
 	plrulev1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	cfgpolicyv1 "open-cluster-management.io/config-policy-controller/api/v1"
 	policyv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 )
 
-var _ = Describe("Secret propagator", func() {
+var _ = Describe("Secret_propagator", func() {
 	genericCodecs := serializer.NewCodecFactory(scheme.Scheme)
 	genericCodec := genericCodecs.UniversalDeserializer()
 
 	var testNamespace *corev1.Namespace
+	var testLongNamespaceName *corev1.Namespace
 	var owner metav1.Object
+	var ownerWithLongNameNamespace metav1.Object
 
 	BeforeEach(func() {
 		// Create namespace for test
@@ -39,6 +42,15 @@ var _ = Describe("Secret propagator", func() {
 		}
 		Expect(k8sClient.Create(ctx, testNamespace)).To(Succeed())
 		Expect(testNamespace.GetName()).NotTo(BeEmpty())
+
+		// Create namespace for testing long namespace name
+		testLongNamespaceName = &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: "dummy-cm-namespace-with-len-of-45-characters",
+			},
+		}
+		Expect(k8sClient.Create(ctx, testLongNamespaceName)).To(Succeed())
+		Expect(testLongNamespaceName.GetName()).NotTo(BeEmpty())
 
 		// Create dummy resource to be the "owner" of the generated secret
 		// Using a configmap for now - in reality this owner resource will
@@ -52,11 +64,25 @@ var _ = Describe("Secret propagator", func() {
 		Expect(k8sClient.Create(ctx, ownerCm)).To(Succeed())
 		Expect(ownerCm.GetName()).NotTo(BeEmpty())
 		owner = ownerCm
+
+		// Create a new owner for testing long name/namespace
+		newOwnerCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: "dummy-cm-name-with-length-of-43-characters-",
+				Namespace:    testLongNamespaceName.GetName(),
+			},
+		}
+		Expect(k8sClient.Create(ctx, newOwnerCM)).To(Succeed())
+		Expect(newOwnerCM.GetName()).NotTo(BeEmpty())
+		ownerWithLongNameNamespace = newOwnerCM
 	})
 
 	AfterEach(func() {
 		// All resources are namespaced, so this should clean it all up
 		Expect(k8sClient.Delete(ctx, testNamespace)).To(Succeed())
+
+		// All resources are namespaced, so this should clean it all up
+		Expect(k8sClient.Delete(ctx, testLongNamespaceName)).To(Succeed())
 	})
 
 	Describe("Secret propagation from hub", func() {
@@ -190,9 +216,40 @@ var _ = Describe("Secret propagator", func() {
 					Expect(plBindingSubject.Name).To(Equal(createdPolicy.GetName()))
 				})
 
+				Context("When Policy name combined with namespace is longer than 62 characters", func() {
+					It("Should regenerate and trim the Policy name", func() {
+						destClustersUpdated := []string{"cluster-2", "cluster-3"}
+						policyName := ownerWithLongNameNamespace.GetName() + "-vs-secret"
+
+						generatedPolicyName := util.GeneratePolicyName(policyName,
+							62-len(ownerWithLongNameNamespace.GetNamespace()))
+
+						Eventually(func() bool {
+							// Run in eventually loop to make sure the cache loads the newly created resources
+							err := volsync.PropagateSecretToClusters(ctx, k8sClient, testSecret, ownerWithLongNameNamespace,
+								destClustersUpdated, destSecName, destSecNamespace, logger)
+							if err != nil {
+								return false
+							}
+
+							// Find the new policy, pl rule and pl binding
+							createdPolicy = &policyv1.Policy{}
+							err = k8sClient.Get(ctx, types.NamespacedName{
+								Name:      generatedPolicyName,
+								Namespace: ownerWithLongNameNamespace.GetNamespace(),
+							}, createdPolicy)
+							if err != nil {
+								return false
+							}
+
+							return err == nil
+						}, maxWait, interval).Should(BeTrue())
+					})
+				})
+
 				Context("When secret policy prop run again when policy/rule/binding already exist", func() {
 					It("Should reconcile and update properly", func() {
-						destClustersUpdated := []string{"cluster-2", "cluster-3"}
+						destClustersUpdated := []string{"cluster-3", "cluster-4"}
 
 						Eventually(func() bool {
 							// Run in eventually loop to make sure the cache loads the newly created resources

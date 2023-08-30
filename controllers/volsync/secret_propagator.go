@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	"github.com/ramendr/ramen/controllers/util"
 	plrulev1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	cfgpolicyv1 "open-cluster-management.io/config-policy-controller/api/v1"
 	policyv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
@@ -75,11 +76,14 @@ type secretPropagator struct {
 	PlacementBindingName string
 }
 
+const policyNameMaxLength = 62
+
 func newSecretPropagator(ctx context.Context, k8sClient client.Client, sourceSecret *corev1.Secret,
 	ownerObject metav1.Object, destClusters []string, destSecretName, destSecretNamespace string,
 	log logr.Logger,
 ) secretPropagator {
-	secretPropagationPolicyName := ownerObject.GetName() + "-vs-secret"
+	secretPropagationPolicyName := util.GeneratePolicyName(ownerObject.GetName()+"-vs-secret",
+		policyNameMaxLength-len(ownerObject.GetNamespace()))
 	secretPropagationPolicyPlacementRuleName := secretPropagationPolicyName
 	secretPropagationPolicyPlacementBindingName := secretPropagationPolicyName
 
