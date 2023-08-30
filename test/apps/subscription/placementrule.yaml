@@ -11,3 +11,5 @@ spec:
     - type: ManagedClusterConditionAvailable
       status: "True"
   clusterReplicas: 1
+  clusters:
+    - name: dr1
