@@ -2,11 +2,3 @@
 resources:
 - ../../dr
 namespace: busybox-hostpath
-patches:
-  - target:
-      kind: DRPlacementControl
-      name: busybox-drpc
-    patch: |-
-      - op: replace
-        path: /spec/preferredCluster
-        value: dr2
