@@ -2,3 +2,5 @@
 resources:
 - ../../dr
 namespace: busybox-rbd
+commonLabels:
+  app: busybox-rbd

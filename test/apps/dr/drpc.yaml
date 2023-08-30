@@ -6,8 +6,6 @@ apiVersion: ramendr.openshift.io/v1alpha1
 kind: DRPlacementControl
 metadata:
   name: busybox-drpc
-  labels:
-    app: busybox-sample
 spec:
   preferredCluster: dr1
   drPolicyRef:

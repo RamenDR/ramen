@@ -8,8 +8,6 @@ metadata:
   annotations:
     apps.open-cluster-management.io/github-branch: main
     apps.open-cluster-management.io/github-path: github-path
-  labels:
-    app: busybox-sample
   name: busybox-sub
 spec:
   channel: ramen-test/ramen-gitops

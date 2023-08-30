@@ -90,6 +90,7 @@ if pvc_after["spec"]["volumeName"] != pvc_before["spec"]["volumeName"]:
     raise RuntimeError(f"PVC volume changed: before={pvc_after} after={pvc_before}")
 
 # But the PV reclaim policy must change to "Retain".
+# XXX fail randomly - probably need to wait for some condition before checking the pv.
 
 out = kubectl.get(
     "pv",

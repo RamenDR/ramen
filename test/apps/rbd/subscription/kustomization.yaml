@@ -2,6 +2,8 @@
 resources:
 - ../../subscription
 namespace: busybox-rbd
+commonLabels:
+  app: busybox-rbd
 patches:
 - target:
     kind: Subscription

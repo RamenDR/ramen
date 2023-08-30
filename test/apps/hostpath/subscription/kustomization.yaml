@@ -2,6 +2,8 @@
 resources:
 - ../../subscription
 namespace: busybox-hostpath
+commonLabels:
+  app: busybox-hostpath
 patches:
 - target:
     kind: Subscription
