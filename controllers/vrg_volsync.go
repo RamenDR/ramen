@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/controllers/volsync"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -373,12 +374,15 @@ func (v VRGInstance) isVolSyncProtectedPVCConditionReady(conType string) bool {
 // protectedPVCAnnotations return the annotations that we must propagate to the
 // destination cluster:
 //   - apps.open-cluster-management.io/* - required to make the protected PVC
-//     owned by OCM when DR is disabled.
+//     owned by OCM when DR is disabled. Copy all annnotations except the
+//     special "do-not-delete" annotation, used only on the source cluster
+//     during relocate.
 func protectedPVCAnnotations(pvc corev1.PersistentVolumeClaim) map[string]string {
 	res := map[string]string{}
 
 	for key, value := range pvc.Annotations {
-		if strings.HasPrefix(key, "apps.open-cluster-management.io/") {
+		if strings.HasPrefix(key, "apps.open-cluster-management.io/") &&
+			key != volsync.ACMAppSubDoNotDeleteAnnotation {
 			res[key] = value
 		}
 	}

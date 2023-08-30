@@ -112,6 +112,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 				pvcAnnotations := map[string]string{
 					"apps.open-cluster-management.io/hosting-subscription": "sub-name",
 					"apps.open-cluster-management.io/reconcile-option":     "merge",
+					volsync.ACMAppSubDoNotDeleteAnnotation:                 volsync.ACMAppSubDoNotDeleteAnnotationVal,
 					"pv.kubernetes.io/bind-completed":                      "yes",
 					"volume.kubernetes.io/storage-provisioner":             "provisioner",
 				}
@@ -164,6 +165,9 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 							"apps.open-cluster-management.io/hosting-subscription", "sub-name"))
 						Expect(vsPvc.Annotations).To(HaveKeyWithValue(
 							"apps.open-cluster-management.io/reconcile-option", "merge"))
+
+						// Except the do-no-delete annotion
+						Expect(vsPvc.Annotations).NotTo(HaveKey(volsync.ACMAppSubDoNotDeleteAnnotation))
 
 						// Other annotations are droopped.
 						Expect(vsPvc.Annotations).NotTo(HaveKey("pv.kubernetes.io/bind-completed"))
