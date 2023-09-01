@@ -14,6 +14,7 @@ import (
 	volrepController "github.com/csi-addons/kubernetes-csi-addons/controllers/replication.storage"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/format"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	vrgController "github.com/ramendr/ramen/controllers"
 	corev1 "k8s.io/api/core/v1"
@@ -360,28 +361,30 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 
 			By("Starting the VRG deletion process")
 			vrgVRDeleteEnsureTestCase.cleanupPVCs()
-			Expect(k8sClient.Delete(context.TODO(), vrgVRDeleteEnsureTestCase.getVRG())).To(Succeed())
+			vrg := vrgVRDeleteEnsureTestCase.getVRG()
+			Expect(k8sClient.Delete(context.TODO(), vrg)).To(Succeed())
 
 			By("Ensuring VRG is not deleted till VRs are present")
-			Consistently(func() bool {
-				vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
-				err := apiReader.Get(context.TODO(), vrgVRDeleteEnsureTestCase.vrgNamespacedName(), vrg)
-
-				return err == nil
-			}, vrgtimeout, vrginterval).Should(BeTrue(), "while waiting for VRG %v to remain undeleted",
-				vrgVRDeleteEnsureTestCase.vrgNamespacedName())
+			Consistently(apiReader.Get, vrgtimeout, vrginterval).
+				WithArguments(context.TODO(), vrgVRDeleteEnsureTestCase.vrgNamespacedName(), vrg).
+				Should(Succeed(), "while waiting for VRG %v to remain undeleted",
+					vrgVRDeleteEnsureTestCase.vrgNamespacedName())
 
 			By("Un-protecting the VolumeReplication resources to ensure their deletion")
 			vrgVRDeleteEnsureTestCase.unprotectDeletionOfVolReps()
 
 			By("Ensuring VRG is deleted eventually as a result")
-			Eventually(func() bool {
-				vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
-				err := apiReader.Get(context.TODO(), vrgVRDeleteEnsureTestCase.vrgNamespacedName(), vrg)
+			var i int
+			Eventually(func() error {
+				i++
 
-				return errors.IsNotFound(err)
-			}, vrgtimeout, vrginterval).Should(BeTrue(), "while waiting for VRG %v to be deleted",
-				vrgVRDeleteEnsureTestCase.vrgNamespacedName())
+				return apiReader.Get(context.TODO(), vrgVRDeleteEnsureTestCase.vrgNamespacedName(), vrg)
+			}, vrgtimeout, vrginterval).
+				Should(MatchError(errors.NewNotFound(schema.GroupResource{
+					Group:    ramendrv1alpha1.GroupVersion.Group,
+					Resource: "volumereplicationgroups",
+				}, vrgVRDeleteEnsureTestCase.vrgName)),
+					"polled %d times for VRG to be garbage collected\n"+format.Object(*vrg, 1), i)
 
 			vrgVRDeleteEnsureTestCase.cleanupNamespace()
 			vrgVRDeleteEnsureTestCase.cleanupSC()
