@@ -67,7 +67,7 @@ func (v *VRGInstance) vrgObjectProtect(result *ctrl.Result, s3StoreAccessors []s
 
 func shouldThrottleVRGProtection(lastUploadTime metav1.Time, maxVRGProtectionTime time.Duration) bool {
 	// Throttle VRG protection if this call is more recent than MaxVRGProtectionTime.
-	return lastUploadTime.Add(maxVRGProtectionTime).Before(time.Now())
+	return time.Now().Before(lastUploadTime.Add(maxVRGProtectionTime))
 }
 
 const vrgS3ObjectNameSuffix = "a"
