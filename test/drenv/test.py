@@ -8,7 +8,11 @@ import sys
 
 import yaml
 
+import drenv
+from drenv import kubectl
+
 from . import ramen
+
 
 workdir = None
 env = None
@@ -85,3 +89,41 @@ def debug(fmt, *args):
 
 def _excepthook(t, v, tb):
     log.exception("test failed", exc_info=(t, v, tb))
+
+
+def wait_until_drpc_is_stable(timeout=300):
+    """
+    Wait until drpc is in stable state:
+    - Available=true
+    - PeerReady=true
+    - lastGroupSyncTime!=''
+    """
+    info("Waiting for Available condition")
+    kubectl.wait(
+        f"drpc/{config['name']}",
+        "--for=condition=Available",
+        f"--namespace={config['namespace']}",
+        f"--timeout={timeout}s",
+        context=env["hub"],
+        log=debug,
+    )
+
+    info("Waiting for PeerReady condition")
+    kubectl.wait(
+        f"drpc/{config['name']}",
+        "--for=condition=PeerReady",
+        f"--namespace={config['namespace']}",
+        f"--timeout={timeout}s",
+        context=env["hub"],
+        log=debug,
+    )
+
+    info("Waiting for first replication")
+    drenv.wait_for(
+        f"drpc/{config['name']}",
+        output="jsonpath={.status.lastGroupSyncTime}",
+        namespace=config["namespace"],
+        timeout=timeout,
+        profile=env["hub"],
+        log=debug,
+    )
