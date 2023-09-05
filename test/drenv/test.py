@@ -128,6 +128,19 @@ def deploy(cluster):
     )
 
 
+def undeploy():
+    """
+    Undeploy an application.
+    """
+    info("Deleting application")
+    kubectl.delete(
+        "--ignore-not-found",
+        f"--kustomize={config['tmp_dir']}",
+        context=env["hub"],
+        log=debug,
+    )
+
+
 def failover(cluster):
     """
     Start failover to cluster.
