@@ -3,10 +3,6 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import json
-
-import drenv
-from drenv import kubectl
 from drenv import test
 
 test.start("failover", __file__)
@@ -15,25 +11,12 @@ test.add_argument(
     help="Cluster name to failover to (default second cluster).",
 )
 args = test.parse_args()
-config = test.config
 
 cluster = args.cluster or test.env["clusters"][1]
-test.info("Failing over to cluster '%s'", cluster)
+test.info("Fail over application to cluster '%s'", cluster)
 
 test.wait_until_drpc_is_stable()
-
-test.info("Starting failover")
-patch = {"spec": {"action": "Failover", "failoverCluster": cluster}}
-kubectl.patch(
-    f"drpc/{config['name']}",
-    "--patch",
-    json.dumps(patch),
-    "--type=merge",
-    f"--namespace={config['namespace']}",
-    context=test.env["hub"],
-    log=test.debug,
-)
-
+test.failover(cluster)
 test.wait_until_drpc_is_stable()
 
-test.info("Application was failed over to cluster %s successfully", cluster)
+test.info("Application was failed over to cluster '%s' successfully", cluster)
