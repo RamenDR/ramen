@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
+import json
 import logging
 import os
 import sys
@@ -89,6 +90,23 @@ def debug(fmt, *args):
 
 def _excepthook(t, v, tb):
     log.exception("test failed", exc_info=(t, v, tb))
+
+
+def failover(cluster):
+    """
+    Start failover to cluster.
+    """
+    info("Starting failover to cluster '%s'", cluster)
+    patch = {"spec": {"action": "Failover", "failoverCluster": cluster}}
+    kubectl.patch(
+        f"drpc/{config['name']}",
+        "--patch",
+        json.dumps(patch),
+        "--type=merge",
+        f"--namespace={config['namespace']}",
+        context=env["hub"],
+        log=debug,
+    )
 
 
 def wait_until_drpc_is_stable(timeout=300):
