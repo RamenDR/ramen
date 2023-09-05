@@ -124,17 +124,14 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, fmt.Errorf("drpolicy deploy: %w", u.validatedSetFalse("DrClustersDeployFailed", err))
 	}
 
-	schedulingIntervalSeconds, err := util.GetSecondsFromSchedulingInterval(drpolicy)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("unable to convert scheduling interval to seconds: %w", err)
+	isMetro, _ := dRPolicySupportsMetro(drpolicy, drclusters.Items)
+
+	// Do not set metric for metro-dr
+	if !isMetro {
+		if err := r.setDRPolicyMetrics(drpolicy); err != nil {
+			return ctrl.Result{}, fmt.Errorf("error in setting drpolicy metrics: %w", err)
+		}
 	}
-
-	log.Info(fmt.Sprintf("Setting metric: (%v)", DRPolicySyncIntervalSeconds))
-
-	syncIntervalMetricsLabels := DRPolicySyncIntervalMetricLabels(drpolicy)
-	metric := NewDRPolicySyncIntervalMetrics(syncIntervalMetricsLabels)
-
-	metric.DRPolicySyncInterval.Set(schedulingIntervalSeconds)
 
 	return ctrl.Result{}, u.validatedSetTrue("Succeeded", "drpolicy validated")
 }
@@ -161,6 +158,22 @@ func validateDRPolicy(ctx context.Context,
 	}
 
 	return "", nil
+}
+
+func (r *DRPolicyReconciler) setDRPolicyMetrics(drPolicy *ramen.DRPolicy) error {
+	r.Log.Info(fmt.Sprintf("Setting metric: (%v)", DRPolicySyncIntervalSeconds))
+
+	syncIntervalMetricsLabels := DRPolicySyncIntervalMetricLabels(drPolicy)
+	metric := NewDRPolicySyncIntervalMetrics(syncIntervalMetricsLabels)
+
+	schedulingIntervalSeconds, err := util.GetSecondsFromSchedulingInterval(drPolicy)
+	if err != nil {
+		return fmt.Errorf("unable to convert scheduling interval to seconds: %w", err)
+	}
+
+	metric.DRPolicySyncInterval.Set(schedulingIntervalSeconds)
+
+	return nil
 }
 
 func ensureDRClustersAvailable(drpolicy *ramen.DRPolicy, drclusters *ramen.DRClusterList) (string, error) {
@@ -308,9 +321,13 @@ func (u *drpolicyUpdater) deleteDRPolicy(drclusters *ramen.DRClusterList,
 		return fmt.Errorf("finalizer remove update: %w", err)
 	}
 
-	// delete metrics if matching labels are found
-	metricLabels := DRPolicySyncIntervalMetricLabels(u.object)
-	DeleteDRPolicySyncIntervalMetrics(metricLabels)
+	// proceed to delete metrics if non-metro-dr
+	isMetro, _ := dRPolicySupportsMetro(u.object, drclusters.Items)
+	if !isMetro {
+		// delete metrics if matching labels are found
+		metricLabels := DRPolicySyncIntervalMetricLabels(u.object)
+		DeleteDRPolicySyncIntervalMetrics(metricLabels)
+	}
 
 	return nil
 }
