@@ -109,6 +109,35 @@ def failover(cluster):
     )
 
 
+def relocate(cluster):
+    """
+    Start relocate to cluster.
+    """
+    info("Starting relocate to cluster '%s'", cluster)
+    patch = {"spec": {"action": "Relocate", "preferredCluster": cluster}}
+    kubectl.patch(
+        f"drpc/{config['name']}",
+        "--patch",
+        json.dumps(patch),
+        "--type=merge",
+        f"--namespace={config['namespace']}",
+        context=env["hub"],
+        log=debug,
+    )
+
+
+def wait_for_drpc_phase(phase):
+    info("Waiting for drpc '%s' phase", phase)
+    kubectl.wait(
+        f"drpc/{config['name']}",
+        f"--for=jsonpath={{.status.phase}}={phase}",
+        f"--namespace={config['namespace']}",
+        "--timeout=300s",
+        context=env["hub"],
+        log=debug,
+    )
+
+
 def wait_until_drpc_is_stable(timeout=300):
     """
     Wait until drpc is in stable state:

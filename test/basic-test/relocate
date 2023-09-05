@@ -3,10 +3,6 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import json
-
-import drenv
-from drenv import kubectl
 from drenv import test
 
 test.start("relocate", __file__)
@@ -15,38 +11,18 @@ test.add_argument(
     help="Cluster name to relocate to (default first cluster).",
 )
 args = test.parse_args()
-config = test.config
 
 cluster = args.cluster or test.env["clusters"][0]
-test.info("Relocate to cluster '%s'", cluster)
+test.info("Relocate application to cluster '%s'", cluster)
 
 test.wait_until_drpc_is_stable()
-
-test.info("Starting relocate")
-patch = {"spec": {"action": "Relocate", "preferredCluster": cluster}}
-kubectl.patch(
-    f"drpc/{config['name']}",
-    "--patch",
-    json.dumps(patch),
-    "--type=merge",
-    f"--namespace={config['namespace']}",
-    context=test.env["hub"],
-    log=test.debug,
-)
+test.relocate(cluster)
 
 # We must wait for the phase since both Available and PeerReady are true at
 # this point. PeerReady becomes false when entering phase: Relocating
 # progression: EnsuringVolumesAreSecondary.
-test.info("Waiting for Relocated phase")
-kubectl.wait(
-    f"drpc/{config['name']}",
-    "--for=jsonpath={.status.phase}=Relocated",
-    f"--namespace={config['namespace']}",
-    "--timeout=300s",
-    context=test.env["hub"],
-    log=test.debug,
-)
+test.wait_for_drpc_phase("Relocated")
 
 test.wait_until_drpc_is_stable()
 
-test.info("Application was relocated to cluster %s successfully", cluster)
+test.info("Application was relocated to cluster '%s' successfully", cluster)
