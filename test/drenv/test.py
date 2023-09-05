@@ -12,6 +12,7 @@ import yaml
 import drenv
 from drenv import kubectl
 
+from . import commands
 from . import ramen
 
 
@@ -92,6 +93,41 @@ def _excepthook(t, v, tb):
     log.exception("test failed", exc_info=(t, v, tb))
 
 
+def deploy(cluster):
+    """
+    Deploy application on cluster.
+    """
+    info("Creating temporary directory %s", config["tmp_dir"])
+    os.makedirs(config["tmp_dir"], exist_ok=True)
+
+    info("Cloning ocm-ramen-samples")
+    if not os.path.exists(config["samples_dir"]):
+        cmd = [
+            "git",
+            "clone",
+            "--depth=1",
+            "--branch",
+            config["samples_branch"],
+            config["samples_repo"],
+            config["samples_dir"],
+        ]
+        for line in commands.watch(*cmd):
+            debug(line)
+
+    info("Creating kustomization for using cluster '%s'", cluster)
+    template = drenv.template("kustomization.yaml")
+    yaml = template.substitute(cluster_name=cluster)
+    with open(os.path.join(config["tmp_dir"], "kustomization.yaml"), "w") as f:
+        f.write(yaml)
+
+    info("Deploying busybox example application")
+    kubectl.apply(
+        f"--kustomize={config['tmp_dir']}",
+        context=env["hub"],
+        log=debug,
+    )
+
+
 def failover(cluster):
     """
     Start failover to cluster.
@@ -122,6 +158,30 @@ def relocate(cluster):
         "--type=merge",
         f"--namespace={config['namespace']}",
         context=env["hub"],
+        log=debug,
+    )
+
+
+def wait_for_drpc_status():
+    """
+    Wait until drpc exists and reports status. This is needed only during
+    inital deployment.
+    """
+    info("waiting for namespace %s", config["namespace"])
+    drenv.wait_for(
+        f"namespace/{config['namespace']}",
+        timeout=60,
+        profile=env["hub"],
+        log=debug,
+    )
+
+    info("Waiting until busybox drpc reports status")
+    drenv.wait_for(
+        f"drpc/{config['name']}",
+        output="jsonpath={.status}",
+        namespace=config["namespace"],
+        timeout=60,
+        profile=env["hub"],
         log=debug,
     )
 
