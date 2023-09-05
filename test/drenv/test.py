@@ -5,6 +5,7 @@ import argparse
 import json
 import logging
 import os
+import string
 import sys
 
 import yaml
@@ -12,7 +13,6 @@ import yaml
 import drenv
 from drenv import kubectl
 
-from . import commands
 from . import ramen
 
 
@@ -97,48 +97,29 @@ def deploy(cluster):
     """
     Deploy application on cluster.
     """
-    info("Creating temporary directory %s", config["tmp_dir"])
-    os.makedirs(config["tmp_dir"], exist_ok=True)
-
-    info("Cloning ocm-ramen-samples")
-    if not os.path.exists(config["samples_dir"]):
-        cmd = [
-            "git",
-            "clone",
-            "--depth=1",
-            "--branch",
-            config["samples_branch"],
-            config["samples_repo"],
-            config["samples_dir"],
-        ]
-        for line in commands.watch(*cmd):
-            debug(line)
-
-    info("Creating kustomization for using cluster '%s'", cluster)
-    template = drenv.template("kustomization.yaml")
-    yaml = template.substitute(cluster_name=cluster)
-    with open(os.path.join(config["tmp_dir"], "kustomization.yaml"), "w") as f:
-        f.write(yaml)
-
-    info("Deploying busybox example application")
-    kubectl.apply(
-        f"--kustomize={config['tmp_dir']}",
-        context=env["hub"],
-        log=debug,
-    )
+    info("Deploying subscription based application")
+    yaml = _kustomization(cluster)
+    with drenv.kustomization_yaml(yaml) as tmpdir:
+        kubectl.apply(
+            f"--kustomize={tmpdir}",
+            context=env["hub"],
+            log=debug,
+        )
 
 
 def undeploy():
     """
     Undeploy an application.
     """
-    info("Deleting application")
-    kubectl.delete(
-        "--ignore-not-found",
-        f"--kustomize={config['tmp_dir']}",
-        context=env["hub"],
-        log=debug,
-    )
+    info("Undeploying subscription based application")
+    yaml = _kustomization("unused")
+    with drenv.kustomization_yaml(yaml) as tmpdir:
+        kubectl.delete(
+            "--ignore-not-found",
+            f"--kustomize={tmpdir}",
+            context=env["hub"],
+            log=debug,
+        )
 
 
 def failover(cluster):
@@ -246,4 +227,26 @@ def wait_until_drpc_is_stable(timeout=300):
         timeout=timeout,
         profile=env["hub"],
         log=debug,
+    )
+
+
+def _kustomization(cluster):
+    yaml = """
+resources:
+  - ${repo}/subscriptions?ref=${branch}
+  - ${repo}/subscriptions/busybox?ref=${branch}
+patches:
+  - target:
+      kind: DRPlacementControl
+      name: busybox-drpc
+    patch: |-
+      - op: replace
+        path: /spec/preferredCluster
+        value: ${cluster}
+"""
+    template = string.Template(yaml)
+    return template.substitute(
+        repo=config["repo"],
+        branch=config["branch"],
+        cluster=cluster,
     )
