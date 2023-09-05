@@ -65,20 +65,28 @@ def template(path):
         return string.Template(f.read())
 
 
-@contextmanager
 def kustomization(path, **kw):
     """
     Create a temporary kustomization directory using template at path,
     substituting values from kw.
 
-    Yields the directory path to be used with `kubectl -k`.
+    Returns a context manager to use with `kubectl -k`.
     """
     yaml_template = template(path)
     yaml = yaml_template.substitute(**kw)
+    return kustomization_yaml(yaml)
 
+
+@contextmanager
+def kustomization_yaml(yaml):
+    """
+    Create a temporary kustomization directory using given yaml.
+
+    Yields the directory path to be used with `kubectl -k`.
+    """
     with tempfile.TemporaryDirectory(prefix="drenv") as tmpdir:
-        kustomization_yaml = os.path.join(tmpdir, "kustomization.yaml")
-        with open(kustomization_yaml, "w") as f:
+        path = os.path.join(tmpdir, "kustomization.yaml")
+        with open(path, "w") as f:
             f.write(yaml)
 
         yield tmpdir
