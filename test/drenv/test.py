@@ -329,6 +329,20 @@ def wait_for_drpc_phase(phase):
     )
 
 
+def wait_for_drpc_progression(progression):
+    drpc = _lookup_app_resource("drpc")
+
+    info("Waiting for '%s' progression '%s'", drpc, progression)
+    kubectl.wait(
+        drpc,
+        f"--for=jsonpath={{.status.progression}}={progression}",
+        f"--namespace={config['namespace']}",
+        "--timeout=300s",
+        context=env["hub"],
+        log=debug,
+    )
+
+
 def wait_until_drpc_is_stable(timeout=300):
     """
     Wait until drpc is in stable state:
