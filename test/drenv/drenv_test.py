@@ -6,6 +6,7 @@ import os
 import yaml
 import pytest
 
+import drenv
 from drenv import cluster
 from drenv import commands
 
@@ -74,3 +75,37 @@ profiles:
     path.write(content)
     with pytest.raises(commands.Error):
         commands.run("drenv", "start", str(path))
+
+
+def test_kustomization(tmpdir):
+    content = """
+key1: ${value1}
+key2: ${value2}
+"""
+    template = tmpdir.join("kustomization.yaml")
+    template.write(content)
+    with drenv.kustomization(
+        str(template), value1="value 1", value2="value 2"
+    ) as kustomization_dir:
+        path = os.path.join(kustomization_dir, "kustomization.yaml")
+        with open(path) as f:
+            content = f.read()
+
+    expected = """
+key1: value 1
+key2: value 2
+"""
+    assert content == expected
+    assert not os.path.exists(kustomization_dir)
+
+
+def test_kustomization_yaml():
+    content = """
+key1: value 1
+key2: value 2
+"""
+    with drenv.kustomization_yaml(content) as kustomization_dir:
+        path = os.path.join(kustomization_dir, "kustomization.yaml")
+        with open(path) as f:
+            assert f.read() == content
+    assert not os.path.exists(kustomization_dir)
