@@ -1756,6 +1756,69 @@ func verifyActionResultForPlacement(placement *clrapiv1beta1.Placement, homeClus
 	}
 }
 
+func buildVRG(namespaceName, objectName string) rmn.VolumeReplicationGroup {
+	return rmn.VolumeReplicationGroup{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: rmn.GroupVersion.String(),
+			Kind:       "VolumeReplicationGroup",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespaceName,
+			Name:      objectName,
+		},
+		Spec: rmn.VolumeReplicationGroupSpec{
+			PVCSelector:      metav1.LabelSelector{},
+			ReplicationState: rmn.Primary,
+			S3Profiles:       []string{},
+			Sync:             &rmn.VRGSyncSpec{},
+		},
+	}
+}
+
+func ensureLatestVRGDownloadedFromS3Stores() {
+	orgVRG := buildVRG("vrgNamespace1", "vrgName1")
+	s3ProfileNames := []string{s3Profiles[0].S3ProfileName, s3Profiles[1].S3ProfileName}
+
+	objectStorer1, _, err := drpcReconciler.ObjStoreGetter.ObjectStore(
+		ctx, apiReader, s3ProfileNames[0], "drpolicy validation", testLogger)
+
+	Expect(err).ToNot(HaveOccurred())
+	Expect(controllers.VrgObjectProtect(objectStorer1, orgVRG)).To(Succeed())
+
+	objectStorer2, _, err := drpcReconciler.ObjStoreGetter.ObjectStore(
+		ctx, apiReader, s3ProfileNames[1], "drpolicy validation", testLogger)
+	Expect(err).ToNot(HaveOccurred())
+
+	Expect(controllers.VrgObjectProtect(objectStorer2, orgVRG)).To(Succeed())
+
+	vrg := controllers.GetLastKnownVRGPrimaryFromS3(context.TODO(),
+		apiReader, s3ProfileNames,
+		"vrgName1", "vrgNamespace1", drpcReconciler.ObjStoreGetter, testLogger)
+
+	Expect(err).ToNot(HaveOccurred())
+	Expect(vrg.Name).To(Equal("vrgName1"))
+
+	t1 := metav1.Now()
+	orgVRG.Status.LastUpdateTime = t1
+	Expect(controllers.VrgObjectProtect(objectStorer2, orgVRG)).To(Succeed())
+
+	vrg2 := controllers.GetLastKnownVRGPrimaryFromS3(context.TODO(),
+		apiReader, s3ProfileNames,
+		"vrgName1", "vrgNamespace1", drpcReconciler.ObjStoreGetter, testLogger)
+
+	Expect(err).ToNot(HaveOccurred())
+	Expect(vrg2.Status.LastUpdateTime).To(Equal(t1))
+
+	vrg3 := controllers.GetLastKnownVRGPrimaryFromS3(context.TODO(),
+		apiReader, s3ProfileNames,
+		"vrgName1", "vrgNamespace1", drpcReconciler.ObjStoreGetter, testLogger)
+
+	Expect(err).ToNot(HaveOccurred())
+	Expect(vrg3.Status.LastUpdateTime).To(Equal(t1))
+
+	Expect(controllers.VrgObjectUnprotect(objectStorer2, orgVRG)).To(Succeed())
+}
+
 // +kubebuilder:docs-gen:collapse=Imports
 //
 //nolint:errcheck
@@ -1859,6 +1922,11 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				// ----------------------------- RELOCATION TO PRIMARY --------------------------------------
 				By("\n\n*** relocate 2\n\n")
 				runRelocateAction(userPlacementRule, West1ManagedCluster, false, false)
+			})
+		})
+		When("Get VRG from s3 store", func() {
+			It("Should get the latest primary VRG from s3 stores", func() {
+				ensureLatestVRGDownloadedFromS3Stores()
 			})
 		})
 		When("Deleting DRPolicy with DRPC references", func() {

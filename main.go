@@ -180,8 +180,9 @@ func setupReconcilersHub(mgr ctrl.Manager) {
 			Client:    mgr.GetClient(),
 			APIReader: mgr.GetAPIReader(),
 		},
-		Scheme:   mgr.GetScheme(),
-		Callback: func(string, string) {},
+		Scheme:         mgr.GetScheme(),
+		Callback:       func(string, string) {},
+		ObjStoreGetter: controllers.S3ObjectStoreGetter(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DRPlacementControl")
 		os.Exit(1)

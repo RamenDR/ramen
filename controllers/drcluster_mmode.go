@@ -70,7 +70,16 @@ func (u *drclusterInstance) mModeActivationsRequired() (map[string]ramen.Storage
 			continue
 		}
 
-		required, activationsRequired := requiresRegionalFailoverPrerequisites(vrgs, u.object.GetName(), u.log)
+		required, activationsRequired := requiresRegionalFailoverPrerequisites(
+			u.ctx,
+			u.reconciler.APIReader,
+			[]string{u.object.Spec.S3ProfileName},
+			drpcCollection.drpc.GetName(),
+			drpcCollection.drpc.GetNamespace(),
+			vrgs,
+			u.object.GetName(),
+			u.reconciler.ObjectStoreGetter,
+			u.log)
 		if !required {
 			continue
 		}

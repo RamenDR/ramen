@@ -74,6 +74,7 @@ type DRPlacementControlReconciler struct {
 	Callback            ProgressCallback
 	eventRecorder       *rmnutil.EventReporter
 	savedInstanceStatus rmn.DRPlacementControlStatus
+	ObjStoreGetter      ObjectStoreGetter
 }
 
 func ManifestWorkPredicateFunc() predicate.Funcs {
