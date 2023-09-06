@@ -534,7 +534,12 @@ func (d *DRPCInstance) checkRegionalFailoverPrerequisites() bool {
 	d.setProgression(rmn.ProgressionWaitForStorageMaintenanceActivation)
 
 	if required, activationsRequired := requiresRegionalFailoverPrerequisites(
-		d.vrgs, d.instance.Spec.FailoverCluster, d.log); required {
+		d.ctx,
+		d.reconciler.APIReader,
+		rmnutil.DRPolicyS3Profiles(d.drPolicy, d.drClusters).List(),
+		d.instance.GetName(), d.instance.GetNamespace(),
+		d.vrgs, d.instance.Spec.FailoverCluster,
+		d.reconciler.ObjStoreGetter, d.log); required {
 		for _, drCluster := range d.drClusters {
 			if drCluster.Name != d.instance.Spec.FailoverCluster {
 				continue
@@ -551,8 +556,14 @@ func (d *DRPCInstance) checkRegionalFailoverPrerequisites() bool {
 // to determine if this instance requires failover maintenance modes to be active prior to initiating
 // a failover
 func requiresRegionalFailoverPrerequisites(
+	ctx context.Context,
+	apiReader client.Reader,
+	s3ProfileNames []string,
+	drpcName string,
+	drpcNamespace string,
 	vrgs map[string]*rmn.VolumeReplicationGroup,
 	failoverCluster string,
+	objectStoreGetter ObjectStoreGetter,
 	log logr.Logger,
 ) (
 	bool,
@@ -562,11 +573,14 @@ func requiresRegionalFailoverPrerequisites(
 
 	vrg := getLastKnownPrimaryVRG(vrgs, failoverCluster)
 	if vrg == nil {
-		// TODO: Is this an error, should we ensure at least one VRG is found in the edge cases?
-		// Potentially missing VRG and so stop failover? How to recover in that case?
-		log.Info("Failed to find last known primary", "cluster", failoverCluster)
+		vrg = GetLastKnownVRGPrimaryFromS3(ctx, apiReader, s3ProfileNames, drpcName, drpcNamespace, objectStoreGetter, log)
+		if vrg == nil {
+			// TODO: Is this an error, should we ensure at least one VRG is found in the edge cases?
+			// Potentially missing VRG and so stop failover? How to recover in that case?
+			log.Info("Failed to find last known primary", "cluster", failoverCluster)
 
-		return false, activationsRequired
+			return false, activationsRequired
+		}
 	}
 
 	for _, protectedPVC := range vrg.Status.ProtectedPVCs {
@@ -610,11 +624,60 @@ func getLastKnownPrimaryVRG(
 	}
 
 	if vrgToInspect == nil {
-		// TODO: Get it from the s3 store
 		return nil
 	}
 
 	return vrgToInspect
+}
+
+func GetLastKnownVRGPrimaryFromS3(
+	ctx context.Context,
+	apiReader client.Reader,
+	s3ProfileNames []string,
+	sourceVrgName string,
+	sourceVrgNamespace string,
+	objectStoreGetter ObjectStoreGetter,
+	log logr.Logger,
+) *rmn.VolumeReplicationGroup {
+	var latestVrg *rmn.VolumeReplicationGroup
+
+	var latestUpdateTime time.Time
+
+	for _, s3ProfileName := range s3ProfileNames {
+		objectStorer, _, err := objectStoreGetter.ObjectStore(
+			ctx, apiReader, s3ProfileName, "drpolicy validation", log)
+		if err != nil {
+			log.Info("Creating object store failed", "error", err)
+
+			continue
+		}
+
+		sourcePathNamePrefix := s3PathNamePrefix(sourceVrgNamespace, sourceVrgName)
+
+		vrg := &rmn.VolumeReplicationGroup{}
+		if err := vrgObjectDownload(objectStorer, sourcePathNamePrefix, vrg); err != nil {
+			log.Error(err, "Kube objects capture-to-recover-from identifier get error")
+
+			continue
+		}
+
+		if !isVRGPrimary(vrg) {
+			log.Info("Found a non-primary vrg on s3 store", "name", vrg.GetName(), "namespace", vrg.GetNamespace())
+
+			continue
+		}
+
+		// Compare lastUpdateTime with the latestUpdateTime
+		if latestVrg == nil || vrg.Status.LastUpdateTime.After(latestUpdateTime) {
+			latestUpdateTime = vrg.Status.LastUpdateTime.Time
+			latestVrg = vrg
+
+			log.Info("Found a primary vrg on s3 store", "name",
+				latestVrg.GetName(), "namespace", latestVrg.GetNamespace(), "s3Store", s3ProfileName)
+		}
+	}
+
+	return latestVrg
 }
 
 // hasMode is a helper routine that checks if a list of modes has the passed in mode

@@ -65,6 +65,8 @@ var (
 	ramenConfig *ramendrv1alpha1.RamenConfig
 	testLogger  logr.Logger
 
+	drpcReconciler *ramencontrollers.DRPlacementControlReconciler
+
 	namespaceDeletionSupported bool
 
 	timeout  = time.Second * 10
@@ -341,7 +343,7 @@ var _ = BeforeSuite(func() {
 		ObjStoreGetter: fakeObjectStoreGetter{},
 	}).SetupWithManager(k8sManager)).To(Succeed())
 
-	drpcReconciler := (&ramencontrollers.DRPlacementControlReconciler{
+	drpcReconciler = (&ramencontrollers.DRPlacementControlReconciler{
 		Client:    k8sManager.GetClient(),
 		APIReader: k8sManager.GetAPIReader(),
 		Log:       ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),
@@ -349,8 +351,9 @@ var _ = BeforeSuite(func() {
 			Client:    k8sClient,
 			apiReader: k8sManager.GetAPIReader(),
 		},
-		Scheme:   k8sManager.GetScheme(),
-		Callback: FakeProgressCallback,
+		Scheme:         k8sManager.GetScheme(),
+		Callback:       FakeProgressCallback,
+		ObjStoreGetter: fakeObjectStoreGetter{},
 	})
 	err = drpcReconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
