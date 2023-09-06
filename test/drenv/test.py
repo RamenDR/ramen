@@ -126,10 +126,12 @@ def failover(cluster):
     """
     Start failover to cluster.
     """
-    info("Starting failover to cluster '%s'", cluster)
+    drpc = _drpc_name()
+
+    info("Starting failover for '%s' to cluster '%s'", drpc, cluster)
     patch = {"spec": {"action": "Failover", "failoverCluster": cluster}}
     kubectl.patch(
-        f"drpc/{config['name']}",
+        drpc,
         "--patch",
         json.dumps(patch),
         "--type=merge",
@@ -143,10 +145,12 @@ def relocate(cluster):
     """
     Start relocate to cluster.
     """
-    info("Starting relocate to cluster '%s'", cluster)
+    drpc = _drpc_name()
+
+    info("Starting relocate for '%s' to cluster '%s'", drpc, cluster)
     patch = {"spec": {"action": "Relocate", "preferredCluster": cluster}}
     kubectl.patch(
-        f"drpc/{config['name']}",
+        drpc,
         "--patch",
         json.dumps(patch),
         "--type=merge",
@@ -169,9 +173,11 @@ def wait_for_drpc_status():
         log=debug,
     )
 
-    info("Waiting until busybox drpc reports status")
+    drpc = _drpc_name()
+
+    info("Waiting until '%s' reports status", drpc)
     drenv.wait_for(
-        f"drpc/{config['name']}",
+        drpc,
         output="jsonpath={.status}",
         namespace=config["namespace"],
         timeout=60,
@@ -181,9 +187,11 @@ def wait_for_drpc_status():
 
 
 def wait_for_drpc_phase(phase):
-    info("Waiting for drpc '%s' phase", phase)
+    drpc = _drpc_name()
+
+    info("Waiting for '%s' phase '%s'", drpc, phase)
     kubectl.wait(
-        f"drpc/{config['name']}",
+        drpc,
         f"--for=jsonpath={{.status.phase}}={phase}",
         f"--namespace={config['namespace']}",
         "--timeout=300s",
@@ -199,9 +207,11 @@ def wait_until_drpc_is_stable(timeout=300):
     - PeerReady=true
     - lastGroupSyncTime!=''
     """
-    info("Waiting for Available condition")
+    drpc = _drpc_name()
+
+    info("Waiting for '%s' Available condition", drpc)
     kubectl.wait(
-        f"drpc/{config['name']}",
+        drpc,
         "--for=condition=Available",
         f"--namespace={config['namespace']}",
         f"--timeout={timeout}s",
@@ -209,9 +219,9 @@ def wait_until_drpc_is_stable(timeout=300):
         log=debug,
     )
 
-    info("Waiting for PeerReady condition")
+    info("Waiting for '%s' PeerReady condition", drpc)
     kubectl.wait(
-        f"drpc/{config['name']}",
+        drpc,
         "--for=condition=PeerReady",
         f"--namespace={config['namespace']}",
         f"--timeout={timeout}s",
@@ -219,15 +229,26 @@ def wait_until_drpc_is_stable(timeout=300):
         log=debug,
     )
 
-    info("Waiting for first replication")
+    info("Waiting for '%s' first replication", drpc)
     drenv.wait_for(
-        f"drpc/{config['name']}",
+        drpc,
         output="jsonpath={.status.lastGroupSyncTime}",
         namespace=config["namespace"],
         timeout=timeout,
         profile=env["hub"],
         log=debug,
     )
+
+
+def _drpc_name():
+    out = kubectl.get(
+        "drpc",
+        f"--selector=app={config['name']}",
+        f"--namespace={config['namespace']}",
+        "--output=name",
+        context=env["hub"],
+    )
+    return out.rstrip()
 
 
 def _kustomization(cluster):
