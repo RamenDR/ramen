@@ -11,7 +11,7 @@ spec:
     - name: recording_rules
       rules:
         - record: ramen_sync_duration_seconds
-          expr: (time() - (ramen_last_sync_timestamp_seconds{job='ramen-hub-operator-metrics-service'} > 0))
+          expr: (time() - (ramen_last_sync_timestamp_seconds{job='ramen-hub-operator-metrics-service'}))
         - record: ramen_rpo_difference
           expr: ramen_sync_duration_seconds / on(policyname) group_left() (ramen_policy_schedule_interval_seconds{job="ramen-hub-operator-metrics-service"})
     - name: alerts
