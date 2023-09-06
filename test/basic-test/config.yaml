@@ -4,5 +4,5 @@
 ---
 repo: https://github.com/ramendr/ocm-ramen-samples.git
 branch: main
+name: busybox-sample
 namespace: busybox-sample
-name: busybox-drpc
