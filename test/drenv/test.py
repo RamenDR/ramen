@@ -5,7 +5,6 @@ import argparse
 import json
 import logging
 import os
-import string
 import sys
 
 import yaml
@@ -93,33 +92,115 @@ def _excepthook(t, v, tb):
     log.exception("test failed", exc_info=(t, v, tb))
 
 
-def deploy(cluster):
+def deploy():
     """
     Deploy application on cluster.
     """
+    info("Deploying channel")
+    kubectl.apply(
+        f"--kustomize={config['repo']}/channel?ref={config['branch']}",
+        context=env["hub"],
+        log=debug,
+    )
     info("Deploying subscription based application")
-    yaml = _kustomization(cluster)
-    with drenv.kustomization_yaml(yaml) as tmpdir:
-        kubectl.apply(
-            f"--kustomize={tmpdir}",
-            context=env["hub"],
-            log=debug,
-        )
+    kubectl.apply(
+        f"--kustomize={config['repo']}/subscription?ref={config['branch']}",
+        context=env["hub"],
+        log=debug,
+    )
 
 
 def undeploy():
     """
     Undeploy an application.
     """
+    info("Undeploying channel")
+    kubectl.delete(
+        f"--kustomize={config['repo']}/channel?ref={config['branch']}",
+        "--ignore-not-found",
+        context=env["hub"],
+        log=debug,
+    )
     info("Undeploying subscription based application")
-    yaml = _kustomization("unused")
-    with drenv.kustomization_yaml(yaml) as tmpdir:
-        kubectl.delete(
-            "--ignore-not-found",
-            f"--kustomize={tmpdir}",
-            context=env["hub"],
-            log=debug,
+    kubectl.delete(
+        f"--kustomize={config['repo']}/subscription?ref={config['branch']}",
+        "--ignore-not-found",
+        context=env["hub"],
+        log=debug,
+    )
+
+
+def enable_dr():
+    """
+    Enable DR for deployed application.
+    """
+    cluster = lookup_cluster()
+
+    # TODO: support placement
+    info("Setting placementrule scheduler to ramen")
+    _patch_placementrule({"spec": {"schedulerName": "ramen"}})
+
+    drpc = f"""
+apiVersion: ramendr.openshift.io/v1alpha1
+kind: DRPlacementControl
+metadata:
+  name: busybox-drpc
+  namespace: {config['namespace']}
+  labels:
+    app: {config['name']}
+spec:
+  preferredCluster: {cluster}
+  drPolicyRef:
+    name: dr-policy
+  placementRef:
+    kind: PlacementRule
+    name: busybox-placement
+  pvcSelector:
+    matchLabels:
+      appname: busybox
+"""
+    kubectl.apply("--filename=-", input=drpc, context=env["hub"], log=debug)
+
+
+def disable_dr():
+    """
+    Disable DR for deployed application.
+    """
+    drpc = _lookup_app_resource("drpc")
+    if not drpc:
+        debug("drpc already removed")
+        return
+
+    info("Deleting '%s'", drpc)
+    kubectl.delete(
+        drpc,
+        "--ignore-not-found",
+        f"--namespace={config['namespace']}",
+        context=env["hub"],
+        log=debug,
+    )
+
+    # TODO: support placement
+    info("Clearing placementrule scheduler")
+    _patch_placementrule({"spec": {"schedulerName": None}})
+
+
+def _patch_placementrule(patch):
+    placementrule = _lookup_app_resource("placementrule")
+    if not placementrule:
+        raise RuntimeError(
+            f"Cannot find placementrule for application {config['name']}"
         )
+
+    kubectl.patch(
+        placementrule,
+        "--patch",
+        json.dumps(patch),
+        "--type=merge",
+        f"--namespace={config['namespace']}",
+        context=env["hub"],
+        log=debug,
+    )
 
 
 def target_cluster():
@@ -323,25 +404,3 @@ def _lookup_app_resource(kind):
         context=env["hub"],
     )
     return out.rstrip()
-
-
-def _kustomization(cluster):
-    yaml = """
-resources:
-  - ${repo}/subscriptions?ref=${branch}
-  - ${repo}/subscriptions/busybox?ref=${branch}
-patches:
-  - target:
-      kind: DRPlacementControl
-      name: busybox-drpc
-    patch: |-
-      - op: replace
-        path: /spec/preferredCluster
-        value: ${cluster}
-"""
-    template = string.Template(yaml)
-    return template.substitute(
-        repo=config["repo"],
-        branch=config["branch"],
-        cluster=cluster,
-    )
