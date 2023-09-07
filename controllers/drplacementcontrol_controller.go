@@ -587,7 +587,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 //
-//nolint:cyclop,funlen
+//nolint:cyclop,funlen,gocognit
 func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.Log.WithValues("DRPC", req.NamespacedName, "rid", uuid.New())
 
@@ -612,7 +612,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	ensureDRPCConditionsInited(&drpc.Status.Conditions, drpc.Generation, "Initialization")
 
-	placementObj, err := r.ownPlacementOrPlacementRule(ctx, drpc, logger)
+	placementObj, err := getPlacementOrPlacementRule(ctx, r.Client, drpc, logger)
 	if err != nil && !(errors.IsNotFound(err) && !drpc.GetDeletionTimestamp().IsZero()) {
 		r.recordFailure(ctx, drpc, placementObj, "Error", err.Error(), logger)
 
@@ -633,7 +633,23 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, nil
 	}
 
-	d, err := r.createDRPCInstance(ctx, drpc, placementObj, logger)
+	drPolicy, err := r.getAndEnsureValidDRPolicy(ctx, drpc, logger)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Updates labels, finalizers and set the placement as the owner of the DRPC
+	updated, err := r.updateAndSetOwner(ctx, drpc, placementObj, logger)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if updated {
+		// Reload before proceeding
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	d, err := r.createDRPCInstance(ctx, drPolicy, drpc, placementObj, logger)
 	if err != nil && !errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
 		err2 := r.updateDRPCStatus(ctx, drpc, placementObj, logger)
 
@@ -733,33 +749,14 @@ func (r *DRPlacementControlReconciler) setLastSyncBytesMetric(syncDataBytesMetri
 	syncDataBytesMetrics.LastSyncDataBytes.Set(float64(*b))
 }
 
-//nolint:funlen,cyclop
+//nolint:funlen
 func (r *DRPlacementControlReconciler) createDRPCInstance(
 	ctx context.Context,
+	drPolicy *rmn.DRPolicy,
 	drpc *rmn.DRPlacementControl,
 	placementObj client.Object,
 	log logr.Logger,
 ) (*DRPCInstance, error) {
-	drPolicy, err := r.getDRPolicy(ctx, drpc, log)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get DRPolicy %w", err)
-	}
-
-	if !drPolicy.ObjectMeta.DeletionTimestamp.IsZero() {
-		// If drpolicy is deleted then return
-		// error to fail drpc reconciliation
-		return nil, fmt.Errorf("drPolicy '%s' referred by the DRPC is deleted, DRPC reconciliation would fail",
-			drpc.Spec.DRPolicyRef.Name)
-	}
-
-	if err := r.addLabelsAndFinalizers(ctx, drpc, placementObj, log); err != nil {
-		return nil, err
-	}
-
-	if err := rmnutil.DrpolicyValidated(drPolicy); err != nil {
-		return nil, fmt.Errorf("DRPolicy not valid %w", err)
-	}
-
 	drClusters, err := getDRClusters(ctx, r.Client, drPolicy)
 	if err != nil {
 		return nil, err
@@ -883,6 +880,28 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(d *DRPCInstance, lo
 	log.Info("Requeue time", "duration", requeueTimeDuration)
 
 	return ctrl.Result{RequeueAfter: requeueTimeDuration}, nil
+}
+
+func (r *DRPlacementControlReconciler) getAndEnsureValidDRPolicy(ctx context.Context,
+	drpc *rmn.DRPlacementControl, log logr.Logger,
+) (*rmn.DRPolicy, error) {
+	drPolicy, err := r.getDRPolicy(ctx, drpc, log)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get DRPolicy %w", err)
+	}
+
+	if !drPolicy.ObjectMeta.DeletionTimestamp.IsZero() {
+		// If drpolicy is deleted then return
+		// error to fail drpc reconciliation
+		return nil, fmt.Errorf("drPolicy '%s' referred by the DRPC is deleted, DRPC reconciliation would fail",
+			drpc.Spec.DRPolicyRef.Name)
+	}
+
+	if err := rmnutil.DrpolicyValidated(drPolicy); err != nil {
+		return nil, fmt.Errorf("DRPolicy not valid %w", err)
+	}
+
+	return drPolicy, nil
 }
 
 func (r *DRPlacementControlReconciler) getDRPolicy(ctx context.Context,
@@ -1116,23 +1135,21 @@ func (r *DRPlacementControlReconciler) getDRPCPlacementRule(ctx context.Context,
 	return nil
 }
 
-func (r *DRPlacementControlReconciler) ownPlacementOrPlacementRule(
+func (r *DRPlacementControlReconciler) updateAndSetOwner(
 	ctx context.Context,
 	drpc *rmn.DRPlacementControl,
+	usrPlacement client.Object,
 	log logr.Logger,
-) (client.Object, error) {
-	usrPlacement, err := getPlacementOrPlacementRule(ctx, r.Client, drpc, log)
-	if err != nil {
-		return nil, err
+) (bool, error) {
+	if err := r.annotateObject(ctx, drpc, usrPlacement, log); err != nil {
+		return false, err
 	}
 
-	if err = r.annotateUserPlacement(ctx, drpc, usrPlacement, log); err != nil {
-		return nil, err
+	if err := r.addLabelsAndFinalizers(ctx, drpc, usrPlacement, log); err != nil {
+		return false, err
 	}
 
-	log.Info(fmt.Sprintf("Using placement %v", usrPlacement))
-
-	return usrPlacement, nil
+	return r.setDRPCOwner(ctx, drpc, usrPlacement, log)
 }
 
 func getPlacementOrPlacementRule(
@@ -1256,43 +1273,69 @@ func getPlacement(ctx context.Context, k8sclient client.Client,
 	return usrPlmnt, nil
 }
 
-func (r *DRPlacementControlReconciler) annotateUserPlacement(ctx context.Context,
-	drpc *rmn.DRPlacementControl, placementObj client.Object, log logr.Logger,
+func (r *DRPlacementControlReconciler) annotateObject(ctx context.Context,
+	drpc *rmn.DRPlacementControl, obj client.Object, log logr.Logger,
 ) error {
-	if !placementObj.GetDeletionTimestamp().IsZero() {
+	if !obj.GetDeletionTimestamp().IsZero() {
 		return nil
 	}
 
-	if placementObj.GetAnnotations() == nil {
-		placementObj.SetAnnotations(map[string]string{})
+	if obj.GetAnnotations() == nil {
+		obj.SetAnnotations(map[string]string{})
 	}
 
-	ownerName := placementObj.GetAnnotations()[DRPCNameAnnotation]
-	ownerNamespace := placementObj.GetAnnotations()[DRPCNamespaceAnnotation]
+	ownerName := obj.GetAnnotations()[DRPCNameAnnotation]
+	ownerNamespace := obj.GetAnnotations()[DRPCNamespaceAnnotation]
 
 	if ownerName == "" {
-		placementObj.GetAnnotations()[DRPCNameAnnotation] = drpc.Name
-		placementObj.GetAnnotations()[DRPCNamespaceAnnotation] = drpc.Namespace
+		obj.GetAnnotations()[DRPCNameAnnotation] = drpc.Name
+		obj.GetAnnotations()[DRPCNamespaceAnnotation] = drpc.Namespace
 
-		err := r.Update(ctx, placementObj)
+		err := r.Update(ctx, obj)
 		if err != nil {
-			log.Error(err, "Failed to update PlacementRule annotation", "placementObjName", placementObj.GetName())
+			log.Error(err, "Failed to update Object annotation", "objName", obj.GetName())
 
-			return fmt.Errorf("failed to update PlacementRule %s annotation '%s/%s' (%w)",
-				placementObj.GetName(), DRPCNameAnnotation, drpc.Name, err)
+			return fmt.Errorf("failed to update Object %s annotation '%s/%s' (%w)",
+				obj.GetName(), DRPCNameAnnotation, drpc.Name, err)
 		}
 
 		return nil
 	}
 
 	if ownerName != drpc.Name || ownerNamespace != drpc.Namespace {
-		log.Info("PlacementRule not owned by this DRPC", "placementObjName", placementObj.GetName())
+		log.Info("Object not owned by this DRPC", "objName", obj.GetName())
 
-		return fmt.Errorf("PlacementRule %s not owned by this DRPC '%s/%s'",
-			placementObj.GetName(), drpc.Name, drpc.Namespace)
+		return fmt.Errorf("object %s not owned by this DRPC '%s/%s'",
+			obj.GetName(), drpc.Name, drpc.Namespace)
 	}
 
 	return nil
+}
+
+func (r *DRPlacementControlReconciler) setDRPCOwner(
+	ctx context.Context, drpc *rmn.DRPlacementControl, owner client.Object, log logr.Logger,
+) (bool, error) {
+	const updated = true
+
+	for _, ownerReference := range drpc.GetOwnerReferences() {
+		if ownerReference.Name == owner.GetName() {
+			return !updated, nil // ownerreference already set
+		}
+	}
+
+	err := ctrl.SetControllerReference(owner, drpc, r.Client.Scheme())
+	if err != nil {
+		return !updated, fmt.Errorf("failed to set DRPC owner %w", err)
+	}
+
+	err = r.Update(ctx, drpc)
+	if err != nil {
+		return !updated, fmt.Errorf("failed to update drpc %s (%w)", drpc.GetName(), err)
+	}
+
+	log.Info(fmt.Sprintf("Object %s owns DRPC %s", owner.GetName(), drpc.GetName()))
+
+	return updated, nil
 }
 
 func (r *DRPlacementControlReconciler) getOrClonePlacementRule(ctx context.Context,
