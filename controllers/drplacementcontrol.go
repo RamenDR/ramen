@@ -57,7 +57,6 @@ type DRPCInstance struct {
 	vrgs                 map[string]*rmn.VolumeReplicationGroup
 	vrgNamespace         string
 	mwu                  rmnutil.MWUtil
-	metrics              *DRPCMetrics
 }
 
 func (d *DRPCInstance) startProcessing() bool {
@@ -67,7 +66,7 @@ func (d *DRPCInstance) startProcessing() bool {
 	done, processingErr := d.processPlacement()
 
 	if d.shouldUpdateStatus() || d.statusUpdateTimeElapsed() {
-		if err := d.reconciler.updateDRPCStatus(d.instance, d.userPlacement, d.metrics, d.log); err != nil {
+		if err := d.reconciler.updateDRPCStatus(d.ctx, d.instance, d.userPlacement, d.log); err != nil {
 			errMsg := fmt.Sprintf("error from update DRPC status: %v", err)
 			if processingErr != nil {
 				errMsg += fmt.Sprintf(", error from process placement: %v", processingErr)
