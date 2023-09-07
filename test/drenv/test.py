@@ -122,6 +122,78 @@ def undeploy():
         )
 
 
+def target_cluster():
+    """
+    Return the target cluster for failover or relocate.
+    """
+    cluster = lookup_cluster()
+    if cluster == env["clusters"][0]:
+        return env["clusters"][1]
+    else:
+        return env["clusters"][0]
+
+
+def lookup_cluster():
+    """
+    Return the current cluster the application is placed on.
+    """
+    cluster = _get_cluster_from_placement_decisions()
+    if not cluster:
+        cluster = _get_cluster_from_placementrule()
+        if not cluster:
+            raise RuntimeError(f"Cannot find cluster for application {config['name']}")
+
+    return cluster
+
+
+def _get_cluster_from_placement_decisions():
+    placement = _lookup_app_resource("placement")
+    if not placement:
+        return None
+
+    info("Waiting for '%s' decisions", placement)
+    kubectl.wait(
+        placement,
+        "--for=condition=PlacementSatisfied",
+        "--timeout=60s",
+        context=env["hub"],
+        log=debug,
+    )
+
+    placement_name = placement.split("/")[1]
+
+    return kubectl.get(
+        "placementdecisions",
+        f"--selector=cluster.open-cluster-management.io/placement={placement_name}"
+        f"--namespace={config['namespace']}",
+        "--output=jsonpath={.status.decisions[0].clusterName}",
+        context=env["hub"],
+    )
+
+
+def _get_cluster_from_placementrule():
+    placementrule = _lookup_app_resource("placementrule")
+    if not placementrule:
+        return None
+
+    info("Waiting for '%s' decisions", placementrule)
+    drenv.wait_for(
+        placementrule,
+        output="jsonpath={.status.decisions}",
+        namespace=config["namespace"],
+        timeout=60,
+        profile=env["hub"],
+        log=debug,
+    )
+
+    return kubectl.get(
+        placementrule,
+        f"--namespace={config['namespace']}",
+        "--output=jsonpath={.status.decisions[0].clusterName}",
+        context=env["hub"],
+    )
+
+
 def failover(cluster):
     """
     Start failover to cluster.
