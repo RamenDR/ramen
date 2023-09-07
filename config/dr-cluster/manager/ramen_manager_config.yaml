@@ -11,3 +11,5 @@ leaderElection:
   resourceName: dr-cluster.ramendr.openshift.io
 ramenControllerType: dr-cluster
 maxConcurrentReconciles: 50
+volSync:
+  destinationCopyMethod: LocalDirect
