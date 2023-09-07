@@ -6,17 +6,12 @@
 from drenv import test
 
 test.start("relocate", __file__)
-test.add_argument(
-    "--cluster",
-    help="Cluster name to relocate to (default first cluster).",
-)
 args = test.parse_args()
 
-cluster = args.cluster or test.env["clusters"][0]
-test.info("Relocate application to cluster '%s'", cluster)
+test.info("Relocate application")
 
 test.wait_until_drpc_is_stable()
-test.relocate(cluster)
+test.relocate()
 
 # We must wait for the phase since both Available and PeerReady are true at
 # this point. PeerReady becomes false when entering phase: Relocating
@@ -25,4 +20,4 @@ test.wait_for_drpc_phase("Relocated")
 
 test.wait_until_drpc_is_stable()
 
-test.info("Application was relocated to cluster '%s' successfully", cluster)
+test.info("Application was relocated")
