@@ -6,17 +6,12 @@
 from drenv import test
 
 test.start("failover", __file__)
-test.add_argument(
-    "--cluster",
-    help="Cluster name to failover to (default second cluster).",
-)
 args = test.parse_args()
 
-cluster = args.cluster or test.env["clusters"][1]
-test.info("Fail over application to cluster '%s'", cluster)
+test.info("Fail over application")
 
 test.wait_until_drpc_is_stable()
-test.failover(cluster)
+test.failover()
 test.wait_until_drpc_is_stable()
 
-test.info("Application was failed over to cluster '%s' successfully", cluster)
+test.info("Application was failed over")

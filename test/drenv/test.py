@@ -194,10 +194,11 @@ def _get_cluster_from_placementrule():
     )
 
 
-def failover(cluster):
+def failover():
     """
     Start failover to cluster.
     """
+    cluster = target_cluster()
     drpc = _lookup_app_resource("drpc")
 
     info("Starting failover for '%s' to cluster '%s'", drpc, cluster)
@@ -213,10 +214,11 @@ def failover(cluster):
     )
 
 
-def relocate(cluster):
+def relocate():
     """
     Start relocate to cluster.
     """
+    cluster = target_cluster()
     drpc = _lookup_app_resource("drpc")
 
     info("Starting relocate for '%s' to cluster '%s'", drpc, cluster)
