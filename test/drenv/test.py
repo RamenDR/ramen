@@ -126,7 +126,7 @@ def failover(cluster):
     """
     Start failover to cluster.
     """
-    drpc = _drpc_name()
+    drpc = _lookup_app_resource("drpc")
 
     info("Starting failover for '%s' to cluster '%s'", drpc, cluster)
     patch = {"spec": {"action": "Failover", "failoverCluster": cluster}}
@@ -145,7 +145,7 @@ def relocate(cluster):
     """
     Start relocate to cluster.
     """
-    drpc = _drpc_name()
+    drpc = _lookup_app_resource("drpc")
 
     info("Starting relocate for '%s' to cluster '%s'", drpc, cluster)
     patch = {"spec": {"action": "Relocate", "preferredCluster": cluster}}
@@ -173,7 +173,7 @@ def wait_for_drpc_status():
         log=debug,
     )
 
-    drpc = _drpc_name()
+    drpc = _lookup_app_resource("drpc")
 
     info("Waiting until '%s' reports status", drpc)
     drenv.wait_for(
@@ -187,7 +187,7 @@ def wait_for_drpc_status():
 
 
 def wait_for_drpc_phase(phase):
-    drpc = _drpc_name()
+    drpc = _lookup_app_resource("drpc")
 
     info("Waiting for '%s' phase '%s'", drpc, phase)
     kubectl.wait(
@@ -207,7 +207,7 @@ def wait_until_drpc_is_stable(timeout=300):
     - PeerReady=true
     - lastGroupSyncTime!=''
     """
-    drpc = _drpc_name()
+    drpc = _lookup_app_resource("drpc")
 
     info("Waiting for '%s' Available condition", drpc)
     kubectl.wait(
@@ -240,9 +240,9 @@ def wait_until_drpc_is_stable(timeout=300):
     )
 
 
-def _drpc_name():
+def _lookup_app_resource(kind):
     out = kubectl.get(
-        "drpc",
+        kind,
         f"--selector=app={config['name']}",
         f"--namespace={config['namespace']}",
         "--output=name",
