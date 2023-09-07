@@ -5,9 +5,9 @@
 
 from drenv import test
 
-test.start("deploy", __file__)
+test.start("disable-dr", __file__)
 args = test.parse_args()
 
-test.info("Deploying application")
-test.deploy()
-test.info("Application running on cluster '%s'", test.lookup_cluster())
+test.info("Disable DR")
+test.disable_dr()
+test.info("DR was disabled")

@@ -5,9 +5,11 @@
 
 from drenv import test
 
-test.start("deploy", __file__)
+test.start("enable-dr", __file__)
 args = test.parse_args()
 
-test.info("Deploying application")
-test.deploy()
-test.info("Application running on cluster '%s'", test.lookup_cluster())
+test.info("Enable DR")
+test.enable_dr()
+test.wait_for_drpc_status()
+test.wait_until_drpc_is_stable()
+test.info("DR enabled")
