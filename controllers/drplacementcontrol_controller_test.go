@@ -1819,6 +1819,16 @@ func ensureLatestVRGDownloadedFromS3Stores() {
 	Expect(controllers.VrgObjectUnprotect(objectStorer2, orgVRG)).To(Succeed())
 }
 
+func verifyDRPCOwnedByPlacement(placementObj client.Object, drpc *rmn.DRPlacementControl) {
+	for _, ownerReference := range drpc.GetOwnerReferences() {
+		if ownerReference.Name == placementObj.GetName() {
+			return
+		}
+	}
+
+	Fail(fmt.Sprintf("DRPC %s not owned by Placement %s", drpc.GetName(), placementObj.GetName()))
+}
+
 // +kubebuilder:docs-gen:collapse=Imports
 //
 //nolint:errcheck
@@ -1838,6 +1848,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				userPlacementRule = placementObj.(*plrv1.PlacementRule)
 				Expect(userPlacementRule).NotTo(BeNil())
 				verifyInitialDRPCDeployment(userPlacementRule, East1ManagedCluster)
+				verifyDRPCOwnedByPlacement(userPlacementRule, getLatestDRPC())
 			})
 		})
 		When("DRAction changes to Failover", func() {
@@ -1949,9 +1960,6 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				// ----------------------------- DELETE DRPC from PRIMARY --------------------------------------
 				By("\n\n*** DELETE User PlacementRule ***\n\n")
 				deleteUserPlacementRule()
-				drpc := getLatestDRPC()
-				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionPeerReady)
-				Expect(condition).NotTo(BeNil())
 			})
 		})
 
@@ -1992,6 +2000,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				Expect(placement).NotTo(BeNil())
 				verifyInitialDRPCDeployment(placement, East1ManagedCluster)
 				verifyActionResultForPlacement(placement, East1ManagedCluster, UsePlacementWithSubscription)
+				verifyDRPCOwnedByPlacement(placement, getLatestDRPC())
 			})
 		})
 		When("DRAction changes to Failover using Placement with Subscription", func() {
@@ -2067,6 +2076,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				Expect(placement).NotTo(BeNil())
 				verifyInitialDRPCDeployment(placement, East1ManagedCluster)
 				verifyActionResultForPlacement(placement, East1ManagedCluster, UsePlacementWithAppSet)
+				verifyDRPCOwnedByPlacement(placement, getLatestDRPC())
 			})
 		})
 		When("DRAction changes to Failover using Placement", func() {
@@ -2147,6 +2157,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				By("Initial Deployment")
 				userPlacementRule, drpc = InitialDeploymentSync(DRPCNamespaceName, UserPlacementRuleName, East1ManagedCluster)
 				verifyInitialDRPCDeployment(userPlacementRule, East1ManagedCluster)
+				verifyDRPCOwnedByPlacement(userPlacementRule, getLatestDRPC())
 			})
 		})
 		When("DRAction changes to Failover", func() {
@@ -2221,14 +2232,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			It("Should cleanup DRPC", func() {
 				By("\n\n*** DELETE User PlacementRule ***\n\n")
 				deleteUserPlacementRule()
-				drpc := getLatestDRPC()
-				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionPeerReady)
-				Expect(condition).NotTo(BeNil())
-				// waitForCompletion("deleted")
-				// Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1)) // DRCluster MW
 			})
 		})
-
 		When("Deleting DRPC", func() {
 			It("Should delete VRG from Primary (East1ManagedCluster)", func() {
 				By("\n\n*** DELETE DRPC ***\n\n")
@@ -2251,6 +2256,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				By("Initial Deployment")
 				userPlacementRule, drpc = InitialDeploymentSync(DRPCNamespaceName, UserPlacementRuleName, East1ManagedCluster)
 				verifyInitialDRPCDeployment(userPlacementRule, East1ManagedCluster)
+				verifyDRPCOwnedByPlacement(userPlacementRule, getLatestDRPC())
 			})
 		})
 		When("DRAction changes to Failover", func() {
@@ -2325,11 +2331,6 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			It("Should cleanup DRPC", func() {
 				By("\n\n*** DELETE User PlacementRule ***\n\n")
 				deleteUserPlacementRule()
-				drpc := getLatestDRPC()
-				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionPeerReady)
-				Expect(condition).NotTo(BeNil())
-				// waitForCompletion("deleted")
-				// Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1)) // DRCluster MW
 			})
 		})
 
