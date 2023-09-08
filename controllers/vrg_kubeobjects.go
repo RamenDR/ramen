@@ -520,9 +520,7 @@ func (v *VRGInstance) getRecoverGroupsFromRecipe() []kubeobjects.RecoverSpec {
 	return groups
 }
 
-func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result,
-	s3StoreAccessor s3StoreAccessor,
-) error {
+func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result, s3StoreAccessor s3StoreAccessor) error {
 	vrg := v.instance
 
 	if clusterDataReady := meta.FindStatusCondition(vrg.Status.Conditions,
@@ -533,6 +531,16 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result,
 		return nil
 	}
 
+	if dataReady := meta.FindStatusCondition(vrg.Status.Conditions,
+		VRGConditionTypeDataReady,
+	); dataReady.Status != metav1.ConditionTrue || dataReady.ObservedGeneration != vrg.Generation {
+		err := errors.New("waiting for data to be ready")
+		v.kubeObjectsRecoverStatusFalse("DataNotReady", err.Error())
+
+		return err
+	}
+
+	log := v.log.WithValues("profile", s3StoreAccessor.S3ProfileName)
 	sourceVrgNamespaceName, sourceVrgName := vrg.Namespace, vrg.Name
 	sourcePathNamePrefix := s3PathNamePrefix(sourceVrgNamespaceName, sourceVrgName)
 
@@ -551,9 +559,22 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result,
 	}
 
 	vrg.Status.KubeObjectProtection.CaptureToRecoverFrom = captureToRecoverFromIdentifier
+	log = log.WithValues("number", captureToRecoverFromIdentifier.Number)
+
+	return v.kubeObjectsRecoveryStartOrResume(
+		result, s3StoreAccessor, log,
+		sourceVrgNamespaceName, sourceVrgName, captureToRecoverFromIdentifier,
+	)
+}
+
+func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
+	result *ctrl.Result, s3StoreAccessor s3StoreAccessor, log logr.Logger,
+	sourceVrgNamespaceName, sourceVrgName string,
+	captureToRecoverFromIdentifier *ramen.KubeObjectsCaptureIdentifier,
+) error {
+	vrg := v.instance
 	veleroNamespaceName := v.veleroNamespaceName()
 	labels := util.OwnerLabels(vrg.Namespace, vrg.Name)
-	log := v.log.WithValues("number", captureToRecoverFromIdentifier.Number, "profile", s3StoreAccessor.S3ProfileName)
 
 	captureRequestsStruct, err := v.reconciler.kubeObjects.ProtectRequestsGet(
 		v.ctx, v.reconciler.APIReader, veleroNamespaceName, labels)
@@ -571,22 +592,12 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result,
 		return err
 	}
 
-	if dataReady := meta.FindStatusCondition(vrg.Status.Conditions,
-		VRGConditionTypeDataReady,
-	); dataReady.Status != metav1.ConditionTrue || dataReady.ObservedGeneration != vrg.Generation {
-		err := errors.New("waiting for data to be ready")
-		v.kubeObjectsRecoverStatusFalse("DataNotReady", err.Error())
-
-		return err
-	}
-
-	return v.kubeObjectsRecoveryStartOrResume(
-		result,
-		s3StoreAccessor,
+	return v.kubeObjectsRecoveryGroupsStartOrResume(
+		result, s3StoreAccessor, log,
 		sourceVrgNamespaceName, sourceVrgName, captureToRecoverFromIdentifier,
 		kubeobjects.RequestsMapKeyedByName(captureRequestsStruct),
 		kubeobjects.RequestsMapKeyedByName(recoverRequestsStruct),
-		veleroNamespaceName, labels, log,
+		veleroNamespaceName, labels,
 	)
 }
 
@@ -652,12 +663,12 @@ func (v *VRGInstance) getRecoverOrProtectRequest(
 		}
 }
 
-func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
-	result *ctrl.Result, s3StoreAccessor s3StoreAccessor,
+func (v *VRGInstance) kubeObjectsRecoveryGroupsStartOrResume(
+	result *ctrl.Result, s3StoreAccessor s3StoreAccessor, log logr.Logger,
 	sourceVrgNamespaceName, sourceVrgName string,
 	captureToRecoverFromIdentifier *ramen.KubeObjectsCaptureIdentifier,
 	captureRequests, recoverRequests map[string]kubeobjects.Request,
-	veleroNamespaceName string, labels map[string]string, log logr.Logger,
+	veleroNamespaceName string, labels map[string]string,
 ) error {
 	groups := v.getRecoverGroups()
 	requests := make([]kubeobjects.Request, len(groups))
