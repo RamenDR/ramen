@@ -796,7 +796,7 @@ func (v *VRGInstance) separatePVCsUsingStorageClassProvisioner(pvcList *corev1.P
 func (v *VRGInstance) processForDeletion() ctrl.Result {
 	v.log.Info("Entering processing VolumeReplicationGroup for deletion")
 
-	defer v.log.Info("Exiting processing VolumeReplicationGroup")
+	defer v.log.Info("Exiting processing VolumeReplicationGroup for deletion")
 
 	if !containsString(v.instance.ObjectMeta.Finalizers, vrgFinalizerName) {
 		v.log.Info("Finalizer missing from resource", "finalizer", vrgFinalizerName)
