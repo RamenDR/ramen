@@ -1135,11 +1135,12 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 	return nil
 }
 
-// namespacedName applies to both VolumeReplication resource and pvc as of now.
-// This is because, VolumeReplication resource for a pvc that is created by the
-// VolumeReplicationGroup has the same name as pvc. But in future if it changes
-// functions to be changed would be processVRAsPrimary(), processVRAsSecondary()
-// to either receive pvc NamespacedName or pvc itself as an additional argument.
+// selectVolumeReplicationClass applies to both VolumeReplication resource and
+// pvc as of now.  This is because, VolumeReplication resource for a pvc that is
+// created by the VolumeReplicationGroup has the same name as pvc. But in future
+// if it changes functions to be changed would be processVRAsPrimary(),
+// processVRAsSecondary() to either receive pvc NamespacedName or pvc itself as
+// an additional argument.
 func (v *VRGInstance) selectVolumeReplicationClass(
 	namespacedName types.NamespacedName,
 ) (*volrep.VolumeReplicationClass, error) {
