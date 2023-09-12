@@ -613,7 +613,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	ensureDRPCConditionsInited(&drpc.Status.Conditions, drpc.Generation, "Initialization")
 
 	placementObj, err := getPlacementOrPlacementRule(ctx, r.Client, drpc, logger)
-	if err != nil && !(errors.IsNotFound(err) && !drpc.GetDeletionTimestamp().IsZero()) {
+	if err != nil && !(errors.IsNotFound(err) && rmnutil.IsDeleted(drpc)) {
 		r.recordFailure(ctx, drpc, placementObj, "Error", err.Error(), logger)
 
 		return ctrl.Result{}, err
@@ -838,8 +838,7 @@ func (r *DRPlacementControlReconciler) createDRPCMetricsInstance(
 
 // isBeingDeleted returns true if either DRPC, user placement, or both are being deleted
 func isBeingDeleted(drpc *rmn.DRPlacementControl, usrPl client.Object) bool {
-	return !drpc.GetDeletionTimestamp().IsZero() ||
-		(usrPl != nil && !usrPl.GetDeletionTimestamp().IsZero())
+	return rmnutil.IsDeleted(drpc) || (usrPl != nil && rmnutil.IsDeleted(usrPl))
 }
 
 func (r *DRPlacementControlReconciler) reconcileDRPCInstance(d *DRPCInstance, log logr.Logger) (ctrl.Result, error) {
@@ -1276,7 +1275,7 @@ func getPlacement(ctx context.Context, k8sclient client.Client,
 func (r *DRPlacementControlReconciler) annotateObject(ctx context.Context,
 	drpc *rmn.DRPlacementControl, obj client.Object, log logr.Logger,
 ) error {
-	if !obj.GetDeletionTimestamp().IsZero() {
+	if rmnutil.IsDeleted(obj) {
 		return nil
 	}
 

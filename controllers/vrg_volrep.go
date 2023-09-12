@@ -160,7 +160,7 @@ func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, 
 	const ready bool = true
 
 	// If PVC is not being deleted, it is not ready for Secondary, unless action is failover
-	if v.instance.Spec.Action != ramendrv1alpha1.VRGActionFailover && pvc.GetDeletionTimestamp().IsZero() {
+	if v.instance.Spec.Action != ramendrv1alpha1.VRGActionFailover && !rmnutil.IsDeleted(pvc) {
 		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolumeClaim is not marked for deletion")
 
 		msg := "unable to transition to Secondary as PVC is not deleted"
@@ -339,7 +339,7 @@ func (v *VRGInstance) protectPVC(pvc *corev1.PersistentVolumeClaim,
 	}
 
 	// Annotate that PVC protection is complete, skip if being deleted
-	if pvc.GetDeletionTimestamp().IsZero() {
+	if !rmnutil.IsDeleted(pvc) {
 		if err := v.addProtectedAnnotationForPVC(pvc, log); err != nil {
 			log.Info("Requeuing, as annotating PersistentVolumeClaim failed", "errorValue", err)
 
@@ -377,7 +377,7 @@ func skipPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, string) 
 
 func isPVCDeletedAndNotProtected(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, string) {
 	// If PVC deleted but not yet protected with a finalizer, skip it!
-	if !containsString(pvc.Finalizers, pvcVRFinalizerProtected) && !pvc.GetDeletionTimestamp().IsZero() {
+	if !containsString(pvc.Finalizers, pvcVRFinalizerProtected) && rmnutil.IsDeleted(pvc) {
 		log.Info("Skipping PersistentVolumeClaim, as it is marked for deletion and not yet protected")
 
 		msg := "Skipping pvc marked for deletion"

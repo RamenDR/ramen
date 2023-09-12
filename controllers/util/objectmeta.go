@@ -17,3 +17,7 @@ func ObjectMetaEmbedded(objectMeta *metav1.ObjectMeta) metav1.ObjectMeta {
 		Finalizers:  objectMeta.Finalizers,
 	}
 }
+
+func IsDeleted(o metav1.Object) bool {
+	return !o.GetDeletionTimestamp().IsZero()
+}

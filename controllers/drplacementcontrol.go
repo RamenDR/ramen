@@ -1800,7 +1800,7 @@ func (d *DRPCInstance) ensureVRGManifestWorkOnClusterDeleted(clusterName string)
 		return !done, fmt.Errorf("failed to retrieve ManifestWork (%w)", err)
 	}
 
-	if !mw.GetDeletionTimestamp().IsZero() {
+	if rmnutil.IsDeleted(mw) {
 		d.log.Info("Waiting for VRG MW to be fully deleted", "cluster", clusterName)
 		// As long as the Manifestwork still exist, then we are not done
 		return !done, nil
