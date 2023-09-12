@@ -129,11 +129,13 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 	return requeue
 }
 
-// reconcileVRAsSecondary checks for PVC readiness to move to Secondary and subsequently updates the VR
-// backing the PVC to secondary. It reports completion status of the VR request with the following values:
-// requeue (bool): If the request needs to be requeued
-// ready (bool): If desired state is achieved and hence VR is ready
-// skip (bool): If the VR can be currently skipped for processing
+// reconcileVRAsSecondary checks for PVC readiness to move to Secondary and
+// subsequently updates the VR backing the PVC to secondary.
+//
+// Returns 3 booleans describing the completion status of the VR request:
+//   - requeue: If the request needs to be requeued
+//   - ready: If desired state is achieved and hence VR is ready
+//   - skip: If the VR can be currently skipped for processing
 func (v *VRGInstance) reconcileVRAsSecondary(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, bool, bool) {
 	const (
 		requeue bool = true
@@ -940,8 +942,9 @@ func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName, 
 	return true, true, nil
 }
 
-// processVRAsSecondary processes VR to change its state to secondary, with the assumption that the
-// related PVC is prepared for VR as secondary
+// processVRAsSecondary processes VR to change its state to secondary, with the
+// assumption that the related PVC is prepared for VR as secondary
+//
 // Return values are:
 //   - a boolean indicating if a reconcile requeue is required
 //   - a boolean indicating if VR is already at the desired state
@@ -972,13 +975,17 @@ func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName
 	return true, true, nil
 }
 
-// createOrUpdateVR updates an existing VR resource if found, or creates it if required
-// While both creating and updating the VolumeReplication resource, conditions.status
-// for the protected PVC (corresponding to the VolumeReplication resource) is set as
-// VRGConditionReasonProgressing. When the VolumeReplication resource changes its state either due to
-// successful reaching of the desired state or due to some error, VolumeReplicationGroup
-// would get a reconcile. And then the conditions for the appropriate Protected PVC can
-// be set as either Replicating or Error.
+// createOrUpdateVR updates an existing VR resource if found, or creates it if
+// required.
+//
+// While both creating and updating the VolumeReplication resource,
+// conditions.status for the protected PVC (corresponding to the
+// VolumeReplication resource) is set as VRGConditionReasonProgressing. When the
+// VolumeReplication resource changes its state either due to successful
+// reaching of the desired state or due to some error, VolumeReplicationGroup
+// would get a reconcile. And then the conditions for the appropriate Protected
+// PVC can be set as either Replicating or Error.
+//
 // Return values are:
 //   - a boolean indicating if a reconcile requeue is required
 //   - a boolean indicating if VR is already at the desired state
@@ -1043,7 +1050,7 @@ func (v *VRGInstance) autoResync(state volrep.ReplicationState) bool {
 	return true
 }
 
-// updateVR updates the VR to the desired state and returns,
+// updateVR updates the VR to the desired state and returns:
 //   - a boolean indicating if a reconcile requeue is required
 //   - a boolean indicating if VR is already at the desired state
 //   - any errors during the process of updating the resource
@@ -1188,8 +1195,9 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 	return nil, fmt.Errorf("no VolumeReplicationClass found to match provisioner and schedule")
 }
 
-// getStorageClass inspects the PVCs being protected by this VRG instance for the passed in namespacedName, and
-// returns its corresponding StorageClass resource from an instance cache if available, or fetches it from the API
+// getStorageClass inspects the PVCs being protected by this VRG instance for
+// the passed in namespacedName, and returns its corresponding StorageClass
+// resource from an instance cache if available, or fetches it from the API
 // server and stores it in an instance cache before returning the StorageClass
 func (v *VRGInstance) getStorageClass(namespacedName types.NamespacedName) (*storagev1.StorageClass, error) {
 	var pvc *corev1.PersistentVolumeClaim
