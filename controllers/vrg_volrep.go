@@ -161,7 +161,7 @@ func (v *VRGInstance) reconcileVRAsSecondary(pvc *corev1.PersistentVolumeClaim, 
 func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
 	const ready bool = true
 
-	// If PVC is not being deleted, it is not ready for Secondary, unless action is failover
+	// The PVC must be deleted to be ready for secondary, unless action is failover.
 	if v.instance.Spec.Action != ramendrv1alpha1.VRGActionFailover && !rmnutil.IsDeleted(pvc) {
 		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolumeClaim is not marked for deletion")
 
