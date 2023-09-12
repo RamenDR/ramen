@@ -351,8 +351,7 @@ func (v *VRGInstance) kubeObjectsCaptureAndCaptureRequestDelete(
 func (v *VRGInstance) kubeObjectsCaptureDeleteAndLog(
 	s3StoreAccessor s3StoreAccessor, pathName, requestName string, log logr.Logger,
 ) {
-	// TODO Rename DeleteObjectsWithKeyPrefix after merging PR #828
-	if err := s3StoreAccessor.ObjectStorer.DeleteObjects /*WithKeyPrefix*/ (pathName + requestName + "/"); err != nil {
+	if err := s3StoreAccessor.ObjectStorer.DeleteObjectsWithKeyPrefix(pathName + requestName + "/"); err != nil {
 		log.Error(err, "Kube objects capture delete error")
 	}
 }
