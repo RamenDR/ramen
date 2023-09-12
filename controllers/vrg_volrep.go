@@ -751,8 +751,6 @@ func (v *VRGInstance) reconcileVRsForDeletion() bool {
 func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
 	const requeue = true
 
-	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
-
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
 		requeueResult, ready, skip := v.reconcileVRAsSecondary(pvc, log)
 		if requeueResult {
@@ -768,6 +766,8 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 			return !requeue
 		}
 	} else {
+		pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
+
 		requeueResult, ready, err := v.processVRAsPrimary(pvcNamespacedName, log)
 		switch {
 		case err != nil:
