@@ -807,20 +807,25 @@ func (v *VRGInstance) undoPVCFinalizersAndPVRetention(pvc *corev1.PersistentVolu
 	return !requeue
 }
 
-// reconcileMissingVR determines if VR is missing, and if missing completes other steps required for
-// reconciliation during deletion.
-// VR can be missing,
-// - if no VR was created post initial processing, by when VRG was deleted. In this case
-// no PV was also uploaded, as VR is created first before PV is uploaded.
-// - if VR was deleted in a prior reconcile, during VRG deletion, but steps post VR deletion were not
-// completed, at this point a deleted VR is also not processed further (its generation would have been updated)
-// Returns 2 booleans,
-// - the first indicating if VR is missing or not, to enable further VR processing if needed
-// - the next indicating any required requeue of the request, due to errors in determining VR presence
+// reconcileMissingVR determines if VR is missing, and if missing completes
+// other steps required for reconciliation during deletion.
+//
+// VR can be missing if:
+//   - VR was not created post initial processing, by when VRG was deleted. In
+//     this case no PV was also uploaded, as VR is created first before PV is
+//     uploaded.
+//   - VR was deleted in a prior reconcile, during VRG deletion, but steps post VR
+//     deletion were not completed, at this point a deleted VR is also not
+//     processed further (its generation would have been updated)
+//
+// Returns 2 booleans:
+//   - vrMissing: the VR is missing
+//   - requeue: need to requeue the request, due to errors in determining VR
+//     presence
 func (v *VRGInstance) reconcileMissingVR(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, bool) {
 	const (
-		requeue   = true
 		vrMissing = true
+		requeue   = true
 	)
 
 	if v.instance.Spec.Async == nil {
