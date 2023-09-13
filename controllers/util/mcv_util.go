@@ -71,7 +71,9 @@ func (m ManagedClusterViewGetterImpl) GetVRGFromManagedCluster(resourceName, res
 	}
 
 	mcvViewscope := viewv1beta1.ViewScope{
-		Resource:  "VolumeReplicationGroup",
+		Kind:      "VolumeReplicationGroup",
+		Group:     rmn.GroupVersion.Group,
+		Version:   rmn.GroupVersion.Version,
 		Name:      resourceName,
 		Namespace: resourceNamespace,
 	}
@@ -98,7 +100,9 @@ func (m ManagedClusterViewGetterImpl) GetNFFromManagedCluster(resourceName, reso
 	}
 
 	mcvViewscope := viewv1beta1.ViewScope{
-		Resource:  "NetworkFence",
+		Kind:      "NetworkFence",
+		Group:     csiaddonsv1alpha1.GroupVersion.Group,
+		Version:   csiaddonsv1alpha1.GroupVersion.Version,
 		Name:      "network-fence-" + resourceName,
 		Namespace: resourceNamespace,
 	}
@@ -128,8 +132,10 @@ func (m ManagedClusterViewGetterImpl) GetMModeFromManagedCluster(resourceName, m
 	}
 
 	mcvViewscope := viewv1beta1.ViewScope{
-		Resource: "MaintenanceMode",
-		Name:     resourceName,
+		Kind:    "MaintenanceMode",
+		Group:   rmn.GroupVersion.Group,
+		Version: rmn.GroupVersion.Version,
+		Name:    resourceName,
 	}
 
 	mMode := &rmn.MaintenanceMode{}
@@ -191,8 +197,10 @@ func (m ManagedClusterViewGetterImpl) GetNamespaceFromManagedCluster(
 	}
 
 	mcvViewscope := viewv1beta1.ViewScope{
-		Resource: "Namespace",
-		Name:     namespaceString,
+		Kind:    "Namespace",
+		Group:   corev1.SchemeGroupVersion.Group,
+		Version: corev1.SchemeGroupVersion.Version,
+		Name:    namespaceString,
 	}
 
 	namespace := &corev1.Namespace{}
