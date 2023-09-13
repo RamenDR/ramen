@@ -307,6 +307,7 @@ Returns: ManagedClusterView, error
 func (m ManagedClusterViewGetterImpl) getOrCreateManagedClusterView(
 	meta metav1.ObjectMeta, viewscope viewv1beta1.ViewScope, logger logr.Logger,
 ) (*viewv1beta1.ManagedClusterView, error) {
+	key := types.NamespacedName{Name: meta.Name, Namespace: meta.Namespace}
 	mcv := &viewv1beta1.ManagedClusterView{
 		ObjectMeta: meta,
 		Spec: viewv1beta1.ViewSpec{
@@ -314,15 +315,17 @@ func (m ManagedClusterViewGetterImpl) getOrCreateManagedClusterView(
 		},
 	}
 
-	err := m.Get(context.TODO(), types.NamespacedName{Name: meta.Name, Namespace: meta.Namespace}, mcv)
+	err := m.Get(context.TODO(), key, mcv)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			logger.Info(fmt.Sprintf("Creating ManagedClusterView %v", mcv))
-			err = m.Create(context.TODO(), mcv)
+		if !errors.IsNotFound(err) {
+			return nil, errorswrapper.Wrap(err, "failed to get ManagedClusterView")
 		}
 
-		if err != nil {
-			return nil, errorswrapper.Wrap(err, "failed to getOrCreateManagedClusterView")
+		logger.Info(fmt.Sprintf("Creating ManagedClusterView %s with scope %+v",
+			key, viewscope))
+
+		if err := m.Create(context.TODO(), mcv); err != nil {
+			return nil, errorswrapper.Wrap(err, "failed to create ManagedClusterView")
 		}
 	}
 
