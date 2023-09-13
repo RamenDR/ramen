@@ -330,7 +330,14 @@ func (m ManagedClusterViewGetterImpl) getOrCreateManagedClusterView(
 	}
 
 	if mcv.Spec.Scope != viewscope {
-		logger.Info("WARNING: existing ManagedClusterView has different ViewScope than desired one")
+		// Expected once when uprading ramen if scope format or details have changed.
+		logger.Info(fmt.Sprintf("Updating ManagedClusterView %s scope %+v to %+v",
+			key, mcv.Spec.Scope, viewscope))
+
+		mcv.Spec.Scope = viewscope
+		if err := m.Update(context.TODO(), mcv); err != nil {
+			return nil, errorswrapper.Wrap(err, "failed to update ManagedClusterView")
+		}
 	}
 
 	return mcv, nil
