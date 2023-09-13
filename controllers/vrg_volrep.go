@@ -1687,49 +1687,10 @@ func (v *VRGInstance) addProtectedFinalizerToPVC(pvc *corev1.PersistentVolumeCla
 	return v.addFinalizerToPVC(pvc, pvcVRFinalizerProtected, log)
 }
 
-func (v *VRGInstance) addFinalizerToPVC(pvc *corev1.PersistentVolumeClaim,
-	finalizer string,
-	log logr.Logger,
-) error {
-	if !containsString(pvc.ObjectMeta.Finalizers, finalizer) {
-		pvc.ObjectMeta.Finalizers = append(pvc.ObjectMeta.Finalizers, finalizer)
-		if err := v.reconciler.Update(v.ctx, pvc); err != nil {
-			log.Error(err, "Failed to add finalizer", "finalizer", finalizer)
-
-			return fmt.Errorf("failed to add finalizer (%s) to PersistentVolumeClaim resource"+
-				" (%s/%s) belonging to VolumeReplicationGroup (%s/%s), %w",
-				finalizer, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
-		}
-	}
-
-	return nil
-}
-
 func (v *VRGInstance) removeProtectedFinalizerFromPVC(pvc *corev1.PersistentVolumeClaim,
 	log logr.Logger,
 ) error {
-	return v.removeFinalizerFromPVC(pvc, pvcVRFinalizerProtected, log)
-}
-
-// removeFinalizerFromPVC removes the VR finalizer on PVC and also the protected annotation from the PVC
-func (v *VRGInstance) removeFinalizerFromPVC(pvc *corev1.PersistentVolumeClaim,
-	finalizer string,
-	log logr.Logger,
-) error {
-	if containsString(pvc.ObjectMeta.Finalizers, finalizer) {
-		pvc.ObjectMeta.Finalizers = removeString(pvc.ObjectMeta.Finalizers, finalizer)
-		delete(pvc.ObjectMeta.Annotations, pvcVRAnnotationProtectedKey)
-
-		if err := v.reconciler.Update(v.ctx, pvc); err != nil {
-			log.Error(err, "Failed to remove finalizer", "finalizer", finalizer)
-
-			return fmt.Errorf("failed to remove finalizer (%s) from PersistentVolumeClaim resource"+
-				" (%s/%s) detected as part of VolumeReplicationGroup (%s/%s), %w",
-				finalizer, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
-		}
-	}
-
-	return nil
+	return v.removeFinalizerAndAnnotationFromPVC(pvc, pvcVRFinalizerProtected, pvcVRAnnotationProtectedKey, log)
 }
 
 func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) error {

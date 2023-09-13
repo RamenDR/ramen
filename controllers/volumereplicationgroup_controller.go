@@ -792,6 +792,46 @@ func (v *VRGInstance) separatePVCsUsingStorageClassProvisioner(pvcList *corev1.P
 	return nil
 }
 
+func (v *VRGInstance) addFinalizerToPVC(pvc *corev1.PersistentVolumeClaim,
+	finalizer string,
+	log logr.Logger,
+) error {
+	if !containsString(pvc.ObjectMeta.Finalizers, finalizer) {
+		pvc.ObjectMeta.Finalizers = append(pvc.ObjectMeta.Finalizers, finalizer)
+		if err := v.reconciler.Update(v.ctx, pvc); err != nil {
+			log.Error(err, "Failed to add finalizer", "finalizer", finalizer)
+
+			return fmt.Errorf("failed to add finalizer (%s) to PersistentVolumeClaim resource"+
+				" (%s/%s) belonging to VolumeReplicationGroup (%s/%s), %w",
+				finalizer, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// removeFinalizerFromPVC removes the VR finalizer on PVC and also the protected annotation from the PVC
+func (v *VRGInstance) removeFinalizerAndAnnotationFromPVC(pvc *corev1.PersistentVolumeClaim,
+	finalizer string,
+	annotation string,
+	log logr.Logger,
+) error {
+	if containsString(pvc.ObjectMeta.Finalizers, finalizer) {
+		pvc.ObjectMeta.Finalizers = removeString(pvc.ObjectMeta.Finalizers, finalizer)
+		delete(pvc.ObjectMeta.Annotations, annotation)
+
+		if err := v.reconciler.Update(v.ctx, pvc); err != nil {
+			log.Error(err, "Failed to remove finalizer", "finalizer", finalizer)
+
+			return fmt.Errorf("failed to remove finalizer (%s) from PersistentVolumeClaim resource"+
+				" (%s/%s) detected as part of VolumeReplicationGroup (%s/%s), %w",
+				finalizer, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
+		}
+	}
+
+	return nil
+}
+
 // finalizeVRG cleans up managed resources and removes the VRG finalizer for resource deletion
 func (v *VRGInstance) processForDeletion() ctrl.Result {
 	v.log.Info("Entering processing VolumeReplicationGroup for deletion")
