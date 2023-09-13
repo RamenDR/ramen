@@ -1,0 +1,42 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    appname: busybox
+  name: busybox
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      appname: busybox
+  template:
+    metadata:
+      labels:
+        appname: busybox
+    spec:
+      containers:
+      - image: docker.io/library/busybox:stable
+        imagePullPolicy: IfNotPresent
+        name: busybox
+        command:
+        - sh
+        - -c
+        - |
+          trap exit TERM
+          while true; do
+              date | tee -a /mnt/test/outfile
+              sync
+              sleep 10 &
+              wait
+          done
+        volumeMounts:
+        - name: mypvc
+          mountPath: /mnt/test
+      volumes:
+      - name: mypvc
+        persistentVolumeClaim:
+          claimName: busybox-pvc

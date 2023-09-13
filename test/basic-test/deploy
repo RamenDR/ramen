@@ -3,55 +3,31 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import os
-
 import drenv
-from drenv import commands
 from drenv import kubectl
 from drenv import test
 
 test.start("deploy", __file__)
-test.add_argument(
-    "--cluster",
-    help="Cluster name to deploy on (default first cluster)",
-)
 args = test.parse_args()
 config = test.config
 
-cluster = args.cluster or test.env["clusters"][0]
-test.info("Deploying on cluster '%s'", cluster)
-
-test.info("Creating temporary directory %s", config["tmp_dir"])
-os.makedirs(config["tmp_dir"], exist_ok=True)
-
-test.info("Cloning ocm-ramen-samples")
-if not os.path.exists(config["samples_dir"]):
-    cmd = [
-        "git",
-        "clone",
-        "--depth=1",
-        "--branch",
-        config["samples_branch"],
-        config["samples_repo"],
-        config["samples_dir"],
-    ]
-    for line in commands.watch(*cmd):
-        test.debug(line)
-
-test.info("Creating kustomization for using cluster '%s'", cluster)
-template = drenv.template("kustomization.yaml")
-yaml = template.substitute(cluster_name=cluster)
-with open(os.path.join(config["tmp_dir"], "kustomization.yaml"), "w") as f:
-    f.write(yaml)
-
-test.info("Deploying busybox example application")
+test.info("Deploying sample channel")
 kubectl.apply(
-    f"--kustomize={config['tmp_dir']}",
+    f"--kustomize={config['repo']}/channel?ref={config['branch']}",
     context=test.env["hub"],
     log=test.debug,
 )
 
-test.info("waiting for namespace %s", config["namespace"])
+test.info("Deploying '%s' subscription", config["namespace"])
+with drenv.kustomization(
+    "subscription/kustomization.yaml",
+    namespace=config["namespace"],
+    repo=config["repo"],
+    branch=config["branch"],
+) as sub:
+    kubectl.apply(f"--kustomize={sub}", context=test.env["hub"], log=test.debug)
+
+test.info("waiting for namespace '%s'", config["namespace"])
 drenv.wait_for(
     f"namespace/{config['namespace']}",
     timeout=60,
@@ -59,9 +35,26 @@ drenv.wait_for(
     log=test.debug,
 )
 
-test.info("Waiting until busybox drpc reports phase")
+test.info("Waiting for '%s' placement decision", config["namespace"])
 drenv.wait_for(
-    f"drpc/{config['name']}",
+    f"placementrule/{config['placement']}",
+    output="jsonpath={.status.decisions}",
+    namespace=config["namespace"],
+    timeout=60,
+    profile=test.env["hub"],
+    log=test.debug,
+)
+
+cluster = kubectl.get(
+    f"placementrule/{config['placement']}",
+    f"--namespace={config['namespace']}",
+    "--output=jsonpath={.status.decisions[0].clusterName}",
+    context=test.env["hub"],
+)
+
+test.info("Waiting until '%s' subscription reports phase", config["namespace"])
+drenv.wait_for(
+    f"subscription/{config['subscription']}",
     output="jsonpath={.status.phase}",
     namespace=config["namespace"],
     timeout=60,
@@ -69,24 +62,48 @@ drenv.wait_for(
     log=test.debug,
 )
 
-test.info("Waiting until busybox drpc is deployed")
+test.info("Waiting until '%s' subscription is propagated", config["namespace"])
 kubectl.wait(
-    f"drpc/{config['name']}",
-    "--for=jsonpath={.status.phase}=Deployed",
+    f"subscription/{config['subscription']}",
+    "--for=jsonpath={.status.phase}=Propagated",
     f"--namespace={config['namespace']}",
     "--timeout=60s",
     context=test.env["hub"],
     log=test.debug,
 )
 
-test.info("Waiting until application is replicated")
-drenv.wait_for(
-    f"drpc/{config['name']}",
-    output="jsonpath={.status.lastGroupSyncTime}",
-    namespace=config["namespace"],
-    timeout=300,
-    profile=test.env["hub"],
+test.info("Waiting until '%s' manifestwork is available", config["namespace"])
+kubectl.wait(
+    f"manifestwork/{config['namespace']}-{config['subscription']}",
+    "--for=condition=available",
+    f"--namespace={cluster}",
+    "--timeout=60s",
+    context=test.env["hub"],
     log=test.debug,
 )
 
-test.info("Application was deployed successfully")
+# Manifestwork can report condition=available before the deployment exist.
+test.info("Waiting for '%s' deployment on cluster '%s'", config["namespace"], cluster)
+drenv.wait_for(
+    f"deploy/{config['deploy']}",
+    namespace=config["namespace"],
+    timeout=60,
+    profile=cluster,
+    log=test.debug,
+)
+
+test.info(
+    "Waiting until '%s' deployment is rolled out on cluster '%s'",
+    config["namespace"],
+    cluster,
+)
+kubectl.rollout(
+    "status",
+    f"deploy/{config['deploy']}",
+    f"--namespace={config['namespace']}",
+    "--timeout=60s",
+    context=cluster,
+    log=test.debug,
+)
+
+test.info("Application '%s' was deployed successfully", config["namespace"])

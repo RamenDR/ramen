@@ -2,14 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 ---
-# We use well known path since we need the same directory for multiple scripts.
-# To use a tempoary directory we need to keep the path of the tempoary
-# directory somewhere.
-tmp_dir: /tmp/ramen-test/basic-test
-
-samples_repo: https://github.com/ramendr/ocm-ramen-samples.git
-samples_branch: main
-samples_dir: /tmp/ramen-test/basic-test/ocm-ramen-samples
-
+repo: https://github.com/nirs/ocm-ramen-samples.git
+branch: test
 namespace: busybox-sample
-name: busybox-drpc
+drpc: busybox-drpc
+subscription: busybox-sub
+placement: busybox-placement
+deploy: busybox
+pvc: busybox-pvc

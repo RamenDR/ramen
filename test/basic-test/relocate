@@ -10,19 +10,30 @@ from drenv import kubectl
 from drenv import test
 
 test.start("relocate", __file__)
-test.add_argument(
-    "--cluster",
-    help="Cluster name to relocate to (default first cluster).",
-)
 args = test.parse_args()
 config = test.config
 
-cluster = args.cluster or test.env["clusters"][0]
-test.info("Relocate to cluster '%s'", cluster)
+old_cluster = kubectl.get(
+    f"placementrule/{config['placement']}",
+    f"--namespace={config['namespace']}",
+    "--output=jsonpath={.status.decisions[0].clusterName}",
+    context=test.env["hub"],
+)
+if old_cluster == test.env["clusters"][0]:
+    new_cluster = test.env["clusters"][1]
+else:
+    new_cluster = test.env["clusters"][0]
 
-test.info("Waiting until peer is ready")
+test.info(
+    "Relocating application '%s' from cluster '%s' to cluster '%s'",
+    config["namespace"],
+    old_cluster,
+    new_cluster,
+)
+
+test.info("Waiting until '%s' peer is ready", config["namespace"])
 kubectl.wait(
-    f"drpc/{config['name']}",
+    f"drpc/{config['drpc']}",
     "--for=condition=PeerReady",
     f"--namespace={config['namespace']}",
     "--timeout=300s",
@@ -30,9 +41,9 @@ kubectl.wait(
     log=test.debug,
 )
 
-test.info("Waiting until application is replicated")
+test.info("Waiting until '%s' application is replicated", config["namespace"])
 drenv.wait_for(
-    f"drpc/{config['name']}",
+    f"drpc/{config['drpc']}",
     output="jsonpath={.status.lastGroupSyncTime}",
     namespace=config["namespace"],
     timeout=300,
@@ -41,9 +52,9 @@ drenv.wait_for(
 )
 
 test.info("Starting relocate")
-patch = {"spec": {"action": "Relocate", "preferredCluster": cluster}}
+patch = {"spec": {"action": "Relocate", "preferredCluster": new_cluster}}
 kubectl.patch(
-    f"drpc/{config['name']}",
+    f"drpc/{config['drpc']}",
     "--patch",
     json.dumps(patch),
     "--type=merge",
@@ -52,9 +63,9 @@ kubectl.patch(
     log=test.debug,
 )
 
-test.info("Waiting until application is relocated...")
+test.info("Waiting until '%s' application is relocated...", config["namespace"])
 kubectl.wait(
-    f"drpc/{config['name']}",
+    f"drpc/{config['drpc']}",
     "--for=jsonpath={.status.phase}=Relocated",
     f"--namespace={config['namespace']}",
     "--timeout=300s",
@@ -64,9 +75,9 @@ kubectl.wait(
 
 # NOTE: Deleting the application get stuck if we don't wait until the cleanup
 # after relocate complete before we delete the app.
-test.info("Waiting until relocation completes...")
+test.info("Waiting until '%s' relocation completes...", config["namespace"])
 kubectl.wait(
-    f"drpc/{config['name']}",
+    f"drpc/{config['drpc']}",
     "--for=jsonpath={.status.progression}=Completed",
     f"--namespace={config['namespace']}",
     "--timeout=300s",
@@ -74,4 +85,18 @@ kubectl.wait(
     log=test.debug,
 )
 
-test.info("Application was relocated to cluster %s successfully", cluster)
+test.info("Waiting until '%s' application is replicated", config["namespace"])
+drenv.wait_for(
+    f"drpc/{config['drpc']}",
+    output="jsonpath={.status.lastGroupSyncTime}",
+    namespace=config["namespace"],
+    timeout=300,
+    profile=test.env["hub"],
+    log=test.debug,
+)
+
+test.info(
+    "Application '%s' was relocated to cluster %s successfully",
+    config["namespace"],
+    new_cluster,
+)

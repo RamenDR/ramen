@@ -1,0 +1,14 @@
+---
+resources:
+- ../../busybox
+namespace: busybox-hostpath
+commonLabels:
+  app: busybox-hostpath
+patches:
+- target:
+    kind: PersistentVolumeClaim
+    name: busybox-pvc
+  patch: |-
+    - op: replace
+      path: /spec/storageClassName
+      value: csi-hostpath-sc

@@ -9,7 +9,7 @@ import sys
 from drenv import kubectl
 
 # Update this when upgrading rook.
-VERSION = "release-1.10"
+VERSION = "release-1.12"
 BASE_URL = f"https://raw.githubusercontent.com/rook/rook/{VERSION}/deploy/examples"
 
 

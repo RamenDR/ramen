@@ -6,6 +6,8 @@
 base="$(dirname $0)"
 
 "$base/deploy" "$@"
+"$base/protect" "$@"
 "$base/failover" "$@"
 "$base/relocate" "$@"
+"$base/unprotect" "$@"
 "$base/undeploy" "$@"

@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import json
+
+import drenv
+from drenv import kubectl
+from drenv import test
+
+test.start("unprotect", __file__)
+args = test.parse_args()
+config = test.config
+
+test.info("Disabling DR for application '%s'", config["namespace"])
+
+cluster = kubectl.get(
+    f"placementrule/{config['placement']}",
+    f"--namespace={config['namespace']}",
+    "--output=jsonpath={.status.decisions[0].clusterName}",
+    context=test.env["hub"],
+)
+
+out = kubectl.get(
+    f"pvc/{config['pvc']}",
+    f"--namespace={config['namespace']}",
+    "--output=json",
+    context=cluster,
+)
+pvc_before = json.loads(out)
+
+test.info("Deleting '%s' drpc", config["namespace"])
+with drenv.kustomization(
+    "dr/kustomization.yaml",
+    namespace=config["namespace"],
+    repo=config["repo"],
+    branch=config["branch"],
+    cluster=cluster,
+) as sub:
+    kubectl.delete(
+        f"--kustomize={sub}",
+        "--ignore-not-found",
+        "--timeout=120s",
+        context=test.env["hub"],
+        log=test.debug,
+    )
+
+test.info("Removing '%s' placement scheduler", config["namespace"])
+patch = {"spec": {"schedulerName": None}}
+kubectl.patch(
+    f"placementrule/{config['placement']}",
+    "--patch",
+    json.dumps(patch),
+    "--type=merge",
+    f"--namespace={config['namespace']}",
+    context=test.env["hub"],
+    log=test.debug,
+)
+
+out = kubectl.get(
+    f"pvc/{config['pvc']}",
+    f"--namespace={config['namespace']}",
+    "--output=json",
+    context=cluster,
+)
+pvc_after = json.loads(out)
+
+# Verify that the PVC and PV were not modified by unprotecting the app.
+# (not sure that this is the best way).
+
+if pvc_after["metadata"]["uid"] != pvc_before["metadata"]["uid"]:
+    raise RuntimeError(f"PVC uid changed: before={pvc_after} after={pvc_before}")
+
+if pvc_after["spec"]["volumeName"] != pvc_before["spec"]["volumeName"]:
+    raise RuntimeError(f"PVC volume changed: before={pvc_after} after={pvc_before}")
+
+# But the PV reclaim policy must change to "Delete".
+
+out = kubectl.get(
+    "pv",
+    pvc_after["spec"]["volumeName"],
+    "--output=json",
+    context=cluster,
+)
+pv = json.loads(out)
+if pv["spec"]["persistentVolumeReclaimPolicy"] != "Delete":
+    raise RuntimeError(f"Unexpected PV reclaim policy: {pv}")
+
+test.info("Application '%s' was unprotected successfully", config["namespace"])

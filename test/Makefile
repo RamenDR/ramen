@@ -12,6 +12,8 @@ sources := $(wildcard \
 	*/undeploy \
 	*/failover \
 	*/relocate \
+	*/protect \
+	*/unprotect \
 )
 
 all: flake8 pylint black test coverage

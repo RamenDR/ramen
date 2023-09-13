@@ -1,0 +1,6 @@
+---
+resources:
+- ../../dr
+namespace: busybox-hostpath
+commonLabels:
+  app: busybox-hostpath
