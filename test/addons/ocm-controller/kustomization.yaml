@@ -3,37 +3,24 @@
 
 # yamllint disable rule:line-length
 
-# Based on https://github.com/stolostron/multicloud-operators-foundation/blob/main/deploy/foundation/hub/kustomization.yaml
-# including only what we need for ocm-controller.
-
 ---
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-
 resources:
-- $base_url/resources/crds/action.open-cluster-management.io_managedclusteractions.crd.yaml
-- $base_url/resources/crds/hive.openshift.io_clusterclaims.yaml
-- $base_url/resources/crds/hive.openshift.io_clusterdeployments.yaml
-- $base_url/resources/crds/hive.openshift.io_clusterpools.yaml
-- $base_url/resources/crds/imageregistry.open-cluster-management.io_managedclusterimageregistries.crd.yaml
-- $base_url/resources/crds/internal.open-cluster-management.io_managedclusterinfos.crd.yaml
-- $base_url/resources/crds/view.open-cluster-management.io_managedclusterviews.crd.yaml
-- $base_url/resources/agent-clusterrole.yaml
-- $base_url/resources/clustermanagementaddon.yaml
-- $base_url/resources/clusterrole.yaml
-- $base_url/resources/controller.yaml
-
+- https://github.com/stolostron/multicloud-operators-foundation.git/deploy/foundation/hub/overlays/ocm-controller?ref=main
 images:
 - name: quay.io/stolostron/multicloud-manager
-  newTag: $image_tag
-
+  newTag: latest
 patches:
-# Replace upstream patches.yaml with version that does not need modification
-# before applying the patch.
+# Ammend upstream kustomization since it does not add an image tag. We want an
+# image tag to pin to specific version.
 - target:
     kind: Deployment
     name: ocm-controller
   patch: |-
-    - op: add
-      path: /spec/template/spec/containers/0/args/-
-      value: "--agent-addon-image=quay.io/stolostron/multicloud-manager:$image_tag"
+    - op: test
+      path: /spec/template/spec/containers/0/args/2
+      value: "--agent-addon-image=quay.io/stolostron/multicloud-manager"
+    - op: replace
+      path: /spec/template/spec/containers/0/args/2
+      value: "--agent-addon-image=quay.io/stolostron/multicloud-manager:latest"
