@@ -6,25 +6,12 @@
 import os
 import sys
 
-import drenv
 from drenv import kubectl
-
-# Use latest good commit and the matching image tag (found using quay.io).
-VERSION = "629b9e066e342d7c0ce8141aa2f1f3ca5128c771"
-IMAGE_TAG = f"2.4.0-{VERSION}"
-
-
-BASE_URL = f"https://raw.githubusercontent.com/stolostron/multicloud-operators-foundation/{VERSION}/deploy/foundation/hub"
 
 
 def deploy(cluster):
     print("Deploying ocm controller")
-    with drenv.kustomization(
-        "kustomization.yaml",
-        base_url=BASE_URL,
-        image_tag=IMAGE_TAG,
-    ) as kustomization:
-        kubectl.apply("--kustomize", kustomization, context=cluster)
+    kubectl.apply("--kustomize", "./", context=cluster)
 
 
 def wait(cluster):
