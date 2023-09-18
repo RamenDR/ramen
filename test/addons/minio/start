@@ -11,7 +11,24 @@ from drenv import kubectl
 
 def deploy(cluster):
     print("Deploying minio")
-    kubectl.apply("--filename", "minio.yaml", context=cluster)
+    # Figure out the name of the default storage class and use kustomize to patch minio.yaml to use it
+    default_storage_class = kubectl.get(
+        "storageclass",
+        "-o",
+        'jsonpath={.items[?(@.metadata.annotations.storageclass\\.kubernetes\\.io/is-default-class=="true")].metadata.name}',
+    )
+    # error out if there is no default storage class
+    if not default_storage_class:
+        print("No default storage class found")
+        sys.exit(1)
+
+    if default_storage_class == "standard":
+        kubectl.apply("--filename", "minio.yaml", context=cluster)
+    else:
+        with open("minio.yaml", "r") as f:
+            minio_yaml = f.read()
+        minio_yaml = minio_yaml.replace("standard", default_storage_class)
+        kubectl.apply("--filename", "-", input=minio_yaml, context=cluster)
 
 
 def wait(cluster):
