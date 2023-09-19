@@ -30,6 +30,11 @@ environment.
    You need `minikube` version supporting the `--extra-disks` option.
    Tested with version v1.31.2.
 
+1. Install `socket_vmnet` on MacOS.
+   If you are using minikube on MacOS, drenv will default to using
+   `socket_vmnet` for network.
+   [Minikube documentation for MacOS network configuration on qemu](https://minikube.sigs.k8s.io/docs/drivers/qemu/#networking)
+
 1. Install the `kubectl` tool. See
    [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
    Tested with version v1.27.4.
@@ -464,7 +469,7 @@ $ drenv delete envs/example.yaml
       case the tool will not start a minikube cluster and all other
       options are ignored.
     - `driver`: The minikube driver. On Linux, the default drivers are kvm2 and
-      docker for VMs and containers. On MacOS, the defaults are hyperkit and
+      docker for VMs and containers. On MacOS, the defaults are qemu2 and
       podman. Use "$vm" and "$container" values to use the recommended VM and
       container drivers for the platform.
     - `container_runtime`: The container runtime to be used. Valid

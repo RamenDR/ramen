@@ -14,7 +14,7 @@ SHARED_NETWORK = "$network"
 _PLATFORM_DEFAULTS = {
     "__default__": {VM: "", CONTAINER: "", SHARED_NETWORK: ""},
     "linux": {VM: "kvm2", CONTAINER: "docker", SHARED_NETWORK: "default"},
-    "darwin": {VM: "hyperkit", CONTAINER: "podman", SHARED_NETWORK: ""},
+    "darwin": {VM: "qemu2", CONTAINER: "podman", SHARED_NETWORK: "socket_vmnet"},
 }
 
 
