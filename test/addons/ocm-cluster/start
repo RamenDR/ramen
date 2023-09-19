@@ -6,6 +6,7 @@
 import json
 import os
 import sys
+import yaml
 
 import drenv
 from drenv import cluster
@@ -97,6 +98,19 @@ def join_cluster(cluster, hub):
 
 def accept_cluster(cluster, hub):
     print("Accepting cluster")
+
+    managed_clusters = clusteradm.get("clusters", output="yaml", context=hub)
+
+    managed_clusters = managed_clusters.split("---")
+    for mc in managed_clusters:
+        managed_cluster = yaml.safe_load(mc)
+        metadata_name = managed_cluster["metadata"]["name"]
+        hub_accepts_client = managed_cluster["spec"]["hubAcceptsClient"]
+
+        if metadata_name == cluster and hub_accepts_client:
+            print(f"Cluster '{cluster}' already accepted")
+            return
+
     clusteradm.accept([cluster], wait=True, context=hub)
 
 
