@@ -60,6 +60,7 @@ def join_cluster(cluster, broker_info):
         clusterid=cluster,
         cable_driver="vxlan",
         version=VERSION,
+        check_broker_certificate=False,
     )
 
 

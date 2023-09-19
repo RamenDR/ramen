@@ -27,11 +27,20 @@ def deploy_broker(context, globalnet=False, broker_info=None, version=None, log=
         shutil.move(BROKER_INFO, broker_info)
 
 
-def join(broker_info, context, clusterid, cable_driver=None, version=None, log=print):
+def join(
+    broker_info,
+    context,
+    clusterid,
+    cable_driver=None,
+    version=None,
+    check_broker_certificate=True,
+    log=print,
+):
     """
     Run subctl join ... logging progress messages.
     """
     args = ["join", broker_info, "--context", context, "--clusterid", clusterid]
+    args.append(f"--check-broker-certificate={check_broker_certificate}")
     if cable_driver:
         args.extend(("--cable-driver", cable_driver))
     if version:
