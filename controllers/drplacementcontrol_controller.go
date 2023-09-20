@@ -635,6 +635,8 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	drPolicy, err := r.getAndEnsureValidDRPolicy(ctx, drpc, logger)
 	if err != nil {
+		r.recordFailure(ctx, drpc, placementObj, "Error", err.Error(), logger)
+
 		return ctrl.Result{}, err
 	}
 
