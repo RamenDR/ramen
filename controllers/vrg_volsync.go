@@ -24,11 +24,13 @@ func (v *VRGInstance) restorePVsForVolSync() error {
 	}
 
 	numPVsRestored := 0
+	var lastErr error
 
 	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
 		err := v.volSyncHandler.EnsurePVCfromRD(rdSpec)
 		if err != nil {
 			v.log.Info(fmt.Sprintf("Unable to ensure PVC %v -- err: %v", rdSpec, err))
+			lastErr = err
 
 			protectedPVC := v.findProtectedPVC(rdSpec.ProtectedPVC.Name)
 			if protectedPVC == nil {
@@ -56,7 +58,7 @@ func (v *VRGInstance) restorePVsForVolSync() error {
 	}
 
 	if numPVsRestored != len(v.instance.Spec.VolSync.RDSpec) {
-		return fmt.Errorf("failed to restore all PVCs using RDSpec (%v)", v.instance.Spec.VolSync.RDSpec)
+		return lastErr
 	}
 
 	v.log.Info("Success restoring VolSync PVs", "Total", numPVsRestored)
@@ -76,8 +78,8 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary(finalSyncPrepared *bool) (requeu
 		return
 	}
 
-	v.log.Info(fmt.Sprintf("Reconciling VolSync as Primary. VolSyncPVCs %d. VolSyncSpec %+v",
-		len(v.volSyncPVCs), v.instance.Spec.VolSync))
+	v.log.Info(fmt.Sprintf("Reconciling VolSync as Primary. VolSyncPVCs %d. VolSyncSpecCount %d",
+		len(v.volSyncPVCs), len(v.instance.Spec.VolSync.RDSpec)))
 
 	// Cleanup - this VRG is primary, cleanup if necessary
 	// remove any ReplicationDestinations (that would have been created when this VRG was secondary) if they
@@ -138,7 +140,9 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 	err := v.volSyncHandler.PreparePVC(pvc.Name, v.instance.Spec.PrepareForFinalSync,
 		v.volSyncHandler.IsCopyMethodDirectOrLocalDirect())
 	if err != nil {
-		return true
+		v.log.Info(fmt.Sprintf("Failed to prepare PVC. Error %v", err))
+
+		return true // requeue
 	}
 
 	// reconcile RS and if runFinalSync is true, then one final sync will be run
@@ -150,11 +154,11 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		setVRGConditionTypeVolSyncRepSourceSetupError(&protectedPVC.Conditions, v.instance.Generation,
 			"VolSync setup failed")
 
-		return true
+		return true // requeue
 	}
 
 	if rs == nil {
-		return true
+		return true // requeue
 	}
 
 	setVRGConditionTypeVolSyncRepSourceSetupComplete(&protectedPVC.Conditions, v.instance.Generation, "Ready")
@@ -193,13 +197,23 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() bool {
 	return v.reconcileRDSpecForDeletionOrReplication()
 }
 
+func (v *VRGInstance) reconcileVolSyncForDeletion() error {
+	for _, pvc := range v.volSyncPVCs {
+		if err := v.removeFinalizerAndAnnotationFromPVC(&pvc, volsync.VolSyncFinalizerName, "", v.log); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
 	requeue := false
 
 	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
 		v.log.Info("Reconcile RD as Secondary", "RDSpec", rdSpec)
 
-		rd, err := v.volSyncHandler.ReconcileRD(rdSpec)
+		rd, shouldRequeue, err := v.volSyncHandler.ReconcileRD(rdSpec, false)
 		if err != nil {
 			v.log.Error(err, "Failed to reconcile VolSync Replication Destination")
 
@@ -208,7 +222,7 @@ func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
 			break
 		}
 
-		if rd == nil {
+		if rd == nil || shouldRequeue {
 			v.log.Info(fmt.Sprintf("ReconcileRD - ReplicationDestination for %s is not ready. We'll retry...",
 				rdSpec.ProtectedPVC.Name))
 

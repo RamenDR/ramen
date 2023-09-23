@@ -85,7 +85,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 			handler.EnqueueRequestsFromMapFunc(r.pvcMapFunc),
 			builder.WithPredicates(pvcPredicateFunc()),
 		).
-		Watches(&source.Kind{Type: &corev1.PersistentVolumeClaim{}},
+		Watches(&source.Kind{Type: &volsyncv1alpha1.ReplicationDestination{}},
 			handler.EnqueueRequestsFromMapFunc(r.rdMapFunc),
 			builder.WithPredicates(replicationDestinationPredicateFunc()),
 		).
@@ -322,18 +322,30 @@ func replicationDestinationPredicateFunc() predicate.Funcs {
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			oldRD, ok := e.ObjectOld.DeepCopyObject().(*volsyncv1alpha1.ReplicationDestination)
 			if !ok {
-				log.Info("Failed to deep copy older MCV")
+				log.Info("Failed to deep copy older RD")
 
 				return false
 			}
 			newRD, ok := e.ObjectNew.DeepCopyObject().(*volsyncv1alpha1.ReplicationDestination)
 			if !ok {
-				log.Info("Failed to deep copy newer MCV")
+				log.Info("Failed to deep copy newer RD")
 
 				return false
 			}
 
-			log.Info(fmt.Sprintf("Update event for MCV %s/%s", oldRD.Name, oldRD.Namespace))
+			log.Info(fmt.Sprintf("Update event for RD %s/%s", oldRD.Name, oldRD.Namespace))
+
+			if oldRD.Status == nil || newRD.Status == nil {
+				return true
+			} else if oldRD.Status.LatestImage == nil && newRD.Status.LatestImage != nil {
+				return true
+			} else if oldRD.Status.LatestImage != nil && newRD.Status.LatestImage == nil {
+				return true
+			} else if oldRD.Status.LatestImage == nil && newRD.Status.LatestImage == nil {
+				return false
+			}
+
+			log.Info(fmt.Sprintf("Latest image old:%s/new:%s", oldRD.Status.LatestImage.Name, newRD.Status.LatestImage.Name))
 
 			return oldRD.Status.LatestImage.Name != newRD.Status.LatestImage.Name
 		},
@@ -641,8 +653,6 @@ func (v *VRGInstance) clusterDataRestore(result *ctrl.Result) error {
 
 	err := v.restorePVsForVolSync()
 	if err != nil {
-		v.log.Info("VolSync PV restore failed")
-
 		result.Requeue = true
 
 		return fmt.Errorf("failed to restore PVs for VolSync (%w)", err)
@@ -850,6 +860,12 @@ func (v *VRGInstance) processForDeletion() ctrl.Result {
 		return ctrl.Result{Requeue: true}
 	}
 
+	if err := v.reconcileVolSyncForDeletion(); err != nil {
+		v.log.Info("Requeuing as reconciling VolSync for deletion failed", "error", err)
+
+		return ctrl.Result{Requeue: true}
+	}
+
 	result := ctrl.Result{}
 	if err := v.kubeObjectsProtectionDelete(&result); err != nil {
 		v.log.Info("Kube objects protection deletion failed", "error", err)
@@ -859,15 +875,14 @@ func (v *VRGInstance) processForDeletion() ctrl.Result {
 
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
 		if err := v.deleteClusterDataInS3Stores(v.log); err != nil {
-			v.log.Info("Requeuing due to failure in deleting cluster data from S3 stores",
-				"errorValue", err)
+			v.log.Info("Requeuing due to failure in deleting cluster data from S3 stores", "error", err)
 
 			return ctrl.Result{Requeue: true}
 		}
 	}
 
 	if err := v.removeFinalizer(vrgFinalizerName); err != nil {
-		v.log.Info("Failed to remove finalizer", "finalizer", vrgFinalizerName, "errorValue", err)
+		v.log.Info("Failed to remove finalizer", "finalizer", vrgFinalizerName, "error", err)
 
 		return ctrl.Result{Requeue: true}
 	}
@@ -908,7 +923,7 @@ func (v *VRGInstance) addFinalizer(finalizer string) error {
 	return nil
 }
 
-// removeFinalizer removes VRG finalizer form the resource
+// removeFinalizer removes VRG finalizer from the resource
 func (v *VRGInstance) removeFinalizer(finalizer string) error {
 	v.instance.ObjectMeta.Finalizers = removeString(v.instance.ObjectMeta.Finalizers, finalizer)
 	status := v.instance.Status

@@ -464,7 +464,7 @@ var _ = Describe("VolSync_Handler", func() {
 				JustBeforeEach(func() {
 					// Run ReconcileRD
 					var err error
-					returnedRD, err = vsHandler.ReconcileRD(rdSpec)
+					returnedRD, _, err = vsHandler.ReconcileRD(rdSpec, false)
 					Expect(err).ToNot(HaveOccurred())
 				})
 
@@ -527,7 +527,7 @@ var _ = Describe("VolSync_Handler", func() {
 
 						// Run ReconcileRD
 						var err error
-						_, err = vsHandler.ReconcileRD(rdSpec)
+						_, _, err = vsHandler.ReconcileRD(rdSpec, false)
 						Expect(err).ToNot(HaveOccurred())
 					})
 
@@ -544,7 +544,7 @@ var _ = Describe("VolSync_Handler", func() {
 					JustBeforeEach(func() {
 						// Run ReconcileRD
 						var err error
-						returnedRD, err = vsHandler.ReconcileRD(rdSpec)
+						returnedRD, _, err = vsHandler.ReconcileRD(rdSpec, false)
 						Expect(err).ToNot(HaveOccurred())
 
 						// RD should be created with name=PVCName
@@ -675,7 +675,7 @@ var _ = Describe("VolSync_Handler", func() {
 
 					// Run ReconcileRD
 					var err error
-					returnedRD, err = vsHandler.ReconcileRD(rdSpec)
+					returnedRD, _, err = vsHandler.ReconcileRD(rdSpec, false)
 					Expect(err).ToNot(HaveOccurred())
 
 					// RD should be created with name=PVCName
@@ -707,7 +707,7 @@ var _ = Describe("VolSync_Handler", func() {
 					}, maxWait, interval).Should(Not(BeNil()))
 				})
 				It("Should create lRD and lRS", func() {
-					_, err := vsHandler.ReconcileRD(rdSpec)
+					_, _, err := vsHandler.ReconcileRD(rdSpec,false)
 					Expect(err).ToNot(HaveOccurred())
 
 					// Local RD should be created with name=PVCName-local
@@ -752,7 +752,7 @@ var _ = Describe("VolSync_Handler", func() {
 				})
 
 				It("SelectDestCopyMethod() should return CopyMethod Snapshot and App PVC name", func() {
-					cpyMethod, dstPVC, err := vsHandler.SelectDestCopyMethod(rdSpec, logger)
+					cpyMethod, dstPVC, _, err := vsHandler.SelectDestCopyMethod(rdSpec, logger)
 					Expect(err).NotTo(HaveOccurred())
 
 					Expect(cpyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
@@ -766,6 +766,72 @@ var _ = Describe("VolSync_Handler", func() {
 					}, maxWait, interval).Should(Succeed())
 
 					Expect(pvc.GetName()).To(Equal(rdSpec.ProtectedPVC.Name))
+					Expect(pvc.GetOwnerReferences()[0].Kind).To(Equal("ConfigMap"))
+				})
+			})
+			Context("With CopyMethod 'LocalDirect', app PVC does not exist", func() {
+				var vsHandler *volsync.VSHandler
+
+				BeforeEach(func() {
+					vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, owner, asyncSpec, "none", "LocalDirect")
+				})
+
+				It("SelectDestCopyMethod() should return CopyMethod Snapshot, localPVC name", func() {
+					cpyMethod, dstPVC, _, err := vsHandler.SelectDestCopyMethod(rdSpec, logger)
+					Expect(err).NotTo(HaveOccurred())
+
+					Expect(cpyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
+					Expect(*dstPVC).To(Equal(volsync.BuildNameForMainDstPVC(rdSpec.ProtectedPVC.Name)))
+					pvc := &corev1.PersistentVolumeClaim{}
+					Eventually(func() error {
+						return k8sClient.Get(ctx, types.NamespacedName{
+							Name:      volsync.BuildNameForMainDstPVC(rdSpec.ProtectedPVC.Name),
+							Namespace: testNamespace.GetName(),
+						}, pvc)
+					}, maxWait, interval).Should(Succeed())
+
+					Expect(pvc.GetName()).To(Equal(volsync.BuildNameForMainDstPVC(rdSpec.ProtectedPVC.Name)))
+					Expect(pvc.GetOwnerReferences()[0].Kind).To(Equal("ConfigMap"))
+				})
+			})
+			Context("With CopyMethod 'LocalDirect', app PVC exists and in deleted state", func() {
+				var vsHandler *volsync.VSHandler
+
+				BeforeEach(func() {
+					vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, owner, asyncSpec, "none", "LocalDirect")
+
+					testPVCName := "my-test-pvc-aabbcc"
+					capacity := resource.MustParse("1Gi")
+					testPVC := createDummyPVC(testPVCName, testNamespace.GetName(), capacity, map[string]string{})
+
+					Eventually(func() bool {
+						err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testPVC), testPVC)
+						if err == nil {
+							testPVC.Finalizers = []string{volsync.VolSyncFinalizerName} // Clear finalizers
+							Expect(k8sClient.Update(ctx, testPVC)).To(Succeed())
+
+							return true
+						}
+
+						return false
+					}, maxWait, interval).Should(BeTrue())
+				})
+
+				It("SelectDestCopyMethod() should return CopyMethod Snapshot, localPVC name", func() {
+					cpyMethod, dstPVC, _, err := vsHandler.SelectDestCopyMethod(rdSpec, logger)
+					Expect(err).NotTo(HaveOccurred())
+
+					Expect(cpyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
+					Expect(*dstPVC).To(Equal(volsync.BuildNameForMainDstPVC(rdSpec.ProtectedPVC.Name)))
+					pvc := &corev1.PersistentVolumeClaim{}
+					Eventually(func() error {
+						return k8sClient.Get(ctx, types.NamespacedName{
+							Name:      volsync.BuildNameForMainDstPVC(rdSpec.ProtectedPVC.Name),
+							Namespace: testNamespace.GetName(),
+						}, pvc)
+					}, maxWait, interval).Should(Succeed())
+
+					Expect(pvc.GetName()).To(Equal(volsync.BuildNameForMainDstPVC(rdSpec.ProtectedPVC.Name)))
 					Expect(pvc.GetOwnerReferences()[0].Kind).To(Equal("ConfigMap"))
 				})
 			})
@@ -1614,12 +1680,12 @@ var _ = Describe("VolSync_Handler", func() {
 
 			for _, rdSpec := range rdSpecList {
 				// create RDs using our vsHandler
-				_, err := vsHandler.ReconcileRD(rdSpec)
+				_, _, err := vsHandler.ReconcileRD(rdSpec, false)
 				Expect(err).NotTo(HaveOccurred())
 			}
 			for _, rdSpecOtherOwner := range rdSpecListOtherOwner {
 				// create other RDs using another vsHandler (will be owned by another VRG)
-				_, err := otherVSHandler.ReconcileRD(rdSpecOtherOwner)
+				_, _, err := otherVSHandler.ReconcileRD(rdSpecOtherOwner, false)
 				Expect(err).NotTo(HaveOccurred())
 			}
 
