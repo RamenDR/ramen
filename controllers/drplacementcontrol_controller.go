@@ -723,6 +723,22 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, nil
 	}
 
+	if err, otherDRPC := r.ensureHasNoConflictingLabelSelectors(ctx, drpc); err != nil {
+		// check which drpc has the finalizer
+		if controllerutil.ContainsFinalizer(drpc, DRPCFinalizer) {
+			if controllerutil.ContainsFinalizer(otherDRPC, DRPCFinalizer) {
+				r.recordFailure(ctx, drpc, placementObj, "Error: two DRPCs have the same pvc label selector", err.Error(), logger)
+			} else {
+				// otherDRPC has no finalizer, so we will assume this drpc is the correct one
+				// log only in debug cases
+				logger.Info("Conflicting DRPC has been created", "Error", err)
+			}
+		} else {
+			logger.Error(err, "Existing DRPC found with label selectors that have overlapping match", "Conflicting DRPC", otherDRPC)
+			r.recordFailure(ctx, drpc, placementObj, "Error: two DRPCs have the same pvc label selector", err.Error(), logger)
+		}
+	}
+
 	drPolicy, err := r.getAndEnsureValidDRPolicy(ctx, drpc, logger)
 	if err != nil {
 		r.recordFailure(ctx, drpc, placementObj, "Error", err.Error(), logger)
@@ -2421,4 +2437,28 @@ func (r *DRPlacementControlReconciler) determineDRPCState(
 	msg := "Failover is allowed - User intervention is required"
 
 	return AllowFailover, msg, nil
+}
+
+func (r *DRPlacementControlReconciler) ensureHasNoConflictingLabelSelectors(ctx context.Context, drpc *rmn.DRPlacementControl) (error, *rmn.DRPlacementControl) {
+	drpcList := &rmn.DRPlacementControlList{}
+	err := r.APIReader.List(ctx, drpcList)
+	if err != nil {
+		return fmt.Errorf("failed to list DRPC objects %w", err), nil
+	}
+
+	for _, otherDRPC := range drpcList.Items {
+		if otherDRPC.Name == drpc.Name {
+			continue
+		}
+
+		if otherDRPC.Namespace != drpc.Namespace {
+			continue
+		}
+
+		if canMatchSameElements(&drpc.Spec.PVCSelector, &otherDRPC.Spec.PVCSelector) {
+			return fmt.Errorf("DRPC %s has conflicting PVCSelector with DRPC %s", drpc.Name, otherDRPC.Name), &otherDRPC
+		}
+	}
+
+	return nil, nil
 }
