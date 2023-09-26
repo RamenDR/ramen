@@ -5,6 +5,9 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"strings"
 
 	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
@@ -62,6 +65,12 @@ func recipeElementsGetFoo(ctx context.Context, reader client.Reader, vrg ramen.V
 		return recipeElements{}, err
 	}
 
+	if err := recipeParametersExpand(&recipe, vrg.Spec.KubeObjectProtection.RecipeParameters); err != nil {
+		log.Error(err, "recipe parameters expand")
+
+		return recipeElements{}, err
+	}
+
 	recipeElements := recipeElements{
 		pvcSelector: pvcSelectorRecipeRefNonNil(recipe, vrg),
 	}
@@ -91,4 +100,25 @@ func recipeWorkflowsGet(recipe recipe.Recipe, recipeElements *recipeElements, lo
 	log.Info("Successfully found recipe recovery groups")
 
 	return err
+}
+
+func recipeParametersExpand(recipe *recipe.Recipe, parameters map[string][]string) error {
+	b, err := json.Marshal(*recipe)
+	if err != nil {
+		return err
+	}
+
+	if err = json.Unmarshal([]byte(parametersExpand(string(b), parameters)), recipe); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func parametersExpand(s string, parameters map[string][]string) string {
+	return os.Expand(s, func(s string) string {
+		values := parameters[s]
+
+		return strings.Join(values, ",")
+	})
 }
