@@ -174,6 +174,13 @@ spec:
                     description: Preferred time between captures
                     format: duration
                     type: string
+                  recipeParameters:
+                    additionalProperties:
+                      items:
+                        type: string
+                      type: array
+                    description: Recipe parameter definitions
+                    type: object
                   recipeRef:
                     description: Name of the Recipe to reference for capture and recovery
                       workflows and volume selection.

@@ -116,6 +116,10 @@ type KubeObjectProtectionSpec struct {
 	// Name of the Recipe to reference for capture and recovery workflows and volume selection.
 	//+optional
 	RecipeRef *corev1.LocalObjectReference `json:"recipeRef,omitempty"`
+
+	// Recipe parameter definitions
+	//+optional
+	RecipeParameters map[string][]string `json:"recipeParameters,omitempty"`
 }
 
 const KubeObjectProtectionCaptureIntervalDefault = 5 * time.Minute
