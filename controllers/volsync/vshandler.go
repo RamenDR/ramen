@@ -28,9 +28,12 @@ import (
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
+	errorswrapper "github.com/pkg/errors"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/util"
 )
+
+var WaitingForNotInUsePVC = errorswrapper.New("Waiting for PVC to become available for use")
 
 const (
 	ServiceExportKind    string = "ServiceExport"
@@ -1216,6 +1219,11 @@ func (v *VSHandler) validateSnapshotAndEnsurePVC(rdSpec ramendrv1alpha1.VolSyncR
 		if err != nil {
 			return err
 		}
+
+		err = v.ensureLastSnapSyncedLocally(rdSpec.ProtectedPVC.Name, rdSpec, snapshotRef)
+		if err != nil {
+			return err
+		}
 	} else {
 		// Restore pvc from snapshot
 		var restoreSize *resource.Quantity
@@ -2267,4 +2275,139 @@ func RemoveFinalizer(ctx context.Context, client client.Client, o client.Object,
 	}
 
 	return nil
+}
+
+// ensureLastSnapSyncedLocally ensures that the last snap is synced locally, the main RD is paused,
+// and the app PVC is not in use
+func (v *VSHandler) ensureLastSnapSyncedLocally(pvcName string,
+	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+	snapshotRef corev1.TypedLocalObjectReference,
+) error {
+	if v.IsCopyMethodLocalDirect() {
+		rd, err := v.getRD(pvcName)
+		if err != nil {
+			return err
+		}
+
+		if err := v.checkSyncStatusAndPauseSyncFromPeerSrc(rd, rdSpec, snapshotRef); err != nil {
+			return err
+		}
+
+		if err := v.handleLastSnapshotSyncAndPVCUsage(pvcName, v.owner.GetNamespace(), rd.GetName(), snapshotRef); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// checkSyncStatusAndPauseSyncFromPeerSrc checks the sync status of the last complete snapshot and pauses
+// any further syncs beyond the last complete snapshot, ensuring no additional snaps are generated.
+func (v *VSHandler) checkSyncStatusAndPauseSyncFromPeerSrc(rd *volsyncv1alpha1.ReplicationDestination,
+	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+	snapshotRef corev1.TypedLocalObjectReference,
+) error {
+	if rd == nil {
+		return fmt.Errorf("RD %s object is nil. Waiting for PVC to not be in use...", rdSpec.ProtectedPVC.Name)
+	}
+
+	v.log.V(1).Info(fmt.Sprintf("Check if last snap needs to be synced - rd: %s, snap %s", rd.GetName(), snapshotRef.Name))
+
+	started, _, err := v.checkLastSnapshotSyncStatus(rd.GetName(), snapshotRef)
+	if err != nil {
+		return err
+	}
+
+	if !started || !rd.Spec.Paused {
+		v.log.V(1).Info(fmt.Sprintf("Last snap %s for rd %s not started/inprogress sync locally yet. Forcing RD to reconcile...",
+			snapshotRef.Name, rd.GetName()))
+		_, _, err := v.ReconcileRD(rdSpec, true)
+		if err != nil {
+			return err
+		}
+		return WaitingForNotInUsePVC
+	}
+
+	return nil
+}
+
+// handleLastSnapshotSyncAndPVCUsage function is responsible for checking the sync status of the last snap,
+// checking whether the PVC is currently in use by a replication object, and, if in use, initiating the
+// deletion of the local replication objects.
+func (v *VSHandler) handleLastSnapshotSyncAndPVCUsage(pvcName, pvcNamespace, rdName string,
+	snapshotRef corev1.TypedLocalObjectReference,
+) error {
+	v.log.V(1).Info(fmt.Sprintf("Check if manual sync is complete - rd: %s", rdName))
+	_, completed, err := v.checkLastSnapshotSyncStatus(rdName, snapshotRef)
+	if err != nil {
+		return err
+	}
+
+	if !completed {
+		v.log.V(1).Info(fmt.Sprintf("local sync is still in progress for pvc %s. Waiting...", pvcName))
+		return WaitingForNotInUsePVC
+	}
+
+	// Make sure the PVC is not used by any pod, otherwise, force the local resources to clean up
+	inUseByPod, err := util.IsPVCInUseByPod(v.ctx, v.client, v.log, pvcName, pvcNamespace, false)
+	if err != nil {
+		return err
+	}
+
+	// If the localRD is still starting up, the inUseByPod might not be accurate.
+	// Need to check if the localRS has completed sync as well
+	if inUseByPod {
+		// If the PVC is in use, we need to delete local resources. We need the PVC to let go. We no longer need local resources
+		v.log.V(1).Info(fmt.Sprintf("Delete local resources - rd: %s", rdName))
+		err = v.deleteLocalRDAndRS(rdName, snapshotRef)
+		if err != nil {
+			return err
+		}
+
+		v.log.V(1).Info(fmt.Sprintf("Done with sync and cleanup for pvc %s. Rechecking...", pvcName))
+		return WaitingForNotInUsePVC
+	}
+
+	return nil
+}
+
+// checkLastSnapshotSyncStatus checks the sync status of the last snapshot and returns two boolean values:
+// one indicating whether the sync has started, and the other indicating whether the sync has completed successfully.
+func (v *VSHandler) checkLastSnapshotSyncStatus(rdName string, snapshotRef corev1.TypedLocalObjectReference,
+) (bool, bool, error) {
+	lrs := &volsyncv1alpha1.ReplicationSource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      getLocalReplicationName(rdName), // rdName is also the pvc name
+			Namespace: v.owner.GetNamespace(),
+		},
+	}
+
+	err := v.client.Get(v.ctx, types.NamespacedName{
+		Name:      lrs.GetName(),
+		Namespace: lrs.GetNamespace(),
+	}, lrs)
+	if err != nil {
+		if kerrors.IsNotFound(err) {
+			return true, true, nil
+		}
+
+		return false, false, err
+	}
+
+	const started = true
+	const completed = true
+
+	v.log.V(1).Info("Local RS trigger", "trigger", lrs.Spec.Trigger, "snapName", snapshotRef.Name)
+	// For LocalDirect, localRS trigger must point to the latest RD snapshot image. Otherwise,
+	// we wait for local final sync to take place first befor cleaning up.
+	if lrs.Spec.Trigger != nil && lrs.Spec.Trigger.Manual == snapshotRef.Name {
+		// When local final sync is complete, we cleanup all locally created resources except the app PVC
+		if lrs.Status != nil && lrs.Status.LastManualSync == lrs.Spec.Trigger.Manual {
+			return started, completed, nil
+		}
+
+		return started, !completed, nil
+	}
+
+	return !started, !completed, nil
 }

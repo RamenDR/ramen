@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
+	errorswrapper "github.com/pkg/errors"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
 	"github.com/ramendr/ramen/controllers/volsync"
@@ -653,6 +654,13 @@ func (v *VRGInstance) clusterDataRestore(result *ctrl.Result) error {
 
 	err := v.restorePVsForVolSync()
 	if err != nil {
+		if errorswrapper.Is(err, volsync.WaitingForNotInUsePVC) {
+			v.log.Info("VolSync PV Restore Incomplete")
+			result.RequeueAfter = time.Second * 5 // delay by no more than 5 seconds
+
+			return err
+		}
+
 		result.Requeue = true
 
 		return fmt.Errorf("failed to restore PVs for VolSync (%w)", err)
