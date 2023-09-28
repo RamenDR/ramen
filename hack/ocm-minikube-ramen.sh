@@ -149,7 +149,7 @@ exit_stack_push unset -f image_registry_undeploy_spokes
 image_archive()
 {
 	set -- $1 $(echo $1|tr : _)
-	set -- $1 $HOME/.minikube/cache/images/$(dirname $2) $(basename $2)
+	set -- $1 $HOME/.minikube/cache/images/amd64/$(dirname $2) $(basename $2)
 	mkdir -p $2
 	set -- $1 $2/$3
 	# docker-archive doesn't support modifying existing images
