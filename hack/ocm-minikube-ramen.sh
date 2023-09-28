@@ -16,6 +16,7 @@ exit_stack_push unset -f until_true_or_n
 exit_stack_push olm_unset
 . $ramen_hack_directory_path_name/minikube.sh
 exit_stack_push minikube_unset
+. $ramen_hack_directory_path_name/cert-manager.sh; exit_stack_push cert_manager_unset
 exit_stack_push unset -v ramen_hack_directory_path_name
 rook_ceph_deploy_spoke()
 {
@@ -820,9 +821,9 @@ application_sample_undeploy()
 exit_stack_push unset -f application_sample_undeploy
 ramen_directory_path_name=${ramen_hack_directory_path_name}/..
 exit_stack_push unset -v ramen_directory_path_name
-hub_cluster_name=${hub_cluster_name:-hub}
+hub_cluster_name=${hub_cluster_name-hub}
 exit_stack_push unset -v hub_cluster_name
-spoke_cluster_names=${spoke_cluster_names:-cluster1\ $hub_cluster_name}
+spoke_cluster_names=${spoke_cluster_names-cluster1\ $hub_cluster_name}
 exit_stack_push unset -v spoke_cluster_names
 for cluster_name in $spoke_cluster_names; do
 	if test $cluster_name = $hub_cluster_name; then
@@ -865,6 +866,12 @@ rook_ceph_volume_replication_image_latest_deploy()
 	done; unset -v cluster_name
 }
 exit_stack_push unset -f rook_ceph_volume_replication_image_latest_deploy
+cert_manager_deploy() {
+	for cluster_name in $hub_cluster_name $spoke_cluster_names_nonhub; do cert_manager_deploy_context $cluster_name; done; unset -v cluster_name
+}; exit_stack_push unset -f cert_manager_deploy
+cert_manager_undeploy() {
+	for cluster_name in $spoke_cluster_names_nonhub $hub_cluster_name; do cert_manager_undeploy_context $cluster_name; done; unset -v cluster_name
+}; exit_stack_push unset -f cert_manager_undeploy
 ramen_deploy()
 {
 	ramen_deploy_hub
@@ -879,6 +886,7 @@ deploy()
 {
 	hub_cluster_name=$hub_cluster_name spoke_cluster_names=$spoke_cluster_names $ramen_hack_directory_path_name/ocm-minikube.sh
 	rook_ceph_deploy
+	cert_manager_deploy
 	minio_deploy_spokes
 	ramen_images_build_and_archive
 	olm_deploy_spokes
@@ -890,6 +898,7 @@ undeploy()
 	ramen_undeploy
 	olm_undeploy_spokes
 	minio_undeploy_spokes
+	cert_manager_undeploy
 	rook_ceph_undeploy
 }
 exit_stack_push unset -f undeploy

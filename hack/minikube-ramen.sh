@@ -9,17 +9,21 @@ ramen_hack_directory_path_name=$(dirname $0)
 cluster_names=${cluster_names:-cluster1\ cluster2}
 deploy() {
 	spoke_cluster_names=$cluster_names $ramen_hack_directory_path_name/ocm-minikube.sh minikube_start_spokes
+	hub_cluser_name=""\
 	spoke_cluster_names=$cluster_names $ramen_hack_directory_path_name/ocm-minikube-ramen.sh\
 		rook_ceph_deploy\
+		cert_manager_deploy\
 		minio_deploy_spokes\
 		ramen_manager_image_build_and_archive\
 		ramen_deploy_spokes\
 
 }
 undeploy() {
+	hub_cluser_name=""\
 	spoke_cluster_names=$cluster_names $ramen_hack_directory_path_name/ocm-minikube-ramen.sh\
 		ramen_undeploy_spokes\
 		minio_undeploy_spokes\
+		cert_manager_undeploy\
 		rook_ceph_undeploy\
 
 }
