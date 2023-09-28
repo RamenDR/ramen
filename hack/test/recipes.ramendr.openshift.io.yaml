@@ -494,7 +494,6 @@ spec:
                 type: object
             required:
             - appType
-            - groups
             type: object
           status:
             description: RecipeStatus defines the observed state of Recipe
