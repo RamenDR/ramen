@@ -26,12 +26,10 @@ type recipeElements struct {
 func captureWorkflowDefault() []kubeobjects.CaptureSpec { return []kubeobjects.CaptureSpec{{}} }
 func recoverWorkflowDefault() []kubeobjects.RecoverSpec { return []kubeobjects.RecoverSpec{{}} }
 
-type foo func(recipe.Recipe, *recipeElements, logr.Logger) error
-
 func GetPVCSelector(ctx context.Context, reader client.Reader, vrg ramen.VolumeReplicationGroup,
 	log logr.Logger,
 ) (PvcSelector, error) {
-	recipeElements, err := recipeElementsGetFoo(ctx, reader, vrg, log,
+	recipeElements, err := recipeVolumesAndOptionallyWorkflowsGet(ctx, reader, vrg, log,
 		func(recipe.Recipe, *recipeElements, logr.Logger) error { return nil },
 	)
 
@@ -41,11 +39,11 @@ func GetPVCSelector(ctx context.Context, reader client.Reader, vrg ramen.VolumeR
 func recipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.VolumeReplicationGroup,
 	log logr.Logger,
 ) (recipeElements, error) {
-	return recipeElementsGetFoo(ctx, reader, vrg, log, recipeWorkflowsGet)
+	return recipeVolumesAndOptionallyWorkflowsGet(ctx, reader, vrg, log, recipeWorkflowsGet)
 }
 
-func recipeElementsGetFoo(ctx context.Context, reader client.Reader, vrg ramen.VolumeReplicationGroup,
-	log logr.Logger, foo foo,
+func recipeVolumesAndOptionallyWorkflowsGet(ctx context.Context, reader client.Reader, vrg ramen.VolumeReplicationGroup,
+	log logr.Logger, workflowsGet func(recipe.Recipe, *recipeElements, logr.Logger) error,
 ) (recipeElements, error) {
 	if vrg.Spec.KubeObjectProtection == nil || vrg.Spec.KubeObjectProtection.RecipeRef == nil {
 		return recipeElements{
@@ -75,7 +73,7 @@ func recipeElementsGetFoo(ctx context.Context, reader client.Reader, vrg ramen.V
 		pvcSelector: pvcSelectorRecipeRefNonNil(recipe, vrg),
 	}
 
-	return recipeElements, foo(recipe, &recipeElements, log)
+	return recipeElements, workflowsGet(recipe, &recipeElements, log)
 }
 
 func recipeWorkflowsGet(recipe recipe.Recipe, recipeElements *recipeElements, log logr.Logger) error {
@@ -88,16 +86,12 @@ func recipeWorkflowsGet(recipe recipe.Recipe, recipeElements *recipeElements, lo
 		return err
 	}
 
-	log.Info("Successfully found recipe capture groups")
-
 	recipeElements.recoverWorkflow, err = getRecoverGroups(recipe)
 	if err != nil {
 		log.Error(err, "Failed to get groups from recovery workflow")
 
 		return err
 	}
-
-	log.Info("Successfully found recipe recovery groups")
 
 	return err
 }
