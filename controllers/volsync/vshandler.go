@@ -342,6 +342,21 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 		return false, replicationSource, err
 	}
 
+	if v.IsCopyMethodLocalDirect() {
+		pvc, err := v.getPVC(rsSpec.ProtectedPVC.Name)
+		if err != nil {
+			return false, replicationSource, err
+		}
+
+		// Reset Owners before adding the RS as the owner
+		pvc.SetOwnerReferences([]metav1.OwnerReference{})
+
+		err = v.addOwnerReferenceAndUpdate(pvc, replicationSource)
+		if err != nil {
+			return false, replicationSource, err
+		}
+	}
+
 	//
 	// For final sync only - check status to make sure the final sync is complete
 	// and also run cleanup (removes PVC we just ran the final sync from)
@@ -659,16 +674,19 @@ func (v *VSHandler) preparePVCForOwnershipTakeOver(pvcName string) (*corev1.Pers
 	// Add annotation to indicate that ACM should not delete/cleanup this pvc.
 	annotationUpdated := addAnnotation(pvc, ACMAppSubDoNotDeleteAnnotation, ACMAppSubDoNotDeleteAnnotationVal)
 
-	// Add Finalizer
-	finalizerUpdated := util.AddFinalizer(pvc, VolSyncFinalizerName)
-
-	// Add VRG as owner
-	ownerRefUpdated, err := v.addOwnerReference(pvc, v.owner) // VRG as owner
-	if err != nil {
-		return nil, false, err
+	// Add Finalizer. For now, add finalizer only if dest copyMethod is LocaDirect
+	finalizerUpdated := false
+	if v.IsCopyMethodLocalDirect() {
+		finalizerUpdated = util.AddFinalizer(pvc, VolSyncFinalizerName)
 	}
 
-	return pvc, annotationUpdated || finalizerUpdated || ownerRefUpdated, nil
+	// Add VRG as owner
+	// ownerRefUpdated, err := v.addOwnerReference(pvc, v.owner) // VRG as owner
+	// if err != nil {
+	// 	return nil, false, err
+	// }
+
+	return pvc, annotationUpdated || finalizerUpdated, nil
 }
 
 func (v *VSHandler) validateSecretAndAddVRGOwnerRef(secretName string) (bool, error) {
@@ -978,7 +996,7 @@ func (v *VSHandler) EnsurePVCfromRD(rdSpec ramendrv1alpha1.VolSyncReplicationDes
 		vsImageRef.APIGroup = &vsGroup
 	}
 
-	l.V(1).Info("Latest Image for ReplicationDestination", "latestImage	", vsImageRef)
+	l.V(1).Info("Latest Image for main ReplicationDestination", "latestImage	", vsImageRef)
 
 	return v.validateSnapshotAndEnsurePVC(rdSpec, *vsImageRef)
 }
@@ -1059,7 +1077,7 @@ func (v *VSHandler) EnsurePVCforLocalDirectCopy(ctx context.Context, log logr.Lo
 
 		log.Info("ReplicationDestination not found", "rd", rdName)
 	} else {
-		log.Info("ReplicationDestination found.", "rd", rdName)
+		log.Info("ReplicationDestination found", "rd", rdName)
 		// We found an RD, PVC orchstration must have already done.
 		return !requeue, nil
 	}
@@ -1176,6 +1194,7 @@ func (v *VSHandler) createPVCforLocalDirect(ctx context.Context,
 	}
 
 	op, err := ctrlutil.CreateOrUpdate(ctx, v.client, rdPVC, func() error {
+		// Here we want to set owner as the RD, but we don't have an RD yet. So delay setting the owner
 		if rdPVC.CreationTimestamp.IsZero() {
 			rdPVC.Spec.AccessModes = rdSpec.ProtectedPVC.AccessModes
 			rdPVC.Spec.StorageClassName = rdSpec.ProtectedPVC.StorageClassName
@@ -1910,7 +1929,7 @@ func (v *VSHandler) reconcileLocalReplication(rd *volsyncv1alpha1.ReplicationDes
 	}
 
 	lrs, err := v.reconcileLocalRS(rd, rsSpec, pskSecretName, *lrd.Status.RsyncTLS.Address)
-	if err != nil {
+	if err != nil || lrs == nil {
 		return lrd, nil, err
 	}
 
@@ -2004,7 +2023,7 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 	}
 
 	pvc, err := v.setupLocalRS(rd)
-	if err != nil {
+	if err != nil || pvc == nil {
 		return nil, err
 	}
 
@@ -2048,6 +2067,13 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 
 	if err != nil {
 		return nil, err
+	}
+
+	// Add lrs as owner to the RO PVC
+	if err := v.addOwnerReferenceAndUpdate(pvc, lrs); err != nil {
+		v.log.Error(err, "Unable to update owner", "pvcName", pvc.GetName())
+
+		return lrs, err
 	}
 
 	return lrs, nil
@@ -2100,9 +2126,9 @@ func (v *VSHandler) setupLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 	}
 
 	if !isLatestImageReady(latestImage) {
-		noSnapErr := fmt.Errorf("unable to find LatestImage from ReplicationDestination %s", rd.GetName())
+		v.log.V(1).Info(fmt.Sprintf("unable to find LatestImage from ReplicationDestination %s", rd.GetName()))
 
-		return nil, noSnapErr
+		return nil, nil
 	}
 
 	// Make copy of the ref and make sure API group is filled out correctly (shouldn't really need this part)

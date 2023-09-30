@@ -198,6 +198,7 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() bool {
 }
 
 func (v *VRGInstance) reconcileVolSyncForDeletion() error {
+	v.log.Info("Reconcile volsync for deletion as Secondary", "volSyncPVCsLen", len(v.volSyncPVCs))
 	for _, pvc := range v.volSyncPVCs {
 		if err := v.removeFinalizerAndAnnotationFromPVC(&pvc, volsync.VolSyncFinalizerName, "", v.log); err != nil {
 			return err

@@ -707,7 +707,7 @@ var _ = Describe("VolSync_Handler", func() {
 					}, maxWait, interval).Should(Not(BeNil()))
 				})
 				It("Should create lRD and lRS", func() {
-					_, _, err := vsHandler.ReconcileRD(rdSpec,false)
+					_, _, err := vsHandler.ReconcileRD(rdSpec, false)
 					Expect(err).ToNot(HaveOccurred())
 
 					// Local RD should be created with name=PVCName-local
@@ -832,7 +832,6 @@ var _ = Describe("VolSync_Handler", func() {
 					}, maxWait, interval).Should(Succeed())
 
 					Expect(pvc.GetName()).To(Equal(volsync.BuildNameForMainDstPVC(rdSpec.ProtectedPVC.Name)))
-					Expect(pvc.GetOwnerReferences()[0].Kind).To(Equal("ConfigMap"))
 				})
 			})
 		})
