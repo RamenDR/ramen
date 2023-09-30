@@ -107,48 +107,85 @@ velero_secret_list() {
 	kubectl --context $1 -nvelero get secret s3secret
 }; exit_stack_push unset -f velero_secret_list
 
-app_namespace_deploy() {
+namespace_deploy() {
 	set -x
-	kubectl create namespace asdf --dry-run=client -oyaml|kubectl --context $1 apply -f-
+	kubectl create namespace $2 --dry-run=client -oyaml|kubectl --context $1 apply -f-
 	{ set +x;} 2>/dev/null
-}; exit_stack_push unset -f app_namespace_deploy
+}; exit_stack_push unset -f namespace_deploy
 
-app_namespace_undeploy() {
+namespace_undeploy() {
 	set -x
-	kubectl --context $1 delete namespace asdf --ignore-not-found
+	kubectl --context $1 delete namespace $2 --ignore-not-found
 	{ set +x;} 2>/dev/null
-}; exit_stack_push unset -f app_namespace_undeploy
+}; exit_stack_push unset -f namespace_undeploy
 
-app_namespace_list() {
-	kubectl --context $1 get namespace asdf
-}; exit_stack_push unset -f app_namespace_list
+namespace_list() {
+	kubectl --context $1 get namespace $2
+}; exit_stack_push unset -f namespace_list
 
-app_namespace_get() {
-	kubectl --context $1 get namespace asdf -oyaml
-}; exit_stack_push unset -f app_namespace_get
+namespace_get() {
+	kubectl --context $1 get namespace $2 -oyaml
+}; exit_stack_push unset -f namespace_get
+
+app_namespace_0_name=asdf
+app_namespace_1_name=a
+app_namespace_2_name=b
+app_namespace_names=$app_namespace_0_name\ $app_namespace_1_name\ $app_namespace_2_name
+exit_stack_push unset -f app_namespace_0_name app_namespace_1_name app_namespace_2_name app_namespace_names
+
+app_label_key=appname
+app_label_value=busybox
+app_label=$app_label_key=$app_label_value
+app_label_yaml=$app_label_key:\ $app_label_value
+app_labels_yaml="
+  labels:
+    $app_label_yaml"
+exit_stack_push unset -v app_label_key app_label_value app_label app_label_yaml app_labels_yaml
 
 app_deploy() {
 	set -- cluster1
-	app_namespace_deploy $1
-	kubectl create --dry-run=client -oyaml configmap asdf\
-		|kubectl --context $1 -nasdf apply -f-
-	kubectl create --dry-run=client -oyaml secret generic asdf --from-literal=key1=value1\
-		|kubectl --context $1 -nasdf apply -f-
-	kubectl --context $1 -nasdf run asdf --image busybox -- sh -c while\ true\;do\ date\;sleep\ 60\;done
-	kubectl create --dry-run=client -oyaml -k https://github.com/RamenDR/ocm-ramen-samples/busybox -nasdf\
-		|kubectl --context $1 apply -f-
+	for namespace_name in $app_namespace_names; do
+		cat <<-a|kubectl --context $1 -n$namespace_name apply -f-
+		apiVersion: v1
+		kind: Namespace
+		metadata:$app_labels_yaml
+		  name: $namespace_name
+		---
+		$(kubectl --dry-run=client -oyaml create -k https://github.com/RamenDR/ocm-ramen-samples/busybox -n$namespace_name)
+		---
+		$(kubectl --dry-run=client -oyaml create configmap asdf)$app_labels_yaml
+		---
+		$(kubectl --dry-run=client -oyaml create secret generic asdf --from-literal=key1=value1)$app_labels_yaml
+		---
+		$(kubectl --dry-run=client -oyaml run asdf -l$app_label --image busybox -- sh -c while\ true\;do\ date\;sleep\ 60\;done)
+		a
+		kubectl --context $1 -n$namespace_name -l$app_label wait pvc --for jsonpath='{.status.phase}'=Bound
+		kubectl --context $1 label $(pv_names_claimed_by_namespace $1 $namespace_name) $app_label --overwrite
+	done
 	app_recipe_deploy $1
 	app_list $1
 }; exit_stack_push unset -f app_deploy
 
 app_recipe_deploy() {
-	cat <<-a|kubectl --context $1 -nasdf apply -f-
+	app_recipe_kubectl $1 apply
+}; exit_stack_push unset -f app_recipe_deploy
+
+app_recipe_undeploy() {
+	app_recipe_kubectl $1 delete\ --ignore-not-found
+}; exit_stack_push unset -f app_recipe_undeploy
+
+app_recipe_kubectl() {
+	cat <<-a|kubectl --context $1 -n$app_namespace_0_name $2 -f-
 	apiVersion: ramendr.openshift.io/v1alpha1
 	kind: Recipe
-	metadata:
+	metadata:$app_labels_yaml
 	  name: asdf
 	spec:
 	  appType: ""
+	  volumes:
+	    includedNamespaces: [\$ns0,\$ns1_2]
+	    name: ""
+	    type: volume
 	  groups:
 	  - excludedResourceTypes:
 	    - deploy
@@ -159,6 +196,7 @@ app_recipe_deploy() {
 	    - vrg
 	    name: everything-but-deploy-po-pv-rs-vr-vrg
 	    type: resource
+	    includedNamespaces: [\$ns0,\$ns1_2]
 	  - includedResourceTypes:
 	    - deployments
 	    - pods
@@ -168,12 +206,15 @@ app_recipe_deploy() {
 	        operator: DoesNotExist
 	    name: deployments-and-naked-pods
 	    type: resource
+	    includedNamespaces: [\$ns0,\$ns1_2]
 	  hooks:
 	  - name: busybox
+	    namespace: \$ns0
 	    type: exec
 	    labelSelector:
-	      matchLabels:
-	        appname: busybox
+	      matchExpressions:
+	      - key: pod-template-hash
+	        operator: Exists
 	    ops:
 	    - name: date
 	      container: busybox
@@ -192,23 +233,15 @@ app_recipe_deploy() {
 	    - hook: busybox/date
 	    - hook: busybox/fail-succeed
 	a
-}; exit_stack_push unset -f app_recipe_deploy
+}; exit_stack_push unset -f app_recipe_kubectl
 
 app_recipe_get() {
-	kubectl --context $1 -nasdf get -oyaml recipe/asdf
+#	app_recipe_kubectl $1 get\ -oyaml
+	kubectl --context $1 -n$app_namespace_0_name get -oyaml recipe/asdf
 }; exit_stack_push unset -f app_recipe_get
 
-app_deployment_replicaset_name() {
-	kubectl --context $1 -nasdf get rs -lpod-template-hash -oname
-}; exit_stack_push unset -f app_deployment_replicaset_name
-
-app_replicaset_pod_name() {
-	kubectl --context $1 -nasdf get po -lpod-template-hash -oname
-}; exit_stack_push unset -f app_replicaset_pod_name
-
 app_list() {
-	kubectl config use-context $1
-	app_list_custom $1 ''
+	app_list_custom $1 --show-labels
 	echo
 	app_list_custom $1 --sort-by=.metadata.creationTimestamp\
 \	-ocustom-columns=Kind:.kind,Namespace:.metadata.namespace,Name:.metadata.name,CreationTime:.metadata.creationTimestamp\
@@ -216,29 +249,18 @@ app_list() {
 }; exit_stack_push unset -f app_list
 
 app_list_custom() {
-	kubectl get\
-		namespace/asdf\
-		recipe/asdf\
-		vrg/bb\
-		$(pv_names $1)\
-		-nasdf\
-		vr/busybox-pvc\
-		pvc/busybox-pvc\
-		deploy/busybox\
-		$(app_replicaset_pod_name $1)\
-		$(app_deployment_replicaset_name $1)\
-		po/asdf\
-		cm/asdf\
-		secret/asdf\
-		$2
+	kubectl --context $1 -A -l$app_label get $2 ns,cm,secret,deploy,rs,po,pvc,pv,recipe,vrg,vr
 }; exit_stack_push unset -f app_list_custom
 
 app_undeploy() {
-	set -x
-	kubectl --context $1 -nasdf delete --ignore-not-found -k https://github.com/RamenDR/ocm-ramen-samples/busybox
-	kubectl --context $1 -nasdf delete --ignore-not-found po/asdf secret/asdf configmap/asdf recipe/asdf
-	{ set +x;} 2>/dev/null
-	app_namespace_undeploy $1
+	app_unprotect $1
+	app_recipe_undeploy $1
+	for namespace_name in $app_namespace_names;do
+		set -x
+		kubectl --context $1 -n$namespace_name delete --ignore-not-found -k https://github.com/RamenDR/ocm-ramen-samples/busybox
+		kubectl --context $1 -n$namespace_name delete --ignore-not-found po/asdf secret/asdf cm/asdf ns/$namespace_name
+		{ set +x;} 2>/dev/null
+	done; unset -v namespace_name
 	app_list $1
 }; exit_stack_push unset -f app_undeploy
 
@@ -247,9 +269,20 @@ vrg_apply() {
   kubeObjectProtection:
     captureInterval: 1m
     recipeRef:
-      name: asdf$3${4:+
-  action: $4}" \
-	cluster_names=$s3_store_cluster_names application_sample_namespace_name=asdf $ramen_hack_directory_path_name/minikube-ramen.sh application_sample_vrg_deploy$2 $1
+      name: $app_namespace_0_name
+    recipeParameters:
+      ns0:
+      - $app_namespace_0_name
+      ns1_2:
+      - $app_namespace_1_name
+      - $app_namespace_2_name$3${4:+
+  action: $4}"\
+	cluster_names=$s3_store_cluster_names application_sample_namespace_name=$app_namespace_0_name\
+	$ramen_hack_directory_path_name/minikube-ramen.sh application_sample_vrg_deploy$2 $1 "$app_label_yaml"
+	for namespace_name in $app_namespace_names; do
+		until_true_or_n 30 kubectl --context $1 -n$namespace_name get vr/busybox-pvc
+		kubectl --context $1 -n$namespace_name label vr/busybox-pvc $app_label --overwrite
+	done; unset -v namespace_name
 }; exit_stack_push unset -f vrg_apply
 
 vrg_deploy() {
@@ -266,21 +299,21 @@ vrg_deploy_relocate() {
 }; exit_stack_push unset -f vrg_deploy_relocate
 
 vrg_undeploy() {
-	cluster_names=$s3_store_cluster_names application_sample_namespace_name=asdf $ramen_hack_directory_path_name/minikube-ramen.sh application_sample_vrg_undeploy $1
+	cluster_names=$s3_store_cluster_names application_sample_namespace_name=$app_namespace_0_name $ramen_hack_directory_path_name/minikube-ramen.sh application_sample_vrg_undeploy $1
 }; exit_stack_push unset -f vrg_undeploy
 
 vrg_demote() {
 	vrg_deploy_$2 $1 _sec
-#	time kubectl --context $1 -nasdf wait vrg/bb --for condition=clusterdataprotected=false
+#	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for condition=clusterdataprotected=false
 }; exit_stack_push unset -f vrg_demote
 
 vrg_final_sync() {
 	vrg_apply $1 '' '
   prepareForFinalSync: true'
-	until_true_or_n 30 eval test \"\$\(kubectl --context $1 -nasdf get vrg/bb -ojsonpath='{.status.prepareForFinalSyncComplete}'\)\" = true
+	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for jsonpath='{.status.prepareForFinalSyncComplete}'=true
 	vrg_apply $1 '' '
   runFinalSync: true'
-	until_true_or_n 30 eval test \"\$\(kubectl --context $1 -nasdf get vrg/bb -ojsonpath='{.status.finalSyncComplete}'\)\" = true
+	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for jsonpath='{.status.finalSyncComplete}'=true
 }; exit_stack_push unset -f vrg_final_sync
 
 vrg_fence() {
@@ -289,25 +322,25 @@ vrg_fence() {
 
 vrg_finalizer0_remove() {
 	true_if_exit_status_and_stderr 1 'Error from server (NotFound): volumereplicationgroups.ramendr.openshift.io "bb" not found' \
-	kubectl --context $1 -nasdf patch vrg/bb --type json -p '[{"op":remove, "path":/metadata/finalizers/0}]'
+	kubectl --context $1 -n$app_namespace_0_name patch vrg/bb --type json -p '[{"op":remove, "path":/metadata/finalizers/0}]'
 }; exit_stack_push unset -f vrg_finalizer0_remove
 
 vr_finalizer0_remove() {
 	true_if_exit_status_and_stderr 1 'Error from server (NotFound): volumereplications.replication.storage.openshift.io "busybox-pvc" not found' \
-	kubectl --context $1 -nasdf patch volumereplication/busybox-pvc --type json -p '[{"op":remove, "path":/metadata/finalizers/0}]'
+	kubectl --context $1 -n$app_namespace_0_name patch volumereplication/busybox-pvc --type json -p '[{"op":remove, "path":/metadata/finalizers/0}]'
 }; exit_stack_push unset -f vr_finalizer0_remove
 
 vrg_get() {
-	kubectl --context $1 -nasdf get vrg/bb --ignore-not-found -oyaml
+	kubectl --context $1 -n$app_namespace_0_name get vrg/bb --ignore-not-found -oyaml
 }; exit_stack_push unset -f vrg_get
 
 vrg_spec_get() {
-	kubectl --context $1 -nasdf get vrg/bb -ojsonpath='{.spec}'|json_to_yaml
+	kubectl --context $1 -n$app_namespace_0_name get vrg/bb -ojsonpath='{.spec}'|json_to_yaml
 }; exit_stack_push unset -f vrg_spec_get
 
 vrg_list() {
 	set -x
-	kubectl --context $1 -nasdf get vrg/bb --ignore-not-found
+	kubectl --context $1 -n$app_namespace_0_name get vrg/bb --ignore-not-found
 	{ set +x;} 2>/dev/null
 }; exit_stack_push unset -f vrg_list
 
@@ -316,23 +349,27 @@ vrg_get_s3() {
 }; exit_stack_push unset -f vrg_get_s3
 
 vr_get() {
-	kubectl --context $1 -nasdf get volumereplication/busybox-pvc --ignore-not-found -oyaml
+	kubectl --context $1 -n$app_namespace_0_name get volumereplication/busybox-pvc --ignore-not-found -oyaml
 }; exit_stack_push unset -f vr_get
 
 vr_list() {
-	kubectl --context $1 -nasdf get volumereplication/busybox-pvc --ignore-not-found
+	kubectl --context $1 -n$app_namespace_0_name get volumereplication/busybox-pvc --ignore-not-found
 }; exit_stack_push unset -f vr_list
 
 vr_delete() {
-	kubectl --context $1 -nasdf delete volumereplication/busybox-pvc --ignore-not-found
+	kubectl --context $1 -n$app_namespace_0_name delete volumereplication/busybox-pvc --ignore-not-found
 }; exit_stack_push unset -f vr_delete
 
 pvc_get() {
-	kubectl --context $1 -nasdf get pvc/busybox-pvc -oyaml --ignore-not-found
+	kubectl --context $1 -n$app_namespace_0_name get pvc/busybox-pvc -oyaml --ignore-not-found
 }; exit_stack_push unset -f pvc_get
 
+pv_names_claimed_by_namespace() {
+	kubectl --context $1 get pv -ojsonpath='{range .items[?(@.spec.claimRef.namespace=="'$2'")]} pv/{.metadata.name}{end}'
+}; exit_stack_push unset -f pv_names_claimed_by_namespace
+
 pv_names() {
-	kubectl --context $1 get pv -ojsonpath='{range .items[?(@.spec.claimRef.namespace=="asdf")]} pv/{.metadata.name}{end}'
+	kubectl --context $1 get pv -ojsonpath='{range .items[?(@.spec.claimRef.name=="busybox-pvc")]} pv/{.metadata.name}{end}'
 }; exit_stack_push unset -f pv_names
 
 pv_list() {
@@ -355,14 +392,14 @@ app_protect() {
 	set -- cluster1
 	vrg_deploy $1
 	set -x
-	time kubectl --context $1 -nasdf wait vrg/bb --for condition=clusterdataprotected --timeout -1s
+	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for condition=clusterdataprotected --timeout -1s
 	{ set +x; } 2>/dev/null
 #	app_protection_info 1
 }; exit_stack_push unset -f app_protect
 
 app_unprotect() {
 	vrg_undeploy $1
-	kubectl --context $1 -nasdf delete events --all
+	kubectl --context $1 -n$app_namespace_0_name delete events --all
 	velero_kube_objects_list $1
 	s3_objects_list
 }; exit_stack_push unset -f app_unprotect
@@ -378,37 +415,37 @@ app_failback() {
 	app_undeploy_failback $1 failover
 	vrg_final_sync $2
 	set -x
-	time kubectl --context $2 -nasdf wait vrg/bb --for condition=clusterdataprotected --timeout -1s
+	time kubectl --context $2 -n$app_namespace_0_name wait vrg/bb --for condition=clusterdataprotected --timeout -1s
 	{ set +x; } 2>/dev/null
 	date
 	app_undeploy_failback $2 relocate app_recover_failback\ $1\ $2
 }; exit_stack_push unset -f app_failback
 
 app_recover() {
-	app_namespace_deploy $1
+	namespace_deploy $1 $app_namespace_0_name
 	date
 	app_recipe_deploy $1 # TODO remove once recipe protected
 	vrg_deploy_$2 $1
 	set -x
-	time kubectl --context $1 -nasdf wait vrg/bb --for condition=clusterdataready --timeout -1s
+	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for condition=clusterdataready --timeout -1s
 	{ set +x; } 2>/dev/null
 	app_list $1
 	date
 	set -x
-	time kubectl --context $1 -nasdf wait vrg/bb --for condition=clusterdataprotected
-	time kubectl --context $1 -nasdf wait vrg/bb --for condition=dataready --timeout 2m
+	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for condition=clusterdataprotected
+	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for condition=dataready --timeout 2m
 	{ set +x; } 2>/dev/null
-	until_true_or_n 30000 eval test \"\$\(kubectl --context $1 -nasdf get vrg/bb -ojsonpath='{.status.state}'\)\" = Primary
+	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for jsonpath='{.status.state}'=Primary
 }; exit_stack_push unset -f app_recover
 
 app_undeploy_failback() {
 	vrg_demote $1 $2
 	# "PVC not being deleted. Not ready to become Secondary"
 	set -x
-	time kubectl --context $1 -nasdf wait vrg/bb --for condition=clusterdataprotected --timeout -1s
+	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for condition=clusterdataprotected --timeout -1s
 	{ set +x; } 2>/dev/null
 	app_undeploy $1& # pvc finalizer remains until vrg deletes its vr
-	until_true_or_n 30000 eval test \"\$\(kubectl --context $1 -nasdf get vrg/bb -ojsonpath='{.status.state}'\)\" = Secondary
+	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for jsonpath='{.status.state}'=Secondary
 	$3
 	vrg_undeploy $1&
 	date
@@ -419,12 +456,12 @@ app_undeploy_failback() {
 app_recover_failback() {
 	# "VolumeReplication resource for the pvc as Secondary is in sync with Primary"
 	set -x
-	time kubectl --context $2 -nasdf wait vrg/bb --for condition=dataprotected --timeout 10m
+	time kubectl --context $2 -n$app_namespace_0_name wait vrg/bb --for condition=dataprotected --timeout 10m
 	{ set +x; } 2>/dev/null
 	app_recover $1 relocate
 }; exit_stack_push unset -f app_recover_failback
 
-app_velero_kube_object_name=asdf--bb--
+app_velero_kube_object_name=$app_namespace_0_name--bb--
 exit_stack_push unset -v app_velero_kube_object_name
 
 s3_objects_list() {
@@ -442,7 +479,7 @@ s3_objects_delete() {
 }; exit_stack_push unset -f s3_objects_list
 
 app_s3_object_name_prefix() {
-	echo $1/bucket/asdf/bb/
+	echo $1/bucket/$app_namespace_0_name/bb/
 }; exit_stack_push unset -f app_s3_object_name_prefix
 
 app_s3_object_name_prefix_velero() {

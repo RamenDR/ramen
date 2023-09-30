@@ -74,6 +74,8 @@ application_sample_vrg_kubectl() {
 	kind: VolumeReplicationGroup
 	metadata:
 	  name: bb
+	  labels:
+	    $4
 	spec:
 	  async:
 	    replicationClassSelector: {}
@@ -87,10 +89,10 @@ $(for cluster_name in $cluster_names; do echo \ \ -\ minio-on-$cluster_name; don
 	a
 }
 application_sample_vrg_deploy() {
-	application_sample_vrg_kubectl $1 primary apply
+	application_sample_vrg_kubectl $1 primary apply "$2"
 }
 application_sample_vrg_deploy_sec() {
-	application_sample_vrg_kubectl $1 secondary apply
+	application_sample_vrg_kubectl $1 secondary apply "$2"
 }
 application_sample_vrg_undeploy() {
 	application_sample_vrg_kubectl $1 primary delete\ --ignore-not-found
