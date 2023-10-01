@@ -4,7 +4,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # shellcheck disable=1090,2046,2086,1091
-set -x
 set -e
 ramen_hack_directory_path_name=$(dirname $0)
 . $ramen_hack_directory_path_name/exit_stack.sh
@@ -904,5 +903,7 @@ undeploy()
 exit_stack_push unset -f undeploy
 exit_stack_push unset -v command
 for command in "${@:-deploy}"; do
+	set -x
 	$command
+	{ set +x;} 2>/dev/null
 done
