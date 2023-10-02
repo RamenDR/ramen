@@ -577,8 +577,8 @@ func (v *VRGInstance) clusterDataRestore(result *ctrl.Result) error {
 // updatePVCList fetches and updates the PVC list to process for the current instance of VRG
 func (v *VRGInstance) updatePVCList() error {
 	pvcList, err := rmnutil.ListPVCsByPVCSelector(v.ctx, v.reconciler.Client, v.log,
-		v.recipeElements.pvcSelector.LabelSelector,
-		v.recipeElements.pvcSelector.NamespaceNames,
+		v.recipeElements.PvcSelector.LabelSelector,
+		v.recipeElements.PvcSelector.NamespaceNames,
 		v.instance.Spec.VolSync.Disabled,
 	)
 	if err != nil {

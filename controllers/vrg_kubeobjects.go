@@ -246,7 +246,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	requests map[string]kubeobjects.Request,
 	log logr.Logger,
 ) {
-	groups := v.recipeElements.captureWorkflow
+	groups := v.recipeElements.CaptureWorkflow
 	requestsProcessedCount := 0
 	requestsCompletedCount := 0
 	annotations := map[string]string{vrgGenerationKey: strconv.FormatInt(generation, vrgGenerationNumberBase)}
@@ -577,7 +577,7 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 	captureRequests, recoverRequests map[string]kubeobjects.Request,
 	veleroNamespaceName string, labels map[string]string, log logr.Logger,
 ) error {
-	groups := v.recipeElements.recoverWorkflow
+	groups := v.recipeElements.RecoverWorkflow
 	requests := make([]kubeobjects.Request, len(groups))
 
 	for groupNumber, recoverGroup := range groups {
