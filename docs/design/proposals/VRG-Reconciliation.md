@@ -104,7 +104,7 @@ status:
         - "True" if reconciliation is completed
             - `reason` is "Replicating"
         - "False" if reconciliation is progressing or has errors
-            - `reason`: Progressing|Error
+            - `reason`: Progressing\|Error
 - `status.protectedPVCs`:
     - `pvcName`: Name of the PVC for which conditions are represented
     - `conditions`:
@@ -184,7 +184,7 @@ are taken to ensure the same:
 1. Select all PVCs that match `PVCSelector` for processing
 1. For each PVC
     1. Prepare and protect PVC as [above](#pvc_preparation_and_protection_for_all_states)
-    1. [Find|Create] VR for PVC as `primary`
+    1. [Find\|Create] VR for PVC as `primary`
 1. For each protected PVC
     1. Check if VR status has reached `primary`
         1. If not, update status as progressing
