@@ -154,6 +154,7 @@ image_archive()
 	set -- $1 $2/$3
 	# docker-archive doesn't support modifying existing images
 	rm -f $2
+	DOCKER_HOST=$DOCKER_HOST\
 	docker image save $1 -o $2
 }
 exit_stack_push unset -f image_archive
@@ -203,10 +204,17 @@ ramen_manager_image_build()
 	if test "${skip_ramen_build:-false}" != false; then
 		return
 	fi
-	${ramen_hack_directory_path_name}/docker-uninstall.sh ${HOME}/.local/bin
-	. ${ramen_hack_directory_path_name}/podman-docker-install.sh
+	if true; then
+		. ${ramen_hack_directory_path_name}/docker-install.sh; docker_install ${HOME}/.local/bin; unset -f docker_install
+		DOCKERCMD=docker
+	else
+		${ramen_hack_directory_path_name}/docker-uninstall.sh ${HOME}/.local/bin
+		. ${ramen_hack_directory_path_name}/podman-docker-install.sh
+		DOCKERCMD=podman
+	fi
 	. ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local; unset -f go_install
-	make -C $ramen_directory_path_name docker-build IMG=$ramen_manager_image_reference
+	make -C $ramen_directory_path_name docker-build IMG=$ramen_manager_image_reference DOCKERCMD=$DOCKERCMD DOCKER_HOST=$DOCKER_HOST
+	unset -v DOCKERCMD
 }
 exit_stack_push unset -f ramen_manager_image_build
 ramen_manager_image_archive()
