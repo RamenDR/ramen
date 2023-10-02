@@ -791,7 +791,6 @@ var _ = Describe("VolSync_Handler", func() {
 					}, maxWait, interval).Should(Succeed())
 
 					Expect(pvc.GetName()).To(Equal(volsync.BuildNameForMainDstPVC(rdSpec.ProtectedPVC.Name)))
-					Expect(pvc.GetOwnerReferences()[0].Kind).To(Equal("ConfigMap"))
 				})
 			})
 			Context("With CopyMethod 'LocalDirect', app PVC exists and in deleted state", func() {
@@ -1960,6 +1959,7 @@ var _ = Describe("VolSync_Handler", func() {
 					if err != nil {
 						return false
 					}
+					fmt.Printf("testPVC output %+v", testPVC)
 					// configmap owner is faking out VRG
 					return ownerMatches(testPVC, owner.GetName(), "ConfigMap", false)
 				}, maxWait, interval).Should(BeTrue())

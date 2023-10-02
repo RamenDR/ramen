@@ -343,15 +343,7 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	}
 
 	if v.IsCopyMethodLocalDirect() {
-		pvc, err := v.getPVC(rsSpec.ProtectedPVC.Name)
-		if err != nil {
-			return false, replicationSource, err
-		}
-
-		// Reset Owners before adding the RS as the owner
-		pvc.SetOwnerReferences([]metav1.OwnerReference{})
-
-		err = v.addOwnerReferenceAndUpdate(pvc, replicationSource)
+		err = v.updateFinalizerAndOwnerForLocalDirect(rsSpec.ProtectedPVC.Name, replicationSource)
 		if err != nil {
 			return false, replicationSource, err
 		}
@@ -661,8 +653,9 @@ func (v *VSHandler) getPV(pvName string) (*corev1.PersistentVolume, error) {
 	return pv, nil
 }
 
-// Adds owner ref and ACM "do-not-delete" annotation to indicate that when the appsub is removed, ACM
-// should not cleanup this PVC - we want it left behind so we can run a final sync
+// Adds ACM "do-not-delete" annotation to indicate that when the appsub is removed, ACM
+// should not cleanup this PVC - we want it left behind so we can run a final sync.
+// Also adds a finalizer if and only if the copyMethod used is LocalDirect
 func (v *VSHandler) preparePVCForOwnershipTakeOver(pvcName string) (*corev1.PersistentVolumeClaim, bool, error) {
 	pvc, err := v.getPVC(pvcName)
 	if err != nil {
@@ -674,19 +667,12 @@ func (v *VSHandler) preparePVCForOwnershipTakeOver(pvcName string) (*corev1.Pers
 	// Add annotation to indicate that ACM should not delete/cleanup this pvc.
 	annotationUpdated := addAnnotation(pvc, ACMAppSubDoNotDeleteAnnotation, ACMAppSubDoNotDeleteAnnotationVal)
 
-	// Add Finalizer. For now, add finalizer only if dest copyMethod is LocaDirect
-	finalizerUpdated := false
-	if v.IsCopyMethodLocalDirect() {
-		finalizerUpdated = util.AddFinalizer(pvc, VolSyncFinalizerName)
+	ownerRefUpdated, err := v.addOwnerReference(pvc, v.owner) // VRG as owner
+	if err != nil {
+		return nil, false, err
 	}
 
-	// Add VRG as owner
-	// ownerRefUpdated, err := v.addOwnerReference(pvc, v.owner) // VRG as owner
-	// if err != nil {
-	// 	return nil, false, err
-	// }
-
-	return pvc, annotationUpdated || finalizerUpdated, nil
+	return pvc, annotationUpdated || ownerRefUpdated, nil
 }
 
 func (v *VSHandler) validateSecretAndAddVRGOwnerRef(secretName string) (bool, error) {
@@ -1440,16 +1426,22 @@ func (v *VSHandler) addOwnerReferenceAndUpdate(obj client.Object, owner metav1.O
 	}
 
 	if needsUpdate {
-		objKindAndName := getKindAndName(v.client.Scheme(), obj)
-
-		if err := v.client.Update(v.ctx, obj); err != nil {
-			v.log.Error(err, "Failed to add owner reference to obj", "obj", objKindAndName)
-
-			return fmt.Errorf("failed to add owner reference to %s (%w)", objKindAndName, err)
-		}
-
-		v.log.Info("ownerRef added to object", "obj", objKindAndName)
+		v.updateResource(obj)
 	}
+
+	return nil
+}
+
+func (v *VSHandler) updateResource(obj client.Object) error {
+	objKindAndName := getKindAndName(v.client.Scheme(), obj)
+
+	if err := v.client.Update(v.ctx, obj); err != nil {
+		v.log.Error(err, "Failed to update object", "obj", objKindAndName)
+
+		return fmt.Errorf("failed to update object %s (%w)", objKindAndName, err)
+	}
+
+	v.log.Info("Updated object", "obj", objKindAndName)
 
 	return nil
 }
@@ -2436,4 +2428,44 @@ func (v *VSHandler) checkLastSnapshotSyncStatus(rdName string, snapshotRef corev
 	}
 
 	return !started, !completed, nil
+}
+
+func (v *VSHandler) updateFinalizerAndOwnerForLocalDirect(pvcName string, rs *volsyncv1alpha1.ReplicationSource,
+) error {
+	pvc, err := v.getPVC(pvcName)
+	if err != nil {
+		return err
+	}
+
+	// Add Finalizer. For now, add finalizer only if dest copyMethod is LocaDirect
+	finalizerUpdated := util.AddFinalizer(pvc, VolSyncFinalizerName)
+
+	ownerUpdated := false
+	ownerFound := false
+	// find current owner
+	for _, ownerRef := range pvc.ObjectMeta.OwnerReferences {
+		if ownerRef.UID == rs.GetObjectMeta().GetUID() {
+			ownerFound = true
+
+			break
+		}
+	}
+
+	if !ownerFound || len(pvc.ObjectMeta.OwnerReferences) > 1 {
+		// Reset Owners before adding the RS as the owner
+		pvc.SetOwnerReferences([]metav1.OwnerReference{})
+		ownerUpdated, err = v.addOwnerReference(pvc, rs)
+		if err != nil {
+			return err
+		}
+	}
+
+	if finalizerUpdated || ownerUpdated {
+		err = v.updateResource(pvc)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
