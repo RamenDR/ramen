@@ -153,7 +153,7 @@ def test_volume_replication(primary, secondary):
         context=primary,
     )
 
-    print(f"Replication from cluster '{primary}' to cluster '{secondary}' successeded")
+    print(f"Replication from cluster '{primary}' to cluster '{secondary}' succeeded")
 
 
 if len(sys.argv) != 3:
