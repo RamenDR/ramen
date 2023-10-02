@@ -154,14 +154,17 @@ test-pvrgl: generate manifests envtest
 test-vrg: generate manifests envtest
 	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroup
 
-test-vrg-controller: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroupController
+test-vrg-pvc: generate manifests envtest
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroupPVC
 
 test-vrg-vr: generate manifests envtest
 	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroupVolRep
 
 test-vrg-vs: generate manifests envtest
 	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroupVolSync
+
+test-vrg-recipe: generate manifests envtest
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroupRecipe
 
 test-vrg-kubeobjects: generate manifests envtest
 	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VRG_KubeObjectProtection

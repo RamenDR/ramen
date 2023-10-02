@@ -164,7 +164,7 @@ func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, 
 		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolumeClaim is not marked for deletion")
 
 		msg := "unable to transition to Secondary as PVC is not deleted"
-		v.updatePVCDataReadyCondition(pvc.Name, VRGConditionReasonProgressing, msg)
+		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonProgressing, msg)
 
 		return !ready
 	}
@@ -180,7 +180,7 @@ func (v *VRGInstance) isPVCInUse(pvc *corev1.PersistentVolumeClaim, log logr.Log
 		msg := operation + " failed as PVC is potentially in use by a pod"
 
 		log.Info(msg, "errorValue", err)
-		v.updatePVCDataReadyCondition(pvc.Name, VRGConditionReasonProgressing, msg)
+		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonProgressing, msg)
 
 		return inUse
 	}
@@ -191,7 +191,7 @@ func (v *VRGInstance) isPVCInUse(pvc *corev1.PersistentVolumeClaim, log logr.Log
 		msg := operation + " failed as PersistentVolume for PVC is still attached to node(s)"
 
 		log.Info(msg, "errorValue", err)
-		v.updatePVCDataReadyCondition(pvc.Name, VRGConditionReasonProgressing, msg)
+		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonProgressing, msg)
 
 		return inUse
 	}
@@ -223,13 +223,12 @@ func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim) err
 			v.instance.Name, err)
 	}
 
-	protectedPVC := v.findProtectedPVC(pvc.GetName())
+	protectedPVC := v.findProtectedPVC(pvc.GetNamespace(), pvc.GetName())
 	if protectedPVC == nil {
-		protectedPVC = &ramendrv1alpha1.ProtectedPVC{Name: pvc.GetName()}
+		protectedPVC = &ramendrv1alpha1.ProtectedPVC{Namespace: pvc.GetNamespace(), Name: pvc.GetName()}
 		v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
 	}
 
-	protectedPVC.Name = pvc.Name
 	protectedPVC.ProtectedByVolSync = false
 	protectedPVC.StorageClassName = pvc.Spec.StorageClassName
 	protectedPVC.Labels = pvc.Labels
@@ -304,7 +303,7 @@ func (v *VRGInstance) preparePVCForVRProtection(pvc *corev1.PersistentVolumeClai
 		// Since pvc is skipped, mark the condition for the PVC as progressing. Even for
 		// deletion this applies where if the VR protection finalizer is absent for pvc and
 		// it is being deleted.
-		v.updatePVCDataReadyCondition(pvc.Name, VRGConditionReasonProgressing, msg)
+		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonProgressing, msg)
 
 		return !requeue, skip
 	}
@@ -324,7 +323,7 @@ func (v *VRGInstance) protectPVC(pvc *corev1.PersistentVolumeClaim,
 		log.Info("Requeuing, as adding PersistentVolumeClaim finalizer failed", "errorValue", err)
 
 		msg := "Failed to add Protected Finalizer to PVC"
-		v.updatePVCDataReadyCondition(pvc.Name, VRGConditionReasonError, msg)
+		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg)
 
 		return requeue, !skip
 	}
@@ -333,7 +332,7 @@ func (v *VRGInstance) protectPVC(pvc *corev1.PersistentVolumeClaim,
 		log.Info("Requeuing, as retaining PersistentVolume failed", "errorValue", err)
 
 		msg := "Failed to retain PV for PVC"
-		v.updatePVCDataReadyCondition(pvc.Name, VRGConditionReasonError, msg)
+		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg)
 
 		return requeue, !skip
 	}
@@ -344,7 +343,7 @@ func (v *VRGInstance) protectPVC(pvc *corev1.PersistentVolumeClaim,
 			log.Info("Requeuing, as annotating PersistentVolumeClaim failed", "errorValue", err)
 
 			msg := "Failed to add protected annotatation to PVC"
-			v.updatePVCDataReadyCondition(pvc.Name, VRGConditionReasonError, msg)
+			v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg)
 
 			return requeue, !skip
 		}
@@ -540,7 +539,7 @@ func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim
 	numProfilesToUpload := len(v.instance.Spec.S3Profiles)
 	if numProfilesToUpload == 0 {
 		msg := "Error uploading PV cluster data because VRG spec has no S3 profiles"
-		v.updatePVCClusterDataProtectedCondition(pvc.Name,
+		v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name,
 			VRGConditionReasonUploadError, msg)
 		v.log.Info(msg)
 
@@ -560,7 +559,7 @@ func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim
 		msg := fmt.Sprintf("Uploaded PV/PVC cluster data to only  %d of %d S3 profile(s): %v",
 			numProfilesUploaded, numProfilesToUpload, s3Profiles)
 		v.log.Info(msg)
-		v.updatePVCClusterDataProtectedCondition(pvc.Name,
+		v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name,
 			VRGConditionReasonUploadError, msg)
 
 		return fmt.Errorf(msg)
@@ -570,7 +569,7 @@ func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim
 		msg := fmt.Sprintf("failed to add archived annotation for PVC (%s/%s) with error (%v)",
 			pvc.Namespace, pvc.Name, err)
 		v.log.Info(msg)
-		v.updatePVCClusterDataProtectedCondition(pvc.Name,
+		v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name,
 			VRGConditionReasonClusterDataAnnotationFailed, msg)
 
 		return fmt.Errorf(msg)
@@ -579,7 +578,7 @@ func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim
 	msg := fmt.Sprintf("Done uploading PV/PVC cluster data to %d of %d S3 profile(s): %v",
 		numProfilesUploaded, numProfilesToUpload, s3Profiles)
 	v.log.Info(msg)
-	v.updatePVCClusterDataProtectedCondition(pvc.Name,
+	v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name,
 		VRGConditionReasonUploaded, msg)
 
 	return nil
@@ -639,7 +638,7 @@ func (v *VRGInstance) UploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim
 	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
 		err := v.UploadPVandPVCtoS3Store(s3ProfileName, pvc)
 		if err != nil {
-			v.updatePVCClusterDataProtectedCondition(pvc.Name, VRGConditionReasonUploadError, err.Error())
+			v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonUploadError, err.Error())
 			rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
 				rmnutil.EventReasonUploadFailed, err.Error())
 
@@ -923,11 +922,11 @@ func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName, 
 	// condition where both async and sync are enabled at the same time.
 	if v.instance.Spec.Sync != nil {
 		msg := "PVC in the VolumeReplicationGroup is ready for use"
-		v.updatePVCDataReadyCondition(vrNamespacedName.Name, VRGConditionReasonReady, msg)
-		v.updatePVCDataProtectedCondition(vrNamespacedName.Name, VRGConditionReasonReady, msg)
-		v.updatePVCLastSyncTime(vrNamespacedName.Name, nil)
-		v.updatePVCLastSyncDuration(vrNamespacedName.Name, nil)
-		v.updatePVCLastSyncBytes(vrNamespacedName.Name, nil)
+		v.updatePVCDataReadyCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonReady, msg)
+		v.updatePVCDataProtectedCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonReady, msg)
+		v.updatePVCLastSyncTime(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
+		v.updatePVCLastSyncDuration(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
+		v.updatePVCLastSyncBytes(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
 
 		return false, true, nil
 	}
@@ -955,11 +954,12 @@ func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName
 	// condition where both async and sync are enabled at the same time.
 	if v.instance.Spec.Sync != nil {
 		msg := "VolumeReplication resource for the pvc as Secondary is in sync with Primary"
-		v.updatePVCDataReadyCondition(vrNamespacedName.Name, VRGConditionReasonReplicated, msg)
-		v.updatePVCDataProtectedCondition(vrNamespacedName.Name, VRGConditionReasonDataProtected, msg)
-		v.updatePVCLastSyncTime(vrNamespacedName.Name, nil)
-		v.updatePVCLastSyncDuration(vrNamespacedName.Name, nil)
-		v.updatePVCLastSyncBytes(vrNamespacedName.Name, nil)
+		v.updatePVCDataReadyCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonReplicated, msg)
+		v.updatePVCDataProtectedCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonDataProtected,
+			msg)
+		v.updatePVCLastSyncTime(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
+		v.updatePVCLastSyncDuration(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
+		v.updatePVCLastSyncBytes(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
 
 		return false, true, nil
 	}
@@ -995,7 +995,7 @@ func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 			// is it replicating or not. So, mark the protected pvc as error
 			// with condition.status as Unknown.
 			msg := "Failed to get VolumeReplication resource"
-			v.updatePVCDataReadyCondition(vrNamespacedName.Name, VRGConditionReasonErrorUnknown, msg)
+			v.updatePVCDataReadyCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonErrorUnknown, msg)
 
 			return requeue, false, fmt.Errorf("failed to get VolumeReplication resource"+
 				" (%s/%s) belonging to VolumeReplicationGroup (%s/%s), %w",
@@ -1009,7 +1009,7 @@ func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 				rmnutil.EventReasonVRCreateFailed, err.Error())
 
 			msg := "Failed to create VolumeReplication resource"
-			v.updatePVCDataReadyCondition(vrNamespacedName.Name, VRGConditionReasonError, msg)
+			v.updatePVCDataReadyCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonError, msg)
 
 			return requeue, false, fmt.Errorf("failed to create VolumeReplication resource"+
 				" (%s/%s) belonging to VolumeReplicationGroup (%s/%s), %w",
@@ -1018,7 +1018,7 @@ func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 
 		// Just created VolRep. Mark status.conditions as Progressing.
 		msg := "Created VolumeReplication resource for PVC"
-		v.updatePVCDataReadyCondition(vrNamespacedName.Name, VRGConditionReasonProgressing, msg)
+		v.updatePVCDataReadyCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonProgressing, msg)
 
 		return !requeue, false, nil
 	}
@@ -1065,7 +1065,7 @@ func (v *VRGInstance) updateVR(volRep *volrep.VolumeReplication,
 			rmnutil.EventReasonVRUpdateFailed, err.Error())
 
 		msg := "Failed to update VolumeReplication resource"
-		v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonError, msg)
+		v.updatePVCDataReadyCondition(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg)
 
 		return requeue, false, fmt.Errorf("failed to update VolumeReplication resource"+
 			" (%s/%s) as %s, belonging to VolumeReplicationGroup (%s/%s), %w",
@@ -1077,7 +1077,7 @@ func (v *VRGInstance) updateVR(volRep *volrep.VolumeReplication,
 		volRep.Name, volRep.Namespace, state))
 	// Just updated the state of the VolRep. Mark it as progressing.
 	msg := "Updated VolumeReplication resource for PVC"
-	v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonProgressing, msg)
+	v.updatePVCDataReadyCondition(volRep.Namespace, volRep.Name, VRGConditionReasonProgressing, msg)
 
 	return !requeue, false, nil
 }
@@ -1241,7 +1241,7 @@ func (v *VRGInstance) checkVRStatus(volRep *volrep.VolumeReplication) bool {
 			volRep.Name, volRep.Namespace))
 
 		msg := "VolumeReplication generation not updated in status"
-		v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonProgressing, msg)
+		v.updatePVCDataReadyCondition(volRep.Namespace, volRep.Name, VRGConditionReasonProgressing, msg)
 
 		return false
 	}
@@ -1256,7 +1256,7 @@ func (v *VRGInstance) checkVRStatus(volRep *volrep.VolumeReplication) bool {
 			string(v.instance.Spec.ReplicationState), v.instance.Name, v.instance.Namespace))
 
 		msg := "VolumeReplicationGroup state invalid"
-		v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonError, msg)
+		v.updatePVCDataReadyCondition(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg)
 
 		return false
 	}
@@ -1286,10 +1286,10 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 	conditionMet, msg := isVRConditionMet(volRep, volrepController.ConditionCompleted, metav1.ConditionTrue)
 	if !conditionMet {
 		defaultMsg := fmt.Sprintf("VolumeReplication resource for pvc not %s to %s", action, stateString)
-		v.updatePVCDataReadyConditionHelper(volRep.Name, VRGConditionReasonError, msg,
+		v.updatePVCDataReadyConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,
 			defaultMsg)
 
-		v.updatePVCDataProtectedConditionHelper(volRep.Name, VRGConditionReasonError, msg,
+		v.updatePVCDataProtectedConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,
 			defaultMsg)
 
 		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", defaultMsg, volRep.Name, volRep.Namespace))
@@ -1303,11 +1303,11 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 	}
 
 	msg = "PVC in the VolumeReplicationGroup is ready for use"
-	v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonReady, msg)
-	v.updatePVCDataProtectedCondition(volRep.Name, VRGConditionReasonReady, msg)
-	v.updatePVCLastSyncTime(volRep.Name, volRep.Status.LastSyncTime)
-	v.updatePVCLastSyncDuration(volRep.Name, volRep.Status.LastSyncDuration)
-	v.updatePVCLastSyncBytes(volRep.Name, volRep.Status.LastSyncBytes)
+	v.updatePVCDataReadyCondition(volRep.Namespace, volRep.Name, VRGConditionReasonReady, msg)
+	v.updatePVCDataProtectedCondition(volRep.Namespace, volRep.Name, VRGConditionReasonReady, msg)
+	v.updatePVCLastSyncTime(volRep.Namespace, volRep.Name, volRep.Status.LastSyncTime)
+	v.updatePVCLastSyncDuration(volRep.Namespace, volRep.Name, volRep.Status.LastSyncDuration)
+	v.updatePVCLastSyncBytes(volRep.Namespace, volRep.Name, volRep.Status.LastSyncBytes)
 	v.log.Info(fmt.Sprintf("VolumeReplication resource %s/%s is ready for use", volRep.Name,
 		volRep.Namespace))
 
@@ -1332,9 +1332,9 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 // ProtectedPVC.Conditions[DataReady] = True
 // ProtectedPVC.Conditions[DataProtected] = True
 func (v *VRGInstance) validateAdditionalVRStatusForSecondary(volRep *volrep.VolumeReplication) bool {
-	v.updatePVCLastSyncTime(volRep.Name, nil)
-	v.updatePVCLastSyncDuration(volRep.Name, nil)
-	v.updatePVCLastSyncBytes(volRep.Name, nil)
+	v.updatePVCLastSyncTime(volRep.Namespace, volRep.Name, nil)
+	v.updatePVCLastSyncDuration(volRep.Namespace, volRep.Name, nil)
+	v.updatePVCLastSyncBytes(volRep.Namespace, volRep.Name, nil)
 
 	conditionMet, _ := isVRConditionMet(volRep, volrepController.ConditionResyncing, metav1.ConditionTrue)
 	if !conditionMet {
@@ -1343,10 +1343,10 @@ func (v *VRGInstance) validateAdditionalVRStatusForSecondary(volRep *volrep.Volu
 
 	conditionMet, msg := isVRConditionMet(volRep, volrepController.ConditionDegraded, metav1.ConditionTrue)
 	if !conditionMet {
-		v.updatePVCDataProtectedConditionHelper(volRep.Name, VRGConditionReasonError, msg,
+		v.updatePVCDataProtectedConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,
 			"VolumeReplication resource for pvc is not in Degraded condition while resyncing")
 
-		v.updatePVCDataReadyConditionHelper(volRep.Name, VRGConditionReasonError, msg,
+		v.updatePVCDataReadyConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,
 			"VolumeReplication resource for pvc is not in Degraded condition while resyncing")
 
 		v.log.Info(fmt.Sprintf("VolumeReplication resource is not in degraded condition while"+
@@ -1356,8 +1356,8 @@ func (v *VRGInstance) validateAdditionalVRStatusForSecondary(volRep *volrep.Volu
 	}
 
 	msg = "VolumeReplication resource for the pvc is syncing as Secondary"
-	v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonReplicating, msg)
-	v.updatePVCDataProtectedCondition(volRep.Name, VRGConditionReasonReplicating, msg)
+	v.updatePVCDataReadyCondition(volRep.Namespace, volRep.Name, VRGConditionReasonReplicating, msg)
+	v.updatePVCDataProtectedCondition(volRep.Namespace, volRep.Name, VRGConditionReasonReplicating, msg)
 
 	v.log.Info(fmt.Sprintf("VolumeReplication resource for the pvc is syncing as Secondary (%s/%s)",
 		volRep.Name, volRep.Namespace))
@@ -1370,10 +1370,10 @@ func (v *VRGInstance) checkResyncCompletionAsSecondary(volRep *volrep.VolumeRepl
 	conditionMet, msg := isVRConditionMet(volRep, volrepController.ConditionResyncing, metav1.ConditionFalse)
 	if !conditionMet {
 		defaultMsg := "VolumeReplication resource for pvc not syncing as Secondary"
-		v.updatePVCDataReadyConditionHelper(volRep.Name, VRGConditionReasonError, msg,
+		v.updatePVCDataReadyConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,
 			defaultMsg)
 
-		v.updatePVCDataProtectedConditionHelper(volRep.Name, VRGConditionReasonError, msg,
+		v.updatePVCDataProtectedConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,
 			defaultMsg)
 
 		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", defaultMsg, volRep.Name, volRep.Namespace))
@@ -1384,10 +1384,10 @@ func (v *VRGInstance) checkResyncCompletionAsSecondary(volRep *volrep.VolumeRepl
 	conditionMet, msg = isVRConditionMet(volRep, volrepController.ConditionDegraded, metav1.ConditionFalse)
 	if !conditionMet {
 		defaultMsg := "VolumeReplication resource for pvc is not syncing and is degraded as Secondary"
-		v.updatePVCDataReadyConditionHelper(volRep.Name, VRGConditionReasonError, msg,
+		v.updatePVCDataReadyConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,
 			defaultMsg)
 
-		v.updatePVCDataProtectedConditionHelper(volRep.Name, VRGConditionReasonError, msg,
+		v.updatePVCDataProtectedConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,
 			defaultMsg)
 
 		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", defaultMsg, volRep.Name, volRep.Namespace))
@@ -1396,8 +1396,8 @@ func (v *VRGInstance) checkResyncCompletionAsSecondary(volRep *volrep.VolumeRepl
 	}
 
 	msg = "VolumeReplication resource for the pvc as Secondary is in sync with Primary"
-	v.updatePVCDataReadyCondition(volRep.Name, VRGConditionReasonReplicated, msg)
-	v.updatePVCDataProtectedCondition(volRep.Name, VRGConditionReasonDataProtected, msg)
+	v.updatePVCDataReadyCondition(volRep.Namespace, volRep.Name, VRGConditionReasonReplicated, msg)
+	v.updatePVCDataProtectedCondition(volRep.Namespace, volRep.Name, VRGConditionReasonDataProtected, msg)
 
 	v.log.Info(fmt.Sprintf("data sync completed as both degraded and resyncing are false for"+
 		" secondary VolRep (%s/%s)", volRep.Name, volRep.Namespace))
@@ -1439,28 +1439,29 @@ func isVRConditionMet(volRep *volrep.VolumeReplication,
 // function sends reason as VRGConditionReasonError and the linter
 // complains about this function always receiving the same reason.
 func (v *VRGInstance) updatePVCDataReadyConditionHelper(
+	namespace string,
 	name string,
 	reason string, //nolint: unparam
 	message,
 	defaultMessage string,
 ) {
 	if message != "" {
-		v.updatePVCDataReadyCondition(name, reason, message)
+		v.updatePVCDataReadyCondition(namespace, name, reason, message)
 
 		return
 	}
 
-	v.updatePVCDataReadyCondition(name, reason, defaultMessage)
+	v.updatePVCDataReadyCondition(namespace, name, reason, defaultMessage)
 }
 
-func (v *VRGInstance) updatePVCDataReadyCondition(pvcName, reason, message string) {
-	if protectedPVC := v.findProtectedPVC(pvcName); protectedPVC != nil {
+func (v *VRGInstance) updatePVCDataReadyCondition(pvcNamespace, pvcName, reason, message string) {
+	if protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName); protectedPVC != nil {
 		setPVCDataReadyCondition(protectedPVC, reason, message, v.instance.Generation)
 		// No need to append it as an already existing entry from the list is being modified.
 		return
 	}
 
-	protectedPVC := &ramendrv1alpha1.ProtectedPVC{Name: pvcName}
+	protectedPVC := &ramendrv1alpha1.ProtectedPVC{Namespace: pvcNamespace, Name: pvcName}
 	setPVCDataReadyCondition(protectedPVC, reason, message, v.instance.Generation)
 
 	// created a new instance. Add it to the list
@@ -1471,36 +1472,37 @@ func (v *VRGInstance) updatePVCDataReadyCondition(pvcName, reason, message strin
 // function sends reason as VRGConditionReasonError and the linter
 // complains about this function always receiving the same reason.
 func (v *VRGInstance) updatePVCDataProtectedConditionHelper(
+	namespace string,
 	name string,
 	reason string, //nolint: unparam
 	message,
 	defaultMessage string,
 ) {
 	if message != "" {
-		v.updatePVCDataProtectedCondition(name, reason, message)
+		v.updatePVCDataProtectedCondition(namespace, name, reason, message)
 
 		return
 	}
 
-	v.updatePVCDataProtectedCondition(name, reason, defaultMessage)
+	v.updatePVCDataProtectedCondition(namespace, name, reason, defaultMessage)
 }
 
-func (v *VRGInstance) updatePVCDataProtectedCondition(pvcName, reason, message string) {
-	if protectedPVC := v.findProtectedPVC(pvcName); protectedPVC != nil {
+func (v *VRGInstance) updatePVCDataProtectedCondition(pvcNamespace, pvcName, reason, message string) {
+	if protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName); protectedPVC != nil {
 		setPVCDataProtectedCondition(protectedPVC, reason, message, v.instance.Generation)
 		// No need to append it as an already existing entry from the list is being modified.
 		return
 	}
 
-	protectedPVC := &ramendrv1alpha1.ProtectedPVC{Name: pvcName}
+	protectedPVC := &ramendrv1alpha1.ProtectedPVC{Namespace: pvcNamespace, Name: pvcName}
 	setPVCDataProtectedCondition(protectedPVC, reason, message, v.instance.Generation)
 
 	// created a new instance. Add it to the list
 	v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
 }
 
-func (v *VRGInstance) updatePVCLastSyncTime(pvcName string, lastSyncTime *metav1.Time) {
-	protectedPVC := v.findProtectedPVC(pvcName)
+func (v *VRGInstance) updatePVCLastSyncTime(pvcNamespace, pvcName string, lastSyncTime *metav1.Time) {
+	protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName)
 	if protectedPVC == nil {
 		return
 	}
@@ -1508,8 +1510,8 @@ func (v *VRGInstance) updatePVCLastSyncTime(pvcName string, lastSyncTime *metav1
 	protectedPVC.LastSyncTime = lastSyncTime
 }
 
-func (v *VRGInstance) updatePVCLastSyncDuration(pvcName string, lastSyncDuration *metav1.Duration) {
-	protectedPVC := v.findProtectedPVC(pvcName)
+func (v *VRGInstance) updatePVCLastSyncDuration(pvcNamespace, pvcName string, lastSyncDuration *metav1.Duration) {
+	protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName)
 	if protectedPVC == nil {
 		return
 	}
@@ -1517,8 +1519,8 @@ func (v *VRGInstance) updatePVCLastSyncDuration(pvcName string, lastSyncDuration
 	protectedPVC.LastSyncDuration = lastSyncDuration
 }
 
-func (v *VRGInstance) updatePVCLastSyncBytes(pvcName string, lastSyncBytes *int64) {
-	protectedPVC := v.findProtectedPVC(pvcName)
+func (v *VRGInstance) updatePVCLastSyncBytes(pvcNamespace, pvcName string, lastSyncBytes *int64) {
+	protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName)
 	if protectedPVC == nil || protectedPVC.ProtectedByVolSync {
 		return
 	}
@@ -1578,8 +1580,8 @@ func setPVCDataProtectedCondition(protectedPVC *ramendrv1alpha1.ProtectedPVC, re
 	}
 }
 
-func (v *VRGInstance) updatePVCClusterDataProtectedCondition(pvcName, reason, message string) {
-	if protectedPVC := v.findProtectedPVC(pvcName); protectedPVC != nil {
+func (v *VRGInstance) updatePVCClusterDataProtectedCondition(pvcNamespace, pvcName, reason, message string) {
+	if protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName); protectedPVC != nil {
 		setPVCClusterDataProtectedCondition(protectedPVC, reason, message, v.instance.Generation)
 		// No need to append it as an already existing entry from the list is being modified.
 		return
@@ -1773,10 +1775,10 @@ func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeCl
 }
 
 // findProtectedPVC returns the &VRG.Status.ProtectedPVC[x] for the given pvcName
-func (v *VRGInstance) findProtectedPVC(pvcName string) *ramendrv1alpha1.ProtectedPVC {
+func (v *VRGInstance) findProtectedPVC(pvcNamespaceName, pvcName string) *ramendrv1alpha1.ProtectedPVC {
 	for index := range v.instance.Status.ProtectedPVCs {
 		protectedPVC := &v.instance.Status.ProtectedPVCs[index]
-		if protectedPVC.Name == pvcName {
+		if protectedPVC.Namespace == pvcNamespaceName && protectedPVC.Name == pvcName {
 			return protectedPVC
 		}
 	}

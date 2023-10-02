@@ -32,7 +32,7 @@ const (
 	vrgTestNamespaceBase string = "test-vrg-namespace-"
 )
 
-var _ = Describe("VolumeReplicationGroupController", func() {
+var _ = Describe("VolumeReplicationGroupPVCSelector", func() {
 	var testCtx context.Context
 	var cancel context.CancelFunc
 	var vrgTestNamespace string
