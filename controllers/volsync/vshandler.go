@@ -1875,7 +1875,7 @@ func getRemoteServiceNameForRDFromPVCName(pvcName, rdNamespace string) string {
 // BuildNameForMainDstPVC transforms a given PVC name into a new name following a specific format. Its primary purpose is
 // to create a distinct name for a new PVC. This new PVC is main destinationPVC for the ReplicationDestination.
 func BuildNameForMainDstPVC(pvcName string) string {
-	return fmt.Sprintf("vs-%s-main-dst-for-localdirect", pvcName)
+	return fmt.Sprintf("vs-%s-main-dst-ld", pvcName)
 }
 
 func getKindAndName(scheme *runtime.Scheme, obj client.Object) string {

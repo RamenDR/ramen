@@ -26,7 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
+	ctrlruntimebldr "sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -74,7 +74,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 			RateLimiter:             rateLimiter,
 		}).
 		For(&ramendrv1alpha1.VolumeReplicationGroup{},
-			builder.WithPredicates(
+			ctrlruntimebldr.WithPredicates(
 				predicate.Or(
 					predicate.GenerationChangedPredicate{},
 					predicate.AnnotationChangedPredicate{},
@@ -84,17 +84,16 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 		).
 		Watches(&source.Kind{Type: &corev1.PersistentVolumeClaim{}},
 			handler.EnqueueRequestsFromMapFunc(r.pvcMapFunc),
-			builder.WithPredicates(pvcPredicateFunc()),
-		).
-		Watches(&source.Kind{Type: &volsyncv1alpha1.ReplicationDestination{}},
-			handler.EnqueueRequestsFromMapFunc(r.rdMapFunc),
-			builder.WithPredicates(replicationDestinationPredicateFunc()),
+			ctrlruntimebldr.WithPredicates(pvcPredicateFunc()),
 		).
 		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(r.configMapFun)).
 		Owns(&volrep.VolumeReplication{})
 
 	if !ramenConfig.VolSync.Disabled {
-		builder.Owns(&volsyncv1alpha1.ReplicationDestination{}).
+		builder.Watches(&source.Kind{Type: &volsyncv1alpha1.ReplicationDestination{}},
+			handler.EnqueueRequestsFromMapFunc(r.rdMapFunc),
+			ctrlruntimebldr.WithPredicates(replicationDestinationPredicateFunc())).
+			Owns(&volsyncv1alpha1.ReplicationDestination{}).
 			Owns(&volsyncv1alpha1.ReplicationSource{})
 	} else {
 		r.Log.Info("VolSync disabled; don't own volsync resources")
