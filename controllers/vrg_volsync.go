@@ -24,6 +24,7 @@ func (v *VRGInstance) restorePVsForVolSync() error {
 	}
 
 	numPVsRestored := 0
+
 	var lastErr error
 
 	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
@@ -199,8 +200,10 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() bool {
 
 func (v *VRGInstance) reconcileVolSyncForDeletion() error {
 	v.log.Info("Reconcile volsync for deletion as Secondary", "volSyncPVCsLen", len(v.volSyncPVCs))
-	for _, pvc := range v.volSyncPVCs {
-		if err := v.removeFinalizerAndAnnotationFromPVC(&pvc, volsync.VolSyncFinalizerName, "", v.log); err != nil {
+
+	for idx := range v.volSyncPVCs {
+		err := v.removeFinalizerAndAnnotationFromPVC(&v.volSyncPVCs[idx], volsync.VolSyncFinalizerName, "", v.log)
+		if err != nil {
 			return err
 		}
 	}

@@ -266,7 +266,7 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 	// decide if reconcile request needs to be sent to the
 	// corresponding VolumeReplicationGroup CR by:
 	// - whether there is a VolumeReplicationGroup CR in the namespace
-	//   to which the the pvc belongs to.
+	//   to which the pvc belongs to.
 	// - whether the labels on pvc match the label selectors from
 	//    VolumeReplicationGroup CR.
 	err := reader.List(context.TODO(), &vrgs, listOptions...)
@@ -305,6 +305,7 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 	return req
 }
 
+//nolint:gocritic,gocognit,cyclop
 func replicationDestinationPredicateFunc() predicate.Funcs {
 	log := ctrl.Log.WithName("RDPredicate").WithName("RD")
 	rdPredicate := predicate.Funcs{
@@ -623,6 +624,7 @@ func (v *VRGInstance) validateVRGMode() error {
 	return nil
 }
 
+//nolint:gomnd
 func (v *VRGInstance) clusterDataRestore(result *ctrl.Result) error {
 	if v.instance.Spec.PrepareForFinalSync || v.instance.Spec.RunFinalSync {
 		msg := "PV restore skipped, as VRG is orchestrating final sync"
@@ -655,6 +657,7 @@ func (v *VRGInstance) clusterDataRestore(result *ctrl.Result) error {
 	if err != nil {
 		if errorswrapper.Is(err, volsync.WaitingForNotInUsePVC) {
 			v.log.Info("VolSync PV Restore Incomplete")
+
 			result.RequeueAfter = time.Second * 5 // delay by no more than 5 seconds
 
 			return err

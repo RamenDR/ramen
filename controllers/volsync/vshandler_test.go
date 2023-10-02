@@ -1744,10 +1744,10 @@ var _ = Describe("VolSync_Handler", func() {
 
 		It("Should delete an RD when it belongs to the VRG", func() {
 			rdToDelete1 := rdSpecList[3].ProtectedPVC.Name // rd name should == pvc name
-			Expect(vsHandler.DeleteRD(rdToDelete1)).To(Succeed())
+			Expect(vsHandler.DeleteRDWithSpecificOwner(rdToDelete1)).To(Succeed())
 
 			rdToDelete2 := rdSpecList[5].ProtectedPVC.Name // rd name should == pvc name
-			Expect(vsHandler.DeleteRD(rdToDelete2)).To(Succeed())
+			Expect(vsHandler.DeleteRDWithSpecificOwner(rdToDelete2)).To(Succeed())
 
 			remainingRDs := &volsyncv1alpha1.ReplicationDestinationList{}
 			Eventually(func() int {
@@ -1763,8 +1763,8 @@ var _ = Describe("VolSync_Handler", func() {
 		})
 
 		It("Should not delete an RD when it does not belong to the VRG", func() {
-			rdToDelete := rdSpecListOtherOwner[1].ProtectedPVC.Name // rd name should == pvc name
-			Expect(vsHandler.DeleteRD(rdToDelete)).To(Succeed())    // Should not return err
+			rdToDelete := rdSpecListOtherOwner[1].ProtectedPVC.Name               // rd name should == pvc name
+			Expect(vsHandler.DeleteRDWithSpecificOwner(rdToDelete)).To(Succeed()) // Should not return err
 
 			// No RDs should have been deleted
 			remainingRDs := &volsyncv1alpha1.ReplicationDestinationList{}
