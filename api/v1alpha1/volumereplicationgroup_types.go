@@ -215,6 +215,10 @@ type StorageIdentifiers struct {
 }
 
 type ProtectedPVC struct {
+	// Name of the namespace the PVC is in
+	//+optional
+	Namespace string `json:"namespace,omitempty"`
+
 	// Name of the VolRep/PVC resource
 	//+optional
 	Name string `json:"name,omitempty"`

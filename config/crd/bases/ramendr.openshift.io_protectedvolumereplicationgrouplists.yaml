@@ -472,6 +472,10 @@ spec:
                                       name:
                                         description: Name of the VolRep/PVC resource
                                         type: string
+                                      namespace:
+                                        description: Name of the namespace the PVC
+                                          is in
+                                        type: string
                                       protectedByVolSync:
                                         description: VolSyncPVC can be used to denote
                                           whether this PVC is protected by VolSync.
@@ -880,6 +884,9 @@ spec:
                                 type: string
                               name:
                                 description: Name of the VolRep/PVC resource
+                                type: string
+                              namespace:
+                                description: Name of the namespace the PVC is in
                                 type: string
                               protectedByVolSync:
                                 description: VolSyncPVC can be used to denote whether
