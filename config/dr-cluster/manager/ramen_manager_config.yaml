@@ -12,4 +12,4 @@ leaderElection:
 ramenControllerType: dr-cluster
 maxConcurrentReconciles: 50
 volSync:
-  destinationCopyMethod: LocalDirect
+  destinationCopyMethod: Direct
