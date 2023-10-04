@@ -26,7 +26,9 @@ func (v *VRGInstance) restorePVsForVolSync() error {
 	numPVsRestored := 0
 
 	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
-		err := v.volSyncHandler.EnsurePVCfromRD(rdSpec)
+		failoverAction := v.instance.Spec.Action == ramendrv1alpha1.VRGActionFailover
+		// Create a PVC from snapshot or for direct copy
+		err := v.volSyncHandler.EnsurePVCfromRD(rdSpec, failoverAction)
 		if err != nil {
 			v.log.Info(fmt.Sprintf("Unable to ensure PVC %v -- err: %v", rdSpec, err))
 
@@ -76,8 +78,7 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary(finalSyncPrepared *bool) (requeu
 		return
 	}
 
-	v.log.Info(fmt.Sprintf("Reconciling VolSync as Primary. VolSyncPVCs %d. VolSyncSpec %+v",
-		len(v.volSyncPVCs), v.instance.Spec.VolSync))
+	v.log.Info(fmt.Sprintf("Reconciling VolSync as Primary. %d VolSyncPVCs", len(v.volSyncPVCs)))
 
 	// Cleanup - this VRG is primary, cleanup if necessary
 	// remove any ReplicationDestinations (that would have been created when this VRG was secondary) if they
