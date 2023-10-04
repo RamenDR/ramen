@@ -752,7 +752,7 @@ var _ = Describe("VolSync_Handler", func() {
 				})
 
 				It("SelectDestCopyMethod() should return CopyMethod Snapshot and App PVC name", func() {
-					cpyMethod, dstPVC, err := vsHandler.SelectDestCopyMethod(rdSpec, logger)
+					cpyMethod, dstPVC, err := vsHandler.SelectDestCopyMethod(rdSpec)
 					Expect(err).NotTo(HaveOccurred())
 
 					Expect(cpyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
@@ -1211,7 +1211,7 @@ var _ = Describe("VolSync_Handler", func() {
 
 		var ensurePVCErr error
 		JustBeforeEach(func() {
-			ensurePVCErr = vsHandler.EnsurePVCfromRD(rdSpec)
+			ensurePVCErr = vsHandler.EnsurePVCfromRD(rdSpec, false)
 		})
 
 		Context("When ReplicationDestination Does not exist", func() {
@@ -1425,7 +1425,7 @@ var _ = Describe("VolSync_Handler", func() {
 					It("ensure PVC should not fail", func() {
 						// Previous ensurePVC will already have created the PVC (see parent context)
 						// Now run ensurePVC again - additional runs should just ensure the PVC is ok
-						Expect(vsHandler.EnsurePVCfromRD(rdSpec)).To(Succeed())
+						Expect(vsHandler.EnsurePVCfromRD(rdSpec, false)).To(Succeed())
 					})
 				})
 
@@ -1462,7 +1462,7 @@ var _ = Describe("VolSync_Handler", func() {
 						// At this point we should have a PVC from previous but it should have a datasource
 						// that maches our old snapshot - the rd has been updated with a new latest image
 						// Expect ensurePVC from RD to remove the old one and return an error
-						err := vsHandler.EnsurePVCfromRD(rdSpec)
+						err := vsHandler.EnsurePVCfromRD(rdSpec, false)
 						Expect(err).To(HaveOccurred())
 						Expect(err.Error()).To(ContainSubstring("incorrect datasource"))
 
@@ -1488,7 +1488,7 @@ var _ = Describe("VolSync_Handler", func() {
 						//
 						// Now should be able to re-try ensurePVC and get a new one with proper datasource
 						//
-						Expect(vsHandler.EnsurePVCfromRD(rdSpec)).NotTo(HaveOccurred())
+						Expect(vsHandler.EnsurePVCfromRD(rdSpec, false)).NotTo(HaveOccurred())
 
 						pvcNew := &corev1.PersistentVolumeClaim{}
 						Eventually(func() error {
