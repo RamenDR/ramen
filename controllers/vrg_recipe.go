@@ -18,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type recipeElements struct {
+type RecipeElements struct {
 	PvcSelector     PvcSelector
 	CaptureWorkflow []kubeobjects.CaptureSpec
 	RecoverWorkflow []kubeobjects.RecoverSpec
@@ -31,23 +31,23 @@ func GetPVCSelector(ctx context.Context, reader client.Reader, vrg ramen.VolumeR
 	log logr.Logger,
 ) (PvcSelector, error) {
 	recipeElements, err := recipeVolumesAndOptionallyWorkflowsGet(ctx, reader, vrg, log,
-		func(recipe.Recipe, *recipeElements) error { return nil },
+		func(recipe.Recipe, *RecipeElements) error { return nil },
 	)
 
 	return recipeElements.PvcSelector, err
 }
 
-func recipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.VolumeReplicationGroup,
+func RecipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.VolumeReplicationGroup,
 	log logr.Logger,
-) (recipeElements, error) {
+) (RecipeElements, error) {
 	return recipeVolumesAndOptionallyWorkflowsGet(ctx, reader, vrg, log, recipeWorkflowsGet)
 }
 
 func recipeVolumesAndOptionallyWorkflowsGet(ctx context.Context, reader client.Reader, vrg ramen.VolumeReplicationGroup,
-	log logr.Logger, workflowsGet func(recipe.Recipe, *recipeElements) error,
-) (recipeElements, error) {
+	log logr.Logger, workflowsGet func(recipe.Recipe, *RecipeElements) error,
+) (RecipeElements, error) {
 	if vrg.Spec.KubeObjectProtection == nil || vrg.Spec.KubeObjectProtection.RecipeRef == nil {
-		return recipeElements{
+		return RecipeElements{
 			PvcSelector:     pvcSelectorDefault(vrg),
 			CaptureWorkflow: captureWorkflowDefault(),
 			RecoverWorkflow: recoverWorkflowDefault(),
@@ -59,21 +59,21 @@ func recipeVolumesAndOptionallyWorkflowsGet(ctx context.Context, reader client.R
 		Namespace: vrg.Namespace,
 		Name:      vrg.Spec.KubeObjectProtection.RecipeRef.Name,
 	}, &recipe); err != nil {
-		return recipeElements{}, errors.Wrap(err, "recipe get")
+		return RecipeElements{}, errors.Wrap(err, "recipe get")
 	}
 
-	if err := recipeParametersExpand(&recipe, vrg.Spec.KubeObjectProtection.RecipeParameters); err != nil {
-		return recipeElements{}, errors.Wrap(err, "recipe parameters expand")
+	if err := RecipeParametersExpand(&recipe, vrg.Spec.KubeObjectProtection.RecipeParameters); err != nil {
+		return RecipeElements{}, errors.Wrap(err, "recipe parameters expand")
 	}
 
-	recipeElements := recipeElements{
+	recipeElements := RecipeElements{
 		PvcSelector: pvcSelectorRecipeRefNonNil(recipe, vrg),
 	}
 
 	return recipeElements, workflowsGet(recipe, &recipeElements)
 }
 
-func recipeWorkflowsGet(recipe recipe.Recipe, recipeElements *recipeElements) error {
+func recipeWorkflowsGet(recipe recipe.Recipe, recipeElements *RecipeElements) error {
 	var err error
 
 	recipeElements.CaptureWorkflow, err = getCaptureGroups(recipe)
@@ -89,13 +89,13 @@ func recipeWorkflowsGet(recipe recipe.Recipe, recipeElements *recipeElements) er
 	return err
 }
 
-func recipeParametersExpand(recipe *recipe.Recipe, parameters map[string][]string) error {
-	b, err := json.Marshal(*recipe)
+func RecipeParametersExpand(recipe *recipe.Recipe, parameters map[string][]string) error {
+	bytes, err := json.Marshal(*recipe)
 	if err != nil {
 		return err
 	}
 
-	if err = json.Unmarshal([]byte(parametersExpand(string(b), parameters)), recipe); err != nil {
+	if err = json.Unmarshal([]byte(parametersExpand(string(bytes), parameters)), recipe); err != nil {
 		return err
 	}
 
@@ -106,6 +106,6 @@ func parametersExpand(s string, parameters map[string][]string) string {
 	return os.Expand(s, func(s string) string {
 		values := parameters[s]
 
-		return strings.Join(values, ",")
+		return strings.Join(values, `","`)
 	})
 }

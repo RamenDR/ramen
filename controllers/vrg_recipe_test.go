@@ -4,8 +4,7 @@
 package controllers_test
 
 import (
-	//	"context"
-	//	"time"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -21,10 +20,9 @@ import (
 
 var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	var (
-		ns  *corev1.Namespace
+		nss []*corev1.Namespace
 		r   *recipe.Recipe
 		vrg *ramen.VolumeReplicationGroup
-		err error
 	)
 
 	nsCreate := func() *corev1.Namespace {
@@ -35,8 +33,8 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 
 		return ns
 	}
-	nsDelete := func(ns *corev1.Namespace) {
-		Expect(k8sClient.Delete(ctx, ns)).To(Succeed())
+	nsDelete := func(ns *corev1.Namespace) error {
+		return k8sClient.Delete(ctx, ns)
 	}
 	pvcCreate := func(ns *corev1.Namespace) *corev1.PersistentVolumeClaim {
 		pvc := &corev1.PersistentVolumeClaim{
@@ -57,6 +55,9 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 
 		return pvc
 	}
+	pvcDelete := func(pvc *corev1.PersistentVolumeClaim) error {
+		return k8sClient.Delete(ctx, pvc)
+	}
 	pvcNameGet := func(pvc *corev1.PersistentVolumeClaim) types.NamespacedName {
 		return types.NamespacedName{Namespace: pvc.Namespace, Name: pvc.Name}
 	}
@@ -72,47 +73,70 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	resources := func(namespaceNames ...string) *recipe.Group {
 		return group("resource", namespaceNames...)
 	}
-	recipeCreate := func(volumes *recipe.Group,
-		groups ...*recipe.Group,
-	) {
-		r = &recipe.Recipe{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: ns.Name,
-				Name:      "r",
-			},
-			Spec: recipe.RecipeSpec{
-				Volumes: volumes,
-				Groups:  groups,
+	hook := func(command ...string) *recipe.Hook {
+		return &recipe.Hook{
+			// Name: "h",
+			Type: "exec",
+			Ops: []*recipe.Operation{
+				{
+					// Name: "o",
+					// Container: "c"
+					Command: command,
+				},
 			},
 		}
+	}
+	recipeDefine := func() {
+		r = &recipe.Recipe{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: nss[0].Name,
+				Name:      "r",
+			},
+			Spec: recipe.RecipeSpec{},
+		}
+	}
+	recipeVolumesDefine := func(volumes *recipe.Group) {
+		r.Spec.Volumes = volumes
+	}
+	recipeGroupsDefine := func(groups ...*recipe.Group) {
+		r.Spec.Groups = groups
+	}
+	recipeHooksDefine := func(hooks ...*recipe.Hook) {
+		r.Spec.Hooks = hooks
+	}
+	recipeCreate := func() {
 		Expect(k8sClient.Create(ctx, r)).To(Succeed())
 	}
-	recipeDelete := func() {
-		Expect(k8sClient.Delete(ctx, r)).To(Succeed())
+	recipeDelete := func() error {
+		return k8sClient.Delete(ctx, r)
 	}
 	localRef := func(name string) *corev1.LocalObjectReference {
 		return &corev1.LocalObjectReference{Name: name}
 	}
-	vrgDefine := func(recipeRef *corev1.LocalObjectReference) {
+	vrgDefine := func() {
 		vrg = &ramen.VolumeReplicationGroup{
-			ObjectMeta: metav1.ObjectMeta{Namespace: ns.Name, Name: "a"},
+			ObjectMeta: metav1.ObjectMeta{Namespace: nss[0].Name, Name: "a"},
 			Spec: ramen.VolumeReplicationGroupSpec{
 				S3Profiles:       []string{controllers.NoS3StoreAvailable},
 				ReplicationState: ramen.Primary,
 				Async: &ramen.VRGAsyncSpec{
 					SchedulingInterval: "0m",
 				},
-				KubeObjectProtection: &ramen.KubeObjectProtectionSpec{
-					RecipeRef: recipeRef,
-				},
+				KubeObjectProtection: &ramen.KubeObjectProtectionSpec{},
 			},
 		}
 	}
-	vrgCreate := func() {
-		err = k8sClient.Create(ctx, vrg)
+	vrgRecipeRefDefine := func(recipeRef *corev1.LocalObjectReference) {
+		vrg.Spec.KubeObjectProtection.RecipeRef = recipeRef
 	}
-	vrgDelete := func() {
-		Expect(k8sClient.Delete(ctx, vrg)).To(Succeed())
+	vrgRecipeParametersDefine := func(recipeParameters map[string][]string) {
+		vrg.Spec.KubeObjectProtection.RecipeParameters = recipeParameters
+	}
+	vrgCreate := func() error {
+		return k8sClient.Create(ctx, vrg)
+	}
+	vrgDelete := func() error {
+		return k8sClient.Delete(ctx, vrg)
 	}
 	vrgGet := func() *ramen.VolumeReplicationGroup {
 		Expect(apiReader.Get(ctx, types.NamespacedName{Namespace: vrg.Namespace, Name: vrg.Name}, vrg)).To(Succeed())
@@ -128,109 +152,139 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	vrgPvcNameMatchesPvc := func(pvc *corev1.PersistentVolumeClaim) gomegatypes.GomegaMatcher {
 		return WithTransform(vrgPvcNameGet, Equal(pvcNameGet(pvc)))
 	}
-	/*
-		vrgPvcNamesMatchPvcs := func(pvcs ...*corev1.PersistentVolumeClaim) []gomegatypes.GomegaMatcher {
-			matchers := make([]gomegatypes.GomegaMatcher, len(pvcs))
-			for i, pvc := range pvcs {
-				matchers[i] = vrgPvcNameMatchesPvc(pvc)
-			}
-
-			return matchers
+	vrgPvcNamesMatchPvcs := func(pvcs ...*corev1.PersistentVolumeClaim) []gomegatypes.GomegaMatcher {
+		matchers := make([]gomegatypes.GomegaMatcher, len(pvcs))
+		for i, pvc := range pvcs {
+			matchers[i] = vrgPvcNameMatchesPvc(pvc)
 		}
-	*/
+
+		return matchers
+	}
+	vrgPvcsConsistOfEventually := func(pvcs ...*corev1.PersistentVolumeClaim) {
+		Eventually(vrgPvcsGet).Should(ConsistOf(vrgPvcNamesMatchPvcs(pvcs...)))
+	}
+	vrgPvcSelectorGet := func() controllers.PvcSelector {
+		pvcSelector, err := controllers.GetPVCSelector(ctx, apiReader, *vrg, testLogger)
+		Expect(err).ToNot(HaveOccurred())
+
+		return pvcSelector
+	}
+	vrgPvcSelectorNsNamesExpect := func(nsNamesExpected []string) {
+		Expect(vrgPvcSelectorGet().NamespaceNames).To(ConsistOf(nsNamesExpected))
+	}
+	var nsNames []string
+	var pvcs []*corev1.PersistentVolumeClaim
 	BeforeEach(func() {
-		ns = nsCreate()
+		nss = []*corev1.Namespace{nsCreate(), nsCreate(), nsCreate()}
+		nsNames = make([]string, len(nss))
+		pvcs = make([]*corev1.PersistentVolumeClaim, len(nss))
+		for i, ns := range nss {
+			DeferCleanup(nsDelete, ns)
+			nsNames[i] = ns.Name
+			pvcs[i] = pvcCreate(ns)
+			DeferCleanup(pvcDelete, pvcs[i])
+		}
+		recipeDefine()
+		vrgDefine()
 	})
-	AfterEach(func() {
-		nsDelete(ns)
-	})
+	var err error
 	JustBeforeEach(func() {
-		vrgCreate()
+		recipeCreate()
+		DeferCleanup(recipeDelete)
+		err = vrgCreate()
 	})
 	Describe("AdmissionController", func() {
-		When("a VRG creation request is submitted without a recipe reference", func() {
-			BeforeEach(func() {
-				vrgDefine(nil)
+		When("a VRG creation request is submitted", func() {
+			Context("without a recipe reference", func() {
+				BeforeEach(func() {
+					DeferCleanup(vrgDelete)
+				})
+				It("allows it", func() { Expect(err).ToNot(HaveOccurred()) })
 			})
-			AfterEach(func() {
-				vrgDelete()
+			Context("referencing an absent recipe", func() {
+				BeforeEach(func() {
+					vrgRecipeRefDefine(localRef("asdf"))
+				})
+				It("denies it", func() { Expect(err).To(HaveOccurred()) })
 			})
-			It("should allow it", func() { Expect(err).ToNot(HaveOccurred()) })
-		})
-		When("a VRG creation request is submitted referencing an absent recipe", func() {
-			BeforeEach(func() {
-				vrgDefine(localRef("asdf"))
+			Context("referencing a recipe", func() {
+				BeforeEach(func() {
+					vrgRecipeRefDefine(localRef(r.Name))
+				})
+				Context("without a volume selector", func() {
+					BeforeEach(func() {
+						DeferCleanup(vrgDelete)
+					})
+					It("allows it", func() { Expect(err).ToNot(HaveOccurred()) })
+				})
+				Context("that references other namespaces", func() {
+					BeforeEach(func() {
+						recipeVolumesDefine(volumes(nss[1].Name))
+					})
+					Context("that the requestor has permission to create VRGs in", func() {
+						It("allows it", func() { Expect(err).ToNot(HaveOccurred()) })
+					})
+					Context("that the requestor does not have permission to create VRGs in", func() {
+						// TODO envTest.AddUser
+						// TODO give user permission to update VRG in nss[0], but not nss[1]
+						// TODO impersonate user for client.Create(vrg)
+						// It("denies it", func() { Expect(err).To(HaveOccurred()) })
+					})
+				})
 			})
-			It("should deny it", func() { Expect(err).To(HaveOccurred()) })
-		})
-		When("a VRG creation request is submitted referencing a recipe without groups", func() {
-			BeforeEach(func() {
-				recipeCreate(nil)
-				vrgDefine(localRef(r.Name))
-			})
-			AfterEach(func() {
-				recipeDelete()
-			})
-			It("should allow it", func() { Expect(err).ToNot(HaveOccurred()) })
-		})
-		When("a VRG creation request is submitted referencing a recipe that references other namespaces "+
-			"that the requestor has permission to create VRGs in", func() {
-			var ns1 *corev1.Namespace
-			BeforeEach(func() {
-				ns1 = nsCreate()
-				recipeCreate(volumes(ns1.Name), resources(ns1.Name))
-				vrgDefine(localRef(r.Name))
-			})
-			AfterEach(func() {
-				recipeDelete()
-				nsDelete(ns1)
-			})
-			It("should allow it", func() { Expect(err).ToNot(HaveOccurred()) })
-		})
-		When("a VRG creation request is submitted referencing a recipe that references other namespaces "+
-			"that the requestor does not have permission to create VRGs in", func() {
-			var ns1 *corev1.Namespace
-			BeforeEach(func() {
-				// TODO envTest.AddUser
-				// TODO give user permission to update VRG in ns, but not ns1
-				// TODO impersonate user for client.Create(vrg)
-				ns1 = nsCreate()
-				recipeCreate(volumes(ns1.Name), resources())
-				vrgDefine(localRef(r.Name))
-			})
-			AfterEach(func() {
-				recipeDelete()
-				nsDelete(ns1)
-			})
-			It("should deny it", func() { Expect(err).ToNot(HaveOccurred()) })
 		})
 	})
 	Describe("Controller", func() {
 		JustBeforeEach(func() {
 			Expect(err).ToNot(HaveOccurred())
+			DeferCleanup(vrgDelete)
 		})
-		When("a VRG is created that references a recipe that includes volumes in multiple namespaces", func() {
-			var ns1 *corev1.Namespace
-			var pvc1 *corev1.PersistentVolumeClaim
-			var namespaceNames []string
+		When("a VRG references a recipe that specifies multiple namespaces", func() {
+			var nsNames1 []string
+			var pvcs1 []*corev1.PersistentVolumeClaim
+			const nsNumberStart = 1
 			BeforeEach(func() {
-				ns1 = nsCreate()
-				pvc1 = pvcCreate(ns1)
-				namespaceNames = []string{ns.Name, ns1.Name}
-				recipeCreate(volumes(namespaceNames...), resources(ns1.Name))
-				vrgDefine(localRef(r.Name))
+				nsNames1 = nsNames[nsNumberStart:]
+				pvcs1 = pvcs[nsNumberStart:]
+				vrgRecipeRefDefine(localRef(r.Name))
 			})
-			AfterEach(func() {
-				recipeDelete()
-				nsDelete(ns1)
+			Context("statically", func() {
+				BeforeEach(func() {
+					recipeVolumesDefine(volumes(nsNames1...))
+					recipeGroupsDefine(resources(nsNames1...))
+					recipeHooksDefine(hook(nsNames1...))
+				})
+				It("includes each in its PVC selection", func() {
+					vrgPvcSelectorNsNamesExpect(nsNames1)
+				})
+				It("lists their PVCs in the VRG's status", func() {
+					vrgPvcsConsistOfEventually(pvcs1...)
+				})
 			})
-			It("should list the namespaces in the PVC selector", func() {
-				pvcSelector, err := controllers.GetPVCSelector(ctx, apiReader, *vrg, testLogger)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(pvcSelector.NamespaceNames).To(ConsistOf(namespaceNames))
-			})
-			It("should list them in the VRG's status", func() {
-				Eventually(vrgPvcsGet).Should(ConsistOf(vrgPvcNameMatchesPvc(pvc1)))
+			Context("parametrically", func() {
+				var recipeExpanded *recipe.Recipe
+				BeforeEach(func() {
+					const parameterName = "ns"
+					const parameterRef = "$" + parameterName
+
+					parameters := map[string][]string{parameterName: nsNames1}
+
+					recipeVolumesDefine(volumes(parameterRef))
+					vrgRecipeParametersDefine(parameters)
+					recipeHooksDefine(hook(parameterRef))
+
+					recipeExpanded = &*r
+					Expect(controllers.RecipeParametersExpand(recipeExpanded, parameters)).To(Succeed())
+				})
+				It("includes each in PVC selection", func() {
+					vrgPvcSelectorNsNamesExpect(nsNames1)
+				})
+				It("lists their PVCs in the VRG's status", func() {
+					vrgPvcsConsistOfEventually(pvcs1...)
+				})
+				It("expands a parameter list enclosed in double quotes to a single string with quotes preserved", func() {
+					Expect(recipeExpanded.Spec.Hooks[0].Ops[0].Command).To(Equal(`"` + strings.Join(nsNames1, ",") + `"`))
+				})
 			})
 		})
 	})
