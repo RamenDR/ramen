@@ -15,13 +15,9 @@ import (
 	"github.com/ramendr/ramen/controllers/kubeobjects"
 	"github.com/ramendr/ramen/controllers/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
+	// "sigs.k8s.io/controller-runtime/pkg/source"
 
 	Recipe "github.com/ramendr/recipe/api/v1alpha1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -680,35 +676,9 @@ func (v *VRGInstance) kubeObjectsProtectionDelete(result *ctrl.Result) error {
 
 func kubeObjectsRequestsWatch(b *builder.Builder, kubeObjects kubeobjects.RequestsManager) *builder.Builder {
 	watch := func(request kubeobjects.Request) {
-		src := &source.Kind{Type: request.Object()}
-		b.Watches(
-			src,
-			handler.EnqueueRequestsFromMapFunc(func(o client.Object) []reconcile.Request {
-				labels := o.GetLabels()
-				log := func(s string) {
-					ctrl.Log.WithName("VolumeReplicationGroup").Info(
-						"Kube objects request updated; "+s,
-						"kind", o.GetObjectKind(),
-						"name", o.GetNamespace()+"/"+o.GetName(),
-						"created", o.GetCreationTimestamp(),
-						"gen", o.GetGeneration(),
-						"ver", o.GetResourceVersion(),
-						"labels", labels,
-					)
-				}
-
-				if ownerNamespaceName, ownerName, ok := util.OwnerNamespaceNameAndName(labels); ok {
-					log("owner labels found, enqueue VRG reconcile")
-
-					return []reconcile.Request{
-						{NamespacedName: types.NamespacedName{Namespace: ownerNamespaceName, Name: ownerName}},
-					}
-				}
-
-				log("owner labels not found")
-
-				return []reconcile.Request{}
-			}),
+		util.OwnsAcrossNamespaces(
+			b,
+			request.Object(),
 			builder.WithPredicates(util.ResourceVersionUpdatePredicate{}),
 		)
 	}
