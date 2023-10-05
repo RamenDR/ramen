@@ -22,6 +22,10 @@ log = None
 parser = None
 log_format = "%(asctime)s %(levelname)-7s [%(name)s] %(message)s"
 
+OCM_SCHEDULING_DISABLE = (
+    "cluster.open-cluster-management.io/experimental-scheduling-disable"
+)
+
 
 def start(name, file, config_file="config.yaml"):
     global workdir, config, parser, log
@@ -134,11 +138,21 @@ def enable_dr():
     """
     Enable DR for deployed application.
     """
-    cluster = lookup_cluster()
+    placement = _lookup_app_resource("placement")
+    if not placement:
+        raise RuntimeError(f"Cannot find placement for application {config['name']}")
 
-    # TODO: support placement
-    info("Setting placementrule scheduler to ramen")
-    _patch_placementrule({"spec": {"schedulerName": "ramen"}})
+    info("Disabling OCM scheduling for '%s'", placement)
+    kubectl.annotate(
+        placement,
+        {OCM_SCHEDULING_DISABLE: "true"},
+        namespace=config["namespace"],
+        context=env["hub"],
+        log=debug,
+    )
+
+    cluster = lookup_cluster()
+    placement_name = placement.split("/")[1]
 
     drpc = f"""
 apiVersion: ramendr.openshift.io/v1alpha1
@@ -153,8 +167,8 @@ spec:
   drPolicyRef:
     name: dr-policy
   placementRef:
-    kind: PlacementRule
-    name: busybox-placement
+    kind: Placement
+    name: {placement_name}
   pvcSelector:
     matchLabels:
       appname: busybox
@@ -180,24 +194,16 @@ def disable_dr():
         log=debug,
     )
 
-    # TODO: support placement
-    info("Clearing placementrule scheduler")
-    _patch_placementrule({"spec": {"schedulerName": None}})
+    placement = _lookup_app_resource("placement")
+    if not placement:
+        debug("placement already removed")
+        return
 
-
-def _patch_placementrule(patch):
-    placementrule = _lookup_app_resource("placementrule")
-    if not placementrule:
-        raise RuntimeError(
-            f"Cannot find placementrule for application {config['name']}"
-        )
-
-    kubectl.patch(
-        placementrule,
-        "--patch",
-        json.dumps(patch),
-        "--type=merge",
-        f"--namespace={config['namespace']}",
+    info("Enabling OCM scheduling for '%s'", placement)
+    kubectl.annotate(
+        placement,
+        {OCM_SCHEDULING_DISABLE: None},
+        namespace=config["namespace"],
         context=env["hub"],
         log=debug,
     )
@@ -218,25 +224,16 @@ def lookup_cluster():
     """
     Return the current cluster the application is placed on.
     """
-    cluster = _get_cluster_from_placement_decisions()
-    if not cluster:
-        cluster = _get_cluster_from_placementrule()
-        if not cluster:
-            raise RuntimeError(f"Cannot find cluster for application {config['name']}")
-
-    return cluster
-
-
-def _get_cluster_from_placement_decisions():
     placement = _lookup_app_resource("placement")
     if not placement:
-        return None
+        raise RuntimeError(f"Cannot find placement for application {config['name']}")
 
     info("Waiting for '%s' decisions", placement)
     kubectl.wait(
         placement,
         "--for=condition=PlacementSatisfied",
         "--timeout=60s",
+        f"--namespace={config['namespace']}",
         context=env["hub"],
         log=debug,
     )
@@ -245,32 +242,9 @@ def _get_cluster_from_placement_decisions():
 
     return kubectl.get(
         "placementdecisions",
-        f"--selector=cluster.open-cluster-management.io/placement={placement_name}"
+        f"--selector=cluster.open-cluster-management.io/placement={placement_name}",
         f"--namespace={config['namespace']}",
-        "--output=jsonpath={.status.decisions[0].clusterName}",
-        context=env["hub"],
-    )
-
-
-def _get_cluster_from_placementrule():
-    placementrule = _lookup_app_resource("placementrule")
-    if not placementrule:
-        return None
-
-    info("Waiting for '%s' decisions", placementrule)
-    drenv.wait_for(
-        placementrule,
-        output="jsonpath={.status.decisions}",
-        namespace=config["namespace"],
-        timeout=60,
-        profile=env["hub"],
-        log=debug,
-    )
-
-    return kubectl.get(
-        placementrule,
-        f"--namespace={config['namespace']}",
-        "--output=jsonpath={.status.decisions[0].clusterName}",
+        "--output=jsonpath={.items[0].status.decisions[0].clusterName}",
         context=env["hub"],
     )
 
