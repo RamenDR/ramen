@@ -69,6 +69,38 @@ def label(name, value, overwrite=False, context=None, log=print):
     _watch(*args, context=context, log=log)
 
 
+def annotate(
+    resource,
+    annotations,
+    overwrite=False,
+    namespace=None,
+    context=None,
+    log=print,
+):
+    """
+    Run kubectl annotate ... logging progress messages.
+
+    annotations is a dict of keys and values. Use key: None to remove an
+    annotation.
+    """
+    args = ["annotate", resource]
+
+    # Convert kubectl argument list:
+    # {"add": "value", "remove": None} -> ["add=value", "remove-"]
+    for key, value in annotations.items():
+        if value:
+            args.append(f"{key}={value}")
+        else:
+            args.append(f"{key}-")
+
+    if overwrite:
+        args.append("--overwrite")
+    if namespace:
+        args.extend(("--namespace", namespace))
+
+    _watch(*args, context=context, log=log)
+
+
 def delete(*args, input=None, context=None, log=print):
     """
     Run kubectl delete ... logging progress messages.
