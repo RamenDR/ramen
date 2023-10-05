@@ -117,19 +117,24 @@ var _ = Describe("DrpolicyController", func() {
 		}
 
 		// Ensure list of secrets for the policy name has as many placement rules
-		Expect(len(plRules)).To(Equal(len(drPoliciesAndSecrets[policyCombinationName])))
+		Eventually(func() bool {
+			plRules = getPlRuleForSecrets()
+
+			return len(plRules) == len(drPoliciesAndSecrets[policyCombinationName])
+		}, timeout, interval).Should(BeTrue())
 
 		// Range through secrets in drpolicies name and ensure cluster list is the same
 		for secretName, clusterList := range drPoliciesAndSecrets[policyCombinationName] {
 			_, _, plRuleName, _ := util.GeneratePolicyResourceNames(secretName)
 
-			Expect(func() (clusterNames []string) {
+			Eventually(func() (clusterNames []string) {
+				plRules = getPlRuleForSecrets()
 				for _, cluster := range plRules[plRuleName].Spec.Clusters {
 					clusterNames = append(clusterNames, cluster.Name)
 				}
 
 				return
-			}()).To(ConsistOf(clusterList))
+			}(), timeout, interval).Should(ConsistOf(clusterList))
 		}
 	}
 

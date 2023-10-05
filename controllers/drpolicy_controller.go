@@ -69,7 +69,7 @@ const ReasonDRClustersUnavailable = "DRClustersUnavailable"
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.9.2/pkg/reconcile
 //
-//nolint:cyclop,funlen
+//nolint:cyclop
 func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("DRPolicy", req.NamespacedName.Name, "rid", uuid.New())
 	log.Info("reconcile enter")
@@ -120,8 +120,21 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, fmt.Errorf("finalizer add update: %w", u.validatedSetFalse("FinalizerAddFailed", err))
 	}
 
+	if err := u.validatedSetTrue("Succeeded", "drpolicy validated"); err != nil {
+		return ctrl.Result{}, fmt.Errorf("unable to set drpolicy validation: %w", err)
+	}
+
+	return r.reconcile(drpolicy, drclusters, secretsUtil, ramenConfig, log)
+}
+
+func (r *DRPolicyReconciler) reconcile(drpolicy *ramen.DRPolicy,
+	drclusters *ramen.DRClusterList,
+	secretsUtil *util.SecretsUtil,
+	ramenConfig *ramen.RamenConfig,
+	log logr.Logger,
+) (ctrl.Result, error) {
 	if err := drPolicyDeploy(drpolicy, drclusters, secretsUtil, ramenConfig, log); err != nil {
-		return ctrl.Result{}, fmt.Errorf("drpolicy deploy: %w", u.validatedSetFalse("DrClustersDeployFailed", err))
+		return ctrl.Result{}, fmt.Errorf("drpolicy deploy: %w", err)
 	}
 
 	isMetro, _ := dRPolicySupportsMetro(drpolicy, drclusters.Items)
@@ -133,7 +146,7 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
-	return ctrl.Result{}, u.validatedSetTrue("Succeeded", "drpolicy validated")
+	return ctrl.Result{}, nil
 }
 
 func validateDRPolicy(ctx context.Context,
