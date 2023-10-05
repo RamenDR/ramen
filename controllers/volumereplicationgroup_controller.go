@@ -400,7 +400,7 @@ type VRGInstance struct {
 	instance             *ramendrv1alpha1.VolumeReplicationGroup
 	savedInstanceStatus  ramendrv1alpha1.VolumeReplicationGroupStatus
 	ramenConfig          *ramendrv1alpha1.RamenConfig
-	recipeElements       recipeElements
+	recipeElements       RecipeElements
 	volRepPVCs           []corev1.PersistentVolumeClaim
 	volSyncPVCs          []corev1.PersistentVolumeClaim
 	replClassList        *volrep.VolumeReplicationClassList
@@ -455,7 +455,7 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 	{
 		var err error
 
-		v.recipeElements, err = recipeElementsGet(v.ctx, v.reconciler.Client, *v.instance, v.log)
+		v.recipeElements, err = RecipeElementsGet(v.ctx, v.reconciler.Client, *v.instance, v.log)
 		if err != nil {
 			return v.invalid(err, "Failed to get recipe", true) // TODO watch recipes
 		}
