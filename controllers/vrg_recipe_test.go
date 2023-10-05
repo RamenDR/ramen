@@ -274,7 +274,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 					recipeHooksDefine(hook(parameterRef))
 
 					recipeExpanded = &*r
-					Expect(controllers.RecipeParametersExpand(recipeExpanded, parameters)).To(Succeed())
+					Expect(controllers.RecipeParametersExpand(recipeExpanded, parameters, testLogger)).To(Succeed())
 				})
 				It("includes each in PVC selection", func() {
 					vrgPvcSelectorNsNamesExpect(nsNames1)

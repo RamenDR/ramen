@@ -62,7 +62,7 @@ func recipeVolumesAndOptionallyWorkflowsGet(ctx context.Context, reader client.R
 		return RecipeElements{}, errors.Wrap(err, "recipe get")
 	}
 
-	if err := RecipeParametersExpand(&recipe, vrg.Spec.KubeObjectProtection.RecipeParameters); err != nil {
+	if err := RecipeParametersExpand(&recipe, vrg.Spec.KubeObjectProtection.RecipeParameters, log); err != nil {
 		return RecipeElements{}, errors.Wrap(err, "recipe parameters expand")
 	}
 
@@ -89,22 +89,32 @@ func recipeWorkflowsGet(recipe recipe.Recipe, recipeElements *RecipeElements) er
 	return err
 }
 
-func RecipeParametersExpand(recipe *recipe.Recipe, parameters map[string][]string) error {
-	bytes, err := json.Marshal(*recipe)
+func RecipeParametersExpand(recipe *recipe.Recipe, parameters map[string][]string,
+	log logr.Logger,
+) error {
+	spec := &recipe.Spec
+	log.Info("Recipe pre-expansion", "spec", *spec, "parameters", parameters)
+
+	bytes, err := json.Marshal(*spec)
 	if err != nil {
 		return err
 	}
 
-	if err = json.Unmarshal([]byte(parametersExpand(string(bytes), parameters)), recipe); err != nil {
+	s1 := string(bytes)
+	s2 := parametersExpand(s1, parameters)
+
+	if err = json.Unmarshal([]byte(s2), spec); err != nil {
 		return err
 	}
+
+	log.Info("Recipe post-expansion", "spec", *spec)
 
 	return nil
 }
 
 func parametersExpand(s string, parameters map[string][]string) string {
-	return os.Expand(s, func(s string) string {
-		values := parameters[s]
+	return os.Expand(s, func(key string) string {
+		values := parameters[key]
 
 		return strings.Join(values, `","`)
 	})
