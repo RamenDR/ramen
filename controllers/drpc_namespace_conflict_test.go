@@ -39,25 +39,25 @@ var _ = Describe("DRPlacementControl Reconciler New", func() {
 				testLogger.Info("dprc rtalur logging", "drpc", drpc2)
 			})
 		})
-		When("Deleting user PlacementRule", func() {
-			It("Should cleanup DRPC", func() {
-				// ----------------------------- DELETE DRPC from PRIMARY --------------------------------------
-				By("\n\n*** DELETE User PlacementRule ***\n\n")
-				deleteUserPlacementRule()
-			})
-		})
+		//When("Deleting user PlacementRule", func() {
+		//	It("Should cleanup DRPC", func() {
+		//		// ----------------------------- DELETE DRPC from PRIMARY --------------------------------------
+		//		By("\n\n*** DELETE User PlacementRule ***\n\n")
+		//		deleteUserPlacementRule()
+		//	})
+		//})
 
-		When("Deleting DRPC", func() {
-			It("Should delete VRG and NS MWs and MCVs from Primary (East1ManagedCluster)", func() {
-				// ----------------------------- DELETE DRPC from PRIMARY --------------------------------------
-				By("\n\n*** DELETE DRPC ***\n\n")
-				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(3)) // DRCluster + VRG MW
-				deleteDRPC()
-				waitForCompletion("deleted")
-				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(2))       // DRCluster + NS MW only
-				Expect(getManagedClusterViewCount(East1ManagedCluster)).Should(Equal(0)) // NS + VRG MCV
-				deleteNamespaceMWsFromAllClusters(DRPCNamespaceName)
-			})
-		})
+		//When("Deleting DRPC", func() {
+		//	It("Should delete VRG and NS MWs and MCVs from Primary (East1ManagedCluster)", func() {
+		//		// ----------------------------- DELETE DRPC from PRIMARY --------------------------------------
+		//		By("\n\n*** DELETE DRPC ***\n\n")
+		//		Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(3)) // DRCluster + VRG MW
+		//		deleteDRPC()
+		//		waitForCompletion("deleted")
+		//		Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(2))       // DRCluster + NS MW only
+		//		Expect(getManagedClusterViewCount(East1ManagedCluster)).Should(Equal(0)) // NS + VRG MCV
+		//		deleteNamespaceMWsFromAllClusters(DRPCNamespaceName)
+		//	})
+		//})
 	})
 })

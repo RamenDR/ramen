@@ -727,14 +727,17 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		// check which drpc has the finalizer
 		if controllerutil.ContainsFinalizer(drpc, DRPCFinalizer) {
 			if controllerutil.ContainsFinalizer(otherDRPC, DRPCFinalizer) {
+				logger.Error(err, "Two valid DRPC found with label selectors that conflict",
+					"this DRPC", drpc, "other DRPC", otherDRPC)
 				r.recordFailure(ctx, drpc, placementObj, "Error: two DRPCs have the same pvc label selector", err.Error(), logger)
 			} else {
 				// otherDRPC has no finalizer, so we will assume this drpc is the correct one
 				// log only in debug cases
-				logger.Info("Conflicting DRPC has been created", "Error", err)
+				logger.V(1).Info("Conflicting DRPC has been created", "Error", err)
 			}
 		} else {
-			logger.Error(err, "Existing DRPC found with label selectors that have overlapping match", "Conflicting DRPC", otherDRPC)
+			logger.Error(err, "Existing DRPC found with label selectors that conflict with label selectors of this drpc",
+				"this DRPC", drpc, "existing drpc", otherDRPC)
 			r.recordFailure(ctx, drpc, placementObj, "Error: two DRPCs have the same pvc label selector", err.Error(), logger)
 		}
 	}
