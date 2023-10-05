@@ -59,8 +59,6 @@ const (
 
 	OwnerNameAnnotation      = "ramendr.openshift.io/owner-name"
 	OwnerNamespaceAnnotation = "ramendr.openshift.io/owner-namespace"
-
-	CopyMethodLocalDirect = "LocalDirect"
 )
 
 type VSHandler struct {
@@ -98,8 +96,6 @@ func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, ow
 
 // returns replication destination only if create/update is successful and the RD is considered available.
 // Callers should assume getting a nil replication destination back means they should retry/requeue.
-//
-//nolint:gocognit,cyclop
 func (v *VSHandler) ReconcileRD(
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec) (*volsyncv1alpha1.ReplicationDestination, error,
 ) {
@@ -146,16 +142,8 @@ func (v *VSHandler) ReconcileRD(
 		return nil, nil
 	}
 
-	l.V(1).Info(fmt.Sprintf("Copy method: %s", v.destinationCopyMethod))
-
-	if v.IsCopyMethodLocalDirect() {
-		lrd, lrs, err := v.reconcileLocalReplication(rd, rdSpec, pskSecretName, l)
-		if lrd == nil || lrs == nil || err != nil {
-			return nil, err
-		}
-	}
-
-	l.V(1).Info(fmt.Sprintf("ReplicationDestination Reconcile Complete rd=%s", rd.Name))
+	l.V(1).Info(fmt.Sprintf("ReplicationDestination Reconcile Complete rd=%s, Copy method: %s",
+		rd.Name, v.destinationCopyMethod))
 
 	return rd, nil
 }
@@ -505,12 +493,12 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 	return rs, nil
 }
 
-func (v *VSHandler) PreparePVC(pvcName string, prepFinalSync, copyMethodDirectOrLocalDirect bool) error {
-	if prepFinalSync || copyMethodDirectOrLocalDirect {
+func (v *VSHandler) PreparePVC(pvcName string, prepFinalSync, copyMethodDirect bool) error {
+	if prepFinalSync || copyMethodDirect {
 		prepared, err := v.TakePVCOwnership(pvcName)
 		if err != nil || !prepared {
-			return fmt.Errorf("waiting to take pvc ownership (%w), prepFinalSync: %t, DirectOrLocalDirect: %t",
-				err, prepFinalSync, copyMethodDirectOrLocalDirect)
+			return fmt.Errorf("waiting to take pvc ownership (%w), prepFinalSync: %t, Direct: %t",
+				err, prepFinalSync, copyMethodDirect)
 		}
 	}
 
@@ -726,7 +714,7 @@ func (v *VSHandler) DeleteRD(pvcName string) error {
 		rd := currentRDListByOwner.Items[i]
 
 		if rd.GetName() == getReplicationDestinationName(pvcName) {
-			if v.IsCopyMethodDirectOrLocalDirect() {
+			if v.IsCopyMethodDirect() {
 				err := v.deleteLocalRDAndRS(&rd)
 				if err != nil {
 					return err
@@ -772,7 +760,7 @@ func (v *VSHandler) deleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestinatio
 		return err
 	}
 
-	// For LocalDirect, localRS trigger must point to the latest RD snapshot image. Otherwise,
+	// For Local Direct, localRS trigger must point to the latest RD snapshot image. Otherwise,
 	// we wait for local final sync to take place first befor cleaning up.
 	if lrs.Spec.Trigger != nil && lrs.Spec.Trigger.Manual == latestRDImage.Name {
 		// When local final sync is complete, we cleanup all locally created resources except the app PVC
@@ -1013,7 +1001,7 @@ func (v *VSHandler) validateSnapshotAndEnsurePVC(rdSpec ramendrv1alpha1.VolSyncR
 		return err
 	}
 
-	if v.IsCopyMethodDirectOrLocalDirect() {
+	if v.IsCopyMethodDirect() {
 		// Directly use the RD pvc
 		v.log.V(1).Info(fmt.Sprintf("Using copyMethod '%s'. latestImage %s. pvcName %s",
 			v.destinationCopyMethod, snapshotRef.Name, rdSpec.ProtectedPVC.Name))
@@ -1641,14 +1629,6 @@ func (v *VSHandler) IsCopyMethodDirect() bool {
 	return v.destinationCopyMethod == volsyncv1alpha1.CopyMethodDirect
 }
 
-func (v *VSHandler) IsCopyMethodLocalDirect() bool {
-	return v.destinationCopyMethod == CopyMethodLocalDirect
-}
-
-func (v *VSHandler) IsCopyMethodDirectOrLocalDirect() bool {
-	return v.IsCopyMethodDirect() || v.IsCopyMethodLocalDirect()
-}
-
 func isLatestImageReady(latestImage *corev1.TypedLocalObjectReference) bool {
 	if latestImage == nil || latestImage.Name == "" || latestImage.Kind != VolumeSnapshotKind {
 		return false
@@ -2131,6 +2111,10 @@ func (v *VSHandler) pauseRD(rdName string) (*volsyncv1alpha1.ReplicationDestinat
 		return nil, err
 	}
 
+	if rd.Spec.Paused {
+		return rd, nil
+	}
+
 	rd.Spec.Paused = true
 
 	return rd, v.updateResource(rd)
@@ -2158,7 +2142,7 @@ func (v *VSHandler) checkLastSnapshotSyncStatus(lrs *volsyncv1alpha1.Replication
 	const completed = true
 
 	v.log.V(1).Info("Local RS trigger", "trigger", lrs.Spec.Trigger, "snapName", snapshotRef.Name)
-	// For LocalDirect, localRS trigger must point to the latest RD snapshot image. Otherwise,
+	// For Local Direct, localRS trigger must point to the latest RD snapshot image. Otherwise,
 	// we wait for local final sync to take place first befor cleaning up.
 	if lrs.Spec.Trigger != nil && lrs.Spec.Trigger.Manual == snapshotRef.Name {
 		// When local final sync is complete, we cleanup all locally created resources except the app PVC

@@ -85,10 +85,6 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 			handler.EnqueueRequestsFromMapFunc(r.pvcMapFunc),
 			builder.WithPredicates(pvcPredicateFunc()),
 		).
-		Watches(&source.Kind{Type: &corev1.PersistentVolumeClaim{}},
-			handler.EnqueueRequestsFromMapFunc(r.rdMapFunc),
-			builder.WithPredicates(replicationDestinationPredicateFunc()),
-		).
 		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(r.configMapFun)).
 		Owns(&volrep.VolumeReplication{})
 
@@ -303,72 +299,6 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 	}
 
 	return req
-}
-
-func replicationDestinationPredicateFunc() predicate.Funcs {
-	log := ctrl.Log.WithName("RDPredicate").WithName("RD")
-	rdPredicate := predicate.Funcs{
-		CreateFunc: func(e event.CreateEvent) bool {
-			return false
-		},
-		GenericFunc: func(e event.GenericEvent) bool {
-			return false
-		},
-		DeleteFunc: func(e event.DeleteEvent) bool {
-			log.Info("Delete event")
-
-			return true
-		},
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			oldRD, ok := e.ObjectOld.DeepCopyObject().(*volsyncv1alpha1.ReplicationDestination)
-			if !ok {
-				log.Info("Failed to deep copy older MCV")
-
-				return false
-			}
-			newRD, ok := e.ObjectNew.DeepCopyObject().(*volsyncv1alpha1.ReplicationDestination)
-			if !ok {
-				log.Info("Failed to deep copy newer MCV")
-
-				return false
-			}
-
-			log.Info(fmt.Sprintf("Update event for MCV %s/%s", oldRD.Name, oldRD.Namespace))
-
-			return oldRD.Status.LatestImage.Name != newRD.Status.LatestImage.Name
-		},
-	}
-
-	return rdPredicate
-}
-
-func (r *VolumeReplicationGroupReconciler) rdMapFunc(obj client.Object) []reconcile.Request {
-	log := ctrl.Log.WithName("rdmap").WithName("VolumeReplicationGroup")
-
-	rd, ok := obj.(*volsyncv1alpha1.ReplicationDestination)
-	if !ok {
-		log.Info("ReplicationDestination (RD) map function received non-RD resource")
-
-		return []reconcile.Request{}
-	}
-
-	return filterRD(rd)
-}
-
-func filterRD(rd *volsyncv1alpha1.ReplicationDestination) []ctrl.Request {
-	if rd.Annotations[volsync.OwnerNameAnnotation] == "" ||
-		rd.Annotations[volsync.OwnerNamespaceAnnotation] == "" {
-		return []ctrl.Request{}
-	}
-
-	return []ctrl.Request{
-		reconcile.Request{
-			NamespacedName: types.NamespacedName{
-				Name:      rd.Annotations[volsync.OwnerNameAnnotation],
-				Namespace: rd.Annotations[volsync.OwnerNamespaceAnnotation],
-			},
-		},
-	}
 }
 
 func GetPVCLabelSelector(
