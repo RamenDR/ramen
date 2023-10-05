@@ -3,6 +3,10 @@
 
 package util
 
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
 const (
 	labelOwnerNamespaceName = "ramendr.openshift.io/owner-namespace-name"
 	labelOwnerName          = "ramendr.openshift.io/owner-name"
@@ -10,14 +14,24 @@ const (
 	MModesLabel = "ramendr.openshift.io/maintenancemodes"
 )
 
-func OwnerLabels(ownerNamespaceName, ownerName string) map[string]string {
-	return map[string]string{
+type Labels map[string]string
+
+func ObjectLabelsSet(object metav1.Object, labels map[string]string) bool {
+	return MapCopyF(labels, object.GetLabels, object.SetLabels)
+}
+
+func ObjectOwnerSet(object, owner metav1.Object) bool {
+	return ObjectLabelsSet(object, OwnerLabels(owner.GetNamespace(), owner.GetName()))
+}
+
+func OwnerLabels(ownerNamespaceName, ownerName string) Labels {
+	return Labels{
 		labelOwnerNamespaceName: ownerNamespaceName,
 		labelOwnerName:          ownerName,
 	}
 }
 
-func OwnerNamespaceNameAndName(labels map[string]string) (string, string, bool) {
+func OwnerNamespaceNameAndName(labels Labels) (string, string, bool) {
 	ownerNamespaceName, ok1 := labels[labelOwnerNamespaceName]
 	ownerName, ok2 := labels[labelOwnerName]
 
