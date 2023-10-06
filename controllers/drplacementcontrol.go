@@ -1725,6 +1725,7 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 	return nil
 }
 
+//nolint:gocognit
 func (d *DRPCInstance) cleanupForVolSync(clusterToSkip string) error {
 	d.log.Info("VolSync needs both VRGs. No need to clean up secondary")
 	d.log.Info("Ensure secondary on peer")
@@ -1738,7 +1739,17 @@ func (d *DRPCInstance) cleanupForVolSync(clusterToSkip string) error {
 
 		justUpdated, err := d.updateVRGState(clusterName, rmn.Secondary)
 		if err != nil {
+			d.log.Info(fmt.Sprintf("Failed to update VRG state for cluster %s. Err (%v)", clusterName, err))
+
 			peersReady = false
+
+			// Recreate the VRG ManifestWork for the secondary. This typically happens during Hub Recovery.
+			if errors.IsNotFound(err) {
+				err := d.createVolSyncDestManifestWork(clusterName)
+				if err != nil {
+					return err
+				}
+			}
 
 			break
 		}
