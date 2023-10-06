@@ -254,13 +254,16 @@ app_list_custom() {
 
 app_undeploy() {
 	app_unprotect $1
-	app_recipe_undeploy $1
-	for namespace_name in $app_namespace_names;do
-		set -x
-		kubectl --context $1 -n$namespace_name delete --ignore-not-found -k https://github.com/RamenDR/ocm-ramen-samples/busybox
-		kubectl --context $1 -n$namespace_name delete --ignore-not-found po/asdf secret/asdf cm/asdf ns/$namespace_name
-		{ set +x;} 2>/dev/null
-	done; unset -v namespace_name
+#	app_recipe_undeploy $1
+#	for namespace_name in $app_namespace_names;do
+#		set -x
+#		kubectl --context $1 -n$namespace_name delete --ignore-not-found -k https://github.com/RamenDR/ocm-ramen-samples/busybox
+#		kubectl --context $1 -n$namespace_name delete --ignore-not-found po/asdf secret/asdf cm/asdf
+#		{ set +x;} 2>/dev/null
+#	done; unset -v namespace_name
+	set -x
+	time kubectl --context $1 delete --ignore-not-found ns $app_namespace_names
+	{ set +x;} 2>/dev/null
 	app_list $1
 }; exit_stack_push unset -f app_undeploy
 
