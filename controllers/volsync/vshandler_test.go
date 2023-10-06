@@ -655,11 +655,10 @@ var _ = Describe("VolSync_Handler", func() {
 					vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, owner, asyncSpec, "none", "Direct")
 				})
 
-				It("SelectDestCopyMethod() should return CopyMethod Snapshot and App PVC name", func() {
-					cpyMethod, dstPVC, err := vsHandler.SelectDestCopyMethod(rdSpec)
+				It("PrecreateDestPVCIfEnabled() should return CopyMethod Snapshot and App PVC name", func() {
+					dstPVC, err := vsHandler.PrecreateDestPVCIfEnabled(rdSpec)
 					Expect(err).NotTo(HaveOccurred())
 
-					Expect(cpyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
 					Expect(*dstPVC).To(Equal(rdSpec.ProtectedPVC.Name))
 					pvc := &corev1.PersistentVolumeClaim{}
 					Eventually(func() error {
