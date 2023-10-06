@@ -121,14 +121,14 @@ func (v *VSHandler) ReconcileRD(
 		return nil, err
 	}
 
-	copyMethod, dstPVC, err := v.SelectDestCopyMethod(rdSpec)
+	dstPVC, err := v.PrecreateDestPVCIfEnabled(rdSpec)
 	if err != nil {
 		return nil, err
 	}
 
 	var rd *volsyncv1alpha1.ReplicationDestination
 
-	rd, err = v.createOrUpdateRD(rdSpec, pskSecretName, copyMethod, dstPVC)
+	rd, err = v.createOrUpdateRD(rdSpec, pskSecretName, dstPVC)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +167,7 @@ func rdStatusReady(rd *volsyncv1alpha1.ReplicationDestination, log logr.Logger) 
 
 func (v *VSHandler) createOrUpdateRD(
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec, pskSecretName string,
-	copyMethod volsyncv1alpha1.CopyMethodType, dstPVC *string) (*volsyncv1alpha1.ReplicationDestination, error,
+	dstPVC *string) (*volsyncv1alpha1.ReplicationDestination, error,
 ) {
 	l := v.log.WithValues("rdSpec", rdSpec)
 
@@ -204,7 +204,7 @@ func (v *VSHandler) createOrUpdateRD(
 			KeySecret:   &pskSecretName,
 
 			ReplicationDestinationVolumeOptions: volsyncv1alpha1.ReplicationDestinationVolumeOptions{
-				CopyMethod:              copyMethod,
+				CopyMethod:              volsyncv1alpha1.CopyMethodSnapshot,
 				Capacity:                rdSpec.ProtectedPVC.Resources.Requests.Storage(),
 				StorageClassName:        rdSpec.ProtectedPVC.StorageClassName,
 				AccessModes:             pvcAccessModes,
@@ -1592,37 +1592,37 @@ func (v *VSHandler) IsRDDataProtected(pvcName string) (bool, error) {
 	return isLatestImageReady(latestImage), nil
 }
 
-func (v *VSHandler) SelectDestCopyMethod(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
-) (volsyncv1alpha1.CopyMethodType, *string, error) {
+func (v *VSHandler) PrecreateDestPVCIfEnabled(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+) (*string, error) {
 	if !v.IsCopyMethodDirect() {
 		v.log.Info("Using default copyMethod of Snapshot")
 
-		return volsyncv1alpha1.CopyMethodSnapshot, nil, nil // use default copyMethod
+		return nil, nil // use default copyMethod
 	}
 
 	// IF using CopyMethodDirect, then ensure that the PVC exists, otherwise, create it.
 	err := v.EnsurePVCforDirectCopy(v.ctx, rdSpec)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	// PVC must not be in-use before creating the RD
 	inUse, err := v.isPVCInUseByNonRDPod(rdSpec.ProtectedPVC.Name)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	// It is possible that the PVC becomes in-use at this point (if an app using this PVC is also deployed
 	// on this cluster). That race condition will be ignored. That would be a user error to deploy the
 	// same app in the same namespace and on the destination cluster...
 	if inUse {
-		return "", nil, fmt.Errorf("pvc %v is mounted by others. Checking later", rdSpec.ProtectedPVC.Name)
+		return nil, fmt.Errorf("pvc %v is mounted by others. Checking later", rdSpec.ProtectedPVC.Name)
 	}
 
-	v.log.Info(fmt.Sprintf("Using copyMethod of Direct with App PVC %s", rdSpec.ProtectedPVC.Name))
+	v.log.Info(fmt.Sprintf("Using App PVC %s for syncing directly to it", rdSpec.ProtectedPVC.Name))
 	// Using the application PVC for syncing from source to destination and save a snapshot
 	// everytime a sync is successful
-	return volsyncv1alpha1.CopyMethodSnapshot, &rdSpec.ProtectedPVC.Name, nil
+	return &rdSpec.ProtectedPVC.Name, nil
 }
 
 func (v *VSHandler) IsCopyMethodDirect() bool {
