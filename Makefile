@@ -154,6 +154,9 @@ test-pvrgl: generate manifests envtest
 test-obj: generate manifests envtest
 	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus FakeObjectStorer
 
+test-vs: generate manifests envtest
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers/volsync -coverprofile cover.out $(GO_TEST_GINKGO_ARGS)
+
 test-vrg: generate manifests envtest
 	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroup
 
@@ -177,6 +180,9 @@ test-drpc: generate manifests envtest
 
 test-drcluster: generate manifests envtest
 	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus DRClusterController
+
+test-util: generate manifests envtest
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers/util -coverprofile cover.out $(GO_TEST_GINKGO_ARGS)
 
 test-util-pvc: generate manifests envtest
 	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers/util -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus PVCS_Util
