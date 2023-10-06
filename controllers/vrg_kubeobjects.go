@@ -691,10 +691,6 @@ func kubeObjectsRequestsWatch(b *builder.Builder, kubeObjects kubeobjects.Reques
 
 func getCaptureGroups(recipe Recipe.Recipe) ([]kubeobjects.CaptureSpec, error) {
 	workflow := recipe.Spec.CaptureWorkflow
-	if workflow == nil {
-		return []kubeobjects.CaptureSpec{{}}, nil
-	}
-
 	resources := make([]kubeobjects.CaptureSpec, len(workflow.Sequence))
 
 	for index, resource := range workflow.Sequence {
@@ -715,10 +711,6 @@ func getCaptureGroups(recipe Recipe.Recipe) ([]kubeobjects.CaptureSpec, error) {
 
 func getRecoverGroups(recipe Recipe.Recipe) ([]kubeobjects.RecoverSpec, error) {
 	workflow := recipe.Spec.RecoverWorkflow
-	if workflow == nil {
-		return []kubeobjects.RecoverSpec{{}}, nil
-	}
-
 	resources := make([]kubeobjects.RecoverSpec, len(workflow.Sequence))
 
 	for index, resource := range workflow.Sequence {
