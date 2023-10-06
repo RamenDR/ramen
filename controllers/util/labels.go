@@ -5,6 +5,7 @@ package util
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 const (
@@ -36,4 +37,13 @@ func OwnerNamespaceNameAndName(labels Labels) (string, string, bool) {
 	ownerName, ok2 := labels[labelOwnerName]
 
 	return ownerNamespaceName, ownerName, ok1 && ok2
+}
+
+func OwnerNamespacedName(labels Labels) types.NamespacedName {
+	ownerNamespaceName, ownerName, _ := OwnerNamespaceNameAndName(labels)
+
+	return types.NamespacedName{
+		Namespace: ownerNamespaceName,
+		Name:      ownerName,
+	}
 }
