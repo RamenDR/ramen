@@ -19,6 +19,8 @@ import (
 )
 
 var _ = Describe("VRG_KubeObjectProtection", func() {
+	const namespaceName = "my-ns"
+
 	var hook *Recipe.Hook
 	var group *Recipe.Group
 
@@ -28,8 +30,9 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		hook = &Recipe.Hook{
-			Name: "hook-single",
-			Type: "exec",
+			Namespace: namespaceName,
+			Name:      "hook-single",
+			Type:      "exec",
 			LabelSelector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					"myapp": "testapp",
@@ -52,6 +55,7 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 			Name:                  "test-group",
 			BackupRef:             "test-backup-ref",
 			Type:                  "resource",
+			IncludedNamespaces:    []string{namespaceName},
 			IncludedResourceTypes: []string{"deployment", "replicaset"},
 			ExcludedResourceTypes: nil,
 			LabelSelector: &metav1.LabelSelector{
@@ -72,8 +76,9 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 				Name: hook.Name + "-" + hook.Ops[0].Name,
 				Spec: kubeobjects.Spec{
 					KubeResourcesSpec: kubeobjects.KubeResourcesSpec{
-						IncludedResources: []string{"pod"},
-						ExcludedResources: []string{},
+						IncludedNamespaces: []string{namespaceName},
+						IncludedResources:  []string{"pod"},
+						ExcludedResources:  []string{},
 						Hooks: []kubeobjects.HookSpec{
 							{
 								Name:          hook.Ops[0].Name,
@@ -100,8 +105,9 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 				BackupName: ramen.ReservedBackupName,
 				Spec: kubeobjects.Spec{
 					KubeResourcesSpec: kubeobjects.KubeResourcesSpec{
-						IncludedResources: []string{"pod"},
-						ExcludedResources: []string{},
+						IncludedNamespaces: []string{namespaceName},
+						IncludedResources:  []string{"pod"},
+						ExcludedResources:  []string{},
 						Hooks: []kubeobjects.HookSpec{
 							{
 								Name:          hook.Ops[0].Name,
@@ -128,8 +134,9 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 				Name: group.Name,
 				Spec: kubeobjects.Spec{
 					KubeResourcesSpec: kubeobjects.KubeResourcesSpec{
-						IncludedResources: group.IncludedResourceTypes,
-						ExcludedResources: group.ExcludedResourceTypes,
+						IncludedNamespaces: group.IncludedNamespaces,
+						IncludedResources:  group.IncludedResourceTypes,
+						ExcludedResources:  group.ExcludedResourceTypes,
 					},
 					LabelSelector:           group.LabelSelector,
 					IncludeClusterResources: group.IncludeClusterResources,
@@ -147,8 +154,9 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 				BackupName: group.BackupRef,
 				Spec: kubeobjects.Spec{
 					KubeResourcesSpec: kubeobjects.KubeResourcesSpec{
-						IncludedResources: group.IncludedResourceTypes,
-						ExcludedResources: group.ExcludedResourceTypes,
+						IncludedNamespaces: group.IncludedNamespaces,
+						IncludedResources:  group.IncludedResourceTypes,
+						ExcludedResources:  group.ExcludedResourceTypes,
 					},
 					LabelSelector:           group.LabelSelector,
 					IncludeClusterResources: group.IncludeClusterResources,
