@@ -620,9 +620,12 @@ func (v *VRGInstance) UploadPVAndPVCtoS3(s3ProfileName string, objectStore Objec
 		return err
 	}
 
-	if err := UploadPVC(objectStore, v.s3KeyPrefix(), pvc.Name, *pvc); err != nil {
+	pvcNamespacedName := types.NamespacedName{Namespace: pvc.Namespace, Name: pvc.Name}
+	pvcNamespacedNameString := pvcNamespacedName.String()
+
+	if err := UploadPVC(objectStore, v.s3KeyPrefix(), pvcNamespacedNameString, *pvc); err != nil {
 		err := fmt.Errorf("error uploading PVC to s3Profile %s, failed to protect cluster data for PVC %s, %w",
-			s3ProfileName, pvc.Name, err)
+			s3ProfileName, pvcNamespacedNameString, err)
 
 		return err
 	}
