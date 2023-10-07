@@ -67,6 +67,8 @@ infra_deploy() {
 	for cluster_name in $s3_store_cluster_names; do
 		mc alias set $cluster_name $(minikube_minio_url $cluster_name) minio minio123
 	done; unset -v cluster_name
+	app_operator_deploy cluster1
+	app_operator_deploy cluster2
 	infra_list
 }; exit_stack_push unset -f infra_deploy
 
@@ -79,10 +81,14 @@ infra_list() {
 	kubectl --context cluster2 -nvelero get deploy/velero secret/s3secret
 	mc tree cluster1
 	mc tree cluster2
+	app_opperator_list cluster1
+	app_opperator_list cluster2
 	{ set +x; } 2>/dev/null
 }; exit_stack_push unset -f infra_list
 
 infra_undeploy() {
+	app_operator_undeploy cluster2
+	app_operator_undeploy cluster1
 	velero_secret_undeploy cluster2
 	velero_secret_undeploy cluster1
 	$ramen_hack_directory_path_name/minikube-ramen.sh undeploy
@@ -115,6 +121,42 @@ namespace_get() {
 	kubectl --context $1 get namespace $2 -oyaml
 }; exit_stack_push unset -f namespace_get
 
+namespace_yaml() {
+	cat <<-a
+	---
+	apiVersion: v1
+	kind: Namespace
+	metadata:
+	  name: $1
+	a
+}; exit_stack_push unset -f namespace_yaml
+
+app_operator_namespace_name=o
+app_operator_recipe_name=r
+exit_stack_push unset -v app_operator_namespace_name
+exit_stack_push unset -v app_operator_recipe_name
+
+app_operator_yaml() {
+	namespace_yaml $app_operator_namespace_name
+	app_operator_recipe_yaml
+}; exit_stack_push unset -f app_operator_yaml
+
+app_operator_kubectl() {
+	app_operator_yaml|kubectl --context $1 $2 -f-
+}; exit_stack_push unset -f app_operator_kubectl
+
+app_operator_deploy() {
+	app_operator_kubectl $1 apply
+}; exit_stack_push unset -f app_operator_deploy
+
+app_operator_undeploy() {
+	app_operator_kubectl $1 delete\ --ignore-not-found
+}; exit_stack_push unset -f app_operator_undeploy
+
+app_operator_list() {
+	app_operator_kubectl $1 get
+}; exit_stack_push unset -f app_operator_list
+
 app_namespace_0_name=a
 app_namespace_1_name=asdf
 app_namespace_2_name=b
@@ -131,14 +173,8 @@ app_labels_yaml="\
 exit_stack_push unset -v app_label_key app_label_value app_label app_label_yaml app_labels_yaml
 
 app_namespace_yaml() {
-	cat <<-a
-	---
-	apiVersion: v1
-	kind: Namespace
-	metadata:
-	  name: $1
-	$app_labels_yaml
-	a
+	namespace_yaml $1
+	echo "$app_labels_yaml"
 }; exit_stack_push unset -f app_namespace_yaml
 
 app_namespaces_yaml() {
@@ -163,8 +199,7 @@ app_naked_pod_name=busybox
 app_clothed_pod_name=busybox
 app_configmap_name=asdf
 app_secret_name=$app_configmap_name
-app_recipe_name=$app_configmap_name
-exit_stack_push unset -v app_naked_pod_name app_clothed_pod_name app_configmap_name app_secret_name app_recipe_name
+exit_stack_push unset -v app_naked_pod_name app_clothed_pod_name app_configmap_name app_secret_name
 
 app_yaml_namespace() {
 	app_namespace_yaml $1
@@ -184,7 +219,6 @@ app_yaml() {
 	for namespace_name in $app_namespace_names; do
 		app_yaml_namespace $namespace_name
 	done; unset -v namespace_name
-	app_recipe_yaml
 }; exit_stack_push unset -v app_yaml
 
 app_deploy() {
@@ -197,26 +231,14 @@ app_deploy() {
 	app_list $1
 }; exit_stack_push unset -f app_deploy
 
-app_recipe_deploy() {
-	app_recipe_kubectl $1 apply
-}; exit_stack_push unset -f app_recipe_deploy
-
-app_recipe_undeploy() {
-	app_recipe_kubectl $1 delete\ --ignore-not-found
-}; exit_stack_push unset -f app_recipe_undeploy
-
-app_recipe_kubectl() {
-	app_recipe_yaml|kubectl --context $1 $2 -f-
-}; exit_stack_push unset -f app_recipe_kubectl
-
-app_recipe_yaml() {
+app_operator_recipe_yaml() {
 	cat <<-a
+	---
 	apiVersion: ramendr.openshift.io/v1alpha1
 	kind: Recipe
 	metadata:
-	  namespace: $app_namespace_0_name
-	  name: $app_recipe_name
-	$app_labels_yaml
+	  namespace: $app_operator_namespace_name
+	  name: $app_operator_recipe_name
 	spec:
 	  appType: ""
 	  volumes:
@@ -287,12 +309,11 @@ app_recipe_yaml() {
 	a
 # TODO restore once PR 871 is merged
 #	    - hook: busybox1/date
-}; exit_stack_push unset -f app_recipe_yaml
+}; exit_stack_push unset -f app_operator_recipe_yaml
 
-app_recipe_get() {
-#	app_recipe_kubectl $1 get\ -oyaml
-	kubectl --context $1 -n$app_namespace_0_name get -oyaml recipe/$app_recipe_name
-}; exit_stack_push unset -f app_recipe_get
+app_operator_recipe_get() {
+	kubectl --context $1 -n$app_operator_namespace_name get -oyaml recipe/$app_operator_recipe_name
+}; exit_stack_push unset -f app_operator_recipe_get
 
 app_list() {
 	app_list_custom $1 --show-labels
@@ -308,7 +329,6 @@ app_list_custom() {
 
 app_undeploy() {
 	app_unprotect $1
-#	app_recipe_undeploy $1
 #	for namespace_name in $app_namespace_names;do
 #		set -x
 #		kubectl --context $1 -n$namespace_name delete --ignore-not-found -k https://github.com/RamenDR/ocm-ramen-samples/busybox
@@ -326,7 +346,8 @@ vrg_apply() {
   kubeObjectProtection:
     captureInterval: 1m
     recipeRef:
-      name: $app_recipe_name
+      namespace: $app_operator_namespace_name
+      name: $app_operator_recipe_name
     recipeParameters:
       ns0:
       - $app_namespace_0_name
@@ -483,7 +504,6 @@ app_failback() {
 app_recover() {
 	app_namespaces_deploy $1
 	date
-	app_recipe_deploy $1 # TODO remove once recipe protected
 	vrg_deploy_$2 $1
 	set -x
 	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for condition=clusterdataready --timeout -1s

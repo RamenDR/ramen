@@ -73,7 +73,7 @@ func recipeVolumesAndOptionallyWorkflowsGet(ctx context.Context, reader client.R
 
 	recipe := recipe.Recipe{}
 	if err := reader.Get(ctx, types.NamespacedName{
-		Namespace: vrg.Namespace,
+		Namespace: vrg.Spec.KubeObjectProtection.RecipeRef.Namespace,
 		Name:      vrg.Spec.KubeObjectProtection.RecipeRef.Name,
 	}, &recipe); err != nil {
 		return RecipeElements{}, errors.Wrap(err, "recipe get")
