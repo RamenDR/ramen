@@ -14,14 +14,13 @@ import (
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/kubeobjects"
 	"github.com/ramendr/ramen/controllers/util"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
-	// "sigs.k8s.io/controller-runtime/pkg/source"
-
 	Recipe "github.com/ramendr/recipe/api/v1alpha1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 )
 
 func kubeObjectsCaptureInterval(kubeObjectProtectionSpec *ramen.KubeObjectProtectionSpec) time.Duration {
@@ -674,10 +673,13 @@ func (v *VRGInstance) kubeObjectsProtectionDelete(result *ctrl.Result) error {
 	)
 }
 
-func kubeObjectsRequestsWatch(b *builder.Builder, kubeObjects kubeobjects.RequestsManager) *builder.Builder {
+func kubeObjectsRequestsWatch(
+	b *builder.Builder, scheme *runtime.Scheme, kubeObjects kubeobjects.RequestsManager,
+) *builder.Builder {
 	watch := func(request kubeobjects.Request) {
 		util.OwnsAcrossNamespaces(
 			b,
+			scheme,
 			request.Object(),
 			builder.WithPredicates(util.ResourceVersionUpdatePredicate{}),
 		)

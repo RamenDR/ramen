@@ -99,7 +99,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 	r.kubeObjects = velero.RequestsManager{}
 	if !ramenConfig.KubeObjectProtection.Disabled {
 		r.Log.Info("Kube object protection enabled; watch kube objects requests")
-		kubeObjectsRequestsWatch(builder, r.kubeObjects)
+		kubeObjectsRequestsWatch(builder, r.Scheme, r.kubeObjects)
 	} else {
 		r.Log.Info("Kube object protection disabled; don't watch kube objects requests")
 	}
