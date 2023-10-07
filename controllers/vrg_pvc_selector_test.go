@@ -191,8 +191,9 @@ func getVRGDefinitionWithKubeObjectProtection(hasPVCSelectorLabels bool, namespa
 	}
 
 	vrg.Spec.KubeObjectProtection = &ramen.KubeObjectProtectionSpec{
-		RecipeRef: &corev1.LocalObjectReference{
-			Name: "test-recipe",
+		RecipeRef: &ramen.RecipeRef{
+			Namespace: vrg.Namespace,
+			Name:      "test-recipe",
 		},
 	}
 

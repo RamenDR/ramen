@@ -186,11 +186,12 @@ spec:
                       workflows and volume selection.
                     properties:
                       name:
-                        description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                          TODO: Add other useful fields. apiVersion, kind, uid?'
+                        description: Name of recipe
+                        type: string
+                      namespace:
+                        description: Name of namespace recipe is in
                         type: string
                     type: object
-                    x-kubernetes-map-type: atomic
                 type: object
               prepareForFinalSync:
                 description: PrepareForFinalSync when set, it tells VRG to prepare

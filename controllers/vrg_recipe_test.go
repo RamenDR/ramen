@@ -110,9 +110,6 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	recipeDelete := func() error {
 		return k8sClient.Delete(ctx, r)
 	}
-	localRef := func(name string) *corev1.LocalObjectReference {
-		return &corev1.LocalObjectReference{Name: name}
-	}
 	vrgDefine := func() {
 		vrg = &ramen.VolumeReplicationGroup{
 			ObjectMeta: metav1.ObjectMeta{Namespace: nss[0].Name, Name: "a"},
@@ -126,8 +123,11 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 			},
 		}
 	}
-	vrgRecipeRefDefine := func(recipeRef *corev1.LocalObjectReference) {
-		vrg.Spec.KubeObjectProtection.RecipeRef = recipeRef
+	vrgRecipeRefDefine := func(name string) {
+		vrg.Spec.KubeObjectProtection.RecipeRef = &ramen.RecipeRef{
+			Namespace: r.Namespace,
+			Name:      name,
+		}
 	}
 	vrgRecipeParametersDefine := func(recipeParameters map[string][]string) {
 		vrg.Spec.KubeObjectProtection.RecipeParameters = recipeParameters
@@ -203,13 +203,13 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 			})
 			Context("referencing an absent recipe", func() {
 				BeforeEach(func() {
-					vrgRecipeRefDefine(localRef("asdf"))
+					vrgRecipeRefDefine("asdf")
 				})
 				It("denies it", func() { Expect(err).To(HaveOccurred()) })
 			})
 			Context("referencing a recipe", func() {
 				BeforeEach(func() {
-					vrgRecipeRefDefine(localRef(r.Name))
+					vrgRecipeRefDefine(r.Name)
 				})
 				Context("without a volume selector", func() {
 					BeforeEach(func() {
@@ -246,7 +246,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 			BeforeEach(func() {
 				nsNames1 = nsNames[nsNumberStart:]
 				pvcs1 = pvcs[nsNumberStart:]
-				vrgRecipeRefDefine(localRef(r.Name))
+				vrgRecipeRefDefine(r.Name)
 			})
 			Context("statically", func() {
 				BeforeEach(func() {
