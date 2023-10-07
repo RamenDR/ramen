@@ -107,18 +107,6 @@ velero_secret_list() {
 	kubectl --context $1 -nvelero get secret s3secret
 }; exit_stack_push unset -f velero_secret_list
 
-namespace_deploy() {
-	set -x
-	kubectl create namespace $2 --dry-run=client -oyaml|kubectl --context $1 apply -f-
-	{ set +x;} 2>/dev/null
-}; exit_stack_push unset -f namespace_deploy
-
-namespace_undeploy() {
-	set -x
-	kubectl --context $1 delete namespace $2 --ignore-not-found
-	{ set +x;} 2>/dev/null
-}; exit_stack_push unset -f namespace_undeploy
-
 namespace_list() {
 	kubectl --context $1 get namespace $2
 }; exit_stack_push unset -f namespace_list
@@ -127,8 +115,8 @@ namespace_get() {
 	kubectl --context $1 get namespace $2 -oyaml
 }; exit_stack_push unset -f namespace_get
 
-app_namespace_0_name=asdf
-app_namespace_1_name=a
+app_namespace_0_name=a
+app_namespace_1_name=asdf
 app_namespace_2_name=b
 app_namespace_names=$app_namespace_0_name\ $app_namespace_1_name\ $app_namespace_2_name
 exit_stack_push unset -f app_namespace_0_name app_namespace_1_name app_namespace_2_name app_namespace_names
@@ -137,32 +125,75 @@ app_label_key=appname
 app_label_value=busybox
 app_label=$app_label_key=$app_label_value
 app_label_yaml=$app_label_key:\ $app_label_value
-app_labels_yaml="
+app_labels_yaml="\
   labels:
     $app_label_yaml"
 exit_stack_push unset -v app_label_key app_label_value app_label app_label_yaml app_labels_yaml
 
+app_namespace_yaml() {
+	cat <<-a
+	---
+	apiVersion: v1
+	kind: Namespace
+	metadata:
+	  name: $1
+	$app_labels_yaml
+	a
+}; exit_stack_push unset -f app_namespace_yaml
+
+app_namespaces_yaml() {
+	for namespace_name in $app_namespace_names; do
+		app_namespace_yaml $namespace_name
+	done; unset -v namespace_name
+}; exit_stack_push unset -f app_namespaces_yaml
+
+app_namespaces_kubectl() {
+	app_namespaces_yaml|kubectl --context $1 $2 -f-
+}; exit_stack_push unset -f app_namespaces_kubectl
+
+app_namespaces_deploy() {
+	app_namespaces_kubectl $1 apply
+}; exit_stack_push unset -f app_namespaces_deploy
+
+app_namespaces_undeploy() {
+	app_namespaces_kubectl $1 delete\ --ignore-not-found
+}; exit_stack_push unset -f app_namespaces_undeploy
+
+app_naked_pod_name=busybox
+app_clothed_pod_name=busybox
+app_configmap_name=asdf
+app_secret_name=$app_configmap_name
+app_recipe_name=$app_configmap_name
+exit_stack_push unset -v app_naked_pod_name app_clothed_pod_name app_configmap_name app_secret_name app_recipe_name
+
+app_yaml_namespace() {
+	app_namespace_yaml $1
+	echo ---
+	kubectl --dry-run=client -oyaml -n$1 create -k https://github.com/RamenDR/ocm-ramen-samples/busybox
+	echo ---
+	kubectl --dry-run=client -oyaml -n$1 create configmap $app_configmap_name
+	echo "$app_labels_yaml"
+	echo ---
+	kubectl --dry-run=client -oyaml -n$1 create secret generic $app_secret_name --from-literal=key1=value1
+	echo "$app_labels_yaml"
+	echo ---
+	kubectl --dry-run=client -oyaml -n$1 run $app_naked_pod_name -l$app_label --image busybox -- sh -c while\ true\;do\ date\;sleep\ 60\;done
+}; exit_stack_push unset -v app_yaml_namespace
+
+app_yaml() {
+	for namespace_name in $app_namespace_names; do
+		app_yaml_namespace $namespace_name
+	done; unset -v namespace_name
+	app_recipe_yaml
+}; exit_stack_push unset -v app_yaml
+
 app_deploy() {
 	set -- cluster1
+	app_yaml|kubectl --context $1 apply -f-
 	for namespace_name in $app_namespace_names; do
-		cat <<-a|kubectl --context $1 -n$namespace_name apply -f-
-		apiVersion: v1
-		kind: Namespace
-		metadata:$app_labels_yaml
-		  name: $namespace_name
-		---
-		$(kubectl --dry-run=client -oyaml create -k https://github.com/RamenDR/ocm-ramen-samples/busybox -n$namespace_name)
-		---
-		$(kubectl --dry-run=client -oyaml create configmap asdf)$app_labels_yaml
-		---
-		$(kubectl --dry-run=client -oyaml create secret generic asdf --from-literal=key1=value1)$app_labels_yaml
-		---
-		$(kubectl --dry-run=client -oyaml run asdf -l$app_label --image busybox -- sh -c while\ true\;do\ date\;sleep\ 60\;done)
-		a
 		kubectl --context $1 -n$namespace_name -l$app_label wait pvc --for jsonpath='{.status.phase}'=Bound
 		kubectl --context $1 label $(pv_names_claimed_by_namespace $1 $namespace_name) $app_label --overwrite
-	done
-	app_recipe_deploy $1
+	done; unset -v namespace_name
 	app_list $1
 }; exit_stack_push unset -f app_deploy
 
@@ -175,18 +206,31 @@ app_recipe_undeploy() {
 }; exit_stack_push unset -f app_recipe_undeploy
 
 app_recipe_kubectl() {
-	cat <<-a|kubectl --context $1 -n$app_namespace_0_name $2 -f-
+	app_recipe_yaml|kubectl --context $1 $2 -f-
+}; exit_stack_push unset -f app_recipe_kubectl
+
+app_recipe_yaml() {
+	cat <<-a
 	apiVersion: ramendr.openshift.io/v1alpha1
 	kind: Recipe
-	metadata:$app_labels_yaml
-	  name: asdf
+	metadata:
+	  namespace: $app_namespace_0_name
+	  name: $app_recipe_name
+	$app_labels_yaml
 	spec:
 	  appType: ""
 	  volumes:
-	    includedNamespaces: [\$ns0,\$ns1_2]
+	    includedNamespaces:
+	    - \$ns0
+	    - \$ns1_2
 	    name: ""
 	    type: volume
 	  groups:
+	  - includedNamespaces:
+	    - \$ns0
+	    - \$ns1_2
+	    name: ""
+	    type: resource
 	  - excludedResourceTypes:
 	    - deploy
 	    - po
@@ -196,7 +240,6 @@ app_recipe_kubectl() {
 	    - vrg
 	    name: everything-but-deploy-po-pv-rs-vr-vrg
 	    type: resource
-	    includedNamespaces: [\$ns0,\$ns1_2]
 	  - includedResourceTypes:
 	    - deployments
 	    - pods
@@ -206,10 +249,9 @@ app_recipe_kubectl() {
 	        operator: DoesNotExist
 	    name: deployments-and-naked-pods
 	    type: resource
-	    includedNamespaces: [\$ns0,\$ns1_2]
 	  hooks:
-	  - name: busybox
-	    namespace: \$ns0
+	  - name: busybox1
+	    namespace: \$ns1
 	    type: exec
 	    labelSelector:
 	      matchExpressions:
@@ -217,27 +259,39 @@ app_recipe_kubectl() {
 	        operator: Exists
 	    ops:
 	    - name: date
-	      container: busybox
+	      container: $app_clothed_pod_name
 	      command:
 	      - date
+	  - name: busybox0
+	    namespace: \$ns0
+	    type: exec
+	    labelSelector:
+	      matchExpressions:
+	      - key: pod-template-hash
+	        operator: DoesNotExist
+	    ops:
 	    - name: fail-succeed
-	      container: busybox
+	      container: $app_naked_pod_name
 	      command:
 	      - sh
 	      - -c
 	      - "rm /tmp/a||! touch /tmp/a"
+	  captureWorkflow:
+	    sequence:
+	    - group: ""
 	  recoverWorkflow:
 	    sequence:
 	    - group: everything-but-deploy-po-pv-rs-vr-vrg
 	    - group: deployments-and-naked-pods
-	    - hook: busybox/date
-	    - hook: busybox/fail-succeed
+	    - hook: busybox0/fail-succeed
 	a
-}; exit_stack_push unset -f app_recipe_kubectl
+# TODO restore once PR 871 is merged
+#	    - hook: busybox1/date
+}; exit_stack_push unset -f app_recipe_yaml
 
 app_recipe_get() {
 #	app_recipe_kubectl $1 get\ -oyaml
-	kubectl --context $1 -n$app_namespace_0_name get -oyaml recipe/asdf
+	kubectl --context $1 -n$app_namespace_0_name get -oyaml recipe/$app_recipe_name
 }; exit_stack_push unset -f app_recipe_get
 
 app_list() {
@@ -258,7 +312,7 @@ app_undeploy() {
 #	for namespace_name in $app_namespace_names;do
 #		set -x
 #		kubectl --context $1 -n$namespace_name delete --ignore-not-found -k https://github.com/RamenDR/ocm-ramen-samples/busybox
-#		kubectl --context $1 -n$namespace_name delete --ignore-not-found po/asdf secret/asdf cm/asdf
+#		kubectl --context $1 -n$namespace_name delete --ignore-not-found po/$app_naked_pod_name secret/$app_secret_name cm/$app_configmap_name
 #		{ set +x;} 2>/dev/null
 #	done; unset -v namespace_name
 	set -x
@@ -272,10 +326,12 @@ vrg_apply() {
   kubeObjectProtection:
     captureInterval: 1m
     recipeRef:
-      name: $app_namespace_0_name
+      name: $app_recipe_name
     recipeParameters:
       ns0:
       - $app_namespace_0_name
+      ns1:
+      - $app_namespace_1_name
       ns1_2:
       - $app_namespace_1_name
       - $app_namespace_2_name$3${4:+
@@ -425,7 +481,7 @@ app_failback() {
 }; exit_stack_push unset -f app_failback
 
 app_recover() {
-	namespace_deploy $1 $app_namespace_0_name
+	app_namespaces_deploy $1
 	date
 	app_recipe_deploy $1 # TODO remove once recipe protected
 	vrg_deploy_$2 $1
