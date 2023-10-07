@@ -201,8 +201,7 @@ app_configmap_name=asdf
 app_secret_name=$app_configmap_name
 exit_stack_push unset -v app_naked_pod_name app_clothed_pod_name app_configmap_name app_secret_name
 
-app_yaml_namespace() {
-	app_namespace_yaml $1
+app_namespaced_yaml() {
 	echo ---
 	kubectl --dry-run=client -oyaml -n$1 create -k https://github.com/RamenDR/ocm-ramen-samples/busybox
 	echo ---
@@ -213,23 +212,42 @@ app_yaml_namespace() {
 	echo "$app_labels_yaml"
 	echo ---
 	kubectl --dry-run=client -oyaml -n$1 run $app_naked_pod_name -l$app_label --image busybox -- sh -c while\ true\;do\ date\;sleep\ 60\;done
-}; exit_stack_push unset -v app_yaml_namespace
+}; exit_stack_push unset -v app_namespaced_yaml
+
+app_less_namespaces_yaml() {
+	for namespace_name in $app_namespace_names; do
+		app_namespaced_yaml $namespace_name
+	done; unset -v namespace_name
+}; exit_stack_push unset -v app_less_namespaces_yaml
 
 app_yaml() {
-	for namespace_name in $app_namespace_names; do
-		app_yaml_namespace $namespace_name
-	done; unset -v namespace_name
+	app_namespaces_yaml $1
+	app_less_namespaces_yaml $1
 }; exit_stack_push unset -v app_yaml
 
 app_deploy() {
 	set -- cluster1
 	app_yaml|kubectl --context $1 apply -f-
+	app_pvs_label $1
+	app_list $1
+}; exit_stack_push unset -f app_deploy
+
+app_pvs_label() {
 	for namespace_name in $app_namespace_names; do
 		kubectl --context $1 -n$namespace_name -l$app_label wait pvc --for jsonpath='{.status.phase}'=Bound
 		kubectl --context $1 label $(pv_names_claimed_by_namespace $1 $namespace_name) $app_label --overwrite
 	done; unset -v namespace_name
+}; exit_stack_push unset -f app_pvs_label
+
+app_less_namespaces_undeploy() {
+	app_less_namespaces_yaml|kubectl --context $1 delete --ignore-not-found -f-
 	app_list $1
-}; exit_stack_push unset -f app_deploy
+}; exit_stack_push unset -f app_less_namespaces_undeploy
+
+app_undeploy() {
+	app_yaml|kubectl --context $1 delete --ignore-not-found -f-
+	app_list $1
+}; exit_stack_push unset -f app_undeploy
 
 app_operator_recipe_yaml() {
 	cat <<-a
@@ -327,20 +345,6 @@ app_list_custom() {
 	kubectl --context $1 -A -l$app_label get $2 ns,cm,secret,deploy,rs,po,pvc,pv,recipe,vrg,vr
 }; exit_stack_push unset -f app_list_custom
 
-app_undeploy() {
-	app_unprotect $1
-#	for namespace_name in $app_namespace_names;do
-#		set -x
-#		kubectl --context $1 -n$namespace_name delete --ignore-not-found -k https://github.com/RamenDR/ocm-ramen-samples/busybox
-#		kubectl --context $1 -n$namespace_name delete --ignore-not-found po/$app_naked_pod_name secret/$app_secret_name cm/$app_configmap_name
-#		{ set +x;} 2>/dev/null
-#	done; unset -v namespace_name
-	set -x
-	time kubectl --context $1 delete --ignore-not-found ns $app_namespace_names
-	{ set +x;} 2>/dev/null
-	app_list $1
-}; exit_stack_push unset -f app_undeploy
-
 vrg_apply() {
 	vrg_appendix="
   kubeObjectProtection:
@@ -359,11 +363,14 @@ vrg_apply() {
   action: $4}"\
 	cluster_names=$s3_store_cluster_names application_sample_namespace_name=$app_namespace_0_name\
 	$ramen_hack_directory_path_name/minikube-ramen.sh application_sample_vrg_deploy$2 $1 "$app_label_yaml"
+}; exit_stack_push unset -f vrg_apply
+
+app_vrs_label() {
 	for namespace_name in $app_namespace_names; do
 		until_true_or_n 30 kubectl --context $1 -n$namespace_name get vr/busybox-pvc
 		kubectl --context $1 -n$namespace_name label vr/busybox-pvc $app_label --overwrite
 	done; unset -v namespace_name
-}; exit_stack_push unset -f vrg_apply
+}; exit_stack_push unset -f app_vrs_label
 
 vrg_deploy() {
 	vrg_apply $1 "$2" "$3" $4
@@ -493,28 +500,22 @@ app_failover() {
 app_failback() {
 	set -- cluster1 cluster2
 	app_undeploy_failback $1 failover
-	vrg_final_sync $2
-	set -x
-	time kubectl --context $2 -n$app_namespace_0_name wait vrg/bb --for condition=clusterdataprotected --timeout -1s
-	{ set +x; } 2>/dev/null
-	date
+#	vrg_final_sync $2
 	app_undeploy_failback $2 relocate app_recover_failback\ $1\ $2
 }; exit_stack_push unset -f app_failback
 
 app_recover() {
 	app_namespaces_deploy $1
-	date
 	vrg_deploy_$2 $1
 	set -x
 	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for condition=clusterdataready --timeout -1s
 	{ set +x; } 2>/dev/null
 	app_list $1
-	date
 	set -x
 	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for condition=clusterdataprotected
 	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for condition=dataready --timeout 2m
-	{ set +x; } 2>/dev/null
 	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for jsonpath='{.status.state}'=Primary
+	{ set +x; } 2>/dev/null
 }; exit_stack_push unset -f app_recover
 
 app_undeploy_failback() {
@@ -523,13 +524,14 @@ app_undeploy_failback() {
 	set -x
 	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for condition=clusterdataprotected --timeout -1s
 	{ set +x; } 2>/dev/null
-	app_undeploy $1& # pvc finalizer remains until vrg deletes its vr
-	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for jsonpath='{.status.state}'=Secondary
+	time app_less_namespaces_undeploy $1& # pvc finalizer remains until vrg deletes its vr
+	set -x
+	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for jsonpath='{.status.state}'=Secondary --timeout -1s
+	{ set +x; } 2>/dev/null
 	$3
 	vrg_undeploy $1&
-	date
 	time wait
-	date
+	time app_namespaces_undeploy $1
 }; exit_stack_push unset -f app_undeploy_failback
 
 app_recover_failback() {
