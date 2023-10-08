@@ -173,9 +173,11 @@ func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, 
 }
 
 func (v *VRGInstance) isPVCInUse(pvc *corev1.PersistentVolumeClaim, log logr.Logger, operation string) bool {
+	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
+
 	const inUse bool = true
 	// Check if any pod definitions exist referencing the PVC
-	inUseByPod, err := rmnutil.IsPVCInUseByPod(v.ctx, v.reconciler.Client, log, pvc.GetName(), pvc.GetNamespace(), false)
+	inUseByPod, err := rmnutil.IsPVCInUseByPod(v.ctx, v.reconciler.Client, log, pvcNamespacedName, false)
 	if err != nil || inUseByPod {
 		msg := operation + " failed as PVC is potentially in use by a pod"
 
@@ -1590,7 +1592,7 @@ func (v *VRGInstance) updatePVCClusterDataProtectedCondition(pvcNamespace, pvcNa
 		return
 	}
 
-	protectedPVC := &ramendrv1alpha1.ProtectedPVC{Name: pvcName}
+	protectedPVC := &ramendrv1alpha1.ProtectedPVC{Namespace: pvcNamespace, Name: pvcName}
 	setPVCClusterDataProtectedCondition(protectedPVC, reason, message, v.instance.Generation)
 	v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
 }
