@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 ---
-repo: https://github.com/ramendr/ocm-ramen-samples.git
-branch: main
+repo: https://github.com/nirs/ocm-ramen-samples.git
+branch: test
 name: busybox-sample
 namespace: busybox-sample
