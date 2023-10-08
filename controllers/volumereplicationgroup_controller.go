@@ -649,7 +649,7 @@ func (v *VRGInstance) separatePVCsUsingVRGStatus(pvcList *corev1.PersistentVolum
 		pvc := &pvcList.Items[idx]
 
 		for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
-			if pvc.Name == protectedPVC.Name {
+			if pvc.Name == protectedPVC.Name && pvc.Namespace == protectedPVC.Namespace {
 				if protectedPVC.ProtectedByVolSync {
 					v.volSyncPVCs = append(v.volSyncPVCs, *pvc)
 				} else {
@@ -666,7 +666,7 @@ func (v *VRGInstance) separatePVCsUsingStorageClassProvisioner(pvcList *corev1.P
 		scName := pvc.Spec.StorageClassName
 
 		if scName == nil || *scName == "" {
-			return fmt.Errorf("missing storage class name for PVC %s", pvc.GetName())
+			return fmt.Errorf("missing storage class name for PVC %s/%s", pvc.GetNamespace(), pvc.GetName())
 		}
 
 		storageClass := &storagev1.StorageClass{}
