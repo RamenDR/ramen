@@ -11,26 +11,19 @@ import (
 )
 
 var _ = Describe("Maps", func() {
-	type t map[string]string
-	var ax, ay, bx, axBx t
-	BeforeEach(func() {
-		ax = t{"a": "x"}
-		ay = t{"a": "y"}
-		bx = t{"b": "x"}
-		axBx = t{"a": "x", "b": "x"}
-	})
+	type t map[int]int
 	DescribeTable("MapCopy",
 		func(a, b, bExpected t, diffExpected bool) {
 			aExpected := maps.Clone(a)
 			Expect(util.MapCopy(a, &b)).To(Equal(diffExpected))
-			Expect(b).To(ConsistOf(bExpected))
-			Expect(a).To(ConsistOf(aExpected))
+			Expect(b).To(Equal(bExpected))
+			Expect(a).To(Equal(aExpected))
 		},
 		Entry(nil, nil, nil, nil, false),
-		Entry(nil, ax, nil, ax, true),
-		Entry(nil, nil, ax, ax, false),
-		Entry(nil, ax, ax, ax, false),
-		Entry(nil, ax, ay, ax, true),
-		Entry(nil, ax, bx, axBx, true),
+		Entry(nil, t{0: 1}, nil, t{0: 1}, true),
+		Entry(nil, nil, t{0: 1}, t{0: 1}, false),
+		Entry(nil, t{0: 1}, t{0: 1}, t{0: 1}, false),
+		Entry(nil, t{0: 1}, t{0: 7}, t{0: 1}, true),
+		Entry(nil, t{0: 1}, t{3: 6}, t{0: 1, 3: 6}, true),
 	)
 })
