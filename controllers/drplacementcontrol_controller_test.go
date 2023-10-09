@@ -1742,6 +1742,7 @@ func verifyFailoverToSecondary(placementObj client.Object, toCluster string,
 func verifyActionResultForPlacement(placement *clrapiv1beta1.Placement, homeCluster string, plType PlacementType) {
 	placementDecision := getPlacementDecision(placement.GetName(), placement.GetNamespace())
 	Expect(placementDecision).ShouldNot(BeNil())
+	Expect(placementDecision.GetLabels()["velero.io/exclude-from-backup"]).Should(Equal("true"))
 	Expect(placementDecision.Status.Decisions[0].ClusterName).Should(Equal(homeCluster))
 	vrg, err := getVRGFromManifestWork(homeCluster)
 	Expect(err).NotTo(HaveOccurred())
