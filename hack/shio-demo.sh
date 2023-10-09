@@ -221,8 +221,8 @@ app_less_namespaces_yaml() {
 }; exit_stack_push unset -v app_less_namespaces_yaml
 
 app_yaml() {
-	app_namespaces_yaml $1
-	app_less_namespaces_yaml $1
+	app_namespaces_yaml
+	app_less_namespaces_yaml
 }; exit_stack_push unset -v app_yaml
 
 app_deploy() {
