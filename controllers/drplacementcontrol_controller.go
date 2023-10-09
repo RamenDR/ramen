@@ -1886,7 +1886,8 @@ func (r *DRPlacementControlReconciler) createPlacementDecision(ctx context.Conte
 	}
 
 	plDecision.ObjectMeta.Labels = map[string]string{
-		clrapiv1beta1.PlacementLabel: placement.GetName(),
+		clrapiv1beta1.PlacementLabel:    placement.GetName(),
+		"velero.io/exclude-from-backup": "true",
 	}
 
 	owner := metav1.NewControllerRef(placement, clrapiv1beta1.GroupVersion.WithKind("Placement"))
