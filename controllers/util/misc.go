@@ -72,6 +72,24 @@ func AddLabel(obj client.Object, key, value string) bool {
 	return !labelAdded
 }
 
+func AddAnnotation(obj client.Object, key, value string) bool {
+	const added = true
+
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+
+	if keyValue, ok := annotations[key]; !ok || keyValue != value {
+		annotations[key] = value
+		obj.SetAnnotations(annotations)
+
+		return added
+	}
+
+	return !added
+}
+
 func AddFinalizer(obj client.Object, finalizer string) bool {
 	const finalizerAdded = true
 
