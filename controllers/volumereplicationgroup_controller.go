@@ -434,8 +434,10 @@ type VRGInstance struct {
 	volSyncPVCs          []corev1.PersistentVolumeClaim
 	replClassList        *volrep.VolumeReplicationClassList
 	storageClassCache    map[string]*storagev1.StorageClass
-	vrgObjectProtected   *metav1.Condition
+	volClusterDataReady  *metav1.Condition
+	kubeObjectsRecovered *metav1.Condition
 	kubeObjectsProtected *metav1.Condition
+	vrgObjectProtected   *metav1.Condition
 	vrcUpdated           bool
 	namespacedName       string
 	volSyncHandler       *volsync.VSHandler
@@ -587,7 +589,7 @@ func (v *VRGInstance) clusterDataRestore(result *ctrl.Result) error {
 
 	// Only after both succeed, we mark ClusterDataReady as true
 	msg := "Restored cluster data"
-	setVRGClusterDataReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+	v.volClusterDataReady = newVRGClusterDataReadyCondition(v.instance.Generation, msg)
 
 	return nil
 }
@@ -850,12 +852,17 @@ func (v *VRGInstance) reconcileAsPrimary() ctrl.Result {
 	result := ctrl.Result{}
 	result.Requeue = v.reconcileVolSyncAsPrimary(&finalSyncPrepared.volSync)
 	v.reconcileVolRepsAsPrimary(&result.Requeue)
-	v.kubeObjectsProtectPrimary(&result, s3StoreAccessors)
+	v.kubeObjectsReconcilePrimary(&result, s3StoreAccessors)
 	v.vrgObjectProtect(&result, s3StoreAccessors)
 
 	if vrg.Spec.PrepareForFinalSync {
 		vrg.Status.PrepareForFinalSyncComplete = finalSyncPrepared.volSync
 	}
+
+	v.statusConditionSetFirstFalseOrLastTrue(VRGConditionTypeClusterDataReady,
+		v.volClusterDataReady,
+		v.kubeObjectsRecovered,
+	)
 
 	return result
 }
@@ -903,6 +910,7 @@ func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
 	return result
 }
 
+// Reconcile desired state of secondary for relocation
 func (v *VRGInstance) relocate(result *ctrl.Result, s3StoreAccessors []s3StoreAccessor) {
 	vrg := v.instance
 
@@ -910,7 +918,7 @@ func (v *VRGInstance) relocate(result *ctrl.Result, s3StoreAccessors []s3StoreAc
 		VRGConditionTypeClusterDataProtected,
 	); clusterDataProtected != nil && (clusterDataProtected.Status != metav1.ConditionTrue ||
 		clusterDataProtected.ObservedGeneration != vrg.Generation) {
-		v.kubeObjectsProtectSecondary(result, s3StoreAccessors)
+		v.kubeObjectsReconcileSecondary(result, s3StoreAccessors)
 		v.vrgObjectProtect(result, s3StoreAccessors)
 	}
 }
@@ -1044,22 +1052,18 @@ func getStatusStateFromSpecState(state ramendrv1alpha1.ReplicationState) ramendr
 // The VRGConditionTypeClusterDataReady summary condition is not a PVC level
 // condition and is updated elsewhere.
 func (v *VRGInstance) updateVRGConditions() {
-	logAndSet := func(conditionName string, subconditions ...*metav1.Condition) {
-		v.log.Info(conditionName, "subconditions", subconditions)
-		rmnutil.ConditionSetFirstFalseOrLastTrue(setStatusCondition, &v.instance.Status.Conditions, subconditions...)
-	}
-	logAndSet(VRGConditionTypeDataReady,
+	v.statusConditionSetFirstFalseOrLastTrue(VRGConditionTypeDataReady,
 		v.aggregateVolSyncDataReadyCondition(),
 		v.aggregateVolRepDataReadyCondition(),
 	)
 
 	volSyncDataProtected, volSyncClusterDataProtected := v.aggregateVolSyncDataProtectedConditions()
 
-	logAndSet(VRGConditionTypeDataProtected,
+	v.statusConditionSetFirstFalseOrLastTrue(VRGConditionTypeDataProtected,
 		volSyncDataProtected,
 		v.aggregateVolRepDataProtectedCondition(),
 	)
-	logAndSet(VRGConditionTypeClusterDataProtected,
+	v.statusConditionSetFirstFalseOrLastTrue(VRGConditionTypeClusterDataProtected,
 		volSyncClusterDataProtected,
 		v.aggregateVolRepClusterDataProtectedCondition(),
 		v.vrgObjectProtected,
@@ -1068,6 +1072,11 @@ func (v *VRGInstance) updateVRGConditions() {
 	v.updateVRGLastGroupSyncTime()
 	v.updateVRGLastGroupSyncDuration()
 	v.updateLastGroupSyncBytes()
+}
+
+func (v *VRGInstance) statusConditionSetFirstFalseOrLastTrue(conditionName string, subconditions ...*metav1.Condition) {
+	v.log.Info(conditionName, "subconditions", subconditions)
+	rmnutil.ConditionSetFirstFalseOrLastTrue(setStatusCondition, &v.instance.Status.Conditions, subconditions...)
 }
 
 func (v *VRGInstance) vrgReadyStatus() *metav1.Condition {
