@@ -129,11 +129,13 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 	return requeue
 }
 
-// reconcileVRAsSecondary checks for PVC readiness to move to Secondary and subsequently updates the VR
-// backing the PVC to secondary. It reports completion status of the VR request with the following values:
-// requeue (bool): If the request needs to be requeued
-// ready (bool): If desired state is achieved and hence VR is ready
-// skip (bool): If the VR can be currently skipped for processing
+// reconcileVRAsSecondary checks for PVC readiness to move to Secondary and
+// subsequently updates the VR backing the PVC to secondary.
+//
+// Returns 3 booleans describing the completion status of the VR request:
+//   - requeue: If the request needs to be requeued
+//   - ready: If desired state is achieved and hence VR is ready
+//   - skip: If the VR can be currently skipped for processing
 func (v *VRGInstance) reconcileVRAsSecondary(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, bool, bool) {
 	const (
 		requeue bool = true
@@ -159,8 +161,8 @@ func (v *VRGInstance) reconcileVRAsSecondary(pvc *corev1.PersistentVolumeClaim, 
 func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
 	const ready bool = true
 
-	// If PVC is not being deleted, it is not ready for Secondary, unless action is failover
-	if v.instance.Spec.Action != ramendrv1alpha1.VRGActionFailover && pvc.GetDeletionTimestamp().IsZero() {
+	// The PVC must be deleted to be ready for secondary, unless action is failover.
+	if v.instance.Spec.Action != ramendrv1alpha1.VRGActionFailover && !rmnutil.IsDeleted(pvc) {
 		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolumeClaim is not marked for deletion")
 
 		msg := "unable to transition to Secondary as PVC is not deleted"
@@ -339,7 +341,7 @@ func (v *VRGInstance) protectPVC(pvc *corev1.PersistentVolumeClaim,
 	}
 
 	// Annotate that PVC protection is complete, skip if being deleted
-	if pvc.GetDeletionTimestamp().IsZero() {
+	if !rmnutil.IsDeleted(pvc) {
 		if err := v.addProtectedAnnotationForPVC(pvc, log); err != nil {
 			log.Info("Requeuing, as annotating PersistentVolumeClaim failed", "errorValue", err)
 
@@ -377,7 +379,7 @@ func skipPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, string) 
 
 func isPVCDeletedAndNotProtected(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, string) {
 	// If PVC deleted but not yet protected with a finalizer, skip it!
-	if !containsString(pvc.Finalizers, pvcVRFinalizerProtected) && !pvc.GetDeletionTimestamp().IsZero() {
+	if !containsString(pvc.Finalizers, pvcVRFinalizerProtected) && rmnutil.IsDeleted(pvc) {
 		log.Info("Skipping PersistentVolumeClaim, as it is marked for deletion and not yet protected")
 
 		msg := "Skipping pvc marked for deletion"
@@ -751,8 +753,6 @@ func (v *VRGInstance) reconcileVRsForDeletion() bool {
 func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
 	const requeue = true
 
-	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
-
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
 		requeueResult, ready, skip := v.reconcileVRAsSecondary(pvc, log)
 		if requeueResult {
@@ -768,6 +768,8 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 			return !requeue
 		}
 	} else {
+		pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
+
 		requeueResult, ready, err := v.processVRAsPrimary(pvcNamespacedName, log)
 		switch {
 		case err != nil:
@@ -807,20 +809,25 @@ func (v *VRGInstance) undoPVCFinalizersAndPVRetention(pvc *corev1.PersistentVolu
 	return !requeue
 }
 
-// reconcileMissingVR determines if VR is missing, and if missing completes other steps required for
-// reconciliation during deletion.
-// VR can be missing,
-// - if no VR was created post initial processing, by when VRG was deleted. In this case
-// no PV was also uploaded, as VR is created first before PV is uploaded.
-// - if VR was deleted in a prior reconcile, during VRG deletion, but steps post VR deletion were not
-// completed, at this point a deleted VR is also not processed further (its generation would have been updated)
-// Returns 2 booleans,
-// - the first indicating if VR is missing or not, to enable further VR processing if needed
-// - the next indicating any required requeue of the request, due to errors in determining VR presence
+// reconcileMissingVR determines if VR is missing, and if missing completes
+// other steps required for reconciliation during deletion.
+//
+// VR can be missing if:
+//   - VR was not created post initial processing, by when VRG was deleted. In
+//     this case no PV was also uploaded, as VR is created first before PV is
+//     uploaded.
+//   - VR was deleted in a prior reconcile, during VRG deletion, but steps post VR
+//     deletion were not completed, at this point a deleted VR is also not
+//     processed further (its generation would have been updated)
+//
+// Returns 2 booleans:
+//   - vrMissing: the VR is missing
+//   - requeue: need to requeue the request, due to errors in determining VR
+//     presence
 func (v *VRGInstance) reconcileMissingVR(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, bool) {
 	const (
-		requeue   = true
 		vrMissing = true
+		requeue   = true
 	)
 
 	if v.instance.Spec.Async == nil {
@@ -935,8 +942,9 @@ func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName, 
 	return true, true, nil
 }
 
-// processVRAsSecondary processes VR to change its state to secondary, with the assumption that the
-// related PVC is prepared for VR as secondary
+// processVRAsSecondary processes VR to change its state to secondary, with the
+// assumption that the related PVC is prepared for VR as secondary
+//
 // Return values are:
 //   - a boolean indicating if a reconcile requeue is required
 //   - a boolean indicating if VR is already at the desired state
@@ -967,13 +975,17 @@ func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName
 	return true, true, nil
 }
 
-// createOrUpdateVR updates an existing VR resource if found, or creates it if required
-// While both creating and updating the VolumeReplication resource, conditions.status
-// for the protected PVC (corresponding to the VolumeReplication resource) is set as
-// VRGConditionReasonProgressing. When the VolumeReplication resource changes its state either due to
-// successful reaching of the desired state or due to some error, VolumeReplicationGroup
-// would get a reconcile. And then the conditions for the appropriate Protected PVC can
-// be set as either Replicating or Error.
+// createOrUpdateVR updates an existing VR resource if found, or creates it if
+// required.
+//
+// While both creating and updating the VolumeReplication resource,
+// conditions.status for the protected PVC (corresponding to the
+// VolumeReplication resource) is set as VRGConditionReasonProgressing. When the
+// VolumeReplication resource changes its state either due to successful
+// reaching of the desired state or due to some error, VolumeReplicationGroup
+// would get a reconcile. And then the conditions for the appropriate Protected
+// PVC can be set as either Replicating or Error.
+//
 // Return values are:
 //   - a boolean indicating if a reconcile requeue is required
 //   - a boolean indicating if VR is already at the desired state
@@ -1038,7 +1050,7 @@ func (v *VRGInstance) autoResync(state volrep.ReplicationState) bool {
 	return true
 }
 
-// updateVR updates the VR to the desired state and returns,
+// updateVR updates the VR to the desired state and returns:
 //   - a boolean indicating if a reconcile requeue is required
 //   - a boolean indicating if VR is already at the desired state
 //   - any errors during the process of updating the resource
@@ -1123,11 +1135,12 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 	return nil
 }
 
-// namespacedName applies to both VolumeReplication resource and pvc as of now.
-// This is because, VolumeReplication resource for a pvc that is created by the
-// VolumeReplicationGroup has the same name as pvc. But in future if it changes
-// functions to be changed would be processVRAsPrimary(), processVRAsSecondary()
-// to either receive pvc NamespacedName or pvc itself as an additional argument.
+// selectVolumeReplicationClass applies to both VolumeReplication resource and
+// pvc as of now.  This is because, VolumeReplication resource for a pvc that is
+// created by the VolumeReplicationGroup has the same name as pvc. But in future
+// if it changes functions to be changed would be processVRAsPrimary(),
+// processVRAsSecondary() to either receive pvc NamespacedName or pvc itself as
+// an additional argument.
 func (v *VRGInstance) selectVolumeReplicationClass(
 	namespacedName types.NamespacedName,
 ) (*volrep.VolumeReplicationClass, error) {
@@ -1183,8 +1196,9 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 	return nil, fmt.Errorf("no VolumeReplicationClass found to match provisioner and schedule")
 }
 
-// getStorageClass inspects the PVCs being protected by this VRG instance for the passed in namespacedName, and
-// returns its corresponding StorageClass resource from an instance cache if available, or fetches it from the API
+// getStorageClass inspects the PVCs being protected by this VRG instance for
+// the passed in namespacedName, and returns its corresponding StorageClass
+// resource from an instance cache if available, or fetches it from the API
 // server and stores it in an instance cache before returning the StorageClass
 func (v *VRGInstance) getStorageClass(namespacedName types.NamespacedName) (*storagev1.StorageClass, error) {
 	var pvc *corev1.PersistentVolumeClaim

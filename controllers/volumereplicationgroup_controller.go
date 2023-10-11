@@ -487,7 +487,7 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 
 	v.log = v.log.WithName("vrginstance").WithValues("State", v.instance.Spec.ReplicationState)
 
-	if !v.instance.GetDeletionTimestamp().IsZero() {
+	if rmnutil.IsDeleted(v.instance) {
 		v.log = v.log.WithValues("Finalize", true)
 
 		return v.processForDeletion()
@@ -509,7 +509,7 @@ func (v *VRGInstance) validateVRGState() error {
 	if v.instance.Spec.ReplicationState != ramendrv1alpha1.Primary &&
 		v.instance.Spec.ReplicationState != ramendrv1alpha1.Secondary {
 		err := fmt.Errorf("invalid or unknown replication state detected (deleted %v, desired replicationState %v)",
-			!v.instance.GetDeletionTimestamp().IsZero(),
+			rmnutil.IsDeleted(v.instance),
 			v.instance.Spec.ReplicationState)
 
 		v.log.Error(err, "Invalid request detected")
@@ -531,7 +531,7 @@ func (v *VRGInstance) validateVRGMode() error {
 
 	if !sync && !async {
 		err := fmt.Errorf("neither of sync or async mode is enabled (deleted %v)",
-			!v.instance.GetDeletionTimestamp().IsZero())
+			rmnutil.IsDeleted(v.instance))
 
 		v.log.Error(err, "Invalid request detected")
 
@@ -628,7 +628,7 @@ func (v *VRGInstance) updatePVCList() error {
 		v.vrcUpdated = true
 	}
 
-	if !v.instance.GetDeletionTimestamp().IsZero() {
+	if rmnutil.IsDeleted(v.instance) {
 		v.separatePVCsUsingVRGStatus(pvcList)
 		v.log.Info(fmt.Sprintf("Separated PVCs (%d) into VolRepPVCs (%d) and VolSyncPVCs (%d)",
 			len(pvcList.Items), len(v.volRepPVCs), len(v.volSyncPVCs)))
@@ -726,7 +726,7 @@ func (v *VRGInstance) separatePVCsUsingStorageClassProvisioner(pvcList *corev1.P
 func (v *VRGInstance) processForDeletion() ctrl.Result {
 	v.log.Info("Entering processing VolumeReplicationGroup for deletion")
 
-	defer v.log.Info("Exiting processing VolumeReplicationGroup")
+	defer v.log.Info("Exiting processing VolumeReplicationGroup for deletion")
 
 	if !containsString(v.instance.ObjectMeta.Finalizers, vrgFinalizerName) {
 		v.log.Info("Finalizer missing from resource", "finalizer", vrgFinalizerName)
