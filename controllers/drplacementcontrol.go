@@ -33,6 +33,9 @@ const (
 
 	// Annotation for the last cluster on which the application was running
 	LastAppDeploymentCluster = "drplacementcontrol.ramendr.openshift.io/last-app-deployment-cluster"
+
+	// Annotation for application namespace on the managed cluster
+	DRPCAppNamespace = "drplacementcontrol.ramendr.openshift.io/app-namespace"
 )
 
 var (
