@@ -622,6 +622,7 @@ simpler and faster to work with a minimal environment.
 - `demo.yaml` - interactive demo for exploring the `drenv` tool
 - `e2e.yaml` - example for testing integration with the e2e framework
 - `external.yaml` - example for using external clusters
+- `kubevirt.yaml` - for testing kubevirt and cdi addons
 - `minio.yaml` - for testing `minio` deployment
 - `ocm.yaml` - for testing `ocm` deployment
 - `rook.yaml` - for testing `rook` deployment
