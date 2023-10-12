@@ -608,6 +608,9 @@ The environments files are located in the `envs` directory.
 - `regional-dr-hubless.yaml` - for testing regional DR using a setup
   without a hub.
 
+- `regional-dr-kubevirt.yaml` - for testing regional DR for kubevirt
+  workloads.
+
 - `regional-dr-external.yaml.example` - A starting point for creating
    environment for testing regional DR using with external storage.
 
