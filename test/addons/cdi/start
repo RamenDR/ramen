@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import os
+import sys
+
+from drenv import kubectl
+
+NAMESPACE = "cdi"
+
+
+def deploy(cluster):
+    print("Deploying cdi operator")
+    kubectl.apply("--kustomize=operator", context=cluster)
+
+    print("Waiting until cdi-operator is rolled out")
+    kubectl.rollout(
+        "status",
+        "deploy/cdi-operator",
+        f"--namespace={NAMESPACE}",
+        "--timeout=300s",
+        context=cluster,
+    )
+
+    print("Deploying cdi cr")
+    kubectl.apply("--kustomize=cr", context=cluster)
+
+
+def wait(cluster):
+    print("Waiting until cdi cr is available")
+    kubectl.wait(
+        "cdi.cdi.kubevirt.io/cdi",
+        "--for=condition=available",
+        f"--namespace={NAMESPACE}",
+        "--timeout=300s",
+        context=cluster,
+    )
+
+
+if len(sys.argv) != 2:
+    print(f"Usage: {sys.argv[0]} cluster")
+    sys.exit(1)
+
+os.chdir(os.path.dirname(__file__))
+cluster = sys.argv[1]
+
+deploy(cluster)
+wait(cluster)
