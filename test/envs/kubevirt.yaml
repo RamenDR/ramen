@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Environment for testing kubvirt.
+---
+name: kubevirt
+profiles:
+  - name: kubevirt
+    driver: $vm
+    container_runtime: containerd
+    network: $network
+    cni: flannel
+    memory: "8g"
+    workers:
+      - addons:
+          - name: kubevirt
