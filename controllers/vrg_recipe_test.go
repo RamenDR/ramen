@@ -13,8 +13,10 @@ import (
 	"github.com/ramendr/ramen/controllers"
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -75,12 +77,9 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	}
 	hook := func(command ...string) *recipe.Hook {
 		return &recipe.Hook{
-			// Name: "h",
 			Type: "exec",
 			Ops: []*recipe.Operation{
 				{
-					// Name: "o",
-					// Container: "c"
 					Command: command,
 				},
 			},
@@ -135,16 +134,26 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	vrgCreate := func() error {
 		return k8sClient.Create(ctx, vrg)
 	}
-	vrgDelete := func() error {
-		return k8sClient.Delete(ctx, vrg)
+	vrgGet := func() error {
+		return apiReader.Get(ctx, types.NamespacedName{Namespace: vrg.Namespace, Name: vrg.Name}, vrg)
 	}
-	vrgGet := func() *ramen.VolumeReplicationGroup {
-		Expect(apiReader.Get(ctx, types.NamespacedName{Namespace: vrg.Namespace, Name: vrg.Name}, vrg)).To(Succeed())
+	vrgDelete := func() {
+		Expect(k8sClient.Delete(ctx, vrg)).To(Succeed())
+		Eventually(vrgGet).Should(MatchError(errors.NewNotFound(
+			schema.GroupResource{
+				Group:    ramen.GroupVersion.Group,
+				Resource: "volumereplicationgroups",
+			},
+			vrg.Name,
+		)))
+	}
+	vrgGetAndExpectSuccess := func() *ramen.VolumeReplicationGroup {
+		Expect(vrgGet()).To(Succeed())
 
 		return vrg
 	}
 	vrgPvcsGet := func() []ramen.ProtectedPVC {
-		return vrgGet().Status.ProtectedPVCs
+		return vrgGetAndExpectSuccess().Status.ProtectedPVCs
 	}
 	vrgPvcNameGet := func(pvc ramen.ProtectedPVC) types.NamespacedName {
 		return types.NamespacedName{Namespace: pvc.Namespace, Name: pvc.Name}
