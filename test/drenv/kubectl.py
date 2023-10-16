@@ -27,6 +27,13 @@ def config(*args, context=None):
     return _run("config", *args, context=context)
 
 
+def create(*args, context=None):
+    """
+    Run kubectl create ... and return the output.
+    """
+    return _run("create", *args, context=context)
+
+
 def get(*args, context=None):
     """
     Run kubectl get ... and return the output.
