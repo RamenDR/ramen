@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import os
+import sys
+
+from drenv import kubectl
+
+
+def test(cluster):
+    print("Deploying disk")
+    kubectl.apply("--kustomize=disk", context=cluster)
+
+    print("Waiting until pvc is bound")
+    kubectl.wait(
+        "pvc/test-pvc",
+        "--for=jsonpath={.status.phase}=Bound",
+        "--timeout=180s",
+        context=cluster,
+    )
+
+    print("Deletting disk")
+    kubectl.delete("--kustomize=disk", context=cluster)
+
+
+if len(sys.argv) != 2:
+    print(f"Usage: {sys.argv[0]} cluster")
+    sys.exit(1)
+
+os.chdir(os.path.dirname(__file__))
+cluster = sys.argv[1]
+
+test(cluster)
