@@ -13,7 +13,6 @@ import (
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/util"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -24,16 +23,15 @@ import (
 )
 
 var _ = Describe("DrpolicyController", func() {
+	drpolicyGet := func(drpolicy *ramen.DRPolicy) error {
+		return apiReader.Get(context.TODO(), types.NamespacedName{Name: drpolicy.Name}, drpolicy)
+	}
 	validatedConditionExpect := func(drpolicy *ramen.DRPolicy, status metav1.ConditionStatus,
 		messageMatcher gomegaTypes.GomegaMatcher,
 	) {
 		Eventually(
 			func(g Gomega) {
-				g.Expect(apiReader.Get(
-					context.TODO(),
-					types.NamespacedName{Name: drpolicy.Name},
-					drpolicy,
-				)).To(Succeed())
+				g.Expect(drpolicyGet(drpolicy)).To(Succeed())
 				g.Expect(drpolicy.Status.Conditions).To(MatchElements(
 					func(element interface{}) string {
 						return element.(metav1.Condition).Type
@@ -41,12 +39,12 @@ var _ = Describe("DrpolicyController", func() {
 					IgnoreExtras,
 					Elements{
 						ramen.DRPolicyValidated: MatchAllFields(Fields{
-							`Type`:               Ignore(),
-							`Status`:             Equal(status),
-							`ObservedGeneration`: Equal(drpolicy.Generation),
-							`LastTransitionTime`: Ignore(),
-							`Reason`:             Ignore(),
-							`Message`:            messageMatcher,
+							"Type":               Ignore(),
+							"Status":             Equal(status),
+							"ObservedGeneration": Equal(drpolicy.Generation),
+							"LastTransitionTime": Ignore(),
+							"Reason":             Ignore(),
+							"Message":            messageMatcher,
 						}),
 					},
 				))
@@ -61,7 +59,7 @@ var _ = Describe("DrpolicyController", func() {
 	drpolicyDeleteAndConfirm := func(drpolicy *ramen.DRPolicy) {
 		Expect(k8sClient.Delete(context.TODO(), drpolicy)).To(Succeed())
 		Eventually(func() bool {
-			return errors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{Name: drpolicy.Name}, drpolicy))
+			return errors.IsNotFound(drpolicyGet(drpolicy))
 		}, timeout, interval).Should(BeTrue())
 	}
 	drpolicyDelete := func(drpolicy *ramen.DRPolicy) {
@@ -100,7 +98,7 @@ var _ = Describe("DrpolicyController", func() {
 
 		return foundPlRules
 	}
-	vaildateSecretDistribution := func(drPolicies []ramen.DRPolicy) {
+	validateSecretDistribution := func(drPolicies []ramen.DRPolicy) {
 		plRules := getPlRuleForSecrets()
 
 		// If no policies are present, expect no secret placement rules
@@ -138,48 +136,31 @@ var _ = Describe("DrpolicyController", func() {
 		}
 	}
 
-	clusters := [...]string{
+	clusterNames := [...]string{
 		"drp-cluster0",
 		"drp-cluster1",
 		"drp-cluster2",
-		"drp-cluster-late-create-0",
-		"drp-cluster-late-create-1",
 	}
-	drClusters := []ramen.DRCluster{}
-	populateDRClusters := func() {
-		drClusters = nil
-		drClusters = append(drClusters,
-			ramen.DRCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: "drp-cluster0"},
+	createDRClustersAndDeferCleanup := func(from, to int, drclusterCleanup func(*ramen.DRCluster)) []ramen.DRCluster {
+		drClusters := [...]ramen.DRCluster{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterNames[0]},
 				Spec:       ramen.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "east"},
 			},
-			ramen.DRCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: "drp-cluster1"},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterNames[1]},
 				Spec:       ramen.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "west"},
 			},
-			ramen.DRCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: "drp-cluster2"},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterNames[2]},
 				Spec:       ramen.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "east"},
 			},
-			ramen.DRCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: "drp-cluster-late-create-0"},
-				Spec:       ramen.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "east"},
-			},
-			ramen.DRCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: "drp-cluster-late-create-1"},
-				Spec:       ramen.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "west"},
-			},
-		)
-	}
-
-	createDRClusters := func(from, to int) {
+		}
 		for idx := range drClusters[from:to] {
 			drcluster := &drClusters[idx+from]
-			Expect(k8sClient.Create(
-				context.TODO(),
-				&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: drcluster.Name}},
-			)).To(Succeed())
+			namespaceCreateAndDeferDeleteOrConfirmAlreadyExists(drcluster.Name)
 			Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+			DeferCleanup(drclusterCleanup, drcluster)
 			updateDRClusterManifestWorkStatus(drcluster.Name)
 			drclusterConditionExpectEventually(
 				drcluster,
@@ -190,95 +171,57 @@ var _ = Describe("DrpolicyController", func() {
 				ramen.DRClusterValidated,
 			)
 		}
+
+		return drClusters[from:to]
+	}
+	drclusterDelete := func(drcluster *ramen.DRCluster) {
+		Expect(k8sClient.Delete(context.TODO(), drcluster)).To(Succeed())
+		Eventually(apiReader.Get).WithArguments(context.TODO(), types.NamespacedName{Name: drcluster.Name}, drcluster).
+			Should(MatchError(errors.NewNotFound(
+				schema.GroupResource{Group: ramen.GroupVersion.Group, Resource: "drclusters"},
+				drcluster.Name,
+			)))
+	}
+	createDRClustersAndDeferDelete := func(from, to int) []ramen.DRCluster {
+		return createDRClustersAndDeferCleanup(from, to, drclusterDelete)
+	}
+	createDRClusters := func(from, to int) []ramen.DRCluster {
+		return createDRClustersAndDeferCleanup(from, to, func(*ramen.DRCluster) {})
 	}
 
-	drpolicies := [...]ramen.DRPolicy{
+	drpoliciesDefault := [...]ramen.DRPolicy{
 		{
 			ObjectMeta: metav1.ObjectMeta{Name: "drpolicy0"},
-			Spec:       ramen.DRPolicySpec{DRClusters: clusters[0:2], SchedulingInterval: `00m`},
+			Spec:       ramen.DRPolicySpec{DRClusters: clusterNames[0:2], SchedulingInterval: "00m"},
 		},
 		{
 			ObjectMeta: metav1.ObjectMeta{Name: "drpolicy1"},
-			Spec:       ramen.DRPolicySpec{DRClusters: clusters[1:3], SchedulingInterval: `9999999d`},
+			Spec:       ramen.DRPolicySpec{DRClusters: clusterNames[1:3], SchedulingInterval: "9999999d"},
 		},
 	}
-	var drpolicyObjectMetas [len(drpolicies)]metav1.ObjectMeta
-	func() {
-		for i := range drpolicies {
-			drpolicyObjectMetas[i] = drpolicies[i].ObjectMeta
-		}
-	}()
-	drpolicyObjectMetaReset := func(i uint) {
-		drpolicies[i].ObjectMeta = drpolicyObjectMetas[i]
-	}
+	var drpolicies [len(drpoliciesDefault)]ramen.DRPolicy
 	var drpolicy *ramen.DRPolicy
-	var drpolicyNumber uint
-	Specify("initialize tests", func() {
-		populateDRClusters()
-		createDRClusters(0, 3)
-	})
-	Specify(`a drpolicy`, func() {
-		drpolicyNumber = 0
-		drpolicy = &drpolicies[drpolicyNumber]
+	BeforeEach(OncePerOrdered, func() {
+		drpolicies = drpoliciesDefault
+		drpolicy = &drpolicies[0]
 	})
 
-	When("a drpolicy is created specifying a cluster name and a namespace of the same name does not exist", func() {
-		It("should set its validated status condition's status to false", func() {
-			drp := drpolicy.DeepCopy()
-			drp.Spec.DRClusters = []string{"missing", "drp-cluster0"}
-			Expect(k8sClient.Create(context.TODO(), drp)).To(Succeed())
-			validatedConditionExpect(drp, metav1.ConditionFalse, Ignore())
+	When("a drpolicy creation request is submitted, and its", func() {
+		var err error
+		JustBeforeEach(OncePerOrdered, func() {
+			err = k8sClient.Create(context.TODO(), drpolicy)
+			DeferCleanup(func() {
+				validateSecretDistribution(nil)
+			})
 		})
-	})
-	Specify("drpolicy delete", func() {
-		drpolicyDeleteAndConfirm(drpolicy)
-		vaildateSecretDistribution(nil)
-	})
-	Specify("a drpolicy", func() {
-		drpolicyObjectMetaReset(drpolicyNumber)
-	})
-	When("a 1st drpolicy is created", func() {
-		It("should create a secret placement rule for each cluster specified in a 1st drpolicy", func() {
-			drpolicyCreate(drpolicy)
-			validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
-			vaildateSecretDistribution(drpolicies[0:1])
-		})
-	})
-	When("a 2nd drpolicy is created specifying some clusters in a 1st drpolicy and some not", func() {
-		It("should create a secret placement rule for each cluster specified in a 2nd drpolicy but not a 1st drpolicy",
-			func() {
-				drpolicyCreate(&drpolicies[1])
-				validatedConditionExpect(&drpolicies[1], metav1.ConditionTrue, Ignore())
-				vaildateSecretDistribution(drpolicies[0:2])
-			},
-		)
-	})
-	When("a 1st drpolicy is deleted", func() {
-		It("should delete a secret placement rule for each cluster specified in a 1st drpolicy but not a 2nd drpolicy",
-			func() {
-				drpolicyDelete(drpolicy)
-				vaildateSecretDistribution(drpolicies[1:2])
-			},
-		)
-	})
-	When("a 2nd drpolicy is deleted", func() {
-		It("should delete a secret placement rule for each cluster specified in a 2nd drpolicy", func() {
-			drpolicyDelete(&drpolicies[1])
-			vaildateSecretDistribution(nil)
-		})
-	})
-	Specify(`a drpolicy`, func() {
-		drpolicyObjectMetaReset(drpolicyNumber)
-	})
-	When(`a drpolicy creation request contains an invalid scheduling interval`, func() {
-		It(`should fail`, func() {
-			err := func(value string) *errors.StatusError {
-				path := field.NewPath(`spec`, `schedulingInterval`)
+		Context("scheduling interval value is", func() {
+			invalid := func(value string) *errors.StatusError {
+				path := field.NewPath("spec", "schedulingInterval")
 
 				return errors.NewInvalid(
 					schema.GroupKind{
 						Group: ramen.GroupVersion.Group,
-						Kind:  `DRPolicy`,
+						Kind:  "DRPolicy",
 					},
 					drpolicy.Name,
 					field.ErrorList{
@@ -287,7 +230,7 @@ var _ = Describe("DrpolicyController", func() {
 							value,
 							validationErrors.FailedPattern(
 								path.String(),
-								`body`,
+								"body",
 								`^\d+[mhd]$`,
 								value,
 							).Error(),
@@ -295,62 +238,134 @@ var _ = Describe("DrpolicyController", func() {
 					},
 				)
 			}
-			drp := drpolicy.DeepCopy()
-			drp.Spec.SchedulingInterval = `3s`
-			Expect(k8sClient.Create(context.TODO(), drp)).To(MatchError(err(drp.Spec.SchedulingInterval)))
-			drp.Spec.SchedulingInterval = `0`
-			Expect(k8sClient.Create(context.TODO(), drp)).To(MatchError(err(drp.Spec.SchedulingInterval)))
+			Context("3s", func() {
+				BeforeEach(func() {
+					drpolicy.Spec.SchedulingInterval = "3s"
+				})
+				It("denies it", func() {
+					Expect(err).To(MatchError(invalid(drpolicy.Spec.SchedulingInterval)))
+				})
+			})
+			Context("0", func() {
+				BeforeEach(func() {
+					drpolicy.Spec.SchedulingInterval = "0"
+				})
+				It("denies it", func() {
+					Expect(err).To(MatchError(invalid(drpolicy.Spec.SchedulingInterval)))
+				})
+			})
+		})
+		Context("drclusters value is", func() {
+			Context("nil", func() {
+				BeforeEach(func() {
+					drpolicy.Spec.DRClusters = nil
+				})
+				It("fails the request specifying the absent required drclusters field", func() {
+					Expect(err).To(MatchError(errors.NewInvalid(
+						schema.GroupKind{
+							Group: ramen.GroupVersion.Group,
+							Kind:  "DRPolicy",
+						},
+						drpolicy.Name,
+						field.ErrorList{
+							field.Required(
+								field.NewPath("spec", "drClusters"),
+								"",
+							),
+						},
+					)))
+				})
+			})
+			Context("admissible, but", func() {
+				JustBeforeEach(OncePerOrdered, func() {
+					Expect(err).To(BeNil())
+				})
+				Context("contains undefined drclusters", Ordered, func() {
+					Context("initially", func() {
+						It("sets its validated status condition's status to false", func() {
+							validatedConditionExpect(drpolicy, metav1.ConditionFalse, Ignore())
+						})
+					})
+					var drcluster1 *ramen.DRCluster
+					Context("then one is defined", func() {
+						JustBeforeEach(OncePerOrdered, func() {
+							drcluster1 = &createDRClusters(1, 2)[0]
+						})
+						It("sets its validated status condition's status to false", func() {
+							validatedConditionExpect(drpolicy, metav1.ConditionFalse, Ignore())
+						})
+					})
+					var drcluster0 *ramen.DRCluster
+					Context("then the last one is defined", func() {
+						JustBeforeEach(OncePerOrdered, func() {
+							drcluster0 = &createDRClusters(0, 1)[0]
+						})
+						It("sets its validated status condition's status to true", func() {
+							validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
+						})
+					})
+					AfterAll(func() {
+						drpolicyDelete(drpolicy)
+						drclusterDelete(drcluster1)
+						drclusterDelete(drcluster0)
+					})
+				})
+				Context("empty", func() {
+					BeforeEach(func() {
+						drpolicy.Spec.DRClusters = []string{}
+						createDRClustersAndDeferDelete(0, 2)
+					})
+					JustBeforeEach(func() {
+						DeferCleanup(drpolicyDelete, drpolicy)
+					})
+					It("sets its validated status condition's status to false", func() {
+						validatedConditionExpect(drpolicy, metav1.ConditionFalse, Ignore())
+					})
+				})
+			})
 		})
 	})
-
-	When("a drpolicy having no drclusters", func() {
-		It("should fail to create drpolicy", func() {
-			drp := drpolicy.DeepCopy()
-			drp.Spec.DRClusters = nil
-			err := func() *errors.StatusError {
-				path := field.NewPath("spec", "drClusters")
-
-				return errors.NewInvalid(
-					schema.GroupKind{
-						Group: ramen.GroupVersion.Group,
-						Kind:  "DRPolicy",
-					},
-					drp.Name,
-					field.ErrorList{
-						field.Required(
-							path,
-							"",
-						),
-					},
-				)
-			}()
-			Expect(k8sClient.Create(context.TODO(), drp)).To(MatchError(err))
+	Context("drpolicies sharing a drcluster", Ordered, func() {
+		BeforeAll(func() {
+			createDRClustersAndDeferDelete(0, 3)
 		})
-	})
-	When("a drpolicy is having an empty list of DRClusters", func() {
-		It("should set its validated status condition's status to false", func() {
-			drp := drpolicy.DeepCopy()
-			drp.Spec.DRClusters = []string{}
-			Expect(k8sClient.Create(context.TODO(), drp)).To(Succeed())
-			validatedConditionExpect(drp, metav1.ConditionFalse, Ignore())
-			drpolicyDeleteAndConfirm(drp)
-			vaildateSecretDistribution(nil)
+		When("a 1st drpolicy is created", func() {
+			BeforeAll(func() {
+				drpolicyCreate(drpolicy)
+			})
+			It("sets its validated status condition's status to true", func() {
+				validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
+			})
+			It("creates a secret placement rule for each cluster specified in a 1st drpolicy", func() {
+				validateSecretDistribution(drpolicies[0:1])
+			})
 		})
-	})
-	When("a drpolicy is created before DRClusters are created", func() {
-		It("should start as invalidated and transition to validated", func() {
-			drp := drpolicy.DeepCopy()
-			drp.Spec.DRClusters = clusters[3:5]
-			By("creating the DRPolicy first")
-			Expect(k8sClient.Create(context.TODO(), drp)).To(Succeed())
-			By("ensuring DRPolicy is not validated")
-			validatedConditionExpect(drp, metav1.ConditionFalse, Ignore())
-			By("creating the DRClusters")
-			createDRClusters(3, 5)
-			By("ensuring DRPolicy is validated")
-			validatedConditionExpect(drp, metav1.ConditionTrue, Ignore())
-			drpolicyDeleteAndConfirm(drp)
-			vaildateSecretDistribution(nil)
+		When("a 2nd drpolicy is created specifying some clusters in a 1st drpolicy and some not", func() {
+			BeforeAll(func() {
+				drpolicyCreate(&drpolicies[1])
+			})
+			It("sets its validated status condition's status to true", func() {
+				validatedConditionExpect(&drpolicies[1], metav1.ConditionTrue, Ignore())
+			})
+			It("creates a secret placement rule for each cluster specified in a 2nd drpolicy but not a 1st drpolicy", func() {
+				validateSecretDistribution(drpolicies[0:2])
+			})
+		})
+		When("a 1st drpolicy is deleted", func() {
+			BeforeAll(func() {
+				drpolicyDelete(drpolicy)
+			})
+			It("deletes a secret placement rule for each cluster specified in a 1st drpolicy but not a 2nd drpolicy", func() {
+				validateSecretDistribution(drpolicies[1:2])
+			})
+		})
+		When("a 2nd drpolicy is deleted", func() {
+			BeforeAll(func() {
+				drpolicyDelete(&drpolicies[1])
+			})
+			It("deletes a secret placement rule for each cluster specified in a 2nd drpolicy", func() {
+				validateSecretDistribution(nil)
+			})
 		})
 	})
 })

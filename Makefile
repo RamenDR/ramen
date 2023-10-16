@@ -181,6 +181,9 @@ test-drpc: generate manifests envtest
 test-drcluster: generate manifests envtest
 	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus DRClusterController
 
+test-drpolicy: generate manifests envtest
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus Drpolicy
+
 test-util: generate manifests envtest
 	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers/util -coverprofile cover.out $(GO_TEST_GINKGO_ARGS)
 
