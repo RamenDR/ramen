@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import os
+import sys
+import time
+
+from drenv import kubectl
+from drenv import virtctl
+
+NAMESPACE = "kubevirt-test"
+
+
+def test(cluster):
+    create_namespace(cluster)
+    create_secret(cluster)
+    create_vm(cluster)
+    wait_until_vm_is_ready(cluster)
+    verify_ssh(cluster)
+    delete_vm(cluster)
+    delete_namespace(cluster)
+
+
+def create_namespace(clsuter):
+    print(f"Creating namespace '{NAMESPACE}'")
+    ns = kubectl.create(
+        "namespace",
+        NAMESPACE,
+        "--dry-run=client",
+        "--output=yaml",
+    )
+    kubectl.apply("--filename=-", input=ns, context=cluster)
+
+
+def delete_namespace(cluster):
+    print(f"Deletting namespace '{NAMESPACE}'")
+    kubectl.delete(f"ns/{NAMESPACE}", context=cluster)
+
+
+def create_secret(cluster):
+    """
+    Create a secret with current user public key for accessing VM via ssh using
+    access credentials API:
+    https://kubevirt.io/user-guide/virtual_machines/accessing_virtual_machines/#static-ssh-public-key-injection-via-cloud-init
+    """
+    public_key = os.path.expanduser("~/.ssh/id_rsa.pub")
+    print(
+        f"Creating secret my-public-key from '{public_key}' in namespace '{NAMESPACE}'"
+    )
+    secret = kubectl.create(
+        "secret",
+        "generic",
+        "my-public-key",
+        f"--from-file=key1={public_key}",
+        "--dry-run=client",
+        "--output=yaml",
+    )
+    kubectl.apply(
+        "--filename=-",
+        f"--namespace={NAMESPACE}",
+        input=secret,
+        context=cluster,
+    )
+
+
+def create_vm(cluster):
+    print(f"Deploying test vm in namespace '{NAMESPACE}'")
+    kubectl.apply("--filename=vm.yaml", f"--namespace={NAMESPACE}", context=cluster)
+
+
+def wait_until_vm_is_ready(cluster):
+    print("Waiting until test vm is ready")
+    kubectl.wait(
+        "vm/testvm",
+        "--for=condition=ready",
+        f"--namespace={NAMESPACE}",
+        "--timeout=180s",
+        context=cluster,
+    )
+
+
+def delete_vm(cluster):
+    print(f"Deleting test vm in namespace '{NAMESPACE}'")
+    kubectl.delete("--filename=vm.yaml", f"--namespace={NAMESPACE}", context=cluster)
+
+
+def verify_ssh(cluster):
+    """
+    Verify that we can run commands via ssh.
+    """
+    delay = 5
+
+    # When running in a vm in the blr lab we need 16 retires. Locally the
+    # second attempt succeeds.
+    retries = 30
+
+    for i in range(retries):
+        time.sleep(delay)
+        print("Running 'hostname' inside the VM via ssh")
+        try:
+            out = virtctl.ssh(
+                "testvm",
+                "hostname",
+                username="cirros",
+                namespace=NAMESPACE,
+                known_hosts="",  # Skip host key verification.
+                context=cluster,
+            )
+        except Exception as e:
+            print(f"Attempt {i+1}/{retries} failed: {e}")
+            print(f"Retrying in {delay} seconds...")
+        else:
+            print(f"Attempt {i+1}/{retries} succeeded")
+            print(out)
+            break
+    else:
+        raise RuntimeError("Failed to connect to VM via ssh")
+
+
+if len(sys.argv) != 2:
+    print(f"Usage: {sys.argv[0]} cluster")
+    sys.exit(1)
+
+os.chdir(os.path.dirname(__file__))
+cluster = sys.argv[1]
+
+test(cluster)
