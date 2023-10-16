@@ -111,7 +111,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	}
 	vrgDefine := func() {
 		vrg = &ramen.VolumeReplicationGroup{
-			ObjectMeta: metav1.ObjectMeta{Namespace: nss[0].Name, Name: "a"},
+			ObjectMeta: metav1.ObjectMeta{Namespace: ramenNamespace, Name: "a"},
 			Spec: ramen.VolumeReplicationGroupSpec{
 				S3Profiles:       []string{controllers.NoS3StoreAvailable},
 				ReplicationState: ramen.Primary,
@@ -220,24 +220,40 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 				BeforeEach(func() {
 					vrgRecipeRefDefine(r.Name)
 				})
-				Context("without a volume selector", func() {
+				Context("for an administrator namespace", func() {
 					BeforeEach(func() {
-						DeferCleanup(vrgDelete)
+						vrg.Namespace = ramenNamespace
 					})
-					It("allows it", func() { Expect(err).ToNot(HaveOccurred()) })
-				})
-				Context("that references other namespaces", func() {
-					BeforeEach(func() {
-						recipeVolumesDefine(volumes(nss[1].Name))
-					})
-					Context("that the requestor has permission to create VRGs in", func() {
+					Context("whose recipe references another namespace", func() {
+						BeforeEach(func() {
+							recipeVolumesDefine(volumes(nss[0].Name))
+							DeferCleanup(vrgDelete)
+						})
 						It("allows it", func() { Expect(err).ToNot(HaveOccurred()) })
 					})
-					Context("that the requestor does not have permission to create VRGs in", func() {
-						// TODO envTest.AddUser
-						// TODO give user permission to update VRG in nss[0], but not nss[1]
-						// TODO impersonate user for client.Create(vrg)
-						// It("denies it", func() { Expect(err).To(HaveOccurred()) })
+				})
+				Context("for a non-administrator namespace", func() {
+					BeforeEach(func() {
+						vrg.Namespace = nss[0].Name
+					})
+					Context("whose recipe references no namespaces", func() {
+						BeforeEach(func() {
+							DeferCleanup(vrgDelete)
+						})
+						It("allows it", func() { Expect(err).ToNot(HaveOccurred()) })
+					})
+					Context("whose recipe references the same namespace only", func() {
+						BeforeEach(func() {
+							recipeVolumesDefine(volumes(vrg.Namespace))
+							DeferCleanup(vrgDelete)
+						})
+						It("allows it", func() { Expect(err).ToNot(HaveOccurred()) })
+					})
+					Context("whose recipe references another namespace", func() {
+						BeforeEach(func() {
+							recipeVolumesDefine(volumes(nss[1].Name))
+						})
+						It("denies it", func() { Expect(err).To(HaveOccurred()) })
 					})
 				})
 			})
