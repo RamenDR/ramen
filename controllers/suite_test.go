@@ -214,6 +214,7 @@ var _ = BeforeSuite(func() {
 	}
 	ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = true
 	ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = true
+	ramenConfig.KubeObjectProtection.ExtraVrgNamespacesFeatureEnabled = true
 	configMap, err = ramencontrollers.ConfigMapNew(
 		ramenNamespace,
 		ramencontrollers.HubOperatorConfigMapName,

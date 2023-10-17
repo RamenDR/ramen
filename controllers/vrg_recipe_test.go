@@ -21,6 +21,15 @@ import (
 )
 
 var _ = Describe("VolumeReplicationGroupRecipe", func() {
+	extraVrgNamespacesFeatureEnabledSetAndDeferRestore := func(enable bool) {
+		enabled := ramenConfig.KubeObjectProtection.ExtraVrgNamespacesFeatureEnabled
+		ramenConfig.KubeObjectProtection.ExtraVrgNamespacesFeatureEnabled = enable
+		configMapUpdate()
+		DeferCleanup(func() {
+			ramenConfig.KubeObjectProtection.ExtraVrgNamespacesFeatureEnabled = enabled
+			configMapUpdate()
+		})
+	}
 	var (
 		nss []*corev1.Namespace
 		r   *recipe.Recipe
@@ -173,7 +182,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 		Eventually(vrgPvcsGet).Should(ConsistOf(vrgPvcNamesMatchPvcs(pvcs...)))
 	}
 	vrgPvcSelectorGet := func() controllers.PvcSelector {
-		pvcSelector, err := controllers.GetPVCSelector(ctx, apiReader, *vrg, testLogger)
+		pvcSelector, err := controllers.GetPVCSelector(ctx, apiReader, *vrg, *ramenConfig, testLogger)
 		Expect(err).ToNot(HaveOccurred())
 
 		return pvcSelector
@@ -227,9 +236,19 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 					Context("whose recipe references another namespace", func() {
 						BeforeEach(func() {
 							recipeVolumesDefine(volumes(nss[0].Name))
-							DeferCleanup(vrgDelete)
 						})
-						It("allows it", func() { Expect(err).ToNot(HaveOccurred()) })
+						Context("with extra-VRG namespaces feature disabled", func() {
+							BeforeEach(func() {
+								extraVrgNamespacesFeatureEnabledSetAndDeferRestore(false)
+							})
+							It("denies it", func() { Expect(err).To(HaveOccurred()) })
+						})
+						Context("with extra-VRG namespaces feature enabled", func() {
+							BeforeEach(func() {
+								DeferCleanup(vrgDelete)
+							})
+							It("allows it", func() { Expect(err).ToNot(HaveOccurred()) })
+						})
 					})
 				})
 				Context("for a non-administrator namespace", func() {

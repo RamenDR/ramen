@@ -269,10 +269,17 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 		return []reconcile.Request{}
 	}
 
+	_, ramenConfig, err := ConfigMapGet(context.TODO(), reader)
+	if err != nil {
+		log.Error(err, "Failed to get Ramen config")
+
+		return []reconcile.Request{}
+	}
+
 	for _, vrg := range vrgs.Items {
 		log1 := log.WithValues("vrg", vrg.Name)
 
-		pvcSelector, err := GetPVCSelector(context.TODO(), reader, vrg, log)
+		pvcSelector, err := GetPVCSelector(context.TODO(), reader, vrg, *ramenConfig, log)
 		if err != nil {
 			continue
 		}
@@ -455,7 +462,7 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 	{
 		var err error
 
-		v.recipeElements, err = RecipeElementsGet(v.ctx, v.reconciler.Client, *v.instance, v.log)
+		v.recipeElements, err = RecipeElementsGet(v.ctx, v.reconciler.Client, *v.instance, *v.ramenConfig, v.log)
 		if err != nil {
 			return v.invalid(err, "Failed to get recipe", true) // TODO watch recipes
 		}
