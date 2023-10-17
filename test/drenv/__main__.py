@@ -15,6 +15,7 @@ import yaml
 import drenv
 from . import cluster
 from . import commands
+from . import containerd
 from . import envfile
 from . import minikube
 from . import ramen
@@ -140,6 +141,9 @@ def start_cluster(profile, hooks=(), verbose=False, **options):
     else:
         is_restart = minikube_profile_exists(profile["name"])
         start_minikube_cluster(profile, verbose=verbose)
+        if profile["containerd"]:
+            logging.info("[%s] Configuring containerd", profile["name"])
+            containerd.configure(profile)
         if is_restart:
             wait_for_deployments(profile)
 

@@ -106,6 +106,7 @@ def _validate_profile(profile, addons_root):
     profile.setdefault("ser", [])
     profile.setdefault("service_cluster_ip_range", None)
     profile.setdefault("extra_config", [])
+    profile.setdefault("containerd", None)
     profile.setdefault("workers", [])
 
     _validate_platform_defaults(profile)

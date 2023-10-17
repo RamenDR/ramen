@@ -86,6 +86,14 @@ def delete(profile):
     _watch("delete", profile=profile)
 
 
+def cp(profile, src, dst):
+    _watch("cp", src, dst, profile=profile)
+
+
+def ssh(profile, command):
+    _watch("ssh", command, profile=profile)
+
+
 def _run(command, *args, profile=None, output=None):
     cmd = ["minikube", command]
     if profile:

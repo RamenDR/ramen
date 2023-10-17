@@ -490,6 +490,8 @@ $ drenv delete envs/example.yaml
     - `extra_config`: List of extra config key=value. Each item adds
       `--extra-config` minikube option. See `minikube start --help` to
       see the possible keys and values.
+    - `containerd`: Optional containerd configuration object. See
+      `containerd config default` for available options.
     - `workers`: Optional list of workers to run when starting a
       profile. Use multiple workers to run scripts in parallel.
         - `name`: Optional worker name
@@ -568,6 +570,31 @@ relative path for resources in the same directory:
 ```python
 kubectl.apply("--filename=deployment.yaml", context=cluster)
 ```
+
+#### containerd options
+
+To configure containerd you can add a configuration object matching
+containerd toml structure.
+
+For example to enable this option containerd toml:
+
+```toml
+[plugins]
+  [plugins."io.containerd.grpc.v1.cri"]
+    device_ownership_from_security_context = true
+```
+
+Add this configuration to the profile:
+
+```yaml
+containerd:
+  plugins:
+    io.containerd.grpc.v1.cri:
+      device_ownership_from_security_context: true
+```
+
+When set, contained configuration is merged into the current
+configuration in `/etc/containerd/config.toml` in the node.
 
 ## Environment files
 
