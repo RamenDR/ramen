@@ -459,16 +459,13 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 		return v.invalid(err, "VolumeReplicationGroup mode is invalid", false)
 	}
 
-	{
-		var err error
-
-		v.recipeElements, err = RecipeElementsGet(v.ctx, v.reconciler.Client, *v.instance, *v.ramenConfig, v.log)
-		if err != nil {
-			return v.invalid(err, "Failed to get recipe", true) // TODO watch recipes
-		}
-
-		v.log.Info("Recipe", "elements", v.recipeElements)
+	if err := RecipeElementsGet(
+		v.ctx, v.reconciler.Client, *v.instance, *v.ramenConfig, v.log, &v.recipeElements,
+	); err != nil {
+		return v.invalid(err, "Failed to get recipe", true) // TODO watch recipes
 	}
+
+	v.log.Info("Recipe", "elements", v.recipeElements)
 
 	if err := v.updatePVCList(); err != nil {
 		return v.invalid(err, "Failed to process list of PVCs to protect", true)
