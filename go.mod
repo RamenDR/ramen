@@ -169,7 +169,37 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 )
 
-replace k8s.io/client-go => k8s.io/client-go v0.26.4
+// replace directives to workaround the go.mod issues arising from the
+// dependencies importing k8s.io/kubernetes instead of importing specific
+// packages from k8s.io. One such dependency is argo-cd. See
+// https://github.com/argoproj/argo-cd/issues/4055
+replace (
+	k8s.io/api v0.0.0 => k8s.io/api v0.26.4
+	k8s.io/apiextensions-apiserver v0.0.0 => k8s.io/apiextensions-apiserver v0.26.4
+	k8s.io/apimachinery v0.0.0 => k8s.io/apimachinery v0.26.4
+	k8s.io/apiserver v0.0.0 => k8s.io/apiserver v0.26.4
+	k8s.io/cli-runtime v0.0.0 => k8s.io/cli-runtime v0.26.4
+	k8s.io/client-go => k8s.io/client-go v0.26.4
+	k8s.io/cloud-provider v0.0.0 => k8s.io/cloud-provider v0.26.4
+	k8s.io/cluster-bootstrap v0.0.0 => k8s.io/cluster-bootstrap v0.26.4
+	k8s.io/code-generator v0.0.0 => k8s.io/code-generator v0.26.4
+	k8s.io/component-base v0.0.0 => k8s.io/component-base v0.26.4
+	k8s.io/component-helpers v0.0.0 => k8s.io/component-helpers v0.26.4
+	k8s.io/controller-manager v0.0.0 => k8s.io/controller-manager v0.26.4
+	k8s.io/cri-api v0.0.0 => k8s.io/cri-api v0.26.4
+	k8s.io/csi-translation-lib v0.0.0 => k8s.io/csi-translation-lib v0.26.4
+	k8s.io/kube-aggregator v0.0.0 => k8s.io/kube-aggregator v0.26.4
+	k8s.io/kube-controller-manager v0.0.0 => k8s.io/kube-controller-manager v0.26.4
+	k8s.io/kube-proxy v0.0.0 => k8s.io/kube-proxy v0.26.4
+	k8s.io/kube-scheduler v0.0.0 => k8s.io/kube-scheduler v0.26.4
+	k8s.io/kubectl v0.0.0 => k8s.io/kubectl v0.26.4
+	k8s.io/kubelet v0.0.0 => k8s.io/kubelet v0.26.4
+	k8s.io/legacy-cloud-providers v0.0.0 => k8s.io/legacy-cloud-providers v0.26.4
+	k8s.io/metrics v0.0.0 => k8s.io/metrics v0.26.4
+	k8s.io/mount-utils v0.0.0 => k8s.io/mount-utils v0.26.4
+	k8s.io/pod-security-admission v0.0.0 => k8s.io/pod-security-admission v0.26.4
+	k8s.io/sample-apiserver v0.0.0 => k8s.io/sample-apiserver v0.26.4
+)
 
 replace (
 	github.com/open-cluster-management-io/api => open-cluster-management.io/api v0.10.0
