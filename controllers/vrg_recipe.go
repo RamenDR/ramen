@@ -6,11 +6,12 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 
 	"github.com/go-logr/logr"
-	"github.com/pkg/errors"
+	pkgerrors "github.com/pkg/errors"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/kubeobjects"
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
@@ -39,9 +40,10 @@ func captureWorkflowDefault(vrg ramen.VolumeReplicationGroup) []kubeobjects.Capt
 func recoverWorkflowDefault() []kubeobjects.RecoverSpec { return []kubeobjects.RecoverSpec{{}} }
 
 func GetPVCSelector(ctx context.Context, reader client.Reader, vrg ramen.VolumeReplicationGroup,
+	ramenConfig ramen.RamenConfig,
 	log logr.Logger,
 ) (PvcSelector, error) {
-	recipeElements, err := recipeVolumesAndOptionallyWorkflowsGet(ctx, reader, vrg, log,
+	recipeElements, err := recipeVolumesAndOptionallyWorkflowsGet(ctx, reader, vrg, ramenConfig, log,
 		func(recipe.Recipe, *RecipeElements, ramen.VolumeReplicationGroup) error { return nil },
 	)
 
@@ -49,12 +51,14 @@ func GetPVCSelector(ctx context.Context, reader client.Reader, vrg ramen.VolumeR
 }
 
 func RecipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.VolumeReplicationGroup,
+	ramenConfig ramen.RamenConfig,
 	log logr.Logger,
 ) (RecipeElements, error) {
-	return recipeVolumesAndOptionallyWorkflowsGet(ctx, reader, vrg, log, recipeWorkflowsGet)
+	return recipeVolumesAndOptionallyWorkflowsGet(ctx, reader, vrg, ramenConfig, log, recipeWorkflowsGet)
 }
 
 func recipeVolumesAndOptionallyWorkflowsGet(ctx context.Context, reader client.Reader, vrg ramen.VolumeReplicationGroup,
+	ramenConfig ramen.RamenConfig,
 	log logr.Logger, workflowsGet func(recipe.Recipe, *RecipeElements, ramen.VolumeReplicationGroup) error,
 ) (RecipeElements, error) {
 	if vrg.Spec.KubeObjectProtection == nil {
@@ -76,11 +80,15 @@ func recipeVolumesAndOptionallyWorkflowsGet(ctx context.Context, reader client.R
 		Namespace: vrg.Spec.KubeObjectProtection.RecipeRef.Namespace,
 		Name:      vrg.Spec.KubeObjectProtection.RecipeRef.Name,
 	}, &recipe); err != nil {
-		return RecipeElements{}, errors.Wrap(err, "recipe get")
+		return RecipeElements{}, pkgerrors.Wrap(err, "recipe get")
 	}
 
 	if err := RecipeParametersExpand(&recipe, vrg.Spec.KubeObjectProtection.RecipeParameters, log); err != nil {
-		return RecipeElements{}, errors.Wrap(err, "recipe parameters expand")
+		return RecipeElements{}, pkgerrors.Wrap(err, "recipe parameters expand")
+	}
+
+	if response := namespacesAllowed(vrg, recipeNamespaceNames(recipe), ramenConfig); !response.Allowed {
+		return RecipeElements{}, errors.New(response.Result.Message)
 	}
 
 	recipeElements := RecipeElements{
@@ -98,7 +106,7 @@ func recipeWorkflowsGet(recipe recipe.Recipe, recipeElements *RecipeElements, vr
 	} else {
 		recipeElements.CaptureWorkflow, err = getCaptureGroups(recipe)
 		if err != nil {
-			return errors.Wrap(err, "Failed to get groups from capture workflow")
+			return pkgerrors.Wrap(err, "Failed to get groups from capture workflow")
 		}
 	}
 
@@ -107,7 +115,7 @@ func recipeWorkflowsGet(recipe recipe.Recipe, recipeElements *RecipeElements, vr
 	} else {
 		recipeElements.RecoverWorkflow, err = getRecoverGroups(recipe)
 		if err != nil {
-			return errors.Wrap(err, "Failed to get groups from recovery workflow")
+			return pkgerrors.Wrap(err, "Failed to get groups from recovery workflow")
 		}
 	}
 

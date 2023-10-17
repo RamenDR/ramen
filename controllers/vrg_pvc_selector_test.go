@@ -56,7 +56,7 @@ var _ = Describe("VolumeReplicationGroupPVCSelector", func() {
 
 			createRecipeAndGet(testCtx, recipe)
 
-			pvcSelector, err := vrgController.GetPVCSelector(testCtx, k8sClient, *vrg, testLogger)
+			pvcSelector, err := vrgController.GetPVCSelector(testCtx, k8sClient, *vrg, *ramenConfig, testLogger)
 			Expect(err).To(BeNil())
 
 			correctLabels := getVolumeGroupLabelSelector(recipe)
@@ -72,7 +72,7 @@ var _ = Describe("VolumeReplicationGroupPVCSelector", func() {
 
 			vrg := getVRGDefinitionWithKubeObjectProtection(!addPVCSelectorLabels, vrgTestNamespace)
 
-			pvcSelector, err := vrgController.GetPVCSelector(testCtx, k8sClient, *vrg, testLogger)
+			pvcSelector, err := vrgController.GetPVCSelector(testCtx, k8sClient, *vrg, *ramenConfig, testLogger)
 			Expect(err).To(BeNil())
 
 			correctLabels := getVolumeGroupLabelSelector(recipe)
@@ -85,7 +85,7 @@ var _ = Describe("VolumeReplicationGroupPVCSelector", func() {
 		It("when only PVCSelector exists, choose PVCSelector", func() {
 			vrg := getVRGDefinitionWithPVCSelectorLabels(vrgTestNamespace) // has PVCSelectorLabels, no Recipe info
 
-			pvcSelector, err := vrgController.GetPVCSelector(testCtx, k8sClient, *vrg, testLogger)
+			pvcSelector, err := vrgController.GetPVCSelector(testCtx, k8sClient, *vrg, *ramenConfig, testLogger)
 			Expect(err).To(BeNil())
 
 			correctLabels := vrg.Spec.PVCSelector
@@ -97,7 +97,7 @@ var _ = Describe("VolumeReplicationGroupPVCSelector", func() {
 			// do not create Recipe object for this test
 			vrg := getVRGDefinitionWithKubeObjectProtection(!addPVCSelectorLabels, vrgTestNamespace)
 
-			_, err := vrgController.GetPVCSelector(testCtx, k8sClient, *vrg, testLogger)
+			_, err := vrgController.GetPVCSelector(testCtx, k8sClient, *vrg, *ramenConfig, testLogger)
 			Expect(err).NotTo(BeNil())
 		})
 	})
