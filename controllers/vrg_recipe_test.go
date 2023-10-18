@@ -8,19 +8,23 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	. "github.com/onsi/gomega/gstruct"
 	gomegatypes "github.com/onsi/gomega/types"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var _ = Describe("VolumeReplicationGroupRecipe", func() {
+	const recipeErrorMessagePrefix = "Failed to get recipe"
 	extraVrgNamespacesFeatureEnabledSetAndDeferRestore := func(enable bool) {
 		enabled := ramenConfig.KubeObjectProtection.ExtraVrgNamespacesFeatureEnabled
 		ramenConfig.KubeObjectProtection.ExtraVrgNamespacesFeatureEnabled = enable
@@ -31,9 +35,11 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 		})
 	}
 	var (
-		nss []*corev1.Namespace
-		r   *recipe.Recipe
-		vrg *ramen.VolumeReplicationGroup
+		nss                 []*corev1.Namespace
+		r                   *recipe.Recipe
+		vrg                 *ramen.VolumeReplicationGroup
+		vrgDataReadyPointer *metav1.Condition
+		vrgDataReady        metav1.Condition
 	)
 
 	nsCreate := func() *corev1.Namespace {
@@ -161,6 +167,25 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 
 		return vrg
 	}
+	vrgStatusConditionGet := func(conditionType string) *metav1.Condition {
+		return meta.FindStatusCondition(vrgGetAndExpectSuccess().Status.Conditions, conditionType)
+	}
+	vrgStatusConditionGetAndExpectNonNil := func(conditionType string) metav1.Condition {
+		condition := meta.FindStatusCondition(vrgGetAndExpectSuccess().Status.Conditions, conditionType)
+		Expect(condition).ToNot(BeNil())
+
+		return *condition
+	}
+	vrgDataReadyConditionGet := func() *metav1.Condition {
+		vrgDataReadyPointer = vrgStatusConditionGet(controllers.VRGConditionTypeDataReady)
+
+		return vrgDataReadyPointer
+	}
+	vrgDataReadyConditionGetAndExpectNonNil := func() metav1.Condition {
+		vrgDataReady = vrgStatusConditionGetAndExpectNonNil(controllers.VRGConditionTypeDataReady)
+
+		return vrgDataReady
+	}
 	vrgPvcsGet := func() []ramen.ProtectedPVC {
 		return vrgGetAndExpectSuccess().Status.ProtectedPVCs
 	}
@@ -200,7 +225,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 
 	var nsNames []string
 	var pvcs []*corev1.PersistentVolumeClaim
-	BeforeEach(func() {
+	BeforeEach(OncePerOrdered, func() {
 		nss = []*corev1.Namespace{nsCreate(), nsCreate(), nsCreate()}
 		nsNames = make([]string, len(nss))
 		pvcs = make([]*corev1.PersistentVolumeClaim, len(nss))
@@ -214,7 +239,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 		vrgDefine()
 	})
 	var err error
-	JustBeforeEach(func() {
+	JustBeforeEach(OncePerOrdered, func() {
 		recipeCreate()
 		DeferCleanup(recipeDelete)
 		err = vrgCreate()
@@ -291,7 +316,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 		})
 	})
 	Describe("Controller", func() {
-		JustBeforeEach(func() {
+		JustBeforeEach(OncePerOrdered, func() {
 			Expect(err).ToNot(HaveOccurred())
 			DeferCleanup(vrgDelete)
 		})
@@ -345,7 +370,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 			})
 		})
 		When("a VRG, referencing a recipe,", func() {
-			BeforeEach(func() {
+			BeforeEach(OncePerOrdered, func() {
 				vrgRecipeRefDefine(r.Name)
 			})
 			Context("in an administrator namespace", func() {
@@ -382,7 +407,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 			})
 			Context("in a non-administrator namespace and the extra-VRG namespaces feature is enabled", func() {
 				var extraVrgNamespaceName string
-				BeforeEach(func() {
+				BeforeEach(OncePerOrdered, func() {
 					vrg.Namespace = nss[0].Name
 					extraVrgNamespaceName = nss[1].Name
 				})
@@ -392,27 +417,53 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 					pvcSelector, err = vrgPvcSelectorGet()
 				})
 				Context("whose recipe references no namespaces", func() {
-					It("includes VRG's namespace only in its PVC selection", func() {
+					It("s PVC selector includes only the VRG's namespace", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(pvcSelector.NamespaceNames).To(ConsistOf(vrg.Namespace))
 					})
 				})
-				Context("whose recipe references the same namespace only", func() {
+				Context("whose recipe references only the same namespace", func() {
 					BeforeEach(func() {
 						recipeVolumesDefine(volumes(vrg.Namespace))
 					})
-					It("includes VRG's namespace only in its PVC selection", func() {
+					It("s PVC selector includes only the VRG's namespace", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(pvcSelector.NamespaceNames).To(ConsistOf(vrg.Namespace))
 					})
 				})
-				Context("whose recipe references the same namespace and another namespace", func() {
-					BeforeEach(func() {
-						recipeVolumesDefine(volumes(vrg.Namespace, extraVrgNamespaceName))
-						skipIfAdmissionValidationDenies()
+				Context("whose recipe references", Ordered, func() {
+					Context("the same namespace and another namespace initially", func() {
+						BeforeAll(func() {
+							recipeVolumesDefine(volumes(vrg.Namespace, extraVrgNamespaceName))
+							skipIfAdmissionValidationDenies()
+						})
+						It("s PVC selector is invalid", func() {
+							Expect(err).To(HaveOccurred())
+						})
+						It("sets DataReady condition's status to false and message to a recipe error", func() {
+							Eventually(vrgDataReadyConditionGet).ShouldNot(BeNil())
+							Expect(*vrgDataReadyPointer).To(MatchFields(IgnoreExtras, Fields{
+								"Status":  Equal(metav1.ConditionFalse),
+								"Reason":  Equal(controllers.VRGConditionReasonError),
+								"Message": HavePrefix(recipeErrorMessagePrefix),
+							}))
+						})
 					})
-					It("returns an error", func() {
-						Expect(err).To(HaveOccurred())
+					Context("only the same namespace after an update to remove another namespace", func() {
+						BeforeAll(func() {
+							Expect(apiReader.Get(ctx, client.ObjectKeyFromObject(r), r)).To(Succeed())
+							recipeVolumesDefine(volumes(vrg.Namespace))
+							Expect(k8sClient.Update(ctx, r)).To(Succeed())
+						})
+						It("s PVC selector includes only the VRG's namespace", func() {
+							Expect(err).ToNot(HaveOccurred())
+							Expect(pvcSelector.NamespaceNames).To(ConsistOf(vrg.Namespace))
+						})
+						It("sets DataReady condition's message to something besides a recipe error", func() {
+							Eventually(vrgDataReadyConditionGetAndExpectNonNil).Should(MatchFields(IgnoreExtras, Fields{
+								"Message": Not(HavePrefix(recipeErrorMessagePrefix)),
+							}))
+						})
 					})
 				})
 			})

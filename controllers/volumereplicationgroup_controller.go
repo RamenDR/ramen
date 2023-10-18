@@ -67,7 +67,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 		//nolint: gomnd
 		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
 	)
-
+	objectToReconcileRequestsMapper := objectToReconcileRequestsMapper{reader: r.Client, log: ctrl.Log}
 	builder := ctrl.NewControllerManagedBy(mgr).
 		WithOptions(ctrlcontroller.Options{
 			MaxConcurrentReconciles: getMaxConcurrentReconciles(r.Log),
@@ -99,12 +99,18 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 	r.kubeObjects = velero.RequestsManager{}
 	if !ramenConfig.KubeObjectProtection.Disabled {
 		r.Log.Info("Kube object protection enabled; watch kube objects requests")
+		recipesWatch(builder, objectToReconcileRequestsMapper)
 		kubeObjectsRequestsWatch(builder, r.Scheme, r.kubeObjects)
 	} else {
 		r.Log.Info("Kube object protection disabled; don't watch kube objects requests")
 	}
 
 	return builder.Complete(r)
+}
+
+type objectToReconcileRequestsMapper struct {
+	reader client.Reader
+	log    logr.Logger
 }
 
 func (r *VolumeReplicationGroupReconciler) pvcMapFunc(obj client.Object) []reconcile.Request {
@@ -462,7 +468,7 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 	if err := RecipeElementsGet(
 		v.ctx, v.reconciler.Client, *v.instance, *v.ramenConfig, v.log, &v.recipeElements,
 	); err != nil {
-		return v.invalid(err, "Failed to get recipe", true) // TODO watch recipes
+		return v.invalid(err, "Failed to get recipe", false)
 	}
 
 	v.log.Info("Recipe", "elements", v.recipeElements)

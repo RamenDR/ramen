@@ -13,11 +13,16 @@ import (
 	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/kubeobjects"
+	"github.com/ramendr/ramen/controllers/util"
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	"golang.org/x/exp/slices"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 type RecipeElements struct {
@@ -197,4 +202,54 @@ func recipeNamespaceNames(recipeElements RecipeElements) sets.Set[string] {
 	}
 
 	return namespaceNames
+}
+
+func recipesWatch(b *builder.Builder, m objectToReconcileRequestsMapper) *builder.Builder {
+	return b.Watches(
+		&source.Kind{Type: &recipe.Recipe{}},
+		handler.EnqueueRequestsFromMapFunc(m.recipeToVrgReconcileRequestsMapper),
+		builder.WithPredicates(util.CreateOrResourceVersionUpdatePredicate{}),
+	)
+}
+
+func (m objectToReconcileRequestsMapper) recipeToVrgReconcileRequestsMapper(
+	recipe client.Object,
+) []reconcile.Request {
+	recipeNamespacedName := types.NamespacedName{
+		Namespace: recipe.GetNamespace(),
+		Name:      recipe.GetName(),
+	}
+	log := m.log.WithName("recipe").WithName("VolumeReplicationGroup").WithValues(
+		"name", recipeNamespacedName.String(),
+		"creation", recipe.GetCreationTimestamp(),
+		"uid", recipe.GetUID(),
+		"generation", recipe.GetGeneration(),
+		"version", recipe.GetResourceVersion(),
+	)
+
+	vrgList := ramen.VolumeReplicationGroupList{}
+	if err := m.reader.List(context.TODO(), &vrgList); err != nil {
+		log.Error(err, "vrg list retrieval error")
+
+		return []reconcile.Request{}
+	}
+
+	requests := make([]reconcile.Request, 0, len(vrgList.Items))
+
+	for _, vrg := range vrgList.Items {
+		if vrg.Spec.KubeObjectProtection == nil ||
+			vrg.Spec.KubeObjectProtection.RecipeRef == nil ||
+			vrg.Spec.KubeObjectProtection.RecipeRef.Namespace != recipe.GetNamespace() ||
+			vrg.Spec.KubeObjectProtection.RecipeRef.Name != recipe.GetName() {
+			continue
+		}
+
+		vrgNamespacedName := types.NamespacedName{Namespace: vrg.Namespace, Name: vrg.Name}
+
+		requests = append(requests, reconcile.Request{NamespacedName: vrgNamespacedName})
+
+		log.Info("Request VRG reconcile", "VRG", vrgNamespacedName.String())
+	}
+
+	return requests
 }
