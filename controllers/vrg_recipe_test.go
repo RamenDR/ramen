@@ -35,7 +35,6 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 		})
 	}
 	var (
-		nss                 []*corev1.Namespace
 		r                   *recipe.Recipe
 		vrg                 *ramen.VolumeReplicationGroup
 		vrgDataReadyPointer *metav1.Condition
@@ -53,10 +52,10 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	nsDelete := func(ns *corev1.Namespace) error {
 		return k8sClient.Delete(ctx, ns)
 	}
-	pvcCreate := func(ns *corev1.Namespace) *corev1.PersistentVolumeClaim {
+	pvcCreate := func(namespaceName string) *corev1.PersistentVolumeClaim {
 		pvc := &corev1.PersistentVolumeClaim{
 			ObjectMeta: metav1.ObjectMeta{
-				Namespace: ns.Name,
+				Namespace: namespaceName,
 				Name:      "a",
 			},
 			Spec: corev1.PersistentVolumeClaimSpec{
@@ -100,10 +99,10 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 			},
 		}
 	}
-	recipeDefine := func() {
+	recipeDefine := func(namespaceName string) {
 		r = &recipe.Recipe{
 			ObjectMeta: metav1.ObjectMeta{
-				Namespace: nss[0].Name,
+				Namespace: namespaceName,
 				Name:      "r",
 			},
 			Spec: recipe.RecipeSpec{},
@@ -124,9 +123,9 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	recipeDelete := func() error {
 		return k8sClient.Delete(ctx, r)
 	}
-	vrgDefine := func() {
+	vrgDefine := func(namespaceName string) {
 		vrg = &ramen.VolumeReplicationGroup{
-			ObjectMeta: metav1.ObjectMeta{Namespace: ramenNamespace, Name: "a"},
+			ObjectMeta: metav1.ObjectMeta{Namespace: namespaceName, Name: "a"},
 			Spec: ramen.VolumeReplicationGroupSpec{
 				S3Profiles:       []string{controllers.NoS3StoreAvailable},
 				ReplicationState: ramen.Primary,
@@ -209,11 +208,6 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	vrgPvcSelectorGet := func() (controllers.PvcSelector, error) {
 		return controllers.GetPVCSelector(ctx, apiReader, *vrg, *ramenConfig, testLogger)
 	}
-	vrgPvcSelectorNsNamesExpect := func(nsNamesExpected []string) {
-		pvcSelector, err := vrgPvcSelectorGet()
-		Expect(err).ToNot(HaveOccurred())
-		Expect(pvcSelector.NamespaceNames).To(ConsistOf(nsNamesExpected))
-	}
 	skipIfAdmissionValidateAndCommitAreAtomicIs := func(condition bool, message string) {
 		if !condition {
 			Skip(message)
@@ -223,20 +217,26 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 		skipIfAdmissionValidateAndCommitAreAtomicIs(true, "VRG admission validation denies")
 	}
 
-	var nsNames []string
-	var pvcs []*corev1.PersistentVolumeClaim
+	const nsCount = 3
+	var (
+		nsNames      [nsCount]string
+		pvcs         [nsCount]*corev1.PersistentVolumeClaim
+		nsNamesSlice []string
+		pvcsSlice    []*corev1.PersistentVolumeClaim
+	)
+	nsSlices := func(low, high uint) ([]string, []*corev1.PersistentVolumeClaim) {
+		return nsNames[low:high], pvcs[low:high]
+	}
 	BeforeEach(OncePerOrdered, func() {
-		nss = []*corev1.Namespace{nsCreate(), nsCreate(), nsCreate()}
-		nsNames = make([]string, len(nss))
-		pvcs = make([]*corev1.PersistentVolumeClaim, len(nss))
-		for i, ns := range nss {
+		for i := range nsNames {
+			ns := nsCreate()
 			DeferCleanup(nsDelete, ns)
 			nsNames[i] = ns.Name
-			pvcs[i] = pvcCreate(ns)
+			pvcs[i] = pvcCreate(ns.Name)
 			DeferCleanup(pvcDelete, pvcs[i])
 		}
-		recipeDefine()
-		vrgDefine()
+		recipeDefine(nsNames[0])
+		vrgDefine(ramenNamespace)
 	})
 	var err error
 	JustBeforeEach(OncePerOrdered, func() {
@@ -272,7 +272,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 					})
 					Context("whose recipe references another namespace", func() {
 						BeforeEach(func() {
-							recipeVolumesDefine(volumes(nss[0].Name))
+							recipeVolumesDefine(volumes(nsNames[0]))
 						})
 						Context("with extra-VRG namespaces feature disabled", func() {
 							BeforeEach(func() {
@@ -290,7 +290,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 				})
 				Context("for a non-administrator namespace", func() {
 					BeforeEach(func() {
-						vrg.Namespace = nss[0].Name
+						vrg.Namespace = nsNames[0]
 					})
 					Context("whose recipe references no namespaces", func() {
 						BeforeEach(func() {
@@ -307,7 +307,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 					})
 					Context("whose recipe references another namespace", func() {
 						BeforeEach(func() {
-							recipeVolumesDefine(volumes(nss[1].Name))
+							recipeVolumesDefine(volumes(nsNames[1]))
 						})
 						It("denies it", func() { Expect(err).To(HaveOccurred()) })
 					})
@@ -320,124 +320,112 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 			Expect(err).ToNot(HaveOccurred())
 			DeferCleanup(vrgDelete)
 		})
-		When("a VRG references a recipe that specifies multiple namespaces", func() {
-			var nsNames1 []string
-			var pvcs1 []*corev1.PersistentVolumeClaim
-			const nsNumberStart = 1
-			BeforeEach(func() {
-				nsNames1 = nsNames[nsNumberStart:]
-				pvcs1 = pvcs[nsNumberStart:]
-				vrgRecipeRefDefine(r.Name)
-			})
-			Context("statically", func() {
-				BeforeEach(func() {
-					recipeVolumesDefine(volumes(nsNames1...))
-					recipeGroupsDefine(resources(nsNames1...))
-					recipeHooksDefine(hook(nsNames1...))
-				})
-				It("includes each in its PVC selection", func() {
-					vrgPvcSelectorNsNamesExpect(nsNames1)
-				})
-				It("lists their PVCs in the VRG's status", func() {
-					vrgPvcsConsistOfEventually(pvcs1...)
-				})
-			})
-			Context("parametrically", func() {
-				var recipeExpanded *recipe.Recipe
-				BeforeEach(func() {
-					const parameterName = "ns"
-					const parameterRef = "$" + parameterName
-
-					parameters := map[string][]string{parameterName: nsNames1}
-
-					recipeVolumesDefine(volumes(parameterRef))
-					vrgRecipeParametersDefine(parameters)
-					recipeHooksDefine(hook(parameterRef))
-
-					recipeExpanded = &*r
-					Expect(controllers.RecipeParametersExpand(recipeExpanded, parameters, testLogger)).To(Succeed())
-				})
-				It("includes each in its PVC selection", func() {
-					vrgPvcSelectorNsNamesExpect(nsNames1)
-				})
-				It("lists their PVCs in the VRG's status", func() {
-					vrgPvcsConsistOfEventually(pvcs1...)
-				})
-				It("expands a parameter list enclosed in double quotes to a single string with quotes preserved", func() {
-					Skip("feature not supported")
-					Expect(recipeExpanded.Spec.Hooks[0].Ops[0].Command).To(Equal(`"` + strings.Join(nsNames1, ",") + `"`))
-				})
-			})
-		})
 		When("a VRG, referencing a recipe,", func() {
 			BeforeEach(OncePerOrdered, func() {
 				vrgRecipeRefDefine(r.Name)
 			})
-			Context("in an administrator namespace", func() {
+			var pvcSelector controllers.PvcSelector
+			var err error
+			JustBeforeEach(func() {
+				pvcSelector, err = vrgPvcSelectorGet()
+			})
+			Context("in an administrator namespace specifies only other namespaces", func() {
 				BeforeEach(func() {
 					vrg.Namespace = ramenNamespace
+					nsNamesSlice, pvcsSlice = nsSlices(1, nsCount)
 				})
-				Context("whose recipe references another namespace", func() {
-					var extraVrgNamespaceNames []string
+				Context("statically", func() {
 					BeforeEach(func() {
-						extraVrgNamespaceNames = []string{nss[0].Name}
-						recipeVolumesDefine(volumes(extraVrgNamespaceNames...))
+						recipeVolumesDefine(volumes(nsNamesSlice...))
+						recipeGroupsDefine(resources(nsNamesSlice...))
+						recipeHooksDefine(hook(nsNamesSlice...))
 					})
-					var pvcSelector controllers.PvcSelector
-					var err error
-					JustBeforeEach(func() {
-						pvcSelector, err = vrgPvcSelectorGet()
+					It("includes only them in its PVC selection", func() {
+						Expect(err).ToNot(HaveOccurred())
+						Expect(pvcSelector.NamespaceNames).To(ConsistOf(nsNamesSlice))
 					})
-					Context("and the extra-VRG namespaces feature is disabled", func() {
+					It("lists only their PVCs in the VRG's status", func() {
+						vrgPvcsConsistOfEventually(pvcsSlice...)
+					})
+				})
+				Context("parametrically", func() {
+					var recipeExpanded *recipe.Recipe
+					BeforeEach(func() {
+						const parameterName = "ns"
+						const parameterRef = "$" + parameterName
+
+						parameters := map[string][]string{parameterName: nsNamesSlice}
+
+						recipeVolumesDefine(volumes(parameterRef))
+						vrgRecipeParametersDefine(parameters)
+						recipeHooksDefine(hook(parameterRef))
+
+						recipeExpanded = &*r
+						Expect(controllers.RecipeParametersExpand(recipeExpanded, parameters, testLogger)).To(Succeed())
+					})
+					It("expands a parameter list enclosed in double quotes to a single string with quotes preserved", func() {
+						Skip("feature not supported")
+						Expect(recipeExpanded.Spec.Hooks[0].Ops[0].Command).To(Equal(`"` + strings.Join(nsNamesSlice, ",") + `"`))
+					})
+					Context("with Ramen's extra-VRG namespaces feature disabled", func() {
 						BeforeEach(func() {
 							extraVrgNamespacesFeatureEnabledSetAndDeferRestore(false)
 							skipIfAdmissionValidationDenies()
 						})
-						It("returns an error", Label(), func() {
+						It("has an invalid PVC selector", func() {
 							Expect(err).To(HaveOccurred())
 						})
 					})
-					Context("and the extra-VRG namespaces feature is enabled", func() {
-						It("includes each in its PVC selection", func() {
+					Context("with Ramen's extra-VRG namespaces feature enabled", func() {
+						It("includes only them in its PVC selection", func() {
 							Expect(err).ToNot(HaveOccurred())
-							Expect(pvcSelector.NamespaceNames).To(ConsistOf(extraVrgNamespaceNames))
+							Expect(pvcSelector.NamespaceNames).To(ConsistOf(nsNamesSlice))
+						})
+						It("lists only their PVCs in the VRG's status", func() {
+							vrgPvcsConsistOfEventually(pvcsSlice...)
 						})
 					})
 				})
 			})
-			Context("in a non-administrator namespace and the extra-VRG namespaces feature is enabled", func() {
-				var extraVrgNamespaceName string
-				BeforeEach(OncePerOrdered, func() {
-					vrg.Namespace = nss[0].Name
-					extraVrgNamespaceName = nss[1].Name
-				})
-				var pvcSelector controllers.PvcSelector
-				var err error
-				JustBeforeEach(func() {
-					pvcSelector, err = vrgPvcSelectorGet()
-				})
+			Context("in a non-administrator namespace with Ramen's extra-VRG namespaces feature enabled", func() {
 				Context("whose recipe references no namespaces", func() {
-					It("s PVC selector includes only the VRG's namespace", func() {
+					BeforeEach(func() {
+						nsNamesSlice, pvcsSlice = nsSlices(1, 2)
+						vrg.Namespace = nsNamesSlice[0]
+					})
+					It("includes only the VRG's namespace in its PVC selection", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(pvcSelector.NamespaceNames).To(ConsistOf(vrg.Namespace))
+					})
+					It("lists only the VRG namespace's PVCs in the VRG's status", func() {
+						vrgPvcsConsistOfEventually(pvcsSlice...)
 					})
 				})
 				Context("whose recipe references only the same namespace", func() {
 					BeforeEach(func() {
+						nsNamesSlice, pvcsSlice = nsSlices(1, 2)
+						vrg.Namespace = nsNamesSlice[0]
 						recipeVolumesDefine(volumes(vrg.Namespace))
 					})
-					It("s PVC selector includes only the VRG's namespace", func() {
+					It("includes only it in its PVC selection", func() {
 						Expect(err).ToNot(HaveOccurred())
 						Expect(pvcSelector.NamespaceNames).To(ConsistOf(vrg.Namespace))
 					})
+					It("lists only its PVCs in the VRG's status", func() {
+						vrgPvcsConsistOfEventually(pvcsSlice...)
+					})
 				})
 				Context("whose recipe references", Ordered, func() {
+					BeforeAll(func() {
+						nsNamesSlice, pvcsSlice = nsSlices(1, nsCount)
+						vrg.Namespace = nsNamesSlice[0]
+						skipIfAdmissionValidationDenies()
+					})
 					Context("the same namespace and another namespace initially", func() {
 						BeforeAll(func() {
-							recipeVolumesDefine(volumes(vrg.Namespace, extraVrgNamespaceName))
-							skipIfAdmissionValidationDenies()
+							recipeVolumesDefine(volumes(nsNamesSlice...))
 						})
-						It("s PVC selector is invalid", func() {
+						It("has an invalid PVC selector", func() {
 							Expect(err).To(HaveOccurred())
 						})
 						It("sets DataReady condition's status to false and message to a recipe error", func() {
@@ -448,14 +436,18 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 								"Message": HavePrefix(recipeErrorMessagePrefix),
 							}))
 						})
+						It("lists no PVCs in the VRG's status", func() {
+							vrgPvcsConsistOfEventually()
+						})
 					})
-					Context("only the same namespace after an update to remove another namespace", func() {
+					Context("only the same namespace after an update to remove other namespaces", func() {
 						BeforeAll(func() {
+							nsNamesSlice, pvcsSlice = nsSlices(1, 2)
 							Expect(apiReader.Get(ctx, client.ObjectKeyFromObject(r), r)).To(Succeed())
 							recipeVolumesDefine(volumes(vrg.Namespace))
 							Expect(k8sClient.Update(ctx, r)).To(Succeed())
 						})
-						It("s PVC selector includes only the VRG's namespace", func() {
+						It("includes only it in its PVC selection", func() {
 							Expect(err).ToNot(HaveOccurred())
 							Expect(pvcSelector.NamespaceNames).To(ConsistOf(vrg.Namespace))
 						})
@@ -463,6 +455,9 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 							Eventually(vrgDataReadyConditionGetAndExpectNonNil).Should(MatchFields(IgnoreExtras, Fields{
 								"Message": Not(HavePrefix(recipeErrorMessagePrefix)),
 							}))
+						})
+						It("lists its PVCs in the VRG's status", func() {
+							vrgPvcsConsistOfEventually(pvcsSlice...)
 						})
 					})
 				})
