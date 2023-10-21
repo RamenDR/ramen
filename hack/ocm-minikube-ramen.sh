@@ -526,6 +526,8 @@ ramen_config_deploy_hub_or_spoke()
 	drClusterOperator:
 	  deploymentAutomationEnabled: true
 	  s3SecretDistributionEnabled: $ramen_s3_secret_distribution_enabled
+	kubeObjectProtection:
+	  extraVrgNamespacesFeatureEnabled: true
 	EOF
 	ramen_config_replace_hub_or_spoke $1 $2 $3
 }
