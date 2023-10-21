@@ -161,17 +161,18 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 		vrg = &ramen.VolumeReplicationGroup{
 			ObjectMeta: metav1.ObjectMeta{Namespace: namespaceName, Name: "a"},
 			Spec: ramen.VolumeReplicationGroupSpec{
-				S3Profiles:       []string{controllers.NoS3StoreAvailable},
-				ReplicationState: ramen.Primary,
-				/*
-					Sync:             &ramen.VRGSyncSpec{},
-				*/
-				Async: &ramen.VRGAsyncSpec{
-					SchedulingInterval: vrInterval,
-				},
+				S3Profiles:           []string{controllers.NoS3StoreAvailable},
+				ReplicationState:     ramen.Primary,
+				Sync:                 &ramen.VRGSyncSpec{},
 				KubeObjectProtection: &ramen.KubeObjectProtectionSpec{},
 			},
 		}
+	}
+	vrgAsyncModeEnable := func() {
+		vrg.Spec.Async = &ramen.VRGAsyncSpec{
+			SchedulingInterval: vrInterval,
+		}
+		vrg.Spec.Sync = nil
 	}
 	vrgRecipeRefDefine := func(name string) {
 		vrg.Spec.KubeObjectProtection.RecipeRef = &ramen.RecipeRef{
@@ -416,12 +417,22 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 						})
 					})
 					Context("with Ramen's extra-VRG namespaces feature enabled", func() {
-						It("includes only them in its PVC selection", func() {
-							Expect(err).ToNot(HaveOccurred())
-							Expect(pvcSelector.NamespaceNames).To(ConsistOf(nsNamesSlice))
+						Context("with async mode enabled", func() {
+							BeforeEach(func() {
+								vrgAsyncModeEnable()
+							})
+							It("has an invalid PVC selector", func() {
+								Expect(err).To(HaveOccurred())
+							})
 						})
-						It("lists only their PVCs in the VRG's status", func() {
-							vrgPvcsConsistOfEventually(pvcsSlice...)
+						Context("with async mode disabled", func() {
+							It("includes only them in its PVC selection", func() {
+								Expect(err).ToNot(HaveOccurred())
+								Expect(pvcSelector.NamespaceNames).To(ConsistOf(nsNamesSlice))
+							})
+							It("lists only their PVCs in the VRG's status", func() {
+								vrgPvcsConsistOfEventually(pvcsSlice...)
+							})
 						})
 					})
 				})
@@ -476,7 +487,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 							}))
 						})
 						It("lists no PVCs in the VRG's status", func() {
-							vrgPvcsConsistOfEventually()
+							Expect(vrgPvcsGet()).To(BeEmpty())
 						})
 					})
 					Context("only the same namespace after an update to remove other namespaces", func() {
