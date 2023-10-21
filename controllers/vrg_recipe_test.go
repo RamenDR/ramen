@@ -6,6 +6,7 @@ package controllers_test
 import (
 	"strings"
 
+	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
@@ -14,6 +15,7 @@ import (
 	"github.com/ramendr/ramen/controllers"
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -34,6 +36,12 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 			configMapUpdate()
 		})
 	}
+	const (
+		scName          = "a"
+		vrcName         = "b"
+		provisionerName = "x"
+		vrInterval      = "0m"
+	)
 	var (
 		r                   *recipe.Recipe
 		vrg                 *ramen.VolumeReplicationGroup
@@ -41,6 +49,27 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 		vrgDataReady        metav1.Condition
 	)
 
+	scCreateAndDeferDelete := func() {
+		sc := &storagev1.StorageClass{
+			ObjectMeta:  metav1.ObjectMeta{Name: scName},
+			Provisioner: provisionerName,
+		}
+		Expect(k8sClient.Create(ctx, sc)).To(Succeed())
+		DeferCleanup(k8sClient.Delete, ctx, sc)
+	}
+	vrcCreateAndDeferDelete := func() {
+		vrc := &volrep.VolumeReplicationClass{
+			ObjectMeta: metav1.ObjectMeta{Name: vrcName},
+			Spec: volrep.VolumeReplicationClassSpec{
+				Provisioner: provisionerName,
+				Parameters: map[string]string{
+					"schedulingInterval": vrInterval,
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, vrc)).To(Succeed())
+		DeferCleanup(k8sClient.Delete, ctx, vrc)
+	}
 	nsCreate := func() *corev1.Namespace {
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{GenerateName: vrgTestNamespaceBase},
@@ -65,6 +94,11 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 						corev1.ResourceStorage: resource.MustParse("1Mi"),
 					},
 				},
+				StorageClassName: func() *string {
+					s := scName
+
+					return &s
+				}(),
 			},
 		}
 		Expect(k8sClient.Create(ctx, pvc)).To(Succeed())
@@ -129,8 +163,11 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 			Spec: ramen.VolumeReplicationGroupSpec{
 				S3Profiles:       []string{controllers.NoS3StoreAvailable},
 				ReplicationState: ramen.Primary,
+				/*
+					Sync:             &ramen.VRGSyncSpec{},
+				*/
 				Async: &ramen.VRGAsyncSpec{
-					SchedulingInterval: "0m",
+					SchedulingInterval: vrInterval,
 				},
 				KubeObjectProtection: &ramen.KubeObjectProtectionSpec{},
 			},
@@ -224,10 +261,12 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 		nsNamesSlice []string
 		pvcsSlice    []*corev1.PersistentVolumeClaim
 	)
-	nsSlices := func(low, high uint) ([]string, []*corev1.PersistentVolumeClaim) {
-		return nsNames[low:high], pvcs[low:high]
+	nsSlices := func(low, high uint) {
+		nsNamesSlice, pvcsSlice = nsNames[low:high], pvcs[low:high]
 	}
 	BeforeEach(OncePerOrdered, func() {
+		scCreateAndDeferDelete()
+		vrcCreateAndDeferDelete()
 		for i := range nsNames {
 			ns := nsCreate()
 			DeferCleanup(nsDelete, ns)
@@ -332,7 +371,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 			Context("in an administrator namespace specifies only other namespaces", func() {
 				BeforeEach(func() {
 					vrg.Namespace = ramenNamespace
-					nsNamesSlice, pvcsSlice = nsSlices(1, nsCount)
+					nsSlices(1, nsCount)
 				})
 				Context("statically", func() {
 					BeforeEach(func() {
@@ -390,7 +429,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 			Context("in a non-administrator namespace with Ramen's extra-VRG namespaces feature enabled", func() {
 				Context("whose recipe references no namespaces", func() {
 					BeforeEach(func() {
-						nsNamesSlice, pvcsSlice = nsSlices(1, 2)
+						nsSlices(1, 2)
 						vrg.Namespace = nsNamesSlice[0]
 					})
 					It("includes only the VRG's namespace in its PVC selection", func() {
@@ -403,7 +442,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 				})
 				Context("whose recipe references only the same namespace", func() {
 					BeforeEach(func() {
-						nsNamesSlice, pvcsSlice = nsSlices(1, 2)
+						nsSlices(1, 2)
 						vrg.Namespace = nsNamesSlice[0]
 						recipeVolumesDefine(volumes(vrg.Namespace))
 					})
@@ -417,7 +456,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 				})
 				Context("whose recipe references", Ordered, func() {
 					BeforeAll(func() {
-						nsNamesSlice, pvcsSlice = nsSlices(1, nsCount)
+						nsSlices(1, nsCount)
 						vrg.Namespace = nsNamesSlice[0]
 						skipIfAdmissionValidationDenies()
 					})
@@ -442,7 +481,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 					})
 					Context("only the same namespace after an update to remove other namespaces", func() {
 						BeforeAll(func() {
-							nsNamesSlice, pvcsSlice = nsSlices(1, 2)
+							nsSlices(1, 2)
 							Expect(apiReader.Get(ctx, client.ObjectKeyFromObject(r), r)).To(Succeed())
 							recipeVolumesDefine(volumes(vrg.Namespace))
 							Expect(k8sClient.Update(ctx, r)).To(Succeed())
