@@ -189,6 +189,10 @@ func recipeNamespacesValidate(recipeElements RecipeElements, vrg ramen.VolumeRep
 		)
 	}
 
+	if vrg.Spec.Async != nil {
+		return fmt.Errorf("extra-VRG namespaces %v require VRG's async mode be disabled", extraVrgNamespaceNames)
+	}
+
 	return nil
 }
 
