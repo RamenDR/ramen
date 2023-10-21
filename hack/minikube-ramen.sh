@@ -68,14 +68,14 @@ application_sample_undeploy() {
 	application_sample_kubectl $1 delete
 }
 application_sample_vrg_kubectl() {
-	cat <<-a|kubectl --context $1 -n$application_sample_namespace_name $3 -f-
+	cat <<-a|kubectl --context=$1 --namespace=$2 $4 -f-
 	---
 	apiVersion: ramendr.openshift.io/v1alpha1
 	kind: VolumeReplicationGroup
 	metadata:
 	  name: bb
 	  labels:
-	    $4
+	    $5
 	spec:
 	  async:
 	    replicationClassSelector: {}
@@ -83,19 +83,19 @@ application_sample_vrg_kubectl() {
 	  pvcSelector:
 	    matchLabels:
 	      appname: busybox
-	  replicationState: $2
+	  replicationState: $3
 	  s3Profiles:
 $(for cluster_name in $cluster_names; do echo \ \ -\ minio-on-$cluster_name; done; unset -v cluster_name)${vrg_appendix-}
 	a
 }
 application_sample_vrg_deploy() {
-	application_sample_vrg_kubectl $1 primary apply "$2"
+	application_sample_vrg_kubectl $1 $2 primary apply "$3"
 }
 application_sample_vrg_deploy_sec() {
-	application_sample_vrg_kubectl $1 secondary apply "$2"
+	application_sample_vrg_kubectl $1 $2 secondary apply "$3"
 }
 application_sample_vrg_undeploy() {
-	application_sample_vrg_kubectl $1 primary delete\ --ignore-not-found
+	application_sample_vrg_kubectl $1 $2 primary delete\ --ignore-not-found
 }
 "${@:-deploy}"
 unset -f application_sample_vrg_undeploy

@@ -345,6 +345,9 @@ app_list_custom() {
 	kubectl --context=$1 -A -l$app_label get $2 ns,cm,secret,deploy,rs,po,pvc,pv,recipe,vrg,vr
 }; exit_stack_push unset -f app_list_custom
 
+vrg_namespace_name=ramen-system
+exit_stack_push unset -v vrg_namespace_name
+
 vrg_apply() {
 	vrg_appendix="
   kubeObjectProtection:
@@ -361,8 +364,8 @@ vrg_apply() {
       - $app_namespace_1_name
       - $app_namespace_2_name$3${4:+
   action: $4}"\
-	cluster_names=$s3_store_cluster_names application_sample_namespace_name=$app_namespace_0_name\
-	$ramen_hack_directory_path_name/minikube-ramen.sh application_sample_vrg_deploy$2 $1 "$app_label_yaml"
+	cluster_names=$s3_store_cluster_names\
+	$ramen_hack_directory_path_name/minikube-ramen.sh application_sample_vrg_deploy$2 $1 $vrg_namespace_name "$app_label_yaml"
 }; exit_stack_push unset -f vrg_apply
 
 app_vrs_label() {
@@ -386,21 +389,21 @@ vrg_deploy_relocate() {
 }; exit_stack_push unset -f vrg_deploy_relocate
 
 vrg_undeploy() {
-	cluster_names=$s3_store_cluster_names application_sample_namespace_name=$app_namespace_0_name $ramen_hack_directory_path_name/minikube-ramen.sh application_sample_vrg_undeploy $1
+	cluster_names=$s3_store_cluster_names $ramen_hack_directory_path_name/minikube-ramen.sh application_sample_vrg_undeploy $1 $vrg_namespace_name
 }; exit_stack_push unset -f vrg_undeploy
 
 vrg_demote() {
 	vrg_deploy_$2 $1 _sec
-#	time kubectl --context=$1 --namespace=$app_namespace_0_name wait vrg/bb --for condition=clusterdataprotected=false
+#	time kubectl --context=$1 --namespace=$vrg_namespace_name wait vrg/bb --for condition=clusterdataprotected=false
 }; exit_stack_push unset -f vrg_demote
 
 vrg_final_sync() {
 	vrg_apply $1 '' '
   prepareForFinalSync: true'
-	time kubectl --context=$1 --namespace=$app_namespace_0_name wait vrg/bb --for jsonpath='{.status.prepareForFinalSyncComplete}'=true
+	time kubectl --context=$1 --namespace=$vrg_namespace_name wait vrg/bb --for jsonpath='{.status.prepareForFinalSyncComplete}'=true
 	vrg_apply $1 '' '
   runFinalSync: true'
-	time kubectl --context=$1 --namespace=$app_namespace_0_name wait vrg/bb --for jsonpath='{.status.finalSyncComplete}'=true
+	time kubectl --context=$1 --namespace=$vrg_namespace_name wait vrg/bb --for jsonpath='{.status.finalSyncComplete}'=true
 }; exit_stack_push unset -f vrg_final_sync
 
 vrg_fence() {
@@ -409,25 +412,25 @@ vrg_fence() {
 
 vrg_finalizer0_remove() {
 	true_if_exit_status_and_stderr 1 'Error from server (NotFound): volumereplicationgroups.ramendr.openshift.io "bb" not found' \
-	kubectl --context=$1 --namespace=$app_namespace_0_name patch vrg/bb --type json -p '[{"op":remove, "path":/metadata/finalizers/0}]'
+	kubectl --context=$1 --namespace=$vrg_namespace_name patch vrg/bb --type json -p '[{"op":remove, "path":/metadata/finalizers/0}]'
 }; exit_stack_push unset -f vrg_finalizer0_remove
 
 vr_finalizer0_remove() {
 	true_if_exit_status_and_stderr 1 'Error from server (NotFound): volumereplications.replication.storage.openshift.io "busybox-pvc" not found' \
-	kubectl --context=$1 --namespace=$app_namespace_0_name patch volumereplication/busybox-pvc --type json -p '[{"op":remove, "path":/metadata/finalizers/0}]'
+	kubectl --context=$1 --namespace=$vrg_namespace_name patch volumereplication/busybox-pvc --type json -p '[{"op":remove, "path":/metadata/finalizers/0}]'
 }; exit_stack_push unset -f vr_finalizer0_remove
 
 vrg_get() {
-	kubectl --context=$1 --namespace=$app_namespace_0_name get vrg/bb --ignore-not-found -oyaml
+	kubectl --context=$1 --namespace=$vrg_namespace_name get vrg/bb --ignore-not-found -oyaml
 }; exit_stack_push unset -f vrg_get
 
 vrg_spec_get() {
-	kubectl --context=$1 --namespace=$app_namespace_0_name get vrg/bb -ojsonpath='{.spec}'|json_to_yaml
+	kubectl --context=$1 --namespace=$vrg_namespace_name get vrg/bb -ojsonpath='{.spec}'|json_to_yaml
 }; exit_stack_push unset -f vrg_spec_get
 
 vrg_list() {
 	set -x
-	kubectl --context=$1 --namespace=$app_namespace_0_name get vrg/bb --ignore-not-found
+	kubectl --context=$1 --namespace=$vrg_namespace_name get vrg/bb --ignore-not-found
 	{ set +x;} 2>/dev/null
 }; exit_stack_push unset -f vrg_list
 
@@ -479,14 +482,14 @@ app_protect() {
 	set -- cluster1
 	vrg_deploy $1
 	set -x
-	time kubectl --context=$1 --namespace=$app_namespace_0_name wait vrg/bb --for condition=clusterdataprotected --timeout -1s
+	time kubectl --context=$1 --namespace=$vrg_namespace_name wait vrg/bb --for condition=clusterdataprotected --timeout -1s
 	{ set +x; } 2>/dev/null
 #	app_protection_info 1
 }; exit_stack_push unset -f app_protect
 
 app_unprotect() {
 	vrg_undeploy $1
-	kubectl --context=$1 --namespace=$app_namespace_0_name delete events --all
+	kubectl --context=$1 --namespace=$vrg_namespace_name delete events --all
 	velero_kube_objects_list $1
 	s3_objects_list
 }; exit_stack_push unset -f app_unprotect
@@ -508,13 +511,13 @@ app_recover() {
 	app_namespaces_deploy $1
 	vrg_deploy_$2 $1
 	set -x
-	time kubectl --context=$1 --namespace=$app_namespace_0_name wait vrg/bb --for condition=clusterdataready --timeout -1s
+	time kubectl --context=$1 --namespace=$vrg_namespace_name wait vrg/bb --for condition=clusterdataready --timeout -1s
 	{ set +x; } 2>/dev/null
 	app_list $1
 	set -x
-	time kubectl --context=$1 --namespace=$app_namespace_0_name wait vrg/bb --for condition=clusterdataprotected
-	time kubectl --context=$1 --namespace=$app_namespace_0_name wait vrg/bb --for condition=dataready --timeout 2m
-	time kubectl --context=$1 --namespace=$app_namespace_0_name wait vrg/bb --for jsonpath='{.status.state}'=Primary
+	time kubectl --context=$1 --namespace=$vrg_namespace_name wait vrg/bb --for condition=clusterdataprotected
+	time kubectl --context=$1 --namespace=$vrg_namespace_name wait vrg/bb --for condition=dataready --timeout 2m
+	time kubectl --context=$1 --namespace=$vrg_namespace_name wait vrg/bb --for jsonpath='{.status.state}'=Primary
 	{ set +x; } 2>/dev/null
 }; exit_stack_push unset -f app_recover
 
@@ -522,11 +525,11 @@ app_undeploy_failback() {
 	vrg_demote $1 $2
 	# "PVC not being deleted. Not ready to become Secondary"
 	set -x
-	time kubectl --context=$1 --namespace=$app_namespace_0_name wait vrg/bb --for condition=clusterdataprotected --timeout -1s
+	time kubectl --context=$1 --namespace=$vrg_namespace_name wait vrg/bb --for condition=clusterdataprotected --timeout -1s
 	{ set +x; } 2>/dev/null
 	time app_less_namespaces_undeploy $1& # pvc finalizer remains until vrg deletes its vr
 	set -x
-	time kubectl --context=$1 --namespace=$app_namespace_0_name wait vrg/bb --for jsonpath='{.status.state}'=Secondary --timeout -1s
+	time kubectl --context=$1 --namespace=$vrg_namespace_name wait vrg/bb --for jsonpath='{.status.state}'=Secondary --timeout -1s
 	{ set +x; } 2>/dev/null
 	$3
 	vrg_undeploy $1&
@@ -537,12 +540,12 @@ app_undeploy_failback() {
 app_recover_failback() {
 	# "VolumeReplication resource for the pvc as Secondary is in sync with Primary"
 	set -x
-	time kubectl --context=$2 --namespace=$app_namespace_0_name wait vrg/bb --for condition=dataprotected --timeout 10m
+	time kubectl --context=$2 --namespace=$vrg_namespace_name wait vrg/bb --for condition=dataprotected --timeout 10m
 	{ set +x; } 2>/dev/null
 	app_recover $1 relocate
 }; exit_stack_push unset -f app_recover_failback
 
-app_velero_kube_object_name=$app_namespace_0_name--bb--
+app_velero_kube_object_name=$vrg_namespace_name--bb--
 exit_stack_push unset -v app_velero_kube_object_name
 
 s3_objects_list() {
@@ -560,7 +563,7 @@ s3_objects_delete() {
 }; exit_stack_push unset -f s3_objects_list
 
 app_s3_object_name_prefix() {
-	echo $1/bucket/$app_namespace_0_name/bb/
+	echo $1/bucket/$vrg_namespace_name/bb/
 }; exit_stack_push unset -f app_s3_object_name_prefix
 
 app_s3_object_name_prefix_velero() {
