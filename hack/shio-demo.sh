@@ -75,10 +75,10 @@ infra_deploy() {
 infra_list() {
 	set -x
 	minikube profile list
-	kubectl --context cluster1 -nramen-system get deploy
-	kubectl --context cluster2 -nramen-system get deploy
-	kubectl --context cluster1 -nvelero get deploy/velero secret/s3secret
-	kubectl --context cluster2 -nvelero get deploy/velero secret/s3secret
+	kubectl --context=cluster1 --namespace=ramen-system get deploy
+	kubectl --context=cluster2 --namespace=ramen-system get deploy
+	kubectl --context=cluster1 --namespace=velero get deploy/velero secret/s3secret
+	kubectl --context=cluster2 --namespace=velero get deploy/velero secret/s3secret
 	mc tree cluster1
 	mc tree cluster2
 	app_opperator_list cluster1
@@ -98,7 +98,7 @@ velero_secret_kubectl() {
 	kubectl create secret generic s3secret --from-literal aws='[default]
 aws_access_key_id=minio
 aws_secret_access_key=minio123
-' --dry-run=client -oyaml|kubectl --context $1 -nvelero $2 -f-
+' --dry-run=client -oyaml|kubectl --context=$1 --namespace=velero $2 -f-
 }; exit_stack_push unset -f velero_secret_kubectl
 
 velero_secret_deploy() {
@@ -110,15 +110,15 @@ velero_secret_undeploy() {
 }; exit_stack_push unset -f velero_secret_undeploy
 
 velero_secret_list() {
-	kubectl --context $1 -nvelero get secret s3secret
+	kubectl --context=$1 --namespace=velero get secret s3secret
 }; exit_stack_push unset -f velero_secret_list
 
 namespace_list() {
-	kubectl --context $1 get namespace $2
+	kubectl --context=$1 get namespace $2
 }; exit_stack_push unset -f namespace_list
 
 namespace_get() {
-	kubectl --context $1 get namespace $2 -oyaml
+	kubectl --context=$1 get namespace $2 -oyaml
 }; exit_stack_push unset -f namespace_get
 
 namespace_yaml() {
@@ -142,7 +142,7 @@ app_operator_yaml() {
 }; exit_stack_push unset -f app_operator_yaml
 
 app_operator_kubectl() {
-	app_operator_yaml|kubectl --context $1 $2 -f-
+	app_operator_yaml|kubectl --context=$1 $2 -f-
 }; exit_stack_push unset -f app_operator_kubectl
 
 app_operator_deploy() {
@@ -184,7 +184,7 @@ app_namespaces_yaml() {
 }; exit_stack_push unset -f app_namespaces_yaml
 
 app_namespaces_kubectl() {
-	app_namespaces_yaml|kubectl --context $1 $2 -f-
+	app_namespaces_yaml|kubectl --context=$1 $2 -f-
 }; exit_stack_push unset -f app_namespaces_kubectl
 
 app_namespaces_deploy() {
@@ -203,15 +203,15 @@ exit_stack_push unset -v app_naked_pod_name app_clothed_pod_name app_configmap_n
 
 app_namespaced_yaml() {
 	echo ---
-	kubectl --dry-run=client -oyaml -n$1 create -k https://github.com/RamenDR/ocm-ramen-samples/busybox
+	kubectl --dry-run=client -oyaml --namespace=$1 create -k https://github.com/RamenDR/ocm-ramen-samples/busybox
 	echo ---
-	kubectl --dry-run=client -oyaml -n$1 create configmap $app_configmap_name
+	kubectl --dry-run=client -oyaml --namespace=$1 create configmap $app_configmap_name
 	echo "$app_labels_yaml"
 	echo ---
-	kubectl --dry-run=client -oyaml -n$1 create secret generic $app_secret_name --from-literal=key1=value1
+	kubectl --dry-run=client -oyaml --namespace=$1 create secret generic $app_secret_name --from-literal=key1=value1
 	echo "$app_labels_yaml"
 	echo ---
-	kubectl --dry-run=client -oyaml -n$1 run $app_naked_pod_name -l$app_label --image busybox -- sh -c while\ true\;do\ date\;sleep\ 60\;done
+	kubectl --dry-run=client -oyaml --namespace=$1 run $app_naked_pod_name -l$app_label --image busybox -- sh -c while\ true\;do\ date\;sleep\ 60\;done
 }; exit_stack_push unset -v app_namespaced_yaml
 
 app_less_namespaces_yaml() {
@@ -227,25 +227,25 @@ app_yaml() {
 
 app_deploy() {
 	set -- cluster1
-	app_yaml|kubectl --context $1 apply -f-
+	app_yaml|kubectl --context=$1 apply -f-
 	app_pvs_label $1
 	app_list $1
 }; exit_stack_push unset -f app_deploy
 
 app_pvs_label() {
 	for namespace_name in $app_namespace_names; do
-		kubectl --context $1 -n$namespace_name -l$app_label wait pvc --for jsonpath='{.status.phase}'=Bound
-		kubectl --context $1 label $(pv_names_claimed_by_namespace $1 $namespace_name) $app_label --overwrite
+		kubectl --context=$1 --namespace=$namespace_name -l$app_label wait pvc --for jsonpath='{.status.phase}'=Bound
+		kubectl --context=$1 label $(pv_names_claimed_by_namespace $1 $namespace_name) $app_label --overwrite
 	done; unset -v namespace_name
 }; exit_stack_push unset -f app_pvs_label
 
 app_less_namespaces_undeploy() {
-	app_less_namespaces_yaml|kubectl --context $1 delete --ignore-not-found -f-
+	app_less_namespaces_yaml|kubectl --context=$1 delete --ignore-not-found -f-
 	app_list $1
 }; exit_stack_push unset -f app_less_namespaces_undeploy
 
 app_undeploy() {
-	app_yaml|kubectl --context $1 delete --ignore-not-found -f-
+	app_yaml|kubectl --context=$1 delete --ignore-not-found -f-
 	app_list $1
 }; exit_stack_push unset -f app_undeploy
 
@@ -330,7 +330,7 @@ app_operator_recipe_yaml() {
 }; exit_stack_push unset -f app_operator_recipe_yaml
 
 app_operator_recipe_get() {
-	kubectl --context $1 -n$app_operator_namespace_name get -oyaml recipe/$app_operator_recipe_name
+	kubectl --context=$1 --namespace=$app_operator_namespace_name get -oyaml recipe/$app_operator_recipe_name
 }; exit_stack_push unset -f app_operator_recipe_get
 
 app_list() {
@@ -342,7 +342,7 @@ app_list() {
 }; exit_stack_push unset -f app_list
 
 app_list_custom() {
-	kubectl --context $1 -A -l$app_label get $2 ns,cm,secret,deploy,rs,po,pvc,pv,recipe,vrg,vr
+	kubectl --context=$1 -A -l$app_label get $2 ns,cm,secret,deploy,rs,po,pvc,pv,recipe,vrg,vr
 }; exit_stack_push unset -f app_list_custom
 
 vrg_apply() {
@@ -367,8 +367,8 @@ vrg_apply() {
 
 app_vrs_label() {
 	for namespace_name in $app_namespace_names; do
-		until_true_or_n 30 kubectl --context $1 -n$namespace_name get vr/busybox-pvc
-		kubectl --context $1 -n$namespace_name label vr/busybox-pvc $app_label --overwrite
+		until_true_or_n 30 kubectl --context=$1 --namespace=$namespace_name get vr/busybox-pvc
+		kubectl --context=$1 --namespace=$namespace_name label vr/busybox-pvc $app_label --overwrite
 	done; unset -v namespace_name
 }; exit_stack_push unset -f app_vrs_label
 
@@ -391,16 +391,16 @@ vrg_undeploy() {
 
 vrg_demote() {
 	vrg_deploy_$2 $1 _sec
-#	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for condition=clusterdataprotected=false
+#	time kubectl --context=$1 --namespace=$app_namespace_0_name wait vrg/bb --for condition=clusterdataprotected=false
 }; exit_stack_push unset -f vrg_demote
 
 vrg_final_sync() {
 	vrg_apply $1 '' '
   prepareForFinalSync: true'
-	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for jsonpath='{.status.prepareForFinalSyncComplete}'=true
+	time kubectl --context=$1 --namespace=$app_namespace_0_name wait vrg/bb --for jsonpath='{.status.prepareForFinalSyncComplete}'=true
 	vrg_apply $1 '' '
   runFinalSync: true'
-	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for jsonpath='{.status.finalSyncComplete}'=true
+	time kubectl --context=$1 --namespace=$app_namespace_0_name wait vrg/bb --for jsonpath='{.status.finalSyncComplete}'=true
 }; exit_stack_push unset -f vrg_final_sync
 
 vrg_fence() {
@@ -409,25 +409,25 @@ vrg_fence() {
 
 vrg_finalizer0_remove() {
 	true_if_exit_status_and_stderr 1 'Error from server (NotFound): volumereplicationgroups.ramendr.openshift.io "bb" not found' \
-	kubectl --context $1 -n$app_namespace_0_name patch vrg/bb --type json -p '[{"op":remove, "path":/metadata/finalizers/0}]'
+	kubectl --context=$1 --namespace=$app_namespace_0_name patch vrg/bb --type json -p '[{"op":remove, "path":/metadata/finalizers/0}]'
 }; exit_stack_push unset -f vrg_finalizer0_remove
 
 vr_finalizer0_remove() {
 	true_if_exit_status_and_stderr 1 'Error from server (NotFound): volumereplications.replication.storage.openshift.io "busybox-pvc" not found' \
-	kubectl --context $1 -n$app_namespace_0_name patch volumereplication/busybox-pvc --type json -p '[{"op":remove, "path":/metadata/finalizers/0}]'
+	kubectl --context=$1 --namespace=$app_namespace_0_name patch volumereplication/busybox-pvc --type json -p '[{"op":remove, "path":/metadata/finalizers/0}]'
 }; exit_stack_push unset -f vr_finalizer0_remove
 
 vrg_get() {
-	kubectl --context $1 -n$app_namespace_0_name get vrg/bb --ignore-not-found -oyaml
+	kubectl --context=$1 --namespace=$app_namespace_0_name get vrg/bb --ignore-not-found -oyaml
 }; exit_stack_push unset -f vrg_get
 
 vrg_spec_get() {
-	kubectl --context $1 -n$app_namespace_0_name get vrg/bb -ojsonpath='{.spec}'|json_to_yaml
+	kubectl --context=$1 --namespace=$app_namespace_0_name get vrg/bb -ojsonpath='{.spec}'|json_to_yaml
 }; exit_stack_push unset -f vrg_spec_get
 
 vrg_list() {
 	set -x
-	kubectl --context $1 -n$app_namespace_0_name get vrg/bb --ignore-not-found
+	kubectl --context=$1 --namespace=$app_namespace_0_name get vrg/bb --ignore-not-found
 	{ set +x;} 2>/dev/null
 }; exit_stack_push unset -f vrg_list
 
@@ -436,57 +436,57 @@ vrg_get_s3() {
 }; exit_stack_push unset -f vrg_get_s3
 
 vr_get() {
-	kubectl --context $1 -n$app_namespace_0_name get volumereplication/busybox-pvc --ignore-not-found -oyaml
+	kubectl --context=$1 --namespace=$app_namespace_0_name get volumereplication/busybox-pvc --ignore-not-found -oyaml
 }; exit_stack_push unset -f vr_get
 
 vr_list() {
-	kubectl --context $1 -n$app_namespace_0_name get volumereplication/busybox-pvc --ignore-not-found
+	kubectl --context=$1 --namespace=$app_namespace_0_name get volumereplication/busybox-pvc --ignore-not-found
 }; exit_stack_push unset -f vr_list
 
 vr_delete() {
-	kubectl --context $1 -n$app_namespace_0_name delete volumereplication/busybox-pvc --ignore-not-found
+	kubectl --context=$1 --namespace=$app_namespace_0_name delete volumereplication/busybox-pvc --ignore-not-found
 }; exit_stack_push unset -f vr_delete
 
 pvc_get() {
-	kubectl --context $1 -n$app_namespace_0_name get pvc/busybox-pvc -oyaml --ignore-not-found
+	kubectl --context=$1 --namespace=$app_namespace_0_name get pvc/busybox-pvc -oyaml --ignore-not-found
 }; exit_stack_push unset -f pvc_get
 
 pv_names_claimed_by_namespace() {
-	kubectl --context $1 get pv -ojsonpath='{range .items[?(@.spec.claimRef.namespace=="'$2'")]} pv/{.metadata.name}{end}'
+	kubectl --context=$1 get pv -ojsonpath='{range .items[?(@.spec.claimRef.namespace=="'$2'")]} pv/{.metadata.name}{end}'
 }; exit_stack_push unset -f pv_names_claimed_by_namespace
 
 pv_names() {
-	kubectl --context $1 get pv -ojsonpath='{range .items[?(@.spec.claimRef.name=="busybox-pvc")]} pv/{.metadata.name}{end}'
+	kubectl --context=$1 get pv -ojsonpath='{range .items[?(@.spec.claimRef.name=="busybox-pvc")]} pv/{.metadata.name}{end}'
 }; exit_stack_push unset -f pv_names
 
 pv_list() {
-	kubectl --context $1 get $(pv_names $1) --show-kind
+	kubectl --context=$1 get $(pv_names $1) --show-kind
 }; exit_stack_push unset -f pv_list
 
 pv_get() {
-	kubectl --context $1 get $(pv_names $1) -oyaml
+	kubectl --context=$1 get $(pv_names $1) -oyaml
 }; exit_stack_push unset -f pv_get
 
 pv_delete() {
-	kubectl --context $1 delete $(pv_names $1)
+	kubectl --context=$1 delete $(pv_names $1)
 }; exit_stack_push unset -f pv_delete
 
 pv_unretain() {
-	kubectl --context $1 patch $(pv_names $1) --type json -p '[{"op":add, "path":/spec/persistentVolumeReclaimPolicy, "value":Delete}]'
+	kubectl --context=$1 patch $(pv_names $1) --type json -p '[{"op":add, "path":/spec/persistentVolumeReclaimPolicy, "value":Delete}]'
 }; exit_stack_push unset -f pv_unretain
 
 app_protect() {
 	set -- cluster1
 	vrg_deploy $1
 	set -x
-	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for condition=clusterdataprotected --timeout -1s
+	time kubectl --context=$1 --namespace=$app_namespace_0_name wait vrg/bb --for condition=clusterdataprotected --timeout -1s
 	{ set +x; } 2>/dev/null
 #	app_protection_info 1
 }; exit_stack_push unset -f app_protect
 
 app_unprotect() {
 	vrg_undeploy $1
-	kubectl --context $1 -n$app_namespace_0_name delete events --all
+	kubectl --context=$1 --namespace=$app_namespace_0_name delete events --all
 	velero_kube_objects_list $1
 	s3_objects_list
 }; exit_stack_push unset -f app_unprotect
@@ -508,13 +508,13 @@ app_recover() {
 	app_namespaces_deploy $1
 	vrg_deploy_$2 $1
 	set -x
-	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for condition=clusterdataready --timeout -1s
+	time kubectl --context=$1 --namespace=$app_namespace_0_name wait vrg/bb --for condition=clusterdataready --timeout -1s
 	{ set +x; } 2>/dev/null
 	app_list $1
 	set -x
-	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for condition=clusterdataprotected
-	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for condition=dataready --timeout 2m
-	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for jsonpath='{.status.state}'=Primary
+	time kubectl --context=$1 --namespace=$app_namespace_0_name wait vrg/bb --for condition=clusterdataprotected
+	time kubectl --context=$1 --namespace=$app_namespace_0_name wait vrg/bb --for condition=dataready --timeout 2m
+	time kubectl --context=$1 --namespace=$app_namespace_0_name wait vrg/bb --for jsonpath='{.status.state}'=Primary
 	{ set +x; } 2>/dev/null
 }; exit_stack_push unset -f app_recover
 
@@ -522,11 +522,11 @@ app_undeploy_failback() {
 	vrg_demote $1 $2
 	# "PVC not being deleted. Not ready to become Secondary"
 	set -x
-	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for condition=clusterdataprotected --timeout -1s
+	time kubectl --context=$1 --namespace=$app_namespace_0_name wait vrg/bb --for condition=clusterdataprotected --timeout -1s
 	{ set +x; } 2>/dev/null
 	time app_less_namespaces_undeploy $1& # pvc finalizer remains until vrg deletes its vr
 	set -x
-	time kubectl --context $1 -n$app_namespace_0_name wait vrg/bb --for jsonpath='{.status.state}'=Secondary --timeout -1s
+	time kubectl --context=$1 --namespace=$app_namespace_0_name wait vrg/bb --for jsonpath='{.status.state}'=Secondary --timeout -1s
 	{ set +x; } 2>/dev/null
 	$3
 	vrg_undeploy $1&
@@ -537,7 +537,7 @@ app_undeploy_failback() {
 app_recover_failback() {
 	# "VolumeReplication resource for the pvc as Secondary is in sync with Primary"
 	set -x
-	time kubectl --context $2 -n$app_namespace_0_name wait vrg/bb --for condition=dataprotected --timeout 10m
+	time kubectl --context=$2 --namespace=$app_namespace_0_name wait vrg/bb --for condition=dataprotected --timeout 10m
 	{ set +x; } 2>/dev/null
 	app_recover $1 relocate
 }; exit_stack_push unset -f app_recover_failback
@@ -612,21 +612,21 @@ velero_restore_log() {
 }; exit_stack_push unset -f velero_restore_log
 
 velero_kube_objects_list() {
-	velero --kubecontext $1 get backups
-	velero --kubecontext $1 get backup-locations
-	velero --kubecontext $1 get restores
+	velero --kubecontext=$1 get backups
+	velero --kubecontext=$1 get backup-locations
+	velero --kubecontext=$1 get restores
 }; exit_stack_push unset -f velero_kube_objects_list
 
 velero_kube_objects_undeploy() {
 	velero_kube_objects_list $1
-	velero --kubecontext $1 delete --all --confirm backups
-	velero --kubecontext $1 delete --all --confirm backup-locations
-	velero --kubecontext $1 delete --all --confirm restores
+	velero --kubecontext=$1 delete --all --confirm backups
+	velero --kubecontext=$1 delete --all --confirm backup-locations
+	velero --kubecontext=$1 delete --all --confirm restores
 	velero_kube_objects_list $1
 }; exit_stack_push unset -f velero_kube_objects_undeploy
 
 velero_kube_objects_delete() {
-	kubectl --context $1 -n velero delete --all restores,backups,backupstoragelocations
+	kubectl --context=$1 --namespace= velero delete --all restores,backups,backupstoragelocations
 }; exit_stack_push unset -f velero_kube_objects_delete
 
 s3_store_cluster_names=${s3_store_cluster_names-cluster2\ cluster1}
