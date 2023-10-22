@@ -49,33 +49,34 @@ manager_redeploy() {
 	manager_deploy
 }
 manager_log() {
-	kubectl --context $1 -nramen-system logs deploy/ramen-dr-cluster-operator manager
+	kubectl --context "$1" -nramen-system logs deploy/ramen-dr-cluster-operator manager
 }
 application_sample_namespace_name=${application_sample_namespace_name:-default}
 application_sample_namespace_deploy() {
 	kubectl create namespace $application_sample_namespace_name --dry-run=client -oyaml|kubectl --context $1 apply -f-
 }
 application_sample_namespace_undeploy() {
-	kubectl --context $1 delete namespace $application_sample_namespace_name
+	kubectl --context "$1" delete namespace $application_sample_namespace_name
 }
-application_sample_kubectl() {
-	kubectl --context $1 -n$application_sample_namespace_name $2 -khttps://github.com/RamenDR/ocm-ramen-samples/busybox
+application_sample_yaml() {
+	kubectl create --dry-run=client -oyaml --namespace "$application_sample_namespace_name" -k https://github.com/RamenDR/ocm-ramen-samples/busybox
 }
 application_sample_deploy() {
-	application_sample_kubectl $1 apply
+	application_sample_yaml|kubectl --context "$1" apply -f -
 }
 application_sample_undeploy() {
-	application_sample_kubectl $1 delete
+	application_sample_yaml|kubectl --context "$1" delete -f - --ignore-not-found
 }
-application_sample_vrg_kubectl() {
-	cat <<-a|kubectl --context=$1 --namespace=$2 $4 -f-
+application_sample_vrg_yaml() {
+	cat <<-a
 	---
 	apiVersion: ramendr.openshift.io/v1alpha1
 	kind: VolumeReplicationGroup
 	metadata:
 	  name: bb
+	  namespace: $2
 	  labels:
-	    $5
+	    $3
 	spec:
 	  async:
 	    replicationClassSelector: {}
@@ -83,19 +84,19 @@ application_sample_vrg_kubectl() {
 	  pvcSelector:
 	    matchLabels:
 	      appname: busybox
-	  replicationState: $3
+	  replicationState: $1
 	  s3Profiles:
 $(for cluster_name in $cluster_names; do echo \ \ -\ minio-on-$cluster_name; done; unset -v cluster_name)${vrg_appendix-}
 	a
 }
 application_sample_vrg_deploy() {
-	application_sample_vrg_kubectl $1 $2 primary apply "$3"
+	application_sample_vrg_yaml primary "$2" "$3"|kubectl --context "$1" apply -f -
 }
 application_sample_vrg_deploy_sec() {
-	application_sample_vrg_kubectl $1 $2 secondary apply "$3"
+	application_sample_vrg_yaml secondary "$2" "$3"|kubectl --context "$1" apply -f -
 }
 application_sample_vrg_undeploy() {
-	application_sample_vrg_kubectl $1 $2 primary delete\ --ignore-not-found
+	application_sample_vrg_yaml primary "$2" "$3"|kubectl --context "$1" delete --ignore-not-found -f -
 }
 "${@:-deploy}"
 unset -f application_sample_vrg_undeploy
