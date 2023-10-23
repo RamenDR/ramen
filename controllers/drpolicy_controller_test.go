@@ -134,7 +134,7 @@ var _ = Describe("DrpolicyController", func() {
 				}
 
 				return
-			}(), timeout, interval).Should(ConsistOf(clusterList))
+			}, timeout, interval).Should(ConsistOf(clusterList))
 		}
 	}
 
