@@ -98,21 +98,20 @@ def verify_ssh(cluster):
 
     for i in range(retries):
         time.sleep(delay)
-        print("Running 'hostname' inside the VM via ssh")
+        print(f"Last entries in /var/log/ramen.log (attempt {i+1}/{retries})")
         try:
             out = virtctl.ssh(
                 "testvm",
-                "hostname",
+                "tail -6 /var/log/ramen.log",
                 username="cirros",
                 namespace=NAMESPACE,
                 known_hosts="",  # Skip host key verification.
                 context=cluster,
             )
         except Exception as e:
-            print(f"Attempt {i+1}/{retries} failed: {e}")
+            print(f"{e}")
             print(f"Retrying in {delay} seconds...")
         else:
-            print(f"Attempt {i+1}/{retries} succeeded")
             print(out)
             break
     else:
