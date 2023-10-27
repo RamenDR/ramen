@@ -28,11 +28,11 @@ import (
 var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	const recipeErrorMessagePrefix = "Failed to get recipe"
 	extraVrgNamespacesFeatureEnabledSetAndDeferRestore := func(enable bool) {
-		enabled := ramenConfig.KubeObjectProtection.ExtraVrgNamespacesFeatureEnabled
-		ramenConfig.KubeObjectProtection.ExtraVrgNamespacesFeatureEnabled = enable
+		enabled := ramenConfig.MultiNamespace.FeatureEnabled
+		ramenConfig.MultiNamespace.FeatureEnabled = enable
 		configMapUpdate()
 		DeferCleanup(func() {
-			ramenConfig.KubeObjectProtection.ExtraVrgNamespacesFeatureEnabled = enabled
+			ramenConfig.MultiNamespace.FeatureEnabled = enabled
 			configMapUpdate()
 		})
 	}
