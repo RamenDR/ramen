@@ -22,7 +22,7 @@ func MapCopy[M ~map[K]V, K, V comparable](src M, dst *M) bool {
 	var diff bool
 
 	for key, value := range src {
-		if d[key] == value {
+		if v, ok := d[key]; ok && v == value {
 			continue
 		}
 
@@ -43,6 +43,34 @@ func MapDoF[M ~map[K]V, K, V comparable, R any](src M, dstGet func() M, dstSet f
 	dstSet(dst)
 
 	return r
+}
+
+// Deletes any key-value pairs from dst that are in src.
+// Returns whether dst changes.
+func MapDelete[M ~map[K]V, K, V comparable](src M, dst *M) bool {
+	if *dst == nil {
+		return false
+	}
+
+	d := *dst
+
+	var diff bool
+
+	for key, value := range src {
+		if v, ok := d[key]; ok && v != value {
+			continue
+		}
+
+		delete(d, key)
+
+		diff = true
+	}
+
+	return diff
+}
+
+func MapDeleteF[M ~map[K]V, K, V comparable](src M, dstGet func() M, dstSet func(M)) bool {
+	return MapDoF(src, dstGet, dstSet, MapDelete[M, K, V])
 }
 
 type Comparison int

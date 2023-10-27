@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/ramendr/ramen/controllers/kubeobjects"
 	"github.com/ramendr/ramen/controllers/kubeobjects/velero"
+	"golang.org/x/exp/maps" // TODO replace with "maps" in go1.21+
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -30,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -201,14 +203,29 @@ func pvcPredicateFunc() predicate.Funcs {
 	return pvcPredicate
 }
 
-func updateEventDecision(oldPVC *corev1.PersistentVolumeClaim,
-	newPVC *corev1.PersistentVolumeClaim,
-	log logr.Logger,
-) bool {
+func updateEventDecision(oldPVC, newPVC *corev1.PersistentVolumeClaim, log logr.Logger) bool {
 	const requeue bool = true
 
-	pvcNamespacedName := types.NamespacedName{Name: newPVC.Name, Namespace: newPVC.Namespace}
-	predicateLog := log.WithValues("pvc", pvcNamespacedName.String())
+	predicateLog := log.WithValues("pvc", types.NamespacedName{Name: newPVC.Name, Namespace: newPVC.Namespace}.String())
+
+	if addedOrRemoved, added, removed := pvcFinalizerAddedOrRemoved(oldPVC, newPVC); addedOrRemoved {
+		predicateLog.Info("Not reconciling due to finalizer addition or removal", "added", added, "removed", removed)
+
+		return !requeue
+	}
+
+	if added, protected, archived := pvcAnnotationAdded(oldPVC, newPVC); added {
+		predicateLog.Info("Not reconciling due to annotation addition", "protected", protected, "archived", archived)
+
+		return !requeue
+	}
+
+	if oldLabels, newLabels := oldPVC.GetLabels(), newPVC.GetLabels(); !maps.Equal(oldLabels, newLabels) {
+		predicateLog.Info("Reconciling due to label change", "before", oldLabels, "after", newLabels)
+
+		return requeue
+	}
+
 	// If finalizers change then deep equal of spec fails to catch it, we may want more
 	// conditions here, compare finalizers and also status.phase to catch bound PVCs
 	if !reflect.DeepEqual(oldPVC.Spec, newPVC.Spec) {
@@ -218,19 +235,15 @@ func updateEventDecision(oldPVC *corev1.PersistentVolumeClaim,
 	}
 
 	if oldPVC.Status.Phase != corev1.ClaimBound && newPVC.Status.Phase == corev1.ClaimBound {
-		predicateLog.Info("Reconciling due to phase change", "oldPhase", oldPVC.Status.Phase,
-			"newPhase", newPVC.Status.Phase)
+		predicateLog.Info("Reconciling due to phase change", "before", oldPVC.Status.Phase, "after", newPVC.Status.Phase)
 
 		return requeue
 	}
 
-	// This check may not be needed and can lead to some
-	// unnecessary reconciles being triggered when the
-	// pod that uses this pvc gets rescheduled to some
-	// other node and pvcInUse finalizer is removed as
+	// This check may not be needed and can lead to some unnecessary reconciles being triggered when the
+	// pod that uses this pvc gets rescheduled to some other node and pvcInUse finalizer is removed as
 	// no pod is mounting it.
-	if containsString(oldPVC.ObjectMeta.Finalizers, pvcInUse) &&
-		!containsString(newPVC.ObjectMeta.Finalizers, pvcInUse) {
+	if controllerutil.ContainsFinalizer(oldPVC, pvcInUse) && !controllerutil.ContainsFinalizer(newPVC, pvcInUse) {
 		predicateLog.Info("Reconciling due to pvc not in use")
 
 		return requeue
@@ -246,10 +259,31 @@ func updateEventDecision(oldPVC *corev1.PersistentVolumeClaim,
 		return requeue
 	}
 
-	predicateLog.Info("Not Requeuing", "oldPVC Phase", oldPVC.Status.Phase,
-		"newPVC phase", newPVC.Status.Phase)
+	predicateLog.Info("Not Requeuing", "oldPVC Phase", oldPVC.Status.Phase, "newPVC phase", newPVC.Status.Phase)
 
 	return !requeue
+}
+
+func pvcFinalizerAddedOrRemoved(oldPVC, newPVC *corev1.PersistentVolumeClaim) (bool, bool, bool) {
+	contained := controllerutil.ContainsFinalizer(oldPVC, PvcVRFinalizerProtected)
+	contains := controllerutil.ContainsFinalizer(newPVC, PvcVRFinalizerProtected)
+	added := !contained && contains
+	removed := contained && !contains
+
+	return added || removed, added, removed
+}
+
+func pvcAnnotationAdded(oldPVC, newPVC *corev1.PersistentVolumeClaim) (bool, bool, bool) {
+	before := oldPVC.GetAnnotations()
+	after := newPVC.GetAnnotations()
+	_, protectedBefore := before[pvcVRAnnotationProtectedKey]
+	_, protectedAfter := after[pvcVRAnnotationProtectedKey]
+	_, archivedBefore := before[pvcVRAnnotationArchivedKey]
+	_, archivedAfter := after[pvcVRAnnotationArchivedKey]
+	protectedAdded := !protectedBefore && protectedAfter
+	archivedAdded := !archivedBefore && archivedAfter
+
+	return protectedAdded || archivedAdded, protectedAdded, archivedAdded
 }
 
 func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr.Logger) []reconcile.Request {
@@ -295,10 +329,18 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 			continue
 		}
 
-		if selector.Matches(labels.Set(pvc.GetLabels())) && slices.Contains(pvcSelector.NamespaceNames, pvc.Namespace) {
-			log1.Info("Found VolumeReplicationGroup with matching labels", "labeled", selector)
+		vrgNamespacedName := types.NamespacedName{Name: vrg.Name, Namespace: vrg.Namespace}
+		namespaceSelected := slices.Contains(pvcSelector.NamespaceNames, pvc.Namespace)
+		labelMatch := selector.Matches(labels.Set(pvc.GetLabels()))
+		ownerMatch := rmnutil.OwnerNamespacedName(pvc) == vrgNamespacedName
 
-			req = append(req, reconcile.Request{NamespacedName: types.NamespacedName{Name: vrg.Name, Namespace: vrg.Namespace}})
+		if labelMatch && namespaceSelected || ownerMatch {
+			log1.Info("Found VolumeReplicationGroup with matching labels or owner",
+				"vrg", vrgNamespacedName.String(), "selector", selector,
+				"namespaces selected", pvcSelector.NamespaceNames,
+				"label match", labelMatch, "owner match", ownerMatch)
+
+			req = append(req, reconcile.Request{NamespacedName: vrgNamespacedName})
 		}
 	}
 
@@ -420,6 +462,7 @@ type VRGInstance struct {
 	volSyncHandler       *volsync.VSHandler
 	objectStorers        map[string]cachedObjectStorer
 	s3StoreAccessors     []s3StoreAccessor
+	result               ctrl.Result
 }
 
 const (
@@ -447,6 +490,10 @@ const (
 	// Maintenance mode label
 	MModesLabel = "ramendr.openshift.io/maintenancemodes"
 )
+
+func (v *VRGInstance) requeue() {
+	v.result.Requeue = true
+}
 
 func (v *VRGInstance) processVRG() ctrl.Result {
 	if err := v.validateVRGState(); err != nil {
@@ -581,13 +628,28 @@ func (v *VRGInstance) clusterDataRestore(result *ctrl.Result) error {
 	return nil
 }
 
-// updatePVCList fetches and updates the PVC list to process for the current instance of VRG
-func (v *VRGInstance) updatePVCList() error {
-	pvcList, err := rmnutil.ListPVCsByPVCSelector(v.ctx, v.reconciler.Client, v.log,
-		v.recipeElements.PvcSelector.LabelSelector,
+func (v *VRGInstance) listPVCsByVrgPVCSelector() (*corev1.PersistentVolumeClaimList, error) {
+	return v.listPVCsByPVCSelector(v.recipeElements.PvcSelector.LabelSelector)
+}
+
+func (v *VRGInstance) listPVCsOwnedByVrg() (*corev1.PersistentVolumeClaimList, error) {
+	vrg := v.instance
+
+	return v.listPVCsByPVCSelector(metav1.LabelSelector{MatchLabels: rmnutil.OwnerLabels(vrg)})
+}
+
+func (v *VRGInstance) listPVCsByPVCSelector(labelSelector metav1.LabelSelector,
+) (*corev1.PersistentVolumeClaimList, error) {
+	return rmnutil.ListPVCsByPVCSelector(v.ctx, v.reconciler.Client, v.log,
+		labelSelector,
 		v.recipeElements.PvcSelector.NamespaceNames,
 		v.instance.Spec.VolSync.Disabled,
 	)
+}
+
+// updatePVCList fetches and updates the PVC list to process for the current instance of VRG
+func (v *VRGInstance) updatePVCList() error {
+	pvcList, err := v.listPVCsByVrgPVCSelector()
 	if err != nil {
 		return err
 	}
@@ -717,10 +779,10 @@ func (v *VRGInstance) processForDeletion() ctrl.Result {
 		return ctrl.Result{}
 	}
 
-	if v.deleteVRGHandleMode() {
+	if v.deleteVRGHandleMode(); v.result.Requeue {
 		v.log.Info("Requeuing as reconciling VolumeReplication for deletion failed")
 
-		return ctrl.Result{Requeue: true}
+		return v.result
 	}
 
 	result := ctrl.Result{}
@@ -756,8 +818,8 @@ func (v *VRGInstance) processForDeletion() ctrl.Result {
 // However, in the future, we may want to enable both modes at the same time
 // and might call different functions for those modes. This function is in
 // preparation of that need.
-func (v *VRGInstance) deleteVRGHandleMode() bool {
-	return v.reconcileVRsForDeletion()
+func (v *VRGInstance) deleteVRGHandleMode() {
+	v.reconcileVRsForDeletion()
 }
 
 // addFinalizer adds a finalizer to VRG, to act as deletion protection
@@ -804,42 +866,78 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 
 	defer v.log.Info("Exiting processing VolumeReplicationGroup")
 
-	result := ctrl.Result{}
-	if err := v.clusterDataRestore(&result); err != nil {
-		return v.clusterDataError(err, "Failed to restore PVs", result)
+	if err := v.pvcsDeselectedUnprotect(); err != nil {
+		return v.dataError(err, "PVCs deselected unprotect failed", v.result.Requeue)
 	}
 
-	result = v.reconcileAsPrimary()
+	if err := v.clusterDataRestore(&v.result); err != nil {
+		return v.clusterDataError(err, "Failed to restore PVs", v.result)
+	}
+
+	v.reconcileAsPrimary()
 
 	// If requeue is false, then VRG was successfully processed as primary.
 	// Hence the event to be generated is Success of type normal.
 	// Expectation is that, if something failed and requeue is true, then
 	// appropriate event might have been captured at the time of failure.
-	if !result.Requeue {
+	if !v.result.Requeue {
 		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeNormal,
 			rmnutil.EventReasonPrimarySuccess, "Primary Success")
 	}
 
-	return v.updateVRGConditionsAndStatus(result)
+	return v.updateVRGConditionsAndStatus(v.result)
 }
 
-func (v *VRGInstance) reconcileAsPrimary() ctrl.Result {
+func (v *VRGInstance) reconcileAsPrimary() {
 	var finalSyncPrepared struct {
 		volSync bool
 	}
 
 	vrg := v.instance
-	result := ctrl.Result{}
-	result.Requeue = v.reconcileVolSyncAsPrimary(&finalSyncPrepared.volSync)
-	v.reconcileVolRepsAsPrimary(&result.Requeue)
-	v.kubeObjectsProtectPrimary(&result)
-	v.vrgObjectProtect(&result)
+	v.result.Requeue = v.reconcileVolSyncAsPrimary(&finalSyncPrepared.volSync)
+	v.reconcileVolRepsAsPrimary()
+	v.kubeObjectsProtectPrimary(&v.result)
+	v.vrgObjectProtect(&v.result)
 
 	if vrg.Spec.PrepareForFinalSync {
 		vrg.Status.PrepareForFinalSyncComplete = finalSyncPrepared.volSync
 	}
+}
 
-	return result
+func (v *VRGInstance) pvcsDeselectedUnprotect() error {
+	log := v.log.WithName("PvcsDeselectedUnprotect")
+
+	if !v.ramenConfig.VolumeUnprotectionEnabled {
+		log.Info("disabled")
+
+		return nil
+	}
+
+	pvcsOwned, err := v.listPVCsOwnedByVrg()
+	if err != nil {
+		log.Error(err, "PVCs owned by VRG list")
+
+		return err
+	}
+
+	pvcsVr := rmnutil.ObjectsMap(v.volRepPVCs...)
+	pvcsVs := rmnutil.ObjectsMap(v.volSyncPVCs...)
+
+	for i := range pvcsOwned.Items {
+		pvc := pvcsOwned.Items[i]
+		pvcNamespacedName := client.ObjectKeyFromObject(&pvc)
+		log1 := log.WithValues("pvc", pvcNamespacedName.String())
+
+		if _, ok := pvcsVr[pvcNamespacedName]; !ok {
+			v.pvcUnprotectVolRep(pvc, log1.WithName("VolRep"))
+		}
+
+		if _, ok := pvcsVs[pvcNamespacedName]; !ok {
+			v.pvcUnprotectVolSync(pvc, log1.WithName("VolSync"))
+		}
+	}
+
+	return nil
 }
 
 // processAsSecondary reconciles the current instance of VRG as secondary

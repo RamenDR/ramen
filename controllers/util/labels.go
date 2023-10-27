@@ -21,6 +21,10 @@ func ObjectLabelsSet(object metav1.Object, labels map[string]string) bool {
 	return ObjectLabelsDo(object, labels, MapCopyF[map[string]string, string, string])
 }
 
+func ObjectLabelsDelete(object metav1.Object, labels map[string]string) bool {
+	return ObjectLabelsDo(object, labels, MapDeleteF[map[string]string, string, string])
+}
+
 func ObjectLabelInsertOnlyAll(object metav1.Object, labels map[string]string) Comparison {
 	return ObjectLabelsDo(object, labels, MapInsertOnlyAllF[map[string]string, string, string])
 }
@@ -32,13 +36,21 @@ func ObjectLabelsDo[T any](object metav1.Object, labels map[string]string,
 }
 
 func ObjectOwnerSet(object, owner metav1.Object) bool {
-	return ObjectLabelsSet(object, OwnerLabels(owner.GetNamespace(), owner.GetName()))
+	return ObjectLabelsSet(object, OwnerLabels(owner))
 }
 
-func OwnerLabels(ownerNamespaceName, ownerName string) Labels {
+func ObjectOwnerSetIfNotAlready(object, owner metav1.Object) Comparison {
+	return ObjectLabelInsertOnlyAll(object, OwnerLabels(owner))
+}
+
+func ObjectOwnerUnsetIfSet(object, owner metav1.Object) bool {
+	return ObjectLabelsDelete(object, OwnerLabels(owner))
+}
+
+func OwnerLabels(owner metav1.Object) Labels {
 	return Labels{
-		labelOwnerNamespaceName: ownerNamespaceName,
-		labelOwnerName:          ownerName,
+		labelOwnerNamespaceName: owner.GetNamespace(),
+		labelOwnerName:          owner.GetName(),
 	}
 }
 
@@ -49,8 +61,8 @@ func OwnerNamespaceNameAndName(labels Labels) (string, string, bool) {
 	return ownerNamespaceName, ownerName, ok1 && ok2
 }
 
-func OwnerNamespacedName(labels Labels) types.NamespacedName {
-	ownerNamespaceName, ownerName, _ := OwnerNamespaceNameAndName(labels)
+func OwnerNamespacedName(owner metav1.Object) types.NamespacedName {
+	ownerNamespaceName, ownerName, _ := OwnerNamespaceNameAndName(owner.GetLabels())
 
 	return types.NamespacedName{
 		Namespace: ownerNamespaceName,

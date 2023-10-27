@@ -152,6 +152,9 @@ type RamenConfig struct {
 		// Enables feature to protect resources in namespaces other than VRG's
 		FeatureEnabled bool `json:"FeatureEnabled,omitempty"`
 	} `json:"multiNamespace,omitempty"`
+
+	// Unprotect deleted or deselected PVCs
+	VolumeUnprotectionEnabled bool `json:"volumeUnprotectionEnabled,omitempty"`
 }
 
 func init() {

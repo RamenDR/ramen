@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/go-logr/logr"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/volsync"
 	corev1 "k8s.io/api/core/v1"
@@ -389,4 +390,12 @@ func protectedPVCAnnotations(pvc corev1.PersistentVolumeClaim) map[string]string
 	}
 
 	return res
+}
+
+func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log logr.Logger) {
+	if true {
+		return
+	}
+	// TODO Delete ReplicationSource, ReplicationDestination, etc.
+	v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
 }
