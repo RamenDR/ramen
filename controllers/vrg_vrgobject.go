@@ -12,7 +12,7 @@ import (
 
 var vrgLastUploadVersion = map[string]string{}
 
-func (v *VRGInstance) vrgObjectProtect(result *ctrl.Result, s3StoreAccessors []s3StoreAccessor) {
+func (v *VRGInstance) vrgObjectProtect(result *ctrl.Result) {
 	vrg := v.instance
 	log := v.log
 
@@ -24,17 +24,17 @@ func (v *VRGInstance) vrgObjectProtect(result *ctrl.Result, s3StoreAccessors []s
 		}
 	}
 
-	v.vrgObjectProtectThrottled(result, s3StoreAccessors, func() {}, func() {})
+	v.vrgObjectProtectThrottled(result, func() {}, func() {})
 }
 
-func (v *VRGInstance) vrgObjectProtectThrottled(result *ctrl.Result, s3StoreAccessors []s3StoreAccessor,
+func (v *VRGInstance) vrgObjectProtectThrottled(result *ctrl.Result,
 	success, failure func(),
 ) {
 	vrg := v.instance
 	eventReporter := v.reconciler.eventRecorder
 	log := v.log
 
-	for _, s3StoreAccessor := range s3StoreAccessors {
+	for _, s3StoreAccessor := range v.s3StoreAccessors {
 		log1 := log.WithValues("profile", s3StoreAccessor.S3ProfileName)
 
 		if err := VrgObjectProtect(s3StoreAccessor.ObjectStorer, *vrg); err != nil {

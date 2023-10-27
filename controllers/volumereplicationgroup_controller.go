@@ -419,6 +419,7 @@ type VRGInstance struct {
 	namespacedName       string
 	volSyncHandler       *volsync.VSHandler
 	objectStorers        map[string]cachedObjectStorer
+	s3StoreAccessors     []s3StoreAccessor
 }
 
 const (
@@ -473,6 +474,7 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 	}
 
 	v.log = v.log.WithName("vrginstance").WithValues("State", v.instance.Spec.ReplicationState)
+	v.s3StoreAccessorsGet()
 
 	if !v.instance.GetDeletionTimestamp().IsZero() {
 		v.log = v.log.WithValues("Finalize", true)
@@ -827,12 +829,11 @@ func (v *VRGInstance) reconcileAsPrimary() ctrl.Result {
 	}
 
 	vrg := v.instance
-	s3StoreAccessors := v.s3StoreAccessorsGet()
 	result := ctrl.Result{}
 	result.Requeue = v.reconcileVolSyncAsPrimary(&finalSyncPrepared.volSync)
 	v.reconcileVolRepsAsPrimary(&result.Requeue)
-	v.kubeObjectsProtectPrimary(&result, s3StoreAccessors)
-	v.vrgObjectProtect(&result, s3StoreAccessors)
+	v.kubeObjectsProtectPrimary(&result)
+	v.vrgObjectProtect(&result)
 
 	if vrg.Spec.PrepareForFinalSync {
 		vrg.Status.PrepareForFinalSyncComplete = finalSyncPrepared.volSync
@@ -865,13 +866,12 @@ func (v *VRGInstance) processAsSecondary() ctrl.Result {
 
 func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
 	vrg := v.instance
-	s3StoreAccessors := v.s3StoreAccessorsGet()
 	result := ctrl.Result{}
 	result.Requeue = v.reconcileVolSyncAsSecondary() || result.Requeue
 	result.Requeue = v.reconcileVolRepsAsSecondary() || result.Requeue
 
 	if vrg.Spec.Action == ramendrv1alpha1.VRGActionRelocate {
-		v.relocate(&result, s3StoreAccessors)
+		v.relocate(&result)
 	}
 
 	// Clear the conditions only if there are no more work as secondary and the RDSpec is not empty.
@@ -884,14 +884,14 @@ func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
 	return result
 }
 
-func (v *VRGInstance) relocate(result *ctrl.Result, s3StoreAccessors []s3StoreAccessor) {
+func (v *VRGInstance) relocate(result *ctrl.Result) {
 	vrg := v.instance
 
 	if clusterDataProtected := meta.FindStatusCondition(vrg.Status.Conditions,
 		VRGConditionTypeClusterDataProtected,
 	); clusterDataProtected != nil && (clusterDataProtected.Status != metav1.ConditionTrue ||
 		clusterDataProtected.ObservedGeneration != vrg.Generation) {
-		v.kubeObjectsProtectSecondary(result, s3StoreAccessors)
+		v.kubeObjectsProtectSecondary(result)
 	}
 }
 
@@ -1131,10 +1131,9 @@ func (v *VRGInstance) updateLastGroupSyncBytes() {
 	v.instance.Status.LastGroupSyncBytes = totalLastSyncBytes
 }
 
-func (v *VRGInstance) s3StoreAccessorsGet() []s3StoreAccessor {
+func (v *VRGInstance) s3StoreAccessorsGet() {
 	vrg := v.instance
-
-	return s3StoreAccessorsGet(
+	v.s3StoreAccessors = s3StoreAccessorsGet(
 		vrg.Spec.S3Profiles,
 		func(s3ProfileName string) (ObjectStorer, ramendrv1alpha1.S3StoreProfile, error) {
 			return v.reconciler.ObjStoreGetter.ObjectStore(
