@@ -20,6 +20,7 @@ import (
 	gomegatypes "github.com/onsi/gomega/types"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	vrgController "github.com/ramendr/ramen/controllers"
+	"github.com/ramendr/ramen/controllers/util"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -61,8 +62,16 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		return condition
 	}
 	var vrgNamespacedName types.NamespacedName
-	vrgGet := func() {
+	vrgGet := func() *ramendrv1alpha1.VolumeReplicationGroup {
 		Expect(apiReader.Get(context.TODO(), vrgNamespacedName, vrg)).To(Succeed())
+
+		return vrg
+	}
+	vrgResourceVersionGet := func() string {
+		return vrgGet().GetResourceVersion()
+	}
+	vrgStatusPvcsGet := func() []ramendrv1alpha1.ProtectedPVC {
+		return vrgGet().Status.ProtectedPVCs
 	}
 	var dataReadyCondition *metav1.Condition
 	When("ReplicationState is invalid", func() {
@@ -271,7 +280,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 				vrgGenerationExpected int64 = 1 + iota
 				vrgGenerationNext
 			)
-			BeforeEach(OncePerOrdered, func() {
+			BeforeAll(func() {
 				t = vrgTestBoundPV
 				vrgObjectStorer := *vrgObjectStorer
 				vrgNamespacedName := t.vrgNamespacedName()
@@ -284,11 +293,14 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 				Expect(pvcs).To(HaveLen(len(t.pvcNames)))
 				for i := range pvcs {
 					pvc := &pvcs[i]
-					pvcNamespacedNames[0][i] = types.NamespacedName{Namespace: pvc.Namespace, Name: pvc.Name}
+					pvcNamespacedName := client.ObjectKeyFromObject(pvc)
+					pvcNamespacedNames[0][i] = pvcNamespacedName
 					pvcNamespacedNames[1][i] = types.NamespacedName{Namespace: vrgNamespacedName.Namespace, Name: t.pvcNames[i]}
 					Expect(vrgController.DeleteTypedObject(vrgObjectStorer, vrgS3KeyPrefix,
-						client.ObjectKeyFromObject(pvc).String(), *pvc)).To(Succeed())
+						pvcNamespacedName.String(), *pvc)).To(Succeed())
+					DeferCleanup(vrgController.UploadPVC, vrgObjectStorer, vrgS3KeyPrefix, pvcNamespacedName.String(), *pvc)
 					Expect(vrgController.UploadPVC(vrgObjectStorer, vrgS3KeyPrefix, pvc.Name, *pvc)).To(Succeed())
+					DeferCleanup(vrgController.DeleteTypedObject, vrgObjectStorer, vrgS3KeyPrefix, pvc.Name, *pvc)
 				}
 				Expect(pvcNamespacedNames[0]).To(ConsistOf(pvcNamespacedNames[1]))
 
@@ -331,8 +343,136 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 				})
 			})
 		})
+		Context("PVC selection", func() {
+			var t *vrgTest
+			BeforeAll(func() {
+				t = vrgTestBoundPV
+				vrgNamespacedName = t.vrgNamespacedName()
+			})
+			var pvcNamesSelected, pvcNamesDeselected []string
+			pvcsVerify := func(pvcNames []string,
+				verify func(vrg ramendrv1alpha1.VolumeReplicationGroup, pvcNamespacedName types.NamespacedName, pvName string),
+			) {
+				for _, pvcName := range pvcNames {
+					verify(*vrg, types.NamespacedName{Namespace: t.namespace, Name: pvcName}, t.pvcVolumeNames[pvcName])
+				}
+			}
+			Context("all are selected", func() {
+				BeforeAll(func() {
+					pvcNamesSelected = t.pvcNames
+					vrgGet()
+				})
+				It("protects them", func() {
+					pvcsVerify(pvcNamesSelected, pvcProtectedVerify)
+				})
+			})
+			var vrgResourceVersion string
+			When("two are deselected with volume unprotection disabled", func() {
+				BeforeAll(func() {
+					ramenConfig.VolumeUnprotectionEnabled = false
+					configMapUpdate()
+					pvcNamesDeselected = pvcNamesSelected[0:2]
+					pvcNamesSelected = pvcNamesSelected[2:]
+					vrgResourceVersion = vrgResourceVersionGet()
+					t.forPVCs(pvcNamesDeselected, func(pvc corev1.PersistentVolumeClaim) {
+						util.ObjectLabelsDelete(&pvc, t.pvcLabels)
+						Expect(k8sClient.Update(context.TODO(), &pvc)).To(Succeed())
+					})
+				})
+				It("updates the status", func() {
+					Eventually(vrgResourceVersionGet).ShouldNot(Equal(vrgResourceVersion))
+				})
+				It("keeps the selected protected", func() {
+					pvcsVerify(pvcNamesSelected, pvcProtectedVerify)
+				})
+				It("keeps them protected", func() {
+					pvcsVerify(pvcNamesDeselected, pvcProtectedVerify)
+				})
+			})
+			When("volume protection is enabled", func() {
+				BeforeAll(func() {
+					ramenConfig.VolumeUnprotectionEnabled = true
+					vrgResourceVersion = vrgResourceVersionGet()
+					configMapUpdate()
+				})
+				It("updates the status", func() {
+					Eventually(vrgResourceVersionGet).ShouldNot(Equal(vrgResourceVersion))
+				})
+				It("keeps the selected protected", func() {
+					pvcsVerify(pvcNamesSelected, pvcProtectedVerify)
+				})
+				It("unprotects the deselected", func() {
+					pvcsVerify(pvcNamesDeselected, pvcUnprotectedVerify)
+				})
+			})
+			When("one is reselected", func() {
+				var pvcNamesReselected []string
+				BeforeAll(func() {
+					pvcNamesReselected = pvcNamesDeselected[1:2]
+					pvcNamesDeselected = pvcNamesDeselected[0:1]
+					DeferCleanup(func() {
+						pvcNamesSelected = append(pvcNamesSelected, pvcNamesReselected...)
+					})
+					vrgResourceVersion = vrgResourceVersionGet()
+					t.forPVCs(pvcNamesReselected, func(pvc corev1.PersistentVolumeClaim) {
+						util.ObjectLabelsSet(&pvc, t.pvcLabels)
+						Expect(k8sClient.Update(context.TODO(), &pvc)).To(Succeed())
+					})
+				})
+				It("updates the status", func() {
+					Eventually(vrgResourceVersionGet).ShouldNot(Equal(vrgResourceVersion))
+				})
+				It("keeps the selected protected", func() {
+					pvcsVerify(pvcNamesSelected, pvcProtectedVerify)
+				})
+				It("keeps the deselected unprotected", func() {
+					pvcsVerify(pvcNamesDeselected, pvcUnprotectedVerify)
+				})
+				Context("and vr is reconciled", func() {
+					BeforeAll(func() {
+						t.promoteVolRepsWithoutVrgStatusCheck()
+					})
+					It("sets data ready condition status to true", func() {
+						Eventually(func() metav1.ConditionStatus {
+							dataReadyCondition = meta.FindStatusCondition(vrgGet().Status.Conditions, "DataReady")
+							Expect(dataReadyCondition).ToNot(BeNil())
+
+							return dataReadyCondition.Status
+						}).Should(Equal(metav1.ConditionTrue))
+					})
+				})
+				It("reprotects it", func() {
+					pvcsVerify(pvcNamesReselected, pvcProtectedVerify)
+				})
+			})
+			When("all selected are deselected", func() {
+				BeforeAll(func() {
+					DeferCleanup(func() {
+						pvcNamesDeselected = append(pvcNamesDeselected, pvcNamesSelected...)
+						pvcNamesSelected = nil
+					})
+					vrgResourceVersion = vrgResourceVersionGet()
+					t.forPVCs(pvcNamesSelected, func(pvc corev1.PersistentVolumeClaim) {
+						util.ObjectLabelsDelete(&pvc, t.pvcLabels)
+						Expect(k8sClient.Update(context.TODO(), &pvc)).To(Succeed())
+					})
+				})
+				It("updates the status", func() {
+					Eventually(vrgResourceVersionGet).ShouldNot(Equal(vrgResourceVersion))
+				})
+				It("keeps the deselected unprotected", func() {
+					pvcsVerify(pvcNamesDeselected, pvcUnprotectedVerify)
+				})
+				It("deletes their status", func() {
+					Eventually(vrgStatusPvcsGet).Should(BeEmpty())
+				})
+				It("unprotects them", func() {
+					pvcsVerify(pvcNamesSelected, pvcUnprotectedVerify)
+				})
+			})
+		})
 		It("cleans up after testing", func() {
-			vrgTestBoundPV.cleanupProtected()
+			vrgTestBoundPV.cleanupUnprotected()
 		})
 	})
 
@@ -393,7 +533,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgS3UploadTestCase.vrgS3ProfilesSet([]string{vrgController.NoS3StoreAvailable})
 		})
 		It("cleans up after testing", func() {
-			vrgS3UploadTestCase.cleanupUnprotected()
+			vrgS3UploadTestCase.cleanupStatusUnprotected()
 		})
 	})
 
@@ -860,6 +1000,7 @@ type vrgTest struct {
 	namespace            string
 	pvNames              []string
 	pvcNames             []string
+	pvcVolumeNames       map[string]string
 	vrgName              string
 	storageClass         string
 	replicationClass     string
@@ -966,6 +1107,7 @@ func newVRGTestCaseCreateAndStart(pvcCount int, testTemplate *template, checkBin
 func (v *vrgTest) createPVCandPV(claimBindInfo corev1.PersistentVolumeClaimPhase,
 	volumeBindInfo corev1.PersistentVolumePhase,
 ) {
+	v.pvcVolumeNames = make(map[string]string, v.pvcCount)
 	// Create the requested number of PVs and corresponding PVCs
 	for i, volumeNameSuffix := 0, "-"+v.uniqueID+"-"; i < v.pvcCount; i++ {
 		volumeNameSuffix := volumeNameSuffix + strconv.Itoa(i)
@@ -986,6 +1128,7 @@ func (v *vrgTest) createPVCandPV(claimBindInfo corev1.PersistentVolumeClaimPhase
 		v.createPVC(pvcName, v.namespace, pvName, v.pvcLabels, claimBindInfo)
 		v.pvNames = append(v.pvNames, pvName)
 		v.pvcNames = append(v.pvcNames, pvcName)
+		v.pvcVolumeNames[pvcName] = pvName
 	}
 }
 
@@ -1539,6 +1682,10 @@ func (v *vrgTest) cleanupStatusAbsent() {
 	v.cleanup(vrgPvcStatusAbsentVerify)
 }
 
+func (v *vrgTest) cleanupStatusUnprotected() {
+	v.cleanup(pvcClusterDataProtectedFalseVerify)
+}
+
 func (v *vrgTest) cleanupUnprotected() {
 	v.cleanup(pvcUnprotectedVerify)
 }
@@ -1561,70 +1708,106 @@ func (v *vrgTest) cleanupPVCs(
 	pvcPreDeleteVerify pvcPreDeleteVerify,
 	pvcPostDeleteVerify pvcPostDeleteVerify,
 ) {
-	var unprotectedVerify func(*corev1.PersistentVolumeClaim)
+	var unprotectedVerify func(corev1.PersistentVolumeClaim)
 
 	vrg := v.getVRG()
 	if vrg.Spec.ReplicationState == ramendrv1alpha1.Primary {
 		vrgNamespacedName := v.vrgNamespacedName()
-		unprotectedVerify = func(pvc *corev1.PersistentVolumeClaim) {
-			pvcUnprotectedEventuallyVerify(vrgNamespacedName, pvc)
+		unprotectedVerify = func(pvc corev1.PersistentVolumeClaim) {
+			pvcUnprotectedEventuallyVerify(vrgNamespacedName,
+				client.ObjectKeyFromObject(&pvc), pvc.Spec.VolumeName)
 		}
 	}
 
-	for _, pvcName := range v.pvcNames {
-		pvc := v.getPVC(pvcName)
-		pvcDelete(vrg, pvc, pvcPreDeleteVerify, pvcPostDeleteVerify)
+	v.forEachPVC(func(pvc corev1.PersistentVolumeClaim) {
+		pvcDelete(*vrg, pvc, pvcPreDeleteVerify, pvcPostDeleteVerify)
 		unprotectedVerify(pvc)
+	})
+}
+
+func (v *vrgTest) forEachPVC(do func(pvc corev1.PersistentVolumeClaim)) {
+	v.forPVCs(v.pvcNames, do)
+}
+
+func (v *vrgTest) forPVCs(pvcNames []string, do func(pvc corev1.PersistentVolumeClaim)) {
+	for _, pvcName := range pvcNames {
+		pvc := v.getPVC(pvcName)
+		do(*pvc)
 	}
 }
 
 func pvcDelete(
-	vrg *ramendrv1alpha1.VolumeReplicationGroup,
-	pvc *corev1.PersistentVolumeClaim,
+	vrg ramendrv1alpha1.VolumeReplicationGroup,
+	pvc corev1.PersistentVolumeClaim,
 	preDeleteVerify pvcPreDeleteVerify,
 	postDeleteVerify pvcPostDeleteVerify,
 ) {
-	Expect(objectGet("", pvc.Spec.VolumeName, &corev1.PersistentVolume{})).To(Succeed())
-	preDeleteVerify(vrg, pvc)
-	Expect(k8sClient.Delete(context.TODO(), pvc)).To(BeNil(), "failed to delete PVC %s", pvc.Name)
-	postDeleteVerify(vrg.Namespace, pvc)
+	pvcNamespacedName := client.ObjectKeyFromObject(&pvc)
+	pvNamespacedName := types.NamespacedName{Name: pvc.Spec.VolumeName}
+
+	Expect(objectGet(pvNamespacedName, &corev1.PersistentVolume{})).To(Succeed())
+	preDeleteVerify(vrg, pvcNamespacedName, pvNamespacedName.Name)
+	Expect(k8sClient.Delete(context.TODO(), &pvc)).To(BeNil(), "failed to delete PVC %s", pvcNamespacedName)
+	postDeleteVerify(pvcNamespacedName, pvNamespacedName.Name)
 }
 
-func pvcUnprotectedEventuallyVerify(vrgNamespacedName types.NamespacedName, pvc *corev1.PersistentVolumeClaim) {
-	pvAndPvcObjectReplicasAbsentVerify(vrgNamespacedName, pvc)
+func pvcUnprotectedEventuallyVerify(vrgNamespacedName, pvcNamespacedName types.NamespacedName, pvName string) {
+	pvAndPvcObjectReplicasAbsentVerify(vrgNamespacedName, pvcNamespacedName, pvName)
+	vrgPvcStatusAbsentEventually(vrgNamespacedName, pvcNamespacedName)
+}
+
+func vrgPvcStatusAbsentEventually(vrgNamespacedName, pvcNamespacedName types.NamespacedName) {
 	Eventually(func() *ramendrv1alpha1.ProtectedPVC {
-		return vrgController.FindProtectedPVC(vrgGet(vrgNamespacedName), pvc.Namespace, pvc.Name)
+		return vrgController.FindProtectedPVC(vrgGet(vrgNamespacedName), pvcNamespacedName.Namespace, pvcNamespacedName.Name)
 	}).Should(BeNil())
 }
 
-type pvcPreDeleteVerify func(*ramendrv1alpha1.VolumeReplicationGroup, *corev1.PersistentVolumeClaim)
-
-func vrgPvcStatusAbsentVerify(vrg *ramendrv1alpha1.VolumeReplicationGroup, pvc *corev1.PersistentVolumeClaim) {
-	Expect(vrgController.FindProtectedPVC(vrg, pvc.Namespace, pvc.Name)).To(BeNil())
+func pvcUnprotectedVerify(
+	vrg ramendrv1alpha1.VolumeReplicationGroup, pvcNamespacedName types.NamespacedName, pvName string,
+) {
+	pvAndPvcObjectReplicasAbsentVerify(client.ObjectKeyFromObject(&vrg), pvcNamespacedName, pvName)
+	vrgPvcStatusAbsentVerify(vrg, pvcNamespacedName, pvName)
 }
 
-func pvcUnprotectedVerify(vrg *ramendrv1alpha1.VolumeReplicationGroup, pvc *corev1.PersistentVolumeClaim) {
-	vrgPvcStatus := vrgPvcStatusGet(vrg, pvc.Namespace, pvc.Name)
+type pvcPreDeleteVerify func(ramendrv1alpha1.VolumeReplicationGroup, types.NamespacedName, string)
+
+func vrgPvcStatusAbsentVerify(
+	vrg ramendrv1alpha1.VolumeReplicationGroup, pvcNamespacedName types.NamespacedName, pvName string,
+) {
+	By("not storing PVC in VRG's status")
+	Expect(vrgController.FindProtectedPVC(&vrg, pvcNamespacedName.Namespace, pvcNamespacedName.Name)).To(BeNil())
+}
+
+func pvcClusterDataProtectedFalseVerify(
+	vrg ramendrv1alpha1.VolumeReplicationGroup, pvcNamespacedName types.NamespacedName, pvName string,
+) {
+	vrgPvcStatus := vrgPvcStatusGet(vrg, pvcNamespacedName)
+
+	By("setting VRG's PVC ClusterDataProtected status to false")
 	pvcClusterDataProtectedStatusVerify(vrgPvcStatus, Equal(metav1.ConditionFalse))
 }
 
-func pvcProtectedVerify(vrg *ramendrv1alpha1.VolumeReplicationGroup, pvc *corev1.PersistentVolumeClaim) {
-	vrgPvcStatus := vrgPvcStatusGet(vrg, pvc.Namespace, pvc.Name)
+func pvcProtectedVerify(
+	vrg ramendrv1alpha1.VolumeReplicationGroup, pvcNamespacedName types.NamespacedName, pvName string,
+) {
+	vrgPvcStatus := vrgPvcStatusGet(vrg, pvcNamespacedName)
+
+	By("setting VRG's PVC ClusterDataProtected status to true")
 	pvcClusterDataProtectedStatusVerify(vrgPvcStatus, Equal(metav1.ConditionTrue))
-	pvAndPvcObjectReplicasPresentVerify(types.NamespacedName{Namespace: vrg.Namespace, Name: vrg.Name}, pvc)
+	pvAndPvcObjectReplicasPresentVerify(client.ObjectKeyFromObject(&vrg), pvcNamespacedName, pvName)
 }
 
 func vrgPvcStatusGet(
-	vrg *ramendrv1alpha1.VolumeReplicationGroup, pvcNamespaceName, pvcName string,
-) *ramendrv1alpha1.ProtectedPVC {
-	vrgPvcStatus := vrgController.FindProtectedPVC(vrg, pvcNamespaceName, pvcName)
+	vrg ramendrv1alpha1.VolumeReplicationGroup, pvcNamespacedName types.NamespacedName,
+) ramendrv1alpha1.ProtectedPVC {
+	vrgPvcStatus := vrgController.FindProtectedPVC(&vrg, pvcNamespacedName.Namespace, pvcNamespacedName.Name)
 	Expect(vrgPvcStatus).ToNot(BeNil())
 
-	return vrgPvcStatus
+	return *vrgPvcStatus
 }
 
 func pvcClusterDataProtectedStatusVerify(
-	vrgPvcStatus *ramendrv1alpha1.ProtectedPVC,
+	vrgPvcStatus ramendrv1alpha1.ProtectedPVC,
 	matcher gomegatypes.GomegaMatcher,
 ) {
 	pvcClusterDataProtected := meta.FindStatusCondition(
@@ -1634,38 +1817,41 @@ func pvcClusterDataProtectedStatusVerify(
 	Expect(pvcClusterDataProtected.Status).To(matcher)
 }
 
-type pvcPostDeleteVerify func(string, *corev1.PersistentVolumeClaim)
+type pvcPostDeleteVerify func(types.NamespacedName, string)
 
-func vrAndPvcDeletionTimestampsRecentVerify(namespaceName string, pvc *corev1.PersistentVolumeClaim) {
-	objectDeletionTimestampRecentVerify(namespaceName, pvc.Name, &volrep.VolumeReplication{})
-	objectDeletionTimestampRecentVerify(namespaceName, pvc.Name, &corev1.PersistentVolumeClaim{})
+func vrAndPvcDeletionTimestampsRecentVerify(pvcNamespacedName types.NamespacedName, pvName string) {
+	objectDeletionTimestampRecentVerify(pvcNamespacedName, &volrep.VolumeReplication{})
+	objectDeletionTimestampRecentVerify(pvcNamespacedName, &corev1.PersistentVolumeClaim{})
 }
 
-func VrAndPvcAndPvAbsentVerify(namespaceName string, pvc *corev1.PersistentVolumeClaim) {
-	vrAbsentVerify(namespaceName, pvc.Name)
-	pvcAbsentVerify(namespaceName, pvc.Name)
-	pvAbsentVerify(pvc.Spec.VolumeName)
+func VrAndPvcAndPvAbsentVerify(pvcNamespacedName types.NamespacedName, pvName string) {
+	vrAbsentVerify(pvcNamespacedName)
+	pvcAbsentVerify(pvcNamespacedName)
+	pvAbsentVerify(pvName)
 }
 
-func vrAndPvcFinalizerOrPvcAndPvAbsentVerify(namespaceName string, pvc *corev1.PersistentVolumeClaim) {
-	vrAbsentVerify(namespaceName, pvc.Name)
+func vrAndPvcFinalizerOrPvcAndPvAbsentVerify(pvcNamespacedName types.NamespacedName, pvName string) {
+	vrAbsentVerify(pvcNamespacedName)
 
-	if objectOrItsFinalizerAbsentVerify(namespaceName, pvc.Name, &corev1.PersistentVolumeClaim{}, pvcGroupResource(),
+	if objectOrItsFinalizerAbsentVerify(pvcNamespacedName, &corev1.PersistentVolumeClaim{}, pvcGroupResource(),
 		vrgController.PvcVRFinalizerProtected) {
-		pvAbsentVerify(pvc.Spec.VolumeName)
+		pvAbsentVerify(pvName)
 	}
 }
 
-func vrAbsentVerify(namespaceName, pvcName string) {
-	objectAbsentVerify(namespaceName, pvcName, &volrep.VolumeReplication{}, vrGroupResource())
+func vrAbsentVerify(namespacedName types.NamespacedName) {
+	By("not storing VR resource in API server")
+	objectAbsentVerify(namespacedName, &volrep.VolumeReplication{}, vrGroupResource())
 }
 
-func pvcAbsentVerify(namespaceName, pvcName string) {
-	objectAbsentVerify(namespaceName, pvcName, &corev1.PersistentVolumeClaim{}, pvcGroupResource())
+func pvcAbsentVerify(namespacedName types.NamespacedName) {
+	By("not storing PVC resource in API server")
+	objectAbsentVerify(namespacedName, &corev1.PersistentVolumeClaim{}, pvcGroupResource())
 }
 
 func pvAbsentVerify(pvName string) {
-	objectAbsentVerify("", pvName, &corev1.PersistentVolume{}, pvGroupResource())
+	By("not storing PV resource in API server")
+	objectAbsentVerify(types.NamespacedName{Name: pvName}, &corev1.PersistentVolume{}, pvGroupResource())
 }
 
 func vrGroupResource() schema.GroupResource {
@@ -1684,28 +1870,30 @@ func pvGroupResource() schema.GroupResource {
 	return schema.GroupResource{Group: corev1.SchemeGroupVersion.Group, Resource: "persistentvolumes"}
 }
 
-func pvAndPvcObjectReplicasPresentVerify(vrgNamespacedName types.NamespacedName, pvc *corev1.PersistentVolumeClaim) {
-	pvAndPvcObjectReplicaDownloadsExpectTo(vrgNamespacedName, pvc, Succeed())
+func pvAndPvcObjectReplicasPresentVerify(vrgNamespacedName, pvcNamespacedName types.NamespacedName, pvName string) {
+	By("storing PVC and its PV API resources in VRG's S3 stores")
+	pvAndPvcObjectReplicaDownloadsExpectTo(vrgNamespacedName, pvcNamespacedName, pvName, Succeed())
 }
 
-func pvAndPvcObjectReplicasAbsentVerify(vrgNamespacedName types.NamespacedName, pvc *corev1.PersistentVolumeClaim) {
-	pvAndPvcObjectReplicaDownloadsExpectTo(vrgNamespacedName, pvc, MatchError(fs.ErrNotExist))
+func pvAndPvcObjectReplicasAbsentVerify(vrgNamespacedName, pvcNamespacedName types.NamespacedName, pvName string) {
+	By("not storing PVC and its PV API resources in VRG's S3 stores")
+	pvAndPvcObjectReplicaDownloadsExpectTo(vrgNamespacedName, pvcNamespacedName, pvName, MatchError(fs.ErrNotExist))
 }
 
 func pvAndPvcObjectReplicaDownloadsExpectTo(
-	vrgNamespacedName types.NamespacedName,
-	pvc *corev1.PersistentVolumeClaim,
+	vrgNamespacedName, pvcNamespacedName types.NamespacedName, pvName string,
 	matcher gomegatypes.GomegaMatcher,
 ) {
 	var (
-		pv   corev1.PersistentVolume
-		pvc1 corev1.PersistentVolumeClaim
+		pv  corev1.PersistentVolume
+		pvc corev1.PersistentVolumeClaim
 	)
 
 	keyPrefix := vrgS3KeyPrefix(vrgNamespacedName)
 
-	Expect(vrgController.DownloadTypedObject(*vrgObjectStorer, keyPrefix, pvc.Spec.VolumeName, &pv)).To(matcher)
-	Expect(vrgController.DownloadTypedObject(*vrgObjectStorer, keyPrefix, pvc.Name, &pvc1)).To(matcher)
+	By(fmt.Sprintf("PVC %v PV %v", pvcNamespacedName.String(), pvName))
+	Expect(vrgController.DownloadTypedObject(*vrgObjectStorer, keyPrefix, pvName, &pv)).To(matcher)
+	Expect(vrgController.DownloadTypedObject(*vrgObjectStorer, keyPrefix, pvcNamespacedName.String(), &pvc)).To(matcher)
 }
 
 func (v *vrgTest) cleanupVRG() {
@@ -1791,6 +1979,17 @@ func (v *vrgTest) waitForVRCountToMatch(vrCount int) {
 }
 
 func (v *vrgTest) promoteVolReps() {
+	v.promoteVolRepsAndDo(func(index, count int) {
+		// VRG should not be ready until last VolRep is ready.
+		v.verifyVRGStatusExpectation(index == count-1)
+	})
+}
+
+func (v *vrgTest) promoteVolRepsWithoutVrgStatusCheck() {
+	v.promoteVolRepsAndDo(func(index, count int) {})
+}
+
+func (v *vrgTest) promoteVolRepsAndDo(do func(int, int)) {
 	By("Promoting VolumeReplication resources " + v.namespace)
 
 	volRepList := &volrep.VolumeReplicationList{}
@@ -1840,13 +2039,9 @@ func (v *vrgTest) promoteVolReps() {
 			Name:      volRep.Name,
 			Namespace: volRep.Namespace,
 		}
+		v.waitForVolRepPromotion(volrepKey)
 
-		// VRG should not be ready until last but VolRep is ready.
-		if index < (len(volRepList.Items) - 1) {
-			v.waitForVolRepPromotion(volrepKey, false)
-		} else {
-			v.waitForVolRepPromotion(volrepKey, true)
-		}
+		do(index, len(volRepList.Items))
 	}
 }
 
@@ -1888,7 +2083,7 @@ func (v *vrgTest) unprotectDeletionOfVolReps() {
 	}
 }
 
-func (v *vrgTest) waitForVolRepPromotion(vrNamespacedName types.NamespacedName, vrgready bool) {
+func (v *vrgTest) waitForVolRepPromotion(vrNamespacedName types.NamespacedName) {
 	updatedVolRep := volrep.VolumeReplication{}
 
 	Eventually(func() bool {
@@ -1914,8 +2109,6 @@ func (v *vrgTest) waitForVolRepPromotion(vrNamespacedName types.NamespacedName, 
 		return v.checkProtectedPVCSuccess(vrg, protectedPVC)
 	}, vrgtimeout, vrginterval).Should(BeTrue(),
 		"while waiting for protected pvc condition %s/%s", updatedVolRep.Namespace, updatedVolRep.Name)
-
-	v.verifyVRGStatusExpectation(vrgready)
 }
 
 func (v *vrgTest) checkProtectedPVCSuccess(vrg *ramendrv1alpha1.VolumeReplicationGroup,

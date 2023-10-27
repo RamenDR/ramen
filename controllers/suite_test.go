@@ -388,35 +388,41 @@ var _ = AfterSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 })
 
-func objectGet(namespaceName, objectName string, object client.Object) error {
-	return apiReader.Get(context.TODO(), types.NamespacedName{Namespace: namespaceName, Name: objectName}, object)
+func objectGet(namespacedName types.NamespacedName, object client.Object) error {
+	return apiReader.Get(context.TODO(), namespacedName, object)
 }
 
-func objectDeletionTimestampRecentVerify(namespaceName, objectName string, object client.Object) {
+func objectDeletionTimestampRecentVerify(namespacedName types.NamespacedName, object client.Object) {
 	Eventually(func() *metav1.Time {
-		Expect(objectGet(namespaceName, objectName, object)).To(Succeed())
+		Expect(objectGet(namespacedName, object)).To(Succeed())
 
 		return object.GetDeletionTimestamp()
 	}).ShouldNot(BeNil())
-	Expect(object.GetDeletionTimestamp().Time).Should(BeTemporally("~", time.Now(), 2*time.Second), "%#v", object)
+	Expect(object.GetDeletionTimestamp().Time).Should(BeTemporally("~", time.Now(), 2*time.Second),
+		format.Object(object, 0))
 }
 
 func objectNotFoundErrorMatch(groupResource schema.GroupResource, objectName string) gomegatypes.GomegaMatcher {
 	return MatchError(errors.NewNotFound(groupResource, objectName))
 }
 
-func objectAbsentVerify(namespaceName, objectName string, object client.Object, groupResource schema.GroupResource) {
+func objectAbsentVerify(namespacedName types.NamespacedName, object client.Object, groupResource schema.GroupResource) {
+	var err error
+
 	Eventually(func() error {
-		return objectGet(namespaceName, objectName, object)
-	}).Should(objectNotFoundErrorMatch(groupResource, objectName), "%#v", object)
+		err = objectGet(namespacedName, object)
+
+		return err
+	}).ShouldNot(BeNil())
+	Expect(err).To(objectNotFoundErrorMatch(groupResource, namespacedName.Name), format.Object(object, 0))
 }
 
-func objectOrItsFinalizerAbsentVerify(namespaceName, objectName string, object client.Object,
+func objectOrItsFinalizerAbsentVerify(namespacedName types.NamespacedName, object client.Object,
 	groupResource schema.GroupResource, finalizerName string,
 ) (objectAbsent bool) {
 	Eventually(func() []string {
-		if err := objectGet(namespaceName, objectName, object); err != nil {
-			Expect(err).To(objectNotFoundErrorMatch(groupResource, objectName), "%#v", object)
+		if err := objectGet(namespacedName, object); err != nil {
+			Expect(err).To(objectNotFoundErrorMatch(groupResource, namespacedName.Name), format.Object(object, 0))
 			objectAbsent = true
 
 			return nil

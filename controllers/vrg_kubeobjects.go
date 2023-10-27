@@ -124,7 +124,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 	log := v.log.WithValues("number", number)
 	pathName, capturePathName, namePrefix := kubeObjectsCapturePathNamesAndNamePrefix(
 		vrg.Namespace, vrg.Name, number, v.reconciler.kubeObjects)
-	labels := util.OwnerLabels(vrg.Namespace, vrg.Name)
+	labels := util.OwnerLabels(vrg)
 
 	requests, err := v.reconciler.kubeObjects.ProtectRequestsGet(
 		v.ctx, v.reconciler.APIReader, veleroNamespaceName, labels)
@@ -472,7 +472,7 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result,
 
 	vrg.Status.KubeObjectProtection.CaptureToRecoverFrom = captureToRecoverFromIdentifier
 	veleroNamespaceName := v.veleroNamespaceName()
-	labels := util.OwnerLabels(vrg.Namespace, vrg.Name)
+	labels := util.OwnerLabels(vrg)
 	log := v.log.WithValues("number", captureToRecoverFromIdentifier.Number, "profile", s3StoreProfile.S3ProfileName)
 
 	captureRequestsStruct, err := v.reconciler.kubeObjects.ProtectRequestsGet(
@@ -668,7 +668,7 @@ func (v *VRGInstance) kubeObjectsProtectionDelete(result *ctrl.Result) error {
 	return v.kubeObjectsRecoverRequestsDelete(
 		result,
 		v.veleroNamespaceName(),
-		util.OwnerLabels(vrg.Namespace, vrg.Name),
+		util.OwnerLabels(vrg),
 	)
 }
 
