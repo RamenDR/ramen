@@ -41,6 +41,14 @@ func (f FakeMCVGetter) GetNFFromManagedCluster(resourceName, resourceNamespace, 
 	}
 
 	nf := baseNF.DeepCopy()
+
+	callerName := getFunctionNameAtIndex(2)
+	if callerName == "fenceClusterOnCluster" {
+		nf.Spec.FenceState = csiaddonsv1alpha1.Fenced
+	} else if callerName == "unfenceClusterOnCluster" {
+		nf.Spec.FenceState = csiaddonsv1alpha1.Unfenced
+	}
+
 	nf.Status = nfStatus
 
 	nf.Generation = 1

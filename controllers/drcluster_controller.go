@@ -641,8 +641,8 @@ func (u *drclusterInstance) clusterUnfence() (bool, error) {
 
 	requeue, err := u.unfenceClusterOnCluster(&peerCluster)
 	if err != nil {
-		return requeue, fmt.Errorf("unfence operation to fence off cluster %s on cluster %s failed",
-			u.object.Name, peerCluster.Name)
+		return requeue, fmt.Errorf("unfence operation to unfence cluster %s on cluster %s failed: %w",
+			u.object.Name, peerCluster.Name, err)
 	}
 
 	if requeue {
@@ -703,6 +703,11 @@ func (u *drclusterInstance) fenceClusterOnCluster(peerCluster *ramen.DRCluster) 
 		// created yet. This assumption is because, drCluster does not delete
 		// the NetworkFence resource as part of fencing.
 		return true, fmt.Errorf("failed to get NetworkFence using MCV (error: %w)", err)
+	}
+
+	if nf.Spec.FenceState != csiaddonsv1alpha1.FenceState(u.object.Spec.ClusterFence) {
+		return true, fmt.Errorf("fence state in the NetworkFence resource is not changed to %v yet",
+			u.object.Spec.ClusterFence)
 	}
 
 	if nf.Status.Result != csiaddonsv1alpha1.FencingOperationResultSucceeded {
@@ -769,6 +774,11 @@ func (u *drclusterInstance) unfenceClusterOnCluster(peerCluster *ramen.DRCluster
 		}
 
 		return true, fmt.Errorf("failed to get NetworkFence using MCV (error: %w", err)
+	}
+
+	if nf.Spec.FenceState != csiaddonsv1alpha1.FenceState(u.object.Spec.ClusterFence) {
+		return true, fmt.Errorf("fence state in the NetworkFence resource is not changed to %v yet",
+			u.object.Spec.ClusterFence)
 	}
 
 	if nf.Status.Result != csiaddonsv1alpha1.FencingOperationResultSucceeded {
