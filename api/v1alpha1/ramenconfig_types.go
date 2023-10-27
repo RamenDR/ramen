@@ -144,11 +144,14 @@ type RamenConfig struct {
 	KubeObjectProtection struct {
 		// Disabled is used to disable KubeObjectProtection usage in Ramen.
 		Disabled bool `json:"disabled,omitempty"`
-		// Enables feature to protect resources in namespaces other than VRG's
-		ExtraVrgNamespacesFeatureEnabled bool `json:"extraVrgNamespacesFeatureEnabled,omitempty"`
 		// Velero namespace input
 		VeleroNamespaceName string `json:"veleroNamespaceName,omitempty"`
 	} `json:"kubeObjectProtection,omitempty"`
+
+	MultiNamespace struct {
+		// Enables feature to protect resources in namespaces other than VRG's
+		FeatureEnabled bool `json:"FeatureEnabled,omitempty"`
+	} `json:"multiNamespace,omitempty"`
 }
 
 func init() {

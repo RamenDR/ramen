@@ -176,7 +176,7 @@ func recipeNamespacesValidate(recipeElements RecipeElements, vrg ramen.VolumeRep
 		return nil
 	}
 
-	if !ramenConfig.KubeObjectProtection.ExtraVrgNamespacesFeatureEnabled {
+	if !ramenConfig.MultiNamespace.FeatureEnabled {
 		return fmt.Errorf("extra-VRG namespaces %v require feature be enabled", extraVrgNamespaceNames)
 	}
 
