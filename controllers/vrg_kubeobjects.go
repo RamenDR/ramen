@@ -56,14 +56,14 @@ func kubeObjectsRecoverName(prefix string, groupNumber int) string {
 	return prefix + "--" + strconv.Itoa(groupNumber)
 }
 
-func (v *VRGInstance) kubeObjectsProtectPrimary(result *ctrl.Result, s3StoreAccessors []s3StoreAccessor) {
-	v.kubeObjectsProtect(result, s3StoreAccessors, kubeObjectsCaptureStartConditionallyPrimary,
+func (v *VRGInstance) kubeObjectsProtectPrimary(result *ctrl.Result) {
+	v.kubeObjectsProtect(result, kubeObjectsCaptureStartConditionallyPrimary,
 		func() {},
 	)
 }
 
-func (v *VRGInstance) kubeObjectsProtectSecondary(result *ctrl.Result, s3StoreAccessors []s3StoreAccessor) {
-	v.kubeObjectsProtect(result, s3StoreAccessors, kubeObjectsCaptureStartConditionallySecondary,
+func (v *VRGInstance) kubeObjectsProtectSecondary(result *ctrl.Result) {
+	v.kubeObjectsProtect(result, kubeObjectsCaptureStartConditionallySecondary,
 		func() {
 			v.kubeObjectsCaptureStatusFalse(VRGConditionReasonUploading, "Kube objects capture for relocate in-progress")
 		},
@@ -77,7 +77,6 @@ type (
 
 func (v *VRGInstance) kubeObjectsProtect(
 	result *ctrl.Result,
-	s3StoreAccessors []s3StoreAccessor,
 	captureStartConditionally captureStartConditionally,
 	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 ) {
@@ -86,7 +85,7 @@ func (v *VRGInstance) kubeObjectsProtect(
 	}
 
 	// TODO tolerate and remove
-	if len(s3StoreAccessors) == 0 {
+	if len(v.s3StoreAccessors) == 0 {
 		v.log.Info("Kube objects capture store list empty")
 
 		result.Requeue = true // TODO remove; watch config map instead
@@ -105,7 +104,7 @@ func (v *VRGInstance) kubeObjectsProtect(
 		captureToRecoverFrom = &ramen.KubeObjectsCaptureIdentifier{}
 	}
 
-	v.kubeObjectsCaptureStartOrResumeOrDelay(result, s3StoreAccessors,
+	v.kubeObjectsCaptureStartOrResumeOrDelay(result,
 		captureStartConditionally,
 		captureInProgressStatusUpdate,
 		captureToRecoverFrom,
@@ -113,7 +112,7 @@ func (v *VRGInstance) kubeObjectsProtect(
 }
 
 func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
-	result *ctrl.Result, s3StoreAccessors []s3StoreAccessor,
+	result *ctrl.Result,
 	captureStartConditionally captureStartConditionally,
 	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 	captureToRecoverFrom *ramen.KubeObjectsCaptureIdentifier,
@@ -140,7 +139,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 
 	captureStartOrResume := func(generation int64, startOrResume string) {
 		log.Info("Kube objects capture "+startOrResume, "generation", generation)
-		v.kubeObjectsCaptureStartOrResume(result, s3StoreAccessors,
+		v.kubeObjectsCaptureStartOrResume(result,
 			captureStartConditionally,
 			captureInProgressStatusUpdate,
 			number, pathName, capturePathName, namePrefix, veleroNamespaceName, interval, labels,
@@ -159,7 +158,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 	captureStartConditionally(
 		v, result, captureToRecoverFrom.StartGeneration, time.Since(captureToRecoverFrom.StartTime.Time), interval,
 		func() {
-			if v.kubeObjectsCapturesDelete(result, s3StoreAccessors, number, capturePathName) != nil {
+			if v.kubeObjectsCapturesDelete(result, number, capturePathName) != nil {
 				return
 			}
 
@@ -202,10 +201,10 @@ func kubeObjectsCaptureStartConditionallyPrimary(
 }
 
 func (v *VRGInstance) kubeObjectsCapturesDelete(
-	result *ctrl.Result, s3StoreAccessors []s3StoreAccessor, captureNumber int64, pathName string,
+	result *ctrl.Result, captureNumber int64, pathName string,
 ) error {
 	// current s3 profiles may differ from those at capture time
-	for _, s3StoreAccessor := range s3StoreAccessors {
+	for _, s3StoreAccessor := range v.s3StoreAccessors {
 		if err := s3StoreAccessor.ObjectStorer.DeleteObjectsWithKeyPrefix(pathName); err != nil {
 			v.log.Error(err, "Kube objects capture s3 objects delete error",
 				"number", captureNumber,
@@ -230,7 +229,6 @@ const (
 
 func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	result *ctrl.Result,
-	s3StoreAccessors []s3StoreAccessor,
 	captureStartConditionally captureStartConditionally,
 	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 	captureNumber int64,
@@ -249,11 +247,11 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	for groupNumber, captureGroup := range groups {
 		log1 := log.WithValues("group", groupNumber, "name", captureGroup.Name)
 		requestsCompletedCount += v.kubeObjectsGroupCapture(
-			result, captureGroup, s3StoreAccessors, pathName, capturePathName, namePrefix, veleroNamespaceName,
+			result, captureGroup, pathName, capturePathName, namePrefix, veleroNamespaceName,
 			captureInProgressStatusUpdate,
 			labels, annotations, requests, log,
 		)
-		requestsProcessedCount += len(s3StoreAccessors)
+		requestsProcessedCount += len(v.s3StoreAccessors)
 
 		if requestsCompletedCount < requestsProcessedCount {
 			log1.Info("Kube objects group capturing", "complete", requestsCompletedCount, "total", requestsProcessedCount)
@@ -262,11 +260,10 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 		}
 	}
 
-	request0 := requests[kubeObjectsCaptureName(namePrefix, groups[0].Name, s3StoreAccessors[0].S3ProfileName)]
+	request0 := requests[kubeObjectsCaptureName(namePrefix, groups[0].Name, v.s3StoreAccessors[0].S3ProfileName)]
 
 	v.kubeObjectsCaptureComplete(
 		result,
-		s3StoreAccessors,
 		captureStartConditionally,
 		captureNumber,
 		veleroNamespaceName,
@@ -279,13 +276,13 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 
 func (v *VRGInstance) kubeObjectsGroupCapture(
 	result *ctrl.Result,
-	captureGroup kubeobjects.CaptureSpec, s3StoreAccessors []s3StoreAccessor,
+	captureGroup kubeobjects.CaptureSpec,
 	pathName, capturePathName, namePrefix, veleroNamespaceName string,
 	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 	labels, annotations map[string]string, requests map[string]kubeobjects.Request,
 	log logr.Logger,
 ) (requestsCompletedCount int) {
-	for _, s3StoreAccessor := range s3StoreAccessors {
+	for _, s3StoreAccessor := range v.s3StoreAccessors {
 		requestName := kubeObjectsCaptureName(namePrefix, captureGroup.Name, s3StoreAccessor.S3ProfileName)
 		log1 := log.WithValues("profile", s3StoreAccessor.S3ProfileName)
 
@@ -358,7 +355,6 @@ func (v *VRGInstance) kubeObjectsCaptureDeleteAndLog(
 
 func (v *VRGInstance) kubeObjectsCaptureComplete(
 	result *ctrl.Result,
-	s3StoreAccessors []s3StoreAccessor,
 	captureStartConditionally captureStartConditionally,
 	captureNumber int64, veleroNamespaceName string, interval time.Duration,
 	labels map[string]string, startTime metav1.Time, annotations map[string]string,
@@ -381,7 +377,6 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 
 	v.vrgObjectProtectThrottled(
 		result,
-		s3StoreAccessors,
 		func() {
 			v.kubeObjectsCaptureIdentifierUpdateComplete(
 				result,
