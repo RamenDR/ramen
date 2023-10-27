@@ -18,7 +18,17 @@ const (
 type Labels map[string]string
 
 func ObjectLabelsSet(object metav1.Object, labels map[string]string) bool {
-	return MapCopyF(labels, object.GetLabels, object.SetLabels)
+	return ObjectLabelsDo(object, labels, MapCopyF[map[string]string, string, string])
+}
+
+func ObjectLabelInsertOnlyAll(object metav1.Object, labels map[string]string) Comparison {
+	return ObjectLabelsDo(object, labels, MapInsertOnlyAllF[map[string]string, string, string])
+}
+
+func ObjectLabelsDo[T any](object metav1.Object, labels map[string]string,
+	do func(map[string]string, func() map[string]string, func(map[string]string)) T,
+) T {
+	return do(labels, object.GetLabels, object.SetLabels)
 }
 
 func ObjectOwnerSet(object, owner metav1.Object) bool {
