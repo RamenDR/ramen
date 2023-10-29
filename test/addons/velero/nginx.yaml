@@ -32,7 +32,7 @@ spec:
         app: nginx
     spec:
       containers:
-      - image: docker.io/library/nginx:stable-alpine-slim
+      - image: quay.io/nirsof/nginx:stable-alpine-slim
         name: nginx
         ports:
         - containerPort: 80

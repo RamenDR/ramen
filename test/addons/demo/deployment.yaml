@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: demo
-        image: docker.io/library/nginx:stable-alpine-slim
+        image: quay.io/nirsof/nginx:stable-alpine-slim
         ports:
         - containerPort: 80
           name: demo-port
