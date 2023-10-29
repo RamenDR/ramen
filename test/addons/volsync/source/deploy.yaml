@@ -20,7 +20,7 @@ spec:
         appname: busybox
     spec:
       containers:
-      - image: docker.io/library/busybox:stable
+      - image: quay.io/nirsof/busybox:stable
         imagePullPolicy: IfNotPresent
         name: busybox
         command:
