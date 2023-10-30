@@ -43,3 +43,7 @@ test/.coverage.*
 __pycache__/
 test/build
 ramenctl/build
+
+# Generated disk images
+*.qcow2
+*.iso
