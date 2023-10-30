@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import argparse
+import json
+import logging
+import os
+import shutil
+import subprocess
+import tempfile
+import time
+
+
+def main():
+    p = argparse.ArgumentParser("download-cirros")
+    p.add_argument("--cirros-version", default="0.6.2", help="Cirros version")
+    p.add_argument("-o", "--output", help="Output filename")
+    p.add_argument("-v", "--verbose", action="store_true", help="Be more verbose")
+    args = p.parse_args()
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(asctime)s %(levelname)-7s %(message)s",
+    )
+
+    out_img = args.output or f"cirros-{args.cirros_version}.qcow2"
+
+    with tempfile.TemporaryDirectory(prefix="download-cirros-") as tmp_dir:
+        work_img = os.path.join(tmp_dir, out_img)
+        nocloud_img = os.path.join(tmp_dir, "nocloud.iso")
+
+        download_image(args.cirros_version, work_img)
+        make_nocloud_img(tmp_dir, nocloud_img)
+        unpack_rootfs(work_img, nocloud_img)
+        shutil.copyfile(work_img, out_img)
+
+
+def download_image(version, out):
+    logging.debug("Downloading cirros version %s to %s", version, out)
+    url = (
+        f"https://download.cirros-cloud.net/{version}/cirros-{version}-x86_64-disk.img"
+    )
+    cmd = ["curl", "--no-progress-meter", "--location", "--output", out, url]
+    logging.debug("Running %s", cmd)
+    subprocess.run(cmd, check=True)
+
+
+def make_nocloud_img(tmp_dir, out):
+    """
+    Create clound-init nocloud image with the required meta-data json and empty
+    user-data script. This avoids the slow lookup for metadata server. When the
+    image is started in teh real deployment it will get a new instance-id and
+    will be configured again.
+    """
+    logging.debug("Creating cloud-init image %s", out)
+
+    meta = {"instance-id": "download-cirros"}
+    meta_data = os.path.join(tmp_dir, "meta-data")
+    with open(meta_data, "w") as f:
+        f.write(json.dumps(meta) + "\n")
+
+    user_data = os.path.join(tmp_dir, "user-data")
+    with open(user_data, "w") as f:
+        f.write("#!/bin/sh\n")
+    os.chmod(user_data, 0o700)
+
+    cmd = ["cloud-localds", out, user_data, meta_data]
+    logging.debug("Running %s", cmd)
+    subprocess.run(cmd, check=True)
+
+
+def unpack_rootfs(boot_img, nocloud_img):
+    logging.debug("Unpacking rootfs in %s", boot_img)
+    cmd = [
+        "qemu-kvm",
+        "-nodefaults",
+        "-machine",
+        "accel=kvm:tcg",
+        "-m",
+        "256",
+        "-drive",
+        f"if=virtio,file={boot_img},format=qcow2",
+        "-drive",
+        f"if=virtio,file={nocloud_img},format=raw",
+        "-nographic",
+        "-net",
+        "none",
+        "-monitor",
+        "none",
+        "-serial",
+        "stdio",
+    ]
+    logging.debug("Staring process %s", cmd)
+    p = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        logging.debug("Started qemu-kvm pid=%s", p.pid)
+        logging.debug("Waiting for login prompt...")
+        wait_for_output(p, "login: ")
+    finally:
+        if p.poll() is not None:
+            err = p.stderr.read().decode()
+            raise RuntimeError(
+                f"qemu-kvm terminated pid={p.pid} rc={p.returncode} err={err}"
+            )
+
+        logging.debug("Terminating qemu-kvm pid=%s", p.pid)
+        p.terminate()
+        try:
+            p.wait(10)
+        except subprocess.TimeoutExpired:
+            logging.debug("Killing qemu-kvm pid=%s", p.pid)
+            p.kill()
+            p.wait()
+
+
+def wait_for_output(p, what, timeout=120):
+    deadline = time.monotonic() + timeout
+    data = what.encode("utf-8")
+    line = bytearray()
+
+    while p.poll() is None:
+        if time.monotonic() > deadline:
+            raise RuntimeError(f"Timeout waiting for output '{what}'")
+
+        line += p.stdout.read(1)
+        if line.endswith(data):
+            break
+
+        if line.endswith(b"\r\n"):
+            logging.debug("%s", line.rstrip().decode("utf-8"))
+            del line[:]
+
+
+if __name__ == "__main__":
+    main()
