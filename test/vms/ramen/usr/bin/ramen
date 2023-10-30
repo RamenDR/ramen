@@ -1,0 +1,19 @@
+#!/bin/sh
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+log="/var/log/ramen.log"
+
+emit() {
+    echo "$(date) $1" >> "$log"
+    sync "$log"
+}
+
+trap "emit STOP; exit" TERM INT
+
+emit START
+while true; do
+    sleep 10 & wait
+    emit UPDATE
+done
