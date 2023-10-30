@@ -1,0 +1,49 @@
+#!/bin/sh
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+DAEMON="ramen"
+PIDFILE="/var/run/$DAEMON.pid"
+
+start() {
+    printf 'Starting %s: ' "$DAEMON"
+    # Must run as "/bin/sh /usr/bin/ramen" to detect if already running.
+    start-stop-daemon --start \
+        --quiet \
+        --background \
+        --make-pidfile \
+        --pidfile "$PIDFILE" \
+        --exec /bin/sh \
+        -- "/usr/bin/$DAEMON"
+    status=$?
+    if [ "$status" -eq 0 ]; then
+        echo "OK"
+    else
+        echo "FAIL"
+    fi
+    return "$status"
+}
+
+stop() {
+    printf 'Stopping %s: ' "$DAEMON"
+    start-stop-daemon --stop \
+        --quiet \
+        --pidfile "$PIDFILE"
+    status=$?
+    if [ "$status" -eq 0 ]; then
+        rm -f "$PIDFILE"
+        echo "OK"
+    else
+        echo "FAIL"
+    fi
+    return "$status"
+}
+
+case "$1" in
+    start|stop)
+        "$1";;
+    *)
+        echo "Usage: $0 {start|stop}"
+        exit 1
+esac
