@@ -22,6 +22,7 @@ $(disk):
 	virt-customize --add $(work) \
 		--copy-in ../ramen:/tmp \
 		--run-command "/tmp/ramen/install" \
+		--run-command "sed -i 's/^\(kernel .*\)$$/\1 quiet/' /boot/grub/menu.lst" \
 		--delete "/tmp/ramen"
 	qemu-img convert -f qcow2 -O qcow2 -c $(work) $@
 
