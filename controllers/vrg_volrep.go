@@ -394,6 +394,12 @@ func isPVCDeletedAndNotProtected(pvc *corev1.PersistentVolumeClaim, log logr.Log
 func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 	log logr.Logger,
 ) error {
+	pv, err := v.getPVFromPVC(pvc)
+	if err != nil {
+		log.Error(err, "Failed to get PV for VR deletion")
+
+		return err
+	}
 	// For Async mode, we want to change the retention policy back to delete
 	// and remove the annotation.
 	// For Sync mode, we don't want to set the retention policy to delete as
@@ -405,9 +411,17 @@ func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 	// PVC may not be deleted). This is achieved by clearing the required claim ref.
 	// such that the PV can bind back to a recreated PVC. func ref.: updateExistingPVForSync
 	if v.instance.Spec.Async != nil || v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
-		if err := v.undoPVRetentionForPVC(*pvc, log); err != nil {
-			return err
-		}
+		undoPVRetention(&pv)
+	}
+
+	delete(pv.Annotations, pvcVRAnnotationArchivedKey)
+
+	if err := v.reconciler.Update(v.ctx, &pv); err != nil {
+		log.Error(err, "Failed to update PersistentVolume for VR deletion")
+
+		return fmt.Errorf("failed to update PersistentVolume %s claimed by %s/%s"+
+			"for deletion of VR owned by VolumeReplicationGroup %s/%s, %w",
+			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
 	}
 
 	// TODO: Delete the PV from the backing store? But when is it safe to do so?
@@ -458,38 +472,14 @@ func (v *VRGInstance) retainPVForPVC(pvc corev1.PersistentVolumeClaim, log logr.
 	return nil
 }
 
-// undoPVRetentionForPVC updates the PV reclaim policy back to its saved state
-func (v *VRGInstance) undoPVRetentionForPVC(pvc corev1.PersistentVolumeClaim, log logr.Logger) error {
-	// Get PV bound to PVC
-	pv := &corev1.PersistentVolume{}
-	pvObjectKey := client.ObjectKey{
-		Name: pvc.Spec.VolumeName,
-	}
-
-	if err := v.reconciler.Get(v.ctx, pvObjectKey, pv); err != nil {
-		log.Error(err, "Failed to get PersistentVolume", "volumeName", pvc.Spec.VolumeName)
-
-		return fmt.Errorf("failed to get PersistentVolume resource (%s) for"+
-			" PersistentVolumeClaim resource (%s/%s) belonging to VolumeReplicationGroup (%s/%s), %w",
-			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
-	}
-
+// undoPVRetention updates the PV reclaim policy back to its saved state
+func undoPVRetention(pv *corev1.PersistentVolume) {
 	if v, ok := pv.ObjectMeta.Annotations[pvVRAnnotationRetentionKey]; !ok || v != pvVRAnnotationRetentionValue {
-		return nil
+		return
 	}
 
 	pv.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimDelete
 	delete(pv.ObjectMeta.Annotations, pvVRAnnotationRetentionKey)
-
-	if err := v.reconciler.Update(v.ctx, pv); err != nil {
-		log.Error(err, "Failed to update PersistentVolume reclaim policy", "volumeName", pvc.Spec.VolumeName)
-
-		return fmt.Errorf("failed to update PersistentVolume resource (%s) reclaim policy for"+
-			" PersistentVolumeClaim resource (%s/%s) belonging to VolumeReplicationGroup (%s/%s), %w",
-			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
-	}
-
-	return nil
 }
 
 func (v *VRGInstance) generateArchiveAnnotation(gen int64) string {
@@ -502,7 +492,7 @@ func (v *VRGInstance) isArchivedAlready(pvc *corev1.PersistentVolumeClaim, log l
 
 	pv, err := v.getPVFromPVC(pvc)
 	if err != nil {
-		log.Error(err, "Failed to get PV from PVC, PVC:%v, err: %w", pvc.Name, err)
+		log.Error(err, "Failed to get PV to check if archived")
 
 		return false
 	}
@@ -658,7 +648,8 @@ func (v *VRGInstance) getPVFromPVC(pvc *corev1.PersistentVolumeClaim) (corev1.Pe
 
 	// Get PV from k8s
 	if err := v.reconciler.Get(v.ctx, pvObjectKey, &pv); err != nil {
-		return pv, fmt.Errorf("failed to get PV %w", err)
+		return pv, fmt.Errorf("failed to get PV %v from PVC %v, %w",
+			pvObjectKey, client.ObjectKeyFromObject(pvc), err)
 	}
 
 	return pv, nil
@@ -1751,7 +1742,7 @@ func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeCl
 
 	pv, err := v.getPVFromPVC(pvc)
 	if err != nil {
-		log.Error(err, "Failed to get PV from PVC")
+		log.Error(err, "Failed to get PV to add archived annotation")
 
 		return fmt.Errorf("failed to update PersistentVolume (%s) annotation (%s) belonging to"+
 			"VolumeReplicationGroup (%s/%s), %w",
