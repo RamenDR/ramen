@@ -394,11 +394,6 @@ func isPVCDeletedAndNotProtected(pvc *corev1.PersistentVolumeClaim, log logr.Log
 func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 	log logr.Logger,
 ) error {
-	// If PVC does not have the VR finalizer we are done
-	if !containsString(pvc.Finalizers, pvcVRFinalizerProtected) {
-		return nil
-	}
-
 	// For Async mode, we want to change the retention policy back to delete
 	// and remove the annotation.
 	// For Sync mode, we don't want to set the retention policy to delete as
