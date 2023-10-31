@@ -12,7 +12,8 @@ emit() {
 
 trap "emit STOP; exit" TERM INT
 
-emit START
+emit "START uptime=$(awk '{print $1}' /proc/uptime)"
+
 while true; do
     sleep 10 & wait
     emit UPDATE
