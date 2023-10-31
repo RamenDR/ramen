@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
@@ -428,7 +429,19 @@ func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 	// application is finally being undeployed, and also the PV would be garbage collected.
 
 	// Remove VR finalizer from PVC and the annotation (PVC maybe left behind, so remove the annotation)
-	return v.removeProtectedFinalizerFromPVC(pvc, log)
+	controllerutil.RemoveFinalizer(pvc, pvcVRFinalizerProtected)
+	delete(pvc.Annotations, pvcVRAnnotationProtectedKey)
+	delete(pvc.Annotations, pvcVRAnnotationArchivedKey)
+
+	if err := v.reconciler.Update(v.ctx, pvc); err != nil {
+		log.Error(err, "Failed to update PersistentVolumeClaim for VR deletion")
+
+		return fmt.Errorf("failed to update PersistentVolumeClaim %s/%s"+
+			"for deletion of VR owned by VolumeReplicationGroup %s/%s, %w",
+			pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
+	}
+
+	return nil
 }
 
 // retainPVForPVC updates the PV reclaim policy to retain for a given PVC
@@ -1684,33 +1697,6 @@ func (v *VRGInstance) addFinalizerToPVC(pvc *corev1.PersistentVolumeClaim,
 
 			return fmt.Errorf("failed to add finalizer (%s) to PersistentVolumeClaim resource"+
 				" (%s/%s) belonging to VolumeReplicationGroup (%s/%s), %w",
-				finalizer, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
-		}
-	}
-
-	return nil
-}
-
-func (v *VRGInstance) removeProtectedFinalizerFromPVC(pvc *corev1.PersistentVolumeClaim,
-	log logr.Logger,
-) error {
-	return v.removeFinalizerFromPVC(pvc, pvcVRFinalizerProtected, log)
-}
-
-// removeFinalizerFromPVC removes the VR finalizer on PVC and also the protected annotation from the PVC
-func (v *VRGInstance) removeFinalizerFromPVC(pvc *corev1.PersistentVolumeClaim,
-	finalizer string,
-	log logr.Logger,
-) error {
-	if containsString(pvc.ObjectMeta.Finalizers, finalizer) {
-		pvc.ObjectMeta.Finalizers = removeString(pvc.ObjectMeta.Finalizers, finalizer)
-		delete(pvc.ObjectMeta.Annotations, pvcVRAnnotationProtectedKey)
-
-		if err := v.reconciler.Update(v.ctx, pvc); err != nil {
-			log.Error(err, "Failed to remove finalizer", "finalizer", finalizer)
-
-			return fmt.Errorf("failed to remove finalizer (%s) from PersistentVolumeClaim resource"+
-				" (%s/%s) detected as part of VolumeReplicationGroup (%s/%s), %w",
 				finalizer, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
 		}
 	}
