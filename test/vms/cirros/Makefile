@@ -5,10 +5,11 @@ REGISTRY ?= quay.io
 REPOSITORY ?= nirsof
 NAME ?= cirros
 VERSION ?= 0.6.2
+RELEASE ?= 1
 
 work := work.qcow2
-disk := cirros-$(VERSION).qcow2
-container := $(REGISTRY)/$(REPOSITORY)/$(NAME):$(VERSION)
+disk := cirros-$(VERSION)-$(RELEASE).qcow2
+container := $(REGISTRY)/$(REPOSITORY)/$(NAME):$(VERSION)-$(RELEASE)
 
 all: $(disk)
 	podman build --tag $(container) --build-arg disk=$(disk) .

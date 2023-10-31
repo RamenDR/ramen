@@ -44,7 +44,7 @@ spec:
         - name: containerdisk
           containerDisk:
             # TODO: use ramendr repo.
-            image: quay.io/nirsof/cirros:0.6.2
+            image: quay.io/nirsof/cirros:0.6.2-1
         - name: cloudinitdisk
           cloudInitConfigDrive:
             userData: |
