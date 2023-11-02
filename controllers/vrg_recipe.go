@@ -116,7 +116,7 @@ func RecipeParametersExpand(recipe *recipe.Recipe, parameters map[string][]strin
 	log logr.Logger,
 ) error {
 	spec := &recipe.Spec
-	log.Info("Recipe pre-expansion", "spec", *spec, "parameters", parameters)
+	log.V(1).Info("Recipe pre-expansion", "spec", *spec, "parameters", parameters)
 
 	bytes, err := json.Marshal(*spec)
 	if err != nil {
@@ -130,7 +130,7 @@ func RecipeParametersExpand(recipe *recipe.Recipe, parameters map[string][]strin
 		return fmt.Errorf("recipe spec %v json unmarshal error: %w", s2, err)
 	}
 
-	log.Info("Recipe post-expansion", "spec", *spec)
+	log.V(1).Info("Recipe post-expansion", "spec", *spec)
 
 	return nil
 }
