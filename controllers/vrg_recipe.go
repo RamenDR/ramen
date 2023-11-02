@@ -205,6 +205,10 @@ func recipeNamespaceNames(recipeElements RecipeElements) sets.Set[string] {
 		namespaceNames.Insert(captureSpec.IncludedNamespaces...)
 	}
 
+	for _, recoverSpec := range recipeElements.RecoverWorkflow {
+		namespaceNames.Insert(recoverSpec.IncludedNamespaces...)
+	}
+
 	return namespaceNames
 }
 
