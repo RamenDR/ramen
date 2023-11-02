@@ -112,7 +112,7 @@ func objectsToDeploy(hubOperatorRamenConfig *rmn.RamenConfig) ([]interface{}, er
 
 	drClusterOperatorConfigMap, err := ConfigMapNew(
 		drClusterOperatorNamespaceName,
-		drClusterOperatorConfigMapName,
+		DrClusterOperatorConfigMapName,
 		ramenConfig,
 	)
 	if err != nil {
