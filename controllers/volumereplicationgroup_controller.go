@@ -907,12 +907,6 @@ func (v *VRGInstance) reconcileAsPrimary() {
 func (v *VRGInstance) pvcsDeselectedUnprotect() error {
 	log := v.log.WithName("PvcsDeselectedUnprotect")
 
-	if !v.ramenConfig.VolumeUnprotectionEnabled {
-		log.Info("disabled")
-
-		return nil
-	}
-
 	pvcsOwned, err := v.listPVCsOwnedByVrg()
 	if err != nil {
 		log.Error(err, "PVCs owned by VRG list")
