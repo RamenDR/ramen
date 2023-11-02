@@ -113,6 +113,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	}
 	group := func(typeName string, namespaceNames ...string) *recipe.Group {
 		return &recipe.Group{
+			Name:               typeName,
 			Type:               typeName,
 			IncludedNamespaces: namespaceNames,
 		}
@@ -123,12 +124,15 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	resources := func(namespaceNames ...string) *recipe.Group {
 		return group("resource", namespaceNames...)
 	}
-	hook := func(command ...string) *recipe.Hook {
+	hook := func(namespaceName string) *recipe.Hook {
 		return &recipe.Hook{
-			Type: "exec",
+			Name:      namespaceName,
+			Namespace: namespaceName,
+			Type:      "exec",
 			Ops: []*recipe.Operation{
 				{
-					Command: command,
+					Name:    namespaceName,
+					Command: []string{namespaceName},
 				},
 			},
 		}
@@ -150,6 +154,27 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	}
 	recipeHooksDefine := func(hooks ...*recipe.Hook) {
 		r.Spec.Hooks = hooks
+	}
+	allGroupsAllHooksWorkflow := func() *recipe.Workflow {
+		sequence := make([]map[string]string, len(r.Spec.Groups)+len(r.Spec.Hooks))
+
+		for i, group := range r.Spec.Groups {
+			sequence[i] = map[string]string{"group": group.Name}
+		}
+
+		for i, hook := range r.Spec.Hooks {
+			sequence[i+len(r.Spec.Groups)] = map[string]string{"hook": hook.Name + "/" + hook.Ops[0].Name}
+		}
+
+		return &recipe.Workflow{
+			Sequence: sequence,
+		}
+	}
+	recipeCaptureWorkflowDefine := func(workflow *recipe.Workflow) {
+		r.Spec.CaptureWorkflow = workflow
+	}
+	recipeRecoverWorkflowDefine := func(workflow *recipe.Workflow) {
+		r.Spec.RecoverWorkflow = workflow
 	}
 	recipeCreate := func() {
 		Expect(k8sClient.Create(ctx, r)).To(Succeed())
@@ -182,6 +207,9 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	}
 	vrgRecipeParametersDefine := func(recipeParameters map[string][]string) {
 		vrg.Spec.KubeObjectProtection.RecipeParameters = recipeParameters
+	}
+	vrgRecipeParameters := func() map[string][]string {
+		return vrg.Spec.KubeObjectProtection.RecipeParameters
 	}
 	vrgCreate := func() error {
 		return k8sClient.Create(ctx, vrg)
@@ -280,6 +308,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	})
 	var err error
 	JustBeforeEach(OncePerOrdered, func() {
+		recipeRecoverWorkflowDefine(allGroupsAllHooksWorkflow())
 		recipeCreate()
 		DeferCleanup(recipeDelete)
 		err = vrgCreate()
@@ -378,7 +407,8 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 					BeforeEach(func() {
 						recipeVolumesDefine(volumes(nsNamesSlice...))
 						recipeGroupsDefine(resources(nsNamesSlice...))
-						recipeHooksDefine(hook(nsNamesSlice...))
+						recipeHooksDefine(hook(nsNamesSlice[0]))
+						recipeCaptureWorkflowDefine(allGroupsAllHooksWorkflow())
 					})
 					It("includes only them in its PVC selection", func() {
 						Expect(err).ToNot(HaveOccurred())
@@ -391,17 +421,23 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 				Context("parametrically", func() {
 					var recipeExpanded *recipe.Recipe
 					BeforeEach(func() {
-						const parameterName = "ns"
-						const parameterRef = "$" + parameterName
+						const nssParameterName = "nss"
+						const nssParameterRef = "$" + nssParameterName
+						const ns0ParameterName = "ns0"
+						const ns0ParameterRef = "$" + ns0ParameterName
 
-						parameters := map[string][]string{parameterName: nsNamesSlice}
+						parameters := map[string][]string{
+							nssParameterName: nsNamesSlice,
+							ns0ParameterName: nsNamesSlice[0:1],
+						}
 
-						recipeVolumesDefine(volumes(parameterRef))
+						recipeVolumesDefine(volumes(nssParameterRef))
 						vrgRecipeParametersDefine(parameters)
-						recipeHooksDefine(hook(parameterRef))
-
+						recipeHooksDefine(hook(ns0ParameterRef))
+					})
+					JustBeforeEach(func() {
 						recipeExpanded = &*r
-						Expect(controllers.RecipeParametersExpand(recipeExpanded, parameters, testLogger)).To(Succeed())
+						Expect(controllers.RecipeParametersExpand(recipeExpanded, vrgRecipeParameters(), testLogger)).To(Succeed())
 					})
 					It("expands a parameter list enclosed in double quotes to a single string with quotes preserved", func() {
 						Skip("feature not supported")
@@ -508,6 +544,37 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 						})
 						It("lists its PVCs in the VRG's status", func() {
 							vrgPvcsConsistOfEventually(pvcsSlice...)
+						})
+					})
+				})
+				Context("whose recipe references", func() {
+					BeforeEach(func() {
+						nsSlices(1, nsCount)
+						vrg.Namespace = nsNamesSlice[0]
+						skipIfAdmissionValidationDenies()
+					})
+					Context("recovery hooks in another namespace", func() {
+						BeforeEach(func() {
+							recipeHooksDefine(hook(nsNamesSlice[1]))
+						})
+						It("sets DataReady condition's status to false and message to a recipe error", func() {
+							Eventually(vrgDataReadyConditionGet).ShouldNot(BeNil())
+							Expect(*vrgDataReadyPointer).To(MatchFields(IgnoreExtras, Fields{
+								"Status":  Equal(metav1.ConditionFalse),
+								"Reason":  Equal(controllers.VRGConditionReasonError),
+								"Message": HavePrefix(recipeErrorMessagePrefix),
+							}))
+						})
+					})
+					Context("recovery hooks in the same namespace", func() {
+						BeforeEach(func() {
+							recipeHooksDefine(hook(vrg.Namespace))
+						})
+						It("sets DataReady condition's message to something besides a recipe error", func() {
+							Eventually(vrgDataReadyConditionGet).ShouldNot(BeNil())
+							Eventually(*vrgDataReadyPointer).Should(MatchFields(IgnoreExtras, Fields{
+								"Message": Not(HavePrefix(recipeErrorMessagePrefix)),
+							}))
 						})
 					})
 				})
