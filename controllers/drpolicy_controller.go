@@ -124,6 +124,10 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, fmt.Errorf("unable to set drpolicy validation: %w", err)
 	}
 
+	if err := r.initiateDRPolicyMetrics(drpolicy, drclusters); err != nil {
+		return ctrl.Result{}, fmt.Errorf("error in intiating policy metrics: %w", err)
+	}
+
 	return r.reconcile(drpolicy, drclusters, secretsUtil, ramenConfig, log)
 }
 
@@ -133,20 +137,24 @@ func (r *DRPolicyReconciler) reconcile(drpolicy *ramen.DRPolicy,
 	ramenConfig *ramen.RamenConfig,
 	log logr.Logger,
 ) (ctrl.Result, error) {
-	if err := drPolicyDeploy(drpolicy, drclusters, secretsUtil, ramenConfig, log); err != nil {
+	if err := propagateS3Secret(drpolicy, drclusters, secretsUtil, ramenConfig, log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drpolicy deploy: %w", err)
 	}
 
+	return ctrl.Result{}, nil
+}
+
+func (r *DRPolicyReconciler) initiateDRPolicyMetrics(drpolicy *ramen.DRPolicy, drclusters *ramen.DRClusterList) error {
 	isMetro, _ := dRPolicySupportsMetro(drpolicy, drclusters.Items)
 
 	// Do not set metric for metro-dr
 	if !isMetro {
 		if err := r.setDRPolicyMetrics(drpolicy); err != nil {
-			return ctrl.Result{}, fmt.Errorf("error in setting drpolicy metrics: %w", err)
+			return fmt.Errorf("error in setting drpolicy metrics: %w", err)
 		}
 	}
 
-	return ctrl.Result{}, nil
+	return nil
 }
 
 func validateDRPolicy(ctx context.Context,

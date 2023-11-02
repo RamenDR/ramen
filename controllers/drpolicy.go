@@ -15,7 +15,7 @@ import (
 
 var drClustersMutex sync.Mutex
 
-func drPolicyDeploy(
+func propagateS3Secret(
 	drpolicy *rmn.DRPolicy,
 	drclusters *rmn.DRClusterList,
 	secretsUtil *util.SecretsUtil,
