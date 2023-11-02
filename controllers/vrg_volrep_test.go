@@ -346,6 +346,10 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		Context("PVC selection", func() {
 			var t *vrgTest
 			BeforeAll(func() {
+				vrgController.VolumeUnprotectionEnabledForAsyncVolRep = true
+				DeferCleanup(func() {
+					vrgController.VolumeUnprotectionEnabledForAsyncVolRep = false
+				})
 				t = vrgTestBoundPV
 				vrgNamespacedName = t.vrgNamespacedName()
 			})
@@ -1708,20 +1712,22 @@ func (v *vrgTest) cleanupPVCs(
 	pvcPreDeleteVerify pvcPreDeleteVerify,
 	pvcPostDeleteVerify pvcPostDeleteVerify,
 ) {
-	var unprotectedVerify func(corev1.PersistentVolumeClaim)
-
 	vrg := v.getVRG()
-	if vrg.Spec.ReplicationState == ramendrv1alpha1.Primary {
-		vrgNamespacedName := v.vrgNamespacedName()
-		unprotectedVerify = func(pvc corev1.PersistentVolumeClaim) {
-			pvcUnprotectedEventuallyVerify(vrgNamespacedName,
-				client.ObjectKeyFromObject(&pvc), pvc.Spec.VolumeName)
+
+	pvcPostDeleteVerify1 := pvcPostDeleteVerify
+	if !vrgController.VolumeUnprotectionEnabledForAsyncVolRep {
+		pvcPostDeleteVerify1 = func(pvcNamespacedName types.NamespacedName, pvName string) {
+			pvcDeletionTimestampRecentVerify(pvcNamespacedName)
+		}
+	} else if vrg.Spec.ReplicationState == ramendrv1alpha1.Primary {
+		pvcPostDeleteVerify1 = func(pvcNamespacedName types.NamespacedName, pvName string) {
+			pvcPostDeleteVerify(pvcNamespacedName, pvName)
+			pvcUnprotectedEventuallyVerify(client.ObjectKeyFromObject(vrg), pvcNamespacedName, pvName)
 		}
 	}
 
 	v.forEachPVC(func(pvc corev1.PersistentVolumeClaim) {
-		pvcDelete(*vrg, pvc, pvcPreDeleteVerify, pvcPostDeleteVerify)
-		unprotectedVerify(pvc)
+		pvcDelete(*vrg, pvc, pvcPreDeleteVerify, pvcPostDeleteVerify1)
 	})
 }
 
@@ -1820,8 +1826,16 @@ func pvcClusterDataProtectedStatusVerify(
 type pvcPostDeleteVerify func(types.NamespacedName, string)
 
 func vrAndPvcDeletionTimestampsRecentVerify(pvcNamespacedName types.NamespacedName, pvName string) {
-	objectDeletionTimestampRecentVerify(pvcNamespacedName, &volrep.VolumeReplication{})
+	vrDeletionTimestampRecentVerify(pvcNamespacedName)
+	pvcDeletionTimestampRecentVerify(pvcNamespacedName)
+}
+
+func pvcDeletionTimestampRecentVerify(pvcNamespacedName types.NamespacedName) {
 	objectDeletionTimestampRecentVerify(pvcNamespacedName, &corev1.PersistentVolumeClaim{})
+}
+
+func vrDeletionTimestampRecentVerify(vrNamespacedName types.NamespacedName) {
+	objectDeletionTimestampRecentVerify(vrNamespacedName, &volrep.VolumeReplication{})
 }
 
 func VrAndPvcAndPvAbsentVerify(pvcNamespacedName types.NamespacedName, pvName string) {

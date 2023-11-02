@@ -752,6 +752,20 @@ func (v *VRGInstance) pvcUnprotectVolRepIfDeleted(
 }
 
 func (v *VRGInstance) pvcUnprotectVolRep(pvc corev1.PersistentVolumeClaim, log logr.Logger) {
+	vrg := v.instance
+
+	if !v.ramenConfig.VolumeUnprotectionEnabled {
+		log.Info("Volume unprotection disabled")
+
+		return
+	}
+
+	if vrg.Spec.Async != nil && !VolumeUnprotectionEnabledForAsyncVolRep {
+		log.Info("Volume unprotection disabled for async mode")
+
+		return
+	}
+
 	if err := v.pvAndPvcObjectReplicasDelete(pvc, log); err != nil {
 		log.Error(err, "PersistentVolume and PersistentVolumeClaim replicas deletion failed")
 		v.requeue()
