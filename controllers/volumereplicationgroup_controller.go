@@ -123,7 +123,7 @@ func (r *VolumeReplicationGroupReconciler) pvcMapFunc(obj client.Object) []recon
 func (r *VolumeReplicationGroupReconciler) configMapFun(configmap client.Object) []reconcile.Request {
 	log := ctrl.Log.WithName("configmap").WithName("VolumeReplicationGroup")
 
-	if configmap.GetName() != drClusterOperatorConfigMapName || configmap.GetNamespace() != NamespaceName() {
+	if configmap.GetName() != DrClusterOperatorConfigMapName || configmap.GetNamespace() != NamespaceName() {
 		return []reconcile.Request{}
 	}
 

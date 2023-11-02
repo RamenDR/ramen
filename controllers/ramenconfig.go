@@ -29,7 +29,7 @@ const (
 	drClusterOperatorNameDefault                      = operatorNamePrefix + drClusterName + operatorNameSuffix
 	configMapNameSuffix                               = "-config"
 	HubOperatorConfigMapName                          = hubOperatorNameDefault + configMapNameSuffix
-	drClusterOperatorConfigMapName                    = drClusterOperatorNameDefault + configMapNameSuffix
+	DrClusterOperatorConfigMapName                    = drClusterOperatorNameDefault + configMapNameSuffix
 	leaderElectionResourceNameSuffix                  = ".ramendr.openshift.io"
 	HubLeaderElectionResourceName                     = hubName + leaderElectionResourceNameSuffix
 	drClusterLeaderElectionResourceName               = drClusterName + leaderElectionResourceNameSuffix
@@ -210,7 +210,7 @@ func ConfigMapGet(
 ) (configMap *corev1.ConfigMap, ramenConfig *ramendrv1alpha1.RamenConfig, err error) {
 	configMapName := HubOperatorConfigMapName
 	if ControllerType != ramendrv1alpha1.DRHubType {
-		configMapName = drClusterOperatorConfigMapName
+		configMapName = DrClusterOperatorConfigMapName
 	}
 
 	configMap = &corev1.ConfigMap{}

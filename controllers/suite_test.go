@@ -61,7 +61,6 @@ var (
 	testEnv     *envtest.Environment
 	ctx         context.Context
 	cancel      context.CancelFunc
-	configMap   *corev1.ConfigMap
 	ramenConfig *ramendrv1alpha1.RamenConfig
 	testLogger  logr.Logger
 
@@ -146,6 +145,11 @@ var _ = BeforeSuite(func() {
 	go func() {
 		defer GinkgoRecover()
 		cfg, err = testEnv.Start()
+		DeferCleanup(func() error {
+			By("tearing down the test environment")
+
+			return testEnv.Stop()
+		})
 		close(done)
 	}()
 	Eventually(done).WithTimeout(time.Minute).Should(BeClosed())
@@ -214,16 +218,10 @@ var _ = BeforeSuite(func() {
 	}
 	ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = true
 	ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = true
-	configMap, err = ramencontrollers.ConfigMapNew(
-		ramenNamespace,
-		ramencontrollers.HubOperatorConfigMapName,
-		ramenConfig,
-	)
-	Expect(err).NotTo(HaveOccurred())
-	Expect(k8sClient.Create(context.TODO(), configMap)).To(Succeed())
+	configMapCreate(ramenConfig)
 
 	s3Secrets[0] = corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Namespace: configMap.Namespace, Name: "s3secret0"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: ramenNamespace, Name: "s3secret0"},
 		StringData: map[string]string{
 			"AWS_ACCESS_KEY_ID":     awsAccessKeyIDSucc,
 			"AWS_SECRET_ACCESS_KEY": "",
@@ -359,6 +357,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	ctx, cancel = context.WithCancel(context.TODO())
+	DeferCleanup(cancel)
 	go func() {
 		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred())
@@ -369,12 +368,4 @@ var _ = BeforeSuite(func() {
 	apiReader = k8sManager.GetAPIReader()
 	Expect(apiReader).ToNot(BeNil())
 	objectStorersSet()
-})
-
-var _ = AfterSuite(func() {
-	cancel()
-	Expect(k8sClient.Delete(context.TODO(), configMap)).To(Succeed())
-	By("tearing down the test environment")
-	err := testEnv.Stop()
-	Expect(err).NotTo(HaveOccurred())
 })
