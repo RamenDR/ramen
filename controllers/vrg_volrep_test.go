@@ -241,7 +241,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 
 	// Test restore success when bound PV/PVC are present
 	var vrgTestBoundPV *vrgTest
-	Context("restore test case for existing and bound PV/PVC", func() {
+	Context("restore test case for existing and bound PV/PVC", Ordered, func() {
 		restoreTestTemplate := &template{
 			ClaimBindInfo:          corev1.ClaimBound,
 			VolumeBindInfo:         corev1.VolumeBound,
@@ -252,9 +252,10 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			scProvisioner:          "manual.storage.com",
 			replicationClassLabels: map[string]string{"protection": "ramen"},
 		}
+		const pvcCount = 3
 		It("populates the S3 store with PVs and starts vrg as primary", func() {
 			restoreTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
-			numPVs := 3
+			numPVs := pvcCount
 			vrgTestBoundPV = newVRGTestCaseCreate(numPVs, restoreTestTemplate, true, false)
 			pvList := vrgTestBoundPV.generateFakePVs("pv", numPVs)
 			populateS3Store(vrgTestBoundPV.s3KeyPrefix(), pvList, []corev1.PersistentVolumeClaim{})
@@ -266,6 +267,73 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		It("waits for VRG status to match", func() {
 			vrgTestBoundPV.promoteVolReps()
 			vrgTestBoundPV.verifyVRGStatusExpectation(true)
+		})
+		When("a VRG, reconciled by a controller without multi-namespace support,", func() {
+			var t *vrgTest
+			var pvcNamespacedNames [2][pvcCount]types.NamespacedName
+			const (
+				vrgGenerationExpected int64 = 1 + iota
+				vrgGenerationNext
+			)
+			BeforeEach(OncePerOrdered, func() {
+				t = vrgTestBoundPV
+				vrgObjectStorer := *vrgObjectStorer
+				vrgNamespacedName := t.vrgNamespacedName()
+				vrgS3KeyPrefix := vrgS3KeyPrefix(vrgNamespacedName)
+				t.clusterDataProtectedWait(metav1.ConditionTrue)
+
+				By("storing PVCs in S3 without namespace name in key suffix")
+				var pvcs []corev1.PersistentVolumeClaim
+				Expect(vrgController.DownloadTypedObjects(vrgObjectStorer, vrgS3KeyPrefix, &pvcs)).To(Succeed())
+				Expect(pvcs).To(HaveLen(len(t.pvcNames)))
+				for i := range pvcs {
+					pvc := &pvcs[i]
+					pvcNamespacedNames[0][i] = types.NamespacedName{Namespace: pvc.Namespace, Name: pvc.Name}
+					pvcNamespacedNames[1][i] = types.NamespacedName{Namespace: vrgNamespacedName.Namespace, Name: t.pvcNames[i]}
+					Expect(vrgController.DeleteTypedObjects(vrgObjectStorer, vrgS3KeyPrefix,
+						client.ObjectKeyFromObject(pvc).String(), *pvc)).To(Succeed())
+					Expect(vrgController.UploadPVC(vrgObjectStorer, vrgS3KeyPrefix, pvc.Name, *pvc)).To(Succeed())
+				}
+				Expect(pvcNamespacedNames[0]).To(ConsistOf(pvcNamespacedNames[1]))
+
+				By("storing VRG status without PVC namespace name")
+				vrg = t.getVRG()
+				Expect(vrg.GetGeneration()).To(Equal(vrgGenerationExpected))
+				Expect(vrg.Status.ProtectedPVCs).To(HaveLen(len(t.pvcNames)))
+				for i := range vrg.Status.ProtectedPVCs {
+					pvc := &vrg.Status.ProtectedPVCs[i]
+					pvcNamespacedNames[0][i] = types.NamespacedName{Namespace: pvc.Namespace, Name: pvc.Name}
+					pvc.Namespace = ""
+				}
+				Expect(pvcNamespacedNames[0]).To(ConsistOf(pvcNamespacedNames[1]))
+				Expect(k8sClient.Status().Update(ctx, vrg)).To(Succeed())
+			})
+			Context("recovers", func() {
+				BeforeAll(func() {
+					Expect(vrg.GetGeneration()).To(Equal(vrgGenerationExpected))
+					vrg.Spec.Async.SchedulingInterval = "8m"
+					Expect(k8sClient.Update(ctx, vrg)).To(Succeed())
+					Eventually(func() int64 {
+						vrg = t.getVRG()
+						Expect(vrg.GetGeneration()).To(Equal(vrgGenerationNext))
+
+						return vrg.Status.ObservedGeneration
+					}).Should(Equal(vrgGenerationNext))
+				})
+				It("sets PVC's namespace name in VRG status", func() {
+					Expect(vrg.Status.ProtectedPVCs).To(HaveLen(len(t.pvcNames)))
+					for i, pvc := range vrg.Status.ProtectedPVCs {
+						pvcNamespacedNames[0][i] = types.NamespacedName{Namespace: pvc.Namespace, Name: pvc.Name}
+					}
+					Expect(pvcNamespacedNames[0]).To(ConsistOf(pvcNamespacedNames[1]))
+				})
+				It("sets cluster data ready with current generation", func() {
+					clusterDataReady := meta.FindStatusCondition(vrg.Status.Conditions, vrgController.VRGConditionTypeClusterDataReady)
+					Expect(clusterDataReady).ToNot(BeNil())
+					Expect(clusterDataReady.ObservedGeneration).To(Equal(vrgGenerationNext))
+					Expect(clusterDataReady.Status).To(Equal(metav1.ConditionTrue))
+				})
+			})
 		})
 		It("cleans up after testing", func() {
 			vrgTestBoundPV.cleanup()
