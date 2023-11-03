@@ -17,3 +17,18 @@ func (v *VRGInstance) findFirstProtectedPVCWithName(pvcName string) *ramen.Prote
 
 	return nil
 }
+
+func (v *VRGInstance) vrgStatusPvcNamespacesSetIfUnset() {
+	vrg := v.instance
+
+	for i := range vrg.Status.ProtectedPVCs {
+		vrgStatusPvc := &vrg.Status.ProtectedPVCs[i]
+		if vrgStatusPvc.Namespace != "" {
+			continue
+		}
+
+		v.log.Info("VRG status PVC namespace unset; setting", "PVC", vrgStatusPvc.Name)
+
+		vrgStatusPvc.Namespace = vrg.GetNamespace()
+	}
+}
