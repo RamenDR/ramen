@@ -58,6 +58,18 @@ enough resources:
 
    To exit virtual environment issue command *deactivate*.
 
+1. Enable libvirtd service if disabled.
+
+   ```
+   sudo systemctl enable libvirtd --now
+   ```
+
+   Verify libvirtd service is now active with no errors.
+
+   ```
+   sudo systemctl status libvirtd -l
+   ```
+
 1. Add yourself to the libvirt group (required for minikube kvm2 driver).
 
    ```
@@ -74,6 +86,11 @@ enough resources:
 
    For more information see [Virtualization on Fedora](https://docs.fedoraproject.org/en-US/quick-docs/virtualization-getting-started/).
 
+1. Install the `kubectl` tool. See
+   [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
+   for details.
+   Tested with version v1.27.4.
+
 1. Install minikube - on Fedora you can use::
 
    ```
@@ -82,15 +99,44 @@ enough resources:
 
    Tested with version v1.31.
 
-1. Install the `kubectl` tool. See
-   [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
-   for details.
-   Tested with version v1.27.4.
+   Verify you can create a Kubernetes cluster with minikube.
+
+   ```
+   minikube start -p testcluster
+   ```
+
+   Wait for `testcluster` to complete and then issue this command:
+
+   ```
+   minikube profile list
+   ```
+
+   Example output:
+
+   ```
+   |-------------|-----------|------------|-----------------|------|---------|---------|-------|--------|
+   |   Profile   | VM Driver |  Runtime   |       IP        | Port | Version | Status  | Nodes | Active |
+   |-------------|-----------|------------|-----------------|------|---------|---------|-------|--------|
+   | testcluster | kvm2      | docker     | 192.168.39.211  | 8443 | v1.27.4 | Running |     1 |        |
+   |-------------|-----------|------------|-----------------|------|---------|---------|-------|--------|
+   ```
+
+   After verifying minikube `testcluster` created, delete the cluster.
+
+   ```
+   minikube delete -p testcluster
+   ```
 
 1. Install `clusteradm` tool. See
    [Install clusteradm CLI tool](https://open-cluster-management.io/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool)
    for the details.
    Tested with v0.6.0.
+
+   ```
+   wget https://github.com/open-cluster-management-io/clusteradm/releases/download/v0.6.0/clusteradm_linux_amd64.tar.gz
+   ```
+
+   After download completes, extract `clusteradm` and copy to /usr/local/bin.
 
    clusteradm v0.7.0 does not currently work with drenv
 
@@ -104,6 +150,22 @@ enough resources:
    for the details.
    Tested with version v1.11.0.
 
+1. Install the `virtctl` tool. See
+   [virtctl install](https://kubevirt.io/quickstart_minikube/#virtctl)
+   for the details.
+   Tested with version v1.0.1.
+
+   ```
+   curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.0.1/virtctl-v1.0.1-linux-amd64
+   ```
+
+   After download completes for `virtctl` issue these commands.
+
+   ```
+   chmod +x virtctl
+   sudo install virtctl /usr/local/bin
+   ```
+
 1. Install `helm` tool - on Fedora you can use:
 
    ```
@@ -112,16 +174,21 @@ enough resources:
 
    Tested with version v3.11.
 
-1. Install the `virtctl` tool. See
-   [virtctl install](https://kubevirt.io/quickstart_minikube/#virtctl)
-   for the details.
-   Tested with version v1.0.1.
-
 1. Install `podman` - on Fedora you can use:
 
    ```
    sudo dnf install podman
    ```
+
+   Tested with version 4.7.0.
+
+1. Install `golang` - on Fedora you can use:
+
+   ```
+   sudo dnf install golang
+   ```
+
+   Tested with version go1.20.10.
 
 ## Starting the test environment
 
@@ -144,7 +211,7 @@ ceph image replication of block volumes.
 To start the environment, run:
 
 ```
-cd ramen/test
+cd test
 drenv start envs/regional-dr.yaml
 ```
 
@@ -165,7 +232,7 @@ Example output:
 ```
 
 The kubconfigs for dr1, dr2 and hub can be found in
-$HOME/.config/drenv/rdrkubeconfigs/.
+$HOME/.config/drenv/rdr/kubeconfigs/.
 
 Validate that the clusters are created.
 
@@ -200,6 +267,18 @@ Build the *Ramen* operator container image:
 ```
 cd ramen
 make docker-build
+```
+
+Select `docker.io/library/golang:1.19.1` when prompted.
+
+```
+podman build -t quay.io/ramendr/ramen-operator:latest .
+[1/2] STEP 1/9: FROM golang:1.19.1 AS builder
+? Please select an image:
+    registry.fedoraproject.org/golang:1.19.1
+    registry.access.redhat.com/golang:1.19.1
+  ▸ docker.io/library/golang:1.19.1
+    quay.io/golang:1.19.1
 ```
 
 This builds the image `quay.io/ramendr/ramen-operator:latest`
