@@ -37,6 +37,7 @@ venv
 # Test enviromemnt generated files
 test/.coverage
 test/.coverage.*
+test/addons/kubevirt/vm/id_rsa.pub
 
 # Python generated files
 *.egg-info/
