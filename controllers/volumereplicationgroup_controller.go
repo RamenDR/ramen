@@ -389,7 +389,7 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	}
 	// Save a copy of the instance status to be used for the VRG status update comparison
 	v.instance.Status.DeepCopyInto(&v.savedInstanceStatus)
-
+	v.vrgStatusPvcNamespacesSetIfUnset()
 	setVRGInitialCondition(&v.instance.Status.Conditions, v.instance.Generation,
 		"Initializing VolumeReplicationGroup")
 
