@@ -22,13 +22,17 @@ func (v *VRGInstance) vrgStatusPvcNamespacesSetIfUnset() {
 	vrg := v.instance
 
 	for i := range vrg.Status.ProtectedPVCs {
-		vrgStatusPvc := &vrg.Status.ProtectedPVCs[i]
-		if vrgStatusPvc.Namespace != "" {
+		pvc := &vrg.Status.ProtectedPVCs[i]
+		log := v.log.WithValues("PVC", pvc.Name)
+
+		if pvc.Namespace != "" {
+			log.V(1).Info("VRG status PVC namespace set already", "namespace", pvc.Namespace)
+
 			continue
 		}
 
-		v.log.Info("VRG status PVC namespace unset; setting", "PVC", vrgStatusPvc.Name)
+		log.Info("VRG status PVC namespace unset; setting")
 
-		vrgStatusPvc.Namespace = vrg.GetNamespace()
+		pvc.Namespace = vrg.GetNamespace()
 	}
 }
