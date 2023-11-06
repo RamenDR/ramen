@@ -16,9 +16,6 @@ patchesJson6902:
         path: /data/CSI_ENABLE_CSIADDONS
         value: 'true'
       - op: add
-        path: /data/ROOK_CSIADDONS_IMAGE
-        value: quay.io/csiaddons/k8s-sidecar:latest
-      - op: add
         path: /data/CSI_ENABLE_OMAP_GENERATOR
         value: 'true'
 
