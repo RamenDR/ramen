@@ -456,7 +456,7 @@ func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 	delete(pvc.Annotations, pvcVRAnnotationProtectedKey)
 	delete(pvc.Annotations, pvcVRAnnotationArchivedKey)
 
-	log1 := log.WithValues("ownerRemoved", ownerRemoved, "finalizer removed", finalizerRemoved)
+	log1 := log.WithValues("owner removed", ownerRemoved, "finalizer removed", finalizerRemoved)
 
 	if err := v.reconciler.Update(v.ctx, pvc); err != nil {
 		log1.Error(err, "Failed to update PersistentVolumeClaim for VR deletion")
@@ -942,15 +942,24 @@ func (v *VRGInstance) deleteClusterDataInS3Stores(log logr.Logger) error {
 }
 
 func (v *VRGInstance) pvAndPvcObjectReplicasDelete(pvc corev1.PersistentVolumeClaim, log logr.Logger) error {
-	log.Info("Delete PV and PVC object replicas", "s3Profiles", v.instance.Spec.S3Profiles)
+	vrg := v.instance
+
+	log.Info("Delete PV and PVC object replicas", "s3Profiles", vrg.Spec.S3Profiles)
 
 	keyPrefix := v.s3KeyPrefix()
-	pvKey := TypedObjectKey(keyPrefix, pvc.Spec.VolumeName, corev1.PersistentVolume{})
-	pvcKey := TypedObjectKey(keyPrefix, pvc.Name, corev1.PersistentVolumeClaim{})
+	pvcNamespacedName := client.ObjectKeyFromObject(&pvc)
+	keys := []string{
+		TypedObjectKey(keyPrefix, pvc.Spec.VolumeName, corev1.PersistentVolume{}),
+		TypedObjectKey(keyPrefix, pvcNamespacedName.String(), corev1.PersistentVolumeClaim{}),
+	}
+
+	if pvc.Namespace == vrg.Namespace {
+		keys = append(keys, TypedObjectKey(keyPrefix, pvc.Name, corev1.PersistentVolumeClaim{}))
+	}
 
 	return v.s3StoresDo(
-		func(s ObjectStorer) error { return s.DeleteObjects(pvKey, pvcKey) },
-		fmt.Sprintf("delete %s and %s object replicas", pvKey, pvcKey),
+		func(s ObjectStorer) error { return s.DeleteObjects(keys...) },
+		fmt.Sprintf("delete object replicas %v", keys),
 	)
 }
 
