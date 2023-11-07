@@ -86,6 +86,9 @@ issues:
       linters:
         - revive
       text: "should not use dot imports"
+    - source: "^func Test"
+      linters:
+        - funlen
 
 
 linters:
