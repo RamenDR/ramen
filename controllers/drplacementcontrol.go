@@ -1388,9 +1388,11 @@ func (d *DRPCInstance) updateUserPlacementRule(homeCluster, reason string) error
 	d.log.Info(fmt.Sprintf("Updating user Placement %s homeCluster %s",
 		d.userPlacement.GetName(), homeCluster))
 
-	err := d.addAnnotation(LastAppDeploymentCluster, homeCluster)
-	if err != nil {
-		return err
+	added := rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, homeCluster)
+	if added {
+		if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
+			return err
+		}
 	}
 
 	newPD := &clrapiv1beta1.ClusterDecision{
@@ -1399,19 +1401,6 @@ func (d *DRPCInstance) updateUserPlacementRule(homeCluster, reason string) error
 	}
 
 	return d.reconciler.updateUserPlacementStatusDecision(d.ctx, d.userPlacement, newPD)
-}
-
-func (d *DRPCInstance) addAnnotation(key, value string) error {
-	annotations := d.instance.GetAnnotations()
-
-	if annotations == nil {
-		annotations = map[string]string{}
-	}
-
-	annotations[key] = value
-	d.instance.SetAnnotations(annotations)
-
-	return d.reconciler.Update(d.ctx, d.instance)
 }
 
 func (d *DRPCInstance) clearUserPlacementRuleStatus() error {

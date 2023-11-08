@@ -195,9 +195,9 @@ func (v *VSHandler) createOrUpdateRD(
 			return fmt.Errorf("%w", err)
 		}
 
-		addVRGOwnerLabel(v.owner, rd)
-		addAnnotation(rd, OwnerNameAnnotation, v.owner.GetName())
-		addAnnotation(rd, OwnerNamespaceAnnotation, v.owner.GetNamespace())
+		util.AddLabel(rd, VRGOwnerLabel, v.owner.GetName())
+		util.AddAnnotation(rd, OwnerNameAnnotation, v.owner.GetName())
+		util.AddAnnotation(rd, OwnerNamespaceAnnotation, v.owner.GetNamespace())
 
 		rd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
 			ServiceType: v.getRsyncServiceType(),
@@ -444,7 +444,7 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 			return fmt.Errorf("%w", err)
 		}
 
-		addVRGOwnerLabel(v.owner, rs)
+		util.AddLabel(rs, VRGOwnerLabel, v.owner.GetName())
 
 		rs.Spec.SourcePVC = rsSpec.ProtectedPVC.Name
 
@@ -1205,7 +1205,7 @@ func (v *VSHandler) validateSnapshotAndAddDoNotDeleteLabel(
 	}
 
 	// Add label to indicate that VolSync should not delete/cleanup this snapshot
-	labelsUpdated := addLabel(volSnap, VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal)
+	labelsUpdated := util.AddLabel(volSnap, VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal)
 	if labelsUpdated {
 		if err := v.client.Update(v.ctx, volSnap); err != nil {
 			v.log.Error(err, "Failed to add label to snapshot",
@@ -1221,45 +1221,6 @@ func (v *VSHandler) validateSnapshotAndAddDoNotDeleteLabel(
 	v.log.V(1).Info("VolumeSnapshot validated", "volumesnapshot name", volSnap.GetName())
 
 	return volSnap, nil
-}
-
-func addLabel(obj client.Object, labelName, labelValue string) bool {
-	return addLabelOrAnnotation(obj, labelName, labelValue, true)
-}
-
-func addAnnotation(obj client.Object, annotationName, annotationValue string) bool {
-	return addLabelOrAnnotation(obj, annotationName, annotationValue, false)
-}
-
-func addLabelOrAnnotation(obj client.Object, name, value string, isLabel bool) bool {
-	updated := false
-
-	// Get current labels or annotations
-	var mapToUpdate map[string]string
-	if isLabel {
-		mapToUpdate = obj.GetLabels()
-	} else {
-		mapToUpdate = obj.GetAnnotations()
-	}
-
-	if mapToUpdate == nil {
-		mapToUpdate = map[string]string{}
-	}
-
-	val, ok := mapToUpdate[name]
-	if !ok || val != value {
-		mapToUpdate[name] = value
-
-		updated = true
-
-		if isLabel {
-			obj.SetLabels(mapToUpdate)
-		} else {
-			obj.SetAnnotations(mapToUpdate)
-		}
-	}
-
-	return updated
 }
 
 func (v *VSHandler) addOwnerReference(obj, owner metav1.Object) (bool, error) {
@@ -1278,7 +1239,7 @@ func (v *VSHandler) addOwnerReference(obj, owner metav1.Object) (bool, error) {
 func (v *VSHandler) addAnnotationAndVRGOwnerRefAndUpdate(obj client.Object,
 	annotationName, annotationValue string,
 ) error {
-	annotationsUpdated := addAnnotation(obj, annotationName, annotationValue)
+	annotationsUpdated := util.AddAnnotation(obj, annotationName, annotationValue)
 
 	ownerRefUpdated, err := v.addOwnerReference(obj, v.owner) // VRG as owner
 	if err != nil {
@@ -1642,17 +1603,6 @@ func isLatestImageReady(latestImage *corev1.TypedLocalObjectReference) bool {
 	return true
 }
 
-func addVRGOwnerLabel(owner, obj metav1.Object) {
-	// Set vrg label to owner name - enables lookups by owner label
-	labels := obj.GetLabels()
-	if labels == nil {
-		labels = make(map[string]string)
-	}
-
-	labels[VRGOwnerLabel] = owner.GetName()
-	obj.SetLabels(labels)
-}
-
 func getReplicationDestinationName(pvcName string) string {
 	return pvcName // Use PVC name as name of ReplicationDestination
 }
@@ -1765,8 +1715,8 @@ func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDe
 			return err
 		}
 
-		addVRGOwnerLabel(v.owner, lrd)
-		addLabel(lrd, VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal)
+		util.AddLabel(lrd, VRGOwnerLabel, v.owner.GetName())
+		util.AddLabel(lrd, VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal)
 
 		pvcAccessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce} // Default value
 		if len(rdSpec.ProtectedPVC.AccessModes) > 0 {
@@ -1841,7 +1791,7 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 			return err
 		}
 
-		addVRGOwnerLabel(v.owner, lrs)
+		util.AddLabel(lrs, VRGOwnerLabel, v.owner.GetName())
 
 		lrs.Spec.Trigger = &volsyncv1alpha1.ReplicationSourceTriggerSpec{
 			Manual: pvc.GetName(),
