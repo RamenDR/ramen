@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: test-pvc
+spec:
+  dataSourceRef:
+    apiGroup: cdi.kubevirt.io
+    kind: VolumeImportSource
+    name: cirros-source
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 128Mi
+  storageClassName: csi-hostpath-sc
+  volumeMode: Block

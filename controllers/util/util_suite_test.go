@@ -15,6 +15,7 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/format"
 	"github.com/ramendr/ramen/controllers/util"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	"go.uber.org/zap/zapcore"
@@ -48,6 +49,8 @@ func TestUtil(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
+	// onsi.github.io/gomega/#adjusting-output
+	format.MaxLength = 0
 	testLogger = zap.New(zap.UseFlagOptions(&zap.Options{
 		Development: true,
 		DestWriter:  GinkgoWriter,

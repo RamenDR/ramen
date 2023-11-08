@@ -115,7 +115,21 @@ type KubeObjectProtectionSpec struct {
 
 	// Name of the Recipe to reference for capture and recovery workflows and volume selection.
 	//+optional
-	RecipeRef *corev1.LocalObjectReference `json:"recipeRef,omitempty"`
+	RecipeRef *RecipeRef `json:"recipeRef,omitempty"`
+
+	// Recipe parameter definitions
+	//+optional
+	RecipeParameters map[string][]string `json:"recipeParameters,omitempty"`
+}
+
+type RecipeRef struct {
+	// Name of namespace recipe is in
+	//+optional
+	Namespace string `json:"namespace,omitempty"`
+
+	// Name of recipe
+	//+optional
+	Name string `json:"name,omitempty"`
 }
 
 const KubeObjectProtectionCaptureIntervalDefault = 5 * time.Minute
@@ -211,6 +225,10 @@ type StorageIdentifiers struct {
 }
 
 type ProtectedPVC struct {
+	// Name of the namespace the PVC is in
+	//+optional
+	Namespace string `json:"namespace,omitempty"`
+
 	// Name of the VolRep/PVC resource
 	//+optional
 	Name string `json:"name,omitempty"`

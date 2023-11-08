@@ -1,0 +1,76 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Enviroment for testing kubevirt flows with Regional-DR
+---
+name: "rdr-kubevirt"
+
+ramen:
+  hub: hub
+  clusters: [dr1, dr2]
+  topology: regional-dr
+
+templates:
+  - name: "dr-cluster"
+    driver: "$vm"
+    container_runtime: containerd
+    containerd:
+      plugins:
+        io.containerd.grpc.v1.cri:
+          device_ownership_from_security_context: true
+    network: "$network"
+    cni: flannel
+    cpus: 3
+    memory: "8g"
+    extra_disks: 1
+    disk_size: "50g"
+    addons:
+      - volumesnapshots
+      - csi-hostpath-driver
+    workers:
+      - addons:
+          - name: cert-manager
+          - name: rook-operator
+          - name: rook-cluster
+          - name: rook-pool
+          - name: rook-toolbox
+      - addons:
+          - name: ocm-cluster
+            args: ["$name", "hub"]
+          - name: cdi
+      - addons:
+          - name: csi-addons
+          - name: olm
+          - name: minio
+          - name: velero
+          - name: kubevirt
+  - name: "hub-cluster"
+    driver: "$vm"
+    container_runtime: containerd
+    network: "$network"
+    cni: flannel
+    memory: "4g"
+    workers:
+      - addons:
+          - name: ocm-hub
+          - name: ocm-controller
+          - name: cert-manager
+          - name: olm
+          - name: submariner
+            args: ["hub", "dr1", "dr2"]
+
+profiles:
+  - name: "dr1"
+    template: "dr-cluster"
+  - name: "dr2"
+    template: "dr-cluster"
+  - name: "hub"
+    template: "hub-cluster"
+
+workers:
+  - addons:
+      - name: rbd-mirror
+        args: ["dr1", "dr2"]
+  - addons:
+      - name: volsync
+        args: ["dr1", "dr2"]

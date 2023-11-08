@@ -147,6 +147,14 @@ type RamenConfig struct {
 		// Velero namespace input
 		VeleroNamespaceName string `json:"veleroNamespaceName,omitempty"`
 	} `json:"kubeObjectProtection,omitempty"`
+
+	MultiNamespace struct {
+		// Enables feature to protect resources in namespaces other than VRG's
+		FeatureEnabled bool `json:"FeatureEnabled,omitempty"`
+	} `json:"multiNamespace,omitempty"`
+
+	// Unprotect deleted or deselected PVCs
+	VolumeUnprotectionEnabled bool `json:"volumeUnprotectionEnabled,omitempty"`
 }
 
 func init() {

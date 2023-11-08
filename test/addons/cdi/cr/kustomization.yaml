@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# yamllint disable rule:line-length
+---
+resources:
+- https://github.com/kubevirt/containerized-data-importer/releases/download/v1.57.0/cdi-cr.yaml

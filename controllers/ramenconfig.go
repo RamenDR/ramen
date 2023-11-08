@@ -29,7 +29,7 @@ const (
 	drClusterOperatorNameDefault                      = operatorNamePrefix + drClusterName + operatorNameSuffix
 	configMapNameSuffix                               = "-config"
 	HubOperatorConfigMapName                          = hubOperatorNameDefault + configMapNameSuffix
-	drClusterOperatorConfigMapName                    = drClusterOperatorNameDefault + configMapNameSuffix
+	DrClusterOperatorConfigMapName                    = drClusterOperatorNameDefault + configMapNameSuffix
 	leaderElectionResourceNameSuffix                  = ".ramendr.openshift.io"
 	HubLeaderElectionResourceName                     = hubName + leaderElectionResourceNameSuffix
 	drClusterLeaderElectionResourceName               = drClusterName + leaderElectionResourceNameSuffix
@@ -41,6 +41,11 @@ const (
 	DefaultCephFSCSIDriverName                        = "openshift-storage.cephfs.csi.ceph.com"
 	VeleroNamespaceNameDefault                        = "velero"
 	DefaultVolSyncCopyMethod                          = "Snapshot"
+)
+
+var (
+	VolumeUnprotectionEnabledForAsyncVolRep  = false
+	VolumeUnprotectionEnabledForAsyncVolSync = false
 )
 
 // FIXME
@@ -210,7 +215,7 @@ func ConfigMapGet(
 ) (configMap *corev1.ConfigMap, ramenConfig *ramendrv1alpha1.RamenConfig, err error) {
 	configMapName := HubOperatorConfigMapName
 	if ControllerType != ramendrv1alpha1.DRHubType {
-		configMapName = drClusterOperatorConfigMapName
+		configMapName = DrClusterOperatorConfigMapName
 	}
 
 	configMap = &corev1.ConfigMap{}
@@ -233,6 +238,10 @@ func ConfigMapGet(
 
 func NamespaceName() string {
 	return os.Getenv("POD_NAMESPACE")
+}
+
+func adminNamespaceNames() []string {
+	return []string{NamespaceName()}
 }
 
 func drClusterOperatorChannelNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {

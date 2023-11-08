@@ -309,14 +309,16 @@ func newVRGClusterDataProtectingCondition(observedGeneration int64, message stri
 }
 
 // sets conditions when PV cluster data failed to be protected
-func setVRGClusterDataUnprotectedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, *newVRGClusterDataUnprotectedCondition(observedGeneration, message))
+func setVRGClusterDataUnprotectedCondition(
+	conditions *[]metav1.Condition, observedGeneration int64, reason, message string,
+) {
+	setStatusCondition(conditions, *newVRGClusterDataUnprotectedCondition(observedGeneration, reason, message))
 }
 
-func newVRGClusterDataUnprotectedCondition(observedGeneration int64, message string) *metav1.Condition {
+func newVRGClusterDataUnprotectedCondition(observedGeneration int64, reason, message string) *metav1.Condition {
 	return &metav1.Condition{
 		Type:               VRGConditionTypeClusterDataProtected,
-		Reason:             VRGConditionReasonUploadError,
+		Reason:             reason,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,

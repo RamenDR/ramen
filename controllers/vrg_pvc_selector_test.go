@@ -32,7 +32,7 @@ const (
 	vrgTestNamespaceBase string = "test-vrg-namespace-"
 )
 
-var _ = Describe("VolumeReplicationGroupController", func() {
+var _ = Describe("VolumeReplicationGroupPVCSelector", func() {
 	var testCtx context.Context
 	var cancel context.CancelFunc
 	var vrgTestNamespace string
@@ -56,11 +56,12 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 
 			createRecipeAndGet(testCtx, recipe)
 
-			labels, err := vrgController.GetPVCLabelSelector(testCtx, k8sClient, *vrg, testLogger)
+			pvcSelector, err := vrgController.GetPVCSelector(testCtx, k8sClient, *vrg, *ramenConfig, testLogger)
 			Expect(err).To(BeNil())
 
 			correctLabels := getVolumeGroupLabelSelector(recipe)
-			Expect(labels).To(Equal(correctLabels))
+			Expect(pvcSelector.LabelSelector).To(Equal(correctLabels))
+			Expect(pvcSelector.NamespaceNames).To(ConsistOf(vrg.Namespace))
 
 			cleanupRecipe(testCtx, recipe)
 		})
@@ -71,11 +72,12 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 
 			vrg := getVRGDefinitionWithKubeObjectProtection(!addPVCSelectorLabels, vrgTestNamespace)
 
-			labels, err := vrgController.GetPVCLabelSelector(testCtx, k8sClient, *vrg, testLogger)
+			pvcSelector, err := vrgController.GetPVCSelector(testCtx, k8sClient, *vrg, *ramenConfig, testLogger)
 			Expect(err).To(BeNil())
 
 			correctLabels := getVolumeGroupLabelSelector(recipe)
-			Expect(labels).To(Equal(correctLabels))
+			Expect(pvcSelector.LabelSelector).To(Equal(correctLabels))
+			Expect(pvcSelector.NamespaceNames).To(ConsistOf(vrg.Namespace))
 
 			cleanupRecipe(testCtx, recipe)
 		})
@@ -83,18 +85,19 @@ var _ = Describe("VolumeReplicationGroupController", func() {
 		It("when only PVCSelector exists, choose PVCSelector", func() {
 			vrg := getVRGDefinitionWithPVCSelectorLabels(vrgTestNamespace) // has PVCSelectorLabels, no Recipe info
 
-			labels, err := vrgController.GetPVCLabelSelector(testCtx, k8sClient, *vrg, testLogger)
+			pvcSelector, err := vrgController.GetPVCSelector(testCtx, k8sClient, *vrg, *ramenConfig, testLogger)
 			Expect(err).To(BeNil())
 
 			correctLabels := vrg.Spec.PVCSelector
-			Expect(labels).To(Equal(correctLabels))
+			Expect(pvcSelector.LabelSelector).To(Equal(correctLabels))
+			Expect(pvcSelector.NamespaceNames).To(ConsistOf(vrg.Namespace))
 		})
 
 		It("produce error when Recipe info is defined, but no recipe exists", func() {
 			// do not create Recipe object for this test
 			vrg := getVRGDefinitionWithKubeObjectProtection(!addPVCSelectorLabels, vrgTestNamespace)
 
-			_, err := vrgController.GetPVCLabelSelector(testCtx, k8sClient, *vrg, testLogger)
+			_, err := vrgController.GetPVCSelector(testCtx, k8sClient, *vrg, *ramenConfig, testLogger)
 			Expect(err).NotTo(BeNil())
 		})
 	})
@@ -188,8 +191,9 @@ func getVRGDefinitionWithKubeObjectProtection(hasPVCSelectorLabels bool, namespa
 	}
 
 	vrg.Spec.KubeObjectProtection = &ramen.KubeObjectProtectionSpec{
-		RecipeRef: &corev1.LocalObjectReference{
-			Name: "test-recipe",
+		RecipeRef: &ramen.RecipeRef{
+			Namespace: vrg.Namespace,
+			Name:      "test-recipe",
 		},
 	}
 

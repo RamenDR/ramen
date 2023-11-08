@@ -54,6 +54,17 @@ import (
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
+const (
+	vrgS3ProfileNumber = iota
+	objS3ProfileNumber
+	bucketInvalidS3ProfileNumber1
+	bucketInvalidS3ProfileNumber2
+	listErrorS3ProfileNumber
+	drClusterS3ProfileNumber
+	uploadErrorS3ProfileNumber
+	s3ProfileCount
+)
+
 var (
 	cfg         *rest.Config
 	apiReader   client.Reader
@@ -61,7 +72,6 @@ var (
 	testEnv     *envtest.Environment
 	ctx         context.Context
 	cancel      context.CancelFunc
-	configMap   *corev1.ConfigMap
 	ramenConfig *ramendrv1alpha1.RamenConfig
 	testLogger  logr.Logger
 
@@ -75,7 +85,7 @@ var (
 	plRuleNames map[string]struct{}
 
 	s3Secrets     [1]corev1.Secret
-	s3Profiles    [7]ramendrv1alpha1.S3StoreProfile
+	s3Profiles    [s3ProfileCount]ramendrv1alpha1.S3StoreProfile
 	objectStorers [2]ramencontrollers.ObjectStorer
 
 	ramenNamespace = "ns-envtest"
@@ -146,6 +156,11 @@ var _ = BeforeSuite(func() {
 	go func() {
 		defer GinkgoRecover()
 		cfg, err = testEnv.Start()
+		DeferCleanup(func() error {
+			By("tearing down the test environment")
+
+			return testEnv.Stop()
+		})
 		close(done)
 	}()
 	Eventually(done).WithTimeout(time.Minute).Should(BeClosed())
@@ -214,24 +229,19 @@ var _ = BeforeSuite(func() {
 	}
 	ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = true
 	ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = true
-	configMap, err = ramencontrollers.ConfigMapNew(
-		ramenNamespace,
-		ramencontrollers.HubOperatorConfigMapName,
-		ramenConfig,
-	)
-	Expect(err).NotTo(HaveOccurred())
-	Expect(k8sClient.Create(context.TODO(), configMap)).To(Succeed())
+	ramenConfig.MultiNamespace.FeatureEnabled = true
+	configMapCreate(ramenConfig)
 
 	s3Secrets[0] = corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Namespace: configMap.Namespace, Name: "s3secret0"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: ramenNamespace, Name: "s3secret0"},
 		StringData: map[string]string{
 			"AWS_ACCESS_KEY_ID":     awsAccessKeyIDSucc,
 			"AWS_SECRET_ACCESS_KEY": "",
 		},
 	}
-	s3ProfileNew := func(profileNameSuffix, bucketName string) ramendrv1alpha1.S3StoreProfile {
+	s3ProfileNew := func(profileNamePrefix, profileNameSuffix, bucketName string) ramendrv1alpha1.S3StoreProfile {
 		return ramendrv1alpha1.S3StoreProfile{
-			S3ProfileName:        "s3profile" + profileNameSuffix,
+			S3ProfileName:        profileNamePrefix + "s3profile" + profileNameSuffix,
 			S3Bucket:             bucketName,
 			S3CompatibleEndpoint: "http://192.168.39.223:30000",
 			S3Region:             "us-east-1",
@@ -239,13 +249,13 @@ var _ = BeforeSuite(func() {
 		}
 	}
 
-	s3Profiles[0] = s3ProfileNew("0", bucketNameSucc)
-	s3Profiles[1] = s3ProfileNew("1", bucketNameSucc2)
-	s3Profiles[2] = s3ProfileNew("2", bucketNameFail)
-	s3Profiles[3] = s3ProfileNew("3", bucketNameFail2)
-	s3Profiles[4] = s3ProfileNew("4", bucketListFail)
-	// s3Profiles[5] used and modified in DRCluster tests
-	s3Profiles[6] = s3ProfileNew("6", bucketNameUploadAwsErr)
+	s3Profiles[vrgS3ProfileNumber] = s3ProfileNew("", "0", bucketNameSucc)
+	s3Profiles[objS3ProfileNumber] = s3ProfileNew("", "1", bucketNameSucc2)
+	s3Profiles[bucketInvalidS3ProfileNumber1] = s3ProfileNew("", "2", bucketNameFail)
+	s3Profiles[bucketInvalidS3ProfileNumber2] = s3ProfileNew("", "3", bucketNameFail2)
+	s3Profiles[listErrorS3ProfileNumber] = s3ProfileNew("", "4", bucketListFail)
+	s3Profiles[drClusterS3ProfileNumber] = s3ProfileNew("drc-", "", bucketNameSucc)
+	s3Profiles[uploadErrorS3ProfileNumber] = s3ProfileNew("", "6", bucketNameUploadAwsErr)
 
 	s3SecretsPolicyNamesSet := func() {
 		plRuleNames = make(map[string]struct{}, len(s3Secrets))
@@ -267,13 +277,6 @@ var _ = BeforeSuite(func() {
 		for i := range s3Profiles {
 			s3Profiles[i].S3SecretRef.Namespace = namespaceName
 		}
-	}
-	s3Profiles[5] = ramendrv1alpha1.S3StoreProfile{
-		S3ProfileName:        "drc-s3profile",
-		S3Bucket:             bucketNameSucc,
-		S3CompatibleEndpoint: "http://192.168.39.223:30000",
-		S3Region:             "us-east-1",
-		S3SecretRef:          corev1.SecretReference{Name: s3Secrets[0].Name},
 	}
 	s3ProfilesUpdate := func() {
 		s3ProfilesStore(s3Profiles[0:])
@@ -359,6 +362,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	ctx, cancel = context.WithCancel(context.TODO())
+	DeferCleanup(cancel)
 	go func() {
 		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred())
@@ -369,12 +373,4 @@ var _ = BeforeSuite(func() {
 	apiReader = k8sManager.GetAPIReader()
 	Expect(apiReader).ToNot(BeNil())
 	objectStorersSet()
-})
-
-var _ = AfterSuite(func() {
-	cancel()
-	Expect(k8sClient.Delete(context.TODO(), configMap)).To(Succeed())
-	By("tearing down the test environment")
-	err := testEnv.Stop()
-	Expect(err).NotTo(HaveOccurred())
 })

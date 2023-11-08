@@ -20,6 +20,7 @@ setuptools.setup(
     packages=["drenv"],
     install_requires=[
         "PyYAML",
+        "toml",
     ],
     classifiers=[
         "Development Status :: 4 - Beta",

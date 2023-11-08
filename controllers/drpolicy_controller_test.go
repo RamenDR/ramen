@@ -86,7 +86,7 @@ var _ = Describe("DrpolicyController", func() {
 
 	getPlRuleForSecrets := func() map[string]plrv1.PlacementRule {
 		plRuleList := &plrv1.PlacementRuleList{}
-		listOptions := &client.ListOptions{Namespace: configMap.Namespace}
+		listOptions := &client.ListOptions{Namespace: ramenNamespace}
 
 		Expect(apiReader.List(context.TODO(), plRuleList, listOptions)).NotTo(HaveOccurred())
 
@@ -134,7 +134,7 @@ var _ = Describe("DrpolicyController", func() {
 				}
 
 				return
-			}(), timeout, interval).Should(ConsistOf(clusterList))
+			}, timeout, interval).Should(ConsistOf(clusterList))
 		}
 	}
 

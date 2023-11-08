@@ -923,23 +923,32 @@ func (r *DRPlacementControlReconciler) getDRPolicy(ctx context.Context,
 	return drPolicy, nil
 }
 
-func (r DRPlacementControlReconciler) addLabelsAndFinalizers(ctx context.Context,
+// updateObjectMetadata updates drpc labels, annotations and finalizer, and also updates placementObj finalizer
+func (r DRPlacementControlReconciler) updateObjectMetadata(ctx context.Context,
 	drpc *rmn.DRPlacementControl, placementObj client.Object, log logr.Logger,
 ) error {
-	// add label and finalizer to DRPC
-	labelAdded := rmnutil.AddLabel(drpc, rmnutil.OCMBackupLabelKey, rmnutil.OCMBackupLabelValue)
-	finalizerAdded := rmnutil.AddFinalizer(drpc, DRPCFinalizer)
+	update := false
 
-	if labelAdded || finalizerAdded {
+	update = rmnutil.AddLabel(drpc, rmnutil.OCMBackupLabelKey, rmnutil.OCMBackupLabelValue)
+	update = rmnutil.AddFinalizer(drpc, DRPCFinalizer) || update
+
+	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, placementObj)
+	if err != nil {
+		return err
+	}
+
+	update = rmnutil.AddAnnotation(drpc, DRPCAppNamespace, vrgNamespace) || update
+
+	if update {
 		if err := r.Update(ctx, drpc); err != nil {
-			log.Error(err, "Failed to add label and finalizer to drpc")
+			log.Error(err, "Failed to add annotations, labels, or finalizer to drpc")
 
 			return fmt.Errorf("%w", err)
 		}
 	}
 
 	// add finalizer to User PlacementRule/Placement
-	finalizerAdded = rmnutil.AddFinalizer(placementObj, DRPCFinalizer)
+	finalizerAdded := rmnutil.AddFinalizer(placementObj, DRPCFinalizer)
 	if finalizerAdded {
 		if err := r.Update(ctx, placementObj); err != nil {
 			log.Error(err, "Failed to add finalizer to user placement rule")
@@ -1147,7 +1156,7 @@ func (r *DRPlacementControlReconciler) updateAndSetOwner(
 		return false, err
 	}
 
-	if err := r.addLabelsAndFinalizers(ctx, drpc, usrPlacement, log); err != nil {
+	if err := r.updateObjectMetadata(ctx, drpc, usrPlacement, log); err != nil {
 		return false, err
 	}
 
@@ -1886,7 +1895,8 @@ func (r *DRPlacementControlReconciler) createPlacementDecision(ctx context.Conte
 	}
 
 	plDecision.ObjectMeta.Labels = map[string]string{
-		clrapiv1beta1.PlacementLabel: placement.GetName(),
+		clrapiv1beta1.PlacementLabel:    placement.GetName(),
+		"velero.io/exclude-from-backup": "true",
 	}
 
 	owner := metav1.NewControllerRef(placement, clrapiv1beta1.GroupVersion.WithKind("Placement"))
@@ -1959,6 +1969,10 @@ func selectVRGNamespace(
 	drpc *rmn.DRPlacementControl,
 	placementObj client.Object,
 ) (string, error) {
+	if drpc.GetAnnotations() != nil && drpc.GetAnnotations()[DRPCAppNamespace] != "" {
+		return drpc.GetAnnotations()[DRPCAppNamespace], nil
+	}
+
 	switch placementObj.(type) {
 	case *clrapiv1beta1.Placement:
 		vrgNamespace, err := getApplicationDestinationNamespace(client, log, placementObj)

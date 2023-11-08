@@ -12,4 +12,4 @@ leaderElection:
 ramenControllerType: dr-hub
 maxConcurrentReconciles: 50
 volSync:
-  destinationCopyMethod: LocalDirect
+  destinationCopyMethod: Direct

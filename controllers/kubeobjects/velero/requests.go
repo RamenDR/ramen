@@ -141,8 +141,6 @@ func (RequestsManager) RecoverRequestCreate(
 	s3KeyPrefix string,
 	secretKeyRef *corev1.SecretKeySelector,
 	caCertificates []byte,
-	sourceNamespaceName string,
-	targetNamespaceName string,
 	recoverSpec kubeobjects.RecoverSpec,
 	requestNamespaceName string,
 	captureName string,
@@ -158,8 +156,6 @@ func (RequestsManager) RecoverRequestCreate(
 		"s3 key prefix", s3KeyPrefix,
 		"secret key ref", secretKeyRef,
 		"CA certificates", caCertificates,
-		"source namespace", sourceNamespaceName,
-		"target namespace", targetNamespaceName,
 		"request namespace", requestNamespaceName,
 		"capture name", captureName,
 		"recover name", recoverName,
@@ -175,8 +171,6 @@ func (RequestsManager) RecoverRequestCreate(
 		s3KeyPrefix,
 		secretKeyRef,
 		caCertificates,
-		sourceNamespaceName,
-		targetNamespaceName,
 		recoverSpec,
 		requestNamespaceName,
 		captureName,
@@ -197,8 +191,6 @@ func backupDummyCreateAndRestore(
 	s3KeyPrefix string,
 	secretKeyRef *corev1.SecretKeySelector,
 	caCertificates []byte,
-	sourceNamespaceName string,
-	targetNamespaceName string,
 	recoverSpec kubeobjects.RecoverSpec,
 	requestNamespaceName string,
 	backupName string,
@@ -212,7 +204,7 @@ func backupDummyCreateAndRestore(
 		_, _, err := backupRequestCreate(
 			w, s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretKeyRef,
 			caCertificates,
-			backupSpecDummy(), sourceNamespaceName,
+			backupSpecDummy(),
 			requestNamespaceName, backupName,
 			labels,
 			annotations,
@@ -227,8 +219,6 @@ func backupDummyCreateAndRestore(
 	return backupDummyStatusProcessAndRestore(
 		backupRequest.backup,
 		w,
-		sourceNamespaceName,
-		targetNamespaceName,
 		recoverSpec,
 		restoreName,
 		labels,
@@ -238,8 +228,6 @@ func backupDummyCreateAndRestore(
 func backupDummyStatusProcessAndRestore(
 	backup *velero.Backup,
 	w objectWriter,
-	sourceNamespaceName string,
-	targetNamespaceName string,
 	recoverSpec kubeobjects.RecoverSpec,
 	restoreName string,
 	labels map[string]string,
@@ -251,7 +239,7 @@ func backupDummyStatusProcessAndRestore(
 		velero.BackupPhasePartiallyFailed,
 		velero.BackupPhaseFailed:
 		return backupRestore(
-			backup, w, sourceNamespaceName, targetNamespaceName,
+			backup, w,
 			recoverSpec,
 			restoreName,
 			labels,
@@ -272,14 +260,11 @@ func backupDummyStatusProcessAndRestore(
 func backupRestore(
 	backup *velero.Backup,
 	w objectWriter,
-	sourceNamespaceName string,
-	targetNamespaceName string,
 	recoverSpec kubeobjects.RecoverSpec,
 	restoreName string,
 	labels map[string]string,
 ) (*velero.Restore, error) {
-	restore := restore(backup.Namespace, restoreName, recoverSpec, backup.Name,
-		sourceNamespaceName, targetNamespaceName, labels)
+	restore := restore(backup.Namespace, restoreName, recoverSpec, backup.Name, labels)
 	if err := w.objectCreate(restore); err != nil {
 		return nil, err
 	}
@@ -318,7 +303,6 @@ func (RequestsManager) ProtectRequestCreate(
 	s3KeyPrefix string,
 	secretKeyRef *corev1.SecretKeySelector,
 	caCertificates []byte,
-	sourceNamespaceName string,
 	objectsSpec kubeobjects.Spec,
 	requestNamespaceName string,
 	captureName string,
@@ -332,7 +316,7 @@ func (RequestsManager) ProtectRequestCreate(
 		"s3 key prefix", s3KeyPrefix,
 		"secret key ref", secretKeyRef,
 		"CA certificates", caCertificates,
-		"source namespace", sourceNamespaceName,
+		"source namespaces", objectsSpec.IncludedNamespaces,
 		"request namespace", requestNamespaceName,
 		"capture name", captureName,
 		"label set", labels,
@@ -347,7 +331,6 @@ func (RequestsManager) ProtectRequestCreate(
 		s3KeyPrefix,
 		secretKeyRef,
 		caCertificates,
-		sourceNamespaceName,
 		objectsSpec,
 		requestNamespaceName,
 		captureName,
@@ -366,7 +349,6 @@ func backupRealCreate(
 	s3KeyPrefix string,
 	secretKeyRef *corev1.SecretKeySelector,
 	caCertificates []byte,
-	sourceNamespaceName string,
 	objectsSpec kubeobjects.Spec,
 	requestNamespaceName string,
 	captureName string,
@@ -377,7 +359,6 @@ func backupRealCreate(
 		w, s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretKeyRef,
 		caCertificates,
 		getBackupSpecFromObjectsSpec(objectsSpec),
-		sourceNamespaceName,
 		requestNamespaceName, captureName,
 		labels,
 		annotations,
@@ -386,7 +367,8 @@ func backupRealCreate(
 
 func getBackupSpecFromObjectsSpec(objectsSpec kubeobjects.Spec) velero.BackupSpec {
 	return velero.BackupSpec{
-		IncludedResources: objectsSpec.IncludedResources,
+		IncludedNamespaces: objectsSpec.IncludedNamespaces,
+		IncludedResources:  objectsSpec.IncludedResources,
 		// exclude VRs from Backup so VRG can create them: see https://github.com/RamenDR/ramen/issues/884
 		ExcludedResources:       append(objectsSpec.ExcludedResources, "volumereplications.replication.storage.openshift.io"),
 		LabelSelector:           objectsSpec.LabelSelector,
@@ -497,7 +479,6 @@ func backupRequestCreate(
 	secretKeyRef *corev1.SecretKeySelector,
 	caCertificates []byte,
 	backupSpec velero.BackupSpec,
-	sourceNamespaceName string,
 	requestsNamespaceName string,
 	requestName string,
 	labels map[string]string,
@@ -513,7 +494,6 @@ func backupRequestCreate(
 	}
 
 	backupSpec.StorageLocation = requestName
-	backupSpec.IncludedNamespaces = []string{sourceNamespaceName}
 	backupSpec.SnapshotVolumes = new(bool)
 	backupRequest := backupRequest(requestsNamespaceName, requestName, backupSpec, labels, annotations)
 
@@ -631,7 +611,8 @@ func backupRequest(namespaceName, name string, spec velero.BackupSpec,
 
 func backupSpecDummy() velero.BackupSpec {
 	return velero.BackupSpec{
-		IncludedResources: []string{"secrets"},
+		IncludedNamespaces: []string{"dummy"},
+		IncludedResources:  []string{"secrets"},
 		LabelSelector: &metav1.LabelSelector{
 			MatchLabels: map[string]string{
 				"dummyKey": "dummyValue",
@@ -645,7 +626,6 @@ func restore(
 	restoreName string,
 	recoverSpec kubeobjects.RecoverSpec,
 	backupName string,
-	sourceNamespaceName, targetNamespaceName string,
 	labels map[string]string,
 ) *velero.Restore {
 	return &velero.Restore{
@@ -659,7 +639,7 @@ func restore(
 			BackupName:              backupName,
 			IncludedResources:       recoverSpec.IncludedResources,
 			ExcludedResources:       recoverSpec.ExcludedResources,
-			NamespaceMapping:        map[string]string{sourceNamespaceName: targetNamespaceName},
+			NamespaceMapping:        recoverSpec.NamespaceMapping,
 			LabelSelector:           recoverSpec.LabelSelector,
 			OrLabelSelectors:        recoverSpec.OrLabelSelectors,
 			RestoreStatus:           recoverSpec.RestoreStatus,

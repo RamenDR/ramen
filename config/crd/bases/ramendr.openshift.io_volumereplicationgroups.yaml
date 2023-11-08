@@ -174,16 +174,24 @@ spec:
                     description: Preferred time between captures
                     format: duration
                     type: string
+                  recipeParameters:
+                    additionalProperties:
+                      items:
+                        type: string
+                      type: array
+                    description: Recipe parameter definitions
+                    type: object
                   recipeRef:
                     description: Name of the Recipe to reference for capture and recovery
                       workflows and volume selection.
                     properties:
                       name:
-                        description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                          TODO: Add other useful fields. apiVersion, kind, uid?'
+                        description: Name of recipe
+                        type: string
+                      namespace:
+                        description: Name of namespace recipe is in
                         type: string
                     type: object
-                    x-kubernetes-map-type: atomic
                 type: object
               prepareForFinalSync:
                 description: PrepareForFinalSync when set, it tells VRG to prepare
@@ -393,6 +401,9 @@ spec:
                               type: string
                             name:
                               description: Name of the VolRep/PVC resource
+                              type: string
+                            namespace:
+                              description: Name of the namespace the PVC is in
                               type: string
                             protectedByVolSync:
                               description: VolSyncPVC can be used to denote whether
@@ -769,6 +780,9 @@ spec:
                       type: string
                     name:
                       description: Name of the VolRep/PVC resource
+                      type: string
+                    namespace:
+                      description: Name of the namespace the PVC is in
                       type: string
                     protectedByVolSync:
                       description: VolSyncPVC can be used to denote whether this PVC

@@ -1705,6 +1705,7 @@ func verifyInitialDRPCDeployment(userPlacement client.Object, preferredCluster s
 	_, condition := getDRPCCondition(&latestDRPC.Status, rmn.ConditionAvailable)
 	Expect(condition.Reason).To(Equal(string(rmn.Deployed)))
 	Expect(latestDRPC.GetAnnotations()[controllers.LastAppDeploymentCluster]).To(Equal(preferredCluster))
+	Expect(latestDRPC.GetAnnotations()[controllers.DRPCAppNamespace]).To(Equal(getVRGNameSpace()))
 }
 
 func verifyFailoverToSecondary(placementObj client.Object, toCluster string,
@@ -1742,6 +1743,7 @@ func verifyFailoverToSecondary(placementObj client.Object, toCluster string,
 func verifyActionResultForPlacement(placement *clrapiv1beta1.Placement, homeCluster string, plType PlacementType) {
 	placementDecision := getPlacementDecision(placement.GetName(), placement.GetNamespace())
 	Expect(placementDecision).ShouldNot(BeNil())
+	Expect(placementDecision.GetLabels()["velero.io/exclude-from-backup"]).Should(Equal("true"))
 	Expect(placementDecision.Status.Decisions[0].ClusterName).Should(Equal(homeCluster))
 	vrg, err := getVRGFromManifestWork(homeCluster)
 	Expect(err).NotTo(HaveOccurred())

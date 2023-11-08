@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/go-logr/logr"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/volsync"
 	corev1 "k8s.io/api/core/v1"
@@ -26,11 +27,13 @@ func (v *VRGInstance) restorePVsForVolSync() error {
 	numPVsRestored := 0
 
 	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
-		err := v.volSyncHandler.EnsurePVCfromRD(rdSpec)
+		failoverAction := v.instance.Spec.Action == ramendrv1alpha1.VRGActionFailover
+		// Create a PVC from snapshot or for direct copy
+		err := v.volSyncHandler.EnsurePVCfromRD(rdSpec, failoverAction)
 		if err != nil {
 			v.log.Info(fmt.Sprintf("Unable to ensure PVC %v -- err: %v", rdSpec, err))
 
-			protectedPVC := v.findProtectedPVC(rdSpec.ProtectedPVC.Name)
+			protectedPVC := v.findFirstProtectedPVCWithName(rdSpec.ProtectedPVC.Name)
 			if protectedPVC == nil {
 				protectedPVC = &ramendrv1alpha1.ProtectedPVC{}
 				rdSpec.ProtectedPVC.DeepCopyInto(protectedPVC)
@@ -45,7 +48,7 @@ func (v *VRGInstance) restorePVsForVolSync() error {
 
 		numPVsRestored++
 
-		protectedPVC := v.findProtectedPVC(rdSpec.ProtectedPVC.Name)
+		protectedPVC := v.findFirstProtectedPVCWithName(rdSpec.ProtectedPVC.Name)
 		if protectedPVC == nil {
 			protectedPVC = &ramendrv1alpha1.ProtectedPVC{}
 			rdSpec.ProtectedPVC.DeepCopyInto(protectedPVC)
@@ -76,8 +79,7 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary(finalSyncPrepared *bool) (requeu
 		return
 	}
 
-	v.log.Info(fmt.Sprintf("Reconciling VolSync as Primary. VolSyncPVCs %d. VolSyncSpec %+v",
-		len(v.volSyncPVCs), v.instance.Spec.VolSync))
+	v.log.Info(fmt.Sprintf("Reconciling VolSync as Primary. %d VolSyncPVCs", len(v.volSyncPVCs)))
 
 	// Cleanup - this VRG is primary, cleanup if necessary
 	// remove any ReplicationDestinations (that would have been created when this VRG was secondary) if they
@@ -120,7 +122,7 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		Resources:          pvc.Spec.Resources,
 	}
 
-	protectedPVC := v.findProtectedPVC(pvc.Name)
+	protectedPVC := v.findFirstProtectedPVCWithName(pvc.Name)
 	if protectedPVC == nil {
 		protectedPVC = newProtectedPVC
 		v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
@@ -136,7 +138,7 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 	}
 
 	err := v.volSyncHandler.PreparePVC(pvc.Name, v.instance.Spec.PrepareForFinalSync,
-		v.volSyncHandler.IsCopyMethodDirectOrLocalDirect())
+		v.volSyncHandler.IsCopyMethodDirect())
 	if err != nil {
 		return true
 	}
@@ -388,4 +390,14 @@ func protectedPVCAnnotations(pvc corev1.PersistentVolumeClaim) map[string]string
 	}
 
 	return res
+}
+
+func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log logr.Logger) {
+	if !VolumeUnprotectionEnabledForAsyncVolSync {
+		log.Info("Volume unprotection disabled for VolSync")
+
+		return
+	}
+	// TODO Delete ReplicationSource, ReplicationDestination, etc.
+	v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
 }

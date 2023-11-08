@@ -1,0 +1,52 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: testvm
+spec:
+  running: true
+  template:
+    metadata:
+      labels:
+        kubevirt.io/size: small
+        kubevirt.io/domain: testvm
+    spec:
+      domain:
+        devices:
+          disks:
+            - name: containerdisk
+              disk:
+                bus: virtio
+            - name: cloudinitdisk
+              disk:
+                bus: virtio
+          interfaces:
+            - name: default
+              bridge: {}
+        resources:
+          requests:
+            # See https://github.com/cirros-dev/cirros/issues/53
+            memory: 256Mi
+      networks:
+        - name: default
+          pod: {}
+      accessCredentials:
+        - sshPublicKey:
+            source:
+              secret:
+                secretName: my-public-key
+            propagationMethod:
+              configDrive: {}
+      volumes:
+        - name: containerdisk
+          containerDisk:
+            # TODO: use ramendr repo.
+            image: quay.io/nirsof/cirros:0.6.2
+        - name: cloudinitdisk
+          cloudInitConfigDrive:
+            userData: |
+              #!/bin/sh
+              echo "Running user-data script"

@@ -4,7 +4,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # shellcheck disable=1090,2046,2086,1091
-set -x
 set -e
 ramen_hack_directory_path_name=$(dirname $0)
 . $ramen_hack_directory_path_name/exit_stack.sh
@@ -16,6 +15,7 @@ exit_stack_push unset -f until_true_or_n
 exit_stack_push olm_unset
 . $ramen_hack_directory_path_name/minikube.sh
 exit_stack_push minikube_unset
+. $ramen_hack_directory_path_name/cert-manager.sh; exit_stack_push cert_manager_unset
 exit_stack_push unset -v ramen_hack_directory_path_name
 rook_ceph_deploy_spoke()
 {
@@ -149,11 +149,12 @@ exit_stack_push unset -f image_registry_undeploy_spokes
 image_archive()
 {
 	set -- $1 $(echo $1|tr : _)
-	set -- $1 $HOME/.minikube/cache/images/$(dirname $2) $(basename $2)
+	set -- $1 $HOME/.minikube/cache/images/amd64/$(dirname $2) $(basename $2)
 	mkdir -p $2
 	set -- $1 $2/$3
 	# docker-archive doesn't support modifying existing images
 	rm -f $2
+	DOCKER_HOST=$DOCKER_HOST\
 	docker image save $1 -o $2
 }
 exit_stack_push unset -f image_archive
@@ -203,10 +204,17 @@ ramen_manager_image_build()
 	if test "${skip_ramen_build:-false}" != false; then
 		return
 	fi
-	${ramen_hack_directory_path_name}/docker-uninstall.sh ${HOME}/.local/bin
-	. ${ramen_hack_directory_path_name}/podman-docker-install.sh
+	if true; then
+		. ${ramen_hack_directory_path_name}/docker-install.sh; docker_install ${HOME}/.local/bin; unset -f docker_install
+		DOCKERCMD=docker
+	else
+		${ramen_hack_directory_path_name}/docker-uninstall.sh ${HOME}/.local/bin
+		. ${ramen_hack_directory_path_name}/podman-docker-install.sh
+		DOCKERCMD=podman
+	fi
 	. ${ramen_hack_directory_path_name}/go-install.sh; go_install ${HOME}/.local; unset -f go_install
-	make -C $ramen_directory_path_name docker-build IMG=$ramen_manager_image_reference
+	make -C $ramen_directory_path_name docker-build IMG=$ramen_manager_image_reference DOCKERCMD=$DOCKERCMD DOCKER_HOST=$DOCKER_HOST
+	unset -v DOCKERCMD
 }
 exit_stack_push unset -f ramen_manager_image_build
 ramen_manager_image_archive()
@@ -518,6 +526,8 @@ ramen_config_deploy_hub_or_spoke()
 	drClusterOperator:
 	  deploymentAutomationEnabled: true
 	  s3SecretDistributionEnabled: $ramen_s3_secret_distribution_enabled
+	kubeObjectProtection:
+	  extraVrgNamespacesFeatureEnabled: true
 	EOF
 	ramen_config_replace_hub_or_spoke $1 $2 $3
 }
@@ -820,9 +830,9 @@ application_sample_undeploy()
 exit_stack_push unset -f application_sample_undeploy
 ramen_directory_path_name=${ramen_hack_directory_path_name}/..
 exit_stack_push unset -v ramen_directory_path_name
-hub_cluster_name=${hub_cluster_name:-hub}
+hub_cluster_name=${hub_cluster_name-hub}
 exit_stack_push unset -v hub_cluster_name
-spoke_cluster_names=${spoke_cluster_names:-cluster1\ $hub_cluster_name}
+spoke_cluster_names=${spoke_cluster_names-cluster1\ $hub_cluster_name}
 exit_stack_push unset -v spoke_cluster_names
 for cluster_name in $spoke_cluster_names; do
 	if test $cluster_name = $hub_cluster_name; then
@@ -865,6 +875,12 @@ rook_ceph_volume_replication_image_latest_deploy()
 	done; unset -v cluster_name
 }
 exit_stack_push unset -f rook_ceph_volume_replication_image_latest_deploy
+cert_manager_deploy() {
+	for cluster_name in $hub_cluster_name $spoke_cluster_names_nonhub; do cert_manager_deploy_context $cluster_name; done; unset -v cluster_name
+}; exit_stack_push unset -f cert_manager_deploy
+cert_manager_undeploy() {
+	for cluster_name in $spoke_cluster_names_nonhub $hub_cluster_name; do cert_manager_undeploy_context $cluster_name; done; unset -v cluster_name
+}; exit_stack_push unset -f cert_manager_undeploy
 ramen_deploy()
 {
 	ramen_deploy_hub
@@ -879,6 +895,7 @@ deploy()
 {
 	hub_cluster_name=$hub_cluster_name spoke_cluster_names=$spoke_cluster_names $ramen_hack_directory_path_name/ocm-minikube.sh
 	rook_ceph_deploy
+	cert_manager_deploy
 	minio_deploy_spokes
 	ramen_images_build_and_archive
 	olm_deploy_spokes
@@ -890,10 +907,13 @@ undeploy()
 	ramen_undeploy
 	olm_undeploy_spokes
 	minio_undeploy_spokes
+	cert_manager_undeploy
 	rook_ceph_undeploy
 }
 exit_stack_push unset -f undeploy
 exit_stack_push unset -v command
 for command in "${@:-deploy}"; do
+	set -x
 	$command
+	{ set +x;} 2>/dev/null
 done

@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: VolumeImportSource
+metadata:
+  name: cirros-source
+spec:
+  source:
+    registry:
+      url: "docker://quay.io/alitke/cirros:latest"

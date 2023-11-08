@@ -27,6 +27,13 @@ def config(*args, context=None):
     return _run("config", *args, context=context)
 
 
+def create(*args, context=None):
+    """
+    Run kubectl create ... and return the output.
+    """
+    return _run("create", *args, context=context)
+
+
 def get(*args, context=None):
     """
     Run kubectl get ... and return the output.
@@ -66,6 +73,38 @@ def label(name, value, overwrite=False, context=None, log=print):
     args = ["label", name, value]
     if overwrite:
         args.append("--overwrite")
+    _watch(*args, context=context, log=log)
+
+
+def annotate(
+    resource,
+    annotations,
+    overwrite=False,
+    namespace=None,
+    context=None,
+    log=print,
+):
+    """
+    Run kubectl annotate ... logging progress messages.
+
+    annotations is a dict of keys and values. Use key: None to remove an
+    annotation.
+    """
+    args = ["annotate", resource]
+
+    # Convert kubectl argument list:
+    # {"add": "value", "remove": None} -> ["add=value", "remove-"]
+    for key, value in annotations.items():
+        if value:
+            args.append(f"{key}={value}")
+        else:
+            args.append(f"{key}-")
+
+    if overwrite:
+        args.append("--overwrite")
+    if namespace:
+        args.extend(("--namespace", namespace))
+
     _watch(*args, context=context, log=log)
 
 

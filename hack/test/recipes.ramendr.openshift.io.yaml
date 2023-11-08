@@ -91,6 +91,11 @@ spec:
                         If nil or true, cluster-scoped resources are included if they
                         are associated with the included namespace-scoped resources
                       type: boolean
+                    includedNamespaces:
+                      description: List of namespaces to include.
+                      items:
+                        type: string
+                      type: array
                     includedResourceTypes:
                       description: List of resource types to include. If unspecified,
                         all resource types are included.
@@ -269,6 +274,9 @@ spec:
                       description: If specified, resource's object name needs to match
                         this expression
                       type: string
+                    namespace:
+                      description: Namespace
+                      type: string
                     onError:
                       default: fail
                       description: Default behavior in case of failing operations
@@ -394,6 +402,11 @@ spec:
                       If nil or true, cluster-scoped resources are included if they
                       are associated with the included namespace-scoped resources
                     type: boolean
+                  includedNamespaces:
+                    description: List of namespaces to include.
+                    items:
+                      type: string
+                    type: array
                   includedResourceTypes:
                     description: List of resource types to include. If unspecified,
                       all resource types are included.
@@ -481,7 +494,6 @@ spec:
                 type: object
             required:
             - appType
-            - groups
             type: object
           status:
             description: RecipeStatus defines the observed state of Recipe

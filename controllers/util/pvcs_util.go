@@ -8,12 +8,14 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	"golang.org/x/exp/slices"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -30,7 +32,7 @@ func ListPVCsByPVCSelector(
 	k8sClient client.Client,
 	logger logr.Logger,
 	pvcLabelSelector metav1.LabelSelector,
-	namespace string,
+	namespaces []string,
 	volSyncDisabled bool,
 ) (*corev1.PersistentVolumeClaimList, error) {
 	// convert metav1.LabelSelector to a labels.Selector
@@ -59,7 +61,6 @@ func ListPVCsByPVCSelector(
 	logger.Info("Fetching PersistentVolumeClaims", "pvcSelector", updatedPVCSelector)
 
 	listOptions := []client.ListOption{
-		client.InNamespace(namespace),
 		client.MatchingLabelsSelector{
 			Selector: updatedPVCSelector,
 		},
@@ -74,6 +75,16 @@ func ListPVCsByPVCSelector(
 
 	logger.Info(fmt.Sprintf("Found %d PVCs using label selector %v", len(pvcList.Items), updatedPVCSelector))
 
+	var pvcs []corev1.PersistentVolumeClaim
+
+	for _, pvc := range pvcList.Items {
+		if slices.Contains(namespaces, pvc.Namespace) {
+			pvcs = append(pvcs, pvc)
+		}
+	}
+
+	pvcList.Items = pvcs
+
 	return pvcList, nil
 }
 
@@ -84,17 +95,18 @@ func ListPVCsByPVCSelector(
 func IsPVCInUseByPod(ctx context.Context,
 	k8sClient client.Client,
 	log logr.Logger,
-	pvcName, pvcNamespace string,
+	pvcNamespacedName types.NamespacedName,
 	inUsePodMustBeReady bool,
 ) (bool, error) {
+	log = log.WithValues("pvc", pvcNamespacedName.String())
 	podUsingPVCList := &corev1.PodList{}
 
 	err := k8sClient.List(ctx,
 		podUsingPVCList, // Our custom index - needs to be setup in the cache (see IndexFieldsForVSHandler())
-		client.MatchingFields{PodVolumePVCClaimIndexName: pvcName},
-		client.InNamespace(pvcNamespace))
+		client.MatchingFields{PodVolumePVCClaimIndexName: pvcNamespacedName.Name},
+		client.InNamespace(pvcNamespacedName.Namespace))
 	if err != nil {
-		log.Error(err, "unable to lookup pods to see if they are using pvc", "pvcName", pvcName)
+		log.Error(err, "unable to lookup pods to see if they are using pvc")
 
 		return false, fmt.Errorf("unable to lookup pods to check if pvc is in use (%w)", err)
 	}
@@ -116,7 +128,7 @@ func IsPVCInUseByPod(ctx context.Context,
 		}
 	}
 
-	log.Info("pvc is in use by pod(s)", "pvcName", pvcName, "pods", inUsePods)
+	log.Info("pvc is in use by pod(s)", "pods", inUsePods)
 
 	if inUsePodMustBeReady {
 		return mountingPodIsReady, nil
@@ -135,10 +147,13 @@ func IsPVAttachedToNode(ctx context.Context,
 	log logr.Logger,
 	pvc *corev1.PersistentVolumeClaim,
 ) (bool, error) {
+	pvcNamespacedName := types.NamespacedName{Namespace: pvc.Namespace, Name: pvc.Name}
 	pvName := pvc.Spec.VolumeName
+	log = log.WithValues("pvc", pvcNamespacedName.String(), "pv", pvName)
+
 	if pvName == "" {
 		// Assuming if no volumename is set, the PVC has not been bound yet, so return false for in-use
-		log.V(1).Info("pvc has no VolumeName set, assuming not in-use", "pvcName", pvc.GetName())
+		log.V(1).Info("pvc has no VolumeName set, assuming not in-use")
 
 		return false, nil
 	}
@@ -152,8 +167,7 @@ func IsPVAttachedToNode(ctx context.Context,
 		volAttachmentList,
 		client.MatchingFields{VolumeAttachmentToPVIndexName: pvName})
 	if err != nil {
-		log.Error(err, "unable to lookup volumeattachments to see if pv for pvc is in use",
-			"pvcName", pvc.GetName(), "pvName", pvName)
+		log.Error(err, "unable to lookup volumeattachments to see if pv for pvc is in use")
 	}
 
 	if len(volAttachmentList.Items) == 0 {
@@ -166,8 +180,7 @@ func IsPVAttachedToNode(ctx context.Context,
 		attachedNodes = append(attachedNodes, volAttachment.Spec.NodeName)
 	}
 
-	log.Info("pvc is attached to node(s), assuming in-use", "pvcName", pvc.GetName(), "pvName", pvName,
-		"nodes", attachedNodes)
+	log.Info("pvc is attached to node(s), assuming in-use", "nodes", attachedNodes)
 
 	return true, nil
 }

@@ -169,14 +169,53 @@ ramenctl config test/envs/regional-dr.yaml
 For more info on the `ramenctl` tool see
 [ramenctl/README.md](../ramenctl/README.md).
 
-## The next steps
+## Running system tests
 
 At this point *Ramen* is ready to protect workloads in your cluster, and
-you are ready for the next steps:
+you are ready for testing basic flows.
 
-- Enable disaster recovery for an application
-- Failing over the application to another cluster
-- Relocating an application back to the original cluster
+To run basic tests using regional-dr environment run:
+
+```
+test/basic-test/run test/envs/regional-dr.yaml
+```
+
+This test:
+
+1. Deploys an application using
+   [ocm-ramen-samples repo](https://github.com/RamenDR/ocm-ramen-samples)
+1. Enables DR for the application
+1. Fails over the application to the other cluster
+1. Relocates the application back to the original cluster
+1. Disables DR for the application
+1. Undeploys the application
+
+If needed, you can run one or more steps form this test, for example to
+deploy and enable DR run:
+
+```
+env=$PWD/test/envs/regional-dr.yaml
+test/basic-test/deploy $env
+test/basic-test/enable-dr $env
+```
+
+At this point you can run run manually failover, relocate one or more
+times as needed:
+
+```
+for i in $(seq 3); do
+    test/basic-test/relocate $env
+done
+```
+
+To clean up run:
+
+```
+test/basic-test/undeploy $env
+```
+
+For more info on writing such tests see
+[test/README.md](../test/README.md).
 
 ## Undeploying the ramen operator
 

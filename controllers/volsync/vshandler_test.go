@@ -647,102 +647,6 @@ var _ = Describe("VolSync_Handler", func() {
 					})
 				})
 			})
-			Context("When reconciling RD for local replication", func() {
-				var vsHandler *volsync.VSHandler
-				var dummyPSKSecret *corev1.Secret
-				myTestAddress := "https://fakeaddress.abc.org:8888"
-				BeforeEach(func() {
-					vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, owner, asyncSpec,
-						"openshift-storage.cephfs.csi.ceph.com", "LocalDirect")
-
-					dummyPSKSecret = &corev1.Secret{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      volsync.GetVolSyncPSKSecretNameFromVRGName(owner.GetName()),
-							Namespace: testNamespace.GetName(),
-						},
-					}
-					Expect(k8sClient.Create(ctx, dummyPSKSecret)).To(Succeed())
-					Expect(dummyPSKSecret.GetName()).NotTo(BeEmpty())
-
-					// Make sure the secret is created to avoid any timing issues
-					Eventually(func() error {
-						return k8sClient.Get(ctx,
-							types.NamespacedName{
-								Name:      dummyPSKSecret.GetName(),
-								Namespace: dummyPSKSecret.GetNamespace(),
-							}, dummyPSKSecret)
-					}, maxWait, interval).Should(Succeed())
-
-					// Run ReconcileRD
-					var err error
-					returnedRD, err = vsHandler.ReconcileRD(rdSpec)
-					Expect(err).ToNot(HaveOccurred())
-
-					// RD should be created with name=PVCName
-					Eventually(func() error {
-						return k8sClient.Get(ctx, types.NamespacedName{
-							Name:      rdSpec.ProtectedPVC.Name,
-							Namespace: testNamespace.GetName(),
-						}, createdRD)
-					}, maxWait, interval).Should(Succeed())
-
-					// Expect the RD should be owned by owner
-					Expect(ownerMatches(createdRD, owner.GetName(), "ConfigMap", true /*should be controller*/)).To(BeTrue())
-
-					// Fake the address and latestImage in the status
-					createdRD.Status = &volsyncv1alpha1.ReplicationDestinationStatus{
-						RsyncTLS: &volsyncv1alpha1.ReplicationDestinationRsyncTLSStatus{
-							Address: &myTestAddress,
-						},
-					}
-					Expect(k8sClient.Status().Update(ctx, createdRD)).To(Succeed())
-
-					Eventually(func() *string {
-						err := k8sClient.Get(ctx, client.ObjectKeyFromObject(createdRD), createdRD)
-						if err != nil || createdRD.Status == nil || createdRD.Status.RsyncTLS == nil {
-							return nil
-						}
-
-						return createdRD.Status.RsyncTLS.Address
-					}, maxWait, interval).Should(Not(BeNil()))
-				})
-				It("Should create lRD and lRS", func() {
-					_, err := vsHandler.ReconcileRD(rdSpec)
-					Expect(err).ToNot(HaveOccurred())
-
-					// Local RD should be created with name=PVCName-local
-					localRD := &volsyncv1alpha1.ReplicationDestination{}
-					Eventually(func() error {
-						return k8sClient.Get(ctx, types.NamespacedName{
-							Name:      rdSpec.ProtectedPVC.Name + "-local",
-							Namespace: testNamespace.GetName(),
-						}, localRD)
-					}, maxWait, interval).Should(Succeed())
-
-					Expect(localRD.Spec.RsyncTLS).NotTo(BeNil())
-					Expect(localRD.Spec.RsyncTLS.CopyMethod).To(Equal(volsyncv1alpha1.CopyMethodDirect))
-
-					// Fake the address and latestImage in the status
-					localRD.Status = &volsyncv1alpha1.ReplicationDestinationStatus{
-						RsyncTLS: &volsyncv1alpha1.ReplicationDestinationRsyncTLSStatus{
-							Address: &myTestAddress,
-						},
-					}
-					Expect(k8sClient.Status().Update(ctx, localRD)).To(Succeed())
-
-					Eventually(func() *string {
-						err := k8sClient.Get(ctx, client.ObjectKeyFromObject(localRD), localRD)
-						if err != nil || localRD.Status == nil || localRD.Status.RsyncTLS == nil {
-							return nil
-						}
-
-						return localRD.Status.RsyncTLS.Address
-					}, maxWait, interval).Should(Not(BeNil()))
-
-					Expect(localRD.Status.RsyncTLS).NotTo(BeNil())
-					Expect(localRD.Status.RsyncTLS.Address).NotTo(BeNil())
-				})
-			})
 
 			Context("With CopyMethod 'Direct'", func() {
 				var vsHandler *volsync.VSHandler
@@ -751,11 +655,10 @@ var _ = Describe("VolSync_Handler", func() {
 					vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, owner, asyncSpec, "none", "Direct")
 				})
 
-				It("SelectDestCopyMethod() should return CopyMethod Snapshot and App PVC name", func() {
-					cpyMethod, dstPVC, err := vsHandler.SelectDestCopyMethod(rdSpec, logger)
+				It("PrecreateDestPVCIfEnabled() should return CopyMethod Snapshot and App PVC name", func() {
+					dstPVC, err := vsHandler.PrecreateDestPVCIfEnabled(rdSpec)
 					Expect(err).NotTo(HaveOccurred())
 
-					Expect(cpyMethod).To(Equal(volsyncv1alpha1.CopyMethodSnapshot))
 					Expect(*dstPVC).To(Equal(rdSpec.ProtectedPVC.Name))
 					pvc := &corev1.PersistentVolumeClaim{}
 					Eventually(func() error {
@@ -1211,7 +1114,7 @@ var _ = Describe("VolSync_Handler", func() {
 
 		var ensurePVCErr error
 		JustBeforeEach(func() {
-			ensurePVCErr = vsHandler.EnsurePVCfromRD(rdSpec)
+			ensurePVCErr = vsHandler.EnsurePVCfromRD(rdSpec, false)
 		})
 
 		Context("When ReplicationDestination Does not exist", func() {
@@ -1425,7 +1328,7 @@ var _ = Describe("VolSync_Handler", func() {
 					It("ensure PVC should not fail", func() {
 						// Previous ensurePVC will already have created the PVC (see parent context)
 						// Now run ensurePVC again - additional runs should just ensure the PVC is ok
-						Expect(vsHandler.EnsurePVCfromRD(rdSpec)).To(Succeed())
+						Expect(vsHandler.EnsurePVCfromRD(rdSpec, false)).To(Succeed())
 					})
 				})
 
@@ -1462,7 +1365,7 @@ var _ = Describe("VolSync_Handler", func() {
 						// At this point we should have a PVC from previous but it should have a datasource
 						// that maches our old snapshot - the rd has been updated with a new latest image
 						// Expect ensurePVC from RD to remove the old one and return an error
-						err := vsHandler.EnsurePVCfromRD(rdSpec)
+						err := vsHandler.EnsurePVCfromRD(rdSpec, false)
 						Expect(err).To(HaveOccurred())
 						Expect(err.Error()).To(ContainSubstring("incorrect datasource"))
 
@@ -1488,7 +1391,7 @@ var _ = Describe("VolSync_Handler", func() {
 						//
 						// Now should be able to re-try ensurePVC and get a new one with proper datasource
 						//
-						Expect(vsHandler.EnsurePVCfromRD(rdSpec)).NotTo(HaveOccurred())
+						Expect(vsHandler.EnsurePVCfromRD(rdSpec, false)).NotTo(HaveOccurred())
 
 						pvcNew := &corev1.PersistentVolumeClaim{}
 						Eventually(func() error {

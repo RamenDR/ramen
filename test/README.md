@@ -58,6 +58,11 @@ environment.
    See [Installing Helm](https://helm.sh/docs/intro/install/) for other options.
    Tested with version v3.11.
 
+1. Install the `virtctl` tool. See
+   [virtctl install](https://kubevirt.io/quickstart_minikube/#virtctl)
+   for the details.
+   Tested with version v1.0.1.
+
 1. Install `docker`
 
    ```
@@ -485,6 +490,8 @@ $ drenv delete envs/example.yaml
     - `extra_config`: List of extra config key=value. Each item adds
       `--extra-config` minikube option. See `minikube start --help` to
       see the possible keys and values.
+    - `containerd`: Optional containerd configuration object. See
+      `containerd config default` for available options.
     - `workers`: Optional list of workers to run when starting a
       profile. Use multiple workers to run scripts in parallel.
         - `name`: Optional worker name
@@ -564,6 +571,31 @@ relative path for resources in the same directory:
 kubectl.apply("--filename=deployment.yaml", context=cluster)
 ```
 
+#### containerd options
+
+To configure containerd you can add a configuration object matching
+containerd toml structure.
+
+For example to enable this option containerd toml:
+
+```toml
+[plugins]
+  [plugins."io.containerd.grpc.v1.cri"]
+    device_ownership_from_security_context = true
+```
+
+Add this configuration to the profile:
+
+```yaml
+containerd:
+  plugins:
+    io.containerd.grpc.v1.cri:
+      device_ownership_from_security_context: true
+```
+
+When set, contained configuration is merged into the current
+configuration in `/etc/containerd/config.toml` in the node.
+
 ## Environment files
 
 The environments files are located in the `envs` directory.
@@ -575,6 +607,9 @@ The environments files are located in the `envs` directory.
 
 - `regional-dr-hubless.yaml` - for testing regional DR using a setup
   without a hub.
+
+- `regional-dr-kubevirt.yaml` - for testing regional DR for kubevirt
+  workloads.
 
 - `regional-dr-external.yaml.example` - A starting point for creating
    environment for testing regional DR using with external storage.
@@ -590,6 +625,7 @@ simpler and faster to work with a minimal environment.
 - `demo.yaml` - interactive demo for exploring the `drenv` tool
 - `e2e.yaml` - example for testing integration with the e2e framework
 - `external.yaml` - example for using external clusters
+- `kubevirt.yaml` - for testing kubevirt and cdi addons
 - `minio.yaml` - for testing `minio` deployment
 - `ocm.yaml` - for testing `ocm` deployment
 - `rook.yaml` - for testing `rook` deployment
