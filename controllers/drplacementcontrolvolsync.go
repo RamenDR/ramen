@@ -283,14 +283,16 @@ func (d *DRPCInstance) updateVRGSpec(clusterName string, tgtVRG *rmn.VolumeRepli
 	return nil
 }
 
-func (d *DRPCInstance) createVolSyncDestManifestWork(srcCluster string) error {
+// createVolSyncDestManifestWork creates volsync Secondaries skipping the cluster referenced in clusterToSkip.
+// Typically, clusterToSkip is passed in as the cluster where volsync is the Primary.
+func (d *DRPCInstance) createVolSyncDestManifestWork(clusterToSkip string) error {
 	// create VRG ManifestWork
-	d.log.Info("Creating VRG ManifestWork for source and destination clusters",
-		"Last State:", d.getLastDRState(), "homeCluster", srcCluster)
+	d.log.Info("Creating VRG ManifestWork for destination clusters",
+		"Last State:", d.getLastDRState(), "homeCluster", clusterToSkip)
 
 	// Create or update ManifestWork for all the peers
 	for _, dstCluster := range rmnutil.DrpolicyClusterNames(d.drPolicy) {
-		if dstCluster == srcCluster {
+		if dstCluster == clusterToSkip {
 			// skip source cluster
 			continue
 		}
