@@ -1748,7 +1748,7 @@ func (d *DRPCInstance) cleanupForVolSync(clusterToSkip string) error {
 
 			// Recreate the VRG ManifestWork for the secondary. This typically happens during Hub Recovery.
 			if errors.IsNotFound(err) {
-				err := d.createVolSyncDestManifestWork(clusterName)
+				err := d.createVolSyncDestManifestWork(clusterToSkip)
 				if err != nil {
 					return err
 				}
