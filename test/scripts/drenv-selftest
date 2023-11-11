@@ -3,7 +3,7 @@
 # We must run in the test directory.
 cd $(dirname $(dirname $0))
 
-prefix="test-$(uuidgen)"
+prefix="drenv-selftest-"
 env="envs/vm.yaml"
 
 echo
