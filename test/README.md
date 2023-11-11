@@ -37,7 +37,7 @@ environment.
 1. Install `clusteradm` tool. See
    [Install clusteradm CLI tool](https://open-cluster-management.io/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool)
    for the details.
-   Version v0.5.0 or later is required, tested with v0.6.0.
+   Version v0.7.1 or later is required.
 
 1. Install `subctl` tool, See
    [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/)

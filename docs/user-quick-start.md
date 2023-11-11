@@ -130,15 +130,7 @@ enough resources:
 1. Install `clusteradm` tool. See
    [Install clusteradm CLI tool](https://open-cluster-management.io/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool)
    for the details.
-   Tested with v0.6.0.
-
-   ```
-   wget https://github.com/open-cluster-management-io/clusteradm/releases/download/v0.6.0/clusteradm_linux_amd64.tar.gz
-   ```
-
-   After download completes, extract `clusteradm` and copy to /usr/local/bin.
-
-   clusteradm v0.7.0 does not currently work with drenv
+   Version v0.7.1 or later is required.
 
 1. Install `subctl` tool, See
    [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/)
