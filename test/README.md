@@ -612,6 +612,23 @@ simpler and faster to work with a minimal environment.
 
 ## Testing drenv
 
+### Preparing the test cluster
+
+The tests requires a small test cluster. To create it use:
+
+```
+make cluster
+```
+
+This starts the `drenv-test-cluster` minikube profile using the kvm2
+driver.
+
+To delete the test cluster run:
+
+```
+make clean
+```
+
 ### Running the tests
 
 Run all linters and tests and report test coverage:

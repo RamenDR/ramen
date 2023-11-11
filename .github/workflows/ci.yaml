@@ -145,12 +145,20 @@ jobs:
         run: make black
         working-directory: test
 
+      - name: Start test cluster
+        run: make cluster
+        working-directory: test
+
       - name: Run tests
         run: make test
         working-directory: test
 
       - name: Report test coverage
         run: make coverage
+        working-directory: test
+
+      - name: Clean up
+        run: make clean
         working-directory: test
 
   ramenctl-test:
