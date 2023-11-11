@@ -620,7 +620,8 @@ These environments are useful for developing the `drenv` tool and
 scripts. When debugging an issue or adding a new component, it is much
 simpler and faster to work with a minimal environment.
 
-- `test.yaml` - for testing `drenv`
+- `vm.yaml` - for testing `drenv` with the $vm driver
+- `container.yaml` - for testing `drenv` with the $container driver
 - `example.yaml` - example for experimenting with the `drenv` tool
 - `demo.yaml` - interactive demo for exploring the `drenv` tool
 - `e2e.yaml` - example for testing integration with the e2e framework

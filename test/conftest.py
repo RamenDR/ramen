@@ -9,7 +9,11 @@ import pytest
 
 from drenv import envfile
 
-TEST_ENV = os.path.join("envs", "test.yaml")
+# DRIVER can be overriden to allow testing in github when we don't have
+# hardware acceleration for VMs.
+DRIVER = os.environ.get("DRIVER", "vm")
+
+TEST_ENV = os.path.join("envs", f"{DRIVER}.yaml")
 
 
 class Env:
