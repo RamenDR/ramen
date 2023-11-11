@@ -27,6 +27,7 @@ env:
   IMAGE_REGISTRY: "quay.io"
   IMAGE_TAG: "ci"
   DOCKERCMD: "podman"
+  DRIVER: "container"
 defaults:
   run:
     shell: bash
