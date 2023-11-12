@@ -63,30 +63,6 @@ environment.
    for the details.
    Tested with version v1.0.1.
 
-1. Install `docker`
-
-   ```
-   sudo dnf install docker
-   ```
-
-   Add yourself to the `docker` group to allow running docker as root:
-
-   ```
-   sudo usermod -aG docker $USER && newgrp docker
-   ```
-
-   Restart docker service to fix the permissions on the docker daemon
-   socket:
-
-   ```
-   sudo systemctl restart docker
-   ```
-
-   For more info see [Linux post-installation steps for Docker Engine](https://docs.docker.com/engine/install/linux-postinstall/).
-
-   docker is used only for running drenv tests locally. You can use
-   podman for building and running containers locally.
-
 ### Testing that drenv is healthy
 
 Run this script to make sure `drenv` works:
