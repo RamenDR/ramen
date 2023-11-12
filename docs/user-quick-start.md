@@ -99,32 +99,39 @@ enough resources:
 
    Tested with version v1.31.
 
-   Verify you can create a Kubernetes cluster with minikube.
+1. Validate the installation
+
+   Run the drenv-selftest to validate that we can create a test cluster:
 
    ```
-   minikube start -p testcluster
-   ```
-
-   Wait for `testcluster` to complete and then issue this command:
-
-   ```
-   minikube profile list
+   test/scripts/drenv-selftest
    ```
 
    Example output:
 
    ```
-   |-------------|-----------|------------|-----------------|------|---------|---------|-------|--------|
-   |   Profile   | VM Driver |  Runtime   |       IP        | Port | Version | Status  | Nodes | Active |
-   |-------------|-----------|------------|-----------------|------|---------|---------|-------|--------|
-   | testcluster | kvm2      | docker     | 192.168.39.211  | 8443 | v1.27.4 | Running |     1 |        |
-   |-------------|-----------|------------|-----------------|------|---------|---------|-------|--------|
-   ```
+   1. Activating the ramen virtual environment ...
 
-   After verifying minikube `testcluster` created, delete the cluster.
 
-   ```
-   minikube delete -p testcluster
+   2. Creating a test cluster ...
+
+   2023-11-12 14:53:43,321 INFO    [drenv-selftest-vm] Starting environment
+   2023-11-12 14:53:43,367 INFO    [drenv-selftest-cluster] Starting minikube cluster
+   2023-11-12 14:54:15,331 INFO    [drenv-selftest-cluster] Cluster started in 31.96 seconds
+   2023-11-12 14:54:15,332 INFO    [drenv-selftest-cluster/0] Running addons/example/start
+   2023-11-12 14:54:33,181 INFO    [drenv-selftest-cluster/0] addons/example/start completed in 17.85 seconds
+   2023-11-12 14:54:33,181 INFO    [drenv-selftest-cluster/0] Running addons/example/test
+   2023-11-12 14:54:33,381 INFO    [drenv-selftest-cluster/0] addons/example/test completed in 0.20 seconds
+   2023-11-12 14:54:33,381 INFO    [drenv-selftest-vm] Environment started in 50.06 seconds
+
+   3. Deleting the test cluster ...
+
+   2023-11-12 14:54:33,490 INFO    [drenv-selftest-vm] Deleting environment
+   2023-11-12 14:54:33,492 INFO    [drenv-selftest-cluster] Deleting cluster
+   2023-11-12 14:54:34,106 INFO    [drenv-selftest-cluster] Cluster deleted in 0.61 seconds
+   2023-11-12 14:54:34,106 INFO    [drenv-selftest-vm] Environment deleted in 0.62 seconds
+
+   drenv is set up properly
    ```
 
 1. Install `clusteradm` tool. See
