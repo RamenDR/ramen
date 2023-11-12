@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-# Enviroment for testing kubevirt flows with Regional-DR
+# Environment for testing kubevirt flows with Regional-DR
 ---
 name: "rdr-kubevirt"
 
