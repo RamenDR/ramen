@@ -43,6 +43,7 @@ def start(
     addons=(),
     service_cluster_ip_range=None,
     extra_config=None,
+    feature_gates=None,
     alsologtostderr=False,
 ):
     args = []
@@ -76,6 +77,10 @@ def start(
     if extra_config:
         for pair in extra_config:
             args.extend(("--extra-config", pair))
+
+    if feature_gates:
+        # Unlike --extra-config this requires one comma separated value.
+        args.extend(("--feature-gates", ",".join(feature_gates)))
 
     if alsologtostderr:
         args.append("--alsologtostderr")
