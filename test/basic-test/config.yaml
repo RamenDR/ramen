@@ -3,6 +3,7 @@
 
 ---
 repo: https://github.com/ramendr/ocm-ramen-samples.git
+path: subscription
 branch: main
 name: busybox-sample
 namespace: busybox-sample
