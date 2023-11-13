@@ -21,6 +21,8 @@ templates:
     addons:
       - volumesnapshots
       - csi-hostpath-driver
+    feature_gates:
+      - StatefulSetAutoDeletePVC=true
     workers:
       - addons:
           - name: cert-manager
