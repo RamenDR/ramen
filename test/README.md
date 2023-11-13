@@ -466,6 +466,10 @@ $ drenv delete envs/example.yaml
     - `extra_config`: List of extra config key=value. Each item adds
       `--extra-config` minikube option. See `minikube start --help` to
       see the possible keys and values.
+    - `feature_gates`: List of Kubernetes feature gates key=value. Each
+      item adds `--feature-gates` minikube option. See
+      [Feature Gates](https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/)
+      for possible keys and values.
     - `containerd`: Optional containerd configuration object. See
       `containerd config default` for available options.
     - `workers`: Optional list of workers to run when starting a
