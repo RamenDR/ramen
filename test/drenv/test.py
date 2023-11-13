@@ -106,9 +106,9 @@ def deploy():
         context=env["hub"],
         log=debug,
     )
-    info("Deploying subscription based application")
+    info("Deploying application")
     kubectl.apply(
-        f"--kustomize={config['repo']}/subscription?ref={config['branch']}",
+        f"--kustomize={config['repo']}/{config['path']}?ref={config['branch']}",
         context=env["hub"],
         log=debug,
     )
@@ -125,9 +125,9 @@ def undeploy():
         context=env["hub"],
         log=debug,
     )
-    info("Undeploying subscription based application")
+    info("Undeploying application")
     kubectl.delete(
-        f"--kustomize={config['repo']}/subscription?ref={config['branch']}",
+        f"--kustomize={config['repo']}/{config['path']}?ref={config['branch']}",
         "--ignore-not-found",
         context=env["hub"],
         log=debug,
