@@ -207,6 +207,7 @@ def start_minikube_cluster(profile, verbose=False):
         addons=profile["addons"],
         service_cluster_ip_range=profile["service_cluster_ip_range"],
         extra_config=profile["extra_config"],
+        feature_gates=profile["feature_gates"],
         alsologtostderr=verbose,
     )
 
