@@ -146,9 +146,9 @@ enough resources:
    Tested with version v0.16.0.
 
 1. Install the `velero` tool. See
-   [Velero Basic Install](https://velero.io/docs/v1.11/basic-install/)
+   [Velero Basic Install](https://velero.io/docs/v1.12/basic-install/)
    for the details.
-   Tested with version v1.11.0.
+   Tested with version v1.12.0.
 
 1. Install the `virtctl` tool. See
    [virtctl install](https://kubevirt.io/quickstart_minikube/#virtctl)
