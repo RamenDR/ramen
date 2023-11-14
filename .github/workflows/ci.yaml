@@ -79,7 +79,7 @@ jobs:
       - name: GolangCI Lint
         uses: golangci/golangci-lint-action@v3
         with:
-          version: v1.49.0
+          version: v1.55.2
 
   unit-test:
     name: Unit tests

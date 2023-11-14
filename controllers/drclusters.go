@@ -223,7 +223,7 @@ func drClusterUndeploy(
 	mcv util.ManagedClusterViewGetter,
 	log logr.Logger,
 ) error {
-	clusterNames := sets.String{}
+	clusterNames := sets.Set[string]{}
 	drpolicies := rmn.DRPolicyList{}
 
 	if err := mwu.Client.List(mwu.Ctx, &drpolicies); err != nil {

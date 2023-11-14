@@ -59,7 +59,7 @@ func drClusterSecretsDeploy(
 		log.Info("Received partial list", "err", err)
 	}
 
-	for _, secretName := range drPolicySecrets.List() {
+	for _, secretName := range drPolicySecrets.UnsortedList() {
 		if err := secretsUtil.AddSecretToCluster(
 			secretName,
 			clusterName,
@@ -102,7 +102,7 @@ func drClustersUndeploySecrets(
 		return nil
 	}
 
-	mustHaveS3Secrets := map[string]sets.String{}
+	mustHaveS3Secrets := map[string]sets.Set[string]{}
 
 	// Determine S3 secrets that must continue to exist per cluster in the policy being deleted
 	for _, clusterName := range util.DrpolicyClusterNames(drpolicy) {
@@ -119,7 +119,7 @@ func drClustersUndeploySecrets(
 	// For each cluster in the must have S3 secrets list, check and delete
 	// S3Profiles that maybe deleted, iff absent in the must have list
 	for clusterName, mustHaveS3Secrets := range mustHaveS3Secrets {
-		for _, s3SecretToDelete := range mayDeleteS3Secrets.List() {
+		for _, s3SecretToDelete := range mayDeleteS3Secrets.UnsortedList() {
 			if mustHaveS3Secrets.Has(s3SecretToDelete) {
 				continue
 			}
@@ -144,8 +144,8 @@ func drClusterListMustHaveSecrets(
 	clusterName string,
 	ignorePolicy *rmn.DRPolicy,
 	ramenConfig *rmn.RamenConfig,
-) sets.String {
-	mustHaveS3Secrets := sets.String{}
+) sets.Set[string] {
+	mustHaveS3Secrets := sets.Set[string]{}
 
 	mustHaveS3Profiles := drClusterListMustHaveS3Profiles(drpolicies, drclusters, clusterName, ignorePolicy)
 
@@ -164,8 +164,8 @@ func drClusterListMustHaveS3Profiles(drpolicies rmn.DRPolicyList,
 	drclusters *rmn.DRClusterList,
 	clusterName string,
 	ignorePolicy *rmn.DRPolicy,
-) sets.String {
-	mustHaveS3Profiles := sets.String{}
+) sets.Set[string] {
+	mustHaveS3Profiles := sets.Set[string]{}
 
 	for idx := range drpolicies.Items {
 		// Skip the policy being ignored (used for delete)
@@ -192,8 +192,8 @@ func drClusterListMustHaveS3Profiles(drpolicies rmn.DRPolicyList,
 func drPolicySecretNames(drpolicy *rmn.DRPolicy,
 	drclusters *rmn.DRClusterList,
 	rmnCfg *rmn.RamenConfig,
-) (sets.String, error) {
-	secretNames := sets.String{}
+) (sets.Set[string], error) {
+	secretNames := sets.Set[string]{}
 
 	var err error
 

@@ -430,8 +430,6 @@ func DRPCsFailingOverToCluster(k8sclient client.Client, log logr.Logger, drclust
 
 // DRPCsFailingOverToClusterForPolicy filters DRPC resources that reference the DRPolicy and are failing over
 // to the target cluster passed in
-//
-//nolint:gocognit
 func DRPCsFailingOverToClusterForPolicy(
 	k8sclient client.Client,
 	log logr.Logger,
@@ -587,7 +585,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 //
-//nolint:cyclop,funlen,gocognit
+//nolint:cyclop,funlen
 func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.Log.WithValues("DRPC", req.NamespacedName, "rid", uuid.New())
 
@@ -655,7 +653,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err != nil && !errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
 		err2 := r.updateDRPCStatus(ctx, drpc, placementObj, logger)
 
-		return ctrl.Result{}, fmt.Errorf("failed to create DRPC instance (%w) and (%v)", err, err2)
+		return ctrl.Result{}, fmt.Errorf("failed to create DRPC instance (%w) and (%w)", err, err2)
 	}
 
 	if errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
@@ -927,7 +925,7 @@ func (r *DRPlacementControlReconciler) getDRPolicy(ctx context.Context,
 func (r DRPlacementControlReconciler) updateObjectMetadata(ctx context.Context,
 	drpc *rmn.DRPlacementControl, placementObj client.Object, log logr.Logger,
 ) error {
-	update := false
+	var update bool
 
 	update = rmnutil.AddLabel(drpc, rmnutil.OCMBackupLabelKey, rmnutil.OCMBackupLabelValue)
 	update = rmnutil.AddFinalizer(drpc, DRPCFinalizer) || update

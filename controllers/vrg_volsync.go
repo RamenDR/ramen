@@ -76,7 +76,7 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary(finalSyncPrepared *bool) (requeu
 	if len(v.volSyncPVCs) == 0 {
 		finalSyncComplete()
 
-		return
+		return requeue
 	}
 
 	v.log.Info(fmt.Sprintf("Reconciling VolSync as Primary. %d VolSyncPVCs", len(v.volSyncPVCs)))
@@ -89,7 +89,7 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary(finalSyncPrepared *bool) (requeu
 
 		requeue = true
 
-		return
+		return requeue
 	}
 
 	for _, pvc := range v.volSyncPVCs {

@@ -325,7 +325,7 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 
 			result.Requeue = true
 
-			return
+			return requestsCompletedCount
 		}
 
 		captureInProgressStatusUpdate()

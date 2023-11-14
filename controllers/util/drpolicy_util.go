@@ -40,8 +40,8 @@ func DrpolicyRegionNames(drpolicy *rmn.DRPolicy, drClusters []rmn.DRCluster) []s
 	return regionNames
 }
 
-func DrpolicyRegionNamesAsASet(drpolicy *rmn.DRPolicy, drClusters []rmn.DRCluster) sets.String {
-	return sets.NewString(DrpolicyRegionNames(drpolicy, drClusters)...)
+func DrpolicyRegionNamesAsASet(drpolicy *rmn.DRPolicy, drClusters []rmn.DRCluster) sets.Set[string] {
+	return sets.New[string](DrpolicyRegionNames(drpolicy, drClusters)...)
 }
 
 func DrpolicyValidated(drpolicy *rmn.DRPolicy) error {
@@ -68,8 +68,8 @@ func GetAllDRPolicies(ctx context.Context, client client.Reader) (rmn.DRPolicyLi
 	return drpolicies, nil
 }
 
-func DRPolicyS3Profiles(drpolicy *rmn.DRPolicy, drclusters []rmn.DRCluster) sets.String {
-	mustHaveS3Profiles := sets.String{}
+func DRPolicyS3Profiles(drpolicy *rmn.DRPolicy, drclusters []rmn.DRCluster) sets.Set[string] {
+	mustHaveS3Profiles := sets.Set[string]{}
 
 	for _, managedCluster := range DrpolicyClusterNames(drpolicy) {
 		s3ProfileName := ""

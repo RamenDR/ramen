@@ -1995,10 +1995,10 @@ func restoreClusterDataObjects[
 
 	for i := range objList {
 		object := &objList[i]
-		objectCopy := &*object
-		obj := ClientObject(objectCopy)
+		objectCopy := *object
+		obj := ClientObject(&objectCopy)
 
-		cleanupForRestore(objectCopy)
+		cleanupForRestore(&objectCopy)
 		addRestoreAnnotation(obj)
 
 		if err := v.reconciler.Create(v.ctx, obj); err != nil {
@@ -2328,7 +2328,7 @@ func (v *VRGInstance) aggregateVolRepDataReadyCondition() *metav1.Condition {
 	return newVRGDataErrorCondition(v.instance.Generation, msg)
 }
 
-//nolint:funlen,gocognit,cyclop
+//nolint:funlen,cyclop
 func (v *VRGInstance) aggregateVolRepDataProtectedCondition() *metav1.Condition {
 	if len(v.volRepPVCs) == 0 {
 		return nil

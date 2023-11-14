@@ -538,7 +538,7 @@ func (d *DRPCInstance) checkRegionalFailoverPrerequisites() bool {
 	if required, activationsRequired := requiresRegionalFailoverPrerequisites(
 		d.ctx,
 		d.reconciler.APIReader,
-		rmnutil.DRPolicyS3Profiles(d.drPolicy, d.drClusters).List(),
+		rmnutil.DRPolicyS3Profiles(d.drPolicy, d.drClusters).UnsortedList(),
 		d.instance.GetName(), d.instance.GetNamespace(),
 		d.vrgs, d.instance.Spec.FailoverCluster,
 		d.reconciler.ObjStoreGetter, d.log); required {
@@ -1498,7 +1498,7 @@ func (d *DRPCInstance) generateVRG(repState rmn.ReplicationState) rmn.VolumeRepl
 		Spec: rmn.VolumeReplicationGroupSpec{
 			PVCSelector:          d.instance.Spec.PVCSelector,
 			ReplicationState:     repState,
-			S3Profiles:           rmnutil.DRPolicyS3Profiles(d.drPolicy, d.drClusters).List(),
+			S3Profiles:           rmnutil.DRPolicyS3Profiles(d.drPolicy, d.drClusters).UnsortedList(),
 			KubeObjectProtection: d.instance.Spec.KubeObjectProtection,
 		},
 	}

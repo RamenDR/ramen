@@ -735,7 +735,6 @@ func (v *VSHandler) DeleteRD(pvcName string) error {
 	return nil
 }
 
-//nolint:gocognit
 func (v *VSHandler) deleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestination) error {
 	latestRDImage, err := v.getRDLatestImage(rd.GetName())
 	if err != nil {

@@ -33,6 +33,62 @@ linters-settings:
   wsl:
     allow-trailing-comment: true
     enforce-err-cuddling: true
+  revive:
+    ignore-generated-header: false
+    severity: error
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: dot-imports
+      - name: error-return
+      - name: error-strings
+      - name: error-naming
+      - name: exported
+      - name: if-return
+      - name: increment-decrement
+      - name: var-naming
+      - name: var-declaration
+      - name: package-comments
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: unexported-return
+      - name: indent-error-flow
+      - name: errorf
+      - name: empty-block
+      - name: superfluous-else
+      # - name: unused-parameter
+      - name: unreachable-code
+      - name: redefines-builtin-id
+      - name: atomic
+      - name: constant-logical-expr
+      - name: unnecessary-stmt
+      # - name: unused-receiver
+      - name: get-return
+      # - name: flag-parameter
+      # - name: confusing-naming
+      - name: modifies-parameter
+      - name: modifies-value-receiver
+      # - name: import-shadowing
+      - name: range-val-in-closure
+      - name: waitgroup-by-value
+      - name: call-to-gc
+      - name: duplicated-imports
+      # - name: argument-limit
+      - name: unhandled-error
+      # - name: line-length-limit
+      # - name: function-result-limit
+      # - confusing-results
+      # - bool-literal-in-expr
+
+issues:
+  exclude-rules:
+    # Allow dot imports for ginkgo and gomega
+    - source: ginkgo|gomega
+      linters:
+      - revive
+      text: "should not use dot imports"
 
 linters:
   enable:
@@ -41,9 +97,7 @@ linters:
     - bidichk
     - bodyclose
     - cyclop
-    - deadcode
     - decorder
-    - depguard
     - dogsled
     - dupl
     - durationcheck
@@ -56,12 +110,10 @@ linters:
     - forbidigo
     - funlen
     - gocognit
-    - goconst
     - gocritic
     - gocyclo
     - gofmt
     - gofumpt
-    - golint
     - gomnd
     - gomodguard
     - goprintffuncname
@@ -69,7 +121,6 @@ linters:
     - gosimple
     - govet
     - grouper
-    - ifshort
     - importas
     - ineffassign
     - interfacebloat
@@ -77,7 +128,6 @@ linters:
     - logrlint
     - maintidx
     - makezero
-    - maligned
     - misspell
     - nakedret
     - nestif
@@ -91,9 +141,7 @@ linters:
     - reassign
     - revive
     - rowserrcheck
-    - scopelint
     - sqlclosecheck
-    - structcheck
     - stylecheck
     - tenv
     - testpackage
@@ -104,35 +152,31 @@ linters:
     - unparam
     - unused
     - usestdlibvars
-    - varcheck
     - wastedassign
     - whitespace
     - wsl
-  disable:
-    - exhaustivestruct
-    - gochecknoglobals
-    - gochecknoinits
-    - godot
-    - godox
-    - paralleltest
-    - goerr113  # TODO: Need to introduce error definition and bring this back
-    - goheader  # TODO: Introduce back post fixing linter errors
-    - gci
-    - interfacer  # interfacer linter is archived and deprecated (https://github.com/mvdan/interfacer)
-    # TODO: fix folloing linter errors.
-    - exhaustruct
-    - tagliatelle
-    - gomoddirectives
-    - goimports
-    - wrapcheck
-    - varnamelen
-    - staticcheck
-    - nosnakecase
-    - ireturn
-    - nilnil
-    - containedctx
-    - nonamedreturns
-    - forcetypeassert
-    - promlinter
-    - contextcheck
-    - errname
+    # - containedctx
+    # - contextcheck
+    # - errname
+    # - exhaustivestruct
+    # - exhaustruct
+    # - forcetypeassert
+    # - gci
+    # - gochecknoglobals
+    # - gochecknoinits
+    # - godot
+    # - godox
+    # - goerr113
+    # - goheader
+    # - goimports
+    # - gomoddirectives
+    # - interfacer
+    # - ireturn
+    # - nilnil
+    # - nonamedreturns
+    # - paralleltest
+    # - promlinter
+    # - tagliatelle
+    # - varnamelen
+    # - wrapcheck
+    # - goconst # Might be useful but I could not get it to ignore the strings in the log messages
