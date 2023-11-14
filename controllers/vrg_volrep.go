@@ -633,6 +633,8 @@ func (v *VRGInstance) UploadPVandPVCtoS3Store(s3ProfileName string, pvc *corev1.
 func (v *VRGInstance) UploadPVAndPVCtoS3(s3ProfileName string, objectStore ObjectStorer,
 	pv *corev1.PersistentVolume, pvc *corev1.PersistentVolumeClaim,
 ) error {
+	v.log.Info("About to upload PV to s3 profile", "PV", pv.Name, "s3 profile", s3ProfileName)
+
 	if err := UploadPV(objectStore, v.s3KeyPrefix(), pv.Name, *pv); err != nil {
 		var aerr awserr.Error
 		if errors.As(err, &aerr) {
@@ -647,8 +649,12 @@ func (v *VRGInstance) UploadPVAndPVCtoS3(s3ProfileName string, objectStore Objec
 		return err
 	}
 
+	v.log.Info("Uploaded PV to s3 profile", "PV", pv.Name, "s3 profile", s3ProfileName)
+
 	pvcNamespacedName := types.NamespacedName{Namespace: pvc.Namespace, Name: pvc.Name}
 	pvcNamespacedNameString := pvcNamespacedName.String()
+
+	v.log.Info("About to upload PVC to s3 profile", "PVC", pvc.Name, "s3 profile", s3ProfileName)
 
 	if err := UploadPVC(objectStore, v.s3KeyPrefix(), pvcNamespacedNameString, *pvc); err != nil {
 		err := fmt.Errorf("error uploading PVC to s3Profile %s, failed to protect cluster data for PVC %s, %w",
@@ -656,6 +662,8 @@ func (v *VRGInstance) UploadPVAndPVCtoS3(s3ProfileName string, objectStore Objec
 
 		return err
 	}
+
+	v.log.Info("Uploaded PVC to s3 profile", "PVC", pvc.Name, "s3 profile", s3ProfileName)
 
 	return nil
 }
