@@ -33,6 +33,7 @@ templates:
           - name: olm
           - name: minio
           - name: velero
+          - name: recipe
 
 profiles:
   - name: "dr1"

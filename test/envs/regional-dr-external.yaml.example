@@ -20,6 +20,7 @@ templates:
       - addons:
           - name: ocm-cluster
             args: ["$name", "hub"]
+          - name: recipe
       - addons:
           - name: cert-manager
           - name: csi-addons
