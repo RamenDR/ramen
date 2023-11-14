@@ -1,0 +1,22 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import os
+import sys
+
+from drenv import kubectl
+
+if len(sys.argv) != 2:
+    sys.exit(f"Usage: {sys.argv[0]} cluster")
+
+os.chdir(os.path.dirname(__file__))
+cluster = sys.argv[1]
+
+print("Deploying recipe crd")
+kubectl.apply(
+    "--kustomize",
+    "https://github.com/RamenDR/recipe.git/config/crd?ref=main&timeout=120s",
+    context=cluster,
+)

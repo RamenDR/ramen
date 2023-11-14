@@ -38,6 +38,7 @@ templates:
           - name: ocm-cluster
             args: ["$name", "hub"]
           - name: cdi
+          - name: recipe
       - addons:
           - name: csi-addons
           - name: olm
