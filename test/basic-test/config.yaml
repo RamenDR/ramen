@@ -7,3 +7,4 @@ path: subscription
 branch: main
 name: busybox-sample
 namespace: busybox-sample
+pvc_label: busybox
