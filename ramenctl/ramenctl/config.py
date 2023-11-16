@@ -145,7 +145,6 @@ def wait_for_dr_clusters(hub, clusters, args):
         drenv.wait_for(
             f"drcluster/{name}",
             output="jsonpath={.status.phase}",
-            namespace=args.ramen_namespace,
             timeout=180,
             profile=hub,
             log=command.debug,
@@ -156,7 +155,6 @@ def wait_for_dr_clusters(hub, clusters, args):
         "drcluster",
         "--all",
         "--for=jsonpath={.status.phase}=Available",
-        f"--namespace={args.ramen_namespace}",
         context=hub,
         log=command.debug,
     )
@@ -167,7 +165,6 @@ def wait_for_dr_policy(hub, args):
     kubectl.wait(
         "drpolicy/dr-policy",
         "--for=condition=Validated",
-        f"--namespace={args.ramen_namespace}",
         context=hub,
         log=command.debug,
     )
