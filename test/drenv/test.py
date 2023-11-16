@@ -171,7 +171,7 @@ spec:
     name: {placement_name}
   pvcSelector:
     matchLabels:
-      appname: busybox
+      appname: {config['pvc_label']}
 """
     kubectl.apply("--filename=-", input=drpc, context=env["hub"], log=debug)
 
