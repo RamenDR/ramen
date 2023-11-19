@@ -30,7 +30,16 @@ def main():
     p = argparse.ArgumentParser(prog="drenv")
     p.add_argument("-v", "--verbose", action="store_true", help="Be more verbose")
     p.add_argument(
-        "--skip-tests", dest="run_tests", action="store_false", help="Skip self tests"
+        "--skip-tests",
+        dest="run_tests",
+        action="store_false",
+        help="Skip addons 'test' hooks",
+    )
+    p.add_argument(
+        "--skip-addons",
+        dest="run_addons",
+        action="store_false",
+        help="Skip addons 'start' and 'stop' hooks",
     )
     p.add_argument("command", choices=commands, help="Command to run")
     p.add_argument("--name-prefix", help="Prefix profile names")
@@ -57,7 +66,12 @@ def main():
 def cmd_start(env, args):
     start = time.monotonic()
     logging.info("[%s] Starting environment", env["name"])
-    hooks = ["start", "test"] if args.run_tests else ["start"]
+
+    hooks = []
+    if args.run_addons:
+        hooks.append("start")
+    if args.run_tests:
+        hooks.append("test")
 
     # Delaying `minikube start` ensures cluster start order.
     execute(
@@ -67,7 +81,9 @@ def cmd_start(env, args):
         hooks=hooks,
         args=args,
     )
-    execute(run_worker, env["workers"], hooks=hooks)
+
+    if hooks:
+        execute(run_worker, env["workers"], hooks=hooks)
 
     if "ramen" in env:
         ramen.dump_e2e_config(env)
@@ -82,7 +98,8 @@ def cmd_start(env, args):
 def cmd_stop(env, args):
     start = time.monotonic()
     logging.info("[%s] Stopping environment", env["name"])
-    execute(stop_cluster, env["profiles"])
+    hooks = ["stop"] if args.run_addons else []
+    execute(stop_cluster, env["profiles"], hooks=hooks)
     logging.info(
         "[%s] Environment stopped in %.2f seconds",
         env["name"],
@@ -152,17 +169,23 @@ def start_cluster(profile, hooks=(), args=None, **options):
         if is_restart:
             wait_for_deployments(profile)
 
-    execute(run_worker, profile["workers"], max_workers=args.max_workers, hooks=hooks)
-
-
-def stop_cluster(profile, **options):
-    cluster_status = cluster.status(profile["name"])
-
-    if cluster_status == cluster.READY:
+    if hooks:
         execute(
             run_worker,
             profile["workers"],
-            hooks=["stop"],
+            max_workers=args.max_workers,
+            hooks=hooks,
+        )
+
+
+def stop_cluster(profile, hooks=(), **options):
+    cluster_status = cluster.status(profile["name"])
+
+    if cluster_status == cluster.READY and hooks:
+        execute(
+            run_worker,
+            profile["workers"],
+            hooks=hooks,
             reverse=True,
             allow_failure=True,
         )
