@@ -25,7 +25,7 @@ def run(args):
     cloud_secret = generate_cloud_credentials_secret(env["clusters"][0], args)
 
     if env["hub"]:
-        hub_cm = generate_config_map("hub", env["clusters"], args)
+        hub_cm = generate_config_map("hub", env, args)
 
         wait_for_ramen_hub_operator(env["hub"], args)
 
@@ -38,7 +38,7 @@ def run(args):
         wait_for_dr_clusters(env["hub"], env["clusters"], args)
         wait_for_dr_policy(env["hub"], args)
     else:
-        dr_cluster_cm = generate_config_map("dr-cluster", env["clusters"], args)
+        dr_cluster_cm = generate_config_map("dr-cluster", env, args)
 
         for cluster in env["clusters"]:
             create_ramen_s3_secrets(cluster, s3_secrets)
@@ -89,7 +89,9 @@ def create_cloud_credentials_secret(cluster, yaml):
     kubectl.apply("--filename=-", input=yaml, context=cluster, log=command.debug)
 
 
-def generate_config_map(controller, clusters, args):
+def generate_config_map(controller, env, args):
+    clusters = env["clusters"]
+    volsync = env["features"].get("volsync", True)
     template = drenv.template(command.resource("configmap.yaml"))
     return template.substitute(
         name=f"ramen-{controller}-operator-config",
@@ -98,6 +100,7 @@ def generate_config_map(controller, clusters, args):
         cluster2=clusters[1],
         minio_url_cluster1=minio.service_url(clusters[0]),
         minio_url_cluster2=minio.service_url(clusters[1]),
+        volsync_disabled="false" if volsync else "true",
         namespace=args.ramen_namespace,
     )
 
