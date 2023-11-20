@@ -294,7 +294,7 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	u.initializeStatus()
 
-	if !u.object.ObjectMeta.DeletionTimestamp.IsZero() {
+	if drClusterIsDeleted(drcluster) {
 		return r.processDeletion(u)
 	}
 
@@ -358,6 +358,11 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 	}
 
 	return ctrl.Result{Requeue: requeue || u.requeue}, reconcileError
+}
+
+// Return true if dr cluster was marked for deletion.
+func drClusterIsDeleted(c *ramen.DRCluster) bool {
+	return !c.GetDeletionTimestamp().IsZero()
 }
 
 func (u *drclusterInstance) initializeStatus() {
