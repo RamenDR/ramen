@@ -33,6 +33,51 @@ linters-settings:
   wsl:
     allow-trailing-comment: true
     enforce-err-cuddling: true
+  revive:
+    ignore-generated-header: false
+    severity: error
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: dot-imports
+      - name: error-return
+      - name: error-strings
+      - name: error-naming
+      - name: exported
+      - name: if-return
+      - name: increment-decrement
+      - name: var-naming
+      - name: var-declaration
+      - name: package-comments
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: unexported-return
+      - name: indent-error-flow
+      - name: errorf
+      - name: empty-block
+      - name: superfluous-else
+      - name: unreachable-code
+      - name: redefines-builtin-id
+      - name: atomic
+      - name: constant-logical-expr
+      - name: unnecessary-stmt
+      - name: get-return
+      - name: modifies-parameter
+      - name: modifies-value-receiver
+      - name: range-val-in-closure
+      - name: waitgroup-by-value
+      - name: call-to-gc
+      - name: duplicated-imports
+      - name: unhandled-error
+      # - name: flag-parameter
+      # - name: unused-receiver
+      # - name: unused-parameter
+      # - name: confusing-naming
+      # - name: import-shadowing
+      # - name: confusing-results
+      # - name: bool-literal-in-expr
 
 linters:
   enable:
