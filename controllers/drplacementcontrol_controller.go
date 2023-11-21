@@ -1460,7 +1460,9 @@ func getVRGsFromManagedClusters(mcvGetter rmnutil.ManagedClusterViewGetter, drpc
 
 	var clustersQueriedSuccessfully int
 
-	for _, drCluster := range drClusters {
+	for i := range drClusters {
+		drCluster := &drClusters[i]
+
 		vrg, err := mcvGetter.GetVRGFromManagedCluster(drpc.Name, vrgNamespace, drCluster.Name, annotations)
 		if err != nil {
 			// Only NotFound error is accepted
@@ -1479,6 +1481,12 @@ func getVRGsFromManagedClusters(mcvGetter rmnutil.ManagedClusterViewGetter, drpc
 		}
 
 		clustersQueriedSuccessfully++
+
+		if drClusterIsDeleted(drCluster) {
+			log.Info("Skipping VRG on deleted drcluster", "drcluster", drCluster.Name, "vrg", vrg.Name)
+
+			continue
+		}
 
 		vrgs[drCluster.Name] = vrg
 
