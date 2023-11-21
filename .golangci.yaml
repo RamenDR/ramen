@@ -80,6 +80,7 @@ linters-settings:
       # - name: bool-literal-in-expr
 
 linters:
+  disable-all: true
   enable:
     - asasalint
     - asciicheck
@@ -153,31 +154,29 @@ linters:
     - wastedassign
     - whitespace
     - wsl
-  disable:
-    - exhaustivestruct
-    - gochecknoglobals
-    - gochecknoinits
-    - godot
-    - godox
-    - paralleltest
-    - goerr113  # TODO: Need to introduce error definition and bring this back
-    - goheader  # TODO: Introduce back post fixing linter errors
-    - gci
-    - interfacer  # interfacer linter is archived and deprecated (https://github.com/mvdan/interfacer)
-    # TODO: fix folloing linter errors.
-    - exhaustruct
-    - tagliatelle
-    - gomoddirectives
-    - goimports
-    - wrapcheck
-    - varnamelen
-    - staticcheck
-    - nosnakecase
-    - ireturn
-    - nilnil
-    - containedctx
-    - nonamedreturns
-    - forcetypeassert
-    - promlinter
-    - contextcheck
-    - errname
+    #  - exhaustivestruct
+    #  - gochecknoglobals
+    #  - gochecknoinits
+    #  - godot
+    #  - godox
+    #  - paralleltest
+    #  - goerr113  # TODO: Need to introduce error definition and bring this back
+    #  - goheader  # TODO: Introduce back post fixing linter errors
+    #  - gci
+    #  - interfacer  # interfacer linter is archived and deprecated (https://github.com/mvdan/interfacer)
+    #  - exhaustruct
+    #  - tagliatelle
+    #  - gomoddirectives
+    #  - goimports
+    #  - wrapcheck
+    #  - varnamelen
+    #  - staticcheck
+    #  - nosnakecase
+    #  - ireturn
+    #  - nilnil
+    #  - containedctx
+    #  - nonamedreturns
+    #  - forcetypeassert
+    #  - promlinter
+    #  - contextcheck
+    #  - errname
