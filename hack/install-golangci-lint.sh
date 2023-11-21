@@ -1,7 +1,7 @@
 #!/bin/bash
 
 GOLANGCI_URL="https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh"
-GOLANGCI_VERSION="1.49.0"
+GOLANGCI_VERSION="1.55.2"
 
 # Get the installed version of golangci-lint, if available
 GOLANGCI_INSTALLED_VER=$(testbin/golangci-lint version --format=short 2>/dev/null)
