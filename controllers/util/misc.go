@@ -13,7 +13,7 @@ import (
 
 const (
 	OCMBackupLabelKey   string = "cluster.open-cluster-management.io/backup"
-	OCMBackupLabelValue string = "resource"
+	OCMBackupLabelValue string = "ramen"
 )
 
 func GenericAddLabelsAndFinalizers(

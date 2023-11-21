@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	rmnutil "github.com/ramendr/ramen/controllers/util"
 	"github.com/ramendr/ramen/controllers/volsync"
 )
 
@@ -71,6 +72,9 @@ var _ = Describe("Secretgen", func() {
 
 				// Expect the secret should be owned by owner
 				Expect(ownerMatches(newSecret, owner.GetName(), "ConfigMap", true))
+
+				// Expect that the secret includes a label utilized for hub backup.
+				Expect(newSecret.GetLabels()[rmnutil.OCMBackupLabelKey]).Should(Equal(rmnutil.OCMBackupLabelValue))
 
 				// Check secret data
 				Expect(len(newSecret.Data)).To(Equal(1))
