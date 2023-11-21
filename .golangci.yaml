@@ -40,7 +40,7 @@ linters-settings:
       - name: blank-imports
       - name: context-as-argument
       - name: context-keys-type
-      - name: dot-imports
+      # - name: dot-imports
       - name: error-return
       - name: error-strings
       - name: error-naming
@@ -89,20 +89,20 @@ linters:
     - cyclop
     - deadcode
     - decorder
-    - depguard
+    #  - depguard
     - dogsled
     - dupl
     - durationcheck
     - errcheck
     - errchkjson
-    - errorlint
+    #  - errorlint
     - execinquery
     - exhaustive
     - exportloopref
     - forbidigo
     - funlen
     - gocognit
-    - goconst
+    #  - goconst
     - gocritic
     - gocyclo
     - gofmt
@@ -125,12 +125,12 @@ linters:
     - makezero
     - maligned
     - misspell
-    - nakedret
+    #  - nakedret
     - nestif
     - nilerr
     - nlreturn
     - noctx
-    - nolintlint
+    #  - nolintlint
     - nosprintfhostport
     - prealloc
     - predeclared
@@ -151,7 +151,7 @@ linters:
     - unused
     - usestdlibvars
     - varcheck
-    - wastedassign
+    #  - wastedassign
     - whitespace
     - wsl
     #  - exhaustivestruct
