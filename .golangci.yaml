@@ -40,7 +40,7 @@ linters-settings:
       - name: blank-imports
       - name: context-as-argument
       - name: context-keys-type
-      # - name: dot-imports
+      - name: dot-imports
       - name: error-return
       - name: error-strings
       - name: error-naming
@@ -78,6 +78,15 @@ linters-settings:
       # - name: import-shadowing
       # - name: confusing-results
       # - name: bool-literal-in-expr
+
+issues:
+  exclude-rules:
+    # Allow dot imports for ginkgo and gomega
+    - source: ginkgo|gomega
+      linters:
+        - revive
+      text: "should not use dot imports"
+
 
 linters:
   disable-all: true
