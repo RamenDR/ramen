@@ -21,7 +21,7 @@ def register(commands):
 def run(args):
     env = command.env_info(args)
 
-    s3_secret = generate_ramen_s3_secret(args)
+    s3_secrets = generate_ramen_s3_secrets(env["clusters"], args)
     cloud_secret = generate_cloud_credentials_secret(env["clusters"][0], args)
 
     if env["hub"]:
@@ -29,19 +29,19 @@ def run(args):
 
         wait_for_ramen_hub_operator(env["hub"], args)
 
-        create_ramen_s3_secret(env["hub"], s3_secret)
-        for cluster in env["clusters"]:
-            create_cloud_credentials_secret(cluster, cloud_secret)
+        create_ramen_s3_secrets(env["hub"], s3_secrets)
+
         create_ramen_config_map(env["hub"], hub_cm)
         create_hub_dr_resources(env["hub"], env["clusters"], env["topology"])
 
+        wait_for_secret_propagation(env["hub"], env["clusters"], args)
         wait_for_dr_clusters(env["hub"], env["clusters"], args)
         wait_for_dr_policy(env["hub"], args)
     else:
         dr_cluster_cm = generate_config_map("dr-cluster", env["clusters"], args)
 
         for cluster in env["clusters"]:
-            create_ramen_s3_secret(cluster, s3_secret)
+            create_ramen_s3_secrets(cluster, s3_secrets)
             create_cloud_credentials_secret(cluster, cloud_secret)
             create_ramen_config_map(cluster, dr_cluster_cm)
 
@@ -58,14 +58,18 @@ def wait_for_ramen_hub_operator(hub, args):
     )
 
 
-def generate_ramen_s3_secret(args):
+def generate_ramen_s3_secrets(clusters, args):
     template = drenv.template(command.resource("ramen-s3-secret.yaml"))
-    return template.substitute(namespace=args.ramen_namespace)
+    return [
+        template.substitute(namespace=args.ramen_namespace, cluster=cluster)
+        for cluster in clusters
+    ]
 
 
-def create_ramen_s3_secret(cluster, yaml):
-    command.info("Creating ramen s3 secret in cluster '%s'", cluster)
-    kubectl.apply("--filename=-", input=yaml, context=cluster, log=command.debug)
+def create_ramen_s3_secrets(cluster, secrets):
+    command.info("Creating ramen s3 secrets in cluster '%s'", cluster)
+    for secret in secrets:
+        kubectl.apply("--filename=-", input=secret, context=cluster, log=command.debug)
 
 
 def generate_cloud_credentials_secret(cluster, args):
@@ -109,6 +113,30 @@ def create_hub_dr_resources(hub, clusters, topology):
         template = drenv.template(command.resource(f"{topology}/{name}.yaml"))
         yaml = template.substitute(cluster1=clusters[0], cluster2=clusters[1])
         kubectl.apply("--filename=-", input=yaml, context=hub, log=command.debug)
+
+
+def wait_for_secret_propagation(hub, clusters, args):
+    command.info("Waiting until s3 secrets are propagated to managed clusters")
+    for cluster in clusters:
+        policy = f"{args.ramen_namespace}.ramen-s3-secret-{cluster}"
+        command.debug("Waiting until policy '%s' reports status", policy)
+        drenv.wait_for(
+            f"policy/{policy}",
+            output="jsonpath={.status}",
+            namespace=cluster,
+            timeout=30,
+            profile=hub,
+            log=command.debug,
+        )
+        command.debug("Waiting until policy %s is compliant", policy)
+        kubectl.wait(
+            f"policy/{policy}",
+            "--for=jsonpath={.status.compliant}=Compliant",
+            "--timeout=30s",
+            f"--namespace={cluster}",
+            context=hub,
+            log=command.debug,
+        )
 
 
 def wait_for_dr_clusters(hub, clusters, args):
