@@ -40,7 +40,7 @@ data:
       s3CompatibleEndpoint: $minio_url_cluster1
       s3Region: us-west-1
       s3SecretRef:
-        name: ramen-s3-secret
+        name: ramen-s3-secret-$cluster1
         namespace: ramen-system
       veleroNamespaceSecretKeyRef:
         key: cloud
@@ -50,7 +50,7 @@ data:
       s3CompatibleEndpoint: $minio_url_cluster2
       s3Region: us-east-1
       s3SecretRef:
-        name: ramen-s3-secret
+        name: ramen-s3-secret-$cluster2
         namespace: ramen-system
       veleroNamespaceSecretKeyRef:
         key: cloud
