@@ -481,21 +481,14 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 	mw *ocmworkv1.ManifestWork,
 	managedClusternamespace string,
 ) error {
+	key := types.NamespacedName{Name: mw.Name, Namespace: managedClusternamespace}
 	foundMW := &ocmworkv1.ManifestWork{}
 
-	err := mwu.Client.Get(mwu.Ctx,
-		types.NamespacedName{Name: mw.Name, Namespace: managedClusternamespace},
-		foundMW)
+	err := mwu.Client.Get(mwu.Ctx, key, foundMW)
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			return errorswrapper.Wrap(err, fmt.Sprintf("failed to fetch ManifestWork %s", mw.Name))
+			return errorswrapper.Wrap(err, fmt.Sprintf("failed to fetch ManifestWork %s", key))
 		}
-
-		// Let DRPC receive notification for any changes to ManifestWork CR created by it.
-		// if err := ctrl.SetControllerReference(d.instance, mw, d.reconciler.Scheme); err != nil {
-		//	return fmt.Errorf("failed to set owner reference to ManifestWork resource (%s/%s) (%v)",
-		//		mw.Name, mw.Namespace, err)
-		// }
 
 		mwu.Log.Info("Creating ManifestWork", "cluster", managedClusternamespace, "MW", mw)
 
@@ -503,28 +496,17 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 	}
 
 	if !reflect.DeepEqual(foundMW.Spec, mw.Spec) {
-		mwu.Log.Info("ManifestWork exists.", "name", mw.Name, "namespace", foundMW.Namespace)
+		mwu.Log.Info("Updating ManifestWork", "name", mw.Name, "namespace", foundMW.Namespace)
 
-		retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-			var err error
-
-			err = mwu.Client.Get(mwu.Ctx,
-				types.NamespacedName{Name: mw.Name, Namespace: managedClusternamespace},
-				foundMW)
-			if err != nil {
+		return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			if err := mwu.Client.Get(mwu.Ctx, key, foundMW); err != nil {
 				return err
 			}
 
 			mw.Spec.DeepCopyInto(&foundMW.Spec)
 
-			err = mwu.Client.Update(mwu.Ctx, foundMW)
-
-			return err
+			return mwu.Client.Update(mwu.Ctx, foundMW)
 		})
-
-		if retryErr != nil {
-			return retryErr
-		}
 	}
 
 	return nil
