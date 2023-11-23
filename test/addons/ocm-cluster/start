@@ -43,7 +43,6 @@ HUB_DEPLOYMENTS = (
 def deploy(cluster, hub):
     wait_for_hub(hub)
     join_cluster(cluster, hub)
-    accept_cluster(cluster, hub)
     label_cluster(cluster, hub)
     wait_for_managed_cluster(cluster, hub)
     enable_addons(cluster, hub)
@@ -94,11 +93,6 @@ def join_cluster(cluster, hub):
         wait=True,
         context=cluster,
     )
-
-
-def accept_cluster(cluster, hub):
-    print("Accepting cluster")
-    clusteradm.accept([cluster], wait=True, context=hub)
 
 
 def label_cluster(cluster, hub):

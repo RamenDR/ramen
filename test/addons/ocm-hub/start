@@ -41,7 +41,12 @@ DEPLOYMENTS = {
 
 def deploy(cluster):
     print("Initializing hub")
-    clusteradm.init(wait=True, context=cluster)
+    clusteradm.init(
+        # With auto approval joined clusters are accepted automatically.
+        feature_gates=["ManagedClusterAutoApproval=true"],
+        wait=True,
+        context=cluster,
+    )
 
     print("Installing hub addons")
     for addon in ADDONS:

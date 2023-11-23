@@ -4,11 +4,13 @@
 from . import commands
 
 
-def init(wait=False, context=None, log=print):
+def init(feature_gates=None, wait=False, context=None, log=print):
     """
     Initialize a Kubernetes cluster into an OCM hub cluster.
     """
     cmd = ["clusteradm", "init"]
+    if feature_gates:
+        cmd.extend(("--feature-gates", ",".join(feature_gates)))
     if wait:
         cmd.append("--wait")
     if context:
@@ -54,18 +56,6 @@ def join(hub_token, hub_apiserver, cluster_name, wait=False, context=None, log=p
         "--cluster-name",
         cluster_name,
     ]
-    if wait:
-        cmd.append("--wait")
-    if context:
-        cmd.extend(("--context", context))
-    _watch(*cmd, log=log)
-
-
-def accept(clusters, wait=False, context=None, log=print):
-    """
-    Accept clusters to the hub.
-    """
-    cmd = ["clusteradm", "accept", "--clusters", ",".join(clusters)]
     if wait:
         cmd.append("--wait")
     if context:
