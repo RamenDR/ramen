@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import argparse
+import collections
+import concurrent.futures
+import logging
+import os
+import subprocess
+
+import yaml
+
+
+def main():
+    p = argparse.ArgumentParser("drtest")
+    p.add_argument("-k", "--kubeconfig", help="If set, use speified kubeconfig path")
+    p.add_argument("-o", "--outdir", default=".", help="Output directory")
+    p.add_argument("-v", "--verbose", action="store_true", help="Be more verbose")
+    p.add_argument("suite", help="Test suite file")
+    p.add_argument("env", help="Environemnt file")
+    args = p.parse_args()
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(asctime)s %(levelname)-7s %(message)s",
+    )
+
+    with open(args.suite) as f:
+        suite = yaml.safe_load(f)
+
+    os.makedirs(args.outdir, exist_ok=True)
+
+    logging.info("Running '%s'", suite["name"])
+    logging.info("Storing output to '%s'", args.outdir)
+
+    stats = collections.Counter({"pass": 0, "fail": 0})
+
+    with concurrent.futures.ThreadPoolExecutor() as e:
+        futures = {}
+
+        for test in suite["tests"]:
+            logging.info("Starting test '%s'", test["name"])
+            f = e.submit(run_test, test, args)
+            futures[f] = test["name"]
+
+        for f in concurrent.futures.as_completed(futures):
+            try:
+                f.result()
+            except Exception:
+                logging.error("Test '%s' FAIL", futures[f])
+                stats["fail"] += 1
+            else:
+                logging.info("Test '%s' PASS", futures[f])
+                stats["pass"] += 1
+
+    logging.info(
+        "%s (%s pass, %s fail)",
+        "PASS" if stats["fail"] == 0 else "FAIL",
+        stats["pass"],
+        stats["fail"],
+    )
+
+
+def run_test(test, args):
+    log = os.path.join(args.outdir, test["name"] + ".log")
+    cmd = [test["command"], "--config", test["config"], args.env]
+    if args.kubeconfig:
+        env = dict(os.environ)
+        env["KUBECONFIG"] = args.kubeconfig
+    else:
+        env = None
+    with open(log, "w") as f:
+        subprocess.run(cmd, stderr=f, check=True, env=env)
+
+
+if __name__ == "__main__":
+    main()
