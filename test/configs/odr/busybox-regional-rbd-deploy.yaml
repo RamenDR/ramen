@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+repo: https://github.com/nirs/ocm-ramen-samples.git
+path: odr/busybox-regional-rbd-deploy/sub
+branch: test-odr
+name: busybox-regional-rbd-deploy
+namespace: busybox-regional-rbd-deploy
+dr_policy: busybox-regional-rbd-deploy
+pvc_label: busybox

@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+repo: https://github.com/nirs/ocm-ramen-samples.git
+path: odr/busybox-metro-rbd-deploy/sub
+branch: test-odr
+name: busybox-metro-rbd-deploy
+namespace: busybox-metro-rbd-deploy
+dr_policy: busybox-metro-rbd-deploy
+pvc_label: busybox
