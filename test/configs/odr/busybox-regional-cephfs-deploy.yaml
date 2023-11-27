@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+repo: https://github.com/nirs/ocm-ramen-samples.git
+path: odr/busybox-regional-cephfs-deploy/sub
+branch: test-odr
+name: busybox-regional-cephfs-deploy
+namespace: busybox-regional-cephfs-deploy
+dr_policy: busybox-regional-cephfs-deploy
+pvc_label: busybox
