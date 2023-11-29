@@ -535,20 +535,23 @@ func (d *DRPCInstance) checkMetroFailoverPrerequisites(curHomeCluster string) (b
 func (d *DRPCInstance) checkRegionalFailoverPrerequisites() bool {
 	d.setProgression(rmn.ProgressionWaitForStorageMaintenanceActivation)
 
-	if required, activationsRequired := requiresRegionalFailoverPrerequisites(
-		d.ctx,
-		d.reconciler.APIReader,
-		rmnutil.DRPolicyS3Profiles(d.drPolicy, d.drClusters).List(),
-		d.instance.GetName(), d.instance.GetNamespace(),
-		d.vrgs, d.instance.Spec.FailoverCluster,
-		d.reconciler.ObjStoreGetter, d.log); required {
-		for _, drCluster := range d.drClusters {
-			if drCluster.Name != d.instance.Spec.FailoverCluster {
-				continue
-			}
+	for _, drCluster := range d.drClusters {
+		if drCluster.Name != d.instance.Spec.FailoverCluster {
+			continue
+		}
 
+		// we want to work with failover cluster only, because the previous primary cluster might be unreachable
+		if required, activationsRequired := requiresRegionalFailoverPrerequisites(
+			d.ctx,
+			d.reconciler.APIReader,
+			[]string{drCluster.Spec.S3ProfileName},
+			d.instance.GetName(), d.instance.GetNamespace(),
+			d.vrgs, d.instance.Spec.FailoverCluster,
+			d.reconciler.ObjStoreGetter, d.log); required {
 			return checkFailoverMaintenanceActivations(drCluster, activationsRequired, d.log)
 		}
+
+		break
 	}
 
 	return true
