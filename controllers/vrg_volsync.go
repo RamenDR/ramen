@@ -114,6 +114,7 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary(finalSyncPrepared *bool) (requeu
 func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeClaim) (requeue bool) {
 	newProtectedPVC := &ramendrv1alpha1.ProtectedPVC{
 		Name:               pvc.Name,
+		Namespace:          pvc.Namespace,
 		ProtectedByVolSync: true,
 		StorageClassName:   pvc.Spec.StorageClassName,
 		Annotations:        protectedPVCAnnotations(pvc),
