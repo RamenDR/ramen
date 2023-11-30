@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+repo: https://github.com/nirs/ocm-kubevirt-samples.git
+path: subscription
+branch: test
+name: kubevirt-sample
+namespace: kubevirt-sample
+dr_policy: kubevirt-sample
+pvc_label: vm-standalone-dv-odr-regional
