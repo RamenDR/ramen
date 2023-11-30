@@ -133,6 +133,9 @@ func (d *DRPCInstance) ensureVolSyncReplicationDestination(srcCluster string) er
 	return nil
 }
 
+// containsMismatchVolSyncPVCs returns true if a VolSync protected pvc in the source VRG is not
+// found in the destination VRG RDSpecs.  Since we never delete protected PVCS from the source VRG,
+// we don't check for other case - a protected PVC in destination not found in the source.
 func (d *DRPCInstance) containsMismatchVolSyncPVCs(srcVRG *rmn.VolumeReplicationGroup,
 	dstVRG *rmn.VolumeReplicationGroup,
 ) bool {
@@ -141,20 +144,14 @@ func (d *DRPCInstance) containsMismatchVolSyncPVCs(srcVRG *rmn.VolumeReplication
 			continue
 		}
 
-		mismatch := true
-
 		for _, rdSpec := range dstVRG.Spec.VolSync.RDSpec {
 			if protectedPVC.Name == rdSpec.ProtectedPVC.Name {
-				mismatch = false
-
-				break
+				return false
 			}
 		}
 
-		// We only need one mismatch to return true
-		if mismatch {
-			return true
-		}
+		// VolSync PVC not found in destination.
+		return true
 	}
 
 	return false
