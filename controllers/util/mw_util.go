@@ -532,6 +532,7 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 
 func (mwu *MWUtil) GetVRGManifestWorkCount(drClusters []string) int {
 	count := 0
+
 	for _, clusterName := range drClusters {
 		_, err := mwu.FindManifestWorkByType(MWTypeVRG, clusterName)
 		if err != nil {
