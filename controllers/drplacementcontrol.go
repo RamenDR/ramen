@@ -1204,7 +1204,7 @@ func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace str
 		vrgState = vrg.Status.State
 	}
 
-	d.log.Info(fmt.Sprintf("PVs/PVCs have been Restored? %v and VRG Primary %v", restored, vrgState))
+	d.log.Info(fmt.Sprintf("PVs/PVCs have been Restored? '%v' and VRG Primary='%v'", restored, vrgState))
 
 	if !restored || vrg.Status.State != rmn.PrimaryState {
 		d.setProgression(rmn.ProgressionWaitingForResourceRestore)
@@ -1987,7 +1987,7 @@ func (d *DRPCInstance) ensureVRGDeleted(clusterName string) bool {
 }
 
 func (d *DRPCInstance) updateVRGState(clusterName string, state rmn.ReplicationState) (bool, error) {
-	d.log.Info(fmt.Sprintf("Updating VRG ReplicationState to secondary for cluster %s", clusterName))
+	d.log.Info(fmt.Sprintf("Updating VRG ReplicationState to %s for cluster %s", state, clusterName))
 
 	vrg, err := d.getVRGFromManifestWork(clusterName)
 	if err != nil {
