@@ -214,6 +214,7 @@ var _ = Describe("Secret_propagator", func() {
 					Expect(plBindingSubject.APIGroup).To(Equal("policy.open-cluster-management.io"))
 					Expect(plBindingSubject.Kind).To(Equal("Policy"))
 					Expect(plBindingSubject.Name).To(Equal(createdPolicy.GetName()))
+					Expect(createdPolicy.GetLabels()["velero.io/exclude-from-backup"]).Should(Equal("true"))
 				})
 
 				Context("When Policy name combined with namespace is longer than 62 characters", func() {
