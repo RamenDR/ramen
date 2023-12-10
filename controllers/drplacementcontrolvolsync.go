@@ -54,7 +54,7 @@ func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 			return err
 		}
 
-		return WaitForVolSyncManifestWorkCreation
+		return ErrWaitForVolSyncManifestWorkCreation
 	}
 
 	if _, found := d.vrgs[srcCluster]; !found {
@@ -107,7 +107,7 @@ func (d *DRPCInstance) ensureVolSyncReplicationDestination(srcCluster string) er
 	if len(srcVRG.Status.ProtectedPVCs) == 0 {
 		d.log.Info("ProtectedPVCs on pirmary cluster is empty")
 
-		return WaitForSourceCluster
+		return ErrWaitForSourceCluster
 	}
 
 	for dstCluster, dstVRG := range d.vrgs {
@@ -202,7 +202,7 @@ func (d *DRPCInstance) IsVolSyncReplicationRequired(homeCluster string) (bool, e
 	}
 
 	if len(vrg.Status.ProtectedPVCs) == 0 {
-		return false, WaitForSourceCluster
+		return false, ErrWaitForSourceCluster
 	}
 
 	for _, protectedPVC := range vrg.Status.ProtectedPVCs {

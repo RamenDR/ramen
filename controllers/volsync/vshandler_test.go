@@ -1112,14 +1112,14 @@ var _ = Describe("VolSync_Handler", func() {
 			}
 		})
 
-		var ensurePVCErr error
+		var errEnsurePVC error
 		JustBeforeEach(func() {
-			ensurePVCErr = vsHandler.EnsurePVCfromRD(rdSpec, false)
+			errEnsurePVC = vsHandler.EnsurePVCfromRD(rdSpec, false)
 		})
 
 		Context("When ReplicationDestination Does not exist", func() {
 			It("Should throw an error", func() {
-				Expect(ensurePVCErr).To(HaveOccurred())
+				Expect(errEnsurePVC).To(HaveOccurred())
 			})
 		})
 
@@ -1143,8 +1143,8 @@ var _ = Describe("VolSync_Handler", func() {
 				}, maxWait, interval).Should(Succeed())
 			})
 			It("Should fail to ensure PVC", func() {
-				Expect(ensurePVCErr).To(HaveOccurred())
-				Expect(ensurePVCErr.Error()).To(ContainSubstring("unable to find LatestImage"))
+				Expect(errEnsurePVC).To(HaveOccurred())
+				Expect(errEnsurePVC.Error()).To(ContainSubstring("unable to find LatestImage"))
 			})
 		})
 
@@ -1187,10 +1187,10 @@ var _ = Describe("VolSync_Handler", func() {
 
 			Context("When the latest image volume snapshot does not exist", func() {
 				It("Should fail to ensure PVC", func() {
-					Expect(ensurePVCErr).To(HaveOccurred())
-					Expect(ensurePVCErr.Error()).To(ContainSubstring("snapshot"))
-					Expect(ensurePVCErr.Error()).To(ContainSubstring("not found"))
-					Expect(ensurePVCErr.Error()).To(ContainSubstring(latestImageSnapshotName))
+					Expect(errEnsurePVC).To(HaveOccurred())
+					Expect(errEnsurePVC.Error()).To(ContainSubstring("snapshot"))
+					Expect(errEnsurePVC.Error()).To(ContainSubstring("not found"))
+					Expect(errEnsurePVC.Error()).To(ContainSubstring(latestImageSnapshotName))
 				})
 			})
 
@@ -1205,7 +1205,7 @@ var _ = Describe("VolSync_Handler", func() {
 				pvc := &corev1.PersistentVolumeClaim{}
 				JustBeforeEach(func() {
 					// Common checks for everything in this context - pvc should be created with correct spec
-					Expect(ensurePVCErr).NotTo(HaveOccurred())
+					Expect(errEnsurePVC).NotTo(HaveOccurred())
 
 					Eventually(func() error {
 						return k8sClient.Get(ctx, types.NamespacedName{
@@ -1787,10 +1787,10 @@ var _ = Describe("VolSync_Handler", func() {
 			})
 
 			var pvcPreparationComplete bool
-			var pvcPreparationErr error
+			var errPVCPreparation error
 
 			JustBeforeEach(func() {
-				pvcPreparationComplete, pvcPreparationErr = vsHandler.TakePVCOwnership(testPVC.GetName())
+				pvcPreparationComplete, errPVCPreparation = vsHandler.TakePVCOwnership(testPVC.GetName())
 
 				// In all cases at this point we should expect that the PVC has ownership taken over by our owner VRG
 				Eventually(func() bool {
@@ -1804,7 +1804,7 @@ var _ = Describe("VolSync_Handler", func() {
 			})
 
 			It("Should complete successfully, return true and remove ACM annotations", func() {
-				Expect(pvcPreparationErr).ToNot(HaveOccurred())
+				Expect(errPVCPreparation).ToNot(HaveOccurred())
 				Expect(pvcPreparationComplete).To(BeTrue())
 
 				Eventually(func() int {

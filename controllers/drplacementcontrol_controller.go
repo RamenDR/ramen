@@ -61,7 +61,8 @@ const (
 	DestinationClusterAnnotationKey = "drplacementcontrol.ramendr.openshift.io/destination-cluster"
 )
 
-var InitialWaitTimeForDRPCPlacementRule = errorswrapper.New("Waiting for DRPC Placement to produces placement decision")
+var ErrInitialWaitTimeForDRPCPlacementRule = errorswrapper.
+	New("Waiting for DRPC Placement to produces placement decision")
 
 // ProgressCallback of function type
 type ProgressCallback func(string, string)
@@ -749,17 +750,17 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	d, err := r.createDRPCInstance(ctx, drPolicy, drpc, placementObj, logger)
-	if err != nil && !errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
+	if err != nil && !errorswrapper.Is(err, ErrInitialWaitTimeForDRPCPlacementRule) {
 		err2 := r.updateDRPCStatus(ctx, drpc, placementObj, logger)
 
 		return ctrl.Result{}, fmt.Errorf("failed to create DRPC instance (%w) and (%v)", err, err2)
 	}
 
-	if errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
+	if errorswrapper.Is(err, ErrInitialWaitTimeForDRPCPlacementRule) {
 		const initialWaitTime = 5
 
 		r.recordFailure(ctx, drpc, placementObj, "Waiting",
-			fmt.Sprintf("%v - wait time: %v", InitialWaitTimeForDRPCPlacementRule, initialWaitTime), logger)
+			fmt.Sprintf("%v - wait time: %v", ErrInitialWaitTimeForDRPCPlacementRule, initialWaitTime), logger)
 
 		return ctrl.Result{RequeueAfter: time.Second * initialWaitTime}, nil
 	}
@@ -1240,7 +1241,7 @@ func (r *DRPlacementControlReconciler) getDRPCPlacementRule(ctx context.Context,
 
 		// Make sure that we give time to the DRPC PlacementRule to run and produces decisions
 		if drpcPlRule != nil && len(drpcPlRule.Status.Decisions) == 0 {
-			return fmt.Errorf("%w", InitialWaitTimeForDRPCPlacementRule)
+			return fmt.Errorf("%w", ErrInitialWaitTimeForDRPCPlacementRule)
 		}
 	} else {
 		log.Info("Preferred cluster is configured. Dynamic selection is disabled",

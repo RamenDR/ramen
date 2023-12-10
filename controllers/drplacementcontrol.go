@@ -39,11 +39,9 @@ const (
 )
 
 var (
-	WaitForAppResourceRestoreToComplete error = errorswrapper.New("Waiting for App resources to be restored...")
-	WaitForVolSyncDestRepToComplete     error = errorswrapper.New("Waiting for VolSync RD to complete...")
-	WaitForSourceCluster                error = errorswrapper.New("Waiting for primary to provide Protected PVCs...")
-	WaitForVolSyncManifestWorkCreation  error = errorswrapper.New("Waiting for VolSync ManifestWork to be created...")
-	WaitForVolSyncRDInfoAvailibility    error = errorswrapper.New("Waiting for VolSync RDInfo...")
+	ErrWaitForAppResourceRestoreToComplete error = errorswrapper.New("Waiting for App resources to be restored...")
+	ErrWaitForSourceCluster                error = errorswrapper.New("Waiting for primary to provide Protected PVCs...")
+	ErrWaitForVolSyncManifestWorkCreation  error = errorswrapper.New("Waiting for VolSync ManifestWork to be created...")
 )
 
 type DRPCInstance struct {
@@ -1189,7 +1187,7 @@ func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace str
 		d.setProgression(rmn.ProgressionWaitingForResourceRestore)
 
 		// We just created MWs. Give it time until the App resources have been restored
-		return fmt.Errorf("%w)", WaitForAppResourceRestoreToComplete)
+		return fmt.Errorf("%w)", ErrWaitForAppResourceRestoreToComplete)
 	}
 
 	vrg, restored, err := d.ensureClusterDataRestored(targetCluster)
@@ -1207,7 +1205,7 @@ func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace str
 	if !restored || vrg.Status.State != rmn.PrimaryState {
 		d.setProgression(rmn.ProgressionWaitingForResourceRestore)
 
-		return fmt.Errorf("%w)", WaitForAppResourceRestoreToComplete)
+		return fmt.Errorf("%w)", ErrWaitForAppResourceRestoreToComplete)
 	}
 
 	err = d.updateUserPlacementRule(targetCluster, targetClusterNamespace)

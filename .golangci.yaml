@@ -191,4 +191,4 @@ linters:
     #  - forcetypeassert
     #  - promlinter
     #  - contextcheck
-    #  - errname
+    - errname
