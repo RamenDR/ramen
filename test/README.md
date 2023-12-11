@@ -628,6 +628,7 @@ simpler and faster to work with a minimal environment.
 - `kubevirt.yaml` - for testing kubevirt and cdi addons
 - `minio.yaml` - for testing `minio` deployment
 - `ocm.yaml` - for testing `ocm` deployment
+- `ocm-multihub.yaml` - for developing hub recovery infrastructure
 - `rook.yaml` - for testing `rook` deployment
 - `submariner.yaml` - for testing `submariner` deployment
 - `velero.yaml` - for testing `velero` deployment

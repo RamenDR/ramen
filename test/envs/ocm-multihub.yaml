@@ -1,0 +1,37 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Enviroment for developing hub recovery infrastructure.
+---
+name: ocm-multihub
+
+templates:
+  - name: hub-cluster
+    driver: $vm
+    container_runtime: containerd
+    network: $network
+    cpus: 2
+    memory: 4g
+    workers:
+      - addons:
+          - name: ocm-hub
+          - name: ocm-controller
+  - name: dr-cluster
+    driver: $vm
+    container_runtime: containerd
+    network: $network
+    cpus: 2
+    memory: 4g
+    workers:
+      - addons:
+          - name: ocm-cluster
+            args: [$name, hub1]
+profiles:
+  - name: hub1
+    template: hub-cluster
+  - name: hub2
+    template: hub-cluster
+  - name: dr1
+    template: dr-cluster
+  - name: dr2
+    template: dr-cluster
