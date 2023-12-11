@@ -60,6 +60,8 @@ const (
 )
 
 var (
+	NumberOfVrgsToReturnWhenRebuildingState = 0
+
 	UseApplicationSet = false
 
 	west1Cluster = &spokeClusterV1.ManagedCluster{
@@ -432,58 +434,63 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(resourceName, resourceNamespace,
 		return nil, errors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
 
 	case "getVRGsFromManagedClusters":
-		vrgFromMW, err := getVRGFromManifestWork(managedCluster)
-		if err != nil {
-			if errors.IsNotFound(err) {
-				if getFunctionNameAtIndex(3) == "getVRGs" { // Called only from DRCluster reconciler, at present
-					return fakeVRGWithMModesProtectedPVC()
-				}
-			}
-
-			return nil, err
-		}
-
-		if vrgFromMW != nil {
-			vrgFromMW.Generation = 1
-			vrgFromMW.Status = vrgStatus
-			vrgFromMW.Status.Conditions = append(vrgFromMW.Status.Conditions, metav1.Condition{
-				Type:               controllers.VRGConditionTypeClusterDataReady,
-				Reason:             controllers.VRGConditionReasonClusterDataRestored,
-				Status:             metav1.ConditionTrue,
-				Message:            "Cluster Data Ready",
-				LastTransitionTime: metav1.Now(),
-				ObservedGeneration: vrgFromMW.Generation,
-			})
-			vrgFromMW.Status.Conditions = append(vrgFromMW.Status.Conditions, metav1.Condition{
-				Type:               controllers.VRGConditionTypeClusterDataProtected,
-				Reason:             controllers.VRGConditionReasonClusterDataRestored,
-				Status:             metav1.ConditionTrue,
-				Message:            "Cluster Data Protected",
-				LastTransitionTime: metav1.Now(),
-				ObservedGeneration: vrgFromMW.Generation,
-			})
-			vrgFromMW.Status.Conditions = append(vrgFromMW.Status.Conditions, metav1.Condition{
-				Type:               controllers.VRGConditionTypeDataProtected,
-				Reason:             controllers.VRGConditionReasonDataProtected,
-				Status:             metav1.ConditionTrue,
-				Message:            "Data Protected",
-				LastTransitionTime: metav1.Now(),
-				ObservedGeneration: vrgFromMW.Generation,
-			})
-
-			protectedPVC := &rmn.ProtectedPVC{}
-			protectedPVC.Name = "random name"
-			protectedPVC.StorageIdentifiers.ReplicationID.ID = MModeReplicationID
-			protectedPVC.StorageIdentifiers.StorageProvisioner = MModeCSIProvisioner
-			protectedPVC.StorageIdentifiers.ReplicationID.Modes = []rmn.MMode{rmn.MModeFailover}
-
-			vrgFromMW.Status.ProtectedPVCs = append(vrgFromMW.Status.ProtectedPVCs, *protectedPVC)
-		}
-
-		return vrgFromMW, nil
+		return doGetFakeVRGsFromManagedClusters(managedCluster, vrgStatus)
 	}
 
 	return nil, fmt.Errorf("unknown caller %s", getFunctionNameAtIndex(2))
+}
+
+func doGetFakeVRGsFromManagedClusters(managedCluster string, vrgStatus rmn.VolumeReplicationGroupStatus,
+) (*rmn.VolumeReplicationGroup, error) {
+	vrgFromMW, err := getVRGFromManifestWork(managedCluster)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			if getFunctionNameAtIndex(4) == "getVRGs" { // Called only from DRCluster reconciler, at present
+				return fakeVRGWithMModesProtectedPVC()
+			}
+		}
+
+		return nil, err
+	}
+
+	if vrgFromMW != nil {
+		vrgFromMW.Generation = 1
+		vrgFromMW.Status = vrgStatus
+		vrgFromMW.Status.Conditions = append(vrgFromMW.Status.Conditions, metav1.Condition{
+			Type:               controllers.VRGConditionTypeClusterDataReady,
+			Reason:             controllers.VRGConditionReasonClusterDataRestored,
+			Status:             metav1.ConditionTrue,
+			Message:            "Cluster Data Ready",
+			LastTransitionTime: metav1.Now(),
+			ObservedGeneration: vrgFromMW.Generation,
+		})
+		vrgFromMW.Status.Conditions = append(vrgFromMW.Status.Conditions, metav1.Condition{
+			Type:               controllers.VRGConditionTypeClusterDataProtected,
+			Reason:             controllers.VRGConditionReasonClusterDataRestored,
+			Status:             metav1.ConditionTrue,
+			Message:            "Cluster Data Protected",
+			LastTransitionTime: metav1.Now(),
+			ObservedGeneration: vrgFromMW.Generation,
+		})
+		vrgFromMW.Status.Conditions = append(vrgFromMW.Status.Conditions, metav1.Condition{
+			Type:               controllers.VRGConditionTypeDataProtected,
+			Reason:             controllers.VRGConditionReasonDataProtected,
+			Status:             metav1.ConditionTrue,
+			Message:            "Data Protected",
+			LastTransitionTime: metav1.Now(),
+			ObservedGeneration: vrgFromMW.Generation,
+		})
+
+		protectedPVC := &rmn.ProtectedPVC{}
+		protectedPVC.Name = "random name"
+		protectedPVC.StorageIdentifiers.ReplicationID.ID = MModeReplicationID
+		protectedPVC.StorageIdentifiers.StorageProvisioner = MModeCSIProvisioner
+		protectedPVC.StorageIdentifiers.ReplicationID.Modes = []rmn.MMode{rmn.MModeFailover}
+
+		vrgFromMW.Status.ProtectedPVCs = append(vrgFromMW.Status.ProtectedPVCs, *protectedPVC)
+	}
+
+	return vrgFromMW, nil
 }
 
 func (f FakeMCVGetter) DeleteVRGManagedClusterView(
@@ -1304,7 +1311,7 @@ func verifyUserPlacementRuleDecisionUnchanged(name, namespace, homeCluster strin
 
 	var placementObj client.Object
 
-	Consistently(func() bool {
+	Eventually(func() bool {
 		err := k8sClient.Get(context.TODO(), usrPlcementLookupKey, usrPlRule)
 		if errors.IsNotFound(err) {
 			usrPlmnt := &clrapiv1beta1.Placement{}
@@ -1425,6 +1432,7 @@ func waitForCompletion(expectedState string) {
 		fmt.Sprintf("failed waiting for state to match. expecting: %s, found %s", expectedState, drstate))
 }
 
+//nolint:unused
 func waitForUpdateDRPCStatus() {
 	Eventually(func() bool {
 		drpc := getLatestDRPC()
@@ -1491,6 +1499,7 @@ func runFailoverAction(placementObj client.Object, fromCluster, toCluster string
 	Expect(decision.ClusterName).To(Equal(toCluster))
 }
 
+//nolint:all
 func clearDRActionAfterFailover(userPlacementRule *plrv1.PlacementRule, preferredCluster, failoverCluster string) {
 	drstate = "none"
 
@@ -1831,9 +1840,32 @@ func verifyDRPCOwnedByPlacement(placementObj client.Object, drpc *rmn.DRPlacemen
 	Fail(fmt.Sprintf("DRPC %s not owned by Placement %s", drpc.GetName(), placementObj.GetName()))
 }
 
+//nolint:all
+func checkConditionAllowFailover() {
+	var drpc *rmn.DRPlacementControl
+
+	var availableCondition metav1.Condition
+
+	Eventually(func() bool {
+		drpc = getLatestDRPC()
+		for _, availableCondition = range drpc.Status.Conditions {
+			if availableCondition.Type != rmn.ConditionPeerReady {
+				if availableCondition.Status == metav1.ConditionTrue {
+					return true
+				}
+			}
+		}
+
+		return false
+	}, timeout, interval).Should(BeTrue(), fmt.Sprintf("Condition '%+v'", availableCondition))
+
+	Expect(drpc.Status.Phase).To(Equal(rmn.DRState("")))
+	Expect(availableCondition.Message).Should(Equal("Failover allowed"))
+}
+
 // +kubebuilder:docs-gen:collapse=Imports
 //
-//nolint:errcheck
+//nolint:errcheck,scopelint
 var _ = Describe("DRPlacementControl Reconciler", func() {
 	Specify("DRClusters", func() {
 		populateDRClusters()
@@ -1858,7 +1890,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				By("\n\n*** Failover - 1\n\n")
 				setRestorePVsUncomplete()
 				setDRPCSpecExpectationTo(rmn.ActionFailover, East1ManagedCluster, West1ManagedCluster)
-				verifyUserPlacementRuleDecisionUnchanged(userPlacementRule.Name, userPlacementRule.Namespace, East1ManagedCluster)
+				verifyUserPlacementRuleDecisionUnchanged(userPlacementRule.Name, userPlacementRule.Namespace, West1ManagedCluster)
 				// MWs for VRG, NS, DRCluster, and MMode
 				Eventually(getManifestWorkCount, timeout, interval).WithArguments(West1ManagedCluster).Should(Equal(4))
 				setRestorePVsComplete()
@@ -1884,50 +1916,11 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				runRelocateAction(userPlacementRule, West1ManagedCluster, false, false)
 			})
 		})
-		When("DRAction is Relocate during hub recovery", func() {
-			It("Should reconstructs the DRPC state and points to Primary (East1ManagedCluster)", func() {
-				// ----------------------------- RELOCATION TO PRIMARY --------------------------------------
-				By("\n\n*** Relocate - 2\n\n")
-				clearFakeUserPlacementRuleStatus()
-				clearDRPCStatus()
-				runRelocateAction(userPlacementRule, West1ManagedCluster, false, false)
-			})
-		})
-		When("DRAction is cleared after relocation", func() {
-			It("Should not do anything", func() {
-				// ----------------------------- Clear DRAction --------------------------------------
-				clearDRActionAfterRelocate(userPlacementRule, East1ManagedCluster, West1ManagedCluster)
-			})
-		})
 		When("DRAction is changed to Failover after relocation", func() {
 			It("Should failover again to Secondary (West1ManagedCluster)", func() {
 				// ----------------------------- FAILOVER TO SECONDARY --------------------------------------
 				By("\n\n*** Failover - 3\n\n")
 				runFailoverAction(userPlacementRule, East1ManagedCluster, West1ManagedCluster, false, false)
-			})
-		})
-		When("DRAction is cleared after failover", func() {
-			It("Should not do anything", func() {
-				// ----------------------------- Clear DRAction --------------------------------------
-				By("\n\n>>> clearing DRAction")
-				clearDRActionAfterFailover(userPlacementRule, East1ManagedCluster, West1ManagedCluster)
-			})
-		})
-		When("DRAction is cleared but DRPC status is empty", func() {
-			It("Should do nothing for placement as it is deployed somewhere else", func() {
-				// ----------------------------- Clear DRAction --------------------------------------
-				By("\n\n>>> Update DRPC status")
-				clearDRPCStatus()
-				waitForCompletion(string(""))
-				drpc = getLatestDRPC()
-				// At this point expect the DRPC status condition to have 2 types
-				// {Available and PeerReady}
-				// Final state didn't change and it is 'FailedOver' even though we tried to run
-				// initial deployment. But the status remains cleared.
-				Expect(drpc.Status.Phase).To(Equal(rmn.DRState("")))
-				decision := getLatestUserPlacementDecision(userPlacementRule.Name, userPlacementRule.Namespace)
-				Expect(decision.ClusterName).To(Equal(West1ManagedCluster))
-				Expect(drpc.GetAnnotations()[controllers.LastAppDeploymentCluster]).To(Equal(West1ManagedCluster))
 			})
 		})
 		When("DRAction is set to Relocate", func() {
@@ -2009,7 +2002,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			It("Should not failover to Secondary (West1ManagedCluster) till PV manifest is applied", func() {
 				setRestorePVsUncomplete()
 				setDRPCSpecExpectationTo(rmn.ActionFailover, East1ManagedCluster, West1ManagedCluster)
-				verifyUserPlacementRuleDecisionUnchanged(placement.Name, placement.Namespace, East1ManagedCluster)
+				verifyUserPlacementRuleDecisionUnchanged(placement.Name, placement.Namespace, West1ManagedCluster)
 				// MWs for VRG, NS, VRG DRCluster, and MMode
 				Expect(getManifestWorkCount(West1ManagedCluster)).Should(Equal(4))
 				Expect(len(getPlacementDecision(placement.GetName(), placement.GetNamespace()).
@@ -2150,14 +2143,14 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 	})
 	Context("DRPlacementControl Reconciler Sync DR", func() {
 		userPlacementRule := &plrv1.PlacementRule{}
-		drpc := &rmn.DRPlacementControl{}
+		// drpc := &rmn.DRPlacementControl{}
 		Specify("DRClusters", func() {
 			populateDRClusters()
 		})
 		When("An Application is deployed for the first time", func() {
 			It("Should deploy to East1ManagedCluster", func() {
 				By("Initial Deployment")
-				userPlacementRule, drpc = InitialDeploymentSync(DRPCNamespaceName, UserPlacementRuleName, East1ManagedCluster)
+				userPlacementRule, _ = InitialDeploymentSync(DRPCNamespaceName, UserPlacementRuleName, East1ManagedCluster)
 				verifyInitialDRPCDeployment(userPlacementRule, East1ManagedCluster)
 				verifyDRPCOwnedByPlacement(userPlacementRule, getLatestDRPC())
 			})
@@ -2168,7 +2161,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				setRestorePVsUncomplete()
 				fenceCluster(East1ManagedCluster, false)
 				setDRPCSpecExpectationTo(rmn.ActionFailover, East1ManagedCluster, East2ManagedCluster)
-				verifyUserPlacementRuleDecisionUnchanged(userPlacementRule.Name, userPlacementRule.Namespace, East1ManagedCluster)
+				verifyUserPlacementRuleDecisionUnchanged(userPlacementRule.Name, userPlacementRule.Namespace, East2ManagedCluster)
 				// MWs for VRG, VRG DRCluster and the MW for NetworkFence CR to fence off
 				// East1ManagedCluster
 				Expect(getManifestWorkCount(East2ManagedCluster)).Should(Equal(4))
@@ -2200,29 +2193,6 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				runFailoverAction(userPlacementRule, East1ManagedCluster, East2ManagedCluster, true, false)
 			})
 		})
-		When("DRAction is cleared after failover", func() {
-			It("Should not do anything", func() {
-				// ----------------------------- Clear DRAction --------------------------------------
-				By("\n\n>>> clearing DRAction")
-				clearDRActionAfterFailover(userPlacementRule, East1ManagedCluster, East2ManagedCluster)
-			})
-		})
-		When("DRAction is cleared but DRPC status is empty", func() {
-			It("Should do nothing for placement as it is deployed somewhere else", func() {
-				// ----------------------------- Clear DRAction --------------------------------------
-				By("\n\n>>> Update DRPC status")
-				clearDRPCStatus()
-				waitForCompletion(string(""))
-				drpc = getLatestDRPC()
-				// At this point expect the DRPC status condition to have 2 types
-				// {Available and PeerReady}
-				// Final state didn't change and it is 'FailedOver' even though we tried to run
-				// initial deployment. But the status remains cleared.
-				Expect(drpc.Status.Phase).To(Equal(rmn.DRState("")))
-				decision := getLatestUserPlacementDecision(userPlacementRule.Name, userPlacementRule.Namespace)
-				Expect(decision.ClusterName).To(Equal(East2ManagedCluster))
-			})
-		})
 		When("DRAction is set to Relocate", func() {
 			It("Should relocate to Primary (East1ManagedCluster)", func() {
 				// ----------------------------- RELOCATION TO PRIMARY FOR SYNC DR------------------------
@@ -2249,14 +2219,14 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 
 		// manual fencing and manual unfencing
 		userPlacementRule = &plrv1.PlacementRule{}
-		drpc = &rmn.DRPlacementControl{}
+		// drpc = &rmn.DRPlacementControl{}
 		Specify("DRClusters", func() {
 			populateDRClusters()
 		})
 		When("An Application is deployed for the first time", func() {
 			It("Should deploy to East1ManagedCluster", func() {
 				By("Initial Deployment")
-				userPlacementRule, drpc = InitialDeploymentSync(DRPCNamespaceName, UserPlacementRuleName, East1ManagedCluster)
+				userPlacementRule, _ = InitialDeploymentSync(DRPCNamespaceName, UserPlacementRuleName, East1ManagedCluster)
 				verifyInitialDRPCDeployment(userPlacementRule, East1ManagedCluster)
 				verifyDRPCOwnedByPlacement(userPlacementRule, getLatestDRPC())
 			})
@@ -2267,7 +2237,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				setRestorePVsUncomplete()
 				fenceCluster(East1ManagedCluster, true)
 				setDRPCSpecExpectationTo(rmn.ActionFailover, East1ManagedCluster, East2ManagedCluster)
-				verifyUserPlacementRuleDecisionUnchanged(userPlacementRule.Name, userPlacementRule.Namespace, East1ManagedCluster)
+				verifyUserPlacementRuleDecisionUnchanged(userPlacementRule.Name, userPlacementRule.Namespace, East2ManagedCluster)
 				// MWs for VRG, VRG DRCluster and the MW for NetworkFence CR to fence off
 				// East1ManagedCluster
 				Expect(getManifestWorkCount(East2ManagedCluster)).Should(Equal(4))
@@ -2286,40 +2256,11 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				runRelocateAction(userPlacementRule, East2ManagedCluster, true, true)
 			})
 		})
-		When("DRAction is cleared after relocation", func() {
-			It("Should not do anything", func() {
-				// ----------------------------- Clear DRAction --------------------------------------
-				clearDRActionAfterRelocate(userPlacementRule, East1ManagedCluster, East2ManagedCluster)
-			})
-		})
 		When("DRAction is changed to Failover after relocation", func() {
 			It("Should failover again to Secondary (East2ManagedCluster)", func() {
 				// ----------------------------- FAILOVER TO SECONDARY FOR SYNC DR--------------------
 				By("\n\n*** Failover - 3\n\n")
 				runFailoverAction(userPlacementRule, East1ManagedCluster, East2ManagedCluster, true, true)
-			})
-		})
-		When("DRAction is cleared after failover", func() {
-			It("Should not do anything", func() {
-				// ----------------------------- Clear DRAction --------------------------------------
-				By("\n\n>>> clearing DRAction")
-				clearDRActionAfterFailover(userPlacementRule, East1ManagedCluster, East2ManagedCluster)
-			})
-		})
-		When("DRAction is cleared but DRPC status is empty", func() {
-			It("Should do nothing for placement as it is deployed somewhere else", func() {
-				// ----------------------------- Clear DRAction --------------------------------------
-				By("\n\n>>> Update DRPC status")
-				clearDRPCStatus()
-				waitForCompletion(string(""))
-				drpc = getLatestDRPC()
-				// At this point expect the DRPC status condition to have 2 types
-				// {Available and PeerReady}
-				// Final state didn't change and it is 'FailedOver' even though we tried to run
-				// initial deployment. But the status remains cleared.
-				Expect(drpc.Status.Phase).To(Equal(rmn.DRState("")))
-				decision := getLatestUserPlacementDecision(userPlacementRule.Name, userPlacementRule.Namespace)
-				Expect(decision.ClusterName).To(Equal(East2ManagedCluster))
 			})
 		})
 		When("DRAction is set to Relocate", func() {

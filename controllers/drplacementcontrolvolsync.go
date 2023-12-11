@@ -308,7 +308,7 @@ func (d *DRPCInstance) createVolSyncDestManifestWork(clusterToSkip string) error
 		annotations[DRPCNameAnnotation] = d.instance.Name
 		annotations[DRPCNamespaceAnnotation] = d.instance.Namespace
 
-		vrg := d.generateVRG(rmn.Secondary)
+		vrg := d.generateVRG(dstCluster, rmn.Secondary)
 		if err := d.mwu.CreateOrUpdateVRGManifestWork(
 			d.instance.Name, d.vrgNamespace,
 			dstCluster, vrg, annotations); err != nil {

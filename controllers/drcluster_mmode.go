@@ -115,7 +115,7 @@ func (u *drclusterInstance) getVRGs(drpcCollection DRPCAndPolicy) (map[string]*r
 		return nil, err
 	}
 
-	vrgs, failedToQueryCluster, err := getVRGsFromManagedClusters(
+	vrgs, _, failedToQueryCluster, err := getVRGsFromManagedClusters(
 		u.reconciler.MCVGetter,
 		drpcCollection.drpc,
 		drClusters,
