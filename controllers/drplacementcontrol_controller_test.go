@@ -187,7 +187,7 @@ func getSyncDRPolicy() *rmn.DRPolicy {
 var drstate string
 
 // FakeProgressCallback of function type
-func FakeProgressCallback(namespace string, state string) {
+func FakeProgressCallback(_ string, state string) {
 	drstate = state
 }
 
@@ -216,7 +216,7 @@ func getFunctionNameAtIndex(idx int) string {
 // a nil mcv back in case of success
 func (f FakeMCVGetter) GetMModeFromManagedCluster(
 	resourceName, managedCluster string,
-	annotations map[string]string,
+	_ map[string]string,
 ) (*rmn.MaintenanceMode, error) {
 	mModeMCV := &viewv1beta1.ManagedClusterView{}
 
@@ -317,7 +317,7 @@ func (f FakeMCVGetter) GetResource(mcv *viewv1beta1.ManagedClusterView, resource
 // DeleteManagedClusterView: This fake function would eventually delete the MMode MCV that is created
 // by the call to GetMModeFromManagedCluster. It is generic enough to delete any MCV that was created as well
 // TODO: Implementation is mostly the same as the one in ManagedClusterViewGetterImpl
-func (f FakeMCVGetter) DeleteManagedClusterView(clusterName, mcvName string, logger logr.Logger) error {
+func (f FakeMCVGetter) DeleteManagedClusterView(clusterName, mcvName string, _ logr.Logger) error {
 	mcv := &viewv1beta1.ManagedClusterView{}
 
 	err := f.Get(context.TODO(), types.NamespacedName{Name: mcvName, Namespace: clusterName}, mcv)
@@ -333,7 +333,7 @@ func (f FakeMCVGetter) DeleteManagedClusterView(clusterName, mcvName string, log
 }
 
 func (f FakeMCVGetter) GetNamespaceFromManagedCluster(
-	resourceName, managedCluster, namespaceString string, annotations map[string]string,
+	resourceName, managedCluster, namespaceString string, _ map[string]string,
 ) (*corev1.Namespace, error) {
 	appNamespaceObj := &corev1.Namespace{}
 
@@ -389,8 +389,8 @@ func resetClusterDown() {
 }
 
 //nolint:funlen,cyclop,gocognit
-func (f FakeMCVGetter) GetVRGFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
-	annnotations map[string]string,
+func (FakeMCVGetter) GetVRGFromManagedCluster(_, resourceNamespace, managedCluster string,
+	_ map[string]string,
 ) (*rmn.VolumeReplicationGroup, error) {
 	conType := controllers.VRGConditionTypeDataReady
 	reason := controllers.VRGConditionReasonReplicating
@@ -516,13 +516,13 @@ func doGetFakeVRGsFromManagedClusters(managedCluster string, vrgNamespace string
 }
 
 func (f FakeMCVGetter) DeleteVRGManagedClusterView(
-	resourceName, resourceNamespace, clusterName, resourceType string,
+	_, _, _, _ string,
 ) error {
 	return nil
 }
 
 func (f FakeMCVGetter) DeleteNamespaceManagedClusterView(
-	resourceName, resourceNamespace, clusterName, resourceType string,
+	_, _, _, _ string,
 ) error {
 	return nil
 }

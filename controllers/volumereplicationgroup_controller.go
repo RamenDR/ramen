@@ -114,7 +114,7 @@ type objectToReconcileRequestsMapper struct {
 	log    logr.Logger
 }
 
-func (r *VolumeReplicationGroupReconciler) pvcMapFunc(ctx context.Context, obj client.Object) []reconcile.Request {
+func (r *VolumeReplicationGroupReconciler) pvcMapFunc(_ context.Context, obj client.Object) []reconcile.Request {
 	log := ctrl.Log.WithName("pvcmap").WithName("VolumeReplicationGroup")
 
 	pvc, ok := obj.(*corev1.PersistentVolumeClaim)
@@ -129,7 +129,7 @@ func (r *VolumeReplicationGroupReconciler) pvcMapFunc(ctx context.Context, obj c
 }
 
 func (r *VolumeReplicationGroupReconciler) configMapFun(
-	ctx context.Context, configmap client.Object,
+	_ context.Context, configmap client.Object,
 ) []reconcile.Request {
 	log := ctrl.Log.WithName("configmap").WithName("VolumeReplicationGroup")
 

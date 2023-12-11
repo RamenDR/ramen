@@ -107,7 +107,7 @@ type HookSpec struct {
 
 func RequestProcessingErrorCreate(s string) RequestProcessingError { return RequestProcessingError{s} }
 func (e RequestProcessingError) Error() string                     { return e.string }
-func (RequestProcessingError) Is(err error) bool                   { return true }
+func (RequestProcessingError) Is(_ error) bool                     { return true }
 
 type RequestsManager interface {
 	ProtectsPath() string

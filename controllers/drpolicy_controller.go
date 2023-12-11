@@ -414,7 +414,7 @@ func (r *DRPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *DRPolicyReconciler) configMapMapFunc(ctx context.Context, configMap client.Object) []reconcile.Request {
+func (r *DRPolicyReconciler) configMapMapFunc(_ context.Context, configMap client.Object) []reconcile.Request {
 	if configMap.GetName() != HubOperatorConfigMapName || configMap.GetNamespace() != NamespaceName() {
 		return []reconcile.Request{}
 	}
@@ -442,7 +442,7 @@ func (r *DRPolicyReconciler) configMapMapFunc(ctx context.Context, configMap cli
 	return requests
 }
 
-func (r *DRPolicyReconciler) secretMapFunc(ctx context.Context, secret client.Object) []reconcile.Request {
+func (r *DRPolicyReconciler) secretMapFunc(_ context.Context, secret client.Object) []reconcile.Request {
 	if secret.GetNamespace() != NamespaceName() {
 		return []reconcile.Request{}
 	}
@@ -461,7 +461,7 @@ func (r *DRPolicyReconciler) secretMapFunc(ctx context.Context, secret client.Ob
 	return requests
 }
 
-func (r *DRPolicyReconciler) drClusterMapFunc(ctx context.Context, drcluster client.Object) []reconcile.Request {
+func (r *DRPolicyReconciler) drClusterMapFunc(_ context.Context, drcluster client.Object) []reconcile.Request {
 	drpolicies := &ramen.DRPolicyList{}
 	if err := r.Client.List(context.TODO(), drpolicies); err != nil {
 		return []reconcile.Request{}

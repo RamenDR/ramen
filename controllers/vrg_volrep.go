@@ -661,7 +661,7 @@ func (v *VRGInstance) UploadPVAndPVCtoS3(s3ProfileName string, objectStore Objec
 }
 
 func (v *VRGInstance) UploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim,
-	log logr.Logger,
+	_ logr.Logger,
 ) ([]string, error) {
 	succeededProfiles := []string{}
 	// Upload the PV to all the S3 profiles in the VRG spec

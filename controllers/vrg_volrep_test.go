@@ -1788,14 +1788,14 @@ func pvcUnprotectedVerify(
 type pvcPreDeleteVerify func(ramendrv1alpha1.VolumeReplicationGroup, types.NamespacedName, string)
 
 func vrgPvcStatusAbsentVerify(
-	vrg ramendrv1alpha1.VolumeReplicationGroup, pvcNamespacedName types.NamespacedName, pvName string,
+	vrg ramendrv1alpha1.VolumeReplicationGroup, pvcNamespacedName types.NamespacedName, _ string,
 ) {
 	By("not storing PVC in VRG's status")
 	Expect(vrgController.FindProtectedPVC(&vrg, pvcNamespacedName.Namespace, pvcNamespacedName.Name)).To(BeNil())
 }
 
 func pvcClusterDataProtectedFalseVerify(
-	vrg ramendrv1alpha1.VolumeReplicationGroup, pvcNamespacedName types.NamespacedName, pvName string,
+	vrg ramendrv1alpha1.VolumeReplicationGroup, pvcNamespacedName types.NamespacedName, _ string,
 ) {
 	vrgPvcStatus := vrgPvcStatusGet(vrg, pvcNamespacedName)
 
@@ -1835,7 +1835,7 @@ func pvcClusterDataProtectedStatusVerify(
 
 type pvcPostDeleteVerify func(types.NamespacedName, string)
 
-func vrAndPvcDeletionTimestampsRecentVerify(pvcNamespacedName types.NamespacedName, pvName string) {
+func vrAndPvcDeletionTimestampsRecentVerify(pvcNamespacedName types.NamespacedName, _ string) {
 	vrDeletionTimestampRecentVerify(pvcNamespacedName)
 	pvcDeletionTimestampRecentVerify(pvcNamespacedName)
 }

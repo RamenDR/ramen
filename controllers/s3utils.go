@@ -115,7 +115,7 @@ type s3ObjectStoreGetter struct{}
 // secret is not configured, or if client session creation fails.
 func (s3ObjectStoreGetter) ObjectStore(ctx context.Context,
 	r client.Reader, s3ProfileName string,
-	callerTag string, log logr.Logger,
+	callerTag string, _ logr.Logger,
 ) (ObjectStorer, ramen.S3StoreProfile, error) {
 	s3StoreProfile, err := GetRamenConfigS3StoreProfile(ctx, r, s3ProfileName)
 	if err != nil {

@@ -220,7 +220,7 @@ func recipesWatch(b *builder.Builder, m objectToReconcileRequestsMapper) *builde
 }
 
 func (m objectToReconcileRequestsMapper) recipeToVrgReconcileRequestsMapper(
-	ctx context.Context,
+	_ context.Context,
 	recipe client.Object,
 ) []reconcile.Request {
 	recipeNamespacedName := types.NamespacedName{

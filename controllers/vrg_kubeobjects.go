@@ -168,8 +168,8 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 }
 
 func kubeObjectsCaptureStartConditionallySecondary(
-	v *VRGInstance, result *ctrl.Result,
-	captureStartGeneration int64, captureStartTimeSince, captureStartInterval time.Duration,
+	v *VRGInstance, _ *ctrl.Result,
+	captureStartGeneration int64, _, _ time.Duration,
 	captureStart func(),
 ) {
 	generation := v.instance.Generation
@@ -187,7 +187,7 @@ func kubeObjectsCaptureStartConditionallySecondary(
 
 func kubeObjectsCaptureStartConditionallyPrimary(
 	v *VRGInstance, result *ctrl.Result,
-	captureStartGeneration int64, captureStartTimeSince, captureStartInterval time.Duration,
+	_ int64, captureStartTimeSince, captureStartInterval time.Duration,
 	captureStart func(),
 ) {
 	if delay := captureStartInterval - captureStartTimeSince; delay > 0 {
