@@ -20,6 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -57,6 +58,8 @@ const (
 	// Maximum retries to create PlacementDecisionName with an increasing index in case of conflicts
 	// with existing PlacementDecision resources
 	MaxPlacementDecisionConflictCount = 5
+
+	DestinationClusterAnnotationKey = "drplacementcontrol.ramendr.openshift.io/destination-cluster"
 )
 
 var InitialWaitTimeForDRPCPlacementRule = errorswrapper.New("Waiting for DRPC Placement to produces placement decision")
@@ -587,7 +590,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 //
-//nolint:cyclop,funlen,gocognit
+//nolint:funlen,gocognit,gocyclo,cyclop
 func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.Log.WithValues("DRPC", req.NamespacedName, "rid", uuid.New())
 
@@ -649,6 +652,16 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if updated {
 		// Reload before proceeding
 		return ctrl.Result{Requeue: true}, nil
+	}
+
+	// Rebuild DRPC state if needed
+	requeue, err := r.ensureDRPCStatusConsistency(ctx, drpc, drPolicy, placementObj, logger)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if requeue {
+		return ctrl.Result{Requeue: true}, r.updateDRPCStatus(ctx, drpc, placementObj, logger)
 	}
 
 	d, err := r.createDRPCInstance(ctx, drPolicy, drpc, placementObj, logger)
@@ -775,7 +788,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 		return nil, err
 	}
 
-	vrgs, err := updateVRGsFromManagedClusters(r.MCVGetter, drpc, drClusters, vrgNamespace, log)
+	vrgs, _, _, err := getVRGsFromManagedClusters(r.MCVGetter, drpc, drClusters, vrgNamespace, log)
 	if err != nil {
 		return nil, err
 	}
@@ -1070,7 +1083,7 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 	}
 
 	// Verify VRGs have been deleted
-	vrgs, _, err := getVRGsFromManagedClusters(r.MCVGetter, drpc, drClusters, vrgNamespace, log)
+	vrgs, _, _, err := getVRGsFromManagedClusters(r.MCVGetter, drpc, drClusters, vrgNamespace, log)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve VRGs. We'll retry later. Error (%w)", err)
 	}
@@ -1425,30 +1438,13 @@ func (r *DRPlacementControlReconciler) clonePlacementRule(ctx context.Context,
 	return clonedPlRule, nil
 }
 
-func updateVRGsFromManagedClusters(mcvGetter rmnutil.ManagedClusterViewGetter, drpc *rmn.DRPlacementControl,
-	drClusters []rmn.DRCluster, vrgNamespace string, log logr.Logger,
-) (map[string]*rmn.VolumeReplicationGroup, error) {
-	vrgs, failedClusterToQuery, err := getVRGsFromManagedClusters(mcvGetter, drpc, drClusters, vrgNamespace, log)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(vrgs) == 0 && failedClusterToQuery != drpc.Spec.FailoverCluster {
-		condition := findCondition(drpc.Status.Conditions, rmn.ConditionPeerReady)
-		if condition == nil {
-			addOrUpdateCondition(&drpc.Status.Conditions, rmn.ConditionAvailable,
-				drpc.Generation, metav1.ConditionTrue, rmn.ReasonSuccess, "Forcing Available")
-			addOrUpdateCondition(&drpc.Status.Conditions, rmn.ConditionPeerReady, drpc.Generation,
-				metav1.ConditionTrue, rmn.ReasonSuccess, "Forcing Ready")
-		}
-	}
-
-	return vrgs, nil
-}
-
-func getVRGsFromManagedClusters(mcvGetter rmnutil.ManagedClusterViewGetter, drpc *rmn.DRPlacementControl,
-	drClusters []rmn.DRCluster, vrgNamespace string, log logr.Logger,
-) (map[string]*rmn.VolumeReplicationGroup, string, error) {
+func getVRGsFromManagedClusters(
+	mcvGetter rmnutil.ManagedClusterViewGetter,
+	drpc *rmn.DRPlacementControl,
+	drClusters []rmn.DRCluster,
+	vrgNamespace string,
+	log logr.Logger,
+) (map[string]*rmn.VolumeReplicationGroup, int, string, error) {
 	vrgs := map[string]*rmn.VolumeReplicationGroup{}
 
 	annotations := make(map[string]string)
@@ -1456,9 +1452,9 @@ func getVRGsFromManagedClusters(mcvGetter rmnutil.ManagedClusterViewGetter, drpc
 	annotations[DRPCNameAnnotation] = drpc.Name
 	annotations[DRPCNamespaceAnnotation] = drpc.Namespace
 
-	var failedClusterToQuery string
-
 	var clustersQueriedSuccessfully int
+
+	var failedCluster string
 
 	for i := range drClusters {
 		drCluster := &drClusters[i]
@@ -1473,9 +1469,9 @@ func getVRGsFromManagedClusters(mcvGetter rmnutil.ManagedClusterViewGetter, drpc
 				continue
 			}
 
-			failedClusterToQuery = drCluster.Name
+			failedCluster = drCluster.Name
 
-			log.Info(fmt.Sprintf("failed to retrieve VRG from %s. err (%v)", drCluster.Name, err))
+			log.Info(fmt.Sprintf("failed to retrieve VRG from %s. err (%v).", drCluster.Name, err))
 
 			continue
 		}
@@ -1495,14 +1491,14 @@ func getVRGsFromManagedClusters(mcvGetter rmnutil.ManagedClusterViewGetter, drpc
 
 	// We are done if we successfully queried all drClusters
 	if clustersQueriedSuccessfully == len(drClusters) {
-		return vrgs, "", nil
+		return vrgs, clustersQueriedSuccessfully, "", nil
 	}
 
 	if clustersQueriedSuccessfully == 0 {
-		return vrgs, "", fmt.Errorf("failed to retrieve VRGs from clusters")
+		return vrgs, 0, "", fmt.Errorf("failed to retrieve VRGs from clusters")
 	}
 
-	return vrgs, failedClusterToQuery, nil
+	return vrgs, clustersQueriedSuccessfully, failedCluster, nil
 }
 
 func (r *DRPlacementControlReconciler) deleteClonedPlacementRule(ctx context.Context,
@@ -1545,6 +1541,10 @@ func (r *DRPlacementControlReconciler) addClusterPeersToPlacementRule(
 // DRPC status is updated at least once every StatusCheckDelay in order to refresh
 // the VRG status.
 func (d *DRPCInstance) statusUpdateTimeElapsed() bool {
+	if d.instance.Status.LastUpdateTime == nil {
+		return false
+	}
+
 	return d.instance.Status.LastUpdateTime.Add(StatusCheckDelay).Before(time.Now())
 }
 
@@ -2050,4 +2050,260 @@ func ensureDRPCConditionsInited(conditions *[]metav1.Condition, observedGenerati
 		LastTransitionTime: time,
 		Message:            message,
 	})
+}
+
+func AvailableS3Profiles(drClusters []rmn.DRCluster) []string {
+	profiles := sets.New[string]()
+
+	for i := range drClusters {
+		drCluster := &drClusters[i]
+		if drClusterIsDeleted(drCluster) {
+			continue
+		}
+
+		profiles.Insert(drCluster.Spec.S3ProfileName)
+	}
+
+	return sets.List(profiles)
+}
+
+type Progress int
+
+const (
+	Continue      = 1
+	AllowFailover = 2
+	Stop          = 3
+)
+
+func (r *DRPlacementControlReconciler) ensureDRPCStatusConsistency(
+	ctx context.Context,
+	drpc *rmn.DRPlacementControl,
+	drPolicy *rmn.DRPolicy,
+	placementObj client.Object,
+	log logr.Logger,
+) (bool, error) {
+	requeue := true
+
+	// This will always be false the first time the DRPC resource is first created OR after hub recovery
+	if drpc.Status.Phase != "" {
+		return !requeue, nil
+	}
+
+	dstCluster := drpc.Spec.PreferredCluster
+	if drpc.Spec.Action == rmn.ActionFailover {
+		dstCluster = drpc.Spec.FailoverCluster
+	}
+
+	progress, err := r.determineDRPCState(ctx, drpc, drPolicy, placementObj, dstCluster, log)
+	if err != nil {
+		return requeue, err
+	}
+
+	switch progress {
+	case Continue:
+		return !requeue, nil
+	case AllowFailover:
+		updateDRPCProgression(drpc, rmn.ProgressionActionPaused, log)
+		addOrUpdateCondition(&drpc.Status.Conditions, rmn.ConditionAvailable,
+			drpc.Generation, metav1.ConditionTrue, rmn.ReasonSuccess, "Failover allowed")
+		addOrUpdateCondition(&drpc.Status.Conditions, rmn.ConditionPeerReady, drpc.Generation,
+			metav1.ConditionTrue, rmn.ReasonSuccess, "Failover allowed")
+
+		return requeue, nil
+	default:
+		msg := "Operation Paused - User Intervention Required."
+
+		log.Info(fmt.Sprintf("err:%v - msg:%s", err, msg))
+		updateDRPCProgression(drpc, rmn.ProgressionActionPaused, log)
+		addOrUpdateCondition(&drpc.Status.Conditions, rmn.ConditionAvailable,
+			drpc.Generation, metav1.ConditionFalse, rmn.ReasonPaused, msg)
+		addOrUpdateCondition(&drpc.Status.Conditions, rmn.ConditionPeerReady, drpc.Generation,
+			metav1.ConditionFalse, rmn.ReasonPaused, msg)
+
+		return requeue, nil
+	}
+}
+
+// determineDRPCState runs the following algorithm
+// 1. Stop Condition for Both Failed Queries:
+//    If attempts to query 2 clusters result in failure for both, the process is halted.
+
+// 2. Initial Deployment without VRGs:
+//    If 2 clusters are successfully queried, and no VRGs are found, proceed with the
+//    initial deployment.
+
+// 3. Handling Failures with S3 Store Check:
+//    - If 2 clusters are queried, 1 fails, and 0 VRGs are found, perform the following checks:
+//       - If the VRG is found in the S3 store, ensure that the DRPC action matches the VRG action.
+//       If not, stop until the action is corrected, allowing failover if necessary (set PeerReady).
+//       - If the VRG is not found in the S3 store and the failed cluster is not the destination
+//       cluster, continue with the initial deployment.
+
+// 4. Verification and Failover for VRGs on Failover Cluster:
+//    If 2 clusters are queried, 1 fails, and 1 VRG is found on the failover cluster, check
+//    the action:
+//       - If the actions don't match, stop until corrected by the user.
+//       - If they match, also stop but allow failover if the VRG in-hand is a secondary.
+//       Otherwise, continue.
+
+// 5. Handling VRGs on Destination Cluster:
+//    If 2 clusters are queried successfully and 1 or more VRGs are found, and one of the
+//    VRGs is on the destination cluster, perform the following checks:
+//       - Continue with the action only if the DRPC and the found VRG action match.
+//       - Stop until someone investigates if there is a mismatch, but allow failover to
+//       take place (set PeerReady).
+
+//  6. Otherwise, default to allowing Failover:
+//     If none of the above conditions apply, allow failover (set PeerReady) but stop until
+//     someone makes the necessary change.
+//
+//nolint:funlen,nestif,gocognit,gocyclo,cyclop
+func (r *DRPlacementControlReconciler) determineDRPCState(
+	ctx context.Context,
+	drpc *rmn.DRPlacementControl,
+	drPolicy *rmn.DRPolicy,
+	placementObj client.Object,
+	dstCluster string,
+	log logr.Logger,
+) (Progress, error) {
+	vrgNamespace, err := selectVRGNamespace(r.Client, log, drpc, placementObj)
+	if err != nil {
+		log.Info("Failed to select VRG namespace")
+
+		return Stop, err
+	}
+
+	drClusters, err := getDRClusters(ctx, r.Client, drPolicy)
+	if err != nil {
+		return Stop, err
+	}
+
+	vrgs, successfullyQueriedClusterCount, failedCluster, err := getVRGsFromManagedClusters(
+		r.MCVGetter, drpc, drClusters, vrgNamespace, log)
+	if err != nil {
+		log.Info("Failed to get a list of VRGs")
+
+		return Stop, err
+	}
+
+	// IF 2 clusters queried, and both queries failed, then STOP
+	if successfullyQueriedClusterCount == 0 {
+		log.Info("Number of clusters queried is 0. Stop...")
+
+		return Stop, nil
+	}
+
+	// IF 2 clusters queried successfully and no VRGs, then continue with initial deployment
+	if successfullyQueriedClusterCount == 2 && len(vrgs) == 0 {
+		log.Info("Queried 2 clusters successfully")
+
+		return Continue, nil
+	}
+
+	// IF queried 2 clusters queried, 1 failed and 0 VRG found, then check s3 store.
+	// IF the VRG found in the s3 store, ensure that the DRPC action and the VRG action match. IF not, stop until
+	// the action is corrected, but allow failover to take place if needed (set PeerReady)
+	// If the VRG is not found in the s3 store and the failedCluster is not the destination cluster, then continue
+	// with initial deploy
+	if successfullyQueriedClusterCount == 1 && len(vrgs) == 0 {
+		vrg := GetLastKnownVRGPrimaryFromS3(ctx, r.APIReader,
+			AvailableS3Profiles(drClusters), drpc.GetName(), vrgNamespace, r.ObjStoreGetter, log)
+		if vrg == nil {
+			// IF the failed cluster is not the dest cluster, then this could be an initial deploy
+			if failedCluster != dstCluster {
+				return Continue, nil
+			}
+
+			log.Info("Unable to query all clusters and failed to get VRG from s3 store")
+
+			return Stop, nil
+		}
+
+		log.Info("VRG From s3", "VRG Spec", vrg.Spec, "VRG Annotations", vrg.GetAnnotations())
+
+		if drpc.Spec.Action != rmn.DRAction(vrg.Spec.Action) {
+			log.Info(fmt.Sprintf("Two different actions - drpc action is '%s'/vrg action from s3 is '%s'",
+				drpc.Spec.Action, vrg.Spec.Action))
+
+			return AllowFailover, nil
+		}
+
+		if dstCluster == vrg.GetAnnotations()[DestinationClusterAnnotationKey] &&
+			dstCluster != failedCluster {
+			log.Info(fmt.Sprintf("VRG from s3. Same dstCluster %s/%s. Proceeding...",
+				dstCluster, vrg.GetAnnotations()[DestinationClusterAnnotationKey]))
+
+			return Continue, nil
+		}
+
+		log.Info(fmt.Sprintf("VRG from s3. DRPCAction/vrgAction/DRPCDstClstr/vrgDstClstr %s/%s/%s/%s. Allow Failover...",
+			drpc.Spec.Action, vrg.Spec.Action, dstCluster, vrg.GetAnnotations()[DestinationClusterAnnotationKey]))
+
+		return AllowFailover, nil
+	}
+
+	// IF 2 clusters queried, 1 failed and 1 VRG found on the failover cluster, then check the action, if they don't
+	// match, stop until corrected by the user. If they do match, then also stop but allow failover if the VRG in-hand
+	// is a secondary. Othewise, continue...
+	if successfullyQueriedClusterCount == 1 && len(vrgs) == 1 {
+		var clusterName string
+
+		var vrg *rmn.VolumeReplicationGroup
+		for k, v := range vrgs {
+			clusterName, vrg = k, v
+
+			break
+		}
+
+		if drpc.Spec.Action != rmn.DRAction(vrg.Spec.Action) {
+			log.Info(fmt.Sprintf("Stop! Two different actions - drpc action is '%s'/vrg action is '%s'",
+				drpc.Spec.Action, vrg.Spec.Action))
+
+			return Stop, nil
+		}
+
+		if dstCluster != clusterName && vrg.Spec.ReplicationState == rmn.Secondary {
+			log.Info(fmt.Sprintf("Same Action and dstCluster and ReplicationState %s/%s/%s",
+				drpc.Spec.Action, dstCluster, vrg.Spec.ReplicationState))
+
+			log.Info("Failover is allowed - Primary is assumed in the failed cluster")
+
+			return AllowFailover, nil
+		}
+
+		log.Info("Allow to continue")
+
+		return Continue, nil
+	}
+
+	// Finally, IF 2 clusters queried successfully and 1 or more VRGs found, and if one of the VRGs is on the dstCluster,
+	// then continue with action if and only if DRPC and the found VRG action match. otherwise, stop until someone
+	// investigates but allow failover to take place (set PeerReady)
+	if successfullyQueriedClusterCount == 2 && len(vrgs) >= 1 {
+		var clusterName string
+
+		var vrg *rmn.VolumeReplicationGroup
+
+		for k, v := range vrgs {
+			clusterName, vrg = k, v
+
+			break
+		}
+
+		if drpc.Spec.Action == rmn.DRAction(vrg.Spec.Action) {
+			log.Info(fmt.Sprintf("Same Action %s", drpc.Spec.Action))
+
+			return Continue, nil
+		}
+
+		log.Info("Failover is allowed", "vrgs count", len(vrgs), "drpc action",
+			drpc.Spec.Action, "vrg action", vrg.Spec.Action, "dstCluster/clusterName", dstCluster+"/"+clusterName)
+
+		return AllowFailover, nil
+	}
+
+	// IF none of the above, then allow failover (set PeerReady), but stop until someone makes the change
+	log.Info("Failover is allowed, but user intervention is required")
+
+	return AllowFailover, nil
 }
