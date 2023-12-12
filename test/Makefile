@@ -1,6 +1,13 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+# DRIVER can be overriden to allow testing in github when we don't have
+# hardware acceleration for VMs.
+DRIVER ?= vm
+
+env := envs/$(DRIVER).yaml
+prefix := drenv-test-
+
 sources := $(wildcard \
 	drenv \
 	*.py \
@@ -39,3 +46,9 @@ coverage:
 coverage-html:
 	python3 -m coverage html
 	xdg-open htmlcov/index.html
+
+cluster:
+	drenv start --name-prefix $(prefix) $(env)
+
+clean:
+	drenv delete --name-prefix $(prefix) $(env)

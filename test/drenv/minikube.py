@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
+import os
 
 from . import commands
 
@@ -17,6 +18,10 @@ EXTRA_CONFIG = [
 
 
 def profile(command, output=None):
+    # Workaround for https://github.com/kubernetes/minikube/pull/16900
+    # TODO: remove when issue is fixed.
+    _create_profiles_dir()
+
     return _run("profile", command, output=output)
 
 
@@ -110,3 +115,10 @@ def _watch(command, *args, profile=None):
     logging.debug("[%s] Running %s", profile, cmd)
     for line in commands.watch(*cmd):
         logging.debug("[%s] %s", profile, line)
+
+
+def _create_profiles_dir():
+    minikube_home = os.environ.get("MINIKUBE_HOME", os.environ.get("HOME"))
+    profiles = os.path.join(minikube_home, ".minikube", "profiles")
+    logging.debug("Creating '%s'", profiles)
+    os.makedirs(profiles, exist_ok=True)

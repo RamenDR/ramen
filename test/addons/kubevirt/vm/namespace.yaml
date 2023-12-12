@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubevirt-test

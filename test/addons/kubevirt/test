@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import shutil
 import sys
 import time
 
@@ -14,60 +15,23 @@ NAMESPACE = "kubevirt-test"
 
 
 def test(cluster):
-    create_namespace(cluster)
-    create_secret(cluster)
+    copy_public_key()
     create_vm(cluster)
     wait_until_vm_is_ready(cluster)
     verify_ssh(cluster)
     delete_vm(cluster)
-    delete_namespace(cluster)
 
 
-def create_namespace(clsuter):
-    print(f"Creating namespace '{NAMESPACE}'")
-    ns = kubectl.create(
-        "namespace",
-        NAMESPACE,
-        "--dry-run=client",
-        "--output=yaml",
-    )
-    kubectl.apply("--filename=-", input=ns, context=cluster)
-
-
-def delete_namespace(cluster):
-    print(f"Deletting namespace '{NAMESPACE}'")
-    kubectl.delete(f"ns/{NAMESPACE}", context=cluster)
-
-
-def create_secret(cluster):
-    """
-    Create a secret with current user public key for accessing VM via ssh using
-    access credentials API:
-    https://kubevirt.io/user-guide/virtual_machines/accessing_virtual_machines/#static-ssh-public-key-injection-via-cloud-init
-    """
-    public_key = os.path.expanduser("~/.ssh/id_rsa.pub")
-    print(
-        f"Creating secret my-public-key from '{public_key}' in namespace '{NAMESPACE}'"
-    )
-    secret = kubectl.create(
-        "secret",
-        "generic",
-        "my-public-key",
-        f"--from-file=key1={public_key}",
-        "--dry-run=client",
-        "--output=yaml",
-    )
-    kubectl.apply(
-        "--filename=-",
-        f"--namespace={NAMESPACE}",
-        input=secret,
-        context=cluster,
-    )
+def copy_public_key():
+    src = os.path.expanduser("~/.ssh/id_rsa.pub")
+    dst = "vm/id_rsa.pub"
+    print(f"Copying public key from {src} to {dst}")
+    shutil.copyfile(src, dst)
 
 
 def create_vm(cluster):
     print(f"Deploying test vm in namespace '{NAMESPACE}'")
-    kubectl.apply("--filename=vm.yaml", f"--namespace={NAMESPACE}", context=cluster)
+    kubectl.apply("--kustomize=vm", context=cluster)
 
 
 def wait_until_vm_is_ready(cluster):
@@ -83,7 +47,7 @@ def wait_until_vm_is_ready(cluster):
 
 def delete_vm(cluster):
     print(f"Deleting test vm in namespace '{NAMESPACE}'")
-    kubectl.delete("--filename=vm.yaml", f"--namespace={NAMESPACE}", context=cluster)
+    kubectl.delete("--kustomize=vm", context=cluster)
 
 
 def verify_ssh(cluster):
@@ -98,21 +62,20 @@ def verify_ssh(cluster):
 
     for i in range(retries):
         time.sleep(delay)
-        print("Running 'hostname' inside the VM via ssh")
+        print(f"Last entries in /var/log/ramen.log (attempt {i+1}/{retries})")
         try:
             out = virtctl.ssh(
                 "testvm",
-                "hostname",
+                "tail -6 /var/log/ramen.log",
                 username="cirros",
                 namespace=NAMESPACE,
                 known_hosts="",  # Skip host key verification.
                 context=cluster,
             )
         except Exception as e:
-            print(f"Attempt {i+1}/{retries} failed: {e}")
+            print(f"{e}")
             print(f"Retrying in {delay} seconds...")
         else:
-            print(f"Attempt {i+1}/{retries} succeeded")
             print(out)
             break
     else:

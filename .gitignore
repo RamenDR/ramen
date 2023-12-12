@@ -4,8 +4,8 @@
 *.dll
 *.so
 *.dylib
-bin
-testbin/*
+/bin
+/testbin/*
 
 # Test binary, build with `go test -c`
 *.test
@@ -37,9 +37,14 @@ venv
 # Test enviromemnt generated files
 test/.coverage
 test/.coverage.*
+test/addons/kubevirt/vm/id_rsa.pub
 
 # Python generated files
 *.egg-info/
 __pycache__/
 test/build
 ramenctl/build
+
+# Generated disk images
+*.qcow2
+*.iso

@@ -174,6 +174,8 @@ func (sp *secretPropagator) reconcileSecretPropagationPolicy() error {
 			return fmt.Errorf("%w", err)
 		}
 
+		util.AddLabel(policy, "velero.io/exclude-from-backup", "true")
+
 		policy.Spec = policyv1.PolicySpec{
 			Disabled: false,
 			PolicyTemplates: []*policyv1.PolicyTemplate{

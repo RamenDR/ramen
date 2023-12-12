@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-# Enviroment for testing Regional-DR in a setup without a hub.
+# Environment for testing Regional-DR in a setup without a hub.
 ---
 name: "rdr-hubless"
 
@@ -33,6 +33,7 @@ templates:
           - name: olm
           - name: minio
           - name: velero
+          - name: recipe
 
 profiles:
   - name: "dr1"

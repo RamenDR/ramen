@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	rmnutil "github.com/ramendr/ramen/controllers/util"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -75,6 +76,9 @@ func generateNewVolSyncReplicationSecret(secretName, secretNamespace string, log
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      secretName,
 			Namespace: secretNamespace,
+			Labels: map[string]string{
+				rmnutil.OCMBackupLabelKey: rmnutil.OCMBackupLabelValue,
+			},
 		},
 		StringData: map[string]string{
 			"psk.txt": "volsyncramen:" + tlsKey,

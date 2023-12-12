@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-# Enviroment for testing kubevirt flows with Regional-DR
+# Environment for testing kubevirt flows with Regional-DR
 ---
 name: "rdr-kubevirt"
 
@@ -38,6 +38,7 @@ templates:
           - name: ocm-cluster
             args: ["$name", "hub"]
           - name: cdi
+          - name: recipe
       - addons:
           - name: csi-addons
           - name: olm

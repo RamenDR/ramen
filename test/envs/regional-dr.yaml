@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-# Enviroment for testing Regional-DR.
+# Environment for testing Regional-DR.
 ---
 name: "rdr"
 
@@ -31,6 +31,7 @@ templates:
       - addons:
           - name: ocm-cluster
             args: ["$name", "hub"]
+          - name: recipe
       - addons:
           - name: csi-addons
           - name: olm

@@ -1,0 +1,10 @@
+#!/bin/sh -e
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+chdir $(dirname $0)
+cp usr/bin/ramen /usr/bin
+cp etc/init.d/ramen /etc/init.d
+ln -sn ../init.d/ramen /etc/rc3.d/S00-ramen
+ln -sn ../init.d/ramen /etc/rc3.d/K00-ramen

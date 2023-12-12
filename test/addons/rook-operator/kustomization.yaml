@@ -16,17 +16,8 @@ patchesJson6902:
         path: /data/CSI_ENABLE_CSIADDONS
         value: 'true'
       - op: add
-        path: /data/ROOK_CSIADDONS_IMAGE
-        value: quay.io/csiaddons/k8s-sidecar:latest
-      - op: add
         path: /data/CSI_ENABLE_OMAP_GENERATOR
         value: 'true'
-      - op: add
-        path: /data/ROOK_CSI_ALLOW_UNSUPPORTED_VERSION
-        value: 'true'
-      - op: add
-        path: /data/ROOK_CSI_CEPH_IMAGE
-        value: quay.io/cephcsi/cephcsi:canary
 
 patches:
   # Disable to avoid random failures when restaring the enviroment.

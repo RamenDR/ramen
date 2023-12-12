@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+resources:
+- vm.yaml
+- namespace.yaml
+namespace: kubevirt-test
+commonLabels:
+  app: kubevirt-test
+secretGenerator:
+- name: my-public-key
+  files:
+  - id_rsa.pub
+generatorOptions:
+  disableNameSuffixHash: true

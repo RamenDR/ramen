@@ -44,8 +44,10 @@ func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 	// Make sure we have Source and Destination VRGs - Source should already have been created at this point
 	d.setProgression(rmn.ProgressionEnsuringVolSyncSetup)
 
+	vrgMWCount := d.mwu.GetVRGManifestWorkCount(rmnutil.DrpolicyClusterNames(d.drPolicy))
+
 	const maxNumberOfVRGs = 2
-	if len(d.vrgs) != maxNumberOfVRGs {
+	if len(d.vrgs) != maxNumberOfVRGs || vrgMWCount != maxNumberOfVRGs {
 		// Create the destination VRG
 		err := d.createVolSyncDestManifestWork(srcCluster)
 		if err != nil {
@@ -133,6 +135,9 @@ func (d *DRPCInstance) ensureVolSyncReplicationDestination(srcCluster string) er
 	return nil
 }
 
+// containsMismatchVolSyncPVCs returns true if a VolSync protected pvc in the source VRG is not
+// found in the destination VRG RDSpecs.  Since we never delete protected PVCS from the source VRG,
+// we don't check for other case - a protected PVC in destination not found in the source.
 func (d *DRPCInstance) containsMismatchVolSyncPVCs(srcVRG *rmn.VolumeReplicationGroup,
 	dstVRG *rmn.VolumeReplicationGroup,
 ) bool {
@@ -141,20 +146,15 @@ func (d *DRPCInstance) containsMismatchVolSyncPVCs(srcVRG *rmn.VolumeReplication
 			continue
 		}
 
-		mismatch := true
-
 		for _, rdSpec := range dstVRG.Spec.VolSync.RDSpec {
-			if protectedPVC.Name == rdSpec.ProtectedPVC.Name {
-				mismatch = false
-
-				break
+			if protectedPVC.Name == rdSpec.ProtectedPVC.Name &&
+				protectedPVC.Namespace == rdSpec.ProtectedPVC.Namespace {
+				return false
 			}
 		}
 
-		// We only need one mismatch to return true
-		if mismatch {
-			return true
-		}
+		// VolSync PVC not found in destination.
+		return true
 	}
 
 	return false
@@ -283,14 +283,16 @@ func (d *DRPCInstance) updateVRGSpec(clusterName string, tgtVRG *rmn.VolumeRepli
 	return nil
 }
 
-func (d *DRPCInstance) createVolSyncDestManifestWork(srcCluster string) error {
+// createVolSyncDestManifestWork creates volsync Secondaries skipping the cluster referenced in clusterToSkip.
+// Typically, clusterToSkip is passed in as the cluster where volsync is the Primary.
+func (d *DRPCInstance) createVolSyncDestManifestWork(clusterToSkip string) error {
 	// create VRG ManifestWork
-	d.log.Info("Creating VRG ManifestWork for source and destination clusters",
-		"Last State:", d.getLastDRState(), "homeCluster", srcCluster)
+	d.log.Info("Creating VRG ManifestWork for destination clusters",
+		"Last State:", d.getLastDRState(), "homeCluster", clusterToSkip)
 
 	// Create or update ManifestWork for all the peers
 	for _, dstCluster := range rmnutil.DrpolicyClusterNames(d.drPolicy) {
-		if dstCluster == srcCluster {
+		if dstCluster == clusterToSkip {
 			// skip source cluster
 			continue
 		}

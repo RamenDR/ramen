@@ -27,6 +27,7 @@ env:
   IMAGE_REGISTRY: "quay.io"
   IMAGE_TAG: "ci"
   DOCKERCMD: "podman"
+  DRIVER: "container"
 defaults:
   run:
     shell: bash
@@ -79,7 +80,7 @@ jobs:
       - name: GolangCI Lint
         uses: golangci/golangci-lint-action@v3
         with:
-          version: v1.49.0
+          version: v1.55.2
 
   unit-test:
     name: Unit tests
@@ -116,7 +117,6 @@ jobs:
           curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
           sudo install minikube-linux-amd64 /usr/local/bin/minikube
           minikube version
-          mkdir "$HOME/.minikube/profiles"
 
       - name: Install kubectl
         run: |
@@ -145,12 +145,20 @@ jobs:
         run: make black
         working-directory: test
 
+      - name: Start test cluster
+        run: make cluster
+        working-directory: test
+
       - name: Run tests
         run: make test
         working-directory: test
 
       - name: Report test coverage
         run: make coverage
+        working-directory: test
+
+      - name: Clean up
+        run: make clean
         working-directory: test
 
   ramenctl-test:

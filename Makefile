@@ -124,17 +124,9 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
-GOLANGCI_URL := https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh
-GOLANGCI_VERSION := 1.49.0
-GOLANGCI_INSTALLED_VER := $(shell testbin/golangci-lint version --format=short 2>&1)
 .PHONY: golangci-bin
-golangci-bin: ## Download and install goloanci-lint locally if necessary.
-ifeq (,$(GOLANGCI_INSTALLED_VER))
-	$(info Installing golangci-lint (version: $(GOLANGCI_VERSION)) into testbin)
-	curl -sSfL $(GOLANGCI_URL) | sh -s -- -b testbin v$(GOLANGCI_VERSION)
-else ifneq ($(GOLANGCI_VERSION),$(GOLANGCI_INSTALLED_VER))
-	$(error Incorrect version ($(GOLANGCI_INSTALLED_VER)) for golangci-lint found, expecting $(GOLANGCI_VERSION))
-endif
+golangci-bin:
+	hack/install-golangci-lint.sh
 
 .PHONY: lint
 lint: golangci-bin ## Run configured golangci-lint and pre-commit.sh linters against the code.
@@ -415,7 +407,7 @@ catalog-push: ## Push a catalog image.
 .PHONY: docker-buildx
 docker-buildx: # Build and push docker image for the manager for cross-platform support
 ifeq ($(DOCKERCMD),docker)
-	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} and 
+	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} and
 	# replace GOARCH value to ${TARGETARCH} into Dockerfile.cross, and preserve the original Dockerfile
 	$(eval PLATFORMS="linux/arm64,linux/amd64,linux/s390x,linux/ppc64le")
 	$(SED_CMD) \
@@ -423,7 +415,7 @@ ifeq ($(DOCKERCMD),docker)
 		-e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' \
 		Dockerfile > Dockerfile.cross
 	$(SED_CMD) -e 's/GOARCH=amd64/GOARCH=$${TARGETARCH}/' -i Dockerfile.cross
-	- $(DOCKERCMD) buildx create --name $(IMAGE_NAME)-builder --bootstrap --use 
+	- $(DOCKERCMD) buildx create --name $(IMAGE_NAME)-builder --bootstrap --use
 	- $(DOCKERCMD) buildx build --push --platform="${PLATFORMS}" --tag ${IMG} -f Dockerfile.cross .
 	- $(DOCKERCMD) buildx rm $(IMAGE_NAME)-builder
 	rm Dockerfile.cross

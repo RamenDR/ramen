@@ -1,23 +1,15 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-# Enviroment for testing minio deployment with both container and vm drivers.
+# Environment for testing minio deployment.
 ---
 name: "minio"
 
-templates:
-  - name: base
+profiles:
+  - name: c1
+    driver: $vm
+    container_runtime: containerd
     memory: 2g
     workers:
       - addons:
           - name: minio
-
-profiles:
-  - name: c1
-    template: base
-    driver: $container
-    container_runtime: cri-o
-  - name: c2
-    template: base
-    driver: $vm
-    container_runtime: containerd

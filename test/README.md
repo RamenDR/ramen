@@ -37,7 +37,7 @@ environment.
 1. Install `clusteradm` tool. See
    [Install clusteradm CLI tool](https://open-cluster-management.io/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool)
    for the details.
-   Version v0.5.0 or later is required, tested with v0.6.0.
+   Version v0.7.1 or later is required.
 
 1. Install `subctl` tool, See
    [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/)
@@ -45,9 +45,9 @@ environment.
    Tested with version v0.15.2.
 
 1. Install the `velero` tool. See
-   [Velero Basic Install](https://velero.io/docs/v1.11/basic-install/)
+   [Velero Basic Install](https://velero.io/docs/v1.12/basic-install/)
    for the details.
-   Version v1.9.3 or later is required, tested with version v1.11.0.
+   Tested with version v1.12.0.
 
 1. Install `helm` tool - on Fedora you can use:
 
@@ -62,30 +62,6 @@ environment.
    [virtctl install](https://kubevirt.io/quickstart_minikube/#virtctl)
    for the details.
    Tested with version v1.0.1.
-
-1. Install `docker`
-
-   ```
-   sudo dnf install docker
-   ```
-
-   Add yourself to the `docker` group to allow running docker as root:
-
-   ```
-   sudo usermod -aG docker $USER && newgrp docker
-   ```
-
-   Restart docker service to fix the permissions on the docker daemon
-   socket:
-
-   ```
-   sudo systemctl restart docker
-   ```
-
-   For more info see [Linux post-installation steps for Docker Engine](https://docs.docker.com/engine/install/linux-postinstall/).
-
-   docker is used only for running drenv tests locally. You can use
-   podman for building and running containers locally.
 
 ### Testing that drenv is healthy
 
@@ -620,7 +596,8 @@ These environments are useful for developing the `drenv` tool and
 scripts. When debugging an issue or adding a new component, it is much
 simpler and faster to work with a minimal environment.
 
-- `test.yaml` - for testing `drenv`
+- `vm.yaml` - for testing `drenv` with the $vm driver
+- `container.yaml` - for testing `drenv` with the $container driver
 - `example.yaml` - example for experimenting with the `drenv` tool
 - `demo.yaml` - interactive demo for exploring the `drenv` tool
 - `e2e.yaml` - example for testing integration with the e2e framework
@@ -634,6 +611,23 @@ simpler and faster to work with a minimal environment.
 - `volsync.yaml` - for testing `volsync` deployment
 
 ## Testing drenv
+
+### Preparing the test cluster
+
+The tests requires a small test cluster. To create it use:
+
+```
+make cluster
+```
+
+This starts the `drenv-test-cluster` minikube profile using the kvm2
+driver.
+
+To delete the test cluster run:
+
+```
+make clean
+```
 
 ### Running the tests
 

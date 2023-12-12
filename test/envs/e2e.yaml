@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-# Enviroment for testing integration with e2e framework.
+# Environment for testing integration with e2e framework.
 ---
 name: "e2e"
 
