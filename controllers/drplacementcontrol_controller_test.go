@@ -332,7 +332,7 @@ func (f FakeMCVGetter) DeleteManagedClusterView(clusterName, mcvName string, _ l
 	return f.Delete(context.TODO(), mcv)
 }
 
-func (f FakeMCVGetter) GetNamespaceFromManagedCluster(
+func (FakeMCVGetter) GetNamespaceFromManagedCluster(
 	resourceName, managedCluster, namespaceString string, _ map[string]string,
 ) (*corev1.Namespace, error) {
 	appNamespaceObj := &corev1.Namespace{}
@@ -515,13 +515,13 @@ func doGetFakeVRGsFromManagedClusters(managedCluster string, vrgNamespace string
 	return vrgFromMW, nil
 }
 
-func (f FakeMCVGetter) DeleteVRGManagedClusterView(
+func (FakeMCVGetter) DeleteVRGManagedClusterView(
 	_, _, _, _ string,
 ) error {
 	return nil
 }
 
-func (f FakeMCVGetter) DeleteNamespaceManagedClusterView(
+func (FakeMCVGetter) DeleteNamespaceManagedClusterView(
 	_, _, _, _ string,
 ) error {
 	return nil

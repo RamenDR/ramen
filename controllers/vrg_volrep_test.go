@@ -1349,7 +1349,7 @@ func (v *vrgTest) bindPVAndPVC() {
 
 	for i := 0; i < len(v.pvcNames); i++ {
 		// Bind PV
-		pv := v.getPV(v.pvNames[i])
+		pv := getPV(v.pvNames[i])
 		pv.Status.Phase = corev1.VolumeBound
 		err := k8sClient.Status().Update(context.TODO(), pv)
 		Expect(err).To(BeNil(),
@@ -1476,7 +1476,7 @@ func (v *vrgTest) verifyPVCBindingToPV(shouldBeBound bool) {
 	By("Waiting for PVC to get bound to PVs for " + v.vrgName)
 
 	for i := 0; i < len(v.pvcNames); i++ {
-		_ = v.getPV(v.pvNames[i])
+		_ = getPV(v.pvNames[i])
 		i := i // capture i for use in closure
 		Eventually(func() bool {
 			pvc := getPVC(v.pvcNames[i])
@@ -1492,7 +1492,7 @@ func (v *vrgTest) verifyPVCBindingToPV(shouldBeBound bool) {
 	}
 }
 
-func (v *vrgTest) getPV(pvName string) *corev1.PersistentVolume {
+func getPV(pvName string) *corev1.PersistentVolume {
 	pvLookupKey := types.NamespacedName{Name: pvName}
 	pv := &corev1.PersistentVolume{}
 	err := apiReader.Get(context.TODO(), pvLookupKey, pv)
@@ -1524,7 +1524,7 @@ func vrgGet(vrgNamespacedName types.NamespacedName) *ramendrv1alpha1.VolumeRepli
 	return vrg
 }
 
-func (v *vrgTest) isAnyPVCProtectedByVolSync(vrg *ramendrv1alpha1.VolumeReplicationGroup) bool {
+func isAnyPVCProtectedByVolSync(vrg *ramendrv1alpha1.VolumeReplicationGroup) bool {
 	for _, protectedPVC := range vrg.Status.ProtectedPVCs {
 		if protectedPVC.ProtectedByVolSync {
 			return true
@@ -1556,7 +1556,7 @@ func (v *vrgTest) verifyVRGStatusExpectation(expectedStatus bool) {
 			}
 		}
 
-		if v.isAnyPVCProtectedByVolSync(vrg) {
+		if isAnyPVCProtectedByVolSync(vrg) {
 			return true
 		}
 
@@ -2130,12 +2130,12 @@ func (v *vrgTest) waitForVolRepPromotion(vrNamespacedName types.NamespacedName) 
 			return false
 		}
 
-		return v.checkProtectedPVCSuccess(vrg, protectedPVC)
+		return checkProtectedPVCSuccess(vrg, protectedPVC)
 	}, vrgtimeout, vrginterval).Should(BeTrue(),
 		"while waiting for protected pvc condition %s/%s", updatedVolRep.Namespace, updatedVolRep.Name)
 }
 
-func (v *vrgTest) checkProtectedPVCSuccess(vrg *ramendrv1alpha1.VolumeReplicationGroup,
+func checkProtectedPVCSuccess(vrg *ramendrv1alpha1.VolumeReplicationGroup,
 	protectedPVC *ramendrv1alpha1.ProtectedPVC,
 ) bool {
 	success := false

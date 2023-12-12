@@ -200,7 +200,7 @@ func (v *VSHandler) createOrUpdateRD(
 		util.AddAnnotation(rd, OwnerNamespaceAnnotation, v.owner.GetNamespace())
 
 		rd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
-			ServiceType: v.getRsyncServiceType(),
+			ServiceType: getRsyncServiceType(),
 			KeySecret:   &pskSecretName,
 
 			ReplicationDestinationVolumeOptions: volsyncv1alpha1.ReplicationDestinationVolumeOptions{
@@ -1284,7 +1284,7 @@ func (v *VSHandler) addOwnerReferenceAndUpdate(obj client.Object, owner metav1.O
 	return nil
 }
 
-func (v *VSHandler) getRsyncServiceType() *corev1.ServiceType {
+func getRsyncServiceType() *corev1.ServiceType {
 	// Use default right now - in future we may use a volsyncProfile
 	return &DefaultRsyncServiceType
 }
@@ -1724,7 +1724,7 @@ func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDe
 		}
 
 		lrd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
-			ServiceType: v.getRsyncServiceType(),
+			ServiceType: getRsyncServiceType(),
 			KeySecret:   &pskSecretName,
 
 			ReplicationDestinationVolumeOptions: volsyncv1alpha1.ReplicationDestinationVolumeOptions{
@@ -1821,7 +1821,7 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 
 func (v *VSHandler) cleanupLocalResources(lrs *volsyncv1alpha1.ReplicationSource) error {
 	// delete the snapshot taken by local RD
-	err := v.deleteSnapshot(v.ctx, v.client, lrs.Spec.Trigger.Manual, v.owner.GetNamespace(), v.log)
+	err := deleteSnapshot(v.ctx, v.client, lrs.Spec.Trigger.Manual, v.owner.GetNamespace(), v.log)
 	if err != nil {
 		return err
 	}
@@ -1934,7 +1934,7 @@ func (v *VSHandler) cleanupPreviousTransferResources(lrs *volsyncv1alpha1.Replic
 		// Only clean up and create new PVC if the previous transfer has completed. We don't want to abort it.
 		if lrs.Spec.Trigger.Manual != "" {
 			if lrs.Status != nil && lrs.Status.LastManualSync == lrs.Spec.Trigger.Manual {
-				err := v.deleteSnapshot(v.ctx, v.client, lrs.Spec.Trigger.Manual, v.owner.GetNamespace(), v.log)
+				err := deleteSnapshot(v.ctx, v.client, lrs.Spec.Trigger.Manual, v.owner.GetNamespace(), v.log)
 				if err != nil {
 					return err
 				}
@@ -2008,7 +2008,7 @@ func (v *VSHandler) createReadOnlyPVCFromSnapshot(rd *volsyncv1alpha1.Replicatio
 	return pvc, nil
 }
 
-func (v *VSHandler) deleteSnapshot(ctx context.Context,
+func deleteSnapshot(ctx context.Context,
 	k8sClient client.Client,
 	snapshotName, namespace string,
 	log logr.Logger,

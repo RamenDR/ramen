@@ -130,7 +130,7 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return r.reconcile(drpolicy, drclusters, secretsUtil, ramenConfig, log)
 }
 
-func (r *DRPolicyReconciler) reconcile(drpolicy *ramen.DRPolicy,
+func (*DRPolicyReconciler) reconcile(drpolicy *ramen.DRPolicy,
 	drclusters *ramen.DRClusterList,
 	secretsUtil *util.SecretsUtil,
 	ramenConfig *ramen.RamenConfig,

@@ -32,7 +32,7 @@ var baseNF = &csiaddonsv1alpha1.NetworkFence{
 	},
 }
 
-func (f FakeMCVGetter) GetNFFromManagedCluster(_, _, _ string,
+func (FakeMCVGetter) GetNFFromManagedCluster(_, _, _ string,
 	_ map[string]string,
 ) (*csiaddonsv1alpha1.NetworkFence, error) {
 	nfStatus := csiaddonsv1alpha1.NetworkFenceStatus{
@@ -56,7 +56,7 @@ func (f FakeMCVGetter) GetNFFromManagedCluster(_, _, _ string,
 	return nf, nil
 }
 
-func (f FakeMCVGetter) DeleteNFManagedClusterView(
+func (FakeMCVGetter) DeleteNFManagedClusterView(
 	_, _, _, _ string,
 ) error {
 	return nil

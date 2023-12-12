@@ -522,7 +522,7 @@ func undoPVRetention(pv *corev1.PersistentVolume) {
 	delete(pv.ObjectMeta.Annotations, pvVRAnnotationRetentionKey)
 }
 
-func (v *VRGInstance) generateArchiveAnnotation(gen int64) string {
+func generateArchiveAnnotation(gen int64) string {
 	return fmt.Sprintf("%s-%s", pvcVRAnnotationArchivedVersionV1, strconv.Itoa(int(gen)))
 }
 
@@ -537,12 +537,12 @@ func (v *VRGInstance) isArchivedAlready(pvc *corev1.PersistentVolumeClaim, log l
 		return false
 	}
 
-	pvcDesiredValue := v.generateArchiveAnnotation(pvc.Generation)
+	pvcDesiredValue := generateArchiveAnnotation(pvc.Generation)
 	if v, ok := pvc.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey]; ok && (v == pvcDesiredValue) {
 		pvcHasAnnotation = true
 	}
 
-	pvDesiredValue := v.generateArchiveAnnotation(pv.Generation)
+	pvDesiredValue := generateArchiveAnnotation(pv.Generation)
 	if v, ok := pv.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey]; ok && (v == pvDesiredValue) {
 		pvHasAnnotation = true
 	}
@@ -1777,7 +1777,7 @@ func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeCl
 		pvc.ObjectMeta.Annotations = map[string]string{}
 	}
 
-	pvc.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey] = v.generateArchiveAnnotation(pvc.Generation)
+	pvc.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey] = generateArchiveAnnotation(pvc.Generation)
 
 	if err := v.reconciler.Update(v.ctx, pvc); err != nil {
 		log.Error(err, "Failed to update PersistentVolumeClaim annotation")
@@ -1800,7 +1800,7 @@ func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeCl
 		pv.ObjectMeta.Annotations = map[string]string{}
 	}
 
-	pv.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey] = v.generateArchiveAnnotation(pv.Generation)
+	pv.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey] = generateArchiveAnnotation(pv.Generation)
 	if err := v.reconciler.Update(v.ctx, &pv); err != nil {
 		log.Error(err, "Failed to update PersistentVolume annotation")
 

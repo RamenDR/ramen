@@ -338,14 +338,14 @@ func (v *VRGInstance) kubeObjectsCaptureAndCaptureRequestDelete(
 	request kubeobjects.Request, s3StoreAccessor s3StoreAccessor,
 	pathName string, log logr.Logger,
 ) {
-	v.kubeObjectsCaptureDeleteAndLog(s3StoreAccessor, pathName, request.Name(), log)
+	kubeObjectsCaptureDeleteAndLog(s3StoreAccessor, pathName, request.Name(), log)
 
 	if err := request.Deallocate(v.ctx, v.reconciler.Client, v.log); err != nil {
 		log.Error(err, "Kube objects capture request deallocate error")
 	}
 }
 
-func (v *VRGInstance) kubeObjectsCaptureDeleteAndLog(
+func kubeObjectsCaptureDeleteAndLog(
 	s3StoreAccessor s3StoreAccessor, pathName, requestName string, log logr.Logger,
 ) {
 	if err := s3StoreAccessor.ObjectStorer.DeleteObjectsWithKeyPrefix(pathName + requestName + "/"); err != nil {

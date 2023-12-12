@@ -795,7 +795,7 @@ func (r *DRPlacementControlReconciler) recordFailure(ctx context.Context, drpc *
 	}
 }
 
-func (r *DRPlacementControlReconciler) setLastSyncTimeMetric(syncMetrics *SyncMetrics,
+func setLastSyncTimeMetric(syncMetrics *SyncMetrics,
 	t *metav1.Time, log logr.Logger,
 ) {
 	if syncMetrics == nil {
@@ -813,7 +813,7 @@ func (r *DRPlacementControlReconciler) setLastSyncTimeMetric(syncMetrics *SyncMe
 	syncMetrics.LastSyncTime.Set(float64(t.ProtoTime().Seconds))
 }
 
-func (r *DRPlacementControlReconciler) setLastSyncDurationMetric(syncDurationMetrics *SyncDurationMetrics,
+func setLastSyncDurationMetric(syncDurationMetrics *SyncDurationMetrics,
 	t *metav1.Duration, log logr.Logger,
 ) {
 	if syncDurationMetrics == nil {
@@ -831,7 +831,7 @@ func (r *DRPlacementControlReconciler) setLastSyncDurationMetric(syncDurationMet
 	syncDurationMetrics.LastSyncDuration.Set(t.Seconds())
 }
 
-func (r *DRPlacementControlReconciler) setLastSyncBytesMetric(syncDataBytesMetrics *SyncDataBytesMetrics,
+func setLastSyncBytesMetric(syncDataBytesMetrics *SyncDataBytesMetrics,
 	b *int64, log logr.Logger,
 ) {
 	if syncDataBytesMetrics == nil {
@@ -919,7 +919,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 	return d, nil
 }
 
-func (r *DRPlacementControlReconciler) createDRPCMetricsInstance(
+func createDRPCMetricsInstance(
 	drPolicy *rmn.DRPolicy, drpc *rmn.DRPlacementControl,
 ) *DRPCMetrics {
 	syncMetricLabels := SyncMetricLabels(drPolicy, drpc)
@@ -978,7 +978,7 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(d *DRPCInstance, lo
 		afterProcessing = *d.instance.Status.LastUpdateTime
 	}
 
-	requeueTimeDuration := r.getStatusCheckDelay(beforeProcessing, afterProcessing)
+	requeueTimeDuration := getStatusCheckDelay(beforeProcessing, afterProcessing)
 	log.Info("Requeue time", "duration", requeueTimeDuration)
 
 	return ctrl.Result{RequeueAfter: requeueTimeDuration}, nil
@@ -1608,7 +1608,7 @@ func (r *DRPlacementControlReconciler) deleteClonedPlacementRule(ctx context.Con
 	return nil
 }
 
-func (r *DRPlacementControlReconciler) addClusterPeersToPlacementRule(
+func (*DRPlacementControlReconciler) addClusterPeersToPlacementRule(
 	drPolicy *rmn.DRPolicy, plRule *plrv1.PlacementRule, log logr.Logger,
 ) error {
 	if len(rmnutil.DrpolicyClusterNames(drPolicy)) == 0 {
@@ -1648,7 +1648,7 @@ func (d *DRPCInstance) statusUpdateTimeElapsed() bool {
 // the reconciler is called, let's say, at 10:08am, and no update to the DRPC status was needed,
 // then the requeue time duration should be 2 minutes and NOT the full StatusCheckDelay. That is:
 // 10:00am + StatusCheckDelay - 10:08am = 2mins
-func (r *DRPlacementControlReconciler) getStatusCheckDelay(
+func getStatusCheckDelay(
 	beforeProcessing metav1.Time, afterProcessing metav1.Time,
 ) time.Duration {
 	if beforeProcessing != afterProcessing {
@@ -1770,12 +1770,12 @@ func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
 		return nil
 	}
 
-	drpcMetrics := r.createDRPCMetricsInstance(drPolicy, drpc)
+	drpcMetrics := createDRPCMetricsInstance(drPolicy, drpc)
 
 	if drpcMetrics != nil {
-		r.setLastSyncTimeMetric(&drpcMetrics.SyncMetrics, drpc.Status.LastGroupSyncTime, log)
-		r.setLastSyncDurationMetric(&drpcMetrics.SyncDurationMetrics, drpc.Status.LastGroupSyncDuration, log)
-		r.setLastSyncBytesMetric(&drpcMetrics.SyncDataBytesMetrics, drpc.Status.LastGroupSyncBytes, log)
+		setLastSyncTimeMetric(&drpcMetrics.SyncMetrics, drpc.Status.LastGroupSyncTime, log)
+		setLastSyncDurationMetric(&drpcMetrics.SyncDurationMetrics, drpc.Status.LastGroupSyncDuration, log)
+		setLastSyncBytesMetric(&drpcMetrics.SyncDataBytesMetrics, drpc.Status.LastGroupSyncBytes, log)
 	}
 
 	return nil
@@ -1813,7 +1813,7 @@ func (r *DRPlacementControlReconciler) getClusterDecision(placementObj interface
 	}
 }
 
-func (r *DRPlacementControlReconciler) getClusterDecisionFromPlacementRule(plRule *plrv1.PlacementRule,
+func (*DRPlacementControlReconciler) getClusterDecisionFromPlacementRule(plRule *plrv1.PlacementRule,
 ) *clrapiv1beta1.ClusterDecision {
 	var clusterName string
 	if len(plRule.Status.Decisions) > 0 {

@@ -138,7 +138,7 @@ func (d *DRPCInstance) ensureVolSyncReplicationDestination(srcCluster string) er
 // containsMismatchVolSyncPVCs returns true if a VolSync protected pvc in the source VRG is not
 // found in the destination VRG RDSpecs.  Since we never delete protected PVCS from the source VRG,
 // we don't check for other case - a protected PVC in destination not found in the source.
-func (d *DRPCInstance) containsMismatchVolSyncPVCs(srcVRG *rmn.VolumeReplicationGroup,
+func (*DRPCInstance) containsMismatchVolSyncPVCs(srcVRG *rmn.VolumeReplicationGroup,
 	dstVRG *rmn.VolumeReplicationGroup,
 ) bool {
 	for _, protectedPVC := range srcVRG.Status.ProtectedPVCs {
@@ -248,7 +248,7 @@ func (d *DRPCInstance) updateVRGSpec(clusterName string, tgtVRG *rmn.VolumeRepli
 
 	d.log.Info(fmt.Sprintf("Updating VRG ownedby MW %s for cluster %s", mw.Name, clusterName))
 
-	vrg, err := d.extractVRGFromManifestWork(mw)
+	vrg, err := extractVRGFromManifestWork(mw)
 	if err != nil {
 		d.log.Error(err, "failed to update VRG state")
 
@@ -264,7 +264,7 @@ func (d *DRPCInstance) updateVRGSpec(clusterName string, tgtVRG *rmn.VolumeRepli
 
 	vrg.Spec.VolSync.RDSpec = tgtVRG.Spec.VolSync.RDSpec
 
-	vrgClientManifest, err := d.mwu.GenerateManifest(vrg)
+	vrgClientManifest, err := rmnutil.GenerateManifest(vrg)
 	if err != nil {
 		d.log.Error(err, "failed to generate manifest")
 
@@ -345,7 +345,7 @@ func (d *DRPCInstance) ResetVolSyncRDOnPrimary(clusterName string) error {
 
 	d.log.Info(fmt.Sprintf("Resetting RD VRG ownedby MW %s for cluster %s", mw.Name, clusterName))
 
-	vrg, err := d.extractVRGFromManifestWork(mw)
+	vrg, err := extractVRGFromManifestWork(mw)
 	if err != nil {
 		d.log.Error(err, "failed to extract VRG state")
 
@@ -366,7 +366,7 @@ func (d *DRPCInstance) ResetVolSyncRDOnPrimary(clusterName string) error {
 
 	vrg.Spec.VolSync.RDSpec = nil
 
-	vrgClientManifest, err := d.mwu.GenerateManifest(vrg)
+	vrgClientManifest, err := rmnutil.GenerateManifest(vrg)
 	if err != nil {
 		d.log.Error(err, "failed to generate manifest")
 

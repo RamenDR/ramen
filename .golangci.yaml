@@ -72,7 +72,7 @@ linters-settings:
       - name: duplicated-imports
       - name: unhandled-error
       # - name: flag-parameter
-      # - name: unused-receiver
+      - name: unused-receiver
       - name: unused-parameter
       # - name: confusing-naming
       # - name: import-shadowing

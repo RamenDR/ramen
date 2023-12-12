@@ -476,7 +476,7 @@ func validateCIDRsFormat(drcluster *ramen.DRCluster, log logr.Logger) error {
 	return nil
 }
 
-func (r DRClusterReconciler) processDeletion(u *drclusterInstance) (ctrl.Result, error) {
+func (DRClusterReconciler) processDeletion(u *drclusterInstance) (ctrl.Result, error) {
 	u.log.Info("delete")
 
 	// Undeploy manifests

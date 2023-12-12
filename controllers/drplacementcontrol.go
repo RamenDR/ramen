@@ -1259,7 +1259,7 @@ func (d *DRPCInstance) getVRGFromManifestWork(clusterName string) (*rmn.VolumeRe
 		return nil, fmt.Errorf("%w", err)
 	}
 
-	vrg, err := d.extractVRGFromManifestWork(mw)
+	vrg, err := extractVRGFromManifestWork(mw)
 	if err != nil {
 		return nil, err
 	}
@@ -2109,7 +2109,7 @@ func (d *DRPCInstance) updateVRGToRunFinalSync(clusterName string) error {
 	return nil
 }
 
-func (d *DRPCInstance) extractVRGFromManifestWork(mw *ocmworkv1.ManifestWork) (*rmn.VolumeReplicationGroup, error) {
+func extractVRGFromManifestWork(mw *ocmworkv1.ManifestWork) (*rmn.VolumeReplicationGroup, error) {
 	if len(mw.Spec.Workload.Manifests) == 0 {
 		return nil, fmt.Errorf("invalid VRG ManifestWork for type: %s", mw.Name)
 	}
@@ -2131,7 +2131,7 @@ func (d *DRPCInstance) updateManifestWork(clusterName string, vrg *rmn.VolumeRep
 		return fmt.Errorf("%w", err)
 	}
 
-	vrgClientManifest, err := d.mwu.GenerateManifest(vrg)
+	vrgClientManifest, err := rmnutil.GenerateManifest(vrg)
 	if err != nil {
 		d.log.Error(err, "failed to generate manifest")
 

@@ -263,7 +263,7 @@ func parseErrorMessage(message string) error {
 	return fmt.Errorf("err: %s", extractLastError(message))
 }
 
-func (m ManagedClusterViewGetterImpl) GetResource(mcv *viewv1beta1.ManagedClusterView, resource interface{}) error {
+func (ManagedClusterViewGetterImpl) GetResource(mcv *viewv1beta1.ManagedClusterView, resource interface{}) error {
 	var err error
 
 	// want single recent Condition with correct Type; otherwise: bad path
