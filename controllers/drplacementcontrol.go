@@ -1454,16 +1454,9 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string, repState rmn.Re
 	return nil
 }
 
+// ensureVRGManifestWork ensures that the VRG ManifestWork exists and matches the current VRG state.
+// TODO: This may be safe only when the VRG is primary - check if callers use this correctly.
 func (d *DRPCInstance) ensureVRGManifestWork(homeCluster string) error {
-	mw, mwErr := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, homeCluster)
-	if mwErr != nil {
-		d.log.Info("Ensure VRG ManifestWork", "Error", mwErr)
-	}
-
-	if mw != nil {
-		return nil
-	}
-
 	d.log.Info("Ensure VRG ManifestWork",
 		"Last State:", d.getLastDRState(), "cluster", homeCluster)
 
