@@ -142,11 +142,11 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 // requeue (bool): If the request needs to be requeued
 // ready (bool): If desired state is achieved and hence VR is ready
 // skip (bool): If the VR can be currently skipped for processing
-func (v *VRGInstance) reconcileVRAsSecondary(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, bool, bool) {
-	const (
-		requeue bool = true
-		skip    bool = true
-	)
+func (v *VRGInstance) reconcileVRAsSecondary(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (
+	requeue bool, ready bool, skip bool,
+) {
+	requeue = true
+	skip = true
 
 	if !v.isPVCReadyForSecondary(pvc, log) {
 		return requeue, false, skip
@@ -154,13 +154,13 @@ func (v *VRGInstance) reconcileVRAsSecondary(pvc *corev1.PersistentVolumeClaim, 
 
 	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 
-	requeueResult, ready, err := v.processVRAsSecondary(pvcNamespacedName, log)
+	requeue, ready, err := v.processVRAsSecondary(pvcNamespacedName, log)
 	if err != nil {
 		log.Info("Failure in getting or creating VolumeReplication resource for PersistentVolumeClaim",
 			"errorValue", err)
 	}
 
-	return requeueResult, ready, !skip
+	return requeue, ready, !skip
 }
 
 // isPVCReadyForSecondary checks if a PVC is ready to be marked as Secondary
@@ -292,11 +292,9 @@ func MModesFromCSV(modes string) []ramendrv1alpha1.MMode {
 // a requeue if preparation failed, and returns skip if PVC can be skipped for VR protection
 func (v *VRGInstance) preparePVCForVRProtection(pvc *corev1.PersistentVolumeClaim,
 	log logr.Logger,
-) (bool, bool) {
-	const (
-		requeue bool = true
-		skip    bool = true
-	)
+) (requeue bool, skip bool) {
+	requeue = true
+	skip = true
 
 	// if PVC protection is complete, return
 	if pvc.Annotations[pvcVRAnnotationProtectedKey] == pvcVRAnnotationProtectedValue {
@@ -888,11 +886,11 @@ func (v *VRGInstance) undoPVCFinalizersAndPVRetention(pvc *corev1.PersistentVolu
 // Returns 2 booleans,
 // - the first indicating if VR is missing or not, to enable further VR processing if needed
 // - the next indicating any required requeue of the request, due to errors in determining VR presence
-func (v *VRGInstance) reconcileMissingVR(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, bool) {
-	const (
-		requeue   = true
-		vrMissing = true
-	)
+func (v *VRGInstance) reconcileMissingVR(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (
+	requeue bool, vrMissing bool,
+) {
+	requeue = true
+	vrMissing = true
 
 	if v.instance.Spec.Async == nil {
 		return !vrMissing, !requeue
@@ -1003,7 +1001,9 @@ func (v *VRGInstance) s3StoreDo(do func(ObjectStorer) error, msg, s3ProfileName 
 //   - a boolean indicating if a reconcile requeue is required
 //   - a boolean indicating if VR is already at the desired state
 //   - any errors during processing
-func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName, log logr.Logger) (bool, bool, error) {
+func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName, log logr.Logger) (
+	requeue bool, ready bool, err error,
+) {
 	if v.instance.Spec.Async != nil {
 		return v.createOrUpdateVR(vrNamespacedName, volrep.Primary, log)
 	}
@@ -1035,7 +1035,9 @@ func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName, 
 //   - a boolean indicating if a reconcile requeue is required
 //   - a boolean indicating if VR is already at the desired state
 //   - any errors during processing
-func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName, log logr.Logger) (bool, bool, error) {
+func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName, log logr.Logger) (
+	requeue bool, ready bool, err error,
+) {
 	if v.instance.Spec.Async != nil {
 		return v.createOrUpdateVR(vrNamespacedName, volrep.Secondary, log)
 	}
@@ -1075,12 +1077,12 @@ func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName
 //   - any errors during processing
 func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 	state volrep.ReplicationState, log logr.Logger,
-) (bool, bool, error) {
-	const requeue = true
+) (requeue bool, ready bool, err error) {
+	requeue = true
 
 	volRep := &volrep.VolumeReplication{}
 
-	err := v.reconciler.Get(v.ctx, vrNamespacedName, volRep)
+	err = v.reconciler.Get(v.ctx, vrNamespacedName, volRep)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			log.Error(err, "Failed to get VolumeReplication resource", "resource", vrNamespacedName)
@@ -1139,8 +1141,8 @@ func (v *VRGInstance) autoResync(state volrep.ReplicationState) bool {
 //   - any errors during the process of updating the resource
 func (v *VRGInstance) updateVR(volRep *volrep.VolumeReplication,
 	state volrep.ReplicationState, log logr.Logger,
-) (bool, bool, error) {
-	const requeue = true
+) (requeue bool, ready bool, err error) {
+	requeue = true
 
 	// If state is already as desired, check the status
 	if volRep.Spec.ReplicationState == state && volRep.Spec.AutoResync == v.autoResync(state) {
@@ -1152,7 +1154,7 @@ func (v *VRGInstance) updateVR(volRep *volrep.VolumeReplication,
 	volRep.Spec.ReplicationState = state
 	volRep.Spec.AutoResync = v.autoResync(state)
 
-	if err := v.reconciler.Update(v.ctx, volRep); err != nil {
+	if err = v.reconciler.Update(v.ctx, volRep); err != nil {
 		log.Error(err, "Failed to update VolumeReplication resource",
 			"name", volRep.Name, "namespace", volRep.Namespace,
 			"state", state)

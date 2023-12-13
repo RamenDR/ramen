@@ -33,10 +33,10 @@ func kubeObjectsCaptureInterval(kubeObjectProtectionSpec *ramen.KubeObjectProtec
 
 func kubeObjectsCapturePathNamesAndNamePrefix(
 	namespaceName, vrgName string, captureNumber int64, kubeObjects kubeobjects.RequestsManager,
-) (string, string, string) {
+) (pathName string, capturePathName string, namePrefix string) {
 	const numberBase = 10
 	number := strconv.FormatInt(captureNumber, numberBase)
-	pathName := s3PathNamePrefix(namespaceName, vrgName) + "kube-objects/" + number + "/"
+	pathName = s3PathNamePrefix(namespaceName, vrgName) + "kube-objects/" + number + "/"
 
 	return pathName,
 		pathName + kubeObjects.ProtectsPath(),

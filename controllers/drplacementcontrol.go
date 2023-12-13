@@ -180,11 +180,8 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 	return done, nil
 }
 
-func (d *DRPCInstance) getHomeClusterForInitialDeploy() (string, string) {
+func (d *DRPCInstance) getHomeClusterForInitialDeploy() (homeCluster string, homeClusterNamespace string) {
 	// Check if the user wants to use the preferredCluster
-	homeCluster := ""
-	homeClusterNamespace := ""
-
 	if d.instance.Spec.PreferredCluster != "" {
 		homeCluster = d.instance.Spec.PreferredCluster
 		homeClusterNamespace = d.instance.Spec.PreferredCluster

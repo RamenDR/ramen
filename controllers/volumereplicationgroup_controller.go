@@ -265,24 +265,28 @@ func updateEventDecision(oldPVC, newPVC *corev1.PersistentVolumeClaim, log logr.
 	return !requeue
 }
 
-func pvcFinalizerAddedOrRemoved(oldPVC, newPVC *corev1.PersistentVolumeClaim) (bool, bool, bool) {
+func pvcFinalizerAddedOrRemoved(oldPVC, newPVC *corev1.PersistentVolumeClaim) (
+	addedOrRemoved bool, added bool, removed bool,
+) {
 	contained := controllerutil.ContainsFinalizer(oldPVC, PvcVRFinalizerProtected)
 	contains := controllerutil.ContainsFinalizer(newPVC, PvcVRFinalizerProtected)
-	added := !contained && contains
-	removed := contained && !contains
+	added = !contained && contains
+	removed = contained && !contains
 
 	return added || removed, added, removed
 }
 
-func pvcAnnotationAdded(oldPVC, newPVC *corev1.PersistentVolumeClaim) (bool, bool, bool) {
+func pvcAnnotationAdded(oldPVC, newPVC *corev1.PersistentVolumeClaim) (
+	added bool, protectedAdded bool, archivedAdded bool,
+) {
 	before := oldPVC.GetAnnotations()
 	after := newPVC.GetAnnotations()
 	_, protectedBefore := before[pvcVRAnnotationProtectedKey]
 	_, protectedAfter := after[pvcVRAnnotationProtectedKey]
 	_, archivedBefore := before[pvcVRAnnotationArchivedKey]
 	_, archivedAfter := after[pvcVRAnnotationArchivedKey]
-	protectedAdded := !protectedBefore && protectedAfter
-	archivedAdded := !archivedBefore && archivedAfter
+	protectedAdded = !protectedBefore && protectedAfter
+	archivedAdded = !archivedBefore && archivedAfter
 
 	return protectedAdded || archivedAdded, protectedAdded, archivedAdded
 }
