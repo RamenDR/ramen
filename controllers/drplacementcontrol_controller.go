@@ -1060,13 +1060,13 @@ func (r DRPlacementControlReconciler) updateObjectMetadata(ctx context.Context,
 	return nil
 }
 
-func getDRClusters(ctx context.Context, client client.Client, drPolicy *rmn.DRPolicy) ([]rmn.DRCluster, error) {
+func getDRClusters(ctx context.Context, cli client.Client, drPolicy *rmn.DRPolicy) ([]rmn.DRCluster, error) {
 	drClusters := []rmn.DRCluster{}
 
 	for _, managedCluster := range rmnutil.DrpolicyClusterNames(drPolicy) {
 		drCluster := &rmn.DRCluster{}
 
-		err := client.Get(ctx, types.NamespacedName{Name: managedCluster}, drCluster)
+		err := cli.Get(ctx, types.NamespacedName{Name: managedCluster}, drCluster)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get DRCluster (%s) %w", managedCluster, err)
 		}
@@ -2021,12 +2021,12 @@ func (r *DRPlacementControlReconciler) createPlacementDecision(ctx context.Conte
 }
 
 func getApplicationDestinationNamespace(
-	client client.Client,
+	cli client.Client,
 	log logr.Logger,
 	placement client.Object,
 ) (string, error) {
 	appSetList := argocdv1alpha1hack.ApplicationSetList{}
-	if err := client.List(context.TODO(), &appSetList); err != nil {
+	if err := cli.List(context.TODO(), &appSetList); err != nil {
 		// If ApplicationSet CRD is not found in the API server,
 		// default to Subscription behavior, and return the placement namespace as the target VRG namespace
 		if meta.IsNoMatchError(err) {
@@ -2064,7 +2064,7 @@ func getApplicationDestinationNamespace(
 }
 
 func selectVRGNamespace(
-	client client.Client,
+	cli client.Client,
 	log logr.Logger,
 	drpc *rmn.DRPlacementControl,
 	placementObj client.Object,
@@ -2075,7 +2075,7 @@ func selectVRGNamespace(
 
 	switch placementObj.(type) {
 	case *clrapiv1beta1.Placement:
-		vrgNamespace, err := getApplicationDestinationNamespace(client, log, placementObj)
+		vrgNamespace, err := getApplicationDestinationNamespace(cli, log, placementObj)
 		if err != nil {
 			return "", err
 		}
@@ -2119,14 +2119,14 @@ func ensureDRPCConditionsInited(conditions *[]metav1.Condition, observedGenerati
 		return
 	}
 
-	time := metav1.NewTime(time.Now())
+	timestamp := metav1.NewTime(time.Now())
 
 	setStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               rmn.ConditionAvailable,
 		Reason:             string(rmn.Initiating),
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
-		LastTransitionTime: time,
+		LastTransitionTime: timestamp,
 		Message:            message,
 	})
 	setStatusConditionIfNotFound(conditions, metav1.Condition{
@@ -2134,7 +2134,7 @@ func ensureDRPCConditionsInited(conditions *[]metav1.Condition, observedGenerati
 		Reason:             string(rmn.Initiating),
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
-		LastTransitionTime: time,
+		LastTransitionTime: timestamp,
 		Message:            message,
 	})
 }

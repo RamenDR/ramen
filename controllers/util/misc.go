@@ -20,7 +20,7 @@ func GenericAddLabelsAndFinalizers(
 	ctx context.Context,
 	object client.Object,
 	finalizerName string,
-	client client.Client,
+	cli client.Client,
 	log logr.Logger,
 ) error {
 	labelAdded := AddLabel(object, OCMBackupLabelKey, OCMBackupLabelValue)
@@ -29,7 +29,7 @@ func GenericAddLabelsAndFinalizers(
 	if finalizerAdded || labelAdded {
 		log.Info("finalizer or label add")
 
-		return client.Update(ctx, object)
+		return cli.Update(ctx, object)
 	}
 
 	return nil
@@ -39,7 +39,7 @@ func GenericFinalizerRemove(
 	ctx context.Context,
 	object client.Object,
 	finalizerName string,
-	client client.Client,
+	cli client.Client,
 	log logr.Logger,
 ) error {
 	finalizerCount := len(object.GetFinalizers())
@@ -48,7 +48,7 @@ func GenericFinalizerRemove(
 	if len(object.GetFinalizers()) != finalizerCount {
 		log.Info("finalizer remove")
 
-		return client.Update(ctx, object)
+		return cli.Update(ctx, object)
 	}
 
 	return nil

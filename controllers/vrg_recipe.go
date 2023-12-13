@@ -91,30 +91,30 @@ func recipeVolumesAndOptionallyWorkflowsGet(ctx context.Context, reader client.R
 		Name:      vrg.Spec.KubeObjectProtection.RecipeRef.Name,
 	}
 
-	recipe := recipe.Recipe{}
-	if err := reader.Get(ctx, recipeNamespacedName, &recipe); err != nil {
+	rcp := recipe.Recipe{}
+	if err := reader.Get(ctx, recipeNamespacedName, &rcp); err != nil {
 		return fmt.Errorf("recipe %v get error: %w", recipeNamespacedName.String(), err)
 	}
 
-	if err := RecipeParametersExpand(&recipe, vrg.Spec.KubeObjectProtection.RecipeParameters, log); err != nil {
+	if err := RecipeParametersExpand(&rcp, vrg.Spec.KubeObjectProtection.RecipeParameters, log); err != nil {
 		return err
 	}
 
 	*recipeElements = RecipeElements{
-		PvcSelector: pvcSelectorRecipeRefNonNil(recipe, vrg),
+		PvcSelector: pvcSelectorRecipeRefNonNil(rcp, vrg),
 	}
 
-	if err := workflowsGet(recipe, recipeElements, vrg); err != nil {
+	if err := workflowsGet(rcp, recipeElements, vrg); err != nil {
 		return err
 	}
 
 	return recipeNamespacesValidate(*recipeElements, vrg, ramenConfig)
 }
 
-func RecipeParametersExpand(recipe *recipe.Recipe, parameters map[string][]string,
+func RecipeParametersExpand(rcp *recipe.Recipe, parameters map[string][]string,
 	log logr.Logger,
 ) error {
-	spec := &recipe.Spec
+	spec := &rcp.Spec
 	log.V(1).Info("Recipe pre-expansion", "spec", *spec, "parameters", parameters)
 
 	bytes, err := json.Marshal(*spec)
@@ -142,22 +142,22 @@ func parametersExpand(s string, parameters map[string][]string) string {
 	})
 }
 
-func recipeWorkflowsGet(recipe recipe.Recipe, recipeElements *RecipeElements, vrg ramen.VolumeReplicationGroup) error {
+func recipeWorkflowsGet(rcp recipe.Recipe, recipeElements *RecipeElements, vrg ramen.VolumeReplicationGroup) error {
 	var err error
 
-	if recipe.Spec.CaptureWorkflow == nil {
+	if rcp.Spec.CaptureWorkflow == nil {
 		recipeElements.CaptureWorkflow = captureWorkflowDefault(vrg)
 	} else {
-		recipeElements.CaptureWorkflow, err = getCaptureGroups(recipe)
+		recipeElements.CaptureWorkflow, err = getCaptureGroups(rcp)
 		if err != nil {
 			return fmt.Errorf("failed to get groups from capture workflow: %w", err)
 		}
 	}
 
-	if recipe.Spec.RecoverWorkflow == nil {
+	if rcp.Spec.RecoverWorkflow == nil {
 		recipeElements.RecoverWorkflow = recoverWorkflowDefault()
 	} else {
-		recipeElements.RecoverWorkflow, err = getRecoverGroups(recipe)
+		recipeElements.RecoverWorkflow, err = getRecoverGroups(rcp)
 		if err != nil {
 			return fmt.Errorf("failed to get groups from recovery workflow: %w", err)
 		}
@@ -220,19 +220,20 @@ func recipesWatch(b *builder.Builder, m objectToReconcileRequestsMapper) *builde
 }
 
 func (m objectToReconcileRequestsMapper) recipeToVrgReconcileRequestsMapper(
+<<<<<<< HEAD
 	_ context.Context,
-	recipe client.Object,
+	rcp client.Object,
 ) []reconcile.Request {
 	recipeNamespacedName := types.NamespacedName{
-		Namespace: recipe.GetNamespace(),
-		Name:      recipe.GetName(),
+		Namespace: rcp.GetNamespace(),
+		Name:      rcp.GetName(),
 	}
 	log := m.log.WithName("recipe").WithName("VolumeReplicationGroup").WithValues(
 		"name", recipeNamespacedName.String(),
-		"creation", recipe.GetCreationTimestamp(),
-		"uid", recipe.GetUID(),
-		"generation", recipe.GetGeneration(),
-		"version", recipe.GetResourceVersion(),
+		"creation", rcp.GetCreationTimestamp(),
+		"uid", rcp.GetUID(),
+		"generation", rcp.GetGeneration(),
+		"version", rcp.GetResourceVersion(),
 	)
 
 	vrgList := ramen.VolumeReplicationGroupList{}
@@ -247,8 +248,8 @@ func (m objectToReconcileRequestsMapper) recipeToVrgReconcileRequestsMapper(
 	for _, vrg := range vrgList.Items {
 		if vrg.Spec.KubeObjectProtection == nil ||
 			vrg.Spec.KubeObjectProtection.RecipeRef == nil ||
-			vrg.Spec.KubeObjectProtection.RecipeRef.Namespace != recipe.GetNamespace() ||
-			vrg.Spec.KubeObjectProtection.RecipeRef.Name != recipe.GetName() {
+			vrg.Spec.KubeObjectProtection.RecipeRef.Namespace != rcp.GetNamespace() ||
+			vrg.Spec.KubeObjectProtection.RecipeRef.Name != rcp.GetName() {
 			continue
 		}
 

@@ -69,7 +69,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
 	)
 	objectToReconcileRequestsMapper := objectToReconcileRequestsMapper{reader: r.Client, log: ctrl.Log}
-	builder := ctrl.NewControllerManagedBy(mgr).
+	blder := ctrl.NewControllerManagedBy(mgr).
 		WithOptions(ctrlcontroller.Options{
 			MaxConcurrentReconciles: getMaxConcurrentReconciles(r.Log),
 			RateLimiter:             rateLimiter,
@@ -91,7 +91,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 		Owns(&volrep.VolumeReplication{})
 
 	if !ramenConfig.VolSync.Disabled {
-		builder.Owns(&volsyncv1alpha1.ReplicationDestination{}).
+		blder.Owns(&volsyncv1alpha1.ReplicationDestination{}).
 			Owns(&volsyncv1alpha1.ReplicationSource{})
 	} else {
 		r.Log.Info("VolSync disabled; don't own volsync resources")
@@ -100,13 +100,13 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 	r.kubeObjects = velero.RequestsManager{}
 	if !ramenConfig.KubeObjectProtection.Disabled {
 		r.Log.Info("Kube object protection enabled; watch kube objects requests")
-		recipesWatch(builder, objectToReconcileRequestsMapper)
-		kubeObjectsRequestsWatch(builder, r.Scheme, r.kubeObjects)
+		recipesWatch(blder, objectToReconcileRequestsMapper)
+		kubeObjectsRequestsWatch(blder, r.Scheme, r.kubeObjects)
 	} else {
 		r.Log.Info("Kube object protection disabled; don't watch kube objects requests")
 	}
 
-	return builder.Complete(r)
+	return blder.Complete(r)
 }
 
 type objectToReconcileRequestsMapper struct {

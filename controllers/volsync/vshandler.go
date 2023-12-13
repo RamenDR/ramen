@@ -73,12 +73,12 @@ type VSHandler struct {
 	volumeSnapshotClassList     *snapv1.VolumeSnapshotClassList
 }
 
-func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, owner metav1.Object,
+func NewVSHandler(ctx context.Context, cli client.Client, log logr.Logger, owner metav1.Object,
 	asyncSpec *ramendrv1alpha1.VRGAsyncSpec, defaultCephFSCSIDriverName string, copyMethod string,
 ) *VSHandler {
 	vsHandler := &VSHandler{
 		ctx:                        ctx,
-		client:                     client,
+		client:                     cli,
 		log:                        log,
 		owner:                      owner,
 		defaultCephFSCSIDriverName: defaultCephFSCSIDriverName,

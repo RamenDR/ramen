@@ -75,9 +75,9 @@ linters-settings:
       - name: unused-receiver
       - name: unused-parameter
       # - name: confusing-naming
-      # - name: import-shadowing
+      - name: import-shadowing
       - name: confusing-results
-      # - name: bool-literal-in-expr
+      - name: bool-literal-in-expr
 
 issues:
   exclude-rules:

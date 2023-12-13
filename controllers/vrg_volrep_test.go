@@ -1481,7 +1481,7 @@ func (v *vrgTest) verifyPVCBindingToPV(shouldBeBound bool) {
 		Eventually(func() bool {
 			pvc := getPVC(v.pvcNames[i])
 
-			if shouldBeBound == true {
+			if shouldBeBound {
 				return pvc.Status.Phase == corev1.ClaimBound
 			}
 
@@ -1543,7 +1543,7 @@ func (v *vrgTest) verifyVRGStatusExpectation(expectedStatus bool) {
 			return false
 		}
 
-		if expectedStatus == true {
+		if expectedStatus {
 			// reasons for success can be different for Primary and
 			// secondary. Validate that as well.
 			switch vrg.Spec.ReplicationState {
