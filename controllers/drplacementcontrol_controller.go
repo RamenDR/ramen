@@ -775,7 +775,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 		return nil, err
 	}
 
-	vrgs, err := updateVRGsFromManagedClusters(r.MCVGetter, drpc, drPolicy, vrgNamespace, log)
+	vrgs, err := updateVRGsFromManagedClusters(r.MCVGetter, drpc, drClusters, vrgNamespace, log)
 	if err != nil {
 		return nil, err
 	}
@@ -1064,8 +1064,13 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 		}
 	}
 
+	drClusters, err := getDRClusters(ctx, r.Client, drPolicy)
+	if err != nil {
+		return fmt.Errorf("failed to get drclusters. Error (%w)", err)
+	}
+
 	// Verify VRGs have been deleted
-	vrgs, _, err := getVRGsFromManagedClusters(r.MCVGetter, drpc, drPolicy, vrgNamespace, log)
+	vrgs, _, err := getVRGsFromManagedClusters(r.MCVGetter, drpc, drClusters, vrgNamespace, log)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve VRGs. We'll retry later. Error (%w)", err)
 	}
@@ -1421,9 +1426,9 @@ func (r *DRPlacementControlReconciler) clonePlacementRule(ctx context.Context,
 }
 
 func updateVRGsFromManagedClusters(mcvGetter rmnutil.ManagedClusterViewGetter, drpc *rmn.DRPlacementControl,
-	drPolicy *rmn.DRPolicy, vrgNamespace string, log logr.Logger,
+	drClusters []rmn.DRCluster, vrgNamespace string, log logr.Logger,
 ) (map[string]*rmn.VolumeReplicationGroup, error) {
-	vrgs, failedClusterToQuery, err := getVRGsFromManagedClusters(mcvGetter, drpc, drPolicy, vrgNamespace, log)
+	vrgs, failedClusterToQuery, err := getVRGsFromManagedClusters(mcvGetter, drpc, drClusters, vrgNamespace, log)
 	if err != nil {
 		return nil, err
 	}
@@ -1442,7 +1447,7 @@ func updateVRGsFromManagedClusters(mcvGetter rmnutil.ManagedClusterViewGetter, d
 }
 
 func getVRGsFromManagedClusters(mcvGetter rmnutil.ManagedClusterViewGetter, drpc *rmn.DRPlacementControl,
-	drPolicy *rmn.DRPolicy, vrgNamespace string, log logr.Logger,
+	drClusters []rmn.DRCluster, vrgNamespace string, log logr.Logger,
 ) (map[string]*rmn.VolumeReplicationGroup, string, error) {
 	vrgs := map[string]*rmn.VolumeReplicationGroup{}
 
@@ -1455,33 +1460,41 @@ func getVRGsFromManagedClusters(mcvGetter rmnutil.ManagedClusterViewGetter, drpc
 
 	var clustersQueriedSuccessfully int
 
-	for _, drCluster := range rmnutil.DrpolicyClusterNames(drPolicy) {
-		vrg, err := mcvGetter.GetVRGFromManagedCluster(drpc.Name, vrgNamespace, drCluster, annotations)
+	for i := range drClusters {
+		drCluster := &drClusters[i]
+
+		vrg, err := mcvGetter.GetVRGFromManagedCluster(drpc.Name, vrgNamespace, drCluster.Name, annotations)
 		if err != nil {
 			// Only NotFound error is accepted
 			if errors.IsNotFound(err) {
-				log.Info(fmt.Sprintf("VRG not found on %q", drCluster))
+				log.Info(fmt.Sprintf("VRG not found on %q", drCluster.Name))
 				clustersQueriedSuccessfully++
 
 				continue
 			}
 
-			failedClusterToQuery = drCluster
+			failedClusterToQuery = drCluster.Name
 
-			log.Info(fmt.Sprintf("failed to retrieve VRG from %s. err (%v)", drCluster, err))
+			log.Info(fmt.Sprintf("failed to retrieve VRG from %s. err (%v)", drCluster.Name, err))
 
 			continue
 		}
 
 		clustersQueriedSuccessfully++
 
-		vrgs[drCluster] = vrg
+		if drClusterIsDeleted(drCluster) {
+			log.Info("Skipping VRG on deleted drcluster", "drcluster", drCluster.Name, "vrg", vrg.Name)
 
-		log.Info("VRG location", "VRG on", drCluster)
+			continue
+		}
+
+		vrgs[drCluster.Name] = vrg
+
+		log.Info("VRG location", "VRG on", drCluster.Name)
 	}
 
 	// We are done if we successfully queried all drClusters
-	if clustersQueriedSuccessfully == len(rmnutil.DrpolicyClusterNames(drPolicy)) {
+	if clustersQueriedSuccessfully == len(drClusters) {
 		return vrgs, "", nil
 	}
 

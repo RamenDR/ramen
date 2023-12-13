@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/yaml"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
@@ -1453,16 +1454,9 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string, repState rmn.Re
 	return nil
 }
 
+// ensureVRGManifestWork ensures that the VRG ManifestWork exists and matches the current VRG state.
+// TODO: This may be safe only when the VRG is primary - check if callers use this correctly.
 func (d *DRPCInstance) ensureVRGManifestWork(homeCluster string) error {
-	mw, mwErr := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, homeCluster)
-	if mwErr != nil {
-		d.log.Info("Ensure VRG ManifestWork", "Error", mwErr)
-	}
-
-	if mw != nil {
-		return nil
-	}
-
 	d.log.Info("Ensure VRG ManifestWork",
 		"Last State:", d.getLastDRState(), "cluster", homeCluster)
 
@@ -1501,7 +1495,7 @@ func (d *DRPCInstance) generateVRG(repState rmn.ReplicationState) rmn.VolumeRepl
 		Spec: rmn.VolumeReplicationGroupSpec{
 			PVCSelector:          d.instance.Spec.PVCSelector,
 			ReplicationState:     repState,
-			S3Profiles:           rmnutil.DRPolicyS3Profiles(d.drPolicy, d.drClusters).List(),
+			S3Profiles:           d.availableS3Profiles(),
 			KubeObjectProtection: d.instance.Spec.KubeObjectProtection,
 		},
 	}
@@ -1511,6 +1505,21 @@ func (d *DRPCInstance) generateVRG(repState rmn.ReplicationState) rmn.VolumeRepl
 	vrg.Spec.Sync = d.generateVRGSpecSync()
 
 	return vrg
+}
+
+func (d *DRPCInstance) availableS3Profiles() []string {
+	profiles := sets.New[string]()
+
+	for i := range d.drClusters {
+		drCluster := &d.drClusters[i]
+		if drClusterIsDeleted(drCluster) {
+			continue
+		}
+
+		profiles.Insert(drCluster.Spec.S3ProfileName)
+	}
+
+	return sets.List(profiles)
 }
 
 func (d *DRPCInstance) generateVRGSpecAsync() *rmn.VRGAsyncSpec {
