@@ -192,6 +192,9 @@ test-drenv:
 test-ramenctl:
 	$(MAKE) -C ramenctl
 
+e2e-rdr: generate manifests docker-build
+	./e2e/rdr-e2e.sh
+
 ##@ Build
 
 # Build manager binary

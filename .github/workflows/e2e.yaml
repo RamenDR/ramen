@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+# yamllint disable rule:line-length
+name: E2E
+
+on:  # yamllint disable-line rule:truthy
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  e2e-rdr:
+    runs-on: [self-hosted, e2e-rdr]
+    if: github.repository == 'RamenDR/ramen' && contains(fromJson('["nirs", "ShyamsundarR", "BenamarMk", "raghavendra-talur", "rakeshgm", "ELENAGER", "netzzer", "kseegerrh"]'), github.actor)
+
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v3
+
+    - name: Run make target e2e-rdr
+      run: |
+        make e2e-rdr
