@@ -171,7 +171,7 @@ func (v *VSHandler) createOrUpdateRD(
 ) {
 	l := v.log.WithValues("rdSpec", rdSpec)
 
-	volumeSnapshotClassName, err := v.GetVolumeSnapshotClassFromPVCStorageClass(rdSpec.ProtectedPVC.StorageClassName)
+	volumeSnapshotClassName, err := v.GetVolumeSnapshotClassFromPVCStorageClassName(rdSpec.ProtectedPVC.StorageClassName)
 	if err != nil {
 		return nil, err
 	}
@@ -1350,7 +1350,7 @@ func (v *VSHandler) ModifyRSSpecForCephFS(rsSpec *ramendrv1alpha1.VolSyncReplica
 	return nil
 }
 
-func (v *VSHandler) GetVolumeSnapshotClassFromPVCStorageClass(storageClassName *string) (string, error) {
+func (v *VSHandler) GetVolumeSnapshotClassFromPVCStorageClassName(storageClassName *string) (string, error) {
 	storageClass, err := v.getStorageClass(storageClassName)
 	if err != nil {
 		return "", err

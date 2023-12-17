@@ -94,7 +94,6 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	secretsUtil := &util.SecretsUtil{Client: r.Client, APIReader: r.APIReader, Ctx: ctx, Log: log}
-	// DRPolicy is marked for deletion
 	if !drpolicy.ObjectMeta.DeletionTimestamp.IsZero() &&
 		controllerutil.ContainsFinalizer(drpolicy, drPolicyFinalizerName) {
 		return ctrl.Result{}, u.deleteDRPolicy(drclusters, secretsUtil, ramenConfig)
@@ -111,7 +110,6 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 		log.Error(err, "Missing dependent resources")
 
-		// will be reconciled later based on DRCluster watch events
 		return ctrl.Result{}, nil
 	}
 
@@ -127,15 +125,6 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, fmt.Errorf("error in intiating policy metrics: %w", err)
 	}
 
-	return r.reconcile(drpolicy, drclusters, secretsUtil, ramenConfig, log)
-}
-
-func (*DRPolicyReconciler) reconcile(drpolicy *ramen.DRPolicy,
-	drclusters *ramen.DRClusterList,
-	secretsUtil *util.SecretsUtil,
-	ramenConfig *ramen.RamenConfig,
-	log logr.Logger,
-) (ctrl.Result, error) {
 	if err := propagateS3Secret(drpolicy, drclusters, secretsUtil, ramenConfig, log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drpolicy deploy: %w", err)
 	}

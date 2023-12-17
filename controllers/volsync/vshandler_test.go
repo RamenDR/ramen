@@ -96,9 +96,9 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 				Expect(len(vsClasses)).To(Equal(totalVolumeSnapshotClassCount))
 			})
 
-			It("GetVolumeSnapshotClassFromPVCStorageClass() should find the default volume snapshot class "+
+			It("GetVolumeSnapshotClassFromPVCStorageClassName() should find the default volume snapshot class "+
 				"that matches the driver from the storageclass", func() {
-				vsClassName, err := vsHandler.GetVolumeSnapshotClassFromPVCStorageClass(&testStorageClassName)
+				vsClassName, err := vsHandler.GetVolumeSnapshotClassFromPVCStorageClassName(&testStorageClassName)
 				Expect(err).NotTo(HaveOccurred())
 
 				Expect(vsClassName).To(Equal(testDefaultVolumeSnapshotClass.GetName()))
@@ -138,9 +138,9 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 				Expect(vscBFound).To(BeTrue())
 			})
 
-			It("GetVolumeSnapshotClassFromPVCStorageClass() should not find a match if no volume snapshot "+
+			It("GetVolumeSnapshotClassFromPVCStorageClassName() should not find a match if no volume snapshot "+
 				"classes matche the driver from the storageclass", func() {
-				vsClassName, err := vsHandler.GetVolumeSnapshotClassFromPVCStorageClass(&testStorageClassName)
+				vsClassName, err := vsHandler.GetVolumeSnapshotClassFromPVCStorageClassName(&testStorageClassName)
 				Expect(err).To(HaveOccurred())
 				Expect(vsClassName).To(Equal(""))
 				Expect(err.Error()).To(ContainSubstring("unable to find matching volumesnapshotclass"))
@@ -169,10 +169,10 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 				Expect(vsClasses[0].GetName()).To(Equal(volumeSnapshotClassB.GetName()))
 			})
 
-			It("GetVolumeSnapshotClassFromPVCStorageClass() should not find a match if no volume snapshot "+
+			It("GetVolumeSnapshotClassFromPVCStorageClassName() should not find a match if no volume snapshot "+
 				"classes matche the driver from the storageclass", func() {
 				storageClassName := storageClassAandB.GetName()
-				vsClassName, err := vsHandler.GetVolumeSnapshotClassFromPVCStorageClass(&storageClassName)
+				vsClassName, err := vsHandler.GetVolumeSnapshotClassFromPVCStorageClassName(&storageClassName)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(vsClassName).To(Equal(volumeSnapshotClassB.GetName()))
 			})

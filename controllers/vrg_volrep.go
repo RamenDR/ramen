@@ -80,7 +80,7 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 		// itself is assumed to be protected along with other k8s objects in the
 		// subscription, such as, the deployment, pods, services, etc., by an
 		// entity external to the VRG a la IaC.
-		if err := v.uploadPVandPVCtoS3Stores(pvc, log); err != nil {
+		if err := v.uploadPVandPVCtoS3Profiles(pvc, log); err != nil {
 			log.Info("Requeuing due to failure to upload PV object to S3 store(s)",
 				"errorValue", err)
 
@@ -553,7 +553,7 @@ func (v *VRGInstance) isArchivedAlready(pvc *corev1.PersistentVolumeClaim, log l
 }
 
 // Upload PV to the list of S3 stores in the VRG spec
-func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (err error) {
+func (v *VRGInstance) uploadPVandPVCtoS3Profiles(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (err error) {
 	if v.isArchivedAlready(pvc, log) {
 		v.log.Info("PV cluster data already protected for PVC", "PVC", pvc.Name)
 

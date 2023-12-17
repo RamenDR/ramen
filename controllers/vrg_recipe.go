@@ -220,7 +220,6 @@ func recipesWatch(b *builder.Builder, m objectToReconcileRequestsMapper) *builde
 }
 
 func (m objectToReconcileRequestsMapper) recipeToVrgReconcileRequestsMapper(
-<<<<<<< HEAD
 	_ context.Context,
 	rcp client.Object,
 ) []reconcile.Request {
