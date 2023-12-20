@@ -337,6 +337,7 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 
 	// IFF VRG exists and it is primary in the failoverCluster, the clean up and setup VolSync if needed.
 	if d.vrgExistsAndPrimary(failoverCluster) {
+		d.updatePreferredDecision()
 		d.setDRState(rmn.FailedOver)
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
@@ -432,6 +433,7 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 		return !done, err
 	}
 
+	d.updatePreferredDecision()
 	d.setDRState(rmn.FailedOver)
 	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Completed")
@@ -781,6 +783,7 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 
 	// We are done if already relocated; if there were secondaries they are cleaned up above
 	if curHomeCluster != "" && d.vrgExistsAndPrimary(preferredCluster) {
+		d.updatePreferredDecision()
 		d.setDRState(rmn.Relocated)
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
@@ -1132,6 +1135,7 @@ func (d *DRPCInstance) relocate(preferredCluster, preferredClusterNamespace stri
 		return !done, err
 	}
 
+	d.updatePreferredDecision()
 	d.setDRState(rmn.Relocated)
 	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Completed")
