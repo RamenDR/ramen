@@ -116,10 +116,13 @@ func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&ramen.DRCluster{}).
-		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(r.drClusterConfigMapMapFunc)).
 		Watches(&source.Kind{Type: &ramen.DRPlacementControl{}}, drpcMapFun, builder.WithPredicates(drpcPred())).
 		Watches(&source.Kind{Type: &ocmworkv1.ManifestWork{}}, mwMapFun, builder.WithPredicates(mwPred)).
 		Watches(&source.Kind{Type: &viewv1beta1.ManagedClusterView{}}, mcvMapFun, builder.WithPredicates(mcvPred)).
+		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(r.drClusterConfigMapMapFunc)).
+		Watches(&source.Kind{Type: &corev1.Secret{}}, handler.EnqueueRequestsFromMapFunc(r.drClusterSecretMapFunc),
+			builder.WithPredicates(util.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
+		).
 		Complete(r)
 }
 
@@ -136,6 +139,24 @@ func (r *DRClusterReconciler) drClusterConfigMapMapFunc(configMap client.Object)
 	requests := make([]reconcile.Request, len(drcusters.Items))
 	for i, drcluster := range drcusters.Items {
 		requests[i].Name = drcluster.GetName()
+	}
+
+	return requests
+}
+
+func (r *DRClusterReconciler) drClusterSecretMapFunc(secret client.Object) []reconcile.Request {
+	if secret.GetNamespace() != NamespaceName() {
+		return []reconcile.Request{}
+	}
+
+	drcusters := &ramen.DRClusterList{}
+	if err := r.Client.List(context.TODO(), drcusters); err != nil {
+		return []reconcile.Request{}
+	}
+
+	requests := make([]reconcile.Request, len(drcusters.Items))
+	for i := range drcusters.Items {
+		requests[i].Name = drcusters.Items[i].GetName()
 	}
 
 	return requests
@@ -263,6 +284,7 @@ func filterDRClusterMCV(mcv *viewv1beta1.ManagedClusterView) []ctrl.Request {
 // +kubebuilder:rbac:groups=apps.open-cluster-management.io,resources=placementrules,verbs=get;list;watch
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=placements,verbs=get;list;watch
 // +kubebuilder:rbac:groups=argoproj.io,resources=applicationsets,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch
 
 func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
