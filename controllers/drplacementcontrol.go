@@ -538,7 +538,7 @@ func (d *DRPCInstance) checkRegionalFailoverPrerequisites() bool {
 			d.ctx,
 			d.reconciler.APIReader,
 			[]string{drCluster.Spec.S3ProfileName},
-			d.instance.GetName(), d.instance.GetNamespace(),
+			d.instance.GetName(), d.vrgNamespace,
 			d.vrgs, d.instance.Spec.FailoverCluster,
 			d.reconciler.ObjStoreGetter, d.log); required {
 			return checkFailoverMaintenanceActivations(drCluster, activationsRequired, d.log)
@@ -558,7 +558,7 @@ func requiresRegionalFailoverPrerequisites(
 	apiReader client.Reader,
 	s3ProfileNames []string,
 	drpcName string,
-	drpcNamespace string,
+	vrgNamespace string,
 	vrgs map[string]*rmn.VolumeReplicationGroup,
 	failoverCluster string,
 	objectStoreGetter ObjectStoreGetter,
@@ -571,7 +571,7 @@ func requiresRegionalFailoverPrerequisites(
 
 	vrg := getLastKnownPrimaryVRG(vrgs, failoverCluster)
 	if vrg == nil {
-		vrg = GetLastKnownVRGPrimaryFromS3(ctx, apiReader, s3ProfileNames, drpcName, drpcNamespace, objectStoreGetter, log)
+		vrg = GetLastKnownVRGPrimaryFromS3(ctx, apiReader, s3ProfileNames, drpcName, vrgNamespace, objectStoreGetter, log)
 		if vrg == nil {
 			// TODO: Is this an error, should we ensure at least one VRG is found in the edge cases?
 			// Potentially missing VRG and so stop failover? How to recover in that case?
