@@ -559,7 +559,7 @@ func requiresRegionalFailoverPrerequisites(
 	ctx context.Context,
 	apiReader client.Reader,
 	s3ProfileNames []string,
-	drpcName string,
+	DRPCCommonName string,
 	vrgNamespace string,
 	vrgs map[string]*rmn.VolumeReplicationGroup,
 	failoverCluster string,
@@ -573,7 +573,7 @@ func requiresRegionalFailoverPrerequisites(
 
 	vrg := getLastKnownPrimaryVRG(vrgs, failoverCluster)
 	if vrg == nil {
-		vrg = GetLastKnownVRGPrimaryFromS3(ctx, apiReader, s3ProfileNames, drpcName, vrgNamespace, objectStoreGetter, log)
+		vrg = GetLastKnownVRGPrimaryFromS3(ctx, apiReader, s3ProfileNames, DRPCCommonName, vrgNamespace, objectStoreGetter, log)
 		if vrg == nil {
 			// TODO: Is this an error, should we ensure at least one VRG is found in the edge cases?
 			// Potentially missing VRG and so stop failover? How to recover in that case?
