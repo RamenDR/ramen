@@ -2166,6 +2166,8 @@ func (r *DRPlacementControlReconciler) determineDRPCState(
 	dstCluster string,
 	log logr.Logger,
 ) (Progress, error) {
+	log.Info("Rebuild DRPC state")
+
 	vrgNamespace, err := selectVRGNamespace(r.Client, log, drpc, placementObj)
 	if err != nil {
 		log.Info("Failed to select VRG namespace")
@@ -2286,11 +2288,19 @@ func (r *DRPlacementControlReconciler) determineDRPCState(
 
 		for k, v := range vrgs {
 			clusterName, vrg = k, v
-
-			break
+			if vrg.Spec.ReplicationState == rmn.Primary {
+				break
+			}
 		}
 
-		if drpc.Spec.Action == rmn.DRAction(vrg.Spec.Action) {
+		// This can happen if a hub is recovered in the middle of a Relocate
+		if vrg.Spec.ReplicationState == rmn.Secondary && len(vrgs) == 2 {
+			log.Info("Both VRGs are in secondary state")
+
+			return Stop, nil
+		}
+
+		if drpc.Spec.Action == rmn.DRAction(vrg.Spec.Action) && dstCluster == clusterName {
 			log.Info(fmt.Sprintf("Same Action %s", drpc.Spec.Action))
 
 			return Continue, nil

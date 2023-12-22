@@ -62,7 +62,7 @@ func (u *drclusterInstance) mModeActivationsRequired() (map[string]ramen.Storage
 		vrgs, err := u.getVRGs(drpcCollection)
 		if err != nil {
 			u.log.Info("Failed to get VRGs for DRPC that is failing over",
-				"DRPCCommonName", drpcCollection.drpc.GetName(),
+				"DRPCName", drpcCollection.drpc.GetName(),
 				"DRPCNamespace", drpcCollection.drpc.GetNamespace())
 
 			u.requeue = true
