@@ -436,7 +436,7 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(resourceName, resourceNamespace,
 
 		return vrg, nil
 
-	case "checkClusterAccessibility":
+	case "checkAccessToVRGOnCluster":
 		return checkResource(managedCluster)
 
 	case "ensureVRGIsSecondaryOnCluster":
@@ -1528,28 +1528,6 @@ func runFailoverAction(placementObj client.Object, fromCluster, toCluster string
 
 	decision := getLatestUserPlacementDecision(placementObj.GetName(), placementObj.GetNamespace())
 	Expect(decision.ClusterName).To(Equal(toCluster))
-}
-
-//nolint:all
-func clearDRActionAfterFailover(userPlacementRule *plrv1.PlacementRule, namespace, preferredCluster, failoverCluster string) {
-	drstate = "none"
-
-	setDRPCSpecExpectationTo(namespace, preferredCluster, failoverCluster, "")
-	waitForCompletion(string(rmn.FailedOver))
-	// waitForUpdateDRPCStatus(namespace)
-
-	drpc := getLatestDRPC(namespace)
-	// At this point expect the DRPC status condition to have 2 types
-	// {Available and PeerReady}
-	// Final state didn't change and it is 'FailedOver' even though we tried to run
-	// initial deployment
-	Expect(drpc.Status.Phase).To(Equal(rmn.FailedOver))
-	Expect(len(drpc.Status.Conditions)).To(Equal(2))
-	_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
-	Expect(condition.Reason).To(Equal(string(rmn.FailedOver)))
-
-	decision := getLatestUserPlacementDecision(userPlacementRule.Name, userPlacementRule.Namespace)
-	Expect(decision.ClusterName).To(Equal(failoverCluster))
 }
 
 func runRelocateAction(placementObj client.Object, fromCluster string, isSyncDR bool, manualUnfence bool) {

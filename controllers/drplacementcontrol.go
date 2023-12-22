@@ -559,7 +559,7 @@ func requiresRegionalFailoverPrerequisites(
 	ctx context.Context,
 	apiReader client.Reader,
 	s3ProfileNames []string,
-	DRPCCommonName string,
+	drpcName string,
 	vrgNamespace string,
 	vrgs map[string]*rmn.VolumeReplicationGroup,
 	failoverCluster string,
@@ -573,7 +573,7 @@ func requiresRegionalFailoverPrerequisites(
 
 	vrg := getLastKnownPrimaryVRG(vrgs, failoverCluster)
 	if vrg == nil {
-		vrg = GetLastKnownVRGPrimaryFromS3(ctx, apiReader, s3ProfileNames, DRPCCommonName, vrgNamespace, objectStoreGetter, log)
+		vrg = GetLastKnownVRGPrimaryFromS3(ctx, apiReader, s3ProfileNames, drpcName, vrgNamespace, objectStoreGetter, log)
 		if vrg == nil {
 			// TODO: Is this an error, should we ensure at least one VRG is found in the edge cases?
 			// Potentially missing VRG and so stop failover? How to recover in that case?
@@ -1340,7 +1340,12 @@ func (d *DRPCInstance) cleanupSecondaries(skipCluster string) (bool, error) {
 		}
 
 		// If VRG hasn't been deleted, then make sure that the MW for it is deleted and
-		// return and wait
+		// return and wait, but first make sure that the cluster is accessible
+		if err := checkAccessToVRGOnCluster(d.reconciler.MCVGetter, d.instance.GetName(), d.instance.GetNamespace(),
+			d.vrgNamespace, clusterName); err != nil {
+			return false, err
+		}
+
 		mwDeleted, err := d.ensureVRGManifestWorkOnClusterDeleted(clusterName)
 		if err != nil {
 			return false, err
@@ -1378,6 +1383,25 @@ func (d *DRPCInstance) cleanupSecondaries(skipCluster string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+func checkAccessToVRGOnCluster(mcvGetter rmnutil.ManagedClusterViewGetter,
+	name, drpcNamespace, vrgNamespace, clusterName string,
+) error {
+	annotations := make(map[string]string)
+
+	annotations[DRPCNameAnnotation] = name
+	annotations[DRPCNamespaceAnnotation] = drpcNamespace
+
+	_, err := mcvGetter.GetVRGFromManagedCluster(name,
+		vrgNamespace, clusterName, annotations)
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (d *DRPCInstance) updateUserPlacementRule(homeCluster, reason string) error {
