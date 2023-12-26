@@ -70,12 +70,22 @@ func (u *drclusterInstance) mModeActivationsRequired() (map[string]ramen.Storage
 			continue
 		}
 
+		placementObj, err := getPlacementOrPlacementRule(u.ctx, u.client, drpcCollection.drpc, u.log)
+		if err != nil {
+			return nil, err
+		}
+
+		vrgNamespace, err := selectVRGNamespace(u.client, u.log, drpcCollection.drpc, placementObj)
+		if err != nil {
+			return nil, err
+		}
+
 		required, activationsRequired := requiresRegionalFailoverPrerequisites(
 			u.ctx,
 			u.reconciler.APIReader,
 			[]string{u.object.Spec.S3ProfileName},
 			drpcCollection.drpc.GetName(),
-			drpcCollection.drpc.GetNamespace(),
+			vrgNamespace,
 			vrgs,
 			u.object.GetName(),
 			u.reconciler.ObjectStoreGetter,
@@ -115,7 +125,7 @@ func (u *drclusterInstance) getVRGs(drpcCollection DRPCAndPolicy) (map[string]*r
 		return nil, err
 	}
 
-	vrgs, failedToQueryCluster, err := getVRGsFromManagedClusters(
+	vrgs, _, failedToQueryCluster, err := getVRGsFromManagedClusters(
 		u.reconciler.MCVGetter,
 		drpcCollection.drpc,
 		drClusters,

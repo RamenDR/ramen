@@ -18,7 +18,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/yaml"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
@@ -323,13 +322,6 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 func (d *DRPCInstance) RunFailover() (bool, error) {
 	d.log.Info("Entering RunFailover", "state", d.getLastDRState())
 
-	if d.isPlacementNeedsFixing() {
-		err := d.fixupPlacementForFailover()
-		if err != nil {
-			d.log.Info("Couldn't fix up placement for Failover")
-		}
-	}
-
 	const done = true
 
 	// We are done if empty
@@ -345,6 +337,7 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 
 	// IFF VRG exists and it is primary in the failoverCluster, the clean up and setup VolSync if needed.
 	if d.vrgExistsAndPrimary(failoverCluster) {
+		d.updatePreferredDecision()
 		d.setDRState(rmn.FailedOver)
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
@@ -440,6 +433,7 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 		return !done, err
 	}
 
+	d.updatePreferredDecision()
 	d.setDRState(rmn.FailedOver)
 	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Completed")
@@ -546,7 +540,7 @@ func (d *DRPCInstance) checkRegionalFailoverPrerequisites() bool {
 			d.ctx,
 			d.reconciler.APIReader,
 			[]string{drCluster.Spec.S3ProfileName},
-			d.instance.GetName(), d.instance.GetNamespace(),
+			d.instance.GetName(), d.vrgNamespace,
 			d.vrgs, d.instance.Spec.FailoverCluster,
 			d.reconciler.ObjStoreGetter, d.log); required {
 			return checkFailoverMaintenanceActivations(drCluster, activationsRequired, d.log)
@@ -566,7 +560,7 @@ func requiresRegionalFailoverPrerequisites(
 	apiReader client.Reader,
 	s3ProfileNames []string,
 	drpcName string,
-	drpcNamespace string,
+	vrgNamespace string,
 	vrgs map[string]*rmn.VolumeReplicationGroup,
 	failoverCluster string,
 	objectStoreGetter ObjectStoreGetter,
@@ -579,7 +573,7 @@ func requiresRegionalFailoverPrerequisites(
 
 	vrg := getLastKnownPrimaryVRG(vrgs, failoverCluster)
 	if vrg == nil {
-		vrg = GetLastKnownVRGPrimaryFromS3(ctx, apiReader, s3ProfileNames, drpcName, drpcNamespace, objectStoreGetter, log)
+		vrg = GetLastKnownVRGPrimaryFromS3(ctx, apiReader, s3ProfileNames, drpcName, vrgNamespace, objectStoreGetter, log)
 		if vrg == nil {
 			// TODO: Is this an error, should we ensure at least one VRG is found in the edge cases?
 			// Potentially missing VRG and so stop failover? How to recover in that case?
@@ -662,7 +656,7 @@ func GetLastKnownVRGPrimaryFromS3(
 
 		vrg := &rmn.VolumeReplicationGroup{}
 		if err := vrgObjectDownload(objectStorer, sourcePathNamePrefix, vrg); err != nil {
-			log.Error(err, "Kube objects capture-to-recover-from identifier get error")
+			log.Info(fmt.Sprintf("Failed to get VRG from s3 store - s3ProfileName %s. Err %v", s3ProfileName, err))
 
 			continue
 		}
@@ -773,13 +767,6 @@ func checkActivationForStorageIdentifier(
 func (d *DRPCInstance) RunRelocate() (bool, error) {
 	d.log.Info("Entering RunRelocate", "state", d.getLastDRState(), "progression", d.getProgression())
 
-	if d.isPlacementNeedsFixing() {
-		err := d.fixupPlacementForRelocate()
-		if err != nil {
-			d.log.Info("Couldn't fix up placement for Relocate")
-		}
-	}
-
 	const done = true
 
 	preferredCluster := d.instance.Spec.PreferredCluster
@@ -796,6 +783,7 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 
 	// We are done if already relocated; if there were secondaries they are cleaned up above
 	if curHomeCluster != "" && d.vrgExistsAndPrimary(preferredCluster) {
+		d.updatePreferredDecision()
 		d.setDRState(rmn.Relocated)
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
@@ -816,7 +804,7 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	}
 
 	if d.getLastDRState() != rmn.Relocating && !d.validatePeerReady() {
-		return !done, fmt.Errorf("clean up on secondaries pending (%+v)", d.instance)
+		return !done, fmt.Errorf("clean up secondaries is pending (%+v)", d.instance.Status.Conditions)
 	}
 
 	if curHomeCluster != "" && curHomeCluster != preferredCluster {
@@ -837,6 +825,11 @@ func (d *DRPCInstance) ensureActionCompleted(srcCluster string) (bool, error) {
 	const done = true
 
 	err := d.ensureVRGManifestWork(srcCluster)
+	if err != nil {
+		return !done, err
+	}
+
+	err = d.ensurePlacement(srcCluster)
 	if err != nil {
 		return !done, err
 	}
@@ -1009,11 +1002,11 @@ func (d *DRPCInstance) areMultipleVRGsPrimary() bool {
 
 func (d *DRPCInstance) validatePeerReady() bool {
 	condition := findCondition(d.instance.Status.Conditions, rmn.ConditionPeerReady)
-	d.log.Info(fmt.Sprintf("validatePeerReady -- Condition %v", condition))
-
 	if condition == nil || condition.Status == metav1.ConditionTrue {
 		return true
 	}
+
+	d.log.Info("validatePeerReady", "Condition", condition)
 
 	return false
 }
@@ -1142,6 +1135,7 @@ func (d *DRPCInstance) relocate(preferredCluster, preferredClusterNamespace stri
 		return !done, err
 	}
 
+	d.updatePreferredDecision()
 	d.setDRState(rmn.Relocated)
 	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Completed")
@@ -1281,15 +1275,13 @@ func (d *DRPCInstance) vrgExistsAndPrimary(targetCluster string) bool {
 		return false
 	}
 
-	clusterDecision := d.reconciler.getClusterDecision(d.userPlacement)
-	if clusterDecision.ClusterName != "" &&
-		targetCluster == clusterDecision.ClusterName {
-		d.log.Info(fmt.Sprintf("Already %q to cluster %s", d.getLastDRState(), targetCluster))
-
-		return true
+	if !vrg.GetDeletionTimestamp().IsZero() {
+		return false
 	}
 
-	return false
+	d.log.Info(fmt.Sprintf("Already %q to cluster %s", d.getLastDRState(), targetCluster))
+
+	return true
 }
 
 func (d *DRPCInstance) mwExistsAndPlacementUpdated(targetCluster string) (bool, error) {
@@ -1348,7 +1340,12 @@ func (d *DRPCInstance) cleanupSecondaries(skipCluster string) (bool, error) {
 		}
 
 		// If VRG hasn't been deleted, then make sure that the MW for it is deleted and
-		// return and wait
+		// return and wait, but first make sure that the cluster is accessible
+		if err := checkAccessToVRGOnCluster(d.reconciler.MCVGetter, d.instance.GetName(), d.instance.GetNamespace(),
+			d.vrgNamespace, clusterName); err != nil {
+			return false, err
+		}
+
 		mwDeleted, err := d.ensureVRGManifestWorkOnClusterDeleted(clusterName)
 		if err != nil {
 			return false, err
@@ -1386,6 +1383,25 @@ func (d *DRPCInstance) cleanupSecondaries(skipCluster string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+func checkAccessToVRGOnCluster(mcvGetter rmnutil.ManagedClusterViewGetter,
+	name, drpcNamespace, vrgNamespace, clusterName string,
+) error {
+	annotations := make(map[string]string)
+
+	annotations[DRPCNameAnnotation] = name
+	annotations[DRPCNamespaceAnnotation] = drpcNamespace
+
+	_, err := mcvGetter.GetVRGFromManagedCluster(name,
+		vrgNamespace, clusterName, annotations)
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (d *DRPCInstance) updateUserPlacementRule(homeCluster, reason string) error {
@@ -1435,7 +1451,7 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string, repState rmn.Re
 	d.log.Info("Creating VRG ManifestWork",
 		"Last State:", d.getLastDRState(), "cluster", homeCluster)
 
-	vrg := d.generateVRG(repState)
+	vrg := d.generateVRG(homeCluster, repState)
 	vrg.Spec.VolSync.Disabled = d.volSyncDisabled
 
 	annotations := make(map[string]string)
@@ -1468,6 +1484,18 @@ func (d *DRPCInstance) ensureVRGManifestWork(homeCluster string) error {
 	return d.createVRGManifestWork(homeCluster, cachedVrg.Spec.ReplicationState)
 }
 
+func (d *DRPCInstance) ensurePlacement(homeCluster string) error {
+	clusterDecision := d.reconciler.getClusterDecision(d.userPlacement)
+	if clusterDecision.ClusterName == "" ||
+		homeCluster != clusterDecision.ClusterName {
+		d.updatePreferredDecision()
+
+		return d.updateUserPlacementRule(homeCluster, homeCluster)
+	}
+
+	return nil
+}
+
 func vrgAction(drpcAction rmn.DRAction) rmn.VRGAction {
 	switch drpcAction {
 	case rmn.ActionFailover:
@@ -1488,14 +1516,20 @@ func (d *DRPCInstance) setVRGAction(vrg *rmn.VolumeReplicationGroup) {
 	vrg.Spec.Action = action
 }
 
-func (d *DRPCInstance) generateVRG(repState rmn.ReplicationState) rmn.VolumeReplicationGroup {
+func (d *DRPCInstance) generateVRG(dstCluster string, repState rmn.ReplicationState) rmn.VolumeReplicationGroup {
 	vrg := rmn.VolumeReplicationGroup{
-		TypeMeta:   metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
-		ObjectMeta: metav1.ObjectMeta{Name: d.instance.Name, Namespace: d.vrgNamespace},
+		TypeMeta: metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      d.instance.Name,
+			Namespace: d.vrgNamespace,
+			Annotations: map[string]string{
+				DestinationClusterAnnotationKey: dstCluster,
+			},
+		},
 		Spec: rmn.VolumeReplicationGroupSpec{
 			PVCSelector:          d.instance.Spec.PVCSelector,
 			ReplicationState:     repState,
-			S3Profiles:           d.availableS3Profiles(),
+			S3Profiles:           AvailableS3Profiles(d.drClusters),
 			KubeObjectProtection: d.instance.Spec.KubeObjectProtection,
 		},
 	}
@@ -1505,21 +1539,6 @@ func (d *DRPCInstance) generateVRG(repState rmn.ReplicationState) rmn.VolumeRepl
 	vrg.Spec.Sync = d.generateVRGSpecSync()
 
 	return vrg
-}
-
-func (d *DRPCInstance) availableS3Profiles() []string {
-	profiles := sets.New[string]()
-
-	for i := range d.drClusters {
-		drCluster := &d.drClusters[i]
-		if drClusterIsDeleted(drCluster) {
-			continue
-		}
-
-		profiles.Insert(drCluster.Spec.S3ProfileName)
-	}
-
-	return sets.List(profiles)
 }
 
 func (d *DRPCInstance) generateVRGSpecAsync() *rmn.VRGAsyncSpec {
@@ -1651,10 +1670,9 @@ func (d *DRPCInstance) ensureClusterDataRestored(homeCluster string) (*rmn.Volum
 	annotations[DRPCNameAnnotation] = d.instance.Name
 	annotations[DRPCNamespaceAnnotation] = d.instance.Namespace
 
-	vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name,
-		d.vrgNamespace, homeCluster, annotations)
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to get VRG %s from cluster %s (err: %w)", d.instance.Name, homeCluster, err)
+	vrg := d.vrgs[homeCluster]
+	if vrg == nil {
+		return nil, false, fmt.Errorf("failed to get VRG %s from cluster %s", d.instance.Name, homeCluster)
 	}
 
 	// ClusterDataReady condition tells us whether the PVs have been applied on the
@@ -2313,126 +2331,6 @@ func (d *DRPCInstance) setConditionOnInitialDeploymentCompletion() {
 
 	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
 		metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
-}
-
-func (d *DRPCInstance) isPlacementNeedsFixing() bool {
-	// Needs fixing if and only if the DRPC Status is empty, the Placement decision is empty, and
-	// the we have VRG(s) in the managed clusters
-	clusterDecision := d.reconciler.getClusterDecision(d.userPlacement)
-	d.log.Info(fmt.Sprintf("Check placement if needs fixing: PrD %v, PlD %v, VRGs %d",
-		d.instance.Status.PreferredDecision, clusterDecision, len(d.vrgs)))
-
-	if reflect.DeepEqual(d.instance.Status.PreferredDecision, plrv1.PlacementDecision{}) &&
-		(clusterDecision == nil || clusterDecision.ClusterName == "") && len(d.vrgs) > 0 {
-		return true
-	}
-
-	return false
-}
-
-func (d *DRPCInstance) selectCurrentPrimaries() []string {
-	var primaries []string
-
-	for clusterName, vrg := range d.vrgs {
-		if isVRGPrimary(vrg) {
-			primaries = append(primaries, clusterName)
-		}
-	}
-
-	return primaries
-}
-
-func (d *DRPCInstance) selectPrimaryForFailover(primaries []string) string {
-	for _, clusterName := range primaries {
-		if clusterName == d.instance.Spec.FailoverCluster {
-			return clusterName
-		}
-	}
-
-	return ""
-}
-
-func (d *DRPCInstance) fixupPlacementForFailover() error {
-	d.log.Info("Fixing PlacementRule for failover...")
-
-	var primary string
-
-	var primaries []string
-
-	var secondaries []string
-
-	if d.areMultipleVRGsPrimary() {
-		primaries := d.selectCurrentPrimaries()
-		primary = d.selectPrimaryForFailover(primaries)
-	} else {
-		primary, secondaries = d.selectCurrentPrimaryAndSecondaries()
-	}
-
-	// IFF we have a primary cluster, and it points to the failoverCluster, then rebuild the
-	// drpc status with it.
-	if primary != "" && primary == d.instance.Spec.FailoverCluster {
-		err := d.updateUserPlacementRule(primary, "")
-		if err != nil {
-			return err
-		}
-
-		// Update our 'well known' preferred placement
-		d.updatePreferredDecision()
-
-		peerReadyConditionStatus := metav1.ConditionTrue
-		peerReadyMsg := "Ready"
-		// IFF more than one primary then the failover hasn't entered the cleanup phase.
-		// IFF we have a secondary, then the failover hasn't completed the cleanup phase.
-		// We need to start where it was left off (best guess).
-		if len(primaries) > 1 || len(secondaries) > 0 {
-			d.instance.Status.Phase = rmn.FailingOver
-			peerReadyConditionStatus = metav1.ConditionFalse
-			peerReadyMsg = "NotReady"
-		}
-
-		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
-			peerReadyConditionStatus, rmn.ReasonSuccess, peerReadyMsg)
-
-		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
-			metav1.ConditionTrue, string(d.instance.Status.Phase), "Available")
-
-		return nil
-	}
-
-	return fmt.Errorf("detected a failover, but it can't rebuild the state")
-}
-
-func (d *DRPCInstance) fixupPlacementForRelocate() error {
-	if d.areMultipleVRGsPrimary() {
-		return fmt.Errorf("unconstructable state. Can't have multiple primaries on 'Relocate'")
-	}
-
-	primary, secondaries := d.selectCurrentPrimaryAndSecondaries()
-	d.log.Info(fmt.Sprintf("Fixing PlacementRule for relocation. Primary (%s), Secondaries (%v)",
-		primary, secondaries))
-
-	// IFF we have a primary cluster, then update the PlacementRule and reset PeerReady to false
-	// Setting the PeerReady condition status to false allows peer cleanup if necessary
-	if primary != "" {
-		err := d.updateUserPlacementRule(primary, "")
-		if err != nil {
-			return err
-		}
-
-		// Assume that it is not clean
-		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
-			metav1.ConditionFalse, rmn.ReasonNotStarted, "NotReady")
-	} else if len(secondaries) > 1 {
-		// Use case 3: After Hub Recovery, the DRPC Action found to be 'Relocate', and ALL VRGs are secondary
-		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
-			metav1.ConditionTrue, rmn.ReasonSuccess,
-			fmt.Sprintf("Fixed for relocation to %q", d.instance.Spec.PreferredCluster))
-	}
-
-	// Update our 'well known' preferred placement
-	d.updatePreferredDecision()
-
-	return nil
 }
 
 func (d *DRPCInstance) setStatusInitiating() {

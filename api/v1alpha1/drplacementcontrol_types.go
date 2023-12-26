@@ -69,6 +69,7 @@ const (
 	ReasonCleaning    = "Cleaning"
 	ReasonSuccess     = "Success"
 	ReasonNotStarted  = "NotStarted"
+	ReasonPaused      = "Paused"
 )
 
 type ProgressionStatus string
@@ -93,6 +94,7 @@ const (
 	ProgressionEnsuringVolSyncSetup                = ProgressionStatus("EnsuringVolSyncSetup")
 	ProgressionSettingupVolsyncDest                = ProgressionStatus("SettingUpVolSyncDest")
 	ProgressionDeleting                            = ProgressionStatus("Deleting")
+	ProgressionActionPaused                        = ProgressionStatus("Paused")
 )
 
 // DRPlacementControlSpec defines the desired state of DRPlacementControl
