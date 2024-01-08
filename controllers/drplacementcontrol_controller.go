@@ -284,6 +284,7 @@ func DRClusterPredicateFunc() predicate.Funcs {
 // DRClusterUpdateOfInterest checks if the new DRCluster resource as compared to the older version
 // requires any attention, it checks for the following updates:
 //   - If any maintenance mode is reported as activated
+//   - If drcluster was marked for deletion
 //
 // TODO: Needs some logs for easier troubleshooting
 func DRClusterUpdateOfInterest(oldDRCluster, newDRCluster *rmn.DRCluster) bool {
@@ -303,8 +304,8 @@ func DRClusterUpdateOfInterest(oldDRCluster, newDRCluster *rmn.DRCluster) bool {
 		}
 	}
 
-	// Exhausted all failover activation checks, this update is NOT of interest
-	return false
+	// Exhausted all failover activation checks, the only interesting update is deleting a drcluster.
+	return drClusterIsDeleted(newDRCluster)
 }
 
 // checkFailoverActivation checks if provided provisioner and storage instance is activated as per the
@@ -347,7 +348,16 @@ func getFailoverActivatedCondition(mMode rmn.ClusterMaintenanceMode) *metav1.Con
 func (r *DRPlacementControlReconciler) FilterDRCluster(drcluster *rmn.DRCluster) []ctrl.Request {
 	log := ctrl.Log.WithName("DRPCFilter").WithName("DRCluster").WithValues("cluster", drcluster)
 
-	drpcCollections, err := DRPCsFailingOverToCluster(r.Client, log, drcluster.GetName())
+	var drpcCollections []DRPCAndPolicy
+
+	var err error
+
+	if drClusterIsDeleted(drcluster) {
+		drpcCollections, err = DRPCsUsingDRCluster(r.Client, log, drcluster)
+	} else {
+		drpcCollections, err = DRPCsFailingOverToCluster(r.Client, log, drcluster.GetName())
+	}
+
 	if err != nil {
 		log.Info("Failed to process filter")
 
@@ -371,6 +381,76 @@ func (r *DRPlacementControlReconciler) FilterDRCluster(drcluster *rmn.DRCluster)
 type DRPCAndPolicy struct {
 	drpc     *rmn.DRPlacementControl
 	drPolicy *rmn.DRPolicy
+}
+
+// DRPCsUsingDRCluster finds DRPC resources using the DRcluster.
+func DRPCsUsingDRCluster(k8sclient client.Client, log logr.Logger, drcluster *rmn.DRCluster) ([]DRPCAndPolicy, error) {
+	drpolicies := &rmn.DRPolicyList{}
+	if err := k8sclient.List(context.TODO(), drpolicies); err != nil {
+		log.Error(err, "Failed to list DRPolicies", "drcluster", drcluster.GetName())
+
+		return nil, err
+	}
+
+	found := []DRPCAndPolicy{}
+
+	for i := range drpolicies.Items {
+		drpolicy := &drpolicies.Items[i]
+
+		for _, clusterName := range drpolicy.Spec.DRClusters {
+			if clusterName != drcluster.GetName() {
+				continue
+			}
+
+			log.Info("Found DRPolicy referencing DRCluster", "drpolicy", drpolicy.GetName())
+
+			drpcs, err := DRPCsUsingDRPolicy(k8sclient, log, drpolicy)
+			if err != nil {
+				return nil, err
+			}
+
+			for _, drpc := range drpcs {
+				found = append(found, DRPCAndPolicy{drpc: drpc, drPolicy: drpolicy})
+			}
+
+			break
+		}
+	}
+
+	return found, nil
+}
+
+// DRPCsUsingDRPolicy finds DRPC resources that reference the DRPolicy.
+func DRPCsUsingDRPolicy(
+	k8sclient client.Client,
+	log logr.Logger,
+	drpolicy *rmn.DRPolicy,
+) ([]*rmn.DRPlacementControl, error) {
+	drpcs := &rmn.DRPlacementControlList{}
+	if err := k8sclient.List(context.TODO(), drpcs); err != nil {
+		log.Error(err, "Failed to list DRPCs", "drpolicy", drpolicy.GetName())
+
+		return nil, err
+	}
+
+	found := []*rmn.DRPlacementControl{}
+
+	for i := range drpcs.Items {
+		drpc := &drpcs.Items[i]
+
+		if drpc.Spec.DRPolicyRef.Name != drpolicy.GetName() {
+			continue
+		}
+
+		log.Info("Found DRPC referencing drpolicy",
+			"name", drpc.GetName(),
+			"namespace", drpc.GetNamespace(),
+			"drpolicy", drpolicy.GetName())
+
+		found = append(found, drpc)
+	}
+
+	return found, nil
 }
 
 // DRPCsFailingOverToCluster lists DRPC resources that are failing over to the passed in drcluster
