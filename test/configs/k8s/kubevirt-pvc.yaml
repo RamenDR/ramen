@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 ---
-repo: https://github.com/nirs/ocm-kubevirt-samples.git
+repo: http://host.minikube.internal/ocm-kubevirt-samples.git
 path: subscription
-branch: test
+branch: fosdem
 name: kubevirt-sample
 namespace: kubevirt-sample
 dr_policy: kubevirt-sample
-pvc_label: vm-standalone-dv-odr-regional
+pvc_label: kubevirt
