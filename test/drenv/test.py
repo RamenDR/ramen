@@ -96,6 +96,42 @@ def _excepthook(t, v, tb):
     log.exception("test failed", exc_info=(t, v, tb))
 
 
+def _deploy_dr_policy():
+    dr_policy = f"""
+apiVersion: ramendr.openshift.io/v1alpha1
+kind: DRPolicy
+metadata:
+  name: {config['dr_policy']}
+spec:
+  drClusters:
+  - {env['clusters'][0]}
+  - {env['clusters'][1]}
+  schedulingInterval: 1m
+"""
+    info("Deploying drpolicy '%s'", config["dr_policy"])
+    kubectl.apply("--filename=-", input=dr_policy, context=env["hub"], log=debug)
+
+    info("Waiting until drpolicy '%s' is validated", config["dr_policy"])
+    kubectl.wait(
+        "drpolicy",
+        config["dr_policy"],
+        "--for=condition=Validated",
+        context=env["hub"],
+        log=debug,
+    )
+
+
+def _delete_dr_policy():
+    info("Deleting drpolicy '%s'", config["dr_policy"])
+    kubectl.delete(
+        "drpolicy",
+        config["dr_policy"],
+        "--ignore-not-found",
+        context=env["hub"],
+        log=debug,
+    )
+
+
 def deploy():
     """
     Deploy application on cluster.
@@ -106,6 +142,7 @@ def deploy():
         context=env["hub"],
         log=debug,
     )
+    _deploy_dr_policy()
     info("Deploying application")
     kubectl.apply(
         f"--kustomize={config['repo']}/{config['path']}?ref={config['branch']}",
@@ -132,6 +169,7 @@ def undeploy():
         context=env["hub"],
         log=debug,
     )
+    _delete_dr_policy()
 
 
 def enable_dr():
@@ -158,14 +196,14 @@ def enable_dr():
 apiVersion: ramendr.openshift.io/v1alpha1
 kind: DRPlacementControl
 metadata:
-  name: busybox-drpc
+  name: {config['name']}-drpc
   namespace: {config['namespace']}
   labels:
     app: {config['name']}
 spec:
   preferredCluster: {cluster}
   drPolicyRef:
-    name: dr-policy
+    name: {config['dr_policy']}
   placementRef:
     kind: Placement
     name: {placement_name}
