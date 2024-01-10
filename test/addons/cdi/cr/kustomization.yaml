@@ -4,4 +4,18 @@
 # yamllint disable rule:line-length
 ---
 resources:
-- https://github.com/kubevirt/containerized-data-importer/releases/download/v1.58.1/cdi-cr.yaml
+  - https://github.com/kubevirt/containerized-data-importer/releases/download/v1.58.1/cdi-cr.yaml
+patches:
+  # Allow pulling from local insecure registry.
+  - target:
+      kind: CDI
+      name: cdi
+    patch: |-
+      apiVersion: cdi.kubevirt.io/v1beta1
+      kind: CDI
+      metadata:
+        name: not-used
+      spec:
+        config:
+          insecureRegistries:
+            - host.minikube.internal:5000
