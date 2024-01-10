@@ -8,6 +8,6 @@ from drenv import test
 test.start("undeploy", __file__)
 args = test.parse_args()
 
-test.info("Deleting busybox example application")
+test.info("Deleting application")
 test.undeploy()
-test.info("Application was undeployed successfully")
+test.info("Application was deleted")
