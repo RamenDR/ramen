@@ -158,14 +158,14 @@ def enable_dr():
 apiVersion: ramendr.openshift.io/v1alpha1
 kind: DRPlacementControl
 metadata:
-  name: busybox-drpc
+  name: {config['name']}-drpc
   namespace: {config['namespace']}
   labels:
     app: {config['name']}
 spec:
   preferredCluster: {cluster}
   drPolicyRef:
-    name: dr-policy
+    name: {config['dr_policy']}
   placementRef:
     kind: Placement
     name: {placement_name}
