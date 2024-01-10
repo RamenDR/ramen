@@ -7,4 +7,5 @@ path: subscription
 branch: main
 name: busybox-sample
 namespace: busybox-sample
+dr_policy: dr-policy
 pvc_label: busybox
