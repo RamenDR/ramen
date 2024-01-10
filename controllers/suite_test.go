@@ -41,10 +41,10 @@ import (
 	cpcv1 "open-cluster-management.io/config-policy-controller/api/v1"
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 
-	argov1alpha1 "github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
 	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	ramencontrollers "github.com/ramendr/ramen/controllers"
+	argocdv1alpha1hack "github.com/ramendr/ramen/controllers/argocd"
 	"github.com/ramendr/ramen/controllers/util"
 	Recipe "github.com/ramendr/recipe/api/v1alpha1"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
@@ -204,7 +204,7 @@ var _ = BeforeSuite(func() {
 	err = clrapiv1beta1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	err = argov1alpha1.AddToScheme(scheme.Scheme)
+	err = argocdv1alpha1hack.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 	// +kubebuilder:scaffold:scheme
 

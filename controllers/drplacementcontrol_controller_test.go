@@ -30,10 +30,10 @@ import (
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 
-	argov1alpha1 "github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
 	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
+	argocdv1alpha1hack "github.com/ramendr/ramen/controllers/argocd"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -143,30 +143,24 @@ var (
 		},
 	}
 
-	appSet = argov1alpha1.ApplicationSet{
+	appSet = argocdv1alpha1hack.ApplicationSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "simple-appset",
 			Namespace: DefaultDRPCNamespace,
 		},
-		Spec: argov1alpha1.ApplicationSetSpec{
-			Template: argov1alpha1.ApplicationSetTemplate{
-				ApplicationSetTemplateMeta: argov1alpha1.ApplicationSetTemplateMeta{Name: "{{cluster}}-guestbook"},
-				Spec: argov1alpha1.ApplicationSpec{
+		Spec: argocdv1alpha1hack.ApplicationSetSpec{
+			Template: argocdv1alpha1hack.ApplicationSetTemplate{
+				ApplicationSetTemplateMeta: argocdv1alpha1hack.ApplicationSetTemplateMeta{},
+				Spec: argocdv1alpha1hack.ApplicationSpec{
 					Project: "default",
-					Source: &argov1alpha1.ApplicationSource{
-						RepoURL:        "https://github.com/argoproj/argocd-example-apps.git",
-						TargetRevision: "HEAD",
-						Path:           "guestbook",
-					},
-					Destination: argov1alpha1.ApplicationDestination{
-						Server:    "{{url}}",
+					Destination: argocdv1alpha1hack.ApplicationDestination{
 						Namespace: ApplicationNamespace,
 					},
 				},
 			},
-			Generators: []argov1alpha1.ApplicationSetGenerator{
+			Generators: []argocdv1alpha1hack.ApplicationSetGenerator{
 				{
-					ClusterDecisionResource: &argov1alpha1.DuckTypeGenerator{
+					ClusterDecisionResource: &argocdv1alpha1hack.DuckTypeGenerator{
 						LabelSelector: metav1.LabelSelector{
 							MatchLabels: map[string]string{
 								clrapiv1beta1.PlacementLabel: UserPlacementName,

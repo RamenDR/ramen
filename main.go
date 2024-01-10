@@ -34,8 +34,8 @@ import (
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 
-	argov1alpha1 "github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
+	argocdv1alpha1hack "github.com/ramendr/ramen/controllers/argocd"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	// +kubebuilder:scaffold:imports
@@ -92,7 +92,7 @@ func newManager() (ctrl.Manager, *ramendrv1alpha1.RamenConfig, error) {
 		utilruntime.Must(viewv1beta1.AddToScheme(scheme))
 		utilruntime.Must(cpcv1.AddToScheme(scheme))
 		utilruntime.Must(gppv1.AddToScheme(scheme))
-		utilruntime.Must(argov1alpha1.AddToScheme(scheme))
+		utilruntime.Must(argocdv1alpha1hack.AddToScheme(scheme))
 		utilruntime.Must(clrapiv1beta1.AddToScheme(scheme))
 	} else {
 		utilruntime.Must(velero.AddToScheme(scheme))
