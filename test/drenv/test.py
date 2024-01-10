@@ -106,7 +106,7 @@ def deploy():
         context=env["hub"],
         log=debug,
     )
-    info("Deploying application")
+    info("Deploying application '%s'", config["name"])
     kubectl.apply(
         f"--kustomize={config['repo']}/{config['path']}?ref={config['branch']}",
         context=env["hub"],
@@ -125,7 +125,7 @@ def undeploy():
         context=env["hub"],
         log=debug,
     )
-    info("Undeploying application")
+    info("Undeploying application '%s'", config["name"])
     kubectl.delete(
         f"--kustomize={config['repo']}/{config['path']}?ref={config['branch']}",
         "--ignore-not-found",
