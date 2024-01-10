@@ -15,6 +15,8 @@ sources := $(wildcard \
 	addons/*/start \
 	addons/*/test \
 	addons/*/stop \
+	*/enable-dr \
+	*/disable-dr \
 	*/deploy \
 	*/undeploy \
 	*/failover \
