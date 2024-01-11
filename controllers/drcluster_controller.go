@@ -26,7 +26,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/apis/csiaddons/v1alpha1"
 	"github.com/go-logr/logr"
@@ -77,56 +76,62 @@ const (
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	drpcMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
-		drpc, ok := obj.(*ramen.DRPlacementControl)
-		if !ok {
-			return []reconcile.Request{}
-		}
+	// ensure next line is not greater than 120 columns
+	drpcMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
+		func(ctx context.Context, obj client.Object) []reconcile.Request {
+			drpc, ok := obj.(*ramen.DRPlacementControl)
+			if !ok {
+				return []reconcile.Request{}
+			}
 
-		ctrl.Log.Info(fmt.Sprintf("DRCluster: Filtering DRPC (%s/%s)", drpc.Name, drpc.Namespace))
+			ctrl.Log.Info(fmt.Sprintf("DRCluster: Filtering DRPC (%s/%s)", drpc.Name, drpc.Namespace))
 
-		return filterDRPC(drpc)
-	}))
+			return filterDRPC(drpc)
+		}))
 
 	mwPred := ManifestWorkPredicateFunc()
 
-	mwMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
-		mw, ok := obj.(*ocmworkv1.ManifestWork)
-		if !ok {
-			return []reconcile.Request{}
-		}
+	mwMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
+		func(ctx context.Context, obj client.Object) []reconcile.Request {
+			mw, ok := obj.(*ocmworkv1.ManifestWork)
+			if !ok {
+				return []reconcile.Request{}
+			}
 
-		ctrl.Log.Info(fmt.Sprintf("DRCluster: Filtering ManifestWork (%s/%s)", mw.Name, mw.Namespace))
+			ctrl.Log.Info(fmt.Sprintf("DRCluster: Filtering ManifestWork (%s/%s)", mw.Name, mw.Namespace))
 
-		return filterDRClusterMW(mw)
-	}))
+			return filterDRClusterMW(mw)
+		}))
 
 	mcvPred := ManagedClusterViewPredicateFunc()
 
-	mcvMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
-		mcv, ok := obj.(*viewv1beta1.ManagedClusterView)
-		if !ok {
-			return []reconcile.Request{}
-		}
+	mcvMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
+		func(ctx context.Context, obj client.Object) []reconcile.Request {
+			mcv, ok := obj.(*viewv1beta1.ManagedClusterView)
+			if !ok {
+				return []reconcile.Request{}
+			}
 
-		ctrl.Log.Info(fmt.Sprintf("DRCluster: Filtering MCV (%s/%s)", mcv.Name, mcv.Namespace))
+			ctrl.Log.Info(fmt.Sprintf("DRCluster: Filtering MCV (%s/%s)", mcv.Name, mcv.Namespace))
 
-		return filterDRClusterMCV(mcv)
-	}))
+			return filterDRClusterMCV(mcv)
+		}))
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&ramen.DRCluster{}).
-		Watches(&source.Kind{Type: &ramen.DRPlacementControl{}}, drpcMapFun, builder.WithPredicates(drpcPred())).
-		Watches(&source.Kind{Type: &ocmworkv1.ManifestWork{}}, mwMapFun, builder.WithPredicates(mwPred)).
-		Watches(&source.Kind{Type: &viewv1beta1.ManagedClusterView{}}, mcvMapFun, builder.WithPredicates(mcvPred)).
-		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(r.drClusterConfigMapMapFunc)).
-		Watches(&source.Kind{Type: &corev1.Secret{}}, handler.EnqueueRequestsFromMapFunc(r.drClusterSecretMapFunc),
+		Watches(&ramen.DRPlacementControl{}, drpcMapFun, builder.WithPredicates(drpcPred())).
+		Watches(&ocmworkv1.ManifestWork{}, mwMapFun, builder.WithPredicates(mwPred)).
+		Watches(&viewv1beta1.ManagedClusterView{}, mcvMapFun, builder.WithPredicates(mcvPred)).
+		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.drClusterConfigMapMapFunc)).
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.drClusterSecretMapFunc),
 			builder.WithPredicates(util.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
 		).
 		Complete(r)
 }
 
-func (r *DRClusterReconciler) drClusterConfigMapMapFunc(configMap client.Object) []reconcile.Request {
+func (r *DRClusterReconciler) drClusterConfigMapMapFunc(
+	ctx context.Context, configMap client.Object,
+) []reconcile.Request {
 	if configMap.GetName() != HubOperatorConfigMapName || configMap.GetNamespace() != NamespaceName() {
 		return []reconcile.Request{}
 	}
@@ -144,7 +149,7 @@ func (r *DRClusterReconciler) drClusterConfigMapMapFunc(configMap client.Object)
 	return requests
 }
 
-func (r *DRClusterReconciler) drClusterSecretMapFunc(secret client.Object) []reconcile.Request {
+func (r *DRClusterReconciler) drClusterSecretMapFunc(ctx context.Context, secret client.Object) []reconcile.Request {
 	if secret.GetNamespace() != NamespaceName() {
 		return []reconcile.Request{}
 	}
