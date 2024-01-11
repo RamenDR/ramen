@@ -258,7 +258,7 @@ type ProtectedPVC struct {
 
 	// Resources set in the claim to be replicated
 	//+optional
-	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+	Resources corev1.VolumeResourceRequirements `json:"resources,omitempty"`
 
 	// Conditions for this protected pvc
 	//+optional

@@ -1337,7 +1337,7 @@ func pvc(pvcName, namespace, volumeName, storageClassName string, labels map[str
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
 			AccessModes:      accessModes,
-			Resources:        corev1.ResourceRequirements{Requests: capacity},
+			Resources:        corev1.VolumeResourceRequirements{Requests: capacity},
 			VolumeName:       volumeName,
 			StorageClassName: &storageClassName, // Set to nil?
 		},
