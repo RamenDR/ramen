@@ -4,6 +4,8 @@
 package util
 
 import (
+	"context"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -11,7 +13,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 func OwnsAcrossNamespaces(
@@ -24,8 +25,8 @@ func OwnsAcrossNamespaces(
 	log := ctrl.Log.WithValues("gvks", groupVersionKinds)
 
 	return builder.Watches(
-		&source.Kind{Type: object},
-		handler.EnqueueRequestsFromMapFunc(func(o client.Object) []reconcile.Request {
+		object,
+		handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
 			labels := o.GetLabels()
 			log := log.WithValues(
 				"kind", o.GetObjectKind(),
