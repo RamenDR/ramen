@@ -285,7 +285,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 								StorageClassName:   &storageClassName,
 								AccessModes:        testAccessModes,
 
-								Resources: corev1.ResourceRequirements{Requests: testCapacity0},
+								Resources: corev1.VolumeResourceRequirements{Requests: testCapacity0},
 							},
 						},
 						{
@@ -295,7 +295,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 								StorageClassName:   &storageClassName,
 								AccessModes:        testAccessModes,
 
-								Resources: corev1.ResourceRequirements{Requests: testCapacity1},
+								Resources: corev1.VolumeResourceRequirements{Requests: testCapacity1},
 							},
 						},
 					}
@@ -392,7 +392,7 @@ func createPVCBoundToRunningPod(ctx context.Context, namespace string,
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
 			AccessModes:      accessModes,
-			Resources:        corev1.ResourceRequirements{Requests: capacity},
+			Resources:        corev1.VolumeResourceRequirements{Requests: capacity},
 			StorageClassName: &storageClassName,
 		},
 	}

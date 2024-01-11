@@ -205,7 +205,7 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 				},
 				Spec: corev1.PersistentVolumeClaimSpec{
 					AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
-					Resources: corev1.ResourceRequirements{
+					Resources: corev1.VolumeResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceStorage: capacity,
 						},
@@ -448,7 +448,7 @@ var _ = Describe("VolSync_Handler", func() {
 					Name:               "mytestpvc",
 					ProtectedByVolSync: true,
 					StorageClassName:   &testStorageClassName,
-					Resources: corev1.ResourceRequirements{
+					Resources: corev1.VolumeResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceStorage: capacity,
 						},
@@ -685,7 +685,7 @@ var _ = Describe("VolSync_Handler", func() {
 					Name:               testPVCName,
 					ProtectedByVolSync: true,
 					StorageClassName:   &testStorageClassName,
-					Resources: corev1.ResourceRequirements{
+					Resources: corev1.VolumeResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceStorage: capacity,
 						},
@@ -1103,7 +1103,7 @@ var _ = Describe("VolSync_Handler", func() {
 					Name:               pvcName,
 					ProtectedByVolSync: true,
 					StorageClassName:   &testStorageClassName,
-					Resources: corev1.ResourceRequirements{
+					Resources: corev1.VolumeResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceStorage: pvcCapacity,
 						},
@@ -1439,7 +1439,7 @@ var _ = Describe("VolSync_Handler", func() {
 						Name:               pvcNamePrefix + strconv.Itoa(i),
 						ProtectedByVolSync: true,
 						StorageClassName:   &testStorageClassName,
-						Resources: corev1.ResourceRequirements{
+						Resources: corev1.VolumeResourceRequirements{
 							Requests: corev1.ResourceList{
 								corev1.ResourceStorage: pvcCapacity,
 							},
@@ -1468,7 +1468,7 @@ var _ = Describe("VolSync_Handler", func() {
 						Name:               pvcNamePrefixOtherOwner + strconv.Itoa(i),
 						ProtectedByVolSync: true,
 						StorageClassName:   &testStorageClassName,
-						Resources: corev1.ResourceRequirements{
+						Resources: corev1.VolumeResourceRequirements{
 							Requests: corev1.ResourceList{
 								corev1.ResourceStorage: pvcCapacity,
 							},
@@ -1888,7 +1888,7 @@ func createDummyPVC(pvcName, namespace string, capacity resource.Quantity,
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-			Resources: corev1.ResourceRequirements{
+			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceStorage: capacity,
 				},
