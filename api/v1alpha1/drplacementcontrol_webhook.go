@@ -11,6 +11,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 // log is for logging in this package.
@@ -28,19 +29,19 @@ func (r *DRPlacementControl) SetupWebhookWithManager(mgr ctrl.Manager) error {
 var _ webhook.Validator = &DRPlacementControl{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
-func (r *DRPlacementControl) ValidateCreate() error {
+func (r *DRPlacementControl) ValidateCreate() (admission.Warnings, error) {
 	drplacementcontrollog.Info("validate create", "name", r.Name)
 
-	return nil
+	return nil, nil
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (r *DRPlacementControl) ValidateUpdate(old runtime.Object) error {
+func (r *DRPlacementControl) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
 	drplacementcontrollog.Info("validate update", "name", r.Name)
 
 	oldDRPC, ok := old.(*DRPlacementControl)
 	if !ok {
-		return fmt.Errorf("error casting old DRPC")
+		return nil, fmt.Errorf("error casting old DRPC")
 	}
 
 	// checks for immutability
@@ -49,7 +50,7 @@ func (r *DRPlacementControl) ValidateUpdate(old runtime.Object) error {
 			"old", oldDRPC.Spec.PlacementRef,
 			"new", r.Spec.PlacementRef)
 
-		return fmt.Errorf("PlacementRef cannot be changed")
+		return nil, fmt.Errorf("PlacementRef cannot be changed")
 	}
 
 	if !reflect.DeepEqual(r.Spec.DRPolicyRef, oldDRPC.Spec.DRPolicyRef) {
@@ -57,7 +58,7 @@ func (r *DRPlacementControl) ValidateUpdate(old runtime.Object) error {
 			"old", oldDRPC.Spec.DRPolicyRef,
 			"new", r.Spec.DRPolicyRef)
 
-		return fmt.Errorf("DRPolicyRef cannot be changed")
+		return nil, fmt.Errorf("DRPolicyRef cannot be changed")
 	}
 
 	if !reflect.DeepEqual(r.Spec.PVCSelector, oldDRPC.Spec.PVCSelector) {
@@ -65,15 +66,15 @@ func (r *DRPlacementControl) ValidateUpdate(old runtime.Object) error {
 			"old", oldDRPC.Spec.PVCSelector,
 			"new", r.Spec.PVCSelector)
 
-		return fmt.Errorf("PVCSelector cannot be changed")
+		return nil, fmt.Errorf("PVCSelector cannot be changed")
 	}
 
-	return nil
+	return nil, nil
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
-func (r *DRPlacementControl) ValidateDelete() error {
+func (r *DRPlacementControl) ValidateDelete() (admission.Warnings, error) {
 	drplacementcontrollog.Info("validate delete", "name", r.Name)
 
-	return nil
+	return nil, nil
 }
