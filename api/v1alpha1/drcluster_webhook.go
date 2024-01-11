@@ -10,6 +10,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 // log is for logging in this package.
@@ -27,50 +28,50 @@ func (r *DRCluster) SetupWebhookWithManager(mgr ctrl.Manager) error {
 var _ webhook.Validator = &DRCluster{}
 
 // ValidateCreate checks
-func (r *DRCluster) ValidateCreate() error {
+func (r *DRCluster) ValidateCreate() (admission.Warnings, error) {
 	drclusterlog.Info("validate create", "name", r.Name)
 
 	return r.ValidateDRCluster()
 }
 
 // ValidateUpdate checks
-func (r *DRCluster) ValidateUpdate(old runtime.Object) error {
+func (r *DRCluster) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
 	drclusterlog.Info("validate update", "name", r.Name)
 
 	oldDRCluster, ok := old.(*DRCluster)
 	if !ok {
-		return fmt.Errorf("error casting old DRCluster")
+		return nil, fmt.Errorf("error casting old DRCluster")
 	}
 
 	// check for immutability for Region and S3ProfileName
 	if r.Spec.Region != oldDRCluster.Spec.Region {
-		return fmt.Errorf("Region cannot be changed")
+		return nil, fmt.Errorf("Region cannot be changed")
 	}
 
 	if r.Spec.S3ProfileName != oldDRCluster.Spec.S3ProfileName {
-		return fmt.Errorf("S3ProfileName cannot be changed")
+		return nil, fmt.Errorf("S3ProfileName cannot be changed")
 	}
 
 	return r.ValidateDRCluster()
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
-func (r *DRCluster) ValidateDelete() error {
+func (r *DRCluster) ValidateDelete() (admission.Warnings, error) {
 	drclusterlog.Info("validate delete", "name", r.Name)
 
-	return nil
+	return nil, nil
 }
 
-func (r *DRCluster) ValidateDRCluster() error {
+func (r *DRCluster) ValidateDRCluster() (admission.Warnings, error) {
 	if r.Spec.Region == "" {
-		return fmt.Errorf("Region cannot be empty")
+		return nil, fmt.Errorf("Region cannot be empty")
 	}
 
 	if r.Spec.S3ProfileName == "" {
-		return fmt.Errorf("S3ProfileName cannot be empty")
+		return nil, fmt.Errorf("S3ProfileName cannot be empty")
 	}
 
 	// TODO: We can add other validations like validation of CIDRs format
 
-	return nil
+	return nil, nil
 }
