@@ -532,8 +532,14 @@ func DRPCsFailingOverToClusterForPolicy(
 
 	filteredDRPCs := make([]*rmn.DRPlacementControl, 0)
 
-	for idx, drpc := range drpcs.Items {
+	for idx := range drpcs.Items {
+		drpc := &drpcs.Items[idx]
+
 		if drpc.Spec.DRPolicyRef.Name != drpolicy.GetName() {
+			continue
+		}
+
+		if rmnutil.ResourceIsDeleted(drpc) {
 			continue
 		}
 
@@ -552,7 +558,7 @@ func DRPCsFailingOverToClusterForPolicy(
 			"namespace", drpc.GetNamespace(),
 			"drpolicy", drpolicy.GetName())
 
-		filteredDRPCs = append(filteredDRPCs, &drpcs.Items[idx])
+		filteredDRPCs = append(filteredDRPCs, drpc)
 	}
 
 	return filteredDRPCs, nil
