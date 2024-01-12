@@ -268,16 +268,16 @@ cd ramen
 make docker-build
 ```
 
-Select `docker.io/library/golang:1.19.1` when prompted.
+Select `docker.io/library/golang:1.21` when prompted.
 
 ```
 podman build -t quay.io/ramendr/ramen-operator:latest .
-[1/2] STEP 1/9: FROM golang:1.19.1 AS builder
+[1/2] STEP 1/9: FROM golang:1.21 AS builder
 ? Please select an image:
-    registry.fedoraproject.org/golang:1.19.1
-    registry.access.redhat.com/golang:1.19.1
-  ▸ docker.io/library/golang:1.19.1
-    quay.io/golang:1.19.1
+    registry.fedoraproject.org/golang:1.21
+    registry.access.redhat.com/golang:1.21
+  ▸ docker.io/library/golang:1.21
+    quay.io/golang:1.21
 ```
 
 This builds the image `quay.io/ramendr/ramen-operator:latest`
