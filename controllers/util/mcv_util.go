@@ -62,7 +62,7 @@ type ManagedClusterViewGetterImpl struct {
 func (m ManagedClusterViewGetterImpl) GetVRGFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
 	annotations map[string]string,
 ) (*rmn.VolumeReplicationGroup, error) {
-	logger := ctrl.Log.WithName("MCV").WithValues("resourceName", resourceName)
+	logger := ctrl.Log.WithName("MCV").WithValues("resourceName", resourceName, "cluster", managedCluster)
 	// get VRG and verify status through ManagedClusterView
 	mcvMeta := metav1.ObjectMeta{
 		Name:        BuildManagedClusterViewName(resourceName, resourceNamespace, "vrg"),
@@ -228,7 +228,8 @@ func (m ManagedClusterViewGetterImpl) getManagedClusterResource(
 		return errorswrapper.Wrap(err, "getManagedClusterResource failed")
 	}
 
-	logger.Info(fmt.Sprintf("MCV Conditions: %v", mcv.Status.Conditions))
+	logger.Info(fmt.Sprintf("Get managedClusterResource Returned the following MCV Conditions: %v",
+		mcv.Status.Conditions))
 
 	return m.GetResource(mcv, resource)
 }
