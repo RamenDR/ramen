@@ -3,8 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.9.2
-  creationTimestamp: null
+    controller-gen.kubebuilder.io/version: v0.14.0
   name: volumereplicationgroups.ramendr.openshift.io
 spec:
   group: ramendr.openshift.io
@@ -31,29 +30,36 @@ spec:
           API
         properties:
           apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation
-              of an object. Servers should convert recognized schemas to the latest
-              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
           kind:
-            description: 'Kind is a string value representing the REST resource this
-              object represents. Servers may infer this from the endpoint the client
-              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
             type: string
           metadata:
             type: object
           spec:
-            description: 'VolumeReplicationGroup (VRG) spec declares the desired schedule
-              for data replication and replication state of all PVCs identified via
-              the given PVC label selector. For each such PVC, the VRG will do the
-              following: - Create a VolumeReplication (VR) CR to enable storage level
-              replication of volume data and set the desired replication state (primary,
-              secondary, etc). - Take the corresponding PV cluster data in Kubernetes
-              etcd and deposit it in the S3 store.  The url, access key and access
-              id required to access the S3 store is specified via environment variables
-              of the VRG operator POD, which is obtained from a secret resource. -
-              Manage the lifecycle of VR CR and S3 data according to CUD operations
-              on the PVC and the VRG CR.'
+            description: |-
+              VolumeReplicationGroup (VRG) spec declares the desired schedule for data
+              replication and replication state of all PVCs identified via the given
+              PVC label selector. For each such PVC, the VRG will do the following:
+                - Create a VolumeReplication (VR) CR to enable storage level replication
+                  of volume data and set the desired replication state (primary, secondary,
+                  etc).
+                - Take the corresponding PV cluster data in Kubernetes etcd and deposit it in
+                  the S3 store.  The url, access key and access id required to access the
+                  S3 store is specified via environment variables of the VRG operator POD,
+                  which is obtained from a secret resource.
+                - Manage the lifecycle of VR CR and S3 data according to CUD operations on
+                  the PVC and the VRG CR.
             properties:
               action:
                 description: Action is either Failover or Relocate
@@ -65,33 +71,34 @@ spec:
                 description: VRGAsyncSpec has the parameters associated with RegionalDR
                 properties:
                   replicationClassSelector:
-                    description: Label selector to identify the VolumeReplicationClass
-                      resources that are scanned to select an appropriate VolumeReplicationClass
+                    description: |-
+                      Label selector to identify the VolumeReplicationClass resources
+                      that are scanned to select an appropriate VolumeReplicationClass
                       for the VolumeReplication resource.
                     properties:
                       matchExpressions:
                         description: matchExpressions is a list of label selector
                           requirements. The requirements are ANDed.
                         items:
-                          description: A label selector requirement is a selector
-                            that contains values, a key, and an operator that relates
-                            the key and values.
+                          description: |-
+                            A label selector requirement is a selector that contains values, a key, and an operator that
+                            relates the key and values.
                           properties:
                             key:
                               description: key is the label key that the selector
                                 applies to.
                               type: string
                             operator:
-                              description: operator represents a key's relationship
-                                to a set of values. Valid operators are In, NotIn,
-                                Exists and DoesNotExist.
+                              description: |-
+                                operator represents a key's relationship to a set of values.
+                                Valid operators are In, NotIn, Exists and DoesNotExist.
                               type: string
                             values:
-                              description: values is an array of string values. If
-                                the operator is In or NotIn, the values array must
-                                be non-empty. If the operator is Exists or DoesNotExist,
-                                the values array must be empty. This array is replaced
-                                during a strategic merge patch.
+                              description: |-
+                                values is an array of string values. If the operator is In or NotIn,
+                                the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. This array is replaced during a strategic
+                                merge patch.
                               items:
                                 type: string
                               type: array
@@ -103,49 +110,50 @@ spec:
                       matchLabels:
                         additionalProperties:
                           type: string
-                        description: matchLabels is a map of {key,value} pairs. A
-                          single {key,value} in the matchLabels map is equivalent
-                          to an element of matchExpressions, whose key field is "key",
-                          the operator is "In", and the values array contains only
-                          "value". The requirements are ANDed.
+                        description: |-
+                          matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                          map is equivalent to an element of matchExpressions, whose key field is "key", the
+                          operator is "In", and the values array contains only "value". The requirements are ANDed.
                         type: object
                     type: object
                     x-kubernetes-map-type: atomic
                   schedulingInterval:
-                    description: scheduling Interval for replicating Persistent Volume
-                      data to a peer cluster. Interval is typically in the form <num><m,h,d>.
-                      Here <num> is a number, 'm' means minutes, 'h' means hours and
-                      'd' stands for days.
+                    description: |-
+                      scheduling Interval for replicating Persistent Volume
+                      data to a peer cluster. Interval is typically in the
+                      form <num><m,h,d>. Here <num> is a number, 'm' means
+                      minutes, 'h' means hours and 'd' stands for days.
                     pattern: ^\d+[mhd]$
                     type: string
                   volumeSnapshotClassSelector:
-                    description: Label selector to identify the VolumeSnapshotClass
-                      resources that are scanned to select an appropriate VolumeSnapshotClass
+                    description: |-
+                      Label selector to identify the VolumeSnapshotClass resources
+                      that are scanned to select an appropriate VolumeSnapshotClass
                       for the VolumeReplication resource when using VolSync.
                     properties:
                       matchExpressions:
                         description: matchExpressions is a list of label selector
                           requirements. The requirements are ANDed.
                         items:
-                          description: A label selector requirement is a selector
-                            that contains values, a key, and an operator that relates
-                            the key and values.
+                          description: |-
+                            A label selector requirement is a selector that contains values, a key, and an operator that
+                            relates the key and values.
                           properties:
                             key:
                               description: key is the label key that the selector
                                 applies to.
                               type: string
                             operator:
-                              description: operator represents a key's relationship
-                                to a set of values. Valid operators are In, NotIn,
-                                Exists and DoesNotExist.
+                              description: |-
+                                operator represents a key's relationship to a set of values.
+                                Valid operators are In, NotIn, Exists and DoesNotExist.
                               type: string
                             values:
-                              description: values is an array of string values. If
-                                the operator is In or NotIn, the values array must
-                                be non-empty. If the operator is Exists or DoesNotExist,
-                                the values array must be empty. This array is replaced
-                                during a strategic merge patch.
+                              description: |-
+                                values is an array of string values. If the operator is In or NotIn,
+                                the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. This array is replaced during a strategic
+                                merge patch.
                               items:
                                 type: string
                               type: array
@@ -157,11 +165,10 @@ spec:
                       matchLabels:
                         additionalProperties:
                           type: string
-                        description: matchLabels is a map of {key,value} pairs. A
-                          single {key,value} in the matchLabels map is equivalent
-                          to an element of matchExpressions, whose key field is "key",
-                          the operator is "In", and the values array contains only
-                          "value". The requirements are ANDed.
+                        description: |-
+                          matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                          map is equivalent to an element of matchExpressions, whose key field is "key", the
+                          operator is "In", and the values array contains only "value". The requirements are ANDed.
                         type: object
                     type: object
                     x-kubernetes-map-type: atomic
@@ -194,36 +201,37 @@ spec:
                     type: object
                 type: object
               prepareForFinalSync:
-                description: PrepareForFinalSync when set, it tells VRG to prepare
-                  for the final sync from source to destination cluster. Final sync
-                  is needed for relocation only, and for VolSync only
+                description: |-
+                  PrepareForFinalSync when set, it tells VRG to prepare for the final sync from source to destination
+                  cluster. Final sync is needed for relocation only, and for VolSync only
                 type: boolean
               pvcSelector:
-                description: Label selector to identify all the PVCs that are in this
-                  group that needs to be replicated to the peer cluster.
+                description: |-
+                  Label selector to identify all the PVCs that are in this group
+                  that needs to be replicated to the peer cluster.
                 properties:
                   matchExpressions:
                     description: matchExpressions is a list of label selector requirements.
                       The requirements are ANDed.
                     items:
-                      description: A label selector requirement is a selector that
-                        contains values, a key, and an operator that relates the key
-                        and values.
+                      description: |-
+                        A label selector requirement is a selector that contains values, a key, and an operator that
+                        relates the key and values.
                       properties:
                         key:
                           description: key is the label key that the selector applies
                             to.
                           type: string
                         operator:
-                          description: operator represents a key's relationship to
-                            a set of values. Valid operators are In, NotIn, Exists
-                            and DoesNotExist.
+                          description: |-
+                            operator represents a key's relationship to a set of values.
+                            Valid operators are In, NotIn, Exists and DoesNotExist.
                           type: string
                         values:
-                          description: values is an array of string values. If the
-                            operator is In or NotIn, the values array must be non-empty.
-                            If the operator is Exists or DoesNotExist, the values
-                            array must be empty. This array is replaced during a strategic
+                          description: |-
+                            values is an array of string values. If the operator is In or NotIn,
+                            the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                            the values array must be empty. This array is replaced during a strategic
                             merge patch.
                           items:
                             type: string
@@ -236,27 +244,27 @@ spec:
                   matchLabels:
                     additionalProperties:
                       type: string
-                    description: matchLabels is a map of {key,value} pairs. A single
-                      {key,value} in the matchLabels map is equivalent to an element
-                      of matchExpressions, whose key field is "key", the operator
-                      is "In", and the values array contains only "value". The requirements
-                      are ANDed.
+                    description: |-
+                      matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                      map is equivalent to an element of matchExpressions, whose key field is "key", the
+                      operator is "In", and the values array contains only "value". The requirements are ANDed.
                     type: object
                 type: object
                 x-kubernetes-map-type: atomic
               replicationState:
-                description: Desired state of all volumes [primary or secondary] in
-                  this replication group; this value is propagated to children VolumeReplication
-                  CRs
+                description: |-
+                  Desired state of all volumes [primary or secondary] in this replication group;
+                  this value is propagated to children VolumeReplication CRs
                 type: string
               runFinalSync:
-                description: runFinalSync used to indicate whether final sync is needed.
-                  Final sync is needed for relocation only, and for VolSync only
+                description: |-
+                  runFinalSync used to indicate whether final sync is needed. Final sync is needed for
+                  relocation only, and for VolSync only
                 type: boolean
               s3Profiles:
-                description: List of unique S3 profiles in RamenConfig that should
-                  be used to store and forward PV related cluster state to peer DR
-                  clusters.
+                description: |-
+                  List of unique S3 profiles in RamenConfig that should be used to store
+                  and forward PV related cluster state to peer DR clusters.
                 items:
                   type: string
                 type: array
@@ -275,9 +283,9 @@ spec:
                     description: rdSpec array contains the PVCs information that will/are
                       be/being protected by VolSync
                     items:
-                      description: VolSyncReplicationDestinationSpec defines the configuration
-                        for the VolSync protected PVC to be used by the destination
-                        cluster (Secondary)
+                      description: |-
+                        VolSyncReplicationDestinationSpec defines the configuration for the VolSync
+                        protected PVC to be used by the destination cluster (Secondary)
                       properties:
                         protectedPVC:
                           description: protectedPVC contains the information about
@@ -297,51 +305,45 @@ spec:
                               description: Conditions for this protected pvc
                               items:
                                 description: "Condition contains details for one aspect
-                                  of the current state of this API Resource. --- This
+                                  of the current state of this API Resource.\n---\nThis
                                   struct is intended for direct use as an array at
-                                  the field path .status.conditions.  For example,
-                                  \n type FooStatus struct{ // Represents the observations
-                                  of a foo's current state. // Known .status.conditions.type
-                                  are: \"Available\", \"Progressing\", and \"Degraded\"
-                                  // +patchMergeKey=type // +patchStrategy=merge //
-                                  +listType=map // +listMapKey=type Conditions []metav1.Condition
-                                  `json:\"conditions,omitempty\" patchStrategy:\"merge\"
-                                  patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`
-                                  \n // other fields }"
+                                  the field path .status.conditions.  For example,\n\n\n\ttype
+                                  FooStatus struct{\n\t    // Represents the observations
+                                  of a foo's current state.\n\t    // Known .status.conditions.type
+                                  are: \"Available\", \"Progressing\", and \"Degraded\"\n\t
+                                  \   // +patchMergeKey=type\n\t    // +patchStrategy=merge\n\t
+                                  \   // +listType=map\n\t    // +listMapKey=type\n\t
+                                  \   Conditions []metav1.Condition `json:\"conditions,omitempty\"
+                                  patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`\n\n\n\t
+                                  \   // other fields\n\t}"
                                 properties:
                                   lastTransitionTime:
-                                    description: lastTransitionTime is the last time
-                                      the condition transitioned from one status to
-                                      another. This should be when the underlying
-                                      condition changed.  If that is not known, then
-                                      using the time when the API field changed is
-                                      acceptable.
+                                    description: |-
+                                      lastTransitionTime is the last time the condition transitioned from one status to another.
+                                      This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
                                     format: date-time
                                     type: string
                                   message:
-                                    description: message is a human readable message
-                                      indicating details about the transition. This
-                                      may be an empty string.
+                                    description: |-
+                                      message is a human readable message indicating details about the transition.
+                                      This may be an empty string.
                                     maxLength: 32768
                                     type: string
                                   observedGeneration:
-                                    description: observedGeneration represents the
-                                      .metadata.generation that the condition was
-                                      set based upon. For instance, if .metadata.generation
-                                      is currently 12, but the .status.conditions[x].observedGeneration
-                                      is 9, the condition is out of date with respect
-                                      to the current state of the instance.
+                                    description: |-
+                                      observedGeneration represents the .metadata.generation that the condition was set based upon.
+                                      For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                                      with respect to the current state of the instance.
                                     format: int64
                                     minimum: 0
                                     type: integer
                                   reason:
-                                    description: reason contains a programmatic identifier
-                                      indicating the reason for the condition's last
-                                      transition. Producers of specific condition
-                                      types may define expected values and meanings
-                                      for this field, and whether the values are considered
-                                      a guaranteed API. The value should be a CamelCase
-                                      string. This field may not be empty.
+                                    description: |-
+                                      reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                                      Producers of specific condition types may define expected values and meanings for this field,
+                                      and whether the values are considered a guaranteed API.
+                                      The value should be a CamelCase string.
+                                      This field may not be empty.
                                     maxLength: 1024
                                     minLength: 1
                                     pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
@@ -355,13 +357,12 @@ spec:
                                     - Unknown
                                     type: string
                                   type:
-                                    description: type of condition in CamelCase or
-                                      in foo.example.com/CamelCase. --- Many .condition.type
-                                      values are consistent across resources like
-                                      Available, but because arbitrary conditions
-                                      can be useful (see .node.status.conditions),
-                                      the ability to deconflict is important. The
-                                      regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
+                                    description: |-
+                                      type of condition in CamelCase or in foo.example.com/CamelCase.
+                                      ---
+                                      Many .condition.type values are consistent across resources like Available, but because arbitrary conditions can be
+                                      useful (see .node.status.conditions), the ability to deconflict is important.
+                                      The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
                                     maxLength: 316
                                     pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
                                     type: string
@@ -374,10 +375,9 @@ spec:
                                 type: object
                               type: array
                             csiProvisioner:
-                              description: StorageProvisioners contains the provisioner
-                                name of the CSI driver used to provision this PVC
-                                (extracted from the storageClass that was used for
-                                provisioning)
+                              description: |-
+                                StorageProvisioners contains the provisioner name of the CSI driver used to provision this
+                                PVC (extracted from the storageClass that was used for provisioning)
                               type: string
                             labels:
                               additionalProperties:
@@ -390,13 +390,14 @@ spec:
                               format: int64
                               type: integer
                             lastSyncDuration:
-                              description: Duration of recent synchronization for
-                                PVC, if protected in the async or volsync mode
+                              description: |-
+                                Duration of recent synchronization for PVC, if
+                                protected in the async or volsync mode
                               type: string
                             lastSyncTime:
-                              description: Time of the most recent successful synchronization
-                                for the PVC, if protected in the async or volsync
-                                mode
+                              description: |-
+                                Time of the most recent successful synchronization for the PVC, if
+                                protected in the async or volsync mode
                               format: date-time
                               type: string
                             name:
@@ -410,34 +411,27 @@ spec:
                                 this PVC is protected by VolSync. Defaults to "false".
                               type: boolean
                             replicationID:
-                              description: ReplicationID contains the globally unique
-                                replication identifier, as reported by the storage
-                                backend on the VolumeReplicationClass as the value
-                                for the label "ramendr.openshift.io/replicationid",
-                                that identifies the storage backends across 2 (or
-                                more) storage instances where the volume is replicated
-                                It also contains any maintenance modes that the replication
-                                backend requires during vaious Ramen actions
+                              description: |-
+                                ReplicationID contains the globally unique replication identifier, as reported by the storage backend
+                                on the VolumeReplicationClass as the value for the label "ramendr.openshift.io/replicationid", that
+                                identifies the storage backends across 2 (or more) storage instances where the volume is replicated
+                                It also contains any maintenance modes that the replication backend requires during vaious Ramen actions
                               properties:
                                 id:
-                                  description: ID contains the globally unique storage
-                                    identifier that identifies the storage or replication
-                                    backend
+                                  description: |-
+                                    ID contains the globally unique storage identifier that identifies
+                                    the storage or replication backend
                                   type: string
                                 modes:
-                                  description: Modes is a list of maintenance modes
-                                    that need to be activated on the storage backend,
-                                    prior to various Ramen related orchestration.
-                                    This is read from the label "ramendr.openshift.io/maintenancemodes"
-                                    on the StorageClass or VolumeReplicationClass,
-                                    the value for which is a comma separated list
-                                    of maintenance modes.
+                                  description: |-
+                                    Modes is a list of maintenance modes that need to be activated on the storage
+                                    backend, prior to various Ramen related orchestration. This is read from the label
+                                    "ramendr.openshift.io/maintenancemodes" on the StorageClass or VolumeReplicationClass,
+                                    the value for which is a comma separated list of maintenance modes.
                                   items:
-                                    description: MMode defines a maintenance mode,
-                                      that a storage backend may be requested to act
-                                      on, based on the DR orchestration in progress
-                                      for one or more workloads whose PVCs use the
-                                      specific storage provisioner
+                                    description: |-
+                                      MMode defines a maintenance mode, that a storage backend may be requested to act on, based on the DR orchestration
+                                      in progress for one or more workloads whose PVCs use the specific storage provisioner
                                     enum:
                                     - Failover
                                     type: string
@@ -448,30 +442,6 @@ spec:
                             resources:
                               description: Resources set in the claim to be replicated
                               properties:
-                                claims:
-                                  description: "Claims lists the names of resources,
-                                    defined in spec.resourceClaims, that are used
-                                    by this container. \n This is an alpha field and
-                                    requires enabling the DynamicResourceAllocation
-                                    feature gate. \n This field is immutable. It can
-                                    only be set for containers."
-                                  items:
-                                    description: ResourceClaim references one entry
-                                      in PodSpec.ResourceClaims.
-                                    properties:
-                                      name:
-                                        description: Name must match the name of one
-                                          entry in pod.spec.resourceClaims of the
-                                          Pod where this field is used. It makes that
-                                          resource available inside a container.
-                                        type: string
-                                    required:
-                                    - name
-                                    type: object
-                                  type: array
-                                  x-kubernetes-list-map-keys:
-                                  - name
-                                  x-kubernetes-list-type: map
                                 limits:
                                   additionalProperties:
                                     anyOf:
@@ -479,8 +449,9 @@ spec:
                                     - type: string
                                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                                     x-kubernetes-int-or-string: true
-                                  description: 'Limits describes the maximum amount
-                                    of compute resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                                  description: |-
+                                    Limits describes the maximum amount of compute resources allowed.
+                                    More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
                                   type: object
                                 requests:
                                   additionalProperties:
@@ -489,11 +460,11 @@ spec:
                                     - type: string
                                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                                     x-kubernetes-int-or-string: true
-                                  description: 'Requests describes the minimum amount
-                                    of compute resources required. If Requests is
-                                    omitted for a container, it defaults to Limits
-                                    if that is explicitly specified, otherwise to
-                                    an implementation-defined value. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                                  description: |-
+                                    Requests describes the minimum amount of compute resources required.
+                                    If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                                    otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                                    More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
                                   type: object
                               type: object
                             storageClassName:
@@ -501,35 +472,28 @@ spec:
                                 claim.
                               type: string
                             storageID:
-                              description: StorageID contains the globally unique
-                                storage identifier, as reported by the storage backend
-                                on the StorageClass as the value for the label "ramendr.openshift.io/storageid",
-                                that identifies the storage backend that was used
-                                to provision the volume. It is used to label different
-                                StorageClasses across different kubernetes clusters,
-                                that potentially share the same storage backend. It
-                                also contains any maintenance modes that the storage
-                                backend requires during vaious Ramen actions
+                              description: |-
+                                StorageID contains the globally unique storage identifier, as reported by the storage backend
+                                on the StorageClass as the value for the label "ramendr.openshift.io/storageid", that identifies
+                                the storage backend that was used to provision the volume. It is used to label different StorageClasses
+                                across different kubernetes clusters, that potentially share the same storage backend.
+                                It also contains any maintenance modes that the storage backend requires during vaious Ramen actions
                               properties:
                                 id:
-                                  description: ID contains the globally unique storage
-                                    identifier that identifies the storage or replication
-                                    backend
+                                  description: |-
+                                    ID contains the globally unique storage identifier that identifies
+                                    the storage or replication backend
                                   type: string
                                 modes:
-                                  description: Modes is a list of maintenance modes
-                                    that need to be activated on the storage backend,
-                                    prior to various Ramen related orchestration.
-                                    This is read from the label "ramendr.openshift.io/maintenancemodes"
-                                    on the StorageClass or VolumeReplicationClass,
-                                    the value for which is a comma separated list
-                                    of maintenance modes.
+                                  description: |-
+                                    Modes is a list of maintenance modes that need to be activated on the storage
+                                    backend, prior to various Ramen related orchestration. This is read from the label
+                                    "ramendr.openshift.io/maintenancemodes" on the StorageClass or VolumeReplicationClass,
+                                    the value for which is a comma separated list of maintenance modes.
                                   items:
-                                    description: MMode defines a maintenance mode,
-                                      that a storage backend may be requested to act
-                                      on, based on the DR orchestration in progress
-                                      for one or more workloads whose PVCs use the
-                                      specific storage provisioner
+                                    description: |-
+                                      MMode defines a maintenance mode, that a storage backend may be requested to act on, based on the DR orchestration
+                                      in progress for one or more workloads whose PVCs use the specific storage provisioner
                                     enum:
                                     - Failover
                                     type: string
@@ -547,51 +511,51 @@ spec:
             - s3Profiles
             type: object
           status:
-            description: VolumeReplicationGroupStatus defines the observed state of
-              VolumeReplicationGroup INSERT ADDITIONAL STATUS FIELD - define observed
-              state of cluster
+            description: |-
+              VolumeReplicationGroupStatus defines the observed state of VolumeReplicationGroup
+              INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
             properties:
               conditions:
                 description: Conditions are the list of VRG's summary conditions and
                   their status.
                 items:
                   description: "Condition contains details for one aspect of the current
-                    state of this API Resource. --- This struct is intended for direct
-                    use as an array at the field path .status.conditions.  For example,
-                    \n type FooStatus struct{ // Represents the observations of a
-                    foo's current state. // Known .status.conditions.type are: \"Available\",
-                    \"Progressing\", and \"Degraded\" // +patchMergeKey=type // +patchStrategy=merge
-                    // +listType=map // +listMapKey=type Conditions []metav1.Condition
-                    `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"type\"
-                    protobuf:\"bytes,1,rep,name=conditions\"` \n // other fields }"
+                    state of this API Resource.\n---\nThis struct is intended for
+                    direct use as an array at the field path .status.conditions.  For
+                    example,\n\n\n\ttype FooStatus struct{\n\t    // Represents the
+                    observations of a foo's current state.\n\t    // Known .status.conditions.type
+                    are: \"Available\", \"Progressing\", and \"Degraded\"\n\t    //
+                    +patchMergeKey=type\n\t    // +patchStrategy=merge\n\t    // +listType=map\n\t
+                    \   // +listMapKey=type\n\t    Conditions []metav1.Condition `json:\"conditions,omitempty\"
+                    patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`\n\n\n\t
+                    \   // other fields\n\t}"
                   properties:
                     lastTransitionTime:
-                      description: lastTransitionTime is the last time the condition
-                        transitioned from one status to another. This should be when
-                        the underlying condition changed.  If that is not known, then
-                        using the time when the API field changed is acceptable.
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
                       format: date-time
                       type: string
                     message:
-                      description: message is a human readable message indicating
-                        details about the transition. This may be an empty string.
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
                       maxLength: 32768
                       type: string
                     observedGeneration:
-                      description: observedGeneration represents the .metadata.generation
-                        that the condition was set based upon. For instance, if .metadata.generation
-                        is currently 12, but the .status.conditions[x].observedGeneration
-                        is 9, the condition is out of date with respect to the current
-                        state of the instance.
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
                       format: int64
                       minimum: 0
                       type: integer
                     reason:
-                      description: reason contains a programmatic identifier indicating
-                        the reason for the condition's last transition. Producers
-                        of specific condition types may define expected values and
-                        meanings for this field, and whether the values are considered
-                        a guaranteed API. The value should be a CamelCase string.
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
                         This field may not be empty.
                       maxLength: 1024
                       minLength: 1
@@ -605,11 +569,12 @@ spec:
                       - Unknown
                       type: string
                     type:
-                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
-                        --- Many .condition.type values are consistent across resources
-                        like Available, but because arbitrary conditions can be useful
-                        (see .node.status.conditions), the ability to deconflict is
-                        important. The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
+                      description: |-
+                        type of condition in CamelCase or in foo.example.com/CamelCase.
+                        ---
+                        Many .condition.type values are consistent across resources like Available, but because arbitrary conditions can be
+                        useful (see .node.status.conditions), the ability to deconflict is important.
+                        The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
                       maxLength: 316
                       pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
                       type: string
@@ -642,8 +607,9 @@ spec:
                     type: object
                 type: object
               lastGroupSyncBytes:
-                description: lastGroupSyncBytes is the total bytes transferred from
-                  the most recent successful synchronization of all PVCs
+                description: |-
+                  lastGroupSyncBytes is the total bytes transferred from the most recent
+                  successful synchronization of all PVCs
                 format: int64
                 type: integer
               lastGroupSyncDuration:
@@ -684,46 +650,45 @@ spec:
                       description: Conditions for this protected pvc
                       items:
                         description: "Condition contains details for one aspect of
-                          the current state of this API Resource. --- This struct
+                          the current state of this API Resource.\n---\nThis struct
                           is intended for direct use as an array at the field path
-                          .status.conditions.  For example, \n type FooStatus struct{
-                          // Represents the observations of a foo's current state.
-                          // Known .status.conditions.type are: \"Available\", \"Progressing\",
-                          and \"Degraded\" // +patchMergeKey=type // +patchStrategy=merge
-                          // +listType=map // +listMapKey=type Conditions []metav1.Condition
-                          `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"type\"
-                          protobuf:\"bytes,1,rep,name=conditions\"` \n // other fields
-                          }"
+                          .status.conditions.  For example,\n\n\n\ttype FooStatus
+                          struct{\n\t    // Represents the observations of a foo's
+                          current state.\n\t    // Known .status.conditions.type are:
+                          \"Available\", \"Progressing\", and \"Degraded\"\n\t    //
+                          +patchMergeKey=type\n\t    // +patchStrategy=merge\n\t    //
+                          +listType=map\n\t    // +listMapKey=type\n\t    Conditions
+                          []metav1.Condition `json:\"conditions,omitempty\" patchStrategy:\"merge\"
+                          patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`\n\n\n\t
+                          \   // other fields\n\t}"
                         properties:
                           lastTransitionTime:
-                            description: lastTransitionTime is the last time the condition
-                              transitioned from one status to another. This should
-                              be when the underlying condition changed.  If that is
-                              not known, then using the time when the API field changed
-                              is acceptable.
+                            description: |-
+                              lastTransitionTime is the last time the condition transitioned from one status to another.
+                              This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
                             format: date-time
                             type: string
                           message:
-                            description: message is a human readable message indicating
-                              details about the transition. This may be an empty string.
+                            description: |-
+                              message is a human readable message indicating details about the transition.
+                              This may be an empty string.
                             maxLength: 32768
                             type: string
                           observedGeneration:
-                            description: observedGeneration represents the .metadata.generation
-                              that the condition was set based upon. For instance,
-                              if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration
-                              is 9, the condition is out of date with respect to the
-                              current state of the instance.
+                            description: |-
+                              observedGeneration represents the .metadata.generation that the condition was set based upon.
+                              For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                              with respect to the current state of the instance.
                             format: int64
                             minimum: 0
                             type: integer
                           reason:
-                            description: reason contains a programmatic identifier
-                              indicating the reason for the condition's last transition.
-                              Producers of specific condition types may define expected
-                              values and meanings for this field, and whether the
-                              values are considered a guaranteed API. The value should
-                              be a CamelCase string. This field may not be empty.
+                            description: |-
+                              reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                              Producers of specific condition types may define expected values and meanings for this field,
+                              and whether the values are considered a guaranteed API.
+                              The value should be a CamelCase string.
+                              This field may not be empty.
                             maxLength: 1024
                             minLength: 1
                             pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
@@ -737,12 +702,12 @@ spec:
                             - Unknown
                             type: string
                           type:
-                            description: type of condition in CamelCase or in foo.example.com/CamelCase.
-                              --- Many .condition.type values are consistent across
-                              resources like Available, but because arbitrary conditions
-                              can be useful (see .node.status.conditions), the ability
-                              to deconflict is important. The regex it matches is
-                              (dns1123SubdomainFmt/)?(qualifiedNameFmt)
+                            description: |-
+                              type of condition in CamelCase or in foo.example.com/CamelCase.
+                              ---
+                              Many .condition.type values are consistent across resources like Available, but because arbitrary conditions can be
+                              useful (see .node.status.conditions), the ability to deconflict is important.
+                              The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
                             maxLength: 316
                             pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
                             type: string
@@ -755,9 +720,9 @@ spec:
                         type: object
                       type: array
                     csiProvisioner:
-                      description: StorageProvisioners contains the provisioner name
-                        of the CSI driver used to provision this PVC (extracted from
-                        the storageClass that was used for provisioning)
+                      description: |-
+                        StorageProvisioners contains the provisioner name of the CSI driver used to provision this
+                        PVC (extracted from the storageClass that was used for provisioning)
                       type: string
                     labels:
                       additionalProperties:
@@ -770,12 +735,14 @@ spec:
                       format: int64
                       type: integer
                     lastSyncDuration:
-                      description: Duration of recent synchronization for PVC, if
+                      description: |-
+                        Duration of recent synchronization for PVC, if
                         protected in the async or volsync mode
                       type: string
                     lastSyncTime:
-                      description: Time of the most recent successful synchronization
-                        for the PVC, if protected in the async or volsync mode
+                      description: |-
+                        Time of the most recent successful synchronization for the PVC, if
+                        protected in the async or volsync mode
                       format: date-time
                       type: string
                     name:
@@ -789,30 +756,27 @@ spec:
                         is protected by VolSync. Defaults to "false".
                       type: boolean
                     replicationID:
-                      description: ReplicationID contains the globally unique replication
-                        identifier, as reported by the storage backend on the VolumeReplicationClass
-                        as the value for the label "ramendr.openshift.io/replicationid",
-                        that identifies the storage backends across 2 (or more) storage
-                        instances where the volume is replicated It also contains
-                        any maintenance modes that the replication backend requires
-                        during vaious Ramen actions
+                      description: |-
+                        ReplicationID contains the globally unique replication identifier, as reported by the storage backend
+                        on the VolumeReplicationClass as the value for the label "ramendr.openshift.io/replicationid", that
+                        identifies the storage backends across 2 (or more) storage instances where the volume is replicated
+                        It also contains any maintenance modes that the replication backend requires during vaious Ramen actions
                       properties:
                         id:
-                          description: ID contains the globally unique storage identifier
-                            that identifies the storage or replication backend
+                          description: |-
+                            ID contains the globally unique storage identifier that identifies
+                            the storage or replication backend
                           type: string
                         modes:
-                          description: Modes is a list of maintenance modes that need
-                            to be activated on the storage backend, prior to various
-                            Ramen related orchestration. This is read from the label
-                            "ramendr.openshift.io/maintenancemodes" on the StorageClass
-                            or VolumeReplicationClass, the value for which is a comma
-                            separated list of maintenance modes.
+                          description: |-
+                            Modes is a list of maintenance modes that need to be activated on the storage
+                            backend, prior to various Ramen related orchestration. This is read from the label
+                            "ramendr.openshift.io/maintenancemodes" on the StorageClass or VolumeReplicationClass,
+                            the value for which is a comma separated list of maintenance modes.
                           items:
-                            description: MMode defines a maintenance mode, that a
-                              storage backend may be requested to act on, based on
-                              the DR orchestration in progress for one or more workloads
-                              whose PVCs use the specific storage provisioner
+                            description: |-
+                              MMode defines a maintenance mode, that a storage backend may be requested to act on, based on the DR orchestration
+                              in progress for one or more workloads whose PVCs use the specific storage provisioner
                             enum:
                             - Failover
                             type: string
@@ -823,28 +787,6 @@ spec:
                     resources:
                       description: Resources set in the claim to be replicated
                       properties:
-                        claims:
-                          description: "Claims lists the names of resources, defined
-                            in spec.resourceClaims, that are used by this container.
-                            \n This is an alpha field and requires enabling the DynamicResourceAllocation
-                            feature gate. \n This field is immutable. It can only
-                            be set for containers."
-                          items:
-                            description: ResourceClaim references one entry in PodSpec.ResourceClaims.
-                            properties:
-                              name:
-                                description: Name must match the name of one entry
-                                  in pod.spec.resourceClaims of the Pod where this
-                                  field is used. It makes that resource available
-                                  inside a container.
-                                type: string
-                            required:
-                            - name
-                            type: object
-                          type: array
-                          x-kubernetes-list-map-keys:
-                          - name
-                          x-kubernetes-list-type: map
                         limits:
                           additionalProperties:
                             anyOf:
@@ -852,8 +794,9 @@ spec:
                             - type: string
                             pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                             x-kubernetes-int-or-string: true
-                          description: 'Limits describes the maximum amount of compute
-                            resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                          description: |-
+                            Limits describes the maximum amount of compute resources allowed.
+                            More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
                           type: object
                         requests:
                           additionalProperties:
@@ -862,42 +805,39 @@ spec:
                             - type: string
                             pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                             x-kubernetes-int-or-string: true
-                          description: 'Requests describes the minimum amount of compute
-                            resources required. If Requests is omitted for a container,
-                            it defaults to Limits if that is explicitly specified,
-                            otherwise to an implementation-defined value. More info:
-                            https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                          description: |-
+                            Requests describes the minimum amount of compute resources required.
+                            If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                            otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                            More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
                           type: object
                       type: object
                     storageClassName:
                       description: Name of the StorageClass required by the claim.
                       type: string
                     storageID:
-                      description: StorageID contains the globally unique storage
-                        identifier, as reported by the storage backend on the StorageClass
-                        as the value for the label "ramendr.openshift.io/storageid",
-                        that identifies the storage backend that was used to provision
-                        the volume. It is used to label different StorageClasses across
-                        different kubernetes clusters, that potentially share the
-                        same storage backend. It also contains any maintenance modes
-                        that the storage backend requires during vaious Ramen actions
+                      description: |-
+                        StorageID contains the globally unique storage identifier, as reported by the storage backend
+                        on the StorageClass as the value for the label "ramendr.openshift.io/storageid", that identifies
+                        the storage backend that was used to provision the volume. It is used to label different StorageClasses
+                        across different kubernetes clusters, that potentially share the same storage backend.
+                        It also contains any maintenance modes that the storage backend requires during vaious Ramen actions
                       properties:
                         id:
-                          description: ID contains the globally unique storage identifier
-                            that identifies the storage or replication backend
+                          description: |-
+                            ID contains the globally unique storage identifier that identifies
+                            the storage or replication backend
                           type: string
                         modes:
-                          description: Modes is a list of maintenance modes that need
-                            to be activated on the storage backend, prior to various
-                            Ramen related orchestration. This is read from the label
-                            "ramendr.openshift.io/maintenancemodes" on the StorageClass
-                            or VolumeReplicationClass, the value for which is a comma
-                            separated list of maintenance modes.
+                          description: |-
+                            Modes is a list of maintenance modes that need to be activated on the storage
+                            backend, prior to various Ramen related orchestration. This is read from the label
+                            "ramendr.openshift.io/maintenancemodes" on the StorageClass or VolumeReplicationClass,
+                            the value for which is a comma separated list of maintenance modes.
                           items:
-                            description: MMode defines a maintenance mode, that a
-                              storage backend may be requested to act on, based on
-                              the DR orchestration in progress for one or more workloads
-                              whose PVCs use the specific storage provisioner
+                            description: |-
+                              MMode defines a maintenance mode, that a storage backend may be requested to act on, based on the DR orchestration
+                              in progress for one or more workloads whose PVCs use the specific storage provisioner
                             enum:
                             - Failover
                             type: string

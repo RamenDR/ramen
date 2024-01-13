@@ -36,7 +36,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
@@ -84,11 +83,11 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 				),
 			),
 		).
-		Watches(&source.Kind{Type: &corev1.PersistentVolumeClaim{}},
+		Watches(&corev1.PersistentVolumeClaim{},
 			handler.EnqueueRequestsFromMapFunc(r.pvcMapFunc),
 			builder.WithPredicates(pvcPredicateFunc()),
 		).
-		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(r.configMapFun)).
+		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.configMapFun)).
 		Owns(&volrep.VolumeReplication{})
 
 	if !ramenConfig.VolSync.Disabled {
@@ -115,7 +114,7 @@ type objectToReconcileRequestsMapper struct {
 	log    logr.Logger
 }
 
-func (r *VolumeReplicationGroupReconciler) pvcMapFunc(obj client.Object) []reconcile.Request {
+func (r *VolumeReplicationGroupReconciler) pvcMapFunc(ctx context.Context, obj client.Object) []reconcile.Request {
 	log := ctrl.Log.WithName("pvcmap").WithName("VolumeReplicationGroup")
 
 	pvc, ok := obj.(*corev1.PersistentVolumeClaim)
@@ -129,7 +128,9 @@ func (r *VolumeReplicationGroupReconciler) pvcMapFunc(obj client.Object) []recon
 		log.WithValues("pvc", types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}))
 }
 
-func (r *VolumeReplicationGroupReconciler) configMapFun(configmap client.Object) []reconcile.Request {
+func (r *VolumeReplicationGroupReconciler) configMapFun(
+	ctx context.Context, configmap client.Object,
+) []reconcile.Request {
 	log := ctrl.Log.WithName("configmap").WithName("VolumeReplicationGroup")
 
 	if configmap.GetName() != DrClusterOperatorConfigMapName || configmap.GetNamespace() != NamespaceName() {

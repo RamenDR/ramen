@@ -30,7 +30,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
@@ -284,6 +283,7 @@ func DRClusterPredicateFunc() predicate.Funcs {
 // DRClusterUpdateOfInterest checks if the new DRCluster resource as compared to the older version
 // requires any attention, it checks for the following updates:
 //   - If any maintenance mode is reported as activated
+//   - If drcluster was marked for deletion
 //
 // TODO: Needs some logs for easier troubleshooting
 func DRClusterUpdateOfInterest(oldDRCluster, newDRCluster *rmn.DRCluster) bool {
@@ -303,8 +303,8 @@ func DRClusterUpdateOfInterest(oldDRCluster, newDRCluster *rmn.DRCluster) bool {
 		}
 	}
 
-	// Exhausted all failover activation checks, this update is NOT of interest
-	return false
+	// Exhausted all failover activation checks, the only interesting update is deleting a drcluster.
+	return drClusterIsDeleted(newDRCluster)
 }
 
 // checkFailoverActivation checks if provided provisioner and storage instance is activated as per the
@@ -347,7 +347,16 @@ func getFailoverActivatedCondition(mMode rmn.ClusterMaintenanceMode) *metav1.Con
 func (r *DRPlacementControlReconciler) FilterDRCluster(drcluster *rmn.DRCluster) []ctrl.Request {
 	log := ctrl.Log.WithName("DRPCFilter").WithName("DRCluster").WithValues("cluster", drcluster)
 
-	drpcCollections, err := DRPCsFailingOverToCluster(r.Client, log, drcluster.GetName())
+	var drpcCollections []DRPCAndPolicy
+
+	var err error
+
+	if drClusterIsDeleted(drcluster) {
+		drpcCollections, err = DRPCsUsingDRCluster(r.Client, log, drcluster)
+	} else {
+		drpcCollections, err = DRPCsFailingOverToCluster(r.Client, log, drcluster.GetName())
+	}
+
 	if err != nil {
 		log.Info("Failed to process filter")
 
@@ -371,6 +380,76 @@ func (r *DRPlacementControlReconciler) FilterDRCluster(drcluster *rmn.DRCluster)
 type DRPCAndPolicy struct {
 	drpc     *rmn.DRPlacementControl
 	drPolicy *rmn.DRPolicy
+}
+
+// DRPCsUsingDRCluster finds DRPC resources using the DRcluster.
+func DRPCsUsingDRCluster(k8sclient client.Client, log logr.Logger, drcluster *rmn.DRCluster) ([]DRPCAndPolicy, error) {
+	drpolicies := &rmn.DRPolicyList{}
+	if err := k8sclient.List(context.TODO(), drpolicies); err != nil {
+		log.Error(err, "Failed to list DRPolicies", "drcluster", drcluster.GetName())
+
+		return nil, err
+	}
+
+	found := []DRPCAndPolicy{}
+
+	for i := range drpolicies.Items {
+		drpolicy := &drpolicies.Items[i]
+
+		for _, clusterName := range drpolicy.Spec.DRClusters {
+			if clusterName != drcluster.GetName() {
+				continue
+			}
+
+			log.Info("Found DRPolicy referencing DRCluster", "drpolicy", drpolicy.GetName())
+
+			drpcs, err := DRPCsUsingDRPolicy(k8sclient, log, drpolicy)
+			if err != nil {
+				return nil, err
+			}
+
+			for _, drpc := range drpcs {
+				found = append(found, DRPCAndPolicy{drpc: drpc, drPolicy: drpolicy})
+			}
+
+			break
+		}
+	}
+
+	return found, nil
+}
+
+// DRPCsUsingDRPolicy finds DRPC resources that reference the DRPolicy.
+func DRPCsUsingDRPolicy(
+	k8sclient client.Client,
+	log logr.Logger,
+	drpolicy *rmn.DRPolicy,
+) ([]*rmn.DRPlacementControl, error) {
+	drpcs := &rmn.DRPlacementControlList{}
+	if err := k8sclient.List(context.TODO(), drpcs); err != nil {
+		log.Error(err, "Failed to list DRPCs", "drpolicy", drpolicy.GetName())
+
+		return nil, err
+	}
+
+	found := []*rmn.DRPlacementControl{}
+
+	for i := range drpcs.Items {
+		drpc := &drpcs.Items[i]
+
+		if drpc.Spec.DRPolicyRef.Name != drpolicy.GetName() {
+			continue
+		}
+
+		log.Info("Found DRPC referencing drpolicy",
+			"name", drpc.GetName(),
+			"namespace", drpc.GetNamespace(),
+			"drpolicy", drpolicy.GetName())
+
+		found = append(found, drpc)
+	}
+
+	return found, nil
 }
 
 // DRPCsFailingOverToCluster lists DRPC resources that are failing over to the passed in drcluster
@@ -482,79 +561,84 @@ func DRPCsFailingOverToClusterForPolicy(
 func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	mwPred := ManifestWorkPredicateFunc()
 
-	mwMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
-		mw, ok := obj.(*ocmworkv1.ManifestWork)
-		if !ok {
-			return []reconcile.Request{}
-		}
+	mwMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
+		func(ctx context.Context, obj client.Object) []reconcile.Request {
+			mw, ok := obj.(*ocmworkv1.ManifestWork)
+			if !ok {
+				return []reconcile.Request{}
+			}
 
-		ctrl.Log.Info(fmt.Sprintf("DRPC: Filtering ManifestWork (%s/%s)", mw.Name, mw.Namespace))
+			ctrl.Log.Info(fmt.Sprintf("DRPC: Filtering ManifestWork (%s/%s)", mw.Name, mw.Namespace))
 
-		return filterMW(mw)
-	}))
+			return filterMW(mw)
+		}))
 
 	mcvPred := ManagedClusterViewPredicateFunc()
 
-	mcvMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
-		mcv, ok := obj.(*viewv1beta1.ManagedClusterView)
-		if !ok {
-			return []reconcile.Request{}
-		}
+	mcvMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
+		func(ctx context.Context, obj client.Object) []reconcile.Request {
+			mcv, ok := obj.(*viewv1beta1.ManagedClusterView)
+			if !ok {
+				return []reconcile.Request{}
+			}
 
-		ctrl.Log.Info(fmt.Sprintf("DRPC: Filtering MCV (%s/%s)", mcv.Name, mcv.Namespace))
+			ctrl.Log.Info(fmt.Sprintf("DRPC: Filtering MCV (%s/%s)", mcv.Name, mcv.Namespace))
 
-		return filterMCV(mcv)
-	}))
+			return filterMCV(mcv)
+		}))
 
 	usrPlRulePred := PlacementRulePredicateFunc()
 
-	usrPlRuleMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
-		usrPlRule, ok := obj.(*plrv1.PlacementRule)
-		if !ok {
-			return []reconcile.Request{}
-		}
+	usrPlRuleMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
+		func(ctx context.Context, obj client.Object) []reconcile.Request {
+			usrPlRule, ok := obj.(*plrv1.PlacementRule)
+			if !ok {
+				return []reconcile.Request{}
+			}
 
-		ctrl.Log.Info(fmt.Sprintf("DRPC: Filtering User PlacementRule (%s/%s)", usrPlRule.Name, usrPlRule.Namespace))
+			ctrl.Log.Info(fmt.Sprintf("DRPC: Filtering User PlacementRule (%s/%s)", usrPlRule.Name, usrPlRule.Namespace))
 
-		return filterUsrPlRule(usrPlRule)
-	}))
+			return filterUsrPlRule(usrPlRule)
+		}))
 
 	usrPlmntPred := PlacementPredicateFunc()
 
-	usrPlmntMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
-		usrPlmnt, ok := obj.(*clrapiv1beta1.Placement)
-		if !ok {
-			return []reconcile.Request{}
-		}
+	usrPlmntMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
+		func(ctx context.Context, obj client.Object) []reconcile.Request {
+			usrPlmnt, ok := obj.(*clrapiv1beta1.Placement)
+			if !ok {
+				return []reconcile.Request{}
+			}
 
-		ctrl.Log.Info(fmt.Sprintf("DRPC: Filtering User Placement (%s/%s)", usrPlmnt.Name, usrPlmnt.Namespace))
+			ctrl.Log.Info(fmt.Sprintf("DRPC: Filtering User Placement (%s/%s)", usrPlmnt.Name, usrPlmnt.Namespace))
 
-		return filterUsrPlmnt(usrPlmnt)
-	}))
+			return filterUsrPlmnt(usrPlmnt)
+		}))
 
 	drClusterPred := DRClusterPredicateFunc()
 
-	drClusterMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(func(obj client.Object) []reconcile.Request {
-		drCluster, ok := obj.(*rmn.DRCluster)
-		if !ok {
-			return []reconcile.Request{}
-		}
+	drClusterMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
+		func(ctx context.Context, obj client.Object) []reconcile.Request {
+			drCluster, ok := obj.(*rmn.DRCluster)
+			if !ok {
+				return []reconcile.Request{}
+			}
 
-		ctrl.Log.Info(fmt.Sprintf("DRPC Map: Filtering DRCluster (%s)", drCluster.Name))
+			ctrl.Log.Info(fmt.Sprintf("DRPC Map: Filtering DRCluster (%s)", drCluster.Name))
 
-		return r.FilterDRCluster(drCluster)
-	}))
+			return r.FilterDRCluster(drCluster)
+		}))
 
 	r.eventRecorder = rmnutil.NewEventReporter(mgr.GetEventRecorderFor("controller_DRPlacementControl"))
 
 	return ctrl.NewControllerManagedBy(mgr).
 		WithOptions(ctrlcontroller.Options{MaxConcurrentReconciles: getMaxConcurrentReconciles(ctrl.Log)}).
 		For(&rmn.DRPlacementControl{}).
-		Watches(&source.Kind{Type: &ocmworkv1.ManifestWork{}}, mwMapFun, builder.WithPredicates(mwPred)).
-		Watches(&source.Kind{Type: &viewv1beta1.ManagedClusterView{}}, mcvMapFun, builder.WithPredicates(mcvPred)).
-		Watches(&source.Kind{Type: &plrv1.PlacementRule{}}, usrPlRuleMapFun, builder.WithPredicates(usrPlRulePred)).
-		Watches(&source.Kind{Type: &clrapiv1beta1.Placement{}}, usrPlmntMapFun, builder.WithPredicates(usrPlmntPred)).
-		Watches(&source.Kind{Type: &rmn.DRCluster{}}, drClusterMapFun, builder.WithPredicates(drClusterPred)).
+		Watches(&ocmworkv1.ManifestWork{}, mwMapFun, builder.WithPredicates(mwPred)).
+		Watches(&viewv1beta1.ManagedClusterView{}, mcvMapFun, builder.WithPredicates(mcvPred)).
+		Watches(&plrv1.PlacementRule{}, usrPlRuleMapFun, builder.WithPredicates(usrPlRulePred)).
+		Watches(&clrapiv1beta1.Placement{}, usrPlmntMapFun, builder.WithPredicates(usrPlmntPred)).
+		Watches(&rmn.DRCluster{}, drClusterMapFun, builder.WithPredicates(drClusterPred)).
 		Complete(r)
 }
 

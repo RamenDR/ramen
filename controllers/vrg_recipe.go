@@ -22,7 +22,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 type RecipeElements struct {
@@ -214,13 +213,14 @@ func recipeNamespaceNames(recipeElements RecipeElements) sets.Set[string] {
 
 func recipesWatch(b *builder.Builder, m objectToReconcileRequestsMapper) *builder.Builder {
 	return b.Watches(
-		&source.Kind{Type: &recipe.Recipe{}},
+		&recipe.Recipe{},
 		handler.EnqueueRequestsFromMapFunc(m.recipeToVrgReconcileRequestsMapper),
 		builder.WithPredicates(util.CreateOrResourceVersionUpdatePredicate{}),
 	)
 }
 
 func (m objectToReconcileRequestsMapper) recipeToVrgReconcileRequestsMapper(
+	ctx context.Context,
 	recipe client.Object,
 ) []reconcile.Request {
 	recipeNamespacedName := types.NamespacedName{

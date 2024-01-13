@@ -38,7 +38,7 @@ IMAGE_NAME ?= ramen
 IMAGE_TAG ?= latest
 PLATFORM ?= k8s
 IMAGE_TAG_BASE = $(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY)/$(IMAGE_NAME)
-RBAC_PROXY_IMG ?= "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.0"
+RBAC_PROXY_IMG ?= "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1"
 OPERATOR_SUGGESTED_NAMESPACE ?= ramen-system
 AUTO_CONFIGURE_DR_CLUSTER ?= true
 KUBE_OBJECT_PROTECTION_DISABLED ?= false
@@ -258,7 +258,7 @@ undeploy-dr-cluster: kustomize ## Undeploy dr-cluster controller from the K8s cl
 ##@ Tools
 
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
-controller_gen_version=v0.9.2
+controller_gen_version=v0.14.0
 controller-gen: ## Download controller-gen locally if necessary.
 	@test '$(shell $(CONTROLLER_GEN) --version)' = 'Version: $(controller_gen_version)' ||\
 	$(call go-get-tool,sigs.k8s.io/controller-tools/cmd/controller-gen@$(controller_gen_version))

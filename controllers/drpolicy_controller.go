@@ -22,7 +22,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/util"
@@ -398,24 +397,24 @@ func (r *DRPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&ramen.DRPolicy{}).
 		Watches(
-			&source.Kind{Type: &corev1.ConfigMap{}},
+			&corev1.ConfigMap{},
 			handler.EnqueueRequestsFromMapFunc(r.configMapMapFunc),
 			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
 		).
 		Watches(
-			&source.Kind{Type: &corev1.Secret{}},
+			&corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.secretMapFunc),
 			builder.WithPredicates(util.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
 		).
 		Watches(
-			&source.Kind{Type: &ramen.DRCluster{}},
+			&ramen.DRCluster{},
 			handler.EnqueueRequestsFromMapFunc(r.drClusterMapFunc),
 			builder.WithPredicates(util.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
 		).
 		Complete(r)
 }
 
-func (r *DRPolicyReconciler) configMapMapFunc(configMap client.Object) []reconcile.Request {
+func (r *DRPolicyReconciler) configMapMapFunc(ctx context.Context, configMap client.Object) []reconcile.Request {
 	if configMap.GetName() != HubOperatorConfigMapName || configMap.GetNamespace() != NamespaceName() {
 		return []reconcile.Request{}
 	}
@@ -443,7 +442,7 @@ func (r *DRPolicyReconciler) configMapMapFunc(configMap client.Object) []reconci
 	return requests
 }
 
-func (r *DRPolicyReconciler) secretMapFunc(secret client.Object) []reconcile.Request {
+func (r *DRPolicyReconciler) secretMapFunc(ctx context.Context, secret client.Object) []reconcile.Request {
 	if secret.GetNamespace() != NamespaceName() {
 		return []reconcile.Request{}
 	}
@@ -462,7 +461,7 @@ func (r *DRPolicyReconciler) secretMapFunc(secret client.Object) []reconcile.Req
 	return requests
 }
 
-func (r *DRPolicyReconciler) drClusterMapFunc(drcluster client.Object) []reconcile.Request {
+func (r *DRPolicyReconciler) drClusterMapFunc(ctx context.Context, drcluster client.Object) []reconcile.Request {
 	drpolicies := &ramen.DRPolicyList{}
 	if err := r.Client.List(context.TODO(), drpolicies); err != nil {
 		return []reconcile.Request{}
