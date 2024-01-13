@@ -1519,6 +1519,7 @@ func runFailoverAction(placementObj client.Object, fromCluster, toCluster string
 	Expect(len(drpc.Status.Conditions)).To(Equal(2))
 	_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
 	Expect(condition.Reason).To(Equal(string(rmn.FailedOver)))
+	Expect(drpc.Status.ActionStartTime).ShouldNot(BeNil())
 
 	decision := getLatestUserPlacementDecision(placementObj.GetName(), placementObj.GetNamespace())
 	Expect(decision.ClusterName).To(Equal(toCluster))
@@ -2283,8 +2284,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		Specify("DRClusters", func() {
 			populateDRClusters()
 		})
-		When("6 Applications deployed for the first time", func() {
-			It("Should deploy 6 drpcs", func() {
+		When("Application deployed for the first time", func() {
+			It("Should deploy drpc", func() {
 				createNamespacesAsync(getNamespaceObj(DefaultDRPCNamespace))
 				createManagedClusters(asyncClusters)
 				createDRClustersAsync()
@@ -2309,7 +2310,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		// -------- After Secondary is back online ---------
 		// NAMESPACE           NAME           AGE     PREFERREDCLUSTER   FAILOVERCLUSTER   DESIREDSTATE   CURRENTSTATE   PROGRESSION      START TIME             DURATION   PEER READY
 		// busybox-samples-1   busybox-drpc   12h     East1ManagedClus                                      Deployed       Completed                                              True
-		When("DRAction is Initial deploy -- during hub recovery -> Secondary Down", func() {
+		When("HubRecovery: DRAction is Initial deploy -> Secondary Down", func() {
 			It("Should reconstructs the DRPC state to completion. Primary is East1ManagedCluster", func() {
 				setClusterDown(West1ManagedCluster)
 				clearFakeUserPlacementRuleStatus(UserPlacementRuleName, DefaultDRPCNamespace)
@@ -2333,32 +2334,31 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		// -------- After Primary is back online ---------
 		// NAMESPACE           NAME           AGE     PREFERREDCLUSTER   FAILOVERCLUSTER   DESIREDSTATE   CURRENTSTATE   PROGRESSION      START TIME             DURATION   PEER READY
 		// busybox-samples-5   busybox-drpc   11h     East1ManagedClus                                    Deployed       Completed     2023-12-20T12:52:20Z   5m32.467527356s   True
-		When("DRAction is Initial deploy -- during hub recovery -> Primary Down", func() {
-			It("Should be able to reconstructs the DRPC state to completion. Primary East1ManagedCluster", func() {
-				setClusterDown(West1ManagedCluster)
+		When("HubRecovery: DRAction is Initial deploy -> Primary Down", func() {
+			It("Should pause and wait for user to trigger a failover. Primary East1ManagedCluster", func() {
+				setClusterDown(East1ManagedCluster)
 				clearFakeUserPlacementRuleStatus(UserPlacementRuleName, DefaultDRPCNamespace)
 				clearDRPCStatus()
 				expectedAction := rmn.DRAction("")
-				expectedPhase := rmn.Deployed
-				exptectedPorgression := rmn.ProgressionCompleted
+				expectedPhase := rmn.WaitForUser
+				exptectedPorgression := rmn.ProgressionActionPaused
 				verifyDRPCStateAndProgression(expectedAction, expectedPhase, exptectedPorgression)
-				resetClusterDown()
-				exptectedCompleted := rmn.ProgressionCompleted
-				verifyDRPCStateAndProgression(expectedAction, expectedPhase, exptectedCompleted)
 			})
 		})
 
 		// Failover
-		When("DRAction is set to Failover - Hub Recovery", func() {
+		When("HubRecovery: DRAction is set to Failover -> primary cluster down", func() {
 			It("Should failover to West1ManagedCluster", func() {
 				from := East1ManagedCluster
 				to := West1ManagedCluster
+				resetClusterDown()
 				runFailoverAction(userPlacementRule1, from, to, false, false)
-				uploadVRGtoS3Store(DRPCCommonName, DefaultDRPCNamespace, West1ManagedCluster,
-					rmn.VRGAction(rmn.ActionFailover))
 				waitForDRPCPhaseAndProgression(DefaultDRPCNamespace, rmn.FailedOver)
+				uploadVRGtoS3Store(DRPCCommonName, DefaultDRPCNamespace, West1ManagedCluster, rmn.VRGActionFailover)
+				resetClusterDown()
 			})
 		})
+
 		//nolint:lll
 		// -------- Before Hub Recovery Action FailedOver ---
 		// NAMESPACE           NAME           AGE     PREFERREDCLUSTER   FAILOVERCLUSTER   DESIREDSTATE   CURRENTSTATE   PROGRESSION            START TIME             DURATION          PEER READY
@@ -2369,14 +2369,14 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		// -------- After Primary is back online ------------
 		// NAMESPACE           NAME           AGE     PREFERREDCLUSTER   FAILOVERCLUSTER   DESIREDSTATE   CURRENTSTATE   PROGRESSION      START TIME             DURATION   PEER READY
 		// busybox-samples-2   busybox-drpc   11h     East1ManagedClus   West1ManagedClu   Failover       FailedOver     Completed                                              True
-		When("DRAction is Failover -- during hub recovery -> Primary Down", func() {
+		When("HubRecovery: DRAction is Failover -> Primary Down", func() {
 			It("Should Pause, but allows failover. Primary West1ManagedCluster", func() {
 				setClusterDown(West1ManagedCluster)
 				clearFakeUserPlacementRuleStatus(UserPlacementRuleName, DefaultDRPCNamespace)
 				clearDRPCStatus()
 				setDRPCSpecExpectationTo(DefaultDRPCNamespace, East1ManagedCluster, West1ManagedCluster, "")
 				expectedAction := rmn.DRAction("")
-				expectedPhase := rmn.DRState("")
+				expectedPhase := rmn.WaitForUser
 				exptectedPorgression := rmn.ProgressionActionPaused
 				verifyDRPCStateAndProgression(expectedAction, expectedPhase, exptectedPorgression)
 				checkConditionAllowFailover(DefaultDRPCNamespace)
@@ -2393,7 +2393,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		})
 
 		// Relocate
-		When("DRAction is set to Relocate - Hub Recovery", func() {
+		When("HubRecovery: DRAction is set to Relocate", func() {
 			It("Should relocate to Primary (East1ManagedCluster)", func() {
 				// ----------------------------- RELOCATION TO PRIMARY --------------------------------------
 				from := West1ManagedCluster
@@ -2412,7 +2412,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		// -------- After Primary is back online ------------
 		// NAMESPACE           NAME           AGE     PREFERREDCLUSTER   FAILOVERCLUSTER   DESIREDSTATE   CURRENTSTATE   PROGRESSION      START TIME             DURATION   PEER READY
 		// busybox-sample      busybox-drpc   16h     East1ManagedClus   West1ManagedClu   Relocate       Relocated      Completed                                              True
-		When("DRAction is Relocate -- during hub recovery -> Secondary Down", func() {
+		When("HubRecovery: DRAction is Relocate -> Secondary Down", func() {
 			It("Should Continue given the primary East1ManagedCluster is up", func() {
 				setClusterDown(West1ManagedCluster)
 				clearFakeUserPlacementRuleStatus(UserPlacementRuleName, DefaultDRPCNamespace)
@@ -2442,14 +2442,14 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		// -------- After Primary is back online ------------
 		// NAMESPACE           NAME           AGE     PREFERREDCLUSTER   FAILOVERCLUSTER   DESIREDSTATE   CURRENTSTATE   PROGRESSION      START TIME             DURATION   PEER READY
 		// busybox-samples-3   busybox-drpc   11h     East1ManagedClus                     Relocate       Relocated      Completed                                              True
-		When("DRAction is supposed to be Relocate -- during hub recovery -> Primary Down -> Action Cleared", func() {
+		When("HubRecovery: DRAction is supposed to be Relocate -> Primary Down -> Action Cleared", func() {
 			It("Should Pause given the primary East1ManagedCluster is down, but allow failover", func() {
 				setClusterDown(East1ManagedCluster)
 				clearFakeUserPlacementRuleStatus(UserPlacementRuleName, DefaultDRPCNamespace)
 				clearDRPCStatus()
 				setDRPCSpecExpectationTo(DefaultDRPCNamespace, East1ManagedCluster, West1ManagedCluster, "")
 				expectedAction := rmn.DRAction("")
-				expectedPhase := rmn.DRState("")
+				expectedPhase := rmn.WaitForUser
 				exptectedPorgression := rmn.ProgressionActionPaused
 				verifyDRPCStateAndProgression(expectedAction, expectedPhase, exptectedPorgression)
 				checkConditionAllowFailover(DefaultDRPCNamespace)
@@ -2495,11 +2495,19 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 func verifyDRPCStateAndProgression(expectedAction rmn.DRAction, expectedPhase rmn.DRState,
 	exptectedPorgression rmn.ProgressionStatus,
 ) {
+	var phase rmn.DRState
+
+	var progression rmn.ProgressionStatus
+
 	Eventually(func() bool {
 		drpc := getLatestDRPC(DefaultDRPCNamespace)
+		phase = drpc.Status.Phase
+		progression = drpc.Status.Progression
 
-		return drpc.Status.Phase == expectedPhase && drpc.Status.Progression == exptectedPorgression
-	}, timeout, time.Millisecond*1000).Should(BeTrue(), "Phase has not been updated yet!")
+		return phase == expectedPhase && progression == exptectedPorgression
+	}, timeout, time.Millisecond*1000).Should(BeTrue(),
+		fmt.Sprintf("Phase has not been updated yet! Phase:%s Expected:%s - progression:%s exptected:%s",
+			phase, expectedPhase, progression, exptectedPorgression))
 
 	drpc := getLatestDRPC(DefaultDRPCNamespace)
 	Expect(drpc.Spec.Action).Should(Equal(expectedAction))
@@ -2525,8 +2533,7 @@ func checkConditionAllowFailover(namespace string) {
 		return false
 	}, timeout, interval).Should(BeTrue(), fmt.Sprintf("Condition '%+v'", availableCondition))
 
-	Expect(drpc.Status.Phase).To(Equal(rmn.DRState("")))
-	Expect(availableCondition.Message).Should(Equal("Failover allowed"))
+	Expect(drpc.Status.Phase).To(Equal(rmn.WaitForUser))
 }
 
 func uploadVRGtoS3Store(name, namespace, dstCluster string, action rmn.VRGAction) {
