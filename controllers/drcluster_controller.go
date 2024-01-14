@@ -724,7 +724,7 @@ func (u *drclusterInstance) fenceClusterOnCluster(peerCluster *ramen.DRCluster) 
 	}
 
 	annotations := make(map[string]string)
-	annotations[DRPCNameAnnotation] = u.object.Name // ?
+	annotations[DRClusterNameAnnotation] = u.object.Name
 
 	nf, err := u.reconciler.MCVGetter.GetNFFromManagedCluster(u.object.Name,
 		u.object.Namespace, peerCluster.Name, annotations)
