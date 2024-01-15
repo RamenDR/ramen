@@ -287,19 +287,7 @@ endef
 .PHONY: operator-sdk
 OSDK = ./bin/operator-sdk
 operator-sdk: ## Download operator-sdk locally if necessary.
-ifeq (,$(wildcard $(OSDK)))
-ifeq (,$(shell which operator-sdk 2>/dev/null))
-	@{ \
-	set -e ;\
-	mkdir -p $(dir $(OSDK)) ;\
-	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
-	curl -sSLo $(OSDK) https://github.com/operator-framework/operator-sdk/releases/download/v1.24.0/operator-sdk_$${OS}_$${ARCH} ;\
-	chmod +x $(OSDK) ;\
-	}
-else
-OSDK = $(shell which operator-sdk)
-endif
-endif
+	@hack/install-operator-sdk.sh
 
 .PHONY: bundle
 bundle: bundle-hub bundle-dr-cluster ## Generate all bundle manifests and metadata, then validate generated files.
