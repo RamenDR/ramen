@@ -263,10 +263,10 @@ controller-gen: ## Download controller-gen locally if necessary.
 	@test '$(shell $(CONTROLLER_GEN) --version)' = 'Version: $(controller_gen_version)' ||\
 	$(call go-get-tool,sigs.k8s.io/controller-tools/cmd/controller-gen@$(controller_gen_version))
 
+.PHONY: kustomize
 KUSTOMIZE = $(shell pwd)/bin/kustomize
 kustomize: ## Download kustomize locally if necessary.
-	@test -f $(KUSTOMIZE) ||\
-	$(call go-get-tool,sigs.k8s.io/kustomize/kustomize/v4@v4.5.7)
+	@hack/install-kustomize.sh
 
 # go-get-tool will 'go get' any package $1 and install it to bin/.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
