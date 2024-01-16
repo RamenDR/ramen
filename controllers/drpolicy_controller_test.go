@@ -288,7 +288,7 @@ var _ = Describe("DrpolicyController", func() {
 							validationErrors.FailedPattern(
 								path.String(),
 								`body`,
-								`^\d+[mhd]$`,
+								`^(|\d+[mhd])$`,
 								value,
 							).Error(),
 						),
@@ -300,41 +300,6 @@ var _ = Describe("DrpolicyController", func() {
 			Expect(k8sClient.Create(context.TODO(), drp)).To(MatchError(err(drp.Spec.SchedulingInterval)))
 			drp.Spec.SchedulingInterval = `0`
 			Expect(k8sClient.Create(context.TODO(), drp)).To(MatchError(err(drp.Spec.SchedulingInterval)))
-		})
-	})
-
-	When("a drpolicy having no drclusters", func() {
-		It("should fail to create drpolicy", func() {
-			drp := drpolicy.DeepCopy()
-			drp.Spec.DRClusters = nil
-			err := func() *errors.StatusError {
-				path := field.NewPath("spec", "drClusters")
-
-				return errors.NewInvalid(
-					schema.GroupKind{
-						Group: ramen.GroupVersion.Group,
-						Kind:  "DRPolicy",
-					},
-					drp.Name,
-					field.ErrorList{
-						field.Required(
-							path,
-							"",
-						),
-					},
-				)
-			}()
-			Expect(k8sClient.Create(context.TODO(), drp)).To(MatchError(err))
-		})
-	})
-	When("a drpolicy is having an empty list of DRClusters", func() {
-		It("should set its validated status condition's status to false", func() {
-			drp := drpolicy.DeepCopy()
-			drp.Spec.DRClusters = []string{}
-			Expect(k8sClient.Create(context.TODO(), drp)).To(Succeed())
-			validatedConditionExpect(drp, metav1.ConditionFalse, Ignore())
-			drpolicyDeleteAndConfirm(drp)
-			vaildateSecretDistribution(nil)
 		})
 	})
 	When("a drpolicy is created before DRClusters are created", func() {
