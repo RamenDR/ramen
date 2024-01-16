@@ -258,29 +258,13 @@ undeploy-dr-cluster: kustomize ## Undeploy dr-cluster controller from the K8s cl
 ##@ Tools
 
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
-controller_gen_version=v0.14.0
 controller-gen: ## Download controller-gen locally if necessary.
-	@test '$(shell $(CONTROLLER_GEN) --version)' = 'Version: $(controller_gen_version)' ||\
-	$(call go-get-tool,sigs.k8s.io/controller-tools/cmd/controller-gen@$(controller_gen_version))
+	@hack/install-controller-gen.sh
 
 .PHONY: kustomize
 KUSTOMIZE = $(shell pwd)/bin/kustomize
 kustomize: ## Download kustomize locally if necessary.
 	@hack/install-kustomize.sh
-
-# go-get-tool will 'go get' any package $1 and install it to bin/.
-PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
-define go-get-tool
-{ \
-set -e ;\
-TMP_DIR=$$(mktemp -d) ;\
-cd $$TMP_DIR ;\
-go mod init tmp ;\
-echo "Downloading $(1)" ;\
-GOBIN=$(PROJECT_DIR)/bin go install $(1) ;\
-rm -rf $$TMP_DIR ;\
-}
-endef
 
 ##@ Bundle
 
