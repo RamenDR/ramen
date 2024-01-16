@@ -126,7 +126,7 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 
 .PHONY: golangci-bin
 golangci-bin:
-	hack/install-golangci-lint.sh
+	@hack/install-golangci-lint.sh
 
 .PHONY: lint
 lint: golangci-bin ## Run configured golangci-lint and pre-commit.sh linters against the code.
