@@ -16,22 +16,28 @@ type DRPolicySpec struct {
 	// form <num><m,h,d>. Here <num> is a number, 'm' means
 	// minutes, 'h' means hours and 'd' stands for days.
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Pattern=`^\d+[mhd]$`
-	SchedulingInterval string `json:"schedulingInterval,omitempty"`
+	// +kubebuilder:validation:Pattern=`^(|\d+[mhd])$`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="schedulingInterval is immutable"
+	SchedulingInterval string `json:"schedulingInterval"`
 
 	// Label selector to identify all the VolumeReplicationClasses.
 	// This selector is assumed to be the same for all subscriptions that
 	// need DR protection. It will be passed in to the VRG when it is created
-	//+optional
-	ReplicationClassSelector metav1.LabelSelector `json:"replicationClassSelector,omitempty"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="replicationClassSelector is immutable"
+	ReplicationClassSelector metav1.LabelSelector `json:"replicationClassSelector"`
 
 	// Label selector to identify all the VolumeSnapshotClasses.
 	// This selector is assumed to be the same for all subscriptions that
 	// need DR protection. It will be passed in to the VRG when it is created
-	//+optional
-	VolumeSnapshotClassSelector metav1.LabelSelector `json:"volumeSnapshotClassSelector,omitempty"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="volumeSnapshotClassSelector is immutable"
+	VolumeSnapshotClassSelector metav1.LabelSelector `json:"volumeSnapshotClassSelector"`
 
 	// List of DRCluster resources that are governed by this policy
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="size(self) == 2", message="drClusters requires a list of 2 clusters"
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="drClusters is immutable"
 	DRClusters []string `json:"drClusters"`
 }
 
