@@ -119,6 +119,18 @@ def cmd_delete(env, args):
     )
 
 
+def cmd_suspend(env, args):
+    logging.info("[%s] Suspending environment", env["name"])
+    for profile in env["profiles"]:
+        run("virsh", "-c", "qemu:///system", "suspend", profile["name"])
+
+
+def cmd_resume(env, args):
+    logging.info("[%s] Resuming environment", env["name"])
+    for profile in env["profiles"]:
+        run("virsh", "-c", "qemu:///system", "resume", profile["name"])
+
+
 def cmd_dump(env, args):
     yaml.dump(env, sys.stdout)
 
