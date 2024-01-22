@@ -597,8 +597,13 @@ func (s *s3ObjectStore) DeleteObject(key string) error {
 		Bucket: aws.String(s.s3Bucket),
 		Key:    aws.String(key),
 	})
+	if err != nil {
+		errMsgPrefix := fmt.Errorf("failed to delete object %s", *aws.String(key))
 
-	return err
+		return processAwsError(errMsgPrefix, err)
+	}
+
+	return nil
 }
 
 // DeleteObjectsWithKeyPrefix deletes from the bucket any objects that
@@ -643,9 +648,16 @@ func (s *s3ObjectStore) DeleteObjects(keys ...string) error {
 	ctx, cancel := context.WithDeadline(context.TODO(), time.Now().Add(s3Timeout))
 	defer cancel()
 
-	return s.batchDeleter.Delete(ctx, &s3manager.DeleteObjectsIterator{
+	err := s.batchDeleter.Delete(ctx, &s3manager.DeleteObjectsIterator{
 		Objects: delObjects,
 	})
+	if err != nil {
+		errMsgPrefix := fmt.Errorf("unable to process batch delete")
+
+		return processAwsError(errMsgPrefix, err)
+	}
+
+	return nil
 }
 
 // isAwsErrCodeNoSuchBucket returns true if the given input `err` has wrapped
