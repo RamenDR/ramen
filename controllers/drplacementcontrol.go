@@ -2335,6 +2335,7 @@ func (d *DRPCInstance) setConditionOnInitialDeploymentCompletion() {
 
 func (d *DRPCInstance) setStatusInitiating() {
 	if !(d.instance.Status.Phase == "" ||
+		d.instance.Status.Phase == rmn.WaitForUser ||
 		d.instance.Status.Phase == rmn.Deployed ||
 		d.instance.Status.Phase == rmn.FailedOver ||
 		d.instance.Status.Phase == rmn.Relocated) {
