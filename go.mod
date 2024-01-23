@@ -1,8 +1,6 @@
 module github.com/ramendr/ramen
 
-go 1.21
-
-toolchain go1.21.6
+go 1.21.6
 
 require (
 	github.com/aws/aws-sdk-go v1.44.289
@@ -19,6 +17,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.16.0
 	github.com/prometheus/client_model v0.4.0
+	github.com/ramendr/ramen/api v0.0.0-20240117171503-e11c56eac24d
 	github.com/ramendr/recipe v0.0.0-20230817160432-729dc7fd8932
 	github.com/stolostron/multicloud-operators-foundation v0.0.0-20220824091202-e9cd9710d009
 	github.com/stolostron/multicloud-operators-placementrule v1.2.4-1-20220311-8eedb3f.0.20230828200208-cd3c119a7fa0
