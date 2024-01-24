@@ -28,6 +28,10 @@ type DRState string
 
 // These are the valid values for DRState
 const (
+	// WaitForUser, state recorded in DRPC status to indicate that we are
+	// waiting for the user to take an action after hub recover.
+	WaitForUser = DRState("WaitForUser")
+
 	// Initiating, state recorded in the DRPC status to indicate that this
 	// action (Deploy/Failover/Relocate) is preparing for execution. There
 	// is NO follow up state called 'Initiated'

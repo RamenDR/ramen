@@ -2,6 +2,9 @@ module github.com/ramendr/ramen
 
 go 1.21.6
 
+// This replace should always be here for ease of development.
+replace github.com/ramendr/ramen/api => ./api
+
 require (
 	github.com/aws/aws-sdk-go v1.44.289
 	github.com/backube/volsync v0.7.1
