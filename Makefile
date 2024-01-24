@@ -118,9 +118,6 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
-.PHONY: golangci-bin
-golangci-bin:
-	@hack/install-golangci-lint.sh
 
 .PHONY: lint
 lint: golangci-bin ## Run configured golangci-lint and pre-commit.sh linters against the code.
@@ -252,20 +249,29 @@ undeploy-dr-cluster: kustomize ## Undeploy dr-cluster controller from the K8s cl
 ##@ Tools
 
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
-controller-gen: ## Download controller-gen locally if necessary.
+controller-gen: ## Download controller-gen locally.
 	@hack/install-controller-gen.sh
 
 .PHONY: kustomize
 KUSTOMIZE = $(shell pwd)/bin/kustomize
-kustomize: ## Download kustomize locally if necessary.
+kustomize: ## Download kustomize locally.
 	@hack/install-kustomize.sh
 
-##@ Bundle
+.PHONY: opm
+OPM = ./bin/opm
+opm: ## Download opm locally.
+	@./hack/install-opm.sh
 
 .PHONY: operator-sdk
 OSDK = ./bin/operator-sdk
-operator-sdk: ## Download operator-sdk locally if necessary.
+operator-sdk: ## Download operator-sdk locally.
 	@hack/install-operator-sdk.sh
+
+.PHONY: golangci-bin
+golangci-bin: ## Download golangci-lint locally.
+	@hack/install-golangci-lint.sh
+
+##@ Bundle
 
 .PHONY: bundle
 bundle: bundle-hub bundle-dr-cluster ## Generate all bundle manifests and metadata, then validate generated files.
@@ -320,11 +326,6 @@ bundle-dr-cluster-build: bundle-dr-cluster ## Build the dr-cluster bundle image.
 .PHONY: bundle-dr-cluster-push
 bundle-dr-cluster-push: ## Push the dr-cluster bundle image.
 	$(MAKE) docker-push IMG=$(BUNDLE_IMG_DRCLUSTER)
-
-.PHONY: opm
-OPM = ./bin/opm
-opm: ## Download opm locally if necessary.
-	@./hack/install-opm.sh
 
 # A comma-separated list of bundle images (e.g. make catalog-build BUNDLE_IMGS=example.com/operator-bundle:v0.1.0,example.com/operator-bundle:v0.2.0).
 # These images MUST exist in a registry and be pull-able.
