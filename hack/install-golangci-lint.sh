@@ -1,19 +1,26 @@
 #!/bin/bash
+set -e
 
-GOLANGCI_URL="https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh"
-GOLANGCI_VERSION="1.55.2"
+script_dir="$(cd "$(dirname "$0")" && pwd)"
 
-# Get the installed version of golangci-lint, if available
-GOLANGCI_INSTALLED_VER=$(testbin/golangci-lint version --format=short 2>/dev/null)
+source_url="https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh"
+required_version="1.55.2"
+target_dir="${script_dir}/../testbin"
+target_path="${target_dir}/golangci-lint"
+tool="golangci-lint"
 
-# Check if golangci-lint is not installed or if the version does not match
-if [ -z "$GOLANGCI_INSTALLED_VER" ] || [ "$GOLANGCI_VERSION" != "$GOLANGCI_INSTALLED_VER" ]; then
-  if [ -n "$GOLANGCI_INSTALLED_VER" ]; then
-    echo "Incorrect version ($GOLANGCI_INSTALLED_VER) of golangci-lint found, expecting $GOLANGCI_VERSION"
-    rm -f testbin/golangci-lint
-  fi
+# sample output to parse: 'golangci-lint has version 1.55.2 built with go1.21.3 from e3c2265f on 2023-11-03T12:59:25Z'
+installed_version=$("${target_path}" version --format=short || true)
 
-  # Install the correct version
-  echo "Installing golangci-lint (version: $GOLANGCI_VERSION) into testbin"
-  curl -sSfL "$GOLANGCI_URL" | sh -s -- -b testbin v"$GOLANGCI_VERSION"
+if [ "$required_version" == "$installed_version" ]; then
+  exit 0
 fi
+
+if [ -n "$installed_version" ]; then
+  echo "Incorrect version of ${tool} found, installed version: ${installed_version}, expecting: ${required_version}"
+  rm -f "${target_path}"
+fi
+
+echo "Installing ${tool}:${required_version} in ${target_dir}"
+mkdir -p "${target_dir}"
+curl --silent --show-error --location --fail "$source_url" | sh -s -- -b "${target_dir}" v"$required_version"
