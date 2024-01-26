@@ -118,47 +118,58 @@ lint: golangci-bin ## Run configured golangci-lint and pre-commit.sh linters aga
 	testbin/golangci-lint run ./... --config=./.golangci.yaml
 	hack/pre-commit.sh
 
-test: generate manifests envtest ## Run tests.
+##@ Tests
+
+test: generate manifests envtest ## Run all the tests.
 	 go test ./... -coverprofile cover.out
 
-test-pvrgl: generate manifests envtest
+test-pvrgl: generate manifests envtest ## Run ProtectedVolumeReplicationGroupList tests.
 	 go test ./controllers -coverprofile cover.out  -ginkgo.focus ProtectedVolumeReplicationGroupList
 
-test-obj: generate manifests envtest
+test-obj: generate manifests envtest ## Run ObjectStorer tests.
 	 go test ./controllers -coverprofile cover.out  -ginkgo.focus FakeObjectStorer
 
-test-vs: generate manifests envtest
+test-vs: generate manifests envtest ## Run VolumeSync tests.
 	 go test ./controllers/volsync -coverprofile cover.out
 
-test-vrg: generate manifests envtest
+test-vrg: generate manifests envtest ## Run VolumeReplicationGroup tests.
 	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroup
 
-test-vrg-pvc: generate manifests envtest
+test-vrg-pvc: generate manifests envtest ## Run VolumeReplicationGroupPVC tests.
 	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupPVC
 
-test-vrg-vr: generate manifests envtest
+test-vrg-vr: generate manifests envtest ## Run VolumeReplicationGroupVolRep tests.
 	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupVolRep
 
-test-vrg-vs: generate manifests envtest
+test-vrg-vs: generate manifests envtest ## Run VolumeReplicationGroupVolSync tests.
 	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupVolSync
 
-test-vrg-recipe: generate manifests envtest
+test-vrg-recipe: generate manifests envtest ## Run VolumeReplicationGroupRecipe tests.
 	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupRecipe
 
-test-vrg-kubeobjects: generate manifests envtest
+test-vrg-kubeobjects: generate manifests envtest ## Run VolumeReplicationGroupKubeObjects tests.
 	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VRG_KubeObjectProtection
 
-test-drpc: generate manifests envtest
+test-drpc: generate manifests envtest ## Run DRPlacementControl tests.
 	 go test ./controllers -coverprofile cover.out  -ginkgo.focus DRPlacementControl
 
-test-drcluster: generate manifests envtest
+test-drcluster: generate manifests envtest ## Run DRCluster tests.
 	 go test ./controllers -coverprofile cover.out  -ginkgo.focus DRClusterController
 
-test-util: generate manifests envtest
+test-util: generate manifests envtest ## Run util tests.
 	 go test ./controllers/util -coverprofile cover.out
 
-test-util-pvc: generate manifests envtest
+test-util-pvc: generate manifests envtest ## Run util-pvc tests.
 	 go test ./controllers/util -coverprofile cover.out  -ginkgo.focus PVCS_Util
+
+test-drenv: ## Run drenv tests.
+	$(MAKE) -C test
+
+test-ramenctl: ## Run ramenctl tests.
+	$(MAKE) -C ramenctl
+
+e2e-rdr: generate manifests docker-build ## Run rdr-e2e tests.
+	./e2e/rdr-e2e.sh
 
 coverage:
 	go tool cover -html=cover.out
@@ -166,15 +177,6 @@ coverage:
 .PHONY: venv
 venv:
 	hack/make-venv
-
-test-drenv:
-	$(MAKE) -C test
-
-test-ramenctl:
-	$(MAKE) -C ramenctl
-
-e2e-rdr: generate manifests docker-build
-	./e2e/rdr-e2e.sh
 
 ##@ Build
 
