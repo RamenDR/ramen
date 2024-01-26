@@ -7,7 +7,7 @@ required_version="latest"
 source_url="sigs.k8s.io/controller-runtime/tools/setup-envtest@${required_version}"
 target_dir="${script_dir}/../testbin"
 target_path="${target_dir}/setup-envtest"
-k8s_version="1.25.0"
+k8s_version="1.29.0"
 
 # The setup-envtest tool has no versioning, so we need to use the latest version.
 # The go install command is fast enough that it can be run every time.
