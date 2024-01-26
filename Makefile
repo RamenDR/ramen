@@ -86,11 +86,6 @@ endif
 
 DOCKERCMD ?= podman
 
-ENVTEST_K8S_VERSION = 1.25.0
-ENVTEST_ASSETS_DIR = $(shell pwd)/testbin
-# Define to override the path to envtest executables.
-KUBEBUILDER_ASSETS ?= $(shell $(ENVTEST_ASSETS_DIR)/setup-envtest use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_ASSETS_DIR) --print path)
-
 all: build
 
 ##@ General
@@ -123,51 +118,47 @@ lint: golangci-bin ## Run configured golangci-lint and pre-commit.sh linters aga
 	testbin/golangci-lint run ./... --config=./.golangci.yaml
 	hack/pre-commit.sh
 
-envtest:
-	mkdir -p $(ENVTEST_ASSETS_DIR)
-	test -s $(ENVTEST_ASSETS_DIR)/setup-envtest || GOBIN=$(ENVTEST_ASSETS_DIR) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-
 test: generate manifests envtest ## Run tests.
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./... -coverprofile cover.out
+	 go test ./... -coverprofile cover.out
 
 test-pvrgl: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out  -ginkgo.focus ProtectedVolumeReplicationGroupList
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus ProtectedVolumeReplicationGroupList
 
 test-obj: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out  -ginkgo.focus FakeObjectStorer
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus FakeObjectStorer
 
 test-vs: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers/volsync -coverprofile cover.out
+	 go test ./controllers/volsync -coverprofile cover.out
 
 test-vrg: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroup
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroup
 
 test-vrg-pvc: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupPVC
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupPVC
 
 test-vrg-vr: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupVolRep
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupVolRep
 
 test-vrg-vs: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupVolSync
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupVolSync
 
 test-vrg-recipe: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupRecipe
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupRecipe
 
 test-vrg-kubeobjects: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out  -ginkgo.focus VRG_KubeObjectProtection
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VRG_KubeObjectProtection
 
 test-drpc: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out  -ginkgo.focus DRPlacementControl
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus DRPlacementControl
 
 test-drcluster: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out  -ginkgo.focus DRClusterController
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus DRClusterController
 
 test-util: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers/util -coverprofile cover.out
+	 go test ./controllers/util -coverprofile cover.out
 
 test-util-pvc: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers/util -coverprofile cover.out  -ginkgo.focus PVCS_Util
+	 go test ./controllers/util -coverprofile cover.out  -ginkgo.focus PVCS_Util
 
 coverage:
 	go tool cover -html=cover.out
@@ -269,6 +260,11 @@ operator-sdk: ## Download operator-sdk locally.
 .PHONY: golangci-bin
 golangci-bin: ## Download golangci-lint locally.
 	@hack/install-golangci-lint.sh
+
+.PHONY: envtest
+envtest: ## Download envtest locally.
+	hack/install-setup-envtest.sh
+
 
 ##@ Bundle
 
