@@ -521,22 +521,6 @@ func (v *VSHandler) TakePVCOwnership(pvcName string) (bool, error) {
 		return false, err
 	}
 
-	// Remove acm annotations from the PVC just as a precaution - ACM uses the annotations to track that the
-	// pvc is owned by an application.  Removing them should not be necessary now that we are adding
-	// the do-not-delete annotation.  With the do-not-delete annotation (see ACMAppSubDoNotDeleteAnnotation), ACM
-	// should not delete the pvc when the application is removed.
-	updatedAnnotations := map[string]string{}
-
-	for currAnnotationKey, currAnnotationValue := range pvc.Annotations {
-		// We want to only preserve annotations not from ACM (i.e. remove all ACM annotations to break ownership)
-		if !strings.HasPrefix(currAnnotationKey, "apps.open-cluster-management.io") ||
-			currAnnotationKey == ACMAppSubDoNotDeleteAnnotation {
-			updatedAnnotations[currAnnotationKey] = currAnnotationValue
-		}
-	}
-
-	pvc.Annotations = updatedAnnotations
-
 	err = v.client.Update(v.ctx, pvc)
 	if err != nil {
 		l.Error(err, "Error updating annotations on PVC to break appsub ownership")
@@ -578,21 +562,21 @@ func (v *VSHandler) pvcExistsAndInUse(pvcName string, inUsePodMustBeReady bool) 
 	return util.IsPVAttachedToNode(v.ctx, v.client, v.log, pvc)
 }
 
-func (v *VSHandler) pvcExists(pvcName string) (bool, error) {
-	_, err := v.getPVC(pvcName)
+func (v *VSHandler) pvcExists(pvcName string) (bool, *corev1.PersistentVolumeClaim, error) {
+	pvc, err := v.getPVC(pvcName)
 	if err != nil {
 		if !kerrors.IsNotFound(err) {
 			v.log.V(1).Info("failed to get PVC")
 
-			return false, err
+			return false, pvc, err
 		}
 
-		return false, nil
+		return false, pvc, nil
 	}
 
 	v.log.V(1).Info("PVC found")
 
-	return true, nil
+	return true, pvc, nil
 }
 
 func (v *VSHandler) getPVC(pvcName string) (*corev1.PersistentVolumeClaim, error) {
@@ -946,16 +930,16 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 		return fmt.Errorf("capacity must be provided %v", rdSpec.ProtectedPVC)
 	}
 
-	exists, err := v.pvcExists(rdSpec.ProtectedPVC.Name)
+	exists, pvc, err := v.pvcExists(rdSpec.ProtectedPVC.Name)
 	if err != nil {
 		return err
 	}
 
 	if exists {
-		return nil
+		return v.removeOCMAnnotationsAndUpdate(pvc)
 	}
 
-	pvc := &corev1.PersistentVolumeClaim{
+	pvc = &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      rdSpec.ProtectedPVC.Name,
 			Namespace: v.owner.GetNamespace(),
@@ -1041,6 +1025,17 @@ func (v *VSHandler) validateSnapshotAndEnsurePVC(rdSpec ramendrv1alpha1.VolSyncR
 		if err != nil {
 			return err
 		}
+	}
+
+	pvc, err := v.getPVC(rdSpec.ProtectedPVC.Name)
+	if err != nil {
+		return err
+	}
+
+	// Once the PVC is restored/rolled back, need to re-add the annotations from old Primary
+	err = v.addBackOCMAnnotationsAndUpdate(pvc, rdSpec.ProtectedPVC.Annotations)
+	if err != nil {
+		return err
 	}
 
 	// Add ownerRef on snapshot pointing to the vrg - if/when the VRG gets cleaned up, then GC can cleanup the snap
@@ -2109,4 +2104,47 @@ func (v *VSHandler) checkLastSnapshotSyncStatus(lrs *volsyncv1alpha1.Replication
 	}
 
 	return !completed
+}
+
+func (v *VSHandler) DisownVolSyncManagedPVC(pvc *corev1.PersistentVolumeClaim) error {
+	// TODO: Remove just the VRG ownerReference instead of blindly removing all ownerreferences.
+	// For now, this is fine, given that the VRG is the sole owner of the PVC after DR is enabled.
+	pvc.ObjectMeta.OwnerReferences = nil
+	v.deleteAnnotation(pvc, ACMAppSubDoNotDeleteAnnotation)
+
+	return v.client.Update(v.ctx, pvc)
+}
+
+func (v *VSHandler) deleteAnnotation(obj client.Object, annotationName string) {
+	annotations := obj.GetAnnotations()
+	delete(annotations, annotationName)
+	obj.SetAnnotations(annotations)
+}
+
+func (v *VSHandler) addBackOCMAnnotationsAndUpdate(obj client.Object, annotations map[string]string) error {
+	updatedAnnotations := obj.GetAnnotations()
+
+	for key, val := range annotations {
+		if strings.HasPrefix(key, "apps.open-cluster-management.io") {
+			updatedAnnotations[key] = val
+		}
+	}
+
+	obj.SetAnnotations(updatedAnnotations)
+
+	return v.client.Update(v.ctx, obj)
+}
+
+func (v *VSHandler) removeOCMAnnotationsAndUpdate(obj client.Object) error {
+	updatedAnnotations := map[string]string{}
+
+	for key, val := range obj.GetAnnotations() {
+		if !strings.HasPrefix(key, "apps.open-cluster-management.io") {
+			updatedAnnotations[key] = val
+		}
+	}
+
+	obj.SetAnnotations(updatedAnnotations)
+
+	return v.client.Update(v.ctx, obj)
 }

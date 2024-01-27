@@ -59,6 +59,9 @@ const (
 	MaxPlacementDecisionConflictCount = 5
 
 	DestinationClusterAnnotationKey = "drplacementcontrol.ramendr.openshift.io/destination-cluster"
+
+	DoNotDeletePVCAnnotation    = "drplacementcontrol.ramendr.openshift.io/do-not-delete-pvc"
+	DoNotDeletePVCAnnotationVal = "true"
 )
 
 var InitialWaitTimeForDRPCPlacementRule = errorswrapper.New("Waiting for DRPC Placement to produces placement decision")
