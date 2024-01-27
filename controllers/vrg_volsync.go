@@ -402,3 +402,21 @@ func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log 
 	// TODO Delete ReplicationSource, ReplicationDestination, etc.
 	v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
 }
+
+// disownPVCs this function is disassociating all PVCs (targeted for VolSync replication) from its owner (VRG)
+func (v *VRGInstance) disownPVCs() error {
+	if v.instance.GetAnnotations()[DoNotDeletePVCAnnotation] != DoNotDeletePVCAnnotationVal {
+		return nil
+	}
+
+	for idx := range v.volSyncPVCs {
+		pvc := &v.volSyncPVCs[idx]
+
+		err := v.volSyncHandler.DisownVolSyncManagedPVC(pvc)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}

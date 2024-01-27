@@ -774,6 +774,12 @@ func (v *VRGInstance) processForDeletion() ctrl.Result {
 
 	defer v.log.Info("Exiting processing VolumeReplicationGroup")
 
+	if err := v.disownPVCs(); err != nil {
+		v.log.Info("Disowning PVCs failed", "error", err)
+
+		return ctrl.Result{Requeue: true}
+	}
+
 	if !containsString(v.instance.ObjectMeta.Finalizers, vrgFinalizerName) {
 		v.log.Info("Finalizer missing from resource", "finalizer", vrgFinalizerName)
 
