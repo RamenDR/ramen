@@ -22,6 +22,9 @@
    Use `--replace` to replace an existing container, typically left
    after reboot the host.
 
+   To run the registry as system service see
+   [systemd service](#systemd-service).
+
 1. Allow access to port 5000 in the libvirt zone
 
    ```
@@ -71,3 +74,17 @@ spec:
     registry:
       url: "docker://host.minikube.internal:5000/nirsof/cirros:0.6.2-1"
 ```
+
+## Systemd service
+
+To create a registry service running at boot, install the provided
+systemd units and start the service.
+
+```
+sudo cp systemd/registry.* /etc/containers/systemd/
+sudo systemctl daemon-reload
+sudo systemctl start registry.service
+```
+
+> [!NOTE]
+> The service does not need to be enabled.
