@@ -1,0 +1,12 @@
+[Unit]
+Description=Registry container
+
+[Container]
+Label=app=registry
+ContainerName=registry
+Image=docker.io/library/registry:latest
+PublishPort=5000:5000
+Volume=registry.volume:/var/lib/registry
+
+[Install]
+WantedBy=multi-user.target default.target
