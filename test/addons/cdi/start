@@ -3,7 +3,6 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import json
 import os
 import sys
 
@@ -27,19 +26,6 @@ def deploy(cluster):
 
     print("Deploying cdi cr")
     kubectl.apply("--kustomize=cr", context=cluster)
-
-    print("Configuring insecure local registry")
-    patch = {
-        "spec": {"config": {"insecureRegistries": ["host.minikube.internal:5000"]}}
-    }
-    kubectl.patch(
-        "cdi",
-        "cdi",
-        "--patch",
-        json.dumps(patch),
-        "--type=merge",
-        context=cluster,
-    )
 
 
 def wait(cluster):

@@ -22,3 +22,16 @@ patches:
             duration: 168h
           server:
             duration: 168h
+  # Allow pulling from local insecure registry.
+  - target:
+      kind: CDI
+      name: cdi
+    patch: |-
+      apiVersion: cdi.kubevirt.io/v1beta1
+      kind: CDI
+      metadata:
+        name: not-used
+      spec:
+        config:
+          insecureRegistries:
+            - host.minikube.internal:5000
