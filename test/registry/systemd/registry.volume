@@ -1,0 +1,5 @@
+[Unit]
+Description=Registry Volume
+
+[Volume]
+Label=app=registry
