@@ -505,11 +505,8 @@ func (v *VSHandler) PreparePVC(pvcName string, prepFinalSync, copyMethodDirect b
 	return nil
 }
 
-// This doesn't need to specifically be in VSHandler - could be useful for non-volsync scenarios?
-// Will look at annotations on the PVC, make sure the reconcile option from ACM is set to merge (or not exists)
-// and then will remove ACM annotations and also add VRG as the owner.  This is to break the connection between
-// the appsub and the PVC itself.  This way we can proceed to remove the app without the PVC being removed.
-// We need the PVC left behind for running the final sync or for CopyMethod Direct.
+// TakePVCOwnership adds do-not-delete annotation to indicate that ACM should not delete/cleanup this pvc
+// when the appsub is removed and adds VRG as owner so the PVC is garbage collected when the VRG is deleted.
 func (v *VSHandler) TakePVCOwnership(pvcName string) (bool, error) {
 	l := v.log.WithValues("pvcName", pvcName)
 
@@ -562,23 +559,6 @@ func (v *VSHandler) pvcExistsAndInUse(pvcName string, inUsePodMustBeReady bool) 
 	return util.IsPVAttachedToNode(v.ctx, v.client, v.log, pvc)
 }
 
-func (v *VSHandler) pvcExists(pvcName string) (bool, *corev1.PersistentVolumeClaim, error) {
-	pvc, err := v.getPVC(pvcName)
-	if err != nil {
-		if !kerrors.IsNotFound(err) {
-			v.log.V(1).Info("failed to get PVC")
-
-			return false, pvc, err
-		}
-
-		return false, pvc, nil
-	}
-
-	v.log.V(1).Info("PVC found")
-
-	return true, pvc, nil
-}
-
 func (v *VSHandler) getPVC(pvcName string) (*corev1.PersistentVolumeClaim, error) {
 	pvc := &corev1.PersistentVolumeClaim{}
 
@@ -588,7 +568,7 @@ func (v *VSHandler) getPVC(pvcName string) (*corev1.PersistentVolumeClaim, error
 			Namespace: v.owner.GetNamespace(),
 		}, pvc)
 	if err != nil {
-		return pvc, fmt.Errorf("%w", err)
+		return nil, fmt.Errorf("%w", err)
 	}
 
 	return pvc, nil
@@ -917,6 +897,7 @@ func (v *VSHandler) EnsurePVCfromRD(rdSpec ramendrv1alpha1.VolSyncReplicationDes
 	return v.validateSnapshotAndEnsurePVC(rdSpec, *vsImageRef, failoverAction)
 }
 
+//nolint:cyclop
 func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 ) error {
@@ -930,12 +911,12 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 		return fmt.Errorf("capacity must be provided %v", rdSpec.ProtectedPVC)
 	}
 
-	exists, pvc, err := v.pvcExists(rdSpec.ProtectedPVC.Name)
-	if err != nil {
+	pvc, err := v.getPVC(rdSpec.ProtectedPVC.Name)
+	if err != nil && !kerrors.IsNotFound(err) {
 		return err
 	}
 
-	if exists {
+	if pvc != nil {
 		return v.removeOCMAnnotationsAndUpdate(pvc)
 	}
 
@@ -2110,15 +2091,9 @@ func (v *VSHandler) DisownVolSyncManagedPVC(pvc *corev1.PersistentVolumeClaim) e
 	// TODO: Remove just the VRG ownerReference instead of blindly removing all ownerreferences.
 	// For now, this is fine, given that the VRG is the sole owner of the PVC after DR is enabled.
 	pvc.ObjectMeta.OwnerReferences = nil
-	v.deleteAnnotation(pvc, ACMAppSubDoNotDeleteAnnotation)
+	delete(pvc.Annotations, ACMAppSubDoNotDeleteAnnotation)
 
 	return v.client.Update(v.ctx, pvc)
-}
-
-func (v *VSHandler) deleteAnnotation(obj client.Object, annotationName string) {
-	annotations := obj.GetAnnotations()
-	delete(annotations, annotationName)
-	obj.SetAnnotations(annotations)
 }
 
 func (v *VSHandler) addBackOCMAnnotationsAndUpdate(obj client.Object, annotations map[string]string) error {
