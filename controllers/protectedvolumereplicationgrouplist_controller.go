@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ramendr/ramen/controllers/util"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -50,23 +51,29 @@ type ProtectedVolumeReplicationGroupListInstance struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.9.2/pkg/reconcile
 func (r *ProtectedVolumeReplicationGroupListReconciler) Reconcile(ctx context.Context, req ctrl.Request,
 ) (ctrl.Result, error) {
-	log := ctrl.Log.WithName("controllers").WithName("protectedvolumereplicationgrouplist").
-		WithValues("name", req.NamespacedName.Name)
-
-	log.Info("protectedvolumereplicationgrouplist reconcile start")
-
+	start := time.Now()
 	// save all the commonly used parameters in a struct
 	s := ProtectedVolumeReplicationGroupListInstance{
 		reconciler: r,
 		ctx:        ctx,
-		log:        log,
+		log:        ctrl.Log.WithName("pvrgl").WithValues("name", req.NamespacedName.Name),
 		instance:   &ramendrv1alpha1.ProtectedVolumeReplicationGroupList{},
 	}
 
 	// get ProtectedVolumeReplicationGroupListInstance and save to s.instance
-	if err := r.Client.Get(ctx, req.NamespacedName, s.instance); err != nil {
+	if err := r.Client.Get(s.ctx, req.NamespacedName, s.instance); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(fmt.Errorf("get: %w", err))
 	}
+
+	s.log = s.log.WithValues("rid", s.instance.ObjectMeta.UID, "gen", s.instance.ObjectMeta.Generation,
+		"rv", s.instance.ObjectMeta.ResourceVersion)
+	s.ctx = ctrl.LoggerInto(ctx, s.log)
+
+	s.log.Info("reconcile start")
+
+	defer func() {
+		s.log.Info("reconcile end", "time spent", time.Since(start))
+	}()
 
 	if s.instance.Status != nil {
 		return ctrl.Result{}, nil
@@ -74,7 +81,7 @@ func (r *ProtectedVolumeReplicationGroupListReconciler) Reconcile(ctx context.Co
 
 	// get target profile from spec
 	s3profileName := s.instance.Spec.S3ProfileName
-	log.Info(fmt.Sprintf("targetProfileName=%s", s3profileName))
+	s.log.Info(fmt.Sprintf("targetProfileName=%s", s3profileName))
 
 	objectStore, _, err := s.reconciler.ObjStoreGetter.ObjectStore(
 		s.ctx, s.reconciler.APIReader, s3profileName, NamespaceName(), s.log)
@@ -100,7 +107,7 @@ func (r *ProtectedVolumeReplicationGroupListReconciler) Reconcile(ctx context.Co
 		return ctrl.Result{}, fmt.Errorf("error during updateStatus: %w", err)
 	}
 
-	log.Info("protectedvolumereplicationgrouplist updated successfully")
+	s.log.Info("updated successfully")
 
 	return ctrl.Result{}, nil
 }
