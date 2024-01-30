@@ -54,7 +54,7 @@ func OwnerLabels(owner metav1.Object) Labels {
 	}
 }
 
-func OwnerNamespaceNameAndName(labels Labels) (string, string, bool) {
+func OwnerNamespaceNameAndName(labels Labels) (ownerNamespaceName string, ownerName string, ok bool) {
 	ownerNamespaceName, ok1 := labels[labelOwnerNamespaceName]
 	ownerName, ok2 := labels[labelOwnerName]
 

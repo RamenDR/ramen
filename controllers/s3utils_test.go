@@ -41,7 +41,7 @@ func (fakeObjectStoreGetter) ObjectStore(
 	apiReader client.Reader,
 	s3ProfileName string,
 	callerTag string,
-	log logr.Logger,
+	_ logr.Logger,
 ) (controllers.ObjectStorer, ramen.S3StoreProfile, error) {
 	s3StoreProfile, err := controllers.GetRamenConfigS3StoreProfile(ctx, apiReader, s3ProfileName)
 	if err != nil {

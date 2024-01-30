@@ -58,10 +58,10 @@ func DrpolicyValidated(drpolicy *rmn.DRPolicy) error {
 	return errors.New(`validated condition absent`)
 }
 
-func GetAllDRPolicies(ctx context.Context, client client.Reader) (rmn.DRPolicyList, error) {
+func GetAllDRPolicies(ctx context.Context, cli client.Reader) (rmn.DRPolicyList, error) {
 	drpolicies := rmn.DRPolicyList{}
 
-	if err := client.List(ctx, &drpolicies); err != nil {
+	if err := cli.List(ctx, &drpolicies); err != nil {
 		return drpolicies, fmt.Errorf("unable to fetch drpolicies: %w", err)
 	}
 

@@ -10,11 +10,11 @@ import (
 
 type CreateOrDeleteOrResourceVersionUpdatePredicate struct{}
 
-func (CreateOrDeleteOrResourceVersionUpdatePredicate) Create(e event.CreateEvent) bool {
+func (CreateOrDeleteOrResourceVersionUpdatePredicate) Create(_ event.CreateEvent) bool {
 	return true
 }
 
-func (CreateOrDeleteOrResourceVersionUpdatePredicate) Delete(e event.DeleteEvent) bool {
+func (CreateOrDeleteOrResourceVersionUpdatePredicate) Delete(_ event.DeleteEvent) bool {
 	return true
 }
 
@@ -22,7 +22,7 @@ func (CreateOrDeleteOrResourceVersionUpdatePredicate) Update(e event.UpdateEvent
 	return predicate.ResourceVersionChangedPredicate{}.Update(e)
 }
 
-func (CreateOrDeleteOrResourceVersionUpdatePredicate) Generic(e event.GenericEvent) bool {
+func (CreateOrDeleteOrResourceVersionUpdatePredicate) Generic(_ event.GenericEvent) bool {
 	return false
 }
 

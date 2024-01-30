@@ -33,10 +33,10 @@ func kubeObjectsCaptureInterval(kubeObjectProtectionSpec *ramen.KubeObjectProtec
 
 func kubeObjectsCapturePathNamesAndNamePrefix(
 	namespaceName, vrgName string, captureNumber int64, kubeObjects kubeobjects.RequestsManager,
-) (string, string, string) {
+) (pathName string, capturePathName string, namePrefix string) {
 	const numberBase = 10
 	number := strconv.FormatInt(captureNumber, numberBase)
-	pathName := s3PathNamePrefix(namespaceName, vrgName) + "kube-objects/" + number + "/"
+	pathName = s3PathNamePrefix(namespaceName, vrgName) + "kube-objects/" + number + "/"
 
 	return pathName,
 		pathName + kubeObjects.ProtectsPath(),
@@ -168,8 +168,8 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 }
 
 func kubeObjectsCaptureStartConditionallySecondary(
-	v *VRGInstance, result *ctrl.Result,
-	captureStartGeneration int64, captureStartTimeSince, captureStartInterval time.Duration,
+	v *VRGInstance, _ *ctrl.Result,
+	captureStartGeneration int64, _, _ time.Duration,
 	captureStart func(),
 ) {
 	generation := v.instance.Generation
@@ -187,7 +187,7 @@ func kubeObjectsCaptureStartConditionallySecondary(
 
 func kubeObjectsCaptureStartConditionallyPrimary(
 	v *VRGInstance, result *ctrl.Result,
-	captureStartGeneration int64, captureStartTimeSince, captureStartInterval time.Duration,
+	_ int64, captureStartTimeSince, captureStartInterval time.Duration,
 	captureStart func(),
 ) {
 	if delay := captureStartInterval - captureStartTimeSince; delay > 0 {
@@ -338,14 +338,14 @@ func (v *VRGInstance) kubeObjectsCaptureAndCaptureRequestDelete(
 	request kubeobjects.Request, s3StoreAccessor s3StoreAccessor,
 	pathName string, log logr.Logger,
 ) {
-	v.kubeObjectsCaptureDeleteAndLog(s3StoreAccessor, pathName, request.Name(), log)
+	kubeObjectsCaptureDeleteAndLog(s3StoreAccessor, pathName, request.Name(), log)
 
 	if err := request.Deallocate(v.ctx, v.reconciler.Client, v.log); err != nil {
 		log.Error(err, "Kube objects capture request deallocate error")
 	}
 }
 
-func (v *VRGInstance) kubeObjectsCaptureDeleteAndLog(
+func kubeObjectsCaptureDeleteAndLog(
 	s3StoreAccessor s3StoreAccessor, pathName, requestName string, log logr.Logger,
 ) {
 	if err := s3StoreAccessor.ObjectStorer.DeleteObjectsWithKeyPrefix(pathName + requestName + "/"); err != nil {

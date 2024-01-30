@@ -263,7 +263,7 @@ func parseErrorMessage(message string) error {
 	return fmt.Errorf("err: %s", extractLastError(message))
 }
 
-func (m ManagedClusterViewGetterImpl) GetResource(mcv *viewv1beta1.ManagedClusterView, resource interface{}) error {
+func (ManagedClusterViewGetterImpl) GetResource(mcv *viewv1beta1.ManagedClusterView, resource interface{}) error {
 	var err error
 
 	// want single recent Condition with correct Type; otherwise: bad path
@@ -345,7 +345,7 @@ func (m ManagedClusterViewGetterImpl) getOrCreateManagedClusterView(
 }
 
 func (m ManagedClusterViewGetterImpl) DeleteVRGManagedClusterView(
-	resourceName, resourceNamespace, clusterName, resourceType string,
+	resourceName, resourceNamespace, clusterName, _ string,
 ) error {
 	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName)
 	mcvNameVRG := BuildManagedClusterViewName(resourceName, resourceNamespace, MWTypeVRG)
@@ -354,7 +354,7 @@ func (m ManagedClusterViewGetterImpl) DeleteVRGManagedClusterView(
 }
 
 func (m ManagedClusterViewGetterImpl) DeleteNamespaceManagedClusterView(
-	resourceName, resourceNamespace, clusterName, resourceType string,
+	resourceName, resourceNamespace, clusterName, _ string,
 ) error {
 	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName)
 	mcvNameNS := BuildManagedClusterViewName(resourceName, resourceNamespace, MWTypeNS)
@@ -363,7 +363,7 @@ func (m ManagedClusterViewGetterImpl) DeleteNamespaceManagedClusterView(
 }
 
 func (m ManagedClusterViewGetterImpl) DeleteNFManagedClusterView(
-	resourceName, resourceNamespace, clusterName, resourceType string,
+	resourceName, resourceNamespace, clusterName, _ string,
 ) error {
 	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName)
 	mcvNameNF := BuildManagedClusterViewName(resourceName, resourceNamespace, MWTypeNF)

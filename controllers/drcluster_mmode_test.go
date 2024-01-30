@@ -62,7 +62,7 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 			},
 		}
 
-		if testEnv.UseExistingCluster != nil && *testEnv.UseExistingCluster == true {
+		if testEnv.UseExistingCluster != nil && *testEnv.UseExistingCluster {
 			namespaceDeletionSupported = true
 		}
 

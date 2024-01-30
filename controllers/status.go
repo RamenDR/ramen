@@ -79,14 +79,14 @@ func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration i
 		return
 	}
 
-	time := metav1.NewTime(time.Now())
+	timestamp := metav1.NewTime(time.Now())
 
 	setStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               VRGConditionTypeDataReady,
 		Reason:             VRGConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionUnknown,
-		LastTransitionTime: time,
+		LastTransitionTime: timestamp,
 		Message:            message,
 	})
 	setStatusConditionIfNotFound(conditions, metav1.Condition{
@@ -94,7 +94,7 @@ func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration i
 		Reason:             VRGConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionUnknown,
-		LastTransitionTime: time,
+		LastTransitionTime: timestamp,
 		Message:            message,
 	})
 	setStatusConditionIfNotFound(conditions, metav1.Condition{
@@ -102,7 +102,7 @@ func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration i
 		Reason:             VRGConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionUnknown,
-		LastTransitionTime: time,
+		LastTransitionTime: timestamp,
 		Message:            message,
 	})
 	setStatusConditionIfNotFound(conditions, metav1.Condition{
@@ -110,7 +110,7 @@ func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration i
 		Reason:             VRGConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionUnknown,
-		LastTransitionTime: time,
+		LastTransitionTime: timestamp,
 		Message:            message,
 	})
 }

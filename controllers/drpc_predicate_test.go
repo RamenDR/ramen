@@ -239,7 +239,7 @@ var _ = Describe("DRPCPredicateDRCluster", func() {
 				},
 			}
 
-			if testEnv.UseExistingCluster != nil && *testEnv.UseExistingCluster == true {
+			if testEnv.UseExistingCluster != nil && *testEnv.UseExistingCluster {
 				namespaceDeletionSupported = true
 			}
 

@@ -22,19 +22,19 @@ func pvcSelectorDefault(vrg ramen.VolumeReplicationGroup) PvcSelector {
 	return PvcSelector{vrg.Spec.PVCSelector, pvcNamespaceNamesDefault(vrg)}
 }
 
-func pvcSelectorRecipeRefNonNil(recipe recipe.Recipe, vrg ramen.VolumeReplicationGroup) PvcSelector {
-	if recipe.Spec.Volumes == nil {
+func pvcSelectorRecipeRefNonNil(rcp recipe.Recipe, vrg ramen.VolumeReplicationGroup) PvcSelector {
+	if rcp.Spec.Volumes == nil {
 		return pvcSelectorDefault(vrg)
 	}
 
 	var selector PvcSelector
 
-	if recipe.Spec.Volumes.LabelSelector != nil {
-		selector.LabelSelector = *recipe.Spec.Volumes.LabelSelector
+	if rcp.Spec.Volumes.LabelSelector != nil {
+		selector.LabelSelector = *rcp.Spec.Volumes.LabelSelector
 	}
 
-	if len(recipe.Spec.Volumes.IncludedNamespaces) > 0 {
-		selector.NamespaceNames = recipe.Spec.Volumes.IncludedNamespaces
+	if len(rcp.Spec.Volumes.IncludedNamespaces) > 0 {
+		selector.NamespaceNames = rcp.Spec.Volumes.IncludedNamespaces
 	} else {
 		selector.NamespaceNames = pvcNamespaceNamesDefault(vrg)
 	}

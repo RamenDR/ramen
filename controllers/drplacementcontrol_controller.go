@@ -61,7 +61,8 @@ const (
 	DestinationClusterAnnotationKey = "drplacementcontrol.ramendr.openshift.io/destination-cluster"
 )
 
-var InitialWaitTimeForDRPCPlacementRule = errorswrapper.New("Waiting for DRPC Placement to produces placement decision")
+var ErrInitialWaitTimeForDRPCPlacementRule = errorswrapper.
+	New("Waiting for DRPC Placement to produces placement decision")
 
 // ProgressCallback of function type
 type ProgressCallback func(string, string)
@@ -749,17 +750,17 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	d, err := r.createDRPCInstance(ctx, drPolicy, drpc, placementObj, logger)
-	if err != nil && !errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
+	if err != nil && !errorswrapper.Is(err, ErrInitialWaitTimeForDRPCPlacementRule) {
 		err2 := r.updateDRPCStatus(ctx, drpc, placementObj, logger)
 
 		return ctrl.Result{}, fmt.Errorf("failed to create DRPC instance (%w) and (%v)", err, err2)
 	}
 
-	if errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
+	if errorswrapper.Is(err, ErrInitialWaitTimeForDRPCPlacementRule) {
 		const initialWaitTime = 5
 
 		r.recordFailure(ctx, drpc, placementObj, "Waiting",
-			fmt.Sprintf("%v - wait time: %v", InitialWaitTimeForDRPCPlacementRule, initialWaitTime), logger)
+			fmt.Sprintf("%v - wait time: %v", ErrInitialWaitTimeForDRPCPlacementRule, initialWaitTime), logger)
 
 		return ctrl.Result{RequeueAfter: time.Second * initialWaitTime}, nil
 	}
@@ -794,7 +795,7 @@ func (r *DRPlacementControlReconciler) recordFailure(ctx context.Context, drpc *
 	}
 }
 
-func (r *DRPlacementControlReconciler) setLastSyncTimeMetric(syncMetrics *SyncMetrics,
+func setLastSyncTimeMetric(syncMetrics *SyncMetrics,
 	t *metav1.Time, log logr.Logger,
 ) {
 	if syncMetrics == nil {
@@ -812,7 +813,7 @@ func (r *DRPlacementControlReconciler) setLastSyncTimeMetric(syncMetrics *SyncMe
 	syncMetrics.LastSyncTime.Set(float64(t.ProtoTime().Seconds))
 }
 
-func (r *DRPlacementControlReconciler) setLastSyncDurationMetric(syncDurationMetrics *SyncDurationMetrics,
+func setLastSyncDurationMetric(syncDurationMetrics *SyncDurationMetrics,
 	t *metav1.Duration, log logr.Logger,
 ) {
 	if syncDurationMetrics == nil {
@@ -830,7 +831,7 @@ func (r *DRPlacementControlReconciler) setLastSyncDurationMetric(syncDurationMet
 	syncDurationMetrics.LastSyncDuration.Set(t.Seconds())
 }
 
-func (r *DRPlacementControlReconciler) setLastSyncBytesMetric(syncDataBytesMetrics *SyncDataBytesMetrics,
+func setLastSyncBytesMetric(syncDataBytesMetrics *SyncDataBytesMetrics,
 	b *int64, log logr.Logger,
 ) {
 	if syncDataBytesMetrics == nil {
@@ -918,7 +919,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 	return d, nil
 }
 
-func (r *DRPlacementControlReconciler) createDRPCMetricsInstance(
+func createDRPCMetricsInstance(
 	drPolicy *rmn.DRPolicy, drpc *rmn.DRPlacementControl,
 ) *DRPCMetrics {
 	syncMetricLabels := SyncMetricLabels(drPolicy, drpc)
@@ -977,7 +978,7 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(d *DRPCInstance, lo
 		afterProcessing = *d.instance.Status.LastUpdateTime
 	}
 
-	requeueTimeDuration := r.getStatusCheckDelay(beforeProcessing, afterProcessing)
+	requeueTimeDuration := getStatusCheckDelay(beforeProcessing, afterProcessing)
 	log.Info("Requeue time", "duration", requeueTimeDuration)
 
 	return ctrl.Result{RequeueAfter: requeueTimeDuration}, nil
@@ -1059,13 +1060,13 @@ func (r DRPlacementControlReconciler) updateObjectMetadata(ctx context.Context,
 	return nil
 }
 
-func getDRClusters(ctx context.Context, client client.Client, drPolicy *rmn.DRPolicy) ([]rmn.DRCluster, error) {
+func getDRClusters(ctx context.Context, cli client.Client, drPolicy *rmn.DRPolicy) ([]rmn.DRCluster, error) {
 	drClusters := []rmn.DRCluster{}
 
 	for _, managedCluster := range rmnutil.DrpolicyClusterNames(drPolicy) {
 		drCluster := &rmn.DRCluster{}
 
-		err := client.Get(ctx, types.NamespacedName{Name: managedCluster}, drCluster)
+		err := cli.Get(ctx, types.NamespacedName{Name: managedCluster}, drCluster)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get DRCluster (%s) %w", managedCluster, err)
 		}
@@ -1240,7 +1241,7 @@ func (r *DRPlacementControlReconciler) getDRPCPlacementRule(ctx context.Context,
 
 		// Make sure that we give time to the DRPC PlacementRule to run and produces decisions
 		if drpcPlRule != nil && len(drpcPlRule.Status.Decisions) == 0 {
-			return fmt.Errorf("%w", InitialWaitTimeForDRPCPlacementRule)
+			return fmt.Errorf("%w", ErrInitialWaitTimeForDRPCPlacementRule)
 		}
 	} else {
 		log.Info("Preferred cluster is configured. Dynamic selection is disabled",
@@ -1607,7 +1608,7 @@ func (r *DRPlacementControlReconciler) deleteClonedPlacementRule(ctx context.Con
 	return nil
 }
 
-func (r *DRPlacementControlReconciler) addClusterPeersToPlacementRule(
+func (*DRPlacementControlReconciler) addClusterPeersToPlacementRule(
 	drPolicy *rmn.DRPolicy, plRule *plrv1.PlacementRule, log logr.Logger,
 ) error {
 	if len(rmnutil.DrpolicyClusterNames(drPolicy)) == 0 {
@@ -1647,7 +1648,7 @@ func (d *DRPCInstance) statusUpdateTimeElapsed() bool {
 // the reconciler is called, let's say, at 10:08am, and no update to the DRPC status was needed,
 // then the requeue time duration should be 2 minutes and NOT the full StatusCheckDelay. That is:
 // 10:00am + StatusCheckDelay - 10:08am = 2mins
-func (r *DRPlacementControlReconciler) getStatusCheckDelay(
+func getStatusCheckDelay(
 	beforeProcessing metav1.Time, afterProcessing metav1.Time,
 ) time.Duration {
 	if beforeProcessing != afterProcessing {
@@ -1769,12 +1770,12 @@ func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
 		return nil
 	}
 
-	drpcMetrics := r.createDRPCMetricsInstance(drPolicy, drpc)
+	drpcMetrics := createDRPCMetricsInstance(drPolicy, drpc)
 
 	if drpcMetrics != nil {
-		r.setLastSyncTimeMetric(&drpcMetrics.SyncMetrics, drpc.Status.LastGroupSyncTime, log)
-		r.setLastSyncDurationMetric(&drpcMetrics.SyncDurationMetrics, drpc.Status.LastGroupSyncDuration, log)
-		r.setLastSyncBytesMetric(&drpcMetrics.SyncDataBytesMetrics, drpc.Status.LastGroupSyncBytes, log)
+		setLastSyncTimeMetric(&drpcMetrics.SyncMetrics, drpc.Status.LastGroupSyncTime, log)
+		setLastSyncDurationMetric(&drpcMetrics.SyncDurationMetrics, drpc.Status.LastGroupSyncDuration, log)
+		setLastSyncBytesMetric(&drpcMetrics.SyncDataBytesMetrics, drpc.Status.LastGroupSyncBytes, log)
 	}
 
 	return nil
@@ -1812,7 +1813,7 @@ func (r *DRPlacementControlReconciler) getClusterDecision(placementObj interface
 	}
 }
 
-func (r *DRPlacementControlReconciler) getClusterDecisionFromPlacementRule(plRule *plrv1.PlacementRule,
+func (*DRPlacementControlReconciler) getClusterDecisionFromPlacementRule(plRule *plrv1.PlacementRule,
 ) *clrapiv1beta1.ClusterDecision {
 	var clusterName string
 	if len(plRule.Status.Decisions) > 0 {
@@ -2020,12 +2021,12 @@ func (r *DRPlacementControlReconciler) createPlacementDecision(ctx context.Conte
 }
 
 func getApplicationDestinationNamespace(
-	client client.Client,
+	cli client.Client,
 	log logr.Logger,
 	placement client.Object,
 ) (string, error) {
 	appSetList := argocdv1alpha1hack.ApplicationSetList{}
-	if err := client.List(context.TODO(), &appSetList); err != nil {
+	if err := cli.List(context.TODO(), &appSetList); err != nil {
 		// If ApplicationSet CRD is not found in the API server,
 		// default to Subscription behavior, and return the placement namespace as the target VRG namespace
 		if meta.IsNoMatchError(err) {
@@ -2063,7 +2064,7 @@ func getApplicationDestinationNamespace(
 }
 
 func selectVRGNamespace(
-	client client.Client,
+	cli client.Client,
 	log logr.Logger,
 	drpc *rmn.DRPlacementControl,
 	placementObj client.Object,
@@ -2074,7 +2075,7 @@ func selectVRGNamespace(
 
 	switch placementObj.(type) {
 	case *clrapiv1beta1.Placement:
-		vrgNamespace, err := getApplicationDestinationNamespace(client, log, placementObj)
+		vrgNamespace, err := getApplicationDestinationNamespace(cli, log, placementObj)
 		if err != nil {
 			return "", err
 		}
@@ -2118,14 +2119,14 @@ func ensureDRPCConditionsInited(conditions *[]metav1.Condition, observedGenerati
 		return
 	}
 
-	time := metav1.NewTime(time.Now())
+	timestamp := metav1.NewTime(time.Now())
 
 	setStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               rmn.ConditionAvailable,
 		Reason:             string(rmn.Initiating),
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
-		LastTransitionTime: time,
+		LastTransitionTime: timestamp,
 		Message:            message,
 	})
 	setStatusConditionIfNotFound(conditions, metav1.Condition{
@@ -2133,7 +2134,7 @@ func ensureDRPCConditionsInited(conditions *[]metav1.Condition, observedGenerati
 		Reason:             string(rmn.Initiating),
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
-		LastTransitionTime: time,
+		LastTransitionTime: timestamp,
 		Message:            message,
 	})
 }

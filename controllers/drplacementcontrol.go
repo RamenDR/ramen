@@ -39,11 +39,9 @@ const (
 )
 
 var (
-	WaitForAppResourceRestoreToComplete error = errorswrapper.New("Waiting for App resources to be restored...")
-	WaitForVolSyncDestRepToComplete     error = errorswrapper.New("Waiting for VolSync RD to complete...")
-	WaitForSourceCluster                error = errorswrapper.New("Waiting for primary to provide Protected PVCs...")
-	WaitForVolSyncManifestWorkCreation  error = errorswrapper.New("Waiting for VolSync ManifestWork to be created...")
-	WaitForVolSyncRDInfoAvailibility    error = errorswrapper.New("Waiting for VolSync RDInfo...")
+	ErrWaitForAppResourceRestoreToComplete error = errorswrapper.New("Waiting for App resources to be restored...")
+	ErrWaitForSourceCluster                error = errorswrapper.New("Waiting for primary to provide Protected PVCs...")
+	ErrWaitForVolSyncManifestWorkCreation  error = errorswrapper.New("Waiting for VolSync ManifestWork to be created...")
 )
 
 type DRPCInstance struct {
@@ -182,11 +180,8 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 	return done, nil
 }
 
-func (d *DRPCInstance) getHomeClusterForInitialDeploy() (string, string) {
+func (d *DRPCInstance) getHomeClusterForInitialDeploy() (homeCluster string, homeClusterNamespace string) {
 	// Check if the user wants to use the preferredCluster
-	homeCluster := ""
-	homeClusterNamespace := ""
-
 	if d.instance.Spec.PreferredCluster != "" {
 		homeCluster = d.instance.Spec.PreferredCluster
 		homeClusterNamespace = d.instance.Spec.PreferredCluster
@@ -1189,7 +1184,7 @@ func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace str
 		d.setProgression(rmn.ProgressionWaitingForResourceRestore)
 
 		// We just created MWs. Give it time until the App resources have been restored
-		return fmt.Errorf("%w)", WaitForAppResourceRestoreToComplete)
+		return fmt.Errorf("%w)", ErrWaitForAppResourceRestoreToComplete)
 	}
 
 	vrg, restored, err := d.ensureClusterDataRestored(targetCluster)
@@ -1207,7 +1202,7 @@ func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace str
 	if !restored || vrg.Status.State != rmn.PrimaryState {
 		d.setProgression(rmn.ProgressionWaitingForResourceRestore)
 
-		return fmt.Errorf("%w)", WaitForAppResourceRestoreToComplete)
+		return fmt.Errorf("%w)", ErrWaitForAppResourceRestoreToComplete)
 	}
 
 	err = d.updateUserPlacementRule(targetCluster, targetClusterNamespace)
@@ -1261,7 +1256,7 @@ func (d *DRPCInstance) getVRGFromManifestWork(clusterName string) (*rmn.VolumeRe
 		return nil, fmt.Errorf("%w", err)
 	}
 
-	vrg, err := d.extractVRGFromManifestWork(mw)
+	vrg, err := extractVRGFromManifestWork(mw)
 	if err != nil {
 		return nil, err
 	}
@@ -2111,7 +2106,7 @@ func (d *DRPCInstance) updateVRGToRunFinalSync(clusterName string) error {
 	return nil
 }
 
-func (d *DRPCInstance) extractVRGFromManifestWork(mw *ocmworkv1.ManifestWork) (*rmn.VolumeReplicationGroup, error) {
+func extractVRGFromManifestWork(mw *ocmworkv1.ManifestWork) (*rmn.VolumeReplicationGroup, error) {
 	if len(mw.Spec.Workload.Manifests) == 0 {
 		return nil, fmt.Errorf("invalid VRG ManifestWork for type: %s", mw.Name)
 	}
@@ -2133,7 +2128,7 @@ func (d *DRPCInstance) updateManifestWork(clusterName string, vrg *rmn.VolumeRep
 		return fmt.Errorf("%w", err)
 	}
 
-	vrgClientManifest, err := d.mwu.GenerateManifest(vrg)
+	vrgClientManifest, err := rmnutil.GenerateManifest(vrg)
 	if err != nil {
 		d.log.Error(err, "failed to generate manifest")
 

@@ -16,7 +16,7 @@ import (
 )
 
 func OwnsAcrossNamespaces(
-	builder *builder.Builder,
+	blder *builder.Builder,
 	scheme *runtime.Scheme,
 	object client.Object,
 	opts ...builder.WatchesOption,
@@ -24,7 +24,7 @@ func OwnsAcrossNamespaces(
 	groupVersionKinds, _, _ := scheme.ObjectKinds(object) //nolint:errcheck
 	log := ctrl.Log.WithValues("gvks", groupVersionKinds)
 
-	return builder.Watches(
+	return blder.Watches(
 		object,
 		handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
 			labels := o.GetLabels()
