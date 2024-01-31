@@ -479,7 +479,7 @@ func DRPCsFailingOverToCluster(k8sclient client.Client, log logr.Logger, drclust
 		}
 
 		// Skip if policy is of type metro, fake the from and to cluster
-		if isMetroAction(&drpolicies.Items[drpolicyIdx], drClusters, drClusters[0].GetName(), drClusters[1].GetName()) {
+		if metro, _ := dRPolicySupportsMetro(&drpolicies.Items[drpolicyIdx], drClusters); metro {
 			log.Info("Sync DRPolicy detected, skipping!")
 
 			continue

@@ -476,7 +476,7 @@ func (d *DRPCInstance) checkFailoverPrerequisites(curHomeCluster string) (bool, 
 		err error
 	)
 
-	if isMetroAction(d.drPolicy, d.drClusters, curHomeCluster, d.instance.Spec.FailoverCluster) {
+	if metro, _ := dRPolicySupportsMetro(d.drPolicy, d.drClusters); metro {
 		met, err = d.checkMetroFailoverPrerequisites(curHomeCluster)
 	} else {
 		met = d.checkRegionalFailoverPrerequisites()
@@ -1056,7 +1056,7 @@ func (d *DRPCInstance) validateAndSelectCurrentPrimary(preferredCluster string) 
 func (d *DRPCInstance) readyToSwitchOver(homeCluster string, preferredCluster string) bool {
 	d.log.Info(fmt.Sprintf("Checking if VRG Data is available on cluster %s", homeCluster))
 
-	if isMetroAction(d.drPolicy, d.drClusters, homeCluster, preferredCluster) {
+	if metro, _ := dRPolicySupportsMetro(d.drPolicy, d.drClusters); metro {
 		// check fencing status in the preferredCluster
 		fenced, err := d.checkClusterFenced(preferredCluster, d.drClusters)
 		if err != nil {
@@ -1591,36 +1591,6 @@ func dRPolicySupportsMetro(drpolicy *rmn.DRPolicy, drclusters []rmn.DRCluster) (
 	}
 
 	return supportsMetro, metroMap
-}
-
-func isMetroAction(drpolicy *rmn.DRPolicy, drClusters []rmn.DRCluster, from string, to string) bool {
-	var regionFrom, regionTo rmn.Region
-
-	for _, managedCluster := range rmnutil.DrpolicyClusterNames(drpolicy) {
-		if managedCluster == from {
-			regionFrom = drClusterRegion(drClusters, managedCluster)
-		}
-
-		if managedCluster == to {
-			regionTo = drClusterRegion(drClusters, managedCluster)
-		}
-	}
-
-	return regionFrom == regionTo
-}
-
-func drClusterRegion(drClusters []rmn.DRCluster, cluster string) (region rmn.Region) {
-	for _, drCluster := range drClusters {
-		if drCluster.Name != cluster {
-			continue
-		}
-
-		region = drCluster.Spec.Region
-
-		return
-	}
-
-	return
 }
 
 func (d *DRPCInstance) ensureNamespaceExistsOnManagedCluster(homeCluster string) error {
