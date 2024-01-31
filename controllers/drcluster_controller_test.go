@@ -14,7 +14,7 @@ import (
 	workv1 "github.com/open-cluster-management/api/work/v1"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
-	"github.com/ramendr/ramen/controllers/util"
+	util "github.com/ramendr/ramen/pkg/utils"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

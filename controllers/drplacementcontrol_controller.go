@@ -33,9 +33,9 @@ import (
 
 	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
-	argocdv1alpha1hack "github.com/ramendr/ramen/controllers/argocd"
-	rmnutil "github.com/ramendr/ramen/controllers/util"
-	"github.com/ramendr/ramen/controllers/volsync"
+	argocdv1alpha1hack "github.com/ramendr/ramen/pkg/argocd"
+	rmnutil "github.com/ramendr/ramen/pkg/utils"
+	"github.com/ramendr/ramen/pkg/volsync"
 )
 
 const (

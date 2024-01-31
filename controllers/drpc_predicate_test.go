@@ -5,7 +5,6 @@ package controllers_test
 
 import (
 	"context"
-	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -20,6 +19,7 @@ import (
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers"
+	"github.com/ramendr/ramen/test/integration"
 )
 
 var _ = Describe("DRPCPredicateDRCluster", func() {
@@ -231,30 +231,13 @@ var _ = Describe("DRPCPredicateDRCluster", func() {
 		)
 
 		BeforeAll(func() {
-			By("bootstrapping test environment")
-			testEnv = &envtest.Environment{
-				CRDDirectoryPaths: []string{
-					filepath.Join("..", "config", "crd", "bases"),
-					filepath.Join("..", "hack", "test"),
-				},
-			}
-
-			if testEnv.UseExistingCluster != nil && *testEnv.UseExistingCluster == true {
-				namespaceDeletionSupported = true
-			}
-
 			var err error
-			done := make(chan interface{})
-			go func() {
-				defer GinkgoRecover()
-				cfg, err = testEnv.Start()
-				close(done)
-			}()
-			Eventually(done).WithTimeout(time.Minute).Should(BeClosed())
+			By("bootstrapping test environment")
+			testEnv, cfg, _, err = integration.ConfigureSetupEnvTest()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg).NotTo(BeNil())
 
 			k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+			Expect(err).NotTo(HaveOccurred())
 
 			r = &controllers.DRPlacementControlReconciler{
 				Client: k8sClient,
@@ -476,7 +459,7 @@ var _ = Describe("DRPCPredicateDRCluster", func() {
 
 		AfterAll(func() {
 			By("tearing down the test environment")
-			err := testEnv.Stop()
+			err := integration.CleanupSetupEnvTest(testEnv)
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})

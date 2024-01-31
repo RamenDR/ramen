@@ -12,8 +12,8 @@ import (
 
 	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/controllers/kubeobjects"
-	"github.com/ramendr/ramen/controllers/util"
+	"github.com/ramendr/ramen/pkg/kubeobjects"
+	util "github.com/ramendr/ramen/pkg/utils"
 	Recipe "github.com/ramendr/recipe/api/v1alpha1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

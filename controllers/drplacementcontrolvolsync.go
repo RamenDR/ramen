@@ -7,8 +7,8 @@ import (
 	"fmt"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
-	rmnutil "github.com/ramendr/ramen/controllers/util"
-	"github.com/ramendr/ramen/controllers/volsync"
+	rmnutil "github.com/ramendr/ramen/pkg/utils"
+	"github.com/ramendr/ramen/pkg/volsync"
 	"k8s.io/apimachinery/pkg/api/errors"
 )
 

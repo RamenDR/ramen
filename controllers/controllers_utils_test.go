@@ -12,7 +12,7 @@ import (
 	workv1 "github.com/open-cluster-management/api/work/v1"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/controllers/util"
+	"github.com/ramendr/ramen/pkg/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
@@ -54,7 +54,7 @@ func updateDRClusterParameters(drc *ramen.DRCluster) *ramen.DRCluster {
 
 func updateDRClusterManifestWorkStatus(clusterNamespace string) {
 	manifestLookupKey := types.NamespacedName{
-		Name:      util.DrClusterManifestWorkName,
+		Name:      utils.DrClusterManifestWorkName,
 		Namespace: clusterNamespace,
 	}
 	mw := &workv1.ManifestWork{}

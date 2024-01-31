@@ -21,7 +21,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
-	rmnutil "github.com/ramendr/ramen/controllers/util"
+	rmnutil "github.com/ramendr/ramen/pkg/utils"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )

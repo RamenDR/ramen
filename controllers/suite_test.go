@@ -6,7 +6,6 @@ package controllers_test
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
-	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -25,27 +23,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	controller_runtime_config "sigs.k8s.io/controller-runtime/pkg/config/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
-	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
-	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
-	ocmclv1 "github.com/open-cluster-management/api/cluster/v1"
-	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
-	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
-	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
-	cpcv1 "open-cluster-management.io/config-policy-controller/api/v1"
-	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
-
-	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	ramencontrollers "github.com/ramendr/ramen/controllers"
-	argocdv1alpha1hack "github.com/ramendr/ramen/controllers/argocd"
-	"github.com/ramendr/ramen/controllers/util"
-	Recipe "github.com/ramendr/recipe/api/v1alpha1"
-	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
+	util "github.com/ramendr/ramen/pkg/utils"
+	"github.com/ramendr/ramen/test/integration"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -111,31 +94,21 @@ func createOperatorNamespace(ramenNamespace string) {
 }
 
 var _ = BeforeSuite(func() {
+	var err error
+
 	// onsi.github.io/gomega/#adjusting-output
 	format.MaxLength = 0
-	testLogger = zap.New(zap.UseFlagOptions(&zap.Options{
-		Development: true,
-		DestWriter:  GinkgoWriter,
-		TimeEncoder: zapcore.ISO8601TimeEncoder,
-	}))
-	logf.SetLogger(testLogger)
-	testLog := ctrl.Log.WithName("tester")
-	testLog.Info("Starting the controller test suite", "time", time.Now())
+
+	// setup logging for the controllers
+	testLogger = integration.ConfigureTestLogger()
+	testLog := testLogger.WithName("BeforeSuite")
 
 	// default controller type to DRHubType
 	ramencontrollers.ControllerType = ramendrv1alpha1.DRHubType
 
-	if _, set := os.LookupEnv("KUBEBUILDER_ASSETS"); !set {
-		testLog.Info("Setting up KUBEBUILDER_ASSETS for envtest")
-
-		// read content of the file ../testbin/testassets.txt
-		// and set the content as the value of KUBEBUILDER_ASSETS
-		// this is to avoid the need to set KUBEBUILDER_ASSETS
-		// when running the test suite
-		content, err := os.ReadFile("../testbin/testassets.txt")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(os.Setenv("KUBEBUILDER_ASSETS", string(content))).To(Succeed())
-	}
+	testEnv, cfg, namespaceDeletionSupported, err = integration.ConfigureSetupEnvTest()
+	Expect(err).NotTo(HaveOccurred())
+	Expect(cfg).NotTo(BeNil())
 
 	rNs, set := os.LookupEnv("POD_NAMESPACE")
 	if !set {
@@ -144,74 +117,8 @@ var _ = BeforeSuite(func() {
 		ramenNamespace = rNs
 	}
 
-	By("bootstrapping test environment")
-	testEnv = &envtest.Environment{
-		CRDDirectoryPaths: []string{
-			filepath.Join("..", "config", "crd", "bases"),
-			filepath.Join("..", "hack", "test"),
-		},
-	}
-
-	if testEnv.UseExistingCluster != nil && *testEnv.UseExistingCluster == true {
-		namespaceDeletionSupported = true
-	}
-
-	var err error
-	done := make(chan interface{})
-	go func() {
-		defer GinkgoRecover()
-		cfg, err = testEnv.Start()
-		DeferCleanup(func() error {
-			By("tearing down the test environment")
-
-			return testEnv.Stop()
-		})
-		close(done)
-	}()
-	Eventually(done).WithTimeout(time.Minute).Should(BeClosed())
+	err = integration.AddSchemes()
 	Expect(err).NotTo(HaveOccurred())
-	Expect(cfg).NotTo(BeNil())
-
-	err = ocmworkv1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = ocmclv1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = plrv1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = viewv1beta1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = cpcv1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = gppv1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = ramendrv1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = Recipe.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = volrep.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = volsyncv1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = snapv1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-	Expect(velero.AddToScheme(scheme.Scheme)).To(Succeed())
-
-	err = clrapiv1beta1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = argocdv1alpha1hack.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-	// +kubebuilder:scaffold:scheme
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())

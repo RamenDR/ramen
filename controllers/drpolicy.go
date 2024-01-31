@@ -9,7 +9,7 @@ import (
 
 	"github.com/go-logr/logr"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/controllers/util"
+	util "github.com/ramendr/ramen/pkg/utils"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 

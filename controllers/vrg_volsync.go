@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-logr/logr"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/controllers/volsync"
+	"github.com/ramendr/ramen/pkg/volsync"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

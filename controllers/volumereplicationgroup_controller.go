@@ -15,8 +15,8 @@ import (
 
 	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
 	"github.com/google/uuid"
-	"github.com/ramendr/ramen/controllers/kubeobjects"
-	"github.com/ramendr/ramen/controllers/kubeobjects/velero"
+	"github.com/ramendr/ramen/pkg/kubeobjects"
+	"github.com/ramendr/ramen/pkg/velero"
 	"golang.org/x/exp/maps" // TODO replace with "maps" in go1.21+
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -39,8 +39,8 @@ import (
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
-	rmnutil "github.com/ramendr/ramen/controllers/util"
-	"github.com/ramendr/ramen/controllers/volsync"
+	rmnutil "github.com/ramendr/ramen/pkg/utils"
+	"github.com/ramendr/ramen/pkg/volsync"
 )
 
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object

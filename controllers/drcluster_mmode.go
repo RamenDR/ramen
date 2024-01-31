@@ -11,7 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/controllers/util"
+	util "github.com/ramendr/ramen/pkg/utils"
 )
 
 // clusterMModeHandler handles all related maintenance modes that the DRCluster needs

@@ -35,8 +35,8 @@ import (
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 
 	"github.com/ramendr/ramen/controllers"
-	argocdv1alpha1hack "github.com/ramendr/ramen/controllers/argocd"
-	rmnutil "github.com/ramendr/ramen/controllers/util"
+	argocdv1alpha1hack "github.com/ramendr/ramen/pkg/argocd"
+	rmnutil "github.com/ramendr/ramen/pkg/utils"
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )

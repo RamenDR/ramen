@@ -6,7 +6,6 @@ package controllers_test
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -28,7 +27,8 @@ import (
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	ramencontrollers "github.com/ramendr/ramen/controllers"
-	"github.com/ramendr/ramen/controllers/util"
+	util "github.com/ramendr/ramen/pkg/utils"
+	"github.com/ramendr/ramen/test/integration"
 )
 
 var _ = Describe("DRClusterMModeTests", Ordered, func() {
@@ -52,30 +52,12 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 
 	BeforeAll(func() {
 		By("bootstrapping test environment")
+		var err error
 
 		Expect(os.Setenv("POD_NAMESPACE", ramenNamespace)).To(Succeed())
 
-		testEnv = &envtest.Environment{
-			CRDDirectoryPaths: []string{
-				filepath.Join("..", "config", "crd", "bases"),
-				filepath.Join("..", "hack", "test"),
-			},
-		}
-
-		if testEnv.UseExistingCluster != nil && *testEnv.UseExistingCluster == true {
-			namespaceDeletionSupported = true
-		}
-
-		var err error
-		done := make(chan interface{})
-		go func() {
-			defer GinkgoRecover()
-			cfg, err = testEnv.Start()
-			close(done)
-		}()
-		Eventually(done).WithTimeout(time.Minute).Should(BeClosed())
+		testEnv, cfg, namespaceDeletionSupported, err = integration.ConfigureSetupEnvTest()
 		Expect(err).NotTo(HaveOccurred())
-		Expect(cfg).NotTo(BeNil())
 
 		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 		Expect(err).NotTo(HaveOccurred())
@@ -271,7 +253,7 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 	AfterAll(func() {
 		cancel() // Stop the reconciler
 		By("tearing down the test environment")
-		err := testEnv.Stop()
+		err := integration.CleanupSetupEnvTest(testEnv)
 		Expect(err).NotTo(HaveOccurred())
 	})
 

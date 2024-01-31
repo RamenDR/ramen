@@ -25,7 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
-	rmnutil "github.com/ramendr/ramen/controllers/util"
+	rmnutil "github.com/ramendr/ramen/pkg/utils"
 )
 
 func logWithPvcName(log logr.Logger, pvc *corev1.PersistentVolumeClaim) logr.Logger {
