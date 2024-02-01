@@ -545,12 +545,12 @@ func (u *drclusterInstance) statusUpdate() error {
 			return fmt.Errorf("failed to update drCluster status (%s/%s)", u.object.Name, u.object.Namespace)
 		}
 
-		u.log.Info(fmt.Sprintf("Updated drCluster Status %+v", u.object.Status))
+		u.log.Info(fmt.Sprintf("Updated drCluster Status (%s/%s)", u.object.Name, u.object.Namespace))
 
 		return nil
 	}
 
-	u.log.Info(fmt.Sprintf("Nothing to update %+v", u.object.Status))
+	u.log.Info(fmt.Sprintf("Nothing to update (%s/%s)", u.object.Name, u.object.Namespace))
 
 	return nil
 }

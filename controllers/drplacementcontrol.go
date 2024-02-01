@@ -126,8 +126,8 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 		return !done, err
 	}
 
-	d.log.Info(fmt.Sprintf("Using homeCluster %s for initial deployment, Placement Decision %+v",
-		homeCluster, d.reconciler.getClusterDecision(d.userPlacement)))
+	d.log.Info(fmt.Sprintf("Using homeCluster %s for initial deployment",
+		homeCluster))
 
 	// Check if we already deployed in the homeCluster or elsewhere
 	deployed, clusterName := d.isDeployed(homeCluster)
@@ -804,7 +804,7 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	}
 
 	if d.getLastDRState() != rmn.Relocating && !d.validatePeerReady() {
-		return !done, fmt.Errorf("clean up secondaries is pending (%+v)", d.instance.Status.Conditions)
+		return !done, fmt.Errorf("clean up secondaries is pending, peer is not ready")
 	}
 
 	if curHomeCluster != "" && curHomeCluster != preferredCluster {
@@ -1102,7 +1102,7 @@ func (d *DRPCInstance) isVRGConditionMet(cluster string, conditionType string) b
 		return !ready
 	}
 
-	d.log.Info(fmt.Sprintf("VRG status condition: %+v", condition))
+	d.log.Info(fmt.Sprintf("VRG status condition: %s is %s", conditionType, condition.Status))
 
 	return condition.Status == metav1.ConditionTrue &&
 		condition.ObservedGeneration == vrg.Generation

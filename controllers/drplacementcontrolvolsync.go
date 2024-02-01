@@ -278,7 +278,7 @@ func (d *DRPCInstance) updateVRGSpec(clusterName string, tgtVRG *rmn.VolumeRepli
 		return fmt.Errorf("failed to update MW (%w)", err)
 	}
 
-	d.log.Info(fmt.Sprintf("Updated VRG running in cluster %s. VRG (%+v)", clusterName, vrg))
+	d.log.Info(fmt.Sprintf("Updated VRG running in cluster %s. VRG (%s)", clusterName, vrg.Name))
 
 	return nil
 }
