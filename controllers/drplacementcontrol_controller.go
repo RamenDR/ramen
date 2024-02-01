@@ -1342,8 +1342,6 @@ func getPlacementRule(ctx context.Context, k8sclient client.Client,
 			log.Info("User PlacementRule replica count is not set to 1, reconciliation will only" +
 				" schedule it to a single cluster")
 		}
-
-		log.Info(fmt.Sprintf("PlacementRule Status is: (%+v)", usrPlRule.Status))
 	}
 
 	return usrPlRule, nil
@@ -1702,7 +1700,7 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 		return errorswrapper.Wrap(err, "failed to update DRPC status")
 	}
 
-	log.Info(fmt.Sprintf("Updated DRPC Status %+v", drpc.Status))
+	log.Info("Updated DRPC Status")
 
 	return nil
 }

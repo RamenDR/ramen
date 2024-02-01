@@ -322,8 +322,8 @@ func (m ManagedClusterViewGetterImpl) getOrCreateManagedClusterView(
 			return nil, errorswrapper.Wrap(err, "failed to get ManagedClusterView")
 		}
 
-		logger.Info(fmt.Sprintf("Creating ManagedClusterView %s with scope %+v",
-			key, viewscope))
+		logger.Info(fmt.Sprintf("Creating ManagedClusterView %s with scope %s",
+			key, viewscope.Name))
 
 		if err := m.Create(context.TODO(), mcv); err != nil {
 			return nil, errorswrapper.Wrap(err, "failed to create ManagedClusterView")
@@ -332,8 +332,8 @@ func (m ManagedClusterViewGetterImpl) getOrCreateManagedClusterView(
 
 	if mcv.Spec.Scope != viewscope {
 		// Expected once when uprading ramen if scope format or details have changed.
-		logger.Info(fmt.Sprintf("Updating ManagedClusterView %s scope %+v to %+v",
-			key, mcv.Spec.Scope, viewscope))
+		logger.Info(fmt.Sprintf("Updating ManagedClusterView %s scope %s to %s",
+			key, mcv.Spec.Scope.Name, viewscope.Name))
 
 		mcv.Spec.Scope = viewscope
 		if err := m.Update(context.TODO(), mcv); err != nil {

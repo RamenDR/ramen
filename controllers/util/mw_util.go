@@ -118,9 +118,6 @@ func (mwu *MWUtil) CreateOrUpdateVRGManifestWork(
 	name, namespace, homeCluster string,
 	vrg rmn.VolumeReplicationGroup, annotations map[string]string,
 ) error {
-	mwu.Log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%s:%+v",
-		name, namespace, homeCluster, vrg))
-
 	manifestWork, err := mwu.generateVRGManifestWork(name, namespace, homeCluster, vrg, annotations)
 	if err != nil {
 		return err
@@ -157,8 +154,6 @@ func (mwu *MWUtil) CreateOrUpdateMModeManifestWork(
 	name, cluster string,
 	mMode rmn.MaintenanceMode, annotations map[string]string,
 ) error {
-	mwu.Log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%+v", name, cluster, mMode))
-
 	manifestWork, err := mwu.generateMModeManifestWork(name, cluster, mMode, annotations)
 	if err != nil {
 		return err
@@ -238,9 +233,6 @@ func (mwu *MWUtil) CreateOrUpdateNFManifestWork(
 	name, namespace, homeCluster string,
 	nf csiaddonsv1alpha1.NetworkFence, annotations map[string]string,
 ) error {
-	mwu.Log.Info(fmt.Sprintf("Create or Update manifestwork %s:%s:%s:%+v",
-		name, namespace, homeCluster, nf))
-
 	manifestWork, err := mwu.generateNFManifestWork(name, namespace, homeCluster, nf, annotations)
 	if err != nil {
 		return err
