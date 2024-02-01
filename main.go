@@ -48,9 +48,7 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-
 	utilruntime.Must(ramendrv1alpha1.AddToScheme(scheme))
-	utilruntime.Must(recipe.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -94,6 +92,7 @@ func newManager() (ctrl.Manager, *ramendrv1alpha1.RamenConfig, error) {
 		utilruntime.Must(gppv1.AddToScheme(scheme))
 		utilruntime.Must(argocdv1alpha1hack.AddToScheme(scheme))
 		utilruntime.Must(clrapiv1beta1.AddToScheme(scheme))
+		utilruntime.Must(recipe.AddToScheme(scheme))
 	} else {
 		utilruntime.Must(velero.AddToScheme(scheme))
 		utilruntime.Must(volrep.AddToScheme(scheme))
