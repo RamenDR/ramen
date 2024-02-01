@@ -78,17 +78,21 @@ func bindFlags(bindfuncs ...func(*flag.FlagSet)) {
 	}
 }
 
-
-func newManager() (ctrl.Manager, *ramendrv1alpha1.RamenConfig, error) {
-	options := ctrl.Options{Scheme: scheme}
+func buildOptions() (*ctrl.Options, *ramendrv1alpha1.RamenConfig) {
+	ctrlOptions := ctrl.Options{Scheme: scheme}
 	ramenConfig := &ramendrv1alpha1.RamenConfig{}
 
-	controllers.LoadControllerConfig(configFile, setupLog, &options, ramenConfig)
+	controllers.LoadControllerConfig(configFile, setupLog, &ctrlOptions, ramenConfig)
 
+	return &ctrlOptions, ramenConfig
+}
+
+func configureController(ramenConfig *ramendrv1alpha1.RamenConfig) error {
 	controllers.ControllerType = ramenConfig.RamenControllerType
+
 	if !(controllers.ControllerType == ramendrv1alpha1.DRClusterType ||
 		controllers.ControllerType == ramendrv1alpha1.DRHubType) {
-		return nil, nil, fmt.Errorf("invalid controller type specified (%s), should be one of [%s|%s]",
+		return fmt.Errorf("invalid controller type specified (%s), should be one of [%s|%s]",
 			controllers.ControllerType, ramendrv1alpha1.DRHubType, ramendrv1alpha1.DRClusterType)
 	}
 
@@ -109,21 +113,29 @@ func newManager() (ctrl.Manager, *ramendrv1alpha1.RamenConfig, error) {
 		utilruntime.Must(recipe.AddToScheme(scheme))
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), options)
+	return nil
+}
+
+func newManager(options *ctrl.Options) (ctrl.Manager, error) {
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), *options)
 	if err != nil {
-		return mgr, nil, fmt.Errorf("starting new manager failed %w", err)
+		return mgr, fmt.Errorf("starting new manager failed %w", err)
 	}
 
-	return mgr, ramenConfig, nil
+	return mgr, nil
 }
 
 func setupReconcilers(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig) {
 	if controllers.ControllerType == ramendrv1alpha1.DRHubType {
 		setupReconcilersHub(mgr)
-
-		return
 	}
 
+	if controllers.ControllerType == ramendrv1alpha1.DRClusterType {
+		setupReconcilersCluster(mgr, ramenConfig)
+	}
+}
+
+func setupReconcilersCluster(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig) {
 	if err := (&controllers.ProtectedVolumeReplicationGroupListReconciler{
 		Client:         mgr.GetClient(),
 		Scheme:         mgr.GetScheme(),
@@ -215,13 +227,20 @@ func setupReconcilersHub(mgr ctrl.Manager) {
 }
 
 func main() {
-	opts := configureLogOptions()
-	bindFlags(opts.BindFlags)
+	logOpts := configureLogOptions()
+	bindFlags(logOpts.BindFlags)
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(opts)))
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(logOpts)))
 
-	mgr, ramenConfig, err := newManager()
+	ctrlOptions, ramenConfig := buildOptions()
+
+	if err := configureController(ramenConfig); err != nil {
+		setupLog.Error(err, "unable to configure controller")
+		os.Exit(1)
+	}
+
+	mgr, err := newManager(ctrlOptions)
 	if err != nil {
 		setupLog.Error(err, "unable to Get new manager")
 		os.Exit(1)
