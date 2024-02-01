@@ -42,8 +42,9 @@ import (
 )
 
 var (
-	scheme   = runtime.NewScheme()
-	setupLog = ctrl.Log.WithName("setup")
+	scheme     = runtime.NewScheme()
+	setupLog   = ctrl.Log.WithName("setup")
+	configFile string
 )
 
 func init() {
@@ -52,14 +53,7 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
-func newManager() (ctrl.Manager, *ramendrv1alpha1.RamenConfig, error) {
-	var configFile string
-
-	flag.StringVar(&configFile, "config", "",
-		"The controller will load its initial configuration from this file. "+
-			"Omit this flag to use the default configuration values. "+
-			"Command-line flags override configuration from this file.")
-
+func configureLogOptions() *zap.Options {
 	opts := zap.Options{
 		Development: true,
 		ZapOpts: []uberzap.Option{
@@ -68,10 +62,24 @@ func newManager() (ctrl.Manager, *ramendrv1alpha1.RamenConfig, error) {
 		TimeEncoder: zapcore.ISO8601TimeEncoder,
 	}
 
-	opts.BindFlags(flag.CommandLine)
-	flag.Parse()
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	return &opts
+}
 
+// bindFlags takes a list of functions that bind flags to variables.
+// In addition, any ramen specific flags are bound here.
+func bindFlags(bindfuncs ...func(*flag.FlagSet)) {
+	flag.StringVar(&configFile, "config", "",
+		"The controller will load its initial configuration from this file. "+
+			"Omit this flag to use the default configuration values. "+
+			"Command-line flags override configuration from this file.")
+
+	for _, f := range bindfuncs {
+		f(flag.CommandLine)
+	}
+}
+
+
+func newManager() (ctrl.Manager, *ramendrv1alpha1.RamenConfig, error) {
 	options := ctrl.Options{Scheme: scheme}
 	ramenConfig := &ramendrv1alpha1.RamenConfig{}
 
@@ -207,6 +215,12 @@ func setupReconcilersHub(mgr ctrl.Manager) {
 }
 
 func main() {
+	opts := configureLogOptions()
+	bindFlags(opts.BindFlags)
+	flag.Parse()
+
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(opts)))
+
 	mgr, ramenConfig, err := newManager()
 	if err != nil {
 		setupLog.Error(err, "unable to Get new manager")
