@@ -1719,7 +1719,7 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 	vrg, err := r.MCVGetter.GetVRGFromManagedCluster(drpc.Name, vrgNamespace,
 		clusterName, annotations)
 	if err != nil {
-		log.Info("Failed to get VRG from managed cluster", "errMsg", err)
+		log.Info("Failed to get VRG from managed cluster", "errMsg", err.Error())
 
 		drpc.Status.ResourceConditions = rmn.VRGConditions{}
 	} else {
@@ -1967,7 +1967,7 @@ func (r *DRPlacementControlReconciler) createOrUpdatePlacementDecision(ctx conte
 		return fmt.Errorf("failed to update placementDecision status (%w)", err)
 	}
 
-	r.Log.Info("Created/Updated PlacementDecision", "PlacementDecision", plDecision)
+	r.Log.Info("Created/Updated PlacementDecision", "PlacementDecision", plDecision.Status.Decisions)
 
 	return nil
 }

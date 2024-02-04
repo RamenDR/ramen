@@ -1712,7 +1712,7 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 		return nil
 	}
 
-	d.log.Info(fmt.Sprintf("PeerReady Condition %v", condition))
+	d.log.Info(fmt.Sprintf("PeerReady Condition is %s, msg: %s", condition.Status, condition.Message))
 
 	// IFF we have VolSync PVCs, then no need to clean up
 	homeCluster := clusterToSkip
@@ -2012,7 +2012,7 @@ func (d *DRPCInstance) ensureVRGDeleted(clusterName string) bool {
 		return false
 	}
 
-	d.log.Info(fmt.Sprintf("VRG not deleted(%v)", vrg.ObjectMeta))
+	d.log.Info(fmt.Sprintf("VRG not deleted(%s)", vrg.Name))
 
 	return false
 }
