@@ -1807,25 +1807,6 @@ var _ = Describe("VolSync_Handler", func() {
 				Expect(pvcPreparationErr).ToNot(HaveOccurred())
 				Expect(pvcPreparationComplete).To(BeTrue())
 
-				Eventually(func() int {
-					err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testPVC), testPVC)
-					if err != nil {
-						return 0
-					}
-
-					return len(testPVC.Annotations)
-				}, maxWait, interval).Should(Equal(len(initialAnnotations) - 2))
-				// We had 2 acm annotations in initialAnnotations
-
-				for key, val := range testPVC.Annotations {
-					if key != volsync.ACMAppSubDoNotDeleteAnnotation {
-						// Other ACM annotations should be deleted
-						Expect(strings.HasPrefix(key, "apps.open-cluster-management.io")).To(BeFalse())
-
-						Expect(initialAnnotations[key]).To(Equal(val)) // Other annotations should still be there
-					}
-				}
-
 				// ACM do-not-delete annotation should be added to the PVC
 				pvcAnnotations := testPVC.GetAnnotations()
 				val, ok := pvcAnnotations[volsync.ACMAppSubDoNotDeleteAnnotation]
