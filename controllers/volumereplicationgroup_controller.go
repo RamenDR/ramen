@@ -1038,8 +1038,8 @@ func (v *VRGInstance) updateVRGStatus(result ctrl.Result) ctrl.Result {
 	if !reflect.DeepEqual(v.savedInstanceStatus, v.instance.Status) {
 		v.instance.Status.LastUpdateTime = metav1.Now()
 		if err := v.reconciler.Status().Update(v.ctx, v.instance); err != nil {
-			v.log.Info(fmt.Sprintf("Failed to update VRG status (%v/%s)",
-				err, v.instance.Name))
+			v.log.Info(fmt.Sprintf("Failed to update VRG status (%v/%s/%s)",
+				err, v.instance.Namespace, v.instance.Name))
 
 			result.Requeue = true
 
