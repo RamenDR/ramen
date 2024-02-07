@@ -119,7 +119,7 @@ func RecipeParametersExpand(recipe *recipe.Recipe, parameters map[string][]strin
 
 	bytes, err := json.Marshal(*spec)
 	if err != nil {
-		return fmt.Errorf("recipe spec %+v json marshal error: %w", *spec, err)
+		return fmt.Errorf("recipe %s json marshal error: %w", recipe.GetName(), err)
 	}
 
 	s1 := string(bytes)
