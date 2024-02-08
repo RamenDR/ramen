@@ -579,26 +579,24 @@ func (v *VRGInstance) validateVRGMode() error {
 }
 
 func (v *VRGInstance) clusterDataRestore(result *ctrl.Result) error {
-	v.log.Info("Restoring ClusterData")
+	v.log.Info("Restoring PVs and PVCs")
 
-	err := v.restorePVsForVolSync()
+	err := v.restorePVsAndPVCsForVolSync()
 	if err != nil {
-		v.log.Info("VolSync PV restore failed")
+		v.log.Info("VolSync PV/PVC restore failed")
 
-		result.Requeue = true
-
-		return fmt.Errorf("failed to restore PVs for VolSync (%w)", err)
+		return fmt.Errorf("failed to restore PV/PVC for VolSync (%w)", err)
 	}
 
-	err = v.clusterDataRestoreForVolRep(result)
+	err = v.restorePVsAndPVCsForVolRep(result)
 	if err != nil {
-		v.log.Info("VolRep ClusterData restore failed")
+		v.log.Info("VolRep PV/PVC restore failed")
 
-		return fmt.Errorf("failed to restore ClusterData for VolRep (%w)", err)
+		return fmt.Errorf("failed to restore PV/PVC for VolRep (%w)", err)
 	}
 
 	// Only after both succeed, we mark ClusterDataReady as true
-	msg := "Restored cluster data"
+	msg := "Restored PVs and PVCs"
 	setVRGClusterDataReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
 	return nil
@@ -853,18 +851,13 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 	}
 
 	if v.shouldRestoreClusterData() {
-		if err := v.clusterDataRestore(&result); err != nil {
-			v.log.Info("Restoring PVs failed", "Error", err.Error())
-
-			msg := fmt.Sprintf("Failed to restore PVs (%v)", err.Error())
-			setVRGClusterDataErrorCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+		v.result.Requeue = true
+		if err := v.clusterDataRestore(&v.result); err != nil {
+			return v.clusterDataError(err, "Failed to restore PVs/PVCs", v.result)
 		}
 
-		if err := v.updateVRGStatus(false); err != nil {
-			v.log.Error(err, "VRG Status update failed")
-		}
-
-		return ctrl.Result{Requeue: true}, nil
+		// Restore success -- update status and requeue
+		return v.updateVRGConditionsAndStatus(v.result)
 	}
 
 	v.reconcileAsPrimary()
