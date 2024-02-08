@@ -1817,7 +1817,7 @@ func (v *VRGInstance) s3KeyPrefix() string {
 	return S3KeyPrefix(v.namespacedName)
 }
 
-func (v *VRGInstance) clusterDataRestoreForVolRep(result *ctrl.Result) error {
+func (v *VRGInstance) restorePVsAndPVCsForVolRep(result *ctrl.Result) error {
 	v.log.Info("Restoring VolRep PVs and PVCs")
 
 	if len(v.instance.Spec.S3Profiles) == 0 {
