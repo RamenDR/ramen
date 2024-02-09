@@ -3,69 +3,66 @@
 
 domain: openshift.io
 layout:
-- go.kubebuilder.io/v3
+  - go.kubebuilder.io/v3
 plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
 projectName: ramen
 repo: github.com/ramendr/ramen
 resources:
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
-  domain: openshift.io
-  group: ramendr
-  kind: VolumeReplicationGroup
-  path: github.com/ramendr/ramen/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-  controller: true
-  domain: openshift.io
-  group: ramendr
-  kind: DRPolicy
-  path: github.com/ramendr/ramen/api/v1alpha1
-  version: v1alpha1
-  webhooks:
-    validation: true
-    webhookVersion: v1
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
-  domain: openshift.io
-  group: ramendr
-  kind: DRPlacementControl
-  path: github.com/ramendr/ramen/api/v1alpha1
-  version: v1alpha1
-  webhooks:
-    validation: true
-    webhookVersion: v1
-- api:
-    crdVersion: v1
-  controller: true
-  domain: openshift.io
-  group: ramendr
-  kind: DRCluster
-  path: github.com/ramendr/ramen/api/v1alpha1
-  version: v1alpha1
-  webhooks:
-    validation: true
-    webhookVersion: v1
-- api:
-    crdVersion: v1
-  controller: true
-  domain: openshift.io
-  group: ramendr
-  kind: ProtectedVolumeReplicationGroupList
-  path: github.com/ramendr/ramen/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-  domain: openshift.io
-  group: ramendr
-  kind: MaintenanceMode
-  path: github.com/ramendr/ramen/api/v1alpha1
-  version: v1alpha1
+  - api:
+      crdVersion: v1
+      namespaced: true
+    controller: true
+    domain: openshift.io
+    group: ramendr
+    kind: VolumeReplicationGroup
+    path: github.com/ramendr/ramen/api/v1alpha1
+    version: v1alpha1
+  - api:
+      crdVersion: v1
+    controller: true
+    domain: openshift.io
+    group: ramendr
+    kind: DRPolicy
+    path: github.com/ramendr/ramen/api/v1alpha1
+    version: v1alpha1
+    webhooks:
+      validation: true
+      webhookVersion: v1
+  - api:
+      crdVersion: v1
+      namespaced: true
+    controller: true
+    domain: openshift.io
+    group: ramendr
+    kind: DRPlacementControl
+    path: github.com/ramendr/ramen/api/v1alpha1
+    version: v1alpha1
+    webhooks:
+      validation: true
+      webhookVersion: v1
+  - api:
+      crdVersion: v1
+    controller: true
+    domain: openshift.io
+    group: ramendr
+    kind: DRCluster
+    path: github.com/ramendr/ramen/api/v1alpha1
+    version: v1alpha1
+  - api:
+      crdVersion: v1
+    controller: true
+    domain: openshift.io
+    group: ramendr
+    kind: ProtectedVolumeReplicationGroupList
+    path: github.com/ramendr/ramen/api/v1alpha1
+    version: v1alpha1
+  - api:
+      crdVersion: v1
+    domain: openshift.io
+    group: ramendr
+    kind: MaintenanceMode
+    path: github.com/ramendr/ramen/api/v1alpha1
+    version: v1alpha1
 version: "3"
