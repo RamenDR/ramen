@@ -149,22 +149,17 @@ func (r *DRClusterReconciler) drClusterConfigMapMapFunc(
 	return requests
 }
 
-func (r *DRClusterReconciler) drClusterSecretMapFunc(ctx context.Context, secret client.Object) []reconcile.Request {
-	if secret.GetNamespace() != NamespaceName() {
+func (r *DRClusterReconciler) drClusterSecretMapFunc(ctx context.Context, obj client.Object) []reconcile.Request {
+	if obj.GetNamespace() != NamespaceName() {
 		return []reconcile.Request{}
 	}
 
-	drcusters := &ramen.DRClusterList{}
-	if err := r.Client.List(context.TODO(), drcusters); err != nil {
+	secret, ok := obj.(*corev1.Secret)
+	if !ok {
 		return []reconcile.Request{}
 	}
 
-	requests := make([]reconcile.Request, len(drcusters.Items))
-	for i := range drcusters.Items {
-		requests[i].Name = drcusters.Items[i].GetName()
-	}
-
-	return requests
+	return filterDRClusterSecret(ctx, r.Client, secret)
 }
 
 // drpcPred watches for updates to the DRPC resource and checks if it requires an appropriate DRCluster reconcile
@@ -275,6 +270,46 @@ func filterDRClusterMCV(mcv *viewv1beta1.ManagedClusterView) []ctrl.Request {
 			},
 		},
 	}
+}
+
+func filterDRClusterSecret(ctx context.Context, reader client.Reader, secret *corev1.Secret) []ctrl.Request {
+	log := ctrl.Log.WithName("filterDRClusterSecret").WithName("Secret")
+
+	drclusters := &ramen.DRClusterList{}
+	if err := reader.List(ctx, drclusters); err != nil {
+		log.Error(err, "Failed to list DRClusters")
+
+		return []reconcile.Request{}
+	}
+
+	requests := []reconcile.Request{}
+
+	for i := range drclusters.Items {
+		drcluster := &drclusters.Items[i]
+
+		s3ProfileName := drcluster.Spec.S3ProfileName
+
+		if s3ProfileName == NoS3StoreAvailable {
+			continue
+		}
+
+		s3StoreProfile, err := GetRamenConfigS3StoreProfile(context.TODO(), reader, s3ProfileName)
+		if err != nil {
+			log.Info("Failed to filter secret", "secret", secret.GetName(), "drcluster", drcluster.Name, "reason", err.Error())
+
+			continue
+		}
+
+		if secret.GetName() == s3StoreProfile.S3SecretRef.Name {
+			requests = append(requests,
+				reconcile.Request{
+					NamespacedName: types.NamespacedName{Name: drcluster.GetName()},
+				},
+			)
+		}
+	}
+
+	return requests
 }
 
 //nolint:lll
