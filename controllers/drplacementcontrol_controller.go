@@ -1678,7 +1678,12 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 
 	clusterDecision := r.getClusterDecision(userPlacement)
 	if clusterDecision != nil && clusterDecision.ClusterName != "" && vrgNamespace != "" {
-		r.updateResourceCondition(ctx, drpc, clusterDecision.ClusterName, vrgNamespace, log)
+		r.updateResourceCondition(drpc, clusterDecision.ClusterName, vrgNamespace, log)
+	}
+
+	if err := r.setDRPCMetrics(ctx, drpc, log); err != nil {
+		// log the error but do not return the error
+		log.Info("failed to set drpc metrics", "errMSg", err)
 	}
 
 	for i, condition := range drpc.Status.Conditions {
@@ -1706,7 +1711,6 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 }
 
 func (r *DRPlacementControlReconciler) updateResourceCondition(
-	ctx context.Context,
 	drpc *rmn.DRPlacementControl,
 	clusterName, vrgNamespace string,
 	log logr.Logger,
@@ -1722,30 +1726,27 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 		log.Info("Failed to get VRG from managed cluster", "errMsg", err.Error())
 
 		drpc.Status.ResourceConditions = rmn.VRGConditions{}
-	} else {
-		drpc.Status.ResourceConditions.ResourceMeta.Kind = vrg.Kind
-		drpc.Status.ResourceConditions.ResourceMeta.Name = vrg.Name
-		drpc.Status.ResourceConditions.ResourceMeta.Namespace = vrg.Namespace
-		drpc.Status.ResourceConditions.ResourceMeta.Generation = vrg.Generation
-		drpc.Status.ResourceConditions.Conditions = vrg.Status.Conditions
 
-		protectedPVCs := []string{}
-		for _, protectedPVC := range vrg.Status.ProtectedPVCs {
-			protectedPVCs = append(protectedPVCs, protectedPVC.Name)
-		}
-
-		drpc.Status.ResourceConditions.ResourceMeta.ProtectedPVCs = protectedPVCs
-
-		if vrg.Status.LastGroupSyncTime != nil || drpc.Spec.Action != rmn.ActionRelocate {
-			drpc.Status.LastGroupSyncTime = vrg.Status.LastGroupSyncTime
-			drpc.Status.LastGroupSyncDuration = vrg.Status.LastGroupSyncDuration
-			drpc.Status.LastGroupSyncBytes = vrg.Status.LastGroupSyncBytes
-		}
+		return
 	}
 
-	if err := r.setDRPCMetrics(ctx, drpc, log); err != nil {
-		// log the error but do not return the error
-		log.Info("failed to set drpc metrics", "errMSg", err)
+	drpc.Status.ResourceConditions.ResourceMeta.Kind = vrg.Kind
+	drpc.Status.ResourceConditions.ResourceMeta.Name = vrg.Name
+	drpc.Status.ResourceConditions.ResourceMeta.Namespace = vrg.Namespace
+	drpc.Status.ResourceConditions.ResourceMeta.Generation = vrg.Generation
+	drpc.Status.ResourceConditions.Conditions = vrg.Status.Conditions
+
+	protectedPVCs := []string{}
+	for _, protectedPVC := range vrg.Status.ProtectedPVCs {
+		protectedPVCs = append(protectedPVCs, protectedPVC.Name)
+	}
+
+	drpc.Status.ResourceConditions.ResourceMeta.ProtectedPVCs = protectedPVCs
+
+	if vrg.Status.LastGroupSyncTime != nil || drpc.Spec.Action != rmn.ActionRelocate {
+		drpc.Status.LastGroupSyncTime = vrg.Status.LastGroupSyncTime
+		drpc.Status.LastGroupSyncDuration = vrg.Status.LastGroupSyncDuration
+		drpc.Status.LastGroupSyncBytes = vrg.Status.LastGroupSyncBytes
 	}
 }
 

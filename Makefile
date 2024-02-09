@@ -75,12 +75,6 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-# Setting SHELL to bash allows bash commands to be executed by recipes.
-# This is a requirement for 'setup-envtest.sh' in the test target.
-# Options are set to exit when a recipe line exits non-zero or a piped command fails.
-SHELL = /usr/bin/env bash -o pipefail
-.SHELLFLAGS = -ec
-
 # Set sed command appropriately
 SED_CMD:=sed
 ifeq ($(GOHOSTOS),darwin)
@@ -89,14 +83,8 @@ ifeq ($(GOHOSTOS),darwin)
 	endif
 endif
 
-GO_TEST_GINKGO_ARGS ?= -test.v -ginkgo.v -ginkgo.fail-fast
 
 DOCKERCMD ?= podman
-
-ENVTEST_K8S_VERSION = 1.25.0
-ENVTEST_ASSETS_DIR = $(shell pwd)/testbin
-# Define to override the path to envtest executables.
-KUBEBUILDER_ASSETS ?= $(shell $(ENVTEST_ASSETS_DIR)/setup-envtest use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_ASSETS_DIR) --print path)
 
 all: build
 
@@ -124,60 +112,64 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
-.PHONY: golangci-bin
-golangci-bin:
-	@hack/install-golangci-lint.sh
 
 .PHONY: lint
 lint: golangci-bin ## Run configured golangci-lint and pre-commit.sh linters against the code.
 	testbin/golangci-lint run ./... --config=./.golangci.yaml
 	hack/pre-commit.sh
 
-envtest:
-	mkdir -p $(ENVTEST_ASSETS_DIR)
-	test -s $(ENVTEST_ASSETS_DIR)/setup-envtest || GOBIN=$(ENVTEST_ASSETS_DIR) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+##@ Tests
 
-test: generate manifests envtest ## Run tests.
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./... -coverprofile cover.out $(GO_TEST_GINKGO_ARGS)
+test: generate manifests envtest ## Run all the tests.
+	 go test ./... -coverprofile cover.out
 
-test-pvrgl: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus ProtectedVolumeReplicationGroupList
+test-pvrgl: generate manifests envtest ## Run ProtectedVolumeReplicationGroupList tests.
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus ProtectedVolumeReplicationGroupList
 
-test-obj: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus FakeObjectStorer
+test-obj: generate manifests envtest ## Run ObjectStorer tests.
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus FakeObjectStorer
 
-test-vs: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers/volsync -coverprofile cover.out $(GO_TEST_GINKGO_ARGS)
+test-vs: generate manifests envtest ## Run VolumeSync tests.
+	 go test ./controllers/volsync -coverprofile cover.out
 
-test-vrg: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroup
+test-vrg: generate manifests envtest ## Run VolumeReplicationGroup tests.
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroup
 
-test-vrg-pvc: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroupPVC
+test-vrg-pvc: generate manifests envtest ## Run VolumeReplicationGroupPVC tests.
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupPVC
 
-test-vrg-vr: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroupVolRep
+test-vrg-vr: generate manifests envtest ## Run VolumeReplicationGroupVolRep tests.
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupVolRep
 
-test-vrg-vs: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroupVolSync
+test-vrg-vs: generate manifests envtest ## Run VolumeReplicationGroupVolSync tests.
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupVolSync
 
-test-vrg-recipe: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VolumeReplicationGroupRecipe
+test-vrg-recipe: generate manifests envtest ## Run VolumeReplicationGroupRecipe tests.
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupRecipe
 
-test-vrg-kubeobjects: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus VRG_KubeObjectProtection
+test-vrg-kubeobjects: generate manifests envtest ## Run VolumeReplicationGroupKubeObjects tests.
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VRG_KubeObjectProtection
 
-test-drpc: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus DRPlacementControl
+test-drpc: generate manifests envtest ## Run DRPlacementControl tests.
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus DRPlacementControl
 
-test-drcluster: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus DRClusterController
+test-drcluster: generate manifests envtest ## Run DRCluster tests.
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus DRClusterController
 
-test-util: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers/util -coverprofile cover.out $(GO_TEST_GINKGO_ARGS)
+test-util: generate manifests envtest ## Run util tests.
+	 go test ./controllers/util -coverprofile cover.out
 
-test-util-pvc: generate manifests envtest
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./controllers/util -coverprofile cover.out $(GO_TEST_GINKGO_ARGS) -ginkgo.focus PVCS_Util
+test-util-pvc: generate manifests envtest ## Run util-pvc tests.
+	 go test ./controllers/util -coverprofile cover.out  -ginkgo.focus PVCS_Util
+
+test-drenv: ## Run drenv tests.
+	$(MAKE) -C test
+
+test-ramenctl: ## Run ramenctl tests.
+	$(MAKE) -C ramenctl
+
+e2e-rdr: generate manifests docker-build ## Run rdr-e2e tests.
+	./e2e/rdr-e2e.sh
 
 coverage:
 	go tool cover -html=cover.out
@@ -185,15 +177,6 @@ coverage:
 .PHONY: venv
 venv:
 	hack/make-venv
-
-test-drenv:
-	$(MAKE) -C test
-
-test-ramenctl:
-	$(MAKE) -C ramenctl
-
-e2e-rdr: generate manifests docker-build
-	./e2e/rdr-e2e.sh
 
 ##@ Build
 
@@ -258,20 +241,34 @@ undeploy-dr-cluster: kustomize ## Undeploy dr-cluster controller from the K8s cl
 ##@ Tools
 
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
-controller-gen: ## Download controller-gen locally if necessary.
+controller-gen: ## Download controller-gen locally.
 	@hack/install-controller-gen.sh
 
 .PHONY: kustomize
 KUSTOMIZE = $(shell pwd)/bin/kustomize
-kustomize: ## Download kustomize locally if necessary.
+kustomize: ## Download kustomize locally.
 	@hack/install-kustomize.sh
 
-##@ Bundle
+.PHONY: opm
+OPM = ./bin/opm
+opm: ## Download opm locally.
+	@./hack/install-opm.sh
 
 .PHONY: operator-sdk
 OSDK = ./bin/operator-sdk
-operator-sdk: ## Download operator-sdk locally if necessary.
+operator-sdk: ## Download operator-sdk locally.
 	@hack/install-operator-sdk.sh
+
+.PHONY: golangci-bin
+golangci-bin: ## Download golangci-lint locally.
+	@hack/install-golangci-lint.sh
+
+.PHONY: envtest
+envtest: ## Download envtest locally.
+	hack/install-setup-envtest.sh
+
+
+##@ Bundle
 
 .PHONY: bundle
 bundle: bundle-hub bundle-dr-cluster ## Generate all bundle manifests and metadata, then validate generated files.
@@ -326,11 +323,6 @@ bundle-dr-cluster-build: bundle-dr-cluster ## Build the dr-cluster bundle image.
 .PHONY: bundle-dr-cluster-push
 bundle-dr-cluster-push: ## Push the dr-cluster bundle image.
 	$(MAKE) docker-push IMG=$(BUNDLE_IMG_DRCLUSTER)
-
-.PHONY: opm
-OPM = ./bin/opm
-opm: ## Download opm locally if necessary.
-	@./hack/install-opm.sh
 
 # A comma-separated list of bundle images (e.g. make catalog-build BUNDLE_IMGS=example.com/operator-bundle:v0.1.0,example.com/operator-bundle:v0.2.0).
 # These images MUST exist in a registry and be pull-able.
