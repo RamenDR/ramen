@@ -1,6 +1,6 @@
 module github.com/ramendr/ramen/api
 
-go 1.21.6
+go 1.20
 
 require (
 	github.com/stolostron/multicloud-operators-placementrule v1.2.4-1-20220311-8eedb3f.0.20230828200208-cd3c119a7fa0
