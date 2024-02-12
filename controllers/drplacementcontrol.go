@@ -1275,7 +1275,7 @@ func (d *DRPCInstance) vrgExistsAndPrimary(targetCluster string) bool {
 		return false
 	}
 
-	if !vrg.GetDeletionTimestamp().IsZero() {
+	if rmnutil.ResourceIsDeleted(vrg) {
 		return false
 	}
 
@@ -1834,7 +1834,7 @@ func (d *DRPCInstance) ensureVRGManifestWorkOnClusterDeleted(clusterName string)
 		return !done, fmt.Errorf("failed to retrieve ManifestWork (%w)", err)
 	}
 
-	if !mw.GetDeletionTimestamp().IsZero() {
+	if rmnutil.ResourceIsDeleted(mw) {
 		d.log.Info("Waiting for VRG MW to be fully deleted", "cluster", clusterName)
 		// As long as the Manifestwork still exist, then we are not done
 		return !done, nil

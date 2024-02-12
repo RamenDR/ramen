@@ -5,6 +5,7 @@ package util
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func ObjectMetaEmbedded(objectMeta *metav1.ObjectMeta) metav1.ObjectMeta {
@@ -16,4 +17,9 @@ func ObjectMetaEmbedded(objectMeta *metav1.ObjectMeta) metav1.ObjectMeta {
 		Labels:      objectMeta.Labels,
 		Finalizers:  objectMeta.Finalizers,
 	}
+}
+
+// Return true if resource was marked for deletion.
+func ResourceIsDeleted(obj client.Object) bool {
+	return !obj.GetDeletionTimestamp().IsZero()
 }

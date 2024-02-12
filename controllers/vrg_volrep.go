@@ -168,7 +168,7 @@ func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, 
 	const ready bool = true
 
 	// If PVC is not being deleted, it is not ready for Secondary, unless action is failover
-	if v.instance.Spec.Action != ramendrv1alpha1.VRGActionFailover && pvc.GetDeletionTimestamp().IsZero() {
+	if v.instance.Spec.Action != ramendrv1alpha1.VRGActionFailover && !rmnutil.ResourceIsDeleted(pvc) {
 		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolumeClaim is not marked for deletion")
 
 		msg := "unable to transition to Secondary as PVC is not deleted"
@@ -364,7 +364,7 @@ func (v *VRGInstance) protectPVC(pvc *corev1.PersistentVolumeClaim, log logr.Log
 	}
 
 	// Annotate that PVC protection is complete, skip if being deleted
-	if pvc.GetDeletionTimestamp().IsZero() {
+	if !rmnutil.ResourceIsDeleted(pvc) {
 		if err := v.addProtectedAnnotationForPVC(pvc, log); err != nil {
 			log.Info("Requeuing, as annotating PersistentVolumeClaim failed", "errorValue", err)
 
@@ -402,7 +402,7 @@ func skipPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, string) 
 
 func isPVCDeletedAndNotProtected(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, string) {
 	// If PVC deleted but not yet protected with a finalizer, skip it!
-	if !containsString(pvc.Finalizers, PvcVRFinalizerProtected) && !pvc.GetDeletionTimestamp().IsZero() {
+	if !containsString(pvc.Finalizers, PvcVRFinalizerProtected) && rmnutil.ResourceIsDeleted(pvc) {
 		log.Info("Skipping PersistentVolumeClaim, as it is marked for deletion and not yet protected")
 
 		msg := "Skipping pvc marked for deletion"
@@ -740,7 +740,7 @@ func (v *VRGInstance) reconcileVRsForDeletion() {
 func (v *VRGInstance) pvcUnprotectVolRepIfDeleted(
 	pvc corev1.PersistentVolumeClaim, log logr.Logger,
 ) (pvcDeleted bool) {
-	pvcDeleted = !pvc.GetDeletionTimestamp().IsZero()
+	pvcDeleted = rmnutil.ResourceIsDeleted(&pvc)
 	if !pvcDeleted {
 		return
 	}
@@ -903,7 +903,7 @@ func (v *VRGInstance) reconcileMissingVR(pvc *corev1.PersistentVolumeClaim, log 
 
 	err := v.reconciler.Get(v.ctx, vrNamespacedName, volRep)
 	if err == nil {
-		if !volRep.ObjectMeta.DeletionTimestamp.IsZero() {
+		if rmnutil.ResourceIsDeleted(volRep) {
 			log.Info("Requeuing due to processing a VR under deletion")
 
 			return !vrMissing, requeue
@@ -2067,7 +2067,7 @@ func (v *VRGInstance) validateExistingPV(pv *corev1.PersistentVolume) error {
 				pvcNamespacedName.String(), err)
 		}
 
-		if !pvc.DeletionTimestamp.IsZero() {
+		if rmnutil.ResourceIsDeleted(&pvc) {
 			return fmt.Errorf("existing bound PV %s claim %s deletion timestamp non-zero %v", existingPV.GetName(),
 				pvcNamespacedName.String(), pvc.DeletionTimestamp)
 		}
@@ -2122,7 +2122,7 @@ func (v *VRGInstance) validateExistingPVC(pvc *corev1.PersistentVolumeClaim) err
 		return fmt.Errorf("PVC %s exists and is not bound (phase: %s)", pvcNSName.String(), existingPVC.Status.Phase)
 	}
 
-	if !existingPVC.DeletionTimestamp.IsZero() {
+	if rmnutil.ResourceIsDeleted(existingPVC) {
 		return fmt.Errorf("existing bound PVC %s is being deleted", pvcNSName.String())
 	}
 

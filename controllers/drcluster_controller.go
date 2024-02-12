@@ -321,7 +321,7 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	u.initializeStatus()
 
-	if drClusterIsDeleted(drcluster) {
+	if util.ResourceIsDeleted(drcluster) {
 		return r.processDeletion(u)
 	}
 
@@ -385,11 +385,6 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 	}
 
 	return ctrl.Result{Requeue: requeue || u.requeue}, reconcileError
-}
-
-// Return true if dr cluster was marked for deletion.
-func drClusterIsDeleted(c *ramen.DRCluster) bool {
-	return !c.GetDeletionTimestamp().IsZero()
 }
 
 func (u *drclusterInstance) initializeStatus() {
@@ -1005,7 +1000,7 @@ func getPeerFromPolicy(ctx context.Context, reconciler *DRClusterReconciler, log
 			continue
 		}
 
-		if !peerCluster.ObjectMeta.DeletionTimestamp.IsZero() {
+		if util.ResourceIsDeleted(peerCluster) {
 			log.Info(fmt.Sprintf("peer cluster %s of cluster %s is being deleted",
 				peerCluster.Name, drCluster.Name))
 			// for now continue. We just need to get one DRCluster with
