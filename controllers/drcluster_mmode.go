@@ -351,7 +351,7 @@ func (u *drclusterInstance) pruneMModeMCV(
 
 	// Do not prune if it is part of survivors (or if already pruned)
 	key := util.ClusterScopedResourceNameFromMCVName(inMModeMCV.GetName())
-	if _, ok := survivors[key]; ok || !inMModeMCV.GetDeletionTimestamp().IsZero() {
+	if _, ok := survivors[key]; ok || util.ResourceIsDeleted(inMModeMCV) {
 		u.log.Info("Skipping pruning view", "name", inMModeMCV.GetName())
 
 		return nil

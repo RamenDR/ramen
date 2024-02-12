@@ -25,6 +25,7 @@ import (
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/controllers/util"
 	"github.com/ramendr/ramen/controllers/volsync"
 )
 
@@ -1060,7 +1061,7 @@ var _ = Describe("VolSync_Handler", func() {
 											Eventually(func() bool {
 												err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testPVC), testPVC)
 												if err == nil {
-													if !testPVC.GetDeletionTimestamp().IsZero() {
+													if util.ResourceIsDeleted(testPVC) {
 														// PVC protection finalizer is added automatically to PVC - but testenv
 														// doesn't have anything that will remove it for us - we're good as long
 														// as the pvc is marked for deletion
@@ -1373,7 +1374,7 @@ var _ = Describe("VolSync_Handler", func() {
 						Eventually(func() bool {
 							err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pvc), pvc)
 							if err == nil {
-								if !pvc.GetDeletionTimestamp().IsZero() {
+								if util.ResourceIsDeleted(pvc) {
 									// PVC protection finalizer is added automatically to PVC - but testenv
 									// doesn't have anything that will remove it for us - we're good as long
 									// as the pvc is marked for deletion
