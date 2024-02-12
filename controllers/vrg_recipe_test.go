@@ -269,7 +269,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 		return matchers
 	}
 	vrgPvcsConsistOfEventually := func(pvcs ...*corev1.PersistentVolumeClaim) {
-		Eventually(vrgPvcsGet).Should(ConsistOf(vrgPvcNamesMatchPvcs(pvcs...)))
+		Eventually(vrgPvcsGet, timeout, interval).Should(ConsistOf(vrgPvcNamesMatchPvcs(pvcs...)))
 	}
 	vrgPvcSelectorGet := func() (controllers.PvcSelector, error) {
 		return controllers.GetPVCSelector(ctx, apiReader, *vrg, *ramenConfig, testLogger)
@@ -538,7 +538,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 							Expect(pvcSelector.NamespaceNames).To(ConsistOf(vrg.Namespace))
 						})
 						It("sets DataReady condition's message to something besides a recipe error", func() {
-							Eventually(vrgDataReadyConditionGetAndExpectNonNil).Should(MatchFields(IgnoreExtras, Fields{
+							Eventually(vrgDataReadyConditionGetAndExpectNonNil, timeout, interval).Should(MatchFields(IgnoreExtras, Fields{
 								"Message": Not(HavePrefix(recipeErrorMessagePrefix)),
 							}))
 						})
