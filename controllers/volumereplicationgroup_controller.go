@@ -578,28 +578,32 @@ func (v *VRGInstance) validateVRGMode() error {
 	return nil
 }
 
-func (v *VRGInstance) clusterDataRestore(result *ctrl.Result) error {
+func (v *VRGInstance) clusterDataRestore(result *ctrl.Result) (int, error) {
 	v.log.Info("Restoring PVs and PVCs")
 
-	err := v.restorePVsAndPVCsForVolSync()
+	numRestoredForVS, err := v.restorePVsAndPVCsForVolSync()
 	if err != nil {
 		v.log.Info("VolSync PV/PVC restore failed")
 
-		return fmt.Errorf("failed to restore PV/PVC for VolSync (%w)", err)
+		return numRestoredForVS, fmt.Errorf("failed to restore PV/PVC for VolSync (%w)", err)
 	}
 
-	err = v.restorePVsAndPVCsForVolRep(result)
+	numRestoredForVR, err := v.restorePVsAndPVCsForVolRep(result)
 	if err != nil {
 		v.log.Info("VolRep PV/PVC restore failed")
 
-		return fmt.Errorf("failed to restore PV/PVC for VolRep (%w)", err)
+		return numRestoredForVS + numRestoredForVR, fmt.Errorf("failed to restore PV/PVC for VolRep (%w)", err)
 	}
 
 	// Only after both succeed, we mark ClusterDataReady as true
 	msg := "Restored PVs and PVCs"
+	if numRestoredForVS+numRestoredForVR == 0 {
+		msg = "Nothing to restore"
+	}
+
 	setVRGClusterDataReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
-	return nil
+	return numRestoredForVS + numRestoredForVR, nil
 }
 
 func (v *VRGInstance) listPVCsByVrgPVCSelector() (*corev1.PersistentVolumeClaimList, error) {
@@ -852,12 +856,16 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 
 	if v.shouldRestoreClusterData() {
 		v.result.Requeue = true
-		if err := v.clusterDataRestore(&v.result); err != nil {
+
+		numOfRestoredRes, err := v.clusterDataRestore(&v.result)
+		if err != nil {
 			return v.clusterDataError(err, "Failed to restore PVs/PVCs", v.result)
 		}
 
-		// Restore success -- update status and requeue
-		return v.updateVRGConditionsAndStatus(v.result)
+		// Save status and requeue if we restored any resources (PV/PVCs). Otherwise, continue
+		if numOfRestoredRes != 0 {
+			return v.updateVRGConditionsAndStatus(v.result)
+		}
 	}
 
 	v.reconcileAsPrimary()

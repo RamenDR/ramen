@@ -95,6 +95,7 @@ func protectedVrgListExpectInclude(protectedVrgList *ramen.ProtectedVolumeReplic
 	vrgsExpected []ramen.VolumeReplicationGroup,
 ) {
 	vrgsStatusStateUpdate(protectedVrgList.Status.Items, vrgsExpected)
+	Expect(protectedVrgList.Status.Items).To(ContainElements(vrgsExpected))
 }
 
 func vrgsStatusStateUpdate(vrgsS3, vrgsK8s []ramen.VolumeReplicationGroup) {
