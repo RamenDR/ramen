@@ -17,7 +17,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/yaml"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
@@ -865,9 +864,7 @@ func (d *DRPCInstance) ensureCleanupAndVolSyncReplicationSetup(srcCluster string
 			srcCluster, ok))
 	}
 
-	clusterToSkip := srcCluster
-
-	err = d.EnsureCleanup(clusterToSkip)
+	err = d.EnsureCleanup(srcCluster)
 	if err != nil {
 		return err
 	}
@@ -1285,9 +1282,7 @@ func (d *DRPCInstance) vrgExistsAndPrimary(targetCluster string) bool {
 }
 
 func (d *DRPCInstance) mwExistsAndPlacementUpdated(targetCluster string) (bool, error) {
-	vrgMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
-
-	_, err := d.mwu.FindManifestWork(vrgMWName, targetCluster)
+	_, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, targetCluster)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return false, nil
@@ -1792,10 +1787,7 @@ func (d *DRPCInstance) ensureVRGManifestWorkOnClusterDeleted(clusterName string)
 
 	const done = true
 
-	mwName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
-	mw := &ocmworkv1.ManifestWork{}
-
-	err := d.reconciler.Get(d.ctx, types.NamespacedName{Name: mwName, Namespace: clusterName}, mw)
+	mw, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, clusterName)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return done, nil
