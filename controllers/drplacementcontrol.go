@@ -30,6 +30,9 @@ const (
 	DRPCNameAnnotation      = "drplacementcontrol.ramendr.openshift.io/drpc-name"
 	DRPCNamespaceAnnotation = "drplacementcontrol.ramendr.openshift.io/drpc-namespace"
 
+	// Annotation that stores the UID of DRPC that created the resource on the managed cluster using a ManifestWork
+	DRPCUIDAnnotation = "drplacementcontrol.ramendr.openshift.io/drpc-uid"
+
 	// Annotation for the last cluster on which the application was running
 	LastAppDeploymentCluster = "drplacementcontrol.ramendr.openshift.io/last-app-deployment-cluster"
 
@@ -1520,6 +1523,7 @@ func (d *DRPCInstance) generateVRG(dstCluster string, repState rmn.ReplicationSt
 			Annotations: map[string]string{
 				DestinationClusterAnnotationKey: dstCluster,
 				DoNotDeletePVCAnnotation:        d.instance.GetAnnotations()[DoNotDeletePVCAnnotation],
+				DRPCUIDAnnotation:               string(d.instance.UID),
 			},
 		},
 		Spec: rmn.VolumeReplicationGroupSpec{
