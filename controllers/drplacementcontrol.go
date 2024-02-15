@@ -11,13 +11,11 @@ import (
 
 	"github.com/go-logr/logr"
 	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"
-	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	errorswrapper "github.com/pkg/errors"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/yaml"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
@@ -1261,7 +1259,7 @@ func (d *DRPCInstance) getVRGFromManifestWork(clusterName string) (*rmn.VolumeRe
 		return nil, fmt.Errorf("%w", err)
 	}
 
-	vrg, err := d.extractVRGFromManifestWork(mw)
+	vrg, err := rmnutil.ExtractVRGFromManifestWork(mw)
 	if err != nil {
 		return nil, err
 	}
@@ -2076,22 +2074,6 @@ func (d *DRPCInstance) updateVRGToRunFinalSync(clusterName string) error {
 		vrg.Name, clusterName))
 
 	return nil
-}
-
-func (d *DRPCInstance) extractVRGFromManifestWork(mw *ocmworkv1.ManifestWork) (*rmn.VolumeReplicationGroup, error) {
-	if len(mw.Spec.Workload.Manifests) == 0 {
-		return nil, fmt.Errorf("invalid VRG ManifestWork for type: %s", mw.Name)
-	}
-
-	vrgClientManifest := &mw.Spec.Workload.Manifests[0]
-	vrg := &rmn.VolumeReplicationGroup{}
-
-	err := yaml.Unmarshal(vrgClientManifest.RawExtension.Raw, &vrg)
-	if err != nil {
-		return nil, fmt.Errorf("unable to unmarshal VRG object (%w)", err)
-	}
-
-	return vrg, nil
 }
 
 func (d *DRPCInstance) updateManifestWork(clusterName string, vrg *rmn.VolumeReplicationGroup) error {
