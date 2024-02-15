@@ -248,7 +248,7 @@ func (d *DRPCInstance) updateVRGSpec(clusterName string, tgtVRG *rmn.VolumeRepli
 
 	d.log.Info(fmt.Sprintf("Updating VRG ownedby MW %s for cluster %s", mw.Name, clusterName))
 
-	vrg, err := d.extractVRGFromManifestWork(mw)
+	vrg, err := rmnutil.ExtractVRGFromManifestWork(mw)
 	if err != nil {
 		d.log.Error(err, "failed to update VRG state")
 
@@ -345,7 +345,7 @@ func (d *DRPCInstance) ResetVolSyncRDOnPrimary(clusterName string) error {
 
 	d.log.Info(fmt.Sprintf("Resetting RD VRG ownedby MW %s for cluster %s", mw.Name, clusterName))
 
-	vrg, err := d.extractVRGFromManifestWork(mw)
+	vrg, err := rmnutil.ExtractVRGFromManifestWork(mw)
 	if err != nil {
 		d.log.Error(err, "failed to extract VRG state")
 

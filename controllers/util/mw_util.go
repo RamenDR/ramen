@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/apis/csiaddons/v1alpha1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
@@ -559,4 +560,20 @@ func (mwu *MWUtil) DeleteManifestWork(mwName, mwNamespace string) error {
 	}
 
 	return nil
+}
+
+func ExtractVRGFromManifestWork(mw *ocmworkv1.ManifestWork) (*rmn.VolumeReplicationGroup, error) {
+	if len(mw.Spec.Workload.Manifests) == 0 {
+		return nil, fmt.Errorf("invalid VRG ManifestWork for type: %s", mw.Name)
+	}
+
+	vrgClientManifest := &mw.Spec.Workload.Manifests[0]
+	vrg := &rmn.VolumeReplicationGroup{}
+
+	err := yaml.Unmarshal(vrgClientManifest.RawExtension.Raw, &vrg)
+	if err != nil {
+		return nil, fmt.Errorf("unable to unmarshal VRG object (%w)", err)
+	}
+
+	return vrg, nil
 }
