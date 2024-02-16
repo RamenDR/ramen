@@ -953,6 +953,12 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(d *DRPCInstance, lo
 		beforeProcessing = *d.instance.Status.LastUpdateTime
 	}
 
+	if !ensureVRGsManagedByDRPC(d.log, d.mwu, d.vrgs, d.instance, d.vrgNamespace) {
+		log.Info("Requeing... VRG adoption in progress")
+
+		return ctrl.Result{Requeue: true}, nil
+	}
+
 	requeue := d.startProcessing()
 	log.Info("Finished processing", "Requeue?", requeue)
 
@@ -1158,14 +1164,6 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 		return fmt.Errorf("failed to get DRPolicy while finalizing DRPC (%w)", err)
 	}
 
-	// delete manifestworks (VRGs)
-	for _, drClusterName := range rmnutil.DrpolicyClusterNames(drPolicy) {
-		err := mwu.DeleteManifestWorksForCluster(drClusterName)
-		if err != nil {
-			return fmt.Errorf("%w", err)
-		}
-	}
-
 	drClusters, err := getDRClusters(ctx, r.Client, drPolicy)
 	if err != nil {
 		return fmt.Errorf("failed to get drclusters. Error (%w)", err)
@@ -1175,6 +1173,18 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 	vrgs, _, _, err := getVRGsFromManagedClusters(r.MCVGetter, drpc, drClusters, vrgNamespace, log)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve VRGs. We'll retry later. Error (%w)", err)
+	}
+
+	if !ensureVRGsManagedByDRPC(r.Log, mwu, vrgs, drpc, vrgNamespace) {
+		return fmt.Errorf("VRG adoption in progress")
+	}
+
+	// delete manifestworks (VRGs)
+	for _, drClusterName := range rmnutil.DrpolicyClusterNames(drPolicy) {
+		err := mwu.DeleteManifestWorksForCluster(drClusterName)
+		if err != nil {
+			return fmt.Errorf("%w", err)
+		}
 	}
 
 	if len(vrgs) != 0 {
@@ -2286,6 +2296,21 @@ func (r *DRPlacementControlReconciler) determineDRPCState(
 		return Stop, "", err
 	}
 
+	mwu := rmnutil.MWUtil{
+		Client:          r.Client,
+		APIReader:       r.APIReader,
+		Ctx:             ctx,
+		Log:             log,
+		InstName:        drpc.Name,
+		TargetNamespace: vrgNamespace,
+	}
+
+	if !ensureVRGsManagedByDRPC(log, mwu, vrgs, drpc, vrgNamespace) {
+		msg := "VRG adoption in progress"
+
+		return Stop, msg, nil
+	}
+
 	// IF 2 clusters queried, and both queries failed, then STOP
 	if successfullyQueriedClusterCount == 0 {
 		msg := "Stop - Number of clusters queried is 0"
@@ -2425,4 +2450,175 @@ func (r *DRPlacementControlReconciler) determineDRPCState(
 	msg := "Failover is allowed - User intervention is required"
 
 	return AllowFailover, msg, nil
+}
+
+// ensureVRGsManagedByDRPC ensures that VRGs reported by ManagedClusterView are managed by the current instance of
+// DRPC. This is done using the DRPC UID annotation on the viewed VRG matching the current DRPC UID and if not
+// creating or updating the exisiting ManifestWork for the VRG.
+// Returns a bool indicating true if VRGs are managed by the current DRPC resource
+func ensureVRGsManagedByDRPC(
+	log logr.Logger,
+	mwu rmnutil.MWUtil,
+	vrgs map[string]*rmn.VolumeReplicationGroup,
+	drpc *rmn.DRPlacementControl,
+	vrgNamespace string,
+) bool {
+	ensured := true
+
+	for cluster, viewVRG := range vrgs {
+		if rmnutil.ResourceIsDeleted(viewVRG) {
+			log.Info("VRG reported by view undergoing deletion, during adoption")
+
+			continue
+		}
+
+		if viewVRG.GetAnnotations() != nil {
+			if v, ok := viewVRG.Annotations[DRPCUIDAnnotation]; ok && v == string(drpc.UID) {
+				continue
+			}
+		}
+
+		adopted := adoptVRG(log, mwu, viewVRG, cluster, drpc, vrgNamespace)
+
+		ensured = ensured && adopted
+	}
+
+	return ensured
+}
+
+// adoptVRG creates or updates the VRG ManifestWork to ensure that the current DRPC is managing the VRG resource
+// Returns a bool indicating if adoption was completed (which is mostly false except when VRG MW is deleted)
+func adoptVRG(
+	log logr.Logger,
+	mwu rmnutil.MWUtil,
+	viewVRG *rmn.VolumeReplicationGroup,
+	cluster string,
+	drpc *rmn.DRPlacementControl,
+	vrgNamespace string,
+) bool {
+	adopted := true
+
+	mw, err := mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, cluster)
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			log.Info("error fetching VRG ManifestWork during adoption", "error", err)
+
+			return !adopted
+		}
+
+		adoptOrphanVRG(log, mwu, viewVRG, cluster, drpc, vrgNamespace)
+
+		return !adopted
+	}
+
+	if rmnutil.ResourceIsDeleted(mw) {
+		log.Info("VRG ManifestWork found deleted during adoption")
+
+		return adopted
+	}
+
+	vrg, err := rmnutil.ExtractVRGFromManifestWork(mw)
+	if err != nil {
+		log.Info("error extracting VRG from ManifestWork during adoption", "error", err)
+
+		return !adopted
+	}
+
+	// NOTE: upgrade use case, to add DRPC UID for existing VRG MW
+	adoptExistingVRGManifestWork(log, mwu, vrg, cluster, drpc, vrgNamespace)
+
+	return !adopted
+}
+
+// adoptExistingVRGManifestWork updates an existing VRG ManifestWork as managed by the current DRPC resource
+func adoptExistingVRGManifestWork(
+	log logr.Logger,
+	mwu rmnutil.MWUtil,
+	vrg *rmn.VolumeReplicationGroup,
+	cluster string,
+	drpc *rmn.DRPlacementControl,
+	vrgNamespace string,
+) {
+	if vrg.GetAnnotations() == nil {
+		vrg.Annotations = make(map[string]string)
+	}
+
+	if v, ok := vrg.Annotations[DRPCUIDAnnotation]; ok && v == string(drpc.UID) {
+		// Annotation may already be set but not reflected on the resource view yet
+		return
+	}
+
+	vrg.Annotations[DRPCUIDAnnotation] = string(drpc.UID)
+
+	annotations := make(map[string]string)
+	annotations[DRPCNameAnnotation] = drpc.Name
+	annotations[DRPCNamespaceAnnotation] = drpc.Namespace
+
+	err := mwu.CreateOrUpdateVRGManifestWork(drpc.Name, vrgNamespace, cluster, *vrg, annotations)
+	if err != nil {
+		log.Info("error updating VRG via ManifestWork during adoption", "error", err)
+	}
+}
+
+// adoptOpphanVRG creates a missing ManifestWork for a VRG found via a ManagedClusterView
+func adoptOrphanVRG(
+	log logr.Logger,
+	mwu rmnutil.MWUtil,
+	viewVRG *rmn.VolumeReplicationGroup,
+	cluster string,
+	drpc *rmn.DRPlacementControl,
+	vrgNamespace string,
+) {
+	annotations := make(map[string]string)
+	annotations[DRPCNameAnnotation] = drpc.Name
+	annotations[DRPCNamespaceAnnotation] = drpc.Namespace
+
+	// Adopt the namespace as well
+	err := mwu.CreateOrUpdateNamespaceManifest(drpc.Name, vrgNamespace, cluster, annotations)
+	if err != nil {
+		log.Info("error creating namespace via ManifestWork during adoption", "error", err)
+
+		return
+	}
+
+	vrg := constructVRGFromView(viewVRG)
+	if vrg.GetAnnotations() == nil {
+		vrg.Annotations = make(map[string]string)
+	}
+
+	vrg.Annotations[DRPCUIDAnnotation] = string(drpc.UID)
+
+	if err := mwu.CreateOrUpdateVRGManifestWork(
+		drpc.Name, vrgNamespace,
+		cluster, *vrg, annotations); err != nil {
+		log.Info("error creating VRG via ManifestWork during adoption", "error", err)
+	}
+}
+
+// constructVRGFromView selectively constructs a VRG from a view, using its spec and only those annotations that
+// would be set by the hub on the ManifestWork
+func constructVRGFromView(viewVRG *rmn.VolumeReplicationGroup) *rmn.VolumeReplicationGroup {
+	vrg := &rmn.VolumeReplicationGroup{
+		TypeMeta: metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      viewVRG.Name,
+			Namespace: viewVRG.Namespace,
+		},
+	}
+
+	viewVRG.Spec.DeepCopyInto(&vrg.Spec)
+
+	for k, v := range viewVRG.GetAnnotations() {
+		switch k {
+		case DestinationClusterAnnotationKey:
+			fallthrough
+		case DoNotDeletePVCAnnotation:
+			fallthrough
+		case DRPCUIDAnnotation:
+			rmnutil.AddAnnotation(vrg, k, v)
+		default:
+		}
+	}
+
+	return vrg
 }
