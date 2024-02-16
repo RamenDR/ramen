@@ -1666,6 +1666,7 @@ func (r *DRPlacementControlReconciler) getStatusCheckDelay(
 	return time.Until(beforeProcessing.Add(StatusCheckDelay))
 }
 
+//nolint:cyclop
 func (r *DRPlacementControlReconciler) updateDRPCStatus(
 	ctx context.Context, drpc *rmn.DRPlacementControl, userPlacement client.Object, log logr.Logger,
 ) error {
@@ -1681,9 +1682,12 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 		r.updateResourceCondition(drpc, clusterDecision.ClusterName, vrgNamespace, log)
 	}
 
-	if err := r.setDRPCMetrics(ctx, drpc, log); err != nil {
-		// log the error but do not return the error
-		log.Info("failed to set drpc metrics", "errMSg", err)
+	// do not set metrics if DRPC is being deleted
+	if !isBeingDeleted(drpc, userPlacement) {
+		if err := r.setDRPCMetrics(ctx, drpc, log); err != nil {
+			// log the error but do not return the error
+			log.Info("failed to set drpc metrics", "errMSg", err)
+		}
 	}
 
 	for i, condition := range drpc.Status.Conditions {
