@@ -118,6 +118,13 @@ lint: golangci-bin ## Run configured golangci-lint and pre-commit.sh linters aga
 	testbin/golangci-lint run ./... --config=./.golangci.yaml
 	hack/pre-commit.sh
 
+.PHONY: create-rdr-env
+create-rdr-env: ## Create a new rdr environment.
+	./hack/dev-env.sh create
+
+destroy-rdr-env: ## Destroy the existing rdr environment.
+	./hack/dev-env.sh destroy
+
 ##@ Tests
 
 test: generate manifests envtest ## Run all the tests.
