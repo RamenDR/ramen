@@ -307,7 +307,7 @@ func DRClusterUpdateOfInterest(oldDRCluster, newDRCluster *rmn.DRCluster) bool {
 	}
 
 	// Exhausted all failover activation checks, the only interesting update is deleting a drcluster.
-	return drClusterIsDeleted(newDRCluster)
+	return rmnutil.ResourceIsDeleted(newDRCluster)
 }
 
 // checkFailoverActivation checks if provided provisioner and storage instance is activated as per the
@@ -354,7 +354,7 @@ func (r *DRPlacementControlReconciler) FilterDRCluster(drcluster *rmn.DRCluster)
 
 	var err error
 
-	if drClusterIsDeleted(drcluster) {
+	if rmnutil.ResourceIsDeleted(drcluster) {
 		drpcCollections, err = DRPCsUsingDRCluster(r.Client, log, drcluster)
 	} else {
 		drpcCollections, err = DRPCsFailingOverToCluster(r.Client, log, drcluster.GetName())
@@ -479,7 +479,7 @@ func DRPCsFailingOverToCluster(k8sclient client.Client, log logr.Logger, drclust
 		}
 
 		// Skip if policy is of type metro, fake the from and to cluster
-		if isMetroAction(&drpolicies.Items[drpolicyIdx], drClusters, drClusters[0].GetName(), drClusters[1].GetName()) {
+		if metro, _ := dRPolicySupportsMetro(&drpolicies.Items[drpolicyIdx], drClusters); metro {
 			log.Info("Sync DRPolicy detected, skipping!")
 
 			continue
@@ -703,7 +703,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	ensureDRPCConditionsInited(&drpc.Status.Conditions, drpc.Generation, "Initialization")
 
 	placementObj, err := getPlacementOrPlacementRule(ctx, r.Client, drpc, logger)
-	if err != nil && !(errors.IsNotFound(err) && !drpc.GetDeletionTimestamp().IsZero()) {
+	if err != nil && !(errors.IsNotFound(err) && rmnutil.ResourceIsDeleted(drpc)) {
 		r.recordFailure(ctx, drpc, placementObj, "Error", err.Error(), logger)
 
 		return ctrl.Result{}, err
@@ -942,8 +942,8 @@ func (r *DRPlacementControlReconciler) createDRPCMetricsInstance(
 
 // isBeingDeleted returns true if either DRPC, user placement, or both are being deleted
 func isBeingDeleted(drpc *rmn.DRPlacementControl, usrPl client.Object) bool {
-	return !drpc.GetDeletionTimestamp().IsZero() ||
-		(usrPl != nil && !usrPl.GetDeletionTimestamp().IsZero())
+	return rmnutil.ResourceIsDeleted(drpc) ||
+		(usrPl != nil && rmnutil.ResourceIsDeleted(usrPl))
 }
 
 func (r *DRPlacementControlReconciler) reconcileDRPCInstance(d *DRPCInstance, log logr.Logger) (ctrl.Result, error) {
@@ -994,7 +994,7 @@ func (r *DRPlacementControlReconciler) getAndEnsureValidDRPolicy(ctx context.Con
 		return nil, fmt.Errorf("failed to get DRPolicy %w", err)
 	}
 
-	if !drPolicy.ObjectMeta.DeletionTimestamp.IsZero() {
+	if rmnutil.ResourceIsDeleted(drPolicy) {
 		// If drpolicy is deleted then return
 		// error to fail drpc reconciliation
 		return nil, fmt.Errorf("drPolicy '%s' referred by the DRPC is deleted, DRPC reconciliation would fail",
@@ -1392,7 +1392,7 @@ func getPlacement(ctx context.Context, k8sclient client.Client,
 func (r *DRPlacementControlReconciler) annotateObject(ctx context.Context,
 	drpc *rmn.DRPlacementControl, obj client.Object, log logr.Logger,
 ) error {
-	if !obj.GetDeletionTimestamp().IsZero() {
+	if rmnutil.ResourceIsDeleted(obj) {
 		return nil
 	}
 
@@ -1565,7 +1565,7 @@ func getVRGsFromManagedClusters(
 
 		clustersQueriedSuccessfully++
 
-		if drClusterIsDeleted(drCluster) {
+		if rmnutil.ResourceIsDeleted(drCluster) {
 			log.Info("Skipping VRG on deleted drcluster", "drcluster", drCluster.Name, "vrg", vrg.Name)
 
 			continue
@@ -2145,7 +2145,7 @@ func AvailableS3Profiles(drClusters []rmn.DRCluster) []string {
 
 	for i := range drClusters {
 		drCluster := &drClusters[i]
-		if drClusterIsDeleted(drCluster) {
+		if rmnutil.ResourceIsDeleted(drCluster) {
 			continue
 		}
 

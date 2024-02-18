@@ -95,7 +95,7 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	secretsUtil := &util.SecretsUtil{Client: r.Client, APIReader: r.APIReader, Ctx: ctx, Log: log}
 	// DRPolicy is marked for deletion
-	if !drpolicy.ObjectMeta.DeletionTimestamp.IsZero() &&
+	if util.ResourceIsDeleted(drpolicy) &&
 		controllerutil.ContainsFinalizer(drpolicy, drPolicyFinalizerName) {
 		return ctrl.Result{}, u.deleteDRPolicy(drclusters, secretsUtil, ramenConfig)
 	}

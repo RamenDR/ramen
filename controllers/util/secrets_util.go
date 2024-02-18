@@ -527,7 +527,7 @@ func (sutil *SecretsUtil) ensureS3SecretResources(secretName, namespace string) 
 		return nil, sutil.deletePolicyResources(&secret, namespace)
 	}
 
-	if secret.GetDeletionTimestamp().IsZero() {
+	if !ResourceIsDeleted(&secret) {
 		return &secret, nil
 	}
 
