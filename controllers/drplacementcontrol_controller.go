@@ -2463,7 +2463,8 @@ func ensureVRGsManagedByDRPC(
 
 	for cluster, viewVRG := range vrgs {
 		if rmnutil.ResourceIsDeleted(viewVRG) {
-			log.Info("VRG reported by view undergoing deletion, during adoption")
+			log.Info("VRG reported by view undergoing deletion, during adoption",
+				"cluster", cluster, "namespace", viewVRG.Namespace, "name", viewVRG.Name)
 
 			continue
 		}
@@ -2497,7 +2498,7 @@ func adoptVRG(
 	mw, err := mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, cluster)
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			log.Info("error fetching VRG ManifestWork during adoption", "error", err)
+			log.Info("error fetching VRG ManifestWork during adoption", "error", err, "cluster", cluster)
 
 			return !adopted
 		}
@@ -2508,14 +2509,14 @@ func adoptVRG(
 	}
 
 	if rmnutil.ResourceIsDeleted(mw) {
-		log.Info("VRG ManifestWork found deleted during adoption")
+		log.Info("VRG ManifestWork found deleted during adoption", "cluster", cluster)
 
 		return adopted
 	}
 
 	vrg, err := rmnutil.ExtractVRGFromManifestWork(mw)
 	if err != nil {
-		log.Info("error extracting VRG from ManifestWork during adoption", "error", err)
+		log.Info("error extracting VRG from ManifestWork during adoption", "error", err, "cluster", cluster)
 
 		return !adopted
 	}
@@ -2535,12 +2536,17 @@ func adoptExistingVRGManifestWork(
 	drpc *rmn.DRPlacementControl,
 	vrgNamespace string,
 ) {
+	log.Info("adopting existing VRG ManifestWork", "cluster", cluster, "namespace", vrg.Namespace, "name", vrg.Name)
+
 	if vrg.GetAnnotations() == nil {
 		vrg.Annotations = make(map[string]string)
 	}
 
 	if v, ok := vrg.Annotations[DRPCUIDAnnotation]; ok && v == string(drpc.UID) {
 		// Annotation may already be set but not reflected on the resource view yet
+		log.Info("detected VRGs DRPC UID annotation as existing",
+			"cluster", cluster, "namespace", vrg.Namespace, "name", vrg.Name)
+
 		return
 	}
 
@@ -2552,7 +2558,7 @@ func adoptExistingVRGManifestWork(
 
 	err := mwu.CreateOrUpdateVRGManifestWork(drpc.Name, vrgNamespace, cluster, *vrg, annotations)
 	if err != nil {
-		log.Info("error updating VRG via ManifestWork during adoption", "error", err)
+		log.Info("error updating VRG via ManifestWork during adoption", "error", err, "cluster", cluster)
 	}
 }
 
@@ -2565,6 +2571,9 @@ func adoptOrphanVRG(
 	drpc *rmn.DRPlacementControl,
 	vrgNamespace string,
 ) {
+	log.Info("adopting orphaned VRG ManifestWork",
+		"cluster", cluster, "namespace", viewVRG.Namespace, "name", viewVRG.Name)
+
 	annotations := make(map[string]string)
 	annotations[DRPCNameAnnotation] = drpc.Name
 	annotations[DRPCNamespaceAnnotation] = drpc.Namespace
@@ -2572,7 +2581,7 @@ func adoptOrphanVRG(
 	// Adopt the namespace as well
 	err := mwu.CreateOrUpdateNamespaceManifest(drpc.Name, vrgNamespace, cluster, annotations)
 	if err != nil {
-		log.Info("error creating namespace via ManifestWork during adoption", "error", err)
+		log.Info("error creating namespace via ManifestWork during adoption", "error", err, "cluster", cluster)
 
 		return
 	}
@@ -2587,7 +2596,7 @@ func adoptOrphanVRG(
 	if err := mwu.CreateOrUpdateVRGManifestWork(
 		drpc.Name, vrgNamespace,
 		cluster, *vrg, annotations); err != nil {
-		log.Info("error creating VRG via ManifestWork during adoption", "error", err)
+		log.Info("error creating VRG via ManifestWork during adoption", "error", err, "cluster", cluster)
 	}
 }
 
