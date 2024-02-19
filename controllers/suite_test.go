@@ -152,6 +152,12 @@ var _ = BeforeSuite(func() {
 		},
 	}
 
+	_, set = os.LookupEnv("RAMEN_TEST_USE_EXISTING_CLUSTER")
+	if set {
+		testEnv.UseExistingCluster = new(bool)
+		*testEnv.UseExistingCluster = true
+	}
+
 	if testEnv.UseExistingCluster != nil && *testEnv.UseExistingCluster == true {
 		namespaceDeletionSupported = true
 	}

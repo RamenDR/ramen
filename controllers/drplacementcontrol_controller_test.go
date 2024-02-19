@@ -749,13 +749,19 @@ func setDRPCSpecExpectationTo(namespace, preferredCluster, failoverCluster strin
 	}, timeout, interval).Should(BeTrue(), "failed to update DRPC DR action on time")
 }
 
+func getLatestDRPCByNamespacedName(key types.NamespacedName) (*rmn.DRPlacementControl, error) {
+	latestDRPC := &rmn.DRPlacementControl{}
+	err := apiReader.Get(context.TODO(), key, latestDRPC)
+
+	return latestDRPC, err
+}
+
 func getLatestDRPC(namespace string) *rmn.DRPlacementControl {
 	drpcLookupKey := types.NamespacedName{
 		Name:      DRPCCommonName,
 		Namespace: namespace,
 	}
-	latestDRPC := &rmn.DRPlacementControl{}
-	err := apiReader.Get(context.TODO(), drpcLookupKey, latestDRPC)
+	latestDRPC, err := getLatestDRPCByNamespacedName(drpcLookupKey)
 	Expect(err).NotTo(HaveOccurred())
 
 	return latestDRPC
