@@ -72,6 +72,22 @@ enough resources:
    link `venv` for activating the environment. To activate the
    environment use:
 
+1. Install Go 1.20
+
+   Ramen requires now Go 1.20 due to backward incompatible changes in Go
+   1.21 and later. If your system Go is newer and you don't want to
+   downgrade it, you can install Go 1.20 according to
+   [Managing Go installations](https://go.dev/doc/manage-install).
+
+   To use Go 1.20 from the ~/sdk, change the PATH in the shell used to
+   build ramen:
+
+   ```
+   $ export PATH="/home/username/sdk/go1.20.14/bin:$PATH"
+   $ go version
+   go version go1.20.14 linux/amd64
+   ```
+
 That's all! You are ready to submit your first pull request!
 
 ## Running the tests
