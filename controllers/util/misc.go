@@ -115,3 +115,8 @@ func UpdateStringMap(dst *map[string]string, src map[string]string) {
 		(*dst)[key] = val
 	}
 }
+
+// OptionalEqual returns True if optinal field values are qual, or one of them is unset.
+func OptionalEqual(a, b string) bool {
+	return a == "" || b == "" || a == b
+}

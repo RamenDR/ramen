@@ -2162,7 +2162,7 @@ func (v *VRGInstance) pvMatches(x, y *corev1.PersistentVolume) bool {
 			"y", y.Spec.PersistentVolumeSource.CSI.FSType)
 
 		return false
-	case x.Spec.ClaimRef.Kind != y.Spec.ClaimRef.Kind:
+	case !rmnutil.OptionalEqual(x.Spec.ClaimRef.Kind, y.Spec.ClaimRef.Kind):
 		v.log.Info("PVs ClaimRef.Kind mismatch", "x", x.Spec.ClaimRef.Kind, "y", y.Spec.ClaimRef.Kind)
 
 		return false
