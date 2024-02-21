@@ -335,7 +335,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 						Expect(vrg.GetGeneration()).To(Equal(vrgGenerationNext))
 
 						return vrg.Status.ObservedGeneration
-					}).Should(Equal(vrgGenerationNext))
+					}, timeout, interval).Should(Equal(vrgGenerationNext))
 				})
 				It("sets PVC's namespace name in VRG status", func() {
 					Expect(vrg.Status.ProtectedPVCs).To(HaveLen(len(t.pvcNames)))

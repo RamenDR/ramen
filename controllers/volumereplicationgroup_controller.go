@@ -578,55 +578,32 @@ func (v *VRGInstance) validateVRGMode() error {
 	return nil
 }
 
-func (v *VRGInstance) clusterDataRestore(result *ctrl.Result) error {
-	if v.instance.Spec.PrepareForFinalSync || v.instance.Spec.RunFinalSync {
-		msg := "PV restore skipped, as VRG is orchestrating final sync"
-		setVRGClusterDataReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+func (v *VRGInstance) clusterDataRestore(result *ctrl.Result) (int, error) {
+	v.log.Info("Restoring PVs and PVCs")
 
-		return nil
-	}
-
-	clusterDataReady := findCondition(v.instance.Status.Conditions, VRGConditionTypeClusterDataReady)
-	if clusterDataReady != nil {
-		v.log.Info("ClusterDataReady condition",
-			"status", clusterDataReady.Status,
-			"reason", clusterDataReady.Reason,
-			"message", clusterDataReady.Message,
-			"observedGeneration", clusterDataReady.ObservedGeneration,
-			"generation", v.instance.Generation,
-		)
-
-		if clusterDataReady.Status == metav1.ConditionTrue &&
-			clusterDataReady.ObservedGeneration == v.instance.Generation {
-			v.log.Info("VRG's ClusterDataReady condition found. PV restore must have already been applied")
-
-			return nil
-		}
-	} else {
-		v.log.Info("ClusterDataReady condition absent")
-	}
-
-	err := v.restorePVsForVolSync()
+	numRestoredForVS, err := v.restorePVsAndPVCsForVolSync()
 	if err != nil {
-		v.log.Info("VolSync PV restore failed")
+		v.log.Info("VolSync PV/PVC restore failed")
 
-		result.Requeue = true
-
-		return fmt.Errorf("failed to restore PVs for VolSync (%w)", err)
+		return numRestoredForVS, fmt.Errorf("failed to restore PV/PVC for VolSync (%w)", err)
 	}
 
-	err = v.clusterDataRestoreForVolRep(result)
+	numRestoredForVR, err := v.restorePVsAndPVCsForVolRep(result)
 	if err != nil {
-		v.log.Info("VolRep ClusterData restore failed")
+		v.log.Info("VolRep PV/PVC restore failed")
 
-		return fmt.Errorf("failed to restore ClusterData for VolRep (%w)", err)
+		return numRestoredForVS + numRestoredForVR, fmt.Errorf("failed to restore PV/PVC for VolRep (%w)", err)
 	}
 
 	// Only after both succeed, we mark ClusterDataReady as true
-	msg := "Restored cluster data"
+	msg := "Restored PVs and PVCs"
+	if numRestoredForVS+numRestoredForVR == 0 {
+		msg = "Nothing to restore"
+	}
+
 	setVRGClusterDataReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
-	return nil
+	return numRestoredForVS + numRestoredForVR, nil
 }
 
 func (v *VRGInstance) listPVCsByVrgPVCSelector() (*corev1.PersistentVolumeClaimList, error) {
@@ -877,8 +854,18 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 		return v.dataError(err, "PVCs deselected unprotect failed", v.result.Requeue)
 	}
 
-	if err := v.clusterDataRestore(&v.result); err != nil {
-		return v.clusterDataError(err, "Failed to restore PVs", v.result)
+	if v.shouldRestoreClusterData() {
+		v.result.Requeue = true
+
+		numOfRestoredRes, err := v.clusterDataRestore(&v.result)
+		if err != nil {
+			return v.clusterDataError(err, "Failed to restore PVs/PVCs", v.result)
+		}
+
+		// Save status and requeue if we restored any resources (PV/PVCs). Otherwise, continue
+		if numOfRestoredRes != 0 {
+			return v.updateVRGConditionsAndStatus(v.result)
+		}
 	}
 
 	v.reconcileAsPrimary()
@@ -893,6 +880,35 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 	}
 
 	return v.updateVRGConditionsAndStatus(v.result)
+}
+
+func (v *VRGInstance) shouldRestoreClusterData() bool {
+	if v.instance.Spec.PrepareForFinalSync || v.instance.Spec.RunFinalSync {
+		msg := "PV restore skipped, as VRG is orchestrating final sync"
+		setVRGClusterDataReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+
+		return false
+	}
+
+	clusterDataReady := findCondition(v.instance.Status.Conditions, VRGConditionTypeClusterDataReady)
+	if clusterDataReady != nil {
+		v.log.Info("ClusterDataReady condition",
+			"status", clusterDataReady.Status,
+			"reason", clusterDataReady.Reason,
+			"message", clusterDataReady.Message,
+			"observedGeneration", clusterDataReady.ObservedGeneration,
+			"generation", v.instance.Generation,
+		)
+
+		if clusterDataReady.Status == metav1.ConditionTrue &&
+			clusterDataReady.ObservedGeneration == v.instance.Generation {
+			v.log.Info("VRG's ClusterDataReady condition found. PV restore must have already been applied")
+
+			return false
+		}
+	}
+
+	return true
 }
 
 func (v *VRGInstance) reconcileAsPrimary() {

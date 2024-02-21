@@ -1817,7 +1817,7 @@ func (v *VRGInstance) s3KeyPrefix() string {
 	return S3KeyPrefix(v.namespacedName)
 }
 
-func (v *VRGInstance) clusterDataRestoreForVolRep(result *ctrl.Result) error {
+func (v *VRGInstance) restorePVsAndPVCsForVolRep(result *ctrl.Result) (int, error) {
 	v.log.Info("Restoring VolRep PVs and PVCs")
 
 	if len(v.instance.Spec.S3Profiles) == 0 {
@@ -1825,22 +1825,23 @@ func (v *VRGInstance) clusterDataRestoreForVolRep(result *ctrl.Result) error {
 
 		result.Requeue = true
 
-		return fmt.Errorf("no S3Profiles configured")
+		return 0, fmt.Errorf("no S3Profiles configured")
 	}
 
 	v.log.Info(fmt.Sprintf("Restoring PVs and PVCs to this managed cluster. ProfileList: %v", v.instance.Spec.S3Profiles))
 
-	if err := v.restorePVsAndPVCsFromS3(result); err != nil {
+	count, err := v.restorePVsAndPVCsFromS3(result)
+	if err != nil {
 		errMsg := fmt.Sprintf("failed to restore PVs and PVCs using profile list (%v)", v.instance.Spec.S3Profiles)
 		v.log.Info(errMsg)
 
-		return fmt.Errorf("%s: %w", errMsg, err)
+		return 0, fmt.Errorf("%s: %w", errMsg, err)
 	}
 
-	return nil
+	return count, nil
 }
 
-func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) error {
+func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) {
 	err := errors.New("s3Profiles empty")
 	NoS3 := false
 
@@ -1891,16 +1892,16 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) error {
 
 		v.log.Info(fmt.Sprintf("Restored %d PVs and %d PVCs using profile %s", pvCount, pvcCount, s3ProfileName))
 
-		return v.kubeObjectsRecover(result, s3StoreProfile, objectStore)
+		return pvCount + pvcCount, v.kubeObjectsRecover(result, s3StoreProfile, objectStore)
 	}
 
 	if NoS3 {
-		return nil
+		return 0, nil
 	}
 
 	result.Requeue = true
 
-	return err
+	return 0, err
 }
 
 func (v *VRGInstance) restorePVsFromObjectStore(objectStore ObjectStorer, s3ProfileName string) (int, error) {

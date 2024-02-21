@@ -15,13 +15,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func (v *VRGInstance) restorePVsForVolSync() error {
+func (v *VRGInstance) restorePVsAndPVCsForVolSync() (int, error) {
 	v.log.Info("VolSync: Restoring VolSync PVs")
 
 	if len(v.instance.Spec.VolSync.RDSpec) == 0 {
 		v.log.Info("No RDSpec entries. There are no PVCs to restore")
 		// No ReplicationDestinations (i.e. no PVCs) to restore
-		return nil
+		return 0, nil
 	}
 
 	numPVsRestored := 0
@@ -59,12 +59,12 @@ func (v *VRGInstance) restorePVsForVolSync() error {
 	}
 
 	if numPVsRestored != len(v.instance.Spec.VolSync.RDSpec) {
-		return fmt.Errorf("failed to restore all PVCs using RDSpec (%v)", v.instance.Spec.VolSync.RDSpec)
+		return numPVsRestored, fmt.Errorf("failed to restore all PVCs using RDSpec (%v)", v.instance.Spec.VolSync.RDSpec)
 	}
 
 	v.log.Info("Success restoring VolSync PVs", "Total", numPVsRestored)
 
-	return nil
+	return numPVsRestored, nil
 }
 
 func (v *VRGInstance) reconcileVolSyncAsPrimary(finalSyncPrepared *bool) (requeue bool) {
