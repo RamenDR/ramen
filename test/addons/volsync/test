@@ -82,7 +82,7 @@ def setup_replication_service(cluster1, cluster2):
     print(f"Waiting until service export is synced in cluster '{cluster2}'")
     kubectl.wait(
         f"serviceexports/{VOLSYNC_SERVICE}",
-        "--for=condition=Synced=True",
+        "--for=condition=Ready",
         f"--namespace={NAMESPACE}",
         "--timeout=120s",
         context=cluster2,
