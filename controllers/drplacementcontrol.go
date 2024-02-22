@@ -11,14 +11,11 @@ import (
 
 	"github.com/go-logr/logr"
 	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"
-	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	errorswrapper "github.com/pkg/errors"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/yaml"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
@@ -30,6 +27,9 @@ const (
 	// Annotations for MW and PlacementRule
 	DRPCNameAnnotation      = "drplacementcontrol.ramendr.openshift.io/drpc-name"
 	DRPCNamespaceAnnotation = "drplacementcontrol.ramendr.openshift.io/drpc-namespace"
+
+	// Annotation that stores the UID of DRPC that created the resource on the managed cluster using a ManifestWork
+	DRPCUIDAnnotation = "drplacementcontrol.ramendr.openshift.io/drpc-uid"
 
 	// Annotation for the last cluster on which the application was running
 	LastAppDeploymentCluster = "drplacementcontrol.ramendr.openshift.io/last-app-deployment-cluster"
@@ -865,9 +865,7 @@ func (d *DRPCInstance) ensureCleanupAndVolSyncReplicationSetup(srcCluster string
 			srcCluster, ok))
 	}
 
-	clusterToSkip := srcCluster
-
-	err = d.EnsureCleanup(clusterToSkip)
+	err = d.EnsureCleanup(srcCluster)
 	if err != nil {
 		return err
 	}
@@ -1261,7 +1259,7 @@ func (d *DRPCInstance) getVRGFromManifestWork(clusterName string) (*rmn.VolumeRe
 		return nil, fmt.Errorf("%w", err)
 	}
 
-	vrg, err := d.extractVRGFromManifestWork(mw)
+	vrg, err := rmnutil.ExtractVRGFromManifestWork(mw)
 	if err != nil {
 		return nil, err
 	}
@@ -1285,9 +1283,7 @@ func (d *DRPCInstance) vrgExistsAndPrimary(targetCluster string) bool {
 }
 
 func (d *DRPCInstance) mwExistsAndPlacementUpdated(targetCluster string) (bool, error) {
-	vrgMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
-
-	_, err := d.mwu.FindManifestWork(vrgMWName, targetCluster)
+	_, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, targetCluster)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return false, nil
@@ -1525,6 +1521,7 @@ func (d *DRPCInstance) generateVRG(dstCluster string, repState rmn.ReplicationSt
 			Annotations: map[string]string{
 				DestinationClusterAnnotationKey: dstCluster,
 				DoNotDeletePVCAnnotation:        d.instance.GetAnnotations()[DoNotDeletePVCAnnotation],
+				DRPCUIDAnnotation:               string(d.instance.UID),
 			},
 		},
 		Spec: rmn.VolumeReplicationGroupSpec{
@@ -1792,10 +1789,7 @@ func (d *DRPCInstance) ensureVRGManifestWorkOnClusterDeleted(clusterName string)
 
 	const done = true
 
-	mwName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
-	mw := &ocmworkv1.ManifestWork{}
-
-	err := d.reconciler.Get(d.ctx, types.NamespacedName{Name: mwName, Namespace: clusterName}, mw)
+	mw, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, clusterName)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return done, nil
@@ -2080,22 +2074,6 @@ func (d *DRPCInstance) updateVRGToRunFinalSync(clusterName string) error {
 		vrg.Name, clusterName))
 
 	return nil
-}
-
-func (d *DRPCInstance) extractVRGFromManifestWork(mw *ocmworkv1.ManifestWork) (*rmn.VolumeReplicationGroup, error) {
-	if len(mw.Spec.Workload.Manifests) == 0 {
-		return nil, fmt.Errorf("invalid VRG ManifestWork for type: %s", mw.Name)
-	}
-
-	vrgClientManifest := &mw.Spec.Workload.Manifests[0]
-	vrg := &rmn.VolumeReplicationGroup{}
-
-	err := yaml.Unmarshal(vrgClientManifest.RawExtension.Raw, &vrg)
-	if err != nil {
-		return nil, fmt.Errorf("unable to unmarshal VRG object (%w)", err)
-	}
-
-	return vrg, nil
 }
 
 func (d *DRPCInstance) updateManifestWork(clusterName string, vrg *rmn.VolumeReplicationGroup) error {
