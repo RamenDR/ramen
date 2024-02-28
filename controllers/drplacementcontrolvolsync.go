@@ -297,7 +297,7 @@ func (d *DRPCInstance) createVolSyncDestManifestWork(clusterToSkip string) error
 			continue
 		}
 
-		err := d.ensureNamespaceExistsOnManagedCluster(dstCluster)
+		err := d.ensureNamespaceManifestWork(dstCluster)
 		if err != nil {
 			return fmt.Errorf("creating ManifestWork couldn't ensure namespace '%s' on cluster %s exists",
 				d.instance.Namespace, dstCluster)

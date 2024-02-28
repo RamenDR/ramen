@@ -1308,6 +1308,19 @@ func getManifestWorkCount(homeClusterNamespace string) int {
 	return len(manifestWorkList.Items)
 }
 
+func verifyNSManifestWorkBackupLabelNotExist(resourceName, namespaceString, managedCluster string) {
+	mw := &ocmworkv1.ManifestWork{}
+	mwName := fmt.Sprintf(rmnutil.ManifestWorkNameFormat, resourceName, namespaceString, rmnutil.MWTypeNS)
+	err := k8sClient.Get(context.TODO(),
+		types.NamespacedName{Name: mwName, Namespace: managedCluster},
+		mw)
+
+	Expect(err).NotTo(HaveOccurred())
+
+	Expect(mw).ToNot(BeNil())
+	Expect(mw.Labels[rmnutil.OCMBackupLabelKey]).To(Equal(""))
+}
+
 func getManagedClusterViewCount(homeClusterNamespace string) int {
 	mcvList := &viewv1beta1.ManagedClusterViewList{}
 	listOptions := &client.ListOptions{Namespace: homeClusterNamespace}
@@ -1753,6 +1766,9 @@ func verifyInitialDRPCDeployment(userPlacement client.Object, preferredCluster s
 	Expect(latestDRPC.GetAnnotations()[controllers.LastAppDeploymentCluster]).To(Equal(preferredCluster))
 	Expect(latestDRPC.GetAnnotations()[controllers.DRPCAppNamespace]).
 		To(Equal(getVRGNamespace(userPlacement.GetNamespace())))
+
+	verifyNSManifestWorkBackupLabelNotExist(latestDRPC.Name, getVRGNamespace(latestDRPC.Namespace),
+		East1ManagedCluster)
 }
 
 func verifyFailoverToSecondary(placementObj client.Object, toCluster string,
