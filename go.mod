@@ -1,6 +1,6 @@
 module github.com/ramendr/ramen
 
-go 1.20
+go 1.21
 
 // This replace should always be here for ease of development.
 replace github.com/ramendr/ramen/api => ./api
