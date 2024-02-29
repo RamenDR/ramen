@@ -68,7 +68,7 @@ def wait(cluster):
                 "status",
                 deployment,
                 f"--namespace={ns}",
-                "--timeout=300s",
+                "--timeout=600s",
                 context=cluster,
             )
 

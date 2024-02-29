@@ -20,7 +20,7 @@ def wait(cluster):
         "status",
         "deploy/ocm-controller",
         "--namespace=open-cluster-management",
-        "--timeout=300s",
+        "--timeout=600s",
         context=cluster,
     )
 

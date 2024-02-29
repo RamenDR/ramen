@@ -57,7 +57,7 @@ def wait(cluster):
             "status",
             deployment,
             f"--namespace={ADDONS_NAMESPACE}",
-            "--timeout=300s",
+            "--timeout=600s",
             context=cluster,
         )
 
@@ -75,7 +75,7 @@ def wait_for_hub(hub):
             "status",
             deployment,
             f"--namespace={HUB_NAMESPACE}",
-            "--timeout=300s",
+            "--timeout=600s",
             context=hub,
         )
 

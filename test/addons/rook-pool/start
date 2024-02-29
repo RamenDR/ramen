@@ -32,7 +32,7 @@ def wait(cluster):
         "cephblockpool/replicapool",
         "--for=jsonpath={.status.phase}=Ready",
         "--namespace=rook-ceph",
-        "--timeout=300s",
+        "--timeout=600s",
         context=cluster,
     )
 
@@ -41,7 +41,7 @@ def wait(cluster):
         "cephblockpool/replicapool",
         "--for=jsonpath={.status.info.rbdMirrorBootstrapPeerSecretName}=pool-peer-token-replicapool",
         "--namespace=rook-ceph",
-        "--timeout=300s",
+        "--timeout=600s",
         context=cluster,
     )
 
