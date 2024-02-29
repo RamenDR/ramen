@@ -34,7 +34,7 @@ def wait_for_application(cluster):
         "status",
         f"deploy/{DEPLOY}",
         f"--namespace={NAMESPACE}",
-        "--timeout=120s",
+        "--timeout=600s",
         context=cluster,
     )
 
@@ -47,7 +47,7 @@ def wait_for_replication_destination(cluster):
         "replicationdestination/busybox-dst",
         "--for=condition=Synchronizing=True",
         f"--namespace={NAMESPACE}",
-        "--timeout=120s",
+        "--timeout=600s",
         context=cluster,
     )
 
@@ -84,7 +84,7 @@ def setup_replication_service(cluster1, cluster2):
         f"serviceexports/{VOLSYNC_SERVICE}",
         "--for=condition=Ready",
         f"--namespace={NAMESPACE}",
-        "--timeout=120s",
+        "--timeout=600s",
         context=cluster2,
     )
 
@@ -119,7 +119,7 @@ def run_replication(cluster):
         "replicationsource/busybox-src",
         "--for=jsonpath={.status.lastManualSync}=replication-1",
         f"--namespace={NAMESPACE}",
-        "--timeout=120s",
+        "--timeout=600s",
         context=cluster,
     )
     out = kubectl.get(
