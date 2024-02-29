@@ -21,6 +21,7 @@ templates:
     addons:
       - volumesnapshots
       - csi-hostpath-driver
+      - metrics-server
     workers:
       - addons:
           - name: cert-manager
@@ -42,6 +43,8 @@ templates:
     container_runtime: containerd
     network: "$network"
     memory: "4g"
+    addons:
+      - metrics-server
     workers:
       - addons:
           - name: ocm-hub
