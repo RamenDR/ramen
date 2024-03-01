@@ -207,12 +207,6 @@ func setupReconcilersHub(mgr ctrl.Manager) {
 		os.Exit(1)
 	}
 
-	// setup webhook for DRCluster
-	if err := (&ramendrv1alpha1.DRCluster{}).SetupWebhookWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create webhook", "webhook", "DRCluster")
-		os.Exit(1)
-	}
-
 	// setup webhook for drpc
 	if err := (&ramendrv1alpha1.DRPlacementControl{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "DRPlacementControl")
