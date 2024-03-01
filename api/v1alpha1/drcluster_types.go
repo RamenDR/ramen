@@ -21,6 +21,8 @@ const (
 type Region string
 
 // DRClusterSpec defines the desired state of DRCluster
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.region) || has(self.region)", message="region is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.s3ProfileName) || has(self.s3ProfileName)", message="s3ProfileName is required once set"
 type DRClusterSpec struct {
 	// CIDRs is a list of CIDR strings. An admin can use this field to indicate
 	// the CIDRs that are used or could potentially be used for the nodes in
@@ -33,6 +35,8 @@ type DRClusterSpec struct {
 
 	// Region of a managed cluster determines it DR group.
 	// All managed clusters in a region are considered to be in a sync group.
+	// +kubebuilder:validation:Optional
+   	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="region is immutable"
 	Region Region `json:"region,omitempty"`
 
 	// S3 profile name (in Ramen config) to use as a source to restore PV
@@ -42,6 +46,8 @@ type DRClusterSpec struct {
 	// that are active on this managed cluster, their PV related cluster state
 	// is stored to S3 profiles of all other drclusters in the same
 	// DRPolicy to enable recovery or relocate actions to those managed clusters.
+	// +kubebuilder:validation:Optional
+   	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="s3ProfileName is immutable"
 	S3ProfileName string `json:"s3ProfileName"`
 }
 
