@@ -5,10 +5,8 @@ package volsync_test
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/go-logr/logr"
@@ -77,8 +75,14 @@ var _ = BeforeSuite(func() {
 
 	By("Setting up KUBEBUILDER_ASSETS for envtest")
 	if _, set := os.LookupEnv("KUBEBUILDER_ASSETS"); !set {
-		Expect(os.Setenv("KUBEBUILDER_ASSETS",
-			fmt.Sprintf("../../testbin/k8s/1.25.0-%s-%s", runtime.GOOS, runtime.GOARCH))).To(Succeed())
+
+		// read content of the file ../../testbin/testassets.txt
+		// and set the content as the value of KUBEBUILDER_ASSETS
+		// this is to avoid the need to set KUBEBUILDER_ASSETS
+		// when running the test suite
+		content, err := os.ReadFile("../../testbin/testassets.txt")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(os.Setenv("KUBEBUILDER_ASSETS", string(content))).To(Succeed())
 	}
 
 	By("bootstrapping test environment")

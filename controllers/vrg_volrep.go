@@ -168,7 +168,7 @@ func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, 
 	const ready bool = true
 
 	// If PVC is not being deleted, it is not ready for Secondary, unless action is failover
-	if v.instance.Spec.Action != ramendrv1alpha1.VRGActionFailover && pvc.GetDeletionTimestamp().IsZero() {
+	if v.instance.Spec.Action != ramendrv1alpha1.VRGActionFailover && !rmnutil.ResourceIsDeleted(pvc) {
 		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolumeClaim is not marked for deletion")
 
 		msg := "unable to transition to Secondary as PVC is not deleted"
@@ -364,7 +364,7 @@ func (v *VRGInstance) protectPVC(pvc *corev1.PersistentVolumeClaim, log logr.Log
 	}
 
 	// Annotate that PVC protection is complete, skip if being deleted
-	if pvc.GetDeletionTimestamp().IsZero() {
+	if !rmnutil.ResourceIsDeleted(pvc) {
 		if err := v.addProtectedAnnotationForPVC(pvc, log); err != nil {
 			log.Info("Requeuing, as annotating PersistentVolumeClaim failed", "errorValue", err)
 
@@ -402,7 +402,7 @@ func skipPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, string) 
 
 func isPVCDeletedAndNotProtected(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, string) {
 	// If PVC deleted but not yet protected with a finalizer, skip it!
-	if !containsString(pvc.Finalizers, PvcVRFinalizerProtected) && !pvc.GetDeletionTimestamp().IsZero() {
+	if !containsString(pvc.Finalizers, PvcVRFinalizerProtected) && rmnutil.ResourceIsDeleted(pvc) {
 		log.Info("Skipping PersistentVolumeClaim, as it is marked for deletion and not yet protected")
 
 		msg := "Skipping pvc marked for deletion"
@@ -740,7 +740,7 @@ func (v *VRGInstance) reconcileVRsForDeletion() {
 func (v *VRGInstance) pvcUnprotectVolRepIfDeleted(
 	pvc corev1.PersistentVolumeClaim, log logr.Logger,
 ) (pvcDeleted bool) {
-	pvcDeleted = !pvc.GetDeletionTimestamp().IsZero()
+	pvcDeleted = rmnutil.ResourceIsDeleted(&pvc)
 	if !pvcDeleted {
 		return
 	}
@@ -903,7 +903,7 @@ func (v *VRGInstance) reconcileMissingVR(pvc *corev1.PersistentVolumeClaim, log 
 
 	err := v.reconciler.Get(v.ctx, vrNamespacedName, volRep)
 	if err == nil {
-		if !volRep.ObjectMeta.DeletionTimestamp.IsZero() {
+		if rmnutil.ResourceIsDeleted(volRep) {
 			log.Info("Requeuing due to processing a VR under deletion")
 
 			return !vrMissing, requeue
@@ -1817,7 +1817,7 @@ func (v *VRGInstance) s3KeyPrefix() string {
 	return S3KeyPrefix(v.namespacedName)
 }
 
-func (v *VRGInstance) clusterDataRestoreForVolRep(result *ctrl.Result) error {
+func (v *VRGInstance) restorePVsAndPVCsForVolRep(result *ctrl.Result) (int, error) {
 	v.log.Info("Restoring VolRep PVs and PVCs")
 
 	if len(v.instance.Spec.S3Profiles) == 0 {
@@ -1825,22 +1825,23 @@ func (v *VRGInstance) clusterDataRestoreForVolRep(result *ctrl.Result) error {
 
 		result.Requeue = true
 
-		return fmt.Errorf("no S3Profiles configured")
+		return 0, fmt.Errorf("no S3Profiles configured")
 	}
 
 	v.log.Info(fmt.Sprintf("Restoring PVs and PVCs to this managed cluster. ProfileList: %v", v.instance.Spec.S3Profiles))
 
-	if err := v.restorePVsAndPVCsFromS3(result); err != nil {
+	count, err := v.restorePVsAndPVCsFromS3(result)
+	if err != nil {
 		errMsg := fmt.Sprintf("failed to restore PVs and PVCs using profile list (%v)", v.instance.Spec.S3Profiles)
 		v.log.Info(errMsg)
 
-		return fmt.Errorf("%s: %w", errMsg, err)
+		return 0, fmt.Errorf("%s: %w", errMsg, err)
 	}
 
-	return nil
+	return count, nil
 }
 
-func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) error {
+func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) {
 	err := errors.New("s3Profiles empty")
 	NoS3 := false
 
@@ -1891,16 +1892,16 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) error {
 
 		v.log.Info(fmt.Sprintf("Restored %d PVs and %d PVCs using profile %s", pvCount, pvcCount, s3ProfileName))
 
-		return v.kubeObjectsRecover(result, s3StoreProfile, objectStore)
+		return pvCount + pvcCount, v.kubeObjectsRecover(result, s3StoreProfile, objectStore)
 	}
 
 	if NoS3 {
-		return nil
+		return 0, nil
 	}
 
 	result.Requeue = true
 
-	return err
+	return 0, err
 }
 
 func (v *VRGInstance) restorePVsFromObjectStore(objectStore ObjectStorer, s3ProfileName string) (int, error) {
@@ -2067,7 +2068,7 @@ func (v *VRGInstance) validateExistingPV(pv *corev1.PersistentVolume) error {
 				pvcNamespacedName.String(), err)
 		}
 
-		if !pvc.DeletionTimestamp.IsZero() {
+		if rmnutil.ResourceIsDeleted(&pvc) {
 			return fmt.Errorf("existing bound PV %s claim %s deletion timestamp non-zero %v", existingPV.GetName(),
 				pvcNamespacedName.String(), pvc.DeletionTimestamp)
 		}
@@ -2122,7 +2123,7 @@ func (v *VRGInstance) validateExistingPVC(pvc *corev1.PersistentVolumeClaim) err
 		return fmt.Errorf("PVC %s exists and is not bound (phase: %s)", pvcNSName.String(), existingPVC.Status.Phase)
 	}
 
-	if !existingPVC.DeletionTimestamp.IsZero() {
+	if rmnutil.ResourceIsDeleted(existingPVC) {
 		return fmt.Errorf("existing bound PVC %s is being deleted", pvcNSName.String())
 	}
 
@@ -2161,7 +2162,7 @@ func (v *VRGInstance) pvMatches(x, y *corev1.PersistentVolume) bool {
 			"y", y.Spec.PersistentVolumeSource.CSI.FSType)
 
 		return false
-	case x.Spec.ClaimRef.Kind != y.Spec.ClaimRef.Kind:
+	case !rmnutil.OptionalEqual(x.Spec.ClaimRef.Kind, y.Spec.ClaimRef.Kind):
 		v.log.Info("PVs ClaimRef.Kind mismatch", "x", x.Spec.ClaimRef.Kind, "y", y.Spec.ClaimRef.Kind)
 
 		return false

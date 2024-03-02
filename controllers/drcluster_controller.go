@@ -149,22 +149,17 @@ func (r *DRClusterReconciler) drClusterConfigMapMapFunc(
 	return requests
 }
 
-func (r *DRClusterReconciler) drClusterSecretMapFunc(ctx context.Context, secret client.Object) []reconcile.Request {
-	if secret.GetNamespace() != NamespaceName() {
+func (r *DRClusterReconciler) drClusterSecretMapFunc(ctx context.Context, obj client.Object) []reconcile.Request {
+	if obj.GetNamespace() != NamespaceName() {
 		return []reconcile.Request{}
 	}
 
-	drcusters := &ramen.DRClusterList{}
-	if err := r.Client.List(context.TODO(), drcusters); err != nil {
+	secret, ok := obj.(*corev1.Secret)
+	if !ok {
 		return []reconcile.Request{}
 	}
 
-	requests := make([]reconcile.Request, len(drcusters.Items))
-	for i := range drcusters.Items {
-		requests[i].Name = drcusters.Items[i].GetName()
-	}
-
-	return requests
+	return filterDRClusterSecret(ctx, r.Client, secret)
 }
 
 // drpcPred watches for updates to the DRPC resource and checks if it requires an appropriate DRCluster reconcile
@@ -277,6 +272,46 @@ func filterDRClusterMCV(mcv *viewv1beta1.ManagedClusterView) []ctrl.Request {
 	}
 }
 
+func filterDRClusterSecret(ctx context.Context, reader client.Reader, secret *corev1.Secret) []ctrl.Request {
+	log := ctrl.Log.WithName("filterDRClusterSecret").WithName("Secret")
+
+	drclusters := &ramen.DRClusterList{}
+	if err := reader.List(ctx, drclusters); err != nil {
+		log.Error(err, "Failed to list DRClusters")
+
+		return []reconcile.Request{}
+	}
+
+	requests := []reconcile.Request{}
+
+	for i := range drclusters.Items {
+		drcluster := &drclusters.Items[i]
+
+		s3ProfileName := drcluster.Spec.S3ProfileName
+
+		if s3ProfileName == NoS3StoreAvailable {
+			continue
+		}
+
+		s3StoreProfile, err := GetRamenConfigS3StoreProfile(context.TODO(), reader, s3ProfileName)
+		if err != nil {
+			log.Info("Failed to filter secret", "secret", secret.GetName(), "drcluster", drcluster.Name, "reason", err.Error())
+
+			continue
+		}
+
+		if secret.GetName() == s3StoreProfile.S3SecretRef.Name {
+			requests = append(requests,
+				reconcile.Request{
+					NamespacedName: types.NamespacedName{Name: drcluster.GetName()},
+				},
+			)
+		}
+	}
+
+	return requests
+}
+
 //nolint:lll
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusters/status,verbs=get;update;patch
@@ -321,7 +356,7 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	u.initializeStatus()
 
-	if drClusterIsDeleted(drcluster) {
+	if util.ResourceIsDeleted(drcluster) {
 		return r.processDeletion(u)
 	}
 
@@ -365,6 +400,7 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 	err = u.clusterMModeHandler()
 	if err != nil {
 		// On error proceed with S3 validation, as maintenance mode handling is independent of S3
+		reconcileError = fmt.Errorf("%w %w", reconcileError, err)
 		u.log.Info("Error during processing maintenance modes", "error", err)
 	}
 
@@ -385,11 +421,6 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 	}
 
 	return ctrl.Result{Requeue: requeue || u.requeue}, reconcileError
-}
-
-// Return true if dr cluster was marked for deletion.
-func drClusterIsDeleted(c *ramen.DRCluster) bool {
-	return !c.GetDeletionTimestamp().IsZero()
 }
 
 func (u *drclusterInstance) initializeStatus() {
@@ -545,12 +576,12 @@ func (u *drclusterInstance) statusUpdate() error {
 			return fmt.Errorf("failed to update drCluster status (%s/%s)", u.object.Name, u.object.Namespace)
 		}
 
-		u.log.Info(fmt.Sprintf("Updated drCluster Status %+v", u.object.Status))
+		u.log.Info(fmt.Sprintf("Updated drCluster Status (%s/%s)", u.object.Name, u.object.Namespace))
 
 		return nil
 	}
 
-	u.log.Info(fmt.Sprintf("Nothing to update %+v", u.object.Status))
+	u.log.Info(fmt.Sprintf("Nothing to update (%s/%s)", u.object.Name, u.object.Namespace))
 
 	return nil
 }
@@ -1005,7 +1036,7 @@ func getPeerFromPolicy(ctx context.Context, reconciler *DRClusterReconciler, log
 			continue
 		}
 
-		if !peerCluster.ObjectMeta.DeletionTimestamp.IsZero() {
+		if util.ResourceIsDeleted(peerCluster) {
 			log.Info(fmt.Sprintf("peer cluster %s of cluster %s is being deleted",
 				peerCluster.Name, drCluster.Name))
 			// for now continue. We just need to get one DRCluster with

@@ -11,6 +11,7 @@ import (
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
@@ -25,7 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	cpcv1 "open-cluster-management.io/config-policy-controller/api/v1"
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -42,26 +42,18 @@ import (
 )
 
 var (
-	scheme   = runtime.NewScheme()
-	setupLog = ctrl.Log.WithName("setup")
+	scheme     = runtime.NewScheme()
+	setupLog   = ctrl.Log.WithName("setup")
+	configFile string
 )
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-
 	utilruntime.Must(ramendrv1alpha1.AddToScheme(scheme))
-	utilruntime.Must(recipe.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
-func newManager() (ctrl.Manager, *ramendrv1alpha1.RamenConfig, error) {
-	var configFile string
-
-	flag.StringVar(&configFile, "config", "",
-		"The controller will load its initial configuration from this file. "+
-			"Omit this flag to use the default configuration values. "+
-			"Command-line flags override configuration from this file.")
-
+func configureLogOptions() *zap.Options {
 	opts := zap.Options{
 		Development: true,
 		ZapOpts: []uberzap.Option{
@@ -70,19 +62,37 @@ func newManager() (ctrl.Manager, *ramendrv1alpha1.RamenConfig, error) {
 		TimeEncoder: zapcore.ISO8601TimeEncoder,
 	}
 
-	opts.BindFlags(flag.CommandLine)
-	flag.Parse()
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	return &opts
+}
 
-	options := ctrl.Options{Scheme: scheme}
+// bindFlags takes a list of functions that bind flags to variables.
+// In addition, any ramen specific flags are bound here.
+func bindFlags(bindfuncs ...func(*flag.FlagSet)) {
+	flag.StringVar(&configFile, "config", "",
+		"The controller will load its initial configuration from this file. "+
+			"Omit this flag to use the default configuration values. "+
+			"Command-line flags override configuration from this file.")
+
+	for _, f := range bindfuncs {
+		f(flag.CommandLine)
+	}
+}
+
+func buildOptions() (*ctrl.Options, *ramendrv1alpha1.RamenConfig) {
+	ctrlOptions := ctrl.Options{Scheme: scheme}
 	ramenConfig := &ramendrv1alpha1.RamenConfig{}
 
-	controllers.LoadControllerConfig(configFile, setupLog, &options, ramenConfig)
+	controllers.LoadControllerConfig(configFile, setupLog, &ctrlOptions, ramenConfig)
 
+	return &ctrlOptions, ramenConfig
+}
+
+func configureController(ramenConfig *ramendrv1alpha1.RamenConfig) error {
 	controllers.ControllerType = ramenConfig.RamenControllerType
+
 	if !(controllers.ControllerType == ramendrv1alpha1.DRClusterType ||
 		controllers.ControllerType == ramendrv1alpha1.DRHubType) {
-		return nil, nil, fmt.Errorf("invalid controller type specified (%s), should be one of [%s|%s]",
+		return fmt.Errorf("invalid controller type specified (%s), should be one of [%s|%s]",
 			controllers.ControllerType, ramendrv1alpha1.DRHubType, ramendrv1alpha1.DRClusterType)
 	}
 
@@ -94,6 +104,7 @@ func newManager() (ctrl.Manager, *ramendrv1alpha1.RamenConfig, error) {
 		utilruntime.Must(gppv1.AddToScheme(scheme))
 		utilruntime.Must(argocdv1alpha1hack.AddToScheme(scheme))
 		utilruntime.Must(clrapiv1beta1.AddToScheme(scheme))
+		utilruntime.Must(recipe.AddToScheme(scheme))
 	} else {
 		utilruntime.Must(velero.AddToScheme(scheme))
 		utilruntime.Must(volrep.AddToScheme(scheme))
@@ -102,21 +113,29 @@ func newManager() (ctrl.Manager, *ramendrv1alpha1.RamenConfig, error) {
 		utilruntime.Must(recipe.AddToScheme(scheme))
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), options)
+	return nil
+}
+
+func newManager(options *ctrl.Options) (ctrl.Manager, error) {
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), *options)
 	if err != nil {
-		return mgr, nil, fmt.Errorf("starting new manager failed %w", err)
+		return mgr, fmt.Errorf("starting new manager failed %w", err)
 	}
 
-	return mgr, ramenConfig, nil
+	return mgr, nil
 }
 
 func setupReconcilers(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig) {
 	if controllers.ControllerType == ramendrv1alpha1.DRHubType {
 		setupReconcilersHub(mgr)
-
-		return
 	}
 
+	if controllers.ControllerType == ramendrv1alpha1.DRClusterType {
+		setupReconcilersCluster(mgr, ramenConfig)
+	}
+}
+
+func setupReconcilersCluster(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig) {
 	if err := (&controllers.ProtectedVolumeReplicationGroupListReconciler{
 		Client:         mgr.GetClient(),
 		Scheme:         mgr.GetScheme(),
@@ -208,7 +227,20 @@ func setupReconcilersHub(mgr ctrl.Manager) {
 }
 
 func main() {
-	mgr, ramenConfig, err := newManager()
+	logOpts := configureLogOptions()
+	bindFlags(logOpts.BindFlags)
+	flag.Parse()
+
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(logOpts)))
+
+	ctrlOptions, ramenConfig := buildOptions()
+
+	if err := configureController(ramenConfig); err != nil {
+		setupLog.Error(err, "unable to configure controller")
+		os.Exit(1)
+	}
+
+	mgr, err := newManager(ctrlOptions)
 	if err != nil {
 		setupLog.Error(err, "unable to Get new manager")
 		os.Exit(1)

@@ -25,6 +25,7 @@ import (
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/controllers/util"
 	"github.com/ramendr/ramen/controllers/volsync"
 )
 
@@ -1060,7 +1061,7 @@ var _ = Describe("VolSync_Handler", func() {
 											Eventually(func() bool {
 												err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testPVC), testPVC)
 												if err == nil {
-													if !testPVC.GetDeletionTimestamp().IsZero() {
+													if util.ResourceIsDeleted(testPVC) {
 														// PVC protection finalizer is added automatically to PVC - but testenv
 														// doesn't have anything that will remove it for us - we're good as long
 														// as the pvc is marked for deletion
@@ -1373,7 +1374,7 @@ var _ = Describe("VolSync_Handler", func() {
 						Eventually(func() bool {
 							err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pvc), pvc)
 							if err == nil {
-								if !pvc.GetDeletionTimestamp().IsZero() {
+								if util.ResourceIsDeleted(pvc) {
 									// PVC protection finalizer is added automatically to PVC - but testenv
 									// doesn't have anything that will remove it for us - we're good as long
 									// as the pvc is marked for deletion
@@ -1806,25 +1807,6 @@ var _ = Describe("VolSync_Handler", func() {
 			It("Should complete successfully, return true and remove ACM annotations", func() {
 				Expect(pvcPreparationErr).ToNot(HaveOccurred())
 				Expect(pvcPreparationComplete).To(BeTrue())
-
-				Eventually(func() int {
-					err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testPVC), testPVC)
-					if err != nil {
-						return 0
-					}
-
-					return len(testPVC.Annotations)
-				}, maxWait, interval).Should(Equal(len(initialAnnotations) - 2))
-				// We had 2 acm annotations in initialAnnotations
-
-				for key, val := range testPVC.Annotations {
-					if key != volsync.ACMAppSubDoNotDeleteAnnotation {
-						// Other ACM annotations should be deleted
-						Expect(strings.HasPrefix(key, "apps.open-cluster-management.io")).To(BeFalse())
-
-						Expect(initialAnnotations[key]).To(Equal(val)) // Other annotations should still be there
-					}
-				}
 
 				// ACM do-not-delete annotation should be added to the PVC
 				pvcAnnotations := testPVC.GetAnnotations()

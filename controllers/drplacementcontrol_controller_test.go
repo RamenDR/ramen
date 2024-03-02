@@ -388,6 +388,16 @@ func resetClusterDown() {
 	ClusterIsDown = ""
 }
 
+var ToggleUIDChecks bool // default false
+
+func setToggleUIDChecks() {
+	ToggleUIDChecks = true
+}
+
+func resetToggleUIDChecks() {
+	ToggleUIDChecks = false
+}
+
 //nolint:funlen,cyclop,gocognit
 func (f FakeMCVGetter) GetVRGFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
 	annnotations map[string]string,
@@ -465,52 +475,57 @@ func doGetFakeVRGsFromManagedClusters(managedCluster string, vrgNamespace string
 	}
 
 	vrgFromMW, err := getVRGFromManifestWork(managedCluster, vrgNamespace)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			if getFunctionNameAtIndex(4) == "getVRGs" { // Called only from DRCluster reconciler, at present
-				return fakeVRGWithMModesProtectedPVC(vrgNamespace)
-			}
+	if err != nil && !errors.IsNotFound(err) {
+		return nil, err
+	}
+
+	if errors.IsNotFound(err) {
+		if getFunctionNameAtIndex(4) == "getVRGs" { // Called only from DRCluster reconciler, at present
+			return fakeVRGWithMModesProtectedPVC(vrgNamespace)
+		}
+
+		if getFunctionNameAtIndex(4) == "determineDRPCState" && ToggleUIDChecks {
+			// Fake it, no UID
+			return getDefaultVRG(vrgNamespace), nil
 		}
 
 		return nil, err
 	}
 
-	if vrgFromMW != nil {
-		vrgFromMW.Generation = 1
-		vrgFromMW.Status = vrgStatus
-		vrgFromMW.Status.Conditions = append(vrgFromMW.Status.Conditions, metav1.Condition{
-			Type:               controllers.VRGConditionTypeClusterDataReady,
-			Reason:             controllers.VRGConditionReasonClusterDataRestored,
-			Status:             metav1.ConditionTrue,
-			Message:            "Cluster Data Ready",
-			LastTransitionTime: metav1.Now(),
-			ObservedGeneration: vrgFromMW.Generation,
-		})
-		vrgFromMW.Status.Conditions = append(vrgFromMW.Status.Conditions, metav1.Condition{
-			Type:               controllers.VRGConditionTypeClusterDataProtected,
-			Reason:             controllers.VRGConditionReasonClusterDataRestored,
-			Status:             metav1.ConditionTrue,
-			Message:            "Cluster Data Protected",
-			LastTransitionTime: metav1.Now(),
-			ObservedGeneration: vrgFromMW.Generation,
-		})
-		vrgFromMW.Status.Conditions = append(vrgFromMW.Status.Conditions, metav1.Condition{
-			Type:               controllers.VRGConditionTypeDataProtected,
-			Reason:             controllers.VRGConditionReasonDataProtected,
-			Status:             metav1.ConditionTrue,
-			Message:            "Data Protected",
-			LastTransitionTime: metav1.Now(),
-			ObservedGeneration: vrgFromMW.Generation,
-		})
+	vrgFromMW.Generation = 1
+	vrgFromMW.Status = vrgStatus
+	vrgFromMW.Status.Conditions = append(vrgFromMW.Status.Conditions, metav1.Condition{
+		Type:               controllers.VRGConditionTypeClusterDataReady,
+		Reason:             controllers.VRGConditionReasonClusterDataRestored,
+		Status:             metav1.ConditionTrue,
+		Message:            "Cluster Data Ready",
+		LastTransitionTime: metav1.Now(),
+		ObservedGeneration: vrgFromMW.Generation,
+	})
+	vrgFromMW.Status.Conditions = append(vrgFromMW.Status.Conditions, metav1.Condition{
+		Type:               controllers.VRGConditionTypeClusterDataProtected,
+		Reason:             controllers.VRGConditionReasonClusterDataRestored,
+		Status:             metav1.ConditionTrue,
+		Message:            "Cluster Data Protected",
+		LastTransitionTime: metav1.Now(),
+		ObservedGeneration: vrgFromMW.Generation,
+	})
+	vrgFromMW.Status.Conditions = append(vrgFromMW.Status.Conditions, metav1.Condition{
+		Type:               controllers.VRGConditionTypeDataProtected,
+		Reason:             controllers.VRGConditionReasonDataProtected,
+		Status:             metav1.ConditionTrue,
+		Message:            "Data Protected",
+		LastTransitionTime: metav1.Now(),
+		ObservedGeneration: vrgFromMW.Generation,
+	})
 
-		protectedPVC := &rmn.ProtectedPVC{}
-		protectedPVC.Name = "random name"
-		protectedPVC.StorageIdentifiers.ReplicationID.ID = MModeReplicationID
-		protectedPVC.StorageIdentifiers.StorageProvisioner = MModeCSIProvisioner
-		protectedPVC.StorageIdentifiers.ReplicationID.Modes = []rmn.MMode{rmn.MModeFailover}
+	protectedPVC := &rmn.ProtectedPVC{}
+	protectedPVC.Name = "random name"
+	protectedPVC.StorageIdentifiers.ReplicationID.ID = MModeReplicationID
+	protectedPVC.StorageIdentifiers.StorageProvisioner = MModeCSIProvisioner
+	protectedPVC.StorageIdentifiers.ReplicationID.Modes = []rmn.MMode{rmn.MModeFailover}
 
-		vrgFromMW.Status.ProtectedPVCs = append(vrgFromMW.Status.ProtectedPVCs, *protectedPVC)
-	}
+	vrgFromMW.Status.ProtectedPVCs = append(vrgFromMW.Status.ProtectedPVCs, *protectedPVC)
 
 	return vrgFromMW, nil
 }
@@ -972,6 +987,23 @@ func moveVRGToSecondary(clusterNamespace, resourceNamespace, mwType string, prot
 		fmt.Sprintf("failed to wait for manifestwork update %s cluster %s", mwType, clusterNamespace))
 
 	return vrg, err
+}
+
+// createVRGMW creates a basic (always Primary) ManifestWork for a VRG, used to fake existing VRG MW
+// to test upgrade cases for DRPC based UID adoption
+func createVRGMW(name, namespace, homeCluster string) {
+	vrg := getDefaultVRG(namespace)
+
+	mwu := rmnutil.MWUtil{
+		Client:          k8sClient,
+		APIReader:       k8sClient,
+		Ctx:             context.TODO(),
+		Log:             logr.Logger{},
+		InstName:        name,
+		TargetNamespace: namespace,
+	}
+
+	Expect(mwu.CreateOrUpdateVRGManifestWork(name, namespace, homeCluster, *vrg, nil)).To(Succeed())
 }
 
 func updateVRGMW(manifestLookupKey types.NamespacedName, dataProtected bool) (*rmn.VolumeReplicationGroup, error) {
@@ -1467,6 +1499,7 @@ func waitForCompletion(expectedState string) {
 		fmt.Sprintf("failed waiting for state to match. expecting: %s, found %s", expectedState, drstate))
 }
 
+//nolint:unparam
 func waitForDRPCPhaseAndProgression(namespace string, drState rmn.DRState) {
 	Eventually(func() bool {
 		drpc := getLatestDRPC(namespace)
@@ -2490,6 +2523,63 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			deleteDRClustersAsync()
 		})
 	})
+
+	Context("DRPlacementControl Reconciler HubRecovery VRG Adoption (Subscription)", func() {
+		var userPlacementRule1 *plrv1.PlacementRule
+		var drpc1 *rmn.DRPlacementControl
+
+		Specify("DRClusters", func() {
+			populateDRClusters()
+		})
+
+		When("Application deployed for the first time", func() {
+			It("Should deploy drpc", func() {
+				createNamespacesAsync(getNamespaceObj(DefaultDRPCNamespace))
+				createManagedClusters(asyncClusters)
+				createDRClustersAsync()
+				createDRPolicyAsync()
+				setToggleUIDChecks()
+
+				// Create an existing VRG MW on East, to simulate upgrade cases (West1 will report an
+				// orphan VRG for orphan cases)
+				createVRGMW(DRPCCommonName, DefaultDRPCNamespace, East1ManagedCluster)
+
+				var placementObj client.Object
+				placementObj, drpc1 = CreatePlacementAndDRPC(
+					DefaultDRPCNamespace, UserPlacementRuleName, East1ManagedCluster, UsePlacementRule)
+				userPlacementRule1 = placementObj.(*plrv1.PlacementRule)
+				Expect(userPlacementRule1).NotTo(BeNil())
+				waitForDRPCPhaseAndProgression(DefaultDRPCNamespace, rmn.Deployed)
+				uploadVRGtoS3Store(DRPCCommonName, DefaultDRPCNamespace, East1ManagedCluster, rmn.VRGAction(""))
+				resetToggleUIDChecks()
+			})
+		})
+
+		When("Deleting DRPolicy with DRPC references", func() {
+			It("Should retain the deleted DRPolicy in the API server", func() {
+				By("\n\n*** DELETE drpolicy ***\n\n")
+				deleteDRPolicyAsync()
+			})
+		})
+
+		When("Deleting user PlacementRule", func() {
+			It("Should cleanup DRPC", func() {
+				By("\n\n*** DELETE User PlacementRule ***\n\n")
+				deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)
+			})
+		})
+
+		When("Deleting DRPC", func() {
+			It("Should delete all VRGs", func() {
+				Expect(k8sClient.Delete(context.TODO(), drpc1)).Should(Succeed())
+				deleteNamespaceMWsFromAllClusters(DefaultDRPCNamespace)
+			})
+		})
+
+		Specify("delete drclusters", func() {
+			deleteDRClustersAsync()
+		})
+	})
 })
 
 func verifyDRPCStateAndProgression(expectedAction rmn.DRAction, expectedPhase rmn.DRState,
@@ -2536,6 +2626,7 @@ func checkConditionAllowFailover(namespace string) {
 	Expect(drpc.Status.Phase).To(Equal(rmn.WaitForUser))
 }
 
+//nolint:unparam
 func uploadVRGtoS3Store(name, namespace, dstCluster string, action rmn.VRGAction) {
 	vrg := buildVRG(name, namespace, dstCluster, action)
 	s3ProfileNames := []string{s3Profiles[0].S3ProfileName, s3Profiles[1].S3ProfileName}
