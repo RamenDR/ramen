@@ -125,6 +125,9 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+                x-kubernetes-validations:
+                - message: drPolicyRef is immutable
+                  rule: self == oldSelf
               failoverCluster:
                 description: |-
                   FailoverCluster is the cluster name that the user wants to failover the application to.
@@ -200,6 +203,9 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+                x-kubernetes-validations:
+                - message: placementRef is immutable
+                  rule: self == oldSelf
               preferredCluster:
                 description: PreferredCluster is the cluster name that the user preferred
                   to run the application on
@@ -251,6 +257,9 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-map-type: atomic
+                x-kubernetes-validations:
+                - message: pvcSelector is immutable
+                  rule: self == oldSelf
             required:
             - drPolicyRef
             - placementRef

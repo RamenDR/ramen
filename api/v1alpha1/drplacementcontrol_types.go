@@ -104,9 +104,13 @@ const (
 // DRPlacementControlSpec defines the desired state of DRPlacementControl
 type DRPlacementControlSpec struct {
 	// PlacementRef is the reference to the PlacementRule used by DRPC
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="placementRef is immutable"
 	PlacementRef v1.ObjectReference `json:"placementRef"`
 
 	// DRPolicyRef is the reference to the DRPolicy participating in the DR replication for this DRPC
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="drPolicyRef is immutable"
 	DRPolicyRef v1.ObjectReference `json:"drPolicyRef"`
 
 	// PreferredCluster is the cluster name that the user preferred to run the application on
@@ -119,6 +123,8 @@ type DRPlacementControlSpec struct {
 	// Label selector to identify all the PVCs that need DR protection.
 	// This selector is assumed to be the same for all subscriptions that
 	// need DR protection. It will be passed in to the VRG when it is created
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="pvcSelector is immutable"
 	PVCSelector metav1.LabelSelector `json:"pvcSelector"`
 
 	// Action is either Failover or Relocate operation
