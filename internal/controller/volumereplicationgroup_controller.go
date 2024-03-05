@@ -58,6 +58,8 @@ type VolumeReplicationGroupReconciler struct {
 }
 
 // SetupWithManager sets up the controller with the Manager.
+//
+// nolint: funlen
 func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 	mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig,
 ) error {
@@ -97,8 +99,13 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 			handler.EnqueueRequestsFromMapFunc(r.VRMapFunc),
 			builder.WithPredicates(rmnutil.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
 		).
+		Watches(&volrep.VolumeGroupReplication{},
+			handler.EnqueueRequestsFromMapFunc(r.VGRMapFunc),
+			builder.WithPredicates(rmnutil.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
+		).
 		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.configMapFun)).
-		Owns(&volrep.VolumeReplication{})
+		Owns(&volrep.VolumeReplication{}).
+		Owns(&volrep.VolumeGroupReplication{})
 
 	if !ramenConfig.VolSync.Disabled {
 		r.Log.Info("VolSync enabled; adding owns and watches")
@@ -363,6 +370,8 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups/finalizers,verbs=update
 // +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplications,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplicationclasses,verbs=get;list;watch
+// +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumegroupreplications,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumegroupreplicationclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=volumeattachments,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
@@ -404,6 +413,7 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 		volRepPVCs:        []corev1.PersistentVolumeClaim{},
 		volSyncPVCs:       []corev1.PersistentVolumeClaim{},
 		replClassList:     &volrep.VolumeReplicationClassList{},
+		grpReplClassList:  &volrep.VolumeGroupReplicationClassList{},
 		namespacedName:    req.NamespacedName.String(),
 		objectStorers:     make(map[string]cachedObjectStorer),
 		storageClassCache: make(map[string]*storagev1.StorageClass),
@@ -474,6 +484,7 @@ type VRGInstance struct {
 	volRepPVCs           []corev1.PersistentVolumeClaim
 	volSyncPVCs          []corev1.PersistentVolumeClaim
 	replClassList        *volrep.VolumeReplicationClassList
+	grpReplClassList     *volrep.VolumeGroupReplicationClassList
 	storageClassCache    map[string]*storagev1.StorageClass
 	vrgObjectProtected   *metav1.Condition
 	kubeObjectsProtected *metav1.Condition
@@ -689,7 +700,7 @@ func (v *VRGInstance) updatePVCList() error {
 		return nil
 	}
 
-	if len(v.replClassList.Items) == 0 {
+	if len(v.replClassList.Items) == 0 && len(v.grpReplClassList.Items) == 0 {
 		v.volSyncPVCs = make([]corev1.PersistentVolumeClaim, len(pvcList.Items))
 		numCopied := copy(v.volSyncPVCs, pvcList.Items)
 		v.log.Info("No VolumeReplicationClass available. Using all PVCs with VolSync", "pvcCount", numCopied)
@@ -770,16 +781,27 @@ func (v *VRGInstance) updateReplicationClassList() error {
 		client.MatchingLabels(labelSelector.MatchLabels),
 	}
 
-	if err := v.reconciler.List(v.ctx, v.replClassList, listOptions...); err != nil {
-		v.log.Error(err, "Failed to list Replication Classes",
-			"labeled", labels.Set(labelSelector.MatchLabels))
+	if !rmnutil.IsCGEnabled(v.instance.GetAnnotations()) {
+		if err := v.reconciler.List(v.ctx, v.replClassList, listOptions...); err != nil {
+			v.log.Error(err, "Failed to list Replication Classes",
+				"labeled", labels.Set(labelSelector.MatchLabels))
 
-		return fmt.Errorf("failed to list Replication Classes, %w", err)
+			return fmt.Errorf("failed to list Replication Classes, %w", err)
+		}
+
+		v.log.Info("Number of Replication Classes", "count", len(v.replClassList.Items))
+	} else {
+		if err := v.reconciler.List(v.ctx, v.grpReplClassList, listOptions...); err != nil {
+			v.log.Error(err, "Failed to list Group Replication Classes",
+				"labeled", labels.Set(labelSelector.MatchLabels))
+
+			return fmt.Errorf("failed to list Group Replication Classes, %w", err)
+		}
+
+		v.log.Info("Number of Group Replication Classes", "count", len(v.grpReplClassList.Items))
 	}
 
 	v.vrcUpdated = true
-
-	v.log.Info("Number of Replication Classes", "count", len(v.replClassList.Items))
 
 	return nil
 }
@@ -800,6 +822,7 @@ func (v *VRGInstance) separatePVCsUsingVRGStatus(pvcList *corev1.PersistentVolum
 	}
 }
 
+//nolint:gocognit,cyclop
 func (v *VRGInstance) separatePVCsUsingStorageClassProvisioner(pvcList *corev1.PersistentVolumeClaimList) error {
 	for idx := range pvcList.Items {
 		pvc := &pvcList.Items[idx]
@@ -818,12 +841,23 @@ func (v *VRGInstance) separatePVCsUsingStorageClassProvisioner(pvcList *corev1.P
 
 		replicationClassMatchFound := false
 
-		for _, replicationClass := range v.replClassList.Items {
-			if storageClass.Provisioner == replicationClass.Spec.Provisioner {
-				v.volRepPVCs = append(v.volRepPVCs, *pvc)
-				replicationClassMatchFound = true
+		if rmnutil.IsCGEnabled(v.instance.GetAnnotations()) {
+			for _, replicationClass := range v.grpReplClassList.Items {
+				if storageClass.Provisioner == replicationClass.Spec.Provisioner {
+					v.volRepPVCs = append(v.volRepPVCs, *pvc)
+					replicationClassMatchFound = true
 
-				break
+					break
+				}
+			}
+		} else {
+			for _, replicationClass := range v.replClassList.Items {
+				if storageClass.Provisioner == replicationClass.Spec.Provisioner {
+					v.volRepPVCs = append(v.volRepPVCs, *pvc)
+					replicationClassMatchFound = true
+
+					break
+				}
 			}
 		}
 
@@ -1528,6 +1562,20 @@ func filterVRGDependentObjects(reader client.Reader, obj client.Object, log logr
 	}
 
 	return req
+}
+
+func (r *VolumeReplicationGroupReconciler) VGRMapFunc(ctx context.Context, obj client.Object) []reconcile.Request {
+	log := ctrl.Log.WithName("vgrmap").WithName("VolumeReplicationGroup")
+
+	vgr, ok := obj.(*volrep.VolumeGroupReplication)
+	if !ok {
+		log.Info("map function received non-vgr resource")
+
+		return []reconcile.Request{}
+	}
+
+	return filterVRGDependentObjects(r.Client, obj,
+		log.WithValues("vgr", types.NamespacedName{Name: vgr.Name, Namespace: vgr.Namespace}))
 }
 
 func (r *VolumeReplicationGroupReconciler) VRMapFunc(ctx context.Context, obj client.Object) []reconcile.Request {
