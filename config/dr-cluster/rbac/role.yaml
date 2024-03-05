@@ -170,6 +170,7 @@ rules:
 - apiGroups:
   - replication.storage.openshift.io
   resources:
+  - volumegroupreplicationclasses
   - volumereplicationclasses
   verbs:
   - get
@@ -178,6 +179,7 @@ rules:
 - apiGroups:
   - replication.storage.openshift.io
   resources:
+  - volumegroupreplications
   - volumereplications
   verbs:
   - create
