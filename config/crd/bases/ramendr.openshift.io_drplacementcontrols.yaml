@@ -515,6 +515,16 @@ spec:
                         items:
                           type: string
                         type: array
+                      pvcgroups:
+                        description: List of CGs that are protected by the VRG resource
+                        items:
+                          properties:
+                            grouped:
+                              items:
+                                type: string
+                              type: array
+                          type: object
+                        type: array
                       resourceVersion:
                         description: |-
                           ResourceVersion is a value used to identify the version of the
