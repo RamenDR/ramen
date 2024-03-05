@@ -995,6 +995,16 @@ spec:
                       type: string
                   type: object
                 type: array
+              pvcgroups:
+                description: List of CGs that are protected by the VRG resource
+                items:
+                  properties:
+                    grouped:
+                      items:
+                        type: string
+                      type: array
+                  type: object
+                type: array
               state:
                 description: State captures the latest state of the replication operation
                 type: string
