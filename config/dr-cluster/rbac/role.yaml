@@ -124,6 +124,26 @@ rules:
   - list
   - watch
 - apiGroups:
+  - cache.storage.ramendr.io
+  resources:
+  - volumegroupreplicationclasses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - cache.storage.ramendr.io
+  resources:
+  - volumegroupreplications
+  verbs:
+  - create
+  - update
+  - delete
+  - get
+  - list
+  - watch
+  - patch
+- apiGroups:
   - storage.k8s.io
   resources:
   - storageclasses
