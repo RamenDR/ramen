@@ -13,8 +13,9 @@ import (
 	"golang.org/x/exp/slices"
 	"golang.org/x/time/rate"
 
-	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
+	// volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
 	"github.com/google/uuid"
+	volrep "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/kubeobjects"
 	"github.com/ramendr/ramen/controllers/kubeobjects/velero"
 	"golang.org/x/exp/maps" // TODO replace with "maps" in go1.21+
@@ -98,7 +99,8 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 			builder.WithPredicates(rmnutil.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
 		).
 		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.configMapFun)).
-		Owns(&volrep.VolumeReplication{})
+		Owns(&volrep.VolumeReplication{}).
+		Owns(&volrep.VolumeGroupReplication{})
 
 	if !ramenConfig.VolSync.Disabled {
 		r.Log.Info("VolSync enabled; adding owns and watches")
@@ -363,6 +365,8 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups/finalizers,verbs=update
 // +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplications,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplicationclasses,verbs=get;list;watch
+// +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumegroupreplications,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumegroupreplicationclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=volumeattachments,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
@@ -404,6 +408,7 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 		volRepPVCs:        []corev1.PersistentVolumeClaim{},
 		volSyncPVCs:       []corev1.PersistentVolumeClaim{},
 		replClassList:     &volrep.VolumeReplicationClassList{},
+		grpReplClassList:  &volrep.VolumeGroupReplicationClassList{},
 		namespacedName:    req.NamespacedName.String(),
 		objectStorers:     make(map[string]cachedObjectStorer),
 		storageClassCache: make(map[string]*storagev1.StorageClass),
@@ -474,10 +479,12 @@ type VRGInstance struct {
 	volRepPVCs           []corev1.PersistentVolumeClaim
 	volSyncPVCs          []corev1.PersistentVolumeClaim
 	replClassList        *volrep.VolumeReplicationClassList
+	grpReplClassList     *volrep.VolumeGroupReplicationClassList
 	storageClassCache    map[string]*storagev1.StorageClass
 	vrgObjectProtected   *metav1.Condition
 	kubeObjectsProtected *metav1.Condition
 	vrcUpdated           bool
+	vgrcUpdated          bool
 	namespacedName       string
 	volSyncHandler       *volsync.VSHandler
 	objectStorers        map[string]cachedObjectStorer
@@ -506,6 +513,10 @@ const (
 
 	// VolumeReplicationClass label
 	VolumeReplicationIDLabel = "ramendr.openshift.io/replicationid"
+
+	// Consistency group label
+	VolRepCGLabel  = "ramendr.openshift.io/vol-rep-consistency-group"
+	VolSyncCGLabel = "ramendr.openshift.io/vol-sync-consistency-group"
 
 	// Maintenance mode label
 	MModesLabel = "ramendr.openshift.io/maintenancemodes"
@@ -546,6 +557,10 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 
 	if err := v.updatePVCList(); err != nil {
 		return v.invalid(err, "Failed to process list of PVCs to protect", true)
+	}
+
+	if err := v.updatePVCListForCG(); err != nil {
+		return v.invalid(err, "Failed to process list of PVCs for consistency groups", true)
 	}
 
 	v.log = v.log.WithName("vrginstance").WithValues("State", v.instance.Spec.ReplicationState)
@@ -653,6 +668,8 @@ func (v *VRGInstance) listPVCsByPVCSelector(labelSelector metav1.LabelSelector,
 }
 
 // updatePVCList fetches and updates the PVC list to process for the current instance of VRG
+//
+//nolint:cyclop
 func (v *VRGInstance) updatePVCList() error {
 	pvcList, err := v.listPVCsByVrgPVCSelector()
 	if err != nil {
@@ -678,6 +695,16 @@ func (v *VRGInstance) updatePVCList() error {
 		v.vrcUpdated = true
 	}
 
+	if !v.vgrcUpdated {
+		if err := v.updateGroupReplicationClassList(); err != nil {
+			v.log.Error(err, "Failed to get VolumeGroupReplicationClass list")
+
+			return fmt.Errorf("failed to get VolumeGroupReplicationClass list")
+		}
+
+		v.vgrcUpdated = true
+	}
+
 	if rmnutil.ResourceIsDeleted(v.instance) {
 		v.separatePVCsUsingVRGStatus(pvcList)
 		v.log.Info(fmt.Sprintf("Separated PVCs (%d) into VolRepPVCs (%d) and VolSyncPVCs (%d)",
@@ -686,7 +713,7 @@ func (v *VRGInstance) updatePVCList() error {
 		return nil
 	}
 
-	if len(v.replClassList.Items) == 0 {
+	if len(v.replClassList.Items) == 0 && len(v.grpReplClassList.Items) == 0 {
 		v.volSyncPVCs = make([]corev1.PersistentVolumeClaim, len(pvcList.Items))
 		numCopied := copy(v.volSyncPVCs, pvcList.Items)
 		v.log.Info("No VolumeReplicationClass available. Using all PVCs with VolSync", "pvcCount", numCopied)
@@ -696,6 +723,48 @@ func (v *VRGInstance) updatePVCList() error {
 
 	// Separate PVCs targeted for VolRep from PVCs targeted for VolSync
 	return v.separatePVCsUsingStorageClassProvisioner(pvcList)
+}
+
+func (v *VRGInstance) updatePVCListForCG() error {
+	if v.instance.Spec.Async == nil {
+		return nil
+	}
+
+	for idx := range v.volRepPVCs {
+		pvc := &v.volRepPVCs[idx]
+
+		pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
+
+		volumeReplicationClass, err := v.selectVolumeGroupReplicationClass(pvcNamespacedName)
+		if err != nil {
+			return err
+		}
+
+		// if volume group replication class was not found - pvc is not a member of consistency group
+		if volumeReplicationClass == nil {
+			continue
+		}
+
+		scName := pvc.Spec.StorageClassName
+
+		if scName == nil || *scName == "" {
+			return fmt.Errorf("missing storage class name for PVC %s/%s", pvc.GetNamespace(), pvc.GetName())
+		}
+
+		storageClass := &storagev1.StorageClass{}
+		if err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: *scName}, storageClass); err != nil {
+			v.log.Info(fmt.Sprintf("Failed to get the storageclass %s", *scName))
+
+			return fmt.Errorf("failed to get the storageclass with name %s (%w)", *scName, err)
+		}
+
+		if err := v.markPVCForCG(pvc, storageClass); err != nil {
+			return fmt.Errorf("failed to mark PVC %s/%s for consistency group (%w)",
+				pvc.GetNamespace(), pvc.GetName(), err)
+		}
+	}
+
+	return nil
 }
 
 func (v *VRGInstance) updateReplicationClassList() error {
@@ -718,6 +787,26 @@ func (v *VRGInstance) updateReplicationClassList() error {
 	return nil
 }
 
+func (v *VRGInstance) updateGroupReplicationClassList() error {
+	labelSelector := v.instance.Spec.Async.ReplicationClassSelector
+
+	v.log.Info("Fetching VolumeGroupReplicationClass", "labeled", labels.Set(labelSelector.MatchLabels))
+	listOptions := []client.ListOption{
+		client.MatchingLabels(labelSelector.MatchLabels),
+	}
+
+	if err := v.reconciler.List(v.ctx, v.grpReplClassList, listOptions...); err != nil {
+		v.log.Error(err, "Failed to list Group Replication Classes",
+			"labeled", labels.Set(labelSelector.MatchLabels))
+
+		return fmt.Errorf("failed to list Group Replication Classes, %w", err)
+	}
+
+	v.log.Info("Number of Group Replication Classes", "count", len(v.grpReplClassList.Items))
+
+	return nil
+}
+
 func (v *VRGInstance) separatePVCsUsingVRGStatus(pvcList *corev1.PersistentVolumeClaimList) {
 	for idx := range pvcList.Items {
 		pvc := &pvcList.Items[idx]
@@ -734,6 +823,7 @@ func (v *VRGInstance) separatePVCsUsingVRGStatus(pvcList *corev1.PersistentVolum
 	}
 }
 
+//nolint:gocognit,cyclop
 func (v *VRGInstance) separatePVCsUsingStorageClassProvisioner(pvcList *corev1.PersistentVolumeClaimList) error {
 	for idx := range pvcList.Items {
 		pvc := &pvcList.Items[idx]
@@ -762,6 +852,17 @@ func (v *VRGInstance) separatePVCsUsingStorageClassProvisioner(pvcList *corev1.P
 		}
 
 		if !replicationClassMatchFound {
+			for _, replicationClass := range v.grpReplClassList.Items {
+				if storageClass.Provisioner == replicationClass.Spec.Provisioner {
+					v.volRepPVCs = append(v.volRepPVCs, *pvc)
+					replicationClassMatchFound = true
+
+					break
+				}
+			}
+		}
+
+		if !replicationClassMatchFound {
 			v.volSyncPVCs = append(v.volSyncPVCs, *pvc)
 		}
 	}
@@ -770,6 +871,26 @@ func (v *VRGInstance) separatePVCsUsingStorageClassProvisioner(pvcList *corev1.P
 		len(v.volRepPVCs), len(v.volSyncPVCs)))
 
 	return nil
+}
+
+func (v *VRGInstance) PVCisForCG(pvc *corev1.PersistentVolumeClaim) (string, bool) {
+	storageID, ok := pvc.GetLabels()[VolRepCGLabel]
+
+	return storageID, ok
+}
+
+func (v *VRGInstance) markPVCForCG(pvc *corev1.PersistentVolumeClaim,
+	storageClass *storagev1.StorageClass,
+) error {
+	storageID, ok := storageClass.GetLabels()[StorageIDLabel]
+	if !ok {
+		return nil
+	}
+
+	// Add label for PVC, showing that this PVC is part of consistency group
+	return rmnutil.NewResourceUpdater(pvc).
+		AddLabel(VolRepCGLabel, storageID).
+		Update(v.ctx, v.reconciler.Client)
 }
 
 // finalizeVRG cleans up managed resources and removes the VRG finalizer for resource deletion

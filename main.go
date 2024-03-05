@@ -14,10 +14,11 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
-	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
+	// volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
 	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
+	volrep "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
 	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
