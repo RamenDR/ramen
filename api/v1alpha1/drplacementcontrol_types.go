@@ -167,6 +167,10 @@ type PlacementDecision struct {
 	ClusterNamespace string `json:"clusterNamespace,omitempty"`
 }
 
+type Groups struct {
+	Grouped []string `json:"grouped,omitempty"`
+}
+
 // VRGResourceMeta represents the VRG resource.
 type VRGResourceMeta struct {
 	// Kind is the kind of the Kubernetes resource.
@@ -184,6 +188,10 @@ type VRGResourceMeta struct {
 	// List of PVCs that are protected by the VRG resource
 	//+optional
 	ProtectedPVCs []string `json:"protectedpvcs,omitempty"`
+
+	// List of CGs that are protected by the VRG resource
+	//+optional
+	PVCGroups []Groups `json:"pvcgroups,omitempty"`
 
 	// ResourceVersion is a value used to identify the version of the
 	// VRG resource object
