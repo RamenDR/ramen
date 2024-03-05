@@ -470,29 +470,31 @@ func DRPCsFailingOverToCluster(k8sclient client.Client, log logr.Logger, drclust
 
 	drpcCollections := make([]DRPCAndPolicy, 0)
 
-	for drpolicyIdx, drpolicy := range drpolicies.Items {
-		drClusters, err := getDRClusters(context.TODO(), k8sclient, &drpolicies.Items[drpolicyIdx])
-		if err != nil || len(drClusters) <= 1 {
-			log.Error(err, "Failed to get DRClusters")
-
-			return nil, err
-		}
-
-		// Skip if policy is of type metro, fake the from and to cluster
-		if metro, _ := dRPolicySupportsMetro(&drpolicies.Items[drpolicyIdx], drClusters); metro {
-			log.Info("Sync DRPolicy detected, skipping!")
-
-			continue
-		}
+	for drpolicyIdx := range drpolicies.Items {
+		drpolicy := &drpolicies.Items[drpolicyIdx]
 
 		for _, specCluster := range drpolicy.Spec.DRClusters {
 			if specCluster != drcluster {
 				continue
 			}
 
+			drClusters, err := getDRClusters(context.TODO(), k8sclient, drpolicy)
+			if err != nil || len(drClusters) <= 1 {
+				log.Error(err, "Failed to get DRClusters")
+
+				return nil, err
+			}
+
+			// Skip if policy is of type metro, fake the from and to cluster
+			if metro, _ := dRPolicySupportsMetro(drpolicy, drClusters); metro {
+				log.Info("Sync DRPolicy detected, skipping!")
+
+				break
+			}
+
 			log.Info("Processing DRPolicy referencing DRCluster", "drpolicy", drpolicy.GetName())
 
-			drpcs, err := DRPCsFailingOverToClusterForPolicy(k8sclient, log, &drpolicies.Items[drpolicyIdx], drcluster)
+			drpcs, err := DRPCsFailingOverToClusterForPolicy(k8sclient, log, drpolicy, drcluster)
 			if err != nil {
 				return nil, err
 			}
@@ -500,7 +502,7 @@ func DRPCsFailingOverToCluster(k8sclient client.Client, log logr.Logger, drclust
 			for idx := range drpcs {
 				dprcCollection := DRPCAndPolicy{
 					drpc:     drpcs[idx],
-					drPolicy: &drpolicies.Items[drpolicyIdx],
+					drPolicy: drpolicy,
 				}
 
 				drpcCollections = append(drpcCollections, dprcCollection)
