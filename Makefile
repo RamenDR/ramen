@@ -183,7 +183,7 @@ test-drenv: ## Run drenv tests.
 test-ramenctl: ## Run ramenctl tests.
 	$(MAKE) -C ramenctl
 
-e2e-rdr: generate manifests docker-build ## Run rdr-e2e tests.
+e2e-rdr: build-e2e ## Run rdr-e2e tests.
 	./e2e/rdr-e2e.sh
 
 coverage:
@@ -198,6 +198,9 @@ venv:
 # Build manager binary
 build: generate  ## Build manager binary.
 	go build -o bin/manager main.go
+
+build-e2e: ## Build e2e binary
+	cd e2e && go build -o ramen_e2e
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
 run-hub: generate manifests ## Run DR Orchestrator controller from your host.

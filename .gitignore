@@ -48,3 +48,7 @@ ramenctl/build
 # Generated disk images
 *.qcow2
 *.iso
+
+# e2e
+e2e/config.yaml
+e2e/ramen_e2e
