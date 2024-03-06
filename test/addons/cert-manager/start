@@ -24,7 +24,7 @@ def wait(cluster):
         "--all",
         "--for=condition=Available",
         "--namespace=cert-manager",
-        "--timeout=300s",
+        "--timeout=600s",
         context=cluster,
     )
 

@@ -20,7 +20,7 @@ def deploy(cluster):
         "status",
         "deploy/cdi-operator",
         f"--namespace={NAMESPACE}",
-        "--timeout=300s",
+        "--timeout=600s",
         context=cluster,
     )
 
@@ -34,7 +34,7 @@ def wait(cluster):
         "cdi.cdi.kubevirt.io/cdi",
         "--for=condition=available",
         f"--namespace={NAMESPACE}",
-        "--timeout=300s",
+        "--timeout=600s",
         context=cluster,
     )
 
