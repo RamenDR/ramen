@@ -28,9 +28,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// We have seen that the valid errors from the s3 servers take up to 2 minutes.
-// Let the timeout be greater than that.
-var s3Timeout = time.Second * 125
+// We have seen that valid errors from the S3 servers can take up to 2 minutes to timeout.
+// let's reduce this timeout to a more reasonable duration.
+// TODO: Preferably, make the s3 timeout configurable
+var s3Timeout = time.Second * 12
 
 // Example usage:
 // func example_code() {
