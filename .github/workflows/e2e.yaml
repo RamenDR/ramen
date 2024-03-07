@@ -9,6 +9,9 @@ on:  # yamllint disable-line rule:truthy
   pull_request:
     types: [opened, synchronize, reopened]
 
+env:
+  NAME_PREFIX: "rdr-"
+
 jobs:
   e2e-rdr:
     runs-on: [self-hosted, e2e-rdr]
@@ -18,6 +21,27 @@ jobs:
     - name: Checkout Repo
       uses: actions/checkout@v3
 
+    - name: Cleanup existing environment
+      if: ${{ always() }}
+      run: |
+        make venv
+        source venv
+        make destroy-rdr-env
+
     - name: Run make target e2e-rdr
       run: |
+        make docker-build
+        make venv
+        source venv
+        make create-rdr-env
+        cp ~/.config/drenv/${{ env.NAME_PREFIX }}rdr/config.yaml e2e/config.yaml
+        ramenctl deploy --name-prefix ${{ env.NAME_PREFIX }} test/envs/regional-dr.yaml
+        ramenctl config --name-prefix ${{ env.NAME_PREFIX }} test/envs/regional-dr.yaml
         make e2e-rdr
+
+    - name: Cleanup e2e-rdr
+      if: ${{ always() }}
+      run: |
+        make venv
+        source venv
+        make destroy-rdr-env

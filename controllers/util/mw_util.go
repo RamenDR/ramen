@@ -284,9 +284,7 @@ func (mwu *MWUtil) CreateOrUpdateNamespaceManifest(
 	manifestWork := mwu.newManifestWork(
 		mwName,
 		managedClusterNamespace,
-		map[string]string{
-			OCMBackupLabelKey: OCMBackupLabelValue,
-		},
+		map[string]string{},
 		manifests,
 		annotations)
 
