@@ -21,17 +21,20 @@ jobs:
     - name: Checkout Repo
       uses: actions/checkout@v3
 
+    - name: Build ramen-operator container
+      run: make docker-build
+
+    - name: Create virtual environment
+      run: make venv
+
     - name: Cleanup existing environment
       if: ${{ always() }}
       run: |
-        make venv
         source venv
         make destroy-rdr-env
 
     - name: Run make target e2e-rdr
       run: |
-        make docker-build
-        make venv
         source venv
         make create-rdr-env
         cp ~/.config/drenv/${{ env.NAME_PREFIX }}rdr/config.yaml e2e/config.yaml
@@ -42,6 +45,5 @@ jobs:
     - name: Cleanup e2e-rdr
       if: ${{ always() }}
       run: |
-        make venv
         source venv
         make destroy-rdr-env
