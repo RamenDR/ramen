@@ -100,12 +100,6 @@ def deploy():
     """
     Deploy application on cluster.
     """
-    info("Deploying channel")
-    kubectl.apply(
-        f"--kustomize={config['repo']}/channel?ref={config['branch']}",
-        context=env["hub"],
-        log=debug,
-    )
     info("Deploying application '%s'", config["name"])
     kubectl.apply(
         f"--kustomize={config['repo']}/{config['path']}?ref={config['branch']}",
@@ -118,13 +112,6 @@ def undeploy():
     """
     Undeploy an application.
     """
-    info("Undeploying channel")
-    kubectl.delete(
-        f"--kustomize={config['repo']}/channel?ref={config['branch']}",
-        "--ignore-not-found",
-        context=env["hub"],
-        log=debug,
-    )
     info("Undeploying application '%s'", config["name"])
     kubectl.delete(
         f"--kustomize={config['repo']}/{config['path']}?ref={config['branch']}",
