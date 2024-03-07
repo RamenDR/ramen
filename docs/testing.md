@@ -66,16 +66,27 @@ The end-to-end testing framework isn't implemented yet. However, we have a basic
 test that you can use to test the basic flows of Ramen. `basic-test` requires
 the python virtual environment to be activated.
 
-To run basic tests using the regional-dr environment run:
+Ramen basic test use the [ocm-ramen-samples repo](https://github.com/RamenDR/ocm-ramen-samples).
+Before running the tests, you need to deploy a channel pointing this
+repo:
+
+```sh
+kubectl apply -k https://github.com/RamenDR/ocm-ramen-samples.git/channel?ref=main --context hub
+```
+
+> [!NOTE]
+> To test applications from your repo, you need to deploy a channel
+> pointing to your repo.
+
+To run basic tests using regional-dr environment run:
 
 ```sh
 test/basic-test/run test/envs/regional-dr.yaml
 ```
 
-This test:
+This test does these operations:
 
-1. Deploys an application using
-   [ocm-ramen-samples repo](https://github.com/RamenDR/ocm-ramen-samples)
+1. Deploys a busybox application
 1. Enables DR for the application
 1. Fails over the application to the other cluster
 1. Relocates the application back to the original cluster
