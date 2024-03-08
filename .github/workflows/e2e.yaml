@@ -34,6 +34,9 @@ jobs:
         source ../venv
         drenv delete --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
 
+    - name: Setup libvirt
+      run: test/scripts/setup-libvirt
+
     - name: Start clusters
       working-directory: test
       run: |
