@@ -27,23 +27,32 @@ jobs:
     - name: Create virtual environment
       run: make venv
 
-    - name: Cleanup existing environment
+    - name: Delete clusters
       if: ${{ always() }}
+      working-directory: test
       run: |
-        source venv
-        make destroy-rdr-env
+        source ../venv
+        drenv delete --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
 
-    - name: Run make target e2e-rdr
+    - name: Start clusters
+      working-directory: test
+      run: |
+        source ../venv
+        drenv start --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
+        cp ~/.config/drenv/${{ env.NAME_PREFIX }}rdr/config.yaml ../e2e/config.yaml
+
+    - name: Deploy ramen
       run: |
         source venv
-        make create-rdr-env
-        cp ~/.config/drenv/${{ env.NAME_PREFIX }}rdr/config.yaml e2e/config.yaml
         ramenctl deploy --name-prefix ${{ env.NAME_PREFIX }} test/envs/regional-dr.yaml
         ramenctl config --name-prefix ${{ env.NAME_PREFIX }} test/envs/regional-dr.yaml
-        make e2e-rdr
 
-    - name: Cleanup e2e-rdr
+    - name: Run e2e tests
+      run: make e2e-rdr
+
+    - name: Delete clusters
       if: ${{ always() }}
+      working-directory: test
       run: |
-        source venv
-        make destroy-rdr-env
+        source ../venv
+        drenv delete --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
