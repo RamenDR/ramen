@@ -62,7 +62,7 @@ def verify_ssh(cluster):
 
     for i in range(retries):
         time.sleep(delay)
-        print(f"Last entries in /var/log/ramen.log (attempt {i+1}/{retries})")
+        print(f"Last entries in /var/log/ramen.log (attempt {i + 1}/{retries})")
         try:
             out = virtctl.ssh(
                 "testvm",
