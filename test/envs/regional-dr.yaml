@@ -28,11 +28,9 @@ templates:
           - name: rook-cluster
           - name: rook-pool
           - name: rook-toolbox
-      - addons:
           - name: ocm-cluster
             args: ["$name", "hub"]
           - name: recipe
-      - addons:
           - name: csi-addons
           - name: olm
           - name: minio
@@ -48,22 +46,7 @@ templates:
           - name: ocm-controller
           - name: cert-manager
           - name: olm
-      - addons:
-          - name: submariner
-            args: ["hub", "dr1", "dr2"]
 
 profiles:
-  - name: "dr1"
-    template: "dr-cluster"
-  - name: "dr2"
-    template: "dr-cluster"
   - name: "hub"
     template: "hub-cluster"
-
-workers:
-  - addons:
-      - name: rbd-mirror
-        args: ["dr1", "dr2"]
-  - addons:
-      - name: volsync
-        args: ["dr1", "dr2"]
