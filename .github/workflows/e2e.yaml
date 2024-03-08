@@ -11,6 +11,9 @@ on:  # yamllint disable-line rule:truthy
 
 env:
   NAME_PREFIX: "rdr-"
+  # Avoid random failures in overloaded runner
+  # TODO: more testing.
+  MAX_WORKERS: 1
 
 jobs:
   e2e-rdr:
@@ -41,7 +44,7 @@ jobs:
     - name: Start clusters
       working-directory: test
       run: |
-        drenv start --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
+        drenv start --max-workers ${{ env.MAX_WORKERS }} --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
         cp ~/.config/drenv/${{ env.NAME_PREFIX }}rdr/config.yaml ../e2e/config.yaml
 
     - name: Deploy ramen
