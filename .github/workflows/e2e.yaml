@@ -21,18 +21,19 @@ jobs:
     - name: Checkout Repo
       uses: actions/checkout@v3
 
+    - name: Install drenv
+      run: pip install -e test
+
+    - name: Install ramenctl
+      run: pip install -e ramenctl
+
     - name: Build ramen-operator container
       run: make docker-build
-
-    - name: Create virtual environment
-      run: make venv
 
     - name: Delete clusters
       if: ${{ always() }}
       working-directory: test
-      run: |
-        source ../venv
-        drenv delete --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
+      run: drenv delete --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
 
     - name: Setup libvirt
       run: test/scripts/setup-libvirt
@@ -40,13 +41,11 @@ jobs:
     - name: Start clusters
       working-directory: test
       run: |
-        source ../venv
         drenv start --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
         cp ~/.config/drenv/${{ env.NAME_PREFIX }}rdr/config.yaml ../e2e/config.yaml
 
     - name: Deploy ramen
       run: |
-        source venv
         ramenctl deploy --name-prefix ${{ env.NAME_PREFIX }} test/envs/regional-dr.yaml
         ramenctl config --name-prefix ${{ env.NAME_PREFIX }} test/envs/regional-dr.yaml
 
@@ -56,6 +55,4 @@ jobs:
     - name: Delete clusters
       if: ${{ always() }}
       working-directory: test
-      run: |
-        source ../venv
-        drenv delete --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
+      run: drenv delete --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
