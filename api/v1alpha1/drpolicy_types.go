@@ -8,6 +8,8 @@ import (
 )
 
 // DRPolicySpec defines the desired state of DRPolicy
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.replicationClassSelector) || has(self.replicationClassSelector)", message="replicationClassSelector is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.volumeSnapshotClassSelector) || has(self.volumeSnapshotClassSelector)", message="volumeSnapshotClassSelector is required once set"
 type DRPolicySpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 

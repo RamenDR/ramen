@@ -167,6 +167,11 @@ spec:
             - schedulingInterval
             - volumeSnapshotClassSelector
             type: object
+            x-kubernetes-validations:
+            - message: replicationClassSelector is required once set
+              rule: '!has(oldSelf.replicationClassSelector) || has(self.replicationClassSelector)'
+            - message: volumeSnapshotClassSelector is required once set
+              rule: '!has(oldSelf.volumeSnapshotClassSelector) || has(self.volumeSnapshotClassSelector)'
           status:
             description: |-
               DRPolicyStatus defines the observed state of DRPolicy
