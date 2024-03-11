@@ -19,3 +19,19 @@ patches:
         config:
           insecureRegistries:
             - host.minikube.internal:5000
+  # Incrase certificate duration to avoid certificates renewals while a cluster
+  # is suspended and resumed.
+  - target:
+      kind: CDI
+      name: cdi
+    patch: |-
+      apiVersion: cdi.kubevirt.io/v1beta1
+      kind: CDI
+      metadata:
+        name: not-used
+      spec:
+        certConfig:
+          ca:
+            duration: 168h
+          server:
+            duration: 168h
