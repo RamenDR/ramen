@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import sys
+import time
+
+time.sleep(1)
+sys.exit("Fake error")
