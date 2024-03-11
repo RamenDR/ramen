@@ -48,7 +48,7 @@ func drClusterDeploy(drClusterInstance *drclusterInstance, ramenConfig *rmn.Rame
 
 	annotations := make(map[string]string)
 
-	annotations["DRClusterName"] = mwu.InstName
+	annotations[DRClusterNameAnnotation] = mwu.InstName
 
 	return mwu.CreateOrUpdateDrClusterManifestWork(drcluster.Name, objects, annotations)
 }
