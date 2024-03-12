@@ -34,6 +34,11 @@ def main():
     )
     p.add_argument("command", choices=commands, help="Command to run")
     p.add_argument("--name-prefix", help="Prefix profile names")
+    p.add_argument(
+        "--max-workers",
+        type=int,
+        help="Maximum number of workers per profile",
+    )
     p.add_argument("filename", help="Environment filename")
     args = p.parse_args()
 
@@ -60,7 +65,7 @@ def cmd_start(env, args):
         env["profiles"],
         delay=1,
         hooks=hooks,
-        verbose=args.verbose,
+        args=args,
     )
     execute(run_worker, env["workers"], hooks=hooks)
 
@@ -106,7 +111,7 @@ def cmd_dump(env, args):
     yaml.dump(env, sys.stdout)
 
 
-def execute(func, profiles, delay=0, **options):
+def execute(func, profiles, delay=0, max_workers=None, **options):
     """
     Execute func in parallel for every profile.
 
@@ -117,7 +122,7 @@ def execute(func, profiles, delay=0, **options):
     """
     failed = False
 
-    with concurrent.futures.ThreadPoolExecutor() as e:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as e:
         futures = {}
 
         for p in profiles:
@@ -135,19 +140,19 @@ def execute(func, profiles, delay=0, **options):
         sys.exit(1)
 
 
-def start_cluster(profile, hooks=(), verbose=False, **options):
+def start_cluster(profile, hooks=(), args=None, **options):
     if profile["external"]:
         logging.debug("[%s] Skipping external cluster", profile["name"])
     else:
         is_restart = minikube_profile_exists(profile["name"])
-        start_minikube_cluster(profile, verbose=verbose)
+        start_minikube_cluster(profile, verbose=args.verbose)
         if profile["containerd"]:
             logging.info("[%s] Configuring containerd", profile["name"])
             containerd.configure(profile)
         if is_restart:
             wait_for_deployments(profile)
 
-    execute(run_worker, profile["workers"], hooks=hooks)
+    execute(run_worker, profile["workers"], max_workers=args.max_workers, hooks=hooks)
 
 
 def stop_cluster(profile, **options):
