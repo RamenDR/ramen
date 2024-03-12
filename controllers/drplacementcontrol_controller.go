@@ -72,14 +72,13 @@ type ProgressCallback func(string, string)
 // DRPlacementControlReconciler reconciles a DRPlacementControl object
 type DRPlacementControlReconciler struct {
 	client.Client
-	APIReader           client.Reader
-	Log                 logr.Logger
-	MCVGetter           rmnutil.ManagedClusterViewGetter
-	Scheme              *runtime.Scheme
-	Callback            ProgressCallback
-	eventRecorder       *rmnutil.EventReporter
-	savedInstanceStatus rmn.DRPlacementControlStatus
-	ObjStoreGetter      ObjectStoreGetter
+	APIReader      client.Reader
+	Log            logr.Logger
+	MCVGetter      rmnutil.ManagedClusterViewGetter
+	Scheme         *runtime.Scheme
+	Callback       ProgressCallback
+	eventRecorder  *rmnutil.EventReporter
+	ObjStoreGetter ObjectStoreGetter
 }
 
 func ManifestWorkPredicateFunc() predicate.Funcs {
@@ -707,14 +706,11 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	d := r.newDRPCInstance(ctx, drpc, logger)
 
-	// Save a copy of the instance status to be used for the VRG status update comparison
-	drpc.Status.DeepCopyInto(&r.savedInstanceStatus)
-
 	ensureDRPCConditionsInited(&drpc.Status.Conditions, drpc.Generation, "Initialization")
 
 	placementObj, err := getPlacementOrPlacementRule(ctx, r.Client, drpc, logger)
 	if err != nil && !(errors.IsNotFound(err) && rmnutil.ResourceIsDeleted(drpc)) {
-		r.recordFailure(ctx, drpc, placementObj, "Error", err.Error(), logger)
+		d.recordFailure("Error", err.Error())
 
 		return ctrl.Result{}, err
 	}
@@ -735,7 +731,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	drPolicy, err := r.getAndEnsureValidDRPolicy(ctx, drpc, logger)
 	if err != nil {
-		r.recordFailure(ctx, drpc, placementObj, "Error", err.Error(), logger)
+		d.recordFailure("Error", err.Error())
 
 		return ctrl.Result{}, err
 	}
@@ -758,12 +754,12 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	if requeue {
-		return ctrl.Result{Requeue: true}, r.updateDRPCStatus(ctx, drpc, placementObj, logger)
+		return ctrl.Result{Requeue: true}, d.updateDRPCStatus()
 	}
 
 	err = d.updateDRPCInstance(drPolicy, placementObj)
 	if err != nil && !errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
-		err2 := r.updateDRPCStatus(ctx, drpc, placementObj, logger)
+		err2 := d.updateDRPCStatus()
 
 		return ctrl.Result{}, fmt.Errorf("failed to create DRPC instance (%w) and (%v)", err, err2)
 	}
@@ -771,8 +767,8 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
 		const initialWaitTime = 5
 
-		r.recordFailure(ctx, drpc, placementObj, "Waiting",
-			fmt.Sprintf("%v - wait time: %v", InitialWaitTimeForDRPCPlacementRule, initialWaitTime), logger)
+		d.recordFailure("Waiting", fmt.Sprintf("%v - wait time: %v", InitialWaitTimeForDRPCPlacementRule,
+			initialWaitTime))
 
 		return ctrl.Result{RequeueAfter: time.Second * initialWaitTime}, nil
 	}
@@ -794,15 +790,13 @@ func (r *DRPlacementControlReconciler) setProgressionAndUpdate(
 	return nil
 }
 
-func (r *DRPlacementControlReconciler) recordFailure(ctx context.Context, drpc *rmn.DRPlacementControl,
-	placementObj client.Object, reason, msg string, log logr.Logger,
-) {
-	needsUpdate := addOrUpdateCondition(&drpc.Status.Conditions, rmn.ConditionAvailable,
-		drpc.Generation, metav1.ConditionFalse, reason, msg)
+func (d *DRPCInstance) recordFailure(reason, msg string) {
+	needsUpdate := addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable,
+		d.instance.Generation, metav1.ConditionFalse, reason, msg)
 	if needsUpdate {
-		err := r.updateDRPCStatus(ctx, drpc, placementObj, log)
+		err := d.updateDRPCStatus()
 		if err != nil {
-			log.Info(fmt.Sprintf("Failed to update DRPC status (%v)", err))
+			d.log.Info(fmt.Sprintf("Failed to update DRPC status (%v)", err))
 		}
 	}
 }
@@ -1671,49 +1665,47 @@ func (r *DRPlacementControlReconciler) getStatusCheckDelay(
 }
 
 //nolint:cyclop
-func (r *DRPlacementControlReconciler) updateDRPCStatus(
-	ctx context.Context, drpc *rmn.DRPlacementControl, userPlacement client.Object, log logr.Logger,
-) error {
-	log.Info("Updating DRPC status")
+func (d *DRPCInstance) updateDRPCStatus() error {
+	d.log.Info("Updating DRPC status")
 
-	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, userPlacement)
+	vrgNamespace, err := selectVRGNamespace(d.reconciler.Client, d.log, d.instance, d.userPlacement)
 	if err != nil {
-		log.Info("Failed to select VRG namespace", "error", err)
+		d.log.Info("Failed to select VRG namespace", "error", err)
 	}
 
-	clusterDecision := r.getClusterDecision(userPlacement)
+	clusterDecision := d.reconciler.getClusterDecision(d.userPlacement)
 	if clusterDecision != nil && clusterDecision.ClusterName != "" && vrgNamespace != "" {
-		r.updateResourceCondition(drpc, clusterDecision.ClusterName, vrgNamespace, log)
+		d.reconciler.updateResourceCondition(d.instance, clusterDecision.ClusterName, vrgNamespace, d.log)
 	}
 
 	// do not set metrics if DRPC is being deleted
-	if !isBeingDeleted(drpc, userPlacement) {
-		if err := r.setDRPCMetrics(ctx, drpc, log); err != nil {
+	if !isBeingDeleted(d.instance, d.userPlacement) {
+		if err := d.reconciler.setDRPCMetrics(d.ctx, d.instance, d.log); err != nil {
 			// log the error but do not return the error
-			log.Info("failed to set drpc metrics", "errMSg", err)
+			d.log.Info("failed to set drpc metrics", "errMSg", err)
 		}
 	}
 
-	for i, condition := range drpc.Status.Conditions {
-		if condition.ObservedGeneration != drpc.Generation {
-			drpc.Status.Conditions[i].ObservedGeneration = drpc.Generation
+	for i, condition := range d.instance.Status.Conditions {
+		if condition.ObservedGeneration != d.instance.Generation {
+			d.instance.Status.Conditions[i].ObservedGeneration = d.instance.Generation
 		}
 	}
 
-	if reflect.DeepEqual(r.savedInstanceStatus, drpc.Status) {
-		log.Info("No need to update DRPC Status")
+	if reflect.DeepEqual(d.savedInstanceStatus, d.instance.Status) {
+		d.log.Info("No need to update DRPC Status")
 
 		return nil
 	}
 
 	now := metav1.Now()
-	drpc.Status.LastUpdateTime = &now
+	d.instance.Status.LastUpdateTime = &now
 
-	if err := r.Status().Update(context.TODO(), drpc); err != nil {
+	if err := d.reconciler.Status().Update(context.TODO(), d.instance); err != nil {
 		return errorswrapper.Wrap(err, "failed to update DRPC status")
 	}
 
-	log.Info("Updated DRPC Status")
+	d.log.Info("Updated DRPC Status")
 
 	return nil
 }
