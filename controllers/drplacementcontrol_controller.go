@@ -705,6 +705,8 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, errorswrapper.Wrap(err, "failed to get DRPC object")
 	}
 
+	d := r.newDRPCInstance(ctx, drpc, logger)
+
 	// Save a copy of the instance status to be used for the VRG status update comparison
 	drpc.Status.DeepCopyInto(&r.savedInstanceStatus)
 
@@ -759,7 +761,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{Requeue: true}, r.updateDRPCStatus(ctx, drpc, placementObj, logger)
 	}
 
-	d, err := r.createDRPCInstance(ctx, drPolicy, drpc, placementObj, logger)
+	err = d.updateDRPCInstance(drPolicy, placementObj)
 	if err != nil && !errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
 		err2 := r.updateDRPCStatus(ctx, drpc, placementObj, logger)
 
@@ -859,74 +861,58 @@ func (r *DRPlacementControlReconciler) setLastSyncBytesMetric(syncDataBytesMetri
 	syncDataBytesMetrics.LastSyncDataBytes.Set(float64(*b))
 }
 
-//nolint:funlen
-func (r *DRPlacementControlReconciler) createDRPCInstance(
-	ctx context.Context,
-	drPolicy *rmn.DRPolicy,
-	drpc *rmn.DRPlacementControl,
-	placementObj client.Object,
-	log logr.Logger,
-) (*DRPCInstance, error) {
-	log.Info("Creating DRPC instance")
+func (d *DRPCInstance) updateDRPCInstance(drPolicy *rmn.DRPolicy, placementObj client.Object) error {
+	var err error
 
-	drClusters, err := getDRClusters(ctx, r.Client, drPolicy)
+	d.drPolicy = drPolicy
+	d.userPlacement = placementObj
+
+	d.drClusters, err = getDRClusters(d.ctx, d.reconciler.Client, d.drPolicy)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// We only create DRPC PlacementRule if the preferred cluster is not configured
-	err = r.getDRPCPlacementRule(ctx, drpc, placementObj, drPolicy, log)
+	err = d.reconciler.getDRPCPlacementRule(d.ctx, d.instance, d.userPlacement, d.drPolicy, d.log)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, placementObj)
+	d.vrgNamespace, err = selectVRGNamespace(d.reconciler.Client, d.log, d.instance, d.userPlacement)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	vrgs, _, _, err := getVRGsFromManagedClusters(r.MCVGetter, drpc, drClusters, vrgNamespace, log)
+	d.vrgs, _, _, err = getVRGsFromManagedClusters(d.reconciler.MCVGetter, d.instance, d.drClusters, d.vrgNamespace,
+		d.log)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
+	_, ramenConfig, err := ConfigMapGet(d.ctx, d.reconciler.APIReader)
 	if err != nil {
-		return nil, fmt.Errorf("configmap get: %w", err)
+		return fmt.Errorf("configmap get: %w", err)
 	}
 
-	d := &DRPCInstance{
-		reconciler:      r,
-		ctx:             ctx,
-		log:             log,
-		instance:        drpc,
-		userPlacement:   placementObj,
-		drPolicy:        drPolicy,
-		drClusters:      drClusters,
-		vrgs:            vrgs,
-		vrgNamespace:    vrgNamespace,
-		volSyncDisabled: ramenConfig.VolSync.Disabled,
-		mwu: rmnutil.MWUtil{
-			Client:          r.Client,
-			APIReader:       r.APIReader,
-			Ctx:             ctx,
-			Log:             log,
-			InstName:        drpc.Name,
-			TargetNamespace: vrgNamespace,
-		},
-	}
+	d.volSyncDisabled = ramenConfig.VolSync.Disabled
 
-	isMetro, _ := dRPolicySupportsMetro(drPolicy, drClusters)
+	isMetro, _ := dRPolicySupportsMetro(d.drPolicy, d.drClusters)
 	if isMetro {
 		d.volSyncDisabled = true
 
-		log.Info("volsync is set to disabled")
+		d.log.Info("volsync is set to disabled")
 	}
 
-	// Save the instance status
-	d.instance.Status.DeepCopyInto(&d.savedInstanceStatus)
+	d.mwu = rmnutil.MWUtil{
+		Client:          d.reconciler.Client,
+		APIReader:       d.reconciler.APIReader,
+		Ctx:             d.ctx,
+		Log:             d.log,
+		InstName:        d.instance.Name,
+		TargetNamespace: d.vrgNamespace,
+	}
 
-	return d, nil
+	return nil
 }
 
 func (r *DRPlacementControlReconciler) createDRPCMetricsInstance(
@@ -2638,4 +2624,25 @@ func constructVRGFromView(viewVRG *rmn.VolumeReplicationGroup) *rmn.VolumeReplic
 	}
 
 	return vrg
+}
+
+// newDRPCInstance creates a new DRPCInstance using only the information
+// available at the start of the reconcile. It doesn't make any calls to the
+// api server.
+func (r *DRPlacementControlReconciler) newDRPCInstance(ctx context.Context,
+	drpc *rmn.DRPlacementControl, log logr.Logger,
+) *DRPCInstance {
+	log.Info("Creating DRPC instance")
+
+	d := &DRPCInstance{
+		reconciler: r,
+		ctx:        ctx,
+		log:        log,
+		instance:   drpc,
+	}
+
+	// Save the instance status
+	d.instance.Status.DeepCopyInto(&d.savedInstanceStatus)
+
+	return d
 }
