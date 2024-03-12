@@ -13,6 +13,7 @@ import time
 import yaml
 
 import drenv
+from . import cache
 from . import cluster
 from . import commands
 from . import containerd
@@ -52,6 +53,33 @@ def main():
 
     func = globals()[CMD_PREFIX + args.command]
     func(env, args)
+
+
+def cmd_clear(env, args):
+    start = time.monotonic()
+    logging.info("[%s] Clearing cache", env["name"])
+    cache_dir = cache.path("")
+    try:
+        shutil.rmtree(cache_dir)
+    except FileNotFoundError:
+        pass
+    logging.info(
+        "[%s] Fetching finishied in %.2f seconds",
+        env["name"],
+        time.monotonic() - start,
+    )
+
+
+def cmd_fetch(env, args):
+    start = time.monotonic()
+    logging.info("[%s] Fetching", env["name"])
+    addons = collect_addons(env)
+    execute(fetch_addon, addons, max_workers=args.max_workers, ctx=env["name"])
+    logging.info(
+        "[%s] Fetching finishied in %.2f seconds",
+        env["name"],
+        time.monotonic() - start,
+    )
 
 
 def cmd_start(env, args):
@@ -138,6 +166,18 @@ def execute(func, profiles, delay=0, max_workers=None, **options):
 
     if failed:
         sys.exit(1)
+
+
+def collect_addons(env):
+    found = {}
+    for profile in env["profiles"]:
+        for worker in profile["workers"]:
+            for addon in worker["addons"]:
+                found[addon["name"]] = addon
+    for worker in env["workers"]:
+        for addon in worker["addons"]:
+            found[addon["name"]] = addon
+    return found.values()
 
 
 def start_cluster(profile, hooks=(), args=None, **options):
@@ -291,6 +331,21 @@ def run_worker(worker, hooks=(), reverse=False, allow_failure=False):
     addons = reversed(worker["addons"]) if reverse else worker["addons"]
     for addon in addons:
         run_addon(addon, worker["name"], hooks=hooks, allow_failure=allow_failure)
+
+
+def fetch_addon(addon, ctx="global"):
+    addon_dir = os.path.join(ADDONS_DIR, addon["name"])
+    if not os.path.isdir(addon_dir):
+        logging.warning(
+            "[%s] Addon '%s' does not exist - skipping",
+            ctx,
+            addon["name"],
+        )
+        return
+
+    hook = os.path.join(addon_dir, "fetch")
+    if os.path.isfile(hook):
+        run_hook(hook, (), ctx)
 
 
 def run_addon(addon, name, hooks=(), allow_failure=False):
