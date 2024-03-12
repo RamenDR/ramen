@@ -333,7 +333,7 @@ func (u *drpolicyUpdater) deleteDRPolicy(drclusters *ramen.DRClusterList,
 		}
 	}
 
-	if err := drPolicyUndeploy(u.object, drclusters, secretsUtil, ramenConfig); err != nil {
+	if err := drPolicyUndeploy(u.object, drclusters, secretsUtil, ramenConfig, u.log); err != nil {
 		return fmt.Errorf("drpolicy undeploy: %w", err)
 	}
 
