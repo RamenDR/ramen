@@ -1107,10 +1107,15 @@ func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 		return nil
 	}
 
+	vrgNamespace, err := selectVRGNamespace(r.Client, log, drpc, placementObj)
+	if err != nil {
+		return fmt.Errorf("failed to select VRG namespace %w", err)
+	}
+
 	// Run finalization logic for dprc.
 	// If the finalization logic fails, don't remove the finalizer so
 	// that we can retry during the next reconciliation.
-	if err := r.finalizeDRPC(ctx, drpc, placementObj, log); err != nil {
+	if err := r.finalizeDRPC(ctx, drpc, vrgNamespace, log); err != nil {
 		return err
 	}
 
@@ -1138,7 +1143,7 @@ func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 
 //nolint:funlen,cyclop
 func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *rmn.DRPlacementControl,
-	placementObj client.Object, log logr.Logger,
+	vrgNamespace string, log logr.Logger,
 ) error {
 	log.Info("Finalizing DRPC")
 
@@ -1155,11 +1160,6 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 	err := volsync.CleanupSecretPropagation(ctx, r.Client, drpc, r.Log)
 	if err != nil {
 		return fmt.Errorf("failed to clean up volsync secret-related resources (%w)", err)
-	}
-
-	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, placementObj)
-	if err != nil {
-		return err
 	}
 
 	mwu := rmnutil.MWUtil{
