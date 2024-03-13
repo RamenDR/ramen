@@ -30,9 +30,6 @@ jobs:
     - name: Install ramenctl
       run: pip install -e ramenctl
 
-    - name: Build ramen-operator container
-      run: make docker-build
-
     - name: Delete clusters
       if: ${{ always() }}
       working-directory: test
@@ -49,6 +46,9 @@ jobs:
         command: |
           cd test
           drenv start --max-workers ${{ env.MAX_WORKERS }} --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
+
+    - name: Build ramen-operator container
+      run: make docker-build
 
     - name: Deploy ramen
       run: ramenctl deploy --name-prefix ${{ env.NAME_PREFIX }} test/envs/regional-dr.yaml
