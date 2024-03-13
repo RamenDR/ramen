@@ -722,10 +722,14 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		// then the DRPC should be deleted as well. The least we should do here is to clean up DPRC.
 		err := r.processDeletion(ctx, drpc, placementObj, logger)
 		if err != nil {
-			// update drpc progression only on err
 			logger.Info(fmt.Sprintf("Error in deleting DRPC: (%v)", err))
 
-			return ctrl.Result{}, r.setProgressionAndUpdate(ctx, drpc, rmn.ProgressionDeleting)
+			statusErr := r.setProgressionAndUpdate(ctx, drpc, rmn.ProgressionDeleting)
+			if statusErr != nil {
+				err = fmt.Errorf("drpc deletion failed: %w and status update failed: %w", err, statusErr)
+			}
+
+			return ctrl.Result{}, err
 		}
 
 		return ctrl.Result{}, nil
