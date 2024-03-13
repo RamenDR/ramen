@@ -183,7 +183,7 @@ test-drenv: ## Run drenv tests.
 test-ramenctl: ## Run ramenctl tests.
 	$(MAKE) -C ramenctl
 
-e2e-rdr: generate manifests docker-build ## Run rdr-e2e tests.
+e2e-rdr: generate manifests ## Run rdr-e2e tests.
 	./e2e/rdr-e2e.sh
 
 coverage:
