@@ -154,18 +154,24 @@ func validateClusterManifest(drcluster *ramen.DRCluster, disabled bool) {
 		expectedCount = 4
 	}
 
+	clusterName := drcluster.Name
+
+	key := types.NamespacedName{
+		Name:      util.DrClusterManifestWorkName,
+		Namespace: clusterName,
+	}
+
+	manifestWork := &workv1.ManifestWork{}
+
 	Eventually(
 		func(g Gomega) []workv1.Manifest {
-			clusterName := drcluster.Name
-			manifestWork := &workv1.ManifestWork{}
-			g.Expect(apiReader.Get(context.TODO(), types.NamespacedName{
-				Name:      util.DrClusterManifestWorkName,
-				Namespace: clusterName,
-			}, manifestWork)).To(Succeed())
+			g.Expect(apiReader.Get(context.TODO(), key, manifestWork)).To(Succeed())
 
 			return manifestWork.Spec.Workload.Manifests
 		}, timeout, interval,
 	).Should(HaveLen(expectedCount))
+
+	Expect(manifestWork.GetAnnotations()[controllers.DRClusterNameAnnotation]).Should(Equal(clusterName))
 	// TODO: Validate fencing status
 }
 
