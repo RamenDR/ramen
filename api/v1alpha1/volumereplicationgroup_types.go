@@ -10,8 +10,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// Important: Run "make" to regenerate code after modifying this file
-
 // ReplicationState represents the replication operations to be performed on the volume
 type ReplicationState string
 
@@ -137,8 +135,6 @@ type RecipeRef struct {
 }
 
 const KubeObjectProtectionCaptureIntervalDefault = 5 * time.Minute
-
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // VolumeReplicationGroup (VRG) spec declares the desired schedule for data
 // replication and replication state of all PVCs identified via the given
@@ -303,7 +299,6 @@ type KubeObjectProtectionStatus struct {
 }
 
 // VolumeReplicationGroupStatus defines the observed state of VolumeReplicationGroup
-// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 type VolumeReplicationGroupStatus struct {
 	State State `json:"state,omitempty"`
 

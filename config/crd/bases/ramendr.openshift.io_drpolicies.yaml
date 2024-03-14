@@ -173,10 +173,7 @@ spec:
             - message: volumeSnapshotClassSelector is immutable
               rule: has(oldSelf.volumeSnapshotClassSelector) == has(self.volumeSnapshotClassSelector)
           status:
-            description: |-
-              DRPolicyStatus defines the observed state of DRPolicy
-              INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-              Important: Run "make" to regenerate code after modifying this file
+            description: DRPolicyStatus defines the observed state of DRPolicy
             properties:
               conditions:
                 items:
