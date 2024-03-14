@@ -1735,6 +1735,8 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 		}
 	}
 
+	// TODO: This is too generic, why are all conditions reported for the current generation?
+	// Each condition should choose for itself, no?
 	for i, condition := range drpc.Status.Conditions {
 		if condition.ObservedGeneration != drpc.Generation {
 			drpc.Status.Conditions[i].ObservedGeneration = drpc.Generation

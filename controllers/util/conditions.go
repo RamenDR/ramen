@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"golang.org/x/exp/slices"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -87,28 +88,108 @@ func ConditionAppend(
 	)
 }
 
-func ConditionSetFirstFalseOrLastTrue(
+// MergeConditions merges VRG conditions of the same type to generate a single condition for the Type
+func MergeConditions(
 	conditionSet func(*[]metav1.Condition, metav1.Condition),
 	conditions *[]metav1.Condition,
+	ignoreReasons []string,
 	subConditions ...*metav1.Condition,
 ) {
-	trueSubConditions := make([]*metav1.Condition, 0, len(subConditions))
+	trueSubConditions := []*metav1.Condition{}
+	falseSubConditions := []*metav1.Condition{}
+	unknownSubConditions := []*metav1.Condition{}
 
 	for _, subCondition := range subConditions {
 		if subCondition == nil {
 			continue
 		}
 
-		if subCondition.Status == metav1.ConditionFalse {
-			conditionSet(conditions, *subCondition)
+		switch subCondition.Status {
+		case metav1.ConditionFalse:
+			falseSubConditions = oldestConditions(subCondition, falseSubConditions)
+		case metav1.ConditionUnknown:
+			unknownSubConditions = oldestConditions(subCondition, unknownSubConditions)
+		case metav1.ConditionTrue:
+			trueSubConditions = oldestConditions(subCondition, trueSubConditions)
+		}
+	}
 
-			return
+	switch {
+	case len(falseSubConditions) != 0:
+		conditionSet(conditions, mergedCondition(falseSubConditions, ignoreReasons))
+	case len(unknownSubConditions) != 0:
+		conditionSet(conditions, mergedCondition(unknownSubConditions, ignoreReasons))
+	case len(trueSubConditions) != 0:
+		conditionSet(conditions, mergedCondition(trueSubConditions, ignoreReasons))
+	}
+}
+
+// oldestConditions returns a list of conditions that are the same generation and the oldest among newCondition and
+// conditions[]. Initial call should pass an empty conditions[] and iterate over conditions to merge, as the function
+// expects conditions in passed in conditions[] to be the of the same generation.
+func oldestConditions(newCondition *metav1.Condition, conditions []*metav1.Condition) []*metav1.Condition {
+	retConditions := []*metav1.Condition{}
+
+	if len(conditions) == 0 {
+		retConditions = append(retConditions, newCondition)
+
+		return retConditions
+	}
+
+	// All conditions in conditions[] are from an older generation
+	if conditions[0].ObservedGeneration < newCondition.ObservedGeneration {
+		return conditions
+	}
+
+	// newCondition is of the same generation as conditions in conditions[]
+	if conditions[0].ObservedGeneration == newCondition.ObservedGeneration {
+		conditions = append(conditions, newCondition)
+
+		return conditions
+	}
+
+	// newCondition generation is lower than all conditions in conditions[]
+	retConditions = append(retConditions, newCondition)
+
+	return retConditions
+}
+
+// mergedCondition merges messages from conditions[] that MUST contain conditions with the same Type,
+// ObservedGeneration, Status.
+// If a condition in conditions[] has a Reason in ignoreReasons it is ignored in the merge unless all conditions
+// have a reason from ignoreReasons
+func mergedCondition(conditions []*metav1.Condition, ignoreReasons []string) metav1.Condition {
+	merged := metav1.Condition{}
+
+	for _, subCondition := range conditions {
+		if merged.Type == "" {
+			merged = *subCondition
+
+			continue
 		}
 
-		trueSubConditions = append(trueSubConditions, subCondition)
+		if subCondition.Reason == merged.Reason {
+			merged.Message += ". " + subCondition.Message
+
+			continue
+		}
+
+		// If current condition has an ignore reason, carry older merged condition as is
+		if slices.Contains(ignoreReasons, subCondition.Reason) {
+			continue
+		}
+
+		// If older merged condition has an ignore reason, carry current condition
+		if slices.Contains(ignoreReasons, merged.Reason) {
+			merged = *subCondition
+
+			continue
+		}
+
+		// NOTE: Reason differs, for now merge the message. We could look at error reasons
+		// taking precedence over other reasons
+		merged.Message += subCondition.Message
 	}
 
-	if len(trueSubConditions) > 0 {
-		conditionSet(conditions, *trueSubConditions[len(trueSubConditions)-1])
-	}
+	return merged
 }

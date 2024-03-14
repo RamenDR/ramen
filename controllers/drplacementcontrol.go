@@ -1857,7 +1857,7 @@ func (d *DRPCInstance) ensureVRGIsSecondaryOnCluster(clusterName string) bool {
 		return false
 	}
 
-	if vrg.Status.State != rmn.SecondaryState {
+	if vrg.Status.State != rmn.SecondaryState || vrg.Status.ObservedGeneration != vrg.Generation {
 		d.log.Info(fmt.Sprintf("VRG on %s has not transitioned to secondary yet. Spec-State/Status-State %s/%s",
 			clusterName, vrg.Spec.ReplicationState, vrg.Status.State))
 
