@@ -64,8 +64,17 @@ const (
 )
 
 const (
+	// Available condition provides the latest available observation regarding the readiness of the cluster,
+	// in status.preferredDecision, for workload deployment.
 	ConditionAvailable = "Available"
+
+	// PeerReady condition provides the latest available observation regarding the readiness of a peer cluster
+	// to failover or relocate the workload.
 	ConditionPeerReady = "PeerReady"
+
+	// Protected condition provides the latest available observation regarding the protection status of the workload,
+	// on the cluster it is expected to be available on.
+	ConditionProtected = "Protected"
 )
 
 const (
@@ -74,6 +83,13 @@ const (
 	ReasonSuccess     = "Success"
 	ReasonNotStarted  = "NotStarted"
 	ReasonPaused      = "Paused"
+)
+
+const (
+	ReasonProtectedUnknown     = "Unknown"
+	ReasonProtectedProgressing = "Progressing"
+	ReasonProtectedError       = "Error"
+	ReasonProtected            = "Protected"
 )
 
 type ProgressionStatus string

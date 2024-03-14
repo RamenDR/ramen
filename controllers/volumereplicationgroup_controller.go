@@ -986,6 +986,7 @@ func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
 	result.Requeue = v.reconcileVolRepsAsSecondary() || result.Requeue
 
 	if vrg.Spec.Action == ramendrv1alpha1.VRGActionRelocate {
+		// TODO: If RDSpec changes, and hence generation changes, a k8s backup would be initiated again as Secondary
 		v.relocate(&result)
 	}
 
@@ -1291,6 +1292,14 @@ func (v *VRGInstance) updateLastGroupSyncBytes() {
 	}
 
 	v.instance.Status.LastGroupSyncBytes = totalLastSyncBytes
+}
+
+// isVRGReasonError returns true if the passed in VRG condition reason matches any errors reported as the Reason
+func isVRGReasonError(condition *metav1.Condition) bool {
+	return condition.Reason == VRGConditionReasonError ||
+		condition.Reason == VRGConditionReasonErrorUnknown ||
+		condition.Reason == VRGConditionReasonUploadError ||
+		condition.Reason == VRGConditionReasonClusterDataAnnotationFailed
 }
 
 func (v *VRGInstance) s3StoreAccessorsGet() {
