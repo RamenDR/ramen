@@ -6,7 +6,10 @@ spec:
   schedulingInterval: "1h"  # hourly
   replicationClassSelector:
     matchLabels:
-      class: ramen
+      class: ramen-replication-class
+  volumeSnapshotClassSelector:
+    matchLabels:
+      class: ramen-snapshot-class
   drClusters:
     - east
     - west
