@@ -632,30 +632,44 @@ var _ = Describe("DRClusterController", func() {
 			})
 		})
 
-		// Specify("create a drcluster copy for changes", func() {
-		// 	createPolicies()
-		// 	drcluster = drclusters[0].DeepCopy()
-		// })
+		Specify("create a drcluster copy for changes", func() {
+			createPolicies()
+			drcluster = drclusters[0].DeepCopy()
+		})
 
-		// When("provided Fencing value is Fenced and the s3 validation fails", func() {
-		// 	It("reports fenced with reason Fencing success but validated condition should be false", func() {
-		// 		drcluster.Spec.ClusterFence = ramen.ClusterFenceStateFenced
-		// 		drcluster.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
-		// 		Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
-		// 		updateDRClusterManifestWorkStatus(drcluster.Name)
-		// 		drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue,
-		// 			Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
-		// 			ramen.DRClusterConditionTypeFenced)
-		// 	})
-		// })
+		When("provided Fencing value is Fenced and the s3 validation fails", func() {
+			It("reports fenced with reason Fencing success but validated condition should be false", func() {
+				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateFenced
+				drcluster.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
+				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				updateDRClusterManifestWorkStatus(drcluster.Name)
+				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue,
+					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
+					ramen.DRClusterConditionTypeFenced)
+			})
+		})
 
-		// When("deleting a DRCluster", func() {
-		// 	It("is successful", func() {
-		// 		drpolicyDelete(syncDRPolicy)
-		// 		drcluster = getLatestDRCluster(drcluster.Name)
-		// 		drclusterDelete(drcluster)
-		// 	})
-		// })
+		// this test is needed to delete the DRCluster in the above scenario,
+		// ref issue: https://github.com/RamenDR/ramen/issues/1264, because of this
+		// we need to remove the change the fenced status to "", so that ramen will not
+		// look for the peer cluster in this situtaion
+		When("provided Fencing value is empty", func() {
+			It("reports validated with status fencing as Unfenced", func() {
+				drcluster.Spec.ClusterFence = ""
+				drcluster = updateDRClusterParameters(drcluster)
+				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse,
+					Equal(controllers.DRClusterConditionReasonClean), Ignore(),
+					ramen.DRClusterConditionTypeFenced)
+			})
+		})
+
+		When("deleting a DRCluster", func() {
+			It("is successful", func() {
+				drpolicyDelete(syncDRPolicy)
+				drcluster = getLatestDRCluster(drcluster.Name)
+				drclusterDelete(drcluster)
+			})
+		})
 	})
 
 	Context("DRCluster resource cluster name validation", func() {
