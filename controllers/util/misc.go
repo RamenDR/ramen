@@ -5,8 +5,11 @@ package util
 
 import (
 	"context"
+	"reflect"
 
 	"github.com/go-logr/logr"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -88,6 +91,19 @@ func AddAnnotation(obj client.Object, key, value string) bool {
 	}
 
 	return !added
+}
+
+func AddOwnerReference(obj, owner metav1.Object, scheme *runtime.Scheme) (bool, error) {
+	currentOwnerRefs := obj.GetOwnerReferences()
+
+	err := controllerutil.SetOwnerReference(owner, obj, scheme)
+	if err != nil {
+		return false, err
+	}
+
+	ownerAdded := !reflect.DeepEqual(obj.GetOwnerReferences(), currentOwnerRefs)
+
+	return ownerAdded, nil
 }
 
 func AddFinalizer(obj client.Object, finalizer string) bool {
