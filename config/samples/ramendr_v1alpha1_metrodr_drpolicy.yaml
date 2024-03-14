@@ -6,3 +6,6 @@ spec:
   drClusters:
     - east1
     - east2
+  schedulingInterval: {}
+  replicationClassSelector: {}
+  volumeSnapshotClassSelector: {}
