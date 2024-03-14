@@ -1711,6 +1711,11 @@ func (r *DRPlacementControlReconciler) getStatusCheckDelay(
 	return time.Until(beforeProcessing.Add(StatusCheckDelay))
 }
 
+// updateDRPCStatus updates the DRPC sub-resource status with,
+// - the current instance DRPC status as updated during reconcile
+// - any updated VRG status as needs to be reflected in DRPC
+// It also updates latest metrics for the current instance of DRPC.
+//
 //nolint:cyclop
 func (r *DRPlacementControlReconciler) updateDRPCStatus(
 	ctx context.Context, drpc *rmn.DRPlacementControl, userPlacement client.Object, log logr.Logger,
@@ -1724,6 +1729,7 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 
 	clusterDecision := r.getClusterDecision(userPlacement)
 	if clusterDecision != nil && clusterDecision.ClusterName != "" && vrgNamespace != "" {
+		// TODO: On relocate/failover cluster decision is nil, so older cluster decision is reported
 		r.updateResourceCondition(drpc, clusterDecision.ClusterName, vrgNamespace, log)
 	}
 
@@ -1761,13 +1767,16 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 	return nil
 }
 
+// updateResourceCondition updates DRPC status sub-resource with updated status from VRG if one exists,
+// - The VRG is read from the cluster where the workload is intended to be deployed
+// - The status update is NOT intended for a VRG that should be cleaned up on a peer cluster
+// It also updates DRPC ConditionProtected based on current state of VRG.
 func (r *DRPlacementControlReconciler) updateResourceCondition(
 	drpc *rmn.DRPlacementControl,
 	clusterName, vrgNamespace string,
 	log logr.Logger,
 ) {
 	annotations := make(map[string]string)
-
 	annotations[DRPCNameAnnotation] = drpc.Name
 	annotations[DRPCNamespaceAnnotation] = drpc.Namespace
 
@@ -1777,6 +1786,8 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 		log.Info("Failed to get VRG from managed cluster", "errMsg", err.Error())
 
 		drpc.Status.ResourceConditions = rmn.VRGConditions{}
+
+		updateProtectedConditionUnknown(drpc, clusterName)
 
 		return
 	}
@@ -1799,6 +1810,8 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 		drpc.Status.LastGroupSyncDuration = vrg.Status.LastGroupSyncDuration
 		drpc.Status.LastGroupSyncBytes = vrg.Status.LastGroupSyncBytes
 	}
+
+	updateDRPCProtectedCondition(drpc, vrg, clusterName)
 }
 
 func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
@@ -2186,6 +2199,14 @@ func ensureDRPCConditionsInited(conditions *[]metav1.Condition, observedGenerati
 		Reason:             string(rmn.Initiating),
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
+		LastTransitionTime: time,
+		Message:            message,
+	})
+	setStatusConditionIfNotFound(conditions, metav1.Condition{
+		Type:               rmn.ConditionProtected,
+		Reason:             string(rmn.ReasonProtectedUnknown),
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
 		LastTransitionTime: time,
 		Message:            message,
 	})
