@@ -10,3 +10,5 @@ spec:
   - $cluster1
   - $cluster2
   schedulingInterval: 1m
+  replicationClassSelector: {}
+  volumeSnapshotClassSelector: {}
