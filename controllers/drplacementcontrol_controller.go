@@ -710,14 +710,34 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	ensureDRPCConditionsInited(&drpc.Status.Conditions, drpc.Generation, "Initialization")
 
+	if rmnutil.ResourceIsDeleted(drpc) {
+		err := r.processDeletion(ctx, drpc, logger)
+		if err != nil {
+			logger.Info(fmt.Sprintf("Error in deleting DRPC: (%v)", err))
+
+			statusErr := r.setProgressionAndUpdate(ctx, drpc, rmn.ProgressionDeleting)
+			if statusErr != nil {
+				err = fmt.Errorf("drpc deletion failed: %w and status update failed: %w", err, statusErr)
+			}
+
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{}, nil
+	}
+
 	placementObj, err := getPlacementOrPlacementRule(ctx, r.Client, drpc, logger)
-	if err != nil && !(errors.IsNotFound(err) && rmnutil.ResourceIsDeleted(drpc)) {
+	if err != nil {
+		// If drpc is not being deleted, then getting the placement or placementRule should not fail
 		r.recordFailure(ctx, drpc, placementObj, "Error", err.Error(), logger)
 
 		return ctrl.Result{}, err
 	}
 
-	if isBeingDeleted(drpc, placementObj) {
+	if rmnutil.ResourceIsDeleted(placementObj) {
+		logger.Info("Placement or PlacementRule is being deleted, will cleanup the DRPC", "placementObj",
+			placementObj.GetName())
+
 		// DPRC depends on User PlacementRule/Placement. If DRPC or/and the User PlacementRule is deleted,
 		// then the DRPC should be deleted as well. The least we should do here is to clean up DPRC.
 		err := r.processDeletion(ctx, drpc, logger)
