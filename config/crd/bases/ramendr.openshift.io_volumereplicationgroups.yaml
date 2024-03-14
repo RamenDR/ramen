@@ -566,9 +566,8 @@ spec:
             - s3Profiles
             type: object
           status:
-            description: |-
-              VolumeReplicationGroupStatus defines the observed state of VolumeReplicationGroup
-              INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
+            description: VolumeReplicationGroupStatus defines the observed state of
+              VolumeReplicationGroup
             properties:
               conditions:
                 description: Conditions are the list of VRG's summary conditions and
