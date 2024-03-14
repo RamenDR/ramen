@@ -1088,9 +1088,25 @@ func (v *VRGInstance) updateVRGStatus(result ctrl.Result) ctrl.Result {
 	return result
 }
 
+// updateStatusState updates VRG status.State to the observed state, considering required conditions for cases:
+//   - Volsync reports DataReady when VRG is Primary and ignores(nil) it when VRG is Secondary
+//   - Volsync ignores(nil) DataProtected when VRG is Primary
+//   - Volrep reports DataReady for both Primary and Secondary
+//   - Volrep as Secondary is additionally only complete when it is either DataProtected (in the relocate action), or
+//     it is DataProtected with replication reestablished (in the failover action). The latter is folded into DataReady
+//     condition reporting by Volrep, thus requiring inspection of DataProtected for Volrep only when action is
+//     relocate.
+//
+// status.State as Secondary for Volrep is a final state, i.e all PVCs are ensured as Secondary
+// status.State as Secondary for Volsync may switch between true/false, as newer PVCs are protected
+// status.State as Primary can switch between true/false, as new PVCs are protected (or PVCs are deleted), when
+// workload is active on the cluster
+// status.State as Primary is a final state, when VRG is rolled out initially before the workload is placed
+// on the cluster
 func (v *VRGInstance) updateStatusState() {
 	dataReadyCondition := findCondition(v.instance.Status.Conditions, VRGConditionTypeDataReady)
 	if dataReadyCondition == nil {
+		// VRG is exclusively using volsync
 		if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary &&
 			len(v.instance.Spec.VolSync.RDSpec) > 0 {
 			v.instance.Status.State = ramendrv1alpha1.SecondaryState
@@ -1100,37 +1116,60 @@ func (v *VRGInstance) updateStatusState() {
 
 		v.log.Info("Failed to find the DataReady condition in status")
 
-		return
-	}
-
-	StatusState := getStatusStateFromSpecState(v.instance.Spec.ReplicationState)
-
-	// update Status.State to reflect the state in spec
-	// only after successful transition of the resource
-	// (from primary->secondary or vise versa). That
-	// successful completion of transition can be seen
-	// in dataReadyCondition.Status being set to True.
-	if dataReadyCondition.Status == metav1.ConditionTrue {
-		v.instance.Status.State = StatusState
-
-		return
-	}
-
-	// If VRG available condition is not true and the reason
-	// is Error, then mark Status.State as UnknownState instead
-	// of Primary or Secondary.
-	if dataReadyCondition.Reason == VRGConditionReasonError {
 		v.instance.Status.State = ramendrv1alpha1.UnknownState
 
 		return
 	}
 
-	// If the state in spec is anything apart from
-	// primary or secondary, then explicitly set
-	// the Status.State to UnknownState.
-	if StatusState == ramendrv1alpha1.UnknownState {
-		v.instance.Status.State = StatusState
+	StatusState := getStatusStateFromSpecState(v.instance.Spec.ReplicationState)
+
+	if dataReadyCondition.Status != metav1.ConditionTrue ||
+		dataReadyCondition.ObservedGeneration != v.instance.Generation {
+		v.instance.Status.State = ramendrv1alpha1.UnknownState
+
+		return
 	}
+
+	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
+		v.instance.Status.State = StatusState
+
+		return
+	}
+
+	v.updateStatusStateForSecondary()
+}
+
+// updateStatusStateForSecondary is a helper to handle cases where VRG desired state is Secondary and its
+// status.State needs to be updated. See updateStatusState for more details.
+func (v *VRGInstance) updateStatusStateForSecondary() {
+	if v.instance.Spec.Action != ramendrv1alpha1.VRGActionRelocate {
+		v.instance.Status.State = ramendrv1alpha1.SecondaryState
+
+		return
+	}
+
+	dataProtectedCondition := findCondition(v.instance.Status.Conditions, VRGConditionTypeDataProtected)
+	if dataProtectedCondition == nil {
+		if len(v.volRepPVCs) == 0 {
+			// VRG is exclusively using volsync
+			v.instance.Status.State = ramendrv1alpha1.SecondaryState
+
+			return
+		}
+
+		v.instance.Status.State = ramendrv1alpha1.UnknownState
+
+		return
+	}
+
+	if dataProtectedCondition.Status == metav1.ConditionTrue &&
+		dataProtectedCondition.ObservedGeneration == v.instance.Generation {
+		v.instance.Status.State = ramendrv1alpha1.SecondaryState
+
+		return
+	}
+
+	v.instance.Status.State = ramendrv1alpha1.UnknownState
 }
 
 func getStatusStateFromSpecState(state ramendrv1alpha1.ReplicationState) ramendrv1alpha1.State {
@@ -1153,14 +1192,22 @@ func getStatusStateFromSpecState(state ramendrv1alpha1.ReplicationState) ramendr
 func (v *VRGInstance) updateVRGConditions() {
 	logAndSet := func(conditionName string, subconditions ...*metav1.Condition) {
 		v.log.Info(conditionName, "subconditions", subconditions)
-		rmnutil.ConditionSetFirstFalseOrLastTrue(setStatusCondition, &v.instance.Status.Conditions, subconditions...)
+		rmnutil.MergeConditions(setStatusCondition,
+			&v.instance.Status.Conditions,
+			[]string{VRGConditionReasonUnused},
+			subconditions...)
 	}
+
+	var volSyncDataReady, volSyncDataProtected, volSyncClusterDataProtected *metav1.Condition
+	if v.instance.Spec.Sync == nil {
+		volSyncDataReady = v.aggregateVolSyncDataReadyCondition()
+		volSyncDataProtected, volSyncClusterDataProtected = v.aggregateVolSyncDataProtectedConditions()
+	}
+
 	logAndSet(VRGConditionTypeDataReady,
-		v.aggregateVolSyncDataReadyCondition(),
+		volSyncDataReady,
 		v.aggregateVolRepDataReadyCondition(),
 	)
-
-	volSyncDataProtected, volSyncClusterDataProtected := v.aggregateVolSyncDataProtectedConditions()
 
 	logAndSet(VRGConditionTypeDataProtected,
 		volSyncDataProtected,
@@ -1177,21 +1224,32 @@ func (v *VRGInstance) updateVRGConditions() {
 	v.updateLastGroupSyncBytes()
 }
 
-func (v *VRGInstance) vrgReadyStatus() *metav1.Condition {
+func (v *VRGInstance) vrgReadyStatus(reason string) *metav1.Condition {
+	v.log.Info("Marking VRG ready with replicating reason", "reason", reason)
+
+	unusedMsg := "No PVCs are protected using VolumeReplication scheme"
+	if v.instance.Spec.Sync != nil {
+		unusedMsg = "No PVCs are protected, no PVCs found matching the selector"
+	}
+
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
-		v.log.Info("Marking VRG ready with replicating reason")
-
 		msg := "PVCs in the VolumeReplicationGroup group are replicating"
+		if reason == VRGConditionReasonUnused {
+			msg = unusedMsg
+		} else {
+			reason = VRGConditionReasonReplicating
+		}
 
-		return newVRGDataReplicatingCondition(v.instance.Generation, msg)
+		return newVRGDataReplicatingCondition(v.instance.Generation, reason, msg)
 	}
 
 	// VRG as primary
-	v.log.Info("Marking VRG data ready after establishing replication")
-
 	msg := "PVCs in the VolumeReplicationGroup are ready for use"
+	if reason == VRGConditionReasonUnused {
+		msg = unusedMsg
+	}
 
-	return newVRGAsPrimaryReadyCondition(v.instance.Generation, msg)
+	return newVRGAsPrimaryReadyCondition(v.instance.Generation, reason, msg)
 }
 
 func (v *VRGInstance) updateVRGLastGroupSyncTime() {
