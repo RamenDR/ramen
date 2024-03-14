@@ -720,7 +720,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if isBeingDeleted(drpc, placementObj) {
 		// DPRC depends on User PlacementRule/Placement. If DRPC or/and the User PlacementRule is deleted,
 		// then the DRPC should be deleted as well. The least we should do here is to clean up DPRC.
-		err := r.processDeletion(ctx, drpc, placementObj, logger)
+		err := r.processDeletion(ctx, drpc, logger)
 		if err != nil {
 			logger.Info(fmt.Sprintf("Error in deleting DRPC: (%v)", err))
 
@@ -1099,12 +1099,18 @@ func getDRClusters(ctx context.Context, client client.Client, drPolicy *rmn.DRPo
 }
 
 func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
-	drpc *rmn.DRPlacementControl, placementObj client.Object, log logr.Logger,
+	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) error {
 	log.Info("Processing DRPC deletion")
 
 	if !controllerutil.ContainsFinalizer(drpc, DRPCFinalizer) {
 		return nil
+	}
+
+	placementObj, err := getPlacementOrPlacementRule(ctx, r.Client, drpc, log)
+	if err != nil && !errors.IsNotFound(err) {
+		// It is ok to not find the placementObj if the drpc is being deleted
+		return fmt.Errorf("failed to get User PlacementRule/Placement %w", err)
 	}
 
 	vrgNamespace, err := selectVRGNamespace(r.Client, log, drpc, placementObj)
