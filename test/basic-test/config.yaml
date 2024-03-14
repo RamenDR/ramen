@@ -1,8 +1,1 @@
-# SPDX-FileCopyrightText: The RamenDR authors
-# SPDX-License-Identifier: Apache-2.0
-
----
-repo: https://github.com/ramendr/ocm-ramen-samples.git
-branch: main
-name: busybox-sample
-namespace: busybox-sample
+../configs/deployment-k8s-regional-rbd.yaml

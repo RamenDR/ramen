@@ -9,6 +9,8 @@ ramen:
   hub: hub
   clusters: [dr1, dr2]
   topology: regional-dr
+  features:
+    volsync: false
 
 templates:
   - name: "dr-cluster"
@@ -25,7 +27,6 @@ templates:
     extra_disks: 1
     disk_size: "50g"
     addons:
-      - volumesnapshots
       - csi-hostpath-driver
     workers:
       - addons:
@@ -57,8 +58,6 @@ templates:
           - name: ocm-controller
           - name: cert-manager
           - name: olm
-          - name: submariner
-            args: ["hub", "dr1", "dr2"]
 
 profiles:
   - name: "dr1"
@@ -71,7 +70,4 @@ profiles:
 workers:
   - addons:
       - name: rbd-mirror
-        args: ["dr1", "dr2"]
-  - addons:
-      - name: volsync
         args: ["dr1", "dr2"]

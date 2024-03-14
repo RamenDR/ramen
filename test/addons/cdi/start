@@ -37,6 +37,14 @@ def wait(cluster):
         "--timeout=600s",
         context=cluster,
     )
+    print("Waiting until cdi cr finished progressing")
+    kubectl.wait(
+        "cdi.cdi.kubevirt.io/cdi",
+        "--for=condition=progressing=False",
+        f"--namespace={NAMESPACE}",
+        "--timeout=300s",
+        context=cluster,
+    )
 
 
 if len(sys.argv) != 2:
