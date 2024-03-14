@@ -271,7 +271,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 		It("waits for VRG status to match", func() {
 			vrgTestBoundPV.promoteVolReps()
-			vrgTestBoundPV.verifyVRGStatusExpectation(true)
+			vrgTestBoundPV.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
 		})
 		var pvcNamespacedNamesActual [pvcCount]types.NamespacedName
 		var pvcNamespacedNamesUnqualified, pvcNamespacedNamesQualified []types.NamespacedName
@@ -541,7 +541,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 		It("waits for VRG status to match", func() {
 			vrgS3UploadTestCase.promoteVolReps()
-			vrgS3UploadTestCase.verifyVRGStatusExpectation(true)
+			vrgS3UploadTestCase.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
 			vrgS3UploadTestCase.verifyCachedUploadError()
 		})
 		Specify("set VRG's S3 profile names to empty", func() {
@@ -575,7 +575,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 		It("waits for VRG status to match", func() {
 			vrgVRDeleteEnsureTestCase.promoteVolReps()
-			vrgVRDeleteEnsureTestCase.verifyVRGStatusExpectation(true)
+			vrgVRDeleteEnsureTestCase.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
 		})
 		It("ensures orderly cleanup post VolumeReplication deletion", func() {
 			By("Protecting the VolumeReplication resources from deletion")
@@ -647,9 +647,9 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 				v := vrgTestCases[c]
 				v.promoteVolReps()
 				if c != 0 {
-					v.verifyVRGStatusExpectation(true)
+					v.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
 				} else {
-					v.verifyVRGStatusExpectation(false)
+					v.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonUnused)
 				}
 			}
 		})
@@ -680,7 +680,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgEmptySC = newVRGTestCaseCreateAndStart(1, createTestTemplate, true, false)
 		})
 		It("waits for VRG status to match", func() {
-			vrgEmptySC.verifyVRGStatusExpectation(false)
+			vrgEmptySC.verifyVRGStatusExpectation(false, "")
 		})
 		It("cleans up after testing", func() {
 			vrgEmptySC.cleanupStatusAbsent()
@@ -707,7 +707,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgMissingSC = newVRGTestCaseCreateAndStart(1, createTestTemplate, true, false)
 		})
 		It("waits for VRG status to match", func() {
-			vrgMissingSC.verifyVRGStatusExpectation(false)
+			vrgMissingSC.verifyVRGStatusExpectation(false, "")
 		})
 		It("cleans up after testing", func() {
 			vrgMissingSC.cleanupStatusAbsent()
@@ -767,9 +767,9 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 				v := vrgTests[c]
 				v.promoteVolReps()
 				if c != 0 {
-					v.verifyVRGStatusExpectation(true)
+					v.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
 				} else {
-					v.verifyVRGStatusExpectation(false)
+					v.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonUnused)
 				}
 			}
 		})
@@ -816,7 +816,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 		It("waits for VRG status to match", func() {
 			v.promoteVolReps()
-			v.verifyVRGStatusExpectation(true)
+			v.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
 		})
 		It("protects kube objects", func() { kubeObjectProtectionValidate(vrgStatusTests) })
 		It("cleans up after testing", func() {
@@ -851,7 +851,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		It("waits for VRG status to match", func() {
 			v := vrgStatus2Tests[0]
 			v.promoteVolReps()
-			v.verifyVRGStatusExpectation(true)
+			v.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
 		})
 		It("protects kube objects", func() { kubeObjectProtectionValidate(vrgStatus2Tests) })
 		It("cleans up after testing", func() {
@@ -897,7 +897,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 		It("waits for VRG status to match", func() {
 			v.promoteVolReps()
-			v.verifyVRGStatusExpectation(true)
+			v.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
 		})
 		It("protects kube objects", func() { kubeObjectProtectionValidate(vrgStatus3Tests) })
 		It("cleans up after testing", func() {
@@ -930,7 +930,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 		It("waits for VRG status to match", func() {
 			v := vrgScheduleTests[0]
-			v.verifyVRGStatusExpectation(false)
+			v.verifyVRGStatusExpectation(false, "")
 		})
 		// It("protects kube objects", func() { kubeObjectProtectionValidate(vrgScheduleTests) })
 		It("cleans up after testing", func() {
@@ -952,7 +952,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		scProvisioner:          "manual.storage.com",
 		replicationClassLabels: map[string]string{"protection": "ramen"},
 	}
-	Context("schedule tests schedue does not match", func() {
+	Context("schedule tests schedule does not match", func() {
 		It("sets up non-bound PVCs, PVs and then bind them", func() {
 			vrgScheduleTest2Template.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest2Template, true, true)
@@ -964,7 +964,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 		It("waits for VRG status to match", func() {
 			v := vrgSchedule2Tests[0]
-			v.verifyVRGStatusExpectation(false)
+			v.verifyVRGStatusExpectation(false, "")
 		})
 		// It("protects kube objects", func() { kubeObjectProtectionValidate(vrgSchedule2Tests) })
 		It("cleans up after testing", func() {
@@ -998,7 +998,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 		It("waits for VRG status to match", func() {
 			v := vrgSchedule3Tests[0]
-			v.verifyVRGStatusExpectation(false)
+			v.verifyVRGStatusExpectation(false, "")
 		})
 		// It("protects kube objects", func() { kubeObjectProtectionValidate(vrgSchedule3Tests) })
 		It("cleans up after testing", func() {
@@ -1534,7 +1534,7 @@ func (v *vrgTest) isAnyPVCProtectedByVolSync(vrg *ramendrv1alpha1.VolumeReplicat
 	return false
 }
 
-func (v *vrgTest) verifyVRGStatusExpectation(expectedStatus bool) {
+func (v *vrgTest) verifyVRGStatusExpectation(expectedStatus bool, reason string) {
 	Eventually(func() bool {
 		vrg := v.getVRG()
 		dataReadyCondition := meta.FindStatusCondition(
@@ -1548,11 +1548,9 @@ func (v *vrgTest) verifyVRGStatusExpectation(expectedStatus bool) {
 			// secondary. Validate that as well.
 			switch vrg.Spec.ReplicationState {
 			case ramendrv1alpha1.Primary:
-				return dataReadyCondition.Status == metav1.ConditionTrue && dataReadyCondition.Reason ==
-					vrgController.VRGConditionReasonReady
+				return dataReadyCondition.Status == metav1.ConditionTrue && dataReadyCondition.Reason == reason
 			case ramendrv1alpha1.Secondary:
-				return dataReadyCondition.Status == metav1.ConditionTrue && dataReadyCondition.Reason ==
-					vrgController.VRGConditionReasonReplicating
+				return dataReadyCondition.Status == metav1.ConditionTrue && dataReadyCondition.Reason == reason
 			}
 		}
 
@@ -2005,7 +2003,7 @@ func (v *vrgTest) waitForVRCountToMatch(vrCount int) {
 func (v *vrgTest) promoteVolReps() {
 	v.promoteVolRepsAndDo(func(index, count int) {
 		// VRG should not be ready until last VolRep is ready.
-		v.verifyVRGStatusExpectation(index == count-1)
+		v.verifyVRGStatusExpectation(index == count-1, vrgController.VRGConditionReasonReady)
 	})
 }
 

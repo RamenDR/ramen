@@ -50,6 +50,7 @@ const (
 
 // VRG condition reasons
 const (
+	VRGConditionReasonUnused                      = "Unused"
 	VRGConditionReasonInitializing                = "Initializing"
 	VRGConditionReasonReplicating                 = "Replicating"
 	VRGConditionReasonReplicated                  = "Replicated"
@@ -117,13 +118,14 @@ func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration i
 
 // sets conditions when VRG as Secondary is replicating the data with Primary.
 func setVRGDataReplicatingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, *newVRGDataReplicatingCondition(observedGeneration, message))
+	setStatusCondition(conditions,
+		*newVRGDataReplicatingCondition(observedGeneration, VRGConditionReasonReplicating, message))
 }
 
-func newVRGDataReplicatingCondition(observedGeneration int64, message string) *metav1.Condition {
+func newVRGDataReplicatingCondition(observedGeneration int64, reason, message string) *metav1.Condition {
 	return &metav1.Condition{
 		Type:               VRGConditionTypeDataReady,
-		Reason:             VRGConditionReasonReplicating,
+		Reason:             reason,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
 		Message:            message,
@@ -169,6 +171,16 @@ func newVRGAsDataProtectedCondition(observedGeneration int64, message string) *m
 	}
 }
 
+func newVRGAsDataProtectedUnusedCondition(observedGeneration int64, message string) *metav1.Condition {
+	return &metav1.Condition{
+		Type:               VRGConditionTypeDataProtected,
+		Reason:             VRGConditionReasonUnused,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		Message:            message,
+	}
+}
+
 func setVRGAsDataNotProtectedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, *newVRGAsDataNotProtectedCondition(observedGeneration, message))
 }
@@ -199,13 +211,13 @@ func newVRGDataProtectionProgressCondition(observedGeneration int64, message str
 
 // sets conditions when Primary VRG data replication is established
 func setVRGAsPrimaryReadyCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, *newVRGAsPrimaryReadyCondition(observedGeneration, message))
+	setStatusCondition(conditions, *newVRGAsPrimaryReadyCondition(observedGeneration, VRGConditionReasonReady, message))
 }
 
-func newVRGAsPrimaryReadyCondition(observedGeneration int64, message string) *metav1.Condition {
+func newVRGAsPrimaryReadyCondition(observedGeneration int64, reason, message string) *metav1.Condition {
 	return &metav1.Condition{
 		Type:               VRGConditionTypeDataReady,
-		Reason:             VRGConditionReasonReady,
+		Reason:             reason,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
 		Message:            message,
@@ -293,6 +305,16 @@ func newVRGClusterDataProtectedCondition(observedGeneration int64, message strin
 	}
 }
 
+func newVRGClusterDataProtectedUnusedCondition(observedGeneration int64, message string) *metav1.Condition {
+	return &metav1.Condition{
+		Type:               VRGConditionTypeClusterDataProtected,
+		Reason:             VRGConditionReasonUnused,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		Message:            message,
+	}
+}
+
 // sets conditions when PV cluster data is being protected
 func setVRGClusterDataProtectingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, *newVRGClusterDataProtectingCondition(observedGeneration, message))
@@ -368,6 +390,7 @@ func setStatusCondition(existingConditions *[]metav1.Condition, newCondition met
 
 	existingCondition.Reason = newCondition.Reason
 	existingCondition.Message = newCondition.Message
+	// TODO: Why not update lastTranTime if the above change?
 
 	if existingCondition.ObservedGeneration != newCondition.ObservedGeneration {
 		existingCondition.ObservedGeneration = newCondition.ObservedGeneration
