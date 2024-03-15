@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	spokeClusterV1 "github.com/open-cluster-management/api/cluster/v1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
@@ -38,6 +39,7 @@ import (
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 )
 
 const (
@@ -936,6 +938,7 @@ func createAppSet() {
 
 func deleteDRCluster(inDRCluster *rmn.DRCluster) {
 	Expect(k8sClient.Delete(context.TODO(), inDRCluster)).To(Succeed())
+
 	Eventually(func() bool {
 		drcluster := &rmn.DRCluster{}
 
@@ -1898,6 +1901,42 @@ func verifyDRPCOwnedByPlacement(placementObj client.Object, drpc *rmn.DRPlacemen
 	Fail(fmt.Sprintf("DRPC %s not owned by Placement %s", drpc.GetName(), placementObj.GetName()))
 }
 
+var _ = Describe("DRPlacementControl Reconciler Errors", func() {
+	BeforeEach(func() {
+		populateDRClusters()
+	})
+
+	When("a DRPC is deleted and drclusters don't exist", func() {
+		AfterEach(func() {
+			err := forceCleanupClusterAfterAErrorTest()
+			Expect(err).ToNot(HaveOccurred())
+		})
+		It("Should return an error", func(ctx SpecContext) {
+			_, _ = InitialDeploymentAsync(DefaultDRPCNamespace, UserPlacementRuleName, East1ManagedCluster,
+				UsePlacementRule)
+			waitForCompletion(string(rmn.Deployed))
+
+			err := retry.RetryOnConflict(retry.DefaultBackoff, deleteAllDRClusters)
+			Expect(err).ToNot(HaveOccurred())
+
+			deleteDRPC()
+
+			errCount := 0
+			for {
+				_, err = drpcReconcile(DRPCCommonName, DefaultDRPCNamespace)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to get drclusters"))
+				errCount++
+				if errCount > 2 {
+					// Found the required error message for more than a second
+					break
+				}
+				time.Sleep(time.Second)
+			}
+		}, SpecTimeout(time.Second*10))
+	})
+})
+
 // +kubebuilder:docs-gen:collapse=Imports
 //
 //nolint:errcheck,scopelint
@@ -2652,4 +2691,329 @@ func uploadVRGtoS3Store(name, namespace, dstCluster string, action rmn.VRGAction
 
 	Expect(err).ToNot(HaveOccurred())
 	Expect(controllers.VrgObjectProtect(objectStorer, vrg)).To(Succeed())
+}
+
+// drpcRenconcile calls the drpc reconciler with the given drpc name and
+// namespace as the reconcile.Request. This call will be in parallel to the call
+// that would be made by the controller. Only use this function when you are
+// checking for settled states of the reconciler; for example when you are
+// expecting an error that the controller can't correct unless you change the
+// state of the cluster or the drpc.
+func drpcReconcile(drpcname string, drpcnamespace string) (reconcile.Result, error) {
+	res, err := drpcReconciler.Reconcile(context.TODO(), reconcile.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      drpcname,
+			Namespace: drpcnamespace,
+		},
+	})
+
+	return res, err
+}
+
+func deleteAllManagedClusters() error {
+	managedClusters := &spokeClusterV1.ManagedClusterList{}
+
+	err := k8sClient.List(context.TODO(), managedClusters)
+	if err != nil {
+		return err
+	}
+
+	for _, mc := range managedClusters.Items {
+		mcToDelete := mc
+
+		mcToDelete.SetFinalizers([]string{})
+
+		err := k8sClient.Update(context.TODO(), &mcToDelete)
+		if err != nil {
+			return err
+		}
+
+		err = k8sClient.Delete(context.TODO(), &mcToDelete)
+		if err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func deleteAllManifestWorks() error {
+	manifestWorks := &ocmworkv1.ManifestWorkList{}
+
+	err := k8sClient.List(context.TODO(), manifestWorks)
+	if err != nil {
+		return err
+	}
+
+	for _, mw := range manifestWorks.Items {
+		mwToDelete := mw
+
+		mwToDelete.SetFinalizers([]string{})
+
+		err := k8sClient.Update(context.TODO(), &mwToDelete)
+		if err != nil {
+			return err
+		}
+
+		err = k8sClient.Delete(context.TODO(), &mwToDelete)
+		if err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func deleteAllManagedClusterViews() error {
+	managedClusterViews := &viewv1beta1.ManagedClusterViewList{}
+
+	err := k8sClient.List(context.TODO(), managedClusterViews)
+	if err != nil {
+		return err
+	}
+
+	for _, mcv := range managedClusterViews.Items {
+		mcvToDelete := mcv
+
+		mcvToDelete.SetFinalizers([]string{})
+
+		err := k8sClient.Update(context.TODO(), &mcvToDelete)
+		if err != nil {
+			return err
+		}
+
+		err = k8sClient.Delete(context.TODO(), &mcvToDelete)
+		if err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func deleteAllDRPCs() error {
+	drpcs := &rmn.DRPlacementControlList{}
+
+	err := k8sClient.List(context.TODO(), drpcs)
+	if err != nil {
+		return err
+	}
+
+	for _, drpc := range drpcs.Items {
+		drpcToDelete := drpc
+
+		drpcToDelete.SetFinalizers([]string{})
+
+		err := k8sClient.Update(context.TODO(), &drpcToDelete)
+		if err != nil {
+			return err
+		}
+
+		err = k8sClient.Delete(context.TODO(), &drpcToDelete)
+		if err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func deleteAllDRPolicies() error {
+	drPolicies := &rmn.DRPolicyList{}
+
+	err := k8sClient.List(context.TODO(), drPolicies)
+	if err != nil {
+		return err
+	}
+
+	for _, drPolicy := range drPolicies.Items {
+		drPolicyToDelete := drPolicy
+
+		drPolicyToDelete.SetFinalizers([]string{})
+
+		err := k8sClient.Update(context.TODO(), &drPolicyToDelete)
+		if err != nil {
+			return err
+		}
+
+		err = k8sClient.Delete(context.TODO(), &drPolicyToDelete)
+		if err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func deleteAllDRClusters() error {
+	drClusters := &rmn.DRClusterList{}
+
+	err := k8sClient.List(context.TODO(), drClusters)
+	if err != nil {
+		return err
+	}
+
+	for _, drCluster := range drClusters.Items {
+		drClusterToDelete := drCluster
+
+		drClusterToDelete.SetFinalizers([]string{})
+
+		err := k8sClient.Update(context.TODO(), &drClusterToDelete)
+		if err != nil {
+			return err
+		}
+
+		err = k8sClient.Delete(context.TODO(), &drClusterToDelete)
+		if err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func removeRamenFinalizersFromObject(obj client.Object) {
+	ramenFinalizers := []string{
+		controllers.DRPCFinalizer,
+		rmnutil.SecretPolicyFinalizer,
+	}
+
+	objFinalizers := obj.GetFinalizers()
+	newObjFinalizers := []string{}
+
+	for _, finalizer := range objFinalizers {
+		for _, ramenFinalizer := range ramenFinalizers {
+			if !strings.Contains(finalizer, ramenFinalizer) {
+				newObjFinalizers = append(newObjFinalizers, finalizer)
+			}
+		}
+	}
+
+	obj.SetFinalizers(objFinalizers)
+}
+
+func removeRamenFinalisersFromSecrets() error {
+	secrets := &corev1.SecretList{}
+
+	err := k8sClient.List(context.TODO(), secrets)
+	if err != nil {
+		return err
+	}
+
+	for _, secret := range secrets.Items {
+		secretToUpdate := secret
+
+		removeRamenFinalizersFromObject(&secretToUpdate)
+		secretToUpdate.SetFinalizers([]string{})
+
+		err := k8sClient.Update(context.TODO(), &secretToUpdate)
+		if err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func deleteAllUserPlacementRules() error {
+	userPlacementRules := &plrv1.PlacementRuleList{}
+
+	err := k8sClient.List(context.TODO(), userPlacementRules)
+	if err != nil {
+		return err
+	}
+
+	for _, upr := range userPlacementRules.Items {
+		uprToDelete := upr
+
+		uprToDelete.SetFinalizers([]string{})
+
+		err := k8sClient.Update(context.TODO(), &uprToDelete)
+		if err != nil {
+			return err
+		}
+
+		err = k8sClient.Delete(context.TODO(), &uprToDelete)
+		if err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func deleteAllPlacementBindings() error {
+	placementBindings := &gppv1.PlacementBindingList{}
+
+	err := k8sClient.List(context.TODO(), placementBindings)
+	if err != nil {
+		return err
+	}
+
+	for _, pb := range placementBindings.Items {
+		pbToDelete := pb
+
+		pbToDelete.SetFinalizers([]string{})
+
+		err := k8sClient.Update(context.TODO(), &pbToDelete)
+		if err != nil {
+			return err
+		}
+
+		err = k8sClient.Delete(context.TODO(), &pbToDelete)
+		if err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func forceCleanupClusterAfterAErrorTest() error {
+	err := retry.RetryOnConflict(retry.DefaultBackoff, deleteAllDRPCs)
+	if err != nil {
+		return err
+	}
+
+	err = retry.RetryOnConflict(retry.DefaultBackoff, deleteAllDRPolicies)
+	if err != nil {
+		return err
+	}
+
+	err = retry.RetryOnConflict(retry.DefaultBackoff, deleteAllDRClusters)
+	if err != nil {
+		return err
+	}
+
+	err = retry.RetryOnConflict(retry.DefaultBackoff, deleteAllUserPlacementRules)
+	if err != nil {
+		return err
+	}
+
+	err = retry.RetryOnConflict(retry.DefaultBackoff, deleteAllManifestWorks)
+	if err != nil {
+		return err
+	}
+
+	err = retry.RetryOnConflict(retry.DefaultBackoff, deleteAllManagedClusters)
+	if err != nil {
+		return err
+	}
+
+	err = retry.RetryOnConflict(retry.DefaultBackoff, deleteAllManagedClusterViews)
+	if err != nil {
+		return err
+	}
+
+	err = retry.RetryOnConflict(retry.DefaultBackoff, removeRamenFinalisersFromSecrets)
+	if err != nil {
+		return err
+	}
+
+	err = retry.RetryOnConflict(retry.DefaultBackoff, deleteAllPlacementBindings)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
