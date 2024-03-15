@@ -694,6 +694,8 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	drpc := &rmn.DRPlacementControl{}
 
+	var placementObj client.Object
+
 	err := r.APIReader.Get(ctx, req.NamespacedName, drpc)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -726,7 +728,17 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, nil
 	}
 
-	placementObj, err := getPlacementOrPlacementRule(ctx, r.Client, drpc, logger)
+	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
+	if err != nil {
+		statusErr := r.updateDRPCStatus(ctx, drpc, placementObj, logger)
+		if statusErr != nil {
+			err = fmt.Errorf("failed to get the ramen configMap (%w) and status update failed (%w)", err, statusErr)
+		}
+
+		return ctrl.Result{}, fmt.Errorf("failed to get the ramen configMap: %w", err)
+	}
+
+	placementObj, err = getPlacementOrPlacementRule(ctx, r.Client, drpc, logger)
 	if err != nil {
 		// If drpc is not being deleted, then getting the placement or placementRule should not fail
 		r.recordFailure(ctx, drpc, placementObj, "Error", err.Error(), logger)
@@ -783,7 +795,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{Requeue: true}, r.updateDRPCStatus(ctx, drpc, placementObj, logger)
 	}
 
-	d, err := r.createDRPCInstance(ctx, drPolicy, drpc, placementObj, logger)
+	d, err := r.createDRPCInstance(ctx, drPolicy, drpc, placementObj, ramenConfig, logger)
 	if err != nil && !errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
 		err2 := r.updateDRPCStatus(ctx, drpc, placementObj, logger)
 
@@ -889,6 +901,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 	drPolicy *rmn.DRPolicy,
 	drpc *rmn.DRPlacementControl,
 	placementObj client.Object,
+	ramenConfig *rmn.RamenConfig,
 	log logr.Logger,
 ) (*DRPCInstance, error) {
 	log.Info("Creating DRPC instance")
@@ -914,11 +927,6 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 		return nil, err
 	}
 
-	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
-	if err != nil {
-		return nil, fmt.Errorf("configmap get: %w", err)
-	}
-
 	d := &DRPCInstance{
 		reconciler:      r,
 		ctx:             ctx,
@@ -930,6 +938,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 		vrgs:            vrgs,
 		vrgNamespace:    vrgNamespace,
 		volSyncDisabled: ramenConfig.VolSync.Disabled,
+		ramenConfig:     ramenConfig,
 		mwu: rmnutil.MWUtil{
 			Client:          r.Client,
 			APIReader:       r.APIReader,
