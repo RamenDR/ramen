@@ -6,5 +6,9 @@
 import sys
 import time
 
-time.sleep(1)
-sys.exit("Fake error")
+duration = float(sys.argv[1])
+
+print(f"Error addon will fail in {duration} seconds")
+time.sleep(duration)
+
+sys.exit("Error addon failed")
