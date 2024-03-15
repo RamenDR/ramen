@@ -63,6 +63,11 @@ environment.
    for the details.
    Tested with version v1.0.1.
 
+1. Install the `kustomize` tool. See
+   [kustomize installation](https://kubectl.docs.kubernetes.io/installation/kustomize/)
+   for the details.
+   Tested with version v5.3.0.
+
 ### Testing that drenv is healthy
 
 Run this script to make sure `drenv` works:
