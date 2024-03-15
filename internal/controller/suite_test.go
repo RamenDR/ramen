@@ -242,6 +242,7 @@ var _ = BeforeSuite(func() {
 	ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = true
 	ramenConfig.MultiNamespace.FeatureEnabled = true
 	configMapCreate(ramenConfig)
+	DeferCleanup(configMapDelete)
 
 	s3Secrets[0] = corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Namespace: ramenNamespace, Name: "s3secret0"},
