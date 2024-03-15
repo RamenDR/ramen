@@ -5,6 +5,7 @@ package controllers_test
 
 import (
 	"context"
+	"log"
 	"os"
 	"path/filepath"
 	"testing"
@@ -88,6 +89,8 @@ var (
 	objectStorers [2]ramencontrollers.ObjectStorer
 
 	ramenNamespace = "ns-envtest"
+
+	skipCleanup bool
 )
 
 func TestAPIs(t *testing.T) {
@@ -145,6 +148,11 @@ var _ = BeforeSuite(func() {
 		ramenNamespace = rNs
 	}
 
+	skipCleanupEnv, set := os.LookupEnv("SKIP_CLEANUP")
+	if set && (skipCleanupEnv == "true" || skipCleanupEnv == "1") {
+		skipCleanup = true
+	}
+
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
@@ -163,10 +171,25 @@ var _ = BeforeSuite(func() {
 		defer GinkgoRecover()
 		cfg, err = testEnv.Start()
 		DeferCleanup(func() error {
+			if skipCleanup {
+				By("skipping cleanup of the test environment")
+
+				return nil
+			}
 			By("tearing down the test environment")
 
 			return testEnv.Stop()
 		})
+		kubeConfigContent, err := ramencontrollers.ConvertRestConfigToKubeConfig(cfg)
+		if err != nil {
+			log.Fatalf("Failed to convert rest.Config to kubeconfig: %v", err)
+		}
+
+		filePath := "../testbin/kubeconfig.yaml"
+		if err := ramencontrollers.WriteKubeConfigToFile(kubeConfigContent, filePath); err != nil {
+			log.Fatalf("Failed to write kubeconfig file: %v", err)
+		}
+
 		close(done)
 	}()
 	Eventually(done).WithTimeout(time.Minute).Should(BeClosed())
@@ -237,7 +260,15 @@ var _ = BeforeSuite(func() {
 	ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = true
 	ramenConfig.MultiNamespace.FeatureEnabled = true
 	configMapCreate(ramenConfig)
-	DeferCleanup(configMapDelete)
+	DeferCleanup(func() error {
+		if skipCleanup {
+			By("skipping cleanup of the test environment")
+
+			return nil
+		}
+
+		return configMapDelete()
+	})
 
 	s3Secrets[0] = corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Namespace: ramenNamespace, Name: "s3secret0"},
@@ -378,7 +409,18 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	ctx, cancel = context.WithCancel(context.TODO())
-	DeferCleanup(cancel)
+	DeferCleanup(func() error {
+		if skipCleanup {
+			By("skipping cleanup of the test environment")
+
+			return nil
+		}
+
+		cancel()
+
+		return nil
+	})
+
 	go func() {
 		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred())
