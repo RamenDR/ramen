@@ -5,6 +5,7 @@ package controllers_test
 
 import (
 	"context"
+	"log"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,6 +21,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/clientcmd/api"
 	config "k8s.io/component-base/config/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -87,6 +90,8 @@ var (
 	objectStorers [2]ramencontrollers.ObjectStorer
 
 	ramenNamespace = "ns-envtest"
+
+	skipCleanup bool
 )
 
 func TestAPIs(t *testing.T) {
@@ -108,6 +113,41 @@ func createOperatorNamespace(ramenNamespace string) {
 	if err != nil {
 		namespaceCreate(ramenNamespace)
 	}
+}
+
+// writeKubeConfigToFile writes the kubeconfig content to a specified file path.
+func writeKubeConfigToFile(kubeConfigContent, filePath string) error {
+	return os.WriteFile(filePath, []byte(kubeConfigContent), 0o600)
+}
+
+// convertRestConfigToKubeConfig converts a rest.Config to a kubeconfig string.
+func convertRestConfigToKubeConfig(restConfig *rest.Config) (string, error) {
+	kubeConfig := api.NewConfig()
+
+	cluster := api.NewCluster()
+	cluster.Server = restConfig.Host
+	cluster.CertificateAuthorityData = restConfig.CAData
+
+	user := api.NewAuthInfo()
+	user.ClientCertificateData = restConfig.CertData
+	user.ClientKeyData = restConfig.KeyData
+	user.Token = restConfig.BearerToken
+
+	context := api.NewContext()
+	context.Cluster = "cluster"
+	context.AuthInfo = "user"
+
+	kubeConfig.Clusters["cluster"] = cluster
+	kubeConfig.AuthInfos["user"] = user
+	kubeConfig.Contexts["test"] = context
+	kubeConfig.CurrentContext = "test"
+
+	kubeConfigContent, err := clientcmd.Write(*kubeConfig)
+	if err != nil {
+		return "", err
+	}
+
+	return string(kubeConfigContent), nil
 }
 
 var _ = BeforeSuite(func() {
@@ -144,6 +184,11 @@ var _ = BeforeSuite(func() {
 		ramenNamespace = rNs
 	}
 
+	skipCleanupEnv, set := os.LookupEnv("SKIP_CLEANUP")
+	if set && (skipCleanupEnv == "true" || skipCleanupEnv == "1") {
+		skipCleanup = true
+	}
+
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
@@ -162,10 +207,25 @@ var _ = BeforeSuite(func() {
 		defer GinkgoRecover()
 		cfg, err = testEnv.Start()
 		DeferCleanup(func() error {
+			if skipCleanup {
+				By("skipping cleanup of the test environment")
+
+				return nil
+			}
 			By("tearing down the test environment")
 
 			return testEnv.Stop()
 		})
+		kubeConfigContent, err := convertRestConfigToKubeConfig(cfg)
+		if err != nil {
+			log.Fatalf("Failed to convert rest.Config to kubeconfig: %v", err)
+		}
+
+		filePath := "../testbin/kubeconfig.yaml"
+		if err := writeKubeConfigToFile(kubeConfigContent, filePath); err != nil {
+			log.Fatalf("Failed to write kubeconfig file: %v", err)
+		}
+
 		close(done)
 	}()
 	Eventually(done).WithTimeout(time.Minute).Should(BeClosed())
@@ -236,7 +296,15 @@ var _ = BeforeSuite(func() {
 	ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = true
 	ramenConfig.MultiNamespace.FeatureEnabled = true
 	configMapCreate(ramenConfig)
-	DeferCleanup(configMapDelete)
+	DeferCleanup(func() error {
+		if skipCleanup {
+			By("skipping cleanup of the test environment")
+
+			return nil
+		}
+
+		return configMapDelete()
+	})
 
 	s3Secrets[0] = corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Namespace: ramenNamespace, Name: "s3secret0"},
@@ -368,7 +436,18 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	ctx, cancel = context.WithCancel(context.TODO())
-	DeferCleanup(cancel)
+	DeferCleanup(func() error {
+		if skipCleanup {
+			By("skipping cleanup of the test environment")
+
+			return nil
+		}
+
+		cancel()
+
+		return nil
+	})
+
 	go func() {
 		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred())
