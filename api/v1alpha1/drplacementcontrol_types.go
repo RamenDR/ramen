@@ -23,6 +23,21 @@ const (
 	ActionRelocate = DRAction("Relocate")
 )
 
+// DRPCType is the type of the DRPC based on the application handle
+type DRPCType string
+
+// These are the valid values for DRPCType
+const (
+	// OCMManaged is the DRPC type for the applications that are managed by OCM
+	OCMManaged = DRPCType("OCM Managed")
+
+	// OCMDiscovered is the DRPC type for the applications that are not managed by OCM
+	OCMDiscovered = DRPCType("OCM Discovered")
+
+	// Invalid is the DRPC type for the applications that are not recognized by Ramen
+	Invalid = DRPCType("Invalid")
+)
+
 // DRState for keeping track of the DR placement
 type DRState string
 
@@ -104,7 +119,14 @@ const (
 // DRPlacementControlSpec defines the desired state of DRPlacementControl
 type DRPlacementControlSpec struct {
 	// PlacementRef is the reference to the PlacementRule used by DRPC
-	PlacementRef v1.ObjectReference `json:"placementRef"`
+	PlacementRef v1.ObjectReference `json:"placementRef,omitempty"`
+
+	// PrimaryProtectedNamespace is the namespace where the application is running on the dr cluster.
+	// This field is mandatory when the DRPC is created for discovered or imperative apps.
+	PrimaryProtectedNamespace string `json:"primaryProtectedNamespace,omitempty"`
+
+	// EligibleForProtectionNamespaces is a list of namespaces that are considered for protection by the DRPC.
+	EligibleForProtectionNamespaces []string `json:"eligibleForProtectionNamespaces,omitempty"`
 
 	// DRPolicyRef is the reference to the DRPolicy participating in the DR replication for this DRPC
 	DRPolicyRef v1.ObjectReference `json:"drPolicyRef"`
@@ -168,6 +190,7 @@ type DRPlacementControlStatus struct {
 	PreferredDecision  plrv1.PlacementDecision `json:"preferredDecision,omitempty"`
 	Conditions         []metav1.Condition      `json:"conditions,omitempty"`
 	ResourceConditions VRGConditions           `json:"resourceConditions,omitempty"`
+	DRPCType           DRPCType                `json:"drpcType,omitempty"`
 
 	// LastUpdateTime is when was the last time a condition or the overall status was updated
 	LastUpdateTime *metav1.Time `json:"lastUpdateTime,omitempty"`

@@ -120,6 +120,11 @@ type KubeObjectProtectionSpec struct {
 	// Recipe parameter definitions
 	//+optional
 	RecipeParameters map[string][]string `json:"recipeParameters,omitempty"`
+
+	// Label selector to identify all the kube objects that need DR protection.
+	// It will be passed in to the VRG when it is created
+	//+optional
+	KubeObjectSelector metav1.LabelSelector `json:"kubeObjectSelector,omitempty"`
 }
 
 type RecipeRef struct {
@@ -185,6 +190,13 @@ type VolumeReplicationGroupSpec struct {
 	Action VRGAction `json:"action,omitempty"`
 	//+optional
 	KubeObjectProtection *KubeObjectProtectionSpec `json:"kubeObjectProtection,omitempty"`
+
+	// PrimaryProtectedNamespace is the namespace where the application is running on the dr cluster.
+	// This field is mandatory when the VRG is created for discovered or imperative apps.
+	PrimaryProtectedNamespace string `json:"primaryProtectedNamespace,omitempty"`
+
+	// EligibleForProtectionNamespaces is a list of namespaces that are considered for protection by the DRPC.
+	EligibleForProtectionNamespaces []string `json:"eligibleForProtectionNamespaces,omitempty"`
 }
 
 type Identifier struct {
