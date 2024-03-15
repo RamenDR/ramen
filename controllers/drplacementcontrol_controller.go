@@ -710,7 +710,17 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	ensureDRPCConditionsInited(&drpc.Status.Conditions, drpc.Generation, "Initialization")
 
-	placementObj, err := getPlacementOrPlacementRule(ctx, r.Client, drpc, logger)
+	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
+	if err != nil {
+		err = fmt.Errorf("failed to get the ramen configMap: %w", err)
+		r.recordFailure(ctx, drpc, nil, "Error", err.Error(), logger)
+
+		return ctrl.Result{}, err
+	}
+
+	var placementObj client.Object
+
+	placementObj, err = getPlacementOrPlacementRule(ctx, r.Client, drpc, logger)
 	if err != nil && !(errors.IsNotFound(err) && rmnutil.ResourceIsDeleted(drpc)) {
 		r.recordFailure(ctx, drpc, placementObj, "Error", err.Error(), logger)
 
@@ -763,7 +773,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{Requeue: true}, r.updateDRPCStatus(ctx, drpc, placementObj, logger)
 	}
 
-	d, err := r.createDRPCInstance(ctx, drPolicy, drpc, placementObj, logger)
+	d, err := r.createDRPCInstance(ctx, drPolicy, drpc, placementObj, ramenConfig, logger)
 	if err != nil && !errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
 		err2 := r.updateDRPCStatus(ctx, drpc, placementObj, logger)
 
@@ -869,6 +879,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 	drPolicy *rmn.DRPolicy,
 	drpc *rmn.DRPlacementControl,
 	placementObj client.Object,
+	ramenConfig *rmn.RamenConfig,
 	log logr.Logger,
 ) (*DRPCInstance, error) {
 	log.Info("Creating DRPC instance")
@@ -894,11 +905,6 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 		return nil, err
 	}
 
-	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
-	if err != nil {
-		return nil, fmt.Errorf("configmap get: %w", err)
-	}
-
 	d := &DRPCInstance{
 		reconciler:      r,
 		ctx:             ctx,
@@ -910,6 +916,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 		vrgs:            vrgs,
 		vrgNamespace:    vrgNamespace,
 		volSyncDisabled: ramenConfig.VolSync.Disabled,
+		ramenConfig:     ramenConfig,
 		mwu: rmnutil.MWUtil{
 			Client:          r.Client,
 			APIReader:       r.APIReader,
