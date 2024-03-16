@@ -101,11 +101,9 @@ def cmd_start(env, args):
     if args.run_tests:
         hooks.append("test")
 
-    # Delaying `minikube start` ensures cluster start order.
     execute(
         start_cluster,
         env["profiles"],
-        delay=1,
         hooks=hooks,
         args=args,
     )
@@ -168,7 +166,7 @@ def cmd_dump(env, args):
     yaml.dump(env, sys.stdout)
 
 
-def execute(func, profiles, delay=0, max_workers=None, **options):
+def execute(func, profiles, max_workers=None, **options):
     """
     Execute func in parallel for every profile.
 
@@ -182,7 +180,6 @@ def execute(func, profiles, delay=0, max_workers=None, **options):
 
         for p in profiles:
             futures[e.submit(func, p, **options)] = p["name"]
-            time.sleep(delay)
 
         for f in concurrent.futures.as_completed(futures):
             try:
