@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import shutil
+import signal
 import sys
 import time
 
@@ -20,9 +21,12 @@ from . import containerd
 from . import envfile
 from . import minikube
 from . import ramen
+from . import shutdown
 
 CMD_PREFIX = "cmd_"
 ADDONS_DIR = "addons"
+
+executors = []
 
 
 def main():
@@ -61,7 +65,60 @@ def main():
         env = envfile.load(f, name_prefix=args.name_prefix)
 
     func = globals()[CMD_PREFIX + args.command]
-    func(env, args)
+
+    signal.signal(signal.SIGTERM, handle_termination_signal)
+    become_process_group_leader()
+    try:
+        func(env, args)
+    except Exception:
+        logging.exception("Command failed")
+        sys.exit(1)
+    finally:
+        shutdown_executors()
+        terminate_process_group()
+
+
+def shutdown_executors():
+    # Prevents adding new executors, starting new child processes, and aborts
+    # running workers.
+    shutdown.start()
+
+    # Cancels pending tasks and prevent submission of new tasks. This does not
+    # affect running tasks, they will be aborted when they check shutdown
+    # status, or when the child process terminates.
+    for name, executor in executors:
+        logging.debug("[main] Shutting down executor %s", name)
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
+def add_executor(name, executor):
+    with shutdown.guard():
+        logging.debug("[main] Add executor %s", name)
+        executors.append((name, executor))
+
+
+def become_process_group_leader():
+    """
+    To allow cleaning up after errors, ensure that we are a process group
+    leader, so we can terminate the process group during shutdown.
+    """
+    if os.getpid() != os.getpgid(0):
+        os.setpgid(0, 0)
+        logging.debug("[main] Created new process group %s", os.getpgid(0))
+
+
+def terminate_process_group():
+    """
+    Terminate all child processes and child processes created by them.
+    """
+    logging.debug("[main] Terminating process group %s", os.getpid())
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    os.killpg(0, signal.SIGHUP)
+
+
+def handle_termination_signal(signo, frame):
+    logging.info("[main] Terminated by signal %s", signo)
+    sys.exit(1)
 
 
 def cmd_clear(env, args):
@@ -83,7 +140,13 @@ def cmd_fetch(env, args):
     start = time.monotonic()
     logging.info("[%s] Fetching", env["name"])
     addons = collect_addons(env)
-    execute(fetch_addon, addons, max_workers=args.max_workers, ctx=env["name"])
+    execute(
+        fetch_addon,
+        addons,
+        "fetch",
+        max_workers=args.max_workers,
+        ctx=env["name"],
+    )
     logging.info(
         "[%s] Fetching finishied in %.2f seconds",
         env["name"],
@@ -104,12 +167,13 @@ def cmd_start(env, args):
     execute(
         start_cluster,
         env["profiles"],
+        "profiles",
         hooks=hooks,
         args=args,
     )
 
     if hooks:
-        execute(run_worker, env["workers"], hooks=hooks)
+        execute(run_worker, env["workers"], "workers", hooks=hooks)
 
     if "ramen" in env:
         ramen.dump_e2e_config(env)
@@ -125,7 +189,7 @@ def cmd_stop(env, args):
     start = time.monotonic()
     logging.info("[%s] Stopping environment", env["name"])
     hooks = ["stop"] if args.run_addons else []
-    execute(stop_cluster, env["profiles"], hooks=hooks)
+    execute(stop_cluster, env["profiles"], "profiles", hooks=hooks)
     logging.info(
         "[%s] Environment stopped in %.2f seconds",
         env["name"],
@@ -136,7 +200,7 @@ def cmd_stop(env, args):
 def cmd_delete(env, args):
     start = time.monotonic()
     logging.info("[%s] Deleting environment", env["name"])
-    execute(delete_cluster, env["profiles"])
+    execute(delete_cluster, env["profiles"], "profiles")
 
     env_config = drenv.config_dir(env["name"])
     if os.path.exists(env_config):
@@ -166,7 +230,7 @@ def cmd_dump(env, args):
     yaml.dump(env, sys.stdout)
 
 
-def execute(func, profiles, max_workers=None, **options):
+def execute(func, profiles, name, max_workers=None, **options):
     """
     Execute func in parallel for every profile.
 
@@ -175,21 +239,19 @@ def execute(func, profiles, max_workers=None, **options):
         def func(profile, **options):
 
     """
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as e:
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+    try:
+        add_executor(name, executor)
         futures = {}
-
         for p in profiles:
-            futures[e.submit(func, p, **options)] = p["name"]
+            futures[executor.submit(func, p, **options)] = p["name"]
 
         for f in concurrent.futures.as_completed(futures):
-            try:
-                f.result()
-            except Exception:
-                logging.exception("[%s] Cluster failed", futures[f])
-                # This is not the great way to terminate since we may leave
-                # running addons scripts, but it is better than running for
-                # many minutes after a failure.
-                os._exit(1)
+            # If the future failed, stop waiting for the rest of the futures
+            # and let the error propagate to the top level error handler.
+            f.result()
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 def collect_addons(env):
@@ -220,6 +282,7 @@ def start_cluster(profile, hooks=(), args=None, **options):
         execute(
             run_worker,
             profile["workers"],
+            profile["name"],
             max_workers=args.max_workers,
             hooks=hooks,
         )
@@ -232,6 +295,7 @@ def stop_cluster(profile, hooks=(), **options):
         execute(
             run_worker,
             profile["workers"],
+            profile["name"],
             hooks=hooks,
             reverse=True,
             allow_failure=True,
@@ -396,6 +460,10 @@ def run_addon(addon, name, hooks=(), allow_failure=False):
 
 
 def run_hook(hook, args, name, allow_failure=False):
+    if shutdown.started():
+        logging.debug("[%s] Shutting down", name)
+        raise shutdown.Started
+
     start = time.monotonic()
     logging.info("[%s] Running %s", name, hook)
     try:
