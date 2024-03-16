@@ -7,6 +7,8 @@ import selectors
 import subprocess
 import textwrap
 
+from . import shutdown
+
 OUT = "out"
 ERR = "err"
 
@@ -71,20 +73,23 @@ def run(*args, input=None):
     terminated with non-zero exit code. The error includes all data read from
     the child process stdout and stderr.
     """
-    try:
-        cp = subprocess.run(
-            args,
-            input=input.encode() if input else None,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-    except OSError as e:
-        raise Error(args, f"Could not execute: {e}").with_exception(e)
+    with shutdown.guard():
+        try:
+            p = subprocess.Popen(
+                args,
+                stdin=subprocess.PIPE if input else None,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        except OSError as e:
+            raise Error(args, f"Could not execute: {e}").with_exception(e)
 
-    output = cp.stdout.decode()
-    if cp.returncode != 0:
-        error = cp.stderr.decode(errors="replace")
-        raise Error(args, error, exitcode=cp.returncode, output=output)
+    output, error = p.communicate(input=input.encode() if input else None)
+
+    output = output.decode()
+    if p.returncode != 0:
+        error = error.decode(errors="replace")
+        raise Error(args, error, exitcode=p.returncode, output=output)
 
     return output
 
@@ -109,16 +114,17 @@ def watch(*args, input=None):
     env = dict(os.environ)
     env["PYTHONUNBUFFERED"] = "1"
 
-    try:
-        p = subprocess.Popen(
-            args,
-            stdin=subprocess.PIPE if input else None,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=env,
-        )
-    except OSError as e:
-        raise Error(args, f"Could not execute: {e}").with_exception(e)
+    with shutdown.guard():
+        try:
+            p = subprocess.Popen(
+                args,
+                stdin=subprocess.PIPE if input else None,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env,
+            )
+        except OSError as e:
+            raise Error(args, f"Could not execute: {e}").with_exception(e)
 
     with p:
         error = bytearray()
