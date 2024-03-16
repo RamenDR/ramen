@@ -177,8 +177,6 @@ def execute(func, profiles, delay=0, max_workers=None, **options):
         def func(profile, **options):
 
     """
-    failed = False
-
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as e:
         futures = {}
 
@@ -191,10 +189,10 @@ def execute(func, profiles, delay=0, max_workers=None, **options):
                 f.result()
             except Exception:
                 logging.exception("[%s] Cluster failed", futures[f])
-                failed = True
-
-    if failed:
-        sys.exit(1)
+                # This is not the great way to terminate since we may leave
+                # running addons scripts, but it is better than running for
+                # many minutes after a failure.
+                os._exit(1)
 
 
 def collect_addons(env):

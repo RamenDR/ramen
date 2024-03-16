@@ -42,10 +42,14 @@ jobs:
       run: test/scripts/setup-libvirt
 
     - name: Start clusters
-      working-directory: test
-      run: |
-        drenv start --max-workers ${{ env.MAX_WORKERS }} --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
-        cp ~/.config/drenv/${{ env.NAME_PREFIX }}rdr/config.yaml ../e2e/config.yaml
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 20
+        max_attempts: 3
+        command: |
+          cd test
+          drenv start --max-workers ${{ env.MAX_WORKERS }} --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
+          cp ~/.config/drenv/${{ env.NAME_PREFIX }}rdr/config.yaml ../e2e/config.yaml
 
     - name: Deploy ramen
       run: |
