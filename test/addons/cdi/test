@@ -11,18 +11,40 @@ from drenv import kubectl
 
 def test(cluster):
     print("Deploying disk")
-    kubectl.apply("--kustomize=disk", context=cluster)
+    kubectl.apply("--kustomize=pvc", context=cluster)
 
-    print("Waiting until pvc is bound")
+    print("Deploying data volume")
+    kubectl.apply("--kustomize=dv", context=cluster)
+
+    print("Waiting until pvc test-pvc is bound")
     kubectl.wait(
         "pvc/test-pvc",
         "--for=jsonpath={.status.phase}=Bound",
-        "--timeout=600s",
+        "--timeout=120s",
         context=cluster,
     )
 
-    print("Deletting disk")
-    kubectl.delete("--kustomize=disk", context=cluster)
+    print("Waiting until data volume test-dv is bound")
+    kubectl.wait(
+        "dv/test-dv",
+        "--for=condition=Bound",
+        "--timeout=120s",
+        context=cluster,
+    )
+
+    print("Waiting until pvc test-dv is bound")
+    kubectl.wait(
+        "pvc/test-dv",
+        "--for=jsonpath={.status.phase}=Bound",
+        "--timeout=120s",
+        context=cluster,
+    )
+
+    print("Deletting pvc test-pvc")
+    kubectl.delete("--kustomize=pvc", context=cluster)
+
+    print("Deletting data volume test-dv")
+    kubectl.delete("--kustomize=dv", context=cluster)
 
 
 if len(sys.argv) != 2:
