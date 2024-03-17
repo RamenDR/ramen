@@ -35,3 +35,11 @@ patches:
             duration: 168h
           server:
             duration: 168h
+  # Enable data volume PVC adoption, required for DR.
+  - target:
+      kind: CDI
+      name: cdi
+    patch: |-
+      - op: add
+        path: /spec/config/featureGates/-
+        value: DataVolumeClaimAdoption
