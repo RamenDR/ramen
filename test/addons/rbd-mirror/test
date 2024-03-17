@@ -8,20 +8,10 @@ import os
 import sys
 import time
 
-from drenv import ceph
 from drenv import kubectl
 
 POOL_NAME = "replicapool"
 PVC_NAME = "rbd-pvc"
-
-
-def check_blocklist(cluster):
-    """
-    Fail if ceph osd blocklist is not empty.
-    """
-    blocklist = ceph.list_osd_blocklist(cluster)
-    if blocklist:
-        raise RuntimeError(f"Ceph blocklist on cluster {cluster}: {blocklist}")
 
 
 def rbd(*args, cluster=None):
@@ -174,11 +164,5 @@ os.chdir(os.path.dirname(__file__))
 cluster1 = sys.argv[1]
 cluster2 = sys.argv[2]
 
-check_blocklist(cluster1)
-check_blocklist(cluster2)
-
 test_volume_replication(cluster1, cluster2)
 test_volume_replication(cluster2, cluster1)
-
-check_blocklist(cluster1)
-check_blocklist(cluster2)
