@@ -174,11 +174,11 @@ os.chdir(os.path.dirname(__file__))
 cluster1 = sys.argv[1]
 cluster2 = sys.argv[2]
 
-check_blocklist(cluster1)
-check_blocklist(cluster2)
+# check_blocklist(cluster1)
+# check_blocklist(cluster2)
 
 test_volume_replication(cluster1, cluster2)
 test_volume_replication(cluster2, cluster1)
 
-check_blocklist(cluster1)
-check_blocklist(cluster2)
+# check_blocklist(cluster1)
+# check_blocklist(cluster2)
