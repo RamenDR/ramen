@@ -9,32 +9,9 @@ import os
 import sys
 
 import drenv
-from drenv import ceph
 from drenv import kubectl
 
 POOL_NAME = "replicapool"
-
-
-def clear_blocklist(cluster):
-    """
-    Clear ceph blocklist.
-
-    TODO: Maybe it is better to fail.
-    """
-    blocklist = ceph.list_osd_blocklist(cluster)
-    if blocklist:
-        print(f"Clearing ceph osd blocklist on cluster {cluster}")
-        print(json.dumps(blocklist, indent=2))
-        ceph.clear_osd_blocklist(cluster)
-
-
-def check_blocklist(cluster):
-    """
-    Fail if ceph osd blocklist is not empty.
-    """
-    blocklist = ceph.list_osd_blocklist(cluster)
-    if blocklist:
-        raise RuntimeError(f"Ceph blocklist on cluster {cluster}: {blocklist}")
 
 
 def fetch_secret_info(cluster):
@@ -152,9 +129,6 @@ os.chdir(os.path.dirname(__file__))
 cluster1 = sys.argv[1]
 cluster2 = sys.argv[2]
 
-clear_blocklist(cluster1)
-clear_blocklist(cluster2)
-
 cluster1_info = fetch_secret_info(cluster1)
 cluster2_info = fetch_secret_info(cluster2)
 
@@ -169,8 +143,5 @@ wait_until_pool_mirroring_is_healthy(cluster2)
 
 deploy_vrc_sample(cluster1)
 deploy_vrc_sample(cluster2)
-
-check_blocklist(cluster1)
-check_blocklist(cluster2)
 
 print("Mirroring was setup successfully")
