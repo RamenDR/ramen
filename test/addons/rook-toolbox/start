@@ -24,7 +24,7 @@ def wait(cluster):
         "status",
         "deploy/rook-ceph-tools",
         "--namespace=rook-ceph",
-        "--timeout=600s",
+        "--timeout=300s",
         context=cluster,
     )
 

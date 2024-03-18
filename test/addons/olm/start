@@ -60,7 +60,7 @@ def wait(cluster):
         "csv/packageserver",
         f"--namespace={NAMESPACE}",
         "--for=jsonpath={.status.phase}=Succeeded",
-        "--timeout=600s",
+        "--timeout=300s",
         context=cluster,
     )
 
