@@ -28,7 +28,7 @@ print("Waiting until deployment is rolled out")
 kubectl.rollout(
     "status",
     "deployment",
-    "--timeout=600s",
+    "--timeout=120s",
     context=cluster,
 )
 
@@ -37,7 +37,7 @@ kubectl.rollout(
     "status",
     "ingress",
     "--namespace=ingress-nginx",
-    "--timeout=600s",
+    "--timeout=120s",
     context=cluster,
 )
 
