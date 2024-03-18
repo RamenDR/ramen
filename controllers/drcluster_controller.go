@@ -593,11 +593,16 @@ func (u *drclusterInstance) statusUpdate() error {
 const drClusterFinalizerName = "drclusters.ramendr.openshift.io/ramen"
 
 func (u *drclusterInstance) addLabelsAndFinalizers() error {
-	return util.GenericAddLabelsAndFinalizers(u.ctx, u.object, drClusterFinalizerName, u.client, u.log)
+	return util.NewResourceUpdater(u.object).
+		AddLabel(util.OCMBackupLabelKey, util.OCMBackupLabelValue).
+		AddFinalizer(drClusterFinalizerName).
+		Update(u.ctx, u.client)
 }
 
 func (u *drclusterInstance) finalizerRemove() error {
-	return util.GenericFinalizerRemove(u.ctx, u.object, drClusterFinalizerName, u.client, u.log)
+	return util.NewResourceUpdater(u.object).
+		RemoveFinalizer(drClusterFinalizerName).
+		Update(u.ctx, u.client)
 }
 
 // TODO:
