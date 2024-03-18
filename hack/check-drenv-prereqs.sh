@@ -7,7 +7,7 @@ if ! groups "$USER" | grep -qw libvirt; then
 fi
 
 commands=("minikube" "kubectl" "clusteradm" "subctl" "velero" "helm" "virtctl"
-"virt-host-validate")
+"virt-host-validate" "kustomize")
 
 for cmd in "${commands[@]}"; do
   if ! command -v "$cmd" &> /dev/null; then
