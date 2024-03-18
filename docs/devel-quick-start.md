@@ -11,7 +11,7 @@ SPDX-License-Identifier: Apache-2.0
 1. Create a branch from where you want to base your work (usually main).
 1. Make your changes and arrange them in readable commits.
 1. Make sure your commit messages are in the proper format.
-1. Make sure all [tests](docs/testing.md) pass, and add any new [tests](docs/testing.md)
+1. Make sure all [tests](./testing.md) pass, and add any new [tests](./testing.md)
 1. Push your changes to the branch in your fork of the repository.
    as appropriate.
 1. Submit a pull request to the original repository.
