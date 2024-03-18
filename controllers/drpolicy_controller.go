@@ -385,11 +385,16 @@ func (u *drpolicyUpdater) statusUpdate() error {
 const drPolicyFinalizerName = "drpolicies.ramendr.openshift.io/ramen"
 
 func (u *drpolicyUpdater) addLabelsAndFinalizers() error {
-	return util.GenericAddLabelsAndFinalizers(u.ctx, u.object, drPolicyFinalizerName, u.client, u.log)
+	return util.NewResourceUpdater(u.object).
+		AddLabel(util.OCMBackupLabelKey, util.OCMBackupLabelValue).
+		AddFinalizer(drPolicyFinalizerName).
+		Update(u.ctx, u.client)
 }
 
 func (u *drpolicyUpdater) finalizerRemove() error {
-	return util.GenericFinalizerRemove(u.ctx, u.object, drPolicyFinalizerName, u.client, u.log)
+	return util.NewResourceUpdater(u.object).
+		RemoveFinalizer(drPolicyFinalizerName).
+		Update(u.ctx, u.client)
 }
 
 // SetupWithManager sets up the controller with the Manager.

@@ -7,7 +7,6 @@ import (
 	"context"
 	"reflect"
 
-	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -19,39 +18,62 @@ const (
 	OCMBackupLabelValue string = "ramen"
 )
 
-func GenericAddLabelsAndFinalizers(
-	ctx context.Context,
-	object client.Object,
-	finalizerName string,
-	client client.Client,
-	log logr.Logger,
-) error {
-	labelAdded := AddLabel(object, OCMBackupLabelKey, OCMBackupLabelValue)
-	finalizerAdded := AddFinalizer(object, finalizerName)
-
-	if finalizerAdded || labelAdded {
-		log.Info("finalizer or label add")
-
-		return client.Update(ctx, object)
-	}
-
-	return nil
+type ResourceUpdater struct {
+	obj         client.Object
+	objModified bool
+	err         error
 }
 
-func GenericFinalizerRemove(
-	ctx context.Context,
-	object client.Object,
-	finalizerName string,
-	client client.Client,
-	log logr.Logger,
-) error {
-	finalizerCount := len(object.GetFinalizers())
-	controllerutil.RemoveFinalizer(object, finalizerName)
+func NewResourceUpdater(obj client.Object) *ResourceUpdater {
+	return &ResourceUpdater{
+		obj:         obj,
+		objModified: false,
+		err:         nil,
+	}
+}
 
-	if len(object.GetFinalizers()) != finalizerCount {
-		log.Info("finalizer remove")
+func (u *ResourceUpdater) AddLabel(key, value string) *ResourceUpdater {
+	added := AddLabel(u.obj, key, value)
 
-		return client.Update(ctx, object)
+	u.objModified = u.objModified || added
+
+	return u
+}
+
+func (u *ResourceUpdater) AddFinalizer(finalizerName string) *ResourceUpdater {
+	added := AddFinalizer(u.obj, finalizerName)
+
+	u.objModified = u.objModified || added
+
+	return u
+}
+
+func (u *ResourceUpdater) AddOwner(owner metav1.Object, scheme *runtime.Scheme) *ResourceUpdater {
+	added, err := AddOwnerReference(u.obj, owner, scheme)
+	if err != nil {
+		u.err = err
+	}
+
+	u.objModified = u.objModified || added
+
+	return u
+}
+
+func (u *ResourceUpdater) RemoveFinalizer(finalizerName string) *ResourceUpdater {
+	finalizersUpdated := controllerutil.RemoveFinalizer(u.obj, finalizerName)
+
+	u.objModified = u.objModified || finalizersUpdated
+
+	return u
+}
+
+func (u *ResourceUpdater) Update(ctx context.Context, client client.Client) error {
+	if u.err != nil {
+		return u.err
+	}
+
+	if u.objModified {
+		return client.Update(ctx, u.obj)
 	}
 
 	return nil

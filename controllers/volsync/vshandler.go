@@ -1180,64 +1180,17 @@ func (v *VSHandler) validateAndProtectSnapshot(
 	}
 
 	// Add ownerRef on snapshot pointing to the vrg - if/when the VRG gets cleaned up, then GC can cleanup the snap
-	ownerAdded, err := util.AddOwnerReference(volSnap, v.owner, v.client.Scheme())
-	if err != nil {
-		return nil, fmt.Errorf("failed to add owner reference (%w)", err)
-	}
-
 	// Add label to indicate that VolSync should not delete/cleanup this snapshot
-	labelAdded := util.AddLabel(volSnap, VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal)
+	err = util.NewResourceUpdater(volSnap).
+		AddOwner(v.owner, v.client.Scheme()).
+		AddLabel(VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal).
+		Update(v.ctx, v.client)
 
-	if labelAdded || ownerAdded {
-		if err := v.client.Update(v.ctx, volSnap); err != nil {
-			v.log.Error(err, "Failed to add label to snapshot",
-				"snapshot name", volSnap.GetName(), "labelName", VolSyncDoNotDeleteLabel)
-
-			return nil, fmt.Errorf("failed to add %s label to snapshot %s (%w)",
-				VolSyncDoNotDeleteLabel, volSnap.GetName(), err)
-		}
-
-		v.log.Info("label added to snapshot", "snapshot name", volSnap.GetName(), "labelName", VolSyncDoNotDeleteLabel)
-	}
-
-	v.log.V(1).Info("VolumeSnapshot validated", "volumesnapshot name", volSnap.GetName())
-
-	return volSnap, nil
-}
-
-// validateAndProtectSnapshot Validates snapshot exists, adds the vrg as the owner, and
-// adds VolSync "do-not-delete" label to indicate volsync should not cleanup this snapshot
-func (v *VSHandler) validateSnapshotAndAddDoNotDeleteLabel(
-	volumeSnapshotRef corev1.TypedLocalObjectReference,
-) (*snapv1.VolumeSnapshot, error) {
-	volSnap := &snapv1.VolumeSnapshot{}
-
-	err := v.client.Get(v.ctx, types.NamespacedName{
-		Name:      volumeSnapshotRef.Name,
-		Namespace: v.owner.GetNamespace(),
-	}, volSnap)
 	if err != nil {
-		v.log.Error(err, "Unable to get VolumeSnapshot", "volumeSnapshotRef", volumeSnapshotRef)
-
-		return nil, fmt.Errorf("error getting volumesnapshot (%w)", err)
+		return nil, fmt.Errorf("failed to add owner/label to snapshot %s (%w)", volSnap.GetName(), err)
 	}
 
-	// Add label to indicate that VolSync should not delete/cleanup this snapshot
-	labelAdded := util.AddLabel(volSnap, VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal)
-
-	if labelAdded {
-		if err := v.client.Update(v.ctx, volSnap); err != nil {
-			v.log.Error(err, "Failed to add label to snapshot",
-				"snapshot name", volSnap.GetName(), "labelName", VolSyncDoNotDeleteLabel)
-
-			return nil, fmt.Errorf("failed to add %s label to snapshot %s (%w)",
-				VolSyncDoNotDeleteLabel, volSnap.GetName(), err)
-		}
-
-		v.log.Info("label added to snapshot", "snapshot name", volSnap.GetName(), "labelName", VolSyncDoNotDeleteLabel)
-	}
-
-	v.log.V(1).Info("VolumeSnapshot validated", "volumesnapshot name", volSnap.GetName())
+	v.log.V(1).Info("VolumeSnapshot validated and protected", "volumesnapshot name", volSnap.GetName())
 
 	return volSnap, nil
 }
@@ -1917,7 +1870,7 @@ func (v *VSHandler) setupLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 		return nil, err
 	}
 
-	snap, err := v.validateSnapshotAndAddDoNotDeleteLabel(*vsImageRef)
+	snap, err := v.validateAndProtectSnapshot(*vsImageRef)
 	if err != nil {
 		return nil, err
 	}
