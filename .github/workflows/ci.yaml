@@ -94,6 +94,17 @@ jobs:
           version: v1.55.2
           working-directory: ${{ matrix.directory }}
 
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Setup go
+      - uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: govulncheck
+        uses: golang/govulncheck-action@v1
+
   unit-test:
     name: Unit tests
     runs-on: ubuntu-20.04
