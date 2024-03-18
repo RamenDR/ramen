@@ -102,7 +102,7 @@ linters:
     - bidichk
     - bodyclose
     - cyclop
-    - deadcode
+    # - deadcode
     - decorder
     #  - depguard
     - dogsled
@@ -122,7 +122,7 @@ linters:
     - gocyclo
     - gofmt
     - gofumpt
-    - golint
+    # - golint
     - gomnd
     - gomodguard
     - goprintffuncname
@@ -130,7 +130,7 @@ linters:
     - gosimple
     - govet
     - grouper
-    - ifshort
+    # - ifshort
     - importas
     - ineffassign
     - interfacebloat
@@ -138,7 +138,7 @@ linters:
     - logrlint
     - maintidx
     - makezero
-    - maligned
+    # - maligned
     - misspell
     #  - nakedret
     - nestif
@@ -152,9 +152,9 @@ linters:
     - reassign
     - revive
     - rowserrcheck
-    - scopelint
+    # - scopelint
     - sqlclosecheck
-    - structcheck
+    # - structcheck
     - stylecheck
     - tenv
     - testpackage
@@ -165,7 +165,7 @@ linters:
     - unparam
     - unused
     - usestdlibvars
-    - varcheck
+    # - varcheck
     #  - wastedassign
     - whitespace
     - wsl
