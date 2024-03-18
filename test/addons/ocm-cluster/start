@@ -113,7 +113,7 @@ def wait_for_managed_cluster(cluster, hub):
     kubectl.wait(
         f"managedcluster/{cluster}",
         "--for=condition=ManagedClusterConditionAvailable",
-        "--timeout=600s",
+        "--timeout=60s",
         context=hub,
     )
 
