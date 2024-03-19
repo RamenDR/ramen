@@ -4,13 +4,55 @@
 # Environment for testing drenv error handling.
 ---
 name: error
-profiles:
+templates:
   - name: cluster
     driver: $vm
     container_runtime: containerd
     memory: 2g
+profiles:
+  - name: c1
+    template: cluster
     workers:
       - addons:
           - name: error
+            args: ["10.0"]
+          - name: sleep
+            args: ["60"]
       - addons:
-          - name: example
+          - name: sleep
+            args: ["10.0"]
+          - name: sleep
+            args: ["60"]
+      - addons:
+          - name: sleep
+            args: ["10.0"]
+          - name: sleep
+            args: ["60"]
+      - addons:
+          - name: sleep
+            args: ["10.0"]
+          - name: sleep
+            args: ["60"]
+  - name: c2
+    template: cluster
+    workers:
+      - addons:
+          - name: sleep
+            args: ["10.0"]
+          - name: sleep
+            args: ["60"]
+      - addons:
+          - name: sleep
+            args: ["10.0"]
+          - name: sleep
+            args: ["60"]
+      - addons:
+          - name: sleep
+            args: ["10.0"]
+          - name: sleep
+            args: ["60"]
+      - addons:
+          - name: sleep
+            args: ["10.0"]
+          - name: sleep
+            args: ["60"]

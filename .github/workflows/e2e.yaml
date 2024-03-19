@@ -49,15 +49,21 @@ jobs:
         command: |
           cd test
           drenv start --max-workers ${{ env.MAX_WORKERS }} --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
-          cp ~/.config/drenv/${{ env.NAME_PREFIX }}rdr/config.yaml ../e2e/config.yaml
 
     - name: Deploy ramen
-      run: |
-        ramenctl deploy --name-prefix ${{ env.NAME_PREFIX }} test/envs/regional-dr.yaml
-        ramenctl config --name-prefix ${{ env.NAME_PREFIX }} test/envs/regional-dr.yaml
+      run: ramenctl deploy --name-prefix ${{ env.NAME_PREFIX }} test/envs/regional-dr.yaml
+
+    - name: Configure ramen
+      uses: nick-fields/retry@v3
+      with:
+        timeout_seconds: 60
+        max_attempts: 3
+        command: ramenctl config --name-prefix ${{ env.NAME_PREFIX }} test/envs/regional-dr.yaml
 
     - name: Run e2e tests
-      run: make e2e-rdr
+      run: |
+        cp ~/.config/drenv/${{ env.NAME_PREFIX }}rdr/config.yaml e2e/config.yaml
+        make e2e-rdr
 
     - name: Delete clusters
       if: ${{ always() }}
