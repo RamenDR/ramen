@@ -97,6 +97,27 @@ func AddLabel(obj client.Object, key, value string) bool {
 	return !labelAdded
 }
 
+func HasLabel(obj client.Object, key string) bool {
+	labels := obj.GetLabels()
+	for k := range labels {
+		if k == key {
+			return true
+		}
+	}
+
+	return false
+}
+
+func HasLabelWithValue(obj client.Object, key string, value string) bool {
+	labels := obj.GetLabels()
+	for k, v := range labels {
+		if k == key && v == value {
+			return true
+		}
+	}
+	return false
+}
+
 func AddAnnotation(obj client.Object, key, value string) bool {
 	const added = true
 

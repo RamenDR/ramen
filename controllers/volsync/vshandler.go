@@ -1972,14 +1972,24 @@ func (v *VSHandler) deleteSnapshot(ctx context.Context,
 	snapshotName, namespace string,
 	log logr.Logger,
 ) error {
-	volSnap := &snapv1.VolumeSnapshot{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      snapshotName,
-			Namespace: namespace,
-		},
+	volSnap := &snapv1.VolumeSnapshot{}
+
+	err := v.client.Get(v.ctx, types.NamespacedName{
+		Name:      snapshotName,
+		Namespace: namespace,
+	}, volSnap)
+	if err != nil {
+		return client.IgnoreNotFound(err)
 	}
 
-	err := k8sClient.Delete(ctx, volSnap)
+	if util.HasLabelWithValue(volSnap, VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal) {
+		log.Info("Not deleting volumesnapshot because it is protected with label",
+			"name", volSnap.GetName(), "label", VolSyncDoNotDeleteLabel)
+
+		return nil
+	}
+
+	err = k8sClient.Delete(ctx, volSnap)
 	if err != nil {
 		if !kerrors.IsNotFound(err) {
 			log.Error(err, "error deleting snapshot", "snapshotName", snapshotName)
