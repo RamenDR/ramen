@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ramendr/ramen/e2e/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"samples.foo/e2e/util"
 )
 
 const ramenSystemNamespace = "ramen-system"

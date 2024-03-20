@@ -1,15 +1,15 @@
 package suites
 
 import (
-	"samples.foo/e2e/deployer"
-	"samples.foo/e2e/dractions"
-	"samples.foo/e2e/util"
-	"samples.foo/e2e/workload"
+	"github.com/ramendr/ramen/e2e/deployers"
+	"github.com/ramendr/ramen/e2e/dractions"
+	"github.com/ramendr/ramen/e2e/util"
+	"github.com/ramendr/ramen/e2e/workloads"
 )
 
 type BasicSuite struct {
-	w   workload.Workload
-	d   deployer.Deployer
+	w   workloads.Workload
+	d   deployers.Deployer
 	ctx *util.TestContext
 	r   dractions.DRActions
 }
@@ -21,8 +21,8 @@ func (s *BasicSuite) SetContext(ctx *util.TestContext) {
 
 func (s *BasicSuite) SetupSuite() error {
 	s.ctx.Log.Info("enter SetupSuite")
-	s.w = workload.BusyboxDeployment{Ctx: s.ctx}
-	s.d = deployer.Subscription{Ctx: s.ctx}
+	s.w = workloads.BusyboxDeployment{Ctx: s.ctx}
+	s.d = deployers.Subscription{Ctx: s.ctx}
 	s.r = dractions.DRActions{Ctx: s.ctx}
 
 	return nil

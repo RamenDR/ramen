@@ -1,16 +1,16 @@
 package dractions
 
 import (
-	"samples.foo/e2e/deployer"
-	"samples.foo/e2e/util"
-	"samples.foo/e2e/workload"
+	"github.com/ramendr/ramen/e2e/deployers"
+	"github.com/ramendr/ramen/e2e/util"
+	"github.com/ramendr/ramen/e2e/workloads"
 )
 
 type DRActions struct {
 	Ctx *util.TestContext
 }
 
-func (r DRActions) EnableProtection(w workload.Workload, d deployer.Deployer) error {
+func (r DRActions) EnableProtection(w workloads.Workload, d deployers.Deployer) error {
 	// If AppSet/Subscription, find Placement
 	// Determine DRPolicy
 	// Determine preferredCluster
@@ -21,7 +21,7 @@ func (r DRActions) EnableProtection(w workload.Workload, d deployer.Deployer) er
 	return nil
 }
 
-func (r DRActions) Failover(w workload.Workload, d deployer.Deployer) error {
+func (r DRActions) Failover(w workloads.Workload, d deployers.Deployer) error {
 	// Determine DRPC
 	// Check Placement
 	// Failover to alternate in DRPolicy as the failoverCluster
@@ -30,7 +30,7 @@ func (r DRActions) Failover(w workload.Workload, d deployer.Deployer) error {
 	return nil
 }
 
-func (r DRActions) Relocate(w workload.Workload, d deployer.Deployer) error {
+func (r DRActions) Relocate(w workloads.Workload, d deployers.Deployer) error {
 	// Determine DRPC
 	// Check Placement
 	// Relocate to Primary in DRPolicy as the PrimaryCluster

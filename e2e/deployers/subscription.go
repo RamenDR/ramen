@@ -1,8 +1,8 @@
-package deployer
+package deployers
 
 import (
-	"samples.foo/e2e/util"
-	"samples.foo/e2e/workload"
+	"github.com/ramendr/ramen/e2e/util"
+	"github.com/ramendr/ramen/e2e/workloads"
 )
 
 type Subscription struct {
@@ -12,7 +12,7 @@ type Subscription struct {
 	Ctx     *util.TestContext
 }
 
-func (s Subscription) Deploy(w workload.Workload) error {
+func (s Subscription) Deploy(w workloads.Workload) error {
 	// Generate a Placement for the Workload
 	// Use the global Channel
 	// Generate a Binding for the namespace (does this need clusters?)
@@ -24,13 +24,13 @@ func (s Subscription) Deploy(w workload.Workload) error {
 	return nil
 }
 
-func (s Subscription) Undeploy(w workload.Workload) error {
+func (s Subscription) Undeploy(w workloads.Workload) error {
 	// Delete Subscription, Placement, Binding
 	s.Ctx.Log.Info("enter Subscription Undeploy")
 	return nil
 }
 
-func (s Subscription) Health(w workload.Workload) error {
+func (s Subscription) Health(w workloads.Workload) error {
 	s.Ctx.Log.Info("enter Subscription Health")
 	w.GetResources()
 	// Check health using reflection to known types of the workload on the targetCluster

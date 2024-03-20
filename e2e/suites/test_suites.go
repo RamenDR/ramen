@@ -1,6 +1,6 @@
 package suites
 
-import "samples.foo/e2e/util"
+import "github.com/ramendr/ramen/e2e/util"
 
 type Test func() error
 

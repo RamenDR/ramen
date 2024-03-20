@@ -1,6 +1,6 @@
-package workload
+package workloads
 
-import "samples.foo/e2e/util"
+import "github.com/ramendr/ramen/e2e/util"
 
 type BusyboxDeployment struct {
 	repoURL  string // Possibly all this is part of Workload than each implementation of the interfaces?

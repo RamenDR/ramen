@@ -1,4 +1,4 @@
-package workload
+package workloads
 
 type BusyboxPod struct {
 }

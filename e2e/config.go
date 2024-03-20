@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
+	"github.com/ramendr/ramen/e2e/util"
 	"github.com/spf13/viper"
-	"samples.foo/e2e/util"
 )
 
 func validateConfig(config *util.Config) error {

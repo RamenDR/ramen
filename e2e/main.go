@@ -3,10 +3,10 @@ package main
 import (
 	"fmt"
 
+	"github.com/ramendr/ramen/e2e/suites"
+	"github.com/ramendr/ramen/e2e/util"
 	uberzap "go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"samples.foo/e2e/suites"
-	"samples.foo/e2e/util"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
