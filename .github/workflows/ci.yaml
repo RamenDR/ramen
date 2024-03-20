@@ -105,6 +105,19 @@ jobs:
       - name: govulncheck
         uses: golang/govulncheck-action@v1
 
+  gosec:
+    name: gosec
+    runs-on: ubuntu-22.04
+    env:
+      GO111MODULE: on
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v3
+      - name: Run Gosec Security Scanner
+        uses: securego/gosec@master
+        with:
+          args: ./...
+
   unit-test:
     name: Unit tests
     runs-on: ubuntu-20.04
