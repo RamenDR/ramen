@@ -59,6 +59,14 @@ enough resources:
 
    Logout and login again for the change above to be in effect.
 
+1. Install build tools
+
+   On Fedora you can use:
+
+   ```
+   sudo dnf install make golang
+   ```
+
 1. Clone *Ramen* source locally
 
    ```
