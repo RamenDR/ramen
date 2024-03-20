@@ -55,10 +55,12 @@ func (s *PrecheckSuite) TestRamenHubOperatorStatus() error {
 
 	if isRunning {
 		s.ctx.Log.Info("Ramen Hub Operator is running", "pod", podName)
-		return nil
+	} else {
+		return fmt.Errorf("no running Ramen Hub Operator pod")
 	}
 
-	return fmt.Errorf("no running Ramen Hub Operator pod")
+	s.ctx.Log.Info("TestRamenHubOperatorStatus: Pass")
+	return nil
 }
 
 func (s *PrecheckSuite) TestRamenSpokeOperatorStatus() error {
@@ -86,6 +88,7 @@ func (s *PrecheckSuite) TestRamenSpokeOperatorStatus() error {
 		return fmt.Errorf("no running Ramen Spoke Operator pod on cluster 2")
 	}
 
+	s.ctx.Log.Info("TestRamenSpokeOperatorStatus: Pass")
 	return nil
 
 }
@@ -182,7 +185,7 @@ func (s *PrecheckSuite) TestCephClusterStatus() error {
 	if err != nil {
 		return err
 	}
-
+	s.ctx.Log.Info("TestCephClusterStatus: Pass")
 	return nil
 
 }
