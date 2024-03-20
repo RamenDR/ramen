@@ -14,7 +14,7 @@ This video will demonstrate how to test application DR *after* completing the co
 
 ## What you’ll need
 
-To set up a *Ramen* development environment you will need to run 3
+To set up a *Ramen* testing environment you will need to run 3
 Kubernetes clusters. *Ramen* makes this easy using minikube, but you need
 enough resources:
 
