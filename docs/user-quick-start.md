@@ -14,7 +14,7 @@ This video will demonstrate how to test application DR *after* completing the co
 
 ## What you’ll need
 
-To set up a *Ramen* development environment you will need to run 3
+To set up a *Ramen* testing environment you will need to run 3
 Kubernetes clusters. *Ramen* makes this easy using minikube, but you need
 enough resources:
 
@@ -23,171 +23,177 @@ enough resources:
 - 20 GiB of free memory
 - 100 GiB of free space
 - Internet connection
-- Linux - tested on *Fedora* 37 and 38
+- Linux - tested on *Fedora* 37, 38, and 39
 - non-root user with sudo privileges (all instructions are for non-root user)
 
 ## Setting up your machine
 
-1. Fork the *Ramen* repository at [https://github.com/RamenDR/ramen](https://github.com/RamenDR/ramen)
+### Install libvirt
 
-1. Clone the source locally
+Install the `@virtualization` group - on Fedora you can use:
 
-   ```
-   git clone https://github.com/{your_github_id}/ramen.git
-   cd ramen
-   ```
+```
+sudo dnf install @virtualization
+```
 
-1. Create python virtual environment
+For more information see
+[Virtualization on Fedora](https://docs.fedoraproject.org/en-US/quick-docs/virtualization-getting-started/).
 
-   The *Ramen* project use python tool to create and provision test
-   environment and run tests. The create a virtual environment including
-   the tools run:
+Enable the libvirtd service.
 
-   ```
-   make venv
-   ```
+```
+sudo systemctl enable libvirtd --now
+```
 
-   This create a virtual environment in `~/.venv/ramen` and a symbolic
-   link `venv` for activating the environment.
+Verify libvirtd service is now active with no errors.
 
-   To activate the environment use:
+```
+sudo systemctl status libvirtd -l
+```
 
-   ```
-   source venv
-   ```
+Add yourself to the libvirt group (required for minikube kvm2 driver).
 
-   To exit virtual environment issue command *deactivate*.
+```
+sudo usermod -a -G libvirt $(whoami)
+```
 
-1. Enable libvirtd service if disabled.
+Logout and login again for the change above to be in effect.
 
-   ```
-   sudo systemctl enable libvirtd --now
-   ```
+### Install required packages
 
-   Verify libvirtd service is now active with no errors.
+On Fedora you can use:
 
-   ```
-   sudo systemctl status libvirtd -l
-   ```
+```
+sudo dnf install git make golang helm podman
+```
 
-1. Add yourself to the libvirt group (required for minikube kvm2 driver).
+### Clone *Ramen* source locally
 
-   ```
-   sudo usermod -a -G libvirt $(whoami)
-   ```
+```
+git clone https://github.com/RamenDR/ramen.git
+```
 
-   Logout and login again for the change above to be in effect.
+Enter the `ramen` directory - all the commands in this guide assume you
+are in ramen root directory.
 
-1. Install `@virtualization` group - on Fedora you can use:
+```
+cd ramen
+```
 
-   ```
-   sudo dnf install @virtualization
-   ```
+### Create python virtual environment
 
-   For more information see [Virtualization on Fedora](https://docs.fedoraproject.org/en-US/quick-docs/virtualization-getting-started/).
+The *Ramen* project use python tool to create and provision test
+environment and run tests. The create a virtual environment including
+the tools run:
 
-1. Install the `kubectl` tool. See
-   [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
-   for details.
-   Tested with version v1.27.4.
+```
+make venv
+```
 
-1. Install minikube - on Fedora you can use::
+This create a virtual environment in `~/.venv/ramen` and a symbolic
+link `venv` for activating the environment.
 
-   ```
-   sudo dnf install https://storage.googleapis.com/minikube/releases/latest/minikube-latest.x86_64.rpm
-   ```
+To activate the environment use:
 
-   Tested with version v1.31.
+```
+source venv
+```
 
-1. Validate the installation
+To exit virtual environment issue command *deactivate*.
 
-   Run the drenv-selftest to validate that we can create a test cluster:
+### Installing required tools
 
-   ```
-   test/scripts/drenv-selftest
-   ```
+The drenv tool requires various tool for deploying the testing clusters.
 
-   Example output:
+#### minikube
 
-   ```
-   1. Activating the ramen virtual environment ...
+On Fedora you can use:
+
+```
+sudo dnf install https://storage.googleapis.com/minikube/releases/latest/minikube-latest.x86_64.rpm
+```
+
+Tested with version v1.31.
+
+#### kubectl
+
+See [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
+for details.
+
+Tested with version v1.27.4.
+
+#### clusteradm
+
+See [Install clusteradm CLI tool](https://open-cluster-management.io/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool)
+for the details.
+
+Version v0.7.1 or later is required.
+
+#### subctl
+
+See [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/)
+for the details.
+
+Version v0.16.3 or later is required.
+
+#### velero
+
+See [Velero Basic Install](https://velero.io/docs/v1.12/basic-install/)
+for the details.
+
+Tested with version v1.12.0.
+
+#### virtctl
+
+```
+curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.0.1/virtctl-v1.0.1-linux-amd64
+```
+
+After download completes for `virtctl` issue these commands.
+
+```
+sudo install virtctl /usr/local/bin
+```
+
+See [virtctl install](https://kubevirt.io/quickstart_minikube/#virtctl)
+for more info.
+
+Tested with version v1.0.1.
+
+### Validate the installation
+
+Run the drenv-selftest to validate that we can create a test cluster:
+
+```
+test/scripts/drenv-selftest
+```
+
+Example output:
+
+```
+1. Activating the ramen virtual environment ...
 
 
-   2. Creating a test cluster ...
+2. Creating a test cluster ...
 
-   2023-11-12 14:53:43,321 INFO    [drenv-selftest-vm] Starting environment
-   2023-11-12 14:53:43,367 INFO    [drenv-selftest-cluster] Starting minikube cluster
-   2023-11-12 14:54:15,331 INFO    [drenv-selftest-cluster] Cluster started in 31.96 seconds
-   2023-11-12 14:54:15,332 INFO    [drenv-selftest-cluster/0] Running addons/example/start
-   2023-11-12 14:54:33,181 INFO    [drenv-selftest-cluster/0] addons/example/start completed in 17.85 seconds
-   2023-11-12 14:54:33,181 INFO    [drenv-selftest-cluster/0] Running addons/example/test
-   2023-11-12 14:54:33,381 INFO    [drenv-selftest-cluster/0] addons/example/test completed in 0.20 seconds
-   2023-11-12 14:54:33,381 INFO    [drenv-selftest-vm] Environment started in 50.06 seconds
+2023-11-12 14:53:43,321 INFO    [drenv-selftest-vm] Starting environment
+2023-11-12 14:53:43,367 INFO    [drenv-selftest-cluster] Starting minikube cluster
+2023-11-12 14:54:15,331 INFO    [drenv-selftest-cluster] Cluster started in 31.96 seconds
+2023-11-12 14:54:15,332 INFO    [drenv-selftest-cluster/0] Running addons/example/start
+2023-11-12 14:54:33,181 INFO    [drenv-selftest-cluster/0] addons/example/start completed in 17.85 seconds
+2023-11-12 14:54:33,181 INFO    [drenv-selftest-cluster/0] Running addons/example/test
+2023-11-12 14:54:33,381 INFO    [drenv-selftest-cluster/0] addons/example/test completed in 0.20 seconds
+2023-11-12 14:54:33,381 INFO    [drenv-selftest-vm] Environment started in 50.06 seconds
 
-   3. Deleting the test cluster ...
+3. Deleting the test cluster ...
 
-   2023-11-12 14:54:33,490 INFO    [drenv-selftest-vm] Deleting environment
-   2023-11-12 14:54:33,492 INFO    [drenv-selftest-cluster] Deleting cluster
-   2023-11-12 14:54:34,106 INFO    [drenv-selftest-cluster] Cluster deleted in 0.61 seconds
-   2023-11-12 14:54:34,106 INFO    [drenv-selftest-vm] Environment deleted in 0.62 seconds
+2023-11-12 14:54:33,490 INFO    [drenv-selftest-vm] Deleting environment
+2023-11-12 14:54:33,492 INFO    [drenv-selftest-cluster] Deleting cluster
+2023-11-12 14:54:34,106 INFO    [drenv-selftest-cluster] Cluster deleted in 0.61 seconds
+2023-11-12 14:54:34,106 INFO    [drenv-selftest-vm] Environment deleted in 0.62 seconds
 
-   drenv is set up properly
-   ```
-
-1. Install `clusteradm` tool. See
-   [Install clusteradm CLI tool](https://open-cluster-management.io/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool)
-   for the details.
-   Version v0.7.1 or later is required.
-
-1. Install `subctl` tool, See
-   [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/)
-   for the details.
-   Version v0.16.3 or later is required.
-
-1. Install the `velero` tool. See
-   [Velero Basic Install](https://velero.io/docs/v1.12/basic-install/)
-   for the details.
-   Tested with version v1.12.0.
-
-1. Install the `virtctl` tool. See
-   [virtctl install](https://kubevirt.io/quickstart_minikube/#virtctl)
-   for the details.
-   Tested with version v1.0.1.
-
-   ```
-   curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.0.1/virtctl-v1.0.1-linux-amd64
-   ```
-
-   After download completes for `virtctl` issue these commands.
-
-   ```
-   chmod +x virtctl
-   sudo install virtctl /usr/local/bin
-   ```
-
-1. Install `helm` tool - on Fedora you can use:
-
-   ```
-   sudo dnf install helm
-   ```
-
-   Tested with version v3.11.
-
-1. Install `podman` - on Fedora you can use:
-
-   ```
-   sudo dnf install podman
-   ```
-
-   Tested with version 4.7.0.
-
-1. Install `golang` - on Fedora you can use:
-
-   ```
-   sudo dnf install golang
-   ```
-
-   Tested with version go1.20.10.
+drenv is set up properly
+```
 
 ## Starting the test environment
 
@@ -195,7 +201,6 @@ Before using the `drenv` tool to start a test environment, you need to
 activate the python virtual environment:
 
 ```
-cd ramen
 source venv
 ```
 
@@ -210,8 +215,7 @@ ceph image replication of block volumes.
 To start the environment, run:
 
 ```
-cd test
-drenv start envs/regional-dr.yaml
+(cd test; drenv start envs/regional-dr.yaml)
 ```
 
 Starting takes 10-15 minutes, depending on your machine and
@@ -264,7 +268,6 @@ kubectl get deploy -A --context dr2
 Build the *Ramen* operator container image:
 
 ```
-cd ramen
 make docker-build
 ```
 
@@ -352,6 +355,5 @@ If you want to clean up your environment completely run this command.
 All clusters and resources will be deleted.
 
 ```
-cd ramen/test
-drenv delete envs/regional-dr.yaml
+(cd test; drenv delete envs/regional-dr.yaml)
 ```
