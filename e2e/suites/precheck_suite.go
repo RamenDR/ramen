@@ -2,11 +2,14 @@ package suites
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/ramendr/ramen/e2e/util"
+	rookv1 "github.com/rook/rook/pkg/apis/ceph.rook.io/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -36,6 +39,7 @@ func (s *PrecheckSuite) Tests() []Test {
 	return []Test{
 		s.TestRamenHubOperatorStatus,
 		s.TestRamenSpokeOperatorStatus,
+		s.TestCephClusterStatus,
 		//check other operator like cert manager, csi, ocm, submariner, rook, velero, minio, volsync
 	}
 }
@@ -160,4 +164,26 @@ func CheckRamenSpokePodRunningStatus(k8sClient *kubernetes.Clientset) (bool, str
 	}
 
 	return CheckPodRunningStatus(k8sClient, ramenNameSpace, labelSelector, podIdentifier)
+}
+
+func (s *PrecheckSuite) TestCephClusterStatus() error {
+	s.ctx.Log.Info("enter Running TestCephClusterStatus")
+
+	rookNamespace := "rook-ceph"
+	dynamicClient := s.ctx.C1DynamicClient()
+
+	resource := schema.GroupVersionResource{Group: "ceph.rook.io", Version: "v1", Resource: "cephclusters"}
+	resp, err := dynamicClient.Resource(resource).Namespace(rookNamespace).List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		s.ctx.Log.Error(err, "could not list cephcluster")
+		return err
+	}
+	respJson, _ := resp.MarshalJSON()
+	cephclusterList := rookv1.CephClusterList{}
+	json.Unmarshal(respJson, &cephclusterList)
+	// if len(list) != 1 {
+	// 	s.ctx.Log.Error(err, "found more than 1 cephcluster")
+	// }
+
+	return nil
 }
