@@ -10,6 +10,7 @@ import (
 	rookv1 "github.com/rook/rook/pkg/apis/ceph.rook.io/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -169,21 +170,45 @@ func CheckRamenSpokePodRunningStatus(k8sClient *kubernetes.Clientset) (bool, str
 func (s *PrecheckSuite) TestCephClusterStatus() error {
 	s.ctx.Log.Info("enter Running TestCephClusterStatus")
 
+	c1DynamicClient := s.ctx.C1DynamicClient()
+
+	err := CheckCephClusterRunningStatus(c1DynamicClient)
+	if err != nil {
+		return err
+	}
+
+	c2DynamicClient := s.ctx.C2DynamicClient()
+	err = CheckCephClusterRunningStatus(c2DynamicClient)
+	if err != nil {
+		return err
+	}
+
+	return nil
+
+}
+
+func CheckCephClusterRunningStatus(client *dynamic.DynamicClient) error {
 	rookNamespace := "rook-ceph"
-	dynamicClient := s.ctx.C1DynamicClient()
 
 	resource := schema.GroupVersionResource{Group: "ceph.rook.io", Version: "v1", Resource: "cephclusters"}
-	resp, err := dynamicClient.Resource(resource).Namespace(rookNamespace).List(context.TODO(), metav1.ListOptions{})
+	resp, err := client.Resource(resource).Namespace(rookNamespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
-		s.ctx.Log.Error(err, "could not list cephcluster")
-		return err
+		return fmt.Errorf("could not list cephcluster")
+
 	}
 	respJson, _ := resp.MarshalJSON()
 	cephclusterList := rookv1.CephClusterList{}
 	json.Unmarshal(respJson, &cephclusterList)
-	// if len(list) != 1 {
-	// 	s.ctx.Log.Error(err, "found more than 1 cephcluster")
-	// }
+	if len(cephclusterList.Items) == 0 {
+		return fmt.Errorf("found 0 cephcluster")
+	}
+	if len(cephclusterList.Items) > 1 {
+		return fmt.Errorf("found more than 1 cephcluster")
+	}
+	phase := fmt.Sprint(cephclusterList.Items[0].Status.Phase)
+	if phase != "Ready" {
+		return fmt.Errorf("cephcluster is not Ready")
+	}
 
 	return nil
 }
