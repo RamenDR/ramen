@@ -2,6 +2,6 @@ clusters:
   "hub":
     kubeconfigpath: "kubeconfig/hub/kubeconfig"
   "c1":
-    kubeconfigpath: "kubeconfig/dr1/kubeconfig"
+    kubeconfigpath: "kubeconfig/c1/kubeconfig"
   "c2":
-    kubeconfigpath: "kubeconfig/dr2/kubeconfig"
+    kubeconfigpath: "kubeconfig/c2/kubeconfig"
