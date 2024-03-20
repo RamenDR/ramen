@@ -25,7 +25,6 @@ templates:
       - csi-hostpath-driver
     workers:
       - addons:
-          - name: cert-manager
           - name: rook-operator
           - name: rook-cluster
           - name: rook-pool

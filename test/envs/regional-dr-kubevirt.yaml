@@ -30,7 +30,6 @@ templates:
       - csi-hostpath-driver
     workers:
       - addons:
-          - name: cert-manager
           - name: rook-operator
           - name: rook-cluster
           - name: rook-pool
@@ -56,7 +55,6 @@ templates:
       - addons:
           - name: ocm-hub
           - name: ocm-controller
-          - name: cert-manager
           - name: olm
 
 profiles:
