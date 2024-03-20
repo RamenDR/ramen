@@ -42,7 +42,7 @@ environment.
 1. Install `subctl` tool, See
    [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/)
    for the details.
-   Version v0.16.3 or later is required.
+   Version v0.17.0 or later is required.
 
 1. Install the `velero` tool. See
    [Velero Basic Install](https://velero.io/docs/v1.12/basic-install/)
