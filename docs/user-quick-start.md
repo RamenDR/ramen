@@ -201,7 +201,6 @@ Before using the `drenv` tool to start a test environment, you need to
 activate the python virtual environment:
 
 ```
-cd ramen
 source venv
 ```
 
@@ -216,8 +215,7 @@ ceph image replication of block volumes.
 To start the environment, run:
 
 ```
-cd test
-drenv start envs/regional-dr.yaml
+(cd test; drenv start envs/regional-dr.yaml)
 ```
 
 Starting takes 10-15 minutes, depending on your machine and
@@ -270,7 +268,6 @@ kubectl get deploy -A --context dr2
 Build the *Ramen* operator container image:
 
 ```
-cd ramen
 make docker-build
 ```
 
@@ -358,6 +355,5 @@ If you want to clean up your environment completely run this command.
 All clusters and resources will be deleted.
 
 ```
-cd ramen/test
-drenv delete envs/regional-dr.yaml
+(cd test; drenv delete envs/regional-dr.yaml)
 ```
