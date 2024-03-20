@@ -28,183 +28,172 @@ enough resources:
 
 ## Setting up your machine
 
-1. Install libvirt
+### Install libvirt
 
-   Install the `@virtualization` group - on Fedora you can use:
+Install the `@virtualization` group - on Fedora you can use:
 
-   ```
-   sudo dnf install @virtualization
-   ```
+```
+sudo dnf install @virtualization
+```
 
-   For more information see
-   [Virtualization on Fedora](https://docs.fedoraproject.org/en-US/quick-docs/virtualization-getting-started/).
+For more information see
+[Virtualization on Fedora](https://docs.fedoraproject.org/en-US/quick-docs/virtualization-getting-started/).
 
-   Enable the libvirtd service.
+Enable the libvirtd service.
 
-   ```
-   sudo systemctl enable libvirtd --now
-   ```
+```
+sudo systemctl enable libvirtd --now
+```
 
-   Verify libvirtd service is now active with no errors.
+Verify libvirtd service is now active with no errors.
 
-   ```
-   sudo systemctl status libvirtd -l
-   ```
+```
+sudo systemctl status libvirtd -l
+```
 
-   Add yourself to the libvirt group (required for minikube kvm2 driver).
+Add yourself to the libvirt group (required for minikube kvm2 driver).
 
-   ```
-   sudo usermod -a -G libvirt $(whoami)
-   ```
+```
+sudo usermod -a -G libvirt $(whoami)
+```
 
-   Logout and login again for the change above to be in effect.
+Logout and login again for the change above to be in effect.
 
-1. Install build tools
+### Install required packages
 
-   On Fedora you can use:
+On Fedora you can use:
 
-   ```
-   sudo dnf install make golang
-   ```
+```
+sudo dnf install git make golang helm podman
+```
 
-1. Clone *Ramen* source locally
+### Clone *Ramen* source locally
 
-   ```
-   git clone https://github.com/RamenDR/ramen.git
-   ```
+```
+git clone https://github.com/RamenDR/ramen.git
+```
 
-1. Enter the `ramen` directory
+Enter the `ramen` directory - all the commands in this guide assume you
+are in ramen root directory.
 
-   All the commands in this guide assume you are in ramen root
-   directory.
+```
+cd ramen
+```
 
-   ```
-   cd ramen
-   ```
+### Create python virtual environment
 
-1. Create python virtual environment
+The *Ramen* project use python tool to create and provision test
+environment and run tests. The create a virtual environment including
+the tools run:
 
-   The *Ramen* project use python tool to create and provision test
-   environment and run tests. The create a virtual environment including
-   the tools run:
+```
+make venv
+```
 
-   ```
-   make venv
-   ```
+This create a virtual environment in `~/.venv/ramen` and a symbolic
+link `venv` for activating the environment.
 
-   This create a virtual environment in `~/.venv/ramen` and a symbolic
-   link `venv` for activating the environment.
+To activate the environment use:
 
-   To activate the environment use:
+```
+source venv
+```
 
-   ```
-   source venv
-   ```
+To exit virtual environment issue command *deactivate*.
 
-   To exit virtual environment issue command *deactivate*.
+### Installing required tools
 
-1. Install the `kubectl` tool. See
-   [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
-   for details.
-   Tested with version v1.27.4.
+The drenv tool requires various tool for deploying the testing clusters.
 
-1. Install minikube - on Fedora you can use::
+#### minikube
 
-   ```
-   sudo dnf install https://storage.googleapis.com/minikube/releases/latest/minikube-latest.x86_64.rpm
-   ```
+On Fedora you can use:
 
-   Tested with version v1.31.
+```
+sudo dnf install https://storage.googleapis.com/minikube/releases/latest/minikube-latest.x86_64.rpm
+```
 
-1. Validate the installation
+Tested with version v1.31.
 
-   Run the drenv-selftest to validate that we can create a test cluster:
+#### kubectl
 
-   ```
-   test/scripts/drenv-selftest
-   ```
+See [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
+for details.
 
-   Example output:
+Tested with version v1.27.4.
 
-   ```
-   1. Activating the ramen virtual environment ...
+#### clusteradm
+
+See [Install clusteradm CLI tool](https://open-cluster-management.io/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool)
+for the details.
+
+Version v0.7.1 or later is required.
+
+#### subctl
+
+See [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/)
+for the details.
+
+Version v0.16.3 or later is required.
+
+#### velero
+
+See [Velero Basic Install](https://velero.io/docs/v1.12/basic-install/)
+for the details.
+
+Tested with version v1.12.0.
+
+#### virtctl
+
+```
+curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.0.1/virtctl-v1.0.1-linux-amd64
+```
+
+After download completes for `virtctl` issue these commands.
+
+```
+sudo install virtctl /usr/local/bin
+```
+
+See [virtctl install](https://kubevirt.io/quickstart_minikube/#virtctl)
+for more info.
+
+Tested with version v1.0.1.
+
+### Validate the installation
+
+Run the drenv-selftest to validate that we can create a test cluster:
+
+```
+test/scripts/drenv-selftest
+```
+
+Example output:
+
+```
+1. Activating the ramen virtual environment ...
 
 
-   2. Creating a test cluster ...
+2. Creating a test cluster ...
 
-   2023-11-12 14:53:43,321 INFO    [drenv-selftest-vm] Starting environment
-   2023-11-12 14:53:43,367 INFO    [drenv-selftest-cluster] Starting minikube cluster
-   2023-11-12 14:54:15,331 INFO    [drenv-selftest-cluster] Cluster started in 31.96 seconds
-   2023-11-12 14:54:15,332 INFO    [drenv-selftest-cluster/0] Running addons/example/start
-   2023-11-12 14:54:33,181 INFO    [drenv-selftest-cluster/0] addons/example/start completed in 17.85 seconds
-   2023-11-12 14:54:33,181 INFO    [drenv-selftest-cluster/0] Running addons/example/test
-   2023-11-12 14:54:33,381 INFO    [drenv-selftest-cluster/0] addons/example/test completed in 0.20 seconds
-   2023-11-12 14:54:33,381 INFO    [drenv-selftest-vm] Environment started in 50.06 seconds
+2023-11-12 14:53:43,321 INFO    [drenv-selftest-vm] Starting environment
+2023-11-12 14:53:43,367 INFO    [drenv-selftest-cluster] Starting minikube cluster
+2023-11-12 14:54:15,331 INFO    [drenv-selftest-cluster] Cluster started in 31.96 seconds
+2023-11-12 14:54:15,332 INFO    [drenv-selftest-cluster/0] Running addons/example/start
+2023-11-12 14:54:33,181 INFO    [drenv-selftest-cluster/0] addons/example/start completed in 17.85 seconds
+2023-11-12 14:54:33,181 INFO    [drenv-selftest-cluster/0] Running addons/example/test
+2023-11-12 14:54:33,381 INFO    [drenv-selftest-cluster/0] addons/example/test completed in 0.20 seconds
+2023-11-12 14:54:33,381 INFO    [drenv-selftest-vm] Environment started in 50.06 seconds
 
-   3. Deleting the test cluster ...
+3. Deleting the test cluster ...
 
-   2023-11-12 14:54:33,490 INFO    [drenv-selftest-vm] Deleting environment
-   2023-11-12 14:54:33,492 INFO    [drenv-selftest-cluster] Deleting cluster
-   2023-11-12 14:54:34,106 INFO    [drenv-selftest-cluster] Cluster deleted in 0.61 seconds
-   2023-11-12 14:54:34,106 INFO    [drenv-selftest-vm] Environment deleted in 0.62 seconds
+2023-11-12 14:54:33,490 INFO    [drenv-selftest-vm] Deleting environment
+2023-11-12 14:54:33,492 INFO    [drenv-selftest-cluster] Deleting cluster
+2023-11-12 14:54:34,106 INFO    [drenv-selftest-cluster] Cluster deleted in 0.61 seconds
+2023-11-12 14:54:34,106 INFO    [drenv-selftest-vm] Environment deleted in 0.62 seconds
 
-   drenv is set up properly
-   ```
-
-1. Install `clusteradm` tool. See
-   [Install clusteradm CLI tool](https://open-cluster-management.io/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool)
-   for the details.
-   Version v0.7.1 or later is required.
-
-1. Install `subctl` tool, See
-   [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/)
-   for the details.
-   Version v0.16.3 or later is required.
-
-1. Install the `velero` tool. See
-   [Velero Basic Install](https://velero.io/docs/v1.12/basic-install/)
-   for the details.
-   Tested with version v1.12.0.
-
-1. Install the `virtctl` tool. See
-   [virtctl install](https://kubevirt.io/quickstart_minikube/#virtctl)
-   for the details.
-   Tested with version v1.0.1.
-
-   ```
-   curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.0.1/virtctl-v1.0.1-linux-amd64
-   ```
-
-   After download completes for `virtctl` issue these commands.
-
-   ```
-   chmod +x virtctl
-   sudo install virtctl /usr/local/bin
-   ```
-
-1. Install `helm` tool - on Fedora you can use:
-
-   ```
-   sudo dnf install helm
-   ```
-
-   Tested with version v3.11.
-
-1. Install `podman` - on Fedora you can use:
-
-   ```
-   sudo dnf install podman
-   ```
-
-   Tested with version 4.7.0.
-
-1. Install `golang` - on Fedora you can use:
-
-   ```
-   sudo dnf install golang
-   ```
-
-   Tested with version go1.20.10.
+drenv is set up properly
+```
 
 ## Starting the test environment
 
