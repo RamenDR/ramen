@@ -28,12 +28,18 @@ enough resources:
 
 ## Setting up your machine
 
-1. Fork the *Ramen* repository at [https://github.com/RamenDR/ramen](https://github.com/RamenDR/ramen)
-
-1. Clone the source locally
+1. Clone *Ramen* source locally
 
    ```
-   git clone https://github.com/{your_github_id}/ramen.git
+   git clone https://github.com/RamenDR/ramen.git
+   ```
+
+1. Enter the `ramen` directory
+
+   All the commands in this guide assume you are in ramen root
+   directory.
+
+   ```
    cd ramen
    ```
 
