@@ -23,7 +23,7 @@ enough resources:
 - 20 GiB of free memory
 - 100 GiB of free space
 - Internet connection
-- Linux - tested on *Fedora* 37 and 38
+- Linux - tested on *Fedora* 37, 38, and 39
 - non-root user with sudo privileges (all instructions are for non-root user)
 
 ## Setting up your machine
