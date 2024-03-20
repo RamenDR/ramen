@@ -28,6 +28,37 @@ enough resources:
 
 ## Setting up your machine
 
+1. Install libvirt
+
+   Install the `@virtualization` group - on Fedora you can use:
+
+   ```
+   sudo dnf install @virtualization
+   ```
+
+   For more information see
+   [Virtualization on Fedora](https://docs.fedoraproject.org/en-US/quick-docs/virtualization-getting-started/).
+
+   Enable the libvirtd service.
+
+   ```
+   sudo systemctl enable libvirtd --now
+   ```
+
+   Verify libvirtd service is now active with no errors.
+
+   ```
+   sudo systemctl status libvirtd -l
+   ```
+
+   Add yourself to the libvirt group (required for minikube kvm2 driver).
+
+   ```
+   sudo usermod -a -G libvirt $(whoami)
+   ```
+
+   Logout and login again for the change above to be in effect.
+
 1. Clone *Ramen* source locally
 
    ```
@@ -63,34 +94,6 @@ enough resources:
    ```
 
    To exit virtual environment issue command *deactivate*.
-
-1. Enable libvirtd service if disabled.
-
-   ```
-   sudo systemctl enable libvirtd --now
-   ```
-
-   Verify libvirtd service is now active with no errors.
-
-   ```
-   sudo systemctl status libvirtd -l
-   ```
-
-1. Add yourself to the libvirt group (required for minikube kvm2 driver).
-
-   ```
-   sudo usermod -a -G libvirt $(whoami)
-   ```
-
-   Logout and login again for the change above to be in effect.
-
-1. Install `@virtualization` group - on Fedora you can use:
-
-   ```
-   sudo dnf install @virtualization
-   ```
-
-   For more information see [Virtualization on Fedora](https://docs.fedoraproject.org/en-US/quick-docs/virtualization-getting-started/).
 
 1. Install the `kubectl` tool. See
    [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
