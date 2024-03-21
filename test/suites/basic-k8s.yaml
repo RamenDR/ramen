@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+name: Basic Kubernetes Regional DR tests
+tests:
+  - name: deploymnet
+    command: basic-test/run
+    config: configs/k8s/busybox-regional-rbd-deploy.yaml
+  - name: statefulset
+    command: basic-test/run
+    config: configs/k8s/busybox-regional-rbd-sts.yaml
+  - name: daemonset
+    command: basic-test/run
+    config: configs/k8s/busybox-regional-rbd-ds.yaml
