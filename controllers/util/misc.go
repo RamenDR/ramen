@@ -115,6 +115,7 @@ func HasLabelWithValue(obj client.Object, key string, value string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 

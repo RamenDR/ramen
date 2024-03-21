@@ -1752,6 +1752,7 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 
 		util.AddLabel(lrs, VRGOwnerLabel, v.owner.GetName())
 
+		// The name of the PVC is the same as the rd's latest snapshot name
 		lrs.Spec.Trigger = &volsyncv1alpha1.ReplicationSourceTriggerSpec{
 			Manual: pvc.GetName(),
 		}
@@ -1865,11 +1866,6 @@ func (v *VSHandler) setupLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 		}
 	}
 
-	err = v.cleanupPreviousTransferResources(lrs, vsImageRef.Name)
-	if err != nil {
-		return nil, err
-	}
-
 	snap, err := v.validateAndProtectSnapshot(*vsImageRef)
 	if err != nil {
 		return nil, err
@@ -1883,33 +1879,6 @@ func (v *VSHandler) setupLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 
 	// In all other cases, we have to create a RO PVC.
 	return v.createReadOnlyPVCFromSnapshot(rd, *latestImage, restoreSize)
-}
-
-//nolint:gocognit,nestif
-func (v *VSHandler) cleanupPreviousTransferResources(lrs *volsyncv1alpha1.ReplicationSource,
-	snapImageName string,
-) error {
-	if lrs.Spec.Trigger != nil && lrs.Spec.Trigger.Manual != snapImageName {
-		// Only clean up and create new PVC if the previous transfer has completed. We don't want to abort it.
-		if lrs.Spec.Trigger.Manual != "" {
-			if lrs.Status != nil && lrs.Status.LastManualSync == lrs.Spec.Trigger.Manual {
-				err := v.deleteSnapshot(v.ctx, v.client, lrs.Spec.Trigger.Manual, v.owner.GetNamespace(), v.log)
-				if err != nil {
-					return err
-				}
-
-				err = util.DeletePVC(v.ctx, v.client, lrs.Spec.SourcePVC, v.owner.GetNamespace(), v.log)
-				if err != nil {
-					return err
-				}
-			} else { // don't process any further. We have to wait for the previous transfer to complete
-				return fmt.Errorf("wait for previous localRS tranfter to complete - RS/PVC %s/%s",
-					lrs.GetName(), lrs.Spec.SourcePVC)
-			}
-		}
-	}
-
-	return nil
 }
 
 func (v *VSHandler) createReadOnlyPVCFromSnapshot(rd *volsyncv1alpha1.ReplicationDestination,
