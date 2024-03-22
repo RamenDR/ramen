@@ -15,6 +15,7 @@ import (
 
 	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
 	volrepController "github.com/csi-addons/kubernetes-csi-addons/controllers/replication.storage"
+	volgroup "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -34,6 +35,8 @@ func logWithPvcName(log logr.Logger, pvc *corev1.PersistentVolumeClaim) logr.Log
 
 // reconcileVolRepsAsPrimary creates/updates VolumeReplication CR for each pvc
 // from pvcList. If it fails (even for one pvc), then requeue is set to true.
+//
+//nolint:dupl,funlen,gocognit
 func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 	for idx := range v.volRepPVCs {
 		pvc := &v.volRepPVCs[idx]
@@ -44,7 +47,14 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 			continue
 		}
 
-		if err := v.updateProtectedPVCs(pvc); err != nil {
+		volumeReplicationClass, err := v.selectVolumeReplicationClass(pvcNamespacedName)
+		if err != nil {
+			v.requeue()
+
+			continue
+		}
+
+		if err = v.updateProtectedPVCs(pvc, &volumeReplicationClass.Labels); err != nil {
 			v.requeue()
 
 			continue
@@ -62,7 +72,7 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 		}
 
 		// If VR did not reach primary state, it is fine to still upload the PV and continue processing
-		requeueResult, _, err := v.processVRAsPrimary(pvcNamespacedName, log)
+		requeueResult, _, err = v.processVRAsPrimary(pvcNamespacedName, log)
 		if requeueResult {
 			v.requeue()
 		}
@@ -93,6 +103,76 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 	}
 }
 
+// reconcileVolGroupRepsAsPrimary creates/updates VolumeGroupReplication CR for each pvc
+// from pvcList. If it fails (even for one pvc), then requeue is set to true.
+//
+//nolint:dupl,funlen,gocognit
+func (v *VRGInstance) reconcileVolGroupRepsAsPrimary() {
+	for idx := range v.volGrpRepPVCs {
+		pvc := &v.volGrpRepPVCs[idx]
+		pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
+		log := v.log.WithValues("pvc", pvcNamespacedName.String())
+
+		if v.pvcUnprotectVolRepIfDeleted(*pvc, log) {
+			continue
+		}
+
+		volumeGroupReplicationClass, err := v.selectVolumeGroupReplicationClass(pvcNamespacedName)
+		if err != nil {
+			v.requeue()
+
+			continue
+		}
+
+		if err = v.updateProtectedPVCs(pvc, &volumeGroupReplicationClass.Labels); err != nil {
+			v.requeue()
+
+			continue
+		}
+
+		requeueResult, skip := v.preparePVCForVRProtection(pvc, log)
+		if requeueResult {
+			v.requeue()
+
+			continue
+		}
+
+		if skip {
+			continue
+		}
+
+		// If VR did not reach primary state, it is fine to still upload the PV and continue processing
+		requeueResult, _, err = v.processVGRAsPrimary(pvcNamespacedName, log)
+		if requeueResult {
+			v.requeue()
+		}
+
+		if err != nil {
+			log.Info("Failure in getting or creating VolumeGroupReplication resource for PersistentVolumeClaim",
+				"errorValue", err)
+
+			continue
+		}
+
+		// Protect the PVC's PV object stored in etcd by uploading it to S3
+		// store(s).  Note that the VRG is responsible only to protect the PV
+		// object of each PVC of the subscription.  However, the PVC object
+		// itself is assumed to be protected along with other k8s objects in the
+		// subscription, such as, the deployment, pods, services, etc., by an
+		// entity external to the VRG a la IaC.
+		if err := v.uploadPVandPVCtoS3Stores(pvc, log); err != nil {
+			log.Info("Requeuing due to failure to upload PV object to S3 store(s)",
+				"errorValue", err)
+
+			v.requeue()
+
+			continue
+		}
+
+		log.Info("Successfully processed VolumeGroupReplication for PersistentVolumeClaim")
+	}
+}
+
 // reconcileVolRepsAsSecondary reconciles VolumeReplication resources for the VRG as secondary
 func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 	requeue := false
@@ -101,7 +181,17 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 		pvc := &v.volRepPVCs[idx]
 		log := logWithPvcName(v.log, pvc)
 
-		if err := v.updateProtectedPVCs(pvc); err != nil {
+		volumeReplicationClass, err := v.selectVolumeReplicationClass(types.NamespacedName{
+			Name:      pvc.Name,
+			Namespace: pvc.Namespace,
+		})
+		if err != nil {
+			requeue = true
+
+			continue
+		}
+
+		if err := v.updateProtectedPVCs(pvc, &volumeReplicationClass.Labels); err != nil {
 			requeue = true
 
 			continue
@@ -137,6 +227,60 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 	return requeue
 }
 
+// reconcileVolGroupRepsAsSecondary reconciles VolumeGroupReplication resources for the VRG as secondary
+func (v *VRGInstance) reconcileVolGroupRepsAsSecondary() bool {
+	requeue := false
+
+	for idx := range v.volGrpRepPVCs {
+		pvc := &v.volGrpRepPVCs[idx]
+		log := logWithPvcName(v.log, pvc)
+
+		volumeGroupReplicationClass, err := v.selectVolumeGroupReplicationClass(types.NamespacedName{
+			Name:      pvc.Name,
+			Namespace: pvc.Namespace,
+		})
+		if err != nil {
+			requeue = true
+
+			continue
+		}
+
+		if err := v.updateProtectedPVCs(pvc, &volumeGroupReplicationClass.Labels); err != nil {
+			requeue = true
+
+			continue
+		}
+
+		requeueResult, skip := v.preparePVCForVRProtection(pvc, log)
+		if requeueResult {
+			requeue = true
+
+			continue
+		}
+
+		if skip {
+			continue
+		}
+
+		// If VR is not ready as Secondary, we can ignore it here, either a future VGR change or the requeue would
+		// reconcile it to the desired state.
+		requeueResult, _, skip = v.reconcileVGRAsSecondary(pvc, log)
+		if requeueResult {
+			requeue = true
+
+			continue
+		}
+
+		if skip {
+			continue
+		}
+
+		log.Info("Successfully processed VolumeGroupReplication for PersistentVolumeClaim")
+	}
+
+	return requeue
+}
+
 // reconcileVRAsSecondary checks for PVC readiness to move to Secondary and subsequently updates the VR
 // backing the PVC to secondary. It reports completion status of the VR request with the following values:
 // requeue (bool): If the request needs to be requeued
@@ -157,6 +301,32 @@ func (v *VRGInstance) reconcileVRAsSecondary(pvc *corev1.PersistentVolumeClaim, 
 	requeueResult, ready, err := v.processVRAsSecondary(pvcNamespacedName, log)
 	if err != nil {
 		log.Info("Failure in getting or creating VolumeReplication resource for PersistentVolumeClaim",
+			"errorValue", err)
+	}
+
+	return requeueResult, ready, !skip
+}
+
+// reconcileVGRAsSecondary checks for PVC readiness to move to Secondary and subsequently updates the VGR
+// backing the PVC to secondary. It reports completion status of the VGR request with the following values:
+// requeue (bool): If the request needs to be requeued
+// ready (bool): If desired state is achieved and hence VGR is ready
+// skip (bool): If the VGR can be currently skipped for processing
+func (v *VRGInstance) reconcileVGRAsSecondary(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, bool, bool) {
+	const (
+		requeue bool = true
+		skip    bool = true
+	)
+
+	if !v.isPVCReadyForSecondary(pvc, log) {
+		return requeue, false, skip
+	}
+
+	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
+
+	requeueResult, ready, err := v.processVGRAsSecondary(pvcNamespacedName, log)
+	if err != nil {
+		log.Info("Failure in getting or creating VolumeGroupReplication resource for PersistentVolumeClaim",
 			"errorValue", err)
 	}
 
@@ -210,7 +380,9 @@ func (v *VRGInstance) isPVCInUse(pvc *corev1.PersistentVolumeClaim, log logr.Log
 }
 
 // updateProtectedPVCs updates the list of ProtectedPVCs with the passed in PVC
-func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim) error {
+func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim,
+	replLables *map[string]string,
+) error {
 	// IF MetroDR, skip PVC update
 	if v.instance.Spec.Sync != nil {
 		return nil
@@ -227,12 +399,6 @@ func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim) err
 			pvcNamespacedName, err)
 	}
 
-	volumeReplicationClass, err := v.selectVolumeReplicationClass(pvcNamespacedName)
-	if err != nil {
-		return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
-			v.instance.Name, err)
-	}
-
 	protectedPVC := v.findProtectedPVC(pvc.GetNamespace(), pvc.GetName())
 	if protectedPVC == nil {
 		protectedPVC = &ramendrv1alpha1.ProtectedPVC{Namespace: pvc.GetNamespace(), Name: pvc.GetName()}
@@ -245,7 +411,7 @@ func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim) err
 	protectedPVC.AccessModes = pvc.Spec.AccessModes
 	protectedPVC.Resources = pvc.Spec.Resources
 
-	setPVCStorageIdentifiers(protectedPVC, storageClass, volumeReplicationClass)
+	setPVCStorageIdentifiers(protectedPVC, storageClass, replLables)
 
 	return nil
 }
@@ -253,7 +419,7 @@ func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim) err
 func setPVCStorageIdentifiers(
 	protectedPVC *ramendrv1alpha1.ProtectedPVC,
 	storageClass *storagev1.StorageClass,
-	volumeReplicationClass *volrep.VolumeReplicationClass,
+	repClassLabels *map[string]string,
 ) {
 	protectedPVC.StorageIdentifiers.StorageProvisioner = storageClass.Provisioner
 
@@ -264,9 +430,9 @@ func setPVCStorageIdentifiers(
 		}
 	}
 
-	if value, ok := volumeReplicationClass.Labels[VolumeReplicationIDLabel]; ok {
+	if value, ok := (*repClassLabels)[VolumeReplicationIDLabel]; ok {
 		protectedPVC.StorageIdentifiers.ReplicationID.ID = value
-		if modes, ok := volumeReplicationClass.Labels[MModesLabel]; ok {
+		if modes, ok := (*repClassLabels)[MModesLabel]; ok {
 			protectedPVC.StorageIdentifiers.ReplicationID.Modes = MModesFromCSV(modes)
 		}
 	}
@@ -735,6 +901,7 @@ func (v *VRGInstance) cacheObjectStorer(s3ProfileName string, objectStore Object
 // TODO: Currently removes VR requests unconditionally, needs to ensure it is managed by VRG
 func (v *VRGInstance) reconcileVRsForDeletion() {
 	v.pvcsUnprotectVolRep(v.volRepPVCs)
+	v.pvcsUnprotectVolRep(v.volGrpRepPVCs)
 }
 
 func (v *VRGInstance) pvcUnprotectVolRepIfDeleted(
@@ -1029,6 +1196,38 @@ func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName, 
 	return true, true, nil
 }
 
+// processVGRAsPrimary processes VGR to change its state to primary, with the assumption that the
+// related PVC is prepared for VGR protection
+// Return values are:
+//   - a boolean indicating if a reconcile requeue is required
+//   - a boolean indicating if VGR is already at the desired state
+//   - any errors during processing
+func (v *VRGInstance) processVGRAsPrimary(vgrNamespacedName types.NamespacedName, log logr.Logger) (bool, bool, error) {
+	if v.instance.Spec.Async != nil {
+		return v.createOrUpdateVGR(vgrNamespacedName, volgroup.Primary, log)
+	}
+
+	// TODO: createOrUpdateVGR does two things. It modifies the VGR and also
+	// updates the PVC Conditions. For the sync mode, we only want the latter.
+	// In the future, it would be better to refactor createOrUpdateVGR into two
+	// functions. For now, we are only updating the conditions for the sync
+	// mode below. As there is no VolGrpRep involved in sync mode, the
+	// availability is always true. Also, the refactor should work for the
+	// condition where both async and sync are enabled at the same time.
+	if v.instance.Spec.Sync != nil {
+		msg := "PVC in the VolumeReplicationGroup is ready for use"
+		v.updatePVCDataReadyCondition(vgrNamespacedName.Namespace, vgrNamespacedName.Name, VRGConditionReasonReady, msg)
+		v.updatePVCDataProtectedCondition(vgrNamespacedName.Namespace, vgrNamespacedName.Name, VRGConditionReasonReady, msg)
+		v.updatePVCLastSyncTime(vgrNamespacedName.Namespace, vgrNamespacedName.Name, nil)
+		v.updatePVCLastSyncDuration(vgrNamespacedName.Namespace, vgrNamespacedName.Name, nil)
+		v.updatePVCLastSyncBytes(vgrNamespacedName.Namespace, vgrNamespacedName.Name, nil)
+
+		return false, true, nil
+	}
+
+	return true, true, nil
+}
+
 // processVRAsSecondary processes VR to change its state to secondary, with the assumption that the
 // related PVC is prepared for VR as secondary
 // Return values are:
@@ -1062,6 +1261,42 @@ func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName
 	return true, true, nil
 }
 
+// processVGRAsSecondary processes VGR to change its state to secondary, with the assumption that the
+// related PVC is prepared for VGR as secondary
+// Return values are:
+//   - a boolean indicating if a reconcile requeue is required
+//   - a boolean indicating if VGR is already at the desired state
+//   - any errors during processing
+func (v *VRGInstance) processVGRAsSecondary(vgrNamespacedName types.NamespacedName,
+	log logr.Logger,
+) (bool, bool, error) {
+	if v.instance.Spec.Async != nil {
+		return v.createOrUpdateVGR(vgrNamespacedName, volgroup.Secondary, log)
+	}
+
+	// TODO: createOrUpdateVGR does two things. It modifies the VGR and also
+	// updates the PVC Conditions. For the sync mode, we only want the latter.
+	// In the future, it would be better to refactor createOrUpdateVGR into two
+	// functions. For now, we are only updating the conditions for the sync
+	// mode below. As there is no VolGroupRep involved in sync mode, the
+	// availability is always true. Also, the refactor should work for the
+	// condition where both async and sync are enabled at the same time.
+	if v.instance.Spec.Sync != nil {
+		msg := "VolumeGroupReplication resource for the pvc as Secondary is in sync with Primary"
+		v.updatePVCDataReadyCondition(vgrNamespacedName.Namespace, vgrNamespacedName.Name,
+			VRGConditionReasonReplicated, msg)
+		v.updatePVCDataProtectedCondition(vgrNamespacedName.Namespace, vgrNamespacedName.Name,
+			VRGConditionReasonDataProtected, msg)
+		v.updatePVCLastSyncTime(vgrNamespacedName.Namespace, vgrNamespacedName.Name, nil)
+		v.updatePVCLastSyncDuration(vgrNamespacedName.Namespace, vgrNamespacedName.Name, nil)
+		v.updatePVCLastSyncBytes(vgrNamespacedName.Namespace, vgrNamespacedName.Name, nil)
+
+		return false, true, nil
+	}
+
+	return true, true, nil
+}
+
 // createOrUpdateVR updates an existing VR resource if found, or creates it if required
 // While both creating and updating the VolumeReplication resource, conditions.status
 // for the protected PVC (corresponding to the VolumeReplication resource) is set as
@@ -1073,6 +1308,8 @@ func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName
 //   - a boolean indicating if a reconcile requeue is required
 //   - a boolean indicating if VR is already at the desired state
 //   - any errors during processing
+//
+//nolint:dupl
 func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 	state volrep.ReplicationState, log logr.Logger,
 ) (bool, bool, error) {
@@ -1119,6 +1356,72 @@ func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 	}
 
 	return v.updateVR(volRep, state, log)
+}
+
+// createOrUpdateVGR updates an existing VGR resource if found, or creates it if required
+// While both creating and updating the VolumeGroupReplication resource, conditions.status
+// for the protected PVC (corresponding to the VolumeGroupReplication resource) is set as
+// VRGConditionReasonProgressing. When the VolumeGroupReplication resource changes its state either due to
+// successful reaching of the desired state or due to some error, VolumeReplicationGroup
+// would get a reconcile. And then the conditions for the appropriate Protected PVC can
+// be set as either Replicating or Error.
+// Return values are:
+//   - a boolean indicating if a reconcile requeue is required
+//   - a boolean indicating if VR is already at the desired state
+//   - any errors during processing
+//
+//nolint:dupl
+func (v *VRGInstance) createOrUpdateVGR(vgrNamespacedName types.NamespacedName,
+	state volgroup.ReplicationState, log logr.Logger,
+) (bool, bool, error) {
+	const requeue = true
+
+	volGroup := &volgroup.VolumeGroupReplication{}
+
+	namespacedName := types.NamespacedName{
+		Name:      vgrNamespacedName.Namespace + "-vgr",
+		Namespace: vgrNamespacedName.Namespace,
+	}
+
+	err := v.reconciler.Get(v.ctx, namespacedName, volGroup)
+	if err != nil {
+		if !k8serrors.IsNotFound(err) {
+			log.Error(err, "Failed to get VolumeGroupReplication resource", "resource", vgrNamespacedName)
+
+			// Failed to get VolGroupRep and error is not IsNotFound. It is not
+			// clear if the associated VolGroupRep exists or not. If exists, then
+			// is it replicating or not. So, mark the protected pvc as error
+			// with condition.status as Unknown.
+			msg := "Failed to get VolumeGroupReplication resource"
+			v.updatePVCDataReadyCondition(vgrNamespacedName.Namespace, vgrNamespacedName.Name,
+				VRGConditionReasonErrorUnknown, msg)
+
+			return requeue, false, fmt.Errorf("failed to get VolumeGroupReplication resource"+
+				" (%s/%s) belonging to VolumeReplicationGroup (%s/%s), %w",
+				vgrNamespacedName.Namespace, vgrNamespacedName.Name, v.instance.Namespace, v.instance.Name, err)
+		}
+
+		// Create VGR for PVC
+		if err = v.createVGR(vgrNamespacedName, state); err != nil {
+			log.Error(err, "Failed to create VolumeGroupReplication resource", "resource", vgrNamespacedName)
+			rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
+				rmnutil.EventReasonVRCreateFailed, err.Error())
+
+			msg := "Failed to create VolumeGroupReplication resource"
+			v.updatePVCDataReadyCondition(vgrNamespacedName.Namespace, vgrNamespacedName.Name, VRGConditionReasonError, msg)
+
+			return requeue, false, fmt.Errorf("failed to create VolumeGroupReplication resource"+
+				" (%s/%s) belonging to VolumeGroupReplicationGroup (%s/%s), %w",
+				vgrNamespacedName.Namespace, vgrNamespacedName.Name, v.instance.Namespace, v.instance.Name, err)
+		}
+
+		msg := "Created VolumeGroupReplication resource for PVC"
+		v.updatePVCDataReadyCondition(vgrNamespacedName.Namespace, vgrNamespacedName.Name, VRGConditionReasonProgressing, msg)
+
+		return !requeue, false, nil
+	}
+
+	return v.updateVGR(volGroup, state, log)
 }
 
 func (v *VRGInstance) autoResync(state volrep.ReplicationState) bool {
@@ -1177,6 +1480,45 @@ func (v *VRGInstance) updateVR(volRep *volrep.VolumeReplication,
 	return !requeue, false, nil
 }
 
+func (v *VRGInstance) updateVGR(volgroup *volgroup.VolumeGroupReplication,
+	state volgroup.ReplicationState, log logr.Logger,
+) (bool, bool, error) {
+	const requeue = true
+
+	// If state is already as desired, check the status
+	if volgroup.Spec.ReplicationState == state {
+		log.Info("VolumeGroupReplication and VolumeReplicationGroup state match. Proceeding to status check")
+
+		return !requeue, v.checkVGRStatus(volgroup), nil
+	}
+
+	volgroup.Spec.ReplicationState = state
+
+	if err := v.reconciler.Update(v.ctx, volgroup); err != nil {
+		log.Error(err, "Failed to update VolumeGroupReplication resource",
+			"name", volgroup.Name, "namespace", volgroup.Namespace,
+			"state", state)
+		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
+			rmnutil.EventReasonVRUpdateFailed, err.Error())
+
+		msg := "Failed to update VolumeGroupReplication resource"
+		v.updatePVCDataReadyCondition(volgroup.Namespace, volgroup.Name, VRGConditionReasonError, msg)
+
+		return requeue, false, fmt.Errorf("failed to update VolumeGroupReplication resource"+
+			" (%s/%s) as %s, belonging to VolumeReplicationGroup (%s/%s), %w",
+			volgroup.Namespace, volgroup.Name, state,
+			v.instance.Namespace, v.instance.Name, err)
+	}
+
+	log.Info(fmt.Sprintf("Updated VolumeGroupReplication resource (%s/%s) with state %s",
+		volgroup.Name, volgroup.Namespace, state))
+	// Just updated the state of the VolRep. Mark it as progressing.
+	msg := "Updated VolumeGroupReplication resource for PVC"
+	v.updatePVCDataReadyCondition(volgroup.Namespace, volgroup.Name, VRGConditionReasonProgressing, msg)
+
+	return !requeue, false, nil
+}
+
 // createVR creates a VolumeReplication CR with a PVC as its data source.
 func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volrep.ReplicationState) error {
 	volumeReplicationClass, err := v.selectVolumeReplicationClass(vrNamespacedName)
@@ -1212,6 +1554,46 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 	v.log.Info("Creating VolumeReplication resource", "resource", volRep)
 
 	if err := v.reconciler.Create(v.ctx, volRep); err != nil {
+		return fmt.Errorf("failed to create VolumeReplication resource (%s), %w", vrNamespacedName, err)
+	}
+
+	return nil
+}
+
+// createVR creates a VolumeGroupReplication CR with a PVC as its data source.
+func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName, state volgroup.ReplicationState) error {
+	volumeGroupReplicationClass, err := v.selectVolumeGroupReplicationClass(vrNamespacedName)
+	if err != nil {
+		return fmt.Errorf("failed to find the appropriate VolumeGroupReplicationClass (%s) %w",
+			v.instance.Name, err)
+	}
+
+	volGrp := &volgroup.VolumeGroupReplication{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      vrNamespacedName.Namespace + "-vgr",
+			Namespace: vrNamespacedName.Namespace,
+		},
+		Spec: volgroup.VolumeGroupReplicationSpec{
+			ReplicationState:            state,
+			VolumeGroupReplicationClass: volumeGroupReplicationClass.GetName(),
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": vrNamespacedName.Namespace,
+				},
+			},
+		},
+	}
+
+	// Let VRG receive notification for any changes to VolumeGroupReplication CR
+	// created by VRG.
+	if err := ctrl.SetControllerReference(v.instance, volGrp, v.reconciler.Scheme); err != nil {
+		return fmt.Errorf("failed to set owner reference to VolumeReplication resource (%s/%s), %w",
+			volGrp.Name, volGrp.Namespace, err)
+	}
+
+	v.log.Info("Creating VolumeGroupReplication resource", "resource", volGrp)
+
+	if err := v.reconciler.Create(v.ctx, volGrp); err != nil {
 		return fmt.Errorf("failed to create VolumeReplication resource (%s), %w", vrNamespacedName, err)
 	}
 
@@ -1278,6 +1660,63 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 	return nil, fmt.Errorf("no VolumeReplicationClass found to match provisioner and schedule")
 }
 
+func (v *VRGInstance) selectVolumeGroupReplicationClass(
+	namespacedName types.NamespacedName,
+) (*volgroup.VolumeGroupReplicationClass, error) {
+	if !v.vgrcUpdated {
+		if err := v.updateGroupReplicationClassList(); err != nil {
+			v.log.Error(err, "Failed to get VolumeGroupReplicationClass list")
+
+			return nil, fmt.Errorf("failed to get VolumeGroupReplicationClass list")
+		}
+
+		v.vgrcUpdated = true
+	}
+
+	if len(v.grpReplClassList.Items) == 0 {
+		v.log.Info("No VolumeGroupReplicationClass available")
+
+		return nil, fmt.Errorf("no VolumeGroupReplicationClass available")
+	}
+
+	storageClass, err := v.getStorageClass(namespacedName)
+	if err != nil {
+		v.log.Info(fmt.Sprintf("Failed to get the storageclass of pvc %s",
+			namespacedName))
+
+		return nil, fmt.Errorf("failed to get the storageclass of pvc %s (%w)",
+			namespacedName, err)
+	}
+
+	for index := range v.grpReplClassList.Items {
+		grpReplicationClass := &v.grpReplClassList.Items[index]
+		if storageClass.Provisioner != grpReplicationClass.Spec.Provisioner {
+			continue
+		}
+
+		schedulingInterval, found := grpReplicationClass.Spec.Parameters["schedulingInterval"]
+		if !found {
+			v.log.Info("No schedulingInterval in VolumeGroupReplicationClass available")
+
+			// schedule not present in parameters of this replicationClass.
+			continue
+		}
+
+		// ReplicationClass that matches both VRG schedule and pvc provisioner
+		if schedulingInterval == v.instance.Spec.Async.SchedulingInterval {
+			v.log.Info(fmt.Sprintf("Found VolumeGroupReplicationClass that matches provisioner and schedule %s/%s",
+				storageClass.Provisioner, v.instance.Spec.Async.SchedulingInterval))
+
+			return grpReplicationClass, nil
+		}
+	}
+
+	v.log.Info(fmt.Sprintf("No VolumeGroupReplicationClass found to match provisioner and schedule %s/%s",
+		storageClass.Provisioner, v.instance.Spec.Async.SchedulingInterval))
+
+	return nil, fmt.Errorf("no VolumeGroupReplicationClass found to match provisioner and schedule")
+}
+
 // getStorageClass inspects the PVCs being protected by this VRG instance for the passed in namespacedName, and
 // returns its corresponding StorageClass resource from an instance cache if available, or fetches it from the API
 // server and stores it in an instance cache before returning the StorageClass
@@ -1292,6 +1731,19 @@ func (v *VRGInstance) getStorageClass(namespacedName types.NamespacedName) (*sto
 			pvc = pvcItem
 
 			break
+		}
+	}
+
+	if pvc == nil {
+		for idx := range v.volGrpRepPVCs {
+			pvcItem := &v.volGrpRepPVCs[idx]
+
+			pvcNamespacedName := types.NamespacedName{Name: pvcItem.Name, Namespace: pvcItem.Namespace}
+			if pvcNamespacedName == namespacedName {
+				pvc = pvcItem
+
+				break
+			}
 		}
 	}
 
@@ -1357,6 +1809,35 @@ func (v *VRGInstance) checkVRStatus(volRep *volrep.VolumeReplication) bool {
 	}
 }
 
+func (v *VRGInstance) checkVGRStatus(volGroup *volgroup.VolumeGroupReplication) bool {
+	// When the generation in the status is updated, VRG would get a reconcile
+	// as it owns VolumeGroupReplication resource.
+	if volGroup.Generation != volGroup.Status.ObservedGeneration {
+		v.log.Info(fmt.Sprintf("Generation mismatch in status for VolumeGroupReplication resource (%s/%s)",
+			volGroup.Name, volGroup.Namespace))
+
+		msg := "VolumeGroupReplication generation not updated in status"
+		v.updatePVCDataReadyCondition(volGroup.Namespace, volGroup.Name, VRGConditionReasonProgressing, msg)
+
+		return false
+	}
+
+	switch {
+	case string(v.instance.Spec.ReplicationState) == string(volgroup.Primary):
+		return v.validateVGRStatus(volGroup, ramendrv1alpha1.Primary)
+	case string(v.instance.Spec.ReplicationState) == string(volgroup.Secondary):
+		return v.validateVGRStatus(volGroup, ramendrv1alpha1.Secondary)
+	default:
+		v.log.Info(fmt.Sprintf("invalid Replication State %s for VolumeReplicationGroup (%s:%s)",
+			string(v.instance.Spec.ReplicationState), v.instance.Name, v.instance.Namespace))
+
+		msg := "VolumeReplicationGroup state invalid"
+		v.updatePVCDataReadyCondition(volGroup.Namespace, volGroup.Name, VRGConditionReasonError, msg)
+
+		return false
+	}
+}
+
 // validateVRStatus validates if the VolumeReplication resource has the desired status for the
 // current generation and returns true if so, false otherwise
 //   - When replication state is Primary, only Completed condition is checked.
@@ -1378,7 +1859,8 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 	}
 
 	// it should be completed
-	conditionMet, msg := isVRConditionMet(volRep, volrepController.ConditionCompleted, metav1.ConditionTrue)
+	conditionMet, msg := isVRConditionMet(volRep.Status.Conditions, volRep.Generation,
+		volrepController.ConditionCompleted, metav1.ConditionTrue)
 	if !conditionMet {
 		defaultMsg := fmt.Sprintf("VolumeReplication resource for pvc not %s to %s", action, stateString)
 		v.updatePVCDataReadyConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,
@@ -1394,7 +1876,8 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 
 	// if primary, all checks are completed
 	if state == ramendrv1alpha1.Secondary {
-		return v.validateAdditionalVRStatusForSecondary(volRep)
+		return v.validateAdditionalVRStatusForSecondary(volRep.Status.Conditions, volRep.Generation,
+			volRep.Namespace, volRep.Name)
 	}
 
 	msg = "PVC in the VolumeReplicationGroup is ready for use"
@@ -1405,6 +1888,62 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 	v.updatePVCLastSyncBytes(volRep.Namespace, volRep.Name, volRep.Status.LastSyncBytes)
 	v.log.Info(fmt.Sprintf("VolumeReplication resource %s/%s is ready for use", volRep.Name,
 		volRep.Namespace))
+
+	return true
+}
+
+// validateVGRStatus validates if the VolumeReplication resource has the desired status for the
+// current generation and returns true if so, false otherwise
+//   - When replication state is Primary, only Completed condition is checked.
+//   - When replication state is Secondary, all 3 conditions for Completed/Degraded/Resyncing is
+//     checked and ensured healthy.
+func (v *VRGInstance) validateVGRStatus(volGroup *volgroup.VolumeGroupReplication,
+	state ramendrv1alpha1.ReplicationState,
+) bool {
+	var (
+		stateString string
+		action      string
+	)
+
+	switch state {
+	case ramendrv1alpha1.Primary:
+		stateString = "primary"
+		action = "promoted"
+	case ramendrv1alpha1.Secondary:
+		stateString = "secondary"
+		action = "demoted"
+	}
+
+	// it should be completed
+	conditionMet, msg := isVRConditionMet(volGroup.Status.Conditions, volGroup.Generation,
+		volrepController.ConditionCompleted, metav1.ConditionTrue)
+	if !conditionMet {
+		defaultMsg := fmt.Sprintf("VolumeGroupReplication resource for pvc not %s to %s", action, stateString)
+		v.updatePVCDataReadyConditionHelper(volGroup.Namespace, volGroup.Name, VRGConditionReasonError, msg,
+			defaultMsg)
+
+		v.updatePVCDataProtectedConditionHelper(volGroup.Namespace, volGroup.Name, VRGConditionReasonError, msg,
+			defaultMsg)
+
+		v.log.Info(fmt.Sprintf("%s (VolGrpRep: %s/%s)", defaultMsg, volGroup.Name, volGroup.Namespace))
+
+		return false
+	}
+
+	// if primary, all checks are completed
+	if state == ramendrv1alpha1.Secondary {
+		return v.validateAdditionalVRStatusForSecondary(volGroup.Status.Conditions, volGroup.Generation,
+			volGroup.Namespace, volGroup.Name)
+	}
+
+	msg = "PVC in the VolumeGroupReplicationGroup is ready for use"
+	v.updatePVCDataReadyCondition(volGroup.Namespace, volGroup.Name, VRGConditionReasonReady, msg)
+	v.updatePVCDataProtectedCondition(volGroup.Namespace, volGroup.Name, VRGConditionReasonReady, msg)
+	// v.updatePVCLastSyncTime(volGroup.Namespace, volGroup.Name, volGroup.Status.LastSyncTime)
+	// v.updatePVCLastSyncDuration(volGroup.Namespace, volGroup.Name, volGroup.Status.LastSyncDuration)
+	// v.updatePVCLastSyncBytes(volGroup.Namespace, volGroup.Name, volGroup.Status.LastSyncBytes)
+	v.log.Info(fmt.Sprintf("VolumeGroupReplication resource %s/%s is ready for use", volGroup.Name,
+		volGroup.Namespace))
 
 	return true
 }
@@ -1426,92 +1965,101 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 // With 2nd condition being met,
 // ProtectedPVC.Conditions[DataReady] = True
 // ProtectedPVC.Conditions[DataProtected] = True
-func (v *VRGInstance) validateAdditionalVRStatusForSecondary(volRep *volrep.VolumeReplication) bool {
-	v.updatePVCLastSyncTime(volRep.Namespace, volRep.Name, nil)
-	v.updatePVCLastSyncDuration(volRep.Namespace, volRep.Name, nil)
-	v.updatePVCLastSyncBytes(volRep.Namespace, volRep.Name, nil)
+func (v *VRGInstance) validateAdditionalVRStatusForSecondary(conditions []metav1.Condition, observedGeneration int64,
+	namespace, name string,
+) bool {
+	v.updatePVCLastSyncTime(namespace, name, nil)
+	v.updatePVCLastSyncDuration(namespace, name, nil)
+	v.updatePVCLastSyncBytes(namespace, name, nil)
 
-	conditionMet, _ := isVRConditionMet(volRep, volrepController.ConditionResyncing, metav1.ConditionTrue)
+	conditionMet, _ := isVRConditionMet(conditions, observedGeneration,
+		volrepController.ConditionResyncing, metav1.ConditionTrue)
 	if !conditionMet {
-		return v.checkResyncCompletionAsSecondary(volRep)
+		return v.checkResyncCompletionAsSecondary(conditions, observedGeneration,
+			namespace, name)
 	}
 
-	conditionMet, msg := isVRConditionMet(volRep, volrepController.ConditionDegraded, metav1.ConditionTrue)
+	conditionMet, msg := isVRConditionMet(conditions, observedGeneration,
+		volrepController.ConditionDegraded, metav1.ConditionTrue)
 	if !conditionMet {
-		v.updatePVCDataProtectedConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,
+		v.updatePVCDataProtectedConditionHelper(namespace, name, VRGConditionReasonError, msg,
 			"VolumeReplication resource for pvc is not in Degraded condition while resyncing")
 
-		v.updatePVCDataReadyConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,
+		v.updatePVCDataReadyConditionHelper(namespace, name, VRGConditionReasonError, msg,
 			"VolumeReplication resource for pvc is not in Degraded condition while resyncing")
 
 		v.log.Info(fmt.Sprintf("VolumeReplication resource is not in degraded condition while"+
-			" resyncing is true (%s/%s)", volRep.Name, volRep.Namespace))
+			" resyncing is true (%s/%s)", name, namespace))
 
 		return false
 	}
 
 	msg = "VolumeReplication resource for the pvc is syncing as Secondary"
-	v.updatePVCDataReadyCondition(volRep.Namespace, volRep.Name, VRGConditionReasonReplicating, msg)
-	v.updatePVCDataProtectedCondition(volRep.Namespace, volRep.Name, VRGConditionReasonReplicating, msg)
+	v.updatePVCDataReadyCondition(namespace, name, VRGConditionReasonReplicating, msg)
+	v.updatePVCDataProtectedCondition(namespace, name, VRGConditionReasonReplicating, msg)
 
 	v.log.Info(fmt.Sprintf("VolumeReplication resource for the pvc is syncing as Secondary (%s/%s)",
-		volRep.Name, volRep.Namespace))
+		name, namespace))
 
 	return true
 }
 
 // checkResyncCompletionAsSecondary returns true if resync status is complete as secondary, false otherwise
-func (v *VRGInstance) checkResyncCompletionAsSecondary(volRep *volrep.VolumeReplication) bool {
-	conditionMet, msg := isVRConditionMet(volRep, volrepController.ConditionResyncing, metav1.ConditionFalse)
+func (v *VRGInstance) checkResyncCompletionAsSecondary(conditions []metav1.Condition, observedGeneration int64,
+	namespace, name string,
+) bool {
+	conditionMet, msg := isVRConditionMet(conditions, observedGeneration,
+		volrepController.ConditionResyncing, metav1.ConditionFalse)
 	if !conditionMet {
 		defaultMsg := "VolumeReplication resource for pvc not syncing as Secondary"
-		v.updatePVCDataReadyConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,
+		v.updatePVCDataReadyConditionHelper(namespace, name, VRGConditionReasonError, msg,
 			defaultMsg)
 
-		v.updatePVCDataProtectedConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,
+		v.updatePVCDataProtectedConditionHelper(namespace, name, VRGConditionReasonError, msg,
 			defaultMsg)
 
-		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", defaultMsg, volRep.Name, volRep.Namespace))
+		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", defaultMsg, name, namespace))
 
 		return false
 	}
 
-	conditionMet, msg = isVRConditionMet(volRep, volrepController.ConditionDegraded, metav1.ConditionFalse)
+	conditionMet, msg = isVRConditionMet(conditions, observedGeneration,
+		volrepController.ConditionDegraded, metav1.ConditionFalse)
 	if !conditionMet {
 		defaultMsg := "VolumeReplication resource for pvc is not syncing and is degraded as Secondary"
-		v.updatePVCDataReadyConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,
+		v.updatePVCDataReadyConditionHelper(namespace, name, VRGConditionReasonError, msg,
 			defaultMsg)
 
-		v.updatePVCDataProtectedConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,
+		v.updatePVCDataProtectedConditionHelper(namespace, name, VRGConditionReasonError, msg,
 			defaultMsg)
 
-		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", defaultMsg, volRep.Name, volRep.Namespace))
+		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", defaultMsg, name, namespace))
 
 		return false
 	}
 
 	msg = "VolumeReplication resource for the pvc as Secondary is in sync with Primary"
-	v.updatePVCDataReadyCondition(volRep.Namespace, volRep.Name, VRGConditionReasonReplicated, msg)
-	v.updatePVCDataProtectedCondition(volRep.Namespace, volRep.Name, VRGConditionReasonDataProtected, msg)
+	v.updatePVCDataReadyCondition(namespace, name, VRGConditionReasonReplicated, msg)
+	v.updatePVCDataProtectedCondition(namespace, name, VRGConditionReasonDataProtected, msg)
 
 	v.log.Info(fmt.Sprintf("data sync completed as both degraded and resyncing are false for"+
-		" secondary VolRep (%s/%s)", volRep.Name, volRep.Namespace))
+		" secondary VolRep (%s/%s)", name, namespace))
 
 	return true
 }
 
-func isVRConditionMet(volRep *volrep.VolumeReplication,
+func isVRConditionMet(conditions []metav1.Condition, observedGeneration int64,
 	conditionType string,
 	desiredStatus metav1.ConditionStatus,
 ) (bool, string) {
-	volRepCondition := findCondition(volRep.Status.Conditions, conditionType)
+	volRepCondition := findCondition(conditions, conditionType)
 	if volRepCondition == nil {
 		msg := fmt.Sprintf("Failed to get the %s condition from status of VolumeReplication resource.", conditionType)
 
 		return false, msg
 	}
 
-	if volRep.Generation != volRepCondition.ObservedGeneration {
+	if observedGeneration != volRepCondition.ObservedGeneration {
 		msg := fmt.Sprintf("Stale generation for condition %s from status of VolumeReplication resource.", conditionType)
 
 		return false, msg
@@ -1935,7 +2483,14 @@ func (v *VRGInstance) restorePVCsFromObjectStore(objectStore ObjectStorer, s3Pro
 
 	v.log.Info(fmt.Sprintf("Found %d PVCs in s3 store using profile %s", len(pvcList), s3ProfileName))
 
-	v.volRepPVCs = append(v.volRepPVCs, pvcList...)
+	for idx := range pvcList {
+		pvc := &pvcList[idx]
+
+		_, err = v.separatePVCUsingStorageClassProvisioner(pvc)
+		if err != nil {
+			return idx, err
+		}
+	}
 
 	return restoreClusterDataObjects(v, pvcList, "PVC", cleanupPVCForRestore, v.validateExistingPVC)
 }
@@ -2257,9 +2812,9 @@ func cleanupPVCForRestore(pvc *corev1.PersistentVolumeClaim) {
 //	VRG.conditions.Available.Status = false
 //	VRG.conditions.Available.Reason = Progressing
 //
-//nolint:funlen
+//nolint:funlen,cyclop
 func (v *VRGInstance) aggregateVolRepDataReadyCondition() *metav1.Condition {
-	if len(v.volRepPVCs) == 0 {
+	if len(v.volRepPVCs) == 0 && len(v.volGrpRepPVCs) == 0 {
 		return nil
 	}
 
@@ -2331,7 +2886,7 @@ func (v *VRGInstance) aggregateVolRepDataReadyCondition() *metav1.Condition {
 
 //nolint:funlen,gocognit,cyclop
 func (v *VRGInstance) aggregateVolRepDataProtectedCondition() *metav1.Condition {
-	if len(v.volRepPVCs) == 0 {
+	if len(v.volRepPVCs) == 0 && len(v.volGrpRepPVCs) == 0 {
 		return nil
 	}
 
@@ -2408,7 +2963,7 @@ func (v *VRGInstance) aggregateVolRepDataProtectedCondition() *metav1.Condition 
 // protecting condition, set the VRG level condition to protecting.  If not, set
 // the VRG level condition to true.
 func (v *VRGInstance) aggregateVolRepClusterDataProtectedCondition() *metav1.Condition {
-	if len(v.volRepPVCs) == 0 {
+	if len(v.volRepPVCs) == 0 && len(v.volGrpRepPVCs) == 0 {
 		return nil
 	}
 

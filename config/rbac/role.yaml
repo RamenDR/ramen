@@ -68,6 +68,26 @@ rules:
   - list
   - watch
 - apiGroups:
+  - cache.storage.ramendr.io
+  resources:
+  - volumegroupreplicationclasses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - cache.storage.ramendr.io
+  resources:
+  - volumegroupreplications
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - cluster.open-cluster-management.io
   resources:
   - managedclusters
