@@ -17,6 +17,7 @@ templates:
     driver: "$vm"
     container_runtime: containerd
     network: "$network"
+    cpus: 4
     memory: "6g"
     extra_disks: 1
     disk_size: "50g"
@@ -44,6 +45,7 @@ templates:
     driver: "$vm"
     container_runtime: containerd
     network: "$network"
+    cpus: 2
     memory: "4g"
     workers:
       - addons:

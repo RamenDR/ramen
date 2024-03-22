@@ -20,7 +20,7 @@ def deploy(cluster):
         "status",
         "deploy/virt-operator",
         f"--namespace={NAMESPACE}",
-        "--timeout=600s",
+        "--timeout=300s",
         context=cluster,
     )
 
@@ -34,7 +34,7 @@ def wait(cluster):
         "kubevirt.kubevirt.io/kubevirt",
         "--for=condition=available",
         f"--namespace={NAMESPACE}",
-        "--timeout=600s",
+        "--timeout=300s",
         context=cluster,
     )
 

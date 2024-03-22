@@ -29,7 +29,7 @@ def wait(cluster):
         "status",
         "deploy/csi-addons-controller-manager",
         "--namespace=csi-addons-system",
-        "--timeout=600s",
+        "--timeout=300s",
         context=cluster,
     )
 
