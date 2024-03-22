@@ -33,7 +33,9 @@ type DRClusterSpec struct {
 
 	// Region of a managed cluster determines it DR group.
 	// All managed clusters in a region are considered to be in a sync group.
-	Region Region `json:"region,omitempty"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="region is immutable"
+	Region Region `json:"region"`
 
 	// S3 profile name (in Ramen config) to use as a source to restore PV
 	// related cluster state during recovery or relocate actions of applications
@@ -42,6 +44,8 @@ type DRClusterSpec struct {
 	// that are active on this managed cluster, their PV related cluster state
 	// is stored to S3 profiles of all other drclusters in the same
 	// DRPolicy to enable recovery or relocate actions to those managed clusters.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="s3ProfileName is immutable"
 	S3ProfileName string `json:"s3ProfileName"`
 }
 

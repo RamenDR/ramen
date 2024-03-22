@@ -363,11 +363,21 @@ var _ = Describe("DRClusterController", func() {
 					ramen.DRClusterValidated)
 			})
 		})
+		When("deleting a DRCluster", func() {
+			It("is successful", func() {
+				drpolicyDelete(syncDRPolicy)
+				drclusterDelete(drcluster)
+				// recreate DRPolicy
+				createPolicies()
+				drcluster = drclusters[0].DeepCopy()
+			})
+		})
 		When("an S3Profile fails listing", func() {
 			It("reports NOT validated with reason s3ListFailed", func() {
-				By("modifying a DRCluster with an invalid S3Profile that fails listing")
+				By("creating a DRCluster with an invalid S3Profile that fails listing")
 				drcluster.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
-				drcluster = updateDRClusterParameters(drcluster)
+				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				updateDRClusterManifestWorkStatus(drcluster.Name)
 				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse, Equal("s3ListFailed"), Ignore(),
 					ramen.DRClusterValidated)
 			})
@@ -382,21 +392,45 @@ var _ = Describe("DRClusterController", func() {
 					ramen.DRClusterConditionTypeFenced)
 			})
 		})
+
+		When("deleting a DRCluster", func() {
+			It("is successful", func() {
+				drpolicyDelete(syncDRPolicy)
+				drclusterDelete(drcluster)
+				// recreate DRPolicy
+				createPolicies()
+				drcluster = drclusters[0].DeepCopy()
+			})
+		})
+
 		When("S3Profile is valid", func() {
 			It("reports validated with reason Succeeded", func() {
-				By("modifying a DRCluster with a valid S3Profile and no cluster fencing")
+				By("creating a DRCluster with a valid S3Profile and no cluster fencing")
 				drcluster.Spec.S3ProfileName = s3Profiles[0].S3ProfileName
 				drcluster.Spec.ClusterFence = ""
-				drcluster = updateDRClusterParameters(drcluster)
+				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				updateDRClusterManifestWorkStatus(drcluster.Name)
 				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
 					ramen.DRClusterValidated)
 			})
 		})
+
+		When("deleting a DRCluster", func() {
+			It("is successful", func() {
+				drpolicyDelete(syncDRPolicy)
+				drclusterDelete(drcluster)
+				// recreate DRPolicy
+				createPolicies()
+				drcluster = drclusters[0].DeepCopy()
+			})
+		})
+
 		When("S3Profile is changed to an invalid profile in ramen config", func() {
 			It("reports NOT validated with reason s3ConnectionFailed", func() {
-				By("modifying a DRCluster with the new valid S3Profile")
+				By("creating a DRCluster with the new valid S3Profile")
 				drcluster.Spec.S3ProfileName = s3Profiles[5].S3ProfileName
-				drcluster = updateDRClusterParameters(drcluster)
+				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				updateDRClusterManifestWorkStatus(drcluster.Name)
 				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
 					ramen.DRClusterValidated)
 				By("changing the S3Profile in ramen config to an invalid value")
@@ -408,16 +442,23 @@ var _ = Describe("DRClusterController", func() {
 				// TODO: Ensure when changing S3Profile, dr-cluster's ramen config is updated in MW
 			})
 		})
-		When("S3Profile is changed to an invalid profile in DRCluster", func() {
+
+		When("deleting a DRCluster", func() {
+			It("is successful", func() {
+				drpolicyDelete(syncDRPolicy)
+				drclusterDelete(drcluster)
+				// recreate DRPolicy
+				createPolicies()
+				drcluster = drclusters[0].DeepCopy()
+			})
+		})
+
+		When("when adding an invalid S3Profile in DRCLuster", func() {
 			It("reports NOT validated with reason s3ListFailed", func() {
-				By("modifying a DRCluster with a valid S3Profile")
-				drcluster.Spec.S3ProfileName = s3Profiles[0].S3ProfileName
-				drcluster = updateDRClusterParameters(drcluster)
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
-					ramen.DRClusterValidated)
-				By("modifying a DRCluster with an invalid S3Profile that fails listing")
+				By("creating a DRCluster with an invalid S3Profile that fails listing")
 				drcluster.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
-				drcluster = updateDRClusterParameters(drcluster)
+				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				updateDRClusterManifestWorkStatus(drcluster.Name)
 				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse, Equal("s3ListFailed"), Ignore(),
 					ramen.DRClusterValidated)
 			})
@@ -558,16 +599,7 @@ var _ = Describe("DRClusterController", func() {
 					Ignore(), ramen.DRClusterConditionTypeFenced)
 			})
 		})
-		When("provided Fencing value is Fenced and the s3 validation fails", func() {
-			It("reports fenced with reason Fencing success but validated condition should be false", func() {
-				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateFenced
-				drcluster.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
-				drcluster = updateDRClusterParameters(drcluster)
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue,
-					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
-					ramen.DRClusterConditionTypeFenced)
-			})
-		})
+
 		When("provided Fencing value is Unfenced", func() {
 			It("reports Unfenced false with status fenced as false", func() {
 				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateUnfenced
@@ -593,6 +625,45 @@ var _ = Describe("DRClusterController", func() {
 			})
 		})
 		When("deleting a DRCluster with empty fencing value", func() {
+			It("is successful", func() {
+				drpolicyDelete(syncDRPolicy)
+				drcluster = getLatestDRCluster(drcluster.Name)
+				drclusterDelete(drcluster)
+			})
+		})
+
+		Specify("create a drcluster copy for changes", func() {
+			createPolicies()
+			drcluster = drclusters[0].DeepCopy()
+		})
+
+		When("provided Fencing value is Fenced and the s3 validation fails", func() {
+			It("reports fenced with reason Fencing success but validated condition should be false", func() {
+				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateFenced
+				drcluster.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
+				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				updateDRClusterManifestWorkStatus(drcluster.Name)
+				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue,
+					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
+					ramen.DRClusterConditionTypeFenced)
+			})
+		})
+
+		// this test is needed to delete the DRCluster in the above scenario,
+		// ref issue: https://github.com/RamenDR/ramen/issues/1264, because of this
+		// we need to remove the change the fenced status to "", so that ramen will not
+		// look for the peer cluster in this situtaion
+		When("provided Fencing value is empty", func() {
+			It("reports validated with status fencing as Unfenced", func() {
+				drcluster.Spec.ClusterFence = ""
+				drcluster = updateDRClusterParameters(drcluster)
+				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse,
+					Equal(controllers.DRClusterConditionReasonClean), Ignore(),
+					ramen.DRClusterConditionTypeFenced)
+			})
+		})
+
+		When("deleting a DRCluster", func() {
 			It("is successful", func() {
 				drpolicyDelete(syncDRPolicy)
 				drcluster = getLatestDRCluster(drcluster.Name)

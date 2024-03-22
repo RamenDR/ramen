@@ -77,6 +77,7 @@ func drPolicyUndeploy(
 	drclusters *rmn.DRClusterList,
 	secretsUtil *util.SecretsUtil,
 	ramenConfig *rmn.RamenConfig,
+	log logr.Logger,
 ) error {
 	drpolicies := rmn.DRPolicyList{}
 
@@ -87,7 +88,7 @@ func drPolicyUndeploy(
 		return fmt.Errorf("drpolicies list: %w", err)
 	}
 
-	return drClustersUndeploySecrets(drpolicy, drclusters, drpolicies, secretsUtil, ramenConfig)
+	return drClustersUndeploySecrets(drpolicy, drclusters, drpolicies, secretsUtil, ramenConfig, log)
 }
 
 func drClustersUndeploySecrets(
@@ -96,6 +97,7 @@ func drClustersUndeploySecrets(
 	drpolicies rmn.DRPolicyList,
 	secretsUtil *util.SecretsUtil,
 	ramenConfig *rmn.RamenConfig,
+	log logr.Logger,
 ) error {
 	if !ramenConfig.DrClusterOperator.DeploymentAutomationEnabled ||
 		!ramenConfig.DrClusterOperator.S3SecretDistributionEnabled {
@@ -113,7 +115,7 @@ func drClustersUndeploySecrets(
 	// Determine S3 secrets that maybe deleted, based on policy being deleted
 	mayDeleteS3Secrets, err := drPolicySecretNames(drpolicy, drclusters, ramenConfig)
 	if err != nil {
-		return err
+		log.Error(err, "error in retrieving secret names")
 	}
 
 	// For each cluster in the must have S3 secrets list, check and delete

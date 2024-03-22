@@ -62,6 +62,9 @@ spec:
                   Region of a managed cluster determines it DR group.
                   All managed clusters in a region are considered to be in a sync group.
                 type: string
+                x-kubernetes-validations:
+                - message: region is immutable
+                  rule: self == oldSelf
               s3ProfileName:
                 description: |-
                   S3 profile name (in Ramen config) to use as a source to restore PV
@@ -72,7 +75,11 @@ spec:
                   is stored to S3 profiles of all other drclusters in the same
                   DRPolicy to enable recovery or relocate actions to those managed clusters.
                 type: string
+                x-kubernetes-validations:
+                - message: s3ProfileName is immutable
+                  rule: self == oldSelf
             required:
+            - region
             - s3ProfileName
             type: object
           status:

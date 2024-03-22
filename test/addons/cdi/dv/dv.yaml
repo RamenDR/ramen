@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: test-dv
+spec:
+  storage:
+    accessModes:
+      - ReadWriteMany
+    storageClassName: csi-hostpath-sc
+    resources:
+      requests:
+        storage: 128Mi
+  source:
+    registry:
+      url: "docker://quay.io/nirsof/cirros:0.6.2-1"

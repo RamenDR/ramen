@@ -4,7 +4,7 @@
 # yamllint disable rule:line-length
 ---
 resources:
-  - https://github.com/kubevirt/containerized-data-importer/releases/download/v1.58.1/cdi-cr.yaml
+  - https://raw.githubusercontent.com/nirs/drenv-addons/main/cdi/dabbcbed1618d1ec970135b4c0a8b692c2dd60b6/cdi-cr.yaml
 patches:
   # Allow pulling from local insecure registry.
   - target:
@@ -35,3 +35,11 @@ patches:
             duration: 168h
           server:
             duration: 168h
+  # Enable data volume PVC adoption, required for DR.
+  - target:
+      kind: CDI
+      name: cdi
+    patch: |-
+      - op: add
+        path: /spec/config/featureGates/-
+        value: DataVolumeClaimAdoption
