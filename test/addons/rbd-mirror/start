@@ -7,6 +7,7 @@ import base64
 import json
 import os
 import sys
+import time
 
 import drenv
 from drenv import ceph
@@ -170,6 +171,8 @@ wait_until_pool_mirroring_is_healthy(cluster2)
 
 deploy_vrc_sample(cluster1)
 deploy_vrc_sample(cluster2)
+
+time.sleep(30)
 
 check_blocklist(cluster1)
 check_blocklist(cluster2)
