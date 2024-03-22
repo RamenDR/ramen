@@ -9,7 +9,7 @@ import sys
 import drenv
 from drenv import kubectl
 
-VERSION = "v0.7.0"
+VERSION = "v0.8.0"
 BASE_URL = f"https://raw.githubusercontent.com/csi-addons/kubernetes-csi-addons/{VERSION}/deploy/controller"
 
 
