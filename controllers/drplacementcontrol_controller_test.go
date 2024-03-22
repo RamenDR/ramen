@@ -1565,7 +1565,7 @@ func runFailoverAction(placementObj client.Object, fromCluster, toCluster string
 	// {Available and PeerReady}
 	// Final state is 'FailedOver'
 	Expect(drpc.Status.Phase).To(Equal(rmn.FailedOver))
-	Expect(len(drpc.Status.Conditions)).To(Equal(2))
+	Expect(len(drpc.Status.Conditions)).To(Equal(3))
 	_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
 	Expect(condition.Reason).To(Equal(string(rmn.FailedOver)))
 	Expect(drpc.Status.ActionStartTime).ShouldNot(BeNil())
@@ -1618,7 +1618,7 @@ func runRelocateAction(placementObj client.Object, fromCluster string, isSyncDR 
 	// {Available and PeerReady}
 	// Final state is 'Relocated'
 	Expect(drpc.Status.Phase).To(Equal(rmn.Relocated))
-	Expect(len(drpc.Status.Conditions)).To(Equal(2))
+	Expect(len(drpc.Status.Conditions)).To(Equal(3))
 	_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
 	Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
 
@@ -1638,7 +1638,7 @@ func clearDRActionAfterRelocate(userPlacementRule *plrv1.PlacementRule, preferre
 	// Final state didn't change and it is 'Relocated' even though we tried to run
 	// initial deployment
 	Expect(drpc.Status.Phase).To(Equal(rmn.Deployed))
-	Expect(len(drpc.Status.Conditions)).To(Equal(2))
+	Expect(len(drpc.Status.Conditions)).To(Equal(3))
 	_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
 	Expect(condition.Reason).To(Equal(string(rmn.Deployed)))
 
@@ -1763,7 +1763,7 @@ func verifyInitialDRPCDeployment(userPlacement client.Object, preferredCluster s
 	// {Available and PeerReady}
 	// Final state is 'Deployed'
 	Expect(latestDRPC.Status.Phase).To(Equal(rmn.Deployed))
-	Expect(len(latestDRPC.Status.Conditions)).To(Equal(2))
+	Expect(len(latestDRPC.Status.Conditions)).To(Equal(3))
 	_, condition := getDRPCCondition(&latestDRPC.Status, rmn.ConditionAvailable)
 	Expect(condition.Reason).To(Equal(string(rmn.Deployed)))
 	Expect(latestDRPC.GetAnnotations()[controllers.LastAppDeploymentCluster]).To(Equal(preferredCluster))
@@ -1797,7 +1797,7 @@ func verifyFailoverToSecondary(placementObj client.Object, toCluster string,
 	// {Available and PeerReady}
 	// Final state is 'FailedOver'
 	Expect(drpc.Status.Phase).To(Equal(rmn.FailedOver))
-	Expect(len(drpc.Status.Conditions)).To(Equal(2))
+	Expect(len(drpc.Status.Conditions)).To(Equal(3))
 	_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
 	Expect(condition.Reason).To(Equal(string(rmn.FailedOver)))
 
