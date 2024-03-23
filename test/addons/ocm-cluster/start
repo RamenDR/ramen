@@ -52,8 +52,8 @@ HUB_DEPLOYMENTS = {
 def deploy(cluster, hub):
     wait_for_hub(hub)
     join_cluster(cluster, hub)
-    label_cluster(cluster, hub)
     wait_for_managed_cluster(cluster, hub)
+    label_cluster(cluster, hub)
     enable_addons(cluster, hub)
 
 
