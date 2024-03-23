@@ -1935,6 +1935,31 @@ var _ = Describe("DRPlacementControl Reconciler Errors", func() {
 			}
 		}, SpecTimeout(time.Second*10))
 	})
+	When("a placementRule is deleted", func() {
+		AfterEach(func() {
+			err := forceCleanupClusterAfterAErrorTest()
+			Expect(err).ToNot(HaveOccurred())
+		})
+		It("drpc should get deleted", func(ctx SpecContext) {
+			_, _ = InitialDeploymentAsync(DefaultDRPCNamespace, UserPlacementRuleName, East1ManagedCluster,
+				UsePlacementRule)
+			waitForCompletion(string(rmn.Deployed))
+
+			deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)
+
+			Eventually(func() bool {
+				drpcLookupKey := types.NamespacedName{
+					Name:      DRPCCommonName,
+					Namespace: DefaultDRPCNamespace,
+				}
+				latestDRPC := &rmn.DRPlacementControl{}
+
+				err := apiReader.Get(context.TODO(), drpcLookupKey, latestDRPC)
+
+				return errors.IsNotFound(err)
+			}, timeout, interval).Should(HaveOccurred())
+		}, SpecTimeout(time.Second*10))
+	})
 })
 
 // +kubebuilder:docs-gen:collapse=Imports
