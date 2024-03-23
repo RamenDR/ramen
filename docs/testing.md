@@ -62,8 +62,16 @@ The above picture shows the interfaces that are used in Ramen today.
 
 ## End-to-end tests
 
-The end-to-end testing framework isn't implemented yet. However, we have a basic
-test that you can use to test the basic flows of Ramen. `basic-test` requires
+You can run end-to-end tests using the standalone `ramen-e2e` binary or you can
+run them using the python script called `basic-test` in the `test` directory.
+
+### End-to-end (E2E) Testing Framework Documentation
+
+Refer to (./e2e.md) for the documentation on the E2E testing framework.
+
+### Basic-tests
+
+`basic-test` lets you test the basic flows of Ramen. `basic-test` requires
 the python virtual environment to be activated.
 
 Ramen basic test use the [ocm-ramen-samples repo](https://github.com/RamenDR/ocm-ramen-samples).
