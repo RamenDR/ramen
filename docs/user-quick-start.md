@@ -165,6 +165,17 @@ enough resources:
    sudo install virtctl /usr/local/bin
    ```
 
+1. Install `mc` tool
+
+   ```
+   curl -L -o /tmp/mc https://dl.min.io/client/mc/release/linux-amd64/mc
+   sudo install /tmp/mc /usr/local/bin
+   rm /tmp/mc
+   ```
+
+   For more info see
+   [MinIO Client Quickstart](https://min.io/docs/minio/linux/reference/minio-mc.html#quickstart)
+
 1. Install `helm` tool - on Fedora you can use:
 
    ```
