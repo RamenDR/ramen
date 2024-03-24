@@ -27,3 +27,35 @@ def mb(*targets, ignore_existing=False):
         cmd.append("--ignore-existing")
     cmd.extend(targets)
     commands.run(*cmd)
+
+
+def cp(*args):
+    """
+    Copy one or more soruces to target.
+    """
+    commands.run("mc", "cp", *args)
+
+
+def rm(*targets):
+    """
+    Remove one or more targets.
+    """
+    commands.run("mc", "rm", *targets)
+
+
+def cat(*targets):
+    """
+    Concatenate one or more targets.
+    """
+    return commands.run("mc", "cat", *targets, decode=False)
+
+
+def ls(*targets, recursive=False):
+    """
+    List objects and buckets.
+    """
+    cmd = ["mc", "ls"]
+    if recursive:
+        cmd.append("--recursive")
+    cmd.extend(targets)
+    return commands.run(*cmd)

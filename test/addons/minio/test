@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import hashlib
+import os
+import sys
+
+from drenv import mc
+
+# Sync with start.
+BUCKET = "bucket"
+
+if len(sys.argv) != 2:
+    print(f"Usage: {sys.argv[0]} cluster")
+    sys.exit(1)
+
+os.chdir(os.path.dirname(__file__))
+cluster = sys.argv[1]
+
+with open("minio.yaml", "rb") as f:
+    c1 = hashlib.sha256(f.read()).hexdigest()
+
+target = f"{cluster}/{BUCKET}/drenv/addons/minio/test"
+
+print(f"Copying minio.yaml to {target}")
+mc.cp("minio.yaml", target)
+
+print("cluster s3 store contents:")
+print(mc.ls(cluster, recursive=True))
+
+print(f"Getting {target} data")
+data = mc.cat(target)
+
+print(f"Removing {target}")
+mc.rm(target)
+
+print("cluster s3 store contents:")
+print(mc.ls(cluster, recursive=True))
+
+print("Comparing checksums")
+c2 = hashlib.sha256(data).hexdigest()
+if c1 != c2:
+    raise RuntimeError(f"Checksum mismatch: {c1} != {c2}")
