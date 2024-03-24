@@ -63,6 +63,17 @@ environment.
    for the details.
    Tested with version v1.0.1.
 
+1. Install `mc` tool
+
+   ```
+   curl -L -o /tmp/mc https://dl.min.io/client/mc/release/linux-amd64/mc
+   sudo install /tmp/mc /usr/local/bin
+   rm /tmp/mc
+   ```
+
+   For more info see
+   [MinIO Client Quickstart](https://min.io/docs/minio/linux/reference/minio-mc.html#quickstart)
+
 1. Install the `kustomize` tool. See
    [kustomize installation](https://kubectl.docs.kubernetes.io/installation/kustomize/)
    for the details.
