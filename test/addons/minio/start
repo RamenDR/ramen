@@ -14,6 +14,9 @@ from drenv import minio
 MINIO_ACCESS_KEY = "minio"
 MINIO_SECRET_KEY = "minio123"
 
+# Used by ramen and velero.
+BUCKET = "bucket"
+
 
 def deploy(cluster):
     print("Deploying minio")
@@ -40,6 +43,9 @@ def wait(cluster):
         MINIO_ACCESS_KEY,
         MINIO_SECRET_KEY,
     )
+
+    print(f"Creating bucket '{cluster}/{BUCKET}'")
+    mc.mb(f"{cluster}/{BUCKET}", ignore_existing=True)
 
 
 if len(sys.argv) != 2:
