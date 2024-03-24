@@ -16,3 +16,14 @@ def remove_alias(cluster):
     Remove mc alias for cluster.
     """
     commands.run("mc", "alias", "remove", cluster)
+
+
+def mb(*targets, ignore_existing=False):
+    """
+    Create one of more buckets
+    """
+    cmd = ["mc", "mb"]
+    if ignore_existing:
+        cmd.append("--ignore-existing")
+    cmd.extend(targets)
+    commands.run(*cmd)
