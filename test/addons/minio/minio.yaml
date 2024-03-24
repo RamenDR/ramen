@@ -49,6 +49,10 @@ spec:
         - name: minio
           image: quay.io/minio/minio:RELEASE.2024-03-15T01-07-19Z
           imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              # Typical usage is 150Mi
+              memory: "300Mi"
           args:
             - server
             - /storage
