@@ -120,6 +120,10 @@ type KubeObjectProtectionSpec struct {
 	// Recipe parameter definitions
 	//+optional
 	RecipeParameters map[string][]string `json:"recipeParameters,omitempty"`
+
+	// Label selector to identify all the kube objects that need DR protection.
+	// +optional
+	KubeObjectSelector *metav1.LabelSelector `json:"kubeObjectSelector,omitempty"`
 }
 
 type RecipeRef struct {
