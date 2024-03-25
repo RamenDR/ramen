@@ -162,14 +162,16 @@ def service_address(namespace):
     return f"{SERVICE}.{namespace}.svc.clusterset.local"
 
 
-def wait_for_dns(cluster, namespace):
+def wait_for_dns(cluster, namespace, timeout=240):
     """
     Unfortunatley even when we wait for eveything, DNS lookup can fail for more
     than 60 seconds after deploying submariner on a new cluster. After the
     initial DNS always succceeds on the first try.
+
+    We see random failures with 120 seconds timeout, trying 240.
     """
     start = time.monotonic()
-    deadline = start + 120
+    deadline = start + timeout
     dns_name = service_address(namespace)
     delay = 1
 
