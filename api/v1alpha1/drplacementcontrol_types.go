@@ -151,6 +151,13 @@ type DRPlacementControlSpec struct {
 
 	// +optional
 	KubeObjectProtection *KubeObjectProtectionSpec `json:"kubeObjectProtection,omitempty"`
+
+	// Label selector to identify all the kube objects that need DR protection.
+	// It will be passed in to the VRG when it is created
+	// +optional
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="kubeObjectSelector is immutable"
+	KubeObjectSelector metav1.LabelSelector `json:"kubeObjectSelector"`
 }
 
 // VRGResourceMeta represents the VRG resource.
