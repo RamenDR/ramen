@@ -23,6 +23,21 @@ const (
 	ActionRelocate = DRAction("Relocate")
 )
 
+// DRPCType is the type of the DRPC based on the application handle
+type DRPCType string
+
+// These are the valid values for DRPCType
+const (
+	// Managed is the DRPC type for the applications that are managed by OCM
+	Managed = DRPCType("Managed")
+
+	// Unmanaged is the DRPC type for the applications that are not managed by OCM
+	Unmanaged = DRPCType("Discovered")
+
+	// Invalid is the DRPC type for the applications that are not recognized by Ramen
+	Invalid = DRPCType("Invalid")
+)
+
 // DRState for keeping track of the DR placement
 type DRState string
 
@@ -108,6 +123,10 @@ type DRPlacementControlSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="placementRef is immutable"
 	PlacementRef v1.ObjectReference `json:"placementRef"`
 
+	// ProtectedNamespaces is a list of namespaces that are considered for protection by the DRPC.
+	// +optional
+	ProtectedNamespaces []string `json:"protectedNamespaces,omitempty"`
+
 	// DRPolicyRef is the reference to the DRPolicy participating in the DR replication for this DRPC
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="drPolicyRef is immutable"
@@ -132,6 +151,13 @@ type DRPlacementControlSpec struct {
 
 	// +optional
 	KubeObjectProtection *KubeObjectProtectionSpec `json:"kubeObjectProtection,omitempty"`
+
+	// Label selector to identify all the kube objects that need DR protection.
+	// It will be passed in to the VRG when it is created
+	// +optional
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="kubeObjectSelector is immutable"
+	KubeObjectSelector metav1.LabelSelector `json:"kubeObjectSelector"`
 }
 
 // VRGResourceMeta represents the VRG resource.
@@ -174,6 +200,7 @@ type DRPlacementControlStatus struct {
 	PreferredDecision  plrv1.PlacementDecision `json:"preferredDecision,omitempty"`
 	Conditions         []metav1.Condition      `json:"conditions,omitempty"`
 	ResourceConditions VRGConditions           `json:"resourceConditions,omitempty"`
+	DRPCType           DRPCType                `json:"drpcType,omitempty"`
 
 	// LastUpdateTime is when was the last time a condition or the overall status was updated
 	LastUpdateTime *metav1.Time `json:"lastUpdateTime,omitempty"`

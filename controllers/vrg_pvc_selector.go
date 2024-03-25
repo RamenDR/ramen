@@ -14,6 +14,17 @@ type PvcSelector struct {
 	NamespaceNames []string
 }
 
+// pvcSelector depends on vrg.Namespace, vrg.Spec.KubeObjectProtection.RecipeRef and ramenConfig.MultiNamespace.FeatureEnabled
+// We have 8 scenarios to consider:
+// VRG NS != admin NS, RecipeRef == nil, MultiNamespace=N. Result: [vrg.Namespace]. Current Default.
+// VRG NS != admin NS, RecipeRef == nil, MultiNamespace=Y. Result: Error
+// VRG NS != admin NS, RecipeRef != nil, MultiNamespace=N. Result: Error
+// VRG NS != admin NS, RecipeRef != nil, MultiNamespace=Y. Result: Error
+// VRG NS == admin NS, RecipeRef != nil, MultiNamespace=Y. Result: vrg.Spec.ProtectedNamespaces.
+// VRG NS == admin NS, RecipeRef == nil, MultiNamespace=Y. Result: Error.
+// VRG NS == admin NS, RecipeRef != nil, MultiNamespace=N. Result: vrg.Spec.ProtectedNamespaces.
+// VRG NS == admin NS, RecipeRef == nil, MultiNamespace=N. Result: Error.
+
 func pvcNamespaceNamesDefault(vrg ramen.VolumeReplicationGroup) []string {
 	return []string{vrg.Namespace}
 }

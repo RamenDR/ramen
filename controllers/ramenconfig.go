@@ -240,9 +240,18 @@ func NamespaceName() string {
 	return os.Getenv("POD_NAMESPACE")
 }
 
-func adminNamespaceNames() []string {
-	return []string{NamespaceName()}
+func adminNamespaceNames(config ramendrv1alpha1.RamenConfig) []string {
+	return []string{ramenOpsNamespace(config), NamespaceName()}
 }
+
+func ramenOpsNamespace(config ramendrv1alpha1.RamenConfig) string {
+	if config.RamenOpsNamespace != "" {
+		return config.RamenOpsNamespace
+	}
+
+	return ramendrv1alpha1.DefaultRamenOpsNamespace
+}
+
 
 func drClusterOperatorChannelNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
 	if ramenConfig.DrClusterOperator.ChannelName == "" {

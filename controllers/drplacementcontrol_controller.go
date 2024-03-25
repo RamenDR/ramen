@@ -708,6 +708,8 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// Save a copy of the instance status to be used for the VRG status update comparison
 	drpc.Status.DeepCopyInto(&r.savedInstanceStatus)
 
+	setDRPCType(drpc)
+
 	ensureDRPCConditionsInited(&drpc.Status.Conditions, drpc.Generation, "Initialization")
 
 	placementObj, err := getPlacementOrPlacementRule(ctx, r.Client, drpc, logger)
@@ -1290,6 +1292,16 @@ func (r *DRPlacementControlReconciler) updateAndSetOwner(
 	}
 
 	return r.setDRPCOwner(ctx, drpc, usrPlacement, log)
+}
+
+func setDRPCType(drpc *rmn.DRPlacementControl) {
+	if len(drpc.Spec.ProtectedNamespaces) > 0 {
+		drpc.Status.DRPCType = rmn.Unmanaged
+
+		return
+	}
+
+	drpc.Status.DRPCType = rmn.Managed
 }
 
 func getPlacementOrPlacementRule(
