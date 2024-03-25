@@ -6,6 +6,7 @@
 import json
 import os
 import sys
+import time
 
 import drenv
 from drenv import cluster
@@ -122,13 +123,32 @@ def label_cluster(cluster, hub):
 
 
 def wait_for_managed_cluster(cluster, hub):
-    print("Waiting until managed cluster is available")
+    # This takes less then a second, but sometimes it never complete, even if waiting 10 minutes.
+    start = time.monotonic()
+
+    print(f"Waiting until managed cluster '{cluster}' hubAcceptsClient is true")
     kubectl.wait(
         f"managedcluster/{cluster}",
-        "--for=condition=ManagedClusterConditionAvailable",
-        "--timeout=600s",
+        "--for=jsonpath={.spec.hubAcceptsClient}=true",
+        "--timeout=60s",
         context=hub,
     )
+
+    for condition in (
+        "HubAcceptedManagedCluster",
+        "ManagedClusterJoined",
+        "ManagedClusterConditionAvailable",
+    ):
+        print(f"Waiting for managed cluster '{cluster}' condition {condition}")
+        kubectl.wait(
+            f"managedcluster/{cluster}",
+            f"--for=condition={condition}",
+            "--timeout=60s",
+            context=hub,
+        )
+
+    elapsed = time.monotonic() - start
+    print(f"managed cluster '{cluster}' became available in {elapsed:.2f} seconds")
 
 
 def enable_addons(cluster, hub):
