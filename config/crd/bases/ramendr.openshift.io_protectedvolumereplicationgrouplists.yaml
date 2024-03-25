@@ -255,6 +255,12 @@ spec:
                             PrepareForFinalSync when set, it tells VRG to prepare for the final sync from source to destination
                             cluster. Final sync is needed for relocation only, and for VolSync only
                           type: boolean
+                        protectedNamespaces:
+                          description: ProtectedNamespaces is a list of namespaces
+                            that are considered for protection by the DRPC.
+                          items:
+                            type: string
+                          type: array
                         pvcSelector:
                           description: |-
                             Label selector to identify all the PVCs that are in this group

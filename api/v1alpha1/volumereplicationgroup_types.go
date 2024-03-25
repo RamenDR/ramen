@@ -185,6 +185,10 @@ type VolumeReplicationGroupSpec struct {
 	Action VRGAction `json:"action,omitempty"`
 	//+optional
 	KubeObjectProtection *KubeObjectProtectionSpec `json:"kubeObjectProtection,omitempty"`
+
+	// ProtectedNamespaces is a list of namespaces that are considered for protection by the DRPC.
+	//+optional
+	ProtectedNamespaces []string `json:"protectedNamespaces,omitempty"`
 }
 
 type Identifier struct {

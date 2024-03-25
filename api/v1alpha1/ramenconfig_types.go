@@ -24,6 +24,8 @@ const (
 	DRHubType ControllerType = "dr-hub"
 )
 
+const DefaultRamenOpsNamespace = "ramen-ops"
+
 // When naming a S3 bucket, follow the bucket naming rules at:
 // https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
 // - Bucket names must be between 3 and 63 characters long.
@@ -155,6 +157,9 @@ type RamenConfig struct {
 
 	// Unprotect deleted or deselected PVCs
 	VolumeUnprotectionEnabled bool `json:"volumeUnprotectionEnabled,omitempty"`
+
+	// RamenOpsNamespace is the namespace where resources for unmanaged apps are created
+	RamenOpsNamespace string `json:"ramenOpsNamespace,omitempty"`
 }
 
 func init() {

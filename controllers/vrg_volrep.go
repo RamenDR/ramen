@@ -1202,11 +1202,14 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 		},
 	}
 
-	// Let VRG receive notification for any changes to VolumeReplication CR
-	// created by VRG.
-	if err := ctrl.SetControllerReference(v.instance, volRep, v.reconciler.Scheme); err != nil {
-		return fmt.Errorf("failed to set owner reference to VolumeReplication resource (%s/%s), %w",
-			volRep.Name, volRep.Namespace, err)
+	if !vrgInAdminNamespace(v.instance, v.ramenConfig) {
+		// This is to keep existing behavior of ramen.
+		// Set the owner reference only for the VRs which are in the same namespace as the VRG and
+		// when VRG is not in the admin namespace.
+		if err := ctrl.SetControllerReference(v.instance, volRep, v.reconciler.Scheme); err != nil {
+			return fmt.Errorf("failed to set owner reference to VolumeReplication resource (%s/%s), %w",
+				volRep.Name, volRep.Namespace, err)
+		}
 	}
 
 	v.log.Info("Creating VolumeReplication resource", "resource", volRep)

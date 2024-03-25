@@ -15,7 +15,6 @@ import (
 	"github.com/ramendr/ramen/controllers/kubeobjects"
 	"github.com/ramendr/ramen/controllers/util"
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
-	"golang.org/x/exp/slices"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -176,20 +175,17 @@ func recipeNamespacesValidate(recipeElements RecipeElements, vrg ramen.VolumeRep
 	}
 
 	if !ramenConfig.MultiNamespace.FeatureEnabled {
-		return fmt.Errorf("extra-VRG namespaces %v require feature be enabled", extraVrgNamespaceNames)
+		return fmt.Errorf("requested protection of other namespaces when MultiNamespace feature is disabled. %v: %v",
+			"other namespaces", extraVrgNamespaceNames)
 	}
 
-	adminNamespaceNames := adminNamespaceNames()
-	if !slices.Contains(adminNamespaceNames, vrg.Namespace) {
-		return fmt.Errorf("extra-VRG namespaces %v require VRG's namespace, %v, be an admin one %v",
-			extraVrgNamespaceNames,
+	if !vrgInAdminNamespace(&vrg, &ramenConfig) {
+		adminNamespaceNames := adminNamespaceNames(ramenConfig)
+		return fmt.Errorf("vrg namespace: %v needs to be in admin namespaces: %v to protect other namespaces: %v",
 			vrg.Namespace,
 			adminNamespaceNames,
+			extraVrgNamespaceNames,
 		)
-	}
-
-	if vrg.Spec.Async != nil {
-		return fmt.Errorf("extra-VRG namespaces %v require VRG's async mode be disabled", extraVrgNamespaceNames)
 	}
 
 	return nil

@@ -87,6 +87,10 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 			handler.EnqueueRequestsFromMapFunc(r.pvcMapFunc),
 			builder.WithPredicates(pvcPredicateFunc()),
 		).
+		Watches(&volrep.VolumeReplication{},
+			handler.EnqueueRequestsFromMapFunc(r.VRMapFunc),
+			builder.WithPredicates(vrPredicateFunc()),
+		).
 		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.configMapFun)).
 		Owns(&volrep.VolumeReplication{})
 
@@ -126,6 +130,78 @@ func (r *VolumeReplicationGroupReconciler) pvcMapFunc(ctx context.Context, obj c
 
 	return filterPVC(r.Client, pvc,
 		log.WithValues("pvc", types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}))
+}
+
+func filterVR(reader client.Reader, vr *volrep.VolumeReplication, log logr.Logger) []reconcile.Request {
+	req := []reconcile.Request{}
+
+	var vrgs ramendrv1alpha1.VolumeReplicationGroupList
+
+	err := reader.List(context.TODO(), &vrgs)
+	if err != nil {
+		log.Error(err, "Failed to get list of VolumeReplicationGroup resources")
+
+		return req
+	}
+
+	for _, vrg := range vrgs.Items {
+		log1 := log.WithValues("vrg", vrg.Name)
+
+		if vrg.Spec.ProtectedNamespaces == nil {
+			continue
+		}
+
+		if slices.Contains(vrg.Spec.ProtectedNamespaces, vr.Namespace) {
+			log1.Info("Found VolumeReplicationGroup with matching namespace",
+				"vrg", vrg.Name, "namespace", vr.Namespace)
+
+			req = append(req, reconcile.Request{NamespacedName: types.NamespacedName{
+				Name:      vrg.Name,
+				Namespace: vrg.Namespace,
+			}})
+
+			break
+		}
+	}
+
+	return req
+}
+
+func vrPredicateFunc() predicate.Funcs {
+	log := ctrl.Log.WithName("vrmap").WithName("VolumeReplicationGroup")
+	vrPredicate := predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			log.Info("Create event for volume replication")
+
+			return true
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			log.Info("Update event for VolRep")
+
+			return true
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			log.Info("Update event for VolRep")
+
+			return true
+		},
+	}
+
+	return vrPredicate
+}
+
+func (r *VolumeReplicationGroupReconciler) VRMapFunc(ctx context.Context, obj client.Object) []reconcile.Request {
+	log := ctrl.Log.WithName("vrmap").WithName("VolumeReplicationGroup")
+
+	vr, ok := obj.(*volrep.VolumeReplication)
+	if !ok {
+		log.Info("map function received non-vr resource")
+
+		return []reconcile.Request{}
+	}
+
+	return filterVR(r.Client, vr,
+		log.WithValues("vr", types.NamespacedName{Name: vr.Name, Namespace: vr.Namespace}))
 }
 
 func (r *VolumeReplicationGroupReconciler) configMapFun(
@@ -1283,4 +1359,10 @@ func removeString(values []string, s string) []string {
 	}
 
 	return result
+}
+
+func vrgInAdminNamespace(vrg *ramendrv1alpha1.VolumeReplicationGroup, ramenConfig *ramendrv1alpha1.RamenConfig) bool {
+	adminNamespaceNames := adminNamespaceNames(*ramenConfig)
+
+	return slices.Contains(adminNamespaceNames, vrg.Namespace)
 }

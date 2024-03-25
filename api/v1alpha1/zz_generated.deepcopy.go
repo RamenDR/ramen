@@ -206,6 +206,11 @@ func (in *DRPlacementControlList) DeepCopyObject() runtime.Object {
 func (in *DRPlacementControlSpec) DeepCopyInto(out *DRPlacementControlSpec) {
 	*out = *in
 	out.PlacementRef = in.PlacementRef
+	if in.ProtectedNamespaces != nil {
+		in, out := &in.ProtectedNamespaces, &out.ProtectedNamespaces
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	out.DRPolicyRef = in.DRPolicyRef
 	in.PVCSelector.DeepCopyInto(&out.PVCSelector)
 	if in.KubeObjectProtection != nil {
@@ -1046,6 +1051,11 @@ func (in *VolumeReplicationGroupSpec) DeepCopyInto(out *VolumeReplicationGroupSp
 		in, out := &in.KubeObjectProtection, &out.KubeObjectProtection
 		*out = new(KubeObjectProtectionSpec)
 		(*in).DeepCopyInto(*out)
+	}
+	if in.ProtectedNamespaces != nil {
+		in, out := &in.ProtectedNamespaces, &out.ProtectedNamespaces
+		*out = make([]string, len(*in))
+		copy(*out, *in)
 	}
 }
 

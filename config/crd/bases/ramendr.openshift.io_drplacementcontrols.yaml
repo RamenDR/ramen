@@ -210,6 +210,12 @@ spec:
                 description: PreferredCluster is the cluster name that the user preferred
                   to run the application on
                 type: string
+              protectedNamespaces:
+                description: ProtectedNamespaces is a list of namespaces that are
+                  considered for protection by the DRPC.
+                items:
+                  type: string
+                type: array
               pvcSelector:
                 description: |-
                   Label selector to identify all the PVCs that need DR protection.

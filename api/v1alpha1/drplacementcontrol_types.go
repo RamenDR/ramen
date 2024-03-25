@@ -108,6 +108,10 @@ type DRPlacementControlSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="placementRef is immutable"
 	PlacementRef v1.ObjectReference `json:"placementRef"`
 
+	// ProtectedNamespaces is a list of namespaces that are considered for protection by the DRPC.
+	// +optional
+	ProtectedNamespaces []string `json:"protectedNamespaces,omitempty"`
+
 	// DRPolicyRef is the reference to the DRPolicy participating in the DR replication for this DRPC
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="drPolicyRef is immutable"
