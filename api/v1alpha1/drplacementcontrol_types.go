@@ -23,6 +23,21 @@ const (
 	ActionRelocate = DRAction("Relocate")
 )
 
+// DRPCType is the type of the DRPC based on the application handle
+type DRPCType string
+
+// These are the valid values for DRPCType
+const (
+	// Managed is the DRPC type for the applications that are managed by OCM
+	Managed = DRPCType("Managed")
+
+	// Unmanaged is the DRPC type for the applications that are not managed by OCM
+	Unmanaged = DRPCType("Discovered")
+
+	// Invalid is the DRPC type for the applications that are not recognized by Ramen
+	Invalid = DRPCType("Invalid")
+)
+
 // DRState for keeping track of the DR placement
 type DRState string
 
@@ -178,6 +193,7 @@ type DRPlacementControlStatus struct {
 	PreferredDecision  plrv1.PlacementDecision `json:"preferredDecision,omitempty"`
 	Conditions         []metav1.Condition      `json:"conditions,omitempty"`
 	ResourceConditions VRGConditions           `json:"resourceConditions,omitempty"`
+	DRPCType           DRPCType                `json:"drpcType,omitempty"`
 
 	// LastUpdateTime is when was the last time a condition or the overall status was updated
 	LastUpdateTime *metav1.Time `json:"lastUpdateTime,omitempty"`

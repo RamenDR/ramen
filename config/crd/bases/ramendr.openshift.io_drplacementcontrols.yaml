@@ -348,6 +348,10 @@ spec:
                   - type
                   type: object
                 type: array
+              drpcType:
+                description: DRPCType is the type of the DRPC based on the application
+                  handle
+                type: string
               lastGroupSyncBytes:
                 description: |-
                   lastGroupSyncBytes is the total bytes transferred from the most recent
