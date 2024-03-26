@@ -128,6 +128,12 @@ func vrgStatusStateUpdate(vrgS3, vrgK8s *ramen.VolumeReplicationGroup) {
 		vrgS3.ResourceVersion = vrgK8s.ResourceVersion
 		vrgS3.Status.LastUpdateTime = vrgK8s.Status.LastUpdateTime
 	}
+
+	if vrgS3.Status.State == "" && vrgK8s.Status.State == ramen.UnknownState {
+		vrgS3.Status.State = ramen.UnknownState
+		vrgS3.ResourceVersion = vrgK8s.ResourceVersion
+		vrgS3.Status.LastUpdateTime = vrgK8s.Status.LastUpdateTime
+	}
 }
 
 var _ = Describe("ProtectedVolumeReplicationGroupListController", func() {
