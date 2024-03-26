@@ -6,6 +6,7 @@
 *.dylib
 /bin
 /testbin/*
+e2e/e2e
 
 # Test binary, build with `go test -c`
 *.test
@@ -48,3 +49,7 @@ ramenctl/build
 # Generated disk images
 *.qcow2
 *.iso
+
+# e2e test config files
+e2e/config.yaml
+e2e/**/kubeconfig

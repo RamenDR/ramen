@@ -1,0 +1,7 @@
+clusters:
+  "hub":
+    kubeconfigpath: "kubeconfig/hub/kubeconfig"
+  "c1":
+    kubeconfigpath: "kubeconfig/c1/kubeconfig"
+  "c2":
+    kubeconfigpath: "kubeconfig/c2/kubeconfig"
