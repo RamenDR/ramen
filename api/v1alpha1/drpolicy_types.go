@@ -9,8 +9,6 @@ import (
 
 // DRPolicySpec defines the desired state of DRPolicy
 type DRPolicySpec struct {
-	// Important: Run "make" to regenerate code after modifying this file
-
 	// scheduling Interval for replicating Persistent Volume
 	// data to a peer cluster. Interval is typically in the
 	// form <num><m,h,d>. Here <num> is a number, 'm' means
@@ -42,8 +40,6 @@ type DRPolicySpec struct {
 }
 
 // DRPolicyStatus defines the observed state of DRPolicy
-// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-// Important: Run "make" to regenerate code after modifying this file
 type DRPolicyStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }

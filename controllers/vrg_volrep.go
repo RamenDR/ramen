@@ -2260,7 +2260,7 @@ func cleanupPVCForRestore(pvc *corev1.PersistentVolumeClaim) {
 //nolint:funlen
 func (v *VRGInstance) aggregateVolRepDataReadyCondition() *metav1.Condition {
 	if len(v.volRepPVCs) == 0 {
-		return nil
+		return v.vrgReadyStatus(VRGConditionReasonUnused)
 	}
 
 	vrgReady := len(v.instance.Status.ProtectedPVCs) != 0
@@ -2309,7 +2309,7 @@ func (v *VRGInstance) aggregateVolRepDataReadyCondition() *metav1.Condition {
 	}
 
 	if vrgReady {
-		return v.vrgReadyStatus()
+		return v.vrgReadyStatus(VRGConditionReasonReady)
 	}
 
 	if vrgProgressing {
@@ -2332,7 +2332,8 @@ func (v *VRGInstance) aggregateVolRepDataReadyCondition() *metav1.Condition {
 //nolint:funlen,gocognit,cyclop
 func (v *VRGInstance) aggregateVolRepDataProtectedCondition() *metav1.Condition {
 	if len(v.volRepPVCs) == 0 {
-		return nil
+		return newVRGAsDataProtectedUnusedCondition(v.instance.Generation,
+			"No PVCs are protected using VolumeReplication scheme")
 	}
 
 	vrgProtected := true
@@ -2409,7 +2410,8 @@ func (v *VRGInstance) aggregateVolRepDataProtectedCondition() *metav1.Condition 
 // the VRG level condition to true.
 func (v *VRGInstance) aggregateVolRepClusterDataProtectedCondition() *metav1.Condition {
 	if len(v.volRepPVCs) == 0 {
-		return nil
+		return newVRGClusterDataProtectedUnusedCondition(v.instance.Generation,
+			"No PVCs are protected using VolumeReplication scheme")
 	}
 
 	atleastOneProtecting := false

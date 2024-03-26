@@ -105,6 +105,7 @@ func ConditionSetFirstFalseOrLastTrue(
 			return
 		}
 
+		// TODO: Unknown status?
 		trueSubConditions = append(trueSubConditions, subCondition)
 	}
 
