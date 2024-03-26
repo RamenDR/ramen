@@ -12,6 +12,9 @@ from drenv import cluster
 from drenv import clusteradm
 from drenv import kubectl
 
+# Use the latest relase.
+VERSION = "default"
+
 ADDONS = (
     {
         "name": "application-manager",
@@ -26,6 +29,7 @@ ADDONS = (
         "deployment": "config-policy-controller",
     },
 )
+
 
 ADDONS_NAMESPACE = "open-cluster-management-agent-addon"
 HUB_NAMESPACE = "open-cluster-management-hub"
@@ -90,6 +94,7 @@ def join_cluster(cluster, hub):
         hub_token=hub_info["hub-token"],
         hub_apiserver=hub_info["hub-apiserver"],
         cluster_name=cluster,
+        bundle_version=VERSION,
         wait=True,
         context=cluster,
     )
