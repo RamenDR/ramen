@@ -222,7 +222,7 @@ func ConfigMapGet(
 	if err = apiReader.Get(
 		ctx,
 		types.NamespacedName{
-			Namespace: NamespaceName(),
+			Namespace: RamenOperatorNamespace(),
 			Name:      configMapName,
 		},
 		configMap,
@@ -236,7 +236,7 @@ func ConfigMapGet(
 	return
 }
 
-func NamespaceName() string {
+func RamenOperatorNamespace() string {
 	return os.Getenv("POD_NAMESPACE")
 }
 
@@ -262,7 +262,7 @@ func drClusterOperatorPackageNameOrDefault(ramenConfig *ramendrv1alpha1.RamenCon
 
 func drClusterOperatorNamespaceNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
 	if ramenConfig.DrClusterOperator.NamespaceName == "" {
-		return NamespaceName()
+		return RamenOperatorNamespace()
 	}
 
 	return ramenConfig.DrClusterOperator.NamespaceName
@@ -278,7 +278,7 @@ func drClusterOperatorCatalogSourceNameOrDefault(ramenConfig *ramendrv1alpha1.Ra
 
 func drClusterOperatorCatalogSourceNamespaceNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
 	if ramenConfig.DrClusterOperator.CatalogSourceNamespaceName == "" {
-		return NamespaceName()
+		return RamenOperatorNamespace()
 	}
 
 	return ramenConfig.DrClusterOperator.CatalogSourceNamespaceName
