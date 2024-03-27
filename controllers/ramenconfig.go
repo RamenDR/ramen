@@ -240,8 +240,21 @@ func RamenOperatorNamespace() string {
 	return os.Getenv("POD_NAMESPACE")
 }
 
-func adminNamespaceNames() []string {
-	return []string{NamespaceName()}
+func RamenOperandsNamespace(config ramendrv1alpha1.RamenConfig) string {
+	return config.RamenOpsNamespace
+}
+
+// vrgAdminNamespaceNames returns the namespace names where the vrg objects can
+// be created for multi namespace protection.
+// The list includes the namespace where the ramen operator pod is running.
+// This is to keep backward compatibility with existing multi namespace protection.
+func vrgAdminNamespaceNames(config ramendrv1alpha1.RamenConfig) []string {
+	return []string{RamenOperandsNamespace(config), RamenOperatorNamespace()}
+}
+
+// drpcAdminNamespaceNames returns the namespace names where the drpc objects can be created for multi namespace protection. The list does not include the namespace where the ramen operator pod is running. The DRPC must be created only in RamenOperandsNamespace for multi namespace protection.
+func drpcAdminNamespaceNames(config ramendrv1alpha1.RamenConfig) []string {
+	return []string{RamenOperandsNamespace(config)}
 }
 
 func drClusterOperatorChannelNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {

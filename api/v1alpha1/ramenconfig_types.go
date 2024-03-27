@@ -155,6 +155,9 @@ type RamenConfig struct {
 
 	// Unprotect deleted or deselected PVCs
 	VolumeUnprotectionEnabled bool `json:"volumeUnprotectionEnabled,omitempty"`
+
+	// RamenOpsNamespace is the namespace where resources for unmanaged apps are created
+	RamenOpsNamespace string `json:"ramenOpsNamespace,omitempty"`
 }
 
 func init() {
