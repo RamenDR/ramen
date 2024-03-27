@@ -13,7 +13,14 @@ type PvcSelector struct {
 	NamespaceNames []string
 }
 
+// pvcNamespaceNamesDefault returns the default pvc namespaces for the VRG.
+// If the VRG namespace is the Ramen operands namespace, then the protected namespaces are used.
+// In the else cases, vrg in application namespace or the ramen operator namespace, the VRG namespace is used.
 func pvcNamespaceNamesDefault(vrg ramen.VolumeReplicationGroup, ramenConfig ramen.RamenConfig) []string {
+	if vrg.Namespace == RamenOperandsNamespace(ramenConfig) {
+		return *vrg.Spec.ProtectedNamespaces
+	}
+
 	return []string{vrg.Namespace}
 }
 

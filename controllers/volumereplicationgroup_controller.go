@@ -69,7 +69,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
 	)
 	objectToReconcileRequestsMapper := objectToReconcileRequestsMapper{reader: r.Client, log: ctrl.Log}
-	builder := ctrl.NewControllerManagedBy(mgr).
+	ctrlBuilder := ctrl.NewControllerManagedBy(mgr).
 		WithOptions(ctrlcontroller.Options{
 			MaxConcurrentReconciles: getMaxConcurrentReconciles(r.Log),
 			RateLimiter:             rateLimiter,
@@ -87,12 +87,16 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 			handler.EnqueueRequestsFromMapFunc(r.pvcMapFunc),
 			builder.WithPredicates(pvcPredicateFunc()),
 		).
+		Watches(&volrep.VolumeReplication{},
+			handler.EnqueueRequestsFromMapFunc(r.VRMapFunc),
+			builder.WithPredicates(rmnutil.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
+		).
 		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.configMapFun)).
 		Owns(&volrep.VolumeReplication{})
 
 	if !ramenConfig.VolSync.Disabled {
-		builder.Owns(&volsyncv1alpha1.ReplicationDestination{}).
-			Owns(&volsyncv1alpha1.ReplicationSource{})
+		r.Log.Info("VolSync enabled; adding owns and watches")
+		ctrlBuilder = r.addVolsyncOwnsAndWatches(ctrlBuilder)
 	} else {
 		r.Log.Info("VolSync disabled; don't own volsync resources")
 	}
@@ -100,13 +104,13 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 	r.kubeObjects = velero.RequestsManager{}
 	if !ramenConfig.KubeObjectProtection.Disabled {
 		r.Log.Info("Kube object protection enabled; watch kube objects requests")
-		recipesWatch(builder, objectToReconcileRequestsMapper)
-		kubeObjectsRequestsWatch(builder, r.Scheme, r.kubeObjects)
+		recipesWatch(ctrlBuilder, objectToReconcileRequestsMapper)
+		kubeObjectsRequestsWatch(ctrlBuilder, r.Scheme, r.kubeObjects)
 	} else {
 		r.Log.Info("Kube object protection disabled; don't watch kube objects requests")
 	}
 
-	return builder.Complete(r)
+	return ctrlBuilder.Complete(r)
 }
 
 type objectToReconcileRequestsMapper struct {
@@ -496,6 +500,7 @@ func (v *VRGInstance) requeue() {
 	v.result.Requeue = true
 }
 
+// nolint: cyclop
 func (v *VRGInstance) processVRG() ctrl.Result {
 	if err := v.validateVRGState(); err != nil {
 		// No requeue, as there is no reconcile till user changes desired spec to a valid value
@@ -507,6 +512,13 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 	if err := v.validateVRGMode(); err != nil {
 		// No requeue, as there is no reconcile till user changes desired spec to a valid value
 		return v.invalid(err, "VolumeReplicationGroup mode is invalid", false)
+	}
+
+	if v.instance.Spec.ProtectedNamespaces != nil && len(*v.instance.Spec.ProtectedNamespaces) > 0 {
+		if v.instance.Namespace != RamenOperandsNamespace(*v.ramenConfig) {
+			return v.invalid(fmt.Errorf("VolumeReplicationGroup is not allowed to protect namespaces"),
+				"VolumeReplicationGroup is not in the admin namespace", false)
+		}
 	}
 
 	if err := RecipeElementsGet(
@@ -1283,4 +1295,102 @@ func removeString(values []string, s string) []string {
 	}
 
 	return result
+}
+
+func vrgInAdminNamespace(vrg *ramendrv1alpha1.VolumeReplicationGroup, ramenConfig *ramendrv1alpha1.RamenConfig) bool {
+	vrgAdminNamespaceNames := vrgAdminNamespaceNames(*ramenConfig)
+
+	return slices.Contains(vrgAdminNamespaceNames, vrg.Namespace)
+}
+
+func filterVRGDependentObjects(reader client.Reader, obj client.Object, log logr.Logger) []reconcile.Request {
+	req := []reconcile.Request{}
+
+	var vrgs ramendrv1alpha1.VolumeReplicationGroupList
+
+	err := reader.List(context.TODO(), &vrgs)
+	if err != nil {
+		log.Error(err, "Failed to get list of VolumeReplicationGroup resources")
+
+		return req
+	}
+
+	for _, vrg := range vrgs.Items {
+		log1 := log.WithValues("vrg", vrg.Name)
+
+		if vrg.Spec.ProtectedNamespaces == nil || len(*vrg.Spec.ProtectedNamespaces) == 0 {
+			continue
+		}
+
+		if slices.Contains(*vrg.Spec.ProtectedNamespaces, obj.GetNamespace()) {
+			log1.Info("Found VolumeReplicationGroup with matching namespace",
+				"vrg", vrg.Name, "namespace", obj.GetNamespace())
+
+			req = append(req, reconcile.Request{NamespacedName: types.NamespacedName{
+				Name:      vrg.Name,
+				Namespace: vrg.Namespace,
+			}})
+
+			break
+		}
+	}
+
+	return req
+}
+
+func (r *VolumeReplicationGroupReconciler) VRMapFunc(ctx context.Context, obj client.Object) []reconcile.Request {
+	log := ctrl.Log.WithName("vrmap").WithName("VolumeReplicationGroup")
+
+	vr, ok := obj.(*volrep.VolumeReplication)
+	if !ok {
+		log.Info("map function received non-vr resource")
+
+		return []reconcile.Request{}
+	}
+
+	return filterVRGDependentObjects(r.Client, obj,
+		log.WithValues("vr", types.NamespacedName{Name: vr.Name, Namespace: vr.Namespace}))
+}
+
+func (r *VolumeReplicationGroupReconciler) RDMapFunc(ctx context.Context, obj client.Object) []reconcile.Request {
+	log := ctrl.Log.WithName("rdmap").WithName("VolumeReplicationGroup")
+
+	rd, ok := obj.(*volsyncv1alpha1.ReplicationDestination)
+	if !ok {
+		log.Info("map function received not a replication destination resource")
+
+		return []reconcile.Request{}
+	}
+
+	return filterVRGDependentObjects(r.Client, obj,
+		log.WithValues("rd", types.NamespacedName{Name: rd.Name, Namespace: rd.Namespace}))
+}
+
+func (r *VolumeReplicationGroupReconciler) RSMapFunc(ctx context.Context, obj client.Object) []reconcile.Request {
+	log := ctrl.Log.WithName("rsmap").WithName("VolumeReplicationGroup")
+
+	rs, ok := obj.(*volsyncv1alpha1.ReplicationSource)
+	if !ok {
+		log.Info("map function received not a replication source resource")
+
+		return []reconcile.Request{}
+	}
+
+	return filterVRGDependentObjects(r.Client, obj,
+		log.WithValues("rs", types.NamespacedName{Name: rs.Name, Namespace: rs.Namespace}))
+}
+
+func (r *VolumeReplicationGroupReconciler) addVolsyncOwnsAndWatches(ctrlBuilder *builder.Builder) *builder.Builder {
+	ctrlBuilder.Owns(&volsyncv1alpha1.ReplicationDestination{}).
+		Owns(&volsyncv1alpha1.ReplicationSource{}).
+		Watches(&volsyncv1alpha1.ReplicationDestination{},
+			handler.EnqueueRequestsFromMapFunc(r.RDMapFunc),
+			builder.WithPredicates(rmnutil.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
+		).
+		Watches(&volsyncv1alpha1.ReplicationSource{},
+			handler.EnqueueRequestsFromMapFunc(r.RSMapFunc),
+			builder.WithPredicates(rmnutil.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
+		)
+
+	return ctrlBuilder
 }
