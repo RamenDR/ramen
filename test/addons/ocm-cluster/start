@@ -12,8 +12,9 @@ from drenv import cluster
 from drenv import clusteradm
 from drenv import kubectl
 
-# Use the latest relase.
-VERSION = "default"
+# clusteradm 0.8.0 install ocm 0.13.0 which is broken on k8s.
+# This uses latest image from quay.io.
+VERSION = "latest"
 
 ADDONS = (
     {
