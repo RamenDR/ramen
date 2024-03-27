@@ -63,7 +63,7 @@ func drClusterSecretsDeploy(
 		if err := secretsUtil.AddSecretToCluster(
 			secretName,
 			clusterName,
-			NamespaceName(),
+			RamenOperatorNamespace(),
 			drClusterOperatorNamespaceNameOrDefault(rmnCfg)); err != nil {
 			return fmt.Errorf("drcluster '%v' secret add '%v': %w", clusterName, secretName, err)
 		}
@@ -127,7 +127,7 @@ func drClustersUndeploySecrets(
 			}
 
 			// Delete s3profile secret from current cluster
-			if err := secretsUtil.RemoveSecretFromCluster(s3SecretToDelete, clusterName, NamespaceName()); err != nil {
+			if err := secretsUtil.RemoveSecretFromCluster(s3SecretToDelete, clusterName, RamenOperatorNamespace()); err != nil {
 				return fmt.Errorf("drcluster '%v' s3Profile '%v' secrets delete: %w",
 					clusterName, s3SecretToDelete, err)
 			}
