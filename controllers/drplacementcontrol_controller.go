@@ -694,6 +694,8 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	drpc := &rmn.DRPlacementControl{}
 
+	var placementObj client.Object
+
 	err := r.APIReader.Get(ctx, req.NamespacedName, drpc)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -710,17 +712,47 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	ensureDRPCConditionsInited(&drpc.Status.Conditions, drpc.Generation, "Initialization")
 
-	placementObj, err := getPlacementOrPlacementRule(ctx, r.Client, drpc, logger)
-	if err != nil && !(errors.IsNotFound(err) && rmnutil.ResourceIsDeleted(drpc)) {
+	if rmnutil.ResourceIsDeleted(drpc) {
+		err := r.processDeletion(ctx, drpc, logger)
+		if err != nil {
+			logger.Info(fmt.Sprintf("Error in deleting DRPC: (%v)", err))
+
+			statusErr := r.setProgressionAndUpdate(ctx, drpc, rmn.ProgressionDeleting)
+			if statusErr != nil {
+				err = fmt.Errorf("drpc deletion failed: %w and status update failed: %w", err, statusErr)
+			}
+
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{}, nil
+	}
+
+	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
+	if err != nil {
+		statusErr := r.updateDRPCStatus(ctx, drpc, placementObj, logger)
+		if statusErr != nil {
+			err = fmt.Errorf("failed to get the ramen configMap (%w) and status update failed (%w)", err, statusErr)
+		}
+
+		return ctrl.Result{}, fmt.Errorf("failed to get the ramen configMap: %w", err)
+	}
+
+	placementObj, err = getPlacementOrPlacementRule(ctx, r.Client, drpc, logger)
+	if err != nil {
+		// If drpc is not being deleted, then getting the placement or placementRule should not fail
 		r.recordFailure(ctx, drpc, placementObj, "Error", err.Error(), logger)
 
 		return ctrl.Result{}, err
 	}
 
-	if isBeingDeleted(drpc, placementObj) {
+	if rmnutil.ResourceIsDeleted(placementObj) {
+		logger.Info("Placement or PlacementRule is being deleted, will cleanup the DRPC", "placementObj",
+			placementObj.GetName())
+
 		// DPRC depends on User PlacementRule/Placement. If DRPC or/and the User PlacementRule is deleted,
 		// then the DRPC should be deleted as well. The least we should do here is to clean up DPRC.
-		err := r.processDeletion(ctx, drpc, placementObj, logger)
+		err := r.processDeletion(ctx, drpc, logger)
 		if err != nil {
 			logger.Info(fmt.Sprintf("Error in deleting DRPC: (%v)", err))
 
@@ -763,7 +795,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{Requeue: true}, r.updateDRPCStatus(ctx, drpc, placementObj, logger)
 	}
 
-	d, err := r.createDRPCInstance(ctx, drPolicy, drpc, placementObj, logger)
+	d, err := r.createDRPCInstance(ctx, drPolicy, drpc, placementObj, ramenConfig, logger)
 	if err != nil && !errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
 		err2 := r.updateDRPCStatus(ctx, drpc, placementObj, logger)
 
@@ -869,6 +901,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 	drPolicy *rmn.DRPolicy,
 	drpc *rmn.DRPlacementControl,
 	placementObj client.Object,
+	ramenConfig *rmn.RamenConfig,
 	log logr.Logger,
 ) (*DRPCInstance, error) {
 	log.Info("Creating DRPC instance")
@@ -894,11 +927,6 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 		return nil, err
 	}
 
-	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
-	if err != nil {
-		return nil, fmt.Errorf("configmap get: %w", err)
-	}
-
 	d := &DRPCInstance{
 		reconciler:      r,
 		ctx:             ctx,
@@ -910,6 +938,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 		vrgs:            vrgs,
 		vrgNamespace:    vrgNamespace,
 		volSyncDisabled: ramenConfig.VolSync.Disabled,
+		ramenConfig:     ramenConfig,
 		mwu: rmnutil.MWUtil{
 			Client:          r.Client,
 			APIReader:       r.APIReader,
@@ -1099,7 +1128,7 @@ func getDRClusters(ctx context.Context, client client.Client, drPolicy *rmn.DRPo
 }
 
 func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
-	drpc *rmn.DRPlacementControl, placementObj client.Object, log logr.Logger,
+	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) error {
 	log.Info("Processing DRPC deletion")
 
@@ -1107,10 +1136,21 @@ func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 		return nil
 	}
 
+	placementObj, err := getPlacementOrPlacementRule(ctx, r.Client, drpc, log)
+	if err != nil && !errors.IsNotFound(err) {
+		// It is ok to not find the placementObj if the drpc is being deleted
+		return fmt.Errorf("failed to get User PlacementRule/Placement %w", err)
+	}
+
+	vrgNamespace, err := selectVRGNamespace(r.Client, log, drpc, placementObj)
+	if err != nil {
+		return fmt.Errorf("failed to select VRG namespace %w", err)
+	}
+
 	// Run finalization logic for dprc.
 	// If the finalization logic fails, don't remove the finalizer so
 	// that we can retry during the next reconciliation.
-	if err := r.finalizeDRPC(ctx, drpc, placementObj, log); err != nil {
+	if err := r.finalizeDRPC(ctx, drpc, vrgNamespace, log); err != nil {
 		return err
 	}
 
@@ -1138,7 +1178,7 @@ func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 
 //nolint:funlen,cyclop
 func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *rmn.DRPlacementControl,
-	placementObj client.Object, log logr.Logger,
+	vrgNamespace string, log logr.Logger,
 ) error {
 	log.Info("Finalizing DRPC")
 
@@ -1155,11 +1195,6 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 	err := volsync.CleanupSecretPropagation(ctx, r.Client, drpc, r.Log)
 	if err != nil {
 		return fmt.Errorf("failed to clean up volsync secret-related resources (%w)", err)
-	}
-
-	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, placementObj)
-	if err != nil {
-		return err
 	}
 
 	mwu := rmnutil.MWUtil{
