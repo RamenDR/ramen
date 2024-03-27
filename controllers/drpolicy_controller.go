@@ -276,9 +276,9 @@ func hasConflictingDRPolicy(match *ramen.DRPolicy, drclusters *ramen.DRClusterLi
 }
 
 func haveOverlappingMetroZones(d1 *ramen.DRPolicy, d2 *ramen.DRPolicy, drclusters *ramen.DRClusterList) bool {
-	d1ClusterNames := sets.NewString(util.DrpolicyClusterNames(d1)...)
+	d1ClusterNames := sets.NewString(util.DRPolicyClusterNames(d1)...)
 	d1SupportsMetro, d1MetroRegions := dRPolicySupportsMetro(d1, drclusters.Items)
-	d2ClusterNames := sets.NewString(util.DrpolicyClusterNames(d2)...)
+	d2ClusterNames := sets.NewString(util.DRPolicyClusterNames(d2)...)
 	d2SupportsMetro, d2MetroRegions := dRPolicySupportsMetro(d2, drclusters.Items)
 	commonClusters := d1ClusterNames.Intersection(d2ClusterNames)
 

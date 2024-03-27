@@ -44,7 +44,7 @@ func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 	// Make sure we have Source and Destination VRGs - Source should already have been created at this point
 	d.setProgression(rmn.ProgressionEnsuringVolSyncSetup)
 
-	vrgMWCount := d.mwu.GetVRGManifestWorkCount(rmnutil.DrpolicyClusterNames(d.drPolicy))
+	vrgMWCount := d.mwu.GetVRGManifestWorkCount(rmnutil.DRPolicyClusterNames(d.drPolicy))
 
 	const maxNumberOfVRGs = 2
 	if len(d.vrgs) != maxNumberOfVRGs || vrgMWCount != maxNumberOfVRGs {
@@ -291,7 +291,7 @@ func (d *DRPCInstance) createVolSyncDestManifestWork(clusterToSkip string) error
 		"Last State:", d.getLastDRState(), "homeCluster", clusterToSkip)
 
 	// Create or update ManifestWork for all the peers
-	for _, dstCluster := range rmnutil.DrpolicyClusterNames(d.drPolicy) {
+	for _, dstCluster := range rmnutil.DRPolicyClusterNames(d.drPolicy) {
 		if dstCluster == clusterToSkip {
 			// skip source cluster
 			continue

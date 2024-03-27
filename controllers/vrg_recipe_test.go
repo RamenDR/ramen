@@ -193,12 +193,6 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 			},
 		}
 	}
-	vrgAsyncModeEnable := func() {
-		vrg.Spec.Async = &ramen.VRGAsyncSpec{
-			SchedulingInterval: vrInterval,
-		}
-		vrg.Spec.Sync = nil
-	}
 	vrgRecipeRefDefine := func(name string) {
 		vrg.Spec.KubeObjectProtection.RecipeRef = &ramen.RecipeRef{
 			Namespace: r.Namespace,
@@ -453,22 +447,12 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 						})
 					})
 					Context("with Ramen's extra-VRG namespaces feature enabled", func() {
-						Context("with async mode enabled", func() {
-							BeforeEach(func() {
-								vrgAsyncModeEnable()
-							})
-							It("has an invalid PVC selector", func() {
-								Expect(err).To(HaveOccurred())
-							})
+						It("includes only them in its PVC selection", func() {
+							Expect(err).ToNot(HaveOccurred())
+							Expect(pvcSelector.NamespaceNames).To(ConsistOf(nsNamesSlice))
 						})
-						Context("with async mode disabled", func() {
-							It("includes only them in its PVC selection", func() {
-								Expect(err).ToNot(HaveOccurred())
-								Expect(pvcSelector.NamespaceNames).To(ConsistOf(nsNamesSlice))
-							})
-							It("lists only their PVCs in the VRG's status", func() {
-								vrgPvcsConsistOfEventually(pvcsSlice...)
-							})
+						It("lists only their PVCs in the VRG's status", func() {
+							vrgPvcsConsistOfEventually(pvcsSlice...)
 						})
 					})
 				})
