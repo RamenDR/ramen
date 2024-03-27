@@ -132,7 +132,7 @@ func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *DRClusterReconciler) drClusterConfigMapMapFunc(
 	ctx context.Context, configMap client.Object,
 ) []reconcile.Request {
-	if configMap.GetName() != HubOperatorConfigMapName || configMap.GetNamespace() != NamespaceName() {
+	if configMap.GetName() != HubOperatorConfigMapName || configMap.GetNamespace() != RamenOperatorNamespace() {
 		return []reconcile.Request{}
 	}
 
@@ -150,7 +150,7 @@ func (r *DRClusterReconciler) drClusterConfigMapMapFunc(
 }
 
 func (r *DRClusterReconciler) drClusterSecretMapFunc(ctx context.Context, obj client.Object) []reconcile.Request {
-	if obj.GetNamespace() != NamespaceName() {
+	if obj.GetNamespace() != RamenOperatorNamespace() {
 		return []reconcile.Request{}
 	}
 

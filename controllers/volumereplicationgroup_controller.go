@@ -133,7 +133,7 @@ func (r *VolumeReplicationGroupReconciler) configMapFun(
 ) []reconcile.Request {
 	log := ctrl.Log.WithName("configmap").WithName("VolumeReplicationGroup")
 
-	if configmap.GetName() != DrClusterOperatorConfigMapName || configmap.GetNamespace() != NamespaceName() {
+	if configmap.GetName() != DrClusterOperatorConfigMapName || configmap.GetNamespace() != RamenOperatorNamespace() {
 		return []reconcile.Request{}
 	}
 

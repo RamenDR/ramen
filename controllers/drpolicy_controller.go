@@ -415,7 +415,7 @@ func (r *DRPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *DRPolicyReconciler) configMapMapFunc(ctx context.Context, configMap client.Object) []reconcile.Request {
-	if configMap.GetName() != HubOperatorConfigMapName || configMap.GetNamespace() != NamespaceName() {
+	if configMap.GetName() != HubOperatorConfigMapName || configMap.GetNamespace() != RamenOperatorNamespace() {
 		return []reconcile.Request{}
 	}
 
@@ -443,7 +443,7 @@ func (r *DRPolicyReconciler) configMapMapFunc(ctx context.Context, configMap cli
 }
 
 func (r *DRPolicyReconciler) secretMapFunc(ctx context.Context, secret client.Object) []reconcile.Request {
-	if secret.GetNamespace() != NamespaceName() {
+	if secret.GetNamespace() != RamenOperatorNamespace() {
 		return []reconcile.Request{}
 	}
 
