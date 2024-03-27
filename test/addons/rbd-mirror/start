@@ -41,12 +41,11 @@ def fetch_secret_info(cluster):
     info = {}
 
     print(f"Getting mirroring info site name for cluster '{cluster}'")
-    info["name"] = kubectl.get(
-        "cephblockpools.ceph.rook.io",
-        POOL_NAME,
-        "--output=jsonpath={.status.mirroringInfo.site_name}",
-        "--namespace=rook-ceph",
-        context=cluster,
+    info["name"] = drenv.wait_for(
+        f"cephblockpools.ceph.rook.io/{POOL_NAME}",
+        output="jsonpath={.status.mirroringInfo.site_name}",
+        namespace="rook-ceph",
+        profile=cluster,
     )
 
     print(f"Getting rbd mirror boostrap peer secret name for cluster '{cluster}'")
