@@ -317,6 +317,11 @@ def test_run_non_ascii():
     assert output == "\u05d0\n"
 
 
+def test_run_no_decode():
+    data = commands.run("echo", "-n", b"\xd7\x90", decode=False)
+    assert data == b"\xd7\x90"
+
+
 def test_run_invalid_utf8():
     script = """
 import os

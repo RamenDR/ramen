@@ -57,7 +57,7 @@ class Error(Exception):
         return "".join(lines)
 
 
-def run(*args, input=None):
+def run(*args, input=None, decode=True):
     """
     Run command args and return the output of the command.
 
@@ -86,12 +86,11 @@ def run(*args, input=None):
 
     output, error = p.communicate(input=input.encode() if input else None)
 
-    output = output.decode()
     if p.returncode != 0:
         error = error.decode(errors="replace")
-        raise Error(args, error, exitcode=p.returncode, output=output)
+        raise Error(args, error, exitcode=p.returncode, output=output.decode())
 
-    return output
+    return output.decode() if decode else output
 
 
 def watch(*args, input=None):
