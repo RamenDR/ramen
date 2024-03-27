@@ -242,6 +242,21 @@ def test_watch_non_ascii():
     assert output == ["\u05d0"]
 
 
+def test_watch_keepends():
+    output = list(commands.watch("echo", "output", keepends=True))
+    assert output == ["output\n"]
+
+
+def test_watch_no_decode():
+    output = list(commands.watch("echo", b"output", decode=False))
+    assert output == [b"output"]
+
+
+def test_watch_keepends_no_decode():
+    output = list(commands.watch("echo", b"output", keepends=True, decode=False))
+    assert output == [b"output\n"]
+
+
 def test_watch_invalid_utf8():
     script = """
 import os
