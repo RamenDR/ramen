@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"time"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
@@ -745,6 +747,20 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 
 		return ctrl.Result{}, nil
+	}
+
+	err = ensureDRPCValidNamespace(drpc, ramenConfig)
+	if err != nil {
+		r.recordFailure(ctx, drpc, placementObj, "Error", err.Error(), logger)
+
+		return ctrl.Result{}, err
+	}
+
+	err = r.ensureNoConflictingDRPCs(ctx, drpc, ramenConfig, logger)
+	if err != nil {
+		r.recordFailure(ctx, drpc, placementObj, "Error", err.Error(), logger)
+
+		return ctrl.Result{}, err
 	}
 
 	drPolicy, err := r.getAndEnsureValidDRPolicy(ctx, drpc, logger)
@@ -2651,4 +2667,148 @@ func constructVRGFromView(viewVRG *rmn.VolumeReplicationGroup) *rmn.VolumeReplic
 	}
 
 	return vrg
+}
+
+func drpcInAdminNamespace(drpc *rmn.DRPlacementControl, ramenConfig *rmn.RamenConfig) bool {
+	drpcAdminNamespaceNames := drpcAdminNamespaceNames(*ramenConfig)
+
+	return slices.Contains(drpcAdminNamespaceNames, drpc.Namespace)
+}
+
+func ensureDRPCValidNamespace(drpc *rmn.DRPlacementControl, ramenConfig *rmn.RamenConfig) error {
+	if drpcInAdminNamespace(drpc, ramenConfig) {
+		if !ramenConfig.MultiNamespace.FeatureEnabled {
+			return fmt.Errorf("drpc cannot be in admin namespace when multinamespace feature is disabled")
+		}
+
+		if drpc.Spec.ProtectedNamespaces == nil || len(*drpc.Spec.ProtectedNamespaces) == 0 {
+			return fmt.Errorf("drpc in admin namespace must have protected namespaces")
+		}
+
+		drpcAdminNamespaceNames := drpcAdminNamespaceNames(*ramenConfig)
+		for _, ns := range *drpc.Spec.ProtectedNamespaces {
+			if slices.Contains(drpcAdminNamespaceNames, ns) {
+				return fmt.Errorf("admin namespace cannot be a protected namespace, admin namespace: %s", ns)
+			}
+		}
+
+		return nil
+	}
+
+	if drpc.Spec.ProtectedNamespaces != nil {
+		return fmt.Errorf("drpc in non-admin namespace cannot have protected namespaces")
+	}
+
+	return nil
+}
+
+func drpcsProtectCommonNamespace(drpcProtectedNs []string, otherDRPCProtectedNs []string) bool {
+	for _, ns := range drpcProtectedNs {
+		if slices.Contains(otherDRPCProtectedNs, ns) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (r *DRPlacementControlReconciler) getProtectedNamespaces(drpc *rmn.DRPlacementControl,
+	log logr.Logger,
+) ([]string, error) {
+	if drpc.Spec.ProtectedNamespaces != nil {
+		return *drpc.Spec.ProtectedNamespaces, nil
+	}
+
+	placementObj, err := getPlacementOrPlacementRule(context.TODO(), r.Client, drpc, log)
+	if err != nil {
+		return []string{}, err
+	}
+
+	protectedNamespaces, err := selectVRGNamespace(r.Client, log, drpc, placementObj)
+	if err != nil {
+		return []string{}, err
+	}
+
+	return []string{protectedNamespaces}, nil
+}
+
+func (r *DRPlacementControlReconciler) drpcHaveCommonClusters(ctx context.Context,
+	drpc, otherDRPC *rmn.DRPlacementControl, log logr.Logger,
+) (bool, error) {
+	drpolicy, err := r.getDRPolicy(ctx, drpc, log)
+	if err != nil {
+		return false, fmt.Errorf("failed to get DRPolicy %w", err)
+	}
+
+	otherDrpolicy, err := r.getDRPolicy(ctx, otherDRPC, log)
+	if err != nil {
+		return false, fmt.Errorf("failed to get DRPolicy %w", err)
+	}
+
+	drpolicyClusters := rmnutil.DrpolicyClusterNamesAsASet(drpolicy)
+	otherDrpolicyClusters := rmnutil.DrpolicyClusterNamesAsASet(otherDrpolicy)
+
+	return drpolicyClusters.Intersection(otherDrpolicyClusters).Len() > 0, nil
+}
+
+func (r *DRPlacementControlReconciler) twoDRPCsConflict(ctx context.Context,
+	drpc *rmn.DRPlacementControl, otherDRPC *rmn.DRPlacementControl, ramenConfig *rmn.RamenConfig, log logr.Logger,
+) error {
+	// If the drpcs don't have common clusters, they definitely don't conflict
+	common, err := r.drpcHaveCommonClusters(ctx, drpc, otherDRPC, log)
+	if err != nil {
+		return fmt.Errorf("failed to check if drpcs have common clusters (%w)", err)
+	} else if !common {
+		return nil
+	}
+
+	drpcIsInAdminNamespace := drpcInAdminNamespace(drpc, ramenConfig)
+	otherDRPCIsInAdminNamespace := drpcInAdminNamespace(otherDRPC, ramenConfig)
+
+	// we don't check for conflicts between drpcs in non-admin namespace
+	if !drpcIsInAdminNamespace && !otherDRPCIsInAdminNamespace {
+		return nil
+	}
+
+	drpcProtectedNamespaces, err := r.getProtectedNamespaces(drpc, log)
+	if err != nil {
+		return fmt.Errorf("failed to get protected namespaces for drpc: %v, %w", drpc.Name, err)
+	}
+
+	otherDRPCProtectedNamespaces, err := r.getProtectedNamespaces(otherDRPC, log)
+	if err != nil {
+		return fmt.Errorf("failed to get protected namespaces for drpc: %v, %w", otherDRPC.Name, err)
+	}
+
+	conflict := drpcsProtectCommonNamespace(drpcProtectedNamespaces, otherDRPCProtectedNamespaces)
+	if conflict {
+		return fmt.Errorf("drpc: %s and drpc: %s protect the same namespace",
+			drpc.Name, otherDRPC.Name)
+	}
+
+	return nil
+}
+
+func (r *DRPlacementControlReconciler) ensureNoConflictingDRPCs(ctx context.Context,
+	drpc *rmn.DRPlacementControl, ramenConfig *rmn.RamenConfig, log logr.Logger,
+) error {
+	drpcList := &rmn.DRPlacementControlList{}
+	if err := r.Client.List(ctx, drpcList); err != nil {
+		return fmt.Errorf("failed to list DRPlacementControls (%w)", err)
+	}
+
+	for i := range drpcList.Items {
+		otherDRPC := &drpcList.Items[i]
+
+		// Skip the drpc itself
+		if otherDRPC.Name == drpc.Name && otherDRPC.Namespace == drpc.Namespace {
+			continue
+		}
+
+		if err := r.twoDRPCsConflict(ctx, drpc, otherDRPC, ramenConfig, log); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
