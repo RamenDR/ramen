@@ -70,7 +70,7 @@ func recipeVolumesAndOptionallyWorkflowsGet(ctx context.Context, reader client.R
 ) error {
 	if vrg.Spec.KubeObjectProtection == nil {
 		*recipeElements = RecipeElements{
-			PvcSelector: pvcSelectorDefault(vrg),
+			PvcSelector: getPVCSelector(vrg, ramenConfig, nil, nil),
 		}
 
 		return nil
@@ -78,7 +78,7 @@ func recipeVolumesAndOptionallyWorkflowsGet(ctx context.Context, reader client.R
 
 	if vrg.Spec.KubeObjectProtection.RecipeRef == nil {
 		*recipeElements = RecipeElements{
-			PvcSelector:     pvcSelectorDefault(vrg),
+			PvcSelector:     getPVCSelector(vrg, ramenConfig, nil, nil),
 			CaptureWorkflow: captureWorkflowDefault(vrg),
 			RecoverWorkflow: recoverWorkflowDefault(),
 		}
@@ -101,7 +101,7 @@ func recipeVolumesAndOptionallyWorkflowsGet(ctx context.Context, reader client.R
 	}
 
 	*recipeElements = RecipeElements{
-		PvcSelector: pvcSelectorRecipeRefNonNil(recipe, vrg),
+		PvcSelector: selector,
 	}
 
 	if err := workflowsGet(recipe, recipeElements, vrg); err != nil {
