@@ -9,6 +9,8 @@ ramen:
   hub: hub
   clusters: [dr1, dr2]
   topology: regional-dr
+  features:
+    volsync: true
 
 templates:
   - name: "dr-cluster"
@@ -21,9 +23,10 @@ templates:
     addons:
       - volumesnapshots
       - csi-hostpath-driver
+    feature_gates:
+      - StatefulSetAutoDeletePVC=true
     workers:
       - addons:
-          - name: cert-manager
           - name: rook-operator
           - name: rook-cluster
           - name: rook-pool
@@ -46,7 +49,6 @@ templates:
       - addons:
           - name: ocm-hub
           - name: ocm-controller
-          - name: cert-manager
           - name: olm
       - addons:
           - name: submariner

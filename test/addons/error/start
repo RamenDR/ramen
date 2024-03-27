@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import sys
+import time
+
+duration = float(sys.argv[1])
+
+print(f"Error addon will fail in {duration} seconds")
+time.sleep(duration)
+
+sys.exit("Error addon failed")

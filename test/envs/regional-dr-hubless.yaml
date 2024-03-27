@@ -9,6 +9,8 @@ ramen:
   hub: null
   clusters: [dr1, dr2]
   topology: regional-dr
+  features:
+    volsync: true
 
 templates:
   - name: "dr-cluster"
@@ -23,7 +25,6 @@ templates:
       - csi-hostpath-driver
     workers:
       - addons:
-          - name: cert-manager
           - name: rook-operator
           - name: rook-cluster
           - name: rook-pool

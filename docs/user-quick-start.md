@@ -305,17 +305,23 @@ ramenctl config test/envs/regional-dr.yaml
 At this point *Ramen* is ready to protect workloads in your cluster, and
 you are ready for testing basic flows.
 
+Ramen basic test use the [ocm-ramen-samples repo](https://github.com/RamenDR/ocm-ramen-samples).
+Before running the tests, you need to deploy a channel pointing this
+repo:
+
+```
+kubectl apply -k https://github.com/RamenDR/ocm-ramen-samples.git/channel --context hub
+```
+
 To run basic tests using regional-dr environment run:
 
 ```
-cd ramen
 test/basic-test/run test/envs/regional-dr.yaml
 ```
 
 This test does these operations:
 
-1. Deploys an application using
-   [ocm-ramen-samples repo](https://github.com/RamenDR/ocm-ramen-samples)
+1. Deploys a busybox application
 1. Enables DR for the application
 1. Fails over the application to the other cluster
 1. Relocates the application back to the original cluster

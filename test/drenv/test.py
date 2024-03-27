@@ -27,8 +27,8 @@ OCM_SCHEDULING_DISABLE = (
 )
 
 
-def start(name, file, config_file="config.yaml"):
-    global workdir, config, parser, log
+def start(name, file):
+    global workdir, parser, log
 
     # Setting up logging and sys.excepthook must be first so any failure will
     # be reported using the logger.
@@ -42,10 +42,6 @@ def start(name, file, config_file="config.yaml"):
     # Working directory for runing the test.
     workdir = os.path.abspath(os.path.dirname(file))
 
-    config_path = os.path.join(workdir, config_file)
-    with open(config_path) as f:
-        config = yaml.safe_load(f)
-
     parser = argparse.ArgumentParser(name)
     parser.add_argument(
         "-v",
@@ -58,6 +54,12 @@ def start(name, file, config_file="config.yaml"):
         help="Prefix profile names",
     )
     parser.add_argument(
+        "-c",
+        "--config",
+        default=os.path.join(workdir, "config.yaml"),
+        help="Test configuration file",
+    )
+    parser.add_argument(
         "filename",
         help="Environment filename",
     )
@@ -68,12 +70,15 @@ def add_argument(*args, **kw):
 
 
 def parse_args():
-    global env
+    global config, env
 
     args = parser.parse_args()
     if args.verbose:
         log.setLevel(logging.DEBUG)
     debug("Parsed arguments: %s", args)
+
+    with open(args.config) as f:
+        config = yaml.safe_load(f)
 
     env = ramen.env_info(args.filename, name_prefix=args.name_prefix)
     debug("Using environment: %s", env)
@@ -100,15 +105,9 @@ def deploy():
     """
     Deploy application on cluster.
     """
-    info("Deploying channel")
+    info("Deploying application '%s'", config["name"])
     kubectl.apply(
-        f"--kustomize={config['repo']}/channel?ref={config['branch']}",
-        context=env["hub"],
-        log=debug,
-    )
-    info("Deploying subscription based application")
-    kubectl.apply(
-        f"--kustomize={config['repo']}/subscription?ref={config['branch']}",
+        f"--kustomize={config['repo']}/{config['path']}?ref={config['branch']}",
         context=env["hub"],
         log=debug,
     )
@@ -118,16 +117,9 @@ def undeploy():
     """
     Undeploy an application.
     """
-    info("Undeploying channel")
+    info("Undeploying application '%s'", config["name"])
     kubectl.delete(
-        f"--kustomize={config['repo']}/channel?ref={config['branch']}",
-        "--ignore-not-found",
-        context=env["hub"],
-        log=debug,
-    )
-    info("Undeploying subscription based application")
-    kubectl.delete(
-        f"--kustomize={config['repo']}/subscription?ref={config['branch']}",
+        f"--kustomize={config['repo']}/{config['path']}?ref={config['branch']}",
         "--ignore-not-found",
         context=env["hub"],
         log=debug,
@@ -158,20 +150,20 @@ def enable_dr():
 apiVersion: ramendr.openshift.io/v1alpha1
 kind: DRPlacementControl
 metadata:
-  name: busybox-drpc
+  name: {config['name']}-drpc
   namespace: {config['namespace']}
   labels:
     app: {config['name']}
 spec:
   preferredCluster: {cluster}
   drPolicyRef:
-    name: dr-policy
+    name: {config['dr_policy']}
   placementRef:
     kind: Placement
     name: {placement_name}
   pvcSelector:
     matchLabels:
-      appname: busybox
+      appname: {config['pvc_label']}
 """
     kubectl.apply("--filename=-", input=drpc, context=env["hub"], log=debug)
 

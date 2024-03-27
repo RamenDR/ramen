@@ -115,8 +115,23 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 
 .PHONY: lint
 lint: golangci-bin ## Run configured golangci-lint and pre-commit.sh linters against the code.
+# golangci-lint has a limitation that it doesn't lint subdirectories if
+# they are a different module.
+# see https://github.com/golangci/golangci-lint/issues/828
 	testbin/golangci-lint run ./... --config=./.golangci.yaml
+	cd api && ../testbin/golangci-lint run ./... --config=../.golangci.yaml
 	hack/pre-commit.sh
+
+.PHONY: create-rdr-env
+create-rdr-env: drenv-prereqs ## Create a new rdr environment.
+	./hack/dev-env.sh create
+
+destroy-rdr-env: drenv-prereqs ## Destroy the existing rdr environment.
+	./hack/dev-env.sh destroy
+
+.PHONY: drenv-prereqs
+drenv-prereqs: ## Check the prerequisites for the drenv tool.
+	./hack/check-drenv-prereqs.sh
 
 ##@ Tests
 

@@ -24,7 +24,7 @@ def test(cluster):
         "status",
         "deploy/nginx-deployment",
         "--namespace=nginx-example",
-        "--timeout=180s",
+        "--timeout=600s",
         context=cluster,
     )
 
@@ -47,7 +47,7 @@ def test(cluster):
         "status",
         "deploy/nginx-deployment",
         "--namespace=nginx-example",
-        "--timeout=120s",
+        "--timeout=600s",
         context=cluster,
     )
 

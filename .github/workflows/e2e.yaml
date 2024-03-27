@@ -9,6 +9,12 @@ on:  # yamllint disable-line rule:truthy
   pull_request:
     types: [opened, synchronize, reopened]
 
+env:
+  NAME_PREFIX: "rdr-"
+  # Avoid random failures in overloaded runner
+  # TODO: more testing.
+  MAX_WORKERS: 1
+
 jobs:
   e2e-rdr:
     runs-on: [self-hosted, e2e-rdr]
@@ -18,6 +24,48 @@ jobs:
     - name: Checkout Repo
       uses: actions/checkout@v3
 
-    - name: Run make target e2e-rdr
+    - name: Install drenv
+      run: pip install -e test
+
+    - name: Install ramenctl
+      run: pip install -e ramenctl
+
+    - name: Build ramen-operator container
+      run: make docker-build
+
+    - name: Delete clusters
+      if: ${{ always() }}
+      working-directory: test
+      run: drenv delete --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
+
+    - name: Setup libvirt
+      run: test/scripts/setup-libvirt
+
+    - name: Start clusters
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 20
+        max_attempts: 3
+        command: |
+          cd test
+          drenv start --max-workers ${{ env.MAX_WORKERS }} --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
+
+    - name: Deploy ramen
+      run: ramenctl deploy --name-prefix ${{ env.NAME_PREFIX }} test/envs/regional-dr.yaml
+
+    - name: Configure ramen
+      uses: nick-fields/retry@v3
+      with:
+        timeout_seconds: 60
+        max_attempts: 3
+        command: ramenctl config --name-prefix ${{ env.NAME_PREFIX }} test/envs/regional-dr.yaml
+
+    - name: Run e2e tests
       run: |
+        cp ~/.config/drenv/${{ env.NAME_PREFIX }}rdr/config.yaml e2e/config.yaml
         make e2e-rdr
+
+    - name: Delete clusters
+      if: ${{ always() }}
+      working-directory: test
+      run: drenv delete --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml

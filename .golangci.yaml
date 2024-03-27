@@ -89,6 +89,9 @@ issues:
     - source: "^func Test"
       linters:
         - funlen
+    - source: "^//"
+      linters:
+        - lll
 
 
 linters:

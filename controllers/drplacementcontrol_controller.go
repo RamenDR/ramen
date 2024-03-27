@@ -470,29 +470,31 @@ func DRPCsFailingOverToCluster(k8sclient client.Client, log logr.Logger, drclust
 
 	drpcCollections := make([]DRPCAndPolicy, 0)
 
-	for drpolicyIdx, drpolicy := range drpolicies.Items {
-		drClusters, err := getDRClusters(context.TODO(), k8sclient, &drpolicies.Items[drpolicyIdx])
-		if err != nil || len(drClusters) <= 1 {
-			log.Error(err, "Failed to get DRClusters")
-
-			return nil, err
-		}
-
-		// Skip if policy is of type metro, fake the from and to cluster
-		if metro, _ := dRPolicySupportsMetro(&drpolicies.Items[drpolicyIdx], drClusters); metro {
-			log.Info("Sync DRPolicy detected, skipping!")
-
-			continue
-		}
+	for drpolicyIdx := range drpolicies.Items {
+		drpolicy := &drpolicies.Items[drpolicyIdx]
 
 		for _, specCluster := range drpolicy.Spec.DRClusters {
 			if specCluster != drcluster {
 				continue
 			}
 
+			drClusters, err := getDRClusters(context.TODO(), k8sclient, drpolicy)
+			if err != nil || len(drClusters) <= 1 {
+				log.Error(err, "Failed to get DRClusters")
+
+				return nil, err
+			}
+
+			// Skip if policy is of type metro, fake the from and to cluster
+			if metro, _ := dRPolicySupportsMetro(drpolicy, drClusters); metro {
+				log.Info("Sync DRPolicy detected, skipping!")
+
+				break
+			}
+
 			log.Info("Processing DRPolicy referencing DRCluster", "drpolicy", drpolicy.GetName())
 
-			drpcs, err := DRPCsFailingOverToClusterForPolicy(k8sclient, log, &drpolicies.Items[drpolicyIdx], drcluster)
+			drpcs, err := DRPCsFailingOverToClusterForPolicy(k8sclient, log, drpolicy, drcluster)
 			if err != nil {
 				return nil, err
 			}
@@ -500,7 +502,7 @@ func DRPCsFailingOverToCluster(k8sclient client.Client, log logr.Logger, drclust
 			for idx := range drpcs {
 				dprcCollection := DRPCAndPolicy{
 					drpc:     drpcs[idx],
-					drPolicy: &drpolicies.Items[drpolicyIdx],
+					drPolicy: drpolicy,
 				}
 
 				drpcCollections = append(drpcCollections, dprcCollection)
@@ -532,8 +534,14 @@ func DRPCsFailingOverToClusterForPolicy(
 
 	filteredDRPCs := make([]*rmn.DRPlacementControl, 0)
 
-	for idx, drpc := range drpcs.Items {
+	for idx := range drpcs.Items {
+		drpc := &drpcs.Items[idx]
+
 		if drpc.Spec.DRPolicyRef.Name != drpolicy.GetName() {
+			continue
+		}
+
+		if rmnutil.ResourceIsDeleted(drpc) {
 			continue
 		}
 
@@ -552,7 +560,7 @@ func DRPCsFailingOverToClusterForPolicy(
 			"namespace", drpc.GetNamespace(),
 			"drpolicy", drpolicy.GetName())
 
-		filteredDRPCs = append(filteredDRPCs, &drpcs.Items[idx])
+		filteredDRPCs = append(filteredDRPCs, drpc)
 	}
 
 	return filteredDRPCs, nil
@@ -714,10 +722,14 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		// then the DRPC should be deleted as well. The least we should do here is to clean up DPRC.
 		err := r.processDeletion(ctx, drpc, placementObj, logger)
 		if err != nil {
-			// update drpc progression only on err
 			logger.Info(fmt.Sprintf("Error in deleting DRPC: (%v)", err))
 
-			return ctrl.Result{}, r.setProgressionAndUpdate(ctx, drpc, rmn.ProgressionDeleting)
+			statusErr := r.setProgressionAndUpdate(ctx, drpc, rmn.ProgressionDeleting)
+			if statusErr != nil {
+				err = fmt.Errorf("drpc deletion failed: %w and status update failed: %w", err, statusErr)
+			}
+
+			return ctrl.Result{}, err
 		}
 
 		return ctrl.Result{}, nil

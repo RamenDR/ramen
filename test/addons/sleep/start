@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import sys
+from drenv import commands
+
+duration = sys.argv[1]
+
+print(f"Sleep addon waiting {duration} seconds")
+commands.run("sleep", duration)
+
+print("Sleep addon finished normally")

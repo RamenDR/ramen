@@ -66,6 +66,12 @@ jobs:
   golangci:
     name: Golangci Lint
     runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        directory: [., api]
+        # golangci-lint has a limitation that it doesn't lint subdirectories if
+        # they are a different module.
+        # see https://github.com/golangci/golangci-lint/issues/828
     steps:
       - name: Checkout source
         uses: actions/checkout@v3
@@ -86,6 +92,7 @@ jobs:
         uses: golangci/golangci-lint-action@v3
         with:
           version: v1.55.2
+          working-directory: ${{ matrix.directory }}
 
   unit-test:
     name: Unit tests
@@ -268,13 +275,6 @@ jobs:
       - name: Load image artifact
         run: |
           kind load image-archive /tmp/ramen-operator.tar --name ${KIND_CLUSTER_NAME}
-
-      - name: Install cert-manager
-        run: |
-          kubectl apply  -f https://github.com/cert-manager/cert-manager/releases/download/v1.10.0/cert-manager.yaml
-          kubectl -n cert-manager  wait --for=condition=Available --timeout=60s deploy/cert-manager
-          kubectl -n cert-manager  wait --for=condition=Available --timeout=60s deploy/cert-manager-cainjector
-          kubectl -n cert-manager  wait --for=condition=Available --timeout=60s deploy/cert-manager-webhook
 
       - name: Deploy dependent CRDs
         run: |

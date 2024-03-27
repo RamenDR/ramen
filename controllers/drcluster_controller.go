@@ -164,6 +164,8 @@ func (r *DRClusterReconciler) drClusterSecretMapFunc(ctx context.Context, obj cl
 
 // drpcPred watches for updates to the DRPC resource and checks if it requires an appropriate DRCluster reconcile
 func drpcPred() predicate.Funcs {
+	log := ctrl.Log.WithName("Predicate").WithName("DRPC")
+
 	drpcPredicate := predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			return false
@@ -175,7 +177,9 @@ func drpcPred() predicate.Funcs {
 			return false
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			return false
+			log.Info("Processing DRPC delete event", "name", e.Object.GetName(), "namespace", e.Object.GetNamespace())
+
+			return true
 		},
 	}
 

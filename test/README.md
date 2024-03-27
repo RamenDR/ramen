@@ -63,6 +63,11 @@ environment.
    for the details.
    Tested with version v1.0.1.
 
+1. Install the `kustomize` tool. See
+   [kustomize installation](https://kubectl.docs.kubernetes.io/installation/kustomize/)
+   for the details.
+   Tested with version v5.3.0.
+
 ### Testing that drenv is healthy
 
 Run this script to make sure `drenv` works:
@@ -466,6 +471,10 @@ $ drenv delete envs/example.yaml
     - `extra_config`: List of extra config key=value. Each item adds
       `--extra-config` minikube option. See `minikube start --help` to
       see the possible keys and values.
+    - `feature_gates`: List of Kubernetes feature gates key=value. Each
+      item adds `--feature-gates` minikube option. See
+      [Feature Gates](https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/)
+      for possible keys and values.
     - `containerd`: Optional containerd configuration object. See
       `containerd config default` for available options.
     - `workers`: Optional list of workers to run when starting a
