@@ -108,6 +108,14 @@ type DRPlacementControlSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="placementRef is immutable"
 	PlacementRef v1.ObjectReference `json:"placementRef"`
 
+	// ProtectedNamespaces is a list of namespaces that are protected by the DRPC.
+	// Omitting this field means resources are only protected in the namespace controlled by the PlacementRef.
+	// If this field is set, the PlacementRef and the DRPC must be in the RamenOpsNamespace as set in the Ramen Config.
+	// If this field is set, the protected namespace resources are treated as unmanaged.
+	// You can use a recipe to filter and coordinate the order of the resources that are protected.
+	// +kubebuilder:validation:Optional
+	ProtectedNamespaces *[]string `json:"protectedNamespace,omitempty"`
+
 	// DRPolicyRef is the reference to the DRPolicy participating in the DR replication for this DRPC
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="drPolicyRef is immutable"

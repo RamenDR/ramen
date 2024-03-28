@@ -22,6 +22,10 @@ func DrpolicyClusterNames(drpolicy *rmn.DRPolicy) []string {
 	return drpolicy.Spec.DRClusters
 }
 
+func DrpolicyClusterNamesAsASet(drpolicy *rmn.DRPolicy) sets.String {
+	return sets.NewString(DrpolicyClusterNames(drpolicy)...)
+}
+
 func DrpolicyRegionNames(drpolicy *rmn.DRPolicy, drClusters []rmn.DRCluster) []string {
 	regionNames := make([]string, len(DrpolicyClusterNames(drpolicy)))
 

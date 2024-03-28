@@ -59,6 +59,7 @@ type DRPCInstance struct {
 	userPlacement        client.Object
 	vrgs                 map[string]*rmn.VolumeReplicationGroup
 	vrgNamespace         string
+	ramenConfig          *rmn.RamenConfig
 	mwu                  rmnutil.MWUtil
 }
 

@@ -84,7 +84,7 @@ func (r *ProtectedVolumeReplicationGroupListReconciler) Reconcile(ctx context.Co
 	s.log.Info(fmt.Sprintf("targetProfileName=%s", s3profileName))
 
 	objectStore, _, err := s.reconciler.ObjStoreGetter.ObjectStore(
-		s.ctx, s.reconciler.APIReader, s3profileName, NamespaceName(), s.log)
+		s.ctx, s.reconciler.APIReader, s3profileName, RamenOperatorNamespace(), s.log)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("error during getObjectStore: %w", err)
 	}

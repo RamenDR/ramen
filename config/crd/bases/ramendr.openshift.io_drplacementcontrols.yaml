@@ -210,6 +210,16 @@ spec:
                 description: PreferredCluster is the cluster name that the user preferred
                   to run the application on
                 type: string
+              protectedNamespace:
+                description: |-
+                  ProtectedNamespaces is a list of namespaces that are protected by the DRPC.
+                  Omitting this field means resources are only protected in the namespace controlled by the PlacementRef.
+                  If this field is set, the PlacementRef and the DRPC must be in the RamenOpsNamespace as set in the Ramen Config.
+                  If this field is set, the protected namespace resources are treated as unmanaged.
+                  You can use a recipe to filter and coordinate the order of the resources that are protected.
+                items:
+                  type: string
+                type: array
               pvcSelector:
                 description: |-
                   Label selector to identify all the PVCs that need DR protection.
