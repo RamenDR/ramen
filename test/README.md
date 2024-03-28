@@ -34,10 +34,13 @@ environment.
    [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
    Tested with version v1.27.4.
 
-1. Install `clusteradm` tool. See
-   [Install clusteradm CLI tool](https://open-cluster-management.io/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool)
-   for the details.
-   Version v0.7.1 or later is required.
+1. Install `clusteradm` tool
+
+   Requires installing clusteradm from git:
+
+   ```
+   go install open-cluster-management.io/clusteradm/cmd/clusteradm@c24cfa7
+   ```
 
 1. Install `subctl` tool, See
    [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/)

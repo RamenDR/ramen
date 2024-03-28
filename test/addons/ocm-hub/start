@@ -10,14 +10,17 @@ import drenv
 from drenv import kubectl
 from drenv import clusteradm
 
+# This uses latest release.
+VERSION = "default"
+
 ADDONS = (
     {
         "name": "application-manager",
-        "version": "default",
+        "version": VERSION,
     },
     {
         "name": "governance-policy-framework",
-        "version": "default",
+        "version": VERSION,
     },
 )
 
@@ -44,6 +47,7 @@ def deploy(cluster):
     clusteradm.init(
         # With auto approval joined clusters are accepted automatically.
         feature_gates=["ManagedClusterAutoApproval=true"],
+        bundle_version=VERSION,
         wait=True,
         context=cluster,
     )
