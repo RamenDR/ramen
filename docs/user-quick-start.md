@@ -149,21 +149,19 @@ enough resources:
    for the details.
    Tested with version v1.12.0.
 
-1. Install the `virtctl` tool. See
-   [virtctl install](https://kubevirt.io/quickstart_minikube/#virtctl)
-   for the details.
-   Tested with version v1.0.1.
+1. Install the `virtctl` tool.
+   Working Example:
+   ```
+   curl -L -O https://github.com/kubevirt/kubevirt/releases/download/v1.2.0/virtctl-v1.2.0-linux-amd64
+   ```
+   After download completes for `virtctl` issue this command.
 
    ```
-   curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.0.1/virtctl-v1.0.1-linux-amd64
-   ```
-
-   After download completes for `virtctl` issue these commands.
-
-   ```
-   chmod +x virtctl
    sudo install virtctl /usr/local/bin
    ```
+   See
+   [virtctl install](https://kubevirt.io/quickstart_minikube/#virtctl)
+   for more details.
 
 1. Install `mc` tool
 
