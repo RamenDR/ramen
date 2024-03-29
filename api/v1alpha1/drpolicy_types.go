@@ -8,6 +8,8 @@ import (
 )
 
 // DRPolicySpec defines the desired state of DRPolicy
+// +kubebuilder:validation:XValidation:rule="has(oldSelf.replicationClassSelector) == has(self.replicationClassSelector)", message="replicationClassSelector is immutable"
+// +kubebuilder:validation:XValidation:rule="has(oldSelf.volumeSnapshotClassSelector) == has(self.volumeSnapshotClassSelector)", message="volumeSnapshotClassSelector is immutable"
 type DRPolicySpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
@@ -23,14 +25,16 @@ type DRPolicySpec struct {
 	// Label selector to identify all the VolumeReplicationClasses.
 	// This selector is assumed to be the same for all subscriptions that
 	// need DR protection. It will be passed in to the VRG when it is created
-	// +kubebuilder:validation:Required
+	//+optional
+	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="replicationClassSelector is immutable"
 	ReplicationClassSelector metav1.LabelSelector `json:"replicationClassSelector"`
 
 	// Label selector to identify all the VolumeSnapshotClasses.
 	// This selector is assumed to be the same for all subscriptions that
 	// need DR protection. It will be passed in to the VRG when it is created
-	// +kubebuilder:validation:Required
+	//+optional
+	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="volumeSnapshotClassSelector is immutable"
 	VolumeSnapshotClassSelector metav1.LabelSelector `json:"volumeSnapshotClassSelector"`
 
