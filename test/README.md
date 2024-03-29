@@ -58,10 +58,19 @@ environment.
    See [Installing Helm](https://helm.sh/docs/intro/install/) for other options.
    Tested with version v3.11.
 
-1. Install the `virtctl` tool. See
+1. Install the `virtctl` tool.
+   Working Example:
+   ```
+   curl -L -O https://github.com/kubevirt/kubevirt/releases/download/v1.2.0/virtctl-v1.2.0-linux-amd64
+   ```
+   After download completes for `virtctl` issue this command.
+
+   ```
+   sudo install virtctl /usr/local/bin
+   ```
+   See
    [virtctl install](https://kubevirt.io/quickstart_minikube/#virtctl)
-   for the details.
-   Tested with version v1.0.1.
+   for more details.
 
 1. Install `mc` tool
 
