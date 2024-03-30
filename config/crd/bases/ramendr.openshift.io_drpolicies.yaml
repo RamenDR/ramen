@@ -163,10 +163,13 @@ spec:
                   rule: self == oldSelf
             required:
             - drClusters
-            - replicationClassSelector
             - schedulingInterval
-            - volumeSnapshotClassSelector
             type: object
+            x-kubernetes-validations:
+            - message: replicationClassSelector is immutable
+              rule: has(oldSelf.replicationClassSelector) == has(self.replicationClassSelector)
+            - message: volumeSnapshotClassSelector is immutable
+              rule: has(oldSelf.volumeSnapshotClassSelector) == has(self.volumeSnapshotClassSelector)
           status:
             description: |-
               DRPolicyStatus defines the observed state of DRPolicy

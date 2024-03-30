@@ -30,16 +30,28 @@ type RecipeElements struct {
 	RecoverWorkflow []kubeobjects.RecoverSpec
 }
 
-func captureWorkflowDefault(vrg ramen.VolumeReplicationGroup) []kubeobjects.CaptureSpec {
-	return []kubeobjects.CaptureSpec{
+func captureWorkflowDefault(vrg ramen.VolumeReplicationGroup, ramenConfig ramen.RamenConfig) []kubeobjects.CaptureSpec {
+	namespaces := []string{vrg.Namespace}
+
+	if vrg.Namespace == RamenOperandsNamespace(ramenConfig) {
+		namespaces = *vrg.Spec.ProtectedNamespaces
+	}
+
+	captureSpecs := []kubeobjects.CaptureSpec{
 		{
 			Spec: kubeobjects.Spec{
 				KubeResourcesSpec: kubeobjects.KubeResourcesSpec{
-					IncludedNamespaces: []string{vrg.Namespace},
+					IncludedNamespaces: namespaces,
 				},
 			},
 		},
 	}
+
+	if vrg.Spec.KubeObjectProtection.KubeObjectSelector != nil {
+		captureSpecs[0].Spec.LabelSelector = vrg.Spec.KubeObjectProtection.KubeObjectSelector
+	}
+
+	return captureSpecs
 }
 
 func recoverWorkflowDefault() []kubeobjects.RecoverSpec { return []kubeobjects.RecoverSpec{{}} }
@@ -52,7 +64,9 @@ func GetPVCSelector(ctx context.Context, reader client.Reader, vrg ramen.VolumeR
 
 	return recipeElements.PvcSelector, recipeVolumesAndOptionallyWorkflowsGet(
 		ctx, reader, vrg, ramenConfig, log, &recipeElements,
-		func(recipe.Recipe, *RecipeElements, ramen.VolumeReplicationGroup) error { return nil },
+		func(recipe.Recipe, *RecipeElements, ramen.VolumeReplicationGroup, ramen.RamenConfig) error {
+			return nil
+		},
 	)
 }
 
@@ -66,11 +80,11 @@ func RecipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.Volu
 
 func recipeVolumesAndOptionallyWorkflowsGet(ctx context.Context, reader client.Reader, vrg ramen.VolumeReplicationGroup,
 	ramenConfig ramen.RamenConfig, log logr.Logger, recipeElements *RecipeElements,
-	workflowsGet func(recipe.Recipe, *RecipeElements, ramen.VolumeReplicationGroup) error,
+	workflowsGet func(recipe.Recipe, *RecipeElements, ramen.VolumeReplicationGroup, ramen.RamenConfig) error,
 ) error {
 	if vrg.Spec.KubeObjectProtection == nil {
 		*recipeElements = RecipeElements{
-			PvcSelector: pvcSelectorDefault(vrg),
+			PvcSelector: getPVCSelector(vrg, ramenConfig, nil, nil),
 		}
 
 		return nil
@@ -78,8 +92,8 @@ func recipeVolumesAndOptionallyWorkflowsGet(ctx context.Context, reader client.R
 
 	if vrg.Spec.KubeObjectProtection.RecipeRef == nil {
 		*recipeElements = RecipeElements{
-			PvcSelector:     pvcSelectorDefault(vrg),
-			CaptureWorkflow: captureWorkflowDefault(vrg),
+			PvcSelector:     getPVCSelector(vrg, ramenConfig, nil, nil),
+			CaptureWorkflow: captureWorkflowDefault(vrg, ramenConfig),
 			RecoverWorkflow: recoverWorkflowDefault(),
 		}
 
@@ -100,11 +114,19 @@ func recipeVolumesAndOptionallyWorkflowsGet(ctx context.Context, reader client.R
 		return err
 	}
 
-	*recipeElements = RecipeElements{
-		PvcSelector: pvcSelectorRecipeRefNonNil(recipe, vrg),
+	var selector PvcSelector
+	if recipe.Spec.Volumes == nil {
+		selector = getPVCSelector(vrg, ramenConfig, nil, nil)
+	} else {
+		selector = getPVCSelector(vrg, ramenConfig, recipe.Spec.Volumes.IncludedNamespaces,
+			recipe.Spec.Volumes.LabelSelector)
 	}
 
-	if err := workflowsGet(recipe, recipeElements, vrg); err != nil {
+	*recipeElements = RecipeElements{
+		PvcSelector: selector,
+	}
+
+	if err := workflowsGet(recipe, recipeElements, vrg, ramenConfig); err != nil {
 		return err
 	}
 
@@ -142,11 +164,13 @@ func parametersExpand(s string, parameters map[string][]string) string {
 	})
 }
 
-func recipeWorkflowsGet(recipe recipe.Recipe, recipeElements *RecipeElements, vrg ramen.VolumeReplicationGroup) error {
+func recipeWorkflowsGet(recipe recipe.Recipe, recipeElements *RecipeElements, vrg ramen.VolumeReplicationGroup,
+	ramenConfig ramen.RamenConfig,
+) error {
 	var err error
 
 	if recipe.Spec.CaptureWorkflow == nil {
-		recipeElements.CaptureWorkflow = captureWorkflowDefault(vrg)
+		recipeElements.CaptureWorkflow = captureWorkflowDefault(vrg, ramenConfig)
 	} else {
 		recipeElements.CaptureWorkflow, err = getCaptureGroups(recipe)
 		if err != nil {
@@ -176,22 +200,34 @@ func recipeNamespacesValidate(recipeElements RecipeElements, vrg ramen.VolumeRep
 	}
 
 	if !ramenConfig.MultiNamespace.FeatureEnabled {
-		return fmt.Errorf("extra-VRG namespaces %v require feature be enabled", extraVrgNamespaceNames)
+		return fmt.Errorf("requested protection of other namespaces when MultiNamespace feature is disabled. %v: %v",
+			"other namespaces", extraVrgNamespaceNames)
 	}
 
-	adminNamespaceNames := adminNamespaceNames()
-	if !slices.Contains(adminNamespaceNames, vrg.Namespace) {
-		return fmt.Errorf("extra-VRG namespaces %v require VRG's namespace, %v, be an admin one %v",
-			extraVrgNamespaceNames,
+	if !vrgInAdminNamespace(&vrg, &ramenConfig) {
+		vrgAdminNamespaceNames := vrgAdminNamespaceNames(ramenConfig)
+
+		return fmt.Errorf("vrg namespace: %v needs to be in admin namespaces: %v to protect other namespaces: %v",
 			vrg.Namespace,
-			adminNamespaceNames,
+			vrgAdminNamespaceNames,
+			extraVrgNamespaceNames,
 		)
 	}
 
-	if vrg.Spec.Async != nil {
-		return fmt.Errorf("extra-VRG namespaces %v require VRG's async mode be disabled", extraVrgNamespaceNames)
+	// we know vrg is in one of the admin namespaces but if the vrg is in the ramen ops namespace
+	// then the every namespace in recipe should be in the protected namespace list.
+	if vrg.Namespace == RamenOperandsNamespace(ramenConfig) {
+		for _, ns := range extraVrgNamespaceNames {
+			if !slices.Contains(*vrg.Spec.ProtectedNamespaces, ns) {
+				return fmt.Errorf("recipe mentions namespace: %v which is not in protected namespaces: %v",
+					ns,
+					vrg.Spec.ProtectedNamespaces,
+				)
+			}
+		}
 	}
 
+	// vrg is in the ramen operator namespace, allow it to protect any namespace
 	return nil
 }
 

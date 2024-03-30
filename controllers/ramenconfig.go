@@ -222,7 +222,7 @@ func ConfigMapGet(
 	if err = apiReader.Get(
 		ctx,
 		types.NamespacedName{
-			Namespace: NamespaceName(),
+			Namespace: RamenOperatorNamespace(),
 			Name:      configMapName,
 		},
 		configMap,
@@ -236,12 +236,27 @@ func ConfigMapGet(
 	return
 }
 
-func NamespaceName() string {
+func RamenOperatorNamespace() string {
 	return os.Getenv("POD_NAMESPACE")
 }
 
-func adminNamespaceNames() []string {
-	return []string{NamespaceName()}
+func RamenOperandsNamespace(config ramendrv1alpha1.RamenConfig) string {
+	return config.RamenOpsNamespace
+}
+
+// vrgAdminNamespaceNames returns the namespace names where the vrg objects can
+// be created for multi namespace protection.  The list includes the namespace
+// where the ramen operator pod is running.  This is to keep backward
+// compatibility with existing multi namespace protection.
+func vrgAdminNamespaceNames(config ramendrv1alpha1.RamenConfig) []string {
+	return []string{RamenOperandsNamespace(config), RamenOperatorNamespace()}
+}
+
+// drpcAdminNamespaceName returns the namespace name where the drpc objects can
+// be created for multi namespace protection. The DRPC must be created only in
+// RamenOperandsNamespace for multi namespace protection.
+func drpcAdminNamespaceName(config ramendrv1alpha1.RamenConfig) string {
+	return RamenOperandsNamespace(config)
 }
 
 func drClusterOperatorChannelNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
@@ -262,7 +277,7 @@ func drClusterOperatorPackageNameOrDefault(ramenConfig *ramendrv1alpha1.RamenCon
 
 func drClusterOperatorNamespaceNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
 	if ramenConfig.DrClusterOperator.NamespaceName == "" {
-		return NamespaceName()
+		return RamenOperatorNamespace()
 	}
 
 	return ramenConfig.DrClusterOperator.NamespaceName
@@ -278,7 +293,7 @@ func drClusterOperatorCatalogSourceNameOrDefault(ramenConfig *ramendrv1alpha1.Ra
 
 func drClusterOperatorCatalogSourceNamespaceNameOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
 	if ramenConfig.DrClusterOperator.CatalogSourceNamespaceName == "" {
-		return NamespaceName()
+		return RamenOperatorNamespace()
 	}
 
 	return ramenConfig.DrClusterOperator.CatalogSourceNamespaceName

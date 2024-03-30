@@ -276,9 +276,9 @@ func hasConflictingDRPolicy(match *ramen.DRPolicy, drclusters *ramen.DRClusterLi
 }
 
 func haveOverlappingMetroZones(d1 *ramen.DRPolicy, d2 *ramen.DRPolicy, drclusters *ramen.DRClusterList) bool {
-	d1ClusterNames := sets.NewString(util.DrpolicyClusterNames(d1)...)
+	d1ClusterNames := sets.NewString(util.DRPolicyClusterNames(d1)...)
 	d1SupportsMetro, d1MetroRegions := dRPolicySupportsMetro(d1, drclusters.Items)
-	d2ClusterNames := sets.NewString(util.DrpolicyClusterNames(d2)...)
+	d2ClusterNames := sets.NewString(util.DRPolicyClusterNames(d2)...)
 	d2SupportsMetro, d2MetroRegions := dRPolicySupportsMetro(d2, drclusters.Items)
 	commonClusters := d1ClusterNames.Intersection(d2ClusterNames)
 
@@ -415,7 +415,7 @@ func (r *DRPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *DRPolicyReconciler) configMapMapFunc(ctx context.Context, configMap client.Object) []reconcile.Request {
-	if configMap.GetName() != HubOperatorConfigMapName || configMap.GetNamespace() != NamespaceName() {
+	if configMap.GetName() != HubOperatorConfigMapName || configMap.GetNamespace() != RamenOperatorNamespace() {
 		return []reconcile.Request{}
 	}
 
@@ -443,7 +443,7 @@ func (r *DRPolicyReconciler) configMapMapFunc(ctx context.Context, configMap cli
 }
 
 func (r *DRPolicyReconciler) secretMapFunc(ctx context.Context, secret client.Object) []reconcile.Request {
-	if secret.GetNamespace() != NamespaceName() {
+	if secret.GetNamespace() != RamenOperatorNamespace() {
 		return []reconcile.Request{}
 	}
 

@@ -59,6 +59,7 @@ type DRPCInstance struct {
 	userPlacement        client.Object
 	vrgs                 map[string]*rmn.VolumeReplicationGroup
 	vrgNamespace         string
+	ramenConfig          *rmn.RamenConfig
 	mwu                  rmnutil.MWUtil
 }
 
@@ -1306,7 +1307,7 @@ func (d *DRPCInstance) moveVRGToSecondaryEverywhere() bool {
 
 	failedCount := 0
 
-	for _, clusterName := range rmnutil.DrpolicyClusterNames(d.drPolicy) {
+	for _, clusterName := range rmnutil.DRPolicyClusterNames(d.drPolicy) {
 		_, err := d.updateVRGState(clusterName, rmn.Secondary)
 		if err != nil {
 			if errors.IsNotFound(err) {
@@ -1330,7 +1331,7 @@ func (d *DRPCInstance) moveVRGToSecondaryEverywhere() bool {
 }
 
 func (d *DRPCInstance) cleanupSecondaries(skipCluster string) (bool, error) {
-	for _, clusterName := range rmnutil.DrpolicyClusterNames(d.drPolicy) {
+	for _, clusterName := range rmnutil.DRPolicyClusterNames(d.drPolicy) {
 		if skipCluster == clusterName {
 			continue
 		}
@@ -1526,6 +1527,7 @@ func (d *DRPCInstance) generateVRG(dstCluster string, repState rmn.ReplicationSt
 		},
 		Spec: rmn.VolumeReplicationGroupSpec{
 			PVCSelector:          d.instance.Spec.PVCSelector,
+			ProtectedNamespaces:  d.instance.Spec.ProtectedNamespaces,
 			ReplicationState:     repState,
 			S3Profiles:           AvailableS3Profiles(d.drClusters),
 			KubeObjectProtection: d.instance.Spec.KubeObjectProtection,
@@ -1570,7 +1572,7 @@ func dRPolicySupportsMetro(drpolicy *rmn.DRPolicy, drclusters []rmn.DRCluster) (
 	allRegionsMap := make(map[rmn.Region][]string)
 	metroMap = make(map[rmn.Region][]string)
 
-	for _, managedCluster := range rmnutil.DrpolicyClusterNames(drpolicy) {
+	for _, managedCluster := range rmnutil.DRPolicyClusterNames(drpolicy) {
 		for _, v := range drclusters {
 			if v.Name == managedCluster {
 				allRegionsMap[v.Spec.Region] = append(
@@ -1728,7 +1730,7 @@ func (d *DRPCInstance) cleanupForVolSync(clusterToSkip string) error {
 
 	peersReady := true
 
-	for _, clusterName := range rmnutil.DrpolicyClusterNames(d.drPolicy) {
+	for _, clusterName := range rmnutil.DRPolicyClusterNames(d.drPolicy) {
 		if clusterToSkip == clusterName {
 			continue
 		}
@@ -1815,7 +1817,7 @@ func (d *DRPCInstance) ensureVRGManifestWorkOnClusterDeleted(clusterName string)
 // a cluster if provided. It returns true if all clusters report secondary for the VRG,
 // otherwise, it returns false
 func (d *DRPCInstance) ensureVRGIsSecondaryEverywhere(clusterToSkip string) bool {
-	for _, clusterName := range rmnutil.DrpolicyClusterNames(d.drPolicy) {
+	for _, clusterName := range rmnutil.DRPolicyClusterNames(d.drPolicy) {
 		if clusterToSkip == clusterName {
 			continue
 		}
@@ -1873,7 +1875,7 @@ func (d *DRPCInstance) ensureVRGIsSecondaryOnCluster(clusterName string) bool {
 // has to be ensured. This can only be done at the other cluster which has been moved to
 // secondary by now.
 func (d *DRPCInstance) ensureDataProtected(targetCluster string) bool {
-	for _, clusterName := range rmnutil.DrpolicyClusterNames(d.drPolicy) {
+	for _, clusterName := range rmnutil.DRPolicyClusterNames(d.drPolicy) {
 		if targetCluster == clusterName {
 			continue
 		}

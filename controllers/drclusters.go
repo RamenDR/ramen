@@ -232,7 +232,7 @@ func drClusterUndeploy(
 
 	for i := range drpolicies.Items {
 		drpolicy1 := &drpolicies.Items[i]
-		clusterNames = clusterNames.Insert(util.DrpolicyClusterNames(drpolicy1)...)
+		clusterNames = clusterNames.Insert(util.DRPolicyClusterNames(drpolicy1)...)
 	}
 
 	if clusterNames.Has(drcluster.Name) {

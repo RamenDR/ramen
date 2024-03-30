@@ -18,14 +18,18 @@ import (
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
 
-func DrpolicyClusterNames(drpolicy *rmn.DRPolicy) []string {
+func DRPolicyClusterNames(drpolicy *rmn.DRPolicy) []string {
 	return drpolicy.Spec.DRClusters
 }
 
-func DrpolicyRegionNames(drpolicy *rmn.DRPolicy, drClusters []rmn.DRCluster) []string {
-	regionNames := make([]string, len(DrpolicyClusterNames(drpolicy)))
+func DRPolicyClusterNamesAsASet(drpolicy *rmn.DRPolicy) sets.String {
+	return sets.NewString(DRPolicyClusterNames(drpolicy)...)
+}
 
-	for i, v := range DrpolicyClusterNames(drpolicy) {
+func DrpolicyRegionNames(drpolicy *rmn.DRPolicy, drClusters []rmn.DRCluster) []string {
+	regionNames := make([]string, len(DRPolicyClusterNames(drpolicy)))
+
+	for i, v := range DRPolicyClusterNames(drpolicy) {
 		regionName := ""
 
 		for _, drCluster := range drClusters {
@@ -71,7 +75,7 @@ func GetAllDRPolicies(ctx context.Context, client client.Reader) (rmn.DRPolicyLi
 func DRPolicyS3Profiles(drpolicy *rmn.DRPolicy, drclusters []rmn.DRCluster) sets.String {
 	mustHaveS3Profiles := sets.String{}
 
-	for _, managedCluster := range DrpolicyClusterNames(drpolicy) {
+	for _, managedCluster := range DRPolicyClusterNames(drpolicy) {
 		s3ProfileName := ""
 
 		for i := range drclusters {
