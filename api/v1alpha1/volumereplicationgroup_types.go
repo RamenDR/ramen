@@ -120,6 +120,10 @@ type KubeObjectProtectionSpec struct {
 	// Recipe parameter definitions
 	//+optional
 	RecipeParameters map[string][]string `json:"recipeParameters,omitempty"`
+
+	// Label selector to identify all the kube objects that need DR protection.
+	// +optional
+	KubeObjectSelector *metav1.LabelSelector `json:"kubeObjectSelector,omitempty"`
 }
 
 type RecipeRef struct {
@@ -185,6 +189,14 @@ type VolumeReplicationGroupSpec struct {
 	Action VRGAction `json:"action,omitempty"`
 	//+optional
 	KubeObjectProtection *KubeObjectProtectionSpec `json:"kubeObjectProtection,omitempty"`
+
+	// ProtectedNamespaces is a list of namespaces that are considered for protection by the VRG.
+	// Omitting this field means resources are only protected in the namespace where VRG is.
+	// If this field is set, the VRG must be in the Ramen Ops Namespace as configured in the Ramen Config.
+	// If this field is set, the protected namespace resources are treated as unmanaged.
+	// You can use a recipe to filter and coordinate the order of the resources that are protected.
+	//+optional
+	ProtectedNamespaces *[]string `json:"protectedNamespace,omitempty"`
 }
 
 type Identifier struct {

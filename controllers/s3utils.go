@@ -179,7 +179,7 @@ func GetS3Secret(ctx context.Context, r client.Reader,
 	namepacedName := types.NamespacedName{Namespace: "", Name: secretRef.Name}
 
 	if secretRef.Namespace == "" {
-		namepacedName.Namespace = NamespaceName()
+		namepacedName.Namespace = RamenOperatorNamespace()
 	} else {
 		namepacedName.Namespace = secretRef.Namespace
 	}
