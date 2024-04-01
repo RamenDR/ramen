@@ -151,14 +151,17 @@ enough resources:
 
 1. Install the `virtctl` tool.
    Working Example:
+   
    ```
    curl -L -O https://github.com/kubevirt/kubevirt/releases/download/v1.2.0/virtctl-v1.2.0-linux-amd64
    ```
+   
    After download completes for `virtctl` issue this command.
 
    ```
-   sudo install virtctl /usr/local/bin
+   sudo install virtctl-v1.2.0-linux-amd64 /usr/local/bin/virtctl
    ```
+   
    See
    [virtctl install](https://kubevirt.io/quickstart_minikube/#virtctl)
    for more details.
