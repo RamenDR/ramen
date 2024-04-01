@@ -13,6 +13,9 @@ from drenv import clusteradm
 # Use default image version.
 BUNDLE_VERSION = None
 
+# Use default image registry.
+IMAGE_REGISTRY = None
+
 ADDONS = (
     {
         "name": "application-manager",
@@ -49,6 +52,7 @@ def deploy(cluster):
         # With auto approval joined clusters are accepted automatically.
         feature_gates=["ManagedClusterAutoApproval=true"],
         bundle_version=BUNDLE_VERSION,
+        image_registry=IMAGE_REGISTRY,
         wait=True,
         context=cluster,
     )
