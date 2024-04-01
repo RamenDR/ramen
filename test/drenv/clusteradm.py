@@ -4,7 +4,14 @@
 from . import commands
 
 
-def init(feature_gates=None, bundle_version=None, wait=False, context=None, log=print):
+def init(
+    feature_gates=None,
+    bundle_version=None,
+    image_registry=None,
+    wait=False,
+    context=None,
+    log=print,
+):
     """
     Initialize a Kubernetes cluster into an OCM hub cluster.
     """
@@ -13,6 +20,8 @@ def init(feature_gates=None, bundle_version=None, wait=False, context=None, log=
         cmd.extend(("--feature-gates", ",".join(feature_gates)))
     if bundle_version:
         cmd.extend(("--bundle-version", bundle_version))
+    if image_registry:
+        cmd.extend(("--image-registry", image_registry))
     if wait:
         cmd.append("--wait")
     if context:
@@ -49,6 +58,7 @@ def join(
     hub_apiserver,
     cluster_name,
     bundle_version=None,
+    image_registry=None,
     wait=False,
     context=None,
     log=print,
@@ -68,6 +78,8 @@ def join(
     ]
     if bundle_version:
         cmd.extend(("--bundle-version", bundle_version))
+    if image_registry:
+        cmd.extend(("--image-registry", image_registry))
     if wait:
         cmd.append("--wait")
     if context:

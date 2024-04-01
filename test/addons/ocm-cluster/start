@@ -16,6 +16,9 @@ from drenv import kubectl
 # Use default image version.
 BUNDLE_VERSION = None
 
+# Use default image registry.
+IMAGE_REGISTRY = None
+
 ADDONS = (
     {
         "name": "application-manager",
@@ -109,6 +112,7 @@ def join_cluster(cluster, hub):
         hub_apiserver=hub_info["hub-apiserver"],
         cluster_name=cluster,
         bundle_version=BUNDLE_VERSION,
+        image_registry=IMAGE_REGISTRY,
         wait=True,
         context=cluster,
     )
