@@ -22,7 +22,7 @@ templates:
           device_ownership_from_security_context: true
     network: "$network"
     cni: flannel
-    cpus: 3
+    cpus: 4
     memory: "8g"
     extra_disks: 1
     disk_size: "50g"
@@ -50,6 +50,7 @@ templates:
     container_runtime: containerd
     network: "$network"
     cni: flannel
+    cpus: 2
     memory: "4g"
     workers:
       - addons:
