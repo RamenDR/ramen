@@ -200,7 +200,7 @@ def wait_for_dns(cluster, namespace, timeout=240):
             break
 
 
-def test_connectivity(cluster, namespace):
+def test_connectivity(cluster, namespace, timeout=60):
     """
     Test that cluster can access service exported on the other cluster.
 
@@ -209,18 +209,37 @@ def test_connectivity(cluster, namespace):
     """
     dns_name = service_address(namespace)
 
-    print(f"Accessing '{dns_name}' in cluster '{cluster}'")
-    out = kubectl.exec(
-        "test",
-        f"--namespace={namespace}",
-        "--",
-        "curl",
-        "--no-progress-meter",
-        dns_name,
-        context=cluster,
-    )
-    if "Welcome to nginx" not in out:
-        raise RuntimeError(f"Unexpected output: {out}")
+    start = time.monotonic()
+    deadline = start + timeout
+    delay = 1
+
+    while True:
+        print(f"Accessing '{dns_name}' in cluster '{cluster}'")
+        try:
+            out = kubectl.exec(
+                "test",
+                f"--namespace={namespace}",
+                "--",
+                "curl",
+                "--no-progress-meter",
+                dns_name,
+                context=cluster,
+            )
+        except commands.Error as e:
+            if time.monotonic() > deadline:
+                raise
+
+            print(f"Failed to connect: {e}")
+            print(f"Retrying in {delay} seconds")
+            time.sleep(delay)
+            delay = min(delay * 2, 10)
+        else:
+            if "Welcome to nginx" not in out:
+                raise RuntimeError(f"Unexpected output: {out}")
+
+            elapsed = time.monotonic() - start
+            print(f"Access completed in {elapsed:.3f} seconds")
+            break
 
 
 if len(sys.argv) != 4:
