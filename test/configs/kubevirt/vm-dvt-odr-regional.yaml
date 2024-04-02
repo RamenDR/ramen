@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+repo: https://github.com/ramendr/ocm-ramen-samples.git
+path: subscription/kubevirt/vm-dvt-odr-regional
+branch: main
+name: vm-dvt
+namespace: vm-dvt
+dr_policy: dr-policy
+pvc_label: vm
