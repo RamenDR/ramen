@@ -30,11 +30,8 @@ def main():
         "failed": 0,
         "success": 0.0,
         "time": 0.0,
-        "passed-time": 0.0,
-        "failed-time": 0.0,
+        "time/run": 0.0,
     }
-
-    start = time.monotonic()
 
     for i in range(args.runs):
         name = f"{i:03d}"
@@ -49,19 +46,18 @@ def main():
         results.append(r)
 
         stats["runs"] += 1
+        stats["time"] += r["time"]
+        stats["time/run"] = stats["time"] / stats["runs"]
 
         if r["passed"]:
             stats["passed"] += 1
-            stats["passed-time"] += r["time"]
         else:
             stats["failed"] += 1
-            stats["failed-time"] += r["time"]
+
+        stats["success"] = stats["passed"] / stats["runs"] * 100
 
         if not r["passed"] and args.exit_first:
             break
-
-    stats["time"] = time.monotonic() - start
-    stats["success"] = stats["passed"] / stats["runs"] * 100
 
     logging.info(
         "%d passed, %d failed (%.1f%%) in %.1fs",
