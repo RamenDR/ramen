@@ -44,18 +44,7 @@ def main():
             r["time"],
         )
         results.append(r)
-
-        stats["runs"] += 1
-        stats["time"] += r["time"]
-        stats["time/run"] = stats["time"] / stats["runs"]
-
-        if r["passed"]:
-            stats["passed"] += 1
-        else:
-            stats["failed"] += 1
-
-        stats["success"] = stats["passed"] / stats["runs"] * 100
-
+        update_stats(stats, r)
         if not r["passed"] and args.exit_first:
             break
 
@@ -100,6 +89,19 @@ def parse_args():
         help="path to environment file",
     )
     return p.parse_args()
+
+
+def update_stats(stats, result):
+    stats["runs"] += 1
+    stats["time"] += result["time"]
+    stats["time/run"] = stats["time"] / stats["runs"]
+
+    if result["passed"]:
+        stats["passed"] += 1
+    else:
+        stats["failed"] += 1
+
+    stats["success"] = stats["passed"] / stats["runs"] * 100
 
 
 def write_output(args, results, stats):
