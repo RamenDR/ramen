@@ -3,8 +3,11 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import os
 import sys
+
+import yaml
 
 import drenv
 from drenv import kubectl
@@ -44,6 +47,15 @@ def wait(cluster):
         "--timeout=300s",
         context=cluster,
     )
+
+    out = kubectl.get(
+        "cephblockpool/replicapool",
+        "--output=jsonpath={.status}",
+        "--namespace=rook-ceph",
+        context=cluster,
+    )
+    info = {"ceph pool status": json.loads(out)}
+    print(yaml.dump(info, sort_keys=False))
 
 
 if len(sys.argv) != 2:
