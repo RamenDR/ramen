@@ -192,6 +192,7 @@ type VRGConditions struct {
 // DRPlacementControlStatus defines the observed state of DRPlacementControl
 type DRPlacementControlStatus struct {
 	Phase              DRState                 `json:"phase,omitempty"`
+	ObservedGeneration int64                   `json:"observedGeneration,omitempty"`
 	ActionStartTime    *metav1.Time            `json:"actionStartTime,omitempty"`
 	ActionDuration     *metav1.Duration        `json:"actionDuration,omitempty"`
 	Progression        ProgressionStatus       `json:"progression,omitempty"`

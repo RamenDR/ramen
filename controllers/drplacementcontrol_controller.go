@@ -2269,6 +2269,7 @@ func (r *DRPlacementControlReconciler) ensureDRPCStatusConsistency(
 		return !requeue, nil
 	case AllowFailover:
 		drpc.Status.Phase = rmn.WaitForUser
+		drpc.Status.ObservedGeneration = drpc.Generation
 		updateDRPCProgression(drpc, rmn.ProgressionActionPaused, log)
 		addOrUpdateCondition(&drpc.Status.Conditions, rmn.ConditionAvailable,
 			drpc.Generation, metav1.ConditionTrue, rmn.ReasonSuccess, msg)
