@@ -13,6 +13,7 @@ import (
 	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"
 	errorswrapper "github.com/pkg/errors"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
+	"golang.org/x/exp/slices"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -289,6 +290,8 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 	if err != nil {
 		return false, err
 	}
+
+	// TODO: Why are we not waiting for ClusterDataReady here? Are there any corner cases?
 
 	// We have a home cluster
 	d.setProgression(rmn.ProgressionUpdatingPlRule)
@@ -2108,8 +2111,83 @@ func updateDRPCProgression(
 	return false
 }
 
+/*
+DRPC Status.Progression has several distinct progressions depending on the action being performed. The following
+comment is to help identify which progressions belong to which actions for reference purposes.
+
+deployProgressions are used to indicate progression during initial deployment processing
+
+	deployProgressions := {
+		ProgressionCreatingMW,
+		ProgressionUpdatingPlRule,
+		ProgressionEnsuringVolSyncSetup,
+		ProgressionSettingupVolsyncDest,
+		ProgressionCompleted,
+	}
+
+failoverProgressions are used to indicate progression during failover action processing
+- preFailoverProgressions indicates Progressions that are noted before creating VRG on the failoverCluster
+- postFailoverProgressions indicates Progressions that are noted post creating VRG on the failoverCluster
+
+	preFailoverProgressions := {
+		ProgressionWaitForReadiness,
+		ProgressionCheckingFailoverPrequisites,
+		ProgressionWaitForFencing,
+		ProgressionWaitForStorageMaintenanceActivation,
+	}
+
+	postFailoverProgressions := {
+		ProgressionFailingOverToCluster,
+		ProgressionWaitingForResourceRestore,
+		ProgressionEnsuringVolSyncSetup,
+		ProgressionSettingupVolsyncDest,
+		ProgressionUpdatedPlacement,
+		ProgressionCompleted,
+		ProgressionCleaningUp,
+	}
+
+relocateProgressions are used to indicate progression during relocate action processing
+- preSwitch indicates Progressions that are noted before creating VRG on the preferredCluster
+- postSwitch indicates Progressions that are noted post creating VRG on the preferredCluster
+
+	preRelocateProgressions := []rmn.ProgressionStatus{
+		rmn.ProgressionPreparingFinalSync,
+		rmn.ProgressionClearingPlacement,
+		rmn.ProgressionRunningFinalSync,
+		rmn.ProgressionFinalSyncComplete,
+		rmn.ProgressionEnsuringVolumesAreSecondary,
+	}
+
+	postRelocateProgressions := {
+		ProgressionCompleted,
+		ProgressionCleaningUp,
+		ProgressionWaitingForResourceRestore,
+		ProgressionUpdatedPlacement,
+		ProgressionEnsuringVolSyncSetup,
+		ProgressionSettingupVolsyncDest,
+	}
+
+specialProgressions are used to indicate special cases irrespective of action or initial deployment
+
+	specialProgressions := {
+		ProgressionDeleting,
+		ProgressionActionPaused,
+	}
+*/
 func (d *DRPCInstance) setProgression(nextProgression rmn.ProgressionStatus) {
 	updateDRPCProgression(d.instance, nextProgression, d.log)
+}
+
+func IsPreRelocateProgression(status rmn.ProgressionStatus) bool {
+	preRelocateProgressions := []rmn.ProgressionStatus{
+		rmn.ProgressionPreparingFinalSync,
+		rmn.ProgressionClearingPlacement,
+		rmn.ProgressionRunningFinalSync,
+		rmn.ProgressionFinalSyncComplete,
+		rmn.ProgressionEnsuringVolumesAreSecondary,
+	}
+
+	return slices.Contains(preRelocateProgressions, status)
 }
 
 //nolint:cyclop
