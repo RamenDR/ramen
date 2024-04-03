@@ -2088,6 +2088,7 @@ func (d *DRPCInstance) setDRState(nextState rmn.DRState) {
 			d.instance.Status.Phase, nextState))
 
 		d.instance.Status.Phase = nextState
+		d.instance.Status.ObservedGeneration = d.instance.Generation
 		d.reportEvent(nextState)
 	}
 }
