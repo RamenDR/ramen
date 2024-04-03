@@ -25,7 +25,7 @@ func propagateS3Secret(
 	drClustersMutex.Lock()
 	defer drClustersMutex.Unlock()
 
-	for _, clusterName := range util.DrpolicyClusterNames(drpolicy) {
+	for _, clusterName := range util.DRPolicyClusterNames(drpolicy) {
 		if err := drClusterSecretsDeploy(clusterName, drpolicy, drclusters, secretsUtil,
 			hubOperatorRamenConfig, log); err != nil {
 			return err
@@ -63,7 +63,7 @@ func drClusterSecretsDeploy(
 		if err := secretsUtil.AddSecretToCluster(
 			secretName,
 			clusterName,
-			NamespaceName(),
+			RamenOperatorNamespace(),
 			drClusterOperatorNamespaceNameOrDefault(rmnCfg)); err != nil {
 			return fmt.Errorf("drcluster '%v' secret add '%v': %w", clusterName, secretName, err)
 		}
@@ -107,7 +107,7 @@ func drClustersUndeploySecrets(
 	mustHaveS3Secrets := map[string]sets.String{}
 
 	// Determine S3 secrets that must continue to exist per cluster in the policy being deleted
-	for _, clusterName := range util.DrpolicyClusterNames(drpolicy) {
+	for _, clusterName := range util.DRPolicyClusterNames(drpolicy) {
 		mustHaveS3Secrets[clusterName] = drClusterListMustHaveSecrets(drpolicies, drclusters, clusterName,
 			drpolicy, ramenConfig)
 	}
@@ -127,7 +127,7 @@ func drClustersUndeploySecrets(
 			}
 
 			// Delete s3profile secret from current cluster
-			if err := secretsUtil.RemoveSecretFromCluster(s3SecretToDelete, clusterName, NamespaceName()); err != nil {
+			if err := secretsUtil.RemoveSecretFromCluster(s3SecretToDelete, clusterName, RamenOperatorNamespace()); err != nil {
 				return fmt.Errorf("drcluster '%v' s3Profile '%v' secrets delete: %w",
 					clusterName, s3SecretToDelete, err)
 			}
@@ -175,7 +175,7 @@ func drClusterListMustHaveS3Profiles(drpolicies rmn.DRPolicyList,
 			continue
 		}
 
-		for _, cluster := range util.DrpolicyClusterNames(&drpolicies.Items[idx]) {
+		for _, cluster := range util.DRPolicyClusterNames(&drpolicies.Items[idx]) {
 			// Skip if not the current cluster
 			if cluster != clusterName {
 				continue
@@ -199,7 +199,7 @@ func drPolicySecretNames(drpolicy *rmn.DRPolicy,
 
 	var err error
 
-	for _, managedCluster := range util.DrpolicyClusterNames(drpolicy) {
+	for _, managedCluster := range util.DRPolicyClusterNames(drpolicy) {
 		mcProfileFound := false
 
 		s3ProfileName := ""

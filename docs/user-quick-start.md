@@ -149,21 +149,27 @@ enough resources:
    for the details.
    Tested with version v1.12.0.
 
-1. Install the `virtctl` tool. See
-   [virtctl install](https://kubevirt.io/quickstart_minikube/#virtctl)
-   for the details.
-   Tested with version v1.0.1.
+1. Install the `virtctl` tool.
 
    ```
-   curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.0.1/virtctl-v1.0.1-linux-amd64
-   ```
-
-   After download completes for `virtctl` issue these commands.
-
-   ```
-   chmod +x virtctl
+   curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.2.0/virtctl-v1.2.0-linux-amd64
    sudo install virtctl /usr/local/bin
+   rm virtctl
    ```
+
+   For more info see
+   [virtctl install](https://kubevirt.io/quickstart_minikube/#virtctl)
+
+1. Install `mc` tool
+
+   ```
+   curl -L -o /tmp/mc https://dl.min.io/client/mc/release/linux-amd64/mc
+   sudo install /tmp/mc /usr/local/bin
+   rm /tmp/mc
+   ```
+
+   For more info see
+   [MinIO Client Quickstart](https://min.io/docs/minio/linux/reference/minio-mc.html#quickstart)
 
 1. Install `helm` tool - on Fedora you can use:
 

@@ -7,6 +7,15 @@ import os
 import sys
 
 from drenv import kubectl
+from drenv import mc
+from drenv import minio
+
+# Sync with minio.yaml
+MINIO_ACCESS_KEY = "minio"
+MINIO_SECRET_KEY = "minio123"
+
+# Used by ramen and velero.
+BUCKET = "bucket"
 
 
 def deploy(cluster):
@@ -23,6 +32,20 @@ def wait(cluster):
         "--timeout=600s",
         context=cluster,
     )
+
+    print("Waiting until minio service is available")
+    minio.wait_for_service(cluster)
+
+    print(f"Setting mc alias {cluster}")
+    mc.set_alias(
+        cluster,
+        minio.service_url(cluster),
+        MINIO_ACCESS_KEY,
+        MINIO_SECRET_KEY,
+    )
+
+    print(f"Creating bucket '{cluster}/{BUCKET}'")
+    mc.mb(f"{cluster}/{BUCKET}", ignore_existing=True)
 
 
 if len(sys.argv) != 2:

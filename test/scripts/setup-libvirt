@@ -1,11 +1,13 @@
 #!/bin/sh -e
 
+base=$(dirname $0)
+
 default_network_exists() {
     virsh -c qemu:///system net-list | grep -q default
 }
 
 create_default_network() {
-    virsh -c qemu:///system net-define /usr/share/libvirt/networks/default.xml
+    virsh -c qemu:///system net-define $base/network.xml
     virsh -c qemu:///system net-autostart default
     virsh -c qemu:///system net-start default
 }

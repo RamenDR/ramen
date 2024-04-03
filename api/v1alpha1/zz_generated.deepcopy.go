@@ -206,6 +206,15 @@ func (in *DRPlacementControlList) DeepCopyObject() runtime.Object {
 func (in *DRPlacementControlSpec) DeepCopyInto(out *DRPlacementControlSpec) {
 	*out = *in
 	out.PlacementRef = in.PlacementRef
+	if in.ProtectedNamespaces != nil {
+		in, out := &in.ProtectedNamespaces, &out.ProtectedNamespaces
+		*out = new([]string)
+		if **in != nil {
+			in, out := *in, *out
+			*out = make([]string, len(*in))
+			copy(*out, *in)
+		}
+	}
 	out.DRPolicyRef = in.DRPolicyRef
 	in.PVCSelector.DeepCopyInto(&out.PVCSelector)
 	if in.KubeObjectProtection != nil {
@@ -427,6 +436,11 @@ func (in *KubeObjectProtectionSpec) DeepCopyInto(out *KubeObjectProtectionSpec) 
 			}
 			(*out)[key] = outVal
 		}
+	}
+	if in.KubeObjectSelector != nil {
+		in, out := &in.KubeObjectSelector, &out.KubeObjectSelector
+		*out = new(v1.LabelSelector)
+		(*in).DeepCopyInto(*out)
 	}
 }
 
@@ -1046,6 +1060,15 @@ func (in *VolumeReplicationGroupSpec) DeepCopyInto(out *VolumeReplicationGroupSp
 		in, out := &in.KubeObjectProtection, &out.KubeObjectProtection
 		*out = new(KubeObjectProtectionSpec)
 		(*in).DeepCopyInto(*out)
+	}
+	if in.ProtectedNamespaces != nil {
+		in, out := &in.ProtectedNamespaces, &out.ProtectedNamespaces
+		*out = new([]string)
+		if **in != nil {
+			in, out := *in, *out
+			*out = make([]string, len(*in))
+			copy(*out, *in)
+		}
 	}
 }
 
