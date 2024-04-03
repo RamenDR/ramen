@@ -139,6 +139,16 @@ def wait_until_pool_mirroring_is_healthy(cluster):
         context=cluster,
     )
 
+    status = kubectl.get(
+        "cephblockpools.ceph.rook.io",
+        POOL_NAME,
+        "--output=jsonpath={.status}",
+        "--namespace=rook-ceph",
+        context=cluster,
+    )
+    info = {f"Cluster '{cluster}' ceph block pool status": json.loads(status)}
+    print(yaml.dump(info, sort_keys=False))
+
 
 def deploy_vrc_sample(cluster):
     print(f"Applying vrc sample in cluster '{cluster}'")
