@@ -1722,22 +1722,13 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 ) error {
 	log.Info("Updating DRPC status")
 
-	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, userPlacement)
-	if err != nil {
-		log.Info("Failed to select VRG namespace", "error", err)
-	}
-
-	clusterDecision := r.getClusterDecision(userPlacement)
-	if clusterDecision != nil && clusterDecision.ClusterName != "" && vrgNamespace != "" {
-		// TODO: On relocate/failover cluster decision is nil, so older cluster decision is reported
-		r.updateResourceCondition(drpc, clusterDecision.ClusterName, vrgNamespace, log)
-	}
+	r.updateResourceCondition(drpc, userPlacement)
 
 	// do not set metrics if DRPC is being deleted
 	if !isBeingDeleted(drpc, userPlacement) {
 		if err := r.setDRPCMetrics(ctx, drpc, log); err != nil {
 			// log the error but do not return the error
-			log.Info("failed to set drpc metrics", "errMSg", err)
+			log.Info("Failed to set drpc metrics", "errMSg", err)
 		}
 	}
 
@@ -1768,14 +1759,26 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 }
 
 // updateResourceCondition updates DRPC status sub-resource with updated status from VRG if one exists,
-// - The VRG is read from the cluster where the workload is intended to be deployed
 // - The status update is NOT intended for a VRG that should be cleaned up on a peer cluster
 // It also updates DRPC ConditionProtected based on current state of VRG.
 func (r *DRPlacementControlReconciler) updateResourceCondition(
-	drpc *rmn.DRPlacementControl,
-	clusterName, vrgNamespace string,
-	log logr.Logger,
+	drpc *rmn.DRPlacementControl, userPlacement client.Object,
 ) {
+	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, userPlacement)
+	if err != nil {
+		r.Log.Info("Failed to select VRG namespace", "error", err)
+
+		return
+	}
+
+	clusterName := r.clusterForVRGStatus(drpc, userPlacement, r.Log)
+	if clusterName == "" {
+		r.Log.Info("Unable to determine managed cluster from which to inspect VRG, " +
+			"skipping processing ResourceConditions")
+
+		return
+	}
+
 	annotations := make(map[string]string)
 	annotations[DRPCNameAnnotation] = drpc.Name
 	annotations[DRPCNamespaceAnnotation] = drpc.Namespace
@@ -1783,7 +1786,7 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 	vrg, err := r.MCVGetter.GetVRGFromManagedCluster(drpc.Name, vrgNamespace,
 		clusterName, annotations)
 	if err != nil {
-		log.Info("Failed to get VRG from managed cluster", "errMsg", err.Error())
+		r.Log.Info("Failed to get VRG from managed cluster", "errMsg", err.Error())
 
 		drpc.Status.ResourceConditions = rmn.VRGConditions{}
 
@@ -1814,10 +1817,60 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 	updateDRPCProtectedCondition(drpc, vrg, clusterName)
 }
 
+// clusterForVRGStatus determines which cluster's VRG should be inspected for status updates to DRPC
+func (r *DRPlacementControlReconciler) clusterForVRGStatus(
+	drpc *rmn.DRPlacementControl, userPlacement client.Object, log logr.Logger,
+) string {
+	clusterName := ""
+
+	clusterDecision := r.getClusterDecision(userPlacement)
+	if clusterDecision != nil && clusterDecision.ClusterName != "" {
+		clusterName = clusterDecision.ClusterName
+	}
+
+	switch drpc.Spec.Action {
+	case rmn.ActionFailover:
+		// Failover can rely on inspecting VRG from clusterDecision as it is never made nil, hence till
+		// placementDecision is changed to failoverCluster, we can inspect VRG from the existing cluster
+		return clusterName
+	case rmn.ActionRelocate:
+		if drpc.Status.ObservedGeneration != drpc.Generation {
+			log.Info("DPRC observedGeneration mismatches current generation, using ClusterDecision instead",
+				"Cluster", clusterName)
+
+			return clusterName
+		}
+
+		// We will inspect VRG from the non-preferredCluster until it reports Secondary, and then switch to the
+		// preferredCluster. This is done using Status.Progression for the DRPC
+		if IsPreRelocateProgression(drpc.Status.Progression) {
+			if value, ok := drpc.GetAnnotations()[LastAppDeploymentCluster]; ok && value != "" {
+				log.Info("Using cluster from LastAppDeploymentCluster annotation", "Cluster", value)
+
+				return value
+			}
+
+			log.Info("DPRC missing LastAppDeploymentCluster annotation, using ClusterDecision instead",
+				"Cluster", clusterName)
+
+			return clusterName
+		}
+
+		log.Info("Using DRPC preferredCluster, Relocate progression detected as switching to preferred cluster")
+
+		return drpc.Spec.PreferredCluster
+	}
+
+	// In cases of initial deployment use VRG from the preferredCluster
+	log.Info("Using DRPC preferredCluster, initial deploy detected")
+
+	return drpc.Spec.PreferredCluster
+}
+
 func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
 	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) error {
-	log.Info("setting drpc metrics")
+	log.Info("Setting drpc metrics")
 
 	drPolicy, err := r.getDRPolicy(ctx, drpc, log)
 	if err != nil {
