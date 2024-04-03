@@ -7,13 +7,16 @@ import os
 import sys
 
 from drenv import kubectl
+from drenv import cache
 
 NAMESPACE = "kubevirt"
 
 
 def deploy(cluster):
     print("Deploying kubevirt operator")
-    kubectl.apply("--kustomize=operator", context=cluster)
+    path = cache.path("addons/kubevirt-operator.yaml")
+    cache.fetch("operator", path)
+    kubectl.apply("--filename", path, context=cluster)
 
     print("Waiting until virt-operator is rolled out")
     kubectl.rollout(
@@ -25,7 +28,9 @@ def deploy(cluster):
     )
 
     print("Deploying kubevirt cr")
-    kubectl.apply("--kustomize=cr", context=cluster)
+    path = cache.path("addons/kubevirt-cr.yaml")
+    cache.fetch("cr", path)
+    kubectl.apply("--filename", path, context=cluster)
 
 
 def wait(cluster):
