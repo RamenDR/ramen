@@ -36,4 +36,12 @@ spec:
               containers:
                 - name: busybox
                   image: quay.io/nirsof/busybox:stable
-                  command: ["sleep", "60"]
+                  command:
+                    - sh
+                    - -c
+                    - |
+                      trap exit TERM
+                      while true; do
+                          sleep 10 &
+                          wait
+                      done

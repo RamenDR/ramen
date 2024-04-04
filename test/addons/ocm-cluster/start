@@ -6,6 +6,7 @@
 import json
 import os
 import sys
+import time
 
 import drenv
 from drenv import cluster
@@ -28,23 +29,32 @@ ADDONS = (
 )
 
 ADDONS_NAMESPACE = "open-cluster-management-agent-addon"
-HUB_NAMESPACE = "open-cluster-management-hub"
-
-# These are deployed when running "clusteradm init" on the hub.
-# We wait for them before we try to join the hub.
-HUB_DEPLOYMENTS = (
-    "cluster-manager-placement-controller",
-    "cluster-manager-registration-controller",
-    "cluster-manager-registration-webhook",
-    "cluster-manager-work-webhook",
-)
+# These are deployed when running "addons/ocm-hub/start" on the hub.  We wait
+# for them before we try to join the hub.
+HUB_DEPLOYMENTS = {
+    "open-cluster-management": (
+        "cluster-manager",
+        "governance-policy-addon-controller",
+        "governance-policy-propagator",
+        "multicluster-operators-appsub-summary",
+        "multicluster-operators-channel",
+        "multicluster-operators-placementrule",
+        "multicluster-operators-subscription",
+    ),
+    "open-cluster-management-hub": (
+        "cluster-manager-placement-controller",
+        "cluster-manager-registration-controller",
+        "cluster-manager-registration-webhook",
+        "cluster-manager-work-webhook",
+    ),
+}
 
 
 def deploy(cluster, hub):
     wait_for_hub(hub)
     join_cluster(cluster, hub)
-    label_cluster(cluster, hub)
     wait_for_managed_cluster(cluster, hub)
+    label_cluster(cluster, hub)
     enable_addons(cluster, hub)
 
 
@@ -66,18 +76,22 @@ def wait_for_hub(hub):
     print(f"Waiting until cluster '{hub}' is ready")
 
     cluster.wait_until_ready(hub)
-    drenv.wait_for(f"namespace/{HUB_NAMESPACE}", profile=hub)
 
-    for name in HUB_DEPLOYMENTS:
-        deployment = f"deploy/{name}"
-        drenv.wait_for(deployment, namespace=HUB_NAMESPACE, profile=hub)
-        kubectl.rollout(
-            "status",
-            deployment,
-            f"--namespace={HUB_NAMESPACE}",
-            "--timeout=600s",
-            context=hub,
-        )
+    for namespace, deployments in HUB_DEPLOYMENTS.items():
+        print(f"Waiting until namespace '{namespace}' is created on cluster '{hub}'")
+        drenv.wait_for(f"namespace/{namespace}", profile=hub)
+
+        for name in deployments:
+            deployment = f"deploy/{name}"
+            print(f"Waiting until deplyment '{name}' is rolled out on cluster '{hub}'")
+            drenv.wait_for(deployment, namespace=namespace, profile=hub)
+            kubectl.rollout(
+                "status",
+                deployment,
+                f"--namespace={namespace}",
+                "--timeout=600s",
+                context=hub,
+            )
 
 
 def join_cluster(cluster, hub):
@@ -109,13 +123,32 @@ def label_cluster(cluster, hub):
 
 
 def wait_for_managed_cluster(cluster, hub):
-    print("Waiting until managed cluster is available")
+    # This takes less then a second, but sometimes it never complete, even if waiting 10 minutes.
+    start = time.monotonic()
+
+    print(f"Waiting until managed cluster '{cluster}' hubAcceptsClient is true")
     kubectl.wait(
         f"managedcluster/{cluster}",
-        "--for=condition=ManagedClusterConditionAvailable",
-        "--timeout=600s",
+        "--for=jsonpath={.spec.hubAcceptsClient}=true",
+        "--timeout=60s",
         context=hub,
     )
+
+    for condition in (
+        "HubAcceptedManagedCluster",
+        "ManagedClusterJoined",
+        "ManagedClusterConditionAvailable",
+    ):
+        print(f"Waiting for managed cluster '{cluster}' condition {condition}")
+        kubectl.wait(
+            f"managedcluster/{cluster}",
+            f"--for=condition={condition}",
+            "--timeout=60s",
+            context=hub,
+        )
+
+    elapsed = time.monotonic() - start
+    print(f"managed cluster '{cluster}' became available in {elapsed:.2f} seconds")
 
 
 def enable_addons(cluster, hub):

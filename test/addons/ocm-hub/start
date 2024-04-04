@@ -23,6 +23,7 @@ ADDONS = (
 
 DEPLOYMENTS = {
     "open-cluster-management": (
+        "cluster-manager",
         "governance-policy-addon-controller",
         "governance-policy-propagator",
         "multicluster-operators-appsub-summary",
