@@ -29,7 +29,8 @@ def wait(cluster):
         "status",
         "deploy/rook-ceph-operator",
         "--namespace=rook-ceph",
-        "--timeout=300s",
+        # We had random timeout with 300s.
+        "--timeout=600s",
         context=cluster,
     )
 
