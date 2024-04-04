@@ -22,15 +22,15 @@ def wait_for_service(cluster, timeout=60, delay=2, log=print):
     start = time.monotonic()
     deadline = start + timeout
 
-    while not _service_is_alive(host_ip, service_port):
+    while not _service_is_ready(host_ip, service_port):
         if time.monotonic() > deadline:
-            raise RuntimeError("Timeout waiting for minio liveness")
+            raise RuntimeError("Timeout waiting for minio readiness")
 
         log(f"Retrying in {delay} seconds")
         time.sleep(delay)
 
     elapsed = time.monotonic() - start
-    log(f"minio service is available in {elapsed:.2f} seconds")
+    log(f"minio is ready in {elapsed:.2f} seconds")
 
 
 def _service_info(cluster):
@@ -50,14 +50,13 @@ def _service_info(cluster):
     return host_ip, service_port
 
 
-def _service_is_alive(host_ip, service_port, log=print):
+def _service_is_ready(host_ip, service_port, log=print):
     """
-    Based on
-    https://min.io/docs/minio/linux/operations/monitoring/healthcheck-probe.html#node-liveness
+    Based on https://github.com/minio/minio/issues/19412#issuecomment-2037702457
     """
     conn = http.client.HTTPConnection(host_ip, service_port, timeout=60)
     try:
-        conn.request("HEAD", "/minio/health/live")
+        conn.request("HEAD", "/minio/health/ready")
         r = conn.getresponse()
         if r.status != http.HTTPStatus.OK:
             log(f"Service returned unexpected status code: {r.status}")
