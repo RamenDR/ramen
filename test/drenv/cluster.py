@@ -28,7 +28,7 @@ def status(name):
     return READY
 
 
-def wait_until_ready(name, timeout=300):
+def wait_until_ready(name, timeout=600):
     """
     Wait until a cluster is ready.
 
