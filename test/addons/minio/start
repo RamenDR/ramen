@@ -5,6 +5,7 @@
 
 import os
 import sys
+import time
 
 from drenv import kubectl
 from drenv import mc
@@ -33,16 +34,34 @@ def wait(cluster):
         context=cluster,
     )
 
-    print("Waiting until minio service is available")
-    minio.wait_for_service(cluster)
+    attempts = 5
+    delay = 1
+    start = time.monotonic()
 
-    print(f"Setting mc alias {cluster}")
-    mc.set_alias(
-        cluster,
-        minio.service_url(cluster),
-        MINIO_ACCESS_KEY,
-        MINIO_SECRET_KEY,
-    )
+    for i in range(1, attempts + 1):
+        print(f"Waiting until minio service is available (attempt {i}/{attempts})")
+        minio.wait_for_service(cluster)
+
+        print(f"Setting mc alias {cluster} (attempt {i}/{attempts})")
+        try:
+            mc.set_alias(
+                cluster,
+                minio.service_url(cluster),
+                MINIO_ACCESS_KEY,
+                MINIO_SECRET_KEY,
+            )
+        except Exception as e:
+            if i == attempts:
+                raise
+
+            print(f"Attempt {i} failed: {e}")
+            print(f"Retrying in {delay} seconds")
+            time.sleep(delay)
+            delay *= 2
+        else:
+            elapsed = time.monotonic() - start
+            print(f"Set mc alias in {elapsed:.2f} seconds")
+            break
 
     print(f"Creating bucket '{cluster}/{BUCKET}'")
     mc.mb(f"{cluster}/{BUCKET}", ignore_existing=True)
