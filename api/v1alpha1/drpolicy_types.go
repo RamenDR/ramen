@@ -27,6 +27,7 @@ type DRPolicySpec struct {
 	// need DR protection. It will be passed in to the VRG when it is created
 	//+optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:default:={}
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="replicationClassSelector is immutable"
 	ReplicationClassSelector metav1.LabelSelector `json:"replicationClassSelector"`
 
@@ -35,6 +36,7 @@ type DRPolicySpec struct {
 	// need DR protection. It will be passed in to the VRG when it is created
 	//+optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:default:={}
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="volumeSnapshotClassSelector is immutable"
 	VolumeSnapshotClassSelector metav1.LabelSelector `json:"volumeSnapshotClassSelector"`
 
