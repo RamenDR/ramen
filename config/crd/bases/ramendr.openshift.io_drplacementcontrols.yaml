@@ -418,6 +418,9 @@ spec:
                   or the overall status was updated
                 format: date-time
                 type: string
+              observedGeneration:
+                format: int64
+                type: integer
               phase:
                 description: DRState for keeping track of the DR placement
                 type: string
