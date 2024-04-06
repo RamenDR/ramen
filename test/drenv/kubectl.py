@@ -6,6 +6,21 @@ from . import commands
 JSONPATH_NEWLINE = '{"\\n"}'
 
 
+def api_resources(verbs=None, namespaced=None, output=None, context=None):
+    """
+    Run kubectl api-resources and return the output.
+    """
+    args = []
+    if verbs:
+        args.append(f"--verbs={_join(verbs)}")
+    if namespaced is not None:
+        value = "true" if namespaced else "false"
+        args.append(f"--namespaced={value}")
+    if output:
+        args.append(f"--output={output}")
+    return _run("api-resources", *args, context=context)
+
+
 def version(context=None, output=None):
     """
     Return local and server version info. Useful for testing connectivity to
@@ -192,3 +207,7 @@ def _watch(cmd, *args, input=None, context=None, log=print):
     cmd.extend(args)
     for line in commands.watch(*cmd, input=input):
         log(line)
+
+
+def _join(items):
+    return ",".join(items)

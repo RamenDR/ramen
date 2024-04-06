@@ -1,0 +1,342 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import argparse
+import concurrent.futures
+import json
+import logging
+import os
+import subprocess
+import threading
+import time
+
+from collections import deque
+from contextlib import closing
+
+import yaml
+
+from drenv import ceph
+from drenv import commands
+from drenv import kubectl
+from drenv import minikube
+
+
+# Main directories
+CLUSTER = "cluster"
+NAMESPACES = "namespaces"
+COMMANDS = "commands"
+
+
+def main():
+    args = parse_args()
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(asctime)s %(levelname)-7s [%(threadName)s] %(message)s",
+    )
+
+    threading.current_thread().name = args.context
+    logging.info("Gathering data from cluster %s", args.context)
+    start = time.monotonic()
+
+    g = Gatherer(args.context, args.output, args.workers)
+    g.gather()
+
+    elapsed = time.monotonic() - start
+    logging.info("Gathered data in %.3f seconds", elapsed)
+
+
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument(
+        "context",
+        help="cluster context to gather data from",
+    )
+    p.add_argument(
+        "-o",
+        "--output",
+        default="gather",
+        help="directory for storing gathered data (default gather)",
+    )
+    p.add_argument(
+        "-w",
+        "--workers",
+        type=int,
+        default=6,
+        help="number of workers (default 6)",
+    )
+    p.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="enable verbose logs",
+    )
+    return p.parse_args()
+
+
+class Executor:
+
+    def __init__(self, workers, prefix):
+        self._executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=workers,
+            thread_name_prefix=prefix,
+        )
+        self._futures = deque()
+
+    def submit(self, func, *args, **kw):
+        f = self._executor.submit(func, *args, **kw)
+        self._futures.append(f)
+
+    def wait(self):
+        while self._futures:
+            f = self._futures.popleft()
+            try:
+                f.result()
+            except Exception:
+                logging.exception("Gather error")
+
+    def close(self):
+        self._executor.shutdown()
+
+
+class Gatherer:
+
+    def __init__(self, context, target, workers):
+        self._context = context
+        self._target = os.path.join(target, context)
+        self._executor = Executor(workers, context)
+
+    def gather(self):
+        with closing(self._executor):
+            for kind in self._list_api_resources():
+                self._executor.submit(self._gather_api_resources, kind)
+            self._executor.wait()
+
+    def _list_api_resources(self):
+        logging.debug("Listing API resources")
+        start = time.monotonic()
+
+        out = kubectl.api_resources(
+            verbs=["list"],
+            output="name",
+            context=self._context,
+        )
+        res = out.splitlines()
+
+        elapsed = time.monotonic() - start
+        logging.debug("Listed %d API resources in %.3f seconds", len(res), elapsed)
+        return res
+
+    def _gather_api_resources(self, kind):
+        logging.debug("Gathering %s", kind)
+        start = time.monotonic()
+
+        # Function for extra processing of this resource kind (e.g. _do_pods).
+        do_func = getattr(self, "_do_" + kind.replace(".", "_"), None)
+
+        items = self._list_resources(kind)
+        for res in items:
+            self._dump_resource(kind, res)
+            if do_func:
+                self._executor.submit(do_func, res)
+
+        elapsed = time.monotonic() - start
+        logging.debug("%d %s gathered in %.3f seconds", len(items), kind, elapsed)
+
+    def _list_resources(self, kind):
+        logging.debug("Listing %s", kind)
+        start = time.monotonic()
+
+        out = kubectl.get(
+            kind,
+            "--output=json",
+            "--all-namespaces",
+            context=self._context,
+        )
+        res = json.loads(out)
+        items = res["items"]
+
+        elapsed = time.monotonic() - start
+        logging.debug("Listed %d %s in %.3f seconds", len(items), kind, elapsed)
+
+        return items
+
+    def _dump_resource(self, kind, res):
+        name = res["metadata"]["name"]
+        namespace = res["metadata"].get("namespace")
+        if namespace:
+            res_dir = self._create_dir(self._target, NAMESPACES, namespace, kind)
+        else:
+            res_dir = self._create_dir(self._target, CLUSTER, kind)
+        filename = os.path.join(res_dir, name + ".yaml")
+        with open(filename, "w") as f:
+            yaml.dump(res, f)
+
+    # Processing special resoruces.
+
+    def _do_pods(self, pod):
+        namespace = pod["metadata"]["namespace"]
+        name = pod["metadata"]["name"]
+        logging.debug("Gathering pod %s/%s", namespace, name)
+
+        for container in (c["name"] for c in pod["spec"]["containers"]):
+            logs_dir = self._create_dir(
+                self._target, NAMESPACES, namespace, "pods", name, container
+            )
+            self._gather_logs(logs_dir, namespace, name, container)
+            self._gather_logs(logs_dir, namespace, name, container, previous=True)
+
+    def _gather_logs(self, logs_dir, namespace, pod, container, previous=False):
+        which = "previous" if previous else "current"
+        logging.debug(
+            "Gathering %s logs for %s/%s/%s", which, namespace, pod, container
+        )
+        start = time.monotonic()
+
+        filename = os.path.join(logs_dir, f"{which}.log")
+
+        # We don't use drenv.kubectl since it does not support redirection yet.
+        cmd = [
+            "kubectl",
+            "logs",
+            pod,
+            f"--namespace={namespace}",
+            f"--container={container}",
+            "--ignore-errors",
+        ]
+        if previous:
+            cmd.append("--previous")
+        cmd.append(f"--context={self._context}")
+
+        with open(filename, "w") as f:
+            cp = subprocess.run(cmd, stdout=f, stderr=subprocess.PIPE)
+
+        if cp.returncode != 0:
+            # Log the error, we don't fail the entire operation.
+            error = cp.stderr.decode().strip()
+            logging.warning(
+                "Cannot gather %s logs for %s/%s/%s: %s",
+                which,
+                namespace,
+                pod,
+                container,
+                error,
+            )
+
+        elapsed = time.monotonic() - start
+        logging.debug(
+            "%s logs for %s/%s/%s gathered in %.3f seconds",
+            which,
+            namespace,
+            pod,
+            container,
+            elapsed,
+        )
+
+    def _do_cephclusters_ceph_rook_io(self, cephcluster):
+        name = cephcluster["metadata"]["name"]
+        namespace = cephcluster["metadata"]["namespace"]
+        logging.debug("Gathering cephcluster %s/%s", namespace, name)
+        self._gather_ceph_command("ceph", "status")
+        self._gather_ceph_command("ceph", "osd", "blocklist", "ls")
+
+    def _gather_ceph_command(self, *cmd):
+        description = " ".join(cmd)
+        logging.debug("Gathering ceph command '%s'", description)
+        start = time.monotonic()
+
+        out = ceph.tool(self._context, *cmd)
+        base_dir = self._create_dir(self._target, COMMANDS)
+        filename = os.path.join(base_dir, "-".join(cmd))
+        with open(filename, "w") as f:
+            f.write(out)
+
+        elapsed = time.monotonic() - start
+        logging.debug(
+            "Ceph command '%s' gathered in %.3f seconds", description, elapsed
+        )
+
+    def _do_nodes(self, node):
+        node_name = node["metadata"]["name"]
+        logging.debug("Gathering node %s", node_name)
+        node_dir = self._create_dir(self._target, CLUSTER, "nodes", node_name)
+
+        if self._node_has_rook_ceph_log(node_name):
+            self._gather_node_rook_ceph_logs(node_dir, node)
+
+    def _gather_node_rook_ceph_logs(self, node_dir, node):
+        node_name = node["metadata"]["name"]
+        node_address = node["status"]["addresses"][0]["address"]
+        logging.debug("Gathering node %s rook-ceph logs", node_name)
+        start = time.monotonic()
+
+        log_dir = self._create_dir(node_dir, "rook-ceph", "log")
+
+        # TODO: works only for minikube cluster.
+        ssh_key = minikube.ssh_key(self._context)
+        try:
+            scp(
+                "docker",
+                node_address,
+                "/data/rook/rook-ceph/log/*.log*",
+                log_dir,
+                identity_file=ssh_key,
+            )
+        except commands.Error as e:
+            logging.warning(
+                "Error gathering node %s rook-ceph logs: %r",
+                node_name,
+                e.error.strip(),
+            )
+
+        elapsed = time.monotonic() - start
+        logging.debug(
+            "Node %s rook-ceph logs gathered in %.3f seconds", node_name, elapsed
+        )
+
+    def _node_has_rook_ceph_log(self, node_name):
+        logging.debug("Checking if node %s has rook-ceph logs", node_name)
+        start = time.monotonic()
+
+        script = "if test -d /data/rook/rook-ceph/log; then echo -n yes; fi"
+        try:
+            # TODO: works only for minikube cluster.
+            result = minikube.ssh(self._context, script, node=node_name) == "yes"
+        except commands.Error as e:
+            logging.warning(
+                "Error checking if node %s has rook-ceph logs: %r",
+                node_name,
+                e.error.strip(),
+            )
+            result = False
+
+        elapsed = time.monotonic() - start
+        logging.debug(
+            "Checking node %s rook-ceph logs completed in %.3f seconds",
+            node_name,
+            elapsed,
+        )
+
+        return result
+
+    # Helpers
+
+    def _create_dir(self, base, *names):
+        path = os.path.join(base, *names)
+        os.makedirs(path, exist_ok=True)
+        return path
+
+
+def scp(user, host, source, target, identity_file=None):
+    cmd = ["scp", "-B", "-q", "-o", "StrictHostKeyChecking=no"]
+    if identity_file:
+        cmd.extend(("-i", identity_file))
+    cmd.append(f"{user}@{host}:{source}")
+    cmd.append(target)
+    return commands.run(*cmd)
+
+
+if __name__ == "__main__":
+    main()

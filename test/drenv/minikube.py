@@ -100,8 +100,18 @@ def cp(profile, src, dst):
     _watch("cp", src, dst, profile=profile)
 
 
-def ssh(profile, command):
-    _watch("ssh", command, profile=profile)
+def ssh(profile, command, node=None):
+    if node is None:
+        node = profile
+    return _run("ssh", "--node", node, command, profile=profile)
+
+
+def ssh_key(profile):
+    return _run("ssh-key", profile=profile).rstrip()
+
+
+def ip(profile):
+    return _run("ip", profile=profile).rstrip()
 
 
 def _run(command, *args, profile=None, output=None):
