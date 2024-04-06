@@ -11,9 +11,17 @@ import sys
 import yaml
 
 import drenv
+from drenv import ceph
 from drenv import kubectl
 
 POOL_NAME = "replicapool"
+
+
+def log_blocklist(cluster):
+    blocklist = ceph.list_osd_blocklist(cluster)
+    if blocklist:
+        info = {f"Cluster '{cluster}' ceph osd blocklist": blocklist}
+        print(yaml.dump(info, sort_keys=False))
 
 
 def fetch_secret_info(cluster):
@@ -178,6 +186,9 @@ configure_rbd_mirroring(cluster2, cluster1_info)
 
 wait_until_rbd_mirror_is_ready(cluster1)
 wait_until_rbd_mirror_is_ready(cluster2)
+
+log_blocklist(cluster1)
+log_blocklist(cluster2)
 
 wait_until_pool_mirroring_is_healthy(cluster1)
 wait_until_pool_mirroring_is_healthy(cluster2)
