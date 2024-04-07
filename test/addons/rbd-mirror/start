@@ -7,11 +7,15 @@ import base64
 import json
 import os
 import sys
+import time
+
+from contextlib import closing
 
 import yaml
 
 import drenv
 from drenv import ceph
+from drenv import commands
 from drenv import kubectl
 
 POOL_NAME = "replicapool"
@@ -115,37 +119,22 @@ def wait_until_rbd_mirror_is_ready(cluster):
     print(yaml.dump(info, sort_keys=False))
 
 
-def wait_until_pool_mirroring_is_healthy(cluster):
-    print(f"Waiting until ceph mirror daemon is healthy in cluster '{cluster}'")
-    kubectl.wait(
-        "cephblockpools.ceph.rook.io",
-        POOL_NAME,
-        "--for=jsonpath={.status.mirroringStatus.summary.daemon_health}=OK",
-        "--namespace=rook-ceph",
-        # We had random timeouts with 300s.
-        "--timeout=600s",
-        context=cluster,
-    )
+def wait_until_pool_mirroring_is_healthy(cluster, attempts=3):
+    # We have random timeouts when rbd-mirror fail to connect to the peer.
+    # When this happens we can recover by restarting the rbd-mirror daemon.
 
-    print(f"Waiting until ceph mirror is healthy in cluster '{cluster}'")
-    kubectl.wait(
-        "cephblockpools.ceph.rook.io",
-        POOL_NAME,
-        "--for=jsonpath={.status.mirroringStatus.summary.health}=OK",
-        "--namespace=rook-ceph",
-        "--timeout=300s",
-        context=cluster,
-    )
+    for i in range(1, attempts + 1):
+        print(f"Waiting for mirroring health in cluster '{cluster}' ({i}/{attempts})")
+        try:
+            watch_pool_mirroring_status(cluster)
+        except commands.Timeout:
+            if i == attempts:
+                raise
 
-    print(f"Waiting until ceph mirror image is healthy in cluster '{cluster}'")
-    kubectl.wait(
-        "cephblockpools.ceph.rook.io",
-        POOL_NAME,
-        "--for=jsonpath={.status.mirroringStatus.summary.image_health}=OK",
-        "--namespace=rook-ceph",
-        "--timeout=300s",
-        context=cluster,
-    )
+            print(f"Timeout waiting for mirroring health in cluster '{cluster}'")
+            restart_rbd_mirror_daemon(cluster)
+        else:
+            break
 
     status = kubectl.get(
         "cephblockpools.ceph.rook.io",
@@ -156,6 +145,61 @@ def wait_until_pool_mirroring_is_healthy(cluster):
     )
     info = {f"Cluster '{cluster}' ceph block pool status": json.loads(status)}
     print(yaml.dump(info, sort_keys=False))
+
+
+def watch_pool_mirroring_status(cluster, timeout=180):
+    """
+    Watch pool .status.mirroringStatus.summary until mirroring is healthy or
+    the timeout expires.
+    """
+    start = time.monotonic()
+    deadline = start + timeout
+
+    while True:
+        remaining = deadline - time.monotonic()
+        watcher = kubectl.watch(
+            f"cephblockpool/{POOL_NAME}",
+            jsonpath="{.status.mirroringStatus.summary}",
+            namespace="rook-ceph",
+            timeout=remaining,
+            context=cluster,
+        )
+        with closing(watcher):
+            for line in watcher:
+                summary = json.loads(line)
+                print(f"Cluster '{cluster}' mirroring status': {summary}")
+
+                if mirroring_is_healthy(summary):
+                    elapsed = time.monotonic() - start
+                    print(
+                        f"Cluster '{cluster}' mirroring healthy in {elapsed:.2f} seconds"
+                    )
+                    return
+
+
+def mirroring_is_healthy(summary):
+    return (
+        summary["daemon_health"] == "OK"
+        and summary["health"] == "OK"
+        and summary["image_health"] == "OK"
+    )
+
+
+def restart_rbd_mirror_daemon(cluster):
+    # TODO: Get the name from the cluster.
+    deploy = "deploy/rook-ceph-rbd-mirror-a"
+
+    print(f"Restarting {deploy} in cluster '{cluster}'")
+    kubectl.rollout("restart", deploy, "--namespace=rook-ceph", context=cluster)
+
+    print(f"Waiting until {deploy} is rolled out in cluster '{cluster}'")
+    kubectl.rollout(
+        "status",
+        deploy,
+        "--namespace=rook-ceph",
+        "--timeout=120s",
+        context=cluster,
+    )
 
 
 def deploy_vrc_sample(cluster):
