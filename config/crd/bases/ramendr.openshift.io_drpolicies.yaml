@@ -51,6 +51,7 @@ spec:
                 - message: drClusters is immutable
                   rule: self == oldSelf
               replicationClassSelector:
+                default: {}
                 description: |-
                   Label selector to identify all the VolumeReplicationClasses.
                   This selector is assumed to be the same for all subscriptions that
@@ -112,6 +113,7 @@ spec:
                 - message: schedulingInterval is immutable
                   rule: self == oldSelf
               volumeSnapshotClassSelector:
+                default: {}
                 description: |-
                   Label selector to identify all the VolumeSnapshotClasses.
                   This selector is assumed to be the same for all subscriptions that
