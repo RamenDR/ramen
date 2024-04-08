@@ -272,6 +272,22 @@ def test_watch_after_shutdown(monkeypatch):
         list(commands.watch("no-such-command"))
 
 
+def test_watch_some():
+    # This command terminate with non-zero exit code, but we care only about
+    # getting the first 2 lines and ignore the rest of the output and the exit
+    # code.
+    cmd = ("sh", "-c", "echo line 1; echo line 2; sleep 10; echo line 3; exit 1")
+    output = []
+
+    watcher = commands.watch(*cmd)
+    for line in watcher:
+        output.append(line)
+        if len(output) == 2:
+            watcher.close()
+
+    assert output == ["line 1", "line 2"]
+
+
 # Running commands.
 
 
