@@ -105,6 +105,10 @@ def watch(*args, input=None, keepends=False, decode=True):
     fail to raise an error about the failing command. Invalid characters will
     be replaced with unicode replacement character (U+FFFD).
 
+    The call return a generator object that can be used to iterate over lines.
+    To stop watching early and terminate the process, call close() on the
+    returned value.
+
     Raises Error if creating a child process failed or the child process
     terminated with non-zero exit code. The error includes all data read from
     the child process stderr.
@@ -125,7 +129,7 @@ def watch(*args, input=None, keepends=False, decode=True):
         except OSError as e:
             raise Error(args, f"Could not execute: {e}").with_exception(e)
 
-    with p:
+    try:
         error = bytearray()
         partial = bytearray()
 
@@ -152,6 +156,12 @@ def watch(*args, input=None, keepends=False, decode=True):
             if not keepends:
                 line = line.rstrip()
             yield line.decode() if decode else line
+
+    except GeneratorExit:
+        p.kill()
+        return
+    finally:
+        p.wait()
 
     if p.returncode != 0:
         error = error.decode(errors="replace")
