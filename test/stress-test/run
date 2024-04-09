@@ -5,72 +5,48 @@
 
 import argparse
 import json
-import logging
 import os
 import subprocess
 import sys
 import time
 
+PROGRESS = (
+    "[%(done)d/%(runs)d] "
+    "%(passed)d passed, "
+    "%(failed)d failed, "
+    "rate: %(rate).1f%%, "
+    "time/run: %(time/run).1fs"
+)
+
 
 def main():
     args = parse_args()
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(message)s",
-    )
-
-    logging.info("Writing output to %s", args.outdir)
     os.mkdir(args.outdir)
 
     results = []
     stats = {
-        "runs": 0,
+        "runs": args.runs,
+        "done": 0,
         "passed": 0,
         "failed": 0,
-        "success": 0.0,
+        "rate": 0.0,
         "time": 0.0,
-        "passed-time": 0.0,
-        "failed-time": 0.0,
+        "time/run": 0.0,
     }
 
-    start = time.monotonic()
+    update_progress(stats)
 
     for i in range(args.runs):
         name = f"{i:03d}"
-        logging.info("[%s] Started", name)
         r = run(name, args)
-        logging.info(
-            "[%s] %s in %.1f seconds",
-            name,
-            "PASSED" if r["passed"] else "FAILED",
-            r["time"],
-        )
         results.append(r)
-
-        stats["runs"] += 1
-
-        if r["passed"]:
-            stats["passed"] += 1
-            stats["passed-time"] += r["time"]
-        else:
-            stats["failed"] += 1
-            stats["failed-time"] += r["time"]
-
+        update_stats(stats, r)
+        update_progress(stats)
         if not r["passed"] and args.exit_first:
             break
 
-    stats["time"] = time.monotonic() - start
-    stats["success"] = stats["passed"] / stats["runs"] * 100
-
-    logging.info(
-        "%d passed, %d failed (%.1f%%) in %.1fs",
-        stats["passed"],
-        stats["failed"],
-        stats["success"],
-        stats["time"],
-    )
-
+    update_progress(stats, last=True)
     write_output(args, results, stats)
 
 
@@ -104,6 +80,25 @@ def parse_args():
         help="path to environment file",
     )
     return p.parse_args()
+
+
+def update_stats(stats, result):
+    stats["done"] += 1
+    stats["time"] += result["time"]
+    stats["time/run"] = stats["time"] / stats["done"]
+
+    if result["passed"]:
+        stats["passed"] += 1
+    else:
+        stats["failed"] += 1
+
+    stats["rate"] = stats["passed"] / stats["done"] * 100
+
+
+def update_progress(stats, last=False):
+    line = (PROGRESS % stats).ljust(79)
+    end = "\n" if last else "\r"
+    sys.stdout.write(line + end)
 
 
 def write_output(args, results, stats):

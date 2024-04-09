@@ -13,6 +13,10 @@ from drenv import kubectl
 VERSION = "release-1.13"
 BASE_URL = f"https://raw.githubusercontent.com/rook/rook/{VERSION}/deploy/examples"
 
+# The ceph, and ceph-csi iamges are very large (500m each), using larger
+# timeout to avoid timeouts with flaky network.
+TIMEOUT = 600
+
 
 def deploy(cluster):
     print("Deploying rook ceph cluster")
@@ -35,7 +39,7 @@ def wait(cluster):
         "cephcluster/my-cluster",
         "--for=jsonpath={.status.phase}=Ready",
         "--namespace=rook-ceph",
-        "--timeout=600s",
+        f"--timeout={TIMEOUT}s",
         context=cluster,
     )
 

@@ -87,6 +87,7 @@ def wait_until_pool_mirroring_is_healthy(cluster):
         POOL_NAME,
         "--for=jsonpath={.status.mirroringStatus.summary.daemon_health}=OK",
         "--namespace=rook-ceph",
+        # We had random timeouts with 300s.
         "--timeout=600s",
         context=cluster,
     )
@@ -97,7 +98,7 @@ def wait_until_pool_mirroring_is_healthy(cluster):
         POOL_NAME,
         "--for=jsonpath={.status.mirroringStatus.summary.health}=OK",
         "--namespace=rook-ceph",
-        "--timeout=600s",
+        "--timeout=300s",
         context=cluster,
     )
 
@@ -107,7 +108,7 @@ def wait_until_pool_mirroring_is_healthy(cluster):
         POOL_NAME,
         "--for=jsonpath={.status.mirroringStatus.summary.image_health}=OK",
         "--namespace=rook-ceph",
-        "--timeout=600s",
+        "--timeout=300s",
         context=cluster,
     )
 

@@ -67,7 +67,7 @@ def wait(cluster):
             "status",
             deployment,
             f"--namespace={ADDONS_NAMESPACE}",
-            "--timeout=600s",
+            "--timeout=300s",
             context=cluster,
         )
 
@@ -89,7 +89,7 @@ def wait_for_hub(hub):
                 "status",
                 deployment,
                 f"--namespace={namespace}",
-                "--timeout=600s",
+                "--timeout=300s",
                 context=hub,
             )
 
@@ -125,6 +125,13 @@ def label_cluster(cluster, hub):
 def wait_for_managed_cluster(cluster, hub):
     # This takes less then a second, but sometimes it never complete, even if waiting 10 minutes.
     start = time.monotonic()
+
+    print(f"Waiting until managed cluster '{cluster}' is created on the hub")
+    drenv.wait_for(
+        f"managedcluster/{cluster}",
+        timeout=60,
+        profile=hub,
+    )
 
     print(f"Waiting until managed cluster '{cluster}' hubAcceptsClient is true")
     kubectl.wait(
