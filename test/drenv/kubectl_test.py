@@ -100,7 +100,7 @@ def test_annotate(tmpenv, capsys):
 
     print(f"Adding new annotation {annotation}")
     kubectl.annotate(pod, {annotation: "old"}, context=tmpenv.profile)
-    assert _get_annotations(pod)[annotation] == "old"
+    assert _get_annotations(pod, tmpenv.profile)[annotation] == "old"
 
     print(f"Overwirting annotation {annotation}")
     kubectl.annotate(
@@ -109,11 +109,11 @@ def test_annotate(tmpenv, capsys):
         overwrite=True,
         context=tmpenv.profile,
     )
-    assert _get_annotations(pod)[annotation] == "new"
+    assert _get_annotations(pod, tmpenv.profile)[annotation] == "new"
 
     print(f"Removing annotation {annotation}")
     kubectl.annotate(pod, {annotation: None}, context=tmpenv.profile)
-    assert annotation not in _get_annotations(pod)
+    assert annotation not in _get_annotations(pod, tmpenv.profile)
 
 
 def test_delete(tmpenv, capsys):
@@ -124,8 +124,12 @@ def test_delete(tmpenv, capsys):
     assert out.strip() == f'pod "{name}" deleted'
 
 
-def _get_annotations(resource):
-    out = kubectl.get(resource, "--output=jsonpath={.metadata.annotations}")
+def _get_annotations(resource, context):
+    out = kubectl.get(
+        resource,
+        "--output=jsonpath={.metadata.annotations}",
+        context=context,
+    )
     if out == "":
         return {}
     return json.loads(out)
