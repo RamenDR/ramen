@@ -3,6 +3,8 @@
 
 from . import commands
 
+JSONPATH_NEWLINE = '{"\\n"}'
+
 
 def version(context=None, output=None):
     """
@@ -129,6 +131,50 @@ def wait(*args, context=None, log=print):
     Run kubectl wait ... logging progress messages.
     """
     _watch("wait", *args, context=context, log=log)
+
+
+def watch(
+    resource,
+    jsonpath="{}",
+    namespace=None,
+    timeout=None,
+    context=None,
+):
+    """
+    Run kubectl get --watch --output={jsonpath} ... iterating over lines from
+    kubectl stdout.
+
+    The resource argument may be kind ("pod") or a single resource
+    ("pod/pod-name").
+
+    Since watch waits for a complete line, a JSONPATH_NEWLINE is added to
+    specified jsonpath argument unless the jsonpath already ends with one.
+
+    Iteration stops when the timeout expires, or the underlying kubectl command
+    terminated with a zero exit code.
+
+    To end watching early, call close() on the return value.
+
+    Raises:
+    - commands.Error if starting kubectl failed.
+    - comamnds.Timeout if timeout has expired.
+    """
+    if not jsonpath.endswith(JSONPATH_NEWLINE):
+        jsonpath += JSONPATH_NEWLINE
+
+    cmd = [
+        "kubectl",
+        "get",
+        resource,
+        "--watch",
+        f"--output=jsonpath={jsonpath}",
+    ]
+    if namespace:
+        cmd.append(f"--namespace={namespace}")
+    if context:
+        cmd.append(f"--context={context}")
+
+    return commands.watch(*cmd, timeout=timeout)
 
 
 def _run(cmd, *args, context=None):
