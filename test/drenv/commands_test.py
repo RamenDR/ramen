@@ -124,6 +124,18 @@ def test_stream_no_stdout_stderr():
     assert stream == []
 
 
+def test_stream_timeout_expired():
+    with run("true") as p:
+        with pytest.raises(commands.StreamTimeout):
+            list(commands.stream(p, timeout=0.0))
+
+
+def test_stream_timeout_not_expired():
+    with run("true") as p:
+        stream = list(commands.stream(p, timeout=1.0))
+    assert stream == []
+
+
 # Watching commands.
 
 
@@ -286,6 +298,16 @@ def test_watch_some():
             watcher.close()
 
     assert output == ["line 1", "line 2"]
+
+
+def test_watch_timeout():
+    with pytest.raises(commands.Timeout):
+        list(commands.watch("true", timeout=0.0))
+
+
+def test_watch_timeout_not_expired():
+    output = list(commands.watch("true", timeout=1.0))
+    assert output == []
 
 
 # Running commands.
