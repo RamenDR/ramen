@@ -66,11 +66,13 @@ def patch(*args, context=None, log=print):
     _watch("patch", *args, context=context, log=log)
 
 
-def label(name, value, overwrite=False, context=None, log=print):
+def label(resource, label, overwrite=False, context=None, log=print):
     """
-    Run kubectl label ... logging progress messages.
+    Run kubectl resource label ... logging progress messages.
+
+    Set label="name=value" to set a label, label="name-" to remove a label.
     """
-    args = ["label", name, value]
+    args = ["label", resource, label]
     if overwrite:
         args.append("--overwrite")
     _watch(*args, context=context, log=log)
