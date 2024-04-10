@@ -966,12 +966,23 @@ func (v *VRGInstance) pvcsDeselectedUnprotect() error {
 		}
 	}
 
-	v.cleanUpProtectedPVCsThatAreNotBound()
+	v.cleanUpProtectedPVCsThatAreNotBound(log)
 
 	return nil
 }
 
-func (v *VRGInstance) cleanUpProtectedPVCsThatAreNotBound() {
+func (v *VRGInstance) cleanUpProtectedPVCsThatAreNotBound(log logr.Logger) {
+	if !v.ramenConfig.VolumeUnprotectionEnabled {
+		log.Info("Volume unprotection disabled")
+
+		return
+	}
+
+	if v.instance.Spec.Async != nil && !VolumeUnprotectionEnabledForAsyncVolRep {
+		log.Info("Volume unprotection disabled for async mode")
+
+		return
+	}
 	// clean up the PVCs that are part of protected pvcs but not in v.volReps and v.volSyncs
 	protectedPVCs := v.instance.Status.ProtectedPVCs
 	protectedPVCsFiltered := make([]ramendrv1alpha1.ProtectedPVC, 0)
