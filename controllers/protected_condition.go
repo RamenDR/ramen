@@ -274,7 +274,7 @@ func updateMiscVRGStatus(drpc *rmn.DRPlacementControl,
 		return updated
 	}
 
-	if vrg.Status.LastGroupSyncTime.IsZero() {
+	if vrg.Spec.Async != nil && vrg.Status.LastGroupSyncTime.IsZero() {
 		addOrUpdateCondition(&drpc.Status.Conditions, rmn.ConditionProtected, drpc.Generation, metav1.ConditionFalse,
 			rmn.ReasonProtectedProgressing, fmt.Sprintf("VolumeReplicationGroup (%s/%s) on cluster %s "+
 				"is not reporting any lastGroupSyncTime as %s, retrying till status is met",
