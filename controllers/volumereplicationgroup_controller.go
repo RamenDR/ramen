@@ -966,7 +966,28 @@ func (v *VRGInstance) pvcsDeselectedUnprotect() error {
 		}
 	}
 
+	v.cleanUpProtectedPVCsThatAreNotBound()
+
 	return nil
+}
+
+func (v *VRGInstance) cleanUpProtectedPVCsThatAreNotBound() {
+	// clean up the PVCs that are part of protected pvcs but not in v.volReps and v.volSyncs
+	protectedPVCs := v.instance.Status.ProtectedPVCs
+	protectedPVCsFiltered := make([]ramendrv1alpha1.ProtectedPVC, 0)
+	for _, protectedPVC := range protectedPVCs {
+		for _, volRepPVC := range v.volRepPVCs {
+			if protectedPVC.Name == volRepPVC.Name && protectedPVC.Namespace == volRepPVC.Namespace {
+				protectedPVCsFiltered = append(protectedPVCsFiltered, protectedPVC)
+			}
+		}
+		for _, volSyncPVC := range v.volSyncPVCs {
+			if protectedPVC.Name == volSyncPVC.Name && protectedPVC.Namespace == volSyncPVC.Namespace {
+				protectedPVCsFiltered = append(protectedPVCsFiltered, protectedPVC)
+			}
+		}
+	}
+	v.instance.Status.ProtectedPVCs = protectedPVCsFiltered
 }
 
 // processAsSecondary reconciles the current instance of VRG as secondary
