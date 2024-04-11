@@ -24,30 +24,38 @@ def main():
 
     os.mkdir(args.outdir)
 
-    results = []
-    stats = {
-        "runs": args.runs,
-        "done": 0,
-        "passed": 0,
-        "failed": 0,
-        "rate": 0.0,
-        "time": 0.0,
-        "time/run": 0.0,
+    test = {
+        "config": {
+            "runs": args.runs,
+            "envfile": args.envfile,
+            "exit-first": args.exit_first,
+            "name-prefix": args.name_prefix,
+        },
+        "results": [],
+        "stats": {
+            "runs": args.runs,
+            "done": 0,
+            "passed": 0,
+            "failed": 0,
+            "rate": 0.0,
+            "time": 0.0,
+            "time/run": 0.0,
+        },
     }
 
-    update_progress(stats)
+    update_progress(test["stats"])
 
     for i in range(args.runs):
         name = f"{i:03d}"
         r = run(name, args)
-        results.append(r)
-        update_stats(stats, r)
-        update_progress(stats)
+        test["results"].append(r)
+        update_stats(test["stats"], r)
+        update_progress(test["stats"])
         if not r["passed"] and args.exit_first:
             break
 
-    update_progress(stats, last=True)
-    write_output(args, results, stats)
+    update_progress(test["stats"], last=True)
+    write_output(test, args.outdir)
 
 
 def parse_args():
@@ -101,19 +109,8 @@ def update_progress(stats, last=False):
     sys.stdout.write(line + end)
 
 
-def write_output(args, results, stats):
-    test = {
-        "config": {
-            "runs": args.runs,
-            "envfile": args.envfile,
-            "exit-first": args.exit_first,
-            "name-prefix": args.name_prefix,
-        },
-        "results": results,
-        "stats": stats,
-    }
-
-    test_file = os.path.join(args.outdir, "test.json")
+def write_output(test, outdir):
+    test_file = os.path.join(outdir, "test.json")
     with open(test_file, "w") as f:
         json.dump(test, f, indent=2)
         f.write("\n")
