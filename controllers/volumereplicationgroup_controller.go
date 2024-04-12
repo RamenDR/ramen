@@ -966,7 +966,57 @@ func (v *VRGInstance) pvcsDeselectedUnprotect() error {
 		}
 	}
 
+	v.cleanUpProtectedPVCsThatAreNotBound(log)
+
 	return nil
+}
+
+func (v *VRGInstance) cleanUpProtectedPVCsThatAreNotBound(log logr.Logger) {
+	if !v.ramenConfig.VolumeUnprotectionEnabled {
+		log.Info("Volume unprotection disabled")
+
+		return
+	}
+
+	if v.instance.Spec.Async != nil && !VolumeUnprotectionEnabledForAsyncVolRep {
+		log.Info("Volume unprotection disabled for async mode")
+
+		return
+	}
+	// clean up the PVCs that are part of protected pvcs but not in v.volReps and v.volSyncs
+	protectedPVCs := v.instance.Status.ProtectedPVCs
+	protectedPVCsFiltered := make([]ramendrv1alpha1.ProtectedPVC, 0)
+
+	for _, protectedPVC := range protectedPVCs {
+		protectedPVCsFiltered = append(protectedPVCsFiltered, v.filterVolRepPVCsForCleanup(protectedPVC)...)
+		protectedPVCsFiltered = append(protectedPVCsFiltered, v.filterVolSyncPVCsForCleanup(protectedPVC)...)
+	}
+
+	v.instance.Status.ProtectedPVCs = protectedPVCsFiltered
+}
+
+func (v *VRGInstance) filterVolRepPVCsForCleanup(pvc ramendrv1alpha1.ProtectedPVC) []ramendrv1alpha1.ProtectedPVC {
+	protectedPVCsFiltered := make([]ramendrv1alpha1.ProtectedPVC, 0)
+
+	for _, volRepPVC := range v.volRepPVCs {
+		if pvc.Name == volRepPVC.Name && pvc.Namespace == volRepPVC.Namespace {
+			protectedPVCsFiltered = append(protectedPVCsFiltered, pvc)
+		}
+	}
+
+	return protectedPVCsFiltered
+}
+
+func (v *VRGInstance) filterVolSyncPVCsForCleanup(pvc ramendrv1alpha1.ProtectedPVC) []ramendrv1alpha1.ProtectedPVC {
+	protectedPVCsFiltered := make([]ramendrv1alpha1.ProtectedPVC, 0)
+
+	for _, volSyncPVC := range v.volSyncPVCs {
+		if pvc.Name == volSyncPVC.Name && pvc.Namespace == volSyncPVC.Namespace {
+			protectedPVCsFiltered = append(protectedPVCsFiltered, pvc)
+		}
+	}
+
+	return protectedPVCsFiltered
 }
 
 // processAsSecondary reconciles the current instance of VRG as secondary
