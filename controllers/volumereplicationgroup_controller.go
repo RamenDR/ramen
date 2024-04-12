@@ -991,6 +991,7 @@ func (v *VRGInstance) cleanUpProtectedPVCsThatAreNotBound(log logr.Logger) {
 		protectedPVCsFiltered = append(protectedPVCsFiltered, v.filterVolRepPVCsForCleanup(protectedPVC)...)
 		protectedPVCsFiltered = append(protectedPVCsFiltered, v.filterVolSyncPVCsForCleanup(protectedPVC)...)
 	}
+
 	v.instance.Status.ProtectedPVCs = protectedPVCsFiltered
 }
 
