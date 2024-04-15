@@ -192,7 +192,7 @@ type VolumeReplicationGroupSpec struct {
 	// If this field is set, the protected namespace resources are treated as unmanaged.
 	// You can use a recipe to filter and coordinate the order of the resources that are protected.
 	//+optional
-	ProtectedNamespaces *[]string `json:"protectedNamespace,omitempty"`
+	ProtectedNamespaces *[]string `json:"protectedNamespaces,omitempty"`
 }
 
 type Identifier struct {
