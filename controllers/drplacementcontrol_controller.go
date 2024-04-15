@@ -2794,12 +2794,12 @@ func (r *DRPlacementControlReconciler) getProtectedNamespaces(drpc *rmn.DRPlacem
 		return []string{}, err
 	}
 
-	protectedNamespace, err := selectVRGNamespace(r.Client, log, drpc, placementObj)
+	vrgNamespace, err := selectVRGNamespace(r.Client, log, drpc, placementObj)
 	if err != nil {
 		return []string{}, err
 	}
 
-	return []string{protectedNamespace}, nil
+	return []string{vrgNamespace}, nil
 }
 
 func (r *DRPlacementControlReconciler) ensureNoConflictingDRPCs(ctx context.Context,
