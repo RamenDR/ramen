@@ -121,6 +121,7 @@ lint: golangci-bin ## Run configured golangci-lint and pre-commit.sh linters aga
 	testbin/golangci-lint run ./... --config=./.golangci.yaml
 	cd api && ../testbin/golangci-lint run ./... --config=../.golangci.yaml
 	hack/pre-commit.sh
+	cd e2e && ../testbin/golangci-lint run ./... --config=../.golangci.yaml
 
 .PHONY: create-rdr-env
 create-rdr-env: drenv-prereqs ## Create a new rdr environment.
