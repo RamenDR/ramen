@@ -14,3 +14,5 @@ maxConcurrentReconciles: 50
 volSync:
   destinationCopyMethod: Direct
 ramenOpsNamespace: ramen-ops
+multiNamespace:
+  FeatureEnabled: true
