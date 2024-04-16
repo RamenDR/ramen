@@ -971,7 +971,9 @@ func (v *VRGInstance) pvcsDeselectedUnprotect() error {
 	return nil
 }
 
-func (v *VRGInstance) cleanupProtectedPVCs(pvcsVr, pvcsVs map[client.ObjectKey]corev1.PersistentVolumeClaim, log logr.Logger) {
+func (v *VRGInstance) cleanupProtectedPVCs(
+	pvcsVr, pvcsVs map[client.ObjectKey]corev1.PersistentVolumeClaim, log logr.Logger,
+) {
 	if !v.ramenConfig.VolumeUnprotectionEnabled {
 		log.Info("Volume unprotection disabled")
 
@@ -985,14 +987,19 @@ func (v *VRGInstance) cleanupProtectedPVCs(pvcsVr, pvcsVs map[client.ObjectKey]c
 	}
 	// clean up the PVCs that are part of protected pvcs but not in v.volReps and v.volSyncs
 	protectedPVCsFiltered := make([]ramendrv1alpha1.ProtectedPVC, 0)
+
 	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
 		pvcNamespacedName := client.ObjectKey{Namespace: protectedPVC.Namespace, Name: protectedPVC.Name}
+
 		if _, ok := pvcsVr[pvcNamespacedName]; ok {
 			protectedPVCsFiltered = append(protectedPVCsFiltered, protectedPVC)
+
 			continue
 		}
+
 		if _, ok := pvcsVs[pvcNamespacedName]; ok {
 			protectedPVCsFiltered = append(protectedPVCsFiltered, protectedPVC)
+
 			continue
 		}
 	}
