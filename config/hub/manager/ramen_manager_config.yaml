@@ -13,3 +13,4 @@ ramenControllerType: dr-hub
 maxConcurrentReconciles: 50
 volSync:
   destinationCopyMethod: Direct
+ramenOpsNamespace: ramen-ops

@@ -13,3 +13,4 @@ ramenControllerType: dr-cluster
 maxConcurrentReconciles: 50
 volSync:
   destinationCopyMethod: Direct
+ramenOpsNamespace: ramen-ops
