@@ -966,12 +966,12 @@ func (v *VRGInstance) pvcsDeselectedUnprotect() error {
 		}
 	}
 
-	v.cleanUpProtectedPVCsThatAreNotBound(log)
+	v.cleanupProtectedPVCs(pvcsVr, pvcsVs, log)
 
 	return nil
 }
 
-func (v *VRGInstance) cleanUpProtectedPVCsThatAreNotBound(log logr.Logger) {
+func (v *VRGInstance) cleanupProtectedPVCs(pvcsVr, pvcsVs map[client.ObjectKey]corev1.PersistentVolumeClaim, log logr.Logger) {
 	if !v.ramenConfig.VolumeUnprotectionEnabled {
 		log.Info("Volume unprotection disabled")
 
@@ -984,39 +984,20 @@ func (v *VRGInstance) cleanUpProtectedPVCsThatAreNotBound(log logr.Logger) {
 		return
 	}
 	// clean up the PVCs that are part of protected pvcs but not in v.volReps and v.volSyncs
-	protectedPVCs := v.instance.Status.ProtectedPVCs
 	protectedPVCsFiltered := make([]ramendrv1alpha1.ProtectedPVC, 0)
-
-	for _, protectedPVC := range protectedPVCs {
-		protectedPVCsFiltered = append(protectedPVCsFiltered, v.filterVolRepPVCsForCleanup(protectedPVC)...)
-		protectedPVCsFiltered = append(protectedPVCsFiltered, v.filterVolSyncPVCsForCleanup(protectedPVC)...)
+	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
+		pvcNamespacedName := client.ObjectKey{Namespace: protectedPVC.Namespace, Name: protectedPVC.Name}
+		if _, ok := pvcsVr[pvcNamespacedName]; ok {
+			protectedPVCsFiltered = append(protectedPVCsFiltered, protectedPVC)
+			continue
+		}
+		if _, ok := pvcsVs[pvcNamespacedName]; ok {
+			protectedPVCsFiltered = append(protectedPVCsFiltered, protectedPVC)
+			continue
+		}
 	}
 
 	v.instance.Status.ProtectedPVCs = protectedPVCsFiltered
-}
-
-func (v *VRGInstance) filterVolRepPVCsForCleanup(pvc ramendrv1alpha1.ProtectedPVC) []ramendrv1alpha1.ProtectedPVC {
-	protectedPVCsFiltered := make([]ramendrv1alpha1.ProtectedPVC, 0)
-
-	for _, volRepPVC := range v.volRepPVCs {
-		if pvc.Name == volRepPVC.Name && pvc.Namespace == volRepPVC.Namespace {
-			protectedPVCsFiltered = append(protectedPVCsFiltered, pvc)
-		}
-	}
-
-	return protectedPVCsFiltered
-}
-
-func (v *VRGInstance) filterVolSyncPVCsForCleanup(pvc ramendrv1alpha1.ProtectedPVC) []ramendrv1alpha1.ProtectedPVC {
-	protectedPVCsFiltered := make([]ramendrv1alpha1.ProtectedPVC, 0)
-
-	for _, volSyncPVC := range v.volSyncPVCs {
-		if pvc.Name == volSyncPVC.Name && pvc.Namespace == volSyncPVC.Namespace {
-			protectedPVCsFiltered = append(protectedPVCsFiltered, pvc)
-		}
-	}
-
-	return protectedPVCsFiltered
 }
 
 // processAsSecondary reconciles the current instance of VRG as secondary
