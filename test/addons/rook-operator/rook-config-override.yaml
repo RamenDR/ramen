@@ -16,13 +16,9 @@ data:
     debug_ms = 1
     debug_rbd = 15
     debug_rbd_mirror = 30
-    log_to_file = true
-    log_file = /var/log/ceph/$cluster-$name.log
     [client.rbd-mirror-peer]
     debug_ms = 1
     debug_rbd = 15
     debug_rbd_mirror = 30
-    log_to_file = true
-    log_file = /var/log/ceph/$cluster-$name.log
     [mgr]
     mgr/rbd_support/log_level = debug
