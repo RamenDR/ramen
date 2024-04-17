@@ -8,10 +8,20 @@ import json
 import os
 import sys
 
+import yaml
+
 import drenv
+from drenv import ceph
 from drenv import kubectl
 
 POOL_NAME = "replicapool"
+
+
+def log_blocklist(cluster):
+    blocklist = ceph.list_osd_blocklist(cluster)
+    if blocklist:
+        info = {f"Cluster '{cluster}' ceph osd blocklist": blocklist}
+        print(yaml.dump(info, sort_keys=False))
 
 
 def fetch_secret_info(cluster):
@@ -80,6 +90,31 @@ def configure_rbd_mirroring(cluster, peer_info):
     )
 
 
+def wait_until_rbd_mirror_is_ready(cluster):
+    print(f"Waiting until rbd mirror is ready in cluster '{cluster}'")
+    drenv.wait_for(
+        "cephrbdmirror/my-rbd-mirror",
+        output="jsonpath={.status.phase}",
+        namespace="rook-ceph",
+        profile=cluster,
+    )
+    kubectl.wait(
+        "cephrbdmirror/my-rbd-mirror",
+        "--for=jsonpath={.status.phase}=Ready",
+        "--namespace=rook-ceph",
+        "--timeout=300s",
+        context=cluster,
+    )
+    status = kubectl.get(
+        "cephrbdmirror/my-rbd-mirror",
+        "--output=jsonpath={.status}",
+        "--namespace=rook-ceph",
+        context=cluster,
+    )
+    info = {f"Cluster '{cluster}' rbd mirror status": json.loads(status)}
+    print(yaml.dump(info, sort_keys=False))
+
+
 def wait_until_pool_mirroring_is_healthy(cluster):
     print(f"Waiting until ceph mirror daemon is healthy in cluster '{cluster}'")
     kubectl.wait(
@@ -112,6 +147,16 @@ def wait_until_pool_mirroring_is_healthy(cluster):
         context=cluster,
     )
 
+    status = kubectl.get(
+        "cephblockpools.ceph.rook.io",
+        POOL_NAME,
+        "--output=jsonpath={.status}",
+        "--namespace=rook-ceph",
+        context=cluster,
+    )
+    info = {f"Cluster '{cluster}' ceph block pool status": json.loads(status)}
+    print(yaml.dump(info, sort_keys=False))
+
 
 def deploy_vrc_sample(cluster):
     print(f"Applying vrc sample in cluster '{cluster}'")
@@ -138,6 +183,12 @@ configure_rbd_mirroring(cluster1, cluster2_info)
 
 print(f"Setting up mirroring from '{cluster1}' to '{cluster2}'")
 configure_rbd_mirroring(cluster2, cluster1_info)
+
+wait_until_rbd_mirror_is_ready(cluster1)
+wait_until_rbd_mirror_is_ready(cluster2)
+
+log_blocklist(cluster1)
+log_blocklist(cluster2)
 
 wait_until_pool_mirroring_is_healthy(cluster1)
 wait_until_pool_mirroring_is_healthy(cluster2)

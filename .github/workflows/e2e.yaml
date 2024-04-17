@@ -11,9 +11,8 @@ on:  # yamllint disable-line rule:truthy
 
 env:
   NAME_PREFIX: "rdr-"
-  # Avoid random failures in overloaded runner
-  # TODO: more testing.
-  MAX_WORKERS: 1
+  # Limit number of drenv workers.
+  MAX_WORKERS: 4
 
 jobs:
   e2e-rdr:

@@ -11,6 +11,8 @@ import signal
 import sys
 import time
 
+from functools import partial
+
 import yaml
 
 import drenv
@@ -19,6 +21,7 @@ from . import cluster
 from . import commands
 from . import containerd
 from . import envfile
+from . import kubectl
 from . import minikube
 from . import ramen
 from . import shutdown
@@ -276,7 +279,7 @@ def start_cluster(profile, hooks=(), args=None, **options):
             logging.info("[%s] Configuring containerd", profile["name"])
             containerd.configure(profile)
         if is_restart:
-            wait_for_deployments(profile)
+            restart_failed_deployments(profile)
 
     if hooks:
         execute(
@@ -379,47 +382,60 @@ def delete_minikube_cluster(profile):
     )
 
 
-def wait_for_deployments(profile, initial_wait=30, timeout=300):
+def restart_failed_deployments(profile, initial_wait=30):
     """
     When restarting, kubectl can report stale status for a while, before it
     starts to report real status. Then it takes a while until all deployments
     become available.
 
-    We first sleep for initial_wait seconds, to give Kubernetes chance to fail
-    liveness and readiness checks, and then wait until all deployments are
-    available or the timeout has expired.
-
-    TODO: Check if there is more reliable way to wait for actual status.
+    We first wait for initial_wait seconds to give Kubernetes chance to fail
+    liveness and readiness checks. Then we restart for failed deployments.
     """
-    start = time.monotonic()
-    logging.info(
-        "[%s] Waiting until all deployments are available",
-        profile["name"],
-    )
-
+    logging.info("[%s] Waiting for fresh status", profile["name"])
     time.sleep(initial_wait)
 
-    kubectl(
-        "wait",
-        "deploy",
-        "--all",
-        "--for",
-        "condition=available",
-        "--all-namespaces",
-        "--timeout",
-        f"{timeout}s",
-        profile=profile["name"],
+    logging.info("[%s] Looking up failed deployments", profile["name"])
+    debug = partial(logging.debug, f"[{profile['name']}] %s")
+
+    for namespace, deploy, progressing in failed_deployments(profile):
+        logging.info(
+            "[%s] Restarting failed deployment '%s': %s",
+            profile["name"],
+            deploy,
+            progressing["message"],
+        )
+        kubectl.rollout(
+            "restart",
+            deploy,
+            f"--namespace={namespace}",
+            context=profile["name"],
+            log=debug,
+        )
+
+
+def failed_deployments(profile):
+    out = kubectl.get(
+        "namespace",
+        "--output=jsonpath={.items[*].metadata.name}",
+        context=profile["name"],
     )
-
-    logging.info(
-        "[%s] Deployments are available in %.2f seconds",
-        profile["name"],
-        time.monotonic() - start,
-    )
-
-
-def kubectl(*args, profile=None):
-    run("kubectl", "--context", profile, *args, name=profile)
+    for namespace in out.split():
+        names = kubectl.get(
+            "deploy",
+            f"--namespace={namespace}",
+            "--output=name",
+            context=profile["name"],
+        )
+        for deploy in names.splitlines():
+            out = kubectl.get(
+                deploy,
+                f"--namespace={namespace}",
+                "--output=jsonpath={.status.conditions[?(@.type=='Progressing')]}",
+                context=profile["name"],
+            )
+            progressing = json.loads(out)
+            if progressing["status"] == "False":
+                yield namespace, deploy, progressing
 
 
 def run_worker(worker, hooks=(), reverse=False, allow_failure=False):

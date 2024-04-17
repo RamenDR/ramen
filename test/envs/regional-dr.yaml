@@ -30,8 +30,8 @@ templates:
       - addons:
           - name: rook-operator
           - name: rook-cluster
-          - name: rook-pool
           - name: rook-toolbox
+          - name: rook-pool
       - addons:
           - name: ocm-cluster
             args: ["$name", "hub"]

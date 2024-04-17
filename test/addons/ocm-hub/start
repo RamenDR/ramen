@@ -10,14 +10,20 @@ import drenv
 from drenv import kubectl
 from drenv import clusteradm
 
+# Use default image version.
+BUNDLE_VERSION = None
+
+# Use default image registry.
+IMAGE_REGISTRY = None
+
 ADDONS = (
     {
         "name": "application-manager",
-        "version": "default",
+        "version": BUNDLE_VERSION,
     },
     {
         "name": "governance-policy-framework",
-        "version": "default",
+        "version": BUNDLE_VERSION,
     },
 )
 
@@ -45,6 +51,8 @@ def deploy(cluster):
     clusteradm.init(
         # With auto approval joined clusters are accepted automatically.
         feature_gates=["ManagedClusterAutoApproval=true"],
+        bundle_version=BUNDLE_VERSION,
+        image_registry=IMAGE_REGISTRY,
         wait=True,
         context=cluster,
     )

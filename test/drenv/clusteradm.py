@@ -4,13 +4,24 @@
 from . import commands
 
 
-def init(feature_gates=None, wait=False, context=None, log=print):
+def init(
+    feature_gates=None,
+    bundle_version=None,
+    image_registry=None,
+    wait=False,
+    context=None,
+    log=print,
+):
     """
     Initialize a Kubernetes cluster into an OCM hub cluster.
     """
     cmd = ["clusteradm", "init"]
     if feature_gates:
         cmd.extend(("--feature-gates", ",".join(feature_gates)))
+    if bundle_version:
+        cmd.extend(("--bundle-version", bundle_version))
+    if image_registry:
+        cmd.extend(("--image-registry", image_registry))
     if wait:
         cmd.append("--wait")
     if context:
@@ -42,7 +53,16 @@ def install(what, names, bundle_version=None, context=None, log=print):
     _watch(*cmd, log=log)
 
 
-def join(hub_token, hub_apiserver, cluster_name, wait=False, context=None, log=print):
+def join(
+    hub_token,
+    hub_apiserver,
+    cluster_name,
+    bundle_version=None,
+    image_registry=None,
+    wait=False,
+    context=None,
+    log=print,
+):
     """
     Join a cluster to the hub.
     """
@@ -56,6 +76,10 @@ def join(hub_token, hub_apiserver, cluster_name, wait=False, context=None, log=p
         "--cluster-name",
         cluster_name,
     ]
+    if bundle_version:
+        cmd.extend(("--bundle-version", bundle_version))
+    if image_registry:
+        cmd.extend(("--image-registry", image_registry))
     if wait:
         cmd.append("--wait")
     if context:
