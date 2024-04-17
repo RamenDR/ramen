@@ -35,9 +35,6 @@ def wait(cluster):
         context=cluster,
     )
 
-    print("Applying rook-config-override")
-    kubectl.apply("--filename=rook-config-override.yaml", context=cluster)
-
 
 if len(sys.argv) != 2:
     print(f"Usage: {sys.argv[0]} cluster")
