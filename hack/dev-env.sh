@@ -20,9 +20,9 @@ cd "$script_dir"/..
 cd test
 
 if [[ $1 == "create" ]]; then
-    drenv start --name-prefix "${RDR_NAME_PREFIX}"- envs/regional-dr.yaml
+    drenv start -v --name-prefix "${RDR_NAME_PREFIX}"- envs/regional-dr.yaml
 fi
 
 if [[ $1 == "destroy" ]]; then
-    drenv delete --name-prefix "${RDR_NAME_PREFIX}"- envs/regional-dr.yaml
+    drenv delete -v --name-prefix "${RDR_NAME_PREFIX}"- envs/regional-dr.yaml
 fi
