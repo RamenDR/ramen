@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import os
+import sys
+import json
+
+from drenv import kubectl
+from drenv import minikube
+from drenv import commands
+
+
+VERSION = "release-2.11"
+URL = f"https://raw.githubusercontent.com/argoproj/argo-cd/{VERSION}/manifests/install.yaml"
+
+
+def deploy(cluster):
+    print("Deploying argocd")
+    kubectl.apply("--filename", "argocd-ns.yaml", context=cluster)
+    kubectl.apply("-n", "argocd", "--filename", URL, context=cluster)
+
+
+def wait(cluster):
+    print("Waiting until all deployments are available")
+    kubectl.wait(
+        "deploy",
+        "--all",
+        "--for=condition=Available",
+        "--namespace=argocd",
+        "--timeout=600s",
+        context=cluster,
+    )
+
+def get_minikube_profile():
+    out = minikube.profile("list", output="json")
+    profiles = json.loads(out)
+    names=[]
+    for profile in profiles["valid"]:
+        names.append(profile["Name"])
+    return names
+
+if len(sys.argv) != 2:
+    print(f"Usage: {sys.argv[0]} cluster")
+    sys.exit(1)
+
+os.chdir(os.path.dirname(__file__))
+cluster = sys.argv[1]
+
+deploy(cluster)
+wait(cluster)
+
+# Need switch to argocd ns first, otherwise will hit argocd bug
+# see https://github.com/argoproj/argo-cd/issues/14167
+kubectl.config("use-context",cluster)
+kubectl.config("set-context", "--current","--namespace=argocd")
+names = get_minikube_profile()
+for name in names:
+    commands.run("argocd", "cluster", "add", name, "-y")
+
+kubectl.patch("role", "argocd-applicationset-controller", "--patch-file", "role-patch.yaml")
