@@ -1430,7 +1430,7 @@ func verifyDRPCStatusPreferredClusterExpectation(namespace string, drState rmn.D
 	Eventually(func() bool {
 		err := k8sClient.Get(context.TODO(), drpcLookupKey, updatedDRPC)
 
-		if d := updatedDRPC.Status.PreferredDecision; err == nil && d != (plrv1.PlacementDecision{}) {
+		if d := updatedDRPC.Status.PreferredDecision; err == nil && d != (rmn.PlacementDecision{}) {
 			idx, condition := getDRPCCondition(&updatedDRPC.Status, rmn.ConditionAvailable)
 
 			return d.ClusterName == East1ManagedCluster &&

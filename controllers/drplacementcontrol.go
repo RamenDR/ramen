@@ -12,7 +12,6 @@ import (
 	"github.com/go-logr/logr"
 	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"
 	errorswrapper "github.com/pkg/errors"
-	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	"golang.org/x/exp/slices"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -1431,8 +1430,8 @@ func (d *DRPCInstance) clearUserPlacementRuleStatus() error {
 
 func (d *DRPCInstance) updatePreferredDecision() {
 	if d.instance.Spec.PreferredCluster != "" &&
-		reflect.DeepEqual(d.instance.Status.PreferredDecision, plrv1.PlacementDecision{}) {
-		d.instance.Status.PreferredDecision = plrv1.PlacementDecision{
+		reflect.DeepEqual(d.instance.Status.PreferredDecision, rmn.PlacementDecision{}) {
+		d.instance.Status.PreferredDecision = rmn.PlacementDecision{
 			ClusterName:      d.instance.Spec.PreferredCluster,
 			ClusterNamespace: d.instance.Spec.PreferredCluster,
 		}
