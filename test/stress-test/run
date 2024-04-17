@@ -125,6 +125,9 @@ def run(name, args):
     elapsed = time.monotonic() - start
     passed = cp.returncode == 0
 
+    if not passed:
+        gather_data(name, args)
+
     if passed or not args.exit_first:
         drenv("delete", args.envfile, log, name_prefix=args.name_prefix, check=True)
 
@@ -135,6 +138,14 @@ def run(name, args):
     }
 
 
+def gather_data(name, args):
+    output = os.path.join(args.outdir, name + ".gather")
+    log = os.path.join(args.outdir, name + ".log")
+
+    # TODO: use actual cluster names from envfile.
+    gather("dr1,dr2,hub", output, log)
+
+
 def drenv(command, envfile, log, name_prefix=None, check=False):
     cmd = ["drenv", command, "--verbose"]
     if name_prefix:
@@ -142,6 +153,20 @@ def drenv(command, envfile, log, name_prefix=None, check=False):
     cmd.append(envfile)
     with open(log, "a") as f:
         return subprocess.run(cmd, stderr=f, check=check)
+
+
+def gather(contexts, output, log):
+    cmd = [
+        "kubectl",
+        "gather",
+        "--contexts",
+        contexts,
+        "--directory",
+        output,
+        "--verbose",
+    ]
+    with open(log, "a") as f:
+        return subprocess.run(cmd, stderr=f)
 
 
 def git_info():
