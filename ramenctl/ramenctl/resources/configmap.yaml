@@ -36,6 +36,9 @@ data:
       veleroNamespaceName: velero
     volSync:
       disabled: $volsync_disabled
+    multiNamespace:
+      FeatureEnabled: true
+    ramenOpsNamespace: ramen-ops
     s3StoreProfiles:
     - s3ProfileName: minio-on-$cluster1
       s3Bucket: bucket
