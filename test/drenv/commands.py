@@ -6,6 +6,7 @@ import platform
 import selectors
 import subprocess
 import textwrap
+import time
 
 from . import shutdown
 
@@ -57,6 +58,18 @@ class Error(Exception):
         return "".join(lines)
 
 
+class Timeout(Error):
+
+    def __init__(self, command, error):
+        super().__init__(command, error)
+
+
+class StreamTimeout(Exception):
+    """
+    Raised when stream timeout expires.
+    """
+
+
 def run(*args, input=None, decode=True):
     """
     Run command args and return the output of the command.
@@ -93,7 +106,7 @@ def run(*args, input=None, decode=True):
     return output.decode() if decode else output
 
 
-def watch(*args, input=None):
+def watch(*args, input=None, keepends=False, decode=True, timeout=None):
     """
     Run command args, iterating over lines read from the child process stdout.
 
@@ -105,9 +118,16 @@ def watch(*args, input=None):
     fail to raise an error about the failing command. Invalid characters will
     be replaced with unicode replacement character (U+FFFD).
 
-    Raises Error if creating a child process failed or the child process
-    terminated with non-zero exit code. The error includes all data read from
-    the child process stderr.
+    The call return a generator object that can be used to iterate over lines.
+    To stop watching early and terminate the process, call close() on the
+    returned value.
+
+    Raises:
+    - Error if creating a child process failed or the child process
+      terminated with non-zero exit code. The error includes all data read
+      from the child process stderr.
+    - Timeout if the command did not terminate within the specified
+      timeout.
     """
     # Avoid delays in python child process logs.
     env = dict(os.environ)
@@ -125,11 +145,11 @@ def watch(*args, input=None):
         except OSError as e:
             raise Error(args, f"Could not execute: {e}").with_exception(e)
 
-    with p:
+    try:
         error = bytearray()
         partial = bytearray()
 
-        for src, data in stream(p, input=input):
+        for src, data in stream(p, input=input, timeout=timeout):
             if src is ERR:
                 error += data
             else:
@@ -142,18 +162,32 @@ def watch(*args, input=None):
                         line = bytes(partial) + line
                         del partial[:]
 
-                    yield line.rstrip().decode()
+                    if not keepends:
+                        line = line.rstrip()
+                    yield line.decode() if decode else line
 
         if partial:
-            yield partial.rstrip().decode()
+            line = bytes(partial)
             del partial[:]
+            if not keepends:
+                line = line.rstrip()
+            yield line.decode() if decode else line
+
+    except GeneratorExit:
+        p.kill()
+        return
+    except StreamTimeout as e:
+        p.kill()
+        raise Timeout(args, "Timed watching command").with_exception(e)
+    finally:
+        p.wait()
 
     if p.returncode != 0:
         error = error.decode(errors="replace")
         raise Error(args, error, exitcode=p.returncode)
 
 
-def stream(proc, input=None, bufsize=32 << 10):
+def stream(proc, input=None, bufsize=32 << 10, timeout=None):
     """
     Stream data from process stdout and stderr.
 
@@ -167,6 +201,11 @@ def stream(proc, input=None, bufsize=32 << 10):
     Yields either (OUT, data) or (ERR, data) read from proc stdout and stderr.
     Returns when both streams are closed.
     """
+    if timeout is None:
+        deadline = None
+    else:
+        deadline = time.monotonic() + timeout
+
     if input:
         if proc.stdin is None:
             raise RuntimeError("Cannot stream input: proc.stdin is None")
@@ -188,7 +227,8 @@ def stream(proc, input=None, bufsize=32 << 10):
             input_offset = 0
 
         while sel.get_map():
-            for key, event in sel.select():
+            remaining = _remaining_time(deadline)
+            for key, event in sel.select(remaining):
                 if key.fileobj is proc.stdin:
                     # Stream data from caller to child process.
                     chunk = input_view[input_offset : input_offset + _PIPE_BUF]
@@ -210,3 +250,14 @@ def stream(proc, input=None, bufsize=32 << 10):
                         continue
 
                     yield key.data, data
+
+
+def _remaining_time(deadline):
+    if deadline is None:
+        return None
+
+    now = time.monotonic()
+    if now >= deadline:
+        raise StreamTimeout
+
+    return deadline - now

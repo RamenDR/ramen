@@ -124,6 +124,18 @@ def test_stream_no_stdout_stderr():
     assert stream == []
 
 
+def test_stream_timeout_expired():
+    with run("true") as p:
+        with pytest.raises(commands.StreamTimeout):
+            list(commands.stream(p, timeout=0.0))
+
+
+def test_stream_timeout_not_expired():
+    with run("true") as p:
+        stream = list(commands.stream(p, timeout=1.0))
+    assert stream == []
+
+
 # Watching commands.
 
 
@@ -242,6 +254,21 @@ def test_watch_non_ascii():
     assert output == ["\u05d0"]
 
 
+def test_watch_keepends():
+    output = list(commands.watch("echo", "output", keepends=True))
+    assert output == ["output\n"]
+
+
+def test_watch_no_decode():
+    output = list(commands.watch("echo", b"output", decode=False))
+    assert output == [b"output"]
+
+
+def test_watch_keepends_no_decode():
+    output = list(commands.watch("echo", b"output", keepends=True, decode=False))
+    assert output == [b"output\n"]
+
+
 def test_watch_invalid_utf8():
     script = """
 import os
@@ -255,6 +282,32 @@ def test_watch_after_shutdown(monkeypatch):
     monkeypatch.setattr(shutdown, "_started", True)
     with pytest.raises(shutdown.Started):
         list(commands.watch("no-such-command"))
+
+
+def test_watch_some():
+    # This command terminate with non-zero exit code, but we care only about
+    # getting the first 2 lines and ignore the rest of the output and the exit
+    # code.
+    cmd = ("sh", "-c", "echo line 1; echo line 2; sleep 10; echo line 3; exit 1")
+    output = []
+
+    watcher = commands.watch(*cmd)
+    for line in watcher:
+        output.append(line)
+        if len(output) == 2:
+            watcher.close()
+
+    assert output == ["line 1", "line 2"]
+
+
+def test_watch_timeout():
+    with pytest.raises(commands.Timeout):
+        list(commands.watch("true", timeout=0.0))
+
+
+def test_watch_timeout_not_expired():
+    output = list(commands.watch("true", timeout=1.0))
+    assert output == []
 
 
 # Running commands.
