@@ -171,6 +171,17 @@ enough resources:
    For more info see
    [MinIO Client Quickstart](https://min.io/docs/minio/linux/reference/minio-mc.html#quickstart)
 
+1. Install `kustomize` tool
+
+   ```
+   curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+   sudo install kustomize /usr/local/bin
+   rm kustomize
+   ```
+
+   For more info see
+   [kustomize install](https://kubectl.docs.kubernetes.io/installation/kustomize/)
+
 1. Install `helm` tool - on Fedora you can use:
 
    ```
@@ -242,7 +253,7 @@ $HOME/.config/drenv/rdr/kubeconfigs/.
 Validate that the clusters are created.
 
 ```
-miikube profile list
+minikube profile list
 ```
 
 Example output:
