@@ -21,6 +21,7 @@ const (
 	LastSyncTimestampSeconds = "last_sync_timestamp_seconds"
 	LastSyncDurationSeconds  = "last_sync_duration_seconds"
 	LastSyncDataBytes        = "last_sync_data_bytes"
+	WorkloadProtectionStatus = "workload_protection_status"
 )
 
 type SyncMetrics struct {
@@ -39,10 +40,15 @@ type SyncDataBytesMetrics struct {
 	LastSyncDataBytes prometheus.Gauge
 }
 
+type WorkloadProtectionMetrics struct {
+	WorkloadProtectionStatus prometheus.Gauge
+}
+
 type DRPCMetrics struct {
 	SyncMetrics
 	SyncDurationMetrics
 	SyncDataBytesMetrics
+	WorkloadProtectionMetrics
 }
 
 const (
@@ -78,6 +84,12 @@ var (
 		ObjName,            // Name of the resoure [drpc-name]
 		ObjNamespace,       // DRPC namespace name
 		SchedulingInterval, // Value from DRPolicy
+	}
+
+	workloadProtectionStatusLabels = []string{
+		ObjType,      // Name of the type of the resource [drpc]
+		ObjName,      // Name of the resoure [drpc-name]
+		ObjNamespace, // DRPC namespace
 	}
 )
 
@@ -116,6 +128,15 @@ var (
 			Help:      "Total data synced in bytes since last sync",
 		},
 		syncDataBytesMetricLabels,
+	)
+
+	workloadProtectionStatus = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      WorkloadProtectionStatus,
+			Namespace: metricNamespace,
+			Help:      "Status regarding workload protection health",
+		},
+		workloadProtectionStatusLabels,
 	)
 )
 
@@ -195,10 +216,30 @@ func DeleteSyncDataBytesMetric(labels prometheus.Labels) bool {
 	return lastSyncDataBytes.Delete(labels)
 }
 
+// workloadProtectionStatus Metric reports information regarding workload protection condition from DRPC
+func WorkloadProtectionStatusLabels(drpc *rmn.DRPlacementControl) prometheus.Labels {
+	return prometheus.Labels{
+		ObjType:      "DRPlacementControl",
+		ObjName:      drpc.Name,
+		ObjNamespace: drpc.Namespace,
+	}
+}
+
+func NewWorkloadProtectionStatusMetric(labels prometheus.Labels) WorkloadProtectionMetrics {
+	return WorkloadProtectionMetrics{
+		WorkloadProtectionStatus: workloadProtectionStatus.With(labels),
+	}
+}
+
+func DeleteWorkloadProtectionStatusMetric(labels prometheus.Labels) bool {
+	return workloadProtectionStatus.Delete(labels)
+}
+
 func init() {
 	// Register custom metrics with the global prometheus registry
 	metrics.Registry.MustRegister(dRPolicySyncInterval)
 	metrics.Registry.MustRegister(lastSyncTime)
 	metrics.Registry.MustRegister(lastSyncDuration)
 	metrics.Registry.MustRegister(lastSyncDataBytes)
+	metrics.Registry.MustRegister(workloadProtectionStatus)
 }
