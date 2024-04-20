@@ -41,7 +41,7 @@ def main():
     logging.info("Gathering data from cluster %s", args.context)
     start = time.monotonic()
 
-    g = Gatherer(args.context, args.output, args.workers)
+    g = Gatherer(args.context, args.output, args.workers, namespace=args.namespace)
     g.gather()
 
     elapsed = time.monotonic() - start
@@ -53,6 +53,11 @@ def parse_args():
     p.add_argument(
         "context",
         help="cluster context to gather data from",
+    )
+    p.add_argument(
+        "-n",
+        "--namespace",
+        help="gather only specified namespace",
     )
     p.add_argument(
         "-o",
@@ -103,10 +108,11 @@ class Executor:
 
 class Gatherer:
 
-    def __init__(self, context, target, workers):
+    def __init__(self, context, target, workers, namespace=None):
         self._context = context
         self._target = os.path.join(target, context)
         self._executor = Executor(workers, context)
+        self._namespace = namespace
 
     def gather(self):
         with closing(self._executor):
@@ -121,13 +127,20 @@ class Gatherer:
         out = kubectl.api_resources(
             verbs=["list"],
             output="name",
+            namespaced=True if self._namespace else None,
             context=self._context,
         )
-        res = out.splitlines()
+        items = set(out.splitlines())
+
+        if self._namespace:
+            # olm bug? - returned for *every namespace* when listing by namespace.
+            # https://github.com/operator-framework/operator-lifecycle-manager/issues/2932
+            items.discard("packagemanifests.packages.operators.coreos.com")
 
         elapsed = time.monotonic() - start
-        logging.debug("Listed %d API resources in %.3f seconds", len(res), elapsed)
-        return res
+        logging.debug("Listed %d API resources in %.3f seconds", len(items), elapsed)
+
+        return items
 
     def _gather_api_resources(self, kind):
         logging.debug("Gathering %s", kind)
@@ -149,12 +162,14 @@ class Gatherer:
         logging.debug("Listing %s", kind)
         start = time.monotonic()
 
-        out = kubectl.get(
-            kind,
-            "--output=json",
-            "--all-namespaces",
-            context=self._context,
-        )
+        args = [kind]
+        if self._namespace:
+            args.append(f"--namespace={self._namespace}")
+        else:
+            args.append("--all-namespaces")
+        args.append("--output=json")
+
+        out = kubectl.get(*args, context=self._context)
         res = json.loads(out)
         items = res["items"]
 
