@@ -11,36 +11,6 @@ import (
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"sigs.k8s.io/controller-runtime/pkg/metrics"
-)
-
-// register Prometheus metrics for testing
-func init() {
-	metrics.Registry.MustRegister(testGauge, testCounter, testHistogram)
-}
-
-var (
-	testGauge = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "ramen_test_gauge",
-		Help: "Test Gauge for use in MW_Util only",
-	})
-
-	testCounter = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "ramen_test_counter",
-			Help: "Test Counter for use in MW_Util only",
-		},
-	)
-
-	testHistogram = prometheus.NewHistogram(
-		prometheus.HistogramOpts{
-			Name:    "ramen_test_histogram",
-			Help:    "Test Histogram for use in MW_Util only",
-			Buckets: prometheus.ExponentialBuckets(1.0, 2.0, 12),
-		},
-	)
 )
 
 var _ = Describe("IsManifestInAppliedState", func() {
