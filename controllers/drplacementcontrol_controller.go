@@ -889,6 +889,30 @@ func (r *DRPlacementControlReconciler) setLastSyncBytesMetric(syncDataBytesMetri
 	syncDataBytesMetrics.LastSyncDataBytes.Set(float64(*b))
 }
 
+// setWorkloadProtectionMetric sets the workload protection info metric, where 0 indicates not protected and
+// 1 indicates protected
+func (r *DRPlacementControlReconciler) setWorkloadProtectionMetric(workloadProtectionMetrics *WorkloadProtectionMetrics,
+	conditions []metav1.Condition, log logr.Logger,
+) {
+	if workloadProtectionMetrics == nil {
+		return
+	}
+
+	log.Info(fmt.Sprintf("setting metric: (%s)", WorkloadProtectionStatus))
+
+	protected := 0
+
+	for idx := range conditions {
+		if conditions[idx].Type == rmn.ConditionProtected && conditions[idx].Status == metav1.ConditionTrue {
+			protected = 1
+
+			break
+		}
+	}
+
+	workloadProtectionMetrics.WorkloadProtectionStatus.Set(float64(protected))
+}
+
 //nolint:funlen
 func (r *DRPlacementControlReconciler) createDRPCInstance(
 	ctx context.Context,
@@ -968,10 +992,14 @@ func (r *DRPlacementControlReconciler) createDRPCMetricsInstance(
 	syncDataBytesLabels := SyncDataBytesMetricLabels(drPolicy, drpc)
 	syncDataMetrics := NewSyncDataBytesMetric(syncDataBytesLabels)
 
+	workloadProtectionLabels := WorkloadProtectionStatusLabels(drpc)
+	workloadProtectionMetrics := NewWorkloadProtectionStatusMetric(workloadProtectionLabels)
+
 	return &DRPCMetrics{
-		SyncMetrics:          syncMetrics,
-		SyncDurationMetrics:  syncDurationMetrics,
-		SyncDataBytesMetrics: syncDataMetrics,
+		SyncMetrics:               syncMetrics,
+		SyncDurationMetrics:       syncDurationMetrics,
+		SyncDataBytesMetrics:      syncDataMetrics,
+		WorkloadProtectionMetrics: workloadProtectionMetrics,
 	}
 }
 
@@ -1240,6 +1268,9 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 
 	syncDataBytesMetricLabels := SyncDataBytesMetricLabels(drPolicy, drpc)
 	DeleteSyncDataBytesMetric(syncDataBytesMetricLabels)
+
+	workloadProtectionLabels := WorkloadProtectionStatusLabels(drpc)
+	DeleteWorkloadProtectionStatusMetric(workloadProtectionLabels)
 
 	return nil
 }
@@ -1894,6 +1925,7 @@ func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
 		r.setLastSyncTimeMetric(&drpcMetrics.SyncMetrics, drpc.Status.LastGroupSyncTime, log)
 		r.setLastSyncDurationMetric(&drpcMetrics.SyncDurationMetrics, drpc.Status.LastGroupSyncDuration, log)
 		r.setLastSyncBytesMetric(&drpcMetrics.SyncDataBytesMetrics, drpc.Status.LastGroupSyncBytes, log)
+		r.setWorkloadProtectionMetric(&drpcMetrics.WorkloadProtectionMetrics, drpc.Status.Conditions, log)
 	}
 
 	return nil
