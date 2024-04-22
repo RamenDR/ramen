@@ -30,6 +30,8 @@ linters-settings:
       SPDX-License-Identifier: Apache-2.0
   misspell:
     locale: US
+  promlinter:
+    strict: true
   wsl:
     allow-trailing-comment: true
     enforce-err-cuddling: true
@@ -149,6 +151,7 @@ linters:
     - nosprintfhostport
     - prealloc
     - predeclared
+    - promlinter
     - reassign
     - revive
     - rowserrcheck
@@ -192,6 +195,5 @@ linters:
     #  - containedctx
     #  - nonamedreturns
     #  - forcetypeassert
-    #  - promlinter
     #  - contextcheck
     #  - errname
