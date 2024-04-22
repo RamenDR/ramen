@@ -7,11 +7,14 @@ import os
 import sys
 
 from drenv import kubectl
+from drenv import cache
 
 
 def deploy(cluster):
     print("Deploying rook ceph operator")
-    kubectl.apply("--kustomize", ".", context=cluster)
+    path = cache.path("addons/rook-operator.yaml")
+    cache.fetch(".", path)
+    kubectl.apply("--filename", path, context=cluster)
 
 
 def wait(cluster):
