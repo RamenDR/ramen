@@ -58,6 +58,8 @@ const (
 
 	OwnerNameAnnotation      = "ramendr.openshift.io/owner-name"
 	OwnerNamespaceAnnotation = "ramendr.openshift.io/owner-namespace"
+
+	PvcVSFinalizerProtected = "volumereplicationgroups.ramendr.openshift.io/pvc-vs-protection"
 )
 
 type VSHandler struct {
@@ -325,56 +327,67 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 // a 2nd call to runFinalSync and we may have already cleaned up the PVC - so if pvc does not
 // exist, treat the same as not in use - continue on with reconcile of the RS (and therefore
 // check status to confirm final sync is complete)
-func (v *VSHandler) validatePVCBeforeRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec,
-	runFinalSync bool) (bool, error,
-) {
+//
+//nolint:gocognit,nestif,cyclop
+func (v *VSHandler) validatePVCBeforeRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec, runFinalSync bool,
+) (bool, error) {
 	l := v.log.WithValues("rsSpec", rsSpec, "runFinalSync", runFinalSync)
 
-	if runFinalSync {
-		// If runFinalSync, check the PVC and make sure it's not mounted to a pod
-		// as we want the app to be quiesced/removed before running final sync
-		pvcIsMounted, err := v.pvcExistsAndInUse(rsSpec.ProtectedPVC.Name, false)
+	checkPVCInUse := func(pvcName string, checkReadyPod bool) (bool, error) {
+		pvcIsInUse, err := v.pvcExistsAndInUse(pvcName, checkReadyPod)
 		if err != nil {
 			return false, err
 		}
 
-		if pvcIsMounted {
-			return false, nil
-		}
-
-		return true, nil // Good to proceed - PVC is not in use, not mounted to node (or does not exist-should not happen)
+		return pvcIsInUse, nil
 	}
 
-	// Not running final sync - if we have not yet created an RS for this PVC, then make sure a pod has mounted
-	// the PVC and is in "Running" state before attempting to create an RS.
-	// This is a best effort to confirm the app that is using the PVC is started before trying to replicate the PVC.
-	_, err := v.getRS(getReplicationSourceName(rsSpec.ProtectedPVC.Name))
-	if err != nil && kerrors.IsNotFound(err) {
-		l.Info("ReplicationSource does not exist yet. " +
-			"validating that the PVC to be protected is in use by a ready pod ...")
-		// RS does not yet exist - consider PVC is ok if it's mounted and in use by running pod
-		inUseByReadyPod, err := v.pvcExistsAndInUse(rsSpec.ProtectedPVC.Name, true /* Check mounting pod is Ready */)
+	if runFinalSync {
+		pvcIsInUse, err := checkPVCInUse(rsSpec.ProtectedPVC.Name, false)
 		if err != nil {
 			return false, err
 		}
 
-		if !inUseByReadyPod {
-			l.Info("PVC is not in use by ready pod, not creating RS yet ...")
-
+		if pvcIsInUse {
 			return false, nil
 		}
-
-		l.Info("PVC is use by ready pod, proceeding to create RS ...")
 
 		return true, nil
 	}
 
+	_, err := v.getRS(getReplicationSourceName(rsSpec.ProtectedPVC.Name))
 	if err != nil {
-		// Err looking up the RS, return it
+		if kerrors.IsNotFound(err) {
+			l.Info("RS does not exist yet. Validating that the PVC to be protected is in use by a ready pod...")
+
+			pvcIsInUse, err := checkPVCInUse(rsSpec.ProtectedPVC.Name, true)
+			if err != nil {
+				return false, err
+			}
+
+			if !pvcIsInUse {
+				l.Info("PVC is not in use by ready pod, not creating RS yet...")
+
+				return false, nil
+			}
+
+			l.Info("PVC is in use by ready pod, proceeding to create RS...")
+
+			return true, nil
+		}
+
 		return false, err
 	}
 
-	// Replication source already exists, no need for any pvc checking
+	pvc, err := v.getPVC(rsSpec.ProtectedPVC.Name)
+	if err != nil {
+		return false, err
+	}
+
+	if err := v.DisownVolSyncManagedPVC(pvc); err != nil {
+		return false, err
+	}
+
 	return true, nil
 }
 
@@ -445,10 +458,17 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 
 		util.AddLabel(rs, VRGOwnerLabel, v.owner.GetName())
 
+		copyMethod := volsyncv1alpha1.CopyMethodSnapshot
+
 		rs.Spec.SourcePVC = rsSpec.ProtectedPVC.Name
+		if sourcePVC, ok := rsSpec.ProtectedPVC.Annotations[util.SourcePVCNameAnnotation]; ok && sourcePVC != "" {
+			rs.Spec.SourcePVC = sourcePVC
+		}
 
 		if runFinalSync {
 			l.V(1).Info("ReplicationSource - final sync")
+			// For the final sync, the source PVC is provided, no need for taking a snapshot.
+			copyMethod = volsyncv1alpha1.CopyMethodDirect
 			// Change the schedule to instead use a keyword trigger - to trigger
 			// a final sync to happen
 			rs.Spec.Trigger = &volsyncv1alpha1.ReplicationSourceTriggerSpec{
@@ -474,7 +494,7 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 			ReplicationSourceVolumeOptions: volsyncv1alpha1.ReplicationSourceVolumeOptions{
 				// Always using CopyMethod of snapshot for now - could use 'Clone' CopyMethod for specific
 				// storage classes that support it in the future
-				CopyMethod:              volsyncv1alpha1.CopyMethodSnapshot,
+				CopyMethod:              copyMethod,
 				VolumeSnapshotClassName: &volumeSnapshotClassName,
 				StorageClassName:        rsSpec.ProtectedPVC.StorageClassName,
 				AccessModes:             rsSpec.ProtectedPVC.AccessModes,
@@ -639,7 +659,7 @@ func (v *VSHandler) getRS(name string) (*volsyncv1alpha1.ReplicationSource, erro
 			Namespace: v.owner.GetNamespace(),
 		}, rs)
 	if err != nil {
-		return nil, fmt.Errorf("%w", err)
+		return nil, err
 	}
 
 	return rs, nil
@@ -896,7 +916,7 @@ func (v *VSHandler) EnsurePVCfromRD(rdSpec ramendrv1alpha1.VolSyncReplicationDes
 	return v.validateSnapshotAndEnsurePVC(rdSpec, *vsImageRef, failoverAction)
 }
 
-//nolint:cyclop
+//nolint:cyclop,funlen,gocognit
 func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 ) error {
@@ -913,6 +933,28 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 	pvc, err := v.getPVC(rdSpec.ProtectedPVC.Name)
 	if err != nil && !kerrors.IsNotFound(err) {
 		return err
+	}
+
+	if pvc != nil && util.ResourceIsDeleted(pvc) {
+		logger.Info("")
+		// Update PV reclaim policy and clean the claimRef
+		err = util.UpdatePVReclaimPolicy(
+			v.ctx,
+			v.client,
+			util.PVAnnotationRetainedForVolSync,
+			corev1.PersistentVolumeReclaimDelete,
+			pvc,
+			true, // Clean claimRef. Once the pv is updated, it will be in the Available status.
+			v.log)
+
+		if err != nil {
+			return err
+		}
+
+		// At this point, the PV is in the Available status. Let the pvc go now.
+		return util.NewResourceUpdater(pvc).
+			RemoveFinalizer(PvcVSFinalizerProtected).
+			Update(v.ctx, v.client)
 	}
 
 	if pvc != nil {
@@ -1491,6 +1533,36 @@ func isRSLastSyncTimeReady(rsStatus *volsyncv1alpha1.ReplicationSourceStatus) bo
 	}
 
 	return false
+}
+
+func (v *VSHandler) GetRSLastSyncTime(pvcName string) (*metav1.Time, error) {
+	l := v.log.WithValues("pvcName", pvcName)
+
+	// Get RD instance
+	rs := &volsyncv1alpha1.ReplicationSource{}
+
+	err := v.client.Get(v.ctx,
+		types.NamespacedName{
+			Name:      getReplicationSourceName(pvcName),
+			Namespace: v.owner.GetNamespace(),
+		}, rs)
+	if err != nil {
+		if !kerrors.IsNotFound(err) {
+			l.Error(err, "Failed to get ReplicationSource")
+
+			return nil, fmt.Errorf("%w", err)
+		}
+
+		l.Info("No ReplicationSource found", "pvcName", pvcName)
+
+		return nil, err
+	}
+
+	if rs.Status == nil {
+		return nil, fmt.Errorf("rs status is nil. (%s)", pvcName)
+	}
+
+	return rs.Status.LastSyncTime, nil
 }
 
 func (v *VSHandler) getRDLatestImage(pvcName string) (*corev1.TypedLocalObjectReference, error) {
