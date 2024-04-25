@@ -437,12 +437,12 @@ func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 	// PVC may not be deleted). This is achieved by clearing the required claim ref.
 	// such that the PV can bind back to a recreated PVC. func ref.: updateExistingPVForSync
 	if v.instance.Spec.Async != nil || v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
-		undoPVRetention(&pv)
+		undoPVRetention(pv)
 	}
 
 	delete(pv.Annotations, pvcVRAnnotationArchivedKey)
 
-	if err := v.reconciler.Update(v.ctx, &pv); err != nil {
+	if err := v.reconciler.Update(v.ctx, pv); err != nil {
 		log.Error(err, "Failed to update PersistentVolume for VR deletion")
 
 		return fmt.Errorf("failed to update PersistentVolume %s claimed by %s/%s"+
@@ -474,42 +474,14 @@ func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 
 // retainPVForPVC updates the PV reclaim policy to retain for a given PVC
 func (v *VRGInstance) retainPVForPVC(pvc corev1.PersistentVolumeClaim, log logr.Logger) error {
-	// Get PV bound to PVC
-	pv := &corev1.PersistentVolume{}
-	pvObjectKey := client.ObjectKey{
-		Name: pvc.Spec.VolumeName,
-	}
-
-	if err := v.reconciler.Get(v.ctx, pvObjectKey, pv); err != nil {
-		log.Error(err, "Failed to get PersistentVolume", "volumeName", pvc.Spec.VolumeName)
-
-		return fmt.Errorf("failed to get PersistentVolume resource (%s) for"+
-			" PersistentVolumeClaim resource (%s/%s) belonging to VolumeReplicationGroup (%s/%s), %w",
-			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
-	}
-
-	// Check reclaimPolicy of PV, if already set to retain
-	if pv.Spec.PersistentVolumeReclaimPolicy == corev1.PersistentVolumeReclaimRetain {
-		return nil
-	}
-
-	// if not retained, retain PV, and add an annotation to denote this is updated for VR needs
-	pv.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimRetain
-	if pv.ObjectMeta.Annotations == nil {
-		pv.ObjectMeta.Annotations = map[string]string{}
-	}
-
-	pv.ObjectMeta.Annotations[pvVRAnnotationRetentionKey] = pvVRAnnotationRetentionValue
-
-	if err := v.reconciler.Update(v.ctx, pv); err != nil {
-		log.Error(err, "Failed to update PersistentVolume reclaim policy")
-
-		return fmt.Errorf("failed to update PersistentVolume resource (%s) reclaim policy for"+
-			" PersistentVolumeClaim resource (%s/%s) belonging to VolumeReplicationGroup (%s/%s), %w",
-			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
-	}
-
-	return nil
+	return rmnutil.UpdatePVReclaimPolicy(
+		v.ctx,
+		v.reconciler.Client,
+		rmnutil.PVAnnotationRetainedForVolRep,
+		corev1.PersistentVolumeReclaimRetain,
+		&pvc,
+		false, // do not clean claimRef
+		log)
 }
 
 // undoPVRetention updates the PV reclaim policy back to its saved state
@@ -627,7 +599,7 @@ func (v *VRGInstance) UploadPVandPVCtoS3Store(s3ProfileName string, pvc *corev1.
 			pvc.Name, s3ProfileName, err)
 	}
 
-	return v.UploadPVAndPVCtoS3(s3ProfileName, objectStore, &pv, pvc)
+	return v.UploadPVAndPVCtoS3(s3ProfileName, objectStore, pv, pvc)
 }
 
 func (v *VRGInstance) UploadPVAndPVCtoS3(s3ProfileName string, objectStore ObjectStorer,
@@ -681,13 +653,13 @@ func (v *VRGInstance) UploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim
 	return succeededProfiles, nil
 }
 
-func (v *VRGInstance) getPVFromPVC(pvc *corev1.PersistentVolumeClaim) (corev1.PersistentVolume, error) {
-	pv := corev1.PersistentVolume{}
+func (v *VRGInstance) getPVFromPVC(pvc *corev1.PersistentVolumeClaim) (*corev1.PersistentVolume, error) {
+	pv := &corev1.PersistentVolume{}
 	volumeName := pvc.Spec.VolumeName
 	pvObjectKey := client.ObjectKey{Name: volumeName}
 
 	// Get PV from k8s
-	if err := v.reconciler.Get(v.ctx, pvObjectKey, &pv); err != nil {
+	if err := v.reconciler.Get(v.ctx, pvObjectKey, pv); err != nil {
 		return pv, fmt.Errorf("failed to get PV %v from PVC %v, %w",
 			pvObjectKey, client.ObjectKeyFromObject(pvc), err)
 	}
@@ -1805,7 +1777,7 @@ func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeCl
 	}
 
 	pv.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey] = v.generateArchiveAnnotation(pv.Generation)
-	if err := v.reconciler.Update(v.ctx, &pv); err != nil {
+	if err := v.reconciler.Update(v.ctx, pv); err != nil {
 		log.Error(err, "Failed to update PersistentVolume annotation")
 
 		return fmt.Errorf("failed to update PersistentVolume (%s) annotation (%s) belonging to"+
@@ -1926,7 +1898,7 @@ func (v *VRGInstance) restorePVsFromObjectStore(objectStore ObjectStorer, s3Prof
 		return 0, fmt.Errorf("%s: %w", errMsg, err)
 	}
 
-	return restoreClusterDataObjects(v, pvList, "PV", cleanupPVForRestore, v.validateExistingPV)
+	return restoreClusterDataObjects(v, pvList, "PV", preparePVForReclaim, v.validateExistingPV)
 }
 
 func (v *VRGInstance) restorePVCsFromObjectStore(objectStore ObjectStorer, s3ProfileName string) (int, error) {
@@ -1993,7 +1965,7 @@ func restoreClusterDataObjects[
 ](
 	v *VRGInstance,
 	objList []ObjectType, objType string,
-	cleanupForRestore func(*ObjectType),
+	preparePVForReclaim func(*ObjectType),
 	validateExistingObject func(*ObjectType) error,
 ) (int, error) {
 	numRestored := 0
@@ -2003,7 +1975,7 @@ func restoreClusterDataObjects[
 		objectCopy := &*object
 		obj := ClientObject(objectCopy)
 
-		cleanupForRestore(objectCopy)
+		preparePVForReclaim(objectCopy)
 		addRestoreAnnotation(obj)
 
 		if err := v.reconciler.Create(v.ctx, obj); err != nil {
@@ -2043,7 +2015,7 @@ func (v *VRGInstance) updateExistingPVForSync(pv *corev1.PersistentVolume) error
 	// failover/relocate process. Hence, the restore may not be
 	// required and the annotation for restore can be missing for
 	// the sync mode.
-	cleanupPVForRestore(pv)
+	preparePVForReclaim(pv)
 	addRestoreAnnotation(pv)
 
 	if err := v.reconciler.Update(v.ctx, pv); err != nil {
@@ -2199,24 +2171,6 @@ func addRestoreAnnotation(obj client.Object) {
 	}
 
 	obj.GetAnnotations()[RestoreAnnotation] = RestoredByRamen
-}
-
-// cleanupForRestore cleans up required PV or PVC fields, to ensure restore succeeds
-// to a new cluster, and rebinding the PVC to an existing PV with the same claimRef
-func cleanupPVForRestore(pv *corev1.PersistentVolume) {
-	pv.ResourceVersion = ""
-	if pv.Spec.ClaimRef != nil {
-		pv.Spec.ClaimRef.UID = ""
-		pv.Spec.ClaimRef.ResourceVersion = ""
-		pv.Spec.ClaimRef.APIVersion = ""
-	}
-}
-
-func cleanupPVCForRestore(pvc *corev1.PersistentVolumeClaim) {
-	pvc.ObjectMeta.Annotations = PruneAnnotations(pvc.GetAnnotations())
-	pvc.ObjectMeta.Finalizers = []string{}
-	pvc.ObjectMeta.ResourceVersion = ""
-	pvc.ObjectMeta.OwnerReferences = nil
 }
 
 // Follow this logic to update VRG (and also ProtectedPVC) conditions for VolRep

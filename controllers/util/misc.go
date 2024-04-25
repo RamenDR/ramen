@@ -16,6 +16,8 @@ import (
 const (
 	OCMBackupLabelKey   string = "cluster.open-cluster-management.io/backup"
 	OCMBackupLabelValue string = "ramen"
+
+	AppPVCNameAnnotation = "ramendr.openshift.io/app-pvc-name"
 )
 
 type ResourceUpdater struct {

@@ -25,6 +25,10 @@ const (
 
 	PodVolumePVCClaimIndexName    string = "spec.volumes.persistentVolumeClaim.claimName"
 	VolumeAttachmentToPVIndexName string = "spec.source.persistentVolumeName"
+
+	PVAnnotationRetainKey          = "volumereplicationgroups.ramendr.openshift.io/retained"
+	PVAnnotationRetainedForVolRep  = "for-volrep"
+	PVAnnotationRetainedForVolSync = "for-volsync"
 )
 
 func ListPVCsByPVCSelector(
@@ -251,6 +255,78 @@ func DeletePVC(ctx context.Context,
 		}
 	} else {
 		log.Info("deleted pvc", "pvcName", pvcName)
+	}
+
+	return nil
+}
+
+// UpdatePVReclaimPolicy updates the reclaim policy of a PV associated with a PVC.
+// The function retrieves the PV bound to the PVC, checks its current reclaim policy,
+// updates it if necessary, and optionally adds annotations for retention denoting the
+// caller (VolRep/VolSync). If cleanClaimRef is set to true, it cleans the claim reference
+// before updating the PV.
+//
+// It takes the following parameters:
+// - ctx: Context for the request.
+// - k8sClient: Kubernetes client for API operations.
+// - retainer: String identifier for caller reclaiming the PV (VolRep/VolSync).
+// - reclaimPolicy: Desired reclaim policy for the PV.
+// - pvc: Pointer to the PVC that is Bound to the PV.
+// - cleanClaimRef: Boolean flag indicating whether to clean claim reference.
+// - log: Logger for logging errors and information.
+//
+// Returns:
+// - error: An error if the update operation fails, otherwise nil.
+func UpdatePVReclaimPolicy(ctx context.Context,
+	k8sClient client.Client,
+	retainer string,
+	reclaimPolicy corev1.PersistentVolumeReclaimPolicy,
+	pvc *corev1.PersistentVolumeClaim,
+	cleanClaimRef bool,
+	log logr.Logger,
+) error {
+	// Get PV bound to PVC
+	pv := &corev1.PersistentVolume{}
+	pvObjectKey := client.ObjectKey{
+		Name: pvc.Spec.VolumeName,
+	}
+
+	if err := k8sClient.Get(ctx, pvObjectKey, pv); err != nil {
+		log.Error(err, "Failed to get PersistentVolume", "volumeName", pvc.Spec.VolumeName)
+
+		return err
+	}
+
+	// Check reclaimPolicy of PV, if already set to retain
+	if pv.Spec.PersistentVolumeReclaimPolicy == reclaimPolicy {
+		return nil
+	}
+
+	// if not retained, retain PV, and add an annotation to denote this is updated for VolRep/VolSync
+	pv.Spec.PersistentVolumeReclaimPolicy = reclaimPolicy
+	if pv.ObjectMeta.Annotations == nil {
+		pv.ObjectMeta.Annotations = map[string]string{}
+	}
+
+	if reclaimPolicy == corev1.PersistentVolumeReclaimRetain {
+		pv.ObjectMeta.Annotations[PVAnnotationRetainKey] = retainer
+	} else {
+		delete(pv.ObjectMeta.Annotations, PVAnnotationRetainKey)
+	}
+
+	if cleanClaimRef {
+		if pv.Spec.ClaimRef != nil {
+			pv.Spec.ClaimRef.UID = ""
+			pv.Spec.ClaimRef.ResourceVersion = ""
+			pv.Spec.ClaimRef.APIVersion = ""
+		}
+	}
+
+	if err := k8sClient.Update(ctx, pv); err != nil {
+		log.Error(err, "Failed to update PersistentVolume reclaim policy")
+
+		return fmt.Errorf("failed to update PV (%s) reclaim policy for PVC (%s/%s), %w",
+			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, err)
 	}
 
 	return nil

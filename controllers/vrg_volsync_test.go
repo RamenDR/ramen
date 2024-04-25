@@ -5,6 +5,7 @@ package controllers_test
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -22,6 +23,7 @@ import (
 	"github.com/ramendr/ramen/controllers/volsync"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 )
 
 const (
@@ -373,36 +375,9 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 func createPVCBoundToRunningPod(ctx context.Context, namespace string,
 	labels map[string]string, annotations map[string]string,
 ) *corev1.PersistentVolumeClaim {
-	capacity := corev1.ResourceList{
-		corev1.ResourceStorage: resource.MustParse("1Gi"),
-	}
-	accessModes := []corev1.PersistentVolumeAccessMode{
-		corev1.ReadWriteOnce,
-	}
-
-	storageClassName := testStorageClassName
-
-	pvc := &corev1.PersistentVolumeClaim{
-		TypeMeta: metav1.TypeMeta{},
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: "testpvc-",
-			Annotations:  annotations,
-			Labels:       labels,
-			Namespace:    namespace,
-		},
-		Spec: corev1.PersistentVolumeClaimSpec{
-			AccessModes:      accessModes,
-			Resources:        corev1.VolumeResourceRequirements{Requests: capacity},
-			StorageClassName: &storageClassName,
-		},
-	}
-
-	Expect(k8sClient.Create(context.TODO(), pvc)).To(Succeed())
-
-	pvc.Status.Phase = corev1.ClaimBound
-	pvc.Status.AccessModes = accessModes
-	pvc.Status.Capacity = capacity
-	Expect(k8sClient.Status().Update(ctx, pvc)).To(Succeed())
+	pvcName := generateName("testpvc-")
+	pv := createPV(ctx, pvcName, namespace)
+	pvc := createPVC(ctx, pvcName, namespace, pv.GetName(), labels, annotations)
 
 	// Create the pod which is mounting the pvc
 	pod := &corev1.Pod{
@@ -422,7 +397,7 @@ func createPVCBoundToRunningPod(ctx context.Context, namespace string,
 					Name: "testvolume",
 					VolumeSource: corev1.VolumeSource{
 						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-							ClaimName: pvc.GetName(),
+							ClaimName: pvcName,
 						},
 					},
 				},
@@ -445,6 +420,117 @@ func createPVCBoundToRunningPod(ctx context.Context, namespace string,
 	Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
 
 	return pvc
+}
+
+func createPVC(ctx context.Context, name, namespace, volumeName string,
+	labels map[string]string, annotations map[string]string,
+) *corev1.PersistentVolumeClaim {
+	capacity := corev1.ResourceList{
+		corev1.ResourceStorage: resource.MustParse("1Gi"),
+	}
+	accessModes := []corev1.PersistentVolumeAccessMode{
+		corev1.ReadWriteOnce,
+	}
+
+	storageClassName := testStorageClassName
+
+	pvc := &corev1.PersistentVolumeClaim{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Annotations: annotations,
+			Labels:      labels,
+			Namespace:   namespace,
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes:      accessModes,
+			Resources:        corev1.VolumeResourceRequirements{Requests: capacity},
+			VolumeName:       volumeName,
+			StorageClassName: &storageClassName,
+		},
+	}
+
+	Expect(k8sClient.Create(context.TODO(), pvc)).To(Succeed())
+
+	pvc.Status.Phase = corev1.ClaimBound
+	pvc.Status.AccessModes = accessModes
+	pvc.Status.Capacity = capacity
+	Expect(k8sClient.Status().Update(ctx, pvc)).To(Succeed())
+
+	return pvc
+}
+
+// func createPV(pvName, claimName string, bindInfo corev1.PersistentVolumePhase) {
+func createPV(ctx context.Context, claimName, claimNamespace string,
+) *corev1.PersistentVolume {
+	capacity := corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}
+	accessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
+	volumeMode := corev1.PersistentVolumeFilesystem
+
+	pv := &corev1.PersistentVolume{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: claimName, // use claimName as the prefix
+		},
+		Spec: corev1.PersistentVolumeSpec{
+			Capacity: capacity,
+			PersistentVolumeSource: corev1.PersistentVolumeSource{
+				CSI: &corev1.CSIPersistentVolumeSource{
+					Driver:       "fake.csi",
+					FSType:       "ext4",
+					VolumeHandle: "fakeVolumeHandle",
+				},
+			},
+			AccessModes: accessModes,
+			VolumeMode:  &volumeMode,
+			ClaimRef: &corev1.ObjectReference{
+				Kind:      "PersistentVolumeClaim",
+				Namespace: claimNamespace,
+				Name:      claimName,
+			},
+			PersistentVolumeReclaimPolicy: "Delete",
+			StorageClassName:              testStorageClassName,
+			MountOptions:                  []string{},
+			NodeAffinity: &corev1.VolumeNodeAffinity{
+				Required: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{
+						{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      "KeyNode",
+									Operator: corev1.NodeSelectorOpIn,
+									Values: []string{
+										"node1",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	err := k8sClient.Create(ctx, pv)
+	Expect(err).ToNot(HaveOccurred())
+
+	pv.Status.Phase = corev1.VolumeBound
+	err = k8sClient.Status().Update(ctx, pv)
+	Expect(err).ToNot(HaveOccurred())
+
+	return pv
+}
+
+func generateName(base string) string {
+	const (
+		MaxGeneratedNameLength = 63
+		randomLength           = 5
+	)
+
+	if len(base) > MaxGeneratedNameLength {
+		base = base[:MaxGeneratedNameLength]
+	}
+
+	return fmt.Sprintf("%s%s", base, utilrand.String(randomLength))
 }
 
 func createSecret(vrgName, namespace string) {
