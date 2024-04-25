@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The RamenDR authors
+// SPDX-License-Identifier: Apache-2.0
+
 package deployers
 
 import "github.com/ramendr/ramen/e2e/workloads"

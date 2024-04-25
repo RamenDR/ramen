@@ -1,6 +1,7 @@
-package workloads
+// SPDX-FileCopyrightText: The RamenDR authors
+// SPDX-License-Identifier: Apache-2.0
 
-// "github.com/ramendr/ramen/e2e/util"
+package workloads
 
 type Deployment struct {
 	RepoURL  string
