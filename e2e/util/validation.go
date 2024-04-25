@@ -12,8 +12,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-const ramenSystemNamespace = "ramen-system"
-
 func CheckRamenHubPodRunningStatus(k8sClient *kubernetes.Clientset) (bool, string, error) {
 	labelSelector := "app=ramen-hub"
 	podIdentifier := "ramen-hub-operator"
@@ -36,7 +34,7 @@ func GetRamenNameSpace(k8sClient *kubernetes.Clientset) (string, error) {
 		return "openshift-operators", nil
 	}
 
-	return ramenSystemNamespace, nil
+	return RamenSystemNamespace, nil
 }
 
 // IsOpenShiftCluster checks if the given Kubernetes cluster is an OpenShift cluster.

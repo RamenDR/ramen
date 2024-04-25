@@ -24,13 +24,13 @@ func Exhaustive(t *testing.T) {
 
 	Workloads := []workloads.Workload{deployment}
 
-	subscrition := &deployers.Subscription{}
-	subscrition.Init()
+	subscription := &deployers.Subscription{}
+	subscription.Init()
 
 	appset := &deployers.ApplicationSet{}
 	appset.Init()
 
-	Deployers := []deployers.Deployer{subscrition, appset}
+	Deployers := []deployers.Deployer{subscription, appset}
 
 	for _, workload := range Workloads {
 		for _, deployer := range Deployers {
@@ -45,6 +45,7 @@ func Exhaustive(t *testing.T) {
 					t.Parallel()
 					testcontext.AddTestContext(t.Name(), w, d)
 					runTestFlow(t)
+					testcontext.DeleteTestContext(t.Name(), w, d)
 				})
 			})
 		}

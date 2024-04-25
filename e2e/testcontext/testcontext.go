@@ -23,6 +23,10 @@ func AddTestContext(name string, w workloads.Workload, d deployers.Deployer) {
 	testContextMap[name] = TestContext{w, d}
 }
 
+func DeleteTestContext(name string, w workloads.Workload, d deployers.Deployer) {
+	delete(testContextMap, name)
+}
+
 // Search name in map for a TestContext to return, if not found go backward
 // - drop the last /<name> suffix form name and search
 // - e.g If name passed is "TestSuites/Exhaustive/DaemonSet/Subscription/Undeploy"

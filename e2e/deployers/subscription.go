@@ -9,18 +9,17 @@ import (
 )
 
 type Subscription struct {
+	// NamePrefix helps when the same workload needs to run in parallel with different deployers.
+	// In the future we potentially would add a resource suffix that is either randomly generated
+	// or a hash of the full test name, to handle cases where we want to run the "same" combination
+	// of deployer+workload for various reasons.
 	NamePrefix string
 	McsbName   string
-
-	ChannelName      string
-	ChannelNamespace string
 }
 
 func (s *Subscription) Init() {
 	s.NamePrefix = "sub-"
 	s.McsbName = "default"
-	s.ChannelName = "ramen-gitops"
-	s.ChannelNamespace = "ramen-samples"
 }
 
 func (s Subscription) GetID() string {
