@@ -18,25 +18,25 @@ const (
 )
 
 func EnableProtection(w workloads.Workload, d deployers.Deployer) error {
-	util.Ctx.Log.Info("enter EnableProtection " + w.GetID() + "/" + d.GetID())
+	util.Ctx.Log.Info("enter EnableProtection " + w.GetName() + "/" + d.GetName())
 
 	return nil
 }
 
 func DisableProtection(w workloads.Workload, d deployers.Deployer) error {
-	util.Ctx.Log.Info("enter DisableProtection " + w.GetID() + "/" + d.GetID())
+	util.Ctx.Log.Info("enter DisableProtection " + w.GetName() + "/" + d.GetName())
 
 	return nil
 }
 
 func Failover(w workloads.Workload, d deployers.Deployer) error {
-	util.Ctx.Log.Info("enter Failover " + w.GetID() + "/" + d.GetID())
+	util.Ctx.Log.Info("enter Failover " + w.GetName() + "/" + d.GetName())
 
 	return nil
 }
 
 func Relocate(w workloads.Workload, d deployers.Deployer) error {
-	util.Ctx.Log.Info("enter Relocate " + w.GetID() + "/" + d.GetID())
+	util.Ctx.Log.Info("enter Relocate " + w.GetName() + "/" + d.GetName())
 
 	return nil
 }

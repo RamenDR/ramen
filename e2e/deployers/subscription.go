@@ -22,7 +22,7 @@ func (s *Subscription) Init() {
 	s.McsbName = "default"
 }
 
-func (s Subscription) GetID() string {
+func (s Subscription) GetName() string {
 	return "Subscription"
 }
 
@@ -33,7 +33,7 @@ func (s Subscription) Deploy(w workloads.Workload) error {
 	// Generate a Subscription for the Workload
 	// - Kustomize the Workload; call Workload.Kustomize(StorageType)
 	// Address namespace/label/suffix as needed for various resources
-	util.Ctx.Log.Info("enter Deploy " + w.GetID() + "/Subscription")
+	util.Ctx.Log.Info("enter Deploy " + w.GetName() + "/Subscription")
 
 	// w.Kustomize()
 	err := createNamespace()
@@ -61,7 +61,7 @@ func (s Subscription) Deploy(w workloads.Workload) error {
 
 func (s Subscription) Undeploy(w workloads.Workload) error {
 	// Delete Subscription, Placement, Binding
-	util.Ctx.Log.Info("enter Undeploy " + w.GetID() + "/Subscription")
+	util.Ctx.Log.Info("enter Undeploy " + w.GetName() + "/Subscription")
 
 	err := deleteSubscription()
 	if err != nil {

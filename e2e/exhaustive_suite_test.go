@@ -39,9 +39,9 @@ func Exhaustive(t *testing.T) {
 			w := workload
 			d := deployer
 
-			t.Run(w.GetID(), func(t *testing.T) {
+			t.Run(w.GetName(), func(t *testing.T) {
 				t.Parallel()
-				t.Run(d.GetID(), func(t *testing.T) {
+				t.Run(d.GetName(), func(t *testing.T) {
 					t.Parallel()
 					testcontext.AddTestContext(t.Name(), w, d)
 					runTestFlow(t)

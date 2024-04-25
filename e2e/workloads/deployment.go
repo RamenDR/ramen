@@ -21,7 +21,7 @@ func (w Deployment) GetAppName() string {
 	return w.AppName
 }
 
-func (w Deployment) GetID() string {
+func (w Deployment) GetName() string {
 	return "Deployment"
 }
 

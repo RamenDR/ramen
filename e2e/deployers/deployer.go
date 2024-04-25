@@ -15,5 +15,5 @@ type Deployer interface {
 	// Resize(Workload) for changing PVC(s) size
 	// Health(Workload) error
 
-	GetID() string
+	GetName() string
 }
