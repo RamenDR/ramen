@@ -490,6 +490,43 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgTestBoundPV.cleanupUnprotected()
 		})
 	})
+	var vrgUnboundTestCase *vrgTest
+	Context("in primary state", func() {
+		createTestTemplate := &template{
+			ClaimBindInfo:          corev1.ClaimPending,
+			VolumeBindInfo:         corev1.VolumePending,
+			schedulingInterval:     "1h",
+			storageClassName:       "manual",
+			replicationClassName:   "test-replicationclass",
+			vrcProvisioner:         "manual.storage.com",
+			scProvisioner:          "manual.storage.com",
+			replicationClassLabels: map[string]string{"protection": "ramen"},
+		}
+		It("populates the S3 store with PVs and starts vrg as primary", func() {
+			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			vrgUnboundTestCase = newVRGTestCaseCreate(1, createTestTemplate, false, false)
+			vrgUnboundTestCase.VRGTestCaseStart()
+		})
+		It("configmap update", func() {
+			ramenConfig.VolumeUnprotectionEnabled = true
+			configMapUpdate()
+		})
+
+		It("checks for the protected PVCs status in VRG", func() {
+			// Do the verification of error msg PVC not bound yet
+			vrgUnboundTestCase.verifyPVCNotBoundMessage()
+		})
+
+		//It("remove the label on one of the PVCs", func() {
+
+		//})
+		// It -- change/remove the label on one of the PVCs -- platimum to disabled
+		// It -- check protectedPVCs doesn't have PVC and the error msg -- write another verifyPVCNotBound
+		// funtion which checks for 1 PVC in not bound and another PVC in bound
+		// It -- do clean up -- ramenConfig (defer cleanup in 510) -- vrg test case stop/delete
+
+		// make test-vrg-vr and then make test for verification
+	})
 
 	// Test Object store "get" failure for an s3 store, expect ClusterDataReady to remain false
 	var vrgS3StoreGetTestCase *vrgTest
@@ -1630,6 +1667,37 @@ func (v *vrgTest) verifyCachedUploadError() {
 		"found multiple non cached codes for PVCs in VRG %s", v.vrgName)
 	Expect(cachedErr).To(BeNumerically("==", v.pvcCount-1),
 		"found mismatched cached code counts for PVCs in VRG %s", v.vrgName)
+}
+
+func (v *vrgTest) verifyPVCNotBoundMessage() {
+	// Verify cluster data protected remains false
+	v.verifyVRGStatusCondition(vrgController.VRGConditionTypeDataReady, false)
+
+	// We verify is exactly one PVC got the expected aws error and rest report the cached error
+	boundErr := 0
+
+	vrg := v.getVRG()
+	testLogger.Info("VRG details", vrg.Name, vrg)
+	for _, protectedPVC := range vrg.Status.ProtectedPVCs {
+		pvcConditionDataReady := meta.FindStatusCondition(
+			protectedPVC.Conditions,
+			vrgController.VRGConditionTypeDataReady)
+
+		Expect(pvcConditionDataReady).NotTo(BeNil(),
+			"vrg to have data ready as false",
+			vrgController.VRGConditionTypeDataReady,
+			protectedPVC.Name, vrg)
+
+		switch strings.Contains(pvcConditionDataReady.Message,
+			"PVC not bound yet") {
+		case true:
+			boundErr++
+		default: // false
+		}
+	}
+
+	Expect(boundErr).To(BeNumerically("==", v.pvcCount),
+		"found VRG %s", v.vrgName)
 }
 
 func (v *vrgTest) clusterDataProtectedWait(status metav1.ConditionStatus,
