@@ -40,8 +40,9 @@ PLATFORM ?= k8s
 IMAGE_TAG_BASE = $(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY)/$(IMAGE_NAME)
 RBAC_PROXY_IMG ?= "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1"
 OPERATOR_SUGGESTED_NAMESPACE ?= ramen-system
+RAMEN_OPS_NAMESPACE ?= ramen-ops
 AUTO_CONFIGURE_DR_CLUSTER ?= true
-KUBE_OBJECT_PROTECTION_DISABLED ?= false
+VELERO_NAMESPACE ?= velero
 
 HUB_NAME ?= $(IMAGE_NAME)-hub-operator
 ifeq (dr,$(findstring dr,$(IMAGE_NAME)))
@@ -244,8 +245,7 @@ uninstall-dr-cluster: manifests kustomize ## Uninstall dr-cluster CRDs from the 
 
 dr-cluster-config: kustomize
 	cd config/dr-cluster/default && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
-	cd config/dr-cluster/manager && $(KUSTOMIZE) edit set image controller=${IMG};\
-	if (${KUBE_OBJECT_PROTECTION_DISABLED});then printf 'kubeObjectProtection:\n  disabled: true\n'>>ramen_manager_config.yaml;fi
+	cd config/dr-cluster/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 
 deploy-dr-cluster: manifests kustomize dr-cluster-config ## Deploy dr-cluster controller to the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/default | kubectl apply -f -
@@ -302,14 +302,14 @@ bundle-hub: manifests kustomize operator-sdk ## Generate hub bundle manifests an
 		--patch '[{"op": "add", "path": "/metadata/annotations/olm.skipRange", "value": "$(SKIP_RANGE)"}]' && \
 		$(KUSTOMIZE) edit add patch --name ramen-hub-operator.v0.0.0 --kind ClusterServiceVersion\
 		--patch '[{"op": "replace", "path": "/spec/replaces", "value": "$(REPLACES)"}]'
+	$(SED_CMD) -e "s,ramenOpsNamespace: ramen-ops,ramenOpsNamespace: $(RAMEN_OPS_NAMESPACE)," -i config/hub/manager/ramen_manager_config.yaml
+	$(SED_CMD) -e "s,veleroNamespaceName: velero,veleroNamespaceName: $(VELERO_NAMESPACE)," -i config/hub/manager/ramen_manager_config.yaml
 	$(SED_CMD) -e "s,channelName: alpha,channelName: $(DEFAULT_CHANNEL)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
 	$(SED_CMD) -e "s,packageName: ramen-dr-cluster-operator,packageName: $(DRCLUSTER_NAME)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
 	$(SED_CMD) -e "s,namespaceName: ramen-system,namespaceName: $(OPERATOR_SUGGESTED_NAMESPACE)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
 	$(SED_CMD) -e "s,clusterServiceVersionName: ramen-dr-cluster-operator.v0.0.1,clusterServiceVersionName: $(DRCLUSTER_NAME).v$(VERSION)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
 	$(SED_CMD) -e "s,deploymentAutomationEnabled: true,deploymentAutomationEnabled: $(AUTO_CONFIGURE_DR_CLUSTER)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
 	$(SED_CMD) -e "s,s3SecretDistributionEnabled: true,s3SecretDistributionEnabled: $(AUTO_CONFIGURE_DR_CLUSTER)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
-	cd config/hub/manifests/$(IMAGE_NAME);\
-	if (${KUBE_OBJECT_PROTECTION_DISABLED});then printf 'kubeObjectProtection:\n  disabled: true\n'>>ramen_manager_config_append.yaml;fi
 	cat config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml >> config/hub/manager/ramen_manager_config.yaml
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/manifests/$(IMAGE_NAME) | $(OSDK) generate bundle -q --package=$(HUB_NAME) --overwrite --output-dir=config/hub/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(OSDK) bundle validate config/hub/bundle
@@ -328,6 +328,8 @@ bundle-dr-cluster: manifests kustomize dr-cluster-config operator-sdk ## Generat
 		--patch '[{"op": "add", "path": "/metadata/annotations/olm.skipRange", "value": "$(SKIP_RANGE)"}]' && \
 		$(KUSTOMIZE) edit add patch --name ramen-dr-cluster-operator.v0.0.0 --kind ClusterServiceVersion\
 		--patch '[{"op": "replace", "path": "/spec/replaces", "value": "$(REPLACES)"}]'
+	$(SED_CMD) -e "s,ramenOpsNamespace: ramen-ops,ramenOpsNamespace: $(RAMEN_OPS_NAMESPACE)," -i config/dr-cluster/manager/ramen_manager_config.yaml
+	$(SED_CMD) -e "s,veleroNamespaceName: velero,veleroNamespaceName: $(VELERO_NAMESPACE)," -i config/dr-cluster/manager/ramen_manager_config.yaml
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/manifests/$(IMAGE_NAME) | $(OSDK) generate bundle -q --package=$(DRCLUSTER_NAME) --overwrite --output-dir=config/dr-cluster/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(OSDK) bundle validate config/dr-cluster/bundle
 

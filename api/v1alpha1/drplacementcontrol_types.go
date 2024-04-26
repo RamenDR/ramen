@@ -114,7 +114,7 @@ type DRPlacementControlSpec struct {
 	// If this field is set, the protected namespace resources are treated as unmanaged.
 	// You can use a recipe to filter and coordinate the order of the resources that are protected.
 	// +kubebuilder:validation:Optional
-	ProtectedNamespaces *[]string `json:"protectedNamespace,omitempty"`
+	ProtectedNamespaces *[]string `json:"protectedNamespaces,omitempty"`
 
 	// DRPolicyRef is the reference to the DRPolicy participating in the DR replication for this DRPC
 	// +kubebuilder:validation:Required
