@@ -32,4 +32,12 @@ spec:
           annotations:
             description: "Syncing of volumes (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }}) is taking more than twice the scheduled snapshot interval. This may cause data loss and impact replication requests."
             alert_type: "DisasterRecovery"
+        - alert: WorkloadUnprotected
+          expr: ramen_workload_protection_status == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            description: "Workload is not protected for disaster recovery (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }})."
+            alert_type: "DisasterRecovery"
     
