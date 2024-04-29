@@ -68,7 +68,7 @@ jobs:
     runs-on: ubuntu-20.04
     strategy:
       matrix:
-        directory: [., api]
+        directory: [., api, e2e]
         # golangci-lint has a limitation that it doesn't lint subdirectories if
         # they are a different module.
         # see https://github.com/golangci/golangci-lint/issues/828
