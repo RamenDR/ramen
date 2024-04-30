@@ -121,6 +121,7 @@ lint: golangci-bin ## Run configured golangci-lint and pre-commit.sh linters aga
 # see https://github.com/golangci/golangci-lint/issues/828
 	testbin/golangci-lint run ./... --config=./.golangci.yaml
 	cd api && ../testbin/golangci-lint run ./... --config=../.golangci.yaml
+	cd e2e && ../testbin/golangci-lint run ./... --config=../.golangci.yaml
 	hack/pre-commit.sh
 
 .PHONY: create-rdr-env
