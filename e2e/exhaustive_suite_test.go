@@ -30,7 +30,8 @@ func Exhaustive(t *testing.T) {
 	appset := &deployers.ApplicationSet{}
 	appset.Init()
 
-	Deployers := []deployers.Deployer{subscription, appset}
+	// Deployers := []deployers.Deployer{subscription, appset}
+	Deployers := []deployers.Deployer{subscription}
 
 	for _, workload := range Workloads {
 		for _, deployer := range Deployers {

@@ -8,18 +8,12 @@ import (
 	"github.com/ramendr/ramen/e2e/workloads"
 )
 
-type Subscription struct {
-	// NamePrefix helps when the same workload needs to run in parallel with different deployers.
-	// In the future we potentially would add a resource suffix that is either randomly generated
-	// or a hash of the full test name, to handle cases where we want to run the "same" combination
-	// of deployer+workload for various reasons.
-	NamePrefix string
-	McsbName   string
-}
+// mcsb name must be same as the target ManagedClusterSet
+const McsbName = ClusterSetName
 
-func (s *Subscription) Init() {
-	s.NamePrefix = "sub-"
-	s.McsbName = "default"
+type Subscription struct{}
+
+func (s Subscription) Init() {
 }
 
 func (s Subscription) GetName() string {
@@ -33,25 +27,28 @@ func (s Subscription) Deploy(w workloads.Workload) error {
 	// Generate a Subscription for the Workload
 	// - Kustomize the Workload; call Workload.Kustomize(StorageType)
 	// Address namespace/label/suffix as needed for various resources
-	util.Ctx.Log.Info("enter Deploy " + w.GetName() + "/Subscription")
+	util.Ctx.Log.Info("enter Deploy " + w.GetName() + "/" + s.GetName())
+
+	name := GetCombinedName(s, w)
+	namespace := name
 
 	// w.Kustomize()
-	err := createNamespace()
+	err := createNamespace(namespace)
 	if err != nil {
 		return err
 	}
 
-	err = createManagedClusterSetBinding()
+	err = createManagedClusterSetBinding(McsbName, namespace)
 	if err != nil {
 		return err
 	}
 
-	err = createPlacement()
+	err = createPlacement(name, namespace)
 	if err != nil {
 		return err
 	}
 
-	err = createSubscription()
+	err = createSubscription(s, w)
 	if err != nil {
 		return err
 	}
@@ -63,22 +60,25 @@ func (s Subscription) Undeploy(w workloads.Workload) error {
 	// Delete Subscription, Placement, Binding
 	util.Ctx.Log.Info("enter Undeploy " + w.GetName() + "/Subscription")
 
-	err := deleteSubscription()
+	name := GetCombinedName(s, w)
+	namespace := name
+
+	err := deleteSubscription(s, w)
 	if err != nil {
 		return err
 	}
 
-	err = deletePlacement()
+	err = deletePlacement(name, namespace)
 	if err != nil {
 		return err
 	}
 
-	err = deleteManagedClusterSetBinding()
+	err = deleteManagedClusterSetBinding(McsbName, namespace)
 	if err != nil {
 		return err
 	}
 
-	err = deleteNamespace()
+	err = deleteNamespace(namespace)
 	if err != nil {
 		return err
 	}

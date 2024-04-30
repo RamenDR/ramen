@@ -8,11 +8,11 @@ type Workload interface {
 	// GetResources() error // Get the actual workload resources
 
 	GetName() string
-	// GetAppName() string
+	GetAppName() string
 
 	// GetRepoURL() string // Possibly all this is part of Workload than each implementation of the interfaces?
-	// GetPath() string
-	// GetRevision() string
+	GetPath() string
+	GetRevision() string
 
 	Init()
 }
