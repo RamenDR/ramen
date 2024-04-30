@@ -119,6 +119,12 @@ func objectsToDeploy(hubOperatorRamenConfig *rmn.RamenConfig) ([]interface{}, er
 		return nil, err
 	}
 
+	if drClusterOperatorRamenConfig.RamenOpsNamespace != "" {
+		objects = append(objects,
+			util.Namespace(drClusterOperatorRamenConfig.RamenOpsNamespace),
+		)
+	}
+
 	return append(objects,
 		util.Namespace(drClusterOperatorNamespaceName),
 		olmClusterRole,
