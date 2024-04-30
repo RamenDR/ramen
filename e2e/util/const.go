@@ -7,4 +7,6 @@ const (
 	RamenSystemNamespace = "ramen-system"
 	ChannelName          = "ramen-gitops"
 	ChannelNamespace     = "ramen-samples"
+	Timeout              = 600 // seconds
+	TimeInterval         = 30  // seconds
 )
