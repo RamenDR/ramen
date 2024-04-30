@@ -324,6 +324,7 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 }
 
 // RunFailover:
+// 0. Check if failoverCluster is a valid target as Secondary (or already is a Primary)
 // 1. If already failed over or in the process (VRG on failoverCluster is Primary), ensure failover is complete and
 // then ensure cleanup
 // 2. Else, if failover is initiated (VRG ManifestWork is create as Primary), then try again till VRG manifests itself
@@ -343,6 +344,14 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 	}
 
 	failoverCluster := d.instance.Spec.FailoverCluster
+	if !d.isValidFailoverTarget(failoverCluster) {
+		err := fmt.Errorf("unable to start failover, spec.FailoverCluster (%s) is not a valid Secondary target",
+			failoverCluster)
+		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
+			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), err.Error())
+
+		return !done, err
+	}
 
 	// IFF VRG exists and it is primary in the failoverCluster, the clean up and setup VolSync if needed.
 	if d.vrgExistsAndPrimary(failoverCluster) {
@@ -370,6 +379,42 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 	d.setStatusInitiating()
 
 	return d.switchToFailoverCluster()
+}
+
+// isValidFailoverTarget determines if the passed in cluster is a valid target to failover to. A valid failover target
+// may already be Primary, if it is Secondary then it has to be protecting PVCs with VolSync.
+// NOTE: Currently there is a gap where, right after DR protection when a Secondary VRG is not yet created for VolSync
+// workloads, a failover if initiated will pass these checks. When we fix to retain VRG for VR as well, a more
+// deterministic check for VRG as Secondary can be performed.
+func (d *DRPCInstance) isValidFailoverTarget(cluster string) bool {
+	annotations := make(map[string]string)
+	annotations[DRPCNameAnnotation] = d.instance.GetName()
+	annotations[DRPCNamespaceAnnotation] = d.instance.GetNamespace()
+
+	vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name, d.vrgNamespace, cluster, annotations)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			d.log.Info(fmt.Sprintf("VRG not found on %q", cluster))
+
+			// Valid target as there would be no VRG for VR and Sync cases
+			return true
+		}
+
+		return false
+	}
+
+	if isVRGPrimary(vrg) {
+		// VRG is Primary, valid target with possible failover in progress
+		return true
+	}
+
+	// Valid target only if VRG is protecting PVCs with VS and its status is also Secondary
+	if d.drType == DRTypeAsync && vrg.Status.State == rmn.SecondaryState &&
+		!vrg.Spec.VolSync.Disabled && len(vrg.Spec.VolSync.RDSpec) != 0 {
+		return true
+	}
+
+	return false
 }
 
 func (d *DRPCInstance) checkClusterFenced(cluster string, drClusters []rmn.DRCluster) (bool, error) {
