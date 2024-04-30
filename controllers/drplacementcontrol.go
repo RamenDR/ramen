@@ -47,6 +47,13 @@ var (
 	WaitForVolSyncRDInfoAvailibility    error = errorswrapper.New("Waiting for VolSync RDInfo...")
 )
 
+type DRType string
+
+const (
+	DRTypeSync  = DRType("sync")
+	DRTypeAsync = DRType("async")
+)
+
 type DRPCInstance struct {
 	reconciler           *DRPlacementControlReconciler
 	ctx                  context.Context
@@ -62,6 +69,7 @@ type DRPCInstance struct {
 	vrgNamespace         string
 	ramenConfig          *rmn.RamenConfig
 	mwu                  rmnutil.MWUtil
+	drType               DRType
 }
 
 func (d *DRPCInstance) startProcessing() bool {
@@ -316,21 +324,18 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 }
 
 // RunFailover:
-// 1. If failoverCluster empty, then fail it and we are done
-// 2. If already failed over, then ensure clean up and we are done
-// 3. Set VRG for the preferredCluster to secondary
-// 5. Update UserPlacementRule decision to failoverCluster
-// 6. Create VRG for the failoverCluster as Primary
-// 7. Update DRPC status
-// 8. Delete VRG MW from preferredCluster once the VRG state has changed to Secondary
+// 1. If already failed over or in the process (VRG on failoverCluster is Primary), ensure failover is complete and
+// then ensure cleanup
+// 2. Else, if failover is initiated (VRG ManifestWork is create as Primary), then try again till VRG manifests itself
+// on the failover cluster
+// 3. Else, initiate failover to the desired failoverCluster (switchToFailoverCluster)
 func (d *DRPCInstance) RunFailover() (bool, error) {
 	d.log.Info("Entering RunFailover", "state", d.getLastDRState())
 
 	const done = true
 
-	// We are done if empty
 	if d.instance.Spec.FailoverCluster == "" {
-		msg := "failover cluster not set. FailoverCluster is a mandatory field"
+		msg := "missing value for spec.FailoverCluster"
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), msg)
 
@@ -405,7 +410,6 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 	d.setProgression(rmn.ProgressionCheckingFailoverPrequisites)
 
 	curHomeCluster := d.getCurrentHomeClusterName(d.instance.Spec.FailoverCluster, d.drClusters)
-
 	if curHomeCluster == "" {
 		msg := "Invalid Failover request. Current home cluster does not exists"
 		d.log.Info(msg)
@@ -480,7 +484,7 @@ func (d *DRPCInstance) checkFailoverPrerequisites(curHomeCluster string) (bool, 
 		err error
 	)
 
-	if metro, _ := dRPolicySupportsMetro(d.drPolicy, d.drClusters); metro {
+	if d.drType == DRTypeSync {
 		met, err = d.checkMetroFailoverPrerequisites(curHomeCluster)
 	} else {
 		met = d.checkRegionalFailoverPrerequisites()
@@ -1058,7 +1062,7 @@ func (d *DRPCInstance) validateAndSelectCurrentPrimary(preferredCluster string) 
 func (d *DRPCInstance) readyToSwitchOver(homeCluster string, preferredCluster string) bool {
 	d.log.Info(fmt.Sprintf("Checking if VRG Data is available on cluster %s", homeCluster))
 
-	if metro, _ := dRPolicySupportsMetro(d.drPolicy, d.drClusters); metro {
+	if d.drType == DRTypeSync {
 		// check fencing status in the preferredCluster
 		fenced, err := d.checkClusterFenced(preferredCluster, d.drClusters)
 		if err != nil {
@@ -1557,7 +1561,7 @@ func (d *DRPCInstance) generateVRGSpecAsync() *rmn.VRGAsyncSpec {
 }
 
 func (d *DRPCInstance) generateVRGSpecSync() *rmn.VRGSyncSpec {
-	if supports, _ := dRPolicySupportsMetro(d.drPolicy, d.drClusters); supports {
+	if d.drType == DRTypeSync {
 		return &rmn.VRGSyncSpec{}
 	}
 

@@ -969,9 +969,12 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 		},
 	}
 
+	d.drType = DRTypeAsync
+
 	isMetro, _ := dRPolicySupportsMetro(drPolicy, drClusters)
 	if isMetro {
 		d.volSyncDisabled = true
+		d.drType = DRTypeSync
 
 		log.Info("volsync is set to disabled")
 	}
