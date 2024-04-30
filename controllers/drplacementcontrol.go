@@ -353,7 +353,8 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		return !done, err
 	}
 
-	// IFF VRG exists and it is primary in the failoverCluster, the clean up and setup VolSync if needed.
+	// IFF VRG exists and it is primary in the failoverCluster, then ensure failover is complete and
+	// clean up and setup VolSync if needed.
 	if d.vrgExistsAndPrimary(failoverCluster) {
 		d.updatePreferredDecision()
 		d.setDRState(rmn.FailedOver)
@@ -1129,8 +1130,14 @@ func (d *DRPCInstance) readyToSwitchOver(homeCluster string, preferredCluster st
 }
 
 func (d *DRPCInstance) checkReadinessAfterFailover(homeCluster string) bool {
+	vrg := d.vrgs[homeCluster]
+	if vrg == nil {
+		return false
+	}
+
 	return d.isVRGConditionMet(homeCluster, VRGConditionTypeDataReady) &&
-		d.isVRGConditionMet(homeCluster, VRGConditionTypeClusterDataReady)
+		d.isVRGConditionMet(homeCluster, VRGConditionTypeClusterDataReady) &&
+		vrg.Status.State == rmn.PrimaryState
 }
 
 func (d *DRPCInstance) isVRGConditionMet(cluster string, conditionType string) bool {
