@@ -29,3 +29,7 @@ patchesJson6902:
           enabled: true
           periodicity: daily
           maxLogSize: 50M
+      # Testing fix for https://tracker.ceph.com/issues/65487#note-20
+      - op: replace
+        path: /spec/cephVersion/image
+        value: quay.io/nirsof/ceph:wip-65487-on-18.2.3

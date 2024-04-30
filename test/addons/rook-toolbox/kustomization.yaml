@@ -5,3 +5,8 @@
 ---
 resources:
   - https://raw.githubusercontent.com/rook/rook/release-1.13/deploy/examples/toolbox.yaml
+images:
+  # Testing fix for https://tracker.ceph.com/issues/65487#note-20
+  - name: quay.io/ceph/ceph
+    newName: quay.io/nirsof/ceph
+    newTag: wip-65487-on-18.2.3
