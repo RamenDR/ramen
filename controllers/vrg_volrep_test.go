@@ -504,7 +504,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		}
 		It("populates the S3 store with PVs and starts vrg as primary", func() {
 			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
-			vrgUnboundTestCase = newVRGTestCaseCreate(1, createTestTemplate, false, false)
+			vrgUnboundTestCase = newVRGTestCaseCreate(2, createTestTemplate, false, false)
 			vrgUnboundTestCase.VRGTestCaseStart()
 		})
 		It("configmap update", func() {
@@ -515,6 +515,8 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		It("checks for the protected PVCs status in VRG", func() {
 			// Do the verification of error msg PVC not bound yet
 			vrgUnboundTestCase.verifyPVCNotBoundMessage()
+			vrg := vrgUnboundTestCase.getVRG()
+			vrgUnboundTestCase.getP
 		})
 
 		//It("remove the label on one of the PVCs", func() {
@@ -1551,6 +1553,8 @@ func getPVC(key types.NamespacedName) *corev1.PersistentVolumeClaim {
 func (v *vrgTest) getVRG() *ramendrv1alpha1.VolumeReplicationGroup {
 	return vrgGet(v.vrgNamespacedName())
 }
+
+func (v *vrgTest) updateVRG()
 
 func vrgGet(vrgNamespacedName types.NamespacedName) *ramendrv1alpha1.VolumeReplicationGroup {
 	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
