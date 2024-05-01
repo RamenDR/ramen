@@ -32,6 +32,7 @@ config/hub/bundle
 .vimrc
 
 # Generated files
+.venv
 venv
 
 # Test enviromemnt generated files
