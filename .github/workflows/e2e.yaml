@@ -17,7 +17,7 @@ env:
 jobs:
   e2e-rdr:
     runs-on: [self-hosted, e2e-rdr]
-    if: github.repository == 'RamenDR/ramen' && contains(fromJson('["nirs", "ShyamsundarR", "BenamarMk", "raghavendra-talur", "rakeshgm", "ELENAGER", "netzzer", "kseegerrh"]'), github.actor)
+    if: github.repository == 'RamenDR/ramen' && github.event.pull_request.author_association == 'MEMBER'
 
     steps:
     - name: Checkout Repo
