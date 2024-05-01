@@ -21,7 +21,6 @@ import (
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/yaml"
 
-	machineryruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -404,132 +403,50 @@ func resetToggleUIDChecks() {
 func (f FakeMCVGetter) GetVRGFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
 	annnotations map[string]string,
 ) (*rmn.VolumeReplicationGroup, error) {
-	conType := controllers.VRGConditionTypeDataReady
-	reason := controllers.VRGConditionReasonReplicating
-	vrgStatus := rmn.VolumeReplicationGroupStatus{
-		State:                       rmn.PrimaryState,
-		PrepareForFinalSyncComplete: true,
-		FinalSyncComplete:           true,
-		Conditions: []metav1.Condition{
-			{
-				Type:               conType,
-				Reason:             reason,
-				Status:             metav1.ConditionTrue,
-				Message:            "Testing VRG",
-				LastTransitionTime: metav1.Now(),
-				ObservedGeneration: 1,
-			},
-		},
-		ProtectedPVCs: []rmn.ProtectedPVC{},
+	if managedCluster == ClusterIsDown {
+		return nil, fmt.Errorf("%s: Faking cluster down %s", getFunctionNameAtIndex(2), managedCluster)
 	}
-	vrg := getDefaultVRG(resourceNamespace).DeepCopy()
-	vrg.Status = vrgStatus
 
-	vrg.Generation = 1
+	vrg, err := getVRGFromManifestWork(managedCluster, resourceNamespace)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			switch getFunctionNameAtIndex(3) {
+			case "getVRGs":
+				// Called only from DRCluster reconciler, at present
+				return fakeVRGWithMModesProtectedPVC(resourceNamespace), nil
+
+			case "determineDRPCState":
+				if ToggleUIDChecks {
+					// Fake it, no DRPC UID annotation set for VRG
+					return getDefaultVRG(resourceNamespace), nil
+				}
+			}
+		}
+
+		return nil, err
+	}
 
 	switch getFunctionNameAtIndex(2) {
-	case "updateResourceCondition":
-		for i := 0; i < pvcCount; i++ {
-			vrg.Status.ProtectedPVCs = append(vrg.Status.ProtectedPVCs, rmn.ProtectedPVC{Name: fmt.Sprintf("fakePVC%d", i)})
-		}
-
-		return vrg, nil
-	case "ensureClusterDataRestored":
-		if isRestorePVsComplete() {
-			vrg.Status.Conditions[0].Type = controllers.VRGConditionTypeClusterDataReady
-			vrg.Status.Conditions[0].Reason = controllers.VRGConditionReasonClusterDataRestored
-		}
-
-		return vrg, nil
-
-	case "checkAccessToVRGOnCluster":
-		return checkResource(managedCluster)
-
-	case "ensureVRGIsSecondaryOnCluster":
-		return moveVRGToSecondary(managedCluster, resourceNamespace, "vrg", false)
-
-	case "ensureDataProtectedOnCluster":
-		return moveVRGToSecondary(managedCluster, resourceNamespace, "vrg", true)
+	case "ensureClusterDataRestored": // TODO: not invoked during tests
+		return nil, nil // Returning nil vrg in case this gets invoked to ensure test failure
 
 	case "ensureVRGDeleted":
 		return nil, errors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
 
+	case "checkAccessToVRGOnCluster":
+		return nil, nil
+
+	case "updateResourceCondition":
+		fallthrough
+	case "ensureVRGIsSecondaryOnCluster":
+		fallthrough
+	case "ensureDataProtectedOnCluster":
+		fallthrough
 	case "getVRGsFromManagedClusters":
-		return doGetFakeVRGsFromManagedClusters(managedCluster, resourceNamespace, vrgStatus)
+		return vrg, nil
 	}
 
 	return nil, fmt.Errorf("unknown caller %s", getFunctionNameAtIndex(2))
-}
-
-func checkResource(managedCluster string) (*rmn.VolumeReplicationGroup, error) {
-	if managedCluster == ClusterIsDown {
-		return nil, fmt.Errorf("Faking cluster down %s", managedCluster)
-	}
-
-	return nil, nil
-}
-
-func doGetFakeVRGsFromManagedClusters(managedCluster string, vrgNamespace string,
-	vrgStatus rmn.VolumeReplicationGroupStatus,
-) (*rmn.VolumeReplicationGroup, error) {
-	if managedCluster == ClusterIsDown {
-		return nil, fmt.Errorf("Faking cluster down %s", managedCluster)
-	}
-
-	vrgFromMW, err := getVRGFromManifestWork(managedCluster, vrgNamespace)
-	if err != nil && !errors.IsNotFound(err) {
-		return nil, err
-	}
-
-	if errors.IsNotFound(err) {
-		if getFunctionNameAtIndex(4) == "getVRGs" { // Called only from DRCluster reconciler, at present
-			return fakeVRGWithMModesProtectedPVC(vrgNamespace)
-		}
-
-		if getFunctionNameAtIndex(4) == "determineDRPCState" && ToggleUIDChecks {
-			// Fake it, no UID
-			return getDefaultVRG(vrgNamespace), nil
-		}
-
-		return nil, err
-	}
-
-	vrgFromMW.Generation = 1
-	vrgFromMW.Status = vrgStatus
-	vrgFromMW.Status.Conditions = append(vrgFromMW.Status.Conditions, metav1.Condition{
-		Type:               controllers.VRGConditionTypeClusterDataReady,
-		Reason:             controllers.VRGConditionReasonClusterDataRestored,
-		Status:             metav1.ConditionTrue,
-		Message:            "Cluster Data Ready",
-		LastTransitionTime: metav1.Now(),
-		ObservedGeneration: vrgFromMW.Generation,
-	})
-	vrgFromMW.Status.Conditions = append(vrgFromMW.Status.Conditions, metav1.Condition{
-		Type:               controllers.VRGConditionTypeClusterDataProtected,
-		Reason:             controllers.VRGConditionReasonClusterDataRestored,
-		Status:             metav1.ConditionTrue,
-		Message:            "Cluster Data Protected",
-		LastTransitionTime: metav1.Now(),
-		ObservedGeneration: vrgFromMW.Generation,
-	})
-	vrgFromMW.Status.Conditions = append(vrgFromMW.Status.Conditions, metav1.Condition{
-		Type:               controllers.VRGConditionTypeDataProtected,
-		Reason:             controllers.VRGConditionReasonDataProtected,
-		Status:             metav1.ConditionTrue,
-		Message:            "Data Protected",
-		LastTransitionTime: metav1.Now(),
-		ObservedGeneration: vrgFromMW.Generation,
-	})
-
-	protectedPVC := &rmn.ProtectedPVC{}
-	protectedPVC.Name = "random name"
-	protectedPVC.StorageIdentifiers.ReplicationID.ID = MModeReplicationID
-	protectedPVC.StorageIdentifiers.StorageProvisioner = MModeCSIProvisioner
-	protectedPVC.StorageIdentifiers.ReplicationID.Modes = []rmn.MMode{rmn.MModeFailover}
-
-	vrgFromMW.Status.ProtectedPVCs = append(vrgFromMW.Status.ProtectedPVCs, *protectedPVC)
-
-	return vrgFromMW, nil
 }
 
 func (f FakeMCVGetter) DeleteVRGManagedClusterView(
@@ -552,6 +469,7 @@ func getVRGNamespace(defaultNamespace string) string {
 	return defaultNamespace
 }
 
+//nolint:funlen
 func getVRGFromManifestWork(managedCluster, resourceNamespace string) (*rmn.VolumeReplicationGroup, error) {
 	manifestLookupKey := types.NamespacedName{
 		Name:      rmnutil.ManifestWorkName(DRPCCommonName, getVRGNamespace(resourceNamespace), "vrg"),
@@ -570,8 +488,31 @@ func getVRGFromManifestWork(managedCluster, resourceNamespace string) (*rmn.Volu
 	err = yaml.Unmarshal(mw.Spec.Workload.Manifests[0].Raw, vrg)
 	Expect(err).NotTo(HaveOccurred())
 
-	// Fake generation:
 	vrg.Generation = 1
+	vrg.Status.ObservedGeneration = 1
+
+	switch vrg.Spec.ReplicationState {
+	case rmn.Primary:
+		vrg.Status.State = rmn.PrimaryState
+	case rmn.Secondary:
+		vrg.Status.State = rmn.SecondaryState
+	default:
+		vrg.Status.State = rmn.UnknownState
+	}
+
+	vrg.Status.PrepareForFinalSyncComplete = true
+	vrg.Status.FinalSyncComplete = true
+	vrg.Status.ProtectedPVCs = []rmn.ProtectedPVC{}
+
+	for i := 0; i < pvcCount; i++ {
+		protectedPVC := rmn.ProtectedPVC{}
+		protectedPVC.Name = fmt.Sprintf("fakePVC%d", i)
+		protectedPVC.StorageIdentifiers.ReplicationID.ID = MModeReplicationID
+		protectedPVC.StorageIdentifiers.StorageProvisioner = MModeCSIProvisioner
+		protectedPVC.StorageIdentifiers.ReplicationID.Modes = []rmn.MMode{rmn.MModeFailover}
+
+		vrg.Status.ProtectedPVCs = append(vrg.Status.ProtectedPVCs, protectedPVC)
+	}
 
 	// Always report conditions as a success?
 	vrg.Status.Conditions = append(vrg.Status.Conditions, metav1.Condition{
@@ -592,11 +533,28 @@ func getVRGFromManifestWork(managedCluster, resourceNamespace string) (*rmn.Volu
 		ObservedGeneration: vrg.Generation,
 	})
 
+	reason := controllers.VRGConditionReasonClusterDataRestored
+	status := metav1.ConditionTrue
+
+	if !isRestorePVsComplete() {
+		reason = controllers.VRGConditionReasonProgressing
+		status = metav1.ConditionFalse
+	}
+
 	vrg.Status.Conditions = append(vrg.Status.Conditions, metav1.Condition{
 		Type:               controllers.VRGConditionTypeClusterDataReady,
-		Reason:             controllers.VRGConditionReasonClusterDataRestored,
-		Status:             metav1.ConditionTrue,
+		Reason:             reason,
+		Status:             status,
 		Message:            "Cluster Data Protected",
+		LastTransitionTime: metav1.Now(),
+		ObservedGeneration: vrg.Generation,
+	})
+
+	vrg.Status.Conditions = append(vrg.Status.Conditions, metav1.Condition{
+		Type:               controllers.VRGConditionTypeDataProtected,
+		Reason:             controllers.VRGConditionReasonDataProtected,
+		Status:             metav1.ConditionTrue,
+		Message:            "Data Protected",
 		LastTransitionTime: metav1.Now(),
 		ObservedGeneration: vrg.Generation,
 	})
@@ -604,7 +562,7 @@ func getVRGFromManifestWork(managedCluster, resourceNamespace string) (*rmn.Volu
 	return vrg, nil
 }
 
-func fakeVRGWithMModesProtectedPVC(vrgNamespace string) (*rmn.VolumeReplicationGroup, error) {
+func fakeVRGWithMModesProtectedPVC(vrgNamespace string) *rmn.VolumeReplicationGroup {
 	vrg := getDefaultVRG(vrgNamespace).DeepCopy()
 	vrg.Status = rmn.VolumeReplicationGroupStatus{
 		State:                       rmn.PrimaryState,
@@ -620,7 +578,7 @@ func fakeVRGWithMModesProtectedPVC(vrgNamespace string) (*rmn.VolumeReplicationG
 
 	vrg.Status.ProtectedPVCs = append(vrg.Status.ProtectedPVCs, *protectedPVC)
 
-	return vrg, nil
+	return vrg
 }
 
 func createPlacementRule(name, namespace string) *plrv1.PlacementRule {
@@ -967,35 +925,11 @@ func deleteDRPolicyAsync() {
 	Expect(k8sClient.Delete(context.TODO(), asyncDRPolicy)).To(Succeed())
 }
 
-func moveVRGToSecondary(clusterNamespace, resourceNamespace, mwType string, protectData bool,
-) (*rmn.VolumeReplicationGroup, error) {
-	if clusterNamespace == ClusterIsDown {
-		return nil, fmt.Errorf("moveVRGToSecondary: Faking cluster down %s", clusterNamespace)
-	}
-
-	manifestLookupKey := types.NamespacedName{
-		Name:      rmnutil.ManifestWorkName(DRPCCommonName, getVRGNamespace(resourceNamespace), mwType),
-		Namespace: clusterNamespace,
-	}
-
-	var vrg *rmn.VolumeReplicationGroup
-
-	var err error
-
-	Eventually(func() bool {
-		vrg, err = updateVRGMW(manifestLookupKey, protectData)
-
-		return err == nil || errors.IsNotFound(err)
-	}, timeout, interval).Should(BeTrue(),
-		fmt.Sprintf("failed to wait for manifestwork update %s cluster %s", mwType, clusterNamespace))
-
-	return vrg, err
-}
-
 // createVRGMW creates a basic (always Primary) ManifestWork for a VRG, used to fake existing VRG MW
 // to test upgrade cases for DRPC based UID adoption
 func createVRGMW(name, namespace, homeCluster string) {
 	vrg := getDefaultVRG(namespace)
+	vrg.Generation = 1
 
 	mwu := rmnutil.MWUtil{
 		Client:          k8sClient,
@@ -1007,65 +941,6 @@ func createVRGMW(name, namespace, homeCluster string) {
 	}
 
 	Expect(mwu.CreateOrUpdateVRGManifestWork(name, namespace, homeCluster, *vrg, nil)).To(Succeed())
-}
-
-func updateVRGMW(manifestLookupKey types.NamespacedName, dataProtected bool) (*rmn.VolumeReplicationGroup, error) {
-	mw := &ocmworkv1.ManifestWork{}
-
-	err := k8sClient.Get(context.TODO(), manifestLookupKey, mw)
-	if errors.IsNotFound(err) {
-		return nil, errors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
-	}
-
-	Expect(err).NotTo(HaveOccurred())
-
-	vrgClientManifest := &mw.Spec.Workload.Manifests[0]
-	vrg := &rmn.VolumeReplicationGroup{}
-
-	err = yaml.Unmarshal(vrgClientManifest.RawExtension.Raw, &vrg)
-	Expect(err).NotTo(HaveOccurred())
-
-	if vrg.Spec.ReplicationState == rmn.Secondary {
-		vrg.Status.State = rmn.SecondaryState
-
-		updateDataProtectedCondition(dataProtected, vrg)
-
-		objJSON, err := json.Marshal(vrg)
-		Expect(err).NotTo(HaveOccurred())
-
-		manifest := &ocmworkv1.Manifest{}
-		manifest.RawExtension = machineryruntime.RawExtension{Raw: objJSON}
-
-		mw.Spec.Workload.Manifests[0] = *manifest
-
-		err = k8sClient.Update(context.TODO(), mw)
-		if err != nil {
-			return nil, fmt.Errorf("failed to update VRG ManifestWork %w", err)
-		}
-	}
-
-	return vrg, nil
-}
-
-func updateDataProtectedCondition(dataProtected bool, vrg *rmn.VolumeReplicationGroup) {
-	if dataProtected {
-		if len(vrg.Status.Conditions) == 0 {
-			vrg.Status.Conditions = append(vrg.Status.Conditions, metav1.Condition{
-				Type:               controllers.VRGConditionTypeDataProtected,
-				Reason:             controllers.VRGConditionReasonDataProtected,
-				Status:             metav1.ConditionTrue,
-				Message:            "Data Protected",
-				LastTransitionTime: metav1.Now(),
-				ObservedGeneration: vrg.Generation,
-			})
-		} else {
-			vrg.Status.Conditions[0].Type = controllers.VRGConditionTypeDataProtected
-			vrg.Status.Conditions[0].Reason = controllers.VRGConditionReasonDataProtected
-			vrg.Status.Conditions[0].Status = metav1.ConditionTrue
-			vrg.Status.Conditions[0].ObservedGeneration = vrg.Generation
-			vrg.Status.Conditions[0].LastTransitionTime = metav1.Now()
-		}
-	}
 }
 
 func updateManifestWorkStatus(clusterNamespace, vrgNamespace, mwType, workType string) {
@@ -1394,7 +1269,7 @@ func verifyUserPlacementRuleDecisionUnchanged(name, namespace, homeCluster strin
 
 	var placementObj client.Object
 
-	Eventually(func() bool {
+	Consistently(func() bool {
 		err := k8sClient.Get(context.TODO(), usrPlcementLookupKey, usrPlRule)
 		if errors.IsNotFound(err) {
 			usrPlmnt := &clrapiv1beta1.Placement{}
@@ -1964,9 +1839,9 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				By("\n\n*** Failover - 1\n\n")
 				setRestorePVsUncomplete()
 				setDRPCSpecExpectationTo(DefaultDRPCNamespace, East1ManagedCluster, West1ManagedCluster, rmn.ActionFailover)
-				verifyUserPlacementRuleDecisionUnchanged(userPlacementRule.Name, userPlacementRule.Namespace, West1ManagedCluster)
+				verifyUserPlacementRuleDecisionUnchanged(userPlacementRule.Name, userPlacementRule.Namespace, East1ManagedCluster)
 				// MWs for VRG, NS, DRCluster, and MMode
-				Eventually(getManifestWorkCount, timeout, interval).WithArguments(West1ManagedCluster).Should(BeElementOf(3, 4))
+				Expect(getManifestWorkCount(West1ManagedCluster)).Should(BeElementOf(3, 4))
 				setRestorePVsComplete()
 			})
 			It("Should failover to Secondary (West1ManagedCluster)", func() {
@@ -2076,7 +1951,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			It("Should not failover to Secondary (West1ManagedCluster) till PV manifest is applied", func() {
 				setRestorePVsUncomplete()
 				setDRPCSpecExpectationTo(DefaultDRPCNamespace, East1ManagedCluster, West1ManagedCluster, rmn.ActionFailover)
-				verifyUserPlacementRuleDecisionUnchanged(placement.Name, placement.Namespace, West1ManagedCluster)
+				verifyUserPlacementRuleDecisionUnchanged(placement.Name, placement.Namespace, East1ManagedCluster)
 				// MWs for VRG, NS, VRG DRCluster, and MMode
 				Expect(getManifestWorkCount(West1ManagedCluster)).Should(BeElementOf(3, 4))
 				Expect(len(getPlacementDecision(placement.GetName(), placement.GetNamespace()).
@@ -2154,7 +2029,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				setDRPCSpecExpectationTo(DefaultDRPCNamespace, East1ManagedCluster, West1ManagedCluster, rmn.ActionFailover)
 				verifyUserPlacementRuleDecisionUnchanged(placement.Name, placement.Namespace, East1ManagedCluster)
 				// MWs for VRG, NS, VRG DRCluster, and MMode
-				Eventually(getManifestWorkCount, timeout, interval).WithArguments(West1ManagedCluster).Should(BeElementOf(3, 4))
+				Expect(getManifestWorkCount(West1ManagedCluster)).Should(BeElementOf(3, 4))
 				Expect(len(getPlacementDecision(placement.GetName(), placement.GetNamespace()).
 					Status.Decisions)).Should(Equal(1))
 				setRestorePVsComplete()
@@ -2235,9 +2110,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				setRestorePVsUncomplete()
 				fenceCluster(East1ManagedCluster, false)
 				setDRPCSpecExpectationTo(DefaultDRPCNamespace, East1ManagedCluster, East2ManagedCluster, rmn.ActionFailover)
-				verifyUserPlacementRuleDecisionUnchanged(userPlacementRule.Name, userPlacementRule.Namespace, East2ManagedCluster)
+				verifyUserPlacementRuleDecisionUnchanged(userPlacementRule.Name, userPlacementRule.Namespace, East1ManagedCluster)
 				// MWs for VRG, VRG DRCluster and the MW for NetworkFence CR to fence off
-				// East1ManagedCluster
 				Expect(getManifestWorkCount(East2ManagedCluster)).Should(BeElementOf(3, 4))
 				Expect(len(userPlacementRule.Status.Decisions)).Should(Equal(0))
 				setRestorePVsComplete()
@@ -2311,9 +2185,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				setRestorePVsUncomplete()
 				fenceCluster(East1ManagedCluster, true)
 				setDRPCSpecExpectationTo(DefaultDRPCNamespace, East1ManagedCluster, East2ManagedCluster, rmn.ActionFailover)
-				verifyUserPlacementRuleDecisionUnchanged(userPlacementRule.Name, userPlacementRule.Namespace, East2ManagedCluster)
+				verifyUserPlacementRuleDecisionUnchanged(userPlacementRule.Name, userPlacementRule.Namespace, East1ManagedCluster)
 				// MWs for VRG, VRG DRCluster and the MW for NetworkFence CR to fence off
-				// East1ManagedCluster
 				Expect(getManifestWorkCount(East2ManagedCluster)).Should(BeElementOf(3, 4))
 				Expect(len(userPlacementRule.Status.Decisions)).Should(Equal(0))
 				setRestorePVsComplete()
