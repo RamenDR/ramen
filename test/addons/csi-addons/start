@@ -6,21 +6,12 @@
 import os
 import sys
 
-import drenv
 from drenv import kubectl
-
-VERSION = "v0.8.0"
-BASE_URL = f"https://raw.githubusercontent.com/csi-addons/kubernetes-csi-addons/{VERSION}/deploy/controller"
 
 
 def deploy(cluster):
     print("Deploying csi addon for volume replication")
-    with drenv.kustomization(
-        "kustomization.yaml",
-        base_url=BASE_URL,
-        image_tag=VERSION,
-    ) as kustomization:
-        kubectl.apply("--kustomize", kustomization, context=cluster)
+    kubectl.apply("--kustomize", ".", context=cluster)
 
 
 def wait(cluster):
