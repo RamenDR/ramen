@@ -491,6 +491,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 	})
 	var vrgUnboundTestCase *vrgTest
+	var pvcDetails types.NamespacedName
 	Context("in primary state", func() {
 		createTestTemplate := &template{
 			ClaimBindInfo:          corev1.ClaimPending,
@@ -509,22 +510,54 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 		It("configmap update", func() {
 			ramenConfig.VolumeUnprotectionEnabled = true
+			vrgController.VolumeUnprotectionEnabledForAsyncVolRep = true
 			configMapUpdate()
 		})
 
 		It("checks for the protected PVCs status in VRG", func() {
 			// Do the verification of error msg PVC not bound yet
 			vrgUnboundTestCase.verifyPVCNotBoundMessage()
-			vrg := vrgUnboundTestCase.getVRG()
-			vrgUnboundTestCase.getP
 		})
 
-		//It("remove the label on one of the PVCs", func() {
+		It("update vrg with PVC selector to ignore some pvcs", func() {
+			vrg := vrgUnboundTestCase.getVRG()
+			modifiedLS := metav1.LabelSelector{
+				MatchLabels: vrg.Spec.PVCSelector.MatchLabels,
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{
+						Key:      "ignoreforramenprotection",
+						Operator: metav1.LabelSelectorOpNotIn,
+						Values:   []string{"true"},
+					},
+				},
+			}
+			vrg.Spec.PVCSelector = modifiedLS
+			vrgUnboundTestCase.updateVRG(vrg)
+			vrgUnboundTestCase.verifyPVCNotBoundMessage()
+		})
 
-		//})
-		// It -- change/remove the label on one of the PVCs -- platimum to disabled
-		// It -- check protectedPVCs doesn't have PVC and the error msg -- write another verifyPVCNotBound
-		// funtion which checks for 1 PVC in not bound and another PVC in bound
+		It("add label on one of the PVCs to ignore", func() {
+			vrg := vrgUnboundTestCase.getVRG()
+			protectedPVC := vrg.Status.ProtectedPVCs[0]
+			pvcDetails = types.NamespacedName{Namespace: protectedPVC.Namespace, Name: protectedPVC.Name}
+			pvc := vrgUnboundTestCase.getPVC(pvcDetails)
+			testLogger.Info("ASN", "pvc before labelling ", pvc)
+			labels := pvc.Labels
+			labels["ignoreforramenprotection"] = "true"
+			pvc.Labels = labels
+			vrgUnboundTestCase.updatePVC(pvc)
+			testLogger.Info("ASN", "pvc after labelling ", pvc)
+			//})
+
+			//It("verifies pvc labelled above is not listed in protectedPVCs of VRG", func() {
+			time.Sleep(1 * time.Second)
+			//vrg := vrgUnboundTestCase.getVRG()
+			testLogger.Info("ASN", "protectedPVCs = ", vrg.Status.ProtectedPVCs)
+			Expect(len(vrg.Status.ProtectedPVCs)).To(Equal(1))
+			Expect(vrg.Status.ProtectedPVCs[0].Name).NotTo(Equal(pvcDetails.Name))
+			Expect(vrg.Status.ProtectedPVCs[0].Namespace).NotTo(Equal(pvcDetails.Namespace))
+		})
+
 		// It -- do clean up -- ramenConfig (defer cleanup in 510) -- vrg test case stop/delete
 
 		// make test-vrg-vr and then make test for verification
@@ -1541,6 +1574,19 @@ func (v *vrgTest) getPV(pvName string) *corev1.PersistentVolume {
 	return pv
 }
 
+func (v *vrgTest) getPVC(namespacedName types.NamespacedName) *corev1.PersistentVolumeClaim {
+	pvc := &corev1.PersistentVolumeClaim{}
+	err := apiReader.Get(context.TODO(), namespacedName, pvc)
+	Expect(err).NotTo(HaveOccurred(),
+		"failed to get PVC %s", namespacedName.Name)
+	return pvc
+}
+
+func (v *vrgTest) updatePVC(pvc *corev1.PersistentVolumeClaim) {
+	err := k8sClient.Update(context.TODO(), pvc)
+	Expect(err).NotTo(HaveOccurred())
+}
+
 func getPVC(key types.NamespacedName) *corev1.PersistentVolumeClaim {
 	pvc := &corev1.PersistentVolumeClaim{}
 	err := apiReader.Get(context.TODO(), key, pvc)
@@ -1554,7 +1600,10 @@ func (v *vrgTest) getVRG() *ramendrv1alpha1.VolumeReplicationGroup {
 	return vrgGet(v.vrgNamespacedName())
 }
 
-func (v *vrgTest) updateVRG()
+func (v *vrgTest) updateVRG(vrg *ramendrv1alpha1.VolumeReplicationGroup) {
+	err := k8sClient.Update(context.TODO(), vrg)
+	Expect(err).NotTo(HaveOccurred())
+}
 
 func vrgGet(vrgNamespacedName types.NamespacedName) *ramendrv1alpha1.VolumeReplicationGroup {
 	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
