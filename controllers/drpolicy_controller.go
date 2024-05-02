@@ -474,18 +474,15 @@ func (r *DRPolicyReconciler) drClusterMapFunc(ctx context.Context, drcluster cli
 
 	requests := make([]reconcile.Request, 0)
 
-	for _, drpolicy := range drpolicies.Items {
-		for _, specCluster := range drpolicy.Spec.DRClusters {
-			if specCluster == drcluster.GetName() {
-				add := reconcile.Request{
-					NamespacedName: types.NamespacedName{
-						Name: drpolicy.GetName(),
-					},
-				}
-				requests = append(requests, add)
-
-				break
+	for idx := range drpolicies.Items {
+		drpolicy := &drpolicies.Items[idx]
+		if util.DrpolicyContainsDrcluster(drpolicy, drcluster.GetName()) {
+			add := reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name: drpolicy.GetName(),
+				},
 			}
+			requests = append(requests, add)
 		}
 	}
 
