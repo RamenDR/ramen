@@ -4,18 +4,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
-import sys
 
-from drenv import kubectl
 from drenv import cache
 
-if len(sys.argv) != 2:
-    sys.exit(f"Usage: {sys.argv[0]} cluster")
-
 os.chdir(os.path.dirname(__file__))
-cluster = sys.argv[1]
-
-print("Deploying recipe crd")
 path = cache.path("addons/recipe.yaml")
 cache.fetch(".", path)
-kubectl.apply("--filename", path, context=cluster)
