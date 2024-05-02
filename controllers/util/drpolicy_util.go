@@ -113,3 +113,13 @@ func GetSecondsFromSchedulingInterval(drpolicy *rmn.DRPolicy) (float64, error) {
 		return s.Seconds(), err
 	}
 }
+
+func DrpolicyContainsDrcluster(drpolicy *rmn.DRPolicy, drcluster string) bool {
+	for _, managedCluster := range DRPolicyClusterNames(drpolicy) {
+		if managedCluster == drcluster {
+			return true
+		}
+	}
+
+	return false
+}
