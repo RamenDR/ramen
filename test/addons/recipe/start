@@ -15,8 +15,4 @@ os.chdir(os.path.dirname(__file__))
 cluster = sys.argv[1]
 
 print("Deploying recipe crd")
-kubectl.apply(
-    "--kustomize",
-    "https://github.com/RamenDR/recipe.git/config/crd?ref=main&timeout=120s",
-    context=cluster,
-)
+kubectl.apply("--kustomize", ".", context=cluster)
