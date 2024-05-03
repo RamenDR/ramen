@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -82,6 +83,7 @@ type DRPlacementControlReconciler struct {
 	eventRecorder       *rmnutil.EventReporter
 	savedInstanceStatus rmn.DRPlacementControlStatus
 	ObjStoreGetter      ObjectStoreGetter
+	RateLimiter         *workqueue.RateLimiter
 }
 
 func ManifestWorkPredicateFunc() predicate.Funcs {
@@ -644,8 +646,15 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 
 	r.eventRecorder = rmnutil.NewEventReporter(mgr.GetEventRecorderFor("controller_DRPlacementControl"))
 
+	options := ctrlcontroller.Options{
+		MaxConcurrentReconciles: getMaxConcurrentReconciles(ctrl.Log),
+	}
+	if r.RateLimiter != nil {
+		options.RateLimiter = *r.RateLimiter
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
-		WithOptions(ctrlcontroller.Options{MaxConcurrentReconciles: getMaxConcurrentReconciles(ctrl.Log)}).
+		WithOptions(options).
 		For(&rmn.DRPlacementControl{}).
 		Watches(&ocmworkv1.ManifestWork{}, mwMapFun, builder.WithPredicates(mwPred)).
 		Watches(&viewv1beta1.ManagedClusterView{}, mcvMapFun, builder.WithPredicates(mcvPred)).

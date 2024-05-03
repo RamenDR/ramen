@@ -34,7 +34,7 @@ import (
 )
 
 const (
-	vrgtimeout   = time.Second * 9
+	vrgtimeout   = time.Second
 	vrginterval  = time.Millisecond * 10
 	letters      = "abcdefghijklmnopqrstuxwxyz"
 	namespaceLen = 5

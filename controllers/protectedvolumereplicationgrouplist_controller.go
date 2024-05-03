@@ -11,8 +11,10 @@ import (
 
 	"github.com/ramendr/ramen/controllers/util"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -26,6 +28,7 @@ type ProtectedVolumeReplicationGroupListReconciler struct {
 	APIReader      client.Reader
 	ObjStoreGetter ObjectStoreGetter
 	Scheme         *runtime.Scheme
+	RateLimiter    *workqueue.RateLimiter
 }
 
 type ProtectedVolumeReplicationGroupListInstance struct {
@@ -271,7 +274,14 @@ func (s *ProtectedVolumeReplicationGroupListInstance) GetItemsInReplicaStoreWith
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ProtectedVolumeReplicationGroupListReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	controller := ctrl.NewControllerManagedBy(mgr)
+	if r.RateLimiter != nil {
+		controller.WithOptions(ctrlcontroller.Options{
+			RateLimiter: *r.RateLimiter,
+		})
+	}
+
+	return controller.
 		For(&ramendrv1alpha1.ProtectedVolumeReplicationGroupList{}).
 		Complete(r)
 }

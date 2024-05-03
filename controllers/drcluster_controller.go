@@ -19,9 +19,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -41,6 +43,7 @@ type DRClusterReconciler struct {
 	Scheme            *runtime.Scheme
 	MCVGetter         util.ManagedClusterViewGetter
 	ObjectStoreGetter ObjectStoreGetter
+	RateLimiter       *workqueue.RateLimiter
 }
 
 // DRCluster condition reasons
@@ -117,7 +120,14 @@ func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return filterDRClusterMCV(mcv)
 		}))
 
-	return ctrl.NewControllerManagedBy(mgr).
+	controller := ctrl.NewControllerManagedBy(mgr)
+	if r.RateLimiter != nil {
+		controller.WithOptions(ctrlcontroller.Options{
+			RateLimiter: *r.RateLimiter,
+		})
+	}
+
+	return controller.
 		For(&ramen.DRCluster{}).
 		Watches(&ramen.DRPlacementControl{}, drpcMapFun, builder.WithPredicates(drpcPred())).
 		Watches(&ocmworkv1.ManifestWork{}, mwMapFun, builder.WithPredicates(mwPred)).

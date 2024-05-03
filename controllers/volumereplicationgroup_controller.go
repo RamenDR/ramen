@@ -52,6 +52,7 @@ type VolumeReplicationGroupReconciler struct {
 	Scheme         *runtime.Scheme
 	eventRecorder  *rmnutil.EventReporter
 	kubeObjects    kubeobjects.RequestsManager
+	RateLimiter    *workqueue.RateLimiter
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -68,6 +69,10 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 		//nolint: gomnd
 		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
 	)
+	if r.RateLimiter != nil {
+		rateLimiter = *r.RateLimiter
+	}
+
 	objectToReconcileRequestsMapper := objectToReconcileRequestsMapper{reader: r.Client, log: ctrl.Log}
 	ctrlBuilder := ctrl.NewControllerManagedBy(mgr).
 		WithOptions(ctrlcontroller.Options{

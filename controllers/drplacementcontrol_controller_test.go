@@ -2650,7 +2650,7 @@ func verifyDRPCStateAndProgression(expectedAction rmn.DRAction, expectedPhase rm
 		progression = drpc.Status.Progression
 
 		return phase == expectedPhase && progression == exptectedPorgression
-	}, timeout, time.Millisecond*1000).Should(BeTrue(),
+	}, timeout, interval).Should(BeTrue(),
 		fmt.Sprintf("Phase has not been updated yet! Phase:%s Expected:%s - progression:%s exptected:%s",
 			phase, expectedPhase, progression, exptectedPorgression))
 
