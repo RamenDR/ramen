@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/util/workqueue"
 	config "k8s.io/component-base/config/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -77,7 +78,7 @@ var (
 
 	namespaceDeletionSupported bool
 
-	timeout  = time.Second * 10
+	timeout  = time.Second * 1
 	interval = time.Millisecond * 10
 
 	plRuleNames map[string]struct{}
@@ -315,6 +316,10 @@ var _ = BeforeSuite(func() {
 	err = util.IndexFieldsForVSHandler(context.TODO(), k8sManager.GetFieldIndexer())
 	Expect(err).ToNot(HaveOccurred())
 
+	rateLimiter := workqueue.NewMaxOfRateLimiter(
+		workqueue.NewItemExponentialFailureRateLimiter(10*time.Millisecond, 100*time.Millisecond),
+	)
+
 	Expect((&ramencontrollers.DRClusterReconciler{
 		Client:    k8sManager.GetClient(),
 		APIReader: k8sManager.GetAPIReader(),
@@ -325,6 +330,7 @@ var _ = BeforeSuite(func() {
 			apiReader: k8sManager.GetAPIReader(),
 		},
 		ObjectStoreGetter: fakeObjectStoreGetter{},
+		RateLimiter:       &rateLimiter,
 	}).SetupWithManager(k8sManager)).To(Succeed())
 
 	Expect((&ramencontrollers.DRPolicyReconciler{
@@ -333,6 +339,7 @@ var _ = BeforeSuite(func() {
 		Scheme:            k8sManager.GetScheme(),
 		Log:               ctrl.Log.WithName("controllers").WithName("DRPolicy"),
 		ObjectStoreGetter: fakeObjectStoreGetter{},
+		RateLimiter:       &rateLimiter,
 	}).SetupWithManager(k8sManager)).To(Succeed())
 
 	err = (&ramencontrollers.VolumeReplicationGroupReconciler{
@@ -341,6 +348,7 @@ var _ = BeforeSuite(func() {
 		Log:            ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
 		ObjStoreGetter: fakeObjectStoreGetter{},
 		Scheme:         k8sManager.GetScheme(),
+		RateLimiter:    &rateLimiter,
 	}).SetupWithManager(k8sManager, ramenConfig)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -349,6 +357,7 @@ var _ = BeforeSuite(func() {
 		APIReader:      k8sManager.GetAPIReader(),
 		Scheme:         k8sManager.GetScheme(),
 		ObjStoreGetter: fakeObjectStoreGetter{},
+		RateLimiter:    &rateLimiter,
 	}).SetupWithManager(k8sManager)).To(Succeed())
 
 	drpcReconciler = (&ramencontrollers.DRPlacementControlReconciler{
@@ -362,6 +371,7 @@ var _ = BeforeSuite(func() {
 		Scheme:         k8sManager.GetScheme(),
 		Callback:       FakeProgressCallback,
 		ObjStoreGetter: fakeObjectStoreGetter{},
+		RateLimiter:    &rateLimiter,
 	})
 	err = drpcReconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
