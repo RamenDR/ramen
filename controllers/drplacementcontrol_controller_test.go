@@ -399,7 +399,13 @@ func resetToggleUIDChecks() {
 	ToggleUIDChecks = false
 }
 
-//nolint:funlen,cyclop,gocognit
+var fakeSecondaryFor string
+
+func setFakeSecondary(clusterName string) {
+	fakeSecondaryFor = clusterName
+}
+
+//nolint:cyclop
 func (f FakeMCVGetter) GetVRGFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
 	annnotations map[string]string,
 ) (*rmn.VolumeReplicationGroup, error) {
@@ -410,17 +416,7 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(resourceName, resourceNamespace,
 	vrg, err := getVRGFromManifestWork(managedCluster, resourceNamespace)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			switch getFunctionNameAtIndex(3) {
-			case "getVRGs":
-				// Called only from DRCluster reconciler, at present
-				return fakeVRGWithMModesProtectedPVC(resourceNamespace), nil
-
-			case "determineDRPCState":
-				if ToggleUIDChecks {
-					// Fake it, no DRPC UID annotation set for VRG
-					return getDefaultVRG(resourceNamespace), nil
-				}
-			}
+			return fakeVRGConditionally(resourceNamespace, managedCluster, err)
 		}
 
 		return nil, err
@@ -436,6 +432,8 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(resourceName, resourceNamespace,
 	case "checkAccessToVRGOnCluster":
 		return nil, nil
 
+	case "isValidFailoverTarget":
+		fallthrough
 	case "updateResourceCondition":
 		fallthrough
 	case "ensureVRGIsSecondaryOnCluster":
@@ -447,6 +445,32 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(resourceName, resourceNamespace,
 	}
 
 	return nil, fmt.Errorf("unknown caller %s", getFunctionNameAtIndex(2))
+}
+
+func fakeVRGConditionally(resourceNamespace, managedCluster string, err error) (*rmn.VolumeReplicationGroup, error) {
+	switch getFunctionNameAtIndex(4) {
+	case "getVRGs":
+		// Called only from DRCluster reconciler, at present
+		return fakeVRGWithMModesProtectedPVC(resourceNamespace), nil
+
+	case "determineDRPCState":
+		if ToggleUIDChecks {
+			// Fake it, no DRPC UID annotation set for VRG
+			return getDefaultVRG(resourceNamespace), nil
+		}
+
+		return nil, err
+	}
+
+	if getFunctionNameAtIndex(3) == "isValidFailoverTarget" &&
+		fakeSecondaryFor == managedCluster {
+		vrg := getDefaultVRG(resourceNamespace)
+		vrg.Spec.ReplicationState = rmn.Secondary
+
+		return vrg, nil
+	}
+
+	return nil, err
 }
 
 func (f FakeMCVGetter) DeleteVRGManagedClusterView(
@@ -894,6 +918,19 @@ func createAppSet() {
 	Expect(err).NotTo(HaveOccurred())
 }
 
+func deleteAppSet() {
+	Expect(k8sClient.Delete(context.TODO(), &appSet)).To(Succeed())
+
+	Eventually(func() bool {
+		resource := &argocdv1alpha1hack.ApplicationSet{}
+
+		return errors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{
+			Namespace: appSet.Namespace,
+			Name:      appSet.Name,
+		}, resource))
+	}, timeout, interval).Should(BeTrue())
+}
+
 func deleteDRCluster(inDRCluster *rmn.DRCluster) {
 	Expect(k8sClient.Delete(context.TODO(), inDRCluster)).To(Succeed())
 
@@ -1199,6 +1236,7 @@ func verifyNSManifestWorkBackupLabelNotExist(resourceName, namespaceString, mana
 	Expect(mw.Labels[rmnutil.OCMBackupLabelKey]).To(Equal(""))
 }
 
+//nolint:unparam
 func getManagedClusterViewCount(homeClusterNamespace string) int {
 	mcvList := &viewv1beta1.ManagedClusterViewList{}
 	listOptions := &client.ListOptions{Namespace: homeClusterNamespace}
@@ -2079,6 +2117,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(2))       // DRCluster + NS MW only
 				Expect(getManagedClusterViewCount(East1ManagedCluster)).Should(Equal(0)) // NS + VRG MCV
 				deleteNamespaceMWsFromAllClusters(ApplicationNamespace)
+				deleteAppSet()
 				UseApplicationSet = false
 			})
 			It("should delete the DRPC causing its referenced drpolicy to be deleted"+
@@ -2506,6 +2545,49 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 
 		Specify("delete drclusters", func() {
 			deleteDRClustersAsync()
+		})
+	})
+
+	Context("Test DRPlacementControl Failover stalls if peer has a Secondary (Placement/Subscription)", func() {
+		var placement *clrapiv1beta1.Placement
+		var drpc *rmn.DRPlacementControl
+		Specify("DRClusters", func() {
+			populateDRClusters()
+		})
+		When("An Application is deployed for the first time using Placement", func() {
+			It("Should deploy to East1ManagedCluster", func() {
+				By("Initial Deployment")
+				var placementObj client.Object
+				placementObj, drpc = InitialDeploymentAsync(
+					DefaultDRPCNamespace, UserPlacementName, East1ManagedCluster, UsePlacementWithSubscription)
+				placement = placementObj.(*clrapiv1beta1.Placement)
+				Expect(placement).NotTo(BeNil())
+				verifyInitialDRPCDeployment(placement, East1ManagedCluster)
+				verifyActionResultForPlacement(placement, East1ManagedCluster, UsePlacementWithSubscription)
+				verifyDRPCOwnedByPlacement(placement, getLatestDRPC(DefaultDRPCNamespace))
+			})
+		})
+		When("DRAction changes to Failover", func() {
+			It("Should not start failover if there is a secondary VRG on the failoverCluster", func() {
+				setFakeSecondary(West1ManagedCluster)
+				setDRPCSpecExpectationTo(DefaultDRPCNamespace, East1ManagedCluster, West1ManagedCluster, rmn.ActionFailover)
+				verifyUserPlacementRuleDecisionUnchanged(placement.Name, placement.Namespace, East1ManagedCluster)
+				// Check MW for primary on West1ManagedCluster is not created
+				Expect(getManifestWorkCount(West1ManagedCluster)).Should(Equal(1)) // DRCluster
+				setFakeSecondary("")
+			})
+		})
+		Specify("Cleanup after tests", func() {
+			deleteUserPlacement(UserPlacementName, DefaultDRPCNamespace)
+			deleteDRPC()
+			waitForCompletion("deleted")
+			Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(2))       // DRCluster + NS MW only
+			Expect(getManagedClusterViewCount(East1ManagedCluster)).Should(Equal(0)) // NS + VRG MCV
+			deleteNamespaceMWsFromAllClusters(DefaultDRPCNamespace)
+			deleteDRPolicyAsync()
+			ensureDRPolicyIsDeleted(drpc.Spec.DRPolicyRef.Name)
+			deleteDRClustersAsync()
+			Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(0))
 		})
 	})
 })
