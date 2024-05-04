@@ -26,16 +26,20 @@ def fetch(kustomization_dir, key, log=print):
     """
     dest = _path(key)
     if not os.path.exists(dest):
-        log(f"Fetching {dest}")
-        dest_dir = os.path.dirname(dest)
-        os.makedirs(dest_dir, exist_ok=True)
-        tmp = dest + f".tmp.{os.getpid()}"
-        try:
-            _build_kustomization(kustomization_dir, tmp)
-            os.rename(tmp, dest)
-        finally:
-            _silent_remove(tmp)
+        _fetch(kustomization_dir, dest, log=log)
     return dest
+
+
+def _fetch(kustomization_dir, dest, log=print):
+    log(f"Fetching {dest}")
+    dest_dir = os.path.dirname(dest)
+    os.makedirs(dest_dir, exist_ok=True)
+    tmp = dest + f".tmp.{os.getpid()}"
+    try:
+        _build_kustomization(kustomization_dir, tmp)
+        os.rename(tmp, dest)
+    finally:
+        _silent_remove(tmp)
 
 
 def _path(key):
