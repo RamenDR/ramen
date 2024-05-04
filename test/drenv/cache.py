@@ -8,28 +8,23 @@ import subprocess
 from . import commands
 
 
-def path(key):
-    cache_home = os.environ.get("XDG_CACHE_HOME", ".cache")
-    return os.path.expanduser(f"~/{cache_home}/drenv/{key}")
-
-
 def clear(key=""):
     """
     Clear cached key. If key is not set clear the entire cache.
     """
-    cache_dir = path(key)
+    cache_dir = _path(key)
     try:
         shutil.rmtree(cache_dir)
     except FileNotFoundError:
         pass
 
 
-def fetch(kustomization_dir, dest, log=print):
+def fetch(kustomization_dir, key, log=print):
     """
-    Build kustomization and store the output yaml in dest.
-
-    TODO: retry on errors.
+    Build kustomization and cache the output yaml. Retrun the path to the
+    cached yaml.
     """
+    dest = _path(key)
     if not os.path.exists(dest):
         log(f"Fetching {dest}")
         dest_dir = os.path.dirname(dest)
@@ -40,6 +35,12 @@ def fetch(kustomization_dir, dest, log=print):
             os.rename(tmp, dest)
         finally:
             _silent_remove(tmp)
+    return dest
+
+
+def _path(key):
+    cache_home = os.environ.get("XDG_CACHE_HOME", ".cache")
+    return os.path.expanduser(f"~/{cache_home}/drenv/{key}")
 
 
 def _build_kustomization(kustomization_dir, dest):
