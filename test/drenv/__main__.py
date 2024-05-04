@@ -173,14 +173,8 @@ def cleanup(args):
 
 
 def clear(args):
-    start = time.monotonic()
     logging.info("[main] Clearing cache")
-    cache_dir = cache.path("")
-    try:
-        shutil.rmtree(cache_dir)
-    except FileNotFoundError:
-        pass
-    logging.info("[main] Cache cleared in %.2f seconds", time.monotonic() - start)
+    cache.clear()
 
 
 def fetch(args):

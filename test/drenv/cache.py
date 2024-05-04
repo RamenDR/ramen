@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import shutil
 import subprocess
 
 from . import commands
@@ -10,6 +11,17 @@ from . import commands
 def path(key):
     cache_home = os.environ.get("XDG_CACHE_HOME", ".cache")
     return os.path.expanduser(f"~/{cache_home}/drenv/{key}")
+
+
+def clear(key=""):
+    """
+    Clear cached key. If key is not set clear the entire cache.
+    """
+    cache_dir = path(key)
+    try:
+        shutil.rmtree(cache_dir)
+    except FileNotFoundError:
+        pass
 
 
 def fetch(kustomization_dir, dest, log=print):
