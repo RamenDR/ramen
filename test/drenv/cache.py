@@ -4,8 +4,12 @@
 import os
 import shutil
 import subprocess
+import time
 
 from . import commands
+
+REFRESH_THRESHOLD = 12 * 3600
+FETCH_THRESHOLD = 48 * 3600
 
 
 def clear(key=""):
@@ -19,15 +23,32 @@ def clear(key=""):
         pass
 
 
-def fetch(kustomization_dir, key, log=print):
+def refresh(kustomization_dir, key, log=print):
     """
-    Build kustomization and cache the output yaml. Retrun the path to the
-    cached yaml.
+    Rebuild the cache if cached item age is bigger than REFRESH_THRESHOLD.
     """
     dest = _path(key)
-    if not os.path.exists(dest):
+    if _age(dest) > REFRESH_THRESHOLD:
+        _fetch(kustomization_dir, dest, log=log)
+
+
+def get(kustomization_dir, key, log=print):
+    """
+    Rebuild the cache if cached item age is bigger than FETCH_THRESHOLD.
+    Return the path to cached kustomization yaml.
+    """
+    dest = _path(key)
+    if _age(dest) > FETCH_THRESHOLD:
         _fetch(kustomization_dir, dest, log=log)
     return dest
+
+
+def _age(path):
+    try:
+        mtime = os.path.getmtime(path)
+    except FileNotFoundError:
+        mtime = 0
+    return time.time() - mtime
 
 
 def _fetch(kustomization_dir, dest, log=print):
