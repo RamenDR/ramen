@@ -7,4 +7,4 @@ import os
 from drenv import cache
 
 os.chdir(os.path.dirname(__file__))
-cache.fetch(".", "addons/ocm-controller.yaml")
+cache.refresh(".", "addons/csi-addons.yaml")

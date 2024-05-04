@@ -85,7 +85,7 @@ def parse_args():
     add_command(sp, "suspend", do_suspend, help="suspend virtual machines")
     add_command(sp, "resume", do_resume, help="resume virtual machines")
     add_command(sp, "dump", do_dump, help="dump an environment yaml")
-    add_command(sp, "fetch", do_fetch, help="cache environment resources")
+    add_command(sp, "cache", do_cache, help="cache environment resources")
 
     add_command(sp, "clear", do_clear, help="cleared cached resources", envfile=False)
     add_command(sp, "setup", do_setup, help="setup minikube for drenv", envfile=False)
@@ -177,20 +177,20 @@ def do_clear(args):
     cache.clear()
 
 
-def do_fetch(args):
+def do_cache(args):
     env = load_env(args)
     start = time.monotonic()
-    logging.info("[%s] Fetching", env["name"])
+    logging.info("[%s] Refreshing cached addons", env["name"])
     addons = collect_addons(env)
     execute(
-        fetch_addon,
+        cache_addon,
         addons,
-        "fetch",
+        "cache",
         max_workers=args.max_workers,
         ctx=env["name"],
     )
     logging.info(
-        "[%s] Fetching finishied in %.2f seconds",
+        "[%s] Cached addons refreshed in %.2f seconds",
         env["name"],
         time.monotonic() - start,
     )
@@ -491,13 +491,13 @@ def run_worker(worker, hooks=(), reverse=False, allow_failure=False):
         run_addon(addon, worker["name"], hooks=hooks, allow_failure=allow_failure)
 
 
-def fetch_addon(addon, ctx="global"):
+def cache_addon(addon, ctx="global"):
     addon_dir = os.path.join(ADDONS_DIR, addon["name"])
     if not os.path.isdir(addon_dir):
         skip_addon(addon, ctx)
         return
 
-    hook = os.path.join(addon_dir, "fetch")
+    hook = os.path.join(addon_dir, "cache")
     if os.path.isfile(hook):
         run_hook(hook, (), ctx)
 

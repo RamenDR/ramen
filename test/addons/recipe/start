@@ -16,5 +16,5 @@ os.chdir(os.path.dirname(__file__))
 cluster = sys.argv[1]
 
 print("Deploying recipe crd")
-path = cache.fetch(".", "addons/recipe.yaml")
+path = cache.get(".", "addons/recipe.yaml")
 kubectl.apply("--filename", path, context=cluster)
