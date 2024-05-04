@@ -494,11 +494,7 @@ def run_worker(worker, hooks=(), reverse=False, allow_failure=False):
 def fetch_addon(addon, ctx="global"):
     addon_dir = os.path.join(ADDONS_DIR, addon["name"])
     if not os.path.isdir(addon_dir):
-        logging.warning(
-            "[%s] Addon '%s' does not exist - skipping",
-            ctx,
-            addon["name"],
-        )
+        skip_addon(addon, ctx)
         return
 
     hook = os.path.join(addon_dir, "fetch")
@@ -509,17 +505,21 @@ def fetch_addon(addon, ctx="global"):
 def run_addon(addon, name, hooks=(), allow_failure=False):
     addon_dir = os.path.join(ADDONS_DIR, addon["name"])
     if not os.path.isdir(addon_dir):
-        logging.warning(
-            "[%s] Addon '%s' does not exist - skipping",
-            name,
-            addon["name"],
-        )
+        skip_addon(addon, name)
         return
 
     for filename in hooks:
         hook = os.path.join(addon_dir, filename)
         if os.path.isfile(hook):
             run_hook(hook, addon["args"], name, allow_failure=allow_failure)
+
+
+def skip_addon(addon, ctx):
+    logging.warning(
+        "[%s] Addon '%s' does not exist - skipping",
+        ctx,
+        addon["name"],
+    )
 
 
 def run_hook(hook, args, name, allow_failure=False):
