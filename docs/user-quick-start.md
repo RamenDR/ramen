@@ -97,7 +97,7 @@ enough resources:
    sudo dnf install https://storage.googleapis.com/minikube/releases/latest/minikube-latest.x86_64.rpm
    ```
 
-   Tested with version v1.31.
+   Tested with version v1.33.0.
 
 1. Validate the installation
 

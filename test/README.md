@@ -28,7 +28,7 @@ environment.
    ```
 
    You need `minikube` version supporting the `--extra-disks` option.
-   Tested with version v1.31.2.
+   Tested with version v1.33.0.
 
 1. Install the `kubectl` tool. See
    [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
