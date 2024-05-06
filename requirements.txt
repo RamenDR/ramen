@@ -1,5 +1,6 @@
-pytest
+black
 coverage
 flake8
 pylint
-black
+pytest
+setuptools
