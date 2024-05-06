@@ -1755,8 +1755,8 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 
 	r.updateResourceCondition(drpc, userPlacement)
 
-	// do not set metrics if DRPC is being deleted
-	if !isBeingDeleted(drpc, userPlacement) {
+	// set metrics if DRPC is not being deleted and if finalizer exists
+	if !isBeingDeleted(drpc, userPlacement) && controllerutil.ContainsFinalizer(drpc, DRPCFinalizer) {
 		if err := r.setDRPCMetrics(ctx, drpc, log); err != nil {
 			// log the error but do not return the error
 			log.Info("Failed to set drpc metrics", "errMSg", err)
