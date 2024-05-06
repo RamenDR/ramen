@@ -162,7 +162,7 @@ func getTargetCluster(client client.Client, namespace, placementName string, drp
 	return targetCluster, nil
 }
 
-// first wait DRPC to have
+// first wait DRPC to have the expected phase, then check DRPC conditions
 func waitDRPC(client client.Client, namespace, name, expectedPhase string) error {
 	// sleep to wait for DRPC is processed
 	time.Sleep(FiveSecondsDuration)
