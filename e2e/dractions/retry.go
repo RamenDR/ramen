@@ -111,17 +111,17 @@ func waitDRPCPhase(client client.Client, namespace string, name string, phase st
 
 		currentPhase := string(drpc.Status.Phase)
 		if currentPhase == phase {
-			util.Ctx.Log.Info("drpc  " + name + " phase is " + phase)
+			util.Ctx.Log.Info("drpc " + name + " phase is " + phase)
 
 			return nil
 		}
 
 		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
 			// fmt.Printf("drpc  "+drpcName+" phase is not %s yet before timeout of %v\n", phase, timeout)
-			return fmt.Errorf(fmt.Sprintf("drpc  "+name+" status is not %s yet before timeout of %v", phase, util.Timeout))
+			return fmt.Errorf(fmt.Sprintf("drpc "+name+" status is not %s yet before timeout of %v", phase, util.Timeout))
 		}
 
-		util.Ctx.Log.Info(fmt.Sprintf("current drpc  "+name+
+		util.Ctx.Log.Info(fmt.Sprintf("current drpc "+name+
 			" phase is %s, expecting %s, retry in %v seconds", currentPhase, phase, util.TimeInterval))
 		time.Sleep(time.Second * time.Duration(util.TimeInterval))
 	}

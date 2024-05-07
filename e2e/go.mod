@@ -11,6 +11,7 @@ require (
 	k8s.io/client-go v12.0.0+incompatible
 	k8s.io/kubectl v0.29.3
 	open-cluster-management.io/api v0.13.0
+	open-cluster-management.io/multicloud-operators-channel v0.10.1-0.20230316173315-10f48e51f3aa
 	open-cluster-management.io/multicloud-operators-subscription v0.13.0
 	sigs.k8s.io/controller-runtime v0.17.3
 )
@@ -55,7 +56,6 @@ require (
 	k8s.io/klog/v2 v2.110.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20231010175941-2dd684a91f00 // indirect
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b // indirect
-	open-cluster-management.io/multicloud-operators-channel v0.10.1-0.20230316173315-10f48e51f3aa // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
