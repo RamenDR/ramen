@@ -32,8 +32,19 @@ func (s Subscription) Deploy(w workloads.Workload) error {
 	name := GetCombinedName(s, w)
 	namespace := name
 
-	// w.Kustomize()
-	err := createNamespace(namespace)
+	// create channel namespace
+	err := createNamespace(util.GetChannelNamespace())
+	if err != nil {
+		return err
+	}
+
+	err = createChannel()
+	if err != nil {
+		return err
+	}
+
+	// create subscription namespace
+	err = createNamespace(namespace)
 	if err != nil {
 		return err
 	}
@@ -49,6 +60,11 @@ func (s Subscription) Deploy(w workloads.Workload) error {
 	}
 
 	err = createSubscription(s, w)
+	if err != nil {
+		return err
+	}
+
+	err = waitSubscriptionPhase(namespace, name, "Propagated")
 	if err != nil {
 		return err
 	}
