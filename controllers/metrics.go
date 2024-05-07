@@ -24,7 +24,7 @@ const (
 	WorkloadProtectionStatus = "workload_protection_status"
 )
 
-type SyncMetrics struct {
+type SyncTimeMetrics struct {
 	LastSyncTime prometheus.Gauge
 }
 
@@ -44,11 +44,10 @@ type WorkloadProtectionMetrics struct {
 	WorkloadProtectionStatus prometheus.Gauge
 }
 
-type DRPCMetrics struct {
-	SyncMetrics
+type SyncMetrics struct {
+	SyncTimeMetrics
 	SyncDurationMetrics
 	SyncDataBytesMetrics
-	WorkloadProtectionMetrics
 }
 
 const (
@@ -60,7 +59,7 @@ const (
 )
 
 var (
-	syncMetricLabelNames = []string{
+	syncTimeMetricLabelNames = []string{
 		ObjType,            // Name of the type of the resource [drpc|vrg]
 		ObjName,            // Name of the resource [drpc-name|vrg-name]
 		ObjNamespace,       // DRPC namespace name
@@ -100,7 +99,7 @@ var (
 			Namespace: metricNamespace,
 			Help:      "Duration of last sync time in seconds",
 		},
-		syncMetricLabelNames,
+		syncTimeMetricLabelNames,
 	)
 
 	dRPolicySyncInterval = prometheus.NewGaugeVec(
@@ -141,7 +140,7 @@ var (
 )
 
 // lastSyncTime metrics reports value from lastGrpupSyncTime taken from DRPC status
-func SyncMetricLabels(drPolicy *rmn.DRPolicy, drpc *rmn.DRPlacementControl) prometheus.Labels {
+func SyncTimeMetricLabels(drPolicy *rmn.DRPolicy, drpc *rmn.DRPlacementControl) prometheus.Labels {
 	return prometheus.Labels{
 		ObjType:            "DRPlacementControl",
 		ObjName:            drpc.Name,
@@ -151,13 +150,13 @@ func SyncMetricLabels(drPolicy *rmn.DRPolicy, drpc *rmn.DRPlacementControl) prom
 	}
 }
 
-func NewSyncMetrics(labels prometheus.Labels) SyncMetrics {
-	return SyncMetrics{
+func NewSyncTimeMetric(labels prometheus.Labels) SyncTimeMetrics {
+	return SyncTimeMetrics{
 		LastSyncTime: lastSyncTime.With(labels),
 	}
 }
 
-func DeleteSyncMetric(labels prometheus.Labels) bool {
+func DeleteSyncTimeMetric(labels prometheus.Labels) bool {
 	return lastSyncTime.Delete(labels)
 }
 
