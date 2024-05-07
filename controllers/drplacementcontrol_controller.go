@@ -837,7 +837,7 @@ func (r *DRPlacementControlReconciler) recordFailure(ctx context.Context, drpc *
 	}
 }
 
-func (r *DRPlacementControlReconciler) setLastSyncTimeMetric(syncMetrics *SyncMetrics,
+func (r *DRPlacementControlReconciler) setLastSyncTimeMetric(syncMetrics *SyncTimeMetrics,
 	t *metav1.Time, log logr.Logger,
 ) {
 	if syncMetrics == nil {
@@ -982,11 +982,11 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 	return d, nil
 }
 
-func (r *DRPlacementControlReconciler) createDRPCMetricsInstance(
+func (r *DRPlacementControlReconciler) createSyncMetricsInstance(
 	drPolicy *rmn.DRPolicy, drpc *rmn.DRPlacementControl,
-) *DRPCMetrics {
-	syncMetricLabels := SyncMetricLabels(drPolicy, drpc)
-	syncMetrics := NewSyncMetrics(syncMetricLabels)
+) *SyncMetrics {
+	syncTimeMetricLabels := SyncTimeMetricLabels(drPolicy, drpc)
+	syncTimeMetrics := NewSyncTimeMetric(syncTimeMetricLabels)
 
 	syncDurationMetricLabels := SyncDurationMetricLabels(drPolicy, drpc)
 	syncDurationMetrics := NewSyncDurationMetric(syncDurationMetricLabels)
@@ -994,14 +994,21 @@ func (r *DRPlacementControlReconciler) createDRPCMetricsInstance(
 	syncDataBytesLabels := SyncDataBytesMetricLabels(drPolicy, drpc)
 	syncDataMetrics := NewSyncDataBytesMetric(syncDataBytesLabels)
 
+	return &SyncMetrics{
+		SyncTimeMetrics:      syncTimeMetrics,
+		SyncDurationMetrics:  syncDurationMetrics,
+		SyncDataBytesMetrics: syncDataMetrics,
+	}
+}
+
+func (r *DRPlacementControlReconciler) createWorkloadProtectionMetricsInstance(
+	drpc *rmn.DRPlacementControl,
+) *WorkloadProtectionMetrics {
 	workloadProtectionLabels := WorkloadProtectionStatusLabels(drpc)
 	workloadProtectionMetrics := NewWorkloadProtectionStatusMetric(workloadProtectionLabels)
 
-	return &DRPCMetrics{
-		SyncMetrics:               syncMetrics,
-		SyncDurationMetrics:       syncDurationMetrics,
-		SyncDataBytesMetrics:      syncDataMetrics,
-		WorkloadProtectionMetrics: workloadProtectionMetrics,
+	return &WorkloadProtectionMetrics{
+		WorkloadProtectionStatus: workloadProtectionMetrics.WorkloadProtectionStatus,
 	}
 }
 
@@ -1263,8 +1270,8 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 	}
 
 	// delete metrics if matching labels are found
-	syncMetricLabels := SyncMetricLabels(drPolicy, drpc)
-	DeleteSyncMetric(syncMetricLabels)
+	syncTimeMetricLabels := SyncTimeMetricLabels(drPolicy, drpc)
+	DeleteSyncTimeMetric(syncTimeMetricLabels)
 
 	syncDurationMetricLabels := SyncDurationMetricLabels(drPolicy, drpc)
 	DeleteSyncDurationMetric(syncDurationMetricLabels)
@@ -1904,7 +1911,10 @@ func (r *DRPlacementControlReconciler) clusterForVRGStatus(
 func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
 	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) error {
-	log.Info("Setting drpc metrics")
+	log.Info("setting WorkloadProtectionMetrics")
+
+	workloadProtectionMetrics := r.createWorkloadProtectionMetricsInstance(drpc)
+	r.setWorkloadProtectionMetric(workloadProtectionMetrics, drpc.Status.Conditions, log)
 
 	drPolicy, err := r.getDRPolicy(ctx, drpc, log)
 	if err != nil {
@@ -1916,19 +1926,20 @@ func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
 		return err
 	}
 
-	// do not set netrics if metro-dr
+	// do not set sync metrics if metro-dr
 	isMetro, _ := dRPolicySupportsMetro(drPolicy, drClusters)
 	if isMetro {
 		return nil
 	}
 
-	drpcMetrics := r.createDRPCMetricsInstance(drPolicy, drpc)
+	log.Info("setting SyncMetrics")
 
-	if drpcMetrics != nil {
-		r.setLastSyncTimeMetric(&drpcMetrics.SyncMetrics, drpc.Status.LastGroupSyncTime, log)
-		r.setLastSyncDurationMetric(&drpcMetrics.SyncDurationMetrics, drpc.Status.LastGroupSyncDuration, log)
-		r.setLastSyncBytesMetric(&drpcMetrics.SyncDataBytesMetrics, drpc.Status.LastGroupSyncBytes, log)
-		r.setWorkloadProtectionMetric(&drpcMetrics.WorkloadProtectionMetrics, drpc.Status.Conditions, log)
+	syncMetrics := r.createSyncMetricsInstance(drPolicy, drpc)
+
+	if syncMetrics != nil {
+		r.setLastSyncTimeMetric(&syncMetrics.SyncTimeMetrics, drpc.Status.LastGroupSyncTime, log)
+		r.setLastSyncDurationMetric(&syncMetrics.SyncDurationMetrics, drpc.Status.LastGroupSyncDuration, log)
+		r.setLastSyncBytesMetric(&syncMetrics.SyncDataBytesMetrics, drpc.Status.LastGroupSyncBytes, log)
 	}
 
 	return nil
