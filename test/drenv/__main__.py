@@ -26,7 +26,6 @@ from . import minikube
 from . import ramen
 from . import shutdown
 
-CMD_PREFIX = "cmd_"
 ADDONS_DIR = "addons"
 
 executors = []
@@ -39,15 +38,10 @@ def main():
         format="%(asctime)s %(levelname)-7s %(message)s",
     )
 
-    with open(args.filename) as f:
-        env = envfile.load(f, name_prefix=args.name_prefix)
-
-    func = globals()[CMD_PREFIX + args.command]
-
     signal.signal(signal.SIGTERM, handle_termination_signal)
     become_process_group_leader()
     try:
-        func(env, args)
+        args.func(args)
     except Exception:
         logging.exception("Command failed")
         sys.exit(1)
@@ -57,31 +51,72 @@ def main():
 
 
 def parse_args():
-    commands = [n[len(CMD_PREFIX) :] for n in globals() if n.startswith(CMD_PREFIX)]
+    parser = argparse.ArgumentParser(prog="drenv")
 
-    p = argparse.ArgumentParser(prog="drenv")
-    p.add_argument("-v", "--verbose", action="store_true", help="Be more verbose")
-    p.add_argument(
+    sp = parser.add_subparsers(
+        title="commands",
+        dest="command",
+        required=True,
+    )
+
+    start_parser = add_command(sp, "start", start, help="start an environment")
+    start_parser.add_argument(
         "--skip-tests",
         dest="run_tests",
         action="store_false",
-        help="Skip addons 'test' hooks",
+        help="Do not run addons 'test' hooks",
     )
-    p.add_argument(
+    start_parser.add_argument(
         "--skip-addons",
         dest="run_addons",
         action="store_false",
-        help="Skip addons 'start' and 'stop' hooks",
+        help="Do not run addons 'start' hooks",
     )
-    p.add_argument("command", choices=commands, help="Command to run")
-    p.add_argument("--name-prefix", help="Prefix profile names")
-    p.add_argument(
-        "--max-workers",
-        type=int,
-        help="Maximum number of workers per profile",
+
+    stop_parser = add_command(sp, "stop", stop, help="stop an environment")
+    stop_parser.add_argument(
+        "--skip-addons",
+        dest="run_addons",
+        action="store_false",
+        help="Do not run addons 'stop' hooks",
     )
-    p.add_argument("filename", help="Environment filename")
-    return p.parse_args()
+
+    add_command(sp, "delete", delete, help="delete an environment")
+    add_command(sp, "suspend", suspend, help="suspend virtual machines")
+    add_command(sp, "resume", resume, help="resume virtual machines")
+    add_command(sp, "dump", dump, help="dump an environment yaml")
+    add_command(sp, "fetch", fetch, help="cache environment resources")
+
+    add_command(sp, "clear", clear, help="cleared cached resources", envfile=False)
+    add_command(sp, "setup", setup, help="setup minikube for drenv", envfile=False)
+    add_command(sp, "cleanup", cleanup, help="cleanup minikube", envfile=False)
+
+    return parser.parse_args()
+
+
+def add_command(sp, name, func, help=None, envfile=True):
+    parser = sp.add_parser(name, help=help)
+    parser.add_argument("-v", "--verbose", action="store_true", help="be more verbose")
+    parser.set_defaults(func=func)
+    if envfile:
+        parser.add_argument(
+            "--name-prefix",
+            metavar="PREFIX",
+            help="prefix profile names",
+        )
+        parser.add_argument(
+            "--max-workers",
+            type=int,
+            metavar="N",
+            help="maximum number of workers per profile",
+        )
+        parser.add_argument("filename", help="path to environment file")
+    return parser
+
+
+def load_env(args):
+    with open(args.filename) as f:
+        return envfile.load(f, name_prefix=args.name_prefix)
 
 
 def shutdown_executors():
@@ -127,22 +162,19 @@ def handle_termination_signal(signo, frame):
     sys.exit(1)
 
 
-def cmd_clear(env, args):
+def clear(args):
     start = time.monotonic()
-    logging.info("[%s] Clearing cache", env["name"])
+    logging.info("[main] Clearing cache")
     cache_dir = cache.path("")
     try:
         shutil.rmtree(cache_dir)
     except FileNotFoundError:
         pass
-    logging.info(
-        "[%s] Fetching finishied in %.2f seconds",
-        env["name"],
-        time.monotonic() - start,
-    )
+    logging.info("[main] Cache cleared in %.2f seconds", time.monotonic() - start)
 
 
-def cmd_fetch(env, args):
+def fetch(args):
+    env = load_env(args)
     start = time.monotonic()
     logging.info("[%s] Fetching", env["name"])
     addons = collect_addons(env)
@@ -160,7 +192,8 @@ def cmd_fetch(env, args):
     )
 
 
-def cmd_start(env, args):
+def start(args):
+    env = load_env(args)
     start = time.monotonic()
     logging.info("[%s] Starting environment", env["name"])
 
@@ -191,7 +224,8 @@ def cmd_start(env, args):
     )
 
 
-def cmd_stop(env, args):
+def stop(args):
+    env = load_env(args)
     start = time.monotonic()
     logging.info("[%s] Stopping environment", env["name"])
     hooks = ["stop"] if args.run_addons else []
@@ -203,7 +237,8 @@ def cmd_stop(env, args):
     )
 
 
-def cmd_delete(env, args):
+def delete(args):
+    env = load_env(args)
     start = time.monotonic()
     logging.info("[%s] Deleting environment", env["name"])
     execute(delete_cluster, env["profiles"], "profiles")
@@ -220,19 +255,22 @@ def cmd_delete(env, args):
     )
 
 
-def cmd_suspend(env, args):
+def suspend(args):
+    env = load_env(args)
     logging.info("[%s] Suspending environment", env["name"])
     for profile in env["profiles"]:
         run("virsh", "-c", "qemu:///system", "suspend", profile["name"])
 
 
-def cmd_resume(env, args):
+def resume(args):
+    env = load_env(args)
     logging.info("[%s] Resuming environment", env["name"])
     for profile in env["profiles"]:
         run("virsh", "-c", "qemu:///system", "resume", profile["name"])
 
 
-def cmd_dump(env, args):
+def dump(args):
+    env = load_env(args)
     yaml.dump(env, sys.stdout)
 
 
