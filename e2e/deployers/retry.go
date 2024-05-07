@@ -32,7 +32,12 @@ func waitSubscriptionPhase(namespace, name, phase string) error {
 		}
 
 		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
-			return fmt.Errorf(fmt.Sprintf("subscription "+name+" status is not %s yet before timeout of %v", phase, util.Timeout))
+			return fmt.Errorf(fmt.Sprintf("subscription "+name+" status is not %s yet before timeout of %v",
+				phase, util.Timeout))
+		}
+
+		if currentPhase == "" {
+			currentPhase = "empty"
 		}
 
 		util.Ctx.Log.Info(fmt.Sprintf("current subscription "+name+
