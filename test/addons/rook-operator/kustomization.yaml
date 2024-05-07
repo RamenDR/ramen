@@ -1,12 +1,14 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+# yamllint disable rule:line-length
 ---
 resources:
-  - ${base_url}/crds.yaml
-  - ${base_url}/common.yaml
-  - ${base_url}/operator.yaml
-patchesJson6902:
+  - https://raw.githubusercontent.com/rook/rook/release-1.13/deploy/examples/crds.yaml
+  - https://raw.githubusercontent.com/rook/rook/release-1.13/deploy/examples/common.yaml
+  - https://raw.githubusercontent.com/rook/rook/release-1.13/deploy/examples/operator.yaml
+
+patches:
   - target:
       kind: ConfigMap
       name: rook-ceph-operator-config
@@ -18,8 +20,6 @@ patchesJson6902:
       - op: add
         path: /data/CSI_ENABLE_OMAP_GENERATOR
         value: 'true'
-
-patches:
   # Disable to avoid random failures when restaring the enviroment.
   #   failed to call webhook:
   #   Post "https://rook-ceph-admission-controller.rook-ceph.svc:443/

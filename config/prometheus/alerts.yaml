@@ -22,7 +22,7 @@ spec:
           labels:
             severity: critical
           annotations:
-            description: "Syncing of volumes (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }}) is taking more than thrice the scheduled snapshot interval. This may cause data loss and a backlog of replication requests."
+            description: "The syncing of volumes is exceeding three times the scheduled snapshot interval, or the volumes have been recently protected. (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }})"
             alert_type: "DisasterRecovery"
         - alert: VolumeSynchronizationDelay
           expr: ramen_rpo_difference > 2 and ramen_rpo_difference < 3
@@ -30,7 +30,7 @@ spec:
           labels:
             severity: warning
           annotations:
-            description: "Syncing of volumes (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }}) is taking more than twice the scheduled snapshot interval. This may cause data loss and impact replication requests."
+            description: "The syncing of volumes is exceeding two times the scheduled snapshot interval, or the volumes have been recently protected. (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }})"
             alert_type: "DisasterRecovery"
         - alert: WorkloadUnprotected
           expr: ramen_workload_protection_status == 0

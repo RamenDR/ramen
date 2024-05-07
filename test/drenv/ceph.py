@@ -31,6 +31,20 @@ def clear_osd_blocklist(cluster):
     tool(cluster, "ceph", "osd", "blocklist", "clear")
 
 
+def set_config(cluster, who, option, value):
+    """
+    See https://docs.ceph.com/en/latest/rados/configuration/ceph-conf/#commands
+    """
+    tool(cluster, "ceph", "config", "set", who, option, value)
+
+
+def rm_config(cluster, who, option):
+    """
+    See https://docs.ceph.com/en/latest/rados/configuration/ceph-conf/#commands
+    """
+    tool(cluster, "ceph", "config", "rm", who, option)
+
+
 def tool(cluster, *args):
     return kubectl.exec(
         "deploy/rook-ceph-tools",

@@ -61,6 +61,8 @@ const (
 
 	// Relocated, state recorded in
 	Relocated = DRState("Relocated")
+
+	Deleting = DRState("Deleting")
 )
 
 const (
@@ -114,6 +116,7 @@ const (
 	ProgressionEnsuringVolSyncSetup                = ProgressionStatus("EnsuringVolSyncSetup")
 	ProgressionSettingupVolsyncDest                = ProgressionStatus("SettingUpVolSyncDest")
 	ProgressionDeleting                            = ProgressionStatus("Deleting")
+	ProgressionDeleted                             = ProgressionStatus("Deleted")
 	ProgressionActionPaused                        = ProgressionStatus("Paused")
 )
 

@@ -11,10 +11,7 @@ import yaml
 
 import drenv
 from drenv import kubectl
-
-# Update this when upgrading rook.
-VERSION = "release-1.13"
-BASE_URL = f"https://raw.githubusercontent.com/rook/rook/{VERSION}/deploy/examples"
+from drenv import cache
 
 # The ceph, and ceph-csi iamges are very large (500m each), using larger
 # timeout to avoid timeouts with flaky network.
@@ -23,11 +20,9 @@ TIMEOUT = 600
 
 def deploy(cluster):
     print("Deploying rook ceph cluster")
-    with drenv.kustomization(
-        "kustomization.yaml",
-        base_url=BASE_URL,
-    ) as kustomization:
-        kubectl.apply("--kustomize", kustomization, context=cluster)
+    path = cache.path("addons/rook-cluster.yaml")
+    cache.fetch(".", path)
+    kubectl.apply("--filename", path, context=cluster)
 
 
 def wait(cluster):

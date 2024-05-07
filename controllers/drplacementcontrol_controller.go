@@ -736,7 +736,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		if err != nil {
 			logger.Info(fmt.Sprintf("Error in deleting DRPC: (%v)", err))
 
-			statusErr := r.setProgressionAndUpdate(ctx, drpc, rmn.ProgressionDeleting)
+			statusErr := r.setDeletionStatusAndUpdate(ctx, drpc)
 			if statusErr != nil {
 				err = fmt.Errorf("drpc deletion failed: %w and status update failed: %w", err, statusErr)
 			}
@@ -808,10 +808,12 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	return r.reconcileDRPCInstance(d, logger)
 }
 
-func (r *DRPlacementControlReconciler) setProgressionAndUpdate(
-	ctx context.Context, drpc *rmn.DRPlacementControl, progressionStatus rmn.ProgressionStatus,
+func (r *DRPlacementControlReconciler) setDeletionStatusAndUpdate(
+	ctx context.Context, drpc *rmn.DRPlacementControl,
 ) error {
-	updated := updateDRPCProgression(drpc, progressionStatus, r.Log)
+	updated := updateDRPCProgression(drpc, rmn.ProgressionDeleting, r.Log)
+	drpc.Status.Phase = rmn.Deleting
+	drpc.Status.ObservedGeneration = drpc.Generation
 
 	if updated {
 		if err := r.Status().Update(ctx, drpc); err != nil {
@@ -1175,6 +1177,7 @@ func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 		}
 	}
 
+	updateDRPCProgression(drpc, rmn.ProgressionDeleted, r.Log)
 	// Remove DRPCFinalizer from DRPC.
 	controllerutil.RemoveFinalizer(drpc, DRPCFinalizer)
 
@@ -1755,8 +1758,8 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 
 	r.updateResourceCondition(drpc, userPlacement)
 
-	// do not set metrics if DRPC is being deleted
-	if !isBeingDeleted(drpc, userPlacement) {
+	// set metrics if DRPC is not being deleted and if finalizer exists
+	if !isBeingDeleted(drpc, userPlacement) && controllerutil.ContainsFinalizer(drpc, DRPCFinalizer) {
 		if err := r.setDRPCMetrics(ctx, drpc, log); err != nil {
 			// log the error but do not return the error
 			log.Info("Failed to set drpc metrics", "errMSg", err)

@@ -6,21 +6,15 @@
 import os
 import sys
 
-import drenv
 from drenv import kubectl
-
-# Update this when upgrading rook.
-VERSION = "release-1.13"
-BASE_URL = f"https://raw.githubusercontent.com/rook/rook/{VERSION}/deploy/examples"
+from drenv import cache
 
 
 def deploy(cluster):
     print("Deploying rook ceph operator")
-    with drenv.kustomization(
-        "kustomization.yaml",
-        base_url=BASE_URL,
-    ) as kustomization:
-        kubectl.apply("--kustomize", kustomization, context=cluster)
+    path = cache.path("addons/rook-operator.yaml")
+    cache.fetch(".", path)
+    kubectl.apply("--filename", path, context=cluster)
 
 
 def wait(cluster):
@@ -43,9 +37,6 @@ def wait(cluster):
         "--timeout=300s",
         context=cluster,
     )
-
-    print("Applying rook-config-override")
-    kubectl.apply("--filename=rook-config-override.yaml", context=cluster)
 
 
 if len(sys.argv) != 2:

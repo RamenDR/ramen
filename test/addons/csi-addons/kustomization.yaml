@@ -3,10 +3,10 @@
 
 ---
 resources:
-  - ${base_url}/crds.yaml
-  - ${base_url}/rbac.yaml
-  - ${base_url}/setup-controller.yaml
+  - https://raw.githubusercontent.com/csi-addons/kubernetes-csi-addons/v0.8.0/deploy/controller/crds.yaml
+  - https://raw.githubusercontent.com/csi-addons/kubernetes-csi-addons/v0.8.0/deploy/controller/rbac.yaml
+  - https://raw.githubusercontent.com/csi-addons/kubernetes-csi-addons/v0.8.0/deploy/controller/setup-controller.yaml
 
 images:
   - name: quay.io/csiaddons/k8s-controller
-    newTag: ${image_tag}
+    newTag: v0.8.0

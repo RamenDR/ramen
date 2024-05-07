@@ -63,6 +63,26 @@ def fetch_secret_info(cluster):
     return info
 
 
+def enable_rbd_mirror_debug_logs(cluster):
+    print(f"Enable rbd-mirror debug logs in cluster '{cluster}'")
+    for who in "client.rbd-mirror.a", "client.rbd-mirror-peer":
+        ceph.set_config(cluster, who, "debug_ms", "1")
+        ceph.set_config(cluster, who, "debug_rbd", "15")
+        ceph.set_config(cluster, who, "debug_rbd_mirror", "30")
+        ceph.set_config(cluster, who, "log_file", "/var/log/ceph/$cluster-$name.log")
+    ceph.set_config(cluster, "mgr", "mgr/rbd_support/log_level", "debug")
+
+
+def disable_rbd_mirror_debug_logs(cluster):
+    print(f"Disable rbd-mirror debug logs in cluster '{cluster}'")
+    for who in "client.rbd-mirror.a", "client.rbd-mirror-peer":
+        ceph.rm_config(cluster, who, "debug_ms")
+        ceph.rm_config(cluster, who, "debug_rbd")
+        ceph.rm_config(cluster, who, "debug_rbd_mirror")
+        ceph.rm_config(cluster, who, "log_file")
+    ceph.rm_config(cluster, "mgr", "mgr/rbd_support/log_level")
+
+
 def configure_rbd_mirroring(cluster, peer_info):
     print(f"Applying rbd mirror secret in cluster '{cluster}'")
 
@@ -218,6 +238,14 @@ if len(sys.argv) != 3:
 os.chdir(os.path.dirname(__file__))
 cluster1 = sys.argv[1]
 cluster2 = sys.argv[2]
+
+# Run with RBD_MIRROR_DEBUG=0 to disable debug logs.
+if os.environ.get("RBD_MIRROR_DEBUG") == "0":
+    disable_rbd_mirror_debug_logs(cluster1)
+    disable_rbd_mirror_debug_logs(cluster2)
+else:
+    enable_rbd_mirror_debug_logs(cluster1)
+    enable_rbd_mirror_debug_logs(cluster2)
 
 cluster1_info = fetch_secret_info(cluster1)
 cluster2_info = fetch_secret_info(cluster2)
