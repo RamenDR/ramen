@@ -21,7 +21,6 @@ templates:
         io.containerd.grpc.v1.cri:
           device_ownership_from_security_context: true
     network: "$network"
-    cni: flannel
     cpus: 4
     memory: "8g"
     extra_disks: 1
