@@ -33,6 +33,30 @@ executors = []
 
 
 def main():
+    args = parse_args()
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(asctime)s %(levelname)-7s %(message)s",
+    )
+
+    with open(args.filename) as f:
+        env = envfile.load(f, name_prefix=args.name_prefix)
+
+    func = globals()[CMD_PREFIX + args.command]
+
+    signal.signal(signal.SIGTERM, handle_termination_signal)
+    become_process_group_leader()
+    try:
+        func(env, args)
+    except Exception:
+        logging.exception("Command failed")
+        sys.exit(1)
+    finally:
+        shutdown_executors()
+        terminate_process_group()
+
+
+def parse_args():
     commands = [n[len(CMD_PREFIX) :] for n in globals() if n.startswith(CMD_PREFIX)]
 
     p = argparse.ArgumentParser(prog="drenv")
@@ -57,28 +81,7 @@ def main():
         help="Maximum number of workers per profile",
     )
     p.add_argument("filename", help="Environment filename")
-    args = p.parse_args()
-
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s %(levelname)-7s %(message)s",
-    )
-
-    with open(args.filename) as f:
-        env = envfile.load(f, name_prefix=args.name_prefix)
-
-    func = globals()[CMD_PREFIX + args.command]
-
-    signal.signal(signal.SIGTERM, handle_termination_signal)
-    become_process_group_leader()
-    try:
-        func(env, args)
-    except Exception:
-        logging.exception("Command failed")
-        sys.exit(1)
-    finally:
-        shutdown_executors()
-        terminate_process_group()
+    return p.parse_args()
 
 
 def shutdown_executors():
