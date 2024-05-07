@@ -5,7 +5,7 @@
 ---
 resources:
   - https://raw.githubusercontent.com/rook/rook/release-1.13/deploy/examples/cluster-test.yaml
-patchesJson6902:
+patches:
   - target:
       kind: CephCluster
       name: my-cluster
