@@ -162,6 +162,16 @@ def handle_termination_signal(signo, frame):
     sys.exit(1)
 
 
+def setup(args):
+    logging.info("[main] Setting up minikube for drenv")
+    minikube.setup_files()
+
+
+def cleanup(args):
+    logging.info("[main] Cleaning up minikube")
+    minikube.cleanup_files()
+
+
 def clear(args):
     start = time.monotonic()
     logging.info("[main] Clearing cache")
@@ -321,6 +331,8 @@ def start_cluster(profile, hooks=(), args=None, **options):
             containerd.configure(profile)
         if is_restart:
             restart_failed_deployments(profile)
+        else:
+            minikube.load_files(profile["name"])
 
     if hooks:
         execute(
