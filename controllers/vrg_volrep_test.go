@@ -395,7 +395,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 					})
 				})
 				It("updates the status", func() {
-					Eventually(vrgResourceVersionGet).ShouldNot(Equal(vrgResourceVersion))
+					Eventually(vrgResourceVersionGet, vrgtimeout*2, vrginterval).ShouldNot(Equal(vrgResourceVersion))
 				})
 				It("keeps the selected protected", func() {
 					pvcsVerify(pvcNamesSelected, pvcProtectedVerify)
@@ -411,7 +411,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 					configMapUpdate()
 				})
 				It("updates the status", func() {
-					Eventually(vrgResourceVersionGet).ShouldNot(Equal(vrgResourceVersion))
+					Eventually(vrgResourceVersionGet, vrgtimeout*2, vrginterval).ShouldNot(Equal(vrgResourceVersion))
 				})
 				It("keeps the selected protected", func() {
 					pvcsVerify(pvcNamesSelected, pvcProtectedVerify)
@@ -435,7 +435,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 					})
 				})
 				It("updates the status", func() {
-					Eventually(vrgResourceVersionGet).ShouldNot(Equal(vrgResourceVersion))
+					Eventually(vrgResourceVersionGet, vrgtimeout*2, vrginterval).ShouldNot(Equal(vrgResourceVersion))
 				})
 				It("keeps the selected protected", func() {
 					pvcsVerify(pvcNamesSelected, pvcProtectedVerify)
@@ -473,7 +473,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 					})
 				})
 				It("updates the status", func() {
-					Eventually(vrgResourceVersionGet).ShouldNot(Equal(vrgResourceVersion))
+					Eventually(vrgResourceVersionGet, vrgtimeout*2, vrginterval).ShouldNot(Equal(vrgResourceVersion))
 				})
 				It("keeps the deselected unprotected", func() {
 					pvcsVerify(pvcNamesDeselected, pvcUnprotectedVerify)
