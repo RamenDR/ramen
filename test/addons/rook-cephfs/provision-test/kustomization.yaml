@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+namespace: drenv-addon-test
+
+resources:
+- namespace.yaml
+- pvc.yaml
+- snapshot.yaml

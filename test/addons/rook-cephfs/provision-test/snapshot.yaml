@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshot
+metadata:
+  name: cephfs-snap
+spec:
+  volumeSnapshotClassName: csi-cephfsplugin-snapclass
+  source:
+    persistentVolumeClaimName: cephfs-pvc
