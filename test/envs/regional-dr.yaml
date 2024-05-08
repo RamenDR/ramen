@@ -32,6 +32,7 @@ templates:
           - name: rook-cluster
           - name: rook-toolbox
           - name: rook-pool
+          - name: rook-cephfs
       - addons:
           - name: ocm-cluster
             args: ["$name", "hub"]
