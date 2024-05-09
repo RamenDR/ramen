@@ -4,7 +4,6 @@
 package v1alpha1
 
 import (
-	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -161,6 +160,12 @@ type DRPlacementControlSpec struct {
 	KubeObjectProtection *KubeObjectProtectionSpec `json:"kubeObjectProtection,omitempty"`
 }
 
+// PlacementDecision defines the decision made by controller
+type PlacementDecision struct {
+	ClusterName      string `json:"clusterName,omitempty"`
+	ClusterNamespace string `json:"clusterNamespace,omitempty"`
+}
+
 // VRGResourceMeta represents the VRG resource.
 type VRGResourceMeta struct {
 	// Kind is the kind of the Kubernetes resource.
@@ -194,14 +199,14 @@ type VRGConditions struct {
 
 // DRPlacementControlStatus defines the observed state of DRPlacementControl
 type DRPlacementControlStatus struct {
-	Phase              DRState                 `json:"phase,omitempty"`
-	ObservedGeneration int64                   `json:"observedGeneration,omitempty"`
-	ActionStartTime    *metav1.Time            `json:"actionStartTime,omitempty"`
-	ActionDuration     *metav1.Duration        `json:"actionDuration,omitempty"`
-	Progression        ProgressionStatus       `json:"progression,omitempty"`
-	PreferredDecision  plrv1.PlacementDecision `json:"preferredDecision,omitempty"`
-	Conditions         []metav1.Condition      `json:"conditions,omitempty"`
-	ResourceConditions VRGConditions           `json:"resourceConditions,omitempty"`
+	Phase              DRState            `json:"phase,omitempty"`
+	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
+	ActionStartTime    *metav1.Time       `json:"actionStartTime,omitempty"`
+	ActionDuration     *metav1.Duration   `json:"actionDuration,omitempty"`
+	Progression        ProgressionStatus  `json:"progression,omitempty"`
+	PreferredDecision  PlacementDecision  `json:"preferredDecision,omitempty"`
+	Conditions         []metav1.Condition `json:"conditions,omitempty"`
+	ResourceConditions VRGConditions      `json:"resourceConditions,omitempty"`
 
 	// LastUpdateTime is when was the last time a condition or the overall status was updated
 	LastUpdateTime *metav1.Time `json:"lastUpdateTime,omitempty"`

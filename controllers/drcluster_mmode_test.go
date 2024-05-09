@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/util/workqueue"
 	config "k8s.io/component-base/config/v1alpha1"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
@@ -144,6 +145,10 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 		k8sManager, err := ctrl.NewManager(cfg, options)
 		Expect(err).ToNot(HaveOccurred())
 
+		rateLimiter := workqueue.NewMaxOfRateLimiter(
+			workqueue.NewItemExponentialFailureRateLimiter(10*time.Millisecond, 100*time.Millisecond),
+		)
+
 		Expect((&ramencontrollers.DRClusterReconciler{
 			Client:    k8sManager.GetClient(),
 			APIReader: k8sManager.GetAPIReader(),
@@ -154,6 +159,7 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 				apiReader: k8sManager.GetAPIReader(),
 			},
 			ObjectStoreGetter: fakeObjectStoreGetter{},
+			RateLimiter:       &rateLimiter,
 		}).SetupWithManager(k8sManager)).To(Succeed())
 
 		ctx, cancel = context.WithCancel(context.TODO())

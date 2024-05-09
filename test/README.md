@@ -28,7 +28,7 @@ environment.
    ```
 
    You need `minikube` version supporting the `--extra-disks` option.
-   Tested with version v1.31.2.
+   Tested with version v1.33.0.
 
 1. Install the `kubectl` tool. See
    [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
@@ -115,6 +115,13 @@ Change directory to the test directory:
 cd test
 ```
 
+To setup up minikube for drenv run once before starting any
+environment:
+
+```
+drenv setup
+```
+
 To start the environment:
 
 ```
@@ -143,17 +150,31 @@ Dumping the file shows how drenv binds templates, expands addons
 arguments, name workers, and applies default values. This can be useful
 to debugging drenv or when writing a new environment file.
 
-Useful options:
+To see all available commands:
 
-- `-v`, `--verbose`: Show verbose logs
-- `-h`, `--help`: Show online help
-- `--name-prefix`: Add prefix to profiles names
+```
+drenv --help
+```
+
+To see help for a command:
+
+```
+drenv start --help
+```
 
 When you are done you can deactivate the virtual environment:
 
 ```
 deactivate
 ```
+
+To clean up minikube changes done by `drenv setup`, run:
+
+```
+drenv cleanup
+```
+
+This should not be needed.
 
 ## The environment file
 

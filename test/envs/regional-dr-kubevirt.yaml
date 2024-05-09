@@ -48,7 +48,6 @@ templates:
     driver: "$vm"
     container_runtime: containerd
     network: "$network"
-    cni: flannel
     cpus: 2
     memory: "4g"
     workers:
