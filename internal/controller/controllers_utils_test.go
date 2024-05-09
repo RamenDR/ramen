@@ -11,8 +11,8 @@ import (
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
 	gomegaTypes "github.com/onsi/gomega/types"
-	ocmv1 "github.com/open-cluster-management/api/cluster/v1"
-	workv1 "github.com/open-cluster-management/api/work/v1"
+	ocmv1 "open-cluster-management.io/api/cluster/v1"
+	workv1 "open-cluster-management.io/api/work/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
