@@ -354,6 +354,10 @@ func (mwu *MWUtil) CreateOrUpdateNamespaceManifest(
 		manifests,
 		annotations)
 
+	manifestWork.Spec.DeleteOption = &ocmworkv1.DeleteOption{
+		PropagationPolicy: ocmworkv1.DeletePropagationPolicyTypeOrphan,
+	}
+
 	return mwu.createOrUpdateManifestWork(manifestWork, managedClusterNamespace)
 }
 
@@ -634,25 +638,42 @@ func (mwu *MWUtil) GetVRGManifestWorkCount(drClusters []string) int {
 	return count
 }
 
-func (mwu *MWUtil) DeleteManifestWorksForCluster(clusterName string) error {
-	// VRG
-	err := mwu.deleteManifestWorkWrapper(clusterName, MWTypeVRG)
-	if err != nil {
-		mwu.Log.Error(err, "failed to delete MW for VRG")
+func (mwu *MWUtil) DeleteNamespaceManifestWork(clusterName string, annotations map[string]string) error {
+	mwName := mwu.BuildManifestWorkName(MWTypeNS)
+	mw := &ocmworkv1.ManifestWork{}
 
-		return fmt.Errorf("failed to delete ManifestWork for VRG in namespace %s (%w)", clusterName, err)
+	err := mwu.Client.Get(mwu.Ctx, types.NamespacedName{Name: mwName, Namespace: clusterName}, mw)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+
+		return fmt.Errorf("failed to retrieve manifestwork for type: %s. Error: %w", mwName, err)
 	}
 
-	// The ManifestWork that created a Namespace is intentionally left on the server
+	// check if the mw already has a delete Timestamp, the mw is already deleted.
+	if ResourceIsDeleted(mw) {
+		return nil
+	}
+
+	// check if the manifestwork has delete Option set
+	// if not set, call CreateOrUpdateNamespaceManifest such that it is
+	// updated with the delete option
+	if mw.Spec.DeleteOption == nil {
+		err = mwu.CreateOrUpdateNamespaceManifest(mwu.InstName, mwu.TargetNamespace, clusterName, annotations)
+		if err != nil {
+			mwu.Log.Info("error creating namespace via ManifestWork", "error", err, "cluster", clusterName)
+
+			return err
+		}
+	}
+
+	err = mwu.DeleteManifestWork(mwName, clusterName)
+	if err != nil {
+		return fmt.Errorf("%w", err)
+	}
 
 	return nil
-}
-
-func (mwu *MWUtil) deleteManifestWorkWrapper(fromCluster string, mwType string) error {
-	mwName := mwu.BuildManifestWorkName(mwType)
-	mwNamespace := fromCluster
-
-	return mwu.DeleteManifestWork(mwName, mwNamespace)
 }
 
 func (mwu *MWUtil) DeleteManifestWork(mwName, mwNamespace string) error {

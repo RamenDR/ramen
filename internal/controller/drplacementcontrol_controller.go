@@ -1206,16 +1206,9 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 	clonedPlRuleName := fmt.Sprintf(ClonedPlacementRuleNameFormat, drpc.Name, drpc.Namespace)
 	// delete cloned placementrule, if one created.
 	if drpc.Spec.PreferredCluster == "" {
-		err := r.deleteClonedPlacementRule(ctx, clonedPlRuleName, drpc.Namespace, log)
-		if err != nil {
+		if err := r.deleteClonedPlacementRule(ctx, clonedPlRuleName, drpc.Namespace, log); err != nil {
 			return err
 		}
-	}
-
-	// Cleanup volsync secret-related resources (policy/plrule/binding)
-	err := volsync.CleanupSecretPropagation(ctx, r.Client, drpc, r.Log)
-	if err != nil {
-		return fmt.Errorf("failed to clean up volsync secret-related resources (%w)", err)
 	}
 
 	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, placementObj)
@@ -1237,6 +1230,51 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 		return fmt.Errorf("failed to get DRPolicy while finalizing DRPC (%w)", err)
 	}
 
+	// Cleanup volsync secret-related resources (policy/plrule/binding)
+	if err := volsync.CleanupSecretPropagation(ctx, r.Client, drpc, r.Log); err != nil {
+		return fmt.Errorf("failed to clean up volsync secret-related resources (%w)", err)
+	}
+
+	// cleanup for VRG artifacts
+	if err = r.cleanupVRGs(ctx, drPolicy, log, mwu, drpc, vrgNamespace); err != nil {
+		return err
+	}
+
+	// delete namespace manifestwork
+	for _, drClusterName := range rmnutil.DRPolicyClusterNames(drPolicy) {
+		annotations := make(map[string]string)
+		annotations[DRPCNameAnnotation] = drpc.Name
+		annotations[DRPCNamespaceAnnotation] = drpc.Namespace
+
+		if err := mwu.DeleteNamespaceManifestWork(drClusterName, annotations); err != nil {
+			return err
+		}
+	}
+
+	// delete metrics if matching labels are found
+	syncTimeMetricLabels := SyncTimeMetricLabels(drPolicy, drpc)
+	DeleteSyncTimeMetric(syncTimeMetricLabels)
+
+	syncDurationMetricLabels := SyncDurationMetricLabels(drPolicy, drpc)
+	DeleteSyncDurationMetric(syncDurationMetricLabels)
+
+	syncDataBytesMetricLabels := SyncDataBytesMetricLabels(drPolicy, drpc)
+	DeleteSyncDataBytesMetric(syncDataBytesMetricLabels)
+
+	workloadProtectionLabels := WorkloadProtectionStatusLabels(drpc)
+	DeleteWorkloadProtectionStatusMetric(workloadProtectionLabels)
+
+	return nil
+}
+
+func (r *DRPlacementControlReconciler) cleanupVRGs(
+	ctx context.Context,
+	drPolicy *rmn.DRPolicy,
+	log logr.Logger,
+	mwu rmnutil.MWUtil,
+	drpc *rmn.DRPlacementControl,
+	vrgNamespace string,
+) error {
 	drClusters, err := GetDRClusters(ctx, r.Client, drPolicy)
 	if err != nil {
 		return fmt.Errorf("failed to get drclusters. Error (%w)", err)
@@ -1252,10 +1290,9 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 		return fmt.Errorf("VRG adoption in progress")
 	}
 
-	// delete manifestworks (VRGs)
+	// delete VRG manifestwork
 	for _, drClusterName := range rmnutil.DRPolicyClusterNames(drPolicy) {
-		err := mwu.DeleteManifestWorksForCluster(drClusterName)
-		if err != nil {
+		if err := mwu.DeleteManifestWork(mwu.BuildManifestWorkName(rmnutil.MWTypeVRG), drClusterName); err != nil {
 			return fmt.Errorf("%w", err)
 		}
 	}
@@ -1264,23 +1301,10 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 		return fmt.Errorf("waiting for VRGs count to go to zero")
 	}
 
-	// delete MCVs used in the previous call
+	// delete MCVs
 	if err := r.deleteAllManagedClusterViews(drpc, rmnutil.DRPolicyClusterNames(drPolicy)); err != nil {
 		return fmt.Errorf("error in deleting MCV (%w)", err)
 	}
-
-	// delete metrics if matching labels are found
-	syncTimeMetricLabels := SyncTimeMetricLabels(drPolicy, drpc)
-	DeleteSyncTimeMetric(syncTimeMetricLabels)
-
-	syncDurationMetricLabels := SyncDurationMetricLabels(drPolicy, drpc)
-	DeleteSyncDurationMetric(syncDurationMetricLabels)
-
-	syncDataBytesMetricLabels := SyncDataBytesMetricLabels(drPolicy, drpc)
-	DeleteSyncDataBytesMetric(syncDataBytesMetricLabels)
-
-	workloadProtectionLabels := WorkloadProtectionStatusLabels(drpc)
-	DeleteWorkloadProtectionStatusMetric(workloadProtectionLabels)
 
 	return nil
 }
