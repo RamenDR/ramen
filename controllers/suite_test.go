@@ -33,20 +33,20 @@ import (
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
-	ocmclv1 "github.com/open-cluster-management/api/cluster/v1"
-	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
+	ocmclv1 "open-cluster-management.io/api/cluster/v1"
+	ocmworkv1 "open-cluster-management.io/api/work/v1"
 	cpcv1 "open-cluster-management.io/config-policy-controller/api/v1"
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 
-	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	ramencontrollers "github.com/ramendr/ramen/controllers"
 	argocdv1alpha1hack "github.com/ramendr/ramen/controllers/argocd"
 	"github.com/ramendr/ramen/controllers/util"
 	Recipe "github.com/ramendr/recipe/api/v1alpha1"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
+	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	// +kubebuilder:scaffold:imports
 )
 
