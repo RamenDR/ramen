@@ -7,17 +7,15 @@ import os
 import sys
 
 import drenv
+from drenv import cache
 from drenv import kubectl
 
 
 def deploy(cluster):
     print("Creating CephFS instance and storage/snapshot classes")
-    kubectl.apply(
-        "--filename=filesystem.yaml",
-        "--filename=storage-class.yaml",
-        "--filename=snap-class.yaml",
-        context=cluster,
-    )
+    path = cache.path("addons/rook-cephfs.yaml")
+    cache.fetch(".", path)
+    kubectl.apply("--filename", path, context=cluster)
 
 
 def wait(cluster):
