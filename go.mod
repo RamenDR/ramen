@@ -14,8 +14,6 @@ require (
 	github.com/kubernetes-csi/external-snapshotter/client/v7 v7.0.0
 	github.com/onsi/ginkgo/v2 v2.20.0
 	github.com/onsi/gomega v1.34.1
-	github.com/open-cluster-management-io/api v0.0.0-00010101000000-000000000000
-	github.com/open-cluster-management/api v0.0.0-20210527013639-a6845f2ebcb1
 	github.com/operator-framework/api v0.17.6
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.18.0
@@ -33,6 +31,7 @@ require (
 	k8s.io/client-go v12.0.0+incompatible
 	k8s.io/component-base v0.30.1
 	k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340
+	open-cluster-management.io/api v0.13.0
 	open-cluster-management.io/config-policy-controller v0.12.0
 	open-cluster-management.io/governance-policy-propagator v0.12.0
 	sigs.k8s.io/controller-runtime v0.18.4
@@ -99,7 +98,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b // indirect
-	open-cluster-management.io/api v0.11.1-0.20230905055724-cf1ead467a83 // indirect
 	open-cluster-management.io/multicloud-operators-subscription v0.12.0 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
@@ -107,5 +105,3 @@ require (
 
 // replace directives to accommodate for stolostron
 replace k8s.io/client-go v12.0.0+incompatible => k8s.io/client-go v0.30.2
-
-replace github.com/open-cluster-management-io/api => open-cluster-management.io/api v0.10.0

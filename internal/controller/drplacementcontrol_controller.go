@@ -13,7 +13,6 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
-	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	errorswrapper "github.com/pkg/errors"
 	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
@@ -24,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
+	ocmworkv1 "open-cluster-management.io/api/work/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,11 +34,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	argocdv1alpha1hack "github.com/ramendr/ramen/internal/controller/argocd"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
+	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 )
 
 const (
