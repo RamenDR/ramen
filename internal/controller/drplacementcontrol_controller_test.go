@@ -26,11 +26,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	spokeClusterV1 "github.com/open-cluster-management/api/cluster/v1"
-	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
 	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
+	spokeClusterV1 "open-cluster-management.io/api/cluster/v1"
+	ocmworkv1 "open-cluster-management.io/api/work/v1"
 
-	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	controllers "github.com/ramendr/ramen/internal/controller"
 	argocdv1alpha1hack "github.com/ramendr/ramen/internal/controller/argocd"
@@ -38,6 +37,7 @@ import (
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 )
 

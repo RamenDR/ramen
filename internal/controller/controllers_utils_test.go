@@ -9,7 +9,7 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
-	workv1 "github.com/open-cluster-management/api/work/v1"
+	workv1 "open-cluster-management.io/api/work/v1"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/util"
