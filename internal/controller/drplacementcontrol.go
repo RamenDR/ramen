@@ -1840,7 +1840,8 @@ func (d *DRPCInstance) ensureVRGManifestWorkOnClusterDeleted(clusterName string)
 	}
 
 	if d.ensureVRGIsSecondaryOnCluster(clusterName) {
-		err := d.mwu.DeleteManifestWorksForCluster(clusterName)
+		// delete VRG manifest work
+		err = d.mwu.DeleteManifestWork(d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG), clusterName)
 		if err != nil {
 			return !done, fmt.Errorf("%w", err)
 		}
