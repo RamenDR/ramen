@@ -109,6 +109,9 @@ type ReplicationGroupSourceStatus struct {
   // conditions represent the latest available observations of the
   // source's state.
   Conditions []metav1.Condition `json:"conditions,omitempty"`
+  
+  // Created ReplicationSources by this ReplicationGroupSource
+  ReplicationSources []*corev1.TypedLocalObjectReference `json:"replicationSources,omitempty"`
 }
 ```
 
@@ -146,6 +149,9 @@ type ReplicationDestinationStatus struct {
   LatestImages []*corev1.TypedLocalObjectReference `json:"latestImage,omitempty"`
 
   Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+  // Created ReplicationDestinations by this ReplicationGroupDestination
+  ReplicationDestinations []*corev1.TypedLocalObjectReference `json:"replicationDestinations,omitempty"`
 }
 ```
 
@@ -188,7 +194,10 @@ current implementation if a consistency group is specified:
 
 * Ramen get the existing VolumeGroupSnapshotClass
 * Ramen creates a ReplicationGroupSource with the schedule
-  specification from the primary VRG. Within each schedule:
+  specification from the primary VRG. **This implies that Ramen will
+  have a scheduler, replacing VolSync scheduler, to manage the
+  synchronization scheduling of PVCs within a consistency group
+  to the destination.** Within each schedule:
     * Ramen Update Status.LastSyncStartTime. Go to the Syncing state.
       In Syncing state:
         * Ramen creates a VolumeGroupSnapshot for the consistency group.
@@ -197,16 +206,18 @@ current implementation if a consistency group is specified:
           within the same consistency group.
         * Each snapshot is then restored to a new read-only PVC by Ramen
         * Ramen creates a ReplicationSource (Use Manual and Direct
-          method in ReplicationSource) for each restored PVC
+          method in ReplicationSource) for each restored PVC. In next schedule,
+          Ramen updates the existing ReplicationSource with new manual string
+          and restored PVC.
         * Ramen monitors the manual string in the ReplicationSource
           spec and status to ensure all PVCs in the group are
           successfully synced to the remote destination.
         * Once synchronization is completed, update Status.LastSyncStartTime
           to nil, and Status.LastSyncTime. Go to Cleanup state
     * In Cleanup state:
-        * Ramen cleans up each RS and the read-only PVCs
-          that were restored from the snapshot.
+        * Ramen cleans up each read-only PVCs that were restored from the snapshot.
         * It also cleans up the VolumeGroupSnapshot created earlier.
+        * Ramen **DO NOT** delete the ReplicationSource maintaining its status information.
         * Update Status.LastSyncStartTime to now. Go to Syncing state
 
 In step 12, volsync will sync the data in the new restored read-only PVC
@@ -271,7 +282,10 @@ current implementation if a consistency group is specified:
 
 * Ramen get the existing VolumeGroupSnapshotClass
 * Ramen creates a ReplicationGroupSource with the schedule
-  specification from the primary VRG. Within each schedule:
+  specification from the primary VRG. **This implies that Ramen will
+  have a scheduler, replacing VolSync scheduler, to manage the
+  synchronization scheduling of PVCs within a consistency group
+  to the destination.** Within each schedule:
     * Ramen Update Status.LastSyncStartTime. Go to the Syncing state.
       In Syncing state:
         * Ramen creates a VolumeGroupSnapshot for the consistency group.
@@ -280,16 +294,18 @@ current implementation if a consistency group is specified:
           within the same consistency group.
         * Each snapshot is then restored to a new read-only PVC by Ramen
         * Ramen creates a ReplicationSource (Use Manual and Direct
-          method in ReplicationSource) for each restored PVC
+          method in ReplicationSource) for each restored PVC. In next schedule,
+          Ramen updates the existing ReplicationSource with new manual string
+          and restored PVC.
         * Ramen monitors the manual string in the ReplicationSource
           spec and status to ensure all PVCs in the group are
           successfully synced to the remote destination.
         * Once synchronization is completed, update Status.LastSyncStartTime
           to nil, and Status.LastSyncTime. Go to Cleanup state
     * In Cleanup state:
-        * Ramen cleans up each RS and the read-only PVCs
-          that were restored from the snapshot.
+        * Ramen cleans up each read-only PVCs that were restored from the snapshot.
         * It also cleans up the VolumeGroupSnapshot created earlier.
+        * Ramen **DO NOT** delete the ReplicationSource maintaining its status information.
         * Update Status.LastSyncStartTime to now. Go to Syncing state
 
 In step 12, volsync will sync the data in the new restored read-only PVC
@@ -349,7 +365,10 @@ current implementation if a consistency group is specified:
 
 * Ramen get the existing VolumeGroupSnapshotClass
 * Ramen creates a ReplicationGroupSource with the schedule
-  specification from the primary VRG. Within each schedule:
+  specification from the primary VRG. **This implies that Ramen will
+  have a scheduler, replacing VolSync scheduler, to manage the
+  synchronization scheduling of PVCs within a consistency group
+  to the destination.** Within each schedule:
     * Ramen Update Status.LastSyncStartTime. Go to the Syncing state.
       In Syncing state:
         * Ramen creates a VolumeGroupSnapshot for the consistency group.
@@ -358,16 +377,18 @@ current implementation if a consistency group is specified:
           within the same consistency group.
         * Each snapshot is then restored to a new read-only PVC by Ramen
         * Ramen creates a ReplicationSource (Use Manual and Direct
-          method in ReplicationSource) for each restored PVC
+          method in ReplicationSource) for each restored PVC. In next schedule,
+          Ramen updates the existing ReplicationSource with new manual string
+          and restored PVC.
         * Ramen monitors the manual string in the ReplicationSource
           spec and status to ensure all PVCs in the group are
           successfully synced to the remote destination.
         * Once synchronization is completed, update Status.LastSyncStartTime
           to nil, and Status.LastSyncTime. Go to Cleanup state
     * In Cleanup state:
-        * Ramen cleans up each RS and the read-only PVCs
-          that were restored from the snapshot.
+        * Ramen cleans up each read-only PVCs that were restored from the snapshot.
         * It also cleans up the VolumeGroupSnapshot created earlier.
+        * Ramen **DO NOT** delete the ReplicationSource maintaining its status information.
         * Update Status.LastSyncStartTime to now. Go to Syncing state
 
 In step 12, volsync will sync the data in the new restored read-only PVC
