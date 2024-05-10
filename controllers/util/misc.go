@@ -7,8 +7,12 @@ import (
 	"context"
 	"reflect"
 
+	rmn "github.com/ramendr/ramen/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -179,4 +183,32 @@ func UpdateStringMap(dst *map[string]string, src map[string]string) {
 // OptionalEqual returns True if optional field values are equal, or one of them is unset.
 func OptionalEqual(a, b string) bool {
 	return a == "" || b == "" || a == b
+}
+
+func CreateRamenOpsNamespace(ctx context.Context, k8sClient client.Client, ramenconfig *rmn.RamenConfig) error {
+	if ramenconfig.RamenOpsNamespace == "" {
+		return nil
+	}
+
+	return CreateNamespaceIfNotExists(ctx, k8sClient, ramenconfig.RamenOpsNamespace)
+}
+
+func CreateNamespaceIfNotExists(ctx context.Context, k8sClient client.Client, namespace string) error {
+	ns := &corev1.Namespace{}
+
+	err := k8sClient.Get(ctx, types.NamespacedName{Name: namespace}, ns)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			ns.Name = namespace
+
+			err = k8sClient.Create(ctx, ns)
+			if err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+
+	return nil
 }
