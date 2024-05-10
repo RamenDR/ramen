@@ -72,7 +72,7 @@ const ReasonDRClustersUnavailable = "DRClustersUnavailable"
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.9.2/pkg/reconcile
 //
-//nolint:cyclop
+//nolint:cyclop,funlen
 func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("DRPolicy", req.NamespacedName.Name, "rid", uuid.New())
 	log.Info("reconcile enter")
@@ -89,6 +89,11 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("config map get: %w", u.validatedSetFalse("ConfigMapGetFailed", err))
+	}
+
+	if err := util.CreateRamenOpsNamespace(ctx, r.Client, ramenConfig); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to create RamenOpsNamespace: %w",
+			u.validatedSetFalse("NamespaceCreateFailed", err))
 	}
 
 	drclusters := &ramen.DRClusterList{}
