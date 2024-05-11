@@ -16,5 +16,5 @@ spec:
   resources:
     requests:
       storage: 128Mi
-  storageClassName: csi-hostpath-sc
+  storageClassName: rook-ceph-block
   volumeMode: Block

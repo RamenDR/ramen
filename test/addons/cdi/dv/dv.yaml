@@ -10,7 +10,7 @@ spec:
   storage:
     accessModes:
       - ReadWriteMany
-    storageClassName: csi-hostpath-sc
+    storageClassName: rook-ceph-block
     resources:
       requests:
         storage: 128Mi
