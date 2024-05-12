@@ -59,7 +59,7 @@ def parse_args():
         required=True,
     )
 
-    start_parser = add_command(sp, "start", start, help="start an environment")
+    start_parser = add_command(sp, "start", do_start, help="start an environment")
     start_parser.add_argument(
         "--skip-tests",
         dest="run_tests",
@@ -73,7 +73,7 @@ def parse_args():
         help="Do not run addons 'start' hooks",
     )
 
-    stop_parser = add_command(sp, "stop", stop, help="stop an environment")
+    stop_parser = add_command(sp, "stop", do_stop, help="stop an environment")
     stop_parser.add_argument(
         "--skip-addons",
         dest="run_addons",
@@ -81,15 +81,15 @@ def parse_args():
         help="Do not run addons 'stop' hooks",
     )
 
-    add_command(sp, "delete", delete, help="delete an environment")
-    add_command(sp, "suspend", suspend, help="suspend virtual machines")
-    add_command(sp, "resume", resume, help="resume virtual machines")
-    add_command(sp, "dump", dump, help="dump an environment yaml")
-    add_command(sp, "fetch", fetch, help="cache environment resources")
+    add_command(sp, "delete", do_delete, help="delete an environment")
+    add_command(sp, "suspend", do_suspend, help="suspend virtual machines")
+    add_command(sp, "resume", do_resume, help="resume virtual machines")
+    add_command(sp, "dump", do_dump, help="dump an environment yaml")
+    add_command(sp, "fetch", do_fetch, help="cache environment resources")
 
-    add_command(sp, "clear", clear, help="cleared cached resources", envfile=False)
-    add_command(sp, "setup", setup, help="setup minikube for drenv", envfile=False)
-    add_command(sp, "cleanup", cleanup, help="cleanup minikube", envfile=False)
+    add_command(sp, "clear", do_clear, help="cleared cached resources", envfile=False)
+    add_command(sp, "setup", do_setup, help="setup minikube for drenv", envfile=False)
+    add_command(sp, "cleanup", do_cleanup, help="cleanup minikube", envfile=False)
 
     return parser.parse_args()
 
@@ -162,22 +162,22 @@ def handle_termination_signal(signo, frame):
     sys.exit(1)
 
 
-def setup(args):
+def do_setup(args):
     logging.info("[main] Setting up minikube for drenv")
     minikube.setup_files()
 
 
-def cleanup(args):
+def do_cleanup(args):
     logging.info("[main] Cleaning up minikube")
     minikube.cleanup_files()
 
 
-def clear(args):
+def do_clear(args):
     logging.info("[main] Clearing cache")
     cache.clear()
 
 
-def fetch(args):
+def do_fetch(args):
     env = load_env(args)
     start = time.monotonic()
     logging.info("[%s] Fetching", env["name"])
@@ -196,7 +196,7 @@ def fetch(args):
     )
 
 
-def start(args):
+def do_start(args):
     env = load_env(args)
     start = time.monotonic()
     logging.info("[%s] Starting environment", env["name"])
@@ -228,7 +228,7 @@ def start(args):
     )
 
 
-def stop(args):
+def do_stop(args):
     env = load_env(args)
     start = time.monotonic()
     logging.info("[%s] Stopping environment", env["name"])
@@ -241,7 +241,7 @@ def stop(args):
     )
 
 
-def delete(args):
+def do_delete(args):
     env = load_env(args)
     start = time.monotonic()
     logging.info("[%s] Deleting environment", env["name"])
@@ -259,21 +259,21 @@ def delete(args):
     )
 
 
-def suspend(args):
+def do_suspend(args):
     env = load_env(args)
     logging.info("[%s] Suspending environment", env["name"])
     for profile in env["profiles"]:
         run("virsh", "-c", "qemu:///system", "suspend", profile["name"])
 
 
-def resume(args):
+def do_resume(args):
     env = load_env(args)
     logging.info("[%s] Resuming environment", env["name"])
     for profile in env["profiles"]:
         run("virsh", "-c", "qemu:///system", "resume", profile["name"])
 
 
-def dump(args):
+def do_dump(args):
     env = load_env(args)
     yaml.dump(env, sys.stdout)
 
