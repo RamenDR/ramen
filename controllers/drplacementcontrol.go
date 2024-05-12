@@ -2199,6 +2199,7 @@ failoverProgressions are used to indicate progression during failover action pro
 		ProgressionUpdatedPlacement,
 		ProgressionCompleted,
 		ProgressionCleaningUp,
+		ProgressionWaitOnUserToCleanUp,
 	}
 
 relocateProgressions are used to indicate progression during relocate action processing
@@ -2211,6 +2212,7 @@ relocateProgressions are used to indicate progression during relocate action pro
 		rmn.ProgressionRunningFinalSync,
 		rmn.ProgressionFinalSyncComplete,
 		rmn.ProgressionEnsuringVolumesAreSecondary,
+		rmn.ProgressionWaitOnUserToCleanUp,
 	}
 
 	postRelocateProgressions := {
