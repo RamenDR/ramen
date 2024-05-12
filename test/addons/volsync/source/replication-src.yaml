@@ -15,7 +15,7 @@ spec:
     keySecret: volsync-rsync-tls-busybox-dst
     address: volsync-rsync-tls-dst-busybox-dst.busybox.svc.clusterset.local
     copyMethod: Snapshot
-    volumeSnapshotClassName: csi-hostpath-snapclass
+    volumeSnapshotClassName: csi-cephfsplugin-snapclass
     moverSecurityContext:
       runAsUser: 10000
       runAsGroup: 10000

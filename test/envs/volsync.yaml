@@ -10,7 +10,6 @@ templates:
     driver: $vm
     container_runtime: containerd
     network: $network
-    cni: kindnet
     memory: 2g
     workers:
       - addons:
@@ -20,12 +19,17 @@ templates:
     driver: $vm
     container_runtime: containerd
     network: $network
-    cni: kindnet
-    memory: 4g
+    memory: 6g
+    extra_disks: 1
     disk_size: 50g
     addons:
       - volumesnapshots
-      - csi-hostpath-driver
+    workers:
+      - addons:
+          - name: rook-operator
+          - name: rook-cluster
+          - name: rook-toolbox
+          - name: rook-cephfs
 
 profiles:
   - name: hub

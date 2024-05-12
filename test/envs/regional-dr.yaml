@@ -21,11 +21,10 @@ templates:
     memory: "6g"
     extra_disks: 1
     disk_size: "50g"
-    addons:
-      - volumesnapshots
-      - csi-hostpath-driver
     feature_gates:
       - StatefulSetAutoDeletePVC=true
+    addons:
+      - volumesnapshots
     workers:
       - addons:
           - name: rook-operator

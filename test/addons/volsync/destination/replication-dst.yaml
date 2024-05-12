@@ -12,8 +12,8 @@ spec:
     copyMethod: Snapshot
     capacity: 1Gi
     accessModes: [ReadWriteOnce]
-    storageClassName: csi-hostpath-sc
-    volumeSnapshotClassName: csi-hostpath-snapclass
+    storageClassName: rook-cephfs
+    volumeSnapshotClassName: csi-cephfsplugin-snapclass
     moverSecurityContext:
       runAsUser: 10000
       runAsGroup: 10000

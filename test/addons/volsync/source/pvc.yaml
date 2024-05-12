@@ -11,7 +11,7 @@ metadata:
     appname: busybox
 spec:
   accessModes: [ReadWriteOnce]
-  storageClassName: csi-hostpath-sc
+  storageClassName: rook-cephfs
   resources:
     requests:
       storage: 1Gi
