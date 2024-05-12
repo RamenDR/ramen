@@ -1865,6 +1865,11 @@ func (d *DRPCInstance) ensureVRGManifestWorkOnClusterDeleted(clusterName string)
 	}
 
 	d.log.Info("Request not complete yet", "cluster", clusterName)
+
+	if d.instance.Spec.ProtectedNamespaces != nil && len(*d.instance.Spec.ProtectedNamespaces) > 0 {
+		d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+	}
+
 	// IF we get here, either the VRG has not transitioned to secondary (yet) or delete didn't succeed. In either cases,
 	// we need to make sure that the VRG object is deleted. IOW, we still have to wait
 	return !done, nil
