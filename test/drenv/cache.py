@@ -22,7 +22,7 @@ def fetch(kustomization_dir, dest, log=print):
         log(f"Fetching {dest}")
         dest_dir = os.path.dirname(dest)
         os.makedirs(dest_dir, exist_ok=True)
-        tmp = dest + ".tmp"
+        tmp = dest + f".tmp.{os.getpid()}"
         try:
             _build_kustomization(kustomization_dir, tmp)
             os.rename(tmp, dest)
