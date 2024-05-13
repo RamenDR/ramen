@@ -4,7 +4,6 @@
 package dractions
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/ramendr/ramen/e2e/deployers"
@@ -27,23 +26,13 @@ const (
 func EnableProtection(w workloads.Workload, d deployers.Deployer) error {
 	util.Ctx.Log.Info("enter EnableProtection " + w.GetName() + "/" + d.GetName())
 
-	_, isSub := d.(*deployers.Subscription)
-	_, isAppSet := d.(*deployers.ApplicationSet)
-
-	if !isSub && !isAppSet {
-		return fmt.Errorf("deployer unknown")
-	}
-
 	name := GetCombinedName(d, w)
 	namespace := name
-
 	// if isAppSet {
 	// 	namespace = util.ArgocdNamespace
 	// }
-
 	drPolicyName := DefaultDRPolicyName
 	appname := w.GetAppName()
-
 	placementName := name
 	drpcName := name
 
@@ -91,13 +80,6 @@ func EnableProtection(w workloads.Workload, d deployers.Deployer) error {
 // update placement annotation
 func DisableProtection(w workloads.Workload, d deployers.Deployer) error {
 	util.Ctx.Log.Info("enter DRActions DisableProtection")
-
-	_, isSub := d.(*deployers.Subscription)
-	_, isAppSet := d.(*deployers.ApplicationSet)
-
-	if !isSub && !isAppSet {
-		return fmt.Errorf("deployers.Deployer not known")
-	}
 
 	name := GetCombinedName(d, w)
 	namespace := name

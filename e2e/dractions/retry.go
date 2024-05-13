@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The RamenDR authors
+// SPDX-License-Identifier: Apache-2.0
+
 package dractions
 
 import (
@@ -63,10 +66,10 @@ func waitDRPCReady(client client.Client, namespace string, drpcName string) erro
 		}
 
 		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
-			return fmt.Errorf(fmt.Sprintf("drpc "+drpcName+" is not ready yet before timeout of %v", util.Timeout))
+			return fmt.Errorf(fmt.Sprintf("drpc %s is not ready yet before timeout of %v", drpcName, util.Timeout))
 		}
 
-		util.Ctx.Log.Info(fmt.Sprintf("drpc  "+drpcName+" is not ready yet, retry in %v seconds", util.TimeInterval))
+		util.Ctx.Log.Info(fmt.Sprintf("drpc %s is not ready yet, retry in %v seconds", drpcName, util.TimeInterval))
 		time.Sleep(time.Second * time.Duration(util.TimeInterval))
 	}
 }
@@ -117,12 +120,11 @@ func waitDRPCPhase(client client.Client, namespace string, name string, phase st
 		}
 
 		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
-			// fmt.Printf("drpc  "+drpcName+" phase is not %s yet before timeout of %v\n", phase, timeout)
-			return fmt.Errorf(fmt.Sprintf("drpc "+name+" status is not %s yet before timeout of %v", phase, util.Timeout))
+			return fmt.Errorf(fmt.Sprintf("drpc %s status is not %s yet before timeout of %v", name, phase, util.Timeout))
 		}
 
-		util.Ctx.Log.Info(fmt.Sprintf("current drpc "+name+
-			" phase is %s, expecting %s, retry in %v seconds", currentPhase, phase, util.TimeInterval))
+		util.Ctx.Log.Info(fmt.Sprintf("current drpc %s phase is %s, expecting %s, retry in %v seconds",
+			name, currentPhase, phase, util.TimeInterval))
 		time.Sleep(time.Second * time.Duration(util.TimeInterval))
 	}
 }
@@ -132,8 +134,6 @@ func getCurrentCluster(client client.Client, namespace string, placementName str
 	if err != nil {
 		return "", err
 	}
-
-	util.Ctx.Log.Info("get placementdecision " + placementDecisionName)
 
 	placementDecision, err := getPlacementDecision(client, namespace, placementDecisionName)
 	if err != nil {

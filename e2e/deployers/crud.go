@@ -17,7 +17,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ocmv1b1 "open-cluster-management.io/api/cluster/v1beta1"
 	ocmv1b2 "open-cluster-management.io/api/cluster/v1beta2"
-	channelv1 "open-cluster-management.io/multicloud-operators-channel/pkg/apis/apps/v1"
 	placementrulev1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/placementrule/v1"
 	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
 )
@@ -26,44 +25,6 @@ const (
 	AppLabelKey    = "app"
 	ClusterSetName = "default"
 )
-
-func createNamespace(namespace string) error {
-	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: namespace,
-		},
-	}
-
-	err := util.Ctx.Hub.CtrlClient.Create(context.Background(), ns)
-	if err != nil {
-		if !errors.IsAlreadyExists(err) {
-			return err
-		}
-
-		util.Ctx.Log.Info("namespace " + namespace + " already Exists")
-	}
-
-	return nil
-}
-
-func deleteNamespace(namespace string) error {
-	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: namespace,
-		},
-	}
-
-	err := util.Ctx.Hub.CtrlClient.Delete(context.Background(), ns)
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			return err
-		}
-
-		util.Ctx.Log.Info("namespace " + namespace + " not found")
-	}
-
-	return nil
-}
 
 func createManagedClusterSetBinding(name, namespace string) error {
 	labels := make(map[string]string)
@@ -84,8 +45,6 @@ func createManagedClusterSetBinding(name, namespace string) error {
 		if !errors.IsAlreadyExists(err) {
 			return err
 		}
-
-		util.Ctx.Log.Info("managedClusterSetBinding " + mcsb.Name + " already Exists")
 	}
 
 	return nil
@@ -229,56 +188,8 @@ func deleteSubscription(s Subscription, w workloads.Workload) error {
 }
 
 func GetCombinedName(d Deployer, w workloads.Workload) string {
-	return strings.ToLower(d.GetName() + "-" + w.GetAppName())
+	return strings.ToLower(d.GetName() + "-" + w.GetName() + "-" + w.GetAppName())
 }
-
-func createChannel() error {
-	objChannel := &channelv1.Channel{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      util.GetChannelName(),
-			Namespace: util.GetChannelNamespace(),
-		},
-		Spec: channelv1.ChannelSpec{
-			Pathname: util.GetChannelPathname(),
-			Type:     channelv1.ChannelTypeGitHub,
-		},
-	}
-
-	err := util.Ctx.Hub.CtrlClient.Create(context.Background(), objChannel)
-	if err != nil {
-		if !errors.IsAlreadyExists(err) {
-			return err
-		}
-
-		util.Ctx.Log.Info("channel " + util.GetChannelName() + " already Exists")
-	}
-
-	return nil
-}
-
-// should not delete channel when undeploy, since other tests may also use this channel
-// comment out this func to avoid golint issue: unused function
-/*
-func deleteChannel() error {
-	channel := &channelv1.Channel{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      util.GetChannelName(),
-			Namespace: util.GetChannelNamespace(),
-		},
-	}
-
-	err := util.Ctx.Hub.CtrlClient.Delete(context.Background(), channel)
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			return err
-		}
-
-		util.Ctx.Log.Info("channel " + util.GetChannelName() + " not found")
-	}
-
-	return nil
-}
-*/
 
 func getSubscription(ctrlClient client.Client, namespace, name string) (*subscriptionv1.Subscription, error) {
 	subscription := &subscriptionv1.Subscription{}

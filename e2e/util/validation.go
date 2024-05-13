@@ -24,6 +24,18 @@ func CheckRamenHubPodRunningStatus(k8sClient *kubernetes.Clientset) (bool, strin
 	return CheckPodRunningStatus(k8sClient, ramenNameSpace, labelSelector, podIdentifier)
 }
 
+func CheckRamenSpokePodRunningStatus(k8sClient *kubernetes.Clientset) (bool, string, error) {
+	labelSelector := "app=ramen-dr-cluster"
+	podIdentifier := "ramen-dr-cluster-operator"
+
+	ramenNameSpace, err := GetRamenNameSpace(k8sClient)
+	if err != nil {
+		return false, "", err
+	}
+
+	return CheckPodRunningStatus(k8sClient, ramenNameSpace, labelSelector, podIdentifier)
+}
+
 func GetRamenNameSpace(k8sClient *kubernetes.Clientset) (string, error) {
 	isOpenShift, err := IsOpenShiftCluster(k8sClient)
 	if err != nil {

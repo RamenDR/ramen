@@ -13,6 +13,4 @@ type Workload interface {
 	// GetRepoURL() string // Possibly all this is part of Workload than each implementation of the interfaces?
 	GetPath() string
 	GetRevision() string
-
-	Init()
 }
