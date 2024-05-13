@@ -31,7 +31,14 @@ transformers:
     path: metadata/labels
   - kind: Service
     path: spec/selector
-
+  - kind: ServiceMonitor
+    path: metadata/labels
+  - kind: ServiceMonitor
+    path: spec/selector/matchLabels
+  - kind: ConfigMap
+    path: metadata/labels
+  - kind: PrometheusRule
+    path: metadata/labels
 
 # Mount the controller config file for loading manager configurations
 # through a ComponentConfig type
