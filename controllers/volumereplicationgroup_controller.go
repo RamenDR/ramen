@@ -427,9 +427,11 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	v.ramenConfig = ramenConfig
+	adminNamespaceVRG := vrgInAdminNamespace(v.instance, v.ramenConfig)
+
 	v.volSyncHandler = volsync.NewVSHandler(ctx, r.Client, log, v.instance,
 		v.instance.Spec.Async, cephFSCSIDriverNameOrDefault(v.ramenConfig),
-		volSyncDestinationCopyMethodOrDefault(v.ramenConfig))
+		volSyncDestinationCopyMethodOrDefault(v.ramenConfig), adminNamespaceVRG)
 
 	if v.instance.Status.ProtectedPVCs == nil {
 		v.instance.Status.ProtectedPVCs = []ramendrv1alpha1.ProtectedPVC{}

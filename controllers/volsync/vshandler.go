@@ -70,10 +70,12 @@ type VSHandler struct {
 	defaultCephFSCSIDriverName  string
 	destinationCopyMethod       volsyncv1alpha1.CopyMethodType
 	volumeSnapshotClassList     *snapv1.VolumeSnapshotClassList
+	vrgInAdminNamespace         bool
 }
 
 func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, owner metav1.Object,
 	asyncSpec *ramendrv1alpha1.VRGAsyncSpec, defaultCephFSCSIDriverName string, copyMethod string,
+	adminNamespaceVRG bool,
 ) *VSHandler {
 	vsHandler := &VSHandler{
 		ctx:                        ctx,
@@ -83,6 +85,7 @@ func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, ow
 		defaultCephFSCSIDriverName: defaultCephFSCSIDriverName,
 		destinationCopyMethod:      volsyncv1alpha1.CopyMethodType(copyMethod),
 		volumeSnapshotClassList:    nil, // Do not initialize until we need it
+		vrgInAdminNamespace:        adminNamespaceVRG,
 	}
 
 	if asyncSpec != nil {
