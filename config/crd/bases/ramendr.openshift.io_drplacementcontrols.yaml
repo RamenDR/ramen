@@ -44,8 +44,16 @@ spec:
       name: duration
       priority: 2
       type: string
+    - jsonPath: .status.conditions[0].status
+      name: available
+      priority: 2
+      type: string
     - jsonPath: .status.conditions[1].status
       name: peer ready
+      priority: 2
+      type: string
+    - jsonPath: .status.conditions[2].status
+      name: protected
       priority: 2
       type: string
     name: v1alpha1

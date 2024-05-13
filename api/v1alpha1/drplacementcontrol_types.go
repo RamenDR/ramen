@@ -246,7 +246,9 @@ type DRPlacementControlStatus struct {
 // +kubebuilder:printcolumn:JSONPath=".status.progression",name=progression,type=string,priority=2
 // +kubebuilder:printcolumn:JSONPath=".status.actionStartTime",name=start time,type=string,priority=2
 // +kubebuilder:printcolumn:JSONPath=".status.actionDuration",name=duration,type=string,priority=2
+// +kubebuilder:printcolumn:JSONPath=".status.conditions[0].status",name=available,type=string,priority=2
 // +kubebuilder:printcolumn:JSONPath=".status.conditions[1].status",name=peer ready,type=string,priority=2
+// +kubebuilder:printcolumn:JSONPath=".status.conditions[2].status",name=protected,type=string,priority=2
 // +kubebuilder:resource:shortName=drpc
 
 // DRPlacementControl is the Schema for the drplacementcontrols API
