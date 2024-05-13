@@ -10,8 +10,8 @@ import (
 
 type ApplicationSet struct{}
 
-func (a *ApplicationSet) Init() {
-}
+// func (a *ApplicationSet) Init() {
+// }
 
 func (a ApplicationSet) Deploy(w workloads.Workload) error {
 	util.Ctx.Log.Info("enter Deploy " + w.GetName() + "/Appset")

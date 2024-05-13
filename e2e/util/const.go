@@ -3,7 +3,9 @@
 
 package util
 
-import "os"
+import (
+	"os"
+)
 
 const (
 	RamenSystemNamespace = "ramen-system"
@@ -13,19 +15,34 @@ const (
 
 	defaultChannelName      = "ramen-gitops"
 	defaultChannelNamespace = "ramen-samples"
-	defaultChannelPathname  = "https://github.com/RamenDR/ocm-ramen-samples.git"
+	defaultGitURL           = "https://github.com/RamenDR/ocm-ramen-samples.git"
 )
 
 func GetChannelName() string {
+	channelName, err := GetChannelNameFromYaml()
+	if err == nil && channelName != "" {
+		return channelName
+	}
+
 	return getEnv("ChannelName", defaultChannelName)
 }
 
 func GetChannelNamespace() string {
+	channelNamespace, err := GetChannelNamespaceFromYaml()
+	if err == nil && channelNamespace != "" {
+		return channelNamespace
+	}
+
 	return getEnv("ChannelNamespace", defaultChannelNamespace)
 }
 
-func GetChannelPathname() string {
-	return getEnv("ChannelPathname", defaultChannelPathname)
+func GetGitURL() string {
+	gitURL, err := GetGitURLFromYaml()
+	if err == nil && gitURL != "" {
+		return gitURL
+	}
+
+	return getEnv("GitURL", defaultGitURL)
 }
 
 func getEnv(name, defaultValue string) string {
