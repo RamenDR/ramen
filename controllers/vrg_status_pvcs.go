@@ -50,17 +50,6 @@ func FindProtectedPvcAndIndex(
 	return nil, len(vrg.Status.ProtectedPVCs)
 }
 
-func (v *VRGInstance) findFirstProtectedPVCWithName(pvcName string) *ramen.ProtectedPVC {
-	for index := range v.instance.Status.ProtectedPVCs {
-		protectedPVC := &v.instance.Status.ProtectedPVCs[index]
-		if protectedPVC.Name == pvcName {
-			return protectedPVC
-		}
-	}
-
-	return nil
-}
-
 func (v *VRGInstance) vrgStatusPvcNamespacesSetIfUnset() {
 	vrg := v.instance
 

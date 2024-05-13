@@ -33,7 +33,7 @@ func (v *VRGInstance) restorePVsAndPVCsForVolSync() (int, error) {
 		if err != nil {
 			v.log.Info(fmt.Sprintf("Unable to ensure PVC %v -- err: %v", rdSpec, err))
 
-			protectedPVC := v.findFirstProtectedPVCWithName(rdSpec.ProtectedPVC.Name)
+			protectedPVC := FindProtectedPVC(v.instance, rdSpec.ProtectedPVC.Namespace, rdSpec.ProtectedPVC.Name)
 			if protectedPVC == nil {
 				protectedPVC = &ramendrv1alpha1.ProtectedPVC{}
 				rdSpec.ProtectedPVC.DeepCopyInto(protectedPVC)
@@ -48,7 +48,7 @@ func (v *VRGInstance) restorePVsAndPVCsForVolSync() (int, error) {
 
 		numPVsRestored++
 
-		protectedPVC := v.findFirstProtectedPVCWithName(rdSpec.ProtectedPVC.Name)
+		protectedPVC := FindProtectedPVC(v.instance, rdSpec.ProtectedPVC.Namespace, rdSpec.ProtectedPVC.Name)
 		if protectedPVC == nil {
 			protectedPVC = &ramendrv1alpha1.ProtectedPVC{}
 			rdSpec.ProtectedPVC.DeepCopyInto(protectedPVC)
@@ -123,7 +123,7 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		Resources:          pvc.Spec.Resources,
 	}
 
-	protectedPVC := v.findFirstProtectedPVCWithName(pvc.Name)
+	protectedPVC := FindProtectedPVC(v.instance, pvc.Namespace, pvc.Name)
 	if protectedPVC == nil {
 		protectedPVC = newProtectedPVC
 		v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
