@@ -2281,7 +2281,7 @@ func addOrUpdateCondition(conditions *[]metav1.Condition, conditionType string,
 
 // Initial creation of the DRPC status condition. This will also preserve the ordering of conditions in the array
 func ensureDRPCConditionsInited(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	const DRPCTotalConditions = 2
+	const DRPCTotalConditions = 3
 	if len(*conditions) == DRPCTotalConditions {
 		return
 	}
