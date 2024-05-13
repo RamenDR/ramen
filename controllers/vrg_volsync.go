@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-logr/logr"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/controllers/util"
 	"github.com/ramendr/ramen/controllers/volsync"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -138,7 +139,8 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		ProtectedPVC: *protectedPVC,
 	}
 
-	err := v.volSyncHandler.PreparePVC(pvc.Name, v.instance.Spec.PrepareForFinalSync,
+	err := v.volSyncHandler.PreparePVC(util.ProtectedPVCNamespacedName(*protectedPVC),
+		v.instance.Spec.PrepareForFinalSync,
 		v.volSyncHandler.IsCopyMethodDirect())
 	if err != nil {
 		return true
@@ -321,7 +323,7 @@ func (v *VRGInstance) buildDataProtectedCondition() *metav1.Condition {
 			}
 
 			// Check now if we have synced up at least once for this PVC
-			rsDataProtected, err := v.volSyncHandler.IsRSDataProtected(protectedPVC.Name)
+			rsDataProtected, err := v.volSyncHandler.IsRSDataProtected(protectedPVC.Name, protectedPVC.Namespace)
 			if err != nil || !rsDataProtected {
 				ready = false
 
