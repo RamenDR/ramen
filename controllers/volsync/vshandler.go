@@ -191,10 +191,12 @@ func (v *VSHandler) createOrUpdateRD(
 	}
 
 	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, rd, func() error {
-		if err := ctrl.SetControllerReference(v.owner, rd, v.client.Scheme()); err != nil {
-			l.Error(err, "unable to set controller reference")
+		if !v.vrgInAdminNamespace {
+			if err := ctrl.SetControllerReference(v.owner, rd, v.client.Scheme()); err != nil {
+				l.Error(err, "unable to set controller reference")
 
-			return fmt.Errorf("%w", err)
+				return fmt.Errorf("%w", err)
+			}
 		}
 
 		util.AddLabel(rd, VRGOwnerLabel, v.owner.GetName())
@@ -437,10 +439,12 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 	}
 
 	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, rs, func() error {
-		if err := ctrl.SetControllerReference(v.owner, rs, v.client.Scheme()); err != nil {
-			l.Error(err, "unable to set controller reference")
+		if !v.vrgInAdminNamespace {
+			if err := ctrl.SetControllerReference(v.owner, rs, v.client.Scheme()); err != nil {
+				l.Error(err, "unable to set controller reference")
 
-			return fmt.Errorf("%w", err)
+				return fmt.Errorf("%w", err)
+			}
 		}
 
 		util.AddLabel(rs, VRGOwnerLabel, v.owner.GetName())
@@ -893,7 +897,7 @@ func (v *VSHandler) EnsurePVCfromRD(rdSpec ramendrv1alpha1.VolSyncReplicationDes
 	return v.validateSnapshotAndEnsurePVC(rdSpec, *vsImageRef, failoverAction)
 }
 
-//nolint:cyclop
+//nolint:cyclop,funlen,gocognit
 func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 ) error {
@@ -924,8 +928,10 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 	}
 
 	op, err := ctrlutil.CreateOrUpdate(ctx, v.client, pvc, func() error {
-		if err := ctrl.SetControllerReference(v.owner, pvc, v.client.Scheme()); err != nil {
-			return fmt.Errorf("failed to set controller reference %w", err)
+		if !v.vrgInAdminNamespace {
+			if err := ctrl.SetControllerReference(v.owner, pvc, v.client.Scheme()); err != nil {
+				return fmt.Errorf("failed to set controller reference %w", err)
+			}
 		}
 
 		if pvc.CreationTimestamp.IsZero() {
@@ -1183,7 +1189,6 @@ func (v *VSHandler) validateAndProtectSnapshot(
 		AddOwner(v.owner, v.client.Scheme()).
 		AddLabel(VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal).
 		Update(v.ctx, v.client)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to add owner/label to snapshot %s (%w)", volSnap.GetName(), err)
 	}
@@ -1195,12 +1200,16 @@ func (v *VSHandler) validateAndProtectSnapshot(
 
 func (v *VSHandler) addAnnotationAndVRGOwnerRefAndUpdate(obj client.Object,
 	annotationName, annotationValue string,
-) error {
+) (err error) {
+	var ownerRefUpdated bool
+
 	annotationsUpdated := util.AddAnnotation(obj, annotationName, annotationValue)
 
-	ownerRefUpdated, err := util.AddOwnerReference(obj, v.owner, v.client.Scheme()) // VRG as owner
-	if err != nil {
-		return err
+	if !v.vrgInAdminNamespace {
+		ownerRefUpdated, err = util.AddOwnerReference(obj, v.owner, v.client.Scheme()) // VRG as owner
+		if err != nil {
+			return err
+		}
 	}
 
 	if annotationsUpdated || ownerRefUpdated {
@@ -1650,6 +1659,7 @@ func (v *VSHandler) reconcileLocalReplication(rd *volsyncv1alpha1.ReplicationDes
 	return lrd, lrs, nil
 }
 
+//nolint:funlen
 func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	pskSecretName string) (*volsyncv1alpha1.ReplicationDestination, error,
 ) {
@@ -1668,10 +1678,12 @@ func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDe
 	}
 
 	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, lrd, func() error {
-		if err := ctrl.SetControllerReference(v.owner, lrd, v.client.Scheme()); err != nil {
-			v.log.Error(err, "unable to set controller reference")
+		if !v.vrgInAdminNamespace {
+			if err := ctrl.SetControllerReference(v.owner, lrd, v.client.Scheme()); err != nil {
+				v.log.Error(err, "unable to set controller reference")
 
-			return err
+				return err
+			}
 		}
 
 		util.AddLabel(lrd, VRGOwnerLabel, v.owner.GetName())
@@ -1744,10 +1756,12 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 	}
 
 	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, lrs, func() error {
-		if err := ctrl.SetControllerReference(v.owner, lrs, v.client.Scheme()); err != nil {
-			v.log.Error(err, "unable to set controller reference")
+		if !v.vrgInAdminNamespace {
+			if err := ctrl.SetControllerReference(v.owner, lrs, v.client.Scheme()); err != nil {
+				v.log.Error(err, "unable to set controller reference")
 
-			return err
+				return err
+			}
 		}
 
 		util.AddLabel(lrs, VRGOwnerLabel, v.owner.GetName())
