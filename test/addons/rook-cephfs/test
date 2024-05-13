@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import os
+import sys
+
+from drenv import kubectl
+
+PVC_NAME = "cephfs-pvc"
+SNAP_NAME = "cephfs-snap"
+NAMESPACE = "drenv-addon-test"
+
+
+def test_provisioning(cluster):
+    print(f"Deploying pvc and snapshot on cluster '{cluster}'")
+    kubectl.apply(
+        "--kustomize",
+        "provision-test",
+        context=cluster,
+    )
+
+    print(f"Waiting until pvc {PVC_NAME} is bound in cluster '{cluster}'")
+    kubectl.wait(
+        f"pvc/{PVC_NAME}",
+        "--for=jsonpath={.status.phase}=Bound",
+        f"--namespace={NAMESPACE}",
+        "--timeout=300s",
+        context=cluster,
+    )
+
+    print(f"Waiting until snapshot {SNAP_NAME} is readyToUse in cluster '{cluster}'")
+    kubectl.wait(
+        f"volumesnapshot/{SNAP_NAME}",
+        "--for=jsonpath={.status.readyToUse}=true",
+        f"--namespace={NAMESPACE}",
+        "--timeout=300s",
+        context=cluster,
+    )
+
+    print(f"Deleting pvc and snapshot on cluster '{cluster}'")
+    kubectl.delete(
+        "--kustomize",
+        "provision-test",
+        "--ignore-not-found",
+        context=cluster,
+    )
+
+    print(f"CephFS PVC and Snapshot provisioning on cluster '{cluster}' succeeded")
+
+
+if len(sys.argv) != 2:
+    print(f"Usage: {sys.argv[0]} cluster")
+    sys.exit(1)
+
+os.chdir(os.path.dirname(__file__))
+cluster = sys.argv[1]
+
+test_provisioning(cluster)
