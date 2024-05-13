@@ -1885,6 +1885,10 @@ func (d *DRPCInstance) ensureVRGIsSecondaryEverywhere(clusterToSkip string) bool
 			continue
 		}
 
+		if d.instance.Spec.ProtectedNamespaces != nil && len(*d.instance.Spec.ProtectedNamespaces) > 0 {
+			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+		}
+
 		if !d.ensureVRGIsSecondaryOnCluster(clusterName) {
 			d.log.Info("Still waiting for VRG to transition to secondary", "cluster", clusterName)
 
