@@ -31,6 +31,8 @@ transformers:
     path: metadata/labels
   - kind: Service
     path: spec/selector
+  - kind: ConfigMap
+    path: metadata/labels
 
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix including the one in
 # crd/kustomization.yaml
