@@ -9,7 +9,7 @@ import sys
 import drenv
 from drenv import kubectl
 
-VERSION = "v0.22.0"
+VERSION = "v0.27.0"
 BASE_URL = f"https://github.com/operator-framework/operator-lifecycle-manager/releases/download/{VERSION}"
 NAMESPACE = "olm"
 
