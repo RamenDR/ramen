@@ -108,10 +108,9 @@ type ReplicationGroupSourceStatus struct {
   LastManualSync string `json:"lastManualSync,omitempty"`
   // conditions represent the latest available observations of the
   // source's state.
-  Conditions []metav1.Condition `json:"conditions,omitempty"`
-  
+  Conditions []metav1.Condition `json:"conditions,omitempty"`  
   // Created ReplicationSources by this ReplicationGroupSource
-  ReplicationSources []*corev1.TypedLocalObjectReference `json:"replicationSources,omitempty"`
+  ReplicationSources []*corev1.ObjectReference `json:"replicationSources,omitempty"`
 }
 ```
 
@@ -151,7 +150,7 @@ type ReplicationDestinationStatus struct {
   Conditions []metav1.Condition `json:"conditions,omitempty"`
 
   // Created ReplicationDestinations by this ReplicationGroupDestination
-  ReplicationDestinations []*corev1.TypedLocalObjectReference `json:"replicationDestinations,omitempty"`
+  ReplicationDestinations []*corev1.ObjectReference `json:"replicationDestinations,omitempty"`
 }
 ```
 
