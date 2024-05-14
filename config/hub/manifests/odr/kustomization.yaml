@@ -10,6 +10,7 @@ configMapGenerator:
     disableNameSuffixHash: true
     labels:
       config.openshift.io/inject-trusted-cabundle: "true"
+      app: ramen-hub
 
 patchesStrategicMerge:
 - manager_openshift_trusted_cabundle.yaml
