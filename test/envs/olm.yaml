@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Environment for testing olm deployment.
+---
+name: olm
+
+profiles:
+  - name: c1
+    driver: $vm
+    container_runtime: containerd
+    memory: 2g
+    workers:
+      - addons:
+          - name: olm
