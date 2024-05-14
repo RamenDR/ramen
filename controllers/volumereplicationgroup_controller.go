@@ -538,7 +538,8 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 		return v.invalid(err, "Failed to process list of PVCs to protect", true)
 	}
 
-	v.log = v.log.WithName("vrginstance").WithValues("State", v.instance.Spec.ReplicationState)
+	v.log = v.log.WithName("vrginstance").WithValues("State", v.instance.Spec.ReplicationState,
+		"action", v.instance.Spec.Action)
 	v.s3StoreAccessorsGet()
 
 	if rmnutil.ResourceIsDeleted(v.instance) {
@@ -900,13 +901,6 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 }
 
 func (v *VRGInstance) shouldRestoreClusterData() bool {
-	if v.instance.Spec.PrepareForFinalSync || v.instance.Spec.RunFinalSync {
-		msg := "PV restore skipped, as VRG is orchestrating final sync"
-		setVRGClusterDataReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
-
-		return false
-	}
-
 	clusterDataReady := findCondition(v.instance.Status.Conditions, VRGConditionTypeClusterDataReady)
 	if clusterDataReady != nil {
 		v.log.Info("ClusterDataReady condition",
@@ -929,19 +923,10 @@ func (v *VRGInstance) shouldRestoreClusterData() bool {
 }
 
 func (v *VRGInstance) reconcileAsPrimary() {
-	var finalSyncPrepared struct {
-		volSync bool
-	}
-
-	vrg := v.instance
-	v.result.Requeue = v.reconcileVolSyncAsPrimary(&finalSyncPrepared.volSync)
+	v.result.Requeue = v.reconcileVolSyncAsPrimary()
 	v.reconcileVolRepsAsPrimary()
 	v.kubeObjectsProtectPrimary(&v.result)
 	v.vrgObjectProtect(&v.result)
-
-	if vrg.Spec.PrepareForFinalSync {
-		vrg.Status.PrepareForFinalSyncComplete = finalSyncPrepared.volSync
-	}
 }
 
 func (v *VRGInstance) pvcsDeselectedUnprotect() error {
@@ -1101,7 +1086,7 @@ func (v *VRGInstance) updateVRGConditionsAndStatus(result ctrl.Result) ctrl.Resu
 }
 
 func (v *VRGInstance) updateVRGStatus(result ctrl.Result) ctrl.Result {
-	v.log.Info("Updating VRG status")
+	v.log.Info("Updating VRG status", "result", result)
 
 	v.updateStatusState()
 
@@ -1503,4 +1488,22 @@ func (r *VolumeReplicationGroupReconciler) addVolsyncOwnsAndWatches(ctrlBuilder 
 		)
 
 	return ctrlBuilder
+}
+
+// preparePVForReclaim cleans up required PV or PVC fields, to ensure restore succeeds
+// to a new cluster, and rebinding the PVC to an existing PV with the same claimRef
+func preparePVForReclaim(pv *corev1.PersistentVolume) {
+	pv.ResourceVersion = ""
+	if pv.Spec.ClaimRef != nil {
+		pv.Spec.ClaimRef.UID = ""
+		pv.Spec.ClaimRef.ResourceVersion = ""
+		pv.Spec.ClaimRef.APIVersion = ""
+	}
+}
+
+func cleanupPVCForRestore(pvc *corev1.PersistentVolumeClaim) {
+	pvc.ObjectMeta.Annotations = PruneAnnotations(pvc.GetAnnotations())
+	pvc.ObjectMeta.Finalizers = []string{}
+	pvc.ObjectMeta.ResourceVersion = ""
+	pvc.ObjectMeta.OwnerReferences = nil
 }

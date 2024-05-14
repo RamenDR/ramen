@@ -58,6 +58,8 @@ const (
 
 	OwnerNameAnnotation      = "ramendr.openshift.io/owner-name"
 	OwnerNamespaceAnnotation = "ramendr.openshift.io/owner-namespace"
+
+	PvcVSFinalizerProtected = "volumereplicationgroups.ramendr.openshift.io/pvc-vs-protection"
 )
 
 type VSHandler struct {
@@ -428,6 +430,9 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 	// Remote service address created for the ReplicationDestination on the secondary
 	// The secondary namespace will be the same as primary namespace so use the vrg.Namespace
 	remoteAddress := getRemoteServiceNameForRDFromPVCName(rsSpec.ProtectedPVC.Name, v.owner.GetNamespace())
+	if val, ok := rsSpec.ProtectedPVC.Annotations[util.AppPVCNameAnnotation]; ok {
+		remoteAddress = getRemoteServiceNameForRDFromPVCName(val, v.owner.GetNamespace())
+	}
 
 	rs := &volsyncv1alpha1.ReplicationSource{
 		ObjectMeta: metav1.ObjectMeta{
@@ -445,10 +450,14 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 
 		util.AddLabel(rs, VRGOwnerLabel, v.owner.GetName())
 
+		copyMethod := volsyncv1alpha1.CopyMethodSnapshot
+
 		rs.Spec.SourcePVC = rsSpec.ProtectedPVC.Name
 
 		if runFinalSync {
 			l.V(1).Info("ReplicationSource - final sync")
+			// For the final sync, the source PVC is provided, no need for taking a snapshot.
+			copyMethod = volsyncv1alpha1.CopyMethodDirect
 			// Change the schedule to instead use a keyword trigger - to trigger
 			// a final sync to happen
 			rs.Spec.Trigger = &volsyncv1alpha1.ReplicationSourceTriggerSpec{
@@ -474,7 +483,7 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 			ReplicationSourceVolumeOptions: volsyncv1alpha1.ReplicationSourceVolumeOptions{
 				// Always using CopyMethod of snapshot for now - could use 'Clone' CopyMethod for specific
 				// storage classes that support it in the future
-				CopyMethod:              volsyncv1alpha1.CopyMethodSnapshot,
+				CopyMethod:              copyMethod,
 				VolumeSnapshotClassName: &volumeSnapshotClassName,
 				StorageClassName:        rsSpec.ProtectedPVC.StorageClassName,
 				AccessModes:             rsSpec.ProtectedPVC.AccessModes,
@@ -639,7 +648,7 @@ func (v *VSHandler) getRS(name string) (*volsyncv1alpha1.ReplicationSource, erro
 			Namespace: v.owner.GetNamespace(),
 		}, rs)
 	if err != nil {
-		return nil, fmt.Errorf("%w", err)
+		return nil, err
 	}
 
 	return rs, nil
@@ -896,7 +905,7 @@ func (v *VSHandler) EnsurePVCfromRD(rdSpec ramendrv1alpha1.VolSyncReplicationDes
 	return v.validateSnapshotAndEnsurePVC(rdSpec, *vsImageRef, failoverAction)
 }
 
-//nolint:cyclop
+//nolint:cyclop,funlen,gocognit
 func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 ) error {
@@ -913,6 +922,26 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 	pvc, err := v.getPVC(rdSpec.ProtectedPVC.Name)
 	if err != nil && !kerrors.IsNotFound(err) {
 		return err
+	}
+
+	if pvc != nil && util.ResourceIsDeleted(pvc) {
+		// Update PV reclaim policy and clean the claimRef
+		err = util.UpdatePVReclaimPolicy(
+			v.ctx,
+			v.client,
+			util.PVAnnotationRetainedForVolSync,
+			corev1.PersistentVolumeReclaimDelete,
+			pvc,
+			true,
+			v.log)
+
+		if err != nil {
+			return err
+		}
+
+		return util.NewResourceUpdater(pvc).
+			RemoveFinalizer(PvcVSFinalizerProtected).
+			Update(v.ctx, v.client)
 	}
 
 	if pvc != nil {
@@ -1491,6 +1520,36 @@ func isRSLastSyncTimeReady(rsStatus *volsyncv1alpha1.ReplicationSourceStatus) bo
 	}
 
 	return false
+}
+
+func (v *VSHandler) GetRSLastSyncTime(pvcName string) (*metav1.Time, error) {
+	l := v.log.WithValues("pvcName", pvcName)
+
+	// Get RD instance
+	rs := &volsyncv1alpha1.ReplicationSource{}
+
+	err := v.client.Get(v.ctx,
+		types.NamespacedName{
+			Name:      getReplicationSourceName(pvcName),
+			Namespace: v.owner.GetNamespace(),
+		}, rs)
+	if err != nil {
+		if !kerrors.IsNotFound(err) {
+			l.Error(err, "Failed to get ReplicationSource")
+
+			return nil, fmt.Errorf("%w", err)
+		}
+
+		l.Info("No ReplicationSource found", "pvcName", pvcName)
+
+		return nil, err
+	}
+
+	if rs.Status == nil {
+		return nil, fmt.Errorf("rs status is nil. (%s)", pvcName)
+	}
+
+	return rs.Status.LastSyncTime, nil
 }
 
 func (v *VSHandler) getRDLatestImage(pvcName string) (*corev1.TypedLocalObjectReference, error) {

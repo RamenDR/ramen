@@ -43,7 +43,7 @@ const (
 	// VolSync related conditions. These conditions are only applicable
 	// at individual PVCs and not generic VRG conditions.
 	VRGConditionTypeVolSyncRepSourceSetup      = "ReplicationSourceSetup"
-	VRGConditionTypeVolSyncFinalSyncInProgress = "FinalSyncInProgress"
+	VRGConditionTypeVolSyncFinalSync           = "FinalSync"
 	VRGConditionTypeVolSyncRepDestinationSetup = "ReplicationDestinationSetup"
 	VRGConditionTypeVolSyncPVsRestored         = "PVsRestored"
 )
@@ -456,6 +456,32 @@ func setVRGConditionTypeVolSyncPVRestoreError(conditions *[]metav1.Condition, ob
 		Reason:             VRGConditionReasonError,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
+		Message:            message,
+	})
+}
+
+// sets conditions when Primary VolSync has finished setting up the Replication Destination
+func setVRGConditionTypeVolSyncFinalSyncInProgress(conditions *[]metav1.Condition, observedGeneration int64,
+	message string,
+) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeVolSyncFinalSync,
+		Reason:             VRGConditionReasonVolSyncFinalSyncInProgress,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+	})
+}
+
+// sets conditions when Primary VolSync has finished setting up the Replication Destination
+func setVRGConditionTypeVolSyncFinalSyncComplete(conditions *[]metav1.Condition, observedGeneration int64,
+	message string,
+) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeVolSyncFinalSync,
+		Reason:             VRGConditionReasonVolSyncFinalSyncComplete,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
 		Message:            message,
 	})
 }
