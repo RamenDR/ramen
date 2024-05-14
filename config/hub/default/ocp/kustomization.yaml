@@ -31,6 +31,14 @@ transformers:
     path: metadata/labels
   - kind: Service
     path: spec/selector
+  - kind: ServiceMonitor
+    path: metadata/labels
+  - kind: ServiceMonitor
+    path: spec/selector/matchLabels
+  - kind: ConfigMap
+    path: metadata/labels
+  - kind: PrometheusRule
+    path: metadata/labels  
 
 # [PROMETHEUS] To enable prometheus monitor, uncomment all sections with 'PROMETHEUS'.
 #-../prometheus
