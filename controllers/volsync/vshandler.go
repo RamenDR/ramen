@@ -98,6 +98,8 @@ func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, ow
 
 // returns replication destination only if create/update is successful and the RD is considered available.
 // Callers should assume getting a nil replication destination back means they should retry/requeue.
+//
+//nolint:cyclop
 func (v *VSHandler) ReconcileRD(
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec) (*volsyncv1alpha1.ReplicationDestination, error,
 ) {
@@ -113,6 +115,14 @@ func (v *VSHandler) ReconcileRD(
 	secretExists, err := v.validateSecretAndAddVRGOwnerRef(pskSecretName)
 	if err != nil || !secretExists {
 		return nil, err
+	}
+
+	if v.vrgInAdminNamespace {
+		// copy th secret to the namespace where the PVC is
+		err = v.copySecretToPVCNamespace(pskSecretName, util.ProtectedPVCNamespacedName(rdSpec.ProtectedPVC))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Check if a ReplicationSource is still here (Can happen if transitioning from primary to secondary)
@@ -260,7 +270,7 @@ func (v *VSHandler) isPVCInUseByNonRDPod(pvcNamespacedName types.NamespacedName)
 // Callers should assume getting a nil replication source back means they should retry/requeue.
 // Returns true/false if final sync is complete, and also returns an RS if one was reconciled.
 //
-//nolint:cyclop
+//nolint:cyclop,funlen
 func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec,
 	runFinalSync bool) (bool /* finalSyncComplete */, *volsyncv1alpha1.ReplicationSource, error,
 ) {
@@ -279,6 +289,14 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	secretExists, err := v.validateSecretAndAddVRGOwnerRef(pskSecretName)
 	if err != nil || !secretExists {
 		return false, nil, err
+	}
+
+	if v.vrgInAdminNamespace {
+		// copy th secret to the namespace where the PVC is
+		err = v.copySecretToPVCNamespace(pskSecretName, util.ProtectedPVCNamespacedName(rsSpec.ProtectedPVC))
+		if err != nil {
+			return false, nil, err
+		}
 	}
 
 	// Check if a ReplicationDestination is still here (Can happen if transitioning from secondary to primary)
@@ -629,6 +647,56 @@ func (v *VSHandler) validateSecretAndAddVRGOwnerRef(secretName string) (bool, er
 	v.log.V(1).Info("VolSync secret validated", "secret name", secretName)
 
 	return true, nil
+}
+
+func (v *VSHandler) copySecretToPVCNamespace(secretName string, pvcNamespacedName types.NamespacedName) error {
+	secret := &corev1.Secret{}
+
+	err := v.client.Get(v.ctx,
+		types.NamespacedName{
+			Name:      secretName,
+			Namespace: pvcNamespacedName.Namespace,
+		}, secret)
+	if err != nil && !kerrors.IsNotFound(err) {
+		v.log.Error(err, "Failed to get secret", "secretName", secretName)
+
+		return fmt.Errorf("error getting secret (%w)", err)
+	}
+
+	if err == nil {
+		v.log.Info("Secret already exists in the PVC namespace", "secretName", secretName, "pvcNamespace",
+			pvcNamespacedName.Namespace)
+
+		return nil
+	}
+
+	v.log.Info("volsync secret not found in the pvc namespace, will create it", "secretName", secretName,
+		"pvcNamespace", pvcNamespacedName.Namespace)
+
+	err = v.client.Get(v.ctx,
+		types.NamespacedName{
+			Name:      secretName,
+			Namespace: v.owner.GetNamespace(),
+		}, secret)
+	if err != nil {
+		return fmt.Errorf("error getting secret from the admin namespace (%w)", err)
+	}
+
+	secretCopy := secret.DeepCopy()
+
+	secretCopy.ObjectMeta = metav1.ObjectMeta{
+		Name:        secretName,
+		Namespace:   pvcNamespacedName.Namespace,
+		Labels:      secret.Labels,
+		Annotations: secret.Annotations,
+	}
+
+	err = v.client.Create(v.ctx, secretCopy)
+	if err != nil {
+		return fmt.Errorf("error creating secret (%w)", err)
+	}
+
+	return nil
 }
 
 func (v *VSHandler) getRS(name, namespace string) (*volsyncv1alpha1.ReplicationSource, error) {
