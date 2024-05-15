@@ -217,6 +217,10 @@ def stream(proc, input=None, bufsize=32 << 10, timeout=None):
         except BrokenPipeError:
             pass
 
+    # Use only if input is not None, but it helps pylint.
+    input_view = ""
+    input_offset = 0
+
     with _Selector() as sel:
         for f, src in (proc.stdout, OUT), (proc.stderr, ERR):
             if f and not f.closed:
@@ -224,7 +228,6 @@ def stream(proc, input=None, bufsize=32 << 10, timeout=None):
         if input:
             sel.register(proc.stdin, selectors.EVENT_WRITE)
             input_view = memoryview(input.encode())
-            input_offset = 0
 
         while sel.get_map():
             remaining = _remaining_time(deadline)
