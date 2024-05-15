@@ -175,6 +175,29 @@ drenv cleanup
 
 This should not be needed.
 
+## Caching resources
+
+If you run the drenv tool with a flaky network you can improve
+reliability of starting the environment by caching resources.
+
+To cache resources for the `regional-dr.yaml` environment run:
+
+```
+drenv cache envs/regional-dr.yaml
+```
+
+The cache expires in 2 days. To refresh the cache daily, you can install
+a cron job to run `scripts/refresh-cache` daily as the user used to run
+the environment.
+
+See the `scripts/refresh-cache.crontab` for example user crontab.
+
+To clear the cached resources run:
+
+```
+drenv clear
+```
+
 ## The environment file
 
 To create an environment you need an yaml file describing the

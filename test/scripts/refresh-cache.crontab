@@ -1,0 +1,9 @@
+# To refresh the cache daily, edit the user crotab (crontab -e) and add the
+# content bellow.
+# NOTES:
+# - update the path to the ramen directory.
+# - ensure all the tools are in the specified PATH.
+
+PATH=/bin:/usr/bin:/usr/local/bin
+
+0 3 * * * /home/github/ramen/test/scripts/refresh-cache
