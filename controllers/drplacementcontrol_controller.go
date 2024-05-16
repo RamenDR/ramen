@@ -403,11 +403,7 @@ func DRPCsUsingDRCluster(k8sclient client.Client, log logr.Logger, drcluster *rm
 	for i := range drpolicies.Items {
 		drpolicy := &drpolicies.Items[i]
 
-		for _, clusterName := range drpolicy.Spec.DRClusters {
-			if clusterName != drcluster.GetName() {
-				continue
-			}
-
+		if rmnutil.DrpolicyContainsDrcluster(drpolicy, drcluster.GetName()) {
 			log.Info("Found DRPolicy referencing DRCluster", "drpolicy", drpolicy.GetName())
 
 			drpcs, err := DRPCsUsingDRPolicy(k8sclient, log, drpolicy)
@@ -418,8 +414,6 @@ func DRPCsUsingDRCluster(k8sclient client.Client, log logr.Logger, drcluster *rm
 			for _, drpc := range drpcs {
 				found = append(found, DRPCAndPolicy{drpc: drpc, drPolicy: drpolicy})
 			}
-
-			break
 		}
 	}
 
@@ -477,11 +471,7 @@ func DRPCsFailingOverToCluster(k8sclient client.Client, log logr.Logger, drclust
 	for drpolicyIdx := range drpolicies.Items {
 		drpolicy := &drpolicies.Items[drpolicyIdx]
 
-		for _, specCluster := range drpolicy.Spec.DRClusters {
-			if specCluster != drcluster {
-				continue
-			}
-
+		if rmnutil.DrpolicyContainsDrcluster(drpolicy, drcluster) {
 			drClusters, err := getDRClusters(context.TODO(), k8sclient, drpolicy)
 			if err != nil || len(drClusters) <= 1 {
 				log.Error(err, "Failed to get DRClusters")
@@ -511,8 +501,6 @@ func DRPCsFailingOverToCluster(k8sclient client.Client, log logr.Logger, drclust
 
 				drpcCollections = append(drpcCollections, dprcCollection)
 			}
-
-			break
 		}
 	}
 
@@ -2290,7 +2278,7 @@ func addOrUpdateCondition(conditions *[]metav1.Condition, conditionType string,
 
 // Initial creation of the DRPC status condition. This will also preserve the ordering of conditions in the array
 func ensureDRPCConditionsInited(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	const DRPCTotalConditions = 2
+	const DRPCTotalConditions = 3
 	if len(*conditions) == DRPCTotalConditions {
 		return
 	}

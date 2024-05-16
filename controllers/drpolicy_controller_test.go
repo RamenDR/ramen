@@ -23,7 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("DrpolicyController", func() {
+var _ = Describe("DRPolicyController", func() {
 	validatedConditionExpect := func(drpolicy *ramen.DRPolicy, status metav1.ConditionStatus,
 		messageMatcher gomegaTypes.GomegaMatcher,
 	) {

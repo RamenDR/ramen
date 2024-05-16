@@ -101,6 +101,7 @@ const (
 	ProgressionUpdatingPlRule                      = ProgressionStatus("UpdatingPlRule")
 	ProgressionWaitForReadiness                    = ProgressionStatus("WaitForReadiness")
 	ProgressionCleaningUp                          = ProgressionStatus("Cleaning Up")
+	ProgressionWaitOnUserToCleanUp                 = ProgressionStatus("WaitOnUserToCleanUp")
 	ProgressionCheckingFailoverPrequisites         = ProgressionStatus("CheckingFailoverPrequisites")
 	ProgressionFailingOverToCluster                = ProgressionStatus("FailingOverToCluster")
 	ProgressionWaitForFencing                      = ProgressionStatus("WaitForFencing")

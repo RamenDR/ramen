@@ -14,12 +14,15 @@ templates:
     memory: "6g"
     extra_disks: 1
     disk_size: "50g"
+    addons:
+      - volumesnapshots
     workers:
       - addons:
           - name: rook-operator
           - name: rook-cluster
           - name: rook-toolbox
           - name: rook-pool
+          - name: rook-cephfs
       - addons:
           - name: csi-addons
 

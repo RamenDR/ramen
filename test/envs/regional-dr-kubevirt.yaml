@@ -25,18 +25,16 @@ templates:
     memory: "8g"
     extra_disks: 1
     disk_size: "50g"
-    addons:
-      - csi-hostpath-driver
     workers:
       - addons:
           - name: rook-operator
           - name: rook-cluster
           - name: rook-toolbox
           - name: rook-pool
+          - name: cdi
       - addons:
           - name: ocm-cluster
             args: ["$name", "hub"]
-          - name: cdi
           - name: recipe
       - addons:
           - name: csi-addons

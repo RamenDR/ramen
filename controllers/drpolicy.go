@@ -175,16 +175,9 @@ func drClusterListMustHaveS3Profiles(drpolicies rmn.DRPolicyList,
 			continue
 		}
 
-		for _, cluster := range util.DRPolicyClusterNames(&drpolicies.Items[idx]) {
-			// Skip if not the current cluster
-			if cluster != clusterName {
-				continue
-			}
-
+		if util.DrpolicyContainsDrcluster(&drpolicies.Items[idx], clusterName) {
 			// Add all S3Profiles across clusters in this policy to the current cluster
 			mustHaveS3Profiles = mustHaveS3Profiles.Union(util.DRPolicyS3Profiles(&drpolicies.Items[idx], drclusters.Items))
-
-			break
 		}
 	}
 
