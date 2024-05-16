@@ -40,6 +40,10 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
+	if err := util.ReadConfig(); err != nil {
+		panic(err)
+	}
+
 	os.Exit(m.Run())
 }
 
