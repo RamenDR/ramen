@@ -27,7 +27,6 @@ environment.
    sudo dnf install https://storage.googleapis.com/minikube/releases/latest/minikube-latest.x86_64.rpm
    ```
 
-   You need `minikube` version supporting the `--extra-disks` option.
    Tested with version v1.33.1.
 
 1. Install the `kubectl` tool. See
