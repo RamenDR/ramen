@@ -21,6 +21,7 @@ setuptools.setup(
     install_requires=[
         "PyYAML",
         "toml",
+        "packaging",
     ],
     classifiers=[
         "Development Status :: 4 - Beta",
