@@ -97,6 +97,10 @@ func DisableProtection(w workloads.Workload, d deployers.Deployer) error {
 		return err
 	}
 
+	if err := waitDRPCDeleted(client, namespace, drpcName); err != nil {
+		return err
+	}
+
 	util.Ctx.Log.Info("get placement " + placementName)
 
 	placement, err := getPlacement(client, namespace, placementName)
