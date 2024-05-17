@@ -2,8 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import errno
+import json
 import logging
 import os
+
+from packaging.version import Version
 
 from . import commands
 
@@ -113,8 +116,10 @@ def setup_files():
     To load the configuration you must call load_files() after a cluster is
     created.
     """
-    _setup_sysctl()
-    _setup_systemd_resolved()
+    version = _version()
+    logging.debug("[minikube] Using minikube version %s", version)
+    _setup_sysctl(version)
+    _setup_systemd_resolved(version)
 
 
 def load_files(profile):
@@ -137,7 +142,17 @@ def cleanup_files():
     _cleanup_file(_sysctl_drenv_conf())
 
 
-def _setup_sysctl():
+def _version():
+    """
+    Get minikube version string ("v1.33.1") and return a package.version.Version
+    instance.
+    """
+    out = _run("version", output="json")
+    info = json.loads(out)
+    return Version(info["minikubeVersion"])
+
+
+def _setup_sysctl(version):
     """
     Increase fs.inotify limits to avoid random timeouts when starting kubevirt
     VM.
@@ -145,6 +160,10 @@ def _setup_sysctl():
     We use the same configuration as OpenShift worker node.
     See also https://www.suse.com/support/kb/doc/?id=000020048
     """
+    if version >= Version("v1.33.1"):
+        logging.debug("[minikube] Skipping sysctl configuration")
+        return
+
     path = _sysctl_drenv_conf()
     data = """# Added by drenv setup
 fs.inotify.max_user_instances = 8192
@@ -165,7 +184,7 @@ def _sysctl_drenv_conf():
     return _minikube_file("etc", "sysctl.d", "99-drenv.conf")
 
 
-def _setup_systemd_resolved():
+def _setup_systemd_resolved(version):
     """
     Disable DNSSEC in systemd-resolved configuration.
 
@@ -174,6 +193,10 @@ def _setup_systemd_resolved():
 
     TODO: Remove when issue is fixed in minikube.
     """
+    if version >= Version("v1.33.1"):
+        logging.debug("[minikube] Skipping systemd-resolved configuration")
+        return
+
     path = _systemd_resolved_drenv_conf()
     data = """# Added by drenv setup
 [Resolve]
