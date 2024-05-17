@@ -9,6 +9,7 @@ import (
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/e2e/util"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"open-cluster-management.io/api/cluster/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -172,4 +173,28 @@ func waitDRPC(client client.Client, namespace, name, expectedPhase string) error
 	}
 	// then check Conditions
 	return waitDRPCReady(client, namespace, name)
+}
+
+func waitDRPCDeleted(client client.Client, namespace string, name string) error {
+	startTime := time.Now()
+
+	for {
+		_, err := getDRPC(client, namespace, name)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				util.Ctx.Log.Info("drpc " + name + " is deleted")
+
+				return nil
+			}
+
+			util.Ctx.Log.Info(fmt.Sprintf("error to get drpc %s: %v", name, err))
+		}
+
+		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
+			return fmt.Errorf(fmt.Sprintf("drpc %s is not deleted yet before timeout of %v", name, util.Timeout))
+		}
+
+		util.Ctx.Log.Info(fmt.Sprintf("drpc %s is not deleted yet, retry in %v seconds", name, util.TimeInterval))
+		time.Sleep(time.Second * time.Duration(util.TimeInterval))
+	}
 }
