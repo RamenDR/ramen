@@ -1764,7 +1764,11 @@ var _ = Describe("VolSync_Handler", func() {
 	Describe("Prepare PVC for final sync", func() {
 		Context("When the PVC does not exist", func() {
 			It("Should assume preparationForFinalSync is complete", func() {
-				pvcPreparationComplete, err := vsHandler.TakePVCOwnership("this-pvc-does-not-exist")
+				pvcNamespacedName := types.NamespacedName{
+					Name:      "this-pvc-does-not-exist",
+					Namespace: testNamespace.GetName(),
+				}
+				pvcPreparationComplete, err := vsHandler.TakePVCOwnership(pvcNamespacedName)
 				Expect(err).To(HaveOccurred())
 				Expect(kerrors.IsNotFound(err)).To(BeTrue())
 				Expect(pvcPreparationComplete).To(BeFalse())
@@ -1791,7 +1795,12 @@ var _ = Describe("VolSync_Handler", func() {
 			var pvcPreparationErr error
 
 			JustBeforeEach(func() {
-				pvcPreparationComplete, pvcPreparationErr = vsHandler.TakePVCOwnership(testPVC.GetName())
+				pvcNamespacedName := types.NamespacedName{
+					Name:      testPVC.GetName(),
+					Namespace: testPVC.GetNamespace(),
+				}
+
+				pvcPreparationComplete, pvcPreparationErr = vsHandler.TakePVCOwnership(pvcNamespacedName)
 
 				// In all cases at this point we should expect that the PVC has ownership taken over by our owner VRG
 				Eventually(func() bool {
