@@ -465,6 +465,7 @@ var _ = Describe("VolSync_Handler", func() {
 				JustBeforeEach(func() {
 					// Run ReconcileRD
 					var err error
+					rdSpec.ProtectedPVC.Namespace = testNamespace.GetName()
 					returnedRD, err = vsHandler.ReconcileRD(rdSpec)
 					Expect(err).ToNot(HaveOccurred())
 				})
@@ -483,6 +484,7 @@ var _ = Describe("VolSync_Handler", func() {
 			Context("When the psk secret for volsync exists (will be pushed down by drpc from hub", func() {
 				var dummyPSKSecret *corev1.Secret
 				JustBeforeEach(func() {
+					rdSpec.ProtectedPVC.Namespace = testNamespace.GetName()
 					// Create a dummy volsync psk secret so the reconcile can proceed properly
 					dummyPSKSecret = &corev1.Secret{
 						ObjectMeta: metav1.ObjectMeta{
@@ -653,6 +655,7 @@ var _ = Describe("VolSync_Handler", func() {
 				var vsHandler *volsync.VSHandler
 
 				BeforeEach(func() {
+					rdSpec.ProtectedPVC.Namespace = testNamespace.GetName()
 					vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, owner, asyncSpec, "none", "Direct", false)
 				})
 
@@ -703,6 +706,7 @@ var _ = Describe("VolSync_Handler", func() {
 					// Run ReconcileRD
 					var err error
 					var finalSyncCompl bool
+					rsSpec.ProtectedPVC.Namespace = testNamespace.GetName()
 					finalSyncCompl, returnedRS, err = vsHandler.ReconcileRS(rsSpec, false)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(finalSyncCompl).To(BeFalse())
@@ -722,6 +726,7 @@ var _ = Describe("VolSync_Handler", func() {
 			Context("When the psk secret for volsync exists (will be pushed down by drpc from hub", func() {
 				var dummyPSKSecret *corev1.Secret
 				JustBeforeEach(func() {
+					rsSpec.ProtectedPVC.Namespace = testNamespace.GetName()
 					// Create a dummy volsync psk secret so the reconcile can proceed properly
 					dummyPSKSecret = &corev1.Secret{
 						ObjectMeta: metav1.ObjectMeta{
@@ -1102,6 +1107,7 @@ var _ = Describe("VolSync_Handler", func() {
 			rdSpec = ramendrv1alpha1.VolSyncReplicationDestinationSpec{
 				ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 					Name:               pvcName,
+					Namespace:          testNamespace.GetName(),
 					ProtectedByVolSync: true,
 					StorageClassName:   &testStorageClassName,
 					Resources: corev1.VolumeResourceRequirements{
@@ -1438,6 +1444,7 @@ var _ = Describe("VolSync_Handler", func() {
 				rdSpec := ramendrv1alpha1.VolSyncReplicationDestinationSpec{
 					ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 						Name:               pvcNamePrefix + strconv.Itoa(i),
+						Namespace:          testNamespace.GetName(),
 						ProtectedByVolSync: true,
 						StorageClassName:   &testStorageClassName,
 						Resources: corev1.VolumeResourceRequirements{
@@ -1467,6 +1474,7 @@ var _ = Describe("VolSync_Handler", func() {
 				otherOwnerRdSpec := ramendrv1alpha1.VolSyncReplicationDestinationSpec{
 					ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 						Name:               pvcNamePrefixOtherOwner + strconv.Itoa(i),
+						Namespace:          testNamespace.GetName(),
 						ProtectedByVolSync: true,
 						StorageClassName:   &testStorageClassName,
 						Resources: corev1.VolumeResourceRequirements{
@@ -1632,6 +1640,7 @@ var _ = Describe("VolSync_Handler", func() {
 				rsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
 					ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 						Name:               pvcNamePrefix + strconv.Itoa(i),
+						Namespace:          testNamespace.GetName(),
 						ProtectedByVolSync: true,
 						StorageClassName:   &testStorageClassName,
 					},
@@ -1657,6 +1666,7 @@ var _ = Describe("VolSync_Handler", func() {
 				otherOwnerRsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
 					ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 						Name:               pvcNamePrefixOtherOwner + strconv.Itoa(i),
+						Namespace:          testNamespace.GetName(),
 						ProtectedByVolSync: true,
 						StorageClassName:   &testStorageClassName,
 					},
