@@ -15,9 +15,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	// Placement
-	ocmclusterv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
+	ocmv1b1 "open-cluster-management.io/api/cluster/v1beta1"
 	// ManagedClusterSetBinding
-	ocmclusterv1beta2 "open-cluster-management.io/api/cluster/v1beta2"
+	ocmv1b2 "open-cluster-management.io/api/cluster/v1beta2"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	subscription "open-cluster-management.io/multicloud-operators-subscription/pkg/apis"
@@ -45,11 +45,11 @@ type Context struct {
 var Ctx *Context
 
 func addToScheme(scheme *runtime.Scheme) error {
-	if err := ocmclusterv1beta1.AddToScheme(scheme); err != nil {
+	if err := ocmv1b1.AddToScheme(scheme); err != nil {
 		return err
 	}
 
-	if err := ocmclusterv1beta2.AddToScheme(scheme); err != nil {
+	if err := ocmv1b2.AddToScheme(scheme); err != nil {
 		return err
 	}
 

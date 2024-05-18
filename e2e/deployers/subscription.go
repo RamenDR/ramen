@@ -6,21 +6,13 @@ package deployers
 import (
 	"github.com/ramendr/ramen/e2e/util"
 	"github.com/ramendr/ramen/e2e/workloads"
+	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
 )
 
-type Subscription struct {
-	// NamePrefix helps when the same workload needs to run in parallel with different deployers.
-	// In the future we potentially would add a resource suffix that is either randomly generated
-	// or a hash of the full test name, to handle cases where we want to run the "same" combination
-	// of deployer+workload for various reasons.
-	NamePrefix string
-	McsbName   string
-}
+// mcsb name must be same as the target ManagedClusterSet
+const McsbName = ClusterSetName
 
-func (s *Subscription) Init() {
-	s.NamePrefix = "sub-"
-	s.McsbName = "default"
-}
+type Subscription struct{}
 
 func (s Subscription) GetName() string {
 	return "Subscription"
@@ -33,25 +25,33 @@ func (s Subscription) Deploy(w workloads.Workload) error {
 	// Generate a Subscription for the Workload
 	// - Kustomize the Workload; call Workload.Kustomize(StorageType)
 	// Address namespace/label/suffix as needed for various resources
-	util.Ctx.Log.Info("enter Deploy " + w.GetName() + "/Subscription")
+	util.Ctx.Log.Info("enter Deploy " + w.GetName() + "/" + s.GetName())
 
-	// w.Kustomize()
-	err := createNamespace()
+	name := GetCombinedName(s, w)
+	namespace := name
+
+	// create subscription namespace
+	err := util.CreateNamespace(util.Ctx.Hub.CtrlClient, namespace)
 	if err != nil {
 		return err
 	}
 
-	err = createManagedClusterSetBinding()
+	err = createManagedClusterSetBinding(McsbName, namespace)
 	if err != nil {
 		return err
 	}
 
-	err = createPlacement()
+	err = createPlacement(name, namespace)
 	if err != nil {
 		return err
 	}
 
-	err = createSubscription()
+	err = createSubscription(s, w)
+	if err != nil {
+		return err
+	}
+
+	err = waitSubscriptionPhase(namespace, name, subscriptionv1.SubscriptionPropagated)
 	if err != nil {
 		return err
 	}
@@ -61,24 +61,27 @@ func (s Subscription) Deploy(w workloads.Workload) error {
 
 func (s Subscription) Undeploy(w workloads.Workload) error {
 	// Delete Subscription, Placement, Binding
-	util.Ctx.Log.Info("enter Undeploy " + w.GetName() + "/Subscription")
+	util.Ctx.Log.Info("enter Undeploy " + w.GetName() + s.GetName())
 
-	err := deleteSubscription()
+	name := GetCombinedName(s, w)
+	namespace := name
+
+	err := deleteSubscription(s, w)
 	if err != nil {
 		return err
 	}
 
-	err = deletePlacement()
+	err = deletePlacement(name, namespace)
 	if err != nil {
 		return err
 	}
 
-	err = deleteManagedClusterSetBinding()
+	err = deleteManagedClusterSetBinding(McsbName, namespace)
 	if err != nil {
 		return err
 	}
 
-	err = deleteNamespace()
+	err = util.DeleteNamespace(util.Ctx.Hub.CtrlClient, namespace)
 	if err != nil {
 		return err
 	}

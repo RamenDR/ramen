@@ -189,7 +189,7 @@ test-ramenctl: ## Run ramenctl tests.
 	$(MAKE) -C ramenctl
 
 e2e-rdr: generate manifests ## Run rdr-e2e tests.
-	./e2e/rdr-e2e.sh
+	cd e2e && ./e2e-rdr.sh
 
 coverage:
 	go tool cover -html=cover.out

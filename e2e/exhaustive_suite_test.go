@@ -15,22 +15,25 @@ import (
 // Workloads = {"Deployment", "STS", "DaemonSet"}
 // Classes   = {"rbd", "cephfs"}
 
+var deployment = &workloads.Deployment{
+	Path:     "workloads/deployment/k8s-regional-rbd",
+	Revision: "main",
+	AppName:  "busybox",
+	Name:     "Deployment",
+}
+
+var Workloads = []workloads.Workload{deployment}
+
+var subscription = &deployers.Subscription{}
+
+// appset := &deployers.ApplicationSet{}
+// Deployers := []deployers.Deployer{subscription, appset}
+
+var Deployers = []deployers.Deployer{subscription}
+
 func Exhaustive(t *testing.T) {
 	t.Helper()
 	t.Parallel()
-
-	deployment := &workloads.Deployment{}
-	deployment.Init()
-
-	Workloads := []workloads.Workload{deployment}
-
-	subscription := &deployers.Subscription{}
-	subscription.Init()
-
-	appset := &deployers.ApplicationSet{}
-	appset.Init()
-
-	Deployers := []deployers.Deployer{subscription, appset}
 
 	for _, workload := range Workloads {
 		for _, deployer := range Deployers {

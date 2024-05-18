@@ -4,17 +4,11 @@
 package workloads
 
 type Deployment struct {
-	RepoURL  string
+	// RepoURL  string
 	Path     string
 	Revision string
 	AppName  string
-}
-
-func (w *Deployment) Init() {
-	w.RepoURL = "https://github.com/ramendr/ocm-ramen-samples.git"
-	w.Path = "workloads/deployment/k8s-regional-rbd"
-	w.Revision = "main"
-	w.AppName = "busybox"
+	Name     string
 }
 
 func (w Deployment) GetAppName() string {
@@ -22,12 +16,12 @@ func (w Deployment) GetAppName() string {
 }
 
 func (w Deployment) GetName() string {
-	return "Deployment"
+	return w.Name
 }
 
-func (w Deployment) GetRepoURL() string {
-	return w.RepoURL
-}
+// func (w Deployment) GetRepoURL() string {
+// 	return w.RepoURL
+// }
 
 func (w Deployment) GetPath() string {
 	return w.Path

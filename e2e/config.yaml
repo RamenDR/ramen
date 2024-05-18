@@ -1,0 +1,4 @@
+---
+channelname: "ramen-gitops"
+channelnamespace: "ramen-samples"
+giturl: "https://github.com/RamenDR/ocm-ramen-samples.git"

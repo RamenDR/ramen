@@ -40,6 +40,10 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
+	if err := util.ReadConfig(); err != nil {
+		panic(err)
+	}
+
 	os.Exit(m.Run())
 }
 
@@ -49,14 +53,27 @@ type testDef struct {
 }
 
 var Suites = []testDef{
-	{"Validate", Validate},
 	{"Exhaustive", Exhaustive},
 }
 
 func TestSuites(t *testing.T) {
 	util.Ctx.Log.Info(t.Name())
 
+	if err := util.EnsureChannel(); err != nil {
+		t.Fatalf("failed to ensure channel: %v", err)
+	}
+
+	if !t.Run("Validate", Validate) {
+		t.Fatal("failed to validate the test suite")
+	}
+
 	for _, suite := range Suites {
 		t.Run(suite.name, suite.test)
 	}
+
+	t.Cleanup(func() {
+		if err := util.EnsureChannelDeleted(); err != nil {
+			t.Fatalf("failed to ensure channel deleted: %v", err)
+		}
+	})
 }
