@@ -23,13 +23,14 @@ fake a success or failure from the components to test the controller code.
 $ make test
 hack/install-setup-envtest.sh
 go test ./... -coverprofile cover.out
-        github.com/ramendr/ramen                coverage: 0.0% of statements
-        github.com/ramendr/ramen/controllers/kubeobjects                coverage: 0.0% of statements
-        github.com/ramendr/ramen/controllers/argocd             coverage: 0.0% of statements
-        github.com/ramendr/ramen/controllers/kubeobjects/velero         coverage: 0.0% of statements
-ok      github.com/ramendr/ramen/controllers    205.468s        coverage: 66.6% of statements
-ok      github.com/ramendr/ramen/controllers/util       9.911s  coverage: 21.8% of statements
-ok      github.com/ramendr/ramen/controllers/volsync    26.089s coverage: 57.3% of statements
+        github.com/ramendr/ramen/cmd    [no test files]
+        github.com/ramendr/ramen/internal/controller/argocd [no test files]
+        github.com/ramendr/ramen/internal/controller/kubeobjects    [no test files]
+        github.com/ramendr/ramen/internal/controller/kubeobjects/velero [no test files]
+ok      github.com/ramendr/ramen/internal/controller    72.451s coverage: 67.6% of statements
+ok      github.com/ramendr/ramen/internal/controller/cel    6.190s  coverage:   [no statements]
+ok      github.com/ramendr/ramen/internal/controller/util   6.387s  coverage: 19.9% of statements
+ok      github.com/ramendr/ramen/internal/controller/volsync    19.654s coverage: 57.6% of statements
 ```
 
 Explore other `test-` targets that test a subset of the controller code.

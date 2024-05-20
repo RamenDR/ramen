@@ -37,7 +37,7 @@ Here is an example of the command for three different scenarios
     ```
     $ go mod why -m golang.org/x/time
     # golang.org/x/time
-    github.com/ramendr/ramen/controllers
+    github.com/ramendr/ramen/internal/controller
     golang.org/x/time/rate
     ```
 
