@@ -7,7 +7,7 @@ resources:
 - ../../crd/bases/ramendr.openshift.io_drclusters.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
-# patchesStrategicMerge:
+# patches:
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix.
 # patches here are for enabling the conversion webhook for each CRD
 # +kubebuilder:scaffold:crdkustomizewebhookpatch

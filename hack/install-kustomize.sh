@@ -3,7 +3,7 @@ set -e
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 
-required_version="v4.5.7"
+required_version="v5.4.1"
 os=$(go env GOOS)
 arch=$(go env GOARCH)
 source_url="https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F${required_version}/kustomize_${required_version}_${os}_${arch}.tar.gz"
