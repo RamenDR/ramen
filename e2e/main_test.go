@@ -15,9 +15,7 @@ import (
 )
 
 func init() {
-	flag.StringVar(&util.KubeconfigHub, "kubeconfig-hub", "", "Path to the kubeconfig file for the hub cluster")
-	flag.StringVar(&util.KubeconfigC1, "kubeconfig-c1", "", "Path to the kubeconfig file for the C1 managed cluster")
-	flag.StringVar(&util.KubeconfigC2, "kubeconfig-c2", "", "Path to the kubeconfig file for the C2 managed cluster")
+	flag.StringVar(&util.ConfigFile, "configfile", "", "Path to the config file")
 }
 
 func TestMain(m *testing.M) {
@@ -33,14 +31,10 @@ func TestMain(m *testing.M) {
 		TimeEncoder: zapcore.ISO8601TimeEncoder,
 	}))
 
-	util.Ctx, err = util.NewContext(&log, util.KubeconfigHub, util.KubeconfigC1, util.KubeconfigC2)
+	util.Ctx, err = util.NewContext(&log, util.ConfigFile)
 	if err != nil {
 		log.Error(err, "unable to create new testing context")
 
-		panic(err)
-	}
-
-	if err := util.ReadConfig(); err != nil {
 		panic(err)
 	}
 
