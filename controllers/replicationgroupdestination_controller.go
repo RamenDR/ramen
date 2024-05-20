@@ -1,0 +1,94 @@
+// SPDX-FileCopyrightText: The RamenDR authors
+// SPDX-License-Identifier: Apache-2.0
+
+package controllers
+
+import (
+	"context"
+
+	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
+	"github.com/backube/volsync/controllers/statemachine"
+	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/controllers/cephfscg"
+	"github.com/ramendr/ramen/controllers/volsync"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+)
+
+// ReplicationGroupDestinationReconciler reconciles a ReplicationGroupDestination object
+type ReplicationGroupDestinationReconciler struct {
+	client.Client
+	Scheme *runtime.Scheme
+}
+
+//+kubebuilder:rbac:groups=ramendr.openshift.io,resources=replicationgroupdestinations,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=ramendr.openshift.io,resources=replicationgroupdestinations/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=ramendr.openshift.io,resources=replicationgroupdestinations/finalizers,verbs=update
+//+kubebuilder:rbac:groups=volsync.backube,resources=replicationdestinations,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch;delete;deletecollection
+
+func (r *ReplicationGroupDestinationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+	logger.Info("Get ReplicationGroupDestination")
+
+	rgd := &ramendrv1alpha1.ReplicationGroupDestination{}
+	if err := r.Client.Get(ctx, req.NamespacedName, rgd); err != nil {
+		if !errors.IsNotFound(err) {
+			logger.Error(err, "Failed to get ReplicationGroupDestination")
+		}
+
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	logger.Info("Get ramen config from configmap")
+
+	_, ramenConfig, err := ConfigMapGet(ctx, r.Client)
+	if err != nil {
+		logger.Error(err, "Failed to get ramen config")
+
+		return ctrl.Result{}, err
+	}
+
+	defaultCephFSCSIDriverName := cephFSCSIDriverNameOrDefault(ramenConfig)
+
+	logger.Info("Run ReplicationGroupDestination state machine", "DefaultCephFSCSIDriverName", defaultCephFSCSIDriverName)
+	result, err := statemachine.Run(
+		ctx,
+		cephfscg.NewRGDMachine(r.Client, rgd,
+			volsync.NewVSHandler(ctx, r.Client, logger, rgd,
+				&ramendrv1alpha1.VRGAsyncSpec{
+					VolumeSnapshotClassSelector: rgd.Spec.VolumeSnapshotClassSelector,
+				}, defaultCephFSCSIDriverName, volSyncDestinationCopyMethodOrDefault(ramenConfig), false,
+			),
+			logger,
+		),
+		logger,
+	)
+	// Update instance status
+	statusErr := r.Client.Status().Update(ctx, rgd)
+
+	if err == nil { // Don't mask previous error
+		err = statusErr
+	}
+
+	if err != nil {
+		logger.Error(err, "Failed to reconcile ReplicationGroupDestination")
+	}
+
+	return result, err
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (r *ReplicationGroupDestinationReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		WithOptions(ctrlcontroller.Options{
+			MaxConcurrentReconciles: getMaxConcurrentReconciles(ctrl.Log),
+		}).
+		Owns(&volsyncv1alpha1.ReplicationDestination{}).
+		For(&ramendrv1alpha1.ReplicationGroupDestination{}).
+		Complete(r)
+}

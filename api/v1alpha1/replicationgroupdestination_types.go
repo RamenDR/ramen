@@ -20,7 +20,7 @@ type ReplicationGroupDestinationSpec struct {
 }
 
 // ReplicationGroupDestinationStatus defines the observed state of ReplicationGroupDestination
-type ReplicationDestinationStatus struct {
+type ReplicationGroupDestinationStatus struct {
 	// lastSyncTime is the time of the most recent successful synchronization.
 	//+optional
 	LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty"`
@@ -39,7 +39,7 @@ type ReplicationDestinationStatus struct {
 	// latestImage in the object holding the most recent consistent replicated
 	// image.
 	//+optional
-	LatestImages []*corev1.TypedLocalObjectReference `json:"latestImage,omitempty"`
+	LatestImages map[string]*corev1.TypedLocalObjectReference `json:"latestImage,omitempty"`
 
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
@@ -54,8 +54,8 @@ type ReplicationGroupDestination struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ReplicationGroupDestinationSpec `json:"spec,omitempty"`
-	Status *ReplicationDestinationStatus   `json:"status,omitempty"`
+	Spec   ReplicationGroupDestinationSpec    `json:"spec,omitempty"`
+	Status *ReplicationGroupDestinationStatus `json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true
