@@ -136,6 +136,7 @@ rules:
   verbs:
   - create
   - delete
+  - deletecollection
   - get
   - list
   - patch
@@ -164,6 +165,18 @@ rules:
   - ""
   resources:
   - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - groupsnapshot.storage.k8s.io
+  resources:
+  - volumegroupsnapshots
   verbs:
   - create
   - delete
@@ -323,6 +336,58 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
+  - replicationgroupdestinations
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - replicationgroupdestinations/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - replicationgroupdestinations/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - replicationgroupsources
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - replicationgroupsources/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - replicationgroupsources/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
   - volumereplicationgroups
   verbs:
   - create
@@ -380,6 +445,7 @@ rules:
   - volumesnapshots
   verbs:
   - delete
+  - deletecollection
   - get
   - list
   - update

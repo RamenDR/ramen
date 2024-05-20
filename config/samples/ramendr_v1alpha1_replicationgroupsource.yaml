@@ -1,0 +1,12 @@
+apiVersion: ramendr.openshift.io/v1alpha1
+kind: ReplicationGroupSource
+metadata:
+  labels:
+    app.kubernetes.io/name: replicationgroupsource
+    app.kubernetes.io/instance: replicationgroupsource-sample
+    app.kubernetes.io/part-of: ramen
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: ramen
+  name: replicationgroupsource-sample
+spec:
+  # TODO(user): Add fields here
