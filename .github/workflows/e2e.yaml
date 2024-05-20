@@ -65,7 +65,7 @@ jobs:
 
     - name: Run e2e tests
       run: |
-        cp ~/.config/drenv/${{ env.NAME_PREFIX }}rdr/config.yaml e2e/config.yaml
+        cat ~/.config/drenv/${{ env.NAME_PREFIX }}rdr/config.yaml >> e2e/config.yaml
         make e2e-rdr
 
     - name: Delete clusters
