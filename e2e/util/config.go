@@ -10,17 +10,23 @@ import (
 	"github.com/spf13/viper"
 )
 
+type PVCSpec struct {
+	StorageClassName string
+	AccessModes      string
+}
 type TestConfig struct {
 	ChannelName      string
 	ChannelNamespace string
 	GitURL           string
 	Clusters         map[string]struct {
-		KubeconfigPath string `mapstructure:"kubeconfigpath" required:"true"`
-	} `mapstructure:"clusters" required:"true"`
+		KubeconfigPath string
+	}
+	PVCSpecs []PVCSpec
 }
 
 var config = &TestConfig{}
 
+//nolint:cyclop
 func ReadConfig(log *logr.Logger, configFile string) error {
 	viper.SetDefault("ChannelName", defaultChannelName)
 	viper.SetDefault("ChannelNamespace", defaultChannelNamespace)
@@ -66,6 +72,10 @@ func ReadConfig(log *logr.Logger, configFile string) error {
 		return fmt.Errorf("failed to find c2 cluster in configuration")
 	}
 
+	if len(config.PVCSpecs) == 0 {
+		return fmt.Errorf("failed to find pvcs in configuration")
+	}
+
 	return nil
 }
 
@@ -79,4 +89,8 @@ func GetChannelNamespace() string {
 
 func GetGitURL() string {
 	return config.GitURL
+}
+
+func GetPVCSpecs() []PVCSpec {
+	return config.PVCSpecs
 }
