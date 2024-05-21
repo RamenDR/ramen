@@ -27,7 +27,7 @@ var _ = Describe("Secrets_Util", func() {
 		secretNames = [secretsCount]string{
 			"secreta",
 			"secretb",
-			"0123456789012345678901234567890123456789012345678900000", // 55 chars
+			"012345678901234567890123456789012345678901234567890000", // 54 chars
 		}
 		clusterNames                          = [clustersCount]string{"clusterEast", "clusterWest"}
 		policyName, plBindingName, plRuleName [secretsCount]string
@@ -37,7 +37,9 @@ var _ = Describe("Secrets_Util", func() {
 
 	BeforeEach(func() {
 		for idx := range secretNames {
-			policyName[idx], plBindingName[idx], plRuleName[idx], _ = util.GeneratePolicyResourceNames(secretNames[idx])
+			policyName[idx], plBindingName[idx], plRuleName[idx], _ = util.GeneratePolicyResourceNames(
+				secretNames[idx],
+				util.SecretFormatRamen)
 			secrets[idx] = &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      secretNames[idx],
@@ -183,10 +185,11 @@ var _ = Describe("Secrets_Util", func() {
 		When("Secret namespace.name length exceeds limits (> 63 characters)", func() {
 			It("Returns an error", func() {
 				Expect(secretsUtil.AddSecretToCluster(
-					secretNames[2]+"00000", // 60 chars
+					secretNames[2]+"00000", // 59 chars
 					clusterNames[0],
 					tstNamespace, // "default" 7 chars
-					tstNamespace)).Should(HaveOccurred())
+					tstNamespace,
+					util.SecretFormatRamen, "")).Should(HaveOccurred())
 			})
 			It("Does not create an associated secret policy", func() {
 				Expect(plRuleAbsent(plRuleName[2], tstNamespace)).Should(BeTrue())
@@ -195,10 +198,11 @@ var _ = Describe("Secrets_Util", func() {
 		When("Secret namespace.name length exceeds limits by 1 (", func() {
 			It("Returns an error", func() {
 				Expect(secretsUtil.AddSecretToCluster(
-					secretNames[2]+"0", // 56 chars
+					secretNames[2]+"0", // 55 chars
 					clusterNames[0],
 					tstNamespace, // "default" 7 chars
-					tstNamespace)).Should(HaveOccurred())
+					tstNamespace,
+					util.SecretFormatRamen, "")).Should(HaveOccurred())
 			})
 			It("Does not create an associated secret policy", func() {
 				Expect(plRuleAbsent(plRuleName[2], tstNamespace)).Should(BeTrue())
@@ -213,7 +217,8 @@ var _ = Describe("Secrets_Util", func() {
 					secretNames[2],
 					clusterNames[0],
 					tstNamespace,
-					tstNamespace)).To(Succeed())
+					tstNamespace,
+					util.SecretFormatRamen, "")).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
 				Expect(finalizerPresent(secretNames[2])).Should(BeTrue())
@@ -229,7 +234,8 @@ var _ = Describe("Secrets_Util", func() {
 					secretNames[0],
 					clusterNames[0],
 					tstNamespace,
-					tstNamespace)).Should(HaveOccurred())
+					tstNamespace,
+					util.SecretFormatRamen, "")).Should(HaveOccurred())
 			})
 			It("Does not create an associated secret policy", func() {
 				Expect(plRuleAbsent(plRuleName[0], tstNamespace)).Should(BeTrue())
@@ -244,7 +250,8 @@ var _ = Describe("Secrets_Util", func() {
 					secretNames[0],
 					clusterNames[0],
 					tstNamespace,
-					tstNamespace)).To(Succeed())
+					tstNamespace,
+					util.SecretFormatRamen, "")).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
 				Expect(finalizerPresent(secretNames[0])).Should(BeTrue())
@@ -263,7 +270,8 @@ var _ = Describe("Secrets_Util", func() {
 					secretNames[0],
 					clusterNames[0],
 					tstNamespace,
-					tstNamespace)).Should(HaveOccurred())
+					tstNamespace,
+					util.SecretFormatRamen, "")).Should(HaveOccurred())
 			})
 			It("No longer protects the secret with a finalizer", func() {
 				By("Ensuring secret is deleted")
@@ -282,7 +290,8 @@ var _ = Describe("Secrets_Util", func() {
 					secretNames[0],
 					clusterNames[0],
 					tstNamespace,
-					tstNamespace)).To(Succeed())
+					tstNamespace,
+					util.SecretFormatRamen, "")).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
 				Expect(finalizerPresent(secretNames[0])).Should(BeTrue())
@@ -301,7 +310,8 @@ var _ = Describe("Secrets_Util", func() {
 					secretNames[0],
 					clusterNames[0],
 					tstNamespace,
-					tstNamespace)).To(Succeed())
+					tstNamespace,
+					util.SecretFormatRamen, "")).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
 				Expect(finalizerPresent(secretNames[0])).Should(BeTrue())
@@ -317,7 +327,8 @@ var _ = Describe("Secrets_Util", func() {
 					secretNames[0],
 					clusterNames[1],
 					tstNamespace,
-					tstNamespace)).To(Succeed())
+					tstNamespace,
+					util.SecretFormatRamen, "")).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
 				Expect(finalizerPresent(secretNames[0])).Should(BeTrue())
@@ -337,7 +348,8 @@ var _ = Describe("Secrets_Util", func() {
 					secretNames[1],
 					clusterNames[0],
 					tstNamespace,
-					tstNamespace)).To(Succeed())
+					tstNamespace,
+					util.SecretFormatRamen, "")).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
 				Expect(finalizerPresent(secretNames[1])).Should(BeTrue())
@@ -358,7 +370,8 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(secretsUtil.RemoveSecretFromCluster(
 					secretNames[2],
 					clusterNames[0],
-					tstNamespace)).To(Succeed())
+					tstNamespace,
+					util.SecretFormatRamen)).To(Succeed())
 			})
 			It("No longer protects the secret with a finalizer", func() {
 				Expect(finalizerAbsent(secretNames[2])).To(BeTrue())
@@ -381,7 +394,8 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(secretsUtil.RemoveSecretFromCluster(
 					secretNames[0],
 					clusterNames[0],
-					tstNamespace)).To(Succeed())
+					tstNamespace,
+					util.SecretFormatRamen)).To(Succeed())
 			})
 			It("Continues protecting the secret with a finalizer", func() {
 				Expect(finalizerPresent(secretNames[0])).Should(BeTrue())
@@ -396,7 +410,8 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(secretsUtil.RemoveSecretFromCluster(
 					secretNames[0],
 					clusterNames[0],
-					tstNamespace)).To(Succeed())
+					tstNamespace,
+					util.SecretFormatRamen)).To(Succeed())
 			})
 			It("Continues protecting the secret with a finalizer", func() {
 				Expect(finalizerPresent(secretNames[0])).Should(BeTrue())
@@ -411,7 +426,8 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(secretsUtil.RemoveSecretFromCluster(
 					secretNames[0],
 					clusterNames[1],
-					tstNamespace)).To(Succeed())
+					tstNamespace,
+					util.SecretFormatRamen)).To(Succeed())
 			})
 			It("No longer protects the secret with a finalizer", func() {
 				Expect(finalizerAbsent(secretNames[0])).To(BeTrue())
@@ -425,7 +441,8 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(secretsUtil.RemoveSecretFromCluster(
 					secretNames[0],
 					clusterNames[1],
-					tstNamespace)).To(Succeed())
+					tstNamespace,
+					util.SecretFormatRamen)).To(Succeed())
 			})
 			It("No longer protects the secret with a finalizer", func() {
 				Expect(finalizerAbsent(secretNames[0])).To(BeTrue())
@@ -445,7 +462,8 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(secretsUtil.RemoveSecretFromCluster(
 					secretNames[0]+"-missing",
 					clusterNames[1],
-					tstNamespace)).To(Succeed())
+					tstNamespace,
+					util.SecretFormatRamen)).To(Succeed())
 			})
 			It("Does not create the associated policy for the secret", func() {
 				Expect(plRuleAbsent(plRuleName[0]+"-missing", tstNamespace)).Should(BeTrue())
@@ -460,7 +478,8 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(secretsUtil.RemoveSecretFromCluster(
 					secretNames[1],
 					clusterNames[1],
-					tstNamespace)).To(Succeed())
+					tstNamespace,
+					util.SecretFormatRamen)).To(Succeed())
 			})
 			It("No longer protects the secret with a finalizer", func() {
 				By("Ensuring secret is deleted")
