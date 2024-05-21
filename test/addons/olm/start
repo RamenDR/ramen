@@ -8,9 +8,8 @@ import sys
 
 import drenv
 from drenv import kubectl
+from drenv import cache
 
-VERSION = "v0.22.0"
-BASE_URL = f"https://github.com/operator-framework/operator-lifecycle-manager/releases/download/{VERSION}"
 NAMESPACE = "olm"
 
 
@@ -21,21 +20,22 @@ def deploy(cluster):
     #   The CustomResourceDefinition "clusterserviceversions.operators.coreos.com"
     #   is invalid: metadata.annotations: Too long: must have at most 262144 bytes
     # See https://medium.com/pareture/kubectl-install-crd-failed-annotations-too-long-2ebc91b40c7d
-    kubectl.apply(
-        f"--filename={BASE_URL}/crds.yaml",
-        "--server-side=true",
-        context=cluster,
-    )
+    path = cache.path("addons/olm-crds.yaml")
+    cache.fetch("crds", path)
+    kubectl.apply("--filename", path, "--server-side=true", context=cluster)
 
     print("Waiting until cdrs are established")
     kubectl.wait(
         "--for=condition=established",
-        f"--filename={BASE_URL}/crds.yaml",
+        "--filename",
+        path,
         context=cluster,
     )
 
     print("Deploying olm")
-    kubectl.apply("--filename", f"{BASE_URL}/olm.yaml", context=cluster)
+    path = cache.path("addons/olm-operators.yaml")
+    cache.fetch("operators", path)
+    kubectl.apply("--filename", path, context=cluster)
 
 
 def wait(cluster):

@@ -27,8 +27,7 @@ environment.
    sudo dnf install https://storage.googleapis.com/minikube/releases/latest/minikube-latest.x86_64.rpm
    ```
 
-   You need `minikube` version supporting the `--extra-disks` option.
-   Tested with version v1.33.0.
+   Tested with version v1.33.1.
 
 1. Install the `kubectl` tool. See
    [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
@@ -652,6 +651,7 @@ simpler and faster to work with a minimal environment.
 - `kubevirt.yaml` - for testing kubevirt and cdi addons
 - `minio.yaml` - for testing `minio` deployment
 - `ocm.yaml` - for testing `ocm` deployment
+- `olm.yaml` - for testing `olm` deployment
 - `rook.yaml` - for testing `rook` deployment
 - `submariner.yaml` - for testing `submariner` deployment
 - `velero.yaml` - for testing `velero` deployment
