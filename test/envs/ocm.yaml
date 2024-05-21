@@ -5,6 +5,10 @@
 ---
 name: "ocm"
 
+ramen:
+  hub: hub
+  clusters: [dr1, dr2]
+
 templates:
   - name: "hub-cluster"
     driver: "$vm"
