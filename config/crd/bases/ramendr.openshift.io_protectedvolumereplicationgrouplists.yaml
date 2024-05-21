@@ -120,6 +120,32 @@ spec:
                           description: VRGAsyncSpec has the parameters associated
                             with RegionalDR
                           properties:
+                            peerClasses:
+                              description: |-
+                                PeerClasses is a list of common StorageClasses across the clusters in a policy that have related
+                                sync relationships. This is ONLY modified post creation, if the workload that is protected
+                                creates a PVC using a newer StorageClass that is determined to be common across the peers.
+                              items:
+                                properties:
+                                  replicationID:
+                                    description: |-
+                                      ReplicationID is the common value for the label "ramendr.openshift.io/replicationID" on the corresponding
+                                      VolumeReplicationClass or VolumeGroupReplicationClass on each peer for the matched StorageClassName.
+                                    type: string
+                                  storageClassName:
+                                    description: StorageClassName is the name of a
+                                      StorageClass that is available across the peers
+                                    type: string
+                                  storageID:
+                                    description: |-
+                                      StorageID is the collection of values for the label "ramendr.openshift.io/storageID" on the corresponding
+                                      StorageClassName across the peers. It is singleton if the storage instance is shared across the peers,
+                                      and distict if storage instances are different.
+                                    items:
+                                      type: string
+                                    type: array
+                                type: object
+                              type: array
                             replicationClassSelector:
                               description: |-
                                 Label selector to identify the VolumeReplicationClass resources
@@ -422,7 +448,34 @@ spec:
                           type: array
                         sync:
                           description: VRGSyncSpec has the parameters associated with
-                            MetroDR
+                            VE
+                          properties:
+                            peerClasses:
+                              description: |-
+                                PeerClasses is a list of common StorageClasses across the clusters in a policy that have related
+                                async relationships. This is ONLY modified post creation, if the workload that is protected
+                                creates a PVC using a newer StorageClass that is determined to be common across the peers.
+                              items:
+                                properties:
+                                  replicationID:
+                                    description: |-
+                                      ReplicationID is the common value for the label "ramendr.openshift.io/replicationID" on the corresponding
+                                      VolumeReplicationClass or VolumeGroupReplicationClass on each peer for the matched StorageClassName.
+                                    type: string
+                                  storageClassName:
+                                    description: StorageClassName is the name of a
+                                      StorageClass that is available across the peers
+                                    type: string
+                                  storageID:
+                                    description: |-
+                                      StorageID is the collection of values for the label "ramendr.openshift.io/storageID" on the corresponding
+                                      StorageClassName across the peers. It is singleton if the storage instance is shared across the peers,
+                                      and distict if storage instances are different.
+                                    items:
+                                      type: string
+                                    type: array
+                                type: object
+                              type: array
                           type: object
                         volSync:
                           description: volsync defines the configuration when using
