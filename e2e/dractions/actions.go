@@ -73,6 +73,10 @@ func EnableProtection(w workloads.Workload, d deployers.Deployer) error {
 		return err
 	}
 
+	if err := util.CreateNamespaceAndAddAnnotation(namespace); err != nil {
+		return err
+	}
+
 	return waitDRPCReady(util.Ctx.Hub.CtrlClient, namespace, drpcName)
 }
 
