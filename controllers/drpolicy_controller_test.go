@@ -125,7 +125,7 @@ var _ = Describe("DRPolicyController", func() {
 
 		// Range through secrets in drpolicies name and ensure cluster list is the same
 		for secretName, clusterList := range drPoliciesAndSecrets[policyCombinationName] {
-			_, _, plRuleName, _ := util.GeneratePolicyResourceNames(secretName)
+			_, _, plRuleName, _ := util.GeneratePolicyResourceNames(secretName, util.SecretFormatRamen)
 
 			Eventually(func() (clusterNames []string) {
 				plRules = getPlRuleForSecrets()
