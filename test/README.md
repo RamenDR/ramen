@@ -487,6 +487,8 @@ $ drenv delete envs/example.yaml
     - `hub`: the context of hub cluster, null if there is no hub
     - `clusters`: list of managed clusters contexts
     - `topology`: either "regional-dr" or "metro-dr"
+    - `distribution`: kubernetes distribution name. Use "k8s" for minikube
+      clusters, "ocp" for OpenShift clusters.
     - `features`: featrues provided by this environment
         - `volsync`: true if volsync is available
 
