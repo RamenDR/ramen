@@ -62,10 +62,22 @@ type VRGAsyncSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Pattern=`^\d+[mhd]$`
 	SchedulingInterval string `json:"schedulingInterval"`
+
+	// PeerClasses is a list of common StorageClasses across the clusters in a policy that have related
+	// sync relationships. This is ONLY modified post creation, if the workload that is protected
+	// creates a PVC using a newer StorageClass that is determined to be common across the peers.
+	//+optional
+	PeerClasses []PeerClass `json:"peerClasses,omitempty"`
 }
 
-// VRGSyncSpec has the parameters associated with MetroDR
-type VRGSyncSpec struct{}
+// VRGSyncSpec has the parameters associated with VE
+type VRGSyncSpec struct {
+	// PeerClasses is a list of common StorageClasses across the clusters in a policy that have related
+	// async relationships. This is ONLY modified post creation, if the workload that is protected
+	// creates a PVC using a newer StorageClass that is determined to be common across the peers.
+	//+optional
+	PeerClasses []PeerClass `json:"peerClasses,omitempty"`
+}
 
 // VolSyncReplicationDestinationSpec defines the configuration for the VolSync
 // protected PVC to be used by the destination cluster (Secondary)

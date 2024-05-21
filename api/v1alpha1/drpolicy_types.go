@@ -54,6 +54,49 @@ type DRPolicySpec struct {
 // DRPolicyStatus defines the observed state of DRPolicy
 type DRPolicyStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// DRPolicyStatus.Async contains the status of observed
+	// async replication details between the clusters in the policy
+	//+optional
+	Async Async `json:"async,omitempty"`
+
+	// DRPolicyStatus.Sync contains the status of observed
+	// sync replication details between the clusters in the policy
+	//+optional
+	Sync Sync `json:"sync,omitempty"`
+}
+
+// for RDR
+type Async struct {
+	// PeerClasses is a list of common StorageClasses across the clusters in a policy
+	// that have related async relationships. (one per pair of peers in the policy)
+	//+optional
+	PeerClasses []PeerClass `json:"peerClasses,omitempty"`
+}
+
+// for MetroDR
+type Sync struct {
+	// PeerClasses is a list of common StorageClasses across the clusters in a policy
+	// that have related sync relationships. (one per pair of peers in the policy)
+	//+optional
+	PeerClasses []PeerClass `json:"peerClasses,omitempty"`
+}
+
+type PeerClass struct {
+	// ReplicationID is the common value for the label "ramendr.openshift.io/replicationID" on the corresponding
+	// VolumeReplicationClass or VolumeGroupReplicationClass on each peer for the matched StorageClassName.
+	//+optional
+	ReplicationID string `json:"replicationID,omitempty"`
+
+	// StorageID is the collection of values for the label "ramendr.openshift.io/storageID" on the corresponding
+	// StorageClassName across the peers. It is singleton if the storage instance is shared across the peers,
+	// and distict if storage instances are different.
+	//+optional
+	StorageID []string `json:"storageID,omitempty"`
+
+	// StorageClassName is the name of a StorageClass that is available across the peers
+	//+optional
+	StorageClassName string `json:"storageClassName,omitempty"`
 }
 
 const (

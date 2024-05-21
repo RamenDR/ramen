@@ -222,6 +222,37 @@ spec:
           status:
             description: DRPolicyStatus defines the observed state of DRPolicy
             properties:
+              async:
+                description: |-
+                  DRPolicyStatus.Async contains the status of observed
+                  async replication details between the clusters in the policy
+                properties:
+                  peerClasses:
+                    description: |-
+                      PeerClasses is a list of common StorageClasses across the clusters in a policy
+                      that have related async relationships. (one per pair of peers in the policy)
+                    items:
+                      properties:
+                        replicationID:
+                          description: |-
+                            ReplicationID is the common value for the label "ramendr.openshift.io/replicationID" on the corresponding
+                            VolumeReplicationClass or VolumeGroupReplicationClass on each peer for the matched StorageClassName.
+                          type: string
+                        storageClassName:
+                          description: StorageClassName is the name of a StorageClass
+                            that is available across the peers
+                          type: string
+                        storageID:
+                          description: |-
+                            StorageID is the collection of values for the label "ramendr.openshift.io/storageID" on the corresponding
+                            StorageClassName across the peers. It is singleton if the storage instance is shared across the peers,
+                            and distict if storage instances are different.
+                          items:
+                            type: string
+                          type: array
+                      type: object
+                    type: array
+                type: object
               conditions:
                 items:
                   description: "Condition contains details for one aspect of the current
@@ -291,6 +322,37 @@ spec:
                   - type
                   type: object
                 type: array
+              sync:
+                description: |-
+                  DRPolicyStatus.Sync contains the status of observed
+                  sync replication details between the clusters in the policy
+                properties:
+                  peerClasses:
+                    description: |-
+                      PeerClasses is a list of common StorageClasses across the clusters in a policy
+                      that have related sync relationships. (one per pair of peers in the policy)
+                    items:
+                      properties:
+                        replicationID:
+                          description: |-
+                            ReplicationID is the common value for the label "ramendr.openshift.io/replicationID" on the corresponding
+                            VolumeReplicationClass or VolumeGroupReplicationClass on each peer for the matched StorageClassName.
+                          type: string
+                        storageClassName:
+                          description: StorageClassName is the name of a StorageClass
+                            that is available across the peers
+                          type: string
+                        storageID:
+                          description: |-
+                            StorageID is the collection of values for the label "ramendr.openshift.io/storageID" on the corresponding
+                            StorageClassName across the peers. It is singleton if the storage instance is shared across the peers,
+                            and distict if storage instances are different.
+                          items:
+                            type: string
+                          type: array
+                      type: object
+                    type: array
+                type: object
             type: object
         type: object
     served: true
