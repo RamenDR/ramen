@@ -1330,7 +1330,7 @@ func (u *drclusterInstance) createNFManifestWork(targetCluster *ramen.DRCluster,
 	annotations[DRClusterNameAnnotation] = u.object.Name
 
 	if err := u.mwUtil.CreateOrUpdateNFManifestWork(
-		u.object.Name, u.object.Namespace,
+		u.object.Name,
 		peerCluster.Name, nf, annotations); err != nil {
 		log.Error(err, "failed to create or update NetworkFence manifest")
 
