@@ -56,10 +56,16 @@ type VRGAsyncSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Pattern=`^\d+[mhd]$`
 	SchedulingInterval string `json:"schedulingInterval"`
+
+	//+optional
+	PeerClasses []PeerClass `json:"peerClasses,omitempty"`
 }
 
 // VRGSyncSpec has the parameters associated with MetroDR
-type VRGSyncSpec struct{}
+type VRGSyncSpec struct {
+	//+optional
+	PeerClasses []PeerClass `json:"peerClasses,omitempty"`
+}
 
 // VolSyncReplicationDestinationSpec defines the configuration for the VolSync
 // protected PVC to be used by the destination cluster (Secondary)
@@ -67,6 +73,17 @@ type VolSyncReplicationDestinationSpec struct {
 	// protectedPVC contains the information about the PVC to be protected by VolSync
 	//+optional
 	ProtectedPVC ProtectedPVC `json:"protectedPVC,omitempty"`
+}
+
+type PeerClass struct {
+	//+optional
+	ReplicationID string `json:"replicationID,omitempty"`
+
+	//+optional
+	StorageID []string `json:"storageID,omitempty"`
+
+	//+optional
+	StorageClassName *string `json:"storageClassName,omitempty"`
 }
 
 // VolSyncReplicationSourceSpec defines the configuration for the VolSync
