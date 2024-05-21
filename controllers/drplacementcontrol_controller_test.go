@@ -2835,6 +2835,7 @@ func removeRamenFinalizersFromObject(obj client.Object) {
 	ramenFinalizers := []string{
 		controllers.DRPCFinalizer,
 		rmnutil.SecretPolicyFinalizer,
+		rmnutil.SecretPolicyFinalizer + "-" + string(rmnutil.SecretFormatVelero),
 	}
 
 	objFinalizers := obj.GetFinalizers()
