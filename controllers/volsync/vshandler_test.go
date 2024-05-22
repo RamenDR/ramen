@@ -87,7 +87,7 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 			var vsHandler *volsync.VSHandler
 
 			BeforeEach(func() {
-				vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, nil, asyncSpec, "none", "Snapshot")
+				vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, nil, asyncSpec, "none", "Snapshot", false)
 			})
 
 			It("GetVolumeSnapshotClasses() should find all volume snapshot classes", func() {
@@ -116,7 +116,7 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 					},
 				}
 
-				vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, nil, asyncSpec, "none", "Snapshot")
+				vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, nil, asyncSpec, "none", "Snapshot", false)
 			})
 
 			It("GetVolumeSnapshotClasses() should find matching volume snapshot classes", func() {
@@ -159,7 +159,7 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 					},
 				}
 
-				vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, nil, asyncSpec, "none", "Snapshot")
+				vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, nil, asyncSpec, "none", "Snapshot", false)
 			})
 
 			It("GetVolumeSnapshotClasses() should find matching volume snapshot classes", func() {
@@ -216,7 +216,7 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 
 			// Initialize a vshandler
 			vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, nil, asyncSpec,
-				"openshift-storage.cephfs.csi.ceph.com", "Snapshot")
+				"openshift-storage.cephfs.csi.ceph.com", "Snapshot", false)
 		})
 
 		JustBeforeEach(func() {
@@ -431,7 +431,7 @@ var _ = Describe("VolSync_Handler", func() {
 		Expect(ownerCm.GetName()).NotTo(BeEmpty())
 		owner = ownerCm
 
-		vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, owner, asyncSpec, "none", "Snapshot")
+		vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, owner, asyncSpec, "none", "Snapshot", false)
 	})
 
 	AfterEach(func() {
@@ -465,6 +465,7 @@ var _ = Describe("VolSync_Handler", func() {
 				JustBeforeEach(func() {
 					// Run ReconcileRD
 					var err error
+					rdSpec.ProtectedPVC.Namespace = testNamespace.GetName()
 					returnedRD, err = vsHandler.ReconcileRD(rdSpec)
 					Expect(err).ToNot(HaveOccurred())
 				})
@@ -483,6 +484,7 @@ var _ = Describe("VolSync_Handler", func() {
 			Context("When the psk secret for volsync exists (will be pushed down by drpc from hub", func() {
 				var dummyPSKSecret *corev1.Secret
 				JustBeforeEach(func() {
+					rdSpec.ProtectedPVC.Namespace = testNamespace.GetName()
 					// Create a dummy volsync psk secret so the reconcile can proceed properly
 					dummyPSKSecret = &corev1.Secret{
 						ObjectMeta: metav1.ObjectMeta{
@@ -653,7 +655,8 @@ var _ = Describe("VolSync_Handler", func() {
 				var vsHandler *volsync.VSHandler
 
 				BeforeEach(func() {
-					vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, owner, asyncSpec, "none", "Direct")
+					rdSpec.ProtectedPVC.Namespace = testNamespace.GetName()
+					vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, owner, asyncSpec, "none", "Direct", false)
 				})
 
 				It("PrecreateDestPVCIfEnabled() should return CopyMethod Snapshot and App PVC name", func() {
@@ -703,6 +706,7 @@ var _ = Describe("VolSync_Handler", func() {
 					// Run ReconcileRD
 					var err error
 					var finalSyncCompl bool
+					rsSpec.ProtectedPVC.Namespace = testNamespace.GetName()
 					finalSyncCompl, returnedRS, err = vsHandler.ReconcileRS(rsSpec, false)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(finalSyncCompl).To(BeFalse())
@@ -722,6 +726,7 @@ var _ = Describe("VolSync_Handler", func() {
 			Context("When the psk secret for volsync exists (will be pushed down by drpc from hub", func() {
 				var dummyPSKSecret *corev1.Secret
 				JustBeforeEach(func() {
+					rsSpec.ProtectedPVC.Namespace = testNamespace.GetName()
 					// Create a dummy volsync psk secret so the reconcile can proceed properly
 					dummyPSKSecret = &corev1.Secret{
 						ObjectMeta: metav1.ObjectMeta{
@@ -1102,6 +1107,7 @@ var _ = Describe("VolSync_Handler", func() {
 			rdSpec = ramendrv1alpha1.VolSyncReplicationDestinationSpec{
 				ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 					Name:               pvcName,
+					Namespace:          testNamespace.GetName(),
 					ProtectedByVolSync: true,
 					StorageClassName:   &testStorageClassName,
 					Resources: corev1.VolumeResourceRequirements{
@@ -1438,6 +1444,7 @@ var _ = Describe("VolSync_Handler", func() {
 				rdSpec := ramendrv1alpha1.VolSyncReplicationDestinationSpec{
 					ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 						Name:               pvcNamePrefix + strconv.Itoa(i),
+						Namespace:          testNamespace.GetName(),
 						ProtectedByVolSync: true,
 						StorageClassName:   &testStorageClassName,
 						Resources: corev1.VolumeResourceRequirements{
@@ -1461,12 +1468,13 @@ var _ = Describe("VolSync_Handler", func() {
 			Expect(k8sClient.Create(ctx, otherOwnerCm)).To(Succeed())
 			Expect(otherOwnerCm.GetName()).NotTo(BeEmpty())
 			otherVSHandler := volsync.NewVSHandler(ctx, k8sClient, logger, otherOwnerCm, asyncSpec,
-				"none", "Snapshot")
+				"none", "Snapshot", false)
 
 			for i := 0; i < 2; i++ {
 				otherOwnerRdSpec := ramendrv1alpha1.VolSyncReplicationDestinationSpec{
 					ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 						Name:               pvcNamePrefixOtherOwner + strconv.Itoa(i),
+						Namespace:          testNamespace.GetName(),
 						ProtectedByVolSync: true,
 						StorageClassName:   &testStorageClassName,
 						Resources: corev1.VolumeResourceRequirements{
@@ -1632,6 +1640,7 @@ var _ = Describe("VolSync_Handler", func() {
 				rsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
 					ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 						Name:               pvcNamePrefix + strconv.Itoa(i),
+						Namespace:          testNamespace.GetName(),
 						ProtectedByVolSync: true,
 						StorageClassName:   &testStorageClassName,
 					},
@@ -1651,12 +1660,13 @@ var _ = Describe("VolSync_Handler", func() {
 			Expect(k8sClient.Create(ctx, otherOwnerCm)).To(Succeed())
 			Expect(otherOwnerCm.GetName()).NotTo(BeEmpty())
 			otherVSHandler := volsync.NewVSHandler(ctx, k8sClient, logger, otherOwnerCm, asyncSpec,
-				"none", "Snapshot")
+				"none", "Snapshot", false)
 
 			for i := 0; i < 2; i++ {
 				otherOwnerRsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
 					ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 						Name:               pvcNamePrefixOtherOwner + strconv.Itoa(i),
+						Namespace:          testNamespace.GetName(),
 						ProtectedByVolSync: true,
 						StorageClassName:   &testStorageClassName,
 					},
@@ -1764,7 +1774,11 @@ var _ = Describe("VolSync_Handler", func() {
 	Describe("Prepare PVC for final sync", func() {
 		Context("When the PVC does not exist", func() {
 			It("Should assume preparationForFinalSync is complete", func() {
-				pvcPreparationComplete, err := vsHandler.TakePVCOwnership("this-pvc-does-not-exist")
+				pvcNamespacedName := types.NamespacedName{
+					Name:      "this-pvc-does-not-exist",
+					Namespace: testNamespace.GetName(),
+				}
+				pvcPreparationComplete, err := vsHandler.TakePVCOwnership(pvcNamespacedName)
 				Expect(err).To(HaveOccurred())
 				Expect(kerrors.IsNotFound(err)).To(BeTrue())
 				Expect(pvcPreparationComplete).To(BeFalse())
@@ -1791,7 +1805,12 @@ var _ = Describe("VolSync_Handler", func() {
 			var pvcPreparationErr error
 
 			JustBeforeEach(func() {
-				pvcPreparationComplete, pvcPreparationErr = vsHandler.TakePVCOwnership(testPVC.GetName())
+				pvcNamespacedName := types.NamespacedName{
+					Name:      testPVC.GetName(),
+					Namespace: testPVC.GetNamespace(),
+				}
+
+				pvcPreparationComplete, pvcPreparationErr = vsHandler.TakePVCOwnership(pvcNamespacedName)
 
 				// In all cases at this point we should expect that the PVC has ownership taken over by our owner VRG
 				Eventually(func() bool {

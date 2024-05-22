@@ -281,6 +281,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 						{
 							ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 								Name:               "testingpvc-a",
+								Namespace:          testNamespace.GetName(),
 								ProtectedByVolSync: true,
 								StorageClassName:   &storageClassName,
 								AccessModes:        testAccessModes,
@@ -291,6 +292,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 						{
 							ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 								Name:               "testingpvc-b",
+								Namespace:          testNamespace.GetName(),
 								ProtectedByVolSync: true,
 								StorageClassName:   &storageClassName,
 								AccessModes:        testAccessModes,
