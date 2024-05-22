@@ -481,6 +481,15 @@ $ drenv delete envs/example.yaml
 
 ### The environment file format
 
+- `name`: environment name, used for logging
+
+- `ramen`: ramen metadata
+    - `hub`: the context of hub cluster, null if there is no hub
+    - `clusters`: list of managed clusters contexts
+    - `topology`: either "regional-dr" or "metro-dr"
+    - `features`: featrues provided by this environment
+        - `volsync`: true if volsync is available
+
 - `templates`: templates for creating new profiles.
     - `name`: profile name.
     - `external`: true if this is existing external cluster. In this
