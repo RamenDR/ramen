@@ -609,7 +609,10 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 		}
 
 		log1.Error(err, "Kube objects group recover error")
-		cleanup(request)
+
+		if ok {
+			cleanup(request)
+		}
 
 		result.Requeue = true
 
