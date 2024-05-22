@@ -9,20 +9,20 @@ import (
 	"github.com/backube/volsync/controllers/mover"
 	"github.com/backube/volsync/controllers/statemachine"
 	"github.com/go-logr/logr"
-	rmn "github.com/ramendr/ramen/api/v1alpha1"
+	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type replicationGroupSourceMachine struct {
 	client.Client
-	ReplicationGroupSource *rmn.ReplicationGroupSource
+	ReplicationGroupSource *ramendrv1alpha1.ReplicationGroupSource
 	VolumeGroupHandler     VolumeGroupSourceHandler
 	Logger                 logr.Logger
 }
 
 func NewRGSMachine(
 	client client.Client,
-	replicationGroupSource *rmn.ReplicationGroupSource,
+	replicationGroupSource *ramendrv1alpha1.ReplicationGroupSource,
 	volumeGroupHandler VolumeGroupSourceHandler,
 	logger logr.Logger,
 ) statemachine.ReplicationMachine {

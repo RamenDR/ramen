@@ -62,7 +62,7 @@ func (r *ReplicationGroupDestinationReconciler) Reconcile(ctx context.Context, r
 			volsync.NewVSHandler(ctx, r.Client, logger, rgd,
 				&ramendrv1alpha1.VRGAsyncSpec{
 					VolumeSnapshotClassSelector: rgd.Spec.VolumeSnapshotClassSelector,
-				}, defaultCephFSCSIDriverName, volSyncDestinationCopyMethodOrDefault(ramenConfig),
+				}, defaultCephFSCSIDriverName, volSyncDestinationCopyMethodOrDefault(ramenConfig), false,
 			),
 			logger,
 		),

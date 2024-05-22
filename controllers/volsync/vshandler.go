@@ -112,7 +112,7 @@ func (v *VSHandler) ReconcileRD(
 	// Pre-allocated shared secret - DRPC will generate and propagate this secret from hub to clusters
 	pskSecretName := GetVolSyncPSKSecretNameFromVRGName(v.owner.GetName())
 	// Need to confirm this secret exists on the cluster before proceeding, otherwise volsync will generate it
-	secretExists, err := v.validateSecretAndAddVRGOwnerRef(pskSecretName)
+	secretExists, err := v.ValidateSecretAndAddVRGOwnerRef(pskSecretName)
 	if err != nil || !secretExists {
 		return nil, err
 	}
@@ -145,12 +145,12 @@ func (v *VSHandler) ReconcileRD(
 		return nil, err
 	}
 
-	err = v.reconcileServiceExportForRD(rd)
+	err = v.ReconcileServiceExportForRD(rd)
 	if err != nil {
 		return nil, err
 	}
 
-	if !rdStatusReady(rd, l) {
+	if !RDStatusReady(rd, l) {
 		return nil, nil
 	}
 
@@ -163,7 +163,7 @@ func (v *VSHandler) ReconcileRD(
 // For ReplicationDestination - considered ready when a sync has completed
 // - rsync address should be filled out in the status
 // - latest image should be set properly in the status (at least one sync cycle has completed and we have a snapshot)
-func rdStatusReady(rd *volsyncv1alpha1.ReplicationDestination, log logr.Logger) bool {
+func RDStatusReady(rd *volsyncv1alpha1.ReplicationDestination, log logr.Logger) bool {
 	if rd.Status == nil {
 		return false
 	}
@@ -286,7 +286,7 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	pskSecretName := GetVolSyncPSKSecretNameFromVRGName(v.owner.GetName())
 
 	// Need to confirm this secret exists on the cluster before proceeding, otherwise volsync will generate it
-	secretExists, err := v.validateSecretAndAddVRGOwnerRef(pskSecretName)
+	secretExists, err := v.ValidateSecretAndAddVRGOwnerRef(pskSecretName)
 	if err != nil || !secretExists {
 		return false, nil, err
 	}
@@ -614,7 +614,7 @@ func (v *VSHandler) validatePVCAndAddVRGOwnerRef(pvcNamespacedName types.Namespa
 	return pvc, nil
 }
 
-func (v *VSHandler) validateSecretAndAddVRGOwnerRef(secretName string) (bool, error) {
+func (v *VSHandler) ValidateSecretAndAddVRGOwnerRef(secretName string) (bool, error) {
 	secret := &corev1.Secret{}
 
 	err := v.client.Get(v.ctx,
@@ -856,7 +856,7 @@ func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncR
 // Make sure a ServiceExport exists to export the service for this RD to remote clusters
 // See: https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/
 // 2.4/html/services/services-overview#enable-service-discovery-submariner
-func (v *VSHandler) reconcileServiceExportForRD(rd *volsyncv1alpha1.ReplicationDestination) error {
+func (v *VSHandler) ReconcileServiceExportForRD(rd *volsyncv1alpha1.ReplicationDestination) error {
 	// Using unstructured to avoid needing to require serviceexport in client scheme
 	svcExport := &unstructured.Unstructured{}
 	svcExport.Object = map[string]interface{}{
