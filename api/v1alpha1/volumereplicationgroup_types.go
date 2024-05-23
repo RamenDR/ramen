@@ -49,6 +49,12 @@ type VRGAsyncSpec struct {
 	//+optional
 	VolumeSnapshotClassSelector metav1.LabelSelector `json:"volumeSnapshotClassSelector,omitempty"`
 
+	// Label selector to identify the VolumeGroupSnapshotClass resources
+	// that are scanned to select an appropriate VolumeGroupSnapshotClass
+	// for the VolumeGroupSnapshot resource when using VolSync.
+	//+optional
+	VolumeGroupSnapshotClassSelector metav1.LabelSelector `json:"volumeGroupSnapshotClassSelector,omitempty"`
+
 	// scheduling Interval for replicating Persistent Volume
 	// data to a peer cluster. Interval is typically in the
 	// form <num><m,h,d>. Here <num> is a number, 'm' means
@@ -153,7 +159,9 @@ type VolumeReplicationGroupSpec struct {
 	// that needs to be replicated to the peer cluster.
 	PVCSelector metav1.LabelSelector `json:"pvcSelector"`
 
-	CephFSConsistencyGroupSelector metav1.LabelSelector `json:"cephFSCGSelector"`
+	// Label selector to identify the cephfs PVCs that are in a consistency group
+	// nil means no consistency group. metav1.LabelSelector{} means all pvcs in a consistency group
+	CephFSConsistencyGroupSelector *metav1.LabelSelector `json:"cephFSCGSelector,omitempty"`
 
 	// Desired state of all volumes [primary or secondary] in this replication group;
 	// this value is propagated to children VolumeReplication CRs

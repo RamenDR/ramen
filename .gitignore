@@ -48,3 +48,5 @@ ramenctl/build
 # Generated disk images
 *.qcow2
 *.iso
+
+config/crd/bases/_.yaml

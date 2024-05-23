@@ -136,7 +136,6 @@ rules:
   verbs:
   - create
   - delete
-  - deletecollection
   - get
   - list
   - patch
@@ -172,6 +171,22 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - groupsnapshot.storage.k8s.io
+  resources:
+  - volumegroupsnapshotclasses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - groupsnapshot.storage.k8s.io
+  resources:
+  - volumegroupsnapshotcontents
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - groupsnapshot.storage.k8s.io
@@ -445,7 +460,6 @@ rules:
   - volumesnapshots
   verbs:
   - delete
-  - deletecollection
   - get
   - list
   - update

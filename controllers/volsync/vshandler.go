@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
-	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
+	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v7/apis/volumesnapshot/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -944,6 +944,41 @@ func (v *VSHandler) EnsurePVCfromRD(rdSpec ramendrv1alpha1.VolSyncReplicationDes
 	latestImage, err := v.getRDLatestImage(rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
 	if err != nil {
 		return err
+	}
+
+	if !isLatestImageReady(latestImage) {
+		noSnapErr := fmt.Errorf("unable to find LatestImage from ReplicationDestination %s", rdSpec.ProtectedPVC.Name)
+		v.log.Error(noSnapErr, "No latestImage", "rdSpec", rdSpec)
+
+		return noSnapErr
+	}
+
+	// Make copy of the ref and make sure API group is filled out correctly (shouldn't really need this part)
+	vsImageRef := latestImage.DeepCopy()
+	if vsImageRef.APIGroup == nil || *vsImageRef.APIGroup == "" {
+		vsGroup := snapv1.GroupName
+		vsImageRef.APIGroup = &vsGroup
+	}
+
+	v.log.Info("Latest Image for ReplicationDestination", "latestImage", vsImageRef.Name)
+
+	return v.validateSnapshotAndEnsurePVC(rdSpec, *vsImageRef, failoverAction)
+}
+
+func (v *VSHandler) EnsurePVCfromRGD(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec, failoverAction bool,
+) error {
+	rgdList := &ramendrv1alpha1.ReplicationGroupDestinationList{}
+
+	if err := v.listByOwner(rgdList); err != nil {
+		return err
+	}
+
+	var latestImage *corev1.TypedLocalObjectReference
+
+	for _, rgd := range rgdList.Items {
+		if util.GetPVCLatestImageRGD(rdSpec.ProtectedPVC.Name, rgd) != nil {
+			latestImage = util.GetPVCLatestImageRGD(rdSpec.ProtectedPVC.Name, rgd)
+		}
 	}
 
 	if !isLatestImageReady(latestImage) {

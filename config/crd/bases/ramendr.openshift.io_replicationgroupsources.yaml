@@ -14,7 +14,26 @@ spec:
     singular: replicationgroupsource
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - format: date-time
+      jsonPath: .status.lastSyncTime
+      name: Last sync
+      type: string
+    - jsonPath: .status.lastSyncDuration
+      name: Duration
+      type: string
+    - format: date-time
+      jsonPath: .status.nextSyncTime
+      name: Next sync
+      type: string
+    - jsonPath: .spec.volumeGroupSnapshotSource
+      name: Source
+      type: string
+    - format: date-time
+      jsonPath: .status.lastSyncStartTime
+      name: Last sync start
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: ReplicationGroupSource is the Schema for the replicationgroupsources
