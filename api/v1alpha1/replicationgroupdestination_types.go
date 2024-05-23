@@ -48,14 +48,17 @@ type ReplicationGroupDestinationStatus struct {
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Last sync",type="string",format="date-time",JSONPath=`.status.lastSyncTime`
+// +kubebuilder:printcolumn:name="Duration",type="string",JSONPath=`.status.lastSyncDuration`
+// +kubebuilder:printcolumn:name="Last sync start",type="string",format="date-time",JSONPath=`.status.lastSyncStartTime`
 
 // ReplicationGroupDestination is the Schema for the replicationgroupdestinations API
 type ReplicationGroupDestination struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ReplicationGroupDestinationSpec    `json:"spec,omitempty"`
-	Status *ReplicationGroupDestinationStatus `json:"status,omitempty"`
+	Spec   ReplicationGroupDestinationSpec   `json:"spec,omitempty"`
+	Status ReplicationGroupDestinationStatus `json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true

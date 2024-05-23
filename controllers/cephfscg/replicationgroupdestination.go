@@ -10,9 +10,11 @@ import (
 	"github.com/backube/volsync/controllers/statemachine"
 	"github.com/go-logr/logr"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/controllers/util"
 	"github.com/ramendr/ramen/controllers/volsync"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -79,10 +81,9 @@ func (m *rgdMachine) Conditions() *[]metav1.Condition {
 	return &m.ReplicationGroupDestination.Status.Conditions
 }
 
-func (m *rgdMachine) Synchronize(
-	ctx context.Context,
-) (mover.Result, error) {
-	latestImages := make(map[string]*corev1.TypedLocalObjectReference)
+func (m *rgdMachine) Synchronize(ctx context.Context) (mover.Result, error) {
+	createdRDs := []*volsyncv1alpha1.ReplicationDestination{}
+	rds := []*corev1.ObjectReference{}
 
 	for _, rdSpec := range m.ReplicationGroupDestination.Spec.RDSpecs {
 		m.Logger.Info("Create replication destination for PVC", "PVCName", rdSpec.ProtectedPVC.Name)
@@ -92,6 +93,17 @@ func (m *rgdMachine) Synchronize(
 			return mover.InProgress(), fmt.Errorf("failed to create replication destination: %w", err)
 		}
 
+		createdRDs = append(createdRDs, rd)
+		rds = append(
+			rds,
+			&corev1.ObjectReference{APIVersion: rd.APIVersion, Kind: rd.Kind, Name: rd.GetName(), Namespace: rd.GetNamespace()},
+		)
+	}
+
+	m.ReplicationGroupDestination.Status.ReplicationDestinations = rds
+	latestImages := make(map[string]*corev1.TypedLocalObjectReference)
+
+	for _, rd := range createdRDs {
 		m.Logger.Info("Check replication destination is completed", "ReplicationDestinationName", rd.Name)
 
 		if rd.Spec.Trigger.Manual != rd.Status.LastManualSync {
@@ -100,14 +112,24 @@ func (m *rgdMachine) Synchronize(
 			return mover.InProgress(), nil
 		}
 
-		if rd.Status.LatestImage != nil {
-			latestImages[rdSpec.ProtectedPVC.Name] = rd.Status.LatestImage
+		if rd.Status.LatestImage != nil && rd.Spec.RsyncTLS != nil && rd.Spec.RsyncTLS.DestinationPVC != nil {
+			latestImages[*rd.Spec.RsyncTLS.DestinationPVC] = rd.Status.LatestImage
+		}
+
+		if err := util.DeferDeleteImage(
+			ctx, m.Client, rd.Status.LatestImage.Name, rd.Namespace, rd.Spec.Trigger.Manual, rd.Name,
+		); err != nil {
+			return mover.InProgress(), err
 		}
 	}
 
 	m.Logger.Info("Set lastest images to ReplicationGroupDestination", "LenofLastestImages", len(latestImages))
 
 	m.ReplicationGroupDestination.Status.LatestImages = latestImages
+
+	if err := util.CleanExpiredRDImages(ctx, m.Client, m.ReplicationGroupDestination); err != nil {
+		return mover.InProgress(), err
+	}
 
 	return mover.Complete(), nil
 }
@@ -169,7 +191,7 @@ func (m *rgdMachine) CreateReplicationDestinations(
 	volumeSnapshotClassName, err := m.VSHandler.GetVolumeSnapshotClassFromPVCStorageClass(
 		rdSpec.ProtectedPVC.StorageClassName)
 	if err != nil {
-		m.Logger.Error(err, "Failed to GetVolumeSnapshotClassFromPVCStorageClass", "PVCName", rdSpec.ProtectedPVC.Name)
+		m.Logger.Error(err, "Failed to get VolumeSnapshotClass from PVC StorageClass", "PVCName", rdSpec.ProtectedPVC.Name)
 
 		return nil, err
 	}
@@ -186,34 +208,80 @@ func (m *rgdMachine) CreateReplicationDestinations(
 		},
 	}
 
-	if _, err := ctrlutil.CreateOrUpdate(context.Background(), m.Client, rd, func() error {
-		rd.Spec.Trigger = &volsyncv1alpha1.ReplicationDestinationTriggerSpec{
-			Manual: manual,
-		}
-		rd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
-			ServiceType: &volsync.DefaultRsyncServiceType,
-			KeySecret:   &pskSecretName,
-			ReplicationDestinationVolumeOptions: volsyncv1alpha1.ReplicationDestinationVolumeOptions{
-				CopyMethod:              volsyncv1alpha1.CopyMethodSnapshot,
-				Capacity:                rdSpec.ProtectedPVC.Resources.Requests.Storage(),
-				StorageClassName:        rdSpec.ProtectedPVC.StorageClassName,
-				AccessModes:             pvcAccessModes,
-				VolumeSnapshotClassName: &volumeSnapshotClassName,
-				DestinationPVC:          dstPVC,
-			},
-		}
+	if _, err := ctrlutil.CreateOrUpdate(
+		context.Background(), m.Client, rd,
+		func() error {
+			if err := ctrl.SetControllerReference(m.ReplicationGroupDestination, rd, m.Client.Scheme()); err != nil {
+				return err
+			}
 
-		return nil
-	}); err != nil {
-		m.Logger.Error(err, "Failed to CreateOrUpdate ReplicationDestination",
+			util.AddLabel(rd, util.RGDOwnerLabel, m.ReplicationGroupDestination.Name)
+			util.AddAnnotation(rd, volsync.OwnerNameAnnotation, m.ReplicationGroupDestination.Name)
+			util.AddAnnotation(rd, volsync.OwnerNamespaceAnnotation, m.ReplicationGroupDestination.Namespace)
+
+			rd.Spec.Trigger = &volsyncv1alpha1.ReplicationDestinationTriggerSpec{
+				Manual: manual,
+			}
+			rd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
+				ServiceType: &volsync.DefaultRsyncServiceType,
+				KeySecret:   &pskSecretName,
+				ReplicationDestinationVolumeOptions: volsyncv1alpha1.ReplicationDestinationVolumeOptions{
+					CopyMethod:              volsyncv1alpha1.CopyMethodSnapshot,
+					Capacity:                rdSpec.ProtectedPVC.Resources.Requests.Storage(),
+					StorageClassName:        rdSpec.ProtectedPVC.StorageClassName,
+					AccessModes:             pvcAccessModes,
+					VolumeSnapshotClassName: &volumeSnapshotClassName,
+					DestinationPVC:          dstPVC,
+				},
+			}
+
+			return nil
+		}); err != nil {
+		m.Logger.Error(err, "Failed to create or update ReplicationDestination",
 			"ReplicationDestinationName", getReplicationDestinationName(rdSpec.ProtectedPVC.Name))
 
 		return nil, fmt.Errorf("%w", err)
 	}
 
-	m.ReplicationGroupDestination.Status.ReplicationDestinations = append(
-		m.ReplicationGroupDestination.Status.ReplicationDestinations,
-		&corev1.ObjectReference{APIVersion: rd.APIVersion, Kind: rd.Kind, Name: rd.GetName()})
-
 	return rd, nil
+}
+
+func CreateOrUpdateReplicationGroupDestination(
+	ctx context.Context, k8sClient client.Client,
+	replicationGroupDestinationName, replicationGroupDestinationNamespace string,
+	volumeSnapshotClassSelector metav1.LabelSelector,
+	rdSpecs []ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+	owner metav1.Object,
+) (*ramendrv1alpha1.ReplicationGroupDestination, error) {
+	if err := util.DeleteReplicationGroupSource(ctx, k8sClient,
+		replicationGroupDestinationName, replicationGroupDestinationNamespace); err != nil {
+		return nil, err
+	}
+
+	rgd := &ramendrv1alpha1.ReplicationGroupDestination{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      replicationGroupDestinationName,
+			Namespace: replicationGroupDestinationNamespace,
+		},
+	}
+
+	_, err := ctrlutil.CreateOrUpdate(ctx, k8sClient, rgd, func() error {
+		if err := ctrl.SetControllerReference(owner, rgd, k8sClient.Scheme()); err != nil {
+			return err
+		}
+
+		util.AddLabel(rgd, volsync.VRGOwnerLabel, owner.GetName())
+		util.AddAnnotation(rgd, volsync.OwnerNameAnnotation, owner.GetName())
+		util.AddAnnotation(rgd, volsync.OwnerNamespaceAnnotation, owner.GetNamespace())
+
+		rgd.Spec.VolumeSnapshotClassSelector = volumeSnapshotClassSelector
+		rgd.Spec.RDSpecs = rdSpecs
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return rgd, nil
 }

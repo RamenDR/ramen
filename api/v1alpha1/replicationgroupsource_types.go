@@ -69,6 +69,11 @@ type ReplicationGroupSourceStatus struct {
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Last sync",type="string",format="date-time",JSONPath=`.status.lastSyncTime`
+// +kubebuilder:printcolumn:name="Duration",type="string",JSONPath=`.status.lastSyncDuration`
+// +kubebuilder:printcolumn:name="Next sync",type="string",format="date-time",JSONPath=`.status.nextSyncTime`
+// +kubebuilder:printcolumn:name="Source",type="string",JSONPath=`.spec.volumeGroupSnapshotSource`
+// +kubebuilder:printcolumn:name="Last sync start",type="string",format="date-time",JSONPath=`.status.lastSyncStartTime`
 
 // ReplicationGroupSource is the Schema for the replicationgroupsources API
 type ReplicationGroupSource struct {

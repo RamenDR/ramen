@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/controllers/volsync"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -12,6 +14,9 @@ import (
 )
 
 // ------------- [Begin] Copied from existing code in Ramen ----
+func isFinalSyncComplete(replicationGroupSource *ramendrv1alpha1.ReplicationGroupSource) bool {
+	return replicationGroupSource.Status.LastManualSync == volsync.FinalSyncTriggerString
+}
 
 func getReplicationDestinationName(pvcName string) string {
 	return pvcName // Use PVC name as name of ReplicationDestination
@@ -48,7 +53,7 @@ func GetRestoreStorageClass(
 	}
 
 	if storageClass.Provisioner != defaultCephFSCSIDriverName {
-		return nil, nil // No workaround required
+		return storageClass, nil // No workaround required
 	}
 
 	// Create/update readOnlyPVCStorageClass

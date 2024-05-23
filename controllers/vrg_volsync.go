@@ -10,12 +10,14 @@ import (
 
 	"github.com/go-logr/logr"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/controllers/cephfscg"
 	"github.com/ramendr/ramen/controllers/util"
 	"github.com/ramendr/ramen/controllers/volsync"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+//nolint:gocognit,funlen,cyclop
 func (v *VRGInstance) restorePVsAndPVCsForVolSync() (int, error) {
 	v.log.Info("VolSync: Restoring VolSync PVs")
 
@@ -29,8 +31,20 @@ func (v *VRGInstance) restorePVsAndPVCsForVolSync() (int, error) {
 
 	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
 		failoverAction := v.instance.Spec.Action == ramendrv1alpha1.VRGActionFailover
-		// Create a PVC from snapshot or for direct copy
-		err := v.volSyncHandler.EnsurePVCfromRD(rdSpec, failoverAction)
+
+		pvcInCephfsCg, err := util.CheckIfPVCMatchLabel(
+			rdSpec.ProtectedPVC.Labels, v.instance.Spec.CephFSConsistencyGroupSelector)
+		if err != nil {
+			continue
+		}
+
+		if pvcInCephfsCg {
+			err = v.volSyncHandler.EnsurePVCfromRGD(rdSpec, failoverAction)
+		} else {
+			// Create a PVC from snapshot or for direct copy
+			err = v.volSyncHandler.EnsurePVCfromRD(rdSpec, failoverAction)
+		}
+
 		if err != nil {
 			v.log.Info(fmt.Sprintf("Unable to ensure PVC %v -- err: %v", rdSpec, err))
 
@@ -112,6 +126,7 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary(finalSyncPrepared *bool) (requeu
 	return requeue
 }
 
+//nolint:gocognit,funlen,cyclop
 func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeClaim) (requeue bool) {
 	newProtectedPVC := &ramendrv1alpha1.ProtectedPVC{
 		Name:               pvc.Name,
@@ -144,6 +159,40 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		v.volSyncHandler.IsCopyMethodDirect())
 	if err != nil {
 		return true
+	}
+
+	pvcInCephfsCg, err := util.CheckIfPVCMatchLabel(pvc.GetLabels(), v.instance.Spec.CephFSConsistencyGroupSelector)
+	if err != nil {
+		return true
+	} else if pvcInCephfsCg {
+		volumeGroupSnapshotClassName, err := util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
+			v.ctx, v.reconciler.Client, v.instance.Spec.Async.VolumeGroupSnapshotClassSelector,
+			v.instance.Spec.CephFSConsistencyGroupSelector, v.instance.Namespace, v.log,
+		)
+		if err != nil {
+			return true
+		}
+
+		rgs, finalSyncComplete, err := cephfscg.CreateOrUpdateReplicationGroupSource(
+			v.ctx, v.reconciler.Client,
+			v.instance.Name, v.instance.Namespace,
+			volumeGroupSnapshotClassName, v.instance.Spec.CephFSConsistencyGroupSelector,
+			v.instance.Spec.Async.SchedulingInterval, v.instance.Spec.RunFinalSync,
+			v.instance,
+		)
+		if err != nil {
+			setVRGConditionTypeVolSyncRepSourceSetupError(&protectedPVC.Conditions, v.instance.Generation,
+				"VolSync setup failed")
+
+			return true
+		}
+
+		setVRGConditionTypeVolSyncRepSourceSetupComplete(&protectedPVC.Conditions, v.instance.Generation, "Ready")
+
+		protectedPVC.LastSyncTime = rgs.Status.LastSyncTime
+		protectedPVC.LastSyncDuration = rgs.Status.LastSyncDuration
+
+		return v.instance.Spec.RunFinalSync && !finalSyncComplete
 	}
 
 	// reconcile RS and if runFinalSync is true, then one final sync will be run
@@ -198,11 +247,89 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() bool {
 	return v.reconcileRDSpecForDeletionOrReplication()
 }
 
+func (v *VRGInstance) GetRDInCG() ([]ramendrv1alpha1.VolSyncReplicationDestinationSpec, error) {
+	rdSpecs := []ramendrv1alpha1.VolSyncReplicationDestinationSpec{}
+
+	if v.instance.Spec.CephFSConsistencyGroupSelector == nil {
+		return rdSpecs, nil
+	}
+
+	if len(v.instance.Spec.VolSync.RDSpec) == 0 {
+		return rdSpecs, nil
+	}
+
+	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
+		pvcInCephfsCg, err := util.CheckIfPVCMatchLabel(
+			rdSpec.ProtectedPVC.Labels, v.instance.Spec.CephFSConsistencyGroupSelector)
+		if err != nil {
+			v.log.Error(err, "Failed to check if pvc label match consistency group selector")
+
+			return nil, err
+		}
+
+		if pvcInCephfsCg {
+			rdSpecs = append(rdSpecs, rdSpec)
+		}
+	}
+
+	return rdSpecs, nil
+}
+
+//nolint:gocognit,funlen,cyclop
 func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
 	requeue := false
 
+	rdinCG, err := v.GetRDInCG()
+	if err != nil {
+		v.log.Error(err, "Failed to get RD in CG")
+
+		requeue = true
+
+		return requeue
+	}
+
+	if len(rdinCG) > 0 {
+		v.log.Info("Create ReplicationGroupDestination with RDSpecs", "RDSpecs", rdinCG)
+
+		replicationGroupDestination, err := cephfscg.CreateOrUpdateReplicationGroupDestination(
+			v.ctx, v.reconciler.Client, v.instance.Name,
+			v.instance.Namespace, v.instance.Spec.Async.VolumeSnapshotClassSelector,
+			rdinCG, v.instance,
+		)
+		if err != nil {
+			v.log.Error(err, "Failed to create ReplicationGroupDestination")
+
+			requeue = true
+
+			return requeue
+		}
+
+		ready, err := util.IsReplicationGroupDestinationReady(v.ctx, v.reconciler.Client, replicationGroupDestination)
+		if err != nil {
+			v.log.Error(err, "Failed to check if ReplicationGroupDestination if ready")
+
+			requeue = true
+
+			return requeue
+		}
+
+		if !ready {
+			v.log.Info(fmt.Sprintf("ReplicationGroupDestination for %s is not ready. We'll retry...",
+				replicationGroupDestination.Name))
+
+			requeue = true
+		}
+	}
+
 	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
 		v.log.Info("Reconcile RD as Secondary", "RDSpec", rdSpec)
+
+		if util.IsRDExist(rdSpec, rdinCG) {
+			v.log.Info("Skip Reconcile RD as Secondary as it's in a consistency group",
+				"RDSpec", rdSpec, "RDInCG", rdinCG)
+
+			continue
+		}
 
 		rd, err := v.volSyncHandler.ReconcileRD(rdSpec)
 		if err != nil {

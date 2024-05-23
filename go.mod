@@ -11,7 +11,6 @@ require (
 	github.com/csi-addons/kubernetes-csi-addons v0.8.0
 	github.com/go-logr/logr v1.3.0
 	github.com/google/uuid v1.3.1
-	github.com/kubernetes-csi/external-snapshotter/client/v4 v4.2.0
 	github.com/kubernetes-csi/external-snapshotter/client/v7 v7.0.0
 	github.com/onsi/ginkgo/v2 v2.13.0
 	github.com/onsi/gomega v1.30.0

@@ -10,12 +10,17 @@ import (
 	"github.com/backube/volsync/controllers/statemachine"
 	"github.com/go-logr/logr"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/controllers/util"
+	"github.com/ramendr/ramen/controllers/volsync"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 type replicationGroupSourceMachine struct {
 	client.Client
 	ReplicationGroupSource *ramendrv1alpha1.ReplicationGroupSource
+	VSHandler              *volsync.VSHandler // VSHandler will be used to call the exist funcs
 	VolumeGroupHandler     VolumeGroupSourceHandler
 	Logger                 logr.Logger
 }
@@ -23,12 +28,14 @@ type replicationGroupSourceMachine struct {
 func NewRGSMachine(
 	client client.Client,
 	replicationGroupSource *ramendrv1alpha1.ReplicationGroupSource,
+	vsHandler *volsync.VSHandler,
 	volumeGroupHandler VolumeGroupSourceHandler,
 	logger logr.Logger,
 ) statemachine.ReplicationMachine {
 	return &replicationGroupSourceMachine{
 		Client:                 client,
 		ReplicationGroupSource: replicationGroupSource,
+		VSHandler:              vsHandler,
 		VolumeGroupHandler:     volumeGroupHandler,
 		Logger:                 logger.WithName("ReplicationGroupSourceMachine"),
 	}
@@ -98,7 +105,7 @@ func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.
 	m.Logger.Info("Create volume group snapshot")
 
 	if err := m.VolumeGroupHandler.CreateOrUpdateVolumeGroupSnapshot(
-		ctx,
+		ctx, m.ReplicationGroupSource,
 	); err != nil {
 		m.Logger.Error(err, "Failed to create volume group snapshot")
 
@@ -107,7 +114,7 @@ func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.
 
 	m.Logger.Info("Restore PVCs from volume group snapshot")
 
-	restoredPVCs, err := m.VolumeGroupHandler.RestoreVolumesFromVolumeGroupSnapshot(ctx)
+	restoredPVCs, err := m.VolumeGroupHandler.RestoreVolumesFromVolumeGroupSnapshot(ctx, m.ReplicationGroupSource)
 	if err != nil {
 		m.Logger.Error(err, "Failed to restore volume group snapshot")
 
@@ -116,8 +123,17 @@ func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.
 
 	m.Logger.Info("Create ReplicationSource for each Restored PVC")
 
+	// Pre-allocated shared secret - DRPC will generate and propagate this secret from hub to clusters
+	pskSecretName := volsync.GetVolSyncPSKSecretNameFromVRGName(m.ReplicationGroupSource.Name)
+
+	// Need to confirm this secret exists on the cluster before proceeding, otherwise volsync will generate it
+	secretExists, err := m.VSHandler.ValidateSecretAndAddVRGOwnerRef(pskSecretName)
+	if err != nil || !secretExists {
+		return mover.InProgress(), err
+	}
+
 	replicationSources, err := m.VolumeGroupHandler.CreateOrUpdateReplicationSourceForRestoredPVCs(
-		ctx, m.ReplicationGroupSource.Status.LastSyncStartTime.String(), restoredPVCs)
+		ctx, m.ReplicationGroupSource.Status.LastSyncStartTime.String(), restoredPVCs, m.ReplicationGroupSource)
 	if err != nil {
 		m.Logger.Error(err, "Failed to create replication source")
 
@@ -162,3 +178,76 @@ func (m *replicationGroupSourceMachine) Cleanup(ctx context.Context) (mover.Resu
 func (m *replicationGroupSourceMachine) SetOutOfSync(bool)                     {}
 func (m *replicationGroupSourceMachine) IncMissedIntervals()                   {}
 func (m *replicationGroupSourceMachine) ObserveSyncDuration(dur time.Duration) {}
+
+//nolint:funlen
+func CreateOrUpdateReplicationGroupSource(
+	ctx context.Context, k8sClient client.Client,
+	replicationGroupSourceName, replicationGroupSourceNamespace string,
+	volumeGroupSnapshotClassName string,
+	volumeGroupSnapshotSource *metav1.LabelSelector,
+	ramenSchedulingInterval string,
+	runFinalSync bool,
+	owner metav1.Object,
+) (*ramendrv1alpha1.ReplicationGroupSource, bool, error) {
+	if err := util.DeleteReplicationGroupDestination(
+		ctx, k8sClient,
+		replicationGroupSourceName, replicationGroupSourceNamespace); err != nil {
+		return nil, false, err
+	}
+
+	rgs := &ramendrv1alpha1.ReplicationGroupSource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      replicationGroupSourceName,
+			Namespace: replicationGroupSourceNamespace,
+		},
+	}
+
+	_, err := ctrlutil.CreateOrUpdate(ctx, k8sClient, rgs, func() error {
+		if err := ctrl.SetControllerReference(owner, rgs, k8sClient.Scheme()); err != nil {
+			return err
+		}
+
+		util.AddLabel(rgs, volsync.VRGOwnerLabel, owner.GetName())
+		util.AddAnnotation(rgs, volsync.OwnerNameAnnotation, owner.GetName())
+		util.AddAnnotation(rgs, volsync.OwnerNamespaceAnnotation, owner.GetNamespace())
+
+		if runFinalSync {
+			rgs.Spec.Trigger = &ramendrv1alpha1.ReplicationSourceTriggerSpec{
+				Manual: volsync.FinalSyncTriggerString,
+			}
+		} else {
+			scheduleCronSpec := &volsync.DefaultScheduleCronSpec
+
+			if ramenSchedulingInterval != "" {
+				var err error
+
+				scheduleCronSpec, err = volsync.ConvertSchedulingIntervalToCronSpec(ramenSchedulingInterval)
+				if err != nil {
+					return err
+				}
+			}
+
+			rgs.Spec.Trigger = &ramendrv1alpha1.ReplicationSourceTriggerSpec{
+				Schedule: scheduleCronSpec,
+			}
+		}
+
+		rgs.Spec.VolumeGroupSnapshotClassName = volumeGroupSnapshotClassName
+		rgs.Spec.VolumeGroupSnapshotSource = volumeGroupSnapshotSource
+
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
+	}
+
+	//
+	// For final sync only - check status to make sure the final sync is complete
+	// and also run cleanup (removes PVC we just ran the final sync from)
+	//
+	if runFinalSync && isFinalSyncComplete(rgs) {
+		return rgs, true, nil
+	}
+
+	return rgs, false, nil
+}
