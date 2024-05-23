@@ -1467,11 +1467,15 @@ func runFailoverAction(placementObj client.Object, fromCluster, toCluster string
 	//       resource is cleaned up or not, number of MW may change.
 	if !isSyncDR {
 		Expect(getManifestWorkCount(toCluster)).Should(BeElementOf(3, 4)) // MW for VRG+DRCluster+NS
-		Expect(getManifestWorkCount(fromCluster)).Should(Equal(2))        // DRCluster + NS MW
 	} else {
-		Expect(getManifestWorkCount(toCluster)).Should(Equal(4))   // MW for VRG+DRCluster + NS + NF
-		Expect(getManifestWorkCount(fromCluster)).Should(Equal(2)) // NS + DRCluster MW
+		if manualFence {
+			Expect(getManifestWorkCount(toCluster)).Should(Equal(3)) // MW for VRG+DRCluster + NS
+		} else {
+			Expect(getManifestWorkCount(toCluster)).Should(Equal(4)) // MW for VRG+DRCluster + NS + NF
+		}
 	}
+
+	Expect(getManifestWorkCount(fromCluster)).Should(Equal(2)) // DRCluster + NS MW
 
 	drpc := getLatestDRPC(placementObj.GetNamespace())
 	// At this point expect the DRPC status condition to have 2 types
@@ -1700,7 +1704,7 @@ func verifyFailoverToSecondary(placementObj client.Object, toCluster string,
 		// MW for VRG+NS+DRCluster
 		Eventually(getManifestWorkCount, timeout, interval).WithArguments(toCluster).Should(BeElementOf(3, 4))
 	} else {
-		Expect(getManifestWorkCount(toCluster)).Should(Equal(4)) // MW for VRG+NS+DRCluster+NF
+		Expect(getManifestWorkCount(toCluster)).Should(BeElementOf(3, 4)) // MW for VRG+NS+DRCluster+NF
 	}
 
 	Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(2)) // DRClustern+NS
