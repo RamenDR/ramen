@@ -153,6 +153,8 @@ type VolumeReplicationGroupSpec struct {
 	// that needs to be replicated to the peer cluster.
 	PVCSelector metav1.LabelSelector `json:"pvcSelector"`
 
+	CephFSConsistencyGroupSelector metav1.LabelSelector `json:"cephFSCGSelector"`
+
 	// Desired state of all volumes [primary or secondary] in this replication group;
 	// this value is propagated to children VolumeReplication CRs
 	ReplicationState ReplicationState `json:"replicationState"`

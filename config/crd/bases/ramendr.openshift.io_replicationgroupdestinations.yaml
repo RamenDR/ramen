@@ -400,10 +400,7 @@ spec:
                 format: date-time
                 type: string
               latestImage:
-                description: |-
-                  latestImage in the object holding the most recent consistent replicated
-                  image.
-                items:
+                additionalProperties:
                   description: |-
                     TypedLocalObjectReference contains enough information to let you locate the
                     typed referenced object inside the same namespace.
@@ -425,7 +422,10 @@ spec:
                   - name
                   type: object
                   x-kubernetes-map-type: atomic
-                type: array
+                description: |-
+                  latestImage in the object holding the most recent consistent replicated
+                  image.
+                type: object
               nextSyncTime:
                 description: |-
                   nextSyncTime is the time when the next volume synchronization is

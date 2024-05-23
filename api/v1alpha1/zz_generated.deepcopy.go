@@ -1361,6 +1361,7 @@ func (in *VolumeReplicationGroupList) DeepCopyObject() runtime.Object {
 func (in *VolumeReplicationGroupSpec) DeepCopyInto(out *VolumeReplicationGroupSpec) {
 	*out = *in
 	in.PVCSelector.DeepCopyInto(&out.PVCSelector)
+	in.CephFSConsistencyGroupSelector.DeepCopyInto(&out.CephFSConsistencyGroupSelector)
 	if in.S3Profiles != nil {
 		in, out := &in.S3Profiles, &out.S3Profiles
 		*out = make([]string, len(*in))
