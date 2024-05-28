@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import sys
+
+from drenv import temporary_kubeconfig
+from drenv import commands
+from drenv import kubectl
+from drenv import cache
+from drenv import cluster
+
+
+def wait_for_clusters(clusters):
+    for name in clusters:
+        print(f"Waiting until cluster '{name}' is ready")
+        cluster.wait_until_ready(name)
+
+
+def deploy_argocd(cluster):
+    print("Deploying argocd")
+    path = cache.path("addons/argocd-2.11.yaml")
+    cache.fetch(".", path)
+    kubectl.apply("--filename", path, "--namespace", "argocd", context=cluster)
+
+
+def wait_for_deployments(cluster):
+    print("Waiting until all deployments are available")
+    kubectl.wait(
+        "deploy",
+        "--all",
+        "--for=condition=Available",
+        "--namespace=argocd",
+        "--timeout=300s",
+        context=cluster,
+    )
+
+
+def add_clusters(hub, clusters):
+    # need use KUBECONFIG env, switch to hub cluster argocd ns first,
+    # otherwise will hit argocd command bug
+    # see https://github.com/argoproj/argo-cd/issues/14167
+    with temporary_kubeconfig("drenv-argocd-test.") as env:
+        kubeconfig = env["KUBECONFIG"]
+        kubectl.config("use-context", hub, "--kubeconfig", kubeconfig)
+        kubectl.config(
+            "set-context",
+            "--current",
+            "--namespace=argocd",
+            f"--kubeconfig={kubeconfig}",
+        )
+
+        print("Logging in to argocd server on hub")
+        for line in commands.watch("argocd", "login", "--core", env=env):
+            print(line)
+
+        for name in clusters:
+            try:
+                print(f"Adding cluster '{name}' to argocd")
+                commands.run("argocd", "cluster", "add", name, "-y", env=env)
+            except commands.Error as e:
+                # ignore known error "NOAUTH" with "argocd cluster add" after "argocd login --core"
+                # see bug https://github.com/argoproj/argo-cd/issues/18464
+                if e.exitcode != 20 or "NOAUTH" not in e.error:
+                    raise e
+
+
+if len(sys.argv) != 4:
+    print(f"Usage: {sys.argv[0]} hub cluster1 cluster2")
+    sys.exit(1)
+
+hub, *clusters = sys.argv[1:]
+
+wait_for_clusters(clusters)
+deploy_argocd(hub)
+wait_for_deployments(hub)
+add_clusters(hub, clusters)
