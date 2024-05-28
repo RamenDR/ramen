@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Environment for testing argocd deployment
+---
+name: argocd
+
+templates:
+  - name: hub
+    driver: "$vm"
+    container_runtime: containerd
+    network: "$network"
+    cpus: 2
+    memory: "4g"
+  - name: cluster
+    driver: "$vm"
+    container_runtime: containerd
+    network: "$network"
+    cpus: 2
+    memory: "2g"
+
+profiles:
+  - name: hub
+    template: hub
+    workers:
+      - addons:
+          - name: argocd
+            args: [hub, dr1, dr2]
+  - name: dr1
+    template: cluster
+  - name: dr2
+    template: cluster
