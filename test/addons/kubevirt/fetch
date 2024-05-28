@@ -9,8 +9,8 @@ from drenv import cache
 
 os.chdir(os.path.dirname(__file__))
 
-path = cache.path("addons/kubevirt-operator.yaml")
+path = cache.path("addons/kubevirt-operator-1.2.1.yaml")
 cache.fetch("operator", path)
 
-path = cache.path("addons/kubevirt-cr.yaml")
+path = cache.path("addons/kubevirt-cr-1.2.1.yaml")
 cache.fetch("cr", path)

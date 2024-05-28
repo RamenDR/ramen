@@ -152,7 +152,7 @@ enough resources:
 1. Install the `virtctl` tool.
 
    ```
-   curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.2.0/virtctl-v1.2.0-linux-amd64
+   curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.2.1/virtctl-v1.2.1-linux-amd64
    sudo install virtctl /usr/local/bin
    rm virtctl
    ```
