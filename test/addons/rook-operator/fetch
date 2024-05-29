@@ -8,5 +8,5 @@ import os
 from drenv import cache
 
 os.chdir(os.path.dirname(__file__))
-path = cache.path("addons/rook-operator.yaml")
+path = cache.path("addons/rook-operator-1.14.yaml")
 cache.fetch(".", path)
