@@ -4,9 +4,9 @@
 # yamllint disable rule:line-length
 ---
 resources:
-  - https://raw.githubusercontent.com/rook/rook/release-1.13/deploy/examples/crds.yaml
-  - https://raw.githubusercontent.com/rook/rook/release-1.13/deploy/examples/common.yaml
-  - https://raw.githubusercontent.com/rook/rook/release-1.13/deploy/examples/operator.yaml
+  - https://raw.githubusercontent.com/rook/rook/release-1.14/deploy/examples/crds.yaml
+  - https://raw.githubusercontent.com/rook/rook/release-1.14/deploy/examples/common.yaml
+  - https://raw.githubusercontent.com/rook/rook/release-1.14/deploy/examples/operator.yaml
 
 patches:
   - target:
