@@ -9,6 +9,7 @@ arch=$(go env GOARCH)
 source_url="https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F${required_version}/kustomize_${required_version}_${os}_${arch}.tar.gz"
 target_dir="${script_dir}/../bin"
 target_path="${target_dir}/kustomize"
+target_archive="${target_dir}/kustomize.tar.gz"
 tool="kustomize"
 
 # sample output to parse: '{Version:kustomize/v4.5.7 GitCommit:56d82a8378dfc8dc3b3b1085e5a6e67b82966bd7 BuildDate:2022-08-02T16:35:54Z GoOs:linux GoArch:amd64}'
@@ -25,6 +26,7 @@ fi
 
 echo "Installing ${tool}:${required_version} in ${target_dir}"
 mkdir -p "${target_dir}"
-curl --silent --show-error --location --output "${target_path}" "${source_url}"
-tar -xzf "${target_path}" -C "${target_dir}"
+curl --silent --show-error --location --output "${target_archive}" "${source_url}"
+tar -xzf "${target_archive}" -C "${target_dir}"
 chmod +x "${target_path}"
+rm "${target_archive}"
