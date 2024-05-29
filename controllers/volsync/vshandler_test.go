@@ -4,6 +4,7 @@
 package volsync_test
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -1121,7 +1122,7 @@ var _ = Describe("VolSync_Handler", func() {
 
 		var ensurePVCErr error
 		JustBeforeEach(func() {
-			ensurePVCErr = vsHandler.EnsurePVCfromRD(rdSpec, false)
+			ensurePVCErr = retryEnsurePVCfromRD(vsHandler, rdSpec)
 		})
 
 		Context("When ReplicationDestination Does not exist", func() {
@@ -1335,7 +1336,7 @@ var _ = Describe("VolSync_Handler", func() {
 					It("ensure PVC should not fail", func() {
 						// Previous ensurePVC will already have created the PVC (see parent context)
 						// Now run ensurePVC again - additional runs should just ensure the PVC is ok
-						Expect(vsHandler.EnsurePVCfromRD(rdSpec, false)).To(Succeed())
+						Expect(retryEnsurePVCfromRD(vsHandler, rdSpec)).To(Succeed())
 					})
 				})
 
@@ -1372,7 +1373,7 @@ var _ = Describe("VolSync_Handler", func() {
 						// At this point we should have a PVC from previous but it should have a datasource
 						// that maches our old snapshot - the rd has been updated with a new latest image
 						// Expect ensurePVC from RD to remove the old one and return an error
-						err := vsHandler.EnsurePVCfromRD(rdSpec, false)
+						err := retryEnsurePVCfromRD(vsHandler, rdSpec)
 						Expect(err).To(HaveOccurred())
 						Expect(err.Error()).To(ContainSubstring("incorrect datasource"))
 
@@ -1398,7 +1399,7 @@ var _ = Describe("VolSync_Handler", func() {
 						//
 						// Now should be able to re-try ensurePVC and get a new one with proper datasource
 						//
-						Expect(vsHandler.EnsurePVCfromRD(rdSpec, false)).NotTo(HaveOccurred())
+						Expect(retryEnsurePVCfromRD(vsHandler, rdSpec)).NotTo(HaveOccurred())
 
 						pvcNew := &corev1.PersistentVolumeClaim{}
 						Eventually(func() error {
@@ -1836,6 +1837,30 @@ var _ = Describe("VolSync_Handler", func() {
 		})
 	})
 })
+
+func retryEnsurePVCfromRD(vsHandler *volsync.VSHandler, rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+) error {
+	var err error
+
+	Eventually(func() bool {
+		err = vsHandler.EnsurePVCfromRD(rdSpec, false)
+		if err != nil {
+			if kerrors.IsNotFound(err) {
+				var statusError *kerrors.StatusError
+
+				return errors.As(err, &statusError) &&
+					statusError.ErrStatus.Details != nil &&
+					statusError.ErrStatus.Details.Kind != "PersistentVolumeClaim"
+			}
+
+			return !kerrors.IsConflict(err)
+		}
+
+		return true
+	}, maxWait, interval).Should(BeTrue())
+
+	return err
+}
 
 func ownerMatches(obj metav1.Object, ownerName, ownerKind string, ownerIsController bool) bool {
 	for _, ownerRef := range obj.GetOwnerReferences() {
