@@ -1253,10 +1253,14 @@ func (v *VSHandler) validateAndProtectSnapshot(
 
 	// Add ownerRef on snapshot pointing to the vrg - if/when the VRG gets cleaned up, then GC can cleanup the snap
 	// Add label to indicate that VolSync should not delete/cleanup this snapshot
-	err = util.NewResourceUpdater(volSnap).
-		AddOwner(v.owner, v.client.Scheme()).
-		AddLabel(VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal).
-		Update(v.ctx, v.client)
+	// Cross-namespace owner references are disallowed, so setting owner is skipped, when VRG is situated in admin
+	// namespace
+	updater := util.NewResourceUpdater(volSnap)
+	if !v.vrgInAdminNamespace {
+		updater.AddOwner(v.owner, v.client.Scheme())
+	}
+
+	err = updater.AddLabel(VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal).Update(v.ctx, v.client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add owner/label to snapshot %s (%w)", volSnap.GetName(), err)
 	}
