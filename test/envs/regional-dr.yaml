@@ -27,13 +27,13 @@ templates:
       - volumesnapshots
     workers:
       - addons:
-          - name: rook-operator
-          - name: rook-cluster
-          - name: rook-toolbox
-          - name: rook-pool
-          - name: rook-cephfs
+          - name: rook/operator
+          - name: rook/cluster
+          - name: rook/toolbox
+          - name: rook/pool
+          - name: rook/cephfs
       - addons:
-          - name: ocm-cluster
+          - name: ocm/cluster
             args: ["$name", "hub"]
           - name: recipe
       - addons:
@@ -49,8 +49,8 @@ templates:
     memory: "4g"
     workers:
       - addons:
-          - name: ocm-hub
-          - name: ocm-controller
+          - name: ocm/hub
+          - name: ocm/controller
           - name: olm
       - addons:
           - name: submariner
@@ -66,7 +66,7 @@ profiles:
 
 workers:
   - addons:
-      - name: rbd-mirror
+      - name: rook/rbd-mirror
         args: ["dr1", "dr2"]
   - addons:
       - name: volsync

@@ -12,15 +12,15 @@ templates:
     network: "$network"
     workers:
       - addons:
-          - name: ocm-hub
-          - name: ocm-controller
+          - name: ocm/hub
+          - name: ocm/controller
   - name: "dr-cluster"
     driver: "$vm"
     container_runtime: containerd
     network: "$network"
     workers:
       - addons:
-          - name: ocm-cluster
+          - name: ocm/cluster
             args: ["$name", "hub"]
 profiles:
   - name: "hub"
