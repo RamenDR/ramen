@@ -4,4 +4,4 @@
 # yamllint disable rule:line-length
 ---
 resources:
-  - https://github.com/kubevirt/containerized-data-importer/releases/download/v1.58.3/cdi-operator.yaml
+  - https://github.com/kubevirt/containerized-data-importer/releases/download/v1.59.0/cdi-operator.yaml
