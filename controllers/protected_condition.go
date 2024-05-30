@@ -158,8 +158,7 @@ func updateVRGDataProtectedAsPrimary(drpc *rmn.DRPlacementControl,
 
 	if condition != nil && condition.ObservedGeneration == vrg.Generation {
 		// VRGConditionReasonReplicating reason is unique to VR based volumes
-		if condition.Reason == VRGConditionReasonReplicating && condition.Status == metav1.ConditionFalse &&
-			vrg.Spec.Async != nil {
+		if condition.Reason == VRGConditionReasonReplicating && condition.Status == metav1.ConditionFalse {
 			return !updated
 		}
 
