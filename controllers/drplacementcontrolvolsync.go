@@ -48,13 +48,29 @@ func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 
 	const maxNumberOfVRGs = 2
 	if len(d.vrgs) != maxNumberOfVRGs || vrgMWCount != maxNumberOfVRGs {
-		// Create the destination VRG
-		err := d.createVolSyncDestManifestWork(srcCluster)
-		if err != nil {
-			return err
-		}
+		for _, drCluster := range d.drClusters {
+			if drCluster.Name == srcCluster {
+				continue
+			}
 
-		return WaitForVolSyncManifestWorkCreation
+			_, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, drCluster.Name)
+			if err != nil {
+				if errors.IsNotFound(err) {
+					// Create the destination VRG
+					clusterToSkip := srcCluster
+					err := d.createVolSyncDestManifestWork(clusterToSkip)
+					if err != nil {
+						return err
+					}
+
+					return WaitForVolSyncManifestWorkCreation
+				}
+
+				return fmt.Errorf("failed to query for ManifestWork %w", err)
+			}
+
+			break
+		}
 	}
 
 	if _, found := d.vrgs[srcCluster]; !found {
