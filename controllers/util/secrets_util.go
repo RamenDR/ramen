@@ -724,7 +724,8 @@ func (sutil *SecretsUtil) RemoveSecretFromCluster(
 			return errorswrapper.Wrap(err, "failed to get placementRule object")
 		}
 
-		return nil
+		// Ensure all related resources and finalizers are deleted
+		return sutil.deletePolicyResources(secret, namespace, format)
 	}
 
 	return sutil.updatePolicyResources(plRule, secret, clusterName, namespace, format, false)
