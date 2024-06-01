@@ -472,7 +472,7 @@ func DRPCsFailingOverToCluster(k8sclient client.Client, log logr.Logger, drclust
 		drpolicy := &drpolicies.Items[drpolicyIdx]
 
 		if rmnutil.DrpolicyContainsDrcluster(drpolicy, drcluster) {
-			drClusters, err := getDRClusters(context.TODO(), k8sclient, drpolicy)
+			drClusters, err := GetDRClusters(context.TODO(), k8sclient, drpolicy)
 			if err != nil || len(drClusters) <= 1 {
 				log.Error(err, "Failed to get DRClusters")
 
@@ -923,7 +923,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 ) (*DRPCInstance, error) {
 	log.Info("Creating DRPC instance")
 
-	drClusters, err := getDRClusters(ctx, r.Client, drPolicy)
+	drClusters, err := GetDRClusters(ctx, r.Client, drPolicy)
 	if err != nil {
 		return nil, err
 	}
@@ -1067,7 +1067,7 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(d *DRPCInstance, lo
 func (r *DRPlacementControlReconciler) getAndEnsureValidDRPolicy(ctx context.Context,
 	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) (*rmn.DRPolicy, error) {
-	drPolicy, err := r.getDRPolicy(ctx, drpc, log)
+	drPolicy, err := GetDRPolicy(ctx, r.Client, drpc, log)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get DRPolicy %w", err)
 	}
@@ -1086,14 +1086,14 @@ func (r *DRPlacementControlReconciler) getAndEnsureValidDRPolicy(ctx context.Con
 	return drPolicy, nil
 }
 
-func (r *DRPlacementControlReconciler) getDRPolicy(ctx context.Context,
+func GetDRPolicy(ctx context.Context, client client.Client,
 	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) (*rmn.DRPolicy, error) {
 	drPolicy := &rmn.DRPolicy{}
 	name := drpc.Spec.DRPolicyRef.Name
 	namespace := drpc.Spec.DRPolicyRef.Namespace
 
-	err := r.Client.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, drPolicy)
+	err := client.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, drPolicy)
 	if err != nil {
 		log.Error(err, "failed to get DRPolicy")
 
@@ -1101,6 +1101,24 @@ func (r *DRPlacementControlReconciler) getDRPolicy(ctx context.Context,
 	}
 
 	return drPolicy, nil
+}
+
+func GetDRClusters(ctx context.Context, client client.Client, drPolicy *rmn.DRPolicy) ([]rmn.DRCluster, error) {
+	drClusters := []rmn.DRCluster{}
+
+	for _, managedCluster := range rmnutil.DRPolicyClusterNames(drPolicy) {
+		drCluster := &rmn.DRCluster{}
+
+		err := client.Get(ctx, types.NamespacedName{Name: managedCluster}, drCluster)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get DRCluster (%s) %w", managedCluster, err)
+		}
+
+		// TODO: What if the DRCluster is deleted? If new DRPC fail reconciliation
+		drClusters = append(drClusters, *drCluster)
+	}
+
+	return drClusters, nil
 }
 
 // updateObjectMetadata updates drpc labels, annotations and finalizer, and also updates placementObj finalizer
@@ -1138,24 +1156,6 @@ func (r DRPlacementControlReconciler) updateObjectMetadata(ctx context.Context,
 	}
 
 	return nil
-}
-
-func getDRClusters(ctx context.Context, client client.Client, drPolicy *rmn.DRPolicy) ([]rmn.DRCluster, error) {
-	drClusters := []rmn.DRCluster{}
-
-	for _, managedCluster := range rmnutil.DRPolicyClusterNames(drPolicy) {
-		drCluster := &rmn.DRCluster{}
-
-		err := client.Get(ctx, types.NamespacedName{Name: managedCluster}, drCluster)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get DRCluster (%s) %w", managedCluster, err)
-		}
-
-		// TODO: What if the DRCluster is deleted? If new DRPC fail reconciliation
-		drClusters = append(drClusters, *drCluster)
-	}
-
-	return drClusters, nil
 }
 
 func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
@@ -1232,12 +1232,12 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 		TargetNamespace: vrgNamespace,
 	}
 
-	drPolicy, err := r.getDRPolicy(ctx, drpc, log)
+	drPolicy, err := GetDRPolicy(ctx, r.Client, drpc, log)
 	if err != nil {
 		return fmt.Errorf("failed to get DRPolicy while finalizing DRPC (%w)", err)
 	}
 
-	drClusters, err := getDRClusters(ctx, r.Client, drPolicy)
+	drClusters, err := GetDRClusters(ctx, r.Client, drPolicy)
 	if err != nil {
 		return fmt.Errorf("failed to get drclusters. Error (%w)", err)
 	}
@@ -1763,7 +1763,7 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 ) error {
 	log.Info("Updating DRPC status")
 
-	r.updateResourceCondition(drpc, userPlacement)
+	r.updateResourceCondition(ctx, drpc, userPlacement)
 
 	// set metrics if DRPC is not being deleted and if finalizer exists
 	if !isBeingDeleted(drpc, userPlacement) && controllerutil.ContainsFinalizer(drpc, DRPCFinalizer) {
@@ -1790,7 +1790,7 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 	now := metav1.Now()
 	drpc.Status.LastUpdateTime = &now
 
-	if err := r.Status().Update(context.TODO(), drpc); err != nil {
+	if err := r.Status().Update(ctx, drpc); err != nil {
 		return errorswrapper.Wrap(err, "failed to update DRPC status")
 	}
 
@@ -1802,8 +1802,10 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 // updateResourceCondition updates DRPC status sub-resource with updated status from VRG if one exists,
 // - The status update is NOT intended for a VRG that should be cleaned up on a peer cluster
 // It also updates DRPC ConditionProtected based on current state of VRG.
+//
+//nolint:funlen
 func (r *DRPlacementControlReconciler) updateResourceCondition(
-	drpc *rmn.DRPlacementControl, userPlacement client.Object,
+	ctx context.Context, drpc *rmn.DRPlacementControl, userPlacement client.Object,
 ) {
 	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, userPlacement)
 	if err != nil {
@@ -1827,19 +1829,34 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 	vrg, err := r.MCVGetter.GetVRGFromManagedCluster(drpc.Name, vrgNamespace,
 		clusterName, annotations)
 	if err != nil {
-		r.Log.Info("Failed to get VRG from managed cluster", "errMsg", err.Error())
+		r.Log.Info("Failed to get VRG from managed cluster. Trying s3 store...", "errMsg", err.Error())
 
-		drpc.Status.ResourceConditions = rmn.VRGConditions{}
+		// The VRG from the s3 store might be stale, however, the worst case should be at most around 1 minute.
+		vrg = GetLastKnownVRGPrimaryFromS3(ctx, r.APIReader,
+			GetAvailableS3Profiles(ctx, r.Client, drpc, r.Log),
+			drpc.GetName(), vrgNamespace, r.ObjStoreGetter, r.Log)
+		if vrg == nil {
+			r.Log.Info("Failed to get VRG from s3 store")
 
-		updateProtectedConditionUnknown(drpc, clusterName)
+			drpc.Status.ResourceConditions = rmn.VRGConditions{}
 
-		return
+			updateProtectedConditionUnknown(drpc, clusterName)
+
+			return
+		}
+
+		if vrg.ResourceVersion < drpc.Status.ResourceConditions.ResourceMeta.ResourceVersion {
+			r.Log.Info("VRG resourceVersion is lower than the previously recorded VRG's resourceVersion in DRPC")
+			// if the VRG resourceVersion is less, then leave the DRPC ResourceCondtions.ResourceMeta.ResourceVersion as is.
+			return
+		}
 	}
 
 	drpc.Status.ResourceConditions.ResourceMeta.Kind = vrg.Kind
 	drpc.Status.ResourceConditions.ResourceMeta.Name = vrg.Name
 	drpc.Status.ResourceConditions.ResourceMeta.Namespace = vrg.Namespace
 	drpc.Status.ResourceConditions.ResourceMeta.Generation = vrg.Generation
+	drpc.Status.ResourceConditions.ResourceMeta.ResourceVersion = vrg.ResourceVersion
 	drpc.Status.ResourceConditions.Conditions = vrg.Status.Conditions
 
 	protectedPVCs := []string{}
@@ -1916,12 +1933,12 @@ func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
 	workloadProtectionMetrics := r.createWorkloadProtectionMetricsInstance(drpc)
 	r.setWorkloadProtectionMetric(workloadProtectionMetrics, drpc.Status.Conditions, log)
 
-	drPolicy, err := r.getDRPolicy(ctx, drpc, log)
+	drPolicy, err := GetDRPolicy(ctx, r.Client, drpc, log)
 	if err != nil {
 		return fmt.Errorf("failed to get DRPolicy %w", err)
 	}
 
-	drClusters, err := getDRClusters(ctx, r.Client, drPolicy)
+	drClusters, err := GetDRClusters(ctx, r.Client, drPolicy)
 	if err != nil {
 		return err
 	}
@@ -2311,6 +2328,26 @@ func ensureDRPCConditionsInited(conditions *[]metav1.Condition, observedGenerati
 	})
 }
 
+func GetAvailableS3Profiles(ctx context.Context, client client.Client,
+	drpc *rmn.DRPlacementControl, log logr.Logger,
+) []string {
+	drPolicy, err := GetDRPolicy(ctx, client, drpc, log)
+	if err != nil {
+		log.Info("Failed to get DRPolicy", "err", err)
+
+		return []string{}
+	}
+
+	drClusters, err := GetDRClusters(ctx, client, drPolicy)
+	if err != nil {
+		log.Info("Failed to get DRClusters", "err", err)
+
+		return []string{}
+	}
+
+	return AvailableS3Profiles(drClusters)
+}
+
 func AvailableS3Profiles(drClusters []rmn.DRCluster) []string {
 	profiles := sets.New[string]()
 
@@ -2441,7 +2478,7 @@ func (r *DRPlacementControlReconciler) determineDRPCState(
 		return Stop, "", err
 	}
 
-	drClusters, err := getDRClusters(ctx, r.Client, drPolicy)
+	drClusters, err := GetDRClusters(ctx, r.Client, drPolicy)
 	if err != nil {
 		return Stop, "", err
 	}
@@ -2921,12 +2958,12 @@ func drpcInAdminNamespace(drpc *rmn.DRPlacementControl, ramenConfig *rmn.RamenCo
 func (r *DRPlacementControlReconciler) drpcHaveCommonClusters(ctx context.Context,
 	drpc, otherDRPC *rmn.DRPlacementControl, log logr.Logger,
 ) (bool, error) {
-	drpolicy, err := r.getDRPolicy(ctx, drpc, log)
+	drpolicy, err := GetDRPolicy(ctx, r.Client, drpc, log)
 	if err != nil {
 		return false, fmt.Errorf("failed to get DRPolicy %w", err)
 	}
 
-	otherDrpolicy, err := r.getDRPolicy(ctx, otherDRPC, log)
+	otherDrpolicy, err := GetDRPolicy(ctx, r.Client, otherDRPC, log)
 	if err != nil {
 		return false, fmt.Errorf("failed to get DRPolicy %w", err)
 	}

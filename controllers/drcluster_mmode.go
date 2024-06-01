@@ -110,7 +110,7 @@ func (u *drclusterInstance) mModeActivationsRequired() (map[string]ramen.Storage
 
 // getVRGs is a helper function to get the VRGs for the passed in DRPC and DRPolicy association
 func (u *drclusterInstance) getVRGs(drpcCollection DRPCAndPolicy) (map[string]*ramen.VolumeReplicationGroup, error) {
-	drClusters, err := getDRClusters(u.ctx, u.client, drpcCollection.drPolicy)
+	drClusters, err := GetDRClusters(u.ctx, u.client, drpcCollection.drPolicy)
 	if err != nil {
 		return nil, err
 	}
