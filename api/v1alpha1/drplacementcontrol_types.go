@@ -170,7 +170,6 @@ type PlacementDecision struct {
 // VRGResourceMeta represents the VRG resource.
 type VRGResourceMeta struct {
 	// Kind is the kind of the Kubernetes resource.
-	// +optional
 	Kind string `json:"kind"`
 
 	// Name is the name of the Kubernetes resource.
@@ -183,7 +182,13 @@ type VRGResourceMeta struct {
 	Generation int64 `json:"generation"`
 
 	// List of PVCs that are protected by the VRG resource
+	//+optional
 	ProtectedPVCs []string `json:"protectedpvcs,omitempty"`
+
+	// ResourceVersion is a value used to identify the version of the
+	// VRG resource object
+	//+optional
+	ResourceVersion string `json:"resourceVersion,omitempty"`
 }
 
 // VRGConditions represents the conditions of the resources deployed on a

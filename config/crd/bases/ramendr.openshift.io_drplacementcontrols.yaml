@@ -535,8 +535,14 @@ spec:
                         items:
                           type: string
                         type: array
+                      resourceVersion:
+                        description: |-
+                          ResourceVersion is a value used to identify the version of the
+                          VRG resource object
+                        type: string
                     required:
                     - generation
+                    - kind
                     - name
                     - namespace
                     type: object
