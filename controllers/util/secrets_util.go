@@ -102,6 +102,11 @@ func generatePolicyPlacementName(secret string, format TargetSecretFormat) strin
 	return fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, policyName)
 }
 
+func GenerateVeleroSecretName(sName string) string {
+	// Disambiguate with a "v" in case fromNS and veleroNS are the same
+	return veleroFormatPrefix + sName
+}
+
 func SecretFinalizer(format TargetSecretFormat) string {
 	switch format {
 	case SecretFormatRamen:
@@ -288,7 +293,7 @@ func newVeleroSecret(s3SecretRef corev1.SecretReference, fromNS, veleroNS, keyNa
 			APIVersion: "v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "v" + s3SecretRef.Name, // Disambiguate with a "v" in case fromNS and veleroNS are the same
+			Name:      GenerateVeleroSecretName(s3SecretRef.Name),
 			Namespace: veleroNS,
 		},
 		/*
