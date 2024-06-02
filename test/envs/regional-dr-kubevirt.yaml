@@ -10,7 +10,7 @@ ramen:
   clusters: [dr1, dr2]
   topology: regional-dr
   features:
-    volsync: false
+    volsync: true
 
 templates:
   - name: "dr-cluster"
@@ -25,12 +25,15 @@ templates:
     memory: "8g"
     extra_disks: 1
     disk_size: "50g"
+    addons:
+      - volumesnapshots
     workers:
       - addons:
           - name: rook-operator
           - name: rook-cluster
           - name: rook-toolbox
           - name: rook-pool
+          - name: rook-cephfs
           - name: cdi
       - addons:
           - name: ocm-cluster
@@ -53,6 +56,8 @@ templates:
           - name: ocm-hub
           - name: ocm-controller
           - name: olm
+          - name: submariner
+            args: ["hub", "dr1", "dr2"]
 
 profiles:
   - name: "dr1"
@@ -65,4 +70,7 @@ profiles:
 workers:
   - addons:
       - name: rbd-mirror
+        args: ["dr1", "dr2"]
+  - addons:
+      - name: volsync
         args: ["dr1", "dr2"]
