@@ -6,6 +6,8 @@ package controllers
 import (
 	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/controllers/util"
+	v1 "k8s.io/api/core/v1"
 )
 
 type s3StoreAccessor struct {
@@ -32,6 +34,15 @@ func s3StoreAccessorsGet(
 			log.Error(err, "Kube object protection store inaccessible", "name", s3ProfileName)
 
 			return nil
+		}
+
+		if s3StoreProfile.VeleroNamespaceSecretKeyRef == nil {
+			s3StoreProfile.VeleroNamespaceSecretKeyRef = &v1.SecretKeySelector{
+				Key: util.VeleroSecretKeyNameDefault,
+				LocalObjectReference: v1.LocalObjectReference{
+					Name: util.GenerateVeleroSecretName(s3StoreProfile.S3SecretRef.Name),
+				},
+			}
 		}
 
 		s3StoreAccessors = append(s3StoreAccessors, s3StoreAccessor{
