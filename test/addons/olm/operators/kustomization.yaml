@@ -3,4 +3,4 @@
 
 ---
 resources:
-  - https://github.com/operator-framework/operator-lifecycle-manager/releases/download/v0.22.0/olm.yaml
+  - https://github.com/operator-framework/operator-lifecycle-manager/releases/download/v0.27.0/olm.yaml
