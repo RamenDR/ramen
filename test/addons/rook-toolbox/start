@@ -13,7 +13,7 @@ from drenv import cache
 
 def deploy(cluster):
     print("Deploying rook ceph toolbox")
-    path = cache.path("addons/rook-toolbox.yaml")
+    path = cache.path("addons/rook-toolbox-1.14.yaml")
     cache.fetch(".", path)
     kubectl.apply("--filename", path, context=cluster)
 

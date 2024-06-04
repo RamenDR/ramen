@@ -8,5 +8,5 @@ import os
 from drenv import cache
 
 os.chdir(os.path.dirname(__file__))
-path = cache.path("addons/rook-cephfs.yaml")
+path = cache.path("addons/rook-cephfs-1.14.yaml")
 cache.fetch(".", path)

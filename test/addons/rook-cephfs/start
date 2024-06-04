@@ -13,7 +13,7 @@ from drenv import kubectl
 
 def deploy(cluster):
     print("Creating CephFS instance and storage/snapshot classes")
-    path = cache.path("addons/rook-cephfs.yaml")
+    path = cache.path("addons/rook-cephfs-1.14.yaml")
     cache.fetch(".", path)
     kubectl.apply("--filename", path, context=cluster)
 
