@@ -425,3 +425,24 @@ func (v *VRGInstance) disownPVCs() error {
 
 	return nil
 }
+
+// cleanupResources this function deleted all PS, PD and VolumeSnapshots from its owner (VRG)
+func (v *VRGInstance) cleanupResources() error {
+	for idx := range v.volSyncPVCs {
+		pvc := &v.volSyncPVCs[idx]
+
+		if err := v.volSyncHandler.DeleteRS(pvc.Name, pvc.Namespace); err != nil {
+			return err
+		}
+
+		if err := v.volSyncHandler.DeleteRD(pvc.Name, pvc.Namespace); err != nil {
+			return err
+		}
+
+		if err := v.volSyncHandler.DeleteSnapshots(pvc.Namespace); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
