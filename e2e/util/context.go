@@ -24,11 +24,7 @@ import (
 	placementrule "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/placementrule/v1"
 )
 
-var (
-	KubeconfigHub string
-	KubeconfigC1  string
-	KubeconfigC2  string
-)
+var ConfigFile string
 
 type Cluster struct {
 	K8sClientSet *kubernetes.Clientset
@@ -98,23 +94,27 @@ func setupClient(kubeconfigPath string) (*kubernetes.Clientset, client.Client, e
 	return k8sClientSet, ctrlClient, nil
 }
 
-func NewContext(log *logr.Logger, hub, c1, c2 string) (*Context, error) {
+func NewContext(log *logr.Logger, configFile string) (*Context, error) {
 	var err error
 
 	ctx := new(Context)
 	ctx.Log = log
 
-	ctx.Hub.K8sClientSet, ctx.Hub.CtrlClient, err = setupClient(hub)
+	if err := ReadConfig(log, configFile); err != nil {
+		panic(err)
+	}
+
+	ctx.Hub.K8sClientSet, ctx.Hub.CtrlClient, err = setupClient(config.Clusters["hub"].KubeconfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create clients for hub cluster: %w", err)
 	}
 
-	ctx.C1.K8sClientSet, ctx.C1.CtrlClient, err = setupClient(c1)
+	ctx.C1.K8sClientSet, ctx.C1.CtrlClient, err = setupClient(config.Clusters["c1"].KubeconfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create clients for c1 cluster: %w", err)
 	}
 
-	ctx.C2.K8sClientSet, ctx.C2.CtrlClient, err = setupClient(c2)
+	ctx.C2.K8sClientSet, ctx.C2.CtrlClient, err = setupClient(config.Clusters["c2"].KubeconfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create clients for c2 cluster: %w", err)
 	}
