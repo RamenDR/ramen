@@ -976,6 +976,10 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 		log.Info("volsync is set to disabled")
 	}
 
+	if !d.volSyncDisabled && drpcInAdminNamespace(drpc, ramenConfig) {
+		d.volSyncDisabled = !ramenConfig.MultiNamespace.VolsyncSupported
+	}
+
 	// Save the instance status
 	d.instance.Status.DeepCopyInto(&d.savedInstanceStatus)
 

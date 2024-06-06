@@ -147,7 +147,8 @@ type RamenConfig struct {
 
 	MultiNamespace struct {
 		// Enables feature to protect resources in namespaces other than VRG's
-		FeatureEnabled bool `json:"FeatureEnabled,omitempty"`
+		FeatureEnabled   bool `json:"FeatureEnabled,omitempty"`
+		VolsyncSupported bool `json:"volsyncSupported,omitempty"`
 	} `json:"multiNamespace,omitempty"`
 
 	// Unprotect deleted or deselected PVCs
