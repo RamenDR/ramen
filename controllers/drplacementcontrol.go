@@ -361,7 +361,7 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
 		// Make sure VolRep 'Data' and VolSync 'setup' conditions are ready
-		ready := d.checkReadinessAfterFailover(failoverCluster)
+		ready := d.checkReadiness(failoverCluster)
 		if !ready {
 			d.log.Info("VRGCondition not ready to finish failover")
 			d.setProgression(rmn.ProgressionWaitForReadiness)
@@ -816,7 +816,7 @@ func checkActivationForStorageIdentifier(
 //   - Check if current primary (that is not the preferred cluster), is ready to switch over
 //   - Relocate!
 //
-//nolint:gocognit,cyclop
+//nolint:gocognit,cyclop,funlen
 func (d *DRPCInstance) RunRelocate() (bool, error) {
 	d.log.Info("Entering RunRelocate", "state", d.getLastDRState(), "progression", d.getProgression())
 
@@ -834,9 +834,19 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 		return !done, err
 	}
 
-	// We are done if already relocated; if there were secondaries they are cleaned up above
+	// If already relocated to preferredCluster; ensure required setup is complete
 	if curHomeCluster != "" && d.vrgExistsAndPrimary(preferredCluster) {
+		d.setDRState(rmn.Relocating)
 		d.updatePreferredDecision()
+
+		ready := d.checkReadiness(preferredCluster)
+		if !ready {
+			d.log.Info("VRGCondition not ready to finish relocation")
+			d.setProgression(rmn.ProgressionWaitForReadiness)
+
+			return !done, nil
+		}
+
 		d.setDRState(rmn.Relocated)
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
@@ -1128,7 +1138,7 @@ func (d *DRPCInstance) readyToSwitchOver(homeCluster string, preferredCluster st
 		d.isVRGConditionMet(homeCluster, VRGConditionTypeClusterDataProtected)
 }
 
-func (d *DRPCInstance) checkReadinessAfterFailover(homeCluster string) bool {
+func (d *DRPCInstance) checkReadiness(homeCluster string) bool {
 	vrg := d.vrgs[homeCluster]
 	if vrg == nil {
 		return false
@@ -1232,8 +1242,16 @@ func (d *DRPCInstance) setupRelocation(preferredCluster string) error {
 	return nil
 }
 
-// switchToCluster is a series of steps to creating, updating, and cleaning up
-// the necessary objects for the failover or relocation
+// switchToCluster is a series of steps for switching to the targetCluster as Primary,
+// - It moves VRG to Primary on the targetCluster and ensures that VRG reports required readiness
+// - Once VRG is ready, it updates the placement to trigger workload roll out to the targetCluster
+// NOTE:
+// Currently this function never gets to invoke updateUserPlacementRule as, if a VRG is found to be ready in
+// checkReadiness, then the same VRG would have been found as Primary in RunFailover or RunRelocate, which would
+// hence start processing the switching to cluster in those functions rather than here.
+// As a result only when a VRG is not found as Primary (IOW nil from MCV), would checkReadiness be called and that
+// would report false, till the VRG is found as above.
+// TODO: This hence can be corrected to remove the call to updateUserPlacementRule and further lines of code
 func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace string) error {
 	d.log.Info("switchToCluster", "cluster", targetCluster)
 
@@ -1249,19 +1267,7 @@ func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace str
 		return fmt.Errorf("%w)", WaitForAppResourceRestoreToComplete)
 	}
 
-	vrg, restored, err := d.ensureClusterDataRestored(targetCluster)
-	if err != nil {
-		return err
-	}
-
-	var vrgState rmn.State
-	if vrg != nil {
-		vrgState = vrg.Status.State
-	}
-
-	d.log.Info(fmt.Sprintf("PVs/PVCs have been Restored? '%v' and VRG Primary='%v'", restored, vrgState))
-
-	if !restored || vrg.Status.State != rmn.PrimaryState {
+	if !d.checkReadiness(targetCluster) {
 		d.setProgression(rmn.ProgressionWaitingForResourceRestore)
 
 		return fmt.Errorf("%w)", WaitForAppResourceRestoreToComplete)
@@ -1696,33 +1702,6 @@ func isVRGSecondary(vrg *rmn.VolumeReplicationGroup) bool {
 	return (vrg.Spec.ReplicationState == rmn.Secondary)
 }
 
-func (d *DRPCInstance) ensureClusterDataRestored(homeCluster string) (*rmn.VolumeReplicationGroup, bool, error) {
-	d.log.Info("Checking if PVs have been restored", "cluster", homeCluster)
-
-	annotations := make(map[string]string)
-
-	annotations[DRPCNameAnnotation] = d.instance.Name
-	annotations[DRPCNamespaceAnnotation] = d.instance.Namespace
-
-	vrg := d.vrgs[homeCluster]
-	if vrg == nil {
-		return nil, false, fmt.Errorf("failed to get VRG %s from cluster %s", d.instance.Name, homeCluster)
-	}
-
-	// ClusterDataReady condition tells us whether the PVs have been applied on the
-	// target cluster or not
-	clusterDataReady := findCondition(vrg.Status.Conditions, VRGConditionTypeClusterDataReady)
-	if clusterDataReady == nil {
-		d.log.Info("Waiting for resources to be restored", "cluster", homeCluster)
-
-		return nil, false, nil
-	}
-
-	return vrg,
-		clusterDataReady.Status == metav1.ConditionTrue && clusterDataReady.ObservedGeneration == vrg.Generation,
-		nil
-}
-
 func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 	d.log.Info("ensuring cleanup on secondaries")
 
@@ -1998,7 +1977,8 @@ func (d *DRPCInstance) ensureDataProtectedOnCluster(clusterName string) bool {
 		return false
 	}
 
-	if dataProtectedCondition.Status != metav1.ConditionTrue {
+	if dataProtectedCondition.Status != metav1.ConditionTrue ||
+		dataProtectedCondition.ObservedGeneration != vrg.Generation {
 		d.log.Info(fmt.Sprintf("VRG data protection is not complete for cluster %s for %v",
 			clusterName, vrg))
 
@@ -2194,7 +2174,6 @@ failoverProgressions are used to indicate progression during failover action pro
 - postFailoverProgressions indicates Progressions that are noted post creating VRG on the failoverCluster
 
 	preFailoverProgressions := {
-		ProgressionWaitForReadiness,
 		ProgressionCheckingFailoverPrequisites,
 		ProgressionWaitForFencing,
 		ProgressionWaitForStorageMaintenanceActivation,
@@ -2205,6 +2184,7 @@ failoverProgressions are used to indicate progression during failover action pro
 		ProgressionWaitingForResourceRestore,
 		ProgressionEnsuringVolSyncSetup,
 		ProgressionSettingupVolsyncDest,
+		ProgressionWaitForReadiness,
 		ProgressionUpdatedPlacement,
 		ProgressionCompleted,
 		ProgressionCleaningUp,
@@ -2228,6 +2208,7 @@ relocateProgressions are used to indicate progression during relocate action pro
 		ProgressionCompleted,
 		ProgressionCleaningUp,
 		ProgressionWaitingForResourceRestore,
+		ProgressionWaitForReadiness,
 		ProgressionUpdatedPlacement,
 		ProgressionEnsuringVolSyncSetup,
 		ProgressionSettingupVolsyncDest,
