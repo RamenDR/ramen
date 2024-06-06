@@ -40,6 +40,7 @@ func (d *DRPCInstance) EnsureVolSyncReplicationSetup(homeCluster string) error {
 	return d.ensureVolSyncReplicationDestination(homeCluster)
 }
 
+//nolint:funlen,gocognit,nestif,cyclop
 func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 	// Make sure we have Source and Destination VRGs - Source should already have been created at this point
 	d.setProgression(rmn.ProgressionEnsuringVolSyncSetup)
@@ -47,7 +48,10 @@ func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 	vrgMWCount := d.mwu.GetVRGManifestWorkCount(rmnutil.DRPolicyClusterNames(d.drPolicy))
 
 	const maxNumberOfVRGs = 2
-	if len(d.vrgs) != maxNumberOfVRGs || vrgMWCount != maxNumberOfVRGs {
+
+	vrgs := d.fetchVRGsFromMClusterOrS3()
+
+	if len(vrgs) != maxNumberOfVRGs || vrgMWCount != maxNumberOfVRGs {
 		for _, drCluster := range d.drClusters {
 			if drCluster.Name == srcCluster {
 				continue
@@ -58,6 +62,7 @@ func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 				if errors.IsNotFound(err) {
 					// Create the destination VRG
 					clusterToSkip := srcCluster
+
 					err := d.createVolSyncDestManifestWork(clusterToSkip)
 					if err != nil {
 						return err
@@ -73,8 +78,9 @@ func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 		}
 	}
 
-	if _, found := d.vrgs[srcCluster]; !found {
-		return fmt.Errorf("failed to find source VolSync VRG in cluster %s. VRGs %v", srcCluster, d.vrgs)
+	if _, found := d.fetchVRGsFromMClusterOrS3()[srcCluster]; !found {
+		return fmt.Errorf("failed to find source VolSync VRG in cluster %s. VRGs %v",
+			srcCluster, d.fetchVRGsFromMClusterOrS3())
 	}
 
 	// Now we should have a source and destination VRG created
@@ -95,7 +101,8 @@ func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 	pskSecretNameCluster := volsync.GetVolSyncPSKSecretNameFromVRGName(d.instance.GetName()) // VRG name == DRPC name
 
 	clustersToPropagateSecret := []string{}
-	for clusterName := range d.vrgs {
+
+	for clusterName := range vrgs {
 		clustersToPropagateSecret = append(clustersToPropagateSecret, clusterName)
 	}
 
@@ -113,9 +120,10 @@ func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 func (d *DRPCInstance) ensureVolSyncReplicationDestination(srcCluster string) error {
 	d.setProgression(rmn.ProgressionSettingupVolsyncDest)
 
-	srcVRG, found := d.vrgs[srcCluster]
+	srcVRG, found := d.fetchVRGsFromMClusterOrS3()[srcCluster]
 	if !found {
-		return fmt.Errorf("failed to find source VolSync VRG in cluster %s. VRGs %v", srcCluster, d.vrgs)
+		return fmt.Errorf("failed to find source VolSync VRG in cluster %s. VRGs %v",
+			srcCluster, d.fetchVRGsFromMClusterOrS3())
 	}
 
 	d.log.Info("Ensuring VolSync replication destination")
@@ -126,7 +134,8 @@ func (d *DRPCInstance) ensureVolSyncReplicationDestination(srcCluster string) er
 		return WaitForSourceCluster
 	}
 
-	for dstCluster, dstVRG := range d.vrgs {
+	vrgs := d.fetchVRGsFromMClusterOrS3()
+	for dstCluster, dstVRG := range vrgs {
 		if dstCluster == srcCluster {
 			continue
 		}
@@ -208,11 +217,11 @@ func (d *DRPCInstance) IsVolSyncReplicationRequired(homeCluster string) (bool, e
 
 	d.log.Info("Checking if there are PVCs for VolSync replication...", "cluster", homeCluster)
 
-	vrg := d.vrgs[homeCluster]
+	vrg := d.fetchVRGsFromMClusterOrS3()[homeCluster]
 
 	if vrg == nil {
 		d.log.Info(fmt.Sprintf("isVolSyncReplicationRequired: VRG not available on cluster %s - VRGs %v",
-			homeCluster, d.vrgs))
+			homeCluster, d.fetchVRGsFromMClusterOrS3()))
 
 		return false, fmt.Errorf("failed to find VRG on homeCluster %s", homeCluster)
 	}
@@ -232,7 +241,7 @@ func (d *DRPCInstance) IsVolSyncReplicationRequired(homeCluster string) (bool, e
 
 func (d *DRPCInstance) getVolSyncPVCCount(homeCluster string) int {
 	pvcCount := 0
-	vrg := d.vrgs[homeCluster]
+	vrg := d.fetchVRGsFromMClusterOrS3()[homeCluster]
 
 	if vrg == nil {
 		d.log.Info(fmt.Sprintf("getVolSyncPVCCount: VRG not available on cluster %s", homeCluster))
