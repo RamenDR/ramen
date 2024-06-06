@@ -64,7 +64,7 @@ type DRPCInstance struct {
 	mcvRequestInProgress bool
 	volSyncDisabled      bool
 	userPlacement        client.Object
-	vrgs                 map[string]*rmn.VolumeReplicationGroup
+	vrgs                 map[string]*rmn.VolumeReplicationGroup // Populated using MCV
 	vrgNamespace         string
 	ramenConfig          *rmn.RamenConfig
 	mwu                  rmnutil.MWUtil
@@ -258,13 +258,14 @@ func (d *DRPCInstance) isUserPlRuleUpdated(homeCluster string) bool {
 // isVRGAlreadyDeployedOnTargetCluster will check whether a VRG exists in the targetCluster and
 // whether it is in protected state, and primary.
 func (d *DRPCInstance) isVRGAlreadyDeployedOnTargetCluster(targetCluster string) bool {
-	d.log.Info(fmt.Sprintf("isAlreadyDeployedAndProtected? - %q", reflect.ValueOf(d.vrgs).MapKeys()))
+	d.log.Info(fmt.Sprintf("Is already deployed and protected? - %q",
+		reflect.ValueOf(d.fetchVRGsFromMClusterOrS3()).MapKeys()))
 
 	return d.getCachedVRG(targetCluster) != nil
 }
 
 func (d *DRPCInstance) getCachedVRG(clusterName string) *rmn.VolumeReplicationGroup {
-	vrg, found := d.vrgs[clusterName]
+	vrg, found := d.fetchVRGsFromMClusterOrS3()[clusterName]
 	if !found {
 		d.log.Info("VRG not found on cluster", "Name", clusterName)
 
@@ -274,8 +275,67 @@ func (d *DRPCInstance) getCachedVRG(clusterName string) *rmn.VolumeReplicationGr
 	return vrg
 }
 
+// fetchVRGsFromMClusterOrS3 retrieves a map of VRGs for all managed clusters.
+// It first attempts to collect VRGs from the cached MCV request result. If a primary VRG is not found,
+// the function retrieves it from an S3 store and adds it to the map. This ensures that the DRPC
+// has an accurate and up-to-date view of VRGs across all clusters, even when the primary cluster is
+// inaccessible or not represented in the MCV data.
+//
+// The function performs the following steps:
+//  1. Iterates over all managed clusters and tries to find their corresponding VRGs in `d.vrgs`.
+//     If found, it adds them to the `vrgs` map and checks if any VRG is marked as primary.
+//  2. If the number of retrieved VRGs matches the number of DR clusters, it returns the `vrgs` map immediately
+//     as a shortcut, indicating that all required VRGs have been collected.
+//  3. If no primary VRG is found in the cached `vrgs`, it attempts to retrieve the last known primary VRG from
+//     the S3 store. The retrieved VRG is then checked to ensure it is not already included in the `vrgs` map and,
+//     if not, it is added.
+//
+// Returns:
+// - A map of VRGs keyed by cluster name.
+func (d *DRPCInstance) fetchVRGsFromMClusterOrS3() map[string]*rmn.VolumeReplicationGroup {
+	vrgs := make(map[string]*rmn.VolumeReplicationGroup)
+
+	var primaryFound bool
+
+	for _, drCluster := range d.drClusters {
+		vrg, found := d.vrgs[drCluster.Name]
+		if !found {
+			continue
+		}
+
+		if isVRGPrimary(vrg) {
+			primaryFound = true
+		}
+
+		vrgs[drCluster.Name] = vrg
+	}
+
+	// shortcut
+	if len(vrgs) == len(d.drClusters) {
+		return vrgs
+	}
+
+	// If MCV didn't return a primary VRG, then we need to get it from the s3 store.
+	if !primaryFound {
+		vrg := GetLastKnownVRGPrimaryFromS3(d.ctx, d.reconciler.APIReader,
+			AvailableS3Profiles(d.drClusters), d.instance.GetName(),
+			d.vrgNamespace, d.reconciler.ObjStoreGetter, d.log)
+		if vrg != nil {
+			primaryCluster := vrg.GetAnnotations()[DestinationClusterAnnotationKey]
+			// Double check that we don't have already an entry in the vrgs populated using MCV
+			_, found := d.vrgs[primaryCluster]
+			if !found {
+				vrgs[primaryCluster] = vrg
+			}
+		}
+	}
+
+	return vrgs
+}
+
 func (d *DRPCInstance) isVRGAlreadyDeployedElsewhere(clusterToSkip string) (string, bool) {
-	for clusterName := range d.vrgs {
+	vrgs := d.fetchVRGsFromMClusterOrS3()
+	for clusterName := range vrgs {
 		if clusterName == clusterToSkip {
 			continue
 		}
@@ -594,7 +654,7 @@ func (d *DRPCInstance) checkRegionalFailoverPrerequisites() bool {
 			d.reconciler.APIReader,
 			[]string{drCluster.Spec.S3ProfileName},
 			d.instance.GetName(), d.vrgNamespace,
-			d.vrgs, d.instance.Spec.FailoverCluster,
+			d.fetchVRGsFromMClusterOrS3(), d.instance.Spec.FailoverCluster,
 			d.reconciler.ObjStoreGetter, d.log); required {
 			return checkFailoverMaintenanceActivations(drCluster, activationsRequired, d.log)
 		}
@@ -912,7 +972,7 @@ func (d *DRPCInstance) ensureCleanupAndVolSyncReplicationSetup(srcCluster string
 
 	// Check if the reset has already been applied. ResetVolSyncRDOnPrimary resets the VRG
 	// in the MW, but the VRGs in the vrgs slice are fetched using MCV.
-	vrg, ok := d.vrgs[srcCluster]
+	vrg, ok := d.fetchVRGsFromMClusterOrS3()[srcCluster]
 	if !ok || len(vrg.Spec.VolSync.RDSpec) != 0 {
 		return fmt.Errorf(fmt.Sprintf("Waiting for RDSpec count on cluster %s to go to zero. VRG OK? %v",
 			srcCluster, ok))
@@ -984,7 +1044,7 @@ func (d *DRPCInstance) prepareForFinalSync(homeCluster string) (bool, error) {
 
 	const done = true
 
-	vrg, ok := d.vrgs[homeCluster]
+	vrg, ok := d.fetchVRGsFromMClusterOrS3()[homeCluster]
 
 	if !ok {
 		d.log.Info(fmt.Sprintf("prepareForFinalSync: VRG not available on cluster %s", homeCluster))
@@ -1014,7 +1074,7 @@ func (d *DRPCInstance) runFinalSync(homeCluster string) (bool, error) {
 
 	const done = true
 
-	vrg, ok := d.vrgs[homeCluster]
+	vrg, ok := d.fetchVRGsFromMClusterOrS3()[homeCluster]
 
 	if !ok {
 		d.log.Info(fmt.Sprintf("runFinalSync: VRG not available on cluster %s", homeCluster))
@@ -1042,7 +1102,8 @@ func (d *DRPCInstance) runFinalSync(homeCluster string) (bool, error) {
 func (d *DRPCInstance) areMultipleVRGsPrimary() bool {
 	numOfPrimaries := 0
 
-	for _, vrg := range d.vrgs {
+	vrgs := d.fetchVRGsFromMClusterOrS3()
+	for _, vrg := range vrgs {
 		if isVRGPrimary(vrg) {
 			numOfPrimaries++
 		}
@@ -1067,7 +1128,8 @@ func (d *DRPCInstance) selectCurrentPrimaryAndSecondaries() (string, []string) {
 
 	primaryVRG := ""
 
-	for cn, vrg := range d.vrgs {
+	vrgs := d.fetchVRGsFromMClusterOrS3()
+	for cn, vrg := range vrgs {
 		if isVRGPrimary(vrg) && primaryVRG == "" {
 			primaryVRG = cn
 		}
@@ -1087,7 +1149,7 @@ func (d *DRPCInstance) validateAndSelectCurrentPrimary(preferredCluster string) 
 	}
 
 	// No VRGs found, invalid state, possibly deployment was not started
-	if len(d.vrgs) == 0 {
+	if len(d.fetchVRGsFromMClusterOrS3()) == 0 {
 		return "", fmt.Errorf("no VRGs exists. Can't relocate")
 	}
 
@@ -1129,7 +1191,7 @@ func (d *DRPCInstance) readyToSwitchOver(homeCluster string, preferredCluster st
 }
 
 func (d *DRPCInstance) checkReadinessAfterFailover(homeCluster string) bool {
-	vrg := d.vrgs[homeCluster]
+	vrg := d.fetchVRGsFromMClusterOrS3()[homeCluster]
 	if vrg == nil {
 		return false
 	}
@@ -1144,7 +1206,7 @@ func (d *DRPCInstance) isVRGConditionMet(cluster string, conditionType string) b
 
 	d.log.Info(fmt.Sprintf("Checking if VRG is %s on cluster %s", conditionType, cluster))
 
-	vrg := d.vrgs[cluster]
+	vrg := d.fetchVRGsFromMClusterOrS3()[cluster]
 
 	if vrg == nil {
 		d.log.Info(fmt.Sprintf("isVRGConditionMet: VRG not available on cluster %s", cluster))
@@ -1327,7 +1389,7 @@ func (d *DRPCInstance) getVRGFromManifestWork(clusterName string) (*rmn.VolumeRe
 }
 
 func (d *DRPCInstance) vrgExistsAndPrimary(targetCluster string) bool {
-	vrg, ok := d.vrgs[targetCluster]
+	vrg, ok := d.fetchVRGsFromMClusterOrS3()[targetCluster]
 	if !ok || !isVRGPrimary(vrg) {
 		return false
 	}
@@ -1531,7 +1593,7 @@ func (d *DRPCInstance) ensureVRGManifestWork(homeCluster string) error {
 	d.log.Info("Ensure VRG ManifestWork",
 		"Last State:", d.getLastDRState(), "cluster", homeCluster)
 
-	cachedVrg := d.vrgs[homeCluster]
+	cachedVrg := d.fetchVRGsFromMClusterOrS3()[homeCluster]
 	if cachedVrg == nil {
 		return fmt.Errorf("failed to get vrg from cluster %s", homeCluster)
 	}
@@ -1704,7 +1766,7 @@ func (d *DRPCInstance) ensureClusterDataRestored(homeCluster string) (*rmn.Volum
 	annotations[DRPCNameAnnotation] = d.instance.Name
 	annotations[DRPCNamespaceAnnotation] = d.instance.Namespace
 
-	vrg := d.vrgs[homeCluster]
+	vrg := d.fetchVRGsFromMClusterOrS3()[homeCluster]
 	if vrg == nil {
 		return nil, false, fmt.Errorf("failed to get VRG %s from cluster %s", d.instance.Name, homeCluster)
 	}
@@ -2279,7 +2341,7 @@ func (d *DRPCInstance) shouldUpdateStatus() bool {
 		return false
 	}
 
-	vrg := d.vrgs[homeCluster]
+	vrg := d.fetchVRGsFromMClusterOrS3()[homeCluster]
 	if vrg == nil {
 		return false
 	}

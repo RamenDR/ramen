@@ -1821,6 +1821,7 @@ func verifyDRPCOwnedByPlacement(placementObj client.Object, drpc *rmn.DRPlacemen
 var _ = Describe("DRPlacementControl Reconciler Errors", func() {
 	BeforeEach(func() {
 		populateDRClusters()
+		Expect(deleteAllVRGsFromS3Store(DRPCCommonName, DefaultDRPCNamespace)).ToNot(HaveOccurred())
 	})
 
 	When("a DRPC is deleted and drclusters don't exist", func() {
@@ -2558,6 +2559,11 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		Specify("DRClusters", func() {
 			populateDRClusters()
 		})
+
+		BeforeEach(func() {
+			deleteAllVRGsFromS3Store(DRPCCommonName, DefaultDRPCNamespace)
+		})
+
 		When("An Application is deployed for the first time using Placement", func() {
 			It("Should deploy to East1ManagedCluster", func() {
 				By("Initial Deployment")
@@ -2650,6 +2656,25 @@ func uploadVRGtoS3Store(name, namespace, dstCluster string, action rmn.VRGAction
 
 	Expect(err).ToNot(HaveOccurred())
 	Expect(controllers.VrgObjectProtect(objectStorer, vrg)).To(Succeed())
+}
+
+//nolint:unparam
+func deleteAllVRGsFromS3Store(name, namespace string) error {
+	s3ProfileNames := []string{s3Profiles[0].S3ProfileName, s3Profiles[1].S3ProfileName}
+
+	objectStorer, _, err := drpcReconciler.ObjStoreGetter.ObjectStore(
+		ctx, apiReader, s3ProfileNames[0], "Hub Recovery", testLogger)
+	Expect(err).ToNot(HaveOccurred())
+
+	listKeyPrefix := types.NamespacedName{Name: name, Namespace: namespace}.String()
+	keys, err := objectStorer.ListKeys(listKeyPrefix)
+	Expect(err).ToNot(HaveOccurred())
+
+	for _, key := range keys {
+		Expect(objectStorer.DeleteObject(key)).ToNot(HaveOccurred())
+	}
+
+	return nil
 }
 
 // drpcRenconcile calls the drpc reconciler with the given drpc name and
