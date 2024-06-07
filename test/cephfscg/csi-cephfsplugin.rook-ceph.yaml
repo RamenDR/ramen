@@ -1,0 +1,172 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: csi-cephfsplugin
+  namespace: rook-ceph
+spec:
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: csi-cephfsplugin
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: csi-cephfsplugin
+        contains: csi-cephfsplugin-metrics
+    spec:
+      affinity:
+        nodeAffinity: {}
+      containers:
+      - args:
+        - --v=0
+        - --csi-address=/csi/csi.sock
+        - --kubelet-registration-path=/var/lib/kubelet/plugins/rook-ceph.cephfs.csi.ceph.com/csi.sock
+        env:
+        - name: KUBE_NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.10.1
+        imagePullPolicy: IfNotPresent
+        name: driver-registrar
+        resources: {}
+        securityContext:
+          capabilities:
+            drop:
+            - ALL
+          privileged: true
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /csi
+          name: plugin-dir
+        - mountPath: /registration
+          name: registration-dir
+      - args:
+        - --nodeid=$(NODE_ID)
+        - --type=cephfs
+        - --endpoint=$(CSI_ENDPOINT)
+        - --v=0
+        - --nodeserver=true
+        - --drivername=rook-ceph.cephfs.csi.ceph.com
+        - --pidlimit=-1
+        - --forcecephkernelclient=true
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.podIP
+        - name: NODE_ID
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: CSI_ENDPOINT
+          value: unix:///csi/csi.sock
+        image: quay.io/cephcsi/cephcsi:canary
+        imagePullPolicy: IfNotPresent
+        name: csi-cephfsplugin
+        resources: {}
+        securityContext:
+          allowPrivilegeEscalation: true
+          capabilities:
+            add:
+            - SYS_ADMIN
+            drop:
+            - ALL
+          privileged: true
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /csi
+          name: plugin-dir
+        - mountPath: /csi/mountinfo
+          name: ceph-csi-mountinfo
+        - mountPath: /var/lib/kubelet/plugins
+          mountPropagation: Bidirectional
+          name: csi-plugins-dir
+        - mountPath: /var/lib/kubelet/pods
+          mountPropagation: Bidirectional
+          name: pods-mount-dir
+        - mountPath: /sys
+          name: host-sys
+        - mountPath: /lib/modules
+          name: lib-modules
+          readOnly: true
+        - mountPath: /dev
+          name: host-dev
+        - mountPath: /etc/ceph-csi-config/
+          name: ceph-csi-config
+        - mountPath: /tmp/csi/keys
+          name: keys-tmp-dir
+        - mountPath: /run/mount
+          name: host-run-mount
+      dnsPolicy: ClusterFirstWithHostNet
+      hostNetwork: true
+      priorityClassName: system-node-critical
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: rook-csi-cephfs-plugin-sa
+      serviceAccountName: rook-csi-cephfs-plugin-sa
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - hostPath:
+          path: /var/lib/kubelet/plugins/rook-ceph.cephfs.csi.ceph.com/mountinfo
+          type: DirectoryOrCreate
+        name: ceph-csi-mountinfo
+      - hostPath:
+          path: /var/lib/kubelet/plugins/rook-ceph.cephfs.csi.ceph.com/
+          type: DirectoryOrCreate
+        name: plugin-dir
+      - hostPath:
+          path: /var/lib/kubelet/plugins
+          type: Directory
+        name: csi-plugins-dir
+      - hostPath:
+          path: /var/lib/kubelet/plugins_registry/
+          type: Directory
+        name: registration-dir
+      - hostPath:
+          path: /var/lib/kubelet/pods
+          type: Directory
+        name: pods-mount-dir
+      - hostPath:
+          path: /sys
+          type: ""
+        name: host-sys
+      - hostPath:
+          path: /lib/modules
+          type: ""
+        name: lib-modules
+      - hostPath:
+          path: /dev
+          type: ""
+        name: host-dev
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: csi-cluster-config-json
+            path: config.json
+          name: rook-ceph-csi-config
+        name: ceph-csi-config
+      - emptyDir:
+          medium: Memory
+        name: keys-tmp-dir
+      - hostPath:
+          path: /run/mount
+          type: ""
+        name: host-run-mount
+  updateStrategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate

@@ -36,6 +36,8 @@ data:
       veleroNamespaceName: velero
     volSync:
       disabled: $volsync_disabled
+      cephFSCSIDriverName: rook-ceph.cephfs.csi.ceph.com
+      destinationCopyMethod: Direct
     multiNamespace:
       FeatureEnabled: true
     ramenOpsNamespace: ramen-ops

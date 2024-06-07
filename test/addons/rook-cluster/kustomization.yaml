@@ -29,3 +29,6 @@ patches:
           enabled: true
           periodicity: daily
           maxLogSize: 50M
+      - op: replace
+        path: /spec/cephVersion/image
+        value: quay.ceph.io/ceph-ci/ceph:3bee77f3679219ac38464c71415bb0c7b9e47ed6-centos9

@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 ---
-repo: https://github.com/ramendr/ocm-ramen-samples.git
-path: subscription/deployment-k8s-regional-rbd
+repo: https://github.com/youhangwang/ocm-ramen-samples.git
+path: subscription/deployment-k8s-regional-cephfs
 branch: main
-name: deployment-rbd
-namespace: deployment-rbd
+name: deployment-cephfs
+namespace: deployment-cephfs
 dr_policy: dr-policy
 pvc_label: busybox

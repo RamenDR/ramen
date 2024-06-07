@@ -1,0 +1,257 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: csi-cephfsplugin-provisioner
+  namespace: rook-ceph
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: csi-cephfsplugin-provisioner
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: csi-cephfsplugin-provisioner
+        contains: csi-cephfsplugin-metrics
+    spec:
+      affinity:
+        nodeAffinity: {}
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - csi-cephfsplugin-provisioner
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - --v=0
+        - --csi-address=$(ADDRESS)
+        - --leader-election=true
+        - --timeout=2m30s
+        - --leader-election-namespace=rook-ceph
+        - --leader-election-lease-duration=2m17s
+        - --leader-election-renew-deadline=1m47s
+        - --leader-election-retry-period=26s
+        env:
+        - name: ADDRESS
+          value: /csi/csi-provisioner.sock
+        image: registry.k8s.io/sig-storage/csi-attacher:v4.5.1
+        imagePullPolicy: IfNotPresent
+        name: csi-attacher
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /csi
+          name: socket-dir
+      - args:
+        - --csi-address=$(ADDRESS)
+        - --v=0
+        - --timeout=2m30s
+        - --leader-election=true
+        - --leader-election-namespace=rook-ceph
+        - --leader-election-lease-duration=2m17s
+        - --leader-election-renew-deadline=1m47s
+        - --leader-election-retry-period=26s
+        - --extra-create-metadata=true
+        - --enable-volume-group-snapshots=true
+        env:
+        - name: ADDRESS
+          value: unix:///csi/csi-provisioner.sock
+        image: localhost/csi-snapshotter:latest
+        imagePullPolicy: IfNotPresent
+        name: csi-snapshotter
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /csi
+          name: socket-dir
+      - args:
+        - --csi-address=$(ADDRESS)
+        - --v=0
+        - --timeout=2m30s
+        - --leader-election=true
+        - --leader-election-namespace=rook-ceph
+        - --leader-election-lease-duration=2m17s
+        - --leader-election-renew-deadline=1m47s
+        - --leader-election-retry-period=26s
+        - --handle-volume-inuse-error=false
+        - --feature-gates=RecoverVolumeExpansionFailure=true
+        env:
+        - name: ADDRESS
+          value: unix:///csi/csi-provisioner.sock
+        image: registry.k8s.io/sig-storage/csi-resizer:v1.10.1
+        imagePullPolicy: IfNotPresent
+        name: csi-resizer
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /csi
+          name: socket-dir
+      - args:
+        - --csi-address=$(ADDRESS)
+        - --v=0
+        - --timeout=2m30s
+        - --retry-interval-start=500ms
+        - --leader-election=true
+        - --leader-election-namespace=rook-ceph
+        - --feature-gates=HonorPVReclaimPolicy=true
+        - --prevent-volume-mode-conversion=true
+        - --leader-election-lease-duration=2m17s
+        - --leader-election-renew-deadline=1m47s
+        - --leader-election-retry-period=26s
+        - --extra-create-metadata=true
+        env:
+        - name: ADDRESS
+          value: unix:///csi/csi-provisioner.sock
+        image: registry.k8s.io/sig-storage/csi-provisioner:v4.0.1
+        imagePullPolicy: IfNotPresent
+        name: csi-provisioner
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /csi
+          name: socket-dir
+      - args:
+        - --nodeid=$(NODE_ID)
+        - --type=cephfs
+        - --endpoint=$(CSI_ENDPOINT)
+        - --v=0
+        - --controllerserver=true
+        - --drivername=rook-ceph.cephfs.csi.ceph.com
+        - --pidlimit=-1
+        - --forcecephkernelclient=true
+        - --csi-addons-endpoint=$(CSIADDONS_ENDPOINT)
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.podIP
+        - name: NODE_ID
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: CSI_ENDPOINT
+          value: unix:///csi/csi-provisioner.sock
+        - name: CSIADDONS_ENDPOINT
+          value: unix:///csi/csi-addons.sock
+        image: quay.io/cephcsi/cephcsi:canary
+        imagePullPolicy: IfNotPresent
+        name: csi-cephfsplugin
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /csi
+          name: socket-dir
+        - mountPath: /sys
+          name: host-sys
+        - mountPath: /lib/modules
+          name: lib-modules
+          readOnly: true
+        - mountPath: /dev
+          name: host-dev
+        - mountPath: /etc/ceph-csi-config/
+          name: ceph-csi-config
+        - mountPath: /tmp/csi/keys
+          name: keys-tmp-dir
+      - args:
+        - --node-id=$(NODE_ID)
+        - --v=0
+        - --csi-addons-address=$(CSIADDONS_ENDPOINT)
+        - --controller-port=9070
+        - --pod=$(POD_NAME)
+        - --namespace=$(POD_NAMESPACE)
+        - --pod-uid=$(POD_UID)
+        - --stagingpath=/var/lib/kubelet/plugins/kubernetes.io/csi/
+        - --leader-election-namespace=rook-ceph
+        - --leader-election-lease-duration=2m17s
+        - --leader-election-renew-deadline=1m47s
+        - --leader-election-retry-period=26s
+        env:
+        - name: NODE_ID
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.uid
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: CSIADDONS_ENDPOINT
+          value: unix:///csi/csi-addons.sock
+        image: quay.io/csiaddons/k8s-sidecar:v0.8.0
+        imagePullPolicy: IfNotPresent
+        name: csi-addons
+        ports:
+        - containerPort: 9070
+          protocol: TCP
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /csi
+          name: socket-dir
+      dnsPolicy: ClusterFirst
+      priorityClassName: system-cluster-critical
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: rook-csi-cephfs-provisioner-sa
+      serviceAccountName: rook-csi-cephfs-provisioner-sa
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - emptyDir:
+          medium: Memory
+        name: socket-dir
+      - hostPath:
+          path: /sys
+          type: ""
+        name: host-sys
+      - hostPath:
+          path: /lib/modules
+          type: ""
+        name: lib-modules
+      - hostPath:
+          path: /dev
+          type: ""
+        name: host-dev
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: csi-cluster-config-json
+            path: config.json
+          name: rook-ceph-csi-config
+        name: ceph-csi-config
+      - emptyDir:
+          medium: Memory
+        name: keys-tmp-dir

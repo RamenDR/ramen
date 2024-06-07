@@ -1,0 +1,11 @@
+apiVersion: groupsnapshot.storage.k8s.io/v1alpha1
+deletionPolicy: Delete
+driver: rook-ceph.cephfs.csi.ceph.com
+kind: VolumeGroupSnapshotClass
+metadata:
+  name: cephfs-cg-snapclass
+parameters:
+  fsName: cephfs
+  clusterID: rook-ceph
+  csi.storage.k8s.io/group-snapshotter-secret-name: rook-csi-cephfs-provisioner
+  csi.storage.k8s.io/group-snapshotter-secret-namespace: rook-ceph
