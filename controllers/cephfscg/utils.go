@@ -6,6 +6,7 @@ import (
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/volsync"
+	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -16,6 +17,18 @@ import (
 // ------------- [Begin] Copied from existing code in Ramen ----
 func isFinalSyncComplete(replicationGroupSource *ramendrv1alpha1.ReplicationGroupSource) bool {
 	return replicationGroupSource.Status.LastManualSync == volsync.FinalSyncTriggerString
+}
+
+func getLocalReplicationName(pvcName string) string {
+	return pvcName + "-local" // Use PVC name as name plus -local for local RD and RS
+}
+
+func isLatestImageReady(latestImage *corev1.TypedLocalObjectReference) bool {
+	if latestImage == nil || latestImage.Name == "" || latestImage.Kind != volsync.VolumeSnapshotKind {
+		return false
+	}
+
+	return true
 }
 
 func getReplicationDestinationName(pvcName string) string {

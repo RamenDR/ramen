@@ -9,11 +9,13 @@ import (
 	"github.com/backube/volsync/controllers/mover"
 	"github.com/backube/volsync/controllers/statemachine"
 	"github.com/go-logr/logr"
+	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v7/apis/volumesnapshot/v1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/util"
 	"github.com/ramendr/ramen/controllers/volsync"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -81,6 +83,7 @@ func (m *rgdMachine) Conditions() *[]metav1.Condition {
 	return &m.ReplicationGroupDestination.Status.Conditions
 }
 
+//nolint:cyclop,funlen
 func (m *rgdMachine) Synchronize(ctx context.Context) (mover.Result, error) {
 	createdRDs := []*volsyncv1alpha1.ReplicationDestination{}
 	rds := []*corev1.ObjectReference{}
@@ -91,6 +94,13 @@ func (m *rgdMachine) Synchronize(ctx context.Context) (mover.Result, error) {
 		rd, err := m.ReconcileRD(rdSpec, m.ReplicationGroupDestination.Status.LastSyncStartTime.String())
 		if err != nil {
 			return mover.InProgress(), fmt.Errorf("failed to create replication destination: %w", err)
+		}
+
+		if rd == nil {
+			m.Logger.Info(fmt.Sprintf("ReplicationDestination for %s is not ready. We'll retry...",
+				rdSpec.ProtectedPVC.Name))
+
+			return mover.InProgress(), nil
 		}
 
 		createdRDs = append(createdRDs, rd)
@@ -117,15 +127,34 @@ func (m *rgdMachine) Synchronize(ctx context.Context) (mover.Result, error) {
 		}
 
 		if err := util.DeferDeleteImage(
-			ctx, m.Client, rd.Status.LatestImage.Name, rd.Namespace, rd.Spec.Trigger.Manual, rd.Name,
+			ctx, m.Client, rd.Status.LatestImage.Name, rd.Namespace, rd.Spec.Trigger.Manual, m.ReplicationGroupDestination.Name,
 		); err != nil {
 			return mover.InProgress(), err
 		}
 	}
 
+	readytoUse, err := m.CheckImagesReadyToUse(ctx, latestImages, m.ReplicationGroupDestination.Namespace)
+	if err != nil {
+		m.Logger.Error(err, "Failed to check if images are ready to use")
+
+		return mover.InProgress(), err
+	}
+
+	if !readytoUse {
+		m.Logger.Error(err, "Images are not ready to use")
+
+		return mover.InProgress(), nil
+	}
+
 	m.Logger.Info("Set lastest images to ReplicationGroupDestination", "LenofLastestImages", len(latestImages))
 
 	m.ReplicationGroupDestination.Status.LatestImages = latestImages
+
+	return mover.Complete(), nil
+}
+
+func (m *rgdMachine) Cleanup(ctx context.Context) (mover.Result, error) {
+	m.Logger.Info("Clean expired RD images")
 
 	if err := util.CleanExpiredRDImages(ctx, m.Client, m.ReplicationGroupDestination); err != nil {
 		return mover.InProgress(), err
@@ -134,14 +163,43 @@ func (m *rgdMachine) Synchronize(ctx context.Context) (mover.Result, error) {
 	return mover.Complete(), nil
 }
 
-func (m *rgdMachine) Cleanup(ctx context.Context) (mover.Result, error) {
-	// No temp resources created by ReplicationGroupDestination
-	return mover.Complete(), nil
-}
-
 func (m *rgdMachine) SetOutOfSync(bool)                     {}
 func (m *rgdMachine) IncMissedIntervals()                   {}
 func (m *rgdMachine) ObserveSyncDuration(dur time.Duration) {}
+
+func (m *rgdMachine) CheckImagesReadyToUse(
+	ctx context.Context,
+	latestImages map[string]*corev1.TypedLocalObjectReference,
+	namespace string,
+) (bool, error) {
+	for pvcName := range latestImages {
+		latestImage := latestImages[pvcName]
+		if latestImage == nil {
+			m.Logger.Info("Image is nil to check")
+
+			return false, nil
+		}
+
+		volumeSnapshot := &vsv1.VolumeSnapshot{}
+		if err := m.Client.Get(ctx,
+			types.NamespacedName{Name: latestImage.Name, Namespace: namespace},
+			volumeSnapshot,
+		); err != nil {
+			m.Logger.Error(err, "Failed to get volume snapshot")
+
+			return false, err
+		}
+
+		if volumeSnapshot.Status.ReadyToUse == nil ||
+			(volumeSnapshot.Status.ReadyToUse != nil && !*volumeSnapshot.Status.ReadyToUse) {
+			m.Logger.Info("Volume snapshot is not ready to use", "VolumeSnapshot", volumeSnapshot.Name)
+
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
 
 //nolint:cyclop
 func (m *rgdMachine) ReconcileRD(
@@ -244,44 +302,4 @@ func (m *rgdMachine) CreateReplicationDestinations(
 	}
 
 	return rd, nil
-}
-
-func CreateOrUpdateReplicationGroupDestination(
-	ctx context.Context, k8sClient client.Client,
-	replicationGroupDestinationName, replicationGroupDestinationNamespace string,
-	volumeSnapshotClassSelector metav1.LabelSelector,
-	rdSpecs []ramendrv1alpha1.VolSyncReplicationDestinationSpec,
-	owner metav1.Object,
-) (*ramendrv1alpha1.ReplicationGroupDestination, error) {
-	if err := util.DeleteReplicationGroupSource(ctx, k8sClient,
-		replicationGroupDestinationName, replicationGroupDestinationNamespace); err != nil {
-		return nil, err
-	}
-
-	rgd := &ramendrv1alpha1.ReplicationGroupDestination{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      replicationGroupDestinationName,
-			Namespace: replicationGroupDestinationNamespace,
-		},
-	}
-
-	_, err := ctrlutil.CreateOrUpdate(ctx, k8sClient, rgd, func() error {
-		if err := ctrl.SetControllerReference(owner, rgd, k8sClient.Scheme()); err != nil {
-			return err
-		}
-
-		util.AddLabel(rgd, volsync.VRGOwnerLabel, owner.GetName())
-		util.AddAnnotation(rgd, volsync.OwnerNameAnnotation, owner.GetName())
-		util.AddAnnotation(rgd, volsync.OwnerNamespaceAnnotation, owner.GetNamespace())
-
-		rgd.Spec.VolumeSnapshotClassSelector = volumeSnapshotClassSelector
-		rgd.Spec.RDSpecs = rdSpecs
-
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return rgd, nil
 }

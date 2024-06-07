@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
+	ramenutils "github.com/backube/volsync/controllers/utils"
 	"github.com/go-logr/logr"
 	groupsnapv1alpha1 "github.com/kubernetes-csi/external-snapshotter/client/v7/apis/volumegroupsnapshot/v1alpha1"
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v7/apis/volumesnapshot/v1"
@@ -22,10 +23,12 @@ import (
 )
 
 const (
-	ManualStringAnnotaion        = "ramendr.openshift.io/manual-string"
-	RGDOwnerLabel                = "ramendr.openshift.io/rgd"
-	CleanupLabelKey              = "volsync.backube/cleanup"
-	RGSOwnerLabel         string = "ramendr.openshift.io/rgs"
+	// do not delete the vs in a vgs, only for testing
+	SkipDeleteAnnotaion = "rgd.ramendr.openshift.io/do-not-delete"
+
+	RGDOwnerLabel          = "ramendr.openshift.io/rgd"
+	CleanupLabelKey        = "volsync.backube/cleanup"
+	RGSOwnerLabel   string = "ramendr.openshift.io/rgs"
 )
 
 func IsFSCGSupport(mgr manager.Manager) (bool, error) {
@@ -265,15 +268,10 @@ func DeferDeleteImage(ctx context.Context,
 		}
 
 		delete(labels, CleanupLabelKey)
+		labels[ramenutils.DoNotDeleteLabelKey] = "true"
+
 		labels[RGDOwnerLabel] = rgdName
 		volumeSnapshot.SetLabels(labels)
-
-		annotations := volumeSnapshot.GetAnnotations()
-		if annotations == nil {
-			annotations = make(map[string]string)
-		}
-		annotations[ManualStringAnnotaion] = manual
-		volumeSnapshot.SetAnnotations(annotations)
 
 		return k8sClient.Update(ctx, volumeSnapshot)
 	})
@@ -292,8 +290,12 @@ func CleanExpiredRDImages(ctx context.Context,
 	}
 
 	for _, vs := range volumeSnapshotList.Items {
-		ManualString, ok := vs.Annotations[ManualStringAnnotaion]
-		if ok && ManualString != rgd.Status.LastSyncStartTime.String() {
+		if _, ok := vs.Annotations[SkipDeleteAnnotaion]; ok {
+			// get SkipDeleteAnnotaion, do not delete the volume snapshot
+			continue
+		}
+
+		if !vsInRGD(vs, rgd) {
 			if err := k8sClient.Delete(ctx, &vsv1.VolumeSnapshot{
 				ObjectMeta: metav1.ObjectMeta{Name: vs.Name, Namespace: vs.Namespace},
 			}); err != nil {
@@ -303,4 +305,14 @@ func CleanExpiredRDImages(ctx context.Context,
 	}
 
 	return nil
+}
+
+func vsInRGD(vs vsv1.VolumeSnapshot, rgd *ramendrv1alpha1.ReplicationGroupDestination) bool {
+	for _, image := range rgd.Status.LatestImages {
+		if image.Name == vs.Name {
+			return true
+		}
+	}
+
+	return false
 }

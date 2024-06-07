@@ -10,11 +10,8 @@ import (
 	"github.com/backube/volsync/controllers/statemachine"
 	"github.com/go-logr/logr"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/controllers/util"
 	"github.com/ramendr/ramen/controllers/volsync"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 type replicationGroupSourceMachine struct {
@@ -178,76 +175,3 @@ func (m *replicationGroupSourceMachine) Cleanup(ctx context.Context) (mover.Resu
 func (m *replicationGroupSourceMachine) SetOutOfSync(bool)                     {}
 func (m *replicationGroupSourceMachine) IncMissedIntervals()                   {}
 func (m *replicationGroupSourceMachine) ObserveSyncDuration(dur time.Duration) {}
-
-//nolint:funlen
-func CreateOrUpdateReplicationGroupSource(
-	ctx context.Context, k8sClient client.Client,
-	replicationGroupSourceName, replicationGroupSourceNamespace string,
-	volumeGroupSnapshotClassName string,
-	volumeGroupSnapshotSource *metav1.LabelSelector,
-	ramenSchedulingInterval string,
-	runFinalSync bool,
-	owner metav1.Object,
-) (*ramendrv1alpha1.ReplicationGroupSource, bool, error) {
-	if err := util.DeleteReplicationGroupDestination(
-		ctx, k8sClient,
-		replicationGroupSourceName, replicationGroupSourceNamespace); err != nil {
-		return nil, false, err
-	}
-
-	rgs := &ramendrv1alpha1.ReplicationGroupSource{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      replicationGroupSourceName,
-			Namespace: replicationGroupSourceNamespace,
-		},
-	}
-
-	_, err := ctrlutil.CreateOrUpdate(ctx, k8sClient, rgs, func() error {
-		if err := ctrl.SetControllerReference(owner, rgs, k8sClient.Scheme()); err != nil {
-			return err
-		}
-
-		util.AddLabel(rgs, volsync.VRGOwnerLabel, owner.GetName())
-		util.AddAnnotation(rgs, volsync.OwnerNameAnnotation, owner.GetName())
-		util.AddAnnotation(rgs, volsync.OwnerNamespaceAnnotation, owner.GetNamespace())
-
-		if runFinalSync {
-			rgs.Spec.Trigger = &ramendrv1alpha1.ReplicationSourceTriggerSpec{
-				Manual: volsync.FinalSyncTriggerString,
-			}
-		} else {
-			scheduleCronSpec := &volsync.DefaultScheduleCronSpec
-
-			if ramenSchedulingInterval != "" {
-				var err error
-
-				scheduleCronSpec, err = volsync.ConvertSchedulingIntervalToCronSpec(ramenSchedulingInterval)
-				if err != nil {
-					return err
-				}
-			}
-
-			rgs.Spec.Trigger = &ramendrv1alpha1.ReplicationSourceTriggerSpec{
-				Schedule: scheduleCronSpec,
-			}
-		}
-
-		rgs.Spec.VolumeGroupSnapshotClassName = volumeGroupSnapshotClassName
-		rgs.Spec.VolumeGroupSnapshotSource = volumeGroupSnapshotSource
-
-		return nil
-	})
-	if err != nil {
-		return nil, false, err
-	}
-
-	//
-	// For final sync only - check status to make sure the final sync is complete
-	// and also run cleanup (removes PVC we just ran the final sync from)
-	//
-	if runFinalSync && isFinalSyncComplete(rgs) {
-		return rgs, true, nil
-	}
-
-	return rgs, false, nil
-}

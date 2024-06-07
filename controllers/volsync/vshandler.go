@@ -819,7 +819,7 @@ func (v *VSHandler) deleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestinatio
 	}, lrs)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
-			return v.deleteLocalRD(getLocalReplicationName(rd.GetName()), rd.GetNamespace())
+			return v.DeleteLocalRD(getLocalReplicationName(rd.GetName()), rd.GetNamespace())
 		}
 
 		return err
@@ -830,7 +830,7 @@ func (v *VSHandler) deleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestinatio
 	if lrs.Spec.Trigger != nil && lrs.Spec.Trigger.Manual == latestRDImage.Name {
 		// When local final sync is complete, we cleanup all locally created resources except the app PVC
 		if lrs.Status != nil && lrs.Status.LastManualSync == lrs.Spec.Trigger.Manual {
-			err = v.cleanupLocalResources(lrs)
+			err = v.CleanupLocalResources(lrs)
 			if err != nil {
 				return err
 			}
@@ -994,42 +994,7 @@ func (v *VSHandler) EnsurePVCfromRD(rdSpec ramendrv1alpha1.VolSyncReplicationDes
 
 	v.log.Info("Latest Image for ReplicationDestination", "latestImage", vsImageRef.Name)
 
-	return v.validateSnapshotAndEnsurePVC(rdSpec, *vsImageRef, failoverAction)
-}
-
-func (v *VSHandler) EnsurePVCfromRGD(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec, failoverAction bool,
-) error {
-	rgdList := &ramendrv1alpha1.ReplicationGroupDestinationList{}
-
-	if err := v.listByOwner(rgdList); err != nil {
-		return err
-	}
-
-	var latestImage *corev1.TypedLocalObjectReference
-
-	for _, rgd := range rgdList.Items {
-		if util.GetPVCLatestImageRGD(rdSpec.ProtectedPVC.Name, rgd) != nil {
-			latestImage = util.GetPVCLatestImageRGD(rdSpec.ProtectedPVC.Name, rgd)
-		}
-	}
-
-	if !isLatestImageReady(latestImage) {
-		noSnapErr := fmt.Errorf("unable to find LatestImage from ReplicationDestination %s", rdSpec.ProtectedPVC.Name)
-		v.log.Error(noSnapErr, "No latestImage", "rdSpec", rdSpec)
-
-		return noSnapErr
-	}
-
-	// Make copy of the ref and make sure API group is filled out correctly (shouldn't really need this part)
-	vsImageRef := latestImage.DeepCopy()
-	if vsImageRef.APIGroup == nil || *vsImageRef.APIGroup == "" {
-		vsGroup := snapv1.GroupName
-		vsImageRef.APIGroup = &vsGroup
-	}
-
-	v.log.Info("Latest Image for ReplicationDestination", "latestImage", vsImageRef.Name)
-
-	return v.validateSnapshotAndEnsurePVC(rdSpec, *vsImageRef, failoverAction)
+	return v.ValidateSnapshotAndEnsurePVC(rdSpec, *vsImageRef, failoverAction)
 }
 
 //nolint:cyclop,funlen,gocognit
@@ -1098,7 +1063,7 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 }
 
 //nolint:nestif
-func (v *VSHandler) validateSnapshotAndEnsurePVC(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+func (v *VSHandler) ValidateSnapshotAndEnsurePVC(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	snapshotRef corev1.TypedLocalObjectReference, failoverAction bool,
 ) error {
 	snap, err := v.validateAndProtectSnapshot(snapshotRef, rdSpec.ProtectedPVC.Namespace)
@@ -1937,7 +1902,7 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 	return lrs, nil
 }
 
-func (v *VSHandler) cleanupLocalResources(lrs *volsyncv1alpha1.ReplicationSource) error {
+func (v *VSHandler) CleanupLocalResources(lrs *volsyncv1alpha1.ReplicationSource) error {
 	// delete the snapshot taken by local RD
 	err := v.deleteSnapshot(v.ctx, v.client, lrs.Spec.Trigger.Manual, lrs.GetNamespace(), v.log)
 	if err != nil {
@@ -1956,10 +1921,10 @@ func (v *VSHandler) cleanupLocalResources(lrs *volsyncv1alpha1.ReplicationSource
 	}
 
 	// Delete the localRD. The name of the localRD is the same as the name of the localRS
-	return v.deleteLocalRD(lrs.GetName(), lrs.GetNamespace())
+	return v.DeleteLocalRD(lrs.GetName(), lrs.GetNamespace())
 }
 
-func (v *VSHandler) deleteLocalRD(lrdName, lrdNamespace string) error {
+func (v *VSHandler) DeleteLocalRD(lrdName, lrdNamespace string) error {
 	lrd := &volsyncv1alpha1.ReplicationDestination{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      lrdName,

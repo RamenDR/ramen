@@ -25,7 +25,6 @@ import (
 var (
 	VolumeGroupSnapshotNameFormat = "cephfscg-%s"
 	RestorePVCinCGNameFormat      = "cephfscg-%s"
-	ReplicationSourceNameFormat   = "cephfscg-%s"
 	SnapshotGroup                 = "snapshot.storage.k8s.io"
 	SnapshotGroupKind             = "VolumeSnapshot"
 )
@@ -387,7 +386,7 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 		replicationSourceNamepspace := h.VolumeGroupSnapshotNamespace
 		replicationSource := &volsyncv1alpha1.ReplicationSource{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      restoredPVC.RestoredPVCName,
+				Name:      restoredPVC.SourcePVCName,
 				Namespace: replicationSourceNamepspace,
 			},
 		}
