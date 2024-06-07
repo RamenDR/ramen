@@ -20,7 +20,7 @@ def deploy(cluster):
     #   The CustomResourceDefinition "clusterserviceversions.operators.coreos.com"
     #   is invalid: metadata.annotations: Too long: must have at most 262144 bytes
     # See https://medium.com/pareture/kubectl-install-crd-failed-annotations-too-long-2ebc91b40c7d
-    path = cache.path("addons/olm-crds.yaml")
+    path = cache.path("addons/olm-crds-0.27.yaml")
     cache.fetch("crds", path)
     kubectl.apply("--filename", path, "--server-side=true", context=cluster)
 
@@ -33,7 +33,7 @@ def deploy(cluster):
     )
 
     print("Deploying olm")
-    path = cache.path("addons/olm-operators.yaml")
+    path = cache.path("addons/olm-operators-0.27.yaml")
     cache.fetch("operators", path)
     kubectl.apply("--filename", path, context=cluster)
 

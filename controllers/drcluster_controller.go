@@ -936,51 +936,9 @@ func (u *drclusterInstance) removeFencingCR(cluster ramen.DRCluster) (bool, erro
 	err := u.mwUtil.DeleteManifestWork(fmt.Sprintf(util.ManifestWorkNameFormat,
 		u.object.Name, cluster.Name, util.MWTypeNF), cluster.Name)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return u.ensureNetworkFenceDeleted(cluster.Name)
-		}
-
 		return true, fmt.Errorf("failed to delete NetworkFence resource from cluster %s", cluster.Name)
 	}
 
-	setDRClusterCleaningCondition(&u.object.Status.Conditions, u.object.Generation, "NetworkFence resource clean started")
-
-	// Since ManifestWork for the fencing CR delete request
-	// has been just issued, requeue is needed to ensure that
-	// the fencing CR has indeed been deleted from the cluster.
-	return true, nil
-}
-
-func (u *drclusterInstance) ensureNetworkFenceDeleted(clusterName string) (bool, error) {
-	annotations := make(map[string]string)
-	annotations[DRClusterNameAnnotation] = u.object.Name
-
-	if _, err := u.reconciler.MCVGetter.GetNFFromManagedCluster(u.object.Name,
-		u.object.Namespace, clusterName, annotations); err != nil {
-		if errors.IsNotFound(err) {
-			return u.deleteNFMCV(clusterName)
-		}
-
-		return true, fmt.Errorf("failed to get MCV for NetworkFence on %s (%w)", clusterName, err)
-	}
-
-	// We are here means, successfully NetworkFence MCV is obtained. Hence
-	// we need to wait for NetworkFence deletion to complete. Requeue.
-	return true, nil
-}
-
-func (u *drclusterInstance) deleteNFMCV(clusterName string) (bool, error) {
-	mcvNameNF := util.BuildManagedClusterViewName(u.object.Name, u.object.Namespace, util.MWTypeNF)
-
-	err := u.reconciler.MCVGetter.DeleteNFManagedClusterView(u.object.Name, u.object.Namespace, clusterName, mcvNameNF)
-	if err != nil {
-		u.log.Info("Failed to delete the MCV for NetworkFence")
-
-		return true, fmt.Errorf("failed to delete MCV for NetworkFence %w", err)
-	}
-
-	u.log.Info("Deleted the MCV for NetworkFence")
-	// successfully deleted the MCV for NetworkFence. No need to requeue
 	return false, nil
 }
 
@@ -1330,7 +1288,7 @@ func (u *drclusterInstance) createNFManifestWork(targetCluster *ramen.DRCluster,
 	annotations[DRClusterNameAnnotation] = u.object.Name
 
 	if err := u.mwUtil.CreateOrUpdateNFManifestWork(
-		u.object.Name, u.object.Namespace,
+		u.object.Name,
 		peerCluster.Name, nf, annotations); err != nil {
 		log.Error(err, "failed to create or update NetworkFence manifest")
 

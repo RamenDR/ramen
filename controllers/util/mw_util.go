@@ -228,10 +228,10 @@ func ExtractMModeFromManifestWork(mw *ocmworkv1.ManifestWork) (*rmn.MaintenanceM
 
 // NetworkFence MW creation
 func (mwu *MWUtil) CreateOrUpdateNFManifestWork(
-	name, namespace, homeCluster string,
+	name, homeCluster string,
 	nf csiaddonsv1alpha1.NetworkFence, annotations map[string]string,
 ) error {
-	manifestWork, err := mwu.generateNFManifestWork(name, namespace, homeCluster, nf, annotations)
+	manifestWork, err := mwu.generateNFManifestWork(name, homeCluster, nf, annotations)
 	if err != nil {
 		return err
 	}
@@ -239,7 +239,7 @@ func (mwu *MWUtil) CreateOrUpdateNFManifestWork(
 	return mwu.createOrUpdateManifestWork(manifestWork, homeCluster)
 }
 
-func (mwu *MWUtil) generateNFManifestWork(name, namespace, homeCluster string,
+func (mwu *MWUtil) generateNFManifestWork(name, homeCluster string,
 	nf csiaddonsv1alpha1.NetworkFence, annotations map[string]string,
 ) (*ocmworkv1.ManifestWork, error) {
 	nfClientManifest, err := mwu.generateNFManifest(nf)
@@ -257,7 +257,7 @@ func (mwu *MWUtil) generateNFManifestWork(name, namespace, homeCluster string,
 	//       that wants to create the csiaddonsv1alpha1.NetworkFence resource
 	// type: type of the resource for this ManifestWork
 	return mwu.newManifestWork(
-		fmt.Sprintf(ManifestWorkNameFormat, name, namespace, MWTypeNF),
+		fmt.Sprintf(ManifestWorkNameFormat, name, homeCluster, MWTypeNF),
 		homeCluster,
 		map[string]string{"app": "NF"},
 		manifests, annotations), nil
