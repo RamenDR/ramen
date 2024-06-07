@@ -39,6 +39,7 @@ import (
 	argocdv1alpha1hack "github.com/ramendr/ramen/controllers/argocd"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -113,6 +114,7 @@ func configureController(ramenConfig *ramendrv1alpha1.RamenConfig) error {
 		utilruntime.Must(snapv1.AddToScheme(scheme))
 		utilruntime.Must(groupsnapv1alpha1.AddToScheme(scheme))
 		utilruntime.Must(recipe.AddToScheme(scheme))
+		utilruntime.Must(apiextensionsv1.AddToScheme(scheme))
 	}
 
 	return nil
