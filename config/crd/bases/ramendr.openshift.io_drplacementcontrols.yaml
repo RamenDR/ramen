@@ -413,6 +413,11 @@ spec:
                   synchronization of all PVCs
                 format: date-time
                 type: string
+              lastKubeObjectProtectionTime:
+                description: lastKubeObjectProtectionTime is the time of the most
+                  recent successful kube object protection
+                format: date-time
+                type: string
               lastUpdateTime:
                 description: LastUpdateTime is when was the last time a condition
                   or the overall status was updated

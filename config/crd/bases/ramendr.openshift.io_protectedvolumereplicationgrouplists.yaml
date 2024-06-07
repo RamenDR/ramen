@@ -709,6 +709,10 @@ spec:
                           properties:
                             captureToRecoverFrom:
                               properties:
+                                endTime:
+                                  format: date-time
+                                  nullable: true
+                                  type: string
                                 number:
                                   format: int64
                                   type: integer
