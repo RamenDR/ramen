@@ -165,20 +165,28 @@ func setupReconcilersCluster(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.Rame
 		os.Exit(1)
 	}
 
-	if err := (&controllers.ReplicationGroupDestinationReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ReplicationGroupDestination")
+	fsCGSupport, err := rmnutil.IsFSCGSupport(mgr)
+	if err != nil {
+		setupLog.Error(err, "failed to check if ceph fs consistency group is supported")
 		os.Exit(1)
 	}
 
-	if err := (&controllers.ReplicationGroupSourceReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ReplicationGroupSource")
-		os.Exit(1)
+	if fsCGSupport {
+		if err := (&controllers.ReplicationGroupDestinationReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "ReplicationGroupDestination")
+			os.Exit(1)
+		}
+
+		if err := (&controllers.ReplicationGroupSourceReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "ReplicationGroupSource")
+			os.Exit(1)
+		}
 	}
 }
 

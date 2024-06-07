@@ -11,12 +11,14 @@ import (
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 const (
@@ -25,6 +27,27 @@ const (
 	CleanupLabelKey              = "volsync.backube/cleanup"
 	RGSOwnerLabel         string = "ramendr.openshift.io/rgs"
 )
+
+func IsFSCGSupport(mgr manager.Manager) (bool, error) {
+	k8sClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: mgr.GetScheme()})
+	if err != nil {
+		return false, err
+	}
+
+	vgsCRD := &apiextensionsv1.CustomResourceDefinition{}
+	if err := k8sClient.Get(context.Background(),
+		types.NamespacedName{Name: "volumegroupsnapshots.groupsnapshot.storage.k8s.io"},
+		vgsCRD,
+	); err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	return true, nil
+}
 
 func GetPVCLatestImageRGD(
 	pvcname string, rgd ramendrv1alpha1.ReplicationGroupDestination,
