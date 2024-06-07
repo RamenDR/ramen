@@ -5,7 +5,7 @@ kind: VolumeGroupSnapshotClass
 metadata:
   name: cephfs-cg-snapclass
 parameters:
-  fsName: cephfs
+  fsName: myfs
   clusterID: rook-ceph
   csi.storage.k8s.io/group-snapshotter-secret-name: rook-csi-cephfs-provisioner
   csi.storage.k8s.io/group-snapshotter-secret-namespace: rook-ceph
