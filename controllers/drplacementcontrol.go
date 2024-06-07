@@ -2296,6 +2296,13 @@ func (d *DRPCInstance) shouldUpdateStatus() bool {
 		return true
 	}
 
+	if vrg.Status.KubeObjectProtection.CaptureToRecoverFrom != nil {
+		vrgKubeObjectProtectionTime := vrg.Status.KubeObjectProtection.CaptureToRecoverFrom.EndTime
+		if !vrgKubeObjectProtectionTime.Equal(d.instance.Status.LastKubeObjectProtectionTime) {
+			return true
+		}
+	}
+
 	return !reflect.DeepEqual(d.instance.Status.ResourceConditions.Conditions, vrg.Status.Conditions)
 }
 
