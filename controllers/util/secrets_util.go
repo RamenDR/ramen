@@ -53,6 +53,9 @@ type TargetSecretFormat string
 const (
 	SecretFormatRamen  TargetSecretFormat = "ramen"
 	SecretFormatVelero TargetSecretFormat = "velero"
+
+	// This is a dev time assertion message to detect any new unhandled format in related functions
+	unknownFormat = "detected unhandled target secret format"
 )
 
 // Prefix length for format, to distinguish policy names for the same secret in the same namespace
@@ -73,20 +76,21 @@ type SecretsUtil struct {
 func GeneratePolicyResourceNames(
 	secret string,
 	format TargetSecretFormat,
-) (plName, plBindingName, plRuleName, configPolicyName string) {
-	var policyName string
-
+) (policyName, plBindingName, plRuleName, configPolicyName string) {
 	switch format {
 	case SecretFormatRamen:
 		policyName = ramenFormatPrefix + secret
 	case SecretFormatVelero:
 		policyName = veleroFormatPrefix + secret
+	default:
+		panic(unknownFormat)
 	}
 
-	return policyName,
-		fmt.Sprintf(secretResourceNameFormat, secretPlBindingBaseName, policyName),
-		fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, policyName),
-		fmt.Sprintf(secretResourceNameFormat, secretConfigPolicyBaseName, policyName)
+	plBindingName = fmt.Sprintf(secretResourceNameFormat, secretPlBindingBaseName, policyName)
+	plRuleName = fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, policyName)
+	configPolicyName = fmt.Sprintf(secretResourceNameFormat, secretConfigPolicyBaseName, policyName)
+
+	return
 }
 
 func generatePolicyPlacementName(secret string, format TargetSecretFormat) string {
@@ -97,6 +101,8 @@ func generatePolicyPlacementName(secret string, format TargetSecretFormat) strin
 		policyName = ramenFormatPrefix + secret
 	case SecretFormatVelero:
 		policyName = veleroFormatPrefix + secret
+	default:
+		panic(unknownFormat)
 	}
 
 	return fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, policyName)
@@ -113,9 +119,9 @@ func SecretFinalizer(format TargetSecretFormat) string {
 		return SecretPolicyFinalizer
 	case SecretFormatVelero:
 		return SecretPolicyFinalizer + "-" + string(SecretFormatVelero)
+	default:
+		panic(unknownFormat)
 	}
-
-	return SecretPolicyFinalizer
 }
 
 // GeneratePolicyName generates a policy name by combining the word "vs-secret-" with the name.
@@ -441,6 +447,8 @@ func (sutil *SecretsUtil) policyObject(
 		object = &runtime.RawExtension{
 			Object: newVeleroSecret(s3SecretRef, targetNS, veleroNS, VeleroSecretKeyNameDefault),
 		}
+	default:
+		panic(unknownFormat)
 	}
 
 	return object
