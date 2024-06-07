@@ -1872,6 +1872,10 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 		drpc.Status.LastGroupSyncBytes = vrg.Status.LastGroupSyncBytes
 	}
 
+	if vrg.Status.KubeObjectProtection.CaptureToRecoverFrom != nil {
+		vrg.Status.KubeObjectProtection.CaptureToRecoverFrom.EndTime.DeepCopyInto(drpc.Status.LastKubeObjectProtectionTime)
+	}
+
 	updateDRPCProtectedCondition(drpc, vrg, clusterName)
 }
 

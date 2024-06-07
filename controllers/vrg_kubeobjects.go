@@ -370,8 +370,10 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 
 	captureToRecoverFromIdentifierCurrent := *captureToRecoverFromIdentifier
 	*captureToRecoverFromIdentifier = &ramen.KubeObjectsCaptureIdentifier{
-		Number:          captureNumber,
-		StartTime:       startTime,
+		Number:    captureNumber,
+		StartTime: startTime,
+		EndTime:   metav1.Now(),
+		// Actual EndTime is last request's EndTime but it is okay to use the current time
 		StartGeneration: startGeneration,
 	}
 

@@ -289,7 +289,9 @@ type ProtectedPVC struct {
 type KubeObjectsCaptureIdentifier struct {
 	Number int64 `json:"number"`
 	//+nullable
-	StartTime       metav1.Time `json:"startTime,omitempty"`
+	StartTime metav1.Time `json:"startTime,omitempty"`
+	//+nullable
+	EndTime         metav1.Time `json:"endTime,omitempty"`
 	StartGeneration int64       `json:"startGeneration,omitempty"`
 }
 

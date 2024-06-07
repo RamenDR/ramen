@@ -230,6 +230,10 @@ type DRPlacementControlStatus struct {
 	// successful synchronization of all PVCs
 	//+optional
 	LastGroupSyncBytes *int64 `json:"lastGroupSyncBytes,omitempty"`
+
+	// lastKubeObjectProtectionTime is the time of the most recent successful kube object protection
+	//+optional
+	LastKubeObjectProtectionTime *metav1.Time `json:"lastKubeObjectProtectionTime,omitempty"`
 }
 
 // +kubebuilder:object:root=true
