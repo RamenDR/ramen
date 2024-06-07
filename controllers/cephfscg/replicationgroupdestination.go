@@ -14,6 +14,7 @@ import (
 	"github.com/ramendr/ramen/controllers/volsync"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -210,7 +211,11 @@ func (m *rgdMachine) CreateReplicationDestinations(
 	if _, err := ctrlutil.CreateOrUpdate(
 		context.Background(), m.Client, rd,
 		func() error {
-			util.AddLabel(rd, volsync.VRGOwnerLabel, m.ReplicationGroupDestination.Name)
+			if err := ctrl.SetControllerReference(m.ReplicationGroupDestination, rd, m.Client.Scheme()); err != nil {
+				return err
+			}
+
+			util.AddLabel(rd, util.RGDOwnerLabel, m.ReplicationGroupDestination.Name)
 			util.AddAnnotation(rd, volsync.OwnerNameAnnotation, m.ReplicationGroupDestination.Name)
 			util.AddAnnotation(rd, volsync.OwnerNamespaceAnnotation, m.ReplicationGroupDestination.Namespace)
 
@@ -239,4 +244,44 @@ func (m *rgdMachine) CreateReplicationDestinations(
 	}
 
 	return rd, nil
+}
+
+func CreateOrUpdateReplicationGroupDestination(
+	ctx context.Context, k8sClient client.Client,
+	replicationGroupDestinationName, replicationGroupDestinationNamespace string,
+	volumeSnapshotClassSelector metav1.LabelSelector,
+	rdSpecs []ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+	owner metav1.Object,
+) (*ramendrv1alpha1.ReplicationGroupDestination, error) {
+	if err := util.DeleteReplicationGroupSource(ctx, k8sClient,
+		replicationGroupDestinationName, replicationGroupDestinationNamespace); err != nil {
+		return nil, err
+	}
+
+	rgd := &ramendrv1alpha1.ReplicationGroupDestination{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      replicationGroupDestinationName,
+			Namespace: replicationGroupDestinationNamespace,
+		},
+	}
+
+	_, err := ctrlutil.CreateOrUpdate(ctx, k8sClient, rgd, func() error {
+		if err := ctrl.SetControllerReference(owner, rgd, k8sClient.Scheme()); err != nil {
+			return err
+		}
+
+		util.AddLabel(rgd, volsync.VRGOwnerLabel, owner.GetName())
+		util.AddAnnotation(rgd, volsync.OwnerNameAnnotation, owner.GetName())
+		util.AddAnnotation(rgd, volsync.OwnerNamespaceAnnotation, owner.GetNamespace())
+
+		rgd.Spec.VolumeSnapshotClassSelector = volumeSnapshotClassSelector
+		rgd.Spec.RDSpecs = rdSpecs
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return rgd, nil
 }

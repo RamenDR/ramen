@@ -10,12 +10,14 @@ import (
 	vgsv1alphfa1 "github.com/kubernetes-csi/external-snapshotter/client/v7/apis/volumegroupsnapshot/v1alpha1"
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v7/apis/volumesnapshot/v1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/controllers/util"
 	"github.com/ramendr/ramen/controllers/volsync"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -30,17 +32,18 @@ var (
 
 type VolumeGroupSourceHandler interface {
 	CreateOrUpdateVolumeGroupSnapshot(
-		ctx context.Context,
+		ctx context.Context, owner metav1.Object,
 	) error
 
 	RestoreVolumesFromVolumeGroupSnapshot(
-		ctx context.Context,
+		ctx context.Context, owner metav1.Object,
 	) ([]RestoredPVC, error)
 
 	CreateOrUpdateReplicationSourceForRestoredPVCs(
 		ctx context.Context,
 		manual string,
 		restoredPVCs []RestoredPVC,
+		owner metav1.Object,
 	) ([]*corev1.ObjectReference, error)
 
 	CheckReplicationSourceForRestoredPVCsCompleted(
@@ -96,7 +99,7 @@ func NewVolumeGroupSourceHandler(
 
 // CreateOrUpdateVolumeGroupSnapshot create or update a VolumeGroupSnapshot
 func (h *volumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(
-	ctx context.Context,
+	ctx context.Context, owner metav1.Object,
 ) error {
 	logger := h.Logger.WithName("CreateOrUpdateVolumeGroupSnapshot")
 	logger.Info("Create or update volume group snapshot")
@@ -112,6 +115,14 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(
 		if !volumeGroupSnapshot.DeletionTimestamp.IsZero() {
 			return fmt.Errorf("the volume group snapshot is being deleted, need to wait")
 		}
+
+		if err := ctrl.SetControllerReference(owner, volumeGroupSnapshot, h.Client.Scheme()); err != nil {
+			return err
+		}
+
+		util.AddLabel(volumeGroupSnapshot, util.RGSOwnerLabel, owner.GetName())
+		util.AddAnnotation(volumeGroupSnapshot, volsync.OwnerNameAnnotation, owner.GetName())
+		util.AddAnnotation(volumeGroupSnapshot, volsync.OwnerNamespaceAnnotation, owner.GetNamespace())
 
 		volumeGroupSnapshot.Spec.VolumeGroupSnapshotClassName = &h.VolumeGroupSnapshotClassName
 		volumeGroupSnapshot.Spec.Source.Selector = h.VolumeGroupLabel
@@ -193,7 +204,7 @@ func (h *volumeGroupSourceHandler) CleanVolumeGroupSnapshot(
 
 // RestoreVolumesFromVolumeGroupSnapshot restore VolumeGroupSnapshot to PVCs
 func (h *volumeGroupSourceHandler) RestoreVolumesFromVolumeGroupSnapshot(
-	ctx context.Context,
+	ctx context.Context, owner metav1.Object,
 ) ([]RestoredPVC, error) {
 	logger := h.Logger.WithName("RestoreVolumesFromVolumeGroupSnapshot")
 	logger.Info("Get volume group snapshot")
@@ -232,7 +243,7 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromVolumeGroupSnapshot(
 			Name:      fmt.Sprintf(RestorePVCinCGNameFormat, pvc.Name),
 		}
 		if err := h.RestoreVolumesFromSnapshot(
-			ctx, vsRef, pvc, RestoredPVCNamespacedName, restoreStorageClass.GetName()); err != nil {
+			ctx, vsRef, pvc, RestoredPVCNamespacedName, restoreStorageClass.GetName(), owner); err != nil {
 			return nil, fmt.Errorf("failed to restore volumes from snapshot %s: %w", vsRef.Name+"/"+vsRef.Namespace, err)
 		}
 
@@ -260,6 +271,7 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromSnapshot(
 	pvc *corev1.PersistentVolumeClaim,
 	restoredPVCNamespacedname types.NamespacedName,
 	restoreStorageClassName string,
+	owner metav1.Object,
 ) error {
 	logger := h.Logger.WithName("RestoreVolumesFromSnapshot").
 		WithValues("RestoredPVCName", restoredPVCNamespacedname.Name).
@@ -288,6 +300,14 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromSnapshot(
 		if !restoredPVC.DeletionTimestamp.IsZero() {
 			return fmt.Errorf("the restored pvc is being deleted, need to wait")
 		}
+
+		if err := ctrl.SetControllerReference(owner, restoredPVC, h.Client.Scheme()); err != nil {
+			return err
+		}
+
+		util.AddLabel(restoredPVC, util.RGSOwnerLabel, owner.GetName())
+		util.AddAnnotation(restoredPVC, volsync.OwnerNameAnnotation, owner.GetName())
+		util.AddAnnotation(restoredPVC, volsync.OwnerNamespaceAnnotation, owner.GetNamespace())
 
 		if !restoredPVC.CreationTimestamp.IsZero() &&
 			restoredPVC.Spec.DataSource != nil &&
@@ -346,10 +366,13 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromSnapshot(
 }
 
 // CreateOrUpdateReplicationSourceForRestoredPVCs create or update replication source for each restored pvc
+//
+//nolint:funlen
 func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVCs(
 	ctx context.Context,
 	manual string,
 	restoredPVCs []RestoredPVC,
+	owner metav1.Object,
 ) ([]*corev1.ObjectReference, error) {
 	logger := h.Logger.WithName("CreateReplicationSourceForRestoredPVCs").
 		WithValues("NumberOfRestoredPVCs", len(restoredPVCs))
@@ -371,6 +394,14 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 		rdService := getRemoteServiceNameForRDFromPVCName(restoredPVC.SourcePVCName, replicationSourceNamepspace)
 
 		op, err := ctrlutil.CreateOrUpdate(ctx, h.Client, replicationSource, func() error {
+			if err := ctrl.SetControllerReference(owner, replicationSource, h.Client.Scheme()); err != nil {
+				return err
+			}
+
+			util.AddLabel(replicationSource, util.RGSOwnerLabel, owner.GetName())
+			util.AddAnnotation(replicationSource, volsync.OwnerNameAnnotation, owner.GetName())
+			util.AddAnnotation(replicationSource, volsync.OwnerNamespaceAnnotation, owner.GetNamespace())
+
 			replicationSource.Spec.SourcePVC = restoredPVC.RestoredPVCName
 			replicationSource.Spec.Trigger = &volsyncv1alpha1.ReplicationSourceTriggerSpec{
 				Manual: manual,

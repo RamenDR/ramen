@@ -178,6 +178,7 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 			v.instance.Name, v.instance.Namespace,
 			volumeGroupSnapshotClassName, v.instance.Spec.CephFSConsistencyGroupSelector,
 			v.instance.Spec.Async.SchedulingInterval, v.instance.Spec.RunFinalSync,
+			v.instance,
 		)
 		if err != nil {
 			setVRGConditionTypeVolSyncRepSourceSetupError(&protectedPVC.Conditions, v.instance.Generation,
@@ -290,10 +291,10 @@ func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
 	if len(rdinCG) > 0 {
 		v.log.Info("Create ReplicationGroupDestination with RDSpecs", "RDSpecs", rdinCG)
 
-		replicationGroupDestination, err := util.CreateOrUpdateReplicationGroupDestination(
+		replicationGroupDestination, err := cephfscg.CreateOrUpdateReplicationGroupDestination(
 			v.ctx, v.reconciler.Client, v.instance.Name,
 			v.instance.Namespace, v.instance.Spec.Async.VolumeSnapshotClassSelector,
-			rdinCG,
+			rdinCG, v.instance,
 		)
 		if err != nil {
 			v.log.Error(err, "Failed to create ReplicationGroupDestination")

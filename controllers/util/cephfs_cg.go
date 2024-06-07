@@ -17,13 +17,13 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const (
-	ManualStringAnnotaion = "ramendr.openshift.io/manual-string"
-	RGDOwnerLabel         = "ramendr.openshift.io/rgd"
-	CleanupLabelKey       = "volsync.backube/cleanup"
+	ManualStringAnnotaion        = "ramendr.openshift.io/manual-string"
+	RGDOwnerLabel                = "ramendr.openshift.io/rgd"
+	CleanupLabelKey              = "volsync.backube/cleanup"
+	RGSOwnerLabel         string = "ramendr.openshift.io/rgs"
 )
 
 func GetPVCLatestImageRGD(
@@ -58,37 +58,6 @@ func IsReplicationGroupDestinationReady(
 	}
 
 	return true, nil
-}
-
-func CreateOrUpdateReplicationGroupDestination(
-	ctx context.Context, k8sClient client.Client,
-	replicationGroupDestinationName, replicationGroupDestinationNamespace string,
-	volumeSnapshotClassSelector metav1.LabelSelector,
-	rdSpecs []ramendrv1alpha1.VolSyncReplicationDestinationSpec,
-) (*ramendrv1alpha1.ReplicationGroupDestination, error) {
-	if err := DeleteReplicationGroupSource(ctx, k8sClient,
-		replicationGroupDestinationName, replicationGroupDestinationNamespace); err != nil {
-		return nil, err
-	}
-
-	rgd := &ramendrv1alpha1.ReplicationGroupDestination{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      replicationGroupDestinationName,
-			Namespace: replicationGroupDestinationNamespace,
-		},
-	}
-
-	_, err := ctrlutil.CreateOrUpdate(ctx, k8sClient, rgd, func() error {
-		rgd.Spec.VolumeSnapshotClassSelector = volumeSnapshotClassSelector
-		rgd.Spec.RDSpecs = rdSpecs
-
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return rgd, nil
 }
 
 func DeleteReplicationGroupSource(
