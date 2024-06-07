@@ -18,9 +18,9 @@ kubectl --context dr1 apply -f "${VOLUME_GROUP_SNAPSHOTCLASS}"
 kubectl --context dr1 apply -f "${VOLUME_GROUP_SNAPSHOT_CONTENT}"
 kubectl --context dr1 apply -f "${VOLUME_GROUP_SNAPSHOT}"
 kubectl --context dr1 apply -f "${SNAPSHOT_RBAC}"
-minikube image load -p dr1 snapshot-controller.tar
-minikube image load -p dr1 csi-snapshotter.tar
-minikube image load -p dr1 cephcsi.tar
+minikube image load -p dr1 /home/johan/snapshot-controller.tar
+minikube image load -p dr1 /home/johan/csi-snapshotter.tar
+minikube image load -p dr1 /home/johan/cephcsi.tar
 kubectl --context dr1 apply -f snapshot-controller-runner-rbac.yaml
 kubectl --context dr1 apply -f csi-cephfsplugin-provisioner.rook-ceph.yaml
 kubectl --context dr1 apply -f csi-cephfsplugin.rook-ceph.yaml
@@ -32,9 +32,9 @@ kubectl --context dr2 apply -f "${VOLUME_GROUP_SNAPSHOTCLASS}"
 kubectl --context dr2 apply -f "${VOLUME_GROUP_SNAPSHOT_CONTENT}"
 kubectl --context dr2 apply -f "${VOLUME_GROUP_SNAPSHOT}"
 kubectl --context dr2 apply -f "${SNAPSHOT_RBAC}"
-minikube image load -p dr2 snapshot-controller.tar
-minikube image load -p dr2 csi-snapshotter.tar
-minikube image load -p dr2 cephcsi.tar
+minikube image load -p dr2 /home/johan/snapshot-controller.tar
+minikube image load -p dr2 /home/johan/csi-snapshotter.tar
+minikube image load -p dr2 /home/johan/cephcsi.tar
 kubectl --context dr2 apply -f snapshot-controller-runner-rbac.yaml
 kubectl --context dr2 apply -f csi-cephfsplugin-provisioner.rook-ceph.yaml
 kubectl --context dr2 apply -f csi-cephfsplugin.rook-ceph.yaml
