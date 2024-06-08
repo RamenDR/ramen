@@ -939,10 +939,13 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 		return nil, err
 	}
 
-	vrgs, _, _, err := getVRGsFromManagedClusters(r.MCVGetter, drpc, drClusters, vrgNamespace, log)
+	vrgsFromMCV, _, _, err := getVRGsFromManagedClusters(r.MCVGetter, drpc, drClusters, vrgNamespace, log)
 	if err != nil {
 		return nil, err
 	}
+
+	vrgFromS3 := GetLastKnownVRGPrimaryFromS3(ctx, r.APIReader,
+		AvailableS3Profiles(drClusters), drpc.GetName(), vrgNamespace, r.ObjStoreGetter, log)
 
 	d := &DRPCInstance{
 		reconciler:      r,
@@ -952,7 +955,8 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 		userPlacement:   placementObj,
 		drPolicy:        drPolicy,
 		drClusters:      drClusters,
-		vrgs:            vrgs,
+		vrgsFromMCV:     vrgsFromMCV,
+		vrgFromS3:       vrgFromS3,
 		vrgNamespace:    vrgNamespace,
 		volSyncDisabled: ramenConfig.VolSync.Disabled,
 		ramenConfig:     ramenConfig,
@@ -1025,7 +1029,7 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(d *DRPCInstance, lo
 		beforeProcessing = *d.instance.Status.LastUpdateTime
 	}
 
-	if !ensureVRGsManagedByDRPC(d.log, d.mwu, d.vrgs, d.instance, d.vrgNamespace) {
+	if !ensureVRGsManagedByDRPC(d.log, d.mwu, d.vrgsFromMCV, d.instance, d.vrgNamespace) {
 		log.Info("Requeing... VRG adoption in progress")
 
 		return ctrl.Result{Requeue: true}, nil

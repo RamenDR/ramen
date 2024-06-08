@@ -64,7 +64,8 @@ type DRPCInstance struct {
 	mcvRequestInProgress bool
 	volSyncDisabled      bool
 	userPlacement        client.Object
-	vrgs                 map[string]*rmn.VolumeReplicationGroup // Populated using MCV
+	vrgsFromMCV          map[string]*rmn.VolumeReplicationGroup // Populated using MCV
+	vrgFromS3            *rmn.VolumeReplicationGroup            // Cache the vrg from s3 if found
 	vrgNamespace         string
 	ramenConfig          *rmn.RamenConfig
 	mwu                  rmnutil.MWUtil
@@ -282,7 +283,7 @@ func (d *DRPCInstance) getCachedVRG(clusterName string) *rmn.VolumeReplicationGr
 // inaccessible or not represented in the MCV data.
 //
 // The function performs the following steps:
-//  1. Iterates over all managed clusters and tries to find their corresponding VRGs in `d.vrgs`.
+//  1. Iterates over all managed clusters and tries to find their corresponding VRGs in `d.vrgsFromMCV`.
 //     If found, it adds them to the `vrgs` map and checks if any VRG is marked as primary.
 //  2. If the number of retrieved VRGs matches the number of DR clusters, it returns the `vrgs` map immediately
 //     as a shortcut, indicating that all required VRGs have been collected.
@@ -298,7 +299,7 @@ func (d *DRPCInstance) fetchVRGsFromMClusterOrS3() map[string]*rmn.VolumeReplica
 	var primaryFound bool
 
 	for _, drCluster := range d.drClusters {
-		vrg, found := d.vrgs[drCluster.Name]
+		vrg, found := d.vrgsFromMCV[drCluster.Name]
 		if !found {
 			continue
 		}
@@ -317,15 +318,12 @@ func (d *DRPCInstance) fetchVRGsFromMClusterOrS3() map[string]*rmn.VolumeReplica
 
 	// If MCV didn't return a primary VRG, then we need to get it from the s3 store.
 	if !primaryFound {
-		vrg := GetLastKnownVRGPrimaryFromS3(d.ctx, d.reconciler.APIReader,
-			AvailableS3Profiles(d.drClusters), d.instance.GetName(),
-			d.vrgNamespace, d.reconciler.ObjStoreGetter, d.log)
-		if vrg != nil {
-			primaryCluster := vrg.GetAnnotations()[DestinationClusterAnnotationKey]
+		if d.vrgFromS3 != nil {
+			primaryCluster := d.vrgFromS3.GetAnnotations()[DestinationClusterAnnotationKey]
 			// Double check that we don't have already an entry in the vrgs populated using MCV
-			_, found := d.vrgs[primaryCluster]
+			_, found := d.vrgsFromMCV[primaryCluster]
 			if !found {
-				vrgs[primaryCluster] = vrg
+				vrgs[primaryCluster] = d.vrgFromS3
 			}
 		}
 	}
