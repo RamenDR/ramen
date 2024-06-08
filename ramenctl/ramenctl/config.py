@@ -22,7 +22,6 @@ def run(args):
     env = command.env_info(args)
 
     s3_secrets = generate_ramen_s3_secrets(env["clusters"], args)
-    cloud_secret = generate_cloud_credentials_secret(env["clusters"][0], args)
 
     if env["hub"]:
         hub_cm = generate_config_map("hub", env, args)
@@ -42,7 +41,6 @@ def run(args):
 
         for cluster in env["clusters"]:
             create_ramen_s3_secrets(cluster, s3_secrets)
-            create_cloud_credentials_secret(cluster, cloud_secret)
             create_ramen_config_map(cluster, dr_cluster_cm)
 
 
@@ -70,23 +68,6 @@ def create_ramen_s3_secrets(cluster, secrets):
     command.info("Creating ramen s3 secrets in cluster '%s'", cluster)
     for secret in secrets:
         kubectl.apply("--filename=-", input=secret, context=cluster, log=command.debug)
-
-
-def generate_cloud_credentials_secret(cluster, args):
-    command.debug("Getting velero cloud credentials from cluster '%s'", cluster)
-    cloud = kubectl.get(
-        "secret/cloud-credentials",
-        "--namespace=velero",
-        "--output=jsonpath={.data.cloud}",
-        context=cluster,
-    )
-    template = drenv.template(command.resource("cloud-credentials-secret.yaml"))
-    return template.substitute(cloud=cloud, namespace=args.ramen_namespace)
-
-
-def create_cloud_credentials_secret(cluster, yaml):
-    command.info("Creating cloud credentials secret in cluster '%s'", cluster)
-    kubectl.apply("--filename=-", input=yaml, context=cluster, log=command.debug)
 
 
 def generate_config_map(controller, env, args):

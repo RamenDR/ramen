@@ -64,8 +64,25 @@ func drClusterSecretsDeploy(
 			secretName,
 			clusterName,
 			RamenOperatorNamespace(),
-			drClusterOperatorNamespaceNameOrDefault(rmnCfg)); err != nil {
-			return fmt.Errorf("drcluster '%v' secret add '%v': %w", clusterName, secretName, err)
+			drClusterOperatorNamespaceNameOrDefault(rmnCfg),
+			util.SecretFormatRamen,
+			"",
+		); err != nil {
+			return fmt.Errorf("cannot add secret '%v' to drcluster '%v': %w", secretName, clusterName, err)
+		}
+
+		if !rmnCfg.KubeObjectProtection.Disabled && rmnCfg.KubeObjectProtection.VeleroNamespaceName != "" {
+			if err := secretsUtil.AddSecretToCluster(
+				secretName,
+				clusterName,
+				RamenOperatorNamespace(),
+				drClusterOperatorNamespaceNameOrDefault(rmnCfg),
+				util.SecretFormatVelero,
+				rmnCfg.KubeObjectProtection.VeleroNamespaceName,
+			); err != nil {
+				return fmt.Errorf("cannot add secret '%v' to drcluster '%v' in format '%v': %w",
+					secretName, clusterName, util.SecretFormatVelero, err)
+			}
 		}
 	}
 
@@ -127,9 +144,8 @@ func drClustersUndeploySecrets(
 			}
 
 			// Delete s3profile secret from current cluster
-			if err := secretsUtil.RemoveSecretFromCluster(s3SecretToDelete, clusterName, RamenOperatorNamespace()); err != nil {
-				return fmt.Errorf("drcluster '%v' s3Profile '%v' secrets delete: %w",
-					clusterName, s3SecretToDelete, err)
+			if err := deleteSecretFromCluster(s3SecretToDelete, clusterName, ramenConfig, secretsUtil); err != nil {
+				return err
 			}
 		}
 	}
@@ -219,4 +235,35 @@ func drPolicySecretNames(drpolicy *rmn.DRPolicy,
 	}
 
 	return secretNames, err
+}
+
+// Delete s3profile secret from cluster
+func deleteSecretFromCluster(
+	s3SecretToDelete, clusterName string,
+	ramenConfig *rmn.RamenConfig,
+	secretsUtil *util.SecretsUtil,
+) error {
+	if err := secretsUtil.RemoveSecretFromCluster(
+		s3SecretToDelete,
+		clusterName,
+		RamenOperatorNamespace(),
+		util.SecretFormatRamen,
+	); err != nil {
+		return fmt.Errorf("unable to delete secret in format '%v' for s3Profile '%v' on drcluster '%v': %w",
+			util.SecretFormatRamen, s3SecretToDelete, clusterName, err)
+	}
+
+	if !ramenConfig.KubeObjectProtection.Disabled && ramenConfig.KubeObjectProtection.VeleroNamespaceName != "" {
+		if err := secretsUtil.RemoveSecretFromCluster(
+			s3SecretToDelete,
+			clusterName,
+			RamenOperatorNamespace(),
+			util.SecretFormatVelero,
+		); err != nil {
+			return fmt.Errorf("unable to delete secret in format '%v' for s3Profile '%v' on drcluster '%v': %w",
+				util.SecretFormatRamen, s3SecretToDelete, clusterName, err)
+		}
+	}
+
+	return nil
 }

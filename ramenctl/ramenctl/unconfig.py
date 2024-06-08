@@ -27,9 +27,6 @@ def run(args):
         s3_secrets = generate_ramen_s3_secrets(env["clusters"], args)
         delete_s3_secrets(env["hub"], s3_secrets)
 
-    # TODO: Should be removed by ramen.
-    delete_cloud_credentials(env["clusters"], args)
-
 
 def delete_hub_dr_resources(hub, clusters, topology):
     # Deleting in reverse order.
@@ -61,20 +58,6 @@ def delete_s3_secrets(cluster, secrets):
             "--filename=-",
             "--ignore-not-found",
             input=secret,
-            context=cluster,
-            log=command.debug,
-        )
-
-
-def delete_cloud_credentials(clusters, args):
-    template = drenv.template(command.resource("cloud-credentials-secret.yaml"))
-    yaml = template.substitute(cloud="", namespace=args.ramen_namespace)
-    for cluster in clusters:
-        command.info("Deleting cloud credentials secret in cluster '%s'", cluster)
-        kubectl.delete(
-            "--filename=-",
-            "--ignore-not-found",
-            input=yaml,
             context=cluster,
             log=command.debug,
         )

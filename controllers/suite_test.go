@@ -266,7 +266,7 @@ var _ = BeforeSuite(func() {
 	s3SecretsPolicyNamesSet := func() {
 		plRuleNames = make(map[string]struct{}, len(s3Secrets))
 		for idx := range s3Secrets {
-			_, _, v, _ := util.GeneratePolicyResourceNames(s3Secrets[idx].Name)
+			_, _, v, _ := util.GeneratePolicyResourceNames(s3Secrets[idx].Name, util.SecretFormatRamen)
 			plRuleNames[v] = struct{}{}
 		}
 	}

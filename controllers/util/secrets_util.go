@@ -43,6 +43,24 @@ const (
 
 	// Finalizer on the secret
 	SecretPolicyFinalizer string = "drpolicies.ramendr.openshift.io/policy-protection"
+
+	VeleroSecretKeyNameDefault = "ramengenerated"
+)
+
+// TargetSecretFormat defines the secret format to deliver to the cluster
+type TargetSecretFormat string
+
+const (
+	SecretFormatRamen  TargetSecretFormat = "ramen"
+	SecretFormatVelero TargetSecretFormat = "velero"
+)
+
+// Prefix length for format, to distinguish policy names for the same secret in the same namespace
+const formatPrefixLen = 1
+
+const (
+	ramenFormatPrefix  = "" // retain backward compatibility, no prefix
+	veleroFormatPrefix = "v"
 )
 
 type SecretsUtil struct {
@@ -54,12 +72,50 @@ type SecretsUtil struct {
 
 func GeneratePolicyResourceNames(
 	secret string,
-) (policyName, plBindingName, plRuleName, configPolicyName string) {
-	// policyName is the same as secret name, to retain name length restrictions
-	return secret,
-		fmt.Sprintf(secretResourceNameFormat, secretPlBindingBaseName, secret),
-		fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, secret),
-		fmt.Sprintf(secretResourceNameFormat, secretConfigPolicyBaseName, secret)
+	format TargetSecretFormat,
+) (plName, plBindingName, plRuleName, configPolicyName string) {
+	var policyName string
+
+	switch format {
+	case SecretFormatRamen:
+		policyName = ramenFormatPrefix + secret
+	case SecretFormatVelero:
+		policyName = veleroFormatPrefix + secret
+	}
+
+	return policyName,
+		fmt.Sprintf(secretResourceNameFormat, secretPlBindingBaseName, policyName),
+		fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, policyName),
+		fmt.Sprintf(secretResourceNameFormat, secretConfigPolicyBaseName, policyName)
+}
+
+func generatePolicyPlacementName(secret string, format TargetSecretFormat) string {
+	var policyName string
+
+	switch format {
+	case SecretFormatRamen:
+		policyName = ramenFormatPrefix + secret
+	case SecretFormatVelero:
+		policyName = veleroFormatPrefix + secret
+	}
+
+	return fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, policyName)
+}
+
+func GenerateVeleroSecretName(sName string) string {
+	// Disambiguate with a "v" in case fromNS and veleroNS are the same
+	return veleroFormatPrefix + sName
+}
+
+func SecretFinalizer(format TargetSecretFormat) string {
+	switch format {
+	case SecretFormatRamen:
+		return SecretPolicyFinalizer
+	case SecretFormatVelero:
+		return SecretPolicyFinalizer + "-" + string(SecretFormatVelero)
+	}
+
+	return SecretPolicyFinalizer
 }
 
 // GeneratePolicyName generates a policy name by combining the word "vs-secret-" with the name.
@@ -230,7 +286,37 @@ func newS3ConfigurationSecret(s3SecretRef corev1.SecretReference, targetns strin
 	}
 }
 
-func newConfigurationPolicy(name string, object runtime.RawExtension) *cpcv1.ConfigurationPolicy {
+func newVeleroSecret(s3SecretRef corev1.SecretReference, fromNS, veleroNS, keyName string) *localSecret {
+	return &localSecret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      GenerateVeleroSecretName(s3SecretRef.Name),
+			Namespace: veleroNS,
+		},
+		/*
+			keyName contains, base 64 encoded data as follows:
+			[default]
+			  aws_access_key_id = <key-id>
+			  aws_secret_access_key = <key>
+
+			Where, <key-id> and <key> are base 64 decoded values from looked up secret (s3SecretRef.Name)
+			in namespace (fromNS)
+		*/
+		Data: map[string]string{
+			keyName: "{{ (printf \"[default]\\n  aws_access_key_id = %s\\n  aws_secret_access_key = %s\\n\" " +
+				"((lookup \"v1\" \"Secret\" \"" + fromNS +
+				"\" \"" + s3SecretRef.Name + "\").data.AWS_ACCESS_KEY_ID | base64dec) " +
+				"((lookup \"v1\" \"Secret\" \"" + fromNS +
+				"\" \"" + s3SecretRef.Name + "\").data.AWS_SECRET_ACCESS_KEY | base64dec)" +
+				") | base64enc }}",
+		},
+	}
+}
+
+func newConfigurationPolicy(name string, object *runtime.RawExtension) *cpcv1.ConfigurationPolicy {
 	return &cpcv1.ConfigurationPolicy{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "ConfigurationPolicy",
@@ -245,7 +331,7 @@ func newConfigurationPolicy(name string, object runtime.RawExtension) *cpcv1.Con
 			ObjectTemplates: []*cpcv1.ObjectTemplate{
 				{
 					ComplianceType:   cpcv1.MustHave,
-					ObjectDefinition: object,
+					ObjectDefinition: *object,
 				},
 			},
 		},
@@ -277,12 +363,17 @@ func newPolicy(name, namespace, triggerValue string, object runtime.RawExtension
 	}
 }
 
-func (sutil *SecretsUtil) createPolicyResources(secret *corev1.Secret, cluster, namespace, targetns string) error {
-	policyName, plBindingName, plRuleName, configPolicyName := GeneratePolicyResourceNames(secret.Name)
+func (sutil *SecretsUtil) createPolicyResources(
+	secret *corev1.Secret,
+	cluster, namespace, targetNS string,
+	format TargetSecretFormat,
+	veleroNS string,
+) error {
+	policyName, plBindingName, plRuleName, configPolicyName := GeneratePolicyResourceNames(secret.Name, format)
 
 	sutil.Log.Info("Creating secret policy", "secret", secret.Name, "cluster", cluster, "namespace", namespace)
 
-	if AddFinalizer(secret, SecretPolicyFinalizer) {
+	if AddFinalizer(secret, SecretFinalizer(format)) {
 		if err := sutil.Client.Update(sutil.Ctx, secret); err != nil {
 			sutil.Log.Error(err, "unable to add finalizer to secret", "secret", secret.Name, "cluster", cluster)
 
@@ -309,9 +400,8 @@ func (sutil *SecretsUtil) createPolicyResources(secret *corev1.Secret, cluster, 
 	}
 
 	// Create a Policy object for the secret
-	s3SecretRef := corev1.SecretReference{Name: secret.Name, Namespace: namespace}
-	secretObject := newS3ConfigurationSecret(s3SecretRef, targetns)
-	configObject := newConfigurationPolicy(configPolicyName, runtime.RawExtension{Object: secretObject})
+	configObject := newConfigurationPolicy(configPolicyName,
+		sutil.policyObject(secret.Name, namespace, targetNS, format, veleroNS))
 
 	sutil.Log.Info("Initializing secret policy trigger", "secret", secret.Name, "trigger", secret.ResourceVersion)
 
@@ -336,8 +426,32 @@ func (sutil *SecretsUtil) createPolicyResources(secret *corev1.Secret, cluster, 
 	return nil
 }
 
-func (sutil *SecretsUtil) deletePolicyResources(secret *corev1.Secret, namespace string) error {
-	policyName, plBindingName, plRuleName, _ := GeneratePolicyResourceNames(secret.Name)
+func (sutil *SecretsUtil) policyObject(
+	secretName, secretNS, targetNS string,
+	format TargetSecretFormat,
+	veleroNS string,
+) *runtime.RawExtension {
+	s3SecretRef := corev1.SecretReference{Name: secretName, Namespace: secretNS}
+	object := &runtime.RawExtension{}
+
+	switch format {
+	case SecretFormatRamen:
+		object = &runtime.RawExtension{Object: newS3ConfigurationSecret(s3SecretRef, targetNS)}
+	case SecretFormatVelero:
+		object = &runtime.RawExtension{
+			Object: newVeleroSecret(s3SecretRef, targetNS, veleroNS, VeleroSecretKeyNameDefault),
+		}
+	}
+
+	return object
+}
+
+func (sutil *SecretsUtil) deletePolicyResources(
+	secret *corev1.Secret,
+	namespace string,
+	format TargetSecretFormat,
+) error {
+	policyName, plBindingName, plRuleName, _ := GeneratePolicyResourceNames(secret.Name, format)
 
 	sutil.Log.Info("Deleting secret policy", "secret", secret.Name)
 
@@ -379,8 +493,8 @@ func (sutil *SecretsUtil) deletePolicyResources(secret *corev1.Secret, namespace
 	}
 
 	// Remove finalizer from secret. Allow secret deletion and recreation ordering for policy tickle
-	if controllerutil.ContainsFinalizer(secret, SecretPolicyFinalizer) {
-		controllerutil.RemoveFinalizer(secret, SecretPolicyFinalizer)
+	if controllerutil.ContainsFinalizer(secret, SecretFinalizer(format)) {
+		controllerutil.RemoveFinalizer(secret, SecretFinalizer(format))
 
 		if err := sutil.Client.Update(sutil.Ctx, secret); err != nil {
 			sutil.Log.Error(err, "unable to remove finalizer from secret", "secret", secret.Name)
@@ -423,6 +537,7 @@ func (sutil *SecretsUtil) updatePlacementRule(
 	plRule *plrv1.PlacementRule,
 	secret *corev1.Secret,
 	cluster, namespace string,
+	format TargetSecretFormat,
 	add bool,
 ) (bool, error) {
 	deleted := true
@@ -439,7 +554,7 @@ func (sutil *SecretsUtil) updatePlacementRule(
 		if len(survivors) == 0 {
 			sutil.Log.Info("Deleting empty secret policy", "secret", secret.Name)
 
-			return deleted, sutil.deletePolicyResources(secret, namespace)
+			return deleted, sutil.deletePolicyResources(secret, namespace, format)
 		}
 
 		if !found {
@@ -495,10 +610,12 @@ func (sutil *SecretsUtil) ticklePolicy(secret *corev1.Secret, namespace string) 
 
 func (sutil *SecretsUtil) updatePolicyResources(
 	plRule *plrv1.PlacementRule,
-	secret *corev1.Secret, cluster, namespace string,
+	secret *corev1.Secret,
+	cluster, namespace string,
+	format TargetSecretFormat,
 	add bool,
 ) error {
-	deleted, err := sutil.updatePlacementRule(plRule, secret, cluster, namespace, add)
+	deleted, err := sutil.updatePlacementRule(plRule, secret, cluster, namespace, format, add)
 	if err != nil {
 		return err
 	}
@@ -510,7 +627,10 @@ func (sutil *SecretsUtil) updatePolicyResources(
 	return nil
 }
 
-func (sutil *SecretsUtil) ensureS3SecretResources(secretName, namespace string) (*corev1.Secret, error) {
+func (sutil *SecretsUtil) ensureS3SecretResources(
+	secretName, namespace string,
+	format TargetSecretFormat,
+) (*corev1.Secret, error) {
 	secret := corev1.Secret{}
 	if err := sutil.Client.Get(sutil.Ctx,
 		types.NamespacedName{Namespace: namespace, Name: secretName},
@@ -524,7 +644,7 @@ func (sutil *SecretsUtil) ensureS3SecretResources(secretName, namespace string) 
 
 		secret.Name = secretName
 
-		return nil, sutil.deletePolicyResources(&secret, namespace)
+		return nil, sutil.deletePolicyResources(&secret, namespace, format)
 	}
 
 	if !ResourceIsDeleted(&secret) {
@@ -534,18 +654,26 @@ func (sutil *SecretsUtil) ensureS3SecretResources(secretName, namespace string) 
 	// Cleanup policy if secret is deleted
 	sutil.Log.Info("Cleaning up secret policy", "secret", secretName)
 
-	return nil, sutil.deletePolicyResources(&secret, namespace)
+	return nil, sutil.deletePolicyResources(&secret, namespace, format)
 }
 
-func (sutil *SecretsUtil) AddSecretToCluster(secretName, clusterName, namespace, targetns string) error {
-	sutil.Log.Info("Add Secret", "cluster", clusterName, "secret", secretName)
+func (sutil *SecretsUtil) AddSecretToCluster(
+	secretName, clusterName, namespace, targetNS string,
+	format TargetSecretFormat,
+	veleroNS string,
+) error {
+	sutil.Log.Info("Add Secret", "cluster", clusterName, "secret", secretName, "format", format)
 
-	if len(secretName)+len(namespace)+len(".") > policyNameLengthLimit {
+	if len(secretName)+len(namespace)+len(".")+formatPrefixLen > policyNameLengthLimit {
 		return fmt.Errorf("secret namespace.name (%s.%s) length exceeds maximum character limit (%d)",
 			secretName, namespace, policyNameLengthLimit)
 	}
 
-	secret, err := sutil.ensureS3SecretResources(secretName, namespace)
+	if format == SecretFormatVelero && veleroNS == "" {
+		return fmt.Errorf("requested format (%s) requires a target namespace", SecretFormatVelero)
+	}
+
+	secret, err := sutil.ensureS3SecretResources(secretName, namespace, format)
 	if err != nil {
 		return err
 	}
@@ -557,7 +685,7 @@ func (sutil *SecretsUtil) AddSecretToCluster(secretName, clusterName, namespace,
 	plRule := &plrv1.PlacementRule{}
 	plRuleName := types.NamespacedName{
 		Namespace: namespace,
-		Name:      fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, secretName),
+		Name:      generatePolicyPlacementName(secretName, format),
 	}
 
 	// Fetch secret placement rule, create secret resources if not found
@@ -567,16 +695,19 @@ func (sutil *SecretsUtil) AddSecretToCluster(secretName, clusterName, namespace,
 			return errorswrapper.Wrap(err, "failed to get placementRule object")
 		}
 
-		return sutil.createPolicyResources(secret, clusterName, namespace, targetns)
+		return sutil.createPolicyResources(secret, clusterName, namespace, targetNS, format, veleroNS)
 	}
 
-	return sutil.updatePolicyResources(plRule, secret, clusterName, namespace, true)
+	return sutil.updatePolicyResources(plRule, secret, clusterName, namespace, format, true)
 }
 
-func (sutil *SecretsUtil) RemoveSecretFromCluster(secretName, clusterName, namespace string) error {
+func (sutil *SecretsUtil) RemoveSecretFromCluster(
+	secretName, clusterName, namespace string,
+	format TargetSecretFormat,
+) error {
 	sutil.Log.Info("Remove Secret", "cluster", clusterName, "secret", secretName)
 
-	secret, err := sutil.ensureS3SecretResources(secretName, namespace)
+	secret, err := sutil.ensureS3SecretResources(secretName, namespace, format)
 	if err != nil {
 		return err
 	}
@@ -588,7 +719,7 @@ func (sutil *SecretsUtil) RemoveSecretFromCluster(secretName, clusterName, names
 	plRule := &plrv1.PlacementRule{}
 	plRuleName := types.NamespacedName{
 		Namespace: namespace,
-		Name:      fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, secretName),
+		Name:      generatePolicyPlacementName(secretName, format),
 	}
 
 	// Fetch secret placement rule, success if not found
@@ -598,8 +729,9 @@ func (sutil *SecretsUtil) RemoveSecretFromCluster(secretName, clusterName, names
 			return errorswrapper.Wrap(err, "failed to get placementRule object")
 		}
 
-		return nil
+		// Ensure all related resources and finalizers are deleted
+		return sutil.deletePolicyResources(secret, namespace, format)
 	}
 
-	return sutil.updatePolicyResources(plRule, secret, clusterName, namespace, false)
+	return sutil.updatePolicyResources(plRule, secret, clusterName, namespace, format, false)
 }
