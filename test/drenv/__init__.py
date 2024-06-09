@@ -92,6 +92,27 @@ def kustomization_yaml(yaml):
         yield tmpdir
 
 
+@contextmanager
+def temporary_kubeconfig(prefix="drenv."):
+    """
+    Create a temporary kubeconfig and return an environment with KUBECONFIG
+    pointing to the temporary kubeconfig. The environment can be used to run
+    commands that do unsafe global modifications (use-context, set-context).
+
+    The temporary kubeconfig is deleted when existing from the context.
+
+    Yields the environment dict.
+    """
+    with tempfile.TemporaryDirectory(prefix=prefix) as tmpdir:
+        kubeconfig = os.path.join(tmpdir, "kubeconfig")
+        out = kubectl.config("view", "--output=yaml")
+        with open(kubeconfig, "w") as f:
+            f.write(out)
+        env = dict(os.environ)
+        env["KUBECONFIG"] = kubeconfig
+        yield env
+
+
 def config_dir(name):
     """
     Return configuration directory for profile name. This can be used to

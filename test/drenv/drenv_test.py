@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import os
 
 import yaml
@@ -9,6 +10,7 @@ import pytest
 import drenv
 from drenv import cluster
 from drenv import commands
+from drenv import kubectl
 
 EXAMPLE_ENV = os.path.join("envs", "example.yaml")
 EXTERNAL_ENV = os.path.join("envs", "external.yaml")
@@ -109,3 +111,45 @@ key2: value 2
         with open(path) as f:
             assert f.read() == content
     assert not os.path.exists(kustomization_dir)
+
+
+def test_temporary_kubeconfig(tmpenv):
+    orig_default_config = get_config(context=tmpenv.profile)
+    print("orig_default_config", yaml.dump(orig_default_config))
+
+    with drenv.temporary_kubeconfig("drenv-test.") as env:
+        kubeconfig = env["KUBECONFIG"]
+        assert os.path.isfile(kubeconfig)
+
+        # When created both config are the same.
+        temporary_config = get_config(context=tmpenv.profile, kubeconfig=kubeconfig)
+        print("temporary_config", yaml.dump(temporary_config))
+        assert temporary_config == orig_default_config
+
+        # If we change the temporary kubeconfig, the default one is not modified.
+        kubectl.config("use-context", tmpenv.profile, "--kubeconfig", kubeconfig)
+        kubectl.config(
+            "set-context",
+            "--current",
+            "--namespace=foobar",
+            "--kubeconfig",
+            kubeconfig,
+        )
+        current_default_config = get_config(context=tmpenv.profile)
+        temporary_config = get_config(context=tmpenv.profile, kubeconfig=kubeconfig)
+        print("temporary_config", yaml.dump(temporary_config))
+        assert current_default_config == orig_default_config
+        assert temporary_config["contexts"][0]["context"]["namespace"] == "foobar"
+        assert temporary_config["current-context"] == tmpenv.profile
+
+
+def get_config(context=None, kubeconfig=None):
+    args = [
+        "view",
+        "--minify",
+        "--output=json",
+    ]
+    if kubeconfig:
+        args.append(f"--kubeconfig={kubeconfig}")
+    out = kubectl.config(*args, context=context)
+    return json.loads(out)
