@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import re
 import subprocess
 from contextlib import contextmanager
@@ -310,6 +311,13 @@ def test_watch_timeout_not_expired():
     assert output == []
 
 
+def test_watch_env():
+    env = dict(os.environ)
+    env["DRENV_COMMAND_TEST"] = "value"
+    output = list(commands.watch("sh", "-c", "echo -n $DRENV_COMMAND_TEST", env=env))
+    assert output == [env["DRENV_COMMAND_TEST"]]
+
+
 # Running commands.
 
 
@@ -388,6 +396,13 @@ def test_run_after_shutdown(monkeypatch):
     monkeypatch.setattr(shutdown, "_started", True)
     with pytest.raises(shutdown.Started):
         commands.run("no-such-command")
+
+
+def test_run_env():
+    env = dict(os.environ)
+    env["DRENV_COMMAND_TEST"] = "value"
+    out = commands.run("sh", "-c", "echo -n $DRENV_COMMAND_TEST", env=env)
+    assert out == env["DRENV_COMMAND_TEST"]
 
 
 # Formatting errors.

@@ -70,7 +70,7 @@ class StreamTimeout(Exception):
     """
 
 
-def run(*args, input=None, decode=True):
+def run(*args, input=None, decode=True, env=None):
     """
     Run command args and return the output of the command.
 
@@ -93,6 +93,7 @@ def run(*args, input=None, decode=True):
                 stdin=subprocess.PIPE if input else None,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                env=env,
             )
         except OSError as e:
             raise Error(args, f"Could not execute: {e}").with_exception(e)
@@ -106,7 +107,7 @@ def run(*args, input=None, decode=True):
     return output.decode() if decode else output
 
 
-def watch(*args, input=None, keepends=False, decode=True, timeout=None):
+def watch(*args, input=None, keepends=False, decode=True, timeout=None, env=None):
     """
     Run command args, iterating over lines read from the child process stdout.
 
@@ -129,8 +130,10 @@ def watch(*args, input=None, keepends=False, decode=True, timeout=None):
     - Timeout if the command did not terminate within the specified
       timeout.
     """
+    if env is None:
+        env = dict(os.environ)
+
     # Avoid delays in python child process logs.
-    env = dict(os.environ)
     env["PYTHONUNBUFFERED"] = "1"
 
     with shutdown.guard():
