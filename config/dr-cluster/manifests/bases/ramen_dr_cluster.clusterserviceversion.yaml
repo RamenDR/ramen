@@ -37,7 +37,7 @@ spec:
       version: v1
     - name: backupstoragelocations.velero.io
       description: BackupStorageLocation is a location where Velero stores
-      backup objects
+          backup objects
       displayName: Backup Storage Location
       kind: BackupStorageLocation
       version: v1
