@@ -9,7 +9,7 @@ done ;
 echo succeed
 
 while ! ../../youhangwang/vs-clean/build.sh ;
-do echo ""----------------delete vs/vgs clean opeartor------------------";
+do echo "----------------delete vs/vgs clean opeartor------------------";
 done ;
 echo succeed
 
