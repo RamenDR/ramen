@@ -21,6 +21,26 @@ spec:
       kind: VolumeReplicationGroup
       name: volumereplicationgroups.ramendr.openshift.io
       version: v1alpha1
+    required:
+    - name: backups.velero.io
+      description: Backup is a Velero resource that represents the capture of
+          Kubernetes cluster state at a point in time (API objects and
+          associated volume state)
+      displayName: Backup
+      kind: Backup
+      version: v1
+    - name: restores.velero.io
+      description: Restore is a Velero resource that represents the application
+          of resources from a Velero backup to a target Kubernetes cluster
+      displayName: Restore
+      kind: Restore
+      version: v1
+    - name: backupstoragelocations.velero.io
+      description: BackupStorageLocation is a location where Velero stores
+      backup objects
+      displayName: Backup Storage Location
+      kind: BackupStorageLocation
+      version: v1
   description: Ramen is a disaster-recovery orchestrator for stateful applications
     across a set of peer kubernetes clusters which are deployed and managed using
     open-cluster-management (OCM) and provides cloud-native interfaces to orchestrate

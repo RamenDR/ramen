@@ -53,6 +53,9 @@ type TargetSecretFormat string
 const (
 	SecretFormatRamen  TargetSecretFormat = "ramen"
 	SecretFormatVelero TargetSecretFormat = "velero"
+
+	// This is a dev time assertion message to detect any new unhandled format in related functions
+	unknownFormat = "detected unhandled target secret format"
 )
 
 // Prefix length for format, to distinguish policy names for the same secret in the same namespace
@@ -70,23 +73,29 @@ type SecretsUtil struct {
 	Log       logr.Logger
 }
 
+// GeneratePolicyResourceNames returns names (in order) for policy resources that are created,
+// policyName: Name of the policy
+// plBindingName: Name of the PlacementBinding that ties a Policy to a PlacementRule
+// plRuleName: Name of the PlacementRule
+// configPolicyName: Name of the ConfigurationPolicy resource embedded within the Policy
 func GeneratePolicyResourceNames(
 	secret string,
 	format TargetSecretFormat,
-) (plName, plBindingName, plRuleName, configPolicyName string) {
-	var policyName string
-
+) (policyName, plBindingName, plRuleName, configPolicyName string) {
 	switch format {
 	case SecretFormatRamen:
 		policyName = ramenFormatPrefix + secret
 	case SecretFormatVelero:
 		policyName = veleroFormatPrefix + secret
+	default:
+		panic(unknownFormat)
 	}
 
-	return policyName,
-		fmt.Sprintf(secretResourceNameFormat, secretPlBindingBaseName, policyName),
-		fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, policyName),
-		fmt.Sprintf(secretResourceNameFormat, secretConfigPolicyBaseName, policyName)
+	plBindingName = fmt.Sprintf(secretResourceNameFormat, secretPlBindingBaseName, policyName)
+	plRuleName = fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, policyName)
+	configPolicyName = fmt.Sprintf(secretResourceNameFormat, secretConfigPolicyBaseName, policyName)
+
+	return
 }
 
 func generatePolicyPlacementName(secret string, format TargetSecretFormat) string {
@@ -97,6 +106,8 @@ func generatePolicyPlacementName(secret string, format TargetSecretFormat) strin
 		policyName = ramenFormatPrefix + secret
 	case SecretFormatVelero:
 		policyName = veleroFormatPrefix + secret
+	default:
+		panic(unknownFormat)
 	}
 
 	return fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, policyName)
@@ -113,9 +124,9 @@ func SecretFinalizer(format TargetSecretFormat) string {
 		return SecretPolicyFinalizer
 	case SecretFormatVelero:
 		return SecretPolicyFinalizer + "-" + string(SecretFormatVelero)
+	default:
+		panic(unknownFormat)
 	}
-
-	return SecretPolicyFinalizer
 }
 
 // GeneratePolicyName generates a policy name by combining the word "vs-secret-" with the name.
@@ -441,6 +452,8 @@ func (sutil *SecretsUtil) policyObject(
 		object = &runtime.RawExtension{
 			Object: newVeleroSecret(s3SecretRef, targetNS, veleroNS, VeleroSecretKeyNameDefault),
 		}
+	default:
+		panic(unknownFormat)
 	}
 
 	return object
@@ -577,6 +590,11 @@ func (sutil *SecretsUtil) updatePlacementRule(
 	return !deleted, nil
 }
 
+// ticklePolicy updates the Policy PolicyTriggerAnnotation with the secret resourceVersion, to deliver refreshed
+// secrets based on the Policy to the managed cluster. This is specifically useful where policy contains templated
+// secret propagation from the hub.
+// (see: https://github.com/open-cluster-management-io/open-cluster-management-io.github.io/blob/448ad30cf9b13a30a82a8f0ed63bb28e1090b132/content/zh/concepts/policy.md?plain=1#L256-L259)
+// The resource version of the Secret is used as a secret does not carry a generation number.
 func (sutil *SecretsUtil) ticklePolicy(secret *corev1.Secret, namespace string) error {
 	policyName := secret.Name
 	policyObject := gppv1.Policy{}
@@ -657,6 +675,12 @@ func (sutil *SecretsUtil) ensureS3SecretResources(
 	return nil, sutil.deletePolicyResources(&secret, namespace, format)
 }
 
+// AddSecretToCluster takes in a secret (secretName) in the Ramen S3 secret format in a namespace and uses OCM Policy
+// to deliver it to the desired cluster (clusterName), in the desired namespace (targetNS). It accepts a format that
+// can help convert the secret in the hub cluster to a desired format on the target cluster.
+// The format SecretFormatVelero needs an additional argument veleroNS which is the namespace for the velero
+// formatted secret, to be delivered from the targetNS (which requires that the secret first be delivered to
+// the targetNS)
 func (sutil *SecretsUtil) AddSecretToCluster(
 	secretName, clusterName, namespace, targetNS string,
 	format TargetSecretFormat,
@@ -701,6 +725,9 @@ func (sutil *SecretsUtil) AddSecretToCluster(
 	return sutil.updatePolicyResources(plRule, secret, clusterName, namespace, format, true)
 }
 
+// RemoveSecretFromCluster removes the secret (secretName) in namespace, from clusterName in the format requested.
+// If this was the last cluster that required the secret to be delivered in the requested format, then the related
+// policy resources are also deleted as part of the removal.
 func (sutil *SecretsUtil) RemoveSecretFromCluster(
 	secretName, clusterName, namespace string,
 	format TargetSecretFormat,
