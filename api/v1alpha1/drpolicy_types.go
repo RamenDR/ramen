@@ -55,9 +55,9 @@ type DRPolicySpec struct {
 type DRPolicyStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	//+optional
-	Async *AsyncSpec `json:"async,omitempty"`
+	Async AsyncSpec `json:"async,omitempty"`
 	//+optional
-	Sync *SyncSpec `json:"sync,omitempty"`
+	Sync SyncSpec `json:"sync,omitempty"`
 }
 
 // for RDR
