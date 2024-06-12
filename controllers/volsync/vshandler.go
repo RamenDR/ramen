@@ -42,7 +42,9 @@ const (
 	PodVolumePVCClaimIndexName    string = "spec.volumes.persistentVolumeClaim.claimName"
 	VolumeAttachmentToPVIndexName string = "spec.source.persistentVolumeName"
 
-	VRGOwnerLabel          string = "volumereplicationgroups-owner"
+	VRGOwnerNameLabel      string = "volumereplicationgroups-owner"
+	VRGOwnerNamespaceLabel string = "volumereplicationgroups-owner-namespace"
+
 	FinalSyncTriggerString string = "vrg-final-sync"
 
 	SchedulingIntervalMinLength int = 2
@@ -209,7 +211,8 @@ func (v *VSHandler) createOrUpdateRD(
 			}
 		}
 
-		util.AddLabel(rd, VRGOwnerLabel, v.owner.GetName())
+		util.AddLabel(rd, VRGOwnerNameLabel, v.owner.GetName())
+		util.AddLabel(rd, VRGOwnerNamespaceLabel, v.owner.GetNamespace())
 		util.AddAnnotation(rd, OwnerNameAnnotation, v.owner.GetName())
 		util.AddAnnotation(rd, OwnerNamespaceAnnotation, v.owner.GetNamespace())
 
@@ -465,7 +468,8 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 			}
 		}
 
-		util.AddLabel(rs, VRGOwnerLabel, v.owner.GetName())
+		util.AddLabel(rs, VRGOwnerNameLabel, v.owner.GetName())
+		util.AddLabel(rs, VRGOwnerNamespaceLabel, v.owner.GetNamespace())
 
 		rs.Spec.SourcePVC = rsSpec.ProtectedPVC.Name
 
@@ -854,7 +858,8 @@ func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncR
 		foundInSpecList := false
 
 		for _, rdSpec := range rdSpecList {
-			if rd.GetName() == getReplicationDestinationName(rdSpec.ProtectedPVC.Name) {
+			if rd.GetName() == getReplicationDestinationName(rdSpec.ProtectedPVC.Name) &&
+				rd.GetNamespace() == rdSpec.ProtectedPVC.Namespace {
 				foundInSpecList = true
 
 				break
@@ -946,10 +951,11 @@ func (v *VSHandler) listRDByOwner(rdNamespace string) (volsyncv1alpha1.Replicati
 	return rdList, nil
 }
 
-// Lists only RS/RD with VRGOwnerLabel that matches the owner
+// Lists only RS/RD with VRGOwnerNameLabel that matches the owner
 func (v *VSHandler) listByOwner(list client.ObjectList, objNamespace string) error {
 	matchLabels := map[string]string{
-		VRGOwnerLabel: v.owner.GetName(),
+		VRGOwnerNameLabel:      v.owner.GetName(),
+		VRGOwnerNamespaceLabel: v.owner.GetNamespace(),
 	}
 	listOptions := []client.ListOption{
 		client.InNamespace(objNamespace),
@@ -1286,7 +1292,8 @@ func (v *VSHandler) validateAndProtectSnapshot(
 		updater.AddOwner(v.owner, v.client.Scheme())
 	}
 
-	err = updater.AddLabel(VRGOwnerLabel, v.owner.GetName()).
+	err = updater.AddLabel(VRGOwnerNameLabel, v.owner.GetName()).
+		AddLabel(VRGOwnerNamespaceLabel, v.owner.GetNamespace()).
 		AddLabel(VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal).
 		Update(v.ctx, v.client)
 	if err != nil {
@@ -1786,7 +1793,8 @@ func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDe
 			}
 		}
 
-		util.AddLabel(lrd, VRGOwnerLabel, v.owner.GetName())
+		util.AddLabel(lrd, VRGOwnerNameLabel, v.owner.GetName())
+		util.AddLabel(lrd, VRGOwnerNamespaceLabel, v.owner.GetNamespace())
 		util.AddLabel(lrd, VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal)
 
 		pvcAccessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce} // Default value
@@ -1864,7 +1872,8 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 			}
 		}
 
-		util.AddLabel(lrs, VRGOwnerLabel, v.owner.GetName())
+		util.AddLabel(lrs, VRGOwnerNameLabel, v.owner.GetName())
+		util.AddLabel(lrs, VRGOwnerNamespaceLabel, v.owner.GetNamespace())
 
 		// The name of the PVC is the same as the rd's latest snapshot name
 		lrs.Spec.Trigger = &volsyncv1alpha1.ReplicationSourceTriggerSpec{
