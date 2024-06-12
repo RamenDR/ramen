@@ -83,7 +83,7 @@ type PeerClass struct {
 	StorageID []string `json:"storageID,omitempty"`
 
 	//+optional
-	StorageClassName *string `json:"storageClassName,omitempty"`
+	StorageClassName string `json:"storageClassName,omitempty"`
 }
 
 // VolSyncReplicationSourceSpec defines the configuration for the VolSync
