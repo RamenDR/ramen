@@ -516,7 +516,8 @@ var _ = Describe("VolSync_Handler", func() {
 								Namespace: testNamespace.GetName(),
 								Labels: map[string]string{
 									// Need to simulate that it's owned by our VRG by using our label
-									volsync.VRGOwnerLabel: owner.GetName(),
+									volsync.VRGOwnerNameLabel:      owner.GetName(),
+									volsync.VRGOwnerNamespaceLabel: owner.GetNamespace(),
 								},
 							},
 							Spec: volsyncv1alpha1.ReplicationSourceSpec{},
@@ -571,7 +572,8 @@ var _ = Describe("VolSync_Handler", func() {
 						Expect(*createdRD.Spec.RsyncTLS.StorageClassName).To(Equal(testStorageClassName))
 						Expect(*createdRD.Spec.RsyncTLS.VolumeSnapshotClassName).To(Equal(testVolumeSnapshotClassName))
 						Expect(createdRD.Spec.Trigger).To(BeNil()) // No schedule should be set
-						Expect(createdRD.GetLabels()).To(HaveKeyWithValue(volsync.VRGOwnerLabel, owner.GetName()))
+						Expect(createdRD.GetLabels()).To(HaveKeyWithValue(volsync.VRGOwnerNameLabel, owner.GetName()))
+						Expect(createdRD.GetLabels()).To(HaveKeyWithValue(volsync.VRGOwnerNamespaceLabel, owner.GetNamespace()))
 						Expect(*createdRD.Spec.RsyncTLS.ServiceType).To(Equal(volsync.DefaultRsyncServiceType))
 
 						// Check that the secret has been updated to have our vrg as owner
@@ -829,7 +831,8 @@ var _ = Describe("VolSync_Handler", func() {
 									Namespace: testNamespace.GetName(),
 									Labels: map[string]string{
 										// Need to simulate that it's owned by our VRG by using our label
-										volsync.VRGOwnerLabel: owner.GetName(),
+										volsync.VRGOwnerNameLabel:      owner.GetName(),
+										volsync.VRGOwnerNamespaceLabel: owner.GetNamespace(),
 									},
 								},
 								Spec: volsyncv1alpha1.ReplicationDestinationSpec{},
@@ -922,7 +925,8 @@ var _ = Describe("VolSync_Handler", func() {
 							Expect(createdRS.Spec.Trigger).To(Equal(&volsyncv1alpha1.ReplicationSourceTriggerSpec{
 								Schedule: &expectedCronSpecSchedule,
 							}))
-							Expect(createdRS.GetLabels()).To(HaveKeyWithValue(volsync.VRGOwnerLabel, owner.GetName()))
+							Expect(createdRS.GetLabels()).To(HaveKeyWithValue(volsync.VRGOwnerNameLabel, owner.GetName()))
+							Expect(createdRS.GetLabels()).To(HaveKeyWithValue(volsync.VRGOwnerNamespaceLabel, owner.GetNamespace()))
 						})
 
 						It("Should create an ReplicationSource if one does not exist", func() {
