@@ -776,6 +776,12 @@ func (v *VRGInstance) processForDeletion() ctrl.Result {
 		return ctrl.Result{Requeue: true}
 	}
 
+	if err := v.cleanupResources(); err != nil {
+		v.log.Info("Cleanup owned resources failed", "error", err)
+
+		return ctrl.Result{Requeue: true}
+	}
+
 	if !containsString(v.instance.ObjectMeta.Finalizers, vrgFinalizerName) {
 		v.log.Info("Finalizer missing from resource", "finalizer", vrgFinalizerName)
 

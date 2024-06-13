@@ -42,7 +42,9 @@ const (
 	PodVolumePVCClaimIndexName    string = "spec.volumes.persistentVolumeClaim.claimName"
 	VolumeAttachmentToPVIndexName string = "spec.source.persistentVolumeName"
 
-	VRGOwnerLabel          string = "volumereplicationgroups-owner"
+	VRGOwnerNameLabel      string = "volumereplicationgroups-owner"
+	VRGOwnerNamespaceLabel string = "volumereplicationgroups-owner-namespace"
+
 	FinalSyncTriggerString string = "vrg-final-sync"
 
 	SchedulingIntervalMinLength int = 2
@@ -128,7 +130,7 @@ func (v *VSHandler) ReconcileRD(
 	// Check if a ReplicationSource is still here (Can happen if transitioning from primary to secondary)
 	// Before creating a new RD for this PVC, make sure any ReplicationSource for this PVC is cleaned up first
 	// This avoids a scenario where we create an RD that immediately syncs with an RS that still exists locally
-	err = v.DeleteRS(rdSpec.ProtectedPVC.Name)
+	err = v.DeleteRS(rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +211,8 @@ func (v *VSHandler) createOrUpdateRD(
 			}
 		}
 
-		util.AddLabel(rd, VRGOwnerLabel, v.owner.GetName())
+		util.AddLabel(rd, VRGOwnerNameLabel, v.owner.GetName())
+		util.AddLabel(rd, VRGOwnerNamespaceLabel, v.owner.GetNamespace())
 		util.AddAnnotation(rd, OwnerNameAnnotation, v.owner.GetName())
 		util.AddAnnotation(rd, OwnerNamespaceAnnotation, v.owner.GetNamespace())
 
@@ -303,7 +306,7 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	// Before creating a new RS for this PVC, make sure any ReplicationDestination for this PVC is cleaned up first
 	// This avoids a scenario where we create an RS that immediately connects back to an RD that still exists locally
 	// Need to be sure ReconcileRS is never called prior to restoring any PVC that need to be restored from RDs first
-	err = v.DeleteRD(rsSpec.ProtectedPVC.Name)
+	err = v.DeleteRD(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
 	if err != nil {
 		return false, nil, err
 	}
@@ -465,7 +468,8 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 			}
 		}
 
-		util.AddLabel(rs, VRGOwnerLabel, v.owner.GetName())
+		util.AddLabel(rs, VRGOwnerNameLabel, v.owner.GetName())
+		util.AddLabel(rs, VRGOwnerNamespaceLabel, v.owner.GetNamespace())
 
 		rs.Spec.SourcePVC = rsSpec.ProtectedPVC.Name
 
@@ -714,9 +718,9 @@ func (v *VSHandler) getRS(name, namespace string) (*volsyncv1alpha1.ReplicationS
 	return rs, nil
 }
 
-func (v *VSHandler) DeleteRS(pvcName string) error {
+func (v *VSHandler) DeleteRS(pvcName string, pvcNamespace string) error {
 	// Remove a ReplicationSource by name that is owned (by parent vrg owner)
-	currentRSListByOwner, err := v.listRSByOwner()
+	currentRSListByOwner, err := v.listRSByOwner(pvcNamespace)
 	if err != nil {
 		return err
 	}
@@ -738,9 +742,9 @@ func (v *VSHandler) DeleteRS(pvcName string) error {
 }
 
 //nolint:nestif
-func (v *VSHandler) DeleteRD(pvcName string) error {
+func (v *VSHandler) DeleteRD(pvcName string, pvcNamespace string) error {
 	// Remove a ReplicationDestination by name that is owned (by parent vrg owner)
-	currentRDListByOwner, err := v.listRDByOwner()
+	currentRDListByOwner, err := v.listRDByOwner(pvcNamespace)
 	if err != nil {
 		return err
 	}
@@ -762,6 +766,32 @@ func (v *VSHandler) DeleteRD(pvcName string) error {
 				v.log.Info("Deleted ReplicationDestination", "name", rd.GetName())
 			}
 		}
+	}
+
+	return nil
+}
+
+func (v *VSHandler) DeleteSnapshots(pvcNamespace string) error {
+	// Remove a Snapshot by name that is owned (by parent vrg owner)
+	snapList := &snapv1.VolumeSnapshotList{}
+
+	err := v.listByOwner(snapList, pvcNamespace)
+	if err != nil {
+		return err
+	}
+
+	for i := range snapList.Items {
+		snapshot := snapList.Items[i]
+
+		if err := v.client.Delete(v.ctx, &snapshot); err != nil {
+			if !kerrors.IsNotFound(err) {
+				v.log.Error(err, "Error cleaning up VolumeSnapshot", "name", snapshot.GetName())
+
+				return err
+			}
+		}
+
+		v.log.Info("Deleted VolumeSnapshot", "name", snapshot.GetName())
 	}
 
 	return nil
@@ -817,7 +847,7 @@ func (v *VSHandler) deleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestinatio
 //nolint:gocognit
 func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncReplicationDestinationSpec) error {
 	// Remove any ReplicationDestination owned (by parent vrg owner) that is not in the provided rdSpecList
-	currentRDListByOwner, err := v.listRDByOwner()
+	currentRDListByOwner, err := v.listRDByOwner("")
 	if err != nil {
 		return err
 	}
@@ -828,7 +858,8 @@ func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncR
 		foundInSpecList := false
 
 		for _, rdSpec := range rdSpecList {
-			if rd.GetName() == getReplicationDestinationName(rdSpec.ProtectedPVC.Name) {
+			if rd.GetName() == getReplicationDestinationName(rdSpec.ProtectedPVC.Name) &&
+				rd.GetNamespace() == rdSpec.ProtectedPVC.Namespace {
 				foundInSpecList = true
 
 				break
@@ -898,9 +929,9 @@ func (v *VSHandler) reconcileServiceExportForRD(rd *volsyncv1alpha1.ReplicationD
 	return nil
 }
 
-func (v *VSHandler) listRSByOwner() (volsyncv1alpha1.ReplicationSourceList, error) {
+func (v *VSHandler) listRSByOwner(rsNamespace string) (volsyncv1alpha1.ReplicationSourceList, error) {
 	rsList := volsyncv1alpha1.ReplicationSourceList{}
-	if err := v.listByOwner(&rsList); err != nil {
+	if err := v.listByOwner(&rsList, rsNamespace); err != nil {
 		v.log.Error(err, "Failed to list ReplicationSources for VRG", "vrg name", v.owner.GetName())
 
 		return rsList, err
@@ -909,9 +940,9 @@ func (v *VSHandler) listRSByOwner() (volsyncv1alpha1.ReplicationSourceList, erro
 	return rsList, nil
 }
 
-func (v *VSHandler) listRDByOwner() (volsyncv1alpha1.ReplicationDestinationList, error) {
+func (v *VSHandler) listRDByOwner(rdNamespace string) (volsyncv1alpha1.ReplicationDestinationList, error) {
 	rdList := volsyncv1alpha1.ReplicationDestinationList{}
-	if err := v.listByOwner(&rdList); err != nil {
+	if err := v.listByOwner(&rdList, rdNamespace); err != nil {
 		v.log.Error(err, "Failed to list ReplicationDestinations for VRG", "vrg name", v.owner.GetName())
 
 		return rdList, err
@@ -920,13 +951,14 @@ func (v *VSHandler) listRDByOwner() (volsyncv1alpha1.ReplicationDestinationList,
 	return rdList, nil
 }
 
-// Lists only RS/RD with VRGOwnerLabel that matches the owner
-func (v *VSHandler) listByOwner(list client.ObjectList) error {
+// Lists only RS/RD with VRGOwnerNameLabel that matches the owner
+func (v *VSHandler) listByOwner(list client.ObjectList, objNamespace string) error {
 	matchLabels := map[string]string{
-		VRGOwnerLabel: v.owner.GetName(),
+		VRGOwnerNameLabel:      v.owner.GetName(),
+		VRGOwnerNamespaceLabel: v.owner.GetNamespace(),
 	}
 	listOptions := []client.ListOption{
-		client.InNamespace(v.owner.GetNamespace()),
+		client.InNamespace(objNamespace),
 		client.MatchingLabels(matchLabels),
 	}
 
@@ -1253,8 +1285,15 @@ func (v *VSHandler) validateAndProtectSnapshot(
 
 	// Add ownerRef on snapshot pointing to the vrg - if/when the VRG gets cleaned up, then GC can cleanup the snap
 	// Add label to indicate that VolSync should not delete/cleanup this snapshot
-	err = util.NewResourceUpdater(volSnap).
-		AddOwner(v.owner, v.client.Scheme()).
+	// Cross-namespace owner references are disallowed, so setting owner is skipped, when VRG is situated in admin
+	// namespace
+	updater := util.NewResourceUpdater(volSnap)
+	if !v.vrgInAdminNamespace {
+		updater.AddOwner(v.owner, v.client.Scheme())
+	}
+
+	err = updater.AddLabel(VRGOwnerNameLabel, v.owner.GetName()).
+		AddLabel(VRGOwnerNamespaceLabel, v.owner.GetNamespace()).
 		AddLabel(VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal).
 		Update(v.ctx, v.client)
 	if err != nil {
@@ -1754,7 +1793,8 @@ func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDe
 			}
 		}
 
-		util.AddLabel(lrd, VRGOwnerLabel, v.owner.GetName())
+		util.AddLabel(lrd, VRGOwnerNameLabel, v.owner.GetName())
+		util.AddLabel(lrd, VRGOwnerNamespaceLabel, v.owner.GetNamespace())
 		util.AddLabel(lrd, VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal)
 
 		pvcAccessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce} // Default value
@@ -1832,7 +1872,8 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 			}
 		}
 
-		util.AddLabel(lrs, VRGOwnerLabel, v.owner.GetName())
+		util.AddLabel(lrs, VRGOwnerNameLabel, v.owner.GetName())
+		util.AddLabel(lrs, VRGOwnerNamespaceLabel, v.owner.GetNamespace())
 
 		// The name of the PVC is the same as the rd's latest snapshot name
 		lrs.Spec.Trigger = &volsyncv1alpha1.ReplicationSourceTriggerSpec{
