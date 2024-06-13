@@ -557,7 +557,9 @@ func (v *VRGInstance) isArchivedAlready(pvc *corev1.PersistentVolumeClaim, log l
 // Upload PV to the list of S3 stores in the VRG spec
 func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (err error) {
 	if v.isArchivedAlready(pvc, log) {
-		v.log.Info("PV cluster data already protected for PVC", "PVC", pvc.Name)
+		msg := fmt.Sprintf("PV cluster data already protected for PVC %s", pvc.Name)
+		v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name,
+			VRGConditionReasonUploaded, msg)
 
 		return nil
 	}
