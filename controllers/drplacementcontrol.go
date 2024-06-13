@@ -275,12 +275,15 @@ func (d *DRPCInstance) getCachedVRG(clusterName string) *rmn.VolumeReplicationGr
 }
 
 func (d *DRPCInstance) isVRGAlreadyDeployedElsewhere(clusterToSkip string) (string, bool) {
-	for clusterName := range d.vrgs {
+	for clusterName, vrg := range d.vrgs {
 		if clusterName == clusterToSkip {
 			continue
 		}
 
-		return clusterName, true
+		// We are checking for the initial deployment. Only return the cluster if the VRG on it is primary.
+		if isVRGPrimary(vrg) {
+			return clusterName, true
+		}
 	}
 
 	return "", false
