@@ -59,4 +59,12 @@ resources:
   kind: MaintenanceMode
   path: github.com/ramendr/ramen/api/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+  controller: true
+  domain: openshift.io
+  group: ramendr
+  kind: DRClusterConfig
+  path: github.com/ramendr/ramen/api/v1alpha1
+  version: v1alpha1
 version: "3"

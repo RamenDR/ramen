@@ -166,6 +166,14 @@ func setupReconcilersCluster(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.Rame
 		setupLog.Error(err, "unable to create controller", "controller", "VolumeReplicationGroup")
 		os.Exit(1)
 	}
+
+	if err := (&controllers.DRClusterConfigReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "DRClusterConfig")
+		os.Exit(1)
+	}
 }
 
 func setupReconcilersHub(mgr ctrl.Manager) {
