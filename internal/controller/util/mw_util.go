@@ -38,12 +38,14 @@ const (
 	// - type is "vrg"
 	ManifestWorkNameFormat             string = "%s-%s-%s-mw"
 	ManifestWorkNameFormatClusterScope string = "%s-%s-mw"
+	ManifestWorkNameTypeFormat         string = "%s-mw"
 
 	// ManifestWork Types
-	MWTypeVRG   string = "vrg"
-	MWTypeNS    string = "ns"
-	MWTypeNF    string = "nf"
-	MWTypeMMode string = "mmode"
+	MWTypeVRG       string = "vrg"
+	MWTypeNS        string = "ns"
+	MWTypeNF        string = "nf"
+	MWTypeMMode     string = "mmode"
+	MWTypeDRCConfig string = "drcconfig"
 )
 
 type MWUtil struct {
@@ -60,6 +62,10 @@ func ManifestWorkName(name, namespace, mwType string) string {
 }
 
 func (mwu *MWUtil) BuildManifestWorkName(mwType string) string {
+	if mwType == MWTypeDRCConfig {
+		return fmt.Sprintf(ManifestWorkNameTypeFormat, MWTypeDRCConfig)
+	}
+
 	return ManifestWorkName(mwu.InstName, mwu.TargetNamespace, mwType)
 }
 
@@ -267,6 +273,52 @@ func (mwu *MWUtil) generateNFManifest(nf csiaddonsv1alpha1.NetworkFence) (*ocmwo
 	return mwu.GenerateManifest(nf)
 }
 
+// DRClusterConfig ManifestWork creation
+func (mwu *MWUtil) CreateOrUpdateDRCConfigManifestWork(cluster string, cConfig rmn.DRClusterConfig) error {
+	manifestWork, err := mwu.generateDRCConfigManifestWork(cluster, cConfig)
+	if err != nil {
+		return err
+	}
+
+	return mwu.createOrUpdateManifestWork(manifestWork, cluster)
+}
+
+func (mwu *MWUtil) generateDRCConfigManifestWork(
+	cluster string,
+	cConfig rmn.DRClusterConfig,
+) (*ocmworkv1.ManifestWork, error) {
+	cConfigManifest, err := mwu.generateDRCConfigManifest(cConfig)
+	if err != nil {
+		mwu.Log.Error(err, "failed to generate DRClusterConfig manifest")
+
+		return nil, err
+	}
+
+	manifests := []ocmworkv1.Manifest{*cConfigManifest}
+
+	return mwu.newManifestWork(
+		mwu.BuildManifestWorkName(MWTypeDRCConfig),
+		cluster,
+		map[string]string{},
+		manifests, nil), nil
+}
+
+func (mwu *MWUtil) generateDRCConfigManifest(cConfig rmn.DRClusterConfig) (*ocmworkv1.Manifest, error) {
+	return mwu.GenerateManifest(cConfig)
+}
+
+func (mwu *MWUtil) IsManifestApplied(cluster, mwType string) bool {
+	mw, err := mwu.FindManifestWork(mwu.BuildManifestWorkName(mwType), cluster)
+	if err != nil {
+		return false
+	}
+
+	deployed := IsManifestInAppliedState(mw)
+
+	return deployed
+}
+
+// Namespace MW creation
 func (mwu *MWUtil) CreateOrUpdateNamespaceManifest(
 	name string, namespaceName string, managedClusterNamespace string,
 	annotations map[string]string,
