@@ -7,22 +7,32 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // DRClusterConfigSpec defines the desired state of DRClusterConfig
+// It carries information regarding the cluster identity as known at the OCM hub cluster. It is also used to
+// advertise required replication schedules on the cluster, if an equivalent DRPolicy resource is created for
+// the same at the hub cluster.
+// It is expected to be watched and used by storage providers that require meta information regarding the cluster
+// and to prepare and manage required storage resources.
 type DRClusterConfigSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// ReplicationSchedules desired from storage providers for replicating Persistent Volume data to a peer cluster.
+	// Values are in the form <num><m,h,d>. Where <num> is a number, 'm' indicates minutes, 'h' means hours and
+	// 'd' stands for days.
+	// Typically used to generate VolumeReplicationClass resources with the desired schedules by storage
+	// provider reconcilers
+	ReplicationSchedules []string `json:"replicationSchedules,omitempty"`
 
-	// Foo is an example field of DRClusterConfig. Edit drclusterconfig_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// ClusterID would carry the ManagedCluster identity from the ManagedCluster claim value for `id.k8s.io`
+	ClusterID string `json:"clusterID,omitempty"`
+
+	// TODO: PeerClusters []ClusterID; to decide if we really need this!
 }
 
 // DRClusterConfigStatus defines the observed state of DRClusterConfig
 type DRClusterConfigStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+
+	// TODO: handle no status for this resource, and remove required RBAC/kubebuilder artifacts for the same
 }
 
 //+kubebuilder:object:root=true
