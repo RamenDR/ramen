@@ -39,9 +39,6 @@ type ReplicationSourceTriggerSpec struct {
 
 // ReplicationGroupSourceStatus defines the observed state of ReplicationGroupSource
 type ReplicationGroupSourceStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
 	// lastSyncTime is the time of the most recent successful synchronization.
 	//+optional
 	LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty"`
@@ -62,7 +59,6 @@ type ReplicationGroupSourceStatus struct {
 	// conditions represent the latest available observations of the
 	// source's state.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
-
 	// Created ReplicationSources by this ReplicationGroupSource
 	ReplicationSources []*corev1.ObjectReference `json:"replicationSources,omitempty"`
 }

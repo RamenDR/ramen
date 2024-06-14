@@ -35,14 +35,14 @@ type ReplicationGroupDestinationStatus struct {
 	// scheduled to start (for schedule-based synchronization).
 	//+optional
 	NextSyncTime *metav1.Time `json:"nextSyncTime,omitempty"`
-
+	// conditions represent the latest available observations of the
+	// source's state.
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// latestImage in the object holding the most recent consistent replicated
 	// image.
 	//+optional
 	LatestImages map[string]*corev1.TypedLocalObjectReference `json:"latestImage,omitempty"`
-
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
-
+	// Created ReplicationDestinations by this ReplicationGroupDestination
 	ReplicationDestinations []*corev1.ObjectReference `json:"replicationDestinations,omitempty"`
 }
 

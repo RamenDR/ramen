@@ -36,11 +36,12 @@ In this design:
 1. ReplicationGroupSource Name = ReplicationGroupDestination Name = VRG Name = Application Name
 
 ReplicationGroupSource create VolumeGroupSnapshot, Restored PVC and ReplicationSource in each sync.
-At the end of each sync, VolumeGroupSnapshot, Restored PVC and ReplicationSource will be deleted by ramen.
+At the end of each sync, VolumeGroupSnapshot, Restored PVC will be deleted by ramen,
+ReplicationSource will not be deleted.
 
 2. VolumeGroupSnapshot Name = cephfscg-<ReplicationGroupSource Name>
 3. Restored PVC Name = cephfscg-<Application PVC Name>
-4. ReplicationSource Name = <Application PVC Name>
+4. ReplicationSource Name = ReplicationDestination Name = <Application PVC Name>
 
 5. ReplicationDestinationServiceName = volsync-rsync-tls-dst-<Application PVC Name>.<RD Namespace>.svc.clusterset.local
 6. Volsync Secret Name = <VRG Name>-vs-secret

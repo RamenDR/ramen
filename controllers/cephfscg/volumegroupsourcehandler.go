@@ -340,7 +340,7 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromSnapshot(
 		}
 
 		restoreSize := pvc.Spec.Resources.Requests.Storage()
-		if volumeSnapshot.Status.RestoreSize != nil {
+		if volumeSnapshot.Status != nil && volumeSnapshot.Status.RestoreSize != nil {
 			restoreSize = volumeSnapshot.Status.RestoreSize
 		}
 

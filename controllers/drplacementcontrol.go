@@ -1593,12 +1593,11 @@ func (d *DRPCInstance) generateVRG(dstCluster string, repState rmn.ReplicationSt
 			},
 		},
 		Spec: rmn.VolumeReplicationGroupSpec{
-			PVCSelector:                    d.instance.Spec.PVCSelector,
-			CephFSConsistencyGroupSelector: d.instance.Spec.CephFSConsistencyGroupSelector,
-			ProtectedNamespaces:            d.instance.Spec.ProtectedNamespaces,
-			ReplicationState:               repState,
-			S3Profiles:                     AvailableS3Profiles(d.drClusters),
-			KubeObjectProtection:           d.instance.Spec.KubeObjectProtection,
+			PVCSelector:          d.instance.Spec.PVCSelector,
+			ProtectedNamespaces:  d.instance.Spec.ProtectedNamespaces,
+			ReplicationState:     repState,
+			S3Profiles:           AvailableS3Profiles(d.drClusters),
+			KubeObjectProtection: d.instance.Spec.KubeObjectProtection,
 		},
 	}
 

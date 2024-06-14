@@ -9,13 +9,11 @@ import (
 	"github.com/backube/volsync/controllers/mover"
 	"github.com/backube/volsync/controllers/statemachine"
 	"github.com/go-logr/logr"
-	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v7/apis/volumesnapshot/v1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/util"
 	"github.com/ramendr/ramen/controllers/volsync"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -85,6 +83,8 @@ func (m *rgdMachine) Conditions() *[]metav1.Condition {
 
 //nolint:cyclop,funlen
 func (m *rgdMachine) Synchronize(ctx context.Context) (mover.Result, error) {
+	m.Logger.Info("Start Synchronize")
+
 	createdRDs := []*volsyncv1alpha1.ReplicationDestination{}
 	rds := []*corev1.ObjectReference{}
 
@@ -114,7 +114,7 @@ func (m *rgdMachine) Synchronize(ctx context.Context) (mover.Result, error) {
 	latestImages := make(map[string]*corev1.TypedLocalObjectReference)
 
 	for _, rd := range createdRDs {
-		m.Logger.Info("Check replication destination is completed", "ReplicationDestinationName", rd.Name)
+		m.Logger.Info("Check if replication destination is completed", "ReplicationDestinationName", rd.Name)
 
 		if rd.Spec.Trigger.Manual != rd.Status.LastManualSync {
 			m.Logger.Info("replication destination is not completed", "ReplicationDestinationName", rd.Name)
@@ -123,8 +123,14 @@ func (m *rgdMachine) Synchronize(ctx context.Context) (mover.Result, error) {
 		}
 
 		if rd.Status.LatestImage != nil && rd.Spec.RsyncTLS != nil && rd.Spec.RsyncTLS.DestinationPVC != nil {
+			m.Logger.Info("Append latest image in the list",
+				"ReplicationDestinationName", rd.Name, "LatestImage", rd.Status.LatestImage)
+
 			latestImages[*rd.Spec.RsyncTLS.DestinationPVC] = rd.Status.LatestImage
 		}
+
+		m.Logger.Info("Set DoNotDeleteLabel to the image",
+			"ReplicationDestinationName", rd.Name, "LatestImage", rd.Status.LatestImage)
 
 		if err := util.DeferDeleteImage(
 			ctx, m.Client, rd.Status.LatestImage.Name, rd.Namespace, rd.Spec.Trigger.Manual, m.ReplicationGroupDestination.Name,
@@ -133,7 +139,9 @@ func (m *rgdMachine) Synchronize(ctx context.Context) (mover.Result, error) {
 		}
 	}
 
-	readytoUse, err := m.CheckImagesReadyToUse(ctx, latestImages, m.ReplicationGroupDestination.Namespace)
+	readytoUse, err := util.CheckImagesReadyToUse(
+		ctx, m.Client, latestImages, m.ReplicationGroupDestination.Namespace, m.Logger,
+	)
 	if err != nil {
 		m.Logger.Error(err, "Failed to check if images are ready to use")
 
@@ -167,40 +175,6 @@ func (m *rgdMachine) SetOutOfSync(bool)                     {}
 func (m *rgdMachine) IncMissedIntervals()                   {}
 func (m *rgdMachine) ObserveSyncDuration(dur time.Duration) {}
 
-func (m *rgdMachine) CheckImagesReadyToUse(
-	ctx context.Context,
-	latestImages map[string]*corev1.TypedLocalObjectReference,
-	namespace string,
-) (bool, error) {
-	for pvcName := range latestImages {
-		latestImage := latestImages[pvcName]
-		if latestImage == nil {
-			m.Logger.Info("Image is nil to check")
-
-			return false, nil
-		}
-
-		volumeSnapshot := &vsv1.VolumeSnapshot{}
-		if err := m.Client.Get(ctx,
-			types.NamespacedName{Name: latestImage.Name, Namespace: namespace},
-			volumeSnapshot,
-		); err != nil {
-			m.Logger.Error(err, "Failed to get volume snapshot")
-
-			return false, err
-		}
-
-		if volumeSnapshot.Status.ReadyToUse == nil ||
-			(volumeSnapshot.Status.ReadyToUse != nil && !*volumeSnapshot.Status.ReadyToUse) {
-			m.Logger.Info("Volume snapshot is not ready to use", "VolumeSnapshot", volumeSnapshot.Name)
-
-			return false, nil
-		}
-	}
-
-	return true, nil
-}
-
 //nolint:cyclop
 func (m *rgdMachine) ReconcileRD(
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec, manual string,
@@ -210,16 +184,26 @@ func (m *rgdMachine) ReconcileRD(
 		return nil, fmt.Errorf("protectedPVC %s is not VolSync Enabled", rdSpec.ProtectedPVC.Name)
 	}
 
+	log := m.Logger.WithValues("ProtectedPVCName", rdSpec.ProtectedPVC.Name)
+
 	// Pre-allocated shared secret - DRPC will generate and propagate this secret from hub to clusters
 	pskSecretName := volsync.GetVolSyncPSKSecretNameFromVRGName(m.ReplicationGroupDestination.Name)
 	// Need to confirm this secret exists on the cluster before proceeding, otherwise volsync will generate it
 	secretExists, err := m.VSHandler.ValidateSecretAndAddVRGOwnerRef(pskSecretName)
-	if err != nil || !secretExists {
+	if err != nil {
+		log.Error(err, "Failed to ValidateSecretAndAddVRGOwnerRef", "PSKSecretName", pskSecretName)
+
 		return nil, err
+	}
+
+	if !secretExists {
+		return nil, fmt.Errorf("psk secret: %s is not found", pskSecretName)
 	}
 
 	dstPVC, err := m.VSHandler.PrecreateDestPVCIfEnabled(rdSpec)
 	if err != nil {
+		log.Error(err, "Failed to PrecreateDestPVCIfEnabled", "PSKSecretName", pskSecretName)
+
 		return nil, err
 	}
 
@@ -232,6 +216,8 @@ func (m *rgdMachine) ReconcileRD(
 
 	err = m.VSHandler.ReconcileServiceExportForRD(rd)
 	if err != nil {
+		log.Error(err, "Failed to ReconcileServiceExportForRD", "RD", rd)
+
 		return nil, err
 	}
 

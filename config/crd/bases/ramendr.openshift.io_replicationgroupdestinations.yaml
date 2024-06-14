@@ -328,6 +328,9 @@ spec:
               of ReplicationGroupDestination
             properties:
               conditions:
+                description: |-
+                  conditions represent the latest available observations of the
+                  source's state.
                 items:
                   description: "Condition contains details for one aspect of the current
                     state of this API Resource.\n---\nThis struct is intended for
@@ -445,6 +448,7 @@ spec:
                 format: date-time
                 type: string
               replicationDestinations:
+                description: Created ReplicationDestinations by this ReplicationGroupDestination
                 items:
                   description: |-
                     ObjectReference contains enough information to let you inspect or modify the referred object.

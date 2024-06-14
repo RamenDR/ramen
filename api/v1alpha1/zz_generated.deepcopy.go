@@ -217,11 +217,6 @@ func (in *DRPlacementControlSpec) DeepCopyInto(out *DRPlacementControlSpec) {
 	}
 	out.DRPolicyRef = in.DRPolicyRef
 	in.PVCSelector.DeepCopyInto(&out.PVCSelector)
-	if in.CephFSConsistencyGroupSelector != nil {
-		in, out := &in.CephFSConsistencyGroupSelector, &out.CephFSConsistencyGroupSelector
-		*out = new(v1.LabelSelector)
-		(*in).DeepCopyInto(*out)
-	}
 	if in.KubeObjectProtection != nil {
 		in, out := &in.KubeObjectProtection, &out.KubeObjectProtection
 		*out = new(KubeObjectProtectionSpec)
@@ -933,6 +928,13 @@ func (in *ReplicationGroupDestinationStatus) DeepCopyInto(out *ReplicationGroupD
 		in, out := &in.NextSyncTime, &out.NextSyncTime
 		*out = (*in).DeepCopy()
 	}
+	if in.Conditions != nil {
+		in, out := &in.Conditions, &out.Conditions
+		*out = make([]v1.Condition, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
 	if in.LatestImages != nil {
 		in, out := &in.LatestImages, &out.LatestImages
 		*out = make(map[string]*corev1.TypedLocalObjectReference, len(*in))
@@ -947,13 +949,6 @@ func (in *ReplicationGroupDestinationStatus) DeepCopyInto(out *ReplicationGroupD
 				(*in).DeepCopyInto(*out)
 			}
 			(*out)[key] = outVal
-		}
-	}
-	if in.Conditions != nil {
-		in, out := &in.Conditions, &out.Conditions
-		*out = make([]v1.Condition, len(*in))
-		for i := range *in {
-			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
 	if in.ReplicationDestinations != nil {
@@ -1369,11 +1364,6 @@ func (in *VolumeReplicationGroupList) DeepCopyObject() runtime.Object {
 func (in *VolumeReplicationGroupSpec) DeepCopyInto(out *VolumeReplicationGroupSpec) {
 	*out = *in
 	in.PVCSelector.DeepCopyInto(&out.PVCSelector)
-	if in.CephFSConsistencyGroupSelector != nil {
-		in, out := &in.CephFSConsistencyGroupSelector, &out.CephFSConsistencyGroupSelector
-		*out = new(v1.LabelSelector)
-		(*in).DeepCopyInto(*out)
-	}
 	if in.S3Profiles != nil {
 		in, out := &in.S3Profiles, &out.S3Profiles
 		*out = make([]string, len(*in))

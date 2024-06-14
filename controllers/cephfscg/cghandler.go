@@ -13,6 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -22,23 +23,28 @@ import (
 func NewVSCGHandler(
 	ctx context.Context,
 	k8sClient client.Client,
-
 	instance *ramendrv1alpha1.VolumeReplicationGroup,
+	volumeGroupSnapshotSource *metav1.LabelSelector,
 	vsHandler *volsync.VSHandler,
-
 	logger logr.Logger,
 ) VSCGHandler {
+	log := logger.WithName("VSCGHandler")
+
 	cgHandler := &cgHandler{
 		ctx:                       ctx,
 		Client:                    k8sClient,
 		instance:                  instance,
 		VSHandler:                 vsHandler,
-		volumeGroupSnapshotSource: instance.Spec.CephFSConsistencyGroupSelector,
-		logger:                    logger.WithName("VSCGHandler"),
+		volumeGroupSnapshotSource: volumeGroupSnapshotSource,
+		logger:                    log,
 	}
+
 	if instance.Spec.Async != nil {
+		log.Info("Set Async config")
+
 		cgHandler.volumeSnapshotClassSelector = instance.Spec.Async.VolumeSnapshotClassSelector
 		cgHandler.ramenSchedulingInterval = instance.Spec.Async.SchedulingInterval
+		cgHandler.volumeGroupSnapshotClassSelector = instance.Spec.Async.VolumeGroupSnapshotClassSelector
 	}
 
 	return cgHandler
@@ -47,7 +53,7 @@ func NewVSCGHandler(
 type VSCGHandler interface {
 	CreateOrUpdateReplicationGroupDestination(
 		replicationGroupDestinationName, replicationGroupDestinationNamespace string,
-		rdSpecs []ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+		rdSpecsInGroup []ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	) (*ramendrv1alpha1.ReplicationGroupDestination, error)
 
 	CreateOrUpdateReplicationGroupSource(
@@ -56,12 +62,16 @@ type VSCGHandler interface {
 	) (*ramendrv1alpha1.ReplicationGroupSource, bool, error)
 
 	GetLatestImageFromRGD(
-		ctx context.Context, pvcName string,
+		ctx context.Context, pvcName, pvcNamespace string,
 	) (*corev1.TypedLocalObjectReference, error)
 
-	EnsurePVCfromRGD(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec, failoverAction bool) error
+	EnsurePVCfromRGD(
+		rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec, failoverAction bool,
+	) error
+
 	DeleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestination) error
 	GetRDInCG() ([]ramendrv1alpha1.VolSyncReplicationDestinationSpec, error)
+	CheckIfPVCMatchLabel(pvcLabels map[string]string) (bool, error)
 }
 
 type cgHandler struct {
@@ -71,19 +81,26 @@ type cgHandler struct {
 	instance  *ramendrv1alpha1.VolumeReplicationGroup
 	VSHandler *volsync.VSHandler // VSHandler will be used to call the exist funcs
 
-	volumeGroupSnapshotSource   *metav1.LabelSelector
-	volumeSnapshotClassSelector metav1.LabelSelector
-	ramenSchedulingInterval     string
+	volumeGroupSnapshotSource        *metav1.LabelSelector
+	volumeSnapshotClassSelector      metav1.LabelSelector
+	volumeGroupSnapshotClassSelector metav1.LabelSelector
+	ramenSchedulingInterval          string
 
 	logger logr.Logger
 }
 
 func (c *cgHandler) CreateOrUpdateReplicationGroupDestination(
 	replicationGroupDestinationName, replicationGroupDestinationNamespace string,
-	rdSpecs []ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+	rdSpecsInGroup []ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 ) (*ramendrv1alpha1.ReplicationGroupDestination, error) {
+	log := c.logger.WithName("CreateOrUpdateReplicationGroupDestination").
+		WithValues("ReplicationGroupDestinationName", replicationGroupDestinationName,
+			"ReplicationGroupDestinationNamespace", replicationGroupDestinationNamespace)
+
 	if err := util.DeleteReplicationGroupSource(c.ctx, c.Client,
 		replicationGroupDestinationName, replicationGroupDestinationNamespace); err != nil {
+		log.Error(err, "Failed to delete ReplicationGroupSource before creating ReplicationGroupDestination")
+
 		return nil, err
 	}
 
@@ -105,11 +122,13 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupDestination(
 		util.AddAnnotation(rgd, volsync.OwnerNamespaceAnnotation, c.instance.GetNamespace())
 
 		rgd.Spec.VolumeSnapshotClassSelector = c.volumeSnapshotClassSelector
-		rgd.Spec.RDSpecs = rdSpecs
+		rgd.Spec.RDSpecs = rdSpecsInGroup
 
 		return nil
 	})
 	if err != nil {
+		log.Error(err, "Failed to create or update ReplicationGroupDestination")
+
 		return nil, err
 	}
 
@@ -121,21 +140,31 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 	replicationGroupSourceName, replicationGroupSourceNamespace string,
 	runFinalSync bool,
 ) (*ramendrv1alpha1.ReplicationGroupSource, bool, error) {
+	log := c.logger.WithName("CreateOrUpdateReplicationGroupSource").
+		WithValues("ReplicationGroupSourceName", replicationGroupSourceName,
+			"ReplicationGroupSourceNamespace", replicationGroupSourceNamespace,
+			"runFinalSync", runFinalSync)
+
+	log.Info("Get RDs which are owned by RGD", "RGD", c.instance.Name)
 	// Get the rd if it exist when change secondary to primary
 	rdList := &volsyncv1alpha1.ReplicationDestinationList{}
 	if err := c.ListByOwner(rdList,
 		map[string]string{util.RGDOwnerLabel: c.instance.Name}, c.instance.Namespace,
 	); err != nil {
+		log.Error(err, "Failed to get RDs which are owned by RGD", "RGD", c.instance.Name)
+
 		return nil, false, err
 	}
 
 	for i := range rdList.Items {
 		rd := rdList.Items[i]
 		if c.VSHandler.IsCopyMethodDirect() {
-			// Before creating a new RGS, make sure any LocalReplicationDestination for this PVC is cleaned up first
-			// DeleteRD only delete LRD&LRS here, as only the lrd&lrs have vrg owner and also belongs a CG
+			log.Info("Delete local RD and RS if they exists for RD", "RD", rd)
+
 			err := c.DeleteLocalRDAndRS(&rd)
 			if err != nil {
+				log.Error(err, "Failed to delete local RD and RS for RD", "RD", rd)
+
 				return nil, false, err
 			}
 		}
@@ -144,19 +173,18 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 	if err := util.DeleteReplicationGroupDestination(
 		c.ctx, c.Client,
 		replicationGroupSourceName, replicationGroupSourceNamespace); err != nil {
+		log.Error(err, "Failed to delete ReplicationGroupDestination before creating ReplicationGroupSource")
+
 		return nil, false, err
 	}
 
-	VolumeGroupSnapshotClassSelector := metav1.LabelSelector{}
-	if c.instance != nil && c.instance.Spec.Async != nil {
-		VolumeGroupSnapshotClassSelector = c.instance.Spec.Async.VolumeGroupSnapshotClassSelector
-	}
-
 	volumeGroupSnapshotClassName, err := util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
-		c.ctx, c.Client, VolumeGroupSnapshotClassSelector,
-		c.instance.Spec.CephFSConsistencyGroupSelector, c.instance.Namespace, c.logger,
+		c.ctx, c.Client, c.volumeGroupSnapshotClassSelector,
+		c.volumeGroupSnapshotSource, c.instance.Namespace, c.logger,
 	)
 	if err != nil {
+		log.Error(err, "Failed to get volume group snapshot class name")
+
 		return nil, false, err
 	}
 
@@ -204,6 +232,8 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 		return nil
 	})
 	if err != nil {
+		log.Error(err, "Failed to create or update ReplicationGroupSource")
+
 		return nil, false, err
 	}
 
@@ -212,6 +242,8 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 	// and also run cleanup (removes PVC we just ran the final sync from)
 	//
 	if runFinalSync && isFinalSyncComplete(rgs) {
+		log.Info("ReplicationGroupSource complete final sync")
+
 		return rgs, true, nil
 	}
 
@@ -219,35 +251,39 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 }
 
 func (c *cgHandler) GetLatestImageFromRGD(
-	ctx context.Context, pvcName string,
+	ctx context.Context, pvcName, pvcNamespace string,
 ) (*corev1.TypedLocalObjectReference, error) {
-	rgdList := &ramendrv1alpha1.ReplicationGroupDestinationList{}
+	log := c.logger.WithName("GetLatestImageFromRGD").
+		WithValues("PVCName", pvcName, "PVCNamespace", pvcNamespace)
 
-	if err := c.ListByOwner(rgdList, map[string]string{
-		volsync.VRGOwnerNameLabel:      c.instance.GetName(),
-		volsync.VRGOwnerNamespaceLabel: c.instance.GetNamespace(),
-	}, c.instance.Namespace); err != nil {
-		return nil, err
+	log.Info("Get ReplicationDestination for the pvc")
+
+	rd := &volsyncv1alpha1.ReplicationDestination{}
+	if err := c.Client.Get(ctx,
+		types.NamespacedName{Name: getReplicationDestinationName(pvcName), Namespace: pvcNamespace},
+		rd); err != nil {
+		log.Error(err, "Failed to get ReplicationDestination")
 	}
 
-	c.logger.Info("Get rgdList", "rgdList", rgdList)
+	log.Info("Get ReplicationGroupDestination which manages the ReplicationDestination")
 
-	var latestImage *corev1.TypedLocalObjectReference
-
-	for _, rgd := range rgdList.Items {
-		if util.GetPVCLatestImageRGD(pvcName, rgd) != nil {
-			c.logger.Info("Get latest image from RDG for PVC", "PVC", pvcName)
-			latestImage = util.GetPVCLatestImageRGD(pvcName, rgd)
-		}
+	rgd := &ramendrv1alpha1.ReplicationGroupDestination{}
+	if err := c.Client.Get(ctx,
+		types.NamespacedName{Name: rd.Labels[util.RGDOwnerLabel], Namespace: rd.Namespace},
+		rgd); err != nil {
+		log.Error(err, "Failed to get ReplicationGroupDestination")
 	}
 
+	latestImage := rgd.Status.LatestImages[pvcName]
 	if latestImage != nil {
 		c.logger.Info("Get latest image from RDG for PVC", "LatestImage", *latestImage)
 	}
 
 	if !isLatestImageReady(latestImage) {
-		noSnapErr := fmt.Errorf("unable to find LatestImage from ReplicationDestination %s", pvcName)
-		c.logger.Error(noSnapErr, "No latestImage", "rd", pvcName)
+		noSnapErr := fmt.Errorf("unable to find LatestImage from ReplicationGroupDestination %s",
+			rd.Labels[util.RGDOwnerLabel])
+		c.logger.Error(noSnapErr, "No latestImage",
+			"ReplicationDestination", pvcName, "ReplicationGroupDestination", rd.Labels[util.RGDOwnerLabel])
 
 		return nil, noSnapErr
 	}
@@ -258,8 +294,12 @@ func (c *cgHandler) GetLatestImageFromRGD(
 func (c *cgHandler) EnsurePVCfromRGD(
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec, failoverAction bool,
 ) error {
-	latestImage, err := c.GetLatestImageFromRGD(c.ctx, rdSpec.ProtectedPVC.Name)
+	log := c.logger.WithName("EnsurePVCfromRGD")
+
+	latestImage, err := c.GetLatestImageFromRGD(c.ctx, rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
 	if err != nil {
+		log.Error(err, "Failed to get latest image from RGD")
+
 		return err
 	}
 
@@ -296,12 +336,12 @@ func (c *cgHandler) listByOwner(ctx context.Context, list client.ObjectList) err
 
 //nolint:gocognit
 func (c *cgHandler) DeleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestination) error {
-	latestRDImage, err := c.GetLatestImageFromRGD(c.ctx, rd.Name)
+	latestRDImage, err := c.GetLatestImageFromRGD(c.ctx, rd.Name, rd.Namespace)
 	if err != nil {
 		return err
 	}
 
-	c.logger.Info("Clean up local resources. Latest Image for main RD", "name", latestRDImage.Name)
+	c.logger.Info("Clean up local resources. Latest Image for RD", "name", latestRDImage.Name)
 
 	lrs := &volsyncv1alpha1.ReplicationSource{
 		ObjectMeta: metav1.ObjectMeta{
@@ -322,6 +362,8 @@ func (c *cgHandler) DeleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestinatio
 			)
 		}
 
+		c.logger.Error(err, "Failed to get local ReplicationSource")
+
 		return err
 	}
 
@@ -330,12 +372,14 @@ func (c *cgHandler) DeleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestinatio
 	if lrs.Spec.Trigger != nil && lrs.Spec.Trigger.Manual == latestRDImage.Name {
 		// When local final sync is complete, we cleanup all locally created resources except the app PVC
 		if lrs.Status != nil && lrs.Status.LastManualSync == lrs.Spec.Trigger.Manual {
+			c.logger.Info("Clean up local resources for RD", "name", rd.Name)
+
 			err = c.VSHandler.CleanupLocalResources(lrs)
 			if err != nil {
+				c.logger.Info("Failed to cleaned up local resources for RD", "name", rd.Name)
+
 				return err
 			}
-
-			c.logger.Info("Cleaned up local resources for RD", "name", rd.Name)
 
 			return nil
 		}
@@ -360,20 +404,36 @@ func (c *cgHandler) ListByOwner(list client.ObjectList, matchLabels map[string]s
 	return nil
 }
 
+func (c *cgHandler) CheckIfPVCMatchLabel(pvcLabels map[string]string) (bool, error) {
+	if c.volumeGroupSnapshotSource == nil {
+		return false, nil
+	}
+
+	selector, err := metav1.LabelSelectorAsSelector(c.volumeGroupSnapshotSource)
+	if err != nil {
+		return false, err
+	}
+
+	return selector.Matches(labels.Set(pvcLabels)), nil
+}
+
 func (c *cgHandler) GetRDInCG() ([]ramendrv1alpha1.VolSyncReplicationDestinationSpec, error) {
 	rdSpecs := []ramendrv1alpha1.VolSyncReplicationDestinationSpec{}
 
-	if c.instance.Spec.CephFSConsistencyGroupSelector == nil {
+	if c.volumeGroupSnapshotSource == nil {
+		c.logger.Info("volumeGroupSnapshotSource is nil, return an empty RD list")
+
 		return rdSpecs, nil
 	}
 
 	if len(c.instance.Spec.VolSync.RDSpec) == 0 {
+		c.logger.Info("There is no RDSpec in the VRG")
+
 		return rdSpecs, nil
 	}
 
 	for _, rdSpec := range c.instance.Spec.VolSync.RDSpec {
-		pvcInCephfsCg, err := util.CheckIfPVCMatchLabel(
-			rdSpec.ProtectedPVC.Labels, c.instance.Spec.CephFSConsistencyGroupSelector)
+		pvcInCephfsCg, err := c.CheckIfPVCMatchLabel(rdSpec.ProtectedPVC.Labels)
 		if err != nil {
 			c.logger.Error(err, "Failed to check if pvc label match consistency group selector")
 
@@ -386,4 +446,19 @@ func (c *cgHandler) GetRDInCG() ([]ramendrv1alpha1.VolSyncReplicationDestination
 	}
 
 	return rdSpecs, nil
+}
+
+func CheckIfPVCMatchLabels(pvcLabels map[string]string, cephfsCGHandlers []VSCGHandler) (bool, VSCGHandler, error) {
+	for _, cephfsCGHandler := range cephfsCGHandlers {
+		pvcInCephfsCg, err := cephfsCGHandler.CheckIfPVCMatchLabel(pvcLabels)
+		if err != nil {
+			return false, nil, err
+		}
+
+		if pvcInCephfsCg {
+			return true, cephfsCGHandler, nil
+		}
+	}
+
+	return false, nil, nil
 }

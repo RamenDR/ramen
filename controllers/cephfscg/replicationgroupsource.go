@@ -126,6 +126,8 @@ func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.
 	// Need to confirm this secret exists on the cluster before proceeding, otherwise volsync will generate it
 	secretExists, err := m.VSHandler.ValidateSecretAndAddVRGOwnerRef(pskSecretName)
 	if err != nil || !secretExists {
+		m.Logger.Error(err, "Failed to validate secret and add VRGOwnerRef")
+
 		return mover.InProgress(), err
 	}
 

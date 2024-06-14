@@ -15,7 +15,6 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -26,9 +25,8 @@ const (
 	// do not delete the vs in a vgs, only for testing
 	SkipDeleteAnnotaion = "rgd.ramendr.openshift.io/do-not-delete"
 
-	RGDOwnerLabel          = "ramendr.openshift.io/rgd"
-	CleanupLabelKey        = "volsync.backube/cleanup"
-	RGSOwnerLabel   string = "ramendr.openshift.io/rgs"
+	RGDOwnerLabel        = "ramendr.openshift.io/rgd"
+	RGSOwnerLabel string = "ramendr.openshift.io/rgs"
 )
 
 func IsFSCGSupport(mgr manager.Manager) (bool, error) {
@@ -52,12 +50,6 @@ func IsFSCGSupport(mgr manager.Manager) (bool, error) {
 	return true, nil
 }
 
-func GetPVCLatestImageRGD(
-	pvcname string, rgd ramendrv1alpha1.ReplicationGroupDestination,
-) *corev1.TypedLocalObjectReference {
-	return rgd.Status.LatestImages[pvcname]
-}
-
 func IsReplicationGroupDestinationReady(
 	ctx context.Context, k8sClient client.Client,
 	rgd *ramendrv1alpha1.ReplicationGroupDestination,
@@ -74,11 +66,7 @@ func IsReplicationGroupDestinationReady(
 			return false, err
 		}
 
-		if rd.Status == nil {
-			return false, nil
-		}
-
-		if rd.Status.RsyncTLS == nil || rd.Status.RsyncTLS.Address == nil {
+		if rd.Status == nil || rd.Status.RsyncTLS == nil || rd.Status.RsyncTLS.Address == nil {
 			return false, nil
 		}
 	}
@@ -126,30 +114,6 @@ func DeleteReplicationGroupDestination(
 	return err
 }
 
-func ListPVCsByCephFSCGLabel(
-	ctx context.Context, k8sClient client.Client, log logr.Logger,
-	pvcLabelSelector metav1.LabelSelector, namespace string,
-) (*corev1.PersistentVolumeClaimList, error) {
-	return ListPVCsByPVCSelector(ctx, k8sClient, log,
-		pvcLabelSelector,
-		[]string{namespace},
-		true,
-	)
-}
-
-func CheckIfPVCMatchLabel(pvcLabels map[string]string, pvcLabelSelector *metav1.LabelSelector) (bool, error) {
-	if pvcLabelSelector == nil {
-		return false, nil
-	}
-
-	selector, err := metav1.LabelSelectorAsSelector(pvcLabelSelector)
-	if err != nil {
-		return false, err
-	}
-
-	return selector.Matches(labels.Set(pvcLabels)), nil
-}
-
 func GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 	ctx context.Context,
 	k8sClient client.Client,
@@ -163,7 +127,7 @@ func GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 		return "", err
 	}
 
-	pvcs, err := ListPVCsByCephFSCGLabel(ctx, k8sClient, logger, *pvcsConsistencyGroupSelector, namespace)
+	pvcs, err := ListPVCsByPVCSelector(ctx, k8sClient, logger, *pvcsConsistencyGroupSelector, []string{namespace}, false)
 	if err != nil {
 		return "", err
 	}
@@ -267,9 +231,7 @@ func DeferDeleteImage(ctx context.Context,
 			labels = make(map[string]string)
 		}
 
-		delete(labels, CleanupLabelKey)
 		labels[ramenutils.DoNotDeleteLabelKey] = "true"
-
 		labels[RGDOwnerLabel] = rgdName
 		volumeSnapshot.SetLabels(labels)
 
@@ -315,4 +277,39 @@ func vsInRGD(vs vsv1.VolumeSnapshot, rgd *ramendrv1alpha1.ReplicationGroupDestin
 	}
 
 	return false
+}
+
+func CheckImagesReadyToUse(
+	ctx context.Context, k8sClient client.Client,
+	latestImages map[string]*corev1.TypedLocalObjectReference,
+	namespace string,
+	log logr.Logger,
+) (bool, error) {
+	for pvcName := range latestImages {
+		latestImage := latestImages[pvcName]
+		if latestImage == nil {
+			log.Info("Image is nil to check")
+
+			return false, nil
+		}
+
+		volumeSnapshot := &vsv1.VolumeSnapshot{}
+		if err := k8sClient.Get(ctx,
+			types.NamespacedName{Name: latestImage.Name, Namespace: namespace},
+			volumeSnapshot,
+		); err != nil {
+			log.Error(err, "Failed to get volume snapshot")
+
+			return false, err
+		}
+
+		if volumeSnapshot.Status.ReadyToUse == nil ||
+			(volumeSnapshot.Status.ReadyToUse != nil && !*volumeSnapshot.Status.ReadyToUse) {
+			log.Info("Volume snapshot is not ready to use", "VolumeSnapshot", volumeSnapshot.Name)
+
+			return false, nil
+		}
+	}
+
+	return true, nil
 }

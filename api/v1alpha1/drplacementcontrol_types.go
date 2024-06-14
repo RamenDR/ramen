@@ -154,10 +154,6 @@ type DRPlacementControlSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="pvcSelector is immutable"
 	PVCSelector metav1.LabelSelector `json:"pvcSelector"`
 
-	// Label selector to identify the cephfs PVCs that are in a consistency group
-	// nil means no consistency group. metav1.LabelSelector{} means all pvcs in a consistency group
-	CephFSConsistencyGroupSelector *metav1.LabelSelector `json:"cephFSCGSelector,omitempty"`
-
 	// Action is either Failover or Relocate operation
 	Action DRAction `json:"action,omitempty"`
 

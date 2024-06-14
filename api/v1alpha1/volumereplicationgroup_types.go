@@ -159,10 +159,6 @@ type VolumeReplicationGroupSpec struct {
 	// that needs to be replicated to the peer cluster.
 	PVCSelector metav1.LabelSelector `json:"pvcSelector"`
 
-	// Label selector to identify the cephfs PVCs that are in a consistency group
-	// nil means no consistency group. metav1.LabelSelector{} means all pvcs in a consistency group
-	CephFSConsistencyGroupSelector *metav1.LabelSelector `json:"cephFSCGSelector,omitempty"`
-
 	// Desired state of all volumes [primary or secondary] in this replication group;
 	// this value is propagated to children VolumeReplication CRs
 	ReplicationState ReplicationState `json:"replicationState"`
