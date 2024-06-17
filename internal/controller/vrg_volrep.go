@@ -1997,6 +1997,7 @@ func (v *VRGInstance) restorePVsAndPVCsForVolRep(result *ctrl.Result) (int, erro
 	return count, nil
 }
 
+//nolint:funlen
 func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) {
 	err := errors.New("s3Profiles empty")
 	NoS3 := false
@@ -2027,6 +2028,8 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) 
 		// Restore all PVs found in the s3 store. If any failure, the next profile will be retried
 		pvCount, err = v.restorePVsFromObjectStore(objectStore, s3ProfileName)
 		if err != nil {
+			v.log.Info(fmt.Sprintf("Warning: cannot restore PVs from s3 profile %s (%v)", s3ProfileName, err))
+
 			continue
 		}
 
@@ -2039,7 +2042,13 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) 
 		// Ignoring PVC restore errors helps with the upgrade from ODF-4.12.x to 4.13
 		pvcCount, err = v.restorePVCsFromObjectStore(objectStore, s3ProfileName)
 
-		if err != nil || pvCount != pvcCount {
+		if err != nil {
+			v.log.Info(fmt.Sprintf("Warning: cannot restore PVCs from s3 profile %s (%v)", s3ProfileName, err))
+
+			continue
+		}
+
+		if pvCount != pvcCount {
 			v.log.Info(fmt.Sprintf("Warning: Mismatch in PV/PVC count %d/%d (%v)",
 				pvCount, pvcCount, err))
 
@@ -2063,19 +2072,13 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) 
 func (v *VRGInstance) restorePVsFromObjectStore(objectStore ObjectStorer, s3ProfileName string) (int, error) {
 	pvList, err := downloadPVs(objectStore, v.s3KeyPrefix())
 	if err != nil {
-		v.log.Error(err, fmt.Sprintf("error fetching PV cluster data from S3 profile %s", s3ProfileName))
-
 		return 0, err
 	}
 
 	v.log.Info(fmt.Sprintf("Found %d PVs in s3 store using profile %s", len(pvList), s3ProfileName))
 
 	if err = v.checkPVClusterData(pvList); err != nil {
-		errMsg := fmt.Sprintf("Error found in PV cluster data in S3 store %s", s3ProfileName)
-		v.log.Info(errMsg)
-		v.log.Error(err, fmt.Sprintf("Resolve PV conflict in the S3 store %s to deploy the application", s3ProfileName))
-
-		return 0, fmt.Errorf("%s: %w", errMsg, err)
+		return 0, err
 	}
 
 	return restoreClusterDataObjects(v, pvList, "PV", v.cleanupPVForRestore, v.validateExistingPV)
@@ -2084,8 +2087,6 @@ func (v *VRGInstance) restorePVsFromObjectStore(objectStore ObjectStorer, s3Prof
 func (v *VRGInstance) restorePVCsFromObjectStore(objectStore ObjectStorer, s3ProfileName string) (int, error) {
 	pvcList, err := downloadPVCs(objectStore, v.s3KeyPrefix())
 	if err != nil {
-		v.log.Error(err, fmt.Sprintf("error fetching PVC cluster data from S3 profile %s", s3ProfileName))
-
 		return 0, err
 	}
 
