@@ -19,10 +19,10 @@ profiles:
     disk_size: "50g"
     workers:
       - addons:
-          - name: rook-operator
-          - name: rook-cluster
-          - name: rook-toolbox
-          - name: rook-pool
+          - name: rook/operator
+          - name: rook/cluster
+          - name: rook/toolbox
+          - name: rook/pool
           - name: cdi
       - addons:
           - name: kubevirt

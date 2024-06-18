@@ -18,7 +18,7 @@ templates:
     memory: "4g"
     workers:
       - addons:
-          - name: ocm-cluster
+          - name: ocm/cluster
             args: ["$name", "hub"]
           - name: recipe
       - addons:
@@ -34,8 +34,8 @@ templates:
     memory: "4g"
     workers:
       - addons:
-          - name: ocm-hub
-          - name: ocm-controller
+          - name: ocm/hub
+          - name: ocm/controller
           - name: olm
 
 profiles:

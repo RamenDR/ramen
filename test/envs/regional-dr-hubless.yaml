@@ -24,11 +24,11 @@ templates:
       - volumesnapshots
     workers:
       - addons:
-          - name: rook-operator
-          - name: rook-cluster
-          - name: rook-toolbox
-          - name: rook-pool
-          - name: rook-cephfs
+          - name: rook/operator
+          - name: rook/cluster
+          - name: rook/toolbox
+          - name: rook/pool
+          - name: rook/cephfs
       - addons:
           - name: csi-addons
           - name: olm
@@ -44,7 +44,7 @@ profiles:
 
 workers:
   - addons:
-      - name: rbd-mirror
+      - name: rook/rbd-mirror
         args: ["dr1", "dr2"]
   - addons:
       - name: submariner
