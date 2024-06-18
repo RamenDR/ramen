@@ -15,6 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -318,6 +319,7 @@ var _ = BeforeSuite(func() {
 
 	rateLimiter := workqueue.NewMaxOfRateLimiter(
 		workqueue.NewItemExponentialFailureRateLimiter(10*time.Millisecond, 100*time.Millisecond),
+		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(50), 500)},
 	)
 
 	Expect((&ramencontrollers.DRClusterReconciler{
