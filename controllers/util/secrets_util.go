@@ -17,6 +17,7 @@ import (
 	errorswrapper "github.com/pkg/errors"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
@@ -228,8 +229,8 @@ func newPlacementRule(name string, namespace string,
 	}
 }
 
-func newS3ConfigurationSecret(s3SecretRef corev1.SecretReference, targetns string) []byte {
-	secretObjDefinition := map[string]interface{}{
+func newS3ConfigurationSecret(s3SecretRef corev1.SecretReference, targetns string) map[string]interface{} {
+	return map[string]interface{}{
 		"apiVersion": "v1",
 		"kind":       "Secret",
 		"metadata": map[string]interface{}{
@@ -248,17 +249,10 @@ func newS3ConfigurationSecret(s3SecretRef corev1.SecretReference, targetns strin
 				"\"AWS_SECRET_ACCESS_KEY\" hub}}",
 		},
 	}
-
-	secretObjDefinitionRaw, err := json.Marshal(secretObjDefinition)
-	if err != nil {
-		return nil
-	}
-
-	return secretObjDefinitionRaw
 }
 
-func newVeleroSecret(s3SecretRef corev1.SecretReference, fromNS, veleroNS, keyName string) []byte {
-	secretObjDefinition := map[string]interface{}{
+func newVeleroSecret(s3SecretRef corev1.SecretReference, fromNS, veleroNS, keyName string) map[string]interface{} {
+	return map[string]interface{}{
 		"apiVersion": "v1",
 		"kind":       "Secret",
 		"metadata": map[string]interface{}{
@@ -275,13 +269,6 @@ func newVeleroSecret(s3SecretRef corev1.SecretReference, fromNS, veleroNS, keyNa
 				") | base64enc }}",
 		},
 	}
-
-	secretObjDefinitionRaw, err := json.Marshal(secretObjDefinition)
-	if err != nil {
-		return nil
-	}
-
-	return secretObjDefinitionRaw
 }
 
 func newConfigurationPolicy(name string, object *runtime.RawExtension) *cpcv1.ConfigurationPolicy {
@@ -400,20 +387,31 @@ func (sutil *SecretsUtil) policyObject(
 	veleroNS string,
 ) *runtime.RawExtension {
 	s3SecretRef := corev1.SecretReference{Name: secretName, Namespace: secretNS}
-	object := &runtime.RawExtension{}
+
+	var object []interface{}
 
 	switch format {
 	case SecretFormatRamen:
-		object = &runtime.RawExtension{Raw: newS3ConfigurationSecret(s3SecretRef, targetNS)}
+		object = append(object, newS3ConfigurationSecret(s3SecretRef, targetNS))
 	case SecretFormatVelero:
-		object = &runtime.RawExtension{
-			Raw: newVeleroSecret(s3SecretRef, targetNS, veleroNS, VeleroSecretKeyNameDefault),
-		}
+		object = append(object, newVeleroSecret(s3SecretRef, targetNS, veleroNS, VeleroSecretKeyNameDefault))
 	default:
 		panic(unknownFormat)
 	}
 
-	return object
+	object = append(object, olmClusterRole,
+		OlmRoleBinding,
+		vrgClusterRole,
+		vrgClusterRoleBinding,
+		mModeClusterRole,
+		mModeClusterRoleBinding)
+
+	object2, err := json.Marshal(object)
+	if err != nil {
+		return nil
+	}
+
+	return &runtime.RawExtension{Raw: object2}
 }
 
 func (sutil *SecretsUtil) deletePolicyResources(
@@ -719,3 +717,95 @@ func (sutil *SecretsUtil) RemoveSecretFromCluster(
 
 	return sutil.updatePolicyResources(plRule, secret, clusterName, namespace, format, false)
 }
+
+var (
+	olmClusterRole = &rbacv1.ClusterRole{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:olm-edit"},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"operators.coreos.com"},
+				Resources: []string{"operatorgroups"},
+				Verbs:     []string{"create", "get", "list", "update", "delete"},
+			},
+		},
+	}
+
+	OlmRoleBinding = &rbacv1.RoleBinding{
+		TypeMeta: metav1.TypeMeta{Kind: "RoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "open-cluster-management:klusterlet-work-sa:agent:olm-edit",
+			Namespace: "",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "klusterlet-work-sa",
+				Namespace: "open-cluster-management-agent",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "open-cluster-management:klusterlet-work-sa:agent:olm-edit",
+		},
+	}
+
+	vrgClusterRole = &rbacv1.ClusterRole{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit"},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"ramendr.openshift.io"},
+				Resources: []string{"volumereplicationgroups"},
+				Verbs:     []string{"create", "get", "list", "update", "delete"},
+			},
+		},
+	}
+
+	vrgClusterRoleBinding = &rbacv1.ClusterRoleBinding{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit"},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "klusterlet-work-sa",
+				Namespace: "open-cluster-management-agent",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit",
+		},
+	}
+
+	mModeClusterRole = &rbacv1.ClusterRole{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:mmode-edit"},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"ramendr.openshift.io"},
+				Resources: []string{"maintenancemodes"},
+				Verbs:     []string{"create", "get", "list", "update", "delete"},
+			},
+		},
+	}
+
+	mModeClusterRoleBinding = &rbacv1.ClusterRoleBinding{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:mmode-edit"},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "klusterlet-work-sa",
+				Namespace: "open-cluster-management-agent",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "open-cluster-management:klusterlet-work-sa:agent:mmode-edit",
+		},
+	}
+)
