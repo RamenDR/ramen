@@ -87,6 +87,9 @@ endif
 
 DOCKERCMD ?= podman
 
+# You can use this to pass ginkgo arguments to test targets (e.g. -ginkgo.no-color)
+GINKGO_ARGS ?=
+
 all: build
 
 ##@ General
@@ -138,49 +141,49 @@ drenv-prereqs: ## Check the prerequisites for the drenv tool.
 ##@ Tests
 
 test: generate manifests envtest ## Run all the tests.
-	 go test ./... -coverprofile cover.out
+	 go test ./... -coverprofile cover.out $(GINKGO_ARGS)
 
 test-pvrgl: generate manifests envtest ## Run ProtectedVolumeReplicationGroupList tests.
-	 go test ./controllers -coverprofile cover.out  -ginkgo.focus ProtectedVolumeReplicationGroupList
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus ProtectedVolumeReplicationGroupList $(GINKGO_ARGS)
 
 test-obj: generate manifests envtest ## Run ObjectStorer tests.
-	 go test ./controllers -coverprofile cover.out  -ginkgo.focus FakeObjectStorer
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus FakeObjectStorer $(GINKGO_ARGS)
 
 test-vs: generate manifests envtest ## Run VolumeSync tests.
-	 go test ./controllers/volsync -coverprofile cover.out
+	 go test ./controllers/volsync -coverprofile cover.out $(GINKGO_ARGS)
 
 test-vrg: generate manifests envtest ## Run VolumeReplicationGroup tests.
-	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroup
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroup $(GINKGO_ARGS)
 
 test-vrg-pvc: generate manifests envtest ## Run VolumeReplicationGroupPVC tests.
-	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupPVC
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupPVC $(GINKGO_ARGS)
 
 test-vrg-vr: generate manifests envtest ## Run VolumeReplicationGroupVolRep tests.
-	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupVolRep
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupVolRep $(GINKGO_ARGS)
 
 test-vrg-vs: generate manifests envtest ## Run VolumeReplicationGroupVolSync tests.
-	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupVolSync
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupVolSync $(GINKGO_ARGS)
 
 test-vrg-recipe: generate manifests envtest ## Run VolumeReplicationGroupRecipe tests.
-	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupRecipe
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupRecipe $(GINKGO_ARGS)
 
 test-vrg-kubeobjects: generate manifests envtest ## Run VolumeReplicationGroupKubeObjects tests.
-	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VRG_KubeObjectProtection
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VRG_KubeObjectProtection $(GINKGO_ARGS)
 
 test-drpc: generate manifests envtest ## Run DRPlacementControl tests.
-	 go test ./controllers -coverprofile cover.out  -ginkgo.focus DRPlacementControl
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus DRPlacementControl $(GINKGO_ARGS)
 
 test-drcluster: generate manifests envtest ## Run DRCluster tests.
-	 go test ./controllers -coverprofile cover.out  -ginkgo.focus DRClusterController
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus DRClusterController $(GINKGO_ARGS)
 
 test-drpolicy: generate manifests envtest ## Run DRPolicy tests.
-	 go test ./controllers -coverprofile cover.out  -ginkgo.focus DRPolicyController
+	 go test ./controllers -coverprofile cover.out  -ginkgo.focus DRPolicyController $(GINKGO_ARGS)
 
 test-util: generate manifests envtest ## Run util tests.
-	 go test ./controllers/util -coverprofile cover.out
+	 go test ./controllers/util -coverprofile cover.out $(GINKGO_ARGS)
 
 test-util-pvc: generate manifests envtest ## Run util-pvc tests.
-	 go test ./controllers/util -coverprofile cover.out  -ginkgo.focus PVCS_Util
+	 go test ./controllers/util -coverprofile cover.out  -ginkgo.focus PVCS_Util $(GINKGO_ARGS)
 
 test-drenv: ## Run drenv tests.
 	$(MAKE) -C test
