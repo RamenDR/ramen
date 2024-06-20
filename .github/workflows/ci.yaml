@@ -94,6 +94,30 @@ jobs:
           version: v1.55.2
           working-directory: ${{ matrix.directory }}
 
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Setup go
+      - uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: govulncheck
+        uses: golang/govulncheck-action@v1
+
+  gosec:
+    name: gosec
+    runs-on: ubuntu-22.04
+    env:
+      GO111MODULE: on
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v3
+      - name: Run Gosec Security Scanner
+        uses: securego/gosec@master
+        with:
+          args: ./...
+
   unit-test:
     name: Unit tests
     runs-on: ubuntu-20.04
