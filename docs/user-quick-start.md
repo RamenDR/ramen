@@ -89,7 +89,7 @@ enough resources:
 1. Install the `kubectl` tool. See
    [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
    for details.
-   Tested with version v1.27.4.
+   Tested with version v1.30.2.
 
 1. Install minikube - on Fedora you can use::
 
@@ -147,7 +147,7 @@ enough resources:
 1. Install the `velero` tool. See
    [Velero Basic Install](https://velero.io/docs/v1.12/basic-install/)
    for the details.
-   Tested with version v1.12.0.
+   Tested with version v1.12.2.
 
 1. Install the `virtctl` tool.
 
@@ -214,7 +214,7 @@ enough resources:
    sudo dnf install golang
    ```
 
-   Tested with version go1.20.10.
+   Tested with version go1.22.0.
 
 ## Starting the test environment
 

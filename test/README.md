@@ -31,7 +31,7 @@ environment.
 
 1. Install the `kubectl` tool. See
    [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
-   Tested with version v1.27.4.
+   Tested with version v1.30.2.
 
 1. Install `clusteradm` tool. See
    [Install clusteradm CLI tool](https://open-cluster-management.io/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool)
@@ -46,7 +46,7 @@ environment.
 1. Install the `velero` tool. See
    [Velero Basic Install](https://velero.io/docs/v1.12/basic-install/)
    for the details.
-   Tested with version v1.12.0.
+   Tested with version v1.12.2.
 
 1. Install `helm` tool - on Fedora you can use:
 
