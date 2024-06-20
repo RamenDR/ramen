@@ -10,9 +10,13 @@ import (
 
 // ReplicationGroupSourceSpec defines the desired state of ReplicationGroupSource
 type ReplicationGroupSourceSpec struct {
-	Trigger                      *ReplicationSourceTriggerSpec `json:"trigger,omitempty"`
-	VolumeGroupSnapshotClassName string                        `json:"volumeGroupSnapshotClassName,omitempty"`
-	VolumeGroupSnapshotSource    *metav1.LabelSelector         `json:"volumeGroupSnapshotSource,omitempty"`
+	Trigger *ReplicationSourceTriggerSpec `json:"trigger,omitempty"`
+
+	// +required
+	VolumeGroupSnapshotClassName string `json:"volumeGroupSnapshotClassName,omitempty"`
+
+	// +required
+	VolumeGroupSnapshotSource *metav1.LabelSelector `json:"volumeGroupSnapshotSource,omitempty"`
 
 	// RSSpecs []VolSyncReplicationSourceSpec `json:"rsspecs,omitempty"`
 }

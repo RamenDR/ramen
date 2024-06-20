@@ -15,10 +15,11 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 const (
@@ -29,8 +30,8 @@ const (
 	RGSOwnerLabel string = "ramendr.openshift.io/rgs"
 )
 
-func IsFSCGSupport(mgr manager.Manager) (bool, error) {
-	k8sClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: mgr.GetScheme()})
+func IsFSCGSupport(restConfig *rest.Config, scheme *runtime.Scheme) (bool, error) {
+	k8sClient, err := client.New(restConfig, client.Options{Scheme: scheme})
 	if err != nil {
 		return false, err
 	}
@@ -54,6 +55,10 @@ func IsReplicationGroupDestinationReady(
 	ctx context.Context, k8sClient client.Client,
 	rgd *ramendrv1alpha1.ReplicationGroupDestination,
 ) (bool, error) {
+	if rgd == nil || len(rgd.Spec.RDSpecs) == 0 {
+		return false, nil
+	}
+
 	if len(rgd.Status.ReplicationDestinations) != len(rgd.Spec.RDSpecs) {
 		return false, nil
 	}
@@ -118,7 +123,7 @@ func GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 	ctx context.Context,
 	k8sClient client.Client,
 	volumeGroupSnapshotClassSelector metav1.LabelSelector,
-	pvcsConsistencyGroupSelector *metav1.LabelSelector,
+	pvcsConsistencyGroupSelector metav1.LabelSelector,
 	namespace string,
 	logger logr.Logger,
 ) (string, error) {
@@ -127,7 +132,7 @@ func GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 		return "", err
 	}
 
-	pvcs, err := ListPVCsByPVCSelector(ctx, k8sClient, logger, *pvcsConsistencyGroupSelector, []string{namespace}, false)
+	pvcs, err := ListPVCsByPVCSelector(ctx, k8sClient, logger, pvcsConsistencyGroupSelector, []string{namespace}, false)
 	if err != nil {
 		return "", err
 	}
@@ -216,7 +221,7 @@ func IsRDExist(rdspec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 }
 
 func DeferDeleteImage(ctx context.Context,
-	k8sClient client.Client, imageName, imageNamespace, manual, rgdName string,
+	k8sClient client.Client, imageName, imageNamespace, rgdName string,
 ) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		volumeSnapshot := &vsv1.VolumeSnapshot{}
@@ -257,7 +262,7 @@ func CleanExpiredRDImages(ctx context.Context,
 			continue
 		}
 
-		if !vsInRGD(vs, rgd) {
+		if !VSInRGD(vs, rgd) {
 			if err := k8sClient.Delete(ctx, &vsv1.VolumeSnapshot{
 				ObjectMeta: metav1.ObjectMeta{Name: vs.Name, Namespace: vs.Namespace},
 			}); err != nil {
@@ -269,7 +274,11 @@ func CleanExpiredRDImages(ctx context.Context,
 	return nil
 }
 
-func vsInRGD(vs vsv1.VolumeSnapshot, rgd *ramendrv1alpha1.ReplicationGroupDestination) bool {
+func VSInRGD(vs vsv1.VolumeSnapshot, rgd *ramendrv1alpha1.ReplicationGroupDestination) bool {
+	if rgd == nil {
+		return false
+	}
+
 	for _, image := range rgd.Status.LatestImages {
 		if image.Name == vs.Name {
 			return true
@@ -285,6 +294,12 @@ func CheckImagesReadyToUse(
 	namespace string,
 	log logr.Logger,
 ) (bool, error) {
+	if len(latestImages) == 0 {
+		log.Info("LatestImages is empty")
+
+		return false, nil
+	}
+
 	for pvcName := range latestImages {
 		latestImage := latestImages[pvcName]
 		if latestImage == nil {
@@ -303,7 +318,7 @@ func CheckImagesReadyToUse(
 			return false, err
 		}
 
-		if volumeSnapshot.Status.ReadyToUse == nil ||
+		if volumeSnapshot.Status == nil || volumeSnapshot.Status.ReadyToUse == nil ||
 			(volumeSnapshot.Status.ReadyToUse != nil && !*volumeSnapshot.Status.ReadyToUse) {
 			log.Info("Volume snapshot is not ready to use", "VolumeSnapshot", volumeSnapshot.Name)
 

@@ -98,6 +98,7 @@ func (m *replicationGroupSourceMachine) Conditions() *[]metav1.Condition {
 	return &m.ReplicationGroupSource.Status.Conditions
 }
 
+//nolint:funlen
 func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.Result, error) {
 	m.Logger.Info("Create volume group snapshot")
 
@@ -129,6 +130,12 @@ func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.
 		m.Logger.Error(err, "Failed to validate secret and add VRGOwnerRef")
 
 		return mover.InProgress(), err
+	}
+
+	if m.ReplicationGroupSource.Status.LastSyncStartTime == nil {
+		m.Logger.Info("LastSyncStartTime in ReplicationGroupSource is not updated yet.")
+
+		return mover.InProgress(), nil
 	}
 
 	replicationSources, err := m.VolumeGroupHandler.CreateOrUpdateReplicationSourceForRestoredPVCs(

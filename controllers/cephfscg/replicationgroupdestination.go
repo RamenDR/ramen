@@ -133,7 +133,7 @@ func (m *rgdMachine) Synchronize(ctx context.Context) (mover.Result, error) {
 			"ReplicationDestinationName", rd.Name, "LatestImage", rd.Status.LatestImage)
 
 		if err := util.DeferDeleteImage(
-			ctx, m.Client, rd.Status.LatestImage.Name, rd.Namespace, rd.Spec.Trigger.Manual, m.ReplicationGroupDestination.Name,
+			ctx, m.Client, rd.Status.LatestImage.Name, rd.Namespace, m.ReplicationGroupDestination.Name,
 		); err != nil {
 			return mover.InProgress(), err
 		}

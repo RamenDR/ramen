@@ -180,7 +180,7 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 
 	volumeGroupSnapshotClassName, err := util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 		c.ctx, c.Client, c.volumeGroupSnapshotClassSelector,
-		c.volumeGroupSnapshotSource, c.instance.Namespace, c.logger,
+		*c.volumeGroupSnapshotSource, c.instance.Namespace, c.logger,
 	)
 	if err != nil {
 		log.Error(err, "Failed to get volume group snapshot class name")
@@ -263,6 +263,8 @@ func (c *cgHandler) GetLatestImageFromRGD(
 		types.NamespacedName{Name: getReplicationDestinationName(pvcName), Namespace: pvcNamespace},
 		rd); err != nil {
 		log.Error(err, "Failed to get ReplicationDestination")
+
+		return nil, err
 	}
 
 	log.Info("Get ReplicationGroupDestination which manages the ReplicationDestination")
@@ -272,6 +274,8 @@ func (c *cgHandler) GetLatestImageFromRGD(
 		types.NamespacedName{Name: rd.Labels[util.RGDOwnerLabel], Namespace: rd.Namespace},
 		rgd); err != nil {
 		log.Error(err, "Failed to get ReplicationGroupDestination")
+
+		return nil, err
 	}
 
 	latestImage := rgd.Status.LatestImages[pvcName]
@@ -313,25 +317,6 @@ func (c *cgHandler) EnsurePVCfromRGD(
 	c.logger.Info("Latest Image for ReplicationDestination", "latestImage", vsImageRef.Name)
 
 	return c.VSHandler.ValidateSnapshotAndEnsurePVC(rdSpec, *vsImageRef, failoverAction)
-}
-
-// Lists only RS/RD with VRGOwnerLabel that matches the owner
-func (c *cgHandler) listByOwner(ctx context.Context, list client.ObjectList) error {
-	matchLabels := map[string]string{
-		volsync.VRGOwnerNameLabel: c.instance.GetName(),
-	}
-	listOptions := []client.ListOption{
-		client.InNamespace(c.instance.GetNamespace()),
-		client.MatchingLabels(matchLabels),
-	}
-
-	if err := c.Client.List(ctx, list, listOptions...); err != nil {
-		c.logger.Error(err, "Failed to list by label", "matchLabels", matchLabels)
-
-		return fmt.Errorf("error listing by label (%w)", err)
-	}
-
-	return nil
 }
 
 //nolint:gocognit

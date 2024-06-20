@@ -140,6 +140,8 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(
 }
 
 // CleanVolumeGroupSnapshot delete restored pvc, replicationsource and VolumeGroupSnapshot
+//
+//nolint:funlen
 func (h *volumeGroupSourceHandler) CleanVolumeGroupSnapshot(
 	ctx context.Context,
 ) error {
@@ -161,32 +163,35 @@ func (h *volumeGroupSourceHandler) CleanVolumeGroupSnapshot(
 		return err
 	}
 
-	for _, vsRef := range volumeGroupSnapshot.Status.VolumeSnapshotRefList {
-		logger.Info("Get PVCName from volume snapshot",
-			"VolumeSnapshotName", vsRef.Name, "VolumeSnapshotNamespace", vsRef.Namespace)
-
-		pvc, err := GetPVCFromVolumeSnapshot(ctx, h.Client, vsRef.Name, vsRef.Namespace, volumeGroupSnapshot)
-		if err != nil {
-			logger.Error(err, "Failed to get PVC name from volume snapshot",
+	if volumeGroupSnapshot.Status != nil {
+		for _, vsRef := range volumeGroupSnapshot.Status.VolumeSnapshotRefList {
+			logger.Info("Get PVCName from volume snapshot",
 				"VolumeSnapshotName", vsRef.Name, "VolumeSnapshotNamespace", vsRef.Namespace)
 
-			return err
-		}
+			pvc, err := GetPVCFromVolumeSnapshot(ctx, h.Client, vsRef.Name, vsRef.Namespace, volumeGroupSnapshot)
+			if err != nil {
+				logger.Error(err, "Failed to get PVC name from volume snapshot",
+					"VolumeSnapshotName", vsRef.Name, "VolumeSnapshotNamespace", vsRef.Namespace)
 
-		restoredPVCName := fmt.Sprintf(RestorePVCinCGNameFormat, pvc.Name)
-		restoredPVCNamespace := vsRef.Namespace
+				return err
+			}
 
-		logger.Info("Delete restored PVCs", "PVCName", restoredPVCName, "PVCNamespace", restoredPVCNamespace)
+			restoredPVCName := fmt.Sprintf(RestorePVCinCGNameFormat, pvc.Name)
+			restoredPVCNamespace := vsRef.Namespace
 
-		if err := h.Client.Delete(ctx, &corev1.PersistentVolumeClaim{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      restoredPVCName,
-				Namespace: restoredPVCNamespace,
-			},
-		}); err != nil && !errors.IsNotFound(err) {
-			logger.Error(err, "Failed to delete restored PVC ", "PVCName", restoredPVCName, "PVCNamespace", restoredPVCNamespace)
+			logger.Info("Delete restored PVCs", "PVCName", restoredPVCName, "PVCNamespace", restoredPVCNamespace)
 
-			return err
+			if err := h.Client.Delete(ctx, &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      restoredPVCName,
+					Namespace: restoredPVCNamespace,
+				},
+			}); err != nil && !errors.IsNotFound(err) {
+				logger.Error(err, "Failed to delete restored PVC ",
+					"PVCName", restoredPVCName, "PVCNamespace", restoredPVCNamespace)
+
+				return err
+			}
 		}
 	}
 
@@ -465,7 +470,17 @@ func (h *volumeGroupSourceHandler) CheckReplicationSourceForRestoredPVCsComplete
 			return false, err
 		}
 
-		if replicationSourceInCluster.Spec.Trigger.Manual != replicationSourceInCluster.Status.LastManualSync {
+		if replicationSourceInCluster.Spec.Trigger == nil || replicationSourceInCluster.Spec.Trigger.Manual == "" {
+			logger.Info("There is no manual trigger in the replication source",
+				"ReplicationSourceName", replicationSource.Name,
+				"ReplicationSourceNamespace", replicationSource.Namespace,
+			)
+
+			return false, fmt.Errorf("manual trigger not found in the replicationsource spec")
+		}
+
+		if replicationSourceInCluster.Status == nil ||
+			replicationSourceInCluster.Spec.Trigger.Manual != replicationSourceInCluster.Status.LastManualSync {
 			logger.Info("replication source is not completed",
 				"ReplicationSourceName", replicationSource.Name,
 				"ReplicationSourceNamespace", replicationSource.Namespace,
@@ -480,9 +495,18 @@ func (h *volumeGroupSourceHandler) CheckReplicationSourceForRestoredPVCsComplete
 	return true, nil
 }
 
+var GetPVCFromVolumeSnapshot func(
+	ctx context.Context, k8sClient client.Client, vsName string,
+	vsNamespace string, vgs *vgsv1alphfa1.VolumeGroupSnapshot,
+) (*corev1.PersistentVolumeClaim, error)
+
+func init() {
+	GetPVCFromVolumeSnapshot = FakeGetPVCFromVolumeSnapshot
+}
+
 // TODO(wangyouhang): https://github.com/kubernetes-csi/external-snapshotter/issues/969
 // Fake func, need to be changed
-func GetPVCFromVolumeSnapshot(
+func FakeGetPVCFromVolumeSnapshot(
 	ctx context.Context, k8sClient client.Client, vsName string,
 	vsNamespace string, vgs *vgsv1alphfa1.VolumeGroupSnapshot,
 ) (*corev1.PersistentVolumeClaim, error) {
