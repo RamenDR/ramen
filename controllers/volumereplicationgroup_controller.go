@@ -24,8 +24,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -42,6 +44,10 @@ import (
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/controllers/util"
 	"github.com/ramendr/ramen/controllers/volsync"
+)
+
+const (
+	crdCheckInterval = 5 * time.Second
 )
 
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
@@ -64,6 +70,10 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 	r.eventRecorder = rmnutil.NewEventReporter(mgr.GetEventRecorderFor("controller_VolumeReplicationGroup"))
 
 	r.Log.Info("Adding VolumeReplicationGroup controller")
+
+	if err := r.waitForCrds(); err != nil {
+		return err
+	}
 
 	rateLimiter := workqueue.NewMaxOfRateLimiter(
 		workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 1*time.Minute),
@@ -163,6 +173,69 @@ func (r *VolumeReplicationGroupReconciler) configMapFun(
 	}
 
 	return req
+}
+
+func (r *VolumeReplicationGroupReconciler) waitForCrds() error {
+	requiredCrds := []string{"VolumeReplicationClass", "VolumeReplication"}
+
+	for _, crd := range requiredCrds {
+		err := r.waitForResource(crd)
+		if err != nil {
+			r.Log.Error(err, "unexpected error occurred while checking CRD", "CRD", crd)
+
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *VolumeReplicationGroupReconciler) waitForResource(resourceName string) error {
+	result, err := r.resourceExists(resourceName)
+	if err != nil {
+		return err
+	}
+
+	if !result {
+		r.Log.Info(fmt.Sprintf("CRD %s is not installed on cluster, waiting until it appears", resourceName))
+
+		for {
+			time.Sleep(crdCheckInterval)
+
+			result, err := r.resourceExists(resourceName)
+			if err != nil {
+				return err
+			}
+
+			if result {
+				r.Log.Info(fmt.Sprintf("CRD %s appeared on cluster", resourceName))
+
+				break
+			}
+		}
+	}
+
+	return nil
+}
+
+func (r *VolumeReplicationGroupReconciler) resourceExists(resourceName string) (bool, error) {
+	unstructuredResource := &unstructured.UnstructuredList{}
+	unstructuredResource.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   volrep.GroupVersion.Group,
+		Kind:    resourceName,
+		Version: volrep.GroupVersion.Version,
+	})
+
+	err := r.Client.List(context.TODO(), unstructuredResource)
+	if err != nil {
+		if !meta.IsNoMatchError(err) {
+			return false, err
+		}
+
+		return false, nil
+	}
+
+	return true, nil
 }
 
 func init() {
