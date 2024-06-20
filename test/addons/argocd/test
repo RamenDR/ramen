@@ -81,6 +81,7 @@ def undeploy_guestbook(hub, cluster):
         ):
             print(line)
 
+    print(f"Deleting namespace argocd-test in cluster {cluster}")
     kubectl.delete("namespace", "argocd-test", context=cluster)
 
 
