@@ -477,7 +477,7 @@ var _ = Describe("VolSync_Handler", func() {
 					Consistently(func() error {
 						return k8sClient.Get(ctx,
 							types.NamespacedName{Name: rdSpec.ProtectedPVC.Name, Namespace: testNamespace.GetName()}, createdRD)
-					}, 1*time.Second, interval).ShouldNot(BeNil())
+					}).ShouldNot(BeNil())
 				})
 			})
 
@@ -721,7 +721,7 @@ var _ = Describe("VolSync_Handler", func() {
 					Consistently(func() error {
 						return k8sClient.Get(ctx,
 							types.NamespacedName{Name: rsSpec.ProtectedPVC.Name, Namespace: testNamespace.GetName()}, createdRS)
-					}, 1*time.Second, interval).ShouldNot(BeNil())
+					}).ShouldNot(BeNil())
 				})
 			})
 
@@ -761,7 +761,7 @@ var _ = Describe("VolSync_Handler", func() {
 						Consistently(func() error {
 							return k8sClient.Get(ctx,
 								types.NamespacedName{Name: rsSpec.ProtectedPVC.Name, Namespace: testNamespace.GetName()}, createdRS)
-						}, 1*time.Second, interval).ShouldNot(BeNil())
+						}).ShouldNot(BeNil())
 					})
 				})
 
@@ -783,7 +783,7 @@ var _ = Describe("VolSync_Handler", func() {
 						Consistently(func() error {
 							return k8sClient.Get(ctx,
 								types.NamespacedName{Name: rsSpec.ProtectedPVC.Name, Namespace: testNamespace.GetName()}, createdRS)
-						}, 1*time.Second, interval).ShouldNot(BeNil())
+						}).ShouldNot(BeNil())
 					})
 				})
 
@@ -806,7 +806,7 @@ var _ = Describe("VolSync_Handler", func() {
 						Consistently(func() error {
 							return k8sClient.Get(ctx,
 								types.NamespacedName{Name: rsSpec.ProtectedPVC.Name, Namespace: testNamespace.GetName()}, createdRS)
-						}, 1*time.Second, interval).ShouldNot(BeNil())
+						}).ShouldNot(BeNil())
 					})
 				})
 
