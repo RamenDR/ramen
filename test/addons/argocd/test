@@ -76,13 +76,32 @@ def undeploy_guestbook(hub, cluster):
             "delete",
             f"guestbook-{cluster}",
             "--yes",
-            "--wait",
             env=env,
         ):
             print(line)
 
     print(f"Deleting namespace argocd-test in cluster {cluster}")
-    kubectl.delete("namespace", "argocd-test", context=cluster)
+    kubectl.delete("namespace", "argocd-test", "--wait=false", context=cluster)
+
+
+def wait_until_guestbook_is_deleted(hub, cluster):
+    print(f"Waiting until application guestbook-{cluster} is deleted")
+    kubectl.wait(
+        "application",
+        f"guestbook-{cluster}",
+        "--for=delete",
+        "--namespace=argocd",
+        "--timeout=60s",
+        context=hub,
+    )
+    print(f"Waiting until namespace argocd-test is deleted in cluster {cluster}")
+    kubectl.wait(
+        "ns",
+        "argocd-test",
+        "--for=delete",
+        "--timeout=60s",
+        context=cluster,
+    )
 
 
 if len(sys.argv) != 4:
@@ -99,3 +118,6 @@ for cluster in clusters:
 
 for cluster in clusters:
     undeploy_guestbook(hub, cluster)
+
+for cluster in clusters:
+    wait_until_guestbook_is_deleted(hub, cluster)
