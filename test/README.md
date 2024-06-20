@@ -71,9 +71,9 @@ environment.
 1. Install `mc` tool
 
    ```
-   curl -L -o /tmp/mc https://dl.min.io/client/mc/release/linux-amd64/mc
-   sudo install /tmp/mc /usr/local/bin
-   rm /tmp/mc
+   curl -L -o mc https://dl.min.io/client/mc/release/linux-amd64/mc
+   sudo install mc /usr/local/bin
+   rm mc
    ```
 
    For more info see
