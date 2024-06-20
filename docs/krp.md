@@ -48,40 +48,14 @@ of events.  Second, the scope of asynchrony can be the source of failed
 dependencies resulting in backoff retry loops which can violate the application
 Recovery Time Objective (RTO).  Restoring resources in a prescribed order can
 avoid both of these problems.  So the Ramen VRG provides a mechanism to support
-capturing and restoring resources in a prescribed order.
-
-## An Example Kubernetes Resource Protection Specification
+capturing and restoring resources in a prescribed order: through a
+[Recipe](recipe_overview.md). When a prescribed order is not required,
+Kubernetes resources can be captured and restored through the VRG by enabling
+KubeObjectProtection:
 
 ```yaml
-    spec:
-        kubeObjectProtection:
-            # backup section
-            captureInterval: 30m
-            captureOrder:
-                - name: config  # backup Names should be unique
-                    includedResources: ["ConfigMap", "Secret"]
-                - name: custom
-                    includedResources: ["sample1.myapp.mycompany.com", "sample.myapp.mycompany.com", "sample3.myapp.mycompany.com"]
-                    labelSelector: "myAppPersist"
-                    # includeClusterResources: false # by default
-                - name: deployments
-                    includedResources: ["Deployment"]
-                - name: everything
-                    includeClusterResources: true
-                    excludedResources: [""]  # include everything with no history, even resources in other backups
-            # restore section
-            recoverOrder:
-                - backupName: config # API server required matching to backup struct
-                    includedResources: ["ConfigMap", "Secret"]
-                - backupName: custom
-                    includedResources: ["sample1.myapp.mycompany.com", "sample2.myapp.mycompany.com", "sample3.myapp.mycompany.com"]
-                    # labelSelector: "" # intentionally omitted - don't require label match
-                    # includeClusterResources: false # by default
-                - backupName: deployments
-                    includedResources: ["Deployment"]
-                - backupName: everything
-                    includeClusterResources: true
-                    excludedResources: ["ConfigMap", "Secret", "Deployment", "sample1.myapp.mycompany.com", "sample2.myapp.mycompany.com", "sample3.myapp.mycompany.com"]  # don't restore resources we've already restored
+spec:
+  kubeObjectProtection: {}
 ```
 
 ## Explanation of the Capture and Recovery Specifications in the VRG
@@ -97,26 +71,3 @@ part of disaster protection.  This is accomplished through the
 kubeObjectProtection section of the VRG spec.  If kubeObjectProtection is not
 included in a VRG, then Kubernetes resources are not protected as part of the
 VRG disaster protection.
-
-The kubeObjectProtection section contains two sub-sections, captureOrder and
-recoverOrder.  This captureOrder section provides instructions on how to backup
-a namespaces Kubernetes resources.  The recoverOrder section provides
-instructions on how to recover a namespaces Kubernetes resources after a
-disaster.  This implies that the backup and recover order can be different and
-don't need to include all the same resources.  Each of the captureOrder and
-recoverOrder sections contain a list of resource instructions.  Each item in the
-list is acted upon even if it duplicates work done by other items in the list.
-So care should be taken to avoid duplication within either the backup or recover
-lists so that the best RPO and RTO are achieved.  The list items must meet the
-following requirements.  If the requirements are not met, then the operation of
-the lists is undefined.
-
-1. The name of each item in the captureOrder list must be unique
-1. The backupName of each item in the recoverOrder list much match a name in the
- recoverOrder list
-1. A labelSelector in a list item only applies to that item in the list
-1. If a list item contains multiple labelSelectors then any resource that
- matches either label selector is operated upon
-1. includeClusterResources in a list item only applies to that item in the list
-1. Each list item can contain either an includedResources section or an
- excludedResources section, but not both
