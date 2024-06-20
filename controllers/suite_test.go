@@ -47,6 +47,7 @@ import (
 	"github.com/ramendr/ramen/controllers/util"
 	Recipe "github.com/ramendr/recipe/api/v1alpha1"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
+	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -211,6 +212,9 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	err = argocdv1alpha1hack.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = apiextensions.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 	// +kubebuilder:scaffold:scheme
 

@@ -23,6 +23,7 @@ import (
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	uberzap "go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	apiextensions "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -96,6 +97,8 @@ func configureController(ramenConfig *ramendrv1alpha1.RamenConfig) error {
 			controllers.ControllerType, ramendrv1alpha1.DRHubType, ramendrv1alpha1.DRClusterType)
 	}
 
+	setupLog.Info("controller type", "type", controllers.ControllerType)
+
 	if controllers.ControllerType == ramendrv1alpha1.DRHubType {
 		utilruntime.Must(plrv1.AddToScheme(scheme))
 		utilruntime.Must(ocmworkv1.AddToScheme(scheme))
@@ -111,6 +114,7 @@ func configureController(ramenConfig *ramendrv1alpha1.RamenConfig) error {
 		utilruntime.Must(volsyncv1alpha1.AddToScheme(scheme))
 		utilruntime.Must(snapv1.AddToScheme(scheme))
 		utilruntime.Must(recipe.AddToScheme(scheme))
+		utilruntime.Must(apiextensions.AddToScheme(scheme))
 	}
 
 	return nil

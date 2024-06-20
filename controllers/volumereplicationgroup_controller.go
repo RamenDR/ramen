@@ -20,6 +20,7 @@ import (
 	"golang.org/x/exp/maps" // TODO replace with "maps" in go1.21+
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -46,13 +47,14 @@ import (
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
 type VolumeReplicationGroupReconciler struct {
 	client.Client
-	APIReader      client.Reader
-	Log            logr.Logger
-	ObjStoreGetter ObjectStoreGetter
-	Scheme         *runtime.Scheme
-	eventRecorder  *rmnutil.EventReporter
-	kubeObjects    kubeobjects.RequestsManager
-	RateLimiter    *workqueue.RateLimiter
+	APIReader           client.Reader
+	Log                 logr.Logger
+	ObjStoreGetter      ObjectStoreGetter
+	Scheme              *runtime.Scheme
+	eventRecorder       *rmnutil.EventReporter
+	kubeObjects         kubeobjects.RequestsManager
+	RateLimiter         *workqueue.RateLimiter
+	veleroCRsAreWatched bool
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -73,7 +75,6 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 		rateLimiter = *r.RateLimiter
 	}
 
-	objectToReconcileRequestsMapper := objectToReconcileRequestsMapper{reader: r.Client, log: ctrl.Log}
 	ctrlBuilder := ctrl.NewControllerManagedBy(mgr).
 		WithOptions(ctrlcontroller.Options{
 			MaxConcurrentReconciles: getMaxConcurrentReconciles(r.Log),
@@ -107,10 +108,9 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 	}
 
 	r.kubeObjects = velero.RequestsManager{}
+
 	if !ramenConfig.KubeObjectProtection.Disabled {
-		r.Log.Info("Kube object protection enabled; watch kube objects requests")
-		recipesWatch(ctrlBuilder, objectToReconcileRequestsMapper)
-		kubeObjectsRequestsWatch(ctrlBuilder, r.Scheme, r.kubeObjects)
+		ctrlBuilder = r.addKubeObjectsOwnsAndWatches(ctrlBuilder)
 	} else {
 		r.Log.Info("Kube object protection disabled; don't watch kube objects requests")
 	}
@@ -377,6 +377,7 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=recipes,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch
+// +kubebuilder:rbac:groups="apiextensions.k8s.io",resources=customresourcedefinitions,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -387,6 +388,7 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
+// nolint: funlen
 func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("VolumeReplicationGroup", req.NamespacedName, "rid", uuid.New())
 
@@ -428,6 +430,12 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 
 	v.ramenConfig = ramenConfig
 	adminNamespaceVRG := vrgInAdminNamespace(v.instance, v.ramenConfig)
+
+	if adminNamespaceVRG && !r.veleroCRsAreWatched {
+		return ctrl.Result{},
+			fmt.Errorf("VRG {%s/%s} with kube object protection doesn't work if velero/oadp is not installed. "+
+				"Please install velero/oadp and restart the operator", v.instance.Namespace, v.instance.Name)
+	}
 
 	v.volSyncHandler = volsync.NewVSHandler(ctx, r.Client, log, v.instance,
 		v.instance.Spec.Async, cephFSCSIDriverNameOrDefault(v.ramenConfig),
@@ -1509,6 +1517,44 @@ func (r *VolumeReplicationGroupReconciler) addVolsyncOwnsAndWatches(ctrlBuilder 
 			handler.EnqueueRequestsFromMapFunc(r.RSMapFunc),
 			builder.WithPredicates(rmnutil.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
 		)
+
+	return ctrlBuilder
+}
+
+func (r *VolumeReplicationGroupReconciler) addKubeObjectsOwnsAndWatches(ctrlBuilder *builder.Builder) *builder.Builder {
+	r.Log.Info("Kube object protection enabled; watch kube objects requests")
+
+	// Find if velero CRDs are present in the cluster
+	veleroCRDs := []string{
+		"backups.velero.io",
+		"backupstoragelocations.velero.io",
+		"restores.velero.io",
+	}
+
+	missingCRDs := false
+
+	for _, crd := range veleroCRDs {
+		installedCRD := &apiextensionsv1.CustomResourceDefinition{}
+		if err := r.APIReader.Get(context.TODO(), types.NamespacedName{Name: crd}, installedCRD); err != nil {
+			r.Log.Info("Cannot fetch Velero CRD", "CRD", crd, "error", err)
+
+			missingCRDs = true
+		}
+	}
+
+	if missingCRDs {
+		r.Log.Info("Cannot fetch Velero CRD; Kubernetes object protection won't work unless Velero/OADP is installed")
+
+		return ctrlBuilder
+	}
+
+	kubeObjectsRequestsWatch(ctrlBuilder, r.Scheme, r.kubeObjects)
+
+	// watch for recipe objects
+	objectToReconcileRequestsMapper := objectToReconcileRequestsMapper{reader: r.Client, log: ctrl.Log}
+	recipesWatch(ctrlBuilder, objectToReconcileRequestsMapper)
+
+	r.veleroCRsAreWatched = true
 
 	return ctrlBuilder
 }

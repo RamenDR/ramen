@@ -29,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -110,7 +111,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		It("should change DataReady message", func() {
 			vrg.Spec.ReplicationState = "primary"
 			dataReadyConditionMessage := dataReadyCondition.Message
-			Expect(k8sClient.Update(context.TODO(), vrg)).To(Succeed())
+			updateVRG(vrg)
 			Eventually(func() string {
 				vrgGet()
 				dataReadyCondition = vrgConditionExpect("DataReady")
@@ -123,7 +124,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 	When("ReplicationState is primary and sync is enabled, but s3 profiles are absent", func() {
 		It("should set ClusterDataReady status=False reason=Error", func() {
 			vrg.Spec.Sync = &ramendrv1alpha1.VRGSyncSpec{}
-			Expect(k8sClient.Update(context.TODO(), vrg)).To(Succeed())
+			updateVRG(vrg)
 			var clusterDataReadyCondition *metav1.Condition
 			Eventually(func() metav1.ConditionStatus {
 				vrgGet()
@@ -1408,7 +1409,7 @@ func (v *vrgTest) createVRG() {
 func (v *vrgTest) vrgS3ProfilesSet(names []string) {
 	vrg := v.getVRG()
 	vrg.Spec.S3Profiles = names
-	Expect(k8sClient.Update(context.TODO(), vrg)).To(Succeed())
+	updateVRG(vrg)
 	vrg = v.getVRG()
 	Expect(vrg.Spec.S3Profiles).To(Equal(names), "%#v", vrg.Spec.S3Profiles)
 }
@@ -1513,6 +1514,18 @@ func getPVC(key types.NamespacedName) *corev1.PersistentVolumeClaim {
 
 func (v *vrgTest) getVRG() *ramendrv1alpha1.VolumeReplicationGroup {
 	return vrgGet(v.vrgNamespacedName())
+}
+
+func updateVRG(desired *ramendrv1alpha1.VolumeReplicationGroup) {
+	retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		current := vrgGet(client.ObjectKeyFromObject(desired))
+
+		current.Spec = desired.Spec
+
+		return k8sClient.Update(context.TODO(), current)
+	})
+
+	Expect(retryErr).NotTo(HaveOccurred())
 }
 
 func vrgGet(vrgNamespacedName types.NamespacedName) *ramendrv1alpha1.VolumeReplicationGroup {
