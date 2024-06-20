@@ -182,6 +182,16 @@ enough resources:
    For more info see
    [kustomize install](https://kubectl.docs.kubernetes.io/installation/kustomize/)
 
+1. Install the `argocd` tool
+
+   ```
+   curl -L -o argocd https://github.com/argoproj/argo-cd/releases/download/v2.11.3/argocd-linux-amd64
+   sudo install argocd /usr/local/bin/
+   rm argocd
+   ```
+
+   For more info see [argocd installation](https://argo-cd.readthedocs.io/en/stable/cli_installation/)
+
 1. Install `helm` tool - on Fedora you can use:
 
    ```

@@ -84,6 +84,16 @@ environment.
    for the details.
    Tested with version v5.3.0.
 
+1. Install the `argocd` tool
+
+   ```
+   curl -L -o argocd https://github.com/argoproj/argo-cd/releases/download/v2.11.3/argocd-linux-amd64
+   sudo install argocd /usr/local/bin/
+   rm argocd
+   ```
+
+   For more info see [argocd installation](https://argo-cd.readthedocs.io/en/stable/cli_installation/)
+
 ### Testing that drenv is healthy
 
 Run this script to make sure `drenv` works:
