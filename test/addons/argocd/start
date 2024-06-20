@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import sys
 
 from drenv import temporary_kubeconfig
@@ -20,8 +21,7 @@ def wait_for_clusters(clusters):
 
 def deploy_argocd(cluster):
     print("Deploying argocd")
-    path = cache.path("addons/argocd-2.11.yaml")
-    cache.fetch(".", path)
+    path = cache.get(".", "addons/argocd-2.11.yaml")
     kubectl.apply("--filename", path, "--namespace", "argocd", context=cluster)
 
 
@@ -70,6 +70,7 @@ if len(sys.argv) != 4:
     print(f"Usage: {sys.argv[0]} hub cluster1 cluster2")
     sys.exit(1)
 
+os.chdir(os.path.dirname(__file__))
 hub, *clusters = sys.argv[1:]
 
 wait_for_clusters(clusters)
