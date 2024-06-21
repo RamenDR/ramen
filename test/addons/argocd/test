@@ -38,6 +38,8 @@ def deploy_guestbook(hub, cluster):
             "--dest-namespace=argocd-test",
             "--sync-option=CreateNamespace=true",
             "--sync-policy=automated",
+            # Should not be needed, but without this the command is not idempotent.
+            "--upsert",
             env=env,
         ):
             print(line)
