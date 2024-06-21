@@ -4,13 +4,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
-
 from drenv import cache
 
 os.chdir(os.path.dirname(__file__))
-
-path = cache.path("addons/kubevirt-operator-1.2.1.yaml")
-cache.fetch("operator", path)
-
-path = cache.path("addons/kubevirt-cr-1.2.1.yaml")
-cache.fetch("cr", path)
+cache.refresh("crds", "addons/olm-crds-0.27.yaml")
+cache.refresh("operators", "addons/olm-operators-0.27.yaml")

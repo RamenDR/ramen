@@ -1,0 +1,22 @@
+#!/bin/sh
+
+env_file=envs/regional-dr.yaml
+attempts=10
+delay_seconds=60
+
+test_dir="$(dirname $(dirname $0))"
+
+echo "$(date) Entering $test_dir"
+cd "$test_dir"
+
+echo "$(date) Activating virtual environment"
+source ../venv
+
+for i in $(seq 1 $attempts); do
+	echo "$(date) Refreshing drenv cache (attempt $i/$attempts)"
+	drenv cache -v "$env_file" && exit 0
+	sleep $delay_seconds
+done
+
+echo "Failed to refresh drenv cache"
+exit 1

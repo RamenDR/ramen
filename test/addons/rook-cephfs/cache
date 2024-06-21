@@ -4,9 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
-
 from drenv import cache
 
 os.chdir(os.path.dirname(__file__))
-path = cache.path("addons/recipe.yaml")
-cache.fetch(".", path)
+cache.refresh(".", "addons/rook-cephfs-1.14.yaml")

@@ -4,9 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
-
 from drenv import cache
 
 os.chdir(os.path.dirname(__file__))
-path = cache.path("addons/csi-addons.yaml")
-cache.fetch(".", path)
+cache.refresh(".", "addons/ocm-controller.yaml")

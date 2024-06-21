@@ -4,13 +4,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
-
 from drenv import cache
 
 os.chdir(os.path.dirname(__file__))
-
-path = cache.path("addons/cdi-operator-1.59.0.yaml")
-cache.fetch("operator", path)
-
-path = cache.path("addons/cdi-cr-1.59.0.yaml")
-cache.fetch("cr", path)
+cache.refresh("operator", "addons/cdi-operator-1.59.0.yaml")
+cache.refresh("cr", "addons/cdi-cr-1.59.0.yaml")

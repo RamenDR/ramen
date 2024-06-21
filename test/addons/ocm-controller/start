@@ -12,8 +12,7 @@ from drenv import cache
 
 def deploy(cluster):
     print("Deploying ocm controller")
-    path = cache.path("addons/ocm-controller.yaml")
-    cache.fetch(".", path)
+    path = cache.get(".", "addons/ocm-controller.yaml")
     kubectl.apply("--filename", path, context=cluster)
 
 

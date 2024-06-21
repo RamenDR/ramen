@@ -59,7 +59,7 @@ def parse_args():
         required=True,
     )
 
-    start_parser = add_command(sp, "start", start, help="start an environment")
+    start_parser = add_command(sp, "start", do_start, help="start an environment")
     start_parser.add_argument(
         "--skip-tests",
         dest="run_tests",
@@ -73,7 +73,7 @@ def parse_args():
         help="Do not run addons 'start' hooks",
     )
 
-    stop_parser = add_command(sp, "stop", stop, help="stop an environment")
+    stop_parser = add_command(sp, "stop", do_stop, help="stop an environment")
     stop_parser.add_argument(
         "--skip-addons",
         dest="run_addons",
@@ -81,15 +81,15 @@ def parse_args():
         help="Do not run addons 'stop' hooks",
     )
 
-    add_command(sp, "delete", delete, help="delete an environment")
-    add_command(sp, "suspend", suspend, help="suspend virtual machines")
-    add_command(sp, "resume", resume, help="resume virtual machines")
-    add_command(sp, "dump", dump, help="dump an environment yaml")
-    add_command(sp, "fetch", fetch, help="cache environment resources")
+    add_command(sp, "delete", do_delete, help="delete an environment")
+    add_command(sp, "suspend", do_suspend, help="suspend virtual machines")
+    add_command(sp, "resume", do_resume, help="resume virtual machines")
+    add_command(sp, "dump", do_dump, help="dump an environment yaml")
+    add_command(sp, "cache", do_cache, help="cache environment resources")
 
-    add_command(sp, "clear", clear, help="cleared cached resources", envfile=False)
-    add_command(sp, "setup", setup, help="setup minikube for drenv", envfile=False)
-    add_command(sp, "cleanup", cleanup, help="cleanup minikube", envfile=False)
+    add_command(sp, "clear", do_clear, help="cleared cached resources", envfile=False)
+    add_command(sp, "setup", do_setup, help="setup minikube for drenv", envfile=False)
+    add_command(sp, "cleanup", do_cleanup, help="cleanup minikube", envfile=False)
 
     return parser.parse_args()
 
@@ -162,47 +162,41 @@ def handle_termination_signal(signo, frame):
     sys.exit(1)
 
 
-def setup(args):
+def do_setup(args):
     logging.info("[main] Setting up minikube for drenv")
     minikube.setup_files()
 
 
-def cleanup(args):
+def do_cleanup(args):
     logging.info("[main] Cleaning up minikube")
     minikube.cleanup_files()
 
 
-def clear(args):
-    start = time.monotonic()
+def do_clear(args):
     logging.info("[main] Clearing cache")
-    cache_dir = cache.path("")
-    try:
-        shutil.rmtree(cache_dir)
-    except FileNotFoundError:
-        pass
-    logging.info("[main] Cache cleared in %.2f seconds", time.monotonic() - start)
+    cache.clear()
 
 
-def fetch(args):
+def do_cache(args):
     env = load_env(args)
     start = time.monotonic()
-    logging.info("[%s] Fetching", env["name"])
+    logging.info("[%s] Refreshing cached addons", env["name"])
     addons = collect_addons(env)
     execute(
-        fetch_addon,
+        cache_addon,
         addons,
-        "fetch",
+        "cache",
         max_workers=args.max_workers,
         ctx=env["name"],
     )
     logging.info(
-        "[%s] Fetching finishied in %.2f seconds",
+        "[%s] Cached addons refreshed in %.2f seconds",
         env["name"],
         time.monotonic() - start,
     )
 
 
-def start(args):
+def do_start(args):
     env = load_env(args)
     start = time.monotonic()
     logging.info("[%s] Starting environment", env["name"])
@@ -234,7 +228,7 @@ def start(args):
     )
 
 
-def stop(args):
+def do_stop(args):
     env = load_env(args)
     start = time.monotonic()
     logging.info("[%s] Stopping environment", env["name"])
@@ -247,7 +241,7 @@ def stop(args):
     )
 
 
-def delete(args):
+def do_delete(args):
     env = load_env(args)
     start = time.monotonic()
     logging.info("[%s] Deleting environment", env["name"])
@@ -265,21 +259,21 @@ def delete(args):
     )
 
 
-def suspend(args):
+def do_suspend(args):
     env = load_env(args)
     logging.info("[%s] Suspending environment", env["name"])
     for profile in env["profiles"]:
         run("virsh", "-c", "qemu:///system", "suspend", profile["name"])
 
 
-def resume(args):
+def do_resume(args):
     env = load_env(args)
     logging.info("[%s] Resuming environment", env["name"])
     for profile in env["profiles"]:
         run("virsh", "-c", "qemu:///system", "resume", profile["name"])
 
 
-def dump(args):
+def do_dump(args):
     env = load_env(args)
     yaml.dump(env, sys.stdout)
 
@@ -497,17 +491,13 @@ def run_worker(worker, hooks=(), reverse=False, allow_failure=False):
         run_addon(addon, worker["name"], hooks=hooks, allow_failure=allow_failure)
 
 
-def fetch_addon(addon, ctx="global"):
+def cache_addon(addon, ctx="global"):
     addon_dir = os.path.join(ADDONS_DIR, addon["name"])
     if not os.path.isdir(addon_dir):
-        logging.warning(
-            "[%s] Addon '%s' does not exist - skipping",
-            ctx,
-            addon["name"],
-        )
+        skip_addon(addon, ctx)
         return
 
-    hook = os.path.join(addon_dir, "fetch")
+    hook = os.path.join(addon_dir, "cache")
     if os.path.isfile(hook):
         run_hook(hook, (), ctx)
 
@@ -515,17 +505,21 @@ def fetch_addon(addon, ctx="global"):
 def run_addon(addon, name, hooks=(), allow_failure=False):
     addon_dir = os.path.join(ADDONS_DIR, addon["name"])
     if not os.path.isdir(addon_dir):
-        logging.warning(
-            "[%s] Addon '%s' does not exist - skipping",
-            name,
-            addon["name"],
-        )
+        skip_addon(addon, name)
         return
 
     for filename in hooks:
         hook = os.path.join(addon_dir, filename)
         if os.path.isfile(hook):
             run_hook(hook, addon["args"], name, allow_failure=allow_failure)
+
+
+def skip_addon(addon, ctx):
+    logging.warning(
+        "[%s] Addon '%s' does not exist - skipping",
+        ctx,
+        addon["name"],
+    )
 
 
 def run_hook(hook, args, name, allow_failure=False):
