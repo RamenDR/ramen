@@ -54,7 +54,26 @@ func captureWorkflowDefault(vrg ramen.VolumeReplicationGroup, ramenConfig ramen.
 	return captureSpecs
 }
 
-func recoverWorkflowDefault() []kubeobjects.RecoverSpec { return []kubeobjects.RecoverSpec{{}} }
+func recoverWorkflowDefault(vrg ramen.VolumeReplicationGroup, ramenConfig ramen.RamenConfig) []kubeobjects.RecoverSpec {
+	namespaces := []string{vrg.Namespace}
+
+	if vrg.Namespace == RamenOperandsNamespace(ramenConfig) {
+		namespaces = *vrg.Spec.ProtectedNamespaces
+	}
+
+	recoverSpecs := []kubeobjects.RecoverSpec{
+		{
+			Spec: kubeobjects.Spec{
+				KubeResourcesSpec: kubeobjects.KubeResourcesSpec{
+					IncludedNamespaces: namespaces,
+				},
+				LabelSelector: vrg.Spec.KubeObjectProtection.KubeObjectSelector,
+			},
+		},
+	}
+
+	return recoverSpecs
+}
 
 func GetPVCSelector(ctx context.Context, reader client.Reader, vrg ramen.VolumeReplicationGroup,
 	ramenConfig ramen.RamenConfig,
@@ -94,7 +113,7 @@ func recipeVolumesAndOptionallyWorkflowsGet(ctx context.Context, reader client.R
 		*recipeElements = RecipeElements{
 			PvcSelector:     getPVCSelector(vrg, ramenConfig, nil, nil),
 			CaptureWorkflow: captureWorkflowDefault(vrg, ramenConfig),
-			RecoverWorkflow: recoverWorkflowDefault(),
+			RecoverWorkflow: recoverWorkflowDefault(vrg, ramenConfig),
 		}
 
 		return nil
@@ -179,7 +198,7 @@ func recipeWorkflowsGet(recipe recipe.Recipe, recipeElements *RecipeElements, vr
 	}
 
 	if recipe.Spec.RecoverWorkflow == nil {
-		recipeElements.RecoverWorkflow = recoverWorkflowDefault()
+		recipeElements.RecoverWorkflow = recoverWorkflowDefault(vrg, ramenConfig)
 	} else {
 		recipeElements.RecoverWorkflow, err = getRecoverGroups(recipe)
 		if err != nil {
