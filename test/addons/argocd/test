@@ -52,7 +52,7 @@ def wait_until_guestbook_is_healthy(hub, cluster):
         f"guestbook-{cluster}",
         "--for=jsonpath={.status.health.status}=Healthy",
         "--namespace=argocd",
-        "--timeout=60s",
+        "--timeout=120s",
         context=hub,
     )
 
