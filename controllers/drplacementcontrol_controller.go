@@ -1179,12 +1179,8 @@ func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 	}
 
 	if placementObj != nil && controllerutil.ContainsFinalizer(placementObj, DRPCFinalizer) {
-		// Remove DRPCFinalizer from User PlacementRule/Placement.
-		controllerutil.RemoveFinalizer(placementObj, DRPCFinalizer)
-
-		err := r.Update(ctx, placementObj)
-		if err != nil {
-			return fmt.Errorf("failed to update User PlacementRule/Placement %w", err)
+		if err := r.finalizePlacement(ctx, placementObj); err != nil {
+			return err
 		}
 	}
 
@@ -1338,6 +1334,20 @@ func (r *DRPlacementControlReconciler) getDRPCPlacementRule(ctx context.Context,
 	} else {
 		log.Info("Preferred cluster is configured. Dynamic selection is disabled",
 			"PreferredCluster", drpc.Spec.PreferredCluster)
+	}
+
+	return nil
+}
+
+func (r *DRPlacementControlReconciler) finalizePlacement(
+	ctx context.Context,
+	placementObj client.Object,
+) error {
+	controllerutil.RemoveFinalizer(placementObj, DRPCFinalizer)
+
+	err := r.Update(ctx, placementObj)
+	if err != nil {
+		return fmt.Errorf("failed to update User PlacementRule/Placement %w", err)
 	}
 
 	return nil
