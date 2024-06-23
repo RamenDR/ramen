@@ -1179,7 +1179,7 @@ func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 	}
 
 	if placementObj != nil && controllerutil.ContainsFinalizer(placementObj, DRPCFinalizer) {
-		if err := r.finalizePlacement(ctx, placementObj); err != nil {
+		if err := r.finalizePlacement(ctx, drpc, placementObj, log); err != nil {
 			return err
 		}
 	}
@@ -1341,8 +1341,26 @@ func (r *DRPlacementControlReconciler) getDRPCPlacementRule(ctx context.Context,
 
 func (r *DRPlacementControlReconciler) finalizePlacement(
 	ctx context.Context,
+	drpc *rmn.DRPlacementControl,
 	placementObj client.Object,
+	log logr.Logger,
 ) error {
+	// TODO: This seems to do the right thing, but maybe we need a more specific version for special
+	// case of disabling DR.
+	clusterName := r.clusterForVRGStatus(drpc, placementObj, log)
+	if clusterName == "" {
+		log.Info("Warning: Unable to determine current cluster")
+	}
+
+	switch obj := placementObj.(type) {
+	case *clrapiv1beta1.Placement:
+		rmnutil.FinalizePlacement(obj, clusterName, log)
+	case *plrv1.PlacementRule:
+		rmnutil.FinalizePlacementRule(obj, clusterName, log)
+	default:
+		panic(fmt.Sprintf("invlaid PlacementRule/Placemnt type: %T", obj))
+	}
+
 	controllerutil.RemoveFinalizer(placementObj, DRPCFinalizer)
 
 	err := r.Update(ctx, placementObj)
