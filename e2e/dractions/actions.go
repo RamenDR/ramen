@@ -87,7 +87,6 @@ func DisableProtection(w workloads.Workload, d deployers.Deployer) error {
 
 	name := GetCombinedName(d, w)
 	namespace := name
-	placementName := name
 	drpcName := name
 	client := util.Ctx.Hub.CtrlClient
 
@@ -101,21 +100,7 @@ func DisableProtection(w workloads.Workload, d deployers.Deployer) error {
 		return err
 	}
 
-	if err := waitDRPCDeleted(client, namespace, drpcName); err != nil {
-		return err
-	}
-
-	util.Ctx.Log.Info("get placement " + placementName)
-
-	placement, err := getPlacement(client, namespace, placementName)
-	if err != nil {
-		return err
-	}
-
-	delete(placement.Annotations, OcmSchedulingDisable)
-	util.Ctx.Log.Info("updated placement " + placementName + " annotation")
-
-	return updatePlacement(client, placement)
+	return waitDRPCDeleted(client, namespace, drpcName)
 }
 
 func Failover(w workloads.Workload, d deployers.Deployer) error {
