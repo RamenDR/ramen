@@ -186,20 +186,6 @@ def disable_dr():
         log=debug,
     )
 
-    placement = _lookup_app_resource("placement")
-    if not placement:
-        debug("placement already removed")
-        return
-
-    info("Enabling OCM scheduling for '%s'", placement)
-    kubectl.annotate(
-        placement,
-        {OCM_SCHEDULING_DISABLE: None},
-        namespace=config["namespace"],
-        context=env["hub"],
-        log=debug,
-    )
-
 
 def target_cluster():
     """
