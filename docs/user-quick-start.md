@@ -89,7 +89,7 @@ enough resources:
 1. Install the `kubectl` tool. See
    [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
    for details.
-   Tested with version v1.27.4.
+   Tested with version v1.30.2.
 
 1. Install minikube - on Fedora you can use::
 
@@ -147,7 +147,7 @@ enough resources:
 1. Install the `velero` tool. See
    [Velero Basic Install](https://velero.io/docs/v1.12/basic-install/)
    for the details.
-   Tested with version v1.12.0.
+   Tested with version v1.12.2.
 
 1. Install the `virtctl` tool.
 
@@ -163,9 +163,9 @@ enough resources:
 1. Install `mc` tool
 
    ```
-   curl -L -o /tmp/mc https://dl.min.io/client/mc/release/linux-amd64/mc
-   sudo install /tmp/mc /usr/local/bin
-   rm /tmp/mc
+   curl -L -o mc https://dl.min.io/client/mc/release/linux-amd64/mc
+   sudo install mc /usr/local/bin
+   rm mc
    ```
 
    For more info see
@@ -181,6 +181,16 @@ enough resources:
 
    For more info see
    [kustomize install](https://kubectl.docs.kubernetes.io/installation/kustomize/)
+
+1. Install the `argocd` tool
+
+   ```
+   curl -L -o argocd https://github.com/argoproj/argo-cd/releases/download/v2.11.3/argocd-linux-amd64
+   sudo install argocd /usr/local/bin/
+   rm argocd
+   ```
+
+   For more info see [argocd installation](https://argo-cd.readthedocs.io/en/stable/cli_installation/)
 
 1. Install `helm` tool - on Fedora you can use:
 
@@ -204,7 +214,7 @@ enough resources:
    sudo dnf install golang
    ```
 
-   Tested with version go1.20.10.
+   Tested with version go1.22.0.
 
 ## Starting the test environment
 

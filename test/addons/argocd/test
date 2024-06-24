@@ -38,6 +38,8 @@ def deploy_guestbook(hub, cluster):
             "--dest-namespace=argocd-test",
             "--sync-option=CreateNamespace=true",
             "--sync-policy=automated",
+            # Should not be needed, but without this the command is not idempotent.
+            "--upsert",
             env=env,
         ):
             print(line)
@@ -50,7 +52,7 @@ def wait_until_guestbook_is_healthy(hub, cluster):
         f"guestbook-{cluster}",
         "--for=jsonpath={.status.health.status}=Healthy",
         "--namespace=argocd",
-        "--timeout=60s",
+        "--timeout=120s",
         context=hub,
     )
 
@@ -76,19 +78,37 @@ def undeploy_guestbook(hub, cluster):
             "delete",
             f"guestbook-{cluster}",
             "--yes",
-            "--wait",
             env=env,
         ):
             print(line)
 
-    kubectl.delete("namespace", "argocd-test", context=cluster)
+    print(f"Deleting namespace argocd-test in cluster {cluster}")
+    kubectl.delete("namespace", "argocd-test", "--wait=false", context=cluster)
+
+
+def wait_until_guestbook_is_deleted(hub, cluster):
+    print(f"Waiting until application guestbook-{cluster} is deleted")
+    kubectl.wait(
+        "application",
+        f"guestbook-{cluster}",
+        "--for=delete",
+        "--namespace=argocd",
+        "--timeout=60s",
+        context=hub,
+    )
+    print(f"Waiting until namespace argocd-test is deleted in cluster {cluster}")
+    kubectl.wait(
+        "ns",
+        "argocd-test",
+        "--for=delete",
+        "--timeout=60s",
+        context=cluster,
+    )
 
 
 if len(sys.argv) != 4:
     print(f"Usage: {sys.argv[0]} hub cluster1 cluster2")
     sys.exit(1)
-
-hub = sys.argv[1]
 
 hub, *clusters = sys.argv[1:]
 
@@ -100,3 +120,6 @@ for cluster in clusters:
 
 for cluster in clusters:
     undeploy_guestbook(hub, cluster)
+
+for cluster in clusters:
+    wait_until_guestbook_is_deleted(hub, cluster)
