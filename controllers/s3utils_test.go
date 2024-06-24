@@ -9,7 +9,7 @@ import (
 	"io/fs"
 	"reflect"
 	"strings"
-
+	"sync"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/go-logr/logr"
@@ -83,6 +83,7 @@ type fakeObjectStorer struct {
 	name       string
 	bucketName string
 	objects    map[string]interface{}
+	mutex      sync.Mutex
 }
 
 func (f fakeObjectStorer) UploadObject(key string, object interface{}) error {
@@ -90,6 +91,8 @@ func (f fakeObjectStorer) UploadObject(key string, object interface{}) error {
 		return awserr.New(s3.ErrCodeInvalidObjectState, "fake error uploading object", fmt.Errorf("fake error"))
 	}
 
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
 	f.objects[key] = object
 
 	return nil
