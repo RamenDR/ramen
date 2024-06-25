@@ -9,7 +9,9 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
+	ocmv1 "github.com/open-cluster-management/api/cluster/v1"
 	workv1 "github.com/open-cluster-management/api/work/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/util"
@@ -17,6 +19,43 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 )
+
+func createManagedCluster(k8sClient client.Client, cluster string) {
+	mc := ocmv1.ManagedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: cluster,
+		},
+		Spec: ocmv1.ManagedClusterSpec{
+			HubAcceptsClient: true,
+		},
+	}
+
+	Expect(k8sClient.Create(context.TODO(), &mc)).To(Succeed())
+
+	updateManagedClusterStatus(k8sClient, &mc)
+}
+
+func updateManagedClusterStatus(k8sClient client.Client, mc *ocmv1.ManagedCluster) {
+	mc.Status = ocmv1.ManagedClusterStatus{
+		Conditions: []metav1.Condition{
+			{
+				Type:               ocmv1.ManagedClusterConditionJoined,
+				LastTransitionTime: metav1.Time{Time: time.Now()},
+				Status:             metav1.ConditionTrue,
+				Reason:             ocmv1.ManagedClusterConditionJoined,
+				Message:            "Faked status",
+			},
+		},
+		ClusterClaims: []ocmv1.ManagedClusterClaim{
+			{
+				Name:  "id.k8s.io",
+				Value: "fake",
+			},
+		},
+	}
+
+	Expect(k8sClient.Status().Update(context.TODO(), mc)).To(Succeed())
+}
 
 func getLatestDRCluster(cluster string) *ramen.DRCluster {
 	drclusterLookupKey := types.NamespacedName{
@@ -52,19 +91,33 @@ func updateDRClusterParameters(drc *ramen.DRCluster) *ramen.DRCluster {
 	return latestdrc
 }
 
-func updateDRClusterManifestWorkStatus(clusterNamespace string) {
-	manifestLookupKey := types.NamespacedName{
+func updateDRClusterManifestWorkStatus(k8sClient client.Client, apiReader client.Reader, clusterNamespace string) {
+	drClusterkey := types.NamespacedName{
 		Name:      util.DrClusterManifestWorkName,
 		Namespace: clusterNamespace,
 	}
+
+	updateMWAsApplied(k8sClient, apiReader, drClusterkey)
+}
+
+func updateDRClusterConfigMWStatus(k8sClient client.Client, apiReader client.Reader, clusterNamespace string) {
+	drClusterConfigkey := types.NamespacedName{
+		Name:      fmt.Sprintf(util.ManifestWorkNameTypeFormat, util.MWTypeDRCConfig),
+		Namespace: clusterNamespace,
+	}
+
+	updateMWAsApplied(k8sClient, apiReader, drClusterConfigkey)
+}
+
+func updateMWAsApplied(k8sClient client.Client, apiReader client.Reader, key types.NamespacedName) {
 	mw := &workv1.ManifestWork{}
 
 	Eventually(func() bool {
-		err := apiReader.Get(context.TODO(), manifestLookupKey, mw)
+		err := apiReader.Get(context.TODO(), key, mw)
 
 		return err == nil
 	}, timeout, interval).Should(BeTrue(),
-		fmt.Sprintf("failed to get manifest for DRCluster %s", clusterNamespace))
+		fmt.Sprintf("failed to get manifest %s for DRCluster %s", key.Name, key.Namespace))
 
 	timeOld := time.Now().Local()
 	timeMostRecent := timeOld.Add(time.Second)
@@ -88,7 +141,7 @@ func updateDRClusterManifestWorkStatus(clusterNamespace string) {
 	}
 
 	retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		err := apiReader.Get(context.TODO(), manifestLookupKey, mw)
+		err := apiReader.Get(context.TODO(), key, mw)
 		if err != nil {
 			return err
 		}
