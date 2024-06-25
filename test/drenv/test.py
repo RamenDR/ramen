@@ -161,9 +161,6 @@ spec:
   placementRef:
     kind: Placement
     name: {placement_name}
-  cephFSCGSelector:
-    matchLabels:
-      cg: test
   pvcSelector:
     matchLabels:
       appname: {config['pvc_label']}
