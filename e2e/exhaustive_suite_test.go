@@ -23,14 +23,12 @@ const (
 	APPNAME     = "busybox"
 )
 
-var Workloads = []workloads.Workload{}
-
-var subscription = &deployers.Subscription{}
-
-// appset := &deployers.ApplicationSet{}
-// Deployers := []deployers.Deployer{subscription, appset}
-
-var Deployers = []deployers.Deployer{subscription}
+var (
+	Workloads    = []workloads.Workload{}
+	subscription = &deployers.Subscription{}
+	appset       = &deployers.ApplicationSet{}
+	Deployers    = []deployers.Deployer{subscription, appset}
+)
 
 func generateWorkloads([]workloads.Workload) {
 	pvcSpecs := util.GetPVCSpecs()
