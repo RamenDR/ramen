@@ -233,6 +233,7 @@ func GenerateReplicationGroupSource(
 			Name:      vgsName,
 			Namespace: "default",
 			UID:       types.UID("123"),
+			Labels:    map[string]string{volsync.VRGOwnerNameLabel: vrgName},
 		},
 		Spec: v1alpha1.ReplicationGroupSourceSpec{
 			VolumeGroupSnapshotClassName: vgscName,

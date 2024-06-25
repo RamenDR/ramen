@@ -185,9 +185,9 @@ func (m *rgdMachine) ReconcileRD(
 	}
 
 	log := m.Logger.WithValues("ProtectedPVCName", rdSpec.ProtectedPVC.Name)
-
+	vrgName := m.ReplicationGroupDestination.GetLabels()[volsync.VRGOwnerNameLabel]
 	// Pre-allocated shared secret - DRPC will generate and propagate this secret from hub to clusters
-	pskSecretName := volsync.GetVolSyncPSKSecretNameFromVRGName(m.ReplicationGroupDestination.Name)
+	pskSecretName := volsync.GetVolSyncPSKSecretNameFromVRGName(vrgName)
 	// Need to confirm this secret exists on the cluster before proceeding, otherwise volsync will generate it
 	secretExists, err := m.VSHandler.ValidateSecretAndAddVRGOwnerRef(pskSecretName)
 	if err != nil {

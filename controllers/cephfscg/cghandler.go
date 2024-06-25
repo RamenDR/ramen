@@ -26,6 +26,7 @@ func NewVSCGHandler(
 	instance *ramendrv1alpha1.VolumeReplicationGroup,
 	volumeGroupSnapshotSource *metav1.LabelSelector,
 	vsHandler *volsync.VSHandler,
+	cgName string,
 	logger logr.Logger,
 ) VSCGHandler {
 	log := logger.WithName("VSCGHandler")
@@ -36,6 +37,7 @@ func NewVSCGHandler(
 		instance:                  instance,
 		VSHandler:                 vsHandler,
 		volumeGroupSnapshotSource: volumeGroupSnapshotSource,
+		cgName:                    cgName,
 		logger:                    log,
 	}
 
@@ -86,6 +88,8 @@ type cgHandler struct {
 	volumeGroupSnapshotClassSelector metav1.LabelSelector
 	ramenSchedulingInterval          string
 
+	cgName string
+
 	logger logr.Logger
 }
 
@@ -93,6 +97,8 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupDestination(
 	replicationGroupDestinationName, replicationGroupDestinationNamespace string,
 	rdSpecsInGroup []ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 ) (*ramendrv1alpha1.ReplicationGroupDestination, error) {
+	replicationGroupDestinationName += c.cgName
+
 	log := c.logger.WithName("CreateOrUpdateReplicationGroupDestination").
 		WithValues("ReplicationGroupDestinationName", replicationGroupDestinationName,
 			"ReplicationGroupDestinationNamespace", replicationGroupDestinationNamespace)
@@ -140,18 +146,20 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 	replicationGroupSourceName, replicationGroupSourceNamespace string,
 	runFinalSync bool,
 ) (*ramendrv1alpha1.ReplicationGroupSource, bool, error) {
+	replicationGroupSourceName += c.cgName
+
 	log := c.logger.WithName("CreateOrUpdateReplicationGroupSource").
 		WithValues("ReplicationGroupSourceName", replicationGroupSourceName,
 			"ReplicationGroupSourceNamespace", replicationGroupSourceNamespace,
 			"runFinalSync", runFinalSync)
 
-	log.Info("Get RDs which are owned by RGD", "RGD", c.instance.Name)
+	log.Info("Get RDs which are owned by RGD", "RGD", replicationGroupSourceName)
 	// Get the rd if it exist when change secondary to primary
 	rdList := &volsyncv1alpha1.ReplicationDestinationList{}
 	if err := c.ListByOwner(rdList,
-		map[string]string{util.RGDOwnerLabel: c.instance.Name}, c.instance.Namespace,
+		map[string]string{util.RGDOwnerLabel: replicationGroupSourceName}, replicationGroupSourceNamespace,
 	); err != nil {
-		log.Error(err, "Failed to get RDs which are owned by RGD", "RGD", c.instance.Name)
+		log.Error(err, "Failed to get RDs which are owned by RGD", "RGD", replicationGroupSourceName)
 
 		return nil, false, err
 	}
@@ -431,19 +439,4 @@ func (c *cgHandler) GetRDInCG() ([]ramendrv1alpha1.VolSyncReplicationDestination
 	}
 
 	return rdSpecs, nil
-}
-
-func CheckIfPVCMatchLabels(pvcLabels map[string]string, cephfsCGHandlers []VSCGHandler) (bool, VSCGHandler, error) {
-	for _, cephfsCGHandler := range cephfsCGHandlers {
-		pvcInCephfsCg, err := cephfsCGHandler.CheckIfPVCMatchLabel(pvcLabels)
-		if err != nil {
-			return false, nil, err
-		}
-
-		if pvcInCephfsCg {
-			return true, cephfsCGHandler, nil
-		}
-	}
-
-	return false, nil, nil
 }

@@ -82,13 +82,15 @@ func NewVolumeGroupSourceHandler(
 	defaultCephFSCSIDriverName string,
 	logger logr.Logger,
 ) VolumeGroupSourceHandler {
+	vrgName := rgs.GetLabels()[volsync.VRGOwnerNameLabel]
+
 	return &volumeGroupSourceHandler{
 		Client:                       client,
 		VolumeGroupSnapshotName:      fmt.Sprintf(VolumeGroupSnapshotNameFormat, rgs.Name),
 		VolumeGroupSnapshotNamespace: rgs.Namespace,
 		VolumeGroupSnapshotClassName: rgs.Spec.VolumeGroupSnapshotClassName,
 		VolumeGroupLabel:             rgs.Spec.VolumeGroupSnapshotSource,
-		VolsyncKeySecretName:         volsync.GetVolSyncPSKSecretNameFromVRGName(rgs.Name),
+		VolsyncKeySecretName:         volsync.GetVolSyncPSKSecretNameFromVRGName(vrgName),
 		DefaultCephFSCSIDriverName:   defaultCephFSCSIDriverName,
 		Logger: logger.WithName("VolumeGroupSourceHandler").
 			WithValues("VolumeGroupSnapshotName", fmt.Sprintf(VolumeGroupSnapshotNameFormat, rgs.Name)).

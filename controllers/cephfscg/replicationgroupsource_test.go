@@ -15,6 +15,7 @@ import (
 	"github.com/ramendr/ramen/hack/fakes"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var rgsName = "rgs"
@@ -30,6 +31,7 @@ var _ = Describe("Replicationgroupsource", func() {
 				Name:      rgsName,
 				Namespace: "default",
 				UID:       "123",
+				Labels:    map[string]string{volsync.VRGOwnerNameLabel: vrgName},
 			},
 			Status: ramendrv1alpha1.ReplicationGroupSourceStatus{
 				LastSyncStartTime: &metaTime,
@@ -54,12 +56,12 @@ var _ = Describe("Replicationgroupsource", func() {
 		Context("pskSecret exist", func() {
 			It("Should be success", func() {
 				fakeVolumeGroupSourceHandler.CheckReplicationSourceForRestoredPVCsCompletedReturns(true, nil)
-				pskSecretName := volsync.GetVolSyncPSKSecretNameFromVRGName(rgsName)
+				pskSecretName := volsync.GetVolSyncPSKSecretNameFromVRGName(vrgName)
 				err := k8sClient.Create(
 					context.Background(),
 					&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: pskSecretName, Namespace: "default"}},
 				)
-				Expect(err).To(BeNil())
+				Expect(client.IgnoreAlreadyExists(err)).To(BeNil())
 				result, err := replicationGroupSourceMachine.Synchronize(context.Background())
 				Expect(err).To(BeNil())
 				Expect(result.Completed).To(BeTrue())

@@ -37,7 +37,7 @@ var _ = Describe("Cghandler", func() {
 					Namespace: "default",
 					UID:       "123",
 				},
-			}, nil, nil, testLogger)
+			}, nil, nil, "0", testLogger)
 			rgd, err := vsCGHandler.CreateOrUpdateReplicationGroupDestination(vgdName, "default", nil)
 			Expect(err).To(BeNil())
 			Expect(len(rgd.Spec.RDSpecs)).To(Equal(0))
@@ -49,7 +49,7 @@ var _ = Describe("Cghandler", func() {
 					Namespace: "default",
 					UID:       "123",
 				},
-			}, nil, nil, testLogger)
+			}, nil, nil, "0", testLogger)
 			rgd, err := vsCGHandler.CreateOrUpdateReplicationGroupDestination(vgdName, "default",
 				[]ramendrv1alpha1.VolSyncReplicationDestinationSpec{{
 					ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
@@ -157,7 +157,7 @@ var _ = Describe("Cghandler", func() {
 					Name:      vrgName,
 					UID:       "123",
 				},
-			}, &metav1.LabelSelector{}, nil, testLogger)
+			}, &metav1.LabelSelector{}, nil, "0", testLogger)
 			rgs, finalSync, err := vsCGHandler.CreateOrUpdateReplicationGroupSource(rgsName, "default", false)
 			Expect(err).To(BeNil())
 			Expect(finalSync).To(BeFalse())
@@ -173,7 +173,7 @@ var _ = Describe("Cghandler", func() {
 					Name:      vrgName,
 					UID:       "123",
 				},
-			}, &metav1.LabelSelector{}, nil, testLogger)
+			}, &metav1.LabelSelector{}, nil, "0", testLogger)
 			image, err := vsCGHandler.GetLatestImageFromRGD(Ctx, "notexist", "default")
 			Expect(err).NotTo(BeNil())
 			Expect(image).To(BeNil())
@@ -211,7 +211,7 @@ var _ = Describe("Cghandler", func() {
 						Name:      vrgName,
 						UID:       "123",
 					},
-				}, &metav1.LabelSelector{}, nil, testLogger)
+				}, &metav1.LabelSelector{}, nil, "0", testLogger)
 				image, err := vsCGHandler.GetLatestImageFromRGD(Ctx, "pvc1", "default")
 				Expect(err).NotTo(BeNil())
 				Expect(image).To(BeNil())
@@ -269,7 +269,7 @@ var _ = Describe("Cghandler", func() {
 							Name:      vrgName,
 							UID:       "123",
 						},
-					}, &metav1.LabelSelector{}, nil, testLogger)
+					}, &metav1.LabelSelector{}, nil, "0", testLogger)
 					image, err := vsCGHandler.GetLatestImageFromRGD(Ctx, "pvc1", "default")
 					Expect(err).To(BeNil())
 					Expect(image.Name).To(Equal("image1"))
@@ -295,7 +295,7 @@ var _ = Describe("Cghandler", func() {
 								},
 							}, &ramendrv1alpha1.VRGAsyncSpec{}, controllers.DefaultCephFSCSIDriverName,
 								"Direct", false,
-							), testLogger)
+							), "0", testLogger)
 						err := vsCGHandler.EnsurePVCfromRGD(ramendrv1alpha1.VolSyncReplicationDestinationSpec{
 							ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 								Name:               "pvc1",
@@ -336,7 +336,7 @@ var _ = Describe("Cghandler", func() {
 									},
 								}, &ramendrv1alpha1.VRGAsyncSpec{}, controllers.DefaultCephFSCSIDriverName,
 								"Direct", false,
-							), testLogger)
+							), "0", testLogger)
 						err := vsCGHandler.DeleteLocalRDAndRS(&volsyncv1alpha1.ReplicationDestination{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "pvc1",
@@ -352,7 +352,7 @@ var _ = Describe("Cghandler", func() {
 	Describe("CheckIfPVCMatchLabel", func() {
 		It("Should be success", func() {
 			vsCGHandler = cephfscg.NewVSCGHandler(
-				Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{}, nil, nil, testLogger,
+				Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{}, nil, nil, "0", testLogger,
 			)
 			match, err := vsCGHandler.CheckIfPVCMatchLabel(nil)
 			Expect(err).To(BeNil())
@@ -360,7 +360,7 @@ var _ = Describe("Cghandler", func() {
 		})
 		It("Should be success", func() {
 			vsCGHandler = cephfscg.NewVSCGHandler(
-				Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{}, nil, nil, testLogger,
+				Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{}, nil, nil, "0", testLogger,
 			)
 			match, err := vsCGHandler.CheckIfPVCMatchLabel(map[string]string{"test": "test"})
 			Expect(err).To(BeNil())
@@ -368,14 +368,14 @@ var _ = Describe("Cghandler", func() {
 		})
 		It("Should be success", func() {
 			vsCGHandler = cephfscg.NewVSCGHandler(Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{},
-				&metav1.LabelSelector{MatchLabels: map[string]string{"test": ""}}, nil, testLogger)
+				&metav1.LabelSelector{MatchLabels: map[string]string{"test": ""}}, nil, "0", testLogger)
 			match, err := vsCGHandler.CheckIfPVCMatchLabel(map[string]string{"test": "test"})
 			Expect(err).To(BeNil())
 			Expect(match).To(BeFalse())
 		})
 		It("Should be success", func() {
 			vsCGHandler = cephfscg.NewVSCGHandler(Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{},
-				&metav1.LabelSelector{MatchLabels: map[string]string{"test": "test"}}, nil, testLogger)
+				&metav1.LabelSelector{MatchLabels: map[string]string{"test": "test"}}, nil, "0", testLogger)
 			match, err := vsCGHandler.CheckIfPVCMatchLabel(map[string]string{"test": "test"})
 			Expect(err).To(BeNil())
 			Expect(match).To(BeTrue())
@@ -384,7 +384,7 @@ var _ = Describe("Cghandler", func() {
 	Describe("GetRDInCG", func() {
 		It("Should be success", func() {
 			vsCGHandler = cephfscg.NewVSCGHandler(Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{},
-				nil, nil, testLogger)
+				nil, nil, "0", testLogger)
 			rdSpecs, err := vsCGHandler.GetRDInCG()
 			Expect(err).To(BeNil())
 			Expect(len(rdSpecs)).To(Equal(0))
@@ -400,7 +400,7 @@ var _ = Describe("Cghandler", func() {
 						}},
 					},
 				},
-			}, nil, nil, testLogger)
+			}, nil, nil, "0", testLogger)
 			rdSpecs, err := vsCGHandler.GetRDInCG()
 			Expect(err).To(BeNil())
 			Expect(len(rdSpecs)).To(Equal(0))
@@ -418,46 +418,10 @@ var _ = Describe("Cghandler", func() {
 				},
 			}, &metav1.LabelSelector{
 				MatchLabels: map[string]string{"test": "test"},
-			}, nil, testLogger)
+			}, nil, "0", testLogger)
 			rdSpecs, err := vsCGHandler.GetRDInCG()
 			Expect(err).To(BeNil())
 			Expect(len(rdSpecs)).To(Equal(1))
-		})
-	})
-	Describe("CheckIfPVCMatchLabels", func() {
-		It("Should be success", func() {
-			vsCGHandlers := []cephfscg.VSCGHandler{
-				cephfscg.NewVSCGHandler(Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{},
-					&metav1.LabelSelector{MatchLabels: map[string]string{"test1": "test1"}}, nil, testLogger),
-				cephfscg.NewVSCGHandler(Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{},
-					&metav1.LabelSelector{MatchLabels: map[string]string{"test2": "test2"}}, nil, testLogger),
-			}
-
-			match, _, err := cephfscg.CheckIfPVCMatchLabels(map[string]string{"test": "test"}, vsCGHandlers)
-			Expect(err).To(BeNil())
-			Expect(match).To(BeFalse())
-		})
-		It("Should be success", func() {
-			match, _, err := cephfscg.CheckIfPVCMatchLabels(map[string]string{"test": "test"}, nil)
-			Expect(err).To(BeNil())
-			Expect(match).To(BeFalse())
-		})
-		It("Should be success", func() {
-			match, _, err := cephfscg.CheckIfPVCMatchLabels(nil, nil)
-			Expect(err).To(BeNil())
-			Expect(match).To(BeFalse())
-		})
-		It("Should be success", func() {
-			vsCGHandlers := []cephfscg.VSCGHandler{
-				cephfscg.NewVSCGHandler(Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{},
-					&metav1.LabelSelector{MatchLabels: map[string]string{"test1": "test1"}}, nil, testLogger),
-				cephfscg.NewVSCGHandler(Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{},
-					&metav1.LabelSelector{MatchLabels: map[string]string{"test2": "test2"}}, nil, testLogger),
-			}
-
-			match, _, err := cephfscg.CheckIfPVCMatchLabels(map[string]string{"test1": "test1"}, vsCGHandlers)
-			Expect(err).To(BeNil())
-			Expect(match).To(BeTrue())
 		})
 	})
 })

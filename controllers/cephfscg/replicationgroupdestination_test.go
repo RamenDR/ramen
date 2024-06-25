@@ -64,6 +64,7 @@ var _ = Describe("Replicationgroupdestination", func() {
 						Name:      rgdName,
 						Namespace: "default",
 						UID:       "123",
+						Labels:    map[string]string{volsync.VRGOwnerNameLabel: vrgName},
 					},
 					Spec: ramendrv1alpha1.ReplicationGroupDestinationSpec{
 						RDSpecs: []ramendrv1alpha1.VolSyncReplicationDestinationSpec{{
@@ -96,12 +97,12 @@ var _ = Describe("Replicationgroupdestination", func() {
 					), testLogger,
 				)
 
-				pskSecretName := volsync.GetVolSyncPSKSecretNameFromVRGName(rgdName)
+				pskSecretName := volsync.GetVolSyncPSKSecretNameFromVRGName(vrgName)
 				err := k8sClient.Create(
 					context.Background(),
 					&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: pskSecretName, Namespace: "default"}},
 				)
-				Expect(err).To(BeNil())
+				Expect(client.IgnoreAlreadyExists(err)).To(BeNil())
 				CreateStorageClass()
 				CreateVolumeSnapshotClass()
 				CreateVS(vsName)

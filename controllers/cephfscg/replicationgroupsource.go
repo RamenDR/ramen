@@ -120,9 +120,9 @@ func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.
 	}
 
 	m.Logger.Info("Create ReplicationSource for each Restored PVC")
-
+	vrgName := m.ReplicationGroupSource.GetLabels()[volsync.VRGOwnerNameLabel]
 	// Pre-allocated shared secret - DRPC will generate and propagate this secret from hub to clusters
-	pskSecretName := volsync.GetVolSyncPSKSecretNameFromVRGName(m.ReplicationGroupSource.Name)
+	pskSecretName := volsync.GetVolSyncPSKSecretNameFromVRGName(vrgName)
 
 	// Need to confirm this secret exists on the cluster before proceeding, otherwise volsync will generate it
 	secretExists, err := m.VSHandler.ValidateSecretAndAddVRGOwnerRef(pskSecretName)

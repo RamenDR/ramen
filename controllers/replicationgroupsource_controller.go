@@ -33,7 +33,7 @@ The naming follow the volsync handler. Currently, in volsync handler:
 
 In this design:
 
-1. ReplicationGroupSource Name = ReplicationGroupDestination Name = VRG Name = Application Name
+1. ReplicationGroupSource Name = ReplicationGroupDestination Name = <VRG Name = Application Name>+cgName
 
 ReplicationGroupSource create VolumeGroupSnapshot, Restored PVC and ReplicationSource in each sync.
 At the end of each sync, VolumeGroupSnapshot, Restored PVC will be deleted by ramen,

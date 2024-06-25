@@ -17,6 +17,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// FakeCGLabel (TODO) this is a fake selectors, it need to get from the common code part
+var FakeCGLabel = "cg"
+
 //nolint:gocognit,funlen,cyclop
 func (v *VRGInstance) restorePVsAndPVCsForVolSync() (int, error) {
 	v.log.Info("VolSync: Restoring VolSync PVs")
@@ -32,12 +35,16 @@ func (v *VRGInstance) restorePVsAndPVCsForVolSync() (int, error) {
 	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
 		failoverAction := v.instance.Spec.Action == ramendrv1alpha1.VRGActionFailover
 
-		pvcInCephfsCg, cephfsCGHandler, err := cephfscg.CheckIfPVCMatchLabels(rdSpec.ProtectedPVC.Labels, v.cephfsCGHandlers)
-		if err != nil {
-			continue
-		}
+		var err error
 
-		if pvcInCephfsCg {
+		cg, ok := rdSpec.ProtectedPVC.Labels[FakeCGLabel]
+		if ok {
+			v.log.Info("rdSpec has CG label", "Labels", rdSpec.ProtectedPVC.Labels)
+			cephfsCGHandler := cephfscg.NewVSCGHandler(
+				v.ctx, v.reconciler.Client, v.instance,
+				&metav1.LabelSelector{MatchLabels: map[string]string{FakeCGLabel: cg}},
+				v.volSyncHandler, cg, v.log,
+			)
 			err = cephfsCGHandler.EnsurePVCfromRGD(rdSpec, failoverAction)
 		} else {
 			// Create a PVC from snapshot or for direct copy
@@ -160,10 +167,15 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		return true
 	}
 
-	pvcInCephfsCg, cephfsCGHandler, err := cephfscg.CheckIfPVCMatchLabels(pvc.GetLabels(), v.cephfsCGHandlers)
-	if err != nil {
-		return true
-	} else if pvcInCephfsCg {
+	cg, ok := pvc.Labels[FakeCGLabel]
+	if ok {
+		v.log.Info("rdSpec has CG label", "Labels", pvc.Labels)
+		cephfsCGHandler := cephfscg.NewVSCGHandler(
+			v.ctx, v.reconciler.Client, v.instance,
+			&metav1.LabelSelector{MatchLabels: map[string]string{FakeCGLabel: cg}},
+			v.volSyncHandler, cg, v.log,
+		)
+
 		rgs, finalSyncComplete, err := cephfsCGHandler.CreateOrUpdateReplicationGroupSource(
 			v.instance.Name, v.instance.Namespace, v.instance.Spec.RunFinalSync,
 		)
@@ -234,53 +246,63 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() bool {
 	return v.reconcileRDSpecForDeletionOrReplication()
 }
 
-//nolint:gocognit,funlen,cyclop
+//nolint:gocognit,funlen,cyclop,nestif
 func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
 	requeue := false
 	rdinCGs := []ramendrv1alpha1.VolSyncReplicationDestinationSpec{}
 
-	for _, cephfsCGHandler := range v.cephfsCGHandlers {
-		rdinCG, err := cephfsCGHandler.GetRDInCG()
-		if err != nil {
-			v.log.Error(err, "Failed to get RD in CG")
-
-			requeue = true
-
-			return requeue
-		}
-
-		if len(rdinCG) > 0 {
-			v.log.Info("Create ReplicationGroupDestination with RDSpecs", "RDSpecs", rdinCG)
-
-			replicationGroupDestination, err := cephfsCGHandler.CreateOrUpdateReplicationGroupDestination(
-				v.instance.Name, v.instance.Namespace, rdinCG,
+	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
+		cg, ok := rdSpec.ProtectedPVC.Labels[FakeCGLabel]
+		if ok {
+			v.log.Info("rdSpec has CG label", "Labels", rdSpec.ProtectedPVC.Labels)
+			cephfsCGHandler := cephfscg.NewVSCGHandler(
+				v.ctx, v.reconciler.Client, v.instance,
+				&metav1.LabelSelector{MatchLabels: map[string]string{FakeCGLabel: cg}},
+				v.volSyncHandler, cg, v.log,
 			)
+
+			rdinCG, err := cephfsCGHandler.GetRDInCG()
 			if err != nil {
-				v.log.Error(err, "Failed to create ReplicationGroupDestination")
+				v.log.Error(err, "Failed to get RD in CG")
 
 				requeue = true
 
 				return requeue
 			}
 
-			ready, err := util.IsReplicationGroupDestinationReady(v.ctx, v.reconciler.Client, replicationGroupDestination)
-			if err != nil {
-				v.log.Error(err, "Failed to check if ReplicationGroupDestination if ready")
+			if len(rdinCG) > 0 {
+				v.log.Info("Create ReplicationGroupDestination with RDSpecs", "RDSpecs", rdinCG)
 
-				requeue = true
+				replicationGroupDestination, err := cephfsCGHandler.CreateOrUpdateReplicationGroupDestination(
+					v.instance.Name, v.instance.Namespace, rdinCG,
+				)
+				if err != nil {
+					v.log.Error(err, "Failed to create ReplicationGroupDestination")
 
-				return requeue
+					requeue = true
+
+					return requeue
+				}
+
+				ready, err := util.IsReplicationGroupDestinationReady(v.ctx, v.reconciler.Client, replicationGroupDestination)
+				if err != nil {
+					v.log.Error(err, "Failed to check if ReplicationGroupDestination if ready")
+
+					requeue = true
+
+					return requeue
+				}
+
+				if !ready {
+					v.log.Info(fmt.Sprintf("ReplicationGroupDestination for %s is not ready. We'll retry...",
+						replicationGroupDestination.Name))
+
+					requeue = true
+				}
 			}
 
-			if !ready {
-				v.log.Info(fmt.Sprintf("ReplicationGroupDestination for %s is not ready. We'll retry...",
-					replicationGroupDestination.Name))
-
-				requeue = true
-			}
+			rdinCGs = append(rdinCGs, rdinCG...)
 		}
-
-		rdinCGs = append(rdinCGs, rdinCG...)
 	}
 
 	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {

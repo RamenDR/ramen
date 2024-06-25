@@ -15,7 +15,6 @@ import (
 
 	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
 	"github.com/google/uuid"
-	"github.com/ramendr/ramen/controllers/cephfscg"
 	"github.com/ramendr/ramen/controllers/kubeobjects"
 	"github.com/ramendr/ramen/controllers/kubeobjects/velero"
 	"golang.org/x/exp/maps" // TODO replace with "maps" in go1.21+
@@ -442,21 +441,6 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 		v.instance.Spec.Async, cephFSCSIDriverNameOrDefault(v.ramenConfig),
 		volSyncDestinationCopyMethodOrDefault(v.ramenConfig), adminNamespaceVRG)
 
-	// (TODO) this is a fake selectors, it need to get from the common code part
-	fakeCephFSConsistencyGroupSelectors := []*metav1.LabelSelector{
-		{MatchLabels: map[string]string{"cg": "cg1"}},
-		{MatchLabels: map[string]string{"cg": "cg2"}},
-	}
-
-	cephfsCGHandlers := []cephfscg.VSCGHandler{}
-	for _, fakeCephFSConsistencyGroupSelector := range fakeCephFSConsistencyGroupSelectors {
-		cephfsCGHandlers = append(cephfsCGHandlers, cephfscg.NewVSCGHandler(
-			ctx, r.Client, v.instance, fakeCephFSConsistencyGroupSelector, v.volSyncHandler, v.log,
-		))
-	}
-
-	v.cephfsCGHandlers = cephfsCGHandlers
-
 	if v.instance.Status.ProtectedPVCs == nil {
 		v.instance.Status.ProtectedPVCs = []ramendrv1alpha1.ProtectedPVC{}
 	}
@@ -496,7 +480,6 @@ type VRGInstance struct {
 	vrcUpdated           bool
 	namespacedName       string
 	volSyncHandler       *volsync.VSHandler
-	cephfsCGHandlers     []cephfscg.VSCGHandler
 	objectStorers        map[string]cachedObjectStorer
 	s3StoreAccessors     []s3StoreAccessor
 	result               ctrl.Result
