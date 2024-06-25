@@ -130,6 +130,7 @@ func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return controller.
 		For(&ramen.DRCluster{}).
 		Watches(&ramen.DRPlacementControl{}, drpcMapFun, builder.WithPredicates(drpcPred())).
+		Watches(&ramen.DRPolicy{}, drPolicyEventHandler(), builder.WithPredicates(drPolicyPredicate())).
 		Watches(&ocmworkv1.ManifestWork{}, mwMapFun, builder.WithPredicates(mwPred)).
 		Watches(&viewv1beta1.ManagedClusterView{}, mcvMapFun, builder.WithPredicates(mcvPred)).
 		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.drClusterConfigMapMapFunc)).
