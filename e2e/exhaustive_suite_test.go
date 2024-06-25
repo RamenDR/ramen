@@ -4,10 +4,12 @@
 package e2e_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/testcontext"
+	"github.com/ramendr/ramen/e2e/util"
 	"github.com/ramendr/ramen/e2e/workloads"
 )
 
@@ -15,14 +17,13 @@ import (
 // Workloads = {"Deployment", "STS", "DaemonSet"}
 // Classes   = {"rbd", "cephfs"}
 
-var deployment = &workloads.Deployment{
-	Path:     "workloads/deployment/k8s-regional-rbd",
-	Revision: "main",
-	AppName:  "busybox",
-	Name:     "Deployment",
-}
+const (
+	GITPATH     = "workloads/deployment/base"
+	GITREVISION = "main"
+	APPNAME     = "busybox"
+)
 
-var Workloads = []workloads.Workload{deployment}
+var Workloads = []workloads.Workload{}
 
 var subscription = &deployers.Subscription{}
 
@@ -31,9 +32,25 @@ var subscription = &deployers.Subscription{}
 
 var Deployers = []deployers.Deployer{subscription}
 
+func generateWorkloads([]workloads.Workload) {
+	pvcSpecs := util.GetPVCSpecs()
+	for i, pvcSpec := range pvcSpecs {
+		deployment := &workloads.Deployment{
+			Path:     GITPATH,
+			Revision: GITREVISION,
+			AppName:  APPNAME,
+			Name:     fmt.Sprintf("Deployment-%d", i),
+			PVCSpec:  pvcSpec,
+		}
+		Workloads = append(Workloads, deployment)
+	}
+}
+
 func Exhaustive(t *testing.T) {
 	t.Helper()
 	t.Parallel()
+
+	generateWorkloads(Workloads)
 
 	for _, workload := range Workloads {
 		for _, deployer := range Deployers {

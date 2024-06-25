@@ -5,11 +5,13 @@ package deployers
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/ramendr/ramen/e2e/util"
 	"github.com/ramendr/ramen/e2e/workloads"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -152,13 +154,25 @@ func createSubscription(s Subscription, w workloads.Workload) error {
 		},
 	}
 
+	if w.Kustomize() != "" {
+		subscription.Spec.PackageOverrides = []*subscriptionv1.Overrides{}
+		subscription.Spec.PackageOverrides = append(subscription.Spec.PackageOverrides, &subscriptionv1.Overrides{
+			PackageName: "kustomization",
+			PackageOverrides: []subscriptionv1.PackageOverride{
+				{RawExtension: runtime.RawExtension{Raw: []byte("{\"value\": " + w.Kustomize() + "}")}},
+			},
+		})
+	}
+
 	err := util.Ctx.Hub.CtrlClient.Create(context.Background(), subscription)
 	if err != nil {
 		if !errors.IsAlreadyExists(err) {
+			util.Ctx.Log.Info(fmt.Sprintf("create subscription with error: %v", err))
+
 			return err
 		}
 
-		util.Ctx.Log.Info("placement " + subscription.Name + " already Exists")
+		util.Ctx.Log.Info("subscription " + subscription.Name + " already Exists")
 	}
 
 	return nil
