@@ -9,11 +9,14 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
+	. "github.com/onsi/gomega/gstruct"
+	gomegaTypes "github.com/onsi/gomega/types"
 	ocmv1 "github.com/open-cluster-management/api/cluster/v1"
 	workv1 "github.com/open-cluster-management/api/work/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	controllers "github.com/ramendr/ramen/internal/controller"
 	"github.com/ramendr/ramen/internal/controller/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -152,4 +155,122 @@ func updateMWAsApplied(k8sClient client.Client, apiReader client.Reader, key typ
 	})
 
 	Expect(retryErr).NotTo(HaveOccurred())
+}
+
+func drclusterConditionExpectEventually(
+	apiReader client.Reader,
+	drcluster *ramen.DRCluster,
+	disabled bool,
+	status metav1.ConditionStatus,
+	reasonMatcher,
+	messageMatcher gomegaTypes.GomegaMatcher,
+	conditionType string,
+) {
+	drclusterConditionExpect(
+		apiReader,
+		drcluster,
+		disabled,
+		status,
+		reasonMatcher,
+		messageMatcher,
+		conditionType,
+		false,
+	)
+}
+
+func drclusterConditionExpectConsistently(
+	apiReader client.Reader,
+	drcluster *ramen.DRCluster,
+	disabled bool,
+	reasonMatcher,
+	messageMatcher gomegaTypes.GomegaMatcher,
+) {
+	drclusterConditionExpect(
+		apiReader,
+		drcluster,
+		disabled,
+		metav1.ConditionTrue,
+		reasonMatcher,
+		messageMatcher,
+		ramen.DRClusterValidated,
+		true,
+	)
+}
+
+func drclusterConditionExpect(
+	apiReader client.Reader,
+	drcluster *ramen.DRCluster,
+	disabled bool,
+	status metav1.ConditionStatus,
+	reasonMatcher,
+	messageMatcher gomegaTypes.GomegaMatcher,
+	conditionType string,
+	always bool,
+) {
+	testFunc := func() []metav1.Condition {
+		Expect(apiReader.Get(context.TODO(), types.NamespacedName{
+			Namespace: drcluster.Namespace,
+			Name:      drcluster.Name,
+		}, drcluster)).To(Succeed())
+
+		return drcluster.Status.Conditions
+	}
+
+	matchElements := MatchElements(
+		func(element interface{}) string {
+			return element.(metav1.Condition).Type
+		},
+		IgnoreExtras,
+		Elements{
+			conditionType: MatchAllFields(Fields{
+				`Type`:               Ignore(),
+				`Status`:             Equal(status),
+				`ObservedGeneration`: Equal(drcluster.Generation),
+				`LastTransitionTime`: Ignore(),
+				`Reason`:             reasonMatcher,
+				`Message`:            messageMatcher,
+			}),
+		},
+	)
+
+	switch always {
+	case false:
+		Eventually(testFunc, timeout, interval).Should(matchElements)
+	case true:
+		Consistently(testFunc, timeout, interval).Should(matchElements)
+	}
+
+	// TODO: Validate finaliziers and labels
+	if status == metav1.ConditionFalse {
+		return
+	}
+
+	validateClusterManifest(drcluster, disabled)
+}
+
+func validateClusterManifest(drcluster *ramen.DRCluster, disabled bool) {
+	expectedCount := 12
+	if disabled {
+		expectedCount = 6
+	}
+
+	clusterName := drcluster.Name
+
+	key := types.NamespacedName{
+		Name:      util.DrClusterManifestWorkName,
+		Namespace: clusterName,
+	}
+
+	manifestWork := &workv1.ManifestWork{}
+
+	Eventually(
+		func(g Gomega) []workv1.Manifest {
+			g.Expect(apiReader.Get(context.TODO(), key, manifestWork)).To(Succeed())
+
+			return manifestWork.Spec.Workload.Manifests
+		}, timeout, interval,
+	).Should(HaveLen(expectedCount))
+
+	Expect(manifestWork.GetAnnotations()[controllers.DRClusterNameAnnotation]).Should(Equal(clusterName))
+	// TODO: Validate fencing status
 }

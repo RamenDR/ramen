@@ -189,6 +189,7 @@ var _ = Describe("DRPolicyController", func() {
 			updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
 			updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
 			drclusterConditionExpectEventually(
+				apiReader,
 				drcluster,
 				!ramenConfig.DrClusterOperator.DeploymentAutomationEnabled,
 				metav1.ConditionTrue,

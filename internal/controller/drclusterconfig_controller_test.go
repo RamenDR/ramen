@@ -48,7 +48,7 @@ var _ = Describe("DRClusterConfig Controller", func() {
 		AfterEach(func() {
 			// TODO(user): Cleanup logic after each test, like removing the resource instance.
 			resource := &ramendrv1alpha1.DRClusterConfig{}
-			err := k8sClient.Get(ctx, typeNamespacedName, resource)
+			err := apiReader.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Cleanup the specific resource instance DRClusterConfig")
