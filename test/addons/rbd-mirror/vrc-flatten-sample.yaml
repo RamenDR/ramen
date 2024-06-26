@@ -6,11 +6,12 @@ apiVersion: replication.storage.openshift.io/v1alpha1
 kind: VolumeReplicationClass
 metadata:
   name: vrc-sample
-  annotation:
-    replication.storage.openshift.io/is-default-class: true
+  label:
+    replication.storage.openshift.io/flatten-mode: force
 spec:
   provisioner: rook-ceph.rbd.csi.ceph.com
   parameters:
     replication.storage.openshift.io/replication-secret-name: rook-csi-rbd-provisioner
     replication.storage.openshift.io/replication-secret-namespace: rook-ceph
     schedulingInterval: 1m
+    flattenMode: force
