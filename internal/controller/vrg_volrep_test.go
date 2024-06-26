@@ -1007,6 +1007,131 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			v.cleanupStatusAbsent()
 		})
 	})
+
+	// Everything matches but there are two default VRCs.
+	var vrgSchedule4Tests []*vrgTest
+	vrgScheduleTest4Template := &template{
+		ClaimBindInfo:          corev1.ClaimBound,
+		VolumeBindInfo:         corev1.VolumeBound,
+		schedulingInterval:     "1h",
+		storageClassName:       "manual",
+		replicationClassName:   "test-replicationclass",
+		vrcProvisioner:         "manual.storage.com",
+		scProvisioner:          "manual.storage.com",
+		replicationClassLabels: map[string]string{"protection": "ramen"},
+		additionalVRCInfoList: []*additionalVRCInfo{
+			{
+				replicationClassName:   "extra-replicationclass",
+				replicationClassLabels: map[string]string{"protection": "ramen"},
+				hasDefaultAnnotation:   true,
+			},
+		},
+	}
+	Context("two default replicationclass exists", func() {
+		It("sets up non-bound PVCs, PVs and then bind them", func() {
+			vrgScheduleTest4Template.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest4Template, true, true)
+			vrgSchedule4Tests = append(vrgSchedule4Tests, v)
+		})
+		It("expect no VR to be created as VR not created and check status", func() {
+			v := vrgSchedule4Tests[0]
+			v.waitForVRCountToMatch(0)
+		})
+		It("waits for VRG status to match", func() {
+			v := vrgSchedule4Tests[0]
+			v.verifyVRGStatusExpectation(false, "")
+		})
+		It("cleans up after testing", func() {
+			v := vrgSchedule4Tests[0]
+			v.cleanupStatusAbsent()
+		})
+	})
+
+	// Everything matches with two VRCs but one with default annotation
+	var vrgSchedule5Tests []*vrgTest
+	vrgScheduleTest5Template := &template{
+		ClaimBindInfo:          corev1.ClaimBound,
+		VolumeBindInfo:         corev1.VolumeBound,
+		schedulingInterval:     "1h",
+		storageClassName:       "manual",
+		replicationClassName:   "test-replicationclass",
+		vrcProvisioner:         "manual.storage.com",
+		scProvisioner:          "manual.storage.com",
+		replicationClassLabels: map[string]string{"protection": "ramen"},
+		additionalVRCInfoList: []*additionalVRCInfo{
+			{
+				replicationClassName:   "extra-replicationclass",
+				replicationClassLabels: map[string]string{"protection": "ramen"},
+				hasDefaultAnnotation:   false,
+			},
+		},
+	}
+	Context("one default & one non-default replicationclass exists", func() {
+		It("sets up non-bound PVCs, PVs and then bind them", func() {
+			vrgScheduleTest5Template.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest5Template, true, true)
+			vrgSchedule5Tests = append(vrgSchedule5Tests, v)
+		})
+		It("expect 4 VRs to be created and check status", func() {
+			v := vrgSchedule5Tests[0]
+			v.waitForVRCountToMatch(4)
+		})
+		It("waits for VRG status to match", func() {
+			v := vrgSchedule5Tests[0]
+			v.promoteVolReps()
+			v.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
+		})
+		It("cleans up after testing", func() {
+			v := vrgSchedule5Tests[0]
+			v.cleanupProtected()
+		})
+	})
+
+	// Everything matches but there are two non default VRCs with matching labels
+	// and one VRC whose label does not match.
+	var vrgSchedule6Tests []*vrgTest
+	vrgScheduleTest6Template := &template{
+		ClaimBindInfo:          corev1.ClaimBound,
+		VolumeBindInfo:         corev1.VolumeBound,
+		schedulingInterval:     "1h",
+		storageClassName:       "manual",
+		replicationClassName:   "test-replicationclass",
+		vrcProvisioner:         "manual.storage.com",
+		scProvisioner:          "manual.storage.com",
+		replicationClassLabels: map[string]string{},
+		additionalVRCInfoList: []*additionalVRCInfo{
+			{
+				replicationClassName:   "extra-replicationclass-0",
+				replicationClassLabels: map[string]string{"protection": "ramen"},
+				hasDefaultAnnotation:   false,
+			},
+			{
+				replicationClassName:   "extra-replicationclass-1",
+				replicationClassLabels: map[string]string{"protection": "ramen"},
+				hasDefaultAnnotation:   false,
+			},
+		},
+	}
+	Context("two non-default replicationclass exists", func() {
+		It("sets up non-bound PVCs, PVs and then bind them", func() {
+			vrgScheduleTest6Template.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest6Template, true, true)
+			vrgSchedule6Tests = append(vrgSchedule6Tests, v)
+		})
+		It("expect no VR to be created as VR not created and check status", func() {
+			v := vrgSchedule6Tests[0]
+			v.waitForVRCountToMatch(0)
+		})
+		It("waits for VRG status to match", func() {
+			v := vrgSchedule6Tests[0]
+			v.verifyVRGStatusExpectation(false, "")
+		})
+		It("cleans up after testing", func() {
+			v := vrgSchedule6Tests[0]
+			v.cleanupStatusAbsent()
+		})
+	})
+
 	// TODO: Add tests to move VRG to Secondary
 	// TODO: Add tests to ensure delete as Secondary (check if delete as Primary is tested above)
 })
@@ -1028,6 +1153,12 @@ type vrgTest struct {
 	template             *template
 }
 
+type additionalVRCInfo struct {
+	replicationClassName   string
+	replicationClassLabels map[string]string
+	hasDefaultAnnotation   bool
+}
+
 type template struct {
 	ClaimBindInfo          corev1.PersistentVolumeClaimPhase
 	VolumeBindInfo         corev1.PersistentVolumePhase
@@ -1037,6 +1168,7 @@ type template struct {
 	storageClassName       string
 	replicationClassName   string
 	replicationClassLabels map[string]string
+	additionalVRCInfoList  []*additionalVRCInfo
 	s3Profiles             []string
 	volsyncEnabled         bool
 	scDisabled             bool
@@ -1415,6 +1547,9 @@ func (v *vrgTest) vrgS3ProfilesSet(names []string) {
 }
 
 func (v *vrgTest) createVRC(testTemplate *template) {
+	defaultAnnotations := map[string]string{}
+	defaultAnnotations["replication.storage.openshift.io/is-default-class"] = "true"
+
 	By("creating VRC " + v.replicationClass)
 
 	parameters := make(map[string]string)
@@ -1425,13 +1560,16 @@ func (v *vrgTest) createVRC(testTemplate *template) {
 
 	vrc := &volrep.VolumeReplicationClass{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: v.replicationClass,
+			Name:        v.replicationClass,
+			Annotations: defaultAnnotations,
 		},
 		Spec: volrep.VolumeReplicationClassSpec{
 			Provisioner: testTemplate.vrcProvisioner,
 			Parameters:  parameters,
 		},
 	}
+
+	vrcCopy := vrc.DeepCopy()
 
 	if len(testTemplate.replicationClassLabels) > 0 {
 		vrc.ObjectMeta.Labels = testTemplate.replicationClassLabels
@@ -1446,6 +1584,26 @@ func (v *vrgTest) createVRC(testTemplate *template) {
 
 	Expect(err).NotTo(HaveOccurred(),
 		"failed to create/get VolumeReplicationClass %s/%s", v.replicationClass, v.vrgName)
+
+	for _, vrcInfo := range testTemplate.additionalVRCInfoList {
+		vrc := vrcCopy.DeepCopy()
+		vrc.ObjectMeta.Name = vrcInfo.replicationClassName
+		vrc.Labels = vrcInfo.replicationClassLabels
+
+		if !vrcInfo.hasDefaultAnnotation {
+			vrc.Annotations = map[string]string{}
+		}
+
+		err := k8sClient.Create(context.TODO(), vrc)
+		if err != nil {
+			if errors.IsAlreadyExists(err) {
+				err = k8sClient.Get(context.TODO(), types.NamespacedName{Name: v.replicationClass}, vrc)
+			}
+		}
+
+		Expect(err).NotTo(HaveOccurred(),
+			"failed to create/get VolumeReplicationClass %s/%s", v.replicationClass, v.vrgName)
+	}
 }
 
 func (v *vrgTest) createSC(testTemplate *template) {
@@ -1963,20 +2121,13 @@ func (v *vrgTest) cleanupSC() {
 }
 
 func (v *vrgTest) cleanupVRC() {
-	key := types.NamespacedName{
-		Name: v.replicationClass,
-	}
-
 	vrc := &volrep.VolumeReplicationClass{}
 
-	err := k8sClient.Get(context.TODO(), key, vrc)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return
-		}
+	err := k8sClient.DeleteAllOf(context.TODO(), vrc)
+	if errors.IsNotFound(err) {
+		return
 	}
 
-	err = k8sClient.Delete(context.TODO(), vrc)
 	Expect(err).To(BeNil(),
 		"failed to delete replicationClass %s", v.replicationClass)
 }

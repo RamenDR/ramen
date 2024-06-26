@@ -668,14 +668,10 @@ func (v *VRGInstance) updatePVCList() error {
 		return nil
 	}
 
-	if !v.vrcUpdated {
-		if err := v.updateReplicationClassList(); err != nil {
-			v.log.Error(err, "Failed to get VolumeReplicationClass list")
+	if err := v.updateReplicationClassList(); err != nil {
+		v.log.Error(err, "Failed to get VolumeReplicationClass list")
 
-			return fmt.Errorf("failed to get VolumeReplicationClass list")
-		}
-
-		v.vrcUpdated = true
+		return fmt.Errorf("failed to get VolumeReplicationClass list")
 	}
 
 	if rmnutil.ResourceIsDeleted(v.instance) {
@@ -699,6 +695,10 @@ func (v *VRGInstance) updatePVCList() error {
 }
 
 func (v *VRGInstance) updateReplicationClassList() error {
+	if v.vrcUpdated {
+		return nil
+	}
+
 	labelSelector := v.instance.Spec.Async.ReplicationClassSelector
 
 	v.log.Info("Fetching VolumeReplicationClass", "labeled", labels.Set(labelSelector.MatchLabels))
@@ -712,6 +712,8 @@ func (v *VRGInstance) updateReplicationClassList() error {
 
 		return fmt.Errorf("failed to list Replication Classes, %w", err)
 	}
+
+	v.vrcUpdated = true
 
 	v.log.Info("Number of Replication Classes", "count", len(v.replClassList.Items))
 
