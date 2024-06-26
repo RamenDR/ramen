@@ -1652,8 +1652,13 @@ func fenceCluster(cluster string, manual bool) {
 	}
 
 	latestDRCluster = updateDRClusterParameters(latestDRCluster)
-	drclusterConditionExpectEventually(latestDRCluster, false, metav1.ConditionTrue,
-		Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
+	drclusterConditionExpectEventually(
+		apiReader,
+		latestDRCluster,
+		false,
+		metav1.ConditionTrue,
+		Equal(controllers.DRClusterConditionReasonFenced),
+		Ignore(),
 		rmn.DRClusterConditionTypeFenced)
 }
 
@@ -1666,10 +1671,15 @@ func unfenceCluster(cluster string, manual bool) {
 	}
 
 	latestDRCluster = updateDRClusterParameters(latestDRCluster)
-	drclusterConditionExpectEventually(latestDRCluster, false, metav1.ConditionFalse,
+	drclusterConditionExpectEventually(
+		apiReader,
+		latestDRCluster,
+		false,
+		metav1.ConditionFalse,
 		BeElementOf(controllers.DRClusterConditionReasonUnfenced, controllers.DRClusterConditionReasonCleaning,
 			controllers.DRClusterConditionReasonClean),
-		Ignore(), rmn.DRClusterConditionTypeFenced)
+		Ignore(),
+		rmn.DRClusterConditionTypeFenced)
 }
 
 func resetdrCluster(cluster string) {
