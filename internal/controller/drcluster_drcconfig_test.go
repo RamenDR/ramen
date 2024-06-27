@@ -400,7 +400,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					)
 				})
 				It("creates the DRClusterConfig manifest", func() {
-					verifyDRClusterConfigMW(k8sClient, drCluster1Name)
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster")
 				})
 			})
 		})

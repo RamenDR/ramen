@@ -291,7 +291,7 @@ func validateClusterManifest(apiReader client.Reader, drcluster *ramen.DRCluster
 	// TODO: Validate fencing status
 }
 
-func verifyDRClusterConfigMW(k8sClient client.Client, managedCluster string) {
+func verifyDRClusterConfigMW(k8sClient client.Client, managedCluster, clusterID string) {
 	mw := &workv1.ManifestWork{}
 
 	Eventually(func() error {
@@ -306,6 +306,11 @@ func verifyDRClusterConfigMW(k8sClient client.Client, managedCluster string) {
 
 		return err
 	}, timeout, interval).Should(BeNil())
+
+	drcConfig, err := util.ExtractDRCConfigFromManifestWork(mw)
+	Expect(err != nil)
+
+	Expect(drcConfig.Spec.ClusterID == clusterID)
 	// TODO: Verify MW contents
 }
 
