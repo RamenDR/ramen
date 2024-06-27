@@ -90,14 +90,14 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 			&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "drcluster1"}},
 		)).To(Succeed())
 
-		createManagedCluster(k8sClient, "drcluster1")
+		ensureManagedCluster(k8sClient, "drcluster1")
 
 		Expect(k8sClient.Create(
 			context.TODO(),
 			&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "drcluster2"}},
 		)).To(Succeed())
 
-		createManagedCluster(k8sClient, "drcluster2")
+		ensureManagedCluster(k8sClient, "drcluster2")
 
 		By("Defining a ramen configuration")
 
