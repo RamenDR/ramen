@@ -13,6 +13,7 @@ import (
 	"github.com/ramendr/ramen/controllers/volsync"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
@@ -44,6 +45,15 @@ func (r *ReplicationGroupDestinationReconciler) Reconcile(ctx context.Context, r
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	logger.Info("Get vrg from ReplicationGroupDestination")
+	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
+	if err := r.Client.Get(ctx, types.NamespacedName{
+		Name:      rgd.GetLabels()[volsync.VRGOwnerNameLabel],
+		Namespace: rgd.GetLabels()[volsync.VRGOwnerNamespaceLabel],
+	}, vrg); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	logger.Info("Get ramen config from configmap")
 
 	_, ramenConfig, err := ConfigMapGet(ctx, r.Client)
@@ -59,7 +69,7 @@ func (r *ReplicationGroupDestinationReconciler) Reconcile(ctx context.Context, r
 	result, err := statemachine.Run(
 		ctx,
 		cephfscg.NewRGDMachine(r.Client, rgd,
-			volsync.NewVSHandler(ctx, r.Client, logger, rgd,
+			volsync.NewVSHandler(ctx, r.Client, logger, vrg,
 				&ramendrv1alpha1.VRGAsyncSpec{
 					VolumeSnapshotClassSelector: rgd.Spec.VolumeSnapshotClassSelector,
 				}, defaultCephFSCSIDriverName, volSyncDestinationCopyMethodOrDefault(ramenConfig), false,
