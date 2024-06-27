@@ -174,7 +174,7 @@ var _ = Describe("DRPolicyController", func() {
 
 	createManagedClusters := func() {
 		for _, cluster := range clusters {
-			createManagedCluster(k8sClient, cluster)
+			ensureManagedCluster(k8sClient, cluster)
 		}
 	}
 

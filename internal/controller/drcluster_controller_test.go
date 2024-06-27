@@ -171,7 +171,7 @@ var _ = Describe("DRClusterController", func() {
 
 	createManagedClusters := func() {
 		for _, drcluster := range drclusters {
-			createManagedCluster(k8sClient, drcluster.Name)
+			ensureManagedCluster(k8sClient, drcluster.Name)
 		}
 	}
 

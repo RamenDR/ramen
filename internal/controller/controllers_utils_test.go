@@ -18,12 +18,13 @@ import (
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	controllers "github.com/ramendr/ramen/internal/controller"
 	"github.com/ramendr/ramen/internal/controller/util"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 )
 
-func createManagedCluster(k8sClient client.Client, cluster string) {
+func ensureManagedCluster(k8sClient client.Client, cluster string) {
 	mc := ocmv1.ManagedCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: cluster,
@@ -36,6 +37,21 @@ func createManagedCluster(k8sClient client.Client, cluster string) {
 	Expect(k8sClient.Create(context.TODO(), &mc)).To(Succeed())
 
 	updateManagedClusterStatus(k8sClient, &mc)
+}
+
+func createManagedCluster(k8sClient client.Client, cluster string) *ocmv1.ManagedCluster {
+	mc := ocmv1.ManagedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: cluster,
+		},
+		Spec: ocmv1.ManagedClusterSpec{
+			HubAcceptsClient: true,
+		},
+	}
+
+	Expect(k8sClient.Create(context.TODO(), &mc)).To(Succeed())
+
+	return &mc
 }
 
 func updateManagedClusterStatus(k8sClient client.Client, mc *ocmv1.ManagedCluster) {
@@ -245,10 +261,10 @@ func drclusterConditionExpect(
 		return
 	}
 
-	validateClusterManifest(drcluster, disabled)
+	validateClusterManifest(apiReader, drcluster, disabled)
 }
 
-func validateClusterManifest(drcluster *ramen.DRCluster, disabled bool) {
+func validateClusterManifest(apiReader client.Reader, drcluster *ramen.DRCluster, disabled bool) {
 	expectedCount := 12
 	if disabled {
 		expectedCount = 6
@@ -273,4 +289,39 @@ func validateClusterManifest(drcluster *ramen.DRCluster, disabled bool) {
 
 	Expect(manifestWork.GetAnnotations()[controllers.DRClusterNameAnnotation]).Should(Equal(clusterName))
 	// TODO: Validate fencing status
+}
+
+func verifyDRClusterConfigMW(k8sClient client.Client, managedCluster string) {
+	mw := &workv1.ManifestWork{}
+
+	Eventually(func() error {
+		err := k8sClient.Get(
+			context.TODO(),
+			types.NamespacedName{
+				Name:      fmt.Sprintf(util.ManifestWorkNameTypeFormat, util.MWTypeDRCConfig),
+				Namespace: managedCluster,
+			},
+			mw,
+		)
+
+		return err
+	}, timeout, interval).Should(BeNil())
+	// TODO: Verify MW contents
+}
+
+func ensureDRClusterConfigMWNotFound(k8sClient client.Client, managedCluster string) {
+	mw := &workv1.ManifestWork{}
+
+	Consistently(func() bool {
+		err := k8sClient.Get(
+			context.TODO(),
+			types.NamespacedName{
+				Name:      fmt.Sprintf(util.ManifestWorkNameTypeFormat, util.MWTypeDRCConfig),
+				Namespace: managedCluster,
+			},
+			mw,
+		)
+
+		return errors.IsNotFound(err)
+	}, timeout, interval).Should(BeTrue())
 }
