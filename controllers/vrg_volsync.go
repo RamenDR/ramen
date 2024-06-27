@@ -169,7 +169,7 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 
 	cg, ok := pvc.Labels[FakeCGLabel]
 	if ok {
-		v.log.Info("rdSpec has CG label", "Labels", pvc.Labels)
+		v.log.Info("PVC has CG label", "Labels", pvc.Labels)
 		cephfsCGHandler := cephfscg.NewVSCGHandler(
 			v.ctx, v.reconciler.Client, v.instance,
 			&metav1.LabelSelector{MatchLabels: map[string]string{FakeCGLabel: cg}},

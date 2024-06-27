@@ -81,6 +81,7 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	logger.Info("Get vrg from ReplicationGroupSource")
+
 	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
 	if err := r.Client.Get(ctx, types.NamespacedName{
 		Name:      rgs.GetLabels()[volsync.VRGOwnerNameLabel],
