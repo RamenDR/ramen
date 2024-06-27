@@ -307,6 +307,20 @@ func (mwu *MWUtil) generateDRCConfigManifest(cConfig rmn.DRClusterConfig) (*ocmw
 	return mwu.GenerateManifest(cConfig)
 }
 
+func ExtractDRCConfigFromManifestWork(mw *ocmworkv1.ManifestWork) (*rmn.DRClusterConfig, error) {
+	gvk := schema.GroupVersionKind{
+		Group:   rmn.GroupVersion.Group,
+		Version: rmn.GroupVersion.Version,
+		Kind:    "DRClusterConfig",
+	}
+
+	drcConfig := &rmn.DRClusterConfig{}
+
+	err := ExtractResourceFromManifestWork(mw, drcConfig, gvk)
+
+	return drcConfig, err
+}
+
 func (mwu *MWUtil) IsManifestApplied(cluster, mwType string) bool {
 	mw, err := mwu.FindManifestWork(mwu.BuildManifestWorkName(mwType), cluster)
 	if err != nil {
@@ -348,6 +362,28 @@ func Namespace(name string) *corev1.Namespace {
 		TypeMeta:   metav1.TypeMeta{Kind: "Namespace", APIVersion: "v1"},
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 	}
+}
+
+func ExtractResourceFromManifestWork(
+	mw *ocmworkv1.ManifestWork,
+	object client.Object,
+	gvk schema.GroupVersionKind,
+) error {
+	rawObject, err := GetRawExtension(mw.Spec.Workload.Manifests, gvk)
+	if err != nil {
+		return fmt.Errorf("failed fetching %s Kind from manifest %w", gvk.Kind, err)
+	}
+
+	if rawObject == nil {
+		return nil
+	}
+
+	err = json.Unmarshal(rawObject.Raw, object)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal %s Kind from manifest %w", gvk.Kind, err)
+	}
+
+	return nil
 }
 
 func GetRawExtension(
