@@ -1165,7 +1165,7 @@ func verifyVRGManifestWorkCreatedAsPrimary(namespace, managedCluster string) {
 		return err == nil
 	}, timeout, interval).Should(BeTrue())
 
-	Expect(len(createdVRGRolesManifest.Spec.Workload.Manifests)).To(Equal(10))
+	Expect(len(createdVRGRolesManifest.Spec.Workload.Manifests)).To(Equal(4))
 
 	vrgClusterRoleManifest := createdVRGRolesManifest.Spec.Workload.Manifests[0]
 	Expect(vrgClusterRoleManifest).ToNot(BeNil())
@@ -1640,7 +1640,7 @@ func fenceCluster(cluster string, manual bool) {
 	}
 
 	latestDRCluster = updateDRClusterParameters(latestDRCluster)
-	drclusterConditionExpectEventually(latestDRCluster, false, metav1.ConditionTrue,
+	drclusterConditionExpectEventually(latestDRCluster, metav1.ConditionTrue,
 		Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
 		rmn.DRClusterConditionTypeFenced)
 }
@@ -1654,7 +1654,7 @@ func unfenceCluster(cluster string, manual bool) {
 	}
 
 	latestDRCluster = updateDRClusterParameters(latestDRCluster)
-	drclusterConditionExpectEventually(latestDRCluster, false, metav1.ConditionFalse,
+	drclusterConditionExpectEventually(latestDRCluster, metav1.ConditionFalse,
 		BeElementOf(controllers.DRClusterConditionReasonUnfenced, controllers.DRClusterConditionReasonCleaning,
 			controllers.DRClusterConditionReasonClean),
 		Ignore(), rmn.DRClusterConditionTypeFenced)
