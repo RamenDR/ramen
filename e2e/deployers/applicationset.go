@@ -10,17 +10,60 @@ import (
 
 type ApplicationSet struct{}
 
-// func (a *ApplicationSet) Init() {
-// }
-
 func (a ApplicationSet) Deploy(w workloads.Workload) error {
-	util.Ctx.Log.Info("enter Deploy " + w.GetName() + "/Appset")
+	util.Ctx.Log.Info("enter Deploy " + w.GetName() + "/" + a.GetName())
 
-	return nil
+	name := GetCombinedName(a, w)
+	namespace := util.ArgocdNamespace
+
+	err := createManagedClusterSetBinding(McsbName, namespace)
+	if err != nil {
+		return err
+	}
+
+	err = createPlacement(name, namespace)
+	if err != nil {
+		return err
+	}
+
+	err = createPlacementDecisionConfigMap(name, namespace)
+	if err != nil {
+		return err
+	}
+
+	err = createApplicationSet(a, w)
+	if err != nil {
+		return err
+	}
+
+	return err
 }
 
 func (a ApplicationSet) Undeploy(w workloads.Workload) error {
-	util.Ctx.Log.Info("enter Undeploy " + w.GetName() + "/Appset")
+	util.Ctx.Log.Info("enter Undeploy " + w.GetName() + "/" + a.GetName())
+
+	name := GetCombinedName(a, w)
+	namespace := util.ArgocdNamespace
+
+	err := deleteApplicationSet(a, w)
+	if err != nil {
+		return err
+	}
+
+	err = deleteConfigMap(name, namespace)
+	if err != nil {
+		return err
+	}
+
+	err = deletePlacement(name, namespace)
+	if err != nil {
+		return err
+	}
+
+	err = deleteManagedClusterSetBinding(McsbName, namespace)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
