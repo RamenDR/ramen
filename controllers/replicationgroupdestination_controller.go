@@ -8,16 +8,22 @@ import (
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	"github.com/backube/volsync/controllers/statemachine"
+	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v7/apis/volumesnapshot/v1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/controllers/cephfscg"
+	"github.com/ramendr/ramen/controllers/util"
 	"github.com/ramendr/ramen/controllers/volsync"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 // ReplicationGroupDestinationReconciler reconciles a ReplicationGroupDestination object
@@ -95,11 +101,28 @@ func (r *ReplicationGroupDestinationReconciler) Reconcile(ctx context.Context, r
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ReplicationGroupDestinationReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	vsMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
+		func(ctx context.Context, obj client.Object) []reconcile.Request {
+			if rgdName, ok := obj.GetLabels()[util.RGDOwnerLabel]; ok {
+				return []reconcile.Request{{NamespacedName: types.NamespacedName{
+					Name:      rgdName,
+					Namespace: obj.GetNamespace(),
+				}}}
+			}
+
+			return []reconcile.Request{}
+		}))
+
 	return ctrl.NewControllerManagedBy(mgr).
 		WithOptions(ctrlcontroller.Options{
 			MaxConcurrentReconciles: getMaxConcurrentReconciles(ctrl.Log),
 		}).
 		Owns(&volsyncv1alpha1.ReplicationDestination{}).
 		For(&ramendrv1alpha1.ReplicationGroupDestination{}).
+		Watches(&snapv1.VolumeSnapshot{}, vsMapFun, builder.WithPredicates(predicate.NewPredicateFuncs(
+			func(object client.Object) bool {
+				return object.GetLabels()[util.RGDOwnerLabel] != ""
+			},
+		))).
 		Complete(r)
 }

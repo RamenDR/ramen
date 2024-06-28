@@ -29,8 +29,8 @@ Naming:
 
 The naming follow the volsync handler. Currently, in volsync handler:
 1. the replicationsource and replicationdestination have the same name with application PVC name
-1. the snapshot name of source application pvc is volsync-<PVC_NAME>-src
-2. the name of tmp pvc restored by volsync is volsync-<PVC_NAME>-src
+2. the snapshot name of source application pvc is volsync-<PVC_NAME>-src
+3. the name of tmp pvc restored by volsync is volsync-<PVC_NAME>-src
 
 In this design:
 
