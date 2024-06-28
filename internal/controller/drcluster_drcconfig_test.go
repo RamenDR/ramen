@@ -39,8 +39,6 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 		apiReader      client.Reader
 		drCluster1     *ramen.DRCluster
 		drCluster1Name = "drcluster1"
-		drpolicy       ramen.DRPolicy
-		drPolicyName   = "drpolicy0"
 		ramenConfig    *ramen.RamenConfig
 		mc             *ocmv1.ManagedCluster
 	)
@@ -146,17 +144,6 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 
 		By("creating the initial API resources")
 
-		// Initialize --- DRPolicy
-		drpolicy = ramen.DRPolicy{
-			ObjectMeta: metav1.ObjectMeta{Name: drPolicyName},
-			Spec: ramen.DRPolicySpec{
-				DRClusters:         []string{drCluster1Name, "fake"},
-				SchedulingInterval: "1m",
-			},
-		}
-
-		Expect(k8sClient.Create(context.TODO(), &drpolicy)).To(Succeed())
-
 		// Initialize --- DRCluster
 		drCluster1 = &ramen.DRCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: drCluster1Name},
@@ -174,7 +161,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred())
 	})
 
-	Describe("Test DRClusterConfig creation", Ordered, func() {
+	Describe("DRClusterConfig", Ordered, func() {
 		Context("Given ManagedCluster resource status", func() {
 			When("There is no ManagedCluster resource", func() {
 				It("reports DRCluster validated as false", func() {
@@ -189,7 +176,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					)
 				})
 				It("fails to create the DRClusterConfig manifest", func() {
-					ensureDRClusterConfigMWNotFound(k8sClient, drCluster1Name)
+					ensureDRClusterConfigMWNotFound(k8sClient, drCluster1Name, true)
 				})
 			})
 			When("ManagedCluster resource has no status", func() {
@@ -208,7 +195,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					)
 				})
 				It("fails to create the DRClusterConfig manifest", func() {
-					ensureDRClusterConfigMWNotFound(k8sClient, drCluster1Name)
+					ensureDRClusterConfigMWNotFound(k8sClient, drCluster1Name, true)
 				})
 			})
 			When("ManagedCluster resource has no claims", func() {
@@ -245,7 +232,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					)
 				})
 				It("fails to create the DRClusterConfig manifest", func() {
-					ensureDRClusterConfigMWNotFound(k8sClient, drCluster1Name)
+					ensureDRClusterConfigMWNotFound(k8sClient, drCluster1Name, true)
 				})
 			})
 			When("ManagedCluster resource is missing cluster ID claim", func() {
@@ -292,7 +279,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					)
 				})
 				It("fails to create the DRClusterConfig manifest", func() {
-					ensureDRClusterConfigMWNotFound(k8sClient, drCluster1Name)
+					ensureDRClusterConfigMWNotFound(k8sClient, drCluster1Name, true)
 				})
 			})
 			When("ManagedCluster resource is missing value for cluster ID claim", func() {
@@ -343,7 +330,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					)
 				})
 				It("fails to create the DRClusterConfig manifest", func() {
-					ensureDRClusterConfigMWNotFound(k8sClient, drCluster1Name)
+					ensureDRClusterConfigMWNotFound(k8sClient, drCluster1Name, true)
 				})
 			})
 			When("ManagedCluster resource has all required status", func() {
@@ -397,23 +384,190 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					)
 				})
 				It("creates the DRClusterConfig manifest", func() {
-					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster")
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster", []string{}, false)
 				})
 			})
 		})
 		Context("Given various DRPolicy resources", func() {
-			/* TODO:
-			- DRP with No schedule
-			- DRP1: Schedule1
-			- DRP2: Schedule1
-			- DRP3: Schedule2
-			- Delete DRP2
-			- Delete DRP1
-			- Delete DRP3
-			- Add DRP3
-			*/
+			When("There is a Sync DRPolicy", func() {
+				It("DRClusterConfig manifest has empty schedules", func() {
+					By("Creating a Sync DRPolicy")
+					syncDRPolicy := ramen.DRPolicy{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "drpolicy-sync",
+						},
+						Spec: ramen.DRPolicySpec{
+							SchedulingInterval: "",
+							DRClusters: []string{
+								drCluster1Name,
+								"fake",
+							},
+						},
+					}
+					Expect(k8sClient.Create(context.TODO(), &syncDRPolicy)).To(Succeed())
+
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster", []string{}, true)
+				})
+			})
+			When("There is an Async DRPolicy", func() {
+				It("DRClusterConfig manifest has required schedules", func() {
+					By("Creating an Async DRPolicy")
+					asyncDRPolicy := ramen.DRPolicy{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "drpolicy-async1",
+						},
+						Spec: ramen.DRPolicySpec{
+							SchedulingInterval: "1m",
+							DRClusters: []string{
+								drCluster1Name,
+								"fake",
+							},
+						},
+					}
+					Expect(k8sClient.Create(context.TODO(), &asyncDRPolicy)).To(Succeed())
+
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster", []string{"1m"}, false)
+				})
+			})
+			When("There is another Async DRPolicy with the same schedule", func() {
+				It("DRClusterConfig manifest has required schedules", func() {
+					By("Creating an Async DRPolicy")
+					asyncDRPolicy := ramen.DRPolicy{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "drpolicy-async2",
+						},
+						Spec: ramen.DRPolicySpec{
+							SchedulingInterval: "1m",
+							DRClusters: []string{
+								drCluster1Name,
+								"fake",
+							},
+						},
+					}
+					Expect(k8sClient.Create(context.TODO(), &asyncDRPolicy)).To(Succeed())
+
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster", []string{"1m"}, true)
+				})
+			})
+			When("There is another Async DRPolicy with a different schedule", func() {
+				It("DRClusterConfig manifest has required schedules", func() {
+					By("Creating an Async DRPolicy")
+					asyncDRPolicy := ramen.DRPolicy{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "drpolicy-async3",
+						},
+						Spec: ramen.DRPolicySpec{
+							SchedulingInterval: "5m",
+							DRClusters: []string{
+								drCluster1Name,
+								"fake",
+							},
+						},
+					}
+					Expect(k8sClient.Create(context.TODO(), &asyncDRPolicy)).To(Succeed())
+
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster", []string{"1m", "5m"}, false)
+				})
+			})
+			When("An Async DRPolicy with a common schedule is deleted", func() {
+				It("DRClusterConfig manifest has required schedules", func() {
+					By("Creating an Async DRPolicy")
+					asyncDRPolicy := ramen.DRPolicy{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "drpolicy-async1",
+						},
+					}
+					Expect(k8sClient.Delete(context.TODO(), &asyncDRPolicy)).To(Succeed())
+
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster", []string{"1m", "5m"}, true)
+				})
+			})
+			When("An Async DRPolicy with a unique schedule is deleted", func() {
+				It("DRClusterConfig manifest has required schedules", func() {
+					By("Creating an Async DRPolicy")
+					asyncDRPolicy := ramen.DRPolicy{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "drpolicy-async3",
+						},
+					}
+					Expect(k8sClient.Delete(context.TODO(), &asyncDRPolicy)).To(Succeed())
+
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster", []string{"1m"}, false)
+				})
+			})
+			When("A last Async DRPolicy with a unique schedule is deleted", func() {
+				It("DRClusterConfig manifest has required schedules", func() {
+					By("Creating an Async DRPolicy")
+					asyncDRPolicy := ramen.DRPolicy{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "drpolicy-async2",
+						},
+					}
+					Expect(k8sClient.Delete(context.TODO(), &asyncDRPolicy)).To(Succeed())
+
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster", []string{}, false)
+				})
+			})
+			When("An Async DRPolicy does not contain the DRCluster", func() {
+				It("DRClusterConfig manifest has required schedules", func() {
+					By("Creating an Async DRPolicy")
+					asyncDRPolicy := ramen.DRPolicy{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "drpolicy-async3",
+						},
+						Spec: ramen.DRPolicySpec{
+							SchedulingInterval: "5m",
+							DRClusters: []string{
+								"fake1",
+								"fake2",
+							},
+						},
+					}
+					Expect(k8sClient.Create(context.TODO(), &asyncDRPolicy)).To(Succeed())
+
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster", []string{}, true)
+				})
+			})
+			When("There are no DRPolicy resources containing the DRCluster", func() {
+				It("DRClusterConfig manifest has required schedules", func() {
+					By("Deleting all DRPolicy resources referencing the DRCluster")
+					syncDRPolicy := ramen.DRPolicy{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "drpolicy-sync",
+						},
+					}
+					Expect(k8sClient.Delete(context.TODO(), &syncDRPolicy)).To(Succeed())
+
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster", []string{}, true)
+				})
+			})
+			When("There are no DRPolicy resources", func() {
+				It("DRClusterConfig manifest has required schedules", func() {
+					By("Deleting all DRPolicy resources")
+					asyncDRPolicy := ramen.DRPolicy{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "drpolicy-async3",
+						},
+					}
+					Expect(k8sClient.Delete(context.TODO(), &asyncDRPolicy)).To(Succeed())
+
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster", []string{}, true)
+				})
+			})
 		})
-		// TODO:
-		// - Delete DRCluster
+		Context("When a DRCluster is deleted", func() {
+			It("Cleans up the DRClusterConfig ManifestWork", func() {
+				By("Deleting the DRCluster resource")
+				drc := ramen.DRCluster{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: drCluster1Name,
+					},
+				}
+				Expect(k8sClient.Delete(context.TODO(), &drc)).To(Succeed())
+
+				By("Ensuring the ManifestWork is not found")
+				ensureDRClusterConfigMWNotFound(k8sClient, drCluster1Name, false)
+			})
+		})
 	})
 })
