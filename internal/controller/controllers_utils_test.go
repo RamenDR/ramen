@@ -291,10 +291,16 @@ func validateClusterManifest(apiReader client.Reader, drcluster *ramen.DRCluster
 	// TODO: Validate fencing status
 }
 
-func verifyDRClusterConfigMW(k8sClient client.Client, managedCluster, clusterID string) {
+//nolint:unparam
+func verifyDRClusterConfigMW(
+	k8sClient client.Client,
+	managedCluster, clusterID string,
+	schedules []string,
+	always bool,
+) {
 	mw := &workv1.ManifestWork{}
 
-	Eventually(func() error {
+	testFunc := func() error {
 		err := k8sClient.Get(
 			context.TODO(),
 			types.NamespacedName{
@@ -303,21 +309,61 @@ func verifyDRClusterConfigMW(k8sClient client.Client, managedCluster, clusterID 
 			},
 			mw,
 		)
+		if err != nil {
+			return err
+		}
+
+		drcConfig, err := util.ExtractDRCConfigFromManifestWork(mw)
+		if err != nil {
+			return fmt.Errorf("error extracting ManifestWork from %v", mw)
+		}
+
+		if drcConfig.Spec.ClusterID != clusterID {
+			return fmt.Errorf("clusterID mismatch, expected %s got %s", clusterID, drcConfig.Spec.ClusterID)
+		}
+
+		err = equalSet(schedules, drcConfig.Spec.ReplicationSchedules)
 
 		return err
-	}, timeout, interval).Should(BeNil())
+	}
 
-	drcConfig, err := util.ExtractDRCConfigFromManifestWork(mw)
-	Expect(err != nil)
-
-	Expect(drcConfig.Spec.ClusterID == clusterID)
-	// TODO: Verify MW contents
+	if always {
+		Consistently(testFunc, timeout, interval).Should(Succeed())
+	} else {
+		Eventually(testFunc, timeout, interval).Should(Succeed())
+	}
 }
 
-func ensureDRClusterConfigMWNotFound(k8sClient client.Client, managedCluster string) {
+// equalSet determines if actual contains all and only all strings from desired
+func equalSet(desired, actual []string) error {
+	d := map[string]bool{}
+	for _, value := range desired {
+		d[value] = false
+	}
+
+	for _, value := range actual {
+		if found, ok := d[value]; !ok || found {
+			// Found a value not in desired map, or found a duplicate
+			return fmt.Errorf("mismatch, desired %v actual %v", desired, actual)
+		}
+
+		d[value] = true
+	}
+
+	// Ensure that all desired strings are found
+	for _, value := range d {
+		if !value {
+			return fmt.Errorf("mismatch, desired %v actual %v", desired, actual)
+		}
+	}
+
+	return nil
+}
+
+func ensureDRClusterConfigMWNotFound(k8sClient client.Client, managedCluster string, always bool) {
 	mw := &workv1.ManifestWork{}
 
-	Consistently(func() bool {
+	testFunc := func() bool {
 		err := k8sClient.Get(
 			context.TODO(),
 			types.NamespacedName{
@@ -328,5 +374,11 @@ func ensureDRClusterConfigMWNotFound(k8sClient client.Client, managedCluster str
 		)
 
 		return errors.IsNotFound(err)
-	}, timeout, interval).Should(BeTrue())
+	}
+
+	if always {
+		Consistently(testFunc, timeout, interval).Should(BeTrue())
+	} else {
+		Eventually(testFunc, timeout, interval).Should(BeTrue())
+	}
 }
