@@ -163,7 +163,7 @@ func (RequestsManager) RecoverRequestCreate(
 		"annotations", annotations,
 	)
 
-	restore, err := backupDummyCreateAndRestore(
+	restore, err := restoreRealCreate(
 		objectWriter{ctx: ctx, Writer: writer, log: log},
 		s3Url,
 		s3BucketName,
@@ -183,7 +183,7 @@ func (RequestsManager) RecoverRequestCreate(
 	return RestoreRequest{restore}, err
 }
 
-func backupDummyCreateAndRestore(
+func restoreRealCreate(
 	w objectWriter,
 	s3Url string,
 	s3BucketName string,
@@ -204,7 +204,7 @@ func backupDummyCreateAndRestore(
 		_, _, err := backupRequestCreate(
 			w, s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretKeyRef,
 			caCertificates,
-			backupSpecDummy(),
+			getBackupSpecFromObjectsSpec(recoverSpec.Spec),
 			requestNamespaceName, backupName,
 			labels,
 			annotations,
@@ -608,18 +608,6 @@ func backupRequest(namespaceName, name string, spec velero.BackupSpec,
 			Annotations: annotations,
 		},
 		Spec: spec,
-	}
-}
-
-func backupSpecDummy() velero.BackupSpec {
-	return velero.BackupSpec{
-		IncludedNamespaces: []string{"dummy"},
-		IncludedResources:  []string{"secrets"},
-		LabelSelector: &metav1.LabelSelector{
-			MatchLabels: map[string]string{
-				"dummyKey": "dummyValue",
-			},
-		},
 	}
 }
 
