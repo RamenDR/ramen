@@ -5,3 +5,12 @@
 ---
 resources:
   - https://github.com/kubevirt/kubevirt/releases/download/v1.2.1/kubevirt-operator.yaml
+patches:
+  # Use single replica to minimize resource usage.
+  - target:
+      kind: Deployment
+      name: virt-operator
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1

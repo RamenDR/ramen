@@ -23,3 +23,15 @@ patches:
               duration: 168h
             server:
               duration: 168h
+  # Use single replica to minimize resource usage.
+  - target:
+      kind: KubeVirt
+      name: kubevirt
+    patch: |-
+      apiVersion: kubevirt.io/v1
+      kind: Kubevirt
+      metadata:
+        name: not-used
+      spec:
+        infra:
+          replicas: 1
