@@ -183,7 +183,6 @@ var _ = Describe("DRPolicyController", func() {
 			updateDRClusterManifestWorkStatus(drcluster.Name)
 			drclusterConditionExpectEventually(
 				drcluster,
-				!ramenConfig.DrClusterOperator.DeploymentAutomationEnabled,
 				metav1.ConditionTrue,
 				Equal("Succeeded"),
 				Ignore(),

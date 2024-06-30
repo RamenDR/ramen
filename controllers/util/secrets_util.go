@@ -10,12 +10,14 @@ import (
 	//nolint:gosec
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 
 	"github.com/go-logr/logr"
 	errorswrapper "github.com/pkg/errors"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
@@ -227,64 +229,16 @@ func newPlacementRule(name string, namespace string,
 	}
 }
 
-// localSecret is added to provide for an interface that can convert the "template" value in secret.Data
-// and store it as a policy object. Currently the actual secret.Data is a map of []byte, which hence garbles
-// the value of the template secret value in the policy. Using stringData which is a map of string does not
-// work with the configuration controllers, as values from actual secret's data is encoded in base64 twice.
-// This needs to be tracked with OCM and fixed, at which point we can remove the local copy and adapt to
-// the fix.
-type localSecret struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Data              map[string]string `json:"data,omitempty"`
-}
-
-// DeepCopyObject interfaces required to use localSecret as a runtime.Object
-// Lifted from generated deep copy file for other resources
-func (in *localSecret) DeepCopyObject() runtime.Object {
-	return in.DeepCopy()
-}
-
-// DeepCopy is for copying the receiver, creating a new ClusterStatus.
-func (in *localSecret) DeepCopy() *localSecret {
-	if in == nil {
-		return nil
-	}
-
-	out := new(localSecret)
-
-	in.DeepCopyInto(out)
-
-	return out
-}
-
-// DeepCopyInto is for copying the receiver, writing into out. in must be non-nil.
-func (in *localSecret) DeepCopyInto(out *localSecret) {
-	*out = *in
-	out.TypeMeta = in.TypeMeta
-	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
-
-	if in.Data != nil {
-		in, out := &in.Data, &out.Data
-		*out = make(map[string]string, len(*in))
-
-		for key, val := range *in {
-			(*out)[key] = val
-		}
-	}
-}
-
-func newS3ConfigurationSecret(s3SecretRef corev1.SecretReference, targetns string) *localSecret {
-	return &localSecret{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Secret",
-			APIVersion: "v1",
+func newS3ConfigurationSecret(s3SecretRef corev1.SecretReference, targetns string) map[string]interface{} {
+	return map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "Secret",
+		"metadata": map[string]interface{}{
+			"name":      s3SecretRef.Name,
+			"namespace": targetns,
 		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      s3SecretRef.Name,
-			Namespace: targetns,
-		},
-		Data: map[string]string{
+		"type": "Opaque",
+		"data": map[string]string{
 			"AWS_ACCESS_KEY_ID": "{{hub fromSecret " +
 				"\"" + s3SecretRef.Namespace + "\"" + " " +
 				"\"" + s3SecretRef.Name + "\"" + " " +
@@ -297,26 +251,16 @@ func newS3ConfigurationSecret(s3SecretRef corev1.SecretReference, targetns strin
 	}
 }
 
-func newVeleroSecret(s3SecretRef corev1.SecretReference, fromNS, veleroNS, keyName string) *localSecret {
-	return &localSecret{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Secret",
-			APIVersion: "v1",
+func newVeleroSecret(s3SecretRef corev1.SecretReference, fromNS, veleroNS, keyName string) map[string]interface{} {
+	return map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "Secret",
+		"metadata": map[string]interface{}{
+			"name":      GenerateVeleroSecretName(s3SecretRef.Name),
+			"namespace": veleroNS,
 		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      GenerateVeleroSecretName(s3SecretRef.Name),
-			Namespace: veleroNS,
-		},
-		/*
-			keyName contains, base 64 encoded data as follows:
-			[default]
-			  aws_access_key_id = <key-id>
-			  aws_secret_access_key = <key>
-
-			Where, <key-id> and <key> are base 64 decoded values from looked up secret (s3SecretRef.Name)
-			in namespace (fromNS)
-		*/
-		Data: map[string]string{
+		"type": "Opaque",
+		"data": map[string]string{
 			keyName: "{{ (printf \"[default]\\n  aws_access_key_id = %s\\n  aws_secret_access_key = %s\\n\" " +
 				"((lookup \"v1\" \"Secret\" \"" + fromNS +
 				"\" \"" + s3SecretRef.Name + "\").data.AWS_ACCESS_KEY_ID | base64dec) " +
@@ -443,20 +387,31 @@ func (sutil *SecretsUtil) policyObject(
 	veleroNS string,
 ) *runtime.RawExtension {
 	s3SecretRef := corev1.SecretReference{Name: secretName, Namespace: secretNS}
-	object := &runtime.RawExtension{}
+
+	var object []interface{}
 
 	switch format {
 	case SecretFormatRamen:
-		object = &runtime.RawExtension{Object: newS3ConfigurationSecret(s3SecretRef, targetNS)}
+		object = append(object, newS3ConfigurationSecret(s3SecretRef, targetNS))
 	case SecretFormatVelero:
-		object = &runtime.RawExtension{
-			Object: newVeleroSecret(s3SecretRef, targetNS, veleroNS, VeleroSecretKeyNameDefault),
-		}
+		object = append(object, newVeleroSecret(s3SecretRef, targetNS, veleroNS, VeleroSecretKeyNameDefault))
 	default:
 		panic(unknownFormat)
 	}
 
-	return object
+	object = append(object, olmClusterRole,
+		OlmRoleBinding,
+		vrgClusterRole,
+		vrgClusterRoleBinding,
+		mModeClusterRole,
+		mModeClusterRoleBinding)
+
+	object2, err := json.Marshal(object)
+	if err != nil {
+		return nil
+	}
+
+	return &runtime.RawExtension{Raw: object2}
 }
 
 func (sutil *SecretsUtil) deletePolicyResources(
@@ -762,3 +717,95 @@ func (sutil *SecretsUtil) RemoveSecretFromCluster(
 
 	return sutil.updatePolicyResources(plRule, secret, clusterName, namespace, format, false)
 }
+
+var (
+	olmClusterRole = &rbacv1.ClusterRole{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:olm-edit"},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"operators.coreos.com"},
+				Resources: []string{"operatorgroups"},
+				Verbs:     []string{"create", "get", "list", "update", "delete"},
+			},
+		},
+	}
+
+	OlmRoleBinding = &rbacv1.RoleBinding{
+		TypeMeta: metav1.TypeMeta{Kind: "RoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "open-cluster-management:klusterlet-work-sa:agent:olm-edit",
+			Namespace: "",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "klusterlet-work-sa",
+				Namespace: "open-cluster-management-agent",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "open-cluster-management:klusterlet-work-sa:agent:olm-edit",
+		},
+	}
+
+	vrgClusterRole = &rbacv1.ClusterRole{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit"},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"ramendr.openshift.io"},
+				Resources: []string{"volumereplicationgroups"},
+				Verbs:     []string{"create", "get", "list", "update", "delete"},
+			},
+		},
+	}
+
+	vrgClusterRoleBinding = &rbacv1.ClusterRoleBinding{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit"},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "klusterlet-work-sa",
+				Namespace: "open-cluster-management-agent",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit",
+		},
+	}
+
+	mModeClusterRole = &rbacv1.ClusterRole{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:mmode-edit"},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"ramendr.openshift.io"},
+				Resources: []string{"maintenancemodes"},
+				Verbs:     []string{"create", "get", "list", "update", "delete"},
+			},
+		},
+	}
+
+	mModeClusterRoleBinding = &rbacv1.ClusterRoleBinding{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:mmode-edit"},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "klusterlet-work-sa",
+				Namespace: "open-cluster-management-agent",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "open-cluster-management:klusterlet-work-sa:agent:mmode-edit",
+		},
+	}
+)

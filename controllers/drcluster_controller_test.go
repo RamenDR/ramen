@@ -64,7 +64,6 @@ func (f FakeMCVGetter) DeleteNFManagedClusterView(
 
 func drclusterConditionExpectEventually(
 	drcluster *ramen.DRCluster,
-	disabled bool,
 	status metav1.ConditionStatus,
 	reasonMatcher,
 	messageMatcher gomegaTypes.GomegaMatcher,
@@ -72,7 +71,6 @@ func drclusterConditionExpectEventually(
 ) {
 	drclusterConditionExpect(
 		drcluster,
-		disabled,
 		status,
 		reasonMatcher,
 		messageMatcher,
@@ -83,13 +81,11 @@ func drclusterConditionExpectEventually(
 
 func drclusterConditionExpectConsistently(
 	drcluster *ramen.DRCluster,
-	disabled bool,
 	reasonMatcher,
 	messageMatcher gomegaTypes.GomegaMatcher,
 ) {
 	drclusterConditionExpect(
 		drcluster,
-		disabled,
 		metav1.ConditionTrue,
 		reasonMatcher,
 		messageMatcher,
@@ -100,7 +96,6 @@ func drclusterConditionExpectConsistently(
 
 func drclusterConditionExpect(
 	drcluster *ramen.DRCluster,
-	disabled bool,
 	status metav1.ConditionStatus,
 	reasonMatcher,
 	messageMatcher gomegaTypes.GomegaMatcher,
@@ -145,14 +140,11 @@ func drclusterConditionExpect(
 		return
 	}
 
-	validateClusterManifest(drcluster, disabled)
+	validateClusterManifest(drcluster)
 }
 
-func validateClusterManifest(drcluster *ramen.DRCluster, disabled bool) {
-	expectedCount := 10
-	if disabled {
-		expectedCount = 4
-	}
+func validateClusterManifest(drcluster *ramen.DRCluster) {
+	expectedCount := 4
 
 	clusterName := drcluster.Name
 
@@ -359,7 +351,7 @@ var _ = Describe("DRClusterController", func() {
 				drcluster.Spec.S3ProfileName = "missing"
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
 				updateDRClusterManifestWorkStatus(drcluster.Name)
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse, Equal("s3ConnectionFailed"), Ignore(),
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionFalse, Equal("s3ConnectionFailed"), Ignore(),
 					ramen.DRClusterValidated)
 			})
 		})
@@ -378,7 +370,7 @@ var _ = Describe("DRClusterController", func() {
 				drcluster.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
 				updateDRClusterManifestWorkStatus(drcluster.Name)
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse, Equal("s3ListFailed"), Ignore(),
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionFalse, Equal("s3ListFailed"), Ignore(),
 					ramen.DRClusterValidated)
 			})
 		})
@@ -387,7 +379,7 @@ var _ = Describe("DRClusterController", func() {
 				By("fencing an existing DRCluster with an invalid S3Profile")
 				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateManuallyFenced
 				drcluster = updateDRClusterParameters(drcluster)
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue,
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionTrue,
 					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
 					ramen.DRClusterConditionTypeFenced)
 			})
@@ -410,7 +402,7 @@ var _ = Describe("DRClusterController", func() {
 				drcluster.Spec.ClusterFence = ""
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
 				updateDRClusterManifestWorkStatus(drcluster.Name)
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
 					ramen.DRClusterValidated)
 			})
 		})
@@ -431,13 +423,13 @@ var _ = Describe("DRClusterController", func() {
 				drcluster.Spec.S3ProfileName = s3Profiles[5].S3ProfileName
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
 				updateDRClusterManifestWorkStatus(drcluster.Name)
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
 					ramen.DRClusterValidated)
 				By("changing the S3Profile in ramen config to an invalid value")
 				newS3Profiles := s3Profiles[0:]
 				s3Profiles[5].S3Bucket = bucketNameFail
 				s3ProfilesStore(newS3Profiles)
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse, Equal("s3ConnectionFailed"), Ignore(),
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionFalse, Equal("s3ConnectionFailed"), Ignore(),
 					ramen.DRClusterValidated)
 				// TODO: Ensure when changing S3Profile, dr-cluster's ramen config is updated in MW
 			})
@@ -459,7 +451,7 @@ var _ = Describe("DRClusterController", func() {
 				drcluster.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
 				updateDRClusterManifestWorkStatus(drcluster.Name)
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse, Equal("s3ListFailed"), Ignore(),
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionFalse, Equal("s3ListFailed"), Ignore(),
 					ramen.DRClusterValidated)
 			})
 		})
@@ -481,7 +473,7 @@ var _ = Describe("DRClusterController", func() {
 				By("creating a new DRCluster with an invalid CIDR")
 				drcluster.Spec.CIDRs = cidrs[1]
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse, Equal("ValidationFailed"), Ignore(),
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionFalse, Equal("ValidationFailed"), Ignore(),
 					ramen.DRClusterValidated)
 				updateDRClusterManifestWorkStatus(drcluster.Name)
 			})
@@ -490,7 +482,7 @@ var _ = Describe("DRClusterController", func() {
 			It("reports validated", func() {
 				drcluster.Spec.CIDRs = cidrs[0]
 				drcluster = updateDRClusterParameters(drcluster)
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
 					ramen.DRClusterValidated)
 			})
 		})
@@ -512,7 +504,7 @@ var _ = Describe("DRClusterController", func() {
 				By("creating a new DRCluster with an valid CIDR")
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
 				updateDRClusterManifestWorkStatus(drcluster.Name)
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
 					ramen.DRClusterValidated)
 			})
 		})
@@ -520,7 +512,7 @@ var _ = Describe("DRClusterController", func() {
 			It("reports NOT validated with reason ValidationFailed", func() {
 				drcluster.Spec.CIDRs = cidrs[1]
 				drcluster = updateDRClusterParameters(drcluster)
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse,
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionFalse,
 					Equal("ValidationFailed"), Ignore(), ramen.DRClusterValidated)
 			})
 		})
@@ -542,7 +534,7 @@ var _ = Describe("DRClusterController", func() {
 				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateManuallyFenced
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
 				updateDRClusterManifestWorkStatus(drcluster.Name)
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue,
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionTrue,
 					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
 					ramen.DRClusterConditionTypeFenced)
 			})
@@ -551,7 +543,7 @@ var _ = Describe("DRClusterController", func() {
 			It("reports validated with status fencing as Unfenced", func() {
 				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateManuallyUnfenced
 				drcluster = updateDRClusterParameters(drcluster)
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse,
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionFalse,
 					Equal(controllers.DRClusterConditionReasonClean), Ignore(),
 					ramen.DRClusterConditionTypeFenced)
 			})
@@ -561,7 +553,7 @@ var _ = Describe("DRClusterController", func() {
 				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateFenced
 				drcluster.Spec.CIDRs = []string{}
 				drcluster = updateDRClusterParameters(drcluster)
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse,
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionFalse,
 					Equal(controllers.DRClusterConditionReasonFenceError), Ignore(),
 					ramen.DRClusterConditionTypeFenced)
 			})
@@ -571,7 +563,7 @@ var _ = Describe("DRClusterController", func() {
 				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateFenced
 				drcluster.Spec.CIDRs = cidrs[0]
 				drcluster = updateDRClusterParameters(drcluster)
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
 					ramen.DRClusterValidated)
 			})
 		})
@@ -579,7 +571,7 @@ var _ = Describe("DRClusterController", func() {
 			It("reports fenced with reason Fencing success", func() {
 				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateFenced
 				drcluster = updateDRClusterParameters(drcluster)
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue,
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionTrue,
 					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
 					ramen.DRClusterConditionTypeFenced)
 			})
@@ -593,7 +585,7 @@ var _ = Describe("DRClusterController", func() {
 				// up the fencing resource. So, by the time this check is made,
 				// either the cluster should have been unfenced or completely
 				// cleaned
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse,
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionFalse,
 					BeElementOf(controllers.DRClusterConditionReasonUnfenced, controllers.DRClusterConditionReasonCleaning,
 						controllers.DRClusterConditionReasonClean),
 					Ignore(), ramen.DRClusterConditionTypeFenced)
@@ -609,7 +601,7 @@ var _ = Describe("DRClusterController", func() {
 				// up the fencing resource. So, by the time this check is made,
 				// either the cluster should have been unfenced or completely
 				// cleaned
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse,
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionFalse,
 					BeElementOf(controllers.DRClusterConditionReasonUnfenced, controllers.DRClusterConditionReasonCleaning,
 						controllers.DRClusterConditionReasonClean),
 					Ignore(), ramen.DRClusterConditionTypeFenced)
@@ -619,7 +611,7 @@ var _ = Describe("DRClusterController", func() {
 			It("reports validated with status fencing as Unfenced", func() {
 				drcluster.Spec.ClusterFence = ""
 				drcluster = updateDRClusterParameters(drcluster)
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse,
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionFalse,
 					Equal(controllers.DRClusterConditionReasonClean), Ignore(),
 					ramen.DRClusterConditionTypeFenced)
 			})
@@ -643,7 +635,7 @@ var _ = Describe("DRClusterController", func() {
 				drcluster.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
 				updateDRClusterManifestWorkStatus(drcluster.Name)
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue,
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionTrue,
 					Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
 					ramen.DRClusterConditionTypeFenced)
 			})
@@ -657,7 +649,7 @@ var _ = Describe("DRClusterController", func() {
 			It("reports validated with status fencing as Unfenced", func() {
 				drcluster.Spec.ClusterFence = ""
 				drcluster = updateDRClusterParameters(drcluster)
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionFalse,
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionFalse,
 					Equal(controllers.DRClusterConditionReasonClean), Ignore(),
 					ramen.DRClusterConditionTypeFenced)
 			})
@@ -683,7 +675,6 @@ var _ = Describe("DRClusterController", func() {
 				drcluster.Name = "drc-missing"
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
 				drclusterConditionExpectEventually(drcluster,
-					false,
 					metav1.ConditionFalse,
 					Equal("DrClustersDeployFailed"),
 					Ignore(),
@@ -696,7 +687,7 @@ var _ = Describe("DRClusterController", func() {
 				drcluster = drclusters[0].DeepCopy()
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
 				updateDRClusterManifestWorkStatus(drcluster.Name)
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
 					ramen.DRClusterValidated)
 			})
 		})
@@ -719,13 +710,13 @@ var _ = Describe("DRClusterController", func() {
 				By("creating a valid DRCluster")
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
 				updateDRClusterManifestWorkStatus(drcluster.Name)
-				drclusterConditionExpectEventually(drcluster, false, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
+				drclusterConditionExpectEventually(drcluster, metav1.ConditionTrue, Equal("Succeeded"), Ignore(),
 					ramen.DRClusterValidated)
 				By("updating ramen config to NOT auto deploy managed cluster components")
 				ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = false
 				ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = false
 				configMapUpdate()
-				drclusterConditionExpectConsistently(drcluster, true, Equal("Succeeded"), Ignore())
+				drclusterConditionExpectConsistently(drcluster, Equal("Succeeded"), Ignore())
 			})
 		})
 		When("configuration automation is turned ON after being OFF", func() {
@@ -734,7 +725,7 @@ var _ = Describe("DRClusterController", func() {
 				ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = true
 				ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = true
 				configMapUpdate()
-				drclusterConditionExpectConsistently(drcluster, false, Equal("Succeeded"), Ignore())
+				drclusterConditionExpectConsistently(drcluster, Equal("Succeeded"), Ignore())
 			})
 		})
 		When("configuration automation is ON and CSVersion in configuration changes", func() {
@@ -742,7 +733,7 @@ var _ = Describe("DRClusterController", func() {
 				By("updating ramen config to change CSV version")
 				ramenConfig.DrClusterOperator.ClusterServiceVersionName = "fake.v0.0.2"
 				configMapUpdate()
-				drclusterConditionExpectConsistently(drcluster, false, Equal("Succeeded"), Ignore())
+				drclusterConditionExpectConsistently(drcluster, Equal("Succeeded"), Ignore())
 				inspectClusterManifestSubscriptionCSV(false, "fake.v0.0.2", drcluster)
 			})
 		})
@@ -751,7 +742,7 @@ var _ = Describe("DRClusterController", func() {
 				By("updating ramen config to change Channel")
 				ramenConfig.DrClusterOperator.ChannelName = "fake"
 				configMapUpdate()
-				drclusterConditionExpectConsistently(drcluster, false, Equal("Succeeded"), Ignore())
+				drclusterConditionExpectConsistently(drcluster, Equal("Succeeded"), Ignore())
 				inspectClusterManifestSubscriptionCSV(true, "fake.v0.0.2", drcluster)
 			})
 		})
