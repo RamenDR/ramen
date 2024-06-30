@@ -8,6 +8,7 @@ name: "e2e"
 ramen:
   hub: hub
   clusters: [dr1, dr2]
+  distribution: k8s
   topology: regional-dr
 
 templates:
