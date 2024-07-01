@@ -36,6 +36,11 @@ const (
 
 	// Annotation for application namespace on the managed cluster
 	DRPCAppNamespace = "drplacementcontrol.ramendr.openshift.io/app-namespace"
+
+	// vrg-operational-mode annotation will be used to indicate the current operational mode of the VRG resource.
+	// This annotation helps track whether the resource is currently functioning as Primary or Secondary, even when
+	// it is in the middle of transitioning between these states.
+	VRGOpModeAnnoKey = "drplacementcontrol.ramendr.openshift.io/vrg-operational-mode"
 )
 
 var (
@@ -800,6 +805,42 @@ func checkActivationForStorageIdentifier(
 	return false
 }
 
+func (d *DRPCInstance) isCurrentPrimaryValidForRelocation(preferredCluster string) (string, bool, error) {
+	currentPrimary, secondaries, err := d.validateAndSelectCurrentPrimary(preferredCluster)
+	d.log.Info("isCurrentPrimaryValidForRelocation: ", "cp", currentPrimary, "secondaries", secondaries, "err", err)
+
+	if err != nil {
+		return "", false, err
+	}
+
+	if currentPrimary == "" {
+		if d.isPrimaryTransitioning(secondaries) {
+			return "", true, nil
+		}
+	}
+
+	return currentPrimary, false, nil
+}
+
+// isPrimaryTransitioning checks if any of the secondary clusters are in the process of transitioning.
+// It iterates through the list of secondary clusters, comparing the current replication state
+// (from annotations) to the desired replication state (from the spec). If any of the secondary
+// clusters have a current state (from annotation) that does not match the desired state, it returns true,
+// indicating that a transition is in progress. If all secondary clusters have matching states, it returns false.
+func (d *DRPCInstance) isPrimaryTransitioning(secondaries []string) bool {
+	for _, secondaryCluster := range secondaries {
+		vrg := d.vrgs[secondaryCluster]
+		currentState := rmn.ReplicationState(vrg.Annotations[VRGOpModeAnnoKey])
+		desiredState := vrg.Spec.ReplicationState
+
+		if currentState != desiredState {
+			return true
+		}
+	}
+
+	return false
+}
+
 // runRelocate checks if pre-conditions for relocation are met, and if so performs the relocation
 // Pre-requisites for relocation are checked as follows:
 //   - The exists at least one VRG across clusters (there is no state where we do not have a VRG as
@@ -819,7 +860,7 @@ func checkActivationForStorageIdentifier(
 //   - Check if current primary (that is not the preferred cluster), is ready to switch over
 //   - Relocate!
 //
-//nolint:gocognit,cyclop,funlen
+//nolint:gocognit,cyclop,funlen,gocyclo
 func (d *DRPCInstance) RunRelocate() (bool, error) {
 	d.log.Info("Entering RunRelocate", "state", d.getLastDRState(), "progression", d.getProgression())
 
@@ -829,16 +870,21 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	preferredClusterNamespace := d.instance.Spec.PreferredCluster
 
 	// Before relocating to the preferredCluster, do a quick validation and select the current preferred cluster.
-	curHomeCluster, err := d.validateAndSelectCurrentPrimary(preferredCluster)
-	if err != nil {
+	currentPrimary, transitioning, err := d.isCurrentPrimaryValidForRelocation(preferredCluster)
+	if (currentPrimary == "" && !transitioning) || err != nil {
+		errMsg := "The DRPC is currently in the process of transitioning to secondary"
+		if err != nil {
+			errMsg = err.Error()
+		}
+
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
-			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), err.Error())
+			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), errMsg)
 
 		return !done, err
 	}
 
 	// If already relocated to preferredCluster; ensure required setup is complete
-	if curHomeCluster != "" && d.vrgExistsAndPrimary(preferredCluster) {
+	if currentPrimary != "" && d.vrgExistsAndPrimary(preferredCluster) {
 		d.setDRState(rmn.Relocating)
 		d.updatePreferredDecision()
 
@@ -860,9 +906,9 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	d.setStatusInitiating()
 
 	// Check if current primary (that is not the preferred cluster), is ready to switch over
-	if curHomeCluster != "" && curHomeCluster != preferredCluster &&
-		!d.readyToSwitchOver(curHomeCluster, preferredCluster) {
-		errMsg := fmt.Sprintf("current cluster (%s) has not completed protection actions", curHomeCluster)
+	if currentPrimary != "" && currentPrimary != preferredCluster &&
+		!d.readyToSwitchOver(currentPrimary, preferredCluster) {
+		errMsg := fmt.Sprintf("current cluster (%s) has not completed protection actions", currentPrimary)
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), errMsg)
 
@@ -873,8 +919,8 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 		return !done, fmt.Errorf("clean up secondaries is pending, peer is not ready")
 	}
 
-	if curHomeCluster != "" && curHomeCluster != preferredCluster {
-		result, err := d.quiesceAndRunFinalSync(curHomeCluster)
+	if currentPrimary != "" && currentPrimary != preferredCluster {
+		result, err := d.quiesceAndRunFinalSync(currentPrimary)
 		if err != nil {
 			return !done, err
 		}
@@ -1093,25 +1139,25 @@ func (d *DRPCInstance) selectCurrentPrimaryAndSecondaries() (string, []string) {
 	return primaryVRG, secondaryVRGs
 }
 
-func (d *DRPCInstance) validateAndSelectCurrentPrimary(preferredCluster string) (string, error) {
+func (d *DRPCInstance) validateAndSelectCurrentPrimary(preferredCluster string) (string, []string, error) {
 	// Relocation requires preferredCluster to be configured
 	if preferredCluster == "" {
-		return "", fmt.Errorf("preferred cluster not valid")
+		return "", []string{}, fmt.Errorf("preferred cluster not valid")
 	}
 
 	// No VRGs found, invalid state, possibly deployment was not started
 	if len(d.vrgs) == 0 {
-		return "", fmt.Errorf("no VRGs exists. Can't relocate")
+		return "", []string{}, fmt.Errorf("no VRGs exists. Can't relocate")
 	}
 
 	// Check for at most a single cluster in primary state
 	if d.areMultipleVRGsPrimary() {
-		return "", fmt.Errorf("multiple primaries in transition detected")
+		return "", []string{}, fmt.Errorf("multiple primaries in transition detected")
 	}
 	// Pre-relocate cleanup
-	homeCluster, _ := d.selectCurrentPrimaryAndSecondaries()
+	homeCluster, secondaries := d.selectCurrentPrimaryAndSecondaries()
 
-	return homeCluster, nil
+	return homeCluster, secondaries, nil
 }
 
 // readyToSwitchOver checks App resources are ready and the cluster data has been protected.
@@ -1590,6 +1636,7 @@ func (d *DRPCInstance) generateVRG(dstCluster string, repState rmn.ReplicationSt
 				DestinationClusterAnnotationKey: dstCluster,
 				DoNotDeletePVCAnnotation:        d.instance.GetAnnotations()[DoNotDeletePVCAnnotation],
 				DRPCUIDAnnotation:               string(d.instance.UID),
+				VRGOpModeAnnoKey:                string(repState),
 			},
 		},
 		Spec: rmn.VolumeReplicationGroupSpec{

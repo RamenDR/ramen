@@ -1208,6 +1208,7 @@ func verifyVRGManifestWorkCreatedAsPrimary(namespace, managedCluster string) {
 	Expect(vrg.Name).Should(Equal(DRPCCommonName))
 	Expect(vrg.Spec.PVCSelector.MatchLabels["appclass"]).Should(Equal("gold"))
 	Expect(vrg.Spec.ReplicationState).Should(Equal(rmn.Primary))
+	Expect(vrg.Annotations[controllers.VRGOpModeAnnoKey]).Should(Equal(string(rmn.Primary)))
 
 	// ensure DRPC copied KubeObjectProtection contents to VRG
 	drpc := getLatestDRPC(namespace)
@@ -1721,6 +1722,10 @@ func verifyFailoverToSecondary(placementObj client.Object, toCluster string,
 	decision := getLatestUserPlacementDecision(placementObj.GetName(), placementObj.GetNamespace())
 	Expect(decision.ClusterName).To(Equal(toCluster))
 	Expect(drpc.GetAnnotations()[controllers.LastAppDeploymentCluster]).To(Equal(toCluster))
+	vrg, err := getVRGFromManifestWork(toCluster, drpc.GetNamespace())
+	Expect(err).NotTo(HaveOccurred())
+	Expect(vrg.Spec.ReplicationState).Should(Equal(rmn.Primary))
+	Expect(vrg.Annotations[controllers.VRGOpModeAnnoKey]).Should(Equal(string(rmn.Primary)))
 }
 
 func verifyActionResultForPlacement(placement *clrapiv1beta1.Placement, homeCluster string, plType PlacementType) {
