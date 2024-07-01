@@ -1,0 +1,27 @@
+# permissions for end users to view drclusterconfigs.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: drclusterconfig-viewer-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: ramen
+    app.kubernetes.io/part-of: ramen
+    app.kubernetes.io/managed-by: kustomize
+  name: drclusterconfig-viewer-role
+rules:
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - drclusterconfigs
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - drclusterconfigs/status
+  verbs:
+  - get

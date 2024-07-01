@@ -1,0 +1,12 @@
+apiVersion: ramendr.openshift.io/v1alpha1
+kind: DRClusterConfig
+metadata:
+  labels:
+    app.kubernetes.io/name: drclusterconfig
+    app.kubernetes.io/instance: drclusterconfig-sample
+    app.kubernetes.io/part-of: ramen
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: ramen
+  name: drclusterconfig-sample
+spec:
+  # TODO(user): Add fields here

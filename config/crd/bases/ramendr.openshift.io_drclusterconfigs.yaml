@@ -1,0 +1,70 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.14.0
+  name: drclusterconfigs.ramendr.openshift.io
+spec:
+  group: ramendr.openshift.io
+  names:
+    kind: DRClusterConfig
+    listKind: DRClusterConfigList
+    plural: drclusterconfigs
+    singular: drclusterconfig
+  scope: Cluster
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: DRClusterConfig is the Schema for the drclusterconfigs API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              DRClusterConfigSpec defines the desired state of DRClusterConfig
+              It carries information regarding the cluster identity as known at the OCM hub cluster. It is also used to
+              advertise required replication schedules on the cluster, if an equivalent DRPolicy resource is created for
+              the same at the hub cluster.
+              It is expected to be watched and used by storage providers that require meta information regarding the cluster
+              and to prepare and manage required storage resources.
+            properties:
+              clusterID:
+                description: ClusterID would carry the ManagedCluster identity from
+                  the ManagedCluster claim value for `id.k8s.io`
+                type: string
+              replicationSchedules:
+                description: |-
+                  ReplicationSchedules desired from storage providers for replicating Persistent Volume data to a peer cluster.
+                  Values are in the form <num><m,h,d>. Where <num> is a number, 'm' indicates minutes, 'h' means hours and
+                  'd' stands for days.
+                  Typically used to generate VolumeReplicationClass resources with the desired schedules by storage
+                  provider reconcilers
+                items:
+                  type: string
+                type: array
+            type: object
+          status:
+            description: DRClusterConfigStatus defines the observed state of DRClusterConfig
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
