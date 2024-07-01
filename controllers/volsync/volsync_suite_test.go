@@ -5,6 +5,7 @@ package volsync_test
 
 import (
 	"context"
+	"log"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,6 +20,7 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	cfgpolicyv1 "open-cluster-management.io/config-policy-controller/api/v1"
 	policyv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -29,6 +31,7 @@ import (
 	metrics "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
+	"github.com/ramendr/ramen/controllers"
 	"github.com/ramendr/ramen/controllers/util"
 )
 
@@ -56,6 +59,9 @@ var (
 	volumeSnapshotClassB *snapv1.VolumeSnapshotClass
 
 	totalVolumeSnapshotClassCount = 0
+
+	skipCleanup bool
+	cfg         *rest.Config
 )
 
 func TestVolsync(t *testing.T) {
@@ -64,6 +70,8 @@ func TestVolsync(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
+	var err error
+
 	logger = zap.New(zap.UseFlagOptions(&zap.Options{
 		Development: true,
 		DestWriter:  GinkgoWriter,
@@ -85,6 +93,11 @@ var _ = BeforeSuite(func() {
 		Expect(os.Setenv("KUBEBUILDER_ASSETS", string(content))).To(Succeed())
 	}
 
+	skipCleanupEnv, set := os.LookupEnv("SKIP_CLEANUP")
+	if set && (skipCleanupEnv == "true" || skipCleanupEnv == "1") {
+		skipCleanup = true
+	}
+
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
@@ -93,7 +106,7 @@ var _ = BeforeSuite(func() {
 		},
 	}
 
-	cfg, err := testEnv.Start()
+	cfg, err = testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
@@ -217,6 +230,19 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
+	if skipCleanup {
+		kubeConfigContent, err := controllers.ConvertRestConfigToKubeConfig(cfg)
+		if err != nil {
+			log.Fatalf("Failed to convert rest.Config to kubeconfig: %v", err)
+		}
+
+		filePath := "../../testbin/kubeconfig.yaml"
+		if err := controllers.WriteKubeConfigToFile(kubeConfigContent, filePath); err != nil {
+			log.Fatalf("Failed to write kubeconfig file: %v", err)
+		}
+
+		return
+	}
 	cancel()
 	By("tearing down the test environment")
 	err := testEnv.Stop()
