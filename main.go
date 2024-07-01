@@ -18,6 +18,7 @@ import (
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
 	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
+	volgroup "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
 	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
@@ -111,6 +112,7 @@ func configureController(ramenConfig *ramendrv1alpha1.RamenConfig) error {
 	} else {
 		utilruntime.Must(velero.AddToScheme(scheme))
 		utilruntime.Must(volrep.AddToScheme(scheme))
+		utilruntime.Must(volgroup.AddToScheme(scheme))
 		utilruntime.Must(volsyncv1alpha1.AddToScheme(scheme))
 		utilruntime.Must(snapv1.AddToScheme(scheme))
 		utilruntime.Must(recipe.AddToScheme(scheme))

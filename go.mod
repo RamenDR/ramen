@@ -19,6 +19,7 @@ require (
 	github.com/operator-framework/api v0.17.6
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.16.0
+	github.com/rakeshgm/volgroup-shim-operator v0.0.0-20240410132836-84b7653ba1ad
 	github.com/ramendr/ramen/api v0.0.0-20240117171503-e11c56eac24d
 	github.com/ramendr/recipe v0.0.0-20230817160432-729dc7fd8932
 	github.com/stolostron/multicloud-operators-foundation v0.0.0-20220824091202-e9cd9710d009

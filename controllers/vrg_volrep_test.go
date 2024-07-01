@@ -18,6 +18,8 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
 	gomegatypes "github.com/onsi/gomega/types"
+	volgroup "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
+	volgroupController "github.com/rakeshgm/volgroup-shim-operator/controllers"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	vrgController "github.com/ramendr/ramen/controllers"
 	"github.com/ramendr/ramen/controllers/util"
@@ -578,6 +580,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgVRDeleteEnsureTestCase.promoteVolReps()
 			vrgVRDeleteEnsureTestCase.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
 		})
+		//nolint:dupl
 		It("ensures orderly cleanup post VolumeReplication deletion", func() {
 			By("Protecting the VolumeReplication resources from deletion")
 			vrgVRDeleteEnsureTestCase.protectDeletionOfVolReps()
@@ -612,6 +615,149 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgVRDeleteEnsureTestCase.cleanupNamespace()
 			vrgVRDeleteEnsureTestCase.cleanupSC()
 			vrgVRDeleteEnsureTestCase.cleanupVRC()
+		})
+	})
+
+	// Test VRG finalizer removal during deletion is deferred till VGR is deleted
+	var vrgVGRDeleteEnsureTestCase *vrgTest
+	Context("in primary state", func() {
+		createTestTemplate := &template{
+			ClaimBindInfo:          corev1.ClaimBound,
+			VolumeBindInfo:         corev1.VolumeBound,
+			schedulingInterval:     "1h",
+			storageClassName:       "manual",
+			replicationClassName:   "test-replicationclass",
+			vrcProvisioner:         "manual.storage.com",
+			scProvisioner:          "manual.storage.com",
+			replicationClassLabels: map[string]string{"protection": "ramen"},
+		}
+		It("sets up PVCs, PVs and VRGs (with s3 stores that fail uploads)", func() {
+			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			vrgVGRDeleteEnsureTestCase = newVRGTestCaseCreate(1, createTestTemplate, true, false)
+			vrgVGRDeleteEnsureTestCase.repGroup = true
+			vrgVGRDeleteEnsureTestCase.VRGTestCaseStart()
+		})
+		It("waits for VRG to create a VGR for all PVCs", func() {
+			expectedVRCount := 1
+			vrgVGRDeleteEnsureTestCase.waitForVGRCountToMatch(expectedVRCount)
+		})
+		It("waits for VRG status to match", func() {
+			vrgVGRDeleteEnsureTestCase.promoteVolGroupReps()
+			vrgVGRDeleteEnsureTestCase.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
+		})
+		//nolint:dupl
+		It("ensures orderly cleanup post VolumeGroupReplication deletion", func() {
+			By("Protecting the VolumeGroupReplication resources from deletion")
+			vrgVGRDeleteEnsureTestCase.protectDeletionOfVolGroupReps()
+
+			By("Starting the VRG deletion process")
+			vrgVGRDeleteEnsureTestCase.cleanupPVCs(pvcProtectedVerify, vrAndPvcDeletionTimestampsRecentVerify)
+			vrg := vrgVGRDeleteEnsureTestCase.getVRG()
+			Expect(k8sClient.Delete(context.TODO(), vrg)).To(Succeed())
+
+			By("Ensuring VRG is not deleted till VGR is present")
+			Consistently(apiReader.Get, vrgtimeout, vrginterval).
+				WithArguments(context.TODO(), vrgVGRDeleteEnsureTestCase.vrgNamespacedName(), vrg).
+				Should(Succeed(), "while waiting for VRG %v to remain undeleted",
+					vrgVGRDeleteEnsureTestCase.vrgNamespacedName())
+
+			By("Un-protecting the VolumeReplication resources to ensure their deletion")
+			vrgVGRDeleteEnsureTestCase.unprotectDeletionOfVolGroupReps()
+
+			By("Ensuring VRG is deleted eventually as a result")
+			var i int
+			Eventually(func() error {
+				i++
+
+				return apiReader.Get(context.TODO(), vrgVGRDeleteEnsureTestCase.vrgNamespacedName(), vrg)
+			}, vrgtimeout*2, vrginterval).
+				Should(MatchError(errors.NewNotFound(schema.GroupResource{
+					Group:    ramendrv1alpha1.GroupVersion.Group,
+					Resource: "volumereplicationgroups",
+				}, vrgVGRDeleteEnsureTestCase.vrgName)),
+					"polled %d times for VRG to be garbage collected\n"+format.Object(*vrg, 1), i)
+
+			vrgVGRDeleteEnsureTestCase.cleanupNamespace()
+			vrgVGRDeleteEnsureTestCase.cleanupSC()
+			vrgVGRDeleteEnsureTestCase.cleanupVGRC()
+		})
+	})
+
+	// Try the simple case of creating VRG, PVC, PV and
+	// check whether VolGroupRep resources are created or not
+	var vrgCreateVGRTestCase *vrgTest
+	Context("in primary state", func() {
+		createTestTemplate := &template{
+			ClaimBindInfo:          corev1.ClaimBound,
+			VolumeBindInfo:         corev1.VolumeBound,
+			schedulingInterval:     "1h",
+			storageClassName:       "manual",
+			replicationClassName:   "test-replicationclass",
+			vrcProvisioner:         "manual.storage.com",
+			scProvisioner:          "manual.storage.com",
+			replicationClassLabels: map[string]string{"protection": "ramen"},
+		}
+		It("sets up PVCs, PVs and VRGs", func() {
+			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			vrgCreateVGRTestCase = newVRGTestCaseCreate(3, createTestTemplate, true, false)
+			vrgCreateVGRTestCase.repGroup = true
+			vrgCreateVGRTestCase.VRGTestCaseStart()
+		})
+		It("waits for VRG to create a VGR for all PVCs", func() {
+			expectedVGRCount := 1
+			vrgCreateVGRTestCase.waitForVGRCountToMatch(expectedVGRCount)
+		})
+		It("waits for VRG status to match", func() {
+			vrgCreateVGRTestCase.promoteVolGroupReps()
+			vrgCreateVGRTestCase.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
+		})
+		It("cleans up after testing", func() {
+			vrgCreateVGRTestCase.cleanupProtected()
+		})
+	})
+
+	// Creates VRG. PVCs and PV are created with Status.Phase
+	// set to pending and VolGroupRep should not be created until
+	// all the PVCs and PVs are bound. So, these tests then
+	// change the Status.Phase of PVCs and PVs to bound state,
+	// and then checks whether VolGroupRep
+	// resource have been created or not.
+	var vrgPVCnotBoundVGRTestCase *vrgTest
+	Context("in primary state", func() {
+		createTestTemplate := &template{
+			ClaimBindInfo:          corev1.ClaimPending,
+			VolumeBindInfo:         corev1.VolumePending,
+			schedulingInterval:     "1h",
+			storageClassName:       "manual",
+			replicationClassName:   "test-replicationclass",
+			vrcProvisioner:         "manual.storage.com",
+			scProvisioner:          "manual.storage.com",
+			replicationClassLabels: map[string]string{"protection": "ramen"},
+		}
+		It("sets up PVCs, PVs and VRGs", func() {
+			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			vrgPVCnotBoundVGRTestCase = newVRGTestCaseCreate(3, createTestTemplate, false, false)
+			vrgPVCnotBoundVGRTestCase.repGroup = true
+			vrgPVCnotBoundVGRTestCase.VRGTestCaseStart()
+		})
+		It("expect no VR to be created as PVC not bound", func() {
+			expectedVGRCount := 0
+			vrgPVCnotBoundVGRTestCase.waitForVGRCountToMatch(expectedVGRCount)
+		})
+		It("bind each pv to corresponding pvc", func() {
+			vrgPVCnotBoundVGRTestCase.bindPVAndPVC()
+			vrgPVCnotBoundVGRTestCase.verifyPVCBindingToPV(true)
+		})
+		It("waits for VRG to create one VGR resource for all PVCs", func() {
+			expectedVGRCount := 1
+			vrgPVCnotBoundVGRTestCase.waitForVGRCountToMatch(expectedVGRCount)
+		})
+		It("waits for VRG status to match", func() {
+			vrgPVCnotBoundVGRTestCase.promoteVolGroupReps()
+			vrgPVCnotBoundVGRTestCase.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
+		})
+		It("cleans up after testing", func() {
+			vrgPVCnotBoundVGRTestCase.cleanupProtected()
 		})
 	})
 
@@ -1025,6 +1171,7 @@ type vrgTest struct {
 	skipCreationPVandPVC bool
 	checkBind            bool
 	vrgFirst             bool
+	repGroup             bool
 	template             *template
 }
 
@@ -1083,7 +1230,12 @@ func (v *vrgTest) VRGTestCaseStart() {
 	By("Creating namespace " + v.namespace)
 	v.createNamespace()
 	v.createSC(v.template)
-	v.createVRC(v.template)
+
+	if v.repGroup {
+		v.createVGRC(v.template)
+	} else {
+		v.createVRC(v.template)
+	}
 
 	if v.vrgFirst {
 		v.createVRG()
@@ -1448,6 +1600,41 @@ func (v *vrgTest) createVRC(testTemplate *template) {
 		"failed to create/get VolumeReplicationClass %s/%s", v.replicationClass, v.vrgName)
 }
 
+func (v *vrgTest) createVGRC(testTemplate *template) {
+	By("creating VGRC " + v.replicationClass)
+
+	parameters := make(map[string]string)
+
+	if testTemplate.schedulingInterval != "" {
+		parameters["schedulingInterval"] = testTemplate.schedulingInterval
+	}
+
+	vrc := &volgroup.VolumeGroupReplicationClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      v.replicationClass,
+			Namespace: v.namespace,
+		},
+		Spec: volgroup.VolumeGroupReplicationClassSpec{
+			Provisioner: testTemplate.vrcProvisioner,
+			Parameters:  parameters,
+		},
+	}
+
+	if len(testTemplate.replicationClassLabels) > 0 {
+		vrc.ObjectMeta.Labels = testTemplate.replicationClassLabels
+	}
+
+	err := k8sClient.Create(context.TODO(), vrc)
+	if err != nil {
+		if errors.IsAlreadyExists(err) {
+			err = k8sClient.Get(context.TODO(), types.NamespacedName{Name: v.replicationClass}, vrc)
+		}
+	}
+
+	Expect(err).NotTo(HaveOccurred(),
+		"failed to create/get VolumeGroupReplicationClass %s/%s", v.replicationClass, v.vrgName)
+}
+
 func (v *vrgTest) createSC(testTemplate *template) {
 	By("creating StorageClass " + v.storageClass)
 
@@ -1727,6 +1914,7 @@ func (v *vrgTest) cleanup(
 	v.cleanupNamespace()
 	v.cleanupSC()
 	v.cleanupVRC()
+	v.cleanupVGRC()
 }
 
 func (v *vrgTest) cleanupPVCs(
@@ -1981,6 +2169,26 @@ func (v *vrgTest) cleanupVRC() {
 		"failed to delete replicationClass %s", v.replicationClass)
 }
 
+func (v *vrgTest) cleanupVGRC() {
+	key := types.NamespacedName{
+		Name:      v.replicationClass,
+		Namespace: v.namespace,
+	}
+
+	vgrc := &volgroup.VolumeGroupReplicationClass{}
+
+	err := k8sClient.Get(context.TODO(), key, vgrc)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return
+		}
+	}
+
+	err = k8sClient.Delete(context.TODO(), vgrc)
+	Expect(err).To(BeNil(),
+		"failed to delete replicationClass %s", v.replicationClass)
+}
+
 func (v *vrgTest) cleanupNamespace() {
 	By("deleting namespace " + v.namespace)
 
@@ -2013,8 +2221,33 @@ func (v *vrgTest) waitForVRCountToMatch(vrCount int) {
 		vrCount, v.vrgName, v.namespace)
 }
 
+func (v *vrgTest) waitForVGRCountToMatch(vgrCount int) {
+	By("Waiting for VRs count to match " + v.namespace)
+
+	Eventually(func() int {
+		listOptions := &client.ListOptions{
+			Namespace: v.namespace,
+		}
+		volGroupRepList := &volgroup.VolumeGroupReplicationList{}
+		err := k8sClient.List(context.TODO(), volGroupRepList, listOptions)
+		Expect(err).NotTo(HaveOccurred(),
+			"failed to get a list of VGRs in namespace %s", v.namespace)
+
+		return len(volGroupRepList.Items)
+	}, timeout, interval).Should(BeNumerically("==", vgrCount),
+		"while waiting for VGR count of %d in VRG %s of namespace %s",
+		vgrCount, v.vrgName, v.namespace)
+}
+
 func (v *vrgTest) promoteVolReps() {
 	v.promoteVolRepsAndDo(func(index, count int) {
+		// VRG should not be ready until last VolRep is ready.
+		v.verifyVRGStatusExpectation(index == count-1, vrgController.VRGConditionReasonReady)
+	})
+}
+
+func (v *vrgTest) promoteVolGroupReps() {
+	v.promoteVolGroupRepsAndDo(func(index, count int) {
 		// VRG should not be ready until last VolRep is ready.
 		v.verifyVRGStatusExpectation(index == count-1, vrgController.VRGConditionReasonReady)
 	})
@@ -2024,6 +2257,7 @@ func (v *vrgTest) promoteVolRepsWithoutVrgStatusCheck() {
 	v.promoteVolRepsAndDo(func(index, count int) {})
 }
 
+//nolint:dupl
 func (v *vrgTest) promoteVolRepsAndDo(do func(int, int)) {
 	By("Promoting VolumeReplication resources " + v.namespace)
 
@@ -2080,6 +2314,63 @@ func (v *vrgTest) promoteVolRepsAndDo(do func(int, int)) {
 	}
 }
 
+// nolint: dupl
+func (v *vrgTest) promoteVolGroupRepsAndDo(do func(int, int)) {
+	By("Promoting VolumeGroupReplication resources " + v.namespace)
+
+	volGroupRepList := &volgroup.VolumeGroupReplicationList{}
+	listOptions := &client.ListOptions{
+		Namespace: v.namespace,
+	}
+	err := k8sClient.List(context.TODO(), volGroupRepList, listOptions)
+	Expect(err).NotTo(HaveOccurred(), "failed to get a list of VRs in namespace %s", v.namespace)
+
+	for index := range volGroupRepList.Items {
+		volGroup := volGroupRepList.Items[index]
+
+		volGroupRepStatus := volgroup.VolumeGroupReplicationStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:               volgroupController.ConditionCompleted,
+					Reason:             volgroupController.Promoted,
+					ObservedGeneration: volGroup.Generation,
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.NewTime(time.Now()),
+				},
+				{
+					Type:               volgroupController.ConditionDegraded,
+					Reason:             volgroupController.Healthy,
+					ObservedGeneration: volGroup.Generation,
+					Status:             metav1.ConditionFalse,
+					LastTransitionTime: metav1.NewTime(time.Now()),
+				},
+				{
+					Type:               volgroupController.ConditionResyncing,
+					Reason:             volgroupController.NotResyncing,
+					ObservedGeneration: volGroup.Generation,
+					Status:             metav1.ConditionFalse,
+					LastTransitionTime: metav1.NewTime(time.Now()),
+				},
+			},
+		}
+		volGroupRepStatus.ObservedGeneration = volGroup.Generation
+		volGroupRepStatus.State = volgroup.PrimaryState
+		volGroupRepStatus.Message = "volume is marked primary"
+		volGroup.Status = volGroupRepStatus
+
+		err = k8sClient.Status().Update(context.TODO(), &volGroup)
+		Expect(err).NotTo(HaveOccurred(), "failed to update the status of VolGroupRep %s", volGroup.Name)
+
+		volrepKey := types.NamespacedName{
+			Name:      volGroup.Name,
+			Namespace: volGroup.Namespace,
+		}
+		v.waitForVolGroupRepPromotion(volrepKey)
+
+		do(index, len(volGroupRepList.Items))
+	}
+}
+
 func (v *vrgTest) protectDeletionOfVolReps() {
 	By("Adding a finalizer to protect VolumeReplication resources being deleted " + v.namespace)
 
@@ -2099,6 +2390,25 @@ func (v *vrgTest) protectDeletionOfVolReps() {
 	}
 }
 
+func (v *vrgTest) protectDeletionOfVolGroupReps() {
+	By("Adding a finalizer to protect VolumeGroupReplication resources being deleted " + v.namespace)
+
+	volGroupRepList := &volgroup.VolumeGroupReplicationList{}
+	listOptions := &client.ListOptions{
+		Namespace: v.namespace,
+	}
+	err := apiReader.List(context.TODO(), volGroupRepList, listOptions)
+	Expect(err).NotTo(HaveOccurred(), "failed to get a list of VGRs in namespace %s", v.namespace)
+
+	for index := range volGroupRepList.Items {
+		volGroupRep := volGroupRepList.Items[index]
+		if controllerutil.AddFinalizer(client.Object(&volGroupRep), "testDeleteProtected") {
+			err = k8sClient.Update(context.TODO(), &volGroupRep)
+			Expect(err).NotTo(HaveOccurred(), "failed to add finalizer to VolGroupRep %s", volGroupRep.Name)
+		}
+	}
+}
+
 func (v *vrgTest) unprotectDeletionOfVolReps() {
 	By("Removing finalizer that protects VolumeReplication resources from being deleted " + v.namespace)
 
@@ -2114,6 +2424,25 @@ func (v *vrgTest) unprotectDeletionOfVolReps() {
 		if controllerutil.RemoveFinalizer(client.Object(&volRep), "testDeleteProtected") {
 			err = k8sClient.Update(context.TODO(), &volRep)
 			Expect(err).NotTo(HaveOccurred(), "failed to remove finalizer to VolRep %s", volRep.Name)
+		}
+	}
+}
+
+func (v *vrgTest) unprotectDeletionOfVolGroupReps() {
+	By("Removing finalizer that protects VolumeGroupReplication resources from being deleted " + v.namespace)
+
+	volGroupRepList := &volgroup.VolumeGroupReplicationList{}
+	listOptions := &client.ListOptions{
+		Namespace: v.namespace,
+	}
+	err := apiReader.List(context.TODO(), volGroupRepList, listOptions)
+	Expect(err).NotTo(HaveOccurred(), "failed to get a list of VGRs in namespace %s", v.namespace)
+
+	for index := range volGroupRepList.Items {
+		volGroupRep := volGroupRepList.Items[index]
+		if controllerutil.RemoveFinalizer(client.Object(&volGroupRep), "testDeleteProtected") {
+			err = k8sClient.Update(context.TODO(), &volGroupRep)
+			Expect(err).NotTo(HaveOccurred(), "failed to remove finalizer to VolGroupRep %s", volGroupRep.Name)
 		}
 	}
 }
@@ -2144,6 +2473,55 @@ func (v *vrgTest) waitForVolRepPromotion(vrNamespacedName types.NamespacedName) 
 		return v.checkProtectedPVCSuccess(vrg, protectedPVC)
 	}, vrgtimeout, vrginterval).Should(BeTrue(),
 		"while waiting for protected pvc condition %s/%s", updatedVolRep.Namespace, updatedVolRep.Name)
+}
+
+func (v *vrgTest) waitForVolGroupRepPromotion(vrNamespacedName types.NamespacedName) {
+	updatedVolGroupRep := volgroup.VolumeGroupReplication{}
+
+	Eventually(func() bool {
+		err := k8sClient.Get(context.TODO(), vrNamespacedName, &updatedVolGroupRep)
+
+		return err == nil && len(updatedVolGroupRep.Status.Conditions) == 3
+	}, vrgtimeout, vrginterval).Should(BeTrue(),
+		"failed to wait for volRep condition type to change to 'ConditionCompleted' (%d)",
+		len(updatedVolGroupRep.Status.Conditions))
+
+	Eventually(func() bool {
+		vrg := v.getVRG()
+
+		pvcLabelSelector := updatedVolGroupRep.Spec.Selector
+
+		pvcSelector, err := metav1.LabelSelectorAsSelector(pvcLabelSelector)
+		if err != nil {
+			return false
+		}
+		listOptions := []client.ListOption{
+			client.MatchingLabelsSelector{
+				Selector: pvcSelector,
+			},
+		}
+
+		pvcList := &corev1.PersistentVolumeClaimList{}
+		if err := k8sClient.List(context.TODO(), pvcList, listOptions...); err != nil {
+			return false
+		}
+
+		protected := false
+		for idx := range pvcList.Items {
+			pvc := pvcList.Items[idx]
+			protectedPVC := vrgController.FindProtectedPVC(vrg, pvc.Namespace, pvc.Name)
+			if protectedPVC == nil {
+				continue
+			}
+			protected = v.checkProtectedPVCSuccess(vrg, protectedPVC)
+			if !protected {
+				return false
+			}
+		}
+
+		return protected
+	}, vrgtimeout, vrginterval).Should(BeTrue(),
+		"while waiting for protected pvc condition %s/%s", updatedVolGroupRep.Namespace, updatedVolGroupRep.Name)
 }
 
 func (v *vrgTest) checkProtectedPVCSuccess(vrg *ramendrv1alpha1.VolumeReplicationGroup,
