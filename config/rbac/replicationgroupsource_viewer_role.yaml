@@ -1,0 +1,27 @@
+# permissions for end users to view replicationgroupsources.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: replicationgroupsource-viewer-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: ramen
+    app.kubernetes.io/part-of: ramen
+    app.kubernetes.io/managed-by: kustomize
+  name: replicationgroupsource-viewer-role
+rules:
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - replicationgroupsources
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - replicationgroupsources/status
+  verbs:
+  - get

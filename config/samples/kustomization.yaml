@@ -3,4 +3,6 @@ resources:
 - ramendr_v1alpha1_drcluster.yaml
 - ramendr_v1alpha1_protectedvolumereplicationgrouplist.yaml
 - ramendr_v1alpha1_maintenancemode.yaml
+- ramendr_v1alpha1_replicationgroupdestination.yaml
+- ramendr_v1alpha1_replicationgroupsource.yaml
 #+kubebuilder:scaffold:manifestskustomizesamples

@@ -1,0 +1,12 @@
+apiVersion: ramendr.openshift.io/v1alpha1
+kind: ReplicationGroupDestination
+metadata:
+  labels:
+    app.kubernetes.io/name: replicationgroupdestination
+    app.kubernetes.io/instance: replicationgroupdestination-sample
+    app.kubernetes.io/part-of: ramen
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: ramen
+  name: replicationgroupdestination-sample
+spec:
+  # TODO(user): Add fields here

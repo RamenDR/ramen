@@ -38,6 +38,12 @@ type DRPolicySpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="volumeSnapshotClassSelector is immutable"
 	VolumeSnapshotClassSelector metav1.LabelSelector `json:"volumeSnapshotClassSelector"`
 
+	// Label selector to identify the VolumeGroupSnapshotClass resources
+	// that are scanned to select an appropriate VolumeGroupSnapshotClass
+	// for the VolumeGroupSnapshot resource when using VolSync.
+	//+optional
+	VolumeGroupSnapshotClassSelector metav1.LabelSelector `json:"volumeGroupSnapshotClassSelector,omitempty"`
+
 	// List of DRCluster resources that are governed by this policy
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:XValidation:rule="size(self) == 2", message="drClusters requires a list of 2 clusters"
