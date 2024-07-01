@@ -28,6 +28,11 @@ import (
 	rmnutil "github.com/ramendr/ramen/controllers/util"
 )
 
+const (
+	// defaultVRCAnnotationKey is the default annotation key for VolumeReplicationClass
+	defaultVRCAnnotationKey = "replication.storage.opensds.io/volume-replication-class"
+)
+
 func logWithPvcName(log logr.Logger, pvc *corev1.PersistentVolumeClaim) logr.Logger {
 	return log.WithValues("pvc", types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}.String())
 }
@@ -1250,12 +1255,12 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 
 	storageClass, err := v.getStorageClass(namespacedName)
 	if err != nil {
-		v.log.Info(fmt.Sprintf("Failed to get the storageclass of pvc %s",
-			namespacedName))
+		v.log.Info(fmt.Sprintf("Failed to get the storageclass of pvc %s", namespacedName))
 
-		return nil, fmt.Errorf("failed to get the storageclass of pvc %s (%w)",
-			namespacedName, err)
+		return nil, fmt.Errorf("failed to get the storageclass of pvc %s (%w)", namespacedName, err)
 	}
+
+	matchingReplicationClassList := []*volrep.VolumeReplicationClass{}
 
 	for index := range v.replClassList.Items {
 		replicationClass := &v.replClassList.Items[index]
@@ -1271,17 +1276,52 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 
 		// ReplicationClass that matches both VRG schedule and pvc provisioner
 		if schedulingInterval == v.instance.Spec.Async.SchedulingInterval {
-			v.log.Info(fmt.Sprintf("Found VolumeReplicationClass that matches provisioner and schedule %s/%s",
-				storageClass.Provisioner, v.instance.Spec.Async.SchedulingInterval))
-
-			return replicationClass, nil
+			matchingReplicationClassList = append(matchingReplicationClassList, replicationClass)
 		}
 	}
 
-	v.log.Info(fmt.Sprintf("No VolumeReplicationClass found to match provisioner and schedule %s/%s",
-		storageClass.Provisioner, v.instance.Spec.Async.SchedulingInterval))
+	return v.filterDefaultVRC(matchingReplicationClassList, storageClass.Provisioner)
+}
 
-	return nil, fmt.Errorf("no VolumeReplicationClass found to match provisioner and schedule")
+// filterDefaultVRC filters the VRC list to return VRCs with default annotation
+// if the list contains moret then one VRC.
+func (v *VRGInstance) filterDefaultVRC(
+	replicationClassList []*volrep.VolumeReplicationClass,
+	provisioner string,
+) (*volrep.VolumeReplicationClass, error) {
+	defaultReplicationClassList := []*volrep.VolumeReplicationClass{}
+
+	if len(replicationClassList) > 1 {
+		v.log.Info("Found multiple matching VolumeReplicationClasses, filtering with default annotation")
+
+		for index := range replicationClassList {
+			if replicationClassList[index].Annotations[defaultVRCAnnotationKey] == "true" {
+				defaultReplicationClassList = append(
+					defaultReplicationClassList,
+					replicationClassList[index])
+			}
+		}
+	} else {
+		defaultReplicationClassList = replicationClassList
+	}
+
+	switch len(defaultReplicationClassList) {
+	case 0:
+		v.log.Info(fmt.Sprintf("No VolumeReplicationClass found to match provisioner and schedule %s/%s",
+			provisioner, v.instance.Spec.Async.SchedulingInterval))
+
+		return nil, fmt.Errorf("no VolumeReplicationClass found to match provisioner and schedule")
+	case 1:
+		v.log.Info(fmt.Sprintf("Found VolumeReplicationClass that matches provisioner and schedule %s/%s",
+			provisioner, v.instance.Spec.Async.SchedulingInterval))
+
+		return defaultReplicationClassList[0], nil
+	}
+
+	v.log.Info(fmt.Sprintf("Found multiple VolumeReplicationClass that matches provisioner and schedule %s/%s",
+		provisioner, v.instance.Spec.Async.SchedulingInterval))
+
+	return nil, fmt.Errorf("multiple VolumeReplicationClass found to match provisioner and schedule")
 }
 
 // getStorageClass inspects the PVCs being protected by this VRG instance for the passed in namespacedName, and
