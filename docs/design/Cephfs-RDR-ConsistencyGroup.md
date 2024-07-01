@@ -25,6 +25,7 @@ of their data across geographical locations.
 
 * Consistency Group in MDR (Metro Disaster Recovery)
 * Consistency Group for RBD (Rados Block Device)
+* Application cross Multi-Namespaces
 
 ## Design Details
 
@@ -41,20 +42,11 @@ volsync to synchronize the data in the read-only PVCs to the remote destination.
 
 ### User Story
 
-For the application, users can choose to specify a
-consistency group for some or all of the PVCs:
-
-* The application can have one consistency group
-  that includes all PVCs.
-* The application can have one consistency group
-  where some PVCs belong to the group while others do not.
-* The application can have no consistency group,
-  meaning all PVCs are not part of any consistency group.
+For the application, All Cephfs PVCs belong to a single consistency group.
 
 ### Does enabling the feature change any default behavior
 
-No, only PVCs included in a volume group will adhere to this design;
-other PVCs will continue to follow the current approach.
+No, this design will only be executed after enabling consistency group.
 
 ### Dependencies
 
@@ -68,7 +60,7 @@ two additional CRDs have been introduced:
 * RGS (ReplicationGroupSource): This resource functions similarly
   to volsync ReplicationSource, managing Volume Groups as a source.
 
-```
+```go
 type ReplicationGroupSource struct {
   metav1.TypeMeta   `json:",inline"`
   metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -78,13 +70,20 @@ type ReplicationGroupSource struct {
 }
 
 type ReplicationGroupSourceSpec struct {
-  // Trigger to do the schedule sync or final sync
-  Trigger *ReplicationSourceTriggerSpec `json:"trigger,omitempty"`
+    Trigger *ReplicationSourceTriggerSpec `json:"trigger,omitempty"`
 
-  VolumeGroupSnapshotClassName *string `json:"volumeGroupSnapshotClassName,omitempty"`
+    // +required
+    VolumeGroupSnapshotClassName string `json:"volumeGroupSnapshotClassName,omitempty"`
 
-  // RSSpecs specify the PVCs in a volume group
-  RSSpecs []VolSyncReplicationSourceSpec `json:"rsspecs,omitempty"`
+    // +required
+    VolumeGroupSnapshotSource *metav1.LabelSelector `json:"volumeGroupSnapshotSource,omitempty"`
+}
+
+// ReplicationSourceTriggerSpec defines when a volume will be synchronized with
+// the destination.
+type ReplicationSourceTriggerSpec struct {
+    Schedule *string `json:"schedule,omitempty"`
+    Manual string `json:"manual,omitempty"`
 }
 
 // ReplicationGroupSourceStatus defines the observed state of ReplicationGroupSource
@@ -103,7 +102,6 @@ type ReplicationGroupSourceStatus struct {
   // scheduled to start (for schedule-based synchronization).
   //+optional
   NextSyncTime *metav1.Time `json:"nextSyncTime,omitempty"`
-  // lastManualSync is set to the last spec.trigger.manual when the manual sync is done.
   //+optional
   LastManualSync string `json:"lastManualSync,omitempty"`
   // conditions represent the latest available observations of the
@@ -117,7 +115,7 @@ type ReplicationGroupSourceStatus struct {
 * RGD (ReplicationGroupDestination): This resource functions similarly
   to volsync ReplicationDestination, managing Volume Groups as a destination.
 
-```
+```go
 type ReplicationGroupDestination struct {
   metav1.TypeMeta   `json:",inline"`
   metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -127,32 +125,76 @@ type ReplicationGroupDestination struct {
 }
 
 type ReplicationGroupDestinationSpec struct {
+  // Label selector to identify the VolumeSnapshotClass resources
+    // that are scanned to select an appropriate VolumeSnapshotClass
+    // for the VolumeReplication resource when using VolSync.
+    //+optional
+    VolumeSnapshotClassSelector metav1.LabelSelector `json:"volumeSnapshotClassSelector,omitempty"`
+
   // RDSpecs specify the PVCs in a volume group
   RDSpecs []VolSyncReplicationDestinationSpec `json:"rdspecs,omitempty"`
 }
 
 type ReplicationDestinationStatus struct {
-  // lastSyncTime is the time of the most recent successful synchronization.
-  //+optional
-  LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty"`
-  // lastSyncStartTime is the time the most recent synchronization started.
-  //+optional
-  LastSyncStartTime *metav1.Time `json:"lastSyncStartTime,omitempty"`
-  // lastSyncDuration is the amount of time required to send the most recent
-  // update.
-  //+optional
-  LastSyncDuration *metav1.Duration `json:"lastSyncDuration,omitempty"`
-  // latestImage in the objects holding the most recent consistent replicated
-  // image.
-  //+optional
-  LatestImages []*corev1.TypedLocalObjectReference `json:"latestImage,omitempty"`
-
-  Conditions []metav1.Condition `json:"conditions,omitempty"`
-
-  // Created ReplicationDestinations by this ReplicationGroupDestination
-  ReplicationDestinations []*corev1.ObjectReference `json:"replicationDestinations,omitempty"`
+    // lastSyncTime is the time of the most recent successful synchronization.
+    //+optional
+    LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty"`
+    // lastSyncStartTime is the time the most recent synchronization started.
+    //+optional
+    LastSyncStartTime *metav1.Time `json:"lastSyncStartTime,omitempty"`
+    // lastSyncDuration is the amount of time required to send the most recent
+    // update.
+    //+optional
+    LastSyncDuration *metav1.Duration `json:"lastSyncDuration,omitempty"`
+    // nextSyncTime is the time when the next volume synchronization is
+    // scheduled to start (for schedule-based synchronization).
+    //+optional
+    NextSyncTime *metav1.Time `json:"nextSyncTime,omitempty"`
+    // conditions represent the latest available observations of the
+    // source's state.
+    Conditions []metav1.Condition `json:"conditions,omitempty"`
+    // latestImage in the object holding the most recent consistent replicated
+    // image.
+    //+optional
+    LatestImages map[string]*corev1.TypedLocalObjectReference `json:"latestImage,omitempty"`
+    // Created ReplicationDestinations by this ReplicationGroupDestination
+    ReplicationDestinations []*corev1.ObjectReference `json:"replicationDestinations,omitempty"`
 }
 ```
+
+### Naming
+
+* RS (ReplicationSource): A VolSync resource designed to
+  manage the source. Each RS is responsible for managing one PVC as the data source.
+* RGS (ReplicationGroupSource): A Ramen resource designed to
+  manage all RS instances in a consistency group.
+* RD (ReplicationDestination): A VolSync resource intended
+  for managing the destination. Each RD handles one PVC as the data destination.
+* RGD (ReplicationGroupDestination): A Ramen resource
+  designed to manage all RD instances in a consistency group.
+
+The naming follow the volsync handler. Currently, in volsync handler:
+
+* the ReplicationSource and ReplicationDestination
+  have the same name with Application PVC name
+* the snapshot name of source application pvc is volsync-`PVC_NAME`-src
+* the name of tmp pvc restored by volsync is volsync-`PVC_NAME`-src
+
+In this design, ReplicationGroupSource create VolumeGroupSnapshot,
+Restored PVC and ReplicationSource in each sync.
+At the end of each sync, VolumeGroupSnapshot, Restored PVC will be deleted by ramen,
+ReplicationSource will not be deleted.
+
+* ReplicationGroupSource Name = ReplicationGroupDestination Name
+  = `VRG Name` + `cgName` = `Application Name` + `cgName`
+* VolumeGroupSnapshot Name = cephfscg-`ReplicationGroupSource Name`
+* Restored PVC Name = cephfscg-`Application PVC Name`
+* ReplicationSource Name = ReplicationDestination Name = `Application PVC Name`
+* ReplicationDestinationServiceName =
+  volsync-rsync-tls-dst-`Application PVC Name`.`RD Namespace`.svc.clusterset.local
+* Volsync Secret Name = `VRG Name`-vs-secret
+  ReplicationGroupDestination will create application PVC
+  which is the same with current implementation.
 
 ### DR Enable
 
