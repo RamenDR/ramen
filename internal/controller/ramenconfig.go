@@ -6,7 +6,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"os"
 
@@ -90,7 +89,7 @@ func ReadRamenConfigFile(log logr.Logger) (ramenConfig ramendrv1alpha1.RamenConf
 
 	log.Info("loading Ramen config file ", "name", cachedRamenConfigFileName)
 
-	fileContents, err := ioutil.ReadFile(cachedRamenConfigFileName)
+	fileContents, err := os.ReadFile(cachedRamenConfigFileName)
 	if err != nil {
 		err = fmt.Errorf("unable to load the config file %s: %w",
 			cachedRamenConfigFileName, err)
