@@ -15,6 +15,7 @@ import (
 
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/google/uuid"
+	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v7/apis/volumesnapshot/v1"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects/velero"
 	"golang.org/x/exp/maps" // TODO replace with "maps" in go1.21+
@@ -485,6 +486,8 @@ type VRGInstance struct {
 	result               ctrl.Result
 }
 
+// struct with pv with volrepclass and volsync
+
 const (
 	// Finalizers
 	vrgFinalizerName        = "volumereplicationgroups.ramendr.openshift.io/vrg-protection"
@@ -669,10 +672,13 @@ func (v *VRGInstance) updatePVCList() error {
 		return err
 	}
 
-	if v.instance.Spec.Async == nil || v.instance.Spec.VolSync.Disabled {
+	if v.instance.Spec.Async == nil {
+		if err := v.filterSyncPVCs(pvcList); err != nil {
+			return fmt.Errorf("failed to filter SyncPVCs (%w)", err)
+		}
+
 		v.volRepPVCs = make([]corev1.PersistentVolumeClaim, len(pvcList.Items))
 		total := copy(v.volRepPVCs, pvcList.Items)
-
 		v.log.Info("Found PersistentVolumeClaims", "count", total)
 
 		return nil
@@ -688,14 +694,6 @@ func (v *VRGInstance) updatePVCList() error {
 		v.separatePVCsUsingVRGStatus(pvcList)
 		v.log.Info(fmt.Sprintf("Separated PVCs (%d) into VolRepPVCs (%d) and VolSyncPVCs (%d)",
 			len(pvcList.Items), len(v.volRepPVCs), len(v.volSyncPVCs)))
-
-		return nil
-	}
-
-	if len(v.replClassList.Items) == 0 {
-		v.volSyncPVCs = make([]corev1.PersistentVolumeClaim, len(pvcList.Items))
-		numCopied := copy(v.volSyncPVCs, pvcList.Items)
-		v.log.Info("No VolumeReplicationClass available. Using all PVCs with VolSync", "pvcCount", numCopied)
 
 		return nil
 	}
@@ -803,40 +801,216 @@ func (v *VRGInstance) separatePVCsUsingVRGStatus(pvcList *corev1.PersistentVolum
 	}
 }
 
+func (v *VRGInstance) filterSyncPVCs(pvcList *corev1.PersistentVolumeClaimList) error {
+	for idx := range pvcList.Items {
+		pvc := &pvcList.Items[idx]
+
+		peerClass, storageClass, err := v.getPeerClassAndSC(pvc, v.instance.Spec.Sync.PeerClasses)
+		if err != nil {
+			return err
+		}
+
+		if len(peerClass.StorageID) != 1 {
+			return fmt.Errorf("no StorageID found in Sync PeerClass")
+		}
+
+		if storageClass.Labels[StorageIDLabel] != peerClass.StorageID[0] {
+			return fmt.Errorf("storageId %s not present in peerClass", storageClass.Labels[StorageIDLabel])
+		}
+	}
+
+	return nil
+}
+
 func (v *VRGInstance) separatePVCsUsingStorageClassProvisioner(pvcList *corev1.PersistentVolumeClaimList) error {
 	for idx := range pvcList.Items {
 		pvc := &pvcList.Items[idx]
-		scName := pvc.Spec.StorageClassName
 
-		if scName == nil || *scName == "" {
-			return fmt.Errorf("missing storage class name for PVC %s/%s", pvc.GetNamespace(), pvc.GetName())
+		peerClass, storageClass, err := v.getPeerClassAndSC(pvc, v.instance.Spec.Async.PeerClasses)
+		if err != nil {
+			v.log.Error(err, fmt.Sprintf("failed to find match between PeerClasses and StorageClass for async PVC %s",
+				pvc.Name))
+
+			return err
 		}
 
-		storageClass := &storagev1.StorageClass{}
-		if err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: *scName}, storageClass); err != nil {
-			v.log.Info(fmt.Sprintf("Failed to get the storageclass %s", *scName))
+		replicationClass := v.findMatchingReplicationClass(peerClass, storageClass, pvc)
 
-			return fmt.Errorf("failed to get the storageclass with name %s (%w)", *scName, err)
-		}
-
-		replicationClassMatchFound := false
-
-		for _, replicationClass := range v.replClassList.Items {
-			if storageClass.Provisioner == replicationClass.Spec.Provisioner {
-				v.volRepPVCs = append(v.volRepPVCs, *pvc)
-				replicationClassMatchFound = true
-
-				break
+		if replicationClass == nil && !v.instance.Spec.VolSync.Disabled {
+			// ignoring volsnapClass till we store it in the future
+			if _, err := v.findVolSnapClass(storageClass, pvc); err != nil {
+				return err
 			}
-		}
-
-		if !replicationClassMatchFound {
-			v.volSyncPVCs = append(v.volSyncPVCs, *pvc)
 		}
 	}
 
 	v.log.Info(fmt.Sprintf("Found %d PVCs targeted for VolRep and %d targeted for VolSync",
 		len(v.volRepPVCs), len(v.volSyncPVCs)))
+
+	if !(len(pvcList.Items) == (len(v.volRepPVCs) + len(v.volSyncPVCs))) {
+		return fmt.Errorf("no PVCs are procted")
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) getPeerClassAndSC(pvc *corev1.PersistentVolumeClaim, peerClasses []ramendrv1alpha1.PeerClass,
+) (*ramendrv1alpha1.PeerClass, *storagev1.StorageClass, error) {
+	scName := pvc.Spec.StorageClassName
+
+	storageClass, err := v.validateAndGetStorageClass(scName, pvc)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	v.log.Info(fmt.Sprintf("storageClass %s validated", storageClass.Name))
+
+	peerClass := v.findPeerClassMatchingSC(peerClasses, *scName)
+	if peerClass == nil {
+		return nil, nil, fmt.Errorf("peerClass matching storageClass %s not found", storageClass.Name)
+	}
+
+	return peerClass, storageClass, nil
+}
+
+func (v *VRGInstance) findVolSnapClass(storageClass *storagev1.StorageClass,
+	pvc *corev1.PersistentVolumeClaim,
+) (*snapv1.VolumeSnapshotClass, error) {
+	v.log.Info(fmt.Sprintf("finding snapshotClass for PVC %s with storageClassName %s", pvc.Name, storageClass.Name))
+
+	SnaphotClasses, err := v.volSyncHandler.GetVolumeSnapshotClasses()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, snapshotClass := range SnaphotClasses {
+		if v.selectVSC(snapshotClass, *storageClass) {
+			v.log.Info(fmt.Sprintf("snapshotClass Found: %s", snapshotClass.Name))
+			v.volSyncPVCs = append(v.volSyncPVCs, *pvc)
+
+			return &snapshotClass, nil
+		}
+	}
+
+	return nil, fmt.Errorf("failed to find VolumeSnapshotClass")
+}
+
+func (v *VRGInstance) selectVSC(snapshotClass snapv1.VolumeSnapshotClass,
+	storageClass storagev1.StorageClass,
+) bool {
+	snapshotClassLabels := snapshotClass.GetLabels()
+	storageClassLabels := storageClass.GetLabels()
+
+	if storageIDFromSnapshotClass, exists := snapshotClassLabels[StorageIDLabel]; exists {
+		if storageClassLabels[StorageIDLabel] == storageIDFromSnapshotClass {
+			v.log.Info(fmt.Sprintf("storageId %s from storageClass %s match found in VolumeSnapshotClass %s",
+				storageClassLabels[StorageIDLabel], storageClass.Name, snapshotClass.Name))
+
+			return true
+		}
+	}
+
+	return false
+}
+
+// nolint: cyclop
+func (v *VRGInstance) selectVRC(replicationClass volrep.VolumeReplicationClass,
+	peerClass ramendrv1alpha1.PeerClass, storageClass storagev1.StorageClass,
+) bool {
+	v.log.Info("selecting VolumeReplicationClass")
+
+	replClassLabels := replicationClass.GetLabels()
+	storageClassLabels := storageClass.GetLabels()
+
+	replicationIDMatch := false
+	storageIDMatch := false
+	storageProvisionerMatch := false
+
+	// checks if replicationIDlabel exists in the replciationclass and proceed if exists
+	if replicationID, exists := replClassLabels[VolumeReplicationIDLabel]; exists {
+		if peerClass.ReplicationID == replicationID {
+			replicationIDMatch = true
+		}
+
+		if !replicationIDMatch {
+			v.log.Info(fmt.Sprintf(
+				"replicationID %s from peerClass does not match with replicationID %s in VolumeReplicationClass %s",
+				peerClass.ReplicationID, replicationID, replicationClass.Name))
+		}
+	}
+
+	if storageIDfromReplicationClass, exists := replClassLabels[StorageIDLabel]; exists {
+		if storageIDfromReplicationClass == storageClassLabels[StorageIDLabel] {
+			storageIDMatch = true
+		}
+
+		if !storageIDMatch {
+			v.log.Info(fmt.Sprintf("storageID (%s) not found in VolumeReplicationClass (%s)", storageIDfromReplicationClass,
+				replicationClass.Name))
+		}
+	}
+
+	if storageClass.Provisioner == replicationClass.Spec.Provisioner {
+		storageProvisionerMatch = true
+	}
+
+	if !storageProvisionerMatch {
+		v.log.Info(fmt.Sprintf(
+			"provisioner %s from storageClass %s does not matches with provisioner %s from VolumeReplicationClass %s",
+			storageClass.Provisioner, storageClass.Name, replicationClass.Spec.Provisioner, replicationClass.Name))
+	}
+
+	return replicationIDMatch && storageIDMatch && storageProvisionerMatch
+}
+
+// find replication class match
+func (v *VRGInstance) findMatchingReplicationClass(peerClass *ramendrv1alpha1.PeerClass,
+	storageClass *storagev1.StorageClass, pvc *corev1.PersistentVolumeClaim,
+) *volrep.VolumeReplicationClass {
+	v.log.Info(fmt.Sprintf("finding replicationClass with replicationID %s for PVC %s with storageClassName %s",
+		peerClass.ReplicationID, pvc.Name, storageClass.Name))
+
+	for _, replicationClass := range v.replClassList.Items {
+		if v.selectVRC(replicationClass, *peerClass, *storageClass) {
+			v.volRepPVCs = append(v.volRepPVCs, *pvc)
+
+			return &replicationClass
+		}
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) validateAndGetStorageClass(scName *string, pvc *corev1.PersistentVolumeClaim,
+) (*storagev1.StorageClass, error) {
+	if scName == nil || *scName == "" {
+		return nil, fmt.Errorf("missing storage class name for PVC %s/%s", pvc.GetNamespace(), pvc.GetName())
+	}
+
+	storageClass := &storagev1.StorageClass{}
+	if err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: *scName}, storageClass); err != nil {
+		v.log.Info(fmt.Sprintf("Failed to get the storageclass %s", *scName))
+
+		return nil, fmt.Errorf("failed to get the storageclass with name %s (%w)", *scName, err)
+	}
+
+	storageClassLabels := storageClass.GetLabels()
+
+	// this check is needed because we use storageID to compare with other VRC or VSC
+	if _, ok := storageClassLabels[StorageIDLabel]; !ok {
+		return nil, fmt.Errorf("storageID label not found in storageClass for PVC %s", pvc.Name)
+	}
+
+	return storageClass, nil
+}
+
+func (v *VRGInstance) findPeerClassMatchingSC(peerClasses []ramendrv1alpha1.PeerClass, storageClassName string,
+) *ramendrv1alpha1.PeerClass {
+	for _, peerClass := range peerClasses {
+		if storageClassName == peerClass.StorageClassName {
+			return &peerClass
+		}
+	}
 
 	return nil
 }
