@@ -141,46 +141,46 @@ test: generate manifests envtest ## Run all the tests.
 	 go test ./... -coverprofile cover.out
 
 test-pvrgl: generate manifests envtest ## Run ProtectedVolumeReplicationGroupList tests.
-	 go test ./controllers -coverprofile cover.out  -ginkgo.focus ProtectedVolumeReplicationGroupList
+	 go test ./internal/controller -coverprofile cover.out  -ginkgo.focus ProtectedVolumeReplicationGroupList
 
 test-obj: generate manifests envtest ## Run ObjectStorer tests.
-	 go test ./controllers -coverprofile cover.out  -ginkgo.focus FakeObjectStorer
+	 go test ./internal/controller -coverprofile cover.out  -ginkgo.focus FakeObjectStorer
 
 test-vs: generate manifests envtest ## Run VolumeSync tests.
-	 go test ./controllers/volsync -coverprofile cover.out
+	 go test ./internal/controller/volsync -coverprofile cover.out
 
 test-vrg: generate manifests envtest ## Run VolumeReplicationGroup tests.
-	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroup
+	 go test ./internal/controller -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroup
 
 test-vrg-pvc: generate manifests envtest ## Run VolumeReplicationGroupPVC tests.
-	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupPVC
+	 go test ./internal/controller -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupPVC
 
 test-vrg-vr: generate manifests envtest ## Run VolumeReplicationGroupVolRep tests.
-	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupVolRep
+	 go test ./internal/controller -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupVolRep
 
 test-vrg-vs: generate manifests envtest ## Run VolumeReplicationGroupVolSync tests.
-	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupVolSync
+	 go test ./internal/controller -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupVolSync
 
 test-vrg-recipe: generate manifests envtest ## Run VolumeReplicationGroupRecipe tests.
-	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupRecipe
+	 go test ./internal/controller -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupRecipe
 
 test-vrg-kubeobjects: generate manifests envtest ## Run VolumeReplicationGroupKubeObjects tests.
-	 go test ./controllers -coverprofile cover.out  -ginkgo.focus VRG_KubeObjectProtection
+	 go test ./internal/controller -coverprofile cover.out  -ginkgo.focus VRG_KubeObjectProtection
 
 test-drpc: generate manifests envtest ## Run DRPlacementControl tests.
-	 go test ./controllers -coverprofile cover.out  -ginkgo.focus DRPlacementControl
+	 go test ./internal/controller -coverprofile cover.out  -ginkgo.focus DRPlacementControl
 
 test-drcluster: generate manifests envtest ## Run DRCluster tests.
-	 go test ./controllers -coverprofile cover.out  -ginkgo.focus DRClusterController
+	 go test ./internal/controller -coverprofile cover.out  -ginkgo.focus DRClusterController
 
 test-drpolicy: generate manifests envtest ## Run DRPolicy tests.
-	 go test ./controllers -coverprofile cover.out  -ginkgo.focus DRPolicyController
+	 go test ./internal/controller -coverprofile cover.out  -ginkgo.focus DRPolicyController
 
 test-util: generate manifests envtest ## Run util tests.
-	 go test ./controllers/util -coverprofile cover.out
+	 go test ./internal/controller/util -coverprofile cover.out
 
 test-util-pvc: generate manifests envtest ## Run util-pvc tests.
-	 go test ./controllers/util -coverprofile cover.out  -ginkgo.focus PVCS_Util
+	 go test ./internal/controller/util -coverprofile cover.out  -ginkgo.focus PVCS_Util
 
 test-drenv: ## Run drenv tests.
 	$(MAKE) -C test
@@ -201,15 +201,15 @@ venv:
 ##@ Build
 
 # Build manager binary
-build: generate  ## Build manager binary.
-	go build -o bin/manager main.go
+build: generate manifests  ## Build manager binary.
+	go build -o bin/manager cmd/main.go
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
 run-hub: generate manifests ## Run DR Orchestrator controller from your host.
-	go run ./main.go --config=examples/dr_hub_config.yaml
+	go run ./cmd/main.go --config=examples/dr_hub_config.yaml
 
 run-dr-cluster: generate manifests ## Run DR manager controller from your host.
-	go run ./main.go --config=examples/dr_cluster_config.yaml
+	go run ./cmd/main.go --config=examples/dr_cluster_config.yaml
 
 docker-build: ## Build docker image with the manager.
 	$(DOCKERCMD) build -t ${IMG} .
@@ -391,7 +391,8 @@ ifeq ($(DOCKERCMD),docker)
 		-e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' \
 		Dockerfile > Dockerfile.cross
 	$(SED_CMD) -e 's/GOARCH=amd64/GOARCH=$${TARGETARCH}/' -i Dockerfile.cross
-	- $(DOCKERCMD) buildx create --name $(IMAGE_NAME)-builder --bootstrap --use
+	- $(DOCKERCMD) buildx create --name $(IMAGE_NAME)-builder
+	$(DOCKERCMD) buildx use $(IMAGE_NAME)-builder
 	- $(DOCKERCMD) buildx build --push --platform="${PLATFORMS}" --tag ${IMG} -f Dockerfile.cross .
 	- $(DOCKERCMD) buildx rm $(IMAGE_NAME)-builder
 	rm Dockerfile.cross

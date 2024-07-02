@@ -5,7 +5,7 @@ script_dir="$(cd "$(dirname "$0")" && pwd)"
 
 os=$(go env GOOS)
 arch=$(go env GOARCH)
-required_version="v1.24.0"
+required_version="v1.34.2"
 source_url="https://github.com/operator-framework/operator-sdk/releases/download/${required_version}/operator-sdk_${os}_${arch}"
 target_dir="${script_dir}/../bin"
 target_path="${target_dir}/operator-sdk"
