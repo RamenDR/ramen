@@ -67,8 +67,24 @@ func LoadControllerConfig(configFile string,
 
 	cachedRamenConfigFileName = configFile
 
-	*options = options.AndFromOrDie(
-		ctrl.ConfigFile().AtPath(configFile).OfKind(ramenConfig))
+	ramenConfig, err := ReadRamenConfigFile(log)
+	if err != nil {
+		panic(fmt.Sprintf("could not parse config file: %v", err))
+	}
+
+	// health:
+	//   healthProbeBindAddress: :8081
+	// metrics:
+	//   bindAddress: 127.0.0.1:9289
+	// leaderElection:
+	//   leaderElect: true
+	//   resourceName: dr-cluster.ramendr.openshift.io
+
+	options.HealthProbeBindAddress = ramenConfig.Health.HealthProbeBindAddress
+
+	options.Metrics.BindAddress = ramenConfig.Metrics.BindAddress
+
+	options.LeaderElection = *ramenConfig.LeaderElection.LeaderElect
 
 	for profileName, s3Profile := range ramenConfig.S3StoreProfiles {
 		log.Info("s3 profile", "key", profileName, "value", s3Profile)
@@ -80,7 +96,7 @@ func LoadControllerConfig(configFile string,
 // RamenConfig file for every S3 store profile access turns out to be more
 // expensive, we may need to enhance this logic to load it only when
 // RamenConfig has changed.
-func ReadRamenConfigFile(log logr.Logger) (ramenConfig ramendrv1alpha1.RamenConfig, err error) {
+func ReadRamenConfigFile(log logr.Logger) (ramenConfig *ramendrv1alpha1.RamenConfig, err error) {
 	if cachedRamenConfigFileName == "" {
 		err = fmt.Errorf("config file not specified")
 
