@@ -6,7 +6,7 @@ package v1alpha1
 import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	cfg "sigs.k8s.io/controller-runtime/pkg/config/v1alpha1"
+	configv1alpha1 "k8s.io/component-base/config/v1alpha1"
 )
 
 // ControllerType is the type of controller to run
@@ -76,15 +76,50 @@ type S3StoreProfile struct {
 	CACertificates []byte `json:"caCertificates,omitempty"`
 }
 
+// ControllerMetrics defines the controller metrics configuration
+type ControllerMetrics struct {
+	// BindAddress is the TCP address that the controller should bind to
+	// for serving prometheus metrics.
+	// It can be set to "0" to disable the metrics serving.
+	// +optional
+	BindAddress string `json:"bindAddress,omitempty"`
+}
+
+// ControllerHealth defines the health configs.
+type ControllerHealth struct {
+	// HealthProbeBindAddress is the TCP address that the controller should bind to
+	// for serving health probes
+	// It can be set to "0" or "" to disable serving the health probe.
+	// +optional
+	HealthProbeBindAddress string `json:"healthProbeBindAddress,omitempty"`
+
+	// ReadinessEndpointName, defaults to "readyz"
+	// +optional
+	ReadinessEndpointName string `json:"readinessEndpointName,omitempty"`
+
+	// LivenessEndpointName, defaults to "healthz"
+	// +optional
+	LivenessEndpointName string `json:"livenessEndpointName,omitempty"`
+}
+
 //+kubebuilder:object:root=true
 
 // RamenConfig is the Schema for the ramenconfig API
 type RamenConfig struct {
 	metav1.TypeMeta `json:",inline"`
 
-	// ControllerManagerConfigurationSpec returns the configurations for controllers
-	cfg.ControllerManagerConfigurationSpec `json:",inline"`
+	// LeaderElection is the LeaderElection config to be used when configuring
+	// the manager.Manager leader election
+	// +optional
+	LeaderElection *configv1alpha1.LeaderElectionConfiguration `json:"leaderElection,omitempty"`
 
+	// Metrics contains the controller metrics configuration
+	// +optional
+	Metrics ControllerMetrics `json:"metrics,omitempty"`
+
+	// Health contains the controller health configuration
+	// +optional
+	Health ControllerHealth `json:"health,omitempty"`
 	// RamenControllerType defines the type of controller to run
 	RamenControllerType ControllerType `json:"ramenControllerType"`
 
