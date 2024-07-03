@@ -24,7 +24,6 @@ import (
 	config "k8s.io/component-base/config/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	controller_runtime_config "sigs.k8s.io/controller-runtime/pkg/config/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -229,11 +228,9 @@ var _ = BeforeSuite(func() {
 			Kind:       "RamenConfig",
 			APIVersion: ramendrv1alpha1.GroupVersion.String(),
 		},
-		ControllerManagerConfigurationSpec: controller_runtime_config.ControllerManagerConfigurationSpec{
-			LeaderElection: &config.LeaderElectionConfiguration{
-				LeaderElect:  new(bool),
-				ResourceName: ramencontrollers.HubLeaderElectionResourceName,
-			},
+		LeaderElection: &config.LeaderElectionConfiguration{
+			LeaderElect:  new(bool),
+			ResourceName: ramencontrollers.HubLeaderElectionResourceName,
 		},
 		RamenControllerType: ramendrv1alpha1.DRHubType,
 	}
@@ -309,7 +306,9 @@ var _ = BeforeSuite(func() {
 	s3ProfilesSecretNamespaceNameSet()
 	s3ProfilesUpdate()
 
-	options, err := manager.Options{Scheme: scheme.Scheme}.AndFrom(ramenConfig)
+	options := manager.Options{Scheme: scheme.Scheme}
+	ramencontrollers.LoadControllerOptions(&options, ramenConfig)
+
 	Expect(err).NotTo(HaveOccurred())
 
 	// test controller behavior

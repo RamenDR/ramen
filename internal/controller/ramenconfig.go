@@ -6,7 +6,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"os"
 
@@ -56,8 +55,8 @@ var ControllerType ramendrv1alpha1.ControllerType
 var cachedRamenConfigFileName string
 
 func LoadControllerConfig(configFile string,
-	log logr.Logger, options *ctrl.Options, ramenConfig *ramendrv1alpha1.RamenConfig,
-) {
+	log logr.Logger,
+) (ramenConfig *ramendrv1alpha1.RamenConfig) {
 	if configFile == "" {
 		log.Info("Ramen config file not specified")
 
@@ -68,11 +67,34 @@ func LoadControllerConfig(configFile string,
 
 	cachedRamenConfigFileName = configFile
 
-	*options = options.AndFromOrDie(
-		ctrl.ConfigFile().AtPath(configFile).OfKind(ramenConfig))
+	ramenConfig, err := ReadRamenConfigFile(log)
+	if err != nil {
+		panic(fmt.Sprintf("could not parse config file: %v", err))
+	}
 
 	for profileName, s3Profile := range ramenConfig.S3StoreProfiles {
 		log.Info("s3 profile", "key", profileName, "value", s3Profile)
+	}
+
+	return
+}
+
+func LoadControllerOptions(options *ctrl.Options, ramenConfig *ramendrv1alpha1.RamenConfig) {
+	if ramenConfig == nil {
+		return
+	}
+
+	options.HealthProbeBindAddress = ramenConfig.Health.HealthProbeBindAddress
+	options.Metrics.BindAddress = ramenConfig.Metrics.BindAddress
+
+	if ramenConfig.LeaderElection != nil {
+		if ramenConfig.LeaderElection.LeaderElect != nil {
+			options.LeaderElection = *ramenConfig.LeaderElection.LeaderElect
+		}
+
+		if ramenConfig.LeaderElection.ResourceName != "" {
+			options.LeaderElectionID = ramenConfig.LeaderElection.ResourceName
+		}
 	}
 }
 
@@ -81,16 +103,14 @@ func LoadControllerConfig(configFile string,
 // RamenConfig file for every S3 store profile access turns out to be more
 // expensive, we may need to enhance this logic to load it only when
 // RamenConfig has changed.
-func ReadRamenConfigFile(log logr.Logger) (ramenConfig ramendrv1alpha1.RamenConfig, err error) {
+func ReadRamenConfigFile(log logr.Logger) (ramenConfig *ramendrv1alpha1.RamenConfig, err error) {
 	if cachedRamenConfigFileName == "" {
 		err = fmt.Errorf("config file not specified")
 
 		return
 	}
 
-	log.Info("loading Ramen config file ", "name", cachedRamenConfigFileName)
-
-	fileContents, err := ioutil.ReadFile(cachedRamenConfigFileName)
+	fileContents, err := os.ReadFile(cachedRamenConfigFileName)
 	if err != nil {
 		err = fmt.Errorf("unable to load the config file %s: %w",
 			cachedRamenConfigFileName, err)
