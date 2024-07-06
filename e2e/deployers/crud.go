@@ -77,7 +77,7 @@ func deleteManagedClusterSetBinding(name, namespace string) error {
 func createPlacement(name, namespace string) error {
 	labels := make(map[string]string)
 	labels[AppLabelKey] = name
-	clusterSet := []string{"default"}
+	clusterSet := []string{ClusterSetName}
 
 	var numClusters int32 = 1
 	placement := &ocmv1b1.Placement{
@@ -366,4 +366,21 @@ func deleteApplicationSet(a ApplicationSet, w workloads.Workload) error {
 	}
 
 	return nil
+}
+
+// check if only the last appset is in the argocd namespace
+func isLastAppsetInArgocdNs(namespace string) (bool, error) {
+	util.Ctx.Log.Info("enter GetApplicationSets")
+
+	appsetList := &argocdv1alpha1hack.ApplicationSetList{}
+
+	err := util.Ctx.Hub.CtrlClient.List(
+		context.Background(), appsetList, client.InNamespace(namespace))
+	if err != nil {
+		util.Ctx.Log.Info("error in getting application sets")
+
+		return false, err
+	}
+
+	return len(appsetList.Items) == 1, nil
 }

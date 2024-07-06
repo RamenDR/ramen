@@ -28,12 +28,7 @@ func EnableProtection(w workloads.Workload, d deployers.Deployer) error {
 	util.Ctx.Log.Info("enter EnableProtection " + w.GetName() + "/" + d.GetName())
 
 	name := GetCombinedName(d, w)
-	namespace := name
-
-	_, isAppSet := d.(*deployers.ApplicationSet)
-	if isAppSet {
-		namespace = util.ArgocdNamespace // if appset, need deploy in argocd ns
-	}
+	namespace := GetNamespace(d, w)
 
 	drPolicyName := DefaultDRPolicyName
 	appname := w.GetAppName()
@@ -77,12 +72,8 @@ func EnableProtection(w workloads.Workload, d deployers.Deployer) error {
 		return err
 	}
 
-	nsToAnnonate := namespace
-	if isAppSet {
-		// this is the application namespace to add the annotation in case of argocd
-		nsToAnnonate = name
-	}
-
+	// this is the application namespace in drclusters to add the annotation
+	nsToAnnonate := name
 	if err := util.CreateNamespaceAndAddAnnotation(nsToAnnonate); err != nil {
 		return err
 	}
@@ -96,14 +87,9 @@ func DisableProtection(w workloads.Workload, d deployers.Deployer) error {
 	util.Ctx.Log.Info("enter DRActions DisableProtection")
 
 	name := GetCombinedName(d, w)
-	namespace := name
+	namespace := GetNamespace(d, w)
 	drpcName := name
 	client := util.Ctx.Hub.CtrlClient
-
-	_, isAppSet := d.(*deployers.ApplicationSet)
-	if isAppSet {
-		namespace = util.ArgocdNamespace
-	}
 
 	util.Ctx.Log.Info("delete drpc " + drpcName)
 
@@ -118,12 +104,7 @@ func Failover(w workloads.Workload, d deployers.Deployer) error {
 	util.Ctx.Log.Info("enter DRActions Failover")
 
 	name := GetCombinedName(d, w)
-	namespace := name
-
-	_, isAppSet := d.(*deployers.ApplicationSet)
-	if isAppSet {
-		namespace = util.ArgocdNamespace
-	}
+	namespace := GetNamespace(d, w)
 
 	drPolicyName := DefaultDRPolicyName
 	drpcName := name
@@ -175,12 +156,7 @@ func Relocate(w workloads.Workload, d deployers.Deployer) error {
 	util.Ctx.Log.Info("enter DRActions Relocate")
 
 	name := GetCombinedName(d, w)
-	namespace := name
-
-	_, isAppSet := d.(*deployers.ApplicationSet)
-	if isAppSet {
-		namespace = util.ArgocdNamespace
-	}
+	namespace := GetNamespace(d, w)
 
 	drPolicyName := DefaultDRPolicyName
 	drpcName := name
@@ -228,4 +204,14 @@ func Relocate(w workloads.Workload, d deployers.Deployer) error {
 
 func GetCombinedName(d deployers.Deployer, w workloads.Workload) string {
 	return deployers.GetCombinedName(d, w)
+}
+
+func GetNamespace(d deployers.Deployer, w workloads.Workload) string {
+	_, isAppSet := d.(*deployers.ApplicationSet)
+	if isAppSet {
+		// appset need be deployed in argocd ns
+		return util.ArgocdNamespace
+	}
+
+	return GetCombinedName(d, w)
 }
