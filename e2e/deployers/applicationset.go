@@ -60,9 +60,18 @@ func (a ApplicationSet) Undeploy(w workloads.Workload) error {
 		return err
 	}
 
-	err = deleteManagedClusterSetBinding(McsbName, namespace)
+	// multiple appsets could use the same mcsb in argocd ns.
+	// so delete mcsb if only 1 appset is in argocd ns
+	lastAppset, err := isLastAppsetInArgocdNs(namespace)
 	if err != nil {
 		return err
+	}
+
+	if lastAppset {
+		err = deleteManagedClusterSetBinding(McsbName, namespace)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
