@@ -25,10 +25,10 @@ const (
 // Create DRPC, in desired namespace
 // nolint:funlen
 func EnableProtection(w workloads.Workload, d deployers.Deployer) error {
-	util.Ctx.Log.Info("enter EnableProtection " + w.GetName() + "/" + d.GetName())
-
 	name := GetCombinedName(d, w)
 	namespace := GetNamespace(d, w)
+
+	util.Ctx.Log.Info("enter EnableProtection " + name)
 
 	drPolicyName := DefaultDRPolicyName
 	appname := w.GetAppName()
@@ -40,15 +40,13 @@ func EnableProtection(w workloads.Workload, d deployers.Deployer) error {
 		return err
 	}
 
-	util.Ctx.Log.Info("get placementdecision " + placementDecisionName)
-
 	placementDecision, err := getPlacementDecision(util.Ctx.Hub.CtrlClient, namespace, placementDecisionName)
 	if err != nil {
 		return err
 	}
 
 	clusterName := placementDecision.Status.Decisions[0].ClusterName
-	util.Ctx.Log.Info("placementdecision clusterName: " + clusterName)
+	util.Ctx.Log.Info("got clusterName " + clusterName + " from " + placementDecisionName)
 
 	// move update placement annotation after placement has been handled
 	// otherwise if we first add ocm disable annotation then it might not
@@ -84,10 +82,11 @@ func EnableProtection(w workloads.Workload, d deployers.Deployer) error {
 // remove DRPC
 // update placement annotation
 func DisableProtection(w workloads.Workload, d deployers.Deployer) error {
-	util.Ctx.Log.Info("enter DRActions DisableProtection")
-
 	name := GetCombinedName(d, w)
 	namespace := GetNamespace(d, w)
+
+	util.Ctx.Log.Info("enter DisableProtection " + name)
+
 	drpcName := name
 	client := util.Ctx.Hub.CtrlClient
 
@@ -101,10 +100,10 @@ func DisableProtection(w workloads.Workload, d deployers.Deployer) error {
 }
 
 func Failover(w workloads.Workload, d deployers.Deployer) error {
-	util.Ctx.Log.Info("enter DRActions Failover")
-
 	name := GetCombinedName(d, w)
 	namespace := GetNamespace(d, w)
+
+	util.Ctx.Log.Info("enter Failover " + name)
 
 	drPolicyName := DefaultDRPolicyName
 	drpcName := name
@@ -122,7 +121,7 @@ func Failover(w workloads.Workload, d deployers.Deployer) error {
 		return err
 	}
 
-	util.Ctx.Log.Info("get drpolicy " + drPolicyName)
+	util.Ctx.Log.Info("get drpolicy " + drPolicyName + " for " + drpcName)
 
 	drpolicy, err := getDRPolicy(client, drPolicyName)
 	if err != nil {
@@ -134,12 +133,10 @@ func Failover(w workloads.Workload, d deployers.Deployer) error {
 		return err
 	}
 
-	util.Ctx.Log.Info("failover to cluster: " + targetCluster)
-
 	drpc.Spec.Action = "Failover"
 	drpc.Spec.FailoverCluster = targetCluster
 
-	util.Ctx.Log.Info("update drpc " + drpcName)
+	util.Ctx.Log.Info("update drpc " + drpcName + " failover to " + targetCluster)
 
 	if err = updateDRPC(client, drpc); err != nil {
 		return err
@@ -153,10 +150,10 @@ func Failover(w workloads.Workload, d deployers.Deployer) error {
 // Relocate to Primary in DRPolicy as the PrimaryCluster
 // Update DRPC
 func Relocate(w workloads.Workload, d deployers.Deployer) error {
-	util.Ctx.Log.Info("enter DRActions Relocate")
-
 	name := GetCombinedName(d, w)
 	namespace := GetNamespace(d, w)
+
+	util.Ctx.Log.Info("enter Relocate " + name)
 
 	drPolicyName := DefaultDRPolicyName
 	drpcName := name
@@ -175,7 +172,7 @@ func Relocate(w workloads.Workload, d deployers.Deployer) error {
 		return err
 	}
 
-	util.Ctx.Log.Info("get drpolicy " + drPolicyName)
+	util.Ctx.Log.Info("get drpolicy " + drPolicyName + " for " + drpcName)
 
 	drpolicy, err := getDRPolicy(client, drPolicyName)
 	if err != nil {
@@ -187,12 +184,10 @@ func Relocate(w workloads.Workload, d deployers.Deployer) error {
 		return err
 	}
 
-	util.Ctx.Log.Info("relocate to cluster: " + targetCluster)
-
 	drpc.Spec.Action = "Relocate"
 	drpc.Spec.PreferredCluster = targetCluster
 
-	util.Ctx.Log.Info("update drpc " + drpcName)
+	util.Ctx.Log.Info("update drpc " + drpcName + " relocate to " + targetCluster)
 
 	err = updateDRPC(client, drpc)
 	if err != nil {
