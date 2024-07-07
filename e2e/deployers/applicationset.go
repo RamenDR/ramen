@@ -11,10 +11,10 @@ import (
 type ApplicationSet struct{}
 
 func (a ApplicationSet) Deploy(w workloads.Workload) error {
-	util.Ctx.Log.Info("enter Deploy " + w.GetName() + "/" + a.GetName())
-
 	name := GetCombinedName(a, w)
 	namespace := util.ArgocdNamespace
+
+	util.Ctx.Log.Info("enter Deploy " + name)
 
 	err := createManagedClusterSetBinding(McsbName, namespace)
 	if err != nil {
@@ -40,10 +40,10 @@ func (a ApplicationSet) Deploy(w workloads.Workload) error {
 }
 
 func (a ApplicationSet) Undeploy(w workloads.Workload) error {
-	util.Ctx.Log.Info("enter Undeploy " + w.GetName() + "/" + a.GetName())
-
 	name := GetCombinedName(a, w)
 	namespace := util.ArgocdNamespace
+
+	util.Ctx.Log.Info("enter Undeploy " + name)
 
 	err := deleteApplicationSet(a, w)
 	if err != nil {

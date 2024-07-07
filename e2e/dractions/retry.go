@@ -38,10 +38,10 @@ func waitPlacementDecision(client client.Client, namespace string, placementName
 		}
 
 		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
-			return nil, "", fmt.Errorf("could not get placement decision before timeout")
+			return nil, "", fmt.Errorf(
+				"could not get placement decision for " + placementName + " before timeout, fail")
 		}
 
-		util.Ctx.Log.Info(fmt.Sprintf("could not get placement decision, retry in %v seconds", util.TimeInterval))
 		time.Sleep(time.Second * time.Duration(util.TimeInterval))
 	}
 }
@@ -62,15 +62,18 @@ func waitDRPCReady(client client.Client, namespace string, drpcName string) erro
 			return nil
 		}
 
-		if conditionReady && drpc.Status.LastGroupSyncTime == nil {
-			util.Ctx.Log.Info("drpc " + drpcName + " LastGroupSyncTime is nil")
-		}
-
 		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
-			return fmt.Errorf(fmt.Sprintf("drpc %s is not ready yet before timeout of %v", drpcName, util.Timeout))
+			if !conditionReady {
+				util.Ctx.Log.Info("drpc " + drpcName + " condition 'Available' or 'PeerReady' is not True")
+			}
+
+			if conditionReady && drpc.Status.LastGroupSyncTime == nil {
+				util.Ctx.Log.Info("drpc " + drpcName + " LastGroupSyncTime is nil")
+			}
+
+			return fmt.Errorf("drpc " + drpcName + " is not ready yet before timeout, fail")
 		}
 
-		util.Ctx.Log.Info(fmt.Sprintf("drpc %s is not ready yet, retry in %v seconds", drpcName, util.TimeInterval))
 		time.Sleep(time.Second * time.Duration(util.TimeInterval))
 	}
 }
@@ -82,8 +85,6 @@ func checkDRPCConditions(drpc *ramen.DRPlacementControl) bool {
 	for _, cond := range drpc.Status.Conditions {
 		if cond.Type == "Available" {
 			if cond.Status != "True" {
-				util.Ctx.Log.Info("drpc " + drpc.Name + " condition Available is not True")
-
 				return false
 			}
 
@@ -92,8 +93,6 @@ func checkDRPCConditions(drpc *ramen.DRPlacementControl) bool {
 
 		if cond.Type == "PeerReady" {
 			if cond.Status != "True" {
-				util.Ctx.Log.Info("drpc " + drpc.Name + " condition PeerReady is not True")
-
 				return false
 			}
 
@@ -115,17 +114,16 @@ func waitDRPCPhase(client client.Client, namespace string, name string, phase st
 
 		currentPhase := string(drpc.Status.Phase)
 		if currentPhase == phase {
-			util.Ctx.Log.Info("drpc " + name + " phase is " + phase)
+			util.Ctx.Log.Info("drpc " + name + " phase is " + phase + ", meets expectation")
 
 			return nil
 		}
 
 		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
-			return fmt.Errorf(fmt.Sprintf("drpc %s status is not %s yet before timeout of %v", name, phase, util.Timeout))
+			return fmt.Errorf(fmt.Sprintf(
+				"drpc %s status is not %s yet before timeout, fail", name, phase))
 		}
 
-		util.Ctx.Log.Info(fmt.Sprintf("current drpc %s phase is %s, expecting %s, retry in %v seconds",
-			name, currentPhase, phase, util.TimeInterval))
 		time.Sleep(time.Second * time.Duration(util.TimeInterval))
 	}
 }
@@ -142,7 +140,7 @@ func getCurrentCluster(client client.Client, namespace string, placementName str
 	}
 
 	clusterName := placementDecision.Status.Decisions[0].ClusterName
-	util.Ctx.Log.Info("placementdecision clusterName: " + clusterName)
+	util.Ctx.Log.Info(placementName + " placementdecision clusterName: " + clusterName)
 
 	return clusterName, nil
 }
@@ -191,10 +189,9 @@ func waitDRPCDeleted(client client.Client, namespace string, name string) error 
 		}
 
 		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
-			return fmt.Errorf(fmt.Sprintf("drpc %s is not deleted yet before timeout of %v", name, util.Timeout))
+			return fmt.Errorf(fmt.Sprintf("drpc %s is not deleted yet before timeout, fail", name))
 		}
 
-		util.Ctx.Log.Info(fmt.Sprintf("drpc %s is not deleted yet, retry in %v seconds", name, util.TimeInterval))
 		time.Sleep(time.Second * time.Duration(util.TimeInterval))
 	}
 }

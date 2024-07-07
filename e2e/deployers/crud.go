@@ -264,8 +264,6 @@ func deleteConfigMap(cmName string, cmNamespace string) error {
 
 // nolint:funlen
 func createApplicationSet(a ApplicationSet, w workloads.Workload) error {
-	util.Ctx.Log.Info("enter createApplicationSet")
-
 	var requeueSeconds int64 = 180
 
 	name := GetCombinedName(a, w)
@@ -344,8 +342,6 @@ func createApplicationSet(a ApplicationSet, w workloads.Workload) error {
 }
 
 func deleteApplicationSet(a ApplicationSet, w workloads.Workload) error {
-	util.Ctx.Log.Info("enter deleteApplicationSet")
-
 	name := GetCombinedName(a, w)
 	namespace := util.ArgocdNamespace
 
@@ -370,8 +366,6 @@ func deleteApplicationSet(a ApplicationSet, w workloads.Workload) error {
 
 // check if only the last appset is in the argocd namespace
 func isLastAppsetInArgocdNs(namespace string) (bool, error) {
-	util.Ctx.Log.Info("enter GetApplicationSets")
-
 	appsetList := &argocdv1alpha1hack.ApplicationSetList{}
 
 	err := util.Ctx.Hub.CtrlClient.List(
