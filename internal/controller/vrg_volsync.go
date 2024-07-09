@@ -21,7 +21,6 @@ import (
 var FakeCGLabel = "cg"
 
 //nolint:gocognit,funlen,cyclop
-
 func (v *VRGInstance) restorePVsAndPVCsForVolSync() (int, error) {
 	v.log.Info("VolSync: Restoring VolSync PVs")
 
@@ -35,6 +34,7 @@ func (v *VRGInstance) restorePVsAndPVCsForVolSync() (int, error) {
 
 	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
 		failoverAction := v.instance.Spec.Action == ramendrv1alpha1.VRGActionFailover
+
 		var err error
 
 		cg, ok := rdSpec.ProtectedPVC.Labels[FakeCGLabel]
