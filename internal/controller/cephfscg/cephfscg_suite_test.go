@@ -68,11 +68,11 @@ var _ = BeforeSuite(func() {
 	if _, set := os.LookupEnv("KUBEBUILDER_ASSETS"); !set {
 		testLog.Info("Setting up KUBEBUILDER_ASSETS for envtest")
 
-		// read content of the file ../../testbin/testassets.txt
+		// read content of the file ../../../testbin/testassets.txt
 		// and set the content as the value of KUBEBUILDER_ASSETS
 		// this is to avoid the need to set KUBEBUILDER_ASSETS
 		// when running the test suite
-		content, err := os.ReadFile("../../testbin/testassets.txt")
+		content, err := os.ReadFile("../../../testbin/testassets.txt")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(os.Setenv("KUBEBUILDER_ASSETS", string(content))).To(Succeed())
 	}
@@ -80,8 +80,8 @@ var _ = BeforeSuite(func() {
 	By("Bootstrapping test environment")
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
-			filepath.Join("..", "..", "config", "crd", "bases"),
-			filepath.Join("..", "..", "hack", "test"),
+			filepath.Join("..", "..", "..", "config", "crd", "bases"),
+			filepath.Join("..", "..", "..", "hack", "test"),
 		},
 	}
 
