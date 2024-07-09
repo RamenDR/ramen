@@ -1511,6 +1511,8 @@ func (r *VolumeReplicationGroupReconciler) RSMapFunc(ctx context.Context, obj cl
 func (r *VolumeReplicationGroupReconciler) addVolsyncOwnsAndWatches(ctrlBuilder *builder.Builder) *builder.Builder {
 	ctrlBuilder.Owns(&volsyncv1alpha1.ReplicationDestination{}).
 		Owns(&volsyncv1alpha1.ReplicationSource{}).
+		Owns(&ramendrv1alpha1.ReplicationGroupSource{}).
+		Owns(&ramendrv1alpha1.ReplicationGroupDestination{}).
 		Watches(&volsyncv1alpha1.ReplicationDestination{},
 			handler.EnqueueRequestsFromMapFunc(r.RDMapFunc),
 			builder.WithPredicates(rmnutil.CreateOrDeleteOrResourceVersionUpdatePredicate{}),

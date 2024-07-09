@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
-	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
+	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v7/apis/volumesnapshot/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -114,7 +114,7 @@ func (v *VSHandler) ReconcileRD(
 	// Pre-allocated shared secret - DRPC will generate and propagate this secret from hub to clusters
 	pskSecretName := GetVolSyncPSKSecretNameFromVRGName(v.owner.GetName())
 	// Need to confirm this secret exists on the cluster before proceeding, otherwise volsync will generate it
-	secretExists, err := v.validateSecretAndAddVRGOwnerRef(pskSecretName)
+	secretExists, err := v.ValidateSecretAndAddVRGOwnerRef(pskSecretName)
 	if err != nil || !secretExists {
 		return nil, err
 	}
@@ -147,12 +147,12 @@ func (v *VSHandler) ReconcileRD(
 		return nil, err
 	}
 
-	err = v.reconcileServiceExportForRD(rd)
+	err = v.ReconcileServiceExportForRD(rd)
 	if err != nil {
 		return nil, err
 	}
 
-	if !rdStatusReady(rd, l) {
+	if !RDStatusReady(rd, l) {
 		return nil, nil
 	}
 
@@ -165,7 +165,7 @@ func (v *VSHandler) ReconcileRD(
 // For ReplicationDestination - considered ready when a sync has completed
 // - rsync address should be filled out in the status
 // - latest image should be set properly in the status (at least one sync cycle has completed and we have a snapshot)
-func rdStatusReady(rd *volsyncv1alpha1.ReplicationDestination, log logr.Logger) bool {
+func RDStatusReady(rd *volsyncv1alpha1.ReplicationDestination, log logr.Logger) bool {
 	if rd.Status == nil {
 		return false
 	}
@@ -289,7 +289,7 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	pskSecretName := GetVolSyncPSKSecretNameFromVRGName(v.owner.GetName())
 
 	// Need to confirm this secret exists on the cluster before proceeding, otherwise volsync will generate it
-	secretExists, err := v.validateSecretAndAddVRGOwnerRef(pskSecretName)
+	secretExists, err := v.ValidateSecretAndAddVRGOwnerRef(pskSecretName)
 	if err != nil || !secretExists {
 		return false, nil, err
 	}
@@ -618,7 +618,7 @@ func (v *VSHandler) validatePVCAndAddVRGOwnerRef(pvcNamespacedName types.Namespa
 	return pvc, nil
 }
 
-func (v *VSHandler) validateSecretAndAddVRGOwnerRef(secretName string) (bool, error) {
+func (v *VSHandler) ValidateSecretAndAddVRGOwnerRef(secretName string) (bool, error) {
 	secret := &corev1.Secret{}
 
 	err := v.client.Get(v.ctx,
@@ -819,7 +819,7 @@ func (v *VSHandler) deleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestinatio
 	}, lrs)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
-			return v.deleteLocalRD(getLocalReplicationName(rd.GetName()), rd.GetNamespace())
+			return v.DeleteLocalRD(getLocalReplicationName(rd.GetName()), rd.GetNamespace())
 		}
 
 		return err
@@ -830,7 +830,7 @@ func (v *VSHandler) deleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestinatio
 	if lrs.Spec.Trigger != nil && lrs.Spec.Trigger.Manual == latestRDImage.Name {
 		// When local final sync is complete, we cleanup all locally created resources except the app PVC
 		if lrs.Status != nil && lrs.Status.LastManualSync == lrs.Spec.Trigger.Manual {
-			err = v.cleanupLocalResources(lrs)
+			err = v.CleanupLocalResources(lrs)
 			if err != nil {
 				return err
 			}
@@ -887,7 +887,7 @@ func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncR
 // Make sure a ServiceExport exists to export the service for this RD to remote clusters
 // See: https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/
 // 2.4/html/services/services-overview#enable-service-discovery-submariner
-func (v *VSHandler) reconcileServiceExportForRD(rd *volsyncv1alpha1.ReplicationDestination) error {
+func (v *VSHandler) ReconcileServiceExportForRD(rd *volsyncv1alpha1.ReplicationDestination) error {
 	// Using unstructured to avoid needing to require serviceexport in client scheme
 	svcExport := &unstructured.Unstructured{}
 	svcExport.Object = map[string]interface{}{
@@ -994,7 +994,7 @@ func (v *VSHandler) EnsurePVCfromRD(rdSpec ramendrv1alpha1.VolSyncReplicationDes
 
 	v.log.Info("Latest Image for ReplicationDestination", "latestImage", vsImageRef.Name)
 
-	return v.validateSnapshotAndEnsurePVC(rdSpec, *vsImageRef, failoverAction)
+	return v.ValidateSnapshotAndEnsurePVC(rdSpec, *vsImageRef, failoverAction)
 }
 
 //nolint:cyclop,funlen,gocognit
@@ -1063,7 +1063,7 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 }
 
 //nolint:nestif
-func (v *VSHandler) validateSnapshotAndEnsurePVC(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+func (v *VSHandler) ValidateSnapshotAndEnsurePVC(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	snapshotRef corev1.TypedLocalObjectReference, failoverAction bool,
 ) error {
 	snap, err := v.validateAndProtectSnapshot(snapshotRef, rdSpec.ProtectedPVC.Namespace)
@@ -1155,7 +1155,7 @@ func (v *VSHandler) rollbackToLastSnapshot(rdSpec ramendrv1alpha1.VolSyncReplica
 	pskSecretName := GetVolSyncPSKSecretNameFromVRGName(v.owner.GetName())
 
 	// Create localRD and localRS. The latest snapshot of the main RD will be used for the rollback
-	lrd, lrs, err := v.reconcileLocalReplication(rd, rdSpec, pskSecretName, v.log)
+	lrd, lrs, err := v.reconcileLocalReplication(rd, &snapshotRef, rdSpec, pskSecretName, v.log)
 	if err != nil {
 		return err
 	}
@@ -1743,6 +1743,7 @@ func ValidateObjectExists(ctx context.Context, c client.Client, obj client.Objec
 }
 
 func (v *VSHandler) reconcileLocalReplication(rd *volsyncv1alpha1.ReplicationDestination,
+	snapshotRef *corev1.TypedLocalObjectReference,
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	pskSecretName string, l logr.Logger) (*volsyncv1alpha1.ReplicationDestination,
 	*volsyncv1alpha1.ReplicationSource, error,
@@ -1756,7 +1757,7 @@ func (v *VSHandler) reconcileLocalReplication(rd *volsyncv1alpha1.ReplicationDes
 		ProtectedPVC: rdSpec.ProtectedPVC,
 	}
 
-	lrs, err := v.reconcileLocalRS(rd, rsSpec, pskSecretName, *lrd.Status.RsyncTLS.Address)
+	lrs, err := v.reconcileLocalRS(rd, snapshotRef, rsSpec, pskSecretName, *lrd.Status.RsyncTLS.Address)
 	if err != nil {
 		return lrd, nil, fmt.Errorf("failed to reconcile localRS (%w)", err)
 	}
@@ -1834,6 +1835,7 @@ func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDe
 
 //nolint:funlen
 func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
+	snapshotRef *corev1.TypedLocalObjectReference,
 	rsSpec *ramendrv1alpha1.VolSyncReplicationSourceSpec,
 	pskSecretName, address string,
 ) (*volsyncv1alpha1.ReplicationSource, error,
@@ -1851,7 +1853,7 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 		return nil, err
 	}
 
-	pvc, err := v.setupLocalRS(rd)
+	pvc, err := v.setupLocalRS(rd, snapshotRef)
 	if err != nil {
 		return nil, err
 	}
@@ -1902,7 +1904,7 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 	return lrs, nil
 }
 
-func (v *VSHandler) cleanupLocalResources(lrs *volsyncv1alpha1.ReplicationSource) error {
+func (v *VSHandler) CleanupLocalResources(lrs *volsyncv1alpha1.ReplicationSource) error {
 	// delete the snapshot taken by local RD
 	err := v.deleteSnapshot(v.ctx, v.client, lrs.Spec.Trigger.Manual, lrs.GetNamespace(), v.log)
 	if err != nil {
@@ -1921,10 +1923,10 @@ func (v *VSHandler) cleanupLocalResources(lrs *volsyncv1alpha1.ReplicationSource
 	}
 
 	// Delete the localRD. The name of the localRD is the same as the name of the localRS
-	return v.deleteLocalRD(lrs.GetName(), lrs.GetNamespace())
+	return v.DeleteLocalRD(lrs.GetName(), lrs.GetNamespace())
 }
 
-func (v *VSHandler) deleteLocalRD(lrdName, lrdNamespace string) error {
+func (v *VSHandler) DeleteLocalRD(lrdName, lrdNamespace string) error {
 	lrd := &volsyncv1alpha1.ReplicationDestination{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      lrdName,
@@ -1948,13 +1950,9 @@ func (v *VSHandler) deleteLocalRD(lrdName, lrdNamespace string) error {
 }
 
 func (v *VSHandler) setupLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
+	snapshotRef *corev1.TypedLocalObjectReference,
 ) (*corev1.PersistentVolumeClaim, error) {
-	latestImage, err := v.getRDLatestImage(rd.GetName(), rd.GetNamespace())
-	if err != nil {
-		return nil, err
-	}
-
-	if !isLatestImageReady(latestImage) {
+	if !isLatestImageReady(snapshotRef) {
 		noSnapErr := fmt.Errorf("unable to find LatestImage from ReplicationDestination %s", rd.GetName())
 		v.log.Error(noSnapErr, "No latestImage")
 
@@ -1962,7 +1960,7 @@ func (v *VSHandler) setupLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 	}
 
 	// Make copy of the ref and make sure API group is filled out correctly (shouldn't really need this part)
-	vsImageRef := latestImage.DeepCopy()
+	vsImageRef := snapshotRef.DeepCopy()
 	if vsImageRef.APIGroup == nil || *vsImageRef.APIGroup == "" {
 		vsGroup := snapv1.GroupName
 		vsImageRef.APIGroup = &vsGroup
@@ -1977,7 +1975,7 @@ func (v *VSHandler) setupLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 		},
 	}
 
-	err = v.client.Get(v.ctx, types.NamespacedName{
+	err := v.client.Get(v.ctx, types.NamespacedName{
 		Name:      lrs.Name,
 		Namespace: lrs.Namespace,
 	}, lrs)
@@ -2001,7 +1999,7 @@ func (v *VSHandler) setupLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 	}
 
 	// In all other cases, we have to create a RO PVC.
-	return v.createReadOnlyPVCFromSnapshot(rd, *latestImage, restoreSize)
+	return v.createReadOnlyPVCFromSnapshot(rd, *snapshotRef, restoreSize)
 }
 
 func (v *VSHandler) createReadOnlyPVCFromSnapshot(rd *volsyncv1alpha1.ReplicationDestination,

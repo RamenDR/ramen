@@ -67,4 +67,22 @@ resources:
   kind: DRClusterConfig
   path: github.com/ramendr/ramen/api/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: openshift.io
+  group: ramendr
+  kind: ReplicationGroupDestination
+  path: github.com/ramendr/ramen/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: openshift.io
+  group: ramendr
+  kind: ReplicationGroupSource
+  path: github.com/ramendr/ramen/api/v1alpha1
+  version: v1alpha1
 version: "3"
