@@ -15,7 +15,6 @@ import (
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	controller_runtime_config "sigs.k8s.io/controller-runtime/pkg/config/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
@@ -98,14 +97,12 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 				Kind:       "RamenConfig",
 				APIVersion: rmn.GroupVersion.String(),
 			},
-			ControllerManagerConfigurationSpec: controller_runtime_config.ControllerManagerConfigurationSpec{
-				LeaderElection: &config.LeaderElectionConfiguration{
-					LeaderElect:  new(bool),
-					ResourceName: ramencontrollers.HubLeaderElectionResourceName,
-				},
-				Metrics: controller_runtime_config.ControllerMetrics{
-					BindAddress: "0", // Disable metrics
-				},
+			LeaderElection: &config.LeaderElectionConfiguration{
+				LeaderElect:  new(bool),
+				ResourceName: ramencontrollers.HubLeaderElectionResourceName,
+			},
+			Metrics: rmn.ControllerMetrics{
+				BindAddress: "0", // Disable metrics
 			},
 			RamenControllerType: rmn.DRHubType,
 			S3StoreProfiles: []rmn.S3StoreProfile{
@@ -139,7 +136,9 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 
 		By("starting the DRCluster reconciler")
 
-		options, err := manager.Options{Scheme: scheme.Scheme}.AndFrom(ramenConfig)
+		options := manager.Options{Scheme: scheme.Scheme}
+		ramencontrollers.LoadControllerOptions(&options, ramenConfig)
+
 		Expect(err).NotTo(HaveOccurred())
 
 		k8sManager, err := ctrl.NewManager(cfg, options)
