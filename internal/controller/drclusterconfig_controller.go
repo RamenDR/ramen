@@ -8,13 +8,17 @@ import (
 	"fmt"
 	"time"
 
+	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
+
 	"golang.org/x/time/rate"
 	storagev1 "k8s.io/api/storage/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
@@ -23,7 +27,9 @@ import (
 )
 
 const (
-	drCConfigFinalizerName = "drclusterconfigs.ramendr.openshift.io/ramen"
+	drCConfigFinalizerName = "drclusterconfigs.ramendr.openshift.io/finalizer"
+	drCConfigOwnerLabel    = "drclusterconfigs.ramendr.openshift.io/owner"
+	drCConfigOwnerName     = "ramen"
 
 	maxReconcileBackoff = 5 * time.Minute
 
@@ -36,7 +42,7 @@ type DRClusterConfigReconciler struct {
 	client.Client
 	Scheme      *runtime.Scheme
 	Log         logr.Logger
-	RateLimiter *workqueue.RateLimiter
+	RateLimiter *workqueue.TypedRateLimiter[reconcile.Request]
 }
 
 //nolint:lll
@@ -108,7 +114,7 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 
 	allSurvivors := []string{}
 
-	survivors, err := r.createSCClusterClaims(ctx, log)
+	survivors, err := r.createSCClusterClaims(ctx)
 	if err != nil {
 		return ctrl.Result{Requeue: true}, err
 	}
@@ -125,7 +131,6 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 // createSCClusterClaims lists all StorageClasses and creates ClusterClaims for them
 func (r *DRClusterConfigReconciler) createSCClusterClaims(
 	ctx context.Context,
-	log logr.Logger,
 ) ([]string, error) {
 	claims := []string{}
 
@@ -140,7 +145,7 @@ func (r *DRClusterConfigReconciler) createSCClusterClaims(
 			continue
 		}
 
-		if err := r.ensureClusterClaim(ctx, log, ccSCPrefix, sClasses.Items[i].GetName()); err != nil {
+		if err := r.ensureClusterClaim(ctx, ccSCPrefix, sClasses.Items[i].GetName()); err != nil {
 			return nil, err
 		}
 
@@ -150,13 +155,28 @@ func (r *DRClusterConfigReconciler) createSCClusterClaims(
 	return claims, nil
 }
 
-// ensureClusterClaim is a generic ClusterClaim creation function, that create a claim named "prefix.name", with
+// ensureClusterClaim is a generic ClusterClaim creation function, that creates a claim named "prefix.name", with
 // the passed in name as the ClusterClaim spec.Value
 func (r *DRClusterConfigReconciler) ensureClusterClaim(
 	ctx context.Context,
-	log logr.Logger,
 	prefix, name string,
 ) error {
+	cc := &clusterv1alpha1.ClusterClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: claimName(prefix, name),
+		},
+	}
+
+	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, cc, func() error {
+		util.NewResourceUpdater(cc).AddLabel(drCConfigOwnerLabel, drCConfigOwnerName)
+
+		cc.Spec.Value = name
+
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to create or update ClusterClaim %s, %w", claimName(prefix, name), err)
+	}
+
 	return nil
 }
 
@@ -168,11 +188,11 @@ func claimName(prefix, name string) string {
 func (r *DRClusterConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	controller := ctrl.NewControllerManagedBy(mgr)
 
-	rateLimiter := workqueue.NewMaxOfRateLimiter(
-		workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, maxReconcileBackoff),
+	rateLimiter := workqueue.NewTypedMaxOfRateLimiter(
+		workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, maxReconcileBackoff),
 		// defaults from client-go
 		//nolint: gomnd
-		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
+		&workqueue.TypedBucketRateLimiter[reconcile.Request]{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
 	)
 
 	if r.RateLimiter != nil {

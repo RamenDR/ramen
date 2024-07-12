@@ -5,68 +5,177 @@ package controllers_test
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/util/workqueue"
+	config "k8s.io/component-base/config/v1alpha1"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	ramencontrollers "github.com/ramendr/ramen/internal/controller"
 )
 
-var _ = Describe("DRClusterConfig Controller", func() {
-	Context("When reconciling a resource", func() {
-		const resourceName = "test-resource"
+var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
+	var (
+		ctx       context.Context
+		cancel    context.CancelFunc
+		cfg       *rest.Config
+		testEnv   *envtest.Environment
+		k8sClient client.Client
+		drCConfig *ramen.DRClusterConfig
+		sc1       *storagev1.StorageClass
+	)
 
-		ctx := context.Background()
+	BeforeAll(func() {
+		By("bootstrapping test environment")
 
-		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+		Expect(os.Setenv("POD_NAMESPACE", ramenNamespace)).To(Succeed())
+
+		testEnv = &envtest.Environment{
+			CRDDirectoryPaths: []string{
+				filepath.Join("..", "..", "config", "crd", "bases"),
+				filepath.Join("..", "..", "hack", "test"),
+			},
 		}
-		drclusterconfig := &ramendrv1alpha1.DRClusterConfig{}
 
-		BeforeEach(func() {
-			By("creating the custom resource for the Kind DRClusterConfig")
-			err := k8sClient.Get(ctx, typeNamespacedName, drclusterconfig)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &ramendrv1alpha1.DRClusterConfig{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: "default",
-					},
-					// TODO(user): Specify other spec details if needed.
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-			}
-		})
+		if testEnv.UseExistingCluster != nil && *testEnv.UseExistingCluster == true {
+			namespaceDeletionSupported = true
+		}
 
-		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &ramendrv1alpha1.DRClusterConfig{}
-			err := apiReader.Get(ctx, typeNamespacedName, resource)
-			Expect(err).NotTo(HaveOccurred())
+		var err error
+		done := make(chan interface{})
+		go func() {
+			defer GinkgoRecover()
+			cfg, err = testEnv.Start()
+			close(done)
+		}()
+		Eventually(done).WithTimeout(time.Minute).Should(BeClosed())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg).NotTo(BeNil())
 
-			By("Cleanup the specific resource instance DRClusterConfig")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
-		})
-		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
-			controllerReconciler := &ramencontrollers.DRClusterConfigReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
-			}
+		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+		Expect(err).NotTo(HaveOccurred())
 
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
+		By("starting the DRClusterConfig reconciler")
+
+		ramenConfig := &ramen.RamenConfig{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "RamenConfig",
+				APIVersion: ramen.GroupVersion.String(),
+			},
+			LeaderElection: &config.LeaderElectionConfiguration{
+				LeaderElect:  new(bool),
+				ResourceName: ramencontrollers.HubLeaderElectionResourceName,
+			},
+			Metrics: ramen.ControllerMetrics{
+				BindAddress: "0", // Disable metrics
+			},
+		}
+
+		options := manager.Options{Scheme: scheme.Scheme}
+		ramencontrollers.LoadControllerOptions(&options, ramenConfig)
+
+		k8sManager, err := ctrl.NewManager(cfg, options)
+		Expect(err).ToNot(HaveOccurred())
+
+		rateLimiter := workqueue.NewTypedMaxOfRateLimiter(
+			workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](
+				10*time.Millisecond,
+				100*time.Millisecond),
+		)
+
+		Expect((&ramencontrollers.DRClusterConfigReconciler{
+			Client:      k8sManager.GetClient(),
+			Scheme:      k8sManager.GetScheme(),
+			Log:         ctrl.Log.WithName("controllers").WithName("DRClusterConfig"),
+			RateLimiter: &rateLimiter,
+		}).SetupWithManager(k8sManager)).To(Succeed())
+
+		ctx, cancel = context.WithCancel(context.TODO())
+		go func() {
+			err = k8sManager.Start(ctx)
+			Expect(err).ToNot(HaveOccurred())
+		}()
+
+		By("Creating a DClusterConfig")
+
+		drCConfig = &ramen.DRClusterConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "local"},
+			Spec:       ramen.DRClusterConfigSpec{},
+		}
+		Expect(k8sClient.Create(context.TODO(), drCConfig)).To(Succeed())
+	})
+
+	AfterAll(func() {
+		Expect(k8sClient.Delete(context.TODO(), drCConfig)).To(Succeed())
+		Eventually(func() bool {
+			err := k8sClient.Get(context.TODO(), types.NamespacedName{
+				Name: "local",
+			}, drCConfig)
+
+			return errors.IsNotFound(err)
+		}, timeout, interval).Should(BeTrue())
+
+		cancel() // Stop the reconciler
+		By("tearing down the test environment")
+		err := testEnv.Stop()
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	Describe("ClusterClaims-StorageClasses", Ordered, func() {
+		Context("Given DRClusterConfig resource", func() {
+			When("there is a StorageClass created with required labels", func() {
+				It("creates a ClusterClaim", func() {
+					By("creating a StorageClass")
+
+					sc1 = &storagev1.StorageClass{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "sc1",
+							Labels: map[string]string{
+								ramencontrollers.StorageIDLabel: "fake",
+							},
+						},
+						Provisioner: "fake.ramen.com",
+					}
+					Expect(k8sClient.Create(context.TODO(), sc1)).To(Succeed())
+
+					Eventually(func() error {
+						ccName := types.NamespacedName{
+							Name: "storage.class" + "." + "sc1",
+						}
+
+						cc := &clusterv1alpha1.ClusterClaim{}
+						err := k8sClient.Get(context.TODO(), ccName, cc)
+						if err != nil {
+							return err
+						}
+
+						if cc.Spec.Value != "sc1" {
+							return fmt.Errorf("mismatched spec.value in Clusterclaim, expected sc1, got %s",
+								cc.Spec.Value)
+						}
+
+						return nil
+					}, timeout, interval).Should(BeNil())
+				})
 			})
-			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
 		})
 	})
 })
