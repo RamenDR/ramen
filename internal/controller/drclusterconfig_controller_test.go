@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"time"
 
+	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
+	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	clusterv1alpha1 "github.com/open-cluster-management-io/api/cluster/v1alpha1"
@@ -43,7 +45,6 @@ func ensureClaimCount(apiReader client.Reader, count int) {
 	}, timeout, interval).Should(BeTrue())
 }
 
-//nolint:unparam
 func ensureClusterClaim(apiReader client.Reader, class, name string) {
 	Eventually(func() error {
 		ccName := types.NamespacedName{
@@ -67,14 +68,17 @@ func ensureClusterClaim(apiReader client.Reader, class, name string) {
 
 var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 	var (
-		ctx              context.Context
-		cancel           context.CancelFunc
-		cfg              *rest.Config
-		testEnv          *envtest.Environment
-		k8sClient        client.Client
-		apiReader        client.Reader
-		drCConfig        *ramen.DRClusterConfig
-		baseSC, sc1, sc2 *storagev1.StorageClass
+		ctx                 context.Context
+		cancel              context.CancelFunc
+		cfg                 *rest.Config
+		testEnv             *envtest.Environment
+		k8sClient           client.Client
+		apiReader           client.Reader
+		drCConfig           *ramen.DRClusterConfig
+		baseSC, sc1, sc2    *storagev1.StorageClass
+		baseVSC, vsc1, vsc2 *snapv1.VolumeSnapshotClass
+		baseVRC, vrc1, vrc2 *volrep.VolumeReplicationClass
+		claimCount          int
 	)
 
 	BeforeAll(func() {
@@ -156,7 +160,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 		}
 		Expect(k8sClient.Create(context.TODO(), drCConfig)).To(Succeed())
 
-		By("Defining a basic StroageClass")
+		By("Defining basic Classes")
 
 		baseSC = &storagev1.StorageClass{
 			ObjectMeta: metav1.ObjectMeta{
@@ -166,6 +170,29 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				},
 			},
 			Provisioner: "fake.ramen.com",
+		}
+
+		baseVSC = &snapv1.VolumeSnapshotClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "baseVSC",
+				Labels: map[string]string{
+					ramencontrollers.StorageIDLabel: "fake",
+				},
+			},
+			Driver:         "fake.ramen.com",
+			DeletionPolicy: snapv1.VolumeSnapshotContentDelete,
+		}
+
+		baseVRC = &volrep.VolumeReplicationClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "baseVRC",
+				Labels: map[string]string{
+					ramencontrollers.VolumeReplicationIDLabel: "fake",
+				},
+			},
+			Spec: volrep.VolumeReplicationClassSpec{
+				Provisioner: "fake.ramen.com",
+			},
 		}
 	})
 
@@ -189,7 +216,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred())
 	})
 
-	Describe("ClusterClaims-StorageClasses", Ordered, func() {
+	Describe("ClusterClaims", Ordered, func() {
 		Context("Given DRClusterConfig resource", func() {
 			When("there is a StorageClass created with required labels", func() {
 				It("creates a ClusterClaim", func() {
@@ -199,8 +226,9 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 					sc1.Name = "sc1"
 					Expect(k8sClient.Create(context.TODO(), sc1)).To(Succeed())
 
+					claimCount++
 					ensureClusterClaim(apiReader, "storage.class", "sc1")
-					ensureClaimCount(apiReader, 1)
+					ensureClaimCount(apiReader, claimCount)
 				})
 			})
 			When("a StorageClass with required labels is deleted", func() {
@@ -209,7 +237,8 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 
 					Expect(k8sClient.Delete(context.TODO(), sc1)).To(Succeed())
 
-					ensureClaimCount(apiReader, 0)
+					claimCount--
+					ensureClaimCount(apiReader, claimCount)
 				})
 			})
 			When("there are multiple StorageClass created with required labels", func() {
@@ -224,9 +253,10 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 					sc2.Name = "sc2"
 					Expect(k8sClient.Create(context.TODO(), sc2)).To(Succeed())
 
+					claimCount += 2
 					ensureClusterClaim(apiReader, "storage.class", "sc1")
 					ensureClusterClaim(apiReader, "storage.class", "sc2")
-					ensureClaimCount(apiReader, 2)
+					ensureClaimCount(apiReader, claimCount)
 				})
 			})
 			When("a StorageClass label is deleted", func() {
@@ -236,9 +266,116 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 					sc1.Labels = map[string]string{}
 					Expect(k8sClient.Update(context.TODO(), sc1)).To(Succeed())
 
-					ensureClaimCount(apiReader, 1)
+					claimCount--
+					ensureClaimCount(apiReader, claimCount)
 					ensureClusterClaim(apiReader, "storage.class", "sc2")
 				})
+			})
+		})
+		When("there is a SnapshotCLass created with required labels", func() {
+			It("creates a ClusterClaim", func() {
+				By("creating a SnapshotClass")
+
+				vsc1 = baseVSC.DeepCopy()
+				vsc1.Name = "vsc1"
+				Expect(k8sClient.Create(context.TODO(), vsc1)).To(Succeed())
+
+				claimCount++
+				ensureClusterClaim(apiReader, "snapshot.class", "vsc1")
+				ensureClaimCount(apiReader, claimCount)
+			})
+		})
+		When("a SnapshotClass with required labels is deleted", func() {
+			It("deletes the associated ClusterClaim", func() {
+				By("deleting a SnapshotClass")
+
+				Expect(k8sClient.Delete(context.TODO(), vsc1)).To(Succeed())
+
+				claimCount--
+				ensureClaimCount(apiReader, claimCount)
+			})
+		})
+		When("there are multiple SnapshotClass created with required labels", func() {
+			It("creates ClusterClaims", func() {
+				By("creating a SnapshotClass")
+
+				vsc1 = baseVSC.DeepCopy()
+				vsc1.Name = "vsc1"
+				Expect(k8sClient.Create(context.TODO(), vsc1)).To(Succeed())
+
+				vsc2 = baseVSC.DeepCopy()
+				vsc2.Name = "vsc2"
+				Expect(k8sClient.Create(context.TODO(), vsc2)).To(Succeed())
+
+				claimCount += 2
+				ensureClusterClaim(apiReader, "snapshot.class", "vsc1")
+				ensureClusterClaim(apiReader, "snapshot.class", "vsc2")
+				ensureClaimCount(apiReader, claimCount)
+			})
+		})
+		When("a SnapshotClass label is deleted", func() {
+			It("deletes the associated ClusterClaim", func() {
+				By("deleting a SnapshotClass label")
+
+				vsc2.Labels = map[string]string{}
+				Expect(k8sClient.Update(context.TODO(), vsc2)).To(Succeed())
+
+				claimCount--
+				ensureClaimCount(apiReader, claimCount)
+				ensureClusterClaim(apiReader, "snapshot.class", "vsc1")
+			})
+		})
+		When("there is a VolumeReplicationCLass created with required labels", func() {
+			It("creates a ClusterClaim", func() {
+				By("creating a VolumeReplicationClass")
+
+				vrc1 = baseVRC.DeepCopy()
+				vrc1.Name = "vrc1"
+				Expect(k8sClient.Create(context.TODO(), vrc1)).To(Succeed())
+
+				claimCount++
+				ensureClusterClaim(apiReader, "replication.class", "vrc1")
+				ensureClaimCount(apiReader, claimCount)
+			})
+		})
+		When("a VolumeReplicationClass with required labels is deleted", func() {
+			It("deletes the associated ClusterClaim", func() {
+				By("deleting a VolumeReplicationClass")
+
+				Expect(k8sClient.Delete(context.TODO(), vrc1)).To(Succeed())
+
+				claimCount--
+				ensureClaimCount(apiReader, claimCount)
+			})
+		})
+		When("there are multiple VolumeReplicationClass created with required labels", func() {
+			It("creates ClusterClaims", func() {
+				By("creating a VolumeReplicationClass")
+
+				vrc1 = baseVRC.DeepCopy()
+				vrc1.Name = "vrc1"
+				Expect(k8sClient.Create(context.TODO(), vrc1)).To(Succeed())
+
+				vrc2 = baseVRC.DeepCopy()
+				vrc2.Name = "vrc2"
+				Expect(k8sClient.Create(context.TODO(), vrc2)).To(Succeed())
+
+				claimCount += 2
+				ensureClusterClaim(apiReader, "replication.class", "vrc1")
+				ensureClusterClaim(apiReader, "replication.class", "vrc2")
+				ensureClaimCount(apiReader, claimCount)
+			})
+		})
+		When("a VolumeReplicationClass label is deleted", func() {
+			It("deletes the associated ClusterClaim", func() {
+				By("deleting a VolumeReplicationClass label")
+
+				vrc2.Labels = map[string]string{}
+				Expect(k8sClient.Update(context.TODO(), vrc2)).To(Succeed())
+
+				claimCount--
+				ensureClaimCount(apiReader, claimCount)
+				ensureClusterClaim(apiReader, "replication.class", "vrc1")
 			})
 		})
 	})
