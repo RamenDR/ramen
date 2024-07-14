@@ -32,15 +32,51 @@ import (
 	ramencontrollers "github.com/ramendr/ramen/internal/controller"
 )
 
+func ensureClaimCount(apiReader client.Reader, count int) {
+	Eventually(func() bool {
+		claims := &clusterv1alpha1.ClusterClaimList{}
+
+		err := apiReader.List(context.TODO(), claims)
+		if err != nil {
+			return false
+		}
+
+		return len(claims.Items) == count
+	}, timeout, interval).Should(BeTrue())
+}
+
+//nolint:unparam
+func ensureClusterClaim(apiReader client.Reader, class, name string) {
+	Eventually(func() error {
+		ccName := types.NamespacedName{
+			Name: class + "." + name,
+		}
+
+		cc := &clusterv1alpha1.ClusterClaim{}
+		err := apiReader.Get(context.TODO(), ccName, cc)
+		if err != nil {
+			return err
+		}
+
+		if cc.Spec.Value != name {
+			return fmt.Errorf("mismatched spec.value in ClusterClaim, expected %s, got %s",
+				name, cc.Spec.Value)
+		}
+
+		return nil
+	}, timeout, interval).Should(BeNil())
+}
+
 var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 	var (
-		ctx       context.Context
-		cancel    context.CancelFunc
-		cfg       *rest.Config
-		testEnv   *envtest.Environment
-		k8sClient client.Client
-		drCConfig *ramen.DRClusterConfig
-		sc1       *storagev1.StorageClass
+		ctx              context.Context
+		cancel           context.CancelFunc
+		cfg              *rest.Config
+		testEnv          *envtest.Environment
+		k8sClient        client.Client
+		apiReader        client.Reader
+		drCConfig        *ramen.DRClusterConfig
+		baseSC, sc1, sc2 *storagev1.StorageClass
 	)
 
 	BeforeAll(func() {
@@ -94,6 +130,8 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 
 		k8sManager, err := ctrl.NewManager(cfg, options)
 		Expect(err).ToNot(HaveOccurred())
+		apiReader = k8sManager.GetAPIReader()
+		Expect(apiReader).ToNot(BeNil())
 
 		rateLimiter := workqueue.NewTypedMaxOfRateLimiter(
 			workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](
@@ -121,9 +159,22 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 			Spec:       ramen.DRClusterConfigSpec{},
 		}
 		Expect(k8sClient.Create(context.TODO(), drCConfig)).To(Succeed())
+
+		By("Defining a basic StroageClass")
+
+		baseSC = &storagev1.StorageClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "baseSC",
+				Labels: map[string]string{
+					ramencontrollers.StorageIDLabel: "fake",
+				},
+			},
+			Provisioner: "fake.ramen.com",
+		}
 	})
 
 	AfterAll(func() {
+		By("deleting the DRClusterConfig")
 		Expect(k8sClient.Delete(context.TODO(), drCConfig)).To(Succeed())
 		Eventually(func() bool {
 			err := k8sClient.Get(context.TODO(), types.NamespacedName{
@@ -132,6 +183,9 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 
 			return errors.IsNotFound(err)
 		}, timeout, interval).Should(BeTrue())
+
+		By("ensuring claim count is 0 post deletion")
+		ensureClaimCount(apiReader, 0)
 
 		cancel() // Stop the reconciler
 		By("tearing down the test environment")
@@ -145,35 +199,49 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				It("creates a ClusterClaim", func() {
 					By("creating a StorageClass")
 
-					sc1 = &storagev1.StorageClass{
-						ObjectMeta: metav1.ObjectMeta{
-							Name: "sc1",
-							Labels: map[string]string{
-								ramencontrollers.StorageIDLabel: "fake",
-							},
-						},
-						Provisioner: "fake.ramen.com",
-					}
+					sc1 = baseSC.DeepCopy()
+					sc1.Name = "sc1"
 					Expect(k8sClient.Create(context.TODO(), sc1)).To(Succeed())
 
-					Eventually(func() error {
-						ccName := types.NamespacedName{
-							Name: "storage.class" + "." + "sc1",
-						}
+					ensureClusterClaim(apiReader, "storage.class", "sc1")
+					ensureClaimCount(apiReader, 1)
+				})
+			})
+			When("a StorageClass with required labels is deleted", func() {
+				It("deletes the associated ClusterClaim", func() {
+					By("deleting a StorageClass")
 
-						cc := &clusterv1alpha1.ClusterClaim{}
-						err := k8sClient.Get(context.TODO(), ccName, cc)
-						if err != nil {
-							return err
-						}
+					Expect(k8sClient.Delete(context.TODO(), sc1)).To(Succeed())
 
-						if cc.Spec.Value != "sc1" {
-							return fmt.Errorf("mismatched spec.value in Clusterclaim, expected sc1, got %s",
-								cc.Spec.Value)
-						}
+					ensureClaimCount(apiReader, 0)
+				})
+			})
+			When("there are multiple StorageClass created with required labels", func() {
+				It("creates ClusterClaims", func() {
+					By("creating a StorageClass")
 
-						return nil
-					}, timeout, interval).Should(BeNil())
+					sc1 = baseSC.DeepCopy()
+					sc1.Name = "sc1"
+					Expect(k8sClient.Create(context.TODO(), sc1)).To(Succeed())
+
+					sc2 = baseSC.DeepCopy()
+					sc2.Name = "sc2"
+					Expect(k8sClient.Create(context.TODO(), sc2)).To(Succeed())
+
+					ensureClusterClaim(apiReader, "storage.class", "sc1")
+					ensureClusterClaim(apiReader, "storage.class", "sc2")
+					ensureClaimCount(apiReader, 2)
+				})
+			})
+			When("a StorageClass label is deleted", func() {
+				It("deletes the associated ClusterClaim", func() {
+					By("deleting a StorageClass label")
+
+					sc1.Labels = map[string]string{}
+					Expect(k8sClient.Update(context.TODO(), sc1)).To(Succeed())
+
+					ensureClaimCount(apiReader, 1)
+					ensureClusterClaim(apiReader, "storage.class", "sc2")
 				})
 			})
 		})

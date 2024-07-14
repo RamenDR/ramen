@@ -6,6 +6,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
@@ -14,10 +15,14 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/go-logr/logr"
@@ -62,7 +67,16 @@ func (r *DRClusterConfigReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	drCConfig := &ramen.DRClusterConfig{}
 	if err := r.Client.Get(ctx, req.NamespacedName, drCConfig); err != nil {
+		log.Info("Reconcile error", "error", err)
+
 		return ctrl.Result{}, client.IgnoreNotFound(fmt.Errorf("get: %w", err))
+	}
+
+	// Ensure there is ony one DRClusterConfig for the cluster
+	if _, err := r.GetDRClusterConfig(ctx); err != nil {
+		log.Info("Reconcile error", "error", err)
+
+		return ctrl.Result{}, err
 	}
 
 	if util.ResourceIsDeleted(drCConfig) {
@@ -70,6 +84,23 @@ func (r *DRClusterConfigReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	return r.processCreateOrUpdate(ctx, log, drCConfig)
+}
+
+func (r *DRClusterConfigReconciler) GetDRClusterConfig(ctx context.Context) (*ramen.DRClusterConfig, error) {
+	drcConfigs := &ramen.DRClusterConfigList{}
+	if err := r.Client.List(ctx, drcConfigs); err != nil {
+		return nil, fmt.Errorf("failed to list DRClusterConfig, %w", err)
+	}
+
+	if len(drcConfigs.Items) == 0 {
+		return nil, fmt.Errorf("failed to find DRClusterConfig")
+	}
+
+	if len(drcConfigs.Items) > 1 {
+		return nil, fmt.Errorf("multiple DRClusterConfigs found")
+	}
+
+	return &drcConfigs.Items[0], nil
 }
 
 // processDeletion ensures all cluster claims created by drClusterConfig are deleted, before removing the finalizer on
@@ -80,12 +111,16 @@ func (r *DRClusterConfigReconciler) processDeletion(
 	drCConfig *ramen.DRClusterConfig,
 ) (ctrl.Result, error) {
 	if err := r.pruneClusterClaims(ctx, log, []string{}); err != nil {
+		log.Info("Reconcile error", "error", err)
+
 		return ctrl.Result{Requeue: true}, err
 	}
 
 	if err := util.NewResourceUpdater(drCConfig).
 		RemoveFinalizer(drCConfigFinalizerName).
 		Update(ctx, r.Client); err != nil {
+		log.Info("Reconcile error", "error", err)
+
 		return ctrl.Result{Requeue: true},
 			fmt.Errorf("failed to remove finalizer for DRClusterConfig resource, %w", err)
 	}
@@ -96,6 +131,31 @@ func (r *DRClusterConfigReconciler) processDeletion(
 // pruneClusterClaims will prune all ClusterClaims created by drClusterConfig that are not in the
 // passed in survivor list
 func (r *DRClusterConfigReconciler) pruneClusterClaims(ctx context.Context, log logr.Logger, survivors []string) error {
+	matchLabels := map[string]string{
+		drCConfigOwnerLabel: drCConfigOwnerName,
+	}
+
+	listOptions := []client.ListOption{
+		client.MatchingLabels(matchLabels),
+	}
+
+	claims := &clusterv1alpha1.ClusterClaimList{}
+	if err := r.Client.List(ctx, claims, listOptions...); err != nil {
+		return fmt.Errorf("failed to list ClusterClaims, %w", err)
+	}
+
+	for idx := range claims.Items {
+		if slices.Contains(survivors, claims.Items[idx].GetName()) {
+			continue
+		}
+
+		if err := r.Client.Delete(ctx, &claims.Items[idx]); err != nil {
+			return fmt.Errorf("failed to delete ClusterClaim %s, %w", claims.Items[idx].GetName(), err)
+		}
+
+		log.Info("Pruned ClusterClaim", "claimName", claims.Items[idx].GetName())
+	}
+
 	return nil
 }
 
@@ -109,19 +169,25 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 	if err := util.NewResourceUpdater(drCConfig).
 		AddFinalizer(drCConfigFinalizerName).
 		Update(ctx, r.Client); err != nil {
+		log.Info("Reconcile error", "error", err)
+
 		return ctrl.Result{Requeue: true}, fmt.Errorf("failed to add finalizer for DRClusterConfig resource, %w", err)
 	}
 
 	allSurvivors := []string{}
 
-	survivors, err := r.createSCClusterClaims(ctx)
+	survivors, err := r.createSCClusterClaims(ctx, log)
 	if err != nil {
+		log.Info("Reconcile error", "error", err)
+
 		return ctrl.Result{Requeue: true}, err
 	}
 
 	allSurvivors = append(allSurvivors, survivors...)
 
 	if err := r.pruneClusterClaims(ctx, log, allSurvivors); err != nil {
+		log.Info("Reconcile error", "error", err)
+
 		return ctrl.Result{Requeue: true}, err
 	}
 
@@ -130,7 +196,7 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 
 // createSCClusterClaims lists all StorageClasses and creates ClusterClaims for them
 func (r *DRClusterConfigReconciler) createSCClusterClaims(
-	ctx context.Context,
+	ctx context.Context, log logr.Logger,
 ) ([]string, error) {
 	claims := []string{}
 
@@ -145,7 +211,7 @@ func (r *DRClusterConfigReconciler) createSCClusterClaims(
 			continue
 		}
 
-		if err := r.ensureClusterClaim(ctx, ccSCPrefix, sClasses.Items[i].GetName()); err != nil {
+		if err := r.ensureClusterClaim(ctx, log, ccSCPrefix, sClasses.Items[i].GetName()); err != nil {
 			return nil, err
 		}
 
@@ -159,6 +225,7 @@ func (r *DRClusterConfigReconciler) createSCClusterClaims(
 // the passed in name as the ClusterClaim spec.Value
 func (r *DRClusterConfigReconciler) ensureClusterClaim(
 	ctx context.Context,
+	log logr.Logger,
 	prefix, name string,
 ) error {
 	cc := &clusterv1alpha1.ClusterClaim{
@@ -177,6 +244,8 @@ func (r *DRClusterConfigReconciler) ensureClusterClaim(
 		return fmt.Errorf("failed to create or update ClusterClaim %s, %w", claimName(prefix, name), err)
 	}
 
+	log.Info("Created ClusterClaim", "claimName", cc.GetName())
+
 	return nil
 }
 
@@ -186,7 +255,30 @@ func claimName(prefix, name string) string {
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *DRClusterConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	controller := ctrl.NewControllerManagedBy(mgr)
+	drccMapFn := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
+		func(ctx context.Context, obj client.Object) []reconcile.Request {
+			drcConfig, err := r.GetDRClusterConfig(ctx)
+			if err != nil {
+				ctrl.Log.Info(fmt.Sprintf("failed processing DRClusterConfig mapping, %v", err))
+
+				return []ctrl.Request{}
+			}
+
+			return []ctrl.Request{
+				reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name: drcConfig.GetName(),
+					},
+				},
+			}
+		}),
+	)
+
+	drccPredFn := builder.WithPredicates(predicate.NewPredicateFuncs(
+		func(object client.Object) bool {
+			return true
+		}),
+	)
 
 	rateLimiter := workqueue.NewTypedMaxOfRateLimiter(
 		workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, maxReconcileBackoff),
@@ -199,7 +291,11 @@ func (r *DRClusterConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		rateLimiter = *r.RateLimiter
 	}
 
+	controller := ctrl.NewControllerManagedBy(mgr)
+
 	return controller.WithOptions(ctrlcontroller.Options{
 		RateLimiter: rateLimiter,
-	}).For(&ramen.DRClusterConfig{}).Complete(r)
+	}).For(&ramen.DRClusterConfig{}).
+		Watches(&storagev1.StorageClass{}, drccMapFn, drccPredFn).
+		Complete(r)
 }
