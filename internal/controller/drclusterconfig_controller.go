@@ -9,14 +9,15 @@ import (
 	"slices"
 	"time"
 
-	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
-
+	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
+	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v7/apis/volumesnapshot/v1"
 	"golang.org/x/time/rate"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
+	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -39,7 +40,9 @@ const (
 	maxReconcileBackoff = 5 * time.Minute
 
 	// Prefixes for various ClusterClaims
-	ccSCPrefix = "storage.class"
+	ccSCPrefix  = "storage.class"
+	ccVSCPrefix = "snapshot.class"
+	ccVRCPrefix = "replication.class"
 )
 
 // DRClusterConfigReconciler reconciles a DRClusterConfig object
@@ -174,16 +177,12 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 		return ctrl.Result{Requeue: true}, fmt.Errorf("failed to add finalizer for DRClusterConfig resource, %w", err)
 	}
 
-	allSurvivors := []string{}
-
-	survivors, err := r.createSCClusterClaims(ctx, log)
+	allSurvivors, err := r.CreateClassClaims(ctx, log)
 	if err != nil {
 		log.Info("Reconcile error", "error", err)
 
 		return ctrl.Result{Requeue: true}, err
 	}
-
-	allSurvivors = append(allSurvivors, survivors...)
 
 	if err := r.pruneClusterClaims(ctx, log, allSurvivors); err != nil {
 		log.Info("Reconcile error", "error", err)
@@ -194,7 +193,35 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 	return ctrl.Result{}, nil
 }
 
-// createSCClusterClaims lists all StorageClasses and creates ClusterClaims for them
+// CreateClassClaims creates cluster claims for various storage related classes of interest
+func (r *DRClusterConfigReconciler) CreateClassClaims(ctx context.Context, log logr.Logger) ([]string, error) {
+	allSurvivors := []string{}
+
+	survivors, err := r.createSCClusterClaims(ctx, log)
+	if err != nil {
+		return nil, err
+	}
+
+	allSurvivors = append(allSurvivors, survivors...)
+
+	survivors, err = r.createVSCClusterClaims(ctx, log)
+	if err != nil {
+		return nil, err
+	}
+
+	allSurvivors = append(allSurvivors, survivors...)
+
+	survivors, err = r.createVRCClusterClaims(ctx, log)
+	if err != nil {
+		return nil, err
+	}
+
+	allSurvivors = append(allSurvivors, survivors...)
+
+	return allSurvivors, nil
+}
+
+// createSCClusterClaims lists StorageClasses and creates ClusterClaims for ones marked for ramen
 func (r *DRClusterConfigReconciler) createSCClusterClaims(
 	ctx context.Context, log logr.Logger,
 ) ([]string, error) {
@@ -206,7 +233,6 @@ func (r *DRClusterConfigReconciler) createSCClusterClaims(
 	}
 
 	for i := range sClasses.Items {
-		// TODO: If something is labeled later is there an Update event?
 		if !util.HasLabel(&sClasses.Items[i], StorageIDLabel) {
 			continue
 		}
@@ -216,6 +242,58 @@ func (r *DRClusterConfigReconciler) createSCClusterClaims(
 		}
 
 		claims = append(claims, claimName(ccSCPrefix, sClasses.Items[i].GetName()))
+	}
+
+	return claims, nil
+}
+
+// createVSCClusterClaims lists VolumeSnapshotClasses and creates ClusterClaims for ones marked for ramen
+func (r *DRClusterConfigReconciler) createVSCClusterClaims(
+	ctx context.Context, log logr.Logger,
+) ([]string, error) {
+	claims := []string{}
+
+	vsClasses := &snapv1.VolumeSnapshotClassList{}
+	if err := r.Client.List(ctx, vsClasses); err != nil {
+		return nil, fmt.Errorf("failed to list VolumeSnapshotClasses, %w", err)
+	}
+
+	for i := range vsClasses.Items {
+		if !util.HasLabel(&vsClasses.Items[i], StorageIDLabel) {
+			continue
+		}
+
+		if err := r.ensureClusterClaim(ctx, log, ccVSCPrefix, vsClasses.Items[i].GetName()); err != nil {
+			return nil, err
+		}
+
+		claims = append(claims, claimName(ccVSCPrefix, vsClasses.Items[i].GetName()))
+	}
+
+	return claims, nil
+}
+
+// createVRCClusterClaims lists VolumeReplicationClasses and creates ClusterClaims for ones marked for ramen
+func (r *DRClusterConfigReconciler) createVRCClusterClaims(
+	ctx context.Context, log logr.Logger,
+) ([]string, error) {
+	claims := []string{}
+
+	vrClasses := &volrep.VolumeReplicationClassList{}
+	if err := r.Client.List(ctx, vrClasses); err != nil {
+		return nil, fmt.Errorf("failed to list VolumeReplicationClasses, %w", err)
+	}
+
+	for i := range vrClasses.Items {
+		if !util.HasLabel(&vrClasses.Items[i], VolumeReplicationIDLabel) {
+			continue
+		}
+
+		if err := r.ensureClusterClaim(ctx, log, ccVRCPrefix, vrClasses.Items[i].GetName()); err != nil {
+			return nil, err
+		}
+
+		claims = append(claims, claimName(ccVRCPrefix, vrClasses.Items[i].GetName()))
 	}
 
 	return claims, nil
@@ -297,5 +375,7 @@ func (r *DRClusterConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		RateLimiter: rateLimiter,
 	}).For(&ramen.DRClusterConfig{}).
 		Watches(&storagev1.StorageClass{}, drccMapFn, drccPredFn).
+		Watches(&snapv1.VolumeSnapshotClass{}, drccMapFn, drccPredFn).
+		Watches(&volrep.VolumeReplicationClass{}, drccMapFn, drccPredFn).
 		Complete(r)
 }
