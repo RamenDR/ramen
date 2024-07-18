@@ -20,6 +20,8 @@ import (
 const (
 	OCMBackupLabelKey   string = "cluster.open-cluster-management.io/backup"
 	OCMBackupLabelValue string = "ramen"
+
+	IsCGEnabledAnnotation = "drplacementcontrol.ramendr.openshift.io/is-cg-enabled"
 )
 
 type ResourceUpdater struct {
@@ -211,4 +213,12 @@ func CreateNamespaceIfNotExists(ctx context.Context, k8sClient client.Client, na
 	}
 
 	return nil
+}
+
+func IsCGEnabled(annotations map[string]string) bool {
+	if annotations == nil {
+		return false
+	}
+
+	return annotations[IsCGEnabledAnnotation] == "true"
 }

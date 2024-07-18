@@ -1590,6 +1590,7 @@ func (d *DRPCInstance) generateVRG(dstCluster string, repState rmn.ReplicationSt
 				DestinationClusterAnnotationKey: dstCluster,
 				DoNotDeletePVCAnnotation:        d.instance.GetAnnotations()[DoNotDeletePVCAnnotation],
 				DRPCUIDAnnotation:               string(d.instance.UID),
+				rmnutil.IsCGEnabledAnnotation:   d.instance.GetAnnotations()[rmnutil.IsCGEnabledAnnotation],
 			},
 		},
 		Spec: rmn.VolumeReplicationGroupSpec{
