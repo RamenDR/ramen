@@ -14,8 +14,6 @@ require (
 	github.com/kubernetes-csi/external-snapshotter/client/v4 v4.2.0
 	github.com/onsi/ginkgo/v2 v2.13.0
 	github.com/onsi/gomega v1.30.0
-	github.com/open-cluster-management-io/api v0.0.0-00010101000000-000000000000
-	github.com/open-cluster-management/api v0.0.0-20210527013639-a6845f2ebcb1
 	github.com/operator-framework/api v0.17.6
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.16.0
@@ -27,12 +25,13 @@ require (
 	go.uber.org/zap v1.26.0
 	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1
 	golang.org/x/time v0.3.0
-	k8s.io/api v0.29.0
+	k8s.io/api v0.29.1
 	k8s.io/apiextensions-apiserver v0.28.3
-	k8s.io/apimachinery v0.29.0
+	k8s.io/apimachinery v0.29.1
 	k8s.io/client-go v12.0.0+incompatible
-	k8s.io/component-base v0.29.0
+	k8s.io/component-base v0.29.1
 	k8s.io/kube-openapi v0.0.0-20231010175941-2dd684a91f00
+	open-cluster-management.io/api v0.13.0
 	open-cluster-management.io/config-policy-controller v0.12.0
 	open-cluster-management.io/governance-policy-propagator v0.12.0
 	sigs.k8s.io/controller-runtime v0.16.3
@@ -75,12 +74,12 @@ require (
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/net v0.18.0 // indirect
+	golang.org/x/net v0.19.0 // indirect
 	golang.org/x/oauth2 v0.11.0 // indirect
-	golang.org/x/sys v0.14.0 // indirect
-	golang.org/x/term v0.14.0 // indirect
+	golang.org/x/sys v0.15.0 // indirect
+	golang.org/x/term v0.15.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
-	golang.org/x/tools v0.12.0 // indirect
+	golang.org/x/tools v0.16.1 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231106174013-bbf56f31fb17 // indirect
@@ -91,7 +90,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/klog/v2 v2.110.1 // indirect
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b // indirect
-	open-cluster-management.io/api v0.11.1-0.20230905055724-cf1ead467a83 // indirect
 	open-cluster-management.io/multicloud-operators-subscription v0.12.0 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
@@ -99,5 +97,3 @@ require (
 
 // replace directives to accommodate for stolostron
 replace k8s.io/client-go v12.0.0+incompatible => k8s.io/client-go v0.29.0
-
-replace github.com/open-cluster-management-io/api => open-cluster-management.io/api v0.10.0
