@@ -288,7 +288,7 @@ func (c *cgHandler) GetLatestImageFromRGD(
 
 	latestImage := rgd.Status.LatestImages[pvcName]
 	if latestImage != nil {
-		c.logger.Info("Get latest image from RDG for PVC", "LatestImage", *latestImage)
+		c.logger.Info("Get latest image from RGD for PVC", "LatestImage", *latestImage)
 	}
 
 	if !isLatestImageReady(latestImage) {
