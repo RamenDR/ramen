@@ -41,13 +41,11 @@ func NewVSCGHandler(
 		logger:                    log,
 	}
 
-	if instance.Spec.Async != nil {
-		log.Info("Set Async config")
+	log.Info("Set Async config")
 
-		cgHandler.volumeSnapshotClassSelector = instance.Spec.Async.VolumeSnapshotClassSelector
-		cgHandler.ramenSchedulingInterval = instance.Spec.Async.SchedulingInterval
-		cgHandler.volumeGroupSnapshotClassSelector = instance.Spec.Async.VolumeGroupSnapshotClassSelector
-	}
+	cgHandler.volumeSnapshotClassSelector = instance.Spec.Async.VolumeSnapshotClassSelector
+	cgHandler.ramenSchedulingInterval = instance.Spec.Async.SchedulingInterval
+	cgHandler.volumeGroupSnapshotClassSelector = instance.Spec.Async.VolumeGroupSnapshotClassSelector
 
 	return cgHandler
 }

@@ -37,6 +37,9 @@ var _ = Describe("Cghandler", func() {
 					Namespace: "default",
 					UID:       "123",
 				},
+				Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
+					Async: &ramendrv1alpha1.VRGAsyncSpec{},
+				},
 			}, nil, nil, "0", testLogger)
 			rgd, err := vsCGHandler.CreateOrUpdateReplicationGroupDestination(vgdName, "default", nil)
 			Expect(err).To(BeNil())
@@ -48,6 +51,9 @@ var _ = Describe("Cghandler", func() {
 					Name:      vgdName,
 					Namespace: "default",
 					UID:       "123",
+				},
+				Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
+					Async: &ramendrv1alpha1.VRGAsyncSpec{},
 				},
 			}, nil, nil, "0", testLogger)
 			rgd, err := vsCGHandler.CreateOrUpdateReplicationGroupDestination(vgdName, "default",
@@ -157,6 +163,9 @@ var _ = Describe("Cghandler", func() {
 					Name:      vrgName,
 					UID:       "123",
 				},
+				Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
+					Async: &ramendrv1alpha1.VRGAsyncSpec{},
+				},
 			}, &metav1.LabelSelector{}, nil, "0", testLogger)
 			rgs, finalSync, err := vsCGHandler.CreateOrUpdateReplicationGroupSource(rgsName, "default", false)
 			Expect(err).To(BeNil())
@@ -172,6 +181,9 @@ var _ = Describe("Cghandler", func() {
 					Namespace: "default",
 					Name:      vrgName,
 					UID:       "123",
+				},
+				Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
+					Async: &ramendrv1alpha1.VRGAsyncSpec{},
 				},
 			}, &metav1.LabelSelector{}, nil, "0", testLogger)
 			image, err := vsCGHandler.GetLatestImageFromRGD(Ctx, "notexist", "default")
@@ -210,6 +222,9 @@ var _ = Describe("Cghandler", func() {
 						Namespace: "default",
 						Name:      vrgName,
 						UID:       "123",
+					},
+					Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
+						Async: &ramendrv1alpha1.VRGAsyncSpec{},
 					},
 				}, &metav1.LabelSelector{}, nil, "0", testLogger)
 				image, err := vsCGHandler.GetLatestImageFromRGD(Ctx, "pvc1", "default")
@@ -269,6 +284,9 @@ var _ = Describe("Cghandler", func() {
 							Name:      vrgName,
 							UID:       "123",
 						},
+						Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
+							Async: &ramendrv1alpha1.VRGAsyncSpec{},
+						},
 					}, &metav1.LabelSelector{}, nil, "0", testLogger)
 					image, err := vsCGHandler.GetLatestImageFromRGD(Ctx, "pvc1", "default")
 					Expect(err).To(BeNil())
@@ -285,6 +303,9 @@ var _ = Describe("Cghandler", func() {
 								Namespace: "default",
 								Name:      vrgName,
 								UID:       "123",
+							},
+							Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
+								Async: &ramendrv1alpha1.VRGAsyncSpec{},
 							},
 						}, &metav1.LabelSelector{},
 							volsync.NewVSHandler(context.Background(), k8sClient, testLogger, &ramendrv1alpha1.VolumeReplicationGroup{
@@ -325,6 +346,9 @@ var _ = Describe("Cghandler", func() {
 									Name:      vrgName,
 									UID:       "123",
 								},
+								Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
+									Async: &ramendrv1alpha1.VRGAsyncSpec{},
+								},
 							}, &metav1.LabelSelector{},
 							volsync.NewVSHandler(
 								context.Background(), k8sClient, testLogger,
@@ -352,7 +376,11 @@ var _ = Describe("Cghandler", func() {
 	Describe("CheckIfPVCMatchLabel", func() {
 		It("Should be success", func() {
 			vsCGHandler = cephfscg.NewVSCGHandler(
-				Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{}, nil, nil, "0", testLogger,
+				Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{
+					Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
+						Async: &ramendrv1alpha1.VRGAsyncSpec{},
+					},
+				}, nil, nil, "0", testLogger,
 			)
 			match, err := vsCGHandler.CheckIfPVCMatchLabel(nil)
 			Expect(err).To(BeNil())
@@ -360,21 +388,33 @@ var _ = Describe("Cghandler", func() {
 		})
 		It("Should be success", func() {
 			vsCGHandler = cephfscg.NewVSCGHandler(
-				Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{}, nil, nil, "0", testLogger,
+				Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{
+					Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
+						Async: &ramendrv1alpha1.VRGAsyncSpec{},
+					},
+				}, nil, nil, "0", testLogger,
 			)
 			match, err := vsCGHandler.CheckIfPVCMatchLabel(map[string]string{"test": "test"})
 			Expect(err).To(BeNil())
 			Expect(match).To(BeFalse())
 		})
 		It("Should be success", func() {
-			vsCGHandler = cephfscg.NewVSCGHandler(Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{},
+			vsCGHandler = cephfscg.NewVSCGHandler(Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{
+				Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
+					Async: &ramendrv1alpha1.VRGAsyncSpec{},
+				},
+			},
 				&metav1.LabelSelector{MatchLabels: map[string]string{"test": ""}}, nil, "0", testLogger)
 			match, err := vsCGHandler.CheckIfPVCMatchLabel(map[string]string{"test": "test"})
 			Expect(err).To(BeNil())
 			Expect(match).To(BeFalse())
 		})
 		It("Should be success", func() {
-			vsCGHandler = cephfscg.NewVSCGHandler(Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{},
+			vsCGHandler = cephfscg.NewVSCGHandler(Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{
+				Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
+					Async: &ramendrv1alpha1.VRGAsyncSpec{},
+				},
+			},
 				&metav1.LabelSelector{MatchLabels: map[string]string{"test": "test"}}, nil, "0", testLogger)
 			match, err := vsCGHandler.CheckIfPVCMatchLabel(map[string]string{"test": "test"})
 			Expect(err).To(BeNil())
@@ -383,7 +423,11 @@ var _ = Describe("Cghandler", func() {
 	})
 	Describe("GetRDInCG", func() {
 		It("Should be success", func() {
-			vsCGHandler = cephfscg.NewVSCGHandler(Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{},
+			vsCGHandler = cephfscg.NewVSCGHandler(Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{
+				Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
+					Async: &ramendrv1alpha1.VRGAsyncSpec{},
+				},
+			},
 				nil, nil, "0", testLogger)
 			rdSpecs, err := vsCGHandler.GetRDInCG()
 			Expect(err).To(BeNil())
@@ -399,6 +443,7 @@ var _ = Describe("Cghandler", func() {
 							},
 						}},
 					},
+					Async: &ramendrv1alpha1.VRGAsyncSpec{},
 				},
 			}, nil, nil, "0", testLogger)
 			rdSpecs, err := vsCGHandler.GetRDInCG()
@@ -415,6 +460,7 @@ var _ = Describe("Cghandler", func() {
 							},
 						}},
 					},
+					Async: &ramendrv1alpha1.VRGAsyncSpec{},
 				},
 			}, &metav1.LabelSelector{
 				MatchLabels: map[string]string{"test": "test"},
