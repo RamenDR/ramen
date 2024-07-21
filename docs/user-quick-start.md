@@ -144,10 +144,17 @@ enough resources:
    for the details.
    Version v0.17.0 or later is required.
 
-1. Install the `velero` tool. See
-   [Velero Basic Install](https://velero.io/docs/v1.12/basic-install/)
-   for the details.
-   Tested with version v1.12.2.
+1. Install the `velero` tool
+
+   ```
+   curl -L -o velero.tar.gz https://github.com/vmware-tanzu/velero/releases/download/v1.14.0/velero-v1.14.0-linux-amd64.tar.gz
+   tar xf velero.tar.gz --strip 1 velero-v1.14.0-linux-amd64/velero
+   sudo install velero /usr/local/bin
+   rm velero.tar.gz velero
+   ```
+
+   For more info see
+   [Velero Basic Install](https://velero.io/docs/v1.14/basic-install/)
 
 1. Install the `virtctl` tool.
 
