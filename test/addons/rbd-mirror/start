@@ -239,13 +239,13 @@ os.chdir(os.path.dirname(__file__))
 cluster1 = sys.argv[1]
 cluster2 = sys.argv[2]
 
-# Run with RBD_MIRROR_DEBUG=0 to disable debug logs.
-if os.environ.get("RBD_MIRROR_DEBUG") == "0":
-    disable_rbd_mirror_debug_logs(cluster1)
-    disable_rbd_mirror_debug_logs(cluster2)
-else:
+# Run with RBD_MIRROR_DEBUG=1 to enable debug logs.
+if os.environ.get("RBD_MIRROR_DEBUG") == "1":
     enable_rbd_mirror_debug_logs(cluster1)
     enable_rbd_mirror_debug_logs(cluster2)
+else:
+    disable_rbd_mirror_debug_logs(cluster1)
+    disable_rbd_mirror_debug_logs(cluster2)
 
 cluster1_info = fetch_secret_info(cluster1)
 cluster2_info = fetch_secret_info(cluster2)
