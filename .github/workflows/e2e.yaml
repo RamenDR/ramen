@@ -13,6 +13,7 @@ env:
   NAME_PREFIX: "rdr-"
   # Limit number of drenv workers.
   MAX_WORKERS: 4
+  GATHER_DIR: gather.${{ github.run_id }}-${{ github.run_attempt }}
 
 jobs:
   e2e-rdr:
@@ -67,6 +68,29 @@ jobs:
       run: |
         cat ~/.config/drenv/${{ env.NAME_PREFIX }}rdr/config.yaml >> e2e/config.yaml
         make e2e-rdr
+
+    - name: Gather environment data
+      if: failure()
+      working-directory: test
+      run: drenv gather --directory ${{ env.GATHER_DIR }} --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
+
+    # Tar manually to work around github limitations with special chracters (:)
+    # in file names, and getting much smaller archives comapred with zip (6m vs
+    # 12m).
+    # https://github.com/actions/upload-artifact/issues/546
+    - name: Archive gathered data
+      if: failure()
+      working-directory: test
+      run: tar czf ${{ env.GATHER_DIR }}.tar.gz ${{ env.GATHER_DIR }}
+
+    - name: Upload artifacts
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.GATHER_DIR }}
+        path: test/${{ env.GATHER_DIR }}.tar.gz
+        compression-level: 0
+        retention-days: 15
 
     - name: Delete clusters
       if: always()
