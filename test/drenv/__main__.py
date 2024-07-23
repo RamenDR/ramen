@@ -95,6 +95,19 @@ def parse_args():
         help="maximum number of workers per profile",
     )
 
+    p = add_command(sp, "gather", do_gather, help="gather environment data")
+    p.add_argument(
+        "-d",
+        "--directory",
+        help='directory for storing gathered data (default "gather.{timestamp}")',
+    )
+    p.add_argument(
+        "-n",
+        "--namespaces",
+        type=lambda s: s.split(","),
+        help="if specified, comma separated list of namespaces to gather data from",
+    )
+
     add_command(sp, "delete", do_delete, help="delete an environment")
     add_command(sp, "suspend", do_suspend, help="suspend virtual machines")
     add_command(sp, "resume", do_resume, help="resume virtual machines")
@@ -243,6 +256,22 @@ def do_stop(args):
     execute(stop_cluster, env["profiles"], "profiles", hooks=hooks)
     logging.info(
         "[%s] Environment stopped in %.2f seconds",
+        env["name"],
+        time.monotonic() - start,
+    )
+
+
+def do_gather(args):
+    env = load_env(args)
+    start = time.monotonic()
+    logging.info("[%s] Gathering environment", env["name"])
+    kubectl.gather(
+        [p["name"] for p in env["profiles"]],
+        directory=args.directory,
+        namespaces=args.namespaces,
+    )
+    logging.info(
+        "[%s] Environment gathered in %.2f seconds",
         env["name"],
         time.monotonic() - start,
     )
