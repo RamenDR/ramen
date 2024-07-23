@@ -125,6 +125,15 @@ def run(name, args):
     elapsed = time.monotonic() - start
     passed = cp.returncode == 0
 
+    if not passed:
+        drenv(
+            "gather",
+            args.envfile,
+            log,
+            name_prefix=args.name_prefix,
+            directory=os.path.join(args.outdir, name + ".gather"),
+        )
+
     if passed or not args.exit_first:
         drenv(
             "delete",
@@ -147,12 +156,15 @@ def drenv(
     envfile,
     log,
     name_prefix=None,
+    directory=None,
     verbose=False,
     check=False,
 ):
     cmd = ["drenv", command]
     if name_prefix:
         cmd.extend(("--name-prefix", name_prefix))
+    if directory:
+        cmd.extend(("--directory", directory))
     if verbose:
         cmd.append("--verbose")
     cmd.append(envfile)
