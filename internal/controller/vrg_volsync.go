@@ -299,9 +299,9 @@ func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
 
 					requeue = true
 				}
-			}
 
-			rdinCGs = append(rdinCGs, rdinCG...)
+				rdinCGs = append(rdinCGs, rdinCG...)
+			}
 		}
 	}
 

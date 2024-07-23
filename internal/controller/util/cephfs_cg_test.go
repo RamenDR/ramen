@@ -17,21 +17,11 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var _ = Describe("CephfsCg", func() {
-	Describe("IsFSCGSupport", func() {
-		Context("There is volume group snapshot class", func() {
-			It("Should be true", func() {
-				isFSCGSupport, err := util.IsFSCGSupport(cfg, scheme.Scheme)
-				Expect(err).To(BeNil())
-				Expect(isFSCGSupport).To(BeTrue())
-			})
-		})
-	})
 	Describe("IsReplicationGroupDestinationReady", func() {
 		Describe("ReplicationGroupDestination is empty", func() {
 			It("Should be false", func() {

@@ -179,13 +179,9 @@ func setupReconcilersCluster(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.Rame
 		os.Exit(1)
 	}
 
-	fsCGSupport, err := rmnutil.IsFSCGSupport(mgr.GetConfig(), mgr.GetScheme())
-	if err != nil {
-		setupLog.Error(err, "failed to check if ceph fs consistency group is supported")
-		os.Exit(1)
-	}
+	if !ramenConfig.VolSync.Disabled {
+		setupLog.Info("VolSync enabled, setup ReplicationGroupSource and ReplicationGroupDestination controllers")
 
-	if fsCGSupport {
 		if err := (&controllers.ReplicationGroupDestinationReconciler{
 			Client: mgr.GetClient(),
 			Scheme: mgr.GetScheme(),

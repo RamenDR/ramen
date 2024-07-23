@@ -5,9 +5,11 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 
 	vgsv1alphfa1 "github.com/kubernetes-csi/external-snapshotter/client/v7/apis/volumegroupsnapshot/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -53,23 +55,31 @@ ReplicationGroupDestination will create application PVC which is the same with c
 // ReplicationGroupSourceReconciler reconciles a ReplicationGroupSource object
 type ReplicationGroupSourceReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme                           *runtime.Scheme
+	volumeGroupSnapshotCRsAreWatched bool
 }
 
-//+kubebuilder:rbac:groups=ramendr.openshift.io,resources=replicationgroupsources,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=ramendr.openshift.io,resources=replicationgroupsources/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=ramendr.openshift.io,resources=replicationgroupsources/finalizers,verbs=update
-//+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshots,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotclasses,verbs=get;list;watch
-//+kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotcontents,verbs=get;list;watch
-//+kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=volsync.backube,resources=replicationsources,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch
-//+kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get
-
+// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=replicationgroupsources,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=replicationgroupsources/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=ramendr.openshift.io,resources=replicationgroupsources/finalizers,verbs=update
+// +kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshots,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotclasses,verbs=get;list;watch
+// +kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotcontents,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=volsync.backube,resources=replicationsources,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get
+//
+//nolint:funlen
 func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("Get ReplicationGroupSource")
+
+	if !r.volumeGroupSnapshotCRsAreWatched {
+		return ctrl.Result{},
+			fmt.Errorf("ReplicationGroupSource {%s/%s} doesn't work if VolumeGroupSnapshot CRD is not installed. "+
+				"Please install VolumeGroupSnapshot CRD and restart the operator", req.Namespace, req.Name)
+	}
 
 	rgs := &ramendrv1alpha1.ReplicationGroupSource{}
 	if err := r.Client.Get(ctx, req.NamespacedName, rgs); err != nil {
@@ -129,13 +139,24 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ReplicationGroupSourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	vgsCRD := &apiextensionsv1.CustomResourceDefinition{}
+	if err := r.Client.Get(context.TODO(),
+		types.NamespacedName{Name: "volumegroupsnapshots.groupsnapshot.storage.k8s.io"}, vgsCRD,
+	); err == nil {
+		r.volumeGroupSnapshotCRsAreWatched = true
+	}
+
+	builder := ctrl.NewControllerManagedBy(mgr).
 		WithOptions(ctrlcontroller.Options{
 			MaxConcurrentReconciles: getMaxConcurrentReconciles(ctrl.Log),
 		}).
-		Owns(&vgsv1alphfa1.VolumeGroupSnapshot{}).
 		Owns(&corev1.PersistentVolumeClaim{}).
 		Owns(&volsyncv1alpha1.ReplicationSource{}).
-		For(&ramendrv1alpha1.ReplicationGroupSource{}).
-		Complete(r)
+		For(&ramendrv1alpha1.ReplicationGroupSource{})
+
+	if r.volumeGroupSnapshotCRsAreWatched {
+		builder.Owns(&vgsv1alphfa1.VolumeGroupSnapshot{})
+	}
+
+	return builder.Complete(r)
 }
