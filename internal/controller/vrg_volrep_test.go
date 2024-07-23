@@ -244,6 +244,9 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vtest.promoteVolReps()
 			vtest.waitForVRGStateToTransitionToPrimary()
 			cleanupS3Store()
+			vtest.forEachPVC(func(pvc corev1.PersistentVolumeClaim) {
+				pvcDelete(pvc)
+			})
 		})
 	})
 
@@ -266,6 +269,8 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			numPVs := pvcCount
 			vrgTestBoundPV = newVRGTestCaseCreate(numPVs, restoreTestTemplate, true, false)
 			pvList := vrgTestBoundPV.generateFakePVs("pv", numPVs)
+			pvcList := vrgTestBoundPV.generateFakePVCs(pvList)
+			updatePVCClaimBindInfo(pvcList, corev1.ClaimBound)
 			populateS3Store(vrgTestBoundPV.s3KeyPrefix(), pvList, []corev1.PersistentVolumeClaim{})
 			vrgTestBoundPV.VRGTestCaseStart()
 		})
@@ -1908,7 +1913,7 @@ func (v *vrgTest) cleanupPVCs(
 	}
 
 	v.forEachPVC(func(pvc corev1.PersistentVolumeClaim) {
-		pvcDelete(*vrg, pvc, pvcPreDeleteVerify, pvcPostDeleteVerify1)
+		pvcDeleteWithVerify(*vrg, pvc, pvcPreDeleteVerify, pvcPostDeleteVerify1)
 	})
 }
 
@@ -1923,7 +1928,13 @@ func forPVCs(pvcNames []types.NamespacedName, do func(pvc corev1.PersistentVolum
 	}
 }
 
-func pvcDelete(
+func pvcDelete(pvc corev1.PersistentVolumeClaim) {
+	pvcNamespacedName := client.ObjectKeyFromObject(&pvc)
+
+	Expect(k8sClient.Delete(context.TODO(), &pvc)).To(BeNil(), "failed to delete PVC %s", pvcNamespacedName)
+}
+
+func pvcDeleteWithVerify(
 	vrg ramendrv1alpha1.VolumeReplicationGroup,
 	pvc corev1.PersistentVolumeClaim,
 	preDeleteVerify pvcPreDeleteVerify,
