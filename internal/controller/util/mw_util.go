@@ -38,12 +38,14 @@ const (
 	// - type is "vrg"
 	ManifestWorkNameFormat             string = "%s-%s-%s-mw"
 	ManifestWorkNameFormatClusterScope string = "%s-%s-mw"
+	ManifestWorkNameTypeFormat         string = "%s-mw"
 
 	// ManifestWork Types
-	MWTypeVRG   string = "vrg"
-	MWTypeNS    string = "ns"
-	MWTypeNF    string = "nf"
-	MWTypeMMode string = "mmode"
+	MWTypeVRG       string = "vrg"
+	MWTypeNS        string = "ns"
+	MWTypeNF        string = "nf"
+	MWTypeMMode     string = "mmode"
+	MWTypeDRCConfig string = "drcconfig"
 )
 
 type MWUtil struct {
@@ -60,6 +62,10 @@ func ManifestWorkName(name, namespace, mwType string) string {
 }
 
 func (mwu *MWUtil) BuildManifestWorkName(mwType string) string {
+	if mwType == MWTypeDRCConfig {
+		return fmt.Sprintf(ManifestWorkNameTypeFormat, MWTypeDRCConfig)
+	}
+
 	return ManifestWorkName(mwu.InstName, mwu.TargetNamespace, mwType)
 }
 
@@ -267,6 +273,66 @@ func (mwu *MWUtil) generateNFManifest(nf csiaddonsv1alpha1.NetworkFence) (*ocmwo
 	return mwu.GenerateManifest(nf)
 }
 
+// DRClusterConfig ManifestWork creation
+func (mwu *MWUtil) CreateOrUpdateDRCConfigManifestWork(cluster string, cConfig rmn.DRClusterConfig) error {
+	manifestWork, err := mwu.generateDRCConfigManifestWork(cluster, cConfig)
+	if err != nil {
+		return err
+	}
+
+	return mwu.createOrUpdateManifestWork(manifestWork, cluster)
+}
+
+func (mwu *MWUtil) generateDRCConfigManifestWork(
+	cluster string,
+	cConfig rmn.DRClusterConfig,
+) (*ocmworkv1.ManifestWork, error) {
+	cConfigManifest, err := mwu.generateDRCConfigManifest(cConfig)
+	if err != nil {
+		mwu.Log.Error(err, "failed to generate DRClusterConfig manifest")
+
+		return nil, err
+	}
+
+	manifests := []ocmworkv1.Manifest{*cConfigManifest}
+
+	return mwu.newManifestWork(
+		mwu.BuildManifestWorkName(MWTypeDRCConfig),
+		cluster,
+		map[string]string{},
+		manifests, nil), nil
+}
+
+func (mwu *MWUtil) generateDRCConfigManifest(cConfig rmn.DRClusterConfig) (*ocmworkv1.Manifest, error) {
+	return mwu.GenerateManifest(cConfig)
+}
+
+func ExtractDRCConfigFromManifestWork(mw *ocmworkv1.ManifestWork) (*rmn.DRClusterConfig, error) {
+	gvk := schema.GroupVersionKind{
+		Group:   rmn.GroupVersion.Group,
+		Version: rmn.GroupVersion.Version,
+		Kind:    "DRClusterConfig",
+	}
+
+	drcConfig := &rmn.DRClusterConfig{}
+
+	err := ExtractResourceFromManifestWork(mw, drcConfig, gvk)
+
+	return drcConfig, err
+}
+
+func (mwu *MWUtil) IsManifestApplied(cluster, mwType string) bool {
+	mw, err := mwu.FindManifestWork(mwu.BuildManifestWorkName(mwType), cluster)
+	if err != nil {
+		return false
+	}
+
+	deployed := IsManifestInAppliedState(mw)
+
+	return deployed
+}
+
+// Namespace MW creation
 func (mwu *MWUtil) CreateOrUpdateNamespaceManifest(
 	name string, namespaceName string, managedClusterNamespace string,
 	annotations map[string]string,
@@ -296,6 +362,28 @@ func Namespace(name string) *corev1.Namespace {
 		TypeMeta:   metav1.TypeMeta{Kind: "Namespace", APIVersion: "v1"},
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 	}
+}
+
+func ExtractResourceFromManifestWork(
+	mw *ocmworkv1.ManifestWork,
+	object client.Object,
+	gvk schema.GroupVersionKind,
+) error {
+	rawObject, err := GetRawExtension(mw.Spec.Workload.Manifests, gvk)
+	if err != nil {
+		return fmt.Errorf("failed fetching %s Kind from manifest %w", gvk.Kind, err)
+	}
+
+	if rawObject == nil {
+		return nil
+	}
+
+	err = json.Unmarshal(rawObject.Raw, object)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal %s Kind from manifest %w", gvk.Kind, err)
+	}
+
+	return nil
 }
 
 func GetRawExtension(
@@ -342,6 +430,8 @@ func (mwu *MWUtil) CreateOrUpdateDrClusterManifestWork(
 			vrgClusterRoleBinding,
 			mModeClusterRole,
 			mModeClusterRoleBinding,
+			drClusterConfigRole,
+			drClusterConfigRoleBinding,
 		},
 		objectsToAppend...,
 	)
@@ -426,6 +516,35 @@ var (
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind:     "ClusterRole",
 			Name:     "open-cluster-management:klusterlet-work-sa:agent:mmode-edit",
+		},
+	}
+
+	drClusterConfigRole = &rbacv1.ClusterRole{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:drclusterconfig-edit"},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"ramendr.openshift.io"},
+				Resources: []string{"drclusterconfigs"},
+				Verbs:     []string{"create", "get", "list", "update", "delete"},
+			},
+		},
+	}
+
+	drClusterConfigRoleBinding = &rbacv1.ClusterRoleBinding{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:drclusterconfig-edit"},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "klusterlet-work-sa",
+				Namespace: "open-cluster-management-agent",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "open-cluster-management:klusterlet-work-sa:agent:drclusterconfig-edit",
 		},
 	}
 )

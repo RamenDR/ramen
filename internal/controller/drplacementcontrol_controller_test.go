@@ -828,7 +828,13 @@ func createManagedClusters(managedClusters []*spokeClusterV1.ManagedCluster) {
 
 			err := k8sClient.Create(context.TODO(), clinstance)
 			Expect(err).NotTo(HaveOccurred())
+
+			updateManagedClusterStatus(k8sClient, clinstance)
+
+			continue
 		}
+
+		updateManagedClusterStatus(k8sClient, mcObj)
 	}
 }
 
@@ -871,7 +877,8 @@ func createDRClusters(inClusters []*spokeClusterV1.ManagedCluster) {
 			if managedCluster.Name == drClusters[idx].Name {
 				err := k8sClient.Create(context.TODO(), &drClusters[idx])
 				Expect(err).NotTo(HaveOccurred())
-				updateDRClusterManifestWorkStatus(drClusters[idx].Name)
+				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drClusters[idx].Name)
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drClusters[idx].Name)
 			}
 		}
 	}
@@ -1165,7 +1172,7 @@ func verifyVRGManifestWorkCreatedAsPrimary(namespace, managedCluster string) {
 		return err == nil
 	}, timeout, interval).Should(BeTrue())
 
-	Expect(len(createdVRGRolesManifest.Spec.Workload.Manifests)).To(Equal(10))
+	Expect(len(createdVRGRolesManifest.Spec.Workload.Manifests)).To(Equal(12))
 
 	vrgClusterRoleManifest := createdVRGRolesManifest.Spec.Workload.Manifests[0]
 	Expect(vrgClusterRoleManifest).ToNot(BeNil())
@@ -1220,7 +1227,12 @@ func getManifestWorkCount(homeClusterNamespace string) int {
 
 	Expect(apiReader.List(context.TODO(), manifestWorkList, listOptions)).NotTo(HaveOccurred())
 
-	return len(manifestWorkList.Items)
+	if len(manifestWorkList.Items) == 0 {
+		return 0
+	}
+
+	// Reduce by one to accommodate for DRClusterConfig ManifestWork
+	return len(manifestWorkList.Items) - 1
 }
 
 func verifyNSManifestWorkBackupLabelNotExist(resourceName, namespaceString, managedCluster string) {
@@ -1640,8 +1652,13 @@ func fenceCluster(cluster string, manual bool) {
 	}
 
 	latestDRCluster = updateDRClusterParameters(latestDRCluster)
-	drclusterConditionExpectEventually(latestDRCluster, false, metav1.ConditionTrue,
-		Equal(controllers.DRClusterConditionReasonFenced), Ignore(),
+	drclusterConditionExpectEventually(
+		apiReader,
+		latestDRCluster,
+		false,
+		metav1.ConditionTrue,
+		Equal(controllers.DRClusterConditionReasonFenced),
+		Ignore(),
 		rmn.DRClusterConditionTypeFenced)
 }
 
@@ -1654,10 +1671,15 @@ func unfenceCluster(cluster string, manual bool) {
 	}
 
 	latestDRCluster = updateDRClusterParameters(latestDRCluster)
-	drclusterConditionExpectEventually(latestDRCluster, false, metav1.ConditionFalse,
+	drclusterConditionExpectEventually(
+		apiReader,
+		latestDRCluster,
+		false,
+		metav1.ConditionFalse,
 		BeElementOf(controllers.DRClusterConditionReasonUnfenced, controllers.DRClusterConditionReasonCleaning,
 			controllers.DRClusterConditionReasonClean),
-		Ignore(), rmn.DRClusterConditionTypeFenced)
+		Ignore(),
+		rmn.DRClusterConditionTypeFenced)
 }
 
 func resetdrCluster(cluster string) {

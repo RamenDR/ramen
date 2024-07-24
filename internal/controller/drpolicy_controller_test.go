@@ -172,6 +172,12 @@ var _ = Describe("DRPolicyController", func() {
 		)
 	}
 
+	createManagedClusters := func() {
+		for _, cluster := range clusters {
+			ensureManagedCluster(k8sClient, cluster)
+		}
+	}
+
 	createDRClusters := func(from, to int) {
 		for idx := range drClusters[from:to] {
 			drcluster := &drClusters[idx+from]
@@ -180,8 +186,10 @@ var _ = Describe("DRPolicyController", func() {
 				&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: drcluster.Name}},
 			)).To(Succeed())
 			Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
-			updateDRClusterManifestWorkStatus(drcluster.Name)
+			updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
+			updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
 			drclusterConditionExpectEventually(
+				apiReader,
 				drcluster,
 				!ramenConfig.DrClusterOperator.DeploymentAutomationEnabled,
 				metav1.ConditionTrue,
@@ -215,6 +223,7 @@ var _ = Describe("DRPolicyController", func() {
 	var drpolicyNumber uint
 	Specify("initialize tests", func() {
 		populateDRClusters()
+		createManagedClusters()
 		createDRClusters(0, 3)
 	})
 	Specify(`a drpolicy`, func() {

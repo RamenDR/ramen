@@ -130,6 +130,7 @@ func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return controller.
 		For(&ramen.DRCluster{}).
 		Watches(&ramen.DRPlacementControl{}, drpcMapFun, builder.WithPredicates(drpcPred())).
+		Watches(&ramen.DRPolicy{}, drPolicyEventHandler(), builder.WithPredicates(drPolicyPredicate())).
 		Watches(&ocmworkv1.ManifestWork{}, mwMapFun, builder.WithPredicates(mwPred)).
 		Watches(&viewv1beta1.ManagedClusterView{}, mcvMapFun, builder.WithPredicates(mcvPred)).
 		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.drClusterConfigMapMapFunc)).
@@ -337,6 +338,7 @@ func filterDRClusterSecret(ctx context.Context, reader client.Reader, secret *co
 // +kubebuilder:rbac:groups=view.open-cluster-management.io,resources=managedclusterviews,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps.open-cluster-management.io,resources=placementrules,verbs=get;list;watch
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=placements,verbs=get;list;watch
+// +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=managedclusters,verbs=get;list;watch
 // +kubebuilder:rbac:groups=argoproj.io,resources=applicationsets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch
@@ -377,12 +379,14 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	return r.processCreateOrUpdate(u)
 }
 
+// processCreateOrUpdate of a DRCluster resource
+// Handle fencing after just processing spec correctness as other checks below may fail, owing to cluster being
+// potentially unreachable. Fencing is to request fencing this cluster using another, hence this cluster may fail
+// other live validation checks, but we still need to process the fence request.
+//
 //nolint:cyclop
 func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.Result, error) {
-	var (
-		requeue        bool
-		reconcileError error
-	)
+	var requeue bool
 
 	u.log.Info("create/update")
 
@@ -406,16 +410,7 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 
 	requeue, err = u.clusterFenceHandle()
 	if err != nil {
-		// On error proceed with S3 validation, as fencing is independent of S3
-		reconcileError = fmt.Errorf("failed to handle cluster fencing: %w", err)
 		u.log.Info("Error during processing fencing", "error", err)
-	}
-
-	err = u.clusterMModeHandler()
-	if err != nil {
-		// On error proceed with S3 validation, as maintenance mode handling is independent of S3
-		reconcileError = fmt.Errorf("%w %w", reconcileError, err)
-		u.log.Info("Error during processing maintenance modes", "error", err)
 	}
 
 	if reason, err := validateS3Profile(u.ctx, r.APIReader, r.ObjectStoreGetter, u.object, u.namespacedName.String(),
@@ -428,13 +423,27 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 			u.validatedSetFalseAndUpdate("DrClustersDeployStatusCheckFailed", err))
 	}
 
+	if err := u.ensureDRClusterConfig(); err != nil {
+		return ctrl.Result{}, fmt.Errorf(
+			"failed to ensure DRClusterConfig: %w",
+			u.validatedSetFalseAndUpdate("DRClusterConfigInProgress", err),
+		)
+	}
+
 	setDRClusterValidatedCondition(&u.object.Status.Conditions, u.object.Generation, "Validated the cluster")
+
+	err = u.clusterMModeHandler()
+	if err != nil {
+		requeue = true
+
+		u.log.Info("Error during processing maintenance modes", "error", err)
+	}
 
 	if err := u.statusUpdate(); err != nil {
 		u.log.Info("failed to update status", "failure", err)
 	}
 
-	return ctrl.Result{Requeue: requeue || u.requeue}, reconcileError
+	return ctrl.Result{Requeue: requeue || u.requeue}, nil
 }
 
 func (u *drclusterInstance) initializeStatus() {
@@ -613,6 +622,80 @@ func (u *drclusterInstance) finalizerRemove() error {
 	return util.NewResourceUpdater(u.object).
 		RemoveFinalizer(drClusterFinalizerName).
 		Update(u.ctx, u.client)
+}
+
+func (u *drclusterInstance) ensureDRClusterConfig() error {
+	drcConfig, err := u.generateDRClusterConfig()
+	if err != nil {
+		return err
+	}
+
+	if err := u.mwUtil.CreateOrUpdateDRCConfigManifestWork(u.object.Name, *drcConfig); err != nil {
+		return fmt.Errorf("failed to create or update DRClusterConfig manifest on cluster %s (%w)",
+			u.object.GetName(), err)
+	}
+
+	if !u.mwUtil.IsManifestApplied(u.object.Name, util.MWTypeDRCConfig) {
+		return fmt.Errorf("DRClusterConfig is not applied to cluster (%s)", u.object.Name)
+	}
+
+	return nil
+}
+
+func (u *drclusterInstance) generateDRClusterConfig() (*ramen.DRClusterConfig, error) {
+	mc, err := util.NewManagedClusterInstance(u.ctx, u.client, u.object.GetName())
+	if err != nil {
+		return nil, err
+	}
+
+	clusterID, err := mc.ClusterID()
+	if err != nil {
+		return nil, err
+	}
+
+	drcConfig := ramen.DRClusterConfig{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "DRClusterConfig",
+			APIVersion: "ramendr.openshift.io/v1alpha1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: u.object.GetName(),
+		},
+		Spec: ramen.DRClusterConfigSpec{
+			ClusterID: clusterID,
+		},
+	}
+
+	drpolicies, err := util.GetAllDRPolicies(u.ctx, u.reconciler.APIReader)
+	if err != nil {
+		return nil, err
+	}
+
+	// Ensure that schedules are not duplicated by, storing them in "added" to avoid adding a duplicate schedule from
+	// another DRPolicy
+	added := map[string]bool{}
+
+	for idx := range drpolicies.Items {
+		if drpolicies.Items[idx].Spec.SchedulingInterval == "" {
+			continue
+		}
+
+		if !util.DrpolicyContainsDrcluster(&drpolicies.Items[idx], u.object.GetName()) {
+			continue
+		}
+
+		if exists, ok := added[drpolicies.Items[idx].Spec.SchedulingInterval]; !ok || !exists {
+			drcConfig.Spec.ReplicationSchedules = append(
+				drcConfig.Spec.ReplicationSchedules,
+				drpolicies.Items[idx].Spec.SchedulingInterval)
+
+			added[drpolicies.Items[idx].Spec.SchedulingInterval] = true
+
+			u.log.Info(fmt.Sprintf("added %s", drpolicies.Items[idx].Spec.SchedulingInterval))
+		}
+	}
+
+	return &drcConfig, nil
 }
 
 // TODO:

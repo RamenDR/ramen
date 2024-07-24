@@ -245,6 +245,14 @@ func drClusterUndeploy(
 		return fmt.Errorf("drcluster '%v' referenced in one or more existing drPolicy resources", drcluster.Name)
 	}
 
+	if err := mwu.DeleteManifestWork(mwu.BuildManifestWorkName(util.MWTypeDRCConfig), drcluster.GetName()); err != nil {
+		return err
+	}
+
+	if _, err := mwu.FindManifestWork(mwu.BuildManifestWorkName(util.MWTypeDRCConfig), drcluster.GetName()); err == nil {
+		return fmt.Errorf("waiting for DRClusterConfig resource deletion on cluster (%s)", drcluster.GetName())
+	}
+
 	if err := drClusterMModeCleanup(drcluster, mwu, mcv, log); err != nil {
 		return err
 	}

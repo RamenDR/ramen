@@ -90,6 +90,15 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 			&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "drcluster1"}},
 		)).To(Succeed())
 
+		ensureManagedCluster(k8sClient, "drcluster1")
+
+		Expect(k8sClient.Create(
+			context.TODO(),
+			&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "drcluster2"}},
+		)).To(Succeed())
+
+		ensureManagedCluster(k8sClient, "drcluster2")
+
 		By("Defining a ramen configuration")
 
 		ramenConfig = &rmn.RamenConfig{
@@ -270,7 +279,11 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 		drCluster2.Spec.Region = "west"
 
 		Expect(k8sClient.Create(context.TODO(), drCluster1)).To(Succeed())
+		updateDRClusterManifestWorkStatus(k8sClient, k8sManager.GetAPIReader(), drCluster1.GetName())
+		updateDRClusterConfigMWStatus(k8sClient, k8sManager.GetAPIReader(), drCluster1.GetName())
 		Expect(k8sClient.Create(context.TODO(), drCluster2)).To(Succeed())
+		updateDRClusterManifestWorkStatus(k8sClient, k8sManager.GetAPIReader(), drCluster2.GetName())
+		updateDRClusterConfigMWStatus(k8sClient, k8sManager.GetAPIReader(), drCluster2.GetName())
 	})
 
 	AfterAll(func() {
