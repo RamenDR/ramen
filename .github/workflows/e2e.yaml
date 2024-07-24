@@ -34,7 +34,7 @@ jobs:
       run: pip install -e ramenctl
 
     - name: Delete clusters
-      if: ${{ always() }}
+      if: always()
       working-directory: test
       run: drenv delete --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
 
@@ -69,11 +69,11 @@ jobs:
         make e2e-rdr
 
     - name: Delete clusters
-      if: ${{ always() }}
+      if: always()
       working-directory: test
       run: drenv delete --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
 
     - name: Cleanup drenv
-      if: ${{ always() }}
+      if: always()
       working-directory: test
       run: drenv cleanup -v
