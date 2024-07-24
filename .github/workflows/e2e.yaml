@@ -60,7 +60,7 @@ jobs:
     - name: Configure ramen
       uses: nick-fields/retry@v3
       with:
-        timeout_seconds: 60
+        timeout_seconds: 120
         max_attempts: 3
         command: ramenctl config --name-prefix ${{ env.NAME_PREFIX }} test/envs/regional-dr.yaml
 
