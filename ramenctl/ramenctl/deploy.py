@@ -5,6 +5,7 @@ import concurrent.futures
 import os
 import tempfile
 
+from drenv import kubectl
 from . import command
 
 IMAGE = "quay.io/ramendr/ramen-operator:latest"
@@ -18,6 +19,7 @@ def register(commands):
     parser.set_defaults(func=run)
     command.add_common_arguments(parser)
     command.add_source_arguments(parser)
+    command.add_ramen_arguments(parser)
     parser.add_argument(
         "--image",
         default=IMAGE,
@@ -53,3 +55,22 @@ def run(args):
         command.info("Deploying ramen operator in cluster '%s'", cluster)
         command.watch("kubectl", "config", "use-context", cluster)
         command.watch("make", "-C", args.source_dir, "deploy-dr-cluster")
+
+    if env["hub"]:
+        wait_for_ramen_deployment(args, env["hub"], "hub")
+
+    for cluster in env["clusters"]:
+        wait_for_ramen_deployment(args, cluster, "dr-cluster")
+
+
+def wait_for_ramen_deployment(args, cluster, deploy_type, timeout=120):
+    deploy = f"ramen-{deploy_type}-operator"
+    command.info("Waiting until '%s' is rolled out in cluster '%s'", deploy, cluster)
+    kubectl.rollout(
+        "status",
+        f"deploy/{deploy}",
+        f"--namespace={args.ramen_namespace}",
+        f"--timeout={timeout}s",
+        context=cluster,
+        log=command.debug,
+    )
