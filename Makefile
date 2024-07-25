@@ -219,6 +219,8 @@ docker-push: ## Push docker image with the manager.
 
 ##@ Deployment
 
+resources: manifests hub-config dr-cluster-config ## Prepare resources for deployment
+
 install: install-hub install-dr-cluster ## Install hub and dr-cluster CRDs into the K8s cluster specified in ~/.kube/config.
 
 uninstall: uninstall-hub uninstall-dr-cluster ## Uninstall hub and dr-cluster CRDs from the K8s cluster specified in ~/.kube/config.
@@ -233,9 +235,11 @@ install-hub: manifests kustomize ## Install hub CRDs into the K8s cluster specif
 uninstall-hub: manifests kustomize ## Uninstall hub CRDs from the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/crd | kubectl delete -f -
 
-deploy-hub: manifests kustomize ## Deploy hub controller to the K8s cluster specified in ~/.kube/config.
+hub-config: kustomize
 	cd config/hub/default/$(PLATFORM) && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
 	cd config/hub/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+
+deploy-hub: manifests kustomize hub-config ## Deploy hub controller to the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/default/$(PLATFORM) | kubectl apply -f -
 
 undeploy-hub: kustomize ## Undeploy hub controller from the K8s cluster specified in ~/.kube/config.
