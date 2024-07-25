@@ -59,33 +59,59 @@ def parse_args():
         required=True,
     )
 
-    start_parser = add_command(sp, "start", do_start, help="start an environment")
-    start_parser.add_argument(
+    p = add_command(sp, "start", do_start, help="start an environment")
+    p.add_argument(
         "--skip-tests",
         dest="run_tests",
         action="store_false",
         help="Do not run addons 'test' hooks",
     )
-    start_parser.add_argument(
+    p.add_argument(
         "--skip-addons",
         dest="run_addons",
         action="store_false",
         help="Do not run addons 'start' hooks",
     )
+    p.add_argument(
+        "--max-workers",
+        type=int,
+        metavar="N",
+        help="maximum number of workers per profile",
+    )
 
-    stop_parser = add_command(sp, "stop", do_stop, help="stop an environment")
-    stop_parser.add_argument(
+    p = add_command(sp, "stop", do_stop, help="stop an environment")
+    p.add_argument(
         "--skip-addons",
         dest="run_addons",
         action="store_false",
         help="Do not run addons 'stop' hooks",
     )
 
+    p = add_command(sp, "cache", do_cache, help="cache environment resources")
+    p.add_argument(
+        "--max-workers",
+        type=int,
+        metavar="N",
+        help="maximum number of workers per profile",
+    )
+
+    p = add_command(sp, "gather", do_gather, help="gather environment data")
+    p.add_argument(
+        "-d",
+        "--directory",
+        help='directory for storing gathered data (default "gather.{timestamp}")',
+    )
+    p.add_argument(
+        "-n",
+        "--namespaces",
+        type=lambda s: s.split(","),
+        help="if specified, comma separated list of namespaces to gather data from",
+    )
+
     add_command(sp, "delete", do_delete, help="delete an environment")
     add_command(sp, "suspend", do_suspend, help="suspend virtual machines")
     add_command(sp, "resume", do_resume, help="resume virtual machines")
     add_command(sp, "dump", do_dump, help="dump an environment yaml")
-    add_command(sp, "cache", do_cache, help="cache environment resources")
 
     add_command(sp, "clear", do_clear, help="cleared cached resources", envfile=False)
     add_command(sp, "setup", do_setup, help="setup minikube for drenv", envfile=False)
@@ -103,12 +129,6 @@ def add_command(sp, name, func, help=None, envfile=True):
             "--name-prefix",
             metavar="PREFIX",
             help="prefix profile names",
-        )
-        parser.add_argument(
-            "--max-workers",
-            type=int,
-            metavar="N",
-            help="maximum number of workers per profile",
         )
         parser.add_argument("filename", help="path to environment file")
     return parser
@@ -236,6 +256,22 @@ def do_stop(args):
     execute(stop_cluster, env["profiles"], "profiles", hooks=hooks)
     logging.info(
         "[%s] Environment stopped in %.2f seconds",
+        env["name"],
+        time.monotonic() - start,
+    )
+
+
+def do_gather(args):
+    env = load_env(args)
+    start = time.monotonic()
+    logging.info("[%s] Gathering environment", env["name"])
+    kubectl.gather(
+        [p["name"] for p in env["profiles"]],
+        directory=args.directory,
+        namespaces=args.namespaces,
+    )
+    logging.info(
+        "[%s] Environment gathered in %.2f seconds",
         env["name"],
         time.monotonic() - start,
     )

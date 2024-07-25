@@ -177,6 +177,18 @@ def watch(
     return commands.watch(*cmd, timeout=timeout)
 
 
+def gather(contexts, namespaces=None, directory=None):
+    """
+    Run kubectl gather plugin.
+    """
+    cmd = ["kubectl", "gather", "--contexts", ",".join(contexts)]
+    if namespaces:
+        cmd.extend(("--namespaces", ",".join(namespaces)))
+    if directory:
+        cmd.extend(("--directory", directory))
+    commands.run(*cmd)
+
+
 def _run(cmd, *args, context=None):
     cmd = ["kubectl", cmd]
     if context:

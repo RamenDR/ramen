@@ -121,12 +121,28 @@ def run(name, args):
     log = os.path.join(args.outdir, name + ".log")
 
     start = time.monotonic()
-    cp = drenv("start", args.envfile, log, name_prefix=args.name_prefix)
+    cp = drenv("start", args.envfile, log, name_prefix=args.name_prefix, verbose=True)
     elapsed = time.monotonic() - start
     passed = cp.returncode == 0
 
+    if not passed:
+        drenv(
+            "gather",
+            args.envfile,
+            log,
+            name_prefix=args.name_prefix,
+            directory=os.path.join(args.outdir, name + ".gather"),
+        )
+
     if passed or not args.exit_first:
-        drenv("delete", args.envfile, log, name_prefix=args.name_prefix, check=True)
+        drenv(
+            "delete",
+            args.envfile,
+            log,
+            name_prefix=args.name_prefix,
+            verbose=True,
+            check=True,
+        )
 
     return {
         "name": name,
@@ -135,10 +151,22 @@ def run(name, args):
     }
 
 
-def drenv(command, envfile, log, name_prefix=None, check=False):
-    cmd = ["drenv", command, "--verbose"]
+def drenv(
+    command,
+    envfile,
+    log,
+    name_prefix=None,
+    directory=None,
+    verbose=False,
+    check=False,
+):
+    cmd = ["drenv", command]
     if name_prefix:
         cmd.extend(("--name-prefix", name_prefix))
+    if directory:
+        cmd.extend(("--directory", directory))
+    if verbose:
+        cmd.append("--verbose")
     cmd.append(envfile)
     with open(log, "a") as f:
         return subprocess.run(cmd, stderr=f, check=check)
