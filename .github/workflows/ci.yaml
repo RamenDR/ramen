@@ -37,10 +37,10 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout source
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -74,10 +74,10 @@ jobs:
         # see https://github.com/golangci/golangci-lint/issues/828
     steps:
       - name: Checkout source
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           # when the files to be extracted are already present,
           # tar extraction in Golangci Lint fails with the "File exists"
@@ -99,10 +99,10 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout source
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -117,10 +117,10 @@ jobs:
         python-version: ["3.9", "3.10", "3.11"]
     steps:
       - name: Checkout source
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -182,10 +182,10 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -212,10 +212,10 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout source
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -226,7 +226,7 @@ jobs:
         run: ${{env.DOCKERCMD}} save -o /tmp/ramen-operator.tar ${IMAGE_TAG_BASE}-operator:${IMAGE_TAG}
 
       - name: Save image artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ramen-operator
           path: /tmp/ramen-operator.tar
@@ -251,10 +251,10 @@ jobs:
       KIND_CLUSTER_NAME: "ci"
     steps:
       - name: Checkout source
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -267,7 +267,7 @@ jobs:
         run: ./hack/setup-kind-cluster.sh
 
       - name: Download image artifact
-        uses: actions/download-artifact@v1
+        uses: actions/download-artifact@v4
         with:
           name: ramen-operator
           path: /tmp
@@ -358,10 +358,10 @@ jobs:
 
       # TODO: We do not need to build bundles and catalogs each time, fix once we reach alpha
       - name: Checkout source
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
