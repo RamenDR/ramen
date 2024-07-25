@@ -175,6 +175,23 @@ spec:
           status:
             description: DRPolicyStatus defines the observed state of DRPolicy
             properties:
+              async:
+                description: for RDR
+                properties:
+                  peerClasses:
+                    items:
+                      properties:
+                        replicationID:
+                          type: string
+                        storageClassName:
+                          type: string
+                        storageID:
+                          items:
+                            type: string
+                          type: array
+                      type: object
+                    type: array
+                type: object
               conditions:
                 items:
                   description: "Condition contains details for one aspect of the current
@@ -244,6 +261,23 @@ spec:
                   - type
                   type: object
                 type: array
+              sync:
+                description: for MetroDR
+                properties:
+                  peerClasses:
+                    items:
+                      properties:
+                        replicationID:
+                          type: string
+                        storageClassName:
+                          type: string
+                        storageID:
+                          items:
+                            type: string
+                          type: array
+                      type: object
+                    type: array
+                type: object
             type: object
         type: object
     served: true
