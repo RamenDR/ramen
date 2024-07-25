@@ -30,40 +30,40 @@ def register(commands):
 def run(args):
     env = command.env_info(args)
 
+    command.info("Preparing resources")
+    command.watch("make", "-C", args.source_dir, "resources")
+
     with tempfile.TemporaryDirectory(prefix="ramenctl-deploy-") as tmpdir:
         tar = os.path.join(tmpdir, "image.tar")
         command.info("Saving image '%s'", args.image)
         command.watch("podman", "save", args.image, "-o", tar)
 
-        def load_image(cluster):
-            command.info("Loading image in cluster '%s'", cluster)
-            command.watch("minikube", "--profile", cluster, "image", "load", tar)
-
-        all_clusters = env["clusters"][:]
-        if env["hub"]:
-            all_clusters.append(env["hub"])
-
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            list(executor.map(load_image, all_clusters))
+            futures = []
 
-    if env["hub"]:
-        command.info("Deploying ramen operator in cluster '%s'", env["hub"])
-        command.watch("kubectl", "config", "use-context", env["hub"])
-        command.watch("make", "-C", args.source_dir, "deploy-hub")
+            if env["hub"]:
+                f = executor.submit(
+                    deploy, args, env["hub"], tar, "hub", platform="k8s"
+                )
+                futures.append(f)
 
-    for cluster in env["clusters"]:
-        command.info("Deploying ramen operator in cluster '%s'", cluster)
-        command.watch("kubectl", "config", "use-context", cluster)
-        command.watch("make", "-C", args.source_dir, "deploy-dr-cluster")
+            for cluster in env["clusters"]:
+                f = executor.submit(deploy, args, cluster, tar, "dr-cluster")
+                futures.append(f)
 
-    if env["hub"]:
-        wait_for_ramen_deployment(args, env["hub"], "hub")
-
-    for cluster in env["clusters"]:
-        wait_for_ramen_deployment(args, cluster, "dr-cluster")
+            for f in concurrent.futures.as_completed(futures):
+                f.result()
 
 
-def wait_for_ramen_deployment(args, cluster, deploy_type, timeout=120):
+def deploy(args, cluster, tar, deploy_type, platform="", timeout=120):
+    command.info("Loading image in cluster '%s'", cluster)
+    command.watch("minikube", "--profile", cluster, "image", "load", tar)
+
+    command.info("Deploying ramen operator in cluster '%s'", cluster)
+    overlay = os.path.join(args.source_dir, f"config/{deploy_type}/default", platform)
+    yaml = kubectl.kustomize(overlay, load_restrictor="LoadRestrictionsNone")
+    kubectl.apply("--filename=-", input=yaml, context=cluster, log=command.debug)
+
     deploy = f"ramen-{deploy_type}-operator"
     command.info("Waiting until '%s' is rolled out in cluster '%s'", deploy, cluster)
     kubectl.rollout(
