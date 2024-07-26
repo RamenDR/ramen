@@ -315,7 +315,7 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Download image artifact
-        uses: actions/download-artifact@v1
+        uses: actions/download-artifact@v4
         with:
           name: ramen-operator
           path: /tmp
@@ -325,7 +325,7 @@ jobs:
           ${{env.DOCKERCMD}} load -i /tmp/ramen-operator.tar
 
       - name: Login to Quay
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
