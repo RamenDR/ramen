@@ -17,7 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// TODO: use ConsistencyGroupLabel in PR https://github.com/RamenDR/ramen/pull/1472/files
+// ConsistencyGroupLabel (TODO) use ConsistencyGroupLabel in PR https://github.com/RamenDR/ramen/pull/1472/files
 var ConsistencyGroupLabel = "ramendr.openshift.io/consistency-group"
 
 //nolint:gocognit,funlen,cyclop
