@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: The RamenDR authors
-// SPDX-License-Identifier: Apache-2.0
-
-package util_test
+package cephfscg_test
 
 import (
 	"context"
@@ -30,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 )
 
 const (
@@ -40,17 +38,21 @@ const (
 var (
 	cfg         *rest.Config
 	k8sClient   client.Client
+	mgrClient   client.Client
 	testEnv     *envtest.Environment
 	secretsUtil util.SecretsUtil
 	testLogger  logr.Logger
+	CtxCancel   context.CancelFunc
+	Ctx         context.Context
 )
 
-func TestUtil(t *testing.T) {
+func TestCephfscg(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Util Suite")
+	RunSpecs(t, "Cephfscg Suite")
 }
 
 var _ = BeforeSuite(func() {
+	Ctx, CtxCancel = context.WithCancel(context.TODO())
 	// onsi.github.io/gomega/#adjusting-output
 	format.MaxLength = 0
 	testLogger = zap.New(zap.UseFlagOptions(&zap.Options{
@@ -110,10 +112,23 @@ var _ = BeforeSuite(func() {
 	err = snapv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
+	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
+		Scheme: scheme.Scheme,
+		Metrics: metricsserver.Options{
+			BindAddress: ":9090",
+		},
+	})
+	Expect(err).ToNot(HaveOccurred())
+
+	// Index fields that are required for VSHandler
+	err = util.IndexFieldsForVSHandler(context.TODO(), k8sManager.GetFieldIndexer())
+	Expect(err).ToNot(HaveOccurred())
+
 	By("Creating a k8s client")
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+	mgrClient = k8sManager.GetClient()
 
 	secretsUtil = util.SecretsUtil{
 		Client:    k8sClient,
@@ -121,10 +136,16 @@ var _ = BeforeSuite(func() {
 		Ctx:       context.TODO(),
 		Log:       ctrl.Log.WithName("secrets_util"),
 	}
+	go func() {
+		defer GinkgoRecover()
+		err = k8sManager.Start(Ctx)
+		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
+	}()
 })
 
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
+	CtxCancel()
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 })

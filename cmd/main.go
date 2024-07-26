@@ -15,7 +15,8 @@ import (
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
-	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
+	groupsnapv1alpha1 "github.com/kubernetes-csi/external-snapshotter/client/v7/apis/volumegroupsnapshot/v1alpha1"
+	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v7/apis/volumesnapshot/v1"
 	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"
 	ocmv1 "github.com/open-cluster-management/api/cluster/v1"
 	ocmworkv1 "github.com/open-cluster-management/api/work/v1"
@@ -115,6 +116,7 @@ func configureController(ramenConfig *ramendrv1alpha1.RamenConfig) error {
 		utilruntime.Must(volrep.AddToScheme(scheme))
 		utilruntime.Must(volsyncv1alpha1.AddToScheme(scheme))
 		utilruntime.Must(snapv1.AddToScheme(scheme))
+		utilruntime.Must(groupsnapv1alpha1.AddToScheme(scheme))
 		utilruntime.Must(recipe.AddToScheme(scheme))
 		utilruntime.Must(apiextensions.AddToScheme(scheme))
 	}
@@ -175,6 +177,27 @@ func setupReconcilersCluster(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.Rame
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DRClusterConfig")
 		os.Exit(1)
+	}
+
+	if !ramenConfig.VolSync.Disabled {
+		setupLog.Info("VolSync enabled, setup ReplicationGroupSource and ReplicationGroupDestination controllers")
+
+		if err := (&controllers.ReplicationGroupDestinationReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "ReplicationGroupDestination")
+			os.Exit(1)
+		}
+
+		if err := (&controllers.ReplicationGroupSourceReconciler{
+			Client:    mgr.GetClient(),
+			APIReader: mgr.GetAPIReader(),
+			Scheme:    mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "ReplicationGroupSource")
+			os.Exit(1)
+		}
 	}
 }
 
