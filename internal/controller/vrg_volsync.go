@@ -17,8 +17,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// FakeCGLabel (TODO) this is a fake selectors, it need to get from the common code part
-var FakeCGLabel = "cg"
+// TODO: use ConsistencyGroupLabel in PR https://github.com/RamenDR/ramen/pull/1472/files
+var ConsistencyGroupLabel = "ramendr.openshift.io/consistency-group"
 
 //nolint:gocognit,funlen,cyclop
 func (v *VRGInstance) restorePVsAndPVCsForVolSync() (int, error) {
@@ -37,12 +37,12 @@ func (v *VRGInstance) restorePVsAndPVCsForVolSync() (int, error) {
 
 		var err error
 
-		cg, ok := rdSpec.ProtectedPVC.Labels[FakeCGLabel]
-		if ok {
+		cg, ok := rdSpec.ProtectedPVC.Labels[ConsistencyGroupLabel]
+		if ok && util.IsCGEnabled(v.instance.Annotations) {
 			v.log.Info("rdSpec has CG label", "Labels", rdSpec.ProtectedPVC.Labels)
 			cephfsCGHandler := cephfscg.NewVSCGHandler(
 				v.ctx, v.reconciler.Client, v.instance,
-				&metav1.LabelSelector{MatchLabels: map[string]string{FakeCGLabel: cg}},
+				&metav1.LabelSelector{MatchLabels: map[string]string{ConsistencyGroupLabel: cg}},
 				v.volSyncHandler, cg, v.log,
 			)
 			err = cephfsCGHandler.EnsurePVCfromRGD(rdSpec, failoverAction)
@@ -167,12 +167,12 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		return true
 	}
 
-	cg, ok := pvc.Labels[FakeCGLabel]
-	if ok {
+	cg, ok := pvc.Labels[ConsistencyGroupLabel]
+	if ok && util.IsCGEnabled(v.instance.Annotations) {
 		v.log.Info("PVC has CG label", "Labels", pvc.Labels)
 		cephfsCGHandler := cephfscg.NewVSCGHandler(
 			v.ctx, v.reconciler.Client, v.instance,
-			&metav1.LabelSelector{MatchLabels: map[string]string{FakeCGLabel: cg}},
+			&metav1.LabelSelector{MatchLabels: map[string]string{ConsistencyGroupLabel: cg}},
 			v.volSyncHandler, cg, v.log,
 		)
 
@@ -252,12 +252,12 @@ func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
 	rdinCGs := []ramendrv1alpha1.VolSyncReplicationDestinationSpec{}
 
 	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
-		cg, ok := rdSpec.ProtectedPVC.Labels[FakeCGLabel]
-		if ok {
+		cg, ok := rdSpec.ProtectedPVC.Labels[ConsistencyGroupLabel]
+		if ok && util.IsCGEnabled(v.instance.Annotations) {
 			v.log.Info("rdSpec has CG label", "Labels", rdSpec.ProtectedPVC.Labels)
 			cephfsCGHandler := cephfscg.NewVSCGHandler(
 				v.ctx, v.reconciler.Client, v.instance,
-				&metav1.LabelSelector{MatchLabels: map[string]string{FakeCGLabel: cg}},
+				&metav1.LabelSelector{MatchLabels: map[string]string{ConsistencyGroupLabel: cg}},
 				v.volSyncHandler, cg, v.log,
 			)
 

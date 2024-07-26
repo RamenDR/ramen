@@ -55,6 +55,7 @@ ReplicationGroupDestination will create application PVC which is the same with c
 // ReplicationGroupSourceReconciler reconciles a ReplicationGroupSource object
 type ReplicationGroupSourceReconciler struct {
 	client.Client
+	APIReader                        client.Reader
 	Scheme                           *runtime.Scheme
 	volumeGroupSnapshotCRsAreWatched bool
 }
@@ -140,7 +141,7 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 // SetupWithManager sets up the controller with the Manager.
 func (r *ReplicationGroupSourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	vgsCRD := &apiextensionsv1.CustomResourceDefinition{}
-	if err := r.Client.Get(context.TODO(),
+	if err := r.APIReader.Get(context.TODO(),
 		types.NamespacedName{Name: "volumegroupsnapshots.groupsnapshot.storage.k8s.io"}, vgsCRD,
 	); err == nil {
 		r.volumeGroupSnapshotCRsAreWatched = true
