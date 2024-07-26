@@ -14,7 +14,7 @@ NAMESPACE = "kubevirt"
 
 def deploy(cluster):
     print("Deploying kubevirt operator")
-    path = cache.get("operator", "addons/kubevirt-operator-1.2.1.yaml")
+    path = cache.get("operator", "addons/kubevirt-operator-1.3.0.yaml")
     kubectl.apply("--filename", path, context=cluster)
 
     print("Waiting until virt-operator is rolled out")
@@ -27,7 +27,7 @@ def deploy(cluster):
     )
 
     print("Deploying kubevirt cr")
-    path = cache.get("cr", "addons/kubevirt-cr-1.2.1.yaml")
+    path = cache.get("cr", "addons/kubevirt-cr-1.3.0.yaml")
     kubectl.apply("--filename", path, context=cluster)
 
 
