@@ -1238,6 +1238,8 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 // VolumeReplicationGroup has the same name as pvc. But in future if it changes
 // functions to be changed would be processVRAsPrimary(), processVRAsSecondary()
 // to either receive pvc NamespacedName or pvc itself as an additional argument.
+
+//nolint:funlen,cyclop
 func (v *VRGInstance) selectVolumeReplicationClass(
 	namespacedName types.NamespacedName,
 ) (*volrep.VolumeReplicationClass, error) {
@@ -1262,6 +1264,11 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 			namespacedName, err)
 	}
 
+	sID, found := storageClass.GetLabels()[StorageIDLabel]
+	if !found {
+		return nil, fmt.Errorf("missing storageID label in storageclass of pvc %s", namespacedName)
+	}
+
 	matchingReplicationClassList := []*volrep.VolumeReplicationClass{}
 
 	for index := range v.replClassList.Items {
@@ -1274,9 +1281,20 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 		}
 
 		// ReplicationClass that matches both VRG schedule and pvc provisioner
-		if schedulingInterval == v.instance.Spec.Async.SchedulingInterval {
-			matchingReplicationClassList = append(matchingReplicationClassList, replicationClass)
+		if schedulingInterval != v.instance.Spec.Async.SchedulingInterval {
+			continue
 		}
+
+		sIDFromReplicationClass, exists := replicationClass.GetLabels()[StorageIDLabel]
+		if !exists {
+			continue
+		}
+
+		if sIDFromReplicationClass != sID {
+			continue
+		}
+
+		matchingReplicationClassList = append(matchingReplicationClassList, replicationClass)
 	}
 
 	switch len(matchingReplicationClassList) {
