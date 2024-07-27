@@ -43,6 +43,17 @@ def get(*args, context=None):
     return _run("get", *args, context=context)
 
 
+def kustomize(src, load_restrictor=None):
+    """
+    Run kubectl kustomize ... and return the output.
+    """
+    args = []
+    if load_restrictor:
+        args.append(f"--load-restrictor={load_restrictor}")
+    args.append(src)
+    return _run("kustomize", *args)
+
+
 def describe(*args, context=None):
     return _run("describe", *args, context=context)
 
