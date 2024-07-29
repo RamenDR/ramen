@@ -228,8 +228,8 @@ func newPlacementRule(name string, namespace string,
 	}
 }
 
-func newS3ConfigurationSecret(s3SecretRef corev1.SecretReference, targetns string) []byte {
-	secretObjDefinition := map[string]interface{}{
+func newS3ConfigurationSecret(s3SecretRef corev1.SecretReference, targetns string) map[string]interface{} {
+	return map[string]interface{}{
 		"apiVersion": "v1",
 		"kind":       "Secret",
 		"metadata": map[string]interface{}{
@@ -248,17 +248,10 @@ func newS3ConfigurationSecret(s3SecretRef corev1.SecretReference, targetns strin
 				"\"AWS_SECRET_ACCESS_KEY\" hub}}",
 		},
 	}
-
-	secretObjDefinitionRaw, err := json.Marshal(secretObjDefinition)
-	if err != nil {
-		return nil
-	}
-
-	return secretObjDefinitionRaw
 }
 
-func newVeleroSecret(s3SecretRef corev1.SecretReference, fromNS, veleroNS, keyName string) []byte {
-	secretObjDefinition := map[string]interface{}{
+func newVeleroSecret(s3SecretRef corev1.SecretReference, fromNS, veleroNS, keyName string) map[string]interface{} {
+	return map[string]interface{}{
 		"apiVersion": "v1",
 		"kind":       "Secret",
 		"metadata": map[string]interface{}{
@@ -275,13 +268,6 @@ func newVeleroSecret(s3SecretRef corev1.SecretReference, fromNS, veleroNS, keyNa
 				") | base64enc }}",
 		},
 	}
-
-	secretObjDefinitionRaw, err := json.Marshal(secretObjDefinition)
-	if err != nil {
-		return nil
-	}
-
-	return secretObjDefinitionRaw
 }
 
 func newConfigurationPolicy(name string, object *runtime.RawExtension) *cpcv1.ConfigurationPolicy {
@@ -332,7 +318,7 @@ func newPolicy(name, namespace, triggerValue string, object runtime.RawExtension
 }
 
 func (sutil *SecretsUtil) createPolicyResources(
-	secret *corev1.Secret,
+	secret *corev1.Secret, objectsToAppend []interface{},
 	cluster, namespace, targetNS string,
 	format TargetSecretFormat,
 	veleroNS string,
@@ -369,7 +355,7 @@ func (sutil *SecretsUtil) createPolicyResources(
 
 	// Create a Policy object for the secret
 	configObject := newConfigurationPolicy(configPolicyName,
-		sutil.policyObject(secret.Name, namespace, targetNS, format, veleroNS))
+		sutil.policyObject(secret.Name, namespace, targetNS, objectsToAppend, format, veleroNS))
 
 	sutil.Log.Info("Initializing secret policy trigger", "secret", secret.Name, "trigger", secret.ResourceVersion)
 
@@ -396,24 +382,31 @@ func (sutil *SecretsUtil) createPolicyResources(
 
 func (sutil *SecretsUtil) policyObject(
 	secretName, secretNS, targetNS string,
+	objectsToAppend []interface{},
 	format TargetSecretFormat,
 	veleroNS string,
 ) *runtime.RawExtension {
 	s3SecretRef := corev1.SecretReference{Name: secretName, Namespace: secretNS}
-	object := &runtime.RawExtension{}
+
+	var object []interface{}
 
 	switch format {
 	case SecretFormatRamen:
-		object = &runtime.RawExtension{Raw: newS3ConfigurationSecret(s3SecretRef, targetNS)}
+		object = append(object, newS3ConfigurationSecret(s3SecretRef, targetNS))
 	case SecretFormatVelero:
-		object = &runtime.RawExtension{
-			Raw: newVeleroSecret(s3SecretRef, targetNS, veleroNS, VeleroSecretKeyNameDefault),
-		}
+		object = append(object, newVeleroSecret(s3SecretRef, targetNS, veleroNS, VeleroSecretKeyNameDefault))
 	default:
 		panic(unknownFormat)
 	}
 
-	return object
+	object = append(object, objectsToAppend...)
+
+	object2, err := json.Marshal(object)
+	if err != nil {
+		return nil
+	}
+
+	return &runtime.RawExtension{Raw: object2}
 }
 
 func (sutil *SecretsUtil) deletePolicyResources(
@@ -640,6 +633,7 @@ func (sutil *SecretsUtil) ensureS3SecretResources(
 // the targetNS)
 func (sutil *SecretsUtil) AddSecretToCluster(
 	secretName, clusterName, namespace, targetNS string,
+	objectsToAppend []interface{},
 	format TargetSecretFormat,
 	veleroNS string,
 ) error {
@@ -676,7 +670,7 @@ func (sutil *SecretsUtil) AddSecretToCluster(
 			return errorswrapper.Wrap(err, "failed to get placementRule object")
 		}
 
-		return sutil.createPolicyResources(secret, clusterName, namespace, targetNS, format, veleroNS)
+		return sutil.createPolicyResources(secret, objectsToAppend, clusterName, namespace, targetNS, format, veleroNS)
 	}
 
 	return sutil.updatePolicyResources(plRule, secret, clusterName, namespace, format, true)
