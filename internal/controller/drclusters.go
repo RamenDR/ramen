@@ -13,6 +13,7 @@ import (
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -88,6 +89,18 @@ func appendSubscriptionObject(
 		)), nil
 }
 
+var olmClusterRole = &rbacv1.ClusterRole{
+	TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+	ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:olm-edit"},
+	Rules: []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{"operators.coreos.com"},
+			Resources: []string{"operatorgroups"},
+			Verbs:     []string{"create", "get", "list", "update", "delete"},
+		},
+	},
+}
+
 func objectsToDeploy(hubOperatorRamenConfig *rmn.RamenConfig) ([]interface{}, error) {
 	objects := []interface{}{}
 
@@ -114,7 +127,11 @@ func objectsToDeploy(hubOperatorRamenConfig *rmn.RamenConfig) ([]interface{}, er
 
 	return append(objects,
 		util.Namespace(drClusterOperatorNamespaceName),
+		olmClusterRole,
+		olmRoleBinding(drClusterOperatorNamespaceName),
 		operatorGroup(drClusterOperatorNamespaceName),
+		drClusterConfigRole,
+		drClusterConfigRoleBinding,
 		drClusterOperatorConfigMap,
 	), nil
 }
@@ -123,6 +140,28 @@ func operatorGroup(namespaceName string) *operatorsv1.OperatorGroup {
 	return &operatorsv1.OperatorGroup{
 		TypeMeta:   metav1.TypeMeta{Kind: "OperatorGroup", APIVersion: "operators.coreos.com/v1"},
 		ObjectMeta: metav1.ObjectMeta{Name: "ramen-operator-group", Namespace: namespaceName},
+	}
+}
+
+func olmRoleBinding(namespaceName string) *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		TypeMeta: metav1.TypeMeta{Kind: "RoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "open-cluster-management:klusterlet-work-sa:agent:olm-edit",
+			Namespace: namespaceName,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "klusterlet-work-sa",
+				Namespace: "open-cluster-management-agent",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "open-cluster-management:klusterlet-work-sa:agent:olm-edit",
+		},
 	}
 }
 
