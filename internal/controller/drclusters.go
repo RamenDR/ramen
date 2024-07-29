@@ -87,7 +87,9 @@ func appendSubscriptionObject(
 func objectsToDeploy() []interface{} {
 	objects := []interface{}{}
 
-	return objects
+	return append(objects,
+		drClusterConfigRole,
+	)
 }
 
 func subscription(
