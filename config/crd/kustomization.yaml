@@ -9,6 +9,8 @@ resources:
 - bases/ramendr.openshift.io_protectedvolumereplicationgrouplists.yaml
 - bases/ramendr.openshift.io_maintenancemodes.yaml
 - bases/ramendr.openshift.io_drclusterconfigs.yaml
+- bases/ramendr.openshift.io_replicationgroupdestinations.yaml
+- bases/ramendr.openshift.io_replicationgroupsources.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

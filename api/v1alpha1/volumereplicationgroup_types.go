@@ -49,6 +49,12 @@ type VRGAsyncSpec struct {
 	//+optional
 	VolumeSnapshotClassSelector metav1.LabelSelector `json:"volumeSnapshotClassSelector,omitempty"`
 
+	// Label selector to identify the VolumeGroupSnapshotClass resources
+	// that are scanned to select an appropriate VolumeGroupSnapshotClass
+	// for the VolumeGroupSnapshot resource when using VolSync.
+	//+optional
+	VolumeGroupSnapshotClassSelector metav1.LabelSelector `json:"volumeGroupSnapshotClassSelector,omitempty"`
+
 	// scheduling Interval for replicating Persistent Volume
 	// data to a peer cluster. Interval is typically in the
 	// form <num><m,h,d>. Here <num> is a number, 'm' means
