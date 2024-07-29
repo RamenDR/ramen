@@ -272,7 +272,7 @@ func newVeleroSecret(s3SecretRef corev1.SecretReference, fromNS, veleroNS, keyNa
 	return secret
 }
 
-func newConfigurationPolicy(name string, object *runtime.RawExtension) *cpcv1.ConfigurationPolicy {
+func newConfigurationPolicy(name string, object []*cpcv1.ObjectTemplate) *cpcv1.ConfigurationPolicy {
 	return &cpcv1.ConfigurationPolicy{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "ConfigurationPolicy",
@@ -284,12 +284,7 @@ func newConfigurationPolicy(name string, object *runtime.RawExtension) *cpcv1.Co
 		Spec: &cpcv1.ConfigurationPolicySpec{
 			RemediationAction: cpcv1.Enforce,
 			Severity:          "high",
-			ObjectTemplates: []*cpcv1.ObjectTemplate{
-				{
-					ComplianceType:   cpcv1.MustHave,
-					ObjectDefinition: *object,
-				},
-			},
+			ObjectTemplates:   object,
 		},
 	}
 }
@@ -321,7 +316,7 @@ func newPolicy(name, namespace, triggerValue string, object runtime.RawExtension
 
 // nolint:funlen
 func (sutil *SecretsUtil) createPolicyResources(
-	secret *corev1.Secret,
+	secret *corev1.Secret, objects []*cpcv1.ObjectTemplate,
 	cluster, namespace, targetNS string,
 	format TargetSecretFormat,
 	veleroNS string,
@@ -358,7 +353,7 @@ func (sutil *SecretsUtil) createPolicyResources(
 
 	// Create a Policy object for the secret
 	configObject := newConfigurationPolicy(configPolicyName,
-		sutil.policyObject(secret.Name, namespace, targetNS, format, veleroNS))
+		sutil.policyObject(secret.Name, namespace, targetNS, objects, format, veleroNS))
 	AddLabel(configObject, CreatedByRamenLabel, "true")
 
 	sutil.Log.Info("Initializing secret policy trigger", "secret", secret.Name, "trigger", secret.ResourceVersion)
@@ -388,27 +383,33 @@ func (sutil *SecretsUtil) createPolicyResources(
 
 func (sutil *SecretsUtil) policyObject(
 	secretName, secretNS, targetNS string,
+	objects []*cpcv1.ObjectTemplate,
 	format TargetSecretFormat,
 	veleroNS string,
-) *runtime.RawExtension {
-	var object *runtime.RawExtension
-
+) []*cpcv1.ObjectTemplate {
 	s3SecretRef := corev1.SecretReference{Name: secretName, Namespace: secretNS}
+
+	var secretObject *corev1.Secret
 
 	switch format {
 	case SecretFormatRamen:
-		obj := newS3ConfigurationSecret(s3SecretRef, targetNS)
-		AddLabel(obj, CreatedByRamenLabel, "true")
-		object = &runtime.RawExtension{Object: obj}
+		secretObject = newS3ConfigurationSecret(s3SecretRef, targetNS)
+		AddLabel(secretObject, CreatedByRamenLabel, "true")
 	case SecretFormatVelero:
-		obj := newVeleroSecret(s3SecretRef, targetNS, veleroNS, VeleroSecretKeyNameDefault)
-		AddLabel(obj, CreatedByRamenLabel, "true")
-		object = &runtime.RawExtension{Object: obj}
+		secretObject = newVeleroSecret(s3SecretRef, targetNS, veleroNS, VeleroSecretKeyNameDefault)
+		AddLabel(secretObject, CreatedByRamenLabel, "true")
 	default:
 		panic(unknownFormat)
 	}
 
-	return object
+	object := &cpcv1.ObjectTemplate{
+		ComplianceType:   cpcv1.MustHave,
+		ObjectDefinition: runtime.RawExtension{Object: secretObject},
+	}
+
+	objects = append(objects, object)
+
+	return objects
 }
 
 func (sutil *SecretsUtil) deletePolicyResources(
@@ -633,6 +634,7 @@ func (sutil *SecretsUtil) ensureS3SecretResources(
 // the targetNS)
 func (sutil *SecretsUtil) AddSecretToCluster(
 	secretName, clusterName, namespace, targetNS string,
+	objects []*cpcv1.ObjectTemplate,
 	format TargetSecretFormat,
 	veleroNS string,
 ) error {
@@ -669,7 +671,7 @@ func (sutil *SecretsUtil) AddSecretToCluster(
 			return fmt.Errorf("failed to get placementRule object: %w", err)
 		}
 
-		return sutil.createPolicyResources(secret, clusterName, namespace, targetNS, format, veleroNS)
+		return sutil.createPolicyResources(secret, objects, clusterName, namespace, targetNS, format, veleroNS)
 	}
 
 	return sutil.updatePolicyResources(plRule, secret, clusterName, namespace, format, true)

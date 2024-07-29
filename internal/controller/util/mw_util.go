@@ -29,7 +29,6 @@ import (
 
 const (
 	DrClusterManifestWorkName = "ramen-dr-cluster"
-	ClusterRoleAggregateLabel = "open-cluster-management.io/aggregate-to-work"
 
 	// ManifestWorkNameFormat is a formated a string used to generate the manifest name
 	// The format is name-namespace-type-mw where:

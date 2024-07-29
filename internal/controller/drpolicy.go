@@ -8,12 +8,20 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
+	operatorsv1 "github.com/operator-framework/api/pkg/operators/v1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/util"
+	rbacv1 "k8s.io/api/rbac/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	runtime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
+	cpcv1 "open-cluster-management.io/config-policy-controller/api/v1"
 )
 
 var drClustersMutex sync.Mutex
+
+const ClusterRoleAggregateLabel = "open-cluster-management.io/aggregate-to-work"
 
 func propagateS3Secret(
 	drpolicy *rmn.DRPolicy,
@@ -35,6 +43,7 @@ func propagateS3Secret(
 	return nil
 }
 
+//nolint:cyclop
 func drClusterSecretsDeploy(
 	clusterName string,
 	drpolicy *rmn.DRPolicy,
@@ -59,12 +68,18 @@ func drClusterSecretsDeploy(
 		log.Info("Received partial list", "err", err)
 	}
 
+	objects, err := drClusterPolicyObjectsToDeploy(rmnCfg)
+	if err != nil {
+		return fmt.Errorf("failed to deploy DRClusterPolicy objects: %w", err)
+	}
+
 	for _, secretName := range drPolicySecrets.List() {
 		if err := secretsUtil.AddSecretToCluster(
 			secretName,
 			clusterName,
 			RamenOperatorNamespace(),
 			drClusterOperatorNamespaceNameOrDefault(rmnCfg),
+			objects,
 			util.SecretFormatRamen,
 			"",
 		); err != nil {
@@ -77,6 +92,7 @@ func drClusterSecretsDeploy(
 				clusterName,
 				RamenOperatorNamespace(),
 				drClusterOperatorNamespaceNameOrDefault(rmnCfg),
+				objects,
 				util.SecretFormatVelero,
 				rmnCfg.KubeObjectProtection.VeleroNamespaceName,
 			); err != nil {
@@ -87,6 +103,83 @@ func drClusterSecretsDeploy(
 	}
 
 	return nil
+}
+
+func toUnstructuredWithoutStatus(obj runtime.Object) (*unstructured.Unstructured, error) {
+	u := &unstructured.Unstructured{}
+
+	m, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+	if err != nil {
+		return nil, err
+	}
+
+	delete(m, "status")
+
+	u.SetUnstructuredContent(m)
+
+	return u, nil
+}
+
+func drClusterPolicyObjectsToDeploy(
+	hubOperatorRamenConfig *rmn.RamenConfig,
+) ([]*cpcv1.ObjectTemplate, error) {
+	drClusterOperatorRamenConfig := *hubOperatorRamenConfig
+	ramenConfig := &drClusterOperatorRamenConfig
+	drClusterOperatorNamespaceName := drClusterOperatorNamespaceNameOrDefault(ramenConfig)
+	ramenConfig.LeaderElection.ResourceName = drClusterLeaderElectionResourceName
+	ramenConfig.RamenControllerType = rmn.DRClusterType
+
+	drClusterOperatorConfigMap, err := ConfigMapNew(
+		drClusterOperatorNamespaceName,
+		DrClusterOperatorConfigMapName,
+		ramenConfig,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create ConfigMap for DRClusterOperator: %w", err)
+	}
+
+	operatorGroupObject := operatorGroup(drClusterOperatorNamespaceName)
+
+	unstructuredObj, err := toUnstructuredWithoutStatus(operatorGroupObject)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert OperatorGroup to unstructured object: %w", err)
+	}
+
+	objects := []*cpcv1.ObjectTemplate{
+		{
+			ComplianceType:   cpcv1.MustHave,
+			ObjectDefinition: runtime.RawExtension{Object: util.Namespace(drClusterOperatorNamespaceName)},
+		},
+		{
+			ComplianceType:   cpcv1.MustHave,
+			ObjectDefinition: runtime.RawExtension{Object: olmClusterRole},
+		},
+		{
+			ComplianceType:   cpcv1.MustHave,
+			ObjectDefinition: runtime.RawExtension{Object: unstructuredObj},
+		},
+		{
+			ComplianceType:   cpcv1.MustHave,
+			ObjectDefinition: runtime.RawExtension{Object: drClusterOperatorConfigMap},
+		},
+		{
+			ComplianceType:   cpcv1.MustHave,
+			ObjectDefinition: runtime.RawExtension{Object: vrgClusterRole},
+		},
+		{
+			ComplianceType:   cpcv1.MustHave,
+			ObjectDefinition: runtime.RawExtension{Object: mModeClusterRole},
+		},
+	}
+
+	if drClusterOperatorRamenConfig.RamenOpsNamespace != "" {
+		objects = append(objects, &cpcv1.ObjectTemplate{
+			ComplianceType:   cpcv1.MustHave,
+			ObjectDefinition: runtime.RawExtension{Object: util.Namespace(drClusterOperatorRamenConfig.RamenOpsNamespace)},
+		})
+	}
+
+	return objects, nil
 }
 
 func drPolicyUndeploy(
@@ -267,3 +360,81 @@ func deleteSecretFromCluster(
 
 	return nil
 }
+
+func operatorGroup(namespaceName string) *operatorsv1.OperatorGroup {
+	return &operatorsv1.OperatorGroup{
+		TypeMeta:   metav1.TypeMeta{Kind: "OperatorGroup", APIVersion: "operators.coreos.com/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "ramen-operator-group", Namespace: namespaceName},
+		Spec:       operatorsv1.OperatorGroupSpec{UpgradeStrategy: operatorsv1.UpgradeStrategyDefault},
+	}
+}
+
+var (
+	olmClusterRole = &rbacv1.ClusterRole{
+		TypeMeta: metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "open-cluster-management:klusterlet-work-sa:agent:olm-edit",
+			Labels: map[string]string{
+				ClusterRoleAggregateLabel: "true",
+			},
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"operators.coreos.com"},
+				Resources: []string{"operatorgroups"},
+				Verbs:     []string{"create", "get", "list", "update", "delete"},
+			},
+		},
+	}
+
+	vrgClusterRole = &rbacv1.ClusterRole{
+		TypeMeta: metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit",
+			Labels: map[string]string{
+				ClusterRoleAggregateLabel: "true",
+			},
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"ramendr.openshift.io"},
+				Resources: []string{"volumereplicationgroups"},
+				Verbs:     []string{"create", "get", "list", "update", "delete"},
+			},
+		},
+	}
+
+	mModeClusterRole = &rbacv1.ClusterRole{
+		TypeMeta: metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "open-cluster-management:klusterlet-work-sa:agent:mmode-edit",
+			Labels: map[string]string{
+				ClusterRoleAggregateLabel: "true",
+			},
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"ramendr.openshift.io"},
+				Resources: []string{"maintenancemodes"},
+				Verbs:     []string{"create", "get", "list", "update", "delete"},
+			},
+		},
+	}
+
+	drClusterConfigRole = &rbacv1.ClusterRole{
+		TypeMeta: metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "open-cluster-management:klusterlet-work-sa:agent:drclusterconfig-edit",
+			Labels: map[string]string{
+				ClusterRoleAggregateLabel: "true",
+			},
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"ramendr.openshift.io"},
+				Resources: []string{"drclusterconfigs"},
+				Verbs:     []string{"create", "get", "list", "update", "delete"},
+			},
+		},
+	}
+)
