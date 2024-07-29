@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
-	operatorsv1 "github.com/operator-framework/api/pkg/operators/v1"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/util"
@@ -113,17 +112,8 @@ func objectsToDeploy(hubOperatorRamenConfig *rmn.RamenConfig) ([]interface{}, er
 	}
 
 	return append(objects,
-		util.Namespace(drClusterOperatorNamespaceName),
-		operatorGroup(drClusterOperatorNamespaceName),
 		drClusterOperatorConfigMap,
 	), nil
-}
-
-func operatorGroup(namespaceName string) *operatorsv1.OperatorGroup {
-	return &operatorsv1.OperatorGroup{
-		TypeMeta:   metav1.TypeMeta{Kind: "OperatorGroup", APIVersion: "operators.coreos.com/v1"},
-		ObjectMeta: metav1.ObjectMeta{Name: "ramen-operator-group", Namespace: namespaceName},
-	}
 }
 
 func subscription(
