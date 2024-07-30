@@ -16,5 +16,6 @@ volSync:
 ramenOpsNamespace: ramen-ops
 multiNamespace:
   FeatureEnabled: true
+  volsyncSupported: true
 kubeObjectProtection:
   veleroNamespaceName: velero
