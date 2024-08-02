@@ -7,6 +7,8 @@ import (
 	"context"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/e2e/deployers"
+	"github.com/ramendr/ramen/e2e/util"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -102,6 +104,7 @@ func deleteDRPC(ctrlClient client.Client, namespace, name string) error {
 	return nil
 }
 
+// nolint:unparam
 func getDRPolicy(ctrlClient client.Client, name string) (*ramen.DRPolicy, error) {
 	drpolicy := &ramen.DRPolicy{}
 	key := types.NamespacedName{Name: name}
@@ -137,6 +140,83 @@ func generateDRPC(name, namespace, clusterName, drPolicyName, placementName, app
 			PVCSelector: metav1.LabelSelector{
 				MatchLabels: map[string]string{"appname": appname},
 			},
+		},
+	}
+
+	return drpc
+}
+
+func createPlacementManagedByRamen(name, namespace string) error {
+	labels := make(map[string]string)
+	labels[deployers.AppLabelKey] = name
+	clusterSet := []string{"default"}
+	annotations := make(map[string]string)
+	annotations[OcmSchedulingDisable] = "true"
+
+	var numClusters int32 = 1
+	placement := &clusterv1beta1.Placement{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Namespace:   namespace,
+			Labels:      labels,
+			Annotations: annotations,
+		},
+		Spec: clusterv1beta1.PlacementSpec{
+			ClusterSets:      clusterSet,
+			NumberOfClusters: &numClusters,
+		},
+	}
+
+	err := util.Ctx.Hub.CtrlClient.Create(context.Background(), placement)
+	if err != nil {
+		if !errors.IsAlreadyExists(err) {
+			return err
+		}
+
+		util.Ctx.Log.Info("placement " + placement.Name + " already Exists")
+	}
+
+	return nil
+}
+
+func generateDRPCDiscoveredApps(name, namespace, clusterName, drPolicyName, placementName,
+	appname, protectedNamespace string,
+) *ramen.DRPlacementControl {
+	kubeObjectProtectionSpec := &ramen.KubeObjectProtectionSpec{
+		KubeObjectSelector: &metav1.LabelSelector{
+			MatchExpressions: []metav1.LabelSelectorRequirement{
+				{
+					Key:      "appname",
+					Operator: metav1.LabelSelectorOpIn,
+					Values:   []string{appname},
+				},
+			},
+		},
+	}
+	drpc := &ramen.DRPlacementControl{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "DRPlacementControl",
+			APIVersion: "ramendr.openshift.io/v1alpha1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels:    map[string]string{"app": name},
+		},
+		Spec: ramen.DRPlacementControlSpec{
+			PreferredCluster: clusterName,
+			DRPolicyRef: v1.ObjectReference{
+				Name: drPolicyName,
+			},
+			PlacementRef: v1.ObjectReference{
+				Kind: "placement",
+				Name: placementName,
+			},
+			PVCSelector: metav1.LabelSelector{
+				MatchLabels: map[string]string{"appname": appname},
+			},
+			ProtectedNamespaces:  &[]string{protectedNamespace},
+			KubeObjectProtection: kubeObjectProtectionSpec,
 		},
 	}
 
