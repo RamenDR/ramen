@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+name: Basic OpenShift Regional DR tests
+tests:
+  - name: rbd
+    command: basic-test/run
+    config: configs/odr/busybox-regional-rbd-deploy.yaml
+  - name: cephfs
+    command: basic-test/run
+    config: configs/odr/busybox-regional-cephfs-deploy.yaml
