@@ -113,6 +113,41 @@ def deploy():
     )
 
 
+def delete_application():
+    """
+    Simulate OpenShift ACM console delete application flow, deleting the
+    application resources.
+    """
+    for r in _application_resources():
+        info("Deleting %s", r)
+        kubectl.delete(
+            r,
+            f"--namespace={config['namespace']}",
+            "--ignore-not-found",
+            "--wait=false",
+            context=env["hub"],
+            log=debug,
+        )
+
+
+def _application_resources():
+    """
+    Return application resources.
+    - placement
+    - subscription
+
+    TODO: support applicationsets
+    """
+    lines = kubectl.get(
+        "subscription,placement",
+        f"--selector=app={config['name']}",
+        f"--namespace={config['namespace']}",
+        "--output=name",
+        context=env["hub"],
+    )
+    return lines.strip().splitlines()
+
+
 def undeploy():
     """
     Undeploy an application.
@@ -300,6 +335,20 @@ def wait_for_drpc_phase(phase):
     kubectl.wait(
         drpc,
         f"--for=jsonpath={{.status.phase}}={phase}",
+        f"--namespace={config['namespace']}",
+        "--timeout=300s",
+        context=env["hub"],
+        log=debug,
+    )
+
+
+def wait_for_drpc_progression(progression):
+    drpc = _lookup_app_resource("drpc")
+
+    info("Waiting for '%s' progression '%s'", drpc, progression)
+    kubectl.wait(
+        drpc,
+        f"--for=jsonpath={{.status.progression}}={progression}",
         f"--namespace={config['namespace']}",
         "--timeout=300s",
         context=env["hub"],
