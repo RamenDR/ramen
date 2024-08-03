@@ -1,0 +1,138 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import os
+import sys
+import shlex
+import tempfile
+import subprocess
+
+import drenv
+from drenv import kubectl
+from drenv import commands
+
+
+# Update this when upgrading rook.
+VERSION = "release-1.10"
+BASE_URL = f"https://raw.githubusercontent.com/rook/rook/{VERSION}/deploy/examples"
+ROOK_CEPH_NAME_SPACE = "rook-ceph"
+
+
+def get_cluster_details_from_external_storage_cluster(external_storage_cluster):
+    wait_for_ceph_cluster_phase(external_storage_cluster, "Ready")
+    podname = get_ceph_toolbox_pod_name(external_storage_cluster)
+    cluster_details = get_rook_ceph_external_cluster_details(podname, external_storage_cluster)
+    return cluster_details
+
+
+def rook_connect_to_external_storage_cluster(managed_cluster, external_storage_cluster):
+    cluster_details = get_cluster_details_from_external_storage_cluster(external_storage_cluster)
+    env = os.environ.copy()
+    script_name = ''
+
+    env['NAMESPACE'] = ROOK_CEPH_NAME_SPACE
+    env['KUBECONTEXT'] = managed_cluster
+
+    for line in cluster_details.split('\n'):
+        if line.startswith("export "):
+            _, rest = line.split("export ", 1)
+            k, v = rest.split("=", 1)
+            env[k] = v
+
+    run_script_result = subprocess.run(["/bin/bash", "import-external-cluster.sh"],
+                                       capture_output=True, encoding='utf-8', env=env)
+
+    if run_script_result.returncode != 0:
+        print("Failed to run script: " + run_script_result.stderr)
+        sys.exit(1)
+
+def get_ceph_toolbox_pod_name(cluster):
+    return kubectl.get(
+        "pod",
+        "-l app=rook-ceph-tools",
+        "--output=jsonpath={.items[0].metadata.name}",
+        f"--namespace={ROOK_CEPH_NAME_SPACE}",
+        context=cluster
+    )
+
+def get_rook_ceph_external_cluster_details(podname, cluster):
+    try:
+        out = kubectl.exec(
+            podname,
+            f"--namespace={ROOK_CEPH_NAME_SPACE}",
+            "--",
+            "curl",
+            "-o",
+            "/tmp/create-external-cluster-resources.py",
+            "https://raw.githubusercontent.com/rook/rook/master/deploy/examples/create-external-cluster-resources.py",
+            context=cluster
+        )
+    except commands.Error as e:
+        print("kubectl.exec failed: " + e)
+        raise
+
+    try:
+        out = kubectl.exec(
+            podname,
+            f"--namespace={ROOK_CEPH_NAME_SPACE}",
+            "--",
+            "python3",
+            "/tmp/create-external-cluster-resources.py",
+            "--format",
+            "bash",
+            "--rbd-data-pool-name",
+            "replicapool",
+            # "--cephfs-filesystem-name",
+            # "cephfs",
+            context=cluster
+        )
+    except commands.Error as e:
+        print("kubectl.exec failed: " + e)
+        raise
+
+    return out
+
+def wait_for_ceph_cluster_phase(cluster, phase):
+    print("Waiting until rook ceph external cluster is connected")
+    drenv.wait_for(
+        "cephcluster/my-cluster",
+        output="jsonpath={.status.phase}",
+        namespace="rook-ceph",
+        profile=cluster,
+    )
+    kubectl.wait(
+        "cephcluster/my-cluster",
+        f"--for=jsonpath={{.status.phase}}={phase}",
+        "--namespace=rook-ceph",
+        "--timeout=300s",
+        context=cluster,
+    )
+
+def deploy(cluster, external_storage_cluster):
+    print("Deploying rook ceph cluster in external mode")
+    with drenv.kustomization(
+        "kustomization.yaml",
+        base_url=BASE_URL,
+    ) as kustomization:
+        kubectl.apply("--kustomize", kustomization, context=cluster)
+
+    rook_connect_to_external_storage_cluster(cluster, external_storage_cluster)
+
+def wait(cluster):
+    print("Waiting until rook ceph external cluster is connected")
+    wait_for_ceph_cluster_phase(cluster, "Connected")
+
+
+if len(sys.argv) != 3:
+    print(f"Usage: {sys.argv[0]} cluster external_storage_cluster")
+    sys.exit(1)
+
+os.chdir(os.path.dirname(__file__))
+cluster = sys.argv[1]
+external_storage_cluster = sys.argv[2]
+
+# Deploy rook ceph cluster in external mode
+deploy(cluster, external_storage_cluster)
+wait(cluster)
