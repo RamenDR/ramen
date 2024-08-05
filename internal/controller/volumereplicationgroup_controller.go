@@ -504,6 +504,9 @@ const (
 	// StorageClass label
 	StorageIDLabel = "ramendr.openshift.io/storageid"
 
+	// Consistency group label
+	ConsistencyGroupLabel = "ramendr.openshift.io/consistency-group"
+
 	// VolumeReplicationClass label
 	VolumeReplicationIDLabel = "ramendr.openshift.io/replicationid"
 
@@ -546,6 +549,10 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 
 	if err := v.updatePVCList(); err != nil {
 		return v.invalid(err, "Failed to process list of PVCs to protect", true)
+	}
+
+	if err := v.labelPVCsForCG(); err != nil {
+		return v.invalid(err, "Failed to label PVCs for consistency groups", true)
 	}
 
 	v.log = v.log.WithName("vrginstance").WithValues("State", v.instance.Spec.ReplicationState)
@@ -692,6 +699,54 @@ func (v *VRGInstance) updatePVCList() error {
 
 	// Separate PVCs targeted for VolRep from PVCs targeted for VolSync
 	return v.separatePVCsUsingStorageClassProvisioner(pvcList)
+}
+
+func (v *VRGInstance) labelPVCsForCG() error {
+	if v.instance.Spec.Async == nil {
+		return nil
+	}
+
+	if !rmnutil.IsCGEnabled(v.instance.GetAnnotations()) {
+		return nil
+	}
+
+	for idx := range v.volRepPVCs {
+		pvc := &v.volRepPVCs[idx]
+
+		if err := v.addConsistencyGroupLabel(pvc); err != nil {
+			return fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
+				pvc.GetNamespace(), pvc.GetName(), err)
+		}
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) addConsistencyGroupLabel(pvc *corev1.PersistentVolumeClaim) error {
+	scName := pvc.Spec.StorageClassName
+
+	if scName == nil || *scName == "" {
+		return fmt.Errorf("missing storage class name for PVC %s/%s", pvc.GetNamespace(), pvc.GetName())
+	}
+
+	storageClass := &storagev1.StorageClass{}
+	if err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: *scName}, storageClass); err != nil {
+		v.log.Info(fmt.Sprintf("Failed to get the storageclass %s", *scName))
+
+		return fmt.Errorf("failed to get the storageclass with name %s (%w)", *scName, err)
+	}
+
+	storageID, ok := storageClass.GetLabels()[StorageIDLabel]
+	if !ok {
+		v.log.Info("Missing storageID for PVC %s/%s", pvc.GetNamespace(), pvc.GetName())
+
+		return fmt.Errorf("missing storageID for PVC %s/%s", pvc.GetNamespace(), pvc.GetName())
+	}
+
+	// Add label for PVC, showing that this PVC is part of consistency group
+	return rmnutil.NewResourceUpdater(pvc).
+		AddLabel(ConsistencyGroupLabel, storageID).
+		Update(v.ctx, v.reconciler.Client)
 }
 
 func (v *VRGInstance) updateReplicationClassList() error {
