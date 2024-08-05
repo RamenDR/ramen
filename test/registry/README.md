@@ -16,7 +16,7 @@
        --volume registry:/var/lib/registry:Z \
        --detach \
        --replace \
-       docker.io/library/registry:latest
+       docker.io/library/registry:2
    ```
 
    Use `--replace` to replace an existing container, typically left
