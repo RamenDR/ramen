@@ -19,6 +19,7 @@ import (
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	controller "github.com/ramendr/ramen/internal/controller"
 	"github.com/ramendr/ramen/internal/controller/volsync"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -29,6 +30,27 @@ const (
 	testInterval            = 250 * time.Millisecond
 	testStorageClassName    = "fakestorageclass"
 	testVolumeSnapshotClass = "fakevolumesnapshotclass"
+)
+
+var sIDs = []string{"sid-1", "sid-2"}
+
+var (
+	scLabels = func() map[string]string {
+		return map[string]string{
+			controller.StorageIDLabel: sIDs[0],
+		}
+	}
+	vscLabels = func() map[string]string {
+		return map[string]string{
+			controller.StorageIDLabel: sIDs[0],
+		}
+	}
+	peerClass = func(storageClassName string, storageIDs []string) ramendrv1alpha1.PeerClass {
+		return ramendrv1alpha1.PeerClass{
+			StorageID:        storageIDs,
+			StorageClassName: storageClassName,
+		}
+	}
 )
 
 var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
@@ -60,6 +82,9 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 		testMatchLabels := map[string]string{
 			"ramentest": "backmeup",
 		}
+		vrgAsyncPeerClasses := func() []ramendrv1alpha1.PeerClass {
+			return []ramendrv1alpha1.PeerClass{peerClass(testStorageClassName, sIDs)}
+		}
 
 		var testVsrg *ramendrv1alpha1.VolumeReplicationGroup
 
@@ -74,6 +99,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 						ReplicationState: ramendrv1alpha1.Primary,
 						Async: &ramendrv1alpha1.VRGAsyncSpec{
 							SchedulingInterval: "1h",
+							PeerClasses:        vrgAsyncPeerClasses(),
 						},
 						PVCSelector: metav1.LabelSelector{
 							MatchLabels: testMatchLabels,
@@ -463,7 +489,8 @@ func createSecret(vrgName, namespace string) {
 func createSC() {
 	sc := &storagev1.StorageClass{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: testStorageClassName,
+			Name:   testStorageClassName,
+			Labels: scLabels(),
 		},
 		Provisioner: "manual.storage.com",
 	}
@@ -482,7 +509,8 @@ func createSC() {
 func createVSC() {
 	vsc := &snapv1.VolumeSnapshotClass{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: testVolumeSnapshotClass,
+			Name:   testVolumeSnapshotClass,
+			Labels: vscLabels(),
 		},
 		Driver:         "manual.storage.com",
 		DeletionPolicy: snapv1.VolumeSnapshotContentDelete,
