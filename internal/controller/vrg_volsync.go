@@ -17,9 +17,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ConsistencyGroupLabel (TODO) use ConsistencyGroupLabel in PR https://github.com/RamenDR/ramen/pull/1472/files
-var ConsistencyGroupLabel = "ramendr.openshift.io/consistency-group"
-
 //nolint:gocognit,funlen,cyclop
 func (v *VRGInstance) restorePVsAndPVCsForVolSync() (int, error) {
 	v.log.Info("VolSync: Restoring VolSync PVs")
