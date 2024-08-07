@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""
+When we demonstrate DR flows, we want to make changes in the application
+data before failover or relocate, and then wait at least one replication
+interval, ensuring that replication started after our changes were made.
+
+Example usage with 1m replication interval:
+
+    $ scripts/watch-replication fedora-drpc-1
+    2024-08-07T22:12:01Z Replication updated
+    2024-08-07T22:13:00Z Replication updated
+
+Flow:
+
+1. Start watching the app
+2. When you see the first message, write data in the app
+3. When you see the second message, start failover or relocate
+
+The total wait time is less than 2 replication intervals.
+"""
+
+import argparse
+import time
+
+from drenv import kubectl
+
+
+def main():
+    args = parse_args()
+    last = last_group_sync_time(args)
+
+    try:
+        while True:
+            time.sleep(10)
+            current = last_group_sync_time(args)
+            if current != last:
+                print(f"{current} Replication updated")
+                last = current
+    except KeyboardInterrupt:
+        print()
+
+
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("-d", "--drpc", required=True, help="drpc name")
+    p.add_argument("-n", "--namespace", required=True, help="application namespace")
+    p.add_argument("--context", help="hub cluster context")
+    args = p.parse_args()
+    return args
+
+
+def last_group_sync_time(args):
+    return kubectl.get(
+        f"drpc/{args.drpc}",
+        "--output=jsonpath={.status.lastGroupSyncTime}",
+        f"--namespace={args.namespace}",
+        context=args.context,
+    )
+
+
+if __name__ == "__main__":
+    main()
