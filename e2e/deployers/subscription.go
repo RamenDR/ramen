@@ -25,10 +25,10 @@ func (s Subscription) Deploy(w workloads.Workload) error {
 	// Generate a Subscription for the Workload
 	// - Kustomize the Workload; call Workload.Kustomize(StorageType)
 	// Address namespace/label/suffix as needed for various resources
-	util.Ctx.Log.Info("enter Deploy " + w.GetName() + "/" + s.GetName())
-
 	name := GetCombinedName(s, w)
 	namespace := name
+
+	util.Ctx.Log.Info("enter Deploy " + name)
 
 	// create subscription namespace
 	err := util.CreateNamespace(util.Ctx.Hub.CtrlClient, namespace)
@@ -59,12 +59,12 @@ func (s Subscription) Deploy(w workloads.Workload) error {
 	return nil
 }
 
+// Delete Subscription, Placement, Binding
 func (s Subscription) Undeploy(w workloads.Workload) error {
-	// Delete Subscription, Placement, Binding
-	util.Ctx.Log.Info("enter Undeploy " + w.GetName() + s.GetName())
-
 	name := GetCombinedName(s, w)
 	namespace := name
+
+	util.Ctx.Log.Info("enter Undeploy " + name)
 
 	err := deleteSubscription(s, w)
 	if err != nil {

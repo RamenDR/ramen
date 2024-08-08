@@ -33,16 +33,9 @@ func waitSubscriptionPhase(namespace, name string, phase subscriptionv1.Subscrip
 		}
 
 		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
-			return fmt.Errorf(fmt.Sprintf("subscription %s status is not %s yet before timeout of %v",
-				name, phase, util.Timeout))
+			return fmt.Errorf(fmt.Sprintf("subscription %s status is not %s yet before timeout", name, phase))
 		}
 
-		if currentPhase == "" {
-			currentPhase = "empty"
-		}
-
-		util.Ctx.Log.Info(fmt.Sprintf("current subscription %s phase is %s, expecting %s, retry in %v seconds",
-			name, currentPhase, phase, util.TimeInterval))
 		time.Sleep(time.Second * time.Duration(util.TimeInterval))
 	}
 }
