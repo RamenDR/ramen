@@ -564,7 +564,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		}
 		It("sets up PVCs, PVs and VRGs (with s3 stores that fail ObjectStore get)", func() {
 			vrgS3storeGetTemplate.s3Profiles = []string{s3Profiles[bucketInvalidS3ProfileNumber2].S3ProfileName}
-			vrgS3StoreGetTestCase = newVRGTestCaseCreateAndStart(2, vrgS3storeGetTemplate, true, false)
+			vrgS3StoreGetTestCase = newVRGTestCaseCreateAndStart(2, vrgS3storeGetTemplate, true, false, true)
 		})
 		It("waits for VRG status to match", func() {
 			vrgS3StoreGetTestCase.verifyVRGStatusCondition(vrgController.VRGConditionTypeClusterDataReady, false)
@@ -595,7 +595,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		}
 		It("sets up PVCs, PVs and VRGs (with s3 stores that fail uploads)", func() {
 			vrgsS3UploadTestTemplate.s3Profiles = []string{s3Profiles[uploadErrorS3ProfileNumber].S3ProfileName}
-			vrgS3UploadTestCase = newVRGTestCaseCreateAndStart(3, vrgsS3UploadTestTemplate, true, false)
+			vrgS3UploadTestCase = newVRGTestCaseCreateAndStart(3, vrgsS3UploadTestTemplate, true, false, true)
 		})
 		It("waits for VRG to create a VR for each PVC", func() {
 			expectedVRCount := len(vrgS3UploadTestCase.pvcNames)
@@ -633,7 +633,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		}
 		It("sets up PVCs, PVs and VRGs (with s3 stores that fail uploads)", func() {
 			vrgVRDeleteEnsureTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
-			vrgVRDeleteEnsureTestCase = newVRGTestCaseCreateAndStart(1, vrgVRDeleteEnsureTestTemplate, true, false)
+			vrgVRDeleteEnsureTestCase = newVRGTestCaseCreateAndStart(1, vrgVRDeleteEnsureTestTemplate, true, false, true)
 		})
 		It("waits for VRG to create a VR for each PVC", func() {
 			expectedVRCount := len(vrgVRDeleteEnsureTestCase.pvcNames)
@@ -870,7 +870,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 				vrcLabels := genVRCLabels(replicationIDs[c], storageID, "ramen")
 				createTestTemplate.storageIDLabels = storageIDLabel
 				createTestTemplate.replicationClassLabels = vrcLabels
-				v := newVRGTestCaseCreateAndStart(c, createTestTemplate, true, false)
+				v := newVRGTestCaseCreateAndStart(c, createTestTemplate, true, false, true)
 				vrgTestCases = append(vrgTestCases, v)
 			}
 		})
@@ -920,7 +920,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		It("sets up PVCs, PVs and VRGs - with nil/empty StorageClassName", func() {
 			vrgEmptySCTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			vrgEmptySCTemplate.volsyncEnabled = true
-			vrgEmptySC = newVRGTestCaseCreateAndStart(1, vrgEmptySCTemplate, true, false)
+			vrgEmptySC = newVRGTestCaseCreateAndStart(1, vrgEmptySCTemplate, true, false, true)
 		})
 		It("waits for VRG status to match", func() {
 			vrgEmptySC.verifyVRGStatusExpectation(false, "")
@@ -951,7 +951,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgMissingSCTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			vrgMissingSCTemplate.volsyncEnabled = true
 			vrgMissingSCTemplate.scDisabled = true
-			vrgMissingSC = newVRGTestCaseCreateAndStart(1, vrgMissingSCTemplate, true, false)
+			vrgMissingSC = newVRGTestCaseCreateAndStart(1, vrgMissingSCTemplate, true, false, true)
 		})
 		It("waits for VRG status to match", func() {
 			vrgMissingSC.verifyVRGStatusExpectation(false, "")
@@ -989,7 +989,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 				vrgTestTemplate.replicationClassLabels = vrcLabels
 				// Test the scenario where the pvc is not bound yet
 				// and expect no VRs to be created.
-				v := newVRGTestCaseCreateAndStart(c, vrgTestTemplate, false, false)
+				v := newVRGTestCaseCreateAndStart(c, vrgTestTemplate, false, false, true)
 				vrgTests = append(vrgTests, v)
 			}
 		})
@@ -1052,7 +1052,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			storageID := storageIDLabel[vrgController.StorageIDLabel]
 			vrgTestTemplateVSEnabled.storageIDLabels = storageIDLabel
 			vrgTestTemplateVSEnabled.replicationClassLabels = genVRCLabels(replicationIDs[0], storageID, "ramen")
-			v := newVRGTestCaseCreateAndStart(4, vrgTestTemplateVSEnabled, false, false)
+			v := newVRGTestCaseCreateAndStart(4, vrgTestTemplateVSEnabled, false, false, true)
 			vrgStatusTests = append(vrgStatusTests, v)
 		})
 		var v *vrgTest
@@ -1097,7 +1097,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			storageID := storageIDLabel[vrgController.StorageIDLabel]
 			vrgTest2Template.replicationClassLabels = genVRCLabels(replicationIDs[0], storageID, "ramen")
 			vrgTest2Template.storageIDLabels = storageIDLabel
-			v := newVRGTestCaseCreateAndStart(4, vrgTest2Template, true, true)
+			v := newVRGTestCaseCreateAndStart(4, vrgTest2Template, true, true, true)
 			vrgStatus2Tests = append(vrgStatus2Tests, v)
 		})
 		It("waits for VRG to create a VR for each PVC bind and checks status", func() {
@@ -1138,7 +1138,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			storageID := storageIDLabel[vrgController.StorageIDLabel]
 			vrgTest3Template.replicationClassLabels = genVRCLabels(replicationIDs[0], storageID, "ramen")
 			vrgTest3Template.storageIDLabels = storageIDLabel
-			v := newVRGTestCaseCreateAndStart(4, vrgTest3Template, false, true)
+			v := newVRGTestCaseCreateAndStart(4, vrgTest3Template, false, true, true)
 			vrgStatus3Tests = append(vrgStatus3Tests, v)
 		})
 		var v *vrgTest
@@ -1184,7 +1184,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			storageID := storageIDLabel[vrgController.StorageIDLabel]
 			vrgScheduleTestTemplate.replicationClassLabels = genVRCLabels(replicationIDs[0], storageID, "ramen")
 			vrgScheduleTestTemplate.storageIDLabels = storageIDLabel
-			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTestTemplate, true, true)
+			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTestTemplate, true, true, true)
 			vrgScheduleTests = append(vrgScheduleTests, v)
 		})
 		It("expect no VR to be created as PVC not bound and check status", func() {
@@ -1221,7 +1221,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			storageID := storageIDLabel[vrgController.StorageIDLabel]
 			vrgScheduleTest2Template.replicationClassLabels = genVRCLabels(replicationIDs[0], storageID, "ramen")
 			vrgScheduleTest2Template.storageIDLabels = storageIDLabel
-			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest2Template, true, true)
+			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest2Template, true, true, true)
 			vrgSchedule2Tests = append(vrgSchedule2Tests, v)
 		})
 		It("expect no VR to be created as PVC not bound and check status", func() {
@@ -1257,7 +1257,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgScheduleTest3Template.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			storageIDLabel := genStorageIDLabel(storageIDs[0])
 			vrgScheduleTest3Template.storageIDLabels = storageIDLabel
-			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest3Template, true, true)
+			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest3Template, true, true, true)
 			vrgSchedule3Tests = append(vrgSchedule3Tests, v)
 		})
 		It("expect no VR to be created as VR not created and check status", func() {
@@ -1303,7 +1303,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgScheduleTest4Template.additionalVRCInfoList[0].replicationClassLabels = genVRCLabels(
 				replicationIDs[0], storageID, "ramen")
 			vrgScheduleTest4Template.storageIDLabels = storageIDLabel
-			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest4Template, true, true)
+			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest4Template, true, true, true)
 			vrgSchedule4Tests = append(vrgSchedule4Tests, v)
 		})
 		It("expect no VR to be created as VR not created and check status", func() {
@@ -1348,7 +1348,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgScheduleTest5Template.additionalVRCInfoList[0].replicationClassLabels = genVRCLabels(
 				replicationIDs[0], storageID, "ramen")
 			vrgScheduleTest5Template.storageIDLabels = storageIDLabel
-			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest5Template, true, true)
+			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest5Template, true, true, true)
 			vrgSchedule5Tests = append(vrgSchedule5Tests, v)
 		})
 		It("expect 4 VRs to be created and check status", func() {
@@ -1405,7 +1405,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgScheduleTest6Template.additionalVRCInfoList[1].replicationClassLabels = genVRCLabels(
 				replicationIDs[0], storageID, "ramen")
 			vrgScheduleTest6Template.storageIDLabels = storageIDLabel
-			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest6Template, true, true)
+			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest6Template, true, true, true)
 			vrgSchedule6Tests = append(vrgSchedule6Tests, v)
 		})
 		It("expect no VR to be created as VR not created and check status", func() {
@@ -1419,6 +1419,80 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		It("cleans up after testing", func() {
 			v := vrgSchedule6Tests[0]
 			v.cleanupStatusAbsent()
+		})
+	})
+
+	// Basic test with no peerClasses
+	var vrgNoPeerClasses []*vrgTest
+	vrgNoPeerClassesTemplate := &template{
+		ClaimBindInfo:        corev1.ClaimBound,
+		VolumeBindInfo:       corev1.VolumeBound,
+		schedulingInterval:   "1h",
+		storageClassName:     "manual",
+		replicationClassName: "test-replicationclass",
+		vrcProvisioner:       "manual.storage.com",
+		scProvisioner:        "manual.storage.com",
+	}
+	Context("Basic test with no peerClassses", func() {
+		It("sets up PVCs, PVs and VRGs", func() {
+			vrgNoPeerClassesTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			storageIDLabel := genStorageIDLabel(storageIDs[0])
+			storageID := storageIDLabel[vrgController.StorageIDLabel]
+			vrcLabels := genVRCLabels(replicationIDs[0], storageID, "ramen")
+			vrgNoPeerClassesTemplate.storageIDLabels = storageIDLabel
+			vrgNoPeerClassesTemplate.replicationClassLabels = vrcLabels
+			v := newVRGTestCaseCreateAndStart(2, vrgNoPeerClassesTemplate, true, false, false)
+			vrgNoPeerClasses = append(vrgNoPeerClasses, v)
+		})
+		It("expect VR to be created and check status", func() {
+			v := vrgNoPeerClasses[0]
+			v.waitForVRCountToMatch(v.pvcCount)
+		})
+		It("waits for VRG status to match", func() {
+			v := vrgNoPeerClasses[0]
+			v.promoteVolReps()
+			v.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
+		})
+		It("cleans up after testing", func() {
+			v := vrgNoPeerClasses[0]
+			v.cleanupProtected()
+		})
+	})
+
+	// Basic test with no peerClasses with no replicationID in vrc
+	var vrgNoPeerClassesAndReplicationID []*vrgTest
+	vrgNoPeerClassesAndReplicationIDTemplate := &template{
+		ClaimBindInfo:        corev1.ClaimBound,
+		VolumeBindInfo:       corev1.VolumeBound,
+		schedulingInterval:   "1h",
+		storageClassName:     "manual",
+		replicationClassName: "test-replicationclass",
+		vrcProvisioner:       "manual.storage.com",
+		scProvisioner:        "manual.storage.com",
+	}
+	Context("Basic test with no peerClassses with replicationID in vrc", func() {
+		It("sets up PVCs, PVs and VRGs", func() {
+			vrgNoPeerClassesAndReplicationIDTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			storageIDLabel := genStorageIDLabel(storageIDs[0])
+			storageID := storageIDLabel[vrgController.StorageIDLabel]
+			vrcLabels := genVRCLabels("", storageID, "ramen")
+			vrgNoPeerClassesAndReplicationIDTemplate.storageIDLabels = storageIDLabel
+			vrgNoPeerClassesAndReplicationIDTemplate.replicationClassLabels = vrcLabels
+			v := newVRGTestCaseCreateAndStart(2, vrgNoPeerClassesAndReplicationIDTemplate, true, false, false)
+			vrgNoPeerClassesAndReplicationID = append(vrgNoPeerClassesAndReplicationID, v)
+		})
+		It("expect VR to be created and check status", func() {
+			v := vrgNoPeerClassesAndReplicationID[0]
+			v.waitForVRCountToMatch(v.pvcCount)
+		})
+		It("waits for VRG status to match", func() {
+			v := vrgNoPeerClassesAndReplicationID[0]
+			v.promoteVolReps()
+			v.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
+		})
+		It("cleans up after testing", func() {
+			v := vrgNoPeerClassesAndReplicationID[0]
+			v.cleanupProtected()
 		})
 	})
 
@@ -1545,7 +1619,9 @@ func (v *vrgTest) VRGTestCaseStart() {
 // with Status.Phase set to ClaimPending instead of ClaimBound. Expectation
 // is that, until pvc is not bound, VolRep resources should not be created
 // by VRG.
-func newVRGTestCaseCreateAndStart(pvcCount int, testTemplate *template, checkBind, vrgFirst bool) *vrgTest {
+func newVRGTestCaseCreateAndStart(pvcCount int, testTemplate *template, checkBind,
+	vrgFirst, includePeerClasses bool,
+) *vrgTest {
 	var replicationID string
 
 	v := newVRGTestCaseCreate(pvcCount, testTemplate, checkBind, vrgFirst)
@@ -1557,8 +1633,11 @@ func newVRGTestCaseCreateAndStart(pvcCount int, testTemplate *template, checkBin
 	}
 
 	storageID := testTemplate.storageIDLabels[vrgController.StorageIDLabel]
-	asyncPeerClass := genPeerClass(replicationID, testTemplate.storageClassName, []string{storageID})
-	v.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
+	if includePeerClasses {
+		asyncPeerClass := genPeerClass(replicationID, testTemplate.storageClassName, []string{storageID})
+		v.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
+	}
+
 	v.VRGTestCaseStart()
 
 	return v
@@ -2869,9 +2948,14 @@ func genPeerClass(replicationID, storageClassName string, storageIDs []string) r
 
 //nolint:unparam
 func genVRCLabels(replicationID, storageID, protectionKey string) map[string]string {
-	return map[string]string{
-		vrgController.VolumeReplicationIDLabel: replicationID,
-		vrgController.StorageIDLabel:           storageID,
-		"protection":                           protectionKey,
+	vrcLabel := map[string]string{
+		vrgController.StorageIDLabel: storageID,
+		"protection":                 protectionKey,
 	}
+
+	if replicationID != "" {
+		vrcLabel[vrgController.VolumeReplicationIDLabel] = replicationID
+	}
+
+	return vrcLabel
 }
