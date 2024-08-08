@@ -14,4 +14,5 @@ const (
 	defaultGitURL           = "https://github.com/RamenDR/ocm-ramen-samples.git"
 
 	ArgocdNamespace = "argocd"
+	RamenOpsNs      = "ramen-ops"
 )

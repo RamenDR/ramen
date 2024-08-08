@@ -4,6 +4,7 @@
 package dractions
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// nolint:gocognit
 // return placement object, placementDecisionName, error
 func waitPlacementDecision(client client.Client, namespace string, placementName string,
 ) (*v1beta1.Placement, string, error) {
@@ -30,11 +32,16 @@ func waitPlacementDecision(client client.Client, namespace string, placementName
 			if cond.Type == "PlacementSatisfied" && cond.Status == "True" {
 				placementDecisionName = placement.Status.DecisionGroups[0].Decisions[0]
 				if placementDecisionName != "" {
-					util.Ctx.Log.Info("got placementdecision name " + placementDecisionName)
-
 					return placement, placementDecisionName, nil
 				}
 			}
+		}
+
+		// if placement is controlled by ramen, it will not have placementdecision name in its status
+		// so need query placementdecision by label
+		placementDecision, err := getPlacementDecisionFromPlacement(client, placement)
+		if err == nil && placementDecision != nil {
+			return placement, placementDecision.Name, nil
 		}
 
 		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
@@ -103,7 +110,7 @@ func checkDRPCConditions(drpc *ramen.DRPlacementControl) bool {
 	return available && peerReady
 }
 
-func waitDRPCPhase(client client.Client, namespace string, name string, phase string) error {
+func waitDRPCPhase(client client.Client, namespace, name string, phase ramen.DRState) error {
 	startTime := time.Now()
 
 	for {
@@ -112,9 +119,9 @@ func waitDRPCPhase(client client.Client, namespace string, name string, phase st
 			return err
 		}
 
-		currentPhase := string(drpc.Status.Phase)
+		currentPhase := drpc.Status.Phase
 		if currentPhase == phase {
-			util.Ctx.Log.Info("drpc " + name + " phase is " + phase + ", meets expectation")
+			util.Ctx.Log.Info(fmt.Sprintf("drpc %s phase is %s", name, phase))
 
 			return nil
 		}
@@ -145,6 +152,15 @@ func getCurrentCluster(client client.Client, namespace string, placementName str
 	return clusterName, nil
 }
 
+// return dr cluster client
+func getDRClusterClient(clusterName string, drpolicy *ramen.DRPolicy) client.Client {
+	if clusterName == drpolicy.Spec.DRClusters[0] {
+		return util.Ctx.C1.CtrlClient
+	}
+
+	return util.Ctx.C2.CtrlClient
+}
+
 func getTargetCluster(client client.Client, namespace, placementName string, drpolicy *ramen.DRPolicy) (string, error) {
 	currentCluster, err := getCurrentCluster(client, namespace, placementName)
 	if err != nil {
@@ -162,7 +178,7 @@ func getTargetCluster(client client.Client, namespace, placementName string, drp
 }
 
 // first wait DRPC to have the expected phase, then check DRPC conditions
-func waitDRPC(client client.Client, namespace, name, expectedPhase string) error {
+func waitDRPC(client client.Client, namespace, name string, expectedPhase ramen.DRState) error {
 	// sleep to wait for DRPC is processed
 	time.Sleep(FiveSecondsDuration)
 	// check Phase
@@ -175,6 +191,8 @@ func waitDRPC(client client.Client, namespace, name, expectedPhase string) error
 
 func waitDRPCDeleted(client client.Client, namespace string, name string) error {
 	startTime := time.Now()
+	// sleep to wait for DRPC is deleted
+	time.Sleep(FiveSecondsDuration)
 
 	for {
 		_, err := getDRPC(client, namespace, name)
@@ -194,4 +212,70 @@ func waitDRPCDeleted(client client.Client, namespace string, name string) error 
 
 		time.Sleep(time.Second * time.Duration(util.TimeInterval))
 	}
+}
+
+// nolint:unparam
+func waitDRPCProgression(client client.Client, namespace, name string, progression ramen.ProgressionStatus) error {
+	startTime := time.Now()
+
+	for {
+		drpc, err := getDRPC(client, namespace, name)
+		if err != nil {
+			return err
+		}
+
+		currentProgression := drpc.Status.Progression
+		if currentProgression == progression {
+			util.Ctx.Log.Info(fmt.Sprintf("drpc %s progression is %s", name, progression))
+
+			return nil
+		}
+
+		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
+			return fmt.Errorf(fmt.Sprintf("drpc %s progression is not %s yet before timeout of %v",
+				name, progression, util.Timeout))
+		}
+
+		time.Sleep(time.Second * time.Duration(util.TimeInterval))
+	}
+}
+
+func getPlacementDecisionFromPlacement(ctrlClient client.Client, placement *v1beta1.Placement,
+) (*v1beta1.PlacementDecision, error) {
+	matchLabels := map[string]string{
+		v1beta1.PlacementLabel: placement.GetName(),
+	}
+
+	listOptions := []client.ListOption{
+		client.InNamespace(placement.GetNamespace()),
+		client.MatchingLabels(matchLabels),
+	}
+
+	plDecisions := &v1beta1.PlacementDecisionList{}
+	if err := ctrlClient.List(context.TODO(), plDecisions, listOptions...); err != nil {
+		return nil, fmt.Errorf("failed to list PlacementDecisions (placement: %s)",
+			placement.GetNamespace()+"/"+placement.GetName())
+	}
+
+	if len(plDecisions.Items) == 0 {
+		return nil, nil
+	}
+
+	if len(plDecisions.Items) > 1 {
+		return nil, fmt.Errorf("multiple PlacementDecisions found for Placement (count: %d, placement: %s)",
+			len(plDecisions.Items), placement.GetNamespace()+"/"+placement.GetName())
+	}
+
+	plDecision := plDecisions.Items[0]
+	// r.Log.Info("Found ClusterDecision", "ClsDedicision", plDecision.Status.Decisions)
+
+	if len(plDecision.Status.Decisions) > 1 {
+		return nil, fmt.Errorf("multiple placements found in PlacementDecision"+
+			" (count: %d, Placement: %s, PlacementDecision: %s)",
+			len(plDecision.Status.Decisions),
+			placement.GetNamespace()+"/"+placement.GetName(),
+			plDecision.GetName()+"/"+plDecision.GetNamespace())
+	}
+
+	return &plDecision, nil
 }

@@ -15,7 +15,7 @@ const McsbName = ClusterSetName
 type Subscription struct{}
 
 func (s Subscription) GetName() string {
-	return "Subscription"
+	return "Subscr"
 }
 
 func (s Subscription) Deploy(w workloads.Workload) error {
@@ -36,17 +36,17 @@ func (s Subscription) Deploy(w workloads.Workload) error {
 		return err
 	}
 
-	err = createManagedClusterSetBinding(McsbName, namespace)
+	err = CreateManagedClusterSetBinding(McsbName, namespace)
 	if err != nil {
 		return err
 	}
 
-	err = createPlacement(name, namespace)
+	err = CreatePlacement(name, namespace)
 	if err != nil {
 		return err
 	}
 
-	err = createSubscription(s, w)
+	err = CreateSubscription(s, w)
 	if err != nil {
 		return err
 	}
@@ -66,17 +66,17 @@ func (s Subscription) Undeploy(w workloads.Workload) error {
 
 	util.Ctx.Log.Info("enter Undeploy " + name)
 
-	err := deleteSubscription(s, w)
+	err := DeleteSubscription(s, w)
 	if err != nil {
 		return err
 	}
 
-	err = deletePlacement(name, namespace)
+	err = DeletePlacement(name, namespace)
 	if err != nil {
 		return err
 	}
 
-	err = deleteManagedClusterSetBinding(McsbName, namespace)
+	err = DeleteManagedClusterSetBinding(McsbName, namespace)
 	if err != nil {
 		return err
 	}
@@ -87,4 +87,8 @@ func (s Subscription) Undeploy(w workloads.Workload) error {
 	}
 
 	return nil
+}
+
+func (s Subscription) IsWorkloadSupported(w workloads.Workload) bool {
+	return true
 }

@@ -5,6 +5,7 @@ package e2e_test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/ramendr/ramen/e2e/deployers"
@@ -24,20 +25,37 @@ const (
 )
 
 var (
-	Workloads    = []workloads.Workload{}
-	subscription = &deployers.Subscription{}
-	appset       = &deployers.ApplicationSet{}
-	Deployers    = []deployers.Deployer{subscription, appset}
+	Workloads      = []workloads.Workload{}
+	subscription   = &deployers.Subscription{}
+	appset         = &deployers.ApplicationSet{}
+	discoveredApps = &deployers.DiscoveredApps{}
+	Deployers      = []deployers.Deployer{subscription, appset, discoveredApps}
 )
+
+func generateSuffix(storageClassName string) string {
+	suffix := storageClassName
+
+	if strings.ToLower(storageClassName) == "rook-ceph-block" {
+		suffix = "rbd"
+	}
+
+	if strings.ToLower(storageClassName) == "rook-cephfs" {
+		suffix = "cephfs"
+	}
+
+	return suffix
+}
 
 func generateWorkloads([]workloads.Workload) {
 	pvcSpecs := util.GetPVCSpecs()
-	for i, pvcSpec := range pvcSpecs {
+	for _, pvcSpec := range pvcSpecs {
+		// add storageclass name to deployment name
+		suffix := generateSuffix(pvcSpec.StorageClassName)
 		deployment := &workloads.Deployment{
 			Path:     GITPATH,
 			Revision: GITREVISION,
 			AppName:  APPNAME,
-			Name:     fmt.Sprintf("Deployment-%d", i),
+			Name:     fmt.Sprintf("Deploy-%s", suffix),
 			PVCSpec:  pvcSpec,
 		}
 		Workloads = append(Workloads, deployment)
@@ -72,6 +90,15 @@ func Exhaustive(t *testing.T) {
 
 func runTestFlow(t *testing.T) {
 	t.Helper()
+
+	testCtx, err := testcontext.GetTestContext(t.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !testCtx.Deployer.IsWorkloadSupported(testCtx.Workload) {
+		t.Skipf("Workload %s not supported by deployer %s, skip test", testCtx.Workload.GetName(), testCtx.Deployer.GetName())
+	}
 
 	if !t.Run("Deploy", DeployAction) {
 		t.Fatal("Deploy failed")

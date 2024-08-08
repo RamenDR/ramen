@@ -16,22 +16,22 @@ func (a ApplicationSet) Deploy(w workloads.Workload) error {
 
 	util.Ctx.Log.Info("enter Deploy " + name)
 
-	err := createManagedClusterSetBinding(McsbName, namespace)
+	err := CreateManagedClusterSetBinding(McsbName, namespace)
 	if err != nil {
 		return err
 	}
 
-	err = createPlacement(name, namespace)
+	err = CreatePlacement(name, namespace)
 	if err != nil {
 		return err
 	}
 
-	err = createPlacementDecisionConfigMap(name, namespace)
+	err = CreatePlacementDecisionConfigMap(name, namespace)
 	if err != nil {
 		return err
 	}
 
-	err = createApplicationSet(a, w)
+	err = CreateApplicationSet(a, w)
 	if err != nil {
 		return err
 	}
@@ -45,17 +45,17 @@ func (a ApplicationSet) Undeploy(w workloads.Workload) error {
 
 	util.Ctx.Log.Info("enter Undeploy " + name)
 
-	err := deleteApplicationSet(a, w)
+	err := DeleteApplicationSet(a, w)
 	if err != nil {
 		return err
 	}
 
-	err = deleteConfigMap(name, namespace)
+	err = DeleteConfigMap(name, namespace)
 	if err != nil {
 		return err
 	}
 
-	err = deletePlacement(name, namespace)
+	err = DeletePlacement(name, namespace)
 	if err != nil {
 		return err
 	}
@@ -68,7 +68,7 @@ func (a ApplicationSet) Undeploy(w workloads.Workload) error {
 	}
 
 	if lastAppset {
-		err = deleteManagedClusterSetBinding(McsbName, namespace)
+		err = DeleteManagedClusterSetBinding(McsbName, namespace)
 		if err != nil {
 			return err
 		}
@@ -79,4 +79,8 @@ func (a ApplicationSet) Undeploy(w workloads.Workload) error {
 
 func (a ApplicationSet) GetName() string {
 	return "Appset"
+}
+
+func (a ApplicationSet) IsWorkloadSupported(w workloads.Workload) bool {
+	return true
 }
