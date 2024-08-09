@@ -89,6 +89,8 @@ def start(
     if alsologtostderr:
         args.append("--alsologtostderr")
 
+    args.append("--insecure-registry=host.minikube.internal:5000")
+
     _watch("start", *args, profile=profile)
 
 
