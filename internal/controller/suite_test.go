@@ -40,6 +40,7 @@ import (
 	cpcv1 "open-cluster-management.io/config-policy-controller/api/v1"
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 
+	clusterv1alpha1 "github.com/open-cluster-management-io/api/cluster/v1alpha1"
 	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	ramencontrollers "github.com/ramendr/ramen/internal/controller"
@@ -209,6 +210,9 @@ var _ = BeforeSuite(func() {
 	Expect(velero.AddToScheme(scheme.Scheme)).To(Succeed())
 
 	err = clrapiv1beta1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = clusterv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = argocdv1alpha1hack.AddToScheme(scheme.Scheme)
