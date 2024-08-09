@@ -1616,6 +1616,7 @@ func (d *DRPCInstance) generateVRGSpecAsync() *rmn.VRGAsyncSpec {
 			VolumeSnapshotClassSelector:      d.drPolicy.Spec.VolumeSnapshotClassSelector,
 			VolumeGroupSnapshotClassSelector: d.drPolicy.Spec.VolumeGroupSnapshotClassSelector,
 			SchedulingInterval:               d.drPolicy.Spec.SchedulingInterval,
+			PeerClasses:                      d.drPolicy.Status.Async.PeerClasses,
 		}
 	}
 
@@ -1624,7 +1625,9 @@ func (d *DRPCInstance) generateVRGSpecAsync() *rmn.VRGAsyncSpec {
 
 func (d *DRPCInstance) generateVRGSpecSync() *rmn.VRGSyncSpec {
 	if d.drType == DRTypeSync {
-		return &rmn.VRGSyncSpec{}
+		return &rmn.VRGSyncSpec{
+			PeerClasses: d.drPolicy.Status.Async.PeerClasses,
+		}
 	}
 
 	return nil

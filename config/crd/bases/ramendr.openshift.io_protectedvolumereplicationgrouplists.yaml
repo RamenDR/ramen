@@ -120,6 +120,19 @@ spec:
                           description: VRGAsyncSpec has the parameters associated
                             with RegionalDR
                           properties:
+                            peerClasses:
+                              items:
+                                properties:
+                                  replicationID:
+                                    type: string
+                                  storageClassName:
+                                    type: string
+                                  storageID:
+                                    items:
+                                      type: string
+                                    type: array
+                                type: object
+                              type: array
                             replicationClassSelector:
                               description: |-
                                 Label selector to identify the VolumeReplicationClass resources
@@ -423,6 +436,20 @@ spec:
                         sync:
                           description: VRGSyncSpec has the parameters associated with
                             MetroDR
+                          properties:
+                            peerClasses:
+                              items:
+                                properties:
+                                  replicationID:
+                                    type: string
+                                  storageClassName:
+                                    type: string
+                                  storageID:
+                                    items:
+                                      type: string
+                                    type: array
+                                type: object
+                              type: array
                           type: object
                         volSync:
                           description: volsync defines the configuration when using
