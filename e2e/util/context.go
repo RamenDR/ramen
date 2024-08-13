@@ -20,6 +20,7 @@ import (
 	ocmv1b2 "open-cluster-management.io/api/cluster/v1beta2"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
 	subscription "open-cluster-management.io/multicloud-operators-subscription/pkg/apis"
 	placementrule "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/placementrule/v1"
 )
@@ -54,6 +55,10 @@ func addToScheme(scheme *runtime.Scheme) error {
 	}
 
 	if err := subscription.AddToScheme(scheme); err != nil {
+		return err
+	}
+
+	if err := argocdv1alpha1hack.AddToScheme(scheme); err != nil {
 		return err
 	}
 

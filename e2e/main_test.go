@@ -38,6 +38,9 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
+	log.Info("Global setting", "Timeout", util.Timeout)
+	log.Info("Global setting", "Retry Interval", util.TimeInterval)
+
 	os.Exit(m.Run())
 }
 
