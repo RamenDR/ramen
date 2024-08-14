@@ -153,13 +153,13 @@ func getCurrentCluster(client client.Client, namespace string, placementName str
 }
 
 // return dr cluster client
-func getDRClusterClient(clusterName string, drpolicy *ramen.DRPolicy) client.Client {
-	if clusterName == drpolicy.Spec.DRClusters[0] {
-		return util.Ctx.C1.CtrlClient
-	}
+// func getDRClusterClient(clusterName string, drpolicy *ramen.DRPolicy) client.Client {
+// 	if clusterName == drpolicy.Spec.DRClusters[0] {
+// 		return util.Ctx.C1.CtrlClient
+// 	}
 
-	return util.Ctx.C2.CtrlClient
-}
+// 	return util.Ctx.C2.CtrlClient
+// }
 
 func getTargetCluster(client client.Client, namespace, placementName string, drpolicy *ramen.DRPolicy) (string, error) {
 	currentCluster, err := getCurrentCluster(client, namespace, placementName)
@@ -252,7 +252,7 @@ func getPlacementDecisionFromPlacement(ctrlClient client.Client, placement *v1be
 	}
 
 	plDecisions := &v1beta1.PlacementDecisionList{}
-	if err := ctrlClient.List(context.TODO(), plDecisions, listOptions...); err != nil {
+	if err := ctrlClient.List(context.Background(), plDecisions, listOptions...); err != nil {
 		return nil, fmt.Errorf("failed to list PlacementDecisions (placement: %s)",
 			placement.GetNamespace()+"/"+placement.GetName())
 	}

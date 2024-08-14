@@ -16,8 +16,8 @@ import (
 
 const (
 	OcmSchedulingDisable = "cluster.open-cluster-management.io/experimental-scheduling-disable"
-	DefaultDRPolicyName  = "dr-policy"
-	FiveSecondsDuration  = 5 * time.Second
+
+	FiveSecondsDuration = 5 * time.Second
 )
 
 // If AppSet/Subscription, find Placement
@@ -37,7 +37,7 @@ func EnableProtection(w workloads.Workload, d deployers.Deployer) error {
 
 	util.Ctx.Log.Info("enter EnableProtection " + name)
 
-	drPolicyName := DefaultDRPolicyName
+	drPolicyName := util.DefaultDRPolicyName
 	appname := w.GetAppName()
 	placementName := name
 	drpcName := name
@@ -165,9 +165,9 @@ func waitAndUpdateDRPC(client client.Client, namespace, drpcName string, action 
 		return err
 	}
 
-	drPolicyName := DefaultDRPolicyName
+	drPolicyName := util.DefaultDRPolicyName
 
-	drpolicy, err := getDRPolicy(client, drPolicyName)
+	drpolicy, err := util.GetDRPolicy(client, drPolicyName)
 	if err != nil {
 		return err
 	}
@@ -190,17 +190,7 @@ func waitAndUpdateDRPC(client client.Client, namespace, drpcName string, action 
 }
 
 func GetNamespace(d deployers.Deployer, w workloads.Workload) string {
-	_, isAppSet := d.(*deployers.ApplicationSet)
-	if isAppSet {
-		// appset need be deployed in argocd ns
-		return util.ArgocdNamespace
-	}
-
-	if _, isDiscoveredApps := d.(*deployers.DiscoveredApps); isDiscoveredApps {
-		return util.RamenOpsNs
-	}
-
-	return GetCombinedName(d, w)
+	return deployers.GetNamespace(d, w)
 }
 
 func GetCombinedName(d deployers.Deployer, w workloads.Workload) string {

@@ -4,7 +4,8 @@
 package deployers
 
 import (
-	"fmt"
+	"os"
+	"os/exec"
 
 	"github.com/ramendr/ramen/e2e/util"
 	"github.com/ramendr/ramen/e2e/workloads"
@@ -12,12 +13,12 @@ import (
 
 type DiscoveredApps struct{}
 
-func (s DiscoveredApps) GetName() string {
+func (d DiscoveredApps) GetName() string {
 	return "Disapp"
 }
 
-func (s DiscoveredApps) Deploy(w workloads.Workload) error {
-	name := GetCombinedName(s, w)
+func (d DiscoveredApps) Deploy(w workloads.Workload) error {
+	name := GetCombinedName(d, w)
 	namespace := name
 
 	util.Ctx.Log.Info("enter Deploy " + name)
@@ -27,63 +28,83 @@ func (s DiscoveredApps) Deploy(w workloads.Workload) error {
 		return err
 	}
 
-	// create pvc and deployment on dr1
-	pvc, err := GetPVCFromFile()
+	tempDir, err := os.MkdirTemp("", "ramen-")
 	if err != nil {
 		return err
 	}
 
-	// TODO: kustomize pvc with workload pvcspec
-	// consider to add getPVCSpec() in workload interface to change pvc sc name and access mode
-	// right now discoveredapps only supports rbd, so do it later
+	// Clean up by removing the temporary directory when done
+	defer os.RemoveAll(tempDir)
 
-	err = createPVC(util.Ctx.C1.CtrlClient, pvc, namespace)
-	if err != nil {
-		err = fmt.Errorf("unable to create pvc %s: %w",
-			pvc.Name, err)
-
+	if err = CreateKustomizationFile(w, tempDir); err != nil {
 		return err
 	}
 
-	deploy, err := GetDeploymentFromFile()
+	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub.CtrlClient, util.DefaultDRPolicyName)
 	if err != nil {
 		return err
 	}
 
-	err = createDeployment(util.Ctx.C1.CtrlClient, deploy, namespace)
-	if err != nil {
-		err = fmt.Errorf("unable to create deployment %s: %w",
-			deploy.Name, err)
+	cmd := exec.Command("kubectl", "apply", "-k", tempDir, "-n", namespace,
+		"--context", drpolicy.Spec.DRClusters[0], "--timeout=5m")
+
+	// Run the command and capture the output
+	if out, err := cmd.Output(); err != nil {
+		util.Ctx.Log.Info(string(out))
 
 		return err
 	}
 
-	return waitDeploymentReady(util.Ctx.C1.CtrlClient, namespace, deploy.Name)
+	// TODO: modify it based on shyam's comment
+	// return waitDeploymentReady(util.Ctx.C1.CtrlClient, namespace, "busybox")
+
+	util.Ctx.Log.Info(name + " is deployed")
+
+	return nil
 }
 
-func (s DiscoveredApps) Undeploy(w workloads.Workload) error {
-	name := GetCombinedName(s, w)
-	namespace := name
+func (d DiscoveredApps) Undeploy(w workloads.Workload) error {
+	name := GetCombinedName(d, w)
+	namespace := name // this namespace is in dr clusters
 
 	util.Ctx.Log.Info("enter Undeploy " + name)
 
-	// delete discovered apps on both clusters
-	if err := DeleteDiscoveredApps(util.Ctx.C1.CtrlClient, namespace); err != nil {
+	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub.CtrlClient, util.DefaultDRPolicyName)
+	if err != nil {
 		return err
 	}
 
-	if err := DeleteDiscoveredApps(util.Ctx.C2.CtrlClient, namespace); err != nil {
+	util.Ctx.Log.Info("starts to delete discovered apps on " + drpolicy.Spec.DRClusters[0])
+
+	// delete app on both clusters
+	if err := DeleteDiscoveredApps(w, namespace, drpolicy.Spec.DRClusters[0]); err != nil {
 		return err
 	}
+
+	util.Ctx.Log.Info("starts to delete discovered apps on " + drpolicy.Spec.DRClusters[1])
+
+	if err := DeleteDiscoveredApps(w, namespace, drpolicy.Spec.DRClusters[1]); err != nil {
+		return err
+	}
+
+	util.Ctx.Log.Info("starts to delete namespace " + namespace + " on " + drpolicy.Spec.DRClusters[0])
 
 	// delete namespace on both clusters
 	if err := util.DeleteNamespace(util.Ctx.C1.CtrlClient, namespace); err != nil {
 		return err
 	}
 
-	return util.DeleteNamespace(util.Ctx.C2.CtrlClient, namespace)
+	util.Ctx.Log.Info("starts to delete namespace " + namespace + " on " + drpolicy.Spec.DRClusters[1])
+
+	if err := util.DeleteNamespace(util.Ctx.C2.CtrlClient, namespace); err != nil {
+		return err
+	}
+
+	util.Ctx.Log.Info(name + " is undeployed")
+
+	return nil
 }
 
-func (s DiscoveredApps) IsWorkloadSupported(w workloads.Workload) bool {
+func (d DiscoveredApps) IsWorkloadSupported(w workloads.Workload) bool {
 	return w.GetName() != "Deploy-cephfs"
 }

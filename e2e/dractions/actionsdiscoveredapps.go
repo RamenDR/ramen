@@ -17,7 +17,7 @@ func EnableProtectionDiscoveredApps(w workloads.Workload, d deployers.Deployer) 
 
 	util.Ctx.Log.Info("enter EnableProtectionDiscoveredApps " + name)
 
-	drPolicyName := DefaultDRPolicyName
+	drPolicyName := util.DefaultDRPolicyName
 	appname := w.GetAppName()
 	placementName := name
 	drpcName := name
@@ -33,7 +33,7 @@ func EnableProtectionDiscoveredApps(w workloads.Workload, d deployers.Deployer) 
 	}
 
 	// create drpc
-	drpolicy, err := getDRPolicy(util.Ctx.Hub.CtrlClient, drPolicyName)
+	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub.CtrlClient, drPolicyName)
 	if err != nil {
 		return err
 	}
@@ -101,34 +101,26 @@ func failoverRelocateDiscoveredApps(w workloads.Workload, d deployers.Deployer, 
 	namespace := GetNamespace(d, w) // this namespace is in hub
 	namespaceInDrCluster := name    // this namespace is in dr clusters
 
-	drPolicyName := DefaultDRPolicyName
 	drpcName := name
 	client := util.Ctx.Hub.CtrlClient
-
-	if err := waitAndUpdateDRPC(client, namespace, drpcName, action); err != nil {
-		return err
-	}
 
 	currentCluster, err := getCurrentCluster(client, namespace, name)
 	if err != nil {
 		return err
 	}
 
-	drpolicy, err := getDRPolicy(client, drPolicyName)
-	if err != nil {
+	if err := waitAndUpdateDRPC(client, namespace, drpcName, action); err != nil {
 		return err
 	}
 
-	drClient := getDRClusterClient(currentCluster, drpolicy)
-
-	if err = waitDRPCProgression(client, namespace, name, ramen.ProgressionWaitOnUserToCleanUp); err != nil {
+	if err := waitDRPCProgression(client, namespace, name, ramen.ProgressionWaitOnUserToCleanUp); err != nil {
 		return err
 	}
 
 	// delete pvc and deployment from dr cluster
 	util.Ctx.Log.Info("start to clean up discovered apps from " + currentCluster)
 
-	if err = deployers.DeleteDiscoveredApps(drClient, namespaceInDrCluster); err != nil {
+	if err = deployers.DeleteDiscoveredApps(w, namespaceInDrCluster, currentCluster); err != nil {
 		return err
 	}
 

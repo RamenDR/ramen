@@ -5,8 +5,10 @@ package deployers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/ramendr/ramen/e2e/util"
@@ -19,7 +21,6 @@ import (
 	"sigs.k8s.io/yaml"
 
 	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ocmv1b1 "open-cluster-management.io/api/cluster/v1beta1"
@@ -210,11 +211,25 @@ func GetCombinedName(d Deployer, w workloads.Workload) string {
 	return strings.ToLower(d.GetName() + "-" + w.GetName() + "-" + w.GetAppName())
 }
 
-func getSubscription(ctrlClient client.Client, namespace, name string) (*subscriptionv1.Subscription, error) {
+func GetNamespace(d Deployer, w workloads.Workload) string {
+	_, isAppSet := d.(*ApplicationSet)
+	if isAppSet {
+		// appset need be deployed in argocd ns
+		return util.ArgocdNamespace
+	}
+
+	if _, isDiscoveredApps := d.(*DiscoveredApps); isDiscoveredApps {
+		return util.RamenOpsNs
+	}
+
+	return GetCombinedName(d, w)
+}
+
+func getSubscription(client client.Client, namespace, name string) (*subscriptionv1.Subscription, error) {
 	subscription := &subscriptionv1.Subscription{}
 	key := types.NamespacedName{Name: name, Namespace: namespace}
 
-	err := ctrlClient.Get(context.Background(), key, subscription)
+	err := client.Get(context.Background(), key, subscription)
 	if err != nil {
 		return nil, err
 	}
@@ -382,158 +397,67 @@ func isLastAppsetInArgocdNs(namespace string) (bool, error) {
 	return len(appsetList.Items) == 1, nil
 }
 
-func createDeployment(client client.Client, deploy *appsv1.Deployment, namespace string) error {
-	deploy.Namespace = namespace
-
-	err := client.Create(context.Background(), deploy)
+func DeleteDiscoveredApps(w workloads.Workload, namespace, cluster string) error {
+	tempDir, err := os.MkdirTemp("", "ramen-")
 	if err != nil {
-		if !errors.IsAlreadyExists(err) {
-			return err
-		}
-
-		util.Ctx.Log.Info("deployment " + deploy.Name + " already Exists")
+		return err
 	}
 
-	return nil
-}
+	// Clean up by removing the temporary directory when done
+	defer os.RemoveAll(tempDir)
 
-func getDeployment(client client.Client, namespace, name string) (*appsv1.Deployment, error) {
-	deploy := &appsv1.Deployment{}
-	key := types.NamespacedName{Name: name, Namespace: namespace}
-
-	err := client.Get(context.Background(), key, deploy)
-	if err != nil {
-		return nil, err
+	if err = CreateKustomizationFile(w, tempDir); err != nil {
+		return err
 	}
 
-	return deploy, nil
-}
+	cmd := exec.Command("kubectl", "delete", "-k", tempDir, "-n", namespace,
+		"--context", cluster, "--timeout=5m", "--ignore-not-found=true")
 
-func DeleteDeployment(client client.Client, namespace, name string) error {
-	deploy, err := getDeployment(client, namespace, name)
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			return err
-		}
+	// Run the command and capture the output
+	if out, err := cmd.Output(); err != nil {
+		util.Ctx.Log.Info(string(out))
 
-		return nil
-	}
-
-	err = client.Delete(context.Background(), deploy)
-	if err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func createPVC(client client.Client, pvc *corev1.PersistentVolumeClaim, namespace string) error {
-	pvc.Namespace = namespace
+type CombinedData map[string]interface{}
 
-	err := client.Create(context.Background(), pvc)
-	if err != nil {
-		if !errors.IsAlreadyExists(err) {
-			return err
-		}
+func CreateKustomizationFile(w workloads.Workload, dir string) error {
+	yamlData := `resources:
+- ` + util.GetGitURL() + `/` + w.GetPath() + `?ref=` + w.GetRevision()
 
-		util.Ctx.Log.Info("pvc " + pvc.Name + " already Exists")
-	}
+	var yamlContent CombinedData
 
-	return nil
-}
-
-func getPVC(client client.Client, namespace, name string) (*corev1.PersistentVolumeClaim, error) {
-	pvc := &corev1.PersistentVolumeClaim{}
-	key := types.NamespacedName{Name: name, Namespace: namespace}
-
-	err := client.Get(context.Background(), key, pvc)
-	if err != nil {
-		return nil, err
-	}
-
-	return pvc, nil
-}
-
-func DeletePVC(client client.Client, namespace, name string) error {
-	pvc, err := getPVC(client, namespace, name)
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			return err
-		}
-
-		return nil
-	}
-
-	err = client.Delete(context.Background(), pvc)
+	err := yaml.Unmarshal([]byte(yamlData), &yamlContent)
 	if err != nil {
 		return err
 	}
 
-	return nil
-}
+	patch := w.Kustomize()
 
-func GetPVCFromFile() (*corev1.PersistentVolumeClaim, error) {
-	pvcFileName := "yamls/discoveredapps/pvc.yaml"
+	var jsonContent CombinedData
 
-	pvcFileContents, err := os.ReadFile(pvcFileName)
-	if err != nil {
-		err = fmt.Errorf("unable to load file %s: %w",
-			pvcFileName, err)
-
-		return nil, err
-	}
-
-	pvc := &corev1.PersistentVolumeClaim{}
-
-	err = yaml.Unmarshal(pvcFileContents, pvc)
-	if err != nil {
-		err = fmt.Errorf("unable to marshal file %s: %w",
-			pvcFileName, err)
-
-		return nil, err
-	}
-
-	return pvc, nil
-}
-
-func GetDeploymentFromFile() (*appsv1.Deployment, error) {
-	deployFileName := "yamls/discoveredapps/busybox-deployment.yaml"
-
-	deployFileContents, err := os.ReadFile(deployFileName)
-	if err != nil {
-		err = fmt.Errorf("unable to load file %s: %w",
-			deployFileName, err)
-
-		return nil, err
-	}
-
-	deploy := &appsv1.Deployment{}
-
-	err = yaml.Unmarshal(deployFileContents, deploy)
-	if err != nil {
-		err = fmt.Errorf("unable to marshal file %s: %w",
-			deployFileName, err)
-
-		return nil, err
-	}
-
-	return deploy, nil
-}
-
-func DeleteDiscoveredApps(client client.Client, namespace string) error {
-	pvc, err := GetPVCFromFile()
+	err = json.Unmarshal([]byte(patch), &jsonContent)
 	if err != nil {
 		return err
 	}
 
-	deploy, err := GetDeploymentFromFile()
+	// Merge JSON content into YAML content
+	for key, value := range jsonContent {
+		yamlContent[key] = value
+	}
+
+	// Convert the combined content back to YAML
+	combinedYAML, err := yaml.Marshal(&yamlContent)
 	if err != nil {
 		return err
 	}
 
-	if err = DeletePVC(client, namespace, pvc.Name); err != nil {
-		return err
-	}
+	// Write the combined content to a new YAML file
+	outputFile := dir + "/kustomization.yaml"
 
-	return DeleteDeployment(client, namespace, deploy.Name)
+	return os.WriteFile(outputFile, combinedYAML, os.ModePerm)
 }

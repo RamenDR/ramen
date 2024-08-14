@@ -51,12 +51,7 @@ func (s Subscription) Deploy(w workloads.Workload) error {
 		return err
 	}
 
-	err = waitSubscriptionPhase(namespace, name, subscriptionv1.SubscriptionPropagated)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return waitSubscriptionPhase(namespace, name, subscriptionv1.SubscriptionPropagated)
 }
 
 // Delete Subscription, Placement, Binding
@@ -81,12 +76,7 @@ func (s Subscription) Undeploy(w workloads.Workload) error {
 		return err
 	}
 
-	err = util.DeleteNamespace(util.Ctx.Hub.CtrlClient, namespace)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return util.DeleteNamespace(util.Ctx.Hub.CtrlClient, namespace)
 }
 
 func (s Subscription) IsWorkloadSupported(w workloads.Workload) bool {

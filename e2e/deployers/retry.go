@@ -9,7 +9,6 @@ import (
 
 	"github.com/ramendr/ramen/e2e/util"
 	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const FiveSecondsDuration = 5 * time.Second
@@ -41,28 +40,28 @@ func waitSubscriptionPhase(namespace, name string, phase subscriptionv1.Subscrip
 	}
 }
 
-func waitDeploymentReady(client client.Client, namespace, name string) error {
-	time.Sleep(FiveSecondsDuration)
+// func waitDeploymentReady(client client.Client, namespace, name string) error {
+// 	time.Sleep(FiveSecondsDuration)
 
-	startTime := time.Now()
+// 	startTime := time.Now()
 
-	for {
-		deploy, err := getDeployment(client, namespace, name)
-		if err != nil {
-			return err
-		}
+// 	for {
+// 		deploy, err := getDeployment(client, namespace, name)
+// 		if err != nil {
+// 			return err
+// 		}
 
-		if deploy.Status.Replicas == deploy.Status.ReadyReplicas {
-			util.Ctx.Log.Info(fmt.Sprintf("deployment %s is ready", name))
+// 		if deploy.Status.Replicas == deploy.Status.ReadyReplicas {
+// 			util.Ctx.Log.Info(fmt.Sprintf("deployment %s is ready", name))
 
-			return nil
-		}
+// 			return nil
+// 		}
 
-		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
-			return fmt.Errorf(fmt.Sprintf("deployment %s is not ready yet before timeout of %v",
-				name, util.Timeout))
-		}
+// 		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
+// 			return fmt.Errorf(fmt.Sprintf("deployment %s is not ready yet before timeout of %v",
+// 				name, util.Timeout))
+// 		}
 
-		time.Sleep(time.Second * time.Duration(util.TimeInterval))
-	}
-}
+// 		time.Sleep(time.Second * time.Duration(util.TimeInterval))
+// 	}
+// }
