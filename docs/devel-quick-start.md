@@ -33,24 +33,14 @@ SPDX-License-Identifier: Apache-2.0
    git remote add upstream https://github.com/RamenDR/ramen.git
    ```
 
-1. Set up a commit-msg hook to sign off your commits
+1. Add the commit-msg hook to sign off your commits
 
    *Ramen* requires a `Signed-off-by: My Name <myemail@example.com>`
    footer in the commit message. To add it automatically to all commits,
    add this hook:
 
    ```sh
-   $ cat .git/hooks/commit-msg
-   #!/bin/sh
-   # Add Signed-off-by trailer.
-   sob=$(git var GIT_AUTHOR_IDENT | sed -n 's/^\(.*>\).*$/Signed-off-by: \1/p')
-   git interpret-trailers --in-place --trailer "$sob" "$1"
-   ```
-
-   And make the hook executable:
-
-   ```sh
-   chmod +x .git/hooks/commit-msg
+   cp hack/commit-msg .git/hooks/
    ```
 
 ## Setting up the environment for development and testing
