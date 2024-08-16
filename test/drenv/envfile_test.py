@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import io
+import os
+
 import pytest
 from collections import namedtuple
 
@@ -86,10 +88,11 @@ workers:
 def test_driver(valid_env):
     env = envfile.load(valid_env.file, addons_root=valid_env.addons_root)
     platform_defaults = envfile.platform_defaults()
+    machine = os.uname().machine
 
     # no driver
     profile = env["profiles"][0]
-    assert profile["driver"] == platform_defaults[envfile.VM]
+    assert profile["driver"] == platform_defaults[envfile.VM][machine]
 
     # concrete driver
     profile = env["profiles"][1]
@@ -101,12 +104,13 @@ def test_driver(valid_env):
 
     # platform vm driver
     profile = env["profiles"][3]
-    assert profile["driver"] == platform_defaults[envfile.VM]
+    assert profile["driver"] == platform_defaults[envfile.VM][machine]
 
 
 def test_network(valid_env):
     env = envfile.load(valid_env.file, addons_root=valid_env.addons_root)
     platform_defaults = envfile.platform_defaults()
+    machine = os.uname().machine
 
     # no network
     profile = env["profiles"][0]
@@ -118,7 +122,7 @@ def test_network(valid_env):
 
     # platform drenv-shared network
     profile = env["profiles"][2]
-    assert profile["network"] == platform_defaults[envfile.SHARED_NETWORK]
+    assert profile["network"] == platform_defaults[envfile.SHARED_NETWORK][machine]
 
 
 def test_valid(valid_env):
