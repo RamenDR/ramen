@@ -47,6 +47,7 @@ def main():
         sys.exit(1)
     finally:
         shutdown_executors()
+        # XXX Does not work for vfkit driver
         terminate_process_group()
 
 
