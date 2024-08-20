@@ -4,7 +4,7 @@
 # yamllint disable rule:line-length
 ---
 resources:
-  - https://raw.githubusercontent.com/rook/rook/release-1.14/deploy/examples/cluster-test.yaml
+  - https://raw.githubusercontent.com/rook/rook/release-1.15/deploy/examples/cluster-test.yaml
 patches:
   - target:
       kind: CephCluster

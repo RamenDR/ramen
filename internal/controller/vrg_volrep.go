@@ -13,8 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/go-logr/logr"
 
-	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
-	volrepController "github.com/csi-addons/kubernetes-csi-addons/controllers/replication.storage"
+	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -26,6 +25,26 @@ import (
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
+)
+
+const (
+	ConditionCompleted = "Completed"
+	ConditionDegraded  = "Degraded"
+	ConditionResyncing = "Resyncing"
+)
+
+const (
+	Success         = "Success"
+	Promoted        = "Promoted"
+	Demoted         = "Demoted"
+	FailedToPromote = "FailedToPromote"
+	FailedToDemote  = "FailedToDemote"
+	Error           = "Error"
+	VolumeDegraded  = "VolumeDegraded"
+	Healthy         = "Healthy"
+	ResyncTriggered = "ResyncTriggered"
+	FailedToResync  = "FailedToResync"
+	NotResyncing    = "NotResyncing"
 )
 
 const (
@@ -1424,7 +1443,7 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 	}
 
 	// it should be completed
-	conditionMet, msg := isVRConditionMet(volRep, volrepController.ConditionCompleted, metav1.ConditionTrue)
+	conditionMet, msg := isVRConditionMet(volRep, ConditionCompleted, metav1.ConditionTrue)
 	if !conditionMet {
 		defaultMsg := fmt.Sprintf("VolumeReplication resource for pvc not %s to %s", action, stateString)
 		v.updatePVCDataReadyConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,
@@ -1477,12 +1496,12 @@ func (v *VRGInstance) validateAdditionalVRStatusForSecondary(volRep *volrep.Volu
 	v.updatePVCLastSyncDuration(volRep.Namespace, volRep.Name, nil)
 	v.updatePVCLastSyncBytes(volRep.Namespace, volRep.Name, nil)
 
-	conditionMet, _ := isVRConditionMet(volRep, volrepController.ConditionResyncing, metav1.ConditionTrue)
+	conditionMet, _ := isVRConditionMet(volRep, ConditionResyncing, metav1.ConditionTrue)
 	if !conditionMet {
 		return v.checkResyncCompletionAsSecondary(volRep)
 	}
 
-	conditionMet, msg := isVRConditionMet(volRep, volrepController.ConditionDegraded, metav1.ConditionTrue)
+	conditionMet, msg := isVRConditionMet(volRep, ConditionDegraded, metav1.ConditionTrue)
 	if !conditionMet {
 		v.updatePVCDataProtectedConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,
 			"VolumeReplication resource for pvc is not in Degraded condition while resyncing")
@@ -1508,7 +1527,7 @@ func (v *VRGInstance) validateAdditionalVRStatusForSecondary(volRep *volrep.Volu
 
 // checkResyncCompletionAsSecondary returns true if resync status is complete as secondary, false otherwise
 func (v *VRGInstance) checkResyncCompletionAsSecondary(volRep *volrep.VolumeReplication) bool {
-	conditionMet, msg := isVRConditionMet(volRep, volrepController.ConditionResyncing, metav1.ConditionFalse)
+	conditionMet, msg := isVRConditionMet(volRep, ConditionResyncing, metav1.ConditionFalse)
 	if !conditionMet {
 		defaultMsg := "VolumeReplication resource for pvc not syncing as Secondary"
 		v.updatePVCDataReadyConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,
@@ -1522,7 +1541,7 @@ func (v *VRGInstance) checkResyncCompletionAsSecondary(volRep *volrep.VolumeRepl
 		return false
 	}
 
-	conditionMet, msg = isVRConditionMet(volRep, volrepController.ConditionDegraded, metav1.ConditionFalse)
+	conditionMet, msg = isVRConditionMet(volRep, ConditionDegraded, metav1.ConditionFalse)
 	if !conditionMet {
 		defaultMsg := "VolumeReplication resource for pvc is not syncing and is degraded as Secondary"
 		v.updatePVCDataReadyConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,
