@@ -5,16 +5,20 @@ package deployers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/ramendr/ramen/e2e/util"
 	"github.com/ramendr/ramen/e2e/workloads"
-	"gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
 	corev1 "k8s.io/api/core/v1"
@@ -30,7 +34,7 @@ const (
 	ClusterSetName = "default"
 )
 
-func createManagedClusterSetBinding(name, namespace string) error {
+func CreateManagedClusterSetBinding(name, namespace string) error {
 	labels := make(map[string]string)
 	labels[AppLabelKey] = namespace
 	mcsb := &ocmv1b2.ManagedClusterSetBinding{
@@ -54,7 +58,7 @@ func createManagedClusterSetBinding(name, namespace string) error {
 	return nil
 }
 
-func deleteManagedClusterSetBinding(name, namespace string) error {
+func DeleteManagedClusterSetBinding(name, namespace string) error {
 	mcsb := &ocmv1b2.ManagedClusterSetBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -74,7 +78,7 @@ func deleteManagedClusterSetBinding(name, namespace string) error {
 	return nil
 }
 
-func createPlacement(name, namespace string) error {
+func CreatePlacement(name, namespace string) error {
 	labels := make(map[string]string)
 	labels[AppLabelKey] = name
 	clusterSet := []string{ClusterSetName}
@@ -104,7 +108,7 @@ func createPlacement(name, namespace string) error {
 	return nil
 }
 
-func deletePlacement(name, namespace string) error {
+func DeletePlacement(name, namespace string) error {
 	placement := &ocmv1b1.Placement{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -124,7 +128,7 @@ func deletePlacement(name, namespace string) error {
 	return nil
 }
 
-func createSubscription(s Subscription, w workloads.Workload) error {
+func CreateSubscription(s Subscription, w workloads.Workload) error {
 	name := GetCombinedName(s, w)
 	namespace := name
 
@@ -180,7 +184,7 @@ func createSubscription(s Subscription, w workloads.Workload) error {
 	return nil
 }
 
-func deleteSubscription(s Subscription, w workloads.Workload) error {
+func DeleteSubscription(s Subscription, w workloads.Workload) error {
 	name := GetCombinedName(s, w)
 	namespace := name
 
@@ -207,11 +211,25 @@ func GetCombinedName(d Deployer, w workloads.Workload) string {
 	return strings.ToLower(d.GetName() + "-" + w.GetName() + "-" + w.GetAppName())
 }
 
-func getSubscription(ctrlClient client.Client, namespace, name string) (*subscriptionv1.Subscription, error) {
+func GetNamespace(d Deployer, w workloads.Workload) string {
+	_, isAppSet := d.(*ApplicationSet)
+	if isAppSet {
+		// appset need be deployed in argocd ns
+		return util.ArgocdNamespace
+	}
+
+	if _, isDiscoveredApps := d.(*DiscoveredApps); isDiscoveredApps {
+		return util.RamenOpsNs
+	}
+
+	return GetCombinedName(d, w)
+}
+
+func getSubscription(client client.Client, namespace, name string) (*subscriptionv1.Subscription, error) {
 	subscription := &subscriptionv1.Subscription{}
 	key := types.NamespacedName{Name: name, Namespace: namespace}
 
-	err := ctrlClient.Get(context.Background(), key, subscription)
+	err := client.Get(context.Background(), key, subscription)
 	if err != nil {
 		return nil, err
 	}
@@ -219,7 +237,7 @@ func getSubscription(ctrlClient client.Client, namespace, name string) (*subscri
 	return subscription, nil
 }
 
-func createPlacementDecisionConfigMap(cmName string, cmNamespace string) error {
+func CreatePlacementDecisionConfigMap(cmName string, cmNamespace string) error {
 	object := metav1.ObjectMeta{Name: cmName, Namespace: cmNamespace}
 
 	data := map[string]string{
@@ -243,7 +261,7 @@ func createPlacementDecisionConfigMap(cmName string, cmNamespace string) error {
 	return nil
 }
 
-func deleteConfigMap(cmName string, cmNamespace string) error {
+func DeleteConfigMap(cmName string, cmNamespace string) error {
 	object := metav1.ObjectMeta{Name: cmName, Namespace: cmNamespace}
 
 	configMap := &corev1.ConfigMap{
@@ -263,7 +281,7 @@ func deleteConfigMap(cmName string, cmNamespace string) error {
 }
 
 // nolint:funlen
-func createApplicationSet(a ApplicationSet, w workloads.Workload) error {
+func CreateApplicationSet(a ApplicationSet, w workloads.Workload) error {
 	var requeueSeconds int64 = 180
 
 	name := GetCombinedName(a, w)
@@ -341,7 +359,7 @@ func createApplicationSet(a ApplicationSet, w workloads.Workload) error {
 	return nil
 }
 
-func deleteApplicationSet(a ApplicationSet, w workloads.Workload) error {
+func DeleteApplicationSet(a ApplicationSet, w workloads.Workload) error {
 	name := GetCombinedName(a, w)
 	namespace := util.ArgocdNamespace
 
@@ -377,4 +395,69 @@ func isLastAppsetInArgocdNs(namespace string) (bool, error) {
 	}
 
 	return len(appsetList.Items) == 1, nil
+}
+
+func DeleteDiscoveredApps(w workloads.Workload, namespace, cluster string) error {
+	tempDir, err := os.MkdirTemp("", "ramen-")
+	if err != nil {
+		return err
+	}
+
+	// Clean up by removing the temporary directory when done
+	defer os.RemoveAll(tempDir)
+
+	if err = CreateKustomizationFile(w, tempDir); err != nil {
+		return err
+	}
+
+	cmd := exec.Command("kubectl", "delete", "-k", tempDir, "-n", namespace,
+		"--context", cluster, "--timeout=5m", "--ignore-not-found=true")
+
+	// Run the command and capture the output
+	if out, err := cmd.Output(); err != nil {
+		util.Ctx.Log.Info(string(out))
+
+		return err
+	}
+
+	return nil
+}
+
+type CombinedData map[string]interface{}
+
+func CreateKustomizationFile(w workloads.Workload, dir string) error {
+	yamlData := `resources:
+- ` + util.GetGitURL() + `/` + w.GetPath() + `?ref=` + w.GetRevision()
+
+	var yamlContent CombinedData
+
+	err := yaml.Unmarshal([]byte(yamlData), &yamlContent)
+	if err != nil {
+		return err
+	}
+
+	patch := w.Kustomize()
+
+	var jsonContent CombinedData
+
+	err = json.Unmarshal([]byte(patch), &jsonContent)
+	if err != nil {
+		return err
+	}
+
+	// Merge JSON content into YAML content
+	for key, value := range jsonContent {
+		yamlContent[key] = value
+	}
+
+	// Convert the combined content back to YAML
+	combinedYAML, err := yaml.Marshal(&yamlContent)
+	if err != nil {
+		return err
+	}
+
+	// Write the combined content to a new YAML file
+	outputFile := dir + "/kustomization.yaml"
+
+	return os.WriteFile(outputFile, combinedYAML, os.ModePerm)
 }
