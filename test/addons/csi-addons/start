@@ -12,7 +12,7 @@ from drenv import cache
 
 def deploy(cluster):
     print("Deploying csi addon for volume replication")
-    path = cache.get(".", "addons/csi-addons.yaml")
+    path = cache.get(".", "addons/csi-addons-0.8.0.yaml")
     kubectl.apply("--filename", path, context=cluster)
 
 
