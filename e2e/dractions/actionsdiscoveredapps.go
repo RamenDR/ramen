@@ -109,6 +109,18 @@ func failoverRelocateDiscoveredApps(w workloads.Workload, d deployers.Deployer, 
 		return err
 	}
 
+	drPolicyName := util.DefaultDRPolicyName
+
+	drpolicy, err := util.GetDRPolicy(client, drPolicyName)
+	if err != nil {
+		return err
+	}
+
+	targetCluster, err := getTargetCluster(client, namespace, drpcName, drpolicy)
+	if err != nil {
+		return err
+	}
+
 	if err := waitAndUpdateDRPC(client, namespace, drpcName, action); err != nil {
 		return err
 	}
@@ -128,5 +140,11 @@ func failoverRelocateDiscoveredApps(w workloads.Workload, d deployers.Deployer, 
 		return err
 	}
 
-	return waitDRPCReady(client, namespace, name)
+	if err = waitDRPCReady(client, namespace, name); err != nil {
+		return err
+	}
+
+	drClient := getDRClusterClient(targetCluster, drpolicy)
+
+	return deployers.WaitWorkloadHealth(drClient, namespaceInDrCluster, w)
 }

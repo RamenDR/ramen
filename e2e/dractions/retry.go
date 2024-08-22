@@ -147,19 +147,18 @@ func getCurrentCluster(client client.Client, namespace string, placementName str
 	}
 
 	clusterName := placementDecision.Status.Decisions[0].ClusterName
-	util.Ctx.Log.Info(placementName + " placementdecision clusterName: " + clusterName)
 
 	return clusterName, nil
 }
 
 // return dr cluster client
-// func getDRClusterClient(clusterName string, drpolicy *ramen.DRPolicy) client.Client {
-// 	if clusterName == drpolicy.Spec.DRClusters[0] {
-// 		return util.Ctx.C1.CtrlClient
-// 	}
+func getDRClusterClient(clusterName string, drpolicy *ramen.DRPolicy) client.Client {
+	if clusterName == drpolicy.Spec.DRClusters[0] {
+		return util.Ctx.C1.CtrlClient
+	}
 
-// 	return util.Ctx.C2.CtrlClient
-// }
+	return util.Ctx.C2.CtrlClient
+}
 
 func getTargetCluster(client client.Client, namespace, placementName string, drpolicy *ramen.DRPolicy) (string, error) {
 	currentCluster, err := getCurrentCluster(client, namespace, placementName)
