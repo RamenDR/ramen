@@ -55,8 +55,9 @@ func (d DiscoveredApps) Deploy(w workloads.Workload) error {
 		return err
 	}
 
-	// TODO: modify it based on shyam's comment
-	// return waitDeploymentReady(util.Ctx.C1.CtrlClient, namespace, "busybox")
+	if err = WaitWorkloadHealth(util.Ctx.C1.CtrlClient, namespace, w); err != nil {
+		return err
+	}
 
 	util.Ctx.Log.Info(name + " is deployed")
 

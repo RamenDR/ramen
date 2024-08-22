@@ -3,7 +3,15 @@
 
 package workloads
 
-import "github.com/ramendr/ramen/e2e/util"
+import (
+	"context"
+	"fmt"
+
+	"github.com/ramendr/ramen/e2e/util"
+	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
 
 type Deployment struct {
 	Path     string
@@ -63,7 +71,30 @@ func (w Deployment) GetResources() error {
 	return nil
 }
 
-func (w Deployment) Health() error {
-	// Check the workload health on a targetCluster
+// Check the workload health deployed in a cluster namespace
+func (w Deployment) Health(client client.Client, namespace string) error {
+	deploy, err := getDeployment(client, namespace, w.GetAppName())
+	if err != nil {
+		return err
+	}
+
+	if deploy.Status.Replicas == deploy.Status.ReadyReplicas {
+		util.Ctx.Log.Info(fmt.Sprintf("deployment %s is ready", w.GetAppName()))
+
+		return nil
+	}
+
 	return nil
+}
+
+func getDeployment(client client.Client, namespace, name string) (*appsv1.Deployment, error) {
+	deploy := &appsv1.Deployment{}
+	key := types.NamespacedName{Name: name, Namespace: namespace}
+
+	err := client.Get(context.Background(), key, deploy)
+	if err != nil {
+		return nil, err
+	}
+
+	return deploy, nil
 }
