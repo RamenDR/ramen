@@ -38,6 +38,5 @@ spec:
           labels:
             severity: warning
           annotations:
-            description: "Workload is not protected for disaster recovery (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }})."
+            description: "Workload is not protected for disaster recovery (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }}). Inspect DRPC status.conditions for details."
             alert_type: "DisasterRecovery"
-    
