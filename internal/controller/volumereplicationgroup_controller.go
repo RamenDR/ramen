@@ -13,7 +13,7 @@ import (
 	"golang.org/x/exp/slices"
 	"golang.org/x/time/rate"
 
-	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
+	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/google/uuid"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects/velero"

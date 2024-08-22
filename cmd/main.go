@@ -14,7 +14,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
-	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
+	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	groupsnapv1alpha1 "github.com/kubernetes-csi/external-snapshotter/client/v7/apis/volumegroupsnapshot/v1alpha1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v7/apis/volumesnapshot/v1"
 	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"
