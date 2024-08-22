@@ -2190,22 +2190,22 @@ func (v *vrgTest) promoteVolRepsAndDo(do func(int, int)) {
 		volRepStatus := volrep.VolumeReplicationStatus{
 			Conditions: []metav1.Condition{
 				{
-					Type:               vrgController.ConditionCompleted,
-					Reason:             vrgController.Promoted,
+					Type:               volrep.ConditionCompleted,
+					Reason:             volrep.Promoted,
 					ObservedGeneration: volRep.Generation,
 					Status:             metav1.ConditionTrue,
 					LastTransitionTime: metav1.NewTime(time.Now()),
 				},
 				{
-					Type:               vrgController.ConditionDegraded,
-					Reason:             vrgController.Healthy,
+					Type:               volrep.ConditionDegraded,
+					Reason:             volrep.Healthy,
 					ObservedGeneration: volRep.Generation,
 					Status:             metav1.ConditionFalse,
 					LastTransitionTime: metav1.NewTime(time.Now()),
 				},
 				{
-					Type:               vrgController.ConditionResyncing,
-					Reason:             vrgController.NotResyncing,
+					Type:               volrep.ConditionResyncing,
+					Reason:             volrep.NotResyncing,
 					ObservedGeneration: volRep.Generation,
 					Status:             metav1.ConditionFalse,
 					LastTransitionTime: metav1.NewTime(time.Now()),

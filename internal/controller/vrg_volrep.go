@@ -28,26 +28,6 @@ import (
 )
 
 const (
-	ConditionCompleted = "Completed"
-	ConditionDegraded  = "Degraded"
-	ConditionResyncing = "Resyncing"
-)
-
-const (
-	Success         = "Success"
-	Promoted        = "Promoted"
-	Demoted         = "Demoted"
-	FailedToPromote = "FailedToPromote"
-	FailedToDemote  = "FailedToDemote"
-	Error           = "Error"
-	VolumeDegraded  = "VolumeDegraded"
-	Healthy         = "Healthy"
-	ResyncTriggered = "ResyncTriggered"
-	FailedToResync  = "FailedToResync"
-	NotResyncing    = "NotResyncing"
-)
-
-const (
 	// defaultVRCAnnotationKey is the default annotation key for VolumeReplicationClass
 	defaultVRCAnnotationKey = "replication.storage.openshift.io/is-default-class"
 )
@@ -1443,7 +1423,7 @@ func (v *VRGInstance) validateVRStatus(volRep *volrep.VolumeReplication, state r
 	}
 
 	// it should be completed
-	conditionMet, msg := isVRConditionMet(volRep, ConditionCompleted, metav1.ConditionTrue)
+	conditionMet, msg := isVRConditionMet(volRep, volrep.ConditionCompleted, metav1.ConditionTrue)
 	if !conditionMet {
 		defaultMsg := fmt.Sprintf("VolumeReplication resource for pvc not %s to %s", action, stateString)
 		v.updatePVCDataReadyConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,
@@ -1496,12 +1476,12 @@ func (v *VRGInstance) validateAdditionalVRStatusForSecondary(volRep *volrep.Volu
 	v.updatePVCLastSyncDuration(volRep.Namespace, volRep.Name, nil)
 	v.updatePVCLastSyncBytes(volRep.Namespace, volRep.Name, nil)
 
-	conditionMet, _ := isVRConditionMet(volRep, ConditionResyncing, metav1.ConditionTrue)
+	conditionMet, _ := isVRConditionMet(volRep, volrep.ConditionResyncing, metav1.ConditionTrue)
 	if !conditionMet {
 		return v.checkResyncCompletionAsSecondary(volRep)
 	}
 
-	conditionMet, msg := isVRConditionMet(volRep, ConditionDegraded, metav1.ConditionTrue)
+	conditionMet, msg := isVRConditionMet(volRep, volrep.ConditionDegraded, metav1.ConditionTrue)
 	if !conditionMet {
 		v.updatePVCDataProtectedConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,
 			"VolumeReplication resource for pvc is not in Degraded condition while resyncing")
@@ -1527,7 +1507,7 @@ func (v *VRGInstance) validateAdditionalVRStatusForSecondary(volRep *volrep.Volu
 
 // checkResyncCompletionAsSecondary returns true if resync status is complete as secondary, false otherwise
 func (v *VRGInstance) checkResyncCompletionAsSecondary(volRep *volrep.VolumeReplication) bool {
-	conditionMet, msg := isVRConditionMet(volRep, ConditionResyncing, metav1.ConditionFalse)
+	conditionMet, msg := isVRConditionMet(volRep, volrep.ConditionResyncing, metav1.ConditionFalse)
 	if !conditionMet {
 		defaultMsg := "VolumeReplication resource for pvc not syncing as Secondary"
 		v.updatePVCDataReadyConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,
@@ -1541,7 +1521,7 @@ func (v *VRGInstance) checkResyncCompletionAsSecondary(volRep *volrep.VolumeRepl
 		return false
 	}
 
-	conditionMet, msg = isVRConditionMet(volRep, ConditionDegraded, metav1.ConditionFalse)
+	conditionMet, msg = isVRConditionMet(volRep, volrep.ConditionDegraded, metav1.ConditionFalse)
 	if !conditionMet {
 		defaultMsg := "VolumeReplication resource for pvc is not syncing and is degraded as Secondary"
 		v.updatePVCDataReadyConditionHelper(volRep.Namespace, volRep.Name, VRGConditionReasonError, msg,

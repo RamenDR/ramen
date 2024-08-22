@@ -10,7 +10,7 @@ replace github.com/ramendr/ramen/api => ./api
 require (
 	github.com/aws/aws-sdk-go v1.44.289
 	github.com/backube/volsync v0.7.1
-	github.com/csi-addons/kubernetes-csi-addons v0.9.0
+	github.com/csi-addons/kubernetes-csi-addons v0.8.1-0.20240822090723-89d4c5b45a32
 	github.com/go-logr/logr v1.4.2
 	github.com/google/uuid v1.6.0
 	github.com/kubernetes-csi/external-snapshotter/client/v7 v7.0.0
