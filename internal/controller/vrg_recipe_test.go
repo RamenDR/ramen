@@ -6,7 +6,7 @@ package controllers_test
 import (
 	"strings"
 
-	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
+	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
