@@ -10,10 +10,13 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	channelv1 "open-cluster-management.io/multicloud-operators-channel/pkg/apis/apps/v1"
 )
+
+const DefaultDRPolicyName = "dr-policy"
 
 func CreateNamespace(client client.Client, namespace string) error {
 	ns := &corev1.Namespace{
@@ -153,4 +156,17 @@ func AddNamespaceAnnotationForVolSync(client client.Client, namespace string) er
 	objNs.SetAnnotations(annotations)
 
 	return client.Update(context.Background(), objNs)
+}
+
+// nolint:unparam
+func GetDRPolicy(client client.Client, name string) (*ramen.DRPolicy, error) {
+	drpolicy := &ramen.DRPolicy{}
+	key := types.NamespacedName{Name: name}
+
+	err := client.Get(context.Background(), key, drpolicy)
+	if err != nil {
+		return nil, err
+	}
+
+	return drpolicy, nil
 }

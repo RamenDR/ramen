@@ -9,6 +9,8 @@ import "github.com/ramendr/ramen/e2e/workloads"
 type Deployer interface {
 	Deploy(workloads.Workload) error
 	Undeploy(workloads.Workload) error
+
+	IsWorkloadSupported(workloads.Workload) bool
 	// Scale(Workload) for adding/removing PVCs; in Deployer even though scaling is a Workload interface
 	// as we can Kustomize the Workload and change the deployer to perform the right action
 	// Resize(Workload) for changing PVC(s) size

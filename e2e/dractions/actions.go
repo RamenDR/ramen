@@ -4,17 +4,20 @@
 package dractions
 
 import (
+	"strings"
 	"time"
 
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/util"
 	"github.com/ramendr/ramen/e2e/workloads"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
 	OcmSchedulingDisable = "cluster.open-cluster-management.io/experimental-scheduling-disable"
-	DefaultDRPolicyName  = "dr-policy"
-	FiveSecondsDuration  = 5 * time.Second
+
+	FiveSecondsDuration = 5 * time.Second
 )
 
 // If AppSet/Subscription, find Placement
@@ -25,12 +28,16 @@ const (
 // Create DRPC, in desired namespace
 // nolint:funlen
 func EnableProtection(w workloads.Workload, d deployers.Deployer) error {
+	if _, isDiscoveredApps := d.(*deployers.DiscoveredApps); isDiscoveredApps {
+		return EnableProtectionDiscoveredApps(w, d)
+	}
+
 	name := GetCombinedName(d, w)
 	namespace := GetNamespace(d, w)
 
 	util.Ctx.Log.Info("enter EnableProtection " + name)
 
-	drPolicyName := DefaultDRPolicyName
+	drPolicyName := util.DefaultDRPolicyName
 	appname := w.GetAppName()
 	placementName := name
 	drpcName := name
@@ -82,6 +89,10 @@ func EnableProtection(w workloads.Workload, d deployers.Deployer) error {
 // remove DRPC
 // update placement annotation
 func DisableProtection(w workloads.Workload, d deployers.Deployer) error {
+	if _, isDiscoveredApps := d.(*deployers.DiscoveredApps); isDiscoveredApps {
+		return DisableProtectionDiscoveredApps(w, d)
+	}
+
 	name := GetCombinedName(d, w)
 	namespace := GetNamespace(d, w)
 
@@ -101,48 +112,13 @@ func DisableProtection(w workloads.Workload, d deployers.Deployer) error {
 
 func Failover(w workloads.Workload, d deployers.Deployer) error {
 	name := GetCombinedName(d, w)
-	namespace := GetNamespace(d, w)
-
 	util.Ctx.Log.Info("enter Failover " + name)
 
-	drPolicyName := DefaultDRPolicyName
-	drpcName := name
-	client := util.Ctx.Hub.CtrlClient
-
-	// here we expect drpc should be ready before failover
-	if err := waitDRPCReady(client, namespace, drpcName); err != nil {
-		return err
+	if _, isDiscoveredApps := d.(*deployers.DiscoveredApps); isDiscoveredApps {
+		return FailoverDiscoveredApps(w, d)
 	}
 
-	util.Ctx.Log.Info("get drpc " + drpcName)
-
-	drpc, err := getDRPC(client, namespace, drpcName)
-	if err != nil {
-		return err
-	}
-
-	util.Ctx.Log.Info("get drpolicy " + drPolicyName + " for " + drpcName)
-
-	drpolicy, err := getDRPolicy(client, drPolicyName)
-	if err != nil {
-		return err
-	}
-
-	targetCluster, err := getTargetCluster(client, namespace, name, drpolicy)
-	if err != nil {
-		return err
-	}
-
-	drpc.Spec.Action = "Failover"
-	drpc.Spec.FailoverCluster = targetCluster
-
-	util.Ctx.Log.Info("update drpc " + drpcName + " failover to " + targetCluster)
-
-	if err = updateDRPC(client, drpc); err != nil {
-		return err
-	}
-
-	return waitDRPC(client, namespace, name, "FailedOver")
+	return failoverRelocate(w, d, ramen.ActionFailover)
 }
 
 // Determine DRPC
@@ -151,62 +127,72 @@ func Failover(w workloads.Workload, d deployers.Deployer) error {
 // Update DRPC
 func Relocate(w workloads.Workload, d deployers.Deployer) error {
 	name := GetCombinedName(d, w)
-	namespace := GetNamespace(d, w)
-
 	util.Ctx.Log.Info("enter Relocate " + name)
 
-	drPolicyName := DefaultDRPolicyName
+	if _, isDiscoveredApps := d.(*deployers.DiscoveredApps); isDiscoveredApps {
+		return RelocateDiscoveredApps(w, d)
+	}
+
+	return failoverRelocate(w, d, ramen.ActionRelocate)
+}
+
+func failoverRelocate(w workloads.Workload, d deployers.Deployer, action ramen.DRAction) error {
+	name := GetCombinedName(d, w)
+	namespace := GetNamespace(d, w)
+
 	drpcName := name
 	client := util.Ctx.Hub.CtrlClient
 
-	// here we expect drpc should be ready before relocate
-	err := waitDRPCReady(client, namespace, drpcName)
-	if err != nil {
+	if err := waitAndUpdateDRPC(client, namespace, drpcName, action); err != nil {
 		return err
 	}
 
-	util.Ctx.Log.Info("get drpc " + drpcName)
+	if action == ramen.ActionFailover {
+		return waitDRPC(client, namespace, name, ramen.FailedOver)
+	}
+
+	return waitDRPC(client, namespace, name, ramen.Relocated)
+}
+
+func waitAndUpdateDRPC(client client.Client, namespace, drpcName string, action ramen.DRAction) error {
+	// here we expect drpc should be ready before action
+	if err := waitDRPCReady(client, namespace, drpcName); err != nil {
+		return err
+	}
 
 	drpc, err := getDRPC(client, namespace, drpcName)
 	if err != nil {
 		return err
 	}
 
-	util.Ctx.Log.Info("get drpolicy " + drPolicyName + " for " + drpcName)
+	drPolicyName := util.DefaultDRPolicyName
 
-	drpolicy, err := getDRPolicy(client, drPolicyName)
+	drpolicy, err := util.GetDRPolicy(client, drPolicyName)
 	if err != nil {
 		return err
 	}
 
-	targetCluster, err := getTargetCluster(client, namespace, name, drpolicy)
+	targetCluster, err := getTargetCluster(client, namespace, drpcName, drpolicy)
 	if err != nil {
 		return err
 	}
 
-	drpc.Spec.Action = "Relocate"
-	drpc.Spec.PreferredCluster = targetCluster
-
-	util.Ctx.Log.Info("update drpc " + drpcName + " relocate to " + targetCluster)
-
-	err = updateDRPC(client, drpc)
-	if err != nil {
-		return err
+	drpc.Spec.Action = action
+	if action == ramen.ActionFailover {
+		drpc.Spec.FailoverCluster = targetCluster
+	} else {
+		drpc.Spec.PreferredCluster = targetCluster
 	}
 
-	return waitDRPC(client, namespace, name, "Relocated")
+	util.Ctx.Log.Info("update drpc " + drpcName + " " + strings.ToLower(string(action)) + " to " + targetCluster)
+
+	return updateDRPC(client, drpc)
+}
+
+func GetNamespace(d deployers.Deployer, w workloads.Workload) string {
+	return deployers.GetNamespace(d, w)
 }
 
 func GetCombinedName(d deployers.Deployer, w workloads.Workload) string {
 	return deployers.GetCombinedName(d, w)
-}
-
-func GetNamespace(d deployers.Deployer, w workloads.Workload) string {
-	_, isAppSet := d.(*deployers.ApplicationSet)
-	if isAppSet {
-		// appset need be deployed in argocd ns
-		return util.ArgocdNamespace
-	}
-
-	return GetCombinedName(d, w)
 }
