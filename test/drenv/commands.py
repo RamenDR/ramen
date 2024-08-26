@@ -90,7 +90,8 @@ def run(*args, input=None, decode=True, env=None):
         try:
             p = subprocess.Popen(
                 args,
-                stdin=subprocess.PIPE if input else None,
+                # Avoid blocking foerver if there is no input.
+                stdin=subprocess.PIPE if input else subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 env=env,
@@ -140,7 +141,8 @@ def watch(*args, input=None, keepends=False, decode=True, timeout=None, env=None
         try:
             p = subprocess.Popen(
                 args,
-                stdin=subprocess.PIPE if input else None,
+                # Avoid blocking foerver if there is no input.
+                stdin=subprocess.PIPE if input else subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 env=env,
