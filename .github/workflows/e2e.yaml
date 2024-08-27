@@ -29,7 +29,7 @@ jobs:
 
     - name: Setup drenv
       working-directory: test
-      run: drenv setup -v
+      run: drenv setup -v envs/regional-dr.yaml
 
     - name: Install ramenctl
       run: pip install -e ramenctl
@@ -100,4 +100,4 @@ jobs:
     - name: Cleanup drenv
       if: always()
       working-directory: test
-      run: drenv cleanup -v
+      run: drenv cleanup -v envs/regional-dr.yaml
