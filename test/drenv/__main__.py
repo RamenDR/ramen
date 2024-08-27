@@ -19,7 +19,6 @@ import drenv
 from . import cache
 from . import cluster
 from . import commands
-from . import containerd
 from . import envfile
 from . import kubectl
 from . import providers
@@ -363,15 +362,11 @@ def start_cluster(profile, hooks=(), args=None, **options):
     if profile["external"]:
         logging.debug("[%s] Skipping external cluster", profile["name"])
     else:
-        is_restart = provider.exists(profile)
+        existing = provider.exists(profile)
         provider.start(profile, verbose=args.verbose)
-        if profile["containerd"]:
-            logging.info("[%s] Configuring containerd", profile["name"])
-            containerd.configure(provider, profile)
-        if is_restart:
+        provider.configure(profile, existing=existing)
+        if existing:
             restart_failed_deployments(profile)
-        else:
-            provider.configure(profile)
 
     if hooks:
         execute(
