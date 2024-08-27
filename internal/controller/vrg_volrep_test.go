@@ -12,8 +12,7 @@ import (
 	"strings"
 	"time"
 
-	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
-	volrepController "github.com/csi-addons/kubernetes-csi-addons/controllers/replication.storage"
+	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
@@ -2191,22 +2190,22 @@ func (v *vrgTest) promoteVolRepsAndDo(do func(int, int)) {
 		volRepStatus := volrep.VolumeReplicationStatus{
 			Conditions: []metav1.Condition{
 				{
-					Type:               volrepController.ConditionCompleted,
-					Reason:             volrepController.Promoted,
+					Type:               volrep.ConditionCompleted,
+					Reason:             volrep.Promoted,
 					ObservedGeneration: volRep.Generation,
 					Status:             metav1.ConditionTrue,
 					LastTransitionTime: metav1.NewTime(time.Now()),
 				},
 				{
-					Type:               volrepController.ConditionDegraded,
-					Reason:             volrepController.Healthy,
+					Type:               volrep.ConditionDegraded,
+					Reason:             volrep.Healthy,
 					ObservedGeneration: volRep.Generation,
 					Status:             metav1.ConditionFalse,
 					LastTransitionTime: metav1.NewTime(time.Now()),
 				},
 				{
-					Type:               volrepController.ConditionResyncing,
-					Reason:             volrepController.NotResyncing,
+					Type:               volrep.ConditionResyncing,
+					Reason:             volrep.NotResyncing,
 					ObservedGeneration: volRep.Generation,
 					Status:             metav1.ConditionFalse,
 					LastTransitionTime: metav1.NewTime(time.Now()),

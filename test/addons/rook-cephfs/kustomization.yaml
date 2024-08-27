@@ -5,5 +5,5 @@
 ---
 resources:
   - filesystem.yaml
-  - https://raw.githubusercontent.com/rook/rook/release-1.14/deploy/examples/csi/cephfs/storageclass.yaml
-  - https://raw.githubusercontent.com/rook/rook/release-1.14/deploy/examples/csi/cephfs/snapshotclass.yaml
+  - https://raw.githubusercontent.com/rook/rook/release-1.15/deploy/examples/csi/cephfs/storageclass.yaml
+  - https://raw.githubusercontent.com/rook/rook/release-1.15/deploy/examples/csi/cephfs/snapshotclass.yaml
