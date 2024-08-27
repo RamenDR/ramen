@@ -305,14 +305,16 @@ def do_suspend(args):
     env = load_env(args)
     logging.info("[%s] Suspending environment", env["name"])
     for profile in env["profiles"]:
-        run("virsh", "-c", "qemu:///system", "suspend", profile["name"])
+        provider = providers.get(profile["provider"])
+        provider.suspend(profile)
 
 
 def do_resume(args):
     env = load_env(args)
     logging.info("[%s] Resuming environment", env["name"])
     for profile in env["profiles"]:
-        run("virsh", "-c", "qemu:///system", "resume", profile["name"])
+        provider = providers.get(profile["provider"])
+        provider.resume(profile)
 
 
 def do_dump(args):
