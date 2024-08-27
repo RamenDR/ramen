@@ -22,18 +22,6 @@ EXTRA_CONFIG = [
 ]
 
 
-def profile(command, output=None):
-    # Workaround for https://github.com/kubernetes/minikube/pull/16900
-    # TODO: remove when issue is fixed.
-    _create_profiles_dir()
-
-    return _run("profile", command, output=output)
-
-
-def status(name, output=None):
-    return _run("status", profile=name, output=output)
-
-
 def start(profile, verbose=False):
     start = time.monotonic()
     logging.info("[%s] Starting minikube cluster", profile["name"])
@@ -124,7 +112,7 @@ def ssh(name, command):
 
 
 def exists(name):
-    out = profile("list", output="json")
+    out = _profile("list", output="json")
     profiles = json.loads(out)
     for p in profiles["valid"]:
         if p["Name"] == name:
@@ -164,6 +152,18 @@ def cleanup_files():
     """
     _cleanup_file(_systemd_resolved_drenv_conf())
     _cleanup_file(_sysctl_drenv_conf())
+
+
+def _profile(command, output=None):
+    # Workaround for https://github.com/kubernetes/minikube/pull/16900
+    # TODO: remove when issue is fixed.
+    _create_profiles_dir()
+
+    return _run("profile", command, output=output)
+
+
+def _status(name, output=None):
+    return _run("status", profile=name, output=output)
 
 
 def _version():
