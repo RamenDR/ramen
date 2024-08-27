@@ -9,7 +9,7 @@ import time
 
 from packaging.version import Version
 
-from . import commands
+from drenv import commands
 
 EXTRA_CONFIG = [
     # When enabled, tells the Kubelet to pull images one at a time. This slows
