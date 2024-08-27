@@ -22,7 +22,7 @@ from . import commands
 from . import containerd
 from . import envfile
 from . import kubectl
-from . import minikube
+from . import providers
 from . import ramen
 from . import shutdown
 
@@ -114,8 +114,8 @@ def parse_args():
     add_command(sp, "dump", do_dump, help="dump an environment yaml")
 
     add_command(sp, "clear", do_clear, help="cleared cached resources", envfile=False)
-    add_command(sp, "setup", do_setup, help="setup minikube for drenv", envfile=False)
-    add_command(sp, "cleanup", do_cleanup, help="cleanup minikube", envfile=False)
+    add_command(sp, "setup", do_setup, help="setup host for drenv")
+    add_command(sp, "cleanup", do_cleanup, help="cleanup host")
 
     return parser.parse_args()
 
@@ -183,13 +183,19 @@ def handle_termination_signal(signo, frame):
 
 
 def do_setup(args):
-    logging.info("[main] Setting up minikube for drenv")
-    minikube.setup_files()
+    env = load_env(args)
+    for name in set(p["provider"] for p in env["profiles"]):
+        logging.info("[main] Setting up '%s' for drenv", name)
+        provider = providers.get(name)
+        provider.setup_files()
 
 
 def do_cleanup(args):
-    logging.info("[main] Cleaning up minikube")
-    minikube.cleanup_files()
+    env = load_env(args)
+    for name in set(p["provider"] for p in env["profiles"]):
+        logging.info("[main] Cleaning up '%s' for drenv", name)
+        provider = providers.get(name)
+        provider.cleanup_files()
 
 
 def do_clear(args):
@@ -351,18 +357,19 @@ def collect_addons(env):
 
 
 def start_cluster(profile, hooks=(), args=None, **options):
+    provider = providers.get(profile["provider"])
     if profile["external"]:
         logging.debug("[%s] Skipping external cluster", profile["name"])
     else:
-        is_restart = minikube.exists(profile["name"])
-        minikube.start(profile, verbose=args.verbose)
+        is_restart = provider.exists(profile["name"])
+        provider.start(profile, verbose=args.verbose)
         if profile["containerd"]:
             logging.info("[%s] Configuring containerd", profile["name"])
-            containerd.configure(profile)
+            containerd.configure(provider, profile)
         if is_restart:
             restart_failed_deployments(profile)
         else:
-            minikube.load_files(profile["name"])
+            provider.load_files(profile["name"])
 
     if hooks:
         execute(
@@ -387,17 +394,19 @@ def stop_cluster(profile, hooks=(), **options):
             allow_failure=True,
         )
 
+    provider = providers.get(profile["provider"])
     if profile["external"]:
         logging.debug("[%s] Skipping external cluster", profile["name"])
     elif cluster_status != cluster.UNKNOWN:
-        minikube.stop(profile["name"])
+        provider.stop(profile["name"])
 
 
 def delete_cluster(profile, **options):
+    provider = providers.get(profile["provider"])
     if profile["external"]:
         logging.debug("[%s] Skipping external cluster", profile["name"])
     else:
-        minikube.delete(profile["name"])
+        provider.delete(profile["name"])
 
     profile_config = drenv.config_dir(profile["name"])
     if os.path.exists(profile_config):
