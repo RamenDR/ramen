@@ -27,13 +27,13 @@ def test_stream_stdout():
 
 
 def test_stream_stderr():
-    with run("sh", "-c", "echo -n error >&2") as p:
+    with run("sh", "-c", "printf error >&2") as p:
         stream = list(commands.stream(p))
     assert stream == [(commands.ERR, b"error")]
 
 
 def test_stream_both():
-    with run("sh", "-c", "echo -n output; echo -n error >&2") as p:
+    with run("sh", "-c", "printf output; printf error >&2") as p:
         stream = list(commands.stream(p))
     assert stream == [(commands.OUT, b"output"), (commands.ERR, b"error")]
 
@@ -106,14 +106,14 @@ def test_stream_input_child_close_pipe():
 
 def test_stream_no_stdout():
     # No reason to stream with one pipe, but it works.
-    with run("sh", "-c", "echo -n error >&2", stdout=None) as p:
+    with run("sh", "-c", "printf error >&2", stdout=None) as p:
         stream = list(commands.stream(p))
     assert stream == [(commands.ERR, b"error")]
 
 
 def test_stream_no_stderr():
     # No reason to stream with one pipe, but it works.
-    with run("sh", "-c", "echo -n output", stderr=None) as p:
+    with run("sh", "-c", "printf output", stderr=None) as p:
         stream = list(commands.stream(p))
     assert stream == [(commands.OUT, b"output")]
 
@@ -233,7 +233,7 @@ def test_watch_error_empty():
 
 
 def test_watch_error():
-    cmd = ("sh", "-c", "echo -n output >&1; echo -n error >&2; exit 1")
+    cmd = ("sh", "-c", "printf output >&1; printf error >&2; exit 1")
     output = []
 
     with pytest.raises(commands.Error) as e:
@@ -314,7 +314,7 @@ def test_watch_timeout_not_expired():
 def test_watch_env():
     env = dict(os.environ)
     env["DRENV_COMMAND_TEST"] = "value"
-    output = list(commands.watch("sh", "-c", "echo -n $DRENV_COMMAND_TEST", env=env))
+    output = list(commands.watch("sh", "-c", "printf $DRENV_COMMAND_TEST", env=env))
     assert output == [env["DRENV_COMMAND_TEST"]]
 
 
@@ -361,7 +361,7 @@ def test_run_error_empty():
 
 
 def test_run_error():
-    cmd = ("sh", "-c", "echo -n output >&1; echo -n error >&2; exit 1")
+    cmd = ("sh", "-c", "printf output >&1; printf error >&2; exit 1")
 
     with pytest.raises(commands.Error) as e:
         commands.run(*cmd)
@@ -401,7 +401,7 @@ def test_run_after_shutdown(monkeypatch):
 def test_run_env():
     env = dict(os.environ)
     env["DRENV_COMMAND_TEST"] = "value"
-    out = commands.run("sh", "-c", "echo -n $DRENV_COMMAND_TEST", env=env)
+    out = commands.run("sh", "-c", "printf $DRENV_COMMAND_TEST", env=env)
     assert out == env["DRENV_COMMAND_TEST"]
 
 
