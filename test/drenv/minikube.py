@@ -29,12 +29,12 @@ def profile(command, output=None):
     return _run("profile", command, output=output)
 
 
-def status(profile, output=None):
-    return _run("status", profile=profile, output=output)
+def status(name, output=None):
+    return _run("status", profile=name, output=output)
 
 
 def start(
-    profile,
+    name,
     driver=None,
     container_runtime=None,
     extra_disks=None,
@@ -94,23 +94,23 @@ def start(
     # TODO: Use --interactive=false when the bug is fixed.
     # https://github.com/kubernetes/minikube/issues/19518
 
-    _watch("start", *args, profile=profile)
+    _watch("start", *args, profile=name)
 
 
-def stop(profile):
-    _watch("stop", profile=profile)
+def stop(name):
+    _watch("stop", profile=name)
 
 
-def delete(profile):
-    _watch("delete", profile=profile)
+def delete(name):
+    _watch("delete", profile=name)
 
 
-def cp(profile, src, dst):
-    _watch("cp", src, dst, profile=profile)
+def cp(name, src, dst):
+    _watch("cp", src, dst, profile=name)
 
 
-def ssh(profile, command):
-    _watch("ssh", command, profile=profile)
+def ssh(name, command):
+    _watch("ssh", command, profile=name)
 
 
 def setup_files():
@@ -127,7 +127,7 @@ def setup_files():
     _setup_systemd_resolved(version)
 
 
-def load_files(profile):
+def load_files(name):
     """
     Load configuration done in setup_files() before the minikube cluster was
     started.
@@ -135,8 +135,8 @@ def load_files(profile):
     Must be called after the cluster is started, before running any addon. Not
     need when starting a stopped cluster.
     """
-    _load_sysctl(profile)
-    _load_systemd_resolved(profile)
+    _load_sysctl(name)
+    _load_systemd_resolved(name)
 
 
 def cleanup_files():
@@ -178,11 +178,11 @@ fs.inotify.max_user_watches = 65536
     _write_file(path, data)
 
 
-def _load_sysctl(profile):
+def _load_sysctl(name):
     if not os.path.exists(_sysctl_drenv_conf()):
         return
-    logging.debug("[%s] Loading drenv sysctl configuration", profile)
-    ssh(profile, "sudo sysctl -p /etc/sysctl.d/99-drenv.conf")
+    logging.debug("[%s] Loading drenv sysctl configuration", name)
+    ssh(name, "sudo sysctl -p /etc/sysctl.d/99-drenv.conf")
 
 
 def _sysctl_drenv_conf():
@@ -211,11 +211,11 @@ DNSSEC=no
     _write_file(path, data)
 
 
-def _load_systemd_resolved(profile):
+def _load_systemd_resolved(name):
     if not os.path.exists(_systemd_resolved_drenv_conf()):
         return
-    logging.debug("[%s] Loading drenv systemd-resolved configuration", profile)
-    ssh(profile, "sudo systemctl restart systemd-resolved.service")
+    logging.debug("[%s] Loading drenv systemd-resolved configuration", name)
+    ssh(name, "sudo systemctl restart systemd-resolved.service")
 
 
 def _systemd_resolved_drenv_conf():
