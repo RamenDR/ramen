@@ -103,6 +103,26 @@ def delete(name):
     logging.info("[%s] Cluster deleted in %.2f seconds", name, time.monotonic() - start)
 
 
+def suspend(profile):
+    if profile["driver"] != "kvm2":
+        logging.warning("[%s] suspend supported only for kvm2 driver", profile["name"])
+        return
+    logging.info("[%s] Suspending cluster", profile["name"])
+    cmd = ["virsh", "-c", "qemu:///system", "suspend", profile["name"]]
+    for line in commands.watch(*cmd):
+        logging.debug("[%s] %s", profile["name"], line)
+
+
+def resume(profile):
+    if profile["driver"] != "kvm2":
+        logging.warning("[%s] resume supported only for kvm2 driver", profile["name"])
+        return
+    logging.info("[%s] Resuming cluster", profile["name"])
+    cmd = ["virsh", "-c", "qemu:///system", "resume", profile["name"]]
+    for line in commands.watch(*cmd):
+        logging.debug("[%s] %s", profile["name"], line)
+
+
 def cp(name, src, dst):
     _watch("cp", src, dst, profile=name)
 
