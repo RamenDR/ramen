@@ -5,11 +5,13 @@ import errno
 import json
 import logging
 import os
+import sys
 import time
 
 from packaging.version import Version
 
 from drenv import commands
+from drenv import containerd
 
 EXTRA_CONFIG = [
     # When enabled, tells the Kubelet to pull images one at a time. This slows
@@ -126,16 +128,19 @@ def start(profile, verbose=False):
     )
 
 
-def configure(profile):
+def configure(profile, existing=False):
     """
     Load configuration done in setup() before the minikube cluster was
     started.
 
-    Must be called after the cluster is started, before running any addon. Not
-    needed when starting a stopped cluster.
+    Must be called after the cluster is started, before running any addon.
     """
-    _configure_sysctl(profile["name"])
-    _configure_systemd_resolved(profile["name"])
+    if not existing:
+        if profile["containerd"]:
+            logging.info("[%s] Configuring containerd", profile["name"])
+            containerd.configure(sys.modules[__name__], profile)
+        _configure_sysctl(profile["name"])
+        _configure_systemd_resolved(profile["name"])
 
 
 def stop(profile):
