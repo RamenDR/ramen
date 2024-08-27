@@ -187,7 +187,7 @@ def do_setup(args):
     for name in set(p["provider"] for p in env["profiles"]):
         logging.info("[main] Setting up '%s' for drenv", name)
         provider = providers.get(name)
-        provider.setup_files()
+        provider.setup()
 
 
 def do_cleanup(args):
@@ -195,7 +195,7 @@ def do_cleanup(args):
     for name in set(p["provider"] for p in env["profiles"]):
         logging.info("[main] Cleaning up '%s' for drenv", name)
         provider = providers.get(name)
-        provider.cleanup_files()
+        provider.cleanup()
 
 
 def do_clear(args):
@@ -363,7 +363,7 @@ def start_cluster(profile, hooks=(), args=None, **options):
     if profile["external"]:
         logging.debug("[%s] Skipping external cluster", profile["name"])
     else:
-        is_restart = provider.exists(profile["name"])
+        is_restart = provider.exists(profile)
         provider.start(profile, verbose=args.verbose)
         if profile["containerd"]:
             logging.info("[%s] Configuring containerd", profile["name"])
@@ -371,7 +371,7 @@ def start_cluster(profile, hooks=(), args=None, **options):
         if is_restart:
             restart_failed_deployments(profile)
         else:
-            provider.load_files(profile["name"])
+            provider.configure(profile)
 
     if hooks:
         execute(
@@ -400,7 +400,7 @@ def stop_cluster(profile, hooks=(), **options):
     if profile["external"]:
         logging.debug("[%s] Skipping external cluster", profile["name"])
     elif cluster_status != cluster.UNKNOWN:
-        provider.stop(profile["name"])
+        provider.stop(profile)
 
 
 def delete_cluster(profile, **options):
@@ -408,7 +408,7 @@ def delete_cluster(profile, **options):
     if profile["external"]:
         logging.debug("[%s] Skipping external cluster", profile["name"])
     else:
-        provider.delete(profile["name"])
+        provider.delete(profile)
 
     profile_config = drenv.config_dir(profile["name"])
     if os.path.exists(profile_config):

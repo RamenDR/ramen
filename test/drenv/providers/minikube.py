@@ -22,6 +22,43 @@ EXTRA_CONFIG = [
 ]
 
 
+# Provider scope
+
+
+def setup():
+    """
+    Set up minikube to work with drenv. Must be called before starting the
+    first cluster.
+
+    To load the configuration you must call configure() after a cluster is
+    started.
+    """
+    version = _version()
+    logging.debug("[minikube] Using minikube version %s", version)
+    _setup_sysctl(version)
+    _setup_systemd_resolved(version)
+
+
+def cleanup():
+    """
+    Cleanup files added by setup().
+    """
+    _cleanup_file(_systemd_resolved_drenv_conf())
+    _cleanup_file(_sysctl_drenv_conf())
+
+
+# Cluster scope
+
+
+def exists(profile):
+    out = _profile("list", output="json")
+    profiles = json.loads(out)
+    for p in profiles["valid"]:
+        if p["Name"] == profile["name"]:
+            return True
+    return False
+
+
 def start(profile, verbose=False):
     start = time.monotonic()
     logging.info("[%s] Starting minikube cluster", profile["name"])
@@ -89,18 +126,38 @@ def start(profile, verbose=False):
     )
 
 
-def stop(name):
-    start = time.monotonic()
-    logging.info("[%s] Stopping cluster", name)
-    _watch("stop", profile=name)
-    logging.info("[%s] Cluster stopped in %.2f seconds", name, time.monotonic() - start)
+def configure(profile):
+    """
+    Load configuration done in setup() before the minikube cluster was
+    started.
+
+    Must be called after the cluster is started, before running any addon. Not
+    needed when starting a stopped cluster.
+    """
+    _configure_sysctl(profile["name"])
+    _configure_systemd_resolved(profile["name"])
 
 
-def delete(name):
+def stop(profile):
     start = time.monotonic()
-    logging.info("[%s] Deleting cluster", name)
-    _watch("delete", profile=name)
-    logging.info("[%s] Cluster deleted in %.2f seconds", name, time.monotonic() - start)
+    logging.info("[%s] Stopping cluster", profile["name"])
+    _watch("stop", profile=profile["name"])
+    logging.info(
+        "[%s] Cluster stopped in %.2f seconds",
+        profile["name"],
+        time.monotonic() - start,
+    )
+
+
+def delete(profile):
+    start = time.monotonic()
+    logging.info("[%s] Deleting cluster", profile["name"])
+    _watch("delete", profile=profile["name"])
+    logging.info(
+        "[%s] Cluster deleted in %.2f seconds",
+        profile["name"],
+        time.monotonic() - start,
+    )
 
 
 def suspend(profile):
@@ -131,47 +188,7 @@ def ssh(name, command):
     _watch("ssh", command, profile=name)
 
 
-def exists(name):
-    out = _profile("list", output="json")
-    profiles = json.loads(out)
-    for p in profiles["valid"]:
-        if p["Name"] == name:
-            return True
-    return False
-
-
-def setup_files():
-    """
-    Set up minikube to work with drenv. Must be called before starting the
-    first cluster.
-
-    To load the configuration you must call load_files() after a cluster is
-    created.
-    """
-    version = _version()
-    logging.debug("[minikube] Using minikube version %s", version)
-    _setup_sysctl(version)
-    _setup_systemd_resolved(version)
-
-
-def load_files(name):
-    """
-    Load configuration done in setup_files() before the minikube cluster was
-    started.
-
-    Must be called after the cluster is started, before running any addon. Not
-    need when starting a stopped cluster.
-    """
-    _load_sysctl(name)
-    _load_systemd_resolved(name)
-
-
-def cleanup_files():
-    """
-    Cleanup files added by setup_files().
-    """
-    _cleanup_file(_systemd_resolved_drenv_conf())
-    _cleanup_file(_sysctl_drenv_conf())
+# Private helpers
 
 
 def _profile(command, output=None):
@@ -217,7 +234,7 @@ fs.inotify.max_user_watches = 65536
     _write_file(path, data)
 
 
-def _load_sysctl(name):
+def _configure_sysctl(name):
     if not os.path.exists(_sysctl_drenv_conf()):
         return
     logging.debug("[%s] Loading drenv sysctl configuration", name)
@@ -250,7 +267,7 @@ DNSSEC=no
     _write_file(path, data)
 
 
-def _load_systemd_resolved(name):
+def _configure_systemd_resolved(name):
     if not os.path.exists(_systemd_resolved_drenv_conf()):
         return
     logging.debug("[%s] Loading drenv systemd-resolved configuration", name)
