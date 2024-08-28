@@ -1,12 +1,12 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-# Example environment using external clusters. The cluster `test` must exist
-# when this environment is started.
+# Example environment using external clusters. The cluster must exist when this
+# environment is started.
 #
 # To try this example, create the cluster with:
 #
-#     drenv start envs/test.yaml
+#     drenv start envs/vm.yaml
 #
 # Now you can start this environment with:
 #
@@ -20,7 +20,7 @@
 name: external
 profiles:
   - name: cluster
-    external: true
+    provider: external
     workers:
       - addons:
           - name: example

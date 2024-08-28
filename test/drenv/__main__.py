@@ -359,14 +359,13 @@ def collect_addons(env):
 
 def start_cluster(profile, hooks=(), args=None, **options):
     provider = providers.get(profile["provider"])
-    if profile["external"]:
-        logging.debug("[%s] Skipping external cluster", profile["name"])
-    else:
-        existing = provider.exists(profile)
-        provider.start(profile, verbose=args.verbose)
-        provider.configure(profile, existing=existing)
-        if existing:
-            restart_failed_deployments(profile)
+    existing = provider.exists(profile)
+
+    provider.start(profile, verbose=args.verbose)
+    provider.configure(profile, existing=existing)
+
+    if existing:
+        restart_failed_deployments(profile)
 
     if hooks:
         execute(
@@ -391,19 +390,14 @@ def stop_cluster(profile, hooks=(), **options):
             allow_failure=True,
         )
 
-    provider = providers.get(profile["provider"])
-    if profile["external"]:
-        logging.debug("[%s] Skipping external cluster", profile["name"])
-    elif cluster_status != cluster.UNKNOWN:
+    if cluster_status != cluster.UNKNOWN:
+        provider = providers.get(profile["provider"])
         provider.stop(profile)
 
 
 def delete_cluster(profile, **options):
     provider = providers.get(profile["provider"])
-    if profile["external"]:
-        logging.debug("[%s] Skipping external cluster", profile["name"])
-    else:
-        provider.delete(profile)
+    provider.delete(profile)
 
     profile_config = drenv.config_dir(profile["name"])
     if os.path.exists(profile_config):
