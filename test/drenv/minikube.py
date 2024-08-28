@@ -89,6 +89,9 @@ def start(
     if alsologtostderr:
         args.append("--alsologtostderr")
 
+    # TODO: Use --interactive=false when the bug is fixed.
+    # https://github.com/kubernetes/minikube/issues/19518
+
     _watch("start", *args, profile=profile)
 
 

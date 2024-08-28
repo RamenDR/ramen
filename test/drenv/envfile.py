@@ -12,9 +12,39 @@ CONTAINER = "$container"
 SHARED_NETWORK = "$network"
 
 _PLATFORM_DEFAULTS = {
-    "__default__": {VM: "", CONTAINER: "", SHARED_NETWORK: ""},
-    "linux": {VM: "kvm2", CONTAINER: "docker", SHARED_NETWORK: "default"},
-    "darwin": {VM: "hyperkit", CONTAINER: "podman", SHARED_NETWORK: ""},
+    "__default__": {
+        VM: {
+            "x86_64": "",
+            "arm64": "",
+        },
+        CONTAINER: "",
+        SHARED_NETWORK: {
+            "x86_64": "",
+            "arm64": "",
+        },
+    },
+    "linux": {
+        VM: {
+            "x86_64": "kvm2",
+            "arm64": "",
+        },
+        CONTAINER: "docker",
+        SHARED_NETWORK: {
+            "x86_64": "default",
+            "arm64": "",
+        },
+    },
+    "darwin": {
+        VM: {
+            "x86_64": "hyperkit",
+            "arm64": "qemu",
+        },
+        CONTAINER: "podman",
+        SHARED_NETWORK: {
+            "x86_64": "",
+            "arm64": "",
+        },
+    },
 }
 
 
@@ -118,14 +148,15 @@ def _validate_profile(profile, addons_root):
 
 def _validate_platform_defaults(profile):
     platform = platform_defaults()
+    machine = os.uname().machine
 
     if profile["driver"] == VM:
-        profile["driver"] = platform[VM]
+        profile["driver"] = platform[VM][machine]
     elif profile["driver"] == CONTAINER:
         profile["driver"] = platform[CONTAINER]
 
     if profile["network"] == SHARED_NETWORK:
-        profile["network"] = platform[SHARED_NETWORK]
+        profile["network"] = platform[SHARED_NETWORK][machine]
 
 
 def _validate_worker(worker, env, addons_root, index):
