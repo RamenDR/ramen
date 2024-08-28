@@ -539,9 +539,11 @@ $ drenv delete envs/example.yaml
 
 - `templates`: templates for creating new profiles.
     - `name`: profile name.
-    - `external`: true if this is existing external cluster. In this
-      case the tool will not start a minikube cluster and all other
-      options are ignored.
+    - `provider`: cluster provider. The default provider is "minikube",
+      creating cluster using VM or containers.  Use "external" to use
+      exsiting clusters not managed by `drenv`. Use the special value
+      "$provider" to select the best provider for the host. (default
+      "$provider")
     - `driver`: The minikube driver. On Linux, the default drivers are kvm2 and
       docker for VMs and containers. On MacOS, the defaults are hyperkit and
       podman. Use "$vm" and "$container" values to use the recommended VM and
