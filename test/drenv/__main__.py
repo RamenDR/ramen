@@ -411,18 +411,12 @@ def delete_cluster(profile, **options):
         shutil.rmtree(profile_config)
 
 
-def restart_failed_deployments(profile, initial_wait=30):
+def restart_failed_deployments(profile):
     """
-    When restarting, kubectl can report stale status for a while, before it
-    starts to report real status. Then it takes a while until all deployments
-    become available.
-
-    We first wait for initial_wait seconds to give Kubernetes chance to fail
-    liveness and readiness checks. Then we restart for failed deployments.
+    When restarting after failure, some deployment may enter failing state.
+    This is not handled by the addons. Restarting the deployment solves this
+    issue. This may also be solved at the addon level.
     """
-    logging.info("[%s] Waiting for fresh status", profile["name"])
-    time.sleep(initial_wait)
-
     logging.info("[%s] Looking up failed deployments", profile["name"])
     debug = partial(logging.debug, f"[{profile['name']}] %s")
 

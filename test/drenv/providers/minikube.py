@@ -142,6 +142,9 @@ def configure(profile, existing=False):
         _configure_sysctl(profile["name"])
         _configure_systemd_resolved(profile["name"])
 
+    if existing:
+        _wait_for_fresh_status(profile)
+
 
 def stop(profile):
     start = time.monotonic()
@@ -194,6 +197,19 @@ def ssh(name, command):
 
 
 # Private helpers
+
+
+def _wait_for_fresh_status(profile):
+    """
+    When starting an existing cluster, kubectl can report stale status for a
+    while, before it starts to report real status. Then it takes a while until
+    all deployments become available.
+
+    We wait 30 seconds to give Kubernetes chance to fail liveness and readiness
+    checks and start reporting real cluster status.
+    """
+    logging.info("[%s] Waiting for fresh status", profile["name"])
+    time.sleep(30)
 
 
 def _profile(command, output=None):
