@@ -22,11 +22,11 @@ def version(context=None, output=None):
         raise
 
 
-def config(*args, context=None):
+def config(*args, env=None, context=None):
     """
     Run kubectl config ... and return the output.
     """
-    return _run("config", *args, context=context)
+    return _run("config", *args, env=env, context=context)
 
 
 def create(*args, context=None):
@@ -200,12 +200,12 @@ def gather(contexts, namespaces=None, directory=None):
     commands.run(*cmd)
 
 
-def _run(cmd, *args, context=None):
+def _run(cmd, *args, env=None, context=None):
     cmd = ["kubectl", cmd]
     if context:
         cmd.extend(("--context", context))
     cmd.extend(args)
-    return commands.run(*cmd)
+    return commands.run(*cmd, env=env)
 
 
 def _watch(cmd, *args, input=None, context=None, log=print):
