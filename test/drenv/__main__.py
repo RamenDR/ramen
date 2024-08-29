@@ -13,8 +13,6 @@ import time
 
 from functools import partial
 
-import yaml
-
 import drenv
 from . import cache
 from . import cluster
@@ -24,6 +22,7 @@ from . import kubectl
 from . import providers
 from . import ramen
 from . import shutdown
+from . import yaml
 
 ADDONS_DIR = "addons"
 

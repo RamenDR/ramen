@@ -5,7 +5,7 @@ import os
 import copy
 import platform
 
-import yaml
+from . import yaml
 
 PROVIDER = "$provider"
 VM = "$vm"

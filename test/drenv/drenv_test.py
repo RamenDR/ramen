@@ -6,13 +6,13 @@ import logging
 import os
 import subprocess
 
-import yaml
 import pytest
 
 import drenv
 from drenv import cluster
 from drenv import commands
 from drenv import kubectl
+from drenv import yaml
 
 EXAMPLE_ENV = os.path.join("envs", "example.yaml")
 EXTERNAL_ENV = os.path.join("envs", "external.yaml")

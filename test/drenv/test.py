@@ -7,12 +7,11 @@ import logging
 import os
 import sys
 
-import yaml
-
 import drenv
 from drenv import kubectl
 
 from . import ramen
+from . import yaml
 
 
 workdir = None
