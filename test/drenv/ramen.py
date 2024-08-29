@@ -4,10 +4,9 @@
 import os
 import logging
 
-import yaml
-
 import drenv
 from . import kubectl
+from . import yaml
 
 
 def env_info(filename, name_prefix=None):
