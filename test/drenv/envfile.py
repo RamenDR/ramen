@@ -6,7 +6,7 @@ import logging
 import os
 import platform
 
-import yaml
+from . import yaml
 
 PROVIDER = "$provider"
 VM = "$vm"
