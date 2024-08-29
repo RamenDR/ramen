@@ -20,7 +20,9 @@ setuptools.setup(
     packages=[
         "drenv",
         "drenv.providers",
+        "drenv.providers.lima",
     ],
+    include_package_data=True,
     install_requires=[
         "PyYAML",
         "toml",
