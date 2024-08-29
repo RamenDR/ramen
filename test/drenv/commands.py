@@ -108,9 +108,22 @@ def run(*args, input=None, decode=True, env=None):
     return output.decode() if decode else output
 
 
-def watch(*args, input=None, keepends=False, decode=True, timeout=None, env=None):
+def watch(
+    *args,
+    input=None,
+    keepends=False,
+    decode=True,
+    timeout=None,
+    env=None,
+    stderr=subprocess.PIPE,
+):
     """
     Run command args, iterating over lines read from the child process stdout.
+
+    Some commands have no output and log everyting to stderr (like drenv). To
+    watch the output call with stderr=subprocess.STDOUT. When such command
+    fails, we have always have empty error, since the content was already
+    yielded to the caller.
 
     Assumes that the child process output UTF-8. Will raise if the command
     outputs binary data. This is not a problem in this projects since all our
@@ -144,7 +157,7 @@ def watch(*args, input=None, keepends=False, decode=True, timeout=None, env=None
                 # Avoid blocking foerver if there is no input.
                 stdin=subprocess.PIPE if input else subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=stderr,
                 env=env,
             )
         except OSError as e:
