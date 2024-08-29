@@ -170,6 +170,35 @@ for i in range(10):
     assert output == ["line %d" % i for i in range(10)]
 
 
+def test_watch_stderr_success():
+    # Watching command like drenv, logging only to stderr without any output.
+    script = r"""
+import sys
+for i in range(10):
+    sys.stderr.write(f"line {i}\n")
+"""
+    cmd = ["python3", "-c", script]
+    output = list(commands.watch(*cmd, stderr=subprocess.STDOUT))
+    assert output == [f"line {i}" for i in range(10)]
+
+
+def test_watch_stderr_error():
+    # When stderr is redirected to stdout the error is empty.
+    script = r"""
+import sys
+sys.stderr.write("before error\n")
+sys.exit("error")
+"""
+    cmd = ["python3", "-c", script]
+    output = []
+    with pytest.raises(commands.Error) as e:
+        for line in commands.watch(*cmd, stderr=subprocess.STDOUT):
+            output.append(line)
+
+    assert output == ["before error", "error"]
+    assert e.value.error == ""
+
+
 def test_watch_partial_lines():
     script = """
 import time
