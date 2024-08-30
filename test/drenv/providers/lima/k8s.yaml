@@ -20,6 +20,14 @@ containerd:
   system: true
   user: false
 
+# We access the cluster via the IP address on the shared network.  Port
+# forwarding cannot work for multiple clusters since same port from multiple
+# clusters is mapped to the same host port.
+portForwards:
+  - guestPortRange: [1, 65535]
+    guestIP: "0.0.0.0"
+    ignore: true
+
 provision:
 
   # See <https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/>
