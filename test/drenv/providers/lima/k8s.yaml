@@ -97,6 +97,8 @@ provision:
       set -eux -o pipefail
       test -e /etc/kubernetes/admin.conf && exit 0
       export KUBECONFIG=/etc/kubernetes/admin.conf
+      # Ramen: serve the addiontal shared network instead of the user network.
+      export ADVERTISE_ADDRESS=$(ip -j -4 addr show dev lima0 | jq -r '.[0].addr_info[0].local')
       kubeadm config images list
       kubeadm config images pull --cri-socket=unix:///run/containerd/containerd.sock
       # Initializing your control-plane node
@@ -105,6 +107,9 @@ provision:
       apiVersion: kubeadm.k8s.io/v1beta3
       nodeRegistration:
         criSocket: unix:///run/containerd/containerd.sock
+      # Ramen: serve specific network.
+      localAPIEndpoint:
+        advertiseAddress: $ADVERTISE_ADDRESS
       ---
       kind: ClusterConfiguration
       apiVersion: kubeadm.k8s.io/v1beta3
@@ -123,8 +128,6 @@ provision:
       kubectl apply -f https://github.com/flannel-io/flannel/releases/download/v0.24.0/kube-flannel.yml
       # Control plane node isolation
       kubectl taint nodes --all node-role.kubernetes.io/control-plane-
-      # Replace the server address with localhost, so that it works also from the host
-      sed -e "/server:/ s|https://.*:\([0-9]*\)$|https://127.0.0.1:\1|" -i $KUBECONFIG
       mkdir -p ${HOME:-/root}/.kube && cp -f $KUBECONFIG ${HOME:-/root}/.kube/config
 
   - mode: system
