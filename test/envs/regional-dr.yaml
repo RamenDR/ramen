@@ -16,6 +16,10 @@ templates:
   - name: "dr-cluster"
     driver: "$vm"
     container_runtime: containerd
+    containerd:
+      plugins:
+        io.containerd.grpc.v1.cri:
+          device_ownership_from_security_context: true
     network: "$network"
     cpus: 4
     memory: "6g"
