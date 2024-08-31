@@ -47,7 +47,7 @@ spec:
             readOnly: false
       containers:
         - name: minio
-          image: quay.io/minio/minio:RELEASE.2024-03-15T01-07-19Z
+          image: quay.io/minio/minio:RELEASE.2024-08-29T01-40-52Z
           imagePullPolicy: IfNotPresent
           resources:
             limits:
