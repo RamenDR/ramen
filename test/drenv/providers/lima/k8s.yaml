@@ -107,6 +107,9 @@ provision:
       apiVersion: kubeadm.k8s.io/v1beta3
       nodeRegistration:
         criSocket: unix:///run/containerd/containerd.sock
+        # Ramen: use specific network
+        kubeletExtraArgs:
+          node-ip: $ADVERTISE_ADDRESS
       # Ramen: serve specific network.
       localAPIEndpoint:
         advertiseAddress: $ADVERTISE_ADDRESS
