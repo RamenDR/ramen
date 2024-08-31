@@ -76,8 +76,8 @@ def run(*args):
     return commands.run(*args)
 
 
-def watch(*args, log=log.debug):
-    for line in commands.watch(*args):
+def watch(*args, stderr=None, cwd=None, log=log.debug):
+    for line in commands.watch(*args, stderr=stderr, cwd=cwd):
         log("%s", line)
 
 
