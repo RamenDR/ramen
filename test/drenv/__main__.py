@@ -107,7 +107,11 @@ def parse_args():
     )
 
     p = add_command(sp, "load", do_load, help="load an image into the cluster")
-    p.add_argument("--image", help="image to load into the cluster in tar format")
+    p.add_argument(
+        "--image",
+        required=True,
+        help="image to load into the cluster in tar format",
+    )
 
     add_command(sp, "delete", do_delete, help="delete an environment")
     add_command(sp, "suspend", do_suspend, help="suspend virtual machines")
