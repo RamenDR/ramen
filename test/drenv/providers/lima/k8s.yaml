@@ -127,6 +127,8 @@ provision:
       kind: KubeletConfiguration
       apiVersion: kubelet.config.k8s.io/v1beta1
       cgroupDriver: systemd
+      featureGates:
+        StatefulSetAutoDeletePVC: true
       EOF
       kubeadm init --config kubeadm-config.yaml
       # Installing a Pod network add-on
