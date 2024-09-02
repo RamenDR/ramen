@@ -19,6 +19,7 @@ LIMACTL = "limactl"
 
 # Important lima statuses
 RUNNING = "Running"
+STOPPED = "Stopped"
 
 # Options ignored by this provider.
 # TODO: implement what we can.
@@ -66,12 +67,21 @@ def start(profile, verbose=False):
             _write_config(profile, tmp.name)
             _create_vm(profile, tmp.name)
 
-    _start_vm(profile)
+    # Get vm before starting to detect a stopped vm.
     vm = _get_vm(profile)
+
+    _start_vm(profile)
     _add_kubeconfig(profile, vm)
 
     debug = partial(logging.debug, f"[{profile['name']}] %s")
     cluster.wait_until_ready(profile["name"], timeout=30, log=debug)
+
+    if vm["status"] == STOPPED:
+        # We have random failures (e.g. ocm webooks) when starting a stopped
+        # cluster. Until we find A better way, try to wait give the system
+        # more time to become stable.
+        # TODO: find a better way.
+        time.sleep(15)
 
     logging.info(
         "[%s] Cluster started in %.2f seconds",
