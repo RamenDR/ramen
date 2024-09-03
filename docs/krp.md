@@ -96,7 +96,8 @@ The VRG enables Kubernetes resources to be captured(backed up) and recovered as
 part of disaster protection.  This is accomplished through the
 kubeObjectProtection section of the VRG spec.  If kubeObjectProtection is not
 included in a VRG, then Kubernetes resources are not protected as part of the
-VRG disaster protection.
+VRG disaster protection. PVCs and PVs are protected by Ramen and all resources
+are protected and backed by kubeObjectProtection.
 
 The kubeObjectProtection section contains two sub-sections, captureOrder and
 recoverOrder.  This captureOrder section provides instructions on how to backup
