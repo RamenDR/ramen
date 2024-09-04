@@ -15,6 +15,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -28,7 +29,7 @@ type ProtectedVolumeReplicationGroupListReconciler struct {
 	APIReader      client.Reader
 	ObjStoreGetter ObjectStoreGetter
 	Scheme         *runtime.Scheme
-	RateLimiter    *workqueue.RateLimiter
+	RateLimiter    *workqueue.TypedRateLimiter[reconcile.Request]
 }
 
 type ProtectedVolumeReplicationGroupListInstance struct {

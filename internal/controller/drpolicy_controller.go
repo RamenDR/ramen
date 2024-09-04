@@ -36,7 +36,7 @@ type DRPolicyReconciler struct {
 	Log               logr.Logger
 	Scheme            *runtime.Scheme
 	ObjectStoreGetter ObjectStoreGetter
-	RateLimiter       *workqueue.RateLimiter
+	RateLimiter       *workqueue.TypedRateLimiter[reconcile.Request]
 }
 
 // ReasonValidationFailed is set when the DRPolicy could not be validated or is not valid

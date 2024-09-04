@@ -7,4 +7,4 @@ import os
 from drenv import cache
 
 os.chdir(os.path.dirname(__file__))
-cache.refresh(".", "addons/csi-addons-0.9.0.yaml")
+cache.refresh(".", "addons/csi-addons-0.9.1.yaml")
