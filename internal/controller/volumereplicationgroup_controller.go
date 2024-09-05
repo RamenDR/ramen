@@ -116,6 +116,8 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 		r.Log.Info("Kube object protection disabled; don't watch kube objects requests")
 	}
 
+	r.locks = rmnutil.NewNamespaceLock()
+
 	return ctrlBuilder.Complete(r)
 }
 
@@ -436,6 +438,12 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{},
 			fmt.Errorf("VRG {%s/%s} with kube object protection doesn't work if velero/oadp is not installed. "+
 				"Please install velero/oadp and restart the operator", v.instance.Namespace, v.instance.Name)
+	}
+
+	err = v.vrgParallelProcessingCheck(adminNamespaceVRG)
+
+	if err != nil {
+		return ctrl.Result{Requeue: true}, err
 	}
 
 	v.volSyncHandler = volsync.NewVSHandler(ctx, r.Client, log, v.instance,
@@ -1626,4 +1634,33 @@ func (r *VolumeReplicationGroupReconciler) addKubeObjectsOwnsAndWatches(ctrlBuil
 	r.veleroCRsAreWatched = true
 
 	return ctrlBuilder
+}
+
+func (v *VRGInstance) vrgParallelProcessingCheck(adminNamespaceVRG bool) error {
+	ns := v.instance.Namespace
+
+	if !adminNamespaceVRG {
+		vrgList := &ramendrv1alpha1.VolumeReplicationGroupList{}
+		listOps := &client.ListOptions{
+			Namespace: ns,
+		}
+		err := v.reconciler.APIReader.List(context.Background(), vrgList, listOps)
+
+		if err != nil {
+			v.log.Error(err, "Unable to list the VRGs in the", " namespace ", ns)
+
+			return err
+		}
+
+		// if the number of vrgs in the ns is more than 1, lock is needed.
+		if len(vrgList.Items) > 1 {
+			if isLockAcquired := v.reconciler.locks.TryToAcquireLock(ns); !isLockAcquired {
+				// Acquiring lock failed, VRG reconcile should be requeued
+				return err
+			}
+			defer v.reconciler.locks.Release(ns)
+		}
+	}
+
+	return nil
 }
