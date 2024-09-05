@@ -5,6 +5,7 @@ import json
 import time
 
 from . import kubectl
+from . import commands
 
 # Cluster does not have kubeconfig.
 UNKNOWN = "unknwon"
@@ -12,7 +13,7 @@ UNKNOWN = "unknwon"
 # Cluster has kubeconfig.
 CONFIGURED = "configured"
 
-# APIServer is responding.
+# APIServer is ready.
 READY = "ready"
 
 
@@ -20,21 +21,22 @@ def status(name):
     if not kubeconfig(name):
         return UNKNOWN
 
-    out = kubectl.version(context=name, output="json")
-    version_info = json.loads(out)
-    if "serverVersion" not in version_info:
+    try:
+        readyz(name)
+    except commands.Error:
         return CONFIGURED
 
     return READY
 
 
-def wait_until_ready(name, timeout=600):
+def wait_until_ready(name, timeout=600, log=print):
     """
     Wait until a cluster is ready.
 
     This is useful when starting profiles concurrently, when one profile needs
-    to wait for another profile.
+    to wait for another profile, or when restarting a stopped cluster.
     """
+    log(f"Waiting until cluster '{name}' is ready")
     deadline = time.monotonic() + timeout
     delay = min(1.0, timeout / 60)
     last_status = None
@@ -43,7 +45,7 @@ def wait_until_ready(name, timeout=600):
         current_status = status(name)
 
         if current_status != last_status:
-            print(f"Cluster '{name}' is {current_status}")
+            log(f"Cluster '{name}' is {current_status}")
             last_status = current_status
 
         if current_status == READY:
@@ -77,3 +79,14 @@ def kubeconfig(context_name):
                     return cluster
 
     return {}
+
+
+def readyz(name, verbose=False):
+    """
+    Check if API server is ready.
+    https://kubernetes.io/docs/reference/using-api/health-checks/
+    """
+    path = "/readyz"
+    if verbose:
+        path += "?verbose"
+    return kubectl.get("--raw", path, context=name)
