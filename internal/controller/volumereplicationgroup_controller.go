@@ -1644,8 +1644,8 @@ func (v *VRGInstance) vrgParallelProcessingCheck(adminNamespaceVRG bool) error {
 		listOps := &client.ListOptions{
 			Namespace: ns,
 		}
-		err := v.reconciler.APIReader.List(context.Background(), vrgList, listOps)
 
+		err := v.reconciler.APIReader.List(context.Background(), vrgList, listOps)
 		if err != nil {
 			v.log.Error(err, "Unable to list the VRGs in the", " namespace ", ns)
 
