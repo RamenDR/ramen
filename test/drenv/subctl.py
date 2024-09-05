@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import platform
 import shutil
 
 from . import commands
@@ -31,11 +32,20 @@ def join(broker_info, context, clusterid, cable_driver=None, version=None, log=p
     """
     Run subctl join ... logging progress messages.
     """
-    args = ["join", broker_info, "--context", context, "--clusterid", clusterid]
+    args = [
+        "join",
+        broker_info,
+        "--context",
+        context,
+        "--clusterid",
+        clusterid,
+    ]
     if cable_driver:
         args.extend(("--cable-driver", cable_driver))
     if version:
         args.append(f"--version={version}")
+    if platform.system().lower() == "darwin":
+        args.append("--check-broker-certificate=false")
     _watch(*args, log=log)
 
 
