@@ -121,6 +121,8 @@ provision:
       kind: ClusterConfiguration
       apiVersion: kubeadm.k8s.io/v1beta3
       apiServer:
+        extraArgs:
+          advertise-address: "0.0.0.0"
         certSANs: # --apiserver-cert-extra-sans
         - "127.0.0.1"
       networking:
