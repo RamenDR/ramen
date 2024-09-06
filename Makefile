@@ -32,6 +32,8 @@ DEFAULT_CHANNEL := alpha
 endif
 BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 
+include developer.mk
+
 IMAGE_REGISTRY ?= quay.io
 IMAGE_REPOSITORY ?= ramendr
 IMAGE_NAME ?= ramen
@@ -216,6 +218,9 @@ run-dr-cluster: generate manifests ## Run DR manager controller from your host.
 
 docker-build: ## Build docker image with the manager.
 	$(DOCKERCMD) build -t ${IMG} .
+
+docker-build-x86-64: ## Build docker image with the manager.
+	$(DOCKERCMD) build -t ${IMG} --platform linux/amd64 .
 
 docker-push: ## Push docker image with the manager.
 	$(DOCKERCMD) push ${IMG}

@@ -57,28 +57,15 @@ func kubeObjectsRecoverName(prefix string, groupNumber int) string {
 }
 
 func (v *VRGInstance) kubeObjectsProtectPrimary(result *ctrl.Result) {
-	v.kubeObjectsProtect(result, kubeObjectsCaptureStartConditionallyPrimary,
-		func() {},
-	)
+	v.kubeObjectsProtect(result)
 }
 
 func (v *VRGInstance) kubeObjectsProtectSecondary(result *ctrl.Result) {
-	v.kubeObjectsProtect(result, kubeObjectsCaptureStartConditionallySecondary,
-		func() {
-			v.kubeObjectsCaptureStatusFalse(VRGConditionReasonUploading, "Kube objects capture for relocate in-progress")
-		},
-	)
+	v.kubeObjectsProtect(result)
 }
-
-type (
-	captureStartConditionally     func(*VRGInstance, *ctrl.Result, int64, time.Duration, time.Duration, func())
-	captureInProgressStatusUpdate func()
-)
 
 func (v *VRGInstance) kubeObjectsProtect(
 	result *ctrl.Result,
-	captureStartConditionally captureStartConditionally,
-	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 ) {
 	if v.kubeObjectProtectionDisabled("capture") {
 		return
@@ -105,16 +92,12 @@ func (v *VRGInstance) kubeObjectsProtect(
 	}
 
 	v.kubeObjectsCaptureStartOrResumeOrDelay(result,
-		captureStartConditionally,
-		captureInProgressStatusUpdate,
 		captureToRecoverFrom,
 	)
 }
 
 func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 	result *ctrl.Result,
-	captureStartConditionally captureStartConditionally,
-	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 	captureToRecoverFrom *ramen.KubeObjectsCaptureIdentifier,
 ) {
 	veleroNamespaceName := v.veleroNamespaceName()
@@ -140,8 +123,6 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 	captureStartOrResume := func(generation int64, startOrResume string) {
 		log.Info("Kube objects capture "+startOrResume, "generation", generation)
 		v.kubeObjectsCaptureStartOrResume(result,
-			captureStartConditionally,
-			captureInProgressStatusUpdate,
 			number, pathName, capturePathName, namePrefix, veleroNamespaceName, interval, labels,
 			generation,
 			kubeobjects.RequestsMapKeyedByName(requests),
@@ -155,7 +136,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 		return
 	}
 
-	captureStartConditionally(
+	kubeObjectsCaptureStartConditionally(
 		v, result, captureToRecoverFrom.StartGeneration, time.Since(captureToRecoverFrom.StartTime.Time), interval,
 		func() {
 			if v.kubeObjectsCapturesDelete(result, number, capturePathName) != nil {
@@ -167,7 +148,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 	)
 }
 
-func kubeObjectsCaptureStartConditionallySecondary(
+func kubeObjectsCaptureStartConditionally(
 	v *VRGInstance, result *ctrl.Result,
 	captureStartGeneration int64, captureStartTimeSince, captureStartInterval time.Duration,
 	captureStart func(),
@@ -175,26 +156,26 @@ func kubeObjectsCaptureStartConditionallySecondary(
 	generation := v.instance.Generation
 	log := v.log.WithValues("generation", generation)
 
-	if captureStartGeneration == generation {
-		log.Info("Kube objects capture for relocate complete")
+	// Capture one last time for secondary before relocating
+	if v.instance.Spec.ReplicationState == ramen.Secondary &&
+		v.instance.Spec.Action != ramen.VRGActionRelocate {
+		if captureStartGeneration == generation {
+			log.Info("Kube objects capture for relocate complete")
 
-		return
+			return
+		}
+
+		v.kubeObjectsCaptureStatusFalse(VRGConditionReasonUploading, "Kube objects capture for relocate pending")
 	}
 
-	v.kubeObjectsCaptureStatusFalse(VRGConditionReasonUploading, "Kube objects capture for relocate pending")
-	captureStart()
-}
+	// Capture for primary is time since last capture is greater than interval
+	if v.instance.Spec.ReplicationState == ramen.Primary {
+		if delay := captureStartInterval - captureStartTimeSince; delay > 0 {
+			v.log.Info("Kube objects capture start delay", "delay", delay, "interval", captureStartInterval)
+			delaySetIfLess(result, delay, v.log)
 
-func kubeObjectsCaptureStartConditionallyPrimary(
-	v *VRGInstance, result *ctrl.Result,
-	captureStartGeneration int64, captureStartTimeSince, captureStartInterval time.Duration,
-	captureStart func(),
-) {
-	if delay := captureStartInterval - captureStartTimeSince; delay > 0 {
-		v.log.Info("Kube objects capture start delay", "delay", delay, "interval", captureStartInterval)
-		delaySetIfLess(result, delay, v.log)
-
-		return
+			return
+		}
 	}
 
 	captureStart()
@@ -229,8 +210,6 @@ const (
 
 func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	result *ctrl.Result,
-	captureStartConditionally captureStartConditionally,
-	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 	captureNumber int64,
 	pathName, capturePathName, namePrefix, veleroNamespaceName string,
 	interval time.Duration,
@@ -248,7 +227,6 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 		log1 := log.WithValues("group", groupNumber, "name", captureGroup.Name)
 		requestsCompletedCount += v.kubeObjectsGroupCapture(
 			result, captureGroup, pathName, capturePathName, namePrefix, veleroNamespaceName,
-			captureInProgressStatusUpdate,
 			labels, annotations, requests, log,
 		)
 		requestsProcessedCount += len(v.s3StoreAccessors)
@@ -264,7 +242,6 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 
 	v.kubeObjectsCaptureComplete(
 		result,
-		captureStartConditionally,
 		captureNumber,
 		veleroNamespaceName,
 		interval,
@@ -278,7 +255,6 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 	result *ctrl.Result,
 	captureGroup kubeobjects.CaptureSpec,
 	pathName, capturePathName, namePrefix, veleroNamespaceName string,
-	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 	labels, annotations map[string]string, requests map[string]kubeobjects.Request,
 	log logr.Logger,
 ) (requestsCompletedCount int) {
@@ -328,7 +304,12 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 			return
 		}
 
-		captureInProgressStatusUpdate()
+		if v.instance.Spec.ReplicationState == ramen.Secondary &&
+			v.instance.Spec.Action == ramen.VRGActionRelocate {
+			v.kubeObjectsCaptureStatusFalse(VRGConditionReasonUploading,
+				"Kube objects capture for relocate in-progress")
+		}
+
 	}
 
 	return requestsCompletedCount
@@ -355,7 +336,6 @@ func (v *VRGInstance) kubeObjectsCaptureDeleteAndLog(
 
 func (v *VRGInstance) kubeObjectsCaptureComplete(
 	result *ctrl.Result,
-	captureStartConditionally captureStartConditionally,
 	captureNumber int64, veleroNamespaceName string, interval time.Duration,
 	labels map[string]string, startTime metav1.Time, annotations map[string]string,
 ) {
@@ -382,7 +362,6 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 		func() {
 			v.kubeObjectsCaptureIdentifierUpdateComplete(
 				result,
-				captureStartConditionally,
 				*captureToRecoverFromIdentifier,
 				veleroNamespaceName,
 				interval,
@@ -397,7 +376,6 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 
 func (v *VRGInstance) kubeObjectsCaptureIdentifierUpdateComplete(
 	result *ctrl.Result,
-	captureStartConditionally captureStartConditionally,
 	captureToRecoverFromIdentifier *ramen.KubeObjectsCaptureIdentifier,
 	veleroNamespaceName string,
 	interval time.Duration,
@@ -420,7 +398,7 @@ func (v *VRGInstance) kubeObjectsCaptureIdentifierUpdateComplete(
 	captureStartTimeSince := time.Since(captureToRecoverFromIdentifier.StartTime.Time)
 	v.log.Info("Kube objects captured", "recovery point", captureToRecoverFromIdentifier,
 		"duration", captureStartTimeSince)
-	captureStartConditionally(
+	kubeObjectsCaptureStartConditionally(
 		v, result, captureToRecoverFromIdentifier.StartGeneration, captureStartTimeSince, interval,
 		func() {
 			v.log.Info("Kube objects capture schedule to run immediately")
