@@ -135,11 +135,34 @@ provision:
         StatefulSetAutoDeletePVC: true
       EOF
       kubeadm init --config kubeadm-config.yaml
-      # Installing a Pod network add-on
-      kubectl apply -f https://github.com/flannel-io/flannel/releases/download/v0.24.0/kube-flannel.yml
-      # Control plane node isolation
-      kubectl taint nodes --all node-role.kubernetes.io/control-plane-
+      # Copy kubeconfig to default location.
       mkdir -p ${HOME:-/root}/.kube && cp -f $KUBECONFIG ${HOME:-/root}/.kube/config
+
+  # Deploy additional components
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      export KUBECONFIG=/etc/kubernetes/admin.conf
+
+      echo "Removing control-plane taint from nodes"
+      kubectl taint nodes --all node-role.kubernetes.io/control-plane-
+
+      echo "Deploying flannel"
+      flannel=$(mktemp -d /tmp/deploy-flannel.XXXXXX)
+      cat <<EOF >$flannel/kustomization.yaml
+      resources:
+        - https://github.com/flannel-io/flannel/releases/download/v0.24.0/kube-flannel.yml
+      patches:
+        - target:
+            kind: DaemonSet
+            name: kube-flannel-ds
+          patch: |-
+            - op: add
+              path: /spec/template/spec/containers/0/args/-
+              value: --iface=lima0
+      EOF
+      kubectl apply -k $flannel
 
   - mode: system
     script: |
