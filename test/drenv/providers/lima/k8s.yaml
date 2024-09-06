@@ -177,6 +177,12 @@ provision:
       EOF
       kubectl apply -k $flannel
 
+      # Enable masqueradeAll in kube-proxy.
+      kubectl get cm -n kube-system kube-proxy -o yaml > kube-proxy.yaml
+      sed -i 's/masqueradeAll: false/masqueradeAll: true/g' kube-proxy.yaml
+      kubectl apply -f kube-proxy.yaml
+      kubectl delete pod -n kube-system -l k8s-app=kube-proxy
+
   - mode: system
     script: |
       #!/bin/bash
