@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import os
 import sys
 
@@ -53,6 +54,9 @@ def join_cluster(cluster, broker_info):
     print(f"Waiting until cluster '{cluster}' is ready")
     drenv_cluster.wait_until_ready(cluster)
 
+    print(f"Annotating nodes in '{cluster}'")
+    annotate_nodes(cluster)
+
     print(f"Joining cluster '{cluster}' to broker")
     subctl.join(
         broker_info,
@@ -61,6 +65,29 @@ def join_cluster(cluster, broker_info):
         cable_driver="vxlan",
         version=VERSION,
     )
+
+
+def annotate_nodes(cluster):
+    """
+    Annotate all nodes with the gateway public IP address. Required when is
+    having multiple interfaces and some networks are not shared (e.g. lima user
+    network).
+    """
+    out = kubectl.get("node", "--output=json", context=cluster)
+    nodes = json.loads(out)
+    for node in nodes["items"]:
+        for item in node["status"]["addresses"]:
+            if item["type"] == "InternalIP":
+                break
+        else:
+            raise RuntimeError(f"Cannot find node '{node['metadata']['name']}' address")
+        print(f"Annotating '{node['metadata']['name']}' address '{item['address']}'")
+        kubectl.annotate(
+            f"node/{node['metadata']['name']}",
+            {"gateway.submariner.io/public-ip": f"ipv4:{item['address']}"},
+            overwrite=True,
+            context=cluster,
+        )
 
 
 def wait_for_cluster(cluster):
