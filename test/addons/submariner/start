@@ -119,6 +119,9 @@ os.chdir(os.path.dirname(__file__))
 broker = sys.argv[1]
 clusters = sys.argv[2:]
 
+for cluster in [broker, *clusters]:
+    drenv_cluster.wait_until_ready(cluster)
+
 broker_info = deploy_broker(broker)
 
 for cluster in clusters:
