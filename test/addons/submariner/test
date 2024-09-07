@@ -162,45 +162,7 @@ def service_address(namespace):
     return f"{SERVICE}.{namespace}.svc.clusterset.local"
 
 
-def wait_for_dns(cluster, namespace, timeout=240):
-    """
-    Unfortunatley even when we wait for eveything, DNS lookup can fail for more
-    than 60 seconds after deploying submariner on a new cluster. After the
-    initial DNS always succceeds on the first try.
-
-    We see random failures with 120 seconds timeout, trying 240.
-    """
-    start = time.monotonic()
-    deadline = start + timeout
-    dns_name = service_address(namespace)
-    delay = 1
-
-    while True:
-        print(f"Looking up '{dns_name}' in cluster '{cluster}'")
-        try:
-            out = kubectl.exec(
-                "test",
-                f"--namespace={namespace}",
-                "--",
-                "nslookup",
-                dns_name,
-                context=cluster,
-            )
-        except commands.Error as e:
-            if time.monotonic() > deadline:
-                raise
-
-            print(f"Lookup failed: {e}")
-            print(f"Retrying in {delay} seconds")
-            time.sleep(delay)
-            delay = min(delay * 2, 16)
-        else:
-            print(f"Lookup completed in {time.monotonic() - start:.3f} seconds")
-            print(out)
-            break
-
-
-def test_connectivity(cluster, namespace, timeout=60):
+def test_connectivity(cluster, namespace, timeout=300):
     """
     Test that cluster can access service exported on the other cluster.
 
@@ -271,10 +233,7 @@ wait_for_service_import(clusters[1], NS1)
 wait_for_service_export(clusters[1], NS2)
 wait_for_service_import(clusters[0], NS2)
 
-wait_for_dns(clusters[1], NS1)
 test_connectivity(clusters[1], NS1)
-
-wait_for_dns(clusters[0], NS2)
 test_connectivity(clusters[0], NS2)
 
 unexport_service(clusters[0], NS1)
