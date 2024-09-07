@@ -10,12 +10,12 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	clrapiv1beta1 "github.com/open-cluster-management-io/api/cluster/v1beta1"
 	errorswrapper "github.com/pkg/errors"
 	"golang.org/x/exp/slices"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
@@ -1842,7 +1842,8 @@ func (d *DRPCInstance) ensureVRGManifestWorkOnClusterDeleted(clusterName string)
 	}
 
 	if d.ensureVRGIsSecondaryOnCluster(clusterName) {
-		err := d.mwu.DeleteManifestWorksForCluster(clusterName)
+		// delete VRG manifest work
+		err = d.mwu.DeleteManifestWork(d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG), clusterName)
 		if err != nil {
 			return !done, fmt.Errorf("%w", err)
 		}
