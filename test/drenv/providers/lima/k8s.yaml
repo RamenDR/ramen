@@ -30,6 +30,17 @@ portForwards:
 
 provision:
 
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      echo "Promoting default route on shared network"
+      route=$(ip route show default dev lima0)
+      if [ -n "$route" ] && ! echo $route | grep -E -q "metric 1\b"; then
+        ip route add $route metric 1
+        ip route del $route
+      fi
+
   # See <https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/>
   - mode: system
     script: |
