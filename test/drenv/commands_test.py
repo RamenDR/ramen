@@ -355,6 +355,12 @@ def test_watch_env():
     assert output == [env["DRENV_COMMAND_TEST"]]
 
 
+def test_watch_cwd(tmpdir):
+    tmpdir.join("file").write("content")
+    output = list(commands.watch("cat", "file", cwd=str(tmpdir)))
+    assert output == ["content"]
+
+
 # Running commands.
 
 
@@ -448,6 +454,12 @@ def test_run_env():
     env["DRENV_COMMAND_TEST"] = "value"
     out = commands.run("sh", "-c", "printf $DRENV_COMMAND_TEST", env=env)
     assert out == env["DRENV_COMMAND_TEST"]
+
+
+def test_run_cwd(tmpdir):
+    tmpdir.join("file").write("content")
+    output = commands.run("cat", "file", cwd=str(tmpdir))
+    assert output == "content"
 
 
 # Formatting errors.
