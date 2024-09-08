@@ -70,7 +70,7 @@ class StreamTimeout(Exception):
     """
 
 
-def run(*args, input=None, decode=True, env=None):
+def run(*args, input=None, stdin=None, decode=True, env=None):
     """
     Run command args and return the output of the command.
 
@@ -90,8 +90,7 @@ def run(*args, input=None, decode=True, env=None):
         try:
             p = subprocess.Popen(
                 args,
-                # Avoid blocking foerver if there is no input.
-                stdin=subprocess.PIPE if input else subprocess.DEVNULL,
+                stdin=_select_stdin(input, stdin),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 env=env,
@@ -115,6 +114,7 @@ def watch(
     decode=True,
     timeout=None,
     env=None,
+    stdin=None,
     stderr=subprocess.PIPE,
 ):
     """
@@ -154,8 +154,7 @@ def watch(
         try:
             p = subprocess.Popen(
                 args,
-                # Avoid blocking foerver if there is no input.
-                stdin=subprocess.PIPE if input else subprocess.DEVNULL,
+                stdin=_select_stdin(input, stdin),
                 stdout=subprocess.PIPE,
                 stderr=stderr,
                 env=env,
@@ -271,6 +270,17 @@ def stream(proc, input=None, bufsize=32 << 10, timeout=None):
                         continue
 
                     yield key.data, data
+
+
+def _select_stdin(input=None, stdin=None):
+    if input and stdin:
+        raise RuntimeError("intput and stdin are mutually exclusive")
+    if input:
+        return subprocess.PIPE
+    if stdin:
+        return stdin
+    # Avoid blocking foerver if there is no input.
+    return subprocess.DEVNULL
 
 
 def _remaining_time(deadline):
