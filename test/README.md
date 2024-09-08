@@ -41,7 +41,7 @@ environment.
 1. Install `subctl` tool, See
    [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/)
    for the details.
-   Version v0.17.0 or later is required.
+   Version v0.18.0 or later is required.
 
 1. Install the `velero` tool
 
@@ -133,7 +133,7 @@ environment.
 
 1. Install the `subctl` tool, See
    [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/)
-   for the details. Version v0.17.0 or later is required.
+   for the details. Version v0.18.0 or later is required.
 
 1. Install the `kubectl-gather` plugin
 
