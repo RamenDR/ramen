@@ -30,6 +30,16 @@ portForwards:
 
 provision:
 
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      echo "Removing default route for 192.168.5.15"
+      route=$(ip route show default src 192.168.5.15)
+      if [ -n "$route" ]; then
+        ip route del $route
+      fi
+
   # See <https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/>
   - mode: system
     script: |
