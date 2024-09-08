@@ -168,6 +168,17 @@ def delete(profile):
     )
 
 
+def load(profile, image):
+    start = time.monotonic()
+    logging.info("[%s] Loading image", profile["name"])
+    _watch("image", "load", image, profile=profile["name"])
+    logging.info(
+        "[%s] Image loaded in %.2f seconds",
+        profile["name"],
+        time.monotonic() - start,
+    )
+
+
 def suspend(profile):
     if profile["driver"] != "kvm2":
         logging.warning("[%s] suspend supported only for kvm2 driver", profile["name"])
