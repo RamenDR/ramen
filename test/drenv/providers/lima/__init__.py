@@ -129,6 +129,27 @@ def delete(profile):
     )
 
 
+def load(profile, image):
+    start = time.monotonic()
+    logging.info("[%s] Loading image", profile["name"])
+    with open(image) as f:
+        _watch(
+            "shell",
+            profile["name"],
+            "sudo",
+            "nerdctl",
+            "--namespace=k8s.io",
+            "load",
+            stdin=f,
+            context=profile["name"],
+        )
+    logging.info(
+        "[%s] Image loaded in %.2f seconds",
+        profile["name"],
+        time.monotonic() - start,
+    )
+
+
 # Private helpers
 
 
@@ -272,15 +293,15 @@ def _delete_disk(profile, disk):
 
 
 def _run(*args, context="lima"):
-    cmd = [LIMACTL, *args, "--log-format", "json"]
+    cmd = [LIMACTL, *args]
     logging.debug("[%s] Running %s", context, cmd)
     return commands.run(*cmd)
 
 
-def _watch(*args, context="lima"):
-    cmd = [LIMACTL, *args, "--log-format", "json"]
+def _watch(*args, stdin=None, context="lima"):
+    cmd = [LIMACTL, "--log-format=json", *args]
     logging.debug("[%s] Running %s", context, cmd)
-    for line in commands.watch(*cmd, stderr=subprocess.STDOUT):
+    for line in commands.watch(*cmd, stdin=stdin, stderr=subprocess.STDOUT):
         try:
             info = json.loads(line)
         except ValueError:

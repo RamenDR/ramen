@@ -106,6 +106,9 @@ def parse_args():
         help="if specified, comma separated list of namespaces to gather data from",
     )
 
+    p = add_command(sp, "load", do_load, help="load an image into the cluster")
+    p.add_argument("--image", help="image to load into the cluster in tar format")
+
     add_command(sp, "delete", do_delete, help="delete an environment")
     add_command(sp, "suspend", do_suspend, help="suspend virtual machines")
     add_command(sp, "resume", do_resume, help="resume virtual machines")
@@ -299,6 +302,18 @@ def do_delete(args):
     )
 
 
+def do_load(args):
+    env = load_env(args)
+    start = time.monotonic()
+    logging.info("[%s] Loading image '%s'", env["name"], args.image)
+    execute(load_image, env["profiles"], "profiles", image=args.image)
+    logging.info(
+        "[%s] Image loaded in %.2f seconds",
+        env["name"],
+        time.monotonic() - start,
+    )
+
+
 def do_suspend(args):
     env = load_env(args)
     logging.info("[%s] Suspending environment", env["name"])
@@ -402,6 +417,11 @@ def delete_cluster(profile, **options):
     if os.path.exists(profile_config):
         logging.info("[%s] Removing config %s", profile["name"], profile_config)
         shutil.rmtree(profile_config)
+
+
+def load_image(profile, image=None, **options):
+    provider = providers.get(profile["provider"])
+    provider.load(profile, image)
 
 
 def restart_failed_deployments(profile):
