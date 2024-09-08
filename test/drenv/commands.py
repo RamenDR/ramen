@@ -70,7 +70,7 @@ class StreamTimeout(Exception):
     """
 
 
-def run(*args, input=None, stdin=None, decode=True, env=None):
+def run(*args, input=None, stdin=None, decode=True, env=None, cwd=None):
     """
     Run command args and return the output of the command.
 
@@ -94,6 +94,7 @@ def run(*args, input=None, stdin=None, decode=True, env=None):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 env=env,
+                cwd=cwd,
             )
         except OSError as e:
             raise Error(args, f"Could not execute: {e}").with_exception(e)
@@ -116,6 +117,7 @@ def watch(
     env=None,
     stdin=None,
     stderr=subprocess.PIPE,
+    cwd=None,
 ):
     """
     Run command args, iterating over lines read from the child process stdout.
@@ -158,6 +160,7 @@ def watch(
                 stdout=subprocess.PIPE,
                 stderr=stderr,
                 env=env,
+                cwd=cwd,
             )
         except OSError as e:
             raise Error(args, f"Could not execute: {e}").with_exception(e)
