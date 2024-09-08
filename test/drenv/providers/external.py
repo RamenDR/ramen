@@ -57,6 +57,10 @@ def delete(profile):
     logging.info("[%s] Skipping delete for external cluster", profile["name"])
 
 
+def load(profile, image):
+    logging.info("[%s] Skipping load image for external cluster", profile["name"])
+
+
 def suspend(profile):
     logging.info("[%s] Skipping suspend for external cluster", profile["name"])
 
