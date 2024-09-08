@@ -161,6 +161,14 @@ def test_watch_with_input_large():
     assert output == [text]
 
 
+def test_watch_stdin(tmpdir):
+    path = tmpdir.join("file")
+    path.write("line1\nline2\n")
+    with open(path) as f:
+        output = list(commands.watch("cat", stdin=f))
+    assert output == ["line1", "line2"]
+
+
 def test_watch_lines():
     script = """
 for i in range(10):
@@ -358,6 +366,14 @@ def test_run():
 def test_run_input():
     output = commands.run("cat", input="input")
     assert output == "input"
+
+
+def test_run_stdin(tmpdir):
+    path = tmpdir.join("file")
+    path.write("line1\nline2\n")
+    with open(path) as f:
+        output = commands.run("cat", stdin=f)
+    assert output == "line1\nline2\n"
 
 
 def test_run_input_non_ascii():
