@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import os
+from drenv import cache
+
+os.chdir(os.path.dirname(__file__))
+cache.refresh("crds", "addons/external-snapshotter-crds-8.1.0.yaml")
+cache.refresh("controller", "addons/external-snapshotter-controller-8.1.0.yaml")
