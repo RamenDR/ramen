@@ -26,6 +26,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/workqueue"
 	config "k8s.io/component-base/config/v1alpha1"
+	"k8s.io/utils/ptr"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	ramencontrollers "github.com/ramendr/ramen/internal/controller"
@@ -147,6 +148,7 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 		By("starting the DRCluster reconciler")
 
 		options := manager.Options{Scheme: scheme.Scheme}
+		options.Controller.SkipNameValidation = ptr.To(true)
 		ramencontrollers.LoadControllerOptions(&options, ramenConfig)
 
 		Expect(err).NotTo(HaveOccurred())
