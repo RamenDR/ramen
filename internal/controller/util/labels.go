@@ -12,7 +12,8 @@ const (
 	labelOwnerNamespaceName = "ramendr.openshift.io/owner-namespace-name"
 	labelOwnerName          = "ramendr.openshift.io/owner-name"
 
-	MModesLabel = "ramendr.openshift.io/maintenancemodes"
+	MModesLabel             = "ramendr.openshift.io/maintenancemodes"
+	ExcludeFromVeleroBackup = "velero.io/exclude-from-backup"
 )
 
 type Labels map[string]string
