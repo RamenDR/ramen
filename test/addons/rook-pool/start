@@ -14,10 +14,11 @@ from drenv import kubectl
 
 
 def deploy(cluster):
-    print("Creating rbd pool and storage class")
+    print("Creating RBD pool and storage/snapshot classes")
     kubectl.apply(
         "--filename=replica-pool.yaml",
         "--filename=storage-class.yaml",
+        "--filename=snapshot-class.yaml",
         context=cluster,
     )
 
