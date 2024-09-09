@@ -10,7 +10,7 @@ ramen:
   clusters: [dr1, dr2]
   topology: regional-dr
   features:
-    volsync: false
+    volsync: true
 
 templates:
   - name: "dr-cluster"
@@ -23,20 +23,19 @@ templates:
     disk_size: "50g"
     feature_gates:
       - StatefulSetAutoDeletePVC=true
-    addons:
-      - volumesnapshots
     workers:
       - addons:
           - name: rook-operator
           - name: rook-cluster
           - name: rook-toolbox
           - name: rook-pool
-      # - name: rook-cephfs
+          - name: rook-cephfs
       - addons:
           - name: ocm-cluster
             args: ["$name", "hub"]
           - name: recipe
       - addons:
+          - name: external-snapshotter
           - name: csi-addons
           - name: olm
           - name: minio
@@ -70,6 +69,6 @@ workers:
   - addons:
       - name: rbd-mirror
         args: ["dr1", "dr2"]
-  - addons: []
-  # - name: volsync
-  #   args: ["dr1", "dr2"]
+  - addons:
+      - name: volsync
+        args: ["dr1", "dr2"]
