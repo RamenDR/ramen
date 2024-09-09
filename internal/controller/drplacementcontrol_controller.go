@@ -2169,6 +2169,13 @@ func (r *DRPlacementControlReconciler) createOrUpdatePlacementDecision(ctx conte
 		if plDecision, err = r.createPlacementDecision(ctx, placement); err != nil {
 			return err
 		}
+	} else if plDecision.GetLabels()[rmnutil.ExcludeFromVeleroBackup] != "true" {
+		err = rmnutil.NewResourceUpdater(plDecision).
+			AddLabel(rmnutil.ExcludeFromVeleroBackup, "true").
+			Update(ctx, r.Client)
+		if err != nil {
+			return err
+		}
 	}
 
 	plDecision.Status = clrapiv1beta1.PlacementDecisionStatus{
@@ -2219,7 +2226,7 @@ func (r *DRPlacementControlReconciler) createPlacementDecision(ctx context.Conte
 
 	plDecision.ObjectMeta.Labels = map[string]string{
 		clrapiv1beta1.PlacementLabel:    placement.GetName(),
-		"velero.io/exclude-from-backup": "true",
+		rmnutil.ExcludeFromVeleroBackup: "true",
 	}
 
 	owner := metav1.NewControllerRef(placement, clrapiv1beta1.GroupVersion.WithKind("Placement"))
