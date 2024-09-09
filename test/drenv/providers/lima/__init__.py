@@ -287,9 +287,21 @@ def _watch(*args, context="lima"):
             # We don't want to crash if limactl has logging bug.
             continue
         info.pop("time", None)
-        info.pop("level", None)
         msg = info.pop("msg", None)
+        level = info.pop("level", None)
+        log = _loggers.get(level, logging.debug)
         if info:
-            logging.debug("[%s] %s %s", context, msg, info)
+            log("[%s] %s %s", context, msg, info)
         else:
-            logging.debug("[%s] %s", context, msg)
+            log("[%s] %s", context, msg)
+
+
+# Map lima log levels to python logging functions. Limactl logs are very noisy
+# so turn down logging level.
+_loggers = {
+    "debug": logging.debug,
+    "info": logging.debug,
+    "warning": logging.debug,
+    "error": logging.warning,
+    "fatal": logging.error,
+}
