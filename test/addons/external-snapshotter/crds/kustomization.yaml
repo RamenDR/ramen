@@ -1,0 +1,3 @@
+---
+resources:
+  - https://github.com/kubernetes-csi/external-snapshotter/client/config/crd?ref=v8.1.0
