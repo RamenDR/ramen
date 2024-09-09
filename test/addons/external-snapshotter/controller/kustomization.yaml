@@ -1,0 +1,4 @@
+---
+resources:
+  - https://github.com/kubernetes-csi/external-snapshotter/deploy/kubernetes/snapshot-controller?ref=v8.1.0
+namespace: kube-system
