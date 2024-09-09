@@ -23,8 +23,6 @@ templates:
     disk_size: "50g"
     feature_gates:
       - StatefulSetAutoDeletePVC=true
-    addons:
-      - volumesnapshots
     workers:
       - addons:
           - name: rook-operator
@@ -37,6 +35,7 @@ templates:
             args: ["$name", "hub"]
           - name: recipe
       - addons:
+          - name: external-snapshotter
           - name: csi-addons
           - name: olm
           - name: minio
