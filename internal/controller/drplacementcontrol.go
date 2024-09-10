@@ -1732,16 +1732,16 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 	d.log.Info(fmt.Sprintf("PeerReady Condition is %s, msg: %s", condition.Status, condition.Message))
 
 	// IFF we have VolSync PVCs, then no need to clean up
-	homeCluster := clusterToSkip
+	// homeCluster := clusterToSkip
 
-	repReq, err := d.IsVolSyncReplicationRequired(homeCluster)
-	if err != nil {
-		return fmt.Errorf("failed to check if VolSync replication is required (%w)", err)
-	}
+	//repReq, err := d.IsVolSyncReplicationRequired(homeCluster)
+	//if err != nil {
+	//	return fmt.Errorf("failed to check if VolSync replication is required (%w)", err)
+	//}
 
-	if repReq {
-		return d.cleanupForVolSync(clusterToSkip)
-	}
+	//if repReq {
+	//	return d.cleanupForVolSync(clusterToSkip)
+	//}
 
 	clean, err := d.cleanupSecondaries(clusterToSkip)
 	if err != nil {
