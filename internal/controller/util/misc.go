@@ -93,7 +93,7 @@ func AddLabel(obj client.Object, key, value string) bool {
 		labels = map[string]string{}
 	}
 
-	if _, ok := labels[key]; !ok {
+	if v, ok := labels[key]; !ok || v != value {
 		labels[key] = value
 		obj.SetLabels(labels)
 
@@ -101,6 +101,26 @@ func AddLabel(obj client.Object, key, value string) bool {
 	}
 
 	return !labelAdded
+}
+
+func UpdateLabel(obj client.Object, key, newValue string) bool {
+	const labelUpdated = true
+
+	labels := obj.GetLabels()
+	if labels == nil {
+		return !labelUpdated
+	}
+
+	if currValue, ok := labels[key]; ok {
+		if currValue != newValue {
+			labels[key] = newValue
+			obj.SetLabels(labels)
+
+			return labelUpdated
+		}
+	}
+
+	return !labelUpdated
 }
 
 func HasLabel(obj client.Object, key string) bool {
