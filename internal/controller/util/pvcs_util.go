@@ -230,6 +230,18 @@ func isPodReady(podConditions []corev1.PodCondition) bool {
 	return false
 }
 
+func GetPVC(ctx context.Context, k8sClient client.Client, pvcNamespacedName types.NamespacedName,
+) (*corev1.PersistentVolumeClaim, error) {
+	pvc := &corev1.PersistentVolumeClaim{}
+
+	err := k8sClient.Get(ctx, pvcNamespacedName, pvc)
+	if err != nil {
+		return nil, fmt.Errorf("%w", err)
+	}
+
+	return pvc, nil
+}
+
 func DeletePVC(ctx context.Context,
 	k8sClient client.Client,
 	pvcName, namespace string,

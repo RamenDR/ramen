@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
-	vgsv1alphfa1 "github.com/kubernetes-csi/external-snapshotter/client/v7/apis/volumegroupsnapshot/v1alpha1"
-	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v7/apis/volumesnapshot/v1"
+	vgsv1alphfa1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1alpha1"
+	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -25,6 +25,19 @@ import (
 	"github.com/ramendr/ramen/internal/controller/volsync"
 )
 
+var (
+	vgsName           = "vgs"
+	vgscName          = "vgsc"
+	vsName            = "vs"
+	anotherVSName     = "another-vs"
+	vgsLabel          = map[string]string{"test": "test"}
+	scName            = "sc"
+	appPVCName        = "apppvc"
+	anotherAppPVCName = "another-apppvc"
+	rsName            = "rs"
+	manualString      = "manual"
+)
+
 var _ = Describe("Volumegroupsourcehandler", func() {
 	var volumeGroupSourceHandler cephfscg.VolumeGroupSourceHandler
 
@@ -34,6 +47,9 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 		volumeGroupSourceHandler = cephfscg.NewVolumeGroupSourceHandler(
 			k8sClient, rgs, internalController.DefaultCephFSCSIDriverName, testLogger,
 		)
+
+		CreatePVC(appPVCName)
+		CreatePVC(anotherAppPVCName)
 	})
 	Describe("CreateOrUpdateVolumeGroupSnapshot", func() {
 		It("Should be successful", func() {
@@ -69,11 +85,9 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 		})
 		Context("Restored PVC exist", func() {
 			BeforeEach(func() {
-				EnableFakeGetPVCFromVolumeSnapshot()
-
 				err := volumeGroupSourceHandler.CreateOrUpdateVolumeGroupSnapshot(context.TODO(), rgs)
 				Expect(err).To(BeNil())
-				UpdateVGS(rgs, vsName)
+				UpdateVGS(rgs, vsName, appPVCName)
 
 				CreateRestoredPVC(vsName)
 			})
@@ -113,10 +127,9 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 			})
 			Context("VolumeGroupSnapshot is ready", func() {
 				BeforeEach(func() {
-					EnableFakeGetPVCFromVolumeSnapshot()
 					CreateStorageClass()
-					CreateVS(vsName + "0")
-					UpdateVGS(rgs, vsName+"0")
+					CreateVS(anotherVSName)
+					UpdateVGS(rgs, anotherVSName, anotherAppPVCName)
 				})
 				It("Should be failed", func() {
 					restoredPVCs, err := volumeGroupSourceHandler.RestoreVolumesFromVolumeGroupSnapshot(context.Background(), rgs)
@@ -174,17 +187,6 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 		})
 	})
 })
-
-var (
-	vgsName      = "vgs"
-	vgscName     = "vgsc"
-	vsName       = "vs"
-	vgsLabel     = map[string]string{"test": "test"}
-	scName       = "sc"
-	appPVCName   = "apppvc"
-	rsName       = "rs"
-	manualString = "manual"
-)
 
 func CreateRS(rsName string) {
 	rs := &volsyncv1alpha1.ReplicationSource{
@@ -244,32 +246,7 @@ func GenerateReplicationGroupSource(
 	}
 }
 
-func EnableFakeGetPVCFromVolumeSnapshot() {
-	cephfscg.GetPVCFromVolumeSnapshot = func(
-		ctx context.Context, k8sClient client.Client, vsName string,
-		vsNamespace string, vgs *vgsv1alphfa1.VolumeGroupSnapshot,
-	) (*corev1.PersistentVolumeClaim, error) {
-		return &corev1.PersistentVolumeClaim{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      vsName,
-				Namespace: vsNamespace,
-			},
-			Spec: corev1.PersistentVolumeClaimSpec{
-				StorageClassName: &scName,
-				Resources: corev1.VolumeResourceRequirements{
-					Limits: map[corev1.ResourceName]resource.Quantity{
-						corev1.ResourceStorage: *resource.NewQuantity(1, resource.BinarySI),
-					},
-					Requests: map[corev1.ResourceName]resource.Quantity{
-						corev1.ResourceStorage: *resource.NewQuantity(1, resource.BinarySI),
-					},
-				},
-			},
-		}, nil
-	}
-}
-
-func UpdateVGS(rgs *v1alpha1.ReplicationGroupSource, vsName string) {
+func UpdateVGS(rgs *v1alpha1.ReplicationGroupSource, vsName, pvcName string) {
 	retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		volumeGroupSnapshot := &vgsv1alphfa1.VolumeGroupSnapshot{}
 		err := k8sClient.Get(context.TODO(), types.NamespacedName{
@@ -282,11 +259,9 @@ func UpdateVGS(rgs *v1alpha1.ReplicationGroupSource, vsName string) {
 		ready := true
 		volumeGroupSnapshot.Status = &vgsv1alphfa1.VolumeGroupSnapshotStatus{
 			ReadyToUse: &ready,
-			VolumeSnapshotRefList: []corev1.ObjectReference{{
-				Name:       vsName,
-				Namespace:  "default",
-				Kind:       "VolumeSnapshot",
-				APIVersion: "v1",
+			PVCVolumeSnapshotRefList: []vgsv1alphfa1.PVCVolumeSnapshotPair{{
+				VolumeSnapshotRef:        corev1.LocalObjectReference{Name: vsName},
+				PersistentVolumeClaimRef: corev1.LocalObjectReference{Name: pvcName},
 			}},
 		}
 
