@@ -149,6 +149,7 @@ def get_config(context=None, kubeconfig=None):
     args = [
         "view",
         "--minify",
+        "--flatten",
         "--output=json",
     ]
     if kubeconfig:
