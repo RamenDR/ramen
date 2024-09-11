@@ -20,3 +20,4 @@ parameters:
     csi.storage.k8s.io/node-stage-secret-namespace: rook-ceph
     csi.storage.k8s.io/fstype: ext4
 reclaimPolicy: Delete
+allowVolumeExpansion: true
