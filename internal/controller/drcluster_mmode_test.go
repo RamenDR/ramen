@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,6 +26,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/workqueue"
 	config "k8s.io/component-base/config/v1alpha1"
+	"k8s.io/utils/ptr"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	ramencontrollers "github.com/ramendr/ramen/internal/controller"
@@ -146,6 +148,7 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 		By("starting the DRCluster reconciler")
 
 		options := manager.Options{Scheme: scheme.Scheme}
+		options.Controller.SkipNameValidation = ptr.To(true)
 		ramencontrollers.LoadControllerOptions(&options, ramenConfig)
 
 		Expect(err).NotTo(HaveOccurred())
@@ -153,8 +156,8 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 		k8sManager, err := ctrl.NewManager(cfg, options)
 		Expect(err).ToNot(HaveOccurred())
 
-		rateLimiter := workqueue.NewMaxOfRateLimiter(
-			workqueue.NewItemExponentialFailureRateLimiter(10*time.Millisecond, 100*time.Millisecond),
+		rateLimiter := workqueue.NewTypedMaxOfRateLimiter(
+			workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](10*time.Millisecond, 100*time.Millisecond),
 		)
 
 		Expect((&ramencontrollers.DRClusterReconciler{

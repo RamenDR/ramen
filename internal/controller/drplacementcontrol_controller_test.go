@@ -172,6 +172,18 @@ var (
 			},
 		},
 	}
+
+	placementDecision = &clrapiv1beta1.PlacementDecision{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf(controllers.PlacementDecisionName, UserPlacementName, 1),
+			Namespace: DefaultDRPCNamespace,
+			Labels: map[string]string{
+				"cluster.open-cluster-management.io/decision-group-index": "0",
+				"cluster.open-cluster-management.io/decision-group-name":  "",
+				"cluster.open-cluster-management.io/placement":            UserPlacementName,
+			},
+		},
+	}
 )
 
 func getSyncDRPolicy() *rmn.DRPolicy {
@@ -884,6 +896,14 @@ func createDRClusters(inClusters []*spokeClusterV1.ManagedCluster) {
 	}
 }
 
+func createPlacementDecision() {
+	deletePlacementDecision()
+
+	plDecision := placementDecision.DeepCopy()
+	err := k8sClient.Create(context.TODO(), plDecision)
+	Expect(err).NotTo(HaveOccurred())
+}
+
 func createDRClustersAsync() {
 	createDRClusters(asyncClusters)
 }
@@ -1123,6 +1143,7 @@ func InitialDeploymentAsync(namespace, placementName, homeCluster string, plType
 	createManagedClusters(asyncClusters)
 	createDRClustersAsync()
 	createDRPolicyAsync()
+	createPlacementDecision()
 
 	return CreatePlacementAndDRPC(namespace, placementName, homeCluster, plType)
 }
@@ -1644,6 +1665,20 @@ func deleteDRPolicySync() {
 	Expect(k8sClient.Delete(context.TODO(), getSyncDRPolicy())).To(Succeed())
 }
 
+func deletePlacementDecision() {
+	err := k8sClient.Delete(context.TODO(), placementDecision)
+	Expect(client.IgnoreNotFound(err)).To(Succeed())
+
+	Eventually(func() bool {
+		resource := &clrapiv1beta1.PlacementDecision{}
+
+		return errors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{
+			Namespace: placementDecision.Namespace,
+			Name:      placementDecision.Name,
+		}, resource))
+	}, timeout, interval).Should(BeTrue())
+}
+
 func fenceCluster(cluster string, manual bool) {
 	latestDRCluster := getLatestDRCluster(cluster)
 	if manual {
@@ -1749,7 +1784,7 @@ func verifyFailoverToSecondary(placementObj client.Object, toCluster string,
 func verifyActionResultForPlacement(placement *clrapiv1beta1.Placement, homeCluster string, plType PlacementType) {
 	placementDecision := getPlacementDecision(placement.GetName(), placement.GetNamespace())
 	Expect(placementDecision).ShouldNot(BeNil())
-	Expect(placementDecision.GetLabels()["velero.io/exclude-from-backup"]).Should(Equal("true"))
+	Expect(placementDecision.GetLabels()[rmnutil.ExcludeFromVeleroBackup]).Should(Equal("true"))
 	Expect(placementDecision.Status.Decisions[0].ClusterName).Should(Equal(homeCluster))
 	vrg, err := getVRGFromManifestWork(homeCluster, placement.GetNamespace())
 	Expect(err).NotTo(HaveOccurred())
