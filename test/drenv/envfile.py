@@ -1,8 +1,9 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import copy
+import logging
+import os
 import platform
 
 import yaml
@@ -52,6 +53,7 @@ def platform_defaults():
     # By default, use minikube defaults.
 
     operating_system = platform.system().lower()
+    logging.debug("[envfile] Detected os: '%s'", operating_system)
     return _PLATFORM_DEFAULTS.get(operating_system, _PLATFORM_DEFAULTS["__default__"])
 
 
@@ -149,6 +151,7 @@ def _validate_profile(profile, addons_root):
 def _validate_platform_defaults(profile):
     platform = platform_defaults()
     machine = os.uname().machine
+    logging.debug("[envfile] Detected machine: '%s'", machine)
 
     if profile["driver"] == VM:
         profile["driver"] = platform[VM][machine]
@@ -157,6 +160,10 @@ def _validate_platform_defaults(profile):
 
     if profile["network"] == SHARED_NETWORK:
         profile["network"] = platform[SHARED_NETWORK][machine]
+
+    logging.debug("[envfile] Using provider: '%s'", profile["provider"])
+    logging.debug("[envfile] Using driver: '%s'", profile["driver"])
+    logging.debug("[envfile] Using network: '%s'", profile["network"])
 
 
 def _validate_worker(worker, env, addons_root, index):
