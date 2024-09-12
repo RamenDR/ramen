@@ -44,16 +44,16 @@ func (d *DRPCInstance) ensureVolSyncReplicationCommon(srcCluster string) error {
 	// Make sure we have Source and Destination VRGs - Source should already have been created at this point
 	d.setProgression(rmn.ProgressionEnsuringVolSyncSetup)
 
+	// Create or update the destination VRG
+	err := d.createVolSyncDestManifestWork(srcCluster)
+	if err != nil {
+		return err
+	}
+
 	vrgMWCount := d.mwu.GetVRGManifestWorkCount(rmnutil.DRPolicyClusterNames(d.drPolicy))
 
 	const maxNumberOfVRGs = 2
 	if len(d.vrgs) != maxNumberOfVRGs || vrgMWCount != maxNumberOfVRGs {
-		// Create the destination VRG
-		err := d.createVolSyncDestManifestWork(srcCluster)
-		if err != nil {
-			return err
-		}
-
 		return WaitForVolSyncManifestWorkCreation
 	}
 
