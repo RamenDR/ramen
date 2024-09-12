@@ -242,3 +242,12 @@ func IsCGEnabled(annotations map[string]string) bool {
 
 	return annotations[IsCGEnabledAnnotation] == "true"
 }
+
+func TrimToK8sResourceNameLength(name string) string {
+	const maxLength = 63
+	if len(name) > maxLength {
+		return name[:maxLength]
+	}
+
+	return name
+}

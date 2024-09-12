@@ -84,7 +84,7 @@ func NewVolumeGroupSourceHandler(
 ) VolumeGroupSourceHandler {
 	vrgName := rgs.GetLabels()[volsync.VRGOwnerNameLabel]
 
-	vgsName := BuildVGSName(rgs.Name)
+	vgsName := util.TrimToK8sResourceNameLength(fmt.Sprintf(VolumeGroupSnapshotNameFormat, rgs.Name))
 
 	return &volumeGroupSourceHandler{
 		Client:                       client,
@@ -138,7 +138,7 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(
 		return err
 	}
 
-	logger.Info("VolumeGroupSnapshot successfully be created or updated", "operation", op)
+	logger.Info("VolumeGroupSnapshot successfully created or updated", "operation", op)
 
 	return nil
 }
@@ -503,11 +503,6 @@ func (h *volumeGroupSourceHandler) CheckReplicationSourceForRestoredPVCsComplete
 
 	return true, nil
 }
-
-var GetPVCFromVolumeSnapshot func(
-	ctx context.Context, k8sClient client.Client, vsName string,
-	vsNamespace string, vgs *vgsv1alphfa1.VolumeGroupSnapshot,
-) (*corev1.PersistentVolumeClaim, error)
 
 func GetPVCfromStorageHandle(
 	ctx context.Context,

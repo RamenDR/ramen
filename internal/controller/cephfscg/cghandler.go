@@ -95,7 +95,7 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupDestination(
 	replicationGroupDestinationName, replicationGroupDestinationNamespace string,
 	rdSpecsInGroup []ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 ) (*ramendrv1alpha1.ReplicationGroupDestination, error) {
-	replicationGroupDestinationName += c.cgName
+	replicationGroupDestinationName = util.TrimToK8sResourceNameLength(replicationGroupDestinationName + c.cgName)
 
 	log := c.logger.WithName("CreateOrUpdateReplicationGroupDestination").
 		WithValues("ReplicationGroupDestinationName", replicationGroupDestinationName,
@@ -144,7 +144,7 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 	replicationGroupSourceName, replicationGroupSourceNamespace string,
 	runFinalSync bool,
 ) (*ramendrv1alpha1.ReplicationGroupSource, bool, error) {
-	replicationGroupSourceName += c.cgName
+	replicationGroupSourceName = util.TrimToK8sResourceNameLength(replicationGroupSourceName + c.cgName)
 
 	log := c.logger.WithName("CreateOrUpdateReplicationGroupSource").
 		WithValues("ReplicationGroupSourceName", replicationGroupSourceName,
