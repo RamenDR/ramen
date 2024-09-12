@@ -50,7 +50,7 @@ coverage-html:
 	xdg-open htmlcov/index.html
 
 cluster:
-	drenv start --name-prefix $(prefix) $(env)
+	drenv start --name-prefix $(prefix) $(env) -v
 
 clean:
 	drenv delete --name-prefix $(prefix) $(env)
