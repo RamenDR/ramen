@@ -284,7 +284,9 @@ def _watch(*args, context="lima"):
         try:
             info = json.loads(line)
         except ValueError:
-            # We don't want to crash if limactl has logging bug.
+            # We don't want to crash if limactl has logging bug, and the line
+            # may contain useful info.
+            logging.debug("[%s] %s", context, line)
             continue
         info.pop("time", None)
         msg = info.pop("msg", None)
