@@ -7,6 +7,7 @@ import logging
 import os
 import subprocess
 import tempfile
+import threading
 import time
 from functools import partial
 
@@ -32,6 +33,11 @@ UNSUPPORTED_OPTIONS = (
     "network",
     "service_cluster_ip_range",
 )
+
+# limactl delete is racy, trying to access lima.yaml in other clusters and
+# fails when the files are deleted by another limactl process. Until limactl is
+# fixed, ensure only single concurent delete.
+_delete_vm_lock = threading.Lock()
 
 # Provider scope
 
@@ -118,7 +124,9 @@ def delete(profile):
     start = time.monotonic()
     logging.info("[%s] Deleting lima cluster", profile["name"])
 
-    _delete_vm(profile)
+    with _delete_vm_lock:
+        _delete_vm(profile)
+
     _delete_additional_disks(profile)
     _remove_kubeconfig(profile)
 
