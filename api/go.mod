@@ -5,6 +5,7 @@ go 1.22.6
 require (
 	k8s.io/api v0.29.0
 	k8s.io/apimachinery v0.29.0
+	k8s.io/component-base v0.28.3
 	sigs.k8s.io/controller-runtime v0.16.3
 )
 
@@ -19,7 +20,6 @@ require (
 	golang.org/x/text v0.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	k8s.io/component-base v0.28.3 // indirect
 	k8s.io/klog/v2 v2.110.1 // indirect
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
