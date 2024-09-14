@@ -163,8 +163,12 @@ def teardown(cluster1, cluster2):
         "--wait=false",
         context=cluster2,
     )
-    kubectl.delete("--kustomize", "source", "--ignore-not-found", context=cluster1)
-    kubectl.delete("--kustomize", "destination", "--ignore-not-found", context=cluster2)
+
+    print(f"Waiting until namespace '{NAMESPACE}' is deleted in cluster '{cluster1}'")
+    kubectl.wait("ns", NAMESPACE, "--for=delete", "--timeout=120s", context=cluster1)
+
+    print(f"Waiting until namespace '{NAMESPACE}' is deleted in cluster '{cluster2}'")
+    kubectl.wait("ns", NAMESPACE, "--for=delete", "--timeout=120s", context=cluster2)
 
 
 if len(sys.argv) != 3:
