@@ -7,6 +7,8 @@ import json
 import os
 import sys
 
+import yaml
+
 import drenv
 from drenv import kubectl
 from drenv import subctl
@@ -130,7 +132,7 @@ def run_replication(cluster):
     )
     status = json.loads(out)
     print("Replication status:")
-    print(json.dumps(status, indent=2))
+    print(yaml.dump(status))
 
 
 def teardown(cluster1, cluster2):
