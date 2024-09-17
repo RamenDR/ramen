@@ -3,7 +3,7 @@ set -e
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 
-required_version="release-0.17"
+required_version="release-0.19"
 source_url="sigs.k8s.io/controller-runtime/tools/setup-envtest@${required_version}"
 target_dir="${script_dir}/../testbin"
 target_path="${target_dir}/setup-envtest"
