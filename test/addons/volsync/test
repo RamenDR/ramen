@@ -7,6 +7,8 @@ import json
 import os
 import sys
 
+import yaml
+
 import drenv
 from drenv import kubectl
 from drenv import subctl
@@ -130,7 +132,7 @@ def run_replication(cluster):
     )
     status = json.loads(out)
     print("Replication status:")
-    print(json.dumps(status, indent=2))
+    print(yaml.dump(status))
 
 
 def teardown(cluster1, cluster2):
@@ -138,8 +140,13 @@ def teardown(cluster1, cluster2):
     Remove deployments from both clusters. This also deletes additonal
     resources created in the same namespace.
     """
-    print("Cleaning up clusters")
+    print(f"Delete replication source in cluster '{cluster1}'")
+    kubectl.delete("--filename", "source/replication-src.yaml", context=cluster1)
+
+    print(f"Unexporting volsync service in cluster '{cluster2}'")
     subctl.unexport("service", VOLSYNC_SERVICE, cluster2, namespace=NAMESPACE)
+
+    print(f"Delete source in cluster '{cluster1}'")
     kubectl.delete(
         "--kustomize",
         "source",
@@ -147,6 +154,8 @@ def teardown(cluster1, cluster2):
         "--wait=false",
         context=cluster1,
     )
+
+    print(f"Delete destination in cluster '{cluster2}'")
     kubectl.delete(
         "--kustomize",
         "destination",
@@ -154,8 +163,12 @@ def teardown(cluster1, cluster2):
         "--wait=false",
         context=cluster2,
     )
-    kubectl.delete("--kustomize", "source", "--ignore-not-found", context=cluster1)
-    kubectl.delete("--kustomize", "destination", "--ignore-not-found", context=cluster2)
+
+    print(f"Waiting until namespace '{NAMESPACE}' is deleted in cluster '{cluster1}'")
+    kubectl.wait("ns", NAMESPACE, "--for=delete", "--timeout=120s", context=cluster1)
+
+    print(f"Waiting until namespace '{NAMESPACE}' is deleted in cluster '{cluster2}'")
+    kubectl.wait("ns", NAMESPACE, "--for=delete", "--timeout=120s", context=cluster2)
 
 
 if len(sys.argv) != 3:
