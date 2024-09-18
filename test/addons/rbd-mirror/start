@@ -231,6 +231,15 @@ def deploy_vrc_sample(cluster):
     )
 
 
+def deploy_vgrc_sample(cluster):
+    print(f"Applying vgrc sample in cluster '{cluster}'")
+    kubectl.apply(
+        "--filename=vgrc-sample.yaml",
+        "--namespace=rook-ceph",
+        context=cluster,
+    )
+
+
 if len(sys.argv) != 3:
     print(f"Usage: {sys.argv[0]} cluster1 cluster2")
     sys.exit(1)
@@ -267,5 +276,8 @@ wait_until_pool_mirroring_is_healthy(cluster2)
 
 deploy_vrc_sample(cluster1)
 deploy_vrc_sample(cluster2)
+
+deploy_vgrc_sample(cluster1)
+deploy_vgrc_sample(cluster2)
 
 print("Mirroring was setup successfully")
