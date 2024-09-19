@@ -1,4 +1,5 @@
 ---
 resources:
-  - https://github.com/kubernetes-csi/external-snapshotter/deploy/kubernetes/snapshot-controller?ref=v8.1.0
+  - https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/refs/tags/v8.1.0/deploy/kubernetes/snapshot-controller/rbac-snapshot-controller.yaml
+  - https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/refs/tags/v8.1.0/deploy/kubernetes/snapshot-controller/setup-snapshot-controller.yaml
 namespace: kube-system
