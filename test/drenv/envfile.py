@@ -46,11 +46,11 @@ _PLATFORM_DEFAULTS = {
     },
     "darwin": {
         PROVIDER: {
-            "x86_64": "minikube",
+            "x86_64": "lima",
             "arm64": "lima",
         },
         VM: {
-            "x86_64": "hyperkit",
+            "x86_64": "",
             "arm64": "",
         },
         CONTAINER: "podman",
