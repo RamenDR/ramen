@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+# yamllint disable rule:line-length
+name: E2E Daily
+
+on:  # yamllint disable-line rule:truthy
+  # Run every day on 03:00.
+  schedule:
+    - cron: '0 3 * * *'
+  # Allow manual run.
+  # (Actions -> E2E Daily -> Run workflow)
+  workflow_dispatch:
+
+jobs:
+  refresh-cache:
+    runs-on: [self-hosted, e2e-rdr]
+    if: github.repository == 'RamenDR/ramen'
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Install drenv
+        run: pip install -e test
+
+      - name: Refresh cache
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 2
+          retry_wait_seconds: 60
+          max_attempts: 10
+          command: |
+            cd test
+            drenv cache -v envs/regional-dr.yaml
