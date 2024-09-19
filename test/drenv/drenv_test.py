@@ -2,15 +2,17 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
+import logging
 import os
+import subprocess
 
-import yaml
 import pytest
 
 import drenv
 from drenv import cluster
 from drenv import commands
 from drenv import kubectl
+from drenv import yaml
 
 EXAMPLE_ENV = os.path.join("envs", "example.yaml")
 EXTERNAL_ENV = os.path.join("envs", "external.yaml")
@@ -19,23 +21,23 @@ EXTERNAL_ENV = os.path.join("envs", "external.yaml")
 def test_start_unknown():
     # Cluster does not exists, so it should fail.
     with pytest.raises(commands.Error):
-        commands.run("drenv", "start", "--name-prefix", "unknown-", EXTERNAL_ENV)
+        watch("drenv", "start", "--name-prefix", "unknown-", EXTERNAL_ENV, "--verbose")
 
 
 def test_start(tmpenv):
-    commands.run("drenv", "start", "--name-prefix", tmpenv.prefix, EXTERNAL_ENV)
+    watch("drenv", "start", "--name-prefix", tmpenv.prefix, EXTERNAL_ENV, "--verbose")
     assert cluster.status(tmpenv.prefix + "cluster") == cluster.READY
 
 
 def test_dump_without_prefix():
-    out = commands.run("drenv", "dump", EXAMPLE_ENV)
+    out = run("drenv", "dump", EXAMPLE_ENV)
     dump = yaml.safe_load(out)
     assert dump["profiles"][0]["name"] == "ex1"
     assert dump["profiles"][1]["name"] == "ex2"
 
 
 def test_dump_with_prefix():
-    out = commands.run("drenv", "dump", "--name-prefix", "test-", EXAMPLE_ENV)
+    out = run("drenv", "dump", "--name-prefix", "test-", EXAMPLE_ENV)
     dump = yaml.safe_load(out)
     assert dump["profiles"][0]["name"] == "test-ex1"
     assert dump["profiles"][1]["name"] == "test-ex2"
@@ -43,23 +45,23 @@ def test_dump_with_prefix():
 
 def test_stop_unknown():
     # Does nothing, so should succeed.
-    commands.run("drenv", "stop", "--name-prefix", "unknown-", EXTERNAL_ENV)
+    run("drenv", "stop", "--name-prefix", "unknown-", EXTERNAL_ENV)
 
 
 def test_stop(tmpenv):
     # Stop does nothing, so cluster must be ready.
-    commands.run("drenv", "stop", "--name-prefix", tmpenv.prefix, EXTERNAL_ENV)
+    run("drenv", "stop", "--name-prefix", tmpenv.prefix, EXTERNAL_ENV)
     assert cluster.status(tmpenv.prefix + "cluster") == cluster.READY
 
 
 def test_delete_unknown():
     # Does nothing, so should succeed.
-    commands.run("drenv", "delete", "--name-prefix", "unknown-", EXTERNAL_ENV)
+    run("drenv", "delete", "--name-prefix", "unknown-", EXTERNAL_ENV)
 
 
 def test_delete(tmpenv):
     # Delete does nothing, so cluster must be ready.
-    commands.run("drenv", "delete", "--name-prefix", tmpenv.prefix, EXTERNAL_ENV)
+    run("drenv", "delete", "--name-prefix", tmpenv.prefix, EXTERNAL_ENV)
     assert cluster.status(tmpenv.prefix + "cluster") == cluster.READY
 
 
@@ -76,7 +78,7 @@ profiles:
     path = tmpdir.join("missing-addon.yaml")
     path.write(content)
     with pytest.raises(commands.Error):
-        commands.run("drenv", "start", str(path))
+        run("drenv", "start", str(path))
 
 
 def test_kustomization(tmpdir):
@@ -147,9 +149,19 @@ def get_config(context=None, kubeconfig=None):
     args = [
         "view",
         "--minify",
+        "--flatten",
         "--output=json",
     ]
     if kubeconfig:
         args.append(f"--kubeconfig={kubeconfig}")
     out = kubectl.config(*args, context=context)
     return json.loads(out)
+
+
+def run(*args):
+    return commands.run(*args)
+
+
+def watch(*args):
+    for line in commands.watch(*args, stderr=subprocess.STDOUT):
+        logging.debug("%s", line)

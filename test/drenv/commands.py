@@ -70,7 +70,7 @@ class StreamTimeout(Exception):
     """
 
 
-def run(*args, input=None, decode=True, env=None):
+def run(*args, input=None, stdin=None, decode=True, env=None, cwd=None):
     """
     Run command args and return the output of the command.
 
@@ -90,11 +90,11 @@ def run(*args, input=None, decode=True, env=None):
         try:
             p = subprocess.Popen(
                 args,
-                # Avoid blocking foerver if there is no input.
-                stdin=subprocess.PIPE if input else subprocess.DEVNULL,
+                stdin=_select_stdin(input, stdin),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 env=env,
+                cwd=cwd,
             )
         except OSError as e:
             raise Error(args, f"Could not execute: {e}").with_exception(e)
@@ -108,9 +108,24 @@ def run(*args, input=None, decode=True, env=None):
     return output.decode() if decode else output
 
 
-def watch(*args, input=None, keepends=False, decode=True, timeout=None, env=None):
+def watch(
+    *args,
+    input=None,
+    keepends=False,
+    decode=True,
+    timeout=None,
+    env=None,
+    stdin=None,
+    stderr=subprocess.PIPE,
+    cwd=None,
+):
     """
     Run command args, iterating over lines read from the child process stdout.
+
+    Some commands have no output and log everyting to stderr (like drenv). To
+    watch the output call with stderr=subprocess.STDOUT. When such command
+    fails, we have always have empty error, since the content was already
+    yielded to the caller.
 
     Assumes that the child process output UTF-8. Will raise if the command
     outputs binary data. This is not a problem in this projects since all our
@@ -141,11 +156,11 @@ def watch(*args, input=None, keepends=False, decode=True, timeout=None, env=None
         try:
             p = subprocess.Popen(
                 args,
-                # Avoid blocking foerver if there is no input.
-                stdin=subprocess.PIPE if input else subprocess.DEVNULL,
+                stdin=_select_stdin(input, stdin),
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=stderr,
                 env=env,
+                cwd=cwd,
             )
         except OSError as e:
             raise Error(args, f"Could not execute: {e}").with_exception(e)
@@ -258,6 +273,17 @@ def stream(proc, input=None, bufsize=32 << 10, timeout=None):
                         continue
 
                     yield key.data, data
+
+
+def _select_stdin(input=None, stdin=None):
+    if input and stdin:
+        raise RuntimeError("intput and stdin are mutually exclusive")
+    if input:
+        return subprocess.PIPE
+    if stdin:
+        return stdin
+    # Avoid blocking foerver if there is no input.
+    return subprocess.DEVNULL
 
 
 def _remaining_time(deadline):

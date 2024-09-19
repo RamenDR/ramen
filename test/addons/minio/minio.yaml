@@ -9,6 +9,21 @@ metadata:
   name: minio
 ---
 apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: minio-storage-pv
+  labels:
+    component: minio
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: /mnt/minio
+---
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   namespace: minio
@@ -16,8 +31,9 @@ metadata:
   labels:
     component: minio
 spec:
-  accessModes: ["ReadWriteOnce"]
-  storageClassName: "standard"
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: manual
   resources:
     requests:
       storage: 10Gi
@@ -47,7 +63,7 @@ spec:
             readOnly: false
       containers:
         - name: minio
-          image: quay.io/minio/minio:RELEASE.2024-03-15T01-07-19Z
+          image: quay.io/minio/minio:RELEASE.2024-08-29T01-40-52Z
           imagePullPolicy: IfNotPresent
           resources:
             limits:

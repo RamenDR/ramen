@@ -1,18 +1,24 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import copy
+import logging
+import os
 import platform
 
-import yaml
+from . import yaml
 
+PROVIDER = "$provider"
 VM = "$vm"
 CONTAINER = "$container"
 SHARED_NETWORK = "$network"
 
 _PLATFORM_DEFAULTS = {
     "__default__": {
+        PROVIDER: {
+            "x86_64": "",
+            "arm64": "",
+        },
         VM: {
             "x86_64": "",
             "arm64": "",
@@ -24,6 +30,10 @@ _PLATFORM_DEFAULTS = {
         },
     },
     "linux": {
+        PROVIDER: {
+            "x86_64": "minikube",
+            "arm64": "",
+        },
         VM: {
             "x86_64": "kvm2",
             "arm64": "",
@@ -35,9 +45,13 @@ _PLATFORM_DEFAULTS = {
         },
     },
     "darwin": {
+        PROVIDER: {
+            "x86_64": "minikube",
+            "arm64": "lima",
+        },
         VM: {
             "x86_64": "hyperkit",
-            "arm64": "qemu",
+            "arm64": "",
         },
         CONTAINER: "podman",
         SHARED_NETWORK: {
@@ -49,9 +63,9 @@ _PLATFORM_DEFAULTS = {
 
 
 def platform_defaults():
-    # By default, use minikube defaults.
-
+    # By default, use provider defaults.
     operating_system = platform.system().lower()
+    logging.debug("[envfile] Detected os: '%s'", operating_system)
     return _PLATFORM_DEFAULTS.get(operating_system, _PLATFORM_DEFAULTS["__default__"])
 
 
@@ -122,7 +136,8 @@ def _validate_profile(profile, addons_root):
     # If True, this is an external cluster and we don't have to start it.
     profile.setdefault("external", False)
 
-    # Properties for minikube created cluster.
+    # Properties for drenv managed cluster.
+    profile.setdefault("provider", PROVIDER)
     profile.setdefault("driver", VM)
     profile.setdefault("container_runtime", "")
     profile.setdefault("extra_disks", 0)
@@ -149,6 +164,10 @@ def _validate_profile(profile, addons_root):
 def _validate_platform_defaults(profile):
     platform = platform_defaults()
     machine = os.uname().machine
+    logging.debug("[envfile] Detected machine: '%s'", machine)
+
+    if profile["provider"] == PROVIDER:
+        profile["provider"] = platform[PROVIDER][machine]
 
     if profile["driver"] == VM:
         profile["driver"] = platform[VM][machine]
@@ -157,6 +176,10 @@ def _validate_platform_defaults(profile):
 
     if profile["network"] == SHARED_NETWORK:
         profile["network"] = platform[SHARED_NETWORK][machine]
+
+    logging.debug("[envfile] Using provider: '%s'", profile["provider"])
+    logging.debug("[envfile] Using driver: '%s'", profile["driver"])
+    logging.debug("[envfile] Using network: '%s'", profile["network"])
 
 
 def _validate_worker(worker, env, addons_root, index):

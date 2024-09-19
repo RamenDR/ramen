@@ -17,7 +17,12 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/RamenDR/ramen",
-    packages=["drenv"],
+    packages=[
+        "drenv",
+        "drenv.providers",
+        "drenv.providers.lima",
+    ],
+    include_package_data=True,
     install_requires=[
         "PyYAML",
         "toml",

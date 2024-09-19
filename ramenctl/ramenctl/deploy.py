@@ -3,9 +3,11 @@
 
 import concurrent.futures
 import os
+import subprocess
 import tempfile
 
 from drenv import kubectl
+
 from . import command
 
 IMAGE = "quay.io/ramendr/ramen-operator:latest"
@@ -33,32 +35,37 @@ def run(args):
     command.info("Preparing resources")
     command.watch("make", "-C", args.source_dir, "resources")
 
+    load_image(args)
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = []
+
+        if env["hub"]:
+            f = executor.submit(deploy, args, env["hub"], "hub", platform="k8s")
+            futures.append(f)
+
+        for cluster in env["clusters"]:
+            f = executor.submit(deploy, args, cluster, "dr-cluster")
+            futures.append(f)
+
+        for f in concurrent.futures.as_completed(futures):
+            f.result()
+
+
+def load_image(args):
+    command.info("Loading image '%s'", args.image)
     with tempfile.TemporaryDirectory(prefix="ramenctl-deploy-") as tmpdir:
         tar = os.path.join(tmpdir, "image.tar")
-        command.info("Saving image '%s'", args.image)
         command.watch("podman", "save", args.image, "-o", tar)
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            futures = []
-
-            if env["hub"]:
-                f = executor.submit(
-                    deploy, args, env["hub"], tar, "hub", platform="k8s"
-                )
-                futures.append(f)
-
-            for cluster in env["clusters"]:
-                f = executor.submit(deploy, args, cluster, tar, "dr-cluster")
-                futures.append(f)
-
-            for f in concurrent.futures.as_completed(futures):
-                f.result()
+        cmd = ["drenv", "load", f"--image={tar}"]
+        if args.name_prefix:
+            cmd.append(f"--name-prefix={args.name_prefix}")
+        cmd.append(os.path.abspath(args.filename))
+        work_dir = os.path.join(args.source_dir, "test") if args.source_dir else None
+        command.watch(*cmd, stderr=subprocess.STDOUT, cwd=work_dir)
 
 
-def deploy(args, cluster, tar, deploy_type, platform="", timeout=120):
-    command.info("Loading image in cluster '%s'", cluster)
-    command.watch("minikube", "--profile", cluster, "image", "load", tar)
-
+def deploy(args, cluster, deploy_type, platform="", timeout=120):
     command.info("Deploying ramen operator in cluster '%s'", cluster)
     overlay = os.path.join(args.source_dir, f"config/{deploy_type}/default", platform)
     yaml = kubectl.kustomize(overlay, load_restrictor="LoadRestrictionsNone")

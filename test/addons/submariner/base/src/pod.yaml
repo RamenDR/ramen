@@ -17,5 +17,7 @@ spec:
         - -c
         - |
           trap exit TERM
-          sleep 300 &
-          wait
+          while true; do
+            sleep 10 &
+            wait
+          done

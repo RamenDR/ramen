@@ -161,6 +161,14 @@ def test_watch_with_input_large():
     assert output == [text]
 
 
+def test_watch_stdin(tmpdir):
+    path = tmpdir.join("file")
+    path.write("line1\nline2\n")
+    with open(path) as f:
+        output = list(commands.watch("cat", stdin=f))
+    assert output == ["line1", "line2"]
+
+
 def test_watch_lines():
     script = """
 for i in range(10):
@@ -168,6 +176,35 @@ for i in range(10):
 """
     output = list(commands.watch("python3", "-c", script))
     assert output == ["line %d" % i for i in range(10)]
+
+
+def test_watch_stderr_success():
+    # Watching command like drenv, logging only to stderr without any output.
+    script = r"""
+import sys
+for i in range(10):
+    sys.stderr.write(f"line {i}\n")
+"""
+    cmd = ["python3", "-c", script]
+    output = list(commands.watch(*cmd, stderr=subprocess.STDOUT))
+    assert output == [f"line {i}" for i in range(10)]
+
+
+def test_watch_stderr_error():
+    # When stderr is redirected to stdout the error is empty.
+    script = r"""
+import sys
+sys.stderr.write("before error\n")
+sys.exit("error")
+"""
+    cmd = ["python3", "-c", script]
+    output = []
+    with pytest.raises(commands.Error) as e:
+        for line in commands.watch(*cmd, stderr=subprocess.STDOUT):
+            output.append(line)
+
+    assert output == ["before error", "error"]
+    assert e.value.error == ""
 
 
 def test_watch_partial_lines():
@@ -318,6 +355,12 @@ def test_watch_env():
     assert output == [env["DRENV_COMMAND_TEST"]]
 
 
+def test_watch_cwd(tmpdir):
+    tmpdir.join("file").write("content")
+    output = list(commands.watch("cat", "file", cwd=str(tmpdir)))
+    assert output == ["content"]
+
+
 # Running commands.
 
 
@@ -329,6 +372,14 @@ def test_run():
 def test_run_input():
     output = commands.run("cat", input="input")
     assert output == "input"
+
+
+def test_run_stdin(tmpdir):
+    path = tmpdir.join("file")
+    path.write("line1\nline2\n")
+    with open(path) as f:
+        output = commands.run("cat", stdin=f)
+    assert output == "line1\nline2\n"
 
 
 def test_run_input_non_ascii():
@@ -403,6 +454,12 @@ def test_run_env():
     env["DRENV_COMMAND_TEST"] = "value"
     out = commands.run("sh", "-c", "printf $DRENV_COMMAND_TEST", env=env)
     assert out == env["DRENV_COMMAND_TEST"]
+
+
+def test_run_cwd(tmpdir):
+    tmpdir.join("file").write("content")
+    output = commands.run("cat", "file", cwd=str(tmpdir))
+    assert output == "content"
 
 
 # Formatting errors.

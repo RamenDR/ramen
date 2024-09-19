@@ -176,6 +176,9 @@ test-drcluster: generate manifests envtest ## Run DRCluster tests.
 test-drpolicy: generate manifests envtest ## Run DRPolicy tests.
 	 go test ./internal/controller -coverprofile cover.out  -ginkgo.focus DRPolicyController
 
+test-drclusterconfig: generate manifests envtest ## Run DRClusterConfig tests.
+	 go test ./internal/controller -coverprofile cover.out  -ginkgo.focus DRClusterConfig
+
 test-util: generate manifests envtest ## Run util tests.
 	 go test ./internal/controller/util -coverprofile cover.out
 

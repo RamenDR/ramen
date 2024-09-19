@@ -27,9 +27,6 @@ cp coverage.pth $venv/lib/python*/site-packages
 echo "Adding venv symlink..."
 ln -sf $venv/bin/activate venv
 
-echo "Setting up minikube for drenv"
-$venv/bin/drenv setup -v
-
 echo
 echo "To activate the environment run:"
 echo

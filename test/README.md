@@ -8,7 +8,7 @@ SPDX-License-Identifier: Apache-2.0
 This directory provides tools and configuration for creating Ramen test
 environment.
 
-## Setup
+## Setup on Linux
 
 1. Setup a development environment as describe in
    [developer quick start guide](../docs/devel-quick-start.md)
@@ -41,7 +41,7 @@ environment.
 1. Install `subctl` tool, See
    [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/)
    for the details.
-   Version v0.17.0 or later is required.
+   Version v0.18.0 or later is required.
 
 1. Install the `velero` tool
 
@@ -110,14 +110,82 @@ environment.
 1. Install the `kubectl-gather` plugin
 
    ```
-   curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/v0.4.1/kubectl-gather-v0.4.1-linux-amd64
+   curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/v0.5.1/kubectl-gather-v0.5.1-linux-amd64
    sudo install kubectl-gather /usr/local/bin
    rm kubectl-gather
    ```
 
    For more info see [kubectl-gather](https://github.com/nirs/kubectl-gather)
 
-### Testing that drenv is healthy
+## Setup on macOS
+
+1. Install the [Homebrew package manager](https://brew.sh/)
+
+1. Install required packages
+
+   ```
+   brew install go kubectl kustomize helm velero virtctl minio-mc argocd
+   ```
+
+1. Install the `clusteradm` tool. See
+   [Install clusteradm CLI tool](https://open-cluster-management.io/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool)
+   for the details. Version v0.8.1 or later is required.
+
+1. Install the `subctl` tool, See
+   [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/)
+   for the details. Version v0.18.0 or later is required.
+
+1. Install the `kubectl-gather` plugin
+
+   ```
+   curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/v0.5.1/kubectl-gather-v0.5.1-darwin-arm64
+   sudo install kubectl-gather /usr/local/bin
+   rm kubectl-gather
+   ```
+
+   For more info see [kubectl-gather](https://github.com/nirs/kubectl-gather)
+
+1. Install `lima` from source
+
+   > [!NOTE]
+   > Do not install lima from brew, it is too old.
+
+   Clone and build lima:
+
+   ```
+   git clone https://github.com/lima-vm/lima.git
+   cd lima
+   make
+   ```
+
+   Edit `~/.zshrc` and add `$HOME/lima/_output/bin` directory to the PATH:
+
+   ```
+   PATH="$HOME/lima/_output/bin:$PATH"
+   export PATH
+   ```
+
+   Open a new shell or run this in the current shell:
+
+   ```
+   export PATH="$HOME/lima/_output/bin:$PATH"
+   ```
+
+1. Install `socket_vmnet` from source
+
+   > [!IMPORTANT]
+   > Do not install socket_vmnet from brew, it is insecure.
+
+   ```
+   git clone https://github.com/lima-vm/socket_vmnet.git
+   cd socket_vmnet
+   sudo make PREFIX=/opt/socket_vmnet install.bin
+   sudo make PREFIX=/opt/socket_vmnet install.launchd
+   ```
+
+   For more info see [Installing socket_vmnet from source](https://github.com/lima-vm/socket_vmnet?tab=readme-ov-file#from-source)
+
+## Testing that drenv is healthy
 
 Run this script to make sure `drenv` works:
 
@@ -539,9 +607,11 @@ $ drenv delete envs/example.yaml
 
 - `templates`: templates for creating new profiles.
     - `name`: profile name.
-    - `external`: true if this is existing external cluster. In this
-      case the tool will not start a minikube cluster and all other
-      options are ignored.
+    - `provider`: cluster provider. The default provider is "minikube",
+      creating cluster using VM or containers.  Use "external" to use
+      exsiting clusters not managed by `drenv`. Use the special value
+      "$provider" to select the best provider for the host. (default
+      "$provider")
     - `driver`: The minikube driver. On Linux, the default drivers are kvm2 and
       docker for VMs and containers. On MacOS, the defaults are hyperkit and
       podman. Use "$vm" and "$container" values to use the recommended VM and
