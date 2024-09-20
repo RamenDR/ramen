@@ -1,3 +1,8 @@
 ---
 resources:
-  - https://github.com/kubernetes-csi/external-snapshotter/client/config/crd?ref=v8.1.0
+  - https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/refs/tags/v8.1.0/client/config/crd/groupsnapshot.storage.k8s.io_volumegroupsnapshotclasses.yaml
+  - https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/refs/tags/v8.1.0/client/config/crd/groupsnapshot.storage.k8s.io_volumegroupsnapshotcontents.yaml
+  - https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/refs/tags/v8.1.0/client/config/crd/groupsnapshot.storage.k8s.io_volumegroupsnapshots.yaml
+  - https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/refs/tags/v8.1.0/client/config/crd/snapshot.storage.k8s.io_volumesnapshotclasses.yaml
+  - https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/refs/tags/v8.1.0/client/config/crd/snapshot.storage.k8s.io_volumesnapshotcontents.yaml
+  - https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/refs/tags/v8.1.0/client/config/crd/snapshot.storage.k8s.io_volumesnapshots.yaml

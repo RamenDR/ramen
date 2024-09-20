@@ -676,6 +676,10 @@ func (u *drclusterInstance) generateDRClusterConfig() (*ramen.DRClusterConfig, e
 	added := map[string]bool{}
 
 	for idx := range drpolicies.Items {
+		if util.ResourceIsDeleted(&drpolicies.Items[idx]) {
+			continue
+		}
+
 		if drpolicies.Items[idx].Spec.SchedulingInterval == "" {
 			continue
 		}
