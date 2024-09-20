@@ -40,10 +40,19 @@ black:
 black-reformat:
 	python3 -m black $(sources)
 
-test:
+test: unit-test cluster-test
+
+unit-test:
+	$(call run_test,not cluster)
+
+cluster-test:
+	$(call run_test,cluster)
+
+define run_test
 	rm -f .coverage.*
-	COVERAGE_PROCESS_START=.coveragerc python3 -m coverage run -m pytest
-	python3 -m coverage combine --quiet
+	COVERAGE_PROCESS_START=.coveragerc python3 -m coverage run -m pytest -m "$1"
+	python3 -m coverage combine --append --quiet
+endef
 
 coverage:
 	python3 -m coverage report
@@ -51,6 +60,9 @@ coverage:
 coverage-html:
 	python3 -m coverage html
 	xdg-open htmlcov/index.html
+
+coverage-clean:
+	rm -f .coverage
 
 cluster:
 	drenv start --name-prefix $(prefix) $(env) --verbose --timeout $(TIMEOUT)
