@@ -331,7 +331,9 @@ func (v *VRGInstance) protectPVC(pvc *corev1.PersistentVolumeClaim, log logr.Log
 	vrg := v.instance
 	ownerAdded := false
 
-	switch comparison := rmnutil.ObjectOwnerSetIfNotAlready(pvc, vrg); comparison {
+	comparison := rmnutil.ObjectOwnerSetIfNotAlready(pvc, vrg)
+	log.Info("***ASN, pvc %s ownership comparision result for %v", pvc.Name, comparison)
+	switch comparison {
 	case rmnutil.Absent:
 		ownerAdded = true
 	case rmnutil.Same:
