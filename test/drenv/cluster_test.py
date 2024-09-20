@@ -5,6 +5,8 @@ import pytest
 
 from drenv import cluster
 
+pytestmark = pytest.mark.cluster
+
 
 def test_status_unknown():
     assert cluster.status("no-such-profile") == cluster.UNKNOWN
