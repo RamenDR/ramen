@@ -76,6 +76,11 @@ def parse_args():
         metavar="N",
         help="maximum number of workers per profile",
     )
+    p.add_argument(
+        "--timeout",
+        type=int,
+        help="time in seconds to wait until clsuter is started",
+    )
 
     p = add_command(sp, "stop", do_stop, help="stop an environment")
     p.add_argument(
@@ -379,7 +384,7 @@ def start_cluster(profile, hooks=(), args=None, **options):
     provider = providers.get(profile["provider"])
     existing = provider.exists(profile)
 
-    provider.start(profile, verbose=args.verbose)
+    provider.start(profile, verbose=args.verbose, timeout=args.timeout)
     provider.configure(profile, existing=existing)
 
     if existing:

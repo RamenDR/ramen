@@ -61,7 +61,7 @@ def exists(profile):
     return False
 
 
-def start(profile, verbose=False):
+def start(profile, verbose=False, timeout=None):
     start = time.monotonic()
     logging.info("[%s] Starting minikube cluster", profile["name"])
 
@@ -119,7 +119,7 @@ def start(profile, verbose=False):
     # TODO: Use --interactive=false when the bug is fixed.
     # https://github.com/kubernetes/minikube/issues/19518
 
-    _watch("start", *args, profile=profile["name"])
+    _watch("start", *args, profile=profile["name"], timeout=timeout)
 
     logging.info(
         "[%s] Cluster started in %.2f seconds",
@@ -364,11 +364,11 @@ def _run(command, *args, profile=None, output=None):
     return commands.run(*cmd)
 
 
-def _watch(command, *args, profile=None):
+def _watch(command, *args, profile=None, timeout=None):
     cmd = ["minikube", command, "--profile", profile]
     cmd.extend(args)
     logging.debug("[%s] Running %s", profile, cmd)
-    for line in commands.watch(*cmd):
+    for line in commands.watch(*cmd, timeout=timeout):
         logging.debug("[%s] %s", profile, line)
 
 
