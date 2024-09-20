@@ -1239,7 +1239,7 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 // functions to be changed would be processVRAsPrimary(), processVRAsSecondary()
 // to either receive pvc NamespacedName or pvc itself as an additional argument.
 
-//nolint:funlen,cyclop
+//nolint:funlen,cyclop,gocognit
 func (v *VRGInstance) selectVolumeReplicationClass(
 	namespacedName types.NamespacedName,
 ) (*volrep.VolumeReplicationClass, error) {
@@ -1269,6 +1269,8 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 		return nil, fmt.Errorf("missing storageID label in storageclass of pvc %s", namespacedName)
 	}
 
+	peerClasses := len(v.instance.Spec.Async.PeerClasses)
+
 	matchingReplicationClassList := []*volrep.VolumeReplicationClass{}
 
 	for index := range v.replClassList.Items {
@@ -1285,13 +1287,21 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 			continue
 		}
 
-		sIDFromReplicationClass, exists := replicationClass.GetLabels()[StorageIDLabel]
-		if !exists {
-			continue
-		}
+		// if peerClasses does not exist, replicationClasses would not have SID in
+		// older ramen versions, this check is neeed because we need to handle upgrade
+		// scenario where SID is not present in replicatioClass.
 
-		if sIDFromReplicationClass != sID {
-			continue
+		// if peerClass exist, continue to check if SID matches, or skip the check and proceed
+		// to append to matchingReplicationClassList
+		if peerClasses != 0 {
+			sIDFromReplicationClass, exists := replicationClass.GetLabels()[StorageIDLabel]
+			if !exists {
+				continue
+			}
+
+			if sIDFromReplicationClass != sID {
+				continue
+			}
 		}
 
 		matchingReplicationClassList = append(matchingReplicationClassList, replicationClass)
