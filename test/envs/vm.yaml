@@ -8,7 +8,8 @@ profiles:
   - name: cluster
     driver: $vm
     container_runtime: containerd
-    memory: "3g"
+    cpus: 1
+    memory: "2g"
     workers:
       - addons:
           - name: example
