@@ -147,7 +147,12 @@ provision:
       featureGates:
         StatefulSetAutoDeletePVC: true
       EOF
-      kubeadm init --config kubeadm-config.yaml
+
+      # We ignore NumCPU preflight error for running a minimal cluster in
+      # github actions and for testing drenv.
+      # [ERROR NumCPU]: the number of available CPUs 1 is less than the required 2
+      kubeadm init --config kubeadm-config.yaml --ignore-preflight-errors NumCPU
+
       # Installing a Pod network add-on
       kubectl apply -f https://github.com/flannel-io/flannel/releases/download/v0.24.0/kube-flannel.yml
       # Control plane node isolation
