@@ -857,7 +857,7 @@ func (v *VRGInstance) separatePVCsUsingStorageClassProvisioner(pvcList *corev1.P
 
 		switch len(v.instance.Spec.Async.PeerClasses) {
 		case 0:
-			v.log.Info("validate using sc provisioner")
+			v.log.Info("validate using only sc provisioner")
 
 			replicationClassMatchFound := false
 
