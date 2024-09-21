@@ -181,7 +181,9 @@ def _write_config(profile, path):
     # The "vz" type is required to support amd64 images on arm64, needed for
     # OCM, and also provide the best performance.
     config["vmType"] = "vz"
-    config["rosetta"] = {"enabled": True, "binfmt": True}
+
+    if profile["rosetta"]:
+        config["rosetta"] = {"enabled": True, "binfmt": True}
 
     # We always use socket_vmnet to get shared network.
     config["networks"] = [{"socket": "/var/run/socket_vmnet"}]

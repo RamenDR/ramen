@@ -10,6 +10,7 @@ profiles:
     container_runtime: containerd
     cpus: 1
     memory: "2g"
+    rosetta: false
     workers:
       - addons:
           - name: example
