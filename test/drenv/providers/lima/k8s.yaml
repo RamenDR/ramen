@@ -126,12 +126,12 @@ provision:
         criSocket: unix:///run/containerd/containerd.sock
         kubeletExtraArgs:
           # Ramen: use specific network
-          node-ip: $ADVERTISE_ADDRESS
+          node-ip: "$ADVERTISE_ADDRESS"
           # Ramen: speed up image pulls
           serialize-image-pulls: "false"
       # Ramen: serve specific network.
       localAPIEndpoint:
-        advertiseAddress: $ADVERTISE_ADDRESS
+        advertiseAddress: "$ADVERTISE_ADDRESS"
       ---
       kind: ClusterConfiguration
       apiVersion: kubeadm.k8s.io/v1beta3
