@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+resources:
+- vrc-sample.yaml
+- vgrc-sample.yaml
+- rbd-mirror.yaml
+
+namespace: rook-ceph
