@@ -26,9 +26,8 @@ containerd:
 # forwarding cannot work for multiple clusters since same port from multiple
 # clusters is mapped to the same host port.
 portForwards:
-  - guestPortRange: [1, 65535]
-    guestIP: "0.0.0.0"
-    ignore: true
+  - ignore: true
+    proto: any
 
 provision:
 
