@@ -155,6 +155,9 @@ provision:
       # [ERROR NumCPU]: the number of available CPUs 1 is less than the required 2
       kubeadm init --config kubeadm-config.yaml --ignore-preflight-errors NumCPU
 
+      # Scale down coredns like minikube
+      kubectl scale deploy coredns -n kube-system --replicas=1
+
       # Installing a Pod network add-on
       kubectl apply -f https://github.com/flannel-io/flannel/releases/download/v0.24.0/kube-flannel.yml
       # Control plane node isolation
