@@ -86,7 +86,7 @@ def disable_rbd_mirror_debug_logs(cluster):
 def configure_rbd_mirroring(cluster, peer_info):
     print(f"Applying rbd mirror secret in cluster '{cluster}'")
 
-    template = drenv.template("rbd-mirror-secret.yaml")
+    template = drenv.template("start-data/rbd-mirror-secret.yaml")
     yaml = template.substitute(peer_info)
     kubectl.apply(
         "--filename=-",
@@ -107,11 +107,7 @@ def configure_rbd_mirroring(cluster, peer_info):
     )
 
     print(f"Apply rbd mirror to cluster '{cluster}'")
-    kubectl.apply(
-        "--filename=rbd-mirror.yaml",
-        "--namespace=rook-ceph",
-        context=cluster,
-    )
+    kubectl.apply("--kustomize=start-data", context=cluster)
 
 
 def wait_until_rbd_mirror_is_ready(cluster):
@@ -222,24 +218,6 @@ def restart_rbd_mirror_daemon(cluster):
     )
 
 
-def deploy_vrc_sample(cluster):
-    print(f"Applying vrc sample in cluster '{cluster}'")
-    kubectl.apply(
-        "--filename=vrc-sample.yaml",
-        "--namespace=rook-ceph",
-        context=cluster,
-    )
-
-
-def deploy_vgrc_sample(cluster):
-    print(f"Applying vgrc sample in cluster '{cluster}'")
-    kubectl.apply(
-        "--filename=vgrc-sample.yaml",
-        "--namespace=rook-ceph",
-        context=cluster,
-    )
-
-
 if len(sys.argv) != 3:
     print(f"Usage: {sys.argv[0]} cluster1 cluster2")
     sys.exit(1)
@@ -273,11 +251,5 @@ log_blocklist(cluster2)
 
 wait_until_pool_mirroring_is_healthy(cluster1)
 wait_until_pool_mirroring_is_healthy(cluster2)
-
-deploy_vrc_sample(cluster1)
-deploy_vrc_sample(cluster2)
-
-deploy_vgrc_sample(cluster1)
-deploy_vgrc_sample(cluster2)
 
 print("Mirroring was setup successfully")

@@ -55,12 +55,8 @@ def rbd_mirror_image_status(cluster, image):
 
 
 def test_volume_replication(primary, secondary):
-    print(f"Deploying pvc {PVC_NAME} in cluster '{primary}'")
-    kubectl.apply(
-        f"--filename={PVC_NAME}.yaml",
-        "--namespace=rook-ceph",
-        context=primary,
-    )
+    print(f"Deploying pvc {PVC_NAME} and vr vr-sample in cluster '{primary}'")
+    kubectl.apply("--kustomize=test-data", context=primary)
 
     print(f"Waiting until pvc {PVC_NAME} is bound in cluster '{primary}'")
     kubectl.wait(
@@ -68,13 +64,6 @@ def test_volume_replication(primary, secondary):
         "--for=jsonpath={.status.phase}=Bound",
         "--namespace=rook-ceph",
         "--timeout=300s",
-        context=primary,
-    )
-
-    print(f"Deploying vr vr-sample in cluster '{primary}'")
-    kubectl.apply(
-        "--filename=vr-sample.yaml",
-        "--namespace=rook-ceph",
         context=primary,
     )
 
@@ -139,19 +128,8 @@ def test_volume_replication(primary, secondary):
     image_status = rbd_mirror_image_status(primary, rbd_image)
     print(json.dumps(image_status, indent=2))
 
-    print(f"Deleting vr vr-sample in primary cluster '{primary}'")
-    kubectl.delete(
-        "volumereplication/vr-sample",
-        "--namespace=rook-ceph",
-        context=primary,
-    )
-
-    print(f"Deleting pvc {PVC_NAME} in primary cluster '{primary}'")
-    kubectl.delete(
-        f"pvc/{PVC_NAME}",
-        "--namespace=rook-ceph",
-        context=primary,
-    )
+    print(f"Deleting pvc {PVC_NAME} and vr vr-sample in primary cluster '{primary}'")
+    kubectl.delete("--kustomize=test-data", context=primary)
 
     print(f"Replication from cluster '{primary}' to cluster '{secondary}' succeeded")
 
