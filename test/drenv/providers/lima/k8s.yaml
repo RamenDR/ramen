@@ -175,7 +175,7 @@ provision:
 
 probes:
 
-  - description: "kubeadm to be installed"
+  - description: "kubeadm installed"
     script: |
       #!/bin/bash
       set -eux -o pipefail
@@ -186,7 +186,7 @@ probes:
     hint: |
       See "/var/log/cloud-init-output.log". in the guest
 
-  - description: "kubeadm to be completed"
+  - description: "kubeadm completed"
     script: |
       #!/bin/bash
       set -eux -o pipefail
@@ -197,12 +197,12 @@ probes:
     hint: |
       The k8s kubeconfig file has not yet been created.
 
-  - description: "kubernetes cluster to be running"
+  - description: "kubernetes cluster is ready"
     script: |
       #!/bin/bash
       set -eux -o pipefail
-      if ! timeout 300s bash -c "until kubectl version >/dev/null 2>&1; do sleep 3; done"; then
-        echo >&2 "kubernetes cluster is not up and running yet"
+      if ! timeout 300s bash -c "until kubectl get --raw /readyz >/dev/null 2>&1; do sleep 3; done"; then
+        echo >&2 "kubernetes cluster is not ready yet"
         exit 1
       fi
 
