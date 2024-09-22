@@ -159,15 +159,17 @@ provision:
 
       # Installing a Pod network add-on
       kubectl apply -f https://github.com/flannel-io/flannel/releases/download/v0.24.0/kube-flannel.yml
+
       # Control plane node isolation
       kubectl taint nodes --all node-role.kubernetes.io/control-plane-
-      mkdir -p ${HOME:-/root}/.kube && cp -f $KUBECONFIG ${HOME:-/root}/.kube/config
 
   - mode: system
     script: |
       #!/bin/bash
       set -eux -o pipefail
-      export KUBECONFIG=/etc/kubernetes/admin.conf
+      KUBECONFIG=/etc/kubernetes/admin.conf
+      mkdir -p ${HOME:-/root}/.kube
+      cp -f $KUBECONFIG ${HOME:-/root}/.kube/config
       mkdir -p {{.Home}}/.kube
       cp -f $KUBECONFIG {{.Home}}/.kube/config
       chown -R {{.User}} {{.Home}}/.kube
