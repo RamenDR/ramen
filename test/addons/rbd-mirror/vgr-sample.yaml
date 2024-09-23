@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+apiVersion: replication.storage.openshift.io/v1alpha1
+kind: VolumeGroupReplication
+metadata:
+  name: vgr-sample
+spec:
+  volumeGroupReplicationClassName: vgrc-sample
+  replicationState: primary
+  source:
+    selector:
+      matchLabels:
+        appname: busybox
+        ramendr.openshift.io/consistency-group: rook-ceph-storage-id
+  autoResync: true
