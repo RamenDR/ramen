@@ -454,6 +454,8 @@ func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
 	}
 
+	log.Info("Deleted ramen annotations from PersistentVolume", "pv", pv.Name)
+
 	ownerRemoved := rmnutil.ObjectOwnerUnsetIfSet(pvc, vrg)
 	// Remove VR finalizer from PVC and the annotation (PVC maybe left behind, so remove the annotation)
 	finalizerRemoved := controllerutil.RemoveFinalizer(pvc, PvcVRFinalizerProtected)
@@ -470,8 +472,8 @@ func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 			pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
 	}
 
-	log1.Info("PVC update for VR deletion",
-		"finalizers", pvc.GetFinalizers(), "labels", pvc.GetLabels(), "annotations", pvc.GetAnnotations())
+	log1.Info("Deleted ramen annotations, labels, and finallizers from PersistentVolumeClaim",
+		"annotations", pvc.GetAnnotations(), "labels", pvc.GetLabels(), "finalizers", pvc.GetFinalizers())
 
 	return nil
 }
@@ -1817,6 +1819,8 @@ func (v *VRGInstance) deleteVR(vrNamespacedName types.NamespacedName, log logr.L
 
 		return nil
 	}
+
+	v.log.Info("Deleted VolumeReplication resource %s/%s", vrNamespacedName.Namespace, vrNamespacedName.Name)
 
 	return v.ensureVRDeletedFromAPIServer(vrNamespacedName, log)
 }
