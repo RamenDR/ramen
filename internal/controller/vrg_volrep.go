@@ -1412,13 +1412,27 @@ func (v *VRGInstance) checkVRStatus(pvc *corev1.PersistentVolumeClaim, volRep *v
 }
 
 // validateVRStatus validates if the VolumeReplication resource has the desired status for the
-// current generation and returns true if so, false otherwise
-//   - When replication state is Primary, only Completed condition is checked.
-//   - When replication state is Secondary, all 3 conditions for Completed/Degraded/Resyncing is
-//     checked and ensured healthy.
+// current generation, deletion status, and repliaction state.
+//
+// We handle 3 cases:
+//   - Primary deleted VRG: If Validated condition exists and false, the VR will never complete and can be
+//     deleted safely. Otherwise Completed condition is checked.
+//   - Primary VRG: Completed condition is checked.
+//   - Secondary VRG: Completed, Degraded and Resyncing conditions are checked and ensured healthy.
 func (v *VRGInstance) validateVRStatus(pvc *corev1.PersistentVolumeClaim, volRep *volrep.VolumeReplication,
 	state ramendrv1alpha1.ReplicationState,
 ) bool {
+	// Check validated for primary during VRG deletion.
+	if state == ramendrv1alpha1.Primary && rmnutil.ResourceIsDeleted(v.instance) {
+		validated, ok := v.validateVRValidatedStatus(volRep)
+		if !validated && ok {
+			v.log.Info(fmt.Sprintf("VolumeReplication %s/%s failed validation and can be deleted",
+				volRep.GetName(), volRep.GetNamespace()))
+
+			return true
+		}
+	}
+
 	// Check completed for both primary and secondary.
 	if !v.validateVRCompletedStatus(pvc, volRep, state) {
 		return false
@@ -1439,6 +1453,21 @@ func (v *VRGInstance) validateVRStatus(pvc *corev1.PersistentVolumeClaim, volRep
 		volRep.GetNamespace()))
 
 	return true
+}
+
+// validateVRValidatedStatus validates that VolumeReplicaion resource was validated.
+// Return 2 booleans
+// - validated: true if the condition is true, otherwise false
+// - ok: true if the check was succeesfull, false if the condition is missing, stale, or unknown.
+func (v *VRGInstance) validateVRValidatedStatus(
+	volRep *volrep.VolumeReplication,
+) (bool, bool) {
+	conditionMet, errorMsg := isVRConditionMet(volRep, volrep.ConditionValidated, metav1.ConditionTrue)
+	if errorMsg != "" {
+		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", errorMsg, volRep.GetName(), volRep.GetNamespace()))
+	}
+
+	return conditionMet, errorMsg == ""
 }
 
 // validateVRCompletedStatus validates if the VolumeReplication resource Completed condition is met and update
