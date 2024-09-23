@@ -1417,6 +1417,34 @@ func (v *VRGInstance) checkVRStatus(pvc *corev1.PersistentVolumeClaim, volRep *v
 func (v *VRGInstance) validateVRStatus(pvc *corev1.PersistentVolumeClaim, volRep *volrep.VolumeReplication,
 	state ramendrv1alpha1.ReplicationState,
 ) bool {
+	// Check completed for both primary and secondary.
+	if !v.validateVRCompletedStatus(pvc, volRep, state) {
+		return false
+	}
+
+	// if primary, all checks are completed.
+	if state == ramendrv1alpha1.Secondary {
+		return v.validateAdditionalVRStatusForSecondary(pvc, volRep)
+	}
+
+	msg := "PVC in the VolumeReplicationGroup is ready for use"
+	v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReady, msg)
+	v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReady, msg)
+	v.updatePVCLastSyncTime(pvc.Namespace, pvc.Name, volRep.Status.LastSyncTime)
+	v.updatePVCLastSyncDuration(pvc.Namespace, pvc.Name, volRep.Status.LastSyncDuration)
+	v.updatePVCLastSyncBytes(pvc.Namespace, pvc.Name, volRep.Status.LastSyncBytes)
+	v.log.Info(fmt.Sprintf("VolumeReplication resource %s/%s is ready for use", volRep.GetName(),
+		volRep.GetNamespace()))
+
+	return true
+}
+
+// validateVRCompletedStatus validates if the VolumeReplication resource Completed condition is met and update
+// the PVC DataReady and Protected conditions.
+// Returns true if the condtion is true, false if the condition is missing, stale, ubnknown, of false.
+func (v *VRGInstance) validateVRCompletedStatus(pvc *corev1.PersistentVolumeClaim, volRep *volrep.VolumeReplication,
+	state ramendrv1alpha1.ReplicationState,
+) bool {
 	var (
 		stateString string
 		action      string
@@ -1431,34 +1459,17 @@ func (v *VRGInstance) validateVRStatus(pvc *corev1.PersistentVolumeClaim, volRep
 		action = "demoted"
 	}
 
-	// it should be completed
 	conditionMet, msg := isVRConditionMet(volRep, volrep.ConditionCompleted, metav1.ConditionTrue)
 	if !conditionMet {
 		defaultMsg := fmt.Sprintf("VolumeReplication resource for pvc not %s to %s", action, stateString)
 		v.updatePVCDataReadyConditionHelper(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg,
 			defaultMsg)
-
 		v.updatePVCDataProtectedConditionHelper(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg,
 			defaultMsg)
-
 		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", defaultMsg, volRep.GetName(), volRep.GetNamespace()))
 
 		return false
 	}
-
-	// if primary, all checks are completed
-	if state == ramendrv1alpha1.Secondary {
-		return v.validateAdditionalVRStatusForSecondary(pvc, volRep)
-	}
-
-	msg = "PVC in the VolumeReplicationGroup is ready for use"
-	v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReady, msg)
-	v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReady, msg)
-	v.updatePVCLastSyncTime(pvc.Namespace, pvc.Name, volRep.Status.LastSyncTime)
-	v.updatePVCLastSyncDuration(pvc.Namespace, pvc.Name, volRep.Status.LastSyncDuration)
-	v.updatePVCLastSyncBytes(pvc.Namespace, pvc.Name, volRep.Status.LastSyncBytes)
-	v.log.Info(fmt.Sprintf("VolumeReplication resource %s/%s is ready for use", volRep.GetName(),
-		volRep.GetNamespace()))
 
 	return true
 }
