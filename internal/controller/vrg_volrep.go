@@ -913,7 +913,7 @@ func (v *VRGInstance) reconcileMissingVR(pvc *corev1.PersistentVolumeClaim, log 
 	err := v.reconciler.Get(v.ctx, vrNamespacedName, volRep)
 	if err == nil {
 		if rmnutil.ResourceIsDeleted(volRep) {
-			log.Info("Requeuing due to processing a VR under deletion")
+			log.Info("Requeuing due to processing a deleted VR")
 
 			return !vrMissing, requeue
 		}
@@ -927,7 +927,7 @@ func (v *VRGInstance) reconcileMissingVR(pvc *corev1.PersistentVolumeClaim, log 
 		return !vrMissing, requeue
 	}
 
-	log.Info("Preparing PVC as VR is detected as missing or deleted")
+	log.Info("Unprotecting PVC as VR is missing")
 
 	if err := v.preparePVCForVRDeletion(pvc, log); err != nil {
 		log.Info("Requeuing due to failure in preparing PersistentVolumeClaim for deletion",
