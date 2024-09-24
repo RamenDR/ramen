@@ -132,7 +132,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 			Ops: []*recipe.Operation{
 				{
 					Name:    namespaceName,
-					Command: []string{namespaceName},
+					Command: namespaceName,
 				},
 			},
 		}
@@ -145,6 +145,8 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 			},
 			Spec: recipe.RecipeSpec{},
 		}
+
+		r.Spec.Workflows = make([]*recipe.Workflow, 0)
 	}
 	recipeVolumesDefine := func(volumes *recipe.Group) {
 		r.Spec.Volumes = volumes
@@ -171,10 +173,12 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 		}
 	}
 	recipeCaptureWorkflowDefine := func(workflow *recipe.Workflow) {
-		r.Spec.CaptureWorkflow = workflow
+		workflow.Name = recipe.BackupWorkflowName
+		r.Spec.Workflows = append(r.Spec.Workflows, workflow)
 	}
 	recipeRecoverWorkflowDefine := func(workflow *recipe.Workflow) {
-		r.Spec.RecoverWorkflow = workflow
+		workflow.Name = recipe.RestoreWorkflowName
+		r.Spec.Workflows = append(r.Spec.Workflows, workflow)
 	}
 	recipeCreate := func() {
 		Expect(k8sClient.Create(ctx, r)).To(Succeed())
