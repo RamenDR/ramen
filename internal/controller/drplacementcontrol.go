@@ -1732,16 +1732,16 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 	d.log.Info(fmt.Sprintf("PeerReady Condition is %s, msg: %s", condition.Status, condition.Message))
 
 	// IFF we have VolSync PVCs, then no need to clean up
-	homeCluster := clusterToSkip
+	// homeCluster := clusterToSkip
 
-	repReq, err := d.IsVolSyncReplicationRequired(homeCluster)
-	if err != nil {
-		return fmt.Errorf("failed to check if VolSync replication is required (%w)", err)
-	}
+	//repReq, err := d.IsVolSyncReplicationRequired(homeCluster)
+	//if err != nil {
+	//	return fmt.Errorf("failed to check if VolSync replication is required (%w)", err)
+	//}
 
-	if repReq {
-		return d.cleanupForVolSync(clusterToSkip)
-	}
+	//if repReq {
+	//	return d.cleanupForVolSync(clusterToSkip)
+	//}
 
 	clean, err := d.cleanupSecondaries(clusterToSkip)
 	if err != nil {
@@ -1851,10 +1851,6 @@ func (d *DRPCInstance) ensureVRGManifestWorkOnClusterDeleted(clusterName string)
 
 	d.log.Info("Request not complete yet", "cluster", clusterName)
 
-	if d.instance.Spec.ProtectedNamespaces != nil && len(*d.instance.Spec.ProtectedNamespaces) > 0 {
-		d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
-	}
-
 	// IF we get here, either the VRG has not transitioned to secondary (yet) or delete didn't succeed. In either cases,
 	// we need to make sure that the VRG object is deleted. IOW, we still have to wait
 	return !done, nil
@@ -1914,6 +1910,12 @@ func (d *DRPCInstance) ensureVRGIsSecondaryOnCluster(clusterName string) bool {
 			clusterName, vrg.Spec.ReplicationState, vrg.Status.State))
 
 		return false
+	}
+
+	// If the VRG is secondary everywhere, then we need to wait for the cleanup
+	// to be done by the user in case of discovered apps
+	if d.instance.Spec.ProtectedNamespaces != nil && len(*d.instance.Spec.ProtectedNamespaces) > 0 {
+		d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
 	}
 
 	return true
