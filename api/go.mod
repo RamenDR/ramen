@@ -1,6 +1,8 @@
 module github.com/ramendr/ramen/api
 
-go 1.22.6
+go 1.22.0
+
+toolchain go1.22.7
 
 require (
 	k8s.io/api v0.29.0
