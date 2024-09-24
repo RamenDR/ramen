@@ -1,6 +1,8 @@
 module github.com/ramendr/ramen
 
-go 1.22.6
+go 1.22.5
+
+toolchain go1.22.7
 
 // This replace should always be here for ease of development.
 replace github.com/ramendr/ramen/api => ./api
@@ -8,7 +10,7 @@ replace github.com/ramendr/ramen/api => ./api
 require (
 	github.com/aws/aws-sdk-go v1.44.289
 	github.com/backube/volsync v0.7.1
-	github.com/csi-addons/kubernetes-csi-addons v0.10.0
+	github.com/csi-addons/kubernetes-csi-addons v0.10.1-0.20240924092040-c11db0b867a1
 	github.com/go-logr/logr v1.4.2
 	github.com/google/uuid v1.6.0
 	github.com/kubernetes-csi/external-snapshotter/client/v8 v8.0.0
@@ -87,7 +89,7 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/net v0.28.0 // indirect
-	golang.org/x/oauth2 v0.21.0 // indirect
+	golang.org/x/oauth2 v0.22.0 // indirect
 	golang.org/x/sys v0.24.0 // indirect
 	golang.org/x/term v0.23.0 // indirect
 	golang.org/x/text v0.17.0 // indirect
