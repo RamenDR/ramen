@@ -5,8 +5,6 @@
 package controllers //nolint: testpackage
 
 import (
-	"time"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -25,9 +23,7 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 	var group *Recipe.Group
 
 	BeforeEach(func() {
-		duration, err := time.ParseDuration("30s")
-
-		Expect(err).ToNot(HaveOccurred())
+		duration := 30
 
 		hook = &Recipe.Hook{
 			Namespace: namespaceName,
@@ -43,8 +39,8 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 				{
 					Name:      "checkpoint",
 					Container: "main",
-					Timeout:   &metav1.Duration{Duration: duration},
-					Command:   []string{"bash", "/scripts/checkpoint.sh"},
+					Timeout:   duration,
+					Command:   "bash /scripts/checkpoint.sh",
 				},
 			},
 			Chks:      []*Recipe.Check{},
