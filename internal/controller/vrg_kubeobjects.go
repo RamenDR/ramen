@@ -23,6 +23,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 )
 
+var ErrWorkflowNotFound = fmt.Errorf("backup or restore workflow not found")
+
 func kubeObjectsCaptureInterval(kubeObjectProtectionSpec *ramen.KubeObjectProtectionSpec) time.Duration {
 	if kubeObjectProtectionSpec.CaptureInterval == nil {
 		return ramen.KubeObjectProtectionCaptureIntervalDefault
@@ -709,7 +711,20 @@ func kubeObjectsRequestsWatch(
 }
 
 func getCaptureGroups(recipe Recipe.Recipe) ([]kubeobjects.CaptureSpec, error) {
-	workflow := recipe.Spec.CaptureWorkflow
+	var workflow *Recipe.Workflow
+
+	for _, w := range recipe.Spec.Workflows {
+		if w.Name == Recipe.BackupWorkflowName {
+			workflow = w
+
+			break
+		}
+	}
+
+	if workflow == nil {
+		return nil, ErrWorkflowNotFound
+	}
+
 	resources := make([]kubeobjects.CaptureSpec, len(workflow.Sequence))
 
 	for index, resource := range workflow.Sequence {
@@ -729,7 +744,20 @@ func getCaptureGroups(recipe Recipe.Recipe) ([]kubeobjects.CaptureSpec, error) {
 }
 
 func getRecoverGroups(recipe Recipe.Recipe) ([]kubeobjects.RecoverSpec, error) {
-	workflow := recipe.Spec.RecoverWorkflow
+	var workflow *Recipe.Workflow
+
+	for _, w := range recipe.Spec.Workflows {
+		if w.Name == Recipe.RestoreWorkflowName {
+			workflow = w
+
+			break
+		}
+	}
+
+	if workflow == nil {
+		return nil, ErrWorkflowNotFound
+	}
+
 	resources := make([]kubeobjects.RecoverSpec, len(workflow.Sequence))
 
 	for index, resource := range workflow.Sequence {

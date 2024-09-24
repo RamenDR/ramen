@@ -188,25 +188,25 @@ func recipeWorkflowsGet(recipe recipe.Recipe, recipeElements *RecipeElements, vr
 ) error {
 	var err error
 
-	if recipe.Spec.CaptureWorkflow == nil {
+	recipeElements.CaptureWorkflow, err = getCaptureGroups(recipe)
+	if err != nil && err != ErrWorkflowNotFound {
+		return fmt.Errorf("failed to get groups from capture workflow: %w", err)
+	}
+
+	if err != nil {
 		recipeElements.CaptureWorkflow = captureWorkflowDefault(vrg, ramenConfig)
-	} else {
-		recipeElements.CaptureWorkflow, err = getCaptureGroups(recipe)
-		if err != nil {
-			return fmt.Errorf("failed to get groups from capture workflow: %w", err)
-		}
 	}
 
-	if recipe.Spec.RecoverWorkflow == nil {
+	recipeElements.RecoverWorkflow, err = getRecoverGroups(recipe)
+	if err != nil && err != ErrWorkflowNotFound {
+		return fmt.Errorf("failed to get groups from recovery workflow: %w", err)
+	}
+
+	if err != nil {
 		recipeElements.RecoverWorkflow = recoverWorkflowDefault(vrg, ramenConfig)
-	} else {
-		recipeElements.RecoverWorkflow, err = getRecoverGroups(recipe)
-		if err != nil {
-			return fmt.Errorf("failed to get groups from recovery workflow: %w", err)
-		}
 	}
 
-	return err
+	return nil
 }
 
 func recipeNamespacesValidate(recipeElements RecipeElements, vrg ramen.VolumeReplicationGroup,
