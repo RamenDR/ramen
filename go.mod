@@ -19,7 +19,7 @@ require (
 	github.com/operator-framework/api v0.17.6
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.20.4
-	github.com/ramendr/ramen/api v0.0.0-20240117171503-e11c56eac24d
+	github.com/ramendr/ramen/api v0.0.0-20240924121439-b7cba82de417
 	github.com/ramendr/recipe v0.0.0-20240918115450-667b9d79599f
 	github.com/stolostron/multicloud-operators-foundation v0.0.0-20220824091202-e9cd9710d009
 	github.com/stolostron/multicloud-operators-placementrule v1.2.4-1-20220311-8eedb3f.0.20230828200208-cd3c119a7fa0
