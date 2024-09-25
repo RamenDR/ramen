@@ -2164,17 +2164,22 @@ func (v *vrgTest) waitForVRCountToMatch(vrCount int) {
 }
 
 func (v *vrgTest) promoteVolReps() {
-	v.promoteVolRepsAndDo(func(index, count int) {
+	v.promoteVolRepsAndDo(promoteOptions{}, func(index, count int) {
 		// VRG should not be ready until last VolRep is ready.
 		v.verifyVRGStatusExpectation(index == count-1, vrgController.VRGConditionReasonReady)
 	})
 }
 
 func (v *vrgTest) promoteVolRepsWithoutVrgStatusCheck() {
-	v.promoteVolRepsAndDo(func(index, count int) {})
+	v.promoteVolRepsAndDo(promoteOptions{}, func(index, count int) {})
 }
 
-func (v *vrgTest) promoteVolRepsAndDo(do func(int, int)) {
+type promoteOptions struct {
+	ValidatedMissing bool
+	ValidatedFailed  bool
+}
+
+func (v *vrgTest) promoteVolRepsAndDo(options promoteOptions, do func(int, int)) {
 	By("Promoting VolumeReplication resources " + v.namespace)
 
 	volRepList := &volrep.VolumeReplicationList{}
@@ -2188,33 +2193,17 @@ func (v *vrgTest) promoteVolRepsAndDo(do func(int, int)) {
 		volRep := volRepList.Items[index]
 
 		volRepStatus := volrep.VolumeReplicationStatus{
-			Conditions: []metav1.Condition{
-				{
-					Type:               volrep.ConditionCompleted,
-					Reason:             volrep.Promoted,
-					ObservedGeneration: volRep.Generation,
-					Status:             metav1.ConditionTrue,
-					LastTransitionTime: metav1.NewTime(time.Now()),
-				},
-				{
-					Type:               volrep.ConditionDegraded,
-					Reason:             volrep.Healthy,
-					ObservedGeneration: volRep.Generation,
-					Status:             metav1.ConditionFalse,
-					LastTransitionTime: metav1.NewTime(time.Now()),
-				},
-				{
-					Type:               volrep.ConditionResyncing,
-					Reason:             volrep.NotResyncing,
-					ObservedGeneration: volRep.Generation,
-					Status:             metav1.ConditionFalse,
-					LastTransitionTime: metav1.NewTime(time.Now()),
-				},
-			},
+			Conditions:         v.generateVRConditions(volRep.Generation, options),
+			ObservedGeneration: volRep.Generation,
+			State:              volrep.PrimaryState,
+			Message:            "volume is marked primary",
 		}
-		volRepStatus.ObservedGeneration = volRep.Generation
-		volRepStatus.State = volrep.PrimaryState
-		volRepStatus.Message = "volume is marked primary"
+
+		if options.ValidatedFailed {
+			volRepStatus.State = volrep.UnknownState
+			volRepStatus.Message = "precondition failed ..."
+		}
+
 		volRep.Status = volRepStatus
 
 		err = k8sClient.Status().Update(context.TODO(), &volRep)
@@ -2224,11 +2213,73 @@ func (v *vrgTest) promoteVolRepsAndDo(do func(int, int)) {
 			Name:      volRep.Name,
 			Namespace: volRep.Namespace,
 		}
-		v.waitForVolRepCondition(volrepKey, volrep.ConditionCompleted, metav1.ConditionTrue)
-		v.waitForProtectedPVCs(volrepKey)
+
+		if options.ValidatedFailed {
+			if options.ValidatedMissing {
+				v.waitForVolRepCondition(volrepKey, volrep.ConditionCompleted, metav1.ConditionFalse)
+			} else {
+				v.waitForVolRepCondition(volrepKey, volrep.ConditionValidated, metav1.ConditionFalse)
+			}
+		} else {
+			v.waitForVolRepCondition(volrepKey, volrep.ConditionCompleted, metav1.ConditionTrue)
+			v.waitForProtectedPVCs(volrepKey)
+		}
 
 		do(index, len(volRepList.Items))
 	}
+}
+
+func (v *vrgTest) generateVRConditions(generation int64, options promoteOptions) []metav1.Condition {
+	var conditions []metav1.Condition
+
+	lastTransitionTime := metav1.NewTime(time.Now())
+
+	if !options.ValidatedMissing {
+		validated := metav1.Condition{
+			Type:               volrep.ConditionValidated,
+			Reason:             volrep.PrerequisiteNotMet,
+			ObservedGeneration: generation,
+			Status:             metav1.ConditionFalse,
+			LastTransitionTime: lastTransitionTime,
+		}
+
+		if options.ValidatedFailed {
+			validated.Status = metav1.ConditionFalse
+			validated.Reason = volrep.PrerequisiteNotMet
+		}
+
+		conditions = append(conditions, validated)
+	}
+
+	completed := metav1.Condition{
+		Type:               volrep.ConditionCompleted,
+		Reason:             volrep.Promoted,
+		ObservedGeneration: generation,
+		Status:             metav1.ConditionTrue,
+		LastTransitionTime: lastTransitionTime,
+	}
+
+	if options.ValidatedFailed {
+		completed.Status = metav1.ConditionFalse
+		completed.Reason = volrep.FailedToPromote
+	}
+
+	degraded := metav1.Condition{
+		Type:               volrep.ConditionDegraded,
+		Reason:             volrep.Healthy,
+		ObservedGeneration: generation,
+		Status:             metav1.ConditionFalse,
+		LastTransitionTime: lastTransitionTime,
+	}
+	resyncing := metav1.Condition{
+		Type:               volrep.ConditionResyncing,
+		Reason:             volrep.NotResyncing,
+		ObservedGeneration: generation,
+		Status:             metav1.ConditionFalse,
+		LastTransitionTime: lastTransitionTime,
+	}
+
+	return append(conditions, completed, degraded, resyncing)
 }
 
 func (v *vrgTest) protectDeletionOfVolReps() {
