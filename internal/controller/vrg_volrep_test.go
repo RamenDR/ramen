@@ -2273,11 +2273,18 @@ func (v *vrgTest) waitForVolRepPromotion(vrNamespacedName types.NamespacedName) 
 
 	Eventually(func() bool {
 		err := k8sClient.Get(context.TODO(), vrNamespacedName, &updatedVolRep)
+		if err != nil {
+			return false
+		}
 
-		return err == nil && len(updatedVolRep.Status.Conditions) == 3
+		condition := meta.FindStatusCondition(updatedVolRep.Status.Conditions, volrep.ConditionCompleted)
+		if condition == nil {
+			return false
+		}
+
+		return condition.Status == metav1.ConditionTrue
 	}, vrgtimeout, vrginterval).Should(BeTrue(),
-		"failed to wait for volRep condition type to change to 'ConditionCompleted' (%d)",
-		len(updatedVolRep.Status.Conditions))
+		"failed to wait for volRep condition %q to become %q", volrep.ConditionCompleted, metav1.ConditionTrue)
 
 	Eventually(func() bool {
 		vrg := v.getVRG()
