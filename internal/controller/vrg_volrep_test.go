@@ -2224,7 +2224,8 @@ func (v *vrgTest) promoteVolRepsAndDo(do func(int, int)) {
 			Name:      volRep.Name,
 			Namespace: volRep.Namespace,
 		}
-		v.waitForVolRepPromotion(volrepKey)
+		v.waitForVolRepCondition(volrepKey, volrep.ConditionCompleted, metav1.ConditionTrue)
+		v.waitForProtectedPVCs(volrepKey)
 
 		do(index, len(volRepList.Items))
 	}
@@ -2268,7 +2269,11 @@ func (v *vrgTest) unprotectDeletionOfVolReps() {
 	}
 }
 
-func (v *vrgTest) waitForVolRepPromotion(vrNamespacedName types.NamespacedName) {
+func (v *vrgTest) waitForVolRepCondition(
+	vrNamespacedName types.NamespacedName,
+	conditionType string,
+	conditionStatus metav1.ConditionStatus,
+) {
 	updatedVolRep := volrep.VolumeReplication{}
 
 	Eventually(func() bool {
@@ -2277,21 +2282,23 @@ func (v *vrgTest) waitForVolRepPromotion(vrNamespacedName types.NamespacedName) 
 			return false
 		}
 
-		condition := meta.FindStatusCondition(updatedVolRep.Status.Conditions, volrep.ConditionCompleted)
+		condition := meta.FindStatusCondition(updatedVolRep.Status.Conditions, conditionType)
 		if condition == nil {
 			return false
 		}
 
-		return condition.Status == metav1.ConditionTrue
+		return condition.Status == conditionStatus
 	}, vrgtimeout, vrginterval).Should(BeTrue(),
-		"failed to wait for volRep condition %q to become %q", volrep.ConditionCompleted, metav1.ConditionTrue)
+		"failed to wait for volRep condition %q to become %q", conditionType, conditionStatus)
+}
 
+func (v *vrgTest) waitForProtectedPVCs(vrNamespacedName types.NamespacedName) {
 	Eventually(func() bool {
 		vrg := v.getVRG()
 		// as of now name of VolumeReplication resource created by the VolumeReplicationGroup
 		// is same as the pvc that it replicates. When that changes this has to be changed to
 		// use the right name to get the appropriate protected PVC condition from VRG status.
-		protectedPVC := vrgController.FindProtectedPVC(vrg, updatedVolRep.Namespace, updatedVolRep.Name)
+		protectedPVC := vrgController.FindProtectedPVC(vrg, vrNamespacedName.Namespace, vrNamespacedName.Name)
 
 		// failed to get the protectedPVC. Returning false
 		if protectedPVC == nil {
@@ -2300,7 +2307,7 @@ func (v *vrgTest) waitForVolRepPromotion(vrNamespacedName types.NamespacedName) 
 
 		return v.checkProtectedPVCSuccess(vrg, protectedPVC)
 	}, vrgtimeout, vrginterval).Should(BeTrue(),
-		"while waiting for protected pvc condition %s/%s", updatedVolRep.Namespace, updatedVolRep.Name)
+		"while waiting for protected pvc condition %s/%s", vrNamespacedName.Namespace, vrNamespacedName.Name)
 }
 
 func (v *vrgTest) checkProtectedPVCSuccess(vrg *ramendrv1alpha1.VolumeReplicationGroup,
