@@ -462,6 +462,7 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	res := v.processVRG()
 	if lockedns != "" {
 		log.Info("*** ASN, lock on vrg ns is acquired")
+		log.Info("*** ASN, trying too if trylock is false. Value=", v.reconciler.locks.TryToAcquireLock(lockedns))
 		v.reconciler.locks.Release(lockedns)
 		log.Info("*** ASN, lock on vrg ns is released")
 	}
@@ -1663,7 +1664,9 @@ func (v *VRGInstance) vrgParallelProcessingCheck(adminNamespaceVRG bool) (string
 		// if the number of vrgs in the ns is more than 1, lock is needed.
 		if len(vrgList.Items) > 1 {
 			//fmt.Println("**** ASN, trying to acquire lock on ns, ", ns)
-			if isLockAcquired := v.reconciler.locks.TryToAcquireLock(ns); !isLockAcquired {
+			isLockAcquired := v.reconciler.locks.TryToAcquireLock(ns)
+			fmt.Println("*** ASN, isLockAcquired = ", isLockAcquired, " for ns ", ns)
+			if !isLockAcquired {
 				// Acquiring lock failed, VRG reconcile should be requeued
 				return "", fmt.Errorf("error aquiring lock on the namespace %s", ns)
 			} else {

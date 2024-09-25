@@ -544,7 +544,8 @@ func (v *VRGInstance) isArchivedAlready(pvc *corev1.PersistentVolumeClaim, log l
 
 		return false
 	}
-
+	// Check should also include owner label along with archived annotation so that VRG
+	// is not considering wrong (This PVC is already protected by someone else)
 	pvcDesiredValue := v.generateArchiveAnnotation(pvc.Generation)
 	if v, ok := pvc.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey]; ok && (v == pvcDesiredValue) {
 		pvcHasAnnotation = true
