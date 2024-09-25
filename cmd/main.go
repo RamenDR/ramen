@@ -27,6 +27,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ocmv1 "open-cluster-management.io/api/cluster/v1"
+	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
 	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	ocmworkv1 "open-cluster-management.io/api/work/v1"
 	cpcv1 "open-cluster-management.io/config-policy-controller/api/v1"
@@ -119,6 +120,7 @@ func configureController(ramenConfig *ramendrv1alpha1.RamenConfig) error {
 		utilruntime.Must(groupsnapv1alpha1.AddToScheme(scheme))
 		utilruntime.Must(recipe.AddToScheme(scheme))
 		utilruntime.Must(apiextensions.AddToScheme(scheme))
+		utilruntime.Must(clusterv1alpha1.AddToScheme(scheme))
 	}
 
 	return nil
