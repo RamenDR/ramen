@@ -614,6 +614,51 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 	})
 
+	// Test VRG deletion when VR failed validation
+	var vrgDeleteFailedVR *vrgTest
+	//nolint:dupl
+	Context("VR failed validation in primary state", func() {
+		createTestTemplate := &template{
+			ClaimBindInfo:          corev1.ClaimBound,
+			VolumeBindInfo:         corev1.VolumeBound,
+			schedulingInterval:     "1h",
+			storageClassName:       "manual",
+			replicationClassName:   "test-replicationclass",
+			vrcProvisioner:         "manual.storage.com",
+			scProvisioner:          "manual.storage.com",
+			replicationClassLabels: map[string]string{"protection": "ramen"},
+		}
+		It("sets up PVCs, PVs and VRGs (with s3 stores that fail uploads)", func() {
+			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			vrgDeleteFailedVR = newVRGTestCaseCreateAndStart(1, createTestTemplate, true, false)
+		})
+		It("waits for VRG to create a VR for each PVC", func() {
+			expectedVRCount := len(vrgDeleteFailedVR.pvcNames)
+			vrgDeleteFailedVR.waitForVRCountToMatch(expectedVRCount)
+		})
+		It("simulate VR with failed validation", func() {
+			vrgDeleteFailedVR.promoteVolRepsWithOptions(promoteOptions{ValidatedFailed: true})
+		})
+		It("VRG can be deleted", func() {
+			By("deleting the VRG")
+			vrg := vrgDeleteFailedVR.getVRG()
+			Expect(k8sClient.Delete(context.TODO(), vrg)).To(Succeed())
+
+			By("ensuring VRG is deleted")
+			Eventually(func() error {
+				return apiReader.Get(context.TODO(), vrgDeleteFailedVR.vrgNamespacedName(), vrg)
+			}, vrgtimeout, vrginterval).
+				Should(MatchError(errors.NewNotFound(schema.GroupResource{
+					Group:    ramendrv1alpha1.GroupVersion.Group,
+					Resource: "volumereplicationgroups",
+				}, vrgDeleteFailedVR.vrgName)))
+
+			vrgDeleteFailedVR.cleanupNamespace()
+			vrgDeleteFailedVR.cleanupSC()
+			vrgDeleteFailedVR.cleanupVRC()
+		})
+	})
+
 	// Try the simple case of creating VRG, PVC, PV and
 	// check whether VolRep resources are created or not
 	var vrgTestCases []*vrgTest
@@ -2172,6 +2217,10 @@ func (v *vrgTest) promoteVolReps() {
 
 func (v *vrgTest) promoteVolRepsWithoutVrgStatusCheck() {
 	v.promoteVolRepsAndDo(promoteOptions{}, func(index, count int) {})
+}
+
+func (v *vrgTest) promoteVolRepsWithOptions(options promoteOptions) {
+	v.promoteVolRepsAndDo(options, func(index, count int) {})
 }
 
 type promoteOptions struct {
