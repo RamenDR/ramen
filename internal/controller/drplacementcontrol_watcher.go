@@ -230,6 +230,28 @@ func DRClusterPredicateFunc() predicate.Funcs {
 	return drClusterPredicate
 }
 
+func DRPolicyPredicateFunc() predicate.Funcs {
+	log := ctrl.Log.WithName("DRPCPredicate").WithName("DRPolicy")
+	drPolicyPredicate := predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return false
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return false
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			log.Info("Update event")
+
+			return RequiresDRPCReconciliation(e.ObjectOld.(*rmn.DRPolicy), e.ObjectNew.(*rmn.DRPolicy))
+		},
+	}
+
+	return drPolicyPredicate
+}
+
 // DRClusterUpdateOfInterest checks if the new DRCluster resource as compared to the older version
 // requires any attention, it checks for the following updates:
 //   - If any maintenance mode is reported as activated
@@ -255,6 +277,16 @@ func DRClusterUpdateOfInterest(oldDRCluster, newDRCluster *rmn.DRCluster) bool {
 
 	// Exhausted all failover activation checks, the only interesting update is deleting a drcluster.
 	return rmnutil.ResourceIsDeleted(newDRCluster)
+}
+
+// RequiresDRPCReconciliation determines if the updated DRPolicy resource, compared to the previous version,
+// requires reconciliation of the DRPCs. Reconciliation is needed if the DRPolicy has been newly activated.
+// This check helps avoid delays in reconciliation by ensuring timely updates when necessary.
+func RequiresDRPCReconciliation(oldDRPolicy, newDRPolicy *rmn.DRPolicy) bool {
+	err1 := rmnutil.DrpolicyValidated(oldDRPolicy)
+	err2 := rmnutil.DrpolicyValidated(newDRPolicy)
+
+	return err1 != err2
 }
 
 // checkFailoverActivation checks if provided provisioner and storage instance is activated as per the
@@ -501,6 +533,38 @@ func DRPCsFailingOverToClusterForPolicy(
 	return filteredDRPCs, nil
 }
 
+// FilterDRPCsForDRPolicyUpdate filters and returns the DRPC resources that need reconciliation
+// in response to a DRPolicy update event. This ensures that only relevant DRPCs are processed
+// based on the changes in the associated DRPolicy.
+func (r *DRPlacementControlReconciler) FilterDRPCsForDRPolicyUpdate(drpolicy *rmn.DRPolicy) []ctrl.Request {
+	log := ctrl.Log.WithName("DRPCFilter").WithName("DRPolicy").WithValues("policy", drpolicy)
+
+	drpcs := &rmn.DRPlacementControlList{}
+
+	err := r.List(context.TODO(), drpcs)
+	if err != nil {
+		log.Info("Failed to process DRPolicy filter")
+
+		return []ctrl.Request{}
+	}
+
+	requests := make([]reconcile.Request, 0)
+
+	for _, drpc := range drpcs.Items {
+		if drpc.Spec.DRPolicyRef.Name == drpolicy.GetName() {
+			requests = append(requests,
+				reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      drpc.GetName(),
+						Namespace: drpc.GetNamespace(),
+					},
+				})
+		}
+	}
+
+	return requests
+}
+
 //nolint:funlen
 func (r *DRPlacementControlReconciler) setupWithManagerAndAddWatchers(mgr ctrl.Manager) error {
 	mwPred := ManifestWorkPredicateFunc()
@@ -573,6 +637,20 @@ func (r *DRPlacementControlReconciler) setupWithManagerAndAddWatchers(mgr ctrl.M
 			return r.FilterDRCluster(drCluster)
 		}))
 
+	drPolicyPred := DRPolicyPredicateFunc()
+
+	drPolicyMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
+		func(ctx context.Context, obj client.Object) []reconcile.Request {
+			drPolicy, ok := obj.(*rmn.DRPolicy)
+			if !ok {
+				return []reconcile.Request{}
+			}
+
+			ctrl.Log.Info(fmt.Sprintf("DRPC Map: Filtering DRPolicy (%s)", drPolicy.Name))
+
+			return r.FilterDRPCsForDRPolicyUpdate(drPolicy)
+		}))
+
 	r.eventRecorder = rmnutil.NewEventReporter(mgr.GetEventRecorderFor("controller_DRPlacementControl"))
 
 	options := ctrlcontroller.Options{
@@ -590,5 +668,6 @@ func (r *DRPlacementControlReconciler) setupWithManagerAndAddWatchers(mgr ctrl.M
 		Watches(&plrv1.PlacementRule{}, usrPlRuleMapFun, builder.WithPredicates(usrPlRulePred)).
 		Watches(&clrapiv1beta1.Placement{}, usrPlmntMapFun, builder.WithPredicates(usrPlmntPred)).
 		Watches(&rmn.DRCluster{}, drClusterMapFun, builder.WithPredicates(drClusterPred)).
+		Watches(&rmn.DRPolicy{}, drPolicyMapFun, builder.WithPredicates(drPolicyPred)).
 		Complete(r)
 }
