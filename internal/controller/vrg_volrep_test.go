@@ -659,6 +659,105 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 	})
 
+	// Test VRG deletion when VR failed validation and Validated condition is missing (csi-addons < 0.10.0)
+	var vrgDeleteIncompleteVR *vrgTest
+	//nolint:dupl
+	Context("VR failed validation in primary state and Validated condition is missing", func() {
+		createTestTemplate := &template{
+			ClaimBindInfo:          corev1.ClaimBound,
+			VolumeBindInfo:         corev1.VolumeBound,
+			schedulingInterval:     "1h",
+			storageClassName:       "manual",
+			replicationClassName:   "test-replicationclass",
+			vrcProvisioner:         "manual.storage.com",
+			scProvisioner:          "manual.storage.com",
+			replicationClassLabels: map[string]string{"protection": "ramen"},
+		}
+		It("sets up PVCs, PVs and VRGs (with s3 stores that fail uploads)", func() {
+			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			vrgDeleteIncompleteVR = newVRGTestCaseCreateAndStart(1, createTestTemplate, true, false)
+		})
+		It("waits for VRG to create a VR for each PVC", func() {
+			expectedVRCount := len(vrgDeleteFailedVR.pvcNames)
+			vrgDeleteIncompleteVR.waitForVRCountToMatch(expectedVRCount)
+		})
+		It("simulate incomplete VR", func() {
+			vrgDeleteIncompleteVR.promoteVolRepsWithOptions(promoteOptions{ValidatedFailed: true, ValidatedMissing: true})
+		})
+		It("VRG can not be deleted", func() {
+			By("deleting the VRG")
+			vrg := vrgDeleteIncompleteVR.getVRG()
+			Expect(k8sClient.Delete(context.TODO(), vrg)).To(Succeed())
+
+			By("ensuring VRG cannot be deleted")
+			Consistently(func() error {
+				return apiReader.Get(context.TODO(), vrgDeleteIncompleteVR.vrgNamespacedName(), vrg)
+			}, vrgtimeout, vrginterval).
+				Should(Succeed(), "VRG %s was deleted when VR is incomplete", vrgDeleteIncompleteVR.vrgName)
+
+			By("deleting the VRs")
+			vrgDeleteIncompleteVR.deleteVolReps()
+
+			By("ensuring the VRG is deleted")
+			Eventually(func() error {
+				return apiReader.Get(context.TODO(), vrgDeleteFailedVR.vrgNamespacedName(), vrg)
+			}, vrgtimeout, vrginterval).
+				Should(MatchError(errors.NewNotFound(schema.GroupResource{
+					Group:    ramendrv1alpha1.GroupVersion.Group,
+					Resource: "volumereplicationgroups",
+				}, vrgDeleteFailedVR.vrgName)))
+
+			vrgDeleteIncompleteVR.cleanupNamespace()
+			vrgDeleteIncompleteVR.cleanupSC()
+			vrgDeleteIncompleteVR.cleanupVRC()
+		})
+	})
+
+	// Test VRG deletion when VR completed and Validated condition is missing (csi-addons < 0.10.0)
+	var vrgDeleteCompletedVR *vrgTest
+	//nolint:dupl
+	Context("VR failed validation in primary state and Validated condition is missing", func() {
+		createTestTemplate := &template{
+			ClaimBindInfo:          corev1.ClaimBound,
+			VolumeBindInfo:         corev1.VolumeBound,
+			schedulingInterval:     "1h",
+			storageClassName:       "manual",
+			replicationClassName:   "test-replicationclass",
+			vrcProvisioner:         "manual.storage.com",
+			scProvisioner:          "manual.storage.com",
+			replicationClassLabels: map[string]string{"protection": "ramen"},
+		}
+		It("sets up PVCs, PVs and VRGs (with s3 stores that fail uploads)", func() {
+			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			vrgDeleteCompletedVR = newVRGTestCaseCreateAndStart(1, createTestTemplate, true, false)
+		})
+		It("waits for VRG to create a VR for each PVC", func() {
+			expectedVRCount := len(vrgDeleteFailedVR.pvcNames)
+			vrgDeleteCompletedVR.waitForVRCountToMatch(expectedVRCount)
+		})
+		It("simulate completed VR", func() {
+			vrgDeleteCompletedVR.promoteVolRepsWithOptions(promoteOptions{ValidatedMissing: true})
+		})
+		It("VRG can be deleted", func() {
+			By("deleting the VRG")
+			vrg := vrgDeleteCompletedVR.getVRG()
+			Expect(k8sClient.Delete(context.TODO(), vrg)).To(Succeed())
+
+			By("ensuring the VRG is deleted")
+			Eventually(func() error {
+				return apiReader.Get(context.TODO(), vrgDeleteFailedVR.vrgNamespacedName(), vrg)
+			}, vrgtimeout, vrginterval).
+				Should(MatchError(errors.NewNotFound(schema.GroupResource{
+					Group:    ramendrv1alpha1.GroupVersion.Group,
+					Resource: "volumereplicationgroups",
+				}, vrgDeleteFailedVR.vrgName)))
+
+			vrgDeleteCompletedVR.cleanupNamespace()
+			vrgDeleteCompletedVR.cleanupSC()
+			vrgDeleteCompletedVR.cleanupVRC()
+		})
+	})
+
 	// Try the simple case of creating VRG, PVC, PV and
 	// check whether VolRep resources are created or not
 	var vrgTestCases []*vrgTest
@@ -2329,6 +2428,19 @@ func (v *vrgTest) generateVRConditions(generation int64, options promoteOptions)
 	}
 
 	return append(conditions, completed, degraded, resyncing)
+}
+
+func (v *vrgTest) deleteVolReps() {
+	vrList := &volrep.VolumeReplicationList{}
+	err := k8sClient.List(context.TODO(), vrList, &client.ListOptions{Namespace: v.namespace})
+	Expect(err).NotTo(HaveOccurred(), "failed to get a list of VRs in namespace %s", v.namespace)
+
+	for i := range vrList.Items {
+		vr := vrList.Items[i]
+
+		err := k8sClient.Delete(context.TODO(), &vr)
+		Expect(err).NotTo(HaveOccurred(), "failed to delete volRep %v/%s", vr.Namespace, vr.Name)
+	}
 }
 
 func (v *vrgTest) protectDeletionOfVolReps() {
