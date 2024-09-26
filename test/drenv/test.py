@@ -144,6 +144,8 @@ def enable_dr():
 
     cluster = lookup_cluster()
     placement_name = placement.split("/")[1]
+    consistency_groups = env["features"].get("consistency_groups", False)
+    cg_enabled = "true" if consistency_groups else "false"
 
     drpc = f"""
 apiVersion: ramendr.openshift.io/v1alpha1
@@ -151,6 +153,8 @@ kind: DRPlacementControl
 metadata:
   name: {config['name']}-drpc
   namespace: {config['namespace']}
+  annotations:
+    drplacementcontrol.ramendr.openshift.io/is-cg-enabled: '{cg_enabled}'
   labels:
     app: {config['name']}
 spec:
