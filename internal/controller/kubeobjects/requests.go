@@ -93,10 +93,10 @@ type HookSpec struct {
 
 	Type string `json:"type,omitempty"`
 
-	Command []string `json:"command,omitempty"`
+	Command string `json:"command,omitempty"`
 
 	//+optional
-	Timeout *metav1.Duration `json:"timeout,omitempty"`
+	Timeout int `json:"timeout,omitempty"`
 
 	//+optional
 	Container *string `json:"container,omitempty"`

@@ -13,6 +13,7 @@ package velero
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/go-logr/logr"
 	pkgerrors "github.com/pkg/errors"
@@ -398,8 +399,8 @@ func getBackupHooks(hooks []kubeobjects.HookSpec) velero.BackupHooks {
 				{
 					Exec: &velero.ExecHook{
 						Container: dereferenceOrZeroValueIfNil(hook.Container),
-						Timeout:   dereferenceOrZeroValueIfNil(hook.Timeout),
-						Command:   hook.Command,
+						Timeout:   metav1.Duration{Duration: time.Duration(hook.Timeout)},
+						Command:   []string{hook.Command},
 					},
 				},
 			},

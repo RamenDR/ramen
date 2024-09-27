@@ -201,9 +201,7 @@ func getVRGDefinitionWithKubeObjectProtection(hasPVCSelectorLabels bool, namespa
 }
 
 func getTestHook() *Recipe.Hook {
-	duration, err := time.ParseDuration("30s")
-
-	Expect(err).ToNot(HaveOccurred())
+	duration := 30
 
 	return &Recipe.Hook{
 		Name: "hook-single",
@@ -218,8 +216,8 @@ func getTestHook() *Recipe.Hook {
 			{
 				Name:      "checkpoint",
 				Container: "main",
-				Timeout:   &metav1.Duration{Duration: duration},
-				Command:   []string{"bash", "/scripts/checkpoint.sh"},
+				Timeout:   duration,
+				Command:   "bash /scripts/checkpoint.sh",
 			},
 		},
 		Chks:      []*Recipe.Check{},
@@ -270,16 +268,19 @@ func getRecipeDefinition(namespace string) *Recipe.Recipe {
 			Groups:  []*Recipe.Group{getTestGroup()},
 			Volumes: getTestVolumeGroup(),
 			Hooks:   []*Recipe.Hook{getTestHook()},
-			CaptureWorkflow: &Recipe.Workflow{
-				Sequence: []map[string]string{
-					{
-						"group": "test-group-volume",
-					},
-					{
-						"group": "test-group",
-					},
-					{
-						"hook": "test-hook",
+			Workflows: []*Recipe.Workflow{
+				{
+					Name: "backup",
+					Sequence: []map[string]string{
+						{
+							"group": "test-group-volume",
+						},
+						{
+							"group": "test-group",
+						},
+						{
+							"hook": "test-hook",
+						},
 					},
 				},
 			},
