@@ -15,9 +15,13 @@ from drenv import kubectl
 
 def deploy(cluster):
     print("Creating RBD pool and storage/snapshot classes")
+
+    template = drenv.template("storage-class.yaml")
+    yaml = template.substitute(cluster=cluster)
+
+    kubectl.apply("--filename=-", input=yaml, context=cluster)
     kubectl.apply(
         "--filename=replica-pool.yaml",
-        "--filename=storage-class.yaml",
         "--filename=snapshot-class.yaml",
         context=cluster,
     )
