@@ -22,6 +22,9 @@ const (
 	OCMBackupLabelValue string = "ramen"
 
 	IsCGEnabledAnnotation = "drplacementcontrol.ramendr.openshift.io/is-cg-enabled"
+
+	// Annotation
+	UseVolSyncForPVCProtection = "drplacementcontrol.ramendr.openshift.io/use-volsync-for-pvc-protection"
 )
 
 type ResourceUpdater struct {
@@ -236,11 +239,11 @@ func CreateNamespaceIfNotExists(ctx context.Context, k8sClient client.Client, na
 }
 
 func IsCGEnabled(annotations map[string]string) bool {
-	if annotations == nil {
-		return false
-	}
-
 	return annotations[IsCGEnabledAnnotation] == "true"
+}
+
+func IsRBDEnabledForVolSyncReplication(annotations map[string]string) bool {
+	return annotations[UseVolSyncForPVCProtection] == "true"
 }
 
 func TrimToK8sResourceNameLength(name string) string {
