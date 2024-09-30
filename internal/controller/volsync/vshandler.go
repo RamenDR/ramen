@@ -1040,8 +1040,7 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 		if pvc.CreationTimestamp.IsZero() {
 			pvc.Spec.AccessModes = rdSpec.ProtectedPVC.AccessModes
 			pvc.Spec.StorageClassName = rdSpec.ProtectedPVC.StorageClassName
-			volumeMode := corev1.PersistentVolumeFilesystem
-			pvc.Spec.VolumeMode = &volumeMode
+			pvc.Spec.VolumeMode = v.volumeModeForProtectedPVC(&rdSpec.ProtectedPVC)
 		}
 
 		pvc.Spec.Resources.Requests = rdSpec.ProtectedPVC.Resources.Requests
@@ -2029,7 +2028,6 @@ func (v *VSHandler) createReadOnlyPVCFromSnapshot(rd *volsyncv1alpha1.Replicatio
 
 	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, pvc, func() error {
 		if pvc.Status.Phase == corev1.ClaimBound {
-			// PVC already bound at this point
 			l.V(1).Info("PVC already bound")
 
 			return nil
@@ -2041,8 +2039,8 @@ func (v *VSHandler) createReadOnlyPVCFromSnapshot(rd *volsyncv1alpha1.Replicatio
 			pvc.Spec.AccessModes = accessModes
 			pvc.Spec.StorageClassName = rd.Spec.RsyncTLS.StorageClassName
 
-			// Only set when initially creating
-			pvc.Spec.DataSource = &snapshotRef
+			pvc.Spec.DataSource = snapshotRef
+			pvc.Spec.VolumeMode = v.volumeModeForProtectedPVC(&rdSpec.ProtectedPVC)
 		}
 
 		pvc.Spec.Resources.Requests = corev1.ResourceList{
@@ -2210,4 +2208,15 @@ func (v *VSHandler) removeOCMAnnotationsAndUpdate(obj client.Object) error {
 	obj.SetAnnotations(updatedAnnotations)
 
 	return v.client.Update(v.ctx, obj)
+}
+
+func (v *VSHandler) volumeModeForProtectedPVC(protectedPVC *ramendrv1alpha1.ProtectedPVC) *corev1.PersistentVolumeMode {
+	volumeMode := corev1.PersistentVolumeFilesystem
+	if util.IsRBDEnabledForVolSyncReplication(v.owner.GetAnnotations()) &&
+		protectedPVC.VolumeMode != nil &&
+		*protectedPVC.VolumeMode == corev1.PersistentVolumeBlock {
+		volumeMode = corev1.PersistentVolumeBlock
+	}
+
+	return &volumeMode
 }
