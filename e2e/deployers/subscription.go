@@ -66,7 +66,7 @@ func (s Subscription) Undeploy(w workloads.Workload) error {
 		return err
 	}
 
-	err = DeletePlacement(name, namespace)
+	err = util.DeletePlacement(name, namespace)
 	if err != nil {
 		return err
 	}
