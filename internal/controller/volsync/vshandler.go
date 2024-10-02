@@ -1030,13 +1030,6 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 		},
 	}
 
-	volumeMode := corev1.PersistentVolumeFilesystem
-	if util.IsRBDEnabledForVolSyncReplication(v.owner.GetAnnotations()) &&
-		rdSpec.ProtectedPVC.VolumeMode != nil &&
-		*rdSpec.ProtectedPVC.VolumeMode == corev1.PersistentVolumeBlock {
-		volumeMode = corev1.PersistentVolumeBlock
-	}
-
 	op, err := ctrlutil.CreateOrUpdate(ctx, v.client, pvc, func() error {
 		if !v.vrgInAdminNamespace {
 			if err := ctrl.SetControllerReference(v.owner, pvc, v.client.Scheme()); err != nil {
@@ -2034,13 +2027,6 @@ func (v *VSHandler) createReadOnlyPVCFromSnapshot(rd *volsyncv1alpha1.Replicatio
 		if pvcRequestedCapacity == nil || snapRestoreSize.Cmp(*pvcRequestedCapacity) > 0 {
 			pvcRequestedCapacity = snapRestoreSize
 		}
-	}
-
-	volumeMode := corev1.PersistentVolumeFilesystem
-	if util.IsRBDEnabledForVolSyncReplication(v.owner.GetAnnotations()) &&
-		rdSpec.ProtectedPVC.VolumeMode != nil &&
-		*rdSpec.ProtectedPVC.VolumeMode == corev1.PersistentVolumeBlock {
-		volumeMode = corev1.PersistentVolumeBlock
 	}
 
 	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, pvc, func() error {
