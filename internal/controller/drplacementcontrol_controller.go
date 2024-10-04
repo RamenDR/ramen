@@ -68,15 +68,16 @@ type ProgressCallback func(string, string)
 // DRPlacementControlReconciler reconciles a DRPlacementControl object
 type DRPlacementControlReconciler struct {
 	client.Client
-	APIReader           client.Reader
-	Log                 logr.Logger
-	MCVGetter           rmnutil.ManagedClusterViewGetter
-	Scheme              *runtime.Scheme
-	Callback            ProgressCallback
-	eventRecorder       *rmnutil.EventReporter
-	savedInstanceStatus rmn.DRPlacementControlStatus
-	ObjStoreGetter      ObjectStoreGetter
-	RateLimiter         *workqueue.TypedRateLimiter[reconcile.Request]
+	APIReader                      client.Reader
+	Log                            logr.Logger
+	MCVGetter                      rmnutil.ManagedClusterViewGetter
+	Scheme                         *runtime.Scheme
+	Callback                       ProgressCallback
+	eventRecorder                  *rmnutil.EventReporter
+	savedInstanceStatus            rmn.DRPlacementControlStatus
+	ObjStoreGetter                 ObjectStoreGetter
+	RateLimiter                    *workqueue.TypedRateLimiter[reconcile.Request]
+	numClustersQueriedSuccessfully int
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -373,10 +374,12 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 		return nil, err
 	}
 
-	vrgs, _, _, err := getVRGsFromManagedClusters(r.MCVGetter, drpc, drClusters, vrgNamespace, log)
+	vrgs, cqs, _, err := getVRGsFromManagedClusters(r.MCVGetter, drpc, drClusters, vrgNamespace, log)
 	if err != nil {
 		return nil, err
 	}
+
+	r.numClustersQueriedSuccessfully = cqs
 
 	d := &DRPCInstance{
 		reconciler:      r,
@@ -1097,7 +1100,7 @@ func getVRGsFromManagedClusters(
 	annotations[DRPCNameAnnotation] = drpc.Name
 	annotations[DRPCNamespaceAnnotation] = drpc.Namespace
 
-	var clustersQueriedSuccessfully int
+	var numClustersQueriedSuccessfully int
 
 	var failedCluster string
 
@@ -1109,7 +1112,7 @@ func getVRGsFromManagedClusters(
 			// Only NotFound error is accepted
 			if errors.IsNotFound(err) {
 				log.Info(fmt.Sprintf("VRG not found on %q", drCluster.Name))
-				clustersQueriedSuccessfully++
+				numClustersQueriedSuccessfully++
 
 				continue
 			}
@@ -1121,7 +1124,7 @@ func getVRGsFromManagedClusters(
 			continue
 		}
 
-		clustersQueriedSuccessfully++
+		numClustersQueriedSuccessfully++
 
 		if rmnutil.ResourceIsDeleted(drCluster) {
 			log.Info("Skipping VRG on deleted drcluster", "drcluster", drCluster.Name, "vrg", vrg.Name)
@@ -1135,15 +1138,15 @@ func getVRGsFromManagedClusters(
 	}
 
 	// We are done if we successfully queried all drClusters
-	if clustersQueriedSuccessfully == len(drClusters) {
-		return vrgs, clustersQueriedSuccessfully, "", nil
+	if numClustersQueriedSuccessfully == len(drClusters) {
+		return vrgs, numClustersQueriedSuccessfully, "", nil
 	}
 
-	if clustersQueriedSuccessfully == 0 {
+	if numClustersQueriedSuccessfully == 0 {
 		return vrgs, 0, "", fmt.Errorf("failed to retrieve VRGs from clusters")
 	}
 
-	return vrgs, clustersQueriedSuccessfully, failedCluster, nil
+	return vrgs, numClustersQueriedSuccessfully, failedCluster, nil
 }
 
 func (r *DRPlacementControlReconciler) deleteClonedPlacementRule(ctx context.Context,

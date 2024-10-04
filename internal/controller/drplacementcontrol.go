@@ -825,6 +825,14 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 
 	const done = true
 
+	if d.reconciler.numClustersQueriedSuccessfully != len(d.drPolicy.Spec.DRClusters) {
+		d.log.Info("Can't progress with relocation -- Not all clusters are reachable",
+			"numClustersQueriedSuccessfully", d.reconciler.numClustersQueriedSuccessfully,
+			"NumOfClusters", len(d.drPolicy.Spec.DRClusters))
+
+		return !done, nil
+	}
+
 	preferredCluster := d.instance.Spec.PreferredCluster
 	preferredClusterNamespace := d.instance.Spec.PreferredCluster
 
