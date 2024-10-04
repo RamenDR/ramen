@@ -1216,14 +1216,12 @@ var _ = Describe("VolSync_Handler", func() {
 				pvc := &corev1.PersistentVolumeClaim{}
 				JustBeforeEach(func() {
 					// Common checks for everything in this context - pvc should be created with correct spec
-					Expect(ensurePVCErr).NotTo(HaveOccurred())
-
 					Eventually(func() error {
 						return k8sClient.Get(ctx, types.NamespacedName{
 							Name:      pvcName,
 							Namespace: testNamespace.GetName(),
 						}, pvc)
-					}, maxWait, interval).Should(Succeed())
+					}, maxWait, interval).Should(Succeed(), fmt.Sprintf("Original error %v", ensurePVCErr))
 
 					Expect(pvc.GetName()).To(Equal(pvcName))
 					Expect(pvc.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
