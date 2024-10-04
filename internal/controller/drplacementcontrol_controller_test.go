@@ -2479,8 +2479,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				clearFakeUserPlacementRuleStatus(UserPlacementRuleName, DefaultDRPCNamespace)
 				clearDRPCStatus()
 				expectedAction := rmn.ActionRelocate
-				expectedPhase := rmn.Relocated
-				exptectedPorgression := rmn.ProgressionCleaningUp
+				expectedPhase := rmn.DRState("")
+				exptectedPorgression := rmn.ProgressionStatus("")
 				verifyDRPCStateAndProgression(expectedAction, expectedPhase, exptectedPorgression)
 
 				// User intervention is required (simulate user intervention)
