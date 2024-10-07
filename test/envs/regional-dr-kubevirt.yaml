@@ -27,6 +27,7 @@ templates:
     disk_size: "50g"
     workers:
       - addons:
+          - name: external-snapshotter
           - name: rook-operator
           - name: rook-cluster
           - name: rook-toolbox

@@ -135,7 +135,7 @@ enough resources:
    ```
 
 1. Install `clusteradm` tool. See
-   [Install clusteradm CLI tool](https://open-cluster-management.io/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool)
+   [Install clusteradm CLI tool](https://open-cluster-management.io/docs/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool)
    for the details.
    Version v0.8.1 or later is reuired.
 
