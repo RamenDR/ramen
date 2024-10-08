@@ -70,3 +70,23 @@ func OwnerNamespacedName(owner metav1.Object) types.NamespacedName {
 		Name:      ownerName,
 	}
 }
+
+func DoesObjectOwnerLabelsMatch(object, owner metav1.Object) bool {
+	objectLabels := object.GetLabels()
+	pvcOwnerNS, okNS := objectLabels[labelOwnerNamespaceName]
+	pvcOwnerName, okName := objectLabels[labelOwnerName]
+	if !okNS || !okName {
+		return false
+	}
+	ownerLabels := OwnerLabels(owner)
+	vrgNS := ownerLabels[labelOwnerNamespaceName]
+	vrgName := ownerLabels[labelOwnerName]
+	if vrgNS != pvcOwnerNS {
+		return false
+	}
+
+	if vrgName != pvcOwnerName {
+		return false
+	}
+	return true
+}

@@ -443,7 +443,8 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	lockedns, err := v.vrgParallelProcessingCheck(adminNamespaceVRG)
 
 	if err != nil {
-		return ctrl.Result{}, err
+		// Requeue in order to get the lock and try vrg processing again
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	v.volSyncHandler = volsync.NewVSHandler(ctx, r.Client, log, v.instance,
@@ -461,13 +462,9 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 
 	res := v.processVRG()
 	if lockedns != "" {
-		log.Info("*** ASN, lock on vrg ns is acquired")
-		log.Info("*** ASN, trying too if trylock is false. Value=", v.reconciler.locks.TryToAcquireLock(lockedns))
 		v.reconciler.locks.Release(lockedns)
-		log.Info("*** ASN, lock on vrg ns is released")
+		v.log.Info("****ASN, released lock ", "ns=", lockedns, " vrg name=", v.instance.Name)
 	}
-
-	// TODO: Check if lock can be released here.
 	// Test for RBD(setup exists), CephFS
 	delayResetIfRequeueTrue(&res, v.log)
 	log.Info("Reconcile return", "result", res,
@@ -1357,6 +1354,7 @@ func (v *VRGInstance) updateVRGConditions() {
 		volSyncDataProtected,
 		v.aggregateVolRepDataProtectedCondition(),
 	)
+	// TODO: Check for possible cases here.
 	logAndSet(VRGConditionTypeClusterDataProtected,
 		volSyncClusterDataProtected,
 		v.aggregateVolRepClusterDataProtectedCondition(),
@@ -1663,19 +1661,14 @@ func (v *VRGInstance) vrgParallelProcessingCheck(adminNamespaceVRG bool) (string
 
 		// if the number of vrgs in the ns is more than 1, lock is needed.
 		if len(vrgList.Items) > 1 {
-			//fmt.Println("**** ASN, trying to acquire lock on ns, ", ns)
 			isLockAcquired := v.reconciler.locks.TryToAcquireLock(ns)
-			fmt.Println("*** ASN, isLockAcquired = ", isLockAcquired, " for ns ", ns)
+			v.log.Info("****ASN, checking lock ", "ns=", ns, " isLockAcquired=", isLockAcquired, " vrg name=", v.instance.Name)
 			if !isLockAcquired {
 				// Acquiring lock failed, VRG reconcile should be requeued
 				return "", fmt.Errorf("error aquiring lock on the namespace %s", ns)
 			} else {
 				return ns, nil
 			}
-			//fmt.Println("**** ASN, acquired lock on ns, ", ns)
-			//v.reconciler.locks.Namespaces.Insert("test")
-			//fmt.Println("**** ASN, this line should not be printed")
-			//defer v.reconciler.locks.Release(ns)
 		} else {
 			return "", nil
 		}

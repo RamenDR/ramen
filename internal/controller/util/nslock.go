@@ -29,22 +29,6 @@ func NewNamespaceLock() *NamespaceLock {
 // multiple VRGs and returns true if successful.
 // If processing has already begun in the namespace, returns false.
 func (nl *NamespaceLock) TryToAcquireLock(namespace string) bool {
-	//nl.mux.Lock()
-	//defer nl.mux.Unlock()
-
-	/*if nl.namespace == namespace {
-	  	return false
-	  }
-
-	  if nl.namespace == "" {
-	  	nl.namespace = namespace
-	  }*/
-
-	//if nl.Namespaces.Has(namespace) {
-	//	return false
-	//}
-	//nl.Namespaces.Insert(namespace)
-
 	// If key is found, return false
 	// if key is not found, add key and also lock
 	if _, ok := nl.nslock[namespace]; ok {
@@ -56,11 +40,17 @@ func (nl *NamespaceLock) TryToAcquireLock(namespace string) bool {
 			nl.nslock[namespace].Lock()
 			return true
 		}
+		// if nl.nslock[namespace] == nil {
+		// 	nl.nslock[namespace] = new(sync.Mutex)
+		// 	nl.nslock[namespace].Lock()
+		// 	return true
+		// }
 	} else {
 		nl.nslock[namespace] = new(sync.Mutex)
 		nl.nslock[namespace].Lock()
 		return true
 	}
+	//return false
 }
 
 // Release removes lock on the namespace
