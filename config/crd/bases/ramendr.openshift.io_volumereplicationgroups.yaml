@@ -670,6 +670,10 @@ spec:
                               required:
                               - id
                               type: object
+                            volumeMode:
+                              description: VolumeMode describes how a volume is intended
+                                to be consumed, either Block or Filesystem.
+                              type: string
                           type: object
                       type: object
                     type: array
@@ -1017,6 +1021,10 @@ spec:
                       required:
                       - id
                       type: object
+                    volumeMode:
+                      description: VolumeMode describes how a volume is intended to
+                        be consumed, either Block or Filesystem.
+                      type: string
                   type: object
                 type: array
               state:

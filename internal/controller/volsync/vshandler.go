@@ -1030,6 +1030,13 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 		},
 	}
 
+	volumeMode := corev1.PersistentVolumeFilesystem
+	if util.IsRBDEnabledForVolSyncReplication(v.owner.GetAnnotations()) &&
+		rdSpec.ProtectedPVC.VolumeMode != nil &&
+		*rdSpec.ProtectedPVC.VolumeMode == corev1.PersistentVolumeBlock {
+		volumeMode = corev1.PersistentVolumeBlock
+	}
+
 	op, err := ctrlutil.CreateOrUpdate(ctx, v.client, pvc, func() error {
 		if !v.vrgInAdminNamespace {
 			if err := ctrl.SetControllerReference(v.owner, pvc, v.client.Scheme()); err != nil {
@@ -1157,7 +1164,7 @@ func (v *VSHandler) rollbackToLastSnapshot(rdSpec ramendrv1alpha1.VolSyncReplica
 	pskSecretName := GetVolSyncPSKSecretNameFromVRGName(v.owner.GetName())
 
 	// Create localRD and localRS. The latest snapshot of the main RD will be used for the rollback
-	lrd, lrs, err := v.reconcileLocalReplication(rd, &snapshotRef, rdSpec, pskSecretName, v.log)
+	lrd, lrs, err := v.reconcileLocalReplication(rd, rdSpec, &snapshotRef, pskSecretName, v.log)
 	if err != nil {
 		return err
 	}
@@ -1747,8 +1754,8 @@ func ValidateObjectExists(ctx context.Context, c client.Client, obj client.Objec
 }
 
 func (v *VSHandler) reconcileLocalReplication(rd *volsyncv1alpha1.ReplicationDestination,
-	snapshotRef *corev1.TypedLocalObjectReference,
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+	snapshotRef *corev1.TypedLocalObjectReference,
 	pskSecretName string, l logr.Logger) (*volsyncv1alpha1.ReplicationDestination,
 	*volsyncv1alpha1.ReplicationSource, error,
 ) {
@@ -1757,11 +1764,7 @@ func (v *VSHandler) reconcileLocalReplication(rd *volsyncv1alpha1.ReplicationDes
 		return nil, nil, fmt.Errorf("failed to reconcile fully localRD (%w)", err)
 	}
 
-	rsSpec := &ramendrv1alpha1.VolSyncReplicationSourceSpec{
-		ProtectedPVC: rdSpec.ProtectedPVC,
-	}
-
-	lrs, err := v.reconcileLocalRS(rd, snapshotRef, rsSpec, pskSecretName, *lrd.Status.RsyncTLS.Address)
+	lrs, err := v.reconcileLocalRS(rd, &rdSpec, snapshotRef, pskSecretName, *lrd.Status.RsyncTLS.Address)
 	if err != nil {
 		return lrd, nil, fmt.Errorf("failed to reconcile localRS (%w)", err)
 	}
@@ -1839,16 +1842,20 @@ func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDe
 
 //nolint:funlen
 func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
+	rdSpec *ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	snapshotRef *corev1.TypedLocalObjectReference,
-	rsSpec *ramendrv1alpha1.VolSyncReplicationSourceSpec,
 	pskSecretName, address string,
 ) (*volsyncv1alpha1.ReplicationSource, error,
 ) {
 	v.log.Info("Reconciling localRS", "RD", rd.GetName())
 
-	storageClass, err := v.getStorageClass(rsSpec.ProtectedPVC.StorageClassName)
+	storageClass, err := v.getStorageClass(rdSpec.ProtectedPVC.StorageClassName)
 	if err != nil {
 		return nil, err
+	}
+
+	rsSpec := &ramendrv1alpha1.VolSyncReplicationSourceSpec{
+		ProtectedPVC: rdSpec.ProtectedPVC,
 	}
 
 	// Fix for CephFS (replication source only) - may need different storageclass and access modes
@@ -1857,7 +1864,7 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 		return nil, err
 	}
 
-	pvc, err := v.setupLocalRS(rd, snapshotRef)
+	pvc, err := v.setupLocalRS(rd, rdSpec, snapshotRef)
 	if err != nil {
 		return nil, err
 	}
@@ -1954,6 +1961,7 @@ func (v *VSHandler) DeleteLocalRD(lrdName, lrdNamespace string) error {
 }
 
 func (v *VSHandler) setupLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
+	rdSpec *ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	snapshotRef *corev1.TypedLocalObjectReference,
 ) (*corev1.PersistentVolumeClaim, error) {
 	if !isLatestImageReady(snapshotRef) {
@@ -2003,11 +2011,13 @@ func (v *VSHandler) setupLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 	}
 
 	// In all other cases, we have to create a RO PVC.
-	return v.createReadOnlyPVCFromSnapshot(rd, *snapshotRef, restoreSize)
+	return v.createReadOnlyPVCFromSnapshot(rd, rdSpec, snapshotRef, restoreSize)
 }
 
 func (v *VSHandler) createReadOnlyPVCFromSnapshot(rd *volsyncv1alpha1.ReplicationDestination,
-	snapshotRef corev1.TypedLocalObjectReference, snapRestoreSize *resource.Quantity,
+	rdSpec *ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+	snapshotRef *corev1.TypedLocalObjectReference,
+	snapRestoreSize *resource.Quantity,
 ) (*corev1.PersistentVolumeClaim, error) {
 	l := v.log.WithValues("pvcName", rd.GetName(), "snapshotRef", snapshotRef,
 		"snapRestoreSize", snapRestoreSize)
@@ -2024,6 +2034,13 @@ func (v *VSHandler) createReadOnlyPVCFromSnapshot(rd *volsyncv1alpha1.Replicatio
 		if pvcRequestedCapacity == nil || snapRestoreSize.Cmp(*pvcRequestedCapacity) > 0 {
 			pvcRequestedCapacity = snapRestoreSize
 		}
+	}
+
+	volumeMode := corev1.PersistentVolumeFilesystem
+	if util.IsRBDEnabledForVolSyncReplication(v.owner.GetAnnotations()) &&
+		rdSpec.ProtectedPVC.VolumeMode != nil &&
+		*rdSpec.ProtectedPVC.VolumeMode == corev1.PersistentVolumeBlock {
+		volumeMode = corev1.PersistentVolumeBlock
 	}
 
 	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, pvc, func() error {
@@ -2212,7 +2229,7 @@ func (v *VSHandler) removeOCMAnnotationsAndUpdate(obj client.Object) error {
 
 func (v *VSHandler) volumeModeForProtectedPVC(protectedPVC *ramendrv1alpha1.ProtectedPVC) *corev1.PersistentVolumeMode {
 	volumeMode := corev1.PersistentVolumeFilesystem
-	if util.IsRBDEnabledForVolSyncReplication(v.owner.GetAnnotations()) &&
+	if util.IsPVCMarkedForVolSync(v.owner.GetAnnotations()) &&
 		protectedPVC.VolumeMode != nil &&
 		*protectedPVC.VolumeMode == corev1.PersistentVolumeBlock {
 		volumeMode = corev1.PersistentVolumeBlock

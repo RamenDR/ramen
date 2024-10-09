@@ -18,6 +18,7 @@ import (
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects/velero"
+	"github.com/ramendr/ramen/internal/controller/util"
 	"golang.org/x/exp/maps" // TODO replace with "maps" in go1.21+
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -864,15 +865,19 @@ func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alph
 		return fmt.Errorf(msg)
 	}
 
-	if peerClass.ReplicationID != "" {
-		replicationClass := v.findReplicationClassUsingPeerClass(peerClass, storageClass)
-		if replicationClass != nil {
-			v.volRepPVCs = append(v.volRepPVCs, *pvc)
+	pvcEnabledForVolSync := util.IsPVCMarkedForVolSync(v.instance.GetAnnotations())
 
-			return nil
+	if !pvcEnabledForVolSync {
+		if peerClass.ReplicationID != "" {
+			replicationClass := v.findReplicationClassUsingPeerClass(peerClass, storageClass)
+			if replicationClass != nil {
+				v.volRepPVCs = append(v.volRepPVCs, *pvc)
+
+				return nil
+			}
+
+			return fmt.Errorf("failed to find matching peerClass for PVC") // TODO: better error message
 		}
-
-		return fmt.Errorf("failed to find matching peerClass for PVC") // TODO: better error message
 	}
 
 	if v.instance.Spec.VolSync.Disabled {

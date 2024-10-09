@@ -14,8 +14,8 @@ var _ = Describe("misc", func() {
 	Expect(util.IsCGEnabled(map[string]string{})).Should(Equal(false))
 	Expect(util.IsCGEnabled(map[string]string{util.IsCGEnabledAnnotation: "true"})).Should(Equal(true))
 
-	Expect(util.IsRBDEnabledForVolSyncReplication(nil)).Should(Equal(false))
-	Expect(util.IsRBDEnabledForVolSyncReplication(map[string]string{})).Should(Equal(false))
-	Expect(util.IsRBDEnabledForVolSyncReplication(map[string]string{util.UseVolSyncForPVCProtection: "true"})).
+	Expect(util.IsPVCMarkedForVolSync(nil)).Should(Equal(false))
+	Expect(util.IsPVCMarkedForVolSync(map[string]string{})).Should(Equal(false))
+	Expect(util.IsPVCMarkedForVolSync(map[string]string{util.UseVolSyncForPVCProtection: "true"})).
 		Should(Equal(true))
 })
