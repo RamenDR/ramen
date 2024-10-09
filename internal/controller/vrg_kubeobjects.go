@@ -59,6 +59,7 @@ func kubeObjectsRecoverName(prefix string, groupNumber int) string {
 }
 
 func (v *VRGInstance) kubeObjectsProtectPrimary(result *ctrl.Result) {
+	// TODO: empty function is called, status needs to be updated in case of hooks.
 	v.kubeObjectsProtect(result, kubeObjectsCaptureStartConditionallyPrimary,
 		func() {},
 	)
@@ -187,6 +188,7 @@ func kubeObjectsCaptureStartConditionallySecondary(
 	captureStart()
 }
 
+// TODO: captureStart seems to be not used, cross check.
 func kubeObjectsCaptureStartConditionallyPrimary(
 	v *VRGInstance, result *ctrl.Result,
 	captureStartGeneration int64, captureStartTimeSince, captureStartInterval time.Duration,
@@ -246,6 +248,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	requestsCompletedCount := 0
 	annotations := map[string]string{vrgGenerationKey: strconv.FormatInt(generation, vrgGenerationNumberBase)}
 
+	// TODO: before processing of groups, should hooks be executed?
 	for groupNumber, captureGroup := range groups {
 		log1 := log.WithValues("group", groupNumber, "name", captureGroup.Name)
 		requestsCompletedCount += v.kubeObjectsGroupCapture(
@@ -726,7 +729,7 @@ func getCaptureGroups(recipe Recipe.Recipe) ([]kubeobjects.CaptureSpec, error) {
 	}
 
 	resources := make([]kubeobjects.CaptureSpec, len(workflow.Sequence))
-
+	// TODO: the for loop needs to be changed? resource is map, so key, value can be used?
 	for index, resource := range workflow.Sequence {
 		for resourceType := range resource {
 			resourceName := resource[resourceType]
@@ -829,6 +832,7 @@ func getResourceAndConvertToRecoverGroup(
 	return nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec"}, resourceType)
 }
 
+// Function signature should also be changed to return Recipe.Check
 func getHookAndOpFromRecipe(recipe *Recipe.Recipe, name string) (*Recipe.Hook, *Recipe.Operation, error) {
 	// hook can be made up of optionalPrefix/hookName; workflow sequence uses full name
 	var prefix string
@@ -848,7 +852,7 @@ func getHookAndOpFromRecipe(recipe *Recipe.Recipe, name string) (*Recipe.Hook, *
 	default:
 		return nil, nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec.Hook.Name"}, name)
 	}
-
+	// TODO: Here based on the hook type, suffix needs to be matched either with chks or ops
 	// match prefix THEN suffix
 	for _, hook := range recipe.Spec.Hooks {
 		if hook.Name == prefix {
@@ -864,6 +868,7 @@ func getHookAndOpFromRecipe(recipe *Recipe.Recipe, name string) (*Recipe.Hook, *
 }
 
 // TODO: complete functionality - add Hook support to KubeResourcesSpec, then copy in Velero object creation
+// TODO: For check hooks, capture spec needs to be altered accordingly? Or where to execute the hooks?
 func convertRecipeHookToCaptureSpec(
 	hook Recipe.Hook, op Recipe.Operation) (*kubeobjects.CaptureSpec, error,
 ) {
@@ -873,6 +878,7 @@ func convertRecipeHookToCaptureSpec(
 
 	captureSpec := kubeobjects.CaptureSpec{
 		Name: hookName,
+		// TODO: Check why pod is hardcoded in the included resources?
 		Spec: kubeobjects.Spec{
 			KubeResourcesSpec: kubeobjects.KubeResourcesSpec{
 				IncludedNamespaces: []string{hook.Namespace},
@@ -907,6 +913,8 @@ func convertRecipeHookToRecoverSpec(hook Recipe.Hook, op Recipe.Operation) (*kub
 	}, nil
 }
 
+// TODO: In case of check hooks, the below function needs to get commands etc from check
+// And also array of checks should be handled.
 func getHookSpecFromHook(hook Recipe.Hook, op Recipe.Operation) []kubeobjects.HookSpec {
 	return []kubeobjects.HookSpec{
 		{

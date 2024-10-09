@@ -88,6 +88,7 @@ type KubeResourcesSpec struct {
 	Hooks []HookSpec `json:"hooks,omitempty"`
 }
 
+// TODO: HookSpec needs to be changed in accordance with new recipe changes?
 type HookSpec struct {
 	Name string `json:"name,omitempty"`
 
