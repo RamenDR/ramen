@@ -242,7 +242,7 @@ func IsCGEnabled(annotations map[string]string) bool {
 	return annotations[IsCGEnabledAnnotation] == "true"
 }
 
-func IsRBDEnabledForVolSyncReplication(annotations map[string]string) bool {
+func IsPVCMarkedForVolSync(annotations map[string]string) bool {
 	return annotations[UseVolSyncForPVCProtection] == "true"
 }
 

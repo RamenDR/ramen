@@ -142,6 +142,7 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		Labels:             pvc.Labels,
 		AccessModes:        pvc.Spec.AccessModes,
 		Resources:          pvc.Spec.Resources,
+		VolumeMode:         pvc.Spec.VolumeMode,
 	}
 
 	protectedPVC := v.findProtectedPVC(pvc.Namespace, pvc.Name)
