@@ -51,7 +51,7 @@ def remove(profile, target=DEFAULT_CONFIG):
             return
 
         for k in ("contexts", "clusters", "users"):
-            old = config.get(k, [])
+            old = config.get(k) or []
             new = [v for v in old if v["name"] != profile["name"]]
             if len(new) < len(old):
                 config[k] = new
