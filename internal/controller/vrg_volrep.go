@@ -331,7 +331,9 @@ func (v *VRGInstance) protectPVC(pvc *corev1.PersistentVolumeClaim, log logr.Log
 	vrg := v.instance
 	ownerAdded := false
 
-	switch comparison := rmnutil.ObjectOwnerSetIfNotAlready(pvc, vrg); comparison {
+	comparison := rmnutil.ObjectOwnerSetIfNotAlready(pvc, vrg)
+	log.Info("***ASN, pvc ownership comparision result ", "pvcName=", pvc.Name, "comparision= ", comparison)
+	switch comparison {
 	case rmnutil.Absent:
 		ownerAdded = true
 	case rmnutil.Same:
@@ -532,37 +534,43 @@ func (v *VRGInstance) generateArchiveAnnotation(gen int64) string {
 	return fmt.Sprintf("%s-%s", pvcVRAnnotationArchivedVersionV1, strconv.Itoa(int(gen)))
 }
 
-func (v *VRGInstance) isArchivedAlready(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
+func (v *VRGInstance) isArchivedAlready(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, bool) {
 	pvHasAnnotation := false
 	pvcHasAnnotation := false
-
+	pvcOwnerLabelSame, pvOwnerLabelSame := false, false
+	vrg := v.instance
 	pv, err := v.getPVFromPVC(pvc)
 	if err != nil {
 		log.Error(err, "Failed to get PV to check if archived")
 
-		return false
+		return false, false
 	}
-
+	// Check should also include owner label along with archived annotation so that VRG
+	// is not considering wrong (This PVC is already protected by someone else)
 	pvcDesiredValue := v.generateArchiveAnnotation(pvc.Generation)
 	if v, ok := pvc.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey]; ok && (v == pvcDesiredValue) {
+		pvcOwnerLabelSame = rmnutil.DoesObjectOwnerLabelsMatch(pvc, vrg)
 		pvcHasAnnotation = true
 	}
 
 	pvDesiredValue := v.generateArchiveAnnotation(pv.Generation)
 	if v, ok := pv.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey]; ok && (v == pvDesiredValue) {
 		pvHasAnnotation = true
+		pvOwnerLabelSame = rmnutil.DoesObjectOwnerLabelsMatch(&pv, vrg)
 	}
 
-	if !pvHasAnnotation || !pvcHasAnnotation {
-		return false
-	}
-
-	return true
+	return !pvcHasAnnotation || !pvHasAnnotation, !pvcOwnerLabelSame || !pvOwnerLabelSame
 }
 
 // Upload PV to the list of S3 stores in the VRG spec
 func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (err error) {
-	if v.isArchivedAlready(pvc, log) {
+	if hasAnnotation, hasSameOwner := v.isArchivedAlready(pvc, log); hasAnnotation {
+		log.Info("****ASN, in isAlreadyArchived ", " hasAnnotation=", hasAnnotation, " hasSameOwner=", hasSameOwner)
+		if !hasSameOwner {
+			msg := "pvc is already owned by different vrg"
+			v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonPVOrPVCOwnedByDifferentOwner, msg)
+			return errors.New(msg)
+		}
 		msg := fmt.Sprintf("PV cluster data already protected for PVC %s", pvc.Name)
 		v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name,
 			VRGConditionReasonUploaded, msg)
@@ -1796,7 +1804,7 @@ func setPVCClusterDataProtectedCondition(protectedPVC *ramendrv1alpha1.Protected
 		setVRGClusterDataProtectedCondition(&protectedPVC.Conditions, observedGeneration, message)
 	case VRGConditionReasonUploading:
 		setVRGClusterDataProtectingCondition(&protectedPVC.Conditions, observedGeneration, message)
-	case VRGConditionReasonUploadError, VRGConditionReasonClusterDataAnnotationFailed:
+	case VRGConditionReasonUploadError, VRGConditionReasonClusterDataAnnotationFailed, VRGConditionReasonPVOrPVCOwnedByDifferentOwner:
 		setVRGClusterDataUnprotectedCondition(&protectedPVC.Conditions, observedGeneration, reason, message)
 	default:
 		// if appropriate reason is not provided, then treat it as an unknown condition.
