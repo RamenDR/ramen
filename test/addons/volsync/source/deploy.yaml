@@ -8,7 +8,6 @@ metadata:
   labels:
     appname: busybox
   name: busybox
-  namespace: busybox
 spec:
   replicas: 1
   selector:
