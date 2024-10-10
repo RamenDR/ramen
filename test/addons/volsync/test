@@ -14,7 +14,7 @@ from drenv import kubectl
 from drenv import subctl
 
 DEPLOY = "busybox"
-NAMESPACE = "busybox"
+NAMESPACE = "volsync-test"
 
 VOLSYNC_SECRET = "volsync-rsync-tls-busybox-dst"
 VOLSYNC_SERVICE = "volsync-rsync-tls-dst-busybox-dst"
@@ -70,7 +70,12 @@ def setup_replication_secret(cluster1, cluster2):
     print(f"Creating volsync secret in cluster '{cluster1}'")
     template = drenv.template("source/secret.yaml")
     yaml = template.substitute(value=psk_txt)
-    kubectl.apply("--filename=-", input=yaml, context=cluster1)
+    kubectl.apply(
+        "--filename=-",
+        f"--namespace={NAMESPACE}",
+        input=yaml,
+        context=cluster1,
+    )
 
 
 def setup_replication_service(cluster1, cluster2):
@@ -105,7 +110,12 @@ def run_replication(cluster):
     Start replication and wait until replication completes.
     """
     print(f"Creating replication source in cluster '{cluster}'")
-    kubectl.apply("--filename", "source/replication-src.yaml", context=cluster)
+    kubectl.apply(
+        "--filename",
+        "source/replication-src.yaml",
+        f"--namespace={NAMESPACE}",
+        context=cluster,
+    )
 
     print(f"Waiting until replication source reports sync status in '{cluster}'")
     drenv.wait_for(
@@ -141,7 +151,12 @@ def teardown(cluster1, cluster2):
     resources created in the same namespace.
     """
     print(f"Delete replication source in cluster '{cluster1}'")
-    kubectl.delete("--filename", "source/replication-src.yaml", context=cluster1)
+    kubectl.delete(
+        "--filename",
+        "source/replication-src.yaml",
+        f"--namespace={NAMESPACE}",
+        context=cluster1,
+    )
 
     print(f"Unexporting volsync service in cluster '{cluster2}'")
     subctl.unexport("service", VOLSYNC_SERVICE, cluster2, namespace=NAMESPACE)

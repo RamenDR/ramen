@@ -4,4 +4,6 @@
 ---
 resources:
 - namespace.yaml
+- pvc.yaml
 - replication-dst.yaml
+namespace: volsync-test
