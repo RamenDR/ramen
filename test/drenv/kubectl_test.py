@@ -16,6 +16,8 @@ EXAMPLE_DEPLOYMENT = os.path.join("addons", "example", "deployment.yaml")
 # Avoid random timeouts in github.
 TIMEOUT = 30
 
+pytestmark = pytest.mark.cluster
+
 
 def test_version(tmpenv):
     out = kubectl.version(output="json", context=tmpenv.profile)

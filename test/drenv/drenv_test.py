@@ -24,6 +24,7 @@ def test_start_unknown():
         watch("drenv", "start", "--name-prefix", "unknown-", EXTERNAL_ENV, "--verbose")
 
 
+@pytest.mark.cluster
 def test_start(tmpenv):
     watch("drenv", "start", "--name-prefix", tmpenv.prefix, EXTERNAL_ENV, "--verbose")
     assert cluster.status(tmpenv.prefix + "cluster") == cluster.READY
@@ -48,6 +49,7 @@ def test_stop_unknown():
     run("drenv", "stop", "--name-prefix", "unknown-", EXTERNAL_ENV)
 
 
+@pytest.mark.cluster
 def test_stop(tmpenv):
     # Stop does nothing, so cluster must be ready.
     run("drenv", "stop", "--name-prefix", tmpenv.prefix, EXTERNAL_ENV)
@@ -59,6 +61,7 @@ def test_delete_unknown():
     run("drenv", "delete", "--name-prefix", "unknown-", EXTERNAL_ENV)
 
 
+@pytest.mark.cluster
 def test_delete(tmpenv):
     # Delete does nothing, so cluster must be ready.
     run("drenv", "delete", "--name-prefix", tmpenv.prefix, EXTERNAL_ENV)
@@ -103,6 +106,7 @@ key2: value 2
     assert not os.path.exists(kustomization_dir)
 
 
+@pytest.mark.cluster
 def test_kustomization_yaml():
     content = """
 key1: value 1
@@ -115,6 +119,7 @@ key2: value 2
     assert not os.path.exists(kustomization_dir)
 
 
+@pytest.mark.cluster
 def test_temporary_kubeconfig(tmpenv):
     orig_default_config = get_config(context=tmpenv.profile)
     print("orig_default_config", yaml.dump(orig_default_config))
