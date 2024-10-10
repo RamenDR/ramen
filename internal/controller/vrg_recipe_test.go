@@ -43,6 +43,31 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 		vrInterval      = "0m"
 	)
 	var (
+		storageIDs     = []string{"sid-1"}
+		replicationIDs = []string{"repl-1", "repl-2", "repl-3"}
+	)
+
+	var (
+		scLabels = func() map[string]string {
+			return map[string]string{
+				controllers.StorageIDLabel: storageIDs[0],
+			}
+		}
+		vrcLabels = func() map[string]string {
+			return map[string]string{
+				controllers.VolumeReplicationIDLabel: replicationIDs[0],
+				controllers.StorageIDLabel:           storageIDs[0],
+			}
+		}
+		peerClass = func(replicationID, storageClassName string, sIDs []string) ramen.PeerClass {
+			return ramen.PeerClass{
+				ReplicationID:    replicationID,
+				StorageID:        sIDs,
+				StorageClassName: storageClassName,
+			}
+		}
+	)
+	var (
 		r                   *recipe.Recipe
 		vrg                 *ramen.VolumeReplicationGroup
 		vrgDataReadyPointer *metav1.Condition
@@ -51,7 +76,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 
 	scCreateAndDeferDelete := func() {
 		sc := &storagev1.StorageClass{
-			ObjectMeta:  metav1.ObjectMeta{Name: scName},
+			ObjectMeta:  metav1.ObjectMeta{Name: scName, Labels: scLabels()},
 			Provisioner: provisionerName,
 		}
 		Expect(k8sClient.Create(ctx, sc)).To(Succeed())
@@ -59,7 +84,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	}
 	vrcCreateAndDeferDelete := func() {
 		vrc := &volrep.VolumeReplicationClass{
-			ObjectMeta: metav1.ObjectMeta{Name: vrcName},
+			ObjectMeta: metav1.ObjectMeta{Name: vrcName, Labels: vrcLabels()},
 			Spec: volrep.VolumeReplicationClassSpec{
 				Provisioner: provisionerName,
 				Parameters: map[string]string{
@@ -186,13 +211,18 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	recipeDelete := func() error {
 		return k8sClient.Delete(ctx, r)
 	}
+	vrgSyncPeerClasses := func() []ramen.PeerClass {
+		return []ramen.PeerClass{peerClass(replicationIDs[0], scName, storageIDs)}
+	}
 	vrgDefine := func(namespaceName string) {
 		vrg = &ramen.VolumeReplicationGroup{
 			ObjectMeta: metav1.ObjectMeta{Namespace: namespaceName, Name: "a"},
 			Spec: ramen.VolumeReplicationGroupSpec{
-				S3Profiles:           []string{controllers.NoS3StoreAvailable},
-				ReplicationState:     ramen.Primary,
-				Sync:                 &ramen.VRGSyncSpec{},
+				S3Profiles:       []string{controllers.NoS3StoreAvailable},
+				ReplicationState: ramen.Primary,
+				Sync: &ramen.VRGSyncSpec{
+					PeerClasses: vrgSyncPeerClasses(),
+				},
 				KubeObjectProtection: &ramen.KubeObjectProtectionSpec{},
 			},
 		}
