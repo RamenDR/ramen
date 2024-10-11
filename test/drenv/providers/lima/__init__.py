@@ -61,7 +61,7 @@ def exists(profile):
     return False
 
 
-def start(profile, verbose=False):
+def start(profile, verbose=False, timeout=None):
     start = time.monotonic()
     logging.info("[%s] Starting lima cluster", profile["name"])
 
@@ -76,7 +76,7 @@ def start(profile, verbose=False):
     # Get vm before starting to detect a stopped vm.
     vm = _get_vm(profile)
 
-    _start_vm(profile)
+    _start_vm(profile, timeout=timeout)
     _add_kubeconfig(profile, vm)
 
     debug = partial(logging.debug, f"[{profile['name']}] %s")
@@ -181,7 +181,9 @@ def _write_config(profile, path):
     # The "vz" type is required to support amd64 images on arm64, needed for
     # OCM, and also provide the best performance.
     config["vmType"] = "vz"
-    config["rosetta"] = {"enabled": True, "binfmt": True}
+
+    if profile["rosetta"]:
+        config["rosetta"] = {"enabled": True, "binfmt": True}
 
     # We always use socket_vmnet to get shared network.
     config["networks"] = [{"socket": "/var/run/socket_vmnet"}]
@@ -270,8 +272,12 @@ def _create_vm(profile, config):
     _watch("create", "--name", profile["name"], config, context=profile["name"])
 
 
-def _start_vm(profile):
-    _watch("start", profile["name"], context=profile["name"])
+def _start_vm(profile, timeout=None):
+    args = ["start"]
+    if timeout:
+        args.append(f"--timeout={timeout}s")
+    args.append(profile["name"])
+    _watch(*args, context=profile["name"])
 
 
 def _stop_vm(profile):

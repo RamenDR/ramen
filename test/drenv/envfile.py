@@ -46,11 +46,11 @@ _PLATFORM_DEFAULTS = {
     },
     "darwin": {
         PROVIDER: {
-            "x86_64": "minikube",
+            "x86_64": "lima",
             "arm64": "lima",
         },
         VM: {
-            "x86_64": "hyperkit",
+            "x86_64": "",
             "arm64": "",
         },
         CONTAINER: "podman",
@@ -136,7 +136,7 @@ def _validate_profile(profile, addons_root):
     # If True, this is an external cluster and we don't have to start it.
     profile.setdefault("external", False)
 
-    # Properties for drenv managed cluster.
+    # Common properties.
     profile.setdefault("provider", PROVIDER)
     profile.setdefault("driver", VM)
     profile.setdefault("container_runtime", "")
@@ -154,6 +154,9 @@ def _validate_profile(profile, addons_root):
     profile.setdefault("feature_gates", [])
     profile.setdefault("containerd", None)
     profile.setdefault("workers", [])
+
+    # Lima provider properties.
+    profile.setdefault("rosetta", True)
 
     _validate_platform_defaults(profile)
 

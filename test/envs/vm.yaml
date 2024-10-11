@@ -8,7 +8,9 @@ profiles:
   - name: cluster
     driver: $vm
     container_runtime: containerd
-    memory: "3g"
+    cpus: 1
+    memory: "2g"
+    rosetta: false
     workers:
       - addons:
           - name: example

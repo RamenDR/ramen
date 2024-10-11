@@ -25,7 +25,7 @@ def exists(profile):
     return True
 
 
-def start(profile, verbose=False):
+def start(profile, verbose=False, timeout=None):
     start = time.monotonic()
     logging.info("[%s] Checking external cluster status", profile["name"])
 

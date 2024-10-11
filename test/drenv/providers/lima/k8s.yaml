@@ -13,6 +13,8 @@
 images:
   - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
     arch: "aarch64"
+  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img"
+    arch: "x86_64"
 
 mounts: []
 
@@ -24,22 +26,10 @@ containerd:
 # forwarding cannot work for multiple clusters since same port from multiple
 # clusters is mapped to the same host port.
 portForwards:
-  - guestPortRange: [1, 65535]
-    guestIP: "0.0.0.0"
-    ignore: true
+  - ignore: true
+    proto: any
 
 provision:
-
-  - mode: system
-    script: |
-      #!/bin/bash
-      set -eux -o pipefail
-      echo "Promoting default route on shared network"
-      route=$(ip route show default dev lima0)
-      if [ -n "$route" ] && ! echo $route | grep -E -q "metric 1\b"; then
-        ip route add $route metric 1
-        ip route del $route
-      fi
 
   # See <https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/>
   - mode: system
@@ -48,20 +38,20 @@ provision:
       set -eux -o pipefail
       command -v kubeadm >/dev/null 2>&1 && exit 0
       # Install and configure prerequisites
-      cat <<EOF | sudo tee /etc/modules-load.d/containerd.conf
+      cat <<EOF | tee /etc/modules-load.d/containerd.conf
       overlay
       br_netfilter
       EOF
       modprobe overlay
       modprobe br_netfilter
-      cat <<EOF | sudo tee /etc/sysctl.d/99-kubernetes-cri.conf
+      cat <<EOF | tee /etc/sysctl.d/99-kubernetes-cri.conf
       net.bridge.bridge-nf-call-iptables  = 1
       net.ipv4.ip_forward                 = 1
       net.bridge.bridge-nf-call-ip6tables = 1
       EOF
       # Avoid "failed to creating a fsnotify watcher: too many open files"
       # errors with bigger setups.
-      cat <<EOF | sudo tee /etc/sysctl.d/99-fs-inotify.conf
+      cat <<EOF | tee /etc/sysctl.d/99-fs-inotify.conf
       fs.inotify.max_user_instances       = 8192
       fs.inotify.max_user_watches         = 65536
       EOF
@@ -71,12 +61,12 @@ provision:
       apt-get update
       apt-get install -y apt-transport-https ca-certificates curl
       VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt | sed -e 's/v//' | cut -d'.' -f1-2)
-      echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${VERSION}/deb/ /" | sudo tee /etc/apt/sources.list.d/kubernetes.list
-      curl -fsSL https://pkgs.k8s.io/core:/stable:/v${VERSION}/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+      echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${VERSION}/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list
+      curl -fsSL https://pkgs.k8s.io/core:/stable:/v${VERSION}/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
       apt-get update
       # cri-tools
       apt-get install -y cri-tools
-      cat  <<EOF | sudo tee /etc/crictl.yaml
+      cat  <<EOF | tee /etc/crictl.yaml
       runtime-endpoint: unix:///run/containerd/containerd.sock
       EOF
       # cni-plugins
@@ -126,12 +116,12 @@ provision:
         criSocket: unix:///run/containerd/containerd.sock
         kubeletExtraArgs:
           # Ramen: use specific network
-          node-ip: $ADVERTISE_ADDRESS
+          node-ip: "$ADVERTISE_ADDRESS"
           # Ramen: speed up image pulls
           serialize-image-pulls: "false"
       # Ramen: serve specific network.
       localAPIEndpoint:
-        advertiseAddress: $ADVERTISE_ADDRESS
+        advertiseAddress: "$ADVERTISE_ADDRESS"
       ---
       kind: ClusterConfiguration
       apiVersion: kubeadm.k8s.io/v1beta3
@@ -147,25 +137,35 @@ provision:
       featureGates:
         StatefulSetAutoDeletePVC: true
       EOF
-      kubeadm init --config kubeadm-config.yaml
+
+      # We ignore NumCPU preflight error for running a minimal cluster in
+      # github actions and for testing drenv.
+      # [ERROR NumCPU]: the number of available CPUs 1 is less than the required 2
+      kubeadm init --config kubeadm-config.yaml --ignore-preflight-errors NumCPU
+
+      # Scale down coredns like minikube
+      kubectl scale deploy coredns -n kube-system --replicas=1
+
       # Installing a Pod network add-on
       kubectl apply -f https://github.com/flannel-io/flannel/releases/download/v0.24.0/kube-flannel.yml
+
       # Control plane node isolation
       kubectl taint nodes --all node-role.kubernetes.io/control-plane-
-      mkdir -p ${HOME:-/root}/.kube && cp -f $KUBECONFIG ${HOME:-/root}/.kube/config
 
   - mode: system
     script: |
       #!/bin/bash
       set -eux -o pipefail
-      export KUBECONFIG=/etc/kubernetes/admin.conf
+      KUBECONFIG=/etc/kubernetes/admin.conf
+      mkdir -p ${HOME:-/root}/.kube
+      cp -f $KUBECONFIG ${HOME:-/root}/.kube/config
       mkdir -p {{.Home}}/.kube
       cp -f $KUBECONFIG {{.Home}}/.kube/config
       chown -R {{.User}} {{.Home}}/.kube
 
 probes:
 
-  - description: "kubeadm to be installed"
+  - description: "kubeadm installed"
     script: |
       #!/bin/bash
       set -eux -o pipefail
@@ -176,7 +176,7 @@ probes:
     hint: |
       See "/var/log/cloud-init-output.log". in the guest
 
-  - description: "kubeadm to be completed"
+  - description: "kubeadm completed"
     script: |
       #!/bin/bash
       set -eux -o pipefail
@@ -187,20 +187,14 @@ probes:
     hint: |
       The k8s kubeconfig file has not yet been created.
 
-  - description: "kubernetes cluster to be running"
+  - description: "kubernetes cluster is ready"
     script: |
       #!/bin/bash
       set -eux -o pipefail
-      if ! timeout 300s bash -c "until kubectl version >/dev/null 2>&1; do sleep 3; done"; then
-        echo >&2 "kubernetes cluster is not up and running yet"
+      if ! timeout 300s bash -c "until kubectl get --raw /readyz >/dev/null 2>&1; do sleep 3; done"; then
+        echo >&2 "kubernetes cluster is not ready yet"
         exit 1
       fi
-
-  - description: "coredns deployment to be running"
-    script: |
-      #!/bin/bash
-      set -eux -o pipefail
-      kubectl wait -n kube-system --timeout=180s --for=condition=available deploy coredns
 
 copyToHost:
   - guest: "/etc/kubernetes/admin.conf"
