@@ -1523,6 +1523,20 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string, repState rmn.Re
 	annotations[DRPCNameAnnotation] = d.instance.Name
 	annotations[DRPCNamespaceAnnotation] = d.instance.Namespace
 
+	// vrgFromCluster, _ := d.getVRGFromManifestWork(homeCluster)
+
+	vrgFromCluster, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name,
+		d.vrgNamespace, homeCluster, annotations)
+	d.log.Info("got", "vrg from managedCluster", vrgFromCluster)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			d.log.Info(fmt.Sprintf("VRG not found on %q", homeCluster))
+		}
+	}
+
+	d.updateIfPeerClassesFound(vrgFromCluster, &vrg)
+
 	if err := d.mwu.CreateOrUpdateVRGManifestWork(
 		d.instance.Name, d.vrgNamespace,
 		homeCluster, vrg, annotations); err != nil {
@@ -1532,6 +1546,22 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string, repState rmn.Re
 	}
 
 	return nil
+}
+
+func (d *DRPCInstance) updateIfPeerClassesFound(vrgFromCluster, generatedVRG *rmn.VolumeReplicationGroup) {
+
+	switch d.drType {
+	case DRTypeSync:
+		peerClasses := vrgFromCluster.Spec.Sync.PeerClasses
+		if len(peerClasses) != 0 {
+			generatedVRG.Spec.Sync.PeerClasses = peerClasses
+		}
+	case DRTypeAsync:
+		peerClasses := vrgFromCluster.Spec.Async.PeerClasses
+		if len(peerClasses) != 0 {
+			generatedVRG.Spec.Async.PeerClasses = peerClasses
+		}
+	}
 }
 
 // ensureVRGManifestWork ensures that the VRG ManifestWork exists and matches the current VRG state.
