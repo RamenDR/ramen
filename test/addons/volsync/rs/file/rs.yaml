@@ -11,8 +11,8 @@ spec:
   trigger:
     manual: replication-1
   rsyncTLS:
-    keySecret: volsync-rsync-tls-busybox-dst
-    address: volsync-rsync-tls-dst-busybox-dst.volsync-test.svc.clusterset.local
+    keySecret: volsync-rsync-tls-busybox-dst-file
+    address: volsync-rsync-tls-dst-busybox-dst.volsync-test-file.svc.clusterset.local
     copyMethod: Snapshot
     volumeSnapshotClassName: csi-cephfsplugin-snapclass
     moverSecurityContext:
