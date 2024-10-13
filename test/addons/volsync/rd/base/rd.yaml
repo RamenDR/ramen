@@ -10,8 +10,8 @@ spec:
   rsyncTLS:
     copyMethod: Snapshot
     destinationPVC: volsync-pvc
-    storageClassName: rook-cephfs
-    volumeSnapshotClassName: csi-cephfsplugin-snapclass
+    storageClassName: STORAGE_CLASS
+    volumeSnapshotClassName: VOLUME_SNAPSHOT_CLASS
     moverSecurityContext:
       runAsUser: 10000
       runAsGroup: 10000
