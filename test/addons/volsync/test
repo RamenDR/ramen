@@ -22,12 +22,12 @@ VOLSYNC_SERVICE = "volsync-rsync-tls-dst-busybox-dst"
 
 def setup_application(cluster):
     print(f"Deploy application on cluster '{cluster}'")
-    kubectl.apply("--kustomize", "source", context=cluster)
+    kubectl.apply("--kustomize", "app", context=cluster)
 
 
 def setup_replication_destination(cluster):
     print(f"Create replication destination on cluster '{cluster}'")
-    kubectl.apply("--kustomize", "destination", context=cluster)
+    kubectl.apply("--kustomize", "rd", context=cluster)
 
 
 def wait_for_application(cluster):
@@ -68,7 +68,7 @@ def setup_replication_secret(cluster1, cluster2):
     )
 
     print(f"Creating volsync secret in cluster '{cluster1}'")
-    template = drenv.template("source/secret.yaml")
+    template = drenv.template("rs/secret.yaml")
     yaml = template.substitute(value=psk_txt)
     kubectl.apply(
         "--filename=-",
@@ -112,7 +112,7 @@ def run_replication(cluster):
     print(f"Creating replication source in cluster '{cluster}'")
     kubectl.apply(
         "--filename",
-        "source/replication-src.yaml",
+        "rs/replication-src.yaml",
         f"--namespace={NAMESPACE}",
         context=cluster,
     )
@@ -153,7 +153,7 @@ def teardown(cluster1, cluster2):
     print(f"Delete replication source in cluster '{cluster1}'")
     kubectl.delete(
         "--filename",
-        "source/replication-src.yaml",
+        "rs/replication-src.yaml",
         f"--namespace={NAMESPACE}",
         context=cluster1,
     )
@@ -164,7 +164,7 @@ def teardown(cluster1, cluster2):
     print(f"Delete source in cluster '{cluster1}'")
     kubectl.delete(
         "--kustomize",
-        "source",
+        "app",
         "--ignore-not-found",
         "--wait=false",
         context=cluster1,
@@ -173,7 +173,7 @@ def teardown(cluster1, cluster2):
     print(f"Delete destination in cluster '{cluster2}'")
     kubectl.delete(
         "--kustomize",
-        "destination",
+        "rd",
         "--ignore-not-found",
         "--wait=false",
         context=cluster2,
