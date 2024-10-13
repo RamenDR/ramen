@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import concurrent.futures
 import json
 import os
 import sys
@@ -228,6 +229,20 @@ def teardown(cluster1, cluster2, variant):
         )
 
 
+def test(cluster1, cluster2, variant):
+    setup_application(cluster1, variant)
+    setup_replication_destination(cluster2, variant)
+
+    wait_for_application(cluster1, variant)
+    wait_for_replication_destination(cluster2, variant)
+
+    setup_replication_secret(cluster1, cluster2, variant)
+    setup_replication_service(cluster1, cluster2, variant)
+
+    run_replication(cluster1, variant)
+    teardown(cluster1, cluster2, variant)
+
+
 if len(sys.argv) != 3:
     print(f"Usage: {sys.argv[0]} cluster1 cluster2")
     sys.exit(1)
@@ -235,14 +250,10 @@ if len(sys.argv) != 3:
 os.chdir(os.path.dirname(__file__))
 cluster1, cluster2 = sys.argv[1:]
 
-setup_application(cluster1, "file")
-setup_replication_destination(cluster2, "file")
-
-wait_for_application(cluster1, "file")
-wait_for_replication_destination(cluster2, "file")
-
-setup_replication_secret(cluster1, cluster2, "file")
-setup_replication_service(cluster1, cluster2, "file")
-
-run_replication(cluster1, "file")
-teardown(cluster1, cluster2, "file")
+with concurrent.futures.ThreadPoolExecutor() as e:
+    tests = [
+        e.submit(test, cluster1, cluster2, "file"),
+        e.submit(test, cluster1, cluster2, "block"),
+    ]
+    for t in concurrent.futures.as_completed(tests):
+        t.result()

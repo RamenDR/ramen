@@ -5,5 +5,4 @@
 resources:
 - namespace.yaml
 - pvc.yaml
-- deploy.yaml
 namespace: volsync-test

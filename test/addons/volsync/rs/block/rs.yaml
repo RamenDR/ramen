@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationSource
+metadata:
+  name: busybox-src
+spec:
+  sourcePVC: busybox-pvc
+  trigger:
+    manual: replication-1
+  rsyncTLS:
+    keySecret: volsync-rsync-tls-busybox-dst-block
+    address: volsync-rsync-tls-dst-busybox-dst.volsync-test-block.svc.clusterset.local
+    copyMethod: Snapshot
+    volumeSnapshotClassName: csi-rbdplugin-snapclass
+    moverSecurityContext:
+      runAsUser: 10000
+      runAsGroup: 10000
+      fsGroup: 10000
