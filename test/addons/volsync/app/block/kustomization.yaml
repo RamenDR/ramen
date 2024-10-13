@@ -2,23 +2,23 @@
 # SPDX-License-Identifier: Apache-2.0
 
 ---
-namespace: volsync-test-file
+namespace: volsync-test-block
 resources:
   - ../base
   - deploy.yaml
 patches:
-  # Customize for internal cephfs storage.
+  # Customize for internal ceph rbd storage.
   - target:
       kind: PersistentVolumeClaim
       name: busybox-pvc
     patch: |-
       - op: replace
         path: /spec/storageClassName
-        value: rook-cephfs
+        value: rook-ceph-block
       - op: replace
         path: /spec/accessModes
         value:
-          - ReadWriteMany
+          - ReadWriteOnce
       - op: replace
         path: /spec/volumeMode
-        value: Filesystem
+        value: Block

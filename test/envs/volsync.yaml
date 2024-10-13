@@ -27,6 +27,7 @@ templates:
           - name: rook-operator
           - name: rook-cluster
           - name: rook-toolbox
+          - name: rook-pool
           - name: rook-cephfs
       - addons:
           - name: external-snapshotter

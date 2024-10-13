@@ -1,0 +1,56 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# yamllint disable rule:line-length
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    appname: busybox
+  name: busybox
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      appname: busybox
+  template:
+    metadata:
+      labels:
+        appname: busybox
+    spec:
+      containers:
+      - image: quay.io/nirsof/busybox:stable
+        imagePullPolicy: IfNotPresent
+        name: busybox
+        command:
+        - sh
+        - -c
+        - |
+          trap exit TERM
+          image_size=1073741824 # 1Gi
+          block_size=512
+          blocks=$((image_size/block_size))
+          block_number=0
+          while true; do
+              data=$(date)
+              echo $data
+              echo $data | dd of=/dev/xvda bs=$block_size seek=$block_number status=none conv=fsync
+              sleep 10 &
+              wait
+              block_number=$((block_number+1))
+              if [ $block_number -ge $blocks ]; then
+                  block_number=0;
+              fi
+          done
+        volumeDevices:
+        - name: volume
+          devicePath: /dev/xvda
+      volumes:
+      - name: volume
+        persistentVolumeClaim:
+          claimName: busybox-pvc
+      securityContext:
+        runAsUser: 10000
+        runAsGroup: 10000
+        fsGroup: 10000
