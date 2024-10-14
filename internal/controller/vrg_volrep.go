@@ -239,8 +239,7 @@ func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim) err
 
 	protectedPVC := v.findProtectedPVC(pvc.GetNamespace(), pvc.GetName())
 	if protectedPVC == nil {
-		protectedPVC = &ramendrv1alpha1.ProtectedPVC{Namespace: pvc.GetNamespace(), Name: pvc.GetName()}
-		v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
+		protectedPVC = v.addProtectedPVC(pvc.GetNamespace(), pvc.GetName())
 	}
 
 	protectedPVC.ProtectedByVolSync = false
@@ -1644,17 +1643,12 @@ func (v *VRGInstance) updatePVCDataReadyConditionHelper(
 }
 
 func (v *VRGInstance) updatePVCDataReadyCondition(pvcNamespace, pvcName, reason, message string) {
-	if protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName); protectedPVC != nil {
-		setPVCDataReadyCondition(protectedPVC, reason, message, v.instance.Generation)
-		// No need to append it as an already existing entry from the list is being modified.
-		return
+	protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName)
+	if protectedPVC == nil {
+		protectedPVC = v.addProtectedPVC(pvcNamespace, pvcName)
 	}
 
-	protectedPVC := &ramendrv1alpha1.ProtectedPVC{Namespace: pvcNamespace, Name: pvcName}
 	setPVCDataReadyCondition(protectedPVC, reason, message, v.instance.Generation)
-
-	// created a new instance. Add it to the list
-	v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
 }
 
 // Disabling unparam linter as currently every invokation of this
@@ -1677,17 +1671,12 @@ func (v *VRGInstance) updatePVCDataProtectedConditionHelper(
 }
 
 func (v *VRGInstance) updatePVCDataProtectedCondition(pvcNamespace, pvcName, reason, message string) {
-	if protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName); protectedPVC != nil {
-		setPVCDataProtectedCondition(protectedPVC, reason, message, v.instance.Generation)
-		// No need to append it as an already existing entry from the list is being modified.
-		return
+	protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName)
+	if protectedPVC == nil {
+		protectedPVC = v.addProtectedPVC(pvcNamespace, pvcName)
 	}
 
-	protectedPVC := &ramendrv1alpha1.ProtectedPVC{Namespace: pvcNamespace, Name: pvcName}
 	setPVCDataProtectedCondition(protectedPVC, reason, message, v.instance.Generation)
-
-	// created a new instance. Add it to the list
-	v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
 }
 
 func setPVCDataReadyCondition(protectedPVC *ramendrv1alpha1.ProtectedPVC, reason, message string,
@@ -1743,15 +1732,12 @@ func setPVCDataProtectedCondition(protectedPVC *ramendrv1alpha1.ProtectedPVC, re
 }
 
 func (v *VRGInstance) updatePVCClusterDataProtectedCondition(pvcNamespace, pvcName, reason, message string) {
-	if protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName); protectedPVC != nil {
-		setPVCClusterDataProtectedCondition(protectedPVC, reason, message, v.instance.Generation)
-		// No need to append it as an already existing entry from the list is being modified.
-		return
+	protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName)
+	if protectedPVC == nil {
+		protectedPVC = v.addProtectedPVC(pvcNamespace, pvcName)
 	}
 
-	protectedPVC := &ramendrv1alpha1.ProtectedPVC{Namespace: pvcNamespace, Name: pvcName}
 	setPVCClusterDataProtectedCondition(protectedPVC, reason, message, v.instance.Generation)
-	v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
 }
 
 func setPVCClusterDataProtectedCondition(protectedPVC *ramendrv1alpha1.ProtectedPVC, reason, message string,
