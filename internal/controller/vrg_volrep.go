@@ -1536,11 +1536,12 @@ func (v *VRGInstance) validateAdditionalVRStatusForSecondary(pvc *corev1.Persist
 
 	conditionMet, msg := isVRConditionMet(volRep, volrep.ConditionDegraded, metav1.ConditionTrue)
 	if !conditionMet {
+		defaultMsg := "VolumeReplication resource for pvc is not in Degraded condition while resyncing"
 		v.updatePVCDataProtectedConditionHelper(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg,
-			"VolumeReplication resource for pvc is not in Degraded condition while resyncing")
+			defaultMsg)
 
 		v.updatePVCDataReadyConditionHelper(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg,
-			"VolumeReplication resource for pvc is not in Degraded condition while resyncing")
+			defaultMsg)
 
 		v.log.Info(fmt.Sprintf("VolumeReplication resource is not in degraded condition while"+
 			" resyncing is true (%s/%s)", volRep.GetName(), volRep.GetNamespace()))
