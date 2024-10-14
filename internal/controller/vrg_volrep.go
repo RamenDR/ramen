@@ -1031,9 +1031,7 @@ func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName,
 		msg := "PVC in the VolumeReplicationGroup is ready for use"
 		v.updatePVCDataReadyCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonReady, msg)
 		v.updatePVCDataProtectedCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonReady, msg)
-		v.updatePVCLastSyncTime(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
-		v.updatePVCLastSyncDuration(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
-		v.updatePVCLastSyncBytes(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
+		v.updatePVCLastSyncCounters(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
 
 		return false, true, nil
 	}
@@ -1066,9 +1064,7 @@ func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName
 		v.updatePVCDataReadyCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonReplicated, msg)
 		v.updatePVCDataProtectedCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonDataProtected,
 			msg)
-		v.updatePVCLastSyncTime(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
-		v.updatePVCLastSyncDuration(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
-		v.updatePVCLastSyncBytes(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
+		v.updatePVCLastSyncCounters(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
 
 		return false, true, nil
 	}
@@ -1445,9 +1441,7 @@ func (v *VRGInstance) validateVRStatus(pvc *corev1.PersistentVolumeClaim, volRep
 	msg := "PVC in the VolumeReplicationGroup is ready for use"
 	v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReady, msg)
 	v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReady, msg)
-	v.updatePVCLastSyncTime(pvc.Namespace, pvc.Name, volRep.Status.LastSyncTime)
-	v.updatePVCLastSyncDuration(pvc.Namespace, pvc.Name, volRep.Status.LastSyncDuration)
-	v.updatePVCLastSyncBytes(pvc.Namespace, pvc.Name, volRep.Status.LastSyncBytes)
+	v.updatePVCLastSyncCounters(pvc.Namespace, pvc.Name, &volRep.Status)
 	v.log.Info(fmt.Sprintf("VolumeReplication resource %s/%s is ready for use", volRep.GetName(),
 		volRep.GetNamespace()))
 
@@ -1524,9 +1518,7 @@ func (v *VRGInstance) validateVRCompletedStatus(pvc *corev1.PersistentVolumeClai
 func (v *VRGInstance) validateAdditionalVRStatusForSecondary(pvc *corev1.PersistentVolumeClaim,
 	volRep *volrep.VolumeReplication,
 ) bool {
-	v.updatePVCLastSyncTime(pvc.Namespace, pvc.Name, nil)
-	v.updatePVCLastSyncDuration(pvc.Namespace, pvc.Name, nil)
-	v.updatePVCLastSyncBytes(pvc.Namespace, pvc.Name, nil)
+	v.updatePVCLastSyncCounters(pvc.Namespace, pvc.Name, nil)
 
 	conditionMet, _ := isVRConditionMet(volRep, volrep.ConditionResyncing, metav1.ConditionTrue)
 	if !conditionMet {
@@ -1535,11 +1527,12 @@ func (v *VRGInstance) validateAdditionalVRStatusForSecondary(pvc *corev1.Persist
 
 	conditionMet, msg := isVRConditionMet(volRep, volrep.ConditionDegraded, metav1.ConditionTrue)
 	if !conditionMet {
+		defaultMsg := "VolumeReplication resource for pvc is not in Degraded condition while resyncing"
 		v.updatePVCDataProtectedConditionHelper(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg,
-			"VolumeReplication resource for pvc is not in Degraded condition while resyncing")
+			defaultMsg)
 
 		v.updatePVCDataReadyConditionHelper(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg,
-			"VolumeReplication resource for pvc is not in Degraded condition while resyncing")
+			defaultMsg)
 
 		v.log.Info(fmt.Sprintf("VolumeReplication resource is not in degraded condition while"+
 			" resyncing is true (%s/%s)", volRep.GetName(), volRep.GetNamespace()))
@@ -1788,6 +1781,26 @@ func setPVCClusterDataProtectedCondition(protectedPVC *ramendrv1alpha1.Protected
 		// if appropriate reason is not provided, then treat it as an unknown condition.
 		message = "Unknown reason: " + reason
 		setVRGDataErrorUnknownCondition(&protectedPVC.Conditions, observedGeneration, message)
+	}
+}
+
+func (v *VRGInstance) updatePVCLastSyncCounters(pvcNamespace, pvcName string, status *volrep.VolumeReplicationStatus) {
+	protectedPVC := FindProtectedPVC(v.instance, pvcNamespace, pvcName)
+	if protectedPVC == nil {
+		return
+	}
+
+	if status == nil {
+		protectedPVC.LastSyncTime = nil
+		protectedPVC.LastSyncDuration = nil
+		protectedPVC.LastSyncBytes = nil
+	} else {
+		protectedPVC.LastSyncTime = status.LastSyncTime
+		protectedPVC.LastSyncDuration = status.LastSyncDuration
+
+		if !protectedPVC.ProtectedByVolSync {
+			protectedPVC.LastSyncBytes = status.LastSyncBytes
+		}
 	}
 }
 
