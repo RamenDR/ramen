@@ -6,14 +6,12 @@ apiVersion: volsync.backube/v1alpha1
 kind: ReplicationDestination
 metadata:
   name: busybox-dst
-  namespace: busybox
 spec:
   rsyncTLS:
     copyMethod: Snapshot
-    capacity: 1Gi
-    accessModes: [ReadWriteOnce]
-    storageClassName: rook-cephfs
-    volumeSnapshotClassName: csi-cephfsplugin-snapclass
+    destinationPVC: volsync-pvc
+    storageClassName: STORAGE_CLASS
+    volumeSnapshotClassName: VOLUME_SNAPSHOT_CLASS
     moverSecurityContext:
       runAsUser: 10000
       runAsGroup: 10000

@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+namespace: volsync-test-block
+resources:
+  - ../base
+  - deploy.yaml
+patches:
+  # Customize for internal ceph rbd storage.
+  - target:
+      kind: PersistentVolumeClaim
+      name: busybox-pvc
+    patch: |-
+      - op: replace
+        path: /spec/storageClassName
+        value: rook-ceph-block
+      - op: replace
+        path: /spec/accessModes
+        value:
+          - ReadWriteOnce
+      - op: replace
+        path: /spec/volumeMode
+        value: Block

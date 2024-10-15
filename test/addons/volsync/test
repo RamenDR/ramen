@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import concurrent.futures
 import json
 import os
 import sys
@@ -14,120 +15,156 @@ from drenv import kubectl
 from drenv import subctl
 
 DEPLOY = "busybox"
-NAMESPACE = "busybox"
+NAMESPACE = "volsync-test"
 
 VOLSYNC_SECRET = "volsync-rsync-tls-busybox-dst"
 VOLSYNC_SERVICE = "volsync-rsync-tls-dst-busybox-dst"
 
 
-def setup_application(cluster):
-    print(f"Deploy application on cluster '{cluster}'")
-    kubectl.apply("--kustomize", "source", context=cluster)
+def setup_application(cluster, variant):
+    print(
+        f"Deploy application in namesapce '{NAMESPACE}-{variant}' cluster '{cluster}'"
+    )
+    kubectl.apply("--kustomize", f"app/{variant}", context=cluster)
 
 
-def setup_replication_destination(cluster):
-    print(f"Create replication destination on cluster '{cluster}'")
-    kubectl.apply("--kustomize", "destination", context=cluster)
+def setup_replication_destination(cluster, variant):
+    print(
+        f"Create replication destination in namespace '{NAMESPACE}-{variant}' cluster '{cluster}'"
+    )
+    kubectl.apply("--kustomize", f"rd/{variant}", context=cluster)
 
 
-def wait_for_application(cluster):
-    print(f"Waiting until deploy '{DEPLOY}' is rolled out in cluster '{cluster}'")
+def wait_for_application(cluster, variant):
+    print(
+        f"Waiting until deploy '{DEPLOY}' is rolled out in namespace '{NAMESPACE}-{variant}' "
+        f"cluster '{cluster}'"
+    )
     kubectl.rollout(
         "status",
         f"deploy/{DEPLOY}",
-        f"--namespace={NAMESPACE}",
+        f"--namespace={NAMESPACE}-{variant}",
         "--timeout=120s",
         context=cluster,
     )
 
 
-def wait_for_replication_destination(cluster):
+def wait_for_replication_destination(cluster, variant):
     print(
-        f"Waiting until replication destination is synchronizing in cluster '{cluster}'"
+        f"Waiting until replication destination is synchronizing in namespace "
+        f"'{NAMESPACE}-{variant}' cluster '{cluster}'"
     )
     kubectl.wait(
         "replicationdestination/busybox-dst",
         "--for=condition=Synchronizing=True",
-        f"--namespace={NAMESPACE}",
+        f"--namespace={NAMESPACE}-{variant}",
         "--timeout=120s",
         context=cluster,
     )
 
 
-def setup_replication_secret(cluster1, cluster2):
+def setup_replication_secret(cluster1, cluster2, variant):
     """
     Create a secret in the source cluster using data from the secret created by
     volsync on the destiantion cluster.
     """
-    print(f"Getting volsync secret in cluster '{cluster2}'")
+    print(
+        f"Getting volsync secret in namespace '{NAMESPACE}-{variant}' cluster '{cluster2}'"
+    )
     psk_txt = kubectl.get(
         f"secret/{VOLSYNC_SECRET}",
-        f"--namespace={NAMESPACE}",
+        f"--namespace={NAMESPACE}-{variant}",
         "--output=jsonpath={.data.psk\\.txt}",
         context=cluster2,
     )
 
-    print(f"Creating volsync secret in cluster '{cluster1}'")
-    template = drenv.template("source/secret.yaml")
+    print(
+        f"Creating volsync secret in namespace '{NAMESPACE}-{variant}' cluster '{cluster1}'"
+    )
+    template = drenv.template(f"rs/{variant}/secret.yaml")
     yaml = template.substitute(value=psk_txt)
-    kubectl.apply("--filename=-", input=yaml, context=cluster1)
+    kubectl.apply(
+        "--filename=-",
+        f"--namespace={NAMESPACE}-{variant}",
+        input=yaml,
+        context=cluster1,
+    )
 
 
-def setup_replication_service(cluster1, cluster2):
+def setup_replication_service(cluster1, cluster2, variant):
     """
     Export volsync replication service from the destination cluster to the
     source cluster using submariner.
     """
-    print(f"Exporting volsync service in cluster '{cluster2}'")
-    subctl.export("service", VOLSYNC_SERVICE, cluster2, namespace=NAMESPACE)
+    print(
+        f"Exporting volsync service in namespace '{NAMESPACE}-{variant}' cluster '{cluster2}'"
+    )
+    subctl.export(
+        "service", VOLSYNC_SERVICE, cluster2, namespace=f"{NAMESPACE}-{variant}"
+    )
 
-    print(f"Waiting until service export is synced in cluster '{cluster2}'")
+    print(
+        f"Waiting until service export is synced in namespace '{NAMESPACE}-{variant}' cluster '{cluster2}'"
+    )
     kubectl.wait(
         f"serviceexports/{VOLSYNC_SERVICE}",
         "--for=condition=Ready",
-        f"--namespace={NAMESPACE}",
+        f"--namespace={NAMESPACE}-{variant}",
         "--timeout=120s",
         context=cluster2,
     )
 
-    print(f"Waiting until service import is ready in cluster '{cluster1}'")
+    print(
+        f"Waiting until service import is ready in namespace '{NAMESPACE}-{variant}' cluster '{cluster1}'"
+    )
     drenv.wait_for(
         f"serviceimports/{VOLSYNC_SERVICE}",
         output="jsonpath={.status.clusters}",
-        namespace=NAMESPACE,
+        namespace=f"{NAMESPACE}-{variant}",
         timeout=120,
         profile=cluster1,
     )
 
 
-def run_replication(cluster):
+def run_replication(cluster, variant):
     """
     Start replication and wait until replication completes.
     """
-    print(f"Creating replication source in cluster '{cluster}'")
-    kubectl.apply("--filename", "source/replication-src.yaml", context=cluster)
+    print(
+        f"Creating replication source in namespace '{NAMESPACE}-{variant}' cluster '{cluster}'"
+    )
+    kubectl.apply(
+        "--filename",
+        f"rs/{variant}/rs.yaml",
+        f"--namespace={NAMESPACE}-{variant}",
+        context=cluster,
+    )
 
-    print(f"Waiting until replication source reports sync status in '{cluster}'")
+    print(
+        f"Waiting until replication source reports sync status in namespace '{NAMESPACE}-{variant}' cluster '{cluster}'"
+    )
     drenv.wait_for(
         "replicationsource/busybox-src",
         output="jsonpath={.status.lastManualSync}",
-        namespace=NAMESPACE,
+        namespace=f"{NAMESPACE}-{variant}",
         timeout=120,
         profile=cluster,
     )
 
-    print(f"Waiting until replication is completed in cluster '{cluster}'")
+    print(
+        f"Waiting until replication is completed in namespace '{NAMESPACE}-{variant}' cluster '{cluster}'"
+    )
     kubectl.wait(
         "replicationsource/busybox-src",
         "--for=jsonpath={.status.lastManualSync}=replication-1",
-        f"--namespace={NAMESPACE}",
+        f"--namespace={NAMESPACE}-{variant}",
         "--timeout=120s",
         context=cluster,
     )
     out = kubectl.get(
         "replicationsource/busybox-src",
         "--output=jsonpath={.status}",
-        f"--namespace={NAMESPACE}",
+        f"--namespace={NAMESPACE}-{variant}",
         context=cluster,
     )
     status = json.loads(out)
@@ -135,40 +172,75 @@ def run_replication(cluster):
     print(yaml.dump(status))
 
 
-def teardown(cluster1, cluster2):
+def teardown(cluster1, cluster2, variant):
     """
     Remove deployments from both clusters. This also deletes additonal
     resources created in the same namespace.
     """
-    print(f"Delete replication source in cluster '{cluster1}'")
-    kubectl.delete("--filename", "source/replication-src.yaml", context=cluster1)
+    print(
+        f"Delete replication source in namespace '{NAMESPACE}-{variant}' cluster '{cluster1}'"
+    )
+    kubectl.delete(
+        "--filename",
+        f"rs/{variant}/rs.yaml",
+        f"--namespace={NAMESPACE}-{variant}",
+        context=cluster1,
+    )
 
-    print(f"Unexporting volsync service in cluster '{cluster2}'")
-    subctl.unexport("service", VOLSYNC_SERVICE, cluster2, namespace=NAMESPACE)
+    print(
+        f"Unexporting volsync service in namespace '{NAMESPACE}-{variant}' cluster '{cluster2}'"
+    )
+    subctl.unexport(
+        "service", VOLSYNC_SERVICE, cluster2, namespace=f"{NAMESPACE}-{variant}"
+    )
 
-    print(f"Delete source in cluster '{cluster1}'")
+    print(
+        f"Delete application in namespace '{NAMESPACE}-{variant}' cluster '{cluster1}'"
+    )
     kubectl.delete(
         "--kustomize",
-        "source",
+        f"app/{variant}",
         "--ignore-not-found",
         "--wait=false",
         context=cluster1,
     )
 
-    print(f"Delete destination in cluster '{cluster2}'")
+    print(
+        f"Delete replication destination in namespace '{NAMESPACE}-{variant}' cluster '{cluster2}'"
+    )
     kubectl.delete(
         "--kustomize",
-        "destination",
+        f"rd/{variant}",
         "--ignore-not-found",
         "--wait=false",
         context=cluster2,
     )
 
-    print(f"Waiting until namespace '{NAMESPACE}' is deleted in cluster '{cluster1}'")
-    kubectl.wait("ns", NAMESPACE, "--for=delete", "--timeout=120s", context=cluster1)
+    for cluster in cluster1, cluster2:
+        print(
+            f"Waiting until namespace '{NAMESPACE}-{variant}' is deleted in cluster '{cluster}'"
+        )
+        kubectl.wait(
+            "ns",
+            f"{NAMESPACE}-{variant}",
+            "--for=delete",
+            "--timeout=120s",
+            context=cluster,
+        )
 
-    print(f"Waiting until namespace '{NAMESPACE}' is deleted in cluster '{cluster2}'")
-    kubectl.wait("ns", NAMESPACE, "--for=delete", "--timeout=120s", context=cluster2)
+
+def test(cluster1, cluster2, variant):
+    setup_application(cluster1, variant)
+    setup_replication_destination(cluster2, variant)
+
+    wait_for_application(cluster1, variant)
+    wait_for_replication_destination(cluster2, variant)
+
+    setup_replication_secret(cluster1, cluster2, variant)
+    setup_replication_service(cluster1, cluster2, variant)
+
+    run_replication(cluster1, variant)
+    teardown(cluster1, cluster2, variant)
 
 
 if len(sys.argv) != 3:
@@ -178,15 +250,10 @@ if len(sys.argv) != 3:
 os.chdir(os.path.dirname(__file__))
 cluster1, cluster2 = sys.argv[1:]
 
-setup_application(cluster1)
-setup_replication_destination(cluster2)
-
-wait_for_application(cluster1)
-wait_for_replication_destination(cluster2)
-
-setup_replication_secret(cluster1, cluster2)
-setup_replication_service(cluster1, cluster2)
-
-run_replication(cluster1)
-
-teardown(cluster1, cluster2)
+with concurrent.futures.ThreadPoolExecutor() as e:
+    tests = [
+        e.submit(test, cluster1, cluster2, "file"),
+        e.submit(test, cluster1, cluster2, "block"),
+    ]
+    for t in concurrent.futures.as_completed(tests):
+        t.result()

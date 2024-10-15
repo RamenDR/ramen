@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 ---
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: busybox
+resources:
+- namespace.yaml
+- pvc.yaml
+- rd.yaml
+namespace: volsync-test

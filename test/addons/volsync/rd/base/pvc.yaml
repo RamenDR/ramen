@@ -5,13 +5,12 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: busybox-pvc
-  namespace: busybox
-  labels:
-    appname: busybox
+  name: volsync-pvc
 spec:
-  accessModes: [ReadWriteOnce]
-  storageClassName: rook-cephfs
+  accessModes:
+    - ACCESS_MODE
+  storageClassName: STORAGE_CLASS
+  volumeMode: VOLUME_MODE
   resources:
     requests:
       storage: 1Gi

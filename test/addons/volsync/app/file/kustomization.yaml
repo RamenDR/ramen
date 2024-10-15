@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+namespace: volsync-test-file
+resources:
+  - ../base
+  - deploy.yaml
+patches:
+  # Customize for internal cephfs storage.
+  - target:
+      kind: PersistentVolumeClaim
+      name: busybox-pvc
+    patch: |-
+      - op: replace
+        path: /spec/storageClassName
+        value: rook-cephfs
+      - op: replace
+        path: /spec/accessModes
+        value:
+          - ReadWriteMany
+      - op: replace
+        path: /spec/volumeMode
+        value: Filesystem
