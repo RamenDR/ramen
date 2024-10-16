@@ -142,12 +142,12 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 
 	protectedPVC := v.findProtectedPVC(pvc.Namespace, pvc.Name)
 	if protectedPVC == nil {
-		protectedPVC = newProtectedPVC
-		v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
+		protectedPVC = v.addProtectedPVC(newProtectedPVC.Namespace, newProtectedPVC.Name)
 	} else if !reflect.DeepEqual(protectedPVC, newProtectedPVC) {
 		newProtectedPVC.Conditions = protectedPVC.Conditions
-		newProtectedPVC.DeepCopyInto(protectedPVC)
 	}
+
+	newProtectedPVC.DeepCopyInto(protectedPVC)
 
 	// Not much need for VolSyncReplicationSourceSpec anymore - but keeping it around in case we want
 	// to add anything to it later to control anything in the ReplicationSource
