@@ -292,6 +292,20 @@ type ProtectedPVC struct {
 	LastSyncBytes *int64 `json:"lastSyncBytes,omitempty"`
 }
 
+// ProtectedCG defines a group of ProtectedPVCs
+type ProtectedCG struct {
+	// Name of the namespace the PVC is in
+	//+optional
+	Namespace string `json:"namespace,omitempty"`
+
+	// Name of the VolRep/PVC resource
+	//+optional
+	Name string `json:"name,omitempty"`
+
+	// All the protected pvcs
+	ProtectedPVCs []ProtectedPVC `json:"protectedPVCs,omitempty"`
+}
+
 type KubeObjectsCaptureIdentifier struct {
 	Number int64 `json:"number"`
 	//+nullable
@@ -310,8 +324,9 @@ type KubeObjectProtectionStatus struct {
 type VolumeReplicationGroupStatus struct {
 	State State `json:"state,omitempty"`
 
-	// All the protected pvcs
+	// One of ProtectedPVCs or ProtectedCGs must be set
 	ProtectedPVCs []ProtectedPVC `json:"protectedPVCs,omitempty"`
+	ProtectedCGs  []ProtectedCG  `json:"protectedCGs,omitempty"`
 
 	// Conditions are the list of VRG's summary conditions and their status.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`

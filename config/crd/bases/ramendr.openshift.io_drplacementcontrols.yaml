@@ -535,6 +535,21 @@ spec:
                         description: Namespace is the namespace of the Kubernetes
                           resource.
                         type: string
+                      protectedcgs:
+                        description: List of CGs that are protected by the VRG resource
+                        items:
+                          description: ProtectedPVCsList defines a group of ProtectedPVCs
+                          properties:
+                            name:
+                              description: Name of the VolRep/PVC resource
+                              type: string
+                            protectedpvcs:
+                              description: All the protected pvcs
+                              items:
+                                type: string
+                              type: array
+                          type: object
+                        type: array
                       protectedpvcs:
                         description: List of PVCs that are protected by the VRG resource
                         items:
