@@ -454,6 +454,11 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	if v.instance.Status.ProtectedPVCs == nil {
 		v.instance.Status.ProtectedPVCs = []ramendrv1alpha1.ProtectedPVC{}
 	}
+
+	if v.instance.Status.ProtectedCGs == nil {
+		v.instance.Status.ProtectedCGs = []ramendrv1alpha1.ProtectedCG{}
+	}
+
 	// Save a copy of the instance status to be used for the VRG status update comparison
 	v.instance.Status.DeepCopyInto(&v.savedInstanceStatus)
 	v.vrgStatusPvcNamespacesSetIfUnset()
