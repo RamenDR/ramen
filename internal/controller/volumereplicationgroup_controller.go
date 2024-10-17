@@ -908,12 +908,18 @@ func (v *VRGInstance) findReplicationClassUsingPeerClasses(peerClasses []ramendr
 
 	// this check is needed because we use storageID to compare with other VRC or VSC
 	if _, ok := storageClass.Labels[StorageIDLabel]; !ok {
-		return nil, fmt.Errorf("storageID label not found in storageClass for PVC %s", pvc.Name)
+		msg := fmt.Sprintf("storageID label not found in storageClass for PVC %s", pvc.Name)
+		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonStorageIDNotFound, msg)
+
+		return nil, fmt.Errorf(msg)
 	}
 
 	peerClass := v.findPeerClassMatchingSC(peerClasses, *scName)
 	if peerClass == nil {
-		return nil, fmt.Errorf("peerClass matching storageClass %s not found for async PVC", *scName)
+		msg := fmt.Sprintf("peerClass matching storageClass %s not found for async PVC", *scName)
+		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonPeerClassNotFound, msg)
+
+		return nil, fmt.Errorf(msg)
 	}
 
 	replicationClass := v.findMatchingReplicationClass(peerClass, storageClass, pvc)

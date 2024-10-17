@@ -69,6 +69,8 @@ const (
 	VRGConditionReasonVolSyncFinalSyncInProgress  = "Syncing"
 	VRGConditionReasonVolSyncFinalSyncComplete    = "Synced"
 	VRGConditionReasonClusterDataAnnotationFailed = "AnnotationFailed"
+	VRGConditionReasonPeerClassNotFound           = "PeerClassNotFound"
+	VRGConditionReasonStorageIDNotFound           = "StorageIDNotFound"
 )
 
 const clusterDataProtectedTrueMessage = "Kube objects protected"
@@ -262,6 +264,28 @@ func setVRGDataErrorUnknownCondition(conditions *[]metav1.Condition, observedGen
 	setStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeDataReady,
 		Reason:             VRGConditionReasonErrorUnknown,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionUnknown,
+		Message:            message,
+	})
+}
+
+// sets condition when PV storageID not found
+func setVRGDataStorageIDNotFoundCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeDataReady,
+		Reason:             VRGConditionReasonStorageIDNotFound,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionUnknown,
+		Message:            message,
+	})
+}
+
+// sets condition when PeerClass is not found
+func setVRGDataPeerClassNotFoundCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeDataReady,
+		Reason:             VRGConditionReasonPeerClassNotFound,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionUnknown,
 		Message:            message,
