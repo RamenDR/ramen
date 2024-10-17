@@ -54,6 +54,22 @@ type DRPolicySpec struct {
 // DRPolicyStatus defines the observed state of DRPolicy
 type DRPolicyStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	//+optional
+	Async AsyncSpec `json:"async,omitempty"`
+	//+optional
+	Sync SyncSpec `json:"sync,omitempty"`
+}
+
+// for RDR
+type AsyncSpec struct {
+	//+optional
+	PeerClasses []PeerClass `json:"peerClasses,omitempty"`
+}
+
+// for MetroDR
+type SyncSpec struct {
+	//+optional
+	PeerClasses []PeerClass `json:"peerClasses,omitempty"`
 }
 
 const (

@@ -1531,6 +1531,22 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string, repState rmn.Re
 	annotations[DRPCNameAnnotation] = d.instance.Name
 	annotations[DRPCNamespaceAnnotation] = d.instance.Namespace
 
+	// vrgFromCluster, _ := d.getVRGFromManifestWork(homeCluster)
+
+	vrgFromCluster, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name,
+		d.vrgNamespace, homeCluster, annotations)
+	d.log.Info("got", "vrg from managedCluster", vrgFromCluster)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			d.log.Info(fmt.Sprintf("VRG not found on %q", homeCluster))
+		}
+	}
+
+	if vrgFromCluster != nil {
+		d.updatePeerClasses(vrgFromCluster, &vrg)
+	}
+
 	if err := d.mwu.CreateOrUpdateVRGManifestWork(
 		d.instance.Name, d.vrgNamespace,
 		homeCluster, vrg, annotations); err != nil {
@@ -1540,6 +1556,63 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string, repState rmn.Re
 	}
 
 	return nil
+}
+
+func (d *DRPCInstance) isPeerClassCondtionNotfound(pvc rmn.ProtectedPVC) bool {
+	dataReadyCondition := findCondition(pvc.Conditions, VRGConditionTypeDataReady)
+	if dataReadyCondition.Status == metav1.ConditionFalse &&
+		dataReadyCondition.Reason == VRGConditionReasonPeerClassNotFound {
+		return true
+	}
+
+	return false
+}
+
+func (d *DRPCInstance) updateSyncPeerClass(vrgFromCluster, generatedVRG *rmn.VolumeReplicationGroup) {
+	peerClasses := vrgFromCluster.Spec.Sync.PeerClasses
+
+	if len(peerClasses) != 0 {
+		generatedVRG.Spec.Sync.PeerClasses = peerClasses
+	}
+
+	for _, pvc := range vrgFromCluster.Status.ProtectedPVCs {
+		peerClassConditionNotFound := d.isPeerClassCondtionNotfound(pvc)
+		if peerClassConditionNotFound {
+			for _, peerClass := range d.drPolicy.Status.Sync.PeerClasses {
+				if peerClass.StorageClassName == *pvc.StorageClassName {
+					generatedVRG.Spec.Sync.PeerClasses = append(generatedVRG.Spec.Sync.PeerClasses, peerClass)
+				}
+			}
+		}
+	}
+}
+
+func (d *DRPCInstance) updateAsyncPeerClass(vrgFromCluster, generatedVRG *rmn.VolumeReplicationGroup) {
+	peerClasses := vrgFromCluster.Spec.Async.PeerClasses
+
+	if len(peerClasses) != 0 {
+		generatedVRG.Spec.Async.PeerClasses = peerClasses
+	}
+
+	for _, pvc := range vrgFromCluster.Status.ProtectedPVCs {
+		peerClassConditionNotFound := d.isPeerClassCondtionNotfound(pvc)
+		if peerClassConditionNotFound {
+			for _, peerClass := range d.drPolicy.Status.Async.PeerClasses {
+				if peerClass.StorageClassName == *pvc.StorageClassName {
+					generatedVRG.Spec.Async.PeerClasses = append(generatedVRG.Spec.Async.PeerClasses, peerClass)
+				}
+			}
+		}
+	}
+}
+
+func (d *DRPCInstance) updatePeerClasses(vrgFromCluster, generatedVRG *rmn.VolumeReplicationGroup) {
+	switch d.drType {
+	case DRTypeSync:
+		d.updateSyncPeerClass(vrgFromCluster, generatedVRG)
+	case DRTypeAsync:
+		d.updateAsyncPeerClass(vrgFromCluster, generatedVRG)
+	}
 }
 
 // ensureVRGManifestWork ensures that the VRG ManifestWork exists and matches the current VRG state.
@@ -1624,6 +1697,7 @@ func (d *DRPCInstance) generateVRGSpecAsync() *rmn.VRGAsyncSpec {
 			VolumeSnapshotClassSelector:      d.drPolicy.Spec.VolumeSnapshotClassSelector,
 			VolumeGroupSnapshotClassSelector: d.drPolicy.Spec.VolumeGroupSnapshotClassSelector,
 			SchedulingInterval:               d.drPolicy.Spec.SchedulingInterval,
+			PeerClasses:                      d.drPolicy.Status.Async.PeerClasses,
 		}
 	}
 
@@ -1632,7 +1706,9 @@ func (d *DRPCInstance) generateVRGSpecAsync() *rmn.VRGAsyncSpec {
 
 func (d *DRPCInstance) generateVRGSpecSync() *rmn.VRGSyncSpec {
 	if d.drType == DRTypeSync {
-		return &rmn.VRGSyncSpec{}
+		return &rmn.VRGSyncSpec{
+			PeerClasses: d.drPolicy.Status.Async.PeerClasses,
+		}
 	}
 
 	return nil
