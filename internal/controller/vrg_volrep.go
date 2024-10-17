@@ -1775,6 +1775,10 @@ func setPVCDataReadyCondition(protectedPVC *ramendrv1alpha1.ProtectedPVC, reason
 		setVRGDataProgressingCondition(&protectedPVC.Conditions, observedGeneration, message)
 	case reason == VRGConditionReasonErrorUnknown:
 		setVRGDataErrorUnknownCondition(&protectedPVC.Conditions, observedGeneration, message)
+	case reason == VRGConditionReasonPeerClassNotFound:
+		setVRGDataPeerClassNotFoundCondition(&protectedPVC.Conditions, observedGeneration, message)
+	case reason == VRGConditionReasonStorageIDNotFound:
+		setVRGDataStorageIDNotFoundCondition(&protectedPVC.Conditions, observedGeneration, message)
 	default:
 		// if appropriate reason is not provided, then treat it as an unknown condition.
 		message = "Unknown reason: " + reason
