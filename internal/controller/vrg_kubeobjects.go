@@ -731,6 +731,10 @@ func getCaptureGroups(recipe Recipe.Recipe) ([]kubeobjects.CaptureSpec, error) {
 		for resourceType := range resource {
 			resourceName := resource[resourceType]
 
+			if resourceType == "hook" {
+				continue
+			}
+
 			captureInstance, err := getResourceAndConvertToCaptureGroup(recipe, resourceType, resourceName)
 			if err != nil {
 				return resources, err
@@ -764,6 +768,10 @@ func getRecoverGroups(recipe Recipe.Recipe) ([]kubeobjects.RecoverSpec, error) {
 		// group: map[string]string, e.g. "group": "groupName", or "hook": "hookName"
 		for resourceType := range resource {
 			resourceName := resource[resourceType]
+
+			if resourceType == "hook" {
+				continue
+			}
 
 			captureInstance, err := getResourceAndConvertToRecoverGroup(recipe, resourceType, resourceName)
 			if err != nil {
