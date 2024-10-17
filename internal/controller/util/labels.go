@@ -75,8 +75,10 @@ func DoesObjectOwnerLabelsMatch(object, owner metav1.Object) bool {
 	objectLabels := object.GetLabels()
 	pvcOwnerNS, okNS := objectLabels[labelOwnerNamespaceName]
 	pvcOwnerName, okName := objectLabels[labelOwnerName]
-	if !okNS || !okName {
+	if (!okNS && okName) || (okNS && !okName) {
 		return false
+	} else if !okNS && !okName {
+		return true
 	}
 	ownerLabels := OwnerLabels(owner)
 	vrgNS := ownerLabels[labelOwnerNamespaceName]
