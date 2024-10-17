@@ -8,6 +8,7 @@ import sys
 
 from drenv import commands
 from drenv import minio
+from drenv import kubectl
 
 
 def deploy(cluster):
@@ -24,9 +25,28 @@ def deploy(cluster):
         "--use-volume-snapshots=false",
         f"--backup-location-config=region=minio,s3ForcePathStyle=true,s3Url={s3_url}",
         f"--kubecontext={cluster}",
-        "--wait",
     ):
         print(line)
+
+
+def wait(cluster):
+    print("waiting for available status in velero")
+    kubectl.wait(
+        "deploy/velero",
+        "--namespace=velero",
+        "--for=condition=Available",
+        "--timeout=600s",
+        context=cluster,
+    )
+
+    print("waiting for progressing status in velero")
+    kubectl.wait(
+        "deploy/velero",
+        "--namespace=velero",
+        "--for=condition=Progressing",
+        "--timeout=600s",
+        context=cluster,
+    )
 
 
 if len(sys.argv) != 2:
@@ -37,3 +57,4 @@ os.chdir(os.path.dirname(__file__))
 cluster = sys.argv[1]
 
 deploy(cluster)
+wait(cluster)
