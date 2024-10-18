@@ -81,7 +81,7 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 								Type:          hook.Type,
 								Command:       hook.Ops[0].Command,
 								Timeout:       hook.Ops[0].Timeout,
-								Container:     &hook.Ops[0].Container,
+								Container:     hook.Ops[0].Container,
 								LabelSelector: hook.LabelSelector,
 							},
 						},
