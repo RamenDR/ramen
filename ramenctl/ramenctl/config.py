@@ -31,9 +31,9 @@ def run(args):
         create_ramen_config_map(env["hub"], hub_cm)
         create_hub_dr_resources(env["hub"], env["clusters"], env["topology"])
 
-        wait_for_secret_propagation(env["hub"], env["clusters"], args)
-        wait_for_dr_clusters(env["hub"], env["clusters"], args)
         wait_for_dr_policy(env["hub"], args)
+        wait_for_dr_clusters(env["hub"], env["clusters"], args)
+        wait_for_secret_propagation(env["hub"], env["clusters"], args)
     else:
         dr_cluster_cm = generate_config_map("dr-cluster", env, args)
 
