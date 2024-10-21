@@ -35,6 +35,7 @@ var _ = Describe("Secrets_Util", func() {
 		secrets                                  [secretsCount]*corev1.Secret
 		tstNamespace                             = "default" // 7 chars
 		veleroNS                                 = "default" // 7 chars
+		objects                                  []interface{}
 	)
 
 	BeforeEach(func() {
@@ -194,6 +195,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace, // "default" 7 chars
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen, "")).Should(HaveOccurred())
 			})
 			It("Does not create an associated secret policy", func() {
@@ -207,6 +209,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace, // "default" 7 chars
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen, "")).Should(HaveOccurred())
 			})
 			It("Does not create an associated secret policy", func() {
@@ -223,6 +226,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen, "")).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
@@ -240,6 +244,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen, "")).Should(HaveOccurred())
 			})
 			It("Does not create an associated secret policy", func() {
@@ -256,6 +261,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen, "")).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
@@ -276,6 +282,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen, "")).Should(HaveOccurred())
 			})
 			It("No longer protects the secret with a finalizer", func() {
@@ -296,6 +303,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen, "")).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
@@ -316,6 +324,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen, "")).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
@@ -333,6 +342,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[1],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen, "")).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
@@ -354,6 +364,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen, "")).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
@@ -506,6 +517,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen,
 					"")).To(Succeed())
 			})
@@ -524,6 +536,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatVelero,
 					veleroNS)).To(Succeed())
 			})
@@ -545,6 +558,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatVelero,
 					veleroNS)).Should(HaveOccurred())
 			})
@@ -561,6 +575,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen,
 					veleroNS)).Should(HaveOccurred())
 			})
