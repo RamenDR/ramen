@@ -399,7 +399,7 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 
 var _ = Describe("VolSync_Handler", func() {
 	var testNamespace *corev1.Namespace
-	var owner metav1.Object
+	var owner client.Object
 	var vsHandler *volsync.VSHandler
 
 	asyncSpec := &ramendrv1alpha1.VRGAsyncSpec{
@@ -662,10 +662,10 @@ var _ = Describe("VolSync_Handler", func() {
 				})
 
 				It("PrecreateDestPVCIfEnabled() should return CopyMethod Snapshot and App PVC name", func() {
-					dstPVC, err := vsHandler.PrecreateDestPVCIfEnabled(rdSpec)
+					dstPVCName, err := vsHandler.PrecreateDestPVCIfEnabled(rdSpec)
 					Expect(err).NotTo(HaveOccurred())
 
-					Expect(*dstPVC).To(Equal(rdSpec.ProtectedPVC.Name))
+					Expect(*dstPVCName).To(Equal(rdSpec.ProtectedPVC.Name))
 					pvc := &corev1.PersistentVolumeClaim{}
 					Eventually(func() error {
 						return k8sClient.Get(ctx, types.NamespacedName{
@@ -676,6 +676,51 @@ var _ = Describe("VolSync_Handler", func() {
 
 					Expect(pvc.GetName()).To(Equal(rdSpec.ProtectedPVC.Name))
 					Expect(pvc.GetOwnerReferences()[0].Kind).To(Equal("ConfigMap"))
+					Expect(k8sClient.Delete(ctx, pvc)).ToNot(HaveOccurred())
+				})
+
+				It("PrecreateDestPVCIfEnabled() should create PVC with volumeMode: Filesystem", func() {
+					dstPVCName, err := vsHandler.PrecreateDestPVCIfEnabled(rdSpec)
+					Expect(err).NotTo(HaveOccurred())
+
+					Expect(*dstPVCName).To(Equal(rdSpec.ProtectedPVC.Name))
+					pvc := &corev1.PersistentVolumeClaim{}
+					Eventually(func() error {
+						return k8sClient.Get(ctx, types.NamespacedName{
+							Name:      rdSpec.ProtectedPVC.Name,
+							Namespace: testNamespace.GetName(),
+						}, pvc)
+					}, maxWait, interval).Should(Succeed())
+
+					Expect(pvc.GetName()).To(Equal(rdSpec.ProtectedPVC.Name))
+					Expect(pvc.GetOwnerReferences()[0].Kind).To(Equal("ConfigMap"))
+					Expect(*pvc.Spec.VolumeMode).To(Equal(corev1.PersistentVolumeFilesystem))
+					Expect(k8sClient.Delete(ctx, pvc)).ToNot(HaveOccurred())
+				})
+
+				It("PrecreateDestPVCIfEnabled() should create PVC with volumeMode: Block", func() {
+					util.AddAnnotation(owner, util.UseVolSyncForPVCProtection, "true")
+					Expect(k8sClient.Update(ctx, owner)).To(Succeed())
+					rdSpecForBlockPVC := rdSpec.DeepCopy()
+					block := corev1.PersistentVolumeBlock
+					rdSpecForBlockPVC.ProtectedPVC.VolumeMode = &block
+
+					dstPVCName, err := vsHandler.PrecreateDestPVCIfEnabled(*rdSpecForBlockPVC)
+					Expect(err).NotTo(HaveOccurred())
+
+					Expect(*dstPVCName).To(Equal(rdSpecForBlockPVC.ProtectedPVC.Name))
+					pvc := &corev1.PersistentVolumeClaim{}
+					Eventually(func() error {
+						return k8sClient.Get(ctx, types.NamespacedName{
+							Name:      rdSpecForBlockPVC.ProtectedPVC.Name,
+							Namespace: testNamespace.GetName(),
+						}, pvc)
+					}, maxWait, interval).Should(Succeed())
+
+					Expect(pvc.GetName()).To(Equal(rdSpecForBlockPVC.ProtectedPVC.Name))
+					Expect(pvc.GetOwnerReferences()[0].Kind).To(Equal("ConfigMap"))
+					Expect(*pvc.Spec.VolumeMode).To(Equal(corev1.PersistentVolumeBlock))
+					Expect(k8sClient.Delete(ctx, pvc)).ToNot(HaveOccurred())
 				})
 			})
 		})

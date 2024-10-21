@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects/velero"
+	"github.com/ramendr/ramen/internal/controller/util"
 	"golang.org/x/exp/maps" // TODO replace with "maps" in go1.21+
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -40,7 +41,6 @@ import (
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
-	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
 )
 
@@ -51,7 +51,7 @@ type VolumeReplicationGroupReconciler struct {
 	Log                 logr.Logger
 	ObjStoreGetter      ObjectStoreGetter
 	Scheme              *runtime.Scheme
-	eventRecorder       *rmnutil.EventReporter
+	eventRecorder       *util.EventReporter
 	kubeObjects         kubeobjects.RequestsManager
 	RateLimiter         *workqueue.TypedRateLimiter[reconcile.Request]
 	veleroCRsAreWatched bool
@@ -61,7 +61,7 @@ type VolumeReplicationGroupReconciler struct {
 func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 	mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig,
 ) error {
-	r.eventRecorder = rmnutil.NewEventReporter(mgr.GetEventRecorderFor("controller_VolumeReplicationGroup"))
+	r.eventRecorder = util.NewEventReporter(mgr.GetEventRecorderFor("controller_VolumeReplicationGroup"))
 
 	r.Log.Info("Adding VolumeReplicationGroup controller")
 
@@ -95,7 +95,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 		).
 		Watches(&volrep.VolumeReplication{},
 			handler.EnqueueRequestsFromMapFunc(r.VRMapFunc),
-			builder.WithPredicates(rmnutil.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
+			builder.WithPredicates(util.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
 		).
 		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.configMapFun)).
 		Owns(&volrep.VolumeReplication{})
@@ -342,7 +342,7 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 		vrgNamespacedName := types.NamespacedName{Name: vrg.Name, Namespace: vrg.Namespace}
 		namespaceSelected := slices.Contains(pvcSelector.NamespaceNames, pvc.Namespace)
 		labelMatch := selector.Matches(labels.Set(pvc.GetLabels()))
-		ownerMatch := rmnutil.OwnerNamespacedName(pvc) == vrgNamespacedName
+		ownerMatch := util.OwnerNamespacedName(pvc) == vrgNamespacedName
 
 		if labelMatch && namespaceSelected || ownerMatch {
 			log1.Info("Found VolumeReplicationGroup with matching labels or owner",
@@ -558,7 +558,7 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 	v.log = v.log.WithName("vrginstance").WithValues("State", v.instance.Spec.ReplicationState)
 	v.s3StoreAccessorsGet()
 
-	if rmnutil.ResourceIsDeleted(v.instance) {
+	if util.ResourceIsDeleted(v.instance) {
 		v.log = v.log.WithValues("Finalize", true)
 
 		return v.processForDeletion()
@@ -580,7 +580,7 @@ func (v *VRGInstance) validateVRGState() error {
 	if v.instance.Spec.ReplicationState != ramendrv1alpha1.Primary &&
 		v.instance.Spec.ReplicationState != ramendrv1alpha1.Secondary {
 		err := fmt.Errorf("invalid or unknown replication state detected (deleted %v, desired replicationState %v)",
-			rmnutil.ResourceIsDeleted(v.instance),
+			util.ResourceIsDeleted(v.instance),
 			v.instance.Spec.ReplicationState)
 
 		v.log.Error(err, "Invalid request detected")
@@ -602,7 +602,7 @@ func (v *VRGInstance) validateVRGMode() error {
 
 	if !sync && !async {
 		err := fmt.Errorf("neither of sync or async mode is enabled (deleted %v)",
-			rmnutil.ResourceIsDeleted(v.instance))
+			util.ResourceIsDeleted(v.instance))
 
 		v.log.Error(err, "Invalid request detected")
 
@@ -647,12 +647,12 @@ func (v *VRGInstance) listPVCsByVrgPVCSelector() (*corev1.PersistentVolumeClaimL
 func (v *VRGInstance) listPVCsOwnedByVrg() (*corev1.PersistentVolumeClaimList, error) {
 	vrg := v.instance
 
-	return v.listPVCsByPVCSelector(metav1.LabelSelector{MatchLabels: rmnutil.OwnerLabels(vrg)})
+	return v.listPVCsByPVCSelector(metav1.LabelSelector{MatchLabels: util.OwnerLabels(vrg)})
 }
 
 func (v *VRGInstance) listPVCsByPVCSelector(labelSelector metav1.LabelSelector,
 ) (*corev1.PersistentVolumeClaimList, error) {
-	return rmnutil.ListPVCsByPVCSelector(v.ctx, v.reconciler.Client, v.log,
+	return util.ListPVCsByPVCSelector(v.ctx, v.reconciler.Client, v.log,
 		labelSelector,
 		v.recipeElements.PvcSelector.NamespaceNames,
 		v.instance.Spec.VolSync.Disabled,
@@ -681,7 +681,7 @@ func (v *VRGInstance) updatePVCList() error {
 		return fmt.Errorf("failed to get VolumeReplicationClass list")
 	}
 
-	if rmnutil.ResourceIsDeleted(v.instance) {
+	if util.ResourceIsDeleted(v.instance) {
 		v.separatePVCsUsingVRGStatus(pvcList)
 		v.log.Info(fmt.Sprintf("Separated PVCs (%d) into VolRepPVCs (%d) and VolSyncPVCs (%d)",
 			len(pvcList.Items), len(v.volRepPVCs), len(v.volSyncPVCs)))
@@ -706,7 +706,7 @@ func (v *VRGInstance) labelPVCsForCG() error {
 		return nil
 	}
 
-	if !rmnutil.IsCGEnabled(v.instance.GetAnnotations()) {
+	if !util.IsCGEnabled(v.instance.GetAnnotations()) {
 		return nil
 	}
 
@@ -753,7 +753,7 @@ func (v *VRGInstance) addConsistencyGroupLabel(pvc *corev1.PersistentVolumeClaim
 	}
 
 	// Add label for PVC, showing that this PVC is part of consistency group
-	return rmnutil.NewResourceUpdater(pvc).
+	return util.NewResourceUpdater(pvc).
 		AddLabel(ConsistencyGroupLabel, storageID).
 		Update(v.ctx, v.reconciler.Client)
 }
@@ -814,6 +814,12 @@ func (v *VRGInstance) separatePVCsUsingStorageClassProvisioner(pvcList *corev1.P
 			v.log.Info(fmt.Sprintf("Failed to get the storageclass %s", *scName))
 
 			return fmt.Errorf("failed to get the storageclass with name %s (%w)", *scName, err)
+		}
+
+		if util.IsPVCMarkedForVolSync(v.instance.GetAnnotations()) {
+			v.volSyncPVCs = append(v.volSyncPVCs, *pvc)
+
+			continue
 		}
 
 		replicationClassMatchFound := false
@@ -890,8 +896,8 @@ func (v *VRGInstance) processForDeletion() ctrl.Result {
 		return ctrl.Result{Requeue: true}
 	}
 
-	rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeNormal,
-		rmnutil.EventReasonDeleteSuccess, "Deletion Success")
+	util.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeNormal,
+		util.EventReasonDeleteSuccess, "Deletion Success")
 
 	return ctrl.Result{}
 }
@@ -974,8 +980,8 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 	// Expectation is that, if something failed and requeue is true, then
 	// appropriate event might have been captured at the time of failure.
 	if !v.result.Requeue {
-		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeNormal,
-			rmnutil.EventReasonPrimarySuccess, "Primary Success")
+		util.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeNormal,
+			util.EventReasonPrimarySuccess, "Primary Success")
 	}
 
 	return v.updateVRGConditionsAndStatus(v.result)
@@ -1036,8 +1042,8 @@ func (v *VRGInstance) pvcsDeselectedUnprotect() error {
 		return err
 	}
 
-	pvcsVr := rmnutil.ObjectsMap(v.volRepPVCs...)
-	pvcsVs := rmnutil.ObjectsMap(v.volSyncPVCs...)
+	pvcsVr := util.ObjectsMap(v.volRepPVCs...)
+	pvcsVs := util.ObjectsMap(v.volSyncPVCs...)
 
 	for i := range pvcsOwned.Items {
 		pvc := pvcsOwned.Items[i]
@@ -1109,8 +1115,8 @@ func (v *VRGInstance) processAsSecondary() ctrl.Result {
 	// Expectation is that, if something failed and requeue is true, then
 	// appropriate event might have been captured at the time of failure.
 	if !result.Requeue {
-		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeNormal,
-			rmnutil.EventReasonSecondarySuccess, "Secondary Success")
+		util.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeNormal,
+			util.EventReasonSecondarySuccess, "Secondary Success")
 	}
 
 	return v.updateVRGConditionsAndStatus(result)
@@ -1149,8 +1155,8 @@ func (v *VRGInstance) relocate(result *ctrl.Result) {
 }
 
 func (v *VRGInstance) invalid(err error, msg string, requeue bool) ctrl.Result {
-	rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
-		rmnutil.EventReasonValidationFailed, err.Error())
+	util.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
+		util.EventReasonValidationFailed, err.Error())
 
 	return v.dataError(err, msg, requeue)
 }
@@ -1318,7 +1324,7 @@ func getStatusStateFromSpecState(state ramendrv1alpha1.ReplicationState) ramendr
 func (v *VRGInstance) updateVRGConditions() {
 	logAndSet := func(conditionName string, subconditions ...*metav1.Condition) {
 		v.log.Info(conditionName, "subconditions", subconditions)
-		rmnutil.MergeConditions(setStatusCondition,
+		util.MergeConditions(setStatusCondition,
 			&v.instance.Status.Conditions,
 			[]string{VRGConditionReasonUnused},
 			subconditions...)
@@ -1579,11 +1585,11 @@ func (r *VolumeReplicationGroupReconciler) addVolsyncOwnsAndWatches(ctrlBuilder 
 		Owns(&ramendrv1alpha1.ReplicationGroupDestination{}).
 		Watches(&volsyncv1alpha1.ReplicationDestination{},
 			handler.EnqueueRequestsFromMapFunc(r.RDMapFunc),
-			builder.WithPredicates(rmnutil.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
+			builder.WithPredicates(util.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
 		).
 		Watches(&volsyncv1alpha1.ReplicationSource{},
 			handler.EnqueueRequestsFromMapFunc(r.RSMapFunc),
-			builder.WithPredicates(rmnutil.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
+			builder.WithPredicates(util.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
 		)
 
 	return ctrlBuilder
