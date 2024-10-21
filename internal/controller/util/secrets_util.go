@@ -22,6 +22,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	cpcv1 "open-cluster-management.io/config-policy-controller/api/v1"
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
+	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
+	clrapiv1beta2 "open-cluster-management.io/api/cluster/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -31,7 +33,7 @@ const (
 	// Ref: https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/2.4/html/governance/governance#governance-architecture
 	policyNameLengthLimit = 63
 
-	secretPlRuleBaseName       = "plrule"
+	secretPlBaseName       = "pl"
 	secretPlBindingBaseName    = "plbinding"
 	secretConfigPolicyBaseName = "cfg-policy"
 
@@ -81,7 +83,7 @@ type SecretsUtil struct {
 func GeneratePolicyResourceNames(
 	secret string,
 	format TargetSecretFormat,
-) (policyName, plBindingName, plRuleName, configPolicyName string) {
+) (policyName, plBindingName, plName, configPolicyName string) {
 	switch format {
 	case SecretFormatRamen:
 		policyName = ramenFormatPrefix + secret
@@ -92,7 +94,7 @@ func GeneratePolicyResourceNames(
 	}
 
 	plBindingName = fmt.Sprintf(secretResourceNameFormat, secretPlBindingBaseName, policyName)
-	plRuleName = fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, policyName)
+	plName = fmt.Sprintf(secretResourceNameFormat, secretPlBaseName, policyName)
 	configPolicyName = fmt.Sprintf(secretResourceNameFormat, secretConfigPolicyBaseName, policyName)
 
 	return
@@ -110,7 +112,7 @@ func generatePolicyPlacementName(secret string, format TargetSecretFormat) strin
 		panic(unknownFormat)
 	}
 
-	return fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, policyName)
+	return fmt.Sprintf(secretResourceNameFormat, secretPlBaseName, policyName)
 }
 
 func GenerateVeleroSecretName(sName string) string {
@@ -178,8 +180,37 @@ func GeneratePolicyName(name string, maxLen int) string {
 	return policyName
 }
 
-func newPlacementRuleBinding(
-	name, namespace, placementRuleName string,
+func newManagedClusterSetBinding(clusterSetName, namespace string) *clrapiv1beta2.ManagedClusterSetBinding {
+	return &clrapiv1beta2.ManagedClusterSetBinding{
+		TypeMeta:   metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: clusterSetName,
+			Namespace: namespace,
+		},
+		Spec: clrapiv1beta2.ManagedClusterSetBindingSpec{
+			ClusterSet: clusterSetName,
+		},
+	}
+}
+
+func newPlacement(name string, namespace string, clusters []string) *clrapiv1beta1.Placement {
+	return &clrapiv1beta1.Placement{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Placement",
+			APIVersion: "apps.open-cluster-management.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: clrapiv1beta1.PlacementSpec{
+			ClusterSets: clusters,
+		},
+	}
+}
+
+func newPlacementBinding(
+	name, namespace, placementName string,
 	subjects []gppv1.Subject,
 ) *gppv1.PlacementBinding {
 	return &gppv1.PlacementBinding{
@@ -192,38 +223,11 @@ func newPlacementRuleBinding(
 			Namespace: namespace,
 		},
 		PlacementRef: gppv1.PlacementSubject{
-			APIGroup: plrv1.Resource("PlacementRule").Group,
-			Kind:     plrv1.Resource("PlacementRule").Resource,
-			Name:     placementRuleName,
+			APIGroup: clrapiv1beta1.Resource("Placement").Group,
+			Kind:     clrapiv1beta1.Resource("Placement").Resource,
+			Name:     placementName,
 		},
 		Subjects: subjects,
-	}
-}
-
-func newPlacementRule(name string, namespace string,
-	clusters []string,
-) *plrv1.PlacementRule {
-	plRuleClusters := []plrv1.GenericClusterReference{}
-	for _, clusterRef := range clusters {
-		plRuleClusters = append(plRuleClusters, plrv1.GenericClusterReference{
-			Name: clusterRef,
-		})
-	}
-
-	return &plrv1.PlacementRule{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "PlacementRule",
-			APIVersion: "apps.open-cluster-management.io/v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: plrv1.PlacementRuleSpec{
-			GenericPlacementFields: plrv1.GenericPlacementFields{
-				Clusters: plRuleClusters,
-			},
-		},
 	}
 }
 
@@ -377,10 +381,11 @@ func newPolicy(name, namespace, triggerValue string, object runtime.RawExtension
 func (sutil *SecretsUtil) createPolicyResources(
 	secret *corev1.Secret,
 	cluster, namespace, targetNS string,
+	managedClusterSetName string,
 	format TargetSecretFormat,
 	veleroNS string,
 ) error {
-	policyName, plBindingName, plRuleName, configPolicyName := GeneratePolicyResourceNames(secret.Name, format)
+	policyName, plBindingName, plName, configPolicyName := GeneratePolicyResourceNames(secret.Name, format)
 
 	sutil.Log.Info("Creating secret policy", "secret", secret.Name, "cluster", cluster, "namespace", namespace)
 
@@ -402,8 +407,16 @@ func (sutil *SecretsUtil) createPolicyResources(
 		},
 	}
 
-	plRuleBindingObject := newPlacementRuleBinding(plBindingName, namespace, plRuleName, subjects)
-	if err := sutil.Client.Create(sutil.Ctx, plRuleBindingObject); err != nil && !errors.IsAlreadyExists(err) {
+	managedClusterBindingObject := newManagedClusterSetBinding(managedClusterSetName, namespace)
+	if err := sutil.Client.Create(sutil.Ctx, managedClusterBindingObject); err != nil && !errors.IsAlreadyExists(err) {
+		sutil.Log.Error(err, "unable to create Managed Cluster Binding", "Object: ", cluster)
+
+		return errorswrapper.Wrap(err, fmt.Sprintf("unable to create managed cluster set binding (cluster: %s)",
+			cluster))
+	}
+
+	plBindingObject := newPlacementBinding(plBindingName, namespace, plName, subjects)
+	if err := sutil.Client.Create(sutil.Ctx, plBindingObject); err != nil && !errors.IsAlreadyExists(err) {
 		sutil.Log.Error(err, "unable to create placement binding", "secret", secret.Name, "cluster", cluster)
 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to create placement binding (secret: %s, cluster: %s)",
@@ -425,12 +438,12 @@ func (sutil *SecretsUtil) createPolicyResources(
 			secret.Name, cluster))
 	}
 
-	// Create a PlacementRule, including cluster
-	plRuleObject := newPlacementRule(plRuleName, namespace, []string{cluster})
-	if err := sutil.Client.Create(sutil.Ctx, plRuleObject); err != nil && !errors.IsAlreadyExists(err) {
-		sutil.Log.Error(err, "unable to create placement rule", "secret", secret.Name, "cluster", cluster)
+	plObject := newPlacement(plName, namespace, []string{managedClusterSetName})
+	sutil.Log.Info("***** Creating Placement Resource *****")
+	if err := sutil.Client.Create(sutil.Ctx, plObject); err != nil && !errors.IsAlreadyExists(err) {
+		sutil.Log.Error(err, "unable to create placement", "secret", secret.Name, "cluster", cluster)
 
-		return errorswrapper.Wrap(err, fmt.Sprintf("unable to create placement rule (secret: %s, cluster: %s)",
+		return errorswrapper.Wrap(err, fmt.Sprintf("unable to create the placement (secret: %s, cluster: %s)",
 			secret.Name, cluster))
 	}
 
@@ -719,7 +732,7 @@ func (sutil *SecretsUtil) AddSecretToCluster(
 			return errorswrapper.Wrap(err, "failed to get placementRule object")
 		}
 
-		return sutil.createPolicyResources(secret, clusterName, namespace, targetNS, format, veleroNS)
+		return sutil.createPolicyResources(secret, clusterName, namespace, targetNS, "default", format, veleroNS)
 	}
 
 	return sutil.updatePolicyResources(plRule, secret, clusterName, namespace, format, true)
