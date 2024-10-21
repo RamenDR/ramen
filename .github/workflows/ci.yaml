@@ -115,11 +115,11 @@ jobs:
     strategy:
       matrix:
         python-version:
-          - "3.9"
           - "3.10"
           - "3.11"
           - "3.12"
-          - "3.13-dev"
+          - "3.13"
+          - "3.14-dev"
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -184,11 +184,11 @@ jobs:
     strategy:
       matrix:
         python-version:
-          - "3.9"
           - "3.10"
           - "3.11"
           - "3.12"
-          - "3.13-dev"
+          - "3.13"
+          - "3.14-dev"
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
