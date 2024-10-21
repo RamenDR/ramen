@@ -165,11 +165,6 @@ func waitAndUpdateDRPC(client client.Client, namespace, drpcName string, action 
 		return err
 	}
 
-	drpc, err := getDRPC(client, namespace, drpcName)
-	if err != nil {
-		return err
-	}
-
 	drPolicyName := util.DefaultDRPolicyName
 
 	drpolicy, err := util.GetDRPolicy(client, drPolicyName)
@@ -182,16 +177,23 @@ func waitAndUpdateDRPC(client client.Client, namespace, drpcName string, action 
 		return err
 	}
 
-	drpc.Spec.Action = action
-	if action == ramen.ActionFailover {
-		drpc.Spec.FailoverCluster = targetCluster
-	} else {
-		drpc.Spec.PreferredCluster = targetCluster
-	}
-
 	util.Ctx.Log.Info("update drpc " + drpcName + " " + strings.ToLower(string(action)) + " to " + targetCluster)
 
-	return updateDRPC(client, drpc)
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		drpc, err := getDRPC(client, namespace, drpcName)
+		if err != nil {
+			return err
+		}
+
+		drpc.Spec.Action = action
+		if action == ramen.ActionFailover {
+			drpc.Spec.FailoverCluster = targetCluster
+		} else {
+			drpc.Spec.PreferredCluster = targetCluster
+		}
+
+		return updateDRPC(client, drpc)
+	})
 }
 
 func GetNamespace(d deployers.Deployer, w workloads.Workload) string {
