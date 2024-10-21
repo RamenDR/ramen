@@ -43,7 +43,7 @@ func EnableProtection(w workloads.Workload, d deployers.Deployer) error {
 	placementName := name
 	drpcName := name
 
-	placement, placementDecisionName, err := waitPlacementDecision(util.Ctx.Hub.CtrlClient, namespace, placementName)
+	placementDecisionName, err := waitPlacementDecision(util.Ctx.Hub.CtrlClient, namespace, placementName)
 	if err != nil {
 		return err
 	}
