@@ -935,8 +935,7 @@ func (d *DRPCInstance) ensureCleanupAndVolSyncReplicationSetup(srcCluster string
 	// in the MW, but the VRGs in the vrgs slice are fetched using MCV.
 	vrg, ok := d.vrgs[srcCluster]
 	if !ok || len(vrg.Spec.VolSync.RDSpec) != 0 {
-		return fmt.Errorf(fmt.Sprintf("Waiting for RDSpec count on cluster %s to go to zero. VRG OK? %v",
-			srcCluster, ok))
+		return fmt.Errorf(fmt.Sprintf("Waiting for RDSpec count on cluster %s to go to zero. VRG OK? %v", srcCluster, ok))
 	}
 
 	err = d.EnsureCleanup(srcCluster)
@@ -1793,7 +1792,7 @@ func (d *DRPCInstance) cleanupForVolSync(clusterToSkip string) error {
 
 			// Recreate the VRG ManifestWork for the secondary. This typically happens during Hub Recovery.
 			if errors.IsNotFound(err) {
-				err := d.createVolSyncDestManifestWork(clusterToSkip)
+				err := d.ensureVolSyncSetup(clusterToSkip)
 				if err != nil {
 					return err
 				}
