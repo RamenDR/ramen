@@ -1530,7 +1530,7 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string, repState rmn.Re
 	annotations[DRPCNameAnnotation] = d.instance.Name
 	annotations[DRPCNamespaceAnnotation] = d.instance.Namespace
 
-	if err := d.mwu.CreateOrUpdateVRGManifestWork(
+	if _, err := d.mwu.CreateOrUpdateVRGManifestWork(
 		d.instance.Name, d.vrgNamespace,
 		homeCluster, vrg, annotations); err != nil {
 		d.log.Error(err, "failed to create or update VolumeReplicationGroup manifest")

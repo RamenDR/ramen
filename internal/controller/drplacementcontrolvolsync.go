@@ -10,6 +10,7 @@ import (
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
 	"k8s.io/apimachinery/pkg/api/errors"
+	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 func (d *DRPCInstance) EnsureVolSyncReplicationSetup(homeCluster string) error {
@@ -39,15 +40,12 @@ func (d *DRPCInstance) ensureVolSyncSetup(srcCluster string) error {
 	d.setProgression(rmn.ProgressionEnsuringVolSyncSetup)
 
 	// Create or update the destination VRG
-	err := d.createOrUpdateVolSyncDestManifestWork(srcCluster)
+	opResult, err := d.createOrUpdateVolSyncDestManifestWork(srcCluster)
 	if err != nil {
 		return err
 	}
 
-	vrgMWCount := d.mwu.GetVRGManifestWorkCount(rmnutil.DRPolicyClusterNames(d.drPolicy))
-
-	const maxNumberOfVRGs = 2
-	if len(d.vrgs) != maxNumberOfVRGs || vrgMWCount != maxNumberOfVRGs {
+	if opResult == ctrlutil.OperationResultCreated {
 		return WaitForVolSyncManifestWorkCreation
 	}
 
@@ -123,7 +121,7 @@ func (d *DRPCInstance) IsVolSyncReplicationRequired(homeCluster string) (bool, e
 
 // createOrUpdateVolSyncDestManifestWork creates or updates volsync Secondaries skipping the cluster srcCluster.
 // The srcCluster is primary cluster.
-func (d *DRPCInstance) createOrUpdateVolSyncDestManifestWork(srcCluster string) error {
+func (d *DRPCInstance) createOrUpdateVolSyncDestManifestWork(srcCluster string) (ctrlutil.OperationResult, error) {
 	// create VRG ManifestWork
 	d.log.Info("Creating or updating VRG ManifestWork for destination clusters",
 		"Last State:", d.getLastDRState(), "homeCluster", srcCluster)
@@ -137,8 +135,9 @@ func (d *DRPCInstance) createOrUpdateVolSyncDestManifestWork(srcCluster string) 
 
 		err := d.ensureNamespaceManifestWork(dstCluster)
 		if err != nil {
-			return fmt.Errorf("creating ManifestWork couldn't ensure namespace '%s' on cluster %s exists",
-				d.instance.Namespace, dstCluster)
+			return ctrlutil.OperationResultNone,
+				fmt.Errorf("creating ManifestWork couldn't ensure namespace '%s' on cluster %s exists",
+					d.instance.Namespace, dstCluster)
 		}
 
 		annotations := make(map[string]string)
@@ -148,24 +147,26 @@ func (d *DRPCInstance) createOrUpdateVolSyncDestManifestWork(srcCluster string) 
 
 		vrg, err := d.refreshRDSpec(srcCluster, dstCluster)
 		if err != nil {
-			return err
+			return ctrlutil.OperationResultNone, err
 		}
 
-		if err := d.mwu.CreateOrUpdateVRGManifestWork(
+		opResult, err := d.mwu.CreateOrUpdateVRGManifestWork(
 			d.instance.Name, d.vrgNamespace,
-			dstCluster, *vrg, annotations); err != nil {
+			dstCluster, *vrg, annotations)
+		if err != nil {
 			d.log.Error(err, "failed to create or update VolumeReplicationGroup manifest")
 
-			return fmt.Errorf("failed to create or update VolumeReplicationGroup manifest in namespace %s (%w)", dstCluster, err)
+			return ctrlutil.OperationResultNone,
+				fmt.Errorf("failed to create or update VRG MW in namespace %s (%w)", dstCluster, err)
 		}
 
+		d.log.Info(fmt.Sprintf("Ensured VolSync replication for destination cluster %s. op %s", dstCluster, opResult))
+
 		// For now, assume only a pair of clusters in the DRClusterSet
-		break
+		return opResult, nil
 	}
 
-	d.log.Info("Ensured VolSync replication for destination clusters")
-
-	return nil
+	return ctrlutil.OperationResultNone, nil
 }
 
 func (d *DRPCInstance) refreshRDSpec(srcCluster, dstCluster string) (*rmn.VolumeReplicationGroup, error) {
