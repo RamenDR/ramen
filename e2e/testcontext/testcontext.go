@@ -6,6 +6,7 @@ package testcontext
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/workloads"
@@ -16,14 +17,22 @@ type TestContext struct {
 	Deployer deployers.Deployer
 }
 
+var mutex sync.Mutex
+
 var contexts = make(map[string]TestContext)
 
 // Based on name passed, Init the deployer and Workload and stash in a map[string]TestContext
 func AddTestContext(name string, w workloads.Workload, d deployers.Deployer) {
+	mutex.Lock()
+	defer mutex.Unlock()
+
 	contexts[name] = TestContext{w, d}
 }
 
 func DeleteTestContext(name string) {
+	mutex.Lock()
+	defer mutex.Unlock()
+
 	delete(contexts, name)
 }
 
@@ -33,6 +42,9 @@ func DeleteTestContext(name string) {
 //   - Search for above name first (it will not be found as we create context at a point where we have a d+w)
 //   - Search for "TestSuites/Exhaustive/DaemonSet/Subscription" (should be found)
 func GetTestContext(name string) (TestContext, error) {
+	mutex.Lock()
+	defer mutex.Unlock()
+
 	testCtx, ok := contexts[name]
 	if !ok {
 		i := strings.LastIndex(name, "/")
