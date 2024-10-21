@@ -16,23 +16,23 @@ import (
 )
 
 // nolint:gocognit
-// return placement object, placementDecisionName, error
+// return placementDecisionName, error
 func waitPlacementDecision(client client.Client, namespace string, placementName string,
-) (*v1beta1.Placement, string, error) {
+) (string, error) {
 	startTime := time.Now()
 	placementDecisionName := ""
 
 	for {
 		placement, err := getPlacement(client, namespace, placementName)
 		if err != nil {
-			return nil, "", err
+			return "", err
 		}
 
 		for _, cond := range placement.Status.Conditions {
 			if cond.Type == "PlacementSatisfied" && cond.Status == "True" {
 				placementDecisionName = placement.Status.DecisionGroups[0].Decisions[0]
 				if placementDecisionName != "" {
-					return placement, placementDecisionName, nil
+					return placementDecisionName, nil
 				}
 			}
 		}
@@ -41,11 +41,11 @@ func waitPlacementDecision(client client.Client, namespace string, placementName
 		// so need query placementdecision by label
 		placementDecision, err := getPlacementDecisionFromPlacement(client, placement)
 		if err == nil && placementDecision != nil {
-			return placement, placementDecision.Name, nil
+			return placementDecision.Name, nil
 		}
 
 		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
-			return nil, "", fmt.Errorf(
+			return "", fmt.Errorf(
 				"could not get placement decision for " + placementName + " before timeout, fail")
 		}
 
@@ -136,7 +136,7 @@ func waitDRPCPhase(client client.Client, namespace, name string, phase ramen.DRS
 }
 
 func getCurrentCluster(client client.Client, namespace string, placementName string) (string, error) {
-	_, placementDecisionName, err := waitPlacementDecision(client, namespace, placementName)
+	placementDecisionName, err := waitPlacementDecision(client, namespace, placementName)
 	if err != nil {
 		return "", err
 	}
