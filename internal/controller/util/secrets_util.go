@@ -14,12 +14,16 @@ import (
 
 	"github.com/go-logr/logr"
 	errorswrapper "github.com/pkg/errors"
-	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
+
+	// plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	clusterv1 "open-cluster-management.io/api/cluster/v1"
+	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
+	clrapiv1beta2 "open-cluster-management.io/api/cluster/v1beta2"
 	cpcv1 "open-cluster-management.io/config-policy-controller/api/v1"
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -31,7 +35,7 @@ const (
 	// Ref: https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/2.4/html/governance/governance#governance-architecture
 	policyNameLengthLimit = 63
 
-	secretPlRuleBaseName       = "plrule"
+	secretPlBaseName           = "pl"
 	secretPlBindingBaseName    = "plbinding"
 	secretConfigPolicyBaseName = "cfg-policy"
 
@@ -81,7 +85,7 @@ type SecretsUtil struct {
 func GeneratePolicyResourceNames(
 	secret string,
 	format TargetSecretFormat,
-) (policyName, plBindingName, plRuleName, configPolicyName string) {
+) (policyName, plBindingName, plName, configPolicyName string) {
 	switch format {
 	case SecretFormatRamen:
 		policyName = ramenFormatPrefix + secret
@@ -92,7 +96,7 @@ func GeneratePolicyResourceNames(
 	}
 
 	plBindingName = fmt.Sprintf(secretResourceNameFormat, secretPlBindingBaseName, policyName)
-	plRuleName = fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, policyName)
+	plName = fmt.Sprintf(secretResourceNameFormat, secretPlBaseName, policyName)
 	configPolicyName = fmt.Sprintf(secretResourceNameFormat, secretConfigPolicyBaseName, policyName)
 
 	return
@@ -110,7 +114,7 @@ func generatePolicyPlacementName(secret string, format TargetSecretFormat) strin
 		panic(unknownFormat)
 	}
 
-	return fmt.Sprintf(secretResourceNameFormat, secretPlRuleBaseName, policyName)
+	return fmt.Sprintf(secretResourceNameFormat, secretPlBaseName, policyName)
 }
 
 func GenerateVeleroSecretName(sName string) string {
@@ -178,8 +182,54 @@ func GeneratePolicyName(name string, maxLen int) string {
 	return policyName
 }
 
-func newPlacementRuleBinding(
-	name, namespace, placementRuleName string,
+func newManagedClusterSet(name string) *clrapiv1beta2.ManagedClusterSet {
+	return &clrapiv1beta2.ManagedClusterSet{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ManagedClusterSet",
+			APIVersion: "cluster.open-cluster-management.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec: clrapiv1beta2.ManagedClusterSetSpec{
+			ClusterSelector: clrapiv1beta2.ManagedClusterSelector{
+				SelectorType: clrapiv1beta2.ExclusiveClusterSetLabel,
+			},
+		},
+	}
+}
+
+func newManagedClusterSetBinding(clusterSetName, namespace string) *clrapiv1beta2.ManagedClusterSetBinding {
+	return &clrapiv1beta2.ManagedClusterSetBinding{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      clusterSetName,
+			Namespace: namespace,
+		},
+		Spec: clrapiv1beta2.ManagedClusterSetBindingSpec{
+			ClusterSet: clusterSetName,
+		},
+	}
+}
+
+func newPlacement(name string, namespace string, clusters []string) *clrapiv1beta1.Placement {
+	return &clrapiv1beta1.Placement{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Placement",
+			APIVersion: "apps.open-cluster-management.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: clrapiv1beta1.PlacementSpec{
+			ClusterSets: clusters,
+		},
+	}
+}
+
+func newPlacementBinding(
+	name, namespace, placementName string,
 	subjects []gppv1.Subject,
 ) *gppv1.PlacementBinding {
 	return &gppv1.PlacementBinding{
@@ -192,38 +242,11 @@ func newPlacementRuleBinding(
 			Namespace: namespace,
 		},
 		PlacementRef: gppv1.PlacementSubject{
-			APIGroup: plrv1.Resource("PlacementRule").Group,
-			Kind:     plrv1.Resource("PlacementRule").Resource,
-			Name:     placementRuleName,
+			APIGroup: clrapiv1beta1.Resource("Placement").Group,
+			Kind:     clrapiv1beta1.Resource("Placement").Resource,
+			Name:     placementName,
 		},
 		Subjects: subjects,
-	}
-}
-
-func newPlacementRule(name string, namespace string,
-	clusters []string,
-) *plrv1.PlacementRule {
-	plRuleClusters := []plrv1.GenericClusterReference{}
-	for _, clusterRef := range clusters {
-		plRuleClusters = append(plRuleClusters, plrv1.GenericClusterReference{
-			Name: clusterRef,
-		})
-	}
-
-	return &plrv1.PlacementRule{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "PlacementRule",
-			APIVersion: "apps.open-cluster-management.io/v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: plrv1.PlacementRuleSpec{
-			GenericPlacementFields: plrv1.GenericPlacementFields{
-				Clusters: plRuleClusters,
-			},
-		},
 	}
 }
 
@@ -377,10 +400,12 @@ func newPolicy(name, namespace, triggerValue string, object runtime.RawExtension
 func (sutil *SecretsUtil) createPolicyResources(
 	secret *corev1.Secret,
 	cluster, namespace, targetNS string,
+	managedClusterSetName string,
 	format TargetSecretFormat,
 	veleroNS string,
 ) error {
-	policyName, plBindingName, plRuleName, configPolicyName := GeneratePolicyResourceNames(secret.Name, format)
+	sutil.Log.Info("Entered createPolicyResources for ", "Cluster: ", cluster)
+	policyName, plBindingName, plName, configPolicyName := GeneratePolicyResourceNames(secret.Name, format)
 
 	sutil.Log.Info("Creating secret policy", "secret", secret.Name, "cluster", cluster, "namespace", namespace)
 
@@ -402,8 +427,24 @@ func (sutil *SecretsUtil) createPolicyResources(
 		},
 	}
 
-	plRuleBindingObject := newPlacementRuleBinding(plBindingName, namespace, plRuleName, subjects)
-	if err := sutil.Client.Create(sutil.Ctx, plRuleBindingObject); err != nil && !errors.IsAlreadyExists(err) {
+	managedClusterSetObject := newManagedClusterSet(managedClusterSetName)
+	if err := sutil.Client.Create(sutil.Ctx, managedClusterSetObject); err != nil && !errors.IsAlreadyExists(err) {
+		sutil.Log.Error(err, "unable to create Managed Cluster Set", "Object: ", cluster)
+
+		return errorswrapper.Wrap(err, fmt.Sprintf("unable to create managed cluster set (cluster: %s)",
+			cluster))
+	}
+
+	managedClusterBindingObject := newManagedClusterSetBinding(managedClusterSetName, namespace)
+	if err := sutil.Client.Create(sutil.Ctx, managedClusterBindingObject); err != nil && !errors.IsAlreadyExists(err) {
+		sutil.Log.Error(err, "unable to create Managed Cluster Set Binding", "Object: ", cluster)
+
+		return errorswrapper.Wrap(err, fmt.Sprintf("unable to create managed cluster set binding (cluster: %s)",
+			cluster))
+	}
+
+	plBindingObject := newPlacementBinding(plBindingName, namespace, plName, subjects)
+	if err := sutil.Client.Create(sutil.Ctx, plBindingObject); err != nil && !errors.IsAlreadyExists(err) {
 		sutil.Log.Error(err, "unable to create placement binding", "secret", secret.Name, "cluster", cluster)
 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to create placement binding (secret: %s, cluster: %s)",
@@ -425,12 +466,12 @@ func (sutil *SecretsUtil) createPolicyResources(
 			secret.Name, cluster))
 	}
 
-	// Create a PlacementRule, including cluster
-	plRuleObject := newPlacementRule(plRuleName, namespace, []string{cluster})
-	if err := sutil.Client.Create(sutil.Ctx, plRuleObject); err != nil && !errors.IsAlreadyExists(err) {
-		sutil.Log.Error(err, "unable to create placement rule", "secret", secret.Name, "cluster", cluster)
+	plObject := newPlacement(plName, namespace, []string{managedClusterSetName})
 
-		return errorswrapper.Wrap(err, fmt.Sprintf("unable to create placement rule (secret: %s, cluster: %s)",
+	if err := sutil.Client.Create(sutil.Ctx, plObject); err != nil && !errors.IsAlreadyExists(err) {
+		sutil.Log.Error(err, "unable to create placement", "secret", secret.Name, "cluster", cluster)
+
+		return errorswrapper.Wrap(err, fmt.Sprintf("unable to create the placement (secret: %s, cluster: %s)",
 			secret.Name, cluster))
 	}
 
@@ -462,20 +503,20 @@ func (sutil *SecretsUtil) policyObject(
 
 func (sutil *SecretsUtil) deletePolicyResources(
 	secret *corev1.Secret,
-	namespace string,
+	namespace, clusterSetBindingName string,
 	format TargetSecretFormat,
 ) error {
-	policyName, plBindingName, plRuleName, _ := GeneratePolicyResourceNames(secret.Name, format)
+	policyName, plBindingName, plName, _ := GeneratePolicyResourceNames(secret.Name, format)
 
 	sutil.Log.Info("Deleting secret policy", "secret", secret.Name)
 
-	plRuleBindingObject := &gppv1.PlacementBinding{
+	plBindingObject := &gppv1.PlacementBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      plBindingName,
 			Namespace: namespace,
 		},
 	}
-	if err := sutil.Client.Delete(sutil.Ctx, plRuleBindingObject); err != nil && !errors.IsNotFound(err) {
+	if err := sutil.Client.Delete(sutil.Ctx, plBindingObject); err != nil && !errors.IsNotFound(err) {
 		sutil.Log.Error(err, "unable to delete placement binding", "secret", secret.Name)
 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to delete placement binding (secret: %s)", secret.Name))
@@ -493,17 +534,30 @@ func (sutil *SecretsUtil) deletePolicyResources(
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to delete policy (secret: %s)", secret.Name))
 	}
 
-	plRuleObject := &plrv1.PlacementRule{
+	plObject := &clrapiv1beta1.Placement{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      plRuleName,
+			Name:      plName,
 			Namespace: namespace,
 		},
 	}
-	if err := sutil.Client.Delete(sutil.Ctx, plRuleObject); err != nil && !errors.IsNotFound(err) {
-		sutil.Log.Error(err, "unable to delete placement rule", "secret", secret.Name)
+	if err := sutil.Client.Delete(sutil.Ctx, plObject); err != nil && !errors.IsNotFound(err) {
+		sutil.Log.Error(err, "unable to delete placement", "secret", secret.Name)
 
-		return errorswrapper.Wrap(err, fmt.Sprintf("unable to delete placement rule (secret: %s)",
+		return errorswrapper.Wrap(err, fmt.Sprintf("unable to delete placement (secret: %s)",
 			secret.Name))
+	}
+
+	managedClusterBindingObject := &clrapiv1beta2.ManagedClusterSetBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      clusterSetBindingName,
+			Namespace: namespace,
+		},
+	}
+	if err := sutil.Client.Delete(sutil.Ctx, managedClusterBindingObject); err != nil && !errors.IsNotFound(err) {
+		sutil.Log.Error(err, "unable to delete Managed cluster set binding", "object", clusterSetBindingName)
+
+		return errorswrapper.Wrap(err, fmt.Sprintf("unable to delete Managed cluster set binding (object: %s)",
+			clusterSetBindingName))
 	}
 
 	// Remove finalizer from secret. Allow secret deletion and recreation ordering for policy tickle
@@ -521,71 +575,45 @@ func (sutil *SecretsUtil) deletePolicyResources(
 	return nil
 }
 
-func inspectClusters(
-	clusters []plrv1.GenericClusterReference,
-	cluster string,
-	add bool,
-) (bool, []plrv1.GenericClusterReference) {
-	found := false
-	survivors := []plrv1.GenericClusterReference{}
-
-	// Check if cluster is already part of placement rule
-	for _, plCluster := range clusters {
-		if plCluster.Name == cluster {
-			if add {
-				return true, clusters
-			}
-
-			found = true
-
-			continue
-		}
-		// Build a potential surviving cluster list
-		survivors = append(survivors, plCluster)
-	}
-
-	return found, survivors
-}
-
-func (sutil *SecretsUtil) updatePlacementRule(
-	plRule *plrv1.PlacementRule,
+func (sutil *SecretsUtil) updateManagedClusterSet(
 	secret *corev1.Secret,
-	cluster, namespace string,
+	cluster, namespace, managedClusterSetName string,
 	format TargetSecretFormat,
 	add bool,
 ) (bool, error) {
 	deleted := true
-	found, survivors := inspectClusters(plRule.Spec.Clusters, cluster, add)
 
 	switch add {
 	case true:
-		if found {
-			return !deleted, nil
+		managedClusterObject := clusterv1.ManagedCluster{}
+		if err := sutil.Client.Get(sutil.Ctx,
+			types.NamespacedName{Name: cluster},
+			&managedClusterObject); err != nil {
+			sutil.Log.Error(err, "unable to get Managed", "cluster", cluster)
 		}
 
-		plRule.Spec.Clusters = append(plRule.Spec.Clusters, plrv1.GenericClusterReference{Name: cluster})
+		labels := managedClusterObject.Labels
+		labels["cluster.open-cluster-management.io/clusterset"] = managedClusterSetName
+		managedClusterObject.Labels = labels
+
+		if err := sutil.Client.Update(sutil.Ctx, &managedClusterObject); err != nil {
+			sutil.Log.Error(err, "unable to update managedCluster", "secret", managedClusterObject.Name, "cluster", cluster)
+		}
+
 	case false:
-		if len(survivors) == 0 {
-			sutil.Log.Info("Deleting empty secret policy", "secret", secret.Name)
-
-			return deleted, sutil.deletePolicyResources(secret, namespace, format)
+		managedClusterSetObject := clrapiv1beta2.ManagedClusterSet{}
+		if err := sutil.Client.Get(sutil.Ctx,
+			types.NamespacedName{Name: managedClusterSetName},
+			&managedClusterSetObject); err != nil {
+			sutil.Log.Error(err, "unable to get Managed", "cluster set", cluster)
 		}
+		for _, condition := range managedClusterSetObject.Status.Conditions {
+			if condition.Type == "ClusterSetEmpty" && condition.Status == "True" {
+				sutil.Log.Info("Deleting empty secret policy", "secret", secret.Name)
 
-		if !found {
-			return !deleted, nil
+				return deleted, sutil.deletePolicyResources(secret, namespace, managedClusterSetName, format)
+			}
 		}
-
-		plRule.Spec.Clusters = survivors
-	}
-
-	sutil.Log.Info("Updating placement rule for secret policy", "secret", secret.Name, "clusters", plRule.Spec.Clusters)
-
-	err := sutil.Client.Update(sutil.Ctx, plRule)
-	if err != nil {
-		sutil.Log.Error(err, "unable to update placement rule", "placementRule", plRule.Name, "cluster", cluster)
-
-		return !deleted, errorswrapper.Wrap(err,
-			fmt.Sprintf("unable to update placement rule (placementRule: %s, cluster: %s)", plRule.Name, cluster))
 	}
 
 	return !deleted, nil
@@ -628,13 +656,12 @@ func (sutil *SecretsUtil) ticklePolicy(secret *corev1.Secret, namespace string) 
 }
 
 func (sutil *SecretsUtil) updatePolicyResources(
-	plRule *plrv1.PlacementRule,
 	secret *corev1.Secret,
-	cluster, namespace string,
+	cluster, managedClusterSetName, namespace string,
 	format TargetSecretFormat,
 	add bool,
 ) error {
-	deleted, err := sutil.updatePlacementRule(plRule, secret, cluster, namespace, format, add)
+	deleted, err := sutil.updateManagedClusterSet(secret, cluster, namespace, managedClusterSetName, format, add)
 	if err != nil {
 		return err
 	}
@@ -647,7 +674,7 @@ func (sutil *SecretsUtil) updatePolicyResources(
 }
 
 func (sutil *SecretsUtil) ensureS3SecretResources(
-	secretName, namespace string,
+	secretName, namespace, managedClusterSetName string,
 	format TargetSecretFormat,
 ) (*corev1.Secret, error) {
 	secret := corev1.Secret{}
@@ -663,7 +690,7 @@ func (sutil *SecretsUtil) ensureS3SecretResources(
 
 		secret.Name = secretName
 
-		return nil, sutil.deletePolicyResources(&secret, namespace, format)
+		return nil, sutil.deletePolicyResources(&secret, namespace, managedClusterSetName, format)
 	}
 
 	if !ResourceIsDeleted(&secret) {
@@ -673,7 +700,7 @@ func (sutil *SecretsUtil) ensureS3SecretResources(
 	// Cleanup policy if secret is deleted
 	sutil.Log.Info("Cleaning up secret policy", "secret", secretName)
 
-	return nil, sutil.deletePolicyResources(&secret, namespace, format)
+	return nil, sutil.deletePolicyResources(&secret, namespace, managedClusterSetName, format)
 }
 
 // AddSecretToCluster takes in a secret (secretName) in the Ramen S3 secret format in a namespace and uses OCM Policy
@@ -683,7 +710,7 @@ func (sutil *SecretsUtil) ensureS3SecretResources(
 // formatted secret, to be delivered from the targetNS (which requires that the secret first be delivered to
 // the targetNS)
 func (sutil *SecretsUtil) AddSecretToCluster(
-	secretName, clusterName, namespace, targetNS string,
+	secretName, clusterName, managedClusterSetName, namespace, targetNS string,
 	format TargetSecretFormat,
 	veleroNS string,
 ) error {
@@ -698,7 +725,7 @@ func (sutil *SecretsUtil) AddSecretToCluster(
 		return fmt.Errorf("requested format (%s) requires a target namespace", SecretFormatVelero)
 	}
 
-	secret, err := sutil.ensureS3SecretResources(secretName, namespace, format)
+	secret, err := sutil.ensureS3SecretResources(secretName, namespace, managedClusterSetName, format)
 	if err != nil {
 		return err
 	}
@@ -707,35 +734,55 @@ func (sutil *SecretsUtil) AddSecretToCluster(
 		return fmt.Errorf("failed to find secret (secret: %s, cluster: %s)", secretName, clusterName)
 	}
 
-	plRule := &plrv1.PlacementRule{}
-	plRuleName := types.NamespacedName{
+	pl := &clrapiv1beta1.Placement{}
+	plName := types.NamespacedName{
 		Namespace: namespace,
 		Name:      generatePolicyPlacementName(secretName, format),
 	}
 
-	// Fetch secret placement rule, create secret resources if not found
-	err = sutil.APIReader.Get(sutil.Ctx, plRuleName, plRule)
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			return errorswrapper.Wrap(err, "failed to get placementRule object")
-		}
+	managedClusterObject := clusterv1.ManagedCluster{}
+	if err := sutil.Client.Get(sutil.Ctx,
+		types.NamespacedName{Name: clusterName},
+		&managedClusterObject); err != nil {
+		sutil.Log.Error(err, "unable to get Managed", "cluster", clusterName)
 
-		return sutil.createPolicyResources(secret, clusterName, namespace, targetNS, format, veleroNS)
+		return errorswrapper.Wrap(err, fmt.Sprintf("unable to get managed cluster %s", clusterName))
 	}
 
-	return sutil.updatePolicyResources(plRule, secret, clusterName, namespace, format, true)
+	labels := managedClusterObject.Labels
+	labels["cluster.open-cluster-management.io/clusterset"] = managedClusterSetName
+	managedClusterObject.Labels = labels
+
+	if err := sutil.Client.Update(sutil.Ctx, &managedClusterObject); err != nil {
+		sutil.Log.Error(err, "unable to update managedCluster", "secret", managedClusterObject.Name, "cluster", clusterName)
+
+		return errorswrapper.Wrap(err, fmt.Sprintf("unable to update managedClusterObject %s, cluster: %s)",
+			managedClusterObject.Name, clusterName))
+	}
+
+	// Fetch secret placement, create secret resources if not found
+	err = sutil.APIReader.Get(sutil.Ctx, plName, pl)
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			return errorswrapper.Wrap(err, "failed to get placement object")
+		}
+
+		return sutil.createPolicyResources(secret, clusterName, namespace, targetNS, managedClusterSetName, format, veleroNS)
+	}
+
+	return sutil.updatePolicyResources(secret, clusterName, managedClusterSetName, namespace, format, true)
 }
 
 // RemoveSecretFromCluster removes the secret (secretName) in namespace, from clusterName in the format requested.
 // If this was the last cluster that required the secret to be delivered in the requested format, then the related
 // policy resources are also deleted as part of the removal.
 func (sutil *SecretsUtil) RemoveSecretFromCluster(
-	secretName, clusterName, namespace string,
+	secretName, clusterName, managedClusterSetName, namespace string,
 	format TargetSecretFormat,
 ) error {
 	sutil.Log.Info("Remove Secret", "cluster", clusterName, "secret", secretName)
 
-	secret, err := sutil.ensureS3SecretResources(secretName, namespace, format)
+	secret, err := sutil.ensureS3SecretResources(secretName, namespace, managedClusterSetName, format)
 	if err != nil {
 		return err
 	}
@@ -744,22 +791,22 @@ func (sutil *SecretsUtil) RemoveSecretFromCluster(
 		return nil
 	}
 
-	plRule := &plrv1.PlacementRule{}
-	plRuleName := types.NamespacedName{
+	pl := &clrapiv1beta1.Placement{}
+	plName := types.NamespacedName{
 		Namespace: namespace,
 		Name:      generatePolicyPlacementName(secretName, format),
 	}
 
 	// Fetch secret placement rule, success if not found
-	err = sutil.APIReader.Get(sutil.Ctx, plRuleName, plRule)
+	err = sutil.APIReader.Get(sutil.Ctx, plName, pl)
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			return errorswrapper.Wrap(err, "failed to get placementRule object")
+			return errorswrapper.Wrap(err, "failed to get placement object")
 		}
 
 		// Ensure all related resources and finalizers are deleted
-		return sutil.deletePolicyResources(secret, namespace, format)
+		return sutil.deletePolicyResources(secret, namespace, managedClusterSetName, format)
 	}
 
-	return sutil.updatePolicyResources(plRule, secret, clusterName, namespace, format, false)
+	return sutil.updatePolicyResources(secret, clusterName, managedClusterSetName, namespace, format, false)
 }

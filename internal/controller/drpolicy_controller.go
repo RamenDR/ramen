@@ -54,6 +54,8 @@ const ReasonDRClustersUnavailable = "DRClustersUnavailable"
 // AllDRPolicyAnnotation is added to related resources that can be watched to reconcile all related DRPolicy resources
 const AllDRPolicyAnnotation = "drpolicy.ramendr.openshift.io"
 
+// Managed cluster set which contains the clusters to which drpolicy secrets are propagated
+const managedClusterSetName = "ramen-dr-policy-secrets-set"
 //nolint:lll
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drpolicies,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drpolicies/status,verbs=get;update;patch
@@ -114,7 +116,7 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// DRPolicy is marked for deletion
 	if util.ResourceIsDeleted(drpolicy) &&
 		controllerutil.ContainsFinalizer(drpolicy, drPolicyFinalizerName) {
-		return ctrl.Result{}, u.deleteDRPolicy(drclusters, secretsUtil, ramenConfig)
+		return ctrl.Result{}, u.deleteDRPolicy(drclusters, managedClusterSetName, secretsUtil, ramenConfig)
 	}
 
 	log.Info("create/update")
@@ -144,7 +146,7 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, fmt.Errorf("error in intiating policy metrics: %w", err)
 	}
 
-	return r.reconcile(u, drclusters, secretsUtil, ramenConfig)
+	return r.reconcile(u, drclusters, secretsUtil, ramenConfig, managedClusterSetName)
 }
 
 //nolint:unparam
@@ -153,8 +155,9 @@ func (r *DRPolicyReconciler) reconcile(
 	drclusters *ramen.DRClusterList,
 	secretsUtil *util.SecretsUtil,
 	ramenConfig *ramen.RamenConfig,
+	managedClusterSetName string,
 ) (ctrl.Result, error) {
-	if err := propagateS3Secret(u.object, drclusters, secretsUtil, ramenConfig, u.log); err != nil {
+	if err := propagateS3Secret(u.object, drclusters, secretsUtil, ramenConfig, managedClusterSetName, u.log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drpolicy deploy: %w", err)
 	}
 
@@ -338,6 +341,7 @@ type drpolicyUpdater struct {
 }
 
 func (u *drpolicyUpdater) deleteDRPolicy(drclusters *ramen.DRClusterList,
+	managedClusterSetName string,
 	secretsUtil *util.SecretsUtil,
 	ramenConfig *ramen.RamenConfig,
 ) error {
@@ -355,7 +359,7 @@ func (u *drpolicyUpdater) deleteDRPolicy(drclusters *ramen.DRClusterList,
 		}
 	}
 
-	if err := drPolicyUndeploy(u.object, drclusters, secretsUtil, ramenConfig, u.log); err != nil {
+	if err := drPolicyUndeploy(u.object, drclusters, managedClusterSetName, secretsUtil, ramenConfig, u.log); err != nil {
 		return fmt.Errorf("drpolicy undeploy: %w", err)
 	}
 
