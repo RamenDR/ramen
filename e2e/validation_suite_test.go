@@ -4,60 +4,65 @@
 package e2e_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/ramendr/ramen/e2e/util"
+	"k8s.io/client-go/kubernetes"
 )
 
 func Validate(t *testing.T) {
 	t.Helper()
 
-	if !t.Run("CheckRamenHubOperatorStatus", CheckRamenHubOperatorStatus) {
-		t.Error("CheckRamenHubOperatorStatus failed")
-	}
+	// TODO: Use real cluster names from config
 
-	if !t.Run("CheckRamenSpokeOperatorStatus", CheckRamenSpokeOperatorStatus) {
-		t.Error("CheckRamenHubOperatorStatus failed")
-	}
+	t.Run("hub", func(t *testing.T) {
+		if err := validateHub(util.Ctx.Hub.K8sClientSet, "hub"); err != nil {
+			util.Fatal(t, "Validating cluster hub failed", err)
+		}
+	})
+	t.Run("c1", func(t *testing.T) {
+		if err := validateCluster(util.Ctx.C1.K8sClientSet, "c1"); err != nil {
+			util.Fatal(t, "Validating cluster c2 failed", err)
+		}
+	})
+	t.Run("c2", func(t *testing.T) {
+		if err := validateCluster(util.Ctx.C1.K8sClientSet, "c2"); err != nil {
+			util.Fatal(t, "Validating cluster c2 failed", err)
+		}
+	})
 }
 
-func CheckRamenHubOperatorStatus(t *testing.T) {
-	util.Ctx.Log.Info("enter CheckRamenHubOperatorStatus")
+func validateHub(client *kubernetes.Clientset, name string) error {
+	util.Ctx.Log.Info("Validating hub cluster", "name", name)
 
-	isRunning, podName, err := util.CheckRamenHubPodRunningStatus(util.Ctx.Hub.K8sClientSet)
+	isRunning, podName, err := util.CheckRamenHubPodRunningStatus(client)
 	if err != nil {
-		t.Error(err)
+		return err
 	}
 
-	if isRunning {
-		util.Ctx.Log.Info("Ramen Hub Operator is running", "pod", podName)
-	} else {
-		t.Error("no running Ramen Hub Operator pod found")
+	if !isRunning {
+		return errors.New("no running ramen-hub-operator pod found")
 	}
+
+	util.Ctx.Log.Info("Ramen hub operator is running", "pod", podName)
+
+	return nil
 }
 
-func CheckRamenSpokeOperatorStatus(t *testing.T) {
-	util.Ctx.Log.Info("enter CheckRamenSpokeOperatorStatus")
+func validateCluster(client *kubernetes.Clientset, name string) error {
+	util.Ctx.Log.Info("Validating managed cluster", "name", name)
 
-	isRunning, podName, err := util.CheckRamenSpokePodRunningStatus(util.Ctx.C1.K8sClientSet)
+	isRunning, podName, err := util.CheckRamenSpokePodRunningStatus(client)
 	if err != nil {
-		t.Error(err)
+		return err
 	}
 
-	if isRunning {
-		util.Ctx.Log.Info("Ramen Spoke Operator is running on cluster 1", "pod", podName)
-	} else {
-		t.Error("no running Ramen Spoke Operator pod on cluster 1")
+	if !isRunning {
+		return errors.New("no running ramen-dr-cluster-operator pod found")
 	}
 
-	isRunning, podName, err = util.CheckRamenSpokePodRunningStatus(util.Ctx.C2.K8sClientSet)
-	if err != nil {
-		t.Error(err)
-	}
+	util.Ctx.Log.Info("Ramen DR cluster operator is running", "pod", podName)
 
-	if isRunning {
-		util.Ctx.Log.Info("Ramen Spoke Operator is running on cluster 2", "pod", podName)
-	} else {
-		t.Error("no running Ramen Spoke Operator pod on cluster 2")
-	}
+	return nil
 }
