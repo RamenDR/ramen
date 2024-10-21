@@ -20,13 +20,14 @@ func propagateS3Secret(
 	drclusters *rmn.DRClusterList,
 	secretsUtil *util.SecretsUtil,
 	hubOperatorRamenConfig *rmn.RamenConfig,
+	managedClusterSetName string,
 	log logr.Logger,
 ) error {
 	drClustersMutex.Lock()
 	defer drClustersMutex.Unlock()
 
 	for _, clusterName := range util.DRPolicyClusterNames(drpolicy) {
-		if err := drClusterSecretsDeploy(clusterName, drpolicy, drclusters, secretsUtil,
+		if err := drClusterSecretsDeploy(clusterName, managedClusterSetName, drpolicy, drclusters, secretsUtil,
 			hubOperatorRamenConfig, log); err != nil {
 			return err
 		}
@@ -36,7 +37,7 @@ func propagateS3Secret(
 }
 
 func drClusterSecretsDeploy(
-	clusterName string,
+	clusterName, managedClusterSetName string,
 	drpolicy *rmn.DRPolicy,
 	drclusters *rmn.DRClusterList,
 	secretsUtil *util.SecretsUtil,
@@ -63,6 +64,7 @@ func drClusterSecretsDeploy(
 		if err := secretsUtil.AddSecretToCluster(
 			secretName,
 			clusterName,
+			managedClusterSetName,
 			RamenOperatorNamespace(),
 			drClusterOperatorNamespaceNameOrDefault(rmnCfg),
 			util.SecretFormatRamen,
@@ -75,6 +77,7 @@ func drClusterSecretsDeploy(
 			if err := secretsUtil.AddSecretToCluster(
 				secretName,
 				clusterName,
+				managedClusterSetName,
 				RamenOperatorNamespace(),
 				drClusterOperatorNamespaceNameOrDefault(rmnCfg),
 				util.SecretFormatVelero,
@@ -92,6 +95,7 @@ func drClusterSecretsDeploy(
 func drPolicyUndeploy(
 	drpolicy *rmn.DRPolicy,
 	drclusters *rmn.DRClusterList,
+	managedClusterSetName string,
 	secretsUtil *util.SecretsUtil,
 	ramenConfig *rmn.RamenConfig,
 	log logr.Logger,
@@ -105,12 +109,14 @@ func drPolicyUndeploy(
 		return fmt.Errorf("drpolicies list: %w", err)
 	}
 
-	return drClustersUndeploySecrets(drpolicy, drclusters, drpolicies, secretsUtil, ramenConfig, log)
+	return drClustersUndeploySecrets(drpolicy, drclusters, managedClusterSetName,
+		drpolicies, secretsUtil, ramenConfig, log)
 }
 
 func drClustersUndeploySecrets(
 	drpolicy *rmn.DRPolicy,
 	drclusters *rmn.DRClusterList,
+	managedClusterSetName string,
 	drpolicies rmn.DRPolicyList,
 	secretsUtil *util.SecretsUtil,
 	ramenConfig *rmn.RamenConfig,
@@ -144,7 +150,8 @@ func drClustersUndeploySecrets(
 			}
 
 			// Delete s3profile secret from current cluster
-			if err := deleteSecretFromCluster(s3SecretToDelete, clusterName, ramenConfig, secretsUtil); err != nil {
+			if err := deleteSecretFromCluster(s3SecretToDelete, clusterName, managedClusterSetName,
+				ramenConfig, secretsUtil); err != nil {
 				return err
 			}
 		}
@@ -239,13 +246,14 @@ func drPolicySecretNames(drpolicy *rmn.DRPolicy,
 
 // Delete s3profile secret from cluster
 func deleteSecretFromCluster(
-	s3SecretToDelete, clusterName string,
+	s3SecretToDelete, clusterName, managedClusterSetName string,
 	ramenConfig *rmn.RamenConfig,
 	secretsUtil *util.SecretsUtil,
 ) error {
 	if err := secretsUtil.RemoveSecretFromCluster(
 		s3SecretToDelete,
 		clusterName,
+		managedClusterSetName,
 		RamenOperatorNamespace(),
 		util.SecretFormatRamen,
 	); err != nil {
@@ -257,6 +265,7 @@ func deleteSecretFromCluster(
 		if err := secretsUtil.RemoveSecretFromCluster(
 			s3SecretToDelete,
 			clusterName,
+			managedClusterSetName,
 			RamenOperatorNamespace(),
 			util.SecretFormatVelero,
 		); err != nil {
