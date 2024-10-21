@@ -23,7 +23,7 @@ func AddTestContext(name string, w workloads.Workload, d deployers.Deployer) {
 	testContextMap[name] = TestContext{w, d}
 }
 
-func DeleteTestContext(name string, w workloads.Workload, d deployers.Deployer) {
+func DeleteTestContext(name string) {
 	delete(testContextMap, name)
 }
 

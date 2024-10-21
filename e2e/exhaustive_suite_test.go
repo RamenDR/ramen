@@ -91,7 +91,7 @@ func Exhaustive(t *testing.T) {
 					t.Parallel()
 					testcontext.AddTestContext(t.Name(), w, d)
 					runTestFlow(t)
-					testcontext.DeleteTestContext(t.Name(), w, d)
+					testcontext.DeleteTestContext(t.Name())
 				})
 			})
 		}
