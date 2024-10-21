@@ -10,6 +10,7 @@ import (
 
 	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/testcontext"
+	e2etesting "github.com/ramendr/ramen/e2e/testing"
 	"github.com/ramendr/ramen/e2e/util"
 	"github.com/ramendr/ramen/e2e/workloads"
 )
@@ -67,12 +68,12 @@ func Exhaustive(t *testing.T) {
 	t.Parallel()
 
 	if err := util.EnsureChannel(); err != nil {
-		t.Fatalf("failed to ensure channel: %v", err)
+		e2etesting.Fatal(t, err, "Failed to ensure channel")
 	}
 
 	t.Cleanup(func() {
 		if err := util.EnsureChannelDeleted(); err != nil {
-			t.Fatalf("failed to ensure channel deleted: %v", err)
+			e2etesting.Fatal(t, err, "Failed to ensure channel deleted")
 		}
 	})
 
@@ -100,34 +101,34 @@ func runTestFlow(t *testing.T) {
 
 	testCtx, err := testcontext.GetTestContext(t.Name())
 	if err != nil {
-		t.Fatal(err)
+		e2etesting.Fatal(t, err, "Failed to get test context")
 	}
 
 	if !testCtx.Deployer.IsWorkloadSupported(testCtx.Workload) {
-		t.Skipf("Workload %s not supported by deployer %s, skip test", testCtx.Workload.GetName(), testCtx.Deployer.GetName())
+		e2etesting.Skipf(t, "Workload %s not supported by deployer %s", testCtx.Workload.GetName(), testCtx.Deployer.GetName())
 	}
 
 	if !t.Run("Deploy", DeployAction) {
-		t.Fatal("Deploy failed")
+		e2etesting.FailNow(t)
 	}
 
 	if !t.Run("Enable", EnableAction) {
-		t.Fatal("Enable failed")
+		e2etesting.FailNow(t)
 	}
 
 	if !t.Run("Failover", FailoverAction) {
-		t.Fatal("Failover failed")
+		e2etesting.FailNow(t)
 	}
 
 	if !t.Run("Relocate", RelocateAction) {
-		t.Fatal("Relocate failed")
+		e2etesting.FailNow(t)
 	}
 
 	if !t.Run("Disable", DisableAction) {
-		t.Fatal("Disable failed")
+		e2etesting.FailNow(t)
 	}
 
 	if !t.Run("Undeploy", UndeployAction) {
-		t.Fatal("Undeploy failed")
+		e2etesting.FailNow(t)
 	}
 }
