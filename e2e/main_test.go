@@ -15,7 +15,7 @@ import (
 )
 
 func init() {
-	flag.StringVar(&util.ConfigFile, "configfile", "", "Path to the config file")
+	flag.StringVar(&util.ConfigFile, "config", "", "Path to the config file")
 }
 
 func TestMain(m *testing.M) {
