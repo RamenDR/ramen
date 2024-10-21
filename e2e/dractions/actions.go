@@ -11,6 +11,7 @@ import (
 	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/util"
 	"github.com/ramendr/ramen/e2e/workloads"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -55,18 +56,22 @@ func EnableProtection(w workloads.Workload, d deployers.Deployer) error {
 	clusterName := placementDecision.Status.Decisions[0].ClusterName
 	util.Ctx.Log.Info("got clusterName " + clusterName + " from " + placementDecisionName)
 
-	// move update placement annotation after placement has been handled
-	// otherwise if we first add ocm disable annotation then it might not
-	// yet be handled by ocm and thus PlacementSatisfied=false
-	if placement.Annotations == nil {
-		placement.Annotations = make(map[string]string)
-	}
-
-	placement.Annotations[OcmSchedulingDisable] = "true"
-
 	util.Ctx.Log.Info("update placement " + placementName + " annotation")
 
-	if err = updatePlacement(util.Ctx.Hub.CtrlClient, placement); err != nil {
+	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		placement, err := getPlacement(util.Ctx.Hub.CtrlClient, namespace, placementName)
+		if err != nil {
+			return err
+		}
+
+		if placement.Annotations == nil {
+			placement.Annotations = make(map[string]string)
+		}
+		placement.Annotations[OcmSchedulingDisable] = "true"
+
+		return updatePlacement(util.Ctx.Hub.CtrlClient, placement)
+	})
+	if err != nil {
 		return err
 	}
 
