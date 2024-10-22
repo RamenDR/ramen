@@ -49,7 +49,7 @@ func waitPlacementDecision(client client.Client, namespace string, placementName
 				"could not get placement decision for " + placementName + " before timeout, fail")
 		}
 
-		time.Sleep(util.TimeInterval)
+		time.Sleep(util.RetryInterval)
 	}
 }
 
@@ -81,7 +81,7 @@ func waitDRPCReady(client client.Client, namespace string, drpcName string) erro
 			return fmt.Errorf("drpc " + drpcName + " is not ready yet before timeout, fail")
 		}
 
-		time.Sleep(util.TimeInterval)
+		time.Sleep(util.RetryInterval)
 	}
 }
 
@@ -131,7 +131,7 @@ func waitDRPCPhase(client client.Client, namespace, name string, phase ramen.DRS
 				"drpc %s status is not %s yet before timeout, fail", name, phase))
 		}
 
-		time.Sleep(util.TimeInterval)
+		time.Sleep(util.RetryInterval)
 	}
 }
 
@@ -209,7 +209,7 @@ func waitDRPCDeleted(client client.Client, namespace string, name string) error 
 			return fmt.Errorf(fmt.Sprintf("drpc %s is not deleted yet before timeout, fail", name))
 		}
 
-		time.Sleep(util.TimeInterval)
+		time.Sleep(util.RetryInterval)
 	}
 }
 
@@ -235,7 +235,7 @@ func waitDRPCProgression(client client.Client, namespace, name string, progressi
 				name, progression, util.Timeout))
 		}
 
-		time.Sleep(util.TimeInterval)
+		time.Sleep(util.RetryInterval)
 	}
 }
 
