@@ -44,12 +44,12 @@ func waitPlacementDecision(client client.Client, namespace string, placementName
 			return placementDecision.Name, nil
 		}
 
-		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
+		if time.Since(startTime) > util.Timeout {
 			return "", fmt.Errorf(
 				"could not get placement decision for " + placementName + " before timeout, fail")
 		}
 
-		time.Sleep(time.Second * time.Duration(util.TimeInterval))
+		time.Sleep(util.TimeInterval)
 	}
 }
 
@@ -69,7 +69,7 @@ func waitDRPCReady(client client.Client, namespace string, drpcName string) erro
 			return nil
 		}
 
-		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
+		if time.Since(startTime) > util.Timeout {
 			if !conditionReady {
 				util.Ctx.Log.Info("drpc " + drpcName + " condition 'Available' or 'PeerReady' is not True")
 			}
@@ -81,7 +81,7 @@ func waitDRPCReady(client client.Client, namespace string, drpcName string) erro
 			return fmt.Errorf("drpc " + drpcName + " is not ready yet before timeout, fail")
 		}
 
-		time.Sleep(time.Second * time.Duration(util.TimeInterval))
+		time.Sleep(util.TimeInterval)
 	}
 }
 
@@ -126,12 +126,12 @@ func waitDRPCPhase(client client.Client, namespace, name string, phase ramen.DRS
 			return nil
 		}
 
-		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
+		if time.Since(startTime) > util.Timeout {
 			return fmt.Errorf(fmt.Sprintf(
 				"drpc %s status is not %s yet before timeout, fail", name, phase))
 		}
 
-		time.Sleep(time.Second * time.Duration(util.TimeInterval))
+		time.Sleep(util.TimeInterval)
 	}
 }
 
@@ -205,11 +205,11 @@ func waitDRPCDeleted(client client.Client, namespace string, name string) error 
 			util.Ctx.Log.Info(fmt.Sprintf("error to get drpc %s: %v", name, err))
 		}
 
-		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
+		if time.Since(startTime) > util.Timeout {
 			return fmt.Errorf(fmt.Sprintf("drpc %s is not deleted yet before timeout, fail", name))
 		}
 
-		time.Sleep(time.Second * time.Duration(util.TimeInterval))
+		time.Sleep(util.TimeInterval)
 	}
 }
 
@@ -230,12 +230,12 @@ func waitDRPCProgression(client client.Client, namespace, name string, progressi
 			return nil
 		}
 
-		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
+		if time.Since(startTime) > util.Timeout {
 			return fmt.Errorf(fmt.Sprintf("drpc %s progression is not %s yet before timeout of %v",
 				name, progression, util.Timeout))
 		}
 
-		time.Sleep(time.Second * time.Duration(util.TimeInterval))
+		time.Sleep(util.TimeInterval)
 	}
 }
 
