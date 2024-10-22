@@ -178,8 +178,6 @@ func getTargetCluster(client client.Client, namespace, placementName string, drp
 
 // first wait DRPC to have the expected phase, then check DRPC conditions
 func waitDRPC(client client.Client, namespace, name string, expectedPhase ramen.DRState) error {
-	// sleep to wait for DRPC is processed
-	time.Sleep(FiveSecondsDuration)
 	// check Phase
 	if err := waitDRPCPhase(client, namespace, name, expectedPhase); err != nil {
 		return err
@@ -190,8 +188,6 @@ func waitDRPC(client client.Client, namespace, name string, expectedPhase ramen.
 
 func waitDRPCDeleted(client client.Client, namespace string, name string) error {
 	startTime := time.Now()
-	// sleep to wait for DRPC is deleted
-	time.Sleep(FiveSecondsDuration)
 
 	for {
 		_, err := getDRPC(client, namespace, name)
