@@ -3,11 +3,13 @@
 
 package util
 
+import "time"
+
 const (
 	RamenSystemNamespace = "ramen-system"
 
-	Timeout      = 600 // seconds
-	TimeInterval = 30  // seconds
+	Timeout       = 600 * time.Second
+	RetryInterval = 5 * time.Second
 
 	defaultChannelName      = "ramen-gitops"
 	defaultChannelNamespace = "ramen-samples"
