@@ -127,8 +127,7 @@ func waitDRPCPhase(client client.Client, namespace, name string, phase ramen.DRS
 		}
 
 		if time.Since(startTime) > util.Timeout {
-			return fmt.Errorf(fmt.Sprintf(
-				"drpc %s status is not %s yet before timeout, fail", name, phase))
+			return fmt.Errorf("drpc %s status is not %s yet before timeout, fail", name, phase)
 		}
 
 		time.Sleep(util.RetryInterval)
@@ -202,7 +201,7 @@ func waitDRPCDeleted(client client.Client, namespace string, name string) error 
 		}
 
 		if time.Since(startTime) > util.Timeout {
-			return fmt.Errorf(fmt.Sprintf("drpc %s is not deleted yet before timeout, fail", name))
+			return fmt.Errorf("drpc %s is not deleted yet before timeout, fail", name)
 		}
 
 		time.Sleep(util.RetryInterval)
@@ -227,8 +226,8 @@ func waitDRPCProgression(client client.Client, namespace, name string, progressi
 		}
 
 		if time.Since(startTime) > util.Timeout {
-			return fmt.Errorf(fmt.Sprintf("drpc %s progression is not %s yet before timeout of %v",
-				name, progression, util.Timeout))
+			return fmt.Errorf("drpc %s progression is not %s yet before timeout of %v",
+				name, progression, util.Timeout)
 		}
 
 		time.Sleep(util.RetryInterval)
