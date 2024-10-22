@@ -13,12 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const FiveSecondsDuration = 5 * time.Second
-
 func waitSubscriptionPhase(namespace, name string, phase subscriptionv1.SubscriptionPhase) error {
-	// sleep to wait for subscription is processed
-	time.Sleep(FiveSecondsDuration)
-
 	startTime := time.Now()
 
 	for {
@@ -43,8 +38,6 @@ func waitSubscriptionPhase(namespace, name string, phase subscriptionv1.Subscrip
 }
 
 func WaitWorkloadHealth(client client.Client, namespace string, w workloads.Workload) error {
-	time.Sleep(FiveSecondsDuration)
-
 	startTime := time.Now()
 
 	for {
