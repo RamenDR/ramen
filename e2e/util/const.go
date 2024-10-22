@@ -8,8 +8,8 @@ import "time"
 const (
 	RamenSystemNamespace = "ramen-system"
 
-	Timeout      = 600 * time.Second
-	TimeInterval = 30 * time.Second
+	Timeout       = 600 * time.Second
+	RetryInterval = 30 * time.Second
 
 	defaultChannelName      = "ramen-gitops"
 	defaultChannelNamespace = "ramen-samples"
