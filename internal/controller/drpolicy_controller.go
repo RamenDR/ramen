@@ -61,6 +61,8 @@ const ReasonDRClustersUnavailable = "DRClustersUnavailable"
 // +kubebuilder:rbac:groups="",namespace=system,resources=secrets,verbs=get;update
 // +kubebuilder:rbac:groups="policy.open-cluster-management.io",namespace=system,resources=placementbindings,verbs=get;create;update;delete
 // +kubebuilder:rbac:groups="policy.open-cluster-management.io",namespace=system,resources=policies,verbs=get;create;update;delete
+// +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=managedclusters,verbs=get;list;watch
+// +kubebuilder:rbac:groups=view.open-cluster-management.io,resources=managedclusterviews,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -136,17 +138,21 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, fmt.Errorf("error in intiating policy metrics: %w", err)
 	}
 
-	return r.reconcile(drpolicy, drclusters, secretsUtil, ramenConfig, log)
+	return r.reconcile(u, drclusters, secretsUtil, ramenConfig)
 }
 
-func (r *DRPolicyReconciler) reconcile(drpolicy *ramen.DRPolicy,
+func (r *DRPolicyReconciler) reconcile(
+	u *drpolicyUpdater,
 	drclusters *ramen.DRClusterList,
 	secretsUtil *util.SecretsUtil,
 	ramenConfig *ramen.RamenConfig,
-	log logr.Logger,
 ) (ctrl.Result, error) {
-	if err := propagateS3Secret(drpolicy, drclusters, secretsUtil, ramenConfig, log); err != nil {
+	if err := propagateS3Secret(u.object, drclusters, secretsUtil, ramenConfig, u.log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drpolicy deploy: %w", err)
+	}
+
+	if err := updatePeerClasses(u); err != nil {
+		return ctrl.Result{}, fmt.Errorf("drpolicy peerClass update: %w", err)
 	}
 
 	return ctrl.Result{}, nil
