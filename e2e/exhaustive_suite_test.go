@@ -67,12 +67,12 @@ func Exhaustive(t *testing.T) {
 	t.Parallel()
 
 	if err := util.EnsureChannel(); err != nil {
-		t.Fatalf("failed to ensure channel: %v", err)
+		util.Fatal(t, "Failed to ensure channel", err)
 	}
 
 	t.Cleanup(func() {
 		if err := util.EnsureChannelDeleted(); err != nil {
-			t.Fatalf("failed to ensure channel deleted: %v", err)
+			util.Fatal(t, "Failed to ensure channel deleted", err)
 		}
 	})
 
@@ -103,34 +103,34 @@ func runTestFlow(t *testing.T) {
 
 	testCtx, err := testcontext.GetTestContext(t.Name())
 	if err != nil {
-		t.Fatal(err)
+		util.Fatal(t, "Failed to get test context", err)
 	}
 
 	if !testCtx.Deployer.IsWorkloadSupported(testCtx.Workload) {
-		t.Skipf("Workload %s not supported by deployer %s, skip test", testCtx.Workload.GetName(), testCtx.Deployer.GetName())
+		util.Skipf(t, "Workload %s not supported by deployer %s", testCtx.Workload.GetName(), testCtx.Deployer.GetName())
 	}
 
 	if !t.Run("Deploy", DeployAction) {
-		t.Fatal("Deploy failed")
+		util.FailNow(t)
 	}
 
 	if !t.Run("Enable", EnableAction) {
-		t.Fatal("Enable failed")
+		util.FailNow(t)
 	}
 
 	if !t.Run("Failover", FailoverAction) {
-		t.Fatal("Failover failed")
+		util.FailNow(t)
 	}
 
 	if !t.Run("Relocate", RelocateAction) {
-		t.Fatal("Relocate failed")
+		util.FailNow(t)
 	}
 
 	if !t.Run("Disable", DisableAction) {
-		t.Fatal("Disable failed")
+		util.FailNow(t)
 	}
 
 	if !t.Run("Undeploy", UndeployAction) {
-		t.Fatal("Undeploy failed")
+		util.FailNow(t)
 	}
 }
