@@ -38,7 +38,7 @@ func waitSubscriptionPhase(namespace, name string, phase subscriptionv1.Subscrip
 			return fmt.Errorf(fmt.Sprintf("subscription %s status is not %s yet before timeout", name, phase))
 		}
 
-		time.Sleep(util.TimeInterval)
+		time.Sleep(util.RetryInterval)
 	}
 }
 
@@ -62,6 +62,6 @@ func WaitWorkloadHealth(client client.Client, namespace string, w workloads.Work
 				w.GetName(), util.Timeout))
 		}
 
-		time.Sleep(util.TimeInterval)
+		time.Sleep(util.RetryInterval)
 	}
 }

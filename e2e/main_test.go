@@ -39,7 +39,7 @@ func TestMain(m *testing.M) {
 	}
 
 	log.Info("Global setting", "Timeout", util.Timeout)
-	log.Info("Global setting", "Retry Interval", util.TimeInterval)
+	log.Info("Global setting", "Retry Interval", util.RetryInterval)
 
 	os.Exit(m.Run())
 }
