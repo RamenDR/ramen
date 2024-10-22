@@ -1271,7 +1271,7 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 
 	for index := range v.replClassList.Items {
 		replicationClass := &v.replClassList.Items[index]
-		schedulingInterval, found := replicationClass.Spec.Parameters["schedulingInterval"]
+		schedulingInterval, found := replicationClass.Spec.Parameters[VRClassScheduleKey]
 
 		if storageClass.Provisioner != replicationClass.Spec.Provisioner || !found {
 			// skip this replication class if provisioner does not match or if schedule not found
