@@ -87,47 +87,41 @@ func Exhaustive(t *testing.T) {
 
 			t.Run(deployers.GetCombinedName(d, w), func(t *testing.T) {
 				t.Parallel()
-				testcontext.AddTestContext(t.Name(), w, d)
-				runTestFlow(t)
-				testcontext.DeleteTestContext(t.Name())
+				ctx := testcontext.TestContext{Workload: w, Deployer: d}
+				runTestFlow(t, ctx)
 			})
 		}
 	}
 }
 
-func runTestFlow(t *testing.T) {
+func runTestFlow(t *testing.T, ctx testcontext.TestContext) {
 	t.Helper()
 
-	testCtx, err := testcontext.GetTestContext(t.Name())
-	if err != nil {
-		t.Fatal(err)
+	if !ctx.Deployer.IsWorkloadSupported(ctx.Workload) {
+		t.Skipf("Workload %s not supported by deployer %s, skip test", ctx.Workload.GetName(), ctx.Deployer.GetName())
 	}
 
-	if !testCtx.Deployer.IsWorkloadSupported(testCtx.Workload) {
-		t.Skipf("Workload %s not supported by deployer %s, skip test", testCtx.Workload.GetName(), testCtx.Deployer.GetName())
-	}
-
-	if !t.Run("Deploy", DeployAction) {
+	if !t.Run("Deploy", ctx.Deploy) {
 		t.Fatal("Deploy failed")
 	}
 
-	if !t.Run("Enable", EnableAction) {
+	if !t.Run("Enable", ctx.Enable) {
 		t.Fatal("Enable failed")
 	}
 
-	if !t.Run("Failover", FailoverAction) {
+	if !t.Run("Failover", ctx.Failover) {
 		t.Fatal("Failover failed")
 	}
 
-	if !t.Run("Relocate", RelocateAction) {
+	if !t.Run("Relocate", ctx.Relocate) {
 		t.Fatal("Relocate failed")
 	}
 
-	if !t.Run("Disable", DisableAction) {
+	if !t.Run("Disable", ctx.Disable) {
 		t.Fatal("Disable failed")
 	}
 
-	if !t.Run("Undeploy", UndeployAction) {
+	if !t.Run("Undeploy", ctx.Undeploy) {
 		t.Fatal("Undeploy failed")
 	}
 }
