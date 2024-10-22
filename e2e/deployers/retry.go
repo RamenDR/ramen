@@ -34,11 +34,11 @@ func waitSubscriptionPhase(namespace, name string, phase subscriptionv1.Subscrip
 			return nil
 		}
 
-		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
+		if time.Since(startTime) > util.Timeout {
 			return fmt.Errorf(fmt.Sprintf("subscription %s status is not %s yet before timeout", name, phase))
 		}
 
-		time.Sleep(time.Second * time.Duration(util.TimeInterval))
+		time.Sleep(util.TimeInterval)
 	}
 }
 
@@ -55,13 +55,13 @@ func WaitWorkloadHealth(client client.Client, namespace string, w workloads.Work
 			return nil
 		}
 
-		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
+		if time.Since(startTime) > util.Timeout {
 			util.Ctx.Log.Info(err.Error())
 
 			return fmt.Errorf(fmt.Sprintf("workload %s is not ready yet before timeout of %v",
 				w.GetName(), util.Timeout))
 		}
 
-		time.Sleep(time.Second * time.Duration(util.TimeInterval))
+		time.Sleep(util.TimeInterval)
 	}
 }
