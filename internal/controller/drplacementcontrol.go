@@ -1405,6 +1405,8 @@ func (d *DRPCInstance) moveVRGToSecondaryEverywhere() bool {
 }
 
 func (d *DRPCInstance) cleanupSecondaries(skipCluster string) (bool, error) {
+	d.log.Info("Cleaning up secondaries.")
+
 	for _, clusterName := range rmnutil.DRPolicyClusterNames(d.drPolicy) {
 		if skipCluster == clusterName {
 			continue
@@ -1759,7 +1761,7 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 	}
 
 	if !clean {
-		msg := "cleaning secondaries"
+		msg := "cleaning up secondaries"
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
 			metav1.ConditionFalse, rmn.ReasonCleaning, msg)
 
@@ -1774,8 +1776,7 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 
 //nolint:gocognit
 func (d *DRPCInstance) cleanupForVolSync(clusterToSkip string) error {
-	d.log.Info("VolSync needs both VRGs. No need to clean up secondary")
-	d.log.Info("Ensure secondary on peer")
+	d.log.Info("VolSync needs both VRGs. Ensure secondary setup on peer")
 
 	peersReady := true
 
