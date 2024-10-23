@@ -13,6 +13,9 @@ const (
 	labelOwnerName          = "ramendr.openshift.io/owner-name"
 
 	MModesLabel             = "ramendr.openshift.io/maintenancemodes"
+	SClassLabel             = "ramendr.openshift.io/storageclass"
+	VSClassLabel            = "ramendr.openshift.io/volumesnapshotclass"
+	VRClassLabel            = "ramendr.openshift.io/volumereplicationclass"
 	ExcludeFromVeleroBackup = "velero.io/exclude-from-backup"
 )
 
