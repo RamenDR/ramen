@@ -19,6 +19,14 @@ func FindProtectedPVC(vrg *ramen.VolumeReplicationGroup, pvcNamespaceName, pvcNa
 	return protectedPvc
 }
 
+func (v *VRGInstance) addProtectedPVC(pvcNamespace, pvcName string) *ramen.ProtectedPVC {
+	protectedPVC := &ramen.ProtectedPVC{Namespace: pvcNamespace, Name: pvcName}
+
+	v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
+
+	return &v.instance.Status.ProtectedPVCs[len(v.instance.Status.ProtectedPVCs)-1]
+}
+
 func (v *VRGInstance) pvcStatusDeleteIfPresent(pvcNamespaceName, pvcName string, log logr.Logger) {
 	pvcStatus, i := FindProtectedPvcAndIndex(v.instance, pvcNamespaceName, pvcName)
 	if pvcStatus == nil {

@@ -51,11 +51,10 @@ func (v *VRGInstance) restorePVsAndPVCsForVolSync() (int, error) {
 		if err != nil {
 			v.log.Info(fmt.Sprintf("Unable to ensure PVC %v -- err: %v", rdSpec, err))
 
-			protectedPVC := FindProtectedPVC(v.instance, rdSpec.ProtectedPVC.Namespace, rdSpec.ProtectedPVC.Name)
+			protectedPVC := v.findProtectedPVC(rdSpec.ProtectedPVC.Namespace, rdSpec.ProtectedPVC.Name)
 			if protectedPVC == nil {
-				protectedPVC = &ramendrv1alpha1.ProtectedPVC{}
+				protectedPVC = v.addProtectedPVC(rdSpec.ProtectedPVC.Namespace, rdSpec.ProtectedPVC.Name)
 				rdSpec.ProtectedPVC.DeepCopyInto(protectedPVC)
-				v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
 			}
 
 			setVRGConditionTypeVolSyncPVRestoreError(&protectedPVC.Conditions, v.instance.Generation,
@@ -66,11 +65,10 @@ func (v *VRGInstance) restorePVsAndPVCsForVolSync() (int, error) {
 
 		numPVsRestored++
 
-		protectedPVC := FindProtectedPVC(v.instance, rdSpec.ProtectedPVC.Namespace, rdSpec.ProtectedPVC.Name)
+		protectedPVC := v.findProtectedPVC(rdSpec.ProtectedPVC.Namespace, rdSpec.ProtectedPVC.Name)
 		if protectedPVC == nil {
-			protectedPVC = &ramendrv1alpha1.ProtectedPVC{}
+			protectedPVC = v.addProtectedPVC(rdSpec.ProtectedPVC.Namespace, rdSpec.ProtectedPVC.Name)
 			rdSpec.ProtectedPVC.DeepCopyInto(protectedPVC)
-			v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
 		}
 
 		setVRGConditionTypeVolSyncPVRestoreComplete(&protectedPVC.Conditions, v.instance.Generation, "PVC restored")
@@ -142,14 +140,14 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		Resources:          pvc.Spec.Resources,
 	}
 
-	protectedPVC := FindProtectedPVC(v.instance, pvc.Namespace, pvc.Name)
+	protectedPVC := v.findProtectedPVC(pvc.Namespace, pvc.Name)
 	if protectedPVC == nil {
-		protectedPVC = newProtectedPVC
-		v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
+		protectedPVC = v.addProtectedPVC(newProtectedPVC.Namespace, newProtectedPVC.Name)
 	} else if !reflect.DeepEqual(protectedPVC, newProtectedPVC) {
 		newProtectedPVC.Conditions = protectedPVC.Conditions
-		newProtectedPVC.DeepCopyInto(protectedPVC)
 	}
+
+	newProtectedPVC.DeepCopyInto(protectedPVC)
 
 	// Not much need for VolSyncReplicationSourceSpec anymore - but keeping it around in case we want
 	// to add anything to it later to control anything in the ReplicationSource
