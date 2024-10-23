@@ -4,7 +4,6 @@
 package controllers
 
 import (
-	"context"
 	"fmt"
 	"slices"
 
@@ -12,8 +11,8 @@ import (
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	"github.com/ramendr/ramen/internal/controller/util"
+	"github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	storagev1 "k8s.io/api/storage/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // classLists contains [storage|snapshot|replication]classes from ManagedClusters with the required ramen storageID or,
@@ -276,20 +275,212 @@ func findAllPeers(cls []classLists, schedule string) ([]peerList, []peerList) {
 func updatePeerClassStatus(u *drpolicyUpdater, syncPeers, asyncPeers []peerList) {
 }
 
+// pruneClassViews prunes existing views in mcvs, for classes that are not found in survivorClassNames
+func pruneClassViews(
+	m util.ManagedClusterViewGetter,
+	log logr.Logger,
+	clusterName string,
+	survivorClassNames []string,
+	mcvs *v1beta1.ManagedClusterViewList,
+) error {
+	for mcvIdx := range mcvs.Items {
+		if slices.Contains(survivorClassNames, mcvs.Items[mcvIdx].Spec.Scope.Name) {
+			continue
+		}
+
+		if err := m.DeleteManagedClusterView(clusterName, mcvs.Items[mcvIdx].Name, log); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func pruneVRClassViews(
+	m util.ManagedClusterViewGetter,
+	log logr.Logger,
+	clusterName string,
+	survivorClassNames []string,
+) error {
+	mcvList, err := m.ListVRClassMCVs(clusterName)
+	if err != nil {
+		return err
+	}
+
+	return pruneClassViews(m, log, clusterName, survivorClassNames, mcvList)
+}
+
+// getVRClassesFromCluster gets VolumeReplicationClasses that are claimed in the ManagedClusterInstance
+func getVRClassesFromCluster(
+	u *drpolicyUpdater,
+	m util.ManagedClusterViewGetter,
+	mc *util.ManagedClusterInstance,
+	clusterName string,
+) ([]*volrep.VolumeReplicationClass, error) {
+	vrClasses := []*volrep.VolumeReplicationClass{}
+
+	vrClassNames := mc.VolumeReplicationClassClaims()
+	if len(vrClassNames) == 0 {
+		return vrClasses, nil
+	}
+
+	annotations := make(map[string]string)
+	annotations[AllDRPolicyAnnotation] = clusterName
+
+	for _, vrcName := range vrClassNames {
+		sClass, err := m.GetVRClassFromManagedCluster(vrcName, clusterName, annotations)
+		if err != nil {
+			return []*volrep.VolumeReplicationClass{}, err
+		}
+
+		vrClasses = append(vrClasses, sClass)
+	}
+
+	return vrClasses, pruneVRClassViews(m, u.log, clusterName, vrClassNames)
+}
+
+func pruneVSClassViews(
+	m util.ManagedClusterViewGetter,
+	log logr.Logger,
+	clusterName string,
+	survivorClassNames []string,
+) error {
+	mcvList, err := m.ListVSClassMCVs(clusterName)
+	if err != nil {
+		return err
+	}
+
+	return pruneClassViews(m, log, clusterName, survivorClassNames, mcvList)
+}
+
+// getVSClassesFromCluster gets VolumeSnapshotClasses that are claimed in the ManagedClusterInstance
+func getVSClassesFromCluster(
+	u *drpolicyUpdater,
+	m util.ManagedClusterViewGetter,
+	mc *util.ManagedClusterInstance,
+	clusterName string,
+) ([]*snapv1.VolumeSnapshotClass, error) {
+	vsClasses := []*snapv1.VolumeSnapshotClass{}
+
+	vsClassNames := mc.VolumeSnapshotClassClaims()
+	if len(vsClassNames) == 0 {
+		return vsClasses, nil
+	}
+
+	annotations := make(map[string]string)
+	annotations[AllDRPolicyAnnotation] = clusterName
+
+	for _, vscName := range vsClassNames {
+		sClass, err := m.GetVSClassFromManagedCluster(vscName, clusterName, annotations)
+		if err != nil {
+			return []*snapv1.VolumeSnapshotClass{}, err
+		}
+
+		vsClasses = append(vsClasses, sClass)
+	}
+
+	return vsClasses, pruneVSClassViews(m, u.log, clusterName, vsClassNames)
+}
+
+func pruneSClassViews(
+	m util.ManagedClusterViewGetter,
+	log logr.Logger,
+	clusterName string,
+	survivorClassNames []string,
+) error {
+	mcvList, err := m.ListSClassMCVs(clusterName)
+	if err != nil {
+		return err
+	}
+
+	return pruneClassViews(m, log, clusterName, survivorClassNames, mcvList)
+}
+
+// getSClassesFromCluster gets StorageClasses that are claimed in the ManagedClusterInstance
+func getSClassesFromCluster(
+	u *drpolicyUpdater,
+	m util.ManagedClusterViewGetter,
+	mc *util.ManagedClusterInstance,
+	clusterName string,
+) ([]*storagev1.StorageClass, error) {
+	sClasses := []*storagev1.StorageClass{}
+
+	sClassNames := mc.StorageClassClaims()
+	if len(sClassNames) == 0 {
+		return sClasses, nil
+	}
+
+	annotations := make(map[string]string)
+	annotations[AllDRPolicyAnnotation] = clusterName
+
+	for _, scName := range sClassNames {
+		sClass, err := m.GetSClassFromManagedCluster(scName, clusterName, annotations)
+		if err != nil {
+			return []*storagev1.StorageClass{}, err
+		}
+
+		sClasses = append(sClasses, sClass)
+	}
+
+	return sClasses, pruneSClassViews(m, u.log, clusterName, sClassNames)
+}
+
 // getClusterClasses inspects, using ManagedClusterView, the ManagedCluster claims for all storage related classes,
 // and returns the set of classLists for the passed in clusters
 func getClusterClasses(
-	ctx context.Context,
-	log logr.Logger,
-	client client.Client,
+	u *drpolicyUpdater,
+	m util.ManagedClusterViewGetter,
 	cluster string,
 ) (classLists, error) {
-	return classLists{}, nil
+	mc, err := util.NewManagedClusterInstance(u.ctx, u.client, cluster)
+	if err != nil {
+		return classLists{}, err
+	}
+
+	clID, err := mc.ClusterID()
+	if err != nil {
+		return classLists{}, err
+	}
+
+	sClasses, err := getSClassesFromCluster(u, m, mc, cluster)
+	if err != nil || len(sClasses) == 0 {
+		return classLists{}, err
+	}
+
+	vsClasses, err := getVSClassesFromCluster(u, m, mc, cluster)
+	if err != nil {
+		return classLists{}, err
+	}
+
+	vrClasses, err := getVRClassesFromCluster(u, m, mc, cluster)
+	if err != nil {
+		return classLists{}, err
+	}
+
+	return classLists{
+		clusterID: clID,
+		sClasses:  sClasses,
+		vrClasses: vrClasses,
+		vsClasses: vsClasses,
+	}, nil
+}
+
+// deleteViewsForClasses deletes all views created for classes for the passed in clusterName
+func deleteViewsForClasses(m util.ManagedClusterViewGetter, log logr.Logger, clusterName string) error {
+	if err := pruneSClassViews(m, log, clusterName, []string{}); err != nil {
+		return err
+	}
+
+	if err := pruneVSClassViews(m, log, clusterName, []string{}); err != nil {
+		return err
+	}
+
+	return pruneVRClassViews(m, log, clusterName, []string{})
 }
 
 // updatePeerClasses inspects required classes from the clusters that are part of the DRPolicy and updates DRPolicy
 // status with the peer information across these clusters
-func updatePeerClasses(u *drpolicyUpdater) error {
+func updatePeerClasses(u *drpolicyUpdater, m util.ManagedClusterViewGetter) error {
 	cls := []classLists{}
 
 	if len(u.object.Spec.DRClusters) <= 1 {
@@ -297,9 +488,13 @@ func updatePeerClasses(u *drpolicyUpdater) error {
 	}
 
 	for idx := range u.object.Spec.DRClusters {
-		clusterClasses, err := getClusterClasses(u.ctx, u.log, u.client, u.object.Spec.DRClusters[idx])
+		clusterClasses, err := getClusterClasses(u, m, u.object.Spec.DRClusters[idx])
 		if err != nil {
 			return err
+		}
+
+		if len(clusterClasses.sClasses) == 0 {
+			continue
 		}
 
 		cls = append(cls, clusterClasses)

@@ -11,7 +11,9 @@ import (
 	"strings"
 	"time"
 
+	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
+	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
@@ -37,6 +39,7 @@ import (
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 )
@@ -222,6 +225,33 @@ func getFunctionNameAtIndex(idx int) string {
 	return result[len(result)-1]
 }
 
+func (f FakeMCVGetter) GetSClassFromManagedCluster(resourceName, managedCluster string, annotations map[string]string,
+) (*storagev1.StorageClass, error) {
+	return nil, nil
+}
+
+func (f FakeMCVGetter) ListSClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error) {
+	return &viewv1beta1.ManagedClusterViewList{}, nil
+}
+
+func (f FakeMCVGetter) GetVSClassFromManagedCluster(resourceName, managedCluster string, annotations map[string]string,
+) (*snapv1.VolumeSnapshotClass, error) {
+	return nil, nil
+}
+
+func (f FakeMCVGetter) ListVSClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error) {
+	return &viewv1beta1.ManagedClusterViewList{}, nil
+}
+
+func (f FakeMCVGetter) GetVRClassFromManagedCluster(resourceName, managedCluster string, annotations map[string]string,
+) (*volrep.VolumeReplicationClass, error) {
+	return nil, nil
+}
+
+func (f FakeMCVGetter) ListVRClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error) {
+	return &viewv1beta1.ManagedClusterViewList{}, nil
+}
+
 // GetMModeFromManagedCluster: MMode code uses GetMModeFromManagedCluster to create a MCV and not fetch it, that
 // is done using ListMCV. As a result this fake function creates an MCV for record keeping purposes and returns
 // a nil mcv back in case of success
@@ -341,21 +371,6 @@ func (f FakeMCVGetter) DeleteManagedClusterView(clusterName, mcvName string, log
 	}
 
 	return f.Delete(context.TODO(), mcv)
-}
-
-func (f FakeMCVGetter) GetNamespaceFromManagedCluster(
-	resourceName, managedCluster, namespaceString string, annotations map[string]string,
-) (*corev1.Namespace, error) {
-	appNamespaceObj := &corev1.Namespace{}
-
-	// err := k8sClient.Get(context.TODO(), appNamespaceLookupKey, appNamespaceObj)
-	foundMW := &ocmworkv1.ManifestWork{}
-	mwName := fmt.Sprintf(rmnutil.ManifestWorkNameFormat, resourceName, namespaceString, rmnutil.MWTypeNS)
-	err := k8sClient.Get(context.TODO(),
-		types.NamespacedName{Name: mwName, Namespace: managedCluster},
-		foundMW)
-
-	return appNamespaceObj, err
 }
 
 func getDefaultVRG(namespace string) *rmn.VolumeReplicationGroup {

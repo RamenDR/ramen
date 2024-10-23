@@ -245,6 +245,10 @@ func drClusterUndeploy(
 		return fmt.Errorf("drcluster '%v' referenced in one or more existing drPolicy resources", drcluster.Name)
 	}
 
+	if err := deleteViewsForClasses(mcv, log, drcluster.GetName()); err != nil {
+		return err
+	}
+
 	if err := mwu.DeleteManifestWork(mwu.BuildManifestWorkName(util.MWTypeDRCConfig), drcluster.GetName()); err != nil {
 		return err
 	}
