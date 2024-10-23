@@ -206,10 +206,14 @@ func setupReconcilersCluster(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.Rame
 
 func setupReconcilersHub(mgr ctrl.Manager) {
 	if err := (&controllers.DRPolicyReconciler{
-		Client:            mgr.GetClient(),
-		APIReader:         mgr.GetAPIReader(),
-		Log:               ctrl.Log.WithName("controllers").WithName("DRPolicy"),
-		Scheme:            mgr.GetScheme(),
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Log:       ctrl.Log.WithName("controllers").WithName("DRPolicy"),
+		Scheme:    mgr.GetScheme(),
+		MCVGetter: rmnutil.ManagedClusterViewGetterImpl{
+			Client:    mgr.GetClient(),
+			APIReader: mgr.GetAPIReader(),
+		},
 		ObjectStoreGetter: controllers.S3ObjectStoreGetter(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DRPolicy")
