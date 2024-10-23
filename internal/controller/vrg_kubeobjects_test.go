@@ -75,14 +75,15 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 						IncludedNamespaces: []string{namespaceName},
 						IncludedResources:  []string{"pod"},
 						ExcludedResources:  []string{},
-						Hooks: []kubeobjects.HookSpec{
-							{
-								Name:          hook.Ops[0].Name,
-								Type:          hook.Type,
-								Command:       hook.Ops[0].Command,
-								Timeout:       hook.Ops[0].Timeout,
-								Container:     hook.Ops[0].Container,
-								LabelSelector: hook.LabelSelector,
+						Hook: kubeobjects.HookSpec{
+							Name: hook.Name,
+							Type: hook.Type,
+							//Timeout:       hook.Ops[0].Timeout,
+							LabelSelector: *hook.LabelSelector,
+							Op: kubeobjects.Operation{
+								Name:      hook.Ops[0].Name,
+								Command:   hook.Ops[0].Command,
+								Container: hook.Ops[0].Container,
 							},
 						},
 					},
@@ -90,7 +91,7 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 					IncludeClusterResources: new(bool),
 				},
 			}
-			converted, err := convertRecipeHookToCaptureSpec(*hook, *hook.Ops[0])
+			converted, err := convertRecipeHookToCaptureSpec(*hook, hook.Ops[0].Name)
 
 			Expect(err).To(BeNil())
 			Expect(converted).To(Equal(targetCaptureSpec))
@@ -104,14 +105,15 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 						IncludedNamespaces: []string{namespaceName},
 						IncludedResources:  []string{"pod"},
 						ExcludedResources:  []string{},
-						Hooks: []kubeobjects.HookSpec{
-							{
-								Name:          hook.Ops[0].Name,
-								Type:          hook.Type,
-								Command:       hook.Ops[0].Command,
-								Timeout:       hook.Ops[0].Timeout,
-								Container:     &hook.Ops[0].Container,
-								LabelSelector: hook.LabelSelector,
+						Hook: kubeobjects.HookSpec{
+							Name:          hook.Name,
+							Type:          hook.Type,
+							Timeout:       hook.Ops[0].Timeout,
+							LabelSelector: *hook.LabelSelector,
+							Op: kubeobjects.Operation{
+								Name:      hook.Ops[0].Name,
+								Command:   hook.Ops[0].Command,
+								Container: hook.Ops[0].Container,
 							},
 						},
 					},
@@ -119,7 +121,7 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 					IncludeClusterResources: new(bool),
 				},
 			}
-			converted, err := convertRecipeHookToRecoverSpec(*hook, *hook.Ops[0])
+			converted, err := convertRecipeHookToRecoverSpec(*hook, hook.Ops[0].Name)
 
 			Expect(err).To(BeNil())
 			Expect(converted).To(Equal(targetRecoverSpec))

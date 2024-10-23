@@ -251,6 +251,13 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	// TODO: before processing of groups, should hooks be executed? -- everything under workflow will be groups
 	for groupNumber, captureGroup := range groups {
 		log1 := log.WithValues("group", groupNumber, "name", captureGroup.Name)
+		if captureGroup.IsHook {
+			// Permissions to be fixed
+			// Get of the kubectl for selectReource
+			// Get json object directly with some options or get and then convert?
+			// Evaluate the condition, ip - json
+			// Handle the error based on OnError
+		}
 		// TODO: hooks needs to be processed separately -- add a new function
 		requestsCompletedCount += v.kubeObjectsGroupCapture(
 			result, captureGroup, pathName, capturePathName, namePrefix, veleroNamespaceName,
@@ -732,8 +739,7 @@ func getCaptureGroups(recipe Recipe.Recipe) ([]kubeobjects.CaptureSpec, error) {
 	resources := make([]kubeobjects.CaptureSpec, len(workflow.Sequence))
 	// TODO: the for loop needs to be changed? resource is map, so key, value can be used?
 	for index, resource := range workflow.Sequence {
-		for resourceType := range resource {
-			resourceName := resource[resourceType]
+		for resourceType, resourceName := range resource {
 
 			captureInstance, err := getResourceAndConvertToCaptureGroup(recipe, resourceType, resourceName)
 			if err != nil {
@@ -766,8 +772,7 @@ func getRecoverGroups(recipe Recipe.Recipe) ([]kubeobjects.RecoverSpec, error) {
 	// TODO: do changes for hooks
 	for index, resource := range workflow.Sequence {
 		// group: map[string]string, e.g. "group": "groupName", or "hook": "hookName"
-		for resourceType := range resource {
-			resourceName := resource[resourceType]
+		for resourceType, resourceName := range resource {
 
 			captureInstance, err := getResourceAndConvertToRecoverGroup(recipe, resourceType, resourceName)
 			if err != nil {
@@ -882,6 +887,7 @@ func getHookFromRecipe(recipe *Recipe.Recipe, prefix string) (*Recipe.Hook, erro
 
 // TODO: complete functionality - add Hook support to KubeResourcesSpec, then copy in Velero object creation
 // TODO: For check hooks, capture spec needs to be altered accordingly? Or where to execute the hooks?
+// TODO: Does func needs rename?
 func convertRecipeHookToCaptureSpec(
 	hook Recipe.Hook, suffix string) (*kubeobjects.CaptureSpec, error,
 ) {
@@ -925,42 +931,64 @@ func convertRecipeHookToRecoverSpec(hook Recipe.Hook, suffix string) (*kubeobjec
 }
 
 // And also array of checks should be handled.
+// TODO: Return error as well
 func getHookSpecFromHook(hook Recipe.Hook, suffix string) kubeobjects.HookSpec {
 	// based on hook.type check of the hook is chks or ops
 	if hook.Type == "exec" {
-		for _, op := range hook.Ops {
-			if op.Name == suffix {
-				// TODO: There are two timeouts, onErrors one in hooks and other one in
-				// check or operation, which one to consider while running hook?
-				return kubeobjects.HookSpec{
-					Name:    hook.Name,
-					Timeout: hook.Timeout,
-					OnError: hook.OnError,
-					Op: kubeobjects.Operation{
-						Name:      suffix,
-						Container: op.Container,
-						Command:   op.Command,
-						InverseOp: op.InverseOp,
-					},
-				}
-			}
-		}
+		return getOpHookSpec(&hook, suffix)
 	} else if hook.Type == "check" {
-		for _, chk := range hook.Chks {
-			if chk.Name == suffix {
-				return kubeobjects.HookSpec{
-					Name:    hook.Name,
-					Timeout: chk.Timeout,
-					OnError: chk.OnError,
-					Chk: kubeobjects.Check{
-						Name:      suffix,
-						Condition: chk.Condition,
-					},
-				}
+		return getChkHookSpec(&hook, suffix)
+	}
+
+	return kubeobjects.HookSpec{}
+}
+
+func getChkHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
+	for _, chk := range hook.Chks {
+		if chk.Name == suffix {
+			return kubeobjects.HookSpec{
+				Name:           hook.Name,
+				Namespace:      hook.Namespace,
+				Type:           hook.Type,
+				SelectResource: hook.SelectResource,
+				LabelSelector:  *hook.LabelSelector,
+				NameSelector:   hook.NameSelector,
+				Timeout:        chk.Timeout,
+				OnError:        chk.OnError,
+				Chk: kubeobjects.Check{
+					Name:      suffix,
+					Condition: chk.Condition,
+				},
 			}
 		}
 	}
+	return kubeobjects.HookSpec{}
+}
 
+func getOpHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
+	for _, op := range hook.Ops {
+		if op.Name == suffix {
+			// TODO: There are two timeouts, onErrors one in hooks and other one in
+			// check or operation, which one to consider while running hook?
+			return kubeobjects.HookSpec{
+				Name:           hook.Name,
+				Namespace:      hook.Namespace,
+				Type:           hook.Type,
+				Timeout:        hook.Timeout,
+				OnError:        hook.OnError,
+				SelectResource: hook.SelectResource,
+				LabelSelector:  *hook.LabelSelector,
+				NameSelector:   hook.NameSelector,
+				SinglePodOnly:  hook.SinglePodOnly,
+				Op: kubeobjects.Operation{
+					Name:      suffix,
+					Container: op.Container,
+					Command:   op.Command,
+					InverseOp: op.InverseOp,
+				},
+			}
+		}
+	}
 	return kubeobjects.HookSpec{}
 }
 
