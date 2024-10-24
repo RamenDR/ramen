@@ -33,6 +33,9 @@ func (v *VRGInstance) restorePVsAndPVCsForVolSync() (int, error) {
 		failoverAction := v.instance.Spec.Action == ramendrv1alpha1.VRGActionFailover
 
 		var err error
+		// Source conditions are not needed and should not be added to vrg.status.ProtectedPVCs,
+		// as this would result in incorrect information.
+		rdSpec.ProtectedPVC.Conditions = nil
 
 		cg, ok := rdSpec.ProtectedPVC.Labels[ConsistencyGroupLabel]
 		if ok && util.IsCGEnabled(v.instance.Annotations) {
@@ -75,7 +78,8 @@ func (v *VRGInstance) restorePVsAndPVCsForVolSync() (int, error) {
 	}
 
 	if numPVsRestored != len(v.instance.Spec.VolSync.RDSpec) {
-		return numPVsRestored, fmt.Errorf("failed to restore all PVCs using RDSpec (%v)", v.instance.Spec.VolSync.RDSpec)
+		return numPVsRestored, fmt.Errorf("failed to restore all PVCs. Restored %d PVCs out of %d RDSpecs",
+			numPVsRestored, len(v.instance.Spec.VolSync.RDSpec))
 	}
 
 	v.log.Info("Success restoring VolSync PVs", "Total", numPVsRestored)
@@ -142,8 +146,8 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 
 	protectedPVC := v.findProtectedPVC(pvc.Namespace, pvc.Name)
 	if protectedPVC == nil {
-		protectedPVC = newProtectedPVC
-		v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
+		v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *newProtectedPVC)
+		protectedPVC = &v.instance.Status.ProtectedPVCs[len(v.instance.Status.ProtectedPVCs)-1]
 	} else if !reflect.DeepEqual(protectedPVC, newProtectedPVC) {
 		newProtectedPVC.Conditions = protectedPVC.Conditions
 		newProtectedPVC.DeepCopyInto(protectedPVC)
