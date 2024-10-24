@@ -114,15 +114,20 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 
-.PHONY: lint
-lint: golangci-bin ## Run configured golangci-lint and pre-commit.sh linters against the code.
 # golangci-lint has a limitation that it doesn't lint subdirectories if
 # they are a different module.
 # see https://github.com/golangci/golangci-lint/issues/828
+
+.PHONY: lint
+lint: golangci-bin lint-e2e lint-api ## Run configured golangci-lint and pre-commit.sh linters against the code.
 	testbin/golangci-lint run ./... --config=./.golangci.yaml
-	cd api && ../testbin/golangci-lint run ./... --config=../.golangci.yaml
-	cd e2e && ../testbin/golangci-lint run ./... --config=../.golangci.yaml
 	hack/pre-commit.sh
+
+lint-e2e: golangci-bin ## Run configured golangci-lint for e2e module
+	cd e2e && ../testbin/golangci-lint run ./... --config=../.golangci.yaml
+
+lint-api: golangci-bin ## Run configured golangci-lint for api module
+	cd api && ../testbin/golangci-lint run ./... --config=../.golangci.yaml
 
 .PHONY: create-rdr-env
 create-rdr-env: drenv-prereqs ## Create a new rdr environment.
@@ -195,7 +200,7 @@ test-ramenctl: ## Run ramenctl tests.
 	$(MAKE) -C ramenctl
 
 e2e-rdr: generate manifests ## Run rdr-e2e tests.
-	cd e2e && ./e2e-rdr.sh
+	cd e2e && ./run.sh
 
 coverage:
 	go tool cover -html=cover.out
