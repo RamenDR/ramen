@@ -38,11 +38,6 @@ const (
 	drCConfigOwnerName     = "ramen"
 
 	maxReconcileBackoff = 5 * time.Minute
-
-	// Prefixes for various ClusterClaims
-	ccSCPrefix  = "storage.class"
-	ccVSCPrefix = "snapshot.class"
-	ccVRCPrefix = "replication.class"
 )
 
 // DRClusterConfigReconciler reconciles a DRClusterConfig object
@@ -237,11 +232,11 @@ func (r *DRClusterConfigReconciler) createSCClusterClaims(
 			continue
 		}
 
-		if err := r.ensureClusterClaim(ctx, log, ccSCPrefix, sClasses.Items[i].GetName()); err != nil {
+		if err := r.ensureClusterClaim(ctx, log, util.CCSCPrefix, sClasses.Items[i].GetName()); err != nil {
 			return nil, err
 		}
 
-		claims = append(claims, claimName(ccSCPrefix, sClasses.Items[i].GetName()))
+		claims = append(claims, claimName(util.CCSCPrefix, sClasses.Items[i].GetName()))
 	}
 
 	return claims, nil
@@ -263,11 +258,11 @@ func (r *DRClusterConfigReconciler) createVSCClusterClaims(
 			continue
 		}
 
-		if err := r.ensureClusterClaim(ctx, log, ccVSCPrefix, vsClasses.Items[i].GetName()); err != nil {
+		if err := r.ensureClusterClaim(ctx, log, util.CCVSCPrefix, vsClasses.Items[i].GetName()); err != nil {
 			return nil, err
 		}
 
-		claims = append(claims, claimName(ccVSCPrefix, vsClasses.Items[i].GetName()))
+		claims = append(claims, claimName(util.CCVSCPrefix, vsClasses.Items[i].GetName()))
 	}
 
 	return claims, nil
@@ -289,11 +284,11 @@ func (r *DRClusterConfigReconciler) createVRCClusterClaims(
 			continue
 		}
 
-		if err := r.ensureClusterClaim(ctx, log, ccVRCPrefix, vrClasses.Items[i].GetName()); err != nil {
+		if err := r.ensureClusterClaim(ctx, log, util.CCVRCPrefix, vrClasses.Items[i].GetName()); err != nil {
 			return nil, err
 		}
 
-		claims = append(claims, claimName(ccVRCPrefix, vrClasses.Items[i].GetName()))
+		claims = append(claims, claimName(util.CCVRCPrefix, vrClasses.Items[i].GetName()))
 	}
 
 	return claims, nil

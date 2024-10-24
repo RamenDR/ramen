@@ -6,11 +6,19 @@ package util
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ocmv1 "open-cluster-management.io/api/cluster/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+const (
+	// Prefixes for various ClusterClaims
+	CCSCPrefix  = "storage.class"
+	CCVSCPrefix = "snapshot.class"
+	CCVRCPrefix = "replication.class"
 )
 
 type ManagedClusterInstance struct {
@@ -72,4 +80,35 @@ func (mci *ManagedClusterInstance) ClusterID() (string, error) {
 	}
 
 	return id, nil
+}
+
+func (mci *ManagedClusterInstance) classClaims(prefix string) []string {
+	classNames := []string{}
+
+	for idx := range mci.object.Status.ClusterClaims {
+		if !strings.HasPrefix(mci.object.Status.ClusterClaims[idx].Name, prefix+".") {
+			continue
+		}
+
+		className := strings.TrimPrefix(mci.object.Status.ClusterClaims[idx].Name, prefix+".")
+		if className == "" {
+			continue
+		}
+
+		classNames = append(classNames, className)
+	}
+
+	return classNames
+}
+
+func (mci *ManagedClusterInstance) StorageClassClaims() []string {
+	return mci.classClaims(CCSCPrefix)
+}
+
+func (mci *ManagedClusterInstance) VolumeSnapshotClassClaims() []string {
+	return mci.classClaims(CCVSCPrefix)
+}
+
+func (mci *ManagedClusterInstance) VolumeReplicationClassClaims() []string {
+	return mci.classClaims(CCVRCPrefix)
 }
