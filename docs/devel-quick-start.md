@@ -107,20 +107,18 @@ You can either deploy the *Ramen* operator using the make targets or use the
 - Using `ramenctl`
 
     Ensure python virtual environment is active as `ramenctl` is a python tool.
-    The default name-prefix in the make target `create-rdr-env` is `rdr-`, we
-    will use the same in the `ramenctl` commands.
 
     - Deploy the *Ramen* operator in the environment using `ramenctl`.
 
      ```sh
-     ramenctl deploy --name-prefix rdr- test/envs/regional-dr.yaml
+     ramenctl deploy test/envs/regional-dr.yaml
      ```
 
     - Ramen needs to be configured to know about the managed clusters and the s3
    endpoints. Configure the ramen operator for environment.
 
     ```sh
-    ramenctl config --name-prefix rdr- test/envs/regional-dr.yaml
+    ramenctl config test/envs/regional-dr.yaml
     ```
 
 ## Testing Ramen
@@ -133,6 +131,6 @@ If you want to clean up your environment, you can unconfigure *Ramen* and
 undeploy it.
 
 ```sh
-ramenctl unconfig --name-prefix rdr- test/envs/regional-dr.yaml
-ramenctl undeploy --name-prefix rdr- test/envs/regional-dr.yaml
+ramenctl unconfig test/envs/regional-dr.yaml
+ramenctl undeploy test/envs/regional-dr.yaml
 ```
