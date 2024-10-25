@@ -23,12 +23,18 @@ func TestMain(m *testing.M) {
 
 	flag.Parse()
 
+	logFile, err := os.Create("ramentest.log")
+	if err != nil {
+		panic(err)
+	}
+
 	log := zap.New(zap.UseFlagOptions(&zap.Options{
 		Development: true,
 		ZapOpts: []uberzap.Option{
 			uberzap.AddCaller(),
 		},
 		TimeEncoder: zapcore.ISO8601TimeEncoder,
+		DestWriter:  logFile,
 	}))
 
 	util.Ctx, err = util.NewContext(&log, util.ConfigFile)
