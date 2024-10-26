@@ -10,9 +10,11 @@ import (
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	"github.com/ramendr/ramen/internal/controller/util"
 	"github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	storagev1 "k8s.io/api/storage/v1"
+
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/internal/controller/util"
 )
 
 // classLists contains [storage|snapshot|replication]classes from ManagedClusters with the required ramen storageID or,
@@ -46,6 +48,92 @@ type peerList struct {
 
 	// clusterIDs is a list of 2 IDs that denote the IDs for the clusters in this peer relationship
 	clusterIDs []string
+}
+
+// peerClassMatchesPeer compares the storage class name across the PeerClass and passed in peer for a match, and if
+// matched compares the clusterIDs that this peer represents. No further matching is required to determine a unique
+// PeerClass matching a peer
+func peerClassMatchesPeer(pc ramen.PeerClass, peer peerList) bool {
+	if pc.StorageClassName != peer.storageClassName {
+		return false
+	}
+
+	if !slices.Equal(pc.ClusterIDs, peer.clusterIDs) {
+		return false
+	}
+
+	return true
+}
+
+// findStatusPeerInPeers finds PeerClass in peers, and returns true and the peer if founds
+func findStatusPeerInPeers(pc ramen.PeerClass, peers []peerList) (bool, peerList) {
+	for _, peer := range peers {
+		if !peerClassMatchesPeer(pc, peer) {
+			continue
+		}
+
+		return true, peer
+	}
+
+	return false, peerList{}
+}
+
+// findPeerInStatusPeer finds passed in peer in passed in list of PeerClass, and returns true if found
+func findPeerInStatusPeer(peer peerList, pcs []ramen.PeerClass) bool {
+	for _, pc := range pcs {
+		if !peerClassMatchesPeer(pc, peer) {
+			continue
+		}
+
+		return true
+	}
+
+	return false
+}
+
+func peerClassFromPeer(p peerList) ramen.PeerClass {
+	return ramen.PeerClass{
+		ClusterIDs:       p.clusterIDs,
+		StorageClassName: p.storageClassName,
+		StorageID:        p.storageIDs,
+		ReplicationID:    p.replicationID,
+	}
+}
+
+// pruneAndUpdateStatusPeers prunes the peer classes in status based on current peers that are passed in, and also adds
+// new peers to status.
+func pruneAndUpdateStatusPeers(statusPeers []ramen.PeerClass, peers []peerList) []ramen.PeerClass {
+	outStatusPeers := []ramen.PeerClass{}
+
+	// Prune and update existing
+	for _, peerClass := range statusPeers {
+		found, peer := findStatusPeerInPeers(peerClass, peers)
+		if !found {
+			continue
+		}
+
+		outStatusPeers = append(outStatusPeers, peerClassFromPeer(peer))
+	}
+
+	// Add new peers
+	for _, peer := range peers {
+		found := findPeerInStatusPeer(peer, statusPeers)
+		if found {
+			continue
+		}
+
+		outStatusPeers = append(outStatusPeers, peerClassFromPeer(peer))
+	}
+
+	return outStatusPeers
+}
+
+// updatePeerClassStatus updates the DRPolicy.Status.[Async|Sync] peer lists based on passed in peerList values
+func updatePeerClassStatus(u *drpolicyUpdater, syncPeers, asyncPeers []peerList) error {
+	u.object.Status.Async.PeerClasses = pruneAndUpdateStatusPeers(u.object.Status.Async.PeerClasses, asyncPeers)
+	u.object.Status.Sync.PeerClasses = pruneAndUpdateStatusPeers(u.object.Status.Sync.PeerClasses, syncPeers)
+
+	return u.statusUpdate()
 }
 
 // isAsyncVSClassPeer inspects provided pair of classLists for a matching VolumeSnapshotClass, that is linked to the
@@ -269,10 +357,6 @@ func findAllPeers(cls []classLists, schedule string) ([]peerList, []peerList) {
 	}
 
 	return syncPeers, asyncPeers
-}
-
-// updatePeerClassStatus updates the DRPolicy.Status.[Async|Sync] peer lists based on passed in peerList values
-func updatePeerClassStatus(u *drpolicyUpdater, syncPeers, asyncPeers []peerList) {
 }
 
 // pruneClassViews prunes existing views in mcvs, for classes that are not found in survivorClassNames
@@ -502,7 +586,5 @@ func updatePeerClasses(u *drpolicyUpdater, m util.ManagedClusterViewGetter) erro
 
 	syncPeers, asyncPeers := findAllPeers(cls, u.object.Spec.SchedulingInterval)
 
-	updatePeerClassStatus(u, syncPeers, asyncPeers)
-
-	return nil
+	return updatePeerClassStatus(u, syncPeers, asyncPeers)
 }
