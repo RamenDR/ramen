@@ -833,12 +833,16 @@ func (v *VRGInstance) separatePVCsUsingOnlySC(storageClass *storagev1.StorageCla
 
 	replicationClassMatchFound := false
 
-	for _, replicationClass := range v.replClassList.Items {
-		if storageClass.Provisioner == replicationClass.Spec.Provisioner {
-			v.volRepPVCs = append(v.volRepPVCs, *pvc)
-			replicationClassMatchFound = true
+	pvcEnabledForVolSync := util.IsPVCMarkedForVolSync(v.instance.GetAnnotations())
 
-			break
+	if !pvcEnabledForVolSync {
+		for _, replicationClass := range v.replClassList.Items {
+			if storageClass.Provisioner == replicationClass.Spec.Provisioner {
+				v.volRepPVCs = append(v.volRepPVCs, *pvc)
+				replicationClassMatchFound = true
+
+				break
+			}
 		}
 	}
 

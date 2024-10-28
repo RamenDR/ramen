@@ -23,8 +23,8 @@ const (
 
 	IsCGEnabledAnnotation = "drplacementcontrol.ramendr.openshift.io/is-cg-enabled"
 
-	// Annotation
-	UseVolSyncForPVCProtection = "drplacementcontrol.ramendr.openshift.io/use-volsync-for-pvc-protection"
+	// When this annotation is set to true, VolSync will protect RBD PVCs.
+	UseVolSyncAnnotation = "drplacementcontrol.ramendr.openshift.io/use-volsync-for-pvc-protection"
 )
 
 type ResourceUpdater struct {
@@ -243,7 +243,7 @@ func IsCGEnabled(annotations map[string]string) bool {
 }
 
 func IsPVCMarkedForVolSync(annotations map[string]string) bool {
-	return annotations[UseVolSyncForPVCProtection] == "true"
+	return annotations[UseVolSyncAnnotation] == "true"
 }
 
 func TrimToK8sResourceNameLength(name string) string {
