@@ -68,7 +68,7 @@ func waitDRPCReady(client client.Client, namespace string, drpcName string) erro
 				util.Ctx.Log.Info("drpc " + drpcName + " LastGroupSyncTime is nil")
 			}
 
-			return fmt.Errorf("drpc " + drpcName + " is not ready yet before timeout, fail")
+			return fmt.Errorf("drpc %q is not ready yet before timeout, fail", drpcName)
 		}
 
 		time.Sleep(util.RetryInterval)
@@ -117,7 +117,7 @@ func waitDRPCPhase(client client.Client, namespace, name string, phase ramen.DRS
 		}
 
 		if time.Since(startTime) > util.Timeout {
-			return fmt.Errorf("drpc %s status is not %s yet before timeout, fail", name, phase)
+			return fmt.Errorf("drpc %q status is not %q yet before timeout, fail", name, phase)
 		}
 
 		time.Sleep(util.RetryInterval)
@@ -184,7 +184,7 @@ func waitDRPCDeleted(client client.Client, namespace string, name string) error 
 		}
 
 		if time.Since(startTime) > util.Timeout {
-			return fmt.Errorf("drpc %s is not deleted yet before timeout, fail", name)
+			return fmt.Errorf("drpc %q is not deleted yet before timeout, fail", name)
 		}
 
 		time.Sleep(util.RetryInterval)
@@ -209,7 +209,7 @@ func waitDRPCProgression(client client.Client, namespace, name string, progressi
 		}
 
 		if time.Since(startTime) > util.Timeout {
-			return fmt.Errorf("drpc %s progression is not %s yet before timeout of %v",
+			return fmt.Errorf("drpc %q progression is not %q yet before timeout of %v",
 				name, progression, util.Timeout)
 		}
 

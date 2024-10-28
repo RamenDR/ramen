@@ -252,7 +252,7 @@ func CreatePlacementDecisionConfigMap(cmName string, cmNamespace string) error {
 	err := util.Ctx.Hub.CtrlClient.Create(context.Background(), configMap)
 	if err != nil {
 		if !errors.IsAlreadyExists(err) {
-			return fmt.Errorf("could not create configMap " + cmName)
+			return fmt.Errorf("could not create configMap %q", cmName)
 		}
 
 		util.Ctx.Log.Info("configMap " + cmName + " already Exists")
@@ -271,7 +271,7 @@ func DeleteConfigMap(cmName string, cmNamespace string) error {
 	err := util.Ctx.Hub.CtrlClient.Delete(context.Background(), configMap)
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			return fmt.Errorf("could not delete configMap " + cmName)
+			return fmt.Errorf("could not delete configMap %q", cmName)
 		}
 
 		util.Ctx.Log.Info("configMap " + cmName + " not found")
