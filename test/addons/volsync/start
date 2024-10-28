@@ -19,6 +19,8 @@ def add_helm_repo():
         "helm",
         "repo",
         "add",
+        # replace (overwrite) the repo if it already exists.
+        "--force-update",
         "backube",
         "https://backube.github.io/helm-charts/",
     ]
