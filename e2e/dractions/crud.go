@@ -33,18 +33,6 @@ func updatePlacement(client client.Client, placement *clusterv1beta1.Placement) 
 	return client.Update(context.Background(), placement)
 }
 
-func getPlacementDecision(client client.Client, namespace, name string) (*clusterv1beta1.PlacementDecision, error) {
-	placementDecision := &clusterv1beta1.PlacementDecision{}
-	key := types.NamespacedName{Namespace: namespace, Name: name}
-
-	err := client.Get(context.Background(), key, placementDecision)
-	if err != nil {
-		return nil, err
-	}
-
-	return placementDecision, nil
-}
-
 func getDRPC(client client.Client, namespace, name string) (*ramen.DRPlacementControl, error) {
 	drpc := &ramen.DRPlacementControl{}
 	key := types.NamespacedName{Namespace: namespace, Name: name}
