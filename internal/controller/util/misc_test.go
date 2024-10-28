@@ -16,6 +16,6 @@ var _ = Describe("misc", func() {
 
 	Expect(util.IsPVCMarkedForVolSync(nil)).Should(Equal(false))
 	Expect(util.IsPVCMarkedForVolSync(map[string]string{})).Should(Equal(false))
-	Expect(util.IsPVCMarkedForVolSync(map[string]string{util.UseVolSyncForPVCProtection: "true"})).
+	Expect(util.IsPVCMarkedForVolSync(map[string]string{util.UseVolSyncAnnotation: "true"})).
 		Should(Equal(true))
 })

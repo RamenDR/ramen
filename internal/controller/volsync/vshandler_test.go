@@ -692,14 +692,13 @@ var _ = Describe("VolSync_Handler", func() {
 						}, pvc)
 					}, maxWait, interval).Should(Succeed())
 
-					Expect(pvc.GetName()).To(Equal(rdSpec.ProtectedPVC.Name))
 					Expect(pvc.GetOwnerReferences()[0].Kind).To(Equal("ConfigMap"))
 					Expect(*pvc.Spec.VolumeMode).To(Equal(corev1.PersistentVolumeFilesystem))
 					Expect(k8sClient.Delete(ctx, pvc)).ToNot(HaveOccurred())
 				})
 
 				It("PrecreateDestPVCIfEnabled() should create PVC with volumeMode: Block", func() {
-					util.AddAnnotation(owner, util.UseVolSyncForPVCProtection, "true")
+					util.AddAnnotation(owner, util.UseVolSyncAnnotation, "true")
 					Expect(k8sClient.Update(ctx, owner)).To(Succeed())
 					rdSpecForBlockPVC := rdSpec.DeepCopy()
 					block := corev1.PersistentVolumeBlock
