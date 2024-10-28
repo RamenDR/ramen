@@ -26,12 +26,12 @@ type classLists struct {
 	vrClasses []*volrep.VolumeReplicationClass
 }
 
-// peerList contains a single peer relationship between a PAIR of clusters for a common storageClassName across
+// peerInfo contains a single peer relationship between a PAIR of clusters for a common storageClassName across
 // these peers. This should directly translate to DRPolicy.Status.[Async|Sync] updates.
 // NOTE: storageID discussed in comments relates to the value of the label "ramendr.openshift.io/storageid" for the
 // respective class. replicationID in comments relates to the value of the label "ramendr.openshift.io/replicationid"
 // for the respective class
-type peerList struct {
+type peerInfo struct {
 	// replicationID is an empty string (indicating no common VolumeReplicationClass) or the common replicationID value
 	// for the corresponding VRClass on each peer
 	replicationID string
@@ -53,7 +53,7 @@ type peerList struct {
 // peerClassMatchesPeer compares the storage class name across the PeerClass and passed in peer for a match, and if
 // matched compares the clusterIDs that this peer represents. No further matching is required to determine a unique
 // PeerClass matching a peer
-func peerClassMatchesPeer(pc ramen.PeerClass, peer peerList) bool {
+func peerClassMatchesPeer(pc ramen.PeerClass, peer peerInfo) bool {
 	if pc.StorageClassName != peer.storageClassName {
 		return false
 	}
@@ -65,8 +65,8 @@ func peerClassMatchesPeer(pc ramen.PeerClass, peer peerList) bool {
 	return true
 }
 
-// findStatusPeerInPeers finds PeerClass in peers, and returns true and the peer if founds
-func findStatusPeerInPeers(pc ramen.PeerClass, peers []peerList) (bool, peerList) {
+// findStatusPeerInPeers finds PeerClass in passed in peers, and returns true and the peer if founds
+func findStatusPeerInPeers(pc ramen.PeerClass, peers []peerInfo) (bool, peerInfo) {
 	for _, peer := range peers {
 		if !peerClassMatchesPeer(pc, peer) {
 			continue
@@ -75,11 +75,11 @@ func findStatusPeerInPeers(pc ramen.PeerClass, peers []peerList) (bool, peerList
 		return true, peer
 	}
 
-	return false, peerList{}
+	return false, peerInfo{}
 }
 
 // findPeerInStatusPeer finds passed in peer in passed in list of PeerClass, and returns true if found
-func findPeerInStatusPeer(peer peerList, pcs []ramen.PeerClass) bool {
+func findPeerInStatusPeer(peer peerInfo, pcs []ramen.PeerClass) bool {
 	for _, pc := range pcs {
 		if !peerClassMatchesPeer(pc, peer) {
 			continue
@@ -91,18 +91,18 @@ func findPeerInStatusPeer(peer peerList, pcs []ramen.PeerClass) bool {
 	return false
 }
 
-func peerClassFromPeer(p peerList) ramen.PeerClass {
+func peerClassFromPeer(peer peerInfo) ramen.PeerClass {
 	return ramen.PeerClass{
-		ClusterIDs:       p.clusterIDs,
-		StorageClassName: p.storageClassName,
-		StorageID:        p.storageIDs,
-		ReplicationID:    p.replicationID,
+		ClusterIDs:       peer.clusterIDs,
+		StorageClassName: peer.storageClassName,
+		StorageID:        peer.storageIDs,
+		ReplicationID:    peer.replicationID,
 	}
 }
 
 // pruneAndUpdateStatusPeers prunes the peer classes in status based on current peers that are passed in, and also adds
 // new peers to status.
-func pruneAndUpdateStatusPeers(statusPeers []ramen.PeerClass, peers []peerList) []ramen.PeerClass {
+func pruneAndUpdateStatusPeers(statusPeers []ramen.PeerClass, peers []peerInfo) []ramen.PeerClass {
 	outStatusPeers := []ramen.PeerClass{}
 
 	// Prune and update existing
@@ -128,8 +128,8 @@ func pruneAndUpdateStatusPeers(statusPeers []ramen.PeerClass, peers []peerList) 
 	return outStatusPeers
 }
 
-// updatePeerClassStatus updates the DRPolicy.Status.[Async|Sync] peer lists based on passed in peerList values
-func updatePeerClassStatus(u *drpolicyUpdater, syncPeers, asyncPeers []peerList) error {
+// updatePeerClassStatus updates the DRPolicy.Status.[Async|Sync] peer lists based on passed in peerInfo values
+func updatePeerClassStatus(u *drpolicyUpdater, syncPeers, asyncPeers []peerInfo) error {
 	u.object.Status.Async.PeerClasses = pruneAndUpdateStatusPeers(u.object.Status.Async.PeerClasses, asyncPeers)
 	u.object.Status.Sync.PeerClasses = pruneAndUpdateStatusPeers(u.object.Status.Sync.PeerClasses, syncPeers)
 
@@ -219,8 +219,8 @@ func getAsyncVRClassPeer(clA, clB classLists, sIDA, sIDB string, schedule string
 // The clusterID and sID are the corresponding IDs for the first cluster in the classList, and the schedule is
 // the desired asynchronous schedule that requires to be matched
 // nolint:gocognit
-func getAsyncPeers(scName string, clusterID string, sID string, cls []classLists, schedule string) []peerList {
-	peers := []peerList{}
+func getAsyncPeers(scName string, clusterID string, sID string, cls []classLists, schedule string) []peerInfo {
+	peers := []peerInfo{}
 
 	for _, cl := range cls[1:] {
 		for scIdx := range cl.sClasses {
@@ -240,7 +240,7 @@ func getAsyncPeers(scName string, clusterID string, sID string, cls []classLists
 				}
 			}
 
-			peers = append(peers, peerList{
+			peers = append(peers, peerInfo{
 				storageClassName: scName,
 				storageIDs:       []string{sID, sIDcl},
 				clusterIDs:       []string{clusterID, cl.clusterID},
@@ -256,8 +256,8 @@ func getAsyncPeers(scName string, clusterID string, sID string, cls []classLists
 
 // getSyncPeers determines if scName passed has asynchronous peers in the passed in classLists.
 // The clusterID and sID are the corresponding IDs for the passed in scName to find a match
-func getSyncPeers(scName string, clusterID string, sID string, cls []classLists) []peerList {
-	peers := []peerList{}
+func getSyncPeers(scName string, clusterID string, sID string, cls []classLists) []peerInfo {
+	peers := []peerInfo{}
 
 	for _, cl := range cls {
 		for idx := range cl.sClasses {
@@ -271,7 +271,7 @@ func getSyncPeers(scName string, clusterID string, sID string, cls []classLists)
 
 			// TODO: Check provisioner match?
 
-			peers = append(peers, peerList{
+			peers = append(peers, peerInfo{
 				storageClassName: scName,
 				storageIDs:       []string{sID},
 				clusterIDs:       []string{clusterID, cl.clusterID},
@@ -286,7 +286,7 @@ func getSyncPeers(scName string, clusterID string, sID string, cls []classLists)
 
 // findPeers finds all sync and async peers for the scName and cluster at the index startClsIdx of classLists,
 // across other remaining elements post the startClsIdx in the classLists
-func findPeers(cls []classLists, scName string, startClsIdx int, schedule string) ([]peerList, []peerList) {
+func findPeers(cls []classLists, scName string, startClsIdx int, schedule string) ([]peerInfo, []peerInfo) {
 	scIdx := 0
 	for scIdx = range cls[startClsIdx].sClasses {
 		if cls[startClsIdx].sClasses[scIdx].Name == scName {
@@ -302,7 +302,7 @@ func findPeers(cls []classLists, scName string, startClsIdx int, schedule string
 	// TODO: Check if Sync is non-nil?
 	syncPeers := getSyncPeers(scName, cls[startClsIdx].clusterID, sID, cls[startClsIdx+1:])
 
-	asyncPeers := []peerList{}
+	asyncPeers := []peerInfo{}
 	if schedule != "" {
 		asyncPeers = getAsyncPeers(scName, cls[startClsIdx].clusterID, sID, cls[startClsIdx:], schedule)
 	}
@@ -329,9 +329,9 @@ func unionStorageClasses(cls []classLists) []string {
 
 // findAllPeers finds all PAIRs of peers in the passed in classLists. It does an exhaustive search for each scName in
 // the prior index of classLists (starting at index 0) with all clusters from that index forward
-func findAllPeers(cls []classLists, schedule string) ([]peerList, []peerList) {
-	syncPeers := []peerList{}
-	asyncPeers := []peerList{}
+func findAllPeers(cls []classLists, schedule string) ([]peerInfo, []peerInfo) {
+	syncPeers := []peerInfo{}
+	asyncPeers := []peerInfo{}
 
 	if len(cls) <= 1 {
 		return syncPeers, asyncPeers

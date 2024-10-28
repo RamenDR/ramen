@@ -18,14 +18,14 @@ var _ = Describe("updatePeerClassesInternal", func() {
 		func(
 			cls []classLists,
 			schedule string,
-			syncPeers []peerList,
-			asyncPeers []peerList,
+			syncPeers []peerInfo,
+			asyncPeers []peerInfo,
 		) {
 			sPeers, aPeers := findAllPeers(cls, schedule)
 			Expect(sPeers).Should(HaveExactElements(syncPeers))
 			Expect(aPeers).Should(HaveExactElements(asyncPeers))
 		},
-		Entry("Empty classLists", []classLists{}, "1m", []peerList{}, []peerList{}),
+		Entry("Empty classLists", []classLists{}, "1m", []peerInfo{}, []peerInfo{}),
 		Entry("Not enough clusters",
 			[]classLists{
 				{
@@ -44,8 +44,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 				},
 			},
 			"1m",
-			[]peerList{},
-			[]peerList{},
+			[]peerInfo{},
+			[]peerInfo{},
 		),
 		Entry("Single sync peer",
 			[]classLists{
@@ -79,7 +79,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 				},
 			},
 			"1m",
-			[]peerList{
+			[]peerInfo{
 				{
 					replicationID:    "",
 					storageIDs:       []string{"identical"},
@@ -87,7 +87,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 					clusterIDs:       []string{"cl-1", "cl-2"},
 				},
 			},
-			[]peerList{},
+			[]peerInfo{},
 		),
 		Entry("Multiple sync peer",
 			[]classLists{
@@ -139,7 +139,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 				},
 			},
 			"1m",
-			[]peerList{
+			[]peerInfo{
 				{
 					replicationID:    "",
 					storageIDs:       []string{"identical1"},
@@ -153,7 +153,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 					clusterIDs:       []string{"cl-1", "cl-2"},
 				},
 			},
-			[]peerList{},
+			[]peerInfo{},
 		),
 		Entry("Single async peer, missing related [VR|VS]Classes",
 			[]classLists{
@@ -187,8 +187,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 				},
 			},
 			"1m",
-			[]peerList{},
-			[]peerList{},
+			[]peerInfo{},
+			[]peerInfo{},
 		),
 		Entry("Single async peer, having unrelated VRClasses",
 			[]classLists{
@@ -256,8 +256,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 				},
 			},
 			"1m",
-			[]peerList{},
-			[]peerList{},
+			[]peerInfo{},
+			[]peerInfo{},
 		),
 		Entry("Single async peer, having unrelated VSClasses",
 			[]classLists{
@@ -313,8 +313,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 				},
 			},
 			"1m",
-			[]peerList{},
-			[]peerList{},
+			[]peerInfo{},
+			[]peerInfo{},
 		),
 		Entry("Single async peer, having unrelated [VR|VS]Classes",
 			[]classLists{
@@ -404,8 +404,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 				},
 			},
 			"1m",
-			[]peerList{},
-			[]peerList{},
+			[]peerInfo{},
+			[]peerInfo{},
 		),
 		Entry("Single async peer, having related VRClasses",
 			[]classLists{
@@ -473,8 +473,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 				},
 			},
 			"1m",
-			[]peerList{},
-			[]peerList{
+			[]peerInfo{},
+			[]peerInfo{
 				{
 					replicationID:    "cl-1-2-rID",
 					storageIDs:       []string{"cl-1-sID", "cl-2-sID"},
@@ -537,8 +537,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 				},
 			},
 			"1m",
-			[]peerList{},
-			[]peerList{
+			[]peerInfo{},
+			[]peerInfo{
 				{
 					replicationID:    "",
 					storageIDs:       []string{"cl-1-sID", "cl-2-sID"},
@@ -601,8 +601,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 				},
 			},
 			"1m",
-			[]peerList{},
-			[]peerList{},
+			[]peerInfo{},
+			[]peerInfo{},
 		),
 		Entry("Single async peer, with VRClasses missing rID",
 			[]classLists{
@@ -669,8 +669,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 				},
 			},
 			"1m",
-			[]peerList{},
-			[]peerList{},
+			[]peerInfo{},
+			[]peerInfo{},
 		),
 		Entry("Single async peer, with VRClasses mismatching schedule",
 			[]classLists{
@@ -738,8 +738,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 				},
 			},
 			"1m",
-			[]peerList{},
-			[]peerList{},
+			[]peerInfo{},
+			[]peerInfo{},
 		),
 		Entry("Single async peer, having related VRClasses with mismatching rIDs",
 			[]classLists{
@@ -807,8 +807,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 				},
 			},
 			"1m",
-			[]peerList{},
-			[]peerList{},
+			[]peerInfo{},
+			[]peerInfo{},
 		),
 		Entry("Multiple async peer, having related [VR|VS]Classes",
 			[]classLists{
@@ -916,8 +916,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 				},
 			},
 			"1m",
-			[]peerList{},
-			[]peerList{
+			[]peerInfo{},
+			[]peerInfo{
 				{
 					replicationID:    "",
 					storageIDs:       []string{"cl-1-sID1", "cl-2-sID1"},
@@ -1060,7 +1060,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 				},
 			},
 			"1m",
-			[]peerList{
+			[]peerInfo{
 				{
 					replicationID:    "",
 					storageIDs:       []string{"cl-[1|2]-sID1"},
@@ -1074,7 +1074,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 					clusterIDs:       []string{"cl-3", "cl-4"},
 				},
 			},
-			[]peerList{
+			[]peerInfo{
 				{
 					replicationID:    "cl-[1|2]-[3|4]-rID",
 					storageIDs:       []string{"cl-[1|2]-sID1", "cl-[3|4]-sID1"},
