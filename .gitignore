@@ -30,6 +30,7 @@ config/hub/bundle
 *~
 .vscode
 .vimrc
+.zed
 
 # Generated files
 venv
