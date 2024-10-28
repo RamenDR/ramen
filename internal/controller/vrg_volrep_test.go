@@ -74,142 +74,157 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		return vrgGet().Status.ProtectedPVCs
 	}
 	var dataReadyCondition *metav1.Condition
-	When("ReplicationState is invalid", func() {
-		It("should set DataReady status=False reason=Error", func() {
-			vrg = &ramendrv1alpha1.VolumeReplicationGroup{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "default",
-					Name:      "asdf",
-				},
-				Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
-					PVCSelector:      metav1.LabelSelector{},
-					ReplicationState: "invalid",
-					S3Profiles:       []string{},
-				},
-			}
-			Expect(k8sClient.Create(context.TODO(), vrg)).To(Succeed())
-			vrgNamespacedName = types.NamespacedName{Name: vrg.Name, Namespace: vrg.Namespace}
-			Eventually(func() int {
-				vrgGet()
+	Context("Sync Basic Test", func() {
+		syncBasicTestTemplate := &template{
+			ClaimBindInfo:          corev1.ClaimBound,
+			VolumeBindInfo:         corev1.VolumeBound,
+			schedulingInterval:     "1h",
+			storageClassName:       "manual",
+			replicationClassName:   "test-replicationclass",
+			vrcProvisioner:         "manual.storage.com",
+			scProvisioner:          "manual.storage.com",
+			replicationClassLabels: map[string]string{"protection": "ramen"},
+		}
+		It("should initialize test with creating StorageClass and VolumeReplicationClass", func() {
+			createStorageClass(syncBasicTestTemplate)
+		})
+		When("ReplicationState is invalid", func() {
+			It("should set DataReady status=False reason=Error", func() {
+				vrg = &ramendrv1alpha1.VolumeReplicationGroup{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      "asdf",
+					},
+					Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
+						PVCSelector:      metav1.LabelSelector{},
+						ReplicationState: "invalid",
+						S3Profiles:       []string{},
+					},
+				}
+				Expect(k8sClient.Create(context.TODO(), vrg)).To(Succeed())
+				vrgNamespacedName = types.NamespacedName{Name: vrg.Name, Namespace: vrg.Namespace}
+				Eventually(func() int {
+					vrgGet()
 
-				return len(vrg.Status.Conditions)
-			}, timeout, interval).ShouldNot(BeZero())
-			dataReadyCondition = vrgConditionStatusReasonExpect("DataReady", metav1.ConditionFalse, "Error")
+					return len(vrg.Status.Conditions)
+				}, timeout, interval).ShouldNot(BeZero())
+				dataReadyCondition = vrgConditionStatusReasonExpect("DataReady", metav1.ConditionFalse, "Error")
+			})
+			It("should set DataProtected status=Unknown reason=Initializing", func() {
+				vrgConditionStatusReasonExpect("DataProtected", metav1.ConditionUnknown, "Initializing")
+			})
+			It("should set ClusterDataReady status=Unknown reason=Initializing", func() {
+				vrgConditionStatusReasonExpect("ClusterDataReady", metav1.ConditionUnknown, "Initializing")
+			})
+			It("should set ClusterDataProtected status=Unknown reason=Initializing", func() {
+				vrgConditionStatusReasonExpect("ClusterDataProtected", metav1.ConditionUnknown, "Initializing")
+			})
 		})
-		It("should set DataProtected status=Unknown reason=Initializing", func() {
-			vrgConditionStatusReasonExpect("DataProtected", metav1.ConditionUnknown, "Initializing")
-		})
-		It("should set ClusterDataReady status=Unknown reason=Initializing", func() {
-			vrgConditionStatusReasonExpect("ClusterDataReady", metav1.ConditionUnknown, "Initializing")
-		})
-		It("should set ClusterDataProtected status=Unknown reason=Initializing", func() {
-			vrgConditionStatusReasonExpect("ClusterDataProtected", metav1.ConditionUnknown, "Initializing")
-		})
-	})
-	When("ReplicationState is primary, but sync and async are disabled", func() {
-		It("should change DataReady message", func() {
-			vrg.Spec.ReplicationState = "primary"
-			dataReadyConditionMessage := dataReadyCondition.Message
-			updateVRG(vrg)
-			Eventually(func() string {
-				vrgGet()
-				dataReadyCondition = vrgConditionExpect("DataReady")
+		When("ReplicationState is primary, but sync and async are disabled", func() {
+			It("should change DataReady message", func() {
+				vrg.Spec.ReplicationState = "primary"
+				dataReadyConditionMessage := dataReadyCondition.Message
+				updateVRG(vrg)
+				Eventually(func() string {
+					vrgGet()
+					dataReadyCondition = vrgConditionExpect("DataReady")
 
-				return dataReadyCondition.Message
-			}, timeout, interval).ShouldNot(Equal(dataReadyConditionMessage))
-			vrgConditionStatusReasonExpect("DataReady", metav1.ConditionFalse, "Error")
+					return dataReadyCondition.Message
+				}, timeout, interval).ShouldNot(Equal(dataReadyConditionMessage))
+				vrgConditionStatusReasonExpect("DataReady", metav1.ConditionFalse, "Error")
+			})
 		})
-	})
-	When("ReplicationState is primary and sync is enabled, but s3 profiles are absent", func() {
-		It("should set ClusterDataReady status=False reason=Error", func() {
-			vrg.Spec.Sync = &ramendrv1alpha1.VRGSyncSpec{}
-			updateVRG(vrg)
-			var clusterDataReadyCondition *metav1.Condition
-			Eventually(func() metav1.ConditionStatus {
-				vrgGet()
-				clusterDataReadyCondition = vrgConditionExpect("ClusterDataReady")
+		When("ReplicationState is primary and sync is enabled, but s3 profiles are absent", func() {
+			It("should set ClusterDataReady status=False reason=Error", func() {
+				vrg.Spec.Sync = &ramendrv1alpha1.VRGSyncSpec{}
+				updateVRG(vrg)
+				var clusterDataReadyCondition *metav1.Condition
+				Eventually(func() metav1.ConditionStatus {
+					vrgGet()
+					clusterDataReadyCondition = vrgConditionExpect("ClusterDataReady")
 
-				return clusterDataReadyCondition.Status
-			}, timeout, interval).Should(Equal(metav1.ConditionFalse))
-			Expect(clusterDataReadyCondition.Reason).To(Equal("Error"))
+					return clusterDataReadyCondition.Status
+				}, timeout, interval).Should(Equal(metav1.ConditionFalse))
+				Expect(clusterDataReadyCondition.Reason).To(Equal("Error"))
+			})
 		})
-	})
-	When("VRG is deleted", func() {
-		BeforeEach(func() {
+		When("VRG is deleted", func() {
+			BeforeEach(func() {
+				Expect(k8sClient.Delete(context.TODO(), vrg)).To(Succeed())
+			})
+			It("should allow the VRG to be deleted", func() {
+				Eventually(func() error {
+					return apiReader.Get(context.TODO(), vrgNamespacedName, vrg)
+				}).Should(MatchError(errors.NewNotFound(schema.GroupResource{
+					Group:    ramendrv1alpha1.GroupVersion.Group,
+					Resource: "volumereplicationgroups",
+				}, vrg.Name)))
+			})
+		})
+		var pv0 *corev1.PersistentVolume
+		var pvc0 *corev1.PersistentVolumeClaim
+		When("PV exists, is bound, and its claim's deletion timestamp is non-zero", func() {
+			BeforeEach(func() {
+				pv := pv("pv0", "pvc0", vrg.Namespace, syncBasicTestTemplate.storageClassName)
+				pvc := pvc(pv.Spec.ClaimRef.Name, pv.Spec.ClaimRef.Namespace, pv.Name, pv.Spec.StorageClassName, nil)
+				pvc.Finalizers = []string{"ramendr.openshift.io/asdf"}
+				vrgS3KeyPrefix := vrgS3KeyPrefix(vrgNamespacedName)
+				populateS3Store(vrgS3KeyPrefix, []corev1.PersistentVolume{*pv}, []corev1.PersistentVolumeClaim{*pvc})
+				Expect(k8sClient.Create(context.TODO(), pv)).To(Succeed())
+				Expect(k8sClient.Create(context.TODO(), pvc)).To(Succeed())
+				Expect(apiReader.Get(context.TODO(), types.NamespacedName{Name: pv.Name}, pv)).To(Succeed())
+				pv.Status.Phase = corev1.VolumeBound
+				Expect(k8sClient.Status().Update(context.TODO(), pv)).To(Succeed())
+				Expect(k8sClient.Delete(context.TODO(), pvc)).To(Succeed())
+				Expect(apiReader.Get(context.TODO(), types.NamespacedName{Namespace: pvc.Namespace, Name: pvc.Name}, pvc)).
+					To(Succeed())
+				pv0 = pv
+				pvc0 = pvc
+			})
+			It("should set ClusterDataReady false", func() {
+				vrg.ResourceVersion = ""
+				vrg.Spec.S3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+				Expect(k8sClient.Create(context.TODO(), vrg)).To(Succeed())
+				Expect(apiReader.Get(context.TODO(), vrgNamespacedName, vrg)).To(Succeed())
+				Eventually(func() *metav1.Condition {
+					vrgGet()
+
+					return meta.FindStatusCondition(vrg.Status.Conditions, "ClusterDataReady")
+				}).Should(And(
+					Not(BeNil()),
+					HaveField("Status", metav1.ConditionFalse),
+					HaveField("Reason", "Error"),
+				))
+			})
+		})
+		When("PVC is deleted finally and PV is unbound", func() {
+			BeforeEach(func() {
+				pv := pv0
+				pvc := pvc0
+				Expect(apiReader.Get(context.TODO(), types.NamespacedName{Namespace: pvc.Namespace, Name: pvc.Name}, pvc)).
+					To(Succeed())
+				pvc.Finalizers = []string{}
+				Expect(k8sClient.Update(context.TODO(), pvc)).To(Succeed())
+				Expect(apiReader.Get(context.TODO(), types.NamespacedName{Name: pv.Name}, pv)).To(Succeed())
+				pv.Status.Phase = corev1.VolumePending
+				Expect(k8sClient.Status().Update(context.TODO(), pv)).To(Succeed())
+			})
+			It("should set ClusterDataReady true", func() {
+				Eventually(func() *metav1.Condition {
+					vrgGet()
+
+					return meta.FindStatusCondition(vrg.Status.Conditions, "ClusterDataReady")
+				}).Should(
+					HaveField("Status", metav1.ConditionTrue),
+				)
+			})
+		})
+		Specify("PV delete", func() {
+			Expect(k8sClient.Delete(context.TODO(), pv0)).To(Succeed())
+		})
+		Specify("VRG delete", func() {
 			Expect(k8sClient.Delete(context.TODO(), vrg)).To(Succeed())
 		})
-		It("should allow the VRG to be deleted", func() {
-			Eventually(func() error {
-				return apiReader.Get(context.TODO(), vrgNamespacedName, vrg)
-			}).Should(MatchError(errors.NewNotFound(schema.GroupResource{
-				Group:    ramendrv1alpha1.GroupVersion.Group,
-				Resource: "volumereplicationgroups",
-			}, vrg.Name)))
-		})
-	})
-	var pv0 *corev1.PersistentVolume
-	var pvc0 *corev1.PersistentVolumeClaim
-	When("PV exists, is bound, and its claim's deletion timestamp is non-zero", func() {
-		BeforeEach(func() {
-			pv := pv("pv0", "pvc0", vrg.Namespace, "")
-			pvc := pvc(pv.Spec.ClaimRef.Name, pv.Spec.ClaimRef.Namespace, pv.Name, pv.Spec.StorageClassName, nil)
-			pvc.Finalizers = []string{"ramendr.openshift.io/asdf"}
-			vrgS3KeyPrefix := vrgS3KeyPrefix(vrgNamespacedName)
-			populateS3Store(vrgS3KeyPrefix, []corev1.PersistentVolume{*pv}, []corev1.PersistentVolumeClaim{*pvc})
-			Expect(k8sClient.Create(context.TODO(), pv)).To(Succeed())
-			Expect(k8sClient.Create(context.TODO(), pvc)).To(Succeed())
-			Expect(apiReader.Get(context.TODO(), types.NamespacedName{Name: pv.Name}, pv)).To(Succeed())
-			pv.Status.Phase = corev1.VolumeBound
-			Expect(k8sClient.Status().Update(context.TODO(), pv)).To(Succeed())
-			Expect(k8sClient.Delete(context.TODO(), pvc)).To(Succeed())
-			Expect(apiReader.Get(context.TODO(), types.NamespacedName{Namespace: pvc.Namespace, Name: pvc.Name}, pvc)).
-				To(Succeed())
-			pv0 = pv
-			pvc0 = pvc
-		})
-		It("should set ClusterDataReady false", func() {
-			vrg.ResourceVersion = ""
-			vrg.Spec.S3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
-			Expect(k8sClient.Create(context.TODO(), vrg)).To(Succeed())
-			Expect(apiReader.Get(context.TODO(), vrgNamespacedName, vrg)).To(Succeed())
-			Eventually(func() *metav1.Condition {
-				vrgGet()
-
-				return meta.FindStatusCondition(vrg.Status.Conditions, "ClusterDataReady")
-			}).Should(And(
-				Not(BeNil()),
-				HaveField("Status", metav1.ConditionFalse),
-				HaveField("Reason", "Error"),
-			))
-		})
-	})
-	When("PVC is deleted finally and PV is unbound", func() {
-		BeforeEach(func() {
-			pv := pv0
-			pvc := pvc0
-			Expect(apiReader.Get(context.TODO(), types.NamespacedName{Namespace: pvc.Namespace, Name: pvc.Name}, pvc)).
-				To(Succeed())
-			pvc.Finalizers = []string{}
-			Expect(k8sClient.Update(context.TODO(), pvc)).To(Succeed())
-			Expect(apiReader.Get(context.TODO(), types.NamespacedName{Name: pv.Name}, pv)).To(Succeed())
-			pv.Status.Phase = corev1.VolumePending
-			Expect(k8sClient.Status().Update(context.TODO(), pv)).To(Succeed())
-		})
-		It("should set ClusterDataReady true", func() {
-			Eventually(func() *metav1.Condition {
-				vrgGet()
-
-				return meta.FindStatusCondition(vrg.Status.Conditions, "ClusterDataReady")
-			}).Should(
-				HaveField("Status", metav1.ConditionTrue),
-			)
-		})
-	})
-	Specify("PV delete", func() {
-		Expect(k8sClient.Delete(context.TODO(), pv0)).To(Succeed())
-	})
-	Specify("VRG delete", func() {
-		Expect(k8sClient.Delete(context.TODO(), vrg)).To(Succeed())
 	})
 
 	// Test first restore
@@ -1750,15 +1765,19 @@ func (v *vrgTest) createVRC(testTemplate *template) {
 }
 
 func (v *vrgTest) createSC(testTemplate *template) {
-	By("creating StorageClass " + v.storageClass)
+	createStorageClass(testTemplate)
+}
 
-	if v.storageClass == "" || testTemplate.scDisabled {
+func createStorageClass(testTemplate *template) {
+	By("creating StorageClass " + testTemplate.storageClassName)
+
+	if testTemplate.storageClassName == "" || testTemplate.scDisabled {
 		return
 	}
 
 	sc := &storagev1.StorageClass{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: v.storageClass,
+			Name: testTemplate.storageClassName,
 		},
 		Provisioner: testTemplate.scProvisioner,
 	}
@@ -1766,12 +1785,12 @@ func (v *vrgTest) createSC(testTemplate *template) {
 	err := k8sClient.Create(context.TODO(), sc)
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
-			err = k8sClient.Get(context.TODO(), types.NamespacedName{Name: v.storageClass}, sc)
+			err = k8sClient.Get(context.TODO(), types.NamespacedName{Name: testTemplate.storageClassName}, sc)
 		}
 	}
 
 	Expect(err).NotTo(HaveOccurred(),
-		"failed to create/get StorageClass %s/%s", v.storageClass, v.vrgName)
+		"failed to create/get StorageClass %s/%s", testTemplate.storageClassName, testTemplate.storageClassName)
 }
 
 func (v *vrgTest) verifyPVCBindingToPV(shouldBeBound bool) {
