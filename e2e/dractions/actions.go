@@ -83,8 +83,8 @@ func EnableProtection(w workloads.Workload, d deployers.Deployer) error {
 	}
 
 	// this is the application namespace in drclusters to add the annotation
-	nsToAnnonate := name
-	if err := util.CreateNamespaceAndAddAnnotation(nsToAnnonate); err != nil {
+	nsToAnnotate := name
+	if err := util.CreateNamespaceAndAddAnnotation(nsToAnnotate); err != nil {
 		return err
 	}
 
