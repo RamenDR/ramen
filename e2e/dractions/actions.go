@@ -43,18 +43,13 @@ func EnableProtection(w workloads.Workload, d deployers.Deployer) error {
 	placementName := name
 	drpcName := name
 
-	placementDecisionName, err := waitPlacementDecision(util.Ctx.Hub.CtrlClient, namespace, placementName)
-	if err != nil {
-		return err
-	}
-
-	placementDecision, err := getPlacementDecision(util.Ctx.Hub.CtrlClient, namespace, placementDecisionName)
+	placementDecision, err := waitPlacementDecision(util.Ctx.Hub.CtrlClient, namespace, placementName)
 	if err != nil {
 		return err
 	}
 
 	clusterName := placementDecision.Status.Decisions[0].ClusterName
-	util.Ctx.Log.Info("got clusterName " + clusterName + " from " + placementDecisionName)
+	util.Ctx.Log.Info("got clusterName " + clusterName + " from " + placementDecision.Name)
 
 	util.Ctx.Log.Info("update placement " + placementName + " annotation")
 

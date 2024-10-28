@@ -15,38 +15,28 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// nolint:gocognit
-// return placementDecisionName, error
+// waitPlacementDecision waits until we have a placement decision and returns the placement decision object.
 func waitPlacementDecision(client client.Client, namespace string, placementName string,
-) (string, error) {
+) (*v1beta1.PlacementDecision, error) {
 	startTime := time.Now()
-	placementDecisionName := ""
 
 	for {
 		placement, err := getPlacement(client, namespace, placementName)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
-		for _, cond := range placement.Status.Conditions {
-			if cond.Type == "PlacementSatisfied" && cond.Status == "True" {
-				placementDecisionName = placement.Status.DecisionGroups[0].Decisions[0]
-				if placementDecisionName != "" {
-					return placementDecisionName, nil
-				}
-			}
-		}
-
-		// if placement is controlled by ramen, it will not have placementdecision name in its status
-		// so need query placementdecision by label
 		placementDecision, err := getPlacementDecisionFromPlacement(client, placement)
-		if err == nil && placementDecision != nil {
-			return placementDecision.Name, nil
+		if err != nil {
+			return nil, err
+		}
+
+		if placementDecision != nil && len(placementDecision.Status.Decisions) > 0 {
+			return placementDecision, nil
 		}
 
 		if time.Since(startTime) > util.Timeout {
-			return "", fmt.Errorf(
-				"could not get placement decision for " + placementName + " before timeout, fail")
+			return nil, fmt.Errorf("timeout waiting for placement decisions for %q ", placementName)
 		}
 
 		time.Sleep(util.RetryInterval)
@@ -135,19 +125,12 @@ func waitDRPCPhase(client client.Client, namespace, name string, phase ramen.DRS
 }
 
 func getCurrentCluster(client client.Client, namespace string, placementName string) (string, error) {
-	placementDecisionName, err := waitPlacementDecision(client, namespace, placementName)
+	placementDecision, err := waitPlacementDecision(client, namespace, placementName)
 	if err != nil {
 		return "", err
 	}
 
-	placementDecision, err := getPlacementDecision(client, namespace, placementDecisionName)
-	if err != nil {
-		return "", err
-	}
-
-	clusterName := placementDecision.Status.Decisions[0].ClusterName
-
-	return clusterName, nil
+	return placementDecision.Status.Decisions[0].ClusterName, nil
 }
 
 // return dr cluster client
