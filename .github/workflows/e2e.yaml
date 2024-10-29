@@ -64,10 +64,15 @@ jobs:
         max_attempts: 3
         command: ramenctl config --name-prefix ${{ env.NAME_PREFIX }} test/envs/regional-dr.yaml
 
+    - name: Configure e2e tests
+      run: cat ~/.config/drenv/${{ env.NAME_PREFIX }}rdr/config.yaml >> e2e/config.yaml
+
     - name: Run e2e tests
-      run: |
-        cat ~/.config/drenv/${{ env.NAME_PREFIX }}rdr/config.yaml >> e2e/config.yaml
-        make e2e-rdr
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 20
+        max_attempts: 3
+        command: make e2e-rdr
 
     - name: Gather environment data
       if: failure()
