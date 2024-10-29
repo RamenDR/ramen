@@ -11,53 +11,22 @@ import (
 
 func Validate(t *testing.T) {
 	t.Helper()
-
-	if !t.Run("CheckRamenHubOperatorStatus", CheckRamenHubOperatorStatus) {
-		t.Error("CheckRamenHubOperatorStatus failed")
-	}
-
-	if !t.Run("CheckRamenSpokeOperatorStatus", CheckRamenSpokeOperatorStatus) {
-		t.Error("CheckRamenHubOperatorStatus failed")
-	}
-}
-
-func CheckRamenHubOperatorStatus(t *testing.T) {
-	util.Ctx.Log.Info("enter CheckRamenHubOperatorStatus")
-
-	isRunning, podName, err := util.CheckRamenHubPodRunningStatus(util.Ctx.Hub.K8sClientSet)
-	if err != nil {
-		t.Error(err)
-	}
-
-	if isRunning {
-		util.Ctx.Log.Info("Ramen Hub Operator is running", "pod", podName)
-	} else {
-		t.Error("no running Ramen Hub Operator pod found")
-	}
-}
-
-func CheckRamenSpokeOperatorStatus(t *testing.T) {
-	util.Ctx.Log.Info("enter CheckRamenSpokeOperatorStatus")
-
-	isRunning, podName, err := util.CheckRamenSpokePodRunningStatus(util.Ctx.C1.K8sClientSet)
-	if err != nil {
-		t.Error(err)
-	}
-
-	if isRunning {
-		util.Ctx.Log.Info("Ramen Spoke Operator is running on cluster 1", "pod", podName)
-	} else {
-		t.Error("no running Ramen Spoke Operator pod on cluster 1")
-	}
-
-	isRunning, podName, err = util.CheckRamenSpokePodRunningStatus(util.Ctx.C2.K8sClientSet)
-	if err != nil {
-		t.Error(err)
-	}
-
-	if isRunning {
-		util.Ctx.Log.Info("Ramen Spoke Operator is running on cluster 2", "pod", podName)
-	} else {
-		t.Error("no running Ramen Spoke Operator pod on cluster 2")
-	}
+	t.Run("hub", func(t *testing.T) {
+		err := util.ValidateRamenHubOperator(util.Ctx.Hub.K8sClientSet)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("c1", func(t *testing.T) {
+		err := util.ValidateRamenDRClusterOperator(util.Ctx.C1.K8sClientSet, "c1")
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("c2", func(t *testing.T) {
+		err := util.ValidateRamenDRClusterOperator(util.Ctx.C2.K8sClientSet, "c2")
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
 }
