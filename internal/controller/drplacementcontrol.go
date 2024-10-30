@@ -874,7 +874,7 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), errMsg)
 
-		return !done, fmt.Errorf(errMsg)
+		return !done, fmt.Errorf("%s", errMsg)
 	}
 
 	if d.getLastDRState() != rmn.Relocating && !d.validatePeerReady() {
@@ -935,7 +935,7 @@ func (d *DRPCInstance) ensureCleanupAndVolSyncReplicationSetup(srcCluster string
 	// in the MW, but the VRGs in the vrgs slice are fetched using MCV.
 	vrg, ok := d.vrgs[srcCluster]
 	if !ok || len(vrg.Spec.VolSync.RDSpec) != 0 {
-		return fmt.Errorf(fmt.Sprintf("Waiting for RDSpec count on cluster %s to go to zero. VRG OK? %v", srcCluster, ok))
+		return fmt.Errorf("waiting for RDSpec count on cluster %s to go to zero. VRG OK? %v", srcCluster, ok)
 	}
 
 	err = d.EnsureCleanup(srcCluster)
@@ -1521,10 +1521,10 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string, repState rmn.Re
 	}
 
 	// create VRG ManifestWork
-	d.log.Info("Creating VRG ManifestWork",
+	d.log.Info("Creating VRG ManifestWork", "ReplicationState", repState,
 		"Last State:", d.getLastDRState(), "cluster", homeCluster)
 
-	vrg := d.generateVRG(homeCluster, repState)
+	vrg := d.newVRG(homeCluster, repState)
 	vrg.Spec.VolSync.Disabled = d.volSyncDisabled
 
 	annotations := make(map[string]string)
@@ -1589,7 +1589,7 @@ func (d *DRPCInstance) setVRGAction(vrg *rmn.VolumeReplicationGroup) {
 	vrg.Spec.Action = action
 }
 
-func (d *DRPCInstance) generateVRG(dstCluster string, repState rmn.ReplicationState) rmn.VolumeReplicationGroup {
+func (d *DRPCInstance) newVRG(dstCluster string, repState rmn.ReplicationState) rmn.VolumeReplicationGroup {
 	vrg := rmn.VolumeReplicationGroup{
 		TypeMeta: metav1.TypeMeta{Kind: "VolumeReplicationGroup", APIVersion: "ramendr.openshift.io/v1alpha1"},
 		ObjectMeta: metav1.ObjectMeta{

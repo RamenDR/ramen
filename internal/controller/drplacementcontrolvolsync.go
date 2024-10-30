@@ -183,7 +183,7 @@ func (d *DRPCInstance) refreshRDSpec(srcCluster, dstCluster string) (*rmn.Volume
 		return nil, WaitForSourceCluster
 	}
 
-	dstVRG := d.generateVRG(dstCluster, rmn.Secondary)
+	dstVRG := d.newVRG(dstCluster, rmn.Secondary)
 	d.resetRDSpec(srcVRG, &dstVRG)
 
 	return &dstVRG, nil
@@ -237,7 +237,7 @@ func (d *DRPCInstance) ResetVolSyncRDOnPrimary(clusterName string) error {
 	if vrg.Spec.ReplicationState != rmn.Primary {
 		d.log.Info(fmt.Sprintf("VRG %s not primary on this cluster %s", vrg.Name, mw.Namespace))
 
-		return fmt.Errorf(fmt.Sprintf("VRG %s not primary on this cluster %s", vrg.Name, mw.Namespace))
+		return fmt.Errorf("vrg %s is not set as primary on this cluster, %s", vrg.Name, mw.Namespace)
 	}
 
 	if len(vrg.Spec.VolSync.RDSpec) == 0 {
