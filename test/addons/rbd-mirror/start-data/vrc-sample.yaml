@@ -6,6 +6,9 @@ apiVersion: replication.storage.openshift.io/v1alpha1
 kind: VolumeReplicationClass
 metadata:
   name: vrc-sample
+  labels:
+    ramendr.openshift.io/storageid: rook-ceph-$cluster-1
+    ramendr.openshift.io/replicationid: rook-ceph-replication-1
 spec:
   provisioner: rook-ceph.rbd.csi.ceph.com
   parameters:
