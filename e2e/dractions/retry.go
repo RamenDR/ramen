@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/e2e/util"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -43,7 +44,7 @@ func waitPlacementDecision(client client.Client, namespace string, placementName
 	}
 }
 
-func waitDRPCReady(client client.Client, namespace string, drpcName string) error {
+func waitDRPCReady(client client.Client, namespace string, drpcName string, log logr.Logger) error {
 	startTime := time.Now()
 
 	for {
@@ -54,18 +55,18 @@ func waitDRPCReady(client client.Client, namespace string, drpcName string) erro
 
 		conditionReady := checkDRPCConditions(drpc)
 		if conditionReady && drpc.Status.LastGroupSyncTime != nil {
-			util.Ctx.Log.Info("drpc " + drpcName + " is ready")
+			log.Info("drpc is ready")
 
 			return nil
 		}
 
 		if time.Since(startTime) > util.Timeout {
 			if !conditionReady {
-				util.Ctx.Log.Info("drpc " + drpcName + " condition 'Available' or 'PeerReady' is not True")
+				log.Info("drpc condition 'Available' or 'PeerReady' is not True")
 			}
 
 			if conditionReady && drpc.Status.LastGroupSyncTime == nil {
-				util.Ctx.Log.Info("drpc " + drpcName + " LastGroupSyncTime is nil")
+				log.Info("drpc LastGroupSyncTime is nil")
 			}
 
 			return fmt.Errorf("drpc %q is not ready yet before timeout, fail", drpcName)
@@ -100,7 +101,7 @@ func checkDRPCConditions(drpc *ramen.DRPlacementControl) bool {
 	return available && peerReady
 }
 
-func waitDRPCPhase(client client.Client, namespace, name string, phase ramen.DRState) error {
+func waitDRPCPhase(client client.Client, namespace, name string, phase ramen.DRState, log logr.Logger) error {
 	startTime := time.Now()
 
 	for {
@@ -111,7 +112,7 @@ func waitDRPCPhase(client client.Client, namespace, name string, phase ramen.DRS
 
 		currentPhase := drpc.Status.Phase
 		if currentPhase == phase {
-			util.Ctx.Log.Info(fmt.Sprintf("drpc %s phase is %s", name, phase))
+			log.Info(fmt.Sprintf("drpc phase is %s", phase))
 
 			return nil
 		}
@@ -159,28 +160,28 @@ func getTargetCluster(client client.Client, namespace, placementName string, drp
 }
 
 // first wait DRPC to have the expected phase, then check DRPC conditions
-func waitDRPC(client client.Client, namespace, name string, expectedPhase ramen.DRState) error {
+func waitDRPC(client client.Client, namespace, name string, expectedPhase ramen.DRState, log logr.Logger) error {
 	// check Phase
-	if err := waitDRPCPhase(client, namespace, name, expectedPhase); err != nil {
+	if err := waitDRPCPhase(client, namespace, name, expectedPhase, log); err != nil {
 		return err
 	}
 	// then check Conditions
-	return waitDRPCReady(client, namespace, name)
+	return waitDRPCReady(client, namespace, name, log)
 }
 
-func waitDRPCDeleted(client client.Client, namespace string, name string) error {
+func waitDRPCDeleted(client client.Client, namespace string, name string, log logr.Logger) error {
 	startTime := time.Now()
 
 	for {
 		_, err := getDRPC(client, namespace, name)
 		if err != nil {
 			if errors.IsNotFound(err) {
-				util.Ctx.Log.Info("drpc " + name + " is deleted")
+				log.Info("drpc is deleted")
 
 				return nil
 			}
 
-			util.Ctx.Log.Info(fmt.Sprintf("error to get drpc %s: %v", name, err))
+			log.Info(fmt.Sprintf("failed to get drpc: %v", err))
 		}
 
 		if time.Since(startTime) > util.Timeout {
@@ -192,7 +193,9 @@ func waitDRPCDeleted(client client.Client, namespace string, name string) error 
 }
 
 // nolint:unparam
-func waitDRPCProgression(client client.Client, namespace, name string, progression ramen.ProgressionStatus) error {
+func waitDRPCProgression(client client.Client, namespace, name string, progression ramen.ProgressionStatus,
+	log logr.Logger,
+) error {
 	startTime := time.Now()
 
 	for {
@@ -203,7 +206,7 @@ func waitDRPCProgression(client client.Client, namespace, name string, progressi
 
 		currentProgression := drpc.Status.Progression
 		if currentProgression == progression {
-			util.Ctx.Log.Info(fmt.Sprintf("drpc %s progression is %s", name, progression))
+			log.Info(fmt.Sprintf("drpc progression is %s", progression))
 
 			return nil
 		}

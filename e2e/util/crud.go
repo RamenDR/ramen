@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,7 +38,7 @@ func CreateNamespace(client client.Client, namespace string) error {
 	return nil
 }
 
-func DeleteNamespace(client client.Client, namespace string) error {
+func DeleteNamespace(client client.Client, namespace string, log logr.Logger) error {
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: namespace,
@@ -50,12 +51,12 @@ func DeleteNamespace(client client.Client, namespace string) error {
 			return err
 		}
 
-		Ctx.Log.Info("namespace " + namespace + " not found")
+		log.Info("Namespace " + namespace + " not found")
 
 		return nil
 	}
 
-	Ctx.Log.Info("waiting until namespace " + namespace + " is deleted")
+	log.Info("Waiting until namespace " + namespace + " is deleted")
 
 	startTime := time.Now()
 	key := types.NamespacedName{Name: namespace}
@@ -66,7 +67,7 @@ func DeleteNamespace(client client.Client, namespace string) error {
 				return err
 			}
 
-			Ctx.Log.Info("namespace " + namespace + " deleted")
+			log.Info("Namespace " + namespace + " deleted")
 
 			return nil
 		}
@@ -97,9 +98,9 @@ func createChannel() error {
 			return err
 		}
 
-		Ctx.Log.Info("channel " + GetChannelName() + " already exists")
+		Ctx.Log.Info("Channel " + GetChannelName() + " already exists")
 	} else {
-		Ctx.Log.Info("channel " + GetChannelName() + " is created")
+		Ctx.Log.Info("Created channel " + GetChannelName())
 	}
 
 	return nil
@@ -119,9 +120,9 @@ func deleteChannel() error {
 			return err
 		}
 
-		Ctx.Log.Info("channel " + GetChannelName() + " not found")
+		Ctx.Log.Info("Channel " + GetChannelName() + " not found")
 	} else {
-		Ctx.Log.Info("channel " + GetChannelName() + " is deleted")
+		Ctx.Log.Info("Channel " + GetChannelName() + " is deleted")
 	}
 
 	return nil
@@ -142,7 +143,7 @@ func EnsureChannelDeleted() error {
 		return err
 	}
 
-	return DeleteNamespace(Ctx.Hub.CtrlClient, GetChannelNamespace())
+	return DeleteNamespace(Ctx.Hub.CtrlClient, GetChannelNamespace(), Ctx.Log)
 }
 
 // Problem: currently we must manually add an annotation to application’s namespace to make volsync work.
