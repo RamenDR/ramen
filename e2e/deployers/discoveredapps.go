@@ -20,8 +20,9 @@ func (d DiscoveredApps) GetName() string {
 func (d DiscoveredApps) Deploy(w workloads.Workload) error {
 	name := GetCombinedName(d, w)
 	namespace := name
+	log := util.Ctx.Log.WithName(name)
 
-	util.Ctx.Log.Info("enter Deploy " + name)
+	log.Info("Deploying workload")
 
 	// create namespace in both dr clusters
 	if err := util.CreateNamespaceAndAddAnnotation(namespace); err != nil {
@@ -50,16 +51,16 @@ func (d DiscoveredApps) Deploy(w workloads.Workload) error {
 
 	// Run the command and capture the output
 	if out, err := cmd.Output(); err != nil {
-		util.Ctx.Log.Info(string(out))
+		log.Info(string(out))
 
 		return err
 	}
 
-	if err = WaitWorkloadHealth(util.Ctx.C1.CtrlClient, namespace, w); err != nil {
+	if err = WaitWorkloadHealth(util.Ctx.C1.CtrlClient, namespace, w, log); err != nil {
 		return err
 	}
 
-	util.Ctx.Log.Info(name + " is deployed")
+	log.Info("Workload deployed")
 
 	return nil
 }
@@ -67,41 +68,42 @@ func (d DiscoveredApps) Deploy(w workloads.Workload) error {
 func (d DiscoveredApps) Undeploy(w workloads.Workload) error {
 	name := GetCombinedName(d, w)
 	namespace := name // this namespace is in dr clusters
+	log := util.Ctx.Log.WithName(name)
 
-	util.Ctx.Log.Info("enter Undeploy " + name)
+	log.Info("Undeploying workload")
 
 	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub.CtrlClient, util.DefaultDRPolicyName)
 	if err != nil {
 		return err
 	}
 
-	util.Ctx.Log.Info("starts to delete discovered apps on " + drpolicy.Spec.DRClusters[0])
+	log.Info("Deleting discovered apps on " + drpolicy.Spec.DRClusters[0])
 
 	// delete app on both clusters
-	if err := DeleteDiscoveredApps(w, namespace, drpolicy.Spec.DRClusters[0]); err != nil {
+	if err := DeleteDiscoveredApps(w, namespace, drpolicy.Spec.DRClusters[0], log); err != nil {
 		return err
 	}
 
-	util.Ctx.Log.Info("starts to delete discovered apps on " + drpolicy.Spec.DRClusters[1])
+	log.Info("Deletting discovered apps on " + drpolicy.Spec.DRClusters[1])
 
-	if err := DeleteDiscoveredApps(w, namespace, drpolicy.Spec.DRClusters[1]); err != nil {
+	if err := DeleteDiscoveredApps(w, namespace, drpolicy.Spec.DRClusters[1], log); err != nil {
 		return err
 	}
 
-	util.Ctx.Log.Info("starts to delete namespace " + namespace + " on " + drpolicy.Spec.DRClusters[0])
+	log.Info("Deleting namespace " + namespace + " on " + drpolicy.Spec.DRClusters[0])
 
 	// delete namespace on both clusters
-	if err := util.DeleteNamespace(util.Ctx.C1.CtrlClient, namespace); err != nil {
+	if err := util.DeleteNamespace(util.Ctx.C1.CtrlClient, namespace, log); err != nil {
 		return err
 	}
 
-	util.Ctx.Log.Info("starts to delete namespace " + namespace + " on " + drpolicy.Spec.DRClusters[1])
+	log.Info("Deleting namespace " + namespace + " on " + drpolicy.Spec.DRClusters[1])
 
-	if err := util.DeleteNamespace(util.Ctx.C2.CtrlClient, namespace); err != nil {
+	if err := util.DeleteNamespace(util.Ctx.C2.CtrlClient, namespace, log); err != nil {
 		return err
 	}
 
-	util.Ctx.Log.Info(name + " is undeployed")
+	log.Info("Workload undeployed")
 
 	return nil
 }

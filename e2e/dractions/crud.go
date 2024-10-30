@@ -6,6 +6,7 @@ package dractions
 import (
 	"context"
 
+	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/util"
@@ -106,7 +107,7 @@ func generateDRPC(name, namespace, clusterName, drPolicyName, placementName, app
 	return drpc
 }
 
-func createPlacementManagedByRamen(name, namespace string) error {
+func createPlacementManagedByRamen(name, namespace string, log logr.Logger) error {
 	labels := make(map[string]string)
 	labels[deployers.AppLabelKey] = name
 	clusterSet := []string{"default"}
@@ -133,7 +134,7 @@ func createPlacementManagedByRamen(name, namespace string) error {
 			return err
 		}
 
-		util.Ctx.Log.Info("placement " + placement.Name + " already Exists")
+		log.Info("Placement already Exists")
 	}
 
 	return nil

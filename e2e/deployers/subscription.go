@@ -27,8 +27,9 @@ func (s Subscription) Deploy(w workloads.Workload) error {
 	// Address namespace/label/suffix as needed for various resources
 	name := GetCombinedName(s, w)
 	namespace := name
+	log := util.Ctx.Log.WithName(name)
 
-	util.Ctx.Log.Info("enter Deploy " + name)
+	log.Info("Deploying workload")
 
 	// create subscription namespace
 	err := util.CreateNamespace(util.Ctx.Hub.CtrlClient, namespace)
@@ -41,42 +42,43 @@ func (s Subscription) Deploy(w workloads.Workload) error {
 		return err
 	}
 
-	err = CreatePlacement(name, namespace)
+	err = CreatePlacement(name, namespace, log)
 	if err != nil {
 		return err
 	}
 
-	err = CreateSubscription(s, w)
+	err = CreateSubscription(s, w, log)
 	if err != nil {
 		return err
 	}
 
-	return waitSubscriptionPhase(namespace, name, subscriptionv1.SubscriptionPropagated)
+	return waitSubscriptionPhase(namespace, name, subscriptionv1.SubscriptionPropagated, log)
 }
 
 // Delete Subscription, Placement, Binding
 func (s Subscription) Undeploy(w workloads.Workload) error {
 	name := GetCombinedName(s, w)
 	namespace := name
+	log := util.Ctx.Log.WithName(name)
 
-	util.Ctx.Log.Info("enter Undeploy " + name)
+	log.Info("Undeploying workload")
 
-	err := DeleteSubscription(s, w)
+	err := DeleteSubscription(s, w, log)
 	if err != nil {
 		return err
 	}
 
-	err = DeletePlacement(name, namespace)
+	err = DeletePlacement(name, namespace, log)
 	if err != nil {
 		return err
 	}
 
-	err = DeleteManagedClusterSetBinding(McsbName, namespace)
+	err = DeleteManagedClusterSetBinding(McsbName, namespace, log)
 	if err != nil {
 		return err
 	}
 
-	return util.DeleteNamespace(util.Ctx.Hub.CtrlClient, namespace)
+	return util.DeleteNamespace(util.Ctx.Hub.CtrlClient, namespace, log)
 }
 
 func (s Subscription) IsWorkloadSupported(w workloads.Workload) bool {

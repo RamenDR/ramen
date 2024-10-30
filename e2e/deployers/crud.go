@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"github.com/ramendr/ramen/e2e/util"
 	"github.com/ramendr/ramen/e2e/workloads"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -58,7 +59,7 @@ func CreateManagedClusterSetBinding(name, namespace string) error {
 	return nil
 }
 
-func DeleteManagedClusterSetBinding(name, namespace string) error {
+func DeleteManagedClusterSetBinding(name, namespace string, log logr.Logger) error {
 	mcsb := &ocmv1b2.ManagedClusterSetBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -72,13 +73,13 @@ func DeleteManagedClusterSetBinding(name, namespace string) error {
 			return err
 		}
 
-		util.Ctx.Log.Info("managedClusterSetBinding " + name + " not found")
+		log.Info("ManagedClusterSetBinding " + name + " not found")
 	}
 
 	return nil
 }
 
-func CreatePlacement(name, namespace string) error {
+func CreatePlacement(name, namespace string, log logr.Logger) error {
 	labels := make(map[string]string)
 	labels[AppLabelKey] = name
 	clusterSet := []string{ClusterSetName}
@@ -102,13 +103,13 @@ func CreatePlacement(name, namespace string) error {
 			return err
 		}
 
-		util.Ctx.Log.Info("placement " + placement.Name + " already Exists")
+		log.Info("Placement already Exists")
 	}
 
 	return nil
 }
 
-func DeletePlacement(name, namespace string) error {
+func DeletePlacement(name, namespace string, log logr.Logger) error {
 	placement := &ocmv1b1.Placement{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -122,13 +123,13 @@ func DeletePlacement(name, namespace string) error {
 			return err
 		}
 
-		util.Ctx.Log.Info("placement " + name + " not found")
+		log.Info("Placement not found")
 	}
 
 	return nil
 }
 
-func CreateSubscription(s Subscription, w workloads.Workload) error {
+func CreateSubscription(s Subscription, w workloads.Workload, log logr.Logger) error {
 	name := GetCombinedName(s, w)
 	namespace := name
 
@@ -173,18 +174,18 @@ func CreateSubscription(s Subscription, w workloads.Workload) error {
 	err := util.Ctx.Hub.CtrlClient.Create(context.Background(), subscription)
 	if err != nil {
 		if !errors.IsAlreadyExists(err) {
-			util.Ctx.Log.Info(fmt.Sprintf("create subscription with error: %v", err))
+			log.Info(fmt.Sprintf("create subscription with error: %v", err))
 
 			return err
 		}
 
-		util.Ctx.Log.Info("subscription " + subscription.Name + " already Exists")
+		log.Info("Subscription already Exists")
 	}
 
 	return nil
 }
 
-func DeleteSubscription(s Subscription, w workloads.Workload) error {
+func DeleteSubscription(s Subscription, w workloads.Workload, log logr.Logger) error {
 	name := GetCombinedName(s, w)
 	namespace := name
 
@@ -201,7 +202,7 @@ func DeleteSubscription(s Subscription, w workloads.Workload) error {
 			return err
 		}
 
-		util.Ctx.Log.Info("subscription " + name + " not found")
+		log.Info("Subscription not found")
 	}
 
 	return nil
@@ -237,7 +238,7 @@ func getSubscription(client client.Client, namespace, name string) (*subscriptio
 	return subscription, nil
 }
 
-func CreatePlacementDecisionConfigMap(cmName string, cmNamespace string) error {
+func CreatePlacementDecisionConfigMap(cmName string, cmNamespace string, log logr.Logger) error {
 	object := metav1.ObjectMeta{Name: cmName, Namespace: cmNamespace}
 
 	data := map[string]string{
@@ -255,13 +256,13 @@ func CreatePlacementDecisionConfigMap(cmName string, cmNamespace string) error {
 			return fmt.Errorf("could not create configMap %q", cmName)
 		}
 
-		util.Ctx.Log.Info("configMap " + cmName + " already Exists")
+		log.Info("ConfigMap " + cmName + " already Exists")
 	}
 
 	return nil
 }
 
-func DeleteConfigMap(cmName string, cmNamespace string) error {
+func DeleteConfigMap(cmName string, cmNamespace string, log logr.Logger) error {
 	object := metav1.ObjectMeta{Name: cmName, Namespace: cmNamespace}
 
 	configMap := &corev1.ConfigMap{
@@ -274,14 +275,14 @@ func DeleteConfigMap(cmName string, cmNamespace string) error {
 			return fmt.Errorf("could not delete configMap %q", cmName)
 		}
 
-		util.Ctx.Log.Info("configMap " + cmName + " not found")
+		log.Info("ConfigMap " + cmName + " not found")
 	}
 
 	return nil
 }
 
 // nolint:funlen
-func CreateApplicationSet(a ApplicationSet, w workloads.Workload) error {
+func CreateApplicationSet(a ApplicationSet, w workloads.Workload, log logr.Logger) error {
 	var requeueSeconds int64 = 180
 
 	name := GetCombinedName(a, w)
@@ -353,13 +354,13 @@ func CreateApplicationSet(a ApplicationSet, w workloads.Workload) error {
 			return err
 		}
 
-		util.Ctx.Log.Info("applicationset " + appset.Name + " already Exists")
+		log.Info("Applicationset already Exists")
 	}
 
 	return nil
 }
 
-func DeleteApplicationSet(a ApplicationSet, w workloads.Workload) error {
+func DeleteApplicationSet(a ApplicationSet, w workloads.Workload, log logr.Logger) error {
 	name := GetCombinedName(a, w)
 	namespace := util.ArgocdNamespace
 
@@ -376,20 +377,20 @@ func DeleteApplicationSet(a ApplicationSet, w workloads.Workload) error {
 			return err
 		}
 
-		util.Ctx.Log.Info("applicationset " + appset.Name + " not found")
+		log.Info("Applicationset not found")
 	}
 
 	return nil
 }
 
 // check if only the last appset is in the argocd namespace
-func isLastAppsetInArgocdNs(namespace string) (bool, error) {
+func isLastAppsetInArgocdNs(namespace string, log logr.Logger) (bool, error) {
 	appsetList := &argocdv1alpha1hack.ApplicationSetList{}
 
 	err := util.Ctx.Hub.CtrlClient.List(
 		context.Background(), appsetList, client.InNamespace(namespace))
 	if err != nil {
-		util.Ctx.Log.Info("error in getting application sets")
+		log.Info("Failed to get application sets")
 
 		return false, err
 	}
@@ -397,7 +398,7 @@ func isLastAppsetInArgocdNs(namespace string) (bool, error) {
 	return len(appsetList.Items) == 1, nil
 }
 
-func DeleteDiscoveredApps(w workloads.Workload, namespace, cluster string) error {
+func DeleteDiscoveredApps(w workloads.Workload, namespace, cluster string, log logr.Logger) error {
 	tempDir, err := os.MkdirTemp("", "ramen-")
 	if err != nil {
 		return err
@@ -415,7 +416,7 @@ func DeleteDiscoveredApps(w workloads.Workload, namespace, cluster string) error
 
 	// Run the command and capture the output
 	if out, err := cmd.Output(); err != nil {
-		util.Ctx.Log.Info(string(out))
+		log.Info(string(out))
 
 		return err
 	}

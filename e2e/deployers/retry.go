@@ -7,13 +7,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/ramendr/ramen/e2e/util"
 	"github.com/ramendr/ramen/e2e/workloads"
 	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func waitSubscriptionPhase(namespace, name string, phase subscriptionv1.SubscriptionPhase) error {
+func waitSubscriptionPhase(namespace, name string, phase subscriptionv1.SubscriptionPhase, log logr.Logger) error {
 	startTime := time.Now()
 
 	for {
@@ -24,7 +25,7 @@ func waitSubscriptionPhase(namespace, name string, phase subscriptionv1.Subscrip
 
 		currentPhase := sub.Status.Phase
 		if currentPhase == phase {
-			util.Ctx.Log.Info(fmt.Sprintf("subscription %s phase is %s", name, phase))
+			log.Info(fmt.Sprintf("Subscription phase is %s", phase))
 
 			return nil
 		}
@@ -37,19 +38,19 @@ func waitSubscriptionPhase(namespace, name string, phase subscriptionv1.Subscrip
 	}
 }
 
-func WaitWorkloadHealth(client client.Client, namespace string, w workloads.Workload) error {
+func WaitWorkloadHealth(client client.Client, namespace string, w workloads.Workload, log logr.Logger) error {
 	startTime := time.Now()
 
 	for {
-		err := w.Health(client, namespace)
+		err := w.Health(client, namespace, log)
 		if err == nil {
-			util.Ctx.Log.Info(fmt.Sprintf("workload %s is ready", w.GetName()))
+			log.Info("Workload is ready")
 
 			return nil
 		}
 
 		if time.Since(startTime) > util.Timeout {
-			util.Ctx.Log.Info(err.Error())
+			log.Info(err.Error())
 
 			return fmt.Errorf("workload %q is not ready yet before timeout of %v",
 				w.GetName(), util.Timeout)
