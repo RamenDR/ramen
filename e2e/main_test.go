@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/ramendr/ramen/e2e/util"
-	uberzap "go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -25,9 +24,6 @@ func TestMain(m *testing.M) {
 
 	log := zap.New(zap.UseFlagOptions(&zap.Options{
 		Development: true,
-		ZapOpts: []uberzap.Option{
-			uberzap.AddCaller(),
-		},
 		TimeEncoder: zapcore.ISO8601TimeEncoder,
 	}))
 
