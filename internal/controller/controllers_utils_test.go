@@ -270,7 +270,7 @@ func drclusterConditionExpect(
 }
 
 func validateClusterManifest(apiReader client.Reader, drcluster *ramen.DRCluster, disabled bool) {
-	expectedCount := 8
+	expectedCount := 2
 	if disabled {
 		expectedCount = 0
 	}
