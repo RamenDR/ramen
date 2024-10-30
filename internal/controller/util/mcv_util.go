@@ -78,12 +78,12 @@ type ManagedClusterViewGetterImpl struct {
 
 // getResourceFromManagedCluster gets the resource named resourceName in the resourceNamespace (empty if cluster scoped)
 // with the passed in group, version, and kind on the managedCluster. The created ManagedClusterView(MCV) has the
-// passed in annotations and mcvLabel added to it. The MCV is named mcvname, and fetched into the passed in "resource"
+// passed in annotations and labels added to it. The MCV is named mcvname, and fetched into the passed in "resource"
 // interface
 func (m ManagedClusterViewGetterImpl) getResourceFromManagedCluster(
 	resourceName, resourceNamespace, managedCluster string,
-	annotations map[string]string,
-	mcvName, mcvLabel, kind, group, version string,
+	annotations map[string]string, labels map[string]string,
+	mcvName, kind, group, version string,
 	resource interface{},
 ) error {
 	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName, "cluster", managedCluster)
@@ -93,13 +93,8 @@ func (m ManagedClusterViewGetterImpl) getResourceFromManagedCluster(
 		Namespace: managedCluster,
 	}
 
-	if mcvLabel != "" {
-		mcvMeta.Labels = map[string]string{mcvLabel: ""}
-	}
-
-	if annotations != nil {
-		mcvMeta.Annotations = annotations
-	}
+	mcvMeta.Labels = labels
+	mcvMeta.Annotations = annotations
 
 	mcvViewscope := viewv1beta1.ViewScope{
 		Kind:    kind,
@@ -125,8 +120,8 @@ func (m ManagedClusterViewGetterImpl) GetVRGFromManagedCluster(resourceName, res
 		resourceNamespace,
 		managedCluster,
 		annotations,
+		nil,
 		BuildManagedClusterViewName(resourceName, resourceNamespace, "vrg"),
-		"",
 		"VolumeReplicationGroup",
 		rmn.GroupVersion.Group,
 		rmn.GroupVersion.Version,
@@ -146,8 +141,8 @@ func (m ManagedClusterViewGetterImpl) GetNFFromManagedCluster(resourceName, reso
 		resourceNamespace,
 		managedCluster,
 		annotations,
+		nil,
 		BuildManagedClusterViewName(resourceName, resourceNamespace, "nf"),
-		"",
 		"NetworkFence",
 		csiaddonsv1alpha1.GroupVersion.Group,
 		csiaddonsv1alpha1.GroupVersion.Version,
@@ -167,8 +162,8 @@ func (m ManagedClusterViewGetterImpl) GetMModeFromManagedCluster(resourceName, m
 		"",
 		managedCluster,
 		annotations,
+		map[string]string{MModesLabel: ""},
 		BuildManagedClusterViewName(resourceName, "", MWTypeMMode),
-		MModesLabel,
 		"MaintenanceMode",
 		rmn.GroupVersion.Group,
 		rmn.GroupVersion.Version,
@@ -209,8 +204,8 @@ func (m ManagedClusterViewGetterImpl) GetSClassFromManagedCluster(resourceName, 
 		"",
 		managedCluster,
 		annotations,
+		map[string]string{SClassLabel: ""},
 		BuildManagedClusterViewName(resourceName, "", MWTypeSClass),
-		SClassLabel,
 		"StorageClass",
 		storagev1.SchemeGroupVersion.Group,
 		storagev1.SchemeGroupVersion.Version,
@@ -234,8 +229,8 @@ func (m ManagedClusterViewGetterImpl) GetVSClassFromManagedCluster(resourceName,
 		"",
 		managedCluster,
 		annotations,
+		map[string]string{VSClassLabel: ""},
 		BuildManagedClusterViewName(resourceName, "", MWTypeVSClass),
-		VSClassLabel,
 		"VolumeSnapshotClass",
 		snapv1.SchemeGroupVersion.Group,
 		snapv1.SchemeGroupVersion.Version,
@@ -259,8 +254,8 @@ func (m ManagedClusterViewGetterImpl) GetVRClassFromManagedCluster(resourceName,
 		"",
 		managedCluster,
 		annotations,
+		map[string]string{VRClassLabel: ""},
 		BuildManagedClusterViewName(resourceName, "", MWTypeVRClass),
-		VRClassLabel,
 		"VolumeReplicationClass",
 		volrep.GroupVersion.Group,
 		volrep.GroupVersion.Version,
