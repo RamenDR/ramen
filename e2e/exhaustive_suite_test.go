@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/ramendr/ramen/e2e/deployers"
-	"github.com/ramendr/ramen/e2e/testcontext"
+	"github.com/ramendr/ramen/e2e/dractions"
 	"github.com/ramendr/ramen/e2e/util"
 	"github.com/ramendr/ramen/e2e/workloads"
 )
@@ -55,7 +55,7 @@ func generateWorkloads([]workloads.Workload) {
 			Path:     GITPATH,
 			Revision: GITREVISION,
 			AppName:  APPNAME,
-			Name:     fmt.Sprintf("Deploy-%s", suffix),
+			Name:     fmt.Sprintf("Deployment-%s", suffix),
 			PVCSpec:  pvcSpec,
 		}
 		Workloads = append(Workloads, deployment)
@@ -85,52 +85,54 @@ func Exhaustive(t *testing.T) {
 			w := workload
 			d := deployer
 
-			t.Run(w.GetName(), func(t *testing.T) {
+			t.Run(w.GetName()+"-"+d.GetName(), func(t *testing.T) {
 				t.Parallel()
-				t.Run(d.GetName(), func(t *testing.T) {
-					t.Parallel()
-					testcontext.AddTestContext(t.Name(), w, d)
-					runTestFlow(t)
-					testcontext.DeleteTestContext(t.Name(), w, d)
-				})
+				runTestFlow(t, w, d)
 			})
 		}
 	}
 }
 
-func runTestFlow(t *testing.T) {
+func runTestFlow(t *testing.T, w workloads.Workload, d deployers.Deployer) {
 	t.Helper()
 
-	testCtx, err := testcontext.GetTestContext(t.Name())
-	if err != nil {
-		t.Fatal(err)
+	if !d.IsWorkloadSupported(w) {
+		t.Skipf("Workload %s not supported by deployer %s, skip test", w.GetName(), d.GetName())
 	}
 
-	if !testCtx.Deployer.IsWorkloadSupported(testCtx.Workload) {
-		t.Skipf("Workload %s not supported by deployer %s, skip test", testCtx.Workload.GetName(), testCtx.Deployer.GetName())
-	}
+	t.Run("Deploy", func(t *testing.T) {
+		if err := d.Deploy(w); err != nil {
+			t.Fatal("Deploy failed")
+		}
+	})
 
-	if !t.Run("Deploy", DeployAction) {
-		t.Fatal("Deploy failed")
-	}
+	t.Run("Enable", func(t *testing.T) {
+		if err := dractions.EnableProtection(w, d); err != nil {
+			t.Fatal("Enable failed")
+		}
+	})
 
-	if !t.Run("Enable", EnableAction) {
-		t.Fatal("Enable failed")
-	}
+	t.Run("Failover", func(t *testing.T) {
+		if err := dractions.Failover(w, d); err != nil {
+			t.Fatal("Failover failed")
+		}
+	})
 
-	if !t.Run("Failover", FailoverAction) {
-		t.Fatal("Failover failed")
-	}
+	t.Run("Relocate", func(t *testing.T) {
+		if err := dractions.Relocate(w, d); err != nil {
+			t.Fatal("Relocate failed")
+		}
+	})
 
-	if !t.Run("Relocate", RelocateAction) {
-		t.Fatal("Relocate failed")
-	}
+	t.Run("Disable", func(t *testing.T) {
+		if err := dractions.DisableProtection(w, d); err != nil {
+			t.Fatal("Disable failed")
+		}
+	})
 
-	if !t.Run("Disable", DisableAction) {
-		t.Fatal("Disable failed")
-	}
-
-	if !t.Run("Undeploy", UndeployAction) {
-		t.Fatal("Undeploy failed")
-	}
+	t.Run("Undeploy", func(t *testing.T) {
+		if err := d.Undeploy(w); err != nil {
+			t.Fatal("Undeploy failed")
+		}
+	})
 }
