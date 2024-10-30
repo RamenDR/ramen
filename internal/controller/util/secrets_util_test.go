@@ -14,6 +14,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	cpcv1 "open-cluster-management.io/config-policy-controller/api/v1"
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 )
 
@@ -35,6 +36,7 @@ var _ = Describe("Secrets_Util", func() {
 		secrets                                  [secretsCount]*corev1.Secret
 		tstNamespace                             = "default" // 7 chars
 		veleroNS                                 = "default" // 7 chars
+		objects                                  []*cpcv1.ObjectTemplate
 	)
 
 	BeforeEach(func() {
@@ -194,6 +196,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace, // "default" 7 chars
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen, "")).Should(HaveOccurred())
 			})
 			It("Does not create an associated secret policy", func() {
@@ -207,6 +210,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace, // "default" 7 chars
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen, "")).Should(HaveOccurred())
 			})
 			It("Does not create an associated secret policy", func() {
@@ -223,6 +227,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen, "")).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
@@ -240,6 +245,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen, "")).Should(HaveOccurred())
 			})
 			It("Does not create an associated secret policy", func() {
@@ -256,6 +262,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen, "")).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
@@ -276,6 +283,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen, "")).Should(HaveOccurred())
 			})
 			It("No longer protects the secret with a finalizer", func() {
@@ -296,6 +304,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen, "")).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
@@ -316,6 +325,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen, "")).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
@@ -333,6 +343,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[1],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen, "")).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
@@ -354,6 +365,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen, "")).To(Succeed())
 			})
 			It("Protects the secret with a finalizer", func() {
@@ -506,6 +518,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen,
 					"")).To(Succeed())
 			})
@@ -524,6 +537,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatVelero,
 					veleroNS)).To(Succeed())
 			})
@@ -545,6 +559,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatVelero,
 					veleroNS)).Should(HaveOccurred())
 			})
@@ -561,6 +576,7 @@ var _ = Describe("Secrets_Util", func() {
 					clusterNames[0],
 					tstNamespace,
 					tstNamespace,
+					objects,
 					util.SecretFormatRamen,
 					veleroNS)).Should(HaveOccurred())
 			})
