@@ -136,32 +136,11 @@ func updatePeerClassStatus(u *drpolicyUpdater, syncPeers, asyncPeers []peerInfo)
 	return u.statusUpdate()
 }
 
-// isAsyncVSClassPeer inspects provided pair of classLists for a matching VolumeSnapshotClass, that is linked to the
-// StorageClass whose storageID is respectively sIDA or sIDB
-func isAsyncVSClassPeer(clA, clB classLists, sIDA, sIDB string) bool {
-	sidA := ""
-	sidB := ""
-
-	// No provisioner match as we can do cross provisioner VSC based protection
-	for vscAidx := range clA.vsClasses {
-		sidA = clA.vsClasses[vscAidx].GetLabels()[StorageIDLabel]
-		if sidA == "" || sidA != sIDA {
-			// reset on mismatch, to exit the loop with an empty string if there is no match
-			sidA = ""
-
-			continue
-		}
-
-		break
-	}
-
-	if sidA == "" {
-		return false
-	}
-
-	for vscBidx := range clB.vsClasses {
-		sidB = clB.vsClasses[vscBidx].GetLabels()[StorageIDLabel]
-		if sidB == "" || sidB != sIDB {
+// hasVSClassMatchingSID returns if classLists has a VolumeSnapshotClass matching the passed in storageID
+func hasVSClassMatchingSID(cl classLists, sID string) bool {
+	for idx := range cl.vsClasses {
+		sid := cl.vsClasses[idx].GetLabels()[StorageIDLabel]
+		if sid == "" || sid != sID {
 			continue
 		}
 
@@ -169,6 +148,13 @@ func isAsyncVSClassPeer(clA, clB classLists, sIDA, sIDB string) bool {
 	}
 
 	return false
+}
+
+// isAsyncVSClassPeer inspects provided pair of classLists for a matching VolumeSnapshotClass, that is linked to the
+// StorageClass whose storageID is respectively sIDA or sIDB
+func isAsyncVSClassPeer(clA, clB classLists, sIDA, sIDB string) bool {
+	// No provisioner match as we can do cross provisioner VSC based protection
+	return hasVSClassMatchingSID(clA, sIDA) && hasVSClassMatchingSID(clB, sIDB)
 }
 
 // getVRID inspects VolumeReplicationClass in the passed in classLists at the specified index, and returns,
