@@ -5,6 +5,8 @@ package util
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -49,9 +51,32 @@ func DeleteNamespace(client client.Client, namespace string) error {
 		}
 
 		Ctx.Log.Info("namespace " + namespace + " not found")
+
+		return nil
 	}
 
-	return nil
+	Ctx.Log.Info("waiting until namespace " + namespace + " is deleted")
+
+	startTime := time.Now()
+	key := types.NamespacedName{Name: namespace}
+
+	for {
+		if err := client.Get(context.Background(), key, ns); err != nil {
+			if !errors.IsNotFound(err) {
+				return err
+			}
+
+			Ctx.Log.Info("namespace " + namespace + " deleted")
+
+			return nil
+		}
+
+		if time.Since(startTime) > 60*time.Second {
+			return fmt.Errorf("timeout deleting namespace %q", namespace)
+		}
+
+		time.Sleep(time.Second)
+	}
 }
 
 func createChannel() error {

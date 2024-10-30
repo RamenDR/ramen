@@ -239,8 +239,7 @@ func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim) err
 
 	protectedPVC := v.findProtectedPVC(pvc.GetNamespace(), pvc.GetName())
 	if protectedPVC == nil {
-		protectedPVC = &ramendrv1alpha1.ProtectedPVC{Namespace: pvc.GetNamespace(), Name: pvc.GetName()}
-		v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
+		protectedPVC = v.addProtectedPVC(pvc.GetNamespace(), pvc.GetName())
 	}
 
 	protectedPVC.ProtectedByVolSync = false
@@ -1032,9 +1031,7 @@ func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName,
 		msg := "PVC in the VolumeReplicationGroup is ready for use"
 		v.updatePVCDataReadyCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonReady, msg)
 		v.updatePVCDataProtectedCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonReady, msg)
-		v.updatePVCLastSyncTime(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
-		v.updatePVCLastSyncDuration(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
-		v.updatePVCLastSyncBytes(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
+		v.updatePVCLastSyncCounters(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
 
 		return false, true, nil
 	}
@@ -1067,9 +1064,7 @@ func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName
 		v.updatePVCDataReadyCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonReplicated, msg)
 		v.updatePVCDataProtectedCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonDataProtected,
 			msg)
-		v.updatePVCLastSyncTime(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
-		v.updatePVCLastSyncDuration(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
-		v.updatePVCLastSyncBytes(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
+		v.updatePVCLastSyncCounters(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
 
 		return false, true, nil
 	}
@@ -1446,9 +1441,7 @@ func (v *VRGInstance) validateVRStatus(pvc *corev1.PersistentVolumeClaim, volRep
 	msg := "PVC in the VolumeReplicationGroup is ready for use"
 	v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReady, msg)
 	v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReady, msg)
-	v.updatePVCLastSyncTime(pvc.Namespace, pvc.Name, volRep.Status.LastSyncTime)
-	v.updatePVCLastSyncDuration(pvc.Namespace, pvc.Name, volRep.Status.LastSyncDuration)
-	v.updatePVCLastSyncBytes(pvc.Namespace, pvc.Name, volRep.Status.LastSyncBytes)
+	v.updatePVCLastSyncCounters(pvc.Namespace, pvc.Name, &volRep.Status)
 	v.log.Info(fmt.Sprintf("VolumeReplication resource %s/%s is ready for use", volRep.GetName(),
 		volRep.GetNamespace()))
 
@@ -1525,9 +1518,7 @@ func (v *VRGInstance) validateVRCompletedStatus(pvc *corev1.PersistentVolumeClai
 func (v *VRGInstance) validateAdditionalVRStatusForSecondary(pvc *corev1.PersistentVolumeClaim,
 	volRep *volrep.VolumeReplication,
 ) bool {
-	v.updatePVCLastSyncTime(pvc.Namespace, pvc.Name, nil)
-	v.updatePVCLastSyncDuration(pvc.Namespace, pvc.Name, nil)
-	v.updatePVCLastSyncBytes(pvc.Namespace, pvc.Name, nil)
+	v.updatePVCLastSyncCounters(pvc.Namespace, pvc.Name, nil)
 
 	conditionMet, _ := isVRConditionMet(volRep, volrep.ConditionResyncing, metav1.ConditionTrue)
 	if !conditionMet {
@@ -1536,11 +1527,12 @@ func (v *VRGInstance) validateAdditionalVRStatusForSecondary(pvc *corev1.Persist
 
 	conditionMet, msg := isVRConditionMet(volRep, volrep.ConditionDegraded, metav1.ConditionTrue)
 	if !conditionMet {
+		defaultMsg := "VolumeReplication resource for pvc is not in Degraded condition while resyncing"
 		v.updatePVCDataProtectedConditionHelper(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg,
-			"VolumeReplication resource for pvc is not in Degraded condition while resyncing")
+			defaultMsg)
 
 		v.updatePVCDataReadyConditionHelper(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg,
-			"VolumeReplication resource for pvc is not in Degraded condition while resyncing")
+			defaultMsg)
 
 		v.log.Info(fmt.Sprintf("VolumeReplication resource is not in degraded condition while"+
 			" resyncing is true (%s/%s)", volRep.GetName(), volRep.GetNamespace()))
@@ -1651,17 +1643,12 @@ func (v *VRGInstance) updatePVCDataReadyConditionHelper(
 }
 
 func (v *VRGInstance) updatePVCDataReadyCondition(pvcNamespace, pvcName, reason, message string) {
-	if protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName); protectedPVC != nil {
-		setPVCDataReadyCondition(protectedPVC, reason, message, v.instance.Generation)
-		// No need to append it as an already existing entry from the list is being modified.
-		return
+	protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName)
+	if protectedPVC == nil {
+		protectedPVC = v.addProtectedPVC(pvcNamespace, pvcName)
 	}
 
-	protectedPVC := &ramendrv1alpha1.ProtectedPVC{Namespace: pvcNamespace, Name: pvcName}
 	setPVCDataReadyCondition(protectedPVC, reason, message, v.instance.Generation)
-
-	// created a new instance. Add it to the list
-	v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
 }
 
 // Disabling unparam linter as currently every invokation of this
@@ -1684,44 +1671,12 @@ func (v *VRGInstance) updatePVCDataProtectedConditionHelper(
 }
 
 func (v *VRGInstance) updatePVCDataProtectedCondition(pvcNamespace, pvcName, reason, message string) {
-	if protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName); protectedPVC != nil {
-		setPVCDataProtectedCondition(protectedPVC, reason, message, v.instance.Generation)
-		// No need to append it as an already existing entry from the list is being modified.
-		return
+	protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName)
+	if protectedPVC == nil {
+		protectedPVC = v.addProtectedPVC(pvcNamespace, pvcName)
 	}
 
-	protectedPVC := &ramendrv1alpha1.ProtectedPVC{Namespace: pvcNamespace, Name: pvcName}
 	setPVCDataProtectedCondition(protectedPVC, reason, message, v.instance.Generation)
-
-	// created a new instance. Add it to the list
-	v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
-}
-
-func (v *VRGInstance) updatePVCLastSyncTime(pvcNamespace, pvcName string, lastSyncTime *metav1.Time) {
-	protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName)
-	if protectedPVC == nil {
-		return
-	}
-
-	protectedPVC.LastSyncTime = lastSyncTime
-}
-
-func (v *VRGInstance) updatePVCLastSyncDuration(pvcNamespace, pvcName string, lastSyncDuration *metav1.Duration) {
-	protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName)
-	if protectedPVC == nil {
-		return
-	}
-
-	protectedPVC.LastSyncDuration = lastSyncDuration
-}
-
-func (v *VRGInstance) updatePVCLastSyncBytes(pvcNamespace, pvcName string, lastSyncBytes *int64) {
-	protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName)
-	if protectedPVC == nil || protectedPVC.ProtectedByVolSync {
-		return
-	}
-
-	protectedPVC.LastSyncBytes = lastSyncBytes
 }
 
 func setPVCDataReadyCondition(protectedPVC *ramendrv1alpha1.ProtectedPVC, reason, message string,
@@ -1777,15 +1732,12 @@ func setPVCDataProtectedCondition(protectedPVC *ramendrv1alpha1.ProtectedPVC, re
 }
 
 func (v *VRGInstance) updatePVCClusterDataProtectedCondition(pvcNamespace, pvcName, reason, message string) {
-	if protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName); protectedPVC != nil {
-		setPVCClusterDataProtectedCondition(protectedPVC, reason, message, v.instance.Generation)
-		// No need to append it as an already existing entry from the list is being modified.
-		return
+	protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName)
+	if protectedPVC == nil {
+		protectedPVC = v.addProtectedPVC(pvcNamespace, pvcName)
 	}
 
-	protectedPVC := &ramendrv1alpha1.ProtectedPVC{Namespace: pvcNamespace, Name: pvcName}
 	setPVCClusterDataProtectedCondition(protectedPVC, reason, message, v.instance.Generation)
-	v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *protectedPVC)
 }
 
 func setPVCClusterDataProtectedCondition(protectedPVC *ramendrv1alpha1.ProtectedPVC, reason, message string,
@@ -1802,6 +1754,29 @@ func setPVCClusterDataProtectedCondition(protectedPVC *ramendrv1alpha1.Protected
 		// if appropriate reason is not provided, then treat it as an unknown condition.
 		message = "Unknown reason: " + reason
 		setVRGDataErrorUnknownCondition(&protectedPVC.Conditions, observedGeneration, message)
+	}
+}
+
+func (v *VRGInstance) updatePVCLastSyncCounters(pvcNamespace, pvcName string, status *volrep.VolumeReplicationStatus) {
+	protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName)
+	if protectedPVC == nil {
+		return
+	}
+
+	if status == nil {
+		protectedPVC.LastSyncTime = nil
+		protectedPVC.LastSyncDuration = nil
+
+		if !protectedPVC.ProtectedByVolSync {
+			protectedPVC.LastSyncBytes = nil
+		}
+	} else {
+		protectedPVC.LastSyncTime = status.LastSyncTime
+		protectedPVC.LastSyncDuration = status.LastSyncDuration
+
+		if !protectedPVC.ProtectedByVolSync {
+			protectedPVC.LastSyncBytes = status.LastSyncBytes
+		}
 	}
 }
 

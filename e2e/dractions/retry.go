@@ -15,41 +15,31 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// nolint:gocognit
-// return placementDecisionName, error
+// waitPlacementDecision waits until we have a placement decision and returns the placement decision object.
 func waitPlacementDecision(client client.Client, namespace string, placementName string,
-) (string, error) {
+) (*v1beta1.PlacementDecision, error) {
 	startTime := time.Now()
-	placementDecisionName := ""
 
 	for {
 		placement, err := getPlacement(client, namespace, placementName)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
-		for _, cond := range placement.Status.Conditions {
-			if cond.Type == "PlacementSatisfied" && cond.Status == "True" {
-				placementDecisionName = placement.Status.DecisionGroups[0].Decisions[0]
-				if placementDecisionName != "" {
-					return placementDecisionName, nil
-				}
-			}
-		}
-
-		// if placement is controlled by ramen, it will not have placementdecision name in its status
-		// so need query placementdecision by label
 		placementDecision, err := getPlacementDecisionFromPlacement(client, placement)
-		if err == nil && placementDecision != nil {
-			return placementDecision.Name, nil
+		if err != nil {
+			return nil, err
 		}
 
-		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
-			return "", fmt.Errorf(
-				"could not get placement decision for " + placementName + " before timeout, fail")
+		if placementDecision != nil && len(placementDecision.Status.Decisions) > 0 {
+			return placementDecision, nil
 		}
 
-		time.Sleep(time.Second * time.Duration(util.TimeInterval))
+		if time.Since(startTime) > util.Timeout {
+			return nil, fmt.Errorf("timeout waiting for placement decisions for %q ", placementName)
+		}
+
+		time.Sleep(util.RetryInterval)
 	}
 }
 
@@ -69,7 +59,7 @@ func waitDRPCReady(client client.Client, namespace string, drpcName string) erro
 			return nil
 		}
 
-		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
+		if time.Since(startTime) > util.Timeout {
 			if !conditionReady {
 				util.Ctx.Log.Info("drpc " + drpcName + " condition 'Available' or 'PeerReady' is not True")
 			}
@@ -81,7 +71,7 @@ func waitDRPCReady(client client.Client, namespace string, drpcName string) erro
 			return fmt.Errorf("drpc " + drpcName + " is not ready yet before timeout, fail")
 		}
 
-		time.Sleep(time.Second * time.Duration(util.TimeInterval))
+		time.Sleep(util.RetryInterval)
 	}
 }
 
@@ -126,29 +116,21 @@ func waitDRPCPhase(client client.Client, namespace, name string, phase ramen.DRS
 			return nil
 		}
 
-		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
-			return fmt.Errorf(fmt.Sprintf(
-				"drpc %s status is not %s yet before timeout, fail", name, phase))
+		if time.Since(startTime) > util.Timeout {
+			return fmt.Errorf("drpc %s status is not %s yet before timeout, fail", name, phase)
 		}
 
-		time.Sleep(time.Second * time.Duration(util.TimeInterval))
+		time.Sleep(util.RetryInterval)
 	}
 }
 
 func getCurrentCluster(client client.Client, namespace string, placementName string) (string, error) {
-	placementDecisionName, err := waitPlacementDecision(client, namespace, placementName)
+	placementDecision, err := waitPlacementDecision(client, namespace, placementName)
 	if err != nil {
 		return "", err
 	}
 
-	placementDecision, err := getPlacementDecision(client, namespace, placementDecisionName)
-	if err != nil {
-		return "", err
-	}
-
-	clusterName := placementDecision.Status.Decisions[0].ClusterName
-
-	return clusterName, nil
+	return placementDecision.Status.Decisions[0].ClusterName, nil
 }
 
 // return dr cluster client
@@ -178,8 +160,6 @@ func getTargetCluster(client client.Client, namespace, placementName string, drp
 
 // first wait DRPC to have the expected phase, then check DRPC conditions
 func waitDRPC(client client.Client, namespace, name string, expectedPhase ramen.DRState) error {
-	// sleep to wait for DRPC is processed
-	time.Sleep(FiveSecondsDuration)
 	// check Phase
 	if err := waitDRPCPhase(client, namespace, name, expectedPhase); err != nil {
 		return err
@@ -190,8 +170,6 @@ func waitDRPC(client client.Client, namespace, name string, expectedPhase ramen.
 
 func waitDRPCDeleted(client client.Client, namespace string, name string) error {
 	startTime := time.Now()
-	// sleep to wait for DRPC is deleted
-	time.Sleep(FiveSecondsDuration)
 
 	for {
 		_, err := getDRPC(client, namespace, name)
@@ -205,11 +183,11 @@ func waitDRPCDeleted(client client.Client, namespace string, name string) error 
 			util.Ctx.Log.Info(fmt.Sprintf("error to get drpc %s: %v", name, err))
 		}
 
-		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
-			return fmt.Errorf(fmt.Sprintf("drpc %s is not deleted yet before timeout, fail", name))
+		if time.Since(startTime) > util.Timeout {
+			return fmt.Errorf("drpc %s is not deleted yet before timeout, fail", name)
 		}
 
-		time.Sleep(time.Second * time.Duration(util.TimeInterval))
+		time.Sleep(util.RetryInterval)
 	}
 }
 
@@ -230,12 +208,12 @@ func waitDRPCProgression(client client.Client, namespace, name string, progressi
 			return nil
 		}
 
-		if time.Since(startTime) > time.Second*time.Duration(util.Timeout) {
-			return fmt.Errorf(fmt.Sprintf("drpc %s progression is not %s yet before timeout of %v",
-				name, progression, util.Timeout))
+		if time.Since(startTime) > util.Timeout {
+			return fmt.Errorf("drpc %s progression is not %s yet before timeout of %v",
+				name, progression, util.Timeout)
 		}
 
-		time.Sleep(time.Second * time.Duration(util.TimeInterval))
+		time.Sleep(util.RetryInterval)
 	}
 }
 
