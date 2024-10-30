@@ -1525,7 +1525,6 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string, repState rmn.Re
 		"Last State:", d.getLastDRState(), "cluster", homeCluster)
 
 	vrg := d.newVRG(homeCluster, repState)
-	vrg.Spec.VolSync.Disabled = d.volSyncDisabled
 
 	annotations := make(map[string]string)
 
@@ -1549,12 +1548,57 @@ func (d *DRPCInstance) ensureVRGManifestWork(homeCluster string) error {
 	d.log.Info("Ensure VRG ManifestWork",
 		"Last State:", d.getLastDRState(), "cluster", homeCluster)
 
-	cachedVrg := d.vrgs[homeCluster]
-	if cachedVrg == nil {
-		return fmt.Errorf("failed to get vrg from cluster %s", homeCluster)
+	mw, mwErr := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, homeCluster)
+	if mwErr != nil {
+		if errors.IsNotFound(mwErr) {
+			cachedVrg := d.vrgs[homeCluster]
+			if cachedVrg == nil {
+				return fmt.Errorf("failed to get vrg from cluster %s", homeCluster)
+			}
+
+			return d.createVRGManifestWork(homeCluster, cachedVrg.Spec.ReplicationState)
+		}
+
+		return fmt.Errorf("ensure VRG ManifestWork failed (%w)", mwErr)
 	}
 
-	return d.createVRGManifestWork(homeCluster, cachedVrg.Spec.ReplicationState)
+	vrg, err := rmnutil.ExtractVRGFromManifestWork(mw)
+	if err != nil {
+		return fmt.Errorf("error extracting VRG from ManifestWork for cluster %s. Error: %w", homeCluster, err)
+	}
+
+	d.updateVRGOptionalFields(vrg, homeCluster)
+
+	return d.mwu.UpdateVRGManifestWork(vrg, mw)
+}
+
+// updateVRGOptionalFields ensures that the optional fields in the VRG object are up to date.
+// This function does not modify the following fields:
+//   - ObjectMeta.Name
+//   - ObjectMeta.Namespace
+//   - Spec.PVCSelector
+//   - Spec.ReplicationState
+//   - Spec.PrepareForFinalSync
+//   - Spec.RunFinalSync
+//   - Spec.VolSync.RDSpec
+//
+// These fields are either set during the initial creation of the VRG (e.g., name and namespace)
+// or updated as needed, such as the PrepareForFinalSync and RunFinalSync fields.
+func (d *DRPCInstance) updateVRGOptionalFields(vrg *rmn.VolumeReplicationGroup, homeCluster string) {
+	vrg.ObjectMeta.Annotations = map[string]string{
+		DestinationClusterAnnotationKey: homeCluster,
+		DoNotDeletePVCAnnotation:        d.instance.GetAnnotations()[DoNotDeletePVCAnnotation],
+		DRPCUIDAnnotation:               string(d.instance.UID),
+		rmnutil.IsCGEnabledAnnotation:   d.instance.GetAnnotations()[rmnutil.IsCGEnabledAnnotation],
+	}
+
+	vrg.Spec.ProtectedNamespaces = d.instance.Spec.ProtectedNamespaces
+	vrg.Spec.S3Profiles = AvailableS3Profiles(d.drClusters)
+	vrg.Spec.KubeObjectProtection = d.instance.Spec.KubeObjectProtection
+	vrg.Spec.Async = d.generateVRGSpecAsync()
+	vrg.Spec.Sync = d.generateVRGSpecSync()
+	vrg.Spec.VolSync.Disabled = d.volSyncDisabled
+	d.setVRGAction(vrg)
 }
 
 func (d *DRPCInstance) ensurePlacement(homeCluster string) error {
@@ -1595,25 +1639,14 @@ func (d *DRPCInstance) newVRG(dstCluster string, repState rmn.ReplicationState) 
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      d.instance.Name,
 			Namespace: d.vrgNamespace,
-			Annotations: map[string]string{
-				DestinationClusterAnnotationKey: dstCluster,
-				DoNotDeletePVCAnnotation:        d.instance.GetAnnotations()[DoNotDeletePVCAnnotation],
-				DRPCUIDAnnotation:               string(d.instance.UID),
-				rmnutil.IsCGEnabledAnnotation:   d.instance.GetAnnotations()[rmnutil.IsCGEnabledAnnotation],
-			},
 		},
 		Spec: rmn.VolumeReplicationGroupSpec{
-			PVCSelector:          d.instance.Spec.PVCSelector,
-			ProtectedNamespaces:  d.instance.Spec.ProtectedNamespaces,
-			ReplicationState:     repState,
-			S3Profiles:           AvailableS3Profiles(d.drClusters),
-			KubeObjectProtection: d.instance.Spec.KubeObjectProtection,
+			PVCSelector:      d.instance.Spec.PVCSelector,
+			ReplicationState: repState,
 		},
 	}
 
-	d.setVRGAction(&vrg)
-	vrg.Spec.Async = d.generateVRGSpecAsync()
-	vrg.Spec.Sync = d.generateVRGSpecSync()
+	d.updateVRGOptionalFields(&vrg, dstCluster)
 
 	return vrg
 }

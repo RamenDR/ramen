@@ -248,21 +248,5 @@ func (d *DRPCInstance) ResetVolSyncRDOnPrimary(clusterName string) error {
 
 	vrg.Spec.VolSync.RDSpec = nil
 
-	vrgClientManifest, err := d.mwu.GenerateManifest(vrg)
-	if err != nil {
-		d.log.Error(err, "failed to generate manifest")
-
-		return fmt.Errorf("failed to generate VRG manifest (%w)", err)
-	}
-
-	mw.Spec.Workload.Manifests[0] = *vrgClientManifest
-
-	err = d.reconciler.Update(d.ctx, mw)
-	if err != nil {
-		return fmt.Errorf("failed to update MW (%w)", err)
-	}
-
-	d.log.Info(fmt.Sprintf("Updated VRG running in cluster %s to secondary. VRG (%v)", clusterName, vrg))
-
-	return nil
+	return d.mwu.UpdateVRGManifestWork(vrg, mw)
 }

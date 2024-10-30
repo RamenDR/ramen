@@ -704,6 +704,26 @@ func (mwu *MWUtil) DeleteManifestWork(mwName, mwNamespace string) error {
 	return nil
 }
 
+func (mwu *MWUtil) UpdateVRGManifestWork(vrg *rmn.VolumeReplicationGroup, mw *ocmworkv1.ManifestWork) error {
+	vrgClientManifest, err := mwu.GenerateManifest(vrg)
+	if err != nil {
+		mwu.Log.Error(err, "failed to generate manifest")
+
+		return fmt.Errorf("failed to generate VRG manifest (%w)", err)
+	}
+
+	mw.Spec.Workload.Manifests[0] = *vrgClientManifest
+
+	err = mwu.Client.Update(mwu.Ctx, mw)
+	if err != nil {
+		return fmt.Errorf("failed to update MW (%w)", err)
+	}
+
+	mwu.Log.Info(fmt.Sprintf("Added VRG %s to MW %s for cluster %s", vrg.GetName(), mw.GetName(), mw.GetNamespace()))
+
+	return nil
+}
+
 func ExtractVRGFromManifestWork(mw *ocmworkv1.ManifestWork) (*rmn.VolumeReplicationGroup, error) {
 	if len(mw.Spec.Workload.Manifests) == 0 {
 		return nil, fmt.Errorf("invalid VRG ManifestWork for type: %s", mw.Name)
