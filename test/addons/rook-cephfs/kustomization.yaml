@@ -1,9 +1,0 @@
-# SPDX-FileCopyrightText: The RamenDR authors
-# SPDX-License-Identifier: Apache-2.0
-
-# yamllint disable rule:line-length
----
-resources:
-  - filesystem.yaml
-  - https://raw.githubusercontent.com/rook/rook/release-1.15/deploy/examples/csi/cephfs/storageclass.yaml
-  - https://raw.githubusercontent.com/rook/rook/release-1.15/deploy/examples/csi/cephfs/snapshotclass.yaml

@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# yamllint disable-line rule:line-length
+# Source: https://raw.githubusercontent.com/rook/rook/release-1.15/deploy/examples/csi/cephfs/snapshotclass.yaml
+# Modifications:
+#  - Added storageID
+---
+apiVersion: snapshot.storage.k8s.io/v1
+deletionPolicy: Delete
+driver: rook-ceph.cephfs.csi.ceph.com
+kind: VolumeSnapshotClass
+metadata:
+  name: csi-cephfsplugin-snapclass
+  labels:
+    ramendr.openshift.io/storageid: rook-cephfs-$cluster-1
+parameters:
+  clusterID: rook-ceph
+  csi.storage.k8s.io/snapshotter-secret-name: rook-csi-cephfs-provisioner
+  csi.storage.k8s.io/snapshotter-secret-namespace: rook-ceph
