@@ -33,7 +33,7 @@ type Cluster struct {
 }
 
 type Context struct {
-	Log *logr.Logger
+	Log logr.Logger
 	Hub Cluster
 	C1  Cluster
 	C2  Cluster
@@ -99,7 +99,7 @@ func setupClient(kubeconfigPath string) (*kubernetes.Clientset, client.Client, e
 	return k8sClientSet, ctrlClient, nil
 }
 
-func NewContext(log *logr.Logger, configFile string) (*Context, error) {
+func NewContext(log logr.Logger, configFile string) (*Context, error) {
 	var err error
 
 	ctx := new(Context)

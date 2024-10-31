@@ -31,7 +31,7 @@ func TestMain(m *testing.M) {
 		TimeEncoder: zapcore.ISO8601TimeEncoder,
 	}))
 
-	util.Ctx, err = util.NewContext(&log, util.ConfigFile)
+	util.Ctx, err = util.NewContext(log, util.ConfigFile)
 	if err != nil {
 		log.Error(err, "unable to create new testing context")
 
