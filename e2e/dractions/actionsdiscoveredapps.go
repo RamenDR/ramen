@@ -76,7 +76,7 @@ func DisableProtectionDiscoveredApps(w workloads.Workload, d deployers.Deployer)
 	}
 
 	// delete placement
-	if err := deployers.DeletePlacement(placementName, namespace); err != nil {
+	if err := util.DeletePlacement(placementName, namespace); err != nil {
 		return err
 	}
 

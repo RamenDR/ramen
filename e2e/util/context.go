@@ -26,6 +26,7 @@ import (
 )
 
 var ConfigFile string
+var CleanUp bool
 
 type Cluster struct {
 	K8sClientSet *kubernetes.Clientset

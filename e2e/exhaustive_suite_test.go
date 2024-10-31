@@ -4,6 +4,7 @@
 package e2e_test
 
 import (
+	"flag"
 	"fmt"
 	"strings"
 	"testing"
@@ -17,6 +18,10 @@ import (
 // Deployers = {"Subscription", "AppSet", "Imperative"}
 // Workloads = {"Deployment", "STS", "DaemonSet"}
 // Classes   = {"rbd", "cephfs"}
+
+func init() {
+	flag.BoolVar(&util.CleanUp, "cleanUp", false, "Clean up required after tests are run")
+}
 
 const (
 	GITPATH     = "workloads/deployment/base"
