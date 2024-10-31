@@ -27,7 +27,7 @@ type TestConfig struct {
 var config = &TestConfig{}
 
 //nolint:cyclop
-func ReadConfig(log *logr.Logger, configFile string) error {
+func ReadConfig(log logr.Logger, configFile string) error {
 	viper.SetDefault("ChannelName", defaultChannelName)
 	viper.SetDefault("ChannelNamespace", defaultChannelNamespace)
 	viper.SetDefault("GitURL", defaultGitURL)
