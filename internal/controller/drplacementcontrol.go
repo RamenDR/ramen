@@ -15,6 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
@@ -297,7 +298,7 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 	d.setProgression(rmn.ProgressionCreatingMW)
 	// Create VRG first, to leverage user PlacementRule decision to skip placement and move to cleanup
 	err := d.createVRGManifestWork(homeCluster, rmn.Primary)
-	if err != nil {
+	if err != nil && !errors.IsAlreadyExists(err) {
 		return false, err
 	}
 
@@ -1512,20 +1513,41 @@ func (d *DRPCInstance) updatePreferredDecision() {
 	}
 }
 
+// createVRGManifestWork is called to create a new VRG ManifestWork on homeCluster
 func (d *DRPCInstance) createVRGManifestWork(homeCluster string, repState rmn.ReplicationState) error {
-	// TODO: check if VRG MW here as a less expensive way to validate if Namespace exists
 	err := d.ensureNamespaceManifestWork(homeCluster)
 	if err != nil {
 		return fmt.Errorf("createVRGManifestWork couldn't ensure namespace '%s' on cluster %s exists",
 			d.vrgNamespace, homeCluster)
 	}
 
+	// Safety latch to ensure VRG MW is not present
+	vrg, err := d.getVRGFromManifestWork(homeCluster)
+	if (err != nil && !errors.IsNotFound(err)) || vrg != nil {
+		if err != nil {
+			return fmt.Errorf("error (%w) determining ManifestWork for VolumeReplicationGroup resource "+
+				"exists on cluster %s", err, homeCluster)
+		}
+
+		if vrg.Spec.ReplicationState != repState {
+			return fmt.Errorf("ManifestWork for VolumeReplicationGroup resource "+
+				"exists with mismatching state (%s) on cluster %s",
+				vrg.Spec.ReplicationState, homeCluster)
+		}
+
+		return fmt.Errorf("VolumeReplicationGroup ManifestWork for cluster %s in state %s exists (%w)",
+			homeCluster, string(vrg.Spec.ReplicationState), errors.NewAlreadyExists(
+				schema.GroupResource{
+					Group:    rmn.GroupVersion.Group,
+					Resource: "VolumeReplicationGroup",
+				}, vrg.Name))
+	}
+
 	// create VRG ManifestWork
 	d.log.Info("Creating VRG ManifestWork", "ReplicationState", repState,
 		"Last State:", d.getLastDRState(), "cluster", homeCluster)
 
-	vrg := d.newVRG(homeCluster, repState)
-
+	newVRG := d.newVRG(homeCluster, repState)
 	annotations := make(map[string]string)
 
 	annotations[DRPCNameAnnotation] = d.instance.Name
@@ -1533,7 +1555,7 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string, repState rmn.Re
 
 	if _, err := d.mwu.CreateOrUpdateVRGManifestWork(
 		d.instance.Name, d.vrgNamespace,
-		homeCluster, vrg, annotations); err != nil {
+		homeCluster, newVRG, annotations); err != nil {
 		d.log.Error(err, "failed to create or update VolumeReplicationGroup manifest")
 
 		return fmt.Errorf("failed to create or update VolumeReplicationGroup manifest in namespace %s (%w)", homeCluster, err)
@@ -1543,7 +1565,6 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string, repState rmn.Re
 }
 
 // ensureVRGManifestWork ensures that the VRG ManifestWork exists and matches the current VRG state.
-// TODO: This may be safe only when the VRG is primary - check if callers use this correctly.
 func (d *DRPCInstance) ensureVRGManifestWork(homeCluster string) error {
 	d.log.Info("Ensure VRG ManifestWork",
 		"Last State:", d.getLastDRState(), "cluster", homeCluster)
@@ -1551,20 +1572,28 @@ func (d *DRPCInstance) ensureVRGManifestWork(homeCluster string) error {
 	mw, mwErr := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, homeCluster)
 	if mwErr != nil {
 		if errors.IsNotFound(mwErr) {
-			cachedVrg := d.vrgs[homeCluster]
-			if cachedVrg == nil {
-				return fmt.Errorf("failed to get vrg from cluster %s", homeCluster)
-			}
-
-			return d.createVRGManifestWork(homeCluster, cachedVrg.Spec.ReplicationState)
+			return fmt.Errorf("failed to find ManifestWork for VolumeReplicationGroup from cluster %s", homeCluster)
 		}
 
-		return fmt.Errorf("ensure VRG ManifestWork failed (%w)", mwErr)
+		return fmt.Errorf("error (%w) in finding ManifestWork for VolumeReplicationGroup from cluster %s",
+			mwErr, homeCluster)
 	}
 
 	vrg, err := rmnutil.ExtractVRGFromManifestWork(mw)
 	if err != nil {
 		return fmt.Errorf("error extracting VRG from ManifestWork for cluster %s. Error: %w", homeCluster, err)
+	}
+
+	// Safety latch to ensure VRG to update is Primary
+	if vrg.Spec.ReplicationState != rmn.Primary {
+		return fmt.Errorf("invalid update for VolumeReplicationGroup in %s spec.replicationState on cluster %s",
+			vrg.Spec.ReplicationState, homeCluster)
+	}
+
+	// Safety latch to ensure a view exists for the existing VRG ManifestWork
+	if d.vrgs[homeCluster] == nil {
+		return fmt.Errorf("missing VolumeReplicationGroup view for cluster %s, while attempting to update an instance",
+			homeCluster)
 	}
 
 	d.updateVRGOptionalFields(vrg, homeCluster)
