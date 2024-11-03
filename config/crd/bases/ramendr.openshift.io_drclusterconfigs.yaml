@@ -49,6 +49,9 @@ spec:
                 description: ClusterID would carry the ManagedCluster identity from
                   the ManagedCluster claim value for `id.k8s.io`
                 type: string
+                x-kubernetes-validations:
+                - message: ClusterID is immutable
+                  rule: self == oldSelf
               replicationSchedules:
                 description: |-
                   ReplicationSchedules desired from storage providers for replicating Persistent Volume data to a peer cluster.
@@ -59,6 +62,8 @@ spec:
                 items:
                   type: string
                 type: array
+            required:
+            - clusterID
             type: object
           status:
             description: DRClusterConfigStatus defines the observed state of DRClusterConfig
