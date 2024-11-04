@@ -150,6 +150,8 @@ func (d *DRPCInstance) createOrUpdateVolSyncDestManifestWork(srcCluster string) 
 			return ctrlutil.OperationResultNone, err
 		}
 
+		// TODO: Update peerClass from source VRG MW (NOT from view)
+
 		opResult, err := d.mwu.CreateOrUpdateVRGManifestWork(
 			d.instance.Name, d.vrgNamespace,
 			dstCluster, *vrg, annotations)
@@ -183,7 +185,7 @@ func (d *DRPCInstance) refreshRDSpec(srcCluster, dstCluster string) (*rmn.Volume
 		return nil, WaitForSourceCluster
 	}
 
-	dstVRG := d.newVRG(dstCluster, rmn.Secondary)
+	dstVRG := d.newVRG(dstCluster, rmn.Secondary, nil)
 	d.resetRDSpec(srcVRG, &dstVRG)
 
 	return &dstVRG, nil
