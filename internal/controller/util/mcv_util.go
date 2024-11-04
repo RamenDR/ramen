@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"strings"
 
+	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
+	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	errorswrapper "github.com/pkg/errors"
-	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -24,7 +26,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-// begin MCV code
+// nolint: interfacebloat
 type ManagedClusterViewGetter interface {
 	GetVRGFromManagedCluster(
 		resourceName, resourceNamespace, managedCluster string,
@@ -40,12 +42,27 @@ type ManagedClusterViewGetter interface {
 
 	ListMModesMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error)
 
+	GetSClassFromManagedCluster(
+		resourceName, managedCluster string,
+		annotations map[string]string) (*storagev1.StorageClass, error)
+
+	ListSClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error)
+
+	GetVSClassFromManagedCluster(
+		resourceName, managedCluster string,
+		annotations map[string]string) (*snapv1.VolumeSnapshotClass, error)
+
+	ListVSClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error)
+
+	GetVRClassFromManagedCluster(
+		resourceName, managedCluster string,
+		annotations map[string]string) (*volrep.VolumeReplicationClass, error)
+
+	ListVRClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error)
+
 	GetResource(mcv *viewv1beta1.ManagedClusterView, resource interface{}) error
 
 	DeleteManagedClusterView(clusterName, mcvName string, logger logr.Logger) error
-
-	GetNamespaceFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
-		annotations map[string]string) (*corev1.Namespace, error)
 
 	DeleteVRGManagedClusterView(resourceName, resourceNamespace, clusterName, resourceType string) error
 
@@ -59,28 +76,57 @@ type ManagedClusterViewGetterImpl struct {
 	APIReader client.Reader
 }
 
+// getResourceFromManagedCluster gets the resource named resourceName in the resourceNamespace (empty if cluster scoped)
+// with the passed in group, version, and kind on the managedCluster. The created ManagedClusterView(MCV) has the
+// passed in annotations and labels added to it. The MCV is named mcvname, and fetched into the passed in "resource"
+// interface
+func (m ManagedClusterViewGetterImpl) getResourceFromManagedCluster(
+	resourceName, resourceNamespace, managedCluster string,
+	annotations map[string]string, labels map[string]string,
+	mcvName, kind, group, version string,
+	resource interface{},
+) error {
+	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName, "cluster", managedCluster)
+
+	mcvMeta := metav1.ObjectMeta{
+		Name:      mcvName,
+		Namespace: managedCluster,
+	}
+
+	mcvMeta.Labels = labels
+	mcvMeta.Annotations = annotations
+
+	mcvViewscope := viewv1beta1.ViewScope{
+		Kind:    kind,
+		Group:   group,
+		Version: version,
+		Name:    resourceName,
+	}
+
+	if resourceNamespace != "" {
+		mcvViewscope.Namespace = resourceNamespace
+	}
+
+	return m.getManagedClusterResource(mcvMeta, mcvViewscope, resource, logger)
+}
+
 func (m ManagedClusterViewGetterImpl) GetVRGFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
 	annotations map[string]string,
 ) (*rmn.VolumeReplicationGroup, error) {
-	logger := ctrl.Log.WithName("MCV").WithValues("resourceName", resourceName, "cluster", managedCluster)
-	// get VRG and verify status through ManagedClusterView
-	mcvMeta := metav1.ObjectMeta{
-		Name:        BuildManagedClusterViewName(resourceName, resourceNamespace, "vrg"),
-		Namespace:   managedCluster,
-		Annotations: annotations,
-	}
-
-	mcvViewscope := viewv1beta1.ViewScope{
-		Kind:      "VolumeReplicationGroup",
-		Group:     rmn.GroupVersion.Group,
-		Version:   rmn.GroupVersion.Version,
-		Name:      resourceName,
-		Namespace: resourceNamespace,
-	}
-
 	vrg := &rmn.VolumeReplicationGroup{}
 
-	err := m.getManagedClusterResource(mcvMeta, mcvViewscope, vrg, logger)
+	err := m.getResourceFromManagedCluster(
+		resourceName,
+		resourceNamespace,
+		managedCluster,
+		annotations,
+		nil,
+		BuildManagedClusterViewName(resourceName, resourceNamespace, "vrg"),
+		"VolumeReplicationGroup",
+		rmn.GroupVersion.Group,
+		rmn.GroupVersion.Version,
+		vrg,
+	)
 
 	return vrg, err
 }
@@ -88,28 +134,20 @@ func (m ManagedClusterViewGetterImpl) GetVRGFromManagedCluster(resourceName, res
 func (m ManagedClusterViewGetterImpl) GetNFFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
 	annotations map[string]string,
 ) (*csiaddonsv1alpha1.NetworkFence, error) {
-	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName)
-	// get NetworkFence and verify status through ManagedClusterView
-	mcvMeta := metav1.ObjectMeta{
-		Name:      BuildManagedClusterViewName(resourceName, resourceNamespace, "nf"),
-		Namespace: managedCluster,
-	}
-
-	if annotations != nil {
-		mcvMeta.Annotations = annotations
-	}
-
-	mcvViewscope := viewv1beta1.ViewScope{
-		Kind:      "NetworkFence",
-		Group:     csiaddonsv1alpha1.GroupVersion.Group,
-		Version:   csiaddonsv1alpha1.GroupVersion.Version,
-		Name:      "network-fence-" + resourceName,
-		Namespace: resourceNamespace,
-	}
-
 	nf := &csiaddonsv1alpha1.NetworkFence{}
 
-	err := m.getManagedClusterResource(mcvMeta, mcvViewscope, nf, logger)
+	err := m.getResourceFromManagedCluster(
+		resourceName,
+		resourceNamespace,
+		managedCluster,
+		annotations,
+		nil,
+		BuildManagedClusterViewName(resourceName, resourceNamespace, "nf"),
+		"NetworkFence",
+		csiaddonsv1alpha1.GroupVersion.Group,
+		csiaddonsv1alpha1.GroupVersion.Version,
+		nf,
+	)
 
 	return nf, err
 }
@@ -117,49 +155,118 @@ func (m ManagedClusterViewGetterImpl) GetNFFromManagedCluster(resourceName, reso
 func (m ManagedClusterViewGetterImpl) GetMModeFromManagedCluster(resourceName, managedCluster string,
 	annotations map[string]string,
 ) (*rmn.MaintenanceMode, error) {
-	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName)
-	// get MaintenanceMode and verify status through ManagedClusterView
-	mcvMeta := metav1.ObjectMeta{
-		Name:      BuildManagedClusterViewName(resourceName, "", MWTypeMMode),
-		Namespace: managedCluster,
-		Labels: map[string]string{
-			MModesLabel: "",
-		},
-	}
-
-	if annotations != nil {
-		mcvMeta.Annotations = annotations
-	}
-
-	mcvViewscope := viewv1beta1.ViewScope{
-		Kind:    "MaintenanceMode",
-		Group:   rmn.GroupVersion.Group,
-		Version: rmn.GroupVersion.Version,
-		Name:    resourceName,
-	}
-
 	mMode := &rmn.MaintenanceMode{}
 
-	err := m.getManagedClusterResource(mcvMeta, mcvViewscope, mMode, logger)
+	err := m.getResourceFromManagedCluster(
+		resourceName,
+		"",
+		managedCluster,
+		annotations,
+		map[string]string{MModesLabel: ""},
+		BuildManagedClusterViewName(resourceName, "", MWTypeMMode),
+		"MaintenanceMode",
+		rmn.GroupVersion.Group,
+		rmn.GroupVersion.Version,
+		mMode,
+	)
 
 	return mMode, err
 }
 
-func (m ManagedClusterViewGetterImpl) ListMModesMCVs(cluster string) (*viewv1beta1.ManagedClusterViewList, error) {
-	matchLabels := map[string]string{
-		MModesLabel: "",
-	}
+func (m ManagedClusterViewGetterImpl) listMCVsWithLabel(cluster string, matchLabels map[string]string) (
+	*viewv1beta1.ManagedClusterViewList,
+	error,
+) {
 	listOptions := []client.ListOption{
 		client.InNamespace(cluster),
 		client.MatchingLabels(matchLabels),
 	}
 
-	mModeMCVs := &viewv1beta1.ManagedClusterViewList{}
-	if err := m.APIReader.List(context.TODO(), mModeMCVs, listOptions...); err != nil {
+	mcvs := &viewv1beta1.ManagedClusterViewList{}
+	if err := m.APIReader.List(context.TODO(), mcvs, listOptions...); err != nil {
 		return nil, err
 	}
 
-	return mModeMCVs, nil
+	return mcvs, nil
+}
+
+func (m ManagedClusterViewGetterImpl) ListMModesMCVs(cluster string) (*viewv1beta1.ManagedClusterViewList, error) {
+	return m.listMCVsWithLabel(cluster, map[string]string{MModesLabel: ""})
+}
+
+func (m ManagedClusterViewGetterImpl) GetSClassFromManagedCluster(resourceName, managedCluster string,
+	annotations map[string]string,
+) (*storagev1.StorageClass, error) {
+	sc := &storagev1.StorageClass{}
+
+	err := m.getResourceFromManagedCluster(
+		resourceName,
+		"",
+		managedCluster,
+		annotations,
+		map[string]string{SClassLabel: ""},
+		BuildManagedClusterViewName(resourceName, "", MWTypeSClass),
+		"StorageClass",
+		storagev1.SchemeGroupVersion.Group,
+		storagev1.SchemeGroupVersion.Version,
+		sc,
+	)
+
+	return sc, err
+}
+
+func (m ManagedClusterViewGetterImpl) ListSClassMCVs(cluster string) (*viewv1beta1.ManagedClusterViewList, error) {
+	return m.listMCVsWithLabel(cluster, map[string]string{SClassLabel: ""})
+}
+
+func (m ManagedClusterViewGetterImpl) GetVSClassFromManagedCluster(resourceName, managedCluster string,
+	annotations map[string]string,
+) (*snapv1.VolumeSnapshotClass, error) {
+	vsc := &snapv1.VolumeSnapshotClass{}
+
+	err := m.getResourceFromManagedCluster(
+		resourceName,
+		"",
+		managedCluster,
+		annotations,
+		map[string]string{VSClassLabel: ""},
+		BuildManagedClusterViewName(resourceName, "", MWTypeVSClass),
+		"VolumeSnapshotClass",
+		snapv1.SchemeGroupVersion.Group,
+		snapv1.SchemeGroupVersion.Version,
+		vsc,
+	)
+
+	return vsc, err
+}
+
+func (m ManagedClusterViewGetterImpl) ListVSClassMCVs(cluster string) (*viewv1beta1.ManagedClusterViewList, error) {
+	return m.listMCVsWithLabel(cluster, map[string]string{VSClassLabel: ""})
+}
+
+func (m ManagedClusterViewGetterImpl) GetVRClassFromManagedCluster(resourceName, managedCluster string,
+	annotations map[string]string,
+) (*volrep.VolumeReplicationClass, error) {
+	vrc := &volrep.VolumeReplicationClass{}
+
+	err := m.getResourceFromManagedCluster(
+		resourceName,
+		"",
+		managedCluster,
+		annotations,
+		map[string]string{VRClassLabel: ""},
+		BuildManagedClusterViewName(resourceName, "", MWTypeVRClass),
+		"VolumeReplicationClass",
+		volrep.GroupVersion.Group,
+		volrep.GroupVersion.Version,
+		vrc,
+	)
+
+	return vrc, err
+}
+
+func (m ManagedClusterViewGetterImpl) ListVRClassMCVs(cluster string) (*viewv1beta1.ManagedClusterViewList, error) {
+	return m.listMCVsWithLabel(cluster, map[string]string{VRClassLabel: ""})
 }
 
 // outputs a string for use in creating a ManagedClusterView name
@@ -179,35 +286,6 @@ func ClusterScopedResourceNameFromMCVName(mcvName string) string {
 
 	// Length will be at least 3, remove last 2 elements and return the resource name
 	return strings.Join(splitName[:len(splitName)-2], "-")
-}
-
-func (m ManagedClusterViewGetterImpl) GetNamespaceFromManagedCluster(
-	resourceName, managedCluster, namespaceString string, annotations map[string]string,
-) (*corev1.Namespace, error) {
-	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName)
-
-	// get Namespace and verify status through ManagedClusterView
-	mcvMeta := metav1.ObjectMeta{
-		Name:      BuildManagedClusterViewName(resourceName, namespaceString, MWTypeNS),
-		Namespace: managedCluster,
-	}
-
-	if annotations != nil {
-		mcvMeta.Annotations = annotations
-	}
-
-	mcvViewscope := viewv1beta1.ViewScope{
-		Kind:    "Namespace",
-		Group:   corev1.SchemeGroupVersion.Group,
-		Version: corev1.SchemeGroupVersion.Version,
-		Name:    namespaceString,
-	}
-
-	namespace := &corev1.Namespace{}
-
-	err := m.getManagedClusterResource(mcvMeta, mcvViewscope, namespace, logger)
-
-	return namespace, err
 }
 
 /*

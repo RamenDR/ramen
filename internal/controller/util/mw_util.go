@@ -26,6 +26,7 @@ import (
 
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
+	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const (
@@ -45,6 +46,9 @@ const (
 	MWTypeNS        string = "ns"
 	MWTypeNF        string = "nf"
 	MWTypeMMode     string = "mmode"
+	MWTypeSClass    string = "sc"
+	MWTypeVSClass   string = "vsc"
+	MWTypeVRClass   string = "vrc"
 	MWTypeDRCConfig string = "drcconfig"
 )
 
@@ -121,10 +125,10 @@ func IsManifestInAppliedState(mw *ocmworkv1.ManifestWork) bool {
 func (mwu *MWUtil) CreateOrUpdateVRGManifestWork(
 	name, namespace, homeCluster string,
 	vrg rmn.VolumeReplicationGroup, annotations map[string]string,
-) error {
+) (ctrlutil.OperationResult, error) {
 	manifestWork, err := mwu.generateVRGManifestWork(name, namespace, homeCluster, vrg, annotations)
 	if err != nil {
-		return err
+		return ctrlutil.OperationResultNone, err
 	}
 
 	return mwu.createOrUpdateManifestWork(manifestWork, homeCluster)
@@ -163,7 +167,9 @@ func (mwu *MWUtil) CreateOrUpdateMModeManifestWork(
 		return err
 	}
 
-	return mwu.createOrUpdateManifestWork(manifestWork, cluster)
+	_, err = mwu.createOrUpdateManifestWork(manifestWork, cluster)
+
+	return err
 }
 
 func (mwu *MWUtil) generateMModeManifestWork(name, cluster string,
@@ -242,7 +248,9 @@ func (mwu *MWUtil) CreateOrUpdateNFManifestWork(
 		return err
 	}
 
-	return mwu.createOrUpdateManifestWork(manifestWork, homeCluster)
+	_, err = mwu.createOrUpdateManifestWork(manifestWork, homeCluster)
+
+	return err
 }
 
 func (mwu *MWUtil) generateNFManifestWork(name, homeCluster string,
@@ -280,7 +288,9 @@ func (mwu *MWUtil) CreateOrUpdateDRCConfigManifestWork(cluster string, cConfig r
 		return err
 	}
 
-	return mwu.createOrUpdateManifestWork(manifestWork, cluster)
+	_, err = mwu.createOrUpdateManifestWork(manifestWork, cluster)
+
+	return err
 }
 
 func (mwu *MWUtil) generateDRCConfigManifestWork(
@@ -358,7 +368,9 @@ func (mwu *MWUtil) CreateOrUpdateNamespaceManifest(
 		PropagationPolicy: ocmworkv1.DeletePropagationPolicyTypeOrphan,
 	}
 
-	return mwu.createOrUpdateManifestWork(manifestWork, managedClusterNamespace)
+	_, err = mwu.createOrUpdateManifestWork(manifestWork, managedClusterNamespace)
+
+	return err
 }
 
 func Namespace(name string) *corev1.Namespace {
@@ -453,7 +465,7 @@ func (mwu *MWUtil) CreateOrUpdateDrClusterManifestWork(
 		manifests[i] = *manifest
 	}
 
-	return mwu.createOrUpdateManifestWork(
+	_, err := mwu.createOrUpdateManifestWork(
 		mwu.newManifestWork(
 			DrClusterManifestWorkName,
 			clusterName,
@@ -462,6 +474,8 @@ func (mwu *MWUtil) CreateOrUpdateDrClusterManifestWork(
 		),
 		clusterName,
 	)
+
+	return err
 }
 
 var (
@@ -591,25 +605,29 @@ func (mwu *MWUtil) newManifestWork(name string, mcNamespace string,
 func (mwu *MWUtil) createOrUpdateManifestWork(
 	mw *ocmworkv1.ManifestWork,
 	managedClusternamespace string,
-) error {
+) (ctrlutil.OperationResult, error) {
 	key := types.NamespacedName{Name: mw.Name, Namespace: managedClusternamespace}
 	foundMW := &ocmworkv1.ManifestWork{}
 
 	err := mwu.Client.Get(mwu.Ctx, key, foundMW)
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			return errorswrapper.Wrap(err, fmt.Sprintf("failed to fetch ManifestWork %s", key))
+			return ctrlutil.OperationResultNone, errorswrapper.Wrap(err, fmt.Sprintf("failed to fetch ManifestWork %s", key))
 		}
 
 		mwu.Log.Info("Creating ManifestWork", "cluster", managedClusternamespace, "MW", mw)
 
-		return mwu.Client.Create(mwu.Ctx, mw)
+		if err := mwu.Create(mwu.Ctx, mw); err != nil {
+			return ctrlutil.OperationResultNone, err
+		}
+
+		return ctrlutil.OperationResultCreated, nil
 	}
 
 	if !reflect.DeepEqual(foundMW.Spec, mw.Spec) {
 		mwu.Log.Info("Updating ManifestWork", "name", mw.Name, "namespace", foundMW.Namespace)
 
-		return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 			if err := mwu.Client.Get(mwu.Ctx, key, foundMW); err != nil {
 				return err
 			}
@@ -618,24 +636,13 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 
 			return mwu.Client.Update(mwu.Ctx, foundMW)
 		})
-	}
 
-	return nil
-}
-
-func (mwu *MWUtil) GetVRGManifestWorkCount(drClusters []string) int {
-	count := 0
-
-	for _, clusterName := range drClusters {
-		_, err := mwu.FindManifestWorkByType(MWTypeVRG, clusterName)
-		if err != nil {
-			continue
+		if err == nil {
+			return ctrlutil.OperationResultUpdated, nil
 		}
-
-		count++
 	}
 
-	return count
+	return ctrlutil.OperationResultNone, nil
 }
 
 func (mwu *MWUtil) DeleteNamespaceManifestWork(clusterName string, annotations map[string]string) error {
@@ -696,6 +703,26 @@ func (mwu *MWUtil) DeleteManifestWork(mwName, mwNamespace string) error {
 	if err != nil && !errors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete MW. Error %w", err)
 	}
+
+	return nil
+}
+
+func (mwu *MWUtil) UpdateVRGManifestWork(vrg *rmn.VolumeReplicationGroup, mw *ocmworkv1.ManifestWork) error {
+	vrgClientManifest, err := mwu.GenerateManifest(vrg)
+	if err != nil {
+		mwu.Log.Error(err, "failed to generate manifest")
+
+		return fmt.Errorf("failed to generate VRG manifest (%w)", err)
+	}
+
+	mw.Spec.Workload.Manifests[0] = *vrgClientManifest
+
+	err = mwu.Client.Update(mwu.Ctx, mw)
+	if err != nil {
+		return fmt.Errorf("failed to update MW (%w)", err)
+	}
+
+	mwu.Log.Info(fmt.Sprintf("Added VRG %s to MW %s for cluster %s", vrg.GetName(), mw.GetName(), mw.GetNamespace()))
 
 	return nil
 }

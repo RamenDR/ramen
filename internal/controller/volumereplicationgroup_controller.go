@@ -512,6 +512,9 @@ const (
 
 	// Maintenance mode label
 	MModesLabel = "ramendr.openshift.io/maintenancemodes"
+
+	// VolumeReplicationClass schedule parameter key
+	VRClassScheduleKey = "schedulingInterval"
 )
 
 func (v *VRGInstance) requeue() {

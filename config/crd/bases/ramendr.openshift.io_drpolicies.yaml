@@ -233,6 +233,13 @@ spec:
                       that have related async relationships. (one per pair of peers in the policy)
                     items:
                       properties:
+                        clusterIDs:
+                          description: |-
+                            ClusterIDs is a list of two clusterIDs that represent this peer relationship for a common StorageClassName
+                            The IDs are based on the value of the metadata.uid of the kube-system namespace
+                          items:
+                            type: string
+                          type: array
                         replicationID:
                           description: |-
                             ReplicationID is the common value for the label "ramendr.openshift.io/replicationID" on the corresponding
@@ -333,6 +340,13 @@ spec:
                       that have related sync relationships. (one per pair of peers in the policy)
                     items:
                       properties:
+                        clusterIDs:
+                          description: |-
+                            ClusterIDs is a list of two clusterIDs that represent this peer relationship for a common StorageClassName
+                            The IDs are based on the value of the metadata.uid of the kube-system namespace
+                          items:
+                            type: string
+                          type: array
                         replicationID:
                           description: |-
                             ReplicationID is the common value for the label "ramendr.openshift.io/replicationID" on the corresponding

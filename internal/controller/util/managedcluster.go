@@ -6,6 +6,7 @@ package util
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -13,10 +14,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	// Prefixes for various ClusterClaims
+	CCSCPrefix  = "storage.class"
+	CCVSCPrefix = "snapshot.class"
+	CCVRCPrefix = "replication.class"
+)
+
 type ManagedClusterInstance struct {
 	object *ocmv1.ManagedCluster
 }
 
+// NewManagedClusterInstance creates an ManagedClusterInstance instance, reading the ManagedCluster resource for cluster
 func NewManagedClusterInstance(
 	ctx context.Context,
 	client client.Client,
@@ -54,6 +63,7 @@ func NewManagedClusterInstance(
 	}, nil
 }
 
+// ClusterID returns the clusterID claimed by the ManagedCluster, or error if it is empty or not found
 func (mci *ManagedClusterInstance) ClusterID() (string, error) {
 	id := ""
 
@@ -72,4 +82,36 @@ func (mci *ManagedClusterInstance) ClusterID() (string, error) {
 	}
 
 	return id, nil
+}
+
+// classClaims returns a list of class claims with the passed in prefix from the ManagedCluster
+func (mci *ManagedClusterInstance) classClaims(prefix string) []string {
+	classNames := []string{}
+
+	for idx := range mci.object.Status.ClusterClaims {
+		if !strings.HasPrefix(mci.object.Status.ClusterClaims[idx].Name, prefix+".") {
+			continue
+		}
+
+		className := strings.TrimPrefix(mci.object.Status.ClusterClaims[idx].Name, prefix+".")
+		if className == "" {
+			continue
+		}
+
+		classNames = append(classNames, className)
+	}
+
+	return classNames
+}
+
+func (mci *ManagedClusterInstance) StorageClassClaims() []string {
+	return mci.classClaims(CCSCPrefix)
+}
+
+func (mci *ManagedClusterInstance) VolumeSnapshotClassClaims() []string {
+	return mci.classClaims(CCVSCPrefix)
+}
+
+func (mci *ManagedClusterInstance) VolumeReplicationClassClaims() []string {
+	return mci.classClaims(CCVRCPrefix)
 }

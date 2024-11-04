@@ -1134,7 +1134,7 @@ func getVRGsFromManagedClusters(
 
 		vrgs[drCluster.Name] = vrg
 
-		log.Info("VRG location", "VRG on", drCluster.Name)
+		log.Info("VRG location", "VRG on", drCluster.Name, "replicationState", vrg.Spec.ReplicationState)
 	}
 
 	// We are done if we successfully queried all drClusters
@@ -2244,7 +2244,7 @@ func adoptExistingVRGManifestWork(
 	annotations[DRPCNameAnnotation] = drpc.Name
 	annotations[DRPCNamespaceAnnotation] = drpc.Namespace
 
-	err := mwu.CreateOrUpdateVRGManifestWork(drpc.Name, vrgNamespace, cluster, *vrg, annotations)
+	_, err := mwu.CreateOrUpdateVRGManifestWork(drpc.Name, vrgNamespace, cluster, *vrg, annotations)
 	if err != nil {
 		log.Info("error updating VRG via ManifestWork during adoption", "error", err, "cluster", cluster)
 	}
@@ -2281,7 +2281,7 @@ func adoptOrphanVRG(
 
 	vrg.Annotations[DRPCUIDAnnotation] = string(drpc.UID)
 
-	if err := mwu.CreateOrUpdateVRGManifestWork(
+	if _, err := mwu.CreateOrUpdateVRGManifestWork(
 		drpc.Name, vrgNamespace,
 		cluster, *vrg, annotations); err != nil {
 		log.Info("error creating VRG via ManifestWork during adoption", "error", err, "cluster", cluster)

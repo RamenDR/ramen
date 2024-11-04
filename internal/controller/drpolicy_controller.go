@@ -10,12 +10,14 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
+	ocmv1 "open-cluster-management.io/api/cluster/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,6 +37,7 @@ type DRPolicyReconciler struct {
 	APIReader         client.Reader
 	Log               logr.Logger
 	Scheme            *runtime.Scheme
+	MCVGetter         util.ManagedClusterViewGetter
 	ObjectStoreGetter ObjectStoreGetter
 	RateLimiter       *workqueue.TypedRateLimiter[reconcile.Request]
 }
@@ -47,6 +50,9 @@ const ReasonDRClusterNotFound = "DRClusterNotFound"
 
 // ReasonDRClustersUnavailable is set when the DRPolicy has none of the referenced DRCluster(s) are in a validated state
 const ReasonDRClustersUnavailable = "DRClustersUnavailable"
+
+// AllDRPolicyAnnotation is added to related resources that can be watched to reconcile all related DRPolicy resources
+const AllDRPolicyAnnotation = "drpolicy.ramendr.openshift.io"
 
 //nolint:lll
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drpolicies,verbs=get;list;watch;create;update;patch;delete
@@ -61,6 +67,8 @@ const ReasonDRClustersUnavailable = "DRClustersUnavailable"
 // +kubebuilder:rbac:groups="",namespace=system,resources=secrets,verbs=get;update
 // +kubebuilder:rbac:groups="policy.open-cluster-management.io",namespace=system,resources=placementbindings,verbs=get;create;update;delete
 // +kubebuilder:rbac:groups="policy.open-cluster-management.io",namespace=system,resources=policies,verbs=get;create;update;delete
+// +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=managedclusters,verbs=get;list;watch
+// +kubebuilder:rbac:groups=view.open-cluster-management.io,resources=managedclusterviews,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -136,17 +144,21 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, fmt.Errorf("error in intiating policy metrics: %w", err)
 	}
 
-	return r.reconcile(drpolicy, drclusters, secretsUtil, ramenConfig, log)
+	return r.reconcile(u, drclusters, secretsUtil, ramenConfig)
 }
 
-func (r *DRPolicyReconciler) reconcile(drpolicy *ramen.DRPolicy,
+func (r *DRPolicyReconciler) reconcile(
+	u *drpolicyUpdater,
 	drclusters *ramen.DRClusterList,
 	secretsUtil *util.SecretsUtil,
 	ramenConfig *ramen.RamenConfig,
-	log logr.Logger,
 ) (ctrl.Result, error) {
-	if err := propagateS3Secret(drpolicy, drclusters, secretsUtil, ramenConfig, log); err != nil {
+	if err := propagateS3Secret(u.object, drclusters, secretsUtil, ramenConfig, u.log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drpolicy deploy: %w", err)
+	}
+
+	if err := updatePeerClasses(u, r.MCVGetter); err != nil {
+		return ctrl.Result{}, fmt.Errorf("drpolicy peerClass update: %w", err)
 	}
 
 	return ctrl.Result{}, nil
@@ -429,9 +441,18 @@ func (r *DRPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		).
 		Watches(
 			&ramen.DRCluster{},
-			handler.EnqueueRequestsFromMapFunc(r.drClusterMapFunc),
+			handler.EnqueueRequestsFromMapFunc(r.objectNameAsClusterMapFunc),
 			builder.WithPredicates(util.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
 		).
+		Watches(
+			&ocmv1.ManagedCluster{},
+			handler.EnqueueRequestsFromMapFunc(r.objectNameAsClusterMapFunc),
+			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
+		).
+		Watches(
+			&viewv1beta1.ManagedClusterView{},
+			handler.EnqueueRequestsFromMapFunc(r.mcvMapFun),
+			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
 		Complete(r)
 }
 
@@ -482,7 +503,28 @@ func (r *DRPolicyReconciler) secretMapFunc(ctx context.Context, secret client.Ob
 	return requests
 }
 
-func (r *DRPolicyReconciler) drClusterMapFunc(ctx context.Context, drcluster client.Object) []reconcile.Request {
+// objectNameAsClusterMapFunc returns a list of DRPolicies that contain the object.Name. A DRCluster or a
+// ManagedCluster object can be passed in as the cluster to find the list of policies to reconcile
+func (r *DRPolicyReconciler) objectNameAsClusterMapFunc(
+	ctx context.Context, cluster client.Object,
+) []reconcile.Request {
+	return r.getDRPoliciesForCluster(cluster.GetName())
+}
+
+func (r *DRPolicyReconciler) mcvMapFun(ctx context.Context, obj client.Object) []reconcile.Request {
+	mcv, ok := obj.(*viewv1beta1.ManagedClusterView)
+	if !ok {
+		return []reconcile.Request{}
+	}
+
+	if _, ok := mcv.Annotations[AllDRPolicyAnnotation]; !ok {
+		return []ctrl.Request{}
+	}
+
+	return r.getDRPoliciesForCluster(obj.GetNamespace())
+}
+
+func (r *DRPolicyReconciler) getDRPoliciesForCluster(clusterName string) []reconcile.Request {
 	drpolicies := &ramen.DRPolicyList{}
 	if err := r.Client.List(context.TODO(), drpolicies); err != nil {
 		return []reconcile.Request{}
@@ -492,7 +534,7 @@ func (r *DRPolicyReconciler) drClusterMapFunc(ctx context.Context, drcluster cli
 
 	for idx := range drpolicies.Items {
 		drpolicy := &drpolicies.Items[idx]
-		if util.DrpolicyContainsDrcluster(drpolicy, drcluster.GetName()) {
+		if util.DrpolicyContainsDrcluster(drpolicy, clusterName) {
 			add := reconcile.Request{
 				NamespacedName: types.NamespacedName{
 					Name: drpolicy.GetName(),
