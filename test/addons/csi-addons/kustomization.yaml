@@ -3,10 +3,11 @@
 
 ---
 resources:
-  - https://github.com/csi-addons/kubernetes-csi-addons/releases/download/v0.10.0/crds.yaml
-  - https://github.com/csi-addons/kubernetes-csi-addons/releases/download/v0.10.0/rbac.yaml
-  - https://github.com/csi-addons/kubernetes-csi-addons/releases/download/v0.10.0/setup-controller.yaml
+  - https://raw.githubusercontent.com/yati1998/kubernetes-csi-addons/refs/heads/vr/deploy/controller/crds.yaml
+  - https://raw.githubusercontent.com/yati1998/kubernetes-csi-addons/refs/heads/vr/deploy/controller/rbac.yaml
+  - https://raw.githubusercontent.com/yati1998/kubernetes-csi-addons/refs/heads/vr/deploy/controller/setup-controller.yaml
 
 images:
   - name: quay.io/csiaddons/k8s-controller
-    newTag: v0.10.0
+    newName: quay.io/ypadia/k8s-controller
+    newTag: VRupdate2
