@@ -78,21 +78,18 @@ func Exhaustive(t *testing.T) {
 
 	generateWorkloads(Workloads)
 
-	for _, workload := range Workloads {
-		for _, deployer := range Deployers {
+	for _, deployer := range Deployers {
+		for _, workload := range Workloads {
 			// assign workload and deployer to a local variable to avoid parallel test issue
 			// see https://go.dev/wiki/CommonMistakes
-			w := workload
 			d := deployer
+			w := workload
 
-			t.Run(w.GetName(), func(t *testing.T) {
+			t.Run(deployers.GetCombinedName(d, w), func(t *testing.T) {
 				t.Parallel()
-				t.Run(d.GetName(), func(t *testing.T) {
-					t.Parallel()
-					testcontext.AddTestContext(t.Name(), w, d)
-					runTestFlow(t)
-					testcontext.DeleteTestContext(t.Name())
-				})
+				testcontext.AddTestContext(t.Name(), w, d)
+				runTestFlow(t)
+				testcontext.DeleteTestContext(t.Name())
 			})
 		}
 	}
