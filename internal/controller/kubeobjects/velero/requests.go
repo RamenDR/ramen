@@ -393,7 +393,7 @@ func getBackupHooks(hooks []kubeobjects.HookSpec) velero.BackupHooks {
 
 		hookSpec.Resources = append(hookSpec.Resources, velero.BackupResourceHookSpec{
 			Name:          hook.Name,
-			LabelSelector: &hook.LabelSelector,
+			LabelSelector: hook.LabelSelector,
 			PreHooks:      []velero.BackupResourceHook{},
 			// commenting as the hooks will be executed and not passed on velero
 			/*PostHooks: []velero.BackupResourceHook{

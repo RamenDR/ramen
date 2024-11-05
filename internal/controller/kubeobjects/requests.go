@@ -93,13 +93,13 @@ type KubeResourcesSpec struct {
 
 // HookSpec provides spec of either check or exec hook that needs to be executed
 type HookSpec struct {
-	Name           string               `json:"name"`
-	Namespace      string               `json:"namespace"`
-	Type           string               `json:"type"`
-	SelectResource string               `json:"selectResource,omitempty"`
-	LabelSelector  metav1.LabelSelector `json:"labelSelector,omitempty"`
-	NameSelector   string               `json:"nameSelector,omitempty"`
-	SinglePodOnly  bool                 `json:"singlePodOnly,omitempty"`
+	Name           string                `json:"name"`
+	Namespace      string                `json:"namespace"`
+	Type           string                `json:"type"`
+	SelectResource string                `json:"selectResource,omitempty"`
+	LabelSelector  *metav1.LabelSelector `json:"labelSelector,omitempty"`
+	NameSelector   string                `json:"nameSelector,omitempty"`
+	SinglePodOnly  bool                  `json:"singlePodOnly,omitempty"`
 	//+optional
 	OnError string `json:"onError,omitempty"`
 

@@ -252,25 +252,38 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	for groupNumber, captureGroup := range groups {
 		log1 := log.WithValues("group", groupNumber, "name", captureGroup.Name)
 		if captureGroup.IsHook {
-			// Permissions to be fixed
-			// Get of the kubectl for selectReource
-			// Get json object directly with some options or get and then convert?
-			// Evaluate the condition, ip - json
-			// Handle the error based on OnError
-		}
-		// TODO: hooks needs to be processed separately -- add a new function
-		requestsCompletedCount += v.kubeObjectsGroupCapture(
-			result, captureGroup, pathName, capturePathName, namePrefix, veleroNamespaceName,
-			captureInProgressStatusUpdate,
-			labels, annotations, requests, log,
-		)
-		requestsProcessedCount += len(v.s3StoreAccessors)
+			if captureGroup.Hook.Type == "check" {
+				// TODO: timeout needs to be implemented -- defaults to 300s, hook.Check.Timeout overwrites hook.Timeout
+				hookResult, err := util.EvaluateJsonPathExpression(v.reconciler.Client, &captureGroup, log1)
+				if err != nil {
+					log.Error(err, "error occured during check hook ")
+				}
+				if !hookResult {
+					if shouldExecutionBreakIfHookFails(&captureGroup.Hook) {
+						// update error state
+						break
+					} else {
+						// update error state
+						continue
+					}
+				}
+			}
 
-		if requestsCompletedCount < requestsProcessedCount {
-			log1.Info("Kube objects group capturing", "complete", requestsCompletedCount, "total", requestsProcessedCount)
+		} else {
+			requestsCompletedCount += v.kubeObjectsGroupCapture(
+				result, captureGroup, pathName, capturePathName, namePrefix, veleroNamespaceName,
+				captureInProgressStatusUpdate,
+				labels, annotations, requests, log,
+			)
+			requestsProcessedCount += len(v.s3StoreAccessors)
 
-			return
+			if requestsCompletedCount < requestsProcessedCount {
+				log1.Info("Kube objects group capturing", "complete", requestsCompletedCount, "total", requestsProcessedCount)
+
+				return
+			}
 		}
+
 	}
 
 	request0 := requests[kubeObjectsCaptureName(namePrefix, groups[0].Name, v.s3StoreAccessors[0].S3ProfileName)]
@@ -285,6 +298,26 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 		request0.StartTime(),
 		request0.Object().GetAnnotations(),
 	)
+}
+
+func shouldExecutionBreakIfHookFails(hook *kubeobjects.HookSpec) bool {
+	// hook.Check.OnError overwrites the feature of hook.OnError -- defaults to fail
+	if hook.Chk.OnError == "" {
+		if hook.OnError != "" {
+			if hook.OnError == "fail" {
+				return true
+			} else if hook.OnError == "continue" {
+				return false
+			}
+		}
+	} else {
+		if hook.OnError == "fail" {
+			return true
+		} else if hook.OnError == "continue" {
+			return false
+		}
+	}
+	return true
 }
 
 func (v *VRGInstance) kubeObjectsGroupCapture(
@@ -737,7 +770,6 @@ func getCaptureGroups(recipe Recipe.Recipe) ([]kubeobjects.CaptureSpec, error) {
 	}
 
 	resources := make([]kubeobjects.CaptureSpec, len(workflow.Sequence))
-	// TODO: the for loop needs to be changed? resource is map, so key, value can be used?
 	for index, resource := range workflow.Sequence {
 		for resourceType, resourceName := range resource {
 
@@ -769,7 +801,6 @@ func getRecoverGroups(recipe Recipe.Recipe) ([]kubeobjects.RecoverSpec, error) {
 	}
 
 	resources := make([]kubeobjects.RecoverSpec, len(workflow.Sequence))
-	// TODO: do changes for hooks
 	for index, resource := range workflow.Sequence {
 		// group: map[string]string, e.g. "group": "groupName", or "hook": "hookName"
 		for resourceType, resourceName := range resource {
@@ -829,7 +860,6 @@ func getResourceAndConvertToRecoverGroup(
 
 		return nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec.Group.Name"}, name)
 	}
-	// TODO: based on resource type as hook,
 	if resourceType == "hook" {
 		prefix, suffix, err := validateAndGetHookDetails(name)
 		if err != nil {
@@ -854,28 +884,8 @@ func validateAndGetHookDetails(name string) (string, string, error) {
 	return parts[0], parts[1], nil
 }
 
-// Function signature should also be changed to return Recipe.Check
+// from the recipe, get the hook based on the prefix before "/"
 func getHookFromRecipe(recipe *Recipe.Recipe, prefix string) (*Recipe.Hook, error) {
-	// hook can be made up of optionalPrefix/hookName; workflow sequence uses full name
-	// var prefix string
-
-	// var suffix string
-
-	// const containsSingleDelim = 2
-
-	// parts := strings.Split(name, "/")
-	// switch len(parts) {
-	// case 1:
-	// 	prefix = ""
-	// 	suffix = name
-	// case containsSingleDelim:
-	// 	prefix = parts[0]
-	// 	suffix = parts[1]
-	// default:
-	// 	return nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec.Hook.Name"}, name)
-	// }
-	// TODO: Here based on the hook type, suffix needs to be matched either with chks or ops
-	// match prefix THEN suffix
 	for _, hook := range recipe.Spec.Hooks {
 		if hook.Name == prefix {
 			return hook, nil
@@ -903,7 +913,7 @@ func convertRecipeHookToCaptureSpec(
 				ExcludedResources:  []string{},
 				Hook:               hookSpec,
 			},
-			LabelSelector:           &hookSpec.LabelSelector,
+			LabelSelector:           hookSpec.LabelSelector,
 			IncludeClusterResources: new(bool),
 		},
 	}
@@ -924,14 +934,14 @@ func convertRecipeHookToRecoverSpec(hook Recipe.Hook, suffix string) (*kubeobjec
 				ExcludedResources:  []string{},
 				Hook:               hookSpec,
 			},
-			LabelSelector:           &hookSpec.LabelSelector,
+			LabelSelector:           hookSpec.LabelSelector,
 			IncludeClusterResources: new(bool),
 		},
 	}, nil
 }
 
-// And also array of checks should be handled.
-// TODO: Return error as well
+// TODO: Return error as well or ensure that other than exec and check hooks are
+// handled properly.
 func getHookSpecFromHook(hook Recipe.Hook, suffix string) kubeobjects.HookSpec {
 	// based on hook.type check of the hook is chks or ops
 	if hook.Type == "exec" {
@@ -951,7 +961,7 @@ func getChkHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
 				Namespace:      hook.Namespace,
 				Type:           hook.Type,
 				SelectResource: hook.SelectResource,
-				LabelSelector:  *hook.LabelSelector,
+				LabelSelector:  hook.LabelSelector,
 				NameSelector:   hook.NameSelector,
 				Timeout:        chk.Timeout,
 				OnError:        chk.OnError,
@@ -977,7 +987,7 @@ func getOpHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
 				Timeout:        hook.Timeout,
 				OnError:        hook.OnError,
 				SelectResource: hook.SelectResource,
-				LabelSelector:  *hook.LabelSelector,
+				LabelSelector:  hook.LabelSelector,
 				NameSelector:   hook.NameSelector,
 				SinglePodOnly:  hook.SinglePodOnly,
 				Op: kubeobjects.Operation{
