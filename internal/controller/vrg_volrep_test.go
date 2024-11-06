@@ -654,6 +654,19 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		It("simulate VR with failed validation", func() {
 			vrgDeleteFailedVR.promoteVolRepsWithOptions(promoteOptions{ValidatedFailed: true})
 		})
+		It("propagate VR condition message to protected pvc conditions", func() {
+			vrName := vrgDeleteFailedVR.pvcNames[0]
+			vr := volrep.VolumeReplication{}
+			Expect(k8sClient.Get(context.TODO(), vrName, &vr)).To(Succeed())
+			validated := meta.FindStatusCondition(vr.Status.Conditions, volrep.ConditionValidated)
+			Expect(validated).NotTo(BeNil())
+			vrgDeleteFailedVR.waitForProtectedPVCCondition(
+				vrName,
+				vrgController.VRGConditionTypeDataReady,
+				metav1.ConditionFalse,
+				validated.Message,
+			)
+		})
 		It("VRG can be deleted", func() {
 			By("deleting the VRG")
 			vrg := vrgDeleteFailedVR.getVRG()
@@ -2530,6 +2543,30 @@ func (v *vrgTest) waitForVolRepCondition(
 		return condition.Status == conditionStatus
 	}, vrgtimeout, vrginterval).Should(BeTrue(),
 		"failed to wait for volRep condition %q to become %q", conditionType, conditionStatus)
+}
+
+func (v *vrgTest) waitForProtectedPVCCondition(
+	key types.NamespacedName,
+	conditionType string,
+	conditionStatus metav1.ConditionStatus,
+	conditionMessage string,
+) {
+	Eventually(func() bool {
+		vrg := v.getVRG()
+		protectedPVC := vrgController.FindProtectedPVC(vrg, key.Namespace, key.Name)
+		if protectedPVC == nil {
+			return false
+		}
+
+		condition := meta.FindStatusCondition(protectedPVC.Conditions, conditionType)
+		if condition == nil {
+			return false
+		}
+
+		return condition.Status == conditionStatus && condition.Message == conditionMessage
+	}, vrgtimeout, vrginterval).Should(BeTrue(),
+		"failed to wait for protected pvc condition %q to become %q with message %q",
+		conditionType, conditionStatus, conditionMessage)
 }
 
 func (v *vrgTest) waitForProtectedPVCs(vrNamespacedName types.NamespacedName) {
