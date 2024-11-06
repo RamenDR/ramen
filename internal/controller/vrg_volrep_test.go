@@ -2368,7 +2368,7 @@ func (v *vrgTest) promoteVolRepsAndDo(options promoteOptions, do func(int, int))
 
 		if options.ValidatedFailed {
 			volRepStatus.State = volrep.UnknownState
-			volRepStatus.Message = "precondition failed ..."
+			volRepStatus.Message = "failed to meet prerequisite: details..."
 		}
 
 		volRep.Status = volRepStatus
@@ -2411,11 +2411,13 @@ func (v *vrgTest) generateVRConditions(generation int64, options promoteOptions)
 			ObservedGeneration: generation,
 			Status:             metav1.ConditionTrue,
 			LastTransitionTime: lastTransitionTime,
+			Message:            "volume is validated",
 		}
 
 		if options.ValidatedFailed {
 			validated.Status = metav1.ConditionFalse
 			validated.Reason = volrep.PrerequisiteNotMet
+			validated.Message = "failed to meet prerequisite: details..."
 		}
 
 		conditions = append(conditions, validated)
@@ -2427,11 +2429,13 @@ func (v *vrgTest) generateVRConditions(generation int64, options promoteOptions)
 		ObservedGeneration: generation,
 		Status:             metav1.ConditionTrue,
 		LastTransitionTime: lastTransitionTime,
+		Message:            "volume is completed",
 	}
 
 	if options.ValidatedFailed {
 		completed.Status = metav1.ConditionFalse
 		completed.Reason = volrep.FailedToPromote
+		completed.Message = "failed to promote"
 	}
 
 	degraded := metav1.Condition{
@@ -2440,6 +2444,7 @@ func (v *vrgTest) generateVRConditions(generation int64, options promoteOptions)
 		ObservedGeneration: generation,
 		Status:             metav1.ConditionFalse,
 		LastTransitionTime: lastTransitionTime,
+		Message:            "volume is healthy",
 	}
 	resyncing := metav1.Condition{
 		Type:               volrep.ConditionResyncing,
@@ -2447,6 +2452,7 @@ func (v *vrgTest) generateVRConditions(generation int64, options promoteOptions)
 		ObservedGeneration: generation,
 		Status:             metav1.ConditionFalse,
 		LastTransitionTime: lastTransitionTime,
+		Message:            "volume is not resyncing",
 	}
 
 	return append(conditions, completed, degraded, resyncing)
