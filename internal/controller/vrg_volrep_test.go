@@ -654,6 +654,14 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		It("simulate VR with failed validation", func() {
 			vrgDeleteFailedVR.promoteVolRepsWithOptions(promoteOptions{ValidatedFailed: true})
 		})
+		It("propagate VR condition message to protected pvc conditions", func() {
+			vrgDeleteFailedVR.waitForProtectedPVCCondition(
+				vrgDeleteFailedVR.vrgNamespacedName(),
+				vrgController.VRGConditionTypeDataReady,
+				metav1.ConditionFalse,
+				"failed to meet prerequisite: details...",
+			)
+		})
 		It("VRG can be deleted", func() {
 			By("deleting the VRG")
 			vrg := vrgDeleteFailedVR.getVRG()
@@ -2530,6 +2538,30 @@ func (v *vrgTest) waitForVolRepCondition(
 		return condition.Status == conditionStatus
 	}, vrgtimeout, vrginterval).Should(BeTrue(),
 		"failed to wait for volRep condition %q to become %q", conditionType, conditionStatus)
+}
+
+func (v *vrgTest) waitForProtectedPVCCondition(
+	vrNamespacedName types.NamespacedName,
+	conditionType string,
+	conditionStatus metav1.ConditionStatus,
+	conditionMessage string,
+) {
+	Eventually(func() bool {
+		vrg := v.getVRG()
+		protectedPVC := vrgController.FindProtectedPVC(vrg, vrNamespacedName.Namespace, vrNamespacedName.Name)
+		if protectedPVC == nil {
+			return false
+		}
+
+		condition := meta.FindStatusCondition(protectedPVC.Conditions, conditionType)
+		if condition == nil {
+			return false
+		}
+
+		return condition.Status == conditionStatus && condition.Message == conditionMessage
+	}, vrgtimeout, vrginterval).Should(BeTrue(),
+		"failed to wait for protected pvc condition %q to become %q with message %q",
+		conditionType, conditionStatus, conditionMessage)
 }
 
 func (v *vrgTest) waitForProtectedPVCs(vrNamespacedName types.NamespacedName) {
