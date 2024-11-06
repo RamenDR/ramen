@@ -2388,6 +2388,9 @@ func (v *vrgTest) promoteVolRepsAndDo(options promoteOptions, do func(int, int))
 				v.waitForVolRepCondition(volrepKey, volrep.ConditionValidated, metav1.ConditionFalse)
 			}
 		} else {
+			if !options.ValidatedMissing {
+				v.waitForVolRepCondition(volrepKey, volrep.ConditionValidated, metav1.ConditionTrue)
+			}
 			v.waitForVolRepCondition(volrepKey, volrep.ConditionCompleted, metav1.ConditionTrue)
 			v.waitForProtectedPVCs(volrepKey)
 		}
@@ -2404,9 +2407,9 @@ func (v *vrgTest) generateVRConditions(generation int64, options promoteOptions)
 	if !options.ValidatedMissing {
 		validated := metav1.Condition{
 			Type:               volrep.ConditionValidated,
-			Reason:             volrep.PrerequisiteNotMet,
+			Reason:             volrep.PrerequisiteMet,
 			ObservedGeneration: generation,
-			Status:             metav1.ConditionFalse,
+			Status:             metav1.ConditionTrue,
 			LastTransitionTime: lastTransitionTime,
 		}
 
