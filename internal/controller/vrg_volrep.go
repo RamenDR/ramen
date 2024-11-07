@@ -1556,9 +1556,9 @@ func (v *VRGInstance) validateVRValidatedStatus(
 func (v *VRGInstance) validateVRCompletedStatus(pvc *corev1.PersistentVolumeClaim, volRep *volrep.VolumeReplication,
 	state ramendrv1alpha1.ReplicationState,
 ) bool {
-	conditionMet, _, msg := isVRConditionMet(volRep, volrep.ConditionCompleted, metav1.ConditionTrue)
+	conditionMet, _, errorMsg := isVRConditionMet(volRep, volrep.ConditionCompleted, metav1.ConditionTrue)
 	if !conditionMet {
-		if msg == "" {
+		if errorMsg == "" {
 			var (
 				stateString string
 				action      string
@@ -1573,13 +1573,13 @@ func (v *VRGInstance) validateVRCompletedStatus(pvc *corev1.PersistentVolumeClai
 				action = "demoted"
 			}
 
-			msg = fmt.Sprintf("VolumeReplication resource for pvc not %s to %s", action, stateString)
+			errorMsg = fmt.Sprintf("VolumeReplication resource for pvc not %s to %s", action, stateString)
 		}
 
-		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg)
-		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg)
+		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, errorMsg)
+		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, errorMsg)
 
-		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", msg, volRep.GetName(), volRep.GetNamespace()))
+		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", errorMsg, volRep.GetName(), volRep.GetNamespace()))
 
 		return false
 	}
@@ -1614,21 +1614,21 @@ func (v *VRGInstance) validateAdditionalVRStatusForSecondary(pvc *corev1.Persist
 		return v.checkResyncCompletionAsSecondary(pvc, volRep)
 	}
 
-	conditionMet, _, msg := isVRConditionMet(volRep, volrep.ConditionDegraded, metav1.ConditionTrue)
+	conditionMet, _, errorMsg := isVRConditionMet(volRep, volrep.ConditionDegraded, metav1.ConditionTrue)
 	if !conditionMet {
-		if msg == "" {
-			msg = "VolumeReplication resource for pvc is not in Degraded condition while resyncing"
+		if errorMsg == "" {
+			errorMsg = "VolumeReplication resource for pvc is not in Degraded condition while resyncing"
 		}
 
-		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg)
-		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg)
+		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, errorMsg)
+		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, errorMsg)
 
-		v.log.Info(fmt.Sprintf("%s (VolRep %s/%s)", msg, volRep.GetName(), volRep.GetNamespace()))
+		v.log.Info(fmt.Sprintf("%s (VolRep %s/%s)", errorMsg, volRep.GetName(), volRep.GetNamespace()))
 
 		return false
 	}
 
-	msg = "VolumeReplication resource for the pvc is syncing as Secondary"
+	msg := "VolumeReplication resource for the pvc is syncing as Secondary"
 	v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReplicating, msg)
 	v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReplicating, msg)
 
@@ -1641,35 +1641,35 @@ func (v *VRGInstance) validateAdditionalVRStatusForSecondary(pvc *corev1.Persist
 func (v *VRGInstance) checkResyncCompletionAsSecondary(pvc *corev1.PersistentVolumeClaim,
 	volRep *volrep.VolumeReplication,
 ) bool {
-	conditionMet, _, msg := isVRConditionMet(volRep, volrep.ConditionResyncing, metav1.ConditionFalse)
+	conditionMet, _, errorMsg := isVRConditionMet(volRep, volrep.ConditionResyncing, metav1.ConditionFalse)
 	if !conditionMet {
-		if msg == "" {
-			msg = "VolumeReplication resource for pvc not syncing as Secondary"
+		if errorMsg == "" {
+			errorMsg = "VolumeReplication resource for pvc not syncing as Secondary"
 		}
 
-		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg)
-		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg)
+		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, errorMsg)
+		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, errorMsg)
 
-		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", msg, volRep.GetName(), volRep.GetNamespace()))
+		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", errorMsg, volRep.GetName(), volRep.GetNamespace()))
 
 		return false
 	}
 
-	conditionMet, _, msg = isVRConditionMet(volRep, volrep.ConditionDegraded, metav1.ConditionFalse)
+	conditionMet, _, errorMsg = isVRConditionMet(volRep, volrep.ConditionDegraded, metav1.ConditionFalse)
 	if !conditionMet {
-		if msg == "" {
-			msg = "VolumeReplication resource for pvc is not syncing and is degraded as Secondary"
+		if errorMsg == "" {
+			errorMsg = "VolumeReplication resource for pvc is not syncing and is degraded as Secondary"
 		}
 
-		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg)
-		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg)
+		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, errorMsg)
+		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, errorMsg)
 
-		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", msg, volRep.GetName(), volRep.GetNamespace()))
+		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", errorMsg, volRep.GetName(), volRep.GetNamespace()))
 
 		return false
 	}
 
-	msg = "VolumeReplication resource for the pvc as Secondary is in sync with Primary"
+	msg := "VolumeReplication resource for the pvc as Secondary is in sync with Primary"
 	v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReplicated, msg)
 	v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonDataProtected, msg)
 
