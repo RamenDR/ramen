@@ -1505,13 +1505,17 @@ func (v *VRGInstance) validateVRValidatedStatus(
 	volRep *volrep.VolumeReplication,
 ) (bool, conditionState) {
 	conditionMet, condState, errorMsg := isVRConditionMet(volRep, volrep.ConditionValidated, metav1.ConditionTrue)
-	if !conditionMet && condState != conditionMissing {
-		defaultMsg := "VolumeReplication resource not validated"
-		v.updatePVCDataReadyConditionHelper(pvc.Namespace, pvc.Name, VRGConditionReasonError, errorMsg,
-			defaultMsg)
-		v.updatePVCDataProtectedConditionHelper(pvc.Namespace, pvc.Name, VRGConditionReasonError, errorMsg,
-			defaultMsg)
-		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", defaultMsg, volRep.GetName(), volRep.GetNamespace()))
+	if !conditionMet {
+		if errorMsg == "" {
+			errorMsg = "VolumeReplication resource not validated"
+		}
+		// The condition does not exist when using csi-addons < 0.10.0, so we cannot treat this as a failure.
+		if condState != conditionMissing {
+			v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, errorMsg)
+			v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, errorMsg)
+		}
+
+		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", errorMsg, volRep.GetName(), volRep.GetNamespace()))
 	}
 
 	return conditionMet, condState
