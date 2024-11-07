@@ -1556,28 +1556,30 @@ func (v *VRGInstance) validateVRValidatedStatus(
 func (v *VRGInstance) validateVRCompletedStatus(pvc *corev1.PersistentVolumeClaim, volRep *volrep.VolumeReplication,
 	state ramendrv1alpha1.ReplicationState,
 ) bool {
-	var (
-		stateString string
-		action      string
-	)
-
-	switch state {
-	case ramendrv1alpha1.Primary:
-		stateString = "primary"
-		action = "promoted"
-	case ramendrv1alpha1.Secondary:
-		stateString = "secondary"
-		action = "demoted"
-	}
-
 	conditionMet, _, msg := isVRConditionMet(volRep, volrep.ConditionCompleted, metav1.ConditionTrue)
 	if !conditionMet {
-		defaultMsg := fmt.Sprintf("VolumeReplication resource for pvc not %s to %s", action, stateString)
-		v.updatePVCDataReadyConditionHelper(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg,
-			defaultMsg)
-		v.updatePVCDataProtectedConditionHelper(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg,
-			defaultMsg)
-		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", defaultMsg, volRep.GetName(), volRep.GetNamespace()))
+		if msg == "" {
+			var (
+				stateString string
+				action      string
+			)
+
+			switch state {
+			case ramendrv1alpha1.Primary:
+				stateString = "primary"
+				action = "promoted"
+			case ramendrv1alpha1.Secondary:
+				stateString = "secondary"
+				action = "demoted"
+			}
+
+			msg = fmt.Sprintf("VolumeReplication resource for pvc not %s to %s", action, stateString)
+		}
+
+		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg)
+		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg)
+
+		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", msg, volRep.GetName(), volRep.GetNamespace()))
 
 		return false
 	}
@@ -1614,15 +1616,14 @@ func (v *VRGInstance) validateAdditionalVRStatusForSecondary(pvc *corev1.Persist
 
 	conditionMet, _, msg := isVRConditionMet(volRep, volrep.ConditionDegraded, metav1.ConditionTrue)
 	if !conditionMet {
-		defaultMsg := "VolumeReplication resource for pvc is not in Degraded condition while resyncing"
-		v.updatePVCDataProtectedConditionHelper(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg,
-			defaultMsg)
+		if msg == "" {
+			msg = "VolumeReplication resource for pvc is not in Degraded condition while resyncing"
+		}
 
-		v.updatePVCDataReadyConditionHelper(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg,
-			defaultMsg)
+		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg)
+		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg)
 
-		v.log.Info(fmt.Sprintf("VolumeReplication resource is not in degraded condition while"+
-			" resyncing is true (%s/%s)", volRep.GetName(), volRep.GetNamespace()))
+		v.log.Info(fmt.Sprintf("%s (VolRep %s/%s)", msg, volRep.GetName(), volRep.GetNamespace()))
 
 		return false
 	}
@@ -1631,8 +1632,7 @@ func (v *VRGInstance) validateAdditionalVRStatusForSecondary(pvc *corev1.Persist
 	v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReplicating, msg)
 	v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReplicating, msg)
 
-	v.log.Info(fmt.Sprintf("VolumeReplication resource for the pvc is syncing as Secondary (%s/%s)",
-		volRep.GetName(), volRep.GetNamespace()))
+	v.log.Info(fmt.Sprintf("%s (VolRep %s/%s)", msg, volRep.GetName(), volRep.GetNamespace()))
 
 	return true
 }
@@ -1643,28 +1643,28 @@ func (v *VRGInstance) checkResyncCompletionAsSecondary(pvc *corev1.PersistentVol
 ) bool {
 	conditionMet, _, msg := isVRConditionMet(volRep, volrep.ConditionResyncing, metav1.ConditionFalse)
 	if !conditionMet {
-		defaultMsg := "VolumeReplication resource for pvc not syncing as Secondary"
-		v.updatePVCDataReadyConditionHelper(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg,
-			defaultMsg)
+		if msg == "" {
+			msg = "VolumeReplication resource for pvc not syncing as Secondary"
+		}
 
-		v.updatePVCDataProtectedConditionHelper(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg,
-			defaultMsg)
+		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg)
+		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg)
 
-		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", defaultMsg, volRep.GetName(), volRep.GetNamespace()))
+		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", msg, volRep.GetName(), volRep.GetNamespace()))
 
 		return false
 	}
 
 	conditionMet, _, msg = isVRConditionMet(volRep, volrep.ConditionDegraded, metav1.ConditionFalse)
 	if !conditionMet {
-		defaultMsg := "VolumeReplication resource for pvc is not syncing and is degraded as Secondary"
-		v.updatePVCDataReadyConditionHelper(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg,
-			defaultMsg)
+		if msg == "" {
+			msg = "VolumeReplication resource for pvc is not syncing and is degraded as Secondary"
+		}
 
-		v.updatePVCDataProtectedConditionHelper(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg,
-			defaultMsg)
+		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg)
+		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError, msg)
 
-		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", defaultMsg, volRep.GetName(), volRep.GetNamespace()))
+		v.log.Info(fmt.Sprintf("%s (VolRep: %s/%s)", msg, volRep.GetName(), volRep.GetNamespace()))
 
 		return false
 	}
@@ -1673,8 +1673,7 @@ func (v *VRGInstance) checkResyncCompletionAsSecondary(pvc *corev1.PersistentVol
 	v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReplicated, msg)
 	v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonDataProtected, msg)
 
-	v.log.Info(fmt.Sprintf("data sync completed as both degraded and resyncing are false for"+
-		" secondary VolRep (%s/%s)", volRep.GetName(), volRep.GetNamespace()))
+	v.log.Info(fmt.Sprintf("%s (VolRep %s/%s)", msg, volRep.GetName(), volRep.GetNamespace()))
 
 	return true
 }
@@ -1733,25 +1732,6 @@ func isVRConditionMet(volRep *volrep.VolumeReplication,
 	return met, conditionKnown, ""
 }
 
-// Disabling unparam linter as currently every invokation of this
-// function sends reason as VRGConditionReasonError and the linter
-// complains about this function always receiving the same reason.
-func (v *VRGInstance) updatePVCDataReadyConditionHelper(
-	namespace string,
-	name string,
-	reason string, //nolint: unparam
-	message,
-	defaultMessage string,
-) {
-	if message != "" {
-		v.updatePVCDataReadyCondition(namespace, name, reason, message)
-
-		return
-	}
-
-	v.updatePVCDataReadyCondition(namespace, name, reason, defaultMessage)
-}
-
 func (v *VRGInstance) updatePVCDataReadyCondition(pvcNamespace, pvcName, reason, message string) {
 	protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName)
 	if protectedPVC == nil {
@@ -1759,25 +1739,6 @@ func (v *VRGInstance) updatePVCDataReadyCondition(pvcNamespace, pvcName, reason,
 	}
 
 	setPVCDataReadyCondition(protectedPVC, reason, message, v.instance.Generation)
-}
-
-// Disabling unparam linter as currently every invokation of this
-// function sends reason as VRGConditionReasonError and the linter
-// complains about this function always receiving the same reason.
-func (v *VRGInstance) updatePVCDataProtectedConditionHelper(
-	namespace string,
-	name string,
-	reason string, //nolint: unparam
-	message,
-	defaultMessage string,
-) {
-	if message != "" {
-		v.updatePVCDataProtectedCondition(namespace, name, reason, message)
-
-		return
-	}
-
-	v.updatePVCDataProtectedCondition(namespace, name, reason, defaultMessage)
 }
 
 func (v *VRGInstance) updatePVCDataProtectedCondition(pvcNamespace, pvcName, reason, message string) {
