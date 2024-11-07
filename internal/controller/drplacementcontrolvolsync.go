@@ -145,7 +145,7 @@ func (d *DRPCInstance) createOrUpdateVolSyncDestManifestWork(srcCluster string) 
 		annotations[DRPCNameAnnotation] = d.instance.Name
 		annotations[DRPCNamespaceAnnotation] = d.instance.Namespace
 
-		vrg, err := d.refreshRDSpec(srcCluster, dstCluster)
+		vrg, err := d.refreshVRGSecondarySpec(srcCluster, dstCluster)
 		if err != nil {
 			return ctrlutil.OperationResultNone, err
 		}
@@ -169,22 +169,28 @@ func (d *DRPCInstance) createOrUpdateVolSyncDestManifestWork(srcCluster string) 
 	return ctrlutil.OperationResultNone, nil
 }
 
-func (d *DRPCInstance) refreshRDSpec(srcCluster, dstCluster string) (*rmn.VolumeReplicationGroup, error) {
+func (d *DRPCInstance) refreshVRGSecondarySpec(srcCluster, dstCluster string) (*rmn.VolumeReplicationGroup, error) {
 	d.setProgression(rmn.ProgressionSettingupVolsyncDest)
 
-	srcVRG, found := d.vrgs[srcCluster]
+	srcVRGView, found := d.vrgs[srcCluster]
 	if !found {
 		return nil, fmt.Errorf("failed to find source VolSync VRG in cluster %s. VRGs %v", srcCluster, d.vrgs)
 	}
 
-	if len(srcVRG.Status.ProtectedPVCs) == 0 {
-		d.log.Info("ProtectedPVCs on pirmary cluster is empty")
-
-		return nil, WaitForSourceCluster
+	srcVRG, err := d.getVRGFromManifestWork(srcCluster)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find source VRG ManifestWork in cluster %s", srcCluster)
 	}
 
-	dstVRG := d.newVRG(dstCluster, rmn.Secondary)
-	d.resetRDSpec(srcVRG, &dstVRG)
+	dstVRG := d.newVRG(dstCluster, rmn.Secondary, nil)
+
+	if len(srcVRGView.Status.ProtectedPVCs) != 0 {
+		d.resetRDSpec(srcVRGView, &dstVRG)
+	}
+
+	// Update destination VRG peerClasses with the source classes, such that when secondary is promoted to primary
+	// on actions, it uses the same peerClasses as the primary
+	dstVRG.Spec.Async.PeerClasses = srcVRG.Spec.Async.PeerClasses
 
 	return &dstVRG, nil
 }
