@@ -1678,10 +1678,14 @@ func (v *VRGInstance) checkResyncCompletionAsSecondary(pvc *corev1.PersistentVol
 type conditionState string
 
 const (
+	// Not found.
 	conditionMissing = conditionState("missing")
-	conditionStale   = conditionState("stale")
+	// Found but its observed generation does not match the object generation.
+	conditionStale = conditionState("stale")
+	// Found, not stale, but its value is "Unknown".
 	conditionUnknown = conditionState("unknown")
-	conditionKnown   = conditionState("known")
+	// Found, not stale, and the value is "True" or "False"
+	conditionKnown = conditionState("known")
 )
 
 // isVRConditionMet check if condition is met.
