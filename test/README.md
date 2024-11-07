@@ -124,7 +124,15 @@ environment.
 1. Install required packages
 
    ```
-   brew install go kubectl kustomize helm velero virtctl minio-mc argocd
+   brew install \
+       argocd \
+       go \
+       helm \
+       kubectl \
+       kustomize \
+       minio-mc \
+       velero \
+       virtctl
    ```
 
 1. Install the `clusteradm` tool. See
