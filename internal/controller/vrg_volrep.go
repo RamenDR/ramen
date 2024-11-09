@@ -1279,13 +1279,6 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 			namespacedName, err)
 	}
 
-	sID, found := storageClass.GetLabels()[StorageIDLabel]
-	if !found {
-		return nil, fmt.Errorf("missing storageID label in storageclass of pvc %s", namespacedName)
-	}
-
-	peerClasses := len(v.instance.Spec.Async.PeerClasses)
-
 	matchingReplicationClassList := []*volrep.VolumeReplicationClass{}
 
 	for index := range v.replClassList.Items {
@@ -1308,13 +1301,13 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 
 		// if peerClass exist, continue to check if SID matches, or skip the check and proceed
 		// to append to matchingReplicationClassList
-		if peerClasses != 0 {
+		if len(v.instance.Spec.Async.PeerClasses) != 0 {
 			sIDFromReplicationClass, exists := replicationClass.GetLabels()[StorageIDLabel]
 			if !exists {
 				continue
 			}
 
-			if sIDFromReplicationClass != sID {
+			if sIDFromReplicationClass != storageClass.GetLabels()[StorageIDLabel] {
 				continue
 			}
 		}
