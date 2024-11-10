@@ -124,8 +124,19 @@ environment.
 1. Install required packages
 
    ```
-   brew install go kubectl kustomize helm velero virtctl minio-mc argocd
+   brew install \
+       argocd \
+       go \
+       helm \
+       kubectl \
+       kustomize \
+       lima \
+       minio-mc \
+       velero \
+       virtctl
    ```
+
+   lima version 1.0.0 or later is required.
 
 1. Install the `clusteradm` tool. See
    [Install clusteradm CLI tool](https://open-cluster-management.io/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool)
@@ -144,32 +155,6 @@ environment.
    ```
 
    For more info see [kubectl-gather](https://github.com/nirs/kubectl-gather)
-
-1. Install `lima` from source
-
-   > [!NOTE]
-   > Do not install lima from brew, it is too old.
-
-   Clone and build lima:
-
-   ```
-   git clone https://github.com/lima-vm/lima.git
-   cd lima
-   make
-   ```
-
-   Edit `~/.zshrc` and add `$HOME/lima/_output/bin` directory to the PATH:
-
-   ```
-   PATH="$HOME/lima/_output/bin:$PATH"
-   export PATH
-   ```
-
-   Open a new shell or run this in the current shell:
-
-   ```
-   export PATH="$HOME/lima/_output/bin:$PATH"
-   ```
 
 1. Install `socket_vmnet` from source
 
