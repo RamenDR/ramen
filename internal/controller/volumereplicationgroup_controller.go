@@ -1236,9 +1236,10 @@ func (v *VRGInstance) updateStatusState() {
 	dataReadyCondition := findCondition(v.instance.Status.Conditions, VRGConditionTypeDataReady)
 	if dataReadyCondition == nil {
 		// VRG is exclusively using volsync
-		if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary &&
-			len(v.instance.Spec.VolSync.RDSpec) > 0 {
-			v.instance.Status.State = ramendrv1alpha1.SecondaryState
+		if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
+			if v.volSyncHandler.GetWorkloadStatus() != "active" {
+				v.instance.Status.State = ramendrv1alpha1.SecondaryState
+			}
 
 			return
 		}
