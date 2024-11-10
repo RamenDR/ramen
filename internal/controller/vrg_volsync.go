@@ -225,6 +225,8 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() bool {
 	// If we are secondary, and RDSpec is not set, then we don't want to have any PVC
 	// flagged as a VolSync PVC.
 	if v.instance.Spec.VolSync.RDSpec == nil {
+		// This might be a case where we lose the RDSpec temporarily,
+		// so we don't know if workload status is truly inactive.
 		idx := 0
 
 		for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
@@ -250,6 +252,7 @@ func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
 	requeue := false
 	rdinCGs := []ramendrv1alpha1.VolSyncReplicationDestinationSpec{}
 
+	// TODO: Set the workload status in CG code path later
 	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
 		cg, ok := rdSpec.ProtectedPVC.Labels[ConsistencyGroupLabel]
 		if ok && util.IsCGEnabled(v.instance.Annotations) {
@@ -347,16 +350,24 @@ func (v *VRGInstance) aggregateVolSyncDataReadyCondition() *metav1.Condition {
 		Message:            "All VolSync PVCs are ready",
 	}
 
-	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
+	if len(v.volSyncPVCs) == 0 {
 		dataReadyCondition.Reason = VRGConditionReasonUnused
-		dataReadyCondition.Message = "Volsync based PVC protection does not report DataReady condition as Secondary"
+		dataReadyCondition.Message = "No PVCs are protected using Volsync scheme"
 
 		return dataReadyCondition
 	}
 
-	if len(v.volSyncPVCs) == 0 {
+	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
+		if v.volSyncHandler.GetWorkloadStatus() == "active" {
+			dataReadyCondition.Status = metav1.ConditionFalse
+			dataReadyCondition.Reason = VRGConditionReasonProgressing
+			dataReadyCondition.Message = "Some of the VolSync PVCs are active"
+
+			return dataReadyCondition
+		}
+
 		dataReadyCondition.Reason = VRGConditionReasonUnused
-		dataReadyCondition.Message = "No PVCs are protected using Volsync scheme"
+		dataReadyCondition.Message = "Volsync based PVC protection does not report DataReady condition as Secondary"
 
 		return dataReadyCondition
 	}

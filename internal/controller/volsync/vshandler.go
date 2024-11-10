@@ -73,6 +73,7 @@ type VSHandler struct {
 	destinationCopyMethod       volsyncv1alpha1.CopyMethodType
 	volumeSnapshotClassList     *snapv1.VolumeSnapshotClassList
 	vrgInAdminNamespace         bool
+	workloadStatus              string
 }
 
 func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, owner metav1.Object,
@@ -96,6 +97,10 @@ func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, ow
 	}
 
 	return vsHandler
+}
+
+func (v *VSHandler) GetWorkloadStatus() string {
+	return v.workloadStatus
 }
 
 // returns replication destination only if create/update is successful and the RD is considered available.
@@ -361,6 +366,8 @@ func (v *VSHandler) validatePVCBeforeRS(rsSpec ramendrv1alpha1.VolSyncReplicatio
 		}
 
 		if pvcIsMounted {
+			v.workloadStatus = "active"
+
 			return false, nil
 		}
 
@@ -1634,6 +1641,8 @@ func (v *VSHandler) IsRDDataProtected(pvcName, pvcNamespace string) (bool, error
 func (v *VSHandler) PrecreateDestPVCIfEnabled(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 ) (*string, error) {
 	if !v.IsCopyMethodDirect() {
+		// TODO:
+		// We need to check the workload status even in other cases.
 		v.log.Info("Using default copyMethod of Snapshot")
 
 		return nil, nil // use default copyMethod
@@ -1655,6 +1664,9 @@ func (v *VSHandler) PrecreateDestPVCIfEnabled(rdSpec ramendrv1alpha1.VolSyncRepl
 	// on this cluster). That race condition will be ignored. That would be a user error to deploy the
 	// same app in the same namespace and on the destination cluster...
 	if inUse {
+		// Even if one pvc is in use, mark the workload status as active
+		v.workloadStatus = "active"
+
 		return nil, fmt.Errorf("pvc %v is mounted by others. Checking later",
 			util.ProtectedPVCNamespacedName(rdSpec.ProtectedPVC))
 	}

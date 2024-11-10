@@ -1234,24 +1234,6 @@ func (v *VRGInstance) updateVRGStatus(result ctrl.Result) ctrl.Result {
 // on the cluster
 func (v *VRGInstance) updateStatusState() {
 	dataReadyCondition := findCondition(v.instance.Status.Conditions, VRGConditionTypeDataReady)
-	if dataReadyCondition == nil {
-		// VRG is exclusively using volsync
-		if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary &&
-			len(v.instance.Spec.VolSync.RDSpec) > 0 {
-			v.instance.Status.State = ramendrv1alpha1.SecondaryState
-
-			return
-		}
-
-		v.log.Info("Failed to find the DataReady condition in status")
-
-		v.instance.Status.State = ramendrv1alpha1.UnknownState
-
-		return
-	}
-
-	StatusState := getStatusStateFromSpecState(v.instance.Spec.ReplicationState)
-
 	if dataReadyCondition.Status != metav1.ConditionTrue ||
 		dataReadyCondition.ObservedGeneration != v.instance.Generation {
 		v.instance.Status.State = ramendrv1alpha1.UnknownState
@@ -1259,6 +1241,7 @@ func (v *VRGInstance) updateStatusState() {
 		return
 	}
 
+	StatusState := getStatusStateFromSpecState(v.instance.Spec.ReplicationState)
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
 		v.instance.Status.State = StatusState
 
