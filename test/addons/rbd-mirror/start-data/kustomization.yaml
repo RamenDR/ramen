@@ -3,7 +3,6 @@
 
 ---
 resources:
-- vrc-sample.yaml
 - vgrc-sample.yaml
 - rbd-mirror.yaml
 
