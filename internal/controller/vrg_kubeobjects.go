@@ -248,32 +248,74 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 
 	for groupNumber, captureGroup := range groups {
 		log1 := log.WithValues("group", groupNumber, "name", captureGroup.Name)
-		requestsCompletedCount += v.kubeObjectsGroupCapture(
-			result, captureGroup, pathName, capturePathName, namePrefix, veleroNamespaceName,
-			captureInProgressStatusUpdate,
-			labels, annotations, requests, log,
-		)
-		requestsProcessedCount += len(v.s3StoreAccessors)
+		if captureGroup.IsHook {
+			if captureGroup.Hook.Type == "check" {
+				hookResult, err := util.EvaluateCheckHook(v.reconciler.Client, &captureGroup.Hook, log1)
+				if err != nil {
+					log.Error(err, "error occured during check hook ")
+				}
+				log1.Info("Check hook executed successfully", "check hook is ", captureGroup.Hook.Name+"/"+captureGroup.Hook.Chk.Name, " result is ", hookResult)
+				if !hookResult {
+					if shouldHookBeFailedOnError(&captureGroup.Hook) {
+						// update error state
+						break
+					} else {
+						// update error state
+						continue
+					}
+				}
+				// update successful status here
+			}
+		} else {
+			requestsCompletedCount += v.kubeObjectsGroupCapture(
+				result, captureGroup, pathName, capturePathName, namePrefix, veleroNamespaceName,
+				captureInProgressStatusUpdate,
+				labels, annotations, requests, log,
+			)
+			requestsProcessedCount += len(v.s3StoreAccessors)
+			if requestsCompletedCount < requestsProcessedCount {
+				log1.Info("Kube objects group capturing", "complete", requestsCompletedCount, "total", requestsProcessedCount)
 
-		if requestsCompletedCount < requestsProcessedCount {
-			log1.Info("Kube objects group capturing", "complete", requestsCompletedCount, "total", requestsProcessedCount)
-
-			return
+				return
+			}
 		}
 	}
 
-	request0 := requests[kubeObjectsCaptureName(namePrefix, groups[0].Name, v.s3StoreAccessors[0].S3ProfileName)]
+	request0, ok := requests[kubeObjectsCaptureName(namePrefix, groups[0].Name, v.s3StoreAccessors[0].S3ProfileName)]
 
-	v.kubeObjectsCaptureComplete(
-		result,
-		captureStartConditionally,
-		captureNumber,
-		veleroNamespaceName,
-		interval,
-		labels,
-		request0.StartTime(),
-		request0.Object().GetAnnotations(),
-	)
+	if ok {
+		v.kubeObjectsCaptureComplete(
+			result,
+			captureStartConditionally,
+			captureNumber,
+			veleroNamespaceName,
+			interval,
+			labels,
+			request0.StartTime(),
+			request0.Object().GetAnnotations(),
+		)
+	}
+
+}
+
+func shouldHookBeFailedOnError(hook *kubeobjects.HookSpec) bool {
+	// hook.Check.OnError overwrites the feature of hook.OnError -- defaults to fail
+	if hook.Chk.OnError == "" {
+		if hook.OnError != "" {
+			if hook.OnError == "fail" {
+				return true
+			} else if hook.OnError == "continue" {
+				return false
+			}
+		}
+	} else {
+		if hook.OnError == "fail" {
+			return true
+		} else if hook.OnError == "continue" {
+			return false
+		}
+	}
+	return true
 }
 
 func (v *VRGInstance) kubeObjectsGroupCapture(
@@ -593,47 +635,63 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 
 	for groupNumber, recoverGroup := range groups {
 		log1 := log.WithValues("group", groupNumber, "name", recoverGroup.BackupName)
-		request, ok, submit, cleanup := v.getRecoverOrProtectRequest(
-			captureRequests, recoverRequests, s3StoreAccessor,
-			sourceVrgNamespaceName, sourceVrgName,
-			captureToRecoverFromIdentifier,
-			groupNumber, recoverGroup, veleroNamespaceName, labels, log1,
-		)
 
-		var err error
-
-		if !ok {
-			_, err = submit()
-			if err == nil {
-				log1.Info("Kube objects group recover request submitted")
-
-				return errors.New("kube objects group recover request submitted")
+		if recoverGroup.IsHook {
+			hookResult, err := util.EvaluateCheckHook(v.reconciler.Client, &recoverGroup.Hook, log1)
+			if err != nil {
+				log.Error(err, "error occured during check hook ")
+			}
+			log1.Info("Check hook executed successfully", "check hook is ", recoverGroup.Hook.Name+"/"+recoverGroup.Hook.Chk.Name, " result is ", hookResult)
+			if !hookResult {
+				if shouldHookBeFailedOnError(&recoverGroup.Hook) {
+					// update error state
+					break
+				} else {
+					// update error state
+					continue
+				}
 			}
 		} else {
-			err = request.Status(v.log)
-			if err == nil {
-				log1.Info("Kube objects group recovered", "start", request.StartTime(), "end", request.EndTime())
-				requests[groupNumber] = request
+			request, ok, submit, cleanup := v.getRecoverOrProtectRequest(
+				captureRequests, recoverRequests, s3StoreAccessor,
+				sourceVrgNamespaceName, sourceVrgName,
+				captureToRecoverFromIdentifier,
+				groupNumber, recoverGroup, veleroNamespaceName, labels, log1,
+			)
+			var err error
 
-				continue
+			if !ok {
+				_, err = submit()
+				if err == nil {
+					log1.Info("Kube objects group recover request submitted")
+
+					return errors.New("kube objects group recover request submitted")
+				}
+			} else {
+				err = request.Status(v.log)
+				if err == nil {
+					log1.Info("Kube objects group recovered", "start", request.StartTime(), "end", request.EndTime())
+					requests[groupNumber] = request
+
+					continue
+				}
 			}
-		}
+			if errors.Is(err, kubeobjects.RequestProcessingError{}) {
+				log1.Info("Kube objects group recovering", "state", err.Error())
 
-		if errors.Is(err, kubeobjects.RequestProcessingError{}) {
-			log1.Info("Kube objects group recovering", "state", err.Error())
+				return err
+			}
+			log1.Error(err, "Kube objects group recover error")
+
+			if ok {
+				cleanup(request)
+			}
+
+			result.Requeue = true
 
 			return err
 		}
 
-		log1.Error(err, "Kube objects group recover error")
-
-		if ok {
-			cleanup(request)
-		}
-
-		result.Requeue = true
-
-		return err
 	}
 
 	startTime := requests[0].StartTime()
@@ -728,8 +786,7 @@ func getCaptureGroups(recipe Recipe.Recipe) ([]kubeobjects.CaptureSpec, error) {
 	resources := make([]kubeobjects.CaptureSpec, len(workflow.Sequence))
 
 	for index, resource := range workflow.Sequence {
-		for resourceType := range resource {
-			resourceName := resource[resourceType]
+		for resourceType, resourceName := range resource {
 
 			captureInstance, err := getResourceAndConvertToCaptureGroup(recipe, resourceType, resourceName)
 			if err != nil {
@@ -762,8 +819,7 @@ func getRecoverGroups(recipe Recipe.Recipe) ([]kubeobjects.RecoverSpec, error) {
 
 	for index, resource := range workflow.Sequence {
 		// group: map[string]string, e.g. "group": "groupName", or "hook": "hookName"
-		for resourceType := range resource {
-			resourceName := resource[resourceType]
+		for resourceType, resourceName := range resource {
 
 			captureInstance, err := getResourceAndConvertToRecoverGroup(recipe, resourceType, resourceName)
 			if err != nil {
@@ -792,12 +848,16 @@ func getResourceAndConvertToCaptureGroup(
 	}
 
 	if resourceType == "hook" {
-		hook, op, err := getHookAndOpFromRecipe(&recipe, name)
+		prefix, suffix, err := validateAndGetHookDetails(name)
+		if err != nil {
+			return nil, k8serrors.NewInternalError(err)
+		}
+		hook, err := getHookFromRecipe(&recipe, prefix)
 		if err != nil {
 			return nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec"}, resourceType)
 		}
 
-		return convertRecipeHookToCaptureSpec(*hook, *op)
+		return convertRecipeHookToCaptureSpec(*hook, suffix)
 	}
 
 	return nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec"}, resourceType)
@@ -818,69 +878,59 @@ func getResourceAndConvertToRecoverGroup(
 	}
 
 	if resourceType == "hook" {
-		hook, op, err := getHookAndOpFromRecipe(&recipe, name)
+		prefix, suffix, err := validateAndGetHookDetails(name)
+		if err != nil {
+			return nil, k8serrors.NewInternalError(err)
+		}
+		hook, err := getHookFromRecipe(&recipe, prefix)
 		if err != nil {
 			return nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec"}, resourceType)
 		}
 
-		return convertRecipeHookToRecoverSpec(*hook, *op)
+		return convertRecipeHookToRecoverSpec(*hook, suffix)
 	}
 
 	return nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec"}, resourceType)
 }
 
-func getHookAndOpFromRecipe(recipe *Recipe.Recipe, name string) (*Recipe.Hook, *Recipe.Operation, error) {
-	// hook can be made up of optionalPrefix/hookName; workflow sequence uses full name
-	var prefix string
-
-	var suffix string
-
-	const containsSingleDelim = 2
-
-	parts := strings.Split(name, "/")
-	switch len(parts) {
-	case 1:
-		prefix = ""
-		suffix = name
-	case containsSingleDelim:
-		prefix = parts[0]
-		suffix = parts[1]
-	default:
-		return nil, nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec.Hook.Name"}, name)
+func validateAndGetHookDetails(name string) (string, string, error) {
+	if !strings.Contains(name, "/") {
+		return "", "", errors.New("invalid format of hook name provided ")
 	}
+	parts := strings.Split(name, "/")
+	return parts[0], parts[1], nil
+}
 
-	// match prefix THEN suffix
+// from the recipe, get the hook based on the prefix before "/"
+func getHookFromRecipe(recipe *Recipe.Recipe, prefix string) (*Recipe.Hook, error) {
 	for _, hook := range recipe.Spec.Hooks {
 		if hook.Name == prefix {
-			for _, op := range hook.Ops {
-				if op.Name == suffix {
-					return hook, op, nil
-				}
-			}
+			return hook, nil
 		}
 	}
 
-	return nil, nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec.Hook.Name"}, name)
+	return nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec.Hook.Name"}, prefix)
 }
 
 // TODO: complete functionality - add Hook support to KubeResourcesSpec, then copy in Velero object creation
 func convertRecipeHookToCaptureSpec(
-	hook Recipe.Hook, op Recipe.Operation) (*kubeobjects.CaptureSpec, error,
+	hook Recipe.Hook, suffix string) (*kubeobjects.CaptureSpec, error,
 ) {
-	hookName := hook.Name + "-" + op.Name
-
-	hooks := getHookSpecFromHook(hook, op)
+	hookSpec := getHookSpecFromHook(hook, suffix)
+	hookName := hook.Name + "-" + suffix
 
 	captureSpec := kubeobjects.CaptureSpec{
 		Name: hookName,
+		// TODO: Check why pod is hardcoded in the included resources?
 		Spec: kubeobjects.Spec{
 			KubeResourcesSpec: kubeobjects.KubeResourcesSpec{
 				IncludedNamespaces: []string{hook.Namespace},
 				IncludedResources:  []string{"pod"},
 				ExcludedResources:  []string{},
-				Hooks:              hooks,
+				Hook:               hookSpec,
+				IsHook:             true,
 			},
-			LabelSelector:           hooks[0].LabelSelector,
+			LabelSelector:           hookSpec.LabelSelector,
 			IncludeClusterResources: new(bool),
 		},
 	}
@@ -888,8 +938,8 @@ func convertRecipeHookToCaptureSpec(
 	return &captureSpec, nil
 }
 
-func convertRecipeHookToRecoverSpec(hook Recipe.Hook, op Recipe.Operation) (*kubeobjects.RecoverSpec, error) {
-	hooks := getHookSpecFromHook(hook, op)
+func convertRecipeHookToRecoverSpec(hook Recipe.Hook, suffix string) (*kubeobjects.RecoverSpec, error) {
+	hookSpec := getHookSpecFromHook(hook, suffix)
 
 	return &kubeobjects.RecoverSpec{
 		// BackupName: arbitrary fixed string to designate that this is will be a Backup, not Restore, object
@@ -899,25 +949,75 @@ func convertRecipeHookToRecoverSpec(hook Recipe.Hook, op Recipe.Operation) (*kub
 				IncludedNamespaces: []string{hook.Namespace},
 				IncludedResources:  []string{"pod"},
 				ExcludedResources:  []string{},
-				Hooks:              hooks,
+				Hook:               hookSpec,
+				IsHook:             true,
 			},
-			LabelSelector:           hooks[0].LabelSelector,
+			LabelSelector:           hookSpec.LabelSelector,
 			IncludeClusterResources: new(bool),
 		},
 	}, nil
 }
 
-func getHookSpecFromHook(hook Recipe.Hook, op Recipe.Operation) []kubeobjects.HookSpec {
-	return []kubeobjects.HookSpec{
-		{
-			Name:          op.Name,
-			Type:          hook.Type,
-			Timeout:       op.Timeout,
-			Container:     &op.Container,
-			Command:       op.Command,
-			LabelSelector: hook.LabelSelector,
-		},
+// TODO: Return error as well or ensure that other than exec and check hooks are
+// handled properly.
+func getHookSpecFromHook(hook Recipe.Hook, suffix string) kubeobjects.HookSpec {
+	// based on hook.type check of the hook is chks or ops
+	if hook.Type == "exec" {
+		return getOpHookSpec(&hook, suffix)
+	} else if hook.Type == "check" {
+		return getChkHookSpec(&hook, suffix)
 	}
+
+	return kubeobjects.HookSpec{}
+}
+
+func getChkHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
+	for _, chk := range hook.Chks {
+		if chk.Name == suffix {
+			return kubeobjects.HookSpec{
+				Name:           hook.Name,
+				Namespace:      hook.Namespace,
+				Type:           hook.Type,
+				SelectResource: hook.SelectResource,
+				LabelSelector:  hook.LabelSelector,
+				NameSelector:   hook.NameSelector,
+				Timeout:        chk.Timeout,
+				OnError:        chk.OnError,
+				Chk: kubeobjects.Check{
+					Name:      suffix,
+					Condition: chk.Condition,
+				},
+			}
+		}
+	}
+	return kubeobjects.HookSpec{}
+}
+
+func getOpHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
+	for _, op := range hook.Ops {
+		if op.Name == suffix {
+			// TODO: There are two timeouts, onErrors one in hooks and other one in
+			// check or operation, which one to consider while running hook?
+			return kubeobjects.HookSpec{
+				Name:           hook.Name,
+				Namespace:      hook.Namespace,
+				Type:           hook.Type,
+				Timeout:        hook.Timeout,
+				OnError:        hook.OnError,
+				SelectResource: hook.SelectResource,
+				LabelSelector:  hook.LabelSelector,
+				NameSelector:   hook.NameSelector,
+				SinglePodOnly:  hook.SinglePodOnly,
+				Op: kubeobjects.Operation{
+					Name:      suffix,
+					Container: op.Container,
+					Command:   op.Command,
+					InverseOp: op.InverseOp,
+				},
+			}
+		}
+	}
+	return kubeobjects.HookSpec{}
 }
 
 func convertRecipeGroupToRecoverSpec(group Recipe.Group) (*kubeobjects.RecoverSpec, error) {

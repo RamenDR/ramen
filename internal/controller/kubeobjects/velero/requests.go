@@ -13,7 +13,6 @@ package velero
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/go-logr/logr"
 	pkgerrors "github.com/pkg/errors"
@@ -378,7 +377,8 @@ func getBackupSpecFromObjectsSpec(objectsSpec kubeobjects.Spec) velero.BackupSpe
 		OrLabelSelectors:        objectsSpec.OrLabelSelectors,
 		TTL:                     metav1.Duration{}, // TODO: set default here
 		IncludeClusterResources: objectsSpec.IncludeClusterResources,
-		Hooks:                   getBackupHooks(objectsSpec.KubeResourcesSpec.Hooks),
+		// TODO: Hooks should be handled by ramen code.
+		//Hooks:                   getBackupHooks(objectsSpec.KubeResourcesSpec.Hooks)
 		VolumeSnapshotLocations: []string{},
 		DefaultVolumesToRestic:  new(bool),
 		OrderedResources:        map[string]string{},
@@ -395,7 +395,8 @@ func getBackupHooks(hooks []kubeobjects.HookSpec) velero.BackupHooks {
 			Name:          hook.Name,
 			LabelSelector: hook.LabelSelector,
 			PreHooks:      []velero.BackupResourceHook{},
-			PostHooks: []velero.BackupResourceHook{
+			// commenting as the hooks will be executed and not passed on velero
+			/*PostHooks: []velero.BackupResourceHook{
 				{
 					Exec: &velero.ExecHook{
 						Container: dereferenceOrZeroValueIfNil(hook.Container),
@@ -403,7 +404,7 @@ func getBackupHooks(hooks []kubeobjects.HookSpec) velero.BackupHooks {
 						Command:   []string{hook.Command},
 					},
 				},
-			},
+			},*/
 		})
 	}
 
