@@ -249,22 +249,10 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	for groupNumber, captureGroup := range groups {
 		cg := captureGroup
 		log1 := log.WithValues("group", groupNumber, "name", cg.Name)
-		if cg.IsHook {
-			if cg.Hook.Type == "check" {
-				hookResult, err := util.EvaluateCheckHook(v.reconciler.Client, &cg.Hook, log1)
-				if err != nil {
-					log.Error(err, "error occurred during check hook ")
-				} else {
-					hookName := cg.Hook.Name + "/" + cg.Hook.Chk.Name
-					log1.Info("Check hook executed successfully", "check hook is ", hookName, " result is ", hookResult)
-				}
 
-				if !hookResult && shouldHookBeFailedOnError(&cg.Hook) {
-					// update error state
-					break
-				}
-				// update error state
-				continue
+		if cg.IsHook {
+			if err := v.executeCaptureHook(cg, log1); err != nil {
+				break
 			}
 		} else {
 			requestsCompletedCount += v.kubeObjectsGroupCapture(
@@ -295,6 +283,28 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 			request0.Object().GetAnnotations(),
 		)
 	}
+}
+
+func (v *VRGInstance) executeCaptureHook(cg kubeobjects.CaptureSpec, log1 logr.Logger) error {
+	if cg.Hook.Type == "check" {
+		hookResult, err := util.EvaluateCheckHook(v.reconciler.Client, &cg.Hook, log1)
+
+		if err != nil {
+			log1.Error(err, "error occurred during check hook ")
+		} else {
+			hookName := cg.Hook.Name + "/" + cg.Hook.Chk.Name
+			log1.Info("Check hook executed successfully", "check hook is ", hookName, " result is ", hookResult)
+		}
+
+		if !hookResult && shouldHookBeFailedOnError(&cg.Hook) {
+			// update error state
+			return fmt.Errorf("stopping workflow sequence as check hook failed")
+		}
+		// update error state
+		return nil
+	}
+
+	return nil
 }
 
 func shouldHookBeFailedOnError(hook *kubeobjects.HookSpec) bool {
@@ -630,61 +640,16 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 		log1 := log.WithValues("group", groupNumber, "name", rg.BackupName)
 
 		if rg.IsHook {
-			if rg.Hook.Type == "check" {
-				hookResult, err := util.EvaluateCheckHook(v.reconciler.Client, &rg.Hook, log1)
-				if err != nil {
-					log.Error(err, "error occurred during check hook ")
-				} else {
-					hookName := rg.Hook.Name + "/" + rg.Hook.Chk.Name
-					log1.Info("Check hook executed successfully", "check hook is ", hookName, " result is ", hookResult)
-				}
-
-				if !hookResult && shouldHookBeFailedOnError(&rg.Hook) {
-					// update error state
-					break
-				}
-				// update error state
-				continue
+			if err := v.executeRecoverHook(rg, log1); err != nil {
+				break
 			}
 		} else {
-			request, ok, submit, cleanup := v.getRecoverOrProtectRequest(
-				captureRequests, recoverRequests, s3StoreAccessor,
-				sourceVrgNamespaceName, sourceVrgName,
-				captureToRecoverFromIdentifier,
-				groupNumber, rg, veleroNamespaceName, labels, log1,
-			)
-			var err error
-
-			if !ok {
-				_, err = submit()
-				if err == nil {
-					log1.Info("Kube objects group recover request submitted")
-
-					return errors.New("kube objects group recover request submitted")
-				}
-			} else {
-				err = request.Status(v.log)
-				if err == nil {
-					log1.Info("Kube objects group recovered", "start", request.StartTime(), "end", request.EndTime())
-					requests[groupNumber] = request
-
-					continue
-				}
-			}
-			if errors.Is(err, kubeobjects.RequestProcessingError{}) {
-				log1.Info("Kube objects group recovering", "state", err.Error())
-
+			if err := v.executeRecoverGroup(result, s3StoreAccessor, sourceVrgNamespaceName,
+				sourceVrgName, captureToRecoverFromIdentifier, captureRequests,
+				recoverRequests, veleroNamespaceName, labels, groupNumber, rg,
+				requests, log1); err != nil {
 				return err
 			}
-			log1.Error(err, "Kube objects group recover error")
-
-			if ok {
-				cleanup(request)
-			}
-
-			result.Requeue = true
-
-			return err
 		}
 	}
 
@@ -693,6 +658,76 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 	log.Info("Kube objects recovered", "groups", len(groups), "start", startTime, "duration", duration)
 
 	return v.kubeObjectsRecoverRequestsDelete(result, veleroNamespaceName, labels)
+}
+
+func (v *VRGInstance) executeRecoverGroup(result *ctrl.Result, s3StoreAccessor s3StoreAccessor,
+	sourceVrgNamespaceName, sourceVrgName string,
+	captureToRecoverFromIdentifier *ramen.KubeObjectsCaptureIdentifier,
+	captureRequests, recoverRequests map[string]kubeobjects.Request,
+	veleroNamespaceName string, labels map[string]string, groupNumber int,
+	rg kubeobjects.RecoverSpec, requests []kubeobjects.Request, log1 logr.Logger) error {
+	request, ok, submit, cleanup := v.getRecoverOrProtectRequest(
+		captureRequests, recoverRequests, s3StoreAccessor,
+		sourceVrgNamespaceName, sourceVrgName,
+		captureToRecoverFromIdentifier,
+		groupNumber, rg, veleroNamespaceName, labels, log1,
+	)
+
+	var err error
+
+	if !ok {
+		_, err = submit()
+		if err == nil {
+			log1.Info("Kube objects group recover request submitted")
+
+			return errors.New("kube objects group recover request submitted")
+		}
+	} else {
+		err = request.Status(v.log)
+		if err == nil {
+			log1.Info("Kube objects group recovered", "start", request.StartTime(), "end", request.EndTime())
+			requests[groupNumber] = request
+
+			return nil
+		}
+	}
+
+	if errors.Is(err, kubeobjects.RequestProcessingError{}) {
+		log1.Info("Kube objects group recovering", "state", err.Error())
+
+		return err
+	}
+
+	log1.Error(err, "Kube objects group recover error")
+
+	if ok {
+		cleanup(request)
+	}
+
+	result.Requeue = true
+
+	return err
+}
+
+func (v *VRGInstance) executeRecoverHook(rg kubeobjects.RecoverSpec, log1 logr.Logger) error {
+	if rg.Hook.Type == "check" {
+		hookResult, err := util.EvaluateCheckHook(v.reconciler.Client, &rg.Hook, log1)
+		if err != nil {
+			log1.Error(err, "error occurred during check hook ")
+		} else {
+			hookName := rg.Hook.Name + "/" + rg.Hook.Chk.Name
+			log1.Info("Check hook executed successfully", "check hook is ", hookName, " result is ", hookResult)
+		}
+
+		if !hookResult && shouldHookBeFailedOnError(&rg.Hook) {
+			// update error state
+			return fmt.Errorf("stopping workflow sequence as check hook failed")
+		}
+		// update error state
+		return nil
+	}
+
+	return nil
 }
 
 func (v *VRGInstance) kubeObjectsRecoverRequestsDelete(
