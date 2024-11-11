@@ -1659,7 +1659,6 @@ const (
 // Returns 3 values:
 //   - met: true if the condition status matches the desired status, otherwise false
 //   - state: one of (conditionMissing, conditionStale, conditionUnknown, conditionKnown)
-//     generation, and its value is not unknown.
 //   - errorMsg: error message describing why the condition is not met
 func isVRConditionMet(volRep *volrep.VolumeReplication,
 	conditionType string,
