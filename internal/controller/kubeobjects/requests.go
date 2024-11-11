@@ -85,24 +85,57 @@ type KubeResourcesSpec struct {
 	ExcludedResources []string `json:"excludedResources,omitempty"`
 
 	//+optional
-	Hooks []HookSpec `json:"hooks,omitempty"`
+	Hook HookSpec `json:"hooks,omitempty"`
+
+	//+optional
+	IsHook bool `json:"isHook,omitempty"`
 }
 
+// HookSpec provides spec of either check or exec hook that needs to be executed
 type HookSpec struct {
-	Name string `json:"name,omitempty"`
-
-	Type string `json:"type,omitempty"`
-
-	Command string `json:"command,omitempty"`
+	Name           string                `json:"name"`
+	Namespace      string                `json:"namespace"`
+	Type           string                `json:"type"`
+	SelectResource string                `json:"selectResource,omitempty"`
+	LabelSelector  *metav1.LabelSelector `json:"labelSelector,omitempty"`
+	NameSelector   string                `json:"nameSelector,omitempty"`
+	SinglePodOnly  bool                  `json:"singlePodOnly,omitempty"`
+	//+optional
+	OnError string `json:"onError,omitempty"`
 
 	//+optional
+	Timeout   int   `json:"timeout,omitempty"`
+	Essential *bool `json:"essential,omitempty"`
+
+	Op Operation `json:"operation,omitempty"`
+
+	Chk Check `json:"check,omitempty"`
+}
+
+type Check struct {
+	// Name of the check. Needs to be unique within the hook
+	Name string `json:"name"`
+	// The condition to check for
+	Condition string `json:"condition,omitempty"`
+	// How to handle when check does not become true. Defaults to Fail.
+	OnError string `json:"onError,omitempty"`
+	// How long to wait for the check to execute, in seconds
 	Timeout int `json:"timeout,omitempty"`
+}
 
-	//+optional
-	Container *string `json:"container,omitempty"`
-
-	//+optional
-	LabelSelector *metav1.LabelSelector `json:"labelSelector,omitempty"`
+type Operation struct {
+	// Name of the operation. Needs to be unique within the hook
+	Name string `json:"name"`
+	// The container where the command should be executed
+	Container string `json:"container,omitempty"`
+	// The command to execute
+	Command string `json:"command"`
+	// How to handle command returning with non-zero exit code. Defaults to Fail.
+	OnError string `json:"onError,omitempty"`
+	// How long to wait for the command to execute, in seconds
+	Timeout int `json:"timeout,omitempty"`
+	// Name of another operation that reverts the effect of this operation (e.g. quiesce vs. unquiesce)
+	InverseOp string `json:"inverseOp,omitempty"`
 }
 
 func RequestProcessingErrorCreate(s string) RequestProcessingError { return RequestProcessingError{s} }
