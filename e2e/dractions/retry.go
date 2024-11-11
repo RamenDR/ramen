@@ -192,7 +192,7 @@ func waitDRPCDeleted(client client.Client, namespace string, name string) error 
 }
 
 // nolint:unparam
-func waitDRPCProgression(client client.Client, namespace, name string, progression ramen.ProgressionStatus) error {
+func waitDRPCProgression(client client.Client, namespace, name string, progression ramen.ProgressionStatus, consistently bool) error {
 	startTime := time.Now()
 
 	for {

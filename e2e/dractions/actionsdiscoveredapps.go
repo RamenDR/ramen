@@ -125,7 +125,7 @@ func failoverRelocateDiscoveredApps(w workloads.Workload, d deployers.Deployer, 
 		return err
 	}
 
-	if err := waitDRPCProgression(client, namespace, name, ramen.ProgressionWaitOnUserToCleanUp); err != nil {
+	if err := waitDRPCProgression(client, namespace, name, ramen.ProgressionWaitOnUserToCleanUp, true); err != nil {
 		return err
 	}
 
@@ -136,7 +136,7 @@ func failoverRelocateDiscoveredApps(w workloads.Workload, d deployers.Deployer, 
 		return err
 	}
 
-	if err = waitDRPCProgression(client, namespace, name, ramen.ProgressionCompleted); err != nil {
+	if err = waitDRPCProgression(client, namespace, name, ramen.ProgressionCompleted, false); err != nil {
 		return err
 	}
 
