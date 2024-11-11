@@ -39,7 +39,7 @@ func EvaluateCheckHook(client client.Client, hook *kubeobjects.HookSpec, log log
 			return false, err
 		}
 
-		return EvaluateCheckHookExp(hook.Chk.Condition, resource)
+		return evaluateCheckHookExp(hook.Chk.Condition, resource)
 	case "deployment":
 		// handle deployment type
 		resource := &appsv1.Deployment{}
@@ -49,7 +49,7 @@ func EvaluateCheckHook(client client.Client, hook *kubeobjects.HookSpec, log log
 			return false, err
 		}
 
-		return EvaluateCheckHookExp(hook.Chk.Condition, resource)
+		return evaluateCheckHookExp(hook.Chk.Condition, resource)
 	case "statefulset":
 		// handle statefulset type
 		resource := &appsv1.StatefulSet{}
@@ -59,7 +59,7 @@ func EvaluateCheckHook(client client.Client, hook *kubeobjects.HookSpec, log log
 			return false, err
 		}
 
-		return EvaluateCheckHookExp(hook.Chk.Condition, resource)
+		return evaluateCheckHookExp(hook.Chk.Condition, resource)
 	}
 
 	return false, nil
@@ -104,7 +104,7 @@ func getTimeoutValue(hook *kubeobjects.HookSpec) int {
 	return defaultTimeoutValue
 }
 
-func EvaluateCheckHookExp(booleanExpression string, jsonData interface{}) (bool, error) {
+func evaluateCheckHookExp(booleanExpression string, jsonData interface{}) (bool, error) {
 	op, jsonPaths, err := parseBooleanExpression(booleanExpression)
 	if err != nil {
 		return false, fmt.Errorf("failed to parse boolean expression: %w", err)
@@ -288,8 +288,8 @@ func parseBooleanExpression(booleanExpression string) (op string, jsonPaths []st
 		jsonPaths = trimLeadingTrailingWhiteSpace(exprs)
 
 		if len(exprs) == 2 &&
-			IsValidJSONPathExpression(jsonPaths[0]) &&
-			IsValidJSONPathExpression(jsonPaths[1]) {
+			isValidJSONPathExpression(jsonPaths[0]) &&
+			isValidJSONPathExpression(jsonPaths[1]) {
 			return op, jsonPaths, nil
 		}
 	}
@@ -297,7 +297,7 @@ func parseBooleanExpression(booleanExpression string) (op string, jsonPaths []st
 	return "", []string{}, fmt.Errorf("unable to parse boolean expression %v", booleanExpression)
 }
 
-func IsValidJSONPathExpression(expr string) bool {
+func isValidJSONPathExpression(expr string) bool {
 	jp := jsonpath.New("validator").AllowMissingKeys(true)
 
 	err := jp.Parse(expr)
