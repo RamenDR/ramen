@@ -122,6 +122,8 @@ func evaluateCheckHookExp(booleanExpression string, jsonData interface{}) (bool,
 }
 
 // compare compares two interfaces using the specified operator
+//
+//nolint:gocognit,gocyclo,cyclop
 func compare(a, b reflect.Value, operator string) (bool, error) {
 	// convert pointer to interface
 	if a.Kind() == reflect.Ptr {

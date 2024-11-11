@@ -251,7 +251,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 		log1 := log.WithValues("group", groupNumber, "name", cg.Name)
 
 		if cg.IsHook {
-			if err := v.executeCaptureHook(cg, log1); err != nil {
+			if err := v.executeHook(cg.Hook, log1); err != nil {
 				break
 			}
 		} else {
@@ -285,18 +285,18 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	}
 }
 
-func (v *VRGInstance) executeCaptureHook(cg kubeobjects.CaptureSpec, log1 logr.Logger) error {
-	if cg.Hook.Type == "check" {
-		hookResult, err := util.EvaluateCheckHook(v.reconciler.Client, &cg.Hook, log1)
+func (v *VRGInstance) executeHook(hook kubeobjects.HookSpec, log1 logr.Logger) error {
+	if hook.Type == "check" {
+		hookResult, err := util.EvaluateCheckHook(v.reconciler.Client, &hook, log1)
 
 		if err != nil {
 			log1.Error(err, "error occurred during check hook ")
 		} else {
-			hookName := cg.Hook.Name + "/" + cg.Hook.Chk.Name
+			hookName := hook.Name + "/" + hook.Chk.Name
 			log1.Info("Check hook executed successfully", "check hook is ", hookName, " result is ", hookResult)
 		}
 
-		if !hookResult && shouldHookBeFailedOnError(&cg.Hook) {
+		if !hookResult && shouldHookBeFailedOnError(&hook) {
 			// update error state
 			return fmt.Errorf("stopping workflow sequence as check hook failed")
 		}
@@ -640,7 +640,7 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 		log1 := log.WithValues("group", groupNumber, "name", rg.BackupName)
 
 		if rg.IsHook {
-			if err := v.executeRecoverHook(rg, log1); err != nil {
+			if err := v.executeHook(rg.Hook, log1); err != nil {
 				break
 			}
 		} else {
@@ -665,7 +665,8 @@ func (v *VRGInstance) executeRecoverGroup(result *ctrl.Result, s3StoreAccessor s
 	captureToRecoverFromIdentifier *ramen.KubeObjectsCaptureIdentifier,
 	captureRequests, recoverRequests map[string]kubeobjects.Request,
 	veleroNamespaceName string, labels map[string]string, groupNumber int,
-	rg kubeobjects.RecoverSpec, requests []kubeobjects.Request, log1 logr.Logger) error {
+	rg kubeobjects.RecoverSpec, requests []kubeobjects.Request, log1 logr.Logger,
+) error {
 	request, ok, submit, cleanup := v.getRecoverOrProtectRequest(
 		captureRequests, recoverRequests, s3StoreAccessor,
 		sourceVrgNamespaceName, sourceVrgName,
@@ -707,27 +708,6 @@ func (v *VRGInstance) executeRecoverGroup(result *ctrl.Result, s3StoreAccessor s
 	result.Requeue = true
 
 	return err
-}
-
-func (v *VRGInstance) executeRecoverHook(rg kubeobjects.RecoverSpec, log1 logr.Logger) error {
-	if rg.Hook.Type == "check" {
-		hookResult, err := util.EvaluateCheckHook(v.reconciler.Client, &rg.Hook, log1)
-		if err != nil {
-			log1.Error(err, "error occurred during check hook ")
-		} else {
-			hookName := rg.Hook.Name + "/" + rg.Hook.Chk.Name
-			log1.Info("Check hook executed successfully", "check hook is ", hookName, " result is ", hookResult)
-		}
-
-		if !hookResult && shouldHookBeFailedOnError(&rg.Hook) {
-			// update error state
-			return fmt.Errorf("stopping workflow sequence as check hook failed")
-		}
-		// update error state
-		return nil
-	}
-
-	return nil
 }
 
 func (v *VRGInstance) kubeObjectsRecoverRequestsDelete(
