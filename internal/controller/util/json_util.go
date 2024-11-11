@@ -3,63 +3,111 @@ package util
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"reflect"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/oliveagle/jsonpath"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/jsonpath"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type expressionResult struct {
-	result bool
-	err    error
-}
-
-func EvaluateJsonPathExpression(client client.Client, captureGroup *kubeobjects.CaptureSpec, log logr.Logger) (bool, error) {
-	getTimeoutValue(&captureGroup.Hook)
+func EvaluateCheckHook(client client.Client, hook *kubeobjects.HookSpec, log logr.Logger) (bool, error) {
+	timeout := getTimeoutValue(hook)
 	nsScopedName := types.NamespacedName{
-		Namespace: captureGroup.Hook.Namespace,
-		Name:      captureGroup.Hook.Name,
+		Namespace: hook.Namespace,
+		Name:      hook.NameSelector,
 	}
-	switch captureGroup.Hook.SelectResource {
+	switch hook.SelectResource {
 	case "pod":
 		// handle pod type
 		resource := &corev1.Pod{}
-		err := client.Get(context.Background(), nsScopedName, resource)
-		//if k8serror.NotFound -- we will reexecute after 1s and if timedout, return error
-		data, err := json.MarshalIndent(resource, "", "  ")
+		err := WaitUntilResourceExists(client, resource, nsScopedName, time.Duration(timeout)*time.Second)
 		if err != nil {
 			return false, err
 		}
-		return evaluateJPExp(captureGroup, data)
+		podBytes, err := json.Marshal(resource)
+		if err != nil {
+			return false, err
+		}
+		jsonData := make(map[string]interface{})
+		err = json.Unmarshal(podBytes, &jsonData)
+		if err != nil {
+			return false, err
+		}
+		return evaluateCheckHookExp(hook.Chk.Condition, resource)
 	case "deployment":
 		// handle deployment type
-		log.Info("**** ASN, in case deployment for check hooks")
 		resource := &appsv1.Deployment{}
-		dep := client.Get(context.Background(), nsScopedName, resource)
-		data, err := json.MarshalIndent(dep, "", "  ")
+		err := WaitUntilResourceExists(client, resource, nsScopedName, time.Duration(timeout)*time.Second)
 		if err != nil {
 			return false, err
 		}
-		return evaluateJPExp(captureGroup, data)
+		depBytes, err := json.Marshal(resource)
+		if err != nil {
+			return false, err
+		}
+		jsonData := make(map[string]interface{})
+		err = json.Unmarshal(depBytes, &jsonData)
+		if err != nil {
+			return false, err
+		}
+		return evaluateCheckHookExp(hook.Chk.Condition, resource)
 	case "statefulset":
 		// handle statefulset type
 		resource := &appsv1.StatefulSet{}
-		statefulset := client.Get(context.Background(), nsScopedName, resource)
-		data, err := json.MarshalIndent(statefulset, "", "  ")
+		err := WaitUntilResourceExists(client, resource, nsScopedName, time.Duration(timeout)*time.Second)
 		if err != nil {
 			return false, err
 		}
-		return evaluateJPExp(captureGroup, data)
+		statefulSetBytes, err := json.Marshal(resource)
+		if err != nil {
+			return false, err
+		}
+		jsonData := make(map[string]interface{})
+		err = json.Unmarshal(statefulSetBytes, &jsonData)
+		if err != nil {
+			return false, err
+		}
+		return evaluateCheckHookExp(hook.Chk.Condition, resource)
 	}
 
 	return false, nil
+}
+
+func WaitUntilResourceExists(client client.Client, obj client.Object, nsScopedName types.NamespacedName,
+	timeout time.Duration,
+) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(100 * time.Millisecond) // Poll every 100 milliseconds
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout waiting for resource %s to be ready: %w", nsScopedName.Name, ctx.Err())
+		case <-ticker.C:
+			err := client.Get(context.Background(), nsScopedName, obj)
+			if err != nil {
+				if k8serrors.IsNotFound(err) {
+					// Resource not found, continue polling
+					continue
+				}
+
+				return err // Some other error occurred, return it
+			}
+
+			return nil // Resource is ready
+		}
+	}
 }
 
 func getTimeoutValue(hook *kubeobjects.HookSpec) int {
@@ -73,78 +121,228 @@ func getTimeoutValue(hook *kubeobjects.HookSpec) int {
 	}
 }
 
-func evaluateJPExp(captureGroup *kubeobjects.CaptureSpec, data []byte) (bool, error) {
-	var if_data interface{}
-	err := json.Unmarshal(data, &if_data)
+func evaluateCheckHookExp(booleanExpression string, jsonData interface{}) (bool, error) {
+	op, jsonPaths, err := parseBooleanExpression(booleanExpression)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to parse boolean expression: %w", err)
 	}
-	jsonCondition := captureGroup.Hook.Chk.Condition
-	op, paths, err := getJsonPathsAndOp(jsonCondition)
-	if err != nil {
-		return false, err
-	}
-	tPaths := trimPaths(paths)
-	results := make([]interface{}, len(paths))
-	for i, path := range tPaths {
-		// This section is using go get github.com/oliveagle/jsonpath -- This seems to work. Enhance based on this, we will see later
-		if !strings.HasPrefix(path, "$.") {
-			// It might not be a json path and might be a base type
-			results[i] = path
-			continue
-		}
-		results[i], err = jsonpath.JsonPathLookup(if_data, path)
+
+	operand := make([]reflect.Value, 2)
+	for i, jsonPath := range jsonPaths {
+		operand[i], err = QueryJsonPath(jsonData, jsonPath)
 		if err != nil {
-			return false, err
+			return false, fmt.Errorf("failed to get value for %v: %w", jsonPath, err)
 		}
 	}
-	fmt.Println("**** ASN, the results are ", results)
-	expValue, err := evaluateResults(op, results[0], results[1])
-	fmt.Println("**** ASN, expression evaluated value with results ", expValue)
-	if err != nil {
-		return false, err
-	}
 
-	return expValue, nil
+	return compare(operand[0], operand[1], op)
 }
 
-func evaluateResults(op string, valA, valB interface{}) (bool, error) {
-	switch op {
+// compare compares two interfaces using the specified operator
+func compare(a, b reflect.Value, operator string) (bool, error) {
+	// convert pointer to interface
+	if a.Kind() == reflect.Ptr {
+		a = a.Elem()
+	}
+
+	if b.Kind() == reflect.Ptr {
+		b = b.Elem()
+	}
+
+	// convert int32 to float64
+	if a.Kind() == reflect.Int32 {
+		a = reflect.ValueOf(float64(a.Int()))
+	}
+
+	if b.Kind() == reflect.Int32 {
+		b = reflect.ValueOf(float64(b.Int()))
+	}
+
+	// If one is int and another is float64
+	// then convert int to float64 for comparison
+	if a.Kind() == reflect.Int && b.Kind() == reflect.Float64 {
+		a = reflect.ValueOf(float64(a.Int()))
+	}
+	if a.Kind() == reflect.Float64 && b.Kind() == reflect.Int {
+		b = reflect.ValueOf(float64(b.Int()))
+	}
+
+	// if they are just an interface then we convert them to string
+	if a.Kind() == reflect.Interface {
+		a = reflect.ValueOf(fmt.Sprintf("%v", a.Interface()))
+	}
+	if b.Kind() == reflect.Interface {
+		b = reflect.ValueOf(fmt.Sprintf("%v", b.Interface()))
+	}
+
+	if a.Kind() != b.Kind() {
+		return false, fmt.Errorf("operands of different kinds can't be compared %v, %v", a.Kind(), b.Kind())
+	}
+
+	// At this point, both a and b should be of the same kind
+	if operator != "==" && operator != "!=" {
+		if !isKindStringOrFloat64(a.Kind()) || !isKindStringOrFloat64(b.Kind()) {
+			return false, fmt.Errorf("operands not supported for operator: %v, %v, %s",
+				a.Kind(), b.Kind(), operator)
+		}
+	}
+
+	// Here, we have two scenarios:
+	// 1. operands are either string or float64 and operator is any of the 6
+	// 2. operands are of any kind and operator is either == or !=
+
+	// Safety latch:
+	// We will initially support only string, float64 and bool
+	// return an error if we encounter any other kind
+	if isUnsupportedKind(a.Kind()) || isUnsupportedKind(b.Kind()) {
+		return false, fmt.Errorf("unsupported kind for comparison: %v, %v", a.Kind(), b.Kind())
+	}
+
+	if isKindBool(a.Kind()) && isKindBool(b.Kind()) {
+		return compareBool(a.Bool(), b.Bool(), operator)
+	}
+
+	return compareValues(a.Interface(), b.Interface(), operator)
+}
+
+func compareBool(a, b bool, operator string) (bool, error) {
+	switch operator {
 	case "==":
-		return valA == valB, nil
+		return a == b, nil
 	case "!=":
-		return valA != valB, nil
-	case "<":
-		return valA.(string) < valB.(string), nil
-	case ">":
-		return valA.(string) > valB.(string), nil
-	case "<=":
-		return valA.(string) <= valB.(string), nil
-	case ">=":
-		return valA.(string) >= valB.(string), nil
+		return a != b, nil
 	default:
-		return false, fmt.Errorf("unsupported op %s provided for jsonpath evalvation", op)
+		return false, fmt.Errorf("unknown operator: %s", operator)
 	}
-
 }
 
-func trimPaths(paths []string) []string {
+func compareValues(val1, val2 interface{}, operator string) (bool, error) {
+	switch v1 := val1.(type) {
+	case float64:
+		v2, ok := val2.(float64)
+		if !ok {
+			return false, fmt.Errorf("mismatched types")
+		}
+		switch operator {
+		case "==":
+			return v1 == v2, nil
+		case "!=":
+			return v1 != v2, nil
+		case "<":
+			return v1 < v2, nil
+		case ">":
+			return v1 > v2, nil
+		case "<=":
+			return v1 <= v2, nil
+		case ">=":
+			return v1 >= v2, nil
+		}
+	case string:
+		v2, ok := val2.(string)
+		if !ok {
+			return false, fmt.Errorf("mismatched types")
+		}
+		switch operator {
+		case "==":
+			return v1 == v2, nil
+		case "!=":
+			return v1 != v2, nil
+		}
+	case bool:
+		v2, ok := val2.(bool)
+		if !ok {
+			return false, fmt.Errorf("mismatched types")
+		}
+		switch operator {
+		case "==":
+			return v1 == v2, nil
+		case "!=":
+			return v1 != v2, nil
+		}
+	}
+	return false, fmt.Errorf("unsupported type or operator")
+}
+
+func isKindString(kind reflect.Kind) bool {
+	return kind == reflect.String
+}
+
+func isKindFloat64(kind reflect.Kind) bool {
+	return kind == reflect.Float64
+}
+
+func isKindBool(kind reflect.Kind) bool {
+	return kind == reflect.Bool
+}
+
+func isUnsupportedKind(kind reflect.Kind) bool {
+	return kind != reflect.String && kind != reflect.Float64 && kind != reflect.Bool
+}
+
+func isKindStringOrFloat64(kind reflect.Kind) bool {
+	return isKindString(kind) || isKindFloat64(kind)
+}
+
+func parseBooleanExpression(booleanExpression string) (op string, jsonPaths []string, err error) {
+	operators := []string{"==", "!=", ">=", ">", "<=", "<"}
+
+	// TODO
+	// If one of the jsonpaths have the operator that we are looking for,
+	// then strings.Split with split it at that point and not in the middle.
+
+	for _, op := range operators {
+		exprs := strings.Split(booleanExpression, op)
+
+		jsonPaths = trimLeadingTrailingWhiteSpace(exprs)
+
+		if len(exprs) == 2 &&
+			isValidJsonPathExpression(jsonPaths[0]) &&
+			isValidJsonPathExpression(jsonPaths[1]) {
+
+			return op, jsonPaths, nil
+		}
+	}
+
+	return "", []string{}, fmt.Errorf("unable to parse boolean expression %v", booleanExpression)
+}
+
+func isValidJsonPathExpression(expr string) bool {
+	jp := jsonpath.New("validator").AllowMissingKeys(true)
+
+	err := jp.Parse(expr)
+	if err != nil {
+		return false
+	}
+
+	_, err = QueryJsonPath("{}", expr)
+
+	return err == nil
+}
+
+func QueryJsonPath(data interface{}, jsonPath string) (reflect.Value, error) {
+	jp := jsonpath.New("extractor").AllowMissingKeys(true)
+
+	if err := jp.Parse(jsonPath); err != nil {
+		return reflect.Value{}, fmt.Errorf("failed to get value invalid jsonpath %w", err)
+	}
+
+	results, err := jp.FindResults(data)
+	if err != nil {
+		return reflect.Value{}, fmt.Errorf("failed to get value from data using jsonpath %w", err)
+	}
+
+	if len(results) == 0 || len(results[0]) == 0 {
+		return reflect.Value{}, nil
+	}
+
+	return results[0][0], nil
+}
+
+func trimLeadingTrailingWhiteSpace(paths []string) []string {
 	tPaths := make([]string, len(paths))
 	for i, path := range paths {
-		path = strings.TrimSpace(path)
-		path = strings.TrimLeft(path, "{")
-		path = strings.TrimRight(path, "}")
-		tPaths[i] = path
+		tpath := strings.TrimSpace(path)
+		tPaths[i] = tpath
 	}
 	return tPaths
-}
-
-func getJsonPathsAndOp(exp string) (string, []string, error) {
-	operators := []string{"==", "!=", ">=", ">", "<=", "<"}
-	for _, op := range operators {
-		if strings.Contains(exp, op) {
-			return op, strings.Split(exp, op), nil
-		}
-	}
-	return "", []string{}, errors.New("unsupported operator used in jsonpath evaluation")
 }
