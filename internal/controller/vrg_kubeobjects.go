@@ -247,28 +247,30 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	annotations := map[string]string{vrgGenerationKey: strconv.FormatInt(generation, vrgGenerationNumberBase)}
 
 	for groupNumber, captureGroup := range groups {
-		log1 := log.WithValues("group", groupNumber, "name", captureGroup.Name)
-		if captureGroup.IsHook {
-			if captureGroup.Hook.Type == "check" {
-				hookResult, err := util.EvaluateCheckHook(v.reconciler.Client, &captureGroup.Hook, log1)
+		cg := captureGroup
+		log1 := log.WithValues("group", groupNumber, "name", cg.Name)
+		if cg.IsHook {
+			if cg.Hook.Type == "check" {
+				hookResult, err := util.EvaluateCheckHook(v.reconciler.Client, &cg.Hook, log1)
 				if err != nil {
-					log.Error(err, "error occured during check hook ")
+					log.Error(err, "error occurred during check hook ")
+				} else {
+					hookName := cg.Hook.Name + "/" + cg.Hook.Chk.Name
+					log1.Info("Check hook executed successfully", "check hook is ", hookName, " result is ", hookResult)
 				}
-				log1.Info("Check hook executed successfully", "check hook is ", captureGroup.Hook.Name+"/"+captureGroup.Hook.Chk.Name, " result is ", hookResult)
+
 				if !hookResult {
-					if shouldHookBeFailedOnError(&captureGroup.Hook) {
+					if shouldHookBeFailedOnError(&cg.Hook) {
 						// update error state
 						break
-					} else {
-						// update error state
-						continue
 					}
+					// update error state
+					continue
 				}
-				// update successful status here
 			}
 		} else {
 			requestsCompletedCount += v.kubeObjectsGroupCapture(
-				result, captureGroup, pathName, capturePathName, namePrefix, veleroNamespaceName,
+				result, cg, pathName, capturePathName, namePrefix, veleroNamespaceName,
 				captureInProgressStatusUpdate,
 				labels, annotations, requests, log,
 			)
@@ -295,26 +297,22 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 			request0.Object().GetAnnotations(),
 		)
 	}
-
 }
 
 func shouldHookBeFailedOnError(hook *kubeobjects.HookSpec) bool {
 	// hook.Check.OnError overwrites the feature of hook.OnError -- defaults to fail
 	if hook.Chk.OnError == "" {
 		if hook.OnError != "" {
-			if hook.OnError == "fail" {
-				return true
-			} else if hook.OnError == "continue" {
+			if hook.OnError == "continue" {
 				return false
 			}
 		}
 	} else {
-		if hook.OnError == "fail" {
-			return true
-		} else if hook.OnError == "continue" {
+		if hook.Chk.OnError == "continue" {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -634,29 +632,32 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 	requests := make([]kubeobjects.Request, len(groups))
 
 	for groupNumber, recoverGroup := range groups {
-		log1 := log.WithValues("group", groupNumber, "name", recoverGroup.BackupName)
+		rg := recoverGroup
+		log1 := log.WithValues("group", groupNumber, "name", rg.BackupName)
 
-		if recoverGroup.IsHook {
-			hookResult, err := util.EvaluateCheckHook(v.reconciler.Client, &recoverGroup.Hook, log1)
+		if rg.IsHook {
+			hookResult, err := util.EvaluateCheckHook(v.reconciler.Client, &rg.Hook, log1)
 			if err != nil {
-				log.Error(err, "error occured during check hook ")
+				log.Error(err, "error occurred during check hook ")
+			} else {
+				hookName := rg.Hook.Name + "/" + rg.Hook.Chk.Name
+				log1.Info("Check hook executed successfully", "check hook is ", hookName, " result is ", hookResult)
 			}
-			log1.Info("Check hook executed successfully", "check hook is ", recoverGroup.Hook.Name+"/"+recoverGroup.Hook.Chk.Name, " result is ", hookResult)
+
 			if !hookResult {
-				if shouldHookBeFailedOnError(&recoverGroup.Hook) {
+				if shouldHookBeFailedOnError(&rg.Hook) {
 					// update error state
 					break
-				} else {
-					// update error state
-					continue
 				}
+				// update error state
+				continue
 			}
 		} else {
 			request, ok, submit, cleanup := v.getRecoverOrProtectRequest(
 				captureRequests, recoverRequests, s3StoreAccessor,
 				sourceVrgNamespaceName, sourceVrgName,
 				captureToRecoverFromIdentifier,
-				groupNumber, recoverGroup, veleroNamespaceName, labels, log1,
+				groupNumber, rg, veleroNamespaceName, labels, log1,
 			)
 			var err error
 
@@ -691,7 +692,6 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 
 			return err
 		}
-
 	}
 
 	startTime := requests[0].StartTime()
@@ -787,7 +787,6 @@ func getCaptureGroups(recipe Recipe.Recipe) ([]kubeobjects.CaptureSpec, error) {
 
 	for index, resource := range workflow.Sequence {
 		for resourceType, resourceName := range resource {
-
 			captureInstance, err := getResourceAndConvertToCaptureGroup(recipe, resourceType, resourceName)
 			if err != nil {
 				return resources, err
@@ -820,7 +819,6 @@ func getRecoverGroups(recipe Recipe.Recipe) ([]kubeobjects.RecoverSpec, error) {
 	for index, resource := range workflow.Sequence {
 		// group: map[string]string, e.g. "group": "groupName", or "hook": "hookName"
 		for resourceType, resourceName := range resource {
-
 			captureInstance, err := getResourceAndConvertToRecoverGroup(recipe, resourceType, resourceName)
 			if err != nil {
 				return resources, err
@@ -852,6 +850,7 @@ func getResourceAndConvertToCaptureGroup(
 		if err != nil {
 			return nil, k8serrors.NewInternalError(err)
 		}
+
 		hook, err := getHookFromRecipe(&recipe, prefix)
 		if err != nil {
 			return nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec"}, resourceType)
@@ -882,6 +881,7 @@ func getResourceAndConvertToRecoverGroup(
 		if err != nil {
 			return nil, k8serrors.NewInternalError(err)
 		}
+
 		hook, err := getHookFromRecipe(&recipe, prefix)
 		if err != nil {
 			return nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec"}, resourceType)
@@ -897,7 +897,9 @@ func validateAndGetHookDetails(name string) (string, string, error) {
 	if !strings.Contains(name, "/") {
 		return "", "", errors.New("invalid format of hook name provided ")
 	}
+
 	parts := strings.Split(name, "/")
+
 	return parts[0], parts[1], nil
 }
 
@@ -990,6 +992,7 @@ func getChkHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
 			}
 		}
 	}
+
 	return kubeobjects.HookSpec{}
 }
 
@@ -1017,6 +1020,7 @@ func getOpHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
 			}
 		}
 	}
+
 	return kubeobjects.HookSpec{}
 }
 
