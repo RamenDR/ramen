@@ -2,7 +2,6 @@ package util
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -18,12 +17,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	defaultTimeoutValue = 300
+	pollInterval        = 100
+)
+
 func EvaluateCheckHook(client client.Client, hook *kubeobjects.HookSpec, log logr.Logger) (bool, error) {
 	timeout := getTimeoutValue(hook)
 	nsScopedName := types.NamespacedName{
 		Namespace: hook.Namespace,
 		Name:      hook.NameSelector,
 	}
+
 	switch hook.SelectResource {
 	case "pod":
 		// handle pod type
@@ -32,15 +37,7 @@ func EvaluateCheckHook(client client.Client, hook *kubeobjects.HookSpec, log log
 		if err != nil {
 			return false, err
 		}
-		podBytes, err := json.Marshal(resource)
-		if err != nil {
-			return false, err
-		}
-		jsonData := make(map[string]interface{})
-		err = json.Unmarshal(podBytes, &jsonData)
-		if err != nil {
-			return false, err
-		}
+
 		return evaluateCheckHookExp(hook.Chk.Condition, resource)
 	case "deployment":
 		// handle deployment type
@@ -49,15 +46,7 @@ func EvaluateCheckHook(client client.Client, hook *kubeobjects.HookSpec, log log
 		if err != nil {
 			return false, err
 		}
-		depBytes, err := json.Marshal(resource)
-		if err != nil {
-			return false, err
-		}
-		jsonData := make(map[string]interface{})
-		err = json.Unmarshal(depBytes, &jsonData)
-		if err != nil {
-			return false, err
-		}
+
 		return evaluateCheckHookExp(hook.Chk.Condition, resource)
 	case "statefulset":
 		// handle statefulset type
@@ -66,15 +55,7 @@ func EvaluateCheckHook(client client.Client, hook *kubeobjects.HookSpec, log log
 		if err != nil {
 			return false, err
 		}
-		statefulSetBytes, err := json.Marshal(resource)
-		if err != nil {
-			return false, err
-		}
-		jsonData := make(map[string]interface{})
-		err = json.Unmarshal(statefulSetBytes, &jsonData)
-		if err != nil {
-			return false, err
-		}
+
 		return evaluateCheckHookExp(hook.Chk.Condition, resource)
 	}
 
@@ -87,7 +68,7 @@ func WaitUntilResourceExists(client client.Client, obj client.Object, nsScopedNa
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	ticker := time.NewTicker(100 * time.Millisecond) // Poll every 100 milliseconds
+	ticker := time.NewTicker(pollInterval * time.Millisecond) // Poll every 100 milliseconds
 	defer ticker.Stop()
 
 	for {
@@ -115,10 +96,9 @@ func getTimeoutValue(hook *kubeobjects.HookSpec) int {
 		return hook.Chk.Timeout
 	} else if hook.Timeout != 0 {
 		return hook.Timeout
-	} else {
-		// 300s is the default value for timeout
-		return 300
 	}
+	// 300s is the default value for timeout
+	return defaultTimeoutValue
 }
 
 func evaluateCheckHookExp(booleanExpression string, jsonData interface{}) (bool, error) {
@@ -127,9 +107,9 @@ func evaluateCheckHookExp(booleanExpression string, jsonData interface{}) (bool,
 		return false, fmt.Errorf("failed to parse boolean expression: %w", err)
 	}
 
-	operand := make([]reflect.Value, 2)
+	operand := make([]reflect.Value, len(jsonPaths))
 	for i, jsonPath := range jsonPaths {
-		operand[i], err = QueryJsonPath(jsonData, jsonPath)
+		operand[i], err = QueryJSONPath(jsonData, jsonPath)
 		if err != nil {
 			return false, fmt.Errorf("failed to get value for %v: %w", jsonPath, err)
 		}
@@ -149,21 +129,19 @@ func compare(a, b reflect.Value, operator string) (bool, error) {
 		b = b.Elem()
 	}
 
-	// convert int32 to float64
-	if a.Kind() == reflect.Int32 {
+	if a.Kind() == reflect.Int ||
+		a.Kind() == reflect.Int8 ||
+		a.Kind() == reflect.Int16 ||
+		a.Kind() == reflect.Int32 ||
+		a.Kind() == reflect.Int64 {
 		a = reflect.ValueOf(float64(a.Int()))
 	}
 
-	if b.Kind() == reflect.Int32 {
-		b = reflect.ValueOf(float64(b.Int()))
-	}
-
-	// If one is int and another is float64
-	// then convert int to float64 for comparison
-	if a.Kind() == reflect.Int && b.Kind() == reflect.Float64 {
-		a = reflect.ValueOf(float64(a.Int()))
-	}
-	if a.Kind() == reflect.Float64 && b.Kind() == reflect.Int {
+	if b.Kind() == reflect.Int ||
+		b.Kind() == reflect.Int8 ||
+		b.Kind() == reflect.Int16 ||
+		b.Kind() == reflect.Int32 ||
+		b.Kind() == reflect.Int64 {
 		b = reflect.ValueOf(float64(b.Int()))
 	}
 
@@ -171,6 +149,7 @@ func compare(a, b reflect.Value, operator string) (bool, error) {
 	if a.Kind() == reflect.Interface {
 		a = reflect.ValueOf(fmt.Sprintf("%v", a.Interface()))
 	}
+
 	if b.Kind() == reflect.Interface {
 		b = reflect.ValueOf(fmt.Sprintf("%v", b.Interface()))
 	}
@@ -190,7 +169,6 @@ func compare(a, b reflect.Value, operator string) (bool, error) {
 	// Here, we have two scenarios:
 	// 1. operands are either string or float64 and operator is any of the 6
 	// 2. operands are of any kind and operator is either == or !=
-
 	// Safety latch:
 	// We will initially support only string, float64 and bool
 	// return an error if we encounter any other kind
@@ -223,6 +201,7 @@ func compareValues(val1, val2 interface{}, operator string) (bool, error) {
 		if !ok {
 			return false, fmt.Errorf("mismatched types")
 		}
+
 		switch operator {
 		case "==":
 			return v1 == v2, nil
@@ -242,6 +221,7 @@ func compareValues(val1, val2 interface{}, operator string) (bool, error) {
 		if !ok {
 			return false, fmt.Errorf("mismatched types")
 		}
+
 		switch operator {
 		case "==":
 			return v1 == v2, nil
@@ -253,6 +233,7 @@ func compareValues(val1, val2 interface{}, operator string) (bool, error) {
 		if !ok {
 			return false, fmt.Errorf("mismatched types")
 		}
+
 		switch operator {
 		case "==":
 			return v1 == v2, nil
@@ -260,6 +241,7 @@ func compareValues(val1, val2 interface{}, operator string) (bool, error) {
 			return v1 != v2, nil
 		}
 	}
+
 	return false, fmt.Errorf("unsupported type or operator")
 }
 
@@ -296,9 +278,8 @@ func parseBooleanExpression(booleanExpression string) (op string, jsonPaths []st
 		jsonPaths = trimLeadingTrailingWhiteSpace(exprs)
 
 		if len(exprs) == 2 &&
-			isValidJsonPathExpression(jsonPaths[0]) &&
-			isValidJsonPathExpression(jsonPaths[1]) {
-
+			isValidJSONPathExpression(jsonPaths[0]) &&
+			isValidJSONPathExpression(jsonPaths[1]) {
 			return op, jsonPaths, nil
 		}
 	}
@@ -306,7 +287,7 @@ func parseBooleanExpression(booleanExpression string) (op string, jsonPaths []st
 	return "", []string{}, fmt.Errorf("unable to parse boolean expression %v", booleanExpression)
 }
 
-func isValidJsonPathExpression(expr string) bool {
+func isValidJSONPathExpression(expr string) bool {
 	jp := jsonpath.New("validator").AllowMissingKeys(true)
 
 	err := jp.Parse(expr)
@@ -314,12 +295,12 @@ func isValidJsonPathExpression(expr string) bool {
 		return false
 	}
 
-	_, err = QueryJsonPath("{}", expr)
+	_, err = QueryJSONPath("{}", expr)
 
 	return err == nil
 }
 
-func QueryJsonPath(data interface{}, jsonPath string) (reflect.Value, error) {
+func QueryJSONPath(data interface{}, jsonPath string) (reflect.Value, error) {
 	jp := jsonpath.New("extractor").AllowMissingKeys(true)
 
 	if err := jp.Parse(jsonPath); err != nil {
@@ -340,9 +321,11 @@ func QueryJsonPath(data interface{}, jsonPath string) (reflect.Value, error) {
 
 func trimLeadingTrailingWhiteSpace(paths []string) []string {
 	tPaths := make([]string, len(paths))
+
 	for i, path := range paths {
 		tpath := strings.TrimSpace(path)
 		tPaths[i] = tpath
 	}
+
 	return tPaths
 }

@@ -110,7 +110,7 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 							Name:      hook.Name,
 							Type:      hook.Type,
 							Namespace: namespaceName,
-							//Timeout:       hook.Ops[0].Timeout,
+							// Timeout:       hook.Ops[0].Timeout,
 							LabelSelector: hook.LabelSelector,
 							Op: kubeobjects.Operation{
 								Name:      hook.Ops[0].Name,
