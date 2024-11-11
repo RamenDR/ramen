@@ -301,16 +301,12 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 
 func shouldHookBeFailedOnError(hook *kubeobjects.HookSpec) bool {
 	// hook.Check.OnError overwrites the feature of hook.OnError -- defaults to fail
-	if hook.Chk.OnError == "" {
-		if hook.OnError != "" {
-			if hook.OnError == "continue" {
-				return false
-			}
-		}
-	} else {
-		if hook.Chk.OnError == "continue" {
-			return false
-		}
+	if hook.Chk.OnError != "" && hook.Chk.OnError == "continue" {
+		return false
+	}
+
+	if hook.OnError != "" && hook.OnError == "continue" {
+		return false
 	}
 
 	return true
