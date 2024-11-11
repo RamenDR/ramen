@@ -34,6 +34,7 @@ func EvaluateCheckHook(client client.Client, hook *kubeobjects.HookSpec, log log
 		// handle pod type
 		resource := &corev1.Pod{}
 		err := WaitUntilResourceExists(client, resource, nsScopedName, time.Duration(timeout)*time.Second)
+
 		if err != nil {
 			return false, err
 		}
@@ -43,6 +44,7 @@ func EvaluateCheckHook(client client.Client, hook *kubeobjects.HookSpec, log log
 		// handle deployment type
 		resource := &appsv1.Deployment{}
 		err := WaitUntilResourceExists(client, resource, nsScopedName, time.Duration(timeout)*time.Second)
+
 		if err != nil {
 			return false, err
 		}
@@ -52,6 +54,7 @@ func EvaluateCheckHook(client client.Client, hook *kubeobjects.HookSpec, log log
 		// handle statefulset type
 		resource := &appsv1.StatefulSet{}
 		err := WaitUntilResourceExists(client, resource, nsScopedName, time.Duration(timeout)*time.Second)
+
 		if err != nil {
 			return false, err
 		}
