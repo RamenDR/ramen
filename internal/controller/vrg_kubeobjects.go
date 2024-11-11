@@ -259,14 +259,12 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 					log1.Info("Check hook executed successfully", "check hook is ", hookName, " result is ", hookResult)
 				}
 
-				if !hookResult {
-					if shouldHookBeFailedOnError(&cg.Hook) {
-						// update error state
-						break
-					}
+				if !hookResult && shouldHookBeFailedOnError(&cg.Hook) {
 					// update error state
-					continue
+					break
 				}
+				// update error state
+				continue
 			}
 		} else {
 			requestsCompletedCount += v.kubeObjectsGroupCapture(
@@ -632,16 +630,16 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 		log1 := log.WithValues("group", groupNumber, "name", rg.BackupName)
 
 		if rg.IsHook {
-			hookResult, err := util.EvaluateCheckHook(v.reconciler.Client, &rg.Hook, log1)
-			if err != nil {
-				log.Error(err, "error occurred during check hook ")
-			} else {
-				hookName := rg.Hook.Name + "/" + rg.Hook.Chk.Name
-				log1.Info("Check hook executed successfully", "check hook is ", hookName, " result is ", hookResult)
-			}
+			if rg.Hook.Type == "check" {
+				hookResult, err := util.EvaluateCheckHook(v.reconciler.Client, &rg.Hook, log1)
+				if err != nil {
+					log.Error(err, "error occurred during check hook ")
+				} else {
+					hookName := rg.Hook.Name + "/" + rg.Hook.Chk.Name
+					log1.Info("Check hook executed successfully", "check hook is ", hookName, " result is ", hookResult)
+				}
 
-			if !hookResult {
-				if shouldHookBeFailedOnError(&rg.Hook) {
+				if !hookResult && shouldHookBeFailedOnError(&rg.Hook) {
 					// update error state
 					break
 				}

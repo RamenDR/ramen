@@ -39,7 +39,7 @@ func EvaluateCheckHook(client client.Client, hook *kubeobjects.HookSpec, log log
 			return false, err
 		}
 
-		return evaluateCheckHookExp(hook.Chk.Condition, resource)
+		return EvaluateCheckHookExp(hook.Chk.Condition, resource)
 	case "deployment":
 		// handle deployment type
 		resource := &appsv1.Deployment{}
@@ -49,7 +49,7 @@ func EvaluateCheckHook(client client.Client, hook *kubeobjects.HookSpec, log log
 			return false, err
 		}
 
-		return evaluateCheckHookExp(hook.Chk.Condition, resource)
+		return EvaluateCheckHookExp(hook.Chk.Condition, resource)
 	case "statefulset":
 		// handle statefulset type
 		resource := &appsv1.StatefulSet{}
@@ -59,7 +59,7 @@ func EvaluateCheckHook(client client.Client, hook *kubeobjects.HookSpec, log log
 			return false, err
 		}
 
-		return evaluateCheckHookExp(hook.Chk.Condition, resource)
+		return EvaluateCheckHookExp(hook.Chk.Condition, resource)
 	}
 
 	return false, nil
@@ -104,7 +104,7 @@ func getTimeoutValue(hook *kubeobjects.HookSpec) int {
 	return defaultTimeoutValue
 }
 
-func evaluateCheckHookExp(booleanExpression string, jsonData interface{}) (bool, error) {
+func EvaluateCheckHookExp(booleanExpression string, jsonData interface{}) (bool, error) {
 	op, jsonPaths, err := parseBooleanExpression(booleanExpression)
 	if err != nil {
 		return false, fmt.Errorf("failed to parse boolean expression: %w", err)
@@ -197,6 +197,36 @@ func compareBool(a, b bool, operator string) (bool, error) {
 	}
 }
 
+func compareString(a, b, operator string) (bool, error) {
+	switch operator {
+	case "==":
+		return a == b, nil
+	case "!=":
+		return a != b, nil
+	default:
+		return false, fmt.Errorf("unknown operator: %s", operator)
+	}
+}
+
+func compareFloat(a, b float64, operator string) (bool, error) {
+	switch operator {
+	case "==":
+		return a == b, nil
+	case "!=":
+		return a != b, nil
+	case "<":
+		return a < b, nil
+	case ">":
+		return a > b, nil
+	case "<=":
+		return a <= b, nil
+	case ">=":
+		return a >= b, nil
+	default:
+		return false, fmt.Errorf("unknown operator: %s", operator)
+	}
+}
+
 func compareValues(val1, val2 interface{}, operator string) (bool, error) {
 	switch v1 := val1.(type) {
 	case float64:
@@ -205,44 +235,21 @@ func compareValues(val1, val2 interface{}, operator string) (bool, error) {
 			return false, fmt.Errorf("mismatched types")
 		}
 
-		switch operator {
-		case "==":
-			return v1 == v2, nil
-		case "!=":
-			return v1 != v2, nil
-		case "<":
-			return v1 < v2, nil
-		case ">":
-			return v1 > v2, nil
-		case "<=":
-			return v1 <= v2, nil
-		case ">=":
-			return v1 >= v2, nil
-		}
+		return compareFloat(v1, v2, operator)
 	case string:
 		v2, ok := val2.(string)
 		if !ok {
 			return false, fmt.Errorf("mismatched types")
 		}
 
-		switch operator {
-		case "==":
-			return v1 == v2, nil
-		case "!=":
-			return v1 != v2, nil
-		}
+		return compareString(v1, v2, operator)
 	case bool:
 		v2, ok := val2.(bool)
 		if !ok {
 			return false, fmt.Errorf("mismatched types")
 		}
 
-		switch operator {
-		case "==":
-			return v1 == v2, nil
-		case "!=":
-			return v1 != v2, nil
-		}
+		return compareBool(v1, v2, operator)
 	}
 
 	return false, fmt.Errorf("unsupported type or operator")
@@ -281,8 +288,8 @@ func parseBooleanExpression(booleanExpression string) (op string, jsonPaths []st
 		jsonPaths = trimLeadingTrailingWhiteSpace(exprs)
 
 		if len(exprs) == 2 &&
-			isValidJSONPathExpression(jsonPaths[0]) &&
-			isValidJSONPathExpression(jsonPaths[1]) {
+			IsValidJSONPathExpression(jsonPaths[0]) &&
+			IsValidJSONPathExpression(jsonPaths[1]) {
 			return op, jsonPaths, nil
 		}
 	}
@@ -290,7 +297,7 @@ func parseBooleanExpression(booleanExpression string) (op string, jsonPaths []st
 	return "", []string{}, fmt.Errorf("unable to parse boolean expression %v", booleanExpression)
 }
 
-func isValidJSONPathExpression(expr string) bool {
+func IsValidJSONPathExpression(expr string) bool {
 	jp := jsonpath.New("validator").AllowMissingKeys(true)
 
 	err := jp.Parse(expr)
