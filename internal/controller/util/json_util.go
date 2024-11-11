@@ -33,8 +33,8 @@ func EvaluateCheckHook(client client.Client, hook *kubeobjects.HookSpec, log log
 	case "pod":
 		// handle pod type
 		resource := &corev1.Pod{}
-		err := WaitUntilResourceExists(client, resource, nsScopedName, time.Duration(timeout)*time.Second)
 
+		err := WaitUntilResourceExists(client, resource, nsScopedName, time.Duration(timeout)*time.Second)
 		if err != nil {
 			return false, err
 		}
@@ -43,8 +43,8 @@ func EvaluateCheckHook(client client.Client, hook *kubeobjects.HookSpec, log log
 	case "deployment":
 		// handle deployment type
 		resource := &appsv1.Deployment{}
-		err := WaitUntilResourceExists(client, resource, nsScopedName, time.Duration(timeout)*time.Second)
 
+		err := WaitUntilResourceExists(client, resource, nsScopedName, time.Duration(timeout)*time.Second)
 		if err != nil {
 			return false, err
 		}
@@ -53,8 +53,8 @@ func EvaluateCheckHook(client client.Client, hook *kubeobjects.HookSpec, log log
 	case "statefulset":
 		// handle statefulset type
 		resource := &appsv1.StatefulSet{}
-		err := WaitUntilResourceExists(client, resource, nsScopedName, time.Duration(timeout)*time.Second)
 
+		err := WaitUntilResourceExists(client, resource, nsScopedName, time.Duration(timeout)*time.Second)
 		if err != nil {
 			return false, err
 		}
@@ -172,9 +172,7 @@ func compare(a, b reflect.Value, operator string) (bool, error) {
 	// Here, we have two scenarios:
 	// 1. operands are either string or float64 and operator is any of the 6
 	// 2. operands are of any kind and operator is either == or !=
-	// Safety latch:
-	// We will initially support only string, float64 and bool
-	// return an error if we encounter any other kind
+	// Safety latch: return an error if we encounter any other kind
 	if isUnsupportedKind(a.Kind()) || isUnsupportedKind(b.Kind()) {
 		return false, fmt.Errorf("unsupported kind for comparison: %v, %v", a.Kind(), b.Kind())
 	}
