@@ -113,12 +113,21 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 }
 
 // reconcileVolRepsAsSecondary reconciles VolumeReplication resources for the VRG as secondary
+//
+//nolint:gocognit,cyclop
 func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 	requeue := false
 
 	for idx := range v.volRepPVCs {
 		pvc := &v.volRepPVCs[idx]
 		log := logWithPvcName(v.log, pvc)
+
+		// Potentially for PVCs that are not deleted
+		if !containsString(pvc.Finalizers, PvcVRFinalizerProtected) {
+			log.Info("pvc does not contain VR protection finalizer. Skipping it")
+
+			continue
+		}
 
 		if err := v.updateProtectedPVCs(pvc); err != nil {
 			requeue = true
@@ -137,20 +146,29 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 			continue
 		}
 
+		vrMissing, requeueResult := v.reconcileMissingVR(pvc, log)
+		if vrMissing || requeueResult {
+			v.requeue()
+
+			continue
+		}
+
 		// If VR is not ready as Secondary, we can ignore it here, either a future VR change or the requeue would
 		// reconcile it to the desired state.
-		requeueResult, _, skip = v.reconcileVRAsSecondary(pvc, log)
+		requeueResult, ready, skip := v.reconcileVRAsSecondary(pvc, log)
 		if requeueResult {
 			requeue = true
 
 			continue
 		}
 
-		if skip {
+		if skip || !ready {
 			continue
 		}
 
-		log.Info("Successfully processed VolumeReplication for PersistentVolumeClaim")
+		// Not removed from protectedPVC list
+		// cleanupProtectedPVCs
+		return v.undoPVCFinalizersAndPVRetention(pvc, log)
 	}
 
 	return requeue

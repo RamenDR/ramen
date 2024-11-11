@@ -1380,6 +1380,8 @@ func (v *VRGInstance) errorConditionLogAndSet(err error, msg string,
 }
 
 func (v *VRGInstance) updateVRGConditionsAndStatus(result ctrl.Result) ctrl.Result {
+	// Check if as Secondary things would be updated accordingly, should protectedPVC be cleared?
+	// cleanupProtectedPVCs
 	v.updateVRGConditions()
 
 	return v.updateVRGStatus(result)
