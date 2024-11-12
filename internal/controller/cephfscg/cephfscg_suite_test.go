@@ -115,7 +115,7 @@ var _ = BeforeSuite(func() {
 	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: scheme.Scheme,
 		Metrics: metricsserver.Options{
-			BindAddress: ":9090",
+			BindAddress: "0", // Disable metrics
 		},
 	})
 	Expect(err).ToNot(HaveOccurred())

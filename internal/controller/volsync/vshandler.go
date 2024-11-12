@@ -60,6 +60,9 @@ const (
 
 	OwnerNameAnnotation      = "ramendr.openshift.io/owner-name"
 	OwnerNamespaceAnnotation = "ramendr.openshift.io/owner-namespace"
+
+	// StorageClass label
+	StorageIDLabel = "ramendr.openshift.io/storageid"
 )
 
 type VSHandler struct {
@@ -1441,7 +1444,9 @@ func (v *VSHandler) getVolumeSnapshotClassFromPVCStorageClass(storageClass *stor
 	var matchedVolumeSnapshotClassName string
 
 	for _, volumeSnapshotClass := range volumeSnapshotClasses {
-		if volumeSnapshotClass.Driver == storageClass.Provisioner {
+		sIDFromSnapClass := volumeSnapshotClass.GetLabels()[StorageIDLabel]
+		if volumeSnapshotClass.Driver == storageClass.Provisioner &&
+			sIDFromSnapClass == storageClass.GetLabels()[StorageIDLabel] {
 			// Match the first one where driver/provisioner == the storage class provisioner
 			// But keep looping - if we find the default storageVolumeClass, use it instead
 			if matchedVolumeSnapshotClassName == "" || isDefaultVolumeSnapshotClass(volumeSnapshotClass) {
