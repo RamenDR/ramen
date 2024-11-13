@@ -107,5 +107,5 @@ func (d DiscoveredApps) Undeploy(w workloads.Workload) error {
 }
 
 func (d DiscoveredApps) IsWorkloadSupported(w workloads.Workload) bool {
-	return w.GetName() != "Deploy-cephfs"
+	return true
 }

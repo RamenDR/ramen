@@ -373,7 +373,7 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 			return !done, nil
 		}
 
-		return d.ensureActionCompleted(failoverCluster)
+		return d.ensureFailoverActionCompleted(failoverCluster)
 	} else if yes, err := d.mwExistsAndPlacementUpdated(failoverCluster); yes || err != nil {
 		// We have to wait for the VRG to appear on the failoverCluster or
 		// in case of an error, try again later
@@ -863,7 +863,7 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
-		return d.ensureActionCompleted(preferredCluster)
+		return d.ensureRelocateActionCompleted(preferredCluster)
 	}
 
 	d.setStatusInitiating()
@@ -896,6 +896,29 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	return d.relocate(preferredCluster, preferredClusterNamespace, rmn.Relocating)
 }
 
+func (d *DRPCInstance) ensureRelocateActionCompleted(srcCluster string) (bool, error) {
+	d.setProgression(rmn.ProgressionCleaningUp)
+
+	return d.ensureActionCompleted(srcCluster)
+}
+
+func (d *DRPCInstance) ensureFailoverActionCompleted(srcCluster string) (bool, error) {
+	// This is the time to cleanup the workload from the preferredCluster.
+	// For managed apps, it will be done automatically by ACM, when we update
+	// the placement to the targetCluster. For discovered apps, we have to let
+	// the user know that they need to clean up the apps.
+	// So set the progression to wait on user to clean up.
+	// If not discovered apps, then we can set the progression to cleaning up.
+	if d.instance.Spec.ProtectedNamespaces != nil &&
+		len(*d.instance.Spec.ProtectedNamespaces) > 0 {
+		d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+	} else {
+		d.setProgression(rmn.ProgressionCleaningUp)
+	}
+
+	return d.ensureActionCompleted(srcCluster)
+}
+
 func (d *DRPCInstance) ensureActionCompleted(srcCluster string) (bool, error) {
 	const done = true
 
@@ -908,8 +931,6 @@ func (d *DRPCInstance) ensureActionCompleted(srcCluster string) (bool, error) {
 	if err != nil {
 		return !done, err
 	}
-
-	d.setProgression(rmn.ProgressionCleaningUp)
 
 	// Cleanup and setup VolSync if enabled
 	err = d.ensureCleanupAndVolSyncReplicationSetup(srcCluster)
@@ -939,6 +960,7 @@ func (d *DRPCInstance) ensureCleanupAndVolSyncReplicationSetup(srcCluster string
 		return fmt.Errorf("waiting for RDSpec count on cluster %s to go to zero. VRG OK? %v", srcCluster, ok)
 	}
 
+	// Ensure cleanup waits for the VRG to be secondary on the clusters other than srcCluster
 	err = d.EnsureCleanup(srcCluster)
 	if err != nil {
 		return err
@@ -954,6 +976,7 @@ func (d *DRPCInstance) ensureCleanupAndVolSyncReplicationSetup(srcCluster string
 	return nil
 }
 
+// nolint: cyclop
 func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) {
 	const done = true
 
@@ -974,8 +997,19 @@ func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) 
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Starting quiescing for relocation")
 
-		// clear current user PlacementRule's decision
-		d.setProgression(rmn.ProgressionClearingPlacement)
+		// We are going to clear the placement, this is when ACM will start
+		// deleting the workloads from the current cluster. In case of
+		// discovered apps, we have to let the user know that they need to
+		// clean up the apps from the current cluster. So set the progression
+		// to wait on user to clean up. For non-discovered apps, we can set the
+		// progression to clearing placement.
+		if d.instance.Spec.ProtectedNamespaces != nil &&
+			len(*d.instance.Spec.ProtectedNamespaces) > 0 {
+			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+		} else {
+			// clear current user PlacementRule's decision
+			d.setProgression(rmn.ProgressionClearingPlacement)
+		}
 
 		err := d.clearUserPlacementRuleStatus()
 		if err != nil {
@@ -990,7 +1024,12 @@ func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) 
 	}
 
 	if !result {
-		d.setProgression(rmn.ProgressionRunningFinalSync)
+		if d.instance.Spec.ProtectedNamespaces != nil &&
+			len(*d.instance.Spec.ProtectedNamespaces) > 0 {
+			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+		} else {
+			d.setProgression(rmn.ProgressionRunningFinalSync)
+		}
 
 		return !done, nil
 	}
@@ -1235,7 +1274,12 @@ func (d *DRPCInstance) setupRelocation(preferredCluster string) error {
 	// complete in one shot, then coming back to this loop will reset the preferredCluster to secondary again.
 	clusterToSkip := preferredCluster
 	if !d.ensureVRGIsSecondaryEverywhere(clusterToSkip) {
-		d.setProgression(rmn.ProgressionEnsuringVolumesAreSecondary)
+		if d.instance.Spec.ProtectedNamespaces != nil &&
+			len(*d.instance.Spec.ProtectedNamespaces) > 0 {
+			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+		} else {
+			d.setProgression(rmn.ProgressionEnsuringVolumesAreSecondary)
+		}
 		// During relocation, both clusters should be up and both must be secondaries before we proceed.
 		if !d.moveVRGToSecondaryEverywhere() {
 			return fmt.Errorf("failed to move VRG to secondary everywhere")
@@ -2048,10 +2092,6 @@ func (d *DRPCInstance) ensureVRGManifestWorkOnClusterDeleted(clusterName string)
 
 	d.log.Info("Request not complete yet", "cluster", clusterName)
 
-	if d.instance.Spec.ProtectedNamespaces != nil && len(*d.instance.Spec.ProtectedNamespaces) > 0 {
-		d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
-	}
-
 	// IF we get here, either the VRG has not transitioned to secondary (yet) or delete didn't succeed. In either cases,
 	// we need to make sure that the VRG object is deleted. IOW, we still have to wait
 	return !done, nil
@@ -2065,10 +2105,6 @@ func (d *DRPCInstance) ensureVRGIsSecondaryEverywhere(clusterToSkip string) bool
 	for _, clusterName := range rmnutil.DRPolicyClusterNames(d.drPolicy) {
 		if clusterToSkip == clusterName {
 			continue
-		}
-
-		if d.instance.Spec.ProtectedNamespaces != nil && len(*d.instance.Spec.ProtectedNamespaces) > 0 {
-			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
 		}
 
 		if !d.ensureVRGIsSecondaryOnCluster(clusterName) {
