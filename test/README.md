@@ -200,12 +200,14 @@ Change directory to the test directory:
 cd test
 ```
 
-To setup up minikube for drenv run once before starting any
-environment:
+To set up the host for running specific drenv environment file,
+run once before starting any environment:
 
 ```
-drenv setup
+drenv setup envs/regional-dr.yaml
 ```
+
+The environment file describes one or more kubernetes clusters.
 
 To start the environment:
 

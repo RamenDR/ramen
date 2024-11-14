@@ -262,6 +262,7 @@ func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim) err
 	protectedPVC.Labels = pvc.Labels
 	protectedPVC.AccessModes = pvc.Spec.AccessModes
 	protectedPVC.Resources = pvc.Spec.Resources
+	protectedPVC.VolumeMode = pvc.Spec.VolumeMode
 
 	setPVCStorageIdentifiers(protectedPVC, storageClass, volumeReplicationClass)
 

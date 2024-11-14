@@ -302,6 +302,9 @@ type ProtectedPVC struct {
 
 	// Bytes transferred per sync, if protected in async mode only
 	LastSyncBytes *int64 `json:"lastSyncBytes,omitempty"`
+
+	// VolumeMode describes how a volume is intended to be consumed, either Block or Filesystem.
+	VolumeMode *corev1.PersistentVolumeMode `json:"volumeMode,omitempty"`
 }
 
 type KubeObjectsCaptureIdentifier struct {

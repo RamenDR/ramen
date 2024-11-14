@@ -2309,6 +2309,8 @@ func constructVRGFromView(viewVRG *rmn.VolumeReplicationGroup) *rmn.VolumeReplic
 			fallthrough
 		case rmnutil.IsCGEnabledAnnotation:
 			fallthrough
+		case rmnutil.UseVolSyncAnnotation:
+			fallthrough
 		case DRPCUIDAnnotation:
 			rmnutil.AddAnnotation(vrg, k, v)
 		default:
