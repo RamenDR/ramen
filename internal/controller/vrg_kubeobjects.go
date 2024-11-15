@@ -903,8 +903,8 @@ func getResourceAndConvertToRecoverGroup(
 }
 
 func validateAndGetHookDetails(name string) (string, string, error) {
-	if !strings.Contains(name, "/") {
-		return "", "", errors.New("invalid format of hook name provided ")
+	if strings.Count(name, "/") != 1 {
+		return "", "", errors.New("invalid format: hook name provided should be of the form part1/part2")
 	}
 
 	parts := strings.Split(name, "/")
