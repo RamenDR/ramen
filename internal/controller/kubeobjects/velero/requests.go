@@ -13,7 +13,6 @@ package velero
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/go-logr/logr"
 	pkgerrors "github.com/pkg/errors"
@@ -378,44 +377,12 @@ func getBackupSpecFromObjectsSpec(objectsSpec kubeobjects.Spec) velero.BackupSpe
 		OrLabelSelectors:        objectsSpec.OrLabelSelectors,
 		TTL:                     metav1.Duration{}, // TODO: set default here
 		IncludeClusterResources: objectsSpec.IncludeClusterResources,
-		Hooks:                   getBackupHooks(objectsSpec.KubeResourcesSpec.Hooks),
+		// TODO: Hooks should be handled by ramen code.
+		// Hooks:                   getBackupHooks(objectsSpec.KubeResourcesSpec.Hooks)
 		VolumeSnapshotLocations: []string{},
 		DefaultVolumesToRestic:  new(bool),
 		OrderedResources:        map[string]string{},
 	}
-}
-
-func getBackupHooks(hooks []kubeobjects.HookSpec) velero.BackupHooks {
-	hookSpec := velero.BackupHooks{}
-
-	for i := range hooks {
-		hook := &hooks[i] // exportloopref: fix variable into local variable
-
-		hookSpec.Resources = append(hookSpec.Resources, velero.BackupResourceHookSpec{
-			Name:          hook.Name,
-			LabelSelector: hook.LabelSelector,
-			PreHooks:      []velero.BackupResourceHook{},
-			PostHooks: []velero.BackupResourceHook{
-				{
-					Exec: &velero.ExecHook{
-						Container: dereferenceOrZeroValueIfNil(hook.Container),
-						Timeout:   metav1.Duration{Duration: time.Duration(hook.Timeout)},
-						Command:   []string{hook.Command},
-					},
-				},
-			},
-		})
-	}
-
-	return hookSpec
-}
-
-func dereferenceOrZeroValueIfNil[T any](pointer *T) (t T) {
-	if pointer == nil {
-		return
-	}
-
-	return *pointer
 }
 
 func backupRealStatusProcess(

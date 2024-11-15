@@ -367,6 +367,8 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=volumeattachments,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
+// +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch;update;patch;create
 // +kubebuilder:rbac:groups=volsync.backube,resources=replicationdestinations,verbs=get;list;watch;create;update;patch;delete
@@ -1432,24 +1434,6 @@ func (v *VRGInstance) updateVRGStatus(result ctrl.Result) ctrl.Result {
 // on the cluster
 func (v *VRGInstance) updateStatusState() {
 	dataReadyCondition := findCondition(v.instance.Status.Conditions, VRGConditionTypeDataReady)
-	if dataReadyCondition == nil {
-		// VRG is exclusively using volsync
-		if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary &&
-			len(v.instance.Spec.VolSync.RDSpec) > 0 {
-			v.instance.Status.State = ramendrv1alpha1.SecondaryState
-
-			return
-		}
-
-		v.log.Info("Failed to find the DataReady condition in status")
-
-		v.instance.Status.State = ramendrv1alpha1.UnknownState
-
-		return
-	}
-
-	StatusState := getStatusStateFromSpecState(v.instance.Spec.ReplicationState)
-
 	if dataReadyCondition.Status != metav1.ConditionTrue ||
 		dataReadyCondition.ObservedGeneration != v.instance.Generation {
 		v.instance.Status.State = ramendrv1alpha1.UnknownState
@@ -1457,6 +1441,7 @@ func (v *VRGInstance) updateStatusState() {
 		return
 	}
 
+	StatusState := getStatusStateFromSpecState(v.instance.Spec.ReplicationState)
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
 		v.instance.Status.State = StatusState
 
