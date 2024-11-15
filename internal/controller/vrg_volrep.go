@@ -114,7 +114,7 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 
 // reconcileVolRepsAsSecondary reconciles VolumeReplication resources for the VRG as secondary
 //
-//nolint:gocognit,cyclop
+//nolint:gocognit,cyclop,funlen
 func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 	requeue := false
 
@@ -122,9 +122,11 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 		pvc := &v.volRepPVCs[idx]
 		log := logWithPvcName(v.log, pvc)
 
-		// Potentially for PVCs that are not deleted
+		// Potentially for PVCs that are not deleted, e.g Failover of STS without required auto delete options
 		if !containsString(pvc.Finalizers, PvcVRFinalizerProtected) {
 			log.Info("pvc does not contain VR protection finalizer. Skipping it")
+
+			v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
 
 			continue
 		}
@@ -148,7 +150,7 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 
 		vrMissing, requeueResult := v.reconcileMissingVR(pvc, log)
 		if vrMissing || requeueResult {
-			v.requeue()
+			requeue = true
 
 			continue
 		}
@@ -166,9 +168,13 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 			continue
 		}
 
-		// Not removed from protectedPVC list
-		// cleanupProtectedPVCs
-		return v.undoPVCFinalizersAndPVRetention(pvc, log)
+		if v.undoPVCFinalizersAndPVRetention(pvc, log) {
+			requeue = true
+
+			continue
+		}
+
+		v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
 	}
 
 	return requeue
@@ -2567,6 +2573,16 @@ func (v *VRGInstance) aggregateVolRepDataReadyCondition() *metav1.Condition {
 //nolint:funlen,gocognit,cyclop
 func (v *VRGInstance) aggregateVolRepDataProtectedCondition() *metav1.Condition {
 	if len(v.volRepPVCs) == 0 {
+		if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
+			if v.instance.Spec.Sync != nil {
+				return newVRGAsDataProtectedUnusedCondition(v.instance.Generation,
+					"PVC protection as secondary is complete, or no PVCs needed protection")
+			}
+
+			return newVRGAsDataProtectedUnusedCondition(v.instance.Generation,
+				"PVC protection as secondary is complete, or no PVCs needed protection using VolumeReplication scheme")
+		}
+
 		if v.instance.Spec.Sync != nil {
 			return newVRGAsDataProtectedUnusedCondition(v.instance.Generation,
 				"No PVCs are protected, no PVCs found matching the selector")
@@ -2649,6 +2665,11 @@ func (v *VRGInstance) aggregateVolRepDataProtectedCondition() *metav1.Condition 
 // protecting condition, set the VRG level condition to protecting.  If not, set
 // the VRG level condition to true.
 func (v *VRGInstance) aggregateVolRepClusterDataProtectedCondition() *metav1.Condition {
+	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
+		return newVRGClusterDataProtectedUnusedCondition(v.instance.Generation,
+			"Cluster data is not protected as Secondary")
+	}
+
 	if len(v.volRepPVCs) == 0 {
 		if v.instance.Spec.Sync != nil {
 			return newVRGAsDataProtectedUnusedCondition(v.instance.Generation,
