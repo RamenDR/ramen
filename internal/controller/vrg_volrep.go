@@ -35,16 +35,21 @@ const (
 //nolint:gosec
 const (
 	// secretRef keys
-	controllerPublishSecretName      = "csi.storage.k8s.io/controller-publish-secret-name"
-	controllerPublishSecretNamespace = "csi.storage.k8s.io/controller-publish-secret-namespace"
-	nodeStageSecretName              = "csi.storage.k8s.io/node-stage-secret-name"
-	nodeStageSecretNamespace         = "csi.storage.k8s.io/node-stage-secret-namespace"
-	nodePublishSecretName            = "csi.storage.k8s.io/node-publish-secret-name"
-	nodePublishSecretNamespace       = "csi.storage.k8s.io/node-publish-secret-namespace"
-	controllerExpandSecretName       = "csi.storage.k8s.io/controller-expand-secret-name"
-	controllerExpandSecretNamespace  = "csi.storage.k8s.io/controller-expand-secret-namespace"
-	nodeExpandSecretName             = "csi.storage.k8s.io/node-expand-secret-name"
-	nodeExpandSecretNamespace        = "csi.storage.k8s.io/node-expand-secret-namespace"
+	controllerPublishSecretName        = "csi.storage.k8s.io/controller-publish-secret-name"
+	controllerPublishSecretNamespace   = "csi.storage.k8s.io/controller-publish-secret-namespace"
+	nodeStageSecretName                = "csi.storage.k8s.io/node-stage-secret-name"
+	nodeStageSecretNamespace           = "csi.storage.k8s.io/node-stage-secret-namespace"
+	nodePublishSecretName              = "csi.storage.k8s.io/node-publish-secret-name"
+	nodePublishSecretNamespace         = "csi.storage.k8s.io/node-publish-secret-namespace"
+	controllerExpandSecretName         = "csi.storage.k8s.io/controller-expand-secret-name"
+	controllerExpandSecretNamespace    = "csi.storage.k8s.io/controller-expand-secret-namespace"
+	nodeExpandSecretName               = "csi.storage.k8s.io/node-expand-secret-name"
+	nodeExpandSecretNamespace          = "csi.storage.k8s.io/node-expand-secret-namespace"
+	provisionerSecretName              = "csi.storage.k8s.io/provisioner-secret-name"
+	provisionerSecretNamespace         = "csi.storage.k8s.io/provisioner-secret-namespace"
+	provisionerDeletionSecretName      = "volume.kubernetes.io/provisioner-deletion-secret-name"
+	provisionerDeletionSecretNamespace = "volume.kubernetes.io/provisioner-deletion-secret-namespace"
+	provisionerKeyName                 = "pv.kubernetes.io/provisioned-by"
 )
 
 func logWithPvcName(log logr.Logger, pvc *corev1.PersistentVolumeClaim) logr.Logger {
@@ -2430,6 +2435,17 @@ func (v *VRGInstance) processPVSecrets(pv *corev1.PersistentVolume) error {
 	if exists {
 		pv.Spec.CSI.ControllerExpandSecretRef = secFromSC
 	}
+
+	// the value for provisionerSecretName and provisionerDeletionSecretName are allways same. so we check
+	// if provisionerSecretName name exists in storageClass and if exists we populate PV Annotation with
+	// provisionerDeletionSecretName with the values from  provisionerSecretName and its namespace values.
+	secFromSC, exists = secretsFromSC(sc.Parameters, provisionerSecretName, provisionerSecretNamespace)
+	if exists {
+		rmnutil.AddAnnotation(pv, provisionerDeletionSecretName, secFromSC.Name)
+		rmnutil.AddAnnotation(pv, provisionerDeletionSecretNamespace, secFromSC.Namespace)
+	}
+
+	rmnutil.AddAnnotation(pv, provisionerKeyName, sc.Provisioner)
 
 	return nil
 }
