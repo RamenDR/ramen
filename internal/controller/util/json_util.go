@@ -35,31 +35,15 @@ func EvaluateCheckHook(client client.Client, hook *kubeobjects.HookSpec, log log
 		// handle pod type
 		resource := &corev1.Pod{}
 
-		// err := WaitUntilResourceExists(client, resource, nsScopedName, time.Duration(timeout)*time.Second)
-		// if err != nil {
-		// 	return false, err
-		// }
-
-		//return EvaluateCheckHookExp(hook.Chk.Condition, resource)
 		return EvaluateCheckHookExpWithTimeout(client, resource, nsScopedName, time.Duration(timeout)*time.Second, hook.Chk.Condition)
 	case "deployment":
 		// handle deployment type
 		resource := &appsv1.Deployment{}
 
-		// err := WaitUntilResourceExists(client, resource, nsScopedName, time.Duration(timeout)*time.Second)
-		// if err != nil {
-		// 	return false, err
-		// }
-
 		return EvaluateCheckHookExpWithTimeout(client, resource, nsScopedName, time.Duration(timeout)*time.Second, hook.Chk.Condition)
 	case "statefulset":
 		// handle statefulset type
 		resource := &appsv1.StatefulSet{}
-
-		// err := WaitUntilResourceExists(client, resource, nsScopedName, time.Duration(timeout)*time.Second)
-		// if err != nil {
-		// 	return false, err
-		// }
 
 		return EvaluateCheckHookExpWithTimeout(client, resource, nsScopedName, time.Duration(timeout)*time.Second, hook.Chk.Condition)
 	}
@@ -98,35 +82,6 @@ func EvaluateCheckHookExpWithTimeout(client client.Client, obj client.Object, ns
 		}
 	}
 }
-
-/*func WaitUntilResourceExists(client client.Client, obj client.Object, nsScopedName types.NamespacedName,
-	timeout time.Duration,
-) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	ticker := time.NewTicker(pollInterval * time.Millisecond) // Poll every 100 milliseconds
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("timeout waiting for resource %s to be ready: %w", nsScopedName.Name, ctx.Err())
-		case <-ticker.C:
-			err := client.Get(context.Background(), nsScopedName, obj)
-			if err != nil {
-				if k8serrors.IsNotFound(err) {
-					// Resource not found, continue polling
-					continue
-				}
-
-				return err // Some other error occurred, return it
-			}
-
-			return nil // Resource is ready
-		}
-	}
-}*/
 
 func getTimeoutValue(hook *kubeobjects.HookSpec) int {
 	if hook.Chk.Timeout != 0 {

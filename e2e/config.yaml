@@ -7,3 +7,10 @@ pvcspecs:
     accessmodes: ReadWriteMany
   - storageclassname: rook-ceph-block
     accessmodes: ReadWriteOnce
+Clusters:
+  hub:
+    kubeconfigpath: /home/asn/.config/drenv/rdr/kubeconfigs/hub
+  c1:
+    kubeconfigpath: /home/asn/.config/drenv/rdr/kubeconfigs/dr1
+  c2:
+    kubeconfigpath: /home/asn/.config/drenv/rdr/kubeconfigs/dr2
