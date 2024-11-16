@@ -273,11 +273,14 @@ def _create_vm(profile, config):
 
 
 def _start_vm(profile, timeout=None):
+    env = dict(os.environ)
+    # Use builtin port forwarding instead of starting ssh child process.
+    env["LIMA_SSH_PORT_FORWARDER"] = "false"
     args = ["start"]
     if timeout:
         args.append(f"--timeout={timeout}s")
     args.append(profile["name"])
-    _watch(*args, context=profile["name"])
+    _watch(*args, context=profile["name"], env=env)
 
 
 def _stop_vm(profile):
@@ -312,10 +315,10 @@ def _run(*args, context="lima"):
     return commands.run(*cmd)
 
 
-def _watch(*args, stdin=None, context="lima"):
+def _watch(*args, stdin=None, env=None, context="lima"):
     cmd = [LIMACTL, "--log-format=json", *args]
     logging.debug("[%s] Running %s", context, cmd)
-    for line in commands.watch(*cmd, stdin=stdin, stderr=subprocess.STDOUT):
+    for line in commands.watch(*cmd, stdin=stdin, stderr=subprocess.STDOUT, env=env):
         try:
             info = json.loads(line)
         except ValueError:
