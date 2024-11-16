@@ -1380,6 +1380,8 @@ func (v *VRGInstance) errorConditionLogAndSet(err error, msg string,
 }
 
 func (v *VRGInstance) updateVRGConditionsAndStatus(result ctrl.Result) ctrl.Result {
+	// Check if as Secondary things would be updated accordingly, should protectedPVC be cleared?
+	// cleanupProtectedPVCs
 	v.updateVRGConditions()
 
 	return v.updateVRGStatus(result)
@@ -1539,15 +1541,13 @@ func (v *VRGInstance) updateVRGConditions() {
 func (v *VRGInstance) vrgReadyStatus(reason string) *metav1.Condition {
 	v.log.Info("Marking VRG ready with replicating reason", "reason", reason)
 
-	unusedMsg := "No PVCs are protected using VolumeReplication scheme"
-	if v.instance.Spec.Sync != nil {
-		unusedMsg = "No PVCs are protected, no PVCs found matching the selector"
-	}
-
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
 		msg := "PVCs in the VolumeReplicationGroup group are replicating"
 		if reason == VRGConditionReasonUnused {
-			msg = unusedMsg
+			msg = "PVC protection as secondary is complete, or no PVCs needed protection using VolumeReplication scheme"
+			if v.instance.Spec.Sync != nil {
+				msg = "PVC protection as secondary is complete, or no PVCs needed protection"
+			}
 		} else {
 			reason = VRGConditionReasonReplicating
 		}
@@ -1558,7 +1558,10 @@ func (v *VRGInstance) vrgReadyStatus(reason string) *metav1.Condition {
 	// VRG as primary
 	msg := "PVCs in the VolumeReplicationGroup are ready for use"
 	if reason == VRGConditionReasonUnused {
-		msg = unusedMsg
+		msg = "No PVCs are protected using VolumeReplication scheme"
+		if v.instance.Spec.Sync != nil {
+			msg = "No PVCs are protected, no PVCs found matching the selector"
+		}
 	}
 
 	return newVRGAsPrimaryReadyCondition(v.instance.Generation, reason, msg)

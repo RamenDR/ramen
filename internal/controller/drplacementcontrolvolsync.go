@@ -13,34 +13,11 @@ import (
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-func (d *DRPCInstance) EnsureVolSyncReplicationSetup(homeCluster string) error {
-	d.log.Info(fmt.Sprintf("Ensure VolSync replication has been setup for cluster %s", homeCluster))
-
-	if d.volSyncDisabled {
-		d.log.Info("VolSync is disabled")
-
-		return nil
-	}
-
-	vsRepNeeded, err := d.IsVolSyncReplicationRequired(homeCluster)
-	if err != nil {
-		return err
-	}
-
-	if !vsRepNeeded {
-		d.log.Info("No PVCs found that require VolSync replication")
-
-		return nil
-	}
-
-	return d.ensureVolSyncSetup(homeCluster)
-}
-
-func (d *DRPCInstance) ensureVolSyncSetup(srcCluster string) error {
-	d.setProgression(rmn.ProgressionEnsuringVolSyncSetup)
+func (d *DRPCInstance) EnsureSecondaryReplicationSetup(srcCluster string) error {
+	d.setProgression(rmn.ProgressionEnsuringVolSyncSetup) // TODO: Update progression string
 
 	// Create or update the destination VRG
-	opResult, err := d.createOrUpdateVolSyncDestManifestWork(srcCluster)
+	opResult, err := d.createOrUpdateSecondaryManifestWork(srcCluster)
 	if err != nil {
 		return err
 	}
@@ -50,7 +27,22 @@ func (d *DRPCInstance) ensureVolSyncSetup(srcCluster string) error {
 	}
 
 	if _, found := d.vrgs[srcCluster]; !found {
-		return fmt.Errorf("failed to find source VolSync VRG in cluster %s. VRGs %v", srcCluster, d.vrgs)
+		return fmt.Errorf("failed to find source VRG in cluster %s. VRGs %v", srcCluster, d.vrgs)
+	}
+
+	return d.EnsureVolSyncReplicationSetup(srcCluster)
+}
+
+func (d *DRPCInstance) EnsureVolSyncReplicationSetup(srcCluster string) error {
+	vsRepNeeded, err := d.IsVolSyncReplicationRequired(srcCluster)
+	if err != nil {
+		return err
+	}
+
+	if !vsRepNeeded {
+		d.log.Info("No PVCs found that require VolSync replication")
+
+		return nil
 	}
 
 	// Now we should have a source and destination VRG created
@@ -119,9 +111,9 @@ func (d *DRPCInstance) IsVolSyncReplicationRequired(homeCluster string) (bool, e
 	return !required, nil
 }
 
-// createOrUpdateVolSyncDestManifestWork creates or updates volsync Secondaries skipping the cluster srcCluster.
+// createOrUpdateSecondaryManifestWork creates or updates volsync Secondaries skipping the cluster srcCluster.
 // The srcCluster is primary cluster.
-func (d *DRPCInstance) createOrUpdateVolSyncDestManifestWork(srcCluster string) (ctrlutil.OperationResult, error) {
+func (d *DRPCInstance) createOrUpdateSecondaryManifestWork(srcCluster string) (ctrlutil.OperationResult, error) {
 	// create VRG ManifestWork
 	d.log.Info("Creating or updating VRG ManifestWork for destination clusters",
 		"Last State:", d.getLastDRState(), "homeCluster", srcCluster)
@@ -184,13 +176,17 @@ func (d *DRPCInstance) refreshVRGSecondarySpec(srcCluster, dstCluster string) (*
 
 	dstVRG := d.newVRG(dstCluster, rmn.Secondary, nil)
 
-	if len(srcVRGView.Status.ProtectedPVCs) != 0 {
-		d.resetRDSpec(srcVRGView, &dstVRG)
-	}
+	if d.drType == DRTypeAsync {
+		if len(srcVRGView.Status.ProtectedPVCs) != 0 {
+			d.resetRDSpec(srcVRGView, &dstVRG)
+		}
 
-	// Update destination VRG peerClasses with the source classes, such that when secondary is promoted to primary
-	// on actions, it uses the same peerClasses as the primary
-	dstVRG.Spec.Async.PeerClasses = srcVRG.Spec.Async.PeerClasses
+		// Update destination VRG peerClasses with the source classes, such that when secondary is promoted to primary
+		// on actions, it uses the same peerClasses as the primary
+		dstVRG.Spec.Async.PeerClasses = srcVRG.Spec.Async.PeerClasses
+	} else {
+		dstVRG.Spec.Sync.PeerClasses = srcVRG.Spec.Sync.PeerClasses
+	}
 
 	return &dstVRG, nil
 }
