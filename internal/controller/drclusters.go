@@ -130,8 +130,17 @@ func objectsToDeploy(hubOperatorRamenConfig *rmn.RamenConfig) ([]interface{}, er
 		olmClusterRole,
 		olmRoleBinding(drClusterOperatorNamespaceName),
 		operatorGroup(drClusterOperatorNamespaceName),
+		drClusterConfigRole,
+		drClusterConfigRoleBinding,
 		drClusterOperatorConfigMap,
 	), nil
+}
+
+func operatorGroup(namespaceName string) *operatorsv1.OperatorGroup {
+	return &operatorsv1.OperatorGroup{
+		TypeMeta:   metav1.TypeMeta{Kind: "OperatorGroup", APIVersion: "operators.coreos.com/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "ramen-operator-group", Namespace: namespaceName},
+	}
 }
 
 func olmRoleBinding(namespaceName string) *rbacv1.RoleBinding {
@@ -153,13 +162,6 @@ func olmRoleBinding(namespaceName string) *rbacv1.RoleBinding {
 			Kind:     "ClusterRole",
 			Name:     "open-cluster-management:klusterlet-work-sa:agent:olm-edit",
 		},
-	}
-}
-
-func operatorGroup(namespaceName string) *operatorsv1.OperatorGroup {
-	return &operatorsv1.OperatorGroup{
-		TypeMeta:   metav1.TypeMeta{Kind: "OperatorGroup", APIVersion: "operators.coreos.com/v1"},
-		ObjectMeta: metav1.ObjectMeta{Name: "ramen-operator-group", Namespace: namespaceName},
 	}
 }
 

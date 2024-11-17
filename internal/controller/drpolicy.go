@@ -10,7 +10,11 @@ import (
 	"github.com/go-logr/logr"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/util"
+	rbacv1 "k8s.io/api/rbac/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	runtime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
+	cpcv1 "open-cluster-management.io/config-policy-controller/api/v1"
 )
 
 var drClustersMutex sync.Mutex
@@ -59,12 +63,15 @@ func drClusterSecretsDeploy(
 		log.Info("Received partial list", "err", err)
 	}
 
+	objectsToAppend := drClusterPolicyObjectsToDeploy()
+
 	for _, secretName := range drPolicySecrets.List() {
 		if err := secretsUtil.AddSecretToCluster(
 			secretName,
 			clusterName,
 			RamenOperatorNamespace(),
 			drClusterOperatorNamespaceNameOrDefault(rmnCfg),
+			objectsToAppend,
 			util.SecretFormatRamen,
 			"",
 		); err != nil {
@@ -77,6 +84,7 @@ func drClusterSecretsDeploy(
 				clusterName,
 				RamenOperatorNamespace(),
 				drClusterOperatorNamespaceNameOrDefault(rmnCfg),
+				objectsToAppend,
 				util.SecretFormatVelero,
 				rmnCfg.KubeObjectProtection.VeleroNamespaceName,
 			); err != nil {
@@ -87,6 +95,29 @@ func drClusterSecretsDeploy(
 	}
 
 	return nil
+}
+
+func drClusterPolicyObjectsToDeploy() []*cpcv1.ObjectTemplate {
+	objects := []*cpcv1.ObjectTemplate{
+		{
+			ComplianceType:   cpcv1.MustHave,
+			ObjectDefinition: runtime.RawExtension{Object: vrgClusterRole},
+		},
+		{
+			ComplianceType:   cpcv1.MustHave,
+			ObjectDefinition: runtime.RawExtension{Object: vrgClusterRoleBinding},
+		},
+		{
+			ComplianceType:   cpcv1.MustHave,
+			ObjectDefinition: runtime.RawExtension{Object: mModeClusterRole},
+		},
+		{
+			ComplianceType:   cpcv1.MustHave,
+			ObjectDefinition: runtime.RawExtension{Object: mModeClusterRoleBinding},
+		},
+	}
+
+	return objects
 }
 
 func drPolicyUndeploy(
@@ -267,3 +298,92 @@ func deleteSecretFromCluster(
 
 	return nil
 }
+
+var (
+	vrgClusterRole = &rbacv1.ClusterRole{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit"},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"ramendr.openshift.io"},
+				Resources: []string{"volumereplicationgroups"},
+				Verbs:     []string{"create", "get", "list", "update", "delete"},
+			},
+		},
+	}
+
+	vrgClusterRoleBinding = &rbacv1.ClusterRoleBinding{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit"},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "klusterlet-work-sa",
+				Namespace: "open-cluster-management-agent",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit",
+		},
+	}
+
+	mModeClusterRole = &rbacv1.ClusterRole{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:mmode-edit"},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"ramendr.openshift.io"},
+				Resources: []string{"maintenancemodes"},
+				Verbs:     []string{"create", "get", "list", "update", "delete"},
+			},
+		},
+	}
+
+	mModeClusterRoleBinding = &rbacv1.ClusterRoleBinding{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:mmode-edit"},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "klusterlet-work-sa",
+				Namespace: "open-cluster-management-agent",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "open-cluster-management:klusterlet-work-sa:agent:mmode-edit",
+		},
+	}
+
+	drClusterConfigRole = &rbacv1.ClusterRole{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:drclusterconfig-edit"},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"ramendr.openshift.io"},
+				Resources: []string{"drclusterconfigs"},
+				Verbs:     []string{"create", "get", "list", "update", "delete"},
+			},
+		},
+	}
+
+	drClusterConfigRoleBinding = &rbacv1.ClusterRoleBinding{
+		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:drclusterconfig-edit"},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "klusterlet-work-sa",
+				Namespace: "open-cluster-management-agent",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "open-cluster-management:klusterlet-work-sa:agent:drclusterconfig-edit",
+		},
+	}
+)
