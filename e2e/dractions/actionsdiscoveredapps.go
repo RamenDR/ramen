@@ -32,6 +32,11 @@ func EnableProtectionDiscoveredApps(w workloads.Workload, d deployers.Deployer) 
 		return err
 	}
 
+	// create recipe
+	if err := createRecipe("name", "namespace"); err != nil {
+		return err
+	}
+
 	// create drpc
 	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub.CtrlClient, drPolicyName)
 	if err != nil {

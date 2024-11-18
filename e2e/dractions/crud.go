@@ -5,10 +5,12 @@ package dractions
 
 import (
 	"context"
+	"fmt"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/util"
+	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -181,4 +183,51 @@ func generateDRPCDiscoveredApps(name, namespace, clusterName, drPolicyName, plac
 	}
 
 	return drpc
+}
+
+func createRecipe(name, namespace string) error {
+	r := &recipe.Recipe{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Recipe",
+			APIVersion: "ramendr.openshift.io/v1alpha1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: recipe.RecipeSpec{
+			AppType: "busybox",
+			Groups: []*recipe.Group{
+				{
+					Name: "my-resources",
+					Type: "resource",
+					ExcludedResourceTypes: []string{
+						"event",
+						"event.events.k8s.io",
+						"imagetags.openshift.io",
+						"pod",
+						"installplans.operators.coreos.com",
+					},
+					IncludedNamespaces: []string{
+						"$parent_namespace",
+						"$child_namespaces",
+					},
+					LabelSelector: &metav1.LabelSelector{
+						MatchExpressions: []metav1.LabelSelectorRequirement{
+							{
+								Key:      "ramenshouldignorethis",
+								Operator: "NotIn",
+								Values: []string{
+									"true",
+								},
+							},
+						},
+					},
+				},
+			},
+			Hooks: []*recipe.Hook{},
+		},
+	}
+	fmt.Print(r)
+	return nil
 }

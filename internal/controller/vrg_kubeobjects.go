@@ -634,12 +634,13 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 ) error {
 	groups := v.recipeElements.RecoverWorkflow
 	requests := make([]kubeobjects.Request, len(groups))
-
+	log.Info("****ASN, kubeObjectsRecoveryStartOrResume")
 	for groupNumber, recoverGroup := range groups {
 		rg := recoverGroup
 		log1 := log.WithValues("group", groupNumber, "name", rg.BackupName)
 
 		if rg.IsHook {
+			log.Info("**** ASN, rg executeHook is being called")
 			if err := v.executeHook(rg.Hook, log1); err != nil {
 				break
 			}
