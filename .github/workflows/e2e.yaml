@@ -10,7 +10,6 @@ on:  # yamllint disable-line rule:truthy
     types: [opened, synchronize, reopened]
 
 env:
-  NAME_PREFIX: "rdr-"
   # Limit number of drenv workers.
   MAX_WORKERS: 4
   GATHER_DIR: gather.${{ github.run_id }}-${{ github.run_attempt }}
@@ -37,7 +36,7 @@ jobs:
     - name: Delete clusters
       if: always()
       working-directory: test
-      run: drenv delete --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
+      run: drenv delete envs/regional-dr.yaml
 
     - name: Setup libvirt
       run: test/scripts/setup-libvirt
@@ -49,30 +48,30 @@ jobs:
         max_attempts: 3
         command: |
           cd test
-          drenv start --max-workers ${{ env.MAX_WORKERS }} --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
+          drenv start --max-workers ${{ env.MAX_WORKERS }} envs/regional-dr.yaml
 
     - name: Build ramen-operator container
       run: make docker-build
 
     - name: Deploy ramen
-      run: ramenctl deploy --name-prefix ${{ env.NAME_PREFIX }} test/envs/regional-dr.yaml
+      run: ramenctl deploy test/envs/regional-dr.yaml
 
     - name: Configure ramen
       uses: nick-fields/retry@v3
       with:
         timeout_seconds: 120
         max_attempts: 3
-        command: ramenctl config --name-prefix ${{ env.NAME_PREFIX }} test/envs/regional-dr.yaml
+        command: ramenctl config test/envs/regional-dr.yaml
 
     - name: Run e2e tests
       run: |
-        cat ~/.config/drenv/${{ env.NAME_PREFIX }}rdr/config.yaml >> e2e/config.yaml
+        cat ~/.config/drenv/rdr/config.yaml >> e2e/config.yaml
         make e2e-rdr
 
     - name: Gather environment data
       if: failure()
       working-directory: test
-      run: drenv gather --directory ${{ env.GATHER_DIR }} --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
+      run: drenv gather --directory ${{ env.GATHER_DIR }} envs/regional-dr.yaml
 
     # Tar manually to work around github limitations with special chracters (:)
     # in file names, and getting much smaller archives comapred with zip (6m vs
@@ -95,7 +94,7 @@ jobs:
     - name: Delete clusters
       if: always()
       working-directory: test
-      run: drenv delete --name-prefix ${{ env.NAME_PREFIX }} envs/regional-dr.yaml
+      run: drenv delete envs/regional-dr.yaml
 
     - name: Cleanup drenv
       if: always()

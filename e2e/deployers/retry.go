@@ -30,7 +30,7 @@ func waitSubscriptionPhase(namespace, name string, phase subscriptionv1.Subscrip
 		}
 
 		if time.Since(startTime) > util.Timeout {
-			return fmt.Errorf("subscription %s status is not %s yet before timeout", name, phase)
+			return fmt.Errorf("subscription %q status is not %q yet before timeout", name, phase)
 		}
 
 		time.Sleep(util.RetryInterval)
@@ -51,7 +51,7 @@ func WaitWorkloadHealth(client client.Client, namespace string, w workloads.Work
 		if time.Since(startTime) > util.Timeout {
 			util.Ctx.Log.Info(err.Error())
 
-			return fmt.Errorf("workload %s is not ready yet before timeout of %v",
+			return fmt.Errorf("workload %q is not ready yet before timeout of %v",
 				w.GetName(), util.Timeout)
 		}
 
