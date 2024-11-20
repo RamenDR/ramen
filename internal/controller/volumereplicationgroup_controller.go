@@ -881,7 +881,8 @@ func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alph
 				return nil
 			}
 
-			return fmt.Errorf("failed to find matching peerClass for PVC") // TODO: better error message
+			return fmt.Errorf("failed to find replicationClass matching peerClass for PVC %s/%s",
+				pvc.Namespace, pvc.Name)
 		}
 	}
 
@@ -895,7 +896,7 @@ func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alph
 	}
 
 	if snapClass == nil {
-		return fmt.Errorf("failed to find matching peerClass for PVC") // TODO: better error message
+		return fmt.Errorf("failed to find snapshotClass for PVC %s/%s", pvc.Namespace, pvc.Name)
 	}
 
 	v.volSyncPVCs = append(v.volSyncPVCs, *pvc)
