@@ -1450,9 +1450,14 @@ func (v *VSHandler) getVolumeSnapshotClassFromPVCStorageClass(storageClass *stor
 	var matchedVolumeSnapshotClassName string
 
 	for _, volumeSnapshotClass := range volumeSnapshotClasses {
+		// StorageID From VolumeSnapshotClass should match with storageID in StorageClass if
+		// and only if storageID exists in VolumeSnapshotClass or else skip the check
 		sIDFromSnapClass := volumeSnapshotClass.GetLabels()[StorageIDLabel]
-		if volumeSnapshotClass.Driver == storageClass.Provisioner &&
-			sIDFromSnapClass == storageClass.GetLabels()[StorageIDLabel] {
+		if sIDFromSnapClass != "" && sIDFromSnapClass != storageClass.GetLabels()[StorageIDLabel] {
+			continue
+		}
+
+		if volumeSnapshotClass.Driver == storageClass.Provisioner {
 			// Match the first one where driver/provisioner == the storage class provisioner
 			// But keep looping - if we find the default storageVolumeClass, use it instead
 			if matchedVolumeSnapshotClassName == "" || isDefaultVolumeSnapshotClass(volumeSnapshotClass) {
