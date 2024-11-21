@@ -634,12 +634,13 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 ) error {
 	groups := v.recipeElements.RecoverWorkflow
 	requests := make([]kubeobjects.Request, len(groups))
-
+	log.Info("****ASN, kubeObjectsRecoveryStartOrResume")
 	for groupNumber, recoverGroup := range groups {
 		rg := recoverGroup
 		log1 := log.WithValues("group", groupNumber, "name", rg.BackupName)
 
 		if rg.IsHook {
+			log.Info("**** ASN, rg executeHook is being called")
 			if err := v.executeHook(rg.Hook, log1); err != nil {
 				break
 			}
@@ -903,8 +904,8 @@ func getResourceAndConvertToRecoverGroup(
 }
 
 func validateAndGetHookDetails(name string) (string, string, error) {
-	if !strings.Contains(name, "/") {
-		return "", "", errors.New("invalid format of hook name provided ")
+	if strings.Count(name, "/") != 1 {
+		return "", "", errors.New("invalid format: hook name provided should be of the form part1/part2")
 	}
 
 	parts := strings.Split(name, "/")
