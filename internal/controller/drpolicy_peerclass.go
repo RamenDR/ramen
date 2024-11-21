@@ -136,11 +136,33 @@ func updatePeerClassStatus(u *drpolicyUpdater, syncPeers, asyncPeers []peerInfo)
 	return u.statusUpdate()
 }
 
+// provisionerMatchesSC inspects StorageClass named scName in the passed in classLists and returns true if its
+// provisioner value matches the driver
+func provisionerMatchesSC(scName string, cl classLists, driver string) bool {
+	for scIdx := range cl.sClasses {
+		if cl.sClasses[scIdx].GetName() != scName {
+			continue
+		}
+
+		if cl.sClasses[scIdx].Provisioner != driver {
+			return false
+		}
+
+		return true
+	}
+
+	return false
+}
+
 // hasVSClassMatchingSID returns if classLists has a VolumeSnapshotClass matching the passed in storageID
-func hasVSClassMatchingSID(cl classLists, sID string) bool {
+func hasVSClassMatchingSID(scName string, cl classLists, sID string) bool {
 	for idx := range cl.vsClasses {
 		sid := cl.vsClasses[idx].GetLabels()[StorageIDLabel]
 		if sid == "" || sid != sID {
+			continue
+		}
+
+		if !provisionerMatchesSC(scName, cl, cl.vsClasses[idx].Driver) {
 			continue
 		}
 
@@ -152,21 +174,25 @@ func hasVSClassMatchingSID(cl classLists, sID string) bool {
 
 // isAsyncVSClassPeer inspects provided pair of classLists for a matching VolumeSnapshotClass, that is linked to the
 // StorageClass whose storageID is respectively sIDA or sIDB
-func isAsyncVSClassPeer(clA, clB classLists, sIDA, sIDB string) bool {
+func isAsyncVSClassPeer(scName string, clA, clB classLists, sIDA, sIDB string) bool {
 	// No provisioner match as we can do cross provisioner VSC based protection
-	return hasVSClassMatchingSID(clA, sIDA) && hasVSClassMatchingSID(clB, sIDB)
+	return hasVSClassMatchingSID(scName, clA, sIDA) && hasVSClassMatchingSID(scName, clB, sIDB)
 }
 
 // getVRID inspects VolumeReplicationClass in the passed in classLists at the specified index, and returns,
-// - an empty string if the VRClass fails to match the passed in storageID or schedule, or
+// - an empty string if the VRClass fails to match the passed in storageID, schedule or provisioner, or
 // - the value of replicationID on the VRClass
-func getVRID(cl classLists, vrcIdx int, inSID string, schedule string) string {
+func getVRID(scName string, cl classLists, vrcIdx int, inSID string, schedule string) string {
 	sID := cl.vrClasses[vrcIdx].GetLabels()[StorageIDLabel]
 	if sID == "" || inSID != sID {
 		return ""
 	}
 
 	if cl.vrClasses[vrcIdx].Spec.Parameters[VRClassScheduleKey] != schedule {
+		return ""
+	}
+
+	if !provisionerMatchesSC(scName, cl, cl.vrClasses[vrcIdx].Spec.Provisioner) {
 		return ""
 	}
 
@@ -177,20 +203,20 @@ func getVRID(cl classLists, vrcIdx int, inSID string, schedule string) string {
 
 // getAsyncVRClassPeer inspects if there is a common replicationID among the vrClasses in the passed in classLists,
 // that relate to the corresponding storageIDs and schedule, and returns the replicationID or "" if there was no match
-func getAsyncVRClassPeer(clA, clB classLists, sIDA, sIDB string, schedule string) string {
+func getAsyncVRClassPeer(scName string, clA, clB classLists, sIDA, sIDB string, schedule string) string {
 	for vrcAidx := range clA.vrClasses {
-		ridA := getVRID(clA, vrcAidx, sIDA, schedule)
+		ridA := getVRID(scName, clA, vrcAidx, sIDA, schedule)
 		if ridA == "" {
 			continue
 		}
 
 		for vrcBidx := range clB.vrClasses {
-			ridB := getVRID(clB, vrcBidx, sIDB, schedule)
+			ridB := getVRID(scName, clB, vrcBidx, sIDB, schedule)
 			if ridB == "" {
 				continue
 			}
 
-			if ridA != ridB { // TODO: Check provisioner match?
+			if ridA != ridB {
 				continue
 			}
 
@@ -219,9 +245,9 @@ func getAsyncPeers(scName string, clusterID string, sID string, cls []classLists
 				break
 			}
 
-			rID := getAsyncVRClassPeer(cls[0], cl, sID, sIDcl, schedule)
+			rID := getAsyncVRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule)
 			if rID == "" {
-				if !isAsyncVSClassPeer(cls[0], cl, sID, sIDcl) {
+				if !isAsyncVSClassPeer(scName, cls[0], cl, sID, sIDcl) {
 					continue
 				}
 			}
