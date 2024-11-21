@@ -3,7 +3,10 @@
 
 package workloads
 
-import "sigs.k8s.io/controller-runtime/pkg/client"
+import (
+	"github.com/go-logr/logr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
 
 type Workload interface {
 	Kustomize() string // Can differ based on the workload, hence part of the Workload interface
@@ -16,5 +19,5 @@ type Workload interface {
 	GetPath() string
 	GetRevision() string
 
-	Health(client client.Client, namespace string) error
+	Health(client client.Client, namespace string, log logr.Logger) error
 }

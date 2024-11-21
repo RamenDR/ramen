@@ -13,25 +13,26 @@ type ApplicationSet struct{}
 func (a ApplicationSet) Deploy(w workloads.Workload) error {
 	name := GetCombinedName(a, w)
 	namespace := util.ArgocdNamespace
+	log := util.Ctx.Log.WithName(name)
 
-	util.Ctx.Log.Info("enter Deploy " + name)
+	log.Info("Deploying workload")
 
 	err := CreateManagedClusterSetBinding(McsbName, namespace)
 	if err != nil {
 		return err
 	}
 
-	err = CreatePlacement(name, namespace)
+	err = CreatePlacement(name, namespace, log)
 	if err != nil {
 		return err
 	}
 
-	err = CreatePlacementDecisionConfigMap(name, namespace)
+	err = CreatePlacementDecisionConfigMap(name, namespace, log)
 	if err != nil {
 		return err
 	}
 
-	err = CreateApplicationSet(a, w)
+	err = CreateApplicationSet(a, w, log)
 	if err != nil {
 		return err
 	}
@@ -42,33 +43,34 @@ func (a ApplicationSet) Deploy(w workloads.Workload) error {
 func (a ApplicationSet) Undeploy(w workloads.Workload) error {
 	name := GetCombinedName(a, w)
 	namespace := util.ArgocdNamespace
+	log := util.Ctx.Log.WithName(name)
 
-	util.Ctx.Log.Info("enter Undeploy " + name)
+	log.Info("Undeploying workload")
 
-	err := DeleteApplicationSet(a, w)
+	err := DeleteApplicationSet(a, w, log)
 	if err != nil {
 		return err
 	}
 
-	err = DeleteConfigMap(name, namespace)
+	err = DeleteConfigMap(name, namespace, log)
 	if err != nil {
 		return err
 	}
 
-	err = DeletePlacement(name, namespace)
+	err = DeletePlacement(name, namespace, log)
 	if err != nil {
 		return err
 	}
 
 	// multiple appsets could use the same mcsb in argocd ns.
 	// so delete mcsb if only 1 appset is in argocd ns
-	lastAppset, err := isLastAppsetInArgocdNs(namespace)
+	lastAppset, err := isLastAppsetInArgocdNs(namespace, log)
 	if err != nil {
 		return err
 	}
 
 	if lastAppset {
-		err = DeleteManagedClusterSetBinding(McsbName, namespace)
+		err = DeleteManagedClusterSetBinding(McsbName, namespace, log)
 		if err != nil {
 			return err
 		}

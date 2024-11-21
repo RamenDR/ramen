@@ -1,0 +1,191 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+# yamllint disable rule:line-length
+
+name: tools
+
+# This workflow will run when developer push a topic branch to their
+# fork in github, minimizing noise for maintainers. This
+# workflow also runs on nightly basis at 12:00 AM (00:00 UTC)
+
+on:  # yamllint disable-line rule:truthy
+  push:
+  pull_request:
+  schedule:
+    - cron: '0 0 * * *'
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  drenv-linux:
+    name: drenv
+    strategy:
+      matrix:
+        os:
+          - ubuntu-22.04
+        python-version:
+          - "3.10"
+          - "3.11"
+          - "3.12"
+          - "3.13"
+          - "3.14-dev"
+    runs-on: ${{ matrix.os }}
+    env:
+      DRIVER: "container"
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install minikube
+        run: |
+          curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+          sudo install minikube-linux-amd64 /usr/local/bin/minikube
+          minikube version
+
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          sudo install ./kubectl /usr/local/bin/
+          kubectl version --client --output=yaml
+
+      - name: Install tools
+        run: pip install -r requirements.txt
+
+      - name: Enable coverage for child processes
+        run: cp coverage.pth $(python3 -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+
+      - name: Install drenv
+        run: pip install -e test
+
+      - name: Run flake8
+        run: make flake8
+        working-directory: test
+
+      - name: Run pylint
+        run: make pylint
+        working-directory: test
+
+      - name: Run black
+        run: make black
+        working-directory: test
+
+      - name: Start test cluster
+        run: make cluster
+        working-directory: test
+
+      - name: Run tests
+        run: make test
+        working-directory: test
+
+      - name: Report test coverage
+        run: make coverage
+        working-directory: test
+
+      - name: Clean up
+        run: make clean
+        working-directory: test
+
+  drenv-macos:
+    name: drenv
+    strategy:
+      matrix:
+        os:
+          # arm64, 3 cpus (M1), 7 GiB RAM, no nested virtalization.
+          - macos-14
+        python-version:
+          - "3.13"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout ramen
+        uses: actions/checkout@v4
+
+      - name: Setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Homebrew packages
+        run: brew install kubectl
+
+      - name: Install python packages
+        run: pip install -r requirements.txt
+
+      - name: Enable coverage for child processes
+        run: cp coverage.pth $(python3 -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+
+      - name: Install drenv
+        run: pip install -e test
+
+      - name: Run flake8
+        run: make flake8
+        working-directory: test
+
+      - name: Run pylint
+        run: make pylint
+        working-directory: test
+
+      - name: Run black
+        run: make black
+        working-directory: test
+
+      - name: Run tests
+        # We cannot run the test cluster on macOS.
+        run: make unit-test
+        working-directory: test
+
+      - name: Report test coverage
+        run: make coverage
+        working-directory: test
+
+  ramenctl:
+    name: ramenctl
+    strategy:
+      matrix:
+        os:
+          - ubuntu-22.04
+        python-version:
+          - "3.10"
+          - "3.11"
+          - "3.12"
+          - "3.13"
+          - "3.14-dev"
+        include:
+          # arm64, 3 cpus (M1), 7 GiB RAM, no nested virtalization.
+          - os: macos-14
+            python-version: "3.13"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install python packages
+        run: pip install -r requirements.txt
+
+      - name: Install drenv
+        run: pip install -e test
+
+      - name: Run flake8
+        run: make flake8
+        working-directory: ramenctl
+
+      - name: Run pylint
+        run: make pylint
+        working-directory: ramenctl
+
+      - name: Run black
+        run: make black
+        working-directory: ramenctl

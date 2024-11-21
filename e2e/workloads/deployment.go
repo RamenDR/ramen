@@ -5,8 +5,8 @@ package workloads
 
 import (
 	"context"
-	"fmt"
 
+	"github.com/go-logr/logr"
 	"github.com/ramendr/ramen/e2e/util"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -72,14 +72,14 @@ func (w Deployment) GetResources() error {
 }
 
 // Check the workload health deployed in a cluster namespace
-func (w Deployment) Health(client client.Client, namespace string) error {
+func (w Deployment) Health(client client.Client, namespace string, log logr.Logger) error {
 	deploy, err := getDeployment(client, namespace, w.GetAppName())
 	if err != nil {
 		return err
 	}
 
 	if deploy.Status.Replicas == deploy.Status.ReadyReplicas {
-		util.Ctx.Log.Info(fmt.Sprintf("deployment %s is ready", w.GetAppName()))
+		log.Info("Deployment is ready")
 
 		return nil
 	}

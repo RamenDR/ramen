@@ -4,7 +4,7 @@
 ---
 # yamllint disable rule:line-length
 
-name: CI
+name: ramen
 
 # This workflow will run when developer push a topic branch to their
 # fork in github, minimizing noise for maintainers. This
@@ -27,7 +27,6 @@ env:
   IMAGE_REGISTRY: "quay.io"
   IMAGE_TAG: "ci"
   DOCKERCMD: "podman"
-  DRIVER: "container"
 defaults:
   run:
     shell: bash
@@ -108,113 +107,6 @@ jobs:
 
       - name: Run unit tests
         run: make test
-
-  drenv-test:
-    name: drenv tests
-    runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        python-version:
-          - "3.10"
-          - "3.11"
-          - "3.12"
-          - "3.13"
-          - "3.14-dev"
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-
-      - name: Setup python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install minikube
-        run: |
-          curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
-          sudo install minikube-linux-amd64 /usr/local/bin/minikube
-          minikube version
-
-      - name: Install kubectl
-        run: |
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-          sudo install ./kubectl /usr/local/bin/
-          kubectl version --client --output=yaml
-
-      - name: Install tools
-        run: pip install -r requirements.txt
-
-      - name: Enable coverage for child processes
-        run: cp coverage.pth $(python3 -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
-
-      - name: Install drenv
-        run: pip install -e test
-
-      - name: Run flake8
-        run: make flake8
-        working-directory: test
-
-      - name: Run pylint
-        run: make pylint
-        working-directory: test
-
-      - name: Run black
-        run: make black
-        working-directory: test
-
-      - name: Start test cluster
-        run: make cluster
-        working-directory: test
-
-      - name: Run tests
-        run: make test
-        working-directory: test
-
-      - name: Report test coverage
-        run: make coverage
-        working-directory: test
-
-      - name: Clean up
-        run: make clean
-        working-directory: test
-
-  ramenctl-test:
-    name: ramenctl tests
-    runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        python-version:
-          - "3.10"
-          - "3.11"
-          - "3.12"
-          - "3.13"
-          - "3.14-dev"
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-
-      - name: Setup python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install tools
-        run: pip install -r requirements.txt
-
-      - name: Install drenv
-        run: pip install -e test
-
-      - name: Run flake8
-        run: make flake8
-        working-directory: ramenctl
-
-      - name: Run pylint
-        run: make pylint
-        working-directory: ramenctl
-
-      - name: Run black
-        run: make black
-        working-directory: ramenctl
 
   build-image:
     name: Build image
