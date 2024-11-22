@@ -13,3 +13,5 @@ rules:
     indent-sequences: consistent
   line-length:
     allow-non-breakable-inline-mappings: true
+  truthy:
+    check-keys: false
