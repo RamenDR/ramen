@@ -5,7 +5,7 @@
 # yamllint disable rule:line-length
 name: E2E Daily
 
-on:  # yamllint disable-line rule:truthy
+on:
   # Run every day on 03:00.
   schedule:
     - cron: '0 3 * * *'

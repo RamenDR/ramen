@@ -5,7 +5,7 @@
 # yamllint disable rule:line-length
 name: E2E
 
-on:  # yamllint disable-line rule:truthy
+on:
   pull_request:
     types: [opened, synchronize, reopened]
 

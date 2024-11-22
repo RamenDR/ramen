@@ -10,7 +10,7 @@ name: tools
 # fork in github, minimizing noise for maintainers. This
 # workflow also runs on nightly basis at 12:00 AM (00:00 UTC)
 
-on:  # yamllint disable-line rule:truthy
+on:
   push:
   pull_request:
   schedule:
