@@ -3,7 +3,7 @@
 
 ---
 # yamllint disable rule:line-length
-name: E2E Daily
+name: e2e daily
 
 on:
   # Run every day on 03:00.
