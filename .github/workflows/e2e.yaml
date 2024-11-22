@@ -3,7 +3,7 @@
 
 ---
 # yamllint disable rule:line-length
-name: E2E
+name: e2e
 
 on:  # yamllint disable-line rule:truthy
   pull_request:
