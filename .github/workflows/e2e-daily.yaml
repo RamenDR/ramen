@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
----
 # yamllint disable rule:line-length
+---
 name: e2e daily
 
 on:  # yamllint disable-line rule:truthy
