@@ -14,6 +14,15 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - events
+  verbs:
+  - create
+  - get
+  - patch
+  - update
+- apiGroups:
+  - ""
+  resources:
   - namespaces
   verbs:
   - create
@@ -24,8 +33,33 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - persistentvolumeclaims
   - secrets
   verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumes
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
   - list
   - watch
 - apiGroups:
@@ -51,13 +85,6 @@ rules:
   - apps
   resources:
   - deployments
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - apps
-  resources:
   - statefulsets
   verbs:
   - get
@@ -156,68 +183,9 @@ rules:
   verbs:
   - update
 - apiGroups:
-  - ""
-  resources:
-  - events
-  verbs:
-  - create
-  - get
-  - patch
-  - update
-- apiGroups:
-  - ""
-  resources:
-  - persistentvolumeclaims
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - persistentvolumes
-  verbs:
-  - create
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - pods
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - secrets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
   - groupsnapshot.storage.k8s.io
   resources:
   - volumegroupsnapshotclasses
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - groupsnapshot.storage.k8s.io
-  resources:
   - volumegroupsnapshotcontents
   verbs:
   - get
@@ -251,17 +219,6 @@ rules:
   - policy.open-cluster-management.io
   resources:
   - placementbindings
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - policy.open-cluster-management.io
-  resources:
   - policies
   verbs:
   - create
@@ -275,195 +232,12 @@ rules:
   - ramendr.openshift.io
   resources:
   - drclusterconfigs
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - drclusterconfigs/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - drclusterconfigs/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
   - drclusters
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - drclusters/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - drclusters/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
   - drplacementcontrols
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - drplacementcontrols/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - drplacementcontrols/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
   - drpolicies
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - drpolicies/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - drpolicies/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
   - protectedvolumereplicationgrouplists
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - protectedvolumereplicationgrouplists/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - protectedvolumereplicationgrouplists/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - recipes
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
   - replicationgroupdestinations
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - replicationgroupdestinations/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - replicationgroupdestinations/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
   - replicationgroupsources
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - replicationgroupsources/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - replicationgroupsources/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
   - volumereplicationgroups
   verbs:
   - create
@@ -476,17 +250,39 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
+  - drclusterconfigs/finalizers
+  - drclusters/finalizers
+  - drplacementcontrols/finalizers
+  - drpolicies/finalizers
+  - protectedvolumereplicationgrouplists/finalizers
+  - replicationgroupdestinations/finalizers
+  - replicationgroupsources/finalizers
   - volumereplicationgroups/finalizers
   verbs:
   - update
 - apiGroups:
   - ramendr.openshift.io
   resources:
+  - drclusterconfigs/status
+  - drclusters/status
+  - drplacementcontrols/status
+  - drpolicies/status
+  - protectedvolumereplicationgrouplists/status
+  - replicationgroupdestinations/status
+  - replicationgroupsources/status
   - volumereplicationgroups/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - recipes
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - replication.storage.openshift.io
   resources:
@@ -547,35 +343,6 @@ rules:
   - velero.io
   resources:
   - backups
-  verbs:
-  - create
-  - delete
-  - deletecollection
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - velero.io
-  resources:
-  - backups/status
-  verbs:
-  - get
-- apiGroups:
-  - velero.io
-  resources:
-  - backupstoragelocations
-  verbs:
-  - create
-  - delete
-  - deletecollection
-  - get
-  - patch
-  - update
-- apiGroups:
-  - velero.io
-  resources:
   - restores
   verbs:
   - create
@@ -589,9 +356,21 @@ rules:
 - apiGroups:
   - velero.io
   resources:
+  - backups/status
   - restores/status
   verbs:
   - get
+- apiGroups:
+  - velero.io
+  resources:
+  - backupstoragelocations
+  verbs:
+  - create
+  - delete
+  - deletecollection
+  - get
+  - patch
+  - update
 - apiGroups:
   - view.open-cluster-management.io
   resources:
@@ -608,17 +387,6 @@ rules:
   - volsync.backube
   resources:
   - replicationdestinations
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - volsync.backube
-  resources:
   - replicationsources
   verbs:
   - create
@@ -658,14 +426,6 @@ rules:
   - policy.open-cluster-management.io
   resources:
   - placementbindings
-  verbs:
-  - create
-  - delete
-  - get
-  - update
-- apiGroups:
-  - policy.open-cluster-management.io
-  resources:
   - policies
   verbs:
   - create

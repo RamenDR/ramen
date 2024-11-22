@@ -195,11 +195,9 @@ type VRGResourceMeta struct {
 // managed cluster.
 type VRGConditions struct {
 	// ResourceMeta represents the VRG resoure.
-	// +required
 	ResourceMeta VRGResourceMeta `json:"resourceMeta,omitempty"`
 
 	// Conditions represents the conditions of this resource on a managed cluster.
-	// +required
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 

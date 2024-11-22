@@ -24,12 +24,15 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - events
+  - secrets
   verbs:
   - create
+  - delete
   - get
+  - list
   - patch
   - update
+  - watch
 - apiGroups:
   - addon.open-cluster-management.io
   resources:
@@ -72,6 +75,22 @@ rules:
   - patch
   - update
 - apiGroups:
+  - argoproj.io
+  resources:
+  - applicationsets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - cluster.open-cluster-management.io
+  resources:
+  - managedclusters
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - cluster.open-cluster-management.io
   resources:
   - placementdecisions
@@ -94,14 +113,6 @@ rules:
 - apiGroups:
   - cluster.open-cluster-management.io
   resources:
-  - managedclusters
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - cluster.open-cluster-management.io
-  resources:
   - placements
   verbs:
   - get
@@ -118,17 +129,6 @@ rules:
   - policy.open-cluster-management.io
   resources:
   - placementbindings
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - policy.open-cluster-management.io
-  resources:
   - policies
   verbs:
   - create
@@ -142,57 +142,7 @@ rules:
   - ramendr.openshift.io
   resources:
   - drclusters
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - drclusters/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - drclusters/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
   - drplacementcontrols
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - drplacementcontrols/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - drplacementcontrols/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
   - drpolicies
   verbs:
   - create
@@ -205,12 +155,16 @@ rules:
 - apiGroups:
   - ramendr.openshift.io
   resources:
+  - drclusters/finalizers
+  - drplacementcontrols/finalizers
   - drpolicies/finalizers
   verbs:
   - update
 - apiGroups:
   - ramendr.openshift.io
   resources:
+  - drclusters/status
+  - drplacementcontrols/status
   - drpolicies/status
   verbs:
   - get
@@ -240,26 +194,6 @@ rules:
   - patch
   - update
   - watch
-- apiGroups:
-  - ""
-  resources:
-  - secrets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - argoproj.io
-  resources:
-  - applicationsets
-  verbs:
-  - get
-  - list
-  - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -278,14 +212,6 @@ rules:
   - policy.open-cluster-management.io
   resources:
   - placementbindings
-  verbs:
-  - create
-  - delete
-  - get
-  - update
-- apiGroups:
-  - policy.open-cluster-management.io
-  resources:
   - policies
   verbs:
   - create
