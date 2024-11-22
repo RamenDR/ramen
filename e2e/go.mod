@@ -11,7 +11,7 @@ require (
 	go.uber.org/zap v1.27.0
 	k8s.io/api v0.31.1
 	k8s.io/apimachinery v0.31.1
-	k8s.io/client-go v12.0.0+incompatible
+	k8s.io/client-go v0.31.1
 	k8s.io/kubectl v0.31.1
 	open-cluster-management.io/api v0.13.0
 	open-cluster-management.io/multicloud-operators-channel v0.10.1-0.20230316173315-10f48e51f3aa
@@ -79,5 +79,3 @@ require (
 )
 
 replace github.com/ramendr/ramen/api => ../api
-
-replace k8s.io/client-go v12.0.0+incompatible => k8s.io/client-go v0.31.0
