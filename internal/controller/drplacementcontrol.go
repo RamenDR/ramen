@@ -21,6 +21,7 @@ import (
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 
+	ocmv1 "open-cluster-management.io/api/cluster/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -1146,6 +1147,13 @@ func (d *DRPCInstance) validateAndSelectCurrentPrimary(preferredCluster string) 
 		return "", fmt.Errorf("no VRGs exists. Can't relocate")
 	}
 
+	yes, err := d.areManagedClustersAvailable()
+	if !yes || err != nil {
+		d.log.Info(fmt.Sprintf("ManagedCluster Available condition check failed: %v, with error: %v", yes, err))
+
+		return "", fmt.Errorf("failed to validate managedcluster available condition")
+	}
+
 	// Check for at most a single cluster in primary state
 	if d.areMultipleVRGsPrimary() {
 		return "", fmt.Errorf("multiple primaries in transition detected")
@@ -1154,6 +1162,53 @@ func (d *DRPCInstance) validateAndSelectCurrentPrimary(preferredCluster string) 
 	homeCluster, _ := d.selectCurrentPrimaryAndSecondaries()
 
 	return homeCluster, nil
+}
+
+func (d *DRPCInstance) areManagedClustersAvailable() (bool, error) {
+	managedClusters := &ocmv1.ManagedClusterList{}
+
+	listOptions := []client.ListOption{}
+
+	err := d.reconciler.APIReader.List(context.TODO(), managedClusters, listOptions...)
+	if err != nil {
+		return false, err
+	}
+
+	yes := false
+	for _, mc := range managedClusters.Items {
+		yes, err = d.isManagedClusterReachable(mc)
+		if !yes {
+			d.log.Info(fmt.Sprintf("ManagedCluster %s is not ready yet", mc.Name))
+			d.log.Info(fmt.Sprintf("%v", err))
+
+			return yes, err
+		}
+	}
+
+	return yes, err
+}
+
+func (d *DRPCInstance) isManagedClusterReachable(mc ocmv1.ManagedCluster) (bool, error) {
+	if len(mc.Status.Conditions) < 1 {
+		return false, fmt.Errorf("managedcluster.status.conditions not populated yet")
+	}
+
+	for index := range mc.Status.Conditions {
+		if mc.Status.Conditions[index].Type == ocmv1.ManagedClusterConditionAvailable {
+			// Managed cluster is reachable
+			d.log.Info("ManagedClusterConditionAvailable condition is available")
+
+			if mc.Status.Conditions[index].Status == metav1.ConditionTrue {
+				d.log.Info("ManagedClusterConditionAvailable condition is TRUE")
+
+				return true, nil
+			}
+		}
+	}
+
+	err := fmt.Errorf("the cluster %s condition 'ManagedClusterConditionAvailable' status is not True", mc.Name)
+
+	return false, err
 }
 
 // readyToSwitchOver checks App resources are ready and the cluster data has been protected.
