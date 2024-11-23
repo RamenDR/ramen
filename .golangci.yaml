@@ -169,7 +169,7 @@ linters:
     - unused
     - usestdlibvars
     - varcheck
-    #  - wastedassign
+    - wastedassign
     - whitespace
     - wsl
     #  - exhaustivestruct

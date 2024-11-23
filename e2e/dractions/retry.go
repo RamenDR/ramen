@@ -149,7 +149,7 @@ func getTargetCluster(client client.Client, namespace, placementName string, drp
 		return "", err
 	}
 
-	targetCluster := ""
+	var targetCluster string
 	if currentCluster == drpolicy.Spec.DRClusters[0] {
 		targetCluster = drpolicy.Spec.DRClusters[1]
 	} else {

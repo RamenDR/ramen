@@ -442,8 +442,9 @@ func (sutil *SecretsUtil) policyObject(
 	format TargetSecretFormat,
 	veleroNS string,
 ) *runtime.RawExtension {
+	var object *runtime.RawExtension
+
 	s3SecretRef := corev1.SecretReference{Name: secretName, Namespace: secretNS}
-	object := &runtime.RawExtension{}
 
 	switch format {
 	case SecretFormatRamen:

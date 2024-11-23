@@ -566,7 +566,7 @@ func GetDRClusters(ctx context.Context, client client.Client, drPolicy *rmn.DRPo
 func (r DRPlacementControlReconciler) updateObjectMetadata(ctx context.Context,
 	drpc *rmn.DRPlacementControl, placementObj client.Object, log logr.Logger,
 ) error {
-	update := false
+	var update bool
 
 	update = rmnutil.AddLabel(drpc, rmnutil.OCMBackupLabelKey, rmnutil.OCMBackupLabelValue)
 	update = rmnutil.AddFinalizer(drpc, DRPCFinalizer) || update
