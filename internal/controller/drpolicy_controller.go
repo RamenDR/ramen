@@ -147,6 +147,7 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return r.reconcile(u, drclusters, secretsUtil, ramenConfig)
 }
 
+//nolint:unparam
 func (r *DRPolicyReconciler) reconcile(
 	u *drpolicyUpdater,
 	drclusters *ramen.DRClusterList,

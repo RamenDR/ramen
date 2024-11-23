@@ -459,6 +459,7 @@ func isBeingDeleted(drpc *rmn.DRPlacementControl, usrPl client.Object) bool {
 		(usrPl != nil && rmnutil.ResourceIsDeleted(usrPl))
 }
 
+//nolint:unparam
 func (r *DRPlacementControlReconciler) reconcileDRPCInstance(d *DRPCInstance, log logr.Logger) (ctrl.Result, error) {
 	// Last status update time BEFORE we start processing
 	var beforeProcessing metav1.Time
