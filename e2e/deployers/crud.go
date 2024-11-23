@@ -33,6 +33,8 @@ import (
 const (
 	AppLabelKey    = "app"
 	ClusterSetName = "default"
+
+	fMode = 0o600
 )
 
 func CreateManagedClusterSetBinding(name, namespace string) error {
@@ -460,5 +462,5 @@ func CreateKustomizationFile(w workloads.Workload, dir string) error {
 	// Write the combined content to a new YAML file
 	outputFile := dir + "/kustomization.yaml"
 
-	return os.WriteFile(outputFile, combinedYAML, os.ModePerm)
+	return os.WriteFile(outputFile, combinedYAML, fMode)
 }
