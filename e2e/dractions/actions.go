@@ -64,6 +64,7 @@ func EnableProtection(w workloads.Workload, d deployers.Deployer) error {
 		if placement.Annotations == nil {
 			placement.Annotations = make(map[string]string)
 		}
+
 		placement.Annotations[OcmSchedulingDisable] = "true"
 
 		return updatePlacement(util.Ctx.Hub.CtrlClient, placement)

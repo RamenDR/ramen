@@ -892,6 +892,7 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 		}
 	} else {
 		requeueResult, ready, err := v.processVRAsPrimary(pvcNamespacedName, pvc, log)
+
 		switch {
 		case err != nil:
 			log.Info("Requeuing due to failure in getting or creating VolumeReplication resource for PersistentVolumeClaim",
