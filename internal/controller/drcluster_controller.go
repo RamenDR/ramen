@@ -182,7 +182,17 @@ func drpcPred() predicate.Funcs {
 			return false
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			return DRPCUpdateOfInterest(e.ObjectOld.(*ramen.DRPlacementControl), e.ObjectNew.(*ramen.DRPlacementControl))
+			drpcOld, ok := e.ObjectOld.(*ramen.DRPlacementControl)
+			if !ok {
+				return false
+			}
+
+			drpcNew, ok := e.ObjectNew.(*ramen.DRPlacementControl)
+			if !ok {
+				return false
+			}
+
+			return DRPCUpdateOfInterest(drpcOld, drpcNew)
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
 			return false
