@@ -191,7 +191,13 @@ func IndexFieldsForVSHandler(ctx context.Context, fieldIndexer client.FieldIndex
 	// Index on pods - used to be able to check if a pvc is mounted to a pod
 	err := fieldIndexer.IndexField(ctx, &corev1.Pod{}, PodVolumePVCClaimIndexName, func(o client.Object) []string {
 		var res []string
-		for _, vol := range o.(*corev1.Pod).Spec.Volumes {
+
+		pod, ok := o.(*corev1.Pod)
+		if !ok {
+			return res
+		}
+
+		for _, vol := range pod.Spec.Volumes {
 			if vol.PersistentVolumeClaim == nil {
 				continue
 			}
@@ -211,7 +217,13 @@ func IndexFieldsForVSHandler(ctx context.Context, fieldIndexer client.FieldIndex
 	return fieldIndexer.IndexField(ctx, &storagev1.VolumeAttachment{}, VolumeAttachmentToPVIndexName,
 		func(o client.Object) []string {
 			var res []string
-			sourcePVName := o.(*storagev1.VolumeAttachment).Spec.Source.PersistentVolumeName
+
+			va, ok := o.(*storagev1.VolumeAttachment)
+			if !ok {
+				return res
+			}
+
+			sourcePVName := va.Spec.Source.PersistentVolumeName
 			if sourcePVName != nil {
 				res = append(res, *sourcePVName)
 			}
