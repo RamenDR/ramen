@@ -211,6 +211,7 @@ func CreateRS(rsName string) {
 func UpdateRS(rsName string) {
 	retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		rs := &volsyncv1alpha1.ReplicationSource{}
+
 		err := k8sClient.Get(context.TODO(), types.NamespacedName{
 			Name:      rsName,
 			Namespace: "default",
@@ -218,6 +219,7 @@ func UpdateRS(rsName string) {
 		if err != nil {
 			return err
 		}
+
 		rs.Status = &volsyncv1alpha1.ReplicationSourceStatus{
 			LastManualSync: manualString,
 		}
@@ -249,6 +251,7 @@ func GenerateReplicationGroupSource(
 func UpdateVGS(rgs *v1alpha1.ReplicationGroupSource, vsName, pvcName string) {
 	retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		volumeGroupSnapshot := &vgsv1alphfa1.VolumeGroupSnapshot{}
+
 		err := k8sClient.Get(context.TODO(), types.NamespacedName{
 			Name:      fmt.Sprintf(cephfscg.VolumeGroupSnapshotNameFormat, rgs.Name),
 			Namespace: rgs.Namespace,
@@ -256,6 +259,7 @@ func UpdateVGS(rgs *v1alpha1.ReplicationGroupSource, vsName, pvcName string) {
 		if err != nil {
 			return err
 		}
+
 		ready := true
 		volumeGroupSnapshot.Status = &vgsv1alphfa1.VolumeGroupSnapshotStatus{
 			ReadyToUse: &ready,

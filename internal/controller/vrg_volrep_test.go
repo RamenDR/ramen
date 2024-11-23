@@ -2638,6 +2638,7 @@ func (v *vrgTest) promoteVolRepsAndDo(options promoteOptions, do func(int, int))
 			if !options.ValidatedMissing {
 				v.waitForVolRepCondition(volrepKey, volrep.ConditionValidated, metav1.ConditionTrue)
 			}
+
 			v.waitForVolRepCondition(volrepKey, volrep.ConditionCompleted, metav1.ConditionTrue)
 			v.waitForProtectedPVCs(volrepKey)
 		}
