@@ -475,11 +475,11 @@ func (u *drclusterInstance) initializeStatus() {
 func (u *drclusterInstance) getDRClusterDeployedStatus(drcluster *ramen.DRCluster) error {
 	mw, err := u.mwUtil.GetDrClusterManifestWork(drcluster.Name)
 	if err != nil {
-		return fmt.Errorf(fmt.Sprintf("error in fetching DRCluster ManifestWork %v", err))
+		return fmt.Errorf("error in fetching DRCluster ManifestWork %v", err)
 	}
 
 	if mw == nil {
-		return fmt.Errorf(fmt.Sprintf("missing DRCluster ManifestWork resource %v", err))
+		return fmt.Errorf("missing DRCluster ManifestWork resource %v", err)
 	}
 
 	deployed := util.IsManifestInAppliedState(mw)

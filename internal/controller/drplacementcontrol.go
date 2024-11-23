@@ -339,7 +339,8 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 	const done = true
 
 	if d.instance.Spec.FailoverCluster == "" {
-		msg := "missing value for spec.FailoverCluster"
+		const msg = "missing value for spec.FailoverCluster"
+
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), msg)
 
