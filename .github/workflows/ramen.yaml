@@ -1,16 +1,15 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
----
 # yamllint disable rule:line-length
-
+---
 name: ramen
 
 # This workflow will run when developer push a topic branch to their
 # fork in github, minimizing noise for maintainers. This
 # workflow also runs on nightly basis at 12:00 AM (00:00 UTC)
 
-on:  # yamllint disable-line rule:truthy
+on:
   push:
   pull_request:
   schedule:
@@ -54,11 +53,15 @@ jobs:
       - name: Run linters
         run: ./hack/pre-commit.sh
 
-      - name: Check that generated files were not modified
+      - name: Check tidiness
+        # Check that modules are tidy, and that generated files were not
+        # modified by the pull request. Both validated by empty diff.
         run: |
           make generate
           make manifests
           go mod tidy
+          (cd e2e && go mod tidy)
+          (cd api && go mod tidy)
           git --no-pager diff
           git diff-index --quiet HEAD
 

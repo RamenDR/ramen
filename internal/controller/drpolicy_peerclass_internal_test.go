@@ -1101,5 +1101,184 @@ var _ = Describe("updatePeerClassesInternal", func() {
 				},
 			},
 		),
+		Entry("Multiple async peer, having related [VR|VS]Classes with same storageIDs",
+			[]classLists{
+				{
+					clusterID: "cl-1",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-1-sID1",
+								},
+							},
+							Provisioner: "sample1.csi.com",
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc2",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-1-sID1",
+								},
+							},
+							Provisioner: "sample2.csi.com",
+						},
+					},
+					vsClasses: []*snapv1.VolumeSnapshotClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vsc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-1-sID1",
+								},
+							},
+							Driver: "sample1.csi.com",
+						},
+					},
+					vrClasses: []*volrep.VolumeReplicationClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vrc1",
+								Labels: map[string]string{
+									StorageIDLabel:           "cl-1-sID1",
+									VolumeReplicationIDLabel: "cl-1-2-rID",
+								},
+							},
+							Spec: volrep.VolumeReplicationClassSpec{
+								Provisioner: "sample2.csi.com",
+								Parameters: map[string]string{
+									VRClassScheduleKey: "1m",
+								},
+							},
+						},
+					},
+				},
+				{
+					clusterID: "cl-2",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-2-sID1",
+								},
+							},
+							Provisioner: "sample1.csi.com",
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc2",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-2-sID1",
+								},
+							},
+							Provisioner: "sample2.csi.com",
+						},
+					},
+					vsClasses: []*snapv1.VolumeSnapshotClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vsc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-2-sID1",
+								},
+							},
+							Driver: "sample1.csi.com",
+						},
+					},
+					vrClasses: []*volrep.VolumeReplicationClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vrc1",
+								Labels: map[string]string{
+									StorageIDLabel:           "cl-2-sID1",
+									VolumeReplicationIDLabel: "cl-1-2-rID",
+								},
+							},
+							Spec: volrep.VolumeReplicationClassSpec{
+								Provisioner: "sample2.csi.com",
+								Parameters: map[string]string{
+									VRClassScheduleKey: "1m",
+								},
+							},
+						},
+					},
+				},
+			},
+			"1m",
+			[]peerInfo{},
+			[]peerInfo{
+				{
+					replicationID:    "",
+					storageIDs:       []string{"cl-1-sID1", "cl-2-sID1"},
+					storageClassName: "sc1",
+					clusterIDs:       []string{"cl-1", "cl-2"},
+				},
+				{
+					replicationID:    "cl-1-2-rID",
+					storageIDs:       []string{"cl-1-sID1", "cl-2-sID1"},
+					storageClassName: "sc2",
+					clusterIDs:       []string{"cl-1", "cl-2"},
+				},
+			},
+		),
+		Entry("Multiple async peer, having mismatching VSClass Drivers with storageIDs matching SCs",
+			[]classLists{
+				{
+					clusterID: "cl-1",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-1-sID1",
+								},
+							},
+							Provisioner: "sample1.csi.com",
+						},
+					},
+					vsClasses: []*snapv1.VolumeSnapshotClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vsc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-1-sID1",
+								},
+							},
+							Driver: "sample2.csi.com",
+						},
+					},
+				},
+				{
+					clusterID: "cl-2",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-2-sID1",
+								},
+							},
+							Provisioner: "sample1.csi.com",
+						},
+					},
+					vsClasses: []*snapv1.VolumeSnapshotClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vsc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-2-sID1",
+								},
+							},
+							Driver: "sample2.csi.com",
+						},
+					},
+				},
+			},
+			"1m",
+			[]peerInfo{},
+			[]peerInfo{},
+		),
 	)
 })

@@ -1,11 +1,11 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
----
 # yamllint disable rule:line-length
-name: E2E
+---
+name: e2e
 
-on:  # yamllint disable-line rule:truthy
+on:
   pull_request:
     types: [opened, synchronize, reopened]
 

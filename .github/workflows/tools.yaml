@@ -1,16 +1,15 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
----
 # yamllint disable rule:line-length
-
+---
 name: tools
 
 # This workflow will run when developer push a topic branch to their
 # fork in github, minimizing noise for maintainers. This
 # workflow also runs on nightly basis at 12:00 AM (00:00 UTC)
 
-on:  # yamllint disable-line rule:truthy
+on:
   push:
   pull_request:
   schedule:

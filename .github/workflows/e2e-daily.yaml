@@ -1,11 +1,11 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
----
 # yamllint disable rule:line-length
-name: E2E Daily
+---
+name: e2e daily
 
-on:  # yamllint disable-line rule:truthy
+on:
   # Run every day on 03:00.
   schedule:
     - cron: '0 3 * * *'
