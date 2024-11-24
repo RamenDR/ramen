@@ -103,8 +103,9 @@ linters:
     - asciicheck
     - bidichk
     - bodyclose
+    #  - copyloopvar // Additional new replacement for go 1.22 (https://go.dev/blog/loopvar-preview) (deprecating exportloopref)
     - cyclop
-    - deadcode
+    #  - deadcode // Fully deprecated, remove this line once an alternative is enabled for the same
     - decorder
     #  - depguard
     - dogsled
@@ -113,9 +114,8 @@ linters:
     - errcheck
     - errchkjson
     #  - errorlint
-    - execinquery
+    #  - execinquery // Fully deprecated, remove this line once an alternative is enabled for the same
     - exhaustive
-    - exportloopref
     - forbidigo
     - funlen
     - gocognit
@@ -124,24 +124,24 @@ linters:
     - gocyclo
     - gofmt
     - gofumpt
-    - golint
-    - gomnd
+    #  - golint // Fully deprecated, remove this line once an alternative is enabled for the same
     - gomodguard
     - goprintffuncname
     - gosec
     - gosimple
     - govet
     - grouper
-    - ifshort
+    #  - ifshort // Fully deprecated, remove this line once an alternative is enabled for the same
     - importas
     - ineffassign
     - interfacebloat
     - lll
-    - logrlint
+    - loggercheck
     - maintidx
     - makezero
-    - maligned
+    #  - maligned // Fully deprecated, remove this line once an alternative is enabled for the same
     - misspell
+    - mnd
     #  - nakedret
     - nestif
     - nilerr
@@ -155,9 +155,9 @@ linters:
     - reassign
     - revive
     - rowserrcheck
-    - scopelint
+    #  - scopelint // Fully deprecated, remove this line once an alternative is enabled for the same
     - sqlclosecheck
-    - structcheck
+    #  - structcheck // Fully deprecated, remove this line once an alternative is enabled for the same
     - stylecheck
     - tenv
     - testpackage
@@ -168,7 +168,7 @@ linters:
     - unparam
     - unused
     - usestdlibvars
-    - varcheck
+    #  - varcheck // Fully deprecated, remove this line once an alternative is enabled for the same
     - wastedassign
     - whitespace
     - wsl

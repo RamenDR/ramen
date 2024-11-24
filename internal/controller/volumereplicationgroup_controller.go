@@ -70,7 +70,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 	rateLimiter := workqueue.NewTypedMaxOfRateLimiter(
 		workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 1*time.Minute),
 		// defaults from client-go
-		//nolint: gomnd
+		//nolint: mnd
 		&workqueue.TypedBucketRateLimiter[reconcile.Request]{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
 	)
 	if r.RateLimiter != nil {

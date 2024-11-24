@@ -4,7 +4,7 @@ set -e
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 
 source_url="https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh"
-required_version="1.55.2"
+required_version="1.62.0"
 target_dir="${script_dir}/../testbin"
 target_path="${target_dir}/golangci-lint"
 tool="golangci-lint"
