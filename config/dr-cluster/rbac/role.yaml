@@ -12,28 +12,6 @@ rules:
   - list
   - watch
 - apiGroups:
-  - apiextensions.k8s.io
-  resources:
-  - customresourcedefinitions
-  verbs:
-  - get
-- apiGroups:
-  - groupsnapshot.storage.k8s.io
-  resources:
-  - volumegroupsnapshotcontents
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - groupsnapshot.storage.k8s.io
-  resources:
-  - volumegroupsnapshotclasses
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
   - ""
   resources:
   - events
@@ -45,79 +23,8 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - pods
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - groupsnapshot.storage.k8s.io
-  resources:
-  - volumegroupsnapshots
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - replicationgroupdestinations
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - replicationgroupdestinations/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - replicationgroupdestinations/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - replicationgroupsources
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - replicationgroupsources/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - replicationgroupsources/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - ""
-  resources:
   - persistentvolumeclaims
+  - secrets
   verbs:
   - create
   - delete
@@ -138,6 +45,31 @@ rules:
   - update
   - watch
 - apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apiextensions.k8s.io
+  resources:
+  - customresourcedefinitions
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  - statefulsets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - cluster.open-cluster-management.io
   resources:
   - clusterclaims
@@ -149,9 +81,18 @@ rules:
   - update
   - watch
 - apiGroups:
-  - ramendr.openshift.io
+  - groupsnapshot.storage.k8s.io
   resources:
-  - drclusterconfigs
+  - volumegroupsnapshotclasses
+  - volumegroupsnapshotcontents
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - groupsnapshot.storage.k8s.io
+  resources:
+  - volumegroupsnapshots
   verbs:
   - create
   - delete
@@ -159,110 +100,6 @@ rules:
   - list
   - patch
   - update
-  - watch
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - drclusterconfigs/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - drclusterconfigs/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - protectedvolumereplicationgrouplists
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - protectedvolumereplicationgrouplists/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - protectedvolumereplicationgrouplists/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - volumereplicationgroups
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - volumereplicationgroups/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ramendr.openshift.io
-  resources:
-  - volumereplicationgroups/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - replication.storage.openshift.io
-  resources:
-  - volumereplications
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - replication.storage.openshift.io
-  resources:
-  - volumereplicationclasses
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - storage.k8s.io
-  resources:
-  - storageclasses
-  verbs:
-  - create
-  - get
-  - list
-  - update
-  - watch
-- apiGroups:
-  - storage.k8s.io
-  resources:
-  - volumeattachments
-  verbs:
-  - get
-  - list
   - watch
 - apiGroups:
   - multicluster.x-k8s.io
@@ -277,58 +114,13 @@ rules:
   - update
   - watch
 - apiGroups:
-  - velero.io
+  - ramendr.openshift.io
   resources:
-  - backups
-  verbs:
-  - create
-  - delete
-  - deletecollection
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - velero.io
-  resources:
-  - backups/status
-  verbs:
-  - get
-- apiGroups:
-  - velero.io
-  resources:
-  - backupstoragelocations
-  verbs:
-  - create
-  - delete
-  - deletecollection
-  - get
-  - patch
-  - update
-- apiGroups:
-  - velero.io
-  resources:
-  - restores
-  verbs:
-  - create
-  - delete
-  - deletecollection
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - velero.io
-  resources:
-  - restores/status
-  verbs:
-  - get
-- apiGroups:
-  - volsync.backube
-  resources:
-  - replicationdestinations
+  - drclusterconfigs
+  - protectedvolumereplicationgrouplists
+  - replicationgroupdestinations
+  - replicationgroupsources
+  - volumereplicationgroups
   verbs:
   - create
   - delete
@@ -338,21 +130,47 @@ rules:
   - update
   - watch
 - apiGroups:
-  - volsync.backube
+  - ramendr.openshift.io
   resources:
-  - replicationsources
+  - drclusterconfigs/finalizers
+  - protectedvolumereplicationgrouplists/finalizers
+  - replicationgroupdestinations/finalizers
+  - replicationgroupsources/finalizers
+  - volumereplicationgroups/finalizers
   verbs:
-  - create
-  - delete
+  - update
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - drclusterconfigs/status
+  - protectedvolumereplicationgrouplists/status
+  - replicationgroupdestinations/status
+  - replicationgroupsources/status
+  - volumereplicationgroups/status
+  verbs:
   - get
-  - list
   - patch
   - update
+- apiGroups:
+  - ramendr.openshift.io
+  resources:
+  - recipes
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
-  - ""
+  - replication.storage.openshift.io
   resources:
-  - secrets
+  - volumereplicationclasses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - replication.storage.openshift.io
+  resources:
+  - volumereplications
   verbs:
   - create
   - delete
@@ -380,36 +198,67 @@ rules:
   - update
   - watch
 - apiGroups:
-  - ramendr.openshift.io
+  - storage.k8s.io
   resources:
-  - recipes
+  - storageclasses
+  verbs:
+  - create
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - volumeattachments
   verbs:
   - get
   - list
   - watch
 - apiGroups:
-  - apiextensions.k8s.io
+  - velero.io
   resources:
-  - customresourcedefinitions
+  - backups
+  - restores
   verbs:
+  - create
+  - delete
+  - deletecollection
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
-  - apps
+  - velero.io
   resources:
-  - deployments
+  - backups/status
+  - restores/status
   verbs:
   - get
-  - list
-  - watch
 - apiGroups:
-  - apps
+  - velero.io
   resources:
-  - statefulsets
+  - backupstoragelocations
   verbs:
+  - create
+  - delete
+  - deletecollection
+  - get
+  - patch
+  - update
+- apiGroups:
+  - volsync.backube
+  resources:
+  - replicationdestinations
+  - replicationsources
+  verbs:
+  - create
+  - delete
   - get
   - list
+  - patch
+  - update
   - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1

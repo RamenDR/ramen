@@ -3,7 +3,7 @@ set -e
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 
-required_version="v0.14.0"
+required_version="v0.16.5"
 source_url="sigs.k8s.io/controller-tools/cmd/controller-gen@${required_version}"
 target_dir="${script_dir}/../bin"
 target_path="${target_dir}/controller-gen"
