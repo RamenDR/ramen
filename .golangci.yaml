@@ -169,10 +169,9 @@ linters:
     - unused
     - usestdlibvars
     - varcheck
-    #  - wastedassign
+    - wastedassign
     - whitespace
     - wsl
-    #  - exhaustivestruct
     #  - gochecknoglobals
     #  - gochecknoinits
     #  - godot
