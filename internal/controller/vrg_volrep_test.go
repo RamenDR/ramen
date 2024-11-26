@@ -616,7 +616,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 
 	// Test VRG finalizer removal during deletion is deferred till VR is deleted
 	var vrgVRDeleteEnsureTestCase *vrgTest
-	Context("in primary state where VRG finalizer removal is deferred duing deletion", func() {
+	Context("in primary state where VRG finalizer removal is deferred during deletion", func() {
 		storageIDLabel := genStorageIDLabel(storageIDs[0])
 		storageID := storageIDLabel[vrgController.StorageIDLabel]
 		vrcLabels := genVRCLabels(replicationIDs[0], storageID, "ramen")
@@ -1433,7 +1433,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		vrcProvisioner:       "manual.storage.com",
 		scProvisioner:        "manual.storage.com",
 	}
-	Context("Basic test with no peerClassses", func() {
+	Context("Basic test with no peerClasses", func() {
 		It("sets up PVCs, PVs and VRGs", func() {
 			vrgNoPeerClassesTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			storageIDLabel := genStorageIDLabel(storageIDs[0])
@@ -1470,7 +1470,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		vrcProvisioner:       "manual.storage.com",
 		scProvisioner:        "manual.storage.com",
 	}
-	Context("Basic test with no peerClassses with replicationID in vrc", func() {
+	Context("Basic test with no peerClasses with replicationID in vrc", func() {
 		It("sets up PVCs, PVs and VRGs", func() {
 			vrgNoPeerClassesAndReplicationIDTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			storageIDLabel := genStorageIDLabel(storageIDs[0])
