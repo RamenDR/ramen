@@ -73,10 +73,12 @@ func EvaluateCheckHookExpWithTimeout(client client.Client, obj client.Object, ns
 				}
 				return false, err // Some other error occurred, return it
 			}
+			fmt.Println("**** ASN, deployment found", nsScopedName)
 			res, err := EvaluateCheckHookExp(booleanExpression, obj)
 			if err != nil {
 				continue // This may mean that expression is not evaluated
 			}
+			fmt.Println("**** ASN, checkhook is executed with boolean exp", booleanExpression, " result is ", res)
 
 			return res, err // Resource is ready
 		}

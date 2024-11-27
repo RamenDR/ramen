@@ -21,6 +21,7 @@ import (
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
+	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	subscription "open-cluster-management.io/multicloud-operators-subscription/pkg/apis"
 	placementrule "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/placementrule/v1"
 )
@@ -59,6 +60,10 @@ func addToScheme(scheme *runtime.Scheme) error {
 	}
 
 	if err := argocdv1alpha1hack.AddToScheme(scheme); err != nil {
+		return err
+	}
+
+	if err := recipe.AddToScheme(scheme); err != nil {
 		return err
 	}
 

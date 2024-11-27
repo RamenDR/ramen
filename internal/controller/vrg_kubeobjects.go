@@ -515,7 +515,8 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result,
 
 		return nil
 	}
-
+	v.log.Info("**** ASN,", "sourceVRG status", sourceVrg.Status)
+	v.log.Info("**** ASN,", " v.instance status", vrg.Status)
 	captureToRecoverFromIdentifier := sourceVrg.Status.KubeObjectProtection.CaptureToRecoverFrom
 	if captureToRecoverFromIdentifier == nil {
 		v.log.Info("Kube objects capture-to-recover-from identifier nil")
@@ -635,6 +636,7 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 	groups := v.recipeElements.RecoverWorkflow
 	requests := make([]kubeobjects.Request, len(groups))
 	log.Info("****ASN, kubeObjectsRecoveryStartOrResume")
+	noOfGroups := 0
 	for groupNumber, recoverGroup := range groups {
 		rg := recoverGroup
 		log1 := log.WithValues("group", groupNumber, "name", rg.BackupName)
@@ -645,6 +647,7 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 				break
 			}
 		} else {
+			noOfGroups++
 			if err := v.executeRecoverGroup(result, s3StoreAccessor, sourceVrgNamespaceName,
 				sourceVrgName, captureToRecoverFromIdentifier, captureRequests,
 				recoverRequests, veleroNamespaceName, labels, groupNumber, rg,
@@ -654,9 +657,13 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 		}
 	}
 
-	startTime := requests[0].StartTime()
-	duration := time.Since(startTime.Time)
-	log.Info("Kube objects recovered", "groups", len(groups), "start", startTime, "duration", duration)
+	// if len(requests) > 0 {
+	// 	startTime := requests[0].StartTime()
+	// 	duration := time.Since(startTime.Time)
+	// 	log.Info("Kube objects recovered", "groups", len(groups), "start", startTime, "duration", duration)
+	// } else if len(requests) != noOfGroups {
+	// 	return fmt.Errorf("recover requests not yet complete")
+	// }
 
 	return v.kubeObjectsRecoverRequestsDelete(result, veleroNamespaceName, labels)
 }
@@ -954,8 +961,6 @@ func convertRecipeHookToRecoverSpec(hook Recipe.Hook, suffix string) (*kubeobjec
 	hookSpec := getHookSpecFromHook(hook, suffix)
 
 	return &kubeobjects.RecoverSpec{
-		// BackupName: arbitrary fixed string to designate that this is will be a Backup, not Restore, object
-		BackupName: ramen.ReservedBackupName,
 		Spec: kubeobjects.Spec{
 			KubeResourcesSpec: kubeobjects.KubeResourcesSpec{
 				IncludedNamespaces: []string{hook.Namespace},

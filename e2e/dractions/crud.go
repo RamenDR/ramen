@@ -5,7 +5,6 @@ package dractions
 
 import (
 	"context"
-	"fmt"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/e2e/deployers"
@@ -186,7 +185,29 @@ func generateDRPCDiscoveredApps(name, namespace, clusterName, drPolicyName, plac
 }
 
 func createRecipe(name, namespace string) error {
-	r := &recipe.Recipe{
+	err := util.Ctx.C1.CtrlClient.Create(context.Background(), getRecipe(name, namespace))
+	if err != nil {
+		if !errors.IsAlreadyExists(err) {
+			return err
+		}
+
+		util.Ctx.Log.Info("recipe " + name + " already exists" + " in the cluster " + "C1")
+	}
+
+	err = util.Ctx.C2.CtrlClient.Create(context.Background(), getRecipe(name, namespace))
+	if err != nil {
+		if !errors.IsAlreadyExists(err) {
+			return err
+		}
+
+		util.Ctx.Log.Info("recipe " + name + " already exists" + " in the cluster " + "C2")
+	}
+
+	return nil
+}
+
+func getRecipe(name, namespace string) *recipe.Recipe {
+	return &recipe.Recipe{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Recipe",
 			APIVersion: "ramendr.openshift.io/v1alpha1",
@@ -199,35 +220,94 @@ func createRecipe(name, namespace string) error {
 			AppType: "busybox",
 			Groups: []*recipe.Group{
 				{
-					Name: "my-resources",
+					Name: "rg1",
 					Type: "resource",
-					ExcludedResourceTypes: []string{
-						"event",
-						"event.events.k8s.io",
-						"imagetags.openshift.io",
-						"pod",
-						"installplans.operators.coreos.com",
-					},
 					IncludedNamespaces: []string{
-						"$parent_namespace",
-						"$child_namespaces",
+						namespace,
 					},
-					LabelSelector: &metav1.LabelSelector{
-						MatchExpressions: []metav1.LabelSelectorRequirement{
-							{
-								Key:      "ramenshouldignorethis",
-								Operator: "NotIn",
-								Values: []string{
-									"true",
-								},
-							},
+				},
+				{
+					Name: "rg2",
+					Type: "resource",
+					IncludedNamespaces: []string{
+						namespace,
+					},
+					// select resource for pod
+				},
+			},
+			Hooks: []*recipe.Hook{
+				{
+					Name:           "backup",
+					Type:           "check",
+					Namespace:      name,
+					NameSelector:   "busybox",
+					SelectResource: "deployment",
+					Timeout:        300,
+					Chks: []*recipe.Check{
+						{
+							Name:      "check-replicas",
+							Condition: "{$.spec.replicas} == {$.status.readyReplicas}",
+						},
+					},
+				},
+				{
+					Name:           "restore",
+					Type:           "check",
+					Namespace:      name,
+					NameSelector:   "busybox-recipe",
+					SelectResource: "deployment",
+					Timeout:        300,
+					Chks: []*recipe.Check{
+						{
+							Name:      "check-replicas",
+							Condition: "{$.spec.replicas} == {$.status.readyReplicas}",
 						},
 					},
 				},
 			},
-			Hooks: []*recipe.Hook{},
+			Workflows: []*recipe.Workflow{
+				{
+					Name: "backup",
+					Sequence: []map[string]string{
+						{
+							"group": "rg2",
+						},
+						{
+							"hook": "backup/check-replicas",
+						},
+						{
+							"group": "rg1",
+						},
+					},
+				},
+				{
+					Name: "restore",
+					Sequence: []map[string]string{
+						{
+							"group": "rg1",
+						},
+						{
+							"hook": "restore/check-replicas",
+						},
+					},
+				},
+			},
 		},
 	}
-	fmt.Print(r)
-	return nil
+}
+
+func deleteRecipe(client client.Client, name, namespace string) error {
+	r := &recipe.Recipe{}
+	key := types.NamespacedName{Namespace: namespace, Name: name}
+
+	err := client.Get(context.Background(), key, r)
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			return err
+		}
+
+		return nil
+	}
+
+	return client.Delete(context.Background(), r)
 }

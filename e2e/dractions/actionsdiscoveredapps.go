@@ -33,7 +33,7 @@ func EnableProtectionDiscoveredApps(w workloads.Workload, d deployers.Deployer) 
 	}
 
 	// create recipe
-	if err := createRecipe("name", "namespace"); err != nil {
+	if err := createRecipe(name, namespace); err != nil {
 		return err
 	}
 
@@ -49,6 +49,10 @@ func EnableProtectionDiscoveredApps(w workloads.Workload, d deployers.Deployer) 
 
 	drpc := generateDRPCDiscoveredApps(
 		name, namespace, clusterName, drPolicyName, placementName, appname, namespaceInDrCluster)
+	drpc.Spec.KubeObjectProtection.RecipeRef = &ramen.RecipeRef{
+		Namespace: namespace,
+		Name:      name,
+	}
 	if err = createDRPC(util.Ctx.Hub.CtrlClient, drpc); err != nil {
 		return err
 	}
@@ -77,6 +81,10 @@ func DisableProtectionDiscoveredApps(w workloads.Workload, d deployers.Deployer)
 	}
 
 	if err := waitDRPCDeleted(client, namespace, drpcName); err != nil {
+		return err
+	}
+
+	if err := deleteRecipe(client, name, namespace); err != nil {
 		return err
 	}
 
