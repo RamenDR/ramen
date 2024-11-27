@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: The RamenDR authors
 // SPDX-License-Identifier: Apache-2.0
 
+// nolint: thelper // for using dt *testing.T and keeping test code idiomatic.
 package test
 
 import (
@@ -65,50 +66,56 @@ func (c *Context) Validate() error {
 	return nil
 }
 
-func (c *Context) Deploy(t *testing.T) {
+func (c *Context) Deploy(dt *testing.T) {
+	t := WithLog(dt, c.logger)
 	t.Helper()
 
 	if err := c.deployer.Deploy(c); err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to deploy workload: %s", err)
 	}
 }
 
-func (c *Context) Undeploy(t *testing.T) {
+func (c *Context) Undeploy(dt *testing.T) {
+	t := WithLog(dt, c.logger)
 	t.Helper()
 
 	if err := c.deployer.Undeploy(c); err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to undeploy workload: %s", err)
 	}
 }
 
-func (c *Context) Enable(t *testing.T) {
+func (c *Context) Enable(dt *testing.T) {
+	t := WithLog(dt, c.logger)
 	t.Helper()
 
 	if err := dractions.EnableProtection(c); err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to enable protection for workload: %s", err)
 	}
 }
 
-func (c *Context) Disable(t *testing.T) {
+func (c *Context) Disable(dt *testing.T) {
+	t := WithLog(dt, c.logger)
 	t.Helper()
 
 	if err := dractions.DisableProtection(c); err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to disable protection for workload: %s", err)
 	}
 }
 
-func (c *Context) Failover(t *testing.T) {
+func (c *Context) Failover(dt *testing.T) {
+	t := WithLog(dt, c.logger)
 	t.Helper()
 
 	if err := dractions.Failover(c); err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to failover workload: %s", err)
 	}
 }
 
-func (c *Context) Relocate(t *testing.T) {
+func (c *Context) Relocate(dt *testing.T) {
+	t := WithLog(dt, c.logger)
 	t.Helper()
 
 	if err := dractions.Relocate(c); err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to relocate workload: %s", err)
 	}
 }
