@@ -635,13 +635,13 @@ func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim
 
 	if numProfilesUploaded != numProfilesToUpload {
 		// Merely defensive as we don't expect to reach here
-		msg := fmt.Sprintf("Uploaded PV/PVC cluster data to only  %d of %d S3 profile(s): %v",
+		msg := fmt.Sprintf("uploaded PV/PVC cluster data to only  %d of %d S3 profile(s): %v",
 			numProfilesUploaded, numProfilesToUpload, s3Profiles)
 		v.log.Info(msg)
 		v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name,
 			VRGConditionReasonUploadError, msg)
 
-		return fmt.Errorf(msg)
+		return errors.New(msg)
 	}
 
 	if err := v.addArchivedAnnotationForPVC(pvc, log); err != nil {
@@ -651,7 +651,7 @@ func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim
 		v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name,
 			VRGConditionReasonClusterDataAnnotationFailed, msg)
 
-		return fmt.Errorf(msg)
+		return errors.New(msg)
 	}
 
 	msg := fmt.Sprintf("Done uploading PV/PVC cluster data to %d of %d S3 profile(s): %v",
@@ -892,6 +892,7 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 		}
 	} else {
 		requeueResult, ready, err := v.processVRAsPrimary(pvcNamespacedName, pvc, log)
+
 		switch {
 		case err != nil:
 			log.Info("Requeuing due to failure in getting or creating VolumeReplication resource for PersistentVolumeClaim",
@@ -2127,7 +2128,7 @@ func (v *VRGInstance) checkPVClusterData(pvList []corev1.PersistentVolume) error
 			claimKey, prevPV.Name, thisPV.Name)
 		v.log.Info(msg)
 
-		return fmt.Errorf(msg)
+		return errors.New(msg)
 	}
 
 	return nil

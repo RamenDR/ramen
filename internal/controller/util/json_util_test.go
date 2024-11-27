@@ -59,10 +59,12 @@ func TestXYZ(t *testing.T) {
 
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			var jsonData map[string]interface{}
+
 			err := json.Unmarshal(jsonText1, &jsonData)
 			if err != nil {
 				t.Error(err)
 			}
+
 			_, err = util.EvaluateCheckHookExp(test.jsonPathExprs, jsonData)
 			if (err == nil) != test.result {
 				t.Errorf("EvaluateCheckHookExp() = %v, want %v", err, test.result)

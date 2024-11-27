@@ -260,6 +260,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 				captureInProgressStatusUpdate,
 				labels, annotations, requests, log,
 			)
+
 			requestsProcessedCount += len(v.s3StoreAccessors)
 			if requestsCompletedCount < requestsProcessedCount {
 				log1.Info("Kube objects group capturing", "complete", requestsCompletedCount, "total", requestsProcessedCount)
@@ -354,6 +355,7 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 
 			if err == nil {
 				log1.Info("Kube objects group captured", "start", request.StartTime(), "end", request.EndTime())
+
 				requestsCompletedCount++
 
 				continue

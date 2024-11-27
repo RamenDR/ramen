@@ -459,6 +459,7 @@ func isBeingDeleted(drpc *rmn.DRPlacementControl, usrPl client.Object) bool {
 		(usrPl != nil && rmnutil.ResourceIsDeleted(usrPl))
 }
 
+//nolint:unparam
 func (r *DRPlacementControlReconciler) reconcileDRPCInstance(d *DRPCInstance, log logr.Logger) (ctrl.Result, error) {
 	// Last status update time BEFORE we start processing
 	var beforeProcessing metav1.Time
@@ -1096,7 +1097,6 @@ func getVRGsFromManagedClusters(
 	vrgs := map[string]*rmn.VolumeReplicationGroup{}
 
 	annotations := make(map[string]string)
-
 	annotations[DRPCNameAnnotation] = drpc.Name
 	annotations[DRPCNamespaceAnnotation] = drpc.Namespace
 
@@ -1112,6 +1112,7 @@ func getVRGsFromManagedClusters(
 			// Only NotFound error is accepted
 			if errors.IsNotFound(err) {
 				log.Info(fmt.Sprintf("VRG not found on %q", drCluster.Name))
+
 				numClustersQueriedSuccessfully++
 
 				continue

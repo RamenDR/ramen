@@ -90,7 +90,7 @@ func DRPolicyS3Profiles(drpolicy *rmn.DRPolicy, drclusters []rmn.DRCluster) sets
 	return mustHaveS3Profiles
 }
 
-//nolint:gomnd
+//nolint:mnd
 func GetSecondsFromSchedulingInterval(drpolicy *rmn.DRPolicy) (float64, error) {
 	schedulingInterval := drpolicy.Spec.SchedulingInterval
 	if schedulingInterval == "" {

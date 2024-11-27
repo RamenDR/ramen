@@ -223,7 +223,17 @@ func DRClusterPredicateFunc() predicate.Funcs {
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			log.Info("Update event")
 
-			return DRClusterUpdateOfInterest(e.ObjectOld.(*rmn.DRCluster), e.ObjectNew.(*rmn.DRCluster))
+			drcOld, ok := e.ObjectOld.(*rmn.DRCluster)
+			if !ok {
+				return false
+			}
+
+			drcNew, ok := e.ObjectNew.(*rmn.DRCluster)
+			if !ok {
+				return false
+			}
+
+			return DRClusterUpdateOfInterest(drcOld, drcNew)
 		},
 	}
 
@@ -245,7 +255,17 @@ func DRPolicyPredicateFunc() predicate.Funcs {
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			log.Info("Update event")
 
-			return RequiresDRPCReconciliation(e.ObjectOld.(*rmn.DRPolicy), e.ObjectNew.(*rmn.DRPolicy))
+			drpOld, ok := e.ObjectOld.(*rmn.DRPolicy)
+			if !ok {
+				return false
+			}
+
+			drpNew, ok := e.ObjectNew.(*rmn.DRPolicy)
+			if !ok {
+				return false
+			}
+
+			return RequiresDRPCReconciliation(drpOld, drpNew)
 		},
 	}
 

@@ -234,7 +234,12 @@ func drclusterConditionExpect(
 
 	matchElements := MatchElements(
 		func(element interface{}) string {
-			return element.(metav1.Condition).Type
+			cond, ok := element.(metav1.Condition)
+			if !ok {
+				return ""
+			}
+
+			return cond.Type
 		},
 		IgnoreExtras,
 		Elements{
