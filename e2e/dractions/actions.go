@@ -4,6 +4,7 @@
 package dractions
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -178,6 +179,10 @@ func waitAndUpdateDRPC(client client.Client, namespace, drpcName string, action 
 	targetCluster, err := getTargetCluster(client, namespace, drpcName, drpolicy)
 	if err != nil {
 		return err
+	}
+
+	if drpcName == "subscr-deploy-rbd-busybox" && action == ramen.ActionFailover {
+		return fmt.Errorf("fake error in waitAndUpdateDRPC: failover to cluster %q", targetCluster)
 	}
 
 	log.Info("Updating drpc " + strings.ToLower(string(action)) + " to " + targetCluster)
