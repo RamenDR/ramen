@@ -63,17 +63,19 @@ func generateWorkloads([]types.Workload) {
 	}
 }
 
-func Exhaustive(t *testing.T) {
+// nolint: thelper
+func Exhaustive(dt *testing.T) {
+	t := test.WithLog(dt, util.Ctx.Log)
 	t.Helper()
 	t.Parallel()
 
 	if err := util.EnsureChannel(); err != nil {
-		t.Fatalf("failed to ensure channel: %v", err)
+		t.Fatalf("Failed to ensure channel: %s", err)
 	}
 
 	t.Cleanup(func() {
 		if err := util.EnsureChannelDeleted(); err != nil {
-			t.Fatalf("failed to ensure channel deleted: %v", err)
+			t.Fatalf("Failed to ensure channel deleted: %s", err)
 		}
 	})
 
@@ -82,7 +84,8 @@ func Exhaustive(t *testing.T) {
 	for _, deployer := range Deployers {
 		for _, workload := range Workloads {
 			ctx := test.NewContext(workload, deployer, util.Ctx.Log)
-			t.Run(ctx.Name(), func(t *testing.T) {
+			t.Run(ctx.Name(), func(dt *testing.T) {
+				t := test.WithLog(dt, ctx.Logger())
 				t.Parallel()
 				runTestFlow(t, ctx)
 			})
@@ -90,7 +93,7 @@ func Exhaustive(t *testing.T) {
 	}
 }
 
-func runTestFlow(t *testing.T, ctx test.Context) {
+func runTestFlow(t *test.T, ctx test.Context) {
 	t.Helper()
 
 	if err := ctx.Validate(); err != nil {
@@ -98,26 +101,26 @@ func runTestFlow(t *testing.T, ctx test.Context) {
 	}
 
 	if !t.Run("Deploy", ctx.Deploy) {
-		t.Fatal("Deploy failed")
+		t.FailNow()
 	}
 
 	if !t.Run("Enable", ctx.Enable) {
-		t.Fatal("Enable failed")
+		t.FailNow()
 	}
 
 	if !t.Run("Failover", ctx.Failover) {
-		t.Fatal("Failover failed")
+		t.FailNow()
 	}
 
 	if !t.Run("Relocate", ctx.Relocate) {
-		t.Fatal("Relocate failed")
+		t.FailNow()
 	}
 
 	if !t.Run("Disable", ctx.Disable) {
-		t.Fatal("Disable failed")
+		t.FailNow()
 	}
 
 	if !t.Run("Undeploy", ctx.Undeploy) {
-		t.Fatal("Undeploy failed")
+		t.FailNow()
 	}
 }

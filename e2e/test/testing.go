@@ -1,0 +1,69 @@
+// SPDX-FileCopyrightText: The RamenDR authors
+// SPDX-License-Identifier: Apache-2.0
+
+package test
+
+import (
+	"fmt"
+	"testing"
+
+	"github.com/go-logr/logr"
+)
+
+// T extends testing.T to use a custom logger.
+type T struct {
+	*testing.T
+	log logr.Logger
+}
+
+// WithLog returns a t wrapped with a specified log.
+// nolint: thelper
+func WithLog(t *testing.T, log logr.Logger) *T {
+	return &T{T: t, log: log}
+}
+
+// Log writes a message to the log.
+func (t *T) Log(msg string) {
+	t.log.Info(msg)
+}
+
+// Log writes a formatted message to the log.
+func (t *T) Logf(format string, args ...any) {
+	t.log.Info(fmt.Sprintf(format, args...))
+}
+
+// Error writes an error message to the log and mark the test as failed.
+func (t *T) Error(msg string) {
+	t.log.Error(nil, msg)
+	t.T.Fail()
+}
+
+// Errorf writes a formatted error message to the log and markd the test as failed.
+func (t *T) Errorf(format string, args ...any) {
+	t.log.Error(nil, fmt.Sprintf(format, args...))
+	t.T.Fail()
+}
+
+// Fatal writes an error message to the log and fail the text immediately.
+func (t *T) Fatal(msg string) {
+	t.log.Error(nil, msg)
+	t.T.FailNow()
+}
+
+// Fatalf writes a formatted error message to the log and fail the text immediately.
+func (t *T) Fatalf(format string, args ...any) {
+	t.log.Error(nil, fmt.Sprintf(format, args...))
+	t.T.FailNow()
+}
+
+// Skip is equivalent to Log followed by SkipNow.
+func (t *T) Skip(msg string) {
+	t.log.Info(msg)
+	t.T.SkipNow()
+}
+
+// Skipf is equivalent to Logf followed by SkipNow.
+func (t *T) Skipf(format string, args ...any) {
+	t.log.Info(fmt.Sprintf(format, args...))
+	t.T.SkipNow()
+}
