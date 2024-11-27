@@ -4,7 +4,6 @@
 package e2e_test
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
@@ -32,30 +31,29 @@ var (
 	Deployers      = []deployers.Deployer{subscription, appset, discoveredApps}
 )
 
-func generateSuffix(storageClassName string) string {
-	suffix := storageClassName
+func storageName(storageClassName string) string {
+	name := storageClassName
 
 	if strings.ToLower(storageClassName) == "rook-ceph-block" {
-		suffix = "rbd"
+		name = "rbd"
 	}
 
 	if strings.ToLower(storageClassName) == "rook-cephfs" {
-		suffix = "cephfs"
+		name = "cephfs"
 	}
 
-	return suffix
+	return name
 }
 
 func generateWorkloads([]workloads.Workload) {
 	pvcSpecs := util.GetPVCSpecs()
 	for _, pvcSpec := range pvcSpecs {
 		// add storageclass name to deployment name
-		suffix := generateSuffix(pvcSpec.StorageClassName)
 		deployment := &workloads.Deployment{
 			Path:     GITPATH,
 			Revision: GITREVISION,
 			AppName:  APPNAME,
-			Name:     fmt.Sprintf("Deploy-%s", suffix),
+			Name:     storageName(pvcSpec.StorageClassName),
 			PVCSpec:  pvcSpec,
 		}
 		Workloads = append(Workloads, deployment)

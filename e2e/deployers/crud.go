@@ -211,7 +211,7 @@ func DeleteSubscription(s Subscription, w workloads.Workload, log logr.Logger) e
 }
 
 func GetCombinedName(d Deployer, w workloads.Workload) string {
-	return strings.ToLower(d.GetName() + "-" + w.GetName() + "-" + w.GetAppName())
+	return strings.ToLower(d.GetName() + "-" + w.GetName())
 }
 
 func GetNamespace(d Deployer, w workloads.Workload) string {
