@@ -80,7 +80,7 @@ func Exhaustive(t *testing.T) {
 
 	for _, deployer := range Deployers {
 		for _, workload := range Workloads {
-			ctx := test.NewContext(workload, deployer)
+			ctx := test.NewContext(workload, deployer, util.Ctx.Log)
 			t.Run(ctx.Name, func(t *testing.T) {
 				t.Parallel()
 				runTestFlow(t, ctx)

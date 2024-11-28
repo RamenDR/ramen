@@ -6,6 +6,7 @@ package test
 import (
 	"testing"
 
+	"github.com/go-logr/logr"
 	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/dractions"
 	"github.com/ramendr/ramen/e2e/workloads"
@@ -15,15 +16,17 @@ type Context struct {
 	Workload workloads.Workload
 	Deployer deployers.Deployer
 	Name     string
+	Log      logr.Logger
 }
 
-func NewContext(w workloads.Workload, d deployers.Deployer) Context {
+func NewContext(w workloads.Workload, d deployers.Deployer, log logr.Logger) Context {
 	name := deployers.GetCombinedName(d, w)
 
 	return Context{
 		Workload: w,
 		Deployer: d,
 		Name:     name,
+		Log:      log.WithName(name),
 	}
 }
 
