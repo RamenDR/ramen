@@ -14,6 +14,17 @@ import (
 type Context struct {
 	Workload workloads.Workload
 	Deployer deployers.Deployer
+	Name     string
+}
+
+func NewContext(w workloads.Workload, d deployers.Deployer) Context {
+	name := deployers.GetCombinedName(d, w)
+
+	return Context{
+		Workload: w,
+		Deployer: d,
+		Name:     name,
+	}
 }
 
 func (c *Context) Deploy(t *testing.T) {
