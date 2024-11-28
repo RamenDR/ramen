@@ -93,8 +93,8 @@ func Exhaustive(t *testing.T) {
 func runTestFlow(t *testing.T, ctx test.Context) {
 	t.Helper()
 
-	if !ctx.Deployer().IsWorkloadSupported(ctx.Workload()) {
-		t.Skipf("Workload %s not supported by deployer %s, skip test", ctx.Workload().GetName(), ctx.Deployer().GetName())
+	if err := ctx.Validate(); err != nil {
+		t.Skipf("Skip test: %s", err)
 	}
 
 	if !t.Run("Deploy", ctx.Deploy) {
