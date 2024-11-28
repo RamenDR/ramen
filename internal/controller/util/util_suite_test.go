@@ -23,6 +23,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	clrapiv1beta2 "open-cluster-management.io/api/cluster/v1beta2"
 	cpcv1 "open-cluster-management.io/config-policy-controller/api/v1"
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -90,6 +91,9 @@ var _ = BeforeSuite(func() {
 
 	By("Setting up required schemes in envtest")
 	err = plrv1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = clrapiv1beta2.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = cpcv1.AddToScheme(scheme.Scheme)

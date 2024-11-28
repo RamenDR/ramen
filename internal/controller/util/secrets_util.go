@@ -14,7 +14,6 @@ import (
 
 	"github.com/go-logr/logr"
 
-	// plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -749,6 +748,7 @@ func (sutil *SecretsUtil) AddSecretToCluster(
 	if len(labels) == 0 {
 		labels = make(map[string]string)
 	}
+
 	labels["cluster.open-cluster-management.io/clusterset"] = managedClusterSetName
 	managedClusterObject.Labels = labels
 
