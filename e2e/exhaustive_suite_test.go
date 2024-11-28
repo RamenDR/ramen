@@ -82,7 +82,7 @@ func Exhaustive(t *testing.T) {
 	for _, deployer := range Deployers {
 		for _, workload := range Workloads {
 			ctx := test.NewContext(workload, deployer, util.Ctx.Log)
-			t.Run(ctx.Name, func(t *testing.T) {
+			t.Run(ctx.Name(), func(t *testing.T) {
 				t.Parallel()
 				runTestFlow(t, ctx)
 			})
@@ -93,8 +93,8 @@ func Exhaustive(t *testing.T) {
 func runTestFlow(t *testing.T, ctx test.Context) {
 	t.Helper()
 
-	if !ctx.Deployer.IsWorkloadSupported(ctx.Workload) {
-		t.Skipf("Workload %s not supported by deployer %s, skip test", ctx.Workload.GetName(), ctx.Deployer.GetName())
+	if !ctx.Deployer().IsWorkloadSupported(ctx.Workload()) {
+		t.Skipf("Workload %s not supported by deployer %s, skip test", ctx.Workload().GetName(), ctx.Deployer().GetName())
 	}
 
 	if !t.Run("Deploy", ctx.Deploy) {
