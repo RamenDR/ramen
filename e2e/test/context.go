@@ -13,27 +13,43 @@ import (
 )
 
 type Context struct {
-	Workload workloads.Workload
-	Deployer deployers.Deployer
-	Name     string
-	Log      logr.Logger
+	workload types.Workload
+	deployer types.Deployer
+	name     string
+	logger   logr.Logger
 }
 
 func NewContext(w types.Workload, d types.Deployer, log logr.Logger) Context {
 	name := deployers.GetCombinedName(d, w)
 
 	return Context{
-		Workload: w,
-		Deployer: d,
-		Name:     name,
-		Log:      log.WithName(name),
+		workload: w,
+		deployer: d,
+		name:     name,
+		logger:   log.WithName(name),
 	}
+}
+
+func (c *Context) Deployer() types.Deployer {
+	return c.deployer
+}
+
+func (c *Context) Workload() types.Workload {
+	return c.workload
+}
+
+func (c *Context) Name() string {
+	return c.name
+}
+
+func (c *Context) Logger() logr.Logger {
+	return c.logger
 }
 
 func (c *Context) Deploy(t *testing.T) {
 	t.Helper()
 
-	if err := c.Deployer.Deploy(c.Workload); err != nil {
+	if err := c.deployer.Deploy(c.workload); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -41,7 +57,7 @@ func (c *Context) Deploy(t *testing.T) {
 func (c *Context) Undeploy(t *testing.T) {
 	t.Helper()
 
-	if err := c.Deployer.Undeploy(c.Workload); err != nil {
+	if err := c.deployer.Undeploy(c.workload); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -49,7 +65,7 @@ func (c *Context) Undeploy(t *testing.T) {
 func (c *Context) Enable(t *testing.T) {
 	t.Helper()
 
-	if err := dractions.EnableProtection(c.Workload, c.Deployer); err != nil {
+	if err := dractions.EnableProtection(c.workload, c.deployer); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -57,7 +73,7 @@ func (c *Context) Enable(t *testing.T) {
 func (c *Context) Disable(t *testing.T) {
 	t.Helper()
 
-	if err := dractions.DisableProtection(c.Workload, c.Deployer); err != nil {
+	if err := dractions.DisableProtection(c.workload, c.deployer); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -65,7 +81,7 @@ func (c *Context) Disable(t *testing.T) {
 func (c *Context) Failover(t *testing.T) {
 	t.Helper()
 
-	if err := dractions.Failover(c.Workload, c.Deployer); err != nil {
+	if err := dractions.Failover(c.workload, c.deployer); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -73,7 +89,7 @@ func (c *Context) Failover(t *testing.T) {
 func (c *Context) Relocate(t *testing.T) {
 	t.Helper()
 
-	if err := dractions.Relocate(c.Workload, c.Deployer); err != nil {
+	if err := dractions.Relocate(c.workload, c.deployer); err != nil {
 		t.Fatal(err)
 	}
 }
