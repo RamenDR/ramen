@@ -4,13 +4,13 @@
 package deployers
 
 import (
+	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
-	"github.com/ramendr/ramen/e2e/workloads"
 )
 
 type ApplicationSet struct{}
 
-func (a ApplicationSet) Deploy(w workloads.Workload) error {
+func (a ApplicationSet) Deploy(w types.Workload) error {
 	name := GetCombinedName(a, w)
 	namespace := util.ArgocdNamespace
 	log := util.Ctx.Log.WithName(name)
@@ -40,7 +40,7 @@ func (a ApplicationSet) Deploy(w workloads.Workload) error {
 	return err
 }
 
-func (a ApplicationSet) Undeploy(w workloads.Workload) error {
+func (a ApplicationSet) Undeploy(w types.Workload) error {
 	name := GetCombinedName(a, w)
 	namespace := util.ArgocdNamespace
 	log := util.Ctx.Log.WithName(name)
@@ -83,6 +83,6 @@ func (a ApplicationSet) GetName() string {
 	return "Appset"
 }
 
-func (a ApplicationSet) IsWorkloadSupported(w workloads.Workload) bool {
+func (a ApplicationSet) IsWorkloadSupported(w types.Workload) bool {
 	return true
 }

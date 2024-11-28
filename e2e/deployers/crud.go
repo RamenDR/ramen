@@ -12,11 +12,11 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
-	"github.com/ramendr/ramen/e2e/workloads"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
+	k8stypes "k8s.io/apimachinery/pkg/types"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
@@ -131,7 +131,7 @@ func DeletePlacement(name, namespace string, log logr.Logger) error {
 	return nil
 }
 
-func CreateSubscription(s Subscription, w workloads.Workload, log logr.Logger) error {
+func CreateSubscription(s Subscription, w types.Workload, log logr.Logger) error {
 	name := GetCombinedName(s, w)
 	namespace := name
 
@@ -187,7 +187,7 @@ func CreateSubscription(s Subscription, w workloads.Workload, log logr.Logger) e
 	return nil
 }
 
-func DeleteSubscription(s Subscription, w workloads.Workload, log logr.Logger) error {
+func DeleteSubscription(s Subscription, w types.Workload, log logr.Logger) error {
 	name := GetCombinedName(s, w)
 	namespace := name
 
@@ -210,11 +210,11 @@ func DeleteSubscription(s Subscription, w workloads.Workload, log logr.Logger) e
 	return nil
 }
 
-func GetCombinedName(d Deployer, w workloads.Workload) string {
+func GetCombinedName(d types.Deployer, w types.Workload) string {
 	return strings.ToLower(d.GetName() + "-" + w.GetName() + "-" + w.GetAppName())
 }
 
-func GetNamespace(d Deployer, w workloads.Workload) string {
+func GetNamespace(d types.Deployer, w types.Workload) string {
 	_, isAppSet := d.(*ApplicationSet)
 	if isAppSet {
 		// appset need be deployed in argocd ns
@@ -230,7 +230,7 @@ func GetNamespace(d Deployer, w workloads.Workload) string {
 
 func getSubscription(client client.Client, namespace, name string) (*subscriptionv1.Subscription, error) {
 	subscription := &subscriptionv1.Subscription{}
-	key := types.NamespacedName{Name: name, Namespace: namespace}
+	key := k8stypes.NamespacedName{Name: name, Namespace: namespace}
 
 	err := client.Get(context.Background(), key, subscription)
 	if err != nil {
@@ -284,7 +284,7 @@ func DeleteConfigMap(cmName string, cmNamespace string, log logr.Logger) error {
 }
 
 // nolint:funlen
-func CreateApplicationSet(a ApplicationSet, w workloads.Workload, log logr.Logger) error {
+func CreateApplicationSet(a ApplicationSet, w types.Workload, log logr.Logger) error {
 	var requeueSeconds int64 = 180
 
 	name := GetCombinedName(a, w)
@@ -362,7 +362,7 @@ func CreateApplicationSet(a ApplicationSet, w workloads.Workload, log logr.Logge
 	return nil
 }
 
-func DeleteApplicationSet(a ApplicationSet, w workloads.Workload, log logr.Logger) error {
+func DeleteApplicationSet(a ApplicationSet, w types.Workload, log logr.Logger) error {
 	name := GetCombinedName(a, w)
 	namespace := util.ArgocdNamespace
 
@@ -400,7 +400,7 @@ func isLastAppsetInArgocdNs(namespace string, log logr.Logger) (bool, error) {
 	return len(appsetList.Items) == 1, nil
 }
 
-func DeleteDiscoveredApps(w workloads.Workload, namespace, cluster string, log logr.Logger) error {
+func DeleteDiscoveredApps(w types.Workload, namespace, cluster string, log logr.Logger) error {
 	tempDir, err := os.MkdirTemp("", "ramen-")
 	if err != nil {
 		return err
@@ -428,7 +428,7 @@ func DeleteDiscoveredApps(w workloads.Workload, namespace, cluster string, log l
 
 type CombinedData map[string]interface{}
 
-func CreateKustomizationFile(w workloads.Workload, dir string) error {
+func CreateKustomizationFile(w types.Workload, dir string) error {
 	yamlData := `resources:
 - ` + util.GetGitURL() + `/` + w.GetPath() + `?ref=` + w.GetRevision()
 

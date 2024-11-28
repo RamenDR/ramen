@@ -4,8 +4,8 @@
 package deployers
 
 import (
+	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
-	"github.com/ramendr/ramen/e2e/workloads"
 	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
 )
 
@@ -18,7 +18,7 @@ func (s Subscription) GetName() string {
 	return "Subscr"
 }
 
-func (s Subscription) Deploy(w workloads.Workload) error {
+func (s Subscription) Deploy(w types.Workload) error {
 	// Generate a Placement for the Workload
 	// Use the global Channel
 	// Generate a Binding for the namespace (does this need clusters?)
@@ -56,7 +56,7 @@ func (s Subscription) Deploy(w workloads.Workload) error {
 }
 
 // Delete Subscription, Placement, Binding
-func (s Subscription) Undeploy(w workloads.Workload) error {
+func (s Subscription) Undeploy(w types.Workload) error {
 	name := GetCombinedName(s, w)
 	namespace := name
 	log := util.Ctx.Log.WithName(name)
@@ -81,6 +81,6 @@ func (s Subscription) Undeploy(w workloads.Workload) error {
 	return util.DeleteNamespace(util.Ctx.Hub.CtrlClient, namespace, log)
 }
 
-func (s Subscription) IsWorkloadSupported(w workloads.Workload) bool {
+func (s Subscription) IsWorkloadSupported(w types.Workload) bool {
 	return true
 }

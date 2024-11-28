@@ -10,8 +10,8 @@ import (
 	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/e2e/deployers"
+	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
-	"github.com/ramendr/ramen/e2e/workloads"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -29,7 +29,7 @@ const (
 // Determine KubeObjectProtection requirements if Imperative (?)
 // Create DRPC, in desired namespace
 // nolint:funlen
-func EnableProtection(w workloads.Workload, d deployers.Deployer) error {
+func EnableProtection(w types.Workload, d types.Deployer) error {
 	if _, isDiscoveredApps := d.(*deployers.DiscoveredApps); isDiscoveredApps {
 		return EnableProtectionDiscoveredApps(w, d)
 	}
@@ -91,7 +91,7 @@ func EnableProtection(w workloads.Workload, d deployers.Deployer) error {
 
 // remove DRPC
 // update placement annotation
-func DisableProtection(w workloads.Workload, d deployers.Deployer) error {
+func DisableProtection(w types.Workload, d types.Deployer) error {
 	if _, isDiscoveredApps := d.(*deployers.DiscoveredApps); isDiscoveredApps {
 		return DisableProtectionDiscoveredApps(w, d)
 	}
@@ -114,7 +114,7 @@ func DisableProtection(w workloads.Workload, d deployers.Deployer) error {
 	return waitDRPCDeleted(client, namespace, drpcName, log)
 }
 
-func Failover(w workloads.Workload, d deployers.Deployer) error {
+func Failover(w types.Workload, d types.Deployer) error {
 	name := GetCombinedName(d, w)
 	log := util.Ctx.Log.WithName(name)
 
@@ -131,7 +131,7 @@ func Failover(w workloads.Workload, d deployers.Deployer) error {
 // Check Placement
 // Relocate to Primary in DRPolicy as the PrimaryCluster
 // Update DRPC
-func Relocate(w workloads.Workload, d deployers.Deployer) error {
+func Relocate(w types.Workload, d types.Deployer) error {
 	name := GetCombinedName(d, w)
 	log := util.Ctx.Log.WithName(name)
 
@@ -144,7 +144,7 @@ func Relocate(w workloads.Workload, d deployers.Deployer) error {
 	return failoverRelocate(w, d, ramen.ActionRelocate, log)
 }
 
-func failoverRelocate(w workloads.Workload, d deployers.Deployer, action ramen.DRAction, log logr.Logger) error {
+func failoverRelocate(w types.Workload, d types.Deployer, action ramen.DRAction, log logr.Logger) error {
 	name := GetCombinedName(d, w)
 	namespace := GetNamespace(d, w)
 
@@ -199,10 +199,10 @@ func waitAndUpdateDRPC(client client.Client, namespace, drpcName string, action 
 	})
 }
 
-func GetNamespace(d deployers.Deployer, w workloads.Workload) string {
+func GetNamespace(d types.Deployer, w types.Workload) string {
 	return deployers.GetNamespace(d, w)
 }
 
-func GetCombinedName(d deployers.Deployer, w workloads.Workload) string {
+func GetCombinedName(d types.Deployer, w types.Workload) string {
 	return deployers.GetCombinedName(d, w)
 }
