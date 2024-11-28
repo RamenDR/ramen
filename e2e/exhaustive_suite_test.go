@@ -10,6 +10,7 @@ import (
 
 	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/test"
+	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	"github.com/ramendr/ramen/e2e/workloads"
 )
@@ -25,11 +26,11 @@ const (
 )
 
 var (
-	Workloads      = []workloads.Workload{}
+	Workloads      = []types.Workload{}
 	subscription   = &deployers.Subscription{}
 	appset         = &deployers.ApplicationSet{}
 	discoveredApps = &deployers.DiscoveredApps{}
-	Deployers      = []deployers.Deployer{subscription, appset, discoveredApps}
+	Deployers      = []types.Deployer{subscription, appset, discoveredApps}
 )
 
 func generateSuffix(storageClassName string) string {
@@ -46,7 +47,7 @@ func generateSuffix(storageClassName string) string {
 	return suffix
 }
 
-func generateWorkloads([]workloads.Workload) {
+func generateWorkloads([]types.Workload) {
 	pvcSpecs := util.GetPVCSpecs()
 	for _, pvcSpec := range pvcSpecs {
 		// add storageclass name to deployment name

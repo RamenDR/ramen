@@ -7,8 +7,8 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
-	"github.com/ramendr/ramen/e2e/workloads"
 )
 
 type DiscoveredApps struct{}
@@ -17,7 +17,7 @@ func (d DiscoveredApps) GetName() string {
 	return "Disapp"
 }
 
-func (d DiscoveredApps) Deploy(w workloads.Workload) error {
+func (d DiscoveredApps) Deploy(w types.Workload) error {
 	name := GetCombinedName(d, w)
 	namespace := name
 	log := util.Ctx.Log.WithName(name)
@@ -65,7 +65,7 @@ func (d DiscoveredApps) Deploy(w workloads.Workload) error {
 	return nil
 }
 
-func (d DiscoveredApps) Undeploy(w workloads.Workload) error {
+func (d DiscoveredApps) Undeploy(w types.Workload) error {
 	name := GetCombinedName(d, w)
 	namespace := name // this namespace is in dr clusters
 	log := util.Ctx.Log.WithName(name)
@@ -108,6 +108,6 @@ func (d DiscoveredApps) Undeploy(w workloads.Workload) error {
 	return nil
 }
 
-func (d DiscoveredApps) IsWorkloadSupported(w workloads.Workload) bool {
+func (d DiscoveredApps) IsWorkloadSupported(w types.Workload) bool {
 	return w.GetName() != "Deploy-cephfs"
 }

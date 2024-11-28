@@ -7,11 +7,11 @@ import (
 	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/e2e/deployers"
+	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
-	"github.com/ramendr/ramen/e2e/workloads"
 )
 
-func EnableProtectionDiscoveredApps(w workloads.Workload, d deployers.Deployer) error {
+func EnableProtectionDiscoveredApps(w types.Workload, d types.Deployer) error {
 	name := GetCombinedName(d, w)
 	namespace := GetNamespace(d, w) // this namespace is in hub
 	namespaceInDrCluster := name    // this namespace is in dr clusters
@@ -56,7 +56,7 @@ func EnableProtectionDiscoveredApps(w workloads.Workload, d deployers.Deployer) 
 
 // remove DRPC
 // update placement annotation
-func DisableProtectionDiscoveredApps(w workloads.Workload, d deployers.Deployer) error {
+func DisableProtectionDiscoveredApps(w types.Workload, d types.Deployer) error {
 	name := GetCombinedName(d, w)
 	namespace := GetNamespace(d, w) // this namespace is in hub
 	log := util.Ctx.Log.WithName(name)
@@ -86,20 +86,20 @@ func DisableProtectionDiscoveredApps(w workloads.Workload, d deployers.Deployer)
 	return deployers.DeleteManagedClusterSetBinding(deployers.McsbName, namespace, log)
 }
 
-func FailoverDiscoveredApps(w workloads.Workload, d deployers.Deployer, log logr.Logger) error {
+func FailoverDiscoveredApps(w types.Workload, d types.Deployer, log logr.Logger) error {
 	log.Info("Failing over workload")
 
 	return failoverRelocateDiscoveredApps(w, d, ramen.ActionFailover, log)
 }
 
-func RelocateDiscoveredApps(w workloads.Workload, d deployers.Deployer, log logr.Logger) error {
+func RelocateDiscoveredApps(w types.Workload, d types.Deployer, log logr.Logger) error {
 	log.Info("Relocating workload")
 
 	return failoverRelocateDiscoveredApps(w, d, ramen.ActionRelocate, log)
 }
 
 // nolint:funlen,cyclop
-func failoverRelocateDiscoveredApps(w workloads.Workload, d deployers.Deployer, action ramen.DRAction,
+func failoverRelocateDiscoveredApps(w types.Workload, d types.Deployer, action ramen.DRAction,
 	log logr.Logger,
 ) error {
 	name := GetCombinedName(d, w)

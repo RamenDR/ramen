@@ -9,7 +9,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/dractions"
-	"github.com/ramendr/ramen/e2e/workloads"
+	"github.com/ramendr/ramen/e2e/types"
 )
 
 type Context struct {
@@ -19,7 +19,7 @@ type Context struct {
 	Log      logr.Logger
 }
 
-func NewContext(w workloads.Workload, d deployers.Deployer, log logr.Logger) Context {
+func NewContext(w types.Workload, d types.Deployer, log logr.Logger) Context {
 	name := deployers.GetCombinedName(d, w)
 
 	return Context{

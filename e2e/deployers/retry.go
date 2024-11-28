@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
-	"github.com/ramendr/ramen/e2e/workloads"
 	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -38,7 +38,7 @@ func waitSubscriptionPhase(namespace, name string, phase subscriptionv1.Subscrip
 	}
 }
 
-func WaitWorkloadHealth(client client.Client, namespace string, w workloads.Workload, log logr.Logger) error {
+func WaitWorkloadHealth(client client.Client, namespace string, w types.Workload, log logr.Logger) error {
 	startTime := time.Now()
 
 	for {
