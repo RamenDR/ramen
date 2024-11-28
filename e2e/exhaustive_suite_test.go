@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/ramendr/ramen/e2e/deployers"
-	"github.com/ramendr/ramen/e2e/testcontext"
+	"github.com/ramendr/ramen/e2e/test"
 	"github.com/ramendr/ramen/e2e/util"
 	"github.com/ramendr/ramen/e2e/workloads"
 )
@@ -87,14 +87,14 @@ func Exhaustive(t *testing.T) {
 
 			t.Run(deployers.GetCombinedName(d, w), func(t *testing.T) {
 				t.Parallel()
-				ctx := testcontext.TestContext{Workload: w, Deployer: d}
+				ctx := test.Context{Workload: w, Deployer: d}
 				runTestFlow(t, ctx)
 			})
 		}
 	}
 }
 
-func runTestFlow(t *testing.T, ctx testcontext.TestContext) {
+func runTestFlow(t *testing.T, ctx test.Context) {
 	t.Helper()
 
 	if !ctx.Deployer.IsWorkloadSupported(ctx.Workload) {
