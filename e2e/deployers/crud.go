@@ -386,15 +386,13 @@ func DeleteApplicationSet(a ApplicationSet, w types.Workload, log logr.Logger) e
 }
 
 // check if only the last appset is in the argocd namespace
-func isLastAppsetInArgocdNs(namespace string, log logr.Logger) (bool, error) {
+func isLastAppsetInArgocdNs(namespace string) (bool, error) {
 	appsetList := &argocdv1alpha1hack.ApplicationSetList{}
 
 	err := util.Ctx.Hub.CtrlClient.List(
 		context.Background(), appsetList, client.InNamespace(namespace))
 	if err != nil {
-		log.Info("Failed to get application sets")
-
-		return false, err
+		return false, fmt.Errorf("failed to list applicationsets: %w", err)
 	}
 
 	return len(appsetList.Items) == 1, nil
