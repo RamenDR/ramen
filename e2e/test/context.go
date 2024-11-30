@@ -5,10 +5,10 @@ package test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/go-logr/logr"
-	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/dractions"
 	"github.com/ramendr/ramen/e2e/types"
 )
@@ -21,7 +21,7 @@ type Context struct {
 }
 
 func NewContext(w types.Workload, d types.Deployer, log logr.Logger) Context {
-	name := deployers.GetCombinedName(d, w)
+	name := strings.ToLower(d.GetName() + "-" + w.GetName() + "-" + w.GetAppName())
 
 	return Context{
 		workload: w,
@@ -40,6 +40,14 @@ func (c *Context) Workload() types.Workload {
 }
 
 func (c *Context) Name() string {
+	return c.name
+}
+
+func (c *Context) Namespace() string {
+	if ns := c.deployer.GetNamespace(); ns != "" {
+		return ns
+	}
+
 	return c.name
 }
 
