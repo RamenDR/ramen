@@ -4,6 +4,7 @@
 package deployers
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 
@@ -49,9 +50,10 @@ func (d DiscoveredApps) Deploy(w types.Workload) error {
 	cmd := exec.Command("kubectl", "apply", "-k", tempDir, "-n", namespace,
 		"--context", drpolicy.Spec.DRClusters[0], "--timeout=5m")
 
-	// Run the command and capture the output
 	if out, err := cmd.Output(); err != nil {
-		log.Info(string(out))
+		if ee, ok := err.(*exec.ExitError); ok {
+			return fmt.Errorf("%w: stdout=%q stderr=%q", err, out, ee.Stderr)
+		}
 
 		return err
 	}
@@ -80,13 +82,13 @@ func (d DiscoveredApps) Undeploy(w types.Workload) error {
 	log.Info("Deleting discovered apps on " + drpolicy.Spec.DRClusters[0])
 
 	// delete app on both clusters
-	if err := DeleteDiscoveredApps(w, namespace, drpolicy.Spec.DRClusters[0], log); err != nil {
+	if err := DeleteDiscoveredApps(w, namespace, drpolicy.Spec.DRClusters[0]); err != nil {
 		return err
 	}
 
 	log.Info("Deletting discovered apps on " + drpolicy.Spec.DRClusters[1])
 
-	if err := DeleteDiscoveredApps(w, namespace, drpolicy.Spec.DRClusters[1], log); err != nil {
+	if err := DeleteDiscoveredApps(w, namespace, drpolicy.Spec.DRClusters[1]); err != nil {
 		return err
 	}
 
