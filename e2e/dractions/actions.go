@@ -36,8 +36,8 @@ func EnableProtection(ctx types.Context) error {
 
 	w := ctx.Workload()
 	name := ctx.Name()
+	namespace := ctx.Namespace()
 	log := ctx.Logger()
-	namespace := GetNamespace(d, w)
 
 	log.Info("Protecting workload")
 
@@ -103,8 +103,7 @@ func DisableProtection(ctx types.Context) error {
 	log.Info("Unprotecting workload")
 
 	name := ctx.Name()
-	w := ctx.Workload()
-	namespace := GetNamespace(d, w)
+	namespace := ctx.Namespace()
 	drpcName := name
 	client := util.Ctx.Hub.CtrlClient
 
@@ -148,10 +147,8 @@ func Relocate(ctx types.Context) error {
 }
 
 func failoverRelocate(ctx types.Context, action ramen.DRAction) error {
-	w := ctx.Workload()
-	d := ctx.Deployer()
 	name := ctx.Name()
-	namespace := GetNamespace(d, w)
+	namespace := ctx.Namespace()
 	drpcName := name
 	client := util.Ctx.Hub.CtrlClient
 
@@ -208,12 +205,4 @@ func waitAndUpdateDRPC(
 
 		return updateDRPC(client, drpc)
 	})
-}
-
-func GetNamespace(d types.Deployer, w types.Workload) string {
-	return deployers.GetNamespace(d, w)
-}
-
-func GetCombinedName(d types.Deployer, w types.Workload) string {
-	return deployers.GetCombinedName(d, w)
 }

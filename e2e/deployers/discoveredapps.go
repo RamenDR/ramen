@@ -18,6 +18,10 @@ func (d DiscoveredApps) GetName() string {
 	return "Disapp"
 }
 
+func (d DiscoveredApps) GetNamespace() string {
+	return util.RamenOpsNs
+}
+
 func (d DiscoveredApps) Deploy(ctx types.Context) error {
 	name := ctx.Name()
 	log := ctx.Logger()

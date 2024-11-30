@@ -12,8 +12,10 @@ import (
 type Deployer interface {
 	Deploy(Context) error
 	Undeploy(Context) error
-	IsWorkloadSupported(Workload) bool
 	GetName() string
+	// GetNamespace return the namespace for the ramen resources, or empty string if not using a special namespace.
+	GetNamespace() string
+	IsWorkloadSupported(Workload) bool
 }
 
 type Workload interface {
@@ -35,5 +37,6 @@ type Context interface {
 	Deployer() Deployer
 	Workload() Workload
 	Name() string
+	Namespace() string
 	Logger() logr.Logger
 }

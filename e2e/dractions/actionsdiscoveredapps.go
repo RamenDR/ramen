@@ -12,11 +12,10 @@ import (
 
 func EnableProtectionDiscoveredApps(ctx types.Context) error {
 	w := ctx.Workload()
-	d := ctx.Deployer()
 	name := ctx.Name()
 	log := ctx.Logger()
-	namespace := GetNamespace(d, w) // this namespace is in hub
-	namespaceInDrCluster := name    // this namespace is in dr clusters
+	namespace := ctx.Namespace() // this namespace is in hub
+	namespaceInDrCluster := name // this namespace is in dr clusters
 
 	log.Info("Protecting workload")
 
@@ -60,9 +59,7 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 func DisableProtectionDiscoveredApps(ctx types.Context) error {
 	name := ctx.Name()
 	log := ctx.Logger()
-	w := ctx.Workload()
-	d := ctx.Deployer()
-	namespace := GetNamespace(d, w) // this namespace is in hub
+	namespace := ctx.Namespace() // this namespace is in hub
 
 	log.Info("Unprotecting workload")
 
@@ -105,12 +102,10 @@ func RelocateDiscoveredApps(ctx types.Context) error {
 
 // nolint:funlen,cyclop
 func failoverRelocateDiscoveredApps(ctx types.Context, action ramen.DRAction) error {
-	w := ctx.Workload()
-	d := ctx.Deployer()
 	name := ctx.Name()
 	log := ctx.Logger()
-	namespace := GetNamespace(d, w) // this namespace is in hub
-	namespaceInDrCluster := name    // this namespace is in dr clusters
+	namespace := ctx.Namespace() // this namespace is in hub
+	namespaceInDrCluster := name // this namespace is in dr clusters
 
 	drpcName := name
 	client := util.Ctx.Hub.CtrlClient

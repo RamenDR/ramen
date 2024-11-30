@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
@@ -211,24 +210,6 @@ func DeleteSubscription(ctx types.Context, s Subscription) error {
 	}
 
 	return nil
-}
-
-func GetCombinedName(d types.Deployer, w types.Workload) string {
-	return strings.ToLower(d.GetName() + "-" + w.GetName() + "-" + w.GetAppName())
-}
-
-func GetNamespace(d types.Deployer, w types.Workload) string {
-	_, isAppSet := d.(*ApplicationSet)
-	if isAppSet {
-		// appset need be deployed in argocd ns
-		return util.ArgocdNamespace
-	}
-
-	if _, isDiscoveredApps := d.(*DiscoveredApps); isDiscoveredApps {
-		return util.RamenOpsNs
-	}
-
-	return GetCombinedName(d, w)
 }
 
 func getSubscription(client client.Client, namespace, name string) (*subscriptionv1.Subscription, error) {

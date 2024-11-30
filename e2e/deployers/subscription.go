@@ -18,6 +18,11 @@ func (s Subscription) GetName() string {
 	return "Subscr"
 }
 
+func (s Subscription) GetNamespace() string {
+	// No special namespaces.
+	return ""
+}
+
 func (s Subscription) Deploy(ctx types.Context) error {
 	// Generate a Placement for the Workload
 	// Use the global Channel
