@@ -18,10 +18,10 @@ func (d DiscoveredApps) GetName() string {
 	return "Disapp"
 }
 
-func (d DiscoveredApps) Deploy(w types.Workload) error {
-	name := GetCombinedName(d, w)
+func (d DiscoveredApps) Deploy(ctx types.Context) error {
+	name := ctx.Name()
+	log := ctx.Logger()
 	namespace := name
-	log := util.Ctx.Log.WithName(name)
 
 	log.Info("Deploying workload")
 
@@ -38,7 +38,7 @@ func (d DiscoveredApps) Deploy(w types.Workload) error {
 	// Clean up by removing the temporary directory when done
 	defer os.RemoveAll(tempDir)
 
-	if err = CreateKustomizationFile(w, tempDir); err != nil {
+	if err = CreateKustomizationFile(ctx, tempDir); err != nil {
 		return err
 	}
 
@@ -58,7 +58,7 @@ func (d DiscoveredApps) Deploy(w types.Workload) error {
 		return err
 	}
 
-	if err = WaitWorkloadHealth(util.Ctx.C1.CtrlClient, namespace, w, log); err != nil {
+	if err = WaitWorkloadHealth(ctx, util.Ctx.C1.CtrlClient, namespace); err != nil {
 		return err
 	}
 
@@ -67,10 +67,10 @@ func (d DiscoveredApps) Deploy(w types.Workload) error {
 	return nil
 }
 
-func (d DiscoveredApps) Undeploy(w types.Workload) error {
-	name := GetCombinedName(d, w)
+func (d DiscoveredApps) Undeploy(ctx types.Context) error {
+	name := ctx.Name()
+	log := ctx.Logger()
 	namespace := name // this namespace is in dr clusters
-	log := util.Ctx.Log.WithName(name)
 
 	log.Info("Undeploying workload")
 
@@ -82,13 +82,13 @@ func (d DiscoveredApps) Undeploy(w types.Workload) error {
 	log.Info("Deleting discovered apps on " + drpolicy.Spec.DRClusters[0])
 
 	// delete app on both clusters
-	if err := DeleteDiscoveredApps(w, namespace, drpolicy.Spec.DRClusters[0]); err != nil {
+	if err := DeleteDiscoveredApps(ctx, namespace, drpolicy.Spec.DRClusters[0]); err != nil {
 		return err
 	}
 
 	log.Info("Deletting discovered apps on " + drpolicy.Spec.DRClusters[1])
 
-	if err := DeleteDiscoveredApps(w, namespace, drpolicy.Spec.DRClusters[1]); err != nil {
+	if err := DeleteDiscoveredApps(ctx, namespace, drpolicy.Spec.DRClusters[1]); err != nil {
 		return err
 	}
 

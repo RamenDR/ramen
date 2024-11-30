@@ -6,10 +6,10 @@ package workloads
 import (
 	"context"
 
-	"github.com/go-logr/logr"
+	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	appsv1 "k8s.io/api/apps/v1"
-	"k8s.io/apimachinery/pkg/types"
+	k8stypes "k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -72,7 +72,9 @@ func (w Deployment) GetResources() error {
 }
 
 // Check the workload health deployed in a cluster namespace
-func (w Deployment) Health(client client.Client, namespace string, log logr.Logger) error {
+func (w Deployment) Health(ctx types.Context, client client.Client, namespace string) error {
+	log := ctx.Logger()
+
 	deploy, err := getDeployment(client, namespace, w.GetAppName())
 	if err != nil {
 		return err
@@ -89,7 +91,7 @@ func (w Deployment) Health(client client.Client, namespace string, log logr.Logg
 
 func getDeployment(client client.Client, namespace, name string) (*appsv1.Deployment, error) {
 	deploy := &appsv1.Deployment{}
-	key := types.NamespacedName{Name: name, Namespace: namespace}
+	key := k8stypes.NamespacedName{Name: name, Namespace: namespace}
 
 	err := client.Get(context.Background(), key, deploy)
 	if err != nil {
