@@ -60,7 +60,7 @@ func (c *Context) Validate() error {
 func (c *Context) Deploy(t *testing.T) {
 	t.Helper()
 
-	if err := c.deployer.Deploy(c.workload); err != nil {
+	if err := c.deployer.Deploy(c); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -68,7 +68,7 @@ func (c *Context) Deploy(t *testing.T) {
 func (c *Context) Undeploy(t *testing.T) {
 	t.Helper()
 
-	if err := c.deployer.Undeploy(c.workload); err != nil {
+	if err := c.deployer.Undeploy(c); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -76,7 +76,7 @@ func (c *Context) Undeploy(t *testing.T) {
 func (c *Context) Enable(t *testing.T) {
 	t.Helper()
 
-	if err := dractions.EnableProtection(c.workload, c.deployer); err != nil {
+	if err := dractions.EnableProtection(c); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -84,7 +84,7 @@ func (c *Context) Enable(t *testing.T) {
 func (c *Context) Disable(t *testing.T) {
 	t.Helper()
 
-	if err := dractions.DisableProtection(c.workload, c.deployer); err != nil {
+	if err := dractions.DisableProtection(c); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -92,7 +92,7 @@ func (c *Context) Disable(t *testing.T) {
 func (c *Context) Failover(t *testing.T) {
 	t.Helper()
 
-	if err := dractions.Failover(c.workload, c.deployer); err != nil {
+	if err := dractions.Failover(c); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -100,7 +100,7 @@ func (c *Context) Failover(t *testing.T) {
 func (c *Context) Relocate(t *testing.T) {
 	t.Helper()
 
-	if err := dractions.Relocate(c.workload, c.deployer); err != nil {
+	if err := dractions.Relocate(c); err != nil {
 		t.Fatal(err)
 	}
 }

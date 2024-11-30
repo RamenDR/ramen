@@ -4,18 +4,19 @@
 package dractions
 
 import (
-	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 )
 
-func EnableProtectionDiscoveredApps(w types.Workload, d types.Deployer) error {
-	name := GetCombinedName(d, w)
+func EnableProtectionDiscoveredApps(ctx types.Context) error {
+	w := ctx.Workload()
+	d := ctx.Deployer()
+	name := ctx.Name()
+	log := ctx.Logger()
 	namespace := GetNamespace(d, w) // this namespace is in hub
 	namespaceInDrCluster := name    // this namespace is in dr clusters
-	log := util.Ctx.Log.WithName(name)
 
 	log.Info("Protecting workload")
 
@@ -30,7 +31,7 @@ func EnableProtectionDiscoveredApps(w types.Workload, d types.Deployer) error {
 	}
 
 	// create placement
-	if err := createPlacementManagedByRamen(placementName, namespace, log); err != nil {
+	if err := createPlacementManagedByRamen(ctx, placementName, namespace); err != nil {
 		return err
 	}
 
@@ -51,15 +52,17 @@ func EnableProtectionDiscoveredApps(w types.Workload, d types.Deployer) error {
 	}
 
 	// wait for drpc ready
-	return waitDRPCReady(util.Ctx.Hub.CtrlClient, namespace, drpcName, log)
+	return waitDRPCReady(ctx, util.Ctx.Hub.CtrlClient, namespace, drpcName)
 }
 
 // remove DRPC
 // update placement annotation
-func DisableProtectionDiscoveredApps(w types.Workload, d types.Deployer) error {
-	name := GetCombinedName(d, w)
+func DisableProtectionDiscoveredApps(ctx types.Context) error {
+	name := ctx.Name()
+	log := ctx.Logger()
+	w := ctx.Workload()
+	d := ctx.Deployer()
 	namespace := GetNamespace(d, w) // this namespace is in hub
-	log := util.Ctx.Log.WithName(name)
 
 	log.Info("Unprotecting workload")
 
@@ -74,35 +77,38 @@ func DisableProtectionDiscoveredApps(w types.Workload, d types.Deployer) error {
 		return err
 	}
 
-	if err := waitDRPCDeleted(client, namespace, drpcName, log); err != nil {
+	if err := waitDRPCDeleted(ctx, client, namespace, drpcName); err != nil {
 		return err
 	}
 
 	// delete placement
-	if err := deployers.DeletePlacement(placementName, namespace, log); err != nil {
+	if err := deployers.DeletePlacement(ctx, placementName, namespace); err != nil {
 		return err
 	}
 
-	return deployers.DeleteManagedClusterSetBinding(deployers.McsbName, namespace, log)
+	return deployers.DeleteManagedClusterSetBinding(ctx, deployers.McsbName, namespace)
 }
 
-func FailoverDiscoveredApps(w types.Workload, d types.Deployer, log logr.Logger) error {
+func FailoverDiscoveredApps(ctx types.Context) error {
+	log := ctx.Logger()
 	log.Info("Failing over workload")
 
-	return failoverRelocateDiscoveredApps(w, d, ramen.ActionFailover, log)
+	return failoverRelocateDiscoveredApps(ctx, ramen.ActionFailover)
 }
 
-func RelocateDiscoveredApps(w types.Workload, d types.Deployer, log logr.Logger) error {
+func RelocateDiscoveredApps(ctx types.Context) error {
+	log := ctx.Logger()
 	log.Info("Relocating workload")
 
-	return failoverRelocateDiscoveredApps(w, d, ramen.ActionRelocate, log)
+	return failoverRelocateDiscoveredApps(ctx, ramen.ActionRelocate)
 }
 
 // nolint:funlen,cyclop
-func failoverRelocateDiscoveredApps(w types.Workload, d types.Deployer, action ramen.DRAction,
-	log logr.Logger,
-) error {
-	name := GetCombinedName(d, w)
+func failoverRelocateDiscoveredApps(ctx types.Context, action ramen.DRAction) error {
+	w := ctx.Workload()
+	d := ctx.Deployer()
+	name := ctx.Name()
+	log := ctx.Logger()
 	namespace := GetNamespace(d, w) // this namespace is in hub
 	namespaceInDrCluster := name    // this namespace is in dr clusters
 
@@ -126,30 +132,30 @@ func failoverRelocateDiscoveredApps(w types.Workload, d types.Deployer, action r
 		return err
 	}
 
-	if err := waitAndUpdateDRPC(client, namespace, drpcName, action, log); err != nil {
+	if err := waitAndUpdateDRPC(ctx, client, namespace, drpcName, action); err != nil {
 		return err
 	}
 
-	if err := waitDRPCProgression(client, namespace, name, ramen.ProgressionWaitOnUserToCleanUp, log); err != nil {
+	if err := waitDRPCProgression(ctx, client, namespace, name, ramen.ProgressionWaitOnUserToCleanUp); err != nil {
 		return err
 	}
 
 	// delete pvc and deployment from dr cluster
 	log.Info("Cleaning up discovered apps from " + currentCluster)
 
-	if err = deployers.DeleteDiscoveredApps(w, namespaceInDrCluster, currentCluster); err != nil {
+	if err = deployers.DeleteDiscoveredApps(ctx, namespaceInDrCluster, currentCluster); err != nil {
 		return err
 	}
 
-	if err = waitDRPCProgression(client, namespace, name, ramen.ProgressionCompleted, log); err != nil {
+	if err = waitDRPCProgression(ctx, client, namespace, name, ramen.ProgressionCompleted); err != nil {
 		return err
 	}
 
-	if err = waitDRPCReady(client, namespace, name, log); err != nil {
+	if err = waitDRPCReady(ctx, client, namespace, name); err != nil {
 		return err
 	}
 
 	drClient := getDRClusterClient(targetCluster, drpolicy)
 
-	return deployers.WaitWorkloadHealth(drClient, namespaceInDrCluster, w, log)
+	return deployers.WaitWorkloadHealth(ctx, drClient, namespaceInDrCluster)
 }

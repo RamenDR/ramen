@@ -18,16 +18,16 @@ func (s Subscription) GetName() string {
 	return "Subscr"
 }
 
-func (s Subscription) Deploy(w types.Workload) error {
+func (s Subscription) Deploy(ctx types.Context) error {
 	// Generate a Placement for the Workload
 	// Use the global Channel
 	// Generate a Binding for the namespace (does this need clusters?)
 	// Generate a Subscription for the Workload
 	// - Kustomize the Workload; call Workload.Kustomize(StorageType)
 	// Address namespace/label/suffix as needed for various resources
-	name := GetCombinedName(s, w)
+	name := ctx.Name()
+	log := ctx.Logger()
 	namespace := name
-	log := util.Ctx.Log.WithName(name)
 
 	log.Info("Deploying workload")
 
@@ -42,38 +42,38 @@ func (s Subscription) Deploy(w types.Workload) error {
 		return err
 	}
 
-	err = CreatePlacement(name, namespace, log)
+	err = CreatePlacement(ctx, name, namespace)
 	if err != nil {
 		return err
 	}
 
-	err = CreateSubscription(s, w, log)
+	err = CreateSubscription(ctx, s)
 	if err != nil {
 		return err
 	}
 
-	return waitSubscriptionPhase(namespace, name, subscriptionv1.SubscriptionPropagated, log)
+	return waitSubscriptionPhase(ctx, namespace, name, subscriptionv1.SubscriptionPropagated)
 }
 
 // Delete Subscription, Placement, Binding
-func (s Subscription) Undeploy(w types.Workload) error {
-	name := GetCombinedName(s, w)
+func (s Subscription) Undeploy(ctx types.Context) error {
+	name := ctx.Name()
+	log := ctx.Logger()
 	namespace := name
-	log := util.Ctx.Log.WithName(name)
 
 	log.Info("Undeploying workload")
 
-	err := DeleteSubscription(s, w, log)
+	err := DeleteSubscription(ctx, s)
 	if err != nil {
 		return err
 	}
 
-	err = DeletePlacement(name, namespace, log)
+	err = DeletePlacement(ctx, name, namespace)
 	if err != nil {
 		return err
 	}
 
-	err = DeleteManagedClusterSetBinding(McsbName, namespace, log)
+	err = DeleteManagedClusterSetBinding(ctx, McsbName, namespace)
 	if err != nil {
 		return err
 	}

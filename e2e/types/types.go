@@ -10,8 +10,8 @@ import (
 
 // Deployer interface has methods to deploy a workload to a cluster
 type Deployer interface {
-	Deploy(Workload) error
-	Undeploy(Workload) error
+	Deploy(Context) error
+	Undeploy(Context) error
 	IsWorkloadSupported(Workload) bool
 	GetName() string
 }
@@ -25,8 +25,8 @@ type Workload interface {
 	GetPath() string
 	GetRevision() string
 
-	// TODO: client and log with context, or use internal workload state.
-	Health(client client.Client, namespace string, log logr.Logger) error
+	// TODO: replace client with cluster.
+	Health(ctx Context, client client.Client, namespace string) error
 }
 
 // Context combines workload, deployer and logger used in the content of one test.

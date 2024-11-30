@@ -6,21 +6,21 @@ package dractions
 import (
 	"context"
 
-	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/e2e/deployers"
+	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
+	k8stypes "k8s.io/apimachinery/pkg/types"
 	clusterv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func getPlacement(client client.Client, namespace, name string) (*clusterv1beta1.Placement, error) {
 	placement := &clusterv1beta1.Placement{}
-	key := types.NamespacedName{Namespace: namespace, Name: name}
+	key := k8stypes.NamespacedName{Namespace: namespace, Name: name}
 
 	err := client.Get(context.Background(), key, placement)
 	if err != nil {
@@ -36,7 +36,7 @@ func updatePlacement(client client.Client, placement *clusterv1beta1.Placement) 
 
 func getDRPC(client client.Client, namespace, name string) (*ramen.DRPlacementControl, error) {
 	drpc := &ramen.DRPlacementControl{}
-	key := types.NamespacedName{Namespace: namespace, Name: name}
+	key := k8stypes.NamespacedName{Namespace: namespace, Name: name}
 
 	err := client.Get(context.Background(), key, drpc)
 	if err != nil {
@@ -64,7 +64,7 @@ func updateDRPC(client client.Client, drpc *ramen.DRPlacementControl) error {
 
 func deleteDRPC(client client.Client, namespace, name string) error {
 	objDrpc := &ramen.DRPlacementControl{}
-	key := types.NamespacedName{Namespace: namespace, Name: name}
+	key := k8stypes.NamespacedName{Namespace: namespace, Name: name}
 
 	err := client.Get(context.Background(), key, objDrpc)
 	if err != nil {
@@ -107,7 +107,8 @@ func generateDRPC(name, namespace, clusterName, drPolicyName, placementName, app
 	return drpc
 }
 
-func createPlacementManagedByRamen(name, namespace string, log logr.Logger) error {
+func createPlacementManagedByRamen(ctx types.Context, name, namespace string) error {
+	log := ctx.Logger()
 	labels := make(map[string]string)
 	labels[deployers.AppLabelKey] = name
 	clusterSet := []string{"default"}
