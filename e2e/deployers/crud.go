@@ -400,7 +400,7 @@ func isLastAppsetInArgocdNs(namespace string, log logr.Logger) (bool, error) {
 	return len(appsetList.Items) == 1, nil
 }
 
-func DeleteDiscoveredApps(w types.Workload, namespace, cluster string, log logr.Logger) error {
+func DeleteDiscoveredApps(w types.Workload, namespace, cluster string) error {
 	tempDir, err := os.MkdirTemp("", "ramen-")
 	if err != nil {
 		return err
@@ -416,9 +416,10 @@ func DeleteDiscoveredApps(w types.Workload, namespace, cluster string, log logr.
 	cmd := exec.Command("kubectl", "delete", "-k", tempDir, "-n", namespace,
 		"--context", cluster, "--timeout=5m", "--ignore-not-found=true")
 
-	// Run the command and capture the output
 	if out, err := cmd.Output(); err != nil {
-		log.Info(string(out))
+		if ee, ok := err.(*exec.ExitError); ok {
+			return fmt.Errorf("%w: stdout=%q stderr=%q", err, out, ee.Stderr)
+		}
 
 		return err
 	}

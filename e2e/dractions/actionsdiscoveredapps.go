@@ -137,7 +137,7 @@ func failoverRelocateDiscoveredApps(w types.Workload, d types.Deployer, action r
 	// delete pvc and deployment from dr cluster
 	log.Info("Cleaning up discovered apps from " + currentCluster)
 
-	if err = deployers.DeleteDiscoveredApps(w, namespaceInDrCluster, currentCluster, log); err != nil {
+	if err = deployers.DeleteDiscoveredApps(w, namespaceInDrCluster, currentCluster); err != nil {
 		return err
 	}
 
