@@ -142,7 +142,11 @@ func failoverRelocateDiscoveredApps(ctx types.Context, action ramen.DRAction, st
 		return err
 	}
 
-	if err = waitDRPC(ctx, client, namespace, name, state); err != nil {
+	if err := waitDRPCPhase(ctx, client, namespace, name, state); err != nil {
+		return err
+	}
+
+	if err := waitDRPCReady(ctx, client, namespace, name); err != nil {
 		return err
 	}
 
