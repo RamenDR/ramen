@@ -8,7 +8,6 @@ import (
 	"time"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	"k8s.io/client-go/util/retry"
@@ -30,7 +29,7 @@ const (
 // nolint:funlen
 func EnableProtection(ctx types.Context) error {
 	d := ctx.Deployer()
-	if _, isDiscoveredApps := d.(*deployers.DiscoveredApps); isDiscoveredApps {
+	if d.IsDiscovered() {
 		return EnableProtectionDiscoveredApps(ctx)
 	}
 
@@ -94,12 +93,11 @@ func EnableProtection(ctx types.Context) error {
 // update placement annotation
 func DisableProtection(ctx types.Context) error {
 	d := ctx.Deployer()
-	log := ctx.Logger()
-
-	if _, isDiscoveredApps := d.(*deployers.DiscoveredApps); isDiscoveredApps {
+	if d.IsDiscovered() {
 		return DisableProtectionDiscoveredApps(ctx)
 	}
 
+	log := ctx.Logger()
 	log.Info("Unprotecting workload")
 
 	name := ctx.Name()
@@ -118,12 +116,11 @@ func DisableProtection(ctx types.Context) error {
 
 func Failover(ctx types.Context) error {
 	d := ctx.Deployer()
-	log := ctx.Logger()
-
-	if _, isDiscoveredApps := d.(*deployers.DiscoveredApps); isDiscoveredApps {
+	if d.IsDiscovered() {
 		return FailoverDiscoveredApps(ctx)
 	}
 
+	log := ctx.Logger()
 	log.Info("Failing over workload")
 
 	return failoverRelocate(ctx, ramen.ActionFailover)
@@ -135,12 +132,11 @@ func Failover(ctx types.Context) error {
 // Update DRPC
 func Relocate(ctx types.Context) error {
 	d := ctx.Deployer()
-	log := ctx.Logger()
-
-	if _, isDiscoveredApps := d.(*deployers.DiscoveredApps); isDiscoveredApps {
+	if d.IsDiscovered() {
 		return RelocateDiscoveredApps(ctx)
 	}
 
+	log := ctx.Logger()
 	log.Info("Relocating workload")
 
 	return failoverRelocate(ctx, ramen.ActionRelocate)
