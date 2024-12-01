@@ -12,17 +12,17 @@ import (
 	"github.com/ramendr/ramen/e2e/util"
 )
 
-type DiscoveredApps struct{}
+type DiscoveredApp struct{}
 
-func (d DiscoveredApps) GetName() string {
+func (d DiscoveredApp) GetName() string {
 	return "Disapp"
 }
 
-func (d DiscoveredApps) GetNamespace() string {
-	return util.RamenOpsNs
+func (d DiscoveredApp) GetNamespace() string {
+	return util.RamenOpsNamespace
 }
 
-func (d DiscoveredApps) Deploy(ctx types.Context) error {
+func (d DiscoveredApp) Deploy(ctx types.Context) error {
 	name := ctx.Name()
 	log := ctx.Logger()
 	namespace := name
@@ -71,7 +71,7 @@ func (d DiscoveredApps) Deploy(ctx types.Context) error {
 	return nil
 }
 
-func (d DiscoveredApps) Undeploy(ctx types.Context) error {
+func (d DiscoveredApp) Undeploy(ctx types.Context) error {
 	name := ctx.Name()
 	log := ctx.Logger()
 	namespace := name // this namespace is in dr clusters
@@ -114,10 +114,10 @@ func (d DiscoveredApps) Undeploy(ctx types.Context) error {
 	return nil
 }
 
-func (d DiscoveredApps) IsWorkloadSupported(w types.Workload) bool {
+func (d DiscoveredApp) IsWorkloadSupported(w types.Workload) bool {
 	return w.GetName() != "Deploy-cephfs"
 }
 
-func (d DiscoveredApps) IsDiscovered() bool {
+func (d DiscoveredApp) IsDiscovered() bool {
 	return true
 }

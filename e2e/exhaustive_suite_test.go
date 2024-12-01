@@ -29,7 +29,7 @@ var (
 	Workloads      = []types.Workload{}
 	subscription   = &deployers.Subscription{}
 	appset         = &deployers.ApplicationSet{}
-	discoveredApps = &deployers.DiscoveredApps{}
+	discoveredApps = &deployers.DiscoveredApp{}
 	Deployers      = []types.Deployer{subscription, appset, discoveredApps}
 )
 
