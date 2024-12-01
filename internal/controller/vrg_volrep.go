@@ -1327,7 +1327,7 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 		}
 
 		// if peerClasses does not exist, replicationClasses would not have SID in
-		// older ramen versions, this check is neeed because we need to handle upgrade
+		// older ramen versions, this check is needed because we need to handle upgrade
 		// scenario where SID is not present in replicatioClass.
 
 		// if peerClass exist, continue to check if SID matches, or skip the check and proceed
@@ -1553,7 +1553,7 @@ func (v *VRGInstance) validateVRValidatedStatus(
 
 // validateVRCompletedStatus validates if the VolumeReplication resource Completed condition is met and update
 // the PVC DataReady and Protected conditions.
-// Returns true if the condtion is true, false if the condition is missing, stale, ubnknown, of false.
+// Returns true if the condition is true, false if the condition is missing, stale, ubnknown, of false.
 func (v *VRGInstance) validateVRCompletedStatus(pvc *corev1.PersistentVolumeClaim, volRep *volrep.VolumeReplication,
 	state ramendrv1alpha1.ReplicationState,
 ) bool {
@@ -2405,7 +2405,7 @@ func (v *VRGInstance) processPVSecrets(pv *corev1.PersistentVolume) error {
 		pv.Spec.CSI.ControllerExpandSecretRef = secFromSC
 	}
 
-	// the value for provisionerSecretName and provisionerDeletionSecretName are allways same. so we check
+	// the value for provisionerSecretName and provisionerDeletionSecretName are always same. so we check
 	// if provisionerSecretName name exists in storageClass and if exists we populate PV Annotation with
 	// provisionerDeletionSecretName with the values from  provisionerSecretName and its namespace values.
 	secFromSC, exists = secretsFromSC(sc.Parameters, provisionerSecretName, provisionerSecretNamespace)
