@@ -5,7 +5,6 @@ package dractions
 
 import (
 	"strings"
-	"time"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/e2e/deployers"
@@ -17,8 +16,6 @@ import (
 
 const (
 	OcmSchedulingDisable = "cluster.open-cluster-management.io/experimental-scheduling-disable"
-
-	FiveSecondsDuration = 5 * time.Second
 )
 
 // If AppSet/Subscription, find Placement
