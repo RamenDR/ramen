@@ -9,26 +9,26 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-logr/logr"
 	"github.com/ramendr/ramen/e2e/dractions"
 	"github.com/ramendr/ramen/e2e/types"
+	"go.uber.org/zap"
 )
 
 type Context struct {
 	workload types.Workload
 	deployer types.Deployer
 	name     string
-	logger   logr.Logger
+	logger   *zap.SugaredLogger
 }
 
-func NewContext(w types.Workload, d types.Deployer, log logr.Logger) Context {
+func NewContext(w types.Workload, d types.Deployer, log *zap.SugaredLogger) Context {
 	name := strings.ToLower(d.GetName() + "-" + w.GetName() + "-" + w.GetAppName())
 
 	return Context{
 		workload: w,
 		deployer: d,
 		name:     name,
-		logger:   log.WithName(name),
+		logger:   log.Named(name),
 	}
 }
 
@@ -52,7 +52,7 @@ func (c *Context) Namespace() string {
 	return c.name
 }
 
-func (c *Context) Logger() logr.Logger {
+func (c *Context) Logger() *zap.SugaredLogger {
 	return c.logger
 }
 

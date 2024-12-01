@@ -83,27 +83,27 @@ func (d DiscoveredApps) Undeploy(ctx types.Context) error {
 		return err
 	}
 
-	log.Info("Deleting discovered apps on " + drpolicy.Spec.DRClusters[0])
+	log.Infof("Deleting discovered apps on cluster %q", drpolicy.Spec.DRClusters[0])
 
 	// delete app on both clusters
 	if err := DeleteDiscoveredApps(ctx, namespace, drpolicy.Spec.DRClusters[0]); err != nil {
 		return err
 	}
 
-	log.Info("Deletting discovered apps on " + drpolicy.Spec.DRClusters[1])
+	log.Infof("Deletting discovered apps on cluster %q", drpolicy.Spec.DRClusters[1])
 
 	if err := DeleteDiscoveredApps(ctx, namespace, drpolicy.Spec.DRClusters[1]); err != nil {
 		return err
 	}
 
-	log.Info("Deleting namespace " + namespace + " on " + drpolicy.Spec.DRClusters[0])
+	log.Infof("Deleting namespace %q on cluster %q", namespace, drpolicy.Spec.DRClusters[0])
 
 	// delete namespace on both clusters
 	if err := util.DeleteNamespace(util.Ctx.C1.CtrlClient, namespace, log); err != nil {
 		return err
 	}
 
-	log.Info("Deleting namespace " + namespace + " on " + drpolicy.Spec.DRClusters[1])
+	log.Infof("Deleting namespace %q on cluster %q", namespace, drpolicy.Spec.DRClusters[1])
 
 	if err := util.DeleteNamespace(util.Ctx.C2.CtrlClient, namespace, log); err != nil {
 		return err

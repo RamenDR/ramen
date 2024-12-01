@@ -25,7 +25,7 @@ func waitSubscriptionPhase(ctx types.Context, namespace, name string, phase subs
 
 		currentPhase := sub.Status.Phase
 		if currentPhase == phase {
-			log.Info(fmt.Sprintf("Subscription phase is %s", phase))
+			log.Infof("Subscription phase is %s", phase)
 
 			return nil
 		}

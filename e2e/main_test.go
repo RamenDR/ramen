@@ -10,9 +10,7 @@ import (
 
 	"github.com/ramendr/ramen/e2e/test"
 	"github.com/ramendr/ramen/e2e/util"
-	uberzap "go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -24,23 +22,20 @@ func TestMain(m *testing.M) {
 
 	flag.Parse()
 
-	log := zap.New(zap.UseFlagOptions(&zap.Options{
-		Development: true,
-		ZapOpts: []uberzap.Option{
-			uberzap.AddCaller(),
-		},
-		TimeEncoder: zapcore.ISO8601TimeEncoder,
-	}))
-
-	util.Ctx, err = util.NewContext(log, util.ConfigFile)
+	logger, err := zap.NewDevelopment()
 	if err != nil {
-		log.Error(err, "unable to create new testing context")
-
 		panic(err)
 	}
 
-	log.Info("Global setting", "Timeout", util.Timeout)
-	log.Info("Global setting", "Retry Interval", util.RetryInterval)
+	log := logger.Sugar()
+
+	util.Ctx, err = util.NewContext(log, util.ConfigFile)
+	if err != nil {
+		log.Fatalf("Failed to create testing context: %s", err)
+	}
+
+	log.Infof("Using Timeout: %v", util.Timeout)
+	log.Infof("Using RetryInterval: %v", util.RetryInterval)
 
 	os.Exit(m.Run())
 }

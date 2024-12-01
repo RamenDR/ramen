@@ -136,7 +136,7 @@ func failoverRelocateDiscoveredApps(ctx types.Context, action ramen.DRAction) er
 	}
 
 	// delete pvc and deployment from dr cluster
-	log.Info("Cleaning up discovered apps from " + currentCluster)
+	log.Infof("Cleaning up discovered apps from cluster %q", currentCluster)
 
 	if err = deployers.DeleteDiscoveredApps(ctx, namespaceInDrCluster, currentCluster); err != nil {
 		return err
