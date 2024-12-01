@@ -74,7 +74,7 @@ func DeleteManagedClusterSetBinding(ctx types.Context, name, namespace string) e
 			return err
 		}
 
-		log.Info("ManagedClusterSetBinding " + name + " not found")
+		log.Infof("ManagedClusterSetBinding %q not found", name)
 	}
 
 	return nil
@@ -243,7 +243,7 @@ func CreatePlacementDecisionConfigMap(ctx types.Context, cmName string, cmNamesp
 			return fmt.Errorf("could not create configMap %q", cmName)
 		}
 
-		log.Info("ConfigMap " + cmName + " already Exists")
+		log.Infof("ConfigMap %q already Exists", cmName)
 	}
 
 	return nil
@@ -263,7 +263,7 @@ func DeleteConfigMap(ctx types.Context, cmName string, cmNamespace string) error
 			return fmt.Errorf("could not delete configMap %q", cmName)
 		}
 
-		log.Info("ConfigMap " + cmName + " not found")
+		log.Infof("ConfigMap %q not found", cmName)
 	}
 
 	return nil

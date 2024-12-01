@@ -114,7 +114,7 @@ func waitDRPCPhase(ctx types.Context, client client.Client, namespace, name stri
 
 		currentPhase := drpc.Status.Phase
 		if currentPhase == phase {
-			log.Info(fmt.Sprintf("drpc phase is %s", phase))
+			log.Infof("drpc phase is %q", phase)
 
 			return nil
 		}
@@ -184,7 +184,7 @@ func waitDRPCDeleted(ctx types.Context, client client.Client, namespace string, 
 				return nil
 			}
 
-			log.Info(fmt.Sprintf("failed to get drpc: %v", err))
+			log.Infof("Failed to get drpc: %s", err)
 		}
 
 		if time.Since(startTime) > util.Timeout {
@@ -213,7 +213,7 @@ func waitDRPCProgression(
 
 		currentProgression := drpc.Status.Progression
 		if currentProgression == progression {
-			log.Info(fmt.Sprintf("drpc progression is %s", progression))
+			log.Infof("drpc progression is %q", progression)
 
 			return nil
 		}

@@ -4,21 +4,20 @@
 package test
 
 import (
-	"fmt"
 	"testing"
 
-	"github.com/go-logr/logr"
+	"go.uber.org/zap"
 )
 
 // T extends testing.T to use a custom logger.
 type T struct {
 	*testing.T
-	log logr.Logger
+	log *zap.SugaredLogger
 }
 
 // WithLog returns a t wrapped with a specified log.
 // nolint: thelper
-func WithLog(t *testing.T, log logr.Logger) *T {
+func WithLog(t *testing.T, log *zap.SugaredLogger) *T {
 	return &T{T: t, log: log}
 }
 
@@ -29,30 +28,30 @@ func (t *T) Log(msg string) {
 
 // Log writes a formatted message to the log.
 func (t *T) Logf(format string, args ...any) {
-	t.log.Info(fmt.Sprintf(format, args...))
+	t.log.Infof(format, args...)
 }
 
 // Error writes an error message to the log and mark the test as failed.
 func (t *T) Error(msg string) {
-	t.log.Error(nil, msg)
+	t.log.Error(msg)
 	t.T.Fail()
 }
 
 // Errorf writes a formatted error message to the log and markd the test as failed.
 func (t *T) Errorf(format string, args ...any) {
-	t.log.Error(nil, fmt.Sprintf(format, args...))
+	t.log.Errorf(format, args...)
 	t.T.Fail()
 }
 
 // Fatal writes an error message to the log and fail the text immediately.
 func (t *T) Fatal(msg string) {
-	t.log.Error(nil, msg)
+	t.log.Error(msg)
 	t.T.FailNow()
 }
 
 // Fatalf writes a formatted error message to the log and fail the text immediately.
 func (t *T) Fatalf(format string, args ...any) {
-	t.log.Error(nil, fmt.Sprintf(format, args...))
+	t.log.Errorf(format, args...)
 	t.T.FailNow()
 }
 
@@ -64,6 +63,6 @@ func (t *T) Skip(msg string) {
 
 // Skipf is equivalent to Logf followed by SkipNow.
 func (t *T) Skipf(format string, args ...any) {
-	t.log.Info(fmt.Sprintf(format, args...))
+	t.log.Infof(format, args...)
 	t.T.SkipNow()
 }

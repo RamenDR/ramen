@@ -4,7 +4,7 @@
 package types
 
 import (
-	"github.com/go-logr/logr"
+	"go.uber.org/zap"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -38,5 +38,5 @@ type Context interface {
 	Workload() Workload
 	Name() string
 	Namespace() string
-	Logger() logr.Logger
+	Logger() *zap.SugaredLogger
 }

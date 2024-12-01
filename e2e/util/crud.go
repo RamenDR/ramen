@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"time"
 
+	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,7 +38,7 @@ func CreateNamespace(client client.Client, namespace string) error {
 	return nil
 }
 
-func DeleteNamespace(client client.Client, namespace string, log logr.Logger) error {
+func DeleteNamespace(client client.Client, namespace string, log *zap.SugaredLogger) error {
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: namespace,
@@ -51,12 +51,12 @@ func DeleteNamespace(client client.Client, namespace string, log logr.Logger) er
 			return err
 		}
 
-		log.Info("Namespace " + namespace + " not found")
+		log.Infof("Namespace %q not found", namespace)
 
 		return nil
 	}
 
-	log.Info("Waiting until namespace " + namespace + " is deleted")
+	log.Infof("Waiting until namespace %q is deleted", namespace)
 
 	startTime := time.Now()
 	key := types.NamespacedName{Name: namespace}
@@ -67,7 +67,7 @@ func DeleteNamespace(client client.Client, namespace string, log logr.Logger) er
 				return err
 			}
 
-			log.Info("Namespace " + namespace + " deleted")
+			log.Infof("Namespace %q deleted", namespace)
 
 			return nil
 		}
@@ -98,9 +98,9 @@ func createChannel() error {
 			return err
 		}
 
-		Ctx.Log.Info("Channel " + GetChannelName() + " already exists")
+		Ctx.Log.Infof("Channel %q already exists", GetChannelName())
 	} else {
-		Ctx.Log.Info("Created channel " + GetChannelName())
+		Ctx.Log.Infof("Created channel %q", GetChannelName())
 	}
 
 	return nil
@@ -120,9 +120,9 @@ func deleteChannel() error {
 			return err
 		}
 
-		Ctx.Log.Info("Channel " + GetChannelName() + " not found")
+		Ctx.Log.Infof("Channel %q not found", GetChannelName())
 	} else {
-		Ctx.Log.Info("Channel " + GetChannelName() + " is deleted")
+		Ctx.Log.Infof("Channel %q is deleted", GetChannelName())
 	}
 
 	return nil

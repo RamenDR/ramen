@@ -52,7 +52,7 @@ func EnableProtection(ctx types.Context) error {
 	}
 
 	clusterName := placementDecision.Status.Decisions[0].ClusterName
-	log.Info("Workload running on " + clusterName)
+	log.Infof("Workload running on cluster %q", clusterName)
 
 	log.Info("Annotating placement")
 
