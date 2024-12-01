@@ -90,18 +90,18 @@ func FailoverDiscoveredApps(ctx types.Context) error {
 	log := ctx.Logger()
 	log.Info("Failing over workload")
 
-	return failoverRelocateDiscoveredApps(ctx, ramen.ActionFailover)
+	return failoverRelocateDiscoveredApps(ctx, ramen.ActionFailover, ramen.FailedOver)
 }
 
 func RelocateDiscoveredApps(ctx types.Context) error {
 	log := ctx.Logger()
 	log.Info("Relocating workload")
 
-	return failoverRelocateDiscoveredApps(ctx, ramen.ActionRelocate)
+	return failoverRelocateDiscoveredApps(ctx, ramen.ActionRelocate, ramen.Relocated)
 }
 
 // nolint:funlen,cyclop
-func failoverRelocateDiscoveredApps(ctx types.Context, action ramen.DRAction) error {
+func failoverRelocateDiscoveredApps(ctx types.Context, action ramen.DRAction, state ramen.DRState) error {
 	name := ctx.Name()
 	log := ctx.Logger()
 	namespace := ctx.Namespace() // this namespace is in hub
@@ -142,11 +142,7 @@ func failoverRelocateDiscoveredApps(ctx types.Context, action ramen.DRAction) er
 		return err
 	}
 
-	if err = waitDRPCProgression(ctx, client, namespace, name, ramen.ProgressionCompleted); err != nil {
-		return err
-	}
-
-	if err = waitDRPCReady(ctx, client, namespace, name); err != nil {
+	if err = waitDRPC(ctx, client, namespace, name, state); err != nil {
 		return err
 	}
 

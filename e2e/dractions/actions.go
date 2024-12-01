@@ -123,7 +123,7 @@ func Failover(ctx types.Context) error {
 
 	log.Info("Failing over workload")
 
-	return failoverRelocate(ctx, ramen.ActionFailover)
+	return failoverRelocate(ctx, ramen.ActionFailover, ramen.FailedOver)
 }
 
 // Determine DRPC
@@ -140,24 +140,19 @@ func Relocate(ctx types.Context) error {
 
 	log.Info("Relocating workload")
 
-	return failoverRelocate(ctx, ramen.ActionRelocate)
+	return failoverRelocate(ctx, ramen.ActionRelocate, ramen.Relocated)
 }
 
-func failoverRelocate(ctx types.Context, action ramen.DRAction) error {
-	name := ctx.Name()
+func failoverRelocate(ctx types.Context, action ramen.DRAction, state ramen.DRState) error {
+	drpcName := ctx.Name()
 	namespace := ctx.Namespace()
-	drpcName := name
 	client := util.Ctx.Hub.Client
 
 	if err := waitAndUpdateDRPC(ctx, client, namespace, drpcName, action); err != nil {
 		return err
 	}
 
-	if action == ramen.ActionFailover {
-		return waitDRPC(ctx, client, namespace, name, ramen.FailedOver)
-	}
-
-	return waitDRPC(ctx, client, namespace, name, ramen.Relocated)
+	return waitDRPC(ctx, client, namespace, drpcName, state)
 }
 
 func waitAndUpdateDRPC(
