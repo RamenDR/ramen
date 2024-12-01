@@ -89,3 +89,7 @@ func (s Subscription) Undeploy(ctx types.Context) error {
 func (s Subscription) IsWorkloadSupported(w types.Workload) bool {
 	return true
 }
+
+func (s Subscription) IsDiscovered() bool {
+	return false
+}

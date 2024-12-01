@@ -90,3 +90,7 @@ func (a ApplicationSet) GetNamespace() string {
 func (a ApplicationSet) IsWorkloadSupported(w types.Workload) bool {
 	return true
 }
+
+func (a ApplicationSet) IsDiscovered() bool {
+	return false
+}
