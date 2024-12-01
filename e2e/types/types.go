@@ -16,6 +16,8 @@ type Deployer interface {
 	// GetNamespace return the namespace for the ramen resources, or empty string if not using a special namespace.
 	GetNamespace() string
 	IsWorkloadSupported(Workload) bool
+	// Return true for OCM discovered application, false for OCM managed applications.
+	IsDiscovered() bool
 }
 
 type Workload interface {

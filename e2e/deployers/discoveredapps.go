@@ -117,3 +117,7 @@ func (d DiscoveredApps) Undeploy(ctx types.Context) error {
 func (d DiscoveredApps) IsWorkloadSupported(w types.Workload) bool {
 	return w.GetName() != "Deploy-cephfs"
 }
+
+func (d DiscoveredApps) IsDiscovered() bool {
+	return true
+}
