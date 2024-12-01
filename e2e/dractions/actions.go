@@ -152,7 +152,11 @@ func failoverRelocate(ctx types.Context, action ramen.DRAction, state ramen.DRSt
 		return err
 	}
 
-	return waitDRPC(ctx, client, namespace, drpcName, state)
+	if err := waitDRPCPhase(ctx, client, namespace, drpcName, state); err != nil {
+		return err
+	}
+
+	return waitDRPCReady(ctx, client, namespace, drpcName)
 }
 
 func waitAndUpdateDRPC(
