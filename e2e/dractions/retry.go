@@ -12,6 +12,8 @@ import (
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"open-cluster-management.io/api/cluster/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -48,58 +50,36 @@ func waitDRPCReady(ctx types.Context, client client.Client, namespace string, dr
 	log := ctx.Logger()
 	startTime := time.Now()
 
+	log.Info("Waiting until drpc is ready")
+
 	for {
 		drpc, err := getDRPC(client, namespace, drpcName)
 		if err != nil {
 			return err
 		}
 
-		conditionReady := checkDRPCConditions(drpc)
-		if conditionReady && drpc.Status.LastGroupSyncTime != nil {
+		available := conditionMet(drpc.Status.Conditions, ramen.ConditionAvailable)
+		peerReady := conditionMet(drpc.Status.Conditions, ramen.ConditionPeerReady)
+
+		if available && peerReady && drpc.Status.LastGroupSyncTime != nil {
 			log.Info("drpc is ready")
 
 			return nil
 		}
 
 		if time.Since(startTime) > util.Timeout {
-			if !conditionReady {
-				log.Info("drpc condition 'Available' or 'PeerReady' is not True")
-			}
-
-			if conditionReady && drpc.Status.LastGroupSyncTime == nil {
-				log.Info("drpc LastGroupSyncTime is nil")
-			}
-
-			return fmt.Errorf("drpc %q is not ready yet before timeout, fail", drpcName)
+			return fmt.Errorf("timeout waiting for drpc to become ready (Available: %v, PeerReady: %v, lastGroupSyncTime: %v)",
+				available, peerReady, drpc.Status.LastGroupSyncTime)
 		}
 
 		time.Sleep(util.RetryInterval)
 	}
 }
 
-func checkDRPCConditions(drpc *ramen.DRPlacementControl) bool {
-	available := false
-	peerReady := false
+func conditionMet(conditions []metav1.Condition, conditionType string) bool {
+	condition := meta.FindStatusCondition(conditions, conditionType)
 
-	for _, cond := range drpc.Status.Conditions {
-		if cond.Type == "Available" {
-			if cond.Status != "True" {
-				return false
-			}
-
-			available = true
-		}
-
-		if cond.Type == "PeerReady" {
-			if cond.Status != "True" {
-				return false
-			}
-
-			peerReady = true
-		}
-	}
-
-	return available && peerReady
+	return condition != nil && condition.Status == "True"
 }
 
 func waitDRPCPhase(ctx types.Context, client client.Client, namespace, name string, phase ramen.DRState) error {
