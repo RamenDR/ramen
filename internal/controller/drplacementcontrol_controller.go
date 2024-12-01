@@ -119,7 +119,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 //
-//nolint:funlen,gocognit,gocyclo,cyclop
+//nolint:funlen,gocognit,gocyclo,cyclop,nestif
 func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.Log.WithValues("DRPC", req.NamespacedName, "rid", uuid.New())
 
@@ -166,13 +166,21 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		// then the DRPC should be deleted as well. The least we should do here is to clean up DPRC.
 		err := r.processDeletion(ctx, drpc, placementObj, logger)
 		if err != nil {
-			logger.Info(fmt.Sprintf("Error in deleting DRPC: (%v)", err))
-
 			statusErr := r.setDeletionStatusAndUpdate(ctx, drpc)
 			if statusErr != nil {
 				err = fmt.Errorf("drpc deletion failed: %w and status update failed: %w", err, statusErr)
+
+				return ctrl.Result{}, err
 			}
 
+			// Is this an expected condition?
+			if rmnutil.IsOperationInProgress(err) {
+				logger.Info("Deleting DRPC in progress", "reason", err)
+
+				return ctrl.Result{Requeue: true}, nil
+			}
+
+			// Unexpected error.
 			return ctrl.Result{}, err
 		}
 
@@ -736,7 +744,7 @@ func (r *DRPlacementControlReconciler) cleanupVRGs(
 	}
 
 	if len(vrgs) != 0 {
-		return fmt.Errorf("waiting for VRGs count to go to zero")
+		return rmnutil.OperationInProgress("waiting for VRGs count to go to zero")
 	}
 
 	// delete MCVs
@@ -761,7 +769,7 @@ func (r *DRPlacementControlReconciler) ensureVRGsDeleted(
 	for cluster, vrg := range vrgs {
 		if vrg.Spec.ReplicationState == replicationState {
 			if !ensureVRGsManagedByDRPC(r.Log, mwu, vrgs, drpc, vrgNamespace) {
-				return fmt.Errorf("%s VRG adoption in progress", replicationState)
+				return rmnutil.OperationInProgress(fmt.Sprintf("%s VRG adoption in progress", replicationState))
 			}
 
 			if err := mwu.DeleteManifestWork(mwu.BuildManifestWorkName(rmnutil.MWTypeVRG), cluster); err != nil {
@@ -773,7 +781,7 @@ func (r *DRPlacementControlReconciler) ensureVRGsDeleted(
 	}
 
 	if inProgress {
-		return fmt.Errorf("%s VRG manifestwork deletion in progress", replicationState)
+		return rmnutil.OperationInProgress(fmt.Sprintf("%s VRG manifestwork deletion in progress", replicationState))
 	}
 
 	return nil
