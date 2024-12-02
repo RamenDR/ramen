@@ -14,14 +14,14 @@ import (
 
 var _ = Describe("kubeobjects", func() {
 	Context("comparing errors", func() {
-		err := kubeobjects.RequestProcessingErrorCreate("error")
-		other := kubeobjects.RequestProcessingErrorCreate("other")
+		err := kubeobjects.OperationInProgress("error")
+		target := kubeobjects.OperationInProgress("")
 
 		It("is not equal", func() {
-			Expect(other == err).To(Equal(false))
+			Expect(err == target).To(Equal(false))
 		})
 		It("is same error", func() {
-			Expect(errors.Is(other, err)).To(Equal(true))
+			Expect(errors.Is(err, target)).To(Equal(true))
 		})
 		It("is not same error", func() {
 			Expect(errors.Is(err, errors.New("error"))).To(Equal(false))
