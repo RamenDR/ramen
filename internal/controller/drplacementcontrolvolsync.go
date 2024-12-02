@@ -23,7 +23,7 @@ func (d *DRPCInstance) EnsureSecondaryReplicationSetup(srcCluster string) error 
 	}
 
 	if opResult == ctrlutil.OperationResultCreated {
-		return WaitForVolSyncManifestWorkCreation
+		return ErrWaitForVolSyncManifestWorkCreation
 	}
 
 	if _, found := d.vrgs[srcCluster]; !found {
@@ -99,7 +99,7 @@ func (d *DRPCInstance) IsVolSyncReplicationRequired(homeCluster string) (bool, e
 	}
 
 	if len(vrg.Status.ProtectedPVCs) == 0 {
-		return false, WaitForSourceCluster
+		return false, ErrWaitForSourceCluster
 	}
 
 	for _, protectedPVC := range vrg.Status.ProtectedPVCs {
