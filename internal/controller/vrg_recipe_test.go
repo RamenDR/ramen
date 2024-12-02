@@ -16,7 +16,7 @@ import (
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -247,7 +247,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	}
 	vrgDelete := func() {
 		Expect(k8sClient.Delete(ctx, vrg)).To(Succeed())
-		Eventually(vrgGet).Should(MatchError(errors.NewNotFound(
+		Eventually(vrgGet).Should(MatchError(k8serrors.NewNotFound(
 			schema.GroupResource{
 				Group:    ramen.GroupVersion.Group,
 				Resource: "volumereplicationgroups",

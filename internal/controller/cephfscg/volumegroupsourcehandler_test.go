@@ -14,7 +14,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -105,7 +105,7 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 						Namespace: "default",
 					}, pvc)
 					if err != nil {
-						return !errors.IsNotFound(err)
+						return !k8serrors.IsNotFound(err)
 					}
 
 					return pvc.DeletionTimestamp.IsZero()

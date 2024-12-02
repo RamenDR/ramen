@@ -16,7 +16,7 @@ import (
 	errorswrapper "github.com/pkg/errors"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -403,7 +403,7 @@ func (sutil *SecretsUtil) createPolicyResources(
 	}
 
 	plRuleBindingObject := newPlacementRuleBinding(plBindingName, namespace, plRuleName, subjects)
-	if err := sutil.Client.Create(sutil.Ctx, plRuleBindingObject); err != nil && !errors.IsAlreadyExists(err) {
+	if err := sutil.Client.Create(sutil.Ctx, plRuleBindingObject); err != nil && !k8serrors.IsAlreadyExists(err) {
 		sutil.Log.Error(err, "unable to create placement binding", "secret", secret.Name, "cluster", cluster)
 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to create placement binding (secret: %s, cluster: %s)",
@@ -418,7 +418,7 @@ func (sutil *SecretsUtil) createPolicyResources(
 
 	policyObject := newPolicy(policyName, namespace,
 		secret.ResourceVersion, runtime.RawExtension{Object: configObject})
-	if err := sutil.Client.Create(sutil.Ctx, policyObject); err != nil && !errors.IsAlreadyExists(err) {
+	if err := sutil.Client.Create(sutil.Ctx, policyObject); err != nil && !k8serrors.IsAlreadyExists(err) {
 		sutil.Log.Error(err, "unable to create policy", "secret", secret.Name, "cluster", cluster)
 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to create policy (secret: %s, cluster: %s)",
@@ -427,7 +427,7 @@ func (sutil *SecretsUtil) createPolicyResources(
 
 	// Create a PlacementRule, including cluster
 	plRuleObject := newPlacementRule(plRuleName, namespace, []string{cluster})
-	if err := sutil.Client.Create(sutil.Ctx, plRuleObject); err != nil && !errors.IsAlreadyExists(err) {
+	if err := sutil.Client.Create(sutil.Ctx, plRuleObject); err != nil && !k8serrors.IsAlreadyExists(err) {
 		sutil.Log.Error(err, "unable to create placement rule", "secret", secret.Name, "cluster", cluster)
 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to create placement rule (secret: %s, cluster: %s)",
@@ -475,7 +475,7 @@ func (sutil *SecretsUtil) deletePolicyResources(
 			Namespace: namespace,
 		},
 	}
-	if err := sutil.Client.Delete(sutil.Ctx, plRuleBindingObject); err != nil && !errors.IsNotFound(err) {
+	if err := sutil.Client.Delete(sutil.Ctx, plRuleBindingObject); err != nil && !k8serrors.IsNotFound(err) {
 		sutil.Log.Error(err, "unable to delete placement binding", "secret", secret.Name)
 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to delete placement binding (secret: %s)", secret.Name))
@@ -487,7 +487,7 @@ func (sutil *SecretsUtil) deletePolicyResources(
 			Namespace: namespace,
 		},
 	}
-	if err := sutil.Client.Delete(sutil.Ctx, policyObject); err != nil && !errors.IsNotFound(err) {
+	if err := sutil.Client.Delete(sutil.Ctx, policyObject); err != nil && !k8serrors.IsNotFound(err) {
 		sutil.Log.Error(err, "unable to delete policy", "secret", secret.Name)
 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to delete policy (secret: %s)", secret.Name))
@@ -499,7 +499,7 @@ func (sutil *SecretsUtil) deletePolicyResources(
 			Namespace: namespace,
 		},
 	}
-	if err := sutil.Client.Delete(sutil.Ctx, plRuleObject); err != nil && !errors.IsNotFound(err) {
+	if err := sutil.Client.Delete(sutil.Ctx, plRuleObject); err != nil && !k8serrors.IsNotFound(err) {
 		sutil.Log.Error(err, "unable to delete placement rule", "secret", secret.Name)
 
 		return errorswrapper.Wrap(err, fmt.Sprintf("unable to delete placement rule (secret: %s)",
@@ -654,7 +654,7 @@ func (sutil *SecretsUtil) ensureS3SecretResources(
 	if err := sutil.Client.Get(sutil.Ctx,
 		types.NamespacedName{Namespace: namespace, Name: secretName},
 		&secret); err != nil {
-		if !errors.IsNotFound(err) {
+		if !k8serrors.IsNotFound(err) {
 			return nil, errorswrapper.Wrap(err, "failed to get secret object")
 		}
 
@@ -716,7 +716,7 @@ func (sutil *SecretsUtil) AddSecretToCluster(
 	// Fetch secret placement rule, create secret resources if not found
 	err = sutil.APIReader.Get(sutil.Ctx, plRuleName, plRule)
 	if err != nil {
-		if !errors.IsNotFound(err) {
+		if !k8serrors.IsNotFound(err) {
 			return errorswrapper.Wrap(err, "failed to get placementRule object")
 		}
 
@@ -753,7 +753,7 @@ func (sutil *SecretsUtil) RemoveSecretFromCluster(
 	// Fetch secret placement rule, success if not found
 	err = sutil.APIReader.Get(sutil.Ctx, plRuleName, plRule)
 	if err != nil {
-		if !errors.IsNotFound(err) {
+		if !k8serrors.IsNotFound(err) {
 			return errorswrapper.Wrap(err, "failed to get placementRule object")
 		}
 

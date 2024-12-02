@@ -18,7 +18,7 @@ import (
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	controllers "github.com/ramendr/ramen/internal/controller"
 	"github.com/ramendr/ramen/internal/controller/util"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
@@ -378,7 +378,7 @@ func ensureDRClusterConfigMWNotFound(k8sClient client.Client, managedCluster str
 			mw,
 		)
 
-		return errors.IsNotFound(err)
+		return k8serrors.IsNotFound(err)
 	}
 
 	if always {

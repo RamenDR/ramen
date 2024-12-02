@@ -15,7 +15,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	storagev1 "k8s.io/api/storage/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -207,7 +207,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				Name: "local",
 			}, drCConfig)
 
-			return errors.IsNotFound(err)
+			return k8serrors.IsNotFound(err)
 		}, timeout, interval).Should(BeTrue())
 
 		By("ensuring claim count is 0 post deletion")

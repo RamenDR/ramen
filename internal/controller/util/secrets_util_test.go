@@ -11,7 +11,7 @@ import (
 	"github.com/ramendr/ramen/internal/controller/util"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
@@ -61,7 +61,7 @@ var _ = Describe("Secrets_Util", func() {
 	plRuleAbsent := func(plRuleName, namespace string) bool {
 		plRule := &plrv1.PlacementRule{}
 
-		return errors.IsNotFound(k8sClient.Get(context.TODO(),
+		return k8serrors.IsNotFound(k8sClient.Get(context.TODO(),
 			types.NamespacedName{Name: plRuleName, Namespace: namespace},
 			plRule))
 	}
@@ -178,7 +178,7 @@ var _ = Describe("Secrets_Util", func() {
 	secretAbsent := func(secretName string) bool {
 		secret := &corev1.Secret{}
 
-		return errors.IsNotFound(k8sClient.Get(
+		return k8serrors.IsNotFound(k8sClient.Get(
 			context.TODO(),
 			types.NamespacedName{
 				Name:      secretName,

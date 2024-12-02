@@ -13,7 +13,7 @@ import (
 	"github.com/ramendr/ramen/internal/controller/cephfscg"
 	"github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -44,7 +44,7 @@ func (r *ReplicationGroupDestinationReconciler) Reconcile(ctx context.Context, r
 
 	rgd := &ramendrv1alpha1.ReplicationGroupDestination{}
 	if err := r.Client.Get(ctx, req.NamespacedName, rgd); err != nil {
-		if !errors.IsNotFound(err) {
+		if !k8serrors.IsNotFound(err) {
 			logger.Error(err, "Failed to get ReplicationGroupDestination")
 		}
 
