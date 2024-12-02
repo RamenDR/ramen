@@ -452,7 +452,7 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
 		metav1.ConditionFalse, rmn.ReasonNotStarted,
 		fmt.Sprintf("Started failover to cluster %q", d.instance.Spec.FailoverCluster))
-	d.setProgression(rmn.ProgressionCheckingFailoverPrequisites)
+	d.setProgression(rmn.ProgressionCheckingFailoverPrerequisites)
 
 	curHomeCluster := d.getCurrentHomeClusterName(d.instance.Spec.FailoverCluster, d.drClusters)
 	if curHomeCluster == "" {
@@ -2240,7 +2240,7 @@ failoverProgressions are used to indicate progression during failover action pro
 - postFailoverProgressions indicates Progressions that are noted post creating VRG on the failoverCluster
 
 	preFailoverProgressions := {
-		ProgressionCheckingFailoverPrequisites,
+		ProgressionCheckingFailoverPrerequisites,
 		ProgressionWaitForFencing,
 		ProgressionWaitForStorageMaintenanceActivation,
 	}

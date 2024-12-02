@@ -102,7 +102,7 @@ const (
 	ProgressionWaitForReadiness                    = ProgressionStatus("WaitForReadiness")
 	ProgressionCleaningUp                          = ProgressionStatus("Cleaning Up")
 	ProgressionWaitOnUserToCleanUp                 = ProgressionStatus("WaitOnUserToCleanUp")
-	ProgressionCheckingFailoverPrequisites         = ProgressionStatus("CheckingFailoverPrequisites")
+	ProgressionCheckingFailoverPrerequisites       = ProgressionStatus("CheckingFailoverPrerequisites")
 	ProgressionFailingOverToCluster                = ProgressionStatus("FailingOverToCluster")
 	ProgressionWaitForFencing                      = ProgressionStatus("WaitForFencing")
 	ProgressionWaitForStorageMaintenanceActivation = ProgressionStatus("WaitForStorageMaintenanceActivation")
