@@ -10,7 +10,6 @@ import (
 	"reflect"
 
 	"github.com/go-logr/logr"
-	errorswrapper "github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -612,7 +611,7 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 	err := mwu.Client.Get(mwu.Ctx, key, foundMW)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
-			return ctrlutil.OperationResultNone, errorswrapper.Wrap(err, fmt.Sprintf("failed to fetch ManifestWork %s", key))
+			return ctrlutil.OperationResultNone, fmt.Errorf("failed to fetch ManifestWork %s: %w", key, err)
 		}
 
 		mwu.Log.Info("Creating ManifestWork", "cluster", managedClusternamespace, "MW", mw)

@@ -5,12 +5,12 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"time"
 
 	"github.com/go-logr/logr"
-	errorswrapper "github.com/pkg/errors"
 	"golang.org/x/exp/slices"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -40,11 +40,11 @@ const (
 )
 
 var (
-	WaitForAppResourceRestoreToComplete error = errorswrapper.New("Waiting for App resources to be restored...")
-	WaitForVolSyncDestRepToComplete     error = errorswrapper.New("Waiting for VolSync RD to complete...")
-	WaitForSourceCluster                error = errorswrapper.New("Waiting for primary to provide Protected PVCs...")
-	WaitForVolSyncManifestWorkCreation  error = errorswrapper.New("Waiting for VolSync ManifestWork to be created...")
-	WaitForVolSyncRDInfoAvailability    error = errorswrapper.New("Waiting for VolSync RDInfo...")
+	WaitForAppResourceRestoreToComplete error = errors.New("Waiting for App resources to be restored...")
+	WaitForVolSyncDestRepToComplete     error = errors.New("Waiting for VolSync RD to complete...")
+	WaitForSourceCluster                error = errors.New("Waiting for primary to provide Protected PVCs...")
+	WaitForVolSyncManifestWorkCreation  error = errors.New("Waiting for VolSync ManifestWork to be created...")
+	WaitForVolSyncRDInfoAvailability    error = errors.New("Waiting for VolSync RDInfo...")
 )
 
 type DRType string
