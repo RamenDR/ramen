@@ -21,7 +21,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/go-logr/logr"
-	errorswrapper "github.com/pkg/errors"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -233,7 +232,7 @@ func (s *s3ObjectStore) CreateBucket(bucket string) (err error) {
 	_, err = s.client.CreateBucket(cbInput)
 	if err != nil {
 		var aerr awserr.Error
-		if errorswrapper.As(err, &aerr) {
+		if errors.As(err, &aerr) {
 			switch aerr.Code() {
 			case s3.ErrCodeBucketAlreadyExists:
 			case s3.ErrCodeBucketAlreadyOwnedByYou:
@@ -575,7 +574,7 @@ func (s *s3ObjectStore) DownloadObject(key string,
 	}
 
 	gzReader, err := gzip.NewReader(bytes.NewReader(writerAt.Bytes()))
-	if err != nil && !errorswrapper.Is(err, io.EOF) {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return fmt.Errorf("failed to unzip data of %s:%s, %w",
 			bucket, key, err)
 	}
@@ -665,7 +664,7 @@ func (s *s3ObjectStore) DeleteObjects(keys ...string) error {
 // the awserr.ErrCodeNoSuchBucket anywhere in its chain of errors.
 func isAwsErrCodeNoSuchBucket(err error) bool {
 	var aerr awserr.Error
-	if errorswrapper.As(err, &aerr) {
+	if errors.As(err, &aerr) {
 		if aerr.Code() == s3.ErrCodeNoSuchBucket {
 			return true
 		}

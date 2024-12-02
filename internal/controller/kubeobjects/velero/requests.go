@@ -13,9 +13,9 @@ package velero
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/go-logr/logr"
-	pkgerrors "github.com/pkg/errors"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -109,7 +109,7 @@ func (RequestsManager) ProtectRequestsDelete(
 	}
 
 	if err := writer.DeleteAllOf(ctx, &velero.Backup{}, options...); err != nil {
-		return pkgerrors.Wrap(err, "backup requests delete")
+		return fmt.Errorf("backup requests delete: %w", err)
 	}
 
 	return writer.DeleteAllOf(ctx, &velero.BackupStorageLocation{}, options...)
@@ -125,7 +125,7 @@ func (r RequestsManager) RecoverRequestsDelete(
 		client.InNamespace(requestNamespaceName),
 		client.MatchingLabels(labels),
 	); err != nil {
-		return pkgerrors.Wrap(err, "restore requests delete")
+		return fmt.Errorf("restore requests delete: %w", err)
 	}
 
 	return r.ProtectRequestsDelete(ctx, writer, requestNamespaceName, labels)
@@ -210,7 +210,7 @@ func restoreRealCreate(
 			annotations,
 		)
 		if err != nil {
-			return nil, pkgerrors.Wrap(err, "backup dummy request create")
+			return nil, fmt.Errorf("backup dummy request create: %w", err)
 		}
 
 		return nil, err
@@ -496,7 +496,7 @@ func (w objectWriter) restoreObjectsDelete(
 func (w objectWriter) objectCreate(o client.Object) error {
 	if err := w.Create(w.ctx, o); err != nil {
 		if !k8serrors.IsAlreadyExists(err) {
-			return pkgerrors.Wrap(err, "object create")
+			return fmt.Errorf("object create: %w", err)
 		}
 
 		w.log.Info("Object created previously", "type", o.GetObjectKind(), "name", o.GetName())
@@ -510,7 +510,7 @@ func (w objectWriter) objectCreate(o client.Object) error {
 func (w objectWriter) objectDelete(o client.Object) error {
 	if err := w.Delete(w.ctx, o); err != nil {
 		if !k8serrors.IsNotFound(err) {
-			return pkgerrors.Wrap(err, "object delete")
+			return fmt.Errorf("object delete: %w", err)
 		}
 
 		w.log.Info("Object deleted previously", "type", o.GetObjectKind(), "name", o.GetName())
