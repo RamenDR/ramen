@@ -22,7 +22,7 @@ import (
 	"github.com/ramendr/ramen/internal/controller/util"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -171,7 +171,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			It("should allow the VRG to be deleted", func() {
 				Eventually(func() error {
 					return apiReader.Get(context.TODO(), vrgNamespacedName, vrg)
-				}).Should(MatchError(errors.NewNotFound(schema.GroupResource{
+				}).Should(MatchError(k8serrors.NewNotFound(schema.GroupResource{
 					Group:    ramendrv1alpha1.GroupVersion.Group,
 					Resource: "volumereplicationgroups",
 				}, vrg.Name)))
@@ -668,7 +668,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 
 				return apiReader.Get(context.TODO(), vrgVRDeleteEnsureTestCase.vrgNamespacedName(), vrg)
 			}, vrgtimeout*2, vrginterval).
-				Should(MatchError(errors.NewNotFound(schema.GroupResource{
+				Should(MatchError(k8serrors.NewNotFound(schema.GroupResource{
 					Group:    ramendrv1alpha1.GroupVersion.Group,
 					Resource: "volumereplicationgroups",
 				}, vrgVRDeleteEnsureTestCase.vrgName)),
@@ -731,7 +731,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			Eventually(func() error {
 				return apiReader.Get(context.TODO(), vrgDeleteFailedVR.vrgNamespacedName(), vrg)
 			}, vrgtimeout, vrginterval).
-				Should(MatchError(errors.NewNotFound(schema.GroupResource{
+				Should(MatchError(k8serrors.NewNotFound(schema.GroupResource{
 					Group:    ramendrv1alpha1.GroupVersion.Group,
 					Resource: "volumereplicationgroups",
 				}, vrgDeleteFailedVR.vrgName)))
@@ -789,7 +789,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			Eventually(func() error {
 				return apiReader.Get(context.TODO(), vrgDeleteFailedVR.vrgNamespacedName(), vrg)
 			}, vrgtimeout, vrginterval).
-				Should(MatchError(errors.NewNotFound(schema.GroupResource{
+				Should(MatchError(k8serrors.NewNotFound(schema.GroupResource{
 					Group:    ramendrv1alpha1.GroupVersion.Group,
 					Resource: "volumereplicationgroups",
 				}, vrgDeleteFailedVR.vrgName)))
@@ -838,7 +838,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			Eventually(func() error {
 				return apiReader.Get(context.TODO(), vrgDeleteFailedVR.vrgNamespacedName(), vrg)
 			}, vrgtimeout, vrginterval).
-				Should(MatchError(errors.NewNotFound(schema.GroupResource{
+				Should(MatchError(k8serrors.NewNotFound(schema.GroupResource{
 					Group:    ramendrv1alpha1.GroupVersion.Group,
 					Resource: "volumereplicationgroups",
 				}, vrgDeleteFailedVR.vrgName)))
@@ -1739,7 +1739,7 @@ func (v *vrgTest) createNamespace() {
 
 	appNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: v.namespace}}
 	err := k8sClient.Create(context.TODO(), appNamespace)
-	expectedErr := errors.NewAlreadyExists(
+	expectedErr := k8serrors.NewAlreadyExists(
 		schema.GroupResource{Resource: "namespaces"}, v.namespace)
 	Expect(err).To(SatisfyAny(BeNil(), MatchError(expectedErr)),
 		"failed to create namespace %s", v.namespace)
@@ -1751,7 +1751,7 @@ func (v *vrgTest) createPV(pvName, claimName string, bindInfo corev1.PersistentV
 	pv := v.generatePV(pvName, claimName)
 
 	err := k8sClient.Create(context.TODO(), pv)
-	expectedErr := errors.NewAlreadyExists(
+	expectedErr := k8serrors.NewAlreadyExists(
 		schema.GroupResource{Resource: "persistentvolumes"}, pvName)
 	Expect(err).To(SatisfyAny(BeNil(), MatchError(expectedErr)),
 		"failed to create PV %s", pvName)
@@ -1821,7 +1821,7 @@ func (v *vrgTest) createPVC(pvcName, namespace, volumeName string, labels map[st
 	pvc := v.generatePVC(pvcName, namespace, volumeName, labels)
 
 	err := k8sClient.Create(context.TODO(), pvc)
-	expectedErr := errors.NewAlreadyExists(
+	expectedErr := k8serrors.NewAlreadyExists(
 		schema.GroupResource{Resource: "persistentvolumeclaims"}, pvcName)
 	Expect(err).To(SatisfyAny(BeNil(), MatchError(expectedErr)),
 		"failed to create PVC %s", pvcName)
@@ -1920,7 +1920,7 @@ func (v *vrgTest) createVRG() {
 		},
 	}
 	err := k8sClient.Create(context.TODO(), vrg)
-	expectedErr := errors.NewAlreadyExists(
+	expectedErr := k8serrors.NewAlreadyExists(
 		schema.GroupResource{
 			Group:    "ramendr.openshift.io",
 			Resource: "volumereplicationgroups",
@@ -1977,7 +1977,7 @@ func createVolumeReplicationClass(testTemplate *template) {
 
 	err := k8sClient.Create(context.TODO(), vrc)
 	if err != nil {
-		if errors.IsAlreadyExists(err) {
+		if k8serrors.IsAlreadyExists(err) {
 			err = k8sClient.Get(context.TODO(), types.NamespacedName{Name: testTemplate.replicationClassName}, vrc)
 		}
 	}
@@ -1996,7 +1996,7 @@ func createVolumeReplicationClass(testTemplate *template) {
 
 		err := k8sClient.Create(context.TODO(), vrc)
 		if err != nil {
-			if errors.IsAlreadyExists(err) {
+			if k8serrors.IsAlreadyExists(err) {
 				err = k8sClient.Get(context.TODO(), types.NamespacedName{Name: testTemplate.replicationClassName}, vrc)
 			}
 		}
@@ -2023,7 +2023,7 @@ func createStorageClass(testTemplate *template) {
 
 	err := k8sClient.Create(context.TODO(), sc)
 	if err != nil {
-		if errors.IsAlreadyExists(err) {
+		if k8serrors.IsAlreadyExists(err) {
 			err = k8sClient.Get(context.TODO(), types.NamespacedName{Name: testTemplate.storageClassName}, sc)
 		}
 	}
@@ -2519,7 +2519,7 @@ func cleanupStorageClass(testTemplate *template) {
 
 	err := k8sClient.Get(context.TODO(), key, sc)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			return
 		}
 	}
@@ -2533,7 +2533,7 @@ func cleanupVolumeReplicationClass(testTemplate *template) {
 	vrc := &volrep.VolumeReplicationClass{}
 
 	err := k8sClient.DeleteAllOf(context.TODO(), vrc)
-	if errors.IsNotFound(err) {
+	if k8serrors.IsNotFound(err) {
 		return
 	}
 

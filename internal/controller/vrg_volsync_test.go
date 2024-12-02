@@ -22,7 +22,7 @@ import (
 	controller "github.com/ramendr/ramen/internal/controller"
 	"github.com/ramendr/ramen/internal/controller/volsync"
 	storagev1 "k8s.io/api/storage/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 const (
@@ -497,7 +497,7 @@ func createSC() {
 
 	err := k8sClient.Create(context.TODO(), sc)
 	if err != nil {
-		if errors.IsAlreadyExists(err) {
+		if k8serrors.IsAlreadyExists(err) {
 			err = k8sClient.Get(context.TODO(), types.NamespacedName{Name: sc.Name}, sc)
 		}
 	}
@@ -518,7 +518,7 @@ func createVSC() {
 
 	err := k8sClient.Create(context.TODO(), vsc)
 	if err != nil {
-		if errors.IsAlreadyExists(err) {
+		if k8serrors.IsAlreadyExists(err) {
 			err = k8sClient.Get(context.TODO(), types.NamespacedName{Name: vsc.Name}, vsc)
 		}
 	}

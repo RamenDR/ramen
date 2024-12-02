@@ -14,7 +14,7 @@ import (
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	errorswrapper "github.com/pkg/errors"
 	storagev1 "k8s.io/api/storage/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -335,7 +335,7 @@ func parseErrorMessage(message string) error {
 	}
 
 	if checkNotFound(message) {
-		return errors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
+		return k8serrors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
 	}
 
 	return fmt.Errorf("err: %s", extractLastError(message))
@@ -396,7 +396,7 @@ func (m ManagedClusterViewGetterImpl) getOrCreateManagedClusterView(
 
 	err := m.Get(context.TODO(), key, mcv)
 	if err != nil {
-		if !errors.IsNotFound(err) {
+		if !k8serrors.IsNotFound(err) {
 			return nil, errorswrapper.Wrap(err, "failed to get ManagedClusterView")
 		}
 
@@ -456,7 +456,7 @@ func (m ManagedClusterViewGetterImpl) DeleteManagedClusterView(clusterName, mcvN
 
 	err := m.Get(context.TODO(), types.NamespacedName{Name: mcvName, Namespace: clusterName}, mcv)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			return nil
 		}
 

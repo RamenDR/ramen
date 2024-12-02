@@ -18,7 +18,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
 	. "github.com/onsi/gomega/gstruct"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/yaml"
@@ -268,7 +268,7 @@ func (f FakeMCVGetter) GetMModeFromManagedCluster(
 		return nil, nil
 	}
 
-	if !errors.IsNotFound(err) {
+	if !k8serrors.IsNotFound(err) {
 		return nil, err
 	}
 
@@ -363,7 +363,7 @@ func (f FakeMCVGetter) DeleteManagedClusterView(clusterName, mcvName string, log
 
 	err := f.Get(context.TODO(), types.NamespacedName{Name: mcvName, Namespace: clusterName}, mcv)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			return nil
 		}
 
@@ -440,7 +440,7 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(resourceName, resourceNamespace,
 
 	vrg, err := GetFakeVRGFromMCVUsingMW(managedCluster, resourceNamespace)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			return fakeVRGConditionally(resourceNamespace, managedCluster, err)
 		}
 
@@ -452,7 +452,7 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(resourceName, resourceNamespace,
 		return nil, nil // Returning nil vrg in case this gets invoked to ensure test failure
 
 	case "ensureVRGDeleted":
-		return nil, errors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
+		return nil, k8serrors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
 
 	case "checkAccessToVRGOnCluster":
 		return nil, nil
@@ -529,8 +529,8 @@ func GetFakeVRGFromMCVUsingMW(managedCluster, resourceNamespace string,
 	mw := &ocmworkv1.ManifestWork{}
 
 	err := k8sClient.Get(context.TODO(), manifestLookupKey, mw)
-	if errors.IsNotFound(err) {
-		return nil, errors.NewNotFound(schema.GroupResource{},
+	if k8serrors.IsNotFound(err) {
+		return nil, k8serrors.NewNotFound(schema.GroupResource{},
 			fmt.Sprintf("requested resource not found in ManagedCluster %s", managedCluster))
 	}
 
@@ -983,7 +983,7 @@ func deleteAppSet() {
 	Eventually(func() bool {
 		resource := &argocdv1alpha1hack.ApplicationSet{}
 
-		return errors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{
+		return k8serrors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{
 			Namespace: appSet.Namespace,
 			Name:      appSet.Name,
 		}, resource))
@@ -996,7 +996,7 @@ func deleteDRCluster(inDRCluster *rmn.DRCluster) {
 	Eventually(func() bool {
 		drcluster := &rmn.DRCluster{}
 
-		return errors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{
+		return k8serrors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{
 			Namespace: inDRCluster.Namespace,
 			Name:      inDRCluster.Name,
 		}, drcluster))
@@ -1112,7 +1112,7 @@ func ensureDRPolicyIsDeleted(drpolicyName string) {
 		return apiReader.Get(context.TODO(), types.NamespacedName{Name: drpolicyName}, drpolicy)
 	}, timeout, interval).Should(
 		MatchError(
-			errors.NewNotFound(
+			k8serrors.NewNotFound(
 				schema.GroupResource{
 					Group:    rmn.GroupVersion.Group,
 					Resource: "drpolicies",
@@ -1311,7 +1311,7 @@ func verifyUserPlacementRuleDecision(name, namespace, homeCluster string) {
 
 	Eventually(func() bool {
 		err := k8sClient.Get(context.TODO(), usrPlcementLookupKey, usrPlRule)
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			usrPlmnt := &clrapiv1beta1.Placement{}
 			err = k8sClient.Get(context.TODO(), usrPlcementLookupKey, usrPlmnt)
 			if err != nil {
@@ -1362,7 +1362,7 @@ func verifyUserPlacementRuleDecisionUnchanged(name, namespace, homeCluster strin
 
 	Consistently(func() bool {
 		err := k8sClient.Get(context.TODO(), usrPlcementLookupKey, usrPlRule)
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			usrPlmnt := &clrapiv1beta1.Placement{}
 			err = k8sClient.Get(context.TODO(), usrPlcementLookupKey, usrPlmnt)
 			if err != nil {
@@ -1457,7 +1457,7 @@ func getLatestUserPlacementDecision(name, namespace string) *clrapiv1beta1.Clust
 		}
 	}
 
-	if errors.IsNotFound(err) {
+	if k8serrors.IsNotFound(err) {
 		usrPlmnt := &clrapiv1beta1.Placement{}
 		err = k8sClient.Get(context.TODO(), key, usrPlmnt)
 		Expect(err).NotTo(HaveOccurred())
@@ -1687,7 +1687,7 @@ func deletePlacementDecision() {
 	Eventually(func() bool {
 		resource := &clrapiv1beta1.PlacementDecision{}
 
-		return errors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{
+		return k8serrors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{
 			Namespace: placementDecision.Namespace,
 			Name:      placementDecision.Name,
 		}, resource))
@@ -2903,7 +2903,7 @@ func deleteAllManagedClusters() error {
 		}
 
 		err = k8sClient.Delete(context.TODO(), &mcToDelete)
-		if err != nil && !errors.IsNotFound(err) {
+		if err != nil && !k8serrors.IsNotFound(err) {
 			return err
 		}
 	}
@@ -2930,7 +2930,7 @@ func deleteAllManifestWorks() error {
 		}
 
 		err = k8sClient.Delete(context.TODO(), &mwToDelete)
-		if err != nil && !errors.IsNotFound(err) {
+		if err != nil && !k8serrors.IsNotFound(err) {
 			return err
 		}
 	}
@@ -2957,7 +2957,7 @@ func deleteAllManagedClusterViews() error {
 		}
 
 		err = k8sClient.Delete(context.TODO(), &mcvToDelete)
-		if err != nil && !errors.IsNotFound(err) {
+		if err != nil && !k8serrors.IsNotFound(err) {
 			return err
 		}
 	}
@@ -2984,7 +2984,7 @@ func deleteAllDRPCs() error {
 		}
 
 		err = k8sClient.Delete(context.TODO(), &drpcToDelete)
-		if err != nil && !errors.IsNotFound(err) {
+		if err != nil && !k8serrors.IsNotFound(err) {
 			return err
 		}
 	}
@@ -3011,7 +3011,7 @@ func deleteAllDRPolicies() error {
 		}
 
 		err = k8sClient.Delete(context.TODO(), &drPolicyToDelete)
-		if err != nil && !errors.IsNotFound(err) {
+		if err != nil && !k8serrors.IsNotFound(err) {
 			return err
 		}
 	}
@@ -3038,7 +3038,7 @@ func deleteAllDRClusters() error {
 		}
 
 		err = k8sClient.Delete(context.TODO(), &drClusterToDelete)
-		if err != nil && !errors.IsNotFound(err) {
+		if err != nil && !k8serrors.IsNotFound(err) {
 			return err
 		}
 	}
@@ -3082,7 +3082,7 @@ func removeRamenFinalisersFromSecrets() error {
 		secretToUpdate.SetFinalizers([]string{})
 
 		err := k8sClient.Update(context.TODO(), &secretToUpdate)
-		if err != nil && !errors.IsNotFound(err) {
+		if err != nil && !k8serrors.IsNotFound(err) {
 			return err
 		}
 	}
@@ -3109,7 +3109,7 @@ func deleteAllUserPlacementRules() error {
 		}
 
 		err = k8sClient.Delete(context.TODO(), &uprToDelete)
-		if err != nil && !errors.IsNotFound(err) {
+		if err != nil && !k8serrors.IsNotFound(err) {
 			return err
 		}
 	}
@@ -3136,7 +3136,7 @@ func deleteAllPlacementBindings() error {
 		}
 
 		err = k8sClient.Delete(context.TODO(), &pbToDelete)
-		if err != nil && !errors.IsNotFound(err) {
+		if err != nil && !k8serrors.IsNotFound(err) {
 			return err
 		}
 	}
