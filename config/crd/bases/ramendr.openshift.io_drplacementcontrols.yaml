@@ -130,7 +130,7 @@ spec:
               failoverCluster:
                 description: |-
                   FailoverCluster is the cluster name that the user wants to failover the application to.
-                  If not sepcified, then the DRPC will select the surviving cluster from the DRPolicy
+                  If not specified, then the DRPC will select the surviving cluster from the DRPolicy
                 type: string
               kubeObjectProtection:
                 properties:
@@ -493,7 +493,7 @@ spec:
                       type: object
                     type: array
                   resourceMeta:
-                    description: ResourceMeta represents the VRG resoure.
+                    description: ResourceMeta represents the VRG resource.
                     properties:
                       generation:
                         description: A sequence number representing a specific generation
