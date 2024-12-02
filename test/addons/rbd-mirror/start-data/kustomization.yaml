@@ -3,7 +3,6 @@
 
 ---
 resources:
-- vgrc-sample.yaml
 - rbd-mirror.yaml
 
 namespace: rook-ceph

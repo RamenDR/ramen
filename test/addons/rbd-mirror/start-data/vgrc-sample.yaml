@@ -6,9 +6,14 @@ apiVersion: replication.storage.openshift.io/v1alpha1
 kind: VolumeGroupReplicationClass
 metadata:
   name: vgrc-sample
+  labels:
+    ramendr.openshift.io/storageid: rook-ceph-$cluster-1
+    ramendr.openshift.io/replicationid: rook-ceph-replication-1
 spec:
   provisioner: rook-ceph.rbd.csi.ceph.com
   parameters:
-    replication.storage.openshift.io/replication-secret-name: rook-csi-rbd-provisioner
-    replication.storage.openshift.io/replication-secret-namespace: rook-ceph
+    clusterID: rook-ceph
+    pool: $pool
+    replication.storage.openshift.io/group-replication-secret-name: rook-csi-rbd-provisioner
+    replication.storage.openshift.io/group-replication-secret-namespace: rook-ceph
     schedulingInterval: 1m
