@@ -44,7 +44,7 @@ var (
 	WaitForVolSyncDestRepToComplete     error = errorswrapper.New("Waiting for VolSync RD to complete...")
 	WaitForSourceCluster                error = errorswrapper.New("Waiting for primary to provide Protected PVCs...")
 	WaitForVolSyncManifestWorkCreation  error = errorswrapper.New("Waiting for VolSync ManifestWork to be created...")
-	WaitForVolSyncRDInfoAvailibility    error = errorswrapper.New("Waiting for VolSync RDInfo...")
+	WaitForVolSyncRDInfoAvailability    error = errorswrapper.New("Waiting for VolSync RDInfo...")
 )
 
 type DRType string
@@ -245,7 +245,7 @@ func (d *DRPCInstance) isUserPlRuleUpdated(homeCluster string) bool {
 			plRule.Status.Decisions[0].ClusterName == homeCluster
 	}
 
-	// Othewise, it is a Placement object
+	// Otherwise, it is a Placement object
 	plcmt := ConvertToPlacement(d.userPlacement)
 	if plcmt != nil {
 		clusterDecision := d.reconciler.getClusterDecision(d.userPlacement)
@@ -518,7 +518,7 @@ func (d *DRPCInstance) getCurrentHomeClusterName(toCluster string, drClusters []
 	return ""
 }
 
-// checkFailoverPrerequisites checks for any failover prerequsites that need to be met on the
+// checkFailoverPrerequisites checks for any failover prerequisites that need to be met on the
 // failoverCluster before initiating a failover.
 // Returns:
 //   - bool: Indicating if prerequisites are met
@@ -539,7 +539,7 @@ func (d *DRPCInstance) checkFailoverPrerequisites(curHomeCluster string) (bool, 
 		return true, nil
 	}
 
-	msg := "Waiting for spec.failoverCluster to meet failover prerequsites"
+	msg := "Waiting for spec.failoverCluster to meet failover prerequisites"
 
 	if err != nil {
 		msg = err.Error()
@@ -554,7 +554,7 @@ func (d *DRPCInstance) checkFailoverPrerequisites(curHomeCluster string) (bool, 
 	return met, err
 }
 
-// checkMetroFailoverPrerequisites checks for any MetroDR failover prerequsites that need to be met on the
+// checkMetroFailoverPrerequisites checks for any MetroDR failover prerequisites that need to be met on the
 // failoverCluster before initiating a failover from the curHomeCluster.
 // Returns:
 //   - bool: Indicating if prerequisites are met
@@ -576,7 +576,7 @@ func (d *DRPCInstance) checkMetroFailoverPrerequisites(curHomeCluster string) (b
 	return met, nil
 }
 
-// checkRegionalFailoverPrerequisites checks for any RegionalDR failover prerequsites that need to be met on the
+// checkRegionalFailoverPrerequisites checks for any RegionalDR failover prerequisites that need to be met on the
 // failoverCluster before initiating a failover.
 // Returns:
 //   - bool: Indicating if prerequisites are met
@@ -2011,7 +2011,7 @@ func (d *DRPCInstance) ensureVRGIsSecondaryOnCluster(clusterName string) bool {
 // preferredCluster where the app is being relocated to.
 // This is because, preferredCluster wont have a VRG in a secondary state when
 // relocate is started at first. preferredCluster will get VRG as primary when DRPC is
-// about to move the workload to the preferredCluser. And before doing that, DataProtected
+// about to move the workload to the preferredCluster. And before doing that, DataProtected
 // has to be ensured. This can only be done at the other cluster which has been moved to
 // secondary by now.
 func (d *DRPCInstance) ensureDataProtected(targetCluster string) bool {
