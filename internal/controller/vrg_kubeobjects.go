@@ -361,7 +361,7 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 				continue
 			}
 
-			if errors.Is(err, kubeobjects.RequestProcessingError{}) {
+			if errors.Is(err, kubeobjects.OperationInProgress("")) {
 				log1.Info("Kube objects group capturing", "state", err.Error())
 
 				continue
@@ -695,7 +695,7 @@ func (v *VRGInstance) executeRecoverGroup(result *ctrl.Result, s3StoreAccessor s
 		}
 	}
 
-	if errors.Is(err, kubeobjects.RequestProcessingError{}) {
+	if errors.Is(err, kubeobjects.OperationInProgress("")) {
 		log1.Info("Kube objects group recovering", "state", err.Error())
 
 		return err

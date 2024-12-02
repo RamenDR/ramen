@@ -43,8 +43,6 @@ func RequestsMapKeyedByName(requestsStruct Requests) map[string]Request {
 	return requests
 }
 
-type RequestProcessingError struct{ string }
-
 type CaptureSpec struct {
 	//+optional
 	Name string `json:"name,omitempty"`
@@ -138,12 +136,15 @@ type Operation struct {
 	InverseOp string `json:"inverseOp,omitempty"`
 }
 
-func RequestProcessingErrorCreate(s string) RequestProcessingError { return RequestProcessingError{s} }
-func (e RequestProcessingError) Error() string                     { return e.string }
+// OperationInProgress error is return when an operation is in progress and we wait for the desired state. The error
+// string should describe the operation for logging the error.
+type OperationInProgress string
+
+func (e OperationInProgress) Error() string { return string(e) }
 
 // Called by errors.Is() to match target.
-func (RequestProcessingError) Is(target error) bool {
-	_, ok := target.(RequestProcessingError)
+func (OperationInProgress) Is(target error) bool {
+	_, ok := target.(OperationInProgress)
 
 	return ok
 }
