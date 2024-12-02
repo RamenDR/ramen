@@ -190,9 +190,6 @@ test-util: generate manifests envtest ## Run util tests.
 test-util-pvc: generate manifests envtest ## Run util-pvc tests.
 	 go test ./internal/controller/util -coverprofile cover.out  -ginkgo.focus PVCS_Util
 
-test-kubeobjects: ## Run kubeobjects tests.
-	 go test ./internal/controller/kubeobjects -coverprofile cover.out  -ginkgo.focus Kubeobjects
-
 test-drenv: ## Run drenv tests.
 	$(MAKE) -C test
 

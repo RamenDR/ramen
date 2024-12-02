@@ -136,19 +136,6 @@ type Operation struct {
 	InverseOp string `json:"inverseOp,omitempty"`
 }
 
-// OperationInProgress error is return when an operation is in progress and we wait for the desired state. The error
-// string should describe the operation for logging the error.
-type OperationInProgress string
-
-func (e OperationInProgress) Error() string { return string(e) }
-
-// Called by errors.Is() to match target.
-func (OperationInProgress) Is(target error) bool {
-	_, ok := target.(OperationInProgress)
-
-	return ok
-}
-
 type RequestsManager interface {
 	ProtectsPath() string
 	RecoversPath() string
