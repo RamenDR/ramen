@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // white box testing desired for Recipe/KubeObject conversions
-package controllers //nolint: testpackage
+package controllers //nolint:testpackage
 
 import (
 	. "github.com/onsi/ginkgo/v2"

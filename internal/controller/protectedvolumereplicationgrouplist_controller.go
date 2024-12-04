@@ -39,7 +39,7 @@ type ProtectedVolumeReplicationGroupListInstance struct {
 	instance   *ramendrv1alpha1.ProtectedVolumeReplicationGroupList
 }
 
-//nolint: lll
+//nolint:lll
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=protectedvolumereplicationgrouplists,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=protectedvolumereplicationgrouplists/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=protectedvolumereplicationgrouplists/finalizers,verbs=update

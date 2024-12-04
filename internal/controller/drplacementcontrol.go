@@ -972,7 +972,7 @@ func (d *DRPCInstance) ensureCleanupAndSecondaryReplicationSetup(srcCluster stri
 	return nil
 }
 
-// nolint: cyclop
+//nolint:cyclop
 func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) {
 	const done = true
 

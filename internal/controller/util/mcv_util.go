@@ -26,7 +26,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-// nolint: interfacebloat
+//nolint:interfacebloat
 type ManagedClusterViewGetter interface {
 	GetVRGFromManagedCluster(
 		resourceName, resourceNamespace, managedCluster string,

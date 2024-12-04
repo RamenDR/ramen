@@ -63,7 +63,7 @@ func generateWorkloads([]types.Workload) {
 	}
 }
 
-// nolint: thelper
+//nolint:thelper
 func Exhaustive(dt *testing.T) {
 	t := test.WithLog(dt, util.Ctx.Log)
 	t.Helper()

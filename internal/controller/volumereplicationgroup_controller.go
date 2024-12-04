@@ -70,7 +70,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 	rateLimiter := workqueue.NewTypedMaxOfRateLimiter(
 		workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 1*time.Minute),
 		// defaults from client-go
-		//nolint: mnd
+		//nolint:mnd
 		&workqueue.TypedBucketRateLimiter[reconcile.Request]{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
 	)
 	if r.RateLimiter != nil {
@@ -359,7 +359,7 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 	return req
 }
 
-//nolint: lll // disabling line length linter
+//nolint:lll // disabling line length linter
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=volumereplicationgroups/finalizers,verbs=update
@@ -392,7 +392,8 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
-// nolint: funlen
+//
+//nolint:funlen
 func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("VolumeReplicationGroup", req.NamespacedName, "rid", uuid.New())
 
@@ -527,7 +528,7 @@ func (v *VRGInstance) requeue() {
 	v.result.Requeue = true
 }
 
-// nolint: cyclop
+//nolint:cyclop
 func (v *VRGInstance) processVRG() ctrl.Result {
 	if err := v.validateVRGState(); err != nil {
 		// No requeue, as there is no reconcile till user changes desired spec to a valid value
