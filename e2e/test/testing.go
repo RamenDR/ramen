@@ -16,7 +16,8 @@ type T struct {
 }
 
 // WithLog returns a t wrapped with a specified log.
-// nolint: thelper
+//
+//nolint:thelper
 func WithLog(t *testing.T, log *zap.SugaredLogger) *T {
 	return &T{T: t, log: log}
 }

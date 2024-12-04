@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: The RamenDR authors
 // SPDX-License-Identifier: Apache-2.0
 
-// nolint: thelper // for using dt *testing.T and keeping test code idiomatic.
+//nolint:thelper // for using dt *testing.T and keeping test code idiomatic.
 package test
 
 import (
