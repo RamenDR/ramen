@@ -26,74 +26,57 @@ const (
 	expectedNumberOfJSONPaths = 2
 )
 
-func EvaluateCheckHook(client client.Client, hook *kubeobjects.HookSpec, log logr.Logger) (bool, error) {
-	timeout := getTimeoutValue(hook)
-	nsScopedName := types.NamespacedName{
-		Namespace: hook.Namespace,
-		Name:      hook.NameSelector,
-	}
+func getJSONObject(k8sClient client.Client, hook *kubeobjects.HookSpec) (client.Object, error) {
+	var obj client.Object
 
 	switch hook.SelectResource {
 	case "pod":
-		// handle pod type
-		resource := &corev1.Pod{}
-
-		err := WaitUntilResourceExists(client, resource, nsScopedName, time.Duration(timeout)*time.Second)
-		if err != nil {
-			return false, err
-		}
-
-		return EvaluateCheckHookExp(hook.Chk.Condition, resource)
+		obj = &corev1.Pod{}
 	case "deployment":
-		// handle deployment type
-		resource := &appsv1.Deployment{}
-
-		err := WaitUntilResourceExists(client, resource, nsScopedName, time.Duration(timeout)*time.Second)
-		if err != nil {
-			return false, err
-		}
-
-		return EvaluateCheckHookExp(hook.Chk.Condition, resource)
+		obj = &appsv1.Deployment{}
 	case "statefulset":
-		// handle statefulset type
-		resource := &appsv1.StatefulSet{}
-
-		err := WaitUntilResourceExists(client, resource, nsScopedName, time.Duration(timeout)*time.Second)
-		if err != nil {
-			return false, err
-		}
-
-		return EvaluateCheckHookExp(hook.Chk.Condition, resource)
+		obj = &appsv1.StatefulSet{}
+	default:
+		return obj, fmt.Errorf("unsupported resource type %s", hook.SelectResource)
 	}
 
-	return false, nil
+	err := k8sClient.Get(context.Background(),
+		types.NamespacedName{Name: hook.NameSelector, Namespace: hook.Namespace},
+		obj)
+
+	return obj, err
 }
 
-func WaitUntilResourceExists(client client.Client, obj client.Object, nsScopedName types.NamespacedName,
-	timeout time.Duration,
-) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func EvaluateCheckHook(k8sClient client.Client, hook *kubeobjects.HookSpec, log logr.Logger) (bool, error) {
+	timeout := getTimeoutValue(hook)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	ticker := time.NewTicker(pollInterval * time.Millisecond) // Poll every 100 milliseconds
+	ticker := time.NewTicker(pollInterval * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("timeout waiting for resource %s to be ready: %w", nsScopedName.Name, ctx.Err())
+			return false, fmt.Errorf("timeout waiting for resource %s to be ready: %w", hook.NameSelector, ctx.Err())
 		case <-ticker.C:
-			err := client.Get(context.Background(), nsScopedName, obj)
+			obj, err := getJSONObject(k8sClient, hook)
 			if err != nil {
 				if k8serrors.IsNotFound(err) {
 					// Resource not found, continue polling
 					continue
 				}
 
-				return err // Some other error occurred, return it
+				return false, err // Some other error occurred, return it
 			}
 
-			return nil // Resource is ready
+			res, err := EvaluateCheckHookExp(hook.Chk.Condition, obj)
+			if err != nil {
+				continue // This may mean that expression is not evaluated
+			}
+
+			return res, nil
 		}
 	}
 }
