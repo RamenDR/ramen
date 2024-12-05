@@ -92,7 +92,7 @@ func createChannel() error {
 		},
 	}
 
-	err := Ctx.Hub.CtrlClient.Create(context.Background(), objChannel)
+	err := Ctx.Hub.Client.Create(context.Background(), objChannel)
 	if err != nil {
 		if !errors.IsAlreadyExists(err) {
 			return err
@@ -114,7 +114,7 @@ func deleteChannel() error {
 		},
 	}
 
-	err := Ctx.Hub.CtrlClient.Delete(context.Background(), channel)
+	err := Ctx.Hub.Client.Delete(context.Background(), channel)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return err
@@ -130,7 +130,7 @@ func deleteChannel() error {
 
 func EnsureChannel() error {
 	// create channel namespace
-	err := CreateNamespace(Ctx.Hub.CtrlClient, GetChannelNamespace())
+	err := CreateNamespace(Ctx.Hub.Client, GetChannelNamespace())
 	if err != nil {
 		return err
 	}
@@ -143,26 +143,26 @@ func EnsureChannelDeleted() error {
 		return err
 	}
 
-	return DeleteNamespace(Ctx.Hub.CtrlClient, GetChannelNamespace(), Ctx.Log)
+	return DeleteNamespace(Ctx.Hub.Client, GetChannelNamespace(), Ctx.Log)
 }
 
 // Problem: currently we must manually add an annotation to application’s namespace to make volsync work.
 // See this link https://volsync.readthedocs.io/en/stable/usage/permissionmodel.html#controlling-mover-permissions
 // Workaround: create ns in both drclusters and add annotation
 func CreateNamespaceAndAddAnnotation(namespace string) error {
-	if err := CreateNamespace(Ctx.C1.CtrlClient, namespace); err != nil {
+	if err := CreateNamespace(Ctx.C1.Client, namespace); err != nil {
 		return err
 	}
 
-	if err := AddNamespaceAnnotationForVolSync(Ctx.C1.CtrlClient, namespace); err != nil {
+	if err := AddNamespaceAnnotationForVolSync(Ctx.C1.Client, namespace); err != nil {
 		return err
 	}
 
-	if err := CreateNamespace(Ctx.C2.CtrlClient, namespace); err != nil {
+	if err := CreateNamespace(Ctx.C2.Client, namespace); err != nil {
 		return err
 	}
 
-	return AddNamespaceAnnotationForVolSync(Ctx.C2.CtrlClient, namespace)
+	return AddNamespaceAnnotationForVolSync(Ctx.C2.Client, namespace)
 }
 
 func AddNamespaceAnnotationForVolSync(client client.Client, namespace string) error {

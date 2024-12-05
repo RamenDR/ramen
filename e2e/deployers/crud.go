@@ -49,7 +49,7 @@ func CreateManagedClusterSetBinding(name, namespace string) error {
 		},
 	}
 
-	err := util.Ctx.Hub.CtrlClient.Create(context.Background(), mcsb)
+	err := util.Ctx.Hub.Client.Create(context.Background(), mcsb)
 	if err != nil {
 		if !errors.IsAlreadyExists(err) {
 			return err
@@ -68,7 +68,7 @@ func DeleteManagedClusterSetBinding(ctx types.Context, name, namespace string) e
 		},
 	}
 
-	err := util.Ctx.Hub.CtrlClient.Delete(context.Background(), mcsb)
+	err := util.Ctx.Hub.Client.Delete(context.Background(), mcsb)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return err
@@ -99,7 +99,7 @@ func CreatePlacement(ctx types.Context, name, namespace string) error {
 		},
 	}
 
-	err := util.Ctx.Hub.CtrlClient.Create(context.Background(), placement)
+	err := util.Ctx.Hub.Client.Create(context.Background(), placement)
 	if err != nil {
 		if !errors.IsAlreadyExists(err) {
 			return err
@@ -120,7 +120,7 @@ func DeletePlacement(ctx types.Context, name, namespace string) error {
 		},
 	}
 
-	err := util.Ctx.Hub.CtrlClient.Delete(context.Background(), placement)
+	err := util.Ctx.Hub.Client.Delete(context.Background(), placement)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return err
@@ -176,7 +176,7 @@ func CreateSubscription(ctx types.Context, s Subscription) error {
 		})
 	}
 
-	err := util.Ctx.Hub.CtrlClient.Create(context.Background(), subscription)
+	err := util.Ctx.Hub.Client.Create(context.Background(), subscription)
 	if err != nil {
 		if !errors.IsAlreadyExists(err) {
 			return err
@@ -200,7 +200,7 @@ func DeleteSubscription(ctx types.Context, s Subscription) error {
 		},
 	}
 
-	err := util.Ctx.Hub.CtrlClient.Delete(context.Background(), subscription)
+	err := util.Ctx.Hub.Client.Delete(context.Background(), subscription)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return err
@@ -237,7 +237,7 @@ func CreatePlacementDecisionConfigMap(ctx types.Context, cmName string, cmNamesp
 
 	configMap := &corev1.ConfigMap{ObjectMeta: object, Data: data}
 
-	err := util.Ctx.Hub.CtrlClient.Create(context.Background(), configMap)
+	err := util.Ctx.Hub.Client.Create(context.Background(), configMap)
 	if err != nil {
 		if !errors.IsAlreadyExists(err) {
 			return fmt.Errorf("could not create configMap %q", cmName)
@@ -257,7 +257,7 @@ func DeleteConfigMap(ctx types.Context, cmName string, cmNamespace string) error
 		ObjectMeta: object,
 	}
 
-	err := util.Ctx.Hub.CtrlClient.Delete(context.Background(), configMap)
+	err := util.Ctx.Hub.Client.Delete(context.Background(), configMap)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return fmt.Errorf("could not delete configMap %q", cmName)
@@ -338,7 +338,7 @@ func CreateApplicationSet(ctx types.Context, a ApplicationSet) error {
 		appset.Spec.Template.Spec.Source.Kustomize = patches
 	}
 
-	err := util.Ctx.Hub.CtrlClient.Create(context.Background(), appset)
+	err := util.Ctx.Hub.Client.Create(context.Background(), appset)
 	if err != nil {
 		if !errors.IsAlreadyExists(err) {
 			return err
@@ -362,7 +362,7 @@ func DeleteApplicationSet(ctx types.Context, a ApplicationSet) error {
 		},
 	}
 
-	err := util.Ctx.Hub.CtrlClient.Delete(context.Background(), appset)
+	err := util.Ctx.Hub.Client.Delete(context.Background(), appset)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return err
@@ -378,7 +378,7 @@ func DeleteApplicationSet(ctx types.Context, a ApplicationSet) error {
 func isLastAppsetInArgocdNs(namespace string) (bool, error) {
 	appsetList := &argocdv1alpha1hack.ApplicationSetList{}
 
-	err := util.Ctx.Hub.CtrlClient.List(
+	err := util.Ctx.Hub.Client.List(
 		context.Background(), appsetList, client.InNamespace(namespace))
 	if err != nil {
 		return false, fmt.Errorf("failed to list applicationsets: %w", err)

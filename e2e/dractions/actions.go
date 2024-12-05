@@ -46,7 +46,7 @@ func EnableProtection(ctx types.Context) error {
 	placementName := name
 	drpcName := name
 
-	placementDecision, err := waitPlacementDecision(util.Ctx.Hub.CtrlClient, namespace, placementName)
+	placementDecision, err := waitPlacementDecision(util.Ctx.Hub.Client, namespace, placementName)
 	if err != nil {
 		return err
 	}
@@ -57,7 +57,7 @@ func EnableProtection(ctx types.Context) error {
 	log.Info("Annotating placement")
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		placement, err := getPlacement(util.Ctx.Hub.CtrlClient, namespace, placementName)
+		placement, err := getPlacement(util.Ctx.Hub.Client, namespace, placementName)
 		if err != nil {
 			return err
 		}
@@ -68,7 +68,7 @@ func EnableProtection(ctx types.Context) error {
 
 		placement.Annotations[OcmSchedulingDisable] = "true"
 
-		return updatePlacement(util.Ctx.Hub.CtrlClient, placement)
+		return updatePlacement(util.Ctx.Hub.Client, placement)
 	})
 	if err != nil {
 		return err
@@ -77,7 +77,7 @@ func EnableProtection(ctx types.Context) error {
 	log.Info("Creating drpc")
 
 	drpc := generateDRPC(name, namespace, clusterName, drPolicyName, placementName, appname)
-	if err = createDRPC(util.Ctx.Hub.CtrlClient, drpc); err != nil {
+	if err = createDRPC(util.Ctx.Hub.Client, drpc); err != nil {
 		return err
 	}
 
@@ -87,7 +87,7 @@ func EnableProtection(ctx types.Context) error {
 		return err
 	}
 
-	return waitDRPCReady(ctx, util.Ctx.Hub.CtrlClient, namespace, drpcName)
+	return waitDRPCReady(ctx, util.Ctx.Hub.Client, namespace, drpcName)
 }
 
 // remove DRPC
@@ -105,7 +105,7 @@ func DisableProtection(ctx types.Context) error {
 	name := ctx.Name()
 	namespace := ctx.Namespace()
 	drpcName := name
-	client := util.Ctx.Hub.CtrlClient
+	client := util.Ctx.Hub.Client
 
 	log.Info("Deleting drpc")
 
@@ -150,7 +150,7 @@ func failoverRelocate(ctx types.Context, action ramen.DRAction) error {
 	name := ctx.Name()
 	namespace := ctx.Namespace()
 	drpcName := name
-	client := util.Ctx.Hub.CtrlClient
+	client := util.Ctx.Hub.Client
 
 	if err := waitAndUpdateDRPC(ctx, client, namespace, drpcName, action); err != nil {
 		return err

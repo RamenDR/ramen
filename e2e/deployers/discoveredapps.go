@@ -46,7 +46,7 @@ func (d DiscoveredApps) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub.CtrlClient, util.DefaultDRPolicyName)
+	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub.Client, util.DefaultDRPolicyName)
 	if err != nil {
 		return err
 	}
@@ -62,7 +62,7 @@ func (d DiscoveredApps) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	if err = WaitWorkloadHealth(ctx, util.Ctx.C1.CtrlClient, namespace); err != nil {
+	if err = WaitWorkloadHealth(ctx, util.Ctx.C1.Client, namespace); err != nil {
 		return err
 	}
 
@@ -78,7 +78,7 @@ func (d DiscoveredApps) Undeploy(ctx types.Context) error {
 
 	log.Info("Undeploying workload")
 
-	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub.CtrlClient, util.DefaultDRPolicyName)
+	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub.Client, util.DefaultDRPolicyName)
 	if err != nil {
 		return err
 	}
@@ -99,13 +99,13 @@ func (d DiscoveredApps) Undeploy(ctx types.Context) error {
 	log.Infof("Deleting namespace %q on cluster %q", namespace, drpolicy.Spec.DRClusters[0])
 
 	// delete namespace on both clusters
-	if err := util.DeleteNamespace(util.Ctx.C1.CtrlClient, namespace, log); err != nil {
+	if err := util.DeleteNamespace(util.Ctx.C1.Client, namespace, log); err != nil {
 		return err
 	}
 
 	log.Infof("Deleting namespace %q on cluster %q", namespace, drpolicy.Spec.DRClusters[1])
 
-	if err := util.DeleteNamespace(util.Ctx.C2.CtrlClient, namespace, log); err != nil {
+	if err := util.DeleteNamespace(util.Ctx.C2.Client, namespace, log); err != nil {
 		return err
 	}
 
