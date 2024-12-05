@@ -270,20 +270,18 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 		}
 	}
 
-	request0, ok := requests[kubeObjectsCaptureName(namePrefix, groups[0].Name, v.s3StoreAccessors[0].S3ProfileName)]
+	firstRequest := getFirstRequest(groups, requests, namePrefix, v.s3StoreAccessors[0].S3ProfileName)
 
-	if ok {
-		v.kubeObjectsCaptureComplete(
-			result,
-			captureStartConditionally,
-			captureNumber,
-			veleroNamespaceName,
-			interval,
-			labels,
-			request0.StartTime(),
-			request0.Object().GetAnnotations(),
-		)
-	}
+	v.kubeObjectsCaptureComplete(
+		result,
+		captureStartConditionally,
+		captureNumber,
+		veleroNamespaceName,
+		interval,
+		labels,
+		firstRequest.StartTime(),
+		firstRequest.Object().GetAnnotations(),
+	)
 }
 
 func (v *VRGInstance) executeHook(hook kubeobjects.HookSpec, log1 logr.Logger) error {
@@ -674,7 +672,8 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 		}
 	}
 
-	startTime := requests[0].StartTime()
+	startTime := getRequestsStartTime(requests)
+
 	duration := time.Since(startTime.Time)
 	log.Info("Kube objects recovered", "groups", len(groups), "start", startTime, "duration", duration)
 
@@ -800,18 +799,13 @@ func kubeObjectsRequestsWatch(
 }
 
 func getCaptureGroups(recipe Recipe.Recipe) ([]kubeobjects.CaptureSpec, error) {
-	var workflow *Recipe.Workflow
-
-	for _, w := range recipe.Spec.Workflows {
-		if w.Name == Recipe.BackupWorkflowName {
-			workflow = w
-
-			break
-		}
+	workflow, err := getBackupWorkflow(recipe)
+	if err != nil {
+		return nil, err
 	}
 
-	if workflow == nil {
-		return nil, ErrWorkflowNotFound
+	if err := validateWorkflow(workflow); err != nil {
+		return nil, err
 	}
 
 	resources := make([]kubeobjects.CaptureSpec, len(workflow.Sequence))
@@ -837,18 +831,13 @@ func getCaptureGroups(recipe Recipe.Recipe) ([]kubeobjects.CaptureSpec, error) {
 }
 
 func getRecoverGroups(recipe Recipe.Recipe) ([]kubeobjects.RecoverSpec, error) {
-	var workflow *Recipe.Workflow
-
-	for _, w := range recipe.Spec.Workflows {
-		if w.Name == Recipe.RestoreWorkflowName {
-			workflow = w
-
-			break
-		}
+	workflow, err := getRestoreWorkflow(recipe)
+	if err != nil {
+		return nil, err
 	}
 
-	if workflow == nil {
-		return nil, ErrWorkflowNotFound
+	if err := validateWorkflow(workflow); err != nil {
+		return nil, err
 	}
 
 	resources := make([]kubeobjects.RecoverSpec, len(workflow.Sequence))
@@ -1119,4 +1108,73 @@ func convertRecipeGroupToCaptureSpec(group Recipe.Group) (*kubeobjects.CaptureSp
 	}
 
 	return &captureSpec, nil
+}
+
+func getFirstRequest(groups []kubeobjects.CaptureSpec, requests map[string]kubeobjects.Request,
+	namePrefix string, s3ProfileName string,
+) kubeobjects.Request {
+	for _, group := range groups {
+		cg := group
+
+		if cg.IsHook {
+			continue
+		}
+
+		// else it is a resource group
+		return requests[kubeObjectsCaptureName(namePrefix, cg.Name, s3ProfileName)]
+	}
+
+	return nil
+}
+
+func getBackupWorkflow(recipe Recipe.Recipe) (*Recipe.Workflow, error) {
+	for _, w := range recipe.Spec.Workflows {
+		if w.Name == Recipe.BackupWorkflowName {
+			return w, nil
+		}
+	}
+
+	return nil, ErrWorkflowNotFound
+}
+
+func getRestoreWorkflow(recipe Recipe.Recipe) (*Recipe.Workflow, error) {
+	for _, w := range recipe.Spec.Workflows {
+		if w.Name == Recipe.RestoreWorkflowName {
+			return w, nil
+		}
+	}
+
+	return nil, ErrWorkflowNotFound
+}
+
+func validateWorkflow(workflow *Recipe.Workflow) error {
+	if len(workflow.Sequence) == 0 {
+		return nil
+	}
+
+	var workflowHasResourceTypeGroup bool
+
+	for _, resource := range workflow.Sequence {
+		for resourceType := range resource {
+			if resourceType == "group" {
+				workflowHasResourceTypeGroup = true
+			}
+		}
+	}
+
+	if !workflowHasResourceTypeGroup {
+		return fmt.Errorf("a workflow must contain at least one group")
+	}
+
+	return nil
+}
+
+func getRequestsStartTime(requests []kubeobjects.Request) metav1.Time {
+	for _, request := range requests {
+		if request != nil {
+			return request.StartTime()
+		}
+	}
+
+	return metav1.Time{}
 }
