@@ -643,7 +643,7 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 
 		if rg.IsHook {
 			if err := v.executeHook(rg.Hook, log1); err != nil {
-				break
+				return fmt.Errorf("check hook execution failed during restore %s: %v", rg.Hook.Name, err)
 			}
 		} else {
 			if err := v.executeRecoverGroup(result, s3StoreAccessor, sourceVrgNamespaceName,
