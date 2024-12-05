@@ -7,11 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/e2e/deployers"
+	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
-	"github.com/ramendr/ramen/e2e/workloads"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -29,14 +28,16 @@ const (
 // Determine KubeObjectProtection requirements if Imperative (?)
 // Create DRPC, in desired namespace
 // nolint:funlen
-func EnableProtection(w workloads.Workload, d deployers.Deployer) error {
+func EnableProtection(ctx types.Context) error {
+	d := ctx.Deployer()
 	if _, isDiscoveredApps := d.(*deployers.DiscoveredApps); isDiscoveredApps {
-		return EnableProtectionDiscoveredApps(w, d)
+		return EnableProtectionDiscoveredApps(ctx)
 	}
 
-	name := GetCombinedName(d, w)
-	namespace := GetNamespace(d, w)
-	log := util.Ctx.Log.WithName(name)
+	w := ctx.Workload()
+	name := ctx.Name()
+	namespace := ctx.Namespace()
+	log := ctx.Logger()
 
 	log.Info("Protecting workload")
 
@@ -51,7 +52,7 @@ func EnableProtection(w workloads.Workload, d deployers.Deployer) error {
 	}
 
 	clusterName := placementDecision.Status.Decisions[0].ClusterName
-	log.Info("Workload running on " + clusterName)
+	log.Infof("Workload running on cluster %q", clusterName)
 
 	log.Info("Annotating placement")
 
@@ -86,22 +87,23 @@ func EnableProtection(w workloads.Workload, d deployers.Deployer) error {
 		return err
 	}
 
-	return waitDRPCReady(util.Ctx.Hub.CtrlClient, namespace, drpcName, log)
+	return waitDRPCReady(ctx, util.Ctx.Hub.CtrlClient, namespace, drpcName)
 }
 
 // remove DRPC
 // update placement annotation
-func DisableProtection(w workloads.Workload, d deployers.Deployer) error {
-	if _, isDiscoveredApps := d.(*deployers.DiscoveredApps); isDiscoveredApps {
-		return DisableProtectionDiscoveredApps(w, d)
-	}
+func DisableProtection(ctx types.Context) error {
+	d := ctx.Deployer()
+	log := ctx.Logger()
 
-	name := GetCombinedName(d, w)
-	namespace := GetNamespace(d, w)
-	log := util.Ctx.Log.WithName(name)
+	if _, isDiscoveredApps := d.(*deployers.DiscoveredApps); isDiscoveredApps {
+		return DisableProtectionDiscoveredApps(ctx)
+	}
 
 	log.Info("Unprotecting workload")
 
+	name := ctx.Name()
+	namespace := ctx.Namespace()
 	drpcName := name
 	client := util.Ctx.Hub.CtrlClient
 
@@ -111,60 +113,66 @@ func DisableProtection(w workloads.Workload, d deployers.Deployer) error {
 		return err
 	}
 
-	return waitDRPCDeleted(client, namespace, drpcName, log)
+	return waitDRPCDeleted(ctx, client, namespace, drpcName)
 }
 
-func Failover(w workloads.Workload, d deployers.Deployer) error {
-	name := GetCombinedName(d, w)
-	log := util.Ctx.Log.WithName(name)
+func Failover(ctx types.Context) error {
+	d := ctx.Deployer()
+	log := ctx.Logger()
+
+	if _, isDiscoveredApps := d.(*deployers.DiscoveredApps); isDiscoveredApps {
+		return FailoverDiscoveredApps(ctx)
+	}
 
 	log.Info("Failing over workload")
 
-	if _, isDiscoveredApps := d.(*deployers.DiscoveredApps); isDiscoveredApps {
-		return FailoverDiscoveredApps(w, d, log)
-	}
-
-	return failoverRelocate(w, d, ramen.ActionFailover, log)
+	return failoverRelocate(ctx, ramen.ActionFailover)
 }
 
 // Determine DRPC
 // Check Placement
 // Relocate to Primary in DRPolicy as the PrimaryCluster
 // Update DRPC
-func Relocate(w workloads.Workload, d deployers.Deployer) error {
-	name := GetCombinedName(d, w)
-	log := util.Ctx.Log.WithName(name)
+func Relocate(ctx types.Context) error {
+	d := ctx.Deployer()
+	log := ctx.Logger()
+
+	if _, isDiscoveredApps := d.(*deployers.DiscoveredApps); isDiscoveredApps {
+		return RelocateDiscoveredApps(ctx)
+	}
 
 	log.Info("Relocating workload")
 
-	if _, isDiscoveredApps := d.(*deployers.DiscoveredApps); isDiscoveredApps {
-		return RelocateDiscoveredApps(w, d, log)
-	}
-
-	return failoverRelocate(w, d, ramen.ActionRelocate, log)
+	return failoverRelocate(ctx, ramen.ActionRelocate)
 }
 
-func failoverRelocate(w workloads.Workload, d deployers.Deployer, action ramen.DRAction, log logr.Logger) error {
-	name := GetCombinedName(d, w)
-	namespace := GetNamespace(d, w)
-
+func failoverRelocate(ctx types.Context, action ramen.DRAction) error {
+	name := ctx.Name()
+	namespace := ctx.Namespace()
 	drpcName := name
 	client := util.Ctx.Hub.CtrlClient
 
-	if err := waitAndUpdateDRPC(client, namespace, drpcName, action, log); err != nil {
+	if err := waitAndUpdateDRPC(ctx, client, namespace, drpcName, action); err != nil {
 		return err
 	}
 
 	if action == ramen.ActionFailover {
-		return waitDRPC(client, namespace, name, ramen.FailedOver, log)
+		return waitDRPC(ctx, client, namespace, name, ramen.FailedOver)
 	}
 
-	return waitDRPC(client, namespace, name, ramen.Relocated, log)
+	return waitDRPC(ctx, client, namespace, name, ramen.Relocated)
 }
 
-func waitAndUpdateDRPC(client client.Client, namespace, drpcName string, action ramen.DRAction, log logr.Logger) error {
+func waitAndUpdateDRPC(
+	ctx types.Context,
+	client client.Client,
+	namespace, drpcName string,
+	action ramen.DRAction,
+) error {
+	log := ctx.Logger()
+
 	// here we expect drpc should be ready before action
-	if err := waitDRPCReady(client, namespace, drpcName, log); err != nil {
+	if err := waitDRPCReady(ctx, client, namespace, drpcName); err != nil {
 		return err
 	}
 
@@ -197,12 +205,4 @@ func waitAndUpdateDRPC(client client.Client, namespace, drpcName string, action 
 
 		return updateDRPC(client, drpc)
 	})
-}
-
-func GetNamespace(d deployers.Deployer, w workloads.Workload) string {
-	return deployers.GetNamespace(d, w)
-}
-
-func GetCombinedName(d deployers.Deployer, w workloads.Workload) string {
-	return deployers.GetCombinedName(d, w)
 }

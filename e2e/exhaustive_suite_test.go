@@ -9,7 +9,8 @@ import (
 	"testing"
 
 	"github.com/ramendr/ramen/e2e/deployers"
-	"github.com/ramendr/ramen/e2e/testcontext"
+	"github.com/ramendr/ramen/e2e/test"
+	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	"github.com/ramendr/ramen/e2e/workloads"
 )
@@ -25,11 +26,11 @@ const (
 )
 
 var (
-	Workloads      = []workloads.Workload{}
+	Workloads      = []types.Workload{}
 	subscription   = &deployers.Subscription{}
 	appset         = &deployers.ApplicationSet{}
 	discoveredApps = &deployers.DiscoveredApps{}
-	Deployers      = []deployers.Deployer{subscription, appset, discoveredApps}
+	Deployers      = []types.Deployer{subscription, appset, discoveredApps}
 )
 
 func generateSuffix(storageClassName string) string {
@@ -46,7 +47,7 @@ func generateSuffix(storageClassName string) string {
 	return suffix
 }
 
-func generateWorkloads([]workloads.Workload) {
+func generateWorkloads([]types.Workload) {
 	pvcSpecs := util.GetPVCSpecs()
 	for _, pvcSpec := range pvcSpecs {
 		// add storageclass name to deployment name
@@ -62,17 +63,19 @@ func generateWorkloads([]workloads.Workload) {
 	}
 }
 
-func Exhaustive(t *testing.T) {
+//nolint:thelper
+func Exhaustive(dt *testing.T) {
+	t := test.WithLog(dt, util.Ctx.Log)
 	t.Helper()
 	t.Parallel()
 
 	if err := util.EnsureChannel(); err != nil {
-		t.Fatalf("failed to ensure channel: %v", err)
+		t.Fatalf("Failed to ensure channel: %s", err)
 	}
 
 	t.Cleanup(func() {
 		if err := util.EnsureChannelDeleted(); err != nil {
-			t.Fatalf("failed to ensure channel deleted: %v", err)
+			t.Fatalf("Failed to ensure channel deleted: %s", err)
 		}
 	})
 
@@ -80,54 +83,44 @@ func Exhaustive(t *testing.T) {
 
 	for _, deployer := range Deployers {
 		for _, workload := range Workloads {
-			// assign workload and deployer to a local variable to avoid parallel test issue
-			// see https://go.dev/wiki/CommonMistakes
-			d := deployer
-			w := workload
-
-			t.Run(deployers.GetCombinedName(d, w), func(t *testing.T) {
+			ctx := test.NewContext(workload, deployer, util.Ctx.Log)
+			t.Run(ctx.Name(), func(dt *testing.T) {
+				t := test.WithLog(dt, ctx.Logger())
 				t.Parallel()
-				testcontext.AddTestContext(t.Name(), w, d)
-				runTestFlow(t)
-				testcontext.DeleteTestContext(t.Name())
+				runTestFlow(t, ctx)
 			})
 		}
 	}
 }
 
-func runTestFlow(t *testing.T) {
+func runTestFlow(t *test.T, ctx test.Context) {
 	t.Helper()
 
-	testCtx, err := testcontext.GetTestContext(t.Name())
-	if err != nil {
-		t.Fatal(err)
+	if err := ctx.Validate(); err != nil {
+		t.Skipf("Skip test: %s", err)
 	}
 
-	if !testCtx.Deployer.IsWorkloadSupported(testCtx.Workload) {
-		t.Skipf("Workload %s not supported by deployer %s, skip test", testCtx.Workload.GetName(), testCtx.Deployer.GetName())
+	if !t.Run("Deploy", ctx.Deploy) {
+		t.FailNow()
 	}
 
-	if !t.Run("Deploy", DeployAction) {
-		t.Fatal("Deploy failed")
+	if !t.Run("Enable", ctx.Enable) {
+		t.FailNow()
 	}
 
-	if !t.Run("Enable", EnableAction) {
-		t.Fatal("Enable failed")
+	if !t.Run("Failover", ctx.Failover) {
+		t.FailNow()
 	}
 
-	if !t.Run("Failover", FailoverAction) {
-		t.Fatal("Failover failed")
+	if !t.Run("Relocate", ctx.Relocate) {
+		t.FailNow()
 	}
 
-	if !t.Run("Relocate", RelocateAction) {
-		t.Fatal("Relocate failed")
+	if !t.Run("Disable", ctx.Disable) {
+		t.FailNow()
 	}
 
-	if !t.Run("Disable", DisableAction) {
-		t.Fatal("Disable failed")
-	}
-
-	if !t.Run("Undeploy", UndeployAction) {
-		t.Fatal("Undeploy failed")
+	if !t.Run("Undeploy", ctx.Undeploy) {
+		t.FailNow()
 	}
 }

@@ -1323,7 +1323,7 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 
 		if vrg.ResourceVersion < drpc.Status.ResourceConditions.ResourceMeta.ResourceVersion {
 			r.Log.Info("VRG resourceVersion is lower than the previously recorded VRG's resourceVersion in DRPC")
-			// if the VRG resourceVersion is less, then leave the DRPC ResourceCondtions.ResourceMeta.ResourceVersion as is.
+			// if the VRG resourceVersion is less, then leave the DRPC ResourceConditions.ResourceMeta.ResourceVersion as is.
 			return
 		}
 	}
@@ -1712,8 +1712,8 @@ func getApplicationDestinationNamespace(
 		appSet := &appSetList.Items[i]
 		if len(appSet.Spec.Generators) > 0 &&
 			appSet.Spec.Generators[0].ClusterDecisionResource != nil {
-			pn := appSet.Spec.Generators[0].ClusterDecisionResource.LabelSelector.MatchLabels[clrapiv1beta1.PlacementLabel]
-			if pn == placement.GetName() {
+			name := appSet.Spec.Generators[0].ClusterDecisionResource.LabelSelector.MatchLabels[clrapiv1beta1.PlacementLabel]
+			if name == placement.GetName() {
 				log.Info("Found ApplicationSet for Placement", "name", appSet.Name, "placement", placement.GetName())
 				// Retrieving the Destination.Namespace from Application.Spec requires iterating through all Applications
 				// and checking their ownerReferences, which can be time-consuming. Alternatively, we can get the same
@@ -2060,7 +2060,7 @@ func (r *DRPlacementControlReconciler) determineDRPCState(
 
 	// IF 2 clusters queried, 1 failed and 1 VRG found on the failover cluster, then check the action, if they don't
 	// match, stop until corrected by the user. If they do match, then also stop but allow failover if the VRG in-hand
-	// is a secondary. Othewise, continue...
+	// is a secondary. Otherwise, continue...
 	if successfullyQueriedClusterCount == 1 && len(vrgs) == 1 {
 		var clusterName string
 
@@ -2139,7 +2139,7 @@ func (r *DRPlacementControlReconciler) determineDRPCState(
 
 // ensureVRGsManagedByDRPC ensures that VRGs reported by ManagedClusterView are managed by the current instance of
 // DRPC. This is done using the DRPC UID annotation on the viewed VRG matching the current DRPC UID and if not
-// creating or updating the exisiting ManifestWork for the VRG.
+// creating or updating the existing ManifestWork for the VRG.
 // Returns a bool indicating true if VRGs are managed by the current DRPC resource
 func ensureVRGsManagedByDRPC(
 	log logr.Logger,

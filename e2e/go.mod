@@ -5,7 +5,6 @@ go 1.22.5
 toolchain go1.22.7
 
 require (
-	github.com/go-logr/logr v1.4.2
 	github.com/ramendr/ramen/api v0.0.0-00010101000000-000000000000
 	github.com/spf13/viper v1.18.2
 	go.uber.org/zap v1.27.0
@@ -27,7 +26,7 @@ require (
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
 	github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32 // indirect
-	github.com/go-logr/zapr v1.3.0 // indirect
+	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-openapi/jsonpointer v0.19.6 // indirect
 	github.com/go-openapi/jsonreference v0.20.2 // indirect
 	github.com/go-openapi/swag v0.22.4 // indirect

@@ -4,11 +4,12 @@
 package deployers
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 
+	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
-	"github.com/ramendr/ramen/e2e/workloads"
 )
 
 type DiscoveredApps struct{}
@@ -17,10 +18,14 @@ func (d DiscoveredApps) GetName() string {
 	return "Disapp"
 }
 
-func (d DiscoveredApps) Deploy(w workloads.Workload) error {
-	name := GetCombinedName(d, w)
+func (d DiscoveredApps) GetNamespace() string {
+	return util.RamenOpsNs
+}
+
+func (d DiscoveredApps) Deploy(ctx types.Context) error {
+	name := ctx.Name()
+	log := ctx.Logger()
 	namespace := name
-	log := util.Ctx.Log.WithName(name)
 
 	log.Info("Deploying workload")
 
@@ -37,7 +42,7 @@ func (d DiscoveredApps) Deploy(w workloads.Workload) error {
 	// Clean up by removing the temporary directory when done
 	defer os.RemoveAll(tempDir)
 
-	if err = CreateKustomizationFile(w, tempDir); err != nil {
+	if err = CreateKustomizationFile(ctx, tempDir); err != nil {
 		return err
 	}
 
@@ -49,14 +54,15 @@ func (d DiscoveredApps) Deploy(w workloads.Workload) error {
 	cmd := exec.Command("kubectl", "apply", "-k", tempDir, "-n", namespace,
 		"--context", drpolicy.Spec.DRClusters[0], "--timeout=5m")
 
-	// Run the command and capture the output
 	if out, err := cmd.Output(); err != nil {
-		log.Info(string(out))
+		if ee, ok := err.(*exec.ExitError); ok {
+			return fmt.Errorf("%w: stdout=%q stderr=%q", err, out, ee.Stderr)
+		}
 
 		return err
 	}
 
-	if err = WaitWorkloadHealth(util.Ctx.C1.CtrlClient, namespace, w, log); err != nil {
+	if err = WaitWorkloadHealth(ctx, util.Ctx.C1.CtrlClient, namespace); err != nil {
 		return err
 	}
 
@@ -65,10 +71,10 @@ func (d DiscoveredApps) Deploy(w workloads.Workload) error {
 	return nil
 }
 
-func (d DiscoveredApps) Undeploy(w workloads.Workload) error {
-	name := GetCombinedName(d, w)
+func (d DiscoveredApps) Undeploy(ctx types.Context) error {
+	name := ctx.Name()
+	log := ctx.Logger()
 	namespace := name // this namespace is in dr clusters
-	log := util.Ctx.Log.WithName(name)
 
 	log.Info("Undeploying workload")
 
@@ -77,27 +83,27 @@ func (d DiscoveredApps) Undeploy(w workloads.Workload) error {
 		return err
 	}
 
-	log.Info("Deleting discovered apps on " + drpolicy.Spec.DRClusters[0])
+	log.Infof("Deleting discovered apps on cluster %q", drpolicy.Spec.DRClusters[0])
 
 	// delete app on both clusters
-	if err := DeleteDiscoveredApps(w, namespace, drpolicy.Spec.DRClusters[0], log); err != nil {
+	if err := DeleteDiscoveredApps(ctx, namespace, drpolicy.Spec.DRClusters[0]); err != nil {
 		return err
 	}
 
-	log.Info("Deletting discovered apps on " + drpolicy.Spec.DRClusters[1])
+	log.Infof("Deletting discovered apps on cluster %q", drpolicy.Spec.DRClusters[1])
 
-	if err := DeleteDiscoveredApps(w, namespace, drpolicy.Spec.DRClusters[1], log); err != nil {
+	if err := DeleteDiscoveredApps(ctx, namespace, drpolicy.Spec.DRClusters[1]); err != nil {
 		return err
 	}
 
-	log.Info("Deleting namespace " + namespace + " on " + drpolicy.Spec.DRClusters[0])
+	log.Infof("Deleting namespace %q on cluster %q", namespace, drpolicy.Spec.DRClusters[0])
 
 	// delete namespace on both clusters
 	if err := util.DeleteNamespace(util.Ctx.C1.CtrlClient, namespace, log); err != nil {
 		return err
 	}
 
-	log.Info("Deleting namespace " + namespace + " on " + drpolicy.Spec.DRClusters[1])
+	log.Infof("Deleting namespace %q on cluster %q", namespace, drpolicy.Spec.DRClusters[1])
 
 	if err := util.DeleteNamespace(util.Ctx.C2.CtrlClient, namespace, log); err != nil {
 		return err
@@ -108,6 +114,6 @@ func (d DiscoveredApps) Undeploy(w workloads.Workload) error {
 	return nil
 }
 
-func (d DiscoveredApps) IsWorkloadSupported(w workloads.Workload) bool {
+func (d DiscoveredApps) IsWorkloadSupported(w types.Workload) bool {
 	return w.GetName() != "Deploy-cephfs"
 }

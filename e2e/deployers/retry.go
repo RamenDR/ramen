@@ -7,14 +7,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-logr/logr"
+	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
-	"github.com/ramendr/ramen/e2e/workloads"
 	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func waitSubscriptionPhase(namespace, name string, phase subscriptionv1.SubscriptionPhase, log logr.Logger) error {
+func waitSubscriptionPhase(ctx types.Context, namespace, name string, phase subscriptionv1.SubscriptionPhase) error {
+	log := ctx.Logger()
 	startTime := time.Now()
 
 	for {
@@ -25,7 +25,7 @@ func waitSubscriptionPhase(namespace, name string, phase subscriptionv1.Subscrip
 
 		currentPhase := sub.Status.Phase
 		if currentPhase == phase {
-			log.Info(fmt.Sprintf("Subscription phase is %s", phase))
+			log.Infof("Subscription phase is %s", phase)
 
 			return nil
 		}
@@ -38,11 +38,13 @@ func waitSubscriptionPhase(namespace, name string, phase subscriptionv1.Subscrip
 	}
 }
 
-func WaitWorkloadHealth(client client.Client, namespace string, w workloads.Workload, log logr.Logger) error {
+func WaitWorkloadHealth(ctx types.Context, client client.Client, namespace string) error {
+	log := ctx.Logger()
+	w := ctx.Workload()
 	startTime := time.Now()
 
 	for {
-		err := w.Health(client, namespace, log)
+		err := w.Health(ctx, client, namespace)
 		if err == nil {
 			log.Info("Workload is ready")
 

@@ -37,12 +37,12 @@ type ApplicationSetSpec struct {
 	Template   ApplicationSetTemplate    `json:"template" protobuf:"bytes,3,name=template"`
 }
 
-// nolint: lll
+//nolint:lll
 type ApplicationSetGenerator struct {
 	ClusterDecisionResource *DuckTypeGenerator `json:"clusterDecisionResource,omitempty" protobuf:"bytes,5,name=clusterDecisionResource"`
 }
 
-// nolint: lll
+//nolint:lll
 type DuckTypeGenerator struct {
 	ConfigMapRef        string               `json:"configMapRef" protobuf:"bytes,1,name=configMapRef"`
 	LabelSelector       metav1.LabelSelector `json:"labelSelector,omitempty" protobuf:"bytes,4,name=labelSelector"`
@@ -109,14 +109,14 @@ type KustomizePatch struct {
 	Options map[string]bool    `json:"options,omitempty" yaml:"options,omitempty" protobuf:"bytes,4,opt,name=options"`
 }
 
-// nolint: lll, golint
+//nolint:lll, golint
 type KustomizeSelector struct {
 	KustomizeResId     `json:",inline,omitempty" yaml:",inline,omitempty" protobuf:"bytes,1,opt,name=resId"`
 	AnnotationSelector string `json:"annotationSelector,omitempty" yaml:"annotationSelector,omitempty" protobuf:"bytes,2,opt,name=annotationSelector"`
 	LabelSelector      string `json:"labelSelector,omitempty" yaml:"labelSelector,omitempty" protobuf:"bytes,3,opt,name=labelSelector"`
 }
 
-// nolint: golint, revive, stylecheck
+//nolint:golint, revive, stylecheck
 type KustomizeResId struct {
 	KustomizeGvk `json:",inline,omitempty" yaml:",inline,omitempty" protobuf:"bytes,1,opt,name=gvk"`
 	Name         string `json:"name,omitempty" yaml:"name,omitempty" protobuf:"bytes,2,opt,name=name"`

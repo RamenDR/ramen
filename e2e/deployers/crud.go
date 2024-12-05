@@ -9,14 +9,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 
-	"github.com/go-logr/logr"
+	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
-	"github.com/ramendr/ramen/e2e/workloads"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
+	k8stypes "k8s.io/apimachinery/pkg/types"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
@@ -61,7 +59,8 @@ func CreateManagedClusterSetBinding(name, namespace string) error {
 	return nil
 }
 
-func DeleteManagedClusterSetBinding(name, namespace string, log logr.Logger) error {
+func DeleteManagedClusterSetBinding(ctx types.Context, name, namespace string) error {
+	log := ctx.Logger()
 	mcsb := &ocmv1b2.ManagedClusterSetBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -75,13 +74,14 @@ func DeleteManagedClusterSetBinding(name, namespace string, log logr.Logger) err
 			return err
 		}
 
-		log.Info("ManagedClusterSetBinding " + name + " not found")
+		log.Infof("ManagedClusterSetBinding %q not found", name)
 	}
 
 	return nil
 }
 
-func CreatePlacement(name, namespace string, log logr.Logger) error {
+func CreatePlacement(ctx types.Context, name, namespace string) error {
+	log := ctx.Logger()
 	labels := make(map[string]string)
 	labels[AppLabelKey] = name
 	clusterSet := []string{ClusterSetName}
@@ -111,7 +111,8 @@ func CreatePlacement(name, namespace string, log logr.Logger) error {
 	return nil
 }
 
-func DeletePlacement(name, namespace string, log logr.Logger) error {
+func DeletePlacement(ctx types.Context, name, namespace string) error {
+	log := ctx.Logger()
 	placement := &ocmv1b1.Placement{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -131,8 +132,10 @@ func DeletePlacement(name, namespace string, log logr.Logger) error {
 	return nil
 }
 
-func CreateSubscription(s Subscription, w workloads.Workload, log logr.Logger) error {
-	name := GetCombinedName(s, w)
+func CreateSubscription(ctx types.Context, s Subscription) error {
+	name := ctx.Name()
+	log := ctx.Logger()
+	w := ctx.Workload()
 	namespace := name
 
 	labels := make(map[string]string)
@@ -176,8 +179,6 @@ func CreateSubscription(s Subscription, w workloads.Workload, log logr.Logger) e
 	err := util.Ctx.Hub.CtrlClient.Create(context.Background(), subscription)
 	if err != nil {
 		if !errors.IsAlreadyExists(err) {
-			log.Info(fmt.Sprintf("create subscription with error: %v", err))
-
 			return err
 		}
 
@@ -187,8 +188,9 @@ func CreateSubscription(s Subscription, w workloads.Workload, log logr.Logger) e
 	return nil
 }
 
-func DeleteSubscription(s Subscription, w workloads.Workload, log logr.Logger) error {
-	name := GetCombinedName(s, w)
+func DeleteSubscription(ctx types.Context, s Subscription) error {
+	name := ctx.Name()
+	log := ctx.Logger()
 	namespace := name
 
 	subscription := &subscriptionv1.Subscription{
@@ -210,27 +212,9 @@ func DeleteSubscription(s Subscription, w workloads.Workload, log logr.Logger) e
 	return nil
 }
 
-func GetCombinedName(d Deployer, w workloads.Workload) string {
-	return strings.ToLower(d.GetName() + "-" + w.GetName() + "-" + w.GetAppName())
-}
-
-func GetNamespace(d Deployer, w workloads.Workload) string {
-	_, isAppSet := d.(*ApplicationSet)
-	if isAppSet {
-		// appset need be deployed in argocd ns
-		return util.ArgocdNamespace
-	}
-
-	if _, isDiscoveredApps := d.(*DiscoveredApps); isDiscoveredApps {
-		return util.RamenOpsNs
-	}
-
-	return GetCombinedName(d, w)
-}
-
 func getSubscription(client client.Client, namespace, name string) (*subscriptionv1.Subscription, error) {
 	subscription := &subscriptionv1.Subscription{}
-	key := types.NamespacedName{Name: name, Namespace: namespace}
+	key := k8stypes.NamespacedName{Name: name, Namespace: namespace}
 
 	err := client.Get(context.Background(), key, subscription)
 	if err != nil {
@@ -240,7 +224,8 @@ func getSubscription(client client.Client, namespace, name string) (*subscriptio
 	return subscription, nil
 }
 
-func CreatePlacementDecisionConfigMap(cmName string, cmNamespace string, log logr.Logger) error {
+func CreatePlacementDecisionConfigMap(ctx types.Context, cmName string, cmNamespace string) error {
+	log := ctx.Logger()
 	object := metav1.ObjectMeta{Name: cmName, Namespace: cmNamespace}
 
 	data := map[string]string{
@@ -258,13 +243,14 @@ func CreatePlacementDecisionConfigMap(cmName string, cmNamespace string, log log
 			return fmt.Errorf("could not create configMap %q", cmName)
 		}
 
-		log.Info("ConfigMap " + cmName + " already Exists")
+		log.Infof("ConfigMap %q already Exists", cmName)
 	}
 
 	return nil
 }
 
-func DeleteConfigMap(cmName string, cmNamespace string, log logr.Logger) error {
+func DeleteConfigMap(ctx types.Context, cmName string, cmNamespace string) error {
+	log := ctx.Logger()
 	object := metav1.ObjectMeta{Name: cmName, Namespace: cmNamespace}
 
 	configMap := &corev1.ConfigMap{
@@ -277,17 +263,19 @@ func DeleteConfigMap(cmName string, cmNamespace string, log logr.Logger) error {
 			return fmt.Errorf("could not delete configMap %q", cmName)
 		}
 
-		log.Info("ConfigMap " + cmName + " not found")
+		log.Infof("ConfigMap %q not found", cmName)
 	}
 
 	return nil
 }
 
 // nolint:funlen
-func CreateApplicationSet(a ApplicationSet, w workloads.Workload, log logr.Logger) error {
+func CreateApplicationSet(ctx types.Context, a ApplicationSet) error {
 	var requeueSeconds int64 = 180
 
-	name := GetCombinedName(a, w)
+	name := ctx.Name()
+	log := ctx.Logger()
+	w := ctx.Workload()
 	namespace := util.ArgocdNamespace
 
 	appset := &argocdv1alpha1hack.ApplicationSet{
@@ -362,8 +350,9 @@ func CreateApplicationSet(a ApplicationSet, w workloads.Workload, log logr.Logge
 	return nil
 }
 
-func DeleteApplicationSet(a ApplicationSet, w workloads.Workload, log logr.Logger) error {
-	name := GetCombinedName(a, w)
+func DeleteApplicationSet(ctx types.Context, a ApplicationSet) error {
+	name := ctx.Name()
+	log := ctx.Logger()
 	namespace := util.ArgocdNamespace
 
 	appset := &argocdv1alpha1hack.ApplicationSet{
@@ -386,21 +375,19 @@ func DeleteApplicationSet(a ApplicationSet, w workloads.Workload, log logr.Logge
 }
 
 // check if only the last appset is in the argocd namespace
-func isLastAppsetInArgocdNs(namespace string, log logr.Logger) (bool, error) {
+func isLastAppsetInArgocdNs(namespace string) (bool, error) {
 	appsetList := &argocdv1alpha1hack.ApplicationSetList{}
 
 	err := util.Ctx.Hub.CtrlClient.List(
 		context.Background(), appsetList, client.InNamespace(namespace))
 	if err != nil {
-		log.Info("Failed to get application sets")
-
-		return false, err
+		return false, fmt.Errorf("failed to list applicationsets: %w", err)
 	}
 
 	return len(appsetList.Items) == 1, nil
 }
 
-func DeleteDiscoveredApps(w workloads.Workload, namespace, cluster string, log logr.Logger) error {
+func DeleteDiscoveredApps(ctx types.Context, namespace, cluster string) error {
 	tempDir, err := os.MkdirTemp("", "ramen-")
 	if err != nil {
 		return err
@@ -409,16 +396,17 @@ func DeleteDiscoveredApps(w workloads.Workload, namespace, cluster string, log l
 	// Clean up by removing the temporary directory when done
 	defer os.RemoveAll(tempDir)
 
-	if err = CreateKustomizationFile(w, tempDir); err != nil {
+	if err = CreateKustomizationFile(ctx, tempDir); err != nil {
 		return err
 	}
 
 	cmd := exec.Command("kubectl", "delete", "-k", tempDir, "-n", namespace,
 		"--context", cluster, "--timeout=5m", "--ignore-not-found=true")
 
-	// Run the command and capture the output
 	if out, err := cmd.Output(); err != nil {
-		log.Info(string(out))
+		if ee, ok := err.(*exec.ExitError); ok {
+			return fmt.Errorf("%w: stdout=%q stderr=%q", err, out, ee.Stderr)
+		}
 
 		return err
 	}
@@ -428,7 +416,8 @@ func DeleteDiscoveredApps(w workloads.Workload, namespace, cluster string, log l
 
 type CombinedData map[string]interface{}
 
-func CreateKustomizationFile(w workloads.Workload, dir string) error {
+func CreateKustomizationFile(ctx types.Context, dir string) error {
+	w := ctx.Workload()
 	yamlData := `resources:
 - ` + util.GetGitURL() + `/` + w.GetPath() + `?ref=` + w.GetRevision()
 

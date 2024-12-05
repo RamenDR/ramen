@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/go-logr/logr"
+	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -33,7 +33,7 @@ type Cluster struct {
 }
 
 type Context struct {
-	Log logr.Logger
+	Log *zap.SugaredLogger
 	Hub Cluster
 	C1  Cluster
 	C2  Cluster
@@ -99,7 +99,7 @@ func setupClient(kubeconfigPath string) (*kubernetes.Clientset, client.Client, e
 	return k8sClientSet, ctrlClient, nil
 }
 
-func NewContext(log logr.Logger, configFile string) (*Context, error) {
+func NewContext(log *zap.SugaredLogger, configFile string) (*Context, error) {
 	var err error
 
 	ctx := new(Context)

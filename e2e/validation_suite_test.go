@@ -6,27 +6,35 @@ package e2e_test
 import (
 	"testing"
 
+	"github.com/ramendr/ramen/e2e/test"
 	"github.com/ramendr/ramen/e2e/util"
 )
 
-func Validate(t *testing.T) {
+func Validate(dt *testing.T) {
+	t := test.WithLog(dt, util.Ctx.Log)
 	t.Helper()
-	t.Run("hub", func(t *testing.T) {
+	t.Run("hub", func(dt *testing.T) {
+		t := test.WithLog(dt, util.Ctx.Log)
+
 		err := util.ValidateRamenHubOperator(util.Ctx.Hub.K8sClientSet)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("Failed to validated hub cluster: %s", err)
 		}
 	})
-	t.Run("c1", func(t *testing.T) {
+	t.Run("c1", func(dt *testing.T) {
+		t := test.WithLog(dt, util.Ctx.Log)
+
 		err := util.ValidateRamenDRClusterOperator(util.Ctx.C1.K8sClientSet, "c1")
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("Failed to validated dr cluster c1: %s", err)
 		}
 	})
-	t.Run("c2", func(t *testing.T) {
+	t.Run("c2", func(dt *testing.T) {
+		t := test.WithLog(dt, util.Ctx.Log)
+
 		err := util.ValidateRamenDRClusterOperator(util.Ctx.C2.K8sClientSet, "c2")
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("Failed to validated dr cluster c2: %s", err)
 		}
 	})
 }

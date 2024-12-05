@@ -38,7 +38,7 @@ const (
 
 	// Deploying, state recorded in the DRPC status to indicate that the
 	// initial deployment is in progress. Deploying means selecting the
-	// preffered cluster and creating a VRG MW for it and waiting for MW
+	// preferred cluster and creating a VRG MW for it and waiting for MW
 	// to be applied in the managed cluster
 	Deploying = DRState("Deploying")
 
@@ -102,7 +102,7 @@ const (
 	ProgressionWaitForReadiness                    = ProgressionStatus("WaitForReadiness")
 	ProgressionCleaningUp                          = ProgressionStatus("Cleaning Up")
 	ProgressionWaitOnUserToCleanUp                 = ProgressionStatus("WaitOnUserToCleanUp")
-	ProgressionCheckingFailoverPrequisites         = ProgressionStatus("CheckingFailoverPrequisites")
+	ProgressionCheckingFailoverPrerequisites       = ProgressionStatus("CheckingFailoverPrerequisites")
 	ProgressionFailingOverToCluster                = ProgressionStatus("FailingOverToCluster")
 	ProgressionWaitForFencing                      = ProgressionStatus("WaitForFencing")
 	ProgressionWaitForStorageMaintenanceActivation = ProgressionStatus("WaitForStorageMaintenanceActivation")
@@ -144,7 +144,7 @@ type DRPlacementControlSpec struct {
 	PreferredCluster string `json:"preferredCluster,omitempty"`
 
 	// FailoverCluster is the cluster name that the user wants to failover the application to.
-	// If not sepcified, then the DRPC will select the surviving cluster from the DRPolicy
+	// If not specified, then the DRPC will select the surviving cluster from the DRPolicy
 	FailoverCluster string `json:"failoverCluster,omitempty"`
 
 	// Label selector to identify all the PVCs that need DR protection.
@@ -194,7 +194,7 @@ type VRGResourceMeta struct {
 // VRGConditions represents the conditions of the resources deployed on a
 // managed cluster.
 type VRGConditions struct {
-	// ResourceMeta represents the VRG resoure.
+	// ResourceMeta represents the VRG resource.
 	ResourceMeta VRGResourceMeta `json:"resourceMeta,omitempty"`
 
 	// Conditions represents the conditions of this resource on a managed cluster.

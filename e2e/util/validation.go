@@ -32,7 +32,7 @@ func ValidateRamenHubOperator(k8sClient *kubernetes.Clientset) error {
 			pod.Name, pod.Status.Phase)
 	}
 
-	Ctx.Log.Info("Ramen hub operator is running", "pod", pod.Name)
+	Ctx.Log.Infof("Ramen hub operator pod %q is running", pod.Name)
 
 	return nil
 }
@@ -56,7 +56,7 @@ func ValidateRamenDRClusterOperator(k8sClient *kubernetes.Clientset, clusterName
 			pod.Name, pod.Status.Phase)
 	}
 
-	Ctx.Log.Info("Ramen dr cluster operator is running", "cluster", clusterName, "pod", pod.Name)
+	Ctx.Log.Infof("Ramen dr cluster operator pod %q is running in cluster %q", pod.Name, clusterName)
 
 	return nil
 }

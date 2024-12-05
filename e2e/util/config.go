@@ -6,8 +6,8 @@ package util
 import (
 	"fmt"
 
-	"github.com/go-logr/logr"
 	"github.com/spf13/viper"
+	"go.uber.org/zap"
 )
 
 type PVCSpec struct {
@@ -27,7 +27,7 @@ type TestConfig struct {
 var config = &TestConfig{}
 
 //nolint:cyclop
-func ReadConfig(log logr.Logger, configFile string) error {
+func ReadConfig(log *zap.SugaredLogger, configFile string) error {
 	viper.SetDefault("ChannelName", defaultChannelName)
 	viper.SetDefault("ChannelNamespace", defaultChannelNamespace)
 	viper.SetDefault("GitURL", defaultGitURL)

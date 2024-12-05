@@ -4,16 +4,16 @@
 package deployers
 
 import (
+	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
-	"github.com/ramendr/ramen/e2e/workloads"
 )
 
 type ApplicationSet struct{}
 
-func (a ApplicationSet) Deploy(w workloads.Workload) error {
-	name := GetCombinedName(a, w)
+func (a ApplicationSet) Deploy(ctx types.Context) error {
+	name := ctx.Name()
+	log := ctx.Logger()
 	namespace := util.ArgocdNamespace
-	log := util.Ctx.Log.WithName(name)
 
 	log.Info("Deploying workload")
 
@@ -22,17 +22,17 @@ func (a ApplicationSet) Deploy(w workloads.Workload) error {
 		return err
 	}
 
-	err = CreatePlacement(name, namespace, log)
+	err = CreatePlacement(ctx, name, namespace)
 	if err != nil {
 		return err
 	}
 
-	err = CreatePlacementDecisionConfigMap(name, namespace, log)
+	err = CreatePlacementDecisionConfigMap(ctx, name, namespace)
 	if err != nil {
 		return err
 	}
 
-	err = CreateApplicationSet(a, w, log)
+	err = CreateApplicationSet(ctx, a)
 	if err != nil {
 		return err
 	}
@@ -40,37 +40,37 @@ func (a ApplicationSet) Deploy(w workloads.Workload) error {
 	return err
 }
 
-func (a ApplicationSet) Undeploy(w workloads.Workload) error {
-	name := GetCombinedName(a, w)
+func (a ApplicationSet) Undeploy(ctx types.Context) error {
+	name := ctx.Name()
+	log := ctx.Logger()
 	namespace := util.ArgocdNamespace
-	log := util.Ctx.Log.WithName(name)
 
 	log.Info("Undeploying workload")
 
-	err := DeleteApplicationSet(a, w, log)
+	err := DeleteApplicationSet(ctx, a)
 	if err != nil {
 		return err
 	}
 
-	err = DeleteConfigMap(name, namespace, log)
+	err = DeleteConfigMap(ctx, name, namespace)
 	if err != nil {
 		return err
 	}
 
-	err = DeletePlacement(name, namespace, log)
+	err = DeletePlacement(ctx, name, namespace)
 	if err != nil {
 		return err
 	}
 
 	// multiple appsets could use the same mcsb in argocd ns.
 	// so delete mcsb if only 1 appset is in argocd ns
-	lastAppset, err := isLastAppsetInArgocdNs(namespace, log)
+	lastAppset, err := isLastAppsetInArgocdNs(namespace)
 	if err != nil {
 		return err
 	}
 
 	if lastAppset {
-		err = DeleteManagedClusterSetBinding(McsbName, namespace, log)
+		err = DeleteManagedClusterSetBinding(ctx, McsbName, namespace)
 		if err != nil {
 			return err
 		}
@@ -83,6 +83,10 @@ func (a ApplicationSet) GetName() string {
 	return "Appset"
 }
 
-func (a ApplicationSet) IsWorkloadSupported(w workloads.Workload) bool {
+func (a ApplicationSet) GetNamespace() string {
+	return util.ArgocdNamespace
+}
+
+func (a ApplicationSet) IsWorkloadSupported(w types.Workload) bool {
 	return true
 }

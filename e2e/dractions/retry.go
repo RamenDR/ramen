@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"open-cluster-management.io/api/cluster/v1beta1"
@@ -44,7 +44,8 @@ func waitPlacementDecision(client client.Client, namespace string, placementName
 	}
 }
 
-func waitDRPCReady(client client.Client, namespace string, drpcName string, log logr.Logger) error {
+func waitDRPCReady(ctx types.Context, client client.Client, namespace string, drpcName string) error {
+	log := ctx.Logger()
 	startTime := time.Now()
 
 	for {
@@ -101,7 +102,8 @@ func checkDRPCConditions(drpc *ramen.DRPlacementControl) bool {
 	return available && peerReady
 }
 
-func waitDRPCPhase(client client.Client, namespace, name string, phase ramen.DRState, log logr.Logger) error {
+func waitDRPCPhase(ctx types.Context, client client.Client, namespace, name string, phase ramen.DRState) error {
+	log := ctx.Logger()
 	startTime := time.Now()
 
 	for {
@@ -112,7 +114,7 @@ func waitDRPCPhase(client client.Client, namespace, name string, phase ramen.DRS
 
 		currentPhase := drpc.Status.Phase
 		if currentPhase == phase {
-			log.Info(fmt.Sprintf("drpc phase is %s", phase))
+			log.Infof("drpc phase is %q", phase)
 
 			return nil
 		}
@@ -160,16 +162,17 @@ func getTargetCluster(client client.Client, namespace, placementName string, drp
 }
 
 // first wait DRPC to have the expected phase, then check DRPC conditions
-func waitDRPC(client client.Client, namespace, name string, expectedPhase ramen.DRState, log logr.Logger) error {
+func waitDRPC(ctx types.Context, client client.Client, namespace, name string, expectedPhase ramen.DRState) error {
 	// check Phase
-	if err := waitDRPCPhase(client, namespace, name, expectedPhase, log); err != nil {
+	if err := waitDRPCPhase(ctx, client, namespace, name, expectedPhase); err != nil {
 		return err
 	}
 	// then check Conditions
-	return waitDRPCReady(client, namespace, name, log)
+	return waitDRPCReady(ctx, client, namespace, name)
 }
 
-func waitDRPCDeleted(client client.Client, namespace string, name string, log logr.Logger) error {
+func waitDRPCDeleted(ctx types.Context, client client.Client, namespace string, name string) error {
+	log := ctx.Logger()
 	startTime := time.Now()
 
 	for {
@@ -181,7 +184,7 @@ func waitDRPCDeleted(client client.Client, namespace string, name string, log lo
 				return nil
 			}
 
-			log.Info(fmt.Sprintf("failed to get drpc: %v", err))
+			log.Infof("Failed to get drpc: %s", err)
 		}
 
 		if time.Since(startTime) > util.Timeout {
@@ -193,9 +196,13 @@ func waitDRPCDeleted(client client.Client, namespace string, name string, log lo
 }
 
 // nolint:unparam
-func waitDRPCProgression(client client.Client, namespace, name string, progression ramen.ProgressionStatus,
-	log logr.Logger,
+func waitDRPCProgression(
+	ctx types.Context,
+	client client.Client,
+	namespace, name string,
+	progression ramen.ProgressionStatus,
 ) error {
+	log := ctx.Logger()
 	startTime := time.Now()
 
 	for {
@@ -206,7 +213,7 @@ func waitDRPCProgression(client client.Client, namespace, name string, progressi
 
 		currentProgression := drpc.Status.Progression
 		if currentProgression == progression {
-			log.Info(fmt.Sprintf("drpc progression is %s", progression))
+			log.Infof("drpc progression is %q", progression)
 
 			return nil
 		}
