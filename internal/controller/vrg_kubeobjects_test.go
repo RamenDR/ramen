@@ -12,7 +12,6 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	Recipe "github.com/ramendr/recipe/api/v1alpha1"
 )
 
@@ -100,7 +99,6 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 
 		It("Hook to RecoverSpec", func() {
 			targetRecoverSpec := &kubeobjects.RecoverSpec{
-				BackupName: ramen.ReservedBackupName,
 				Spec: kubeobjects.Spec{
 					KubeResourcesSpec: kubeobjects.KubeResourcesSpec{
 						IncludedNamespaces: []string{namespaceName},
