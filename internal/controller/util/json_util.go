@@ -236,27 +236,28 @@ func compareValues(val1, val2 interface{}, operator string) (bool, error) {
 	case float64:
 		v2, ok := val2.(float64)
 		if !ok {
-			return false, fmt.Errorf("mismatched types")
+			return false, fmt.Errorf("types mismatch: expected %T, actual: %T", val1, val2)
 		}
 
 		return compareFloat(v1, v2, operator)
 	case string:
 		v2, ok := val2.(string)
 		if !ok {
-			return false, fmt.Errorf("mismatched types")
+			return false, fmt.Errorf("types mismatch: expected %T, actual: %T", val1, val2)
 		}
 
 		return compareString(v1, v2, operator)
 	case bool:
 		v2, ok := val2.(bool)
 		if !ok {
-			return false, fmt.Errorf("mismatched types")
+			return false, fmt.Errorf("types mismatch: expected %T, actual: %T", val1, val2)
 		}
 
 		return compareBool(v1, v2, operator)
 	}
 
-	return false, fmt.Errorf("unsupported type or operator")
+	return false, fmt.Errorf("unsupported type or operator, types are %T and %T, operator is %s",
+		val1, val2, operator)
 }
 
 func isKindString(kind reflect.Kind) bool {
