@@ -47,7 +47,7 @@ var (
 	VolumeUnprotectionEnabledForAsyncVolSync = false
 )
 
-// FIXME
+// FIXME #1710
 const NoS3StoreAvailable = "NoS3"
 
 var ControllerType ramendrv1alpha1.ControllerType

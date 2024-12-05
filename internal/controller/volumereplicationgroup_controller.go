@@ -639,10 +639,22 @@ func (v *VRGInstance) clusterDataRestore(result *ctrl.Result) (int, error) {
 		return numRestoredForVS + numRestoredForVR, fmt.Errorf("failed to restore PV/PVC for VolRep (%w)", err)
 	}
 
-	// Only after both succeed, we mark ClusterDataReady as true
-	msg := "Restored PVs and PVCs"
-	if numRestoredForVS+numRestoredForVR == 0 {
+	objectsRestored, err := v.kubeObjectsRecover(result)
+	if err != nil {
+		v.log.Info("Kube objects restore failed")
+
+		return numRestoredForVS + numRestoredForVR, fmt.Errorf("failed to restore kube objects (%w)", err)
+	}
+
+	var msg string
+	// Only after volsync, volrep and kubeObjects succeed, we mark ClusterDataReady as true
+	if numRestoredForVS+numRestoredForVR == 0 && !objectsRestored {
 		msg = "Nothing to restore"
+	} else {
+		msg = fmt.Sprintf("Restored %d volsync PVs/PVCs and %d volrep PVs/PVCs", numRestoredForVS, numRestoredForVR)
+		if objectsRestored {
+			msg = msg + " and kube objects"
+		}
 	}
 
 	setVRGClusterDataReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
