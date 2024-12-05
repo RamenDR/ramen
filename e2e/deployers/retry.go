@@ -18,7 +18,7 @@ func waitSubscriptionPhase(ctx types.Context, namespace, name string, phase subs
 	startTime := time.Now()
 
 	for {
-		sub, err := getSubscription(util.Ctx.Hub.CtrlClient, namespace, name)
+		sub, err := getSubscription(util.Ctx.Hub.Client, namespace, name)
 		if err != nil {
 			return err
 		}

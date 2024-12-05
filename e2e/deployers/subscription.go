@@ -37,7 +37,7 @@ func (s Subscription) Deploy(ctx types.Context) error {
 	log.Info("Deploying workload")
 
 	// create subscription namespace
-	err := util.CreateNamespace(util.Ctx.Hub.CtrlClient, namespace)
+	err := util.CreateNamespace(util.Ctx.Hub.Client, namespace)
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func (s Subscription) Undeploy(ctx types.Context) error {
 		return err
 	}
 
-	return util.DeleteNamespace(util.Ctx.Hub.CtrlClient, namespace, log)
+	return util.DeleteNamespace(util.Ctx.Hub.Client, namespace, log)
 }
 
 func (s Subscription) IsWorkloadSupported(w types.Workload) bool {
