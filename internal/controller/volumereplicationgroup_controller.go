@@ -1393,6 +1393,17 @@ func (v *VRGInstance) updateVRGConditionsAndStatus(result ctrl.Result) ctrl.Resu
 func (v *VRGInstance) updateVRGStatus(result ctrl.Result) ctrl.Result {
 	v.log.Info("Updating VRG status")
 
+	if util.IsCGEnabled(v.instance.GetAnnotations()) {
+		if err := v.updateProtectedCGs(); err != nil {
+			v.log.Info(fmt.Sprintf("Failed to update protected PVC groups (%v/%s)",
+				err, v.instance.Name))
+
+			result.Requeue = true
+
+			return result
+		}
+	}
+
 	v.updateStatusState()
 
 	v.instance.Status.ObservedGeneration = v.instance.Generation
@@ -1498,6 +1509,35 @@ func getStatusStateFromSpecState(state ramendrv1alpha1.ReplicationState) ramendr
 	default:
 		return ramendrv1alpha1.UnknownState
 	}
+}
+
+func (v *VRGInstance) updateProtectedCGs() error {
+	var vgrs volrep.VolumeGroupReplicationList
+	if err := v.reconciler.List(v.ctx, &vgrs); err != nil {
+		return fmt.Errorf("failed to list Volume Group Replications, %w", err)
+	}
+
+	var pvcGroups []ramendrv1alpha1.Groups
+
+	for idx := range vgrs.Items {
+		vgr := &vgrs.Items[idx]
+
+		group := ramendrv1alpha1.Groups{Grouped: []string{}}
+
+		for _, ref := range vgr.Status.PersistentVolumeClaimsRefList {
+			if ref.Name != "" {
+				group.Grouped = append(group.Grouped, ref.Name)
+			}
+		}
+
+		if len(group.Grouped) > 0 {
+			pvcGroups = append(pvcGroups, group)
+		}
+	}
+
+	v.instance.Status.PVCGroups = pvcGroups
+
+	return nil
 }
 
 // updateVRGConditions updates three summary conditions VRGConditionTypeDataReady,
