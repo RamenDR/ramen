@@ -139,10 +139,10 @@ func getCurrentCluster(client client.Client, namespace string, placementName str
 // return dr cluster client
 func getDRClusterClient(clusterName string, drpolicy *ramen.DRPolicy) client.Client {
 	if clusterName == drpolicy.Spec.DRClusters[0] {
-		return util.Ctx.C1.CtrlClient
+		return util.Ctx.C1.Client
 	}
 
-	return util.Ctx.C2.CtrlClient
+	return util.Ctx.C2.Client
 }
 
 func getTargetCluster(client client.Client, namespace, placementName string, drpolicy *ramen.DRPolicy) (string, error) {

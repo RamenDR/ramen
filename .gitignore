@@ -33,6 +33,7 @@ config/hub/bundle
 .zed
 
 # Generated files
+.venv
 venv
 
 # Test enviromemnt generated files

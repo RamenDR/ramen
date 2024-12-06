@@ -35,7 +35,7 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 	}
 
 	// create drpc
-	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub.CtrlClient, drPolicyName)
+	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub.Client, drPolicyName)
 	if err != nil {
 		return err
 	}
@@ -46,12 +46,12 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 
 	drpc := generateDRPCDiscoveredApps(
 		name, namespace, clusterName, drPolicyName, placementName, appname, namespaceInDrCluster)
-	if err = createDRPC(util.Ctx.Hub.CtrlClient, drpc); err != nil {
+	if err = createDRPC(util.Ctx.Hub.Client, drpc); err != nil {
 		return err
 	}
 
 	// wait for drpc ready
-	return waitDRPCReady(ctx, util.Ctx.Hub.CtrlClient, namespace, drpcName)
+	return waitDRPCReady(ctx, util.Ctx.Hub.Client, namespace, drpcName)
 }
 
 // remove DRPC
@@ -66,7 +66,7 @@ func DisableProtectionDiscoveredApps(ctx types.Context) error {
 	placementName := name
 	drpcName := name
 
-	client := util.Ctx.Hub.CtrlClient
+	client := util.Ctx.Hub.Client
 
 	log.Info("Deleting drpc")
 
@@ -108,7 +108,7 @@ func failoverRelocateDiscoveredApps(ctx types.Context, action ramen.DRAction) er
 	namespaceInDrCluster := name // this namespace is in dr clusters
 
 	drpcName := name
-	client := util.Ctx.Hub.CtrlClient
+	client := util.Ctx.Hub.Client
 
 	currentCluster, err := getCurrentCluster(client, namespace, name)
 	if err != nil {

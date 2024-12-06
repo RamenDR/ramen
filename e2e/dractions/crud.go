@@ -129,7 +129,7 @@ func createPlacementManagedByRamen(ctx types.Context, name, namespace string) er
 		},
 	}
 
-	err := util.Ctx.Hub.CtrlClient.Create(context.Background(), placement)
+	err := util.Ctx.Hub.Client.Create(context.Background(), placement)
 	if err != nil {
 		if !errors.IsAlreadyExists(err) {
 			return err
