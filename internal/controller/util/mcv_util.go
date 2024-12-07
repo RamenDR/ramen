@@ -12,9 +12,8 @@ import (
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	errorswrapper "github.com/pkg/errors"
 	storagev1 "k8s.io/api/storage/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -303,7 +302,7 @@ func (m ManagedClusterViewGetterImpl) getManagedClusterResource(
 	// create MCV first
 	mcv, err := m.getOrCreateManagedClusterView(meta, viewscope, logger)
 	if err != nil {
-		return errorswrapper.Wrap(err, "getManagedClusterResource failed")
+		return fmt.Errorf("getManagedClusterResource failed: %w", err)
 	}
 
 	logger.Info(fmt.Sprintf("Get managedClusterResource Returned the following MCV Conditions: %v",
@@ -335,7 +334,7 @@ func parseErrorMessage(message string) error {
 	}
 
 	if checkNotFound(message) {
-		return errors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
+		return k8serrors.NewNotFound(schema.GroupResource{}, "requested resource not found in ManagedCluster")
 	}
 
 	return fmt.Errorf("err: %s", extractLastError(message))
@@ -362,13 +361,13 @@ func (m ManagedClusterViewGetterImpl) GetResource(mcv *viewv1beta1.ManagedCluste
 	}
 
 	if err != nil {
-		return errorswrapper.Wrap(err, "getManagedClusterResource results")
+		return fmt.Errorf("getManagedClusterResource results: %w", err)
 	}
 
 	// good path: convert raw data to usable object
 	err = json.Unmarshal(mcv.Status.Result.Raw, resource)
 	if err != nil {
-		return errorswrapper.Wrap(err, "failed to Unmarshal data from ManagedClusterView to resource")
+		return fmt.Errorf("failed to Unmarshal data from ManagedClusterView to resource: %w", err)
 	}
 
 	return nil // success
@@ -396,15 +395,15 @@ func (m ManagedClusterViewGetterImpl) getOrCreateManagedClusterView(
 
 	err := m.Get(context.TODO(), key, mcv)
 	if err != nil {
-		if !errors.IsNotFound(err) {
-			return nil, errorswrapper.Wrap(err, "failed to get ManagedClusterView")
+		if !k8serrors.IsNotFound(err) {
+			return nil, fmt.Errorf("failed to get ManagedClusterView: %w", err)
 		}
 
 		logger.Info(fmt.Sprintf("Creating ManagedClusterView %s with scope %s",
 			key, viewscope.Name))
 
 		if err := m.Create(context.TODO(), mcv); err != nil {
-			return nil, errorswrapper.Wrap(err, "failed to create ManagedClusterView")
+			return nil, fmt.Errorf("failed to create ManagedClusterView: %w", err)
 		}
 	}
 
@@ -415,7 +414,7 @@ func (m ManagedClusterViewGetterImpl) getOrCreateManagedClusterView(
 
 		mcv.Spec.Scope = viewscope
 		if err := m.Update(context.TODO(), mcv); err != nil {
-			return nil, errorswrapper.Wrap(err, "failed to update ManagedClusterView")
+			return nil, fmt.Errorf("failed to update ManagedClusterView: %w", err)
 		}
 	}
 
@@ -456,7 +455,7 @@ func (m ManagedClusterViewGetterImpl) DeleteManagedClusterView(clusterName, mcvN
 
 	err := m.Get(context.TODO(), types.NamespacedName{Name: mcvName, Namespace: clusterName}, mcv)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			return nil
 		}
 

@@ -14,7 +14,7 @@ import (
 	// corev1 "k8s.io/api/core/v1"
 	// validationErrors "k8s.io/kube-openapi/pkg/validation/errors"
 	// "sigs.k8s.io/controller-runtime/pkg/client"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -64,7 +64,7 @@ var _ = Describe("DRCluster-CEL", func() {
 	drclusterDelete := func(drcluster *ramen.DRCluster) {
 		Expect(k8sClient.Delete(context.TODO(), drcluster)).To(Succeed())
 		Eventually(func() bool {
-			return errors.IsNotFound(k8sClient.Get(context.TODO(), types.NamespacedName{
+			return k8serrors.IsNotFound(k8sClient.Get(context.TODO(), types.NamespacedName{
 				Name: drcluster.Name,
 			}, drcluster))
 		}, timeout, interval).Should(BeTrue())

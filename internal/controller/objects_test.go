@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
 	gomegatypes "github.com/onsi/gomega/types"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -33,7 +33,7 @@ func objectDeletionTimestampRecentVerify(namespacedName types.NamespacedName, ob
 }
 
 func objectNotFoundErrorMatch(groupResource schema.GroupResource, objectName string) gomegatypes.GomegaMatcher {
-	return MatchError(errors.NewNotFound(groupResource, objectName))
+	return MatchError(k8serrors.NewNotFound(groupResource, objectName))
 }
 
 func objectAbsentVerify(namespacedName types.NamespacedName, object client.Object, groupResource schema.GroupResource) {

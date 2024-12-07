@@ -12,7 +12,7 @@ import (
 	// gomegaTypes "github.com/onsi/gomega/types"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	// validationErrors "k8s.io/kube-openapi/pkg/validation/errors"
@@ -92,7 +92,7 @@ var _ = Describe("DRPC-CEL", func() {
 	deleteDRPC := func(drpc *ramen.DRPlacementControl) {
 		Expect(k8sClient.Delete(context.TODO(), drpc)).To(Succeed())
 		Eventually(func() bool {
-			return errors.IsNotFound(k8sClient.Get(context.TODO(), types.NamespacedName{
+			return k8serrors.IsNotFound(k8sClient.Get(context.TODO(), types.NamespacedName{
 				Name: drpc.Name, Namespace: drpc.Namespace,
 			}, drpc))
 		}, timeout, interval).Should(BeTrue())

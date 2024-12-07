@@ -17,7 +17,7 @@ import (
 	"github.com/ramendr/ramen/internal/controller/volsync"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -159,7 +159,7 @@ func (h *volumeGroupSourceHandler) CleanVolumeGroupSnapshot(
 	if err := h.Client.Get(ctx, types.NamespacedName{
 		Name: h.VolumeGroupSnapshotName, Namespace: h.VolumeGroupSnapshotNamespace,
 	}, volumeGroupSnapshot); err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			logger.Info("Volume group snapshot was already deleted")
 
 			return nil
@@ -194,7 +194,7 @@ func (h *volumeGroupSourceHandler) CleanVolumeGroupSnapshot(
 					Name:      restoredPVCName,
 					Namespace: restoredPVCNamespace,
 				},
-			}); err != nil && !errors.IsNotFound(err) {
+			}); err != nil && !k8serrors.IsNotFound(err) {
 				logger.Error(err, "Failed to delete restored PVC ",
 					"PVCName", restoredPVCName, "PVCNamespace", restoredPVCNamespace)
 
@@ -203,7 +203,7 @@ func (h *volumeGroupSourceHandler) CleanVolumeGroupSnapshot(
 		}
 	}
 
-	if err := h.Client.Delete(ctx, volumeGroupSnapshot); err != nil && !errors.IsNotFound(err) {
+	if err := h.Client.Delete(ctx, volumeGroupSnapshot); err != nil && !k8serrors.IsNotFound(err) {
 		logger.Error(err, "Failed to delete volume group snapshot")
 
 		return err
@@ -335,7 +335,7 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromSnapshot(
 			)
 			// If this pvc already exists and not pointing to our desired snapshot, we will need to
 			// delete it and re-create as we cannot update the datah.VolumeGroupSnapshotSource
-			if err := h.Client.Delete(ctx, restoredPVC); err != nil && !errors.IsNotFound(err) {
+			if err := h.Client.Delete(ctx, restoredPVC); err != nil && !k8serrors.IsNotFound(err) {
 				return fmt.Errorf("failed to delete PVC: %w", err)
 			}
 

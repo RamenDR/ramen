@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -948,7 +948,7 @@ func (u *drclusterInstance) unfenceClusterOnCluster(peerCluster *ramen.DRCluster
 	nf, err := u.reconciler.MCVGetter.GetNFFromManagedCluster(u.object.Name,
 		u.object.Namespace, peerCluster.Name, annotations)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			return u.requeueIfNFMWExists(peerCluster)
 		}
 
@@ -979,7 +979,7 @@ func (u *drclusterInstance) unfenceClusterOnCluster(peerCluster *ramen.DRCluster
 func (u *drclusterInstance) requeueIfNFMWExists(peerCluster *ramen.DRCluster) (bool, error) {
 	_, mwErr := u.mwUtil.FindManifestWorkByType(util.MWTypeNF, peerCluster.Name)
 	if mwErr != nil {
-		if errors.IsNotFound(mwErr) {
+		if k8serrors.IsNotFound(mwErr) {
 			u.log.Info("NetworkFence and MW for it not found. Cleaned")
 
 			return false, nil

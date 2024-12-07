@@ -11,7 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	controllers "github.com/ramendr/ramen/internal/controller"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -72,7 +72,7 @@ func protectedVrgListDeleteAndNotFoundWait(protectedVrgList *ramen.ProtectedVolu
 		return protectedVrgListGet(protectedVrgList)
 	}, timeout, interval).Should(
 		MatchError(
-			errors.NewNotFound(
+			k8serrors.NewNotFound(
 				schema.GroupResource{
 					Group:    ramen.GroupVersion.Group,
 					Resource: "protectedvolumereplicationgrouplists",

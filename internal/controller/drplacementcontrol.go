@@ -5,15 +5,15 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"time"
 
 	"github.com/go-logr/logr"
-	errorswrapper "github.com/pkg/errors"
 	"golang.org/x/exp/slices"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
@@ -40,11 +40,11 @@ const (
 )
 
 var (
-	WaitForAppResourceRestoreToComplete error = errorswrapper.New("Waiting for App resources to be restored...")
-	WaitForVolSyncDestRepToComplete     error = errorswrapper.New("Waiting for VolSync RD to complete...")
-	WaitForSourceCluster                error = errorswrapper.New("Waiting for primary to provide Protected PVCs...")
-	WaitForVolSyncManifestWorkCreation  error = errorswrapper.New("Waiting for VolSync ManifestWork to be created...")
-	WaitForVolSyncRDInfoAvailability    error = errorswrapper.New("Waiting for VolSync RDInfo...")
+	ErrWaitForAppResourceRestoreToComplete = errors.New("waiting for App resources to be restored")
+	ErrWaitForVolSyncDestRepToComplete     = errors.New("waiting for VolSync RD to complete")
+	ErrWaitForSourceCluster                = errors.New("waiting for primary to provide Protected PVCs")
+	ErrWaitForVolSyncManifestWorkCreation  = errors.New("waiting for VolSync ManifestWork to be created")
+	ErrWaitForVolSyncRDInfoAvailability    = errors.New("waiting for VolSync RDInfo")
 )
 
 type DRType string
@@ -298,7 +298,7 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 	d.setProgression(rmn.ProgressionCreatingMW)
 	// Create VRG first, to leverage user PlacementRule decision to skip placement and move to cleanup
 	err := d.createVRGManifestWork(homeCluster, rmn.Primary)
-	if err != nil && !errors.IsAlreadyExists(err) {
+	if err != nil && !k8serrors.IsAlreadyExists(err) {
 		return false, err
 	}
 
@@ -1315,13 +1315,13 @@ func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace str
 		d.setProgression(rmn.ProgressionWaitingForResourceRestore)
 
 		// We just created MWs. Give it time until the App resources have been restored
-		return fmt.Errorf("%w)", WaitForAppResourceRestoreToComplete)
+		return fmt.Errorf("%w)", ErrWaitForAppResourceRestoreToComplete)
 	}
 
 	if !d.checkReadiness(targetCluster) {
 		d.setProgression(rmn.ProgressionWaitingForResourceRestore)
 
-		return fmt.Errorf("%w)", WaitForAppResourceRestoreToComplete)
+		return fmt.Errorf("%w)", ErrWaitForAppResourceRestoreToComplete)
 	}
 
 	err = d.updateUserPlacementRule(targetCluster, targetClusterNamespace)
@@ -1339,7 +1339,7 @@ func (d *DRPCInstance) createVRGManifestWorkAsPrimary(targetCluster string) (boo
 
 	vrg, err := d.getVRGFromManifestWork(targetCluster)
 	if err != nil {
-		if !errors.IsNotFound(err) {
+		if !k8serrors.IsNotFound(err) {
 			return false, err
 		}
 	}
@@ -1401,7 +1401,7 @@ func (d *DRPCInstance) vrgExistsAndPrimary(targetCluster string) bool {
 func (d *DRPCInstance) mwExistsAndPlacementUpdated(targetCluster string) (bool, error) {
 	_, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, targetCluster)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			return false, nil
 		}
 
@@ -1425,7 +1425,7 @@ func (d *DRPCInstance) moveVRGToSecondaryEverywhere() bool {
 	for _, clusterName := range rmnutil.DRPolicyClusterNames(d.drPolicy) {
 		_, err := d.updateVRGState(clusterName, rmn.Secondary)
 		if err != nil {
-			if errors.IsNotFound(err) {
+			if k8serrors.IsNotFound(err) {
 				continue
 			}
 
@@ -1490,7 +1490,7 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string, repState rmn.Re
 
 	// Safety latch to ensure VRG MW is not present
 	vrg, err := d.getVRGFromManifestWork(homeCluster)
-	if (err != nil && !errors.IsNotFound(err)) || vrg != nil {
+	if (err != nil && !k8serrors.IsNotFound(err)) || vrg != nil {
 		if err != nil {
 			return fmt.Errorf("error (%w) determining ManifestWork for VolumeReplicationGroup resource "+
 				"exists on cluster %s", err, homeCluster)
@@ -1503,7 +1503,7 @@ func (d *DRPCInstance) createVRGManifestWork(homeCluster string, repState rmn.Re
 		}
 
 		return fmt.Errorf("VolumeReplicationGroup ManifestWork for cluster %s in state %s exists (%w)",
-			homeCluster, string(vrg.Spec.ReplicationState), errors.NewAlreadyExists(
+			homeCluster, string(vrg.Spec.ReplicationState), k8serrors.NewAlreadyExists(
 				schema.GroupResource{
 					Group:    rmn.GroupVersion.Group,
 					Resource: "VolumeReplicationGroup",
@@ -1538,7 +1538,7 @@ func (d *DRPCInstance) ensureVRGManifestWork(homeCluster string) error {
 
 	mw, mwErr := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, homeCluster)
 	if mwErr != nil {
-		if errors.IsNotFound(mwErr) {
+		if k8serrors.IsNotFound(mwErr) {
 			return fmt.Errorf("failed to find ManifestWork for VolumeReplicationGroup from cluster %s", homeCluster)
 		}
 
@@ -1830,7 +1830,7 @@ func (d *DRPCInstance) ensureNamespaceManifestWork(homeCluster string) error {
 	// Ensure the MW for the namespace exists
 	mw, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeNS, homeCluster)
 	if err != nil {
-		if !errors.IsNotFound(err) {
+		if !k8serrors.IsNotFound(err) {
 			return fmt.Errorf("failed to get NS MW (%w)", err)
 		}
 
@@ -1922,7 +1922,7 @@ func (d *DRPCInstance) cleanupSecondaries(clusterToSkip string) error {
 			// Ideally this will never be called due to adoption of VRG in place, in the case of upgrades from older
 			// scheme were VRG was not preserved for VR workloads, this can be hit IFF the upgrade happened when some
 			// workload was not in peerReady state.
-			if errors.IsNotFound(err) {
+			if k8serrors.IsNotFound(err) {
 				err := d.EnsureSecondaryReplicationSetup(clusterToSkip)
 				if err != nil {
 					return err
@@ -1986,7 +1986,7 @@ func (d *DRPCInstance) ensureVRGIsSecondaryOnCluster(clusterName string) bool {
 	vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name,
 		d.vrgNamespace, clusterName, annotations)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			return true // ensured
 		}
 
@@ -2048,7 +2048,7 @@ func (d *DRPCInstance) ensureDataProtectedOnCluster(clusterName string) bool {
 	vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name,
 		d.vrgNamespace, clusterName, annotations)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			// expectation is that VRG should be present. Otherwise, this function
 			// would not have been called. Return false
 			d.log.Info("VRG not found", "errorValue", err)

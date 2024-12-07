@@ -10,10 +10,9 @@ import (
 	"reflect"
 
 	"github.com/go-logr/logr"
-	errorswrapper "github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -88,7 +87,7 @@ func (mwu *MWUtil) FindManifestWork(mwName, managedCluster string) (*ocmworkv1.M
 
 	err := mwu.Client.Get(mwu.Ctx, types.NamespacedName{Name: mwName, Namespace: managedCluster}, mw)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			return nil, fmt.Errorf("%w", err)
 		}
 
@@ -426,7 +425,7 @@ func GetRawExtension(
 func (mwu *MWUtil) GetDrClusterManifestWork(clusterName string) (*ocmworkv1.ManifestWork, error) {
 	mw, err := mwu.FindManifestWork(DrClusterManifestWorkName, clusterName)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			return nil, nil
 		}
 
@@ -611,8 +610,8 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 
 	err := mwu.Client.Get(mwu.Ctx, key, foundMW)
 	if err != nil {
-		if !errors.IsNotFound(err) {
-			return ctrlutil.OperationResultNone, errorswrapper.Wrap(err, fmt.Sprintf("failed to fetch ManifestWork %s", key))
+		if !k8serrors.IsNotFound(err) {
+			return ctrlutil.OperationResultNone, fmt.Errorf("failed to fetch ManifestWork %s: %w", key, err)
 		}
 
 		mwu.Log.Info("Creating ManifestWork", "cluster", managedClusternamespace, "MW", mw)
@@ -651,7 +650,7 @@ func (mwu *MWUtil) DeleteNamespaceManifestWork(clusterName string, annotations m
 
 	err := mwu.Client.Get(mwu.Ctx, types.NamespacedName{Name: mwName, Namespace: clusterName}, mw)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			return nil
 		}
 
@@ -690,7 +689,7 @@ func (mwu *MWUtil) DeleteManifestWork(mwName, mwNamespace string) error {
 
 	err := mwu.Client.Get(mwu.Ctx, types.NamespacedName{Name: mwName, Namespace: mwNamespace}, mw)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			return nil
 		}
 
@@ -700,7 +699,7 @@ func (mwu *MWUtil) DeleteManifestWork(mwName, mwNamespace string) error {
 	mwu.Log.Info("Deleting ManifestWork", "name", mw.Name, "namespace", mwNamespace)
 
 	err = mwu.Client.Delete(mwu.Ctx, mw)
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil && !k8serrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete MW. Error %w", err)
 	}
 

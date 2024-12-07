@@ -14,7 +14,7 @@ import (
 	"github.com/ramendr/ramen/internal/controller/util"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -66,7 +66,7 @@ var _ = Describe("DRPolicyController", func() {
 	drpolicyDeleteAndConfirm := func(drpolicy *ramen.DRPolicy) {
 		Expect(k8sClient.Delete(context.TODO(), drpolicy)).To(Succeed())
 		Eventually(func() bool {
-			return errors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{Name: drpolicy.Name}, drpolicy))
+			return k8serrors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{Name: drpolicy.Name}, drpolicy))
 		}, timeout, interval).Should(BeTrue())
 	}
 	drpolicyDelete := func(drpolicy *ramen.DRPolicy) {
@@ -286,10 +286,10 @@ var _ = Describe("DRPolicyController", func() {
 	})
 	When(`a drpolicy creation request contains an invalid scheduling interval`, func() {
 		It(`should fail`, func() {
-			err := func(value string) *errors.StatusError {
+			err := func(value string) *k8serrors.StatusError {
 				path := field.NewPath(`spec`, `schedulingInterval`)
 
-				return errors.NewInvalid(
+				return k8serrors.NewInvalid(
 					schema.GroupKind{
 						Group: ramen.GroupVersion.Group,
 						Kind:  `DRPolicy`,

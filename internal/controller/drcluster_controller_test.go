@@ -14,7 +14,7 @@ import (
 	controllers "github.com/ramendr/ramen/internal/controller"
 	"github.com/ramendr/ramen/internal/controller/util"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -88,13 +88,13 @@ var _ = Describe("DRClusterController", func() {
 		clusterName := drcluster.Name
 		Expect(k8sClient.Delete(context.TODO(), drcluster)).To(Succeed())
 		Eventually(func() bool {
-			return errors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{
+			return k8serrors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{
 				Namespace: drcluster.Namespace,
 				Name:      drcluster.Name,
 			}, drcluster))
 		}, timeout, interval).Should(BeTrue())
 		manifestWork := &workv1.ManifestWork{}
-		Expect(errors.IsNotFound(apiReader.Get(
+		Expect(k8serrors.IsNotFound(apiReader.Get(
 			context.TODO(),
 			types.NamespacedName{
 				Name:      util.DrClusterManifestWorkName,
@@ -180,7 +180,7 @@ var _ = Describe("DRClusterController", func() {
 		Eventually(func() error {
 			return k8sClient.Get(context.TODO(), types.NamespacedName{Name: namespace.Name}, namespace)
 		}, timeout, interval).Should(
-			MatchError(errors.NewNotFound(schema.GroupResource{Resource: "namespaces"}, namespace.Name)),
+			MatchError(k8serrors.NewNotFound(schema.GroupResource{Resource: "namespaces"}, namespace.Name)),
 			"%v", namespace,
 		)
 	}
@@ -226,7 +226,7 @@ var _ = Describe("DRClusterController", func() {
 		policy := drpolicy.DeepCopy()
 		Expect(k8sClient.Delete(context.TODO(), policy)).To(Succeed())
 		Eventually(func() bool {
-			return errors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{Name: policy.Name}, policy))
+			return k8serrors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{Name: policy.Name}, policy))
 		}, timeout, interval).Should(BeTrue())
 	}
 

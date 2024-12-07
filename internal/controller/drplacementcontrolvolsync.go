@@ -9,7 +9,7 @@ import (
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
@@ -23,7 +23,7 @@ func (d *DRPCInstance) EnsureSecondaryReplicationSetup(srcCluster string) error 
 	}
 
 	if opResult == ctrlutil.OperationResultCreated {
-		return WaitForVolSyncManifestWorkCreation
+		return ErrWaitForVolSyncManifestWorkCreation
 	}
 
 	if _, found := d.vrgs[srcCluster]; !found {
@@ -99,7 +99,7 @@ func (d *DRPCInstance) IsVolSyncReplicationRequired(homeCluster string) (bool, e
 	}
 
 	if len(vrg.Status.ProtectedPVCs) == 0 {
-		return false, WaitForSourceCluster
+		return false, ErrWaitForSourceCluster
 	}
 
 	for _, protectedPVC := range vrg.Status.ProtectedPVCs {
@@ -217,7 +217,7 @@ func (d *DRPCInstance) ResetVolSyncRDOnPrimary(clusterName string) error {
 
 	mw, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, clusterName)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			return nil
 		}
 

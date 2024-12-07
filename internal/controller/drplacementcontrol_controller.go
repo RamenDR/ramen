@@ -5,6 +5,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"time"
@@ -13,9 +14,8 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
-	errorswrapper "github.com/pkg/errors"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -60,7 +60,7 @@ const (
 	DoNotDeletePVCAnnotationVal = "true"
 )
 
-var InitialWaitTimeForDRPCPlacementRule = errorswrapper.New("Waiting for DRPC Placement to produces placement decision")
+var ErrInitialWaitTimeForDRPCPlacementRule = errors.New("waiting for DRPC Placement to produces placement decision")
 
 // ProgressCallback of function type
 type ProgressCallback func(string, string)
@@ -130,13 +130,13 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	err := r.APIReader.Get(ctx, req.NamespacedName, drpc)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			logger.Info(fmt.Sprintf("DRPC object not found %v", req.NamespacedName))
 			// Request object not found, could have been deleted after reconcile request.
 			return ctrl.Result{}, nil
 		}
 
-		return ctrl.Result{}, errorswrapper.Wrap(err, "failed to get DRPC object")
+		return ctrl.Result{}, fmt.Errorf("failed to get DRPC object: %w", err)
 	}
 
 	// Save a copy of the instance status to be used for the VRG status update comparison
@@ -155,7 +155,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	var placementObj client.Object
 
 	placementObj, err = getPlacementOrPlacementRule(ctx, r.Client, drpc, logger)
-	if err != nil && !(errors.IsNotFound(err) && rmnutil.ResourceIsDeleted(drpc)) {
+	if err != nil && !(k8serrors.IsNotFound(err) && rmnutil.ResourceIsDeleted(drpc)) {
 		r.recordFailure(ctx, drpc, placementObj, "Error", err.Error(), logger)
 
 		return ctrl.Result{}, err
@@ -222,17 +222,17 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	d, err := r.createDRPCInstance(ctx, drPolicy, drpc, placementObj, ramenConfig, logger)
-	if err != nil && !errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
+	if err != nil && !errors.Is(err, ErrInitialWaitTimeForDRPCPlacementRule) {
 		err2 := r.updateDRPCStatus(ctx, drpc, placementObj, logger)
 
 		return ctrl.Result{}, fmt.Errorf("failed to create DRPC instance (%w) and (%v)", err, err2)
 	}
 
-	if errorswrapper.Is(err, InitialWaitTimeForDRPCPlacementRule) {
+	if errors.Is(err, ErrInitialWaitTimeForDRPCPlacementRule) {
 		const initialWaitTime = 5
 
 		r.recordFailure(ctx, drpc, placementObj, "Waiting",
-			fmt.Sprintf("%v - wait time: %v", InitialWaitTimeForDRPCPlacementRule, initialWaitTime), logger)
+			fmt.Sprintf("%v - wait time: %v", ErrInitialWaitTimeForDRPCPlacementRule, initialWaitTime), logger)
 
 		return ctrl.Result{RequeueAfter: time.Second * initialWaitTime}, nil
 	}
@@ -791,7 +791,7 @@ func (r *DRPlacementControlReconciler) getDRPCPlacementRule(ctx context.Context,
 
 		// Make sure that we give time to the DRPC PlacementRule to run and produces decisions
 		if drpcPlRule != nil && len(drpcPlRule.Status.Decisions) == 0 {
-			return fmt.Errorf("%w", InitialWaitTimeForDRPCPlacementRule)
+			return ErrInitialWaitTimeForDRPCPlacementRule
 		}
 	} else {
 		log.Info("Preferred cluster is configured. Dynamic selection is disabled",
@@ -846,7 +846,7 @@ func getPlacementOrPlacementRule(
 
 	usrPlacement, err = getPlacementRule(ctx, k8sclient, drpc, log)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			// PacementRule not found. Check Placement instead
 			usrPlacement, err = getPlacement(ctx, k8sclient, drpc, log)
 		}
@@ -1026,7 +1026,7 @@ func (r *DRPlacementControlReconciler) getOrClonePlacementRule(ctx context.Conte
 
 	clonedPlRule, err := r.getClonedPlacementRule(ctx, clonedPlRuleName, drpc.Namespace, log)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			clonedPlRule, err = r.clonePlacementRule(ctx, drPolicy, userPlRule, clonedPlRuleName, log)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create cloned placementrule error: %w", err)
@@ -1081,7 +1081,7 @@ func (r *DRPlacementControlReconciler) clonePlacementRule(ctx context.Context,
 	if err != nil {
 		log.Error(err, "failed to clone placement rule", "name", clonedPlRule.Name)
 
-		return nil, errorswrapper.Wrap(err, "failed to create PlacementRule")
+		return nil, fmt.Errorf("failed to create PlacementRule: %w", err)
 	}
 
 	return clonedPlRule, nil
@@ -1110,7 +1110,7 @@ func getVRGsFromManagedClusters(
 		vrg, err := mcvGetter.GetVRGFromManagedCluster(drpc.Name, vrgNamespace, drCluster.Name, annotations)
 		if err != nil {
 			// Only NotFound error is accepted
-			if errors.IsNotFound(err) {
+			if k8serrors.IsNotFound(err) {
 				log.Info(fmt.Sprintf("VRG not found on %q", drCluster.Name))
 
 				numClustersQueriedSuccessfully++
@@ -1155,7 +1155,7 @@ func (r *DRPlacementControlReconciler) deleteClonedPlacementRule(ctx context.Con
 ) error {
 	plRule, err := r.getClonedPlacementRule(ctx, name, namespace, log)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			return nil
 		}
 
@@ -1267,7 +1267,7 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 	drpc.Status.LastUpdateTime = &now
 
 	if err := r.Status().Update(ctx, drpc); err != nil {
-		return errorswrapper.Wrap(err, "failed to update DRPC status")
+		return fmt.Errorf("failed to update DRPC status: %w", err)
 	}
 
 	log.Info("Updated DRPC Status")
@@ -1675,7 +1675,7 @@ func (r *DRPlacementControlReconciler) createPlacementDecision(ctx context.Conte
 			return plDecision, nil
 		}
 
-		if !errors.IsAlreadyExists(err) {
+		if !k8serrors.IsAlreadyExists(err) {
 			return nil, err
 		}
 
@@ -2186,7 +2186,7 @@ func adoptVRG(
 
 	mw, err := mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, cluster)
 	if err != nil {
-		if !errors.IsNotFound(err) {
+		if !k8serrors.IsNotFound(err) {
 			log.Info("error fetching VRG ManifestWork during adoption", "error", err, "cluster", cluster)
 
 			return !adopted

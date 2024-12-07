@@ -9,7 +9,7 @@ import (
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -223,7 +223,7 @@ func CreateNamespaceIfNotExists(ctx context.Context, k8sClient client.Client, na
 
 	err := k8sClient.Get(ctx, types.NamespacedName{Name: namespace}, ns)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			ns.Name = namespace
 
 			err = k8sClient.Create(ctx, ns)

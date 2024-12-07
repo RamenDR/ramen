@@ -6,7 +6,7 @@ package controllers
 import (
 	"github.com/go-logr/logr"
 	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ocmworkv1 "open-cluster-management.io/api/work/v1"
 
@@ -341,7 +341,7 @@ func (u *drclusterInstance) pruneMModeMCV(
 	}
 
 	// Other errors require us to try later
-	if !errors.IsNotFound(err) {
+	if !k8serrors.IsNotFound(err) {
 		u.log.Error(err, "Error fetching viewed resource")
 
 		u.requeue = true
