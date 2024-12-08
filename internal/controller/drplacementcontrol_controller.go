@@ -1279,7 +1279,7 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 // - The status update is NOT intended for a VRG that should be cleaned up on a peer cluster
 // It also updates DRPC ConditionProtected based on current state of VRG.
 //
-//nolint:funlen
+//nolint:funlen,cyclop
 func (r *DRPlacementControlReconciler) updateResourceCondition(
 	ctx context.Context, drpc *rmn.DRPlacementControl, userPlacement client.Object,
 ) {
@@ -1341,6 +1341,10 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 	}
 
 	drpc.Status.ResourceConditions.ResourceMeta.ProtectedPVCs = protectedPVCs
+
+	if rmnutil.IsCGEnabled(vrg.GetAnnotations()) {
+		drpc.Status.ResourceConditions.ResourceMeta.PVCGroups = vrg.Status.PVCGroups
+	}
 
 	if vrg.Status.LastGroupSyncTime != nil || drpc.Spec.Action != rmn.ActionRelocate {
 		drpc.Status.LastGroupSyncTime = vrg.Status.LastGroupSyncTime
