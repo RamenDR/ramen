@@ -86,18 +86,25 @@ enough resources:
 
    For more information see [Virtualization on Fedora](https://docs.fedoraproject.org/en-US/quick-docs/virtualization-getting-started/).
 
-1. Install the `kubectl` tool. See
-   [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
-   for details.
-   Tested with version v1.30.2.
-
 1. Install minikube - on Fedora you can use::
 
    ```
    sudo dnf install https://storage.googleapis.com/minikube/releases/latest/minikube-latest.x86_64.rpm
    ```
 
-   Tested with version v1.33.1.
+   Tested with version v1.34.0.
+
+1. Install the `kubectl` tool
+
+   ```
+   curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+   sudo install kubectl /usr/local/bin
+   rm kubectl
+   ```
+
+   For more info see
+   [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
+   Tested with version v1.31.3.
 
 1. Validate the installation
 
