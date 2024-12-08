@@ -27,11 +27,19 @@ environment.
    sudo dnf install https://storage.googleapis.com/minikube/releases/latest/minikube-latest.x86_64.rpm
    ```
 
-   Tested with version v1.33.1.
+   Tested with version v1.34.0.
 
-1. Install the `kubectl` tool. See
+1. Install the `kubectl` tool
+
+   ```
+   curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+   sudo install kubectl /usr/local/bin
+   rm kubectl
+   ```
+
+   For more info see
    [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
-   Tested with version v1.30.2.
+   Tested with version v1.31.3.
 
 1. Install `clusteradm` tool. See
    [Install clusteradm CLI tool](https://open-cluster-management.io/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool)
