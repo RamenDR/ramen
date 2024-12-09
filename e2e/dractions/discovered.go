@@ -17,7 +17,8 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 	managementNamespace := ctx.ManagementNamespace()
 	appNamespace := ctx.AppNamespace()
 
-	log.Info("Protecting workload")
+	// TODO: log cluster namespace for completeness?
+	log.Infof("Protecting workload in namespace %q", managementNamespace)
 
 	drPolicyName := util.DefaultDRPolicyName
 	appname := w.GetAppName()
@@ -61,7 +62,8 @@ func DisableProtectionDiscoveredApps(ctx types.Context) error {
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
 
-	log.Info("Unprotecting workload")
+	// TODO: log cluster namespace for completeness?
+	log.Infof("Unprotecting workload in namespace %q", managementNamespace)
 
 	placementName := name
 	drpcName := name
@@ -88,14 +90,18 @@ func DisableProtectionDiscoveredApps(ctx types.Context) error {
 
 func FailoverDiscoveredApps(ctx types.Context) error {
 	log := ctx.Logger()
-	log.Info("Failing over workload")
+	managementNamespace := ctx.ManagementNamespace()
+
+	log.Infof("Failing over workload in namespace %q", managementNamespace)
 
 	return failoverRelocateDiscoveredApps(ctx, ramen.ActionFailover, ramen.FailedOver)
 }
 
 func RelocateDiscoveredApps(ctx types.Context) error {
 	log := ctx.Logger()
-	log.Info("Relocating workload")
+	managementNamespace := ctx.ManagementNamespace()
+
+	log.Infof("Relocating workload in namespace %q", managementNamespace)
 
 	return failoverRelocateDiscoveredApps(ctx, ramen.ActionRelocate, ramen.Relocated)
 }

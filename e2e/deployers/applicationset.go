@@ -16,7 +16,7 @@ func (a ApplicationSet) Deploy(ctx types.Context) error {
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
 
-	log.Info("Deploying workload")
+	log.Infof("Deploying applicationset in namespace %q", managementNamespace)
 
 	err := CreateManagedClusterSetBinding(McsbName, managementNamespace)
 	if err != nil {
@@ -47,7 +47,7 @@ func (a ApplicationSet) Undeploy(ctx types.Context) error {
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
 
-	log.Info("Undeploying workload")
+	log.Infof("Undeploying applicationset in namespace %q", managementNamespace)
 
 	err := DeleteApplicationSet(ctx, a)
 	if err != nil {
