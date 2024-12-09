@@ -41,6 +41,13 @@ type Context interface {
 	Deployer() Deployer
 	Workload() Workload
 	Name() string
-	Namespace() string
+
+	// Namespace for OCM and Ramen resources (Subscription, ApplicationSet, DRPC, VRG) on the hub and managed clusters.
+	// Depending on the deployer, it may be the same as AppNamespace().
+	ManagementNamespace() string
+
+	// Namespace for application resources on the managed clusters.
+	AppNamespace() string
+
 	Logger() *zap.SugaredLogger
 }

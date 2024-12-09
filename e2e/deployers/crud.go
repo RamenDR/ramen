@@ -136,7 +136,7 @@ func CreateSubscription(ctx types.Context, s Subscription) error {
 	name := ctx.Name()
 	log := ctx.Logger()
 	w := ctx.Workload()
-	namespace := name
+	managementNamespace := ctx.ManagementNamespace()
 
 	labels := make(map[string]string)
 	labels[AppLabelKey] = name
@@ -156,7 +156,7 @@ func CreateSubscription(ctx types.Context, s Subscription) error {
 	subscription := &subscriptionv1.Subscription{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
-			Namespace:   namespace,
+			Namespace:   managementNamespace,
 			Labels:      labels,
 			Annotations: annotations,
 		},
@@ -191,12 +191,12 @@ func CreateSubscription(ctx types.Context, s Subscription) error {
 func DeleteSubscription(ctx types.Context, s Subscription) error {
 	name := ctx.Name()
 	log := ctx.Logger()
-	namespace := name
+	managementNamespace := ctx.ManagementNamespace()
 
 	subscription := &subscriptionv1.Subscription{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: managementNamespace,
 		},
 	}
 
@@ -276,12 +276,13 @@ func CreateApplicationSet(ctx types.Context, a ApplicationSet) error {
 	name := ctx.Name()
 	log := ctx.Logger()
 	w := ctx.Workload()
-	namespace := util.ArgocdNamespace
+	managementNamespace := ctx.ManagementNamespace()
+	appNamespace := ctx.AppNamespace()
 
 	appset := &argocdv1alpha1hack.ApplicationSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: managementNamespace,
 		},
 		Spec: argocdv1alpha1hack.ApplicationSetSpec{
 			Generators: []argocdv1alpha1hack.ApplicationSetGenerator{
@@ -309,7 +310,7 @@ func CreateApplicationSet(ctx types.Context, a ApplicationSet) error {
 					},
 					Destination: argocdv1alpha1hack.ApplicationDestination{
 						Server:    "{{server}}",
-						Namespace: name,
+						Namespace: appNamespace,
 					},
 					Project: "default",
 					SyncPolicy: &argocdv1alpha1hack.SyncPolicy{
@@ -353,12 +354,12 @@ func CreateApplicationSet(ctx types.Context, a ApplicationSet) error {
 func DeleteApplicationSet(ctx types.Context, a ApplicationSet) error {
 	name := ctx.Name()
 	log := ctx.Logger()
-	namespace := util.ArgocdNamespace
+	managementNamespace := ctx.ManagementNamespace()
 
 	appset := &argocdv1alpha1hack.ApplicationSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: managementNamespace,
 		},
 	}
 
