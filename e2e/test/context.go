@@ -44,11 +44,15 @@ func (c *Context) Name() string {
 	return c.name
 }
 
-func (c *Context) Namespace() string {
+func (c *Context) ManagementNamespace() string {
 	if ns := c.deployer.GetNamespace(); ns != "" {
 		return ns
 	}
 
+	return c.AppNamespace()
+}
+
+func (c *Context) AppNamespace() string {
 	return c.name
 }
 

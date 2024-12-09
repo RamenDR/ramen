@@ -33,7 +33,7 @@ func EnableProtection(ctx types.Context) error {
 
 	w := ctx.Workload()
 	name := ctx.Name()
-	namespace := ctx.Namespace()
+	hubNamespace := ctx.ManagementNamespace()
 	log := ctx.Logger()
 
 	log.Info("Protecting workload")
@@ -43,7 +43,7 @@ func EnableProtection(ctx types.Context) error {
 	placementName := name
 	drpcName := name
 
-	placementDecision, err := waitPlacementDecision(util.Ctx.Hub.Client, namespace, placementName)
+	placementDecision, err := waitPlacementDecision(util.Ctx.Hub.Client, hubNamespace, placementName)
 	if err != nil {
 		return err
 	}
@@ -54,7 +54,7 @@ func EnableProtection(ctx types.Context) error {
 	log.Info("Annotating placement")
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		placement, err := getPlacement(util.Ctx.Hub.Client, namespace, placementName)
+		placement, err := getPlacement(util.Ctx.Hub.Client, hubNamespace, placementName)
 		if err != nil {
 			return err
 		}
@@ -73,7 +73,7 @@ func EnableProtection(ctx types.Context) error {
 
 	log.Info("Creating drpc")
 
-	drpc := generateDRPC(name, namespace, clusterName, drPolicyName, placementName, appname)
+	drpc := generateDRPC(name, hubNamespace, clusterName, drPolicyName, placementName, appname)
 	if err = createDRPC(util.Ctx.Hub.Client, drpc); err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func EnableProtection(ctx types.Context) error {
 		return err
 	}
 
-	return waitDRPCReady(ctx, util.Ctx.Hub.Client, namespace, drpcName)
+	return waitDRPCReady(ctx, util.Ctx.Hub.Client, hubNamespace, drpcName)
 }
 
 // remove DRPC
@@ -100,17 +100,17 @@ func DisableProtection(ctx types.Context) error {
 	log.Info("Unprotecting workload")
 
 	name := ctx.Name()
-	namespace := ctx.Namespace()
+	hubNamespace := ctx.ManagementNamespace()
 	drpcName := name
 	client := util.Ctx.Hub.Client
 
 	log.Info("Deleting drpc")
 
-	if err := deleteDRPC(client, namespace, drpcName); err != nil {
+	if err := deleteDRPC(client, hubNamespace, drpcName); err != nil {
 		return err
 	}
 
-	return waitDRPCDeleted(ctx, client, namespace, drpcName)
+	return waitDRPCDeleted(ctx, client, hubNamespace, drpcName)
 }
 
 func Failover(ctx types.Context) error {
@@ -145,18 +145,18 @@ func Relocate(ctx types.Context) error {
 
 func failoverRelocate(ctx types.Context, action ramen.DRAction, state ramen.DRState) error {
 	drpcName := ctx.Name()
-	namespace := ctx.Namespace()
+	hubNamespace := ctx.ManagementNamespace()
 	client := util.Ctx.Hub.Client
 
-	if err := waitAndUpdateDRPC(ctx, client, namespace, drpcName, action); err != nil {
+	if err := waitAndUpdateDRPC(ctx, client, hubNamespace, drpcName, action); err != nil {
 		return err
 	}
 
-	if err := waitDRPCPhase(ctx, client, namespace, drpcName, state); err != nil {
+	if err := waitDRPCPhase(ctx, client, hubNamespace, drpcName, state); err != nil {
 		return err
 	}
 
-	return waitDRPCReady(ctx, client, namespace, drpcName)
+	return waitDRPCReady(ctx, client, hubNamespace, drpcName)
 }
 
 func waitAndUpdateDRPC(
