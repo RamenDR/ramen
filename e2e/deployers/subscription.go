@@ -23,6 +23,7 @@ func (s Subscription) GetNamespace() string {
 	return ""
 }
 
+// Deploy creates a Subscription on the hub cluster, creating the workload on one of the managed clusters.
 func (s Subscription) Deploy(ctx types.Context) error {
 	// Generate a Placement for the Workload
 	// Use the global Channel
@@ -32,22 +33,22 @@ func (s Subscription) Deploy(ctx types.Context) error {
 	// Address namespace/label/suffix as needed for various resources
 	name := ctx.Name()
 	log := ctx.Logger()
-	namespace := name
+	managementNamespace := ctx.ManagementNamespace()
 
 	log.Info("Deploying workload")
 
 	// create subscription namespace
-	err := util.CreateNamespace(util.Ctx.Hub.Client, namespace)
+	err := util.CreateNamespace(util.Ctx.Hub.Client, managementNamespace)
 	if err != nil {
 		return err
 	}
 
-	err = CreateManagedClusterSetBinding(McsbName, namespace)
+	err = CreateManagedClusterSetBinding(McsbName, managementNamespace)
 	if err != nil {
 		return err
 	}
 
-	err = CreatePlacement(ctx, name, namespace)
+	err = CreatePlacement(ctx, name, managementNamespace)
 	if err != nil {
 		return err
 	}
@@ -57,14 +58,14 @@ func (s Subscription) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	return waitSubscriptionPhase(ctx, namespace, name, subscriptionv1.SubscriptionPropagated)
+	return waitSubscriptionPhase(ctx, managementNamespace, name, subscriptionv1.SubscriptionPropagated)
 }
 
-// Delete Subscription, Placement, Binding
+// Undeploy deletes a subscription from the hub cluster, deleting the workload from the managed clusters.
 func (s Subscription) Undeploy(ctx types.Context) error {
 	name := ctx.Name()
 	log := ctx.Logger()
-	namespace := name
+	managementNamespace := ctx.ManagementNamespace()
 
 	log.Info("Undeploying workload")
 
@@ -73,17 +74,17 @@ func (s Subscription) Undeploy(ctx types.Context) error {
 		return err
 	}
 
-	err = DeletePlacement(ctx, name, namespace)
+	err = DeletePlacement(ctx, name, managementNamespace)
 	if err != nil {
 		return err
 	}
 
-	err = DeleteManagedClusterSetBinding(ctx, McsbName, namespace)
+	err = DeleteManagedClusterSetBinding(ctx, McsbName, managementNamespace)
 	if err != nil {
 		return err
 	}
 
-	return util.DeleteNamespace(util.Ctx.Hub.Client, namespace, log)
+	return util.DeleteNamespace(util.Ctx.Hub.Client, managementNamespace, log)
 }
 
 func (s Subscription) IsWorkloadSupported(w types.Workload) bool {
