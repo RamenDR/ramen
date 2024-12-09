@@ -35,7 +35,7 @@ func (s Subscription) Deploy(ctx types.Context) error {
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
 
-	log.Info("Deploying workload")
+	log.Infof("Deploying subscription in namespace %q", managementNamespace)
 
 	// create subscription namespace
 	err := util.CreateNamespace(util.Ctx.Hub.Client, managementNamespace)
@@ -67,7 +67,7 @@ func (s Subscription) Undeploy(ctx types.Context) error {
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
 
-	log.Info("Undeploying workload")
+	log.Infof("Undeploying subscription in namespace %q", managementNamespace)
 
 	err := DeleteSubscription(ctx, s)
 	if err != nil {
