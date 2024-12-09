@@ -25,9 +25,10 @@ func (d DiscoveredApps) GetNamespace() string {
 // Deploy creates a workload on the first managed cluster.
 func (d DiscoveredApps) Deploy(ctx types.Context) error {
 	log := ctx.Logger()
+	name := ctx.Name()
 	clusterNamespace := ctx.AppNamespace()
 
-	log.Info("Deploying workload")
+	log.Info("Deploying workload %q in namespace %q", name, clusterNamespace)
 
 	// create namespace in both dr clusters
 	if err := util.CreateNamespaceAndAddAnnotation(clusterNamespace); err != nil {
@@ -74,9 +75,10 @@ func (d DiscoveredApps) Deploy(ctx types.Context) error {
 // Undeploy deletes the workload from the managed clusters.
 func (d DiscoveredApps) Undeploy(ctx types.Context) error {
 	log := ctx.Logger()
+	name := ctx.Name()
 	clusterNamespace := ctx.AppNamespace()
 
-	log.Info("Undeploying workload")
+	log.Info("Undeploying workload %q in namespace %q", name, clusterNamespace)
 
 	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub.Client, util.DefaultDRPolicyName)
 	if err != nil {
