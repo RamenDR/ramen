@@ -29,12 +29,25 @@ type DRClusterConfigSpec struct {
 	// TODO: PeerClusters []ClusterID; to decide if we really need this!
 }
 
+type DRClusterConfigState string
+
+const (
+	DRClusterConfigFailed = DRClusterConfigState("Failed")
+	DRClusterConfigReady  = DRClusterConfigState("Ready")
+)
+
 // DRClusterConfigStatus defines the observed state of DRClusterConfig
 type DRClusterConfigStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// TODO: handle no status for this resource, and remove required RBAC/kubebuilder artifacts for the same
+
+	Phase DRClusterConfigState `json:"phase,omitempty"`
+
+	// ObservedGeneration is the last generation change the operator has dealt with
+	//+optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
 //+kubebuilder:object:root=true
