@@ -162,6 +162,12 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 			Spec:       ramen.DRClusterConfigSpec{ClusterID: "local-cid"},
 		}
 		Expect(k8sClient.Create(context.TODO(), drCConfig)).To(Succeed())
+		drclusterConfigConditionExpectEventually(
+			apiReader,
+			drCConfig,
+			Equal("Succeeded"),
+			Equal("Configuration processed and validated"),
+		)
 
 		By("Defining basic Classes")
 
@@ -218,7 +224,24 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 		err := testEnv.Stop()
 		Expect(err).NotTo(HaveOccurred())
 	})
+	Describe("ConfigurationChange", Ordered, func() {
+		Context("Given DRClusterConfig resource", func() {
+			When("replication schedule is added", func() {
+				It("updates the configuration to reflect the change", func() {
+					By("adding the replication schedule to the configuration")
 
+					drCConfig.Spec.ReplicationSchedules = append(drCConfig.Spec.ReplicationSchedules, "* * * * *")
+					Expect(k8sClient.Update(context.TODO(), drCConfig)).To(Succeed())
+					drclusterConfigConditionExpectEventually(
+						apiReader,
+						drCConfig,
+						Equal("Succeeded"),
+						Equal("Configuration processed and validated"),
+					)
+				})
+			})
+		})
+	})
 	Describe("ClusterClaims", Ordered, func() {
 		Context("Given DRClusterConfig resource", func() {
 			When("there is a StorageClass created with required labels", func() {
@@ -232,6 +255,12 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 					claimCount++
 					ensureClusterClaim(apiReader, "storage.class", "sc1")
 					ensureClaimCount(apiReader, claimCount)
+					drclusterConfigConditionExpectEventually(
+						apiReader,
+						drCConfig,
+						Equal("Succeeded"),
+						Equal("Configuration processed and validated"),
+					)
 				})
 			})
 			When("a StorageClass with required labels is deleted", func() {
@@ -242,6 +271,12 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 
 					claimCount--
 					ensureClaimCount(apiReader, claimCount)
+					drclusterConfigConditionExpectEventually(
+						apiReader,
+						drCConfig,
+						Equal("Succeeded"),
+						Equal("Configuration processed and validated"),
+					)
 				})
 			})
 			When("there are multiple StorageClass created with required labels", func() {
@@ -260,6 +295,12 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 					ensureClusterClaim(apiReader, "storage.class", "sc1")
 					ensureClusterClaim(apiReader, "storage.class", "sc2")
 					ensureClaimCount(apiReader, claimCount)
+					drclusterConfigConditionExpectEventually(
+						apiReader,
+						drCConfig,
+						Equal("Succeeded"),
+						Equal("Configuration processed and validated"),
+					)
 				})
 			})
 			When("a StorageClass label is deleted", func() {
@@ -272,6 +313,12 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 					claimCount--
 					ensureClaimCount(apiReader, claimCount)
 					ensureClusterClaim(apiReader, "storage.class", "sc2")
+					drclusterConfigConditionExpectEventually(
+						apiReader,
+						drCConfig,
+						Equal("Succeeded"),
+						Equal("Configuration processed and validated"),
+					)
 				})
 			})
 		})
@@ -286,6 +333,12 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				claimCount++
 				ensureClusterClaim(apiReader, "snapshot.class", "vsc1")
 				ensureClaimCount(apiReader, claimCount)
+				drclusterConfigConditionExpectEventually(
+					apiReader,
+					drCConfig,
+					Equal("Succeeded"),
+					Equal("Configuration processed and validated"),
+				)
 			})
 		})
 		When("a SnapshotClass with required labels is deleted", func() {
@@ -296,6 +349,12 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 
 				claimCount--
 				ensureClaimCount(apiReader, claimCount)
+				drclusterConfigConditionExpectEventually(
+					apiReader,
+					drCConfig,
+					Equal("Succeeded"),
+					Equal("Configuration processed and validated"),
+				)
 			})
 		})
 		When("there are multiple SnapshotClass created with required labels", func() {
@@ -314,6 +373,12 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				ensureClusterClaim(apiReader, "snapshot.class", "vsc1")
 				ensureClusterClaim(apiReader, "snapshot.class", "vsc2")
 				ensureClaimCount(apiReader, claimCount)
+				drclusterConfigConditionExpectEventually(
+					apiReader,
+					drCConfig,
+					Equal("Succeeded"),
+					Equal("Configuration processed and validated"),
+				)
 			})
 		})
 		When("a SnapshotClass label is deleted", func() {
@@ -326,6 +391,12 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				claimCount--
 				ensureClaimCount(apiReader, claimCount)
 				ensureClusterClaim(apiReader, "snapshot.class", "vsc1")
+				drclusterConfigConditionExpectEventually(
+					apiReader,
+					drCConfig,
+					Equal("Succeeded"),
+					Equal("Configuration processed and validated"),
+				)
 			})
 		})
 		When("there is a VolumeReplicationCLass created with required labels", func() {
@@ -339,6 +410,12 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				claimCount++
 				ensureClusterClaim(apiReader, "replication.class", "vrc1")
 				ensureClaimCount(apiReader, claimCount)
+				drclusterConfigConditionExpectEventually(
+					apiReader,
+					drCConfig,
+					Equal("Succeeded"),
+					Equal("Configuration processed and validated"),
+				)
 			})
 		})
 		When("a VolumeReplicationClass with required labels is deleted", func() {
@@ -349,6 +426,12 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 
 				claimCount--
 				ensureClaimCount(apiReader, claimCount)
+				drclusterConfigConditionExpectEventually(
+					apiReader,
+					drCConfig,
+					Equal("Succeeded"),
+					Equal("Configuration processed and validated"),
+				)
 			})
 		})
 		When("there are multiple VolumeReplicationClass created with required labels", func() {
@@ -367,6 +450,12 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				ensureClusterClaim(apiReader, "replication.class", "vrc1")
 				ensureClusterClaim(apiReader, "replication.class", "vrc2")
 				ensureClaimCount(apiReader, claimCount)
+				drclusterConfigConditionExpectEventually(
+					apiReader,
+					drCConfig,
+					Equal("Succeeded"),
+					Equal("Configuration processed and validated"),
+				)
 			})
 		})
 		When("a VolumeReplicationClass label is deleted", func() {
@@ -379,6 +468,12 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				claimCount--
 				ensureClaimCount(apiReader, claimCount)
 				ensureClusterClaim(apiReader, "replication.class", "vrc1")
+				drclusterConfigConditionExpectEventually(
+					apiReader,
+					drCConfig,
+					Equal("Succeeded"),
+					Equal("Configuration processed and validated"),
+				)
 			})
 		})
 	})
