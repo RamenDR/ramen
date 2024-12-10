@@ -513,12 +513,12 @@ func (v *VRGInstance) getVRGFromS3Profile(s3ProfileName string) (*ramen.VolumeRe
 	return vrg, nil
 }
 
-func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result, s3StoreProfile ramen.S3StoreProfile) error {
+func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result, s3ProfileName string) error {
 	if v.kubeObjectProtectionDisabled("recovery") {
 		return nil
 	}
 
-	sourceVrg, err := v.getVRGFromS3Profile(s3StoreProfile.S3ProfileName)
+	sourceVrg, err := v.getVRGFromS3Profile(s3ProfileName)
 	if err != nil {
 		return fmt.Errorf("kube objects source VRG get error: %v", err)
 	}
@@ -529,9 +529,9 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result, s3StoreProfile ram
 	}
 
 	v.instance.Status.KubeObjectProtection.CaptureToRecoverFrom = captureToRecoverFromIdentifier
-	log := v.log.WithValues("number", captureToRecoverFromIdentifier.Number, "profile", s3StoreProfile.S3ProfileName)
+	log := v.log.WithValues("number", captureToRecoverFromIdentifier.Number, "profile", s3ProfileName)
 
-	return v.kubeObjectsRecoveryStartOrResume(result, s3StoreProfile.S3ProfileName, captureToRecoverFromIdentifier, log)
+	return v.kubeObjectsRecoveryStartOrResume(result, s3ProfileName, captureToRecoverFromIdentifier, log)
 }
 
 func (v *VRGInstance) findS3StoreAccessor(s3StoreProfile ramen.S3StoreProfile) (s3StoreAccessor, error) {
