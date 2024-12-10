@@ -495,22 +495,32 @@ func (v *VRGInstance) kubeObjectsCaptureStatus(status metav1.ConditionStatus, re
 	}
 }
 
-func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result,
-	s3StoreProfile ramen.S3StoreProfile, objectStorer ObjectStorer,
-) error {
+func (v *VRGInstance) getVRGFromS3Profile(s3ProfileName string) (*ramen.VolumeReplicationGroup, error) {
+	pathName := s3PathNamePrefix(v.instance.Namespace, v.instance.Name)
+
+	objectStore, _, err := v.reconciler.ObjStoreGetter.ObjectStore(
+		v.ctx, v.reconciler.APIReader, s3ProfileName, v.namespacedName, v.log)
+	if err != nil {
+		return nil, fmt.Errorf("object store inaccessible for profile %v: %v", s3ProfileName, err)
+	}
+
+	vrg := &ramen.VolumeReplicationGroup{}
+	if err := vrgObjectDownload(objectStore, pathName, vrg); err != nil {
+		return nil, fmt.Errorf("vrg download failed, vrg namespace:%v, vrg name: %v, s3Profile: %v, error: %v",
+			v.instance.Namespace, v.instance.Name, s3ProfileName, err)
+	}
+
+	return vrg, nil
+}
+
+func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result, s3StoreProfile ramen.S3StoreProfile) error {
 	if v.kubeObjectProtectionDisabled("recovery") {
 		return nil
 	}
 
-	vrg := v.instance
-	sourceVrgNamespaceName, sourceVrgName := vrg.Namespace, vrg.Name
-	sourcePathNamePrefix := s3PathNamePrefix(sourceVrgNamespaceName, sourceVrgName)
-
-	sourceVrg := &ramen.VolumeReplicationGroup{}
-	if err := vrgObjectDownload(objectStorer, sourcePathNamePrefix, sourceVrg); err != nil {
-		v.log.Error(err, "Kube objects capture-to-recover-from identifier get error")
-
-		return nil
+	sourceVrg, err := v.getVRGFromS3Profile(s3StoreProfile.S3ProfileName)
+	if err != nil {
+		return fmt.Errorf("kube objects source VRG get error: %v", err)
 	}
 
 	captureToRecoverFromIdentifier := sourceVrg.Status.KubeObjectProtection.CaptureToRecoverFrom
@@ -520,7 +530,7 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result,
 		return nil
 	}
 
-	vrg.Status.KubeObjectProtection.CaptureToRecoverFrom = captureToRecoverFromIdentifier
+	v.instance.Status.KubeObjectProtection.CaptureToRecoverFrom = captureToRecoverFromIdentifier
 	log := v.log.WithValues("number", captureToRecoverFromIdentifier.Number, "profile", s3StoreProfile.S3ProfileName)
 
 	return v.kubeObjectsRecoveryStartOrResume(result, s3StoreProfile.S3ProfileName, captureToRecoverFromIdentifier, log)
