@@ -43,8 +43,6 @@ func RequestsMapKeyedByName(requestsStruct Requests) map[string]Request {
 	return requests
 }
 
-type RequestProcessingError struct{ string }
-
 type CaptureSpec struct {
 	//+optional
 	Name string `json:"name,omitempty"`
@@ -136,16 +134,6 @@ type Operation struct {
 	Timeout int `json:"timeout,omitempty"`
 	// Name of another operation that reverts the effect of this operation (e.g. quiesce vs. unquiesce)
 	InverseOp string `json:"inverseOp,omitempty"`
-}
-
-func RequestProcessingErrorCreate(s string) RequestProcessingError { return RequestProcessingError{s} }
-func (e RequestProcessingError) Error() string                     { return e.string }
-
-// Called by errors.Is() to match target.
-func (RequestProcessingError) Is(target error) bool {
-	_, ok := target.(RequestProcessingError)
-
-	return ok
 }
 
 type RequestsManager interface {

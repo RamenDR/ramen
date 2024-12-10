@@ -119,7 +119,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 //
-//nolint:funlen,gocognit,gocyclo,cyclop
+//nolint:funlen,gocognit,gocyclo,cyclop,nestif
 func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.Log.WithValues("DRPC", req.NamespacedName, "rid", uuid.New())
 
@@ -166,13 +166,21 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		// then the DRPC should be deleted as well. The least we should do here is to clean up DPRC.
 		err := r.processDeletion(ctx, drpc, placementObj, logger)
 		if err != nil {
-			logger.Info(fmt.Sprintf("Error in deleting DRPC: (%v)", err))
-
 			statusErr := r.setDeletionStatusAndUpdate(ctx, drpc)
 			if statusErr != nil {
 				err = fmt.Errorf("drpc deletion failed: %w and status update failed: %w", err, statusErr)
+
+				return ctrl.Result{}, err
 			}
 
+			// Is this an expected condition?
+			if rmnutil.IsOperationInProgress(err) {
+				logger.Info("Deleting DRPC in progress", "reason", err)
+
+				return ctrl.Result{Requeue: true}, nil
+			}
+
+			// Unexpected error.
 			return ctrl.Result{}, err
 		}
 
@@ -724,24 +732,56 @@ func (r *DRPlacementControlReconciler) cleanupVRGs(
 		return fmt.Errorf("failed to retrieve VRGs. We'll retry later. Error (%w)", err)
 	}
 
-	if !ensureVRGsManagedByDRPC(r.Log, mwu, vrgs, drpc, vrgNamespace) {
-		return fmt.Errorf("VRG adoption in progress")
+	// We have to ensure the seconrary VRG is deleted before deleting the primary VRG. This will fail until there
+	// is no secondary VRG in the vrgs list.
+	if err := r.ensureVRGsDeleted(mwu, vrgs, drpc, vrgNamespace, rmn.Secondary); err != nil {
+		return err
 	}
 
-	// delete VRG manifestwork
-	for _, drClusterName := range rmnutil.DRPolicyClusterNames(drPolicy) {
-		if err := mwu.DeleteManifestWork(mwu.BuildManifestWorkName(rmnutil.MWTypeVRG), drClusterName); err != nil {
-			return fmt.Errorf("%w", err)
-		}
+	// This will fail until there is no primary VRG in the vrgs list.
+	if err := r.ensureVRGsDeleted(mwu, vrgs, drpc, vrgNamespace, rmn.Primary); err != nil {
+		return err
 	}
 
 	if len(vrgs) != 0 {
-		return fmt.Errorf("waiting for VRGs count to go to zero")
+		return rmnutil.OperationInProgress("waiting for VRGs count to go to zero")
 	}
 
 	// delete MCVs
 	if err := r.deleteAllManagedClusterViews(drpc, rmnutil.DRPolicyClusterNames(drPolicy)); err != nil {
 		return fmt.Errorf("error in deleting MCV (%w)", err)
+	}
+
+	return nil
+}
+
+// ensureVRGsDeleted ensure that seconrary or primary VRGs are deleted. Return an error if a vrg could not be deleted,
+// or deletion is in progress. Return nil if vrg of specified type was not found.
+func (r *DRPlacementControlReconciler) ensureVRGsDeleted(
+	mwu rmnutil.MWUtil,
+	vrgs map[string]*rmn.VolumeReplicationGroup,
+	drpc *rmn.DRPlacementControl,
+	vrgNamespace string,
+	replicationState rmn.ReplicationState,
+) error {
+	var inProgress bool
+
+	for cluster, vrg := range vrgs {
+		if vrg.Spec.ReplicationState == replicationState {
+			if !ensureVRGsManagedByDRPC(r.Log, mwu, vrgs, drpc, vrgNamespace) {
+				return rmnutil.OperationInProgress(fmt.Sprintf("%s VRG adoption in progress", replicationState))
+			}
+
+			if err := mwu.DeleteManifestWork(mwu.BuildManifestWorkName(rmnutil.MWTypeVRG), cluster); err != nil {
+				return fmt.Errorf("failed to delete %s VRG manifestwork for cluster %q: %w", replicationState, cluster, err)
+			}
+
+			inProgress = true
+		}
+	}
+
+	if inProgress {
+		return rmnutil.OperationInProgress(fmt.Sprintf("%s VRG manifestwork deletion in progress", replicationState))
 	}
 
 	return nil
