@@ -534,15 +534,15 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result, s3ProfileName stri
 	return v.kubeObjectsRecoveryStartOrResume(result, s3ProfileName, captureToRecoverFromIdentifier, log)
 }
 
-func (v *VRGInstance) findS3StoreAccessor(s3StoreProfile ramen.S3StoreProfile) (s3StoreAccessor, error) {
+func (v *VRGInstance) findS3StoreAccessor(s3ProfileName string) (s3StoreAccessor, error) {
 	for _, s3StoreAccessor := range v.s3StoreAccessors {
-		if s3StoreAccessor.S3StoreProfile.S3ProfileName == s3StoreProfile.S3ProfileName {
+		if s3StoreAccessor.S3StoreProfile.S3ProfileName == s3ProfileName {
 			return s3StoreAccessor, nil
 		}
 	}
 
 	return s3StoreAccessor{},
-		fmt.Errorf("s3StoreProfile (%s) not found in s3StoreAccessor list", s3StoreProfile.S3ProfileName)
+		fmt.Errorf("s3StoreProfile (%s) not found in s3StoreAccessor list", s3ProfileName)
 }
 
 func (v *VRGInstance) getRecoverOrProtectRequest(
@@ -646,18 +646,10 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 	groups := v.recipeElements.RecoverWorkflow
 	requests := make([]kubeobjects.Request, len(groups))
 
-	objectStorer, s3StoreProfile, err := v.reconciler.ObjStoreGetter.ObjectStore(
-		v.ctx, v.reconciler.APIReader, s3ProfileName, v.namespacedName, v.log)
-	if err != nil {
-		return fmt.Errorf("kube objects recovery object store inaccessible for profile %v: %v", s3ProfileName, err)
-	}
-
-	localS3StoreAccessor, err := v.findS3StoreAccessor(s3StoreProfile)
+	s3StoreAccessor, err := v.findS3StoreAccessor(s3ProfileName)
 	if err != nil {
 		return fmt.Errorf("kube objects recovery couldn't build s3StoreAccessor: %v", err)
 	}
-
-	s3StoreAccessor := s3StoreAccessor{objectStorer, localS3StoreAccessor.S3StoreProfile}
 
 	for groupNumber, recoverGroup := range groups {
 		rg := recoverGroup
