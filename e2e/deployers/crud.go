@@ -136,7 +136,7 @@ func CreateSubscription(ctx types.Context, s Subscription) error {
 	name := ctx.Name()
 	log := ctx.Logger()
 	w := ctx.Workload()
-	namespace := name
+	hubNamespace := ctx.ManagementNamespace()
 
 	labels := make(map[string]string)
 	labels[AppLabelKey] = name
@@ -156,7 +156,7 @@ func CreateSubscription(ctx types.Context, s Subscription) error {
 	subscription := &subscriptionv1.Subscription{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
-			Namespace:   namespace,
+			Namespace:   hubNamespace,
 			Labels:      labels,
 			Annotations: annotations,
 		},
@@ -191,12 +191,12 @@ func CreateSubscription(ctx types.Context, s Subscription) error {
 func DeleteSubscription(ctx types.Context, s Subscription) error {
 	name := ctx.Name()
 	log := ctx.Logger()
-	namespace := name
+	hubNamespace := ctx.ManagementNamespace()
 
 	subscription := &subscriptionv1.Subscription{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: hubNamespace,
 		},
 	}
 

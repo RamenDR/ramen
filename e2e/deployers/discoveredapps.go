@@ -22,15 +22,16 @@ func (d DiscoveredApps) GetNamespace() string {
 	return util.RamenOpsNs
 }
 
+// Deploy creates a workload on the first managed cluster.
 func (d DiscoveredApps) Deploy(ctx types.Context) error {
-	name := ctx.Name()
 	log := ctx.Logger()
-	namespace := name
+	name := ctx.Name()
+	clusterNamespace := ctx.AppNamespace()
 
-	log.Info("Deploying workload")
+	log.Info("Deploying workload %q in namespace %q", name, clusterNamespace)
 
 	// create namespace in both dr clusters
-	if err := util.CreateNamespaceAndAddAnnotation(namespace); err != nil {
+	if err := util.CreateNamespaceAndAddAnnotation(clusterNamespace); err != nil {
 		return err
 	}
 
@@ -51,7 +52,7 @@ func (d DiscoveredApps) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	cmd := exec.Command("kubectl", "apply", "-k", tempDir, "-n", namespace,
+	cmd := exec.Command("kubectl", "apply", "-k", tempDir, "-n", clusterNamespace,
 		"--context", drpolicy.Spec.DRClusters[0], "--timeout=5m")
 
 	if out, err := cmd.Output(); err != nil {
@@ -62,7 +63,7 @@ func (d DiscoveredApps) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	if err = WaitWorkloadHealth(ctx, util.Ctx.C1.Client, namespace); err != nil {
+	if err = WaitWorkloadHealth(ctx, util.Ctx.C1.Client, clusterNamespace); err != nil {
 		return err
 	}
 
@@ -71,12 +72,13 @@ func (d DiscoveredApps) Deploy(ctx types.Context) error {
 	return nil
 }
 
+// Undeploy deletes the workload from the managed clusters.
 func (d DiscoveredApps) Undeploy(ctx types.Context) error {
-	name := ctx.Name()
 	log := ctx.Logger()
-	namespace := name // this namespace is in dr clusters
+	name := ctx.Name()
+	clusterNamespace := ctx.AppNamespace()
 
-	log.Info("Undeploying workload")
+	log.Info("Undeploying workload %q in namespace %q", name, clusterNamespace)
 
 	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub.Client, util.DefaultDRPolicyName)
 	if err != nil {
@@ -86,26 +88,26 @@ func (d DiscoveredApps) Undeploy(ctx types.Context) error {
 	log.Infof("Deleting discovered apps on cluster %q", drpolicy.Spec.DRClusters[0])
 
 	// delete app on both clusters
-	if err := DeleteDiscoveredApps(ctx, namespace, drpolicy.Spec.DRClusters[0]); err != nil {
+	if err := DeleteDiscoveredApps(ctx, clusterNamespace, drpolicy.Spec.DRClusters[0]); err != nil {
 		return err
 	}
 
 	log.Infof("Deletting discovered apps on cluster %q", drpolicy.Spec.DRClusters[1])
 
-	if err := DeleteDiscoveredApps(ctx, namespace, drpolicy.Spec.DRClusters[1]); err != nil {
+	if err := DeleteDiscoveredApps(ctx, clusterNamespace, drpolicy.Spec.DRClusters[1]); err != nil {
 		return err
 	}
 
-	log.Infof("Deleting namespace %q on cluster %q", namespace, drpolicy.Spec.DRClusters[0])
+	log.Infof("Deleting namespace %q on cluster %q", clusterNamespace, drpolicy.Spec.DRClusters[0])
 
 	// delete namespace on both clusters
-	if err := util.DeleteNamespace(util.Ctx.C1.Client, namespace, log); err != nil {
+	if err := util.DeleteNamespace(util.Ctx.C1.Client, clusterNamespace, log); err != nil {
 		return err
 	}
 
-	log.Infof("Deleting namespace %q on cluster %q", namespace, drpolicy.Spec.DRClusters[1])
+	log.Infof("Deleting namespace %q on cluster %q", clusterNamespace, drpolicy.Spec.DRClusters[1])
 
-	if err := util.DeleteNamespace(util.Ctx.C2.Client, namespace, log); err != nil {
+	if err := util.DeleteNamespace(util.Ctx.C2.Client, clusterNamespace, log); err != nil {
 		return err
 	}
 

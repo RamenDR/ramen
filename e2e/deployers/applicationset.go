@@ -10,24 +10,25 @@ import (
 
 type ApplicationSet struct{}
 
+// Deploy creates an ApplicationSet on the hub cluster, creating the workload on one of the managed clusters.
 func (a ApplicationSet) Deploy(ctx types.Context) error {
 	name := ctx.Name()
 	log := ctx.Logger()
-	namespace := util.ArgocdNamespace
+	hubNamespace := ctx.ManagementNamespace()
 
-	log.Info("Deploying workload")
+	log.Info("Deploying subscription %q in namespace %q", name, hubNamespace)
 
-	err := CreateManagedClusterSetBinding(McsbName, namespace)
+	err := CreateManagedClusterSetBinding(McsbName, hubNamespace)
 	if err != nil {
 		return err
 	}
 
-	err = CreatePlacement(ctx, name, namespace)
+	err = CreatePlacement(ctx, name, hubNamespace)
 	if err != nil {
 		return err
 	}
 
-	err = CreatePlacementDecisionConfigMap(ctx, name, namespace)
+	err = CreatePlacementDecisionConfigMap(ctx, name, hubNamespace)
 	if err != nil {
 		return err
 	}
@@ -40,37 +41,38 @@ func (a ApplicationSet) Deploy(ctx types.Context) error {
 	return err
 }
 
+// Undeploy deletes an ApplicationSet from the hub cluster, deleting the workload from the managed clusters.
 func (a ApplicationSet) Undeploy(ctx types.Context) error {
 	name := ctx.Name()
 	log := ctx.Logger()
-	namespace := util.ArgocdNamespace
+	hubNamespace := ctx.ManagementNamespace()
 
-	log.Info("Undeploying workload")
+	log.Info("Undeploying subscription %q in namespace %q", name, hubNamespace)
 
 	err := DeleteApplicationSet(ctx, a)
 	if err != nil {
 		return err
 	}
 
-	err = DeleteConfigMap(ctx, name, namespace)
+	err = DeleteConfigMap(ctx, name, hubNamespace)
 	if err != nil {
 		return err
 	}
 
-	err = DeletePlacement(ctx, name, namespace)
+	err = DeletePlacement(ctx, name, hubNamespace)
 	if err != nil {
 		return err
 	}
 
 	// multiple appsets could use the same mcsb in argocd ns.
 	// so delete mcsb if only 1 appset is in argocd ns
-	lastAppset, err := isLastAppsetInArgocdNs(namespace)
+	lastAppset, err := isLastAppsetInArgocdNs(hubNamespace)
 	if err != nil {
 		return err
 	}
 
 	if lastAppset {
-		err = DeleteManagedClusterSetBinding(ctx, McsbName, namespace)
+		err = DeleteManagedClusterSetBinding(ctx, McsbName, hubNamespace)
 		if err != nil {
 			return err
 		}
