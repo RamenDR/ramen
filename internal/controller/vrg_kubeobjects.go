@@ -502,11 +502,6 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result,
 		return nil
 	}
 
-	localS3StoreAccessor, err := v.findS3StoreAccessor(s3StoreProfile)
-	if err != nil {
-		return err
-	}
-
 	vrg := v.instance
 	sourceVrgNamespaceName, sourceVrgName := vrg.Namespace, vrg.Name
 	sourcePathNamePrefix := s3PathNamePrefix(sourceVrgNamespaceName, sourceVrgName)
@@ -526,7 +521,7 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result,
 	}
 
 	vrg.Status.KubeObjectProtection.CaptureToRecoverFrom = captureToRecoverFromIdentifier
-	log := v.log.WithValues("number", captureToRecoverFromIdentifier.Number, "profile", localS3StoreAccessor.S3ProfileName)
+	log := v.log.WithValues("number", captureToRecoverFromIdentifier.Number, "profile", s3StoreProfile.S3ProfileName)
 
 	return v.kubeObjectsRecoveryStartOrResume(result, s3StoreProfile.S3ProfileName, captureToRecoverFromIdentifier, log)
 }
