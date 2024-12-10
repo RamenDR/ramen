@@ -77,11 +77,24 @@ func (r *DRClusterConfigReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
+	var (
+		res reconcile.Result
+		err error
+	)
+
 	if util.ResourceIsDeleted(drCConfig) {
-		return r.processDeletion(ctx, log, drCConfig)
+		res, err = r.processDeletion(ctx, log, drCConfig)
+	} else {
+		res, err = r.processCreateOrUpdate(ctx, log, drCConfig)
 	}
 
-	return r.processCreateOrUpdate(ctx, log, drCConfig)
+	// Apply status changes to the DRClusterConfig
+	statusError := r.Client.Status().Update(ctx, drCConfig)
+	if statusError != nil {
+		log.Error(statusError, "Failed to update DRClusterConfig status.")
+	}
+
+	return res, err
 }
 
 func (r *DRClusterConfigReconciler) GetDRClusterConfig(ctx context.Context) (*ramen.DRClusterConfig, error) {
@@ -111,6 +124,8 @@ func (r *DRClusterConfigReconciler) processDeletion(
 	if err := r.pruneClusterClaims(ctx, log, []string{}); err != nil {
 		log.Info("Reconcile error", "error", err)
 
+		drCConfig.Status.Phase = ramen.DRClusterConfigFailed
+
 		return ctrl.Result{Requeue: true}, err
 	}
 
@@ -119,9 +134,13 @@ func (r *DRClusterConfigReconciler) processDeletion(
 		Update(ctx, r.Client); err != nil {
 		log.Info("Reconcile error", "error", err)
 
+		drCConfig.Status.Phase = ramen.DRClusterConfigFailed
+
 		return ctrl.Result{Requeue: true},
 			fmt.Errorf("failed to remove finalizer for DRClusterConfig resource, %w", err)
 	}
+
+	drCConfig.Status.Phase = ramen.DRClusterConfigReady
 
 	return ctrl.Result{}, nil
 }
@@ -169,21 +188,30 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 		Update(ctx, r.Client); err != nil {
 		log.Info("Reconcile error", "error", err)
 
+		drCConfig.Status.Phase = ramen.DRClusterConfigFailed
+
 		return ctrl.Result{Requeue: true}, fmt.Errorf("failed to add finalizer for DRClusterConfig resource, %w", err)
 	}
 
 	allSurvivors, err := r.CreateClassClaims(ctx, log)
 	if err != nil {
+		drCConfig.Status.Phase = ramen.DRClusterConfigFailed
+
 		log.Info("Reconcile error", "error", err)
 
 		return ctrl.Result{Requeue: true}, err
 	}
 
 	if err := r.pruneClusterClaims(ctx, log, allSurvivors); err != nil {
+		drCConfig.Status.Phase = ramen.DRClusterConfigFailed
+
 		log.Info("Reconcile error", "error", err)
 
 		return ctrl.Result{Requeue: true}, err
 	}
+
+	drCConfig.Status.Phase = ramen.DRClusterConfigReady
+	drCConfig.Status.ObservedGeneration = drCConfig.Generation
 
 	return ctrl.Result{}, nil
 }

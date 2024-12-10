@@ -67,6 +67,14 @@ spec:
             type: object
           status:
             description: DRClusterConfigStatus defines the observed state of DRClusterConfig
+            properties:
+              observedGeneration:
+                description: ObservedGeneration is the last generation change the
+                  operator has dealt with
+                format: int64
+                type: integer
+              phase:
+                type: string
             type: object
         type: object
     served: true
