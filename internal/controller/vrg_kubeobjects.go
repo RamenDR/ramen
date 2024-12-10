@@ -665,8 +665,8 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 				return fmt.Errorf("check hook execution failed during restore %s: %v", rg.Hook.Name, err)
 			}
 		} else {
-			if err := v.executeRecoverGroup(result, s3StoreAccessor, sourceVrgNamespaceName,
-				sourceVrgName, captureToRecoverFromIdentifier, captureRequests,
+			if err := v.executeRecoverGroup(result, s3StoreAccessor,
+				captureToRecoverFromIdentifier, captureRequests,
 				recoverRequests, veleroNamespaceName, labels, groupNumber, rg,
 				requests, log1); err != nil {
 				return err
@@ -682,12 +682,13 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 }
 
 func (v *VRGInstance) executeRecoverGroup(result *ctrl.Result, s3StoreAccessor s3StoreAccessor,
-	sourceVrgNamespaceName, sourceVrgName string,
 	captureToRecoverFromIdentifier *ramen.KubeObjectsCaptureIdentifier,
 	captureRequests, recoverRequests map[string]kubeobjects.Request,
 	veleroNamespaceName string, labels map[string]string, groupNumber int,
 	rg kubeobjects.RecoverSpec, requests []kubeobjects.Request, log1 logr.Logger,
 ) error {
+	sourceVrgName := v.instance.Name
+	sourceVrgNamespaceName := v.instance.Namespace
 	request, ok, submit, cleanup := v.getRecoverOrProtectRequest(
 		captureRequests, recoverRequests, s3StoreAccessor,
 		sourceVrgNamespaceName, sourceVrgName,
