@@ -525,9 +525,7 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result, s3StoreProfile ram
 
 	captureToRecoverFromIdentifier := sourceVrg.Status.KubeObjectProtection.CaptureToRecoverFrom
 	if captureToRecoverFromIdentifier == nil {
-		v.log.Info("Kube objects capture-to-recover-from identifier nil")
-
-		return nil
+		return fmt.Errorf("kube objects source VRG capture-to-recover-from identifier nil: %v", err)
 	}
 
 	v.instance.Status.KubeObjectProtection.CaptureToRecoverFrom = captureToRecoverFromIdentifier
